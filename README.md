@@ -4,6 +4,7 @@
 
 This repository is a fork of [TorqueGameEngines/Torque3D](https://github.com/TorqueGameEngines/Torque3D) (community-maintained MIT Torque 3D), being modernised into **FUSE**: ISO C++23, memory-safe ownership, Vulkan/CUDA, and a **Qt 6** editor.
 
+- Unification pre-starter (one program): [`docs/plans/FUSE_UNIFIED_PRESTARTER.md`](docs/plans/FUSE_UNIFIED_PRESTARTER.md)
 - Full development plan: [`docs/plans/FUSE_MASTER_PLAN.md`](docs/plans/FUSE_MASTER_PLAN.md)
 - Plan TOC: [`docs/plans/FUSE_MASTER_PLAN_TOC.md`](docs/plans/FUSE_MASTER_PLAN_TOC.md)
 - Source phase docs: [`docs/sources/`](docs/sources/)
