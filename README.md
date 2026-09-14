@@ -1,3 +1,20 @@
+# FUSE
+
+**F**ast **U**nified **S**imulation **E**ngine
+
+This repository is a fork of [TorqueGameEngines/Torque3D](https://github.com/TorqueGameEngines/Torque3D) (community-maintained MIT Torque 3D), being modernised into **FUSE**: ISO C++23, memory-safe ownership, Vulkan/CUDA, and a **Qt 6** editor.
+
+- Full development plan: [`docs/plans/FUSE_MASTER_PLAN.md`](docs/plans/FUSE_MASTER_PLAN.md)
+- Plan TOC: [`docs/plans/FUSE_MASTER_PLAN_TOC.md`](docs/plans/FUSE_MASTER_PLAN_TOC.md)
+- Source phase docs: [`docs/sources/`](docs/sources/)
+- Related 2D fork: [odin-loki/Torque2D](https://github.com/odin-loki/Torque2D) (from [TorqueGameEngines/Torque2D](https://github.com/TorqueGameEngines/Torque2D)) — separate engine, not bundled in this tree
+
+Port track first (Track A), then feature tracks (Track B). Work happens on **`main`**.
+
+---
+
+# Upstream: Torque 3D (TorqueGameEngines)
+
 # Torque3D
 
 MIT Licensed Open Source version of [Torque3D](https://torque3d.org) from [GarageGames](http://www.garagegames.com)
