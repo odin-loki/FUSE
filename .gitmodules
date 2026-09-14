@@ -1,0 +1,28 @@
+[submodule "addons/GMK"]
+	path = third_party/addons/GMK
+	url = https://github.com/TorqueGameEngines/Addon-GMK.git
+	branch = master
+[submodule "addons/Verve"]
+	path = third_party/addons/Verve
+	url = https://github.com/TorqueGameEngines/Addon-Verve.git
+	branch = master
+[submodule "addons/BadBehaviour"]
+	path = third_party/addons/BadBehaviour
+	url = https://github.com/TorqueGameEngines/Addon-BadBehaviour.git
+	branch = master
+[submodule "addons/GuideBot"]
+	path = third_party/addons/GuideBot
+	url = https://github.com/TorqueGameEngines/Addon-GuideBot.git
+	branch = master
+[submodule "addons/UAISK"]
+	path = third_party/addons/UAISK
+	url = https://github.com/TorqueGameEngines/UAISK.git
+	branch = master
+[submodule "addons/AFX-Template"]
+	path = third_party/addons/AFX-Template
+	url = https://github.com/TorqueGameEngines/AFX-Template.git
+	branch = master
+[submodule "addons/3DAAK"]
+	path = third_party/addons/3DAAK
+	url = https://github.com/TorqueGameEngines/Addon-3DAAK.git
+	branch = master

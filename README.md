@@ -7,6 +7,7 @@ This repository is a fork of [TorqueGameEngines/Torque3D](https://github.com/Tor
 - Full development plan: [`docs/plans/FUSE_MASTER_PLAN.md`](docs/plans/FUSE_MASTER_PLAN.md)
 - Plan TOC: [`docs/plans/FUSE_MASTER_PLAN_TOC.md`](docs/plans/FUSE_MASTER_PLAN_TOC.md)
 - Source phase docs: [`docs/sources/`](docs/sources/)
+- Torque gameplay/AI/FX addon snapshots (submodules): [`third_party/addons/`](third_party/addons/)
 - Related 2D fork: [odin-loki/Torque2D](https://github.com/odin-loki/Torque2D) (from [TorqueGameEngines/Torque2D](https://github.com/TorqueGameEngines/Torque2D)) — separate engine, not bundled in this tree
 
 Port track first (Track A), then feature tracks (Track B). Work happens on **`main`**.
