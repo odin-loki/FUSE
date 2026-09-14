@@ -14,3 +14,6 @@ These trees are **git submodules** of the TorqueGameEngines snapshots. They are 
 
 Clone with: `git clone --recurse-submodules https://github.com/odin-loki/FUSE.git`  
 Or after clone: `git submodule update --init --recursive`
+
+
+See also sibling submodule [`../Torque2D`](../Torque2D) (full Torque2D engine tree).

@@ -26,3 +26,7 @@
 	path = third_party/addons/3DAAK
 	url = https://github.com/TorqueGameEngines/Addon-3DAAK.git
 	branch = master
+[submodule "Torque2D"]
+	path = third_party/Torque2D
+	url = https://github.com/TorqueGameEngines/Torque2D.git
+	branch = master
