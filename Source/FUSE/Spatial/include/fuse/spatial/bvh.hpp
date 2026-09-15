@@ -6,7 +6,6 @@
 #include <fuse/spatial/frustum.hpp>
 #include <fuse/types.hpp>
 
-#include <span>
 #include <vector>
 
 namespace fuse::spatial {
@@ -37,7 +36,7 @@ struct BVHBuildDesc {
 
 class BVH {
 public:
-    void build(std::span<BVHLeaf> leaves, const BVHBuildDesc& desc = {});
+    void build(const std::vector<BVHLeaf>& leaves, const BVHBuildDesc& desc = {});
     void refit();
 
     bool ray_cast(const ecs::vec3& origin, const ecs::vec3& direction, f32 max_t, BVHLeaf& hit,
@@ -51,7 +50,7 @@ public:
     usize leaf_count() const { return m_leaves.size(); }
 
 private:
-    u32 build_recursive(std::span<BVHLeaf> leaves, u32 depth);
+    u32 build_recursive(std::vector<BVHLeaf>& leaves, u32 begin, u32 end, u32 depth);
     f32 sah_cost(const AABB& parent, const AABB& left, const AABB& right, u32 left_count,
                  u32 right_count) const;
     void query_node(u32 node_index, const AABB& box, std::vector<BVHLeaf>& results) const;

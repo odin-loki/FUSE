@@ -15,9 +15,9 @@ f32 axis_component(const ecs::vec3& value, u32 axis) {
     return axis == 0 ? value.x : (axis == 1 ? value.y : value.z);
 }
 
-AABB bounds_for_leaves(std::span<BVHLeaf> leaves) {
-    AABB bounds = leaves[0].aabb;
-    for (usize i = 1; i < leaves.size(); ++i) {
+AABB bounds_for_range(const std::vector<BVHLeaf>& leaves, u32 begin, u32 end) {
+    AABB bounds = leaves[begin].aabb;
+    for (u32 i = begin + 1; i < end; ++i) {
         bounds = bounds.merge(leaves[i].aabb);
     }
     return bounds;
@@ -34,43 +34,39 @@ f32 BVH::sah_cost(const AABB& parent, const AABB& left, const AABB& right, u32 l
     return 1.f + (left.surface_area() * left_count + right.surface_area() * right_count) / parent_area;
 }
 
-u32 BVH::build_recursive(std::span<BVHLeaf> leaves, u32 depth) {
+u32 BVH::build_recursive(std::vector<BVHLeaf>& leaves, u32 begin, u32 end, u32 depth) {
     const u32 node_index = static_cast<u32>(m_nodes.size());
     m_nodes.push_back({});
-    const AABB bounds = bounds_for_leaves(leaves);
+    const u32 count = end - begin;
+    const AABB bounds = bounds_for_range(leaves, begin, end);
 
-    if (leaves.size() <= m_desc.max_leaf_primitives || depth > 32) {
+    if (count <= m_desc.max_leaf_primitives || depth > 32) {
         const u32 leaf_begin = static_cast<u32>(m_leaves.size());
-        for (const BVHLeaf& leaf : leaves) {
-            m_leaves.push_back(leaf);
+        for (u32 i = begin; i < end; ++i) {
+            m_leaves.push_back(leaves[i]);
         }
         m_nodes[node_index].aabb = bounds;
-        m_nodes[node_index].leaf_count = static_cast<u16>(leaves.size());
+        m_nodes[node_index].leaf_count = static_cast<u16>(count);
         m_nodes[node_index].left_child = leaf_begin;
         return node_index;
     }
 
     u32 best_axis = 0;
-    u32 best_split = static_cast<u32>(leaves.size() / 2);
+    u32 best_split = begin + count / 2;
     f32 best_cost = std::numeric_limits<f32>::max();
 
     if (m_desc.use_sah) {
         for (u32 axis = 0; axis < 3; ++axis) {
-            std::sort(leaves.begin(), leaves.end(), [axis](const BVHLeaf& a, const BVHLeaf& b) {
-                return axis_component(a.aabb.center(), axis) < axis_component(b.aabb.center(), axis);
-            });
+            std::sort(leaves.begin() + begin, leaves.begin() + end,
+                      [axis](const BVHLeaf& a, const BVHLeaf& b) {
+                          return axis_component(a.aabb.center(), axis) <
+                                 axis_component(b.aabb.center(), axis);
+                      });
 
-            for (u32 split = 1; split < leaves.size(); ++split) {
-                AABB left = leaves[0].aabb;
-                for (u32 i = 1; i < split; ++i) {
-                    left = left.merge(leaves[i].aabb);
-                }
-                AABB right = leaves[split].aabb;
-                for (u32 i = split + 1; i < leaves.size(); ++i) {
-                    right = right.merge(leaves[i].aabb);
-                }
-                const f32 cost =
-                    sah_cost(bounds, left, right, split, static_cast<u32>(leaves.size()) - split);
+            for (u32 split = begin + 1; split < end; ++split) {
+                const AABB left = bounds_for_range(leaves, begin, split);
+                const AABB right = bounds_for_range(leaves, split, end);
+                const f32 cost = sah_cost(bounds, left, right, split - begin, end - split);
                 if (cost < best_cost) {
                     best_cost = cost;
                     best_axis = axis;
@@ -80,12 +76,12 @@ u32 BVH::build_recursive(std::span<BVHLeaf> leaves, u32 depth) {
         }
     }
 
-    std::sort(leaves.begin(), leaves.end(), [best_axis](const BVHLeaf& a, const BVHLeaf& b) {
+    std::sort(leaves.begin() + begin, leaves.begin() + end, [best_axis](const BVHLeaf& a, const BVHLeaf& b) {
         return axis_component(a.aabb.center(), best_axis) < axis_component(b.aabb.center(), best_axis);
     });
 
-    const u32 left_child = build_recursive(leaves.subspan(0, best_split), depth + 1);
-    const u32 right_child = build_recursive(leaves.subspan(best_split), depth + 1);
+    const u32 left_child = build_recursive(leaves, begin, best_split, depth + 1);
+    const u32 right_child = build_recursive(leaves, best_split, end, depth + 1);
 
     m_nodes[node_index].aabb = bounds;
     m_nodes[node_index].split_axis = static_cast<u8>(best_axis);
@@ -95,21 +91,20 @@ u32 BVH::build_recursive(std::span<BVHLeaf> leaves, u32 depth) {
     return node_index;
 }
 
-void BVH::build(std::span<BVHLeaf> leaves, const BVHBuildDesc& desc) {
+void BVH::build(const std::vector<BVHLeaf>& leaves, const BVHBuildDesc& desc) {
     m_desc = desc;
     m_nodes.clear();
     m_leaves.clear();
-    m_leaf_ranges.clear();
 
     if (leaves.empty()) {
         return;
     }
 
-    std::vector<BVHLeaf> working(leaves.begin(), leaves.end());
+    std::vector<BVHLeaf> working = leaves;
     if (m_desc.parallel && working.size() > 1024) {
         fuse::jobs::parallel_for(static_cast<u32>(working.size()), [&](u32) {});
     }
-    build_recursive(working, 0);
+    build_recursive(working, 0, static_cast<u32>(working.size()), 0);
 }
 
 void BVH::refit() {
