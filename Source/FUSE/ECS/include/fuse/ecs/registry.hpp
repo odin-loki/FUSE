@@ -2,6 +2,7 @@
 
 #include <fuse/ecs/archetype.hpp>
 #include <fuse/ecs/component.hpp>
+#include <fuse/ecs/detail/parallel_iteration.hpp>
 #include <fuse/ecs/entity.hpp>
 #include <fuse/ecs/query_filter.hpp>
 #include <fuse/jobs/parallel_for.hpp>
@@ -280,9 +281,7 @@ void Registry::each_query_parallel(Fn&& fn, Without<WithoutTs...> /*exclude*/, u
 
 template <typename... WithTs, typename Fn>
 void Registry::each_query_parallel_impl_(const QueryFilter& filter, Fn&& fn, u32 batchSize) {
-    if (batchSize == 0) {
-        batchSize = 1;
-    }
+    batchSize = detail::normalize_batch_size(batchSize);
 
     for (Archetype& archetype : m_archetypes) {
         if (!archetype_matches(archetype, filter)) {

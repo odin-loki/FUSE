@@ -12,6 +12,7 @@
 |-----------|----------|-------|
 | `EntityID` | `include/fuse/ecs/entity.hpp` | Index + generation handle; stale detection O(1) |
 | `Registry` | `include/fuse/ecs/registry.hpp` | Create/destroy, add/remove/get/has, `each` + `each_parallel` bulk iteration |
+| `detail::parallel_iteration` / `detail::iteration_parity` | `include/fuse/ecs/detail/` | Shared `normalize_batch_size`; serial/parallel visit-count + transform matrix parity helpers |
 | `QueryFilter` / `With` / `Without` | `include/fuse/ecs/query_filter.hpp` | Archetype-scoped query filters; `each_query` / `each_query_parallel` (B3 deepen) |
 | `Archetype` / `ComponentColumn` | `include/fuse/ecs/archetype.hpp` | SoA columns keyed by `std::type_index`; archetype migration on add/remove |
 | `IsComponentV` trait | `include/fuse/ecs/component.hpp` | Plain data + `component_name` string (C++17) |
@@ -72,7 +73,7 @@ SceneBuildSystem::build → SceneData (draw items, SDF, lights)
 SceneManager::update (stub tick — systems wired in integration test)
 ```
 
-`Registry::each_parallel` parallelizes row iteration per matching archetype via `JobScheduler::parallel_for` (default batch size 256; `batchSize == 0` clamps to 1). `TransformSystemOptions::parallelDirtyRoots` selects the parallel dirty-root pass (default on). `TransformSystem::recompute_world_matrix` is the shared CPU stub for local/world matrix recompute; dirty-root serial/parallel stubs delegate to it before the hierarchy walk. `Registry::each` / `each_parallel` and `each_query` / `each_query_parallel` share the same With/Without filter path — pass a trailing `Without<...>` tag to exclude component types. `archetype_matches(archetype, filter)` evaluates runtime `QueryFilter` values; overloads taking `With<...>` / `Without<...>` tags provide compile-time filter construction. Managed-memory columns at production scale remain **deferred** to B4+ physics/GPU paths. Current columns use `std::vector<std::byte>` on the CPU.
+`Registry::each_parallel` parallelizes row iteration per matching archetype via `JobScheduler::parallel_for` (default batch size 256; `detail::normalize_batch_size` clamps `batchSize == 0` to 1). `TransformSystemOptions::parallelDirtyRoots` selects the parallel dirty-root pass (default on). `TransformSystem::recompute_world_matrix` is the shared CPU stub for local/world matrix recompute; dirty-root serial/parallel stubs delegate to it before the hierarchy walk. `detail::iteration_parity` supplies visit-count and transform-matrix parity helpers used by `fuse_ecs_each_parallel`. `Registry::each` / `each_parallel` and `each_query` / `each_query_parallel` share the same With/Without filter path — pass a trailing `Without<...>` tag to exclude component types. `archetype_matches(archetype, filter)` evaluates runtime `QueryFilter` values; overloads taking `With<...>` / `Without<...>` tags provide compile-time filter construction. Managed-memory columns at production scale remain **deferred** to B4+ physics/GPU paths. Current columns use `std::vector<std::byte>` on the CPU.
 
 ---
 
@@ -123,7 +124,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_ecs|fuse_scene'
 |--------|-----------|
 | `fuse_ecs_registry` | Create/destroy, stale handles, add/get/remove, archetype migration, `each` |
 | `fuse_ecs_query_filter` | `archetype_matches` With/Without filters (runtime + compile-time tags); `each`/`each_query`/`each_parallel`/`each_query_parallel` include/exclude, empty match, and serial/parallel parity (atomic visit counts) |
-| `fuse_ecs_each_parallel` | `each_parallel` visit/mutation parity vs `each`; batchSize edge cases (0, oversized, empty); With/Without query smoke; `TransformSystem` serial/parallel dirty-root paths + matrix parity |
+| `fuse_ecs_each_parallel` | `each_parallel` visit/mutation parity vs `each`; `detail::iteration_parity` visit-count helpers; batchSize edge cases (0, oversized, empty registry); dirty propagation to clean children; dirty-root stub + full `TransformSystem` serial/parallel matrix parity |
 | `fuse_ecs_components` | Component names, defaults, registry storage for lights/tags |
 | `fuse_ecs_system_scheduler` | System dependency DAG execution order |
 | `fuse_ecs_bvh` | SAH BVH ray cast, frustum query vs brute force, refit |
@@ -155,6 +156,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_ecs|fuse_scene'
 
 - [x] **B3.3** `TransformSystem`, `CullingSystem`, `SceneBuildSystem`, `SystemScheduler` on FUSE APIs
 - [x] Transform hierarchy propagates parent translation to children (`fuse_ecs_systems`)
+- [x] Dirty parent move propagates to clean child via hierarchy pass (`fuse_ecs_each_parallel`)
 - [x] System scheduler honours declared dependencies (`fuse_ecs_system_scheduler`)
 - [x] `each<T>` iterates exactly the correct entities — no missed entities, no spurious iterations (`fuse_ecs_registry`)
 - [x] `each_parallel<T>` produces identical results to `each<T>` across randomised cases (`fuse_ecs_each_parallel`; 100k scale deferred)

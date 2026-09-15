@@ -29,7 +29,6 @@ public:
 
 private:
     static void update_hierarchy(Registry& reg, EntityID id, const mat4& parent_matrix);
-    static u32 normalize_batch_size(u32 batchSize);
 };
 
 } // namespace fuse::ecs

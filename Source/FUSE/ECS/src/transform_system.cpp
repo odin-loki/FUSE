@@ -1,14 +1,11 @@
 #include <fuse/ecs/systems/transform_system.hpp>
 
+#include <fuse/ecs/detail/parallel_iteration.hpp>
 #include <fuse/types.hpp>
 
 #include <vector>
 
 namespace fuse::ecs {
-
-u32 TransformSystem::normalize_batch_size(u32 batchSize) {
-    return batchSize == 0 ? 1u : batchSize;
-}
 
 void TransformSystem::recompute_world_matrix(Transform& transform, const mat4& parent_matrix) {
     const mat4 local = from_trs(transform.position, transform.rotation, transform.scale);
@@ -45,7 +42,7 @@ void TransformSystem::update_dirty_roots_serial(Registry& reg) {
 }
 
 void TransformSystem::update_dirty_roots_parallel(Registry& reg, u32 batchSize) {
-    const u32 grain = normalize_batch_size(batchSize);
+    const u32 grain = detail::normalize_batch_size(batchSize);
     reg.each_parallel<Transform>([&](EntityID, Transform& transform) {
         if (transform.parent.valid() || !transform.dirty) {
             return;
