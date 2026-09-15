@@ -6,6 +6,7 @@ set(FUSE_RHI_PUBLIC_HEADERS
     include/fuse/renderer/deferred/deferred_renderer.hpp
     include/fuse/renderer/deferred/frame_pipeline.hpp
     include/fuse/renderer/deferred/gbuffer.hpp
+    include/fuse/renderer/lighting/clustered.hpp
     include/fuse/renderer/material/material.hpp
     include/fuse/renderer/material/material_system.hpp
     include/fuse/renderer/render_command_list.hpp
@@ -45,6 +46,7 @@ set(FUSE_RHI_SOURCES
     src/deferred/deferred_renderer.cpp
     src/deferred/frame_pipeline.cpp
     src/deferred/gbuffer.cpp
+    src/lighting/clustered_light_culler.cpp
     src/material/material.cpp
     src/material/material_system.cpp
     src/render_command_list.cpp

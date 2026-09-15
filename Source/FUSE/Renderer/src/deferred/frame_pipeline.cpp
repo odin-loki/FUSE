@@ -1,12 +1,15 @@
 #include <fuse/renderer/deferred/frame_pipeline.hpp>
 
 #include <fuse/renderer/command_buffer.hpp>
+#include <fuse/renderer/lighting/clustered.hpp>
 
 namespace fuse::renderer {
 namespace {
 
 struct DeferredPassUserData {
     DeferredPassId id = DeferredPassId::DepthPrepass;
+    ClusteredLightCuller* culler = nullptr;
+    ClusterCameraDesc camera{};
 };
 
 DeferredPassUserData g_passUserData[RenderGraph::kMaxPassesPerFrame]{};
@@ -20,6 +23,13 @@ void executeDeferredPass(void* commandBuffer, void* userData) {
     if (recorder == nullptr || pass == nullptr) {
         return;
     }
+
+    if (pass->id == DeferredPassId::ClusteredLightCull && pass->culler != nullptr &&
+        pass->culler->isReady()) {
+        pass->culler->recordCullPass(*recorder, pass->camera, {}, {});
+        return;
+    }
+
     recorder->beginPass(DeferredFramePipeline::passName(pass->id));
     recorder->endPass();
 }
@@ -35,7 +45,9 @@ void addDeferredPass(RenderGraph& graph,
                      DeferredPassId id,
                      bool isCuda,
                      const RGTextureAccess* accesses,
-                     u32 accessCount) {
+                     u32 accessCount,
+                     ClusteredLightCuller* culler = nullptr,
+                     const ClusterCameraDesc* camera = nullptr) {
     if (g_deferredPassCount >= RenderGraph::kMaxPassesPerFrame) {
         return;
     }
@@ -43,6 +55,8 @@ void addDeferredPass(RenderGraph& graph,
     const u32 passIndex = g_deferredPassCount++;
     DeferredPassUserData& userData = g_passUserData[passIndex];
     userData.id = id;
+    userData.culler = culler;
+    userData.camera = camera != nullptr ? *camera : ClusterCameraDesc{};
 
     if (accesses != nullptr && accessCount > 0u) {
         const u32 base = passIndex * 8u;
@@ -116,7 +130,9 @@ const char* DeferredFramePipeline::passName(DeferredPassId id) {
     }
 }
 
-void DeferredFramePipeline::buildGraph(RenderGraph& graph, const GBuffer& gbuffer) {
+void DeferredFramePipeline::buildGraph(RenderGraph& graph,
+                                       const GBuffer& gbuffer,
+                                       ClusteredLightCuller* culler) {
     resetGraphStorage();
 
     RGTextureRef depthTexture{};
@@ -173,7 +189,17 @@ void DeferredFramePipeline::buildGraph(RenderGraph& graph, const GBuffer& gbuffe
     };
     addDeferredPass(graph, DeferredPassId::SdfRayMarch, true, cudaGbufferReads, 4u);
     addDeferredPass(graph, DeferredPassId::DdgiProbeUpdate, true, nullptr, 0u);
-    addDeferredPass(graph, DeferredPassId::ClusteredLightCull, true, nullptr, 0u);
+
+    ClusterCameraDesc clusterCamera{};
+    clusterCamera.screenWidth = m_desc.width;
+    clusterCamera.screenHeight = m_desc.height;
+    addDeferredPass(graph,
+                    DeferredPassId::ClusteredLightCull,
+                    true,
+                    nullptr,
+                    0u,
+                    culler != nullptr && culler->isReady() ? culler : nullptr,
+                    &clusterCamera);
 
     RGTextureAccess deferredWrite = makeGBufferAccess({RenderGraph::kBackbufferTextureId},
                                                       RGResourceAccess::CUDAWrite);

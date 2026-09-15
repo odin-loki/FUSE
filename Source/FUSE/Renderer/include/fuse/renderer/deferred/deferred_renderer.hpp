@@ -2,6 +2,7 @@
 
 #include <fuse/renderer/deferred/frame_pipeline.hpp>
 #include <fuse/renderer/deferred/gbuffer.hpp>
+#include <fuse/renderer/lighting/clustered.hpp>
 #include <fuse/renderer/material/material_system.hpp>
 #include <fuse/renderer/render_graph.hpp>
 #include <fuse/renderer/resource_manager.hpp>
@@ -44,6 +45,9 @@ public:
     DeferredFramePipeline& pipeline() { return m_pipeline; }
     const DeferredFramePipeline& pipeline() const { return m_pipeline; }
 
+    ClusteredLightCuller& lightCuller() { return m_lightCuller; }
+    const ClusteredLightCuller& lightCuller() const { return m_lightCuller; }
+
     bool buildFrameGraph(RenderGraph& graph, u32 backbufferIndex);
     RenderGraphExecuteInfo executeFrame(VulkanDevice& device,
                                         FrameManager& frames,
@@ -59,6 +63,7 @@ private:
     GBuffer m_gbuffer{};
     MaterialSystem m_materials{};
     DeferredFramePipeline m_pipeline;
+    ClusteredLightCuller m_lightCuller{};
 };
 
 } // namespace fuse::renderer
