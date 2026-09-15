@@ -10,8 +10,10 @@
 
 | Component | Location | Notes |
 |-----------|----------|-------|
-| `InterestManager` | `interest_management.hpp/.cpp` | Relevance/unload radii, hysteresis, observer AOI evaluation |
+| `InterestManager` | `interest_management.hpp/.cpp` | Relevance/unload radii, hysteresis, observer AOI evaluation, scope snapshots |
 | `InterestPriorityQueue` | `interest_management.hpp/.cpp` | Max-priority replication ordering stub |
+| `InterestScopeSet` / `InterestSetDiff` | `interest_management.hpp/.cpp` | Enter/leave set diff between AOI evaluations |
+| `filter_candidates_in_radius` | `interest_management.hpp/.cpp` | Radius filter stub (no hysteresis) for candidate lists |
 | `InputHistoryBuffer` | `input_history.hpp/.cpp` | 128-frame ring with `push_frame` / `pop_oldest`, predicted + confirmed `PlayerInput` |
 | `reconcile_predicted_input` | `reconcile.hpp/.cpp` | Compare authoritative input against local prediction |
 | Rollback window helpers | `rollback_window.hpp/.cpp` | `can_rewind_to_frame`, `resimulate_frame_count` bounds stubs |
@@ -52,7 +54,7 @@ while (queue.pop(next)) {
 }
 ```
 
-`classify_interest` and `compute_relevance_priority` are exposed for unit tests and future ghost managers.
+`classify_interest`, `compute_relevance_priority`, and `filter_candidates_in_radius` are exposed for unit tests and future ghost managers. `InterestScopeSet` + `diff_interest_scope_sets` report entities that entered or left scope between evaluations; `InterestManager::compute_scope_diff` compares the last two `evaluate()` snapshots.
 
 ---
 
@@ -159,7 +161,7 @@ ctest --test-dir build --output-on-failure -R fuse_net_b74
 
 | Check | Validates |
 |-------|-----------|
-| `test_net_interest_management` | Relevance/unload radii, hysteresis, priority computation, queue ordering |
+| `test_net_interest_management` | Relevance/unload radii, radius filter, hysteresis, enter/leave diff, priority queue ordering (empty + tie-break) |
 | `test_net_checksum` | FNV-1a determinism, combine, snapshot verify |
 | `test_net_input_history` | `push_frame` / `pop_oldest`, ring wrap eviction, `inputs_equal` |
 | `test_net_reconcile` | Confirmed / mismatch / NoOp reconcile paths, `reconcile_authoritative` |
@@ -171,7 +173,7 @@ ctest --test-dir build --output-on-failure -R fuse_net_b74
 
 ## Gates (B7.4 deepen)
 
-- [x] Interest management AOI stubs (`InterestManager`, relevance radii, priority queue)
+- [x] Interest management AOI stubs (`InterestManager`, relevance radii, priority queue, enter/leave diff, radius filter)
 - [x] Expanded input history ring (128 frames, `push_frame` / `pop_oldest`, predicted + confirmed)
 - [x] Reconcile stub (`reconcile_predicted_input`, `InputHistoryBuffer::reconcile_authoritative`)
 - [x] Rollback window helpers (`can_rewind_to_frame`, `resimulate_frame_count`, `RollbackManager::rewind_to`)

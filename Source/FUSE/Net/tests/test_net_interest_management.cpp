@@ -141,6 +141,101 @@ void run_interest_management_tests() {
     ignored.priority = 1.f;
     queue.push(ignored);
     expectTrue(queue.empty(), "out-of-scope entries are not enqueued");
+
+    // --- radius filter stub ---
+    policy.relevance_radius = 50.f;
+    policy.always_relevant_radius = 5.f;
+    policy.unload_radius = 0.f;
+
+    std::vector<fuse::net::InterestCandidate> candidates;
+    candidates.push_back({make_entity(30), {10.f, 0.f, 0.f, 0.f}, 0.f});
+    candidates.push_back({make_entity(31), {80.f, 0.f, 0.f, 0.f}, 0.f});
+    candidates.push_back({make_entity(32), {3.f, 0.f, 0.f, 0.f}, 0.2f});
+
+    std::vector<fuse::net::InterestEntry> filtered;
+    const fuse::u32 filtered_count =
+        fuse::net::filter_candidates_in_radius(origin, policy, candidates, filtered);
+    expectTrue(filtered_count == 2u, "radius filter keeps in-scope candidates only");
+    expectTrue(filtered.size() == 2u, "radius filter output size matches count");
+    expectTrue(filtered[0].entity.index == 30u || filtered[0].entity.index == 32u,
+               "radius filter retains near entities");
+    expectTrue(!fuse::net::within_relevance_radius(
+                   fuse::net::distance_sq_3d(origin, {80.f, 0.f, 0.f, 0.f}), policy),
+               "within_relevance_radius rejects far entities");
+
+    std::vector<fuse::net::InterestCandidate> empty_candidates;
+    std::vector<fuse::net::InterestEntry> empty_filtered;
+    expectTrue(fuse::net::filter_candidates_in_radius(origin, policy, empty_candidates,
+                                                      empty_filtered) == 0u,
+               "radius filter returns zero for empty candidate list");
+    expectTrue(empty_filtered.empty(), "radius filter clears output on empty input");
+
+    // --- enter/leave set diff ---
+    fuse::net::InterestManager diff_manager;
+    diff_manager.set_policy(policy);
+    diff_manager.set_observer_position(origin);
+    diff_manager.register_entity({make_entity(40), {10.f, 0.f, 0.f, 0.f}, 0.f});
+    diff_manager.register_entity({make_entity(41), {20.f, 0.f, 0.f, 0.f}, 0.f});
+    diff_manager.evaluate();
+    expectTrue(diff_manager.scope_set().size() == 2u, "initial scope set has two entities");
+
+    fuse::net::InterestSetDiff first_diff{};
+    diff_manager.compute_scope_diff(first_diff);
+    expectTrue(first_diff.entered.empty() && first_diff.left.empty(),
+               "first evaluation produces empty enter/leave diff");
+
+    diff_manager.set_observer_position({200.f, 0.f, 0.f, 0.f});
+    diff_manager.evaluate();
+    fuse::net::InterestSetDiff move_diff{};
+    diff_manager.compute_scope_diff(move_diff);
+    expectTrue(move_diff.entered.empty(), "moving away does not enter new entities");
+    expectTrue(move_diff.left.size() == 2u, "moving away leaves prior in-scope entities");
+
+    diff_manager.clear_entities();
+    diff_manager.set_observer_position(origin);
+    diff_manager.register_entity({make_entity(50), {10.f, 0.f, 0.f, 0.f}, 0.f});
+    diff_manager.evaluate();
+    diff_manager.register_entity({make_entity(51), {15.f, 0.f, 0.f, 0.f}, 0.f});
+    diff_manager.evaluate();
+    fuse::net::InterestSetDiff add_diff{};
+    diff_manager.compute_scope_diff(add_diff);
+    expectTrue(add_diff.entered.size() == 1u, "new in-scope entity appears in entered set");
+    expectTrue(add_diff.entered[0].index == 51u, "entered set identifies new entity");
+    expectTrue(add_diff.left.empty(), "adding entity does not leave prior scope");
+
+    fuse::net::InterestScopeSet manual_prev;
+    fuse::net::InterestScopeSet manual_curr;
+    fuse::net::InterestSetDiff manual_diff{};
+    manual_prev.build_from_entries(diff_manager.entries());
+    diff_manager.set_observer_position({200.f, 0.f, 0.f, 0.f});
+    diff_manager.evaluate();
+    manual_curr.build_from_entries(diff_manager.entries());
+    fuse::net::diff_interest_scope_sets(manual_prev, manual_curr, manual_diff);
+    expectTrue(manual_diff.left.size() == 2u, "manual diff detects entities leaving scope");
+    expectTrue(manual_diff.entered.empty(), "manual diff has no enters when observer moves away");
+
+    // --- priority order drain (explicit) ---
+    fuse::net::InterestPriorityQueue order_queue;
+    expectTrue(order_queue.empty(), "new priority queue starts empty");
+    expectTrue(!order_queue.pop(popped), "pop on empty queue returns false");
+
+    fuse::net::InterestEntry tie_near{};
+    tie_near.entity = make_entity(60);
+    tie_near.distance_sq = 10.f;
+    tie_near.priority = 0.5f;
+    tie_near.scope = fuse::net::InterestScope::InScope;
+    fuse::net::InterestEntry tie_far = tie_near;
+    tie_far.entity = make_entity(61);
+    tie_far.distance_sq = 50.f;
+    order_queue.push(tie_far);
+    order_queue.push(tie_near);
+
+    fuse::net::InterestEntry tie_first{};
+    fuse::net::InterestEntry tie_second{};
+    expectTrue(order_queue.pop(tie_first), "priority tie-break pop succeeds");
+    expectTrue(order_queue.pop(tie_second), "priority tie-break second pop succeeds");
+    expectTrue(tie_first.entity.index == 60u, "equal priority prefers closer entity");
+    expectTrue(order_queue.empty(), "queue empty after tie-break drain");
 }
 
 } // namespace fuse::net::tests

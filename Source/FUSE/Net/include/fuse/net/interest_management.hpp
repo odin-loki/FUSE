@@ -44,6 +44,32 @@ struct InterestEntry {
                                                 bool was_in_scope = false);
 [[nodiscard]] f32 compute_relevance_priority(f32 distance_sq, const InterestPolicy& policy,
                                              f32 priority_boost = 0.f);
+[[nodiscard]] bool within_relevance_radius(f32 distance_sq, const InterestPolicy& policy,
+                                           bool was_in_scope = false);
+
+/// In-scope entity set snapshot — used for enter/leave diff between evaluations.
+struct InterestScopeSet {
+    std::vector<ecs::EntityID> entities;
+
+    void clear();
+    void build_from_entries(const std::vector<InterestEntry>& entries);
+    [[nodiscard]] bool empty() const { return entities.empty(); }
+    [[nodiscard]] u32 size() const { return static_cast<u32>(entities.size()); }
+};
+
+/// Entities that entered or left scope between two snapshots.
+struct InterestSetDiff {
+    std::vector<ecs::EntityID> entered;
+    std::vector<ecs::EntityID> left;
+};
+
+void diff_interest_scope_sets(const InterestScopeSet& previous, const InterestScopeSet& current,
+                              InterestSetDiff& out);
+
+/// Radius filter stub — collects in-scope entries for an observer (no hysteresis).
+[[nodiscard]] u32 filter_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
+                                                const std::vector<InterestCandidate>& candidates,
+                                                std::vector<InterestEntry>& out_entries);
 
 /// Server-side interest manager — evaluates AOI for an observer against registered entities.
 class InterestManager {
@@ -63,12 +89,21 @@ public:
     [[nodiscard]] const std::vector<InterestEntry>& entries() const { return m_entries; }
     [[nodiscard]] u32 in_scope_count() const;
 
+    /// Snapshot of in-scope entities from the last `evaluate()` call.
+    [[nodiscard]] const InterestScopeSet& scope_set() const { return m_scope_set; }
+
+    /// Diff current scope against the previous evaluation's scope set.
+    void compute_scope_diff(InterestSetDiff& out) const;
+
 private:
     InterestPolicy m_policy{};
     ecs::vec3 m_observer{};
     std::vector<InterestCandidate> m_candidates;
     std::vector<InterestEntry> m_entries;
     std::vector<bool> m_was_in_scope;
+    InterestScopeSet m_scope_set;
+    InterestScopeSet m_previous_scope_set;
+    bool m_has_scope_snapshot = false;
 };
 
 /// Max-priority replication queue — highest priority popped first (Torque ghost ordering stub).
