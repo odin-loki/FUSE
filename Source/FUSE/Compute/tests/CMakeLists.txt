@@ -1,3 +1,7 @@
 add_executable(fuse_ray_march_stub test_ray_march_stub.cpp)
 target_link_libraries(fuse_ray_march_stub PRIVATE fuse_compute)
 add_test(NAME fuse_ray_march_stub COMMAND fuse_ray_march_stub)
+
+add_executable(fuse_screen_space_effects_stub test_screen_space_effects_stub.cpp)
+target_link_libraries(fuse_screen_space_effects_stub PRIVATE fuse_compute)
+add_test(NAME fuse_screen_space_effects_stub COMMAND fuse_screen_space_effects_stub)

@@ -362,11 +362,12 @@ Portable invariant unchanged: job code emits `RenderCommandList`; platform modul
 | `fuse_cuda_jobs` | `submit_cuda` hook signals counter without CUDA toolkit |
 | `fuse_cuda_interop` | Vulkan/CUDA import + timeline stubs degrade on CI |
 | `fuse_ray_march_stub` | CPU sphere hit distance, `submit_cuda` counter signal, ray-march job wiring |
+| `fuse_screen_space_effects_stub` | SSAO/SSR/SSGI CPU reference samples, launches, `submit_*_job` counter signal — see [B5.7-SCREEN-SPACE-EFFECTS.md](./B5.7-SCREEN-SPACE-EFFECTS.md) |
 
 Run:
 
 ```bash
-ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_graphics_pipeline|fuse_render_command|fuse_render_graph|fuse_composite_pass|fuse_renderer_bootstrap|fuse_hybrid_renderer|fuse_hybrid|fuse_cuda|fuse_ray_march'
+ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_graphics_pipeline|fuse_render_command|fuse_render_graph|fuse_composite_pass|fuse_renderer_bootstrap|fuse_hybrid_renderer|fuse_hybrid|fuse_cuda|fuse_ray_march|fuse_screen_space_effects'
 ```
 
 ---
