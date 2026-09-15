@@ -6,6 +6,7 @@
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 
@@ -16,6 +17,13 @@ int g_failures = 0;
 void expectTrue(bool condition, const char* message) {
     if (!condition) {
         std::fprintf(stderr, "FAIL: %s\n", message);
+        ++g_failures;
+    }
+}
+
+void expectNear(float value, float expected, float epsilon, const char* message) {
+    if (std::fabs(value - expected) > epsilon) {
+        std::fprintf(stderr, "FAIL: %s (got %f, expected %f)\n", message, value, expected);
         ++g_failures;
     }
 }
@@ -35,6 +43,47 @@ void testClusterIndex() {
     desc.slicesZ = 3;
     expectTrue(fuse::renderer::ClusteredLightCuller::clusterIndex(1, 1, 2, desc) == 17u,
                "cluster index layout");
+}
+
+void testSliceDepthDistribution() {
+    fuse::renderer::ClusterDesc desc{};
+    desc.slicesZ = 4;
+
+    fuse::renderer::ClusterCameraDesc camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+
+    const fuse::f32 slice0Near =
+        fuse::renderer::ClusterSliceLayout::computeSliceNearZ(0u, desc, camera);
+    const fuse::f32 slice0Far = fuse::renderer::ClusterSliceLayout::computeSliceFarZ(0u, desc, camera);
+    const fuse::f32 slice3Far = fuse::renderer::ClusterSliceLayout::computeSliceFarZ(3u, desc, camera);
+
+    expectNear(slice0Near, 1.f, 0.001f, "first slice starts at near plane");
+    expectTrue(slice0Far > slice0Near, "slice far exceeds near");
+    expectNear(slice3Far, 100.f, 0.001f, "last slice reaches far plane");
+}
+
+void testLightGridRebuildLayout() {
+    fuse::renderer::ClusterGridSoA grid{};
+    const fuse::u32 clusterCount = 3u;
+    grid.grid.resize(clusterCount);
+
+    const std::vector<std::vector<fuse::u32>> perClusterLights = {
+        {0u, 2u},
+        {},
+        {1u},
+    };
+
+    fuse::renderer::ClusterLightGridLayout::rebuildLightGrid(grid, clusterCount, perClusterLights);
+
+    expectTrue(grid.lightList.size() == 3u, "flat light list packed");
+    expectTrue(grid.grid[0].offset == 0u && grid.grid[0].count == 2u, "cluster 0 offset/count");
+    expectTrue(grid.grid[1].offset == 2u && grid.grid[1].count == 0u, "empty cluster offset preserved");
+    expectTrue(grid.grid[2].offset == 2u && grid.grid[2].count == 1u, "cluster 2 offset/count");
+    expectTrue(grid.lightList[0] == 0u && grid.lightList[1] == 2u && grid.lightList[2] == 1u,
+               "light list ordering");
+    expectTrue(fuse::renderer::ClusterLightGridLayout::validateContiguousOffsets(grid, clusterCount),
+               "rebuilt grid offsets contiguous");
 }
 
 void testCullerInitAndClusterBuild() {
@@ -111,6 +160,14 @@ void testLightCullAssignsAndSkips() {
     culler.cullLights({nearLight, farLight}, {}, camera);
     expectTrue(culler.stats().lightListEntries > 0u, "near light assigned to clusters");
     expectTrue(culler.stats().lightsCulled > 0u, "culled light count non-zero");
+    expectTrue(fuse::renderer::ClusterLightGridLayout::validateContiguousOffsets(culler.gridSoA(),
+                                                                                 desc.clusterCount()),
+               "culler light grid offsets contiguous");
+
+    culler.rebuildLightGrid();
+    expectTrue(fuse::renderer::ClusterLightGridLayout::validateContiguousOffsets(culler.gridSoA(),
+                                                                                 desc.clusterCount()),
+               "explicit rebuild preserves contiguous offsets");
 
     fuse::u32 emptyClusters = 0;
     for (const fuse::renderer::ClusterGridEntry& entry : culler.gridSoA().grid) {
@@ -163,6 +220,8 @@ int main() {
 
     testClusterDescCount();
     testClusterIndex();
+    testSliceDepthDistribution();
+    testLightGridRebuildLayout();
     testCullerInitAndClusterBuild();
     testLightCullAssignsAndSkips();
     testDeferredPipelineWiresClusterPass();

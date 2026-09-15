@@ -122,9 +122,7 @@ void DirectionalShadow::computeCascadeMatrix_(u32 cascade,
                                               const ShadowCameraParams& camera,
                                               const fuse::math::Vec3& sunDirection) {
     const f32 splitFraction = m_desc.csm.cascadeSplits[cascade];
-    const f32 cascadeNear =
-        cascade == 0u ? camera.nearPlane
-                      : CascadedShadowMapLayout::computeCascadeFarZ(cascade - 1u, m_desc.csm, camera);
+    const f32 cascadeNear = CascadedShadowMapLayout::computeCascadeNearZ(cascade, m_desc.csm, camera);
     const f32 cascadeFar = CascadedShadowMapLayout::computeCascadeFarZ(cascade, m_desc.csm, camera);
     const f32 midDistance = (cascadeNear + cascadeFar) * 0.5f;
 

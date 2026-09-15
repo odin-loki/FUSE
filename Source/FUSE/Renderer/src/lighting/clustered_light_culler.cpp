@@ -24,6 +24,64 @@ u32 ClusteredLightCuller::clusterIndex(u32 tileX, u32 tileY, u32 sliceZ, const C
     return (tileY * desc.tilesX + tileX) * desc.slicesZ + sliceZ;
 }
 
+f32 ClusterSliceLayout::computeSliceNearZ(u32 sliceZ, const ClusterDesc& desc, const ClusterCameraDesc& camera) {
+    if (sliceZ >= desc.slicesZ) {
+        return camera.farPlane;
+    }
+
+    const f32 depthRatio = camera.farPlane / camera.nearPlane;
+    const f32 sliceT0 = static_cast<f32>(sliceZ) / static_cast<f32>(desc.slicesZ);
+    return camera.nearPlane * std::pow(depthRatio, sliceT0);
+}
+
+f32 ClusterSliceLayout::computeSliceFarZ(u32 sliceZ, const ClusterDesc& desc, const ClusterCameraDesc& camera) {
+    if (sliceZ >= desc.slicesZ) {
+        return camera.farPlane;
+    }
+
+    const f32 depthRatio = camera.farPlane / camera.nearPlane;
+    const f32 sliceT1 = static_cast<f32>(sliceZ + 1u) / static_cast<f32>(desc.slicesZ);
+    return camera.nearPlane * std::pow(depthRatio, sliceT1);
+}
+
+void ClusterLightGridLayout::rebuildLightGrid(ClusterGridSoA& grid,
+                                              u32 clusterCount,
+                                              const std::vector<std::vector<u32>>& perClusterLights) {
+    grid.lightList.clear();
+    grid.grid.assign(clusterCount, ClusterGridEntry{});
+
+    for (u32 clusterIdx = 0; clusterIdx < clusterCount; ++clusterIdx) {
+        ClusterGridEntry& entry = grid.grid[clusterIdx];
+        entry.offset = static_cast<u32>(grid.lightList.size());
+
+        if (clusterIdx < perClusterLights.size()) {
+            for (u32 lightIdx : perClusterLights[clusterIdx]) {
+                grid.lightList.push_back(lightIdx);
+                ++entry.count;
+            }
+        }
+    }
+}
+
+bool ClusterLightGridLayout::validateContiguousOffsets(const ClusterGridSoA& grid, u32 clusterCount) {
+    if (grid.grid.size() < clusterCount) {
+        return false;
+    }
+
+    u32 expectedOffset = 0;
+    u32 totalLights = 0;
+    for (u32 clusterIdx = 0; clusterIdx < clusterCount; ++clusterIdx) {
+        const ClusterGridEntry& entry = grid.grid[clusterIdx];
+        if (entry.offset != expectedOffset) {
+            return false;
+        }
+        expectedOffset += entry.count;
+        totalLights += entry.count;
+    }
+
+    return totalLights == grid.lightList.size();
+}
+
 void ClusteredLightCuller::init(const ClusterDesc& desc, ResourceManager& resources) {
     destroy();
     m_desc = desc;
@@ -88,13 +146,9 @@ void ClusteredLightCuller::updateClusters(const ClusterCameraDesc& camera) {
     m_gridSoA.aabbs.resize(clusterCount);
     m_gridSoA.grid.resize(clusterCount);
 
-    const f32 depthRatio = camera.farPlane / camera.nearPlane;
-
     for (u32 sliceZ = 0; sliceZ < m_desc.slicesZ; ++sliceZ) {
-        const f32 sliceT0 = static_cast<f32>(sliceZ) / static_cast<f32>(m_desc.slicesZ);
-        const f32 sliceT1 = static_cast<f32>(sliceZ + 1u) / static_cast<f32>(m_desc.slicesZ);
-        const f32 nearZ = camera.nearPlane * std::pow(depthRatio, sliceT0);
-        const f32 farZ = camera.nearPlane * std::pow(depthRatio, sliceT1);
+        const f32 nearZ = ClusterSliceLayout::computeSliceNearZ(sliceZ, m_desc, camera);
+        const f32 farZ = ClusterSliceLayout::computeSliceFarZ(sliceZ, m_desc, camera);
 
         for (u32 tileY = 0; tileY < m_desc.tilesY; ++tileY) {
             for (u32 tileX = 0; tileX < m_desc.tilesX; ++tileX) {
@@ -144,44 +198,51 @@ void ClusteredLightCuller::cullLights(const std::vector<PointLightInput>& pointL
     updateClusters(camera);
 
     const u32 clusterCount = m_desc.clusterCount();
-    m_gridSoA.lightList.clear();
-    m_gridSoA.grid.assign(clusterCount, ClusterGridEntry{});
+    std::vector<std::vector<u32>> perClusterLights(clusterCount);
 
     u32 lightsProcessed = 0;
 
     for (u32 clusterIdx = 0; clusterIdx < clusterCount; ++clusterIdx) {
         const ClusterAABB& aabb = m_gridSoA.aabbs[clusterIdx];
-        ClusterGridEntry& entry = m_gridSoA.grid[clusterIdx];
-        entry.offset = static_cast<u32>(m_gridSoA.lightList.size());
+        std::vector<u32>& clusterLights = perClusterLights[clusterIdx];
 
         for (u32 lightIdx = 0; lightIdx < static_cast<u32>(pointLights.size()); ++lightIdx) {
             const PointLightInput& light = pointLights[lightIdx];
-            if (entry.count >= m_desc.maxLightsPerCluster) {
+            if (clusterLights.size() >= m_desc.maxLightsPerCluster) {
                 break;
             }
             if (sphereIntersectsAabb(light.position, light.radius, aabb)) {
-                m_gridSoA.lightList.push_back(lightIdx);
-                ++entry.count;
+                clusterLights.push_back(lightIdx);
             }
         }
 
         for (u32 lightIdx = 0; lightIdx < static_cast<u32>(spotLights.size()); ++lightIdx) {
             const SpotLightInput& light = spotLights[lightIdx];
-            if (entry.count >= m_desc.maxLightsPerCluster) {
+            if (clusterLights.size() >= m_desc.maxLightsPerCluster) {
                 break;
             }
             const u32 encodedIdx = static_cast<u32>(pointLights.size()) + lightIdx;
             if (sphereIntersectsAabb(light.position, light.radius, aabb)) {
-                m_gridSoA.lightList.push_back(encodedIdx);
-                ++entry.count;
+                clusterLights.push_back(encodedIdx);
             }
         }
 
-        lightsProcessed += entry.count;
+        lightsProcessed += static_cast<u32>(clusterLights.size());
     }
+
+    m_pendingClusterLights = std::move(perClusterLights);
+    rebuildLightGrid();
 
     m_stats.lightsCulled = lightsProcessed;
     m_stats.lightListEntries = static_cast<u32>(m_gridSoA.lightList.size());
+}
+
+void ClusteredLightCuller::rebuildLightGrid() {
+    if (!m_stats.ready) {
+        return;
+    }
+
+    ClusterLightGridLayout::rebuildLightGrid(m_gridSoA, m_desc.clusterCount(), m_pendingClusterLights);
 }
 
 void ClusteredLightCuller::recordCullPass(CommandBufferRecorder& recorder,

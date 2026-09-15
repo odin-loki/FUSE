@@ -45,11 +45,59 @@ void testCascadeLayout() {
     camera.nearPlane = 0.1f;
     camera.farPlane = 100.f;
 
+    expectTrue(CascadedShadowMapLayout::validateCascadeSplits(desc), "default splits monotonic");
+
+    expectNear(CascadedShadowMapLayout::computeCascadeNearZ(0u, desc, camera), 0.1f, 0.001f,
+               "first cascade near equals camera near");
+    expectNear(CascadedShadowMapLayout::computeCascadeNearZ(2u, desc, camera),
+               CascadedShadowMapLayout::computeCascadeFarZ(1u, desc, camera), 0.001f,
+               "cascade near chains from previous far");
     expectNear(CascadedShadowMapLayout::computeCascadeFarZ(0u, desc, camera), 5.095f, 0.01f,
                "first cascade split");
+    expectNear(CascadedShadowMapLayout::computeCascadeFarZ(1u, desc, camera), 15.085f, 0.01f,
+               "second cascade split");
+    expectNear(CascadedShadowMapLayout::computeCascadeFarZ(2u, desc, camera), 40.06f, 0.01f,
+               "third cascade split");
     expectNear(CascadedShadowMapLayout::computeCascadeFarZ(3u, desc, camera), 100.f, 0.01f,
                "last cascade reaches far plane");
     expectTrue(desc.cascadeSplits[kCascadeCount - 1u] == 1.0f, "final split reaches far plane fraction");
+}
+
+void testCascadeSplitValidation() {
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+
+    CascadedShadowMapDesc validDesc{};
+    expectTrue(CascadedShadowMapLayout::validateCascadeSplits(validDesc), "default splits valid");
+
+    CascadedShadowMapDesc invalidDesc{};
+    invalidDesc.cascadeSplits[1] = 0.01f;
+    expectTrue(!CascadedShadowMapLayout::validateCascadeSplits(invalidDesc), "non-monotonic splits rejected");
+
+    CascadedShadowMapDesc truncatedDesc{};
+    truncatedDesc.cascadeSplits[3] = 0.9f;
+    expectTrue(!CascadedShadowMapLayout::validateCascadeSplits(truncatedDesc),
+               "final split must reach 1.0");
+}
+
+void testBatchCascadeFarZs() {
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+
+    CascadedShadowMapDesc desc{};
+    ShadowCameraParams camera{};
+    camera.nearPlane = 0.5f;
+    camera.farPlane = 50.f;
+
+    fuse::f32 farZs[fuse::renderer::kCascadeCount]{};
+    CascadedShadowMapLayout::computeCascadeFarZs(desc, camera, farZs);
+
+    expectNear(farZs[0], CascadedShadowMapLayout::computeCascadeFarZ(0u, desc, camera), 0.001f,
+               "batch far z matches scalar helper");
+    expectNear(farZs[3], 50.f, 0.001f, "batch last cascade reaches far plane");
+    expectTrue(farZs[1] > farZs[0] && farZs[2] > farZs[1] && farZs[3] > farZs[2],
+               "batch far zs monotonic");
 }
 
 void testShadowAtlasLayout() {
@@ -147,6 +195,8 @@ int main() {
     fuse::core::initialize();
 
     testCascadeLayout();
+    testCascadeSplitValidation();
+    testBatchCascadeFarZs();
     testShadowAtlasLayout();
     testDirectionalShadowAllocation();
     testShadowPassGraph();
