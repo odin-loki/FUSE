@@ -51,8 +51,10 @@ void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>
 
     const AudioListener* listener = registry.listener();
     const Vec3 listener_pos = listener != nullptr ? listener->position : Vec3{};
+    ListenerBasis basis{};
     if (listener != nullptr) {
         m_lastMasterGain = listener->master_volume;
+        basis = make_listener_basis(listener->forward, listener->up);
     }
 
     u32 active_sources = 0;
@@ -74,11 +76,20 @@ void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>
             continue;
         }
 
+        AttenuationParams attenuation_params;
+        attenuation_params.curve = source->desc.attenuation;
+        attenuation_params.min_dist = source->desc.min_distance;
+        attenuation_params.max_dist = source->desc.max_distance;
+        attenuation_params.rolloff = source->desc.rolloff;
+
+        const float distance = source->position.distance(listener_pos);
         const float attenuation = source->desc.spatial
-            ? compute_attenuation(source->position.distance(listener_pos), source->desc.min_distance,
-                                  source->desc.max_distance)
+            ? compute_attenuation(distance, attenuation_params)
             : 1.f;
-        const Vec3 rel = source->position - listener_pos;
+
+        const Vec3 world_rel = source->position - listener_pos;
+        const Vec3 rel = listener != nullptr ? to_listener_space(world_rel, basis) : world_rel;
+        const float bus_gain = m_busMixer.effective_gain(source->desc.bus);
 
         for (u32 frame = 0; frame < frames; ++frame) {
             const float local_t = source->play_head + static_cast<float>(frame) / static_cast<float>(m_sampleRate);
@@ -96,12 +107,13 @@ void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>
             if (source->desc.spatial) {
                 apply_hrtf_pan(mono, rel, attenuation, left, right);
             } else {
-                left = mono * m_lastMasterGain;
-                right = mono * m_lastMasterGain;
+                left = mono;
+                right = mono;
             }
 
-            stereo_out[static_cast<usize>(frame) * 2] += left * m_lastMasterGain;
-            stereo_out[static_cast<usize>(frame) * 2 + 1] += right * m_lastMasterGain;
+            const float master = m_lastMasterGain * bus_gain;
+            stereo_out[static_cast<usize>(frame) * 2] += left * master;
+            stereo_out[static_cast<usize>(frame) * 2 + 1] += right * master;
         }
     }
 }

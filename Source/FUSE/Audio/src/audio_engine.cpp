@@ -158,9 +158,15 @@ void AudioEngine::sync_backend_sources_(AudioRegistry& registry) {
             source->backend_source = m_backend.create_source();
         }
 
+        AttenuationParams attenuation_params;
+        attenuation_params.curve = source->desc.attenuation;
+        attenuation_params.min_dist = source->desc.min_distance;
+        attenuation_params.max_dist = source->desc.max_distance;
+        attenuation_params.rolloff = source->desc.rolloff;
+
         const float attenuation = source->desc.spatial && registry.listener() != nullptr
             ? compute_attenuation(source->position.distance(registry.listener()->position),
-                                  source->desc.min_distance, source->desc.max_distance)
+                                  attenuation_params)
             : 1.f;
         const float gain = source->desc.volume * attenuation;
         m_backend.set_source_gain(source->backend_source, gain);

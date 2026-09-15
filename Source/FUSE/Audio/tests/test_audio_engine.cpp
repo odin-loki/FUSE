@@ -1,8 +1,11 @@
 #include <fuse/audio/attenuation.hpp>
+#include <fuse/audio/audio_bus.hpp>
 #include <fuse/audio/audio_clip.hpp>
 #include <fuse/audio/audio_engine.hpp>
 #include <fuse/audio/audio_registry.hpp>
 #include <fuse/audio/conv_reverb_cpu.hpp>
+#include <fuse/audio/math.hpp>
+#include <fuse/audio/spatial_mixer.hpp>
 #include <fuse/core/init.hpp>
 
 #include <cmath>
@@ -98,6 +101,100 @@ void testSpatialAttenuationAtMaxDistance() {
     expectTrue(gain <= 0.001f, "source at max_distance has near-zero volume");
     expectNear(fuse::audio::compute_attenuation(0.5f, 1.f, 50.f), 1.f, 1e-5f,
                "inside min distance is full gain");
+}
+
+void testAttenuationCurves() {
+    fuse::audio::AttenuationParams params;
+    params.min_dist = 1.f;
+    params.max_dist = 100.f;
+    params.rolloff = 1.f;
+
+    params.curve = fuse::audio::AttenuationCurve::Logarithmic;
+    const float log_gain = fuse::audio::compute_attenuation(10.f, params);
+    expectTrue(log_gain > 0.f && log_gain < 1.f, "logarithmic curve attenuates mid-range");
+
+    params.curve = fuse::audio::AttenuationCurve::Exponential;
+    params.rolloff = 2.f;
+    const float exp_gain = fuse::audio::compute_attenuation(10.f, params);
+    expectTrue(exp_gain > 0.f && exp_gain < 1.f, "exponential curve attenuates mid-range");
+    expectTrue(exp_gain < log_gain, "exponential with rolloff=2 falls off faster than logarithmic");
+}
+
+void testListenerOrientationTransform() {
+    const fuse::audio::ListenerBasis basis =
+        fuse::audio::make_listener_basis(fuse::audio::Vec3{0.f, 0.f, -1.f}, fuse::audio::Vec3{0.f, 1.f, 0.f});
+    const fuse::audio::Vec3 local =
+        fuse::audio::to_listener_space(fuse::audio::Vec3{1.f, 0.f, -5.f}, basis);
+    expectNear(local.x, 1.f, 1e-4f, "source to the right stays on +X in listener space");
+    expectNear(local.z, 5.f, 1e-4f, "forward offset maps to +Z in listener space");
+
+    const fuse::audio::ListenerBasis rotated =
+        fuse::audio::make_listener_basis(fuse::audio::Vec3{1.f, 0.f, 0.f}, fuse::audio::Vec3{0.f, 1.f, 0.f});
+    const fuse::audio::Vec3 rotated_local =
+        fuse::audio::to_listener_space(fuse::audio::Vec3{1.f, 0.f, -5.f}, rotated);
+    expectTrue(std::fabs(rotated_local.x - local.x) > 0.5f,
+               "rotated listener changes lateral component");
+}
+
+void testBusGains() {
+    fuse::audio::AudioBusMixer mixer;
+    mixer.set_bus_gain(fuse::audio::AudioBus::Master, 0.5f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Sfx, 0.8f);
+    expectNear(mixer.effective_gain(fuse::audio::AudioBus::Sfx), 0.4f, 1e-5f,
+               "effective gain multiplies bus and master");
+    expectNear(mixer.effective_gain(fuse::audio::AudioBus::Master), 0.5f, 1e-5f,
+               "master effective gain is master alone");
+}
+
+float channelEnergy(const std::vector<float>& buffer, u32 channel) {
+    float sum = 0.f;
+    for (fuse::usize i = channel; i < buffer.size(); i += 2) {
+        sum += std::fabs(buffer[i]);
+    }
+    return sum;
+}
+
+void testSpatialPanRespectsListenerOrientation() {
+    fuse::audio::AudioEngine engine;
+    fuse::audio::AudioDesc desc;
+    desc.frames_per_buf = 256;
+    desc.hrtf_enabled = true;
+    engine.init(desc);
+
+    std::vector<float> pcm(48000, 0.5f);
+    fuse::audio::AudioClip clip;
+    clip.load_from_pcm(pcm.data(), 48000, 1, 48000);
+    const auto clip_handle = engine.register_clip(std::move(clip));
+
+    fuse::audio::AudioRegistry registry;
+    const fuse::audio::EntityId listener_entity = registry.create_entity();
+    registry.set_position(listener_entity, fuse::audio::Vec3{0.f, 0.f, 0.f});
+    fuse::audio::AudioListener* listener = registry.set_listener(listener_entity);
+    listener->forward = fuse::audio::Vec3{0.f, 0.f, -1.f};
+
+    const fuse::audio::EntityId source_entity = registry.create_entity();
+    registry.set_position(source_entity, fuse::audio::Vec3{3.f, 0.f, -5.f});
+    fuse::audio::AudioSourceDesc source_desc;
+    source_desc.clip = clip_handle;
+    source_desc.spatial = true;
+    source_desc.looping = true;
+    fuse::audio::AudioSource* source = registry.add_source(source_entity, source_desc);
+    source->playing = true;
+
+    engine.update(registry, 1.f / 60.f);
+    const float left_a = channelEnergy(engine.last_mix_buffer(), 0);
+    const float right_a = channelEnergy(engine.last_mix_buffer(), 1);
+
+    listener->forward = fuse::audio::Vec3{-1.f, 0.f, 0.f};
+    source->play_head = 0.f;
+    engine.update(registry, 1.f / 60.f);
+    const float left_b = channelEnergy(engine.last_mix_buffer(), 0);
+    const float right_b = channelEnergy(engine.last_mix_buffer(), 1);
+
+    expectTrue(std::fabs(left_a - right_a) > 1e-3f, "facing -Z pans source off-center");
+    expectTrue(std::fabs(left_b - right_b) > 1e-3f, "facing -X pans source off-center");
+    expectTrue(std::fabs((left_a - right_a) - (left_b - right_b)) > 1e-3f,
+               "pan asymmetry changes with listener orientation");
 }
 
 void testPlayAtPositionsSource() {
@@ -196,6 +293,10 @@ int main() {
     testEngineInitializes();
     testMonoAndStereoWavLoad();
     testSpatialAttenuationAtMaxDistance();
+    testAttenuationCurves();
+    testListenerOrientationTransform();
+    testBusGains();
+    testSpatialPanRespectsListenerOrientation();
     testPlayAtPositionsSource();
     testConvolutionReverbCpuMatchesReference();
     testThirtyTwoSourcesMixWithoutNaN();
