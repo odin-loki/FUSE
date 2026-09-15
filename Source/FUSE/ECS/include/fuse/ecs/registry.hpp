@@ -3,6 +3,7 @@
 #include <fuse/ecs/archetype.hpp>
 #include <fuse/ecs/component.hpp>
 #include <fuse/ecs/entity.hpp>
+#include <fuse/jobs/parallel_for.hpp>
 
 #include <algorithm>
 #include <functional>
@@ -41,6 +42,10 @@ public:
     /// Iterates entities that have all listed component types.
     template <typename... Ts, typename Fn>
     void each(Fn&& fn);
+
+    /// Parallel iteration over matching archetypes via JobScheduler::parallel_for.
+    template <typename... Ts, typename Fn>
+    void each_parallel(Fn&& fn, u32 batchSize = 256);
 
     [[nodiscard]] usize archetype_count() const { return m_archetypes.size(); }
 
@@ -200,6 +205,38 @@ void Registry::each(Fn&& fn) {
             EntityID id = archetype.entities[row];
             fn(id, *static_cast<Ts*>(archetype.find_column(std::type_index(typeid(Ts)))->at(row))...);
         }
+    }
+}
+
+template <typename... Ts, typename Fn>
+void Registry::each_parallel(Fn&& fn, u32 batchSize) {
+    if (batchSize == 0) {
+        batchSize = 1;
+    }
+
+    const std::vector<std::type_index> required = {std::type_index(typeid(Ts))...};
+
+    for (Archetype& archetype : m_archetypes) {
+        bool matches = true;
+        for (const std::type_index& type : required) {
+            if (!archetype.has_component(type)) {
+                matches = false;
+                break;
+            }
+        }
+        if (!matches) {
+            continue;
+        }
+
+        const usize rowCount = archetype.count();
+        if (rowCount == 0) {
+            continue;
+        }
+
+        jobs::parallel_for(0, static_cast<u32>(rowCount), batchSize, [&](u32 row) {
+            EntityID id = archetype.entities[row];
+            fn(id, *static_cast<Ts*>(archetype.find_column(std::type_index(typeid(Ts)))->at(row))...);
+        });
     }
 }
 
