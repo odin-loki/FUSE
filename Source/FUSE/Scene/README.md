@@ -6,7 +6,8 @@ Phase 3 scene APIs from [FUSE Master Plan](../../docs/plans/FUSE_MASTER_PLAN.md)
 
 | API | Milestone | Purpose |
 |-----|-----------|---------|
-| `fuse::scene::Scene` | B3.7–B3.9 | Named scene + `fuse::Camera` + object table; serialised by `SceneSerialiser` / `project_io` |
+| `fuse::scene::Scene` | B3.7–B3.9 | Named scene + `fuse::Camera` + entity table (`SceneEntity` + `SceneEntityTransform`); serialised by `SceneSerialiser` / `project_io` |
+| `fuse::scene::SceneSnapshot` | B3.7 deepen | In-memory capture/restore (`captureSnapshot` / `applySnapshot`) for play-mode and round-trip stubs |
 | `fuse::scene::SceneManager` | B3.6 | ECS runtime container — `Registry` + BVH stub + optional `SVO` |
 | `fuse::scene::SVO` | B3.5 | Sparse Voxel Octree — `set`/`get`/`fill`/`carve`/`sdfQuery`/`rayCast` |
 
@@ -24,8 +25,9 @@ Phase 3 scene APIs from [FUSE Master Plan](../../docs/plans/FUSE_MASTER_PLAN.md)
 
 ### B3.7–B3.9 — Scene + Camera + Serialisation (from main)
 
-- `fuse::Camera` — perspective matrices + frustum (B3.8 stub)
-- `SceneSerialiser` — binary `.fuselevel` round-trip
+- `fuse::Camera` — perspective matrices, frustum, `projectWorldPoint` / `worldToNdc` helpers (B3.8 stub)
+- `SceneSerialiser` — binary `.fuselevel` round-trip (entity names + optional transform table)
+- `SceneSnapshot` — entity + transform in-memory round-trip stub
 - `saveForProject` / `loadForProject` — project-relative world paths
 
 ## Upstream dependencies
@@ -39,7 +41,7 @@ Phase 3 scene APIs from [FUSE Master Plan](../../docs/plans/FUSE_MASTER_PLAN.md)
 
 ## Tests (`ctest`)
 
-- `fuse_scene_b37_b39` — camera, serialiser, project I/O
+- `fuse_scene_b37_b39` — camera projection helpers, entity+transform serialiser, `SceneSnapshot`, project I/O
 - `fuse_scene_svo` — SVO set/get, fill, carve, SDF, ray cast
 - `fuse_scene_manager` — SceneManager init, ECS camera, update, queries
 

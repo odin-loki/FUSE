@@ -1,5 +1,7 @@
 #include <fuse/scene/serialiser.hpp>
 
+#include <fuse/scene/scene_snapshot.hpp>
+
 #include <cstring>
 #include <fstream>
 #include <vector>
@@ -10,6 +12,9 @@ namespace {
 
 constexpr u32 kHeaderSize = 64u;
 constexpr u32 kCameraBlockSize = 40u; // f32×9 + u32 active flag
+constexpr u32 kTransformBlockSize = 40u; // f32×10 (position, rotation, scale)
+constexpr u8 kCameraMarker = 'C';
+constexpr u8 kTransformTableMarker = 'T';
 
 struct SceneHeader {
     u32 magic = SceneSerialiser::MAGIC;
@@ -71,6 +76,27 @@ bool readString(const u8*& cursor, const u8* end, std::string& out) {
     out.assign(reinterpret_cast<const char*>(cursor), length);
     cursor += length;
     return true;
+}
+
+void writeTransformBlock(std::vector<u8>& buffer, const SceneEntityTransform& transform) {
+    writeF32(buffer, transform.positionX);
+    writeF32(buffer, transform.positionY);
+    writeF32(buffer, transform.positionZ);
+    writeF32(buffer, transform.rotationX);
+    writeF32(buffer, transform.rotationY);
+    writeF32(buffer, transform.rotationZ);
+    writeF32(buffer, transform.rotationW);
+    writeF32(buffer, transform.scaleX);
+    writeF32(buffer, transform.scaleY);
+    writeF32(buffer, transform.scaleZ);
+}
+
+bool readTransformBlock(const u8*& cursor, const u8* end, SceneEntityTransform& transform) {
+    return readF32(cursor, end, transform.positionX) && readF32(cursor, end, transform.positionY) &&
+           readF32(cursor, end, transform.positionZ) && readF32(cursor, end, transform.rotationX) &&
+           readF32(cursor, end, transform.rotationY) && readF32(cursor, end, transform.rotationZ) &&
+           readF32(cursor, end, transform.rotationW) && readF32(cursor, end, transform.scaleX) &&
+           readF32(cursor, end, transform.scaleY) && readF32(cursor, end, transform.scaleZ);
 }
 
 void writeCameraBlock(std::vector<u8>& buffer, const Camera& camera) {
@@ -139,8 +165,9 @@ SerialiseResult SceneSerialiser::save(const Scene& scene, const std::string& pat
     SerialiseResult result;
 
     SceneHeader header;
-    header.entityCount = scene.objectCount();
-    header.reserved[0] = 'C'; // camera block follows header in this stub
+    header.entityCount = scene.entityCount();
+    header.reserved[0] = kCameraMarker;
+    header.reserved[1] = kTransformTableMarker;
 
     std::vector<u8> buffer;
     buffer.resize(kHeaderSize, 0);
@@ -149,10 +176,15 @@ SerialiseResult SceneSerialiser::save(const Scene& scene, const std::string& pat
     writeCameraBlock(buffer, scene.camera());
     writeString(buffer, scene.name());
 
-    const u32 objectCount = scene.objectCount();
-    writeU32(buffer, objectCount);
-    for (const std::string& objectName : scene.objectNames()) {
-        writeString(buffer, objectName);
+    const u32 entityCount = scene.entityCount();
+    writeU32(buffer, entityCount);
+    for (const SceneEntity& entity : scene.entities()) {
+        writeString(buffer, entity.name);
+    }
+
+    writeU32(buffer, entityCount);
+    for (const SceneEntity& entity : scene.entities()) {
+        writeTransformBlock(buffer, entity.transform);
     }
 
     if (!writeFile(path, buffer)) {
@@ -202,11 +234,13 @@ SerialiseResult SceneSerialiser::load(const std::string& path, Scene& scene) {
         return result;
     }
 
-    if (header.reserved[0] != 'C') {
+    if (header.reserved[0] != kCameraMarker) {
         result.status = SerialiseStatus::TruncatedFile;
         result.error = "missing camera block marker";
         return result;
     }
+
+    const bool hasTransformTable = header.reserved[1] == kTransformTableMarker;
 
     const u8* cursor = buffer.data() + kHeaderSize;
     const u8* end = buffer.data() + buffer.size();
@@ -238,9 +272,8 @@ SerialiseResult SceneSerialiser::load(const std::string& path, Scene& scene) {
         return result;
     }
 
-    Scene loaded(std::move(sceneName));
-    loaded.camera() = camera;
-    loaded.clearObjects();
+    std::vector<SceneEntity> entities;
+    entities.reserve(objectCount);
 
     for (u32 i = 0; i < objectCount; ++i) {
         std::string objectName;
@@ -249,7 +282,40 @@ SerialiseResult SceneSerialiser::load(const std::string& path, Scene& scene) {
             result.error = "truncated object name";
             return result;
         }
-        loaded.addObjectName(std::move(objectName));
+
+        SceneEntity entity;
+        entity.name = std::move(objectName);
+        entities.push_back(std::move(entity));
+    }
+
+    if (hasTransformTable) {
+        u32 transformCount = 0;
+        if (!readU32(cursor, end, transformCount)) {
+            result.status = SerialiseStatus::TruncatedFile;
+            result.error = "truncated transform table";
+            return result;
+        }
+
+        if (transformCount != objectCount) {
+            result.status = SerialiseStatus::TruncatedFile;
+            result.error = "transform count mismatch";
+            return result;
+        }
+
+        for (u32 i = 0; i < transformCount; ++i) {
+            if (!readTransformBlock(cursor, end, entities[i].transform)) {
+                result.status = SerialiseStatus::TruncatedFile;
+                result.error = "truncated entity transform";
+                return result;
+            }
+        }
+    }
+
+    Scene loaded(std::move(sceneName));
+    loaded.camera() = camera;
+    loaded.clearEntities();
+    for (SceneEntity& entity : entities) {
+        loaded.addEntity(std::move(entity.name), entity.transform);
     }
 
     scene = std::move(loaded);

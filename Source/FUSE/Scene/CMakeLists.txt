@@ -4,6 +4,7 @@ add_library(fuse_scene STATIC
     src/project_io.cpp
     src/scene.cpp
     src/scene_manager.cpp
+    src/scene_snapshot.cpp
     src/serialiser.cpp
     src/svo.cpp
     include/fuse/scene/bvh_stub.hpp
@@ -12,6 +13,7 @@ add_library(fuse_scene STATIC
     include/fuse/scene/project_io.hpp
     include/fuse/scene/scene.hpp
     include/fuse/scene/scene_manager.hpp
+    include/fuse/scene/scene_snapshot.hpp
     include/fuse/scene/serialiser.hpp
     include/fuse/scene/svo.hpp
 )

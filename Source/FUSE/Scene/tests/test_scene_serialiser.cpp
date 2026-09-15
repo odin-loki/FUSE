@@ -2,6 +2,7 @@
 #include <fuse/project/loader.hpp>
 #include <fuse/scene/project_io.hpp>
 #include <fuse/scene/scene.hpp>
+#include <fuse/scene/scene_snapshot.hpp>
 #include <fuse/scene/serialiser.hpp>
 
 #include <fuse/types.hpp>
@@ -66,12 +67,73 @@ void testSceneRoundTrip() {
     const fuse::scene::SerialiseResult loadedResult = fuse::scene::SceneSerialiser::load(path, loaded);
     expectTrue(loadedResult.status == fuse::scene::SerialiseStatus::Ok, "scene load ok");
     expectTrue(loaded.name() == "TestScene", "scene name round-trip");
-    expectTrue(loaded.objectCount() == 2u, "object count round-trip");
-    expectTrue(loaded.objectNames()[0] == "mesh_a", "first object name");
-    expectTrue(loaded.objectNames()[1] == "mesh_b", "second object name");
+    expectTrue(loaded.entityCount() == 2u, "entity count round-trip");
+    expectTrue(loaded.entities()[0].name == "mesh_a", "first entity name");
+    expectTrue(loaded.entities()[1].name == "mesh_b", "second entity name");
     expectTrue(loaded.camera().matricesValid(), "camera matrices valid after load");
     expectTrue(loaded.camera().fovDeg == 90.f, "camera fov round-trip");
     expectTrue(loaded.camera().isActive, "camera active flag round-trip");
+}
+
+void testEntityTransformRoundTrip() {
+    const std::string path = tempDir() + "/entity_transform.fuselevel";
+
+    fuse::scene::SceneEntityTransform transformA{};
+    transformA.positionX = 1.f;
+    transformA.positionY = 2.f;
+    transformA.positionZ = 3.f;
+    transformA.rotationY = 0.70710677f;
+    transformA.rotationW = 0.70710677f;
+    transformA.scaleX = 2.f;
+    transformA.scaleY = 2.f;
+    transformA.scaleZ = 2.f;
+
+    fuse::scene::SceneEntityTransform transformB{};
+    transformB.positionX = -4.f;
+    transformB.positionY = 0.5f;
+    transformB.positionZ = 8.f;
+    transformB.scaleZ = 0.5f;
+
+    fuse::scene::Scene scene("EntityScene");
+    scene.addEntity("prop_a", transformA);
+    scene.addEntity("prop_b", transformB);
+
+    expectTrue(fuse::scene::SceneSerialiser::save(scene, path).status == fuse::scene::SerialiseStatus::Ok,
+               "entity scene save ok");
+
+    fuse::scene::Scene loaded;
+    expectTrue(fuse::scene::SceneSerialiser::load(path, loaded).status == fuse::scene::SerialiseStatus::Ok,
+               "entity scene load ok");
+    expectTrue(loaded.entityCount() == 2u, "entity transform count round-trip");
+    expectTrue(loaded.entities()[0].transform.positionX == 1.f, "entity a position x");
+    expectTrue(loaded.entities()[0].transform.scaleX == 2.f, "entity a scale x");
+    expectTrue(loaded.entities()[1].transform.positionX == -4.f, "entity b position x");
+    expectTrue(loaded.entities()[1].transform.scaleZ == 0.5f, "entity b scale z");
+}
+
+void testSceneSnapshotRoundTrip() {
+    fuse::scene::Scene scene("SnapshotScene");
+    scene.camera().setPosition(0.f, 1.f, 5.f);
+    scene.camera().update();
+
+    fuse::scene::SceneEntityTransform transform{};
+    transform.positionX = 10.f;
+    transform.positionY = -2.f;
+    transform.positionZ = 0.25f;
+    scene.addEntity("crate", transform);
+
+    const fuse::scene::SceneSnapshot snapshot = scene.captureSnapshot();
+
+    scene.setName("Mutated");
+    scene.clearEntities();
+    scene.camera().setPosition(99.f, 99.f, 99.f);
+
+    snapshot.apply(scene);
+    expectTrue(scene.name() == "SnapshotScene", "snapshot restores scene name");
+    expectTrue(scene.entityCount() == 1u, "snapshot restores entity count");
+    expectTrue(scene.entities()[0].name == "crate", "snapshot restores entity name");
+    expectTrue(scene.entities()[0].transform.positionX == 10.f, "snapshot restores transform");
+    expectTrue(scene.camera().positionZ == 5.f, "snapshot restores camera");
 }
 
 void testInvalidMagicRejected() {
@@ -148,6 +210,8 @@ void testLoadForProjectFromLoadResult() {
 int test_scene_serialiser_main() {
     fuse::core::initialize();
     testSceneRoundTrip();
+    testEntityTransformRoundTrip();
+    testSceneSnapshotRoundTrip();
     testInvalidMagicRejected();
     testProjectSceneIo();
     testLoadForProjectFromLoadResult();

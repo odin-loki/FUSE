@@ -36,6 +36,22 @@ public:
 
     float viewMatrixRow(u32 row, u32 col) const;
     float projectionMatrixRow(u32 row, u32 col) const;
+    float viewProjectionMatrixRow(u32 row, u32 col) const;
+
+    struct ProjectedPoint {
+        float clipX = 0.f;
+        float clipY = 0.f;
+        float clipZ = 0.f;
+        float clipW = 0.f;
+        bool behindCamera = true;
+    };
+
+    /// Homogeneous clip-space projection. Requires `update()` first.
+    ProjectedPoint projectWorldPoint(float worldX, float worldY, float worldZ) const;
+
+    /// Normalised device coordinates in [-1, 1]. Returns false when behind the camera.
+    bool worldToNdc(float worldX, float worldY, float worldZ, float& ndcX, float& ndcY,
+                    float& ndcZ) const;
 
 private:
     bool m_matricesValid = false;
