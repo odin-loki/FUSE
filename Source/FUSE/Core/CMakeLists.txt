@@ -27,7 +27,12 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/jobs/cuda_jobs.hpp
     include/fuse/jobs/parallel_for.hpp
     include/fuse/math/vec.hpp
+    include/fuse/math/quat.hpp
+    include/fuse/math/mat.hpp
+    include/fuse/math/aabb.hpp
+    include/fuse/math/frustum.hpp
     include/fuse/math/sdf.hpp
+    include/fuse/math/math.hpp
     include/fuse/platform/power.hpp
     include/fuse/platform/lifecycle.hpp
     include/fuse/platform/surface_loss.hpp

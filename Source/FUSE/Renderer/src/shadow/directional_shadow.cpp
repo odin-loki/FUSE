@@ -5,14 +5,10 @@
 namespace fuse::renderer {
 namespace {
 
-fuse::math::Vec3 cross(const fuse::math::Vec3& a, const fuse::math::Vec3& b) {
-    return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
-}
-
 ShadowMat4 makeLookAt(const fuse::math::Vec3& eye, const fuse::math::Vec3& target, const fuse::math::Vec3& up) {
     const fuse::math::Vec3 forward = (target - eye).normalized();
-    const fuse::math::Vec3 side = cross(forward, up).normalized();
-    const fuse::math::Vec3 correctedUp = cross(side, forward).normalized();
+    const fuse::math::Vec3 side = fuse::math::cross(forward, up).normalized();
+    const fuse::math::Vec3 correctedUp = fuse::math::cross(side, forward).normalized();
 
     ShadowMat4 view = ShadowMat4::identity();
     view.data[0] = side.x;
