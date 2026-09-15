@@ -1,6 +1,6 @@
 # Track B — Core Math Library (B1.4)
 
-**Status:** B1.4 deepen follow-up — Mat4 multiply/inverse edge tests, AABB transform helpers landed in `fuse::math`  
+**Status:** B1.4 SIMD deepen — `fuse::math::simd` CPU stubs (Mat4/AABB), plane classify/clip helpers, edge-case tests  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B1.4  
 **Layout:** [unified-layout.md](./unified-layout.md) — `Source/FUSE/Core/include/fuse/math/`
 
@@ -14,11 +14,13 @@
 | `Mat3`, `Mat4` | `mat.hpp` | Column-major; `fromTRS`, `perspective`, `lookAt`, `inverseAffine` |
 | `Quat` | `quat.hpp` | `(x,y,z,w)` with `w` scalar; `rotate`, `slerp`, `fromAxisAngle` |
 | `AABB` | `aabb.hpp` | Overlap, merge, contains, slab ray intersection, `transformAabb`, `transformAabbCorners` |
+| `Plane` | `plane.hpp` | `classifyPoint`, `classifyAabb`, `clipSegmentAgainstPlane`, `clipPolygonAgainstPlane` |
+| `simd` | `simd.hpp` | CPU stubs: `Float4`/`Mat4` lane layout, multiply/inverse/orthonormalize, AABB transform/merge/ray |
 | `Frustum` | `frustum.hpp` | Extract from view-projection; sphere/AABB intersection tests |
 | SDF primitives | `sdf.hpp` | `sphere`, `box`, `opSmoothUnion` (existing) |
 | Umbrella include | `math.hpp` | Pulls all public math headers |
 
-**Not in scope (deferred):** SIMD `vec4` lanes, CUDA `FUSE_HOST_DEVICE` noise library, Torque `Point3F`/`MatrixF` compat shims, migration of `fuse::ecs::vec3` / `fuse::spatial` aliases.
+**Not in scope (deferred):** intrinsics-backed `__m128` lanes, CUDA `FUSE_HOST_DEVICE` noise library, Torque `Point3F`/`MatrixF` compat shims, migration of `fuse::ecs::vec3` / `fuse::spatial` aliases, full 4×4 inverse for non-uniform scale.
 
 ---
 
@@ -40,6 +42,8 @@
 | Mat4 multiply | Left/right identity, associativity, chained TRS vs staged transforms |
 | Mat4 inverse | Identity, pure translation, pure rotation, rigid-body left/right product |
 | AABB transform | Translation, rotation envelope vs corner reference, non-uniform scale corners |
+| `fuse::math::simd` | Lane-layout Mat4 multiply/inverse parity vs scalar; `orthonormalize` stub; AABB transform/merge/ray stubs |
+| Plane helpers | Point/AABB classification, segment clip, convex polygon clip against one plane |
 
 ---
 

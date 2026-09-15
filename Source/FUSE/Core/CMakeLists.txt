@@ -42,7 +42,9 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/math/mat.hpp
     include/fuse/math/aabb.hpp
     include/fuse/math/frustum.hpp
+    include/fuse/math/plane.hpp
     include/fuse/math/sdf.hpp
+    include/fuse/math/simd.hpp
     include/fuse/math/math.hpp
     include/fuse/platform/power.hpp
     include/fuse/platform/lifecycle.hpp
