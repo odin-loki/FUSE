@@ -4,6 +4,8 @@
 #include <fuse/renderer/render_graph.hpp>
 #include <fuse/types.hpp>
 
+#include <vector>
+
 namespace fuse::renderer {
 
 /// Volumetric fog parameters (B5.11 — P5 §5.11).
@@ -22,6 +24,75 @@ struct VolumetricFogPassStats {
     u32 framesRecorded = 0;
     f32 lastDensity = 0.f;
 };
+
+/// Froxel grid configuration (B5.11 follow-up — view-aligned volumetric injection grid).
+struct FroxelGridDesc {
+    u32 tilesX = 16;
+    u32 tilesY = 9;
+    u32 slicesZ = 64;
+
+    u32 froxelCount() const { return tilesX * tilesY * slicesZ; }
+};
+
+/// Camera inputs for froxel depth-slice distribution and screen mapping.
+struct FroxelCameraDesc {
+    math::Vec3 position{};
+    f32 nearPlane = 0.1f;
+    f32 farPlane = 100.f;
+    u32 screenWidth = 1920;
+    u32 screenHeight = 1080;
+};
+
+/// CPU-side froxel density cache — per-froxel scalar density for stub injection and tests.
+struct FroxelDensityGrid {
+    std::vector<f32> density;
+};
+
+/// Continuous froxel sample coordinates for trilinear density lookup.
+struct FroxelSampleCoords {
+    u32 tileX0 = 0;
+    u32 tileY0 = 0;
+    u32 tileX1 = 0;
+    u32 tileY1 = 0;
+    u32 sliceZ0 = 0;
+    u32 sliceZ1 = 0;
+    f32 tx = 0.f;
+    f32 ty = 0.f;
+    f32 tz = 0.f;
+};
+
+/// Exponential depth-slice bounds — shared by froxel injection and CPU tests.
+struct FroxelSliceLayout {
+    static f32 computeSliceNearZ(u32 sliceZ, const FroxelGridDesc& desc, const FroxelCameraDesc& camera);
+    static f32 computeSliceFarZ(u32 sliceZ, const FroxelGridDesc& desc, const FroxelCameraDesc& camera);
+};
+
+/// Froxel grid indexing helpers — mirrors clustered light layout (B5.4).
+struct FroxelGridLayout {
+    static u32 froxelIndex(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc);
+    static void decodeFroxelIndex(u32 index, const FroxelGridDesc& desc, u32& tileX, u32& tileY, u32& sliceZ);
+    static bool mapScreenDepthToSampleCoords(f32 screenX,
+                                             f32 screenY,
+                                             f32 viewDepth,
+                                             const FroxelGridDesc& desc,
+                                             const FroxelCameraDesc& camera,
+                                             FroxelSampleCoords& outCoords);
+};
+
+/// CPU froxel density interpolation helpers — mirrors CUDA trilinear sample stub.
+namespace froxel_util {
+f32 lerpDensity(f32 a, f32 b, f32 t);
+f32 sampleDensityBilinear(const FroxelDensityGrid& grid,
+                          const FroxelGridDesc& desc,
+                          const FroxelSampleCoords& coords);
+f32 sampleDensityTrilinear(const FroxelDensityGrid& grid,
+                           const FroxelGridDesc& desc,
+                           const FroxelSampleCoords& coords);
+void populateFromAnalyticFog(FroxelDensityGrid& grid,
+                             const FroxelGridDesc& desc,
+                             const FroxelCameraDesc& camera,
+                             const VolumetricFogParams& params);
+} // namespace froxel_util
 
 /// CPU stub — exponential height falloff density sample (P5 acceptance reference).
 f32 sample_volumetric_fog_density(const VolumetricFogParams& params, const math::Vec3& world_pos);

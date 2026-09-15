@@ -52,6 +52,117 @@ void testVolumetricFogDensity() {
     expectTrue(stats.framesRecorded == 1u, "fog pass increments frame count");
 }
 
+void testFroxelGridIndexing() {
+    fuse::renderer::FroxelGridDesc desc{};
+    desc.tilesX = 4;
+    desc.tilesY = 2;
+    desc.slicesZ = 3;
+    expectTrue(desc.froxelCount() == 24u, "froxel count product");
+
+    const fuse::u32 index = fuse::renderer::FroxelGridLayout::froxelIndex(1u, 1u, 2u, desc);
+    expectTrue(index == 17u, "froxel index layout");
+
+    fuse::u32 tileX = 0u;
+    fuse::u32 tileY = 0u;
+    fuse::u32 sliceZ = 0u;
+    fuse::renderer::FroxelGridLayout::decodeFroxelIndex(index, desc, tileX, tileY, sliceZ);
+    expectTrue(tileX == 1u && tileY == 1u && sliceZ == 2u, "froxel index decode round-trip");
+}
+
+void testFroxelSliceDepthDistribution() {
+    fuse::renderer::FroxelGridDesc desc{};
+    desc.slicesZ = 4;
+
+    fuse::renderer::FroxelCameraDesc camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+
+    const fuse::f32 slice0Near =
+        fuse::renderer::FroxelSliceLayout::computeSliceNearZ(0u, desc, camera);
+    const fuse::f32 slice0Far = fuse::renderer::FroxelSliceLayout::computeSliceFarZ(0u, desc, camera);
+    const fuse::f32 slice3Far = fuse::renderer::FroxelSliceLayout::computeSliceFarZ(3u, desc, camera);
+
+    expectNear(slice0Near, 1.f, 0.001f, "first froxel slice starts at near plane");
+    expectTrue(slice0Far > slice0Near, "froxel slice far exceeds near");
+    expectNear(slice3Far, 100.f, 0.001f, "last froxel slice reaches far plane");
+}
+
+void testFroxelDensityLerpHelpers() {
+    fuse::renderer::FroxelGridDesc desc{};
+    desc.tilesX = 2;
+    desc.tilesY = 2;
+    desc.slicesZ = 2;
+
+    fuse::renderer::FroxelDensityGrid grid{};
+    grid.density.assign(desc.froxelCount(), 0.f);
+    grid.density[fuse::renderer::FroxelGridLayout::froxelIndex(0u, 0u, 0u, desc)] = 0.f;
+    grid.density[fuse::renderer::FroxelGridLayout::froxelIndex(1u, 0u, 0u, desc)] = 1.f;
+    grid.density[fuse::renderer::FroxelGridLayout::froxelIndex(0u, 1u, 0u, desc)] = 0.f;
+    grid.density[fuse::renderer::FroxelGridLayout::froxelIndex(1u, 1u, 0u, desc)] = 1.f;
+    grid.density[fuse::renderer::FroxelGridLayout::froxelIndex(0u, 0u, 1u, desc)] = 0.5f;
+    grid.density[fuse::renderer::FroxelGridLayout::froxelIndex(1u, 0u, 1u, desc)] = 1.5f;
+    grid.density[fuse::renderer::FroxelGridLayout::froxelIndex(0u, 1u, 1u, desc)] = 0.5f;
+    grid.density[fuse::renderer::FroxelGridLayout::froxelIndex(1u, 1u, 1u, desc)] = 1.5f;
+
+    expectNear(fuse::renderer::froxel_util::lerpDensity(0.f, 1.f, 0.5f), 0.5f, 1e-5f, "density lerp midpoint");
+
+    fuse::renderer::FroxelSampleCoords coords{};
+    coords.tileX0 = 0u;
+    coords.tileY0 = 0u;
+    coords.tileX1 = 1u;
+    coords.tileY1 = 1u;
+    coords.sliceZ0 = 0u;
+    coords.sliceZ1 = 1u;
+    coords.tx = 0.5f;
+    coords.ty = 0.5f;
+    coords.tz = 0.5f;
+
+    const fuse::f32 bilinear =
+        fuse::renderer::froxel_util::sampleDensityBilinear(grid, desc, coords);
+    expectNear(bilinear, 0.5f, 1e-5f, "bilinear froxel density sample");
+
+    const fuse::f32 trilinear =
+        fuse::renderer::froxel_util::sampleDensityTrilinear(grid, desc, coords);
+    expectNear(trilinear, 0.75f, 1e-5f, "trilinear froxel density sample");
+
+    fuse::renderer::FroxelCameraDesc camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+
+    fuse::renderer::FroxelSampleCoords mapped{};
+    expectTrue(fuse::renderer::FroxelGridLayout::mapScreenDepthToSampleCoords(
+                   0.25f, 0.5f, 10.f, desc, camera, mapped),
+               "screen depth maps to froxel sample coords");
+    expectTrue(mapped.tileX0 < desc.tilesX && mapped.tileY0 < desc.tilesY, "mapped tile coords in range");
+    expectTrue(mapped.sliceZ0 < desc.slicesZ, "mapped slice in range");
+}
+
+void testFroxelPopulateFromAnalyticFog() {
+    fuse::renderer::FroxelGridDesc desc{};
+    desc.tilesX = 2;
+    desc.tilesY = 2;
+    desc.slicesZ = 4;
+
+    fuse::renderer::FroxelCameraDesc camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+
+    fuse::renderer::VolumetricFogParams params{};
+    params.density = 0.02f;
+    params.height_falloff = 0.2f;
+    params.base_height = 0.f;
+
+    fuse::renderer::FroxelDensityGrid grid{};
+    fuse::renderer::froxel_util::populateFromAnalyticFog(grid, desc, camera, params);
+
+    expectTrue(grid.density.size() == desc.froxelCount(), "analytic populate fills froxel grid");
+
+    const fuse::u32 nearSlice = fuse::renderer::FroxelGridLayout::froxelIndex(0u, 0u, 0u, desc);
+    const fuse::u32 farSlice = fuse::renderer::FroxelGridLayout::froxelIndex(0u, 0u, desc.slicesZ - 1u, desc);
+    expectTrue(grid.density[nearSlice] >= grid.density[farSlice],
+               "analytic populate preserves height falloff across slices");
+}
+
 void testLightShaftsOcclusion() {
     fuse::renderer::LightShaftsParams params{};
     params.enabled = true;
@@ -148,6 +259,10 @@ int main() {
     fuse::core::initialize();
 
     testVolumetricFogDensity();
+    testFroxelGridIndexing();
+    testFroxelSliceDepthDistribution();
+    testFroxelDensityLerpHelpers();
+    testFroxelPopulateFromAnalyticFog();
     testLightShaftsOcclusion();
     testLensFlareGeneration();
     testDeferredPipelinePassHooks();

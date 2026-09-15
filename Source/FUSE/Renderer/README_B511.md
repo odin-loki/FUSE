@@ -7,7 +7,7 @@ CPU-first scaffolding for Track B5.11 under `fuse_rhi`. Implements analytic lens
 | Header | Role |
 |--------|------|
 | `postprocess/lens_flare.hpp` | `LensFlareSample`, `generate_lens_flare`, lens-flare pass hook |
-| `volumetric/volumetric_fog.hpp` | `VolumetricFogParams`, height-falloff density stub, CUDA pass hook |
+| `volumetric/volumetric_fog.hpp` | `VolumetricFogParams`, froxel grid indexing, density lerp helpers, CUDA pass hook |
 | `volumetric/light_shafts.hpp` | `LightShaftsParams`, screen-space occlusion stub, pass hook |
 
 ## Frame pipeline hooks
@@ -20,7 +20,7 @@ CPU-first scaffolding for Track B5.11 under `fuse_rhi`. Implements analytic lens
 
 ## Tests
 
-`fuse_volumetric_lighting` (`ctest` name `fuse_volumetric_lighting_b511`) covers fog density falloff, light-shaft occlusion, lens-flare element generation, pass recording, and deferred pipeline pass registration.
+`fuse_volumetric_lighting` (`ctest` name `fuse_volumetric_lighting_b511`) covers fog density falloff, froxel grid indexing, exponential slice layout, bilinear/trilinear density lerp, analytic fog populate, light-shaft occlusion, lens-flare element generation, pass recording, and deferred pipeline pass registration.
 
 ## Upstream / downstream
 

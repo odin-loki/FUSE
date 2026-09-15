@@ -1,6 +1,6 @@
 # Track B — Own Renderer (B5 deferred pipeline)
 
-**Status:** B5.2 G-buffer layout validation + B5.3 PBR material parameter blocks + **B5.5 CSM light-space AABB deepen**  
+**Status:** B5.2 G-buffer layout validation + B5.3 PBR material parameter blocks + B5.5 CSM light-space AABB deepen + **B5.11 volumetric froxel grid deepen**  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B5  
 **Detail:** [TRACK-B-RENDER-B5.md](./TRACK-B-RENDER-B5.md) — full B5.1–B5.12 scope, tests, gates  
 **Depends on:** [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) (RHI bootstrap, render graph, CUDA job lane)
@@ -46,6 +46,22 @@ ctest --test-dir build --output-on-failure -R fuse_gbuffer
 
 ```bash
 ctest --test-dir build --output-on-failure -R fuse_shadow_system
+```
+
+---
+
+## B5.11 deepen — Volumetric fog froxel grid (CPU)
+
+| Component | Notes |
+|-----------|-------|
+| `FroxelGridDesc` / `FroxelDensityGrid` | View-aligned froxel injection grid dimensions + per-froxel density cache |
+| `FroxelSliceLayout` | Exponential depth-slice near/far bounds (mirrors clustered layout) |
+| `FroxelGridLayout` | Froxel index encode/decode + screen-depth → sample-coords mapping |
+| `froxel_util` | `lerpDensity`, bilinear/trilinear density sample, analytic fog populate |
+| `fuse_volumetric_lighting_b511` | Froxel indexing, slice distribution, density lerp, analytic populate |
+
+```bash
+ctest --test-dir build --output-on-failure -R fuse_volumetric_lighting_b511
 ```
 
 ---

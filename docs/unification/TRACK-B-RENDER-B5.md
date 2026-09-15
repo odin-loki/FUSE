@@ -228,17 +228,19 @@ DOF, motion blur, film grain GPU shader chain, and CUDA histogram reduction rema
 
 ## B5.11 — Lens Flare & Volumetric Lighting
 
-**Status:** CPU-first volumetric fog, light shafts, and lens flare scaffolds wired into deferred pipeline.
+**Status:** CPU-first volumetric fog, light shafts, and lens flare scaffolds wired into deferred pipeline; froxel grid indexing + density lerp helpers deepened (B5.11 follow-up).
 
 | Component | Location | Notes |
 |-----------|----------|-------|
 | `VolumetricFog` | `include/fuse/renderer/volumetric/volumetric_fog.hpp` | Exponential height fog density + CUDA pass hook |
+| `FroxelGridDesc` / `FroxelGridLayout` | `include/fuse/renderer/volumetric/volumetric_fog.hpp` | Froxel index encode/decode, screen-depth mapping |
+| `FroxelSliceLayout` / `froxel_util` | `include/fuse/renderer/volumetric/volumetric_fog.hpp` | Exponential slice bounds, bilinear/trilinear density lerp |
 | `LightShafts` | `include/fuse/renderer/volumetric/light_shafts.hpp` | Depth-occlusion shaft scaffold |
 | `LensFlare` | `include/fuse/renderer/postprocess/lens_flare.hpp` | Ghost/halo generation + pass hook |
 
 | Test | Validates |
 |------|-----------|
-| `fuse_volumetric_lighting_b511` | Fog density falloff, shaft occlusion, lens flare generation, 19-pass graph hooks |
+| `fuse_volumetric_lighting_b511` | Fog density falloff, froxel indexing/slice layout, density lerp, analytic populate, shaft occlusion, lens flare generation, 19-pass graph hooks |
 
 ---
 
@@ -411,6 +413,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_screen_space_effects'
 - [ ] B5.5 follow-up: SDF soft shadows in `fuse_compute` (CSM split + light-space AABB stubs landed)
 - [ ] B5.7 follow-up: G-buffer `cudaInterop` surface import via B2.6 (stub params + contact-harden CPU helpers landed)
 - [ ] B5.10 follow-up: DOF / motion blur / film grain GPU shader chain; CUDA histogram auto-exposure
+- [x] B5.11 follow-up: Froxel grid indexing stubs, density lerp helpers, CPU tests (`fuse_volumetric_lighting_b511`)
 - [ ] B5.11 follow-up: Full volumetric fog CUDA kernel + lens flare GPU composite
 - [ ] Scene `SceneData` → deferred G-buffer draw list handoff (B3 → B5 bridge)
 - [ ] Editor Qt viewport deferred preview (B6)
