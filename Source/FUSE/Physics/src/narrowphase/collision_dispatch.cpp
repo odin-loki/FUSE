@@ -71,12 +71,11 @@ std::vector<ContactManifold> runNarrowphase(
                 pair.bodyA,
                 pair.bodyB);
         } else if (typeA == CollisionShapeType::Plane && typeB == CollisionShapeType::Sphere) {
-            const vec3 normal = shapes.params[shapeA];
             manifold = collideSpherePlane(
                 posB,
                 shapes.params[shapeB].x,
-                {-normal.x, -normal.y, -normal.z},
-                -shapes.scalars[shapeA],
+                shapes.params[shapeA],
+                shapes.scalars[shapeA],
                 pair.bodyB,
                 pair.bodyA);
         }

@@ -77,3 +77,8 @@ add_test(NAME fuse_collision_events COMMAND fuse_collision_events)
 add_executable(fuse_phase4_deliverables test_phase4_deliverables.cpp)
 target_link_libraries(fuse_phase4_deliverables PRIVATE fuse_physics)
 add_test(NAME fuse_phase4_deliverables COMMAND fuse_phase4_deliverables)
+
+add_executable(fuse_physics_phase4_integration test_physics_phase4_integration.cpp)
+target_link_libraries(fuse_physics_phase4_integration PRIVATE fuse_physics fuse_core)
+target_compile_features(fuse_physics_phase4_integration PRIVATE cxx_std_17)
+add_test(NAME fuse_physics_phase4_integration COMMAND fuse_physics_phase4_integration)

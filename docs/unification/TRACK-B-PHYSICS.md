@@ -106,11 +106,63 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 
 ---
 
-## B4.11 — Phase 4 Deliverables & Test Suite (scaffold)
+## B4.11 — Phase 4 Deliverables & Test Suite
 
-`Phase4TestRegistry::catalog()` enumerates the master-plan checklist (broad phase through performance baselines). Automated smoke (`runAutomatedSmoke()`) exercises destruction radius derivation + cloth step.
+`Phase4TestRegistry::catalog()` enumerates the master-plan checklist (broad phase through performance baselines). Automated smoke (`runAutomatedSmoke()`) exercises destruction radius derivation + cloth step. End-to-end CPU integration is covered by `fuse_physics_phase4_integration` (broadphase → narrowphase → PBD/CCD stubs → `PhysicsManager`).
 
-Future acceptance tests (Bullet reference, 10k-body perf, CCD tunneling) register in the catalog with `automated=false` until B4.1–B4.6 implementations land.
+### B4.11 checklist
+
+#### Broad phase
+
+- [x] `fuse_physics_broadphase_tests` — spatial hash overlapping pairs (CPU stub)
+- [ ] 10k random spheres vs brute force O(n²) — catalog `broadphase.spatial_hash_10k`
+- [ ] Bodies straddling multiple cells — edge case
+- [ ] GPU radix sort — deferred to CUDA B4.1
+
+#### Narrow phase
+
+- [x] `fuse_physics_narrowphase_tests` — analytic sphere/plane + GJK stub paths
+- [ ] Sphere-sphere vs Bullet within 0.001f — catalog `narrowphase.sphere_sphere`
+- [ ] Capsule-capsule degeneracies
+- [ ] EPA / SDF smooth normals — deferred
+
+#### Solver (PBD)
+
+- [x] `fuse_physics_pbd_tests` — gravity fall, separation, distance constraint, sleep
+- [ ] Stack of 10 spheres stable 5s — catalog `solver.stack_stability`
+- [ ] Restitution / friction analytical match — deferred
+
+#### CCD
+
+- [x] `fuse_physics_ccd_tests` — swept sphere-sphere + `CcdPipeline` RB_CCD filter
+- [x] `PhysicsManager` runs `CcdPipeline` sweep when `enableCcd=true`
+- [ ] High-velocity tunneling through thin wall — catalog `ccd.tunneling`
+
+#### Destruction
+
+- [x] `fuse_voxel_destruction` — carve radius, SVO carve/query, debris counters
+- [x] Automated smoke — `destruction.carve_radius`, `destruction.debris_mass`
+- [ ] Dual contouring watertight mesh — B3.5 follow-up
+
+#### Soft body
+
+- [x] `fuse_softbody` — `ParticleSoA`, cloth init, pinned corners, wind
+- [x] Automated smoke — `softbody.cloth_gravity`, `softbody.pinned_corners`
+- [ ] Cloth-sphere collision — deferred
+
+#### Integration
+
+- [x] `fuse_physics_manager` — init/step lifecycle, queries, destruction queue
+- [x] `fuse_collision_events` — Enter/Trigger dispatch
+- [x] `fuse_physics_phase4_integration` — broadphase → narrowphase → PBD/CCD → `PhysicsManager`
+- [x] Catalog entries — `integration.manager_step`, `integration.collision_callbacks`, `integration.broad_to_manager`
+- [ ] ECS Transform writeback every frame — `syncSoaToEcs_` stub
+
+#### Performance baselines (RTX 3090 / CUDA)
+
+- [ ] 1000-body `PhysicsManager::step` < 8ms — catalog `perf.manager_1000_bodies`
+- [ ] Full pipeline 1000 dynamics < 4ms — deferred to CUDA B4.1–B4.6
+- [ ] 10k sleeping bodies < 0.5ms — deferred
 
 ---
 
@@ -136,6 +188,7 @@ Future acceptance tests (Bullet reference, 10k-body perf, CCD tunneling) registe
 | `fuse_physics_manager` | Init/step lifecycle, queries, destruction event queue |
 | `fuse_collision_events` | Register/unregister, Enter/Trigger dispatch |
 | `fuse_phase4_deliverables` | Catalog non-empty, category counts, automated smoke |
+| `fuse_physics_phase4_integration` | B4.11 end-to-end: broadphase → narrowphase → PBD/CCD → `PhysicsManager` |
 
 Run:
 
@@ -159,7 +212,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_physics|fuse_voxel|fuse_soft
 - [x] B4.8 soft body scaffold — `ParticleSoA`, `ClothSimulator` CPU XPBD
 - [x] B4.9 physics manager scaffold — ECS ↔ SoA bridge, destruction queue
 - [x] B4.10 collision events scaffold — callback registration + dispatch
-- [x] B4.11 deliverable registry — checklist catalog + automated smoke
+- [x] B4.11 deliverable registry — checklist catalog + automated smoke + phase-4 integration test
 - [x] B4.1–B4.3 composed: `RigidBodySoA`, spatial hash, narrow phase, `PhysicsPipeline`
 - [ ] B4.4–B4.6 upstream: CUDA PBD, Barnes-Hut, CCD kernels (sibling PR #29)
 - [ ] B3.5 SVO integration — real carve + dual contouring mesh extraction
