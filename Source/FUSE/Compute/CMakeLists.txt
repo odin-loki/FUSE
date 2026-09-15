@@ -1,20 +1,29 @@
-# fuse_compute — Track B CUDA compute scaffolding (B2.7)
+# fuse_compute — Track B CUDA compute scaffolding (B2.7 + B5.7)
 
 set(FUSE_COMPUTE_PUBLIC_HEADERS
     include/fuse/compute/ray_march.hpp
     include/fuse/compute/ray_march_job.hpp
+    include/fuse/compute/screen_space_effects.hpp
+    include/fuse/compute/screen_space_effects_job.hpp
 )
 
 set(FUSE_COMPUTE_SOURCES
     src/ray_march_cpu.cpp
     src/ray_march_host.cpp
     src/ray_march_job.cpp
+    src/screen_space_effects_cpu.cpp
+    src/screen_space_effects_host.cpp
+    src/screen_space_effects_job.cpp
 )
 
 if(FUSE_CUDA_BACKEND)
     list(APPEND FUSE_COMPUTE_SOURCES
         src/ray_march_cuda_host.cpp
+        src/screen_space_effects_cuda_host.cpp
         kernels/ray_march.cu
+        kernels/ssao.cu
+        kernels/ssr.cu
+        kernels/ssgi.cu
     )
 endif()
 
