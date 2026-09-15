@@ -1,5 +1,6 @@
 #include <fuse/config.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/jobs/work_steal.hpp>
 #include <fuse/jobs/worker_context.hpp>
 #include <fuse/platform/fiber.hpp>
 #include <fuse/platform/thread.hpp>
@@ -167,14 +168,25 @@ struct JobScheduler::Impl {
     }
 
     bool trySteal(u32 thief, JobFn& out) {
-        for (u32 victim = 0; victim < workerCount; ++victim) {
+        if (workerCount <= 1) {
+            return false;
+        }
+
+        const u32 maxRounds = workerCount - 1;
+        for (u32 round = 0; round < maxRounds; ++round) {
+            const u32 victim = pickStealVictim(thief, workerCount, round);
             if (victim == thief) {
                 continue;
             }
+
             std::lock_guard<std::mutex> lock(queueMutexes[victim]);
-            if (queues[victim].empty()) {
+            const std::size_t queueSize = queues[victim].size();
+            if (!canStealFromVictim(queueSize)) {
                 continue;
             }
+
+            // Half-queue policy stub: one job per steal today; batch size informs future multi-steal.
+            (void)stealHalfQueueBatchSize(queueSize);
             out = std::move(queues[victim].back());
             queues[victim].pop_back();
             return true;

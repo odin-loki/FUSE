@@ -32,6 +32,7 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/io/vfs.hpp
     include/fuse/jobs/worker_count.hpp
     include/fuse/jobs/worker_context.hpp
+    include/fuse/jobs/work_steal.hpp
     include/fuse/jobs/job_scheduler.hpp
     include/fuse/jobs/job_counter.hpp
     include/fuse/jobs/cuda_jobs.hpp
@@ -71,6 +72,7 @@ set(FUSE_CORE_SOURCES
     src/alloc/stack_allocator.cpp
     src/io/vfs.cpp
     src/jobs/worker_count.cpp
+    src/jobs/work_steal.cpp
     src/jobs/job_scheduler.cpp
     src/jobs/job_counter.cpp
     src/jobs/cuda_jobs.cpp

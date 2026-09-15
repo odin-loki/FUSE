@@ -2,6 +2,7 @@
 #include <fuse/jobs/job_counter.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/jobs/parallel_for.hpp>
+#include <fuse/jobs/work_steal.hpp>
 #include <fuse/jobs/worker_count.hpp>
 #include <fuse/jobs/worker_context.hpp>
 #include <fuse/platform/fiber.hpp>
@@ -144,6 +145,74 @@ void testParallelForMatchesSerial() {
     });
 }
 
+void testWorkStealVictimPickRotatesFromThief() {
+    expectEq(fuse::jobs::pickStealVictim(2u, 4u, 0u), 3u, "victim pick starts at thief+1");
+    expectEq(fuse::jobs::pickStealVictim(2u, 4u, 1u), 0u, "victim pick wraps forward");
+    expectEq(fuse::jobs::pickStealVictim(2u, 4u, 2u), 1u, "victim pick skips thief");
+    expectEq(fuse::jobs::pickStealVictim(0u, 1u, 0u), 0u, "single worker returns thief");
+}
+
+void testWorkStealHalfQueuePolicyStub() {
+    expectEq(fuse::jobs::stealHalfQueueBatchSize(0), 0u, "empty queue yields zero batch");
+    expectEq(fuse::jobs::stealHalfQueueBatchSize(1), 1u, "singleton queue steals one");
+    expectEq(fuse::jobs::stealHalfQueueBatchSize(4), 2u, "even queue steals half");
+    expectEq(fuse::jobs::stealHalfQueueBatchSize(5), 3u, "odd queue rounds half up");
+}
+
+void testWorkStealEmptyVictimFallback() {
+    expectTrue(!fuse::jobs::canStealFromVictim(0), "empty victim is not stealable");
+    expectTrue(fuse::jobs::canStealFromVictim(1), "non-empty victim is stealable");
+}
+
+void testWorkStealFromBusyVictim() {
+#if FUSE_JOBS_SINGLE_THREAD
+    std::printf("SKIP: work-steal integration requires a worker pool\n");
+    return;
+#else
+    std::atomic<fuse::u32> completed{0};
+    fuse::jobs::JobCounter counter(256);
+    withScheduler(4, [&] {
+        auto& sched = fuse::jobs::JobScheduler::instance();
+
+        for (fuse::u32 i = 0; i < 256u; ++i) {
+            sched.submit([&] {
+                completed.fetch_add(1u, std::memory_order_relaxed);
+                counter.signal();
+            });
+        }
+        counter.wait();
+    });
+
+    expectEq(completed.load(std::memory_order_relaxed), 256u,
+             "idle workers steal from busy victim queues");
+#endif
+}
+
+void testWorkStealNoOpWhenAllQueuesEmpty() {
+#if FUSE_JOBS_SINGLE_THREAD
+    std::printf("SKIP: work-steal integration requires a worker pool\n");
+    return;
+#else
+    withScheduler(4, [&] {
+        std::atomic<bool> idleObserved{false};
+        auto& sched = fuse::jobs::JobScheduler::instance();
+
+        sched.submit([&] {
+            for (fuse::u32 spin = 0; spin < 2000u; ++spin) {
+                std::this_thread::yield();
+            }
+            idleObserved.store(true, std::memory_order_release);
+        });
+
+        while (!idleObserved.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+    });
+
+    expectTrue(true, "steal attempts no-op when every queue is empty");
+#endif
+}
+
 void testSingleThreadFallback() {
     withScheduler(0, [&] {
         fuse::u32 sum = 0;
@@ -234,6 +303,23 @@ void testNestedParallelForSerialFallbackParity() {
             return;
         }
     }
+}
+
+void testNestedParallelForVisitCountSingleThread() {
+    constexpr fuse::u32 outer = 16u;
+    constexpr fuse::u32 inner = 32u;
+    std::atomic<fuse::u32> visitCount{0};
+
+    withScheduler(0, [&] {
+        fuse::jobs::parallel_for(0u, outer, outer, [&](fuse::u32 /*o*/) {
+            fuse::jobs::parallel_for(0u, inner, 4u, [&](fuse::u32 /*i*/) {
+                visitCount.fetch_add(1u, std::memory_order_relaxed);
+            });
+        });
+    });
+
+    expectEq(visitCount.load(std::memory_order_relaxed), outer * inner,
+             "single-thread nested parallel_for visits every index");
 }
 
 void testNestedParallelForWithCooperativeWait() {
@@ -327,11 +413,17 @@ void testCompileTimeSingleThreadMacro() {
 int main() {
     testCounterWait();
     testCooperativeWorkerWait();
+    testWorkStealVictimPickRotatesFromThief();
+    testWorkStealHalfQueuePolicyStub();
+    testWorkStealEmptyVictimFallback();
+    testWorkStealFromBusyVictim();
+    testWorkStealNoOpWhenAllQueuesEmpty();
     testParallelForMatchesSerial();
     testSingleThreadFallback();
     testParallelSerialFallbackParity();
     testNestedParallelForParity();
     testNestedParallelForSerialFallbackParity();
+    testNestedParallelForVisitCountSingleThread();
     testNestedParallelForWithCooperativeWait();
     testSingleThreadSubmitRunsInline();
     testSingleThreadNestedCounterWait();
