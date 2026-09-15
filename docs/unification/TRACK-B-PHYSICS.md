@@ -13,6 +13,9 @@
 |-----------|----------|-------|
 | `PhysicsPipeline` / `RigidBodySoA` | `physics_pipeline.hpp`, `physics_data.hpp` | B4.1–B4.3 broad/narrow phase stubs |
 | `SpatialHash` / `Gjk` | `broadphase/`, `narrowphase/` | B4.2–B4.3 CPU reference paths; broadphase jobifies shape→cell + per-cell candidate generation via `fuse::jobs::parallel_for`; narrowphase writes one contact slot per candidate pair then compacts |
+| `ContactManifold` / `ContactBufferSoA` | `narrowphase/contact_manifold.hpp`, `contact_buffer.hpp` | Multi-point slots (up to 4), normal/penetration per point, warm-start impulse stubs |
+| `buildTangentBasis` / `clampFrictionImpulse` | `narrowphase/friction.hpp` | Coulomb friction cone clamp + tangent basis helper (CPU stub) |
+| `collideBoxBox` | `narrowphase/box_box.cpp` | Axis-aligned box-box stub emitting four face contact points |
 | `PhysicsWorld2D` / `PhysicsWorld3D` | `physics_world_*.hpp` | World composition hooks |
 | `DestructionSystem` / `DestructionEvent` | `destruction/` | B4.7 SVO carve → debris spawn scaffold |
 | `Svo` | `Source/FUSE/Physics/include/fuse/physics/spatial/` | Minimal carve/query until Track A B3.5 |
@@ -129,6 +132,8 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 - [x] `fuse_physics_narrowphase_tests` — analytic sphere/plane + GJK stub paths
 - [x] `fuse_physics_narrowphase_tests` — axis-aligned box-sphere + Y-axis capsule-sphere stubs
 - [x] `ContactBufferSoA` — per-pair slot clear/reuse + compact; job-safe `runNarrowphaseIntoBuffer`
+- [x] `ContactBufferSoA` — multi-point slots, warm-start impulse stubs, box-box four-point manifolds
+- [x] `fuse_physics_narrowphase_tests` — friction clamp + tangent basis, box-box contact count
 - [ ] Sphere-sphere vs Bullet within 0.001f — catalog `narrowphase.sphere_sphere`
 - [ ] Capsule-capsule degeneracies
 - [ ] EPA / SDF smooth normals — deferred
@@ -186,7 +191,7 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 - Collision callbacks dispatch on the game thread after solver step (same frame as ECS sync)
 - **Broadphase jobify (CPU stub):** `runBroadphase` / `runBroadphase2D` read immutable `RigidBodySoA` + `CollisionShapeSoA` snapshots and write disjoint per-cell / per-dynamic pair buffers via `fuse::jobs::parallel_for`; falls back to serial when `JobScheduler` is single-threaded or uninitialized
 - **PBD constraint iteration (CPU stub):** each substep builds `ContactIslandGraph` from contacts + distance constraints; `parallel_for` dispatches islands while contacts within an island resolve sequentially (Gauss-Seidel). `SolverWorkBuffers` holds reusable manifolds, per-body `PositionDelta` slots, and per-constraint lambda warm-start buffers. `accumulateDistanceSpringCorrection` / `accumulateContactCorrection` write disjoint body slots (job-safe SoA); `applyPositionDeltas` commits corrections after each iteration. `SolverParams::iterations` configures the max pass count; `residualTolerance` enables early-exit when max constraint violation drops below threshold; `lastConstraintResidual()` surfaces the stub for tests
-- **Narrowphase job-safe slots (CPU stub):** `runNarrowphaseIntoBuffer` assigns one output slot per candidate pair index; workers write only their slot, then `ContactBufferSoA::compact()` gathers valid manifolds without shared mutable pair state (serial dispatch on CPU stub; slot layout matches parallel kernel path)
+- **Narrowphase job-safe slots (CPU stub):** `runNarrowphaseIntoBuffer` assigns one output slot per candidate pair index; workers write only their slot, then `ContactBufferSoA::compact()` gathers valid manifolds without shared mutable pair state (serial dispatch on CPU stub; slot layout matches parallel kernel path). Each slot stores up to four contact points plus warm-start normal/tangent impulse stubs for solver reuse.
 - **CCD job-safe slots (CPU stub):** `runCcdIntoBuffer` assigns one TOI slot per candidate pair; workers write only their slot, then `ToiBufferSoA::compact()` gathers valid impacts. `sweptSpherePlane` / `sweptSphereSlabZ` cover fast-mover vs wall stubs; `PhysicsManager` reuses `m_toiBuffer_` each step
 
 ---
@@ -197,7 +202,7 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 |--------|-----------|
 | `fuse_physics_data_tests` | B4.1 SoA allocate/addBody |
 | `fuse_physics_broadphase_tests` | B4.2 spatial hash pairs, parallel jobify parity, straddling cells, brute-force reference |
-| `fuse_physics_narrowphase_tests` | B4.3 analytic + GJK stubs, box/capsule-sphere, SoA contact buffer reuse |
+| `fuse_physics_narrowphase_tests` | B4.3 analytic + GJK stubs, box/capsule-sphere/box-box, SoA contact buffer reuse, friction clamp |
 | `fuse_physics_pipeline_tests` | B4.1 frame pipeline step |
 | `fuse_physics_world_composition_tests` | World3D + physics composition |
 | `fuse_voxel_destruction` | Carve radius derivation, SVO carve/query, debris spawn counters |
@@ -233,6 +238,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_physics|fuse_voxel|fuse_soft
 - [x] B4.11 deliverable registry — checklist catalog + automated smoke + phase-4 integration test
 - [x] B4.1–B4.3 composed: `RigidBodySoA`, spatial hash, narrow phase, `PhysicsPipeline`
 - [x] B4.3 narrowphase deepen — `ContactBufferSoA`, box-sphere / capsule-sphere stubs, job-safe pair dispatch
+- [x] B4.3 narrowphase deepen — multi-point manifolds, warm-start impulses, `friction.hpp`, axis-aligned box-box stub
 - [x] B4.2 CPU broadphase jobify — `parallel_for` over shape→cell build + per-cell candidate generation stubs
 - [x] B4.4 CPU deepen — island-partitioned constraint iterations, job-safe `SolverWorkBuffers`, rest-length spring tests
 - [x] B4.4 CPU deepen — configurable iteration count, lambda warm-start, residual early-exit stub, job-safe constraint accumulation helpers

@@ -32,13 +32,13 @@ ContactManifold dispatchPair(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
-        return {};
+        return invalidContactManifold();
     }
 
     const u32 shapeA = findShapeForBody(shapes, pair.bodyA, CollisionShapeType::Sphere);
     const u32 shapeB = findShapeForBody(shapes, pair.bodyB, CollisionShapeType::Sphere);
     if (shapeA >= shapes.count() || shapeB >= shapes.count()) {
-        return {};
+        return invalidContactManifold();
     }
 
     const CollisionShapeType typeA = shapeType(shapes, shapeA);
@@ -95,7 +95,7 @@ ContactManifold dispatchPair(
             pair.bodyB,
             pair.bodyA);
         if (!swapped.valid) {
-            return {};
+            return invalidContactManifold();
         }
 
         ContactManifold manifold = swapped;
@@ -124,7 +124,7 @@ ContactManifold dispatchPair(
             pair.bodyB,
             pair.bodyA);
         if (!swapped.valid) {
-            return {};
+            return invalidContactManifold();
         }
 
         ContactManifold manifold = swapped;
@@ -134,7 +134,17 @@ ContactManifold dispatchPair(
         return manifold;
     }
 
-    return {};
+    if (typeA == CollisionShapeType::Box && typeB == CollisionShapeType::Box) {
+        return collideBoxBox(
+            posA,
+            shapes.params[shapeA],
+            posB,
+            shapes.params[shapeB],
+            pair.bodyA,
+            pair.bodyB);
+    }
+
+    return invalidContactManifold();
 }
 
 } // namespace

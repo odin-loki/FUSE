@@ -1,7 +1,7 @@
 #pragma once
 
 #include <fuse/physics/math.hpp>
-#include <fuse/physics/narrowphase/collision_dispatch.hpp>
+#include <fuse/physics/narrowphase/contact_manifold.hpp>
 #include <fuse/types.hpp>
 
 #include <vector>
@@ -17,6 +17,11 @@ struct ContactBufferSoA {
     std::vector<u32> bodyA;
     std::vector<u32> bodyB;
     std::vector<u8> validFlags;
+    std::vector<u8> pointCounts;
+    std::vector<vec3> pointSlots;
+    std::vector<f32> pointPenetrations;
+    std::vector<f32> warmNormalImpulses;
+    std::vector<vec2> warmTangentImpulses;
 
     u32 activeCount = 0;
     u32 pairSlotCount = 0;
@@ -25,9 +30,13 @@ struct ContactBufferSoA {
     void clear();
     void preparePairSlots(u32 pairCount);
     void writeSlot(u32 slot, const ContactManifold& manifold);
+    void applyWarmStartStub(u32 slot, ContactManifold& manifold) const;
     u32 compact();
     ContactManifold manifoldAt(u32 index) const;
     std::vector<ContactManifold> toVector() const;
+
+private:
+    u32 pointSlotBase(u32 slot) const { return slot * kMaxContactPointsPerManifold; }
 };
 
 } // namespace fuse::physics::narrowphase

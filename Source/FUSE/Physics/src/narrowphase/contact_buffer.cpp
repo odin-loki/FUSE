@@ -1,5 +1,7 @@
 #include <fuse/physics/narrowphase/contact_buffer.hpp>
 
+#include <algorithm>
+
 namespace fuse::physics::narrowphase {
 
 void ContactBufferSoA::reserve(u32 capacity) {
@@ -10,6 +12,11 @@ void ContactBufferSoA::reserve(u32 capacity) {
     bodyA.reserve(capacity);
     bodyB.reserve(capacity);
     validFlags.reserve(capacity);
+    pointCounts.reserve(capacity);
+    pointSlots.reserve(capacity * kMaxContactPointsPerManifold);
+    pointPenetrations.reserve(capacity * kMaxContactPointsPerManifold);
+    warmNormalImpulses.reserve(capacity);
+    warmTangentImpulses.reserve(capacity);
 }
 
 void ContactBufferSoA::clear() {
@@ -27,6 +34,11 @@ void ContactBufferSoA::preparePairSlots(u32 pairCount) {
     bodyA.assign(pairCount, 0u);
     bodyB.assign(pairCount, 0u);
     validFlags.assign(pairCount, 0u);
+    pointCounts.assign(pairCount, 0u);
+    pointSlots.assign(pairCount * kMaxContactPointsPerManifold, {});
+    pointPenetrations.assign(pairCount * kMaxContactPointsPerManifold, 0.f);
+    warmNormalImpulses.assign(pairCount, 0.f);
+    warmTangentImpulses.assign(pairCount, {});
 }
 
 void ContactBufferSoA::writeSlot(u32 slot, const ContactManifold& manifold) {
@@ -41,6 +53,30 @@ void ContactBufferSoA::writeSlot(u32 slot, const ContactManifold& manifold) {
     bodyA[slot] = manifold.bodyA;
     bodyB[slot] = manifold.bodyB;
     validFlags[slot] = 1u;
+    warmNormalImpulses[slot] = manifold.warmNormalImpulse;
+    warmTangentImpulses[slot] = manifold.warmTangentImpulse;
+
+    const u32 pointCount = std::min(manifold.pointCount, kMaxContactPointsPerManifold);
+    pointCounts[slot] = static_cast<u8>(pointCount);
+    const u32 base = pointSlotBase(slot);
+    for (u32 pointIndex = 0u; pointIndex < kMaxContactPointsPerManifold; ++pointIndex) {
+        if (pointIndex < pointCount) {
+            pointSlots[base + pointIndex] = manifold.points[pointIndex].point;
+            pointPenetrations[base + pointIndex] = manifold.points[pointIndex].penetration;
+        } else {
+            pointSlots[base + pointIndex] = {};
+            pointPenetrations[base + pointIndex] = 0.f;
+        }
+    }
+}
+
+void ContactBufferSoA::applyWarmStartStub(u32 slot, ContactManifold& manifold) const {
+    if (slot >= pairSlotCount || validFlags[slot] == 0u) {
+        return;
+    }
+
+    manifold.warmNormalImpulse = warmNormalImpulses[slot];
+    manifold.warmTangentImpulse = warmTangentImpulses[slot];
 }
 
 u32 ContactBufferSoA::compact() {
@@ -57,6 +93,16 @@ u32 ContactBufferSoA::compact() {
             bodyA[writeIndex] = bodyA[readIndex];
             bodyB[writeIndex] = bodyB[readIndex];
             validFlags[writeIndex] = 1u;
+            pointCounts[writeIndex] = pointCounts[readIndex];
+            warmNormalImpulses[writeIndex] = warmNormalImpulses[readIndex];
+            warmTangentImpulses[writeIndex] = warmTangentImpulses[readIndex];
+
+            const u32 readBase = pointSlotBase(readIndex);
+            const u32 writeBase = pointSlotBase(writeIndex);
+            for (u32 pointIndex = 0u; pointIndex < kMaxContactPointsPerManifold; ++pointIndex) {
+                pointSlots[writeBase + pointIndex] = pointSlots[readBase + pointIndex];
+                pointPenetrations[writeBase + pointIndex] = pointPenetrations[readBase + pointIndex];
+            }
         }
         ++writeIndex;
     }
@@ -64,6 +110,7 @@ u32 ContactBufferSoA::compact() {
     activeCount = writeIndex;
     for (u32 i = activeCount; i < pairSlotCount; ++i) {
         validFlags[i] = 0u;
+        pointCounts[i] = 0u;
     }
     return activeCount;
 }
@@ -80,7 +127,18 @@ ContactManifold ContactBufferSoA::manifoldAt(u32 index) const {
     manifold.minSeparation = minSeparations[index];
     manifold.bodyA = bodyA[index];
     manifold.bodyB = bodyB[index];
+    manifold.warmNormalImpulse = warmNormalImpulses[index];
+    manifold.warmTangentImpulse = warmTangentImpulses[index];
     manifold.valid = true;
+
+    const u32 pointCount = std::min(static_cast<u32>(pointCounts[index]), kMaxContactPointsPerManifold);
+    manifold.pointCount = pointCount;
+    const u32 base = pointSlotBase(index);
+    for (u32 pointIndex = 0u; pointIndex < pointCount; ++pointIndex) {
+        manifold.points[pointIndex].point = pointSlots[base + pointIndex];
+        manifold.points[pointIndex].penetration = pointPenetrations[base + pointIndex];
+    }
+
     return manifold;
 }
 
