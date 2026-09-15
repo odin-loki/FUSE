@@ -19,6 +19,8 @@ public:
     /// True until the first successful resolve warms the ping-pong targets.
     bool needsWarmup() const { return !m_validity.hasValidHistory; }
     u32 accumulatedFrames() const { return m_validity.accumulatedFrames; }
+    u32 invalidateGeneration() const { return m_validity.invalidateGeneration; }
+    bool matchesDimensions(u32 width, u32 height) const;
     const TaaHistoryBufferDesc& desc() const { return m_desc; }
     const TaaHistoryValidity& validity() const { return m_validity; }
 

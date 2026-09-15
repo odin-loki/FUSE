@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace {
 
@@ -252,6 +253,181 @@ void testHistoryValidityFlags() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testResolveSkipReasonLabels() {
+    expectTrue(std::strcmp(fuse::renderer::taaResolveSkipReasonLabel(fuse::renderer::TaaResolveSkipReason::None),
+                           "none") == 0,
+               "None skip reason label");
+    expectTrue(std::strcmp(fuse::renderer::taaResolveSkipReasonLabel(
+                               fuse::renderer::TaaResolveSkipReason::HistoryNotReady),
+                           "history_not_ready") == 0,
+               "HistoryNotReady skip reason label");
+    expectTrue(std::strcmp(fuse::renderer::taaResolveSkipReasonLabel(
+                               fuse::renderer::TaaResolveSkipReason::InvalidDimensions),
+                           "invalid_dimensions") == 0,
+               "InvalidDimensions skip reason label");
+    expectTrue(std::strcmp(fuse::renderer::taaResolveSkipReasonLabel(
+                               fuse::renderer::TaaResolveSkipReason::DimensionMismatch),
+                           "dimension_mismatch") == 0,
+               "DimensionMismatch skip reason label");
+    expectTrue(std::strcmp(fuse::renderer::taaResolveSkipReasonLabel(
+                               fuse::renderer::TaaResolveSkipReason::MissingSurfaces),
+                           "missing_surfaces") == 0,
+               "MissingSurfaces skip reason label");
+}
+
+void testInvalidDimensionsSkipReason() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for invalid dimensions test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaHistoryBuffer history;
+    fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
+    expectTrue(history.init(resources, historyDesc), "history ready for invalid dimensions test");
+
+    fuse::renderer::TaaResolve resolve;
+    fuse::renderer::TaaResolveDesc desc{};
+    desc.width = 0;
+    desc.height = 64;
+    desc.surfaces.current_frame = reinterpret_cast<void*>(0x1);
+    desc.surfaces.output = reinterpret_cast<void*>(0x2);
+
+    fuse::renderer::TaaResolveSkipReason skipReason = fuse::renderer::TaaResolveSkipReason::None;
+    expectTrue(resolve.wouldSkip(desc, history, &skipReason), "wouldSkip detects zero width");
+    expectTrue(skipReason == fuse::renderer::TaaResolveSkipReason::InvalidDimensions,
+               "zero width skip reason is InvalidDimensions");
+    expectTrue(!resolve.resolve(desc, history), "resolve rejects zero width");
+    expectTrue(resolve.lastStats().skip_reason == fuse::renderer::TaaResolveSkipReason::InvalidDimensions,
+               "resolve records InvalidDimensions skip reason");
+
+    history.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
+void testDimensionMismatchResolve() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for dimension mismatch test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaHistoryBuffer history;
+    fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
+    expectTrue(history.init(resources, historyDesc), "history ready for dimension mismatch test");
+    expectTrue(history.matchesDimensions(64u, 64u), "history matches its own dimensions");
+    expectTrue(!history.matchesDimensions(128u, 64u), "history rejects mismatched width");
+
+    fuse::renderer::TaaResolve resolve;
+    fuse::renderer::TaaResolveDesc desc{};
+    desc.width = 128;
+    desc.height = 64;
+    desc.surfaces.current_frame = reinterpret_cast<void*>(0x1);
+    desc.surfaces.output = reinterpret_cast<void*>(0x2);
+
+    fuse::renderer::TaaResolveSkipReason skipReason = fuse::renderer::TaaResolveSkipReason::None;
+    expectTrue(resolve.wouldSkip(desc, history, &skipReason), "wouldSkip detects dimension mismatch");
+    expectTrue(skipReason == fuse::renderer::TaaResolveSkipReason::DimensionMismatch,
+               "dimension mismatch skip reason");
+    expectTrue(!resolve.resolve(desc, history), "resolve rejects dimension mismatch");
+    expectTrue(resolve.lastStats().skip_reason == fuse::renderer::TaaResolveSkipReason::DimensionMismatch,
+               "resolve records DimensionMismatch skip reason");
+
+    history.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
+void testMissingSurfacesSkipReason() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for missing surfaces test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaHistoryBuffer history;
+    fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
+    expectTrue(history.init(resources, historyDesc), "history ready for missing surfaces test");
+
+    fuse::renderer::TaaResolve resolve;
+    fuse::renderer::TaaResolveDesc desc{};
+    desc.width = 64;
+    desc.height = 64;
+
+    fuse::renderer::TaaResolveSkipReason skipReason = fuse::renderer::TaaResolveSkipReason::None;
+    expectTrue(resolve.wouldSkip(desc, history, &skipReason), "wouldSkip detects missing surfaces");
+    expectTrue(skipReason == fuse::renderer::TaaResolveSkipReason::MissingSurfaces,
+               "missing surfaces skip reason");
+    expectTrue(!resolve.resolve(desc, history), "resolve rejects missing surfaces");
+    expectTrue(resolve.lastStats().skip_reason == fuse::renderer::TaaResolveSkipReason::MissingSurfaces,
+               "resolve records MissingSurfaces skip reason");
+
+    history.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
+void testHistoryInvalidateGeneration() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for invalidate generation test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaHistoryBuffer history;
+    fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
+    expectTrue(history.init(resources, historyDesc), "history ready for invalidate generation test");
+    expectTrue(history.invalidateGeneration() == 0u, "invalidate generation starts at zero");
+
+    fuse::renderer::TaaResolve resolve;
+    fuse::renderer::TaaResolveDesc desc{};
+    desc.width = 64;
+    desc.height = 64;
+    desc.surfaces.current_frame = reinterpret_cast<void*>(0x1);
+    desc.surfaces.output = reinterpret_cast<void*>(0x2);
+    expectTrue(resolve.resolve(desc, history), "initial resolve succeeds");
+    expectTrue(resolve.lastStats().history_invalidate_generation == 0u,
+               "resolve records invalidate generation at resolve time");
+
+    history.invalidateHistory();
+    expectTrue(history.invalidateGeneration() == 1u, "invalidate bumps generation");
+    expectTrue(resolve.resolve(desc, history), "resolve succeeds after invalidate");
+    expectTrue(resolve.lastStats().history_invalidate_generation == 1u,
+               "resolve records bumped invalidate generation");
+
+    history.resize(128, 128);
+    expectTrue(history.invalidateGeneration() == 2u, "resize bumps invalidate generation");
+
+    history.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
 void testEmptyHistoryResolve() {
     fuse::renderer::TaaHistoryBuffer history;
     expectTrue(!history.isReady(), "default history buffer is not ready");
@@ -457,6 +633,48 @@ void testTaaPassInvalidateHistory() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testTaaPassWouldSkipResolve() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for pass wouldSkip test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaPassDesc passDesc{};
+    passDesc.width = 64;
+    passDesc.height = 64;
+
+    auto pass = fuse::renderer::TaaPass::create(passDesc);
+    expectTrue(pass->init(resources), "TaaPass initialized for wouldSkip test");
+    expectTrue(pass->needsHistoryWarmup(), "TaaPass needs warmup before first resolve");
+
+    fuse::renderer::TaaResolveDesc resolveDesc{};
+    resolveDesc.width = 32;
+    resolveDesc.height = 64;
+    resolveDesc.surfaces.current_frame = reinterpret_cast<void*>(0x10);
+    resolveDesc.surfaces.output = reinterpret_cast<void*>(0x20);
+
+    fuse::renderer::TaaResolveSkipReason skipReason = fuse::renderer::TaaResolveSkipReason::None;
+    expectTrue(pass->wouldSkipResolve(resolveDesc, &skipReason), "TaaPass wouldSkipResolve detects mismatch");
+    expectTrue(skipReason == fuse::renderer::TaaResolveSkipReason::DimensionMismatch,
+               "TaaPass wouldSkipResolve reports DimensionMismatch");
+
+    resolveDesc.width = 64;
+    expectTrue(!pass->wouldSkipResolve(resolveDesc, &skipReason), "TaaPass wouldSkipResolve passes valid desc");
+    expectTrue(pass->resolveFrame(resolveDesc), "TaaPass resolveFrame succeeds");
+    expectTrue(!pass->needsHistoryWarmup(), "TaaPass no longer needs warmup after resolve");
+
+    pass->destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
 void testTaaPassSyncJitterToFrameIndex() {
     fuse::renderer::TaaPassDesc passDesc{};
     passDesc.width = 128;
@@ -497,11 +715,17 @@ int main() {
     testJitterNdcOffset();
     testHistoryBufferPingPong();
     testHistoryValidityFlags();
+    testResolveSkipReasonLabels();
+    testInvalidDimensionsSkipReason();
+    testDimensionMismatchResolve();
+    testMissingSurfacesSkipReason();
+    testHistoryInvalidateGeneration();
     testEmptyHistoryResolve();
     testValidityResetAfterInvalidate();
     testResolveStub();
     testTaaPassLifecycle();
     testTaaPassInvalidateHistory();
+    testTaaPassWouldSkipResolve();
     testTaaPassSyncJitterToFrameIndex();
     testTaaPassGraphHook();
 
