@@ -34,6 +34,25 @@ void run_reconcile_tests() {
         fuse::net::reconcile_predicted_input(empty_history, 2, remote_only);
     expectTrue(noop.action == fuse::net::ReconcileAction::NoOp, "no prediction yields NoOp");
     expectTrue(empty_history.has_confirmed(2), "authoritative still recorded");
+
+    fuse::net::InputHistoryBuffer buffer_method;
+    buffer_method.init(16);
+    fuse::net::PlayerInput local{};
+    local.frame = 11;
+    local.axis_ly = 250;
+    buffer_method.push_frame(11, local);
+
+    fuse::net::PlayerInput authority = local;
+    const fuse::net::ReconcileResult via_buffer = buffer_method.reconcile_authoritative(11, authority);
+    expectTrue(via_buffer.action == fuse::net::ReconcileAction::Confirmed,
+               "buffer reconcile_authoritative confirms match");
+
+    authority.axis_ly = 999;
+    const fuse::net::ReconcileResult via_buffer_mismatch =
+        buffer_method.reconcile_authoritative(11, authority);
+    expectTrue(via_buffer_mismatch.action == fuse::net::ReconcileAction::Mismatch,
+               "buffer reconcile_authoritative detects mismatch");
+    expectTrue(!buffer_method.prediction_matches(11), "mismatch leaves prediction divergent");
 }
 
 } // namespace fuse::net::tests

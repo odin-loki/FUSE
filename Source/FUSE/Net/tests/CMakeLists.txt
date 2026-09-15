@@ -2,6 +2,7 @@ add_executable(fuse_net_tests
     test_net_transport.cpp
     test_net_serializer.cpp
     test_net_rollback.cpp
+    test_net_rollback_window.cpp
     test_net_rollback_buffer.cpp
     test_net_checksum.cpp
     test_net_input_history.cpp

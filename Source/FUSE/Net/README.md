@@ -8,8 +8,9 @@ Deterministic rollback and authoritative state-sync scaffolding for Track B7.4. 
 |--------|------|
 | `game_state.hpp` | `GameSnapshot` and `PlayerInput` rollback payloads |
 | `checksum.hpp` | FNV-1a helpers and `compute_snapshot_checksum` / `verify_snapshot_checksum` |
-| `input_history.hpp` | 128-frame ring of predicted + confirmed `PlayerInput` |
+| `input_history.hpp` | 128-frame ring with `push_frame` / `pop_oldest`, predicted + confirmed `PlayerInput` |
 | `reconcile.hpp` | `reconcile_predicted_input` — compare authoritative vs predicted locals |
+| `rollback_window.hpp` | `can_rewind_to_frame`, `resimulate_frame_count` rollback bounds stubs |
 | `transport.hpp` | `Transport` abstraction, loopback/ENet/Steam backends, `TransportStats`, factory |
 | `serializer.hpp` | Compact binary message serialisation |
 | `rollback.hpp` | `RollbackManager` GGPO-style resimulation bound to ECS |
@@ -20,7 +21,7 @@ Deterministic rollback and authoritative state-sync scaffolding for Track B7.4. 
 
 ## Input prediction history
 
-`InputHistoryBuffer` stores up to 128 frames of predicted and confirmed `PlayerInput`. `RollbackManager::set_local_input` records predictions; `apply_remote_input` calls `reconcile_predicted_input` before resimulation. Use `inputs_equal` to compare payloads without frame ids.
+`InputHistoryBuffer` stores up to 128 frames of predicted and confirmed `PlayerInput`. Use `push_frame` for local prediction, `pop_oldest` to evict the oldest retained frame, and `reconcile_authoritative` when authoritative input arrives. `RollbackManager::set_local_input` records predictions; `apply_remote_input` calls `reconcile_predicted_input` before resimulation. `can_rewind_to_frame` / `resimulate_frame_count` bound rollback depth; `RollbackManager::rewind_to` restores a stored snapshot without resimulating forward.
 
 ## Rollback buffer
 
@@ -49,6 +50,6 @@ Hysteresis keeps entities in scope until they pass the unload radius, matching B
 
 ## Tests
 
-`fuse_net_tests` (`ctest` name `fuse_net_b74`) covers loopback channels/stats, serializer round-trip, rollback resimulation, rollback buffer retention, checksum helpers, input history eviction, reconcile outcomes, snapshot delta apply/serialize, client interpolation, relevance radius classification/hysteresis, and interest priority queue ordering without ENet or Steam dependencies.
+`fuse_net_tests` (`ctest` name `fuse_net_b74`) covers loopback channels/stats, serializer round-trip, rollback resimulation, rollback window rewind bounds, rollback buffer retention, checksum helpers, input history push/pop eviction, reconcile outcomes, snapshot delta apply/serialize, client interpolation, relevance radius classification/hysteresis, and interest priority queue ordering without ENet or Steam dependencies.
 
 See [docs/unification/TRACK-B-NET.md](../../docs/unification/TRACK-B-NET.md) for the B7.4 deepen checklist.

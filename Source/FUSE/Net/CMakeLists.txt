@@ -7,6 +7,7 @@ set(FUSE_NET_PUBLIC_HEADERS
     include/fuse/net/checksum.hpp
     include/fuse/net/input_history.hpp
     include/fuse/net/reconcile.hpp
+    include/fuse/net/rollback_window.hpp
     include/fuse/net/rollback.hpp
     include/fuse/net/rollback_buffer.hpp
     include/fuse/net/snapshot_delta.hpp
@@ -20,6 +21,7 @@ set(FUSE_NET_SOURCES
     src/checksum.cpp
     src/input_history.cpp
     src/reconcile.cpp
+    src/rollback_window.cpp
     src/rollback.cpp
     src/rollback_buffer.cpp
     src/snapshot_delta.cpp

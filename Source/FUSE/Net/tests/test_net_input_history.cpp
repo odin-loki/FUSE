@@ -48,6 +48,26 @@ void run_input_history_tests() {
     b.buttons = 2;
     expectTrue(fuse::net::inputs_equal(a, a), "inputs_equal reflexive");
     expectTrue(!fuse::net::inputs_equal(a, b), "inputs_equal detects button diff");
+
+    fuse::net::InputHistoryBuffer push_pop_history;
+    push_pop_history.init(4);
+    for (fuse::u32 frame = 0; frame < 6; ++frame) {
+        fuse::net::PlayerInput input{};
+        input.frame = frame;
+        input.buttons = frame + 1;
+        push_pop_history.push_frame(frame, input);
+    }
+
+    expectTrue(push_pop_history.stored_frame_count() == 4u, "push_frame retains ring capacity");
+    expectTrue(push_pop_history.oldest_stored_frame() == 2u, "push_frame evicts oldest on wrap");
+
+    const std::optional<fuse::net::InputHistoryFrame> popped = push_pop_history.pop_oldest();
+    expectTrue(popped.has_value(), "pop_oldest returns a frame");
+    expectTrue(popped->frame == 2u, "pop_oldest returns oldest frame first");
+    expectTrue(popped->has_predicted, "pop_oldest preserves predicted payload");
+    expectTrue(popped->predicted.buttons == 3u, "pop_oldest payload matches stored frame");
+    expectTrue(push_pop_history.stored_frame_count() == 3u, "pop_oldest shrinks retained count");
+    expectTrue(!push_pop_history.has_frame(2u), "popped frame no longer queryable");
 }
 
 } // namespace fuse::net::tests

@@ -4,6 +4,7 @@
 #include <fuse/net/game_state.hpp>
 #include <fuse/net/input_history.hpp>
 #include <fuse/net/rollback_buffer.hpp>
+#include <fuse/net/rollback_window.hpp>
 #include <fuse/types.hpp>
 
 namespace fuse::net {
@@ -25,9 +26,17 @@ public:
 
     [[nodiscard]] u32 current_frame() const { return m_current_frame; }
     [[nodiscard]] u32 confirmed_frame() const { return m_confirmed_frame; }
+    [[nodiscard]] u32 max_rollback_frames() const { return m_max_rollback; }
     [[nodiscard]] bool is_rolling_back() const { return m_rolling_back; }
     [[nodiscard]] const RollbackBuffer& buffer() const { return m_buffer; }
     [[nodiscard]] const InputHistoryBuffer& input_history() const { return m_input_history; }
+
+    /// True when `frame` is within the rollback window and a snapshot exists for it.
+    [[nodiscard]] bool can_rewind_to(u32 frame) const;
+    /// Restore simulation state to `frame` without resimulating forward.
+    bool rewind_to(u32 frame);
+    /// Stub helper: frames that would be resimulated to reach `target_frame` from `current_frame()`.
+    [[nodiscard]] u32 resimulate_count_to(u32 target_frame) const;
 
 private:
     static constexpr u32 kMaxFrames = 64;

@@ -1,5 +1,7 @@
 #include <fuse/net/input_history.hpp>
 
+#include <fuse/net/reconcile.hpp>
+
 #include <algorithm>
 
 namespace fuse::net {
@@ -24,6 +26,47 @@ void InputHistoryBuffer::clear() {
 
 bool InputHistoryBuffer::has_frame(u32 frame) const {
     return slot_(frame) != nullptr;
+}
+
+u32 InputHistoryBuffer::stored_frame_count() const {
+    if (!m_has_any_frame) {
+        return 0;
+    }
+    return m_newest_frame - m_oldest_frame + 1;
+}
+
+void InputHistoryBuffer::push_frame(u32 frame, const PlayerInput& predicted) {
+    store_predicted(frame, predicted);
+}
+
+std::optional<InputHistoryFrame> InputHistoryBuffer::pop_oldest() {
+    if (!m_has_any_frame || m_capacity == 0) {
+        return std::nullopt;
+    }
+
+    const u32 frame = m_oldest_frame;
+    InputHistoryFrame out{};
+    out.frame = frame;
+
+    const InputSlot* slot = slot_(frame);
+    if (slot != nullptr) {
+        out.has_predicted = slot->has_predicted;
+        out.has_confirmed = slot->has_confirmed;
+        out.predicted = slot->predicted;
+        out.confirmed = slot->confirmed;
+    }
+
+    m_slots[frame % m_capacity] = {};
+
+    if (m_oldest_frame == m_newest_frame) {
+        m_has_any_frame = false;
+        m_oldest_frame = 0;
+        m_newest_frame = 0;
+    } else {
+        ++m_oldest_frame;
+    }
+
+    return out;
 }
 
 const InputHistoryBuffer::InputSlot* InputHistoryBuffer::slot_(u32 frame) const {
@@ -129,6 +172,10 @@ bool InputHistoryBuffer::prediction_matches(u32 frame) const {
         return false;
     }
     return inputs_equal(slot->predicted, slot->confirmed);
+}
+
+ReconcileResult InputHistoryBuffer::reconcile_authoritative(u32 frame, const PlayerInput& authoritative) {
+    return reconcile_predicted_input(*this, frame, authoritative);
 }
 
 } // namespace fuse::net

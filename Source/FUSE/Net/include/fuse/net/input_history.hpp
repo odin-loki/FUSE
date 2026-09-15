@@ -8,6 +8,18 @@
 
 namespace fuse::net {
 
+struct ReconcileResult;
+enum class ReconcileAction : u8;
+
+/// One frame of predicted and/or confirmed local input retained in the history ring.
+struct InputHistoryFrame {
+    u32 frame = 0;
+    PlayerInput predicted{};
+    PlayerInput confirmed{};
+    bool has_predicted = false;
+    bool has_confirmed = false;
+};
+
 /// Ring buffer of predicted and confirmed player inputs — wider than snapshot history (B7.4).
 class InputHistoryBuffer {
 public:
@@ -17,7 +29,13 @@ public:
     [[nodiscard]] u32 capacity() const { return m_capacity; }
     [[nodiscard]] u32 oldest_stored_frame() const { return m_oldest_frame; }
     [[nodiscard]] u32 newest_stored_frame() const { return m_newest_frame; }
+    [[nodiscard]] u32 stored_frame_count() const;
     [[nodiscard]] bool has_frame(u32 frame) const;
+
+    /// Push a predicted local input for `frame` (ring may evict the oldest retained frame).
+    void push_frame(u32 frame, const PlayerInput& predicted);
+    /// Remove and return the oldest retained frame; empty when the ring has no frames.
+    [[nodiscard]] std::optional<InputHistoryFrame> pop_oldest();
 
     void store_predicted(u32 frame, const PlayerInput& input);
     void store_confirmed(u32 frame, const PlayerInput& input);
@@ -29,6 +47,9 @@ public:
 
     /// True when both predicted and confirmed slots exist and `inputs_equal` returns true.
     [[nodiscard]] bool prediction_matches(u32 frame) const;
+
+    /// Record authoritative input and compare against the predicted local history entry.
+    [[nodiscard]] ReconcileResult reconcile_authoritative(u32 frame, const PlayerInput& authoritative);
 
 private:
     struct InputSlot {
