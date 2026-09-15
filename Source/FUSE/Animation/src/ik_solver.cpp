@@ -109,6 +109,9 @@ bool solve_two_bone_positions(const vec3& root,
     vec3 bendAxis = vec3_cross(dir, pole_vector);
     if (vec3_length(bendAxis) < 1e-6f) {
         bendAxis = vec3_cross(dir, {0.f, 0.f, 1.f, 0.f});
+        if (vec3_length(bendAxis) < 1e-6f) {
+            bendAxis = vec3_cross(dir, {0.f, 1.f, 0.f, 0.f});
+        }
     }
     bendAxis = vec3_normalize(bendAxis);
 

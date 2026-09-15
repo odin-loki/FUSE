@@ -674,6 +674,41 @@ void testTwoBoneIKReachable() {
     expectNear(lowerDist, lowerLen, 0.05f, "two bone ik preserves lower length");
 }
 
+void testTwoBoneIKPoleBend() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+    fuse::animation::Pose posePositive = fuse::animation::Pose::make_bind_pose(skel);
+    fuse::animation::Pose poseNegative = fuse::animation::Pose::make_bind_pose(skel);
+
+    fuse::animation::TwoBoneIK ikPositive;
+    ikPositive.root_bone = 0;
+    ikPositive.mid_bone = 1;
+    ikPositive.end_bone = 2;
+    ikPositive.target = {1.f, 1.f, 0.f, 0.f};
+    ikPositive.pole_vector = {0.f, 0.f, 1.f, 0.f};
+
+    fuse::animation::TwoBoneIK ikNegative = ikPositive;
+    ikNegative.pole_vector = {0.f, 0.f, -1.f, 0.f};
+
+    expectTrue(ikPositive.solve(posePositive, skel), "two bone ik pole +Z solves");
+    expectTrue(ikNegative.solve(poseNegative, skel), "two bone ik pole -Z solves");
+
+    const fuse::animation::vec3 midPositive = {
+        posePositive.bone_world_transforms[1].data[12],
+        posePositive.bone_world_transforms[1].data[13],
+        posePositive.bone_world_transforms[1].data[14],
+        0.f,
+    };
+    const fuse::animation::vec3 midNegative = {
+        poseNegative.bone_world_transforms[1].data[12],
+        poseNegative.bone_world_transforms[1].data[13],
+        poseNegative.bone_world_transforms[1].data[14],
+        0.f,
+    };
+
+    expectTrue(midPositive.z * midNegative.z < 0.f, "pole vector flips mid joint bend side");
+    expectNear(midPositive.x, midNegative.x, 0.05f, "pole bend preserves mid joint forward offset");
+}
+
 void testTwoBoneIKUnreachableClamps() {
     const fuse::animation::Skeleton skel = makeLimbSkeleton();
     fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
@@ -739,6 +774,20 @@ void testRetargetApplyPoseSoA() {
     expectNear(targetPose.bone_world_transforms[2].data[12], 2.f, 1e-4f, "retarget leaves unmapped prop bone at bind");
 }
 
+void testRetargetApplyPose() {
+    const fuse::animation::Skeleton sourceSkel = makeTwoBoneSkeleton();
+    const fuse::animation::Skeleton targetSkel = makeRetargetTargetSkeleton();
+    const fuse::animation::RetargetMap map = fuse::animation::RetargetMap::build_by_name(sourceSkel, targetSkel);
+
+    fuse::animation::Pose sourcePose = fuse::animation::Pose::make_bind_pose(sourceSkel);
+    sourcePose.bone_world_transforms[1].data[13] = 6.f;
+
+    fuse::animation::Pose targetPose = fuse::animation::Pose::make_bind_pose(targetSkel);
+    map.apply_pose(sourcePose, targetSkel, targetPose);
+    expectNear(targetPose.bone_world_transforms[1].data[13], 6.f, 1e-4f, "retarget apply_pose copies mapped world transform");
+    expectNear(targetPose.bone_world_transforms[2].data[12], 2.f, 1e-4f, "retarget apply_pose leaves unmapped bones at bind");
+}
+
 void testBlendPoseSoAReuse() {
     const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
     fuse::animation::PoseSoA poseA = fuse::animation::PoseSoA::from_bind_pose(skel);
@@ -802,10 +851,12 @@ int main() {
     testBlendPoseSoARotationScale();
     testBlendPoseSoAReuse();
     testTwoBoneIKReachable();
+    testTwoBoneIKPoleBend();
     testTwoBoneIKUnreachableClamps();
     testTwoBoneIKSoA();
     testRetargetMapBuildByName();
     testRetargetApplyPoseSoA();
+    testRetargetApplyPose();
     testStateMachineEnterExit();
     testStateMachineCrossfadeClamp();
     testStateMachineTransition();

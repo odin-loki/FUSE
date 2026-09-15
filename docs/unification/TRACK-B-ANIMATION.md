@@ -71,11 +71,11 @@ All `BlendNode` types expose `evaluate_soa(dt, skel, out)` alongside the legacy 
 
 ### Two-bone IK (closed form)
 
-`TwoBoneIK::solve` uses law-of-cosines shoulder angle plus a pole-vector bend plane to place the mid joint in O(1). Targets beyond `upper + lower` bone length are clamped along the root→target ray. Both `Pose` (world translation writeback) and `PoseSoA` (local position + hierarchy recompute) entry points are provided.
+`TwoBoneIK::solve` uses law-of-cosines shoulder angle plus a pole-vector bend plane to place the mid joint in O(1). Targets beyond `upper + lower` bone length are clamped along the root→target ray. When the pole vector is parallel to the root→target axis, a secondary fallback axis is chosen so the bend plane remains stable. Both `Pose` (world translation writeback) and `PoseSoA` (local position writes + hierarchy recompute) entry points are provided.
 
 ### Retarget map (stub)
 
-`RetargetMap::build_by_name` pairs bones with matching `Bone::name` strings. `apply_pose_soa` seeds the target skeleton bind pose, copies mapped local TRS columns from the source pose, and recomputes world transforms. Unmapped target bones remain at bind pose. Rotation/scale offsets and animation-space retargeting are deferred.
+`RetargetMap::build_by_name` pairs bones with matching `Bone::name` strings. `apply_pose_soa` seeds the target skeleton bind pose, copies mapped local TRS columns from the source pose, and recomputes world transforms. `apply_pose` (AoS stub) copies mapped world transforms directly; unmapped target bones remain at bind pose. Rotation/scale offsets and animation-space retargeting are deferred.
 
 ---
 
@@ -115,10 +115,12 @@ ctest --test-dir build --output-on-failure -R fuse_animation_runtime
 | `testPoseSoAResizeDefaults` | `resize` grow/shrink and default TRS seeding |
 | `testBlendPoseSoARotationScale` | `blend_pose_soa` rotation and scale lerp |
 | `testTwoBoneIKReachable` | Closed-form IK reaches target with preserved bone lengths |
+| `testTwoBoneIKPoleBend` | Opposite pole vectors flip mid-joint bend side |
 | `testTwoBoneIKUnreachableClamps` | Out-of-reach target clamps to max limb extension |
 | `testTwoBoneIKSoA` | SoA IK path writes local positions and recomputes hierarchy |
 | `testRetargetMapBuildByName` | Name pairing and validity |
 | `testRetargetApplyPoseSoA` | Mapped local TRS copy; unmapped bones stay at bind |
+| `testRetargetApplyPose` | AoS world-transform copy stub for mapped bones |
 | `testClipSampling` | AoS `sample` position channel |
 | `testClipEvaluateLocalChannels` | SoA `evaluate` composes position + rotation |
 | `testBlendNodeInterpolation` | `BlendNode2` world translation lerp |
@@ -151,8 +153,8 @@ ctest --test-dir build --output-on-failure -R fuse_animation_runtime
 - [x] `AnimStateMachine` enter/exit callbacks and `crossfade_alpha`
 - [x] Layered blend weight sweep and unmasked-bone isolation tests
 - [x] Pose buffer clear/reuse tests
-- [x] Closed-form `TwoBoneIK` (AoS + SoA) with reach/clamp tests
-- [x] `RetargetMap` name pairing + `apply_pose_soa` stub
+- [x] Closed-form `TwoBoneIK` (AoS + SoA) with reach/clamp and pole-bend tests
+- [x] `RetargetMap` name pairing + `apply_pose_soa` / `apply_pose` stubs
 - [x] Expanded `PoseSoA` roundtrip, resize, and rotation/scale blend tests
 - [x] `fuse_animation_runtime` CTest target green
 - [ ] CUDA skinning device kernel — deferred
