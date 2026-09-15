@@ -478,6 +478,8 @@ void testUndoStackSetBaselineState() {
     stack.undo();
     expectTrue(stack.isAtBaseline(), "undo back to baseline depth");
     expectTrue(!stack.hasUnsavedChanges(), "undo restores baseline alignment");
+    expectTrue(!stack.isDirty(), "baseline dirty guard clears dirty on undo to baseline");
+    expectTrue(stack.dirtyRevision() == 2u, "baseline dirty guard does not bump revision on clean undo");
 }
 
 void testUndoStackEmptyStackGuardsDirtyRevision() {
@@ -509,6 +511,71 @@ void testUndoStackPushClearsRedoBranch() {
     expectTrue(stack.undoCount() == 2u, "push after undo appends undo step");
 }
 
+void testUndoStackBaselineDirtyGuardOnRedo() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "first"));
+    stack.execute(std::make_unique<CounterCommand>(counter, 1, 2, "second"));
+    stack.set_baseline_state();
+
+    stack.undo();
+    expectTrue(stack.isDirty(), "undo away from baseline marks dirty");
+
+    stack.redo();
+    expectTrue(stack.isAtBaseline(), "redo returns to baseline depth");
+    expectTrue(!stack.isDirty(), "baseline dirty guard clears dirty on redo to baseline");
+    expectTrue(!stack.hasUnsavedChanges(), "redo to baseline clears unsaved flag");
+}
+
+void testUndoStackCoalescedOpsSinceBaseline() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "drag"));
+    stack.execute(std::make_unique<CounterCommand>(counter, 1, 3, "drag"));
+    expectTrue(stack.coalescedOps() == 1u, "pre-baseline coalesce tracked globally");
+    expectTrue(stack.coalescedOpsSinceBaseline() == 1u, "pre-baseline coalesce visible before save");
+
+    stack.set_baseline_state();
+    expectTrue(stack.coalescedOpsSinceBaseline() == 0u, "baseline resets coalesce counter");
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 3, 5, "drag"));
+    stack.execute(std::make_unique<CounterCommand>(counter, 5, 8, "drag"));
+    expectTrue(stack.coalescedOps() == 3u, "total coalesced ops accumulate");
+    expectTrue(stack.coalescedOpsSinceBaseline() == 2u, "post-baseline coalesce tracked separately");
+}
+
+void testUndoStackClearOnEmptyIsNoOp() {
+    fuse::editor::UndoStack stack;
+
+    stack.clear();
+    stack.clear();
+
+    expectTrue(stack.undoCount() == 0u, "clear on empty stack stays empty");
+    expectTrue(!stack.isDirty(), "clear on empty stack stays clean");
+    expectTrue(stack.coalescedOpsSinceBaseline() == 0u, "clear on empty resets coalesce baseline");
+}
+
+void testUndoStackDoubleUndoEmptyGuard() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "only"));
+    stack.undo();
+    expectTrue(counter == 0, "first undo restores initial state");
+
+    stack.undo();
+    expectTrue(counter == 0, "second undo on empty stack is a no-op");
+    expectTrue(stack.undoCount() == 0u, "undo stack remains empty");
+    expectTrue(stack.redoCount() == 1u, "redo branch preserved after empty undo guard");
+
+    stack.redo();
+    stack.redo();
+    expectTrue(counter == 1, "first redo restores command");
+    expectTrue(stack.redoCount() == 0u, "second redo on empty stack is a no-op");
+}
+
 void testUndoStackSnapshotBaselineRoundTrip() {
     fuse::editor::UndoStack stack;
     int counter = 0;
@@ -519,12 +586,14 @@ void testUndoStackSnapshotBaselineRoundTrip() {
 
     const fuse::editor::UndoStackSnapshot snapshot = stack.captureSnapshot();
     expectTrue(snapshot.coalescedOps == 1u, "snapshot captures coalescedOps");
+    expectTrue(snapshot.coalescedOpsAtBaseline == 1u, "snapshot captures coalescedOpsAtBaseline");
     expectTrue(snapshot.baselineUndoCount == 1u, "snapshot captures baseline undo depth");
 
     stack.execute(std::make_unique<CounterCommand>(counter, 3, 5, "after save"));
     stack.restoreSnapshot(snapshot);
 
     expectTrue(stack.coalescedOps() == snapshot.coalescedOps, "restore brings back coalescedOps");
+    expectTrue(stack.coalescedOpsSinceBaseline() == 0u, "restore brings back coalesce baseline offset");
     expectTrue(stack.isAtBaseline(), "restore brings back baseline alignment");
     expectTrue(counter == 3, "restore rewinds scene state to snapshot depth");
 }
@@ -582,6 +651,10 @@ int main() {
     testUndoStackPushAlias();
     testUndoStackCoalescedOps();
     testUndoStackSetBaselineState();
+    testUndoStackBaselineDirtyGuardOnRedo();
+    testUndoStackCoalescedOpsSinceBaseline();
+    testUndoStackClearOnEmptyIsNoOp();
+    testUndoStackDoubleUndoEmptyGuard();
     testUndoStackEmptyStackGuardsDirtyRevision();
     testUndoStackPushClearsRedoBranch();
     testUndoStackSnapshotBaselineRoundTrip();

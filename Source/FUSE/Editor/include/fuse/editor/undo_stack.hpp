@@ -16,8 +16,10 @@ struct UndoStackSnapshot {
     u32 redoCount = 0;
     u32 evictedCount = 0;
     u32 coalescedOps = 0;
+    u32 coalescedOpsAtBaseline = 0;
     u32 baselineUndoCount = 0;
     u32 baselineRedoCount = 0;
+    bool baselineConfigured = false;
     bool dirty = false;
     u32 dirtyRevision = 0;
     std::vector<std::string> undoDescriptions;
@@ -54,6 +56,8 @@ public:
     u32 redoCount() const { return static_cast<u32>(m_redo.size()); }
     u32 evictedCount() const { return m_evictedCount; }
     u32 coalescedOps() const { return m_coalescedOps; }
+    /// Coalesce events recorded since the last `set_baseline_state` call.
+    u32 coalescedOpsSinceBaseline() const;
 
     [[nodiscard]] bool isDirty() const { return m_dirty; }
     u32 dirtyRevision() const { return m_dirtyRevision; }
@@ -77,13 +81,17 @@ private:
     void evictOldestIfNeeded_();
 
     void markDirty_();
+    /// Clears dirty when undo depth matches the saved baseline; otherwise marks dirty.
+    void syncBaselineDirty_();
 
     std::vector<std::unique_ptr<UndoCommand>> m_undo;
     std::vector<std::unique_ptr<UndoCommand>> m_redo;
     u32 m_evictedCount = 0;
     u32 m_coalescedOps = 0;
+    u32 m_coalescedOpsAtBaseline = 0;
     u32 m_baselineUndoCount = 0;
     u32 m_baselineRedoCount = 0;
+    bool m_baselineConfigured = false;
     bool m_dirty = false;
     u32 m_dirtyRevision = 0;
 };
