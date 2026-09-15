@@ -29,7 +29,7 @@ Deterministic rollback and authoritative state-sync scaffolding for Track B7.4. 
 
 ## Snapshot deltas
 
-`compute_snapshot_delta(base, target)` emits `SnapshotDeltaKind::None`, `EntityPatch`, or `Full` depending on how many entity rows changed. Entity patches include `SnapshotEcsField` / `SnapshotPhysicsField` masks and a `changed_entity_mask` bitset validated by `validate_changed_entity_mask`. `apply_snapshot_delta` reconstructs a target snapshot from a base frame plus delta payload; `apply_snapshot_delta_verified` checks baseline/target checksums and entity-mask consistency. `SnapshotHistoryRing` stores recent snapshots via `RollbackBuffer`, exposes `stored_frame_count`, and supports wrap-safe `apply_delta_and_store`. `StateSyncDeltaBroadcaster` maps authoritative `StateSyncSnapshot` bundles into the same delta path.
+`compute_snapshot_delta(base, target)` emits `SnapshotDeltaKind::None`, `EntityPatch`, or `Full` depending on how many entity rows changed (entity indices ≥ 64 force `Full`). Entity patches include `SnapshotEcsField` / `SnapshotPhysicsField` masks with `ecs_field_mask_contains` / `physics_field_mask_contains` helpers and a `changed_entity_mask` bitset validated by `validate_changed_entity_mask`. `preflight_snapshot_delta` checks baseline checksum and entity-mask consistency; `apply_snapshot_delta_verified` reconstructs and verifies the target frame. `SnapshotHistoryRing` stores recent snapshots via `RollbackBuffer`, exposes `stored_frame_count`, `can_apply_delta`, `pop_oldest`, and wrap-safe `apply_delta_and_store`. `StateSyncDeltaBroadcaster` maps authoritative `StateSyncSnapshot` bundles into the same delta path.
 
 ## Transport stubs
 

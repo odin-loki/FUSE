@@ -33,6 +33,31 @@ fuse::net::GameSnapshot make_entity_snapshot(u32 frame, u32 entity_index, u32 ge
     return snapshot;
 }
 
+fuse::net::GameSnapshot make_entity_snapshot_with_rotation(u32 frame, u32 entity_index, u32 generation,
+                                                           fuse::ecs::vec3 position, fuse::ecs::quat rotation) {
+    fuse::net::GameSnapshot snapshot;
+    snapshot.frame = frame;
+
+    fuse::net::NetSerializer ecs_writer;
+    ecs_writer.write_u32(entity_index);
+    ecs_writer.write_u32(generation);
+    ecs_writer.write_vec3(position);
+    ecs_writer.write_quat(rotation);
+    ecs_writer.write_vec3({1.f, 1.f, 1.f, 0.f});
+    snapshot.ecs_state = ecs_writer.buffer;
+
+    fuse::net::NetSerializer physics_writer;
+    physics_writer.write_u32(entity_index);
+    physics_writer.write_u32(generation);
+    physics_writer.write_vec3({0.f, 0.f, 0.f, 0.f});
+    physics_writer.write_vec3({0.f, 0.f, 0.f, 0.f});
+    physics_writer.write_f32(1.f);
+    snapshot.physics_state = physics_writer.buffer;
+
+    snapshot.checksum = fuse::net::compute_snapshot_checksum(snapshot);
+    return snapshot;
+}
+
 fuse::net::GameSnapshot make_two_entity_snapshot(u32 frame, fuse::ecs::vec3 pos0, fuse::ecs::vec3 pos1) {
     fuse::net::GameSnapshot snapshot;
     snapshot.frame = frame;
@@ -77,12 +102,26 @@ void run_snapshot_delta_tests() {
     expectTrue(fuse::net::snapshots_equivalent(base, empty_applied), "empty delta preserves baseline state");
     expectTrue(fuse::net::validate_changed_entity_mask(empty_delta), "empty delta has zero entity mask");
 
+    const fuse::net::SnapshotDeltaPreflight empty_preflight = fuse::net::preflight_snapshot_delta(base, empty_delta);
+    expectTrue(empty_preflight.can_apply(), "empty delta preflight passes");
+    expectTrue(empty_preflight.base_checksum_ok, "empty delta preflight accepts baseline checksum");
+    expectTrue(empty_preflight.entity_mask_ok, "empty delta preflight accepts entity mask");
+
     const fuse::net::DeltaApplyResult empty_verified =
         fuse::net::apply_snapshot_delta_verified(base, empty_delta);
     expectTrue(empty_verified.base_checksum_ok, "empty delta verified apply accepts baseline");
     expectTrue(empty_verified.entity_mask_ok, "empty delta verified apply accepts entity mask");
     expectTrue(fuse::net::snapshots_equivalent(base, empty_verified.snapshot),
                "empty delta verified apply preserves baseline state");
+
+    fuse::net::SnapshotHistoryRing empty_history;
+    empty_history.init(4);
+    empty_history.push(base);
+    expectTrue(empty_history.can_apply_delta(base.frame, empty_delta), "history ring can apply empty delta");
+    fuse::net::GameSnapshot empty_stored{};
+    expectTrue(empty_history.apply_delta_and_store(base.frame, empty_delta, &empty_stored),
+               "history ring stores empty delta result");
+    expectTrue(empty_stored.frame == base.frame, "empty delta retains target frame from delta");
 
     const fuse::net::SnapshotDelta patch_delta = fuse::net::compute_snapshot_delta(base, target);
     expectTrue(patch_delta.kind == fuse::net::SnapshotDeltaKind::EntityPatch, "single entity change produces patch");
@@ -110,6 +149,20 @@ void run_snapshot_delta_tests() {
                "entity mask helper reports patched index");
     expectTrue(fuse::net::count_changed_entities_in_mask(patch_delta.changed_entity_mask) == 1u,
                "entity mask popcount matches patch count");
+    expectTrue(fuse::net::ecs_field_mask_contains(patch_delta.entity_patches[0].changed_ecs_fields,
+                                                  fuse::net::SnapshotEcsField::Position),
+               "ecs mask helper reports position field");
+    expectTrue(!fuse::net::ecs_field_mask_contains(patch_delta.entity_patches[0].changed_ecs_fields,
+                                                   fuse::net::SnapshotEcsField::Rotation),
+               "ecs mask helper omits unchanged rotation field");
+    expectTrue(fuse::net::ecs_field_mask_count(patch_delta.entity_patches[0].changed_ecs_fields) == 1u,
+               "ecs mask popcount matches changed fields");
+    expectTrue(fuse::net::physics_field_mask_contains(patch_delta.entity_patches[0].changed_physics_fields,
+                                                      fuse::net::SnapshotPhysicsField::LinearVelocity),
+               "physics mask helper reports velocity field");
+    expectTrue(fuse::net::physics_field_mask_count(patch_delta.entity_patches[0].changed_physics_fields) == 1u,
+               "physics mask popcount matches changed fields");
+    expectTrue(empty_history.can_apply_delta(base.frame, patch_delta), "history ring preflights patch delta");
 
     fuse::net::SnapshotDelta bad_checksum_delta = patch_delta;
     bad_checksum_delta.base_checksum = 0xDEADBEEF;
@@ -201,6 +254,33 @@ void run_snapshot_delta_tests() {
     expectTrue(mass_applied.ecs_state == mass_base.ecs_state, "partial mask apply preserves ecs state");
     expectTrue(mass_applied.physics_state == mass_target.physics_state, "partial mask apply updates physics");
 
+    const fuse::net::GameSnapshot rotation_base = make_entity_snapshot_with_rotation(
+        30, 4, 1, {0.f, 0.f, 0.f, 1.f}, {0.f, 0.f, 0.f, 1.f});
+    fuse::net::GameSnapshot rotation_target = rotation_base;
+    rotation_target.frame = 31;
+    {
+        fuse::net::NetSerializer ecs_writer;
+        ecs_writer.write_u32(4);
+        ecs_writer.write_u32(1);
+        ecs_writer.write_vec3({0.f, 0.f, 0.f, 1.f});
+        ecs_writer.write_quat({0.f, 0.70710677f, 0.f, 0.70710677f});
+        ecs_writer.write_vec3({1.f, 1.f, 1.f, 0.f});
+        rotation_target.ecs_state = ecs_writer.buffer;
+    }
+    rotation_target.checksum = fuse::net::compute_snapshot_checksum(rotation_target);
+
+    const fuse::net::SnapshotDelta rotation_delta = fuse::net::compute_snapshot_delta(rotation_base, rotation_target);
+    expectTrue(rotation_delta.entity_patches.size() == 1u, "rotation-only change emits one patch");
+    expectTrue(rotation_delta.entity_patches[0].changed_ecs_fields ==
+                   static_cast<fuse::u8>(fuse::net::SnapshotEcsField::Rotation),
+               "rotation-only change marks rotation ecs field");
+    expectTrue(rotation_delta.entity_patches[0].changed_physics_fields == 0, "rotation-only change skips physics mask");
+
+    const fuse::net::GameSnapshot rotation_applied = fuse::net::apply_snapshot_delta(rotation_base, rotation_delta);
+    expectTrue(rotation_applied.ecs_state == rotation_target.ecs_state, "rotation-only mask apply updates ecs state");
+    expectTrue(rotation_applied.physics_state == rotation_base.physics_state,
+               "rotation-only mask apply preserves physics state");
+
     fuse::net::SnapshotDelta bad_mask_delta = patch_delta;
     bad_mask_delta.changed_entity_mask |= (1ull << 5);
     expectTrue(!fuse::net::validate_changed_entity_mask(bad_mask_delta), "stray mask bit fails validation");
@@ -232,6 +312,29 @@ void run_snapshot_delta_tests() {
     expectTrue(wrap_ok, "history ring applies delta after wrap from retained baseline");
     expectTrue(wrap_history.has_frame(10u), "history ring stores delta result after wrap");
     expectTrue(wrap_stored.ecs_state == wrap_target.ecs_state, "wrapped history ring reconstructs ecs state");
+    expectTrue(wrap_history.can_apply_delta(8u, wrap_delta), "wrapped history ring preflights retained baseline");
+
+    const std::optional<fuse::net::GameSnapshot> popped = wrap_history.pop_oldest();
+    expectTrue(popped.has_value(), "history ring pop_oldest returns evicted snapshot");
+    expectTrue(popped->frame == 7u, "history ring pop_oldest evicts oldest retained frame");
+    expectTrue(wrap_history.stored_frame_count() == 3u, "history ring pop_oldest reduces retained count");
+    expectTrue(!wrap_history.has_frame(7u), "history ring pop_oldest removes evicted frame");
+
+    expectTrue(!wrap_history.can_apply_delta(99u, wrap_delta), "history ring rejects missing baseline frame");
+
+    fuse::net::GameSnapshot high_index_base =
+        make_entity_snapshot(40, 64, 1, {1.f, 0.f, 0.f, 1.f}, {0.f, 0.f, 0.f, 0.f}, 1.f);
+    fuse::net::GameSnapshot high_index_target =
+        make_entity_snapshot(41, 64, 1, {2.f, 0.f, 0.f, 1.f}, {0.f, 0.f, 0.f, 0.f}, 1.f);
+    const fuse::net::SnapshotDelta high_index_delta =
+        fuse::net::compute_snapshot_delta(high_index_base, high_index_target);
+    expectTrue(high_index_delta.kind == fuse::net::SnapshotDeltaKind::Full,
+               "entity index >= 64 falls back to full snapshot delta");
+
+    fuse::net::SnapshotDelta bad_target_delta = patch_delta;
+    bad_target_delta.target_checksum = 0xBADC0DE;
+    expectTrue(!history.apply_delta_and_store(base.frame, bad_target_delta, nullptr),
+               "history ring rejects delta with bad target checksum");
 }
 
 } // namespace fuse::net::tests
