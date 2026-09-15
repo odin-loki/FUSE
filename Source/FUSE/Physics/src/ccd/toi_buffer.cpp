@@ -131,10 +131,26 @@ u32 ToiBufferSoA::compact() {
     return activeCount;
 }
 
+u32 ToiBufferSoA::applyMaxCapacityClamp() {
+    if (maxCapacity == 0u || activeCount <= maxCapacity) {
+        return activeCount;
+    }
+
+    const u32 excess = activeCount - maxCapacity;
+    droppedCount += excess;
+    activeCount = maxCapacity;
+
+    for (u32 i = activeCount; i < pairSlotCount; ++i) {
+        validFlags[i] = 0u;
+    }
+
+    return activeCount;
+}
+
 u32 ToiBufferSoA::compactAndSort() {
-    const u32 count = compact();
+    compact();
     sortByToi();
-    return count;
+    return applyMaxCapacityClamp();
 }
 
 bool ToiBufferSoA::isSortedByToi() const {
