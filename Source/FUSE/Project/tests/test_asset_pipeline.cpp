@@ -629,6 +629,45 @@ void testCookCacheUpstreamInvalidation() {
     expectTrue(!remiss.cache_hit, "downstream re-cook is cache miss");
 }
 
+void testCookCacheEmptyKeyPaths() {
+    fuse::project::CookCache cache;
+
+    expectTrue(cache.lookup(0) == fuse::project::CookCacheLookup::Miss, "zero hash always misses");
+    expectTrue(cache.stats().hits == 0u && cache.stats().misses == 0u,
+               "zero-hash lookup does not touch hit/miss stats");
+
+    fuse::project::CookCacheEntry invalid;
+    invalid.content_hash = 0;
+    invalid.source_path = "/tmp/fuse_b79_empty_key.obj";
+    invalid.output_path = "/tmp/fuse_b79_empty_key.fusemesh";
+    cache.store(invalid);
+    expectTrue(cache.entry_count() == 0u, "zero-hash entry is not stored");
+
+    fuse::project::CookCacheEntry empty_paths;
+    empty_paths.content_hash = 42;
+    empty_paths.source_path = "";
+    empty_paths.output_path = "/tmp/fuse_b79_empty_paths.fusemesh";
+    cache.store(empty_paths);
+    expectTrue(cache.entry_count() == 0u, "empty source path is not stored");
+
+    expectTrue(!cache.invalidate(0), "zero-hash invalidation is a no-op");
+    expectTrue(cache.stats().invalidations == 0u, "zero-hash invalidation does not bump stats");
+
+    expectTrue(fuse::project::hash_file_content("") == 0, "empty path hashes to zero");
+    expectTrue(fuse::project::combine_cook_cache_key(0, 0) == 0, "all-zero cache key stays zero");
+
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = "";
+    desc.output_path = "/tmp/fuse_b79_empty_input.fusemesh";
+    expectTrue(fuse::project::hash_mesh_import(desc) == 0, "empty input path yields zero content hash");
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord record = cooker.cook_mesh(desc);
+    expectTrue(!record.ok, "empty input path fails cook");
+    expectTrue(cooker.cache().entry_count() == 0u, "failed empty-path cook does not cache");
+    expectTrue(cooker.cache().stats().misses == 0u, "uncacheable cook does not record misses");
+}
+
 void testCookDirtyInvalidatesCache() {
     const std::string source = writeTempFile("/tmp/fuse_b79_dirty_mesh.obj", "# dirty mesh\n");
 
@@ -683,6 +722,7 @@ int main() {
     testCookCacheStaleDependencyHashInvalidation();
     testCookCacheUpstreamInvalidation();
     testCookCacheRoundTrip();
+    testCookCacheEmptyKeyPaths();
     testCookDirtyInvalidatesCache();
 
     fuse::core::shutdown();

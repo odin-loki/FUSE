@@ -29,6 +29,11 @@ struct CookCacheStats {
     u64 invalidations = 0;
 };
 
+/// Zero is reserved — empty or unreadable source keys must not enter the cache.
+[[nodiscard]] inline bool is_valid_cook_cache_key(u64 content_hash) {
+    return content_hash != 0;
+}
+
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
 public:

@@ -18,7 +18,7 @@
 | **B7.6** | World partition | `fuse_world_partition` | ✅ | `fuse_world_partition_b76` | Grid cells, streaming volume, residency lifecycle, JobScheduler async queue |
 | **B7.7** | VFX | `fuse_vfx` | ✅ | `fuse_vfx_runtime` | CPU `ParticleSystem`, emitters, effect instances |
 | **B7.8** | Platform hardening | `fuse_core` (`fuse::platform`) | ✅ | `fuse_core_platform_hardening` | Lifecycle, surface-loss, crash-report, desktop/mobile profile hooks |
-| **B7.9** | Asset pipeline | `fuse_project` + `Tools/FUSE` | ✅ | `fuse_assets_b79` | Cook manifest, `AssetGraph`, `ImportPipeline`, `fuse_cook` / `fuse_import` CLI |
+| **B7.9** | Asset pipeline | `fuse_project` + `Tools/FUSE` | ✅ | `fuse_assets_b79` | Cook manifest, `AssetGraph`, content-hash cache (path+mtime+bytes keys), `ImportPipeline`, `fuse_cook` / `fuse_import` CLI |
 
 Submodule detail:
 

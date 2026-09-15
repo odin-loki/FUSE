@@ -40,6 +40,10 @@ const CookCacheEntry* CookCache::find_entry_(u64 content_hash) const {
 }
 
 CookCacheLookup CookCache::lookup(u64 content_hash, CookCacheEntry* out_entry) {
+    if (!is_valid_cook_cache_key(content_hash)) {
+        return CookCacheLookup::Miss;
+    }
+
     const CookCacheEntry* entry = find_entry_(content_hash);
     if (!entry) {
         ++m_stats.misses;
@@ -54,6 +58,10 @@ CookCacheLookup CookCache::lookup(u64 content_hash, CookCacheEntry* out_entry) {
 }
 
 void CookCache::store(const CookCacheEntry& entry) {
+    if (!is_valid_cook_cache_key(entry.content_hash) || entry.source_path.empty() || entry.output_path.empty()) {
+        return;
+    }
+
     if (CookCacheEntry* existing = find_entry_(entry.content_hash)) {
         *existing = entry;
         return;
@@ -62,6 +70,10 @@ void CookCache::store(const CookCacheEntry& entry) {
 }
 
 bool CookCache::invalidate(u64 content_hash) {
+    if (!is_valid_cook_cache_key(content_hash)) {
+        return false;
+    }
+
     for (auto it = m_entries.begin(); it != m_entries.end(); ++it) {
         if (it->content_hash == content_hash) {
             m_entries.erase(it);

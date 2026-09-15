@@ -47,6 +47,10 @@ u64 file_mtime_ns(const std::string& path) {
 }
 
 u64 hash_file_content(const std::string& path) {
+    if (path.empty()) {
+        return 0;
+    }
+
     u64 hash = hash_string(path);
     hash = fnv1a64_combine(hash, hash_u64(file_mtime_ns(path)));
 
@@ -85,9 +89,18 @@ u64 combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
 }
 
 u64 hash_mesh_import(const MeshImportDesc& desc) {
+    if (desc.input_path.empty() || desc.output_path.empty()) {
+        return 0;
+    }
+
+    const u64 file_hash = hash_file_content(desc.input_path);
+    if (file_hash == 0) {
+        return 0;
+    }
+
     u64 hash = hash_string(desc.input_path);
     hash = fnv1a64_combine(hash, hash_string(desc.output_path));
-    hash = fnv1a64_combine(hash, hash_file_content(desc.input_path));
+    hash = fnv1a64_combine(hash, file_hash);
     hash = fnv1a64_combine(hash, hash_bool(desc.generate_tangents));
     hash = fnv1a64_combine(hash, hash_bool(desc.generate_normals));
     hash = fnv1a64_combine(hash, hash_bool(desc.optimise_vertex_cache));
@@ -99,9 +112,18 @@ u64 hash_mesh_import(const MeshImportDesc& desc) {
 }
 
 u64 hash_texture_import(const TextureImportDesc& desc) {
+    if (desc.input_path.empty() || desc.output_path.empty()) {
+        return 0;
+    }
+
+    const u64 file_hash = hash_file_content(desc.input_path);
+    if (file_hash == 0) {
+        return 0;
+    }
+
     u64 hash = hash_string(desc.input_path);
     hash = fnv1a64_combine(hash, hash_string(desc.output_path));
-    hash = fnv1a64_combine(hash, hash_file_content(desc.input_path));
+    hash = fnv1a64_combine(hash, file_hash);
     hash = fnv1a64_combine(hash, hash_u64(static_cast<u64>(desc.color_space)));
     hash = fnv1a64_combine(hash, hash_bool(desc.generate_mipmaps));
     hash = fnv1a64_combine(hash, hash_u64(static_cast<u64>(desc.compression)));
@@ -111,9 +133,18 @@ u64 hash_texture_import(const TextureImportDesc& desc) {
 }
 
 u64 hash_audio_import(const AudioImportDesc& desc) {
+    if (desc.input_path.empty() || desc.output_path.empty()) {
+        return 0;
+    }
+
+    const u64 file_hash = hash_file_content(desc.input_path);
+    if (file_hash == 0) {
+        return 0;
+    }
+
     u64 hash = hash_string(desc.input_path);
     hash = fnv1a64_combine(hash, hash_string(desc.output_path));
-    hash = fnv1a64_combine(hash, hash_file_content(desc.input_path));
+    hash = fnv1a64_combine(hash, file_hash);
     hash = fnv1a64_combine(hash, hash_u64(desc.target_sample_rate));
     hash = fnv1a64_combine(hash, hash_bool(desc.normalise));
     hash = fnv1a64_combine(hash, hash_bool(desc.trim_silence));
@@ -123,10 +154,19 @@ u64 hash_audio_import(const AudioImportDesc& desc) {
 }
 
 u64 hash_manifest_entry(const CookManifestEntry& entry) {
+    if (entry.source_path.empty() || entry.output_path.empty()) {
+        return 0;
+    }
+
+    const u64 file_hash = hash_file_content(entry.source_path);
+    if (file_hash == 0) {
+        return 0;
+    }
+
     u64 hash = hash_u64(static_cast<u64>(entry.kind));
     hash = fnv1a64_combine(hash, hash_string(entry.source_path));
     hash = fnv1a64_combine(hash, hash_string(entry.output_path));
-    hash = fnv1a64_combine(hash, hash_file_content(entry.source_path));
+    hash = fnv1a64_combine(hash, file_hash);
     for (const std::string& dependency : entry.dependencies) {
         hash = fnv1a64_combine(hash, hash_string(dependency));
         hash = fnv1a64_combine(hash, hash_file_content(dependency));

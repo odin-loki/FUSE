@@ -58,7 +58,7 @@ Invalidation paths:
 - `AssetCooker::invalidate_stale_dependency_hashes(manifest)` — reconcile cache against current upstream dependency hashes via `CookJobGraph`.
 - `AssetCooker::cook_dirty` — invalidates cache entries for dirty asset sources before stub reimport.
 
-`CookCacheStats` tracks hits, misses, and invalidations. The cache persists to JSON via `save`/`load` (including `upstreamHash`) for offline cook follow-up.
+`CookCacheStats` tracks hits, misses, and invalidations. Zero or empty-path keys (`is_valid_cook_cache_key`, unreadable `hash_file_content`) are rejected at lookup/store/invalidate so invalid cooks never pollute the cache. The cache persists to JSON via `save`/`load` (including `upstreamHash`) for offline cook follow-up.
 
 ### Import pipeline
 
@@ -114,7 +114,7 @@ ctest --test-dir build --output-on-failure -R fuse_assets
 
 | Target | Validates |
 |--------|-----------|
-| `fuse_assets_b79` | Cook manifest parse, asset graph save/load, cooker stub, job graph linear chain + diamond DAG ordering, cycle reject, failure short-circuit, content-hash cache hit/miss + mtime keys + upstream/chain invalidation, pipeline dry-run, project plan |
+| `fuse_assets_b79` | Cook manifest parse, asset graph save/load, cooker stub, job graph linear chain + diamond DAG ordering, cycle reject, failure short-circuit, content-hash cache hit/miss + mtime keys + empty-key guards + upstream/chain invalidation, pipeline dry-run, project plan |
 
 Run:
 
