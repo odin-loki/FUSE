@@ -904,7 +904,32 @@ void testOcclusionFactorExtremes() {
     expectNear(blocked.gain * blocked.hf_gain, 0.1f * 0.6f, 1e-5f,
                "zero visibility floors effective occlusion gain");
 
+    expectNear(fuse::audio::combine_occlusion_visibility(1.f, 0.f), 1.f, 1e-5f,
+               "clear blockers preserve source occlusion visibility");
+    expectNear(fuse::audio::combine_occlusion_visibility(1.f, 0.75f), 0.25f, 1e-5f,
+               "blocker factor scales source visibility");
+    expectNear(fuse::audio::combine_occlusion_visibility(0.5f, 1.f), 0.f, 1e-5f,
+               "full blocker factor silences partial source occlusion");
+
     const fuse::audio::AABB blocker{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
+    expectNear(fuse::audio::compute_effective_visibility(fuse::audio::Vec3{-5.f, 0.f, 0.f},
+                                                           fuse::audio::Vec3{5.f, 0.f, 0.f}, 1.f,
+                                                           &blocker, 1),
+               0.25f, 1e-5f, "effective visibility applies blocker factor to clear LOS");
+    expectNear(fuse::audio::compute_effective_visibility(fuse::audio::Vec3{-5.f, 0.f, 0.f},
+                                                           fuse::audio::Vec3{5.f, 0.f, 0.f}, 1.f,
+                                                           nullptr, 0),
+               1.f, 1e-5f, "no blockers leaves effective visibility at unity");
+
+    const fuse::audio::OcclusionAttenuation from_blockers =
+        fuse::audio::evaluate_occlusion_from_blockers(fuse::audio::Vec3{0.f, 0.f, 0.f},
+                                                      fuse::audio::Vec3{10.f, 0.f, 0.f}, 1.f,
+                                                      &blocker, 1);
+    expectNear(from_blockers.gain, 0.325f, 1e-5f,
+               "blocker pipeline maps visibility to LF gain");
+    expectNear(from_blockers.hf_gain, 0.7f, 1e-5f,
+               "blocker pipeline maps visibility to HF gain");
+
     expectNear(fuse::audio::compute_blockers_visibility(fuse::audio::Vec3{-5.f, 0.f, 0.f},
                                                         fuse::audio::Vec3{5.f, 0.f, 0.f},
                                                         &blocker, 1),
@@ -1024,6 +1049,63 @@ void testReverbZoneOverlappingBlend() {
     expectNear(outside.wet_dry, 0.f, 1e-5f, "outside all zones yields dry blend");
     expectNear(outside.send_level, 0.f, 1e-5f, "outside all zones yields zero send");
     expectTrue(outside.active_zone_count == 0, "no active zones outside bounds");
+}
+
+void testReverbZoneEmptyList() {
+    const fuse::audio::ReverbZoneBlend null_zones =
+        fuse::audio::blend_reverb_zones(fuse::audio::Vec3{0.f, 0.f, 0.f}, nullptr, 0);
+    expectNear(null_zones.wet_dry, 0.f, 1e-5f, "null zone list yields dry wet_dry");
+    expectNear(null_zones.send_level, 0.f, 1e-5f, "null zone list yields zero send");
+    expectTrue(null_zones.active_zone_count == 0, "null zone list has no active zones");
+    expectNear(fuse::audio::compute_effective_wet_mix(null_zones), 0.f, 1e-5f,
+               "null zone list yields zero effective wet mix");
+
+    const fuse::audio::ReverbZoneParams zones[] = {
+        {{{-5.f, -5.f, -5.f}, {5.f, 5.f, 5.f}}, 0.8f, 1.f},
+    };
+    const fuse::audio::ReverbZoneBlend zero_count =
+        fuse::audio::blend_reverb_zones(fuse::audio::Vec3{0.f, 0.f, 0.f}, zones, 0);
+    expectNear(zero_count.wet_dry, 0.f, 1e-5f, "zero zone count yields dry wet_dry");
+    expectTrue(zero_count.active_zone_count == 0, "zero zone count has no active zones");
+
+    expectTrue(fuse::audio::count_listener_reverb_zones(fuse::audio::Vec3{0.f, 0.f, 0.f},
+                                                          zones, 1) == 1,
+               "count finds listener inside single zone");
+    expectTrue(fuse::audio::count_listener_reverb_zones(fuse::audio::Vec3{100.f, 0.f, 0.f},
+                                                          zones, 1) == 0,
+               "count finds no zones outside bounds");
+    expectTrue(fuse::audio::count_listener_reverb_zones(fuse::audio::Vec3{0.f, 0.f, 0.f},
+                                                          nullptr, 0) == 0,
+               "count on empty zone list is zero");
+}
+
+void testDryWetBlendStub() {
+    expectNear(fuse::audio::blend_dry_wet_sample(1.f, 0.f, 0.f), 1.f, 1e-5f,
+               "zero wet mix returns dry sample");
+    expectNear(fuse::audio::blend_dry_wet_sample(1.f, 0.f, 1.f), 0.f, 1e-5f,
+               "unity wet mix returns wet sample");
+    expectNear(fuse::audio::blend_dry_wet_sample(0.8f, 0.2f, 0.5f), 0.5f, 1e-5f,
+               "mid wet mix linearly blends dry and wet");
+
+    fuse::audio::ReverbZoneBlend blend;
+    blend.wet_dry = 0.6f;
+    blend.send_level = 0.5f;
+    blend.active_zone_count = 1;
+    expectNear(fuse::audio::compute_effective_wet_mix(blend), 0.3f, 1e-5f,
+               "effective wet mix multiplies wet_dry and send_level");
+
+    blend.active_zone_count = 0;
+    expectNear(fuse::audio::compute_effective_wet_mix(blend), 0.f, 1e-5f,
+               "inactive blend yields zero effective wet mix");
+
+    const fuse::audio::ReverbZoneParams zones[] = {
+        {{{-10.f, -10.f, -10.f}, {10.f, 10.f, 10.f}}, 0.4f, 0.5f},
+        {{{-10.f, -10.f, -10.f}, {10.f, 10.f, 10.f}}, 0.8f, 1.f},
+    };
+    const fuse::audio::ReverbZoneBlend overlap =
+        fuse::audio::blend_reverb_zones(fuse::audio::Vec3{0.f, 0.f, 0.f}, zones, 2);
+    expectNear(fuse::audio::compute_effective_wet_mix(overlap), 0.45f, 1e-5f,
+               "overlapping zones effective wet mix multiplies averaged wet_dry and send_level");
 }
 
 void testReverbZoneListenerPositionAffectsMix() {
@@ -1386,6 +1468,8 @@ int main() {
     testReverbZoneMembership();
     testReverbZoneBlendExtremes();
     testReverbZoneOverlappingBlend();
+    testReverbZoneEmptyList();
+    testDryWetBlendStub();
     testReverbZoneListenerPositionAffectsMix();
     testReverbSendLevelDryMix();
     testReverbSendLevelWetMix();

@@ -26,4 +26,14 @@ struct ReverbZoneBlend {
 ReverbZoneBlend blend_reverb_zones(const Vec3& listener, const ReverbZoneParams* zones,
                                    u32 zone_count);
 
+/// Count zones whose AABB contains the listener.
+u32 count_listener_reverb_zones(const Vec3& listener, const ReverbZoneParams* zones,
+                                u32 zone_count);
+
+/// Effective wet mix scalar [0, 1] from a zone blend result.
+float compute_effective_wet_mix(const ReverbZoneBlend& blend);
+
+/// Linear dry/wet sample blend stub — wet_mix in [0, 1].
+float blend_dry_wet_sample(float dry, float wet, float wet_mix);
+
 } // namespace fuse::audio

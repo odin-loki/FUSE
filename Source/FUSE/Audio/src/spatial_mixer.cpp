@@ -29,14 +29,12 @@ void SpatialMixer::clear_occlusion_blockers() {
 
 float SpatialMixer::compute_source_visibility(const Vec3& listener, const Vec3& source,
                                               float source_occlusion) const {
-    float visibility = std::clamp(source_occlusion, 0.f, 1.f);
-    if (!m_occlusionBlockers.empty()) {
-        const float blocker_factor =
-            compute_blockers_factor(listener, source, m_occlusionBlockers.data(),
-                                    static_cast<u32>(m_occlusionBlockers.size()));
-        visibility *= (1.f - blocker_factor);
+    if (m_occlusionBlockers.empty()) {
+        return std::clamp(source_occlusion, 0.f, 1.f);
     }
-    return visibility;
+    return compute_effective_visibility(listener, source, source_occlusion,
+                                        m_occlusionBlockers.data(),
+                                        static_cast<u32>(m_occlusionBlockers.size()));
 }
 
 float SpatialMixer::sample_clip(const AudioClip& clip, float play_head, u32 channel) const {
