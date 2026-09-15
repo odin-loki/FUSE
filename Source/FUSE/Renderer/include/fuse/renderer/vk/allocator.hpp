@@ -2,6 +2,7 @@
 
 #include <fuse/renderer/resources.hpp>
 #include <fuse/renderer/vk/device.hpp>
+#include <fuse/renderer/vk/gpu_alloc_stats.hpp>
 #include <fuse/types.hpp>
 
 #include <memory>
@@ -30,8 +31,12 @@ public:
     GpuAllocator& operator=(const GpuAllocator&) = delete;
 
     const GpuAllocatorInfo& info() const { return m_info; }
+    const GpuAllocStats& stats() const { return m_stats; }
     bool isValid() const { return m_info.valid; }
     bool isStub() const { return m_info.mode == GpuAllocatorMode::Stub; }
+
+    void setStatsName(const char* name);
+    void refreshVmaPoolStats();
 
     void* nativeHandle() const;
 
@@ -48,8 +53,14 @@ private:
 
     VulkanDevice* m_device = nullptr;
     GpuAllocatorInfo m_info;
+    GpuAllocStats m_stats;
+    const char* m_statsName = "gpu_allocator";
     void* m_allocator = nullptr;
     u64 m_stubId = 1;
+
+    void notifyStats() const;
+    usize trackedBufferBytes(const Buffer& buffer) const;
+    usize trackedImageBytes(const Texture& texture) const;
 };
 
 } // namespace fuse::renderer

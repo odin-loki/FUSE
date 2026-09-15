@@ -41,6 +41,7 @@ set(FUSE_RHI_PUBLIC_HEADERS
     include/fuse/renderer/shadow/directional_shadow.hpp
     include/fuse/renderer/shadow/shadow_atlas.hpp
     include/fuse/renderer/shadow/shadow_pass.hpp
+    include/fuse/renderer/vk/gpu_alloc_stats.hpp
     include/fuse/renderer/vk/allocator.hpp
     include/fuse/renderer/vk/bindless.hpp
     include/fuse/renderer/vk/bootstrap.hpp
@@ -95,6 +96,7 @@ set(FUSE_RHI_SOURCES
     src/shadow/directional_shadow.cpp
     src/shadow/shadow_atlas.cpp
     src/shadow/shadow_pass.cpp
+    src/vk/gpu_alloc_stats.cpp
     src/vk/allocator.cpp
     src/vk/bindless.cpp
     src/vk/bootstrap.cpp

@@ -10,6 +10,10 @@ add_executable(fuse_rhi_present_path_stub test_rhi_present_path_stub.cpp)
 target_link_libraries(fuse_rhi_present_path_stub PRIVATE fuse_rhi)
 add_test(NAME fuse_rhi_present_path_stub COMMAND fuse_rhi_present_path_stub)
 
+add_executable(fuse_rhi_resource_destroy_order test_rhi_resource_destroy_order.cpp)
+target_link_libraries(fuse_rhi_resource_destroy_order PRIVATE fuse_rhi)
+add_test(NAME fuse_rhi_resource_destroy_order COMMAND fuse_rhi_resource_destroy_order)
+
 add_executable(fuse_vulkan_resources test_vulkan_resources.cpp)
 target_link_libraries(fuse_vulkan_resources PRIVATE fuse_rhi)
 add_test(NAME fuse_vulkan_resources COMMAND fuse_vulkan_resources)

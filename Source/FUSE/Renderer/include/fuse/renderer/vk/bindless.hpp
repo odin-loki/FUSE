@@ -28,9 +28,9 @@ public:
     void* layoutHandle() const { return m_layout; }
     void* descriptorSetHandle() const { return m_set; }
 
-    u32 registeredTextureCount() const { return m_textureSlots.size(); }
-    u32 registeredBufferCount() const { return m_bufferSlots.size(); }
-    u32 registeredSamplerCount() const { return m_samplerSlots.size(); }
+    u32 registeredTextureCount() const;
+    u32 registeredBufferCount() const;
+    u32 registeredSamplerCount() const;
 
 private:
     void* m_pool = nullptr;

@@ -93,7 +93,59 @@ VmaMemoryUsage toVmaMemoryUsage(MemoryUsage usage) {
 #endif
 #endif
 
+bool bufferNeedsHostMapping(MemoryUsage usage) {
+    return usage == MemoryUsage::CpuToGpu || usage == MemoryUsage::GpuToCpu;
+}
+
+void* allocateStubMappedBuffer(usize size) {
+    if (size == 0) {
+        return nullptr;
+    }
+    auto* host = new u8[size]();
+    return host;
+}
+
+void freeStubMappedBuffer(void* mapped) {
+    if (mapped != nullptr) {
+        delete[] static_cast<u8*>(mapped);
+    }
+}
+
 } // namespace
+
+void GpuAllocator::setStatsName(const char* name) {
+    m_statsName = name != nullptr ? name : "gpu_allocator";
+}
+
+void GpuAllocator::notifyStats() const {
+    notifyGpuStats(m_statsName, m_stats);
+}
+
+usize GpuAllocator::trackedBufferBytes(const Buffer& buffer) const {
+    return buffer.desc.size;
+}
+
+usize GpuAllocator::trackedImageBytes(const Texture& texture) const {
+    return gpu_alloc_detail::estimateImageBytes(texture.desc);
+}
+
+void GpuAllocator::refreshVmaPoolStats() {
+#if defined(FUSE_VULKAN_BACKEND) && defined(FUSE_VMA_AVAILABLE)
+    if (m_allocator == nullptr || m_info.mode != GpuAllocatorMode::Vma) {
+        m_stats.vmaPoolCount = 0;
+        m_stats.vmaPoolUsedBytes = 0;
+        return;
+    }
+
+    VmaTotalStatistics totalStats{};
+    vmaCalculateStatistics(static_cast<VmaAllocator>(m_allocator), &totalStats);
+    m_stats.vmaPoolCount = totalStats.poolCount;
+    m_stats.vmaPoolUsedBytes = static_cast<usize>(totalStats.total.statistics.allocationBytes);
+#else
+    m_stats.vmaPoolCount = 0;
+    m_stats.vmaPoolUsedBytes = 0;
+#endif
+}
 
 std::unique_ptr<GpuAllocator> GpuAllocator::create(VulkanDevice& device) {
     auto allocator = std::unique_ptr<GpuAllocator>(new GpuAllocator());
@@ -169,6 +221,8 @@ void GpuAllocator::shutdown() {
 
 bool GpuAllocator::createBuffer(const BufferDesc& desc, Buffer& out) {
     if (!m_info.valid || desc.size == 0) {
+        gpu_alloc_detail::recordFailedAlloc(m_stats);
+        notifyStats();
         return false;
     }
 
@@ -186,6 +240,8 @@ bool GpuAllocator::createBuffer(const BufferDesc& desc, Buffer& out) {
     VmaAllocation allocation = VK_NULL_HANDLE;
     if (vmaCreateBuffer(static_cast<VmaAllocator>(m_allocator), &bufferInfo, &allocInfo, &buffer,
                         &allocation, nullptr) != VK_SUCCESS) {
+        gpu_alloc_detail::recordFailedAlloc(m_stats);
+        notifyStats();
         return false;
     }
 
@@ -194,26 +250,35 @@ bool GpuAllocator::createBuffer(const BufferDesc& desc, Buffer& out) {
     out.desc = desc;
     out.deviceAddress = 0;
     vmaMapMemory(static_cast<VmaAllocator>(m_allocator), allocation, &out.mapped);
+    gpu_alloc_detail::recordBufferAlloc(m_stats, desc.size);
+    refreshVmaPoolStats();
+    notifyStats();
     return true;
 #elif defined(FUSE_VULKAN_BACKEND)
-    (void)desc;
     out.handle = reinterpret_cast<void*>(m_stubId++);
     out.allocation = out.handle;
     out.desc = desc;
-    out.mapped = nullptr;
+    out.mapped = bufferNeedsHostMapping(desc.memoryUsage) ? allocateStubMappedBuffer(desc.size)
+                                                          : nullptr;
     out.deviceAddress = 0;
+    gpu_alloc_detail::recordBufferAlloc(m_stats, desc.size);
+    notifyStats();
     return true;
 #else
     out.handle = reinterpret_cast<void*>(m_stubId++);
     out.allocation = out.handle;
     out.desc = desc;
-    out.mapped = nullptr;
+    out.mapped = bufferNeedsHostMapping(desc.memoryUsage) ? allocateStubMappedBuffer(desc.size)
+                                                          : nullptr;
     out.deviceAddress = 0;
+    gpu_alloc_detail::recordBufferAlloc(m_stats, desc.size);
+    notifyStats();
     return true;
 #endif
 }
 
 void GpuAllocator::destroyBuffer(Buffer& buffer) {
+    const usize bytes = trackedBufferBytes(buffer);
 #if defined(FUSE_VULKAN_BACKEND) && defined(FUSE_VMA_AVAILABLE)
     if (m_allocator != nullptr && buffer.handle != nullptr) {
         if (buffer.mapped != nullptr) {
@@ -224,16 +289,27 @@ void GpuAllocator::destroyBuffer(Buffer& buffer) {
                          static_cast<VkBuffer>(buffer.handle),
                          static_cast<VmaAllocation>(buffer.allocation));
     }
+#elif defined(FUSE_VULKAN_BACKEND)
+    freeStubMappedBuffer(buffer.mapped);
 #else
-    (void)buffer;
+    freeStubMappedBuffer(buffer.mapped);
 #endif
+    if (bytes > 0) {
+        gpu_alloc_detail::recordBufferFree(m_stats, bytes);
+        refreshVmaPoolStats();
+        notifyStats();
+    }
     buffer = Buffer{};
 }
 
 bool GpuAllocator::createImage(const TextureDesc& desc, Texture& out) {
     if (!m_info.valid || desc.width == 0 || desc.height == 0) {
+        gpu_alloc_detail::recordFailedAlloc(m_stats);
+        notifyStats();
         return false;
     }
+
+    const usize imageBytes = gpu_alloc_detail::estimateImageBytes(desc);
 
 #if defined(FUSE_VULKAN_BACKEND) && defined(FUSE_VMA_AVAILABLE)
     VkImageCreateInfo imageInfo{};
@@ -256,6 +332,8 @@ bool GpuAllocator::createImage(const TextureDesc& desc, Texture& out) {
     VmaAllocation allocation = VK_NULL_HANDLE;
     if (vmaCreateImage(static_cast<VmaAllocator>(m_allocator), &imageInfo, &allocInfo, &image,
                        &allocation, nullptr) != VK_SUCCESS) {
+        gpu_alloc_detail::recordFailedAlloc(m_stats);
+        notifyStats();
         return false;
     }
 
@@ -272,6 +350,8 @@ bool GpuAllocator::createImage(const TextureDesc& desc, Texture& out) {
     const VkDevice device = static_cast<VkDevice>(m_device->nativeHandle());
     if (vkCreateImageView(device, &viewInfo, nullptr, &view) != VK_SUCCESS) {
         vmaDestroyImage(static_cast<VmaAllocator>(m_allocator), image, allocation);
+        gpu_alloc_detail::recordFailedAlloc(m_stats);
+        notifyStats();
         return false;
     }
 
@@ -279,23 +359,31 @@ bool GpuAllocator::createImage(const TextureDesc& desc, Texture& out) {
     out.view = view;
     out.allocation = allocation;
     out.desc = desc;
+    gpu_alloc_detail::recordImageAlloc(m_stats, imageBytes);
+    refreshVmaPoolStats();
+    notifyStats();
     return true;
 #elif defined(FUSE_VULKAN_BACKEND)
     out.image = reinterpret_cast<void*>(m_stubId++);
     out.view = reinterpret_cast<void*>(m_stubId++);
     out.allocation = out.image;
     out.desc = desc;
+    gpu_alloc_detail::recordImageAlloc(m_stats, imageBytes);
+    notifyStats();
     return true;
 #else
     out.image = reinterpret_cast<void*>(m_stubId++);
     out.view = reinterpret_cast<void*>(m_stubId++);
     out.allocation = out.image;
     out.desc = desc;
+    gpu_alloc_detail::recordImageAlloc(m_stats, imageBytes);
+    notifyStats();
     return true;
 #endif
 }
 
 void GpuAllocator::destroyImage(Texture& texture) {
+    const usize bytes = trackedImageBytes(texture);
 #if defined(FUSE_VULKAN_BACKEND) && defined(FUSE_VMA_AVAILABLE)
     if (m_device != nullptr && texture.image != nullptr) {
         const VkDevice device = static_cast<VkDevice>(m_device->nativeHandle());
@@ -308,6 +396,11 @@ void GpuAllocator::destroyImage(Texture& texture) {
 #else
     (void)texture;
 #endif
+    if (bytes > 0) {
+        gpu_alloc_detail::recordImageFree(m_stats, bytes);
+        refreshVmaPoolStats();
+        notifyStats();
+    }
     texture = Texture{};
 }
 

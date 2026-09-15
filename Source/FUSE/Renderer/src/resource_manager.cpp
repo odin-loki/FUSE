@@ -3,6 +3,7 @@
 #include <fuse/renderer/vk/allocator.hpp>
 
 #include <cstring>
+#include <vector>
 
 namespace fuse::renderer {
 
@@ -28,6 +29,7 @@ bool ResourceManager::init(VulkanDevice& device, BindlessDescriptors& bindless, 
     if (!m_allocator || !m_allocator->isValid()) {
         return false;
     }
+    m_allocator->setStatsName("fuse_rhi_gpu");
 
     m_ready = true;
     return ensureStagingRing();
@@ -36,6 +38,40 @@ bool ResourceManager::init(VulkanDevice& device, BindlessDescriptors& bindless, 
 void ResourceManager::destroy() {
     if (!m_ready) {
         return;
+    }
+
+    destroyAllResources();
+
+    m_allocator.reset();
+    m_device = nullptr;
+    m_bindless = nullptr;
+    m_stagingOffset = 0;
+    m_ready = false;
+}
+
+void ResourceManager::destroyAllResources() {
+    std::vector<SamplerHandle> samplerHandles;
+    m_samplers.forEachOccupied(
+        [&](SamplerHandle handle) { samplerHandles.push_back(handle); });
+    for (SamplerHandle handle : samplerHandles) {
+        destroySampler(handle);
+    }
+
+    std::vector<TextureHandle> textureHandles;
+    m_textures.forEachOccupied(
+        [&](TextureHandle handle) { textureHandles.push_back(handle); });
+    for (TextureHandle handle : textureHandles) {
+        destroyTexture(handle);
+    }
+
+    std::vector<BufferHandle> bufferHandles;
+    m_buffers.forEachOccupied([&](BufferHandle handle) {
+        if (handle != m_stagingRing) {
+            bufferHandles.push_back(handle);
+        }
+    });
+    for (BufferHandle handle : bufferHandles) {
+        destroyBuffer(handle);
     }
 
     if (m_stagingRing.isValid() && m_allocator) {
@@ -53,11 +89,24 @@ void ResourceManager::destroy() {
     m_textures = fuse::HandleMap<Texture>{};
     m_buffers = fuse::HandleMap<Buffer>{};
     m_samplers = fuse::HandleMap<SamplerEntry>{};
-    m_allocator.reset();
-    m_device = nullptr;
-    m_bindless = nullptr;
-    m_stagingOffset = 0;
-    m_ready = false;
+}
+
+ResourceManager::LiveCounts ResourceManager::liveCounts() const {
+    LiveCounts counts{};
+    counts.textures = m_textures.size();
+    counts.buffers = m_buffers.size();
+    if (m_stagingRing.isValid()) {
+        counts.buffers -= 1;
+    }
+    counts.samplers = m_samplers.size();
+    return counts;
+}
+
+const GpuAllocStats* ResourceManager::allocatorStats() const {
+    if (m_allocator == nullptr) {
+        return nullptr;
+    }
+    return &m_allocator->stats();
 }
 
 TextureHandle ResourceManager::createTexture(const TextureDesc& desc, const void* initialData) {

@@ -88,6 +88,28 @@ u32 BindlessDescriptors::registerSampler(void* samplerHandle) {
     return allocateSlot(m_freeSamplerIndices, m_samplerSlots, kMaxSamplers);
 }
 
+u32 countLiveSlots(const std::vector<u32>& slots) {
+    u32 live = 0;
+    for (u32 occupied : slots) {
+        if (occupied != 0) {
+            ++live;
+        }
+    }
+    return live;
+}
+
+u32 BindlessDescriptors::registeredTextureCount() const {
+    return countLiveSlots(m_textureSlots);
+}
+
+u32 BindlessDescriptors::registeredBufferCount() const {
+    return countLiveSlots(m_bufferSlots);
+}
+
+u32 BindlessDescriptors::registeredSamplerCount() const {
+    return countLiveSlots(m_samplerSlots);
+}
+
 void BindlessDescriptors::unregisterTexture(u32 index) {
     releaseSlot(m_freeTextureIndices, m_textureSlots, index);
 }

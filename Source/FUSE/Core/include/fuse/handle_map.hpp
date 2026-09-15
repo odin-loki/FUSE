@@ -73,6 +73,16 @@ public:
         return count;
     }
 
+    template <typename Fn>
+    void forEachOccupied(Fn&& fn) const {
+        for (u32 i = 0; i < m_slots.size(); ++i) {
+            const Slot& slot = m_slots[i];
+            if (slot.occupied) {
+                fn(Handle<T>(i, slot.generation));
+            }
+        }
+    }
+
 private:
     struct Slot {
         T value{};
