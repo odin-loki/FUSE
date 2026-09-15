@@ -160,6 +160,10 @@ void CookJobGraph::build_from_manifest(const CookManifest& manifest) {
     }
 }
 
+bool CookJobGraph::has_cycle() const {
+    return topological_order_().empty() && !m_jobs.empty();
+}
+
 std::vector<std::string> CookJobGraph::topological_order_() const {
     std::unordered_map<std::string, u32> indegree;
     std::unordered_map<std::string, std::vector<std::string>> adjacency;
@@ -205,11 +209,7 @@ std::vector<std::string> CookJobGraph::topological_order_() const {
     }
 
     if (order.size() != m_jobs.size()) {
-        fuse::log::warn("cook_job_graph: cycle detected — falling back to manifest order");
         order.clear();
-        for (const CookJob& job : m_jobs) {
-            order.push_back(job.id);
-        }
     }
 
     return order;
@@ -265,6 +265,8 @@ bool CookJobGraph::run_job_stages_(CookJob& job, AssetCooker& cooker, CookJobGra
 
     pack_stage.status = CookStageStatus::Ok;
     pack_stage.note = packed.note.empty() ? "packed" : packed.note;
+    job.content_hash = packed.content_hash;
+    job.cache_hit = packed.cache_hit;
     job.ok = true;
     return true;
 }
@@ -272,7 +274,16 @@ bool CookJobGraph::run_job_stages_(CookJob& job, AssetCooker& cooker, CookJobGra
 CookJobGraphExecuteResult CookJobGraph::execute(AssetCooker& cooker) {
     CookJobGraphExecuteResult result;
     result.edges = m_edges;
+    result.jobs = m_jobs;
     result.execution_order = topological_order_();
+
+    if (result.execution_order.empty() && !m_jobs.empty()) {
+        result.cycle_detected = true;
+        result.ok = false;
+        result.failure_note = "dependency cycle detected";
+        result.summary = "cook job graph rejected: dependency cycle";
+        return result;
+    }
 
     usize ok_count = 0;
     for (const std::string& job_id : result.execution_order) {
@@ -335,6 +346,8 @@ CookBatchResult cookBatchFromJobGraphResult(const CookJobGraphExecuteResult& gra
         record.source_path = job.source_path;
         record.output_path = job.output_path;
         record.ok = job.ok;
+        record.content_hash = job.content_hash;
+        record.cache_hit = job.cache_hit;
         record.note = job.skipped ? job.skip_note : format_stage_summary(job);
 
         if (job.skipped) {

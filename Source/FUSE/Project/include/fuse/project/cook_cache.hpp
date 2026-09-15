@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/project/cook_job_graph.hpp>
 #include <fuse/project/cook_manifest.hpp>
 #include <fuse/types.hpp>
 
@@ -34,6 +35,10 @@ public:
 
     bool invalidate(u64 content_hash);
     u32 invalidate_source(const std::string& source_path);
+    /// Remove entries sourced from `output_path` and transitively invalidate dependents (B7.9 deepen).
+    u32 invalidate_downstream_of(const std::string& output_path,
+                                 const std::vector<CookJobDependencyEdge>& edges,
+                                 const std::vector<CookJob>& jobs);
     void invalidate_all();
 
     void clear();

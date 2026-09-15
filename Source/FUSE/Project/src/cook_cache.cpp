@@ -72,6 +72,42 @@ bool CookCache::invalidate(u64 content_hash) {
     return false;
 }
 
+namespace {
+
+const CookJob* find_job_by_id(const std::vector<CookJob>& jobs, const std::string& job_id) {
+    for (const CookJob& job : jobs) {
+        if (job.id == job_id) {
+            return &job;
+        }
+    }
+    return nullptr;
+}
+
+} // namespace
+
+u32 CookCache::invalidate_downstream_of(const std::string& output_path,
+                                        const std::vector<CookJobDependencyEdge>& edges,
+                                        const std::vector<CookJob>& jobs) {
+    u32 removed = invalidate_source(output_path);
+
+    for (const CookJobDependencyEdge& edge : edges) {
+        const CookJob* from_job = find_job_by_id(jobs, edge.from_job_id);
+        if (!from_job || from_job->output_path != output_path) {
+            continue;
+        }
+
+        const CookJob* to_job = find_job_by_id(jobs, edge.to_job_id);
+        if (!to_job) {
+            continue;
+        }
+
+        removed += invalidate_source(to_job->source_path);
+        removed += invalidate_downstream_of(to_job->output_path, edges, jobs);
+    }
+
+    return removed;
+}
+
 u32 CookCache::invalidate_source(const std::string& source_path) {
     u32 removed = 0;
     for (auto it = m_entries.begin(); it != m_entries.end();) {

@@ -152,6 +152,19 @@ CookBatchResult AssetCooker::cook_manifest(const CookManifest& manifest) {
     return cookBatchFromJobGraphResult(cook_manifest_graph(manifest));
 }
 
+u32 AssetCooker::invalidate_upstream_dependency(const CookManifest& manifest, const std::string& changed_source) {
+    CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    u32 removed = m_cache.invalidate_source(changed_source);
+    for (const CookJob& job : graph.jobs()) {
+        if (job.source_path == changed_source) {
+            removed += m_cache.invalidate_downstream_of(job.output_path, graph.edges(), graph.jobs());
+        }
+    }
+    return removed;
+}
+
 CookBatchResult AssetCooker::cook_dirty(AssetGraph& graph, const std::string& project_dir) {
     graph.scan_for_changes();
     const std::vector<std::string> dirty = graph.dirty_assets();

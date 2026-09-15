@@ -20,6 +20,9 @@ public:
     CookJobGraphExecuteResult cook_manifest_graph(const CookManifest& manifest);
     CookBatchResult cook_dirty(AssetGraph& graph, const std::string& project_dir);
 
+    /// Invalidate cache entries for `changed_source` and all manifest dependents (B7.9 deepen).
+    u32 invalidate_upstream_dependency(const CookManifest& manifest, const std::string& changed_source);
+
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
 
