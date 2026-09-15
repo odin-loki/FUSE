@@ -147,6 +147,34 @@ void add_pose_soa(const PoseSoA& base,
     }
 }
 
+void copy_pose_soa_local(const PoseSoA& src, PoseSoA& dst) {
+    dst.resize(src.bone_count);
+    dst.local_positions = src.local_positions;
+    dst.local_rotations = src.local_rotations;
+    dst.local_scales = src.local_scales;
+}
+
+void accumulate_weighted_pose_soa(PoseSoA& result,
+                                  f32& accumulated_weight,
+                                  const PoseSoA& entry,
+                                  f32 weight) {
+    if (weight <= 0.f) {
+        return;
+    }
+
+    if (accumulated_weight <= 0.f) {
+        result = entry;
+        accumulated_weight = weight;
+        return;
+    }
+
+    const f32 alpha = weight / (accumulated_weight + weight);
+    PoseSoA blended = PoseSoA::allocate(std::max(result.bone_count, entry.bone_count));
+    blend_pose_soa(result, entry, alpha, blended);
+    result = blended;
+    accumulated_weight += weight;
+}
+
 void blend_pose_soa(const PoseSoA& a, const PoseSoA& b, f32 weight, PoseSoA& out) {
     const f32 clamped = std::clamp(weight, 0.f, 1.f);
     const u32 count = std::max(a.bone_count, b.bone_count);
