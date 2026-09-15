@@ -7,12 +7,19 @@ Deterministic rollback and authoritative state-sync scaffolding for Track B7.4. 
 | Header | Role |
 |--------|------|
 | `game_state.hpp` | `GameSnapshot` and `PlayerInput` rollback payloads |
+| `checksum.hpp` | FNV-1a helpers and `compute_snapshot_checksum` / `verify_snapshot_checksum` |
+| `input_history.hpp` | 128-frame ring of predicted + confirmed `PlayerInput` |
+| `reconcile.hpp` | `reconcile_predicted_input` — compare authoritative vs predicted locals |
 | `transport.hpp` | `Transport` abstraction, loopback/ENet/Steam backends, `TransportStats`, factory |
 | `serializer.hpp` | Compact binary message serialisation |
 | `rollback.hpp` | `RollbackManager` GGPO-style resimulation bound to ECS |
 | `rollback_buffer.hpp` | Ring buffer of per-frame snapshots and confirmed inputs |
 | `snapshot_delta.hpp` | `SnapshotDelta` / entity patches for bandwidth-friendly sync |
 | `state_sync.hpp` | `ClientInterpolator`, `StateSyncDeltaBroadcaster`, entity deltas |
+
+## Input prediction history
+
+`InputHistoryBuffer` stores up to 128 frames of predicted and confirmed `PlayerInput`. `RollbackManager::set_local_input` records predictions; `apply_remote_input` calls `reconcile_predicted_input` before resimulation. Use `inputs_equal` to compare payloads without frame ids.
 
 ## Rollback buffer
 
@@ -31,4 +38,6 @@ Use `create_transport(TransportBackend)` to instantiate the active backend.
 
 ## Tests
 
-`fuse_net_tests` (`ctest` name `fuse_net_b74`) covers loopback channels/stats, serializer round-trip, rollback resimulation, rollback buffer retention, snapshot delta apply/serialize, and client interpolation without ENet or Steam dependencies.
+`fuse_net_tests` (`ctest` name `fuse_net_b74`) covers loopback channels/stats, serializer round-trip, rollback resimulation, rollback buffer retention, checksum helpers, input history eviction, reconcile outcomes, snapshot delta apply/serialize, and client interpolation without ENet or Steam dependencies.
+
+See [docs/unification/TRACK-B-NET.md](../../docs/unification/TRACK-B-NET.md) for the B7.4 deepen checklist.

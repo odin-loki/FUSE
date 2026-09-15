@@ -2,6 +2,7 @@
 
 #include <fuse/ecs/registry.hpp>
 #include <fuse/net/game_state.hpp>
+#include <fuse/net/input_history.hpp>
 #include <fuse/net/rollback_buffer.hpp>
 #include <fuse/types.hpp>
 
@@ -26,11 +27,14 @@ public:
     [[nodiscard]] u32 confirmed_frame() const { return m_confirmed_frame; }
     [[nodiscard]] bool is_rolling_back() const { return m_rolling_back; }
     [[nodiscard]] const RollbackBuffer& buffer() const { return m_buffer; }
+    [[nodiscard]] const InputHistoryBuffer& input_history() const { return m_input_history; }
 
 private:
     static constexpr u32 kMaxFrames = 64;
+    static constexpr u32 kInputHistoryCapacity = 128;
 
     RollbackBuffer m_buffer;
+    InputHistoryBuffer m_input_history;
     ecs::Registry* m_registry = nullptr;
     u32 m_current_frame = 0;
     u32 m_confirmed_frame = 0;
@@ -43,7 +47,6 @@ private:
     void integrate_frame_(u32 frame, f32 dt);
     void rollback_to_(u32 frame);
     void resimulate_to_(u32 target_frame, f32 dt);
-    [[nodiscard]] u64 compute_checksum_(const GameSnapshot& snapshot) const;
 };
 
 } // namespace fuse::net

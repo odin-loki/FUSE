@@ -2,6 +2,8 @@
 
 #include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/transform.hpp>
+#include <fuse/net/checksum.hpp>
+#include <fuse/net/reconcile.hpp>
 #include <fuse/net/serializer.hpp>
 
 #include <algorithm>
@@ -10,18 +12,6 @@
 namespace fuse::net {
 
 namespace {
-
-constexpr u64 kFnvOffset = 14695981039346656037ull;
-constexpr u64 kFnvPrime = 1099511628211ull;
-
-u64 fnv1a64(const byte* data, usize size) {
-    u64 hash = kFnvOffset;
-    for (usize i = 0; i < size; ++i) {
-        hash ^= static_cast<u64>(data[i]);
-        hash *= kFnvPrime;
-    }
-    return hash;
-}
 
 f32 axis_to_float(std::int16_t axis) {
     return static_cast<f32>(axis) / 32767.f;
@@ -33,6 +23,7 @@ void RollbackManager::init(u32 max_rollback_frames) {
     destroy();
     m_max_rollback = std::min(max_rollback_frames, kMaxFrames - 1u);
     m_buffer.init(kMaxFrames);
+    m_input_history.init(kInputHistoryCapacity);
     m_current_frame = 0;
     m_confirmed_frame = 0;
     m_rolling_back = false;
@@ -46,6 +37,7 @@ void RollbackManager::destroy() {
     m_rolling_back = false;
     m_last_dt = 1.f / 60.f;
     m_buffer.clear();
+    m_input_history.clear();
 }
 
 void RollbackManager::bind_registry(ecs::Registry* registry) { m_registry = registry; }
@@ -78,7 +70,7 @@ void RollbackManager::capture_registry_state_(GameSnapshot& snapshot) const {
 
     snapshot.ecs_state = std::move(ecs_writer.buffer);
     snapshot.physics_state = std::move(physics_writer.buffer);
-    snapshot.checksum = compute_checksum_(snapshot);
+    snapshot.checksum = compute_snapshot_checksum(snapshot);
 }
 
 void RollbackManager::restore_registry_state_(const GameSnapshot& snapshot) const {
@@ -145,12 +137,6 @@ void RollbackManager::restore_registry_state_(const GameSnapshot& snapshot) cons
     }
 }
 
-u64 RollbackManager::compute_checksum_(const GameSnapshot& snapshot) const {
-    u64 hash = fnv1a64(snapshot.ecs_state.data(), snapshot.ecs_state.size());
-    hash = fnv1a64(snapshot.physics_state.data(), snapshot.physics_state.size()) ^ (hash * kFnvPrime);
-    return hash;
-}
-
 void RollbackManager::integrate_frame_(u32 frame, f32 dt) {
     if (m_registry == nullptr) {
         return;
@@ -187,6 +173,7 @@ bool RollbackManager::apply_remote_input(const PlayerInput& input) {
         return false;
     }
 
+    (void)reconcile_predicted_input(m_input_history, input.frame, input);
     m_buffer.store_remote_input(input.frame, input, true);
 
     if (input.frame < m_current_frame) {
@@ -211,6 +198,7 @@ bool RollbackManager::apply_remote_input(const PlayerInput& input) {
 
 void RollbackManager::set_local_input(const PlayerInput& input) {
     m_buffer.store_local_input(input.frame, input);
+    m_input_history.store_predicted(input.frame, input);
 }
 
 void RollbackManager::tick(f32 dt) {
