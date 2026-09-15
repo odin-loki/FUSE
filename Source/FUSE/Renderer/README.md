@@ -17,8 +17,24 @@ CPU-first Dynamic Diffuse Global Illumination scaffolding (P5 §5.6). Probe grid
 - 64 probes updated per frame (round-robin)
 - Octahedral irradiance atlas + depth variance atlas via `ResourceManager`
 
+## B5.10 — Post-Processing Stack (stub)
+
+CPU-first post-processing scaffolding (P5 §5.10). Implements the pipeline as host stubs:
+
+`bloom → tonemap → color_grade`
+
+CUDA compute passes and dual-kawase bloom pyramids are deferred; the public API mirrors the P5 source narrative.
+
+| Header | Role |
+|--------|------|
+| `postprocess/bloom.hpp` | `BloomParams`, CPU threshold/extract stub |
+| `postprocess/tonemap.hpp` | `ToneMapper`, `aces_tonemap()`, host tone-map pass |
+| `postprocess/color_grade.hpp` | `ColorGradeParams`, exposure/saturation/CDL stub |
+| `postprocess/post_stack.hpp` | `PostStack` facade chaining the three stages |
+
 ## Tests (`ctest`)
 
 | Test | Coverage |
 |------|----------|
 | `fuse_ddgi` | Grid math, hysteresis blend, probe scheduling, init/update/sample, pipeline slot |
+| `fuse_post_process_b510` | Black-frame bloom thresholding, ACES clamping, neutral 0.18 grey calibration, stage ordering, `PostStack` facade |

@@ -15,6 +15,10 @@ set(FUSE_RHI_PUBLIC_HEADERS
     include/fuse/renderer/lighting/clustered.hpp
     include/fuse/renderer/material/material.hpp
     include/fuse/renderer/material/material_system.hpp
+    include/fuse/renderer/postprocess/bloom.hpp
+    include/fuse/renderer/postprocess/color_grade.hpp
+    include/fuse/renderer/postprocess/post_stack.hpp
+    include/fuse/renderer/postprocess/tonemap.hpp
     include/fuse/renderer/taa/taa_history.hpp
     include/fuse/renderer/taa/taa_jitter.hpp
     include/fuse/renderer/taa/taa_pass.hpp
@@ -64,6 +68,10 @@ set(FUSE_RHI_SOURCES
     src/lighting/clustered_light_culler.cpp
     src/material/material.cpp
     src/material/material_system.cpp
+    src/postprocess/bloom.cpp
+    src/postprocess/color_grade.cpp
+    src/postprocess/post_stack.cpp
+    src/postprocess/tonemap.cpp
     src/taa/taa_history.cpp
     src/taa/taa_jitter.cpp
     src/taa/taa_pass.cpp
