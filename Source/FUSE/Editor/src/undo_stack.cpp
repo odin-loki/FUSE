@@ -44,6 +44,18 @@ u32 UndoStack::coalescedOpsSinceBaseline() const {
     return m_coalescedOps - m_coalescedOpsAtBaseline;
 }
 
+bool UndoStack::isDirtyRevisionStable() const {
+    return isEmpty() && !m_dirty;
+}
+
+bool UndoStack::wouldCoalesceWith(const UndoCommand& command) const {
+    if (m_undo.empty()) {
+        return false;
+    }
+
+    return m_undo.back()->merge(command);
+}
+
 void UndoStack::execute(std::unique_ptr<UndoCommand> command) {
     if (!command) {
         return;
@@ -52,7 +64,7 @@ void UndoStack::execute(std::unique_ptr<UndoCommand> command) {
     if (!m_undo.empty() && m_undo.back()->merge(*command)) {
         m_undo.back()->execute();
         ++m_coalescedOps;
-        markDirty_();
+        syncBaselineDirty_();
         return;
     }
 
@@ -60,19 +72,24 @@ void UndoStack::execute(std::unique_ptr<UndoCommand> command) {
     m_undo.push_back(std::move(command));
     m_redo.clear();
     evictOldestIfNeeded_();
-    markDirty_();
+    syncBaselineDirty_();
 }
 
 void UndoStack::set_baseline_state() {
     m_baselineUndoCount = undoCount();
     m_baselineRedoCount = redoCount();
     m_coalescedOpsAtBaseline = m_coalescedOps;
+    m_dirtyRevisionAtBaseline = m_dirtyRevision;
     m_baselineConfigured = true;
     markClean();
 }
 
 bool UndoStack::isAtBaseline() const {
-    return undoCount() == m_baselineUndoCount;
+    if (!m_baselineConfigured) {
+        return false;
+    }
+
+    return undoCount() == m_baselineUndoCount && coalescedOpsSinceBaseline() == 0u;
 }
 
 void UndoStack::undo() {
@@ -122,6 +139,7 @@ void UndoStack::clear() {
     m_coalescedOpsAtBaseline = 0;
     m_baselineUndoCount = 0;
     m_baselineRedoCount = 0;
+    m_dirtyRevisionAtBaseline = 0;
     m_baselineConfigured = false;
     m_dirty = false;
     m_dirtyRevision = 0;
@@ -140,6 +158,7 @@ UndoStackSnapshot UndoStack::captureSnapshot() const {
     snapshot.coalescedOpsAtBaseline = m_coalescedOpsAtBaseline;
     snapshot.baselineUndoCount = m_baselineUndoCount;
     snapshot.baselineRedoCount = m_baselineRedoCount;
+    snapshot.dirtyRevisionAtBaseline = m_dirtyRevisionAtBaseline;
     snapshot.baselineConfigured = m_baselineConfigured;
     snapshot.dirty = m_dirty;
     snapshot.dirtyRevision = m_dirtyRevision;
@@ -172,6 +191,7 @@ void UndoStack::restoreSnapshot(const UndoStackSnapshot& snapshot) {
     m_coalescedOpsAtBaseline = snapshot.coalescedOpsAtBaseline;
     m_baselineUndoCount = snapshot.baselineUndoCount;
     m_baselineRedoCount = snapshot.baselineRedoCount;
+    m_dirtyRevisionAtBaseline = snapshot.dirtyRevisionAtBaseline;
     m_baselineConfigured = snapshot.baselineConfigured;
     m_dirty = snapshot.dirty;
     m_dirtyRevision = snapshot.dirtyRevision;

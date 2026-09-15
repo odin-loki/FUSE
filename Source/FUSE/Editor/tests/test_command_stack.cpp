@@ -621,6 +621,96 @@ void testUndoStackSnapshotCapture() {
     expectTrue(!stack.isDirty(), "restore brings back dirty flag");
 }
 
+void testUndoStackCoalesceAtBaselineGuard() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "drag"));
+    stack.set_baseline_state();
+
+    expectTrue(stack.isAtBaseline(), "saved baseline before coalesced edit");
+    expectTrue(stack.wouldCoalesceWith(CounterCommand(counter, 1, 3, "drag")),
+               "wouldCoalesceWith detects mergeable drag");
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 1, 3, "drag"));
+    expectTrue(counter == 3, "coalesced drag applies latest value");
+    expectTrue(stack.undoCount() == 1u, "coalesce keeps baseline undo depth");
+    expectTrue(!stack.isAtBaseline(), "coalesce at baseline depth breaks alignment");
+    expectTrue(stack.hasUnsavedChanges(), "coalesce at baseline marks unsaved changes");
+    expectTrue(stack.isDirty(), "coalesce at baseline marks dirty");
+    expectTrue(stack.coalescedOpsSinceBaseline() == 1u, "post-save coalesce tracked");
+
+    stack.undo();
+    expectTrue(counter == 0, "undo restores pre-drag state");
+    expectTrue(stack.undoCount() == 0u, "undo pops merged command");
+    expectTrue(!stack.isAtBaseline(), "undo below saved depth stays off baseline");
+    expectTrue(stack.hasUnsavedChanges(), "undo below saved depth remains unsaved");
+}
+
+void testUndoStackWouldCoalesceWithEmptyGuard() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    expectTrue(!stack.wouldCoalesceWith(CounterCommand(counter, 0, 1, "drag")),
+               "empty stack rejects coalesce probe");
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "other"));
+    expectTrue(!stack.wouldCoalesceWith(CounterCommand(counter, 1, 2, "drag")),
+               "different labels reject coalesce probe");
+}
+
+void testUndoStackDirtyRevisionAtBaseline() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "step"));
+    expectTrue(stack.dirtyRevision() == 1u, "execute bumps dirty revision");
+
+    stack.set_baseline_state();
+    expectTrue(stack.dirtyRevisionAtBaseline() == 1u, "baseline stores dirty revision");
+    expectTrue(stack.dirtyRevision() == stack.dirtyRevisionAtBaseline(),
+               "baseline aligns dirty revision helper");
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 1, 2, "edit"));
+    expectTrue(stack.dirtyRevision() == 2u, "post-baseline edit bumps revision");
+    expectTrue(stack.dirtyRevisionAtBaseline() == 1u, "baseline revision stays pinned");
+}
+
+void testUndoStackIsEmptyAndDirtyRevisionStable() {
+    fuse::editor::UndoStack stack;
+
+    expectTrue(stack.isEmpty(), "fresh stack is empty");
+    expectTrue(stack.isDirtyRevisionStable(), "empty stack revision is stable");
+
+    stack.undo();
+    stack.redo();
+    stack.push(nullptr);
+
+    expectTrue(stack.isEmpty(), "empty-stack guards keep stack empty");
+    expectTrue(stack.isDirtyRevisionStable(), "empty-stack ops keep revision stable");
+    expectTrue(stack.dirtyRevision() == 0u, "stable revision remains zero");
+}
+
+void testUndoStackBaselineRedoDepthRestore() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "first"));
+    stack.set_baseline_state();
+
+    const fuse::editor::UndoStackSnapshot snapshot = stack.captureSnapshot();
+    expectTrue(snapshot.baselineRedoCount == 0u, "snapshot captures baseline redo depth");
+    expectTrue(snapshot.dirtyRevisionAtBaseline == snapshot.dirtyRevision,
+               "snapshot captures dirty revision at baseline");
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 1, 2, "edit"));
+    stack.restoreSnapshot(snapshot);
+
+    expectTrue(stack.dirtyRevisionAtBaseline() == snapshot.dirtyRevisionAtBaseline,
+               "restore brings back dirty revision at baseline");
+    expectTrue(stack.isAtBaseline(), "restore realigns baseline metadata");
+}
+
 } // namespace
 
 int main() {
@@ -659,6 +749,11 @@ int main() {
     testUndoStackPushClearsRedoBranch();
     testUndoStackSnapshotBaselineRoundTrip();
     testUndoStackSnapshotCapture();
+    testUndoStackCoalesceAtBaselineGuard();
+    testUndoStackWouldCoalesceWithEmptyGuard();
+    testUndoStackDirtyRevisionAtBaseline();
+    testUndoStackIsEmptyAndDirtyRevisionStable();
+    testUndoStackBaselineRedoDepthRestore();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

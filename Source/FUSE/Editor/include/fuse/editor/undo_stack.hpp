@@ -19,6 +19,7 @@ struct UndoStackSnapshot {
     u32 coalescedOpsAtBaseline = 0;
     u32 baselineUndoCount = 0;
     u32 baselineRedoCount = 0;
+    u32 dirtyRevisionAtBaseline = 0;
     bool baselineConfigured = false;
     bool dirty = false;
     u32 dirtyRevision = 0;
@@ -51,6 +52,7 @@ public:
 
     bool canUndo() const { return !m_undo.empty(); }
     bool canRedo() const { return !m_redo.empty(); }
+    [[nodiscard]] bool isEmpty() const { return m_undo.empty() && m_redo.empty(); }
 
     u32 undoCount() const { return static_cast<u32>(m_undo.size()); }
     u32 redoCount() const { return static_cast<u32>(m_redo.size()); }
@@ -61,6 +63,10 @@ public:
 
     [[nodiscard]] bool isDirty() const { return m_dirty; }
     u32 dirtyRevision() const { return m_dirtyRevision; }
+    /// Dirty revision recorded at the last `set_baseline_state` call.
+    u32 dirtyRevisionAtBaseline() const { return m_dirtyRevisionAtBaseline; }
+    /// True when empty-stack undo/redo/null push will not advance `dirtyRevision`.
+    [[nodiscard]] bool isDirtyRevisionStable() const;
     void markClean();
     /// Records the current undo/redo depth as the saved-document baseline (B6.2 deepen).
     void set_baseline_state();
@@ -71,6 +77,9 @@ public:
 
     std::string peekUndoDescription() const;
     std::string peekRedoDescription() const;
+
+    /// Probe whether the next `execute` would merge into the top undo entry.
+    [[nodiscard]] bool wouldCoalesceWith(const UndoCommand& command) const;
 
     void clear();
 
@@ -91,6 +100,7 @@ private:
     u32 m_coalescedOpsAtBaseline = 0;
     u32 m_baselineUndoCount = 0;
     u32 m_baselineRedoCount = 0;
+    u32 m_dirtyRevisionAtBaseline = 0;
     bool m_baselineConfigured = false;
     bool m_dirty = false;
     u32 m_dirtyRevision = 0;
