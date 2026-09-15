@@ -1591,6 +1591,7 @@ void testSoaOpsSimulateStepEmptyGuard() {
     expectEq(empty.alive_after, 0u, "simulate_step on empty soa stays empty");
     expectEq(empty.integrated, 0u, "simulate_step on empty soa integrates nothing");
     expectEq(empty.culled, 0u, "simulate_step on empty soa culls nothing");
+    expectTrue(empty.skipped, "simulate_step on empty soa reports skipped");
     expectEq(static_cast<fuse::u32>(empty.dead_slots.size()), 0u, "simulate_step on empty soa collects no slots");
 }
 
@@ -1662,6 +1663,145 @@ void testParticleEmitterBurstReturnsEmitted() {
     expectEq(emitter.burst(1u), 0u, "burst at capacity returns zero");
 }
 
+void testSoaOpsBurstPreflight() {
+    fuse::vfx::ParticleSoA soa{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 5;
+    desc.lifetime_min = 1.f;
+    desc.lifetime_max = 1.f;
+
+    fuse::vfx::particle_soa::init(soa, desc.max_particles);
+
+    const fuse::vfx::particle_soa::BurstEmitPreflight empty =
+        fuse::vfx::particle_soa::preflight_burst_emit(soa, 8u);
+    expectEq(empty.requested, 8u, "preflight reports requested burst count");
+    expectEq(empty.allowed, 5u, "preflight clamps to free capacity on empty soa");
+    expectEq(empty.remaining_free, 5u, "preflight reports remaining free slots");
+    expectTrue(empty.would_clamp, "preflight marks overflow burst as clamped");
+    expectTrue(empty.can_emit, "preflight allows non-zero burst on empty soa");
+    expectTrue(!empty.at_capacity, "preflight empty soa is not at capacity");
+    expectTrue(fuse::vfx::particle_soa::can_burst_emit(soa, 3u), "can_burst_emit true with free slots");
+
+    (void)fuse::vfx::particle_soa::burst_emit(soa, desc, {}, 4u, 1u);
+    const fuse::vfx::particle_soa::BurstEmitPreflight partial =
+        fuse::vfx::particle_soa::preflight_burst_emit(soa, 3u);
+    expectEq(partial.allowed, 1u, "preflight respects remaining free slots");
+    expectTrue(partial.would_clamp, "preflight marks partial overflow as clamped");
+
+    (void)fuse::vfx::particle_soa::burst_emit(soa, desc, {}, 1u, 2u);
+    const fuse::vfx::particle_soa::BurstEmitPreflight full =
+        fuse::vfx::particle_soa::preflight_burst_emit(soa, 1u);
+    expectEq(full.allowed, 0u, "preflight at capacity allows zero burst");
+    expectTrue(full.at_capacity, "preflight full soa is at capacity");
+    expectTrue(!full.can_emit, "preflight at capacity cannot emit");
+    expectTrue(!fuse::vfx::particle_soa::can_burst_emit(soa, 1u), "can_burst_emit false at capacity");
+    expectTrue(!fuse::vfx::particle_soa::can_burst_emit(soa, 0u), "can_burst_emit false for zero count");
+}
+
+void testSoaOpsCountLiveFlags() {
+    fuse::vfx::ParticleSoA soa{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 4;
+    desc.lifetime_min = 1.f;
+    desc.lifetime_max = 1.f;
+
+    fuse::vfx::particle_soa::init(soa, desc.max_particles);
+    expectEq(fuse::vfx::particle_soa::count_live_flags(soa), 0u, "count_live_flags on empty soa is zero");
+
+    (void)fuse::vfx::particle_soa::burst_emit(soa, desc, {}, 2u, 3u);
+    expectEq(fuse::vfx::particle_soa::count_live_flags(soa), 2u, "count_live_flags matches emitted slots");
+
+    soa.count = 99u;
+    expectEq(fuse::vfx::particle_soa::count_live_flags(soa), 2u, "count_live_flags ignores stale soa.count");
+    expectEq(fuse::vfx::particle_soa::sync_alive_count(soa), 2u, "sync_alive_count repairs stale count");
+    expectEq(soa.count, 2u, "sync_alive_count writes repaired count");
+}
+
+void testSoaOpsSimStepPreflight() {
+    fuse::vfx::ParticleSoA soa{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 4;
+    desc.lifetime_min = 1.f;
+    desc.lifetime_max = 1.f;
+
+    fuse::vfx::particle_soa::init(soa, desc.max_particles);
+    const fuse::vfx::particle_soa::SimStepPreflight empty =
+        fuse::vfx::particle_soa::preflight_simulate_step(soa, 0.1f);
+    expectTrue(empty.skipped, "preflight skips empty soa simulate step");
+    expectTrue(fuse::vfx::particle_soa::should_skip_simulate_step(soa, 0.1f),
+               "should_skip_simulate_step on empty soa");
+
+    (void)fuse::vfx::particle_soa::burst_emit(soa, desc, {}, 2u, 4u);
+    const fuse::vfx::particle_soa::SimStepPreflight live =
+        fuse::vfx::particle_soa::preflight_simulate_step(soa, 0.05f);
+    expectTrue(!live.skipped, "preflight runs simulate step with live particles");
+    expectEq(live.live_input, 2u, "preflight reports live input count");
+    expectNear(live.dt, 0.05f, 1e-5f, "preflight carries dt");
+
+    const fuse::vfx::particle_soa::SimStepPreflight zero_dt =
+        fuse::vfx::particle_soa::preflight_simulate_step(soa, 0.f);
+    expectTrue(zero_dt.skipped, "preflight skips non-positive dt");
+    expectTrue(fuse::vfx::particle_soa::should_skip_simulate_step(soa, 0.f),
+               "should_skip_simulate_step for zero dt");
+
+    const fuse::vfx::particle_soa::SimStepResult skipped =
+        fuse::vfx::particle_soa::simulate_step(soa, desc, -0.1f);
+    expectTrue(skipped.skipped, "simulate_step reports skipped for negative dt");
+    expectEq(skipped.alive_after, 2u, "skipped simulate_step preserves alive count");
+    expectEq(skipped.integrated, 0u, "skipped simulate_step integrates nothing");
+}
+
+void testSoaOpsRateEmitPreflight() {
+    fuse::vfx::ParticleSoA soa{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 3;
+    desc.emit_rate = 10.f;
+    desc.lifetime_min = 1.f;
+    desc.lifetime_max = 1.f;
+
+    fuse::vfx::particle_soa::init(soa, desc.max_particles);
+    const fuse::vfx::particle_soa::RateEmitPreflight active =
+        fuse::vfx::particle_soa::preflight_rate_emit(soa, desc, 0.1f);
+    expectTrue(!active.skipped, "preflight rate emit runs with positive rate and dt");
+    expectEq(active.remaining_free, 3u, "preflight rate emit reports free slots");
+    expectTrue(!active.at_capacity, "preflight rate emit not at capacity initially");
+
+    (void)fuse::vfx::particle_soa::burst_emit(soa, desc, {}, 3u, 1u);
+    const fuse::vfx::particle_soa::RateEmitPreflight full =
+        fuse::vfx::particle_soa::preflight_rate_emit(soa, desc, 0.1f);
+    expectTrue(full.at_capacity, "preflight rate emit at capacity when full");
+    expectEq(full.remaining_free, 0u, "preflight rate emit zero free slots at capacity");
+
+    desc.emit_rate = 0.f;
+    const fuse::vfx::particle_soa::RateEmitPreflight zero_rate =
+        fuse::vfx::particle_soa::preflight_rate_emit(soa, desc, 0.1f);
+    expectTrue(zero_rate.skipped, "preflight skips zero emit rate");
+    expectTrue(fuse::vfx::particle_soa::should_skip_rate_emit(soa, desc, 0.1f),
+               "should_skip_rate_emit for zero rate");
+
+    desc.emit_rate = 10.f;
+    expectTrue(fuse::vfx::particle_soa::should_skip_rate_emit(soa, desc, 0.f),
+               "should_skip_rate_emit for zero dt");
+}
+
+void testSoaOpsLifetimeCullSkipGuard() {
+    fuse::vfx::ParticleSoA soa{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 2;
+    desc.lifetime_min = 0.5f;
+    desc.lifetime_max = 0.5f;
+
+    fuse::vfx::particle_soa::init(soa, desc.max_particles);
+    expectTrue(fuse::vfx::particle_soa::should_skip_lifetime_cull(soa, 0.2f),
+               "should_skip_lifetime_cull on empty soa");
+
+    (void)fuse::vfx::particle_soa::burst_emit(soa, desc, {}, 2u, 8u);
+    expectTrue(!fuse::vfx::particle_soa::should_skip_lifetime_cull(soa, 0.2f),
+               "should_skip_lifetime_cull false with live particles");
+    expectTrue(fuse::vfx::particle_soa::should_skip_lifetime_cull(soa, 0.f),
+               "should_skip_lifetime_cull for zero dt");
+}
+
 void testParticleSystemEmitterHandles() {
     fuse::vfx::ParticleSystem system{};
     system.init({});
@@ -1726,6 +1866,11 @@ int main() {
     testSoaOpsSimulateStepEmptyGuard();
     testSoaOpsSimulateStepIntegratedCounts();
     testSoaOpsRateEmitAtCapacityFlag();
+    testSoaOpsBurstPreflight();
+    testSoaOpsCountLiveFlags();
+    testSoaOpsSimStepPreflight();
+    testSoaOpsRateEmitPreflight();
+    testSoaOpsLifetimeCullSkipGuard();
     testParticleEmitterBurstReturnsEmitted();
     testSoaOpsParallelParity();
     testParticleGpuBufferLayout();

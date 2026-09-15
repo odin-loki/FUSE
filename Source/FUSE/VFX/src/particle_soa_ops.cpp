@@ -124,13 +124,33 @@ bool has_live_particles(const ParticleSoA& soa) {
     return soa.count > 0u;
 }
 
-u32 sync_alive_count(ParticleSoA& soa) {
+u32 count_live_flags(const ParticleSoA& soa) {
     u32 alive = 0;
     for (u32 index = 0; index < soa.capacity; ++index) {
         if (soa.alive_flags[index] != 0U) {
             ++alive;
         }
     }
+    return alive;
+}
+
+bool can_burst_emit(const ParticleSoA& soa, u32 count) {
+    return count > 0u && soa.capacity > 0u && clamp_burst_count(soa, count) > 0u;
+}
+
+BurstEmitPreflight preflight_burst_emit(const ParticleSoA& soa, u32 requested) {
+    BurstEmitPreflight preflight{};
+    preflight.requested = requested;
+    preflight.remaining_free = free_slot_count(soa);
+    preflight.at_capacity = is_at_capacity(soa);
+    preflight.allowed = clamp_burst_count(soa, requested);
+    preflight.would_clamp = requested > 0u && soa.capacity > 0u && preflight.allowed < requested;
+    preflight.can_emit = preflight.allowed > 0u;
+    return preflight;
+}
+
+u32 sync_alive_count(ParticleSoA& soa) {
+    const u32 alive = count_live_flags(soa);
     soa.count = alive;
     return alive;
 }
@@ -157,10 +177,12 @@ BurstEmitResult burst_emit(ParticleSoA& soa, const ParticleEmitterDesc& desc, co
     BurstEmitResult result{};
     result.requested = count;
     result.seed_after = seed;
-    if (count == 0u || soa.capacity == 0u) {
+    const BurstEmitPreflight preflight = preflight_burst_emit(soa, count);
+    if (!preflight.can_emit) {
+        result.clamped = preflight.would_clamp;
         return result;
     }
-    for (u32 i = 0; i < count; ++i) {
+    for (u32 i = 0; i < preflight.allowed; ++i) {
         const u32 slot = allocate_slot(soa);
         if (slot == UINT32_MAX) {
             break;
@@ -168,13 +190,17 @@ BurstEmitResult burst_emit(ParticleSoA& soa, const ParticleEmitterDesc& desc, co
         fill_slot(soa, slot, desc, origin, result.seed_after);
         ++result.emitted;
     }
-    result.clamped = result.requested > 0u && result.emitted < result.requested;
+    result.clamped = preflight.would_clamp || (result.requested > 0u && result.emitted < result.requested);
     return result;
+}
+
+bool should_skip_lifetime_cull(const ParticleSoA& soa, f32 dt) {
+    return dt <= 0.f || soa.capacity == 0u || !has_live_particles(soa);
 }
 
 LifetimeCullResult lifetime_cull(ParticleSoA& soa, f32 dt, u32 grain_size) {
     LifetimeCullResult result{};
-    if (dt <= 0.f || soa.capacity == 0u || !has_live_particles(soa)) {
+    if (should_skip_lifetime_cull(soa, dt)) {
         result.alive_after = soa.count;
         return result;
     }
@@ -207,12 +233,24 @@ LifetimeCullResult lifetime_cull(ParticleSoA& soa, f32 dt, u32 grain_size) {
     return result;
 }
 
+bool should_skip_rate_emit(const ParticleSoA& soa, const ParticleEmitterDesc& desc, f32 dt) {
+    return desc.emit_rate <= 0.f || dt <= 0.f || soa.capacity == 0u;
+}
+
+RateEmitPreflight preflight_rate_emit(const ParticleSoA& soa, const ParticleEmitterDesc& desc, f32 dt) {
+    RateEmitPreflight preflight{};
+    preflight.remaining_free = free_slot_count(soa);
+    preflight.at_capacity = is_at_capacity(soa);
+    preflight.skipped = should_skip_rate_emit(soa, desc, dt);
+    return preflight;
+}
+
 RateEmitResult accumulate_rate_emit(ParticleSoA& soa, const ParticleEmitterDesc& desc, const math::Vec3& origin,
                                     f32 dt, f32 emit_accum, u64 seed) {
     RateEmitResult result{};
     result.accum_after = emit_accum;
     result.seed_after = seed;
-    if (desc.emit_rate <= 0.f || dt <= 0.f || soa.capacity == 0u) {
+    if (should_skip_rate_emit(soa, desc, dt)) {
         return result;
     }
 
@@ -231,9 +269,23 @@ RateEmitResult accumulate_rate_emit(ParticleSoA& soa, const ParticleEmitterDesc&
     return result;
 }
 
+bool should_skip_simulate_step(const ParticleSoA& soa, f32 dt) {
+    return dt <= 0.f || soa.capacity == 0u || !has_live_particles(soa);
+}
+
+SimStepPreflight preflight_simulate_step(const ParticleSoA& soa, f32 dt) {
+    SimStepPreflight preflight{};
+    preflight.dt = dt;
+    preflight.live_input = soa.count;
+    preflight.skipped = should_skip_simulate_step(soa, dt);
+    return preflight;
+}
+
 SimStepResult simulate_step(ParticleSoA& soa, const ParticleEmitterDesc& desc, f32 dt, u32 grain_size) {
     SimStepResult result{};
-    if (dt <= 0.f || soa.capacity == 0u || !has_live_particles(soa)) {
+    const SimStepPreflight preflight = preflight_simulate_step(soa, dt);
+    if (preflight.skipped) {
+        result.skipped = true;
         result.alive_after = soa.count;
         return result;
     }
