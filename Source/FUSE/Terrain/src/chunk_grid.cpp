@@ -3,8 +3,10 @@
 #include <fuse/jobs/job_scheduler.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <limits>
+#include <thread>
 
 namespace fuse::terrain {
 
@@ -22,6 +24,12 @@ void ChunkGrid::init(const TerrainDesc& desc) {
 }
 
 void ChunkGrid::destroy() {
+    drain_completed_requests_();
+    for (int attempt = 0; attempt < 1000 && m_async_queue.in_flight_count() > 0; ++attempt) {
+        drain_completed_requests_();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
     for (TerrainChunk& chunk : m_chunks) {
         if (is_resident_state(chunk.residency) || is_transitional_state(chunk.residency)) {
             execute_unload_(chunk);
