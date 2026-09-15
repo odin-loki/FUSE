@@ -160,11 +160,13 @@ void CookJobGraph::build_from_manifest(const CookManifest& manifest) {
     }
 }
 
-bool CookJobGraph::has_cycle() const {
-    return topological_order_().empty() && !m_jobs.empty();
-}
+CookJobGraphOrderResult CookJobGraph::topological_order() const {
+    CookJobGraphOrderResult result;
 
-std::vector<std::string> CookJobGraph::topological_order_() const {
+    if (m_jobs.empty()) {
+        return result;
+    }
+
     std::unordered_map<std::string, u32> indegree;
     std::unordered_map<std::string, std::vector<std::string>> adjacency;
 
@@ -190,11 +192,10 @@ std::vector<std::string> CookJobGraph::topological_order_() const {
     }
     std::sort(queue.begin(), queue.end());
 
-    std::vector<std::string> order;
     while (!queue.empty()) {
         const std::string current = queue.front();
         queue.erase(queue.begin());
-        order.push_back(current);
+        result.order.push_back(current);
 
         for (const std::string& next : adjacency[current]) {
             auto it = indegree.find(next);
@@ -208,11 +209,18 @@ std::vector<std::string> CookJobGraph::topological_order_() const {
         }
     }
 
-    if (order.size() != m_jobs.size()) {
-        order.clear();
+    if (result.order.size() != m_jobs.size()) {
+        result.order.clear();
+        result.cycle_detected = true;
+        result.ok = false;
     }
 
-    return order;
+    return result;
+}
+
+bool CookJobGraph::has_cycle() const {
+    const CookJobGraphOrderResult order = topological_order();
+    return order.cycle_detected;
 }
 
 bool CookJobGraph::run_job_stages_(CookJob& job, AssetCooker& cooker, const CookManifest& manifest,
@@ -277,9 +285,10 @@ CookJobGraphExecuteResult CookJobGraph::execute(AssetCooker& cooker, const CookM
     CookJobGraphExecuteResult result;
     result.edges = m_edges;
     result.jobs = m_jobs;
-    result.execution_order = topological_order_();
+    const CookJobGraphOrderResult order = topological_order();
+    result.execution_order = order.order;
 
-    if (result.execution_order.empty() && !m_jobs.empty()) {
+    if (order.cycle_detected) {
         result.cycle_detected = true;
         result.ok = false;
         result.failure_note = "dependency cycle detected";

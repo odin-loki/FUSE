@@ -97,6 +97,122 @@ void testImportPipelineDryRun() {
     expectTrue(dryRun.ok, "pipeline dry-run ok");
 }
 
+void testCookJobGraphEmpty() {
+    fuse::project::CookJobGraph graph;
+    expectTrue(graph.empty(), "default graph is empty");
+    expectTrue(!graph.has_cycle(), "empty graph has no cycle");
+
+    const fuse::project::CookJobGraphOrderResult order = graph.topological_order();
+    expectTrue(order.ok, "empty graph order ok");
+    expectTrue(!order.cycle_detected, "empty graph order not cyclic");
+    expectTrue(order.order.empty(), "empty graph yields empty order");
+    expectTrue(graph.edges().empty(), "empty graph has no edges");
+
+    fuse::project::CookManifest manifest;
+    graph.build_from_manifest(manifest);
+    expectTrue(graph.empty(), "empty manifest yields empty graph");
+    expectTrue(!graph.has_cycle(), "empty manifest graph has no cycle");
+
+    const fuse::project::CookJobGraphOrderResult manifestOrder = graph.topological_order();
+    expectTrue(manifestOrder.ok, "empty manifest order ok");
+    expectTrue(manifestOrder.order.empty(), "empty manifest order is empty");
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker, manifest);
+    expectTrue(result.ok, "empty graph execute ok");
+    expectTrue(!result.cycle_detected, "empty graph execute not cyclic");
+    expectTrue(result.execution_order.empty(), "empty graph execute order empty");
+    expectTrue(result.jobs.empty(), "empty graph execute has no jobs");
+}
+
+void testCookJobGraphTopologicalOrderDirect() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_topo_a.obj", "# topo a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_topo_b.obj", "# topo b\n");
+
+    fuse::project::CookManifest manifest;
+
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_topo_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_topo_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    const fuse::project::CookJobGraphOrderResult order = graph.topological_order();
+    expectTrue(order.ok, "topological order ok");
+    expectTrue(!order.cycle_detected, "topological order not cyclic");
+    expectTrue(order.order.size() == 2u, "two jobs topologically ordered");
+    expectTrue(order.order[0] == entryA.output_path, "producer precedes dependent");
+    expectTrue(order.order[1] == entryB.output_path, "dependent follows producer");
+    expectTrue(!graph.has_cycle(), "has_cycle agrees with order result");
+}
+
+void testCookJobGraphImplicitOutputSourceEdge() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_implicit_a.obj", "# implicit a\n");
+
+    fuse::project::CookManifest manifest;
+
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_implicit_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = entryA.output_path;
+    entryB.output_path = "/tmp/fuse_b79_implicit_b.fusemesh";
+    manifest.assets.push_back(entryB);
+
+    fuse::project::CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    expectTrue(graph.edges().size() >= 1u, "implicit output→source edge recorded");
+    expectTrue(graph.edges()[0].from_job_id == entryA.output_path, "implicit edge from producer");
+    expectTrue(graph.edges()[0].to_job_id == entryB.output_path, "implicit edge to consumer");
+
+    const fuse::project::CookJobGraphOrderResult order = graph.topological_order();
+    expectTrue(order.ok, "implicit edge graph orders ok");
+    expectTrue(order.order.size() == 2u, "two jobs ordered via implicit edge");
+    expectTrue(order.order[0] == entryA.output_path, "producer runs first via implicit edge");
+}
+
+void testCookJobGraphCycleDetectDirect() {
+    fuse::project::CookManifest manifest;
+
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = "/tmp/fuse_b79_cycle_direct_a.obj";
+    entryA.output_path = "/tmp/fuse_b79_cycle_direct_a.fusemesh";
+    entryA.dependencies.push_back("/tmp/fuse_b79_cycle_direct_b.fusemesh");
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = "/tmp/fuse_b79_cycle_direct_b.obj";
+    entryB.output_path = "/tmp/fuse_b79_cycle_direct_b.fusemesh";
+    entryB.dependencies.push_back("/tmp/fuse_b79_cycle_direct_a.fusemesh");
+    manifest.assets.push_back(entryB);
+
+    fuse::project::CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    const fuse::project::CookJobGraphOrderResult order = graph.topological_order();
+    expectTrue(!order.ok, "cyclic graph order not ok");
+    expectTrue(order.cycle_detected, "topological order reports cycle");
+    expectTrue(order.order.empty(), "cyclic graph yields empty order");
+    expectTrue(graph.has_cycle(), "has_cycle agrees with order stub");
+}
+
 void testCookJobGraphStageOrdering() {
     const std::string source = writeTempFile("/tmp/fuse_b79_stage_mesh.obj", "# stage mesh\n");
 
@@ -703,6 +819,10 @@ int main() {
     testParseCookManifest();
     testAssetGraphRoundTrip();
     testAssetCookerStub();
+    testCookJobGraphEmpty();
+    testCookJobGraphTopologicalOrderDirect();
+    testCookJobGraphImplicitOutputSourceEdge();
+    testCookJobGraphCycleDetectDirect();
     testCookJobGraphStageOrdering();
     testCookJobGraphFailedStageShortCircuit();
     testCookJobGraphLinearChain();

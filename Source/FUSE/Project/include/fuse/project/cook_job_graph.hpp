@@ -49,6 +49,13 @@ struct CookJob {
     std::string skip_note;
 };
 
+/// Topological ordering stub — Kahn with stable tie-breaking; empty order when cyclic.
+struct CookJobGraphOrderResult {
+    std::vector<std::string> order;
+    bool cycle_detected = false;
+    bool ok = true;
+};
+
 struct CookJobGraphExecuteResult {
     bool ok = false;
     bool cycle_detected = false;
@@ -68,8 +75,10 @@ public:
 
     void build_from_manifest(const CookManifest& manifest);
 
+    [[nodiscard]] bool empty() const { return m_jobs.empty(); }
     [[nodiscard]] const std::vector<CookJob>& jobs() const { return m_jobs; }
     [[nodiscard]] const std::vector<CookJobDependencyEdge>& edges() const { return m_edges; }
+    [[nodiscard]] CookJobGraphOrderResult topological_order() const;
     [[nodiscard]] bool has_cycle() const;
 
     CookJobGraphExecuteResult execute(AssetCooker& cooker, const CookManifest& manifest);
@@ -80,7 +89,6 @@ private:
     [[nodiscard]] CookJob* find_job_(const std::string& job_id);
     [[nodiscard]] const CookJob* find_job_(const std::string& job_id) const;
     [[nodiscard]] std::string resolve_job_id_(const std::string& path) const;
-    [[nodiscard]] std::vector<std::string> topological_order_() const;
 
     bool run_job_stages_(CookJob& job, AssetCooker& cooker, const CookManifest& manifest,
                          CookJobGraphExecuteResult& result);
