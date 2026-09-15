@@ -26,18 +26,36 @@ void testMaterialPack() {
     material.metallic = 0.75f;
     material.emissiveColor = {1.f, 0.5f, 0.25f};
     material.emissiveIntensity = 2.f;
+    material.normalStrength = 0.8f;
     material.shadingModel = fuse::renderer::ShadingModel::Emissive;
+    material.parameters.subsurface.scatterRadius = 2.5f;
+    material.parameters.clearCoat.clearCoat = 0.6f;
+    material.parameters.cloth.sheenRoughness = 0.4f;
     material.isProcedural = true;
     material.proceduralFnId = 3u;
+    material.normalTex = fuse::renderer::TextureHandle(7u, 1u);
+    material.metallicTex = fuse::renderer::TextureHandle(9u, 1u);
 
     const fuse::renderer::Material::GPUMaterial packed = material.pack();
     expectTrue(packed.baseColor.x == 0.8f, "packed base color x");
     expectTrue(packed.baseColor.w == 0.75f, "packed metallic in base color w");
     expectTrue(packed.roughnessEmissive.x == 0.35f, "packed roughness");
     expectTrue(packed.emissiveIntensity == 2.f, "packed emissive intensity");
+    expectTrue(packed.normalStrength == 0.8f, "packed normal strength");
+    expectTrue(packed.metallicTexIdx == 9u, "packed metallic texture index");
+    expectTrue(packed.subsurfaceBlock.w == 2.5f, "packed subsurface scatter radius");
+    expectTrue(packed.clearCoatBlock.x == 0.6f, "packed clearcoat weight");
+    expectTrue(packed.clearCoatBlock.z == 0.4f, "packed cloth sheen roughness");
     expectTrue(packed.shadingModel == static_cast<fuse::u32>(fuse::renderer::ShadingModel::Emissive),
                "packed shading model");
-    expectTrue((packed.flags & 1u) != 0u, "procedural flag set");
+    expectTrue((packed.flags & fuse::renderer::MaterialFlagBits::kProcedural) != 0u, "procedural flag set");
+    expectTrue((packed.flags & fuse::renderer::MaterialFlagBits::kHasNormalMap) != 0u, "normal map flag set");
+    expectTrue((packed.flags & fuse::renderer::MaterialFlagBits::kHasMetallicMap) != 0u, "metallic map flag set");
+}
+
+void testMaterialGpuLayout() {
+    expectTrue(fuse::renderer::MaterialLayout::validateGpuStruct(), "GPUMaterial SSBO layout valid");
+    expectTrue(fuse::renderer::MaterialLayout::gpuMaterialStride() >= 64u, "GPUMaterial stride non-trivial");
 }
 
 void testMaterialSystemRegisterFlush() {
@@ -88,6 +106,7 @@ int main() {
     fuse::core::initialize();
 
     testMaterialPack();
+    testMaterialGpuLayout();
     testMaterialSystemRegisterFlush();
 
     fuse::core::shutdown();

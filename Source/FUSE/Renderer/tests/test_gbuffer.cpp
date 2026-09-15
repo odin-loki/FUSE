@@ -36,11 +36,47 @@ void testLayoutFormats() {
                "RT0 uses RGBA16F");
     expectTrue(GBufferLayout::format(GBufferAttachment::AlbedoAlpha) == GpuFormat::R8G8B8A8Unorm,
                "RT1 uses RGBA8");
+    expectTrue(GBufferLayout::format(GBufferAttachment::RoughMetalEmissiveShading) == GpuFormat::R8G8B8A8Unorm,
+               "RT2 uses RGBA8");
     expectTrue(GBufferLayout::format(GBufferAttachment::Velocity) == GpuFormat::R16G16Sfloat,
                "RT3 uses RG16F");
     expectTrue(GBufferLayout::format(GBufferAttachment::Depth) == GpuFormat::R32Sfloat,
                "RT4 uses R32F");
+    expectTrue(GBufferLayout::format(GBufferAttachment::Emissive) == GpuFormat::R16G16B16A16Sfloat,
+               "RT5 uses RGBA16F");
     expectTrue(GBufferLayout::attachmentCount() == 6u, "six G-buffer attachments");
+    expectTrue(GBufferLayout::channelCount(GBufferAttachment::Velocity) == 2u, "velocity has two channels");
+    expectTrue(GBufferLayout::channelCount(GBufferAttachment::Depth) == 1u, "depth has one channel");
+    expectTrue(GBufferLayout::validateAttachmentFormats(), "all attachment formats defined");
+}
+
+void testGBufferPackingRoundTrip() {
+    fuse::renderer::GBufferPackedData source{};
+    source.normal = {-0.2f, 0.7f, 0.68f};
+    source.albedo = {0.25f, 0.5f, 0.75f};
+    source.roughness = 0.42f;
+    source.metallic = 0.9f;
+    source.emissive = {2.f, 0.5f, 0.1f};
+    source.ao = 0.8f;
+    source.velocityX = 0.01f;
+    source.velocityY = -0.02f;
+    source.shadingModel = 4u;
+
+    const fuse::renderer::GBufferMrt packed = fuse::renderer::GBufferPacking::pack(source, 0.75f);
+    expectNear(packed.rt1.w, 0.75f, 1e-5f, "packed alpha channel");
+    expectTrue(packed.rt2.z > 0.5f, "emissive mask set when emissive magnitude > 0.001");
+
+    const fuse::renderer::GBufferPackedData decoded = fuse::renderer::GBufferPacking::unpack(packed);
+    const float normalError =
+        fuse::renderer::GBufferEncoding::angularErrorRadians(source.normal, decoded.normal);
+    expectTrue(normalError < 0.001f, "packed normal round-trips through MRT channels");
+    expectNear(decoded.albedo.x, source.albedo.x, 1e-5f, "packed albedo x");
+    expectNear(decoded.roughness, source.roughness, 1e-5f, "packed roughness");
+    expectNear(decoded.metallic, source.metallic, 1e-5f, "packed metallic");
+    expectNear(decoded.emissive.y, source.emissive.y, 1e-5f, "packed emissive y");
+    expectNear(decoded.ao, source.ao, 1e-5f, "packed ao");
+    expectNear(decoded.velocityX, source.velocityX, 1e-5f, "packed velocity x");
+    expectTrue(decoded.shadingModel == source.shadingModel, "packed shading model id");
 }
 
 void testNormalEncodingRoundTrip() {
@@ -105,6 +141,7 @@ int main() {
 
     testLayoutFormats();
     testNormalEncodingRoundTrip();
+    testGBufferPackingRoundTrip();
     testGBufferAllocationStub();
 
     fuse::core::shutdown();
