@@ -28,7 +28,8 @@ struct SolverWorkBuffers {
     void clearPositionDeltasForBodies(u32 bodyA, u32 bodyB);
     /// Clear all body slots listed in an island before sequential constraint passes.
     void clearPositionDeltasForIslandBodies(const std::vector<u32>& bodyIndices);
-    void applyPositionDeltas(RigidBodySoA& bodies) const;
+    /// Apply accumulated deltas to predicted positions and reset touched slots.
+    void applyPositionDeltas(RigidBodySoA& bodies);
 
     void ensureLambdaCapacity(u32 contactCount, u32 distanceCount);
     void clearLambdas();

@@ -132,13 +132,12 @@ void PBDSolver::resolveIslandConstraints(RigidBodySoA& bodies,
     const std::vector<narrowphase::ContactManifold>& contacts = workBuffers_.contactManifolds();
     std::vector<PositionDelta>& positionDeltas = workBuffers_.positionDeltas();
 
-    workBuffers_.clearPositionDeltasForIslandBodies(island.bodyIndices);
-
     for (u32 contactIndex : island.contactIndices) {
         if (contactIndex >= contacts.size()) {
             continue;
         }
         const narrowphase::ContactManifold& contact = contacts[contactIndex];
+        workBuffers_.clearPositionDeltasForBodies(contact.bodyA, contact.bodyB);
         const f32 invMassA = effectiveInvMass(bodies, contact.bodyA);
         const f32 invMassB = effectiveInvMass(bodies, contact.bodyB);
         f32& lambda = workBuffers_.contactLambda(contactIndex);
@@ -158,6 +157,7 @@ void PBDSolver::resolveIslandConstraints(RigidBodySoA& bodies,
             continue;
         }
         const DistanceConstraint& constraint = distanceConstraints_[distanceIndex];
+        workBuffers_.clearPositionDeltasForBodies(constraint.bodyA, constraint.bodyB);
         const f32 invMassA = effectiveInvMass(bodies, constraint.bodyA);
         const f32 invMassB = effectiveInvMass(bodies, constraint.bodyB);
         f32& lambda = workBuffers_.distanceLambda(distanceIndex);
@@ -290,12 +290,18 @@ void PBDSolver::step(RigidBodySoA& bodies,
     const f32 subDt = dt / static_cast<f32>(std::max(1u, params.substeps));
     lastActiveCount_ = 0;
     lastContactCount_ = 0;
+    const std::vector<f32> priorDistanceLambdas = workBuffers_.distanceLambdas();
 
     for (u32 substep = 0; substep < std::max(1u, params.substeps); ++substep) {
         predict(bodies, params, subDt);
         generateContacts(bodies, shapes, params);
         if (substep == 0u) {
             workBuffers_.clearLambdas();
+            for (u32 distanceIndex = 0; distanceIndex < distanceConstraints_.size(); ++distanceIndex) {
+                if (distanceIndex < priorDistanceLambdas.size()) {
+                    workBuffers_.seedDistanceLambda(distanceIndex, priorDistanceLambdas[distanceIndex]);
+                }
+            }
         }
         runConstraintIterations(bodies, params, subDt);
         updateVelocities(bodies, subDt);

@@ -93,13 +93,15 @@ void SolverWorkBuffers::clearPositionDeltasForIslandBodies(const std::vector<u32
     }
 }
 
-void SolverWorkBuffers::applyPositionDeltas(RigidBodySoA& bodies) const {
+void SolverWorkBuffers::applyPositionDeltas(RigidBodySoA& bodies) {
     const u32 count = std::min(bodies.count(), static_cast<u32>(positionDeltas_.size()));
     for (u32 i = 0; i < count; ++i) {
         if (positionDeltas_[i].writeCount == 0) {
             continue;
         }
         bodies.predictedPositions[i] += positionDeltas_[i].delta;
+        positionDeltas_[i].delta = {};
+        positionDeltas_[i].writeCount = 0;
     }
 }
 
