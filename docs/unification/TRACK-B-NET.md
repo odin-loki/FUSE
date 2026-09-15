@@ -1,6 +1,6 @@
 # Track B — B7.4 Networking (deepen)
 
-**Status:** Interest management AOI stubs, input prediction history, reconcile stub, and shared checksum helpers on `fuse_net`  
+**Status:** Snapshot delta field masks, verified apply path, snapshot history ring, AOI stubs, input prediction history, reconcile stub, and shared checksum helpers on `fuse_net`  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.4  
 **Depends on:** B3 ECS (`fuse_ecs`), initial B7.4 transport/rollback scaffolding
 
@@ -16,8 +16,10 @@
 | `reconcile_predicted_input` | `reconcile.hpp/.cpp` | Compare authoritative input against local prediction |
 | Checksum helpers | `checksum.hpp/.cpp` | FNV-1a over snapshot blobs; shared by rollback + delta paths |
 | `RollbackBuffer` | `rollback_buffer.hpp/.cpp` | 64-frame snapshot + input ring (unchanged capacity) |
+| `SnapshotHistoryRing` | `snapshot_delta.hpp/.cpp` | Snapshot-only ring delegating to `RollbackBuffer`; `apply_delta_and_store` |
 | `RollbackManager` | `rollback.hpp/.cpp` | Records predicted locals; reconciles on remote apply |
-| Transport / deltas | `transport.hpp`, `snapshot_delta.hpp` | Loopback + delta stubs from prior deepen PR |
+| Snapshot deltas | `snapshot_delta.hpp/.cpp` | Field masks, entity bitsets, encode/decode, verified apply + delta checksum |
+| Transport | `transport.hpp` | Loopback + ENet/Steam stubs |
 
 **Not in scope (follow-up PRs):** ENet process-pair smoke, session matchmaking, desync telemetry UI, full GGPO input delay, frustum/LOS refinement of AOI.
 
@@ -91,6 +93,32 @@ const bool ok = fuse::net::verify_snapshot_checksum(snapshot);
 
 ---
 
+## Snapshot delta / state-sync deepen
+
+Entity patches carry per-component field masks (`SnapshotEcsField`, `SnapshotPhysicsField`) and a `changed_entity_mask` bitset (stub: up to 64 entity indices). `compute_snapshot_delta` compares baseline vs current snapshots; `apply_snapshot_delta_verified` checks baseline checksum before reconstructing the target frame.
+
+```cpp
+#include <fuse/net/snapshot_delta.hpp>
+
+const fuse::net::SnapshotDelta delta =
+    fuse::net::compute_snapshot_delta(baseline, current);
+
+fuse::net::SnapshotHistoryRing history;
+history.init(64);
+history.push(baseline);
+
+fuse::net::GameSnapshot reconstructed{};
+history.apply_delta_and_store(baseline.frame, delta, &reconstructed);
+
+const fuse::net::DeltaApplyResult verified =
+    fuse::net::apply_snapshot_delta_verified(baseline, delta);
+// verified.base_checksum_ok / target_checksum_ok
+```
+
+Wire encode/decode preserves masks and entity bitsets. `compute_delta_checksum` hashes the delta payload for roundtrip diagnostics.
+
+---
+
 ## Build
 
 ```bash
@@ -114,6 +142,7 @@ ctest --test-dir build --output-on-failure -R fuse_net_b74
 | `test_net_checksum` | FNV-1a determinism, combine, snapshot verify |
 | `test_net_input_history` | Predicted/confirmed retention, ring eviction, `inputs_equal` |
 | `test_net_reconcile` | Confirmed / mismatch / NoOp reconcile paths |
+| `test_net_snapshot_delta` | Empty delta, single-field mask, multi-entity bitset, wire roundtrip, checksum mismatch, history ring |
 | `fuse_net_b74` (umbrella) | Transport, serializer, rollback, buffer, delta, interpolation, AOI |
 
 ---
@@ -124,6 +153,8 @@ ctest --test-dir build --output-on-failure -R fuse_net_b74
 - [x] Expanded input history ring (128 frames, predicted + confirmed)
 - [x] Reconcile stub (`reconcile_predicted_input`)
 - [x] Shared checksum helpers + tests
+- [x] Snapshot delta field masks, entity bitsets, verified apply + delta checksum
+- [x] `SnapshotHistoryRing` reuses `RollbackBuffer` for rollback-friendly snapshot history
 - [x] `RollbackManager` records predictions and reconciles remotes
 - [ ] ENet / Steam real backends (follow-up)
 - [ ] Process-pair net smoke (follow-up, see [TRACK-B-PHASE7.md](./TRACK-B-PHASE7.md))
