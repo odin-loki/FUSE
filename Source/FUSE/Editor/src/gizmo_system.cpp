@@ -265,12 +265,32 @@ f32 snapDragDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings) 
     return snapValue(delta, mode, settings);
 }
 
+f32 snapStepForMode(GizmoMode mode, const GizmoSnapSettings& settings) {
+    if (!isSnapEnabled(mode, settings)) {
+        return 0.f;
+    }
+
+    switch (mode) {
+    case GizmoMode::Translate:
+        return settings.gridSize;
+    case GizmoMode::Rotate:
+        return settings.angleStepDegrees;
+    case GizmoMode::Scale:
+        return settings.scaleGridStep;
+    }
+    return 0.f;
+}
+
 bool isRayEmpty(const GizmoRay& ray) {
     return ray.direction.length() < kEpsilon;
 }
 
 bool isHitTestEmpty(const GizmoHitTest& hit) {
     return hit.viewportWidth <= kEpsilon || hit.viewportHeight <= kEpsilon;
+}
+
+bool isAxisEmpty(GizmoAxis axis) {
+    return axis == GizmoAxis::None;
 }
 
 bool tryPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
@@ -307,6 +327,25 @@ bool tryPickAxis(const GizmoHitTest& hit, GizmoMode mode, GizmoAxis& outAxis) {
     }
     outAxis = GizmoAxis::Z;
     return true;
+}
+
+bool canBeginDrag(const GizmoHitTest& hit, GizmoMode mode) {
+    if (isHitTestEmpty(hit) || isScreenHitMiss(hit, mode)) {
+        return false;
+    }
+
+    GizmoAxis axis = GizmoAxis::None;
+    return tryPickAxis(hit, mode, axis);
+}
+
+bool canBeginDrag(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+                  GizmoSpace space, f32 axisLength, f32 pickRadius) {
+    if (isRayEmpty(ray)) {
+        return false;
+    }
+
+    GizmoAxis axis = GizmoAxis::None;
+    return tryPickAxis(ray, transform, mode, space, axisLength, pickRadius, axis);
 }
 
 bool isScreenHitMiss(const GizmoHitTest& hit, GizmoMode mode) {
@@ -512,6 +551,14 @@ bool GizmoSystem::tryPickAxis(const GizmoHitTest& hit, GizmoAxis& outAxis) const
     return fuse::editor::tryPickAxis(hit, m_mode, outAxis);
 }
 
+bool GizmoSystem::canBeginDrag(const GizmoHitTest& hit) const {
+    return fuse::editor::canBeginDrag(hit, m_mode);
+}
+
+bool GizmoSystem::canBeginDrag(const GizmoRay& ray, const GizmoTransform& current) const {
+    return fuse::editor::canBeginDrag(ray, current, m_mode, m_space, kAxisLength, kPickRadius);
+}
+
 GizmoResult GizmoSystem::beginDrag(const GizmoHitTest& hit, const GizmoTransform& current) {
     GizmoResult result;
     if (!tryBeginDrag(hit, current, result)) {
@@ -523,12 +570,12 @@ GizmoResult GizmoSystem::beginDrag(const GizmoHitTest& hit, const GizmoTransform
 bool GizmoSystem::tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& current,
                                GizmoResult& out) {
     out = {};
-    if (isHitTestEmpty(hit)) {
+    if (m_dragging || !canBeginDrag(hit)) {
         return false;
     }
 
     m_activeAxis = pickAxisScreen_(hit);
-    if (m_activeAxis == GizmoAxis::None) {
+    if (isAxisEmpty(m_activeAxis)) {
         return false;
     }
 
@@ -546,7 +593,11 @@ bool GizmoSystem::tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& cu
 bool GizmoSystem::tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current,
                                GizmoResult& out) {
     out = {};
-    if (!tryPickAxis(ray, current, m_activeAxis)) {
+    if (m_dragging || !canBeginDrag(ray, current)) {
+        return false;
+    }
+
+    if (!tryPickAxis(ray, current, m_activeAxis) || isAxisEmpty(m_activeAxis)) {
         return false;
     }
 
@@ -563,24 +614,15 @@ bool GizmoSystem::tryBeginDrag(const GizmoRay& ray, const GizmoTransform& curren
 
 GizmoResult GizmoSystem::beginDrag(const GizmoRay& ray, const GizmoTransform& current) {
     GizmoResult result;
-    if (!tryPickAxis(ray, current, m_activeAxis)) {
+    if (!tryBeginDrag(ray, current, result)) {
         return result;
     }
-
-    m_dragging = true;
-    m_startTransform = current;
-    m_currentTransform = current;
-    m_lastHit = {};
-
-    result.active = true;
-    result.axis = m_activeAxis;
-    result.transform = m_currentTransform;
     return result;
 }
 
 GizmoResult GizmoSystem::updateDrag(const GizmoHitTest& hit) {
     GizmoResult result;
-    if (!m_dragging || isHitTestEmpty(hit)) {
+    if (!m_dragging || isHitTestEmpty(hit) || isAxisEmpty(m_activeAxis)) {
         return result;
     }
 
@@ -596,7 +638,7 @@ GizmoResult GizmoSystem::updateDrag(const GizmoHitTest& hit) {
 
 GizmoResult GizmoSystem::endDrag() {
     GizmoResult result;
-    if (!m_dragging) {
+    if (!m_dragging || isAxisEmpty(m_activeAxis)) {
         return result;
     }
 

@@ -357,6 +357,15 @@ void testTryBeginDragGuards() {
                "tryBeginDrag rejects empty ray");
     expectTrue(!gizmo.isDragging(), "empty ray does not start drag");
 
+    fuse::editor::GizmoHitTest deadZone{};
+    deadZone.viewportWidth = 100.f;
+    deadZone.viewportHeight = 100.f;
+    deadZone.screenX = 50.f;
+    deadZone.screenY = 50.f;
+    expectTrue(!gizmo.tryBeginDrag(deadZone, transform, result),
+               "tryBeginDrag rejects translate dead-zone hit");
+    expectTrue(!gizmo.isDragging(), "dead-zone hit does not start drag");
+
     fuse::editor::GizmoHitTest hit{};
     hit.viewportWidth = 100.f;
     hit.viewportHeight = 100.f;
@@ -365,12 +374,104 @@ void testTryBeginDragGuards() {
     expectTrue(gizmo.tryBeginDrag(hit, transform, result), "tryBeginDrag accepts valid screen hit");
     expectTrue(result.active, "valid screen hit activates drag");
     expectTrue(result.axis == fuse::editor::GizmoAxis::X, "valid screen hit records axis");
+    expectTrue(!gizmo.tryBeginDrag(hit, transform, result),
+               "tryBeginDrag rejects second begin while dragging");
     gizmo.endDrag();
 
     const fuse::editor::GizmoRay xRay = rayAlongX();
     expectTrue(gizmo.tryBeginDrag(xRay, transform, result), "tryBeginDrag accepts valid ray");
     expectTrue(result.axis == fuse::editor::GizmoAxis::X, "valid ray records axis");
     gizmo.endDrag();
+
+    fuse::editor::GizmoRay missRay;
+    missRay.origin = {0.f, 5.f, 0.f};
+    missRay.direction = {1.f, 0.f, 0.f};
+    expectTrue(!gizmo.tryBeginDrag(missRay, transform, result),
+               "tryBeginDrag rejects ray miss");
+    expectTrue(!gizmo.isDragging(), "ray miss does not start drag");
+}
+
+void testCanBeginDragPreflight() {
+    fuse::editor::GizmoSystem gizmo;
+    fuse::editor::GizmoTransform transform{};
+
+    fuse::editor::GizmoHitTest emptyHit{};
+    emptyHit.viewportWidth = 0.f;
+    expectTrue(!gizmo.canBeginDrag(emptyHit), "canBeginDrag rejects empty viewport");
+
+    fuse::editor::GizmoHitTest deadZone{};
+    deadZone.viewportWidth = 100.f;
+    deadZone.viewportHeight = 100.f;
+    deadZone.screenX = 50.f;
+    deadZone.screenY = 50.f;
+    expectTrue(!gizmo.canBeginDrag(deadZone), "canBeginDrag rejects translate dead zone");
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+    expectTrue(gizmo.canBeginDrag(hit), "canBeginDrag accepts valid screen hit");
+
+    fuse::editor::GizmoRay emptyRay{};
+    expectTrue(!gizmo.canBeginDrag(emptyRay, transform), "canBeginDrag rejects empty ray");
+
+    const fuse::editor::GizmoRay xRay = rayAlongX();
+    expectTrue(gizmo.canBeginDrag(xRay, transform), "canBeginDrag accepts valid ray");
+
+    fuse::editor::GizmoRay missRay;
+    missRay.origin = {0.f, 5.f, 0.f};
+    missRay.direction = {1.f, 0.f, 0.f};
+    expectTrue(!gizmo.canBeginDrag(missRay, transform), "canBeginDrag rejects ray miss");
+}
+
+void testDragLifecycleGuards() {
+    fuse::editor::GizmoSystem gizmo;
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    fuse::editor::GizmoTransform transform{};
+    const fuse::editor::GizmoResult idleUpdate = gizmo.updateDrag(hit);
+    expectTrue(!idleUpdate.changed, "updateDrag is no-op when not dragging");
+
+    const fuse::editor::GizmoResult idleEnd = gizmo.endDrag();
+    expectTrue(!idleEnd.changed, "endDrag is no-op when not dragging");
+    expectTrue(!gizmo.transformDirty(), "idle endDrag does not mark dirty");
+
+    gizmo.beginDrag(hit, transform);
+    hit.screenX = 30.f;
+    const fuse::editor::GizmoResult activeUpdate = gizmo.updateDrag(hit);
+    expectTrue(activeUpdate.changed, "updateDrag applies delta while dragging");
+    gizmo.endDrag();
+}
+
+void testSnapStepForMode() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.5f;
+    snap.rotateSnap = true;
+    snap.angleStepDegrees = 15.f;
+    snap.scaleSnap = true;
+    snap.scaleGridStep = 0.25f;
+
+    expectNear(fuse::editor::snapStepForMode(fuse::editor::GizmoMode::Translate, snap), 0.5f, 0.001f,
+               "snapStepForMode returns translate grid");
+    expectNear(fuse::editor::snapStepForMode(fuse::editor::GizmoMode::Rotate, snap), 15.f, 0.001f,
+               "snapStepForMode returns rotate step degrees");
+    expectNear(fuse::editor::snapStepForMode(fuse::editor::GizmoMode::Scale, snap), 0.25f, 0.001f,
+               "snapStepForMode returns scale grid step");
+
+    snap.rotateSnap = false;
+    expectNear(fuse::editor::snapStepForMode(fuse::editor::GizmoMode::Rotate, snap), 0.f, 0.001f,
+               "snapStepForMode returns zero when snap disabled");
+
+    expectTrue(fuse::editor::isAxisEmpty(fuse::editor::GizmoAxis::None),
+               "isAxisEmpty reports none axis");
+    expectTrue(!fuse::editor::isAxisEmpty(fuse::editor::GizmoAxis::X),
+               "isAxisEmpty rejects active axis");
 }
 
 void testUpdateDragEmptyViewportGuard() {
@@ -487,6 +588,9 @@ int main() {
     testSetModeCancelsDrag();
     testTryPickAxisGuards();
     testTryBeginDragGuards();
+    testCanBeginDragPreflight();
+    testDragLifecycleGuards();
+    testSnapStepForMode();
     testUpdateDragEmptyViewportGuard();
     testCycleModeCancelsDrag();
     testSnapDragDeltaModeAware();
