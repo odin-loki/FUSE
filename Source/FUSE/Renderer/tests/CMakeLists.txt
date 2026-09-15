@@ -1,3 +1,10 @@
 add_executable(fuse_vulkan_bootstrap test_vulkan_bootstrap.cpp)
 target_link_libraries(fuse_vulkan_bootstrap PRIVATE fuse_rhi)
 add_test(NAME fuse_vulkan_bootstrap COMMAND fuse_vulkan_bootstrap)
+
+add_executable(fuse_shader_pipeline test_shader_pipeline.cpp)
+target_link_libraries(fuse_shader_pipeline PRIVATE fuse_rhi)
+target_compile_definitions(fuse_shader_pipeline PRIVATE
+    FUSE_SHADER_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/Source/FUSE/Renderer/shaders/fixtures"
+)
+add_test(NAME fuse_shader_pipeline COMMAND fuse_shader_pipeline)

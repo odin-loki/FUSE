@@ -112,10 +112,55 @@ No GPU on runner is OK: stub backend keeps configure/build green; when Lavapipe 
 
 ---
 
+## B2.4 — Shader system & pipeline compiler (scaffold)
+
+**Status:** Offline SPIR-V load + `VkShaderModule` stub + pipeline layout placeholders landed.
+
+| Component | Location | Notes |
+|-----------|----------|-------|
+| `ShaderCompiler` | `Source/FUSE/Renderer/include/fuse/renderer/shader/` | Offline-first — loads checked-in `.spv` fixtures |
+| `ShaderModule` | same | Creates `VkShaderModule` when `FUSE_VULKAN_BACKEND=1` and device ready |
+| `PipelineLayout` | `Source/FUSE/Renderer/include/fuse/renderer/vk/pipeline_layout.hpp` | Placeholder layout (push constants only; bindless sets deferred) |
+| Fixtures | `Source/FUSE/Renderer/shaders/fixtures/` | `minimal.vert` / `minimal.frag` + precompiled `.spv` for CI |
+
+### Offline SPIR-V path (CI default)
+
+CI does **not** require glslang. Tests load `minimal.vert.spv` / `minimal.frag.spv` checked into the repo (sibling naming: `source.glsl` → `source.glsl.spv`).
+
+```bash
+# Regenerate fixtures locally when GLSL changes (developer machine only):
+glslangValidator -V Source/FUSE/Renderer/shaders/fixtures/minimal.vert \
+  -o Source/FUSE/Renderer/shaders/fixtures/minimal.vert.spv
+spirv-val Source/FUSE/Renderer/shaders/fixtures/minimal.vert.spv
+```
+
+Optional runtime glslang (off by default):
+
+```bash
+cmake -B build -DFUSE_UMBRELLA=ON -DFUSE_BUILD_VULKAN=ON -DFUSE_SHADER_GLSLANG=ON
+```
+
+When `FUSE_SHADER_GLSLANG=ON` but glslang is missing, configure continues with offline SPIR-V only.
+
+### Tests
+
+| Target | Validates |
+|--------|-----------|
+| `fuse_shader_pipeline` | SPIR-V I/O, offline compiler, shader module + pipeline layout (stub or Vulkan) |
+
+```bash
+ctest --test-dir build --output-on-failure -R fuse_shader_pipeline
+```
+
+**Not in scope (other agents / later milestones):** swapchain present, VMA integration, bindless descriptor sets, graphics pipeline cache, hot-reload watchers.
+
+---
+
 ## Next (B2.2+)
 
 - [ ] `VkSwapchainKHR` + triple-buffered frame ring
-- [ ] VMA + bindless descriptor scaffolding (B2.3–B2.4)
+- [ ] VMA + bindless descriptor scaffolding (B2.3)
+- [ ] Graphics pipeline builder + content-hashed cache (B2.4 follow-up)
 - [ ] Replace `PlaceholderRenderer` present path incrementally — keep software fallback for headless CI
 - [ ] Editor Qt native surface (`U6` viewport) → `SwapchainDesc.surface`
 - [ ] Android Vulkan WSI + MoltenVK macOS module
