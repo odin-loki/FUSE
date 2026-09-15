@@ -100,6 +100,83 @@ void testBatchCascadeFarZs() {
                "batch far zs monotonic");
 }
 
+void testBatchCascadeNearZsAndRanges() {
+    using fuse::renderer::CascadeRange;
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+
+    CascadedShadowMapDesc desc{};
+    ShadowCameraParams camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 200.f;
+
+    fuse::f32 nearZs[fuse::renderer::kCascadeCount]{};
+    CascadedShadowMapLayout::computeCascadeNearZs(desc, camera, nearZs);
+    expectNear(nearZs[0], 1.f, 0.001f, "batch first near equals camera near");
+    expectNear(nearZs[2], CascadedShadowMapLayout::computeCascadeFarZ(1u, desc, camera), 0.001f,
+               "batch near chains from previous far");
+
+    CascadeRange ranges[fuse::renderer::kCascadeCount]{};
+    CascadedShadowMapLayout::computeCascadeRanges(desc, camera, ranges);
+    expectTrue(CascadedShadowMapLayout::validateCascadeRanges(desc, camera), "default cascade ranges valid");
+    expectTrue(ranges[0].nearZ < ranges[0].farZ, "first cascade range ordered");
+    expectNear(ranges[1].nearZ, ranges[0].farZ, 0.001f, "cascade ranges chain without gaps");
+}
+
+void testCascadeFrustumCorners() {
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+
+    CascadedShadowMapDesc desc{};
+    ShadowCameraParams camera{};
+    camera.position = {0.f, 0.f, 0.f};
+    camera.forward = {0.f, 0.f, -1.f};
+    camera.nearPlane = 0.1f;
+    camera.farPlane = 100.f;
+    camera.fovDegrees = 90.f;
+    camera.aspect = 1.f;
+
+    const auto corners = CascadedShadowMapLayout::buildCascadeFrustumCorners(0u, desc, camera);
+    const fuse::f32 nearZ = CascadedShadowMapLayout::computeCascadeNearZ(0u, desc, camera);
+    expectNear(corners.corners[0].z, -nearZ, 0.01f, "near corner depth matches cascade near");
+    expectTrue(corners.corners[0].x < corners.corners[1].x, "near corners span horizontal axis");
+    expectTrue(corners.corners[4].z < corners.corners[0].z, "far corners deeper than near corners");
+}
+
+void testLightSpaceAabb() {
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+
+    CascadedShadowMapDesc desc{};
+    ShadowCameraParams camera{};
+    camera.position = {0.f, 5.f, 10.f};
+    camera.forward = {0.f, -0.2f, -1.f};
+    camera.nearPlane = 0.1f;
+    camera.farPlane = 200.f;
+    camera.fovDegrees = 60.f;
+    camera.aspect = 16.f / 9.f;
+
+    const fuse::math::Vec3 sunDirection{-0.3f, -1.f, -0.2f};
+    const auto aabb = CascadeLightSpaceLayout::computeCascadeLightSpaceAabb(0u, desc, camera, sunDirection);
+
+    expectTrue(aabb.min.x < aabb.max.x, "light-space aabb has horizontal extent");
+    expectTrue(aabb.min.y < aabb.max.y, "light-space aabb has vertical extent");
+    expectTrue(aabb.min.z < aabb.max.z, "light-space aabb has depth extent");
+
+    const auto corners = CascadedShadowMapLayout::buildCascadeFrustumCorners(0u, desc, camera);
+    const fuse::renderer::CascadeRange range = CascadedShadowMapLayout::computeCascadeRange(0u, desc, camera);
+    const fuse::math::Vec3 focus =
+        camera.position + camera.forward.normalized() * ((range.nearZ + range.farZ) * 0.5f);
+    const fuse::math::Mat4 lightView = CascadeLightSpaceLayout::buildLightView(focus, sunDirection);
+    const auto rebuilt = CascadeLightSpaceLayout::computeLightSpaceAabb(corners, lightView);
+    expectNear(rebuilt.min.x, aabb.min.x, 0.001f, "rebuilt light-space min x matches");
+    expectNear(rebuilt.max.z, aabb.max.z, 0.001f, "rebuilt light-space max z matches");
+}
+
 void testShadowAtlasLayout() {
     using fuse::renderer::ShadowAtlas;
     using fuse::renderer::ShadowAtlasDesc;
@@ -197,6 +274,9 @@ int main() {
     testCascadeLayout();
     testCascadeSplitValidation();
     testBatchCascadeFarZs();
+    testBatchCascadeNearZsAndRanges();
+    testCascadeFrustumCorners();
+    testLightSpaceAabb();
     testShadowAtlasLayout();
     testDirectionalShadowAllocation();
     testShadowPassGraph();
