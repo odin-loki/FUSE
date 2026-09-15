@@ -245,6 +245,113 @@ void testBusResetGains() {
                "reset restores default parent routing");
 }
 
+void testInvalidAudioBusGuards() {
+    const auto invalid =
+        static_cast<fuse::audio::AudioBus>(static_cast<fuse::u8>(fuse::audio::AudioBus::Count));
+    const auto out_of_range = static_cast<fuse::audio::AudioBus>(255);
+
+    expectTrue(!fuse::audio::is_valid_audio_bus(invalid), "Count sentinel is not a valid bus");
+    expectTrue(!fuse::audio::is_valid_audio_bus(out_of_range), "out-of-range bus is invalid");
+    expectTrue(fuse::audio::is_valid_audio_bus(fuse::audio::AudioBus::Sfx),
+               "category buses are valid");
+
+    fuse::audio::AudioBusMixer mixer;
+    mixer.set_bus_gain(fuse::audio::AudioBus::Master, 0.5f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Sfx, 0.25f);
+
+    expectNear(mixer.effective_gain(invalid), 1.f, 1e-5f,
+               "invalid bus effective gain falls back to unity");
+    expectNear(mixer.routed_bus_gain(out_of_range), 1.f, 1e-5f,
+               "invalid bus routed gain falls back to unity");
+    expectNear(mixer.effective_output_gain(invalid, 0.6f), 0.6f, 1e-5f,
+               "invalid bus output gain applies listener master only");
+    expectNear(fuse::audio::compute_effective_output_gain(mixer, invalid, 0.6f), 0.6f, 1e-5f,
+               "one-shot output gain matches empty-bus guard");
+    expectTrue(!mixer.should_apply_bus_gain(invalid), "invalid bus skips bus attenuation");
+    expectTrue(!fuse::audio::is_bus_muted(mixer, invalid),
+               "invalid bus is not treated as muted");
+}
+
+void testBusMuteGuards() {
+    fuse::audio::AudioBusMixer mixer;
+    mixer.set_bus_gain(fuse::audio::AudioBus::Master, 1.f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Music, 0.f);
+
+    expectTrue(fuse::audio::is_bus_muted(mixer, fuse::audio::AudioBus::Music),
+               "zero bus gain is muted");
+    expectTrue(!mixer.should_apply_bus_gain(fuse::audio::AudioBus::Music),
+               "muted bus should not apply attenuation");
+    expectTrue(mixer.should_apply_bus_gain(fuse::audio::AudioBus::Sfx),
+               "unity bus still applies attenuation");
+
+    mixer.set_bus_gain(fuse::audio::AudioBus::Master, 0.f);
+    expectTrue(fuse::audio::is_bus_muted(mixer, fuse::audio::AudioBus::Sfx),
+               "zero master mutes all category buses");
+    expectNear(mixer.effective_gain(fuse::audio::AudioBus::Voice), 0.f, 1e-5f,
+               "master mute silences routed effective gain");
+}
+
+void testEffectiveGainMasterCascade() {
+    fuse::audio::AudioBusMixer mixer;
+    mixer.set_bus_gain(fuse::audio::AudioBus::Master, 0.4f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Sfx, 0.5f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Voice, 0.8f);
+    mixer.set_bus_parent(fuse::audio::AudioBus::Voice, fuse::audio::AudioBus::Sfx);
+
+    expectNear(mixer.effective_gain(fuse::audio::AudioBus::Voice), 0.16f, 1e-5f,
+               "effective gain walks voice -> sfx -> master");
+    expectNear(fuse::audio::compute_effective_output_gain(mixer, fuse::audio::AudioBus::Voice, 0.5f),
+               0.08f, 1e-5f, "one-shot output gain multiplies listener master");
+}
+
+void testAttenuationParamsValidationGuards() {
+    fuse::audio::AttenuationParams invalid_min;
+    invalid_min.min_dist = 0.f;
+    invalid_min.max_dist = 50.f;
+    expectTrue(!fuse::audio::is_attenuation_params_valid(invalid_min),
+               "zero min distance is invalid");
+
+    fuse::audio::AttenuationParams inverted_range;
+    inverted_range.min_dist = 50.f;
+    inverted_range.max_dist = 10.f;
+    expectTrue(!fuse::audio::is_attenuation_params_valid(inverted_range),
+               "inverted min/max range is invalid");
+
+    fuse::audio::AttenuationParams valid;
+    valid.min_dist = 1.f;
+    valid.max_dist = 50.f;
+    expectTrue(fuse::audio::is_attenuation_params_valid(valid), "positive range is valid");
+
+    expectNear(fuse::audio::compute_attenuation(25.f, invalid_min), 1.f, 1e-5f,
+               "invalid params keep full gain in compute_attenuation");
+    expectNear(fuse::audio::sample_attenuation_curve(25.f, inverted_range), 1.f, 1e-5f,
+               "invalid params keep unity in sample_attenuation_curve");
+    expectNear(fuse::audio::sample_attenuation_at_min(inverted_range), 1.f, 1e-5f,
+               "invalid params keep unity at min endpoint");
+    expectNear(fuse::audio::sample_attenuation_at_max(inverted_range), 1.f, 1e-5f,
+               "invalid params keep unity at max endpoint");
+}
+
+void testSampleAttenuationCurveGuarded() {
+    fuse::audio::AttenuationParams empty_custom;
+    empty_custom.curve = fuse::audio::AttenuationCurve::Custom;
+    empty_custom.min_dist = 1.f;
+    empty_custom.max_dist = 50.f;
+    empty_custom.keypoint_count = 0;
+
+    expectNear(fuse::audio::sample_attenuation_curve_guarded(10.f, empty_custom), 1.f, 1e-5f,
+               "guarded sample returns unity for empty custom curve");
+
+    fuse::audio::AttenuationParams linear;
+    linear.min_dist = 1.f;
+    linear.max_dist = 50.f;
+    linear.curve = fuse::audio::AttenuationCurve::Linear;
+    const float raw = fuse::audio::sample_attenuation_curve(10.f, linear);
+    const float guarded = fuse::audio::sample_attenuation_curve_guarded(10.f, linear);
+    expectNear(guarded, raw, 1e-5f, "guarded sample matches raw curve for valid params");
+    expectTrue(guarded > 0.f && guarded < 1.f, "guarded linear sample attenuates mid-range");
+}
+
 void testEmptyCustomAttenuationCurve() {
     fuse::audio::AttenuationParams params;
     params.curve = fuse::audio::AttenuationCurve::Custom;
@@ -1725,6 +1832,11 @@ int main() {
     testBusRoutingCycleGuard();
     testBusEffectiveOutputGainEndpoints();
     testBusResetGains();
+    testInvalidAudioBusGuards();
+    testBusMuteGuards();
+    testEffectiveGainMasterCascade();
+    testAttenuationParamsValidationGuards();
+    testSampleAttenuationCurveGuarded();
     testEmptyCustomAttenuationCurve();
     testMakeAttenuationParamsFromDesc();
     testAttenuationCurveSampleEndpoints();
