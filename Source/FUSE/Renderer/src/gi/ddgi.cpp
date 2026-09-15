@@ -67,6 +67,43 @@ bool ProbeGridLayout::isBorderProbeCoord(const DDGIDesc& desc, const ProbeGridCo
            coord.z == max_z;
 }
 
+ProbeBorderKind ProbeGridLayout::probeBorderKind(const DDGIDesc& desc, const ProbeGridCoord& coord) {
+    if (isEmptyGrid(desc) || !isValidProbeCoord(desc, coord)) {
+        return ProbeBorderKind::Invalid;
+    }
+
+    u32 boundary_axes = 0u;
+    if (desc.grid_dims.x > 1u) {
+        const u32 max_x = desc.grid_dims.x - 1u;
+        if (coord.x == 0u || coord.x == max_x) {
+            ++boundary_axes;
+        }
+    }
+    if (desc.grid_dims.y > 1u) {
+        const u32 max_y = desc.grid_dims.y - 1u;
+        if (coord.y == 0u || coord.y == max_y) {
+            ++boundary_axes;
+        }
+    }
+    if (desc.grid_dims.z > 1u) {
+        const u32 max_z = desc.grid_dims.z - 1u;
+        if (coord.z == 0u || coord.z == max_z) {
+            ++boundary_axes;
+        }
+    }
+
+    if (boundary_axes == 0u) {
+        return isBorderProbeCoord(desc, coord) ? ProbeBorderKind::Corner : ProbeBorderKind::Interior;
+    }
+    if (boundary_axes == 1u) {
+        return ProbeBorderKind::Face;
+    }
+    if (boundary_axes == 2u) {
+        return ProbeBorderKind::Edge;
+    }
+    return ProbeBorderKind::Corner;
+}
+
 ProbeValidityFlags ProbeGridLayout::probeValidity(const DDGIDesc& desc, const ProbeGridCoord& coord) {
     ProbeValidityFlags flags{};
     flags.valid = isValidProbeCoord(desc, coord);
@@ -74,7 +111,8 @@ ProbeValidityFlags ProbeGridLayout::probeValidity(const DDGIDesc& desc, const Pr
         return flags;
     }
 
-    flags.is_border = isBorderProbeCoord(desc, coord);
+    flags.border_kind = probeBorderKind(desc, coord);
+    flags.is_border = flags.border_kind != ProbeBorderKind::Interior;
     flags.interior = !flags.is_border;
     const u32 max_x = desc.grid_dims.x - 1u;
     const u32 max_y = desc.grid_dims.y - 1u;
@@ -109,6 +147,59 @@ u32 ProbeGridLayout::clampProbeIndex(u32 probe_index, const DDGIDesc& desc) {
         return 0u;
     }
     return std::min(probe_index, count - 1u);
+}
+
+u32 ProbeGridLayout::clampProbeCoordX(u32 x, const DDGIDesc& desc) {
+    if (desc.grid_dims.x == 0u) {
+        return 0u;
+    }
+    return std::min(x, desc.grid_dims.x - 1u);
+}
+
+u32 ProbeGridLayout::clampProbeCoordY(u32 y, const DDGIDesc& desc) {
+    if (desc.grid_dims.y == 0u) {
+        return 0u;
+    }
+    return std::min(y, desc.grid_dims.y - 1u);
+}
+
+u32 ProbeGridLayout::clampProbeCoordZ(u32 z, const DDGIDesc& desc) {
+    if (desc.grid_dims.z == 0u) {
+        return 0u;
+    }
+    return std::min(z, desc.grid_dims.z - 1u);
+}
+
+u32 ProbeGridLayout::probeIndexFromClampedCoord(const DDGIDesc& desc, const ProbeGridCoord& coord) {
+    if (isEmptyGrid(desc)) {
+        return 0u;
+    }
+    const ProbeGridCoord clamped{clampProbeCoordX(coord.x, desc),
+                                 clampProbeCoordY(coord.y, desc),
+                                 clampProbeCoordZ(coord.z, desc)};
+    return probeIndexFromCoord(desc, clamped);
+}
+
+void ProbeGridLayout::clampProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCoords& coords) {
+    if (isEmptyGrid(desc)) {
+        coords = {};
+        return;
+    }
+
+    const u32 max_x = desc.grid_dims.x - 1u;
+    const u32 max_y = desc.grid_dims.y - 1u;
+    const u32 max_z = desc.grid_dims.z - 1u;
+
+    coords.x0 = std::min(coords.x0, max_x);
+    coords.y0 = std::min(coords.y0, max_y);
+    coords.z0 = std::min(coords.z0, max_z);
+    coords.x1 = std::min(coords.x1, max_x);
+    coords.y1 = std::min(coords.y1, max_y);
+    coords.z1 = std::min(coords.z1, max_z);
+
+    coords.tx = std::clamp(coords.tx, 0.f, 1.f);
+    coords.ty = std::clamp(coords.ty, 0.f, 1.f);
+    coords.tz = std::clamp(coords.tz, 0.f, 1.f);
 }
 
 bool ProbeGridLayout::buildProbeSampleCoords(const DDGIDesc& desc,
@@ -290,12 +381,43 @@ u32 probeCount(const DDGIDesc& desc) {
     return desc.grid_dims.x * desc.grid_dims.y * desc.grid_dims.z;
 }
 
+u32 countBorderProbes(const DDGIDesc& desc) {
+    const u32 count = probeCount(desc);
+    if (count == 0u) {
+        return 0u;
+    }
+
+    u32 border_count = 0u;
+    for (u32 i = 0u; i < count; ++i) {
+        const ProbeGridCoord coord = ProbeGridLayout::probeCoordFromIndex(desc, i);
+        if (ProbeGridLayout::isBorderProbeCoord(desc, coord)) {
+            ++border_count;
+        }
+    }
+    return border_count;
+}
+
+u32 countInteriorProbes(const DDGIDesc& desc) {
+    const u32 count = probeCount(desc);
+    if (count == 0u) {
+        return 0u;
+    }
+    return count - countBorderProbes(desc);
+}
+
 fuse::math::Vec3 probeWorldPosition(const DDGIDesc& desc, u32 probe_index) {
+    if (ProbeGridLayout::isEmptyGrid(desc)) {
+        return desc.grid_origin;
+    }
     const ProbeGridCoord coord = ProbeGridLayout::probeCoordFromIndex(desc, probe_index);
     return desc.grid_origin +
            fuse::math::Vec3{desc.probe_spacing.x * static_cast<f32>(coord.x),
                             desc.probe_spacing.y * static_cast<f32>(coord.y),
                             desc.probe_spacing.z * static_cast<f32>(coord.z)};
+}
+
+fuse::math::Vec3 probeWorldPositionClamped(const DDGIDesc& desc, u32 probe_index) {
+    return probeWorldPosition(desc, ProbeGridLayout::clampProbeIndex(probe_index, desc));
 }
 
 u32 irradianceAtlasWidth(const DDGIDesc& desc) {
@@ -518,7 +640,7 @@ bool launch_ddgi_probe_update(const DDGIDesc& desc,
                               const u32* probe_indices,
                               u32 probe_count,
                               void* cuda_stream) {
-    if (probe_count == 0u || probe_indices == nullptr) {
+    if (probe_count == 0u || probe_indices == nullptr || ProbeGridLayout::isEmptyGrid(desc)) {
         return false;
     }
 
@@ -604,10 +726,14 @@ void DDGI::destroy() {
 }
 
 const IrradianceCacheEntry& DDGI::cacheEntry(u32 probe_index) const {
-    if (probe_index >= m_cache.size()) {
+    if (!m_ready || m_cache.empty()) {
         return kDefaultCacheEntry;
     }
-    return m_cache[probe_index];
+    const u32 clamped = ProbeGridLayout::clampProbeIndex(probe_index, m_desc);
+    if (clamped >= m_cache.size()) {
+        return kDefaultCacheEntry;
+    }
+    return m_cache[clamped];
 }
 
 bool DDGI::update(u32 frame_index, void* cuda_stream) {
@@ -634,7 +760,7 @@ bool DDGI::update(u32 frame_index, void* cuda_stream) {
 
     const fuse::math::Vec3 incoming = defaultAmbientIrradiance();
     for (u32 i = 0; i < scheduled_count; ++i) {
-        const u32 probe_index = scheduled_indices[i];
+        const u32 probe_index = ProbeGridLayout::clampProbeIndex(scheduled_indices[i], m_desc);
         if (probe_index >= m_cache.size()) {
             continue;
         }
