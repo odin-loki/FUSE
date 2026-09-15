@@ -12,6 +12,10 @@ namespace fuse::terrain {
 /// Sentinel returned by `pick_eviction_candidate` when the set is empty.
 inline constexpr u32 kInvalidChunkIndex = ~0u;
 
+[[nodiscard]] inline bool is_valid_chunk_index(u32 chunk_index) {
+    return chunk_index != kInvalidChunkIndex;
+}
+
 /// One resident terrain chunk tracked by planar focus distance from the camera.
 struct LodResidencyEntry {
     u32 chunk_index = kInvalidChunkIndex;
@@ -52,7 +56,7 @@ private:
 };
 
 inline bool LodResidencySet::add(u32 chunk_index, f32 focus_distance) {
-    if (focus_distance < 0.f) {
+    if (!is_valid_chunk_index(chunk_index) || focus_distance < 0.f) {
         return false;
     }
 
@@ -150,11 +154,17 @@ inline u32 LodResidencySet::find_index_(u32 chunk_index) const {
 
 /// Stub: register a resident chunk; rejects invalid focus distance.
 [[nodiscard]] inline bool try_add_resident(LodResidencySet& set, u32 chunk_index, f32 focus_distance) {
+    if (!is_valid_chunk_index(chunk_index)) {
+        return false;
+    }
     return set.add(chunk_index, focus_distance);
 }
 
 /// Stub: evict a chunk from the resident set.
 [[nodiscard]] inline bool try_remove_resident(LodResidencySet& set, u32 chunk_index) {
+    if (!is_valid_chunk_index(chunk_index)) {
+        return false;
+    }
     return set.remove(chunk_index);
 }
 
@@ -175,6 +185,20 @@ inline u32 LodResidencySet::find_index_(u32 chunk_index) const {
     return set.has_eviction_candidate() ? set.pick_eviction_candidate() : kInvalidChunkIndex;
 }
 
+/// Guard: returns false when chunk index is invalid or not resident.
+[[nodiscard]] inline bool contains_resident_guarded(const LodResidencySet& set, u32 chunk_index) {
+    return is_valid_chunk_index(chunk_index) && set.contains(chunk_index);
+}
+
+/// Guard: clears residency set; returns false when already empty.
+[[nodiscard]] inline bool clear_residency_guarded(LodResidencySet& set) {
+    if (set.empty()) {
+        return false;
+    }
+    set.clear();
+    return true;
+}
+
 /// Pick the farthest chunk from `candidates` eligible for budget eviction under `policy`.
 /// Returns `kInvalidChunkIndex` and leaves `out_score` at -1 when no candidate qualifies.
 template <typename ScoreFn>
@@ -183,6 +207,9 @@ template <typename ScoreFn>
                                                         LodEvictionPolicy policy, f32& out_score) {
     out_score = -1.f;
     for (const u32 chunk_index : candidates) {
+        if (!is_valid_chunk_index(chunk_index)) {
+            continue;
+        }
         const f32 score = score_fn(chunk_index);
         if (!can_evict_for_incoming(incoming_priority, score, load_radius, policy)) {
             continue;
@@ -202,12 +229,39 @@ template <typename ScoreFn>
     std::vector<u32> eligible;
     eligible.reserve(candidates.size());
     for (const u32 chunk_index : candidates) {
+        if (!is_valid_chunk_index(chunk_index)) {
+            continue;
+        }
         const f32 score = score_fn(chunk_index);
         if (can_evict_for_incoming(incoming_priority, score, load_radius, policy)) {
             eligible.push_back(chunk_index);
         }
     }
     return eligible;
+}
+
+/// Empty-set guard: pick budget eviction candidate from a residency set.
+template <typename ScoreFn>
+[[nodiscard]] inline u32 pick_budget_eviction_candidate_from_set(const LodResidencySet& set, ScoreFn&& score_fn,
+                                                                f32 incoming_priority, f32 load_radius,
+                                                                LodEvictionPolicy policy, f32& out_score) {
+    if (!set.has_eviction_candidate()) {
+        out_score = -1.f;
+        return kInvalidChunkIndex;
+    }
+    return pick_budget_eviction_candidate(set.collect_eviction_candidates(), score_fn, incoming_priority,
+                                          load_radius, policy, out_score);
+}
+
+/// True when the residency set has at least one eligible budget eviction candidate.
+template <typename ScoreFn>
+[[nodiscard]] inline bool has_budget_eviction_candidate(const LodResidencySet& set, ScoreFn&& score_fn,
+                                                         f32 incoming_priority, f32 load_radius,
+                                                         LodEvictionPolicy policy) {
+    f32 score = -1.f;
+    const u32 picked =
+        pick_budget_eviction_candidate_from_set(set, score_fn, incoming_priority, load_radius, policy, score);
+    return is_valid_chunk_index(picked) && score > 0.f;
 }
 
 } // namespace fuse::terrain

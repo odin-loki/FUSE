@@ -2,6 +2,7 @@
 
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/terrain/lod.hpp>
+#include <fuse/terrain/lod_residency_budget.hpp>
 
 #include <algorithm>
 
@@ -77,7 +78,9 @@ u32 LodResidencyQueue::flush(u32 budget, LodResidencyWorkFn work) {
                       return a.priority > b.priority;
                   });
 
-        const u32 count = std::min(budget, static_cast<u32>(m_pending.size()));
+        const u32 async_budget =
+            clamp_residency_flush_budget(budget, m_inFlight, m_max_async_in_flight);
+        const u32 count = std::min(async_budget, static_cast<u32>(m_pending.size()));
         batch.assign(m_pending.begin(), m_pending.begin() + static_cast<std::ptrdiff_t>(count));
         m_pending.erase(m_pending.begin(), m_pending.begin() + static_cast<std::ptrdiff_t>(count));
     }
@@ -103,7 +106,7 @@ bool LodResidencyQueue::submit(LodResidencyRequest request, LodResidencyWorkFn w
 
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        if (would_exceed_budget_()) {
+        if (would_exceed_budget_() || would_exceed_async_in_flight_()) {
             return false;
         }
         ++m_inFlight;
@@ -163,6 +166,11 @@ u32 LodResidencyQueue::completed_count() const {
     return static_cast<u32>(m_completed.size());
 }
 
+bool LodResidencyQueue::empty() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_pending.empty() && m_inFlight == 0u && m_completed.empty();
+}
+
 void LodResidencyQueue::clear() {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_inFlight = 0;
@@ -175,6 +183,10 @@ bool LodResidencyQueue::would_exceed_budget_() const {
         return false;
     }
     return m_inFlight + static_cast<u32>(m_completed.size()) >= m_max_pending_submits;
+}
+
+bool LodResidencyQueue::would_exceed_async_in_flight_() const {
+    return !can_submit_async_load(m_inFlight, m_max_async_in_flight);
 }
 
 void LodResidencyQueue::push_completed_(CompletedLodResidencyRequest completed) {

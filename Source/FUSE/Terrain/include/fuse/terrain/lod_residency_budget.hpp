@@ -69,6 +69,13 @@ struct LodResidencyBudgetCounters {
     return would_exceed_resident_cap(max_resident_chunks, resident_count, incoming_count);
 }
 
+/// True when budget pressure exists and the residency set can supply an eviction candidate.
+[[nodiscard]] inline bool can_attempt_budget_eviction(u32 max_resident_chunks, u32 resident_count,
+                                                        u32 incoming_count, bool has_eviction_candidate) {
+    return needs_budget_eviction_for_incoming(max_resident_chunks, resident_count, incoming_count) &&
+           has_eviction_candidate;
+}
+
 [[nodiscard]] inline u32 effective_tick_budget(u32 queued, u32 per_tick_cap) {
     if (per_tick_cap == 0u) {
         return queued;
@@ -100,6 +107,23 @@ struct LodResidencyBudgetCounters {
 
 [[nodiscard]] inline u32 clamp_eviction_batch(u32 requested, u32 headroom) {
     return requested < headroom ? requested : headroom;
+}
+
+[[nodiscard]] inline u32 clamp_residency_flush_budget(u32 requested, u32 in_flight, u32 max_async_in_flight) {
+    const u32 headroom = async_in_flight_headroom(max_async_in_flight, in_flight);
+    if (headroom == ~0u) {
+        return requested;
+    }
+    return requested < headroom ? requested : headroom;
+}
+
+[[nodiscard]] inline f32 rank_unload_priority(f32 load_priority, f32 stored_priority, f32 focus_distance) {
+    return std::max({load_priority, stored_priority, focus_distance});
+}
+
+[[nodiscard]] inline f32 rank_budget_unload_priority(f32 load_priority, f32 stored_priority, f32 focus_distance,
+                                                     f32 budget_score) {
+    return std::max(rank_unload_priority(load_priority, stored_priority, focus_distance), budget_score);
 }
 
 /// Higher score evicts sooner. Distance policy uses focus distance; LRU uses age.
@@ -160,6 +184,15 @@ struct LodResidencyBudgetCounters {
         return true;
     }
     return incoming_outranks_resident(incoming_priority, load_radius, resident_focus_distance);
+}
+
+/// Combined unload rank for budget-driven eviction (B7.5 deepen).
+[[nodiscard]] inline f32 eviction_unload_priority(f32 load_priority, f32 stored_priority, f32 focus_distance,
+                                                  f32 unload_distance_priority, u32 last_touch_tick,
+                                                  u32 current_tick, LodEvictionPolicy policy) {
+    const f32 budget_score = budget_eviction_score(focus_distance, unload_distance_priority, last_touch_tick,
+                                                   current_tick, policy);
+    return rank_budget_unload_priority(load_priority, stored_priority, focus_distance, budget_score);
 }
 
 } // namespace fuse::terrain

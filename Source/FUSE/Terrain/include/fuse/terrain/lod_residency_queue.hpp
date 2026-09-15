@@ -73,20 +73,25 @@ public:
 
     void set_max_pending_submits(u32 max_pending) { m_max_pending_submits = max_pending; }
     [[nodiscard]] u32 max_pending_submits() const { return m_max_pending_submits; }
+    void set_max_async_in_flight(u32 max_in_flight) { m_max_async_in_flight = max_in_flight; }
+    [[nodiscard]] u32 max_async_in_flight() const { return m_max_async_in_flight; }
     [[nodiscard]] u32 pending_enqueue_count() const;
     [[nodiscard]] u32 pending_submit_count() const;
 
     [[nodiscard]] u32 in_flight_count() const;
     [[nodiscard]] u32 completed_count() const;
+    [[nodiscard]] bool empty() const;
 
     void clear();
 
 private:
     [[nodiscard]] bool would_exceed_budget_() const;
+    [[nodiscard]] bool would_exceed_async_in_flight_() const;
     void push_completed_(CompletedLodResidencyRequest completed);
 
     mutable std::mutex m_mutex;
     u32 m_inFlight = 0;
+    u32 m_max_async_in_flight = 0; ///< 0 = unlimited concurrent in-flight submissions
     u32 m_max_pending_submits = 0; ///< 0 = unlimited pending (in-flight + completed buffer)
     std::vector<LodResidencyRequest> m_pending;
     std::vector<CompletedLodResidencyRequest> m_completed;

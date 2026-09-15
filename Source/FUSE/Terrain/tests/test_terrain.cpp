@@ -274,6 +274,93 @@ void testPickEvictionCandidateGuarded() {
              "guarded pick returns eviction candidate when set non-empty");
 }
 
+void testCanAttemptBudgetEviction() {
+    expectTrue(!fuse::terrain::can_attempt_budget_eviction(2u, 2u, 1u, false),
+               "cannot attempt eviction without residency candidate");
+    expectTrue(fuse::terrain::can_attempt_budget_eviction(2u, 2u, 1u, true),
+               "can attempt eviction when pressure and candidate exist");
+    expectTrue(!fuse::terrain::can_attempt_budget_eviction(4u, 2u, 1u, true),
+               "cannot attempt eviction when headroom remains");
+}
+
+void testPickBudgetEvictionCandidateFromSet() {
+    fuse::terrain::LodResidencySet residency;
+    fuse::f32 score = -1.f;
+    const fuse::f32 load_radius = 24.f;
+    const fuse::u32 empty_pick = fuse::terrain::pick_budget_eviction_candidate_from_set(
+        residency,
+        [&](fuse::u32) { return 0.f; }, 100.f, load_radius,
+        fuse::terrain::LodEvictionPolicy::DistanceFromFocus, score);
+    expectEq(empty_pick, fuse::terrain::kInvalidChunkIndex,
+             "empty residency guarded pick returns invalid index");
+    expectNear(score, -1.f, 1e-4f, "empty residency leaves score unset");
+
+    expectTrue(residency.add(5u, 20.f), "add far chunk");
+    const fuse::u32 picked = fuse::terrain::pick_budget_eviction_candidate_from_set(
+        residency,
+        [&](fuse::u32 chunk_index) { return residency.focus_distance_for(chunk_index); }, 20.f, load_radius,
+        fuse::terrain::LodEvictionPolicy::DistanceFromFocus, score);
+    expectEq(picked, 5u, "guarded set pick returns eligible candidate");
+    expectNear(score, 20.f, 1e-4f, "guarded set pick records candidate score");
+}
+
+void testHasBudgetEvictionCandidate() {
+    fuse::terrain::LodResidencySet residency;
+    const fuse::f32 load_radius = 24.f;
+    expectTrue(!fuse::terrain::has_budget_eviction_candidate(
+                   residency,
+                   [&](fuse::u32) { return 0.f; }, 100.f, load_radius,
+                   fuse::terrain::LodEvictionPolicy::DistanceFromFocus),
+               "empty residency has no budget eviction candidate");
+
+    expectTrue(residency.add(1u, 10.f), "add near chunk");
+    expectTrue(residency.add(5u, 20.f), "add far chunk");
+
+    expectTrue(!fuse::terrain::has_budget_eviction_candidate(
+                   residency,
+                   [&](fuse::u32 chunk_index) { return residency.focus_distance_for(chunk_index); }, 1.f,
+                   load_radius, fuse::terrain::LodEvictionPolicy::DistanceFromFocus),
+               "weak incoming yields no eligible budget candidate");
+    expectTrue(fuse::terrain::has_budget_eviction_candidate(
+                   residency,
+                   [&](fuse::u32 chunk_index) { return residency.focus_distance_for(chunk_index); }, 20.f,
+                   load_radius, fuse::terrain::LodEvictionPolicy::DistanceFromFocus),
+               "strong incoming finds eligible budget candidate");
+}
+
+void testResidencyContainsClearGuards() {
+    fuse::terrain::LodResidencySet residency;
+    expectTrue(!fuse::terrain::contains_resident_guarded(residency, 2u),
+               "contains guard false on empty set");
+    expectTrue(!fuse::terrain::contains_resident_guarded(residency, fuse::terrain::kInvalidChunkIndex),
+               "contains guard rejects invalid chunk index");
+    expectTrue(!fuse::terrain::clear_residency_guarded(residency),
+               "clear guard returns false when already empty");
+
+    expectTrue(residency.add(2u, 100.f), "add resident for guard tests");
+    expectTrue(fuse::terrain::contains_resident_guarded(residency, 2u),
+               "contains guard true for resident chunk");
+    expectTrue(!fuse::terrain::contains_resident_guarded(residency, 9u),
+               "contains guard false for absent chunk");
+    expectTrue(!fuse::terrain::contains_resident_guarded(residency, fuse::terrain::kInvalidChunkIndex),
+               "contains guard false for invalid index even when set non-empty");
+
+    expectTrue(fuse::terrain::clear_residency_guarded(residency), "clear guard succeeds when set non-empty");
+    expectTrue(residency.empty(), "clear guard empties residency set");
+    expectTrue(!fuse::terrain::clear_residency_guarded(residency),
+               "clear guard returns false on second clear");
+}
+
+void testEvictionUnloadPriority() {
+    expectNear(fuse::terrain::rank_unload_priority(0.f, 0.f, 0.f), 0.f, 1e-4f, "rank unload all-zero");
+    expectNear(fuse::terrain::rank_unload_priority(2.f, 8.f, 5.f), 8.f, 1e-4f, "rank unload picks max");
+    expectNear(fuse::terrain::rank_budget_unload_priority(2.f, 3.f, 5.f, 9.f), 9.f, 1e-4f,
+               "rank budget picks budget score when higher");
+    expectNear(fuse::terrain::eviction_unload_priority(2.f, 3.f, 900.f, 0.f, 0u, 10u,
+                                                       fuse::terrain::LodEvictionPolicy::DistanceFromFocus),
+               900.f, 1e-4f, "eviction unload priority merges budget focus distance");
+}
+
 void testCollectBudgetEvictionCandidates() {
     fuse::terrain::LodResidencySet residency;
     expectTrue(residency.collect_eviction_candidates().empty(), "empty residency has no candidates");
@@ -304,6 +391,13 @@ void testCollectBudgetEvictionCandidates() {
                                                                  fuse::terrain::LodEvictionPolicy::DistanceFromFocus)
                    .empty(),
                "empty candidate list early-outs to empty eligible set");
+
+    const std::vector<fuse::u32> with_invalid = {fuse::terrain::kInvalidChunkIndex, 5u};
+    const auto filtered = fuse::terrain::collect_budget_eviction_candidates(
+        with_invalid, [](fuse::u32 chunk_index) { return chunk_index == 5u ? 20.f : 0.f; }, 20.f, load_radius,
+        fuse::terrain::LodEvictionPolicy::DistanceFromFocus);
+    expectEq(static_cast<fuse::u32>(filtered.size()), 1u, "invalid chunk index filtered from eligible set");
+    expectEq(filtered[0], 5u, "valid chunk survives budget filter");
 }
 
 void testAsyncInFlightBudgetGuards() {
@@ -732,6 +826,45 @@ void testLodResidencyQueueFlushBudget() {
     });
 }
 
+void testLodResidencyQueueEmptyAndAsyncInFlightGuard() {
+    withScheduler(1, [] {
+        fuse::terrain::LodResidencyQueue queue;
+        expectTrue(queue.empty(), "fresh queue is empty");
+
+        queue.set_max_async_in_flight(1);
+        queue.set_max_pending_submits(2);
+        std::atomic<bool> gate_open{false};
+
+        fuse::terrain::LodResidencyRequest blocking{};
+        blocking.chunk_index = 0;
+        blocking.kind = fuse::terrain::LodResidencyRequestKind::Load;
+        expectTrue(queue.submit(blocking, [&](fuse::u32, fuse::terrain::LodResidencyRequestKind) {
+            while (!gate_open.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            return true;
+        }), "first submit accepted");
+        expectTrue(!queue.empty(), "queue non-empty while request in flight");
+        expectEq(queue.in_flight_count(), 1u, "one request in flight");
+
+        fuse::terrain::LodResidencyRequest overflow{};
+        overflow.chunk_index = 1;
+        overflow.kind = fuse::terrain::LodResidencyRequestKind::Load;
+        expectTrue(!queue.submit(overflow, [](fuse::u32, fuse::terrain::LodResidencyRequestKind) { return true; }),
+                   "second submit rejected at async in-flight cap");
+
+        gate_open.store(true);
+        for (int attempt = 0; attempt < 100 && queue.completed_count() == 0u; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        std::vector<fuse::terrain::CompletedLodResidencyRequest> completed;
+        queue.drain_completed(completed);
+        expectEq(completed.size(), 1u, "blocked request completes after gate opens");
+        expectTrue(queue.empty(), "queue empty after drain");
+    });
+}
+
 void testLodResidencyQueueStub() {
     withScheduler(1, [] {
         fuse::terrain::LodResidencyQueue queue;
@@ -902,6 +1035,11 @@ int main() {
     testIncomingOutranksEviction();
     testPickBudgetEvictionCandidate();
     testPickEvictionCandidateGuarded();
+    testCanAttemptBudgetEviction();
+    testPickBudgetEvictionCandidateFromSet();
+    testHasBudgetEvictionCandidate();
+    testResidencyContainsClearGuards();
+    testEvictionUnloadPriority();
     testCollectBudgetEvictionCandidates();
     testAsyncInFlightBudgetGuards();
     testBudgetEvictionScore();
@@ -920,6 +1058,7 @@ int main() {
     testLodResidencyQueueDrainOrdering();
     testLodResidencyQueueBudgetReject();
     testLodResidencyQueueFlushBudget();
+    testLodResidencyQueueEmptyAndAsyncInFlightGuard();
     testChunkGridLodTransitions();
     testChunkGridResidentCapEviction();
     testChunkGridEmptyResidencyEarlyOut();
