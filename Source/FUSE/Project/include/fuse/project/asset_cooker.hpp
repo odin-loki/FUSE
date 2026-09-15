@@ -16,12 +16,15 @@ public:
     CookRecord cook_audio(const AudioImportDesc& desc);
 
     CookRecord cook_entry(const CookManifestEntry& entry);
+    CookRecord cook_entry(const CookManifestEntry& entry, const CookManifest& manifest);
     CookBatchResult cook_manifest(const CookManifest& manifest);
     CookJobGraphExecuteResult cook_manifest_graph(const CookManifest& manifest);
     CookBatchResult cook_dirty(AssetGraph& graph, const std::string& project_dir);
 
     /// Invalidate cache entries for `changed_source` and all manifest dependents (B7.9 deepen).
     u32 invalidate_upstream_dependency(const CookManifest& manifest, const std::string& changed_source);
+    /// Reconcile cache with current upstream dependency hashes via the cook job graph (B7.9 deepen).
+    u32 invalidate_stale_dependency_hashes(const CookManifest& manifest);
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
@@ -31,6 +34,7 @@ private:
                                 const std::string& source_path,
                                 const std::string& output_path,
                                 u64 content_hash,
+                                u64 upstream_hash,
                                 const char* stub_note);
 
     CookCache m_cache;

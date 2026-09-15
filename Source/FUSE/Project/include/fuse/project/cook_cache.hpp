@@ -5,6 +5,7 @@
 #include <fuse/types.hpp>
 
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace fuse::project {
@@ -16,6 +17,7 @@ enum class CookCacheLookup : u8 {
 
 struct CookCacheEntry {
     u64 content_hash = 0;
+    u64 upstream_hash = 0;
     std::string output_path;
     std::string source_path;
     CookAssetKind kind = CookAssetKind::Mesh;
@@ -35,6 +37,10 @@ public:
 
     bool invalidate(u64 content_hash);
     u32 invalidate_source(const std::string& source_path);
+    /// Drop entries whose stored upstream hash differs from the freshly computed value (B7.9 deepen).
+    /// Returns source paths that were invalidated.
+    std::vector<std::string> invalidate_stale_upstream_hashes(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path);
     /// Remove entries sourced from `output_path` and transitively invalidate dependents (B7.9 deepen).
     u32 invalidate_downstream_of(const std::string& output_path,
                                  const std::vector<CookJobDependencyEdge>& edges,

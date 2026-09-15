@@ -215,7 +215,8 @@ std::vector<std::string> CookJobGraph::topological_order_() const {
     return order;
 }
 
-bool CookJobGraph::run_job_stages_(CookJob& job, AssetCooker& cooker, CookJobGraphExecuteResult& result) {
+bool CookJobGraph::run_job_stages_(CookJob& job, AssetCooker& cooker, const CookManifest& manifest,
+                                   CookJobGraphExecuteResult& result) {
     CookStageRecord& import_stage = job.stages[0];
     if (job.source_path.empty() || job.output_path.empty()) {
         import_stage.status = CookStageStatus::Failed;
@@ -250,9 +251,10 @@ bool CookJobGraph::run_job_stages_(CookJob& job, AssetCooker& cooker, CookJobGra
     entry.kind = job.kind;
     entry.source_path = job.source_path;
     entry.output_path = job.output_path;
+    entry.dependencies = job.dependency_ids;
 
     CookStageRecord& pack_stage = job.stages[2];
-    const CookRecord packed = cooker.cook_entry(entry);
+    const CookRecord packed = cooker.cook_entry(entry, manifest);
     if (!packed.ok) {
         pack_stage.status = CookStageStatus::Failed;
         pack_stage.note = packed.note.empty() ? cookStatusName(packed.status) : packed.note;
@@ -271,7 +273,7 @@ bool CookJobGraph::run_job_stages_(CookJob& job, AssetCooker& cooker, CookJobGra
     return true;
 }
 
-CookJobGraphExecuteResult CookJobGraph::execute(AssetCooker& cooker) {
+CookJobGraphExecuteResult CookJobGraph::execute(AssetCooker& cooker, const CookManifest& manifest) {
     CookJobGraphExecuteResult result;
     result.edges = m_edges;
     result.jobs = m_jobs;
@@ -317,7 +319,7 @@ CookJobGraphExecuteResult CookJobGraph::execute(AssetCooker& cooker) {
             continue;
         }
 
-        if (run_job_stages_(*job, cooker, result)) {
+        if (run_job_stages_(*job, cooker, manifest, result)) {
             ++ok_count;
         }
     }

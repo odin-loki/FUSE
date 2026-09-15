@@ -1,6 +1,6 @@
 # Track B — Asset Pipeline (B7.9)
 
-**Status:** B7.9 offline cook/import stubs + job graph + content-hash cache deepen landed  
+**Status:** B7.9 offline cook/import stubs + job graph + content-hash cache (path+mtime+bytes keys, dep-hash invalidation)  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.9  
 **Source narrative:** [P7.md](../sources/P7.md) §7.9
 
@@ -40,9 +40,9 @@ Each manifest asset expands into a three-stage job: **import** (source validatio
 
 ### Content-hash cook cache (B7.9 deepen)
 
-`CookContentHash` computes deterministic FNV-1a keys from source file bytes plus import descriptor knobs (`hash_mesh_import`, `hash_texture_import`, `hash_audio_import`, `hash_manifest_entry`). Identical source+desc inputs produce identical hashes; descriptor or file changes alter the key.
+`CookContentHash` computes deterministic FNV-1a keys from source **path + mtime + file bytes** plus import descriptor knobs (`hash_mesh_import`, `hash_texture_import`, `hash_audio_import`, `hash_manifest_entry`). `combine_cook_cache_key` folds in `hash_upstream_dependencies` from manifest/job-graph edges so dependent cooks invalidate when upstream source hashes change.
 
-`CookCache` stores `CookCacheEntry` records keyed by content hash. `AssetCooker` consults the cache before stub cooks:
+`CookCache` stores `CookCacheEntry` records keyed by the combined content hash (with optional `upstream_hash` metadata). `AssetCooker` consults the cache before stub cooks:
 
 - **Miss** — runs the stub cook, stores the entry, sets `CookRecord::cache_hit = false` and appends `(cache miss)` to the note.
 - **Hit** — returns the cached output path without re-running stages, sets `CookRecord::cache_hit = true`, increments hit stats.
@@ -51,12 +51,14 @@ Invalidation paths:
 
 - `CookCache::invalidate(hash)` — drop one entry by content hash.
 - `CookCache::invalidate_source(path)` — drop all entries sourced from a file.
+- `CookCache::invalidate_stale_upstream_hashes(...)` — drop entries whose stored upstream hash differs from the current job-graph dependency hash.
 - `CookCache::invalidate_downstream_of(output, edges, jobs)` — transitively drop dependents along manifest edges.
 - `CookCache::invalidate_all()` — clear the cache.
 - `AssetCooker::invalidate_upstream_dependency(manifest, source)` — invalidate a changed upstream source and cascade to dependent jobs.
+- `AssetCooker::invalidate_stale_dependency_hashes(manifest)` — reconcile cache against current upstream dependency hashes via `CookJobGraph`.
 - `AssetCooker::cook_dirty` — invalidates cache entries for dirty asset sources before stub reimport.
 
-`CookCacheStats` tracks hits, misses, and invalidations. The cache persists to JSON via `save`/`load` for offline cook follow-up.
+`CookCacheStats` tracks hits, misses, and invalidations. The cache persists to JSON via `save`/`load` (including `upstreamHash`) for offline cook follow-up.
 
 ### Import pipeline
 
@@ -112,7 +114,7 @@ ctest --test-dir build --output-on-failure -R fuse_assets
 
 | Target | Validates |
 |--------|-----------|
-| `fuse_assets_b79` | Cook manifest parse, asset graph save/load, cooker stub, job graph linear chain + diamond DAG ordering, cycle reject, failure short-circuit, content-hash cache hit/miss + upstream invalidation, pipeline dry-run, project plan |
+| `fuse_assets_b79` | Cook manifest parse, asset graph save/load, cooker stub, job graph linear chain + diamond DAG ordering, cycle reject, failure short-circuit, content-hash cache hit/miss + mtime keys + upstream/chain invalidation, pipeline dry-run, project plan |
 
 Run:
 
