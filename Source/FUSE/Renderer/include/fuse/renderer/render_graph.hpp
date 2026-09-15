@@ -145,6 +145,8 @@ private:
     std::vector<TextureState> m_textureStates;
 };
 
-void populateRenderGraphFromCommandList(RenderGraph& graph, const RenderCommandList& commands);
+void populateRenderGraphFromCommandList(RenderGraph& graph,
+                                        const RenderCommandList& commands,
+                                        float compositeBlend = 0.5f);
 
 } // namespace fuse::renderer

@@ -54,6 +54,14 @@ void RhiContext::ensureRasterPath() {
     m_rasterPath = RasterPath::create(*device, rasterDesc);
 }
 
+void RhiContext::ensureCompositePass() {
+    if (m_compositePass || !m_desc.enableCompositePass) {
+        return;
+    }
+
+    m_compositePass = CompositePass::create(m_desc.composite);
+}
+
 bool RhiContext::beginFrame(u32 frameIndex) {
     if (!platform::requireGpuContextThread()) {
         return false;
@@ -93,7 +101,11 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
             m_commandRecorder.reset();
         }
 
-        populateRenderGraphFromCommandList(m_renderGraph, commands);
+        ensureCompositePass();
+        const float compositeBlend =
+            m_compositePass ? m_compositePass->blendForFrame(commands) : m_desc.composite.defaultBlend;
+
+        populateRenderGraphFromCommandList(m_renderGraph, commands, compositeBlend);
         m_renderGraph.compile();
 
         VulkanDevice* device = m_bootstrap->device();
@@ -112,6 +124,11 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
     if (m_rasterPath && m_rasterPath->isReady()) {
         m_rasterPath->recordFrame(commands);
         m_lastRasterStats = m_rasterPath->lastStats();
+    }
+
+    if (m_compositePass && m_compositePass->isReady()) {
+        m_compositePass->recordFrame(commands);
+        m_lastCompositeStats = m_compositePass->lastStats();
     }
 
     m_lastCommandCount = commands.commandCount();

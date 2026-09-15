@@ -95,7 +95,7 @@ void testPopulateFromCommandList() {
     fuse::renderer::populateRenderGraphFromCommandList(graph, commands);
     graph.compile();
 
-    expectTrue(graph.compileInfo().passCount >= 3u, "clear + sprites + present passes");
+    expectTrue(graph.compileInfo().passCount >= 4u, "clear + sprites + composite + present passes");
     expectTrue(graph.compileInfo().compiled, "hybrid command list graph compiles");
 }
 
@@ -129,7 +129,7 @@ void testRhiContextUsesRenderGraph() {
     expectTrue(context->beginFrame(0u), "beginFrame accepted on render thread");
     const bool submitted = context->submitFrame(commands, 0u);
     expectTrue(submitted, "submit accepted when Vulkan device ready");
-    expectTrue(context->lastGraphPassCount() >= 2u, "render graph executed passes");
+    expectTrue(context->lastGraphPassCount() >= 3u, "render graph executed passes");
     expectTrue(context->lastRecordedCommandCount() > 0u, "command recorder captured work");
 #else
     expectTrue(!context->submitFrame(commands, 0u), "stub mode rejects GPU submit");
