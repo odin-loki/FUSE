@@ -130,6 +130,19 @@ u32 cluster_util::lookupClusterLights(const ClusterGridSoA& grid, u32 clusterIdx
     return entry.count;
 }
 
+u32 cluster_util::lookupClusterLightsAtIndex(const ClusterGridSoA& grid,
+                                              const ClusterDesc& desc,
+                                              u32 index,
+                                              std::vector<u32>& outLights) {
+    if (ClusterGridLayout::isEmptyGrid(desc) || !gridMatchesDesc(grid, desc)) {
+        outLights.clear();
+        return 0u;
+    }
+
+    const u32 clampedIndex = ClusterGridLayout::clampClusterIndex(index, desc);
+    return lookupClusterLights(grid, clampedIndex, outLights);
+}
+
 u32 cluster_util::clusterLightCount(const ClusterGridSoA& grid, u32 clusterIdx) {
     if (clusterIdx >= grid.grid.size()) {
         return 0u;
@@ -204,6 +217,16 @@ bool cluster_util::validatePopulationCounts(const ClusterGridSoA& grid, u32 clus
     return countNonEmptyClusters(grid, clusterCount) + countEmptyClusters(grid, clusterCount) == clusterCount;
 }
 
+bool cluster_util::validateGridPopulation(const ClusterGridSoA& grid, u32 clusterCount) {
+    if (!validatePopulationCounts(grid, clusterCount)) {
+        return false;
+    }
+    if (clusterCount == 0u) {
+        return true;
+    }
+    return ClusterLightGridLayout::validateContiguousOffsets(grid, clusterCount);
+}
+
 bool ClusterGridLayout::isEmptyGrid(const ClusterDesc& desc) {
     return desc.tilesX == 0u || desc.tilesY == 0u || desc.slicesZ == 0u;
 }
@@ -267,6 +290,14 @@ u32 ClusterGridLayout::clampSliceZ(u32 sliceZ, const ClusterDesc& desc) {
         return 0u;
     }
     return std::min(sliceZ, desc.slicesZ - 1u);
+}
+
+u32 ClusterGridLayout::maxClusterIndex(const ClusterDesc& desc) {
+    const u32 count = desc.clusterCount();
+    if (count == 0u) {
+        return 0u;
+    }
+    return count - 1u;
 }
 
 bool ClusterGridLayout::mapScreenDepthToClusterIndex(f32 screenX,
