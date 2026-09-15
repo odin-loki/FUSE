@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <sstream>
+#include <unordered_map>
 
 namespace fuse::project {
 
@@ -57,6 +58,53 @@ const char* cookStageKindName(CookStageKind kind) {
         return "pack";
     }
     return "unknown";
+}
+
+u8 cookStageIndex(CookStageKind kind) {
+    switch (kind) {
+    case CookStageKind::Import:
+        return 0;
+    case CookStageKind::Process:
+        return 1;
+    case CookStageKind::Pack:
+        return 2;
+    }
+    return 0;
+}
+
+CookStageKind nextCookStageKind(CookStageKind kind) {
+    switch (kind) {
+    case CookStageKind::Import:
+        return CookStageKind::Process;
+    case CookStageKind::Process:
+        return CookStageKind::Pack;
+    case CookStageKind::Pack:
+        return CookStageKind::Pack;
+    }
+    return CookStageKind::Pack;
+}
+
+bool isTerminalCookStage(CookStageKind kind) {
+    return kind == CookStageKind::Pack;
+}
+
+std::size_t pendingCookStageCount(const CookJob& job) {
+    std::size_t count = 0;
+    for (const CookStageRecord& stage : job.stages) {
+        if (stage.status == CookStageStatus::Pending) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+std::size_t firstPendingCookStageIndex(const CookJob& job) {
+    for (std::size_t i = 0; i < job.stages.size(); ++i) {
+        if (job.stages[i].status == CookStageStatus::Pending) {
+            return i;
+        }
+    }
+    return job.stages.size();
 }
 
 const char* cookStageStatusName(CookStageStatus status) {
@@ -152,12 +200,58 @@ CookJobGraphOrderResult CookJobGraph::topological_order() const {
     return m_dep_graph.topological_order();
 }
 
+CookDependencyLayerResult CookJobGraph::topological_layers() const {
+    return m_dep_graph.topological_layers();
+}
+
 bool CookJobGraph::has_cycle() const {
     return m_dep_graph.has_cycle();
 }
 
 CookDependencyCycleResult CookJobGraph::cycle_edges() const {
     return m_dep_graph.detect_cycle_edges();
+}
+
+std::vector<std::string> CookJobGraph::ready_job_ids(const std::vector<std::string>& completed_job_ids) const {
+    if (m_jobs.empty()) {
+        return {};
+    }
+
+    std::unordered_map<std::string, bool> completed;
+    for (const std::string& job_id : completed_job_ids) {
+        completed[job_id] = true;
+    }
+
+    std::vector<std::string> ready;
+    for (const CookJob& job : m_jobs) {
+        if (completed.find(job.id) != completed.end()) {
+            continue;
+        }
+
+        bool all_deps_met = true;
+        for (const std::string& dependency_id : job.dependency_ids) {
+            if (completed.find(dependency_id) == completed.end()) {
+                all_deps_met = false;
+                break;
+            }
+        }
+
+        if (all_deps_met) {
+            ready.push_back(job.id);
+        }
+    }
+
+    std::sort(ready.begin(), ready.end());
+    return ready;
+}
+
+CookInvalidationClosureResult CookJobGraph::invalidation_closure(const std::string& from_job_id) const {
+    if (m_jobs.empty()) {
+        CookInvalidationClosureResult result;
+        result.ok = false;
+        return result;
+    }
+    return m_dep_graph.transitive_successors(from_job_id);
 }
 
 bool CookJobGraph::run_job_stages_(CookJob& job, AssetCooker& cooker, const CookManifest& manifest,
@@ -222,6 +316,13 @@ CookJobGraphExecuteResult CookJobGraph::execute(AssetCooker& cooker, const CookM
     CookJobGraphExecuteResult result;
     result.edges = m_dep_graph.edges();
     result.jobs = m_jobs;
+
+    if (m_jobs.empty()) {
+        result.ok = true;
+        result.summary = "cooked 0/0 jobs via stage graph (stub)";
+        return result;
+    }
+
     const CookJobGraphOrderResult order = topological_order();
     result.execution_order = order.order;
 

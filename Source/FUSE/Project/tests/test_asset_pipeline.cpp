@@ -235,6 +235,114 @@ void testCookDependencyGraphTopologicalOrder() {
     expectTrue(order.order[2] == "c", "merge node runs last");
 }
 
+void testCookDependencyGraphQueryHelpers() {
+    fuse::project::CookDependencyGraph graph;
+    graph.add_node("a");
+    graph.add_node("b");
+    graph.add_node("c");
+    expectTrue(graph.has_node("a"), "has_node reports registered node");
+    expectTrue(!graph.has_node("missing"), "has_node rejects unknown node");
+    expectTrue(!graph.has_node(""), "has_node rejects empty id");
+
+    expectTrue(graph.add_edge("a", "b"), "helper test edge a->b");
+    expectTrue(graph.add_edge("a", "c"), "helper test edge a->c");
+    expectTrue(graph.add_edge("b", "c"), "helper test edge b->c");
+    expectTrue(graph.has_edge("a", "b"), "has_edge reports forward edge");
+    expectTrue(!graph.has_edge("b", "a"), "has_edge rejects reverse edge");
+    expectTrue(!graph.has_edge("", "b"), "has_edge rejects empty from id");
+
+    const std::vector<std::string> preds = graph.predecessors("c");
+    expectTrue(preds.size() == 2u, "merge node has two predecessors");
+    expectTrue(preds[0] == "a", "first predecessor sorted");
+    expectTrue(preds[1] == "b", "second predecessor sorted");
+    expectTrue(graph.predecessors("missing").empty(), "unknown node has no predecessors");
+    expectTrue(graph.predecessors("").empty(), "empty node id has no predecessors");
+
+    const std::vector<std::string> succs = graph.successors("a");
+    expectTrue(succs.size() == 2u, "root has two successors");
+    expectTrue(graph.successors("c").empty(), "leaf has no successors");
+
+    const std::vector<std::string> roots = graph.roots();
+    expectTrue(roots.size() == 1u, "diamond has one root");
+    expectTrue(roots[0] == "a", "root is node a");
+
+    const std::vector<std::string> leaves = graph.leaves();
+    expectTrue(leaves.size() == 1u, "diamond has one leaf");
+    expectTrue(leaves[0] == "c", "leaf is node c");
+}
+
+void testCookDependencyGraphTopologicalLayers() {
+    fuse::project::CookDependencyGraph graph;
+    graph.add_node("a");
+    graph.add_node("b");
+    graph.add_node("c");
+    graph.add_node("d");
+    expectTrue(graph.add_edge("a", "b"), "layer test a->b");
+    expectTrue(graph.add_edge("a", "c"), "layer test a->c");
+    expectTrue(graph.add_edge("b", "d"), "layer test b->d");
+    expectTrue(graph.add_edge("c", "d"), "layer test c->d");
+
+    const fuse::project::CookDependencyLayerResult layers = graph.topological_layers();
+    expectTrue(layers.ok, "layered diamond is acyclic");
+    expectTrue(!layers.cycle_detected, "layered diamond not cyclic");
+    expectTrue(layers.layers.size() == 3u, "diamond has three layers");
+    expectTrue(layers.layers[0].size() == 1u && layers.layers[0][0] == "a", "layer 0 is root");
+    expectTrue(layers.layers[1].size() == 2u, "layer 1 has parallel branches");
+    expectTrue(layers.layers[2].size() == 1u && layers.layers[2][0] == "d", "layer 2 is merge");
+
+    fuse::project::CookDependencyGraph cyclic;
+    cyclic.add_node("x");
+    cyclic.add_node("y");
+    expectTrue(cyclic.add_edge("x", "y"), "cycle layer x->y");
+    expectTrue(cyclic.add_edge("y", "x"), "cycle layer y->x");
+    const fuse::project::CookDependencyLayerResult cyclic_layers = cyclic.topological_layers();
+    expectTrue(!cyclic_layers.ok, "cyclic graph layers not ok");
+    expectTrue(cyclic_layers.cycle_detected, "cyclic graph layers detect cycle");
+    expectTrue(cyclic_layers.layers.empty(), "cyclic graph yields no layers");
+}
+
+void testCookDependencyGraphInvalidationClosure() {
+    fuse::project::CookDependencyGraph graph;
+    graph.add_node("a");
+    graph.add_node("b");
+    graph.add_node("c");
+    expectTrue(graph.add_edge("a", "b"), "closure a->b");
+    expectTrue(graph.add_edge("b", "c"), "closure b->c");
+
+    const fuse::project::CookInvalidationClosureResult closure = graph.transitive_successors("a");
+    expectTrue(closure.ok, "valid seed yields closure");
+    expectTrue(closure.job_ids.size() == 2u, "closure includes two downstream nodes");
+    expectTrue(closure.job_ids[0] == "b", "first downstream is b");
+    expectTrue(closure.job_ids[1] == "c", "second downstream is c");
+
+    const fuse::project::CookInvalidationClosureResult leaf_closure = graph.transitive_successors("c");
+    expectTrue(leaf_closure.ok, "leaf seed closure ok");
+    expectTrue(leaf_closure.job_ids.empty(), "leaf has no downstream nodes");
+
+    const fuse::project::CookInvalidationClosureResult guarded = graph.transitive_successors("missing");
+    expectTrue(!guarded.ok, "unknown seed guarded");
+    expectTrue(guarded.job_ids.empty(), "unknown seed yields empty closure");
+
+    const fuse::project::CookInvalidationClosureResult empty_seed = graph.transitive_successors("");
+    expectTrue(!empty_seed.ok, "empty seed guarded");
+}
+
+void testCookDependencyGraphEmptyHelperGuards() {
+    fuse::project::CookDependencyGraph graph;
+    expectTrue(graph.roots().empty(), "empty graph roots guarded");
+    expectTrue(graph.leaves().empty(), "empty graph leaves guarded");
+    expectTrue(graph.predecessors("a").empty(), "empty graph predecessors guarded");
+    expectTrue(graph.successors("a").empty(), "empty graph successors guarded");
+    expectTrue(!graph.has_edge("a", "b"), "empty graph has_edge guarded");
+
+    const fuse::project::CookDependencyLayerResult layers = graph.topological_layers();
+    expectTrue(layers.ok, "empty graph layers ok");
+    expectTrue(layers.layers.empty(), "empty graph yields no layers");
+
+    const fuse::project::CookInvalidationClosureResult closure = graph.transitive_successors("a");
+    expectTrue(!closure.ok, "empty graph invalidation closure guarded");
+}
+
 void testCookDependencyGraphCycleEdges() {
     fuse::project::CookDependencyGraph graph;
     graph.add_node("a");
@@ -520,6 +628,86 @@ void testCookJobGraphDependencyEdgesAndOrder() {
     expectTrue(result.execution_order.size() == 2u, "two jobs ordered");
     expectTrue(result.execution_order[0] == entryA.output_path, "producer runs first");
     expectTrue(result.execution_order[1] == entryB.output_path, "dependent runs second");
+}
+
+void testCookJobGraphStageHelpers() {
+    expectTrue(fuse::project::cookStageIndex(fuse::project::CookStageKind::Import) == 0u, "import stage index");
+    expectTrue(fuse::project::cookStageIndex(fuse::project::CookStageKind::Process) == 1u, "process stage index");
+    expectTrue(fuse::project::cookStageIndex(fuse::project::CookStageKind::Pack) == 2u, "pack stage index");
+
+    expectTrue(fuse::project::nextCookStageKind(fuse::project::CookStageKind::Import) ==
+                   fuse::project::CookStageKind::Process,
+               "import advances to process");
+    expectTrue(fuse::project::nextCookStageKind(fuse::project::CookStageKind::Pack) ==
+                   fuse::project::CookStageKind::Pack,
+               "pack is terminal stage kind");
+    expectTrue(fuse::project::isTerminalCookStage(fuse::project::CookStageKind::Pack), "pack is terminal");
+    expectTrue(!fuse::project::isTerminalCookStage(fuse::project::CookStageKind::Import), "import not terminal");
+
+    fuse::project::CookJob job;
+    job.stages = {
+        {fuse::project::CookStageKind::Import, fuse::project::CookStageStatus::Ok, {}},
+        {fuse::project::CookStageKind::Process, fuse::project::CookStageStatus::Pending, {}},
+        {fuse::project::CookStageKind::Pack, fuse::project::CookStageStatus::Pending, {}},
+    };
+    expectTrue(fuse::project::pendingCookStageCount(job) == 2u, "two pending stages");
+    expectTrue(fuse::project::firstPendingCookStageIndex(job) == 1u, "first pending is process stage");
+}
+
+void testCookJobGraphReadyJobsAndInvalidationClosure() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_ready_a.obj", "# ready a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_ready_b.obj", "# ready b\n");
+    const std::string sourceC = writeTempFile("/tmp/fuse_b79_ready_c.obj", "# ready c\n");
+
+    fuse::project::CookManifest manifest;
+
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_ready_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_ready_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::CookManifestEntry entryC;
+    entryC.kind = fuse::project::CookAssetKind::Mesh;
+    entryC.source_path = sourceC;
+    entryC.output_path = "/tmp/fuse_b79_ready_c.fusemesh";
+    entryC.dependencies.push_back(entryB.output_path);
+    manifest.assets.push_back(entryC);
+
+    fuse::project::CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    const std::vector<std::string> initial_ready = graph.ready_job_ids({});
+    expectTrue(initial_ready.size() == 1u, "only root job is initially ready");
+    expectTrue(initial_ready[0] == entryA.output_path, "root job id matches");
+
+    const std::vector<std::string> after_a = graph.ready_job_ids({entryA.output_path});
+    expectTrue(after_a.size() == 1u, "one job ready after root completes");
+    expectTrue(after_a[0] == entryB.output_path, "middle job becomes ready");
+
+    const fuse::project::CookDependencyLayerResult layers = graph.topological_layers();
+    expectTrue(layers.ok, "job graph layers ok");
+    expectTrue(layers.layers.size() == 3u, "linear chain has three layers");
+
+    const fuse::project::CookInvalidationClosureResult closure =
+        graph.invalidation_closure(entryA.output_path);
+    expectTrue(closure.ok, "job graph invalidation closure ok");
+    expectTrue(closure.job_ids.size() == 2u, "upstream invalidates two downstream jobs");
+    expectTrue(closure.job_ids[0] == entryB.output_path, "first downstream job in closure");
+    expectTrue(closure.job_ids[1] == entryC.output_path, "second downstream job in closure");
+
+    fuse::project::CookJobGraph empty_graph;
+    const fuse::project::CookInvalidationClosureResult empty_closure =
+        empty_graph.invalidation_closure(entryA.output_path);
+    expectTrue(!empty_closure.ok, "empty job graph invalidation guarded");
+    expectTrue(empty_graph.ready_job_ids({}).empty(), "empty job graph ready list guarded");
 }
 
 void testCookJobGraphDependencyShortCircuit() {
@@ -1050,8 +1238,14 @@ int main() {
     testAssetCookerStub();
     testCookJobGraphEmpty();
     testCookDependencyGraphEmptyGuards();
+    testCookDependencyGraphEmptyHelperGuards();
+    testCookDependencyGraphQueryHelpers();
+    testCookDependencyGraphTopologicalLayers();
+    testCookDependencyGraphInvalidationClosure();
     testCookDependencyGraphTopologicalOrder();
     testCookDependencyGraphCycleEdges();
+    testCookJobGraphStageHelpers();
+    testCookJobGraphReadyJobsAndInvalidationClosure();
     testCookJobGraphCycleEdgesIntegration();
     testCookJobGraphTopologicalOrderDirect();
     testCookJobGraphImplicitOutputSourceEdge();

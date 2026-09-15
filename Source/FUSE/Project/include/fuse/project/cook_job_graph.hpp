@@ -68,8 +68,15 @@ public:
     [[nodiscard]] const std::vector<CookJobDependencyEdge>& edges() const { return m_dep_graph.edges(); }
     [[nodiscard]] const CookDependencyGraph& dependency_graph() const { return m_dep_graph; }
     [[nodiscard]] CookJobGraphOrderResult topological_order() const;
+    [[nodiscard]] CookDependencyLayerResult topological_layers() const;
     [[nodiscard]] bool has_cycle() const;
     [[nodiscard]] CookDependencyCycleResult cycle_edges() const;
+
+    /// Jobs with no unmet predecessors — `completed_job_ids` may be empty (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> ready_job_ids(const std::vector<std::string>& completed_job_ids) const;
+
+    /// Transitive downstream jobs for cache invalidation — guarded on empty graph / unknown seed (B7.9 deepen).
+    [[nodiscard]] CookInvalidationClosureResult invalidation_closure(const std::string& from_job_id) const;
 
     CookJobGraphExecuteResult execute(AssetCooker& cooker, const CookManifest& manifest);
 
@@ -89,6 +96,13 @@ private:
 
 const char* cookStageKindName(CookStageKind kind);
 const char* cookStageStatusName(CookStageStatus status);
+
+/// Stage graph helpers — index, successor stage, and pending-stage probes (B7.9 deepen).
+[[nodiscard]] u8 cookStageIndex(CookStageKind kind);
+[[nodiscard]] CookStageKind nextCookStageKind(CookStageKind kind);
+[[nodiscard]] bool isTerminalCookStage(CookStageKind kind);
+[[nodiscard]] std::size_t pendingCookStageCount(const CookJob& job);
+[[nodiscard]] std::size_t firstPendingCookStageIndex(const CookJob& job);
 
 CookBatchResult cookBatchFromJobGraphResult(const CookJobGraphExecuteResult& graph_result);
 
