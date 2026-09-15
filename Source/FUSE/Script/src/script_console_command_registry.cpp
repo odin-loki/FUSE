@@ -143,6 +143,50 @@ std::vector<std::string> ScriptConsoleCommandRegistry::commands_with_prefix(cons
     return matches;
 }
 
+std::string ScriptConsoleCommandRegistry::longest_common_prefix(const char* prefix) const {
+    const std::vector<std::string> matches = commands_with_prefix(prefix);
+    if (matches.empty()) {
+        return {};
+    }
+    if (matches.size() == 1) {
+        return matches.front();
+    }
+
+    std::string common = matches.front();
+    for (std::size_t i = 1; i < matches.size(); ++i) {
+        const std::string& candidate = matches[i];
+        const std::size_t limit = std::min(common.size(), candidate.size());
+        std::size_t shared = 0;
+        while (shared < limit && common[shared] == candidate[shared]) {
+            ++shared;
+        }
+        common.resize(shared);
+        if (common.empty()) {
+            break;
+        }
+    }
+
+    return common;
+}
+
+std::string ScriptConsoleCommandRegistry::unique_prefix_match(const char* partial) const {
+    if (partial == nullptr) {
+        partial = "";
+    }
+
+    const std::string needle(partial);
+    if (has_command(needle.c_str())) {
+        return needle;
+    }
+
+    const std::vector<std::string> matches = commands_with_prefix(needle.c_str());
+    if (matches.size() == 1) {
+        return matches.front();
+    }
+
+    return {};
+}
+
 std::vector<std::string> ScriptConsoleCommandRegistry::suggest_commands(const char* name,
                                                                           u32 max_suggestions) const {
     if (name == nullptr || name[0] == '\0' || max_suggestions == 0) {

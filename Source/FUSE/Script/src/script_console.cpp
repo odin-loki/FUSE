@@ -171,12 +171,41 @@ void ScriptConsole::registerBuiltIns_() {
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, std::string{}};
         }
 
+        if (matches.size() == 1) {
+            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, matches.front()};
+        }
+
+        const std::string shared = console.m_commands.longest_common_prefix(args);
         std::ostringstream out;
+        if (!shared.empty()) {
+            out << shared << ' ';
+        }
         for (std::size_t i = 0; i < matches.size(); ++i) {
             if (i > 0) {
                 out << ' ';
             }
             out << matches[i];
+        }
+        return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, out.str()};
+    });
+
+    m_commands.register_built_in("suggest", [](ScriptConsole& console, const char* args) {
+        if (args == nullptr || args[0] == '\0') {
+            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
+                                              "suggest requires a partial command name"};
+        }
+
+        const std::vector<std::string> suggestions = console.m_commands.suggest_commands(args, 3);
+        if (suggestions.empty()) {
+            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, std::string{}};
+        }
+
+        std::ostringstream out;
+        for (std::size_t i = 0; i < suggestions.size(); ++i) {
+            if (i > 0) {
+                out << ' ';
+            }
+            out << suggestions[i];
         }
         return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, out.str()};
     });

@@ -27,6 +27,10 @@ public:
     [[nodiscard]] ScriptConsoleCommandKind lookup_kind(const char* name) const;
     [[nodiscard]] std::vector<std::string> commands_with_prefix(const char* prefix) const;
     [[nodiscard]] std::vector<std::string> suggest_commands(const char* name, u32 max_suggestions = 3) const;
+    /// Longest shared prefix across all commands matching `prefix` (empty when none match).
+    [[nodiscard]] std::string longest_common_prefix(const char* prefix) const;
+    /// Returns the sole prefix match, an exact command name, or empty when ambiguous/missing.
+    [[nodiscard]] std::string unique_prefix_match(const char* partial) const;
 
     [[nodiscard]] static bool is_valid_command_name(const char* name);
 

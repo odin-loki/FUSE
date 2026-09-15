@@ -52,6 +52,20 @@ public:
     [[nodiscard]] usize built_in_command_count() const { return m_commands.built_in_count(); }
     [[nodiscard]] usize custom_command_count() const { return m_commands.custom_count(); }
 
+    [[nodiscard]] std::vector<std::string> command_names() const { return m_commands.command_names(); }
+    [[nodiscard]] std::vector<std::string> commands_with_prefix(const char* prefix) const {
+        return m_commands.commands_with_prefix(prefix);
+    }
+    [[nodiscard]] std::vector<std::string> suggest_commands(const char* name, u32 max_suggestions = 3) const {
+        return m_commands.suggest_commands(name, max_suggestions);
+    }
+    [[nodiscard]] std::string longest_common_prefix(const char* prefix) const {
+        return m_commands.longest_common_prefix(prefix);
+    }
+    [[nodiscard]] std::string unique_prefix_match(const char* partial) const {
+        return m_commands.unique_prefix_match(partial);
+    }
+
 private:
     ScriptConsoleCommandResult executeLine_(const char* line, bool record_history);
     ScriptConsoleCommandResult dispatch_(const char* command, const char* args);

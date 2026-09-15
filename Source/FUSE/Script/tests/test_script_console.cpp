@@ -4,6 +4,7 @@
 #include <fuse/script/script_console_history.hpp>
 #include <fuse/script/script_host.hpp>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -370,6 +371,101 @@ void testRepeatDispatchStub() {
                "repeat does not overwrite last executed line");
 }
 
+void testPrefixMatchAndCompletionHelpers() {
+    fuse::script::ScriptConsole console;
+    fuse::script::ScriptConsoleCommandRegistry registry;
+
+    expectTrue(registry.register_built_in("help_probe",
+                                          [](fuse::script::ScriptConsole& /*repl*/,
+                                             const char* /*args*/) {
+                                              return fuse::script::ScriptConsoleCommandResult{
+                                                  fuse::script::ScriptConsoleCommandStatus::Ok, "ok"};
+                                          }),
+               "register help_probe for prefix tests");
+    expectTrue(registry.register_built_in("history_probe",
+                                          [](fuse::script::ScriptConsole& /*repl*/,
+                                             const char* /*args*/) {
+                                              return fuse::script::ScriptConsoleCommandResult{
+                                                  fuse::script::ScriptConsoleCommandStatus::Ok, "ok"};
+                                          }),
+               "register history_probe for prefix tests");
+
+    const auto h_matches = registry.commands_with_prefix("h");
+    expectTrue(h_matches.size() == 2u, "prefix h matches both probe commands");
+    expectTrue(registry.longest_common_prefix("h") == "h",
+               "longest common prefix for h is h");
+    expectTrue(registry.longest_common_prefix("help_probe") == "help_probe",
+               "longest common prefix for exact command is command name");
+    expectTrue(registry.longest_common_prefix("zzz").empty(),
+               "longest common prefix empty when no matches");
+
+    expectTrue(registry.unique_prefix_match("help_probe") == "help_probe",
+               "unique_prefix_match returns exact command");
+    expectTrue(registry.unique_prefix_match("help_pr") == "help_probe",
+               "unique_prefix_match returns sole prefix match");
+    expectTrue(registry.unique_prefix_match("h").empty(),
+               "unique_prefix_match empty when ambiguous");
+    expectTrue(registry.unique_prefix_match("missing").empty(),
+               "unique_prefix_match empty when no match");
+
+    const auto console_matches = console.commands_with_prefix("hi");
+    expectTrue(!console_matches.empty(), "ScriptConsole forwards commands_with_prefix");
+    expectTrue(console.longest_common_prefix("hi").find('h') == 0u,
+               "ScriptConsole forwards longest_common_prefix");
+    expectTrue(console.unique_prefix_match("history").find("history") == 0u,
+               "ScriptConsole forwards unique_prefix_match");
+
+    const auto names = console.command_names();
+    expectTrue(names.size() >= console.built_in_command_count(), "command_names includes built-ins");
+    expectTrue(std::find(names.begin(), names.end(), "help") != names.end(),
+               "command_names includes help");
+
+    const auto complete = console.execute("complete h");
+    expectTrue(complete.ok(), "complete with ambiguous prefix succeeds");
+    expectTrue(complete.output.find('h') == 0u, "complete emits shared prefix first");
+    expectTrue(complete.output.find("help") != std::string::npos,
+               "complete lists help among ambiguous matches");
+    expectTrue(complete.output.find("history") != std::string::npos,
+               "complete lists history among ambiguous matches");
+
+    const auto unique = console.execute("complete history");
+    expectTrue(unique.ok(), "complete with unique prefix succeeds");
+    expectTrue(unique.output == "history", "complete returns sole match without listing");
+
+    const auto suggest = console.execute("suggest hel");
+    expectTrue(suggest.ok(), "suggest stub succeeds");
+    expectTrue(suggest.output.find("help") != std::string::npos,
+               "suggest stub returns help for hel");
+
+    const auto suggest_invalid = console.execute("suggest");
+    expectTrue(suggest_invalid.status == fuse::script::ScriptConsoleCommandStatus::InvalidArgument,
+               "suggest without args fails");
+
+    const auto suggest_none = console.execute("suggest zzznop");
+    expectTrue(suggest_none.ok(), "suggest with no matches succeeds");
+    expectTrue(suggest_none.output.empty(), "suggest with no matches returns empty");
+}
+
+void testHistoryGuardAccessors() {
+    fuse::script::ScriptConsoleHistoryBuffer history;
+
+    expectTrue(history.is_empty(), "new history buffer is empty");
+    expectTrue(!history.is_valid_index(0), "index 0 invalid on empty history");
+
+    history.push("alpha");
+    expectTrue(!history.is_empty(), "history not empty after push");
+    expectTrue(history.is_valid_index(0), "index 0 valid after push");
+    expectTrue(!history.is_valid_index(1), "index 1 invalid with one entry");
+    expectTrue(history.at(99).empty(), "out-of-range at returns empty string");
+
+    fuse::script::ScriptConsole console;
+    const auto null_line = console.execute(nullptr);
+    expectTrue(null_line.status == fuse::script::ScriptConsoleCommandStatus::InvalidArgument,
+               "execute rejects null line");
+    expectTrue(null_line.output == "line is null", "null line guard message");
+    expectTrue(console.historyCount() == 0u, "null line does not push history");
+}
+
 void testCustomCommandDispatch() {
     fuse::script::ScriptConsole console;
     int invoke_count = 0;
@@ -404,10 +500,12 @@ void run_script_console_tests() {
     testBuiltInCommandDispatch();
     testCommandRegistryDirect();
     testHistoryBufferRingWrapDirect();
+    testHistoryGuardAccessors();
     testHistoryBufferAndNavigation();
     testHistoryClearStub();
     testEmptyLineSkipsHistory();
     testDescribeAndCompleteStubs();
+    testPrefixMatchAndCompletionHelpers();
     testRepeatDispatchStub();
     testHostDispatchLoadAndRun();
     testCustomCommandShadowsBuiltIn();
