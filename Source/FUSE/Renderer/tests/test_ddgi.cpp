@@ -328,15 +328,84 @@ void testProbeBorderCounts() {
     expectTrue(fuse::renderer::ddgi_util::countBorderProbes(desc) == 26u, "3x3x3 has 26 border probes");
     expectTrue(fuse::renderer::ddgi_util::countInteriorProbes(desc) == 1u, "3x3x3 has 1 interior probe");
 
+    const fuse::renderer::ProbeBorderCounts byKind =
+        fuse::renderer::ddgi_util::countProbesByBorderKind(desc);
+    expectTrue(byKind.total == 27u, "3x3x3 total probe count");
+    expectTrue(byKind.interior == 1u, "3x3x3 interior by kind");
+    expectTrue(byKind.border == 26u, "3x3x3 border by kind");
+    expectTrue(byKind.face == 6u, "3x3x3 has 6 face probes");
+    expectTrue(byKind.edge == 12u, "3x3x3 has 12 edge probes");
+    expectTrue(byKind.corner == 8u, "3x3x3 has 8 corner probes");
+    expectTrue(byKind.interior + byKind.border == byKind.total, "interior + border equals total");
+    expectTrue(byKind.face + byKind.edge + byKind.corner == byKind.border,
+               "face + edge + corner equals border count");
+
     fuse::renderer::DDGIDesc single{};
     single.grid_dims = {1, 1, 1};
     expectTrue(fuse::renderer::ddgi_util::countBorderProbes(single) == 1u, "1x1x1 border count");
     expectTrue(fuse::renderer::ddgi_util::countInteriorProbes(single) == 0u, "1x1x1 interior count");
 
+    const fuse::renderer::ProbeBorderCounts loneKind =
+        fuse::renderer::ddgi_util::countProbesByBorderKind(single);
+    expectTrue(loneKind.corner == 1u, "1x1x1 lone probe is corner");
+    expectTrue(loneKind.interior == 0u, "1x1x1 lone probe has no interior");
+
     fuse::renderer::DDGIDesc empty{};
     empty.grid_dims = {0, 3, 3};
     expectTrue(fuse::renderer::ddgi_util::countBorderProbes(empty) == 0u, "empty grid border count");
     expectTrue(fuse::renderer::ddgi_util::countInteriorProbes(empty) == 0u, "empty grid interior count");
+    const fuse::renderer::ProbeBorderCounts emptyKind =
+        fuse::renderer::ddgi_util::countProbesByBorderKind(empty);
+    expectTrue(emptyKind.total == 0u, "empty grid border-kind total is zero");
+}
+
+void testEmptyDirectionGuards() {
+    expectTrue(fuse::renderer::DdgiIrradianceEncoding::isEmptyDirection({0.f, 0.f, 0.f}),
+               "zero direction is empty");
+    expectTrue(!fuse::renderer::DdgiIrradianceEncoding::isEmptyDirection({0.f, 1.f, 0.f}),
+               "unit +Y is not empty");
+
+    const fuse::math::Vec3 fallback =
+        fuse::renderer::DdgiIrradianceEncoding::resolveSampleDirection({0.f, 0.f, 0.f});
+    expectNear(fallback.y, 1.f, 1e-5f, "empty direction resolves to +Y fallback");
+
+    const fuse::math::Vec3 customFallback =
+        fuse::renderer::DdgiIrradianceEncoding::resolveSampleDirection({0.f, 0.f, 0.f}, {1.f, 0.f, 0.f});
+    expectNear(customFallback.x, 1.f, 1e-5f, "empty direction uses custom fallback axis");
+
+    const fuse::math::Vec2 encodedEmpty =
+        fuse::renderer::DdgiIrradianceEncoding::encodeDirection({0.f, 0.f, 0.f});
+    const fuse::math::Vec2 encodedUp =
+        fuse::renderer::DdgiIrradianceEncoding::encodeDirection({0.f, 1.f, 0.f});
+    expectNear(encodedEmpty.x, encodedUp.x, 1e-5f, "empty direction encodes like +Y fallback");
+    expectNear(encodedEmpty.y, encodedUp.y, 1e-5f, "empty direction encodes like +Y fallback v");
+
+    fuse::renderer::IrradianceCacheEntry entry{};
+    entry.irradiance = {1.f, 0.5f, 0.25f};
+    const fuse::math::Vec3 emptySample =
+        fuse::renderer::ddgi_util::sampleDirectionalIrradianceAtProbe(entry, {0.f, 0.f, 0.f}, 8u);
+    const fuse::math::Vec3 upSample =
+        fuse::renderer::ddgi_util::sampleDirectionalIrradianceAtProbe(entry, {0.f, 1.f, 0.f}, 8u);
+    expectTrue(emptySample.x > 0.f, "empty direction sample falls back to non-zero irradiance");
+    expectNear(emptySample.x, upSample.x, 1e-4f, "empty direction sample matches +Y sample");
+
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_origin = {0.f, 0.f, 0.f};
+    desc.probe_spacing = {1.f, 1.f, 1.f};
+    desc.grid_dims = {2, 2, 2};
+    desc.irradiance_res = 8;
+    std::vector<fuse::renderer::IrradianceCacheEntry> cache(8);
+    for (fuse::u32 i = 0; i < 8u; ++i) {
+        cache[i].irradiance = {1.f, 1.f, 1.f};
+    }
+    const fuse::math::Vec3 emptyTrilinear =
+        fuse::renderer::ddgi_util::trilinearDirectionalProbeIrradiance(
+            desc, {0.5f, 0.5f, 0.5f}, {0.f, 0.f, 0.f}, cache.data(), static_cast<fuse::u32>(cache.size()));
+    const fuse::math::Vec3 upTrilinear =
+        fuse::renderer::ddgi_util::trilinearDirectionalProbeIrradiance(
+            desc, {0.5f, 0.5f, 0.5f}, {0.f, 1.f, 0.f}, cache.data(), static_cast<fuse::u32>(cache.size()));
+    expectTrue(emptyTrilinear.x > 0.f, "empty direction trilinear sample is non-zero");
+    expectNear(emptyTrilinear.x, upTrilinear.x, 1e-4f, "empty direction trilinear matches +Y");
 }
 
 void testProbeWorldPositionClamped() {
@@ -370,8 +439,10 @@ void testIrradianceOctahedralEncoding() {
 
     const fuse::math::Vec2 zeroDirEncoded =
         fuse::renderer::DdgiIrradianceEncoding::encodeDirection({0.f, 0.f, 0.f});
-    expectNear(zeroDirEncoded.x, 0.5f, 1e-5f, "zero direction encodes to atlas centre u");
-    expectNear(zeroDirEncoded.y, 0.5f, 1e-5f, "zero direction encodes to atlas centre v");
+    const fuse::math::Vec2 upDirEncoded =
+        fuse::renderer::DdgiIrradianceEncoding::encodeDirection({0.f, 1.f, 0.f});
+    expectNear(zeroDirEncoded.x, upDirEncoded.x, 1e-5f, "zero direction encodes like +Y fallback u");
+    expectNear(zeroDirEncoded.y, upDirEncoded.y, 1e-5f, "zero direction encodes like +Y fallback v");
 
     const fuse::math::Vec2 oobEncoded{1.5f, -0.25f};
     const fuse::math::Vec2 clampedEncoded =
@@ -681,6 +752,7 @@ int main() {
     testProbePerAxisClamp();
     testClampProbeSampleCoords();
     testProbeBorderCounts();
+    testEmptyDirectionGuards();
     testProbeWorldPositionClamped();
     testProbeAtlasLayout();
     testIrradianceOctahedralEncoding();
