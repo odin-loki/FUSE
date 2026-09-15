@@ -13,6 +13,10 @@ static constexpr u32 kTaaMaxJitterSequenceLength = 64;
 struct TaaJitterLayout {
     static f32 halton(u32 index, u32 base);
     static bool validateSequenceLength(u32 length);
+    /// Returns the jitter cycle length after validation (0 when invalid).
+    static u32 sequencePeriod(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// Maps a monotonic frame counter into the active Halton slot.
+    static u32 frameIndexInSequence(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     static fuse::math::Vec2 haltonPixelOffset(u32 index, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     static fuse::math::Vec2 haltonNdcOffset(u32 index, u32 width, u32 height,
                                             u32 sequenceLength = kTaaDefaultJitterSequenceLength);

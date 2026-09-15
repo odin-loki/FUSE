@@ -21,6 +21,18 @@ bool TaaJitterLayout::validateSequenceLength(u32 length) {
     return length > 0u && length <= kTaaMaxJitterSequenceLength;
 }
 
+u32 TaaJitterLayout::sequencePeriod(u32 sequenceLength) {
+    return validateSequenceLength(sequenceLength) ? sequenceLength : 0u;
+}
+
+u32 TaaJitterLayout::frameIndexInSequence(u32 frameIndex, u32 sequenceLength) {
+    const u32 period = sequencePeriod(sequenceLength);
+    if (period == 0u) {
+        return 0u;
+    }
+    return frameIndex % period;
+}
+
 fuse::math::Vec2 TaaJitterLayout::haltonPixelOffset(u32 index, u32 sequenceLength) {
     const u32 safeLength = validateSequenceLength(sequenceLength) ? sequenceLength : kTaaDefaultJitterSequenceLength;
     const u32 slot = index % safeLength;
