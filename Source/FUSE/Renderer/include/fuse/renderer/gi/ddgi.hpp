@@ -89,11 +89,21 @@ struct ProbeGridCoord {
     u32 z = 0;
 };
 
+/// Border shell classification for a probe cell (B5.6 deepen).
+enum class ProbeBorderKind : u8 {
+    Invalid,
+    Interior,
+    Face,
+    Edge,
+    Corner,
+};
+
 /// Per-probe validity flags for border/interior classification (B5.6 deepen).
 struct ProbeValidityFlags {
     bool valid = false;
     bool is_border = false;
     bool interior = false;
+    ProbeBorderKind border_kind = ProbeBorderKind::Invalid;
     /// True when the probe has a full 2×2×2 neighbourhood for trilinear sampling.
     bool has_trilinear_neighbourhood = false;
 };
@@ -149,6 +159,8 @@ struct ProbeGridLayout {
     static bool isValidProbeCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
     static bool isValidProbeIndex(const DDGIDesc& desc, u32 probe_index);
     static bool isBorderProbeCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
+    /// Face/edge/corner shell classification; `Invalid` when coord or grid is empty.
+    static ProbeBorderKind probeBorderKind(const DDGIDesc& desc, const ProbeGridCoord& coord);
     static ProbeValidityFlags probeValidity(const DDGIDesc& desc, const ProbeGridCoord& coord);
     static ProbeValidityFlags probeValidityFromIndex(const DDGIDesc& desc, u32 probe_index);
     /// Validity for a flat probe index after `clampProbeIndex` (safe for OOB scheduling).
@@ -157,6 +169,13 @@ struct ProbeGridLayout {
     static bool isProbeIndexOutOfRange(u32 probe_index, const DDGIDesc& desc);
     /// Clamp a flat probe index to [0, probeCount - 1]; returns 0 when the grid is empty.
     static u32 clampProbeIndex(u32 probe_index, const DDGIDesc& desc);
+    static u32 clampProbeCoordX(u32 x, const DDGIDesc& desc);
+    static u32 clampProbeCoordY(u32 y, const DDGIDesc& desc);
+    static u32 clampProbeCoordZ(u32 z, const DDGIDesc& desc);
+    /// Clamp each axis then encode a flat probe index; returns 0 on empty grid.
+    static u32 probeIndexFromClampedCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
+    /// Clamp trilinear corner indices/weights to grid bounds (no-op on empty grid).
+    static void clampProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCoords& coords);
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
@@ -181,7 +200,13 @@ struct ProbeGridLayout {
 /// CPU-side probe grid helpers — mirrors CUDA scheduling without GPU.
 namespace ddgi_util {
 u32 probeCount(const DDGIDesc& desc);
+/// Returns 0 when the grid is empty.
+u32 countBorderProbes(const DDGIDesc& desc);
+/// Returns 0 when the grid is empty.
+u32 countInteriorProbes(const DDGIDesc& desc);
 fuse::math::Vec3 probeWorldPosition(const DDGIDesc& desc, u32 probe_index);
+/// World position after `clampProbeIndex` — safe for OOB scheduling indices.
+fuse::math::Vec3 probeWorldPositionClamped(const DDGIDesc& desc, u32 probe_index);
 u32 irradianceAtlasWidth(const DDGIDesc& desc);
 u32 irradianceAtlasHeight(const DDGIDesc& desc);
 u32 depthAtlasWidth(const DDGIDesc& desc);

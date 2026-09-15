@@ -224,15 +224,25 @@ void testProbeValidityFlags() {
     expectTrue(cornerFlags.valid, "corner probe valid");
     expectTrue(cornerFlags.is_border, "corner probe is border");
     expectTrue(!cornerFlags.interior, "corner probe not interior");
+    expectTrue(cornerFlags.border_kind == fuse::renderer::ProbeBorderKind::Corner, "corner border kind");
     expectTrue(!cornerFlags.has_trilinear_neighbourhood, "corner lacks trilinear neighbourhood");
 
-    const fuse::renderer::ProbeGridCoord faceEdge{0, 1, 1};
+    const fuse::renderer::ProbeGridCoord faceCenter{0, 1, 1};
     const fuse::renderer::ProbeValidityFlags faceFlags =
-        fuse::renderer::ProbeGridLayout::probeValidity(desc, faceEdge);
-    expectTrue(faceFlags.valid, "face-edge probe valid");
-    expectTrue(faceFlags.is_border, "face-edge probe is border");
-    expectTrue(!faceFlags.interior, "face-edge probe not interior");
-    expectTrue(!faceFlags.has_trilinear_neighbourhood, "face-edge lacks trilinear neighbourhood");
+        fuse::renderer::ProbeGridLayout::probeValidity(desc, faceCenter);
+    expectTrue(faceFlags.valid, "face-center probe valid");
+    expectTrue(faceFlags.is_border, "face-center probe is border");
+    expectTrue(!faceFlags.interior, "face-center probe not interior");
+    expectTrue(faceFlags.border_kind == fuse::renderer::ProbeBorderKind::Face, "face border kind");
+    expectTrue(!faceFlags.has_trilinear_neighbourhood, "face-center lacks trilinear neighbourhood");
+
+    const fuse::renderer::ProbeGridCoord edge{0, 0, 1};
+    const fuse::renderer::ProbeValidityFlags edgeFlags =
+        fuse::renderer::ProbeGridLayout::probeValidity(desc, edge);
+    expectTrue(edgeFlags.valid, "edge probe valid");
+    expectTrue(edgeFlags.is_border, "edge probe is border");
+    expectTrue(edgeFlags.border_kind == fuse::renderer::ProbeBorderKind::Edge, "edge border kind");
+    expectTrue(!edgeFlags.has_trilinear_neighbourhood, "edge lacks trilinear neighbourhood");
 
     const fuse::renderer::ProbeGridCoord interior{1, 1, 1};
     const fuse::renderer::ProbeValidityFlags interiorFlags =
@@ -240,6 +250,7 @@ void testProbeValidityFlags() {
     expectTrue(interiorFlags.valid, "interior probe valid");
     expectTrue(!interiorFlags.is_border, "interior probe not border");
     expectTrue(interiorFlags.interior, "interior probe flagged interior");
+    expectTrue(interiorFlags.border_kind == fuse::renderer::ProbeBorderKind::Interior, "interior border kind");
     expectTrue(interiorFlags.has_trilinear_neighbourhood, "interior has trilinear neighbourhood");
 
     fuse::renderer::DDGIDesc single{};
@@ -248,6 +259,7 @@ void testProbeValidityFlags() {
         fuse::renderer::ProbeGridLayout::probeValidity(single, {0, 0, 0});
     expectTrue(loneProbe.valid, "1x1x1 lone probe valid");
     expectTrue(loneProbe.is_border, "1x1x1 lone probe is border");
+    expectTrue(loneProbe.border_kind == fuse::renderer::ProbeBorderKind::Corner, "1x1x1 lone probe is corner");
     expectTrue(!loneProbe.has_trilinear_neighbourhood, "1x1x1 lacks trilinear neighbourhood");
 
     const fuse::renderer::ProbeValidityFlags fromIndex =
@@ -258,6 +270,95 @@ void testProbeValidityFlags() {
     const fuse::renderer::ProbeValidityFlags invalidIndex =
         fuse::renderer::ProbeGridLayout::probeValidityFromIndex(desc, 99u);
     expectTrue(!invalidIndex.valid, "out-of-range index invalid");
+}
+
+void testProbePerAxisClamp() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {4, 2, 3};
+
+    expectTrue(fuse::renderer::ProbeGridLayout::clampProbeCoordX(99u, desc) == 3u, "clamp probe X");
+    expectTrue(fuse::renderer::ProbeGridLayout::clampProbeCoordY(99u, desc) == 1u, "clamp probe Y");
+    expectTrue(fuse::renderer::ProbeGridLayout::clampProbeCoordZ(99u, desc) == 2u, "clamp probe Z");
+
+    const fuse::u32 clampedIndex =
+        fuse::renderer::ProbeGridLayout::probeIndexFromClampedCoord(desc, {9, 9, 9});
+    expectTrue(clampedIndex == 23u, "probeIndexFromClampedCoord maps OOB coord to last index");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+    expectTrue(fuse::renderer::ProbeGridLayout::probeIndexFromClampedCoord(empty, {1, 1, 1}) == 0u,
+               "empty grid clamped coord index is 0");
+    expectTrue(fuse::renderer::ProbeGridLayout::clampProbeCoordX(5u, empty) == 0u,
+               "empty grid clamp probe X returns 0");
+}
+
+void testClampProbeSampleCoords() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+
+    fuse::renderer::ProbeSampleCoords coords{};
+    coords.x0 = 9u;
+    coords.y0 = 9u;
+    coords.z0 = 9u;
+    coords.x1 = 9u;
+    coords.y1 = 9u;
+    coords.z1 = 9u;
+    coords.tx = 2.f;
+    coords.ty = -1.f;
+    coords.tz = 0.5f;
+    fuse::renderer::ProbeGridLayout::clampProbeSampleCoords(desc, coords);
+    expectTrue(coords.x0 == 1u && coords.x1 == 1u, "clamp sample coord x indices");
+    expectTrue(coords.y0 == 1u && coords.y1 == 1u, "clamp sample coord y indices");
+    expectTrue(coords.z0 == 1u && coords.z1 == 1u, "clamp sample coord z indices");
+    expectNear(coords.tx, 1.f, 1e-5f, "clamp sample tx to unit range");
+    expectNear(coords.ty, 0.f, 1e-5f, "clamp sample ty to unit range");
+    expectNear(coords.tz, 0.5f, 1e-5f, "clamp sample tz unchanged in range");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+    fuse::renderer::ProbeSampleCoords emptyCoords{};
+    emptyCoords.x0 = 3u;
+    fuse::renderer::ProbeGridLayout::clampProbeSampleCoords(empty, emptyCoords);
+    expectTrue(emptyCoords.x0 == 0u && emptyCoords.x1 == 0u, "empty grid clamp clears sample coords");
+}
+
+void testProbeBorderCounts() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {3, 3, 3};
+    expectTrue(fuse::renderer::ddgi_util::countBorderProbes(desc) == 26u, "3x3x3 has 26 border probes");
+    expectTrue(fuse::renderer::ddgi_util::countInteriorProbes(desc) == 1u, "3x3x3 has 1 interior probe");
+
+    fuse::renderer::DDGIDesc single{};
+    single.grid_dims = {1, 1, 1};
+    expectTrue(fuse::renderer::ddgi_util::countBorderProbes(single) == 1u, "1x1x1 border count");
+    expectTrue(fuse::renderer::ddgi_util::countInteriorProbes(single) == 0u, "1x1x1 interior count");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 3, 3};
+    expectTrue(fuse::renderer::ddgi_util::countBorderProbes(empty) == 0u, "empty grid border count");
+    expectTrue(fuse::renderer::ddgi_util::countInteriorProbes(empty) == 0u, "empty grid interior count");
+}
+
+void testProbeWorldPositionClamped() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_origin = {1.f, 2.f, 3.f};
+    desc.probe_spacing = {2.f, 2.f, 2.f};
+    desc.grid_dims = {2, 2, 2};
+
+    const fuse::math::Vec3 last =
+        fuse::renderer::ddgi_util::probeWorldPositionClamped(desc, UINT32_MAX);
+    const fuse::math::Vec3 expected =
+        fuse::renderer::ddgi_util::probeWorldPosition(desc, 7u);
+    expectNear(last.x, expected.x, 1e-5f, "clamped world position x matches last probe");
+    expectNear(last.y, expected.y, 1e-5f, "clamped world position y matches last probe");
+    expectNear(last.z, expected.z, 1e-5f, "clamped world position z matches last probe");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_origin = {4.f, 5.f, 6.f};
+    empty.grid_dims = {0, 2, 2};
+    const fuse::math::Vec3 emptyPos =
+        fuse::renderer::ddgi_util::probeWorldPosition(empty, 99u);
+    expectNear(emptyPos.x, 4.f, 1e-5f, "empty grid probeWorldPosition returns origin");
 }
 
 void testIrradianceOctahedralEncoding() {
@@ -523,6 +624,17 @@ void testDdgiInitUpdateSample() {
     expectTrue(ddgi.update(0u), "first DDGI update completes");
     expectTrue(ddgi.lastUpdateStats().probes_scheduled == 64u, "64 probes scheduled");
     expectTrue(ddgi.lastUpdateStats().kernel_launched, "DDGI kernel launch stub succeeds");
+    expectTrue(ddgi.cacheEntry(UINT32_MAX).irradiance.x > 0.f, "OOB cacheEntry clamps to valid probe");
+
+    fuse::renderer::DDGIDesc emptyDesc{};
+    emptyDesc.grid_dims = {0, 8, 16};
+    fuse::renderer::DDGI emptyDdgi;
+    expectTrue(!emptyDdgi.init(emptyDesc, resources), "empty grid DDGI init fails");
+    expectTrue(!emptyDdgi.isReady(), "empty grid DDGI not ready");
+
+    fuse::u32 emptyIndices[4] = {0u, 1u, 2u, 3u};
+    expectTrue(!fuse::renderer::launch_ddgi_probe_update(emptyDesc, emptyIndices, 4u, nullptr),
+               "empty grid probe update launch returns false");
 
     fuse::renderer::DDGISampleRequest sampleRequest{};
     sampleRequest.world_position = fuse::renderer::ddgi_util::probeWorldPosition(desc, 0u);
@@ -566,6 +678,10 @@ int main() {
     testProbeSampleCoords();
     testEmptyProbeGrid();
     testProbeValidityFlags();
+    testProbePerAxisClamp();
+    testClampProbeSampleCoords();
+    testProbeBorderCounts();
+    testProbeWorldPositionClamped();
     testProbeAtlasLayout();
     testIrradianceOctahedralEncoding();
     testDirectionalProbeIrradiance();
