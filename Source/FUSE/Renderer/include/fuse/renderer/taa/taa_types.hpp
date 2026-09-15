@@ -40,6 +40,12 @@ struct TaaResolveDesc {
     u32 height = 0;
 };
 
+/// History accumulation bookkeeping tracked alongside ping-pong targets.
+struct TaaHistoryValidity {
+    bool hasValidHistory = false;
+    u32 accumulatedFrames = 0;
+};
+
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {
     bool resolved = false;
@@ -47,6 +53,9 @@ struct TaaResolveStats {
     u32 height = 0;
     f32 last_blend = 0.f;
     bool history_swapped = false;
+    bool first_frame = false;
+    bool has_valid_history = false;
+    u32 accumulated_frames = 0;
 };
 
 } // namespace fuse::renderer

@@ -47,6 +47,51 @@ void testHaltonJitterSequence() {
     expectNear(reset.x, first.x, 1e-5f, "jitter reset returns to first sample");
 }
 
+void testJitterSequenceLayout() {
+    using fuse::renderer::TaaJitterLayout;
+
+    expectTrue(TaaJitterLayout::validateSequenceLength(8u), "default sequence length valid");
+    expectTrue(!TaaJitterLayout::validateSequenceLength(0u), "zero sequence length rejected");
+    expectTrue(!TaaJitterLayout::validateSequenceLength(fuse::renderer::kTaaMaxJitterSequenceLength + 1u),
+               "oversized sequence length rejected");
+
+    const fuse::math::Vec2 computed = TaaJitterLayout::haltonPixelOffset(0u, 8u);
+    expectNear(computed.x, 0.5f, 1e-5f, "layout Halton X matches default table");
+    expectNear(computed.y, 0.333f, 1e-3f, "layout Halton Y matches default table");
+
+    fuse::math::Vec2 sequence[8]{};
+    TaaJitterLayout::fillHaltonSequence(8u, sequence);
+    expectNear(sequence[0].x, 0.5f, 1e-5f, "filled sequence slot 0 X");
+    expectNear(sequence[7].x, 0.0625f, 1e-5f, "filled sequence slot 7 X");
+    expectNear(sequence[7].y, 0.889f, 1e-3f, "filled sequence slot 7 Y");
+}
+
+void testCustomJitterSequenceLength() {
+    fuse::renderer::TaaJitterDesc desc{};
+    desc.sequence_length = 4u;
+    fuse::renderer::TaaJitter jitter(desc);
+    expectTrue(jitter.sequenceLength() == 4u, "custom jitter sequence length applied");
+
+    const fuse::math::Vec2 first = jitter.currentPixelOffset();
+    expectNear(first.x, 0.5f, 1e-5f, "custom sequence first sample X");
+
+    for (fuse::u32 i = 0u; i < 4u; ++i) {
+        jitter.advance();
+    }
+    expectTrue(jitter.index() == 0u, "custom sequence wraps after four advances");
+    const fuse::math::Vec2 wrapped = jitter.currentPixelOffset();
+    expectNear(wrapped.x, first.x, 1e-5f, "custom sequence wraps to first sample");
+}
+
+void testHaltonComputeMatchesTable() {
+    using fuse::renderer::TaaJitterLayout;
+
+    expectNear(TaaJitterLayout::halton(1u, 2u), 0.5f, 1e-5f, "halton(1,2)");
+    expectNear(TaaJitterLayout::halton(2u, 2u), 0.25f, 1e-5f, "halton(2,2)");
+    expectNear(TaaJitterLayout::halton(1u, 3u), 0.333f, 1e-3f, "halton(1,3)");
+    expectNear(TaaJitterLayout::halton(8u, 3u), 0.889f, 1e-3f, "halton(8,3)");
+}
+
 void testJitterNdcOffset() {
     const fuse::math::Vec2 ndc =
         fuse::renderer::TaaJitter::haltonNdcOffset(0u, 1920u, 1080u);
@@ -88,6 +133,43 @@ void testHistoryBufferPingPong() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testHistoryValidityFlags() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for TAA history validity test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaHistoryBuffer history;
+    fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
+    expectTrue(history.init(resources, historyDesc), "history ready for validity checks");
+    expectTrue(!history.hasValidHistory(), "history invalid before first resolve");
+    expectTrue(history.accumulatedFrames() == 0u, "no accumulated frames before resolve");
+
+    history.markResolved();
+    expectTrue(history.hasValidHistory(), "history valid after first resolve");
+    expectTrue(history.accumulatedFrames() == 1u, "one accumulated frame after first resolve");
+
+    history.invalidateHistory();
+    expectTrue(!history.hasValidHistory(), "invalidate clears validity flag");
+    expectTrue(history.accumulatedFrames() == 0u, "invalidate clears accumulated frame count");
+
+    history.resize(128, 128);
+    expectTrue(!history.hasValidHistory(), "resize invalidates history");
+    expectTrue(history.desc().width == 128u, "history resized width");
+    expectTrue(history.desc().height == 128u, "history resized height");
+
+    history.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
 void testResolveStub() {
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
@@ -116,7 +198,16 @@ void testResolveStub() {
     expectTrue(resolve.resolve(desc, history), "resolve stub succeeds with valid surfaces");
     expectTrue(resolve.lastStats().resolved, "resolve stats marked resolved");
     expectTrue(resolve.lastStats().history_swapped, "resolve swaps history");
+    expectTrue(resolve.lastStats().first_frame, "first resolve marks first frame");
+    expectTrue(resolve.lastStats().has_valid_history, "resolve marks history valid");
+    expectTrue(resolve.lastStats().accumulated_frames == 1u, "resolve increments accumulated frames");
     expectNear(resolve.lastStats().last_blend, 0.15f, 1e-5f, "resolve records blend factor");
+
+    desc.surfaces.current_frame = reinterpret_cast<void*>(0x3);
+    desc.surfaces.output = reinterpret_cast<void*>(0x4);
+    expectTrue(resolve.resolve(desc, history), "second resolve succeeds");
+    expectTrue(!resolve.lastStats().first_frame, "second resolve is not first frame");
+    expectTrue(resolve.lastStats().accumulated_frames == 2u, "second resolve increments accumulated frames");
 
     fuse::renderer::TaaResolveDesc invalid{};
     invalid.width = 64;
@@ -186,8 +277,12 @@ int main() {
     fuse::core::initialize();
 
     testHaltonJitterSequence();
+    testJitterSequenceLayout();
+    testCustomJitterSequenceLength();
+    testHaltonComputeMatchesTable();
     testJitterNdcOffset();
     testHistoryBufferPingPong();
+    testHistoryValidityFlags();
     testResolveStub();
     testTaaPassLifecycle();
     testTaaPassGraphHook();

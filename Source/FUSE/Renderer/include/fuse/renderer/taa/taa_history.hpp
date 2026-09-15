@@ -15,19 +15,25 @@ public:
     void destroy();
 
     bool isReady() const { return m_ready; }
+    bool hasValidHistory() const { return m_validity.hasValidHistory; }
+    u32 accumulatedFrames() const { return m_validity.accumulatedFrames; }
     const TaaHistoryBufferDesc& desc() const { return m_desc; }
+    const TaaHistoryValidity& validity() const { return m_validity; }
 
     TextureHandle read() const;
     TextureHandle write() const;
     u32 activeIndex() const { return m_activeIndex; }
 
     void swap();
+    void invalidateHistory();
+    void markResolved();
 
 private:
     void releaseTargets();
 
     ResourceManager* m_resources = nullptr;
     TaaHistoryBufferDesc m_desc{};
+    TaaHistoryValidity m_validity{};
     TextureHandle m_buffers[2]{};
     u32 m_activeIndex = 0;
     bool m_ready = false;

@@ -6,11 +6,25 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 
 | Header | Role |
 |--------|------|
-| `taa_types.hpp` | `TAAParams`, history/jitter/resolve descriptor types |
-| `taa_jitter.hpp` | 8-frame Halton (2,3) sequence and NDC projection offsets |
-| `taa_history.hpp` | Ping-pong `TextureHandle` history targets |
-| `taa_resolve.hpp` | Resolve stub — records inputs and swaps history |
+| `taa_types.hpp` | `TAAParams`, `TaaHistoryValidity`, history/jitter/resolve descriptor types |
+| `taa_jitter.hpp` | `TaaJitterLayout` Halton helpers + `TaaJitter` frame state |
+| `taa_history.hpp` | Ping-pong `TextureHandle` history targets + validity flags |
+| `taa_resolve.hpp` | Resolve stub — records inputs, validity, and swaps history |
 | `taa_pass.hpp` | `TaaPass` facade + render-graph hook |
+
+## Jitter sequence (B5.9 deepen)
+
+- `TaaJitterLayout::halton(index, base)` — CPU Halton reference used by tests and custom sequence lengths
+- `TaaJitterLayout::validateSequenceLength(length)` — rejects zero or >64 frame sequences
+- `TaaJitterLayout::fillHaltonSequence(length, out)` — fills a Halton (2,3) table for projection jitter
+- `TaaJitter` honours `TaaJitterDesc::sequence_length` (default 8) when advancing and wrapping
+
+## History validity (B5.9 deepen)
+
+- `TaaHistoryBuffer::hasValidHistory()` — false until the first successful resolve
+- `TaaHistoryBuffer::accumulatedFrames()` — monotonic frame counter reset on invalidate/resize
+- `TaaHistoryBuffer::invalidateHistory()` — clears validity (called on resize)
+- `TaaResolveStats::first_frame` — set when resolve runs before history is warm
 
 ## Pipeline (stub)
 
@@ -18,12 +32,16 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 
 - **Jitter** — `TaaJitter::currentNdcOffset()` feeds the projection matrix each frame
 - **History** — two RGBA16F targets allocated via `ResourceManager`
-- **Resolve** — validates surfaces, updates stats, swaps history; kernel deferred
+- **Resolve** — validates surfaces, updates stats/validity, swaps history; kernel deferred
 - **Graph** — `addTaaPassToGraph()` inserts the `taa_resolve` pass (also scheduled by `DeferredFramePipeline`)
 
 ## Tests
 
-`fuse_taa_pass` (`ctest` name `fuse_taa_pass`) covers Halton jitter, history ping-pong, resolve validation, `TaaPass` lifecycle, and render-graph registration.
+`fuse_taa_pass` (`ctest` name `fuse_taa_pass`) covers Halton layout helpers, custom sequence length, history validity flags, ping-pong, resolve validation, `TaaPass` lifecycle, and render-graph registration.
+
+```bash
+ctest --test-dir build --output-on-failure -R fuse_taa_pass
+```
 
 ## Build
 
