@@ -899,9 +899,37 @@ void testSoaOpsEmptyBurst() {
     const fuse::vfx::particle_soa::BurstEmitResult burst =
         fuse::vfx::particle_soa::burst_emit(soa, desc, {0.f, 1.f, 0.f}, 0u, 42u);
 
+    expectEq(burst.requested, 0u, "soa burst_emit(0) reports zero requested");
     expectEq(burst.emitted, 0u, "soa burst_emit(0) emits nothing");
     expectEq(soa.count, 0u, "soa burst_emit(0) leaves count at zero");
-    expectEq(static_cast<fuse::u32>(soa.free_slots.size()), 8u, "soa burst_emit(0) leaves all slots free");
+    expectEq(fuse::vfx::particle_soa::free_slot_count(soa), 8u, "soa burst_emit(0) leaves all slots free");
+}
+
+void testSoaOpsBurstUninitializedCapacity() {
+    fuse::vfx::ParticleSoA soa{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 0;
+
+    const fuse::vfx::particle_soa::BurstEmitResult burst =
+        fuse::vfx::particle_soa::burst_emit(soa, desc, {}, 4u, 1u);
+    expectEq(burst.requested, 4u, "soa burst_emit on zero capacity reports requested count");
+    expectEq(burst.emitted, 0u, "soa burst_emit on zero capacity emits nothing");
+    expectEq(fuse::vfx::particle_soa::free_slot_count(soa), 0u, "soa zero capacity has no free slots");
+}
+
+void testSoaOpsFreeSlotCount() {
+    fuse::vfx::ParticleSoA soa{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 5;
+    desc.lifetime_min = 1.f;
+    desc.lifetime_max = 1.f;
+
+    fuse::vfx::particle_soa::init(soa, desc.max_particles);
+    expectEq(fuse::vfx::particle_soa::free_slot_count(soa), 5u, "init pre-fills free list");
+
+    (void)fuse::vfx::particle_soa::burst_emit(soa, desc, {}, 2u, 9u);
+    expectEq(fuse::vfx::particle_soa::free_slot_count(soa), 3u, "free_slot_count shrinks after burst");
+    expectEq(fuse::vfx::particle_soa::sync_alive_count(soa), 2u, "sync_alive_count matches emitted slots");
 }
 
 void testSoaOpsEmitCount() {
@@ -925,8 +953,10 @@ void testSoaOpsEmitCount() {
 
     const fuse::vfx::particle_soa::BurstEmitResult overflow =
         fuse::vfx::particle_soa::burst_emit(soa, desc, {}, 5u, three.seed_after);
+    expectEq(overflow.requested, 5u, "soa burst_emit reports requested count at capacity");
     expectEq(overflow.emitted, 2u, "soa burst_emit reports clamped emit count at capacity");
     expectEq(soa.count, 6u, "soa count reaches capacity after clamped burst");
+    expectEq(fuse::vfx::particle_soa::free_slot_count(soa), 0u, "full soa has zero free slots");
 }
 
 void testSoaOpsLifetimeCull() {
@@ -942,16 +972,48 @@ void testSoaOpsLifetimeCull() {
     const fuse::f32 yBefore = soa.positions[0].y;
     const fuse::vfx::particle_soa::LifetimeCullResult partial =
         fuse::vfx::particle_soa::lifetime_cull(soa, 0.4f);
+    expectEq(partial.aged, 4u, "lifetime_cull ages all live slots");
     expectEq(partial.culled, 0u, "lifetime_cull keeps young particles alive");
     expectEq(partial.alive_after, 4u, "lifetime_cull alive count unchanged before expiry");
     expectNear(soa.positions[0].y, yBefore, 1e-5f, "lifetime_cull does not integrate position");
 
     const fuse::vfx::particle_soa::LifetimeCullResult expired =
         fuse::vfx::particle_soa::lifetime_cull(soa, 0.7f);
+    expectEq(expired.aged, 4u, "lifetime_cull ages remaining live slots");
     expectEq(expired.culled, 4u, "lifetime_cull removes expired particles");
     expectEq(expired.alive_after, 0u, "lifetime_cull reports zero alive after expiry");
     expectEq(soa.count, 0u, "lifetime_cull updates soa count");
-    expectEq(static_cast<fuse::u32>(soa.free_slots.size()), 4u, "lifetime_cull recycles dead slots");
+    expectEq(fuse::vfx::particle_soa::free_slot_count(soa), 4u, "lifetime_cull recycles dead slots");
+}
+
+void testSoaOpsLifetimeCullMixedLifetimes() {
+    fuse::vfx::ParticleSoA soa{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 4;
+    desc.lifetime_min = 1.f;
+    desc.lifetime_max = 1.f;
+
+    fuse::vfx::particle_soa::init(soa, desc.max_particles);
+    (void)fuse::vfx::particle_soa::burst_emit(soa, desc, {}, 4u, 77u);
+    soa.lifetimes[0] = 0.2f;
+    soa.lifetimes[1] = 0.2f;
+    soa.lifetimes[2] = 1.0f;
+    soa.lifetimes[3] = 1.0f;
+
+    const fuse::vfx::particle_soa::LifetimeCullResult partial =
+        fuse::vfx::particle_soa::lifetime_cull(soa, 0.25f);
+    expectEq(partial.culled, 2u, "mixed lifetimes cull only short-lived slots");
+    expectEq(partial.alive_after, 2u, "mixed lifetimes keep long-lived slots alive");
+    expectEq(partial.alive_after + partial.culled, partial.aged,
+             "lifetime_cull aged count matches culled plus survivors");
+    expectEq(partial.alive_after, soa.count, "lifetime_cull alive_after matches soa count");
+    expectEq(fuse::vfx::particle_soa::sync_alive_count(soa), partial.alive_after,
+             "sync_alive_count agrees with lifetime_cull survivors");
+
+    const fuse::vfx::particle_soa::LifetimeCullResult final_pass =
+        fuse::vfx::particle_soa::lifetime_cull(soa, 2.f);
+    expectEq(final_pass.alive_after, 0u, "mixed lifetimes fully culled after long dt");
+    expectEq(fuse::vfx::particle_soa::free_slot_count(soa), 4u, "mixed lifetime cull returns all slots");
 }
 
 void testSoaOpsLifetimeCullEmpty() {
@@ -1082,6 +1144,61 @@ void testSoaOpsRateEmit() {
     expectNear(second.accum_after, 0.f, 1e-5f, "soa rate emit clears accumulator at capacity");
 }
 
+void testSoaOpsRateEmitEmpty() {
+    fuse::vfx::ParticleSoA soa{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 4;
+    desc.emit_rate = 0.f;
+    desc.lifetime_min = 1.f;
+    desc.lifetime_max = 1.f;
+
+    fuse::vfx::particle_soa::init(soa, desc.max_particles);
+    const fuse::vfx::particle_soa::RateEmitResult zero_rate =
+        fuse::vfx::particle_soa::accumulate_rate_emit(soa, desc, {}, 1.f, 0.5f, 1u);
+    expectEq(zero_rate.emitted, 0u, "soa rate emit with zero rate emits nothing");
+    expectNear(zero_rate.accum_after, 0.5f, 1e-5f, "soa rate emit with zero rate preserves accumulator");
+
+    desc.emit_rate = 10.f;
+    const fuse::vfx::particle_soa::RateEmitResult zero_dt =
+        fuse::vfx::particle_soa::accumulate_rate_emit(soa, desc, {}, 0.f, 0.25f, 1u);
+    expectEq(zero_dt.emitted, 0u, "soa rate emit with zero dt emits nothing");
+    expectNear(zero_dt.accum_after, 0.25f, 1e-5f, "soa rate emit with zero dt preserves accumulator");
+}
+
+void testSoaOpsLifetimeCullParallelParity() {
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 96;
+    desc.lifetime_min = 0.5f;
+    desc.lifetime_max = 1.5f;
+
+    fuse::u32 serialAlive = 0;
+    fuse::u32 serialCulled = 0;
+    withScheduler(0, [&] {
+        fuse::vfx::ParticleSoA soa{};
+        fuse::vfx::particle_soa::init(soa, desc.max_particles);
+        (void)fuse::vfx::particle_soa::burst_emit(soa, desc, {}, 80u, 4321u);
+        const fuse::vfx::particle_soa::LifetimeCullResult cull =
+            fuse::vfx::particle_soa::lifetime_cull(soa, 0.35f);
+        serialAlive = cull.alive_after;
+        serialCulled = cull.culled;
+    });
+
+    fuse::u32 parallelAlive = 0;
+    fuse::u32 parallelCulled = 0;
+    withScheduler(4, [&] {
+        fuse::vfx::ParticleSoA soa{};
+        fuse::vfx::particle_soa::init(soa, desc.max_particles);
+        (void)fuse::vfx::particle_soa::burst_emit(soa, desc, {}, 80u, 4321u);
+        const fuse::vfx::particle_soa::LifetimeCullResult cull =
+            fuse::vfx::particle_soa::lifetime_cull(soa, 0.35f);
+        parallelAlive = cull.alive_after;
+        parallelCulled = cull.culled;
+    });
+
+    expectEq(parallelAlive, serialAlive, "lifetime_cull parallel alive count matches serial");
+    expectEq(parallelCulled, serialCulled, "lifetime_cull parallel culled count matches serial");
+}
+
 void testSoaOpsParallelParity() {
     fuse::vfx::ParticleEmitterDesc desc{};
     desc.max_particles = 96;
@@ -1174,14 +1291,19 @@ int main() {
     testParallelAllDeadNoOp();
     testParallelMultiWorkerParity();
     testSoaOpsEmptyBurst();
+    testSoaOpsBurstUninitializedCapacity();
+    testSoaOpsFreeSlotCount();
     testSoaOpsEmitCount();
     testSoaOpsLifetimeCull();
+    testSoaOpsLifetimeCullMixedLifetimes();
     testSoaOpsLifetimeCullEmpty();
     testSoaOpsLifetimeCullNoDt();
+    testSoaOpsLifetimeCullParallelParity();
     testSoaOpsBurstFill();
     testSoaOpsDeterministicSeed();
     testSoaOpsAgeKill();
     testSoaOpsRateEmit();
+    testSoaOpsRateEmitEmpty();
     testSoaOpsParallelParity();
     testParticleGpuBufferLayout();
     testParticleGpuColumnAlignment();

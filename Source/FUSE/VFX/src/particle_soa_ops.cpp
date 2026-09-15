@@ -104,6 +104,21 @@ void init(ParticleSoA& soa, u32 capacity) {
     soa.count = 0;
 }
 
+u32 free_slot_count(const ParticleSoA& soa) {
+    return static_cast<u32>(soa.free_slots.size());
+}
+
+u32 sync_alive_count(ParticleSoA& soa) {
+    u32 alive = 0;
+    for (u32 index = 0; index < soa.capacity; ++index) {
+        if (soa.alive_flags[index] != 0U) {
+            ++alive;
+        }
+    }
+    soa.count = alive;
+    return alive;
+}
+
 u32 allocate_slot(ParticleSoA& soa) {
     if (soa.free_slots.empty()) {
         return UINT32_MAX;
@@ -117,10 +132,18 @@ void recycle_slot(ParticleSoA& soa, u32 slot) {
     soa.free_slots.push_back(slot);
 }
 
+void recycle_slots(ParticleSoA& soa, const std::vector<u32>& slots) {
+    soa.free_slots.insert(soa.free_slots.end(), slots.begin(), slots.end());
+}
+
 BurstEmitResult burst_emit(ParticleSoA& soa, const ParticleEmitterDesc& desc, const math::Vec3& origin,
                            u32 count, u64 seed) {
     BurstEmitResult result{};
+    result.requested = count;
     result.seed_after = seed;
+    if (count == 0u || soa.capacity == 0u) {
+        return result;
+    }
     for (u32 i = 0; i < count; ++i) {
         const u32 slot = allocate_slot(soa);
         if (slot == UINT32_MAX) {
@@ -142,12 +165,14 @@ LifetimeCullResult lifetime_cull(ParticleSoA& soa, f32 dt, u32 grain_size) {
     result.dead_slots.reserve(soa.capacity / 8u + 1u);
     std::mutex dead_mutex;
     std::atomic<u32> alive_count{0};
+    std::atomic<u32> aged_count{0};
     std::atomic<u32> culled_count{0};
 
     fuse::jobs::parallel_for(0u, soa.capacity, grain_size, [&](u32 index) {
         if (soa.alive_flags[index] == 0U) {
             return;
         }
+        aged_count.fetch_add(1U, std::memory_order_relaxed);
         if (advance_age_and_cull_slot(soa, index, dt)) {
             std::lock_guard<std::mutex> guard(dead_mutex);
             result.dead_slots.push_back(index);
@@ -158,11 +183,10 @@ LifetimeCullResult lifetime_cull(ParticleSoA& soa, f32 dt, u32 grain_size) {
     });
 
     soa.count = alive_count.load(std::memory_order_relaxed);
+    result.aged = aged_count.load(std::memory_order_relaxed);
     result.alive_after = soa.count;
     result.culled = culled_count.load(std::memory_order_relaxed);
-    for (u32 slot : result.dead_slots) {
-        recycle_slot(soa, slot);
-    }
+    recycle_slots(soa, result.dead_slots);
     return result;
 }
 
@@ -209,9 +233,7 @@ SimStepResult simulate_step(ParticleSoA& soa, const ParticleEmitterDesc& desc, f
 
     soa.count = alive_count.load(std::memory_order_relaxed);
     result.alive_after = soa.count;
-    for (u32 slot : result.dead_slots) {
-        recycle_slot(soa, slot);
-    }
+    recycle_slots(soa, result.dead_slots);
     return result;
 }
 

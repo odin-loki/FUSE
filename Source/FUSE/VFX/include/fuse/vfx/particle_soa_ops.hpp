@@ -9,13 +9,23 @@ namespace fuse::vfx::particle_soa {
 /// Initialize SoA columns and pre-fill the free-list with all slot indices.
 void init(ParticleSoA& soa, u32 capacity);
 
+/// Remaining emission capacity (size of `free_slots`).
+[[nodiscard]] u32 free_slot_count(const ParticleSoA& soa);
+
+/// Recount live slots from `alive_flags` and write `soa.count`.
+[[nodiscard]] u32 sync_alive_count(ParticleSoA& soa);
+
 /// Pop a dead slot from `free_slots`, or return `UINT32_MAX` when full.
 [[nodiscard]] u32 allocate_slot(ParticleSoA& soa);
 
 /// Return a dead slot index to the free list (caller must clear `alive_flags`).
 void recycle_slot(ParticleSoA& soa, u32 slot);
 
+/// Return multiple dead slot indices to the free list (caller must clear `alive_flags`).
+void recycle_slots(ParticleSoA& soa, const std::vector<u32>& slots);
+
 struct BurstEmitResult {
+    u32 requested = 0;
     u32 emitted = 0;
     u64 seed_after = 0;
 };
@@ -36,6 +46,7 @@ struct RateEmitResult {
                                                   u64 seed);
 
 struct LifetimeCullResult {
+    u32 aged = 0;
     u32 culled = 0;
     u32 alive_after = 0;
     std::vector<u32> dead_slots;
