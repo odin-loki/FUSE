@@ -3,6 +3,7 @@
 #include <fuse/physics/broadphase/spatial_hash.hpp>
 #include <fuse/physics/config.hpp>
 #include <fuse/physics/math.hpp>
+#include <fuse/physics/narrowphase/contact_manifold.hpp>
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/types.hpp>
 
@@ -11,16 +12,6 @@
 #include <vector>
 
 namespace fuse::physics::narrowphase {
-
-struct ContactManifold {
-    vec3 contactPoint{};
-    vec3 contactNormal{};
-    f32 penetrationDepth = 0.f;
-    f32 minSeparation = 0.f;
-    u32 bodyA = 0;
-    u32 bodyB = 0;
-    bool valid = false;
-};
 
 FUSE_PHYSICS_INLINE ContactManifold collideSphereSphere(
     vec3 posA,
@@ -33,7 +24,7 @@ FUSE_PHYSICS_INLINE ContactManifold collideSphereSphere(
     const f32 dist = diff.length();
     const f32 sumRadius = radiusA + radiusB;
     if (dist > sumRadius) {
-        return {};
+        return invalidContactManifold();
     }
 
     vec3 normal{};
@@ -44,17 +35,18 @@ FUSE_PHYSICS_INLINE ContactManifold collideSphereSphere(
     }
 
     ContactManifold manifold{};
-    manifold.contactPoint = {
-        posB.x + normal.x * radiusB,
-        posB.y + normal.y * radiusB,
-        posB.z + normal.z * radiusB,
-    };
     manifold.contactNormal = normal;
-    manifold.penetrationDepth = sumRadius - dist;
     manifold.minSeparation = sumRadius;
     manifold.bodyA = idxA;
     manifold.bodyB = idxB;
     manifold.valid = true;
+    manifold.addPoint(
+        {
+            posB.x + normal.x * radiusB,
+            posB.y + normal.y * radiusB,
+            posB.z + normal.z * radiusB,
+        },
+        sumRadius - dist);
     return manifold;
 }
 
@@ -67,21 +59,22 @@ FUSE_PHYSICS_INLINE ContactManifold collideSpherePlane(
     u32 idxPlane) {
     const f32 dist = spherePos.dot(planeNormal) - planeDistance;
     if (dist > sphereRadius) {
-        return {};
+        return invalidContactManifold();
     }
 
     ContactManifold manifold{};
-    manifold.contactPoint = {
-        spherePos.x - planeNormal.x * sphereRadius,
-        spherePos.y - planeNormal.y * sphereRadius,
-        spherePos.z - planeNormal.z * sphereRadius,
-    };
     manifold.contactNormal = planeNormal;
-    manifold.penetrationDepth = sphereRadius - dist;
     manifold.minSeparation = sphereRadius;
     manifold.bodyA = idxSphere;
     manifold.bodyB = idxPlane;
     manifold.valid = true;
+    manifold.addPoint(
+        {
+            spherePos.x - planeNormal.x * sphereRadius,
+            spherePos.y - planeNormal.y * sphereRadius,
+            spherePos.z - planeNormal.z * sphereRadius,
+        },
+        sphereRadius - dist);
     return manifold;
 }
 
@@ -103,7 +96,7 @@ FUSE_PHYSICS_INLINE ContactManifold collideBoxSphere(
     const vec3 delta = local - closest;
     const f32 distSq = delta.dot(delta);
     if (distSq > sphereRadius * sphereRadius) {
-        return {};
+        return invalidContactManifold();
     }
 
     vec3 normal{};
@@ -129,13 +122,12 @@ FUSE_PHYSICS_INLINE ContactManifold collideBoxSphere(
     }
 
     ContactManifold manifold{};
-    manifold.contactPoint = spherePos - normal * sphereRadius;
     manifold.contactNormal = normal;
-    manifold.penetrationDepth = penetration;
     manifold.minSeparation = sphereRadius;
     manifold.bodyA = idxSphere;
     manifold.bodyB = idxBox;
     manifold.valid = true;
+    manifold.addPoint(spherePos - normal * sphereRadius, penetration);
     return manifold;
 }
 
@@ -164,7 +156,7 @@ FUSE_PHYSICS_INLINE ContactManifold collideCapsuleSphere(
     const f32 dist = diff.length();
     const f32 sumRadius = sphereRadius + capsuleRadius;
     if (dist > sumRadius) {
-        return {};
+        return invalidContactManifold();
     }
 
     vec3 normal{};
@@ -175,15 +167,23 @@ FUSE_PHYSICS_INLINE ContactManifold collideCapsuleSphere(
     }
 
     ContactManifold manifold{};
-    manifold.contactPoint = axisPoint + normal * capsuleRadius;
     manifold.contactNormal = normal;
-    manifold.penetrationDepth = sumRadius - dist;
     manifold.minSeparation = sumRadius;
     manifold.bodyA = idxSphere;
     manifold.bodyB = idxCapsule;
     manifold.valid = true;
+    manifold.addPoint(axisPoint + normal * capsuleRadius, sumRadius - dist);
     return manifold;
 }
+
+/// Axis-aligned box vs box (stub ignores orientation; emits up to four face contact points).
+ContactManifold collideBoxBox(
+    vec3 posA,
+    vec3 halfExtentsA,
+    vec3 posB,
+    vec3 halfExtentsB,
+    u32 idxA,
+    u32 idxB);
 
 struct ContactBufferSoA;
 

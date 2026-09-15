@@ -1,5 +1,6 @@
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
 #include <fuse/physics/narrowphase/contact_buffer.hpp>
+#include <fuse/physics/narrowphase/friction.hpp>
 #include <fuse/physics/narrowphase/gjk.hpp>
 #include <fuse/physics/physics_data.hpp>
 
@@ -97,25 +98,90 @@ void testContactBufferClearReuse() {
     expectTrue(buffer.compact() == 2u, "reuse after clear compacts new contacts");
 }
 
+void testBoxBoxCollisionPointCount() {
+    const auto manifold = fuse::physics::narrowphase::collideBoxBox(
+        {0.f, 1.1f, 0.f},
+        {1.f, 1.f, 1.f},
+        {0.f, 0.f, 0.f},
+        {1.f, 1.f, 1.f},
+        0u,
+        1u);
+    expectTrue(manifold.valid, "overlapping axis-aligned boxes produce contact");
+    expectTrue(manifold.pointCount == 4u, "box-box stub emits four face contact points");
+    expectTrue(manifold.penetrationDepth > 0.f, "box-box penetration depth positive");
+}
+
+void testFrictionClampStub() {
+    const auto basis = fuse::physics::narrowphase::buildTangentBasis({0.f, 1.f, 0.f});
+    expectNear(basis.tangent1.length(), 1.f, 1e-4f, "tangent1 unit length");
+    expectNear(basis.tangent2.length(), 1.f, 1e-4f, "tangent2 unit length");
+    expectNear(basis.tangent1.dot({0.f, 1.f, 0.f}), 0.f, 1e-4f, "tangent1 orthogonal to normal");
+
+    fuse::physics::narrowphase::FrictionImpulse withinStatic{};
+    withinStatic.tangent1 = 0.4f;
+    const auto staticClamped =
+        fuse::physics::narrowphase::clampFrictionImpulse(withinStatic, 2.f, 0.5f, 0.3f);
+    expectNear(staticClamped.tangent1, 0.4f, 1e-4f, "friction clamp keeps tangent inside static cone");
+
+    fuse::physics::narrowphase::FrictionImpulse beyondStatic{};
+    beyondStatic.tangent1 = 5.f;
+    const auto dynamicClamped =
+        fuse::physics::narrowphase::clampFrictionImpulse(beyondStatic, 2.f, 0.5f, 0.3f);
+    expectNear(dynamicClamped.normal, 2.f, 1e-4f, "friction clamp preserves normal impulse");
+    expectNear(dynamicClamped.tangent1, 0.6f, 1e-4f, "friction clamp limits tangent to dynamic cone");
+}
+
+void testContactBufferWarmStartAndPointSlots() {
+    fuse::physics::narrowphase::ContactBufferSoA buffer;
+    buffer.preparePairSlots(1u);
+
+    fuse::physics::narrowphase::ContactManifold manifold{};
+    manifold.valid = true;
+    manifold.bodyA = 0u;
+    manifold.bodyB = 1u;
+    manifold.contactNormal = {0.f, 1.f, 0.f};
+    manifold.warmNormalImpulse = 3.5f;
+    manifold.warmTangentImpulse = {0.25f, -0.1f};
+    manifold.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    manifold.addPoint({1.f, 0.f, 0.f}, 0.25f);
+    buffer.writeSlot(0u, manifold);
+    expectTrue(buffer.compact() == 1u, "warm-start buffer compacts one manifold");
+
+    fuse::physics::narrowphase::ContactManifold restored = buffer.manifoldAt(0u);
+    expectTrue(restored.pointCount == 2u, "buffer restores multi-point slots");
+    expectNear(restored.warmNormalImpulse, 3.5f, 1e-4f, "buffer stores warm normal impulse");
+    expectNear(restored.warmTangentImpulse.x, 0.25f, 1e-4f, "buffer stores warm tangent impulse");
+
+    fuse::physics::narrowphase::ContactManifold warmStartTarget{};
+    buffer.applyWarmStartStub(0u, warmStartTarget);
+    expectNear(warmStartTarget.warmNormalImpulse, 3.5f, 1e-4f, "warm-start stub copies prior impulses");
+}
+
 void testRunNarrowphaseIntoBufferJobSafe() {
     fuse::physics::RigidBodySoA bodies;
     fuse::physics::CollisionShapeSoA shapes;
 
-    const fuse::u32 sphereBody = bodies.addBody({0.f, 1.2f, 0.f}, 1.f);
-    const fuse::u32 boxBody = bodies.addBody({0.f, 0.f, 0.f}, 0.f, fuse::physics::RB_STATIC);
-    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, sphereBody, {0.5f, 0.f, 0.f});
-    shapes.addShape(fuse::physics::CollisionShapeType::Box, boxBody, {1.f, 1.f, 1.f});
+    const fuse::u32 boxBodyA = bodies.addBody({0.f, 1.1f, 0.f}, 1.f);
+    const fuse::u32 boxBodyB = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Box, boxBodyA, {1.f, 1.f, 1.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Box, boxBodyB, {1.f, 1.f, 1.f});
 
-    const std::vector<fuse::physics::broadphase::CandidatePair> pairs = {{sphereBody, boxBody}};
+    const std::vector<fuse::physics::broadphase::CandidatePair> pairs = {
+        {boxBodyA, boxBodyB},
+        {boxBodyB, boxBodyA},
+    };
 
     fuse::physics::narrowphase::ContactBufferSoA buffer;
-    buffer.reserve(1u);
+    buffer.reserve(2u);
     fuse::physics::narrowphase::runNarrowphaseIntoBuffer(pairs, bodies, shapes, buffer);
 
-    expectTrue(buffer.activeCount == 1u, "parallel narrowphase resolves box-sphere pair");
-    const auto manifold = buffer.manifoldAt(0u);
-    expectTrue(manifold.valid, "buffer manifold valid");
-    expectTrue(manifold.bodyA == sphereBody && manifold.bodyB == boxBody, "buffer preserves body indices");
+    expectTrue(buffer.activeCount == 2u, "job-safe narrowphase fills one slot per pair index");
+    const auto first = buffer.manifoldAt(0u);
+    const auto second = buffer.manifoldAt(1u);
+    expectTrue(first.valid && second.valid, "both pair slots produce valid manifolds");
+    expectTrue(first.pointCount == 4u, "box-box dispatch preserves four contact points");
+    expectTrue(first.bodyA == boxBodyA && first.bodyB == boxBodyB, "slot zero preserves pair order");
+    expectTrue(second.bodyA == boxBodyB && second.bodyB == boxBodyA, "slot one preserves swapped pair order");
 }
 
 void testGjkSupportAndEpaStub() {
@@ -139,6 +205,9 @@ int main() {
     testBoxSphereCollision();
     testCapsuleSphereCollision();
     testContactBufferClearReuse();
+    testBoxBoxCollisionPointCount();
+    testFrictionClampStub();
+    testContactBufferWarmStartAndPointSlots();
     testRunNarrowphaseIntoBufferJobSafe();
     testGjkSupportAndEpaStub();
 
