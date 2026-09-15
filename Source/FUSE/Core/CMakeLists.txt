@@ -43,8 +43,13 @@ set(FUSE_CORE_SOURCES
     src/jobs/job_counter.cpp
     src/jobs/cuda_jobs.cpp
     src/platform/platform_stub.cpp
-    src/platform/fiber_posix.cpp
 )
+
+if(WIN32)
+    list(APPEND FUSE_CORE_SOURCES src/platform/win/fiber_win32.cpp)
+else()
+    list(APPEND FUSE_CORE_SOURCES src/platform/fiber_posix.cpp)
+endif()
 
 find_package(Threads REQUIRED)
 

@@ -4,10 +4,14 @@
 
 namespace fuse::platform {
 
-/// Low-level cooperative fiber context (POSIX ucontext on native Linux/macOS).
+/// Low-level cooperative fiber context.
+/// Backends: POSIX ucontext (desktop Linux/macOS), Win32 fibers (Windows), stub elsewhere.
 struct FiberContext;
 
 bool cooperativeFibersAvailable();
+
+/// Diagnostic label for the active backend ("posix-ucontext", "win32", or "stub").
+const char* fiberBackendName();
 
 FiberContext* fiberAllocateContext();
 void fiberCaptureCurrent(FiberContext* ctx);
