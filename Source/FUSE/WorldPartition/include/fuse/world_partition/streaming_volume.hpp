@@ -41,6 +41,16 @@ struct StreamingVolume {
         const f32 distance = planar_distance_to(cell_center);
         return std::max(0.f, desc.stream_in_radius - distance);
     }
+
+    /// Farther cells beyond `stream_out_radius` receive higher eviction priority.
+    [[nodiscard]] f32 unload_priority_for(GridCoord coord, f32 cell_size) const {
+        const fuse::ecs::vec3 cell_center = grid_to_world_center(coord, cell_size);
+        const f32 distance = planar_distance_to(cell_center);
+        if (distance <= desc.stream_out_radius) {
+            return 0.f;
+        }
+        return distance - desc.stream_out_radius;
+    }
 };
 
 } // namespace fuse::world_partition

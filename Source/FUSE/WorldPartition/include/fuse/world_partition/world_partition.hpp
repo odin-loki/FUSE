@@ -3,6 +3,7 @@
 #include <fuse/ecs/math/vec.hpp>
 #include <fuse/types.hpp>
 #include <fuse/world_partition/grid_cell.hpp>
+#include <fuse/world_partition/streaming_budget.hpp>
 #include <fuse/world_partition/streaming_request_queue.hpp>
 #include <fuse/world_partition/streaming_volume.hpp>
 
@@ -16,7 +17,7 @@ struct WorldPartitionDesc {
     f32 stream_in_distance = 512.f;
     f32 stream_out_distance = 600.f;
     u32 max_loaded_cells = 64;
-    u32 max_async_in_flight = 4;
+    StreamingBudget budget{};
     bool async_loading = true;
 };
 
@@ -62,10 +63,15 @@ private:
         f32 priority = 0.f;
     };
 
+    struct UnloadRequest {
+        GridCoord coord{};
+        f32 priority = 0.f;
+    };
+
     WorldCell& ensure_cell_(GridCoord coord);
     [[nodiscard]] const WorldCell* find_cell_(GridCoord coord) const;
     void queue_load_(GridCoord coord, f32 priority);
-    void queue_unload_(GridCoord coord);
+    void queue_unload_(GridCoord coord, f32 priority);
     void process_queues_();
     void drain_completed_requests_();
     void execute_load_(WorldCell& cell);
@@ -79,7 +85,7 @@ private:
     CellLoadCallbacks m_callbacks{};
     std::unordered_map<u64, WorldCell> m_cells;
     std::vector<LoadRequest> m_load_queue;
-    std::vector<GridCoord> m_unload_queue;
+    std::vector<UnloadRequest> m_unload_queue;
     StreamingVolume m_streaming{};
     StreamingRequestQueue m_async_queue{};
     std::vector<CompletedStreamingRequest> m_completed_batch_;

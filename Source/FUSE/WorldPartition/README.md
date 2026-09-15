@@ -7,7 +7,8 @@ Large-world streaming scaffolding for Track B7.6. Cells are keyed on an XZ grid;
 | Header | Role |
 |--------|------|
 | `grid_cell.hpp` | `GridCoord`, `WorldCell`, `CellResidencyState`, grid ↔ world helpers |
-| `streaming_volume.hpp` | Camera-centered stream-in / stream-out radii |
+| `streaming_volume.hpp` | Camera-centered stream-in / stream-out radii + load/unload priority |
+| `streaming_budget.hpp` | Per-tick load/unload submission caps (`StreamingBudget`) |
 | `streaming_request_queue.hpp` | JobScheduler-backed async request queue stub |
 | `world_partition.hpp` | `WorldPartitionDesc`, `WorldPartition` update + force load/unload |
 
@@ -22,14 +23,14 @@ Helpers in `grid_cell.hpp`: `is_resident_state`, `is_loading_state`, `is_unloadi
 When `async_loading = true` and `JobScheduler` has worker threads:
 
 1. `update()` drains completed requests on the game thread.
-2. `process_queues_()` submits up to `max_async_in_flight` load/unload jobs to `StreamingRequestQueue`.
+2. `process_queues_()` submits up to `budget.max_loads_per_tick` / `budget.max_unloads_per_tick` jobs per tick, capped by `budget.max_async_in_flight` concurrent in-flight work on `StreamingRequestQueue`.
 3. Worker threads run the I/O stub (`StreamingWorkFn`); callbacks and entity wiring run on drain via `execute_load_` / `execute_unload_`.
 
-Synchronous mode (`async_loading = false` or single-threaded scheduler) drains queues immediately on the calling thread.
+Load requests sort by `StreamingVolume::load_priority_for` (closer cells first). Unload requests sort by `unload_priority_for` (farther cells evict first). Synchronous mode (`async_loading = false` or single-threaded scheduler) drains queues immediately on the calling thread.
 
 ## Tests
 
-`fuse_world_partition_tests` (`ctest` name `fuse_world_partition_b76`) covers grid math, residency helpers, streaming hysteresis, callback stubs, camera-driven residency, `StreamingRequestQueue`, and async load/unload completion.
+`fuse_world_partition_tests` (`ctest` name `fuse_world_partition_b76`) covers grid math, residency helpers, streaming hysteresis, unload priority ordering, per-tick budget caps, callback stubs, camera-driven residency, `StreamingRequestQueue` batch/in-flight tracking, and async load/unload completion.
 
 ## Dependencies
 
