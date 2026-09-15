@@ -46,7 +46,7 @@ bool HybridRendererBootstrap::initialize() {
     }
 
     const bool deferSwapchain =
-        m_desc.presentable.backend == PresentableBackend::PlatformWindow &&
+        m_desc.presentable.backend == PresentableBackend::GameWindow &&
         m_presentable->surfaceDesc().kind == renderer::SurfaceKind::Headless;
     if (deferSwapchain) {
         rendererDesc.rhi.bootstrap.createSwapchain = false;

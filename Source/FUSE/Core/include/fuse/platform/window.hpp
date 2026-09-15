@@ -2,53 +2,88 @@
 
 #include <fuse/types.hpp>
 
-#include <memory>
 #include <string>
 
 namespace fuse::platform {
 
-/// Desktop window backend for WSI surface creation (B2.2 follow-up).
-enum class WindowBackend : u8 {
-    /// No OS window — CI / headless default.
-    Null = 0,
-    /// GLFW hidden window when `FUSE_PLATFORM_WINDOW_GLFW` is enabled at build time.
-    Glfw = 1,
-};
-
+/// Game-path window description (master plan §B1.7 / P1 §1.7).
 struct WindowDesc {
-    WindowBackend backend = WindowBackend::Null;
-    u32 width = 1280;
-    u32 height = 720;
     const char* title = "FUSE";
-    /// When false, GLFW creates a hidden window suitable for off-screen WSI bootstrap.
-    bool visible = false;
+    u32 width = 1920;
+    u32 height = 1080;
+    bool fullscreen = false;
+    bool borderless = false;
+    bool vsync = true;
 };
 
-struct WindowInfo {
-    WindowBackend backend = WindowBackend::Null;
-    bool valid = false;
-    u32 width = 0;
-    u32 height = 0;
-    std::string message;
+/// Opaque native window token (HWND, X11 Window, NSWindow*, ANativeWindow*, etc.).
+struct NativeWindowHandle {
+    void* value = nullptr;
 };
 
-/// Thin OS window abstraction — WSI surface creation stays in Hybrid presentable glue.
-class PlatformWindow {
+enum class WindowCloseRequest {
+    None,
+    Requested,
+};
+
+/// Metadata for wiring a platform window into the Vulkan RHI external-surface path.
+///
+/// Future platform backends populate `nativeSurface` with an opaque `VkSurfaceKHR`
+/// after enabling the appropriate WSI extensions. Until then the stub returns
+/// `presentable == false` and `nativeSurface == nullptr` (renderer stays Headless).
+struct VulkanSurfaceWire {
+    void* nativeSurface = nullptr;
+    bool presentable = false;
+};
+
+/// Portable game window — desktop and mobile share the same stub backend for B1.7.
+///
+/// Real Win32 / X11 / Wayland / UIKit / Android backends replace the stub in follow-up PRs.
+/// Editor viewport windowing remains Qt-owned (Track A / B6).
+class Window {
 public:
-    static std::unique_ptr<PlatformWindow> create(const WindowDesc& desc);
+    Window();
+    explicit Window(const WindowDesc& desc);
+    ~Window();
 
-    const WindowInfo& info() const { return m_info; }
-    bool isValid() const { return m_info.valid; }
+    Window(Window&& other) noexcept;
+    Window& operator=(Window&& other) noexcept;
+    Window(const Window&) = delete;
+    Window& operator=(const Window&) = delete;
 
-    /// Opaque native window handle (`GLFWwindow*` when GLFW backend is active).
-    void* nativeHandle() const { return m_nativeHandle; }
+    bool isValid() const { return m_valid; }
+
+    WindowDesc description() const;
+    u32 width() const { return m_width; }
+    u32 height() const { return m_height; }
+    bool isFullscreen() const { return m_fullscreen; }
+    bool vsyncEnabled() const { return m_vsync; }
+
+    NativeWindowHandle nativeHandle() const;
+
+    /// Opaque `VkSurfaceKHR` when WSI is wired; null in the B1.7 stub.
+    void* nativeVulkanSurface() const;
+
+    /// Maps this window to renderer surface metadata (see TRACK-B-VULKAN §Surface abstraction).
+    VulkanSurfaceWire vulkanSurfaceWire() const;
+
+    void setTitle(const char* title);
+    void resize(u32 width, u32 height);
+    void setFullscreen(bool fullscreen);
+
+    void requestClose();
+    WindowCloseRequest closeRequest() const { return m_closeRequest; }
+    void clearCloseRequest();
 
 private:
-    friend std::unique_ptr<PlatformWindow> createGlfwWindow(const WindowDesc& desc);
-    PlatformWindow(WindowInfo info, void* nativeHandle);
-
-    WindowInfo m_info;
-    void* m_nativeHandle = nullptr;
+    bool m_valid = false;
+    u32 m_width = 0;
+    u32 m_height = 0;
+    bool m_fullscreen = false;
+    bool m_borderless = false;
+    bool m_vsync = true;
+    WindowCloseRequest m_closeRequest = WindowCloseRequest::None;
+    std::string m_title = "FUSE";
 };
 
 } // namespace fuse::platform

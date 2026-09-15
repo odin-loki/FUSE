@@ -2,26 +2,12 @@
 
 #include <fuse/hybrid/vulkan_presentable.hpp>
 
-#if defined(FUSE_HAS_GLFW_WINDOW)
-#define GLFW_INCLUDE_NONE
-#include <GLFW/glfw3.h>
-#endif
-
-#if defined(FUSE_VULKAN_BACKEND)
-#include <vulkan/vulkan.h>
-#endif
-
 namespace fuse::hybrid {
 
 VulkanPresentable::VulkanPresentable(VulkanPresentableDesc desc) : m_desc(desc) {}
 
 VulkanPresentable::~VulkanPresentable() {
-#if defined(FUSE_VULKAN_BACKEND)
-    if (m_vkSurface != nullptr) {
-        // Instance is owned by RendererBootstrap; surface is destroyed when presentable is reset.
-        m_vkSurface = nullptr;
-    }
-#endif
+    m_vkSurface = nullptr;
 }
 
 std::unique_ptr<VulkanPresentable> VulkanPresentable::create(const VulkanPresentableDesc& desc) {
@@ -40,24 +26,23 @@ bool VulkanPresentable::initialize() {
         return true;
     }
 
-    m_window = platform::PlatformWindow::create(m_desc.window);
+    m_window = std::make_unique<platform::Window>(m_desc.window);
     m_status.windowReady = m_window != nullptr && m_window->isValid();
     if (!m_status.windowReady) {
-        m_status.message = m_window ? m_window->info().message : "PlatformWindow allocation failed";
+        m_status.message = "fuse::platform::Window allocation failed";
         return true;
     }
 
-#if defined(FUSE_HAS_GLFW_WINDOW)
-    if (m_desc.window.backend == platform::WindowBackend::Glfw) {
-        u32 extensionCount = 0;
-        const char** extensions = glfwGetRequiredInstanceExtensions(&extensionCount);
-        if (extensions != nullptr && extensionCount > 0) {
-            m_requiredExtensions.assign(extensions, extensions + extensionCount);
-        }
+    const platform::VulkanSurfaceWire wire = m_window->vulkanSurfaceWire();
+    if (wire.presentable && wire.nativeSurface != nullptr) {
+        m_vkSurface = wire.nativeSurface;
+        m_status.surfaceReady = true;
+        m_status.presentable = true;
+        m_status.message = "External VkSurfaceKHR wired from platform::Window";
+        return true;
     }
-#endif
 
-    m_status.message = m_window->info().message;
+    m_status.message = "B1.7 window stub — WSI surface pending platform backend";
     return true;
 }
 
@@ -67,33 +52,23 @@ bool VulkanPresentable::createVulkanSurface(void* vkInstance) {
         return false;
     }
 
-    if (m_window == nullptr || !m_window->isValid() || m_window->nativeHandle() == nullptr) {
+    if (m_window == nullptr || !m_window->isValid()) {
         m_status.message = "Platform window not ready for WSI surface creation";
         return false;
     }
 
-#if defined(FUSE_VULKAN_BACKEND) && defined(FUSE_HAS_GLFW_WINDOW)
-    if (m_desc.window.backend == platform::WindowBackend::Glfw) {
-        VkSurfaceKHR surface = VK_NULL_HANDLE;
-        const VkResult result = glfwCreateWindowSurface(static_cast<VkInstance>(vkInstance),
-                                                        static_cast<GLFWwindow*>(m_window->nativeHandle()),
-                                                        nullptr, &surface);
-        if (result != VK_SUCCESS) {
-            m_status.message = "glfwCreateWindowSurface failed";
-            return false;
-        }
-
-        m_vkSurface = surface;
+    const platform::VulkanSurfaceWire wire = m_window->vulkanSurfaceWire();
+    if (wire.presentable && wire.nativeSurface != nullptr) {
+        m_vkSurface = wire.nativeSurface;
         m_status.surfaceReady = true;
         m_status.presentable = true;
-        m_status.message = "External VkSurfaceKHR created from GLFW window";
+        m_status.message = "External VkSurfaceKHR wired from platform::Window";
+        (void)vkInstance;
         return true;
     }
-#else
-    (void)vkInstance;
-#endif
 
-    m_status.message = "WSI surface creation stub — enable FUSE_PLATFORM_WINDOW_GLFW for GLFW path";
+    (void)vkInstance;
+    m_status.message = "B1.7 window stub — no VkSurfaceKHR until platform WSI lands";
     return false;
 }
 

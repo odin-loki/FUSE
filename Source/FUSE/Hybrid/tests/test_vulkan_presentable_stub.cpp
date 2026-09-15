@@ -18,17 +18,19 @@ void expectTrue(bool condition, const char* message) {
     }
 }
 
-void testNullPlatformWindow() {
+void testGameWindowStub() {
     fuse::platform::WindowDesc desc{};
-    desc.backend = fuse::platform::WindowBackend::Null;
     desc.width = 640;
     desc.height = 480;
 
-    auto window = fuse::platform::PlatformWindow::create(desc);
-    expectTrue(window != nullptr, "null PlatformWindow allocated");
-    expectTrue(window->isValid(), "null window backend is valid");
-    expectTrue(window->nativeHandle() == nullptr, "null window has no native handle");
-    expectTrue(window->info().width == 640u, "null window records width");
+    fuse::platform::Window window(desc);
+    expectTrue(window.isValid(), "B1.7 window stub is valid");
+    expectTrue(window.nativeHandle().value == nullptr, "stub window has no native handle");
+    expectTrue(window.width() == 640u, "stub window records width");
+
+    const fuse::platform::VulkanSurfaceWire wire = window.vulkanSurfaceWire();
+    expectTrue(!wire.presentable, "stub window is not presentable");
+    expectTrue(wire.nativeSurface == nullptr, "stub window has no VkSurfaceKHR");
 }
 
 void testHeadlessPresentableSurface() {
@@ -76,7 +78,7 @@ void testHybridBootstrapHeadlessPresentable() {
 } // namespace
 
 int main() {
-    testNullPlatformWindow();
+    testGameWindowStub();
     testHeadlessPresentableSurface();
     testExternalSurfaceWiring();
     testHybridBootstrapHeadlessPresentable();

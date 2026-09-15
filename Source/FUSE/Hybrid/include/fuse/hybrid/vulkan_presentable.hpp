@@ -15,8 +15,8 @@ namespace fuse::hybrid {
 enum class PresentableBackend : u8 {
     /// CI default — `SurfaceKind::Headless`, no OS window.
     Headless = 0,
-    /// Own `PlatformWindow` (null or GLFW) wired to `SurfaceKind::External` when a surface exists.
-    PlatformWindow = 1,
+    /// B1.7 `fuse::platform::Window` wired to `SurfaceKind::External` when WSI exists.
+    GameWindow = 1,
 };
 
 struct VulkanPresentableDesc {
@@ -45,7 +45,7 @@ public:
     VulkanPresentable& operator=(const VulkanPresentable&) = delete;
 
     const VulkanPresentableStatus& status() const { return m_status; }
-    const platform::PlatformWindow* window() const { return m_window.get(); }
+    const platform::Window* window() const { return m_window.get(); }
 
     /// WSI instance extensions required before `vkCreateInstance` (GLFW path only).
     const std::vector<const char*>& requiredInstanceExtensions() const { return m_requiredExtensions; }
@@ -68,7 +68,7 @@ private:
 
     VulkanPresentableDesc m_desc;
     VulkanPresentableStatus m_status;
-    std::unique_ptr<platform::PlatformWindow> m_window;
+    std::unique_ptr<platform::Window> m_window;
     std::vector<const char*> m_requiredExtensions;
     void* m_vkSurface = nullptr;
 };
