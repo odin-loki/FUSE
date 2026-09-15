@@ -84,6 +84,27 @@ void testClusterIndex() {
     expectTrue(fuse::renderer::ClusterGridLayout::clampClusterIndex(999u, desc) ==
                    fuse::renderer::ClusterGridLayout::maxClusterIndex(desc),
                "clamp cluster index agrees with max index");
+    expectTrue(desc.maxClusterIndex() == 23u, "ClusterDesc maxClusterIndex matches layout helper");
+}
+
+void testClusterMaxIndexForClampedDesc() {
+    fuse::renderer::ClusterDesc desc{};
+    desc.tilesX = 4;
+    desc.tilesY = 2;
+    desc.slicesZ = 3;
+    expectTrue(fuse::renderer::ClusterGridLayout::maxClusterIndexForClampedDesc(desc) == 23u,
+               "max index for clamped desc matches in-bounds grid");
+
+    fuse::renderer::ClusterDesc oversized{};
+    oversized.tilesX = 999u;
+    oversized.tilesY = 999u;
+    oversized.slicesZ = 999u;
+    const fuse::renderer::ClusterDesc clamped = fuse::renderer::ClusterDesc::clampCounts(oversized);
+    expectTrue(fuse::renderer::ClusterGridLayout::maxClusterIndexForClampedDesc(oversized) ==
+                   fuse::renderer::ClusterGridLayout::maxClusterIndex(clamped),
+               "max index for clamped desc uses clampCounts");
+    expectTrue(oversized.maxClusterIndex() > clamped.maxClusterIndex(),
+               "unclamped desc max index can exceed clamped grid");
 }
 
 void testClusterGridClampAndScreenMapping() {
@@ -424,6 +445,78 @@ void testClusterLookupAtIndexGuards() {
     std::vector<fuse::u32> zeroGridLights;
     expectTrue(fuse::renderer::cluster_util::lookupClusterLightsAtIndex(grid, zeroDesc, 0u, zeroGridLights) == 0u,
                "lookup rejects empty grid desc");
+
+    expectTrue(fuse::renderer::cluster_util::canLookupClusterAtIndex(grid, desc, 0u),
+               "can lookup at origin when grid matches desc");
+    expectTrue(!fuse::renderer::cluster_util::canLookupClusterAtIndex(emptyGrid, desc, 0u),
+               "can lookup rejects empty storage");
+    expectTrue(!fuse::renderer::cluster_util::canLookupClusterAtIndex(grid, mismatched, 0u),
+               "can lookup rejects desc mismatch");
+    expectTrue(!fuse::renderer::cluster_util::canLookupClusterAtIndex(grid, zeroDesc, 0u),
+               "can lookup rejects empty grid desc");
+
+    fuse::u32 tryCount = 0u;
+    std::vector<fuse::u32> tryLights;
+    expectTrue(fuse::renderer::cluster_util::tryLookupClusterLightsAtIndex(grid, desc, 0u, tryLights, tryCount),
+               "try lookup succeeds when guards pass");
+    expectTrue(tryCount == 2u && tryLights.size() == 2u, "try lookup fills count and output");
+
+    fuse::u32 tryEmptyCount = 99u;
+    std::vector<fuse::u32> tryEmptyLights = {99u};
+    expectTrue(fuse::renderer::cluster_util::tryLookupClusterLightsAtIndex(grid, desc, 1u, tryEmptyLights, tryEmptyCount),
+               "try lookup succeeds on empty cluster");
+    expectTrue(tryEmptyCount == 0u && tryEmptyLights.empty(), "try lookup clears output for empty cluster");
+
+    fuse::u32 rejectedCount = 99u;
+    std::vector<fuse::u32> rejectedLights = {99u};
+    expectTrue(!fuse::renderer::cluster_util::tryLookupClusterLightsAtIndex(emptyGrid, desc, 0u, rejectedLights, rejectedCount),
+               "try lookup rejects empty storage");
+    expectTrue(rejectedCount == 0u && rejectedLights.empty(), "try lookup clears output on guard failure");
+}
+
+void testValidateGridPopulationForDesc() {
+    fuse::renderer::ClusterDesc desc{};
+    desc.tilesX = 2;
+    desc.tilesY = 2;
+    desc.slicesZ = 1;
+
+    fuse::renderer::ClusterGridSoA grid{};
+    const fuse::u32 clusterCount = desc.clusterCount();
+    const std::vector<std::vector<fuse::u32>> perClusterLights = {
+        {0u, 1u},
+        {},
+        {2u},
+        {3u, 4u},
+    };
+    fuse::renderer::ClusterLightGridLayout::rebuildLightGrid(grid, clusterCount, perClusterLights, 2u);
+
+    expectTrue(fuse::renderer::cluster_util::validateGridPopulationForDesc(grid, desc),
+               "valid rebuilt grid passes desc-aware population validation");
+
+    fuse::renderer::ClusterDesc mismatched{};
+    mismatched.tilesX = 1;
+    mismatched.tilesY = 1;
+    mismatched.slicesZ = 1;
+    expectTrue(!fuse::renderer::cluster_util::validateGridPopulationForDesc(grid, mismatched),
+               "desc mismatch fails desc-aware population validation");
+
+    fuse::renderer::ClusterGridSoA brokenOffsets{};
+    brokenOffsets.grid.assign(clusterCount, fuse::renderer::ClusterGridEntry{});
+    brokenOffsets.grid[0].offset = 0u;
+    brokenOffsets.grid[0].count = 1u;
+    brokenOffsets.grid[1].offset = 5u;
+    brokenOffsets.grid[1].count = 0u;
+    brokenOffsets.lightList = {0u};
+    expectTrue(fuse::renderer::cluster_util::gridMatchesDesc(brokenOffsets, desc),
+               "broken-offset fixture still matches desc storage size");
+    expectTrue(!fuse::renderer::cluster_util::validateGridPopulationForDesc(brokenOffsets, desc),
+               "non-contiguous offsets fail desc-aware population validation");
+
+    fuse::renderer::ClusterDesc zeroDesc{};
+    zeroDesc.tilesX = 0u;
+    fuse::renderer::ClusterGridSoA emptyGrid{};
+    expectTrue(fuse::renderer::cluster_util::validateGridPopulationForDesc(emptyGrid, zeroDesc),
+               "empty grid and zero desc validate vacuously");
 }
 
 void testZeroDimensionClusterGrid() {
@@ -857,6 +950,7 @@ int main() {
     testClusterDescCount();
     testClusterDescClampCounts();
     testClusterIndex();
+    testClusterMaxIndexForClampedDesc();
     testClusterGridClampAndScreenMapping();
     testSliceDepthDistribution();
     testLightGridRebuildLayout();
@@ -867,6 +961,7 @@ int main() {
     testClusterGridSoAAllocate();
     testClusterIndexClampAndGridGuards();
     testClusterLookupAtIndexGuards();
+    testValidateGridPopulationForDesc();
     testZeroDimensionClusterGrid();
     testCullerInitClampsOversizedDesc();
     testEmptyGridRecordCullPassSkips();

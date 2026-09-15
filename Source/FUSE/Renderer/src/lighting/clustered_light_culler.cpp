@@ -60,6 +60,10 @@ ClusterDesc ClusterDesc::clampCounts(const ClusterDesc& raw) {
     return out;
 }
 
+u32 ClusterDesc::maxClusterIndex() const {
+    return ClusterGridLayout::maxClusterIndex(*this);
+}
+
 bool cluster_util::gridMatchesDesc(const ClusterGridSoA& grid, const ClusterDesc& desc) {
     const u32 clusterCount = ClusterDesc::clampCounts(desc).clusterCount();
     if (clusterCount == 0u) {
@@ -134,13 +138,35 @@ u32 cluster_util::lookupClusterLightsAtIndex(const ClusterGridSoA& grid,
                                               const ClusterDesc& desc,
                                               u32 index,
                                               std::vector<u32>& outLights) {
-    if (ClusterGridLayout::isEmptyGrid(desc) || !gridMatchesDesc(grid, desc)) {
+    if (!canLookupClusterAtIndex(grid, desc, index)) {
         outLights.clear();
         return 0u;
     }
 
     const u32 clampedIndex = ClusterGridLayout::clampClusterIndex(index, desc);
     return lookupClusterLights(grid, clampedIndex, outLights);
+}
+
+bool cluster_util::canLookupClusterAtIndex(const ClusterGridSoA& grid,
+                                            const ClusterDesc& desc,
+                                            u32 index) {
+    (void)index;
+    return !ClusterGridLayout::isEmptyGrid(desc) && gridMatchesDesc(grid, desc);
+}
+
+bool cluster_util::tryLookupClusterLightsAtIndex(const ClusterGridSoA& grid,
+                                                  const ClusterDesc& desc,
+                                                  u32 index,
+                                                  std::vector<u32>& outLights,
+                                                  u32& outCount) {
+    if (!canLookupClusterAtIndex(grid, desc, index)) {
+        outLights.clear();
+        outCount = 0u;
+        return false;
+    }
+
+    outCount = lookupClusterLightsAtIndex(grid, desc, index, outLights);
+    return true;
 }
 
 u32 cluster_util::clusterLightCount(const ClusterGridSoA& grid, u32 clusterIdx) {
@@ -227,6 +253,14 @@ bool cluster_util::validateGridPopulation(const ClusterGridSoA& grid, u32 cluste
     return ClusterLightGridLayout::validateContiguousOffsets(grid, clusterCount);
 }
 
+bool cluster_util::validateGridPopulationForDesc(const ClusterGridSoA& grid, const ClusterDesc& desc) {
+    const u32 clusterCount = ClusterDesc::clampCounts(desc).clusterCount();
+    if (!gridMatchesDesc(grid, desc)) {
+        return false;
+    }
+    return validateGridPopulation(grid, clusterCount);
+}
+
 bool ClusterGridLayout::isEmptyGrid(const ClusterDesc& desc) {
     return desc.tilesX == 0u || desc.tilesY == 0u || desc.slicesZ == 0u;
 }
@@ -298,6 +332,10 @@ u32 ClusterGridLayout::maxClusterIndex(const ClusterDesc& desc) {
         return 0u;
     }
     return count - 1u;
+}
+
+u32 ClusterGridLayout::maxClusterIndexForClampedDesc(const ClusterDesc& desc) {
+    return maxClusterIndex(ClusterDesc::clampCounts(desc));
 }
 
 bool ClusterGridLayout::mapScreenDepthToClusterIndex(f32 screenX,
