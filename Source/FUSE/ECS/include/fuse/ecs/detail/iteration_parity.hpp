@@ -42,6 +42,14 @@ u32 count_each_query(Registry& reg) {
     return count;
 }
 
+/// Count entities visited by serial `each_query` with With/Without filters.
+template <typename... WithTs, typename... WithoutTs>
+u32 count_each_query(Registry& reg, Without<WithoutTs...> exclude) {
+    u32 count = 0;
+    reg.each_query<WithTs...>([&](EntityID, WithTs&...) { ++count; }, exclude);
+    return count;
+}
+
 /// Count entities visited by `each_query_parallel`.
 template <typename... WithTs>
 u32 count_each_query_parallel(Registry& reg, u32 batchSize) {
@@ -52,10 +60,27 @@ u32 count_each_query_parallel(Registry& reg, u32 batchSize) {
     return count.load(std::memory_order_relaxed);
 }
 
+/// Count entities visited by `each_query_parallel` with With/Without filters.
+template <typename... WithTs, typename... WithoutTs>
+u32 count_each_query_parallel(Registry& reg, Without<WithoutTs...> exclude, u32 batchSize) {
+    std::atomic<u32> count{0};
+    reg.each_query_parallel<WithTs...>([&](EntityID, WithTs&...) {
+        count.fetch_add(1u, std::memory_order_relaxed);
+    }, exclude, normalize_batch_size(batchSize));
+    return count.load(std::memory_order_relaxed);
+}
+
 /// Returns true when serial and parallel query iteration visit the same entity count.
 template <typename... WithTs>
 bool each_query_parallel_matches_serial(Registry& reg, u32 batchSize) {
     return count_each_query<WithTs...>(reg) == count_each_query_parallel<WithTs...>(reg, batchSize);
+}
+
+/// Returns true when serial and parallel With/Without query iteration visit the same entity count.
+template <typename... WithTs, typename... WithoutTs>
+bool each_query_with_without_parallel_matches_serial(Registry& reg, Without<WithoutTs...> exclude, u32 batchSize) {
+    return count_each_query<WithTs...>(reg, exclude) ==
+           count_each_query_parallel<WithTs...>(reg, exclude, batchSize);
 }
 
 [[nodiscard]] inline bool transform_matrices_equal(const Transform& lhs, const Transform& rhs) {
