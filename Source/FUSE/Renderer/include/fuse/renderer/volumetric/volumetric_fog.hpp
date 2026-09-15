@@ -53,6 +53,10 @@ struct FroxelCameraDesc {
 /// CPU-side froxel density cache — per-froxel scalar density for stub injection and tests.
 struct FroxelDensityGrid {
     std::vector<f32> density;
+
+    /// Resize density storage to match a clamped froxel grid; zero-fills all froxels.
+    void allocate(const FroxelGridDesc& desc);
+    bool isEmpty() const { return density.empty(); }
 };
 
 /// Continuous froxel sample coordinates for trilinear density lookup.
@@ -89,6 +93,13 @@ struct FroxelGridLayout {
                                              const FroxelGridDesc& desc,
                                              const FroxelCameraDesc& camera,
                                              FroxelSampleCoords& outCoords);
+    /// Screen-depth → linear froxel index (mirrors clustered `mapScreenDepthToClusterIndex`).
+    static bool mapScreenDepthToFroxelIndex(f32 screenX,
+                                            f32 screenY,
+                                            f32 viewDepth,
+                                            const FroxelGridDesc& desc,
+                                            const FroxelCameraDesc& camera,
+                                            u32& outFroxelIndex);
 };
 
 /// CPU froxel density interpolation helpers — mirrors CUDA trilinear sample stub.
@@ -100,6 +111,13 @@ f32 sampleDensityBilinear(const FroxelDensityGrid& grid,
 f32 sampleDensityTrilinear(const FroxelDensityGrid& grid,
                            const FroxelGridDesc& desc,
                            const FroxelSampleCoords& coords);
+/// Screen-space trilinear density sample; returns 0 when mapping fails or grid is empty.
+f32 sampleDensityAtScreen(const FroxelDensityGrid& grid,
+                          const FroxelGridDesc& desc,
+                          const FroxelCameraDesc& camera,
+                          f32 screenX,
+                          f32 screenY,
+                          f32 viewDepth);
 void populateFromAnalyticFog(FroxelDensityGrid& grid,
                              const FroxelGridDesc& desc,
                              const FroxelCameraDesc& camera,
