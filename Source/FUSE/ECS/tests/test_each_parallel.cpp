@@ -63,6 +63,63 @@ void testEachParallelVisitsSameEntities() {
     expectEq(parallelCount.load(std::memory_order_relaxed), 64u, "each_parallel visits all transforms");
 }
 
+void testEachParallelStressVisitCoverage() {
+    constexpr fuse::u32 kEntityCount = 256;
+    constexpr fuse::u32 kIterations = 64;
+    const fuse::u32 workerCounts[] = {1, 2, 4, 8};
+    const fuse::u32 batchSizes[] = {1, 4, 8, 16, 32, 64};
+
+    for (fuse::u32 workers : workerCounts) {
+        withScheduler(workers, [&] {
+            for (fuse::u32 batchSize : batchSizes) {
+                for (fuse::u32 iteration = 0; iteration < kIterations; ++iteration) {
+                    fuse::ecs::Registry reg;
+                    reg.init(kEntityCount);
+
+                    for (fuse::u32 i = 0; i < kEntityCount; ++i) {
+                        const fuse::ecs::EntityID id = reg.create();
+                        fuse::ecs::Transform& transform = reg.add<fuse::ecs::Transform>(id);
+                        transform.position.x = static_cast<float>(i);
+                    }
+
+                    std::vector<std::atomic<bool>> visited(kEntityCount);
+                    for (auto& slot : visited) {
+                        slot.store(false, std::memory_order_relaxed);
+                    }
+
+                    reg.each_parallel<fuse::ecs::Transform>(
+                        [&](fuse::ecs::EntityID, fuse::ecs::Transform& transform) {
+                            const fuse::u32 index = static_cast<fuse::u32>(transform.position.x);
+                            if (index < kEntityCount) {
+                                visited[index].store(true, std::memory_order_relaxed);
+                            }
+                        },
+                        batchSize);
+
+                    fuse::u32 visitedCount = 0;
+                    for (fuse::u32 i = 0; i < kEntityCount; ++i) {
+                        if (visited[i].load(std::memory_order_relaxed)) {
+                            ++visitedCount;
+                        }
+                    }
+
+                    if (visitedCount != kEntityCount) {
+                        std::fprintf(stderr,
+                                     "FAIL: stress visit coverage workers=%u batch=%u iter=%u (expected %u, got %u)\n",
+                                     workers,
+                                     batchSize,
+                                     iteration,
+                                     kEntityCount,
+                                     visitedCount);
+                        ++g_failures;
+                        return;
+                    }
+                }
+            }
+        });
+    }
+}
+
 void testEachParallelMutationParity() {
     fuse::ecs::Registry serialReg;
     fuse::ecs::Registry parallelReg;
@@ -203,6 +260,7 @@ void testTransformSystemSerialDirtyRoots() {
 
 int main() {
     testEachParallelVisitsSameEntities();
+    testEachParallelStressVisitCoverage();
     testEachParallelMutationParity();
     testEachParallelMultiComponent();
     testTransformSystemParallelDirtyRoots();
