@@ -19,9 +19,11 @@ extern "C" {
 #include <string>
 #include <vector>
 
-namespace {
-
 int g_failures = 0;
+
+void run_script_console_tests();
+
+namespace {
 
 void expectTrue(bool condition, const char* message) {
     if (!condition) {
@@ -365,6 +367,7 @@ int main() {
     testBindHelpersPrimitives();
     testBindHelpersValuesEqual();
     testBindHelpersEntityAndTransform();
+    run_script_console_tests();
 #if defined(FUSE_SCRIPT_LUA) && FUSE_SCRIPT_LUA
     testLuaLoadsHelloWorld();
     testLuaBindStackRoundTrip();
