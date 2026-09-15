@@ -120,6 +120,12 @@ void testProbeIndexClamp() {
                "OOB probe index clamped to last probe");
     expectTrue(fuse::renderer::ProbeGridLayout::clampProbeIndex(0u, desc) == 0u,
                "origin probe index unchanged");
+    expectTrue(fuse::renderer::ProbeGridLayout::clampProbeIndex(UINT32_MAX, desc) == 23u,
+               "UINT32_MAX probe index clamped to last probe");
+    expectTrue(!fuse::renderer::ProbeGridLayout::isProbeIndexOutOfRange(17u, desc),
+               "in-range probe index not out of range");
+    expectTrue(fuse::renderer::ProbeGridLayout::isProbeIndexOutOfRange(999u, desc),
+               "OOB probe index flagged out of range");
 
     const fuse::renderer::ProbeGridCoord clampedCoord =
         fuse::renderer::ProbeGridLayout::clampProbeGridCoord(desc, {9, 9, 9});
@@ -130,6 +136,11 @@ void testProbeIndexClamp() {
         fuse::renderer::ProbeGridLayout::probeCoordFromClampedIndex(desc, 999u);
     expectTrue(fromClamped.x == 3u && fromClamped.y == 1u && fromClamped.z == 2u,
                "probeCoordFromClampedIndex maps OOB index to last coord");
+
+    const fuse::renderer::ProbeValidityFlags clampedValidity =
+        fuse::renderer::ProbeGridLayout::probeValidityFromClampedIndex(desc, 999u);
+    expectTrue(clampedValidity.valid, "clamped validity valid for OOB index");
+    expectTrue(clampedValidity.is_border, "clamped OOB index maps to border corner");
 }
 
 void testProbeSampleCoords() {
@@ -166,6 +177,8 @@ void testEmptyProbeGrid() {
     expectTrue(fuse::renderer::ddgi_util::probeCount(desc) == 0u, "zero-dimension grid has zero probes");
     expectTrue(fuse::renderer::ProbeGridLayout::clampProbeIndex(5u, desc) == 0u,
                "empty grid index clamp returns 0");
+    expectTrue(fuse::renderer::ProbeGridLayout::isProbeIndexOutOfRange(0u, desc),
+               "any index out of range on empty grid");
     expectTrue(!fuse::renderer::ProbeGridLayout::isValidProbeIndex(desc, 0u), "index 0 invalid on empty grid");
 
     const fuse::renderer::ProbeGridCoord clampedEmpty =
@@ -191,6 +204,10 @@ void testEmptyProbeGrid() {
     expectNear(emptySample.x, 0.f, 1e-5f, "empty grid trilinear sample returns zero");
     expectTrue(fuse::renderer::ddgi_util::nearestProbeIndex(desc, {0.f, 0.f, 0.f}) == UINT32_MAX,
                "nearest probe on empty grid is UINT32_MAX");
+
+    const fuse::renderer::ProbeValidityFlags emptyClampedValidity =
+        fuse::renderer::ProbeGridLayout::probeValidityFromClampedIndex(desc, 99u);
+    expectTrue(!emptyClampedValidity.valid, "clamped validity invalid on empty grid");
 
     const fuse::math::Vec2 texelOffset =
         fuse::renderer::DdgiIrradianceEncoding::directionToTexelOffset({0.f, 1.f, 0.f}, 0u);
@@ -250,6 +267,26 @@ void testIrradianceOctahedralEncoding() {
     const fuse::f32 error = fuse::renderer::DdgiIrradianceEncoding::angularErrorRadians(up, decoded);
     expectTrue(error < 0.001f, "octahedral direction round-trip < 0.001 rad");
 
+    const fuse::math::Vec2 zeroDirEncoded =
+        fuse::renderer::DdgiIrradianceEncoding::encodeDirection({0.f, 0.f, 0.f});
+    expectNear(zeroDirEncoded.x, 0.5f, 1e-5f, "zero direction encodes to atlas centre u");
+    expectNear(zeroDirEncoded.y, 0.5f, 1e-5f, "zero direction encodes to atlas centre v");
+
+    const fuse::math::Vec2 oobEncoded{1.5f, -0.25f};
+    const fuse::math::Vec2 clampedEncoded =
+        fuse::renderer::DdgiIrradianceEncoding::clampEncodedUV(oobEncoded);
+    expectNear(clampedEncoded.x, 1.f, 1e-5f, "clampEncodedUV clamps high u");
+    expectNear(clampedEncoded.y, 0.f, 1e-5f, "clampEncodedUV clamps low v");
+    const fuse::math::Vec3 decodedOob =
+        fuse::renderer::DdgiIrradianceEncoding::decodeDirection(oobEncoded);
+    const fuse::math::Vec3 decodedClamped =
+        fuse::renderer::DdgiIrradianceEncoding::decodeDirection(clampedEncoded);
+    expectNear(decodedOob.x, decodedClamped.x, 1e-5f, "decode clamps OOB encoded u");
+    expectNear(decodedOob.y, decodedClamped.y, 1e-5f, "decode clamps OOB encoded v");
+
+    expectNear(fuse::renderer::DdgiIrradianceEncoding::angularErrorRadians({0.f, 0.f, 0.f}, up), 0.f, 1e-5f,
+               "angular error zero for degenerate direction");
+
     fuse::renderer::DdgiTileBilinearCoords tileCoords{};
     expectTrue(fuse::renderer::DdgiIrradianceEncoding::buildTileBilinearCoords(up, 8u, tileCoords),
                "buildTileBilinearCoords succeeds for +Y");
@@ -257,6 +294,14 @@ void testIrradianceOctahedralEncoding() {
                "tile bilinear texel indices are ordered");
     expectTrue(tileCoords.tu >= 0.f && tileCoords.tu <= 1.f && tileCoords.tv >= 0.f && tileCoords.tv <= 1.f,
                "tile bilinear fractions stay in unit range");
+
+    fuse::renderer::DdgiTileBilinearCoords singleTexel{};
+    expectTrue(fuse::renderer::DdgiIrradianceEncoding::buildTileBilinearCoords(up, 1u, singleTexel),
+               "buildTileBilinearCoords succeeds for 1x1 tile");
+    expectTrue(singleTexel.texel_u0 == 0u && singleTexel.texel_u1 == 0u, "1x1 tile u indices collapse");
+    expectTrue(singleTexel.texel_v0 == 0u && singleTexel.texel_v1 == 0u, "1x1 tile v indices collapse");
+    expectTrue(!fuse::renderer::DdgiIrradianceEncoding::buildTileBilinearCoords(up, 0u, singleTexel),
+               "buildTileBilinearCoords fails for zero irradiance_res");
 
     fuse::renderer::DDGIDesc desc{};
     desc.grid_dims = {2, 2, 2};
@@ -269,6 +314,16 @@ void testIrradianceOctahedralEncoding() {
     expectTrue(texel.x >= origin.x && texel.y >= origin.y, "atlas texel within probe tile");
     expectTrue(texel.x < origin.x + static_cast<fuse::f32>(desc.irradiance_res),
                "atlas texel x within tile width");
+
+    fuse::renderer::DDGIDesc emptyDesc{};
+    emptyDesc.grid_dims = {0, 2, 2};
+    const fuse::math::Vec2 emptyOrigin =
+        fuse::renderer::ProbeGridLayout::probeIrradianceAtlasOrigin(emptyDesc, coord);
+    expectNear(emptyOrigin.x, 0.f, 1e-5f, "empty grid irradiance atlas origin is zero");
+    const fuse::renderer::ProbeGridCoord invalid{9, 0, 0};
+    const fuse::math::Vec2 invalidOrigin =
+        fuse::renderer::ProbeGridLayout::probeIrradianceAtlasOrigin(desc, invalid);
+    expectNear(invalidOrigin.x, 0.f, 1e-5f, "invalid coord irradiance atlas origin is zero");
 }
 
 void testDirectionalProbeIrradiance() {
@@ -336,6 +391,16 @@ void testIrradianceLerp() {
     expectNear(below.x, 1.f, 1e-5f, "lerp t<0 clamps to a.x");
     const fuse::math::Vec3 above = fuse::renderer::ddgi_util::lerpIrradiance(a, b, 1.5f);
     expectNear(above.y, 1.f, 1e-5f, "lerp t>1 clamps to b.y");
+
+    const fuse::math::Vec3 identical = fuse::renderer::ddgi_util::lerpIrradiance(a, a, 0.75f);
+    expectNear(identical.x, 1.f, 1e-5f, "lerp identical endpoints returns a");
+
+    const fuse::math::Vec3 fullRetain =
+        fuse::renderer::ddgi_util::blendIrradiance(a, b, 1.5f);
+    expectNear(fullRetain.x, 1.f, 1e-5f, "hysteresis >1 retains previous");
+    const fuse::math::Vec3 fullReplace =
+        fuse::renderer::ddgi_util::blendIrradiance(a, b, -0.5f);
+    expectNear(fullReplace.y, 1.f, 1e-5f, "hysteresis <0 replaces with incoming");
 }
 
 void testBilinearTileIrradiance() {
@@ -349,6 +414,31 @@ void testBilinearTileIrradiance() {
     const fuse::math::Vec3 centre =
         fuse::renderer::ddgi_util::bilinearTileIrradiance(samples, 0.5f, 0.5f);
     expectNear(centre.x, 0.5f, 1e-5f, "bilinear centre");
+
+    const fuse::math::Vec3 oobUv =
+        fuse::renderer::ddgi_util::bilinearTileIrradiance(samples, 2.f, -1.f);
+    const fuse::math::Vec3 clampedEdge =
+        fuse::renderer::ddgi_util::bilinearTileIrradiance(samples, 1.f, 0.f);
+    expectNear(oobUv.x, clampedEdge.x, 1e-5f, "bilinear OOB uv clamps to edge sample");
+    const fuse::math::Vec3 nullSample =
+        fuse::renderer::ddgi_util::bilinearTileIrradiance(nullptr, 0.5f, 0.5f);
+    expectNear(nullSample.x, 0.f, 1e-5f, "bilinear null samples returns zero");
+}
+
+void testPartialCacheTrilinear() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_origin = {0.f, 0.f, 0.f};
+    desc.probe_spacing = {1.f, 1.f, 1.f};
+    desc.grid_dims = {2, 2, 2};
+
+    std::vector<fuse::renderer::IrradianceCacheEntry> partialCache(4);
+    for (fuse::u32 i = 0; i < 4u; ++i) {
+        partialCache[i].irradiance = {1.f, 0.f, 0.f};
+    }
+
+    const fuse::math::Vec3 undersized = fuse::renderer::ddgi_util::trilinearProbeIrradiance(
+        desc, {0.5f, 0.5f, 0.5f}, partialCache.data(), static_cast<fuse::u32>(partialCache.size()));
+    expectTrue(undersized.x >= 0.f, "undersized cache trilinear sample does not assert");
 }
 
 void testTrilinearProbeIrradiance() {
@@ -481,6 +571,7 @@ int main() {
     testDirectionalProbeIrradiance();
     testIrradianceLerp();
     testBilinearTileIrradiance();
+    testPartialCacheTrilinear();
     testTrilinearProbeIrradiance();
     testProbeScheduling();
     testHysteresisBlend();

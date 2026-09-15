@@ -126,6 +126,8 @@ struct ProbeSampleCoords {
 struct DdgiIrradianceEncoding {
     static fuse::math::Vec2 encodeDirection(const fuse::math::Vec3& direction);
     static fuse::math::Vec3 decodeDirection(const fuse::math::Vec2& encoded);
+    /// Clamp encoded octahedral UV to the unit square before decode/atlas lookup.
+    static fuse::math::Vec2 clampEncodedUV(const fuse::math::Vec2& encoded);
     /// Unit-square UV within a probe's octahedral tile.
     static fuse::math::Vec2 directionToAtlasUV(const fuse::math::Vec3& direction);
     /// Texel offset within a probe tile — clamped to [0, irradiance_res - 1].
@@ -149,6 +151,10 @@ struct ProbeGridLayout {
     static bool isBorderProbeCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
     static ProbeValidityFlags probeValidity(const DDGIDesc& desc, const ProbeGridCoord& coord);
     static ProbeValidityFlags probeValidityFromIndex(const DDGIDesc& desc, u32 probe_index);
+    /// Validity for a flat probe index after `clampProbeIndex` (safe for OOB scheduling).
+    static ProbeValidityFlags probeValidityFromClampedIndex(const DDGIDesc& desc, u32 probe_index);
+    /// True when `probe_index` exceeds the valid probe range (would be clamped).
+    static bool isProbeIndexOutOfRange(u32 probe_index, const DDGIDesc& desc);
     /// Clamp a flat probe index to [0, probeCount - 1]; returns 0 when the grid is empty.
     static u32 clampProbeIndex(u32 probe_index, const DDGIDesc& desc);
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
