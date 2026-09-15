@@ -254,7 +254,7 @@ void testAdjacentLodMorphBlend() {
                "adjacent morph blend interpolates");
     expectNear(fuse::terrain::blend_adjacent_lod_morph(0.2f, 0.8f, 2.f), 0.8f, 0.001f,
                "adjacent morph blend clamps blend factor");
-    expectNear(fuse::terrain::blend_adjacent_lod_morph(-0.5f, 1.5f, 0.25f), 0.125f, 0.001f,
+    expectNear(fuse::terrain::blend_adjacent_lod_morph(-0.5f, 1.5f, 0.25f), 0.25f, 0.001f,
                "adjacent morph blend clamps endpoints");
 }
 

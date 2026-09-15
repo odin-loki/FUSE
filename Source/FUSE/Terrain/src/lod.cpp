@@ -65,8 +65,10 @@ AdjacentLodPair clamp_adjacent_lod_pair(const AdjacentLodPair& pair) {
 }
 
 f32 blend_adjacent_lod_morph(f32 from_morph, f32 to_morph, f32 t) {
+    const f32 clamped_from = clamp_morph_factor(from_morph);
+    const f32 clamped_to = clamp_morph_factor(to_morph);
     const f32 clamped_t = clamp_morph_factor(t);
-    return clamp_morph_factor(from_morph + (to_morph - from_morph) * clamped_t);
+    return clamped_from + (clamped_to - clamped_from) * clamped_t;
 }
 
 vec3 blend_morph_between_lods(vec3 position, const AdjacentLodPair& pair, f32 base_stride) {
