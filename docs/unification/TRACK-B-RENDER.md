@@ -70,11 +70,12 @@ ctest --test-dir build --output-on-failure -R fuse_clustered_light_culler
 
 | Component | Notes |
 |-----------|-------|
-| `FroxelGridDesc` / `FroxelDensityGrid` | View-aligned froxel injection grid dimensions + per-froxel density cache |
-| `FroxelSliceLayout` | Exponential depth-slice near/far bounds (mirrors clustered layout) |
-| `FroxelGridLayout` | Froxel index encode/decode + screen-depth → sample-coords mapping |
-| `froxel_util` | `lerpDensity`, bilinear/trilinear density sample, analytic fog populate |
-| `fuse_volumetric_lighting_b511` | Froxel indexing, slice distribution, density lerp, analytic populate |
+| `FroxelGridDesc` / `FroxelDensityGrid` | View-aligned froxel injection grid dimensions + per-froxel density cache; `clampCounts` enforces CPU stub maxima |
+| `FroxelSliceLayout` | Exponential depth-slice near/far bounds + `computeSliceZFromDepth` (mirrors clustered layout) |
+| `FroxelGridLayout` | Froxel index encode/decode, tile/slice/index clamp helpers, screen-depth → sample-coords mapping |
+| `froxel_util` | `lerpDensity` (clamped t), bilinear/trilinear density sample, analytic fog populate |
+| `record_volumetric_fog_pass` | Skips when `march_steps == 0` or `density <= 0` (empty-scene path) |
+| `fuse_volumetric_lighting_b511` | Froxel indexing/clamp, slice distribution, density lerp extremes, empty-scene path, analytic populate |
 
 ```bash
 ctest --test-dir build --output-on-failure -R fuse_volumetric_lighting_b511
