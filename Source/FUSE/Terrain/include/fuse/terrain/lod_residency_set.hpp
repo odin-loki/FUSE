@@ -193,4 +193,21 @@ template <typename ScoreFn>
     return kInvalidChunkIndex;
 }
 
+/// Return chunk indices from `candidates` eligible for budget eviction, preserving farthest-first order.
+template <typename ScoreFn>
+[[nodiscard]] inline std::vector<u32> collect_budget_eviction_candidates(const std::vector<u32>& candidates,
+                                                                         ScoreFn&& score_fn,
+                                                                         f32 incoming_priority, f32 load_radius,
+                                                                         LodEvictionPolicy policy) {
+    std::vector<u32> eligible;
+    eligible.reserve(candidates.size());
+    for (const u32 chunk_index : candidates) {
+        const f32 score = score_fn(chunk_index);
+        if (can_evict_for_incoming(incoming_priority, score, load_radius, policy)) {
+            eligible.push_back(chunk_index);
+        }
+    }
+    return eligible;
+}
+
 } // namespace fuse::terrain

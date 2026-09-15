@@ -274,6 +274,47 @@ void testPickEvictionCandidateGuarded() {
              "guarded pick returns eviction candidate when set non-empty");
 }
 
+void testCollectBudgetEvictionCandidates() {
+    fuse::terrain::LodResidencySet residency;
+    expectTrue(residency.collect_eviction_candidates().empty(), "empty residency has no candidates");
+
+    expectTrue(residency.add(1u, 10.f), "add near chunk");
+    expectTrue(residency.add(3u, 15.f), "add mid chunk");
+    expectTrue(residency.add(5u, 20.f), "add far chunk");
+
+    const auto candidates = residency.collect_eviction_candidates();
+    const fuse::f32 load_radius = 24.f;
+    const auto blocked = fuse::terrain::collect_budget_eviction_candidates(
+        candidates,
+        [&](fuse::u32 chunk_index) { return residency.focus_distance_for(chunk_index); }, 1.f, load_radius,
+        fuse::terrain::LodEvictionPolicy::DistanceFromFocus);
+    expectTrue(blocked.empty(), "weak incoming yields no eligible budget eviction candidates");
+
+    const auto eligible = fuse::terrain::collect_budget_eviction_candidates(
+        candidates,
+        [&](fuse::u32 chunk_index) { return residency.focus_distance_for(chunk_index); }, 20.f, load_radius,
+        fuse::terrain::LodEvictionPolicy::DistanceFromFocus);
+    expectEq(static_cast<fuse::u32>(eligible.size()), 3u, "strong incoming keeps all residents eligible");
+    expectEq(eligible[0], 5u, "eligible list preserves farthest-first order");
+    expectEq(eligible[1], 3u, "eligible list preserves mid ordering");
+    expectEq(eligible[2], 1u, "eligible list preserves nearest ordering");
+
+    expectTrue(fuse::terrain::collect_budget_eviction_candidates({}, [](fuse::u32) { return 0.f; }, 10.f,
+                                                                 load_radius,
+                                                                 fuse::terrain::LodEvictionPolicy::DistanceFromFocus)
+                   .empty(),
+               "empty candidate list early-outs to empty eligible set");
+}
+
+void testAsyncInFlightBudgetGuards() {
+    expectTrue(fuse::terrain::can_submit_async_load(0u, 0u), "zero async cap allows submit");
+    expectTrue(fuse::terrain::can_submit_async_load(3u, 4u), "under async cap allows submit");
+    expectTrue(!fuse::terrain::can_submit_async_load(4u, 4u), "at async cap blocks submit");
+    expectEq(fuse::terrain::async_in_flight_headroom(0u, 100u), ~0u, "zero async cap has unlimited headroom");
+    expectEq(fuse::terrain::async_in_flight_headroom(4u, 2u), 2u, "async headroom subtracts in-flight count");
+    expectEq(fuse::terrain::async_in_flight_headroom(4u, 6u), 0u, "over-cap async headroom is zero");
+}
+
 void testBudgetEvictionScore() {
     expectNear(fuse::terrain::budget_eviction_score(900.f, 0.f, 0u, 10u,
                                                   fuse::terrain::LodEvictionPolicy::DistanceFromFocus),
@@ -329,6 +370,26 @@ void testChunkGridResidentCapEviction() {
     expectEq(grid.resident_chunk_count(), 2u, "resident count stays at cap after eviction load");
 
     grid.destroy();
+}
+
+void testChunkGridEmptyResidencyEarlyOut() {
+    fuse::terrain::ChunkGrid grid{};
+    fuse::terrain::TerrainDesc desc = makeTestDesc();
+    desc.async_loading = false;
+    desc.max_resident_chunks = 1;
+    desc.load_radius = 28.f;
+    grid.init(desc);
+
+    expectTrue(grid.residency_set().empty(), "grid starts with empty residency set");
+    expectEq(grid.budget_counters().eviction_skipped, 0u, "no eviction skips before cap pressure");
+
+    grid.update_lod({0.f, 0.f, 0.f}, 0.016f);
+    expectEq(grid.resident_chunk_count(), 1u, "single resident fills cap");
+    expectTrue(!grid.residency_set().empty(), "resident tracked in residency set");
+
+    grid.destroy();
+    expectTrue(grid.residency_set().empty(), "destroy clears residency set");
+    expectEq(grid.resident_chunk_count(), 0u, "destroy clears resident chunks");
 }
 
 void testChunkGridEvictionSkippedWhenIncomingDoesNotOutrank() {
@@ -841,6 +902,8 @@ int main() {
     testIncomingOutranksEviction();
     testPickBudgetEvictionCandidate();
     testPickEvictionCandidateGuarded();
+    testCollectBudgetEvictionCandidates();
+    testAsyncInFlightBudgetGuards();
     testBudgetEvictionScore();
     testResidentCapIncomingGuards();
     testLodResidencySetAddRemove();
@@ -859,6 +922,7 @@ int main() {
     testLodResidencyQueueFlushBudget();
     testChunkGridLodTransitions();
     testChunkGridResidentCapEviction();
+    testChunkGridEmptyResidencyEarlyOut();
     testChunkGridEvictionSkippedWhenIncomingDoesNotOutrank();
     testChunkGridAsyncResidency();
     testHeightfieldRaycast();

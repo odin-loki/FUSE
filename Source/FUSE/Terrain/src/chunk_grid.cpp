@@ -193,6 +193,14 @@ void ChunkGrid::collect_stream_candidates_(vec3 camera_pos) {
 }
 
 void ChunkGrid::evict_for_resident_cap_(f32 incoming_priority) {
+    if (!needs_budget_eviction(m_desc.max_resident_chunks, resident_chunk_count())) {
+        return;
+    }
+    if (!m_residency_set.has_eviction_candidate()) {
+        ++m_budget_counters.eviction_skipped;
+        return;
+    }
+
     const f32 load_radius = effective_load_radius();
     while (needs_budget_eviction(m_desc.max_resident_chunks, resident_chunk_count())) {
         if (!m_residency_set.has_eviction_candidate()) {
@@ -227,7 +235,7 @@ void ChunkGrid::queue_load_(u32 chunk_index, f32 priority) {
         return;
     }
 
-    if (!can_accept_resident_chunk(m_desc.max_resident_chunks, resident_chunk_count())) {
+    if (needs_budget_eviction_for_incoming(m_desc.max_resident_chunks, resident_chunk_count())) {
         evict_for_resident_cap_(priority);
     }
     if (!can_accept_resident_chunk(m_desc.max_resident_chunks, resident_chunk_count())) {
@@ -303,7 +311,7 @@ void ChunkGrid::process_queues_(vec3 camera_pos) {
 
     while (!m_load_queue.empty() && can_accept_resident_chunk(m_desc.max_resident_chunks, resident_chunk_count()) &&
            processed < max_per_tick) {
-        if (async_jobs && m_async_queue.in_flight_count() >= m_desc.max_async_in_flight) {
+        if (async_jobs && !can_submit_async_load(m_async_queue.in_flight_count(), m_desc.max_async_in_flight)) {
             break;
         }
 
@@ -336,7 +344,7 @@ void ChunkGrid::process_queues_(vec3 camera_pos) {
 
     const u32 unload_budget = async_jobs ? m_desc.max_async_in_flight : static_cast<u32>(m_unload_queue.size());
     for (u32 i = 0; i < unload_budget && !m_unload_queue.empty(); ++i) {
-        if (async_jobs && m_async_queue.in_flight_count() >= m_desc.max_async_in_flight) {
+        if (async_jobs && !can_submit_async_load(m_async_queue.in_flight_count(), m_desc.max_async_in_flight)) {
             break;
         }
 
