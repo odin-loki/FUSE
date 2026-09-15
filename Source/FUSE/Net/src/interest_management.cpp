@@ -77,6 +77,24 @@ bool contains_entity_(const std::vector<ecs::EntityID>& entities, ecs::EntityID 
     return false;
 }
 
+bool entity_less_(const ecs::EntityID& a, const ecs::EntityID& b) {
+    if (a.index != b.index) {
+        return a.index < b.index;
+    }
+    return a.generation < b.generation;
+}
+
+void sort_entities_(std::vector<ecs::EntityID>& entities) {
+    std::sort(entities.begin(), entities.end(), entity_less_);
+}
+
+bool entry_higher_priority_(const InterestEntry& a, const InterestEntry& b) {
+    if (a.priority != b.priority) {
+        return a.priority > b.priority;
+    }
+    return a.distance_sq < b.distance_sq;
+}
+
 } // namespace
 
 void InterestScopeSet::clear() {
@@ -90,6 +108,11 @@ void InterestScopeSet::build_from_entries(const std::vector<InterestEntry>& entr
             entities.push_back(entry.entity);
         }
     }
+    sort_entities_(entities);
+}
+
+bool InterestScopeSet::contains(ecs::EntityID entity) const {
+    return contains_entity_(entities, entity);
 }
 
 void diff_interest_scope_sets(const InterestScopeSet& previous, const InterestScopeSet& current,
@@ -108,6 +131,9 @@ void diff_interest_scope_sets(const InterestScopeSet& previous, const InterestSc
             out.left.push_back(entity);
         }
     }
+
+    sort_entities_(out.entered);
+    sort_entities_(out.left);
 }
 
 u32 filter_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
@@ -128,6 +154,7 @@ u32 filter_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy&
         out_entries.push_back(entry);
     }
 
+    std::sort(out_entries.begin(), out_entries.end(), entry_higher_priority_);
     return static_cast<u32>(out_entries.size());
 }
 
@@ -159,6 +186,16 @@ void InterestManager::set_observer_position(ecs::vec3 position) {
 
 void InterestManager::register_entity(InterestCandidate candidate) {
     m_candidates.push_back(candidate);
+}
+
+bool InterestManager::update_entity_position(ecs::EntityID entity, ecs::vec3 position) {
+    for (InterestCandidate& candidate : m_candidates) {
+        if (candidate.entity == entity) {
+            candidate.position = position;
+            return true;
+        }
+    }
+    return false;
 }
 
 void InterestManager::clear_entities() {
@@ -202,6 +239,27 @@ void InterestManager::evaluate() {
 
 void InterestManager::compute_scope_diff(InterestSetDiff& out) const {
     diff_interest_scope_sets(m_previous_scope_set, m_scope_set, out);
+}
+
+bool InterestManager::scope_changed_since_last_evaluate() const {
+    if (!m_has_scope_snapshot) {
+        return false;
+    }
+
+    if (m_previous_scope_set.size() != m_scope_set.size()) {
+        return true;
+    }
+
+    for (u32 i = 0; i < m_scope_set.size(); ++i) {
+        if (m_previous_scope_set.entities[i] != m_scope_set.entities[i]) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool InterestManager::is_entity_in_scope(ecs::EntityID entity) const {
+    return m_scope_set.contains(entity);
 }
 
 u32 InterestManager::in_scope_count() const {

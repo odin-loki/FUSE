@@ -43,10 +43,10 @@ Use `create_transport(TransportBackend)` to instantiate the active backend.
 Server-side area-of-interest scaffolding mirrors Torque ghost scoping with FUSE-native relevance radii:
 
 - **`InterestPolicy`** — `relevance_radius`, optional `unload_radius` (default 1.25×), inner `always_relevant_radius`
-- **`InterestManager`** — registers entity positions, evaluates scope/priority for an observer
+- **`InterestManager`** — registers entity positions, `update_entity_position`, evaluates scope/priority for an observer
 - **`InterestPriorityQueue`** — max-priority heap for replication ordering (closest / always-relevant first)
 - **`InterestScopeSet` / `InterestSetDiff`** — enter/leave entity sets between consecutive AOI evaluations
-- **`filter_candidates_in_radius`** — radius filter stub over candidate lists (no hysteresis)
+- **`filter_candidates_in_radius`** — radius filter stub over candidate lists (no hysteresis), priority-sorted output
 
 Hysteresis keeps entities in scope until they pass the unload radius, matching B7.5 terrain streaming semantics.
 
