@@ -1,6 +1,7 @@
 #include <fuse/audio/spatial_mixer.hpp>
 
 #include <fuse/audio/attenuation.hpp>
+#include <fuse/audio/binaural_pan.hpp>
 #include <fuse/audio/occlusion.hpp>
 
 #include <algorithm>
@@ -43,18 +44,22 @@ float SpatialMixer::sample_clip(const AudioClip& clip, float play_head, u32 chan
 void SpatialMixer::apply_hrtf_pan(float mono_sample, const Vec3& rel, float attenuation,
                                   float& left, float& right) const {
     const float distance = rel.length();
-    if (!m_hrtfEnabled || distance < 1e-5f) {
+    if (distance < 1e-5f) {
         left += mono_sample * attenuation;
         right += mono_sample * attenuation;
         return;
     }
 
-    const float azimuth = std::atan2(rel.x, -rel.z);
-    const float pan = std::sin(azimuth);
-    const float left_gain = std::sqrt(0.5f * (1.f - pan));
-    const float right_gain = std::sqrt(0.5f * (1.f + pan));
-    left += mono_sample * attenuation * left_gain;
-    right += mono_sample * attenuation * right_gain;
+    if (!m_hrtfEnabled) {
+        left += mono_sample * attenuation;
+        right += mono_sample * attenuation;
+        return;
+    }
+
+    BinauralPanGains pan = compute_binaural_pan_gains(rel);
+    apply_hrtf_distance_factor(pan, attenuation);
+    left += mono_sample * attenuation * pan.left;
+    right += mono_sample * attenuation * pan.right;
 }
 
 void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>& clips, float dt,

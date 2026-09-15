@@ -3,6 +3,7 @@
 #include <fuse/audio/audio_clip.hpp>
 #include <fuse/audio/audio_engine.hpp>
 #include <fuse/audio/audio_registry.hpp>
+#include <fuse/audio/binaural_pan.hpp>
 #include <fuse/audio/conv_reverb_cpu.hpp>
 #include <fuse/audio/math.hpp>
 #include <fuse/audio/occlusion.hpp>
@@ -238,6 +239,78 @@ float panAsymmetry(fuse::audio::AudioEngine& engine, fuse::audio::AudioRegistry&
     }
     engine.update(registry, 1.f / 60.f);
     return channelEnergy(engine.last_mix_buffer(), 0) - channelEnergy(engine.last_mix_buffer(), 1);
+}
+
+void testBinauralPanFrontBackSideExtremes() {
+    const fuse::audio::Vec3 forward{0.f, 0.f, 5.f};
+    const fuse::audio::Vec3 back{0.f, 0.f, -5.f};
+    const fuse::audio::Vec3 left{-5.f, 0.f, 0.f};
+    const fuse::audio::Vec3 right{5.f, 0.f, 0.f};
+
+    const fuse::audio::BinauralPanGains ahead =
+        fuse::audio::compute_binaural_pan_gains(forward);
+    expectTrue(std::fabs(ahead.left - ahead.right) < 1e-3f, "front source is near-centre panned");
+    expectNear(ahead.itd_seconds, 0.f, 1e-5f, "front source has zero ITD stub");
+
+    const fuse::audio::BinauralPanGains behind =
+        fuse::audio::compute_binaural_pan_gains(back);
+    expectTrue(std::fabs(behind.left - behind.right) < 1e-3f, "back source is near-centre panned");
+
+    const fuse::audio::BinauralPanGains left_side =
+        fuse::audio::compute_binaural_pan_gains(left);
+    expectTrue(left_side.left > left_side.right + 0.1f, "left extreme favours left ear");
+
+    const fuse::audio::BinauralPanGains right_side =
+        fuse::audio::compute_binaural_pan_gains(right);
+    expectTrue(right_side.right > right_side.left + 0.1f, "right extreme favours right ear");
+    expectTrue(right_side.itd_seconds > 0.f, "right-side source has positive ITD stub");
+    expectTrue(left_side.itd_seconds < 0.f, "left-side source has negative ITD stub");
+}
+
+void testBinauralPanListenerBasisTransform() {
+    const fuse::audio::ListenerBasis basis =
+        fuse::audio::make_listener_basis(fuse::audio::Vec3{0.f, 0.f, -1.f}, fuse::audio::Vec3{0.f, 1.f, 0.f});
+    const fuse::audio::Vec3 world_offset{5.f, 1.f, -5.f};
+    const fuse::audio::Vec3 local_offset = fuse::audio::to_listener_space(world_offset, basis);
+    const fuse::audio::BinauralPanAngles world_angles =
+        fuse::audio::compute_binaural_angles(world_offset, basis);
+    const fuse::audio::BinauralPanAngles local_angles =
+        fuse::audio::compute_binaural_angles(local_offset);
+    expectNear(world_angles.azimuth, local_angles.azimuth, 1e-4f,
+               "listener basis maps world offset to lateral angles");
+    expectNear(world_angles.elevation, local_angles.elevation, 1e-4f,
+               "listener basis preserves elevation component");
+}
+
+void testBinauralPanGainClamp() {
+    fuse::audio::BinauralPanParams params;
+    params.max_ild_pan = 4.f;
+    fuse::audio::BinauralPanGains gains =
+        fuse::audio::compute_binaural_pan_gains(fuse::audio::Vec3{0.f, 0.f, 5.f}, params);
+    expectTrue(gains.left >= 0.f && gains.left <= 1.f, "left gain clamps to unit range");
+    expectTrue(gains.right >= 0.f && gains.right <= 1.f, "right gain clamps to unit range");
+
+    gains.left = 1.5f;
+    gains.right = -0.25f;
+    fuse::audio::clamp_binaural_pan_gains(gains);
+    expectNear(gains.left, 1.f, 1e-5f, "overshoot left gain clamps to one");
+    expectNear(gains.right, 0.f, 1e-5f, "negative right gain clamps to zero");
+}
+
+void testBinauralPanDistanceFactorNarrowsImage() {
+    fuse::audio::BinauralPanGains wide =
+        fuse::audio::compute_binaural_pan_gains(fuse::audio::Vec3{5.f, 0.f, 0.f});
+    fuse::audio::apply_hrtf_distance_factor(wide, 0.2f);
+    const float wide_spread = std::fabs(wide.left - wide.right);
+
+    fuse::audio::BinauralPanGains narrow =
+        fuse::audio::compute_binaural_pan_gains(fuse::audio::Vec3{5.f, 0.f, 0.f});
+    fuse::audio::apply_hrtf_distance_factor(narrow, 1.f);
+    const float narrow_spread = std::fabs(narrow.left - narrow.right);
+
+    expectTrue(wide_spread < narrow_spread, "attenuated source narrows binaural image");
+    expectNear(fuse::audio::compute_hrtf_distance_factor(1.f), 1.f, 1e-5f,
+               "unity attenuation preserves full spatial blend");
 }
 
 void testHrtfPanEdgeCases() {
@@ -850,6 +923,10 @@ int main() {
     testBusRoutingAllCategories();
     testBusGainClampsNegative();
     testBusRoutingAffectsMixOutput();
+    testBinauralPanFrontBackSideExtremes();
+    testBinauralPanListenerBasisTransform();
+    testBinauralPanGainClamp();
+    testBinauralPanDistanceFactorNarrowsImage();
     testHrtfPanEdgeCases();
     testOcclusionStub();
     testOcclusionFactorExtremes();

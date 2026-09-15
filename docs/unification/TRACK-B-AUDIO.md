@@ -15,6 +15,7 @@
 | `ListenerBasis` / `to_listener_space` | `Source/FUSE/Audio/include/fuse/audio/math.hpp` | World → listener-local transform for panning |
 | `AudioBus` / `AudioBusMixer` | `Source/FUSE/Audio/include/fuse/audio/audio_bus.hpp` | Per-category gain stub (Master, Sfx, Music, Voice) |
 | `OcclusionParams` / `evaluate_occlusion_*` | `Source/FUSE/Audio/include/fuse/audio/occlusion.hpp` | Visibility → LF/HF gain stubs; segment-vs-AABB blocker raycast |
+| `BinauralPanParams` / `compute_binaural_*` | `Source/FUSE/Audio/include/fuse/audio/binaural_pan.hpp` | Listener-local azimuth/elevation, ILD equal-power pan, ITD stub, distance blend |
 | `ReverbZoneParams` / `blend_reverb_zones` | `Source/FUSE/Audio/include/fuse/audio/reverb_zones.hpp` | Zone AABB membership + overlapping wet/dry blend |
 | `SpatialMixer` | `Source/FUSE/Audio/include/fuse/audio/spatial_mixer.hpp` | CPU HRTF-lite pan + curve attenuation + bus routing + blocker occlusion |
 | `AudioEngine` | `Source/FUSE/Audio/include/fuse/audio/audio_engine.hpp` | OpenAL backend sync, CUDA/CPU reverb facade, zone blend + occlusion blockers |
@@ -51,14 +52,16 @@ effective = listener.master_volume * bus_mixer.effective_gain(source.bus)
 
 ### HRTF-lite panning
 
-`apply_hrtf_pan` computes azimuth from listener-local offset and applies equal-power L/R gains via `sin(azimuth)`. Edge cases:
+`apply_hrtf_pan` delegates to `compute_binaural_pan_gains` for ILD (equal-power L/R) and a Woodworth-style ITD stub (`max_itd_seconds * sin(azimuth)`). `apply_hrtf_distance_factor` narrows the binaural image when distance attenuation is low. Edge cases:
 
 | Case | Behaviour |
 |------|-----------|
 | Co-located source (`distance < ε`) | Mono centre — no pan split |
-| Ahead / behind on forward axis | Near-centre pan |
-| Left / right offset | Asymmetric L/R energy |
+| Ahead / behind on forward axis | Near-centre pan; ITD stub ≈ 0 |
+| Left / right offset | Asymmetric L/R energy; signed ITD stub |
+| Elevated source | Both ears scaled by `elevation_rolloff` stub |
 | `hrtf_enabled = false` | Equal L/R regardless of position |
+| Low distance attenuation | `min_spatial_blend` narrows L/R spread toward mono |
 
 ### Occlusion (stub)
 
@@ -133,6 +136,10 @@ ctest --test-dir build --output-on-failure -R fuse_audio
 | `testBusGainClampsNegative` | Negative gains clamp to zero |
 | `testBusRoutingAffectsMixOutput` | Bus gain scales spatial mix energy |
 | `testHrtfPanEdgeCases` | Ahead/left/right/behind/co-located pan; HRTF-off is mono |
+| `testBinauralPanFrontBackSideExtremes` | Front/back centre pan; lateral ITD sign; side ILD asymmetry |
+| `testBinauralPanListenerBasisTransform` | World offset → listener-local azimuth/elevation |
+| `testBinauralPanGainClamp` | Per-ear gains clamp to [0, 1] |
+| `testBinauralPanDistanceFactorNarrowsImage` | Attenuation narrows binaural spread via `apply_hrtf_distance_factor` |
 | `testOcclusionStub` | LF/HF gain mapping, attenuation bundle, multi-blocker visibility |
 | `testOcclusionFactorExtremes` | Unity vs floored effective occlusion gain; blocker visibility extremes |
 | `testOcclusionReducesMixOutput` | Occluded source is quieter with min_gain floor |
@@ -156,6 +163,7 @@ ctest --test-dir build --output-on-failure -R fuse_audio
 - [x] Bus gain stub with master × category routing
 - [x] Bus routing tests cover all categories and mix output scaling
 - [x] HRTF-lite pan edge cases (ahead, lateral, behind, co-located, disabled)
+- [x] Binaural pan helpers: azimuth/elevation, ITD/ILD stubs, gain clamp, distance blend
 - [x] Occlusion segment-vs-AABB blockers wired into spatial attenuation path
 - [x] Reverb zone AABB membership + overlapping blend + listener-scoped wet/dry
 - [x] `fuse_audio_b72` CTest target green
