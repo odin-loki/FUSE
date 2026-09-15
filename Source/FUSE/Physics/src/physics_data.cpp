@@ -14,6 +14,9 @@ void RigidBodySoA::reserve(u32 bodyCapacity) {
     flags.reserve(bodyCapacity);
     predictedPositions.reserve(bodyCapacity);
     predictedOrientations.reserve(bodyCapacity);
+    forces.reserve(bodyCapacity);
+    torques.reserve(bodyCapacity);
+    sleepTimers.reserve(bodyCapacity);
 }
 
 void RigidBodySoA::clear() {
@@ -28,6 +31,9 @@ void RigidBodySoA::clear() {
     flags.clear();
     predictedPositions.clear();
     predictedOrientations.clear();
+    forces.clear();
+    torques.clear();
+    sleepTimers.clear();
 }
 
 u32 RigidBodySoA::addBody(vec3 position, f32 invMass, u32 bodyFlags) {
@@ -43,6 +49,9 @@ u32 RigidBodySoA::addBody(vec3 position, f32 invMass, u32 bodyFlags) {
     flags.push_back(bodyFlags);
     predictedPositions.push_back(position);
     predictedOrientations.push_back({});
+    forces.push_back({});
+    torques.push_back({});
+    sleepTimers.push_back(0.f);
     return index;
 }
 

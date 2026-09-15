@@ -42,6 +42,11 @@ struct RigidBodySoA {
     std::vector<vec3> predictedPositions;
     std::vector<quat> predictedOrientations;
 
+    // B4.4 additive — external forces and sleep tracking for PBD solver.
+    std::vector<vec3> forces;
+    std::vector<vec3> torques;
+    std::vector<f32> sleepTimers;
+
     u32 count() const { return static_cast<u32>(positions.size()); }
     u32 capacity() const { return static_cast<u32>(positions.capacity()); }
 

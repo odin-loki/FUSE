@@ -32,3 +32,27 @@ add_executable(fuse_physics_world_composition_tests
 
 target_link_libraries(fuse_physics_world_composition_tests PRIVATE fuse_world3d fuse_physics)
 add_test(NAME fuse_physics_world_composition_tests COMMAND fuse_physics_world_composition_tests)
+
+add_executable(fuse_physics_pbd_tests
+    test_pbd_solver.cpp
+)
+
+target_link_libraries(fuse_physics_pbd_tests PRIVATE fuse_physics fuse_core)
+target_compile_features(fuse_physics_pbd_tests PRIVATE cxx_std_17)
+add_test(NAME fuse_physics_pbd_tests COMMAND fuse_physics_pbd_tests)
+
+add_executable(fuse_physics_barnes_hut_tests
+    test_barnes_hut.cpp
+)
+
+target_link_libraries(fuse_physics_barnes_hut_tests PRIVATE fuse_physics fuse_core)
+target_compile_features(fuse_physics_barnes_hut_tests PRIVATE cxx_std_17)
+add_test(NAME fuse_physics_barnes_hut_tests COMMAND fuse_physics_barnes_hut_tests)
+
+add_executable(fuse_physics_ccd_tests
+    test_ccd.cpp
+)
+
+target_link_libraries(fuse_physics_ccd_tests PRIVATE fuse_physics fuse_core)
+target_compile_features(fuse_physics_ccd_tests PRIVATE cxx_std_17)
+add_test(NAME fuse_physics_ccd_tests COMMAND fuse_physics_ccd_tests)
