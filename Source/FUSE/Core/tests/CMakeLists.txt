@@ -75,3 +75,11 @@ add_executable(fuse_core_allocator_tests
 target_link_libraries(fuse_core_allocator_tests PRIVATE fuse_core)
 fuse_core_apply_tsan(fuse_core_allocator_tests)
 add_test(NAME fuse_core_allocator COMMAND fuse_core_allocator_tests)
+
+add_executable(fuse_core_platform_window_tests
+    test_platform_window.cpp
+)
+
+target_link_libraries(fuse_core_platform_window_tests PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_platform_window_tests)
+add_test(NAME fuse_core_platform_window COMMAND fuse_core_platform_window_tests)
