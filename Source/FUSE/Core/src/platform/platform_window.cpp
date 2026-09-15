@@ -174,6 +174,16 @@ bool EventPump::peekEvent(PlatformEvent& outEvent) const {
     return true;
 }
 
+bool EventPump::peekEventType(PlatformEventType& outType) const {
+    if (m_syntheticHead == m_syntheticTail) {
+        outType = PlatformEventType::None;
+        return false;
+    }
+
+    outType = m_syntheticEvents[m_syntheticHead].type;
+    return true;
+}
+
 bool EventPump::hasPendingEvents() const {
     return m_syntheticHead != m_syntheticTail;
 }
@@ -191,21 +201,41 @@ u32 EventPump::pendingEventCount() const {
 }
 
 bool EventPump::hasPendingResizeFor(const Window& window) const {
+    return pendingResizeExtentFor(window).pending;
+}
+
+PendingResizeExtent EventPump::pendingResizeExtentFor(const Window& window) const {
+    PendingResizeExtent extent;
     if (m_syntheticHead == m_syntheticTail) {
-        return false;
+        return extent;
     }
 
     u32 index = m_syntheticHead;
     while (index != m_syntheticTail) {
         const PlatformEvent& pending = m_syntheticEvents[index];
         if (pending.type == PlatformEventType::WindowResized && pending.window == &window) {
-            return true;
+            extent.width = pending.width;
+            extent.height = pending.height;
+            extent.pending = true;
         }
 
         index = (index + 1u) % kMaxSyntheticEvents;
     }
 
-    return false;
+    return extent;
+}
+
+const ResizeCoalesceRecord& EventPump::lastCoalescedResize() const {
+    return m_lastCoalescedResize;
+}
+
+EventPumpStats EventPump::stats() const {
+    EventPumpStats snapshot;
+    snapshot.pendingEventCount = pendingEventCount();
+    snapshot.droppedEventCount = m_droppedEventCount;
+    snapshot.coalescedResizeCount = m_coalescedResizeCount;
+    snapshot.quitRequested = m_quitRequested;
+    return snapshot;
 }
 
 u32 EventPump::droppedEventCount() const {
@@ -222,6 +252,10 @@ void EventPump::processOsEvents() {
 
 bool EventPump::pumpOnce() {
     processOsEvents();
+
+    if (!hasPendingEvents()) {
+        return !m_quitRequested;
+    }
 
     PlatformEvent event;
     while (pollEvent(event)) {
@@ -263,6 +297,10 @@ bool EventPump::tryCoalescePendingResize_(const PlatformEvent& event) {
             pending.width = event.width;
             pending.height = event.height;
             ++m_coalescedResizeCount;
+            m_lastCoalescedResize.window = event.window;
+            m_lastCoalescedResize.width = event.width;
+            m_lastCoalescedResize.height = event.height;
+            m_lastCoalescedResize.valid = true;
             return true;
         }
 
@@ -349,6 +387,7 @@ void EventPump::clearSyntheticEvents() {
 void EventPump::resetEventStats() {
     m_droppedEventCount = 0;
     m_coalescedResizeCount = 0;
+    m_lastCoalescedResize = {};
 }
 
 } // namespace fuse::platform

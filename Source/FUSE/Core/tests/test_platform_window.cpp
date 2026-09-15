@@ -431,6 +431,107 @@ void testEventPumpCoalescedResizeCount() {
     expectEq(pump.pendingEventCount(), 1u, "resetEventStats does not drain queue");
 }
 
+void testEventPumpPeekEventTypeEmptyQueueGuard() {
+    fuse::platform::EventPump pump;
+
+    fuse::platform::PlatformEventType type = fuse::platform::PlatformEventType::Quit;
+    expectTrue(!pump.peekEventType(type), "peekEventType returns false on empty queue");
+    expectTrue(type == fuse::platform::PlatformEventType::None,
+               "peekEventType resets outType on empty queue");
+}
+
+void testEventPumpPeekEventTypeDoesNotPop() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    pump.pushWindowCloseRequested(window);
+    expectEq(pump.pendingEventCount(), 1u, "close requested queued before type peek");
+
+    fuse::platform::PlatformEventType type = fuse::platform::PlatformEventType::None;
+    expectTrue(pump.peekEventType(type), "peekEventType succeeds with pending event");
+    expectTrue(type == fuse::platform::PlatformEventType::WindowCloseRequested,
+               "peekEventType sees close requested");
+    expectEq(pump.pendingEventCount(), 1u, "peekEventType does not remove queued event");
+}
+
+void testEventPumpPendingResizeExtentFor() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window left;
+    fuse::platform::Window right;
+
+    const fuse::platform::PendingResizeExtent emptyLeft = pump.pendingResizeExtentFor(left);
+    expectTrue(!emptyLeft.pending, "empty queue reports no pending resize extent");
+    expectEq(emptyLeft.width, 0u, "empty resize extent width is zero");
+    expectEq(emptyLeft.height, 0u, "empty resize extent height is zero");
+
+    left.resize(800, 600, &pump);
+    const fuse::platform::PendingResizeExtent first = pump.pendingResizeExtentFor(left);
+    expectTrue(first.pending, "resize extent pending after enqueue");
+    expectEq(first.width, 800u, "resize extent width matches enqueue");
+    expectEq(first.height, 600u, "resize extent height matches enqueue");
+
+    left.resize(1024, 768, &pump);
+    const fuse::platform::PendingResizeExtent coalesced = pump.pendingResizeExtentFor(left);
+    expectTrue(coalesced.pending, "coalesced resize extent still pending");
+    expectEq(coalesced.width, 1024u, "coalesced resize extent keeps latest width");
+    expectEq(coalesced.height, 768u, "coalesced resize extent keeps latest height");
+    expectTrue(!pump.pendingResizeExtentFor(right).pending,
+               "other window has no pending resize extent");
+
+    fuse::platform::PlatformEvent event;
+    expectTrue(pump.pollEvent(event), "drain coalesced resize");
+    expectTrue(!pump.pendingResizeExtentFor(left).pending,
+               "resize extent cleared after poll");
+}
+
+void testEventPumpLastCoalescedResizeRecord() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    expectTrue(!pump.lastCoalescedResize().valid, "no coalesce record on fresh pump");
+
+    window.resize(800, 600, &pump);
+    window.resize(1280, 720, &pump);
+    const fuse::platform::ResizeCoalesceRecord& record = pump.lastCoalescedResize();
+    expectTrue(record.valid, "coalesce record valid after merge");
+    expectTrue(record.window == &window, "coalesce record stores window pointer");
+    expectEq(record.width, 1280u, "coalesce record keeps latest width");
+    expectEq(record.height, 720u, "coalesce record keeps latest height");
+
+    pump.resetEventStats();
+    expectTrue(!pump.lastCoalescedResize().valid, "resetEventStats clears coalesce record");
+    expectEq(pump.pendingEventCount(), 1u, "resetEventStats does not drain coalesced resize");
+}
+
+void testEventPumpStatsSnapshot() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    const fuse::platform::EventPumpStats fresh = pump.stats();
+    expectEq(fresh.pendingEventCount, 0u, "fresh stats pending count is zero");
+    expectEq(fresh.droppedEventCount, 0u, "fresh stats dropped count is zero");
+    expectEq(fresh.coalescedResizeCount, 0u, "fresh stats coalesce count is zero");
+    expectTrue(!fresh.quitRequested, "fresh stats quit flag is false");
+
+    window.resize(800, 600, &pump);
+    window.resize(1024, 768, &pump);
+    pump.requestQuit();
+
+    const fuse::platform::EventPumpStats active = pump.stats();
+    expectEq(active.pendingEventCount, 2u, "stats pending count tracks queued events");
+    expectEq(active.coalescedResizeCount, 1u, "stats coalesce count tracks merges");
+    expectTrue(active.quitRequested, "stats quit flag tracks requestQuit");
+}
+
+void testEventPumpPumpOnceEmptyQueueEarlyOut() {
+    fuse::platform::EventPump pump;
+
+    expectTrue(!pump.hasPendingEvents(), "fresh pump queue is empty");
+    expectTrue(pump.pumpOnce(), "pumpOnce early-outs on empty queue");
+    expectTrue(!pump.quitRequested(), "empty pumpOnce does not request quit");
+    expectEq(pump.pendingEventCount(), 0u, "empty pumpOnce leaves queue empty");
+}
+
 void testEventPumpHasPendingResizeFor() {
     fuse::platform::EventPump pump;
     fuse::platform::Window left;
@@ -491,9 +592,15 @@ int main() {
     testEventPumpCoalesceIsPerWindow();
     testEventPumpPeekEventEmptyQueueGuard();
     testEventPumpPeekEventDoesNotPop();
+    testEventPumpPeekEventTypeEmptyQueueGuard();
+    testEventPumpPeekEventTypeDoesNotPop();
     testEventPumpPollEventEmptyQueueGuard();
     testEventPumpDroppedEventCount();
     testEventPumpCoalescedResizeCount();
+    testEventPumpPendingResizeExtentFor();
+    testEventPumpLastCoalescedResizeRecord();
+    testEventPumpStatsSnapshot();
+    testEventPumpPumpOnceEmptyQueueEarlyOut();
     testEventPumpHasPendingResizeFor();
     testMobileProfileStillUsesWindowStub();
 
