@@ -1,0 +1,6 @@
+add_executable(fuse_world_partition_tests
+    test_world_partition.cpp
+)
+
+target_link_libraries(fuse_world_partition_tests PRIVATE fuse_world_partition fuse_ecs fuse_core)
+add_test(NAME fuse_world_partition_b76 COMMAND fuse_world_partition_tests)
