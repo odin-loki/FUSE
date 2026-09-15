@@ -13,6 +13,7 @@ struct CommandStackSnapshot {
     u32 undoDepth = 0;
     u32 redoDepth = 0;
     u32 appliedCount = 0;
+    u32 coalescedCount = 0;
     bool dirty = false;
     u32 dirtyRevision = 0;
 };
@@ -24,6 +25,7 @@ public:
     static constexpr u32 kMaxHistory = 256;
 
     void execute(EditorCommand command);
+    void push(EditorCommand command) { execute(std::move(command)); }
     void undo();
     void redo();
     void clear();
@@ -35,6 +37,7 @@ public:
     u32 redoDepth() const { return m_redoDepth; }
     u32 appliedCount() const { return m_appliedCount; }
     u32 coalescedCount() const { return m_coalescedCount; }
+    u32 evictedCount() const { return m_evictedCount; }
 
     [[nodiscard]] bool isDirty() const { return m_dirty; }
     u32 dirtyRevision() const { return m_dirtyRevision; }
@@ -60,6 +63,7 @@ private:
     u32 m_redoDepth = 0;
     u32 m_appliedCount = 0;
     u32 m_coalescedCount = 0;
+    u32 m_evictedCount = 0;
     bool m_dirty = false;
     u32 m_dirtyRevision = 0;
 };

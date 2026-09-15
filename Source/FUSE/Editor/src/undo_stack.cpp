@@ -75,6 +75,28 @@ void UndoStack::clear() {
     m_evictedCount = 0;
 }
 
+UndoStackSnapshot UndoStack::captureSnapshot() const {
+    UndoStackSnapshot snapshot;
+    snapshot.undoCount = undoCount();
+    snapshot.redoCount = redoCount();
+    snapshot.evictedCount = m_evictedCount;
+    snapshot.undoDescriptions.reserve(m_undo.size());
+    for (const auto& command : m_undo) {
+        snapshot.undoDescriptions.push_back(command->description());
+    }
+    snapshot.redoDescriptions.reserve(m_redo.size());
+    for (const auto& command : m_redo) {
+        snapshot.redoDescriptions.push_back(command->description());
+    }
+    return snapshot;
+}
+
+void UndoStack::restoreSnapshot(const UndoStackSnapshot& /*snapshot*/) {
+    // Stub: polymorphic UndoCommand payloads are not serialised yet.
+    // Callers use captureSnapshot() for PIE checkpoint metadata until
+    // command cloning lands in a follow-up.
+}
+
 SetObjectNameCommand::SetObjectNameCommand(Object& object, std::string before, std::string after)
     : m_object(object), m_before(std::move(before)), m_after(std::move(after)) {}
 

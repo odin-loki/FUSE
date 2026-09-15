@@ -16,6 +16,7 @@ void CommandStack::evictOldestIfNeeded_() {
     }
 
     m_undoStack.erase(m_undoStack.begin());
+    ++m_evictedCount;
     if (m_undoDepth > 0u) {
         --m_undoDepth;
     }
@@ -82,6 +83,7 @@ void CommandStack::clear() {
     m_redoDepth = 0;
     m_appliedCount = 0;
     m_coalescedCount = 0;
+    m_evictedCount = 0;
     m_dirty = false;
     m_dirtyRevision = 0;
 }
@@ -97,6 +99,7 @@ CommandStackSnapshot CommandStack::captureSnapshot() const {
     snapshot.undoDepth = m_undoDepth;
     snapshot.redoDepth = m_redoDepth;
     snapshot.appliedCount = m_appliedCount;
+    snapshot.coalescedCount = m_coalescedCount;
     snapshot.dirty = m_dirty;
     snapshot.dirtyRevision = m_dirtyRevision;
     return snapshot;
@@ -108,9 +111,9 @@ void CommandStack::restoreSnapshot(const CommandStackSnapshot& snapshot) {
     m_undoDepth = snapshot.undoDepth;
     m_redoDepth = snapshot.redoDepth;
     m_appliedCount = snapshot.appliedCount;
+    m_coalescedCount = snapshot.coalescedCount;
     m_dirty = snapshot.dirty;
     m_dirtyRevision = snapshot.dirtyRevision;
-    m_coalescedCount = 0;
 }
 
 const EditorCommand* CommandStack::lastApplied() const {
