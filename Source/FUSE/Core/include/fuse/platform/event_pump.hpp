@@ -24,6 +24,29 @@ struct PlatformEvent {
     u32 height = 0;
 };
 
+/// Snapshot of the most recent in-place resize coalesce (diagnostic only).
+struct ResizeCoalesceRecord {
+    Window* window = nullptr;
+    u32 width = 0;
+    u32 height = 0;
+    bool valid = false;
+};
+
+/// Pending resize dimensions for a window when a `WindowResized` event is queued.
+struct PendingResizeExtent {
+    u32 width = 0;
+    u32 height = 0;
+    bool pending = false;
+};
+
+/// Aggregate EventPump counters for headless diagnostics and tests.
+struct EventPumpStats {
+    u32 pendingEventCount = 0;
+    u32 droppedEventCount = 0;
+    u32 coalescedResizeCount = 0;
+    bool quitRequested = false;
+};
+
 /// OS event pump — B1.7 stub drains a synthetic queue only (desktop + mobile no-op).
 ///
 /// Platform backends will override `processOsEvents()` behaviour by replacing this
@@ -42,6 +65,9 @@ public:
     /// Inspect the front queued event without removing it. Returns false when empty.
     bool peekEvent(PlatformEvent& outEvent) const;
 
+    /// Inspect only the front event type without removing it. Returns false when empty.
+    bool peekEventType(PlatformEventType& outType) const;
+
     /// True when the synthetic queue holds at least one event.
     bool hasPendingEvents() const;
 
@@ -50,6 +76,15 @@ public:
 
     /// True when a `WindowResized` event for `window` is still queued.
     bool hasPendingResizeFor(const Window& window) const;
+
+    /// Pending resize dimensions for `window`, or `pending == false` when none queued.
+    PendingResizeExtent pendingResizeExtentFor(const Window& window) const;
+
+    /// Most recent in-place resize coalesce (invalid when none have occurred).
+    const ResizeCoalesceRecord& lastCoalescedResize() const;
+
+    /// Aggregate queue + overflow/coalesce counters.
+    EventPumpStats stats() const;
 
     /// Number of synthetic events dropped because the ring buffer was full.
     u32 droppedEventCount() const;
@@ -95,6 +130,7 @@ private:
     u32 m_syntheticTail = 0;
     u32 m_droppedEventCount = 0;
     u32 m_coalescedResizeCount = 0;
+    ResizeCoalesceRecord m_lastCoalescedResize{};
     static constexpr u32 kMaxSyntheticEvents = 32;
     PlatformEvent m_syntheticEvents[kMaxSyntheticEvents]{};
 };
