@@ -306,6 +306,148 @@ void testStreamingRequestQueueInFlightTracking() {
     });
 }
 
+void testResidentCellBudgetReject() {
+    fuse::world_partition::WorldPartition partition;
+    fuse::world_partition::WorldPartitionDesc desc{};
+    desc.async_loading = false;
+    desc.max_loaded_cells = 2;
+    desc.default_cell_bytes = 1024u;
+    partition.init(desc);
+
+    const fuse::world_partition::GridCoord a{0, 0};
+    const fuse::world_partition::GridCoord b{1, 0};
+    const fuse::world_partition::GridCoord c{2, 0};
+
+    partition.force_load(a);
+    partition.force_load(b);
+    expectEq(partition.loaded_cell_count(), 2u, "two cells resident at cap");
+
+    partition.force_load(c);
+    expectEq(partition.rejected_load_count(), 1u, "rejected load counter increments");
+    expectTrue(partition.cell_residency(c) == fuse::world_partition::CellResidencyState::Unloaded,
+               "rejected cell stays unloaded");
+
+    partition.destroy();
+}
+
+void testByteBudgetClamp() {
+    fuse::world_partition::WorldPartition partition;
+    fuse::world_partition::WorldPartitionDesc desc{};
+    desc.async_loading = false;
+    desc.max_loaded_cells = 16;
+    desc.default_cell_bytes = 1024u;
+    desc.budget.max_resident_bytes = 2048u;
+    partition.init(desc);
+
+    const fuse::world_partition::GridCoord a{0, 0};
+    const fuse::world_partition::GridCoord b{1, 0};
+    const fuse::world_partition::GridCoord c{2, 0};
+
+    partition.force_load(a);
+    partition.force_load(b);
+    expectEq(partition.resident_byte_count(), 2048u, "byte budget fills at two cells");
+
+    partition.force_load(c);
+    expectEq(partition.rejected_load_count(), 1u, "byte-budget rejection tracked");
+
+    partition.destroy();
+}
+
+void testLruEvictionOrdering() {
+    fuse::world_partition::WorldPartition partition;
+    fuse::world_partition::WorldPartitionDesc desc{};
+    desc.async_loading = false;
+    desc.max_loaded_cells = 2;
+    desc.stream_in_distance = 1.f;
+    desc.stream_out_distance = 10000.f;
+    desc.eviction_policy = fuse::world_partition::EvictionPolicy::Lru;
+    partition.init(desc);
+
+    const fuse::world_partition::GridCoord old_cell{0, 0};
+    const fuse::world_partition::GridCoord recent_cell{1, 0};
+    const fuse::world_partition::GridCoord incoming{2, 0};
+
+    partition.force_load(old_cell);
+    partition.update({0.f, 0.f, 0.f, 0.f});
+    partition.force_load(old_cell);
+    partition.update({0.f, 0.f, 0.f, 0.f});
+    partition.force_load(recent_cell);
+
+    expectTrue(partition.cell_loaded(old_cell) && partition.cell_loaded(recent_cell),
+               "both cells resident before LRU eviction");
+
+    partition.force_load(incoming);
+
+    expectTrue(partition.cell_residency(old_cell) == fuse::world_partition::CellResidencyState::Unloaded,
+               "oldest touched cell evicts under LRU policy");
+    expectTrue(partition.cell_loaded(recent_cell), "recently touched cell remains resident");
+
+    partition.destroy();
+}
+
+void testStreamingRequestQueueDrainOrdering() {
+    withScheduler(2, [] {
+        fuse::world_partition::StreamingRequestQueue queue;
+
+        for (fuse::u32 i = 0; i < 3u; ++i) {
+            fuse::world_partition::StreamingRequest request{};
+            request.coord = {static_cast<fuse::s32>(i), 0};
+            request.kind = fuse::world_partition::StreamingRequestKind::Load;
+            request.priority = static_cast<fuse::f32>(i);
+            expectTrue(queue.submit(request, [](fuse::world_partition::GridCoord,
+                                                fuse::world_partition::StreamingRequestKind) { return true; }),
+                       "priority submit succeeds");
+        }
+
+        for (int attempt = 0; attempt < 200 && queue.completed_count() < 3u; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        std::vector<fuse::world_partition::CompletedStreamingRequest> completed;
+        expectEq(queue.drain_completed(completed), 3u, "drain returns all completed requests");
+        expectTrue(completed[0].priority >= completed[1].priority &&
+                       completed[1].priority >= completed[2].priority,
+                   "drain orders highest priority first");
+        expectTrue(completed[0].coord.x == 2, "highest-priority completion is first");
+    });
+}
+
+void testStreamingRequestQueuePendingReject() {
+    withScheduler(1, [] {
+        fuse::world_partition::StreamingRequestQueue queue;
+        queue.set_max_pending_submits(1);
+        std::atomic<bool> gate_open{false};
+
+        fuse::world_partition::StreamingRequest blocking{};
+        blocking.coord = {0, 0};
+        blocking.kind = fuse::world_partition::StreamingRequestKind::Load;
+        blocking.priority = 1.f;
+        expectTrue(queue.submit(blocking, [&](fuse::world_partition::GridCoord,
+                                              fuse::world_partition::StreamingRequestKind) {
+            while (!gate_open.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            return true;
+        }), "first submit accepted");
+
+        fuse::world_partition::StreamingRequest overflow{};
+        overflow.coord = {1, 0};
+        overflow.kind = fuse::world_partition::StreamingRequestKind::Load;
+        expectTrue(!queue.submit(overflow, [](fuse::world_partition::GridCoord,
+                                              fuse::world_partition::StreamingRequestKind) { return true; }),
+                   "second submit rejected while pending cap reached");
+
+        gate_open.store(true);
+        for (int attempt = 0; attempt < 100 && queue.completed_count() == 0u; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        std::vector<fuse::world_partition::CompletedStreamingRequest> completed;
+        queue.drain_completed(completed);
+        expectEq(completed.size(), 1u, "blocked request completes after gate opens");
+    });
+}
+
 void testWorldPartitionAsyncResidency() {
     withScheduler(1, [] {
         fuse::world_partition::WorldPartition partition;
@@ -360,10 +502,15 @@ int main() {
     testWorldPartitionLoadUnloadStubs();
     testWorldPartitionStreamingUpdate();
     testStreamingBudgetCaps();
+    testResidentCellBudgetReject();
+    testByteBudgetClamp();
     testUnloadPriorityOrdering();
+    testLruEvictionOrdering();
     testStreamingRequestQueueStub();
     testStreamingRequestQueueMultipleSubmits();
     testStreamingRequestQueueInFlightTracking();
+    testStreamingRequestQueueDrainOrdering();
+    testStreamingRequestQueuePendingReject();
     testWorldPartitionAsyncResidency();
     fuse::core::shutdown();
 
