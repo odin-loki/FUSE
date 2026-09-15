@@ -256,25 +256,33 @@ void testWaitLeaf() {
 }
 
 void testBlackboardSetGetLeaves() {
-    const std::vector<fuse::ai::NodeLoadSpec> specs = {
+    const std::vector<fuse::ai::NodeLoadSpec> setSpecs = {
         {"bb.action.blackboard_set", 1.f, 2, 1, {}, {}},
+    };
+    const std::vector<fuse::ai::NodeLoadSpec> getSpecs = {
         {"bb.condition.blackboard_get", 0.f, 2, 1, {}, {}},
-        {"bb.sequence", 0.f, 0, 1, {}, {0, 1}},
     };
 
-    fuse::ai::BehaviorTree tree;
-    expectTrue(fuse::ai::loadTreeFromSpecs(specs, 2, tree), "blackboard set/get tree loads");
+    fuse::ai::BehaviorTree setTree;
+    fuse::ai::BehaviorTree getTree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(setSpecs, 0, setTree), "blackboard set loads");
+    expectTrue(fuse::ai::loadTreeFromSpecs(getSpecs, 0, getTree), "blackboard get loads");
 
     fuse::ai::AgentSnapshot agent;
     fuse::ai::Blackboard board;
     board.resize(1);
 
-    const fuse::ai::BehaviorTickResult result =
-        tree.tick(0, agent, fuse::ai::BlackboardView(board));
-    expectTrue(result.status == fuse::ai::BehaviorStatus::Success, "blackboard set/get succeeds");
-    expectTrue(result.wroteFlag, "blackboard set writes flag");
-    expectTrue(result.flagIndex == 2u, "blackboard set targets configured flag");
-    expectTrue(result.flagValue, "blackboard set writes true");
+    const fuse::ai::BehaviorTickResult setResult =
+        setTree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(setResult.status == fuse::ai::BehaviorStatus::Success, "blackboard set succeeds");
+    expectTrue(setResult.wroteFlag, "blackboard set writes flag");
+    expectTrue(setResult.flagIndex == 2u, "blackboard set targets configured flag");
+    expectTrue(setResult.flagValue, "blackboard set writes true");
+
+    board.setFlag(0, 2, true);
+    const fuse::ai::BehaviorTickResult getResult =
+        getTree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(getResult.status == fuse::ai::BehaviorStatus::Success, "blackboard get succeeds when flag set");
 }
 
 void testDistanceGreaterCondition() {

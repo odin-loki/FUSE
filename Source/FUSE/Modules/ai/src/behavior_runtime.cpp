@@ -25,8 +25,10 @@ void BehaviorRuntime::addAgent(const AgentBinding& binding) {
 }
 
 void BehaviorRuntime::ensureWaitState() {
-    const std::size_t perAgent = m_tree.nodeCount();
-    m_waitStartTicks.assign(m_bindings.size() * perAgent, 0);
+    const std::size_t needed = m_bindings.size() * m_tree.nodeCount();
+    if (m_waitStartTicks.size() != needed) {
+        m_waitStartTicks.assign(needed, 0);
+    }
 }
 
 void BehaviorRuntime::buildSnapshots() {
@@ -46,8 +48,6 @@ void BehaviorRuntime::buildSnapshots() {
     if (m_results.size() != m_snapshots.size()) {
         m_results.assign(m_snapshots.size(), BehaviorTickResult{});
     }
-
-    ensureWaitState();
 }
 
 void BehaviorRuntime::evaluate(const frame::FrameCtx& ctx) {
