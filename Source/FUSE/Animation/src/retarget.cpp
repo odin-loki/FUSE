@@ -63,21 +63,15 @@ void RetargetMap::apply_pose_soa(const PoseSoA& source_pose,
 void RetargetMap::apply_pose(const Pose& source_pose,
                              const Skeleton& target_skel,
                              Pose& out_pose) const {
-    PoseSoA sourceSoa{};
-    sourceSoa.bone_count = source_pose.bone_count;
-    sourceSoa.bone_world_transforms = source_pose.bone_world_transforms;
+    out_pose = Pose::make_bind_pose(target_skel);
 
-    PoseSoA targetSoa = PoseSoA::from_bind_pose(target_skel);
     for (const RetargetBoneEntry& entry : bone_map) {
-        if (entry.source_bone >= source_pose.bone_count || entry.target_bone >= targetSoa.bone_count) {
+        if (entry.source_bone >= source_pose.bone_count || entry.target_bone >= out_pose.bone_count) {
             continue;
         }
 
-        targetSoa.bone_world_transforms[entry.target_bone] = source_pose.bone_world_transforms[entry.source_bone];
+        out_pose.bone_world_transforms[entry.target_bone] = source_pose.bone_world_transforms[entry.source_bone];
     }
-
-    targetSoa.compute_world_transforms(target_skel);
-    out_pose = targetSoa.to_pose();
 }
 
 } // namespace fuse::animation
