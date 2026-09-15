@@ -56,6 +56,10 @@ BindlessBindingIndex bindlessSamplerBinding(u32 slotIndex);
 u32 packBindlessBindingIndex(u32 binding, u32 arrayIndex);
 bool unpackBindlessBindingIndex(u32 packed, u32& binding, u32& arrayIndex);
 
+/// Packs kind + index + generation into a single u64 for SSBO rows / network payloads.
+u64 packBindlessSlotHandle(BindlessSlotHandle handle);
+BindlessSlotHandle unpackBindlessSlotHandle(u64 packed);
+
 /// Global descriptor table scaffolding — CPU heap with generation handles until B2.4 pool wiring.
 class BindlessDescriptors {
 public:
@@ -72,10 +76,16 @@ public:
     bool validateSlot(BindlessSlotHandle handle) const;
     bool isSlotOccupied(BindlessHeapKind kind, u32 index) const;
     u32 slotGeneration(BindlessHeapKind kind, u32 index) const;
+    bool slotIsStorageTexture(u32 index) const;
+
+    /// Shader binding for a validated slot handle; returns empty binding when invalid.
+    BindlessBindingIndex bindingIndexForHandle(BindlessSlotHandle handle) const;
 
     /// Sparse table growth stub — never shrinks; rejects above per-kind caps.
     bool resizeHeap(BindlessHeapKind kind, u32 newCapacity);
     u32 heapCapacity(BindlessHeapKind kind) const;
+    u32 heapLiveCount(BindlessHeapKind kind) const;
+    u32 heapFreeCount(BindlessHeapKind kind) const;
 
     u32 registerTexture(const Texture& texture, bool storage = false);
     u32 registerBuffer(const Buffer& buffer);

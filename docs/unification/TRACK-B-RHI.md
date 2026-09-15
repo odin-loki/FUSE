@@ -15,11 +15,11 @@
 | `GpuAllocator` | `include/fuse/renderer/vk/allocator.hpp` | Stub + VMA paths record alloc/free; `refreshVmaPoolStats()` |
 | `ResourceManager` | `include/fuse/renderer/resource_manager.hpp` | Ordered teardown: samplers → textures → user buffers → staging ring |
 | `HandleMap::forEachOccupied` | `include/fuse/handle_map.hpp` | Safe bulk destroy without mutating during iteration |
-| `BindlessDescriptors` | `include/fuse/renderer/vk/bindless.hpp` | Generation slot handles, binding-index helpers, sparse resize stub |
+| `BindlessDescriptors` | `include/fuse/renderer/vk/bindless.hpp` | Generation slot handles, binding-index helpers, handle pack/unpack, heap counts, sparse resize stub |
 | `test_rhi_resource_destroy_order` | `Source/FUSE/Renderer/tests/` | Headless destroy-order + stats hook acceptance |
-| `test_bindless_descriptors` | `Source/FUSE/Renderer/tests/` | Alloc/free reuse, generation bump, OOB reject, binding pack |
+| `test_bindless_descriptors` | `Source/FUSE/Renderer/tests/` | Alloc/free reuse, generation bump, OOB reject, binding pack, handle pack, cap exhaustion |
 
-**B2.3 bindless deepen:** `BindlessDescriptors` CPU heap — generation `BindlessSlotHandle`, alloc/free reuse, binding-index helpers, sparse `resizeHeap` stub. See `fuse_bindless_descriptors` tests.
+**B2.3 bindless deepen:** `BindlessDescriptors` CPU heap — generation `BindlessSlotHandle`, alloc/free reuse, `bindingIndexForHandle`, `packBindlessSlotHandle` / `unpackBindlessSlotHandle`, `heapLiveCount` / `heapFreeCount`, sparse `resizeHeap` stub. See `fuse_bindless_descriptors` tests.
 
 **Not in scope (follow-up PRs):** Real `VkDescriptorPool` updates (B2.4), async upload fences, CUDA shared allocations, real GPU memory budgets.
 
@@ -90,7 +90,7 @@ Individual `destroyTexture` / `destroyBuffer` / `destroySampler` calls follow th
 |-------------|------------|----------|
 | `fuse_rhi_resource_destroy_order` | `fuse_rhi_resource_destroy_order` | Explicit destroy order, destroy-all, staging ring guard, stats + global hook |
 | `fuse_vulkan_resources` | `fuse_vulkan_resources` | Handle map generation, bindless recycle, create/destroy smoke |
-| `fuse_bindless_descriptors` | `fuse_bindless_descriptors` | Slot handle generations, binding helpers, sparse resize, legacy register API |
+| `fuse_bindless_descriptors` | `fuse_bindless_descriptors` | Slot handle generations, binding helpers, handle pack/unpack, heap counts, cap exhaustion, legacy register API |
 
 All tests run headless — stub allocator path when VMA is absent; Lavapipe path when Vulkan ICD is available.
 
