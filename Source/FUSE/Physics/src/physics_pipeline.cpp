@@ -5,6 +5,7 @@ namespace fuse::physics {
 void PhysicsPipeline::init(const PhysicsPipelineDesc& desc) {
     m_desc = desc;
     m_bodies.reserve(desc.maxBodies);
+    m_contactBuffer.reserve(desc.maxPairs > 0 ? desc.maxPairs : 16384u);
     m_hashParams.cellSize = desc.cellSize;
     m_hashParams.tableSize = desc.maxBodies > 0 ? desc.maxBodies * 2u : 1024u;
     m_initialized = true;
@@ -14,6 +15,7 @@ void PhysicsPipeline::reset() {
     m_bodies.clear();
     m_shapes.clear();
     m_candidatePairs.clear();
+    m_contactBuffer.clear();
     m_contacts.clear();
     m_lastDt = 0.f;
 }
@@ -63,17 +65,12 @@ void PhysicsPipeline::step(f32 dt) {
         m_candidatePairs.resize(m_desc.maxPairs);
     }
 
-    m_contacts = narrowphase::runNarrowphase(m_candidatePairs, m_bodies, m_shapes);
+    narrowphase::runNarrowphaseIntoBuffer(m_candidatePairs, m_bodies, m_shapes, m_contactBuffer);
+    m_contacts = m_contactBuffer.toVector();
 }
 
 u32 PhysicsPipeline::contactCount() const {
-    u32 count = 0;
-    for (const narrowphase::ContactManifold& manifold : m_contacts) {
-        if (manifold.valid) {
-            ++count;
-        }
-    }
-    return count;
+    return m_contactBuffer.activeCount;
 }
 
 } // namespace fuse::physics
