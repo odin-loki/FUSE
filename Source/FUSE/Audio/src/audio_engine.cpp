@@ -161,7 +161,7 @@ void AudioEngine::apply_reverb_(std::vector<float>& stereo_buffer, u32 frames,
 
     m_dryBuffer.resize(frames);
     std::vector<float> wet(frames, 0.f);
-    const float wet_mix = blend.wet_dry * blend.send_level;
+    const float wet_mix = compute_effective_wet_mix(blend);
 
     for (u32 frame = 0; frame < frames; ++frame) {
         m_dryBuffer[frame] = 0.5f * (stereo_buffer[static_cast<usize>(frame) * 2]
@@ -171,8 +171,7 @@ void AudioEngine::apply_reverb_(std::vector<float>& stereo_buffer, u32 frames,
     m_cpuReverb.process(m_dryBuffer.data(), wet.data(), frames);
 
     for (u32 frame = 0; frame < frames; ++frame) {
-        const float dry = m_dryBuffer[frame];
-        const float mixed = dry * (1.f - wet_mix) + wet[frame] * wet_mix;
+        const float mixed = blend_dry_wet_sample(m_dryBuffer[frame], wet[frame], wet_mix);
         stereo_buffer[static_cast<usize>(frame) * 2] = mixed;
         stereo_buffer[static_cast<usize>(frame) * 2 + 1] = mixed;
     }

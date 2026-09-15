@@ -90,4 +90,28 @@ float compute_blockers_factor(const Vec3& listener, const Vec3& source, const AA
     return factor;
 }
 
+float combine_occlusion_visibility(float source_occlusion, float blocker_factor) {
+    const float visibility = std::clamp(source_occlusion, 0.f, 1.f);
+    const float blocked = std::clamp(blocker_factor, 0.f, 1.f);
+    return visibility * (1.f - blocked);
+}
+
+float compute_effective_visibility(const Vec3& listener, const Vec3& source,
+                                   float source_occlusion, const AABB* blockers, u32 blocker_count,
+                                   const OcclusionParams& params) {
+    const float blocker_factor =
+        compute_blockers_factor(listener, source, blockers, blocker_count, params);
+    return combine_occlusion_visibility(source_occlusion, blocker_factor);
+}
+
+OcclusionAttenuation evaluate_occlusion_from_blockers(const Vec3& listener, const Vec3& source,
+                                                      float source_occlusion, const AABB* blockers,
+                                                      u32 blocker_count,
+                                                      const OcclusionParams& params) {
+    const float visibility =
+        compute_effective_visibility(listener, source, source_occlusion, blockers, blocker_count,
+                                     params);
+    return evaluate_occlusion_attenuation(visibility, params);
+}
+
 } // namespace fuse::audio

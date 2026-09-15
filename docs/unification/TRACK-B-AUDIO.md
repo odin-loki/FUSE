@@ -1,6 +1,6 @@
 # Track B — Spatial Audio Engine (B7.2 deepen)
 
-**Status:** B7.2 deepen — bus routing cycle guard, attenuation endpoint stubs, empty custom curve  
+**Status:** B7.2 deepen — occlusion visibility pipeline, reverb wet/dry blend stubs, empty zone tests  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.2  
 **Source narrative:** [P7.md](../sources/P7.md) §7.2
 
@@ -18,7 +18,7 @@
 | `OcclusionParams` / `evaluate_occlusion_*` | `Source/FUSE/Audio/include/fuse/audio/occlusion.hpp` | Visibility → LF/HF gain stubs; segment-vs-AABB ray + blocker factor 0..1 |
 | `PanLaw` / `sample_pan_law` | `Source/FUSE/Audio/include/fuse/audio/binaural_pan.hpp` | Equal-power and linear stereo pan law curves |
 | `BinauralPanParams` / `compute_binaural_*` | `Source/FUSE/Audio/include/fuse/audio/binaural_pan.hpp` | Listener-local azimuth/elevation, selectable pan law, ITD stub, distance blend |
-| `ReverbZoneParams` / `blend_reverb_zones` | `Source/FUSE/Audio/include/fuse/audio/reverb_zones.hpp` | Zone AABB membership + overlapping wet/dry blend |
+| `ReverbZoneParams` / `blend_reverb_zones` | `Source/FUSE/Audio/include/fuse/audio/reverb_zones.hpp` | Zone AABB membership + overlapping wet/dry blend + dry/wet sample stubs |
 | `SpatialMixer` | `Source/FUSE/Audio/include/fuse/audio/spatial_mixer.hpp` | CPU HRTF-lite pan + curve attenuation + bus routing + blocker occlusion |
 | `AudioEngine` | `Source/FUSE/Audio/include/fuse/audio/audio_engine.hpp` | OpenAL backend sync, CUDA/CPU reverb facade, zone blend + occlusion blockers |
 
@@ -88,13 +88,17 @@ effective = bus_mixer.effective_output_gain(source.bus, listener.master_volume)
 
 ```
 blocker_factor = compute_blockers_factor(listener, source, blockers)   // 0 = clear, 1 = blocked
-visibility     = clamp(source.occlusion) * (1 - blocker_factor)
+visibility     = combine_occlusion_visibility(source.occlusion, blocker_factor)
+               = compute_effective_visibility(listener, source, source.occlusion, blockers, count)
 ```
 
 Occlusion helpers map visibility to attenuation multipliers:
 
 | Helper | Behaviour |
 |--------|-----------|
+| `combine_occlusion_visibility` | Multiplies clamped source occlusion by `(1 - blocker_factor)` |
+| `compute_effective_visibility` | One-shot visibility from listener, source, blockers, and source occlusion |
+| `evaluate_occlusion_from_blockers` | Bundles blocker visibility → LF/HF attenuation |
 | `evaluate_occlusion_gain` | LF gain with `min_gain` floor (default 0.1) |
 | `evaluate_occlusion_hf_gain` | HF rolloff stub — lerp toward `hf_attenuation` (default 0.6) |
 | `evaluate_occlusion_attenuation` | Bundles LF + HF gains for mixer consumption |
@@ -109,14 +113,14 @@ Occlusion helpers map visibility to attenuation multipliers:
 
 ### Reverb zones (stub)
 
-`ReverbZone` carries an AABB `bounds`, `wet_dry` (mix ratio), and `send_level` (bus send scalar). `listener_in_reverb_zone` tests membership; `blend_reverb_zones` averages wet/dry and send across all zones containing the listener.
+`ReverbZone` carries an AABB `bounds`, `wet_dry` (mix ratio), and `send_level` (bus send scalar). `listener_in_reverb_zone` tests membership; `count_listener_reverb_zones` counts active zones; `blend_reverb_zones` averages wet/dry and send across all zones containing the listener.
 
 Effective wet contribution when the listener is inside at least one zone:
 
 ```
 blend     = blend_reverb_zones(listener, zones)
-wet_mix   = blend.wet_dry * blend.send_level
-mixed     = dry * (1 - wet_mix) + convolved * wet_mix
+wet_mix   = compute_effective_wet_mix(blend)    // wet_dry * send_level, clamped
+mixed     = blend_dry_wet_sample(dry, wet, wet_mix)
 ```
 
 When the listener is outside all zones, reverb is skipped (fully dry). `AudioEngine::set_reverb_send_level` / `reverb_send_level()` adjust zone send without re-adding zones. Convolution runs through `ConvReverbCpu` (CUDA facade deferred).
@@ -182,12 +186,14 @@ ctest --test-dir build --output-on-failure -R fuse_audio
 | `testEmptyListenerSpatialMix` | No listener entity mixes without crash; world-relative pan |
 | `testOcclusionStub` | LF/HF gain mapping, attenuation bundle, multi-blocker visibility |
 | `testBlockerFactorExtremes` | Ray/AABB intersection, blocker factor 0..1, mixer visibility helper |
-| `testOcclusionFactorExtremes` | Unity vs floored effective occlusion gain; blocker visibility extremes |
+| `testOcclusionFactorExtremes` | Unity vs floored effective occlusion gain; visibility pipeline and blocker attenuation |
 | `testOcclusionReducesMixOutput` | Occluded source is quieter with min_gain floor |
 | `testOcclusionBlockerAttenuatesMix` | AABB blocker on LOS reduces spatial mix energy |
 | `testReverbZoneMembership` | Listener inside/outside zone AABB |
 | `testReverbZoneBlendExtremes` | Dry/wet extremes and clamped zone parameters |
 | `testReverbZoneOverlappingBlend` | Overlapping zones average wet/dry; outside yields dry |
+| `testReverbZoneEmptyList` | Null/zero zone lists and zone count return dry blend |
+| `testDryWetBlendStub` | `blend_dry_wet_sample` endpoints and `compute_effective_wet_mix` |
 | `testReverbZoneListenerPositionAffectsMix` | Inside zone is wetter than outside |
 | `testReverbSendLevelDryMix` | Zero `wet_dry` leaves dry mix unchanged |
 | `testReverbSendLevelWetMix` | Full send increases mix energy vs dry |
@@ -211,6 +217,8 @@ ctest --test-dir build --output-on-failure -R fuse_audio
 - [x] Binaural pan helpers: azimuth/elevation, pan law curves, ITD/ILD stubs, gain clamp, distance blend
 - [x] Listener orientation helpers: validity check, sanitization, safe basis for degenerate input
 - [x] Pan endpoint, empty-listener, and orientation edge-case tests
+- [x] Occlusion visibility pipeline (`combine_occlusion_visibility`, `compute_effective_visibility`, `evaluate_occlusion_from_blockers`)
+- [x] Reverb wet/dry blend stubs (`compute_effective_wet_mix`, `blend_dry_wet_sample`, `count_listener_reverb_zones`)
 - [x] Occlusion segment-vs-AABB blocker factor 0..1 wired into spatial attenuation + backend sync
 - [x] Reverb zone AABB membership + overlapping blend + listener-scoped wet/dry
 - [x] `fuse_audio_b72` CTest target green

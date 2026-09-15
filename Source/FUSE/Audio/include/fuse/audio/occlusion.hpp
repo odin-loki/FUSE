@@ -46,4 +46,18 @@ float compute_blocker_factor(const Vec3& listener, const Vec3& source, const AAB
 float compute_blockers_factor(const Vec3& listener, const Vec3& source, const AABB* blockers,
                                 u32 blocker_count, const OcclusionParams& params = {});
 
+/// Combine per-source occlusion visibility with blocker factor in [0, 1].
+float combine_occlusion_visibility(float source_occlusion, float blocker_factor);
+
+/// Effective visibility from listener, source, per-source occlusion, and optional blockers.
+float compute_effective_visibility(const Vec3& listener, const Vec3& source,
+                                 float source_occlusion, const AABB* blockers, u32 blocker_count,
+                                 const OcclusionParams& params = {});
+
+/// Evaluate LF/HF attenuation from blocker geometry and per-source occlusion.
+OcclusionAttenuation evaluate_occlusion_from_blockers(const Vec3& listener, const Vec3& source,
+                                                      float source_occlusion, const AABB* blockers,
+                                                      u32 blocker_count,
+                                                      const OcclusionParams& params = {});
+
 } // namespace fuse::audio
