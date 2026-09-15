@@ -59,3 +59,7 @@ add_test(NAME fuse_shadow_system COMMAND fuse_shadow_system)
 add_executable(fuse_clustered_light_culler test_clustered_light_culler.cpp)
 target_link_libraries(fuse_clustered_light_culler PRIVATE fuse_rhi)
 add_test(NAME fuse_clustered_light_culler COMMAND fuse_clustered_light_culler)
+
+add_executable(fuse_taa_pass test_taa_pass.cpp)
+target_link_libraries(fuse_taa_pass PRIVATE fuse_rhi)
+add_test(NAME fuse_taa_pass COMMAND fuse_taa_pass)
