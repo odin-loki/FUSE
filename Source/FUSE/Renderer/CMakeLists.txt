@@ -5,6 +5,8 @@ set(FUSE_RHI_PUBLIC_HEADERS
     include/fuse/renderer/atmosphere/sky_lut.hpp
     include/fuse/renderer/atmosphere/sky_pass.hpp
     include/fuse/renderer/atmosphere/sky_scatter.hpp
+    include/fuse/renderer/atmosphere/sun_disk.hpp
+    include/fuse/renderer/atmosphere/transmittance_lut.hpp
     include/fuse/renderer/command_buffer.hpp
     include/fuse/renderer/composite_pass.hpp
     include/fuse/renderer/deferred/deferred_renderer.hpp
@@ -66,6 +68,8 @@ set(FUSE_RHI_SOURCES
     src/atmosphere/sky_lut.cpp
     src/atmosphere/sky_pass.cpp
     src/atmosphere/sky_scatter.cpp
+    src/atmosphere/sun_disk.cpp
+    src/atmosphere/transmittance_lut.cpp
     src/command_buffer.cpp
     src/composite_pass.cpp
     src/deferred/deferred_renderer.cpp

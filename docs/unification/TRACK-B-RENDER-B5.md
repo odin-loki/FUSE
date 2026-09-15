@@ -175,17 +175,19 @@ See [B5.7-SCREEN-SPACE-EFFECTS.md](./B5.7-SCREEN-SPACE-EFFECTS.md) for component
 
 ## B5.8 — Atmosphere & Sky
 
-**Status:** CPU Rayleigh/Mie reference + sky LUT + `SkyPass` scaffold landed.
+**Status:** B5.8 deepen — transmittance LUT indexing stubs, sun disk helpers, expanded CPU tests landed.
 
 | Component | Location | Notes |
 |-----------|----------|-------|
 | `AtmosphereParams` | `atmosphere/atmosphere_params.hpp` | Earth radius, Rayleigh/Mie coefficients |
+| `TransmittanceLut` | `atmosphere/transmittance_lut.hpp` | Altitude × cos(zenith) transmittance LUT + flat-index helpers |
 | `SkyLut` | `atmosphere/sky_lut.hpp` | Precomputed sky colour LUT |
+| `sun_disk` helpers | `atmosphere/sun_disk.hpp` | 0.5° apparent-diameter disk cone + compositing stub |
 | `SkyPass` | `atmosphere/sky_pass.hpp` | Depth-tested sky fill via LUT (GPU deferred) |
 
 | Test | Validates |
 |------|-----------|
-| `fuse_atmosphere_sky` | Phase functions, sky colour stub, LUT build/sample, graph node |
+| `fuse_atmosphere_sky` | Phase functions, transmittance indexing/build/sample, sun disk helpers, sky colour stub, LUT build/sample, graph node |
 
 ---
 
@@ -310,7 +312,7 @@ DOF, motion blur, film grain GPU shader chain, and CUDA histogram reduction rema
 |------|--------|-------|
 | Sky Rayleigh scattering — blue midday, orange/red low sun | **Done (stub)** | CPU reference colour; `fuse_atmosphere_sky` |
 | No banding in sky gradient at 10-bit | **Deferred** | — |
-| Sun disk 0.5° apparent diameter | **Deferred** | — |
+| Sun disk 0.5° apparent diameter | **Done (stub)** | `sun_disk.hpp` angular radius + compositing; visual gate deferred |
 | Volumetric fog exponential falloff | **Done (stub)** | `fuse_volumetric_lighting_b511` CPU density test |
 
 #### Post-Processing
