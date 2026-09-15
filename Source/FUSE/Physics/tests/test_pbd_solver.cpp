@@ -3,6 +3,7 @@
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/physics/solver/constraint_accumulation.hpp>
 #include <fuse/physics/solver/contact_island_graph.hpp>
+#include <fuse/physics/solver/pbd_island_solve.hpp>
 #include <fuse/physics/solver/pbd_solver.hpp>
 #include <fuse/physics/solver/solver_work_buffers.hpp>
 
@@ -629,6 +630,128 @@ void testDistanceLambdaWarmStartsAcrossFrames() {
                "warm-started spring converges across consecutive frames");
 }
 
+void testExtractIslandFlagsEmptyAndConstrained() {
+    ContactIslandGraph graph;
+    std::vector<narrowphase::ContactManifold> contacts;
+    std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+    };
+
+    graph.build(3, contacts, constraints);
+
+    bool foundEmptyJob = false;
+    bool foundConstrainedJob = false;
+    for (u32 islandIndex = 0; islandIndex < graph.islandCount(); ++islandIndex) {
+        const IslandSolveJob job = extract_island(graph, islandIndex);
+        expectTrue(job.islandIndex == islandIndex, "extract_island records island index");
+        expectTrue(job.island != nullptr, "extract_island binds island pointer");
+        if (job.empty) {
+            foundEmptyJob = true;
+            expectTrue(!island_has_constraints(*job.island), "empty job maps to constraint-free island");
+        } else {
+            foundConstrainedJob = true;
+            expectTrue(island_has_constraints(*job.island), "non-empty job maps to constrained island");
+        }
+    }
+
+    expectTrue(foundEmptyJob, "extract_island surfaces empty island guard");
+    expectTrue(foundConstrainedJob, "extract_island surfaces constrained island job");
+    expectTrue(extract_island(graph, graph.islandCount() + 1u).empty,
+               "extract_island guards out-of-range island index");
+}
+
+void testSolveIslandJobSkipsEmptyIsland() {
+    ContactIslandGraph graph;
+    std::vector<narrowphase::ContactManifold> contacts;
+    std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+    };
+    graph.build(3, contacts, constraints);
+
+    RigidBodySoA bodies;
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+    bodies.addBody({2.f, 0.f, 0.f}, 1.f, 0);
+    bodies.addBody({10.f, 0.f, 0.f}, 1.f, 0);
+    bodies.predictedPositions = bodies.positions;
+
+    SolverWorkBuffers work;
+    work.init(3, 0, 1);
+
+    bool foundEmptyIsland = false;
+    for (u32 islandIndex = 0; islandIndex < graph.islandCount(); ++islandIndex) {
+        const IslandSolveJob job = extract_island(graph, islandIndex);
+        if (!job.empty || job.island == nullptr) {
+            continue;
+        }
+        foundEmptyIsland = true;
+        const bool solved = solve_island_job(bodies,
+                                             *job.island,
+                                             work,
+                                             constraints,
+                                             1.f / 60.f,
+                                             0.f,
+                                             [](const RigidBodySoA&, u32) { return 1.f; });
+        expectTrue(!solved, "solve_island_job returns false for empty islands");
+    }
+
+    expectTrue(foundEmptyIsland, "graph exposes empty island for solve guard test");
+}
+
+void testPerPairDeltaApplicationDistance() {
+    RigidBodySoA bodies;
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+    bodies.addBody({2.1f, 0.f, 0.f}, 1.f, 0);
+    bodies.predictedPositions = bodies.positions;
+
+    const DistanceConstraint constraint{
+        .bodyA = 0,
+        .bodyB = 1,
+        .restLength = 2.f,
+    };
+
+    SolverWorkBuffers work;
+    work.init(2, 0, 1);
+    f32 lambda = 0.f;
+    const f32 dt = 1.f / 60.f;
+
+    per_pair_delta_application(bodies,
+                             work,
+                             constraint.bodyA,
+                             constraint.bodyB,
+                             1.f,
+                             1.f,
+                             constraint,
+                             dt,
+                             lambda);
+
+    const f32 dist = (bodies.predictedPositions[0] - bodies.predictedPositions[1]).length();
+    expectTrue(dist < 2.1f, "per_pair_delta_application moves bodies toward rest length");
+    expectTrue(std::fabs(lambda) > 1e-6f, "per_pair_delta_application accumulates distance lambda");
+    expectTrue(work.positionDeltas()[0].writeCount == 0u,
+               "per_pair_delta_application clears body slots after apply");
+}
+
+void testFrameLambdaWarmStartReseedsDistance() {
+    SolverWorkBuffers work;
+    work.init(2, 0, 2);
+    work.ensureLambdaCapacity(0, 2);
+    work.distanceLambda(0) = 0.33f;
+    work.distanceLambda(1) = 0.11f;
+
+    const std::vector<f32> prior = work.distanceLambdas();
+    const std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+        DistanceConstraint{.bodyA = 1, .bodyB = 2, .restLength = 2.f},
+    };
+
+    work.distanceLambda(0) = 0.f;
+    work.distanceLambda(1) = 0.f;
+    frame_lambda_warm_start(work, constraints, prior);
+
+    expectNear(work.distanceLambdas()[0], 0.33f, 1e-6f, "frame_lambda_warm_start reseeds first distance slot");
+    expectNear(work.distanceLambdas()[1], 0.11f, 1e-6f, "frame_lambda_warm_start reseeds second distance slot");
+}
+
 void testEarlyExitWhenResidualBelowTolerance() {
     CollisionShapeSoA shapes;
     RigidBodySoA bodies;
@@ -682,6 +805,10 @@ int main() {
     testLambdasPersistWithoutMidFrameClear();
     testApplyPositionDeltasClearsBodySlots();
     testDistanceLambdaWarmStartsAcrossFrames();
+    testExtractIslandFlagsEmptyAndConstrained();
+    testSolveIslandJobSkipsEmptyIsland();
+    testPerPairDeltaApplicationDistance();
+    testFrameLambdaWarmStartReseedsDistance();
     testEarlyExitWhenResidualBelowTolerance();
     fuse::core::shutdown();
 
