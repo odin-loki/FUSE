@@ -1379,9 +1379,24 @@ void testStateMachineFindStateAndEdges() {
 
     expectTrue(machine.find_state_index("idle") == 0, "find state index locates idle");
     expectTrue(machine.find_state_index("missing") < 0, "find state index rejects unknown name");
+    expectTrue(machine.state_count() == 3u, "state count reports registered states");
+    expectTrue(machine.is_valid_state(0u), "is valid state accepts registered index");
+    expectTrue(!machine.is_valid_state(3u), "is valid state rejects out of range index");
+    expectTrue(machine.transition_count() == 3u, "transition count reports registered edges");
     expectTrue(machine.outgoing_transition_count(0u) == 2u, "outgoing transition count from idle");
     expectTrue(machine.incoming_transition_count(0u) == 1u, "incoming transition count to idle");
     expectTrue(machine.incoming_transition_count(1u) == 1u, "incoming transition count to run");
+    expectTrue(machine.outgoing_transition_to(0u, 0u) == 1, "outgoing transition to first edge");
+    expectTrue(machine.outgoing_transition_to(0u, 1u) == 2, "outgoing transition to second edge");
+    expectTrue(machine.outgoing_transition_to(0u, 2u) < 0, "outgoing transition to rejects invalid edge");
+    expectTrue(machine.incoming_transition_from(0u, 0u) == 1, "incoming transition from first edge");
+    expectNear(machine.outgoing_transition_blend_duration_at(0u, 0u), 0.2f, 1e-4f,
+               "outgoing transition blend duration at first edge");
+    expectNear(machine.outgoing_transition_blend_duration_at(0u, 1u), 0.35f, 1e-4f,
+               "outgoing transition blend duration at second edge");
+    expectTrue(machine.outgoing_transition_blend_duration_at(0u, 2u) < 0.f,
+               "outgoing transition blend duration at rejects invalid edge");
+    expectTrue(!machine.has_state_node(0u), "has state node false for null node");
     expectTrue(machine.has_transition(0u, 1u), "has transition detects idle to run edge");
     expectTrue(!machine.has_transition(1u, 2u), "has transition rejects missing edge");
     expectNear(machine.transition_blend_duration(0u, 1u), 0.2f, 1e-4f, "transition blend duration lookup");
@@ -1391,6 +1406,7 @@ void testStateMachineFindStateAndEdges() {
     expectTrue(std::strcmp(machine.state_name(1u), "run") == 0, "state name lookup by index");
     expectTrue(machine.state_name(99u)[0] == '\0', "state name lookup rejects invalid index");
     expectTrue(std::strcmp(machine.active_state_name(), "idle") == 0, "active state name defaults to first state");
+    expectTrue(!machine.has_pending_transition(), "has pending transition false when idle");
 }
 
 void testStateMachineConditionFalse() {
@@ -1439,6 +1455,66 @@ void testStateMachineFirstTransitionWins() {
     expectTrue(machine.has_transition(0u, 1u), "first transition edge remains registered");
 }
 
+void testStateMachineNullStateNode() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+
+    fuse::animation::AnimStateMachine machine;
+    machine.add_state("empty", nullptr);
+
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    machine.evaluate_soa(0.f, skel, pose);
+    expectTrue(fuse::animation::pose_soa_matches_bind(pose, skel), "null state node returns bind pose");
+    expectTrue(!machine.has_state_node(0u), "has state node false for empty state");
+}
+
+void testStateMachineNullPendingNodeCrossfade() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::AnimationClip idle = makePositionClip(1, 1.f);
+
+    fuse::animation::AnimStateMachine machine;
+    auto idleNode = std::make_unique<fuse::animation::ClipNode>();
+    idleNode->clip = &idle;
+    machine.add_state("idle", std::move(idleNode));
+    machine.add_state("empty", nullptr);
+
+    bool shouldEmpty = true;
+    machine.add_transition("idle", "empty", 0.2f, [&]() { return shouldEmpty; });
+
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    machine.evaluate_soa(0.1f, skel, pose);
+    expectTrue(machine.has_pending_transition(), "crossfade to null-node state is pending");
+    expectTrue(std::strcmp(machine.pending_state_name(), "empty") == 0, "pending state name during null crossfade");
+    expectNear(machine.crossfade_alpha(), 0.5f, 1e-4f, "crossfade alpha mid transition to null node");
+}
+
+void testBlendSpace1DNullClipEntries() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::BlendSpace1D space;
+    space.entries.push_back({0.f, nullptr});
+    space.entries.push_back({1.f, nullptr});
+
+    fuse::f32 speed = 0.5f;
+    space.param = &speed;
+
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    space.evaluate_soa(0.f, skel, pose);
+    expectTrue(fuse::animation::pose_soa_matches_bind(pose, skel), "blend space 1d null clips return bind pose");
+}
+
+void testBlendSpace2DNullClipEntries() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::BlendSpace2D space;
+    space.entries.push_back({{0.f, 0.f}, nullptr});
+    space.entries.push_back({{1.f, 0.f}, nullptr});
+
+    fuse::animation::vec2 velocity{0.5f, 0.f};
+    space.param = &velocity;
+
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    space.evaluate_soa(0.f, skel, pose);
+    expectTrue(fuse::animation::pose_soa_matches_bind(pose, skel), "blend space 2d null clips return bind pose");
+}
+
 void testStateMachineEvaluateSoACrossfade() {
     const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
     fuse::animation::AnimationClip idle = makePositionClip(1, 1.f);
@@ -1458,6 +1534,7 @@ void testStateMachineEvaluateSoACrossfade() {
     fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::from_bind_pose(skel);
     machine.evaluate_soa(0.1f, skel, pose);
     expectTrue(machine.is_transitioning, "state machine soa path begins crossfade");
+    expectTrue(machine.has_pending_transition(), "has pending transition true during crossfade");
     expectTrue(std::strcmp(machine.pending_state_name(), "run") == 0, "pending state name during crossfade");
     expectNear(machine.crossfade_alpha(), 0.5f, 1e-4f, "state machine soa crossfade alpha mid transition");
     expectNear(pose.local_positions[1].y, 4.5f, 0.05f, "state machine soa crossfade lerps local position");
@@ -1610,6 +1687,10 @@ int main() {
     testEmptyBlendSpace1DSoA();
     testAdditiveBlendWeightClamp();
     testStateMachineFindStateAndEdges();
+    testStateMachineNullStateNode();
+    testStateMachineNullPendingNodeCrossfade();
+    testBlendSpace1DNullClipEntries();
+    testBlendSpace2DNullClipEntries();
     testStateMachineEvaluateSoACrossfade();
     testEmptyLayeredBlendNode();
     testEmptyAdditiveBlendNode();
