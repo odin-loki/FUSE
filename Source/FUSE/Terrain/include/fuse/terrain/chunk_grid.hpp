@@ -8,7 +8,7 @@
 
 namespace fuse::terrain {
 
-/// Simple chunk grid (clipmap ring scaffold) for terrain streaming (B7.5).
+/// Chunk grid with clipmap ring LOD transitions and morph-factor tracking (B7.5 deepen).
 class ChunkGrid {
 public:
     void init(const TerrainDesc& desc);
@@ -20,8 +20,9 @@ public:
 
     [[nodiscard]] ivec2 world_to_chunk_coord(f32 world_x, f32 world_z) const;
     [[nodiscard]] AABB chunk_world_bounds(ivec2 coord, u32 lod) const;
+    [[nodiscard]] f32 base_chunk_stride() const;
 
-    /// Mark chunks loaded/unloaded based on camera position (stub — no async IO).
+    /// Update chunk LOD rings, morph factors, and load state from camera position (stub — no async IO).
     void update_lod(vec3 camera_pos, f32 dt);
 
     [[nodiscard]] u32 visible_chunk_count() const;

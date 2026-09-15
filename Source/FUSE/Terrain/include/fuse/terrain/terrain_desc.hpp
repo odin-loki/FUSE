@@ -19,6 +19,7 @@ struct TerrainDesc {
 /// One terrain chunk in the clipmap / chunk grid (GPU handles stubbed until B2/B3 integration).
 struct TerrainChunk {
     u32 lod = 0;
+    f32 morph_factor = 0.f; // clipmap ring morph blend [0,1]
     ivec2 chunk_coord{};
     AABB world_bounds{};
     u64 vertex_buffer = 0;

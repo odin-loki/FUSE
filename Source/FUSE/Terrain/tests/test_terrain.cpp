@@ -70,20 +70,62 @@ void testLodSelection() {
     expectTrue(lod2.world_stride > lod0.world_stride, "coarser LOD has larger stride");
 }
 
-void testChunkGridLodUpdate() {
+void testLodTransitionMorphBand() {
+    const fuse::terrain::TerrainDesc desc = makeTestDesc();
+
+    const fuse::terrain::LodTransition nearTransition = fuse::terrain::compute_lod_transition(2.f, desc.lod_levels);
+    expectTrue(nearTransition.lod == 0, "near camera stays at LOD 0");
+    expectNear(nearTransition.morph_factor, 0.f, 0.01f, "near camera has no morph");
+
+    const fuse::terrain::LodTransition edgeTransition = fuse::terrain::compute_lod_transition(7.5f, desc.lod_levels);
+    expectTrue(edgeTransition.lod == 0, "ring edge still at LOD 0");
+    expectTrue(edgeTransition.morph_factor > 0.5f, "ring edge morph factor active");
+
+    const fuse::terrain::LodTransition farTransition = fuse::terrain::compute_lod_transition(32.f, desc.lod_levels);
+    expectTrue(farTransition.lod >= 2, "far camera uses coarser LOD ring");
+    expectTrue(farTransition.morph_factor >= 0.f && farTransition.morph_factor <= 1.f, "morph factor clamped");
+}
+
+void testVertexMorphSnapsToGrid() {
+    const fuse::terrain::TerrainDesc desc = makeTestDesc();
+    const fuse::terrain::LodLevel lod1 = fuse::terrain::make_lod_level(desc, 1);
+    const fuse::f32 base_stride = desc.world_size / static_cast<fuse::f32>(desc.chunk_resolution);
+
+    const fuse::terrain::vec3 original{base_stride * 1.5f, 4.f, base_stride * 2.5f};
+    const fuse::terrain::vec3 morphed =
+        fuse::terrain::morph_vertex_position(original, 1, 1.f, base_stride);
+
+    expectNear(morphed.x, base_stride * 2.f, 0.01f, "morph snaps X to coarser grid");
+    expectNear(morphed.z, base_stride * 2.f, 0.01f, "morph snaps Z to coarser grid");
+    expectNear(morphed.y, original.y, 0.01f, "morph preserves Y (height deferred to GPU)");
+
+    const fuse::terrain::vec3 unchanged = fuse::terrain::morph_vertex_position(original, 0, 1.f, base_stride);
+    expectNear(unchanged.x, original.x, 0.01f, "LOD 0 skips morph");
+    expectNear(unchanged.z, original.z, 0.01f, "LOD 0 skips morph");
+}
+
+void testChunkGridLodTransitions() {
     fuse::terrain::ChunkGrid grid{};
     const fuse::terrain::TerrainDesc desc = makeTestDesc();
     grid.init(desc);
 
-    expectTrue(grid.is_initialized(), "chunk grid initialized");
-    expectTrue(grid.chunk_count() > 0, "chunk grid has chunks");
-
     grid.update_lod({0.f, 0.f, 0.f}, 0.016f);
-    expectTrue(grid.visible_chunk_count() > 0, "camera near origin loads chunks");
+    expectTrue(grid.visible_chunk_count() > 0, "camera near terrain loads chunks");
+
+    bool hasMorphingChunk = false;
+    for (fuse::u32 i = 0; i < grid.chunk_count(); ++i) {
+        const fuse::terrain::TerrainChunk& chunk = grid.chunk(i);
+        if (chunk.morph_factor > 0.f) {
+            hasMorphingChunk = true;
+        }
+        expectTrue(chunk.morph_factor >= 0.f && chunk.morph_factor <= 1.f, "chunk morph factor in range");
+    }
+    expectTrue(hasMorphingChunk, "some chunks have active morph factor in transition band");
 
     grid.update_lod({desc.world_size * 4.f, 0.f, desc.world_size * 4.f}, 0.016f);
     expectTrue(grid.visible_chunk_count() == 0, "camera far away unloads chunks");
 }
+
 
 void testHeightfieldRaycast() {
     fuse::terrain::Heightfield field{};
@@ -125,6 +167,14 @@ void testTerrainFacade() {
     std::vector<const fuse::terrain::TerrainChunk*> visible{};
     terrain.get_visible_chunks(visible);
     expectTrue(!visible.empty(), "terrain exposes visible chunks");
+
+    bool terrainHasMorph = false;
+    for (const fuse::terrain::TerrainChunk* chunk : visible) {
+        if (chunk->morph_factor > 0.f) {
+            terrainHasMorph = true;
+        }
+    }
+    expectTrue(terrainHasMorph, "terrain visible chunks carry morph factors");
 }
 
 } // namespace
@@ -133,7 +183,9 @@ int main() {
     fuse::core::initialize();
     testHeightfieldSampling();
     testLodSelection();
-    testChunkGridLodUpdate();
+    testLodTransitionMorphBand();
+    testVertexMorphSnapsToGrid();
+    testChunkGridLodTransitions();
     testHeightfieldRaycast();
     testTerrainFacade();
     fuse::core::shutdown();

@@ -10,8 +10,8 @@ CPU-first heightfield terrain scaffolding for Track B7.5. Implements the P7 pipe
 |--------|------|
 | `terrain_desc.hpp` | `TerrainDesc`, `TerrainChunk` configuration and chunk metadata |
 | `heightfield.hpp` | CPU heightmap storage with bilinear sampling |
-| `lod.hpp` | LOD level table and distance-based selection stub |
-| `chunk_grid.hpp` | Simple chunk grid with clipmap-style LOD update |
+| `lod.hpp` | LOD ring table, transition morph band, vertex morph stub |
+| `chunk_grid.hpp` | Chunk grid with clipmap LOD transitions and morph-factor tracking |
 | `queries.hpp` | `sample_height` and `raycast_heightfield` query APIs |
 | `terrain.hpp` | Game-thread terrain facade (generate, deform, LOD, queries) |
 
