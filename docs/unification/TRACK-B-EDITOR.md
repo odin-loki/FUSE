@@ -1,7 +1,7 @@
-# Track B — Editor Panels (B6.2–B6.12)
+# Track B — Editor Panels (B6.2–B6.13)
 
-**Status:** B6.2 undo stack + B6.3–B6.5 core panel stubs + B6.6–B6.8 inspector/material/sculpt API stubs + B6.9–B6.12 asset/profiler/console/play-mode stubs landed  
-**Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B6.2–B6.12  
+**Status:** B6.2 undo stack + B6.3–B6.5 core panel stubs + B6.6–B6.8 inspector/material/sculpt API stubs + B6.9–B6.12 asset/profiler/console/play-mode stubs landed; **B6.13** Phase 6 integration gate + checklist complete  
+**Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B6.2–B6.13  
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §2.1–§4, [U6-EDITOR.md](./U6-EDITOR.md)
 
 ---
@@ -92,33 +92,149 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 | `fuse_editor_command_stack` | `fuse_editor_command_stack_tests` | B6.2 `UndoStack` LIFO, merge, rename/reparent |
 | `fuse_editor_hierarchy_model` | `fuse_editor_hierarchy_model_tests` | B6.5 flatten, search, reparent + undo |
 | `fuse_editor_panels_b69_b612` | `fuse_editor_panels_b69_b612_tests` | B6.9–B6.12 asset/profiler/console/play-mode stubs |
+| `fuse_editor_phase6_integration` | `fuse_editor_phase6_integration_tests` | **B6.13** — `UndoStack` + `SceneHierarchyPanel` + `ViewportPanel` headless wiring |
 
 ---
 
 ## Gates
 
-### B6.2–B6.5
+### B6.2 — Command System & Undo/Redo
 
-- [x] `UndoStack` with execute/undo/redo + merge hook
-- [x] `ViewportPanel` headless API (camera, resize flag, tick)
-- [x] `GizmoSystem` headless drag stub
-- [x] `HierarchyModel` + `SceneHierarchyPanel` with search + reparent command
-- [ ] Embedded viewport + real gizmo rendering (follow-up)
+- [x] `UndoCommand` interface with `execute` / `undo` / `description`
+- [x] `UndoStack` LIFO undo/redo with merge hook for consecutive commands
+- [x] `SetObjectNameCommand` — rename with full undo restore
+- [x] `ReparentObjectCommand` — scene-graph reparent with parent restore
+- [x] `fuse_editor_command_stack` — LIFO, merge collapse, rename/reparent unit tests
+- [ ] `MAX_HISTORY` cap and oldest-command eviction (deferred)
+- [ ] `TransformCommand` with drag merge (deferred — needs gizmo wiring)
 
-### B6.6–B6.8
+### B6.3 — Viewport Panel
 
-- [x] **B6.6** `PropertyInspector` on FUSE ECS APIs (Qt-free)
-- [x] **B6.7** `MaterialEditorPanel` stub with optional RHI bridge
-- [x] **B6.8** `SdfSculptPanel` brush + stroke command stub
-- [ ] Qt 6 dock wiring for panels (follow-up under `FUSE_BUILD_EDITOR`)
+- [x] `ViewportPanel` headless API — camera state, mode, project label
+- [x] `setDimensions` / `needsResize` resize flag
+- [x] `tick(dt)` frame counter for game-thread stub
+- [ ] Embedded Vulkan surface + framebuffer rebuild (U6 follow-up)
+- [ ] Free-camera WASD input + entity picking (deferred)
 
-### B6.9–B6.12
+### B6.4 — In-Viewport Gizmos
 
-- [x] **B6.9** `AssetBrowser` on FUSE APIs (filesystem model, no Qt)
-- [x] **B6.10** `ProfilerPanel` frame history ring buffer
-- [x] **B6.11** `ConsolePanel` log buffer + filters + exec stub
-- [x] **B6.12** `PlayModeController` snapshot enter/pause/resume/stop
-- [ ] Qt chrome for asset grid, profiler plots, console view, play transport (U6 follow-up)
+- [x] `GizmoSystem` headless drag stub — translate/rotate/scale modes
+- [x] Axis-constrained drag delta accumulation
+- [ ] Screen-space gizmo rendering + hover highlight (deferred)
+- [ ] Snap-to-grid quantisation (deferred)
+
+### B6.5 — Scene Hierarchy Panel
+
+- [x] `HierarchyModel` flatten + parent/child index
+- [x] `SceneHierarchyPanel` search filter (case-insensitive)
+- [x] `reparentSelection` via `UndoStack` + post-command `refresh`
+- [x] `fuse_editor_hierarchy_model` — flatten, search, reparent + undo
+- [ ] Drag-and-drop reparent UI (Qt deferred to U6)
+- [ ] Right-click create/delete entity menu (deferred)
+
+### B6.6 — Property Inspector Panel
+
+- [x] `PropertyInspector` component section model on FUSE ECS APIs (Qt-free)
+- [x] `setTransformPosition` / `setSdfBlendAlpha` live edits via `CommandStack`
+- [x] `fuse_editor_panels` — transform + SDF section coverage
+- [ ] All component types render without crash (deferred — expand section list)
+- [ ] Live renderer preview on slider drag (deferred)
+
+### B6.7 — Material Editor Panel
+
+- [x] `MaterialEditorPanel` catalog/selection + `MaterialEditState`
+- [x] Roughness/metallic edits post `EditorCommand` via `CommandStack`
+- [x] Optional RHI bridge methods (no-op when `FUSE_BUILD_VULKAN=OFF`)
+- [ ] Live material preview render target (deferred)
+- [ ] Save/load persistence cycle (deferred)
+
+### B6.8 — SDF Sculpt Panel
+
+- [x] `SdfSculptPanel` brush state — radius, operation, blend alpha
+- [x] Stroke spacing suppression + symmetry flag
+- [x] Brush stroke posts `EditorCommand` via `CommandStack`
+- [ ] GPU SDF volume carve verification (deferred — needs B3.5 SVO)
+
+### B6.9 — Asset Browser Panel
+
+- [x] `AssetBrowser::init(project_root)` filesystem scan
+- [x] Extension-based type classification + `setSearchFilter`
+- [x] `fuse_editor_panels_b69_b612` asset browser coverage
+- [ ] Qt grid/tree chrome (U6 follow-up)
+
+### B6.10 — Profiler Panel
+
+- [x] `ProfilerPanel::pushFrameData` 256-frame ring buffer
+- [x] `setPaused(true)` freezes capture
+- [x] Frame history count + latest-frame accessor
+- [ ] Qt profiler plots (U6 follow-up)
+- [ ] Core `FrameProfileData` scope events wired (see [TRACK-B-CORE-B16.md](./TRACK-B-CORE-B16.md))
+
+### B6.11 — Console Panel
+
+- [x] `ConsolePanel::addLog` with `fuse::log::Level`
+- [x] Duplicate-line coalescing + level/text filters via `filteredLines()`
+- [x] Command exec stub (`executeCommand`)
+- [ ] Qt text view chrome (U6 follow-up)
+
+### B6.12 — Play Mode & Scene Simulation
+
+- [x] `PlayModeController` scene snapshot on `enterPlay`
+- [x] Pause / resume / stop with snapshot restore
+- [x] `PlayModePhysicsState` simulation-active flag
+- [x] `fuse_editor_panels_b69_b612` play-mode lifecycle coverage
+- [ ] `PhysicsManager` wiring during play (deferred — B4 integration)
+- [ ] Qt play transport toolbar (U6 follow-up)
+
+### B6.13 — Phase 6 Deliverables & Test Suite
+
+**Status:** Headless integration test exercises `UndoStack` + `SceneHierarchyPanel` + `ViewportPanel` together; full production gates from P6 §6.13 remain deferred.
+
+| Deliverable | Location | B6.13 status |
+|-------------|----------|--------------|
+| Phase 6 integration test | `Source/FUSE/Editor/tests/test_editor_phase6_integration.cpp` | **Done** — `fuse_editor_phase6_integration` (headless, no Qt) |
+| Per-component unit tests | `Source/FUSE/Editor/tests/` | **Done** — B6.2–B6.12 targets listed above |
+| CI umbrella run | `.github/workflows/fuse-umbrella-linux.yml` | **Done** — `FUSE_BUILD_EDITOR_API=ON`, `FUSE_BUILD_EDITOR=OFF` |
+
+#### Checklist — scaffold landed (B6.2–B6.12) vs deferred (full P6 gates)
+
+| Area | Item | Status | Notes |
+|------|------|--------|-------|
+| Command system | `UndoStack` LIFO + merge hook | **Done** | `fuse_editor_command_stack` |
+| Command system | 100-command undo chain | **Deferred** | No stress harness yet |
+| Command system | `MAX_HISTORY` eviction | **Deferred** | — |
+| Viewport | Headless camera + resize stub | **Done** | `ViewportPanel` |
+| Viewport | Framebuffer rebuild on resize | **Deferred** | Needs Vulkan surface |
+| Gizmos | Headless drag delta stub | **Done** | `GizmoSystem` |
+| Gizmos | Screen-space axis rendering | **Deferred** | — |
+| Hierarchy | Flatten + search + reparent via undo | **Done** | `fuse_editor_hierarchy_model` |
+| Hierarchy | Drag-and-drop UI | **Deferred** | Qt U6 |
+| Inspector | ECS component sections (Qt-free) | **Done** | `fuse_editor_panels` |
+| Material | Catalog + edit state stub | **Done** | `fuse_editor_panels` |
+| Sculpt | Brush stroke + spacing | **Done** | `fuse_editor_panels` |
+| Asset browser | Filesystem scan + filter | **Done** | `fuse_editor_panels_b69_b612` |
+| Profiler | 256-frame ring buffer | **Done** | `fuse_editor_panels_b69_b612` |
+| Console | Log buffer + filters | **Done** | `fuse_editor_panels_b69_b612` |
+| Play mode | Snapshot enter/pause/resume/stop | **Done** | `fuse_editor_panels_b69_b612` |
+| Integration | Undo + hierarchy + viewport in one test | **Done** | `fuse_editor_phase6_integration` |
+| Editor startup | All panels initialise < 1 s | **Deferred** | Needs Qt dockspace |
+| Theme / DPI | Dark theme + font scaling | **Deferred** | Qt U6 |
+
+#### Integration test flow (headless)
+
+`fuse_editor_phase6_integration` validates B6.2 + B6.5 + B6.3 wiring in one executable:
+
+1. `fuse::core::initialize()`
+2. Build scene graph (`root` → `group`, `child`)
+3. `EditorHost` owns shared `UndoStack`; `SceneHierarchyPanel` reparents `child` under `group`
+4. `ViewportPanel` ticks and records resize while hierarchy state is live
+5. `SetObjectNameCommand` via shared undo stack; hierarchy search finds renamed node
+6. Two-step undo restores name then parent; hierarchy `refresh` reflects final state
+
+- [x] **B6.13** End-to-end test: `UndoStack` + `SceneHierarchyPanel` + `ViewportPanel` (`fuse_editor_phase6_integration`)
+- [x] B6.2–B6.12 per-component CTest targets registered and green under umbrella CI
+- [x] B6.2–B6.12 checklist documented in this file (above)
+- [ ] Master-plan perf baselines (editor startup < 1 s, 60 fps viewport) — deferred to U6 Qt shell
 
 ---
 
