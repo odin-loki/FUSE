@@ -6,6 +6,17 @@
 
 namespace fuse::ecs {
 
+u32 TransformSystem::normalize_batch_size(u32 batchSize) {
+    return batchSize == 0 ? 1u : batchSize;
+}
+
+void TransformSystem::recompute_world_matrix(Transform& transform, const mat4& parent_matrix) {
+    const mat4 local = from_trs(transform.position, transform.rotation, transform.scale);
+    transform.local_to_world = parent_matrix * local;
+    transform.world_to_local = inverse_affine(transform.local_to_world);
+    transform.dirty = false;
+}
+
 void TransformSystem::update_hierarchy(Registry& reg, EntityID id, const mat4& parent_matrix) {
     Transform* transform = reg.get<Transform>(id);
     if (transform == nullptr) {
@@ -13,10 +24,7 @@ void TransformSystem::update_hierarchy(Registry& reg, EntityID id, const mat4& p
     }
 
     if (transform->dirty || transform->parent.valid()) {
-        const mat4 local = from_trs(transform->position, transform->rotation, transform->scale);
-        transform->local_to_world = parent_matrix * local;
-        transform->world_to_local = inverse_affine(transform->local_to_world);
-        transform->dirty = false;
+        recompute_world_matrix(*transform, parent_matrix);
     }
 
     reg.each<Transform>([&](EntityID child_id, Transform& child) {
@@ -32,24 +40,19 @@ void TransformSystem::update_dirty_roots_serial(Registry& reg) {
             return;
         }
 
-        const mat4 local = from_trs(transform.position, transform.rotation, transform.scale);
-        transform.local_to_world = local;
-        transform.world_to_local = inverse_affine(local);
-        transform.dirty = false;
+        recompute_world_matrix(transform, mat4::identity());
     });
 }
 
 void TransformSystem::update_dirty_roots_parallel(Registry& reg, u32 batchSize) {
+    const u32 grain = normalize_batch_size(batchSize);
     reg.each_parallel<Transform>([&](EntityID, Transform& transform) {
         if (transform.parent.valid() || !transform.dirty) {
             return;
         }
 
-        const mat4 local = from_trs(transform.position, transform.rotation, transform.scale);
-        transform.local_to_world = local;
-        transform.world_to_local = inverse_affine(local);
-        transform.dirty = false;
-    }, batchSize);
+        recompute_world_matrix(transform, mat4::identity());
+    }, grain);
 }
 
 void TransformSystem::update(Registry& reg, const TransformSystemOptions& options) {

@@ -3,7 +3,9 @@
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/query_filter.hpp>
 #include <fuse/ecs/registry.hpp>
+#include <fuse/jobs/job_scheduler.hpp>
 
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <algorithm>
@@ -144,18 +146,36 @@ void testEachQueryParallelMatchesSerial() {
         },
         fuse::ecs::Without<fuse::ecs::TagStatic>{});
 
-    std::vector<fuse::u32> parallelIndices;
+    std::atomic<fuse::u32> parallelCount{0};
+    std::vector<std::atomic<bool>> seen(4);
+    for (auto& slot : seen) {
+        slot.store(false, std::memory_order_relaxed);
+    }
+
+    fuse::jobs::JobScheduler::instance().shutdown();
+    fuse::jobs::JobScheduler::instance().initialize(4);
     reg.each_query_parallel<fuse::ecs::Transform, fuse::ecs::RigidBody>(
         [&](fuse::ecs::EntityID id, fuse::ecs::Transform&, fuse::ecs::RigidBody&) {
-            parallelIndices.push_back(id.index);
+            if (id.index < seen.size()) {
+                seen[id.index].store(true, std::memory_order_relaxed);
+            }
+            parallelCount.fetch_add(1u, std::memory_order_relaxed);
         },
         fuse::ecs::Without<fuse::ecs::TagStatic>{},
         1);
+    fuse::jobs::JobScheduler::instance().shutdown();
 
     expectEq(static_cast<fuse::u32>(serialIndices.size()), 2u, "serial query finds two dynamic bodies");
-    expectEq(static_cast<fuse::u32>(parallelIndices.size()), 2u, "parallel query finds two dynamic bodies");
+    expectEq(parallelCount.load(std::memory_order_relaxed), 2u, "parallel query finds two dynamic bodies");
 
     std::sort(serialIndices.begin(), serialIndices.end());
+
+    std::vector<fuse::u32> parallelIndices;
+    for (fuse::u32 i = 0; i < seen.size(); ++i) {
+        if (seen[i].load(std::memory_order_relaxed)) {
+            parallelIndices.push_back(i);
+        }
+    }
     std::sort(parallelIndices.begin(), parallelIndices.end());
     expectTrue(serialIndices == parallelIndices, "each_query_parallel matches serial coverage");
 }
