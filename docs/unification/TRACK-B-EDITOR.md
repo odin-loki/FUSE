@@ -1,6 +1,6 @@
 # Track B — Editor Panels (B6.2–B6.13)
 
-**Status:** B6.2 undo stack + B6.3–B6.5 core panel stubs + B6.6–B6.8 inspector/material/sculpt API stubs + B6.9–B6.12 asset/profiler/console/play-mode stubs landed; **B6.13** Phase 6 integration gate + checklist complete  
+**Status:** B6.2 undo stack + B6.3–B6.5 core panel stubs + B6.6–B6.8 inspector/material/sculpt API stubs + B6.9–B6.12 asset/profiler/console/play-mode stubs landed; **B6.13** Phase 6 integration gate + checklist complete; **B6.2 deepen** — `CommandStack` coalescing, dirty tracking, snapshot restore + `UndoStack` `MAX_HISTORY` eviction  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B6.2–B6.13  
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §2.1–§4, [U6-EDITOR.md](./U6-EDITOR.md)
 
@@ -12,7 +12,7 @@
 |-----------|----------|-------|
 | `UndoCommand` / `UndoStack` | `Source/FUSE/Editor/include/fuse/editor/undo_stack.hpp` | B6.2 — reversible scene mutations + merge hook |
 | `SetObjectNameCommand` / `ReparentObjectCommand` | same | Core hierarchy rename/reparent commands |
-| `CommandStack` | `Source/FUSE/Editor/include/fuse/editor/command_stack.hpp` | `EditorCommand` envelope history for B6.6–B6.8 panel stubs |
+| `CommandStack` / `CommandStackSnapshot` | `Source/FUSE/Editor/include/fuse/editor/command_stack.hpp` | `EditorCommand` envelope history for B6.6–B6.8 panel stubs; coalescing, dirty tracking, snapshot restore (B6.2 deepen) |
 | `ViewportPanel` | `Source/FUSE/Editor/include/fuse/editor/viewport_panel.hpp` | B6.3 — camera + resize stub |
 | `GizmoSystem` | `Source/FUSE/Editor/include/fuse/editor/gizmo_system.hpp` | B6.4 — translate/rotate/scale drag stub |
 | `HierarchyModel` / `SceneHierarchyPanel` | `hierarchy_model.hpp`, `scene_hierarchy_panel.hpp` | B6.5 — flatten, search, reparent via `UndoStack` |
@@ -42,6 +42,13 @@
 | Undo/redo | `UndoCommand` + `UndoStack` | Game thread | B6.2 non-destructive scene graph edits |
 
 `EditorHost` owns `CommandQueue` and `UndoStack`. B6.6–B6.8 panels accept `CommandStack&` for envelope recording.
+
+### B6.2 deepen — command stack + undo history
+
+- **Coalescing** — consecutive `SetProperty` commands with the same `target` + `propertyName` collapse into one undo step (slider/drag edits); `coalescedCount()` tracks merges.
+- **Dirty tracking** — `isDirty()` / `markClean()` / `dirtyRevision()` mirror document-modified state for save prompts.
+- **Snapshot restore** — `captureSnapshot()` / `restoreSnapshot()` stub for PIE or macro checkpoints without draining `CommandQueue`.
+- **MAX_HISTORY** — both `CommandStack` and `UndoStack` cap at 256 entries; oldest commands evicted on overflow (`evictedCount()` on `UndoStack`).
 
 ### Headless panel stubs
 
@@ -91,7 +98,7 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 | `fuse_editor_command_queue` | `fuse_editor_api_tests` | UI→game command queue |
 | `fuse_editor_host` | `fuse_editor_host_tests` | `EditorHost::gameTick()` drain |
 | `fuse_editor_panels` | `fuse_editor_panels_tests` | B6.6–B6.8 inspector/material/sculpt API |
-| `fuse_editor_command_stack` | `fuse_editor_command_stack_tests` | B6.2 `UndoStack` LIFO, merge, rename/reparent |
+| `fuse_editor_command_stack` | `fuse_editor_command_stack_tests` | B6.2 `UndoStack` LIFO, merge, rename/reparent, `MAX_HISTORY`, 100-step chain; `CommandStack` coalescing, dirty tracking, snapshot restore |
 | `fuse_editor_hierarchy_model` | `fuse_editor_hierarchy_model_tests` | B6.5 flatten, search, reparent + undo |
 | `fuse_editor_panels_b69_b612` | `fuse_editor_panels_b69_b612_tests` | B6.9–B6.12 asset/profiler/console/play-mode stubs |
 | `fuse_editor_phase6_integration` | `fuse_editor_phase6_integration_tests` | **B6.13** — `UndoStack` + `SceneHierarchyPanel` + `ViewportPanel` headless wiring |
@@ -108,7 +115,10 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 - [x] `SetObjectNameCommand` — rename with full undo restore
 - [x] `ReparentObjectCommand` — scene-graph reparent with parent restore
 - [x] `fuse_editor_command_stack` — LIFO, merge collapse, rename/reparent unit tests
-- [ ] `MAX_HISTORY` cap and oldest-command eviction (deferred)
+- [x] `MAX_HISTORY` cap and oldest-command eviction (`UndoStack` + `CommandStack`)
+- [x] 100-command undo chain stress test
+- [x] `CommandStack` coalescing for consecutive `SetProperty` edits
+- [x] `CommandStack` dirty tracking + `captureSnapshot` / `restoreSnapshot` stubs
 - [ ] `TransformCommand` with drag merge (deferred — needs gizmo wiring)
 
 ### B6.3 — Viewport Panel
@@ -205,8 +215,9 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 | Area | Item | Status | Notes |
 |------|------|--------|-------|
 | Command system | `UndoStack` LIFO + merge hook | **Done** | `fuse_editor_command_stack` |
-| Command system | 100-command undo chain | **Deferred** | No stress harness yet |
-| Command system | `MAX_HISTORY` eviction | **Deferred** | — |
+| Command system | 100-command undo chain | **Done** | `fuse_editor_command_stack` |
+| Command system | `MAX_HISTORY` eviction | **Done** | `UndoStack` + `CommandStack` |
+| Command system | `CommandStack` coalescing + dirty + snapshot | **Done** | `fuse_editor_command_stack` |
 | Viewport | Headless camera + resize stub | **Done** | `ViewportPanel` |
 | Viewport | Framebuffer rebuild on resize | **Deferred** | Needs Vulkan surface |
 | Gizmos | Headless drag delta stub | **Done** | `GizmoSystem` |
