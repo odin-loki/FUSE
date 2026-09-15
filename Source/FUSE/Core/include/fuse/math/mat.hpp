@@ -204,12 +204,73 @@ inline Mat4 inverseAffine(const Mat4& matrix) {
     return result;
 }
 
+/// True when the bottom row is `[0, 0, 0, 1]` (affine transform, not perspective).
+inline bool isAffine(const Mat4& matrix, f32 epsilon = 1e-5f) {
+    return std::fabs(matrix.data[3]) <= epsilon && std::fabs(matrix.data[7]) <= epsilon &&
+           std::fabs(matrix.data[11]) <= epsilon && std::fabs(matrix.data[15] - 1.f) <= epsilon;
+}
+
+/// Uniform column length of a rigid upper 3×3 block; returns `0` when the block is not rigid.
+inline f32 uniformScaleUpper3x3(const Mat4& matrix, f32 epsilon = 1e-4f) {
+    if (!isRigidUpper3x3(matrix, epsilon)) {
+        return 0.f;
+    }
+    const Vec3 x{matrix.data[0], matrix.data[1], matrix.data[2]};
+    return x.length();
+}
+
 /// Writes `inverseAffine(matrix)` to `out` when the upper 3×3 block is a pure rotation; returns false for any scale.
 inline bool tryInverseAffine(const Mat4& matrix, Mat4& out) {
     if (!isOrthogonalUpper3x3(matrix)) {
         return false;
     }
     out = inverseAffine(matrix);
+    return true;
+}
+
+/// Writes the inverse of a rigid affine matrix (rotation ± uniform scale + translation) to `out`.
+inline bool tryInverseRigid(const Mat4& matrix, Mat4& out, f32 epsilon = 1e-4f) {
+    if (!isAffine(matrix, epsilon) || !isRigidUpper3x3(matrix, epsilon)) {
+        return false;
+    }
+
+    const f32 scale = uniformScaleUpper3x3(matrix, epsilon);
+    if (scale < epsilon) {
+        return false;
+    }
+
+    const f32 invScaleSq = 1.f / (scale * scale);
+    const f32 r00 = matrix.data[0];
+    const f32 r01 = matrix.data[4];
+    const f32 r02 = matrix.data[8];
+    const f32 tx = matrix.data[12];
+    const f32 r10 = matrix.data[1];
+    const f32 r11 = matrix.data[5];
+    const f32 r12 = matrix.data[9];
+    const f32 ty = matrix.data[13];
+    const f32 r20 = matrix.data[2];
+    const f32 r21 = matrix.data[6];
+    const f32 r22 = matrix.data[10];
+    const f32 tz = matrix.data[14];
+
+    Mat4 result{};
+    result.data[0] = r00 * invScaleSq;
+    result.data[1] = r01 * invScaleSq;
+    result.data[2] = r02 * invScaleSq;
+
+    result.data[4] = r10 * invScaleSq;
+    result.data[5] = r11 * invScaleSq;
+    result.data[6] = r12 * invScaleSq;
+
+    result.data[8] = r20 * invScaleSq;
+    result.data[9] = r21 * invScaleSq;
+    result.data[10] = r22 * invScaleSq;
+
+    result.data[12] = -(r00 * tx + r10 * ty + r20 * tz) * invScaleSq;
+    result.data[13] = -(r01 * tx + r11 * ty + r21 * tz) * invScaleSq;
+    result.data[14] = -(r02 * tx + r12 * ty + r22 * tz) * invScaleSq;
+    result.data[15] = 1.f;
+    out = result;
     return true;
 }
 
