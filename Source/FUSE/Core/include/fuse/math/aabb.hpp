@@ -67,6 +67,12 @@ struct AABB {
         if (isEmpty()) {
             return -1.f;
         }
+
+        const f32 dirLenSq = direction.dot(direction);
+        if (dirLenSq < 1e-16f) {
+            return contains(origin) ? 0.f : -1.f;
+        }
+
         f32 tmin = 0.f;
         f32 tmax = std::numeric_limits<f32>::max();
 
