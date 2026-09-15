@@ -54,6 +54,44 @@ void testShouldUseHrtfIrAlias() {
                "should_use_hrtf_ir matches has_hrtf_ir");
 }
 
+void testEmptyIrGuardEdgeCases() {
+    const fuse::audio::HrtfIrStub empty = fuse::audio::make_empty_hrtf_ir();
+    expectTrue(fuse::audio::is_empty_hrtf_ir(empty), "make_empty_hrtf_ir is empty");
+    expectTrue(!fuse::audio::has_hrtf_ir(empty), "empty factory has no IR");
+
+    const float samples[] = {1.f};
+    const fuse::audio::HrtfIrStub null_samples_nonzero_length{nullptr, 1};
+    expectTrue(fuse::audio::is_empty_hrtf_ir(null_samples_nonzero_length),
+               "null samples with non-zero length is empty");
+    expectTrue(!fuse::audio::should_use_hrtf_ir(null_samples_nonzero_length),
+               "null samples cannot select convolution");
+
+    const fuse::audio::HrtfIrStub zero_length{samples, 0};
+    expectTrue(fuse::audio::is_empty_hrtf_ir(zero_length), "zero-length IR is empty");
+    expectTrue(fuse::audio::is_empty_hrtf_ir(empty) == !fuse::audio::has_hrtf_ir(empty),
+               "is_empty_hrtf_ir inverts has_hrtf_ir");
+}
+
+void testHrtfPanPathQueryHelpers() {
+    expectTrue(!fuse::audio::is_hrtf_pan_path_spatial(fuse::audio::HrtfPanPath::Bypass),
+               "bypass path is not spatial");
+    expectTrue(fuse::audio::is_hrtf_pan_path_spatial(fuse::audio::HrtfPanPath::IldItdStub),
+               "ILD stub path is spatial");
+    expectTrue(fuse::audio::is_hrtf_pan_path_spatial(fuse::audio::HrtfPanPath::Convolution),
+               "convolution path is spatial");
+
+    expectTrue(!fuse::audio::hrtf_pan_path_uses_convolution(fuse::audio::HrtfPanPath::IldItdStub),
+               "ILD stub does not use convolution");
+    expectTrue(fuse::audio::hrtf_pan_path_uses_convolution(fuse::audio::HrtfPanPath::Convolution),
+               "convolution path uses convolution");
+
+    const fuse::audio::Vec3 offset{3.f, 0.f, 0.f};
+    expectTrue(fuse::audio::resolve_hrtf_pan_path(true, offset)
+                   == fuse::audio::resolve_hrtf_pan_path(true, fuse::audio::make_empty_hrtf_ir(),
+                                                         offset),
+               "no-IR resolve matches empty IR stub");
+}
+
 void testItdAndElevationHelpers() {
     const fuse::audio::BinauralPanParams params;
     expectNear(fuse::audio::compute_itd_from_azimuth(0.f, params), 0.f, 1e-5f,
@@ -177,6 +215,80 @@ void testPanPathForPathHelper() {
         fuse::audio::compute_binaural_pan_gains(offset);
     expectNear(stub.left, direct.left, 1e-5f, "for_path ILD stub matches direct gains");
     expectNear(stub.right, direct.right, 1e-5f, "for_path ILD stub matches direct gains");
+
+    const fuse::audio::BinauralPanGains convolution =
+        fuse::audio::compute_binaural_pan_gains_for_path(fuse::audio::HrtfPanPath::Convolution,
+                                                         offset);
+    expectNear(convolution.left, direct.left, 1e-5f,
+               "for_path convolution stub matches ILD/ITD until IR wired");
+    expectNear(convolution.right, direct.right, 1e-5f,
+               "for_path convolution stub matches ILD/ITD until IR wired");
+}
+
+void testResolvedPanPipeline() {
+    const fuse::audio::Vec3 offset{5.f, 0.f, 0.f};
+    const fuse::audio::HrtfIrStub empty = fuse::audio::make_empty_hrtf_ir();
+    const float samples[] = {1.f, 0.f};
+    const fuse::audio::HrtfIrStub valid{samples, 2};
+
+    const fuse::audio::BinauralPanGains resolved =
+        fuse::audio::compute_binaural_pan_gains_resolved(true, empty, offset);
+    const fuse::audio::BinauralPanGains guarded =
+        fuse::audio::compute_binaural_pan_gains_guarded(true, empty, offset);
+    expectNear(resolved.left, guarded.left, 1e-5f, "resolved matches guarded for empty IR");
+    expectNear(resolved.right, guarded.right, 1e-5f, "resolved matches guarded for empty IR");
+
+    const fuse::audio::BinauralPanGains resolved_valid =
+        fuse::audio::compute_binaural_pan_gains_resolved(true, valid, offset);
+    expectNear(resolved_valid.left, resolved.left, 1e-4f,
+               "convolution path stub matches ILD/ITD until IR wired");
+}
+
+void testOcclusionOnlyCoupling() {
+    fuse::audio::BinauralPanGains wide =
+        fuse::audio::compute_binaural_pan_gains(fuse::audio::Vec3{5.f, 0.f, 0.f});
+    const float wide_spread = fuse::audio::compute_pan_spread(wide);
+
+    fuse::audio::BinauralPanGains occluded = wide;
+    fuse::audio::apply_hrtf_occlusion_coupling(occluded, 0.1f);
+    expectTrue(fuse::audio::compute_pan_spread(occluded) < wide_spread,
+               "occlusion-only coupling narrows pan spread");
+
+    expectNear(fuse::audio::compute_hrtf_occlusion_blend(1.f), 1.f, 1e-5f,
+               "unity occlusion keeps full spatial blend");
+    expectNear(fuse::audio::compute_hrtf_occlusion_blend(0.f), 0.25f, 1e-5f,
+               "zero occlusion reaches min spatial blend");
+}
+
+void testSpatialBlendWeightExtremes() {
+    fuse::audio::HrtfAttenuationCoupling distance_only;
+    distance_only.occlusion_weight = 0.f;
+    fuse::audio::HrtfAttenuationCoupling occlusion_only;
+    occlusion_only.occlusion_weight = 1.f;
+
+    expectNear(fuse::audio::compute_hrtf_spatial_blend(0.2f, 0.8f, distance_only),
+               fuse::audio::compute_hrtf_distance_factor(0.2f), 1e-5f,
+               "zero occlusion weight uses distance factor only");
+    expectNear(fuse::audio::compute_hrtf_spatial_blend(0.2f, 0.8f, occlusion_only),
+               fuse::audio::compute_hrtf_occlusion_blend(0.8f), 1e-5f,
+               "unity occlusion weight uses occlusion factor only");
+}
+
+void testResolvedCoupledPan() {
+    const fuse::audio::Vec3 offset{5.f, 0.f, 0.f};
+    const fuse::audio::HrtfIrStub empty = fuse::audio::make_empty_hrtf_ir();
+
+    const fuse::audio::BinauralPanGains resolved =
+        fuse::audio::compute_binaural_pan_gains_resolved_coupled(true, empty, offset, 0.15f, 0.2f);
+    const fuse::audio::BinauralPanGains coupled =
+        fuse::audio::compute_binaural_pan_gains_coupled(true, empty, offset, 0.15f, 0.2f);
+    expectNear(resolved.left, coupled.left, 1e-5f, "resolved coupled matches coupled helper");
+    expectNear(resolved.right, coupled.right, 1e-5f, "resolved coupled matches coupled helper");
+
+    const fuse::audio::BinauralPanGains bypassed =
+        fuse::audio::compute_binaural_pan_gains_resolved_coupled(false, empty, offset, 0.1f, 0.1f);
+    expectTrue(fuse::audio::is_centre_panned(bypassed),
+               "resolved coupled bypasses coupling when HRTF disabled");
 }
 
 } // namespace
@@ -185,12 +297,18 @@ int main() {
     fuse::core::initialize();
     testHrtfPanPathResolution();
     testShouldUseHrtfIrAlias();
+    testEmptyIrGuardEdgeCases();
+    testHrtfPanPathQueryHelpers();
     testItdAndElevationHelpers();
     testIrAwareGuardedPan();
     testSpatialBlendHelper();
     testLerpBinauralPanGains();
     testCoupledPanOneShot();
     testPanPathForPathHelper();
+    testResolvedPanPipeline();
+    testOcclusionOnlyCoupling();
+    testSpatialBlendWeightExtremes();
+    testResolvedCoupledPan();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

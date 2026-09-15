@@ -18,6 +18,12 @@ bool has_hrtf_ir(const HrtfIrStub& ir);
 /// Alias for `has_hrtf_ir` — convolution path is available when true.
 bool should_use_hrtf_ir(const HrtfIrStub& ir);
 
+/// True when the IR stub is empty (null samples or zero length).
+bool is_empty_hrtf_ir(const HrtfIrStub& ir);
+
+/// Default-constructed empty IR stub.
+HrtfIrStub make_empty_hrtf_ir();
+
 /// HRTF pan routing — empty IR uses ILD/ITD stub; convolution deferred until IR wired.
 enum class HrtfPanPath {
     Bypass,
@@ -27,6 +33,15 @@ enum class HrtfPanPath {
 
 /// Select pan path from HRTF enable flag, IR stub, and listener-local offset.
 HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener);
+
+/// Resolve pan path with an implicit empty IR stub.
+HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener);
+
+/// True when the path produces spatial pan (not centre bypass).
+bool is_hrtf_pan_path_spatial(HrtfPanPath path);
+
+/// True when the path selects convolution (IR wired; stub gains until delay-line lands).
+bool hrtf_pan_path_uses_convolution(HrtfPanPath path);
 
 /// True when HRTF pan should run (enabled and source is not co-located).
 bool should_apply_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener);
@@ -130,6 +145,11 @@ BinauralPanGains compute_binaural_pan_gains_guarded(bool hrtf_enabled, const Hrt
 BinauralPanGains compute_binaural_pan_gains_for_path(HrtfPanPath path, const Vec3& rel_listener,
                                                      const BinauralPanParams& params = {});
 
+/// Resolve path then compute gains (pan path + empty-IR guards in one call).
+BinauralPanGains compute_binaural_pan_gains_resolved(bool hrtf_enabled, const HrtfIrStub& ir,
+                                                     const Vec3& rel_listener,
+                                                     const BinauralPanParams& params = {});
+
 /// Linear interpolation between two binaural pan gain states.
 BinauralPanGains lerp_binaural_pan_gains(const BinauralPanGains& from, const BinauralPanGains& to,
                                          float t);
@@ -149,6 +169,14 @@ struct HrtfAttenuationCoupling {
 float compute_hrtf_spatial_blend(float distance_attenuation, float occlusion_gain,
                                  const HrtfAttenuationCoupling& coupling = {},
                                  const BinauralPanParams& params = {});
+
+/// Occlusion-only spatial blend factor (no distance attenuation).
+float compute_hrtf_occlusion_blend(float occlusion_gain,
+                                   const BinauralPanParams& params = {});
+
+/// Apply occlusion-only spatial narrowing.
+void apply_hrtf_occlusion_coupling(BinauralPanGains& gains, float occlusion_gain,
+                                   const BinauralPanParams& params = {});
 
 /// Apply distance + occlusion coupling to narrow the binaural image toward mono centre.
 void apply_hrtf_attenuation_coupling(BinauralPanGains& gains, float distance_attenuation,
@@ -176,5 +204,14 @@ BinauralPanGains compute_binaural_pan_gains_coupled(bool hrtf_enabled, const Hrt
                                                     float distance_attenuation, float occlusion_gain,
                                                     const HrtfAttenuationCoupling& coupling = {},
                                                     const BinauralPanParams& params = {});
+
+/// Resolve path, compute gains, and apply attenuation coupling in one call.
+BinauralPanGains compute_binaural_pan_gains_resolved_coupled(bool hrtf_enabled,
+                                                             const HrtfIrStub& ir,
+                                                             const Vec3& rel_listener,
+                                                             float distance_attenuation,
+                                                             float occlusion_gain,
+                                                             const HrtfAttenuationCoupling& coupling = {},
+                                                             const BinauralPanParams& params = {});
 
 } // namespace fuse::audio
