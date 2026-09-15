@@ -114,12 +114,23 @@ bool tryAssignLight(std::vector<u32>& clusterLights, u32 lightIdx, u32 maxLights
 u32 assignLights(std::vector<u32>& clusterLights,
                  const std::vector<u32>& candidates,
                  u32 maxLightsPerCluster);
+/// Assign one light index to a cluster row; returns false when OOB or at per-cluster capacity.
+bool assignLightToCluster(std::vector<std::vector<u32>>& perClusterLights,
+                          u32 clusterIdx,
+                          u32 lightIdx,
+                          u32 maxLightsPerCluster);
 /// Copy light indices assigned to one cluster from the rebuilt flat grid.
 u32 lookupClusterLights(const ClusterGridSoA& grid, u32 clusterIdx, std::vector<u32>& outLights);
+/// Per-cluster assigned-light count from the rebuilt grid; returns 0 when `clusterIdx` is OOB.
+u32 clusterLightCount(const ClusterGridSoA& grid, u32 clusterIdx);
 u32 countAssignedLights(const ClusterGridSoA& grid, u32 clusterCount);
 /// Count clusters with at least one assigned light; returns 0 when `clusterCount` is zero.
 u32 countNonEmptyClusters(const ClusterGridSoA& grid, u32 clusterCount);
 u32 countEmptyClusters(const ClusterGridSoA& grid, u32 clusterCount);
+/// Count clusters holding `maxLightsPerCluster` lights; returns 0 when `clusterCount` is zero.
+u32 countClustersAtCapacity(const ClusterGridSoA& grid, u32 clusterCount, u32 maxLightsPerCluster);
+/// True when non-empty + empty cluster counts sum to `clusterCount` (empty grid is vacuously true).
+bool validatePopulationCounts(const ClusterGridSoA& grid, u32 clusterCount);
 } // namespace cluster_util
 
 /// Renderer-side point light input (decoupled from ECS).

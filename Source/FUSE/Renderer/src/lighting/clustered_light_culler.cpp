@@ -80,6 +80,16 @@ u32 cluster_util::assignLights(std::vector<u32>& clusterLights,
     return dropped;
 }
 
+bool cluster_util::assignLightToCluster(std::vector<std::vector<u32>>& perClusterLights,
+                                         u32 clusterIdx,
+                                         u32 lightIdx,
+                                         u32 maxLightsPerCluster) {
+    if (clusterIdx >= perClusterLights.size()) {
+        return false;
+    }
+    return tryAssignLight(perClusterLights[clusterIdx], lightIdx, maxLightsPerCluster);
+}
+
 u32 cluster_util::lookupClusterLights(const ClusterGridSoA& grid, u32 clusterIdx, std::vector<u32>& outLights) {
     outLights.clear();
     if (clusterIdx >= grid.grid.size()) {
@@ -101,6 +111,13 @@ u32 cluster_util::lookupClusterLights(const ClusterGridSoA& grid, u32 clusterIdx
         outLights.push_back(grid.lightList[offset]);
     }
     return entry.count;
+}
+
+u32 cluster_util::clusterLightCount(const ClusterGridSoA& grid, u32 clusterIdx) {
+    if (clusterIdx >= grid.grid.size()) {
+        return 0u;
+    }
+    return grid.grid[clusterIdx].count;
 }
 
 u32 cluster_util::countAssignedLights(const ClusterGridSoA& grid, u32 clusterCount) {
@@ -144,6 +161,30 @@ u32 cluster_util::countEmptyClusters(const ClusterGridSoA& grid, u32 clusterCoun
         }
     }
     return empty;
+}
+
+u32 cluster_util::countClustersAtCapacity(const ClusterGridSoA& grid, u32 clusterCount, u32 maxLightsPerCluster) {
+    if (clusterCount == 0u || maxLightsPerCluster == 0u || grid.grid.size() < clusterCount) {
+        return 0u;
+    }
+
+    u32 atCapacity = 0u;
+    for (u32 clusterIdx = 0; clusterIdx < clusterCount; ++clusterIdx) {
+        if (grid.grid[clusterIdx].count >= maxLightsPerCluster) {
+            ++atCapacity;
+        }
+    }
+    return atCapacity;
+}
+
+bool cluster_util::validatePopulationCounts(const ClusterGridSoA& grid, u32 clusterCount) {
+    if (clusterCount == 0u) {
+        return true;
+    }
+    if (grid.grid.size() < clusterCount) {
+        return false;
+    }
+    return countNonEmptyClusters(grid, clusterCount) + countEmptyClusters(grid, clusterCount) == clusterCount;
 }
 
 u32 ClusterGridLayout::clusterIndex(u32 tileX, u32 tileY, u32 sliceZ, const ClusterDesc& desc) {
@@ -311,6 +352,12 @@ void ClusteredLightCuller::init(const ClusterDesc& desc, ResourceManager& resour
     const u32 clusterCount = m_desc.clusterCount();
     m_buffers.clusterCount = clusterCount;
 
+    if (clusterCount == 0u) {
+        m_gridSoA.allocate(m_desc);
+        m_stats.ready = true;
+        return;
+    }
+
     m_buffers.clusterAabbs =
         resources.createBuffer(makeStorageBuffer(static_cast<usize>(clusterCount) * sizeof(ClusterAABB),
                                                  "cluster_aabbs"));
@@ -428,6 +475,14 @@ void ClusteredLightCuller::cullLights(const std::vector<PointLightInput>& pointL
     m_stats.lightsDroppedOverflow = 0;
 
     const u32 clusterCount = m_desc.clusterCount();
+    if (clusterCount == 0u) {
+        m_pendingClusterLights.clear();
+        rebuildLightGrid();
+        m_stats.lightsCulled = 0;
+        m_stats.lightListEntries = 0;
+        return;
+    }
+
     std::vector<std::vector<u32>> perClusterLights(clusterCount);
 
     u32 lightsProcessed = 0;
@@ -444,7 +499,8 @@ void ClusteredLightCuller::cullLights(const std::vector<PointLightInput>& pointL
             if (!sphereIntersectsAabb(light.position, light.radius, aabb)) {
                 continue;
             }
-            if (!cluster_util::tryAssignLight(clusterLights, lightIdx, m_desc.maxLightsPerCluster)) {
+            if (!cluster_util::assignLightToCluster(perClusterLights, clusterIdx, lightIdx,
+                                                     m_desc.maxLightsPerCluster)) {
                 ++lightsDroppedOverflow;
                 clusterOverflowed = true;
             }
@@ -456,7 +512,8 @@ void ClusteredLightCuller::cullLights(const std::vector<PointLightInput>& pointL
                 continue;
             }
             const u32 encodedIdx = static_cast<u32>(pointLights.size()) + lightIdx;
-            if (!cluster_util::tryAssignLight(clusterLights, encodedIdx, m_desc.maxLightsPerCluster)) {
+            if (!cluster_util::assignLightToCluster(perClusterLights, clusterIdx, encodedIdx,
+                                                     m_desc.maxLightsPerCluster)) {
                 ++lightsDroppedOverflow;
                 clusterOverflowed = true;
             }

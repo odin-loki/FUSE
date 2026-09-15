@@ -190,14 +190,24 @@ void testClusterUtilAssignmentCounts() {
     expectTrue(batchClusterLights.size() == 2u, "batch assign stores capacity-limited lights");
     expectTrue(batchClusterLights[0] == 10u && batchClusterLights[1] == 11u, "batch assign preserves order");
 
+    std::vector<std::vector<fuse::u32>> perClusterLights(2u);
+    expectTrue(fuse::renderer::cluster_util::assignLightToCluster(perClusterLights, 0u, 7u, 2u),
+               "assign light to cluster row succeeds");
+    expectTrue(fuse::renderer::cluster_util::assignLightToCluster(perClusterLights, 0u, 8u, 2u),
+               "second assign to same cluster succeeds");
+    expectTrue(!fuse::renderer::cluster_util::assignLightToCluster(perClusterLights, 0u, 9u, 2u),
+               "assign light to full cluster rejected");
+    expectTrue(!fuse::renderer::cluster_util::assignLightToCluster(perClusterLights, 99u, 0u, 2u),
+               "assign light to OOB cluster rejected");
+
     fuse::renderer::ClusterGridSoA grid{};
     const fuse::u32 clusterCount = 3u;
-    const std::vector<std::vector<fuse::u32>> perClusterLights = {
+    const std::vector<std::vector<fuse::u32>> rebuiltClusterLights = {
         {0u, 2u},
         {},
         {1u},
     };
-    fuse::renderer::ClusterLightGridLayout::rebuildLightGrid(grid, clusterCount, perClusterLights);
+    fuse::renderer::ClusterLightGridLayout::rebuildLightGrid(grid, clusterCount, rebuiltClusterLights);
 
     expectTrue(fuse::renderer::cluster_util::countAssignedLights(grid, clusterCount) == 3u,
                "assigned light count matches flat list");
@@ -205,6 +215,12 @@ void testClusterUtilAssignmentCounts() {
                "non-empty cluster count matches grid");
     expectTrue(fuse::renderer::cluster_util::countEmptyClusters(grid, clusterCount) == 1u,
                "empty cluster count matches grid");
+    expectTrue(fuse::renderer::cluster_util::validatePopulationCounts(grid, clusterCount),
+               "population counts sum to cluster count");
+    expectTrue(fuse::renderer::cluster_util::clusterLightCount(grid, 0u) == 2u, "cluster light count for cluster 0");
+    expectTrue(fuse::renderer::cluster_util::clusterLightCount(grid, 1u) == 0u, "cluster light count for empty cluster");
+    expectTrue(fuse::renderer::cluster_util::clusterLightCount(grid, 99u) == 0u,
+               "cluster light count OOB returns zero");
 
     std::vector<fuse::u32> cluster0Lights;
     expectTrue(fuse::renderer::cluster_util::lookupClusterLights(grid, 0u, cluster0Lights) == 2u,
@@ -216,6 +232,32 @@ void testClusterUtilAssignmentCounts() {
     expectTrue(fuse::renderer::cluster_util::lookupClusterLights(grid, 1u, emptyClusterLights) == 0u,
                "lookup on empty cluster returns zero");
     expectTrue(emptyClusterLights.empty(), "lookup clears output for empty cluster");
+}
+
+void testClusterCapacityAndPopulationValidation() {
+    fuse::renderer::ClusterGridSoA grid{};
+    const fuse::u32 clusterCount = 4u;
+    const std::vector<std::vector<fuse::u32>> perClusterLights = {
+        {0u, 1u},
+        {2u, 3u},
+        {},
+        {4u},
+    };
+    fuse::renderer::ClusterLightGridLayout::rebuildLightGrid(grid, clusterCount, perClusterLights, 2u);
+
+    expectTrue(fuse::renderer::cluster_util::countClustersAtCapacity(grid, clusterCount, 2u) == 2u,
+               "two clusters at per-cluster capacity");
+    expectTrue(fuse::renderer::cluster_util::countClustersAtCapacity(grid, clusterCount, 0u) == 0u,
+               "zero max lights reports no clusters at capacity");
+    expectTrue(fuse::renderer::cluster_util::validatePopulationCounts(grid, clusterCount),
+               "capacity-clamped grid preserves population invariant");
+
+    fuse::renderer::ClusterGridSoA undersized{};
+    undersized.grid.resize(2u);
+    expectTrue(!fuse::renderer::cluster_util::validatePopulationCounts(undersized, clusterCount),
+               "undersized grid fails population validation");
+    expectTrue(fuse::renderer::cluster_util::validatePopulationCounts(undersized, 0u),
+               "zero cluster count is vacuously valid");
 }
 
 void testClusterGridSoAAllocate() {
@@ -458,6 +500,48 @@ void testEmptySceneCull() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testZeroDimensionCuller() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for zero-dimension culler test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::ClusterDesc zeroDesc{};
+    zeroDesc.tilesX = 0u;
+    zeroDesc.tilesY = 0u;
+    zeroDesc.slicesZ = 0u;
+
+    fuse::renderer::ClusteredLightCuller culler;
+    culler.init(zeroDesc, resources);
+    expectTrue(culler.isReady(), "zero-dimension culler initializes");
+    expectTrue(culler.buffers().clusterCount == 0u, "zero-dimension gpu cluster count");
+
+    fuse::renderer::ClusterCameraDesc camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 50.f;
+
+    fuse::renderer::PointLightInput light{};
+    light.position = {0.f, 0.f, -5.f};
+    light.radius = 10.f;
+
+    culler.cullLights({light}, {}, camera);
+    expectTrue(culler.stats().lightsCulled == 0u, "zero-dimension cull assigns no lights");
+    expectTrue(culler.stats().lightListEntries == 0u, "zero-dimension cull clears light list");
+    expectTrue(culler.gridSoA().isEmpty(), "zero-dimension cull leaves empty grid");
+    expectTrue(culler.gridSoA().matchesDesc(zeroDesc), "zero-dimension grid matches desc");
+
+    culler.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
 void testLightCullCapacityClamp() {
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
@@ -494,6 +578,11 @@ void testLightCullCapacityClamp() {
 
     culler.cullLights(lights, {}, camera);
     expectTrue(culler.gridSoA().grid[0].count == 2u, "cluster stores at most maxLightsPerCluster");
+    expectTrue(fuse::renderer::cluster_util::clusterLightCount(culler.gridSoA(), 0u) == 2u,
+               "cluster light count reflects capacity clamp");
+    expectTrue(fuse::renderer::cluster_util::countClustersAtCapacity(culler.gridSoA(), desc.clusterCount(),
+                                                                     desc.maxLightsPerCluster) == 1u,
+               "capacity helper matches culler overflow stats");
     expectTrue(culler.stats().lightsDroppedOverflow == 3u, "excess intersecting lights dropped");
     expectTrue(culler.stats().clustersAtCapacity == 1u, "single cluster reported at capacity");
 
@@ -547,11 +636,13 @@ int main() {
     testLightGridRebuildOverflowClamp();
     testEmptyGridRebuild();
     testClusterUtilAssignmentCounts();
+    testClusterCapacityAndPopulationValidation();
     testClusterGridSoAAllocate();
     testZeroDimensionClusterGrid();
     testCullerInitAndClusterBuild();
     testLightCullAssignsAndSkips();
     testEmptySceneCull();
+    testZeroDimensionCuller();
     testLightCullCapacityClamp();
     testDeferredPipelineWiresClusterPass();
 
