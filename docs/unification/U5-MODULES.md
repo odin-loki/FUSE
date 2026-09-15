@@ -49,7 +49,7 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 - Demo tree `makePatrolWhenNearTarget()` + registry/text load equivalents
 - UAISK script-only template hooks (`uaisk_template_hooks.hpp`, `Samples/Modules/ai/uaisk-templates/`)
 - Blackboard spatial query stubs: `spatial_query.hpp` — ally radius filter, nearest-ally lookup; `teamId` on `AgentSnapshot` / `AgentBinding`
-- Unit tests: `fuse_ai_tests` — registry parity, composite child-status aggregation (sequence/selector/parallel), leaf nodes (wait, blackboard set/get, distance, allies_in_radius, nearest_ally), spatial query radius filter, text loader, UAISK hooks, multi-agent parallel runtime
+- Unit tests: `fuse_ai_tests` — registry parity, composite child-status aggregation (sequence/selector/parallel with success/fail thresholds + abort-on-fail), blackboard try-get/set + typed scalars, leaf nodes (wait, blackboard set/get, distance, allies_in_radius, nearest_ally), spatial query radius filter, text loader, UAISK hooks, multi-agent parallel runtime
 - Hybrid demo: `demo_hybrid_hud` ticks `BehaviorRuntime` each frame after `HybridComposer::tick`
 
 ### Ore extraction (BadBehaviour / GuideBot / UAISK)

@@ -52,6 +52,16 @@ struct BehaviorEvalContext {
     const std::vector<AllyCandidate>* allies = nullptr;
 };
 
+/// Per-child aggregation policy for `bb.parallel` (BadBehaviour Parallel composite stub).
+struct ParallelPolicy {
+    /// Minimum child successes required; 0 means all active children must succeed.
+    u32 successThreshold = 0;
+    /// Failures tolerated before the composite fails; 0 defaults to 1.
+    u32 failThreshold = 1;
+    /// When true, stop ticking remaining children once fail threshold is reached.
+    bool abortOnFail = false;
+};
+
 /// Flat behavior-tree node — ore analogue: BadBehaviour composite/decorator/leaf nodes.
 /// Ore: third_party/addons/BadBehaviour/Engine/source/BadBehavior/
 struct BehaviorNode {
@@ -61,6 +71,7 @@ struct BehaviorNode {
     u32 loopCount = 1;
     u32 childA = 0;
     u32 childB = 0;
+    ParallelPolicy parallelPolicy;
     std::string scriptHook;
 };
 

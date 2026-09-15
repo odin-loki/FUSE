@@ -33,6 +33,9 @@ BehaviorNode makeParallel(const NodeLoadSpec& spec) {
     node.kind = NodeKind::Parallel;
     node.childA = firstChild(spec);
     node.childB = secondChild(spec);
+    node.parallelPolicy.successThreshold = spec.successThreshold;
+    node.parallelPolicy.failThreshold = spec.failThreshold;
+    node.parallelPolicy.abortOnFail = spec.abortOnFail;
     return node;
 }
 
