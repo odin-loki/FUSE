@@ -573,6 +573,62 @@ void testLambdasPersistWithoutMidFrameClear() {
                "clearLambdas resets warm-start slots on the first substep of a frame");
 }
 
+void testApplyPositionDeltasClearsBodySlots() {
+    SolverWorkBuffers work;
+    work.init(2, 0, 1);
+
+    work.positionDeltas()[0].delta = {0.1f, 0.f, 0.f};
+    work.positionDeltas()[0].writeCount = 1;
+
+    RigidBodySoA bodies;
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+    bodies.addBody({1.f, 0.f, 0.f}, 1.f, 0);
+    bodies.predictedPositions = bodies.positions;
+
+    work.applyPositionDeltas(bodies);
+    expectNear(bodies.predictedPositions[0].x, 0.1f, 1e-6f, "applyPositionDeltas commits accumulated delta");
+    expectTrue(work.positionDeltas()[0].writeCount == 0u,
+               "applyPositionDeltas clears slot after commit for next constraint pass");
+}
+
+void testDistanceLambdaWarmStartsAcrossFrames() {
+    RigidBodySoA bodies;
+    CollisionShapeSoA shapes;
+
+    const u32 bodyA = bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+    const u32 bodyB = bodies.addBody({2.05f, 0.f, 0.f}, 1.f, 0);
+    shapes.addShape(CollisionShapeType::Sphere, bodyA, {0.1f, 0.f, 0.f});
+    shapes.addShape(CollisionShapeType::Sphere, bodyB, {0.1f, 0.f, 0.f});
+
+    PBDSolver solver;
+    solver.init(2, 0, 1);
+    solver.setDistanceConstraints({DistanceConstraint{
+        .bodyA = bodyA,
+        .bodyB = bodyB,
+        .restLength = 2.f,
+    }});
+
+    SolverParams params;
+    params.substeps = 1;
+    params.iterations = 4;
+    params.gravity = {};
+    params.broadphase.cellSize = 4.f;
+    const f32 dt = 1.f / 60.f;
+
+    solver.step(bodies, shapes, params, dt);
+    const f32 lambdaAfterFirstFrame = solver.workBuffers().distanceLambdas()[0];
+    expectTrue(std::fabs(lambdaAfterFirstFrame) > 1e-6f,
+               "first frame accumulates distance lambda for warm-start seed");
+
+    solver.step(bodies, shapes, params, dt);
+    expectTrue(std::fabs(solver.workBuffers().distanceLambdas()[0]) > 1e-6f,
+               "second frame retains distance lambda warm-start across clearLambdas");
+    expectNear((bodies.positions[bodyA] - bodies.positions[bodyB]).length(),
+               2.f,
+               0.05f,
+               "warm-started spring converges across consecutive frames");
+}
+
 void testEarlyExitWhenResidualBelowTolerance() {
     CollisionShapeSoA shapes;
     RigidBodySoA bodies;
@@ -624,6 +680,8 @@ int main() {
     testEmptyIslandHasNoConstraints();
     testWarmStartLambdaSeedHelpers();
     testLambdasPersistWithoutMidFrameClear();
+    testApplyPositionDeltasClearsBodySlots();
+    testDistanceLambdaWarmStartsAcrossFrames();
     testEarlyExitWhenResidualBelowTolerance();
     fuse::core::shutdown();
 
