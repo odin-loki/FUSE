@@ -1,7 +1,9 @@
 #include "demo_check.hpp"
 
+#include <fuse/adventure/interactable.hpp>
 #include <fuse/adventure/interaction.hpp>
 #include <fuse/adventure/inventory.hpp>
+#include <fuse/adventure/puzzle_gate.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/log/logger.hpp>
 #include <fuse/project/loader.hpp>
@@ -11,7 +13,7 @@
 
 int main(int argc, char** argv) {
     fuse::core::initialize();
-    fuse::log::info("demo_adventure_stub: fuse_adventure interaction + inventory stub (3DAAK-inspired)");
+    fuse::log::info("demo_adventure_stub: fuse_adventure interaction + inventory (3DAAK-inspired)");
 
     std::string projectPath = "Samples/unification/demo_adventure_stub";
     if (argc > 1) {
@@ -23,30 +25,29 @@ int main(int argc, char** argv) {
     fuse::demo::check(project.manifest.modules.adventure, "project enables fuse_adventure");
 
     fuse::adventure::Inventory inventory;
+    inventory.setMaxLimit(fuse::adventure::ItemId("rusty_key"), 1);
+    inventory.setMaxLimit(fuse::adventure::ItemId("outpost_door"), 1);
+
+    fuse::adventure::InteractContext ctx;
+    ctx.inventory = &inventory;
+    ctx.actorName = "player";
+
     fuse::adventure::InteractionSystem interactions;
+    fuse::adventure::InteractableStub keyPickup;
 
-    const fuse::Handle<fuse::Object> keyItem(10u, 1u);
-    inventory.addItem("rusty_key", 1u);
+    const auto pickedUp = interactions.pickup(
+        ctx, fuse::adventure::ItemId("rusty_key"), 1, keyPickup);
+    inventory.incInventory(fuse::adventure::ItemId("rusty_key"), 1);
 
-    const fuse::Handle<fuse::Object> player(1u, 1u);
+    fuse::adventure::PuzzleGate outpostDoor(fuse::adventure::ItemId("rusty_key"));
+    const auto used = interactions.use(
+        ctx, fuse::adventure::ItemId("rusty_key"), outpostDoor);
 
-    fuse::adventure::InteractionRequest pickup;
-    pickup.kind = fuse::adventure::InteractionKind::PickUp;
-    pickup.actor = player;
-    pickup.target = keyItem;
-    const bool pickedUp = interactions.tryInteract(pickup);
-
-    fuse::adventure::InteractionRequest useDoor;
-    useDoor.kind = fuse::adventure::InteractionKind::Use;
-    useDoor.actor = player;
-    useDoor.target = fuse::Handle<fuse::Object>(11u, 1u);
-    useDoor.payload = "outpost_door";
-    const bool used = interactions.tryInteract(useDoor);
-
-    fuse::demo::check(inventory.itemCount() == 1u, "inventory holds one item");
-    fuse::demo::check(pickedUp, "pickup interaction succeeded");
-    fuse::demo::check(used, "use interaction succeeded");
-    fuse::demo::check(interactions.successCount() == 2u, "two interactions recorded");
+    fuse::demo::check(inventory.hasInventory(fuse::adventure::ItemId("rusty_key")) == false,
+                      "key consumed after door use");
+    fuse::demo::check(pickedUp == fuse::adventure::InteractResult::PickedUp, "pickup interaction succeeded");
+    fuse::demo::check(used == fuse::adventure::InteractResult::Used, "use interaction succeeded");
+    fuse::demo::check(outpostDoor.isUnlocked(), "outpost door unlocked");
 
     fuse::core::shutdown();
     return fuse::demo::finish("demo_adventure_stub");

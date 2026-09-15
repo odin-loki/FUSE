@@ -1,0 +1,15 @@
+add_executable(fuse_adventure_inventory_tests
+    test_inventory.cpp
+)
+
+target_link_libraries(fuse_adventure_inventory_tests PRIVATE fuse_adventure fuse_core)
+target_compile_features(fuse_adventure_inventory_tests PRIVATE cxx_std_17)
+add_test(NAME fuse_adventure_inventory COMMAND fuse_adventure_inventory_tests)
+
+add_executable(fuse_adventure_interact_tests
+    test_interact.cpp
+)
+
+target_link_libraries(fuse_adventure_interact_tests PRIVATE fuse_adventure fuse_core)
+target_compile_features(fuse_adventure_interact_tests PRIVATE cxx_std_17)
+add_test(NAME fuse_adventure_interact COMMAND fuse_adventure_interact_tests)

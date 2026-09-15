@@ -1,35 +1,18 @@
 #pragma once
 
-#include <fuse/handle.hpp>
-#include <fuse/object.hpp>
-#include <fuse/types.hpp>
-
-#include <string>
+#include <fuse/adventure/interactable.hpp>
+#include <fuse/adventure/inventory.hpp>
 
 namespace fuse::adventure {
 
-enum class InteractionKind {
-    PickUp,
-    Use,
-    Talk,
-};
-
-/// Interaction request — game-thread only; 2D/3D share this interface.
-/// TODO(U5 extract): 3DAAK interaction templates under third_party/addons/3DAAK/
-struct InteractionRequest {
-    Handle<Object> actor = Handle<Object>::invalid();
-    Handle<Object> target = Handle<Object>::invalid();
-    InteractionKind kind = InteractionKind::Use;
-    std::string payload;
-};
-
+/// Dispatches use / pickup commands (maps to 3DAAK `ShapeBase::use` / `pickup`).
 class InteractionSystem {
 public:
-    bool tryInteract(const InteractionRequest& request);
-    u32 successCount() const { return m_successCount; }
+    /// Use an item from inventory when count > 0 (3DAAK `ShapeBase::use`).
+    InteractResult use(InteractContext& ctx, ItemId item, IInteractable& target);
 
-private:
-    u32 m_successCount = 0;
+    /// Pick up an item through the target's onPickup hook (3DAAK `ShapeBase::pickup`).
+    InteractResult pickup(InteractContext& ctx, ItemId item, u32 amount, IInteractable& target);
 };
 
 } // namespace fuse::adventure
