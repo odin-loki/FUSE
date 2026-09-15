@@ -16,6 +16,7 @@
 - Game/submit thread `wait()` still uses condition variables (expected for fork-join root)
 - `fiberBackendName()` diagnostic (`posix-ucontext`, `win32`, or `stub`) + `fuse_core_fiber` unit tests (swap round-trip on desktop; compile-gated backend name checks elsewhere)
 - **`FUSE_JOBS_SINGLE_THREAD` compile-time profile** — `computeWorkerCount()` → `0`, scheduler `submit()` inline, serial `parallel_for`; Linux CI job + `fuse_core_jobs_single_thread` tests
+- **Work-steal policy stubs** — `fuse/jobs/work_steal.hpp`: `pickStealVictim`, `stealHalfQueueBatchSize`, `canStealFromVictim` (empty-victim fallback); `JobScheduler::trySteal` uses rotating victim pick; half-queue batch is stubbed (one job per steal today)
 - **Emscripten stub profile documented** — `FUSE_PLATFORM_EMSCRIPTEN` + default `FUSE_JOBS_SINGLE_THREAD=ON`; fiber `stub` backend; does **not** gate desktop/mobile WP-03 exit (see [BUILD.md](./BUILD.md#emscripten-stub-profile-deferred-non-blocking))
 
 ## Remaining (honest limit)
@@ -46,7 +47,7 @@ Nightly job: [`.github/workflows/fuse-tsan-nightly.yml`](../../.github/workflows
 | `JobCounter` teardown vs in-flight `signal()` | TSan race on `m_fiberWaiters` / mutex when `wait()` returned before `signal()` released `m_waitMutex` | Removed unused fiber-waiter list; `wait()` calls `synchronizeCompletion()` to serialize with the final `signal()` |
 | Shared `Impl::useFibers` bool | Potential torn read when fiber allocation fails on one worker while others observe the flag | `std::atomic<bool>` with acquire/release loads |
 
-Regression tests: `fuse_core_jobs` — `testParallelSerialFallbackParity`, `testNestedParallelForParity`, `testNestedParallelForSerialFallbackParity`, `testNestedParallelForWithCooperativeWait`.
+Regression tests: `fuse_core_jobs` — `testParallelSerialFallbackParity`, `testNestedParallelForParity`, `testNestedParallelForSerialFallbackParity`, `testNestedParallelForWithCooperativeWait`, work-steal helper/integration tests (`testWorkSteal*`), `testNestedParallelForVisitCountSingleThread`.
 
 ### Remaining (documented, not yet eliminated)
 

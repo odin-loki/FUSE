@@ -65,7 +65,7 @@ void JobScheduler::parallel_for(u32 begin, u32 end, u32 grainSize, const Body& b
     for (u32 chunk = begin; chunk < end; chunk += grainSize) {
         const u32 chunkEnd = (chunk + grainSize < end) ? (chunk + grainSize) : end;
         state->counter.add(1);
-        submit([state, chunk, chunkEnd, &body]() {
+        submit([state, chunk, chunkEnd, body]() {
             for (u32 i = chunk; i < chunkEnd; ++i) {
                 body(i);
             }
