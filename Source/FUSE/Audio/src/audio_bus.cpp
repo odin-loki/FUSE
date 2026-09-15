@@ -23,6 +23,14 @@ float clamp_bus_gain(float gain) {
     return std::clamp(gain, 0.f, 1.f);
 }
 
+float clamp_listener_master_volume(float volume) {
+    return clamp_bus_gain(volume);
+}
+
+bool is_audible_bus_gain(float gain) {
+    return clamp_bus_gain(gain) > kBusMuteEpsilon;
+}
+
 bool is_valid_audio_bus(AudioBus bus) {
     u32 index = 0;
     return try_bus_index(bus, index);
@@ -104,23 +112,85 @@ float AudioBusMixer::effective_gain(AudioBus bus) const {
 }
 
 float AudioBusMixer::effective_output_gain(AudioBus bus, float listener_master_volume) const {
-    const float listener_gain = clamp_bus_gain(listener_master_volume);
+    const float listener_gain = clamp_listener_master_volume(listener_master_volume);
     if (!is_valid_audio_bus(bus)) {
         return listener_gain;
     }
     return listener_gain * effective_gain(bus);
 }
 
+void AudioBusMixer::set_bus_muted(AudioBus bus, bool muted) {
+    u32 index = 0;
+    if (!try_bus_index(bus, index) || bus == AudioBus::Master) {
+        return;
+    }
+    m_muted[index] = muted;
+}
+
+bool AudioBusMixer::bus_muted(AudioBus bus) const {
+    u32 index = 0;
+    if (!try_bus_index(bus, index) || bus == AudioBus::Master) {
+        return false;
+    }
+    return m_muted[index];
+}
+
+void AudioBusMixer::set_bus_solo(AudioBus bus, bool solo) {
+    u32 index = 0;
+    if (!try_bus_index(bus, index) || bus == AudioBus::Master) {
+        return;
+    }
+    m_solo[index] = solo;
+}
+
+bool AudioBusMixer::bus_soloed(AudioBus bus) const {
+    u32 index = 0;
+    if (!try_bus_index(bus, index) || bus == AudioBus::Master) {
+        return false;
+    }
+    return m_solo[index];
+}
+
+bool AudioBusMixer::any_bus_soloed() const {
+    for (u32 i = 0; i < static_cast<u32>(AudioBus::Count); ++i) {
+        if (static_cast<AudioBus>(i) == AudioBus::Master) {
+            continue;
+        }
+        if (m_solo[i]) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool AudioBusMixer::should_apply_bus_gain(AudioBus bus) const {
     if (!is_valid_audio_bus(bus)) {
         return false;
     }
-    return effective_gain(bus) > kBusMuteEpsilon;
+    if (bus != AudioBus::Master && bus_muted(bus)) {
+        return false;
+    }
+    return is_audible_bus_gain(effective_gain(bus));
+}
+
+bool AudioBusMixer::should_mix_bus(AudioBus bus) const {
+    if (!should_apply_bus_gain(bus)) {
+        return false;
+    }
+    if (!any_bus_soloed()) {
+        return true;
+    }
+    if (bus == AudioBus::Master) {
+        return true;
+    }
+    return bus_soloed(bus);
 }
 
 void AudioBusMixer::reset_gains() {
     for (u32 i = 0; i < static_cast<u32>(AudioBus::Count); ++i) {
         m_gains[i] = 1.f;
+        m_muted[i] = false;
+        m_solo[i] = false;
     }
     m_parents[static_cast<u32>(AudioBus::Master)] = AudioBus::Master;
     m_parents[static_cast<u32>(AudioBus::Sfx)] = AudioBus::Master;
@@ -133,11 +203,22 @@ float compute_effective_output_gain(const AudioBusMixer& mixer, AudioBus bus,
     return mixer.effective_output_gain(bus, listener_master_volume);
 }
 
+float compute_mix_output_gain(const AudioBusMixer& mixer, AudioBus bus,
+                              float listener_master_volume) {
+    if (!mixer.should_mix_bus(bus)) {
+        return 0.f;
+    }
+    return compute_effective_output_gain(mixer, bus, listener_master_volume);
+}
+
 bool is_bus_muted(const AudioBusMixer& mixer, AudioBus bus) {
     if (!is_valid_audio_bus(bus)) {
         return false;
     }
-    return mixer.effective_gain(bus) <= kBusMuteEpsilon;
+    if (mixer.bus_muted(bus)) {
+        return true;
+    }
+    return !is_audible_bus_gain(mixer.effective_gain(bus));
 }
 
 } // namespace fuse::audio
