@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/physics/broadphase/pair_buffer.hpp>
 #include <fuse/physics/broadphase/spatial_hash.hpp>
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
 #include <fuse/physics/narrowphase/contact_buffer.hpp>
@@ -35,6 +36,7 @@ public:
     const RigidBodySoA& bodies() const { return m_bodies; }
     const CollisionShapeSoA& shapes() const { return m_shapes; }
     const std::vector<broadphase::CandidatePair>& candidatePairs() const { return m_candidatePairs; }
+    const broadphase::PairBufferSoA& pairBuffer() const { return m_pairBuffer; }
     const std::vector<narrowphase::ContactManifold>& contacts() const { return m_contacts; }
     const narrowphase::ContactBufferSoA& contactBuffer() const { return m_contactBuffer; }
 
@@ -49,6 +51,7 @@ private:
     RigidBodySoA m_bodies;
     CollisionShapeSoA m_shapes;
     broadphase::SpatialHashParams m_hashParams{};
+    broadphase::PairBufferSoA m_pairBuffer;
     std::vector<broadphase::CandidatePair> m_candidatePairs;
     narrowphase::ContactBufferSoA m_contactBuffer;
     std::vector<narrowphase::ContactManifold> m_contacts;

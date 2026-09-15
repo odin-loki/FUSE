@@ -7,6 +7,7 @@ add_library(fuse_physics STATIC
     src/physics_world_2d.cpp
     src/physics_world_3d.cpp
     src/broadphase/spatial_hash.cpp
+    src/broadphase/pair_buffer.cpp
     src/narrowphase/collision_dispatch.cpp
     src/narrowphase/contact_buffer.cpp
     src/narrowphase/contact_manifold.cpp
@@ -21,6 +22,7 @@ add_library(fuse_physics STATIC
     src/ccd.cpp
     src/ccd/toi_buffer.cpp
     include/fuse/physics/broadphase/spatial_hash.hpp
+    include/fuse/physics/broadphase/pair_buffer.hpp
     include/fuse/physics/config.hpp
     include/fuse/physics/math.hpp
     include/fuse/physics/narrowphase/collision_dispatch.hpp

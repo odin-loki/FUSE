@@ -1,3 +1,4 @@
+#include <fuse/physics/broadphase/pair_buffer.hpp>
 #include <fuse/physics/broadphase/spatial_hash.hpp>
 #include <fuse/physics/physics_data.hpp>
 
@@ -240,6 +241,93 @@ void testBroadphaseParallelParity() {
                "parallel broadphase matches single-thread scheduler output");
 }
 
+void testBroadphaseEmptyScene() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+
+    fuse::physics::broadphase::SpatialHashParams params;
+    params.cellSize = 2.f;
+    params.tableSize = 128;
+
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    fuse::physics::broadphase::runBroadphaseIntoBuffer(bodies, shapes, params, buffer);
+    expectEq(buffer.activeCount, 0u, "empty scene emits zero candidate pairs");
+    expectTrue(buffer.toVector().empty(), "empty scene SoA buffer vector is empty");
+}
+
+void testAabbOverlapStub() {
+    const fuse::physics::aabb boxA = fuse::physics::broadphase::aabbFromSphere({0.f, 0.f, 0.f}, 1.f);
+    const fuse::physics::aabb boxB = fuse::physics::broadphase::aabbFromSphere({1.5f, 0.f, 0.f}, 1.f);
+    const fuse::physics::aabb boxC = fuse::physics::broadphase::aabbFromSphere({3.f, 0.f, 0.f}, 1.f);
+
+    expectTrue(fuse::physics::broadphase::aabbOverlap(boxA, boxB), "touching AABBs overlap");
+    expectTrue(!fuse::physics::broadphase::aabbOverlap(boxA, boxC), "separated AABBs do not overlap");
+    expectTrue(fuse::physics::broadphase::sphereAabbOverlap({0.f, 0.f, 0.f}, 1.f, {1.5f, 0.f, 0.f}, 1.f),
+               "sphere AABB overlap stub matches touching spheres");
+    expectTrue(!fuse::physics::broadphase::sphereAabbOverlap({0.f, 0.f, 0.f}, 1.f, {3.f, 0.f, 0.f}, 1.f),
+               "sphere AABB overlap stub rejects separated spheres");
+}
+
+void testPairBufferSoAClearReuse() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.reserve(8u);
+    buffer.push(0u, 1u);
+    buffer.push(2u, 3u);
+    expectEq(buffer.activeCount, 2u, "pair buffer push increments active count");
+
+    buffer.clear();
+    expectEq(buffer.activeCount, 0u, "pair buffer clear resets active count");
+
+    buffer.push(4u, 5u);
+    expectEq(buffer.activeCount, 1u, "pair buffer reuses storage after clear");
+    expectEq(buffer.toVector().size(), 1u, "pair buffer toVector after reuse");
+}
+
+void testBroadphaseSoABufferParity() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    populateRandomSpheres(128u, bodies, shapes);
+
+    fuse::physics::broadphase::SpatialHashParams params;
+    params.cellSize = 1.f;
+    params.tableSize = 1024;
+    params.bodyCount = bodies.count();
+
+    fuse::physics::broadphase::PairBufferSoA singleThreaded;
+    fuse::physics::broadphase::PairBufferSoA multiThreaded;
+    withScheduler(0u, [&] {
+        fuse::physics::broadphase::runBroadphaseIntoBuffer(bodies, shapes, params, singleThreaded);
+    });
+    withScheduler(4u, [&] {
+        fuse::physics::broadphase::runBroadphaseIntoBuffer(bodies, shapes, params, multiThreaded);
+    });
+
+    expectTrue(pairListsEqual(singleThreaded.toVector(), multiThreaded.toVector()),
+               "SoA buffer parallel broadphase matches single-thread output");
+    expectEq(singleThreaded.activeCount, multiThreaded.activeCount, "SoA buffer pair counts match");
+}
+
+void testBroadphasePairCount() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    bodies.addBody({0.5f, 0.f, 0.f}, 1.f);
+    bodies.addBody({10.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 1, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 2, {1.f, 0.f, 0.f});
+
+    fuse::physics::broadphase::SpatialHashParams params;
+    params.cellSize = 2.f;
+    params.tableSize = 128;
+    params.bodyCount = bodies.count();
+
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    fuse::physics::broadphase::runBroadphaseIntoBuffer(bodies, shapes, params, buffer);
+    expectEq(buffer.activeCount, 1u, "three spheres with one overlap emits one pair");
+}
+
 void testBroadphaseLargeScene() {
     fuse::physics::RigidBodySoA bodies;
     fuse::physics::CollisionShapeSoA shapes;
@@ -270,10 +358,15 @@ void testBroadphaseLargeScene() {
 
 int main() {
     testSpatialHashFunction();
+    testAabbOverlapStub();
+    testPairBufferSoAClearReuse();
+    testBroadphaseEmptyScene();
     testBroadphaseFindsOverlappingPair();
     testBodiesStraddlingCells();
+    testBroadphasePairCount();
     testBroadphaseMatchesBruteForce();
     testBroadphaseParallelParity();
+    testBroadphaseSoABufferParity();
     testBroadphaseLargeScene();
 
     if (g_failures == 0) {
