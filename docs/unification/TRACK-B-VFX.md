@@ -1,6 +1,6 @@
 # Track B — VFX System (B7.7 deepen)
 
-**Status:** B7.7 deepen — SoA free-list emission, jobified CPU simulation landed  
+**Status:** B7.7 deepen — SoA free-list emission, jobified CPU simulation, expanded burst/rate/parallel tests  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.7  
 **Source narrative:** [P7.md](../sources/P7.md) §7.7
 
@@ -23,9 +23,10 @@
 
 ### Emission
 
-- **Burst** — emit `count` particles in one call; clamped to remaining free slots.
-- **Rate** — accumulator driven by `emit_rate` (particles/second) during `simulate`.
-- **Allocation** — `free_slots` provides O(1) slot lookup; expired particles return slots after the simulate pass.
+- **Burst** — emit `count` particles in one call; clamped to remaining free slots. `burst(0)` and pre-`init` bursts are no-ops.
+- **Rate** — accumulator driven by `emit_rate` (particles/second) during `simulate`; accumulator clears when the free list is exhausted at capacity.
+- **Allocation** — `free_slots` provides O(1) slot lookup via `allocate_slot_()`; expired particles return slots after the simulate pass. `free_slot_count()` reports remaining capacity.
+- **Spawn burst** — `ParticleSystem::spawn_effect(..., burst_count)` seeds the backing emitter with an immediate burst (default 1).
 
 ### Simulation
 
@@ -36,7 +37,14 @@
 3. Integrates position
 4. Interpolates size, RGB color, and alpha between start/end descriptor values
 
-When the job scheduler is single-threaded (`workerCount == 0`), `parallel_for` runs the same body serially — tests assert parity between serial and multi-worker paths.
+When the job scheduler is single-threaded (`workerCount == 0`), `parallel_for` runs the same body serially — tests assert parity between serial and multi-worker paths (1, 2, and 4 workers where the pool is available).
+
+Edge cases covered in tests:
+
+- Non-positive `dt` and disabled emitters skip integration without corrupting alive counts.
+- Capacity not aligned to grain size (65 slots vs grain 64) still matches serial integration.
+- All-dead emitters simulate safely with zero live slots.
+- Partial slot recycle across multi-burst emit/expiry cycles.
 
 ### Effect instances
 
@@ -64,11 +72,12 @@ ctest --test-dir build -R fuse_vfx_runtime --output-on-failure
 
 | Test area | Coverage |
 |-----------|----------|
-| Burst | Requested count, capacity clamp, slot recycling |
-| Emit rate | Steady-state particles/sec approximation |
-| Integration | Gravity, drag, size/color/alpha interpolation |
-| Parallel parity | 4-worker vs single-thread simulation match |
-| System | Spawn/update cleanup, emitter handle lifecycle |
+| Burst | Requested count, `burst(0)`, pre-init no-op, capacity clamp, slot recycling |
+| Emit rate | Steady-state particles/sec, burst+rate fill, capacity accumulator reset |
+| Free list | Partial/mixed expiry recycle, multi-burst slot reuse, `free_slot_count()` after burst and simulate |
+| Integration | Gravity, drag, size/color/alpha interpolation, disabled emitter |
+| Parallel parity | 1/2/4-worker vs serial; grain boundary (65 slots); single particle; all-dead |
+| System | Spawn/update cleanup, `spawn_effect` burst_count, emitter handle lifecycle |
 
 ---
 

@@ -73,7 +73,8 @@ void ParticleSystem::destroy_emitter(Handle<ParticleEmitter> handle) {
 }
 
 Handle<EffectInstance> ParticleSystem::spawn_effect(const ParticleEmitterDesc& desc,
-                                                      const math::Vec3& position, f32 duration) {
+                                                      const math::Vec3& position, f32 duration,
+                                                      u32 burst_count) {
     if (!m_initialized || m_activeEffects.size() >= m_desc.max_effect_instances) {
         return Handle<EffectInstance>::invalid();
     }
@@ -90,7 +91,7 @@ Handle<EffectInstance> ParticleSystem::spawn_effect(const ParticleEmitterDesc& d
     }
 
     emitter->set_position(position);
-    emitter->burst(1);
+    emitter->burst(burst_count);
 
     EffectInstance effect{};
     effect.emitter = emitterHandle;
