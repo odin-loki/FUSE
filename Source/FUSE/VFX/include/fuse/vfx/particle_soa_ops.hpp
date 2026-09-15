@@ -21,6 +21,24 @@ void init(ParticleSoA& soa, u32 capacity);
 /// True when at least one live particle is tracked in `soa.count`.
 [[nodiscard]] bool has_live_particles(const ParticleSoA& soa);
 
+/// Count live slots from `alive_flags` without mutating `soa.count`.
+[[nodiscard]] u32 count_live_flags(const ParticleSoA& soa);
+
+/// True when a burst of `count` particles can allocate at least one slot.
+[[nodiscard]] bool can_burst_emit(const ParticleSoA& soa, u32 count);
+
+struct BurstEmitPreflight {
+    u32 requested = 0;
+    u32 allowed = 0;
+    u32 remaining_free = 0;
+    bool at_capacity = false;
+    bool would_clamp = false;
+    bool can_emit = false;
+};
+
+/// Preflight a burst request without mutating the SoA.
+[[nodiscard]] BurstEmitPreflight preflight_burst_emit(const ParticleSoA& soa, u32 requested);
+
 /// Recount live slots from `alive_flags` and write `soa.count`.
 [[nodiscard]] u32 sync_alive_count(ParticleSoA& soa);
 
@@ -56,6 +74,18 @@ struct RateEmitResult {
                                                   const math::Vec3& origin, f32 dt, f32 emit_accum,
                                                   u64 seed);
 
+struct RateEmitPreflight {
+    bool skipped = true;
+    bool at_capacity = false;
+    u32 remaining_free = 0;
+};
+
+/// Preflight rate emission without mutating the SoA or accumulator.
+[[nodiscard]] RateEmitPreflight preflight_rate_emit(const ParticleSoA& soa, const ParticleEmitterDesc& desc, f32 dt);
+
+/// True when rate emission would be a no-op for the current SoA/descriptor/dt.
+[[nodiscard]] bool should_skip_rate_emit(const ParticleSoA& soa, const ParticleEmitterDesc& desc, f32 dt);
+
 struct LifetimeCullResult {
     u32 aged = 0;
     u32 culled = 0;
@@ -67,12 +97,28 @@ struct LifetimeCullResult {
 /// Uses `parallel_for` when the job scheduler has workers; otherwise runs serially.
 [[nodiscard]] LifetimeCullResult lifetime_cull(ParticleSoA& soa, f32 dt, u32 grain_size = 64u);
 
+/// True when lifetime cull would scan no live slots for the current SoA/dt.
+[[nodiscard]] bool should_skip_lifetime_cull(const ParticleSoA& soa, f32 dt);
+
 struct SimStepResult {
     u32 integrated = 0;
     u32 culled = 0;
     u32 alive_after = 0;
+    bool skipped = false;
     std::vector<u32> dead_slots;
 };
+
+struct SimStepPreflight {
+    bool skipped = true;
+    u32 live_input = 0;
+    f32 dt = 0.f;
+};
+
+/// Preflight a simulation step without mutating the SoA.
+[[nodiscard]] SimStepPreflight preflight_simulate_step(const ParticleSoA& soa, f32 dt);
+
+/// True when simulate_step would be a no-op for the current SoA/dt.
+[[nodiscard]] bool should_skip_simulate_step(const ParticleSoA& soa, f32 dt);
 
 /// One simulation step: age/kill, velocity integrate, attribute interpolation over live slots.
 /// Uses `parallel_for` when the job scheduler has workers; otherwise runs serially.
