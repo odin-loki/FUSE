@@ -49,6 +49,7 @@ struct CookJob {
 
 struct CookJobGraphExecuteResult {
     bool ok = false;
+    bool cycle_detected = false;
     std::vector<CookJob> jobs;
     std::vector<CookJobDependencyEdge> edges;
     std::vector<std::string> execution_order;
@@ -67,6 +68,7 @@ public:
 
     [[nodiscard]] const std::vector<CookJob>& jobs() const { return m_jobs; }
     [[nodiscard]] const std::vector<CookJobDependencyEdge>& edges() const { return m_edges; }
+    [[nodiscard]] bool has_cycle() const;
 
     CookJobGraphExecuteResult execute(AssetCooker& cooker);
 

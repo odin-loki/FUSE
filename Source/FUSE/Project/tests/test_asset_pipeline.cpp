@@ -9,6 +9,7 @@
 #include <fuse/project/loader.hpp>
 #include <fuse/project/manifest.hpp>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -142,6 +143,137 @@ void testCookJobGraphFailedStageShortCircuit() {
     expectTrue(result.jobs[0].stages[0].status == fuse::project::CookStageStatus::Failed, "import marked failed");
     expectTrue(result.jobs[0].stages[1].status == fuse::project::CookStageStatus::Skipped, "process short-circuited");
     expectTrue(result.jobs[0].stages[2].status == fuse::project::CookStageStatus::Skipped, "pack short-circuited");
+}
+
+void testCookJobGraphLinearChain() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_chain_a.obj", "# chain a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_chain_b.obj", "# chain b\n");
+    const std::string sourceC = writeTempFile("/tmp/fuse_b79_chain_c.obj", "# chain c\n");
+
+    fuse::project::CookManifest manifest;
+
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_chain_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_chain_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::CookManifestEntry entryC;
+    entryC.kind = fuse::project::CookAssetKind::Mesh;
+    entryC.source_path = sourceC;
+    entryC.output_path = "/tmp/fuse_b79_chain_c.fusemesh";
+    entryC.dependencies.push_back(entryB.output_path);
+    manifest.assets.push_back(entryC);
+
+    fuse::project::CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+    expectTrue(graph.edges().size() == 2u, "linear chain has two edges");
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker);
+
+    expectTrue(result.ok, "linear chain executes successfully");
+    expectTrue(result.execution_order.size() == 3u, "three jobs ordered");
+    expectTrue(result.execution_order[0] == entryA.output_path, "chain head runs first");
+    expectTrue(result.execution_order[1] == entryB.output_path, "chain middle runs second");
+    expectTrue(result.execution_order[2] == entryC.output_path, "chain tail runs last");
+}
+
+void testCookJobGraphDiamondDag() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_diamond_a.obj", "# diamond a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_diamond_b.obj", "# diamond b\n");
+    const std::string sourceC = writeTempFile("/tmp/fuse_b79_diamond_c.obj", "# diamond c\n");
+    const std::string sourceD = writeTempFile("/tmp/fuse_b79_diamond_d.obj", "# diamond d\n");
+
+    fuse::project::CookManifest manifest;
+
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_diamond_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_diamond_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::CookManifestEntry entryC;
+    entryC.kind = fuse::project::CookAssetKind::Mesh;
+    entryC.source_path = sourceC;
+    entryC.output_path = "/tmp/fuse_b79_diamond_c.fusemesh";
+    entryC.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryC);
+
+    fuse::project::CookManifestEntry entryD;
+    entryD.kind = fuse::project::CookAssetKind::Mesh;
+    entryD.source_path = sourceD;
+    entryD.output_path = "/tmp/fuse_b79_diamond_d.fusemesh";
+    entryD.dependencies.push_back(entryB.output_path);
+    entryD.dependencies.push_back(entryC.output_path);
+    manifest.assets.push_back(entryD);
+
+    fuse::project::CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+    expectTrue(graph.edges().size() >= 3u, "diamond DAG records dependency edges");
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker);
+
+    expectTrue(result.ok, "diamond DAG executes successfully");
+    expectTrue(result.execution_order.size() == 4u, "four jobs ordered");
+    expectTrue(result.execution_order[0] == entryA.output_path, "diamond root runs first");
+    expectTrue(result.execution_order[3] == entryD.output_path, "diamond merge runs last");
+
+    const auto posB = std::find(result.execution_order.begin(), result.execution_order.end(), entryB.output_path);
+    const auto posC = std::find(result.execution_order.begin(), result.execution_order.end(), entryC.output_path);
+    const auto posD = std::find(result.execution_order.begin(), result.execution_order.end(), entryD.output_path);
+    expectTrue(posB != result.execution_order.end(), "diamond branch B scheduled");
+    expectTrue(posC != result.execution_order.end(), "diamond branch C scheduled");
+    expectTrue(posD != result.execution_order.end(), "diamond merge scheduled");
+    expectTrue(posB < posD, "branch B completes before merge");
+    expectTrue(posC < posD, "branch C completes before merge");
+}
+
+void testCookJobGraphCycleReject() {
+    fuse::project::CookManifest manifest;
+
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = "/tmp/fuse_b79_cycle_a.obj";
+    entryA.output_path = "/tmp/fuse_b79_cycle_a.fusemesh";
+    entryA.dependencies.push_back("/tmp/fuse_b79_cycle_b.fusemesh");
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = "/tmp/fuse_b79_cycle_b.obj";
+    entryB.output_path = "/tmp/fuse_b79_cycle_b.fusemesh";
+    entryB.dependencies.push_back("/tmp/fuse_b79_cycle_a.fusemesh");
+    manifest.assets.push_back(entryB);
+
+    fuse::project::CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    expectTrue(graph.has_cycle(), "cycle detected in graph");
+    expectTrue(graph.edges().size() >= 2u, "cycle edges recorded");
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker);
+
+    expectTrue(!result.ok, "cycle rejects graph execute");
+    expectTrue(result.cycle_detected, "cycle flag set");
+    expectTrue(result.execution_order.empty(), "no execution order for cyclic graph");
+    expectTrue(result.failure_note.find("cycle") != std::string::npos, "failure note mentions cycle");
 }
 
 void testCookJobGraphDependencyEdgesAndOrder() {
@@ -358,6 +490,48 @@ void testCookCacheRoundTrip() {
     expectTrue(loaded.entry_count() == 1u, "one cache entry round-tripped");
 }
 
+void testCookCacheUpstreamInvalidation() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_upinv_a.obj", "# upstream a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_upinv_b.obj", "# downstream b\n");
+
+    fuse::project::CookManifest manifest;
+
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_upinv_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_upinv_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookBatchResult batch = cooker.cook_manifest(manifest);
+    expectTrue(batch.ok, "manifest cook seeds cache");
+    expectTrue(cooker.cache().entry_count() == 2u, "upstream and downstream cached");
+
+    const fuse::u64 downstream_hash = batch.records[1].content_hash;
+    expectTrue(cooker.cache().lookup(downstream_hash) == fuse::project::CookCacheLookup::Hit,
+               "downstream entry cached before upstream change");
+
+    writeTempFile(sourceA, "# upstream a revised\n");
+    const fuse::u32 removed = cooker.invalidate_upstream_dependency(manifest, sourceA);
+    expectTrue(removed >= 2u, "upstream change invalidates downstream dependents");
+    expectTrue(cooker.cache().lookup(downstream_hash) == fuse::project::CookCacheLookup::Miss,
+               "downstream cache misses after upstream invalidation");
+
+    fuse::project::MeshImportDesc descB;
+    descB.input_path = sourceB;
+    descB.output_path = entryB.output_path;
+    const fuse::project::CookRecord remiss = cooker.cook_mesh(descB);
+    expectTrue(remiss.ok, "downstream re-cook ok");
+    expectTrue(!remiss.cache_hit, "downstream re-cook is cache miss");
+}
+
 void testCookDirtyInvalidatesCache() {
     const std::string source = writeTempFile("/tmp/fuse_b79_dirty_mesh.obj", "# dirty mesh\n");
 
@@ -395,6 +569,9 @@ int main() {
     testAssetCookerStub();
     testCookJobGraphStageOrdering();
     testCookJobGraphFailedStageShortCircuit();
+    testCookJobGraphLinearChain();
+    testCookJobGraphDiamondDag();
+    testCookJobGraphCycleReject();
     testCookJobGraphDependencyEdgesAndOrder();
     testCookJobGraphDependencyShortCircuit();
     testCookManifestUsesJobGraph();
@@ -404,6 +581,7 @@ int main() {
     testContentHashDescSensitivity();
     testCookCacheHitMiss();
     testCookCacheInvalidation();
+    testCookCacheUpstreamInvalidation();
     testCookCacheRoundTrip();
     testCookDirtyInvalidatesCache();
 
