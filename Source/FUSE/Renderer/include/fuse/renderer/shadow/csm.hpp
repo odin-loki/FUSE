@@ -140,12 +140,37 @@ struct CascadedShadowMapLayout {
     static bool validateCascadeSplits(const CascadedShadowMapDesc& desc);
     /// True when every split lies in [0, 1] and `validateCascadeSplits` passes.
     static bool validateClampedCascadeSplits(const CascadedShadowMapDesc& desc);
+    /// Clamp one split to [0, 1] and enforce it is not less than `previousSplit`.
+    static f32 sanitizeCascadeSplitValue(f32 split, f32 previousSplit);
+    /// In-place monotonic repair for the first `cascadeCount` entries (clamps each to >= predecessor).
+    static void enforceCascadeSplitMonotonicity(f32 splits[], u32 cascadeCount);
+    /// Pin the last active split entry to 1.0 (far-plane fraction).
+    static void pinLastCascadeSplitToFar(f32 splits[], u32 cascadeCount);
     /// Clamp each split to [0, 1], enforce monotonicity, and pin the last slot to 1.0.
     static void sanitizeCascadeSplits(CascadedShadowMapDesc& desc);
     static bool validateCascadeRanges(const CascadedShadowMapDesc& desc, const ShadowCameraParams& camera);
     static CascadeFrustumCorners buildCascadeFrustumCorners(u32 cascadeIndex,
                                                             const CascadedShadowMapDesc& desc,
                                                             const ShadowCameraParams& camera);
+};
+
+/// Why a cascade shadow-matrix build was skipped (CPU stub diagnostics).
+enum class CascadeShadowSkipReason : u8 {
+    None = 0,
+    EmptyLight,
+    EmptyCamera,
+    EmptyFrustum,
+    DegenerateRange,
+};
+
+/// Per-reason skipped-cascade counters for one update pass.
+struct CascadeShadowSkipCounters {
+    u32 emptyLight = 0u;
+    u32 emptyCamera = 0u;
+    u32 emptyFrustum = 0u;
+    u32 degenerateRange = 0u;
+
+    u32 totalSkipped() const { return emptyLight + emptyCamera + emptyFrustum + degenerateRange; }
 };
 
 /// Orthographic projection extents in light view space.
@@ -190,10 +215,17 @@ struct CascadeLightSpaceLayout {
     static bool isDegenerateCascadeRange(const CascadeRange& range, const ShadowCameraParams& camera);
     static bool isDegenerateLightDirection(const fuse::math::Vec3& lightDirection);
     static bool isEmptyLightDirection(const fuse::math::Vec3& lightDirection);
+    /// True when every active cascade should be skipped (empty light or inverted camera depth).
+    static bool shouldSkipAllCascadeShadowBuilds(const ShadowCameraParams& camera,
+                                                 const fuse::math::Vec3& lightDirection);
     static bool shouldSkipCascadeShadowBuild(u32 cascadeIndex,
                                              const CascadedShadowMapDesc& desc,
                                              const ShadowCameraParams& camera,
                                              const fuse::math::Vec3& lightDirection);
+    static CascadeShadowSkipReason classifyCascadeShadowSkipReason(u32 cascadeIndex,
+                                                                   const CascadedShadowMapDesc& desc,
+                                                                   const ShadowCameraParams& camera,
+                                                                   const fuse::math::Vec3& lightDirection);
     static u32 countValidCascadeMatrixSlots(const CascadedShadowMapDesc& desc,
                                             const ShadowCameraParams& camera,
                                             const fuse::math::Vec3& lightDirection,
@@ -202,6 +234,10 @@ struct CascadeLightSpaceLayout {
                                                const ShadowCameraParams& camera,
                                                const fuse::math::Vec3& lightDirection,
                                                u32 cascadeCount);
+    static CascadeShadowSkipCounters countCascadeShadowSkipReasons(const CascadedShadowMapDesc& desc,
+                                                                   const ShadowCameraParams& camera,
+                                                                   const fuse::math::Vec3& lightDirection,
+                                                                   u32 cascadeCount);
     static bool validateOrthoBounds(const CascadeOrthoBounds& bounds);
     static fuse::math::Mat4 buildLightView(const fuse::math::Vec3& focus, const fuse::math::Vec3& lightDirection);
     static bool isEmptyLightSpaceAabb(const fuse::math::AABB& aabb);

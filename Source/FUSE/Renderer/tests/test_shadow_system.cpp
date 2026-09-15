@@ -922,6 +922,30 @@ void testEmptyLightDirectionDirectionalShadowUpdate() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testSanitizeCascadeSplitHelpers() {
+    using fuse::renderer::CascadedShadowMapLayout;
+
+    expectNear(CascadedShadowMapLayout::sanitizeCascadeSplitValue(-0.25f, 0.f), 0.f, 0.001f,
+               "sanitize split clamps negative to zero");
+    expectNear(CascadedShadowMapLayout::sanitizeCascadeSplitValue(1.5f, 0.f), 1.f, 0.001f,
+               "sanitize split clamps oversized to one");
+    expectNear(CascadedShadowMapLayout::sanitizeCascadeSplitValue(0.2f, 0.5f), 0.5f, 0.001f,
+               "sanitize split enforces monotonic floor");
+
+    fuse::f32 splits[fuse::renderer::kMaxCascadeCount]{-0.1f, 0.4f, 0.2f, 0.9f};
+    CascadedShadowMapLayout::enforceCascadeSplitMonotonicity(splits, 4u);
+    expectTrue(splits[0] <= splits[1] && splits[1] <= splits[2] && splits[2] <= splits[3],
+               "enforce monotonicity repairs out-of-order splits");
+    expectNear(splits[2], 0.4f, 0.001f, "monotonic repair raises trailing split to predecessor");
+
+    splits[3] = 0.75f;
+    CascadedShadowMapLayout::pinLastCascadeSplitToFar(splits, 4u);
+    expectNear(splits[3], 1.f, 0.001f, "pin last split forces far-plane fraction");
+
+    CascadedShadowMapLayout::pinLastCascadeSplitToFar(splits, 2u);
+    expectNear(splits[1], 1.f, 0.001f, "pin last split respects active cascade count");
+}
+
 void testSanitizeCascadeSplits() {
     using fuse::renderer::CascadedShadowMapDesc;
     using fuse::renderer::CascadedShadowMapLayout;
@@ -979,6 +1003,67 @@ void testPopulateCascadeSplitsClamped() {
     expectNear(desc.cascadeSplits[0], 1.f, 0.001f, "single clamped cascade reaches far plane");
 }
 
+void testShouldSkipAllCascadeShadowBuilds() {
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+
+    ShadowCameraParams camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+
+    const fuse::math::Vec3 sunDirection{0.f, -1.f, 0.f};
+    expectTrue(!CascadeLightSpaceLayout::shouldSkipAllCascadeShadowBuilds(camera, sunDirection),
+               "valid camera and light do not skip all cascades");
+    expectTrue(CascadeLightSpaceLayout::shouldSkipAllCascadeShadowBuilds(camera, {0.f, 0.f, 0.f}),
+               "empty light direction skips all cascades");
+
+    ShadowCameraParams invertedCamera = camera;
+    invertedCamera.nearPlane = 80.f;
+    invertedCamera.farPlane = 5.f;
+    expectTrue(CascadedShadowMapLayout::isEmptyCameraDepthRange(invertedCamera),
+               "inverted camera flagged as empty depth range");
+    expectTrue(CascadeLightSpaceLayout::shouldSkipAllCascadeShadowBuilds(invertedCamera, sunDirection),
+               "empty camera depth range skips all cascades");
+}
+
+void testClassifyCascadeShadowSkipReason() {
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadeShadowSkipReason;
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::ShadowCameraParams;
+
+    CascadedShadowMapDesc desc{};
+    ShadowCameraParams camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+
+    const fuse::math::Vec3 sunDirection{0.f, -1.f, 0.f};
+    expectTrue(CascadeLightSpaceLayout::classifyCascadeShadowSkipReason(0u, desc, camera, sunDirection) ==
+                   CascadeShadowSkipReason::None,
+               "default cascade is not skipped");
+
+    expectTrue(CascadeLightSpaceLayout::classifyCascadeShadowSkipReason(0u, desc, camera, {0.f, 0.f, 0.f}) ==
+                   CascadeShadowSkipReason::EmptyLight,
+               "empty light classified before per-cascade checks");
+
+    ShadowCameraParams invertedCamera = camera;
+    invertedCamera.nearPlane = 50.f;
+    invertedCamera.farPlane = 10.f;
+    expectTrue(CascadeLightSpaceLayout::classifyCascadeShadowSkipReason(1u, desc, invertedCamera, sunDirection) ==
+                   CascadeShadowSkipReason::EmptyCamera,
+               "empty camera classified before per-cascade checks");
+
+    CascadedShadowMapDesc flatDesc{};
+    flatDesc.cascadeSplits[0] = 0.5f;
+    flatDesc.cascadeSplits[1] = 0.5f;
+    flatDesc.cascadeSplits[2] = 1.f;
+    flatDesc.cascadeSplits[3] = 1.f;
+    expectTrue(CascadeLightSpaceLayout::classifyCascadeShadowSkipReason(1u, flatDesc, camera, sunDirection) ==
+                   CascadeShadowSkipReason::EmptyFrustum,
+               "zero-thickness cascade classified as empty frustum");
+}
+
 void testCountSkippedCascadeShadowBuilds() {
     using fuse::renderer::CascadeLightSpaceLayout;
     using fuse::renderer::CascadedShadowMapDesc;
@@ -1008,6 +1093,48 @@ void testCountSkippedCascadeShadowBuilds() {
                        CascadeLightSpaceLayout::countSkippedCascadeShadowBuilds(flatDesc, camera, sunDirection, 4u) ==
                    4u,
                "skipped + valid cascade counts sum to active count");
+}
+
+void testCountCascadeShadowSkipReasons() {
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::ShadowCameraParams;
+
+    CascadedShadowMapDesc desc{};
+    ShadowCameraParams camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+
+    const fuse::math::Vec3 sunDirection{0.f, -1.f, 0.f};
+    const auto defaultCounters =
+        CascadeLightSpaceLayout::countCascadeShadowSkipReasons(desc, camera, sunDirection, 4u);
+    expectTrue(defaultCounters.totalSkipped() == 0u, "default cascades have zero skip reasons");
+
+    const auto emptyLightCounters =
+        CascadeLightSpaceLayout::countCascadeShadowSkipReasons(desc, camera, {0.f, 0.f, 0.f}, 4u);
+    expectTrue(emptyLightCounters.emptyLight == 4u, "empty light buckets all active cascades");
+    expectTrue(emptyLightCounters.emptyCamera == 0u && emptyLightCounters.emptyFrustum == 0u,
+               "empty light does not mix other skip buckets");
+
+    ShadowCameraParams invertedCamera = camera;
+    invertedCamera.nearPlane = 60.f;
+    invertedCamera.farPlane = 5.f;
+    const auto emptyCameraCounters =
+        CascadeLightSpaceLayout::countCascadeShadowSkipReasons(desc, invertedCamera, sunDirection, 3u);
+    expectTrue(emptyCameraCounters.emptyCamera == 3u, "empty camera buckets active cascade count");
+    expectTrue(emptyCameraCounters.totalSkipped() == 3u, "empty camera total matches active count");
+
+    CascadedShadowMapDesc flatDesc{};
+    flatDesc.cascadeSplits[0] = 0.5f;
+    flatDesc.cascadeSplits[1] = 0.5f;
+    flatDesc.cascadeSplits[2] = 1.f;
+    flatDesc.cascadeSplits[3] = 1.f;
+    const auto flatCounters =
+        CascadeLightSpaceLayout::countCascadeShadowSkipReasons(flatDesc, camera, sunDirection, 4u);
+    expectTrue(flatCounters.emptyFrustum == 2u, "zero-thickness cascades bucketed as empty frustum");
+    expectTrue(flatCounters.totalSkipped() ==
+                   CascadeLightSpaceLayout::countSkippedCascadeShadowBuilds(flatDesc, camera, sunDirection, 4u),
+               "per-reason counters sum to aggregate skipped count");
 }
 
 void testIsCascadeSlotPopulated() {
@@ -1186,10 +1313,14 @@ int main() {
     testPopulateCascadeShadowData();
     testClearCascadeShadowDataSlots();
     testEmptyLightDirectionDirectionalShadowUpdate();
+    testSanitizeCascadeSplitHelpers();
     testSanitizeCascadeSplits();
     testClampedCascadeFarZ();
     testPopulateCascadeSplitsClamped();
+    testShouldSkipAllCascadeShadowBuilds();
+    testClassifyCascadeShadowSkipReason();
     testCountSkippedCascadeShadowBuilds();
+    testCountCascadeShadowSkipReasons();
     testIsCascadeSlotPopulated();
     testDirectionalShadowEmptyCameraGuard();
     testShadowAtlasLayout();
