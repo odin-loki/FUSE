@@ -153,8 +153,9 @@ void testChromeTraceExport() {
     const std::string json = fuse::profiler::exportChromeTraceJson();
     expectTrue(json.find("\"displayTimeUnit\":\"ns\"") != std::string::npos,
                "chrome trace declares displayTimeUnit");
-    expectTrue(json.find("\"metadata\":{\"name\":\"FUSE CPU profiler\"}") != std::string::npos,
+    expectTrue(json.find("\"metadata\":{\"name\":\"FUSE CPU profiler\"") != std::string::npos,
                "chrome trace includes metadata block");
+    expectTrue(json.find("\"frame\":") != std::string::npos, "chrome trace exports frame metadata");
     expectTrue(json.find("\"traceEvents\":[") != std::string::npos, "chrome trace has traceEvents root");
     expectTrue(json.find("\"name\":\"chrome_scope\"") != std::string::npos, "chrome trace includes scope name");
     expectTrue(json.find("\"name\":\"chrome_child\"") != std::string::npos, "chrome trace includes nested scope");
@@ -315,6 +316,83 @@ void testChromeTraceNestingDepthExport() {
     expectTrue(fuse::profiler::maxNestingDepth() == 2u, "nesting depth tracks two-level stack");
 }
 
+void testChromeTraceEmptyExport() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::eventCount() == 0u, "reset leaves profiler buffer empty");
+    const std::string json = fuse::profiler::exportChromeTraceJson();
+    expectTrue(json.find("\"displayTimeUnit\":\"ns\"") != std::string::npos,
+               "empty export declares displayTimeUnit");
+    expectTrue(json.find("\"metadata\":{\"name\":\"FUSE CPU profiler\",\"frame\":0}") != std::string::npos,
+               "empty export includes frame metadata");
+    expectTrue(json.find("\"traceEvents\":[]") != std::string::npos,
+               "empty export emits zero trace events");
+    expectTrue(json.back() == '}', "empty export json is closed");
+}
+
+void testNestedAsyncFlowWithinScope() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    {
+        FUSE_PROFILE_SCOPE("flow_outer");
+        {
+            FUSE_PROFILE_SCOPE("flow_inner");
+            FUSE_PROFILE_ASYNC_FLOW_BEGIN("nested_io", flowId);
+            FUSE_PROFILE_COUNTER("nested_budget", 12);
+            FUSE_PROFILE_ASYNC_FLOW_END("nested_io", flowId);
+        }
+    }
+
+    expectTrue(fuse::profiler::eventCount() == 7u,
+               "nested flow inside scopes emits scope + flow + counter events");
+
+    const fuse::profiler::ProfileEvent& flowStart = fuse::profiler::eventAt(2);
+    const fuse::profiler::ProfileEvent& counter = fuse::profiler::eventAt(3);
+    const fuse::profiler::ProfileEvent& flowFinish = fuse::profiler::eventAt(4);
+    expectTrue(flowStart.phase == fuse::profiler::EventPhase::FlowStart, "nested flow start recorded");
+    expectTrue(flowFinish.phase == fuse::profiler::EventPhase::FlowFinish, "nested flow finish recorded");
+    expectTrue(flowStart.nestingDepth == 2u, "flow start inherits inner scope depth");
+    expectTrue(flowFinish.nestingDepth == 2u, "flow finish inherits inner scope depth");
+    expectTrue(counter.nestingDepth == 2u, "counter sample inherits inner scope depth");
+
+    const std::string json = fuse::profiler::exportChromeTraceJson();
+    expectTrue(json.find("\"name\":\"nested_io\"") != std::string::npos,
+               "nested flow export keeps flow name");
+    expectTrue(json.find("\"args\":{\"depth\":2}") != std::string::npos,
+               "nested flow export includes inner scope depth");
+    expectTrue(json.find("\"args\":{\"value\":12,\"depth\":2}") != std::string::npos,
+               "nested counter export includes scope depth");
+}
+
+void testDisabledProfilerSkipsAsyncFlowAndCounter() {
+    resetState();
+    fuse::profiler::setEnabled(false);
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("ignored_flow", flowId);
+    FUSE_PROFILE_COUNTER("ignored_counter", 99);
+    FUSE_PROFILE_ASYNC_FLOW_END("ignored_flow", flowId);
+
+    expectTrue(fuse::profiler::eventCount() == 0u,
+               "disabled profiler skips async flow and counter samples");
+    expectTrue(fuse::profiler::exportChromeTraceJson().find("\"traceEvents\":[]") != std::string::npos,
+               "disabled profiler export stays empty");
+}
+
+void testChromeTraceEscapedNameExport() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    FUSE_PROFILE_COUNTER("track\"quoted\\path", 1);
+
+    const std::string json = fuse::profiler::exportChromeTraceJson();
+    expectTrue(json.find("\"name\":\"track\\\"quoted\\\\path\"") != std::string::npos,
+               "chrome export escapes quotes and backslashes in counter track names");
+}
+
 void testChromeTraceExportMixedEvents() {
     resetState();
     fuse::platform::registerMainThread();
@@ -400,6 +478,10 @@ int main() {
     testFloatCounterSamples();
     testAsyncFlowMatchingIdsInExport();
     testChromeTraceNestingDepthExport();
+    testChromeTraceEmptyExport();
+    testNestedAsyncFlowWithinScope();
+    testDisabledProfilerSkipsAsyncFlowAndCounter();
+    testChromeTraceEscapedNameExport();
     testChromeTraceExportMixedEvents();
     testFatalHandlerHook();
     testVerifyMacro();
