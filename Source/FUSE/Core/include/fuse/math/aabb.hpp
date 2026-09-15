@@ -62,15 +62,20 @@ struct AABB {
                 {std::max(max.x, other.max.x), std::max(max.y, other.max.y), std::max(max.z, other.max.z)}};
     }
 
-    /// Slab ray intersection. Returns -1 when there is no hit.
-    f32 rayIntersect(const Vec3& origin, const Vec3& direction) const {
+    /// Slab ray interval. Returns false on miss; writes parametric entry/exit into `[tEnter, tExit]`.
+    bool rayInterval(const Vec3& origin, const Vec3& direction, f32& tEnter, f32& tExit) const {
         if (isEmpty()) {
-            return -1.f;
+            return false;
         }
 
         const f32 dirLenSq = direction.dot(direction);
         if (dirLenSq < 1e-16f) {
-            return contains(origin) ? 0.f : -1.f;
+            if (!contains(origin)) {
+                return false;
+            }
+            tEnter = 0.f;
+            tExit = 0.f;
+            return true;
         }
 
         f32 tmin = 0.f;
@@ -89,7 +94,7 @@ struct AABB {
 
             if (std::abs(dir) < 1e-8f) {
                 if (origin_axis < min_axis || origin_axis > max_axis) {
-                    return -1.f;
+                    return false;
                 }
                 continue;
             }
@@ -103,14 +108,27 @@ struct AABB {
             tmin = std::max(tmin, t1);
             tmax = std::min(tmax, t2);
             if (tmax < tmin) {
-                return -1.f;
+                return false;
             }
         }
 
         if (tmax < 0.f) {
+            return false;
+        }
+
+        tEnter = tmin >= 0.f ? tmin : tmax;
+        tExit = tmax;
+        return true;
+    }
+
+    /// Slab ray intersection. Returns -1 when there is no hit.
+    f32 rayIntersect(const Vec3& origin, const Vec3& direction) const {
+        f32 tEnter = -1.f;
+        f32 tExit = -1.f;
+        if (!rayInterval(origin, direction, tEnter, tExit)) {
             return -1.f;
         }
-        return tmin >= 0.f ? tmin : tmax;
+        return tEnter;
     }
 };
 

@@ -290,4 +290,29 @@ inline u32 clipPolygonAgainstPlane(const Vec4& plane, const Vec3* input, u32 inp
     return fuse::math::clipPolygonAgainstPlane(plane, input, inputCount, output, maxOutput, epsilon);
 }
 
+inline bool isAffine(const fuse::math::Mat4& matrix, f32 epsilon = 1e-5f) {
+    return fuse::math::isAffine(matrix, epsilon);
+}
+
+inline f32 uniformScaleUpper3x3(const fuse::math::Mat4& matrix, f32 epsilon = 1e-4f) {
+    return fuse::math::uniformScaleUpper3x3(matrix, epsilon);
+}
+
+inline bool tryInverseRigid(const fuse::math::Mat4& matrix, fuse::math::Mat4& out, f32 epsilon = 1e-4f) {
+    return fuse::math::tryInverseRigid(matrix, out, epsilon);
+}
+
+inline bool tryNormalizePlane(Vec4& plane, f32 epsilon = 1e-8f) {
+    return fuse::math::tryNormalizePlane(plane, epsilon);
+}
+
+inline Vec4 makePlaneFromNormalAndPoint(const Vec3& normal, const Vec3& point) {
+    return fuse::math::makePlaneFromNormalAndPoint(normal, point);
+}
+
+inline bool rayIntervalAabb(const AABB& box, const Vec3& origin, const Vec3& direction, f32& tEnter,
+                            f32& tExit) {
+    return box.rayInterval(origin, direction, tEnter, tExit);
+}
+
 } // namespace fuse::math::simd

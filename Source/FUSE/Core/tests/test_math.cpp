@@ -120,6 +120,25 @@ void testMat4MultiplyEdgeCases() {
     expectVec3Near(chained, staged, 1e-4f, "Mat4 chained multiply matches staged transforms");
 }
 
+void testMat4AffineGuards() {
+    const fuse::math::Mat4 rigid =
+        fuse::math::fromTRS({1.f, 2.f, 3.f}, fuse::math::fromAxisAngle({0.f, 1.f, 0.f}, 0.4f), {1.f, 1.f, 1.f});
+    expectTrue(fuse::math::isAffine(rigid), "Mat4 TRS matrix is affine");
+
+    const fuse::math::Mat4 perspective = fuse::math::perspective(60.f, 16.f / 9.f, 0.1f, 100.f);
+    expectTrue(!fuse::math::isAffine(perspective), "Mat4 perspective matrix is not affine");
+
+    const fuse::math::Mat4 uniformScale =
+        fuse::math::fromTRS({0.f, 0.f, 0.f}, fuse::math::Quat::identity(), {2.5f, 2.5f, 2.5f});
+    expectNear(fuse::math::uniformScaleUpper3x3(uniformScale), 2.5f, 1e-4f,
+               "Mat4 uniformScaleUpper3x3 extracts column length");
+
+    const fuse::math::Mat4 nonUniformScale =
+        fuse::math::fromTRS({0.f, 0.f, 0.f}, fuse::math::Quat::identity(), {2.f, 3.f, 4.f});
+    expectNear(fuse::math::uniformScaleUpper3x3(nonUniformScale), 0.f, 1e-5f,
+               "Mat4 uniformScaleUpper3x3 rejects non-uniform scale");
+}
+
 void testMat4RigidGuards() {
     const fuse::math::Mat4 rotation =
         fuse::math::fromTRS({0.f, 0.f, 0.f}, fuse::math::fromAxisAngle({0.f, 1.f, 0.f}, 0.6f), {1.f, 1.f, 1.f});
@@ -146,6 +165,37 @@ void testMat4RigidGuards() {
                "tryInverseAffine rejects uniform scale");
     expectTrue(!fuse::math::tryInverseAffine(nonUniformScale, inverse),
                "tryInverseAffine rejects non-uniform scale");
+}
+
+void testMat4TryInverseRigid() {
+    const fuse::math::Mat4 uniformScale =
+        fuse::math::fromTRS({4.f, 0.f, 0.f}, fuse::math::Quat::identity(), {2.f, 2.f, 2.f});
+    fuse::math::Mat4 inverse{};
+    expectTrue(fuse::math::tryInverseRigid(uniformScale, inverse), "tryInverseRigid accepts uniform scale");
+    expectTrue(fuse::math::isAffine(inverse), "tryInverseRigid output is affine");
+
+    const fuse::math::Vec3 probe{1.f, 2.f, 3.f};
+    expectVec3Near(fuse::math::transformPoint(inverse * uniformScale, probe), probe, 1e-4f,
+                   "tryInverseRigid left product round-trips points");
+    expectVec3Near(fuse::math::transformPoint(uniformScale * inverse, probe), probe, 1e-4f,
+                   "tryInverseRigid right product round-trips points");
+
+    const fuse::math::Mat4 rotation =
+        fuse::math::fromTRS({0.f, 0.f, 0.f}, fuse::math::fromAxisAngle({0.f, 0.f, 1.f}, 0.8f), {1.f, 1.f, 1.f});
+    fuse::math::Mat4 rotationInverse{};
+    expectTrue(fuse::math::tryInverseRigid(rotation, rotationInverse),
+               "tryInverseRigid accepts pure rotation");
+    expectMat4Near(rotationInverse, fuse::math::inverseAffine(rotation), 1e-4f,
+                   "tryInverseRigid matches inverseAffine for rotation");
+
+    const fuse::math::Mat4 nonUniformScale =
+        fuse::math::fromTRS({0.f, 0.f, 0.f}, fuse::math::Quat::identity(), {2.f, 3.f, 4.f});
+    expectTrue(!fuse::math::tryInverseRigid(nonUniformScale, inverse),
+               "tryInverseRigid rejects non-uniform scale");
+
+    const fuse::math::Mat4 perspective = fuse::math::perspective(45.f, 1.f, 0.1f, 10.f);
+    expectTrue(!fuse::math::tryInverseRigid(perspective, inverse),
+               "tryInverseRigid rejects perspective matrix");
 }
 
 void testMat4InverseEdgeCases() {
@@ -213,6 +263,38 @@ void testAabbOverlap() {
     const fuse::math::AABB merged = a.merge(c);
     expectVec3Near(merged.min, {-1.f, -1.f, -1.f}, 1e-5f, "AABB merge min");
     expectVec3Near(merged.max, {4.f, 4.f, 4.f}, 1e-5f, "AABB merge max");
+}
+
+void testAabbRayIntervalEdgeCases() {
+    const fuse::math::AABB box{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
+
+    f32 tEnter = 0.f;
+    f32 tExit = 0.f;
+    expectTrue(box.rayInterval({-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, tEnter, tExit),
+               "AABB rayInterval reports hit along +X");
+    expectNear(tEnter, 2.f, 1e-4f, "AABB rayInterval entry along +X");
+    expectNear(tExit, 4.f, 1e-4f, "AABB rayInterval exit along +X");
+
+    expectTrue(!box.rayInterval({-3.f, 2.f, 0.f}, {1.f, 0.f, 0.f}, tEnter, tExit),
+               "AABB rayInterval rejects separated ray");
+
+    expectTrue(box.rayInterval({-3.f, 1.f, 0.f}, {1.f, 0.f, 0.f}, tEnter, tExit),
+               "AABB rayInterval grazes top face inside slab");
+    expectNear(tEnter, 2.f, 1e-4f, "AABB grazing ray enters at near X face");
+
+    expectTrue(!box.rayInterval({5.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, tEnter, tExit),
+               "AABB rayInterval rejects ray entirely behind box");
+
+    expectTrue(box.rayInterval({1.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, tEnter, tExit),
+               "AABB rayInterval accepts origin on max face");
+    expectNear(tEnter, 0.f, 1e-5f, "AABB surface origin returns zero entry");
+
+    const f32 scaledHit = box.rayIntersect({-3.f, 0.f, 0.f}, {2.f, 0.f, 0.f});
+    expectNear(scaledHit, 1.f, 1e-4f, "AABB rayIntersect uses parametric distance for non-unit direction");
+
+    const fuse::math::AABB empty{{2.f, 2.f, 2.f}, {1.f, 1.f, 1.f}};
+    expectTrue(!empty.rayInterval({0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, tEnter, tExit),
+               "AABB rayInterval rejects empty box");
 }
 
 void testAabbRayIntersect() {
@@ -392,6 +474,28 @@ void testSimdAabbStubs() {
     expectNear(miss, -1.f, 1e-5f, "simd rayIntersectAabb misses separated ray");
 }
 
+void testPlaneNormalize() {
+    fuse::math::Vec4 unnormalized{0.f, 2.f, 0.f, -4.f};
+    expectTrue(fuse::math::tryNormalizePlane(unnormalized), "tryNormalizePlane succeeds for Y-up plane");
+    expectNear(unnormalized.y, 1.f, 1e-5f, "tryNormalizePlane unitizes normal");
+    expectNear(unnormalized.w, -2.f, 1e-5f, "tryNormalizePlane scales offset");
+
+    fuse::math::Vec4 degenerate{0.f, 0.f, 0.f, 5.f};
+    expectTrue(!fuse::math::tryNormalizePlane(degenerate), "tryNormalizePlane rejects zero normal");
+
+    const fuse::math::Vec4 built =
+        fuse::math::makePlaneFromNormalAndPoint({0.f, 3.f, 0.f}, {0.f, 2.f, 0.f});
+    expectNear(built.y, 1.f, 1e-5f, "makePlaneFromNormalAndPoint normalizes Y");
+    expectNear(built.w, -2.f, 1e-5f, "makePlaneFromNormalAndPoint preserves point distance");
+    expectTrue(fuse::math::classifyPoint(built, {0.f, 3.f, 0.f}) == fuse::math::PlaneSide::InFront,
+               "makePlaneFromNormalAndPoint yields usable classification");
+
+    const fuse::math::Vec4 zeroNormal =
+        fuse::math::makePlaneFromNormalAndPoint({0.f, 0.f, 0.f}, {1.f, 2.f, 3.f});
+    expectTrue(fuse::math::isDegeneratePlane(zeroNormal),
+               "makePlaneFromNormalAndPoint returns degenerate plane for zero normal");
+}
+
 void testPlaneDegenerate() {
     const fuse::math::Vec4 degenerate{0.f, 0.f, 0.f, 1.f};
     expectTrue(fuse::math::isDegeneratePlane(degenerate), "Plane zero normal is degenerate");
@@ -438,6 +542,23 @@ void testPlaneClassify() {
     const fuse::math::AABB empty{{2.f, 2.f, 2.f}, {1.f, 1.f, 1.f}};
     expectTrue(fuse::math::classifyAabb(plane, empty) == fuse::math::PlaneSide::Behind,
                "Plane classifyAabb treats empty AABB as culled");
+}
+
+void testPlaneClipParallelSegment() {
+    const fuse::math::Vec4 plane{0.f, 1.f, 0.f, 0.f};
+
+    fuse::math::Vec3 onPlaneA{-1.f, 0.f, 0.f};
+    fuse::math::Vec3 onPlaneB{1.f, 0.f, 0.f};
+    expectTrue(fuse::math::clipSegmentAgainstPlane(plane, onPlaneA, onPlaneB),
+               "Plane clip keeps segment lying on plane");
+    expectVec3Near(onPlaneA, {-1.f, 0.f, 0.f}, 1e-5f, "Plane parallel segment start unchanged");
+    expectVec3Near(onPlaneB, {1.f, 0.f, 0.f}, 1e-5f, "Plane parallel segment end unchanged");
+
+    fuse::math::Vec4 nearDegenerate{1e-9f, 0.f, 0.f, 0.f};
+    expectTrue(fuse::math::isDegeneratePlane(nearDegenerate, 1e-8f),
+               "Plane near-zero normal is degenerate at default epsilon");
+    expectTrue(fuse::math::classifyPoint(nearDegenerate, {1.f, 0.f, 0.f}) == fuse::math::PlaneSide::On,
+               "Plane classifyPoint treats near-degenerate plane as on");
 }
 
 void testPlaneClip() {
@@ -582,6 +703,40 @@ void testSimdPlanePolygonParity() {
                "simd classifyAabb treats empty AABB as culled");
 }
 
+void testSimdMat4RigidInverseParity() {
+    const fuse::math::Mat4 scalarUniform =
+        fuse::math::fromTRS({3.f, -1.f, 2.f}, fuse::math::fromAxisAngle({0.f, 1.f, 0.f}, 0.25f), {1.5f, 1.5f, 1.5f});
+    fuse::math::Mat4 scalarInverse{};
+    expectTrue(fuse::math::tryInverseRigid(scalarUniform, scalarInverse), "scalar tryInverseRigid succeeds");
+
+    fuse::math::Mat4 simdInverse{};
+    expectTrue(fuse::math::tryInverseRigid(scalarUniform, simdInverse), "simd tryInverseRigid succeeds");
+    expectMat4Near(simdInverse, scalarInverse, 1e-4f, "simd tryInverseRigid matches scalar");
+
+    expectTrue(fuse::math::simd::isAffine(scalarUniform), "simd isAffine matches scalar");
+    expectNear(fuse::math::simd::uniformScaleUpper3x3(scalarUniform),
+               fuse::math::uniformScaleUpper3x3(scalarUniform), 1e-4f,
+               "simd uniformScaleUpper3x3 matches scalar");
+
+    const fuse::math::AABB box{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
+    f32 scalarEnter = 0.f;
+    f32 scalarExit = 0.f;
+    f32 simdEnter = 0.f;
+    f32 simdExit = 0.f;
+    expectTrue(box.rayInterval({-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, scalarEnter, scalarExit),
+               "scalar rayInterval hits");
+    expectTrue(fuse::math::simd::rayIntervalAabb(box, {-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, simdEnter, simdExit),
+               "simd rayIntervalAabb hits");
+    expectNear(simdEnter, scalarEnter, 1e-4f, "simd rayIntervalAabb entry matches scalar");
+    expectNear(simdExit, scalarExit, 1e-4f, "simd rayIntervalAabb exit matches scalar");
+
+    fuse::math::Vec4 plane = fuse::math::makePlaneFromNormalAndPoint({0.f, 2.f, 0.f}, {0.f, 1.f, 0.f});
+    fuse::math::Vec4 simdPlane = plane;
+    expectTrue(fuse::math::tryNormalizePlane(plane), "scalar tryNormalizePlane succeeds");
+    expectTrue(fuse::math::simd::tryNormalizePlane(simdPlane), "simd tryNormalizePlane succeeds");
+    expectNear(simdPlane.y, plane.y, 1e-5f, "simd tryNormalizePlane matches scalar");
+}
+
 void testSimdMat4Associativity() {
     const fuse::math::Mat4 a =
         fuse::math::fromTRS({1.f, 0.f, 0.f}, fuse::math::fromAxisAngle({0.f, 1.f, 0.f}, 0.3f), {1.f, 1.f, 1.f});
@@ -608,13 +763,16 @@ int main() {
     testMat4MultiplyEdgeCases();
     testMat4TransformPoint();
     testMat4InverseAffine();
+    testMat4AffineGuards();
     testMat4RigidGuards();
+    testMat4TryInverseRigid();
     testMat4InverseEdgeCases();
     testMat3Upper3x3();
     testQuatRotation();
     testQuatSlerp();
     testAabbOverlap();
     testAabbRayIntersect();
+    testAabbRayIntervalEdgeCases();
     testAabbEmptyEdgeCases();
     testAabbTransformHelpers();
     testAabbMergeFreeFunction();
@@ -624,13 +782,16 @@ int main() {
     testSimdMat4Parity();
     testSimdMat4InverseEdgeCases();
     testSimdMat4Associativity();
+    testSimdMat4RigidInverseParity();
     testSimdOrthonormalizeEdgeCases();
     testSimdAabbStubs();
     testSimdAabbEmpty();
     testSimdPlaneParity();
     testSimdPlanePolygonParity();
+    testPlaneNormalize();
     testPlaneDegenerate();
     testPlaneClassify();
+    testPlaneClipParallelSegment();
     testPlaneClip();
 
     if (g_failures != 0) {

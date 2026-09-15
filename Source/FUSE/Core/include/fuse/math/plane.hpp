@@ -25,6 +25,31 @@ inline bool isDegeneratePlane(const Vec4& plane, f32 epsilon = 1e-8f) {
     return lenSq < epsilon * epsilon;
 }
 
+/// Normalizes `plane` in place; returns false when the normal length is below `epsilon`.
+inline bool tryNormalizePlane(Vec4& plane, f32 epsilon = 1e-8f) {
+    const f32 lenSq = plane.x * plane.x + plane.y * plane.y + plane.z * plane.z;
+    if (lenSq < epsilon * epsilon) {
+        return false;
+    }
+    const f32 invLen = 1.f / std::sqrt(lenSq);
+    plane.x *= invLen;
+    plane.y *= invLen;
+    plane.z *= invLen;
+    plane.w *= invLen;
+    return true;
+}
+
+/// Builds `n·p + d = 0` from a (possibly unnormalized) normal and a point on the plane.
+inline Vec4 makePlaneFromNormalAndPoint(const Vec3& normal, const Vec3& point) {
+    const f32 lenSq = normal.dot(normal);
+    if (lenSq < 1e-16f) {
+        return {0.f, 0.f, 0.f, 0.f};
+    }
+    const f32 invLen = 1.f / std::sqrt(lenSq);
+    const Vec3 unitNormal = normal * invLen;
+    return {unitNormal.x, unitNormal.y, unitNormal.z, -unitNormal.dot(point)};
+}
+
 inline PlaneSide classifyPoint(const Vec4& plane, const Vec3& point, f32 epsilon = 1e-5f) {
     if (isDegeneratePlane(plane, epsilon)) {
         return PlaneSide::On;
