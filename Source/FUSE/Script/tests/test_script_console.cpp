@@ -23,7 +23,7 @@ void expectTrue(bool condition, const char* message) {
 
 void testBuiltInCommandDispatch() {
     fuse::script::ScriptConsole console;
-    expectTrue(console.built_in_command_count() >= 7u, "built-in command stubs registered");
+    expectTrue(console.built_in_command_count() >= 8u, "built-in command stubs registered");
 
     const auto help = console.execute("help");
     expectTrue(help.ok(), "help command succeeds");
@@ -52,6 +52,15 @@ void testBuiltInCommandDispatch() {
                "unknown command status");
     expectTrue(unknown.output.find("unknown command:") != std::string::npos,
                "unknown command returns error string");
+
+    const auto typo = console.execute("hel");
+    expectTrue(!typo.ok(), "typo command fails");
+    expectTrue(typo.status == fuse::script::ScriptConsoleCommandStatus::UnknownCommand,
+               "typo command status");
+    expectTrue(typo.output.find("did you mean:") != std::string::npos,
+               "unknown command suggests nearest match");
+    expectTrue(typo.output.find("help") != std::string::npos,
+               "unknown command suggestion includes help");
 }
 
 void testHistoryBufferAndNavigation() {
@@ -138,6 +147,12 @@ void testCommandRegistryDirect() {
     expectTrue(!registry.register_built_in(nullptr, {}), "built-in rejects null name");
     expectTrue(!registry.register_custom("noop", {}), "custom rejects null handler");
     expectTrue(!registry.register_custom(nullptr, {}), "custom rejects null name");
+    expectTrue(!registry.register_custom("", {}), "custom rejects empty name");
+    expectTrue(!registry.register_custom("bad name", {}), "custom rejects whitespace name");
+    expectTrue(!fuse::script::ScriptConsoleCommandRegistry::is_valid_command_name("bad name"),
+               "is_valid_command_name rejects whitespace");
+    expectTrue(fuse::script::ScriptConsoleCommandRegistry::is_valid_command_name("valid"),
+               "is_valid_command_name accepts simple name");
 
     expectTrue(registry.register_built_in("builtin_probe",
                                           [](fuse::script::ScriptConsole& /*repl*/,
@@ -193,6 +208,10 @@ void testCommandRegistryDirect() {
     expectTrue(empty.status == fuse::script::ScriptConsoleCommandStatus::InvalidArgument,
                "registry rejects empty command name");
 
+    const auto suggestions = registry.suggest_commands("builtin_p", 2);
+    expectTrue(suggestions.size() >= 1u, "registry suggest_commands finds matches");
+    expectTrue(suggestions[0] == "builtin_probe", "registry suggest_commands prefers prefix match");
+
     expectTrue(!registry.unregister_custom("missing"), "unregister unknown custom fails");
     expectTrue(registry.unregister_custom("probe"), "unregister custom succeeds");
     expectTrue(!registry.has_command("probe"), "unregistered custom is gone");
@@ -221,6 +240,8 @@ void testHistoryBufferRingWrapDirect() {
     history.push("epsilon");
     expectTrue(history.at(0) == "gamma", "second wrap evicts prior oldest");
     expectTrue(history.at(2) == "epsilon", "second wrap retains newest");
+    expectTrue(history.oldest() == "gamma", "oldest returns first surviving entry");
+    expectTrue(history.newest() == "epsilon", "newest returns last entry");
 
     history.clear();
     expectTrue(history.count() == 0u, "history clear resets count");
@@ -329,6 +350,26 @@ void testEmptyLineSkipsHistory() {
     expectTrue(console.historyCount() == 1u, "valid command pushes history");
 }
 
+void testRepeatDispatchStub() {
+    fuse::script::ScriptConsole console;
+
+    const auto empty_repeat = console.execute("repeat");
+    expectTrue(empty_repeat.status == fuse::script::ScriptConsoleCommandStatus::InvalidArgument,
+               "repeat without prior command fails");
+    expectTrue(empty_repeat.output == "no command to repeat",
+               "repeat without prior command message");
+
+    const auto echoed = console.execute("echo repeat-me");
+    expectTrue(echoed.ok(), "setup command for repeat succeeds");
+    expectTrue(console.lastExecutedLine() == "echo repeat-me", "last executed line tracked");
+
+    const auto repeated = console.execute("repeat");
+    expectTrue(repeated.ok(), "repeat re-dispatches last command");
+    expectTrue(repeated.output == "repeat-me", "repeat returns prior command output");
+    expectTrue(console.lastExecutedLine() == "echo repeat-me",
+               "repeat does not overwrite last executed line");
+}
+
 void testCustomCommandDispatch() {
     fuse::script::ScriptConsole console;
     int invoke_count = 0;
@@ -367,6 +408,7 @@ void run_script_console_tests() {
     testHistoryClearStub();
     testEmptyLineSkipsHistory();
     testDescribeAndCompleteStubs();
+    testRepeatDispatchStub();
     testHostDispatchLoadAndRun();
     testCustomCommandShadowsBuiltIn();
     testCustomCommandDispatch();

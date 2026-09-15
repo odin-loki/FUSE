@@ -26,6 +26,9 @@ public:
     [[nodiscard]] bool is_custom(const char* name) const;
     [[nodiscard]] ScriptConsoleCommandKind lookup_kind(const char* name) const;
     [[nodiscard]] std::vector<std::string> commands_with_prefix(const char* prefix) const;
+    [[nodiscard]] std::vector<std::string> suggest_commands(const char* name, u32 max_suggestions = 3) const;
+
+    [[nodiscard]] static bool is_valid_command_name(const char* name);
 
     [[nodiscard]] usize built_in_count() const { return m_builtInHandlers.size(); }
     [[nodiscard]] usize custom_count() const { return m_customHandlers.size(); }

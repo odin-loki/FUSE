@@ -3,12 +3,33 @@
 #include <fuse/script/script_console.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <sstream>
 
 namespace fuse::script {
 
+namespace {
+
+bool containsWhitespace(const char* text) {
+    if (text == nullptr) {
+        return true;
+    }
+    for (const char* cursor = text; *cursor != '\0'; ++cursor) {
+        if (std::isspace(static_cast<unsigned char>(*cursor)) != 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+} // namespace
+
+bool ScriptConsoleCommandRegistry::is_valid_command_name(const char* name) {
+    return name != nullptr && name[0] != '\0' && !containsWhitespace(name);
+}
+
 bool ScriptConsoleCommandRegistry::register_built_in(const char* name, CommandHandler handler) {
-    if (name == nullptr || !handler) {
+    if (!is_valid_command_name(name) || !handler) {
         return false;
     }
 
@@ -22,7 +43,7 @@ bool ScriptConsoleCommandRegistry::register_built_in(const char* name, CommandHa
 }
 
 bool ScriptConsoleCommandRegistry::register_custom(const char* name, CommandHandler handler) {
-    if (name == nullptr || !handler) {
+    if (!is_valid_command_name(name) || !handler) {
         return false;
     }
 
@@ -54,7 +75,18 @@ ScriptConsoleCommandResult ScriptConsoleCommandRegistry::dispatch(const char* na
         return built_in_it->second(console, args != nullptr ? args : "");
     }
 
-    return {ScriptConsoleCommandStatus::UnknownCommand, "unknown command: " + key};
+    std::string message = "unknown command: " + key;
+    const std::vector<std::string> suggestions = suggest_commands(key.c_str(), 3);
+    if (!suggestions.empty()) {
+        message += " (did you mean:";
+        for (const auto& suggestion : suggestions) {
+            message += ' ';
+            message += suggestion;
+        }
+        message += ')';
+    }
+
+    return {ScriptConsoleCommandStatus::UnknownCommand, message};
 }
 
 bool ScriptConsoleCommandRegistry::has_command(const char* name) const {
@@ -109,6 +141,57 @@ std::vector<std::string> ScriptConsoleCommandRegistry::commands_with_prefix(cons
     }
 
     return matches;
+}
+
+std::vector<std::string> ScriptConsoleCommandRegistry::suggest_commands(const char* name,
+                                                                          u32 max_suggestions) const {
+    if (name == nullptr || name[0] == '\0' || max_suggestions == 0) {
+        return {};
+    }
+
+    const std::string needle(name);
+    const std::vector<std::string> names = command_names();
+    std::vector<std::string> suggestions;
+    suggestions.reserve(max_suggestions);
+
+    auto try_add = [&](const std::string& candidate) {
+        if (suggestions.size() >= max_suggestions) {
+            return;
+        }
+        if (std::find(suggestions.begin(), suggestions.end(), candidate) != suggestions.end()) {
+            return;
+        }
+        suggestions.push_back(candidate);
+    };
+
+    for (const auto& candidate : commands_with_prefix(needle.c_str())) {
+        try_add(candidate);
+    }
+
+    if (suggestions.size() < max_suggestions && needle.size() > 1) {
+        for (u32 prefix_len = static_cast<u32>(needle.size() - 1); prefix_len > 0; --prefix_len) {
+            for (const auto& candidate : commands_with_prefix(needle.substr(0, prefix_len).c_str())) {
+                try_add(candidate);
+            }
+            if (suggestions.size() >= max_suggestions) {
+                break;
+            }
+        }
+    }
+
+    if (suggestions.size() < max_suggestions) {
+        for (const auto& candidate : names) {
+            if (candidate.find(needle) != std::string::npos ||
+                needle.find(candidate) != std::string::npos) {
+                try_add(candidate);
+            }
+            if (suggestions.size() >= max_suggestions) {
+                break;
+            }
+        }
+    }
+
+    return suggestions;
 }
 
 std::vector<std::string> ScriptConsoleCommandRegistry::command_names() const {

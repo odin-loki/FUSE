@@ -104,6 +104,10 @@ ScriptConsoleCommandResult ScriptConsole::dispatch_(const char* command, const c
 }
 
 ScriptConsoleCommandResult ScriptConsole::execute(const char* line) {
+    return executeLine_(line, true);
+}
+
+ScriptConsoleCommandResult ScriptConsole::executeLine_(const char* line, bool record_history) {
     if (line == nullptr) {
         return {ScriptConsoleCommandStatus::InvalidArgument, "line is null"};
     }
@@ -114,8 +118,15 @@ ScriptConsoleCommandResult ScriptConsole::execute(const char* line) {
         return {ScriptConsoleCommandStatus::InvalidArgument, "empty line"};
     }
 
-    m_history.push(line);
-    resetHistoryNavigation();
+    const std::string trimmed_line = trim(line);
+    if (record_history) {
+        m_history.push(line);
+        resetHistoryNavigation();
+    }
+
+    if (command != "repeat") {
+        m_lastExecutedLine = trimmed_line;
+    }
 
     ScriptConsoleCommandResult result = dispatch_(command.c_str(), args.c_str());
     if (!result.output.empty()) {
@@ -125,6 +136,15 @@ ScriptConsoleCommandResult ScriptConsole::execute(const char* line) {
 }
 
 void ScriptConsole::registerBuiltIns_() {
+    m_commands.register_built_in("repeat", [](ScriptConsole& console, const char* /*args*/) {
+        if (console.m_lastExecutedLine.empty()) {
+            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
+                                              "no command to repeat"};
+        }
+
+        return console.executeLine_(console.m_lastExecutedLine.c_str(), true);
+    });
+
     m_commands.register_built_in("help", [](ScriptConsole& console, const char* /*args*/) {
         return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, console.m_commands.formatCommandList()};
     });

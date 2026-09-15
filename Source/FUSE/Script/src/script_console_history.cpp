@@ -65,6 +65,14 @@ void ScriptConsoleHistoryBuffer::clear() {
     m_navigationCursor = -1;
 }
 
+const std::string& ScriptConsoleHistoryBuffer::newest() const {
+    return at(m_size == 0 ? 0 : m_size - 1);
+}
+
+const std::string& ScriptConsoleHistoryBuffer::oldest() const {
+    return at(0);
+}
+
 void ScriptConsoleHistoryBuffer::push(const char* line) {
     if (line == nullptr) {
         return;
