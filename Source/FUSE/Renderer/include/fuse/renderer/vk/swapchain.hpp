@@ -72,6 +72,8 @@ public:
     const SwapchainInfo& info() const { return m_info; }
     bool isReady() const { return m_info.ready; }
     bool isHeadless() const { return m_info.headless; }
+    bool hasImages() const { return !m_images.empty(); }
+    bool isEmpty() const { return !isReady() || m_handle == nullptr || m_images.empty(); }
 
     void* nativeHandle() const { return m_handle; }
     const std::vector<SwapchainImageInfo>& images() const { return m_images; }

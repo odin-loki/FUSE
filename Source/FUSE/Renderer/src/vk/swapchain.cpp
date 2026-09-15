@@ -1,5 +1,7 @@
 #include <fuse/renderer/vk/swapchain.hpp>
 
+#include <fuse/renderer/vk/swapchain_util.hpp>
+
 #include <algorithm>
 #include <cstring>
 
@@ -274,6 +276,11 @@ bool VulkanSwapchain::createSwapchainResources(VulkanDevice& device, const Swapc
 }
 
 bool VulkanSwapchain::rebuild(VulkanDevice& device, u32 width, u32 height) {
+    if (!isValidSwapchainExtent(width, height)) {
+        m_info.message = "Swapchain rebuild rejected — extent must be non-zero";
+        return false;
+    }
+
     if (m_info.headless || !m_info.ready) {
         m_desc.width = width;
         m_desc.height = height;
@@ -306,7 +313,7 @@ bool VulkanSwapchain::rebuild(VulkanDevice& device, u32 width, u32 height) {
 
 u32 VulkanSwapchain::acquireNextImage(void* imageAvailableSemaphore) {
 #if defined(FUSE_VULKAN_BACKEND)
-    if (!m_info.ready || m_handle == nullptr) {
+    if (isEmpty()) {
         return UINT32_MAX;
     }
 
@@ -334,8 +341,7 @@ u32 VulkanSwapchain::acquireNextImage(void* imageAvailableSemaphore) {
 
 bool VulkanSwapchain::present(void* renderFinishedSemaphore, u32 imageIndex) {
 #if defined(FUSE_VULKAN_BACKEND)
-    if (!m_info.ready || m_handle == nullptr || imageIndex == UINT32_MAX ||
-        m_graphicsQueue == nullptr) {
+    if (isEmpty() || isEmptyAcquireResult(imageIndex) || m_graphicsQueue == nullptr) {
         return false;
     }
 
