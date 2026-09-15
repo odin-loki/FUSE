@@ -219,12 +219,14 @@ void testCommandStackSnapshotRestore() {
     expectTrue(!snapshot.dirty, "snapshot captures clean dirty flag");
 
     stack.execute(makeSetPropertyCommand(1u, "transform.position", "9,9,9"));
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "10,10,10"));
     stack.undo();
     expectTrue(stack.undoDepth() == 2u, "mutations change stack before restore");
 
     stack.restoreSnapshot(snapshot);
     expectTrue(stack.undoDepth() == 2u, "restore brings back undo depth");
     expectTrue(stack.redoDepth() == 0u, "restore clears redo branch");
+    expectTrue(stack.coalescedCount() == snapshot.coalescedCount, "restore brings back coalesced count");
     expectTrue(!stack.isDirty(), "restore brings back dirty flag");
     expectTrue(stack.dirtyRevision() == snapshot.dirtyRevision, "restore brings back dirty revision");
 
@@ -266,6 +268,94 @@ void testCommandStackUndoRedo() {
     expectTrue(stack.lastApplied()->propertyName == "sdf.blend_alpha", "redo restores last value");
 }
 
+void testCommandStackEmptyStackNoOps() {
+    fuse::editor::CommandStack stack;
+
+    expectTrue(!stack.canUndo(), "empty stack cannot undo");
+    expectTrue(!stack.canRedo(), "empty stack cannot redo");
+    expectTrue(stack.lastApplied() == nullptr, "empty stack has no last applied command");
+
+    stack.undo();
+    stack.redo();
+
+    expectTrue(stack.undoDepth() == 0u, "undo on empty stack is a no-op");
+    expectTrue(stack.redoDepth() == 0u, "redo on empty stack is a no-op");
+    expectTrue(stack.appliedCount() == 0u, "empty stack applied count stays zero");
+}
+
+void testUndoStackEmptyStackNoOps() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    expectTrue(!stack.canUndo(), "empty undo stack cannot undo");
+    expectTrue(!stack.canRedo(), "empty undo stack cannot redo");
+    expectTrue(stack.peekUndoDescription().empty(), "empty undo stack has no undo description");
+    expectTrue(stack.peekRedoDescription().empty(), "empty redo stack has no redo description");
+
+    stack.undo();
+    stack.redo();
+
+    expectTrue(counter == 0, "empty stack undo/redo does not mutate scene");
+    expectTrue(stack.undoCount() == 0u, "undo on empty stack is a no-op");
+    expectTrue(stack.redoCount() == 0u, "redo on empty stack is a no-op");
+}
+
+void testCommandStackPushClearsRedoBranch() {
+    fuse::editor::CommandStack stack;
+
+    stack.push(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
+    stack.push(makeSetPropertyCommand(1u, "sdf.blend_alpha", "0.5"));
+    stack.undo();
+    expectTrue(stack.canRedo(), "redo branch available after undo");
+
+    stack.push(makeSetPropertyCommand(1u, "sdf.blend_alpha", "0.75"));
+    expectTrue(!stack.canRedo(), "new push clears redo branch");
+    expectTrue(stack.undoDepth() == 2u, "push after undo appends new undo step");
+    expectTrue(stack.lastApplied()->propertyValue == "0.75", "push applies latest value");
+}
+
+void testCommandStackCoalesceUndoRestoresFirstValue() {
+    fuse::editor::CommandStack stack;
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "4,5,6"));
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "7,8,9"));
+
+    stack.undo();
+    expectTrue(stack.undoDepth() == 0u, "single coalesced step undoes in one pop");
+    expectTrue(stack.lastApplied() == nullptr, "fully undone stack has no last applied");
+}
+
+void testCommandStackEvictedCount() {
+    fuse::editor::CommandStack stack;
+
+    for (fuse::u32 step = 0; step < fuse::editor::CommandStack::kMaxHistory + 5u; ++step) {
+        stack.execute(makeSetPropertyCommand(step + 1u, "transform.position",
+                                             std::to_string(step).c_str()));
+    }
+
+    expectTrue(stack.evictedCount() == 5u, "command stack tracks evicted entries");
+}
+
+void testUndoStackSnapshotCapture() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "first"));
+    stack.execute(std::make_unique<CounterCommand>(counter, 1, 3, "second"));
+
+    const fuse::editor::UndoStackSnapshot snapshot = stack.captureSnapshot();
+    expectTrue(snapshot.undoCount == 2u, "snapshot captures undo depth");
+    expectTrue(snapshot.redoCount == 0u, "snapshot captures empty redo branch");
+    expectTrue(snapshot.undoDescriptions.size() == 2u, "snapshot records undo descriptions");
+    expectTrue(snapshot.undoDescriptions[0] == "first", "snapshot preserves undo order");
+    expectTrue(snapshot.undoDescriptions[1] == "second", "snapshot preserves undo order");
+
+    stack.undo();
+    stack.restoreSnapshot(snapshot);
+    expectTrue(stack.undoCount() == 1u, "restore stub is a no-op until command cloning lands");
+}
+
 } // namespace
 
 int main() {
@@ -282,6 +372,12 @@ int main() {
     testCommandStackSnapshotRestore();
     testCommandStackMaxHistoryEviction();
     testCommandStackUndoRedo();
+    testCommandStackEmptyStackNoOps();
+    testUndoStackEmptyStackNoOps();
+    testCommandStackPushClearsRedoBranch();
+    testCommandStackCoalesceUndoRestoresFirstValue();
+    testCommandStackEvictedCount();
+    testUndoStackSnapshotCapture();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

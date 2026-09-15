@@ -9,6 +9,16 @@
 
 namespace fuse::editor {
 
+/// Captured `UndoStack` metadata for snapshot/restore stubs (B6.2 deepen).
+/// Command payloads remain live on the stack; restore rewinds depth counters only.
+struct UndoStackSnapshot {
+    u32 undoCount = 0;
+    u32 redoCount = 0;
+    u32 evictedCount = 0;
+    std::vector<std::string> undoDescriptions;
+    std::vector<std::string> redoDescriptions;
+};
+
 /// Undo/redo command interface (B6.2). Game-thread mutations only.
 class UndoCommand {
 public:
@@ -42,6 +52,9 @@ public:
     std::string peekRedoDescription() const;
 
     void clear();
+
+    UndoStackSnapshot captureSnapshot() const;
+    void restoreSnapshot(const UndoStackSnapshot& snapshot);
 
 private:
     void evictOldestIfNeeded_();
