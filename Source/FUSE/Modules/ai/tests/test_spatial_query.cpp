@@ -91,15 +91,57 @@ void testRadiusFilterMinCountPolicy() {
                "policy fails when minCount exceeds in-radius allies");
 }
 
+void testCountAlliesInRadiusMatchesFilter() {
+    const std::vector<fuse::ai::AllyCandidate> allies = makeSquad();
+    std::vector<fuse::u32> indices;
+
+    const fuse::u32 count =
+        fuse::ai::count_allies_in_radius(0, 1, 0.f, 0.f, 10.f, allies);
+    const fuse::u32 filtered =
+        fuse::ai::filter_allies_in_radius(0, 1, 0.f, 0.f, 10.f, allies, indices);
+    expectTrue(count == filtered, "count_allies_in_radius matches filter_allies_in_radius");
+    expectTrue(count == 3u, "count finds three allies within radius");
+}
+
+void testRadiusFilterEmptyAllyList() {
+    const std::vector<fuse::ai::AllyCandidate> allies;
+    std::vector<fuse::u32> indices;
+
+    const fuse::u32 count =
+        fuse::ai::count_allies_in_radius(0, 1, 0.f, 0.f, 10.f, allies);
+    expectTrue(count == 0u, "count returns zero for empty ally list");
+    expectTrue(fuse::ai::filter_allies_in_radius(0, 1, 0.f, 0.f, 10.f, allies, indices) == 0u,
+               "filter returns zero for empty ally list");
+    expectTrue(indices.empty(), "filter output stays empty");
+
+    fuse::ai::RadiusFilterPolicy policy;
+    policy.radius = 10.f;
+    policy.minCount = 1;
+    expectTrue(!fuse::ai::allies_in_radius_satisfied(0, 1, 0.f, 0.f, policy, allies),
+               "radius policy fails on empty ally list");
+}
+
 void testNearestAllyFindsClosest() {
     const std::vector<fuse::ai::AllyCandidate> allies = makeSquad();
 
     const fuse::ai::NearestAllyResult nearest =
         fuse::ai::find_nearest_ally(0, 1, 0.f, 0.f, allies);
     expectTrue(nearest.found, "nearest ally found for squad leader");
-    expectTrue(nearest.allyIndex == 1u || nearest.allyIndex == 3u,
-               "nearest ally is one of the equidistant close agents");
+    expectTrue(nearest.allyIndex == 1u, "nearest ally tie-break prefers lowest agent index");
     expectNear(nearest.distanceSq, 25.f, 1e-4f, "nearest ally distance matches five-unit offset");
+}
+
+void testNearestAllyWithinRadiusRejectsDistant() {
+    const std::vector<fuse::ai::AllyCandidate> allies = makeSquad();
+
+    const fuse::ai::NearestAllyResult within =
+        fuse::ai::find_nearest_ally_within_radius(0, 1, 0.f, 0.f, 6.f, allies);
+    expectTrue(within.found, "nearest ally within radius succeeds");
+    expectTrue(within.allyIndex == 1u, "within-radius nearest is closest ally");
+
+    const fuse::ai::NearestAllyResult beyond =
+        fuse::ai::find_nearest_ally_within_radius(0, 1, 0.f, 0.f, 4.f, allies);
+    expectTrue(!beyond.found, "nearest ally within radius rejects beyond max");
 }
 
 void testNearestAllyExcludesSelf() {
@@ -124,11 +166,14 @@ void testNearestAllyNoMatchOtherTeam() {
 int run_spatial_query_tests() {
     testDistanceSq2d();
     testWithinRadius();
+    testCountAlliesInRadiusMatchesFilter();
     testRadiusFilterIncludesNearbyAllies();
     testRadiusFilterExcludesSelfAndOtherTeams();
     testRadiusFilterEmptyOutsideRange();
+    testRadiusFilterEmptyAllyList();
     testRadiusFilterMinCountPolicy();
     testNearestAllyFindsClosest();
+    testNearestAllyWithinRadiusRejectsDistant();
     testNearestAllyExcludesSelf();
     testNearestAllyNoMatchOtherTeam();
     return g_failures;

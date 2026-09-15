@@ -35,6 +35,28 @@ float effective_radius(const RadiusFilterPolicy& policy) {
     return clamp_radius_(policy.radius);
 }
 
+u32 count_allies_in_radius(u32 selfIndex,
+                           u32 teamId,
+                           float x,
+                           float y,
+                           float radius,
+                           const std::vector<AllyCandidate>& allies) {
+    const float radiusSq = radius_sq_(radius);
+    u32 count = 0;
+
+    for (const AllyCandidate& candidate : allies) {
+        if (!is_ally_(selfIndex, teamId, candidate)) {
+            continue;
+        }
+        const float distSq = distance_sq_2d(x, y, candidate.x, candidate.y);
+        if (distSq <= radiusSq) {
+            ++count;
+        }
+    }
+
+    return count;
+}
+
 u32 filter_allies_in_radius(u32 selfIndex,
                             u32 teamId,
                             float x,
@@ -72,7 +94,8 @@ NearestAllyResult find_nearest_ally(u32 selfIndex,
         }
 
         const float distSq = distance_sq_2d(x, y, candidate.x, candidate.y);
-        if (!result.found || distSq < bestSq) {
+        if (!result.found || distSq < bestSq ||
+            (distSq == bestSq && candidate.agentIndex < result.allyIndex)) {
             result.found = true;
             result.allyIndex = candidate.agentIndex;
             result.distanceSq = distSq;
@@ -83,20 +106,34 @@ NearestAllyResult find_nearest_ally(u32 selfIndex,
     return result;
 }
 
+NearestAllyResult find_nearest_ally_within_radius(u32 selfIndex,
+                                                  u32 teamId,
+                                                  float x,
+                                                  float y,
+                                                  float maxRadius,
+                                                  const std::vector<AllyCandidate>& allies) {
+    const NearestAllyResult nearest = find_nearest_ally(selfIndex, teamId, x, y, allies);
+    if (!nearest.found) {
+        return nearest;
+    }
+    if (maxRadius > 0.f && !within_radius(nearest.distanceSq, maxRadius)) {
+        return {};
+    }
+    return nearest;
+}
+
 bool allies_in_radius_satisfied(u32 selfIndex,
                                 u32 teamId,
                                 float x,
                                 float y,
                                 const RadiusFilterPolicy& policy,
                                 const std::vector<AllyCandidate>& allies) {
-    std::vector<u32> scratch;
-    const u32 count = filter_allies_in_radius(selfIndex,
-                                              teamId,
-                                              x,
-                                              y,
-                                              effective_radius(policy),
-                                              allies,
-                                              scratch);
+    const u32 count = count_allies_in_radius(selfIndex,
+                                             teamId,
+                                             x,
+                                             y,
+                                             effective_radius(policy),
+                                             allies);
     return count >= policy.minCount;
 }
 

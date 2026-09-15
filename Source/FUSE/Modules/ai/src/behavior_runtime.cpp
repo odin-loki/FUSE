@@ -94,6 +94,9 @@ void BehaviorRuntime::commit() {
         if (result.wroteFlag) {
             m_blackboard.setFlag(agentIndex, result.flagIndex, result.flagValue);
         }
+        if (result.wroteScalar) {
+            m_blackboard.setScalar(agentIndex, result.scalarIndex, result.scalarValue);
+        }
     }
     ++m_tickCount;
 }

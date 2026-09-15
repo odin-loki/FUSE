@@ -142,6 +142,13 @@ bool parseNodeLine(const std::string& line, NodeLoadSpec& outSpec, std::string* 
             }
         } else if (key == "abort") {
             outSpec.abortOnFail = value == "1" || value == "true" || value == "yes";
+        } else if (key == "scalar") {
+            if (!parseU32(value, outSpec.scalarSlot)) {
+                if (errorOut) {
+                    *errorOut = "invalid scalar slot: " + value;
+                }
+                return false;
+            }
         } else {
             if (errorOut) {
                 *errorOut = "unknown node attribute: " + key;

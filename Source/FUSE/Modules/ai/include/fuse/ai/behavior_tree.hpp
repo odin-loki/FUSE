@@ -21,6 +21,9 @@ struct BehaviorTickResult {
     bool wroteFlag = false;
     u32 flagIndex = 0;
     bool flagValue = false;
+    bool wroteScalar = false;
+    u32 scalarIndex = 0;
+    float scalarValue = 0.f;
 };
 
 enum class NodeKind {
@@ -65,6 +68,8 @@ struct ParallelPolicy {
 /// Flat behavior-tree node — ore analogue: BadBehaviour composite/decorator/leaf nodes.
 /// Ore: third_party/addons/BadBehaviour/Engine/source/BadBehavior/
 struct BehaviorNode {
+    static constexpr u32 kNoScalarSlot = UINT32_MAX;
+
     NodeKind kind = NodeKind::Sequence;
     float threshold = 0.f;
     u32 flagIndex = 0;
@@ -72,6 +77,7 @@ struct BehaviorNode {
     u32 childA = 0;
     u32 childB = 0;
     ParallelPolicy parallelPolicy;
+    u32 scalarSlot = kNoScalarSlot;
     std::string scriptHook;
 };
 

@@ -146,6 +146,7 @@ BehaviorNode makeActionNearestAlly(const NodeLoadSpec& spec) {
     node.kind = NodeKind::ActionNearestAlly;
     node.threshold = spec.threshold;
     node.flagIndex = spec.flagIndex;
+    node.scalarSlot = spec.scalarSlot;
     return node;
 }
 
