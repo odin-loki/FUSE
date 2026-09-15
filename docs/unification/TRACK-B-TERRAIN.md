@@ -1,6 +1,6 @@
 # Track B — Terrain System (B7.5 deepen)
 
-**Status:** B7.5 deepen — adjacent LOD morph helpers, skirt/seam vertex counts, residency morph sync  
+**Status:** B7.5 deepen — adjacent LOD morph helpers, skirt/seam vertex counts, residency queue priority/budget  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.5  
 **Source narrative:** [P7.md](../sources/P7.md) §7.5
 
@@ -14,9 +14,11 @@
 | `Heightfield` | `Source/FUSE/Terrain/include/fuse/terrain/heightfield.hpp` | CPU heightmap, bilinear `sample_height` / `sample_normal` |
 | `LodLevel` / `LodTransition` / `AdjacentLodPair` | `Source/FUSE/Terrain/include/fuse/terrain/lod.hpp` | Distance-based LOD rings + morph band + adjacent LOD pair |
 | `clamp_morph_factor` / `blend_morph_between_lods` | `Source/FUSE/Terrain/src/lod.cpp` | Morph clamp + blend between fine/coarse rings |
+| `clamp_adjacent_lod_pair` / `blend_adjacent_lod_morph` | `Source/FUSE/Terrain/src/lod.cpp` | Adjacent LOD pair morph clamp + factor blend |
 | `compute_lod_mesh_vertex_counts` | `Source/FUSE/Terrain/src/lod.cpp` | CPU stub — grid + skirt + seam vertex budgets per LOD |
 | `morph_vertex_position` | `Source/FUSE/Terrain/src/lod.cpp` | CPU stub — snap XZ toward coarser grid |
-| `LodResidencyQueue` | `lod_residency_queue.hpp/.cpp` | Mutex-backed completion buffer; morph snapshot on submit/drain |
+| `LodResidencyQueue` | `lod_residency_queue.hpp/.cpp` | Mutex-backed completion buffer; enqueue promote/demote, budget clamp, priority drain |
+| `promote_residency_priority` / `demote_residency_priority` | `lod_residency_queue.cpp` | Pending load priority raise/lower stubs |
 | `capture_morph_snapshot` / `sync_morph_after_residency` | `lod_residency_queue.cpp` | Keep morph in sync across async promotion/demotion |
 | `ChunkGrid` | `Source/FUSE/Terrain/include/fuse/terrain/chunk_grid.hpp` | Clipmap ring LOD update, morph-factor tracking, async residency queue |
 | `sample_height` / `raycast_heightfield` | `Source/FUSE/Terrain/include/fuse/terrain/queries.hpp` | Query APIs for gameplay and physics |
@@ -54,7 +56,7 @@ morphed = lerp(position, round(position / grid) * grid, morph_factor)
 
 Y (height) is preserved — GPU heightmap displacement handles vertical detail later. `ChunkGrid::update_lod` writes `morph_factor` onto each `TerrainChunk` and marks chunks `dirty` when LOD changes or morph is active.
 
-`make_adjacent_lod_pair` exposes the fine/coarse ring pair for a transition; `blend_morph_between_lods` lerps XZ toward the coarser grid using `clamp_morph_factor`.
+`make_adjacent_lod_pair` exposes the fine/coarse ring pair for a transition; `blend_morph_between_lods` lerps XZ toward the coarser grid using `clamp_adjacent_lod_pair`. `blend_adjacent_lod_morph` blends morph factors with `[0, 1]` clamp on both endpoints and blend weight.
 
 ### Skirt / seam vertex budget (CPU stub)
 
@@ -99,11 +101,19 @@ const fuse::u32 inFlight = grid.in_flight_request_count();
 
 ```cpp
 fuse::terrain::LodResidencyQueue queue;
+queue.set_max_pending_submits(4);
+queue.enqueue({chunk_index, fuse::terrain::LodResidencyRequestKind::Load, priority});
+queue.demote(chunk_index, fuse::terrain::LodResidencyRequestKind::Load, 0.5f);
+queue.flush(budget, [](fuse::u32, fuse::terrain::LodResidencyRequestKind) {
+    return true; // worker I/O stub
+});
 queue.submit({chunk_index, fuse::terrain::LodResidencyRequestKind::Load, priority},
              [](fuse::u32, fuse::terrain::LodResidencyRequestKind) {
                  return true; // worker I/O stub
              });
 ```
+
+Pending requests dedupe by `(chunk_index, kind)` and promote priority on re-enqueue. `set_max_pending_submits` rejects direct `submit` when in-flight + completed buffer reaches the cap (mirrors B7.6 `StreamingRequestQueue`). `drain_completed` returns highest-priority completions first.
 
 ### Queries
 
@@ -154,11 +164,17 @@ ctest --test-dir build --output-on-failure -R fuse_terrain
 | `testLodTransitionMorphBand` | Morph ramp, ring edge, and boundary reset |
 | `testMorphFactorClamp` | `clamp_morph_factor` and snapshot clamp |
 | `testAdjacentLodPair` | Fine/coarse pair + `blend_morph_between_lods` |
+| `testAdjacentLodMorphBlend` | `clamp_adjacent_lod_pair` + `blend_adjacent_lod_morph` |
 | `testLodMeshVertexCounts` | Grid/skirt/seam vertex budget sanity |
 | `testResidencyMorphSync` | `sync_morph_after_residency` on LOD match/mismatch |
+| `testResidencyPriorityPromoteDemote` | Priority raise/lower helper stubs |
 | `testVertexMorphSnapsToGrid` | Full/half morph, LOD 0 skip, zero morph |
 | `testChunkResidencyStateHelpers` | `is_*_state` predicates |
+| `testLodResidencyQueueEnqueuePromoteDemote` | Pending enqueue dedupe + demote |
 | `testLodResidencyQueueStub` | Submit, worker execution, drain |
+| `testLodResidencyQueueDrainOrdering` | Highest-priority completion first |
+| `testLodResidencyQueueBudgetReject` | `max_pending_submits` rejects overflow submit |
+| `testLodResidencyQueueFlushBudget` | `flush` respects budget and priority order |
 | `testChunkGridLodTransitions` | Sync residency + per-chunk morph factors |
 | `testChunkGridAsyncResidency` | `Loading` → `Resident` → `Unloading` → `Unloaded` with 1 worker |
 | `testHeightfieldRaycast` | Ray hits flat heightfield |
@@ -179,6 +195,8 @@ ctest --test-dir build --output-on-failure -R fuse_terrain
 - [x] `AdjacentLodPair` + `blend_morph_between_lods` helpers
 - [x] `compute_lod_mesh_vertex_counts` skirt/seam vertex stub
 - [x] Residency queue morph snapshot + `sync_morph_after_residency`
+- [x] Residency queue promote/demote priority + budget clamp + priority drain
+- [x] Adjacent LOD morph clamp + factor blend helpers
 - [x] `fuse_terrain_b75` CTest target green
 - [x] No owning raw pointers in public FUSE APIs
 

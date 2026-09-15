@@ -19,6 +19,7 @@ void ChunkGrid::init(const TerrainDesc& desc) {
     }
 
     m_chunks_per_axis = std::max(1u, desc.resolution / std::max(desc.chunk_resolution, 1u));
+    m_async_queue.set_max_pending_submits(desc.max_async_in_flight);
     rebuild_chunks();
     m_initialized = true;
 }
@@ -189,19 +190,19 @@ void ChunkGrid::queue_load_(u32 chunk_index, f32 priority) {
 
     TerrainChunk& chunk = m_chunks[chunk_index];
     if (is_resident_state(chunk.residency) || is_loading_state(chunk.residency)) {
-        chunk.load_priority = std::max(chunk.load_priority, priority);
+        chunk.load_priority = promote_residency_priority(chunk.load_priority, priority);
         return;
     }
 
     chunk.residency = ChunkResidencyState::QueuedLoad;
-    chunk.load_priority = priority;
+    chunk.load_priority = promote_residency_priority(chunk.load_priority, priority);
 
     const auto already_queued = std::find_if(m_load_queue.begin(), m_load_queue.end(),
                                              [&](const LoadRequest& request) {
                                                  return request.chunk_index == chunk_index;
                                              });
     if (already_queued != m_load_queue.end()) {
-        already_queued->priority = std::max(already_queued->priority, priority);
+        already_queued->priority = promote_residency_priority(already_queued->priority, priority);
         return;
     }
 

@@ -245,6 +245,138 @@ void testChunkResidencyStateHelpers() {
     expectTrue(fuse::terrain::is_resident_state(ChunkResidencyState::Resident), "Resident is resident");
 }
 
+void testAdjacentLodMorphBlend() {
+    const fuse::terrain::AdjacentLodPair raw{0, 1, 1.5f};
+    const fuse::terrain::AdjacentLodPair clamped = fuse::terrain::clamp_adjacent_lod_pair(raw);
+    expectNear(clamped.morph_factor, 1.f, 0.001f, "adjacent pair morph clamps above one");
+
+    expectNear(fuse::terrain::blend_adjacent_lod_morph(0.f, 1.f, 0.5f), 0.5f, 0.001f,
+               "adjacent morph blend interpolates");
+    expectNear(fuse::terrain::blend_adjacent_lod_morph(0.2f, 0.8f, 2.f), 0.8f, 0.001f,
+               "adjacent morph blend clamps blend factor");
+    expectNear(fuse::terrain::blend_adjacent_lod_morph(-0.5f, 1.5f, 0.25f), 0.125f, 0.001f,
+               "adjacent morph blend clamps endpoints");
+}
+
+void testResidencyPriorityPromoteDemote() {
+    expectNear(fuse::terrain::promote_residency_priority(4.f, 6.f), 6.f, 0.001f, "promote keeps higher priority");
+    expectNear(fuse::terrain::promote_residency_priority(8.f, 3.f), 8.f, 0.001f, "promote keeps existing when higher");
+    expectNear(fuse::terrain::demote_residency_priority(10.f, 0.5f), 5.f, 0.001f, "demote scales priority");
+    expectNear(fuse::terrain::demote_residency_priority(10.f, 1.5f), 10.f, 0.001f, "demote scale clamps above one");
+    expectNear(fuse::terrain::demote_residency_priority(10.f, -0.5f), 0.f, 0.001f, "demote scale clamps below zero");
+}
+
+void testLodResidencyQueueEnqueuePromoteDemote() {
+    fuse::terrain::LodResidencyQueue queue;
+
+    fuse::terrain::LodResidencyRequest first{};
+    first.chunk_index = 3;
+    first.kind = fuse::terrain::LodResidencyRequestKind::Load;
+    first.priority = 4.f;
+    expectTrue(queue.enqueue(first), "enqueue accepts first request");
+    expectEq(queue.pending_enqueue_count(), 1u, "one pending request after enqueue");
+
+    fuse::terrain::LodResidencyRequest promote{};
+    promote.chunk_index = 3;
+    promote.kind = fuse::terrain::LodResidencyRequestKind::Load;
+    promote.priority = 9.f;
+    expectTrue(queue.enqueue(promote), "duplicate enqueue promotes priority");
+    expectEq(queue.pending_enqueue_count(), 1u, "duplicate enqueue does not grow pending list");
+
+    expectTrue(queue.demote(3, fuse::terrain::LodResidencyRequestKind::Load, 0.5f),
+               "demote finds pending request");
+    expectTrue(!queue.demote(99, fuse::terrain::LodResidencyRequestKind::Load, 0.5f),
+               "demote misses unknown chunk");
+}
+
+void testLodResidencyQueueDrainOrdering() {
+    withScheduler(2, [] {
+        fuse::terrain::LodResidencyQueue queue;
+
+        for (fuse::u32 i = 0; i < 3u; ++i) {
+            fuse::terrain::LodResidencyRequest request{};
+            request.chunk_index = i;
+            request.kind = fuse::terrain::LodResidencyRequestKind::Load;
+            request.priority = static_cast<fuse::f32>(i);
+            expectTrue(queue.submit(request, [](fuse::u32, fuse::terrain::LodResidencyRequestKind) { return true; }),
+                       "priority submit succeeds");
+        }
+
+        for (int attempt = 0; attempt < 200 && queue.completed_count() < 3u; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        std::vector<fuse::terrain::CompletedLodResidencyRequest> completed;
+        expectEq(queue.drain_completed(completed), 3u, "drain returns all completed requests");
+        expectTrue(completed[0].priority >= completed[1].priority &&
+                       completed[1].priority >= completed[2].priority,
+                   "drain orders highest priority first");
+        expectEq(completed[0].chunk_index, 2u, "highest-priority completion is first");
+    });
+}
+
+void testLodResidencyQueueBudgetReject() {
+    withScheduler(1, [] {
+        fuse::terrain::LodResidencyQueue queue;
+        queue.set_max_pending_submits(1);
+        std::atomic<bool> gate_open{false};
+
+        fuse::terrain::LodResidencyRequest blocking{};
+        blocking.chunk_index = 0;
+        blocking.kind = fuse::terrain::LodResidencyRequestKind::Load;
+        blocking.priority = 1.f;
+        expectTrue(queue.submit(blocking, [&](fuse::u32, fuse::terrain::LodResidencyRequestKind) {
+            while (!gate_open.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            return true;
+        }), "first submit accepted");
+
+        fuse::terrain::LodResidencyRequest overflow{};
+        overflow.chunk_index = 1;
+        overflow.kind = fuse::terrain::LodResidencyRequestKind::Load;
+        expectTrue(!queue.submit(overflow, [](fuse::u32, fuse::terrain::LodResidencyRequestKind) { return true; }),
+                   "second submit rejected while pending cap reached");
+
+        gate_open.store(true);
+        for (int attempt = 0; attempt < 100 && queue.completed_count() == 0u; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        std::vector<fuse::terrain::CompletedLodResidencyRequest> completed;
+        queue.drain_completed(completed);
+        expectEq(completed.size(), 1u, "blocked request completes after gate opens");
+    });
+}
+
+void testLodResidencyQueueFlushBudget() {
+    withScheduler(1, [] {
+        fuse::terrain::LodResidencyQueue queue;
+        queue.set_max_pending_submits(2);
+
+        for (fuse::u32 i = 0; i < 3u; ++i) {
+            fuse::terrain::LodResidencyRequest request{};
+            request.chunk_index = i;
+            request.kind = fuse::terrain::LodResidencyRequestKind::Load;
+            request.priority = static_cast<fuse::f32>(i);
+            expectTrue(queue.enqueue(request), "enqueue pending request");
+        }
+
+        expectEq(queue.flush(2, [](fuse::u32, fuse::terrain::LodResidencyRequestKind) { return true; }), 2u,
+               "flush respects budget cap");
+        expectEq(queue.pending_enqueue_count(), 1u, "flush leaves lower-priority pending request");
+
+        for (int attempt = 0; attempt < 100 && queue.completed_count() < 2u; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        std::vector<fuse::terrain::CompletedLodResidencyRequest> completed;
+        queue.drain_completed(completed);
+        expectEq(completed.size(), 2u, "flush submits complete");
+        expectEq(completed[0].chunk_index, 2u, "flush submits highest priority first");
+    });
+}
+
 void testLodResidencyQueueStub() {
     withScheduler(1, [] {
         fuse::terrain::LodResidencyQueue queue;
@@ -406,11 +538,17 @@ int main() {
     testLodTransitionMorphBand();
     testMorphFactorClamp();
     testAdjacentLodPair();
+    testAdjacentLodMorphBlend();
     testLodMeshVertexCounts();
     testResidencyMorphSync();
+    testResidencyPriorityPromoteDemote();
     testVertexMorphSnapsToGrid();
     testChunkResidencyStateHelpers();
+    testLodResidencyQueueEnqueuePromoteDemote();
     testLodResidencyQueueStub();
+    testLodResidencyQueueDrainOrdering();
+    testLodResidencyQueueBudgetReject();
+    testLodResidencyQueueFlushBudget();
     testChunkGridLodTransitions();
     testChunkGridAsyncResidency();
     testHeightfieldRaycast();
