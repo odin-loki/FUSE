@@ -73,7 +73,7 @@ Items marked **⚠ STAKEHOLDER** require explicit decisions before U3+ implement
 | U phase | Subsystems touched | Master plan parallel |
 |---------|-------------------|---------------------|
 | U1–U2 | Build graph only | Track A P0 skeleton |
-| U3 | memory, strings, log, I/O, input, audio, assets IDs | Track A P1–P3 |
+| U3 | memory, strings, log, I/O, input, audio, assets IDs, **job spine** | Track A P1–P3 |
 | U4 | gfx compose, `SceneObject2D/3D`, World2D/3D | Track A P4 handles |
 | U6 | gui → Qt | Track A P5 / B6 |
 | U7 | assets import, persistence | Track A P6 compat |

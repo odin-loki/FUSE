@@ -29,6 +29,9 @@ Likelihood: **High** / **Medium** / **Low**
 | R14 | StringTable / singleton init order | Critical | High | U2 | **Open** |
 | R15 | Qt scope / U6 vertical slice slips | High | Medium | U6 | **Open** |
 | R16 | Inheritance misuse across physics/gfx/net | High | Medium | U4 | **Open** — mitigated by policy |
+| R17 | Data races on scene graph / SimObject | Critical | High | U3–U6 | **Open** — handles + snapshots |
+| R18 | GL/GFX context affinity on worker threads | High | Medium | U4 | **Open** — game-thread record v1 |
+| R19 | Job scheduler scope creep / blocking waits | Medium | Medium | U3 | **Open** — fiber yield policy |
 
 ---
 
@@ -243,6 +246,42 @@ Likelihood: **High** / **Medium** / **Low**
 
 ---
 
+### R17 — Data races on scene graph / SimObject
+
+**Evidence:** T3D/T2D assume main-thread sim mutation; `SimSet` mutex protects iteration only (`console/simSet.h`); `Con::isMainThread()` guards script (`codeBlock.cpp`); 19 `Sim*` class collisions if dual-linked ([symbol-collision-report.md](./symbol-collision-report.md)). [concurrency-inventory.md](./concurrency-inventory.md) §2.5, §5.
+
+**Impact:** Silent corruption, TSan explosions, non-reproducible crashes when jobs touch `fuse::Object` or legacy adapters unsafely.
+
+**Mitigation:**
+- [architecture-parallel.md](./architecture-parallel.md) §5–6: handles, snapshots, game-thread mutation only
+- `SceneObject2D` → `SceneObject3D` merge uses SOA + command buffers ([merge-strategy-2d-extends.md](./merge-strategy-2d-extends.md))
+- TSan nightly from U3; forbid raw `SimObject*` in worker code review
+- WP-05 / WP-06 in [work-plan.md](./work-plan.md)
+
+**Residual:** Legacy compat scripts may force main-thread tick until U7 converters.
+
+---
+
+### R18 — GL / GFX context affinity
+
+**Evidence:** T3D Theora explicitly cannot upload textures on worker threads (`gfx/video/theoraTexture.h` L151–152); no render thread in either engine ([concurrency-inventory.md](./concurrency-inventory.md) §2.6).
+
+**Impact:** GPU crashes or black screens if render record moves to workers prematurely.
+
+**Mitigation:** v1 record+present on game thread ([architecture-parallel.md](./architecture-parallel.md) §4.3); workers only stage CPU buffers.
+
+---
+
+### R19 — Job scheduler misuse (blocking game thread)
+
+**Evidence:** T3D pattern `waitForAllItems()` on main thread (`imageUtils.cpp`); global `ThreadPool` deadlock if non-main submits (`threadPool.h` L51–55).
+
+**Impact:** Frame hitches, deadlocks when mixing legacy pool with FUSE jobs.
+
+**Mitigation:** Fiber `JobCounter::wait()` yields workers not game thread; legacy pool quarantined inside prefixed libs; WP-03 in [work-plan.md](./work-plan.md).
+
+---
+
 ## Decision gates (from prestarter §18)
 
 | Gate | Risk IDs | Recommendation |
@@ -250,7 +289,9 @@ Likelihood: **High** / **Medium** / **Low**
 | Script host end-state | R02 | Decide by end of U3 |
 | Physics end-state | R03, R16 | Box2D for 2D short-term; composition only — no World3D : Box2D |
 | 2D renderer | R04, R06, R16 | Keep T2D GL until Vulkan 2D; render via composition on SceneObject* |
-| 2D→3D scene merge | R16 | Inheritance for SceneObject2D/3D only; see merge-strategy doc |
+| 2D→3D scene merge | R16, R17 | Inheritance for SceneObject2D/3D only; MT via handles/snapshots |
+| Job model | R19 | Fiber work-stealing default — [architecture-parallel.md](./architecture-parallel.md) §12 |
+| Editor in-process | R17 | Qt UI thread vs game thread queue |
 | Multiprocess fallback | R11 | **Forbidden after U4** |
 | Product SKU | R06 | Unified binary with `FUSE_WITH_2D` / `FUSE_WITH_3D` flags |
 

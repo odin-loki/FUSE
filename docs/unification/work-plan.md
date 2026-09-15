@@ -1,0 +1,255 @@
+# FUSE U0 — Work Plan (Unification + Parallel Foundations)
+
+**Phase:** U0 planning deliverable  
+**Date:** 2026-09-15  
+**Horizon:** Now → U8 exit + Track A P3 job spine in parallel with U1–U4  
+**Architecture:** [architecture-parallel.md](./architecture-parallel.md)  
+**Evidence:** [concurrency-inventory.md](./concurrency-inventory.md)
+
+**Effort bands:** **S** (days, 1 agent) · **M** (1–2 weeks) · **L** (multi-week, multi-stream) · **XL** (phase gate)
+
+---
+
+## 1. Workstream map (honest parallelism)
+
+```
+Stream A — Build / link spine     U1 ──► U2 ──► umbrella CI
+Stream B — FUSE core + jobs       U1 stub ──► U3 P1-P3 jobs (parallel to U2)
+Stream C — Dimensions + hybrid    U4 (after U2 smoke + job API sketch)
+Stream D — Feature modules        U5 (after U4 APIs; modules parallelizable)
+Stream E — Editor Qt              U6 (overlaps U5; needs game thread model)
+Stream F — Content / converters   U7
+Stream G — Parity demos           U8
+Stream H — Docs / gates           U0 ✓ ──► ongoing
+```
+
+| Streams that can run **in parallel** (after deps met) | Prerequisite |
+|-----------------------------------------------------|--------------|
+| B + A after U1 | Umbrella CMake exists |
+| D (per module) after U4 | `IDimension` + handles stable |
+| E + D after U4 | Game thread / Editor API boundary defined |
+| H anytime | — |
+
+---
+
+## 2. Ordered work packages
+
+### WP-00 — U0 inventory & architecture (this PR)
+
+| Field | Value |
+|-------|-------|
+| **Effort** | M (complete) |
+| **Deliverables** | Collision report, subsystem matrix, addon catalog, demos, risks, layout, merge strategy, **concurrency inventory**, **architecture-parallel**, **work-plan** |
+| **Exit** | All docs in `docs/unification/`; stakeholder defaults documented |
+| **Deps** | Submodules init |
+
+---
+
+### WP-01 — U1 Umbrella build
+
+| Field | Value |
+|-------|-------|
+| **Effort** | M |
+| **Scope** | Root CMake FUSE umbrella; `FUSE_BUILD_T3D`, `FUSE_BUILD_T2D`; `docs/unification/BUILD.md`; CI configure both targets |
+| **Parallel** | Stream A; can start **B stub** (`Source/FUSE/CMakeLists.txt` empty options) |
+| **Exit** | One `cmake` configure builds T3D app + T2D engine target; zero secret scripts |
+| **Deps** | WP-00 |
+
+---
+
+### WP-02 — U2 One-process smoke + legacy quarantine
+
+| Field | Value |
+|-------|-------|
+| **Effort** | L |
+| **Scope** | `fuse_t3d_legacy`, `fuse_t2d_legacy` static libs with symbol prefix; `fuse_runtime_smoke`; ASan clean init |
+| **MT note** | Single-threaded smoke OK; **no** parallel tick yet |
+| **Exit** | Core stub + both legacy inits in one process; documented remaining symbol conflicts trending down |
+| **Deps** | WP-01 |
+
+---
+
+### WP-03 — Job scheduler spine (Track A P3 / B1.5)
+
+| Field | Value |
+|-------|-------|
+| **Effort** | L |
+| **Scope** | `Source/FUSE/Core/jobs/` — fiber pool, `JobCounter`, `parallel_for`, single-thread fallback; unit tests |
+| **Parallel** | **Runs parallel to WP-02** once `fuse_core` stub lands (U1) |
+| **Exit** | Job tests pass; microbench shows work-stealing on 4+ cores; `FUSE_JOBS_SINGLE_THREAD` works |
+| **Deps** | WP-01 (cmake target); architecture-parallel §3.2 |
+
+---
+
+### WP-04 — U3 Shared services + MT rules
+
+| Field | Value |
+|-------|-------|
+| **Effort** | L |
+| **Scope** | Logger, VFS, handles (`fuse::Handle`), allocators (frame linear), string intern (game thread); I/O lane |
+| **MT note** | Publish asset handles from I/O jobs; game thread commit; TSan nightly begins |
+| **Exit** | Both dims log via FUSE logger; one asset loaded via VFS from job; handle rules documented |
+| **Deps** | WP-02, WP-03 (partial — I/O can use thread pool before fibers complete) |
+
+---
+
+### WP-05 — Scene hierarchy greenfield (2D→3D merge)
+
+| Field | Value |
+|-------|-------|
+| **Effort** | L |
+| **Scope** | `fuse::Object`, `SceneObject2D`, `SceneObject3D`, adapters to legacy; snapshot SOA |
+| **Parallel** | Overlaps late WP-04 |
+| **Exit** | Unit tests for hierarchy; adapter round-trip one legacy object; **no** cross-thread raw pointers |
+| **Deps** | WP-04 handles; [merge-strategy-2d-extends.md](./merge-strategy-2d-extends.md) |
+
+---
+
+### WP-06 — U4 Dimension APIs + hybrid frame
+
+| Field | Value |
+|-------|-------|
+| **Effort** | XL |
+| **Scope** | `World2D`, `World3D`, `IDimension`, `HybridComposer`; parallel cull `parallel_for`; game-thread physics |
+| **MT note** | Frame barrier; render record on game thread v1 |
+| **Exit** | Demo: 3D clear + spinning 2D sprite one window; TSan clean on cull path |
+| **Deps** | WP-05, WP-03 |
+
+---
+
+### WP-07 — U5 Feature modules (parallel per module)
+
+| Field | Value |
+|-------|-------|
+| **Effort** | XL (5 sub-packages) |
+| **Sub-packages** | `fuse_ai`, `fuse_cinematics`, `fuse_fx`, `fuse_mechanics`, `fuse_adventure` — **each parallelizable** after WP-06 |
+| **MT note** | AI/FX jobify per architecture §7 |
+| **Exit** | Per-module U5 gates in prestarter §10 |
+| **Deps** | WP-06 |
+
+---
+
+### WP-08 — U6 Qt editor vertical slice
+
+| Field | Value |
+|-------|-------|
+| **Effort** | L |
+| **Scope** | In-process PIE; UI thread vs game thread command queue; one feature pane |
+| **Deps** | WP-06, WP-05 |
+
+---
+
+### WP-09 — U7 Project format + converters
+
+| Field | Value |
+|-------|-------|
+| **Effort** | L |
+| **Scope** | `project.json`, importers, cookers under `Tools/FUSE/` |
+| **Deps** | WP-06 |
+
+---
+
+### WP-10 — U8 Parity demos
+
+| Field | Value |
+|-------|-------|
+| **Effort** | M |
+| **Scope** | `Samples/unification/demo_*` per [demo-corpus-parity-targets.md](./demo-corpus-parity-targets.md) |
+| **Deps** | WP-07 (subset), WP-09 |
+
+---
+
+### WP-11 — Legacy parallel audit (continuous)
+
+| Field | Value |
+|-------|-------|
+| **Effort** | S per sprint |
+| **Scope** | Route safe T3D loops to jobs ([FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) B1.5 table); shrink `_forceAllMainThread` reliance |
+| **Deps** | WP-03 |
+
+---
+
+## 3. Dependency graph (critical path)
+
+```
+WP-00 → WP-01 → WP-02 ──────────────────────────────┐
+              └→ WP-03 (jobs) ──┐                    │
+                                ▼                    │
+                         WP-04 (services)            │
+                                ▼                    │
+                         WP-05 (scene 2D→3D)       │
+                                ▼                    │
+                         WP-06 (U4 hybrid) ◄─────────┘
+                                ├→ WP-07 (modules, parallel)
+                                ├→ WP-08 (editor)
+                                └→ WP-09 → WP-10
+```
+
+**Critical path:** WP-00 → 01 → 02 → 04 → 05 → 06 → 10
+
+**Parallel win:** WP-03 alongside WP-02; WP-07 modules in parallel after WP-06.
+
+---
+
+## 4. Phase gates × MT criteria
+
+| Gate | Unification | MT add-on criterion |
+|------|-------------|---------------------|
+| **U1** | Umbrella build | `fuse_core` cmake target exists |
+| **U2** | One-process smoke | ASan init; jobs optional |
+| **U3** | Shared services | I/O job publishes handle; TSan plan live |
+| **U4** | Hybrid demo | `parallel_for` cull; frame barrier; game-thread GFX |
+| **U6** | Editor PIE | UI/game thread queue proven |
+| **U8** | Parity demos | `demo_hybrid_hud` under parallel tick |
+| **P3 (Track A)** | Job system tests | Fiber scheduler + single-thread fallback |
+
+---
+
+## 5. Team / agent parallelization guide
+
+| Agent / team | After gate | Focus |
+|--------------|------------|-------|
+| **Agent A** | U1 | CMake, CI, legacy wrap |
+| **Agent B** | U1 | `fuse_core` + jobs (WP-03) |
+| **Agent C** | U3 | Scene types + adapters (WP-05) |
+| **Agent D** | U4 | World2D OR World3D (split) |
+| **Agent E** | U5 | One addon module each |
+| **Agent F** | U6 | Qt editor shell |
+| **Docs** | U0+ | Keep inventory current when code lands |
+
+**Merge rule:** All product code obeys [architecture-parallel.md](./architecture-parallel.md) §5–6 before parallel scene tick merges.
+
+---
+
+## 6. Immediate next 5 actions (after this PR merges)
+
+1. **Stakeholder/coordinator:** Confirm [architecture-parallel.md §12](./architecture-parallel.md#12-stakeholder-questions--recommended-defaults) defaults (or overrides) — especially editor in-process and worker count policy.
+
+2. **WP-01 (U1):** Branch `cursor/u1-umbrella-cmake-62b4` — extend root `CMakeLists.txt`; add `Source/FUSE/CMakeLists.txt` with `fuse_core` INTERFACE stub and `FUSE_BUILD_*` options; write `docs/unification/BUILD.md`.
+
+3. **WP-03 stub:** In same or follow-up branch, add `Source/FUSE/Core/jobs/` headers-only skeleton + empty test target wired into umbrella (no legacy link yet).
+
+4. **WP-02 prep:** From [symbol-collision-report.md](./symbol-collision-report.md), draft prefix rename script prototype for top 50 `Con::` / `Platform::` symbols — doc-only PR or `tools/` script without enabling link.
+
+5. **CI:** Add Linux job that configures umbrella with `FUSE_BUILD_T2D=ON` + `FUSE_BUILD_T3D=ON` (build may fail until WP-02 — allow `continue-on-error` until U1 gate, then harden).
+
+---
+
+## 7. Risk cross-reference
+
+| Risk | Work package mitigation |
+|------|-------------------------|
+| R14 Static init | WP-02 explicit init order in `fuse_core` |
+| R16 Inheritance misuse | WP-05, WP-06 code review checklist |
+| R17 Data races on scene graph | WP-04 handles, WP-05 snapshots, WP-06 barrier |
+| R01 Symbol collision | WP-02 prefix libs |
+| R02 Dual script VMs | WP-04 script host decision |
+
+---
+
+## 8. Document maintenance
+
+Update this plan when:
+- U gates pass (check off WPs)
+- Stakeholder overrides defaults in architecture §12
+- New evidence from legacy datamine changes assumptions

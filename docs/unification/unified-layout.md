@@ -53,8 +53,9 @@ FUSE/                                    # repo root (today)
 │       ├── CMakeLists.txt               # umbrella: options FUSE_BUILD_*
 │       │
 │       ├── Core/                        # L0 — fuse_core
-│       │   ├── include/fuse/           # public headers: types, handles, allocators, math, log, jobs
-│       │   │   └── object.h            # fuse::Object — shared root (replaces dual SimObject over time)
+│       │   ├── include/fuse/           # public headers: types, handles, allocators, math, log
+│       │   │   ├── object.h            # fuse::Object — shared root (replaces dual SimObject over time)
+│       │   │   └── jobs/               # JobScheduler, JobCounter, parallel_for — MT spine
 │       │   └── src/
 │       │
 │       ├── Services/                    # L1 — shared services (strangle from U3)
@@ -376,5 +377,7 @@ Repo ships **templates** under `Templates/FUSE/` and **parity demos** under `Sam
 - [x] Migration map from current paths documented
 - [x] U0–U2 stay-put policy explicit
 - [ ] Physical `Source/FUSE/` tree — **U1** (optional stubs only if umbrella needs them)
+
+**Parallel architecture:** [architecture-parallel.md](./architecture-parallel.md) — game thread + fiber workers; `Core/jobs/` is first-class layout.
 
 **This PR:** documentation only — no `Engine/` moves, no addon merges.

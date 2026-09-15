@@ -175,7 +175,8 @@ flowchart TB
 |----------|--------|
 | [subsystem-matrix.md](./subsystem-matrix.md) | Sim/objects → Merge/Replace toward 2D-base hierarchy; console/reflection aligned |
 | [unified-layout.md](./unified-layout.md) | `World2D/Scene/`, `World3D/Scene/` paths; inheritance direction |
-| [risk-register.md](./risk-register.md) | R16 — inheritance misuse across physics/gfx |
+| [risk-register.md](./risk-register.md) | R16 — inheritance misuse; R17 — scene graph data races |
+| [architecture-parallel.md](./architecture-parallel.md) | Handles, snapshots, game-thread mutation for merged hierarchy |
 | [symbol-collision-report.md](./symbol-collision-report.md) | Unchanged (evidence); strategy consumes its findings |
 
 ---

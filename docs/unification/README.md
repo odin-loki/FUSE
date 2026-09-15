@@ -9,7 +9,11 @@ This directory contains evidence-based inventory and collision analysis for merg
 
 **Constraint:** Investigation and documentation only — no addon `Engine/` merges into FUSE `Engine/` in this phase.
 
-**Stakeholder direction (2026-09-15):** Intelligent source merge via **2D→3D extension** for scene/object identity — [merge-strategy-2d-extends.md](./merge-strategy-2d-extends.md). Physics, gfx, and net remain composition/dual-backend. No physical `Engine/` + T2D source marriage.
+**Stakeholder direction (2026-09-15):**
+- **2D→3D extension merge** for scene/object identity — [merge-strategy-2d-extends.md](./merge-strategy-2d-extends.md)
+- **Multi-threading first-class** — fiber job spine, game-thread mutation, handle-based cross-thread rules — [architecture-parallel.md](./architecture-parallel.md)
+
+Physics, gfx, and net remain composition/dual-backend. No physical `Engine/` + T2D source marriage.
 
 ---
 
@@ -24,6 +28,9 @@ This directory contains evidence-based inventory and collision analysis for merg
 | [risk-register.md](./risk-register.md) | Box2D vs T3D physics, Gui, net, symbols, dual VMs, mobile/web, addon ore, … |
 | [unified-layout.md](./unified-layout.md) | Target monorepo tree, migration map (today→target), U0–U2 stay-put policy, naming conventions |
 | [merge-strategy-2d-extends.md](./merge-strategy-2d-extends.md) | **Stakeholder:** selective 2D→3D inheritance merge; composition boundaries; U2–U4 sequencing |
+| [concurrency-inventory.md](./concurrency-inventory.md) | Datamine: T3D ThreadPool, T2D single-thread loop, frame assumptions (paths, counts) |
+| [architecture-parallel.md](./architecture-parallel.md) | **MT spine:** process model, job system, frame pipeline, editor threading, safety |
+| [work-plan.md](./work-plan.md) | Ordered WPs U1–U8 + parallel workstreams; immediate next 5 actions |
 
 **Related (not U0):**
 - [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) — Track A/B port (consult for alignment only)
@@ -45,6 +52,9 @@ This directory contains evidence-based inventory and collision analysis for merg
 | Parity demo list frozen (minimum set) | ✅ [demo-corpus-parity-targets.md](./demo-corpus-parity-targets.md) |
 | Risk register published | ✅ [risk-register.md](./risk-register.md) |
 | Unified file layout proposed | ✅ [unified-layout.md](./unified-layout.md) |
+| Concurrency inventory (evidence) | ✅ [concurrency-inventory.md](./concurrency-inventory.md) |
+| Parallel architecture proposed | ✅ [architecture-parallel.md](./architecture-parallel.md) |
+| Work plan / backlog | ✅ [work-plan.md](./work-plan.md) |
 
 **U0 exit:** Documentation complete; stakeholder review of matrix recommendations and decision gates (script host, physics, 2D renderer, multiprocess policy) before U1 umbrella CMake.
 
@@ -58,6 +68,13 @@ This directory contains evidence-based inventory and collision analysis for merg
 4. **Physics and gfx stay dual (composed)** — Box2D behind `World2D`; T3D collision behind `World3D`; render refs on scene objects — no inheritance across backends.
 5. **Addons are mostly content** — kernels are small (BadBehaviour 74 files, Verve 163, GMK component 26); AFX/Verve already in FUSE root `Engine/source/`.
 6. **UAISK is scripts-only** — template pack for `fuse_ai`, no C++ ore.
+7. **Legacy is main-thread-first** — T3D `ThreadPool` (132 refs) with main-only global submit; T2D has no pool; FUSE needs fiber job spine (master plan B1.5).
+
+---
+
+## Stakeholder questions (coordinator)
+
+Non-blocking defaults in [architecture-parallel.md §12](./architecture-parallel.md#12-stakeholder-questions--recommended-defaults): fiber scheduler, `cores-2` workers, in-process editor, game-thread GFX v1, desktop-first platforms.
 
 ---
 
