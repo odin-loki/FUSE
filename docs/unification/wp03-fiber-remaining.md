@@ -1,0 +1,27 @@
+# WP-03 — Cooperative fiber wait (incremental)
+
+**Status:** Landed (POSIX ucontext on Linux/macOS)  
+**Deferred:** Win32 Fibers, ARM asm stacks, Emscripten coarse pool
+
+---
+
+## Shipped
+
+- `fuse/platform/fiber.hpp` + `fiber_posix.cpp` — stack switching via `ucontext` on native POSIX
+- Worker threads run jobs on a dedicated job fiber; `JobCounter::wait()` on workers yields to the scheduler fiber instead of blocking the OS thread on a condition variable
+- ASan fiber annotations when built with `-fsanitize=address`
+- Scheduler refuses new jobs on a worker whose job fiber is suspended in a cooperative wait (prevents fiber stack corruption)
+- Game/submit thread `wait()` still uses condition variables (expected for fork-join root)
+
+## Remaining (honest limit)
+
+| Item | Notes |
+|------|-------|
+| Per-job fiber pools | Today one job fiber per worker; nested waits OK, not arbitrary coroutine depth |
+| Windows fiber backend | `ConvertThreadToFiber` / `SwitchToFiber` under `Core/src/platform/win/` |
+| Apple platform split | Share POSIX backend or migrate to `makecontext` replacement when glibc removes ucontext |
+| Emscripten | `FUSE_JOBS_SINGLE_THREAD` / coarse pool per architecture-parallel §3.5 |
+| Hot-path mutex removal | `JobCounter` still uses mutex for CV fallback and waiter lists |
+| I/O + render dependency chains | Needs WP-04 handle commit + WP-06 frame barrier |
+
+See [architecture-parallel.md](./architecture-parallel.md) §3.2–3.3 and [work-plan.md](./work-plan.md) WP-03.

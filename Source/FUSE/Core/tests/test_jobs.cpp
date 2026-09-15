@@ -2,10 +2,13 @@
 #include <fuse/jobs/job_counter.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/jobs/parallel_for.hpp>
+#include <fuse/jobs/worker_context.hpp>
+#include <fuse/platform/fiber.hpp>
 
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -54,6 +57,38 @@ void testCounterWait() {
     expectTrue(counter.isComplete(), "counter reaches zero");
 }
 
+void testCooperativeWorkerWait() {
+    if (!fuse::platform::cooperativeFibersAvailable()) {
+        std::printf("SKIP: cooperative fibers unavailable on this platform\n");
+        return;
+    }
+
+    fuse::jobs::JobCounter gate(1);
+    std::atomic<bool> waiterResumed{false};
+    std::atomic<bool> waiterStarted{false};
+
+    withScheduler(2, [&] {
+        auto& sched = fuse::jobs::JobScheduler::instance();
+        sched.submit([&] {
+            waiterStarted.store(true, std::memory_order_release);
+            gate.wait();
+            waiterResumed.store(true, std::memory_order_release);
+        });
+
+        while (!waiterStarted.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+
+        sched.submit([&] {
+            gate.signal();
+        });
+
+        gate.wait();
+    });
+
+    expectTrue(waiterResumed.load(std::memory_order_acquire), "worker resumed after cooperative wait");
+}
+
 void testParallelForMatchesSerial() {
     withScheduler(4, [&] {
         fuse::u32 parallelSum = 0;
@@ -84,6 +119,7 @@ void testSingleThreadFallback() {
 
 int main() {
     testCounterWait();
+    testCooperativeWorkerWait();
     testParallelForMatchesSerial();
     testSingleThreadFallback();
 

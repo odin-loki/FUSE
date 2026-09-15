@@ -1,26 +1,38 @@
-# fuse_core — L0 FUSE core library (jobs + platform stubs, U1/WP-03)
+# fuse_core — L0 FUSE core library (jobs + platform + shared services, U1/WP-03+)
 
 option(FUSE_JOBS_SINGLE_THREAD "Force single-threaded job execution (tests/replay)" OFF)
 
 set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/types.hpp
     include/fuse/config.hpp
+    include/fuse/handle.hpp
+    include/fuse/object.hpp
     include/fuse/core/init.hpp
+    include/fuse/log/logger.hpp
+    include/fuse/alloc/frame_allocator.hpp
+    include/fuse/io/vfs.hpp
     include/fuse/jobs/worker_count.hpp
+    include/fuse/jobs/worker_context.hpp
     include/fuse/jobs/job_scheduler.hpp
     include/fuse/jobs/job_counter.hpp
     include/fuse/jobs/parallel_for.hpp
     include/fuse/platform/power.hpp
     include/fuse/platform/thread.hpp
+    include/fuse/platform/fiber.hpp
 )
 
 set(FUSE_CORE_SOURCES
     src/fuse_core_stub.cpp
     src/core/init.cpp
+    src/object.cpp
+    src/log/logger.cpp
+    src/alloc/frame_allocator.cpp
+    src/io/vfs.cpp
     src/jobs/worker_count.cpp
     src/jobs/job_scheduler.cpp
     src/jobs/job_counter.cpp
     src/platform/platform_stub.cpp
+    src/platform/fiber_posix.cpp
 )
 
 find_package(Threads REQUIRED)

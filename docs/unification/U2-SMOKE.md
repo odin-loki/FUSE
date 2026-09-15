@@ -111,17 +111,19 @@ Re-run collision inventory at U3 when first real Engine `.cpp` batches land in q
 
 ---
 
-## 5. WP-03 job spine progress (same PR)
+## 5. WP-03 job spine progress
 
-| Item | U1 stub | U2 |
-|------|---------|-----|
-| `computeWorkerCount()` | ✅ | ✅ |
-| `JobScheduler` | no-op | **work-stealing thread pool** |
-| `JobCounter::wait()` | no-op | **blocking wait** |
-| `parallel_for` | serial only | **parallel when workers > 0** |
-| Cooperative fibers | — | **deferred** — API surface kept; OS threads back workers |
+| Item | U1 stub | U2 | WP-03 (follow-up PR) |
+|------|---------|-----|----------------------|
+| `computeWorkerCount()` | ✅ | ✅ | ✅ |
+| `JobScheduler` | no-op | work-stealing thread pool | + cooperative job fiber per worker |
+| `JobCounter::wait()` | no-op | blocking wait (CV) | **worker yield via POSIX fibers** |
+| `parallel_for` | serial only | parallel when workers > 0 | ✅ unchanged API |
+| Cooperative fibers | — | deferred | ✅ Linux/macOS ucontext — [wp03-fiber-remaining.md](./wp03-fiber-remaining.md) |
 
-Remaining fiber work: stack switching (`fuse::platform::fiber`), `JobCounter::wait()` yield on worker threads without blocking OS threads, 32/64 KiB stacks from `recommendedFiberStackBytes()`.
+**U2 blockers unchanged:** full Engine source in quarantine libs (§3), symbol prefix at scale, dual script VMs.
+
+**New since U2 (does not unblock §3):** FUSE logger + VFS stub wired in smoke; greenfield `fuse::Object` → `SceneObject2D` → `SceneObject3D` hierarchy tests.
 
 ---
 
