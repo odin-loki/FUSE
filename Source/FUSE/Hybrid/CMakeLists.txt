@@ -9,7 +9,9 @@ add_library(fuse_hybrid STATIC
 if(FUSE_BUILD_VULKAN)
     target_sources(fuse_hybrid PRIVATE
         src/hybrid_renderer_bootstrap.cpp
+        src/vulkan_presentable.cpp
         include/fuse/hybrid/hybrid_renderer_bootstrap.hpp
+        include/fuse/hybrid/vulkan_presentable.hpp
     )
 endif()
 

@@ -14,6 +14,8 @@
 | `RenderCommandList` | `Source/FUSE/Renderer/` | Per-frame draws/clears merged on render thread |
 | `VulkanInstance` / `VulkanDevice` | `Source/FUSE/Renderer/include/fuse/renderer/vk/` | Headless bootstrap; optional validation layers |
 | `VulkanSurface` | same | Headless vs external `VkSurfaceKHR` abstraction |
+| `PlatformWindow` | `Source/FUSE/Core/include/fuse/platform/window.hpp` | Null (CI) or optional GLFW desktop window stub |
+| `VulkanPresentable` | `Source/FUSE/Hybrid/include/fuse/hybrid/vulkan_presentable.hpp` | Own Hybrid presentable path — wires platform window → External `VulkanSurface` |
 | `VulkanSwapchain` | same | Real `VkSwapchainKHR` when External surface + WSI; headless stub otherwise |
 | `FrameManager` | same | Triple-buffered fence/semaphore ring aligned with `FrameBarrier` |
 | `ResourceManager` / `GpuAllocator` | `Source/FUSE/Renderer/` | Handle-based buffers/images; VMA when vendored, stub otherwise |
@@ -108,6 +110,23 @@ enum class SurfaceKind : u8 { Headless, External };
 | **External** | opaque `VkSurfaceKHR*` | Creates real swapchain when device has `VK_KHR_swapchain` and queue supports present |
 
 Headless is intentional for CI: Lavapipe provides an ICD but umbrella tests run without a window. Editor Qt viewport (`U6`) will pass `SurfaceKind::External`.
+
+### Presentable path stubs (B2.2 follow-up)
+
+| Component | Backend | Behaviour |
+|-----------|---------|-----------|
+| `PlatformWindow` | **Null** (default) | No OS window; CI / Lavapipe headless |
+| `PlatformWindow` | **GLFW** (`FUSE_PLATFORM_WINDOW_GLFW=ON`) | Hidden desktop window; `glfwGetRequiredInstanceExtensions` + `glfwCreateWindowSurface` |
+| `VulkanPresentable` | **Headless** | No window; `SurfaceKind::Headless` |
+| `VulkanPresentable` | **PlatformWindow** | Defers swapchain until `VkSurfaceKHR` exists; wires `SurfaceKind::External` |
+| `HybridRendererBootstrap` | either | Owns `VulkanPresentable`; populates `SwapchainDesc.surface` + WSI instance extensions |
+
+```bash
+# Optional local GLFW window bootstrap (not used in CI):
+cmake -B build -DFUSE_UMBRELLA=ON -DFUSE_BUILD_VULKAN=ON -DFUSE_PLATFORM_WINDOW_GLFW=ON
+```
+
+Android CI keeps `FUSE_BUILD_VULKAN=OFF` — `VulkanPresentable` and `HybridRendererBootstrap` Vulkan sources are not compiled into `fuse_hybrid`.
 
 ---
 
@@ -443,6 +462,7 @@ Portable invariant unchanged: job code emits `RenderCommandList`; platform modul
 | `fuse_renderer_bootstrap` | B2.10 init/shutdown order, FrameManager availability, post-init submit |
 | `fuse_vulkan_phase2_integration` | **B2.11** — `RendererBootstrap` + `RenderGraph` + `RasterPath` + `CompositePass` headless multi-frame |
 | `fuse_hybrid_renderer_bootstrap` | Hybrid glue, shared RhiContext, runFrame lifecycle |
+| `fuse_hybrid_vulkan_presentable` | Headless-only presentable stubs — null window, External surface wiring, hybrid bootstrap |
 | `fuse_hybrid_tests` | Existing U4 software renderer regressions |
 | `fuse_cuda_jobs` | `submit_cuda` hook signals counter without CUDA toolkit |
 | `fuse_cuda_interop` | Vulkan/CUDA import + timeline stubs degrade on CI |
@@ -452,14 +472,14 @@ Portable invariant unchanged: job code emits `RenderCommandList`; platform modul
 Run:
 
 ```bash
-ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_graphics_pipeline|fuse_render_command|fuse_render_graph|fuse_composite_pass|fuse_renderer_bootstrap|fuse_vulkan_phase2|fuse_hybrid_renderer|fuse_hybrid|fuse_cuda|fuse_ray_march|fuse_screen_space_effects'
+ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_graphics_pipeline|fuse_render_command|fuse_render_graph|fuse_composite_pass|fuse_renderer_bootstrap|fuse_vulkan_phase2|fuse_hybrid_renderer|fuse_hybrid_vulkan_presentable|fuse_hybrid|fuse_cuda|fuse_ray_march|fuse_screen_space_effects'
 ```
 
 ---
 
 ## CI story (honest)
 
-1. **Linux umbrella** — `FUSE_BUILD_VULKAN=ON`, Mesa Lavapipe for headless ICD; Khronos validation layers used when installed, otherwise stub message (non-fatal). Swapchain stays **headless** (no `VkSurfaceKHR`); frame ring exercises real fences/semaphores.
+1. **Linux umbrella** — `FUSE_BUILD_VULKAN=ON`, Mesa Lavapipe for headless ICD; Khronos validation layers used when installed, otherwise stub message (non-fatal). Swapchain stays **headless** (no `VkSurfaceKHR`); frame ring exercises real fences/semaphores. `fuse_hybrid_vulkan_presentable` exercises null-window + External-surface wiring only — no GPU window on runner.
 2. **Android NDK** — `FUSE_BUILD_VULKAN=OFF`; `fuse_core` + `fuse_hybrid` unchanged.
 3. **iOS stub workflow** — unchanged; Vulkan deferred.
 4. **CUDA** — umbrella Linux enables `FUSE_BUILD_CUDA=ON`; no NVIDIA toolkit required. `fuse_cuda_jobs`, `fuse_cuda_interop`, and `fuse_ray_march_stub` exercise stub paths.
@@ -521,6 +541,7 @@ Thread ownership unchanged: CUDA launch jobs run on worker threads; Vulkan recor
 - [ ] B2.5 follow-up: real `vkCmdBeginRenderPass` / queue submit wiring (B2.8 draw list)
 - [ ] B2.6 follow-up: `cudaImportExternalMemory`, timeline semaphores, real shared textures
 - [ ] Replace `PlaceholderRenderer` present path incrementally — keep software fallback for headless CI
+- [x] Own Hybrid presentable path stubs — `PlatformWindow` (null/GLFW), `VulkanPresentable`, `HybridRendererBootstrap` wiring
 - [ ] Editor Qt native surface (`U6` viewport) → `SwapchainDesc.surface`
 - [ ] Android Vulkan WSI + MoltenVK macOS module
 

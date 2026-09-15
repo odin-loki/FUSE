@@ -5,6 +5,7 @@
 #include <fuse/frame/frame_ctx.hpp>
 #include <fuse/hybrid/hybrid_composer.hpp>
 #include <fuse/hybrid/project_flags.hpp>
+#include <fuse/hybrid/vulkan_presentable.hpp>
 #include <fuse/renderer/renderer_bootstrap.hpp>
 
 #include <memory>
@@ -14,6 +15,7 @@ namespace fuse::hybrid {
 /// B2.10 — runtime/demo glue: RendererBootstrap + HybridComposer on one init path.
 struct HybridRendererBootstrapDesc {
     renderer::RendererBootstrapDesc renderer{};
+    VulkanPresentableDesc presentable{};
     DimensionFlags projectFlags{};
 };
 
@@ -21,6 +23,8 @@ struct HybridRendererBootstrapStatus {
     bool initialized = false;
     bool rendererReady = false;
     bool composerAttached = false;
+    bool presentableReady = false;
+    bool presentableSurface = false;
     std::string message;
 };
 
@@ -41,6 +45,9 @@ public:
     HybridComposer& composer() { return m_composer; }
     const HybridComposer& composer() const { return m_composer; }
 
+    VulkanPresentable* presentable() { return m_presentable.get(); }
+    const VulkanPresentable* presentable() const { return m_presentable.get(); }
+
     /// Tick → render on the registered render thread (main loop glue).
     void runFrame(frame::FrameCtx& ctx);
 
@@ -57,6 +64,7 @@ private:
 
     HybridRendererBootstrapDesc m_desc;
     HybridRendererBootstrapStatus m_status;
+    std::unique_ptr<VulkanPresentable> m_presentable;
     std::unique_ptr<renderer::RendererBootstrap> m_rendererBootstrap;
     HybridComposer m_composer;
 };

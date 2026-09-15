@@ -41,6 +41,7 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/platform/thread.hpp
     include/fuse/platform/fiber.hpp
     include/fuse/platform/gl_context.hpp
+    include/fuse/platform/window.hpp
 )
 
 set(FUSE_CORE_SOURCES
@@ -59,7 +60,21 @@ set(FUSE_CORE_SOURCES
     src/jobs/cuda_jobs.cpp
     src/platform/platform_stub.cpp
     src/platform/platform_hardening.cpp
+    src/platform/window_stub.cpp
 )
+
+option(FUSE_PLATFORM_WINDOW_GLFW "Enable GLFW desktop window backend in fuse_core (off in CI)" OFF)
+set(FUSE_HAS_GLFW_WINDOW FALSE)
+if(FUSE_PLATFORM_WINDOW_GLFW)
+    find_package(glfw3 QUIET)
+    if(glfw3_FOUND)
+        list(APPEND FUSE_CORE_SOURCES src/platform/window_glfw.cpp)
+        set(FUSE_HAS_GLFW_WINDOW TRUE)
+        message(STATUS "FUSE: GLFW window backend enabled for fuse_core")
+    else()
+        message(STATUS "FUSE: FUSE_PLATFORM_WINDOW_GLFW=ON but glfw3 not found — null window only")
+    endif()
+endif()
 
 if(WIN32)
     list(APPEND FUSE_CORE_SOURCES src/platform/win/fiber_win32.cpp)
@@ -107,6 +122,11 @@ endif()
 
 target_compile_features(fuse_core PUBLIC cxx_std_17)
 target_link_libraries(fuse_core PUBLIC Threads::Threads)
+
+if(FUSE_HAS_GLFW_WINDOW)
+    target_compile_definitions(fuse_core PRIVATE FUSE_HAS_GLFW_WINDOW=1)
+    target_link_libraries(fuse_core PRIVATE glfw)
+endif()
 
 target_compile_definitions(fuse_core
     PUBLIC

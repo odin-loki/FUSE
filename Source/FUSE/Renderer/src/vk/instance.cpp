@@ -87,6 +87,14 @@ bool VulkanInstance::initialize(const VulkanInstanceDesc& desc) {
     if (extensionAvailable(VK_EXT_DEBUG_UTILS_EXTENSION_NAME)) {
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
+    if (desc.extraExtensions != nullptr && desc.extraExtensionCount > 0) {
+        for (u32 i = 0; i < desc.extraExtensionCount; ++i) {
+            const char* extensionName = desc.extraExtensions[i];
+            if (extensionName != nullptr) {
+                extensions.push_back(extensionName);
+            }
+        }
+    }
 
     std::vector<const char*> layers;
     const bool validationRequested = desc.enableValidation;
