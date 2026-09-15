@@ -223,4 +223,25 @@ void RollbackManager::resimulate_to_(u32 target_frame, f32 dt) {
     }
 }
 
+bool RollbackManager::can_rewind_to(u32 frame) const {
+    if (!can_rewind_to_frame(m_current_frame, frame, m_max_rollback)) {
+        return false;
+    }
+    return m_buffer.has_frame(frame) && m_buffer.snapshot(frame) != nullptr;
+}
+
+bool RollbackManager::rewind_to(u32 frame) {
+    if (!can_rewind_to(frame)) {
+        return false;
+    }
+
+    rollback_to_(frame);
+    m_current_frame = frame;
+    return true;
+}
+
+u32 RollbackManager::resimulate_count_to(u32 target_frame) const {
+    return resimulate_frame_count(m_current_frame, target_frame);
+}
+
 } // namespace fuse::net

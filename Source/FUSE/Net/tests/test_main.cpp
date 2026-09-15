@@ -10,6 +10,7 @@ namespace fuse::net::tests {
 void run_transport_tests();
 void run_serializer_tests();
 void run_rollback_tests();
+void run_rollback_window_tests();
 void run_rollback_buffer_tests();
 void run_checksum_tests();
 void run_input_history_tests();
@@ -26,6 +27,7 @@ int main() {
     fuse::net::tests::run_transport_tests();
     fuse::net::tests::run_serializer_tests();
     fuse::net::tests::run_rollback_tests();
+    fuse::net::tests::run_rollback_window_tests();
     fuse::net::tests::run_rollback_buffer_tests();
     fuse::net::tests::run_checksum_tests();
     fuse::net::tests::run_input_history_tests();

@@ -12,8 +12,9 @@
 |-----------|----------|-------|
 | `InterestManager` | `interest_management.hpp/.cpp` | Relevance/unload radii, hysteresis, observer AOI evaluation |
 | `InterestPriorityQueue` | `interest_management.hpp/.cpp` | Max-priority replication ordering stub |
-| `InputHistoryBuffer` | `input_history.hpp/.cpp` | 128-frame ring of predicted + confirmed `PlayerInput` |
+| `InputHistoryBuffer` | `input_history.hpp/.cpp` | 128-frame ring with `push_frame` / `pop_oldest`, predicted + confirmed `PlayerInput` |
 | `reconcile_predicted_input` | `reconcile.hpp/.cpp` | Compare authoritative input against local prediction |
+| Rollback window helpers | `rollback_window.hpp/.cpp` | `can_rewind_to_frame`, `resimulate_frame_count` bounds stubs |
 | Checksum helpers | `checksum.hpp/.cpp` | FNV-1a over snapshot blobs; shared by rollback + delta paths |
 | `RollbackBuffer` | `rollback_buffer.hpp/.cpp` | 64-frame snapshot + input ring (unchanged capacity) |
 | `SnapshotHistoryRing` | `snapshot_delta.hpp/.cpp` | Snapshot-only ring delegating to `RollbackBuffer`; `apply_delta_and_store` |
@@ -57,7 +58,7 @@ while (queue.pop(next)) {
 
 ## Input prediction history
 
-Clients predict with local input before authoritative packets arrive. `InputHistoryBuffer` stores both sides per frame:
+Clients predict with local input before authoritative packets arrive. `InputHistoryBuffer` stores both sides per frame and exposes ring push/pop helpers:
 
 ```cpp
 #include <fuse/net/input_history.hpp>
@@ -68,15 +69,35 @@ history.init(128);
 fuse::net::PlayerInput local{};
 local.frame = frame;
 local.axis_lx = stick_x;
-history.store_predicted(frame, local);
+history.push_frame(frame, local);
 
 // later, when authoritative input arrives:
-fuse::net::ReconcileResult result =
-    fuse::net::reconcile_predicted_input(history, frame, authoritative);
+fuse::net::ReconcileResult result = history.reconcile_authoritative(frame, authoritative);
 // result.action == Confirmed | Mismatch | NoOp
+
+// explicit eviction (tests / tooling):
+const std::optional<fuse::net::InputHistoryFrame> oldest = history.pop_oldest();
 ```
 
 `RollbackManager::set_local_input` mirrors predictions into the attached history buffer. `apply_remote_input` records confirmed remotes via the same reconcile helper before resimulation.
+
+### Rollback window helpers
+
+Pure bounds helpers and `RollbackManager` rewind stubs keep rollback depth explicit:
+
+```cpp
+#include <fuse/net/rollback_window.hpp>
+#include <fuse/net/rollback.hpp>
+
+if (fuse::net::can_rewind_to_frame(current, target, max_rollback)) {
+    const fuse::u32 steps = fuse::net::resimulate_frame_count(target, current);
+    // ...
+}
+
+rollback.can_rewind_to(target_frame);
+rollback.rewind_to(target_frame);          // restore snapshot only
+rollback.resimulate_count_to(target_frame);  // forward gap stub
+```
 
 ---
 
@@ -140,8 +161,9 @@ ctest --test-dir build --output-on-failure -R fuse_net_b74
 |-------|-----------|
 | `test_net_interest_management` | Relevance/unload radii, hysteresis, priority computation, queue ordering |
 | `test_net_checksum` | FNV-1a determinism, combine, snapshot verify |
-| `test_net_input_history` | Predicted/confirmed retention, ring eviction, `inputs_equal` |
-| `test_net_reconcile` | Confirmed / mismatch / NoOp reconcile paths |
+| `test_net_input_history` | `push_frame` / `pop_oldest`, ring wrap eviction, `inputs_equal` |
+| `test_net_reconcile` | Confirmed / mismatch / NoOp reconcile paths, `reconcile_authoritative` |
+| `test_net_rollback_window` | Rewind bounds, `resimulate_frame_count`, `RollbackManager::rewind_to` |
 | `test_net_snapshot_delta` | Empty delta, single-field mask, multi-entity bitset, wire roundtrip, checksum mismatch, history ring |
 | `fuse_net_b74` (umbrella) | Transport, serializer, rollback, buffer, delta, interpolation, AOI |
 
@@ -150,8 +172,9 @@ ctest --test-dir build --output-on-failure -R fuse_net_b74
 ## Gates (B7.4 deepen)
 
 - [x] Interest management AOI stubs (`InterestManager`, relevance radii, priority queue)
-- [x] Expanded input history ring (128 frames, predicted + confirmed)
-- [x] Reconcile stub (`reconcile_predicted_input`)
+- [x] Expanded input history ring (128 frames, `push_frame` / `pop_oldest`, predicted + confirmed)
+- [x] Reconcile stub (`reconcile_predicted_input`, `InputHistoryBuffer::reconcile_authoritative`)
+- [x] Rollback window helpers (`can_rewind_to_frame`, `resimulate_frame_count`, `RollbackManager::rewind_to`)
 - [x] Shared checksum helpers + tests
 - [x] Snapshot delta field masks, entity bitsets, verified apply + delta checksum
 - [x] `SnapshotHistoryRing` reuses `RollbackBuffer` for rollback-friendly snapshot history
