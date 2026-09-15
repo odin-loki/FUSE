@@ -24,6 +24,57 @@ f32 clamp01(f32 value) {
 
 } // namespace
 
+ClusterDesc ClusterDesc::clampCounts(const ClusterDesc& raw) {
+    ClusterDesc out = raw;
+    if (out.tilesX > kMaxTilesX) {
+        out.tilesX = kMaxTilesX;
+    }
+    if (out.tilesY > kMaxTilesY) {
+        out.tilesY = kMaxTilesY;
+    }
+    if (out.slicesZ > kMaxSlicesZ) {
+        out.slicesZ = kMaxSlicesZ;
+    }
+    if (out.maxLightsPerCluster > kMaxLightsPerCluster) {
+        out.maxLightsPerCluster = kMaxLightsPerCluster;
+    }
+    return out;
+}
+
+bool cluster_util::tryAssignLight(std::vector<u32>& clusterLights, u32 lightIdx, u32 maxLightsPerCluster) {
+    if (maxLightsPerCluster > 0u && clusterLights.size() >= maxLightsPerCluster) {
+        return false;
+    }
+    clusterLights.push_back(lightIdx);
+    return true;
+}
+
+u32 cluster_util::countAssignedLights(const ClusterGridSoA& grid, u32 clusterCount) {
+    if (grid.grid.size() < clusterCount) {
+        return 0u;
+    }
+
+    u32 total = 0u;
+    for (u32 clusterIdx = 0; clusterIdx < clusterCount; ++clusterIdx) {
+        total += grid.grid[clusterIdx].count;
+    }
+    return total;
+}
+
+u32 cluster_util::countEmptyClusters(const ClusterGridSoA& grid, u32 clusterCount) {
+    if (grid.grid.size() < clusterCount) {
+        return clusterCount;
+    }
+
+    u32 empty = 0u;
+    for (u32 clusterIdx = 0; clusterIdx < clusterCount; ++clusterIdx) {
+        if (grid.grid[clusterIdx].count == 0u) {
+            ++empty;
+        }
+    }
+    return empty;
+}
+
 u32 ClusterGridLayout::clusterIndex(u32 tileX, u32 tileY, u32 sliceZ, const ClusterDesc& desc) {
     return (tileY * desc.tilesX + tileX) * desc.slicesZ + sliceZ;
 }
@@ -130,6 +181,11 @@ u32 ClusterLightGridLayout::rebuildLightGrid(ClusterGridSoA& grid,
                                               const std::vector<std::vector<u32>>& perClusterLights,
                                               u32 maxLightsPerCluster) {
     grid.lightList.clear();
+    grid.grid.clear();
+    if (clusterCount == 0u) {
+        return 0u;
+    }
+
     grid.grid.assign(clusterCount, ClusterGridEntry{});
 
     u32 lightsDropped = 0u;
@@ -175,7 +231,7 @@ bool ClusterLightGridLayout::validateContiguousOffsets(const ClusterGridSoA& gri
 
 void ClusteredLightCuller::init(const ClusterDesc& desc, ResourceManager& resources) {
     destroy();
-    m_desc = desc;
+    m_desc = ClusterDesc::clampCounts(desc);
     m_resources = &resources;
 
     const u32 clusterCount = m_desc.clusterCount();
@@ -308,12 +364,10 @@ void ClusteredLightCuller::cullLights(const std::vector<PointLightInput>& pointL
             if (!sphereIntersectsAabb(light.position, light.radius, aabb)) {
                 continue;
             }
-            if (clusterLights.size() >= m_desc.maxLightsPerCluster) {
+            if (!cluster_util::tryAssignLight(clusterLights, lightIdx, m_desc.maxLightsPerCluster)) {
                 ++lightsDroppedOverflow;
                 clusterOverflowed = true;
-                continue;
             }
-            clusterLights.push_back(lightIdx);
         }
 
         for (u32 lightIdx = 0; lightIdx < static_cast<u32>(spotLights.size()); ++lightIdx) {
@@ -321,13 +375,11 @@ void ClusteredLightCuller::cullLights(const std::vector<PointLightInput>& pointL
             if (!sphereIntersectsAabb(light.position, light.radius, aabb)) {
                 continue;
             }
-            if (clusterLights.size() >= m_desc.maxLightsPerCluster) {
+            const u32 encodedIdx = static_cast<u32>(pointLights.size()) + lightIdx;
+            if (!cluster_util::tryAssignLight(clusterLights, encodedIdx, m_desc.maxLightsPerCluster)) {
                 ++lightsDroppedOverflow;
                 clusterOverflowed = true;
-                continue;
             }
-            const u32 encodedIdx = static_cast<u32>(pointLights.size()) + lightIdx;
-            clusterLights.push_back(encodedIdx);
         }
 
         if (clusterOverflowed) {

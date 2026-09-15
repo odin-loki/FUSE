@@ -11,12 +11,20 @@ namespace fuse::renderer {
 
 /// Cluster grid configuration (B5.4 — P5 §5.4).
 struct ClusterDesc {
+    static constexpr u32 kMaxTilesX = 32u;
+    static constexpr u32 kMaxTilesY = 18u;
+    static constexpr u32 kMaxSlicesZ = 64u;
+    static constexpr u32 kMaxLightsPerCluster = 256u;
+
     u32 tilesX = 16;
     u32 tilesY = 9;
     u32 slicesZ = 24;
     u32 maxLightsPerCluster = 256;
 
     u32 clusterCount() const { return tilesX * tilesY * slicesZ; }
+
+    /// Clamp tile/slice/light caps to CPU stub limits; zero dimensions remain zero (empty grid).
+    static ClusterDesc clampCounts(const ClusterDesc& raw);
 };
 
 /// World-space cluster bounds built from the camera frustum.
@@ -87,6 +95,13 @@ struct ClusterLightGridLayout {
                                 u32 maxLightsPerCluster = 0u);
     static bool validateContiguousOffsets(const ClusterGridSoA& grid, u32 clusterCount);
 };
+
+/// CPU light-to-cluster assignment stubs — mirrors CUDA cull kernel list append.
+namespace cluster_util {
+bool tryAssignLight(std::vector<u32>& clusterLights, u32 lightIdx, u32 maxLightsPerCluster);
+u32 countAssignedLights(const ClusterGridSoA& grid, u32 clusterCount);
+u32 countEmptyClusters(const ClusterGridSoA& grid, u32 clusterCount);
+} // namespace cluster_util
 
 /// Renderer-side point light input (decoupled from ECS).
 struct PointLightInput {
