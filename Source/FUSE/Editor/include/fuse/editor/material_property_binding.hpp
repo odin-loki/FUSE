@@ -38,6 +38,12 @@ public:
     bool setBaseColor(f32 r, f32 g, f32 b, CommandStack& cmds);
     bool setShadingModel(u8 shadingModel, CommandStack& cmds);
 
+    /// Generic get/set by property id for inspector round-trip (B6.7 deepen).
+    bool getProperty(MaterialPropertyId id, f32& out) const;
+    bool setProperty(MaterialPropertyId id, f32 value, CommandStack& cmds);
+    bool getPropertyVec3(MaterialPropertyId id, f32& x, f32& y, f32& z) const;
+    bool setPropertyVec3(MaterialPropertyId id, f32 x, f32 y, f32 z, CommandStack& cmds);
+
     [[nodiscard]] bool isPropertyDirty(MaterialPropertyId id) const;
     [[nodiscard]] bool needsPanelRefresh() const { return m_panelRefreshPending; }
     [[nodiscard]] u32 coalescedDirtyCount() const { return m_coalescedDirtyCount; }

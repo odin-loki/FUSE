@@ -4,8 +4,10 @@
 #include <fuse/editor/editor_state.hpp>
 #include <fuse/editor/material_editor_panel.hpp>
 #include <fuse/editor/material_property_binding.hpp>
+#include <fuse/editor/material_property_inspect.hpp>
 #include <fuse/editor/property_inspector.hpp>
 #include <fuse/editor/sdf_sculpt_panel.hpp>
+#include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/transform.hpp>
 
@@ -175,6 +177,131 @@ void testMaterialPropertyBindingDirtyCoalesce() {
                "refreshPanel resets coalesced dirty counter");
 }
 
+void testMaterialPropertyBindingRoundtrip() {
+    fuse::editor::EditorState state;
+    fuse::editor::MaterialEditorPanel panel;
+    panel.sync(state, 1u);
+    panel.selectMaterial(0u);
+
+    fuse::editor::MaterialPropertyBinding& binding = panel.propertyBinding();
+    fuse::editor::CommandStack cmds;
+
+    expectTrue(binding.setProperty(fuse::editor::MaterialPropertyId::Roughness, 0.25f, cmds),
+               "set roughness via generic property api");
+    fuse::f32 roughness = 0.f;
+    expectTrue(binding.getProperty(fuse::editor::MaterialPropertyId::Roughness, roughness),
+               "get roughness via generic property api");
+    expectTrue(roughness == 0.25f, "roughness round-trips");
+
+    expectTrue(binding.setProperty(fuse::editor::MaterialPropertyId::Metallic, 0.9f, cmds),
+               "set metallic via generic property api");
+    fuse::f32 metallic = 0.f;
+    expectTrue(binding.getProperty(fuse::editor::MaterialPropertyId::Metallic, metallic),
+               "get metallic via generic property api");
+    expectTrue(metallic == 0.9f, "metallic round-trips");
+
+    expectTrue(binding.setPropertyVec3(fuse::editor::MaterialPropertyId::BaseColor, 0.2f, 0.4f, 0.6f,
+                                       cmds),
+               "set base color via generic vec3 api");
+    fuse::f32 r = 0.f;
+    fuse::f32 g = 0.f;
+    fuse::f32 b = 0.f;
+    expectTrue(binding.getPropertyVec3(fuse::editor::MaterialPropertyId::BaseColor, r, g, b),
+               "get base color via generic vec3 api");
+    expectTrue(r == 0.2f && g == 0.4f && b == 0.6f, "base color round-trips");
+
+    expectTrue(binding.setProperty(fuse::editor::MaterialPropertyId::ShadingModel, 4.f, cmds),
+               "set shading model via generic property api");
+    fuse::f32 shadingModel = 0.f;
+    expectTrue(binding.getProperty(fuse::editor::MaterialPropertyId::ShadingModel, shadingModel),
+               "get shading model via generic property api");
+    expectTrue(shadingModel == 4.f, "shading model round-trips");
+
+    expectTrue(cmds.appliedCount() == 4u, "roundtrip edits post four commands");
+    expectTrue(fuse::editor::materialPropertyCount() == 4u, "four inspector properties exposed");
+}
+
+void testMaterialEditorPanelEmptyCatalog() {
+    fuse::editor::EditorState state;
+    fuse::editor::MaterialEditorPanel panel;
+    panel.sync(state, 0u);
+
+    expectTrue(panel.catalogCount() == 0u, "empty catalog reports zero materials");
+    expectTrue(panel.selectedMaterialId() == fuse::editor::MaterialEditorPanel::kInvalidMaterialId,
+               "empty catalog has no selection");
+    expectTrue(!panel.propertyBinding().isBound(), "empty catalog keeps binding unbound");
+
+    fuse::editor::CommandStack cmds;
+    expectTrue(!panel.selectMaterial(0u), "select fails on empty catalog");
+    expectTrue(!panel.setRoughness(0.5f, cmds), "edit fails without selection");
+    expectTrue(cmds.appliedCount() == 0u, "empty catalog posts no commands");
+}
+
+void testMaterialPropertyBindingClamp() {
+    fuse::editor::EditorState state;
+    fuse::editor::MaterialEditorPanel panel;
+    panel.sync(state, 1u);
+    panel.selectMaterial(0u);
+
+    fuse::editor::MaterialPropertyBinding& binding = panel.propertyBinding();
+    fuse::editor::CommandStack cmds;
+
+    expectTrue(binding.setRoughness(-0.5f, cmds), "negative roughness accepted");
+    expectTrue(panel.editState().roughness == 0.f, "roughness clamped to zero");
+
+    expectTrue(binding.setRoughness(1.5f, cmds), "overshoot roughness accepted");
+    expectTrue(panel.editState().roughness == 1.f, "roughness clamped to one");
+
+    expectTrue(binding.setMetallic(-1.f, cmds), "negative metallic accepted");
+    expectTrue(panel.editState().metallic == 0.f, "metallic clamped to zero");
+
+    expectTrue(binding.setBaseColor(2.f, -0.25f, 0.5f, cmds), "out-of-range base color accepted");
+    expectTrue(panel.editState().baseColorR == 1.f, "base color r clamped");
+    expectTrue(panel.editState().baseColorG == 0.f, "base color g clamped");
+    expectTrue(panel.editState().baseColorB == 0.5f, "base color b unchanged");
+
+    expectTrue(binding.setShadingModel(99u, cmds), "overshoot shading model accepted");
+    expectTrue(panel.editState().shadingModel == 5u, "shading model clamped to cloth");
+
+    const fuse::editor::MaterialPropertyDescriptor roughnessDesc =
+        fuse::editor::materialPropertyDescriptor(fuse::editor::MaterialPropertyId::Roughness);
+    expectTrue(roughnessDesc.minValue == 0.f && roughnessDesc.maxValue == 1.f,
+               "roughness descriptor exposes unit range");
+}
+
+void testPropertyInspectorMeshMaterialId() {
+    fuse::editor::EditorScene scene;
+    scene.init();
+
+    const fuse::ecs::EntityID entity = scene.registry().create();
+    scene.registry().add<fuse::ecs::Transform>(entity);
+    fuse::ecs::Mesh mesh{};
+    mesh.material_id = 2u;
+    scene.registry().add<fuse::ecs::Mesh>(entity, mesh);
+
+    fuse::editor::EditorState state;
+    state.primarySelection = entity;
+
+    fuse::editor::PropertyInspector inspector;
+    inspector.sync(state, scene);
+
+    fuse::u32 materialId = 0u;
+    expectTrue(inspector.getMeshMaterialId(scene, materialId), "mesh material id readable");
+    expectTrue(materialId == 2u, "mesh material id matches component");
+
+    fuse::editor::CommandStack cmds;
+    expectTrue(inspector.setMeshMaterialId(5u, scene, cmds), "mesh material id edit accepted");
+    expectTrue(scene.registry().get<fuse::ecs::Mesh>(entity)->material_id == 5u,
+               "mesh material id updated on component");
+    expectTrue(cmds.appliedCount() == 1u, "mesh material id posts command");
+
+    const fuse::editor::EditorCommand* last = cmds.lastApplied();
+    expectTrue(last != nullptr && last->propertyName == "mesh.material_id",
+               "mesh material id command property name");
+
+    scene.destroy();
+}
+
 void testMaterialPropertyBindingUnbound() {
     fuse::editor::MaterialPropertyBinding binding;
     expectTrue(!binding.isBound(), "default binding is unbound");
@@ -297,8 +424,12 @@ int main() {
     testMaterialEditorPanelPropertyBindings();
     testMaterialEditorPanelPropertyCoalescing();
     testMaterialPropertyBindingGetSet();
+    testMaterialPropertyBindingRoundtrip();
+    testMaterialEditorPanelEmptyCatalog();
+    testMaterialPropertyBindingClamp();
     testMaterialPropertyBindingDirtyCoalesce();
     testMaterialPropertyBindingUnbound();
+    testPropertyInspectorMeshMaterialId();
 #ifdef FUSE_VULKAN_BACKEND
     testMaterialEditorPanelMaterialSystemBridge();
 #endif

@@ -1,6 +1,6 @@
 # Track B — Editor Panels (B6.2–B6.13)
 
-**Status:** B6.2 undo stack + B6.3–B6.5 core panel stubs + B6.6–B6.8 inspector/material/sculpt API stubs + B6.9–B6.12 asset/profiler/console/play-mode stubs landed; **B6.13** Phase 6 integration gate + checklist complete; **B6.12 deepen** — `PlaySession` tick accumulator, `PlayWorldSnapshot` ECS capture/restore, coalesced dirty restore on stop; **B6.2 deepen** — `CommandStack` `push`/undo/redo, coalescing (`propertyValueBefore` baseline), dirty tracking, `peekUndo`/`peekRedo`, `evictedCount`, full snapshot restore + `UndoStackSnapshot` depth rewind restore + dirty stub; **B6.4 deepen** — `GizmoSystem` ray axis/plane hit tests, local/world delta helpers, translate/rotate snap stubs, `CommandStack`/`EditorState` dirty marking; **B6.4 deepen follow-up** — `cycleGizmoMode`/`cycleMode`, screen dead-zone miss stub (`isScreenHitMiss`), scale grid snap (`scaleSnap`/`snapScale`), hit-test miss + snap grid tests; **B6.7 deepen** — material property bindings (`roughness`/`metallic`/`baseColor`/`shadingModel`), `editDirty`/`previewDirty` flags, `MaterialSystem` push/sync bridge tests; **B6.7 deepen follow-up** — `MaterialPropertyBinding` bind/get/set stubs, per-property dirty coalesce, `needsPanelRefresh`/`refreshPanel` helpers  
+**Status:** B6.2 undo stack + B6.3–B6.5 core panel stubs + B6.6–B6.8 inspector/material/sculpt API stubs + B6.9–B6.12 asset/profiler/console/play-mode stubs landed; **B6.13** Phase 6 integration gate + checklist complete; **B6.12 deepen** — `PlaySession` tick accumulator, `PlayWorldSnapshot` ECS capture/restore, coalesced dirty restore on stop; **B6.2 deepen** — `CommandStack` `push`/undo/redo, coalescing (`propertyValueBefore` baseline), dirty tracking, `peekUndo`/`peekRedo`, `evictedCount`, full snapshot restore + `UndoStackSnapshot` depth rewind restore + dirty stub; **B6.4 deepen** — `GizmoSystem` ray axis/plane hit tests, local/world delta helpers, translate/rotate snap stubs, `CommandStack`/`EditorState` dirty marking; **B6.4 deepen follow-up** — `cycleGizmoMode`/`cycleMode`, screen dead-zone miss stub (`isScreenHitMiss`), scale grid snap (`scaleSnap`/`snapScale`), hit-test miss + snap grid tests; **B6.7 deepen** — material property bindings (`roughness`/`metallic`/`baseColor`/`shadingModel`), `editDirty`/`previewDirty` flags, `MaterialSystem` push/sync bridge tests; **B6.7 deepen follow-up** — `MaterialPropertyBinding` bind/get/set stubs, per-property dirty coalesce, `needsPanelRefresh`/`refreshPanel` helpers; **B6.7 deepen (material inspector)** — `material_property_inspect` clamp/descriptor helpers, generic `getProperty`/`setProperty` round-trip API, empty-catalog guard, `PropertyInspector` mesh `material_id` get/set  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B6.2–B6.13  
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §2.1–§4, [U6-EDITOR.md](./U6-EDITOR.md)
 
@@ -19,7 +19,8 @@
 | `EditorState` / `EditorScene` | `editor_state.hpp`, `editor_scene.hpp` | Selection + ECS registry for panel tests |
 | `PropertyInspector` | `property_inspector.hpp` | B6.6 — component section model + live ECS edits |
 | `MaterialEditorPanel` | `material_editor_panel.hpp` | B6.7 — catalog/selection + `MaterialEditState`; B6.7 deepen — property bindings + dirty flags |
-| `MaterialPropertyBinding` | `material_property_binding.hpp` | B6.7 deepen follow-up — bind/get/set stubs, per-property dirty coalesce, panel refresh helpers |
+| `MaterialPropertyBinding` | `material_property_binding.hpp` | B6.7 deepen follow-up — bind/get/set stubs, per-property dirty coalesce, panel refresh helpers; generic property round-trip + clamp on set |
+| `material_property_inspect` | `material_property_inspect.hpp` | B6.7 deepen — clamp helpers, `MaterialPropertyDescriptor` metadata for inspector widgets |
 | `SdfSculptPanel` | `sdf_sculpt_panel.hpp` | B6.8 — brush state + stroke spacing / symmetry |
 | `AssetBrowser` | `asset_browser.hpp` | B6.9 — filesystem scan + type classification + search filter |
 | `ProfilerPanel` | `profiler_panel.hpp` | B6.10 — 256-frame ring buffer of `FrameProfileData` |
@@ -99,7 +100,7 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 |------------|--------|-----------|
 | `fuse_editor_command_queue` | `fuse_editor_api_tests` | UI→game command queue |
 | `fuse_editor_host` | `fuse_editor_host_tests` | `EditorHost::gameTick()` drain |
-| `fuse_editor_panels` | `fuse_editor_panels_tests` | B6.6–B6.8 inspector/material/sculpt API; B6.7 deepen property bindings + dirty flags; B6.7 deepen follow-up bind/get/set + dirty coalesce + unbound |
+| `fuse_editor_panels` | `fuse_editor_panels_tests` | B6.6–B6.8 inspector/material/sculpt API; B6.7 deepen property bindings + dirty flags; B6.7 deepen follow-up bind/get/set + dirty coalesce + unbound; B6.7 deepen binding round-trip, empty catalog, property clamp, mesh `material_id` inspect |
 | `fuse_editor_command_stack` | `fuse_editor_command_stack_tests` | B6.2 `UndoStack` LIFO, merge, rename/reparent, `MAX_HISTORY`, 100-step chain, empty-stack no-ops, dirty stub, depth-rewind snapshot restore; `CommandStack` push/undo/redo, coalescing baseline, `peekUndo`/`peekRedo`, redo-branch clear, dirty tracking, snapshot restore, `evictedCount` |
 | `fuse_editor_hierarchy_model` | `fuse_editor_hierarchy_model_tests` | B6.5 flatten, search, reparent + undo |
 | `fuse_editor_panels_b69_b612` | `fuse_editor_panels_b69_b612_tests` | B6.9–B6.12 asset/profiler/console/play-mode stubs |
@@ -189,6 +190,14 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 - **Dirty coalesce** — repeat edits to the same property increment `coalescedDirtyCount()` while a single property dirty bit stays set until `markPanelRefreshed()`.
 - **Panel refresh** — `needsPanelRefresh()` / `refreshPanel()` on `MaterialEditorPanel`; unbound get/set returns false without posting commands.
 - **Tests** — `fuse_editor_panels` adds bind/get/set round-trip, dirty coalesce, and unbound coverage.
+
+#### B6.7 deepen — material inspector clamp + inspect helpers
+
+- **`material_property_inspect`** — `clampRoughness`/`clampMetallic`/`clampBaseColorComponent`/`clampShadingModel` keep authoring edits in valid PBR ranges; `materialPropertyDescriptor` exposes slider metadata.
+- **Generic binding API** — `getProperty`/`setProperty` and `getPropertyVec3`/`setPropertyVec3` round-trip all four `MaterialPropertyId` values through one code path.
+- **Empty catalog** — `sync(state, 0)` leaves binding unbound; `selectMaterial` and property edits fail without posting commands.
+- **Mesh material slot** — `PropertyInspector::getMeshMaterialId` / `setMeshMaterialId` wire entity mesh `material_id` to the material panel selection stub.
+- **Tests** — `fuse_editor_panels` adds binding round-trip, empty catalog, property clamp, and mesh `material_id` inspect coverage.
 
 ### B6.8 — SDF Sculpt Panel
 
