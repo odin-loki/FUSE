@@ -76,6 +76,13 @@ void testProbeGridIndexing() {
 
     const fuse::renderer::ProbeGridCoord invalid{4, 0, 0};
     expectTrue(!fuse::renderer::ProbeGridLayout::isValidProbeCoord(desc, invalid), "x out of range");
+
+    const fuse::renderer::ProbeGridCoord origin{0, 0, 0};
+    expectTrue(fuse::renderer::ProbeGridLayout::probeIndexFromCoord(desc, origin) == 0u, "origin index 0");
+    const fuse::renderer::ProbeGridCoord last{3, 1, 2};
+    expectTrue(fuse::renderer::ProbeGridLayout::probeIndexFromCoord(desc, last) == 23u, "last coord index 23");
+    expectTrue(fuse::renderer::ProbeGridLayout::probeIndexFromCoord(desc, invalid) == UINT32_MAX,
+               "invalid coord returns UINT32_MAX");
 }
 
 void testProbeGridWorldCoord() {
@@ -93,6 +100,64 @@ void testProbeGridWorldCoord() {
     const fuse::renderer::ProbeGridCoord clamped =
         fuse::renderer::ProbeGridLayout::clampProbeGridCoord(desc, {9, 9, 9});
     expectTrue(clamped.x == 2u && clamped.y == 2u && clamped.z == 2u, "clamp to grid max");
+
+    const fuse::math::Vec3 oobGrid =
+        fuse::renderer::ProbeGridLayout::worldToProbeGridCoord(desc, {100.f, -10.f, 50.f});
+    const fuse::math::Vec3 clampedGrid =
+        fuse::renderer::ProbeGridLayout::clampWorldToProbeGridCoord(desc, oobGrid);
+    expectNear(clampedGrid.x, 2.f, 1e-5f, "OOB grid x clamped to max");
+    expectNear(clampedGrid.y, 0.f, 1e-5f, "OOB grid y clamped to min");
+    expectNear(clampedGrid.z, 2.f, 1e-5f, "OOB grid z clamped to max");
+}
+
+void testProbeValidityFlags() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {3, 3, 3};
+
+    const fuse::renderer::ProbeGridCoord corner{0, 0, 0};
+    const fuse::renderer::ProbeValidityFlags cornerFlags =
+        fuse::renderer::ProbeGridLayout::probeValidity(desc, corner);
+    expectTrue(cornerFlags.valid, "corner probe valid");
+    expectTrue(cornerFlags.is_border, "corner probe is border");
+    expectTrue(!cornerFlags.interior, "corner probe not interior");
+    expectTrue(!cornerFlags.has_trilinear_neighbourhood, "corner lacks trilinear neighbourhood");
+
+    const fuse::renderer::ProbeGridCoord interior{1, 1, 1};
+    const fuse::renderer::ProbeValidityFlags interiorFlags =
+        fuse::renderer::ProbeGridLayout::probeValidity(desc, interior);
+    expectTrue(interiorFlags.valid, "interior probe valid");
+    expectTrue(!interiorFlags.is_border, "interior probe not border");
+    expectTrue(interiorFlags.interior, "interior probe flagged interior");
+    expectTrue(interiorFlags.has_trilinear_neighbourhood, "interior has trilinear neighbourhood");
+
+    const fuse::renderer::ProbeValidityFlags fromIndex =
+        fuse::renderer::ProbeGridLayout::probeValidityFromIndex(desc, 13u);
+    expectTrue(fromIndex.valid, "index 13 validity from index helper");
+    expectTrue(fromIndex.interior, "index 13 is interior in 3x3x3 grid");
+
+    const fuse::renderer::ProbeValidityFlags invalidIndex =
+        fuse::renderer::ProbeGridLayout::probeValidityFromIndex(desc, 99u);
+    expectTrue(!invalidIndex.valid, "out-of-range index invalid");
+}
+
+void testIrradianceOctahedralEncoding() {
+    const fuse::math::Vec3 up{0.f, 1.f, 0.f};
+    const fuse::math::Vec2 encoded = fuse::renderer::DdgiIrradianceEncoding::encodeDirection(up);
+    const fuse::math::Vec3 decoded = fuse::renderer::DdgiIrradianceEncoding::decodeDirection(encoded);
+    const fuse::f32 error = fuse::renderer::DdgiIrradianceEncoding::angularErrorRadians(up, decoded);
+    expectTrue(error < 0.001f, "octahedral direction round-trip < 0.001 rad");
+
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+    desc.irradiance_res = 8;
+    const fuse::renderer::ProbeGridCoord coord{1, 0, 1};
+    const fuse::math::Vec2 texel =
+        fuse::renderer::ProbeGridLayout::probeIrradianceAtlasTexel(desc, coord, up);
+    const fuse::math::Vec2 origin =
+        fuse::renderer::ProbeGridLayout::probeIrradianceAtlasOrigin(desc, coord);
+    expectTrue(texel.x >= origin.x && texel.y >= origin.y, "atlas texel within probe tile");
+    expectTrue(texel.x < origin.x + static_cast<fuse::f32>(desc.irradiance_res),
+               "atlas texel x within tile width");
 }
 
 void testProbeAtlasLayout() {
@@ -118,6 +183,32 @@ void testIrradianceLerp() {
     const fuse::math::Vec3 mid = fuse::renderer::ddgi_util::lerpIrradiance(a, b, 0.5f);
     expectNear(mid.x, 0.5f, 1e-5f, "lerp midpoint x");
     expectNear(mid.y, 0.5f, 1e-5f, "lerp midpoint y");
+
+    const fuse::math::Vec3 atA = fuse::renderer::ddgi_util::lerpIrradiance(a, b, 0.f);
+    expectNear(atA.x, 1.f, 1e-5f, "lerp t=0 returns a.x");
+    expectNear(atA.y, 0.f, 1e-5f, "lerp t=0 returns a.y");
+
+    const fuse::math::Vec3 atB = fuse::renderer::ddgi_util::lerpIrradiance(a, b, 1.f);
+    expectNear(atB.x, 0.f, 1e-5f, "lerp t=1 returns b.x");
+    expectNear(atB.y, 1.f, 1e-5f, "lerp t=1 returns b.y");
+
+    const fuse::math::Vec3 below = fuse::renderer::ddgi_util::lerpIrradiance(a, b, -0.5f);
+    expectNear(below.x, 1.f, 1e-5f, "lerp t<0 clamps to a.x");
+    const fuse::math::Vec3 above = fuse::renderer::ddgi_util::lerpIrradiance(a, b, 1.5f);
+    expectNear(above.y, 1.f, 1e-5f, "lerp t>1 clamps to b.y");
+}
+
+void testBilinearTileIrradiance() {
+    const fuse::math::Vec3 samples[4] = {{0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, {1.f, 1.f, 0.f}};
+    const fuse::math::Vec3 corner =
+        fuse::renderer::ddgi_util::bilinearTileIrradiance(samples, 0.f, 0.f);
+    expectNear(corner.x, 0.f, 1e-5f, "bilinear corner u=0 v=0");
+    const fuse::math::Vec3 opposite =
+        fuse::renderer::ddgi_util::bilinearTileIrradiance(samples, 1.f, 1.f);
+    expectNear(opposite.x, 1.f, 1e-5f, "bilinear opposite u=1 v=1");
+    const fuse::math::Vec3 centre =
+        fuse::renderer::ddgi_util::bilinearTileIrradiance(samples, 0.5f, 0.5f);
+    expectNear(centre.x, 0.5f, 1e-5f, "bilinear centre");
 }
 
 void testTrilinearProbeIrradiance() {
@@ -138,6 +229,18 @@ void testTrilinearProbeIrradiance() {
     const fuse::math::Vec3 corner = fuse::renderer::ddgi_util::trilinearProbeIrradiance(
         desc, {0.f, 0.f, 0.f}, cache.data(), static_cast<fuse::u32>(cache.size()));
     expectNear(corner.x, 0.f, 1e-5f, "trilinear at probe 0 returns probe 0 irradiance");
+
+    const fuse::math::Vec3 maxCorner = fuse::renderer::ddgi_util::trilinearProbeIrradiance(
+        desc, {1.f, 1.f, 1.f}, cache.data(), static_cast<fuse::u32>(cache.size()));
+    const fuse::math::Vec3 oobHigh = fuse::renderer::ddgi_util::trilinearProbeIrradiance(
+        desc, {100.f, 100.f, 100.f}, cache.data(), static_cast<fuse::u32>(cache.size()));
+    expectNear(oobHigh.x, maxCorner.x, 1e-4f, "OOB high world position clamps to max-corner sample");
+
+    const fuse::math::Vec3 minCorner = fuse::renderer::ddgi_util::trilinearProbeIrradiance(
+        desc, {0.f, 0.f, 0.f}, cache.data(), static_cast<fuse::u32>(cache.size()));
+    const fuse::math::Vec3 oobLow = fuse::renderer::ddgi_util::trilinearProbeIrradiance(
+        desc, {-100.f, -100.f, -100.f}, cache.data(), static_cast<fuse::u32>(cache.size()));
+    expectNear(oobLow.x, minCorner.x, 1e-4f, "OOB low world position clamps to min-corner sample");
 }
 
 void testProbeScheduling() {
@@ -228,14 +331,17 @@ int main() {
     testProbeGridMath();
     testProbeGridIndexing();
     testProbeGridWorldCoord();
+    testProbeValidityFlags();
     testProbeAtlasLayout();
+    testIrradianceOctahedralEncoding();
     testIrradianceLerp();
+    testBilinearTileIrradiance();
     testTrilinearProbeIrradiance();
     testProbeScheduling();
     testHysteresisBlend();
-    testDdgiInitUpdateSample();
     testPipelineSlot();
     testDdgiInfo();
+    testDdgiInitUpdateSample();
 
     fuse::core::shutdown();
 

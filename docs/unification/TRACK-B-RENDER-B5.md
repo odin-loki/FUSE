@@ -148,19 +148,21 @@ SDF soft shadows and deferred shading sampling deferred to B2.6 interop + B5.4 C
 
 ## B5.6 — Global Illumination: DDGI
 
-**Status:** CPU-first probe grid, irradiance cache, update/sample stubs landed; probe grid indexing + trilinear irradiance lerp deepened (B5 follow-up).
+**Status:** CPU-first probe grid, irradiance cache, update/sample stubs landed; probe grid indexing + trilinear irradiance lerp deepened; **B5.6 deepen** adds octahedral direction encoding, border/interior validity flags, and OOB clamp helpers.
 
 | Component | Location | Notes |
 |-----------|----------|-------|
 | `DDGIDesc` / `ProbeVolume` | `gi/ddgi.hpp` | Default 16×8×16 = 2048 probes, 64/frame round-robin |
-| `ProbeGridCoord` / `ProbeGridLayout` | `gi/ddgi.hpp` | Index↔coord, world→grid, irradiance/depth atlas texel origins |
-| `ddgi_util::lerpIrradiance` / `trilinearProbeIrradiance` | `gi/ddgi.cpp` | Spatial probe irradiance interpolation for CPU sample path |
+| `ProbeGridCoord` / `ProbeGridLayout` | `gi/ddgi.hpp` | Index↔coord, world→grid, `clampWorldToProbeGridCoord`, irradiance/depth atlas texel origins |
+| `ProbeValidityFlags` | `gi/ddgi.hpp` | Border/interior classification + trilinear neighbourhood flag |
+| `DdgiIrradianceEncoding` | `gi/ddgi.hpp` | Octahedral direction encode/decode + per-tile texel offset |
+| `ddgi_util::lerpIrradiance` / `bilinearTileIrradiance` / `trilinearProbeIrradiance` | `gi/ddgi.cpp` | Spatial probe irradiance interpolation for CPU sample path |
 | `DDGI::update` / `sampleIrradiance` | `gi/ddgi.cpp` | CPU hysteresis blend; trilinear cache sample; CUDA kernel launch stub |
 | `ddgi_kernels.hpp` | `gi/ddgi_kernels.hpp` | `probe_trace_kernel`, `probe_blend_kernel` stubs |
 
 | Test | Validates |
 |------|-----------|
-| `fuse_ddgi` | Grid math, probe indexing round-trip, atlas layout, trilinear lerp, scheduling, hysteresis, init/update/sample, pipeline slot |
+| `fuse_ddgi` | Grid math, probe indexing round-trip, border/interior validity, octahedral direction encoding, atlas texel layout, lerp extremes + bilinear tile stub, OOB world clamp, trilinear lerp, scheduling, hysteresis, init/update/sample, pipeline slot |
 
 ---
 
