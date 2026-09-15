@@ -1,13 +1,18 @@
 #include <fuse/core/init.hpp>
+#include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/terrain/chunk_grid.hpp>
 #include <fuse/terrain/heightfield.hpp>
 #include <fuse/terrain/lod.hpp>
+#include <fuse/terrain/lod_residency_queue.hpp>
 #include <fuse/terrain/queries.hpp>
 #include <fuse/terrain/terrain.hpp>
 
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <thread>
 
 namespace {
 
@@ -25,6 +30,22 @@ void expectNear(fuse::f32 actual, fuse::f32 expected, fuse::f32 epsilon, const c
         std::fprintf(stderr, "FAIL: %s (expected %.4f, got %.4f)\n", message, expected, actual);
         ++g_failures;
     }
+}
+
+void expectEq(fuse::u32 actual, fuse::u32 expected, const char* message) {
+    if (actual != expected) {
+        std::fprintf(stderr, "FAIL: %s (expected %u, got %u)\n", message, expected, actual);
+        ++g_failures;
+    }
+}
+
+template <typename Body>
+void withScheduler(fuse::u32 workers, Body&& body) {
+    auto& scheduler = fuse::jobs::JobScheduler::instance();
+    scheduler.shutdown();
+    scheduler.initialize(workers);
+    body();
+    scheduler.shutdown();
 }
 
 fuse::terrain::TerrainDesc makeTestDesc() {
@@ -77,9 +98,18 @@ void testLodTransitionMorphBand() {
     expectTrue(nearTransition.lod == 0, "near camera stays at LOD 0");
     expectNear(nearTransition.morph_factor, 0.f, 0.01f, "near camera has no morph");
 
+    const fuse::terrain::LodTransition midRingTransition = fuse::terrain::compute_lod_transition(6.5f, desc.lod_levels);
+    expectTrue(midRingTransition.lod == 0, "mid-ring still at LOD 0");
+    expectTrue(midRingTransition.morph_factor > 0.f && midRingTransition.morph_factor < 0.5f,
+               "mid-ring morph factor ramps gradually");
+
     const fuse::terrain::LodTransition edgeTransition = fuse::terrain::compute_lod_transition(7.5f, desc.lod_levels);
     expectTrue(edgeTransition.lod == 0, "ring edge still at LOD 0");
     expectTrue(edgeTransition.morph_factor > 0.5f, "ring edge morph factor active");
+
+    const fuse::terrain::LodTransition ringBoundary = fuse::terrain::compute_lod_transition(8.f, desc.lod_levels);
+    expectTrue(ringBoundary.lod == 1, "ring boundary advances to LOD 1");
+    expectNear(ringBoundary.morph_factor, 0.f, 0.01f, "ring boundary resets morph factor");
 
     const fuse::terrain::LodTransition farTransition = fuse::terrain::compute_lod_transition(32.f, desc.lod_levels);
     expectTrue(farTransition.lod >= 2, "far camera uses coarser LOD ring");
@@ -99,18 +129,77 @@ void testVertexMorphSnapsToGrid() {
     expectNear(morphed.z, base_stride * 2.f, 0.01f, "morph snaps Z to coarser grid");
     expectNear(morphed.y, original.y, 0.01f, "morph preserves Y (height deferred to GPU)");
 
+    const fuse::terrain::vec3 halfMorphed =
+        fuse::terrain::morph_vertex_position(original, 1, 0.5f, base_stride);
+    const fuse::f32 snapped_x = base_stride * 2.f;
+    const fuse::f32 snapped_z = base_stride * 2.f;
+    expectTrue(halfMorphed.x > std::min(original.x, snapped_x) && halfMorphed.x < std::max(original.x, snapped_x),
+               "half morph interpolates X");
+    expectTrue(halfMorphed.z > std::min(original.z, snapped_z) && halfMorphed.z < std::max(original.z, snapped_z),
+               "half morph interpolates Z");
+
     const fuse::terrain::vec3 unchanged = fuse::terrain::morph_vertex_position(original, 0, 1.f, base_stride);
     expectNear(unchanged.x, original.x, 0.01f, "LOD 0 skips morph");
     expectNear(unchanged.z, original.z, 0.01f, "LOD 0 skips morph");
+
+    const fuse::terrain::vec3 zeroMorph =
+        fuse::terrain::morph_vertex_position(original, 2, 0.f, base_stride);
+    expectNear(zeroMorph.x, original.x, 0.01f, "zero morph factor leaves position unchanged");
+}
+
+void testChunkResidencyStateHelpers() {
+    using fuse::terrain::ChunkResidencyState;
+    expectTrue(fuse::terrain::is_loading_state(ChunkResidencyState::QueuedLoad),
+               "QueuedLoad is loading state");
+    expectTrue(fuse::terrain::is_loading_state(ChunkResidencyState::Loading), "Loading is loading state");
+    expectTrue(fuse::terrain::is_unloading_state(ChunkResidencyState::QueuedUnload),
+               "QueuedUnload is unloading state");
+    expectTrue(fuse::terrain::is_unloading_state(ChunkResidencyState::Unloading),
+               "Unloading is unloading state");
+    expectTrue(fuse::terrain::is_transitional_state(ChunkResidencyState::Loading),
+               "Loading is transitional");
+    expectTrue(fuse::terrain::is_queued_state(ChunkResidencyState::QueuedLoad), "QueuedLoad is queued");
+    expectTrue(fuse::terrain::is_resident_state(ChunkResidencyState::Resident), "Resident is resident");
+}
+
+void testLodResidencyQueueStub() {
+    withScheduler(1, [] {
+        fuse::terrain::LodResidencyQueue queue;
+        std::atomic<bool> worker_ran{false};
+
+        fuse::terrain::LodResidencyRequest request{};
+        request.chunk_index = 5;
+        request.kind = fuse::terrain::LodResidencyRequestKind::Load;
+        request.priority = 12.f;
+
+        const bool submitted = queue.submit(request, [&](fuse::u32 chunk_index,
+                                                         fuse::terrain::LodResidencyRequestKind kind) {
+            worker_ran.store(chunk_index == 5 && kind == fuse::terrain::LodResidencyRequestKind::Load);
+            return true;
+        });
+        expectTrue(submitted, "queue submits to JobScheduler");
+
+        for (int attempt = 0; attempt < 100 && queue.completed_count() == 0u; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        std::vector<fuse::terrain::CompletedLodResidencyRequest> completed;
+        expectEq(queue.drain_completed(completed), 1u, "drain returns completed request");
+        expectTrue(worker_ran.load(), "worker stub ran on scheduler thread");
+        expectTrue(completed[0].success, "completed request reports success");
+        expectEq(queue.in_flight_count(), 0u, "in-flight count returns to zero");
+    });
 }
 
 void testChunkGridLodTransitions() {
     fuse::terrain::ChunkGrid grid{};
-    const fuse::terrain::TerrainDesc desc = makeTestDesc();
+    fuse::terrain::TerrainDesc desc = makeTestDesc();
+    desc.async_loading = false;
     grid.init(desc);
 
     grid.update_lod({0.f, 0.f, 0.f}, 0.016f);
     expectTrue(grid.visible_chunk_count() > 0, "camera near terrain loads chunks");
+    expectTrue(grid.resident_chunk_count() == grid.visible_chunk_count(), "resident count matches visible");
 
     bool hasMorphingChunk = false;
     for (fuse::u32 i = 0; i < grid.chunk_count(); ++i) {
@@ -119,13 +208,51 @@ void testChunkGridLodTransitions() {
             hasMorphingChunk = true;
         }
         expectTrue(chunk.morph_factor >= 0.f && chunk.morph_factor <= 1.f, "chunk morph factor in range");
+        if (chunk.loaded) {
+            expectTrue(fuse::terrain::is_resident_state(chunk.residency), "loaded chunk is Resident");
+        }
+    }
+    grid.update_lod({8.f, 0.f, 1.f}, 0.016f);
+    for (fuse::u32 i = 0; i < grid.chunk_count(); ++i) {
+        const fuse::terrain::TerrainChunk& chunk = grid.chunk(i);
+        if (chunk.morph_factor > 0.f) {
+            hasMorphingChunk = true;
+        }
     }
     expectTrue(hasMorphingChunk, "some chunks have active morph factor in transition band");
 
     grid.update_lod({desc.world_size * 4.f, 0.f, desc.world_size * 4.f}, 0.016f);
     expectTrue(grid.visible_chunk_count() == 0, "camera far away unloads chunks");
+    expectEq(grid.resident_chunk_count(), 0u, "no resident chunks when camera is far");
 }
 
+void testChunkGridAsyncResidency() {
+    withScheduler(1, [] {
+        fuse::terrain::ChunkGrid grid{};
+        fuse::terrain::TerrainDesc desc = makeTestDesc();
+        desc.async_loading = true;
+        desc.max_async_in_flight = 2;
+        grid.init(desc);
+
+        for (int frame = 0; frame < 64 && grid.resident_chunk_count() == 0u; ++frame) {
+            grid.update_lod({0.f, 0.f, 0.f}, 0.016f);
+            grid.drain_completed_requests();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        expectTrue(grid.resident_chunk_count() >= 1u, "async load completes near camera");
+        expectEq(grid.in_flight_request_count(), 0u, "no in-flight requests after completion");
+
+        for (int frame = 0; frame < 64 && grid.resident_chunk_count() > 0u; ++frame) {
+            grid.update_lod({desc.world_size * 4.f, 0.f, desc.world_size * 4.f}, 0.016f);
+            grid.drain_completed_requests();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        expectEq(grid.resident_chunk_count(), 0u, "async unload returns to Unloaded");
+        grid.destroy();
+    });
+}
 
 void testHeightfieldRaycast() {
     fuse::terrain::Heightfield field{};
@@ -143,6 +270,7 @@ void testHeightfieldRaycast() {
 void testTerrainFacade() {
     fuse::terrain::Terrain terrain{};
     fuse::terrain::TerrainDesc desc = makeTestDesc();
+    desc.async_loading = false;
     terrain.init(desc);
     terrain.generate(42);
 
@@ -167,7 +295,12 @@ void testTerrainFacade() {
     std::vector<const fuse::terrain::TerrainChunk*> visible{};
     terrain.get_visible_chunks(visible);
     expectTrue(!visible.empty(), "terrain exposes visible chunks");
+    for (const fuse::terrain::TerrainChunk* chunk : visible) {
+        expectTrue(fuse::terrain::is_resident_state(chunk->residency), "visible chunk is Resident");
+    }
 
+    terrain.update_lod({8.f, 0.f, 1.f}, 0.016f);
+    terrain.get_visible_chunks(visible);
     bool terrainHasMorph = false;
     for (const fuse::terrain::TerrainChunk* chunk : visible) {
         if (chunk->morph_factor > 0.f) {
@@ -185,7 +318,10 @@ int main() {
     testLodSelection();
     testLodTransitionMorphBand();
     testVertexMorphSnapsToGrid();
+    testChunkResidencyStateHelpers();
+    testLodResidencyQueueStub();
     testChunkGridLodTransitions();
+    testChunkGridAsyncResidency();
     testHeightfieldRaycast();
     testTerrainFacade();
     fuse::core::shutdown();
