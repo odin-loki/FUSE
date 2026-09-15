@@ -102,24 +102,14 @@ CookRecord AssetCooker::cook_entry(const CookManifestEntry& entry) {
     return {};
 }
 
+CookJobGraphExecuteResult AssetCooker::cook_manifest_graph(const CookManifest& manifest) {
+    CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+    return graph.execute(*this);
+}
+
 CookBatchResult AssetCooker::cook_manifest(const CookManifest& manifest) {
-    CookBatchResult result;
-    result.records.reserve(manifest.assets.size());
-
-    usize ok_count = 0;
-    for (const CookManifestEntry& entry : manifest.assets) {
-        CookRecord record = cook_entry(entry);
-        if (record.ok) {
-            ++ok_count;
-        }
-        result.records.push_back(std::move(record));
-    }
-
-    result.ok = ok_count == manifest.assets.size();
-    std::ostringstream summary;
-    summary << "cooked " << ok_count << "/" << manifest.assets.size() << " assets (stub)";
-    result.summary = summary.str();
-    return result;
+    return cookBatchFromJobGraphResult(cook_manifest_graph(manifest));
 }
 
 CookBatchResult AssetCooker::cook_dirty(AssetGraph& graph, const std::string& project_dir) {

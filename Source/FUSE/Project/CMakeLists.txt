@@ -7,6 +7,7 @@ set(FUSE_PROJECT_PUBLIC_HEADERS
     include/fuse/project/cook_manifest.hpp
     include/fuse/project/asset_graph.hpp
     include/fuse/project/asset_cooker.hpp
+    include/fuse/project/cook_job_graph.hpp
     include/fuse/project/import_pipeline.hpp
 )
 
@@ -18,6 +19,7 @@ set(FUSE_PROJECT_SOURCES
     src/cook_manifest.cpp
     src/asset_graph.cpp
     src/asset_cooker.cpp
+    src/cook_job_graph.cpp
     src/import_pipeline.cpp
 )
 
