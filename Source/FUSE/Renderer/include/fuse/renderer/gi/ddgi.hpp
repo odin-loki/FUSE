@@ -98,6 +98,29 @@ struct ProbeValidityFlags {
     bool has_trilinear_neighbourhood = false;
 };
 
+/// Continuous octahedral tile sample coordinates for bilinear irradiance lookup.
+struct DdgiTileBilinearCoords {
+    u32 texel_u0 = 0;
+    u32 texel_v0 = 0;
+    u32 texel_u1 = 0;
+    u32 texel_v1 = 0;
+    f32 tu = 0.f;
+    f32 tv = 0.f;
+};
+
+/// Continuous probe-grid sample coordinates for trilinear irradiance lookup.
+struct ProbeSampleCoords {
+    u32 x0 = 0;
+    u32 y0 = 0;
+    u32 z0 = 0;
+    u32 x1 = 0;
+    u32 y1 = 0;
+    u32 z1 = 0;
+    f32 tx = 0.f;
+    f32 ty = 0.f;
+    f32 tz = 0.f;
+};
+
 /// CPU-side octahedral direction encoding for probe irradiance atlas tiles (B5.6 deepen).
 /// Mirrors `GBufferEncoding` and the deferred-shade probe sampling path.
 struct DdgiIrradianceEncoding {
@@ -107,12 +130,19 @@ struct DdgiIrradianceEncoding {
     static fuse::math::Vec2 directionToAtlasUV(const fuse::math::Vec3& direction);
     /// Texel offset within a probe tile — clamped to [0, irradiance_res - 1].
     static fuse::math::Vec2 directionToTexelOffset(const fuse::math::Vec3& direction, u32 irradiance_res);
+    /// Fractional texel coordinates for bilinear octahedral tile sampling.
+    static bool buildTileBilinearCoords(const fuse::math::Vec3& direction,
+                                        u32 irradiance_res,
+                                        DdgiTileBilinearCoords& out_coords);
     static f32 angularErrorRadians(const fuse::math::Vec3& a, const fuse::math::Vec3& b);
 };
 
 /// Probe grid indexing + atlas layout helpers — mirrors deferred-shade probe sampling.
 struct ProbeGridLayout {
+    static bool isEmptyGrid(const DDGIDesc& desc);
     static ProbeGridCoord probeCoordFromIndex(const DDGIDesc& desc, u32 probe_index);
+    /// Decode a clamped flat probe index to grid coordinates; returns origin on empty grid.
+    static ProbeGridCoord probeCoordFromClampedIndex(const DDGIDesc& desc, u32 probe_index);
     static u32 probeIndexFromCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
     static bool isValidProbeCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
     static bool isValidProbeIndex(const DDGIDesc& desc, u32 probe_index);
@@ -121,6 +151,10 @@ struct ProbeGridLayout {
     static ProbeValidityFlags probeValidityFromIndex(const DDGIDesc& desc, u32 probe_index);
     /// Clamp a flat probe index to [0, probeCount - 1]; returns 0 when the grid is empty.
     static u32 clampProbeIndex(u32 probe_index, const DDGIDesc& desc);
+    /// Build trilinear corner indices/weights from a world position; false when grid is empty.
+    static bool buildProbeSampleCoords(const DDGIDesc& desc,
+                                       const fuse::math::Vec3& world_position,
+                                       ProbeSampleCoords& out_coords);
     /// Fractional grid coordinates — origin cell centre is (0,0,0).
     static fuse::math::Vec3 worldToProbeGridCoord(const DDGIDesc& desc,
                                                   const fuse::math::Vec3& world_position);
@@ -163,6 +197,16 @@ fuse::math::Vec3 trilinearProbeIrradiance(const DDGIDesc& desc,
                                           const fuse::math::Vec3& world_position,
                                           const IrradianceCacheEntry* cache,
                                           u32 cache_count);
+/// Directional octahedral bilinear sample within one probe cache entry (CPU stub).
+fuse::math::Vec3 sampleDirectionalIrradianceAtProbe(const IrradianceCacheEntry& entry,
+                                                  const fuse::math::Vec3& direction,
+                                                  u32 irradiance_res);
+/// Spatial trilinear probe blend with per-probe octahedral direction sampling.
+fuse::math::Vec3 trilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
+                                                     const fuse::math::Vec3& world_position,
+                                                     const fuse::math::Vec3& direction,
+                                                     const IrradianceCacheEntry* cache,
+                                                     u32 cache_count);
 u32 nearestProbeIndex(const DDGIDesc& desc, const fuse::math::Vec3& world_position);
 } // namespace ddgi_util
 
