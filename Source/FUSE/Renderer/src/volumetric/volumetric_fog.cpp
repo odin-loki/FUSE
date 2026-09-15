@@ -103,7 +103,7 @@ u32 FroxelGridLayout::froxelIndexClamped(u32 tileX, u32 tileY, u32 sliceZ, const
 }
 
 void FroxelGridLayout::decodeFroxelIndex(u32 index, const FroxelGridDesc& desc, u32& tileX, u32& tileY, u32& sliceZ) {
-    if (desc.slicesZ == 0u || desc.tilesX == 0u) {
+    if (isEmptyGrid(desc)) {
         tileX = 0u;
         tileY = 0u;
         sliceZ = 0u;
@@ -169,6 +169,14 @@ u32 FroxelGridLayout::clampSliceZ(u32 sliceZ, const FroxelGridDesc& desc) {
         return 0u;
     }
     return std::min(sliceZ, desc.slicesZ - 1u);
+}
+
+u32 FroxelGridLayout::maxFroxelIndex(const FroxelGridDesc& desc) {
+    const u32 count = desc.froxelCount();
+    if (count == 0u) {
+        return 0u;
+    }
+    return count - 1u;
 }
 
 bool FroxelGridLayout::mapScreenDepthToSampleCoords(f32 screenX,
@@ -268,6 +276,24 @@ f32 sampleDensityAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& de
     return grid.density[clampedIndex];
 }
 
+bool writeDensityAtIndex(FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index, f32 value) {
+    if (grid.isEmpty() || FroxelGridLayout::isEmptyGrid(desc) || !grid.matchesDesc(desc)) {
+        return false;
+    }
+
+    const u32 clampedIndex = FroxelGridLayout::clampFroxelIndex(index, desc);
+    grid.density[clampedIndex] = value;
+    return true;
+}
+
+bool validateDensityCounts(const FroxelDensityGrid& grid, f32 epsilon) {
+    if (grid.isEmpty()) {
+        return true;
+    }
+
+    return countNonZeroFroxels(grid, epsilon) + countEmptyFroxels(grid, epsilon) == grid.density.size();
+}
+
 f32 sampleDensityBilinear(const FroxelDensityGrid& grid,
                           const FroxelGridDesc& desc,
                           const FroxelSampleCoords& coords) {
@@ -275,14 +301,17 @@ f32 sampleDensityBilinear(const FroxelDensityGrid& grid,
         return 0.f;
     }
 
-    const f32 d00 = froxelDensityAt(grid, desc, coords.tileX0, coords.tileY0, coords.sliceZ0);
-    const f32 d10 = froxelDensityAt(grid, desc, coords.tileX1, coords.tileY0, coords.sliceZ0);
-    const f32 d01 = froxelDensityAt(grid, desc, coords.tileX0, coords.tileY1, coords.sliceZ0);
-    const f32 d11 = froxelDensityAt(grid, desc, coords.tileX1, coords.tileY1, coords.sliceZ0);
+    FroxelSampleCoords safeCoords = coords;
+    FroxelGridLayout::clampSampleCoords(safeCoords, desc);
 
-    const f32 d0 = lerpDensity(d00, d10, coords.tx);
-    const f32 d1 = lerpDensity(d01, d11, coords.tx);
-    return lerpDensity(d0, d1, coords.ty);
+    const f32 d00 = froxelDensityAt(grid, desc, safeCoords.tileX0, safeCoords.tileY0, safeCoords.sliceZ0);
+    const f32 d10 = froxelDensityAt(grid, desc, safeCoords.tileX1, safeCoords.tileY0, safeCoords.sliceZ0);
+    const f32 d01 = froxelDensityAt(grid, desc, safeCoords.tileX0, safeCoords.tileY1, safeCoords.sliceZ0);
+    const f32 d11 = froxelDensityAt(grid, desc, safeCoords.tileX1, safeCoords.tileY1, safeCoords.sliceZ0);
+
+    const f32 d0 = lerpDensity(d00, d10, safeCoords.tx);
+    const f32 d1 = lerpDensity(d01, d11, safeCoords.tx);
+    return lerpDensity(d0, d1, safeCoords.ty);
 }
 
 f32 sampleDensityTrilinear(const FroxelDensityGrid& grid,
@@ -292,14 +321,17 @@ f32 sampleDensityTrilinear(const FroxelDensityGrid& grid,
         return 0.f;
     }
 
-    FroxelSampleCoords slice0 = coords;
+    FroxelSampleCoords safeCoords = coords;
+    FroxelGridLayout::clampSampleCoords(safeCoords, desc);
+
+    FroxelSampleCoords slice0 = safeCoords;
     slice0.sliceZ1 = slice0.sliceZ0;
-    FroxelSampleCoords slice1 = coords;
+    FroxelSampleCoords slice1 = safeCoords;
     slice1.sliceZ0 = slice1.sliceZ1;
 
     const f32 nearSlice = sampleDensityBilinear(grid, desc, slice0);
     const f32 farSlice = sampleDensityBilinear(grid, desc, slice1);
-    return lerpDensity(nearSlice, farSlice, coords.tz);
+    return lerpDensity(nearSlice, farSlice, safeCoords.tz);
 }
 
 f32 sampleDensityAtScreen(const FroxelDensityGrid& grid,
@@ -308,7 +340,7 @@ f32 sampleDensityAtScreen(const FroxelDensityGrid& grid,
                           f32 screenX,
                           f32 screenY,
                           f32 viewDepth) {
-    if (grid.isEmpty()) {
+    if (grid.isEmpty() || FroxelGridLayout::isEmptyGrid(desc) || !grid.matchesDesc(desc)) {
         return 0.f;
     }
 

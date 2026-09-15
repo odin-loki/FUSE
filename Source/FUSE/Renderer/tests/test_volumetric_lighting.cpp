@@ -424,6 +424,92 @@ void testFroxelIndexClampAndLerpGuards() {
                "bilinear sample on empty grid returns zero");
 }
 
+void testFroxelDensityCountValidationAndWriteGuards() {
+    fuse::renderer::FroxelGridDesc desc{};
+    desc.tilesX = 4;
+    desc.tilesY = 2;
+    desc.slicesZ = 3;
+
+    expectTrue(fuse::renderer::FroxelGridLayout::maxFroxelIndex(desc) == 23u,
+               "max froxel index matches last cell");
+    expectTrue(fuse::renderer::FroxelGridLayout::clampFroxelIndex(999u, desc) ==
+                   fuse::renderer::FroxelGridLayout::maxFroxelIndex(desc),
+               "clamp froxel index agrees with max index");
+
+    fuse::renderer::FroxelGridDesc zeroDesc{};
+    zeroDesc.tilesX = 0u;
+    expectTrue(fuse::renderer::FroxelGridLayout::maxFroxelIndex(zeroDesc) == 0u,
+               "max froxel index on empty grid is zero");
+
+    fuse::renderer::FroxelDensityGrid grid{};
+    expectTrue(fuse::renderer::froxel_util::validateDensityCounts(grid),
+               "empty storage vacuously validates density counts");
+
+    grid.allocate(desc);
+    expectTrue(fuse::renderer::froxel_util::validateDensityCounts(grid),
+               "fresh allocate validates density counts");
+    expectTrue(fuse::renderer::froxel_util::countNonZeroFroxels(grid) +
+                       fuse::renderer::froxel_util::countEmptyFroxels(grid) ==
+                   desc.froxelCount(),
+               "non-zero and empty froxel counts partition grid");
+
+    expectTrue(fuse::renderer::froxel_util::writeDensityAtIndex(grid, desc, 0u, 1.5f),
+               "write at origin index succeeds");
+    expectTrue(fuse::renderer::froxel_util::writeDensityAtIndex(grid, desc, 999u, 2.5f),
+               "write at OOB index clamps and succeeds");
+    expectNear(fuse::renderer::froxel_util::sampleDensityAtIndex(grid, desc, 0u), 1.5f, 1e-5f,
+               "write at origin readable via sample");
+    expectNear(fuse::renderer::froxel_util::sampleDensityAtIndex(grid, desc, 23u), 2.5f, 1e-5f,
+               "write at clamped last index readable via sample");
+    expectTrue(fuse::renderer::froxel_util::validateDensityCounts(grid),
+               "partially filled grid still validates density counts");
+    expectTrue(fuse::renderer::froxel_util::countNonZeroFroxels(grid) == 2u,
+               "two written froxels counted non-zero");
+
+    fuse::renderer::FroxelGridDesc mismatched{};
+    mismatched.tilesX = 2;
+    mismatched.tilesY = 2;
+    mismatched.slicesZ = 2;
+    expectTrue(!fuse::renderer::froxel_util::writeDensityAtIndex(grid, mismatched, 0u, 9.f),
+               "write rejects desc mismatch");
+    expectTrue(!fuse::renderer::froxel_util::writeDensityAtIndex(grid, zeroDesc, 0u, 9.f),
+               "write rejects empty froxel desc");
+
+    fuse::renderer::FroxelDensityGrid emptyGrid{};
+    expectTrue(!fuse::renderer::froxel_util::writeDensityAtIndex(emptyGrid, desc, 0u, 1.f),
+               "write rejects empty density storage");
+
+    fuse::renderer::FroxelCameraDesc camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+    expectNear(fuse::renderer::froxel_util::sampleDensityAtScreen(grid, mismatched, camera, 0.5f, 0.5f, 10.f),
+               0.f,
+               1e-6f,
+               "screen sample rejects desc mismatch");
+    expectNear(fuse::renderer::froxel_util::sampleDensityAtScreen(grid, zeroDesc, camera, 0.5f, 0.5f, 10.f),
+               0.f,
+               1e-6f,
+               "screen sample rejects empty froxel desc");
+
+    fuse::renderer::FroxelSampleCoords extremeCoords{};
+    extremeCoords.tileX0 = 99u;
+    extremeCoords.tileY0 = 99u;
+    extremeCoords.tileX1 = 99u;
+    extremeCoords.tileY1 = 99u;
+    extremeCoords.sliceZ0 = 99u;
+    extremeCoords.sliceZ1 = 99u;
+    extremeCoords.tx = 2.f;
+    extremeCoords.ty = -1.f;
+    extremeCoords.tz = 3.f;
+    const fuse::f32 bilinearExtreme =
+        fuse::renderer::froxel_util::sampleDensityBilinear(grid, desc, extremeCoords);
+    fuse::renderer::FroxelGridLayout::clampSampleCoords(extremeCoords, desc);
+    const fuse::f32 bilinearClamped =
+        fuse::renderer::froxel_util::sampleDensityBilinear(grid, desc, extremeCoords);
+    expectNear(bilinearExtreme, bilinearClamped, 1e-5f,
+               "bilinear sample clamps OOB interpolation weights internally");
+}
+
 void testZeroDimensionFroxelGrid() {
     fuse::renderer::FroxelGridDesc zeroDesc{};
     zeroDesc.tilesX = 0u;
@@ -565,6 +651,7 @@ int main() {
     testFroxelSliceDepthDistribution();
     testFroxelDensityLerpHelpers();
     testFroxelIndexClampAndLerpGuards();
+    testFroxelDensityCountValidationAndWriteGuards();
     testEmptySceneVolumetricFog();
     testZeroDimensionFroxelGrid();
     testFroxelPopulateFromAnalyticFog();

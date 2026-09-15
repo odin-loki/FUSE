@@ -98,6 +98,8 @@ struct FroxelGridLayout {
     static u32 clampTileX(u32 tileX, const FroxelGridDesc& desc);
     static u32 clampTileY(u32 tileY, const FroxelGridDesc& desc);
     static u32 clampSliceZ(u32 sliceZ, const FroxelGridDesc& desc);
+    /// Last valid flat froxel index; returns 0 when the grid has no froxels.
+    static u32 maxFroxelIndex(const FroxelGridDesc& desc);
     /// Clamp interpolation weights and corner indices to grid bounds.
     static void clampSampleCoords(FroxelSampleCoords& coords, const FroxelGridDesc& desc);
     static bool mapScreenDepthToSampleCoords(f32 screenX,
@@ -126,6 +128,10 @@ u32 countNonZeroFroxels(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
 u32 countEmptyFroxels(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
 /// Read density at a clamped flat froxel index; returns 0 when grid/desc mismatch or empty.
 f32 sampleDensityAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index);
+/// Write density at a clamped flat froxel index; returns false when grid/desc mismatch or empty.
+bool writeDensityAtIndex(FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index, f32 value);
+/// True when non-zero + empty froxel counts sum to storage size (empty grid is vacuously true).
+bool validateDensityCounts(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
 f32 sampleDensityBilinear(const FroxelDensityGrid& grid,
                           const FroxelGridDesc& desc,
                           const FroxelSampleCoords& coords);
