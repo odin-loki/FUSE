@@ -176,7 +176,7 @@ void PBDSolver::runConstraintIterations(RigidBodySoA& bodies, const SolverParams
         } else {
             fuse::jobs::parallel_for(0, islandCount, kIslandGrainSize, [&](u32 islandIndex) {
                 const IslandSolveJob job = extract_island(islandGraph_, islandIndex);
-                if (job.empty || job.island == nullptr) {
+                if (!should_solve_island(job)) {
                     return;
                 }
                 resolveIslandConstraints(bodies, *job.island, params, dt);
@@ -260,12 +260,16 @@ void PBDSolver::step(RigidBodySoA& bodies,
     lastActiveCount_ = 0;
     lastContactCount_ = 0;
     const std::vector<f32> priorDistanceLambdas = workBuffers_.distanceLambdas();
+    const std::vector<f32> priorContactLambdas = workBuffers_.contactLambdas();
 
     for (u32 substep = 0; substep < std::max(1u, params.substeps); ++substep) {
         predict(bodies, params, subDt);
         generateContacts(bodies, shapes, params);
         if (substep == 0u) {
-            frame_lambda_warm_start(workBuffers_, distanceConstraints_, priorDistanceLambdas);
+            frame_lambda_warm_start(workBuffers_,
+                                    distanceConstraints_,
+                                    priorDistanceLambdas,
+                                    priorContactLambdas);
         }
         runConstraintIterations(bodies, params, subDt);
         updateVelocities(bodies, subDt);

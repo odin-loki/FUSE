@@ -647,9 +647,11 @@ void testExtractIslandFlagsEmptyAndConstrained() {
         expectTrue(job.island != nullptr, "extract_island binds island pointer");
         if (job.empty) {
             foundEmptyJob = true;
+            expectTrue(job.constraintCount == 0u, "empty job reports zero constraints");
             expectTrue(!island_has_constraints(*job.island), "empty job maps to constraint-free island");
         } else {
             foundConstrainedJob = true;
+            expectTrue(job.constraintCount > 0u, "constrained job reports positive constraint count");
             expectTrue(island_has_constraints(*job.island), "non-empty job maps to constrained island");
         }
     }
@@ -752,6 +754,182 @@ void testFrameLambdaWarmStartReseedsDistance() {
     expectNear(work.distanceLambdas()[1], 0.11f, 1e-6f, "frame_lambda_warm_start reseeds second distance slot");
 }
 
+void testIslandConstraintCount() {
+    ContactIslandGraph graph;
+    std::vector<narrowphase::ContactManifold> contacts;
+    contacts.push_back(narrowphase::ContactManifold{});
+    contacts.back().valid = true;
+    contacts.back().bodyA = 0;
+    contacts.back().bodyB = 1;
+
+    std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f},
+        DistanceConstraint{.bodyA = 3, .bodyB = 4, .restLength = 2.f},
+    };
+
+    graph.build(5, contacts, constraints);
+
+    u32 constrainedCount = 0;
+    for (u32 islandIndex = 0; islandIndex < graph.islandCount(); ++islandIndex) {
+        const ContactIslandGraph::Island& island = graph.island(islandIndex);
+        const u32 count = island_constraint_count(island);
+        if (island.isEmpty()) {
+            expectTrue(count == 0u, "empty island reports zero constraints");
+        } else {
+            expectTrue(count > 0u, "constrained island reports positive constraint count");
+            constrainedCount += count;
+        }
+    }
+
+    expectTrue(constrainedCount == 3u, "constraint count sums contacts and distance constraints");
+}
+
+void testExtractIslandJobsBatch() {
+    ContactIslandGraph graph;
+    std::vector<narrowphase::ContactManifold> contacts;
+    std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+        DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f},
+    };
+    graph.build(4, contacts, constraints);
+
+    const std::vector<IslandSolveJob> jobs = extract_island_jobs(graph);
+    expectTrue(jobs.size() == graph.islandCount(), "extract_island_jobs matches island count");
+
+    u32 constrainedJobs = 0;
+    for (const IslandSolveJob& job : jobs) {
+        expectTrue(job.island != nullptr, "batch extract binds island pointer");
+        if (!job.empty) {
+            ++constrainedJobs;
+            expectTrue(job.constraintCount == 1u, "single-spring island reports one constraint");
+            expectTrue(should_solve_island(job), "constrained job passes should_solve_island");
+        } else {
+            expectTrue(job.constraintCount == 0u, "empty job reports zero constraints");
+            expectTrue(!should_solve_island(job), "empty job fails should_solve_island");
+        }
+    }
+
+    expectTrue(constrainedJobs == graph.constrainedIslandCount(),
+               "batch extract surfaces all constrained islands");
+}
+
+void testShouldSolveIslandGuards() {
+    IslandSolveJob invalid{};
+    expectTrue(!should_solve_island(invalid), "default job is not dispatchable");
+
+    ContactIslandGraph graph;
+    std::vector<narrowphase::ContactManifold> contacts;
+    std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+    };
+    graph.build(3, contacts, constraints);
+
+    bool foundEmptyGuard = false;
+    bool foundConstrainedGuard = false;
+    for (u32 islandIndex = 0; islandIndex < graph.islandCount(); ++islandIndex) {
+        const IslandSolveJob job = extract_island(graph, islandIndex);
+        if (job.empty) {
+            foundEmptyGuard = true;
+            expectTrue(!should_solve_island(job), "empty island job is not dispatchable");
+        } else {
+            foundConstrainedGuard = true;
+            expectTrue(should_solve_island(job), "constrained island job is dispatchable");
+        }
+    }
+
+    expectTrue(foundEmptyGuard, "should_solve_island guard covers empty island");
+    expectTrue(foundConstrainedGuard, "should_solve_island guard covers constrained island");
+}
+
+void testSolveIslandJobReturnsTrueForConstrained() {
+    ContactIslandGraph graph;
+    std::vector<narrowphase::ContactManifold> contacts;
+    std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+    };
+    graph.build(2, contacts, constraints);
+
+    RigidBodySoA bodies;
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+    bodies.addBody({2.1f, 0.f, 0.f}, 1.f, 0);
+    bodies.predictedPositions = bodies.positions;
+
+    SolverWorkBuffers work;
+    work.init(2, 0, 1);
+
+    const IslandSolveJob job = extract_island(graph, 0);
+    expectTrue(should_solve_island(job), "spring island is dispatchable");
+    const bool solved = solve_island_job(bodies,
+                                         *job.island,
+                                         work,
+                                         constraints,
+                                         1.f / 60.f,
+                                         0.f,
+                                         [](const RigidBodySoA&, u32) { return 1.f; });
+    expectTrue(solved, "solve_island_job returns true for constrained island");
+    const f32 dist = (bodies.predictedPositions[0] - bodies.predictedPositions[1]).length();
+    expectTrue(dist < 2.1f, "constrained island solve moves bodies toward rest length");
+}
+
+void testSolveIslandJobClearsIslandBodyDeltas() {
+    ContactIslandGraph graph;
+    std::vector<narrowphase::ContactManifold> contacts;
+    std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+    };
+    graph.build(2, contacts, constraints);
+
+    RigidBodySoA bodies;
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+    bodies.addBody({2.1f, 0.f, 0.f}, 1.f, 0);
+    bodies.predictedPositions = bodies.positions;
+
+    SolverWorkBuffers work;
+    work.init(2, 0, 1);
+    work.positionDeltas()[0].delta = {9.f, 0.f, 0.f};
+    work.positionDeltas()[0].writeCount = 1;
+    work.positionDeltas()[1].delta = {-9.f, 0.f, 0.f};
+    work.positionDeltas()[1].writeCount = 1;
+
+    const IslandSolveJob job = extract_island(graph, 0);
+    solve_island_job(bodies,
+                     *job.island,
+                     work,
+                     constraints,
+                     1.f / 60.f,
+                     0.f,
+                     [](const RigidBodySoA&, u32) { return 1.f; });
+
+    expectTrue(work.positionDeltas()[0].writeCount == 0u,
+               "solve_island_job clears island body delta slots after apply");
+    expectTrue(work.positionDeltas()[1].writeCount == 0u,
+               "solve_island_job clears all island body delta slots after apply");
+}
+
+void testFrameLambdaWarmStartReseedsContact() {
+    SolverWorkBuffers work;
+    work.init(2, 2, 1);
+    work.ensureLambdaCapacity(2, 1);
+    work.contactLambda(0) = 0.44f;
+    work.contactLambda(1) = 0.22f;
+    work.distanceLambda(0) = 0.33f;
+
+    const std::vector<f32> priorContacts = work.contactLambdas();
+    const std::vector<f32> priorDistance = work.distanceLambdas();
+    const std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+    };
+
+    work.contactLambda(0) = 0.f;
+    work.contactLambda(1) = 0.f;
+    work.distanceLambda(0) = 0.f;
+    frame_lambda_warm_start(work, constraints, priorDistance, priorContacts);
+
+    expectNear(work.contactLambdas()[0], 0.44f, 1e-6f, "frame_lambda_warm_start reseeds first contact slot");
+    expectNear(work.contactLambdas()[1], 0.22f, 1e-6f, "frame_lambda_warm_start reseeds second contact slot");
+    expectNear(work.distanceLambdas()[0], 0.33f, 1e-6f, "frame_lambda_warm_start still reseeds distance slots");
+}
+
 void testEarlyExitWhenResidualBelowTolerance() {
     CollisionShapeSoA shapes;
     RigidBodySoA bodies;
@@ -809,6 +987,12 @@ int main() {
     testSolveIslandJobSkipsEmptyIsland();
     testPerPairDeltaApplicationDistance();
     testFrameLambdaWarmStartReseedsDistance();
+    testIslandConstraintCount();
+    testExtractIslandJobsBatch();
+    testShouldSolveIslandGuards();
+    testSolveIslandJobReturnsTrueForConstrained();
+    testSolveIslandJobClearsIslandBodyDeltas();
+    testFrameLambdaWarmStartReseedsContact();
     testEarlyExitWhenResidualBelowTolerance();
     fuse::core::shutdown();
 

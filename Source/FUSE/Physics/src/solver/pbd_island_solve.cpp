@@ -8,6 +8,14 @@ bool island_has_constraints(const ContactIslandGraph::Island& island) {
     return !island.isEmpty();
 }
 
+u32 island_constraint_count(const ContactIslandGraph::Island& island) {
+    return static_cast<u32>(island.contactIndices.size() + island.distanceIndices.size());
+}
+
+bool should_solve_island(const IslandSolveJob& job) {
+    return !job.empty && job.island != nullptr && job.constraintCount > 0u;
+}
+
 IslandSolveJob extract_island(const ContactIslandGraph& graph, u32 islandIndex) {
     IslandSolveJob job{};
     if (islandIndex >= graph.islandCount()) {
@@ -17,8 +25,19 @@ IslandSolveJob extract_island(const ContactIslandGraph& graph, u32 islandIndex) 
     const ContactIslandGraph::Island& island = graph.island(islandIndex);
     job.islandIndex = islandIndex;
     job.island = &island;
-    job.empty = !island_has_constraints(island);
+    job.constraintCount = island_constraint_count(island);
+    job.empty = job.constraintCount == 0u;
     return job;
+}
+
+std::vector<IslandSolveJob> extract_island_jobs(const ContactIslandGraph& graph) {
+    const u32 count = graph.islandCount();
+    std::vector<IslandSolveJob> jobs;
+    jobs.reserve(count);
+    for (u32 islandIndex = 0; islandIndex < count; ++islandIndex) {
+        jobs.push_back(extract_island(graph, islandIndex));
+    }
+    return jobs;
 }
 
 void per_pair_delta_application(RigidBodySoA& bodies,
@@ -74,6 +93,8 @@ bool solve_island_job(RigidBodySoA& bodies,
         return false;
     }
 
+    workBuffers.clearPositionDeltasForIslandBodies(island.bodyIndices);
+
     const std::vector<narrowphase::ContactManifold>& contacts = workBuffers.contactManifolds();
 
     for (u32 contactIndex : island.contactIndices) {
@@ -116,11 +137,22 @@ bool solve_island_job(RigidBodySoA& bodies,
 
 void frame_lambda_warm_start(SolverWorkBuffers& workBuffers,
                              const std::vector<DistanceConstraint>& distanceConstraints,
-                             const std::vector<f32>& priorDistanceLambdas) {
+                             const std::vector<f32>& priorDistanceLambdas,
+                             const std::vector<f32>& priorContactLambdas) {
     workBuffers.clearLambdas();
     for (u32 distanceIndex = 0; distanceIndex < distanceConstraints.size(); ++distanceIndex) {
         if (distanceIndex < priorDistanceLambdas.size()) {
             workBuffers.seedDistanceLambda(distanceIndex, priorDistanceLambdas[distanceIndex]);
+        }
+    }
+    for (u32 contactIndex = 0; contactIndex < priorContactLambdas.size(); ++contactIndex) {
+        const f32 prior = priorContactLambdas[contactIndex];
+        if (prior == 0.f) {
+            continue;
+        }
+        f32& lambda = workBuffers.contactLambda(contactIndex);
+        if (lambda == 0.f) {
+            lambda = prior;
         }
     }
 }
