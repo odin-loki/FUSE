@@ -40,6 +40,10 @@ add_executable(fuse_renderer_bootstrap test_renderer_bootstrap.cpp)
 target_link_libraries(fuse_renderer_bootstrap PRIVATE fuse_rhi)
 add_test(NAME fuse_renderer_bootstrap COMMAND fuse_renderer_bootstrap)
 
+add_executable(fuse_vulkan_phase2_integration test_vulkan_phase2_integration.cpp)
+target_link_libraries(fuse_vulkan_phase2_integration PRIVATE fuse_rhi)
+add_test(NAME fuse_vulkan_phase2_integration COMMAND fuse_vulkan_phase2_integration)
+
 add_executable(fuse_gbuffer test_gbuffer.cpp)
 target_link_libraries(fuse_gbuffer PRIVATE fuse_rhi)
 add_test(NAME fuse_gbuffer COMMAND fuse_gbuffer)
