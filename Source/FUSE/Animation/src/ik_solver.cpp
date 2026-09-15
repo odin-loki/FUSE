@@ -110,6 +110,13 @@ bool two_bone_segment_lengths(const vec3& root,
     return out_upper_len >= 1e-6f && out_lower_len >= 1e-6f;
 }
 
+f32 two_bone_max_reach(f32 upper_len, f32 lower_len, f32 reach_epsilon) {
+    if (upper_len < 1e-6f || lower_len < 1e-6f) {
+        return 0.f;
+    }
+    return upper_len + lower_len - reach_epsilon;
+}
+
 bool is_two_bone_target_reachable(const vec3& root,
                                    const vec3& target,
                                    f32 upper_len,
@@ -120,7 +127,7 @@ bool is_two_bone_target_reachable(const vec3& root,
     }
 
     const f32 dist = vec3_distance(root, target);
-    const f32 maxReach = upper_len + lower_len - reach_epsilon;
+    const f32 maxReach = two_bone_max_reach(upper_len, lower_len, reach_epsilon);
     return dist <= maxReach && dist >= reach_epsilon;
 }
 
@@ -131,7 +138,7 @@ vec3 clamp_two_bone_target(const vec3& root,
                             f32 reach_epsilon) {
     vec3 delta = vec3_sub(target, root);
     f32 dist = vec3_length(delta);
-    const f32 maxReach = upper_len + lower_len - reach_epsilon;
+    const f32 maxReach = two_bone_max_reach(upper_len, lower_len, reach_epsilon);
 
     if (dist > maxReach) {
         const vec3 dir = vec3_normalize(delta);
@@ -163,9 +170,9 @@ bool solve_two_bone_positions(const vec3& root,
                                f32 reach_epsilon,
                                vec3& out_mid,
                                vec3& out_end) {
-    const f32 upperLen = vec3_distance(root, mid_bind);
-    const f32 lowerLen = vec3_distance(mid_bind, end_bind);
-    if (upperLen < 1e-6f || lowerLen < 1e-6f) {
+    f32 upperLen = 0.f;
+    f32 lowerLen = 0.f;
+    if (!two_bone_segment_lengths(root, mid_bind, end_bind, upperLen, lowerLen)) {
         return false;
     }
 
@@ -199,7 +206,7 @@ bool solve_two_bone_positions(const vec3& root,
 }
 
 bool FABRIKChain::has_valid_chain(const Skeleton& skel) const {
-    if (bone_indices.empty() || skel.bones.empty()) {
+    if (bone_indices.size() < 2 || skel.bones.empty()) {
         return false;
     }
 
@@ -291,9 +298,12 @@ f32 TwoBoneIK::max_reach(const Pose& pose) const {
     const vec3 root = bone_translation(pose, root_bone);
     const vec3 mid = bone_translation(pose, mid_bone);
     const vec3 end = bone_translation(pose, end_bone);
-    const f32 upperLen = vec3_distance(root, mid);
-    const f32 lowerLen = vec3_distance(mid, end);
-    return upperLen + lowerLen - reach_epsilon;
+    f32 upperLen = 0.f;
+    f32 lowerLen = 0.f;
+    if (!two_bone_segment_lengths(root, mid, end, upperLen, lowerLen)) {
+        return 0.f;
+    }
+    return two_bone_max_reach(upperLen, lowerLen, reach_epsilon);
 }
 
 vec3 TwoBoneIK::effective_pole_vector(const Pose& pose) const {
