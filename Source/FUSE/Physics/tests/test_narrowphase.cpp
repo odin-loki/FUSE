@@ -347,6 +347,53 @@ void testRunNarrowphaseIntoBufferJobSafe() {
     expectTrue(second.bodyA == boxBodyB && second.bodyB == boxBodyA, "slot one preserves swapped pair order");
 }
 
+void testContactPairRejectReasonGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 bodyA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 bodyB = bodies.addBody({1.5f, 0.f, 0.f}, 1.f);
+    const fuse::u32 triggerA = bodies.addBody({2.f, 0.f, 0.f}, 0.f, fuse::physics::RB_TRIGGER);
+    const fuse::u32 triggerB = bodies.addBody({2.5f, 0.f, 0.f}, 0.f, fuse::physics::RB_TRIGGER);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodyA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodyB, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, triggerA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, triggerB, {1.f, 0.f, 0.f});
+
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_reject_reason({bodyA, bodyA}, bodies, shapes) ==
+            fuse::physics::narrowphase::ContactPairRejectReason::SelfPair,
+        "reject reason flags self pair");
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_reject_reason({bodyA, 99u}, bodies, shapes) ==
+            fuse::physics::narrowphase::ContactPairRejectReason::OutOfRangeBody,
+        "reject reason flags out-of-range body");
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_reject_reason({triggerA, triggerB}, bodies, shapes) ==
+            fuse::physics::narrowphase::ContactPairRejectReason::BothTriggers,
+        "reject reason flags both-trigger pair");
+    expectTrue(
+        fuse::physics::narrowphase::is_trigger_contact_pair({triggerA, triggerB}, bodies),
+        "trigger guard detects both-trigger pair");
+    expectTrue(
+        !fuse::physics::narrowphase::is_trigger_contact_pair({bodyA, triggerA}, bodies),
+        "trigger guard allows mixed trigger/dynamic pair");
+
+    const fuse::u32 hullBody = bodies.addBody({5.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::ConvexHull, hullBody, {1.f, 0.f, 0.f});
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_reject_reason({bodyA, hullBody}, bodies, shapes) ==
+            fuse::physics::narrowphase::ContactPairRejectReason::UnsupportedShapePair,
+        "reject reason flags unsupported convex hull pair");
+    expectTrue(
+        fuse::physics::narrowphase::is_unsupported_shape_pair({bodyA, hullBody}, shapes),
+        "unsupported shape guard flags convex hull dispatch gap");
+
+    const auto triggerPair =
+        fuse::physics::narrowphase::detect_contacts_pair({triggerA, triggerB}, bodies, shapes);
+    expectTrue(!triggerPair.valid, "both-trigger pair returns invalid manifold");
+    expectTrue(triggerPair.empty(), "both-trigger pair has no contact points");
+}
+
 void testDetectContactsPairEmptyGuards() {
     fuse::physics::RigidBodySoA bodies;
     fuse::physics::CollisionShapeSoA shapes;
@@ -442,6 +489,85 @@ void testManifoldPruneNonPenetratingPoints() {
     expectTrue(manifold.pointCount == 3u, "prune keeps touching and penetrating points");
     expectNear(manifold.maxPenetration(), 0.3f, 1e-4f, "prune preserves deepest penetration");
     expectNear(manifold.penetrationDepth, 0.3f, 1e-4f, "prune syncs legacy penetration depth");
+}
+
+void testManifoldPruneHelpers() {
+    fuse::physics::narrowphase::ContactManifold capped{};
+    capped.contactNormal = {0.f, 1.f, 0.f};
+    capped.addPoint({0.f, 0.f, 0.f}, 0.1f);
+    capped.addPoint({1.f, 0.f, 0.f}, 0.5f);
+    capped.addPoint({2.f, 0.f, 0.f}, 0.3f);
+    capped.addPoint({3.f, 0.f, 0.f}, 0.9f);
+    capped.pruneToMaxPoints(2u);
+    expectTrue(capped.pointCount == 2u, "pruneToMaxPoints keeps deepest two slots");
+    expectNear(capped.maxPenetration(), 0.9f, 1e-4f, "pruneToMaxPoints retains max penetration");
+    expectNear(capped.penetrationDepth, 0.9f, 1e-4f, "pruneToMaxPoints syncs legacy depth");
+
+    fuse::physics::narrowphase::ContactManifold duplicates{};
+    duplicates.contactNormal = {0.f, 1.f, 0.f};
+    duplicates.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    duplicates.addPoint({0.00001f, 0.f, 0.f}, 0.35f);
+    duplicates.addPoint({1.f, 0.f, 0.f}, 0.1f);
+    duplicates.pruneDuplicatePoints(1e-3f);
+    expectTrue(duplicates.pointCount == 2u, "pruneDuplicatePoints merges near-identical points");
+    expectNear(duplicates.maxPenetration(), 0.35f, 1e-4f, "pruneDuplicatePoints keeps deeper duplicate");
+
+    fuse::physics::narrowphase::ContactManifold chained{};
+    chained.contactNormal = {0.f, 1.f, 0.f};
+    chained.addPoint({0.f, 0.f, 0.f}, 0.4f);
+    chained.addPoint({0.f, 0.f, 0.f}, 0.5f);
+    chained.addPoint({1.f, 0.f, 0.f}, -0.1f);
+    chained.addPoint({2.f, 0.f, 0.f}, 0.05f);
+    chained.pruneContactPoints();
+    expectTrue(chained.pointCount == 2u, "pruneContactPoints chains separation and duplicate pruning");
+    expectNear(chained.maxPenetration(), 0.5f, 1e-4f, "pruneContactPoints keeps deepest merged point");
+}
+
+void testFrictionTangentEarlyOuts() {
+    fuse::physics::narrowphase::ContactManifold empty{};
+    expectTrue(
+        fuse::physics::narrowphase::should_skip_friction_tangents(empty),
+        "friction early-out skips empty manifold");
+
+    fuse::physics::narrowphase::ContactManifold noNormal{};
+    noNormal.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    expectTrue(
+        fuse::physics::narrowphase::should_skip_friction_tangents(noNormal),
+        "friction early-out skips zero-length normal");
+
+    expectTrue(
+        fuse::physics::narrowphase::should_skip_friction_solve(0.f, 0.f, 1.f),
+        "friction solve early-out skips zero coefficients");
+    expectTrue(
+        fuse::physics::narrowphase::should_skip_friction_solve(0.5f, 0.3f, 0.f),
+        "friction solve early-out skips negligible normal impulse");
+    expectTrue(
+        !fuse::physics::narrowphase::should_skip_friction_solve(0.5f, 0.3f, 0.25f),
+        "friction solve proceeds with coefficients and impulse");
+
+    const fuse::physics::vec2 slow{1e-8f, 1e-8f};
+    const fuse::physics::vec2 fast{0.3f, 0.4f};
+    expectTrue(
+        fuse::physics::narrowphase::hasNegligibleTangentialVelocity(slow),
+        "tangential early-out flags negligible speed");
+    expectTrue(
+        !fuse::physics::narrowphase::hasNegligibleTangentialVelocity(fast),
+        "tangential early-out allows meaningful slip");
+
+    fuse::physics::narrowphase::ContactManifold manifold{};
+    manifold.contactNormal = {0.f, 1.f, 0.f};
+    manifold.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    fuse::physics::narrowphase::compute_friction_tangents(manifold);
+    expectTrue(manifold.hasFrictionBasis(), "first friction tangent build succeeds");
+
+    const auto cachedBasis = manifold.frictionBasis;
+    fuse::physics::narrowphase::compute_friction_tangents(manifold);
+    expectTrue(
+        fuse::physics::narrowphase::isOrthonormalTangentBasis(
+            manifold.contactNormal, manifold.frictionBasis),
+        "second friction tangent build early-outs with valid basis");
+    expectNear(manifold.frictionBasis.tangent1.x, cachedBasis.tangent1.x, 1e-4f,
+        "friction early-out preserves cached tangent1");
 }
 
 void testRunNarrowphaseFinalizesFrictionTangents() {
@@ -550,9 +676,12 @@ int main() {
     testContactBufferFrictionTangentSoA();
     testContactBufferWarmStartAndPointSlots();
     testRunNarrowphaseIntoBufferJobSafe();
+    testContactPairRejectReasonGuards();
     testDetectContactsPairEmptyGuards();
     testGenerateContactManifoldAndFrictionTangents();
     testManifoldPruneNonPenetratingPoints();
+    testManifoldPruneHelpers();
+    testFrictionTangentEarlyOuts();
     testRunNarrowphaseFinalizesFrictionTangents();
     testContactPointTangentBasisAndManifoldClear();
     testContactBufferCapacityClamp();

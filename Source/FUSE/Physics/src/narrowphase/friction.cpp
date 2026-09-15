@@ -77,4 +77,30 @@ vec2 projectTangentialVelocity(vec3 relativeVelocity, const TangentBasis& basis)
     };
 }
 
+bool should_skip_friction_tangents(const ContactManifold& manifold) {
+    if (manifold.empty() || !manifold.hasValidNormal()) {
+        return true;
+    }
+    return false;
+}
+
+bool should_skip_friction_solve(
+    f32 staticFriction,
+    f32 dynamicFriction,
+    f32 normalImpulse,
+    f32 impulseEpsilon) {
+    if (staticFriction <= 0.f && dynamicFriction <= 0.f) {
+        return true;
+    }
+    if (normalImpulse <= impulseEpsilon) {
+        return true;
+    }
+    return false;
+}
+
+bool hasNegligibleTangentialVelocity(vec2 projected, f32 speedThreshold) {
+    const f32 speedSq = projected.x * projected.x + projected.y * projected.y;
+    return speedSq <= speedThreshold * speedThreshold;
+}
+
 } // namespace fuse::physics::narrowphase

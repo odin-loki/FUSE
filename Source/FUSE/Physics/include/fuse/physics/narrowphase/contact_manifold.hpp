@@ -51,6 +51,17 @@ struct ContactManifold {
 
     /// Drop separated contact points with penetration below `-epsilon` (B4.3 deepen).
     void pruneNonPenetratingPoints(f32 epsilon = 1e-6f);
+
+    /// Keep at most `maxPoints` deepest-penetrating slots (B4.3 deepen).
+    void pruneToMaxPoints(u32 maxPoints);
+
+    /// Merge contact points within `positionEpsilon` of an existing slot (B4.3 deepen).
+    void pruneDuplicatePoints(f32 positionEpsilon = 1e-4f);
+
+    /// Run non-penetrating, duplicate, and max-point pruning in order (B4.3 deepen).
+    void pruneContactPoints(
+        f32 separationEpsilon = 1e-6f,
+        f32 duplicateEpsilon = 1e-4f);
 };
 
 inline ContactManifold invalidContactManifold() {
