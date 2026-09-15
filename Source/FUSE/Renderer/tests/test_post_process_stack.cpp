@@ -1,9 +1,11 @@
 #include <fuse/core/init.hpp>
 #include <fuse/math/vec.hpp>
+#include <fuse/renderer/postprocess/auto_exposure.hpp>
 #include <fuse/renderer/postprocess/bloom.hpp>
 #include <fuse/renderer/postprocess/color_grade.hpp>
 #include <fuse/renderer/postprocess/post_stack.hpp>
 #include <fuse/renderer/postprocess/tonemap.hpp>
+#include <fuse/renderer/postprocess/tonemap_curve.hpp>
 
 #include <cmath>
 #include <cstdio>
@@ -82,6 +84,8 @@ void testPostStackProcessPixel() {
     expectTrue(stack.isReady(), "post stack ready after init");
     expectTrue(stack.bloom().isReady(), "bloom stage ready");
     expectTrue(stack.toneMap().isReady(), "tonemap stage ready");
+    expectTrue(stack.tonemapCurve().isReady(), "tonemap curve stage ready");
+    expectTrue(stack.autoExposure().isReady(), "auto exposure stage ready");
     expectTrue(stack.colorGrade().isReady(), "color grade stage ready");
 
     fuse::renderer::ColorGradeParams gradeParams{};
@@ -100,6 +104,91 @@ void testPostStackProcessPixel() {
     expectTrue(!stack.isReady(), "post stack not ready after destroy");
 }
 
+void testTonemapCurveDisabledIsIdentity() {
+    fuse::renderer::TonemapCurveParams params{};
+    params.enabled = false;
+    const fuse::math::Vec3 input{0.4f, 0.2f, 0.1f};
+    const fuse::math::Vec3 output = fuse::renderer::apply_tonemap_curve(input, params);
+    expectNear(output.x, input.x, 1e-6f, "disabled curve preserves red");
+    expectNear(output.y, input.y, 1e-6f, "disabled curve preserves green");
+    expectNear(output.z, input.z, 1e-6f, "disabled curve preserves blue");
+}
+
+void testTonemapCurveEnabledCompressesHighlights() {
+    fuse::renderer::TonemapCurveParams params{};
+    params.enabled = true;
+    params.shoulder_strength = 0.5f;
+    params.shoulder_length = 0.4f;
+    const fuse::math::Vec3 hot{8.f, 6.f, 4.f};
+    const fuse::math::Vec3 curved = fuse::renderer::apply_tonemap_curve(hot, params);
+    expectTrue(curved.x < hot.x, "enabled curve rolls off hot red");
+    expectTrue(curved.x >= 0.f && curved.x <= 1.f, "curved red stays in range");
+}
+
+void testTonemapOperators() {
+    const fuse::math::Vec3 grey{0.18f, 0.18f, 0.18f};
+    const fuse::math::Vec3 aces = fuse::renderer::apply_tone_map(grey, fuse::renderer::ToneMapper::ACES);
+    const fuse::math::Vec3 reinhard = fuse::renderer::apply_tone_map(grey, fuse::renderer::ToneMapper::Reinhard);
+    const fuse::math::Vec3 neutral = fuse::renderer::apply_tone_map(grey, fuse::renderer::ToneMapper::Neutral);
+    expectTrue(aces.x > 0.f && aces.x < 1.f, "aces maps mid grey into display range");
+    expectTrue(reinhard.x > 0.f && reinhard.x < neutral.x, "reinhard compresses mid grey below neutral");
+    expectNear(neutral.x, 0.18f, 1e-4f, "neutral preserves 0.18 grey");
+    expectTrue(std::string(fuse::renderer::tone_mapper_name(fuse::renderer::ToneMapper::Filmic)) == "filmic",
+               "filmic mapper name");
+}
+
+void testLuminanceToEvCalibration() {
+    expectNear(fuse::renderer::luminance_to_ev(0.18f, 0.18f), 0.f, 1e-5f, "0.18 grey is 0 EV offset");
+    expectTrue(fuse::renderer::luminance_to_ev(0.36f, 0.18f) > 0.f, "brighter scene yields positive EV");
+    expectTrue(fuse::renderer::luminance_to_ev(0.09f, 0.18f) < 0.f, "darker scene yields negative EV");
+}
+
+void testAutoExposureClampsAndAdapts() {
+    fuse::renderer::AutoExposureParams params{};
+    params.min_ev = -2.f;
+    params.max_ev = 2.f;
+    params.target_luminance = 0.18f;
+    params.adaptation_speed_up = 4.f;
+    params.adaptation_speed_down = 4.f;
+
+    fuse::renderer::AutoExposureState state{};
+    const fuse::f32 first = fuse::renderer::update_auto_exposure(state, 0.72f, params, 0.25f);
+    expectTrue(first > 0.f && first <= params.max_ev, "bright frame adapts upward within clamp");
+    expectNear(state.measured_luminance, 0.72f, 1e-6f, "state stores measured luminance");
+
+    const fuse::f32 second = fuse::renderer::update_auto_exposure(state, 0.045f, params, 0.25f);
+    expectTrue(second < first, "dark frame pulls exposure down");
+    expectTrue(second >= params.min_ev, "exposure respects minimum clamp");
+}
+
+void testExposureMeterAverage() {
+    const fuse::math::Vec3 samples[] = {{0.18f, 0.18f, 0.18f}, {0.36f, 0.36f, 0.36f}};
+    const fuse::f32 average = fuse::renderer::ExposureMeter::measureAverage(samples, 2u);
+    expectNear(average, 0.27f, 1e-4f, "meter averages rec709 luminance");
+}
+
+void testPostStackAutoExposureIntegration() {
+    fuse::renderer::PostStack stack{};
+    stack.init({});
+
+    fuse::renderer::AutoExposureParams autoParams{};
+    autoParams.enabled = true;
+    autoParams.adaptation_speed_up = 8.f;
+    autoParams.adaptation_speed_down = 8.f;
+    stack.setAutoExposureParams(autoParams);
+
+    const fuse::math::Vec3 brightFrame[] = {{1.f, 1.f, 1.f}, {0.8f, 0.8f, 0.8f}};
+    const fuse::f32 ev = stack.updateAutoExposure(brightFrame, 2u, 0.5f);
+    expectTrue(ev > 0.f, "post stack auto exposure adapts to bright samples");
+
+    const fuse::math::Vec3 ldr = stack.processPixel({0.5f, 0.5f, 0.5f}, 0u);
+    const fuse::renderer::PostStackStats stats = stack.lastStats();
+    expectNear(stats.auto_exposure_ev, ev, 1e-5f, "process pixel reports active auto EV");
+    expectTrue(ldr.x >= 0.f && ldr.x <= 1.f, "auto exposure path stays in display range");
+
+    stack.destroy();
+}
+
 } // namespace
 
 int main() {
@@ -110,6 +199,13 @@ int main() {
     testNeutralCalibrationGrey();
     testPostStackStageChain();
     testPostStackProcessPixel();
+    testTonemapCurveDisabledIsIdentity();
+    testTonemapCurveEnabledCompressesHighlights();
+    testTonemapOperators();
+    testLuminanceToEvCalibration();
+    testAutoExposureClampsAndAdapts();
+    testExposureMeterAverage();
+    testPostStackAutoExposureIntegration();
 
     fuse::core::shutdown();
 

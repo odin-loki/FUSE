@@ -206,18 +206,20 @@ See [B5.7-SCREEN-SPACE-EFFECTS.md](./B5.7-SCREEN-SPACE-EFFECTS.md) for component
 
 ## B5.10 — Post-Processing Stack
 
-**Status:** CPU-first `PostStack` scaffold landed — bloom, ACES/neutral tonemap, color grade stages.
+**Status:** CPU-first `PostStack` scaffold landed — bloom, ACES/neutral tonemap, color grade stages; **B5.10 deepen** adds tonemap curve + auto-exposure CPU stubs.
 
 | Component | Location | Notes |
 |-----------|----------|-------|
 | `PostStack` | `include/fuse/renderer/postprocess/post_stack.hpp` | Three-stage chain: bloom → tonemap → color grade |
 | `Bloom` / `ToneMap` / `ColorGrade` | `postprocess/bloom.hpp`, `tonemap.hpp`, `color_grade.hpp` | CPU pixel path for unit tests |
+| `TonemapCurve` | `postprocess/tonemap_curve.hpp` | Filmic S-curve stub applied before tone-map operator |
+| `AutoExposure` / `ExposureMeter` | `postprocess/auto_exposure.hpp` | Histogram-free metering + temporal EV adaptation stub |
 
 | Test | Validates |
 |------|-----------|
-| `fuse_post_process_b510` | Bloom threshold, ACES clamp, neutral 0.18 grey calibration, stage chain |
+| `fuse_post_process_b510` | Bloom threshold, ACES clamp, neutral 0.18 grey calibration, stage chain, tonemap curve identity/rolloff, EV metering/adaptation, auto-exposure integration |
 
-DOF, motion blur, film grain, and GPU shader chain remain future work.
+DOF, motion blur, film grain GPU shader chain, and CUDA histogram reduction remain future work.
 
 ---
 
@@ -315,9 +317,11 @@ DOF, motion blur, film grain, and GPU shader chain remain future work.
 | Item | Status | Notes |
 |------|--------|-------|
 | Bloom threshold gate | **Done (stub)** | `fuse_post_process_b510` black-frame test |
+| Tonemap curve S-curve rolloff | **Done (stub)** | `fuse_post_process_b510` filmic curve tests |
+| Auto-exposure EV metering/adaptation | **Done (stub)** | `fuse_post_process_b510` luminance→EV + clamp tests |
 | DOF circle of confusion thin-lens formula | **Deferred** | — |
 | Motion blur velocity trail | **Deferred** | — |
-| ACES tonemap 0.18 grey calibration | **Deferred** | — |
+| ACES tonemap 0.18 grey calibration | **Deferred** | Neutral pass-through calibrated; ACES sRGB gate deferred |
 | Film grain temporally decorrelated | **Deferred** | — |
 
 #### Full Frame Performance (RTX 3090, 1920×1080)
@@ -342,7 +346,7 @@ DOF, motion blur, film grain, and GPU shader chain remain future work.
 | `fuse_screen_space_effects_stub` | B5.7 — SSAO/SSR/SSGI stubs (`fuse_compute`) |
 | `fuse_atmosphere_sky` | B5.8 — scatter, LUT, sky pass graph |
 | `fuse_taa_pass` | B5.9 — jitter, history, resolve, graph hook |
-| `fuse_post_process_b510` | B5.10 — bloom, tonemap, color grade stage chain |
+| `fuse_post_process_b510` | B5.10 — bloom, tonemap, color grade stage chain, tonemap curve, auto-exposure |
 | `fuse_volumetric_lighting_b511` | B5.11 — fog, light shafts, lens flare, 19-pass graph hooks |
 | `fuse_phase5_deferred_integration` | **B5.12** — full deferred pipeline + all subsystems headless multi-frame |
 
@@ -383,6 +387,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_screen_space_effects'
 ### B5.10–B5.11 (post-process, lens flare / volumetric)
 
 - [x] **B5.10** `PostStack` CPU scaffold — bloom, tonemap, color grade (`fuse_post_process_b510`)
+- [x] **B5.10 deepen** Tonemap curve + auto-exposure CPU stubs wired into `PostStack`
 - [x] **B5.11** Volumetric fog, light shafts, lens flare scaffolds + graph hooks (`fuse_volumetric_lighting_b511`)
 - [ ] GPU post-process shader chain (deferred — B2.4 bindless descriptor pool)
 - [ ] Full volumetric fog CUDA kernel (deferred — B2.6 interop)
@@ -402,7 +407,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_screen_space_effects'
 - [ ] B5.4 follow-up: CUDA cluster AABB build + deferred shade kernels (CPU light-grid rebuild stub landed)
 - [ ] B5.5 follow-up: SDF soft shadows in `fuse_compute` (CSM split helpers landed)
 - [ ] B5.7 follow-up: G-buffer `cudaInterop` surface import via B2.6
-- [ ] B5.10 follow-up: DOF / motion blur / film grain GPU shader chain
+- [ ] B5.10 follow-up: DOF / motion blur / film grain GPU shader chain; CUDA histogram auto-exposure
 - [ ] B5.11 follow-up: Full volumetric fog CUDA kernel + lens flare GPU composite
 - [ ] Scene `SceneData` → deferred G-buffer draw list handoff (B3 → B5 bridge)
 - [ ] Editor Qt viewport deferred preview (B6)
