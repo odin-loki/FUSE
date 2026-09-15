@@ -91,3 +91,11 @@ add_executable(fuse_core_phase1_integration
 target_link_libraries(fuse_core_phase1_integration PRIVATE fuse_core)
 fuse_core_apply_tsan(fuse_core_phase1_integration)
 add_test(NAME fuse_core_phase1_integration COMMAND fuse_core_phase1_integration)
+
+add_executable(fuse_core_frame_barrier_tests
+    test_frame_barrier.cpp
+)
+
+target_link_libraries(fuse_core_frame_barrier_tests PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_frame_barrier_tests)
+add_test(NAME fuse_core_frame_barrier COMMAND fuse_core_frame_barrier_tests)

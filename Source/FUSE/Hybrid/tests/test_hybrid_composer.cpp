@@ -8,6 +8,7 @@
 #include <cstdlib>
 
 int runFramePipelineMtTests();
+int runFrameBarrierIntegrationTests();
 
 namespace {
 
@@ -84,6 +85,10 @@ int main() {
     testDimensionDisableFlags();
 
     if (runFramePipelineMtTests() != EXIT_SUCCESS) {
+        ++g_failures;
+    }
+
+    if (runFrameBarrierIntegrationTests() != EXIT_SUCCESS) {
         ++g_failures;
     }
 

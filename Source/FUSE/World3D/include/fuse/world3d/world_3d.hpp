@@ -23,6 +23,11 @@ public:
     void tick(frame::FrameCtx& ctx) override;
     void render(frame::FrameCtx& ctx) override;
 
+    /// Game-thread phase: physics step + immutable snapshot build (no worker reads yet).
+    void tickGameThread(frame::FrameCtx& ctx);
+    /// Worker-safe cull over the snapshot built by tickGameThread (JobScheduler parallel_for).
+    void runParallelCull();
+
     void loadWorld(dimension::WorldHandle world) override;
     dimension::WorldHandle activeWorld() const override { return m_activeWorld; }
 
@@ -44,7 +49,6 @@ public:
 
 private:
     void buildSnapshot();
-    void runParallelCull();
     void syncPhysicsFromScene();
     void syncSceneFromPhysics();
 

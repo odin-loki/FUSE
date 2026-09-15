@@ -37,6 +37,7 @@ public:
     void render(frame::FrameCtx& ctx);
 
     u32 frameCount() const { return m_frameCount; }
+    const frame::FrameBarrier& frameBarrier() const { return m_barrier; }
 
 #if defined(FUSE_HAS_VULKAN_RHI)
     bool hasRhiRecording() const { return true; }
