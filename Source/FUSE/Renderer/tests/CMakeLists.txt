@@ -67,3 +67,7 @@ add_test(NAME fuse_taa_pass COMMAND fuse_taa_pass)
 add_executable(fuse_atmosphere_sky test_atmosphere_sky.cpp)
 target_link_libraries(fuse_atmosphere_sky PRIVATE fuse_rhi)
 add_test(NAME fuse_atmosphere_sky COMMAND fuse_atmosphere_sky)
+
+add_executable(fuse_ddgi test_ddgi.cpp)
+target_link_libraries(fuse_ddgi PRIVATE fuse_rhi)
+add_test(NAME fuse_ddgi COMMAND fuse_ddgi)
