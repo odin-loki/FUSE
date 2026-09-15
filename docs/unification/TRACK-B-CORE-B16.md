@@ -1,6 +1,6 @@
 # Track B — Core B1.6 Logging, Assert & Profiler (stubs)
 
-**Status:** B1.6 CPU profiler ring buffer, chrome-trace export stub, assert macros, and fatal handler hooks on `fuse_core`  
+**Status:** B1.6 deepen follow-up — async chrome flow begin/end stubs, counter samples, expanded export tests on `fuse_core`  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B1.6  
 **Related:** Editor `ProfilerPanel` ring buffer (B6.10) consumes frame summaries; this PR owns per-scope CPU events in Core.
 
@@ -12,9 +12,9 @@
 |-----------|----------|-------|
 | `assert.hpp` | `Source/FUSE/Core/include/fuse/` | `FUSE_ASSERT`, `FUSE_VERIFY`, contract helpers |
 | `fatal_handler.cpp` | `Source/FUSE/Core/src/assert/` | Fatal log + callback hook + `std::abort()` |
-| `profiler.hpp` | `Source/FUSE/Core/include/fuse/profiler/` | `ProfileScope`, frame ring buffer, chrome JSON stub |
+| `profiler.hpp` | `Source/FUSE/Core/include/fuse/profiler/` | `ProfileScope`, async flow + counter stubs, chrome JSON export |
 | `profiler.cpp` | `Source/FUSE/Core/src/profiler/` | 4096-event ring buffer, steady-clock timestamps |
-| `test_profiler_assert.cpp` | `Source/FUSE/Core/tests/` | Scope, export, fatal hook acceptance |
+| `test_profiler_assert.cpp` | `Source/FUSE/Core/tests/` | Scope, async flow, counter samples, export, fatal hook acceptance |
 
 **Not in scope (follow-up PRs):** lock-free async logger ring, GPU/CUDA markers, Tracy backend, shipping strip presets (`FUSE_NO_ASSERT` / `FUSE_NO_PROFILER` macros exist for future CMake presets).
 
@@ -81,11 +81,17 @@ void tick() {
   fuse::profiler::endFrame();
 }
 
+const fuse::u32 flowId = fuse::profiler::nextFlowId();
+FUSE_PROFILE_ASYNC_FLOW_BEGIN("vfs_load", flowId);
+// ... worker thread completes I/O ...
+FUSE_PROFILE_ASYNC_FLOW_END("vfs_load", flowId);
+FUSE_PROFILE_COUNTER("frame_alloc_bytes", frameAllocator.usedBytes());
+
 const std::string trace = fuse::profiler::exportChromeTraceJson();
 // Load in chrome://tracing — stub emits valid {"traceEvents":[...]} JSON
 ```
 
-Ring buffer holds up to 4096 `ProfileEvent` records (name, timestamp ns, begin/end phase, chrome `tid`, paired `scopeId`, nesting depth). `setEnabled(false)` makes `FUSE_PROFILE_SCOPE` a no-op without recompiling.
+Ring buffer holds up to 4096 `ProfileEvent` records (name, timestamp ns, phase, chrome `tid`, paired `scopeId` / `flowId`, nesting depth, counter value). `setEnabled(false)` makes `FUSE_PROFILE_SCOPE`, `FUSE_PROFILE_ASYNC_FLOW_*`, and `FUSE_PROFILE_COUNTER` no-ops without recompiling.
 
 Nested scopes preserve stack order (`outer B → inner B → inner E → outer E`) and track `maxNestingDepth()` for flame-graph scaffolding.
 
@@ -106,14 +112,17 @@ fuse::platform::registerMainThread();
 |-------|-------|
 | `displayTimeUnit` | `"ns"` |
 | `metadata.name` | `"FUSE CPU profiler"` |
-| `traceEvents[].ph` | `"B"` / `"E"` begin/end pairs |
+| `traceEvents[].ph` | `"B"` / `"E"` scope begin/end; `"s"` / `"f"` async flow start/finish; `"C"` counter sample |
+| `traceEvents[].cat` | `"cpu"` scopes, `"async"` flows, `"counter"` samples |
 | `traceEvents[].ts` | microseconds (`timestampNs / 1000`) |
 | `traceEvents[].pid` | `1` (single-process stub) |
 | `traceEvents[].tid` | `chromeTraceThreadId()` |
-| `traceEvents[].id` | paired `scopeId` per `FUSE_PROFILE_SCOPE` |
-| `traceEvents[].args.depth` | 1-based nesting depth |
+| `traceEvents[].id` | paired `scopeId` per `FUSE_PROFILE_SCOPE`, or `flowId` for async flow pairs |
+| `traceEvents[].bp` | `"e"` on flow finish — bind to enclosing slice end |
+| `traceEvents[].args.depth` | 1-based nesting depth (scope events only) |
+| `traceEvents[].args.value` | counter sample payload (`FUSE_PROFILE_COUNTER`) |
 
-Load the JSON in `chrome://tracing` for offline inspection; Qt flame-graph panel (B6.10) will consume the same event buffer later.
+Load the JSON in `chrome://tracing` for offline inspection; Qt flame-graph panel (B6.10) will consume the same event buffer later. Async flow stubs correlate I/O and job handoff across threads; counter samples surface allocator and scheduler budgets until GPU markers land (B2+).
 
 ---
 
@@ -121,7 +130,7 @@ Load the JSON in `chrome://tracing` for offline inspection; Qt flame-graph panel
 
 | Test binary | CTest name | Coverage |
 |-------------|------------|----------|
-| `fuse_core_profiler_assert_tests` | `fuse_core_profiler_assert` | Scope begin/end, nested zone ordering, thread-id stubs, disable flag, frame index, chrome JSON fields, fatal hook, `FUSE_VERIFY` |
+| `fuse_core_profiler_assert_tests` | `fuse_core_profiler_assert` | Scope begin/end, nested zone ordering, async flow begin/end, counter samples, mixed chrome JSON export, thread-id stubs, disable flag, frame index, fatal hook, `FUSE_VERIFY` |
 
 ---
 
@@ -129,6 +138,7 @@ Load the JSON in `chrome://tracing` for offline inspection; Qt flame-graph panel
 
 - [x] Frame profiler scopes (CPU) with ring buffer on FUSE APIs
 - [x] chrome://tracing JSON export stub
+- [x] Async flow begin/end stubs (`ph:"s"` / `ph:"f"`) + counter samples (`ph:"C"`)
 - [x] `FUSE_ASSERT` / `FUSE_VERIFY` macros + fatal handler hooks
 - [x] Unit tests + this doc
 - [ ] Lock-free async logger ring (B1.6 logging follow-up)

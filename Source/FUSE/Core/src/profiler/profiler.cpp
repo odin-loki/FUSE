@@ -17,6 +17,7 @@ constexpr u32 kRingCapacity = 4096u;
 std::atomic<bool> g_enabled{true};
 std::atomic<u32> g_frameIndex{0};
 std::atomic<u32> g_nextScopeId{1};
+std::atomic<u32> g_nextFlowId{1};
 
 std::array<ProfileEvent, kRingCapacity> g_events{};
 std::atomic<u32> g_writeHead{0};
@@ -55,7 +56,11 @@ void popNestingDepth() {
     }
 }
 
-void recordEvent(const char* name, EventPhase phase, u32 scopeId, u32 nestingDepth) {
+void recordEvent(const char* name,
+                 EventPhase phase,
+                 u32 scopeId,
+                 u32 nestingDepth,
+                 s64 counterValue = 0) {
     if (!g_enabled.load(std::memory_order_acquire)) {
         return;
     }
@@ -68,11 +73,40 @@ void recordEvent(const char* name, EventPhase phase, u32 scopeId, u32 nestingDep
         fuse::platform::chromeTraceThreadId(),
         scopeId,
         nestingDepth,
+        counterValue,
     };
 
     const u32 count = g_eventCount.load(std::memory_order_acquire);
     if (count < kRingCapacity) {
         g_eventCount.fetch_add(1u, std::memory_order_acq_rel);
+    }
+}
+
+const char* chromePhaseToken(EventPhase phase) {
+    switch (phase) {
+    case EventPhase::Begin:
+        return "B";
+    case EventPhase::End:
+        return "E";
+    case EventPhase::FlowStart:
+        return "s";
+    case EventPhase::FlowFinish:
+        return "f";
+    case EventPhase::Counter:
+        return "C";
+    }
+    return "X";
+}
+
+const char* chromeCategory(EventPhase phase) {
+    switch (phase) {
+    case EventPhase::FlowStart:
+    case EventPhase::FlowFinish:
+        return "async";
+    case EventPhase::Counter:
+        return "counter";
+    default:
+        return "cpu";
     }
 }
 
@@ -142,8 +176,25 @@ void reset() {
     g_eventCount.store(0u, std::memory_order_release);
     g_frameIndex.store(0u, std::memory_order_release);
     g_nextScopeId.store(1u, std::memory_order_release);
+    g_nextFlowId.store(1u, std::memory_order_release);
     g_maxNestingDepth.store(0u, std::memory_order_release);
     threadLocalNestingDepth() = 0u;
+}
+
+u32 nextFlowId() {
+    return g_nextFlowId.fetch_add(1u, std::memory_order_acq_rel);
+}
+
+void beginAsyncFlow(const char* name, u32 flowId) {
+    recordEvent(name, EventPhase::FlowStart, flowId, 0u);
+}
+
+void endAsyncFlow(const char* name, u32 flowId) {
+    recordEvent(name, EventPhase::FlowFinish, flowId, 0u);
+}
+
+void sampleCounter(const char* track, s64 value) {
+    recordEvent(track, EventPhase::Counter, 0u, 0u, value);
 }
 
 std::string exportChromeTraceJson() {
@@ -160,21 +211,67 @@ std::string exportChromeTraceJson() {
             continue;
         }
 
-        const char phase = event.phase == EventPhase::Begin ? 'B' : 'E';
+        const char* phase = chromePhaseToken(event.phase);
+        const char* category = chromeCategory(event.phase);
         const u64 timestampUs = event.timestampNs / 1000u;
 
         char buffer[640];
-        std::snprintf(buffer,
-                      sizeof(buffer),
-                      "%s{\"name\":\"%s\",\"cat\":\"cpu\",\"ph\":\"%c\",\"ts\":%llu,\"pid\":1,"
-                      "\"tid\":%u,\"id\":%u,\"args\":{\"depth\":%u}}",
-                      first ? "" : ",",
-                      event.name,
-                      phase,
-                      static_cast<unsigned long long>(timestampUs),
-                      event.threadId,
-                      event.scopeId,
-                      event.nestingDepth);
+        switch (event.phase) {
+        case EventPhase::Begin:
+        case EventPhase::End:
+            std::snprintf(buffer,
+                          sizeof(buffer),
+                          "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
+                          "\"tid\":%u,\"id\":%u,\"args\":{\"depth\":%u}}",
+                          first ? "" : ",",
+                          event.name,
+                          category,
+                          phase,
+                          static_cast<unsigned long long>(timestampUs),
+                          event.threadId,
+                          event.scopeId,
+                          event.nestingDepth);
+            break;
+        case EventPhase::FlowStart:
+            std::snprintf(buffer,
+                          sizeof(buffer),
+                          "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
+                          "\"tid\":%u,\"id\":%u}",
+                          first ? "" : ",",
+                          event.name,
+                          category,
+                          phase,
+                          static_cast<unsigned long long>(timestampUs),
+                          event.threadId,
+                          event.scopeId);
+            break;
+        case EventPhase::FlowFinish:
+            std::snprintf(buffer,
+                          sizeof(buffer),
+                          "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
+                          "\"tid\":%u,\"id\":%u,\"bp\":\"e\"}",
+                          first ? "" : ",",
+                          event.name,
+                          category,
+                          phase,
+                          static_cast<unsigned long long>(timestampUs),
+                          event.threadId,
+                          event.scopeId);
+            break;
+        case EventPhase::Counter:
+            std::snprintf(buffer,
+                          sizeof(buffer),
+                          "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
+                          "\"tid\":%u,\"args\":{\"value\":%lld}}",
+                          first ? "" : ",",
+                          event.name,
+                          category,
+                          phase,
+                          static_cast<unsigned long long>(timestampUs),
+                          event.threadId,
+                          static_cast<long long>(event.counterValue));
+            break;
+        }
         json += buffer;
         first = false;
     }

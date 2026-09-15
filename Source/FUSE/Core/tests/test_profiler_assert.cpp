@@ -167,6 +167,116 @@ void testChromeTraceExport() {
     expectTrue(json.back() == '}', "chrome trace json is closed");
 }
 
+void testAsyncFlowStubs() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    expectTrue(flowId != 0u, "nextFlowId returns non-zero id");
+
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("vfs_load", flowId);
+    FUSE_PROFILE_ASYNC_FLOW_END("vfs_load", flowId);
+
+    expectTrue(fuse::profiler::eventCount() == 2u, "async flow emits start and finish events");
+
+    const fuse::profiler::ProfileEvent& flowStart = fuse::profiler::eventAt(0);
+    const fuse::profiler::ProfileEvent& flowFinish = fuse::profiler::eventAt(1);
+    expectTrue(flowStart.phase == fuse::profiler::EventPhase::FlowStart, "first flow event is start");
+    expectTrue(flowFinish.phase == fuse::profiler::EventPhase::FlowFinish, "second flow event is finish");
+    expectTrue(std::string(flowStart.name) == "vfs_load", "flow start preserves name");
+    expectTrue(std::string(flowFinish.name) == "vfs_load", "flow finish preserves name");
+    expectTrue(flowStart.scopeId == flowId, "flow start stores flow id");
+    expectTrue(flowFinish.scopeId == flowId, "flow finish stores flow id");
+    expectTrue(flowFinish.timestampNs >= flowStart.timestampNs,
+               "flow finish timestamp is not before flow start");
+
+    const std::string json = fuse::profiler::exportChromeTraceJson();
+    expectTrue(json.find("\"cat\":\"async\"") != std::string::npos, "async flow uses async category");
+    expectTrue(json.find("\"ph\":\"s\"") != std::string::npos, "chrome trace exports flow start phase");
+    expectTrue(json.find("\"ph\":\"f\"") != std::string::npos, "chrome trace exports flow finish phase");
+    expectTrue(json.find("\"name\":\"vfs_load\"") != std::string::npos, "chrome trace includes flow name");
+    expectTrue(json.find("\"bp\":\"e\"") != std::string::npos, "flow finish binds to enclosing slice end");
+}
+
+void testAsyncFlowCrossThread() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 flowId = 42u;
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("job_handoff", flowId);
+
+    std::atomic<bool> workerDone{false};
+    std::atomic<fuse::u32> workerTid{0};
+    std::thread worker([&]() {
+        workerTid.store(fuse::platform::chromeTraceThreadId(), std::memory_order_release);
+        FUSE_PROFILE_ASYNC_FLOW_END("job_handoff", flowId);
+        workerDone.store(true, std::memory_order_release);
+    });
+    worker.join();
+    expectTrue(workerDone.load(std::memory_order_acquire), "worker thread completed");
+
+    expectTrue(fuse::profiler::eventCount() == 2u, "cross-thread flow emits two events");
+    const fuse::profiler::ProfileEvent& flowStart = fuse::profiler::eventAt(0);
+    const fuse::profiler::ProfileEvent& flowFinish = fuse::profiler::eventAt(1);
+    expectTrue(flowStart.threadId != flowFinish.threadId, "flow start and finish record distinct tids");
+    expectTrue(flowFinish.threadId == workerTid.load(std::memory_order_acquire),
+               "flow finish tid matches worker chromeTraceThreadId");
+}
+
+void testCounterSamples() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    FUSE_PROFILE_COUNTER("frame_alloc_bytes", 4096);
+    FUSE_PROFILE_COUNTER("active_jobs", 3);
+
+    expectTrue(fuse::profiler::eventCount() == 2u, "counter samples emit one event each");
+
+    const fuse::profiler::ProfileEvent& first = fuse::profiler::eventAt(0);
+    const fuse::profiler::ProfileEvent& second = fuse::profiler::eventAt(1);
+    expectTrue(first.phase == fuse::profiler::EventPhase::Counter, "counter event phase is Counter");
+    expectTrue(second.phase == fuse::profiler::EventPhase::Counter, "second counter event phase is Counter");
+    expectTrue(std::string(first.name) == "frame_alloc_bytes", "counter track name preserved");
+    expectTrue(first.counterValue == 4096, "counter value preserved");
+    expectTrue(second.counterValue == 3, "second counter value preserved");
+
+    const std::string json = fuse::profiler::exportChromeTraceJson();
+    expectTrue(json.find("\"cat\":\"counter\"") != std::string::npos, "counter uses counter category");
+    expectTrue(json.find("\"ph\":\"C\"") != std::string::npos, "chrome trace exports counter phase");
+    expectTrue(json.find("\"name\":\"frame_alloc_bytes\"") != std::string::npos,
+               "chrome trace includes counter track name");
+    expectTrue(json.find("\"args\":{\"value\":4096}") != std::string::npos,
+               "chrome trace exports counter value args");
+    expectTrue(json.find("\"args\":{\"value\":3}") != std::string::npos,
+               "chrome trace exports second counter value");
+}
+
+void testChromeTraceExportMixedEvents() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    {
+        FUSE_PROFILE_SCOPE("mixed_parent");
+        FUSE_PROFILE_ASYNC_FLOW_BEGIN("mixed_flow", flowId);
+        FUSE_PROFILE_COUNTER("mixed_counter", 7);
+        FUSE_PROFILE_ASYNC_FLOW_END("mixed_flow", flowId);
+    }
+
+    const std::string json = fuse::profiler::exportChromeTraceJson();
+    expectTrue(json.find("\"ph\":\"B\"") != std::string::npos, "mixed export keeps scope begin");
+    expectTrue(json.find("\"ph\":\"E\"") != std::string::npos, "mixed export keeps scope end");
+    expectTrue(json.find("\"ph\":\"s\"") != std::string::npos, "mixed export keeps flow start");
+    expectTrue(json.find("\"ph\":\"f\"") != std::string::npos, "mixed export keeps flow finish");
+    expectTrue(json.find("\"ph\":\"C\"") != std::string::npos, "mixed export keeps counter sample");
+    expectTrue(json.find("\"name\":\"mixed_parent\"") != std::string::npos,
+               "mixed export keeps parent scope name");
+    expectTrue(json.find("\"name\":\"mixed_flow\"") != std::string::npos,
+               "mixed export keeps flow name");
+    expectTrue(json.find("\"name\":\"mixed_counter\"") != std::string::npos,
+               "mixed export keeps counter track name");
+}
+
 void testFatalHandlerHook() {
     resetState();
 
@@ -220,6 +330,10 @@ int main() {
     testNestedScopeOrdering();
     testThreadIdStubs();
     testChromeTraceExport();
+    testAsyncFlowStubs();
+    testAsyncFlowCrossThread();
+    testCounterSamples();
+    testChromeTraceExportMixedEvents();
     testFatalHandlerHook();
     testVerifyMacro();
 
