@@ -56,6 +56,20 @@ TonemapCurveParams make_aces_curve_params(const AcesCurveParams& aces) {
     return params;
 }
 
+TonemapCurveEndpoints evaluate_tonemap_curve_endpoints(const TonemapCurveParams& params, f32 white_input) {
+    TonemapCurveEndpoints endpoints{};
+    endpoints.black_input = 0.f;
+    endpoints.white_input = std::max(white_input, 0.f);
+    endpoints.black_output = evaluate_tonemap_curve_channel(0.f, params);
+    endpoints.white_output = evaluate_tonemap_curve_channel(endpoints.white_input, params);
+    return endpoints;
+}
+
+bool tonemap_curve_preserves_black(const TonemapCurveParams& params, f32 epsilon) {
+    const f32 black = evaluate_tonemap_curve_channel(0.f, params);
+    return black <= epsilon;
+}
+
 f32 evaluate_reinhard_curve_channel(f32 channel, const ReinhardCurveParams& params) {
     const f32 exposed = std::max(channel, 0.f) * std::pow(2.f, params.exposure_bias);
     const f32 whitePoint = std::max(params.white_point, 1e-4f);

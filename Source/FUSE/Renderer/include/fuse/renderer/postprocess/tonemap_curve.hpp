@@ -41,6 +41,18 @@ struct TonemapCurveParams {
 TonemapCurveParams make_reinhard_curve_params(const ReinhardCurveParams& reinhard = {});
 TonemapCurveParams make_aces_curve_params(const AcesCurveParams& aces = {});
 
+/// Canonical black/white anchor outputs for curve calibration (B5.10 deepen).
+struct TonemapCurveEndpoints {
+    f32 black_input = 0.f;
+    f32 white_input = 1.f;
+    f32 black_output = 0.f;
+    f32 white_output = 0.f;
+};
+
+TonemapCurveEndpoints evaluate_tonemap_curve_endpoints(const TonemapCurveParams& params,
+                                                         f32 white_input = 1.f);
+bool tonemap_curve_preserves_black(const TonemapCurveParams& params, f32 epsilon = 1e-4f);
+
 f32 evaluate_reinhard_curve_channel(f32 channel, const ReinhardCurveParams& params);
 f32 evaluate_aces_curve_channel(f32 channel, const AcesCurveParams& params);
 

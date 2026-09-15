@@ -125,6 +125,29 @@ void testTonemapCurveEnabledCompressesHighlights() {
     expectTrue(curved.x >= 0.f && curved.x <= 1.f, "curved red stays in range");
 }
 
+void testTonemapCurveEndpoints() {
+    fuse::renderer::TonemapCurveParams filmic{};
+    filmic.enabled = true;
+    const fuse::renderer::TonemapCurveEndpoints filmicEndpoints =
+        fuse::renderer::evaluate_tonemap_curve_endpoints(filmic);
+    expectNear(filmicEndpoints.black_output, 0.f, 1e-4f, "filmic curve maps black to zero");
+    expectTrue(filmicEndpoints.white_output > 0.f && filmicEndpoints.white_output <= 1.f,
+               "filmic curve maps white input into display range");
+
+    const fuse::renderer::TonemapCurveParams reinhard = fuse::renderer::make_reinhard_curve_params();
+    const fuse::renderer::TonemapCurveEndpoints reinhardEndpoints =
+        fuse::renderer::evaluate_tonemap_curve_endpoints(reinhard);
+    expectTrue(fuse::renderer::tonemap_curve_preserves_black(reinhard), "reinhard preserves black anchor");
+    expectTrue(reinhardEndpoints.white_output > 0.f && reinhardEndpoints.white_output <= 1.f,
+               "reinhard white anchor stays in range");
+
+    const fuse::renderer::TonemapCurveParams aces = fuse::renderer::make_aces_curve_params();
+    const fuse::renderer::TonemapCurveEndpoints acesEndpoints = fuse::renderer::evaluate_tonemap_curve_endpoints(aces);
+    expectTrue(fuse::renderer::tonemap_curve_preserves_black(aces), "aces preserves black anchor");
+    expectTrue(acesEndpoints.white_output > 0.f && acesEndpoints.white_output <= 1.f,
+               "aces white anchor stays in range");
+}
+
 void testTonemapCurveReinhardAcesClamp() {
     const fuse::renderer::TonemapCurveParams reinhard = fuse::renderer::make_reinhard_curve_params();
     const fuse::renderer::TonemapCurveParams aces = fuse::renderer::make_aces_curve_params();
@@ -161,6 +184,31 @@ void testLuminanceToEvCalibration() {
     expectTrue(fuse::renderer::luminance_to_ev(0.09f, 0.18f) < 0.f, "darker scene yields negative EV");
 }
 
+void testAutoExposureEmaAsymmetricAlpha() {
+    fuse::renderer::AutoExposureParams params{};
+    params.ema_alpha_up = 0.4f;
+    params.ema_alpha_down = 0.1f;
+
+    expectTrue(fuse::renderer::is_brightening_luminance(0.5f, 0.2f), "brightening luminance detected");
+    expectTrue(!fuse::renderer::is_brightening_luminance(0.1f, 0.2f), "darkening luminance detected");
+    expectNear(fuse::renderer::ema_alpha_for_direction(true, params), 0.4f, 1e-6f, "brightening uses alpha up");
+    expectNear(fuse::renderer::ema_alpha_for_direction(false, params), 0.1f, 1e-6f, "darkening uses alpha down");
+    expectNear(fuse::renderer::ema_blend(0.2f, 0.8f, 0.4f), 0.44f, 1e-5f, "ema blend interpolates toward measured");
+
+    fuse::renderer::AutoExposureState state{};
+    state.smoothed_luminance = 0.2f;
+    const fuse::f32 brightened = fuse::renderer::update_smoothed_luminance(state, 0.8f, params);
+    expectTrue(brightened > 0.2f, "bright frame raises smoothed luminance");
+    expectTrue(brightened > fuse::renderer::ema_blend(0.2f, 0.8f, params.ema_alpha_down),
+               "brightening uses faster alpha");
+
+    state.smoothed_luminance = 0.8f;
+    const fuse::f32 darkened = fuse::renderer::update_smoothed_luminance(state, 0.2f, params);
+    expectTrue(darkened < 0.8f, "dark frame lowers smoothed luminance");
+    expectTrue(darkened > fuse::renderer::ema_blend(0.8f, 0.2f, params.ema_alpha_up),
+               "darkening uses slower alpha and stays closer to previous luminance");
+}
+
 void testAutoExposureEmaConverges() {
     fuse::renderer::AutoExposureParams params{};
     params.use_ema_adaptation = true;
@@ -188,6 +236,7 @@ void testLuminanceHistogramEmpty() {
     fuse::renderer::LuminanceHistogramParams params{};
     histogram.init(params);
 
+    expectTrue(histogram.isEmpty(), "fresh histogram reports empty");
     expectTrue(histogram.sampleCount() == 0u, "empty histogram has zero samples");
     expectTrue(histogram.occupiedBinCount() == 0u, "empty histogram has no occupied bins");
     expectNear(histogram.averageLuminance(), 0.f, 1e-6f, "empty histogram average is zero");
@@ -195,6 +244,13 @@ void testLuminanceHistogramEmpty() {
     expectNear(histogram.meteringLuminance(), 0.f, 1e-6f, "empty histogram metering is zero");
     expectNear(fuse::renderer::LuminanceHistogram::measureFromSamples(nullptr, 0u, params), 0.f, 1e-6f,
                "empty sample buffer yields zero metering");
+    expectTrue(fuse::renderer::LuminanceHistogram::logBinIndex(0.18f, params) < params.bin_count,
+               "log bin index stays within histogram range");
+    expectNear(fuse::renderer::LuminanceHistogram::binCenterLuminance(0u, params),
+               std::pow(2.f, params.min_log_luminance), 1e-4f, "first bin center matches min log luminance");
+
+    histogram.accumulate({0.18f, 0.18f, 0.18f});
+    expectTrue(!histogram.isEmpty(), "histogram reports non-empty after accumulate");
 }
 
 void testAutoExposureClampsAndAdapts() {
@@ -255,9 +311,11 @@ int main() {
     testPostStackProcessPixel();
     testTonemapCurveDisabledIsIdentity();
     testTonemapCurveEnabledCompressesHighlights();
+    testTonemapCurveEndpoints();
     testTonemapCurveReinhardAcesClamp();
     testTonemapOperators();
     testLuminanceToEvCalibration();
+    testAutoExposureEmaAsymmetricAlpha();
     testAutoExposureEmaConverges();
     testLuminanceHistogramEmpty();
     testAutoExposureClampsAndAdapts();
