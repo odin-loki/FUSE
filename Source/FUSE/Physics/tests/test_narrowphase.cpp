@@ -111,11 +111,28 @@ void testBoxBoxCollisionPointCount() {
     expectTrue(manifold.penetrationDepth > 0.f, "box-box penetration depth positive");
 }
 
+void testFrictionBasisOrthogonality() {
+    const fuse::physics::vec3 normals[] = {
+        {0.f, 1.f, 0.f},
+        {1.f, 0.f, 0.f},
+        {0.f, 0.f, 1.f},
+        {0.577350269f, 0.577350269f, 0.577350269f},
+        {0.267261f, 0.534522f, 0.801784f},
+    };
+
+    for (const fuse::physics::vec3& normal : normals) {
+        const auto basis = fuse::physics::narrowphase::buildTangentBasis(normal);
+        expectTrue(
+            fuse::physics::narrowphase::isOrthonormalTangentBasis(normal, basis),
+            "friction basis is orthonormal for sampled normals");
+    }
+}
+
 void testFrictionClampStub() {
     const auto basis = fuse::physics::narrowphase::buildTangentBasis({0.f, 1.f, 0.f});
-    expectNear(basis.tangent1.length(), 1.f, 1e-4f, "tangent1 unit length");
-    expectNear(basis.tangent2.length(), 1.f, 1e-4f, "tangent2 unit length");
-    expectNear(basis.tangent1.dot({0.f, 1.f, 0.f}), 0.f, 1e-4f, "tangent1 orthogonal to normal");
+    expectTrue(
+        fuse::physics::narrowphase::isOrthonormalTangentBasis({0.f, 1.f, 0.f}, basis),
+        "friction clamp stub uses orthonormal tangent basis");
 
     fuse::physics::narrowphase::FrictionImpulse withinStatic{};
     withinStatic.tangent1 = 0.4f;
@@ -129,6 +146,64 @@ void testFrictionClampStub() {
         fuse::physics::narrowphase::clampFrictionImpulse(beyondStatic, 2.f, 0.5f, 0.3f);
     expectNear(dynamicClamped.normal, 2.f, 1e-4f, "friction clamp preserves normal impulse");
     expectNear(dynamicClamped.tangent1, 0.6f, 1e-4f, "friction clamp limits tangent to dynamic cone");
+}
+
+void testEmptyContacts() {
+    const auto separatedSpheres = fuse::physics::narrowphase::collideSphereSphere(
+        {0.f, 0.f, 0.f},
+        1.f,
+        {5.f, 0.f, 0.f},
+        1.f,
+        0u,
+        1u);
+    expectTrue(!separatedSpheres.valid, "separated spheres produce no contact");
+    expectTrue(separatedSpheres.empty(), "separated sphere manifold has no points");
+
+    const auto separatedBoxes = fuse::physics::narrowphase::collideBoxBox(
+        {0.f, 0.f, 0.f},
+        {1.f, 1.f, 1.f},
+        {5.f, 0.f, 0.f},
+        {1.f, 1.f, 1.f},
+        0u,
+        1u);
+    expectTrue(!separatedBoxes.valid, "separated boxes produce no contact");
+
+    fuse::physics::narrowphase::ContactBufferSoA buffer;
+    buffer.preparePairSlots(3u);
+    expectTrue(buffer.compact() == 0u, "all-invalid pair slots compact to zero contacts");
+    expectTrue(buffer.isEmpty(), "empty buffer reports no active contacts");
+
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 bodyA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 bodyB = bodies.addBody({10.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodyA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodyB, {1.f, 0.f, 0.f});
+
+    const std::vector<fuse::physics::broadphase::CandidatePair> pairs = {{bodyA, bodyB}};
+    fuse::physics::narrowphase::runNarrowphaseIntoBuffer(pairs, bodies, shapes, buffer);
+    expectTrue(buffer.isEmpty(), "narrowphase buffer stays empty for separated pair");
+}
+
+void testManifoldFillAndPointCap() {
+    fuse::physics::narrowphase::ContactManifold manifold{};
+    manifold.valid = true;
+    manifold.contactNormal = {0.f, 1.f, 0.f};
+    manifold.addPoint({0.f, 0.f, 0.f}, 0.1f);
+    manifold.addPoint({1.f, 0.f, 0.f}, 0.4f);
+    manifold.addPoint({2.f, 0.f, 0.f}, 0.2f);
+    manifold.addPoint({3.f, 0.f, 0.f}, 0.15f);
+    manifold.addPoint({4.f, 0.f, 0.f}, 0.9f);
+    expectTrue(manifold.pointCount == fuse::physics::narrowphase::kMaxContactPointsPerManifold,
+        "manifold fill caps at max contact points");
+    expectNear(manifold.maxPenetration(), 0.4f, 1e-4f, "max penetration tracks deepest point");
+    expectNear(manifold.penetrationDepth, 0.4f, 1e-4f, "legacy penetration mirrors deepest point");
+    expectNear(manifold.contactPoint.x, 1.f, 1e-4f, "legacy contact point mirrors deepest slot");
+
+    manifold.reset();
+    expectTrue(!manifold.valid, "reset clears validity");
+    expectTrue(manifold.empty(), "reset clears point slots");
+    expectNear(manifold.maxPenetration(), 0.f, 1e-4f, "reset clears penetration");
 }
 
 void testContactBufferWarmStartAndPointSlots() {
@@ -206,7 +281,10 @@ int main() {
     testCapsuleSphereCollision();
     testContactBufferClearReuse();
     testBoxBoxCollisionPointCount();
+    testFrictionBasisOrthogonality();
     testFrictionClampStub();
+    testEmptyContacts();
+    testManifoldFillAndPointCap();
     testContactBufferWarmStartAndPointSlots();
     testRunNarrowphaseIntoBufferJobSafe();
     testGjkSupportAndEpaStub();

@@ -25,6 +25,19 @@ TangentBasis buildTangentBasis(vec3 normal) {
     return {tangent1, tangent2};
 }
 
+bool isOrthonormalTangentBasis(vec3 normal, const TangentBasis& basis, f32 epsilon) {
+    const vec3 unitNormal = normal.normalized();
+    const f32 tangent1Length = basis.tangent1.length();
+    const f32 tangent2Length = basis.tangent2.length();
+    if (std::fabs(tangent1Length - 1.f) > epsilon || std::fabs(tangent2Length - 1.f) > epsilon) {
+        return false;
+    }
+
+    return std::fabs(basis.tangent1.dot(unitNormal)) <= epsilon &&
+           std::fabs(basis.tangent2.dot(unitNormal)) <= epsilon &&
+           std::fabs(basis.tangent1.dot(basis.tangent2)) <= epsilon;
+}
+
 FrictionImpulse clampFrictionImpulse(
     FrictionImpulse accumulated,
     f32 normalImpulse,

@@ -26,6 +26,8 @@ struct ContactBufferSoA {
     u32 activeCount = 0;
     u32 pairSlotCount = 0;
 
+    bool isEmpty() const { return activeCount == 0u; }
+
     void reserve(u32 capacity);
     void clear();
     void preparePairSlots(u32 pairCount);

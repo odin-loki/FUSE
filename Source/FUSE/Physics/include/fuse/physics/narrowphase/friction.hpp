@@ -20,6 +20,9 @@ struct FrictionImpulse {
 /// Build an orthonormal tangent frame from a contact normal (B4.3 friction stub).
 TangentBasis buildTangentBasis(vec3 normal);
 
+/// Validate that `basis` is unit-length and mutually orthogonal with `normal`.
+bool isOrthonormalTangentBasis(vec3 normal, const TangentBasis& basis, f32 epsilon = 1e-4f);
+
 /// Coulomb friction cone clamp for accumulated impulses (CPU stub).
 FrictionImpulse clampFrictionImpulse(
     FrictionImpulse accumulated,
