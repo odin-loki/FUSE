@@ -34,6 +34,17 @@ struct CookCacheStats {
     return content_hash != 0;
 }
 
+/// Non-empty filesystem paths are required for cache entries (B7.9 deepen).
+[[nodiscard]] inline bool is_valid_cook_cache_path(const std::string& path) {
+    return !path.empty();
+}
+
+/// Structural validity for cache records — key plus both paths (B7.9 deepen).
+[[nodiscard]] inline bool is_valid_cook_cache_entry(const CookCacheEntry& entry) {
+    return is_valid_cook_cache_key(entry.content_hash) && is_valid_cook_cache_path(entry.source_path) &&
+           is_valid_cook_cache_path(entry.output_path);
+}
+
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
 public:
@@ -58,6 +69,10 @@ public:
 
     /// Recompute content keys from stored paths/kinds and drop entries whose source changed (B7.9 deepen).
     u32 prune_stale_entries();
+    /// Drop entries with zero keys or empty paths without touching hit/miss stats (B7.9 deepen).
+    u32 prune_invalid_entries();
+
+    [[nodiscard]] bool contains(u64 content_hash) const;
 
     void clear();
     [[nodiscard]] bool empty() const { return m_entries.empty(); }
