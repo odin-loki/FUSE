@@ -125,6 +125,10 @@ u32 ToiBufferSoA::compact() {
     return activeCount;
 }
 
+TOIResult ToiBufferSoA::earliestToi() const {
+    return resultAt(0u);
+}
+
 TOIResult ToiBufferSoA::resultAt(u32 index) const {
     TOIResult result{};
     if (index >= activeCount || validFlags[index] == 0u) {

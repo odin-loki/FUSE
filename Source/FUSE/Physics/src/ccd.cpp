@@ -91,9 +91,9 @@ TOIResult dispatchCcdPair(const broadphase::CandidatePair& pair,
     }
 
     if (typeA == CollisionShapeType::Sphere && typeB == CollisionShapeType::Box) {
-        const f32 halfThickness = shapes.params[shapeB].z;
-        TOIResult result = sweptSphereSlabZ(
-            posA, velA - velB, shapes.params[shapeA].x, posB.z, halfThickness);
+        const aabb box = makeCenteredAabb(posB, shapes.params[shapeB]);
+        TOIResult result =
+            sweptSphereAabb(posA, velA - velB, shapes.params[shapeA].x, box);
         if (!result.valid) {
             return {};
         }
@@ -103,9 +103,9 @@ TOIResult dispatchCcdPair(const broadphase::CandidatePair& pair,
     }
 
     if (typeA == CollisionShapeType::Box && typeB == CollisionShapeType::Sphere) {
-        const f32 halfThickness = shapes.params[shapeA].z;
-        TOIResult result = sweptSphereSlabZ(
-            posB, velB - velA, shapes.params[shapeB].x, posA.z, halfThickness);
+        const aabb box = makeCenteredAabb(posA, shapes.params[shapeA]);
+        TOIResult result =
+            sweptSphereAabb(posB, velB - velA, shapes.params[shapeB].x, box);
         if (!result.valid) {
             return {};
         }

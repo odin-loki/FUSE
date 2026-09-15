@@ -104,6 +104,29 @@ void testToiBufferEmpty() {
     expectTrue(buffer.toVector().empty(), "toVector on empty buffer returns empty");
 }
 
+void testToiBufferEarliestToi() {
+    ToiBufferSoA buffer;
+    expectTrue(buffer.isEmpty(), "default buffer reports empty");
+
+    TOIResult first{};
+    first.valid = true;
+    first.toi = 0.6f;
+    first.bodyA = 1u;
+
+    TOIResult second = first;
+    second.toi = 0.15f;
+    second.bodyA = 2u;
+
+    buffer.push(first);
+    buffer.push(second);
+    buffer.sortByToi();
+
+    const TOIResult earliest = buffer.earliestToi();
+    expectTrue(earliest.valid, "earliestToi returns valid result after sort");
+    expectNear(earliest.toi, 0.15f, 1e-5f, "earliestToi matches first sorted slot");
+    expectTrue(earliest.bodyA == 2u, "earliestToi preserves body metadata");
+}
+
 void testToiBufferCapacityClamp() {
     ToiBufferSoA buffer;
     buffer.setMaxCapacity(2u);
@@ -162,6 +185,61 @@ void testToiBufferClearReuse() {
     buffer.writeSlot(1u, second);
     buffer.writeSlot(3u, first);
     expectTrue(buffer.compact() == 2u, "reuse after clear compacts new TOIs");
+}
+
+void testRunCcdIntoBufferSortsEarliestFirst() {
+    RigidBodySoA bodies;
+    CollisionShapeSoA shapes;
+
+    const u32 nearSphere = bodies.addBody({0.f, 0.f, 0.f}, 1.f, RB_CCD);
+    const u32 midSphere = bodies.addBody({0.f, 0.f, 0.f}, 1.f, RB_CCD);
+    const u32 farSphere = bodies.addBody({0.f, 0.f, 0.f}, 1.f, RB_CCD);
+    const u32 target = bodies.addBody({8.f, 0.f, 0.f}, 1.f, 0);
+
+    bodies.linearVelocities[nearSphere] = {25.f, 0.f, 0.f};
+    bodies.linearVelocities[midSphere] = {16.f, 0.f, 0.f};
+    bodies.linearVelocities[farSphere] = {12.f, 0.f, 0.f};
+
+    shapes.addShape(CollisionShapeType::Sphere, nearSphere, {0.5f, 0.f, 0.f});
+    shapes.addShape(CollisionShapeType::Sphere, midSphere, {0.5f, 0.f, 0.f});
+    shapes.addShape(CollisionShapeType::Sphere, farSphere, {0.5f, 0.f, 0.f});
+    shapes.addShape(CollisionShapeType::Sphere, target, {0.5f, 0.f, 0.f});
+
+    const std::vector<broadphase::CandidatePair> pairs = {
+        {farSphere, target},
+        {nearSphere, target},
+        {midSphere, target},
+    };
+
+    ToiBufferSoA buffer;
+    runCcdIntoBuffer(pairs, bodies, shapes, 1.f, buffer);
+
+    expectTrue(buffer.activeCount == 3u, "multi-pair CCD resolves all flagged impacts");
+    expectNear(buffer.resultAt(0u).toi, buffer.earliestToi().toi, 1e-5f, "earliestToi matches first slot");
+    expectTrue(buffer.resultAt(0u).toi <= buffer.resultAt(1u).toi, "buffer sorted ascending by TOI");
+    expectTrue(buffer.resultAt(1u).toi <= buffer.resultAt(2u).toi, "buffer keeps later TOIs ordered");
+    expectTrue(buffer.resultAt(0u).bodyA == nearSphere, "earliest impact belongs to fastest mover");
+}
+
+void testRunCcdIntoBufferSphereBoxAabb() {
+    RigidBodySoA bodies;
+    CollisionShapeSoA shapes;
+
+    const u32 fastSphere = bodies.addBody({0.f, 0.f, 0.f}, 1.f, RB_CCD);
+    const u32 boxBody = bodies.addBody({0.f, 0.f, 8.f}, 0.f, RB_STATIC);
+    bodies.linearVelocities[fastSphere] = {0.f, 0.f, 40.f};
+    shapes.addShape(CollisionShapeType::Sphere, fastSphere, {0.5f, 0.f, 0.f});
+    shapes.addShape(CollisionShapeType::Box, boxBody, {2.f, 2.f, 1.f});
+
+    const std::vector<broadphase::CandidatePair> pairs = {{fastSphere, boxBody}};
+
+    ToiBufferSoA buffer;
+    runCcdIntoBuffer(pairs, bodies, shapes, 1.f, buffer);
+
+    expectTrue(buffer.activeCount == 1u, "sphere-box pair uses AABB sweep dispatch");
+    const TOIResult result = buffer.resultAt(0u);
+    expectTrue(result.valid, "sphere-box TOI is valid");
+    expectTrue(result.toi < 0.25f, "sphere-box TOI catches mover before tunneling");
 }
 
 void testRunCcdIntoBufferJobSafe() {
@@ -255,10 +333,13 @@ int main() {
     testSweptSphereSlabFindsThinWallImpact();
     testToiBufferPushSortOrder();
     testToiBufferEmpty();
+    testToiBufferEarliestToi();
     testToiBufferCapacityClamp();
     testSweptSphereAabbFindsImpact();
     testSweptSphereAabbRejectsMiss();
     testToiBufferClearReuse();
+    testRunCcdIntoBufferSortsEarliestFirst();
+    testRunCcdIntoBufferSphereBoxAabb();
     testRunCcdIntoBufferJobSafe();
     testCcdPipelineFiltersRbCcdFlag();
     testCcdPipelineSkipsUnflaggedBodies();

@@ -29,6 +29,8 @@ struct ToiBufferSoA {
     bool push(const TOIResult& result);
     void sortByToi();
     u32 compact();
+    bool isEmpty() const { return activeCount == 0u; }
+    TOIResult earliestToi() const;
     TOIResult resultAt(u32 index) const;
     std::vector<TOIResult> toVector() const;
 };
