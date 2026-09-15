@@ -9,6 +9,7 @@
 
 int runFramePipelineMtTests();
 int runFrameBarrierIntegrationTests();
+int runParallelCullEdgeTests();
 
 namespace {
 
@@ -89,6 +90,10 @@ int main() {
     }
 
     if (runFrameBarrierIntegrationTests() != EXIT_SUCCESS) {
+        ++g_failures;
+    }
+
+    if (runParallelCullEdgeTests() != EXIT_SUCCESS) {
         ++g_failures;
     }
 

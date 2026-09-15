@@ -2,6 +2,7 @@ add_executable(fuse_hybrid_tests
     test_hybrid_composer.cpp
     test_frame_pipeline_mt.cpp
     test_frame_barrier_integration.cpp
+    test_parallel_cull_edge.cpp
 )
 
 target_link_libraries(fuse_hybrid_tests PRIVATE fuse_hybrid fuse_core)
