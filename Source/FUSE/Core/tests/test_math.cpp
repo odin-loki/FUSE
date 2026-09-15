@@ -251,6 +251,20 @@ void testAabbTransformHelpers() {
     const fuse::math::AABB scaledExact = fuse::math::transformAabbCorners(scaled, local);
     expectAabbNear(scaledExact, {{-2.f, -6.f, -12.f}, {2.f, 6.f, 12.f}}, 1e-4f,
                    "AABB corner transform handles non-uniform scale");
+
+    const fuse::math::AABB scaledEnvelope = fuse::math::transformAabb(scaled, local);
+    expectTrue(scaledEnvelope.min.x <= scaledExact.min.x && scaledEnvelope.min.y <= scaledExact.min.y &&
+                   scaledEnvelope.min.z <= scaledExact.min.z,
+               "AABB transformAabb envelope lower bounds contain exact corners");
+    expectTrue(scaledEnvelope.max.x >= scaledExact.max.x && scaledEnvelope.max.y >= scaledExact.max.y &&
+                   scaledEnvelope.max.z >= scaledExact.max.z,
+               "AABB transformAabb envelope upper bounds contain exact corners");
+}
+
+void testAabbMergeFreeFunction() {
+    const fuse::math::AABB a{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
+    const fuse::math::AABB b{{0.5f, 0.5f, 0.5f}, {2.f, 2.f, 2.f}};
+    expectAabbNear(fuse::math::mergeAabb(a, b), a.merge(b), 1e-5f, "mergeAabb free function matches member");
 }
 
 void testFrustumCulling() {
@@ -359,6 +373,10 @@ void testPlaneClassify() {
                "Plane classifyAabb fully behind");
     expectTrue(fuse::math::classifyAabb(plane, crossing) == fuse::math::PlaneSide::Straddling,
                "Plane classifyAabb straddles plane");
+
+    const fuse::math::AABB empty{{2.f, 2.f, 2.f}, {1.f, 1.f, 1.f}};
+    expectTrue(fuse::math::classifyAabb(plane, empty) == fuse::math::PlaneSide::Behind,
+               "Plane classifyAabb treats empty AABB as culled");
 }
 
 void testPlaneClip() {
@@ -410,6 +428,15 @@ void testPlaneClip() {
                "Plane polygon clip culls fully behind quad");
     expectTrue(fuse::math::clipPolygonAgainstPlane(plane, behind, 0, culled, 8) == 0,
                "Plane polygon clip rejects zero input");
+
+    fuse::math::Vec3 inFrontA{1.f, 0.f, 0.f};
+    fuse::math::Vec3 inFrontB{3.f, 0.f, 0.f};
+    const fuse::math::Vec3 inFrontAExpected = inFrontA;
+    const fuse::math::Vec3 inFrontBExpected = inFrontB;
+    expectTrue(fuse::math::clipSegmentAgainstPlane(plane, inFrontA, inFrontB),
+               "Plane clip keeps segment fully in front");
+    expectVec3Near(inFrontA, inFrontAExpected, 1e-5f, "Plane clip in-front segment start unchanged");
+    expectVec3Near(inFrontB, inFrontBExpected, 1e-5f, "Plane clip in-front segment end unchanged");
 }
 
 void testSimdOrthonormalizeEdgeCases() {
@@ -460,6 +487,31 @@ void testSimdPlaneParity() {
     expectVec3Near(simdB, b, 1e-5f, "simd clipSegmentAgainstPlane end matches scalar");
 }
 
+void testSimdPlanePolygonParity() {
+    const fuse::math::Vec4 plane{1.f, 0.f, 0.f, 0.f};
+    const fuse::math::Vec3 halfSquare[4] = {
+        {-2.f, -1.f, 0.f},
+        {2.f, -1.f, 0.f},
+        {2.f, 1.f, 0.f},
+        {-2.f, 1.f, 0.f},
+    };
+
+    fuse::math::Vec3 scalarClipped[8]{};
+    fuse::math::Vec3 simdClipped[8]{};
+    const u32 scalarCount =
+        fuse::math::clipPolygonAgainstPlane(plane, halfSquare, 4, scalarClipped, 8);
+    const u32 simdCount =
+        fuse::math::simd::clipPolygonAgainstPlane(plane, halfSquare, 4, simdClipped, 8);
+    expectTrue(scalarCount == simdCount, "simd clipPolygonAgainstPlane count matches scalar");
+    for (u32 i = 0; i < scalarCount; ++i) {
+        expectVec3Near(simdClipped[i], scalarClipped[i], 1e-4f, "simd clipPolygonAgainstPlane vertex matches scalar");
+    }
+
+    const fuse::math::AABB empty{{1.f, 1.f, 1.f}, {0.f, 0.f, 0.f}};
+    expectTrue(fuse::math::simd::classifyAabb(plane, empty) == fuse::math::PlaneSide::Behind,
+               "simd classifyAabb treats empty AABB as culled");
+}
+
 void testSimdMat4Associativity() {
     const fuse::math::Mat4 a =
         fuse::math::fromTRS({1.f, 0.f, 0.f}, fuse::math::fromAxisAngle({0.f, 1.f, 0.f}, 0.3f), {1.f, 1.f, 1.f});
@@ -494,6 +546,7 @@ int main() {
     testAabbRayIntersect();
     testAabbEmptyEdgeCases();
     testAabbTransformHelpers();
+    testAabbMergeFreeFunction();
     testFrustumCulling();
     testSdfPrimitives();
     testSimdBackend();
@@ -504,6 +557,7 @@ int main() {
     testSimdAabbStubs();
     testSimdAabbEmpty();
     testSimdPlaneParity();
+    testSimdPlanePolygonParity();
     testPlaneClassify();
     testPlaneClip();
 
