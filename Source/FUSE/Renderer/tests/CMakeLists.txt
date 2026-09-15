@@ -51,3 +51,7 @@ add_test(NAME fuse_material_system COMMAND fuse_material_system)
 add_executable(fuse_deferred_pipeline test_deferred_pipeline.cpp)
 target_link_libraries(fuse_deferred_pipeline PRIVATE fuse_rhi)
 add_test(NAME fuse_deferred_pipeline COMMAND fuse_deferred_pipeline)
+
+add_executable(fuse_shadow_system test_shadow_system.cpp)
+target_link_libraries(fuse_shadow_system PRIVATE fuse_rhi)
+add_test(NAME fuse_shadow_system COMMAND fuse_shadow_system)

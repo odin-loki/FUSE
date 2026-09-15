@@ -18,6 +18,10 @@ set(FUSE_RHI_PUBLIC_HEADERS
     include/fuse/renderer/shader/shader_io.hpp
     include/fuse/renderer/shader/shader_module.hpp
     include/fuse/renderer/shader/shader_types.hpp
+    include/fuse/renderer/shadow/csm.hpp
+    include/fuse/renderer/shadow/directional_shadow.hpp
+    include/fuse/renderer/shadow/shadow_atlas.hpp
+    include/fuse/renderer/shadow/shadow_pass.hpp
     include/fuse/renderer/vk/allocator.hpp
     include/fuse/renderer/vk/bindless.hpp
     include/fuse/renderer/vk/bootstrap.hpp
@@ -51,6 +55,10 @@ set(FUSE_RHI_SOURCES
     src/shader/shader_compiler.cpp
     src/shader/shader_io.cpp
     src/shader/shader_module.cpp
+    src/shadow/csm.cpp
+    src/shadow/directional_shadow.cpp
+    src/shadow/shadow_atlas.cpp
+    src/shadow/shadow_pass.cpp
     src/vk/allocator.cpp
     src/vk/bindless.cpp
     src/vk/bootstrap.cpp
