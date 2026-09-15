@@ -91,6 +91,18 @@ f32 snapToGrid(f32 value, f32 gridSize);
 f32 snapAngleRadians(f32 radians, f32 stepDegrees);
 f32 snapScale(f32 value, f32 gridStep);
 
+/// Mode-aware scalar snap for the active gizmo channel (B6.4 deepen follow-up).
+f32 snapValue(f32 value, GizmoMode mode, const GizmoSnapSettings& settings);
+
+/// Empty-hit guards — reject degenerate pick inputs before axis tests (B6.4 deepen follow-up).
+bool isRayEmpty(const GizmoRay& ray);
+bool isHitTestEmpty(const GizmoHitTest& hit);
+
+/// Pick axis with empty-hit guards — returns false when pick misses (B6.4 deepen follow-up).
+bool tryPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+                 GizmoSpace space, f32 axisLength, f32 pickRadius, GizmoAxis& outAxis);
+bool tryPickAxis(const GizmoHitTest& hit, GizmoMode mode, GizmoAxis& outAxis);
+
 /// Screen-space dead-zone check before axis pick (B6.4 deepen).
 bool isScreenHitMiss(const GizmoHitTest& hit, GizmoMode mode);
 GizmoTransform snapTransform(const GizmoTransform& transform, GizmoMode mode,
@@ -118,7 +130,8 @@ public:
     static constexpr f32 kAxisLength = 1.f;
     static constexpr f32 kPickRadius = 0.08f;
 
-    void setMode(GizmoMode mode);
+    /// Returns true when the mode changed; cancels an active drag on change.
+    bool setMode(GizmoMode mode);
     GizmoMode mode() const { return m_mode; }
     void cycleMode();
 
@@ -139,6 +152,8 @@ public:
 
     GizmoAxis pickAxis(const GizmoRay& ray, const GizmoTransform& transform) const;
     GizmoAxis pickAxis(const GizmoHitTest& hit) const;
+    bool tryPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoAxis& outAxis) const;
+    bool tryPickAxis(const GizmoHitTest& hit, GizmoAxis& outAxis) const;
 
     GizmoResult beginDrag(const GizmoHitTest& hit, const GizmoTransform& current);
     GizmoResult beginDrag(const GizmoRay& ray, const GizmoTransform& current);
