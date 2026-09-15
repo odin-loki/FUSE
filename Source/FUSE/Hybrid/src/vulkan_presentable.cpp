@@ -20,6 +20,7 @@ std::unique_ptr<VulkanPresentable> VulkanPresentable::create(const VulkanPresent
 
 bool VulkanPresentable::initialize() {
     m_status.backend = m_desc.backend;
+    m_status.vsyncMode = m_desc.vsyncMode;
 
     if (m_desc.backend == PresentableBackend::Headless) {
         m_status.message = "Headless presentable path — no platform window";
@@ -86,6 +87,24 @@ renderer::SurfaceDesc VulkanPresentable::surfaceDesc() const {
 
 renderer::VulkanSurface VulkanPresentable::vulkanSurface() const {
     return renderer::VulkanSurface::fromDesc(surfaceDesc());
+}
+
+void VulkanPresentable::requestResize(u32 width, u32 height) {
+    m_desc.swapchainWidth = width;
+    m_desc.swapchainHeight = height;
+    m_status.pendingResizeWidth = width;
+    m_status.pendingResizeHeight = height;
+    m_status.resizePending = true;
+    m_status.message = "Resize queued for present-path recreate";
+}
+
+renderer::SwapchainDesc VulkanPresentable::swapchainDesc() const {
+    renderer::SwapchainDesc desc{};
+    desc.surface = surfaceDesc();
+    desc.width = m_desc.swapchainWidth;
+    desc.height = m_desc.swapchainHeight;
+    desc.vsyncMode = m_desc.vsyncMode;
+    return desc;
 }
 
 } // namespace fuse::hybrid

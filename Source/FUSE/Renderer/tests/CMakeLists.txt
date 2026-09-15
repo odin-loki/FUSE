@@ -6,6 +6,10 @@ add_executable(fuse_vulkan_swapchain test_vulkan_swapchain.cpp)
 target_link_libraries(fuse_vulkan_swapchain PRIVATE fuse_rhi)
 add_test(NAME fuse_vulkan_swapchain COMMAND fuse_vulkan_swapchain)
 
+add_executable(fuse_rhi_present_path_stub test_rhi_present_path_stub.cpp)
+target_link_libraries(fuse_rhi_present_path_stub PRIVATE fuse_rhi)
+add_test(NAME fuse_rhi_present_path_stub COMMAND fuse_rhi_present_path_stub)
+
 add_executable(fuse_vulkan_resources test_vulkan_resources.cpp)
 target_link_libraries(fuse_vulkan_resources PRIVATE fuse_rhi)
 add_test(NAME fuse_vulkan_resources COMMAND fuse_vulkan_resources)

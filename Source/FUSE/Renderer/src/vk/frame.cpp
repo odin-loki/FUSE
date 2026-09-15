@@ -149,6 +149,35 @@ void FrameManager::signalTickComplete() {
     m_tickComplete = true;
 }
 
+bool FrameManager::waitInFlightFence(u32 slotIndex) {
+    const u32 index = slotIndex % kFramesInFlight;
+    FrameSyncData& slot = m_slots[index];
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_info.ready || slot.inFlightFence == nullptr) {
+        return false;
+    }
+
+    if (slot.fenceSignaled) {
+        auto fence = static_cast<VkFence>(slot.inFlightFence);
+        if (vkWaitForFences(static_cast<VkDevice>(m_device), 1, &fence, VK_TRUE, UINT64_MAX) !=
+            VK_SUCCESS) {
+            return false;
+        }
+        if (vkResetFences(static_cast<VkDevice>(m_device), 1, &fence) != VK_SUCCESS) {
+            return false;
+        }
+    }
+#else
+    if (!m_info.ready) {
+        return false;
+    }
+#endif
+
+    slot.fenceSignaled = false;
+    return true;
+}
+
 void FrameManager::beginFrame(u32 frameIndex) {
     m_lastBarrierFrame = frameIndex;
 
@@ -157,8 +186,6 @@ void FrameManager::beginFrame(u32 frameIndex) {
         return;
     }
 
-    // B2.2 sketch: sync objects are allocated; vkWaitForFences is deferred until
-    // queue submission lands (B2.3). CPU ring tracks slot reuse via fenceSignaled.
     FrameSyncData& slot = m_slots[m_info.currentIndex % kFramesInFlight];
     if (slot.fenceSignaled && slot.inFlightFence != nullptr) {
         auto fence = static_cast<VkFence>(slot.inFlightFence);

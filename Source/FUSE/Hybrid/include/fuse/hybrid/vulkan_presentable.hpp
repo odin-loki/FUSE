@@ -3,6 +3,7 @@
 #if defined(FUSE_HAS_VULKAN_RHI)
 
 #include <fuse/platform/window.hpp>
+#include <fuse/renderer/vk/present_path.hpp>
 #include <fuse/renderer/vk/surface.hpp>
 
 #include <memory>
@@ -24,6 +25,7 @@ struct VulkanPresentableDesc {
     platform::WindowDesc window{};
     u32 swapchainWidth = 1280;
     u32 swapchainHeight = 720;
+    renderer::VsyncMode vsyncMode = renderer::VsyncMode::Fifo;
 };
 
 struct VulkanPresentableStatus {
@@ -31,6 +33,10 @@ struct VulkanPresentableStatus {
     bool windowReady = false;
     bool surfaceReady = false;
     bool presentable = false;
+    bool resizePending = false;
+    u32 pendingResizeWidth = 0;
+    u32 pendingResizeHeight = 0;
+    renderer::VsyncMode vsyncMode = renderer::VsyncMode::Fifo;
     std::string message;
 };
 
@@ -60,6 +66,13 @@ public:
 
     u32 swapchainWidth() const { return m_desc.swapchainWidth; }
     u32 swapchainHeight() const { return m_desc.swapchainHeight; }
+    renderer::VsyncMode vsyncMode() const { return m_desc.vsyncMode; }
+
+    /// Queue swapchain dimensions for recreate on the next present-path fence wait.
+    void requestResize(u32 width, u32 height);
+    bool needsResizeRecreate() const { return m_status.resizePending; }
+
+    renderer::SwapchainDesc swapchainDesc() const;
 
 private:
     explicit VulkanPresentable(VulkanPresentableDesc desc);

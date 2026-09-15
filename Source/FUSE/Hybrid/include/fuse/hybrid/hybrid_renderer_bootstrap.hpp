@@ -7,6 +7,7 @@
 #include <fuse/hybrid/project_flags.hpp>
 #include <fuse/hybrid/vulkan_presentable.hpp>
 #include <fuse/renderer/renderer_bootstrap.hpp>
+#include <fuse/renderer/vk/present_path.hpp>
 
 #include <memory>
 
@@ -48,6 +49,9 @@ public:
     VulkanPresentable* presentable() { return m_presentable.get(); }
     const VulkanPresentable* presentable() const { return m_presentable.get(); }
 
+    renderer::PresentPath* presentPath() { return m_presentPath.get(); }
+    const renderer::PresentPath* presentPath() const { return m_presentPath.get(); }
+
     /// Tick → render on the registered render thread (main loop glue).
     void runFrame(frame::FrameCtx& ctx);
 
@@ -65,6 +69,7 @@ private:
     HybridRendererBootstrapDesc m_desc;
     HybridRendererBootstrapStatus m_status;
     std::unique_ptr<VulkanPresentable> m_presentable;
+    std::unique_ptr<renderer::PresentPath> m_presentPath;
     std::unique_ptr<renderer::RendererBootstrap> m_rendererBootstrap;
     HybridComposer m_composer;
 };

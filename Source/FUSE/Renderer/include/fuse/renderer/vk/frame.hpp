@@ -55,6 +55,9 @@ public:
     /// Waits on the current slot fence, advances ring index. Call after tick barrier, before render record.
     void beginFrame(u32 frameIndex);
 
+    /// Wait on the in-flight fence for a slot before acquire (B2.2 present path).
+    bool waitInFlightFence(u32 slotIndex);
+
     /// Marks the current slot as submitted — fence will be waited on next beginFrame.
     void endFrame();
 
