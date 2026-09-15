@@ -154,6 +154,47 @@ u32 CookCache::invalidate_source(const std::string& source_path) {
     return removed;
 }
 
+u32 CookCache::invalidate_stale_content_for_source(const std::string& source_path, u64 current_content_hash) {
+    if (source_path.empty()) {
+        return 0;
+    }
+
+    u32 removed = 0;
+    for (auto it = m_entries.begin(); it != m_entries.end();) {
+        if (it->source_path != source_path) {
+            ++it;
+            continue;
+        }
+
+        if (!is_valid_cook_cache_key(current_content_hash) || it->content_hash != current_content_hash) {
+            it = m_entries.erase(it);
+            ++removed;
+            ++m_stats.invalidations;
+        } else {
+            ++it;
+        }
+    }
+    return removed;
+}
+
+u32 CookCache::invalidate_output(const std::string& output_path) {
+    if (output_path.empty()) {
+        return 0;
+    }
+
+    u32 removed = 0;
+    for (auto it = m_entries.begin(); it != m_entries.end();) {
+        if (it->output_path == output_path) {
+            it = m_entries.erase(it);
+            ++removed;
+            ++m_stats.invalidations;
+        } else {
+            ++it;
+        }
+    }
+    return removed;
+}
+
 void CookCache::invalidate_all() {
     const u32 removed = static_cast<u32>(m_entries.size());
     if (removed > 0) {

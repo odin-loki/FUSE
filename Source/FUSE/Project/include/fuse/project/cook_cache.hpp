@@ -42,6 +42,10 @@ public:
 
     bool invalidate(u64 content_hash);
     u32 invalidate_source(const std::string& source_path);
+    /// Drop entries for `source_path` whose stored hash differs from `current_content_hash` (B7.9 deepen).
+    u32 invalidate_stale_content_for_source(const std::string& source_path, u64 current_content_hash);
+    /// Drop entries whose cooked output path matches `output_path` (B7.9 deepen).
+    u32 invalidate_output(const std::string& output_path);
     /// Drop entries whose stored upstream hash differs from the freshly computed value (B7.9 deepen).
     /// Returns source paths that were invalidated.
     std::vector<std::string> invalidate_stale_upstream_hashes(

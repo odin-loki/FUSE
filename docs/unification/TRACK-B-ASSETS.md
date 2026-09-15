@@ -51,6 +51,8 @@ Invalidation paths:
 
 - `CookCache::invalidate(hash)` — drop one entry by content hash.
 - `CookCache::invalidate_source(path)` — drop all entries sourced from a file.
+- `CookCache::invalidate_stale_content_for_source(path, hash)` — drop entries for a source whose stored hash differs from the freshly computed path+mtime+content key (auto-pruned on store).
+- `CookCache::invalidate_output(path)` — drop entries by cooked output path.
 - `CookCache::invalidate_stale_upstream_hashes(...)` — drop entries whose stored upstream hash differs from the current job-graph dependency hash.
 - `CookCache::invalidate_downstream_of(output, edges, jobs)` — transitively drop dependents along manifest edges.
 - `CookCache::invalidate_all()` — clear the cache.
@@ -114,7 +116,7 @@ ctest --test-dir build --output-on-failure -R fuse_assets
 
 | Target | Validates |
 |--------|-----------|
-| `fuse_assets_b79` | Cook manifest parse, asset graph save/load, cooker stub, job graph empty/topo/cycle stubs + implicit edges + linear chain + diamond DAG ordering, cycle reject, failure short-circuit, content-hash cache hit/miss + mtime keys + empty-key guards + upstream/chain invalidation, pipeline dry-run, project plan |
+| `fuse_assets_b79` | Cook manifest parse, asset graph save/load, cooker stub, job graph empty/topo/cycle stubs + implicit edges + linear chain + diamond DAG ordering, cycle reject, failure short-circuit, content-hash cache hit/miss + mtime/byte keys + empty-key guards + stale-content prune + output invalidation + upstream/chain invalidation, pipeline dry-run, project plan |
 
 Run:
 
