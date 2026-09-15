@@ -60,6 +60,23 @@ ClusterDesc ClusterDesc::clampCounts(const ClusterDesc& raw) {
     return out;
 }
 
+bool cluster_util::gridMatchesDesc(const ClusterGridSoA& grid, const ClusterDesc& desc) {
+    const u32 clusterCount = ClusterDesc::clampCounts(desc).clusterCount();
+    if (clusterCount == 0u) {
+        return grid.grid.empty();
+    }
+    return grid.grid.size() == clusterCount;
+}
+
+u32 cluster_util::clusterLightCountAtIndex(const ClusterGridSoA& grid, const ClusterDesc& desc, u32 index) {
+    if (ClusterGridLayout::isEmptyGrid(desc) || !gridMatchesDesc(grid, desc)) {
+        return 0u;
+    }
+
+    const u32 clampedIndex = ClusterGridLayout::clampClusterIndex(index, desc);
+    return clusterLightCount(grid, clampedIndex);
+}
+
 bool cluster_util::tryAssignLight(std::vector<u32>& clusterLights, u32 lightIdx, u32 maxLightsPerCluster) {
     if (maxLightsPerCluster > 0u && clusterLights.size() >= maxLightsPerCluster) {
         return false;
@@ -187,6 +204,10 @@ bool cluster_util::validatePopulationCounts(const ClusterGridSoA& grid, u32 clus
     return countNonEmptyClusters(grid, clusterCount) + countEmptyClusters(grid, clusterCount) == clusterCount;
 }
 
+bool ClusterGridLayout::isEmptyGrid(const ClusterDesc& desc) {
+    return desc.tilesX == 0u || desc.tilesY == 0u || desc.slicesZ == 0u;
+}
+
 u32 ClusterGridLayout::clusterIndex(u32 tileX, u32 tileY, u32 sliceZ, const ClusterDesc& desc) {
     return (tileY * desc.tilesX + tileX) * desc.slicesZ + sliceZ;
 }
@@ -196,7 +217,7 @@ u32 ClusterGridLayout::clusterIndexClamped(u32 tileX, u32 tileY, u32 sliceZ, con
 }
 
 void ClusterGridLayout::decodeClusterIndex(u32 index, const ClusterDesc& desc, u32& tileX, u32& tileY, u32& sliceZ) {
-    if (desc.slicesZ == 0u || desc.tilesX == 0u) {
+    if (isEmptyGrid(desc)) {
         tileX = 0u;
         tileY = 0u;
         sliceZ = 0u;
@@ -208,6 +229,15 @@ void ClusterGridLayout::decodeClusterIndex(u32 index, const ClusterDesc& desc, u
     const u32 tileSlice = clampedIndex / desc.slicesZ;
     tileX = tileSlice % desc.tilesX;
     tileY = tileSlice / desc.tilesX;
+}
+
+bool ClusterGridLayout::isValidClusterIndex(u32 index, const ClusterDesc& desc) {
+    return index < desc.clusterCount();
+}
+
+bool ClusterGridLayout::isClusterIndexOutOfRange(u32 index, const ClusterDesc& desc) {
+    const u32 count = desc.clusterCount();
+    return count == 0u || index >= count;
 }
 
 u32 ClusterGridLayout::clampClusterIndex(u32 index, const ClusterDesc& desc) {
@@ -245,7 +275,7 @@ bool ClusterGridLayout::mapScreenDepthToClusterIndex(f32 screenX,
                                                      const ClusterDesc& desc,
                                                      const ClusterCameraDesc& camera,
                                                      u32& outClusterIndex) {
-    if (desc.tilesX == 0u || desc.tilesY == 0u || desc.slicesZ == 0u) {
+    if (isEmptyGrid(desc)) {
         return false;
     }
     if (viewDepth < camera.nearPlane || viewDepth > camera.farPlane) {
@@ -409,6 +439,12 @@ void ClusteredLightCuller::updateClusters(const ClusterCameraDesc& camera) {
         return;
     }
 
+    if (ClusterGridLayout::isEmptyGrid(m_desc)) {
+        m_gridSoA.clear();
+        m_stats.clustersBuilt = 0;
+        return;
+    }
+
     const u32 clusterCount = m_desc.clusterCount();
     if (clusterCount == 0u) {
         m_gridSoA.clear();
@@ -473,6 +509,14 @@ void ClusteredLightCuller::cullLights(const std::vector<PointLightInput>& pointL
 
     m_stats.clustersAtCapacity = 0;
     m_stats.lightsDroppedOverflow = 0;
+
+    if (ClusterGridLayout::isEmptyGrid(m_desc)) {
+        m_pendingClusterLights.clear();
+        rebuildLightGrid();
+        m_stats.lightsCulled = 0;
+        m_stats.lightListEntries = 0;
+        return;
+    }
 
     const u32 clusterCount = m_desc.clusterCount();
     if (clusterCount == 0u) {
@@ -549,7 +593,7 @@ void ClusteredLightCuller::recordCullPass(CommandBufferRecorder& recorder,
                                           const ClusterCameraDesc& camera,
                                           const std::vector<PointLightInput>& pointLights,
                                           const std::vector<SpotLightInput>& spotLights) {
-    if (!m_stats.ready) {
+    if (!m_stats.ready || ClusterGridLayout::isEmptyGrid(m_desc)) {
         return;
     }
 

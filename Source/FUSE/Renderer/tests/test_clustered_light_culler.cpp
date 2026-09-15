@@ -1,4 +1,5 @@
 #include <fuse/core/init.hpp>
+#include <fuse/renderer/command_buffer.hpp>
 #include <fuse/renderer/deferred/deferred_renderer.hpp>
 #include <fuse/renderer/deferred/frame_pipeline.hpp>
 #include <fuse/renderer/lighting/clustered.hpp>
@@ -282,6 +283,79 @@ void testClusterGridSoAAllocate() {
     expectTrue(!grid.matchesDesc(desc), "cleared grid no longer matches desc");
 }
 
+void testClusterIndexClampAndGridGuards() {
+    fuse::renderer::ClusterDesc layoutDesc{};
+    layoutDesc.tilesX = 4;
+    layoutDesc.tilesY = 2;
+    layoutDesc.slicesZ = 3;
+
+    expectTrue(!fuse::renderer::ClusterGridLayout::isEmptyGrid(layoutDesc),
+               "non-zero cluster grid is not empty");
+    expectTrue(fuse::renderer::ClusterGridLayout::isValidClusterIndex(0u, layoutDesc), "origin index is valid");
+    expectTrue(fuse::renderer::ClusterGridLayout::isValidClusterIndex(23u, layoutDesc), "last index is valid");
+    expectTrue(!fuse::renderer::ClusterGridLayout::isValidClusterIndex(24u, layoutDesc),
+               "index at count is invalid");
+    expectTrue(fuse::renderer::ClusterGridLayout::isClusterIndexOutOfRange(24u, layoutDesc),
+               "index at count is out of range");
+    expectTrue(!fuse::renderer::ClusterGridLayout::isClusterIndexOutOfRange(23u, layoutDesc),
+               "last index is in range");
+
+    fuse::renderer::ClusterDesc zeroDesc{};
+    zeroDesc.tilesX = 0u;
+    expectTrue(fuse::renderer::ClusterGridLayout::isEmptyGrid(zeroDesc), "zero x dimension is empty grid");
+    expectTrue(!fuse::renderer::ClusterGridLayout::isValidClusterIndex(0u, zeroDesc),
+               "index 0 invalid on empty grid");
+    expectTrue(fuse::renderer::ClusterGridLayout::isClusterIndexOutOfRange(0u, zeroDesc),
+               "any index out of range on empty grid");
+
+    fuse::renderer::ClusterDesc desc{};
+    desc.tilesX = 2;
+    desc.tilesY = 2;
+    desc.slicesZ = 1;
+
+    fuse::renderer::ClusterGridSoA grid{};
+    const fuse::u32 clusterCount = desc.clusterCount();
+    const std::vector<std::vector<fuse::u32>> perClusterLights = {
+        {0u, 1u},
+        {},
+        {2u},
+        {3u, 4u},
+    };
+    fuse::renderer::ClusterLightGridLayout::rebuildLightGrid(grid, clusterCount, perClusterLights, 2u);
+
+    expectTrue(fuse::renderer::cluster_util::gridMatchesDesc(grid, desc), "grid matches desc");
+    expectTrue(fuse::renderer::cluster_util::clusterLightCountAtIndex(grid, desc, 0u) == 2u,
+               "count at origin index");
+    expectTrue(fuse::renderer::cluster_util::clusterLightCountAtIndex(grid, desc, 1u) == 0u,
+               "count at empty cluster index");
+    expectTrue(fuse::renderer::cluster_util::clusterLightCountAtIndex(grid, desc, 3u) == 2u,
+               "count at last index");
+    expectTrue(fuse::renderer::cluster_util::clusterLightCountAtIndex(grid, desc, 999u) == 2u,
+               "count clamps OOB index to last cluster");
+
+    fuse::renderer::ClusterDesc mismatched{};
+    mismatched.tilesX = 2;
+    mismatched.tilesY = 1;
+    mismatched.slicesZ = 1;
+    expectTrue(!fuse::renderer::cluster_util::gridMatchesDesc(grid, mismatched),
+               "grid does not match smaller desc");
+    expectTrue(fuse::renderer::cluster_util::clusterLightCountAtIndex(grid, mismatched, 0u) == 0u,
+               "count rejects desc mismatch");
+
+    fuse::renderer::ClusterGridSoA emptyGrid{};
+    expectTrue(!fuse::renderer::cluster_util::gridMatchesDesc(emptyGrid, desc),
+               "empty storage does not match desc");
+    expectTrue(fuse::renderer::cluster_util::clusterLightCountAtIndex(emptyGrid, desc, 0u) == 0u,
+               "count on empty grid returns zero");
+
+    expectTrue(fuse::renderer::cluster_util::countNonEmptyClusters(grid, clusterCount) == 3u,
+               "non-empty cluster count after partial assignment");
+    expectTrue(fuse::renderer::cluster_util::countEmptyClusters(grid, clusterCount) == 1u,
+               "empty cluster count after partial assignment");
+    expectTrue(fuse::renderer::cluster_util::validatePopulationCounts(grid, clusterCount),
+               "population counts sum after partial assignment");
+}
+
 void testZeroDimensionClusterGrid() {
     fuse::renderer::ClusterDesc zeroDesc{};
     zeroDesc.tilesX = 0u;
@@ -500,6 +574,81 @@ void testEmptySceneCull() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testCullerInitClampsOversizedDesc() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for oversized desc clamp test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::ClusterDesc oversized{};
+    oversized.tilesX = 999u;
+    oversized.tilesY = 999u;
+    oversized.slicesZ = 999u;
+    oversized.maxLightsPerCluster = 999u;
+
+    fuse::renderer::ClusteredLightCuller culler;
+    culler.init(oversized, resources);
+    expectTrue(culler.isReady(), "oversized desc culler initializes");
+
+    const fuse::renderer::ClusterDesc& clamped = culler.desc();
+    expectTrue(clamped.tilesX == fuse::renderer::ClusterDesc::kMaxTilesX, "culler clamps tilesX on init");
+    expectTrue(clamped.tilesY == fuse::renderer::ClusterDesc::kMaxTilesY, "culler clamps tilesY on init");
+    expectTrue(clamped.slicesZ == fuse::renderer::ClusterDesc::kMaxSlicesZ, "culler clamps slicesZ on init");
+    expectTrue(clamped.maxLightsPerCluster == fuse::renderer::ClusterDesc::kMaxLightsPerCluster,
+               "culler clamps maxLightsPerCluster on init");
+    expectTrue(culler.buffers().clusterCount == clamped.clusterCount(), "gpu cluster count matches clamped desc");
+    expectTrue(culler.gridSoA().matchesDesc(clamped), "grid storage matches clamped desc");
+
+    culler.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
+void testEmptyGridRecordCullPassSkips() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for empty-grid record guard test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::ClusterDesc zeroDesc{};
+    zeroDesc.tilesX = 0u;
+
+    fuse::renderer::ClusteredLightCuller culler;
+    culler.init(zeroDesc, resources);
+    expectTrue(culler.isReady(), "empty-grid culler initializes");
+
+    fuse::renderer::ClusterCameraDesc camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 50.f;
+
+    fuse::renderer::PointLightInput light{};
+    light.position = {0.f, 0.f, -5.f};
+    light.radius = 10.f;
+
+    fuse::renderer::CommandBufferRecorder recorder;
+    culler.recordCullPass(recorder, camera, {light}, {});
+    expectTrue(culler.stats().cullPassCount == 0u, "empty grid skips recordCullPass");
+    expectTrue(culler.stats().lightsCulled == 0u, "empty grid record leaves lights culled at zero");
+
+    culler.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
 void testZeroDimensionCuller() {
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
@@ -638,7 +787,10 @@ int main() {
     testClusterUtilAssignmentCounts();
     testClusterCapacityAndPopulationValidation();
     testClusterGridSoAAllocate();
+    testClusterIndexClampAndGridGuards();
     testZeroDimensionClusterGrid();
+    testCullerInitClampsOversizedDesc();
+    testEmptyGridRecordCullPassSkips();
     testCullerInitAndClusterBuild();
     testLightCullAssignsAndSkips();
     testEmptySceneCull();

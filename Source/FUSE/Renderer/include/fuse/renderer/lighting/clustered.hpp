@@ -82,10 +82,14 @@ struct ClusterSliceLayout {
 
 /// Tile/cluster indexing helpers — mirrors froxel layout (B5.4 CPU path).
 struct ClusterGridLayout {
+    static bool isEmptyGrid(const ClusterDesc& desc);
     static u32 clusterIndex(u32 tileX, u32 tileY, u32 sliceZ, const ClusterDesc& desc);
     /// Tile/slice coords clamped to grid bounds before linear index encode.
     static u32 clusterIndexClamped(u32 tileX, u32 tileY, u32 sliceZ, const ClusterDesc& desc);
     static void decodeClusterIndex(u32 index, const ClusterDesc& desc, u32& tileX, u32& tileY, u32& sliceZ);
+    static bool isValidClusterIndex(u32 index, const ClusterDesc& desc);
+    /// True when `index` exceeds the valid cluster range (would be clamped).
+    static bool isClusterIndexOutOfRange(u32 index, const ClusterDesc& desc);
     static u32 clampClusterIndex(u32 index, const ClusterDesc& desc);
     static u32 clampTileX(u32 tileX, const ClusterDesc& desc);
     static u32 clampTileY(u32 tileY, const ClusterDesc& desc);
@@ -109,6 +113,10 @@ struct ClusterLightGridLayout {
 
 /// CPU light-to-cluster assignment stubs — mirrors CUDA cull kernel list append.
 namespace cluster_util {
+/// True when light-grid storage matches the clamped cluster count for `desc`.
+bool gridMatchesDesc(const ClusterGridSoA& grid, const ClusterDesc& desc);
+/// Per-cluster light count at a clamped flat index; returns 0 when grid/desc mismatch or empty.
+u32 clusterLightCountAtIndex(const ClusterGridSoA& grid, const ClusterDesc& desc, u32 index);
 bool tryAssignLight(std::vector<u32>& clusterLights, u32 lightIdx, u32 maxLightsPerCluster);
 /// Batch-assign candidate lights; returns overflow count dropped at per-cluster capacity.
 u32 assignLights(std::vector<u32>& clusterLights,
