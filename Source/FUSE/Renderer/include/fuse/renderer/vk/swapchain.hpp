@@ -21,6 +21,18 @@ inline bool vsyncEnabled(VsyncMode mode) {
     return mode == VsyncMode::Fifo;
 }
 
+inline const char* vsyncModeName(VsyncMode mode) {
+    switch (mode) {
+    case VsyncMode::Fifo:
+        return "Fifo";
+    case VsyncMode::Mailbox:
+        return "Mailbox";
+    case VsyncMode::Immediate:
+        return "Immediate";
+    }
+    return "Unknown";
+}
+
 struct SwapchainDesc {
     SurfaceDesc surface{};
     u32 width = 0;
@@ -44,6 +56,7 @@ struct SwapchainInfo {
     u32 height = 0;
     u32 imageCount = 0;
     u32 format = 0;
+    u32 recreateCount = 0;
     std::string message;
 };
 

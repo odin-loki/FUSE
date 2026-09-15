@@ -1,11 +1,14 @@
 #include <fuse/core/init.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
+#include <fuse/renderer/vk/fence_wait.hpp>
 #include <fuse/renderer/vk/frame.hpp>
 #include <fuse/renderer/vk/present_path.hpp>
+#include <fuse/renderer/vk/swapchain.hpp>
 
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace {
 
@@ -78,8 +81,8 @@ void testBeginEndFrameCycle() {
 
     auto presentPath = fuse::renderer::PresentPath::create(*bootstrap);
     expectTrue(presentPath->beginFrame(0u), "beginFrame runs wait+acquire");
-    expectTrue(presentPath->state() == fuse::renderer::PresentPathState::ImageAcquired,
-               "beginFrame leaves path ready to record");
+    expectTrue(presentPath->state() == fuse::renderer::PresentPathState::ReadyToPresent,
+               "beginFrame leaves path ready to present");
     expectTrue(presentPath->endFrame(), "endFrame presents and advances frame ring");
     expectTrue(presentPath->state() == fuse::renderer::PresentPathState::Idle,
                "endFrame returns to Idle");
@@ -129,6 +132,104 @@ void testResizeRecreateStub() {
     expectTrue(!presentPath->hasPendingResize(), "resize cleared after recreate");
     expectEq(presentPath->status().width, 1024u, "resize width recorded");
     expectEq(presentPath->status().height, 768u, "resize height recorded");
+    expectEq(presentPath->status().swapchainRecreateCount, 1u, "resize increments recreate counter");
+}
+
+void testInvalidStateTransitions() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        return;
+    }
+#else
+    return;
+#endif
+
+    auto presentPath = fuse::renderer::PresentPath::create(*bootstrap);
+    expectEq(presentPath->acquireImage(), UINT32_MAX, "acquire without fence wait rejected");
+    expectTrue(presentPath->state() == fuse::renderer::PresentPathState::Idle,
+               "invalid acquire keeps Idle state");
+
+    expectTrue(presentPath->waitInFlightFence(), "fence wait from Idle");
+    (void)presentPath->acquireImage();
+    expectTrue(presentPath->markReadyToPresent(), "mark ready after acquire");
+    expectTrue(presentPath->presentImage(), "first present succeeds");
+    expectTrue(!presentPath->presentImage(), "second present without re-acquire fails");
+    expectTrue(presentPath->state() == fuse::renderer::PresentPathState::Presented,
+               "state stays Presented after failed second present");
+}
+
+void testVsyncModeSwitch() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        return;
+    }
+#else
+    return;
+#endif
+
+    auto presentPath = fuse::renderer::PresentPath::create(*bootstrap);
+    presentPath->setVsyncMode(fuse::renderer::VsyncMode::Mailbox);
+    expectTrue(presentPath->vsyncMode() == fuse::renderer::VsyncMode::Mailbox,
+               "Mailbox vsync mode applied");
+    expectTrue(std::strcmp(fuse::renderer::vsyncModeName(presentPath->vsyncMode()), "Mailbox") == 0,
+               "vsync mode name helper");
+
+    presentPath->setVsyncMode(fuse::renderer::VsyncMode::Fifo);
+    expectTrue(fuse::renderer::vsyncEnabled(presentPath->vsyncMode()), "Fifo enables vsync gate");
+}
+
+void testFenceWaitHelpers() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        return;
+    }
+#else
+    return;
+#endif
+
+    fuse::renderer::FrameManager* frameManager = bootstrap->frameManager();
+    expectTrue(frameManager != nullptr && frameManager->isReady(), "frame manager ready");
+
+    expectTrue(fuse::renderer::waitInFlightFenceForSlot(*frameManager, frameManager->currentIndex()),
+               "per-slot fence wait helper");
+    expectTrue(fuse::renderer::waitAllInFlightFences(*frameManager),
+               "wait-all helper succeeds on fresh ring");
+}
+
+void testReadyToPresentTransition() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        return;
+    }
+#else
+    return;
+#endif
+
+    auto presentPath = fuse::renderer::PresentPath::create(*bootstrap);
+    expectTrue(presentPath->waitInFlightFence(), "fence wait");
+    (void)presentPath->acquireImage();
+    expectTrue(presentPath->state() == fuse::renderer::PresentPathState::ImageAcquired,
+               "acquire reaches ImageAcquired");
+    expectTrue(presentPath->markReadyToPresent(), "mark ready to present");
+    expectTrue(presentPath->state() == fuse::renderer::PresentPathState::ReadyToPresent,
+               "ReadyToPresent state wired");
+    expectTrue(presentPath->presentImage(), "present from ReadyToPresent");
 }
 
 } // namespace
@@ -140,6 +241,10 @@ int main() {
     testBeginEndFrameCycle();
     testVsyncModeEnum();
     testResizeRecreateStub();
+    testInvalidStateTransitions();
+    testVsyncModeSwitch();
+    testFenceWaitHelpers();
+    testReadyToPresentTransition();
 
     fuse::core::shutdown();
 

@@ -129,16 +129,19 @@ CPU-side lifecycle exercised without a real GPU window:
 
 ```
 Idle → waitInFlightFence → FenceWaited → acquireImage → ImageAcquired
-     → presentImage → Presented → Idle
-ResizePending → (fence wait) → recreateSwapchain → Idle
+     → markReadyToPresent → ReadyToPresent → presentImage → Presented → Idle
+ResizePending → (waitAllInFlightFences) → recreateSwapchain → Idle
 ```
 
 | API | Headless CI behaviour |
 |-----|----------------------|
 | `FrameManager::waitInFlightFence` | Slot bookkeeping; real `vkWaitForFences` when backend active |
+| `waitInFlightFenceForSlot` / `waitAllInFlightFences` | `fence_wait.hpp` helpers — per-slot acquire wait; all-slots wait before WSI recreate (headless uses current slot only) |
 | `PresentPath::acquireImage` | Returns `UINT32_MAX`; advances state |
+| `PresentPath::markReadyToPresent` | `ImageAcquired` → `ReadyToPresent` after render record |
 | `PresentPath::presentImage` | Succeeds without `vkQueuePresentKHR` |
-| `PresentPath::requestResize` | Records dimensions; `rebuild()` on next fence wait |
+| `PresentPath::requestResize` | Records dimensions; `rebuild()` on next fence wait (waits all in-flight fences first) |
+| `PresentPath::swapchainRecreateCount` | Incremented on each headless/WSI resize recreate |
 | `VulkanPresentable::requestResize` | Queues resize; `HybridRendererBootstrap::render` forwards to `PresentPath` |
 
 ```bash
