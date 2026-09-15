@@ -26,6 +26,7 @@ public:
     [[nodiscard]] ScriptHost* host() const { return m_host; }
 
     ScriptConsoleCommandResult execute(const char* line);
+    [[nodiscard]] const std::string& lastExecutedLine() const { return m_lastExecutedLine; }
 
     void setHistoryCapacity(u32 capacity);
     [[nodiscard]] u32 historyCapacity() const { return m_history.capacity(); }
@@ -52,6 +53,7 @@ public:
     [[nodiscard]] usize custom_command_count() const { return m_commands.custom_count(); }
 
 private:
+    ScriptConsoleCommandResult executeLine_(const char* line, bool record_history);
     ScriptConsoleCommandResult dispatch_(const char* command, const char* args);
     void appendOutput_(const std::string& text);
     void registerBuiltIns_();
@@ -60,6 +62,7 @@ private:
     ScriptConsoleHistoryBuffer m_history;
     ScriptConsoleCommandRegistry m_commands;
     std::vector<std::string> m_output;
+    std::string m_lastExecutedLine;
 };
 
 } // namespace fuse::script

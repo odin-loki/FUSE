@@ -20,6 +20,9 @@ public:
     void push(const char* line);
     void clear();
 
+    [[nodiscard]] const std::string& newest() const;
+    [[nodiscard]] const std::string& oldest() const;
+
     /// Navigate history (`previous=true` recalls older entries).
     [[nodiscard]] const std::string& recall(bool previous);
     void resetNavigation();
