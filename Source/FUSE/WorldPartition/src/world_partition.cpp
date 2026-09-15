@@ -196,6 +196,11 @@ void WorldPartition::evict_for_budget_(f32 incoming_priority, u64 incoming_bytes
         return;
     }
 
+    if (!m_residency_set.has_eviction_candidate()) {
+        ++m_budget_counters.eviction_skipped;
+        return;
+    }
+
     while (needs_budget_eviction_for_incoming(m_desc.max_loaded_cells, resident_cell_count(),
                                               m_desc.budget.max_resident_bytes, resident_byte_count(),
                                               incoming_bytes)) {
@@ -210,8 +215,9 @@ void WorldPartition::evict_for_budget_(f32 incoming_priority, u64 incoming_bytes
         const f32 focus_distance = m_residency_set.focus_distance_for(best_candidate->coord);
         const f32 streaming_priority =
             m_streaming.unload_priority_for(best_candidate->coord, m_desc.cell_size);
-        const f32 unload_priority =
-            rank_unload_priority(streaming_priority, best_candidate->unload_priority, focus_distance);
+        const f32 unload_priority = eviction_unload_priority(
+            streaming_priority, best_candidate->unload_priority, focus_distance, streaming_priority,
+            best_candidate->last_touch_tick, m_tick, m_desc.eviction_policy);
 
         m_budget_counters.budget_evictions += 1u;
         m_budget_counters.bytes_evicted += best_candidate->resident_bytes;
