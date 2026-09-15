@@ -3,6 +3,7 @@ add_library(fuse_adventure STATIC
     src/inventory_component.cpp
     src/interactable.cpp
     src/interaction.cpp
+    src/interaction_queue.cpp
     src/pickup_interactable.cpp
     src/adventure_interactable_component.cpp
     src/mechanics_bridge.cpp
@@ -12,6 +13,7 @@ add_library(fuse_adventure STATIC
     include/fuse/adventure/inventory_component.hpp
     include/fuse/adventure/interactable.hpp
     include/fuse/adventure/interaction.hpp
+    include/fuse/adventure/interaction_queue.hpp
     include/fuse/adventure/pickup_interactable.hpp
     include/fuse/adventure/adventure_interactable_component.hpp
     include/fuse/adventure/mechanics_bridge.hpp
