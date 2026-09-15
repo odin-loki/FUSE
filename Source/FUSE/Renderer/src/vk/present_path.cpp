@@ -118,7 +118,10 @@ bool PresentPath::waitInFlightFence() {
     FrameManager* frameManager = m_bootstrap.frameManager();
     if (frameManager != nullptr && frameManager->isReady()) {
         m_status.lastPendingFenceCount = countPendingInFlightFences(*frameManager);
-        if (!waitCurrentInFlightFence(*frameManager)) {
+        const u32 slotIndex = frameManager->currentIndex();
+        if (!isInFlightFencePending(*frameManager, slotIndex)) {
+            ++m_status.fenceWaitSkippedCount;
+        } else if (!waitCurrentInFlightFenceIfSignaled(*frameManager)) {
             m_status.message = "In-flight fence wait failed";
             return false;
         }
@@ -144,7 +147,10 @@ u32 PresentPath::acquireImage() {
     VulkanSwapchain* swapchain = m_bootstrap.swapchain();
 
     u32 imageIndex = UINT32_MAX;
-    if (swapchain != nullptr && swapchain->isReady() && frameManager != nullptr && frameManager->isReady()) {
+    if (swapchain != nullptr && shouldSkipSwapchainAcquire(*swapchain)) {
+        // Empty-swapchain early-out — skip vkAcquireNextImageKHR on headless / not-ready paths.
+    } else if (swapchain != nullptr && swapchain->isReady() && frameManager != nullptr &&
+               frameManager->isReady()) {
         const FrameSyncData& slot = frameManager->current();
         imageIndex = swapchain->acquireNextImage(slot.imageAvailable);
     }
@@ -268,7 +274,20 @@ void PresentPath::requestResize(u32 width, u32 height) {
         return;
     }
 
+    if (!m_status.resizePending &&
+        swapchainExtentsMatch(width, height, m_status.width, m_status.height)) {
+        ++m_status.resizeNoOpCount;
+        m_status.message = "Resize no-op — extent matches current dimensions";
+        return;
+    }
+
     if (m_status.resizePending) {
+        if (swapchainExtentsMatch(width, height, m_status.pendingResizeWidth,
+                                  m_status.pendingResizeHeight)) {
+            ++m_status.resizeNoOpCount;
+            m_status.message = "Resize no-op — extent matches pending dimensions";
+            return;
+        }
         ++m_status.resizeCoalesceCount;
     }
 
@@ -293,6 +312,21 @@ bool PresentPath::recreateSwapchain() {
         return true;
     }
     return processPendingResize();
+}
+
+void PresentPath::cancelPendingResize() {
+    if (!m_status.resizePending) {
+        m_status.message = "cancelPendingResize: no pending resize";
+        return;
+    }
+
+    m_status.resizePending = false;
+    m_status.pendingResizeWidth = 0;
+    m_status.pendingResizeHeight = 0;
+    if (m_status.state == PresentPathState::ResizePending) {
+        m_status.state = PresentPathState::Idle;
+    }
+    m_status.message = "Pending resize cancelled";
 }
 
 } // namespace fuse::renderer

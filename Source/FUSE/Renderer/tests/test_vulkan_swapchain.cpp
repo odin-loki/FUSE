@@ -192,6 +192,40 @@ void testPresentEmptyImageIndex() {
 #endif
 }
 
+void testSwapchainUtilHelpers() {
+    expectTrue(fuse::renderer::swapchainExtentsMatch(1920u, 1080u, 1920u, 1080u),
+               "matching extents");
+    expectTrue(!fuse::renderer::swapchainExtentsMatch(1920u, 1080u, 1280u, 720u),
+               "mismatched extents");
+
+    fuse::renderer::VulkanInstanceDesc instanceDesc{};
+    instanceDesc.enableValidation = false;
+
+    auto instance = fuse::renderer::VulkanInstance::create(instanceDesc);
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!instance->isValid()) {
+        return;
+    }
+
+    auto device = fuse::renderer::VulkanDevice::create(*instance);
+    if (!device->isValid()) {
+        return;
+    }
+
+    fuse::renderer::SwapchainDesc swapDesc{};
+    swapDesc.surface.kind = fuse::renderer::SurfaceKind::Headless;
+    swapDesc.width = 800;
+    swapDesc.height = 600;
+
+    auto swapchain = fuse::renderer::VulkanSwapchain::create(*device, swapDesc);
+    expectTrue(swapchain != nullptr, "headless swapchain allocated");
+    expectTrue(fuse::renderer::shouldSkipSwapchainAcquire(*swapchain),
+               "empty headless swapchain skips acquire");
+#else
+    (void)instance;
+#endif
+}
+
 void testZeroExtentRebuildRejected() {
     fuse::renderer::VulkanInstanceDesc instanceDesc{};
     instanceDesc.enableValidation = false;
@@ -233,6 +267,7 @@ int main() {
     testExternalSurfaceWithoutHandleFailsGracefully();
     testAcquireOnEmptySwapchain();
     testPresentEmptyImageIndex();
+    testSwapchainUtilHelpers();
     testZeroExtentRebuildRejected();
 
     fuse::core::shutdown();

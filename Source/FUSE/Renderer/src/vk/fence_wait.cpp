@@ -53,4 +53,11 @@ bool waitInFlightFenceIfSignaled(FrameManager& manager, u32 slotIndex) {
     return manager.waitInFlightFence(slotIndex);
 }
 
+bool waitCurrentInFlightFenceIfSignaled(FrameManager& manager) {
+    if (!manager.isReady()) {
+        return false;
+    }
+    return waitInFlightFenceIfSignaled(manager, manager.currentIndex());
+}
+
 } // namespace fuse::renderer

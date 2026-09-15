@@ -22,4 +22,14 @@ bool isSwapchainPresentable(const VulkanSwapchain& swapchain);
 /// True when the swapchain has no backing images (headless stub or not ready).
 bool isSwapchainEmpty(const VulkanSwapchain& swapchain);
 
+/// Returns true when width/height pairs match.
+inline bool swapchainExtentsMatch(u32 widthA, u32 heightA, u32 widthB, u32 heightB) {
+    return widthA == widthB && heightA == heightB;
+}
+
+/// True when acquire should be skipped (empty swapchain — caller uses UINT32_MAX stub).
+inline bool shouldSkipSwapchainAcquire(const VulkanSwapchain& swapchain) {
+    return isSwapchainEmpty(swapchain);
+}
+
 } // namespace fuse::renderer
