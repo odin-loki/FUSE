@@ -86,14 +86,20 @@ struct FroxelSliceLayout {
 
 /// Froxel grid indexing helpers — mirrors clustered light layout (B5.4).
 struct FroxelGridLayout {
+    static bool isEmptyGrid(const FroxelGridDesc& desc);
     static u32 froxelIndex(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc);
     /// Tile/slice coords clamped to grid bounds before linear index encode.
     static u32 froxelIndexClamped(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc);
     static void decodeFroxelIndex(u32 index, const FroxelGridDesc& desc, u32& tileX, u32& tileY, u32& sliceZ);
+    static bool isValidFroxelIndex(u32 index, const FroxelGridDesc& desc);
+    /// True when `index` exceeds the valid froxel range (would be clamped).
+    static bool isFroxelIndexOutOfRange(u32 index, const FroxelGridDesc& desc);
     static u32 clampFroxelIndex(u32 index, const FroxelGridDesc& desc);
     static u32 clampTileX(u32 tileX, const FroxelGridDesc& desc);
     static u32 clampTileY(u32 tileY, const FroxelGridDesc& desc);
     static u32 clampSliceZ(u32 sliceZ, const FroxelGridDesc& desc);
+    /// Clamp interpolation weights and corner indices to grid bounds.
+    static void clampSampleCoords(FroxelSampleCoords& coords, const FroxelGridDesc& desc);
     static bool mapScreenDepthToSampleCoords(f32 screenX,
                                              f32 screenY,
                                              f32 viewDepth,
@@ -112,10 +118,14 @@ struct FroxelGridLayout {
 /// CPU froxel density interpolation helpers — mirrors CUDA trilinear sample stub.
 namespace froxel_util {
 f32 lerpDensity(f32 a, f32 b, f32 t);
+/// True when density storage matches the clamped froxel count for `desc`.
+bool gridMatchesDesc(const FroxelDensityGrid& grid, const FroxelGridDesc& desc);
 /// Count froxels with density above `epsilon`; returns 0 when the grid is empty.
 u32 countNonZeroFroxels(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
 /// Count froxels with density at or below `epsilon`; returns 0 when the grid is empty.
 u32 countEmptyFroxels(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
+/// Read density at a clamped flat froxel index; returns 0 when grid/desc mismatch or empty.
+f32 sampleDensityAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index);
 f32 sampleDensityBilinear(const FroxelDensityGrid& grid,
                           const FroxelGridDesc& desc,
                           const FroxelSampleCoords& coords);
