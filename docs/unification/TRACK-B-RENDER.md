@@ -1,6 +1,6 @@
 # Track B — Own Renderer (B5 deferred pipeline)
 
-**Status:** B5.2 G-buffer layout validation + B5.3 PBR material parameter blocks deepened  
+**Status:** B5.2 G-buffer layout validation + B5.3 PBR material parameter blocks + **B5.5 CSM light-space AABB deepen**  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B5  
 **Detail:** [TRACK-B-RENDER-B5.md](./TRACK-B-RENDER-B5.md) — full B5.1–B5.12 scope, tests, gates  
 **Depends on:** [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) (RHI bootstrap, render graph, CUDA job lane)
@@ -31,6 +31,21 @@
 
 ```bash
 ctest --test-dir build --output-on-failure -R fuse_gbuffer
+```
+
+---
+
+## B5.5 deepen — Shadow cascade / CSM (CPU)
+
+| Component | Notes |
+|-----------|-------|
+| `CascadedShadowMapLayout` | Batch near/far/range helpers, cascade frustum corners, split + range validation |
+| `CascadeLightSpaceLayout` | Light-view matrix + light-space AABB from cascade frustum corners |
+| `DirectionalShadow` | Orthographic projection fitted from light-space AABB with texel stabilisation |
+| `fuse_shadow_system` | Near/far/range batch, frustum corners, light-space AABB, atlas, shadow pass graph |
+
+```bash
+ctest --test-dir build --output-on-failure -R fuse_shadow_system
 ```
 
 ---

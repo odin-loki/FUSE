@@ -1,5 +1,7 @@
 #pragma once
 
+#include <fuse/math/aabb.hpp>
+#include <fuse/math/mat.hpp>
 #include <fuse/math/vec.hpp>
 #include <fuse/renderer/resources.hpp>
 #include <fuse/types.hpp>
@@ -44,6 +46,17 @@ struct ShadowCameraParams {
     f32 aspect = 16.f / 9.f;
 };
 
+/// View-space depth range for one cascade slice.
+struct CascadeRange {
+    f32 nearZ = 0.f;
+    f32 farZ = 0.f;
+};
+
+/// Eight world-space corners of a camera sub-frustum slice (near quad + far quad).
+struct CascadeFrustumCorners {
+    fuse::math::Vec3 corners[8]{};
+};
+
 /// Static cascade layout helpers.
 struct CascadedShadowMapLayout {
     static u32 cascadeCount() { return kCascadeCount; }
@@ -51,10 +64,34 @@ struct CascadedShadowMapLayout {
     static const char* debugName(u32 cascadeIndex);
     static f32 computeCascadeNearZ(u32 cascadeIndex, const CascadedShadowMapDesc& desc, const ShadowCameraParams& camera);
     static f32 computeCascadeFarZ(u32 cascadeIndex, const CascadedShadowMapDesc& desc, const ShadowCameraParams& camera);
+    static CascadeRange computeCascadeRange(u32 cascadeIndex,
+                                            const CascadedShadowMapDesc& desc,
+                                            const ShadowCameraParams& camera);
+    static void computeCascadeNearZs(const CascadedShadowMapDesc& desc,
+                                     const ShadowCameraParams& camera,
+                                     f32 outNearZ[kCascadeCount]);
     static void computeCascadeFarZs(const CascadedShadowMapDesc& desc,
                                     const ShadowCameraParams& camera,
                                     f32 outFarZ[kCascadeCount]);
+    static void computeCascadeRanges(const CascadedShadowMapDesc& desc,
+                                     const ShadowCameraParams& camera,
+                                     CascadeRange outRanges[kCascadeCount]);
     static bool validateCascadeSplits(const CascadedShadowMapDesc& desc);
+    static bool validateCascadeRanges(const CascadedShadowMapDesc& desc, const ShadowCameraParams& camera);
+    static CascadeFrustumCorners buildCascadeFrustumCorners(u32 cascadeIndex,
+                                                            const CascadedShadowMapDesc& desc,
+                                                            const ShadowCameraParams& camera);
+};
+
+/// Light-space fitting helpers for orthographic shadow projections (CPU stub).
+struct CascadeLightSpaceLayout {
+    static fuse::math::Mat4 buildLightView(const fuse::math::Vec3& focus, const fuse::math::Vec3& lightDirection);
+    static fuse::math::AABB computeLightSpaceAabb(const CascadeFrustumCorners& corners,
+                                                  const fuse::math::Mat4& lightView);
+    static fuse::math::AABB computeCascadeLightSpaceAabb(u32 cascadeIndex,
+                                                        const CascadedShadowMapDesc& desc,
+                                                        const ShadowCameraParams& camera,
+                                                        const fuse::math::Vec3& lightDirection);
 };
 
 } // namespace fuse::renderer

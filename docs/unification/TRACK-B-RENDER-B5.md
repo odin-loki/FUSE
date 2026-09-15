@@ -127,20 +127,21 @@ CUDA `build_cluster_aabbs_kernel` / `cull_lights_kernel` / `deferred_shade_kerne
 
 ## B5.5 — Shadow System
 
-**Status:** CSM layout + shadow atlas allocation + `ShadowPass` render-graph node landed; cascade split helpers deepened (B5 follow-up).
+**Status:** CSM layout + shadow atlas allocation + `ShadowPass` render-graph node landed; cascade split helpers and light-space AABB fitting deepened (B5.5 follow-up).
 
 | Component | Location | Notes |
 |-----------|----------|-------|
-| `CascadedShadowMapLayout` | `shadow/csm.hpp` | 4 cascades, near/far split distances, batch far-Z, split validation, R32F depth |
+| `CascadedShadowMapLayout` | `shadow/csm.hpp` | 4 cascades, near/far split distances, batch near/far/range helpers, split + range validation, frustum corners, R32F depth |
+| `CascadeLightSpaceLayout` | `shadow/csm.hpp` | Light-view matrix, light-space AABB from cascade frustum corners (CPU stub) |
 | `ShadowAtlas` | `shadow/shadow_atlas.hpp` | Single atlas backing all cascades |
-| `DirectionalShadow` | `shadow/directional_shadow.hpp` | Cascade matrix computation, atlas allocation |
+| `DirectionalShadow` | `shadow/directional_shadow.hpp` | Ortho projection fitted from light-space AABB + texel stabilisation |
 | `ShadowPass` | `shadow/shadow_pass.hpp` | Records `shadow_maps` into render graph |
 
 SDF soft shadows and deferred shading sampling deferred to B2.6 interop + B5.4 CUDA shade kernel.
 
 | Test | Validates |
 |------|-----------|
-| `fuse_shadow_system` | Cascade near/far splits, split validation, batch far-Z, atlas layout, allocation, shadow pass graph |
+| `fuse_shadow_system` | Cascade near/far/range splits, split + range validation, batch near/far-Z, frustum corners, light-space AABB, atlas layout, allocation, shadow pass graph |
 
 ---
 
@@ -337,7 +338,7 @@ DOF, motion blur, film grain, and GPU shader chain remain future work.
 | `fuse_material_system` | B5.3 — pack/unpack, SSBO table |
 | `fuse_deferred_pipeline` | B5.1 — 16-pass schedule, graph build, execute stub |
 | `fuse_clustered_light_culler` | B5.4 — cluster grid, slice depth, light-grid rebuild, light cull, pipeline wiring |
-| `fuse_shadow_system` | B5.5 — CSM near/far splits, validation, atlas, shadow pass graph |
+| `fuse_shadow_system` | B5.5 — CSM near/far/range splits, light-space AABB, validation, atlas, shadow pass graph |
 | `fuse_ddgi` | B5.6 — probe grid, update/sample, pipeline slot |
 | `fuse_screen_space_effects_stub` | B5.7 — SSAO/SSR/SSGI stubs (`fuse_compute`) |
 | `fuse_atmosphere_sky` | B5.8 — scatter, LUT, sky pass graph |
@@ -373,7 +374,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_screen_space_effects'
 
 ### B5.5–B5.9 (shadows, GI, screen-space, atmosphere, TAA)
 
-- [x] **B5.5** `DirectionalShadow` + `ShadowPass` scaffold + cascade split helpers
+- [x] **B5.5** `DirectionalShadow` + `ShadowPass` scaffold + cascade split helpers + light-space AABB fitting
 - [x] **B5.6** `DDGI` probe grid + update/sample stubs
 - [x] **B5.7** SSAO/SSR/SSGI API + job wiring in `fuse_compute`
 - [x] **B5.8** `SkyPass` + Rayleigh/Mie CPU reference + LUT
@@ -400,7 +401,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_screen_space_effects'
 
 - [ ] Wire `DeferredRenderer` into `RhiContext::submitFrame` (replace hybrid placeholder incrementally)
 - [ ] B5.4 follow-up: CUDA cluster AABB build + deferred shade kernels (CPU light-grid rebuild stub landed)
-- [ ] B5.5 follow-up: SDF soft shadows in `fuse_compute` (CSM split helpers landed)
+- [ ] B5.5 follow-up: SDF soft shadows in `fuse_compute` (CSM split + light-space AABB stubs landed)
 - [ ] B5.7 follow-up: G-buffer `cudaInterop` surface import via B2.6
 - [ ] B5.10 follow-up: DOF / motion blur / film grain GPU shader chain
 - [ ] B5.11 follow-up: Full volumetric fog CUDA kernel + lens flare GPU composite
