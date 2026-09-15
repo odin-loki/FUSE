@@ -25,7 +25,8 @@ struct TaaJitterLayout {
     /// NDC jitter for a monotonic frame counter (wraps via `frameIndexInSequence`).
     static fuse::math::Vec2 ndcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height,
                                                    u32 sequenceLength = kTaaDefaultJitterSequenceLength);
-    static void fillHaltonSequence(u32 length, fuse::math::Vec2* out);
+    /// Fills a Halton (2,3) table; returns false when `out` is null or length is invalid.
+    static bool fillHaltonSequence(u32 length, fuse::math::Vec2* out);
 };
 
 /// Sub-pixel jitter state — advances through a Halton sequence each frame (B5.9).
@@ -42,6 +43,8 @@ public:
     void syncToFrameIndex(u32 frameIndex);
 
     u32 index() const { return m_index; }
+    /// Monotonic frame counter — incremented by `advance`, set by `syncToFrameIndex`, cleared by `reset`.
+    u32 monotonicFrameIndex() const { return m_monotonicFrame; }
     u32 sequenceLength() const { return m_sequenceLength; }
 
     static fuse::math::Vec2 haltonPixelOffset(u32 index);
@@ -50,6 +53,7 @@ public:
 private:
     u32 m_sequenceLength = kTaaDefaultJitterSequenceLength;
     u32 m_index = 0;
+    u32 m_monotonicFrame = 0;
 };
 
 } // namespace fuse::renderer

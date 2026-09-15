@@ -20,9 +20,10 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaJitterLayout::frameIndexInSequence(frame, length)` — maps a monotonic frame counter into the active slot
 - `TaaJitterLayout::offsetForFrameIndex(frame, length)` — Halton offset for a monotonic frame counter (wraps with period)
 - `TaaJitterLayout::ndcOffsetForFrameIndex(frame, w, h, length)` — NDC jitter for a monotonic frame counter
-- `TaaJitterLayout::fillHaltonSequence(length, out)` — fills a Halton (2,3) table for projection jitter
+- `TaaJitterLayout::fillHaltonSequence(length, out)` — fills a Halton (2,3) table; returns false on null/invalid length
 - `TaaJitter` honours `TaaJitterDesc::sequence_length` (default 8) when advancing and wrapping
 - `TaaJitter::syncToFrameIndex(frame)` — align jitter state to a wrapped monotonic frame counter
+- `TaaJitter::monotonicFrameIndex()` — monotonic frame counter incremented by `advance`, set by `syncToFrameIndex`
 
 ## History validity (B5.9 deepen)
 
@@ -32,9 +33,11 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaHistoryBuffer::invalidateHistory()` — clears validity (called on resize)
 - `TaaResolveStats::first_frame` — set when resolve runs before history is warm
 - `TaaResolveStats::effective_blend` — 1.0 on first warm-up frame, else `TAAParams::blend_factor`
-- `TaaResolveStats::skipped` — set when resolve bails before history update (empty history, bad dimensions, missing surfaces)
-- `TaaResolve::resetBookkeeping()` — clears resolve stats/message (called on `TaaPass::destroy`)
-- `TaaPass::invalidateHistory()` — clears history validity without destroying buffers
+- `TaaResolveStats::skipped` / `skip_reason` — set when resolve bails before history update
+- `TaaResolve::wouldSkip(desc, history, &reason)` — preflight skip check without mutating history
+- `TaaResolve::resetBookkeeping()` — clears resolve stats/message (called on `TaaPass::destroy` / `invalidateHistory`)
+- `TaaPass::invalidateHistory()` — clears history validity and resolve bookkeeping without destroying buffers
+- `TaaPass::syncJitterToFrameIndex(frame)` — align pass jitter to a monotonic frame counter
 
 ## Pipeline (stub)
 

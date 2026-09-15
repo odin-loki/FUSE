@@ -1,31 +1,58 @@
 #include <fuse/renderer/taa/taa_resolve.hpp>
 
 namespace fuse::renderer {
+namespace {
+
+TaaResolveSkipReason classifySkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    if (!history.isReady()) {
+        return TaaResolveSkipReason::HistoryNotReady;
+    }
+    if (desc.width == 0u || desc.height == 0u) {
+        return TaaResolveSkipReason::InvalidDimensions;
+    }
+    if (desc.surfaces.current_frame == nullptr || desc.surfaces.output == nullptr) {
+        return TaaResolveSkipReason::MissingSurfaces;
+    }
+    return TaaResolveSkipReason::None;
+}
+
+} // namespace
 
 void TaaResolve::resetBookkeeping() {
     m_stats = {};
     m_message.clear();
 }
 
+bool TaaResolve::wouldSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                           TaaResolveSkipReason* reason) const {
+    const TaaResolveSkipReason skip = classifySkip(desc, history);
+    if (reason != nullptr) {
+        *reason = skip;
+    }
+    return skip != TaaResolveSkipReason::None;
+}
+
 bool TaaResolve::resolve(const TaaResolveDesc& desc, TaaHistoryBuffer& history, void* /*cudaStream*/) {
     m_stats = {};
     m_message.clear();
 
-    if (!history.isReady()) {
+    const TaaResolveSkipReason skip = classifySkip(desc, history);
+    if (skip != TaaResolveSkipReason::None) {
         m_stats.skipped = true;
-        m_message = "TAA resolve skipped — history buffer not ready";
-        return false;
-    }
-
-    if (desc.width == 0u || desc.height == 0u) {
-        m_stats.skipped = true;
-        m_message = "TAA resolve skipped — invalid dimensions";
-        return false;
-    }
-
-    if (desc.surfaces.current_frame == nullptr || desc.surfaces.output == nullptr) {
-        m_stats.skipped = true;
-        m_message = "TAA resolve skipped — missing current/output surfaces";
+        m_stats.skip_reason = skip;
+        switch (skip) {
+        case TaaResolveSkipReason::HistoryNotReady:
+            m_message = "TAA resolve skipped — history buffer not ready";
+            break;
+        case TaaResolveSkipReason::InvalidDimensions:
+            m_message = "TAA resolve skipped — invalid dimensions";
+            break;
+        case TaaResolveSkipReason::MissingSurfaces:
+            m_message = "TAA resolve skipped — missing current/output surfaces";
+            break;
+        default:
+            break;
+        }
         return false;
     }
 

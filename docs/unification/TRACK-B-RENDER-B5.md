@@ -199,13 +199,13 @@ See [B5.7-SCREEN-SPACE-EFFECTS.md](./B5.7-SCREEN-SPACE-EFFECTS.md) for component
 
 ## B5.9 — Temporal Anti-Aliasing
 
-**Status:** Halton jitter layout helpers, history validity flags, and resolve bookkeeping deepened (B5.9 follow-up); CUDA kernel deferred.
+**Status:** Halton jitter layout helpers, monotonic frame counter, history validity flags, resolve skip-reason bookkeeping deepened (B5.9 follow-up); CUDA kernel deferred.
 
 | Component | Location | Notes |
 |-----------|----------|-------|
-| `TaaJitterLayout` / `TaaJitter` | `taa/taa_jitter.hpp` | Halton (2,3) reference, sequence period/frame-index helpers, configurable length (≤64) |
+| `TaaJitterLayout` / `TaaJitter` | `taa/taa_jitter.hpp` | Halton (2,3) reference, sequence period/frame-index helpers, `monotonicFrameIndex`, configurable length (≤64) |
 | `TaaHistoryBuffer` | `taa/taa_history.hpp` | Ping-pong colour history + `hasValidHistory` / `accumulatedFrames` |
-| `TaaResolve` / `TaaPass` | `taa/taa_resolve.hpp`, `taa/taa_pass.hpp` | Resolve stub records first-frame + validity, `resetBookkeeping`; CUDA kernel deferred |
+| `TaaResolve` / `TaaPass` | `taa/taa_resolve.hpp`, `taa/taa_pass.hpp` | Resolve stub records first-frame + validity, `skip_reason` / `wouldSkip`, `resetBookkeeping`; CUDA kernel deferred |
 
 | Test | Validates |
 |------|-----------|

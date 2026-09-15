@@ -151,14 +151,16 @@ ctest --test-dir build --output-on-failure -R fuse_post_process_b510
 | `TaaJitterLayout::validateSequenceLength` | Rejects zero or >64 frame sequences |
 | `TaaJitterLayout::sequencePeriod` / `frameIndexInSequence` | Jitter cycle length + frame→slot mapping |
 | `TaaJitterLayout::offsetForFrameIndex` / `ndcOffsetForFrameIndex` | Halton/NDC jitter for monotonic frame counters (wraps with period) |
-| `TaaJitter::syncToFrameIndex` | Align jitter state to a wrapped monotonic frame counter |
-| `TaaJitterLayout::fillHaltonSequence` | Full Halton (2,3) table for projection jitter |
+| `TaaJitter::syncToFrameIndex` / `monotonicFrameIndex` | Align jitter to a wrapped monotonic frame counter; track advances |
+| `TaaJitterLayout::fillHaltonSequence` | Full Halton (2,3) table for projection jitter (returns false on invalid input) |
+| `TaaPass::syncJitterToFrameIndex` | Pass-level jitter alignment to monotonic frame counter |
 | `TaaHistoryBuffer::hasValidHistory` / `needsWarmup` | Invalid until first resolve; cleared on resize |
 | `TaaHistoryBuffer::accumulatedFrames` | Monotonic resolve counter |
 | `TaaResolveStats::first_frame` / `effective_blend` | First warm-up frame uses full current weight (1.0) |
-| `TaaResolveStats::skipped` | Set when resolve bails before history update |
+| `TaaResolveStats::skipped` / `skip_reason` | Set when resolve bails before history update (not ready, bad dimensions, missing surfaces) |
+| `TaaResolve::wouldSkip` | Preflight skip check without mutating history |
 | `TaaResolve::resetBookkeeping` | Clears resolve stats; `TaaPass::destroy` / `invalidateHistory` reset validity path |
-| `fuse_taa_pass` | Layout helpers, sequence period/large-frame wrap, syncToFrameIndex, validity reset, empty history, resolve bookkeeping |
+| `fuse_taa_pass` | Layout helpers, sequence period/large-frame wrap, monotonic frame counter, syncToFrameIndex, skip reason, validity reset, empty history, resolve bookkeeping |
 
 ```bash
 ctest --test-dir build --output-on-failure -R fuse_taa_pass
