@@ -128,12 +128,12 @@ CUDA `build_cluster_aabbs_kernel` / `cull_lights_kernel` / `deferred_shade_kerne
 
 ## B5.5 — Shadow System
 
-**Status:** CSM layout + shadow atlas allocation + `ShadowPass` render-graph node landed; cascade split helpers and light-space AABB fitting deepened (B5.5 follow-up).
+**Status:** CSM layout + shadow atlas allocation + `ShadowPass` render-graph node landed; cascade split helpers (uniform/log/practical schemes, count clamp) and light-space AABB fitting deepened (B5.5 follow-up).
 
 | Component | Location | Notes |
 |-----------|----------|-------|
-| `CascadedShadowMapLayout` | `shadow/csm.hpp` | 4 cascades, near/far split distances, batch near/far/range helpers, split + range validation, frustum corners, R32F depth |
-| `CascadeLightSpaceLayout` | `shadow/csm.hpp` | Light-view matrix, light-space AABB from cascade frustum corners (CPU stub) |
+| `CascadedShadowMapLayout` | `shadow/csm.hpp` | 4 cascades, uniform/log/practical split schemes, cascade count/index clamp, near/far split distances, batch near/far/range helpers, split + range validation, frustum corners, R32F depth |
+| `CascadeLightSpaceLayout` | `shadow/csm.hpp` | Light-view matrix, world-frustum-corner → light-space AABB (CPU stub), empty-frustum detection |
 | `ShadowAtlas` | `shadow/shadow_atlas.hpp` | Single atlas backing all cascades |
 | `DirectionalShadow` | `shadow/directional_shadow.hpp` | Ortho projection fitted from light-space AABB + texel stabilisation |
 | `ShadowPass` | `shadow/shadow_pass.hpp` | Records `shadow_maps` into render graph |
@@ -142,7 +142,7 @@ SDF soft shadows and deferred shading sampling deferred to B2.6 interop + B5.4 C
 
 | Test | Validates |
 |------|-----------|
-| `fuse_shadow_system` | Cascade near/far/range splits, split + range validation, batch near/far-Z, frustum corners, light-space AABB, atlas layout, allocation, shadow pass graph |
+| `fuse_shadow_system` | Cascade split schemes (uniform/log/practical), count clamp, near/far/range splits, split monotonicity, frustum corners, light-space AABB contain + empty frustum, atlas layout, allocation, shadow pass graph |
 
 ---
 
