@@ -20,3 +20,10 @@ add_executable(fuse_scene_manager_tests
 
 target_link_libraries(fuse_scene_manager_tests PRIVATE fuse_scene fuse_core fuse_ecs)
 add_test(NAME fuse_scene_manager COMMAND fuse_scene_manager_tests)
+
+add_executable(fuse_ecs_phase3_integration_tests
+    test_phase3_integration.cpp
+)
+
+target_link_libraries(fuse_ecs_phase3_integration_tests PRIVATE fuse_scene fuse_core fuse_ecs)
+add_test(NAME fuse_ecs_phase3_integration COMMAND fuse_ecs_phase3_integration_tests)
