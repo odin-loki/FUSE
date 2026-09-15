@@ -76,14 +76,37 @@ struct CellBuckets {
     }
 };
 
-void generatePairsForCell(const std::vector<u32>& occupants, std::vector<CandidatePair>& out) {
+std::vector<u32> uniqueOccupants(const std::vector<u32>& occupants) {
     std::vector<u32> uniqueBodies = occupants;
     std::sort(uniqueBodies.begin(), uniqueBodies.end());
     uniqueBodies.erase(std::unique(uniqueBodies.begin(), uniqueBodies.end()), uniqueBodies.end());
+    return uniqueBodies;
+}
 
+u32 countPairsForCell(const std::vector<u32>& occupants) {
+    const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
+    const u32 bodyCount = static_cast<u32>(uniqueBodies.size());
+    return bodyCount > 1u ? bodyCount * (bodyCount - 1u) / 2u : 0u;
+}
+
+void generatePairsForCell(const std::vector<u32>& occupants, std::vector<CandidatePair>& out) {
+    const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
     for (usize i = 0; i < uniqueBodies.size(); ++i) {
         for (usize j = i + 1; j < uniqueBodies.size(); ++j) {
             appendPair(out, uniqueBodies[i], uniqueBodies[j]);
+        }
+    }
+}
+
+void writePairsForCellSlots(
+    const std::vector<u32>& occupants,
+    u32 slotStart,
+    PairBufferSoA& buffer) {
+    const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
+    u32 slot = slotStart;
+    for (usize i = 0; i < uniqueBodies.size(); ++i) {
+        for (usize j = i + 1; j < uniqueBodies.size(); ++j) {
+            buffer.writeSlot(slot++, uniqueBodies[i], uniqueBodies[j]);
         }
     }
 }
@@ -166,17 +189,21 @@ void runBroadphaseIntoBufferInternal(
         populateShapeCells(shapeIndex, bodies, shapes, params, use2D, cells);
     });
 
-    std::vector<std::vector<CandidatePair>> cellPairs(tableSize);
+    std::vector<u32> cellSlotOffsets(tableSize, 0u);
+    u32 totalCellSlots = 0u;
+    for (u32 cellIndex = 0; cellIndex < tableSize; ++cellIndex) {
+        cellSlotOffsets[cellIndex] = totalCellSlots;
+        totalCellSlots += countPairsForCell(cells.buckets[cellIndex]);
+    }
+
+    buffer.preparePairSlots(totalCellSlots);
     fuse::jobs::parallel_for(0u, tableSize, kCellGrainSize, [&](u32 cellIndex) {
         if (cells.buckets[cellIndex].empty()) {
             return;
         }
-        generatePairsForCell(cells.buckets[cellIndex], cellPairs[cellIndex]);
+        writePairsForCellSlots(cells.buckets[cellIndex], cellSlotOffsets[cellIndex], buffer);
     });
-
-    for (const std::vector<CandidatePair>& bucketPairs : cellPairs) {
-        mergePairsIntoBuffer(bucketPairs, buffer);
-    }
+    buffer.compact();
     dedupeBuffer(buffer);
 
     std::vector<u32> planeBodies;
