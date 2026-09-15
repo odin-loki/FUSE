@@ -130,6 +130,29 @@ struct AABB {
         }
         return tEnter;
     }
+
+    /// Ray interval clamped to `[tMin, tMax]`. Returns false on miss or when the clamp range is inverted.
+    bool rayIntervalClamped(const Vec3& origin, const Vec3& direction, f32 tMin, f32 tMax, f32& tEnter,
+                            f32& tExit) const {
+        if (tMin > tMax) {
+            return false;
+        }
+        if (!rayInterval(origin, direction, tEnter, tExit)) {
+            return false;
+        }
+
+        tEnter = std::max(tEnter, tMin);
+        tExit = std::min(tExit, tMax);
+        return tExit >= tEnter;
+    }
+
+    /// True when the ray hits the box within `[tMin, tMax]` (inclusive segment guard).
+    bool rayHits(const Vec3& origin, const Vec3& direction, f32 tMin = 0.f,
+                 f32 tMax = std::numeric_limits<f32>::max()) const {
+        f32 tEnter = 0.f;
+        f32 tExit = 0.f;
+        return rayIntervalClamped(origin, direction, tMin, tMax, tEnter, tExit);
+    }
 };
 
 /// Transforms an AABB through an affine matrix using the absolute linear-part envelope.
