@@ -24,7 +24,7 @@ Submodule detail:
 
 | Topic | Doc / README |
 |-------|----------------|
-| B7.1 Animation | [Source/FUSE/Animation/README.md](../../Source/FUSE/Animation/README.md) |
+| B7.1 Animation | [TRACK-B-ANIMATION.md](./TRACK-B-ANIMATION.md), [Source/FUSE/Animation/README.md](../../Source/FUSE/Animation/README.md) |
 | B7.2 Audio | `Source/FUSE/Audio/` (see `fuse_audio_b72` tests) |
 | B7.3 Script | [TRACK-B-SCRIPT.md](./TRACK-B-SCRIPT.md) |
 | B7.4 Net | [Source/FUSE/Net/README.md](../../Source/FUSE/Net/README.md) |
