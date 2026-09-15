@@ -196,6 +196,33 @@ void testAabbRayIntersect() {
     expectNear(miss, -1.f, 1e-5f, "AABB ray miss above box");
 }
 
+void testAabbEmptyEdgeCases() {
+    const fuse::math::AABB inverted{{1.f, 1.f, 1.f}, {0.f, 0.f, 0.f}};
+    expectTrue(inverted.isEmpty(), "AABB inverted bounds are empty");
+    expectTrue(!inverted.isValid(), "AABB inverted bounds are invalid");
+
+    const fuse::math::AABB point{{0.f, 0.f, 0.f}, {0.f, 0.f, 0.f}};
+    expectTrue(!point.isEmpty(), "AABB zero-volume point box is not empty");
+    expectTrue(point.isValid(), "AABB zero-volume point box is valid");
+    expectTrue(point.contains({0.f, 0.f, 0.f}), "AABB point box contains its corner");
+
+    expectNear(inverted.rayIntersect({0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}), -1.f, 1e-5f,
+               "AABB empty box ray always misses");
+
+    const fuse::math::AABB valid{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
+    expectAabbNear(inverted.merge(valid), valid, 1e-5f, "AABB merge empty with valid returns valid");
+    expectAabbNear(valid.merge(inverted), valid, 1e-5f, "AABB merge valid with empty returns valid");
+    expectTrue(inverted.merge(inverted).isEmpty(), "AABB merge two empty boxes stays empty");
+    expectTrue(!inverted.overlaps(valid), "AABB empty does not overlap valid box");
+
+    const fuse::math::Mat4 translate =
+        fuse::math::fromTRS({3.f, 0.f, 0.f}, fuse::math::Quat::identity(), {1.f, 1.f, 1.f});
+    expectTrue(fuse::math::transformAabb(translate, inverted).isEmpty(),
+               "AABB transformAabb preserves empty");
+    expectTrue(fuse::math::transformAabbCorners(translate, inverted).isEmpty(),
+               "AABB transformAabbCorners preserves empty");
+}
+
 void testAabbTransformHelpers() {
     const fuse::math::AABB local{{-1.f, -2.f, -3.f}, {1.f, 2.f, 3.f}};
 
@@ -243,6 +270,14 @@ void testFrustumCulling() {
 void testSdfPrimitives() {
     expectNear(fuse::math::SDF::sphere({0.f, 0.f, 0.f}, 2.f), -2.f, 1e-5f, "SDF sphere at origin");
     expectNear(fuse::math::SDF::sphere({3.f, 0.f, 0.f}, 2.f), 1.f, 1e-5f, "SDF sphere surface distance");
+}
+
+void testSimdBackend() {
+#if defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
+    expectTrue(fuse::math::simd::hasSseBackend(), "simd SSE backend enabled on SSE2 targets");
+#else
+    expectTrue(!fuse::math::simd::hasSseBackend(), "simd scalar backend on non-SSE targets");
+#endif
 }
 
 void testSimdMat4Parity() {
@@ -363,6 +398,84 @@ void testPlaneClip() {
         fuse::math::clipPolygonAgainstPlane(plane, halfSquare, 4, halfClipped, 8);
     expectTrue(halfCount == 4, "Plane polygon clip trims crossing quad");
     expectNear(halfClipped[0].x, 0.f, 1e-4f, "Plane polygon clip inserts plane intersection");
+
+    const fuse::math::Vec3 behind[4] = {
+        {-2.f, -1.f, 0.f},
+        {-1.f, -1.f, 0.f},
+        {-1.f, 1.f, 0.f},
+        {-2.f, 1.f, 0.f},
+    };
+    fuse::math::Vec3 culled[8]{};
+    expectTrue(fuse::math::clipPolygonAgainstPlane(plane, behind, 4, culled, 8) == 0,
+               "Plane polygon clip culls fully behind quad");
+    expectTrue(fuse::math::clipPolygonAgainstPlane(plane, behind, 0, culled, 8) == 0,
+               "Plane polygon clip rejects zero input");
+}
+
+void testSimdOrthonormalizeEdgeCases() {
+    const fuse::math::simd::Mat4 identity = fuse::math::simd::Mat4::identity();
+    expectTrue(fuse::math::simd::isOrthogonalUpper3x3(identity), "simd identity is orthogonal");
+    const fuse::math::simd::Mat4 orthoIdentity = fuse::math::simd::orthonormalize(identity);
+    expectMat4Near(orthoIdentity.toScalar(), identity.toScalar(), 1e-5f,
+                   "simd orthonormalize leaves identity unchanged");
+
+    fuse::math::simd::Mat4 nearSingular = fuse::math::simd::Mat4::identity();
+    nearSingular.cols[0] = {1e-6f, 0.f, 0.f, 0.f};
+    nearSingular.cols[1] = {0.f, 1e-6f, 0.f, 0.f};
+    nearSingular.cols[2] = {0.f, 0.f, 1e-6f, 0.f};
+    const fuse::math::simd::Mat4 recovered = fuse::math::simd::orthonormalize(nearSingular);
+    expectTrue(fuse::math::simd::isOrthogonalUpper3x3(recovered),
+               "simd orthonormalize recovers orthogonal basis from near-singular input");
+}
+
+void testSimdAabbEmpty() {
+    const fuse::math::AABB empty{{2.f, 2.f, 2.f}, {1.f, 1.f, 1.f}};
+    const fuse::math::simd::Mat4 matrix = fuse::math::simd::Mat4::identity();
+
+    expectTrue(fuse::math::simd::transformAabb(matrix, empty).isEmpty(),
+               "simd transformAabb preserves empty");
+    expectNear(fuse::math::simd::rayIntersectAabb(empty, {0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}), -1.f, 1e-5f,
+               "simd rayIntersectAabb rejects empty box");
+
+    const fuse::math::AABB valid{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
+    expectAabbNear(fuse::math::simd::mergeAabb(empty, valid), valid, 1e-5f,
+                   "simd mergeAabb empty with valid returns valid");
+}
+
+void testSimdPlaneParity() {
+    const fuse::math::Vec4 plane{0.f, 1.f, 0.f, -2.f};
+    const fuse::math::AABB crossing{{0.f, 1.f, 0.f}, {1.f, 3.f, 1.f}};
+
+    expectTrue(fuse::math::simd::classifyAabb(plane, crossing) == fuse::math::classifyAabb(plane, crossing),
+               "simd classifyAabb matches scalar");
+
+    fuse::math::Vec3 a{-2.f, 0.f, 0.f};
+    fuse::math::Vec3 b{2.f, 3.f, 0.f};
+    fuse::math::Vec3 simdA = a;
+    fuse::math::Vec3 simdB = b;
+    const bool scalarClip = fuse::math::clipSegmentAgainstPlane(plane, a, b);
+    const bool simdClip = fuse::math::simd::clipSegmentAgainstPlane(plane, simdA, simdB);
+    expectTrue(scalarClip == simdClip, "simd clipSegmentAgainstPlane hit/miss matches scalar");
+    expectVec3Near(simdA, a, 1e-5f, "simd clipSegmentAgainstPlane start matches scalar");
+    expectVec3Near(simdB, b, 1e-5f, "simd clipSegmentAgainstPlane end matches scalar");
+}
+
+void testSimdMat4Associativity() {
+    const fuse::math::Mat4 a =
+        fuse::math::fromTRS({1.f, 0.f, 0.f}, fuse::math::fromAxisAngle({0.f, 1.f, 0.f}, 0.3f), {1.f, 1.f, 1.f});
+    const fuse::math::Mat4 b =
+        fuse::math::fromTRS({0.f, 2.f, 0.f}, fuse::math::fromAxisAngle({1.f, 0.f, 0.f}, -0.5f), {1.f, 1.f, 1.f});
+    const fuse::math::Mat4 c =
+        fuse::math::fromTRS({0.f, 0.f, 3.f}, fuse::math::fromAxisAngle({0.f, 0.f, 1.f}, 1.1f), {1.f, 1.f, 1.f});
+
+    const fuse::math::simd::Mat4 simdA = fuse::math::simd::Mat4::fromScalar(a);
+    const fuse::math::simd::Mat4 simdB = fuse::math::simd::Mat4::fromScalar(b);
+    const fuse::math::simd::Mat4 simdC = fuse::math::simd::Mat4::fromScalar(c);
+
+    const fuse::math::Mat4 scalarAssoc = (a * b) * c;
+    const fuse::math::Mat4 simdAssoc = fuse::math::simd::multiply(fuse::math::simd::multiply(simdA, simdB), simdC)
+                                           .toScalar();
+    expectMat4Near(simdAssoc, scalarAssoc, 1e-4f, "simd Mat4 multiply associativity matches scalar");
 }
 
 } // namespace
@@ -379,12 +492,18 @@ int main() {
     testQuatSlerp();
     testAabbOverlap();
     testAabbRayIntersect();
+    testAabbEmptyEdgeCases();
     testAabbTransformHelpers();
     testFrustumCulling();
     testSdfPrimitives();
+    testSimdBackend();
     testSimdMat4Parity();
     testSimdMat4InverseEdgeCases();
+    testSimdMat4Associativity();
+    testSimdOrthonormalizeEdgeCases();
     testSimdAabbStubs();
+    testSimdAabbEmpty();
+    testSimdPlaneParity();
     testPlaneClassify();
     testPlaneClip();
 

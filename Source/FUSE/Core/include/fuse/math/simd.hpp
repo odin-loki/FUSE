@@ -8,14 +8,39 @@
 #include <array>
 #include <cmath>
 
+#if defined(FUSE_MATH_SIMD_SCALAR)
+// Force scalar lane math even when SSE is available (tests / parity).
+#elif defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
+#include <emmintrin.h>
+#define FUSE_MATH_HAS_SSE 1
+#endif
+
 namespace fuse::math::simd {
 
-/// Four-wide float lane — scalar CPU stub (future `__m128` backend).
+/// Reports whether the lane backend uses SSE intrinsics (false for scalar stub).
+inline bool hasSseBackend() {
+#if defined(FUSE_MATH_HAS_SSE)
+    return true;
+#else
+    return false;
+#endif
+}
+
+/// Four-wide float lane — scalar fallback or SSE `__m128` when available.
 struct alignas(16) Float4 {
     f32 x = 0.f;
     f32 y = 0.f;
     f32 z = 0.f;
     f32 w = 0.f;
+
+#if defined(FUSE_MATH_HAS_SSE)
+    __m128 simd() const { return _mm_loadu_ps(&x); }
+    static Float4 fromSimd(__m128 value) {
+        Float4 result{};
+        _mm_storeu_ps(&result.x, value);
+        return result;
+    }
+#endif
 
     Float4() = default;
     Float4(f32 x_, f32 y_, f32 z_, f32 w_) : x(x_), y(y_), z(z_), w(w_) {}
@@ -24,7 +49,7 @@ struct alignas(16) Float4 {
     Vec4 toVec4() const { return {x, y, z, w}; }
 };
 
-/// Column-major 4×4 matrix stored as four lane columns (SIMD stub layout).
+/// Column-major 4×4 matrix stored as four lane columns.
 struct alignas(16) Mat4 {
     std::array<Float4, 4> cols{};
 
@@ -76,7 +101,9 @@ struct alignas(16) Mat4 {
     }
 };
 
-inline Float4 multiplyColumn(const Mat4& matrix, const Float4& vector) {
+namespace detail {
+
+inline Float4 multiplyColumnScalar(const Mat4& matrix, const Float4& vector) {
     Float4 result{};
     result.x = matrix.cols[0].x * vector.x + matrix.cols[1].x * vector.y + matrix.cols[2].x * vector.z +
                matrix.cols[3].x * vector.w;
@@ -87,6 +114,31 @@ inline Float4 multiplyColumn(const Mat4& matrix, const Float4& vector) {
     result.w = matrix.cols[0].w * vector.x + matrix.cols[1].w * vector.y + matrix.cols[2].w * vector.z +
                matrix.cols[3].w * vector.w;
     return result;
+}
+
+#if defined(FUSE_MATH_HAS_SSE)
+inline Float4 multiplyColumnSse(const Mat4& matrix, const Float4& vector) {
+    const __m128 vx = _mm_set1_ps(vector.x);
+    const __m128 vy = _mm_set1_ps(vector.y);
+    const __m128 vz = _mm_set1_ps(vector.z);
+    const __m128 vw = _mm_set1_ps(vector.w);
+
+    __m128 acc = _mm_mul_ps(matrix.cols[0].simd(), vx);
+    acc = _mm_add_ps(acc, _mm_mul_ps(matrix.cols[1].simd(), vy));
+    acc = _mm_add_ps(acc, _mm_mul_ps(matrix.cols[2].simd(), vz));
+    acc = _mm_add_ps(acc, _mm_mul_ps(matrix.cols[3].simd(), vw));
+    return Float4::fromSimd(acc);
+}
+#endif
+
+} // namespace detail
+
+inline Float4 multiplyColumn(const Mat4& matrix, const Float4& vector) {
+#if defined(FUSE_MATH_HAS_SSE)
+    return detail::multiplyColumnSse(matrix, vector);
+#else
+    return detail::multiplyColumnScalar(matrix, vector);
+#endif
 }
 
 inline Mat4 multiply(const Mat4& a, const Mat4& b) {
@@ -122,15 +174,29 @@ inline bool isOrthogonalUpper3x3(const Mat4& matrix, f32 epsilon = 1e-4f) {
     return xy <= unitTolerance && xz <= unitTolerance && yz <= unitTolerance;
 }
 
-/// Gram–Schmidt orthonormalization of the upper 3×3 block (CPU stub).
+namespace detail {
+
+inline Vec3 safeNormalized(const Vec3& vector, const Vec3& fallback) {
+    const f32 len = vector.length();
+    if (len < 1e-8f) {
+        return fallback;
+    }
+    return vector * (1.f / len);
+}
+
+} // namespace detail
+
+/// Gram–Schmidt orthonormalization of the upper 3×3 block; translation column preserved.
 inline Mat4 orthonormalize(const Mat4& matrix) {
     Vec3 x{matrix.at(0, 0), matrix.at(1, 0), matrix.at(2, 0)};
     Vec3 y{matrix.at(0, 1), matrix.at(1, 1), matrix.at(2, 1)};
     Vec3 z{matrix.at(0, 2), matrix.at(1, 2), matrix.at(2, 2)};
 
-    x = x.normalized();
-    y = (y - x * x.dot(y)).normalized();
-    z = cross(x, y).normalized();
+    x = detail::safeNormalized(x, {1.f, 0.f, 0.f});
+    y = detail::safeNormalized(y - x * x.dot(y), {0.f, 1.f, 0.f});
+    z = cross(x, y);
+    z = detail::safeNormalized(z, {0.f, 0.f, 1.f});
+    y = cross(z, x).normalized();
 
     Mat4 result = matrix;
     result.cols[0].x = x.x;
@@ -146,7 +212,34 @@ inline Mat4 orthonormalize(const Mat4& matrix) {
 }
 
 inline Mat4 inverseAffine(const Mat4& matrix) {
-    return Mat4::fromScalar(fuse::math::inverseAffine(matrix.toScalar()));
+    const fuse::math::Mat4 scalar = matrix.toScalar();
+    const f32 r00 = scalar.data[0];
+    const f32 r01 = scalar.data[4];
+    const f32 r02 = scalar.data[8];
+    const f32 tx = scalar.data[12];
+    const f32 r10 = scalar.data[1];
+    const f32 r11 = scalar.data[5];
+    const f32 r12 = scalar.data[9];
+    const f32 ty = scalar.data[13];
+    const f32 r20 = scalar.data[2];
+    const f32 r21 = scalar.data[6];
+    const f32 r22 = scalar.data[10];
+    const f32 tz = scalar.data[14];
+
+    Mat4 result = Mat4::identity();
+    result.cols[0].x = r00;
+    result.cols[0].y = r01;
+    result.cols[0].z = r02;
+    result.cols[1].x = r10;
+    result.cols[1].y = r11;
+    result.cols[1].z = r12;
+    result.cols[2].x = r20;
+    result.cols[2].y = r21;
+    result.cols[2].z = r22;
+    result.cols[3].x = -(r00 * tx + r10 * ty + r20 * tz);
+    result.cols[3].y = -(r01 * tx + r11 * ty + r21 * tz);
+    result.cols[3].z = -(r02 * tx + r12 * ty + r22 * tz);
+    return result;
 }
 
 inline Vec3 transformPoint(const Mat4& matrix, const Vec3& point) {
@@ -155,6 +248,9 @@ inline Vec3 transformPoint(const Mat4& matrix, const Vec3& point) {
 }
 
 inline AABB transformAabb(const Mat4& matrix, const AABB& box) {
+    if (box.isEmpty()) {
+        return box;
+    }
     return fuse::math::transformAabb(matrix.toScalar(), box);
 }
 
@@ -163,7 +259,18 @@ inline AABB mergeAabb(const AABB& a, const AABB& b) {
 }
 
 inline f32 rayIntersectAabb(const AABB& box, const Vec3& origin, const Vec3& direction) {
+    if (box.isEmpty()) {
+        return -1.f;
+    }
     return box.rayIntersect(origin, direction);
+}
+
+inline PlaneSide classifyAabb(const Vec4& plane, const AABB& box) {
+    return fuse::math::classifyAabb(plane, box);
+}
+
+inline bool clipSegmentAgainstPlane(const Vec4& plane, Vec3& a, Vec3& b, f32 epsilon = 1e-5f) {
+    return fuse::math::clipSegmentAgainstPlane(plane, a, b, epsilon);
 }
 
 } // namespace fuse::math::simd
