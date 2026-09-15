@@ -39,8 +39,14 @@ float compute_attenuation(float distance, float min_dist, float max_dist);
 /// Distance attenuation with selectable curve and rolloff factor.
 float compute_attenuation(float distance, const AttenuationParams& params);
 
+/// True when attenuation params have positive min distance and non-inverted range.
+bool is_attenuation_params_valid(const AttenuationParams& params);
+
 /// Sample a curve at \p distance without min/max clamping (for unit tests and tooling).
 float sample_attenuation_curve(float distance, const AttenuationParams& params);
+
+/// Sample a curve with empty/invalid-param guards — unity when params are degenerate.
+float sample_attenuation_curve_guarded(float distance, const AttenuationParams& params);
 
 /// Build attenuation params from an audio source descriptor (copies custom keypoints).
 AttenuationParams make_attenuation_params(const AudioSourceDesc& desc);

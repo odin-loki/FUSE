@@ -45,6 +45,10 @@ float sample_custom_keypoints(float distance, const AttenuationParams& params) {
 
 } // namespace
 
+bool is_attenuation_params_valid(const AttenuationParams& params) {
+    return params.min_dist > 0.f && params.max_dist >= params.min_dist;
+}
+
 float compute_attenuation(float distance, float min_dist, float max_dist) {
     AttenuationParams params;
     params.curve = AttenuationCurve::Linear;
@@ -55,6 +59,10 @@ float compute_attenuation(float distance, float min_dist, float max_dist) {
 }
 
 float sample_attenuation_curve(float distance, const AttenuationParams& params) {
+    if (!is_attenuation_params_valid(params)) {
+        return 1.f;
+    }
+
     const float clamped = std::max(distance, params.min_dist);
     float gain = 1.f;
 
@@ -84,7 +92,20 @@ float sample_attenuation_curve(float distance, const AttenuationParams& params) 
     return std::clamp(gain, 0.f, 1.f);
 }
 
+float sample_attenuation_curve_guarded(float distance, const AttenuationParams& params) {
+    if (!is_attenuation_params_valid(params)) {
+        return 1.f;
+    }
+    if (params.curve == AttenuationCurve::Custom && params.keypoint_count == 0) {
+        return 1.f;
+    }
+    return sample_attenuation_curve(distance, params);
+}
+
 float compute_attenuation(float distance, const AttenuationParams& params) {
+    if (!is_attenuation_params_valid(params)) {
+        return 1.f;
+    }
     if (distance <= params.min_dist) {
         return 1.f;
     }
@@ -110,6 +131,9 @@ AttenuationParams make_attenuation_params(const AudioSourceDesc& desc) {
 }
 
 float sample_attenuation_at_min(const AttenuationParams& params) {
+    if (!is_attenuation_params_valid(params)) {
+        return 1.f;
+    }
     if (params.curve == AttenuationCurve::Custom && params.keypoint_count > 0) {
         return std::clamp(params.keypoints[0].gain, 0.f, 1.f);
     }
@@ -117,6 +141,9 @@ float sample_attenuation_at_min(const AttenuationParams& params) {
 }
 
 float sample_attenuation_at_max(const AttenuationParams& params) {
+    if (!is_attenuation_params_valid(params)) {
+        return 1.f;
+    }
     return compute_attenuation(params.max_dist, params);
 }
 
