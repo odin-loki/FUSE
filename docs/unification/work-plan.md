@@ -136,6 +136,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **MT note** | AI/FX jobify per architecture §7 |
 | **Exit** | Per-module U5 gates in prestarter §10 |
 | **Deps** | WP-06 |
+| **Status** | 🚧 Scaffolding — five CMake targets + `fuse_ai` BT vertical slice + tests; ore extraction backlog in [U5-MODULES.md](./U5-MODULES.md) |
 
 ---
 
@@ -146,6 +147,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | L |
 | **Scope** | In-process PIE; UI thread vs game thread command queue; one feature pane |
 | **Deps** | WP-06, WP-05 |
+| **Status** | 🚧 Thin start — `fuse_editor_api` command queue stub + test (no Qt yet) |
 
 ---
 
@@ -209,7 +211,8 @@ WP-00 → WP-01 → WP-02 ──────────────────
 | **U2** | One-process smoke | ASan init; jobs optional — ✅ smoke + quarantine libs |
 | **U3** | Shared services | I/O job publishes handle; TSan plan live |
 | **U4** | Hybrid demo | `parallel_for` cull; frame barrier; game-thread GFX — 🚧 scaffolding + software demo |
-| **U6** | Editor PIE | UI/game thread queue proven |
+| **U5** | Feature modules | Five `fuse_*` targets; `fuse_ai` BT slice + tests — 🚧 scaffolds + ore backlog ([U5-MODULES.md](./U5-MODULES.md)) |
+| **U6** | Editor PIE | UI/game thread queue proven — 🚧 `fuse_editor_api` stub only |
 | **U8** | Parity demos | `demo_hybrid_hud` under parallel tick |
 | **P3 (Track A)** | Job system tests | Fiber scheduler + single-thread fallback |
 
@@ -244,7 +247,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 
-**Next:** WP-04 async I/O lane + handle table; WP-05 legacy adapters; WP-06 real RHI hookup (Track B).
+**Next:** WP-07 ore extraction per module; WP-04 async I/O lane + handle table; WP-06 real RHI hookup (Track B).
 
 ---
 
