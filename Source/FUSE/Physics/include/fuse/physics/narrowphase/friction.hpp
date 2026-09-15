@@ -6,6 +6,8 @@
 
 namespace fuse::physics::narrowphase {
 
+struct ContactManifold;
+
 struct TangentBasis {
     vec3 tangent1{};
     vec3 tangent2{};
@@ -19,6 +21,9 @@ struct FrictionImpulse {
 
 /// Build an orthonormal tangent frame from a contact normal (B4.3 friction stub).
 TangentBasis buildTangentBasis(vec3 normal);
+
+/// Build a tangent frame from a contact manifold's normal (B4.3 friction stub).
+TangentBasis buildTangentBasisForManifold(const ContactManifold& manifold);
 
 /// Validate that `basis` is unit-length and mutually orthogonal with `normal`.
 bool isOrthonormalTangentBasis(vec3 normal, const TangentBasis& basis, f32 epsilon = 1e-4f);

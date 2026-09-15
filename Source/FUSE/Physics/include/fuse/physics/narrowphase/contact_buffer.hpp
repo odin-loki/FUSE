@@ -2,6 +2,7 @@
 
 #include <fuse/physics/math.hpp>
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
+#include <fuse/physics/narrowphase/friction.hpp>
 #include <fuse/types.hpp>
 
 #include <vector>
@@ -22,6 +23,8 @@ struct ContactBufferSoA {
     std::vector<f32> pointPenetrations;
     std::vector<f32> warmNormalImpulses;
     std::vector<vec2> warmTangentImpulses;
+    std::vector<vec3> tangent1;
+    std::vector<vec3> tangent2;
 
     u32 activeCount = 0;
     u32 pairSlotCount = 0;
@@ -33,7 +36,9 @@ struct ContactBufferSoA {
     void preparePairSlots(u32 pairCount);
     void writeSlot(u32 slot, const ContactManifold& manifold);
     void applyWarmStartStub(u32 slot, ContactManifold& manifold) const;
+    void buildFrictionTangentBases();
     u32 compact();
+    TangentBasis tangentBasisAt(u32 index) const;
     ContactManifold manifoldAt(u32 index) const;
     std::vector<ContactManifold> toVector() const;
 

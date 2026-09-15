@@ -206,6 +206,93 @@ void testManifoldFillAndPointCap() {
     expectNear(manifold.maxPenetration(), 0.f, 1e-4f, "reset clears penetration");
 }
 
+void testManifoldPointAccessAndFrictionBasis() {
+    fuse::physics::narrowphase::ContactManifold manifold{};
+    manifold.valid = true;
+    manifold.contactNormal = {0.f, 1.f, 0.f};
+    manifold.addPoint({1.f, 0.f, 0.f}, 0.2f);
+    manifold.addPoint({2.f, 0.f, 0.f}, 0.35f);
+    expectNear(manifold.pointAt(0u).penetration, 0.2f, 1e-4f, "pointAt returns first slot");
+    expectNear(manifold.pointAt(1u).point.x, 2.f, 1e-4f, "pointAt returns second slot position");
+
+    manifold.buildFrictionBasis();
+    expectTrue(
+        manifold.hasFrictionBasis(),
+        "manifold friction basis is orthonormal after buildFrictionBasis");
+    expectTrue(
+        fuse::physics::narrowphase::isOrthonormalTangentBasis(
+            manifold.contactNormal, manifold.frictionBasis),
+        "manifold stores orthonormal friction basis");
+}
+
+void testTangentialVelocityProjection() {
+    const auto basis = fuse::physics::narrowphase::buildTangentBasis({0.f, 1.f, 0.f});
+    const fuse::physics::vec3 relativeVelocity{3.f, 0.f, 4.f};
+    const fuse::physics::vec2 projected =
+        fuse::physics::narrowphase::projectTangentialVelocity(relativeVelocity, basis);
+    expectNear(
+        projected.x,
+        relativeVelocity.dot(basis.tangent1),
+        1e-4f,
+        "tangential projection along tangent1");
+    expectNear(
+        projected.y,
+        relativeVelocity.dot(basis.tangent2),
+        1e-4f,
+        "tangential projection along tangent2");
+
+    const fuse::physics::vec3 reconstructed =
+        basis.tangent1 * projected.x + basis.tangent2 * projected.y;
+    expectNear(reconstructed.x, relativeVelocity.x, 1e-4f, "tangential projection reconstructs X");
+    expectNear(reconstructed.y, relativeVelocity.y, 1e-4f, "tangential projection reconstructs Y");
+    expectNear(reconstructed.z, relativeVelocity.z, 1e-4f, "tangential projection reconstructs Z");
+}
+
+void testContactBufferFrictionTangentSoA() {
+    fuse::physics::narrowphase::ContactBufferSoA buffer;
+    buffer.preparePairSlots(2u);
+
+    fuse::physics::narrowphase::ContactManifold manifold{};
+    manifold.valid = true;
+    manifold.bodyA = 0u;
+    manifold.bodyB = 1u;
+    manifold.contactNormal = {0.f, 0.f, 1.f};
+    manifold.addPoint({0.f, 0.f, 0.f}, 0.1f);
+    manifold.buildFrictionBasis();
+    buffer.writeSlot(0u, manifold);
+
+    fuse::physics::narrowphase::ContactManifold second{};
+    second.valid = true;
+    second.bodyA = 2u;
+    second.bodyB = 3u;
+    second.contactNormal = {1.f, 0.f, 0.f};
+    second.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    buffer.writeSlot(1u, second);
+
+    expectTrue(buffer.compact() == 2u, "friction tangent SoA compacts two manifolds");
+    const auto firstBasis = buffer.tangentBasisAt(0u);
+    const auto secondBasis = buffer.tangentBasisAt(1u);
+    expectTrue(
+        fuse::physics::narrowphase::isOrthonormalTangentBasis({0.f, 0.f, 1.f}, firstBasis),
+        "buffer tangent SoA slot zero is orthonormal");
+    expectTrue(
+        fuse::physics::narrowphase::isOrthonormalTangentBasis({1.f, 0.f, 0.f}, secondBasis),
+        "buffer tangent SoA slot one is orthonormal");
+
+    fuse::physics::narrowphase::ContactManifold restored = buffer.manifoldAt(0u);
+    expectTrue(restored.hasFrictionBasis(), "manifoldAt restores friction basis");
+    expectTrue(
+        fuse::physics::narrowphase::isOrthonormalTangentBasis(
+            restored.contactNormal, restored.frictionBasis),
+        "restored manifold friction basis matches normal");
+
+    buffer.buildFrictionTangentBases();
+    const auto rebuilt = buffer.tangentBasisAt(1u);
+    expectTrue(
+        fuse::physics::narrowphase::isOrthonormalTangentBasis({1.f, 0.f, 0.f}, rebuilt),
+        "buildFrictionTangentBases rebuilds orthonormal frames");
+}
+
 void testContactBufferWarmStartAndPointSlots() {
     fuse::physics::narrowphase::ContactBufferSoA buffer;
     buffer.preparePairSlots(1u);
@@ -285,6 +372,9 @@ int main() {
     testFrictionClampStub();
     testEmptyContacts();
     testManifoldFillAndPointCap();
+    testManifoldPointAccessAndFrictionBasis();
+    testTangentialVelocityProjection();
+    testContactBufferFrictionTangentSoA();
     testContactBufferWarmStartAndPointSlots();
     testRunNarrowphaseIntoBufferJobSafe();
     testGjkSupportAndEpaStub();

@@ -1,6 +1,7 @@
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
 
 #include <algorithm>
+#include <cmath>
 
 namespace fuse::physics::narrowphase {
 
@@ -12,12 +13,33 @@ void ContactManifold::reset() {
     pointCount = 0;
     warmNormalImpulse = 0.f;
     warmTangentImpulse = {};
+    frictionBasis = {};
     contactPoint = {};
     penetrationDepth = 0.f;
     valid = false;
     for (u32 i = 0u; i < kMaxContactPointsPerManifold; ++i) {
         points[i] = {};
     }
+}
+
+void ContactManifold::buildFrictionBasis() {
+    if (contactNormal.length() < 1e-8f) {
+        frictionBasis = {};
+        return;
+    }
+    frictionBasis = buildTangentBasis(contactNormal);
+}
+
+bool ContactManifold::hasFrictionBasis() const {
+    return isOrthonormalTangentBasis(contactNormal, frictionBasis);
+}
+
+const ContactPointSlot& ContactManifold::pointAt(u32 index) const {
+    static const ContactPointSlot empty{};
+    if (index >= pointCount) {
+        return empty;
+    }
+    return points[index];
 }
 
 f32 ContactManifold::maxPenetration() const {

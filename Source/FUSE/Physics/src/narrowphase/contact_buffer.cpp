@@ -17,6 +17,8 @@ void ContactBufferSoA::reserve(u32 capacity) {
     pointPenetrations.reserve(capacity * kMaxContactPointsPerManifold);
     warmNormalImpulses.reserve(capacity);
     warmTangentImpulses.reserve(capacity);
+    tangent1.reserve(capacity);
+    tangent2.reserve(capacity);
 }
 
 void ContactBufferSoA::clear() {
@@ -39,6 +41,8 @@ void ContactBufferSoA::preparePairSlots(u32 pairCount) {
     pointPenetrations.assign(pairCount * kMaxContactPointsPerManifold, 0.f);
     warmNormalImpulses.assign(pairCount, 0.f);
     warmTangentImpulses.assign(pairCount, {});
+    tangent1.assign(pairCount, {});
+    tangent2.assign(pairCount, {});
 }
 
 void ContactBufferSoA::writeSlot(u32 slot, const ContactManifold& manifold) {
@@ -55,6 +59,10 @@ void ContactBufferSoA::writeSlot(u32 slot, const ContactManifold& manifold) {
     validFlags[slot] = 1u;
     warmNormalImpulses[slot] = manifold.warmNormalImpulse;
     warmTangentImpulses[slot] = manifold.warmTangentImpulse;
+
+    const TangentBasis basis = buildTangentBasisForManifold(manifold);
+    tangent1[slot] = basis.tangent1;
+    tangent2[slot] = basis.tangent2;
 
     const u32 pointCount = std::min(manifold.pointCount, kMaxContactPointsPerManifold);
     pointCounts[slot] = static_cast<u8>(pointCount);
@@ -77,6 +85,25 @@ void ContactBufferSoA::applyWarmStartStub(u32 slot, ContactManifold& manifold) c
 
     manifold.warmNormalImpulse = warmNormalImpulses[slot];
     manifold.warmTangentImpulse = warmTangentImpulses[slot];
+    manifold.frictionBasis = tangentBasisAt(slot);
+}
+
+void ContactBufferSoA::buildFrictionTangentBases() {
+    for (u32 slot = 0u; slot < activeCount; ++slot) {
+        if (validFlags[slot] == 0u) {
+            continue;
+        }
+        const TangentBasis basis = buildTangentBasis(contactNormals[slot]);
+        tangent1[slot] = basis.tangent1;
+        tangent2[slot] = basis.tangent2;
+    }
+}
+
+TangentBasis ContactBufferSoA::tangentBasisAt(u32 index) const {
+    if (index >= activeCount || validFlags[index] == 0u) {
+        return {};
+    }
+    return {tangent1[index], tangent2[index]};
 }
 
 u32 ContactBufferSoA::compact() {
@@ -96,6 +123,8 @@ u32 ContactBufferSoA::compact() {
             pointCounts[writeIndex] = pointCounts[readIndex];
             warmNormalImpulses[writeIndex] = warmNormalImpulses[readIndex];
             warmTangentImpulses[writeIndex] = warmTangentImpulses[readIndex];
+            tangent1[writeIndex] = tangent1[readIndex];
+            tangent2[writeIndex] = tangent2[readIndex];
 
             const u32 readBase = pointSlotBase(readIndex);
             const u32 writeBase = pointSlotBase(writeIndex);
@@ -129,6 +158,7 @@ ContactManifold ContactBufferSoA::manifoldAt(u32 index) const {
     manifold.bodyB = bodyB[index];
     manifold.warmNormalImpulse = warmNormalImpulses[index];
     manifold.warmTangentImpulse = warmTangentImpulses[index];
+    manifold.frictionBasis = tangentBasisAt(index);
     manifold.valid = true;
 
     const u32 pointCount = std::min(static_cast<u32>(pointCounts[index]), kMaxContactPointsPerManifold);
