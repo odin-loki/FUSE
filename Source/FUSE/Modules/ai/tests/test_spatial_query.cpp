@@ -161,6 +161,26 @@ void testNearestAllyNoMatchOtherTeam() {
     expectTrue(!nearest.found, "nearest ally returns none when solo on team");
 }
 
+void testHasAnyAllyInRadius() {
+    const std::vector<fuse::ai::AllyCandidate> allies = makeSquad();
+
+    expectTrue(fuse::ai::has_any_ally_in_radius(0, 1, 0.f, 0.f, 10.f, allies),
+               "has_any_ally_in_radius succeeds when allies are nearby");
+    expectTrue(!fuse::ai::has_any_ally_in_radius(0, 1, 0.f, 0.f, 2.f, allies),
+               "has_any_ally_in_radius fails outside tight radius");
+    expectTrue(!fuse::ai::has_any_ally_in_radius(0, 1, 0.f, 0.f, 10.f, {}),
+               "has_any_ally_in_radius fails on empty ally list");
+}
+
+void testAllyContextAvailable() {
+    const std::vector<fuse::ai::AllyCandidate> allies = makeSquad();
+    expectTrue(!fuse::ai::ally_context_available(nullptr), "ally context unavailable when null");
+    expectTrue(fuse::ai::ally_context_available(&allies),
+               "ally context available when list is non-empty");
+    const std::vector<fuse::ai::AllyCandidate> empty;
+    expectTrue(!fuse::ai::ally_context_available(&empty), "ally context unavailable when empty");
+}
+
 } // namespace
 
 int run_spatial_query_tests() {
@@ -176,5 +196,7 @@ int run_spatial_query_tests() {
     testNearestAllyWithinRadiusRejectsDistant();
     testNearestAllyExcludesSelf();
     testNearestAllyNoMatchOtherTeam();
+    testHasAnyAllyInRadius();
+    testAllyContextAvailable();
     return g_failures;
 }

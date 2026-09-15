@@ -137,4 +137,17 @@ bool allies_in_radius_satisfied(u32 selfIndex,
     return count >= policy.minCount;
 }
 
+bool has_any_ally_in_radius(u32 selfIndex,
+                            u32 teamId,
+                            float x,
+                            float y,
+                            float radius,
+                            const std::vector<AllyCandidate>& allies) {
+    return count_allies_in_radius(selfIndex, teamId, x, y, radius, allies) > 0;
+}
+
+bool ally_context_available(const std::vector<AllyCandidate>* allies) {
+    return allies != nullptr && !allies->empty();
+}
+
 } // namespace fuse::ai

@@ -72,4 +72,15 @@ struct RadiusFilterPolicy {
                                               const RadiusFilterPolicy& policy,
                                               const std::vector<AllyCandidate>& allies);
 
+/// True when at least one same-team ally lies within `radius` (excludes self).
+[[nodiscard]] bool has_any_ally_in_radius(u32 selfIndex,
+                                          u32 teamId,
+                                          float x,
+                                          float y,
+                                          float radius,
+                                          const std::vector<AllyCandidate>& allies);
+
+/// True when `allies` is non-null and contains at least one entry.
+[[nodiscard]] bool ally_context_available(const std::vector<AllyCandidate>* allies);
+
 } // namespace fuse::ai

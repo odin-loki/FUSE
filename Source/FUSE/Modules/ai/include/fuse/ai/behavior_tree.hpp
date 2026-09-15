@@ -43,7 +43,12 @@ enum class NodeKind {
     ActionDistance,
     ActionMoveToward,
     ConditionAlliesInRadius,
+    ConditionAnyAllyInRadius,
     ActionNearestAlly,
+    ActionAlliesCount,
+    GuardBlackboardBound,
+    GuardBlackboardScalarEmpty,
+    GuardAllyContext,
 };
 
 /// Optional per-tick eval state for leaves that span frames (wait) or read runtime tick count.
@@ -63,6 +68,10 @@ struct ParallelPolicy {
     u32 failThreshold = 1;
     /// When true, stop ticking remaining children once fail threshold is reached.
     bool abortOnFail = false;
+    /// When true, fail immediately when the blackboard view is not bound.
+    bool requireBoundBlackboard = false;
+    /// When true, fail immediately when ally context is null or empty.
+    bool requireAllyContext = false;
 };
 
 /// Flat behavior-tree node — ore analogue: BadBehaviour composite/decorator/leaf nodes.
