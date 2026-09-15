@@ -174,6 +174,19 @@ void testCollectEvictionCandidatesOrdering() {
     expectTrue(residency.collect_eviction_candidates().empty(), "empty residency has no candidates");
 }
 
+void testEvictionCandidateTieBreak() {
+    fuse::terrain::LodResidencySet residency;
+    expectTrue(!residency.has_eviction_candidate(), "empty set has no eviction candidate");
+    expectTrue(residency.add(2u, 100.f), "add lower-index chunk");
+    expectTrue(residency.add(8u, 100.f), "add higher-index chunk at same distance");
+    expectTrue(residency.has_eviction_candidate(), "non-empty set has eviction candidate");
+    expectEq(residency.pick_eviction_candidate(), 8u, "equal focus distance breaks tie by chunk index");
+
+    const auto candidates = residency.collect_eviction_candidates();
+    expectEq(candidates[0], 8u, "tie-break prefers higher chunk index first");
+    expectEq(candidates[1], 2u, "tie-break orders lower chunk index second");
+}
+
 void testResidencyHelperStubs() {
     fuse::terrain::LodResidencySet residency;
     expectTrue(fuse::terrain::try_add_resident(residency, 2u, 50.f), "try_add_resident accepts valid focus");
@@ -181,6 +194,20 @@ void testResidencyHelperStubs() {
     expectTrue(residency.contains(2u), "stub add tracks resident chunk");
     expectTrue(fuse::terrain::try_remove_resident(residency, 2u), "try_remove_resident evicts chunk");
     expectTrue(!residency.contains(2u), "stub remove clears resident chunk");
+
+    expectTrue(fuse::terrain::apply_residency_on_load_complete(residency, 4u, 12.f, true),
+               "apply on successful load registers resident");
+    expectTrue(residency.contains(4u), "load-complete stub tracks resident chunk");
+    expectTrue(!fuse::terrain::apply_residency_on_load_complete(residency, 5u, -1.f, true),
+               "load-complete stub rejects invalid focus");
+    expectTrue(!fuse::terrain::apply_residency_on_load_complete(residency, 6u, 8.f, false),
+               "failed load does not register resident");
+
+    expectTrue(fuse::terrain::apply_residency_on_unload_complete(residency, 4u, true),
+               "apply on successful unload clears resident");
+    expectTrue(!residency.contains(4u), "unload-complete stub removes resident chunk");
+    expectTrue(!fuse::terrain::apply_residency_on_unload_complete(residency, 99u, true),
+               "unload-complete stub misses unknown chunk");
 }
 
 void testIncomingOutranksResident() {
@@ -204,12 +231,43 @@ void testChunkGridResidentCapEviction() {
     grid.update_lod({0.f, 0.f, 0.f}, 0.016f);
     expectEq(grid.resident_chunk_count(), 2u, "cap limits initial residents");
     expectEq(grid.budget_counters().budget_evictions, 0u, "no evictions before cap pressure");
+    expectEq(grid.budget_counters().eviction_skipped, 0u, "no skipped evictions before cap pressure");
 
     // Move focus toward the far corner so a nearer chunk outranks an existing resident.
     grid.update_lod({30.f, 0.f, 30.f}, 0.016f);
     expectEq(grid.budget_counters().budget_evictions, 1u, "cap pressure evicts farthest resident");
     expectEq(grid.budget_counters().rejected_loads, 0u, "successful eviction avoids rejection");
+    expectEq(grid.budget_counters().eviction_skipped, 0u, "successful eviction avoids skip counter");
     expectEq(grid.resident_chunk_count(), 2u, "resident count stays at cap after eviction load");
+
+    grid.destroy();
+}
+
+void testChunkGridEvictionSkippedWhenIncomingDoesNotOutrank() {
+    fuse::terrain::ChunkGrid grid{};
+    fuse::terrain::TerrainDesc desc = makeTestDesc();
+    desc.async_loading = false;
+    desc.max_resident_chunks = 1;
+    desc.load_radius = 28.f;
+    grid.init(desc);
+
+    const fuse::f32 far = desc.world_size * 4.f;
+    const fuse::terrain::vec3 focus{24.f, 0.f, 8.f}; // centre of chunk (1,0)
+
+    grid.update_lod(focus, 0.016f);
+    expectEq(grid.resident_chunk_count(), 1u, "single resident at cap");
+
+    grid.update_lod({far, 0.f, far}, 0.016f);
+    grid.update_lod(focus, 0.016f);
+    expectEq(grid.resident_chunk_count(), 1u, "refocus restores single resident");
+
+    // Pending loads were cleared while far; refocus again queues farther chunks as Unloaded.
+    grid.update_lod(focus, 0.016f);
+    expectTrue(grid.budget_counters().eviction_skipped >= 1u,
+               "farther chunks increment skip counter when nearer resident holds cap");
+    expectTrue(grid.budget_counters().rejected_loads >= 1u,
+               "farther chunks reject load when they cannot outrank resident");
+    expectEq(grid.resident_chunk_count(), 1u, "resident count unchanged when eviction skipped");
 
     grid.destroy();
 }
@@ -252,6 +310,9 @@ void testLodClampHelpers() {
     expectEq(fuse::terrain::resident_chunk_headroom(2u, 4u), 0u, "over-cap headroom is zero");
     expectTrue(fuse::terrain::can_accept_resident_chunk(4u, 3u), "under cap accepts chunk");
     expectTrue(!fuse::terrain::can_accept_resident_chunk(4u, 4u), "at cap rejects chunk");
+    expectTrue(fuse::terrain::needs_budget_eviction(4u, 4u), "at cap needs budget eviction");
+    expectTrue(!fuse::terrain::needs_budget_eviction(4u, 3u), "under cap does not need eviction");
+    expectTrue(!fuse::terrain::needs_budget_eviction(0u, 100u), "unlimited cap never needs eviction");
     expectEq(fuse::terrain::effective_tick_budget(8u, 3u), 3u, "tick budget clamps to cap");
     expectEq(fuse::terrain::clamp_pending_submits(5u, 2u), 2u, "pending submits clamp to cap");
 }
@@ -686,6 +747,7 @@ int main() {
     testAdjacentLodPair();
     testAdjacentLodMorphBlend();
     testCollectEvictionCandidatesOrdering();
+    testEvictionCandidateTieBreak();
     testResidencyHelperStubs();
     testIncomingOutranksResident();
     testLodResidencySetAddRemove();
@@ -704,6 +766,7 @@ int main() {
     testLodResidencyQueueFlushBudget();
     testChunkGridLodTransitions();
     testChunkGridResidentCapEviction();
+    testChunkGridEvictionSkippedWhenIncomingDoesNotOutrank();
     testChunkGridAsyncResidency();
     testHeightfieldRaycast();
     testTerrainFacade();

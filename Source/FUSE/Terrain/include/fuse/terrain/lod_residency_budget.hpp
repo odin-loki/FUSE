@@ -17,6 +17,7 @@ struct LodResidencyBudget {
 struct LodResidencyBudgetCounters {
     u32 rejected_loads = 0;   ///< Loads rejected after eviction could not free a slot
     u32 budget_evictions = 0; ///< Resident chunks queued for unload to make room
+    u32 eviction_skipped = 0; ///< Cap pressure with no evictable resident candidate
 };
 
 /// Clamp a discrete LOD index to the valid range for a terrain description.
@@ -42,6 +43,10 @@ struct LodResidencyBudgetCounters {
 
 [[nodiscard]] inline bool is_at_resident_cap(u32 max_resident_chunks, u32 resident_count) {
     return !resident_cap_unlimited(max_resident_chunks) && resident_count >= max_resident_chunks;
+}
+
+[[nodiscard]] inline bool needs_budget_eviction(u32 max_resident_chunks, u32 resident_count) {
+    return is_at_resident_cap(max_resident_chunks, resident_count);
 }
 
 [[nodiscard]] inline u32 effective_tick_budget(u32 queued, u32 per_tick_cap) {

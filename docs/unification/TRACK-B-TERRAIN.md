@@ -18,9 +18,9 @@
 | `compute_lod_mesh_vertex_counts` | `Source/FUSE/Terrain/src/lod.cpp` | CPU stub — grid + skirt + seam vertex budgets per LOD |
 | `LodSkirtParams` / `clamp_skirt_params` | `Source/FUSE/Terrain/src/lod.cpp` | Skirt depth/segment clamp + strip vertex count stub |
 | `morph_vertex_position` | `Source/FUSE/Terrain/src/lod.cpp` | CPU stub — snap XZ toward coarser grid |
-| `LodResidencySet` | `lod_residency_set.hpp` | Focus-distance resident chunk set with eviction ordering; `try_add_resident` / `try_remove_resident` stubs |
-| `LodResidencyBudget` / clamp helpers | `lod_residency_budget.hpp` | `clamp_lod_level`, resident headroom, tick/pending budget clamps, `incoming_outranks_resident` |
-| `LodResidencyBudgetCounters` | `lod_residency_budget.hpp` | `rejected_loads` / `budget_evictions` tracked by `ChunkGrid` |
+| `LodResidencySet` | `lod_residency_set.hpp` | Focus-distance resident chunk set with eviction ordering; `has_eviction_candidate`, chunk-index tie-break, `try_add_resident` / `try_remove_resident` / `apply_residency_on_*_complete` stubs |
+| `LodResidencyBudget` / clamp helpers | `lod_residency_budget.hpp` | `clamp_lod_level`, resident headroom, `needs_budget_eviction`, tick/pending budget clamps, `incoming_outranks_resident` |
+| `LodResidencyBudgetCounters` | `lod_residency_budget.hpp` | `rejected_loads` / `budget_evictions` / `eviction_skipped` tracked by `ChunkGrid` |
 | `LodResidencyQueue` | `lod_residency_queue.hpp/.cpp` | Mutex-backed completion buffer; enqueue promote/demote, budget clamp, priority drain |
 | `promote_residency_priority` / `demote_residency_priority` | `lod_residency_queue.cpp` | Pending load priority raise/lower stubs |
 | `capture_morph_snapshot` / `sync_morph_after_residency` | `lod_residency_queue.cpp` | Keep morph in sync across async promotion/demotion |
@@ -68,7 +68,7 @@ Y (height) is preserved — GPU heightmap displacement handles vertical detail l
 
 ### Budget clamp helpers
 
-`lod_residency_budget.hpp` exposes `clamp_lod_level`, `resident_chunk_headroom`, `can_accept_resident_chunk`, `effective_tick_budget`, and `clamp_pending_submits`. `ChunkGrid::process_queues_` uses these when enforcing `TerrainDesc::max_resident_chunks` and per-tick submission caps.
+`lod_residency_budget.hpp` exposes `clamp_lod_level`, `resident_chunk_headroom`, `can_accept_resident_chunk`, `needs_budget_eviction`, `effective_tick_budget`, and `clamp_pending_submits`. `ChunkGrid::evict_for_resident_cap_` increments `eviction_skipped` when no resident can be evicted or the incoming chunk does not outrank the farthest resident. `ChunkGrid::process_queues_` uses these when enforcing `TerrainDesc::max_resident_chunks` and per-tick submission caps.
 
 ### Skirt / seam vertex budget (CPU stub)
 
@@ -179,9 +179,11 @@ ctest --test-dir build --output-on-failure -R fuse_terrain
 | `testAdjacentLodMorphBlend` | `clamp_adjacent_lod_pair` + `blend_adjacent_lod_morph` |
 | `testLodResidencySetAddRemove` | Residency set add/remove/update/clear/eviction order |
 | `testCollectEvictionCandidatesOrdering` | Farthest-first eviction candidate list + limit |
-| `testResidencyHelperStubs` | `try_add_resident` / `try_remove_resident` |
+| `testEvictionCandidateTieBreak` | Equal focus distance tie-break by chunk index |
+| `testResidencyHelperStubs` | `try_add_resident` / `try_remove_resident` / `apply_residency_on_*_complete` |
 | `testIncomingOutranksResident` | Incoming-vs-resident priority helper |
 | `testChunkGridResidentCapEviction` | Cap pressure evicts farthest resident |
+| `testChunkGridEvictionSkippedWhenIncomingDoesNotOutrank` | `eviction_skipped` + `rejected_loads` when incoming cannot outrank |
 | `testLodClampHelpers` | `clamp_lod_level` + resident/tick budget clamps |
 | `testLodSkirtStubs` | Skirt param clamp + segment vertex multiplier |
 | `testEmptyTerrainResidency` | Empty residency set + far-camera zero residents |
@@ -219,6 +221,10 @@ ctest --test-dir build --output-on-failure -R fuse_terrain
 - [x] `LodResidencySet` focus-distance tracking + eviction candidate ordering
 - [x] `LodResidencyBudget` clamp helpers (`clamp_lod_level`, resident headroom)
 - [x] `LodResidencyBudgetCounters` + `ChunkGrid` cap-pressure eviction via `evict_for_resident_cap_`
+- [x] `eviction_skipped` counter when cap pressure cannot evict
+- [x] `needs_budget_eviction` + `has_eviction_candidate` budget/residency helpers
+- [x] `apply_residency_on_load_complete` / `apply_residency_on_unload_complete` stubs
+- [x] Eviction candidate tie-break by chunk index at equal focus distance
 - [x] `try_add_resident` / `try_remove_resident` residency stubs
 - [x] Skirt param clamp + segment vertex multiplier stub
 - [x] Adjacent LOD morph clamp + factor blend helpers
