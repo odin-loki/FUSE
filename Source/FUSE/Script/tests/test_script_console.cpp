@@ -451,6 +451,8 @@ void testHistoryGuardAccessors() {
 
     expectTrue(history.is_empty(), "new history buffer is empty");
     expectTrue(!history.is_valid_index(0), "index 0 invalid on empty history");
+    expectTrue(history.newest().empty(), "newest on empty history returns empty");
+    expectTrue(history.oldest().empty(), "oldest on empty history returns empty");
 
     history.push("alpha");
     expectTrue(!history.is_empty(), "history not empty after push");
@@ -464,6 +466,70 @@ void testHistoryGuardAccessors() {
                "execute rejects null line");
     expectTrue(null_line.output == "line is null", "null line guard message");
     expectTrue(console.historyCount() == 0u, "null line does not push history");
+}
+
+void testHistorySkipsFailedCommands() {
+    fuse::script::ScriptConsole console;
+
+    console.execute("not_a_command");
+    expectTrue(console.historyCount() == 0u, "unknown command does not push history");
+
+    console.execute("describe");
+    expectTrue(console.historyCount() == 0u, "invalid argument does not push history");
+
+    console.execute("   ");
+    expectTrue(console.historyCount() == 0u, "empty line does not push history");
+
+    console.execute("echo ok");
+    expectTrue(console.historyCount() == 1u, "successful command pushes history");
+    expectTrue(console.historyAt(0) == "echo ok", "history records successful command text");
+}
+
+void testLastExecutedLineGuards() {
+    fuse::script::ScriptConsole console;
+
+    console.execute("not_a_command");
+    expectTrue(console.lastExecutedLine().empty(),
+               "unknown command does not update last executed line");
+
+    console.execute("describe");
+    expectTrue(console.lastExecutedLine().empty(),
+               "invalid argument does not update last executed line");
+
+    console.execute("echo tracked");
+    expectTrue(console.lastExecutedLine() == "echo tracked",
+               "successful command updates last executed line");
+}
+
+void testResolveCommandStub() {
+    fuse::script::ScriptConsole console;
+
+    const auto invalid = console.execute("resolve");
+    expectTrue(invalid.status == fuse::script::ScriptConsoleCommandStatus::InvalidArgument,
+               "resolve without args fails");
+
+    const auto ambiguous = console.execute("resolve h");
+    expectTrue(ambiguous.status == fuse::script::ScriptConsoleCommandStatus::InvalidArgument,
+               "resolve ambiguous prefix fails");
+    expectTrue(ambiguous.output.find("ambiguous prefix:") != std::string::npos,
+               "resolve ambiguous prefix error message");
+
+    const auto missing = console.execute("resolve zzznop");
+    expectTrue(missing.status == fuse::script::ScriptConsoleCommandStatus::UnknownCommand,
+               "resolve missing prefix fails");
+    expectTrue(missing.output.find("no command matches:") != std::string::npos,
+               "resolve missing prefix error message");
+
+    expectTrue(console.historyCount() == 0u, "resolve failures do not push history");
+
+    const auto exact = console.execute("resolve help");
+    expectTrue(exact.ok(), "resolve exact command succeeds");
+    expectTrue(exact.output == "help", "resolve exact command returns name");
+
+    const auto unique = console.execute("resolve histor");
+    expectTrue(unique.ok(), "resolve unique prefix succeeds");
+    expectTrue(unique.output == "history", "resolve unique prefix returns full command name");
+    expectTrue(console.historyCount() == 2u, "resolve success pushes history");
 }
 
 void testCustomCommandDispatch() {
@@ -501,11 +567,14 @@ void run_script_console_tests() {
     testCommandRegistryDirect();
     testHistoryBufferRingWrapDirect();
     testHistoryGuardAccessors();
+    testHistorySkipsFailedCommands();
+    testLastExecutedLineGuards();
     testHistoryBufferAndNavigation();
     testHistoryClearStub();
     testEmptyLineSkipsHistory();
     testDescribeAndCompleteStubs();
     testPrefixMatchAndCompletionHelpers();
+    testResolveCommandStub();
     testRepeatDispatchStub();
     testHostDispatchLoadAndRun();
     testCustomCommandShadowsBuiltIn();
