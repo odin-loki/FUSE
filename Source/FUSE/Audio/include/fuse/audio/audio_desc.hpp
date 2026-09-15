@@ -26,6 +26,8 @@ struct AudioSourceDesc {
     float max_distance = 50.f;
     AttenuationCurve attenuation = AttenuationCurve::Linear;
     float rolloff = 1.f;
+    AttenuationKeypoint attenuation_keypoints[AttenuationParams::max_keypoints] = {};
+    u32 attenuation_keypoint_count = 0;
     AudioBus bus = AudioBus::Sfx;
     float occlusion = 1.f;
     bool looping = false;
