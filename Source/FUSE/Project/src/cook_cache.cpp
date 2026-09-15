@@ -91,7 +91,7 @@ CookCacheLookup CookCache::lookup(u64 content_hash, CookCacheEntry* out_entry) {
 }
 
 void CookCache::store(const CookCacheEntry& entry) {
-    if (!is_valid_cook_cache_key(entry.content_hash) || entry.source_path.empty() || entry.output_path.empty()) {
+    if (!is_valid_cook_cache_entry(entry)) {
         return;
     }
 
@@ -133,6 +133,10 @@ const CookJob* find_job_by_id(const std::vector<CookJob>& jobs, const std::strin
 u32 CookCache::invalidate_downstream_of(const std::string& output_path,
                                         const std::vector<CookJobDependencyEdge>& edges,
                                         const std::vector<CookJob>& jobs) {
+    if (!is_valid_cook_cache_path(output_path) || m_entries.empty()) {
+        return 0;
+    }
+
     u32 removed = invalidate_source(output_path);
 
     for (const CookJobDependencyEdge& edge : edges) {
@@ -155,9 +159,16 @@ u32 CookCache::invalidate_downstream_of(const std::string& output_path,
 
 std::vector<std::string> CookCache::invalidate_stale_upstream_hashes(
     const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) {
+    if (m_entries.empty() || source_upstream_by_path.empty()) {
+        return {};
+    }
+
     std::vector<std::string> invalidated;
     for (const auto& pair : source_upstream_by_path) {
         const std::string& source_path = pair.first;
+        if (!is_valid_cook_cache_path(source_path)) {
+            continue;
+        }
         const u64 current_upstream = pair.second;
 
         for (auto it = m_entries.begin(); it != m_entries.end();) {
@@ -174,7 +185,7 @@ std::vector<std::string> CookCache::invalidate_stale_upstream_hashes(
 }
 
 u32 CookCache::invalidate_source(const std::string& source_path) {
-    if (source_path.empty() || m_entries.empty()) {
+    if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
         return 0;
     }
 
@@ -192,7 +203,7 @@ u32 CookCache::invalidate_source(const std::string& source_path) {
 }
 
 u32 CookCache::invalidate_stale_content_for_source(const std::string& source_path, u64 current_content_hash) {
-    if (source_path.empty() || m_entries.empty()) {
+    if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
         return 0;
     }
 
@@ -215,7 +226,7 @@ u32 CookCache::invalidate_stale_content_for_source(const std::string& source_pat
 }
 
 u32 CookCache::invalidate_output(const std::string& output_path) {
-    if (output_path.empty() || m_entries.empty()) {
+    if (!is_valid_cook_cache_path(output_path) || m_entries.empty()) {
         return 0;
     }
 
@@ -259,6 +270,31 @@ u32 CookCache::prune_stale_entries() {
         }
     }
     return removed;
+}
+
+u32 CookCache::prune_invalid_entries() {
+    if (m_entries.empty()) {
+        return 0;
+    }
+
+    u32 removed = 0;
+    for (auto it = m_entries.begin(); it != m_entries.end();) {
+        if (!is_valid_cook_cache_entry(*it)) {
+            it = m_entries.erase(it);
+            ++removed;
+            ++m_stats.invalidations;
+        } else {
+            ++it;
+        }
+    }
+    return removed;
+}
+
+bool CookCache::contains(u64 content_hash) const {
+    if (!is_valid_cook_cache_key(content_hash)) {
+        return false;
+    }
+    return find_entry_(content_hash) != nullptr;
 }
 
 void CookCache::clear() {
@@ -411,7 +447,7 @@ bool CookCache::load(const std::string& path) {
             entry.kind = CookAssetKind::Shader;
         }
 
-        if (entry.content_hash != 0 && !entry.output_path.empty()) {
+        if (is_valid_cook_cache_entry(entry)) {
             m_entries.push_back(std::move(entry));
         }
 

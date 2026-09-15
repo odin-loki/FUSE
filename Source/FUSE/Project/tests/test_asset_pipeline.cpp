@@ -860,6 +860,14 @@ void testCookCacheEmptyKeyPaths() {
     cache.store(empty_paths);
     expectTrue(cache.entry_count() == 0u, "empty source path is not stored");
 
+    empty_paths.source_path = "/tmp/fuse_b79_empty_source.obj";
+    empty_paths.output_path = "";
+    cache.store(empty_paths);
+    expectTrue(cache.entry_count() == 0u, "empty output path is not stored");
+
+    expectTrue(!fuse::project::is_valid_cook_cache_path(""), "empty path fails path validation");
+    expectTrue(fuse::project::is_valid_cook_cache_path("/tmp/fuse_b79_ok.obj"), "non-empty path passes validation");
+
     expectTrue(!cache.invalidate(0), "zero-hash invalidation is a no-op");
     expectTrue(cache.stats().invalidations == 0u, "zero-hash invalidation does not bump stats");
 
@@ -1016,6 +1024,124 @@ void testCookCacheEmptyGuards() {
 
     expectTrue(!cache.save(""), "save rejects empty path");
     expectTrue(!cache.load(""), "load rejects empty path");
+
+    const std::vector<std::pair<std::string, fuse::u64>> empty_upstream;
+    expectTrue(cache.invalidate_stale_upstream_hashes(empty_upstream).empty(),
+               "stale upstream invalidation on empty cache returns empty list");
+    expectTrue(cache.invalidate_stale_upstream_hashes({{"", 1u}}).empty(),
+               "stale upstream invalidation skips empty source paths");
+
+    expectTrue(cache.invalidate_downstream_of("/tmp/fuse_b79_missing.fusemesh", {}, {}) == 0u,
+               "downstream invalidation on empty cache returns zero");
+    expectTrue(cache.invalidate_downstream_of("", {}, {}) == 0u,
+               "downstream invalidation rejects empty output path");
+}
+
+void testCookCacheContainsHelper() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_contains_mesh.obj", "# contains mesh\n");
+
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_contains_mesh.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
+    expectTrue(seeded.ok, "seed cook for contains helper ok");
+    expectTrue(cooker.cache().contains(seeded.content_hash), "contains reports seeded hash");
+    expectTrue(!cooker.cache().contains(0), "contains rejects zero hash");
+    expectTrue(!cooker.cache().contains(seeded.content_hash + 1u), "contains rejects unknown hash");
+
+    const fuse::u64 hits_before = cooker.cache().stats().hits;
+    expectTrue(cooker.cache().contains(seeded.content_hash), "contains does not increment hit stats");
+    expectTrue(cooker.cache().stats().hits == hits_before, "contains leaves hit counter unchanged");
+}
+
+void testCookCachePruneInvalidEntries() {
+    fuse::project::CookCacheEntry valid;
+    valid.content_hash = 42;
+    valid.source_path = "/tmp/fuse_b79_valid_entry.obj";
+    valid.output_path = "/tmp/fuse_b79_valid_entry.fusemesh";
+    expectTrue(fuse::project::is_valid_cook_cache_entry(valid), "valid entry passes validation");
+
+    fuse::project::CookCacheEntry invalid = valid;
+    invalid.content_hash = 0;
+    expectTrue(!fuse::project::is_valid_cook_cache_entry(invalid), "zero hash fails entry validation");
+
+    invalid = valid;
+    invalid.source_path = "";
+    expectTrue(!fuse::project::is_valid_cook_cache_entry(invalid), "empty source fails entry validation");
+
+    invalid = valid;
+    invalid.output_path = "";
+    expectTrue(!fuse::project::is_valid_cook_cache_entry(invalid), "empty output fails entry validation");
+
+    fuse::project::CookCache cache;
+    cache.store(invalid);
+    expectTrue(cache.entry_count() == 0u, "store rejects invalid entry");
+    cache.store(valid);
+    expectTrue(cache.entry_count() == 1u, "store accepts valid entry");
+    expectTrue(cache.prune_invalid_entries() == 0u, "prune_invalid on valid-only cache is a no-op");
+    expectTrue(cache.contains(valid.content_hash), "valid entry remains after invalid prune");
+
+    const std::string cachePath = "/tmp/fuse_b79_invalid_cache.json";
+    {
+        std::ofstream out(cachePath, std::ios::binary);
+        out << R"({
+  "schemaVersion": 1,
+  "entries": [
+    {
+      "contentHash": 101,
+      "upstreamHash": 0,
+      "outputPath": "/tmp/fuse_b79_valid.fusemesh",
+      "sourcePath": "/tmp/fuse_b79_valid.obj",
+      "kind": "mesh"
+    },
+    {
+      "contentHash": 0,
+      "upstreamHash": 0,
+      "outputPath": "/tmp/fuse_b79_zero_hash.fusemesh",
+      "sourcePath": "/tmp/fuse_b79_zero_hash.obj",
+      "kind": "mesh"
+    },
+    {
+      "contentHash": 99,
+      "upstreamHash": 0,
+      "outputPath": "/tmp/fuse_b79_empty_source.fusemesh",
+      "sourcePath": "",
+      "kind": "mesh"
+    }
+  ]
+}
+)";
+    }
+
+    fuse::project::CookCache loaded;
+    expectTrue(loaded.load(cachePath), "mixed cache JSON loads");
+    expectTrue(loaded.entry_count() == 1u, "load keeps first valid entry and rejects invalid trailing records");
+    expectTrue(loaded.contains(101u), "valid loaded entry remains addressable");
+
+    const std::string invalidOnlyPath = "/tmp/fuse_b79_invalid_only_cache.json";
+    {
+        std::ofstream out(invalidOnlyPath, std::ios::binary);
+        out << R"({
+  "schemaVersion": 1,
+  "entries": [
+    {
+      "contentHash": 0,
+      "upstreamHash": 0,
+      "outputPath": "/tmp/fuse_b79_zero_only.fusemesh",
+      "sourcePath": "/tmp/fuse_b79_zero_only.obj",
+      "kind": "mesh"
+    }
+  ]
+}
+)";
+    }
+
+    fuse::project::CookCache invalidOnly;
+    expectTrue(invalidOnly.load(invalidOnlyPath), "invalid-only cache JSON loads");
+    expectTrue(invalidOnly.empty(), "invalid-only cache rejects zero-hash entry on load");
+    expectTrue(invalidOnly.prune_invalid_entries() == 0u, "prune on empty cache after rejected load");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
@@ -1076,6 +1202,8 @@ int main() {
     testCookCacheOutputInvalidation();
     testCookCachePruneStaleEntries();
     testCookCacheEmptyGuards();
+    testCookCacheContainsHelper();
+    testCookCachePruneInvalidEntries();
     testCookManifestCacheHitsOnSecondRun();
     testCookCacheInvalidateChain();
     testCookCacheStaleDependencyHashInvalidation();
