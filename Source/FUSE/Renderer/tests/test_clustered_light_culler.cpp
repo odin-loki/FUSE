@@ -73,6 +73,11 @@ void testClusterIndex() {
     fuse::renderer::ClusterGridLayout::decodeClusterIndex(999u, desc, oversizedTileX, oversizedTileY, oversizedSliceZ);
     expectTrue(oversizedTileX == 3u && oversizedTileY == 1u && oversizedSliceZ == 2u,
                "decode clamps oversized cluster index");
+
+    expectTrue(fuse::renderer::ClusterGridLayout::clusterIndexClamped(99u, 99u, 99u, desc) == 23u,
+               "clamped cluster index maps OOB coords to last cell");
+    expectTrue(fuse::renderer::ClusterGridLayout::clusterIndexClamped(1u, 1u, 2u, desc) == 17u,
+               "clamped cluster index preserves in-bounds coords");
 }
 
 void testClusterGridClampAndScreenMapping() {
@@ -196,6 +201,8 @@ void testClusterUtilAssignmentCounts() {
 
     expectTrue(fuse::renderer::cluster_util::countAssignedLights(grid, clusterCount) == 3u,
                "assigned light count matches flat list");
+    expectTrue(fuse::renderer::cluster_util::countNonEmptyClusters(grid, clusterCount) == 2u,
+               "non-empty cluster count matches grid");
     expectTrue(fuse::renderer::cluster_util::countEmptyClusters(grid, clusterCount) == 1u,
                "empty cluster count matches grid");
 
@@ -225,10 +232,12 @@ void testClusterGridSoAAllocate() {
     expectTrue(grid.grid.size() == desc.clusterCount(), "allocate sizes grid entries");
     expectTrue(grid.lightList.empty(), "allocate clears flat light list");
     expectTrue(!grid.isEmpty(), "allocated grid is non-empty");
+    expectTrue(grid.matchesDesc(desc), "allocate matches desc");
 
     grid.clear();
     expectTrue(grid.isEmpty(), "cleared grid is empty");
     expectTrue(grid.aabbs.empty() && grid.grid.empty() && grid.lightList.empty(), "clear drops all storage");
+    expectTrue(!grid.matchesDesc(desc), "cleared grid no longer matches desc");
 }
 
 void testZeroDimensionClusterGrid() {
@@ -250,6 +259,8 @@ void testZeroDimensionClusterGrid() {
     expectTrue(fuse::renderer::ClusterGridLayout::clampTileX(99u, zeroDesc) == 0u, "clamp tile X on empty grid");
     expectTrue(fuse::renderer::ClusterGridLayout::clampTileY(99u, zeroDesc) == 0u, "clamp tile Y on empty grid");
     expectTrue(fuse::renderer::ClusterGridLayout::clampSliceZ(99u, zeroDesc) == 0u, "clamp slice Z on empty grid");
+    expectTrue(fuse::renderer::ClusterGridLayout::clusterIndexClamped(99u, 99u, 99u, zeroDesc) == 0u,
+               "clamped cluster index on empty grid returns origin");
 
     fuse::renderer::ClusterCameraDesc camera{};
     camera.nearPlane = 1.f;
@@ -262,12 +273,15 @@ void testZeroDimensionClusterGrid() {
     fuse::renderer::ClusterGridSoA grid{};
     grid.allocate(zeroDesc);
     expectTrue(grid.isEmpty(), "allocate on zero-dimension desc stays empty");
+    expectTrue(grid.matchesDesc(zeroDesc), "empty grid matches zero desc");
 
     const fuse::u32 dropped =
         fuse::renderer::ClusterLightGridLayout::rebuildLightGrid(grid, 0u, {}, 4u);
     expectTrue(dropped == 0u, "zero cluster rebuild on empty grid drops nothing");
     expectTrue(fuse::renderer::cluster_util::countAssignedLights(grid, 0u) == 0u,
                "assignment count zero for empty grid");
+    expectTrue(fuse::renderer::cluster_util::countNonEmptyClusters(grid, 0u) == 0u,
+               "non-empty cluster count zero when cluster count is zero");
     expectTrue(fuse::renderer::cluster_util::countEmptyClusters(grid, 0u) == 0u,
                "empty cluster count zero when cluster count is zero");
 }
@@ -432,9 +446,12 @@ void testEmptySceneCull() {
     expectTrue(emptyClusters == desc.clusterCount(), "all clusters empty with no lights");
     expectTrue(fuse::renderer::cluster_util::countAssignedLights(culler.gridSoA(), desc.clusterCount()) == 0u,
                "assignment count zero for empty scene");
+    expectTrue(fuse::renderer::cluster_util::countNonEmptyClusters(culler.gridSoA(), desc.clusterCount()) == 0u,
+               "non-empty cluster count zero for empty scene");
     expectTrue(fuse::renderer::cluster_util::countEmptyClusters(culler.gridSoA(), desc.clusterCount()) ==
                    desc.clusterCount(),
                "empty cluster count matches grid size");
+    expectTrue(culler.gridSoA().matchesDesc(desc), "empty scene grid matches desc");
 
     culler.destroy();
     resources.destroy();

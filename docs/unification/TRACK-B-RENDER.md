@@ -55,13 +55,13 @@ ctest --test-dir build --output-on-failure -R fuse_shadow_system
 | Component | Notes |
 |-----------|-------|
 | `ClusterDesc::clampCounts` / `isEmpty` | Tile/slice/light caps clamped to CPU stub maxima; zero dimensions remain empty |
-| `ClusterGridSoA::allocate` / `clear` | Resize AABB/grid storage for a clamped desc; clear flat light list |
-| `ClusterGridLayout` | Tile/cluster index encode/decode (oversized decode clamp), bounds clamp, screen-depth → cluster index |
+| `ClusterGridSoA::allocate` / `clear` / `matchesDesc` | Resize AABB/grid storage for a clamped desc; clear flat light list; storage matches clamped cluster count |
+| `ClusterGridLayout` | Tile/cluster index encode/decode, `clusterIndexClamped`, bounds clamp, screen-depth → cluster index |
 | `ClusterSliceLayout` | Exponential slice near/far + `computeSliceZFromDepth` (mirrors froxel layout) |
 | `ClusterLightGridLayout` | Flat light-list packing with per-cluster capacity clamp; zero-cluster rebuild clears SoA |
-| `cluster_util` | `tryAssignLight`, `assignLights`, `lookupClusterLights`, `countAssignedLights`, `countEmptyClusters` |
+| `cluster_util` | `tryAssignLight`, `assignLights`, `lookupClusterLights`, `countAssignedLights`, `countNonEmptyClusters`, `countEmptyClusters` |
 | `ClusteredLightCullerStats` | `clustersAtCapacity` / `lightsDroppedOverflow` overflow reporting |
-| `fuse_clustered_light_culler` | Desc clamp, index round-trip + oversized decode, zero-dim grid, screen/depth clamp paths, allocate/clear, assignment lookup/counts, overflow |
+| `fuse_clustered_light_culler` | Desc clamp, index round-trip + OOB clamp, zero-dim grid, screen/depth clamp paths, allocate/clear/matchesDesc, assignment lookup/counts, overflow |
 
 ```bash
 ctest --test-dir build --output-on-failure -R fuse_clustered_light_culler

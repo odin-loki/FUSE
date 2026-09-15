@@ -51,6 +51,8 @@ struct ClusterGridSoA {
     /// Drop all cluster entries and the flat light list.
     void clear();
     bool isEmpty() const { return grid.empty(); }
+    /// True when AABB/grid storage matches the clamped cluster count for `desc`.
+    bool matchesDesc(const ClusterDesc& desc) const;
 };
 
 /// GPU buffer handles for cluster build + light cull kernels (CUDA deferred).
@@ -81,6 +83,8 @@ struct ClusterSliceLayout {
 /// Tile/cluster indexing helpers — mirrors froxel layout (B5.4 CPU path).
 struct ClusterGridLayout {
     static u32 clusterIndex(u32 tileX, u32 tileY, u32 sliceZ, const ClusterDesc& desc);
+    /// Tile/slice coords clamped to grid bounds before linear index encode.
+    static u32 clusterIndexClamped(u32 tileX, u32 tileY, u32 sliceZ, const ClusterDesc& desc);
     static void decodeClusterIndex(u32 index, const ClusterDesc& desc, u32& tileX, u32& tileY, u32& sliceZ);
     static u32 clampClusterIndex(u32 index, const ClusterDesc& desc);
     static u32 clampTileX(u32 tileX, const ClusterDesc& desc);
@@ -113,6 +117,8 @@ u32 assignLights(std::vector<u32>& clusterLights,
 /// Copy light indices assigned to one cluster from the rebuilt flat grid.
 u32 lookupClusterLights(const ClusterGridSoA& grid, u32 clusterIdx, std::vector<u32>& outLights);
 u32 countAssignedLights(const ClusterGridSoA& grid, u32 clusterCount);
+/// Count clusters with at least one assigned light; returns 0 when `clusterCount` is zero.
+u32 countNonEmptyClusters(const ClusterGridSoA& grid, u32 clusterCount);
 u32 countEmptyClusters(const ClusterGridSoA& grid, u32 clusterCount);
 } // namespace cluster_util
 
