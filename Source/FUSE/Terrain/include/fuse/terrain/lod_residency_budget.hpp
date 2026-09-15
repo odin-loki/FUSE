@@ -3,6 +3,7 @@
 #include <fuse/types.hpp>
 
 #include <algorithm>
+#include <limits>
 
 namespace fuse::terrain {
 
@@ -11,6 +12,12 @@ struct LodResidencyBudget {
     u32 max_resident_chunks = 0; ///< 0 = unlimited resident chunks
     u32 max_async_in_flight = 4;
     u32 max_loads_per_tick = 1;
+};
+
+/// Eviction ordering when resident caps are exceeded (B7.5 deepen — mirrors B7.6).
+enum class LodEvictionPolicy : u8 {
+    DistanceFromFocus, ///< Farther chunks beyond load radius evict first
+    Lru,               ///< Least-recently touched resident chunks evict first
 };
 
 /// Budget pressure counters tracked by `ChunkGrid` (mirrors B7.6 `StreamingBudgetCounters`).
@@ -49,11 +56,28 @@ struct LodResidencyBudgetCounters {
     return is_at_resident_cap(max_resident_chunks, resident_count);
 }
 
+[[nodiscard]] inline bool would_exceed_resident_cap(u32 max_resident_chunks, u32 resident_count,
+                                                    u32 incoming_count = 1u) {
+    if (resident_cap_unlimited(max_resident_chunks) || incoming_count == 0u) {
+        return false;
+    }
+    return resident_count + incoming_count > max_resident_chunks;
+}
+
+[[nodiscard]] inline bool needs_budget_eviction_for_incoming(u32 max_resident_chunks, u32 resident_count,
+                                                             u32 incoming_count = 1u) {
+    return would_exceed_resident_cap(max_resident_chunks, resident_count, incoming_count);
+}
+
 [[nodiscard]] inline u32 effective_tick_budget(u32 queued, u32 per_tick_cap) {
     if (per_tick_cap == 0u) {
         return queued;
     }
     return queued < per_tick_cap ? queued : per_tick_cap;
+}
+
+[[nodiscard]] inline u32 clamp_loads_per_tick(u32 queued, const LodResidencyBudget& budget) {
+    return effective_tick_budget(queued, budget.max_loads_per_tick);
 }
 
 [[nodiscard]] inline u32 clamp_pending_submits(u32 pending, u32 max_pending) {
@@ -63,13 +87,68 @@ struct LodResidencyBudgetCounters {
     return pending < max_pending ? pending : max_pending;
 }
 
+[[nodiscard]] inline u32 clamp_eviction_batch(u32 requested, u32 headroom) {
+    return requested < headroom ? requested : headroom;
+}
+
+/// Higher score evicts sooner. Distance policy uses focus distance; LRU uses age.
+[[nodiscard]] inline f32 eviction_score_for(f32 focus_distance, u32 last_touch_tick, u32 current_tick,
+                                            LodEvictionPolicy policy) {
+    switch (policy) {
+    case LodEvictionPolicy::DistanceFromFocus:
+        return focus_distance;
+    case LodEvictionPolicy::Lru:
+        return static_cast<f32>(current_tick - last_touch_tick);
+    }
+    return focus_distance;
+}
+
+/// Budget-pressure eviction score — prefers residency focus distance over unload priority.
+[[nodiscard]] inline f32 budget_eviction_score(f32 focus_distance, f32 unload_priority, u32 last_touch_tick,
+                                               u32 current_tick, LodEvictionPolicy policy) {
+    switch (policy) {
+    case LodEvictionPolicy::DistanceFromFocus:
+        if (focus_distance >= 0.f && focus_distance > unload_priority) {
+            return focus_distance;
+        }
+        return unload_priority;
+    case LodEvictionPolicy::Lru:
+        return static_cast<f32>(current_tick - last_touch_tick);
+    }
+    return unload_priority;
+}
+
 /// True when an incoming load (higher `priority` = closer) should evict a resident at `resident_focus_distance`.
-[[nodiscard]] inline bool incoming_outranks_resident(f32 incoming_priority, f32 load_radius, f32 resident_focus_distance) {
+[[nodiscard]] inline bool incoming_outranks_resident(f32 incoming_priority, f32 load_radius,
+                                                     f32 resident_focus_distance) {
     if (incoming_priority <= 0.f || load_radius <= 0.f) {
         return false;
     }
     const f32 incoming_distance = load_radius - incoming_priority;
     return incoming_distance < resident_focus_distance;
+}
+
+/// True when an incoming load outranks a resident eviction score (closer / higher priority wins).
+[[nodiscard]] inline bool incoming_outranks_eviction(f32 incoming_priority, f32 eviction_score) {
+    if (incoming_priority <= 0.f) {
+        return false;
+    }
+    if (incoming_priority >= std::numeric_limits<f32>::max()) {
+        return true;
+    }
+    return incoming_priority >= eviction_score;
+}
+
+/// True when a budget eviction candidate is eligible under distance policy pressure checks.
+[[nodiscard]] inline bool can_evict_for_incoming(f32 incoming_priority, f32 resident_focus_distance,
+                                                   f32 load_radius, LodEvictionPolicy policy) {
+    if (resident_focus_distance <= 0.f) {
+        return false;
+    }
+    if (policy != LodEvictionPolicy::DistanceFromFocus) {
+        return true;
+    }
+    return incoming_outranks_resident(incoming_priority, load_radius, resident_focus_distance);
 }
 
 } // namespace fuse::terrain

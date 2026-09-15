@@ -18,8 +18,8 @@
 | `compute_lod_mesh_vertex_counts` | `Source/FUSE/Terrain/src/lod.cpp` | CPU stub — grid + skirt + seam vertex budgets per LOD |
 | `LodSkirtParams` / `clamp_skirt_params` | `Source/FUSE/Terrain/src/lod.cpp` | Skirt depth/segment clamp + strip vertex count stub |
 | `morph_vertex_position` | `Source/FUSE/Terrain/src/lod.cpp` | CPU stub — snap XZ toward coarser grid |
-| `LodResidencySet` | `lod_residency_set.hpp` | Focus-distance resident chunk set with eviction ordering; `has_eviction_candidate`, chunk-index tie-break, `try_add_resident` / `try_remove_resident` / `apply_residency_on_*_complete` stubs |
-| `LodResidencyBudget` / clamp helpers | `lod_residency_budget.hpp` | `clamp_lod_level`, resident headroom, `needs_budget_eviction`, tick/pending budget clamps, `incoming_outranks_resident` |
+| `LodResidencySet` | `lod_residency_set.hpp` | Focus-distance resident chunk set with eviction ordering; `has_eviction_candidate`, chunk-index tie-break, `pick_eviction_candidate_guarded`, `pick_budget_eviction_candidate`, `try_add_resident` / `try_remove_resident` / `apply_residency_on_*_complete` stubs |
+| `LodResidencyBudget` / clamp helpers | `lod_residency_budget.hpp` | `LodEvictionPolicy`, `clamp_lod_level`, resident headroom, `would_exceed_resident_cap`, `needs_budget_eviction`, `clamp_loads_per_tick`, tick/pending budget clamps, `incoming_outranks_resident` / `incoming_outranks_eviction`, `can_evict_for_incoming`, `budget_eviction_score` |
 | `LodResidencyBudgetCounters` | `lod_residency_budget.hpp` | `rejected_loads` / `budget_evictions` / `eviction_skipped` tracked by `ChunkGrid` |
 | `LodResidencyQueue` | `lod_residency_queue.hpp/.cpp` | Mutex-backed completion buffer; enqueue promote/demote, budget clamp, priority drain |
 | `promote_residency_priority` / `demote_residency_priority` | `lod_residency_queue.cpp` | Pending load priority raise/lower stubs |
@@ -182,6 +182,11 @@ ctest --test-dir build --output-on-failure -R fuse_terrain
 | `testEvictionCandidateTieBreak` | Equal focus distance tie-break by chunk index |
 | `testResidencyHelperStubs` | `try_add_resident` / `try_remove_resident` / `apply_residency_on_*_complete` |
 | `testIncomingOutranksResident` | Incoming-vs-resident priority helper |
+| `testIncomingOutranksEviction` | `incoming_outranks_eviction` + `can_evict_for_incoming` under distance/LRU policy |
+| `testPickBudgetEvictionCandidate` | `pick_budget_eviction_candidate` skips ineligible farthest-first |
+| `testPickEvictionCandidateGuarded` | Empty-set guard on `pick_eviction_candidate_guarded` |
+| `testBudgetEvictionScore` | `budget_eviction_score` / `eviction_score_for` stubs |
+| `testResidentCapIncomingGuards` | `would_exceed_resident_cap`, `clamp_loads_per_tick`, `clamp_eviction_batch` |
 | `testChunkGridResidentCapEviction` | Cap pressure evicts farthest resident |
 | `testChunkGridEvictionSkippedWhenIncomingDoesNotOutrank` | `eviction_skipped` + `rejected_loads` when incoming cannot outrank |
 | `testLodClampHelpers` | `clamp_lod_level` + resident/tick budget clamps |
@@ -223,6 +228,9 @@ ctest --test-dir build --output-on-failure -R fuse_terrain
 - [x] `LodResidencyBudgetCounters` + `ChunkGrid` cap-pressure eviction via `evict_for_resident_cap_`
 - [x] `eviction_skipped` counter when cap pressure cannot evict
 - [x] `needs_budget_eviction` + `has_eviction_candidate` budget/residency helpers
+- [x] `LodEvictionPolicy` + `pick_budget_eviction_candidate` + `pick_eviction_candidate_guarded`
+- [x] `would_exceed_resident_cap` + `clamp_loads_per_tick` / `clamp_eviction_batch` incoming guards
+- [x] `incoming_outranks_eviction` + `can_evict_for_incoming` + `budget_eviction_score`
 - [x] `apply_residency_on_load_complete` / `apply_residency_on_unload_complete` stubs
 - [x] Eviction candidate tie-break by chunk index at equal focus distance
 - [x] `try_add_resident` / `try_remove_resident` residency stubs
