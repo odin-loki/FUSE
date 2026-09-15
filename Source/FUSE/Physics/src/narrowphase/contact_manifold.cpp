@@ -5,6 +5,10 @@
 
 namespace fuse::physics::narrowphase {
 
+TangentBasis ContactPoint::tangent_basis(vec3 contactNormal) const {
+    return buildTangentBasis(contactNormal);
+}
+
 void ContactManifold::reset() {
     contactNormal = {};
     minSeparation = 0.f;
@@ -22,6 +26,10 @@ void ContactManifold::reset() {
     }
 }
 
+void ContactManifold::clear() {
+    reset();
+}
+
 void ContactManifold::buildFrictionBasis() {
     if (contactNormal.length() < 1e-8f) {
         frictionBasis = {};
@@ -34,8 +42,8 @@ bool ContactManifold::hasFrictionBasis() const {
     return isOrthonormalTangentBasis(contactNormal, frictionBasis);
 }
 
-const ContactPointSlot& ContactManifold::pointAt(u32 index) const {
-    static const ContactPointSlot empty{};
+const ContactPoint& ContactManifold::pointAt(u32 index) const {
+    static const ContactPoint empty{};
     if (index >= pointCount) {
         return empty;
     }

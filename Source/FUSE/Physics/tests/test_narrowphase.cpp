@@ -1,5 +1,6 @@
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
 #include <fuse/physics/narrowphase/contact_buffer.hpp>
+#include <fuse/physics/narrowphase/contact_pair.hpp>
 #include <fuse/physics/narrowphase/friction.hpp>
 #include <fuse/physics/narrowphase/gjk.hpp>
 #include <fuse/physics/physics_data.hpp>
@@ -346,6 +347,104 @@ void testRunNarrowphaseIntoBufferJobSafe() {
     expectTrue(second.bodyA == boxBodyB && second.bodyB == boxBodyA, "slot one preserves swapped pair order");
 }
 
+void testDetectContactsPairEmptyGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 bodyA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 bodyB = bodies.addBody({1.5f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodyA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodyB, {1.f, 0.f, 0.f});
+
+    const auto selfPair = fuse::physics::narrowphase::detect_contacts_pair({bodyA, bodyA}, bodies, shapes);
+    expectTrue(!selfPair.valid, "self pair returns invalid manifold");
+    expectTrue(selfPair.empty(), "self pair has no contact points");
+
+    const auto missingPair = fuse::physics::narrowphase::detect_contacts_pair({bodyA, 99u}, bodies, shapes);
+    expectTrue(!missingPair.valid, "out-of-range pair returns invalid manifold");
+
+    const auto overlap = fuse::physics::narrowphase::detect_contacts_pair({bodyA, bodyB}, bodies, shapes);
+    expectTrue(overlap.valid, "valid pair detects contact");
+    expectTrue(overlap.pointCount > 0u, "valid pair populates contact points");
+}
+
+void testGenerateContactManifoldAndFrictionTangents() {
+    fuse::physics::narrowphase::ContactManifold empty{};
+    empty.valid = true;
+    expectTrue(!fuse::physics::narrowphase::generate_contact_manifold(empty), "empty manifold generation fails");
+    expectTrue(!empty.valid, "failed generation clears validity");
+    expectTrue(empty.empty(), "failed generation clears points");
+
+    fuse::physics::narrowphase::ContactManifold manifold =
+        fuse::physics::narrowphase::collideSphereSphere({0.f, 0.f, 0.f}, 1.f, {1.5f, 0.f, 0.f}, 1.f, 0u, 1u);
+    expectTrue(manifold.valid, "detected sphere pair is valid before finalize");
+    expectTrue(!manifold.hasFrictionBasis(), "raw detection omits friction basis");
+
+    expectTrue(fuse::physics::narrowphase::generate_contact_manifold(manifold), "generate finalizes manifold");
+    expectTrue(manifold.hasFrictionBasis(), "generate builds friction basis");
+    fuse::physics::narrowphase::compute_friction_tangents(manifold);
+    expectTrue(
+        fuse::physics::narrowphase::isOrthonormalTangentBasis(
+            manifold.contactNormal, manifold.frictionBasis),
+        "compute_friction_tangents stores orthonormal basis");
+}
+
+void testContactPointTangentBasisAndManifoldClear() {
+    fuse::physics::narrowphase::ContactPoint point{};
+    point.point = {1.f, 0.f, 0.f};
+    point.penetration = 0.25f;
+
+    const fuse::physics::vec3 normal{0.f, 1.f, 0.f};
+    const auto basis = point.tangent_basis(normal);
+    expectTrue(
+        fuse::physics::narrowphase::isOrthonormalTangentBasis(normal, basis),
+        "ContactPoint tangent_basis is orthonormal");
+
+    fuse::physics::narrowphase::ContactManifold manifold{};
+    manifold.valid = true;
+    manifold.contactNormal = normal;
+    manifold.addPoint(point.point, point.penetration);
+    manifold.clear();
+    expectTrue(!manifold.valid, "clear resets validity");
+    expectTrue(manifold.empty(), "clear removes contact points");
+}
+
+void testContactBufferCapacityClamp() {
+    fuse::physics::narrowphase::ContactBufferSoA buffer;
+    buffer.setMaxCapacity(2u);
+    buffer.preparePairSlots(4u);
+
+    fuse::physics::narrowphase::ContactManifold shallow{};
+    shallow.valid = true;
+    shallow.bodyA = 0u;
+    shallow.bodyB = 1u;
+    shallow.contactNormal = {0.f, 1.f, 0.f};
+    shallow.penetrationDepth = 0.1f;
+    shallow.addPoint({0.f, 0.f, 0.f}, 0.1f);
+
+    fuse::physics::narrowphase::ContactManifold deep = shallow;
+    deep.bodyB = 2u;
+    deep.penetrationDepth = 0.9f;
+    deep.points[0].penetration = 0.9f;
+
+    fuse::physics::narrowphase::ContactManifold medium = shallow;
+    medium.bodyB = 3u;
+    medium.penetrationDepth = 0.5f;
+    medium.points[0].penetration = 0.5f;
+
+    fuse::physics::narrowphase::ContactManifold selfPair = shallow;
+    selfPair.bodyB = selfPair.bodyA;
+
+    buffer.writeSlot(0u, shallow);
+    buffer.writeSlot(1u, deep);
+    buffer.writeSlot(2u, medium);
+    buffer.writeSlot(3u, selfPair);
+
+    expectTrue(buffer.compactAndClamp() == 2u, "compactAndClamp ignores self pair and truncates to max capacity");
+    expectTrue(buffer.droppedCount == 1u, "dropped count tracks truncated contacts");
+    expectNear(buffer.manifoldAt(0u).penetrationDepth, 0.9f, 1e-4f, "clamp keeps deepest penetration");
+    expectNear(buffer.manifoldAt(1u).penetrationDepth, 0.5f, 1e-4f, "clamp keeps next deepest penetration");
+}
+
 void testGjkSupportAndEpaStub() {
     const fuse::physics::vec3 hull[] = {
         {-1.f, 0.f, 0.f},
@@ -377,6 +476,10 @@ int main() {
     testContactBufferFrictionTangentSoA();
     testContactBufferWarmStartAndPointSlots();
     testRunNarrowphaseIntoBufferJobSafe();
+    testDetectContactsPairEmptyGuards();
+    testGenerateContactManifoldAndFrictionTangents();
+    testContactPointTangentBasisAndManifoldClear();
+    testContactBufferCapacityClamp();
     testGjkSupportAndEpaStub();
 
     if (g_failures == 0) {

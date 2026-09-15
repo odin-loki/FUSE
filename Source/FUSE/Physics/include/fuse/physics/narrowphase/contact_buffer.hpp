@@ -28,16 +28,21 @@ struct ContactBufferSoA {
 
     u32 activeCount = 0;
     u32 pairSlotCount = 0;
+    u32 maxCapacity = 0;
+    u32 droppedCount = 0;
 
     bool isEmpty() const { return activeCount == 0u; }
 
     void reserve(u32 capacity);
+    void setMaxCapacity(u32 capacity);
     void clear();
     void preparePairSlots(u32 pairCount);
     void writeSlot(u32 slot, const ContactManifold& manifold);
     void applyWarmStartStub(u32 slot, ContactManifold& manifold) const;
     void buildFrictionTangentBases();
     u32 compact();
+    u32 applyMaxCapacityClamp();
+    u32 compactAndClamp();
     TangentBasis tangentBasisAt(u32 index) const;
     ContactManifold manifoldAt(u32 index) const;
     std::vector<ContactManifold> toVector() const;

@@ -4,6 +4,10 @@
 
 namespace fuse::physics::narrowphase {
 
+void ContactBufferSoA::setMaxCapacity(u32 capacity) {
+    maxCapacity = capacity;
+}
+
 void ContactBufferSoA::reserve(u32 capacity) {
     contactPoints.reserve(capacity);
     contactNormals.reserve(capacity);
@@ -24,11 +28,13 @@ void ContactBufferSoA::reserve(u32 capacity) {
 void ContactBufferSoA::clear() {
     activeCount = 0;
     pairSlotCount = 0;
+    droppedCount = 0;
 }
 
 void ContactBufferSoA::preparePairSlots(u32 pairCount) {
     pairSlotCount = pairCount;
     activeCount = 0;
+    droppedCount = 0;
     contactPoints.assign(pairCount, {});
     contactNormals.assign(pairCount, {});
     penetrationDepths.assign(pairCount, 0.f);
@@ -46,7 +52,7 @@ void ContactBufferSoA::preparePairSlots(u32 pairCount) {
 }
 
 void ContactBufferSoA::writeSlot(u32 slot, const ContactManifold& manifold) {
-    if (slot >= pairSlotCount || !manifold.valid) {
+    if (slot >= pairSlotCount || !manifold.valid || manifold.bodyA == manifold.bodyB) {
         return;
     }
 
@@ -142,6 +148,92 @@ u32 ContactBufferSoA::compact() {
         pointCounts[i] = 0u;
     }
     return activeCount;
+}
+
+u32 ContactBufferSoA::applyMaxCapacityClamp() {
+    if (maxCapacity == 0u || activeCount <= maxCapacity) {
+        return activeCount;
+    }
+
+    if (activeCount > 1u) {
+        std::vector<u32> order(activeCount);
+        for (u32 i = 0u; i < activeCount; ++i) {
+            order[i] = i;
+        }
+
+        std::sort(order.begin(), order.end(), [&](u32 lhs, u32 rhs) {
+            return penetrationDepths[lhs] > penetrationDepths[rhs];
+        });
+
+        std::vector<vec3> sortedContactPoints(activeCount);
+        std::vector<vec3> sortedContactNormals(activeCount);
+        std::vector<f32> sortedPenetrationDepths(activeCount);
+        std::vector<f32> sortedMinSeparations(activeCount);
+        std::vector<u32> sortedBodyA(activeCount);
+        std::vector<u32> sortedBodyB(activeCount);
+        std::vector<u8> sortedValidFlags(activeCount);
+        std::vector<u8> sortedPointCounts(activeCount);
+        std::vector<f32> sortedWarmNormalImpulses(activeCount);
+        std::vector<vec2> sortedWarmTangentImpulses(activeCount);
+        std::vector<vec3> sortedTangent1(activeCount);
+        std::vector<vec3> sortedTangent2(activeCount);
+        std::vector<vec3> sortedPointSlots(activeCount * kMaxContactPointsPerManifold);
+        std::vector<f32> sortedPointPenetrations(activeCount * kMaxContactPointsPerManifold);
+
+        for (u32 i = 0u; i < activeCount; ++i) {
+            const u32 src = order[i];
+            sortedContactPoints[i] = contactPoints[src];
+            sortedContactNormals[i] = contactNormals[src];
+            sortedPenetrationDepths[i] = penetrationDepths[src];
+            sortedMinSeparations[i] = minSeparations[src];
+            sortedBodyA[i] = bodyA[src];
+            sortedBodyB[i] = bodyB[src];
+            sortedValidFlags[i] = validFlags[src];
+            sortedPointCounts[i] = pointCounts[src];
+            sortedWarmNormalImpulses[i] = warmNormalImpulses[src];
+            sortedWarmTangentImpulses[i] = warmTangentImpulses[src];
+            sortedTangent1[i] = tangent1[src];
+            sortedTangent2[i] = tangent2[src];
+
+            const u32 readBase = pointSlotBase(src);
+            const u32 writeBase = i * kMaxContactPointsPerManifold;
+            for (u32 pointIndex = 0u; pointIndex < kMaxContactPointsPerManifold; ++pointIndex) {
+                sortedPointSlots[writeBase + pointIndex] = pointSlots[readBase + pointIndex];
+                sortedPointPenetrations[writeBase + pointIndex] = pointPenetrations[readBase + pointIndex];
+            }
+        }
+
+        contactPoints.swap(sortedContactPoints);
+        contactNormals.swap(sortedContactNormals);
+        penetrationDepths.swap(sortedPenetrationDepths);
+        minSeparations.swap(sortedMinSeparations);
+        bodyA.swap(sortedBodyA);
+        bodyB.swap(sortedBodyB);
+        validFlags.swap(sortedValidFlags);
+        pointCounts.swap(sortedPointCounts);
+        warmNormalImpulses.swap(sortedWarmNormalImpulses);
+        warmTangentImpulses.swap(sortedWarmTangentImpulses);
+        tangent1.swap(sortedTangent1);
+        tangent2.swap(sortedTangent2);
+        pointSlots.swap(sortedPointSlots);
+        pointPenetrations.swap(sortedPointPenetrations);
+    }
+
+    const u32 excess = activeCount - maxCapacity;
+    droppedCount += excess;
+    activeCount = maxCapacity;
+
+    for (u32 i = activeCount; i < pairSlotCount; ++i) {
+        validFlags[i] = 0u;
+        pointCounts[i] = 0u;
+    }
+
+    return activeCount;
+}
+
+u32 ContactBufferSoA::compactAndClamp() {
+    compact();
+    return applyMaxCapacityClamp();
 }
 
 ContactManifold ContactBufferSoA::manifoldAt(u32 index) const {
