@@ -38,6 +38,7 @@ struct PresentPathStatus {
     u32 pendingResizeHeight = 0;
     bool resizePending = false;
     u64 presentedFrames = 0;
+    u32 fenceWaitCount = 0;
     u32 swapchainRecreateCount = 0;
     std::string message;
 };
@@ -71,6 +72,8 @@ public:
 
     void requestResize(u32 width, u32 height);
     bool hasPendingResize() const { return m_status.resizePending; }
+
+    /// Apply a queued resize immediately (fence-waits first). No-op when nothing is pending.
     bool recreateSwapchain();
 
 private:

@@ -42,7 +42,7 @@ bool PresentPath::processPendingResize() {
                 m_status.message = "In-flight fence wait failed before swapchain recreate";
                 return false;
             }
-        } else if (!waitInFlightFenceForSlot(*frameManager, frameManager->currentIndex())) {
+        } else if (!waitCurrentInFlightFence(*frameManager)) {
             m_status.message = "In-flight fence wait failed before swapchain recreate";
             return false;
         }
@@ -88,12 +88,13 @@ bool PresentPath::waitInFlightFence() {
 
     FrameManager* frameManager = m_bootstrap.frameManager();
     if (frameManager != nullptr && frameManager->isReady()) {
-        if (!waitInFlightFenceForSlot(*frameManager, frameManager->currentIndex())) {
+        if (!waitCurrentInFlightFence(*frameManager)) {
             m_status.message = "In-flight fence wait failed";
             return false;
         }
     }
 
+    ++m_status.fenceWaitCount;
     m_status.fenceWaited = true;
     m_status.state = PresentPathState::FenceWaited;
     m_status.message = m_status.headless ? "Headless fence wait stub (slot bookkeeping)"
@@ -226,11 +227,17 @@ void PresentPath::requestResize(u32 width, u32 height) {
     m_status.pendingResizeWidth = width;
     m_status.pendingResizeHeight = height;
     m_status.resizePending = true;
-    m_status.state = PresentPathState::ResizePending;
-    m_status.message = "Resize queued — recreate on next fence wait";
+    if (m_status.state != PresentPathState::ResizePending) {
+        m_status.state = PresentPathState::ResizePending;
+    }
+    m_status.message = "Resize queued — recreate on next fence wait or recreateSwapchain()";
 }
 
 bool PresentPath::recreateSwapchain() {
+    if (!m_status.resizePending) {
+        m_status.message = "recreateSwapchain: no pending resize";
+        return true;
+    }
     return processPendingResize();
 }
 
