@@ -21,20 +21,22 @@ CPU-first Dynamic Diffuse Global Illumination scaffolding (P5 §5.6). Probe grid
 
 CPU-first post-processing scaffolding (P5 §5.10). Implements the pipeline as host stubs:
 
-`bloom → tonemap → color_grade`
+`bloom → tonemap_curve → tonemap → color_grade`
 
-CUDA compute passes and dual-kawase bloom pyramids are deferred; the public API mirrors the P5 source narrative.
+CUDA compute passes, dual-kawase bloom pyramids, and histogram auto-exposure are deferred; the public API mirrors the P5 source narrative.
 
 | Header | Role |
 |--------|------|
 | `postprocess/bloom.hpp` | `BloomParams`, CPU threshold/extract stub |
+| `postprocess/tonemap_curve.hpp` | `TonemapCurveParams`, filmic S-curve pre-tonemap stub |
 | `postprocess/tonemap.hpp` | `ToneMapper`, `aces_tonemap()`, host tone-map pass |
+| `postprocess/auto_exposure.hpp` | `AutoExposureParams`, `ExposureMeter`, temporal EV adaptation stub |
 | `postprocess/color_grade.hpp` | `ColorGradeParams`, exposure/saturation/CDL stub |
-| `postprocess/post_stack.hpp` | `PostStack` facade chaining the three stages |
+| `postprocess/post_stack.hpp` | `PostStack` facade chaining the stages |
 
 ## Tests (`ctest`)
 
 | Test | Coverage |
 |------|----------|
 | `fuse_ddgi` | Grid math, hysteresis blend, probe scheduling, init/update/sample, pipeline slot |
-| `fuse_post_process_b510` | Black-frame bloom thresholding, ACES clamping, neutral 0.18 grey calibration, stage ordering, `PostStack` facade |
+| `fuse_post_process_b510` | Bloom thresholding, ACES clamping, neutral 0.18 grey calibration, tonemap curve rolloff, auto-exposure EV metering/adaptation, stage ordering, `PostStack` facade |
