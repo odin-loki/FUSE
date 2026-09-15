@@ -34,6 +34,14 @@ void FroxelDensityGrid::allocate(const FroxelGridDesc& desc) {
     density.assign(clampedDesc.froxelCount(), 0.f);
 }
 
+void FroxelDensityGrid::clear() {
+    density.clear();
+}
+
+bool FroxelDensityGrid::matchesDesc(const FroxelGridDesc& desc) const {
+    return density.size() == FroxelGridDesc::clampCounts(desc).froxelCount();
+}
+
 FroxelGridDesc FroxelGridDesc::clampCounts(const FroxelGridDesc& raw) {
     FroxelGridDesc out = raw;
     if (out.tilesX > kMaxTilesX) {
@@ -84,6 +92,10 @@ u32 FroxelSliceLayout::computeSliceZFromDepth(f32 viewDepth,
 
 u32 FroxelGridLayout::froxelIndex(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc) {
     return (tileY * desc.tilesX + tileX) * desc.slicesZ + sliceZ;
+}
+
+u32 FroxelGridLayout::froxelIndexClamped(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc) {
+    return froxelIndex(clampTileX(tileX, desc), clampTileY(tileY, desc), clampSliceZ(sliceZ, desc), desc);
 }
 
 void FroxelGridLayout::decodeFroxelIndex(u32 index, const FroxelGridDesc& desc, u32& tileX, u32& tileY, u32& sliceZ) {
@@ -181,6 +193,26 @@ namespace froxel_util {
 
 f32 lerpDensity(f32 a, f32 b, f32 t) {
     return a + (b - a) * clamp01(t);
+}
+
+u32 countNonZeroFroxels(const FroxelDensityGrid& grid, f32 epsilon) {
+    u32 count = 0u;
+    for (f32 value : grid.density) {
+        if (value > epsilon) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 countEmptyFroxels(const FroxelDensityGrid& grid, f32 epsilon) {
+    u32 count = 0u;
+    for (f32 value : grid.density) {
+        if (value <= epsilon) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 f32 sampleDensityBilinear(const FroxelDensityGrid& grid,

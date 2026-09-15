@@ -77,6 +77,11 @@ void testFroxelGridIndexing() {
     fuse::renderer::FroxelGridLayout::decodeFroxelIndex(999u, desc, oversizedTileX, oversizedTileY, oversizedSliceZ);
     expectTrue(oversizedTileX == 3u && oversizedTileY == 1u && oversizedSliceZ == 2u,
                "decode clamps oversized froxel index");
+
+    expectTrue(fuse::renderer::FroxelGridLayout::froxelIndexClamped(99u, 99u, 99u, desc) == 23u,
+               "clamped froxel index maps OOB coords to last cell");
+    expectTrue(fuse::renderer::FroxelGridLayout::froxelIndexClamped(1u, 1u, 2u, desc) == index,
+               "clamped froxel index preserves in-bounds coords");
 }
 
 void testFroxelGridClampAndCountLimits() {
@@ -255,11 +260,23 @@ void testEmptySceneVolumetricFog() {
     fuse::renderer::froxel_util::populateFromAnalyticFog(grid, desc, camera, params);
     expectTrue(grid.density.size() == desc.froxelCount(), "empty scene populate allocates grid");
     expectTrue(grid.density.front() == 0.f && grid.density.back() == 0.f, "empty scene populate leaves zero density");
+    expectTrue(grid.matchesDesc(desc), "empty scene populate matches desc");
+    expectTrue(fuse::renderer::froxel_util::countNonZeroFroxels(grid) == 0u,
+               "empty scene populate leaves all froxels at zero density");
+    expectTrue(fuse::renderer::froxel_util::countEmptyFroxels(grid) == desc.froxelCount(),
+               "empty scene populate counts all froxels empty");
 
     fuse::renderer::FroxelDensityGrid allocated{};
     allocated.allocate(desc);
     expectTrue(allocated.density.size() == desc.froxelCount(), "allocate sizes density buffer");
+    expectTrue(allocated.matchesDesc(desc), "allocate matches desc");
     expectTrue(!allocated.isEmpty(), "allocated froxel grid is non-empty");
+    expectTrue(fuse::renderer::froxel_util::countEmptyFroxels(allocated) == desc.froxelCount(),
+               "fresh allocate reports all froxels empty");
+
+    allocated.clear();
+    expectTrue(allocated.isEmpty(), "cleared froxel grid is empty");
+    expectTrue(!allocated.matchesDesc(desc), "cleared grid no longer matches desc");
 
     fuse::renderer::FroxelGridDesc zeroGrid{};
     zeroGrid.tilesX = 0u;
@@ -304,6 +321,51 @@ void testFroxelPopulateFromAnalyticFog() {
     const fuse::u32 farSlice = fuse::renderer::FroxelGridLayout::froxelIndex(0u, 0u, desc.slicesZ - 1u, desc);
     expectTrue(grid.density[nearSlice] >= grid.density[farSlice],
                "analytic populate preserves height falloff across slices");
+    expectTrue(grid.matchesDesc(desc), "populated grid matches desc");
+    expectTrue(fuse::renderer::froxel_util::countNonZeroFroxels(grid) == desc.froxelCount(),
+               "analytic populate marks all froxels non-zero");
+    expectTrue(fuse::renderer::froxel_util::countEmptyFroxels(grid) == 0u,
+               "analytic populate leaves no empty froxels");
+}
+
+void testZeroDimensionFroxelGrid() {
+    fuse::renderer::FroxelGridDesc zeroDesc{};
+    zeroDesc.tilesX = 0u;
+    zeroDesc.tilesY = 0u;
+    zeroDesc.slicesZ = 0u;
+    expectTrue(zeroDesc.isEmpty(), "zero tiles yields empty froxel desc");
+    expectTrue(zeroDesc.froxelCount() == 0u, "zero-dimension froxel count is zero");
+
+    fuse::u32 tileX = 99u;
+    fuse::u32 tileY = 99u;
+    fuse::u32 sliceZ = 99u;
+    fuse::renderer::FroxelGridLayout::decodeFroxelIndex(5u, zeroDesc, tileX, tileY, sliceZ);
+    expectTrue(tileX == 0u && tileY == 0u && sliceZ == 0u, "decode on empty grid returns origin");
+
+    expectTrue(fuse::renderer::FroxelGridLayout::clampFroxelIndex(99u, zeroDesc) == 0u,
+               "clamp froxel index on empty grid returns zero");
+    expectTrue(fuse::renderer::FroxelGridLayout::clampTileX(99u, zeroDesc) == 0u, "clamp tile X on empty grid");
+    expectTrue(fuse::renderer::FroxelGridLayout::clampTileY(99u, zeroDesc) == 0u, "clamp tile Y on empty grid");
+    expectTrue(fuse::renderer::FroxelGridLayout::clampSliceZ(99u, zeroDesc) == 0u, "clamp slice Z on empty grid");
+    expectTrue(fuse::renderer::FroxelGridLayout::froxelIndexClamped(99u, 99u, 99u, zeroDesc) == 0u,
+               "clamped index on empty grid returns zero");
+
+    fuse::renderer::FroxelCameraDesc camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+    fuse::u32 froxelIndex = 0u;
+    expectTrue(!fuse::renderer::FroxelGridLayout::mapScreenDepthToFroxelIndex(
+                   0.5f, 0.5f, 10.f, zeroDesc, camera, froxelIndex),
+               "screen mapping rejects empty froxel grid");
+
+    fuse::renderer::FroxelDensityGrid grid{};
+    grid.allocate(zeroDesc);
+    expectTrue(grid.isEmpty(), "allocate on zero-dimension desc stays empty");
+    expectTrue(grid.matchesDesc(zeroDesc), "empty grid matches zero desc");
+    expectTrue(fuse::renderer::froxel_util::countNonZeroFroxels(grid) == 0u,
+               "non-zero count zero for empty grid");
+    expectTrue(fuse::renderer::froxel_util::countEmptyFroxels(grid) == 0u,
+               "empty count zero when grid has no storage");
 }
 
 void testLightShaftsOcclusion() {
@@ -407,6 +469,7 @@ int main() {
     testFroxelSliceDepthDistribution();
     testFroxelDensityLerpHelpers();
     testEmptySceneVolumetricFog();
+    testZeroDimensionFroxelGrid();
     testFroxelPopulateFromAnalyticFog();
     testLightShaftsOcclusion();
     testLensFlareGeneration();
