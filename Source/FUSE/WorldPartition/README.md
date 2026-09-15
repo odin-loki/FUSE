@@ -7,10 +7,10 @@ Large-world streaming scaffolding for Track B7.6. Cells are keyed on an XZ grid;
 | Header | Role |
 |--------|------|
 | `grid_cell.hpp` | `GridCoord`, `WorldCell`, `CellResidencyState`, grid ↔ world helpers |
-| `residency_set.hpp` | Focus-distance resident set (`add`/`remove`, `pick_eviction_candidate`, `collect_eviction_candidates`) |
+| `residency_set.hpp` | Focus-distance resident set (`add`/`remove`, `try_add_resident`/`try_remove_resident`, `pick_eviction_candidate`, `collect_eviction_candidates`) |
 | `streaming_volume.hpp` | Camera-centered stream-in / stream-out radii + load/unload priority |
 | `streaming_budget.hpp` | Per-tick caps, byte/resident budgets, `StreamingBudgetCounters`, `EvictionPolicy` (distance / LRU) |
-| `streaming_request_queue.hpp` | JobScheduler-backed async request queue stub |
+| `streaming_request_queue.hpp` | JobScheduler-backed async request queue (`enqueue`/`flush`, priority drain) |
 | `world_partition.hpp` | `WorldPartitionDesc`, `WorldPartition` update + force load/unload |
 
 ## Residency states
@@ -31,7 +31,7 @@ Load requests sort by `StreamingVolume::load_priority_for` (closer cells first).
 
 ## Tests
 
-`fuse_world_partition_tests` (`ctest` name `fuse_world_partition_b76`) covers grid math, residency helpers, budget headroom/clamp/counters, `ResidencySet` eviction-candidate ordering, empty-residency rejection, streaming hysteresis, unload priority ordering, resident-cell and byte budget rejection, LRU eviction, per-tick budget caps, callback stubs, camera-driven residency, `StreamingRequestQueue` batch/in-flight/FIFO/empty/priority-drain/pending-cap tracking, and async load/unload completion.
+`fuse_world_partition_tests` (`ctest` name `fuse_world_partition_b76`) covers grid math, residency helpers, budget headroom/clamp/counters, `ResidencySet` eviction-candidate ordering, empty-residency stub ops and rejection, streaming hysteresis, unload priority ordering, resident-cell and byte budget rejection, LRU eviction, per-tick budget caps, callback stubs, camera-driven residency, `StreamingRequestQueue` enqueue/flush/batch/in-flight/FIFO/empty/mixed-kind completion/priority-drain/pending-cap tracking, and async load/unload completion.
 
 ## Dependencies
 
