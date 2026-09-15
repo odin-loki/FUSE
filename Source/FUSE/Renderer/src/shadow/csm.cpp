@@ -32,7 +32,7 @@ f32 computeLogarithmicSplitFraction(f32 splitT, f32 nearPlane, f32 farPlane) {
 f32 computePracticalSplitFraction(f32 splitT, f32 nearPlane, f32 farPlane, f32 lambda) {
     const f32 uniform = computeUniformSplitFraction(splitT);
     const f32 logarithmic = computeLogarithmicSplitFraction(splitT, nearPlane, farPlane);
-    const f32 blend = std::clamp(lambda, 0.f, 1.f);
+    const f32 blend = CascadedShadowMapLayout::clampSplitLambda(lambda);
     return blend * uniform + (1.f - blend) * logarithmic;
 }
 
@@ -333,7 +333,7 @@ f32 CascadedShadowMapLayout::computeCascadeFarZ(u32 cascadeIndex,
         return camera.farPlane;
     }
 
-    const f32 splitFraction = desc.cascadeSplits[cascadeIndex];
+    const f32 splitFraction = clampSplitFraction(desc.cascadeSplits[cascadeIndex]);
     return camera.nearPlane + splitFraction * (camera.farPlane - camera.nearPlane);
 }
 
@@ -379,6 +379,31 @@ bool CascadedShadowMapLayout::validateCascadeSplits(const CascadedShadowMapDesc&
     }
 
     return splitFractionNearOne(desc.cascadeSplits[kCascadeCount - 1u]);
+}
+
+bool CascadedShadowMapLayout::validateClampedCascadeSplits(const CascadedShadowMapDesc& desc) {
+    for (u32 cascade = 0; cascade < kCascadeCount; ++cascade) {
+        const f32 split = desc.cascadeSplits[cascade];
+        if (split < 0.f || split > 1.f) {
+            return false;
+        }
+    }
+
+    return validateCascadeSplits(desc);
+}
+
+void CascadedShadowMapLayout::sanitizeCascadeSplits(CascadedShadowMapDesc& desc) {
+    f32 previousSplit = 0.f;
+    for (u32 cascade = 0; cascade < kCascadeCount; ++cascade) {
+        f32 split = clampSplitFraction(desc.cascadeSplits[cascade]);
+        if (split < previousSplit) {
+            split = previousSplit;
+        }
+        desc.cascadeSplits[cascade] = split;
+        previousSplit = split;
+    }
+
+    desc.cascadeSplits[kCascadeCount - 1u] = 1.f;
 }
 
 bool CascadedShadowMapLayout::validateCascadeRanges(const CascadedShadowMapDesc& desc,
@@ -447,11 +472,19 @@ u32 CascadeShadowDataLayout::countPopulatedCascadeMatrices(const CascadedShadowM
     const u32 activeCount = CascadedShadowMapLayout::clampCascadeCount(cascadeCount);
     u32 populatedCount = 0u;
     for (u32 cascade = 0; cascade < activeCount; ++cascade) {
-        if (CascadeLightSpaceLayout::shadowMat4IsPopulated(data.lightViewProj[cascade])) {
+        if (isCascadeSlotPopulated(data, cascade)) {
             ++populatedCount;
         }
     }
     return populatedCount;
+}
+
+bool CascadeShadowDataLayout::isCascadeSlotPopulated(const CascadedShadowMapData& data, u32 cascadeIndex) {
+    if (cascadeIndex >= kCascadeCount) {
+        return false;
+    }
+
+    return CascadeLightSpaceLayout::shadowMat4IsPopulated(data.lightViewProj[cascadeIndex]);
 }
 
 u32 CascadeShadowDataLayout::populateCascadeShadowData(const CascadedShadowMapDesc& desc,
@@ -539,14 +572,21 @@ u32 CascadeLightSpaceLayout::countValidCascadeMatrixSlots(const CascadedShadowMa
     }
 
     const u32 activeCount = CascadedShadowMapLayout::clampCascadeCount(cascadeCount);
-    u32 validCount = 0u;
+    return activeCount - countSkippedCascadeShadowBuilds(desc, camera, lightDirection, cascadeCount);
+}
+
+u32 CascadeLightSpaceLayout::countSkippedCascadeShadowBuilds(const CascadedShadowMapDesc& desc,
+                                                             const ShadowCameraParams& camera,
+                                                             const fuse::math::Vec3& lightDirection,
+                                                             u32 cascadeCount) {
+    const u32 activeCount = CascadedShadowMapLayout::clampCascadeCount(cascadeCount);
+    u32 skippedCount = 0u;
     for (u32 cascade = 0; cascade < activeCount; ++cascade) {
         if (shouldSkipCascadeShadowBuild(cascade, desc, camera, lightDirection)) {
-            continue;
+            ++skippedCount;
         }
-        ++validCount;
     }
-    return validCount;
+    return skippedCount;
 }
 
 bool CascadeLightSpaceLayout::validateOrthoBounds(const CascadeOrthoBounds& bounds) {

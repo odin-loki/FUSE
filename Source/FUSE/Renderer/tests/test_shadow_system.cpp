@@ -922,6 +922,144 @@ void testEmptyLightDirectionDirectionalShadowUpdate() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testSanitizeCascadeSplits() {
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+
+    CascadedShadowMapDesc desc{};
+    desc.cascadeSplits[0] = -0.2f;
+    desc.cascadeSplits[1] = 1.5f;
+    desc.cascadeSplits[2] = 0.3f;
+    desc.cascadeSplits[3] = 0.8f;
+
+    CascadedShadowMapLayout::sanitizeCascadeSplits(desc);
+    expectTrue(CascadedShadowMapLayout::validateClampedCascadeSplits(desc), "sanitized splits are clamped and valid");
+    expectNear(desc.cascadeSplits[0], 0.f, 0.001f, "negative split clamped to zero");
+    expectNear(desc.cascadeSplits[1], 1.f, 0.001f, "oversized split clamped to one");
+    expectTrue(desc.cascadeSplits[2] >= desc.cascadeSplits[1], "non-monotonic split repaired");
+    expectNear(desc.cascadeSplits[3], 1.f, 0.001f, "last split pinned to far plane");
+}
+
+void testClampedCascadeFarZ() {
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+
+    CascadedShadowMapDesc desc{};
+    desc.cascadeSplits[0] = 2.f;
+
+    ShadowCameraParams camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 101.f;
+
+    expectNear(CascadedShadowMapLayout::computeCascadeFarZ(0u, desc, camera), 101.f, 0.001f,
+               "out-of-range split fraction clamped before far-z compute");
+}
+
+void testPopulateCascadeSplitsClamped() {
+    using fuse::renderer::CascadeSplitParams;
+    using fuse::renderer::CascadeSplitScheme;
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+
+    ShadowCameraParams camera{};
+    camera.nearPlane = 0.5f;
+    camera.farPlane = 200.f;
+
+    CascadeSplitParams rawParams{};
+    rawParams.scheme = CascadeSplitScheme::Practical;
+    rawParams.lambda = 9.f;
+    rawParams.cascadeCount = 0u;
+
+    CascadedShadowMapDesc desc{};
+    CascadedShadowMapLayout::populateCascadeSplitsClamped(CascadeSplitParams::clampParams(rawParams), camera, desc);
+    expectTrue(CascadedShadowMapLayout::validateClampedCascadeSplits(desc),
+               "clamped populate yields valid split fractions");
+    expectNear(desc.cascadeSplits[0], 1.f, 0.001f, "single clamped cascade reaches far plane");
+}
+
+void testCountSkippedCascadeShadowBuilds() {
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+
+    CascadedShadowMapDesc desc{};
+    ShadowCameraParams camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+
+    const fuse::math::Vec3 sunDirection{0.f, -1.f, 0.f};
+    expectTrue(CascadeLightSpaceLayout::countSkippedCascadeShadowBuilds(desc, camera, sunDirection, 4u) == 0u,
+               "default cascades are not skipped");
+
+    expectTrue(CascadeLightSpaceLayout::countSkippedCascadeShadowBuilds(desc, camera, {0.f, 0.f, 0.f}, 4u) == 4u,
+               "empty light direction skips every cascade");
+
+    CascadedShadowMapDesc flatDesc{};
+    flatDesc.cascadeSplits[0] = 0.5f;
+    flatDesc.cascadeSplits[1] = 0.5f;
+    flatDesc.cascadeSplits[2] = 1.f;
+    flatDesc.cascadeSplits[3] = 1.f;
+    expectTrue(CascadeLightSpaceLayout::countSkippedCascadeShadowBuilds(flatDesc, camera, sunDirection, 4u) == 2u,
+               "zero-thickness cascades counted as skipped");
+    expectTrue(CascadeLightSpaceLayout::countValidCascadeMatrixSlots(flatDesc, camera, sunDirection, 4u) +
+                       CascadeLightSpaceLayout::countSkippedCascadeShadowBuilds(flatDesc, camera, sunDirection, 4u) ==
+                   4u,
+               "skipped + valid cascade counts sum to active count");
+}
+
+void testIsCascadeSlotPopulated() {
+    using fuse::renderer::CascadeShadowDataLayout;
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadedShadowMapData;
+    using fuse::renderer::ShadowMat4;
+
+    CascadedShadowMapData data{};
+    CascadeShadowDataLayout::clearAllCascadeSlots(data);
+    expectTrue(!CascadeShadowDataLayout::isCascadeSlotPopulated(data, 0u), "cleared slot is not populated");
+
+    data.lightViewProj[0].data[7] = 0.25f;
+    expectTrue(CascadeShadowDataLayout::isCascadeSlotPopulated(data, 0u), "non-identity slot is populated");
+    expectTrue(!CascadeShadowDataLayout::isCascadeSlotPopulated(data, 99u), "oob slot is not populated");
+
+    CascadeShadowDataLayout::clearCascadeSlot(0u, data);
+    expectTrue(!CascadeShadowDataLayout::isCascadeSlotPopulated(data, 0u),
+               "cleared slot is not populated");
+    expectTrue(ShadowMat4::identity().isIdentity(), "identity helper still valid after slot clear");
+    expectTrue(!CascadeLightSpaceLayout::shadowMat4IsPopulated(data.lightViewProj[0]),
+               "cleared slot matrix is not populated");
+}
+
+void testDirectionalShadowEmptyCameraGuard() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for empty-camera guard test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    expectTrue(resources.init(*bootstrap->device(), bindless), "resource manager ready for empty-camera guard");
+
+    fuse::renderer::DirectionalShadow shadows;
+    expectTrue(shadows.init(resources, {}), "directional shadow initialized for empty-camera guard");
+
+    fuse::renderer::ShadowCameraParams camera{};
+    camera.nearPlane = 80.f;
+    camera.farPlane = 10.f;
+    shadows.update(camera, {-0.3f, -1.f, -0.2f});
+    expectTrue(shadows.data().lightViewProj[0].isIdentity(), "inverted camera clears cascade matrix");
+    expectTrue(shadows.stats().framesUpdated == 1u, "empty-camera update still advances stats");
+
+    shadows.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
 void testShadowAtlasLayout() {
     using fuse::renderer::ShadowAtlas;
     using fuse::renderer::ShadowAtlasDesc;
@@ -1048,6 +1186,12 @@ int main() {
     testPopulateCascadeShadowData();
     testClearCascadeShadowDataSlots();
     testEmptyLightDirectionDirectionalShadowUpdate();
+    testSanitizeCascadeSplits();
+    testClampedCascadeFarZ();
+    testPopulateCascadeSplitsClamped();
+    testCountSkippedCascadeShadowBuilds();
+    testIsCascadeSlotPopulated();
+    testDirectionalShadowEmptyCameraGuard();
     testShadowAtlasLayout();
     testDirectionalShadowAllocation();
     testShadowPassGraph();

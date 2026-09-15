@@ -138,6 +138,10 @@ struct CascadedShadowMapLayout {
                                      const ShadowCameraParams& camera,
                                      CascadeRange outRanges[kCascadeCount]);
     static bool validateCascadeSplits(const CascadedShadowMapDesc& desc);
+    /// True when every split lies in [0, 1] and `validateCascadeSplits` passes.
+    static bool validateClampedCascadeSplits(const CascadedShadowMapDesc& desc);
+    /// Clamp each split to [0, 1], enforce monotonicity, and pin the last slot to 1.0.
+    static void sanitizeCascadeSplits(CascadedShadowMapDesc& desc);
     static bool validateCascadeRanges(const CascadedShadowMapDesc& desc, const ShadowCameraParams& camera);
     static CascadeFrustumCorners buildCascadeFrustumCorners(u32 cascadeIndex,
                                                             const CascadedShadowMapDesc& desc,
@@ -159,6 +163,7 @@ struct CascadeShadowDataLayout {
     static void clearCascadeSlot(u32 cascadeIndex, CascadedShadowMapData& data);
     static void clearAllCascadeSlots(CascadedShadowMapData& data);
     static u32 countPopulatedCascadeMatrices(const CascadedShadowMapData& data, u32 cascadeCount);
+    static bool isCascadeSlotPopulated(const CascadedShadowMapData& data, u32 cascadeIndex);
     /// Populate far-Z and light view-projection slots; returns count of populated matrices.
     static u32 populateCascadeShadowData(const CascadedShadowMapDesc& desc,
                                          const ShadowCameraParams& camera,
@@ -193,6 +198,10 @@ struct CascadeLightSpaceLayout {
                                             const ShadowCameraParams& camera,
                                             const fuse::math::Vec3& lightDirection,
                                             u32 cascadeCount);
+    static u32 countSkippedCascadeShadowBuilds(const CascadedShadowMapDesc& desc,
+                                               const ShadowCameraParams& camera,
+                                               const fuse::math::Vec3& lightDirection,
+                                               u32 cascadeCount);
     static bool validateOrthoBounds(const CascadeOrthoBounds& bounds);
     static fuse::math::Mat4 buildLightView(const fuse::math::Vec3& focus, const fuse::math::Vec3& lightDirection);
     static bool isEmptyLightSpaceAabb(const fuse::math::AABB& aabb);
