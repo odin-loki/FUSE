@@ -15,6 +15,7 @@ The root `CMakeLists.txt` is the **FUSE umbrella** entry point. It can build:
 | `FUSE_BUILD_LEGACY` | ON | `fuse_t3d_legacy`, `fuse_t2d_legacy` quarantine static libs |
 | `FUSE_BUILD_SMOKE` | ON | `fuse_runtime_smoke` one-process test binary |
 | `FUSE_BUILD_HYBRID_DEMO` | ON | `demo_hybrid_hud` U4 hybrid frame demo (software renderer) |
+| `FUSE_BUILD_MODULES` | ON | L3 feature modules (`fuse_cinematics`, …) |
 | `FUSE_SMOKE_ENABLE_ASAN` | OFF | AddressSanitizer for smoke target |
 
 Legacy Torque3D-only workflow is **unchanged**:
