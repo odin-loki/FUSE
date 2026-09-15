@@ -70,6 +70,13 @@ void testFroxelGridIndexing() {
 
     expectTrue(fuse::renderer::FroxelGridLayout::froxelIndex(0u, 0u, 0u, desc) == 0u, "origin froxel index");
     expectTrue(fuse::renderer::FroxelGridLayout::froxelIndex(3u, 1u, 2u, desc) == 23u, "last froxel index");
+
+    fuse::u32 oversizedTileX = 0u;
+    fuse::u32 oversizedTileY = 0u;
+    fuse::u32 oversizedSliceZ = 0u;
+    fuse::renderer::FroxelGridLayout::decodeFroxelIndex(999u, desc, oversizedTileX, oversizedTileY, oversizedSliceZ);
+    expectTrue(oversizedTileX == 3u && oversizedTileY == 1u && oversizedSliceZ == 2u,
+               "decode clamps oversized froxel index");
 }
 
 void testFroxelGridClampAndCountLimits() {
@@ -99,6 +106,28 @@ void testFroxelGridClampAndCountLimits() {
     const fuse::u32 midSlice =
         fuse::renderer::FroxelSliceLayout::computeSliceZFromDepth(10.f, desc, camera);
     expectTrue(midSlice < desc.slicesZ, "depth maps into slice range");
+
+    fuse::u32 froxelIndex = 0u;
+    expectTrue(fuse::renderer::FroxelGridLayout::mapScreenDepthToFroxelIndex(
+                   0.5f, 0.5f, 10.f, desc, camera, froxelIndex),
+               "screen depth maps to froxel index");
+    expectTrue(froxelIndex < desc.froxelCount(), "mapped froxel index in bounds");
+
+    fuse::u32 belowNear = 0u;
+    expectTrue(!fuse::renderer::FroxelGridLayout::mapScreenDepthToFroxelIndex(
+                   0.5f, 0.5f, 0.01f, desc, camera, belowNear),
+               "depth below near plane rejected for froxel index");
+
+    fuse::u32 aboveFar = 0u;
+    expectTrue(!fuse::renderer::FroxelGridLayout::mapScreenDepthToFroxelIndex(
+                   0.5f, 0.5f, 200.f, desc, camera, aboveFar),
+               "depth above far plane rejected for froxel index");
+
+    fuse::u32 clampedScreen = 0u;
+    expectTrue(fuse::renderer::FroxelGridLayout::mapScreenDepthToFroxelIndex(
+                   -0.5f, 1.5f, 10.f, desc, camera, clampedScreen),
+               "out-of-range screen coords clamp to froxel grid");
+    expectTrue(clampedScreen < desc.froxelCount(), "clamped screen maps to valid froxel");
 }
 
 void testFroxelSliceDepthDistribution() {
@@ -171,6 +200,32 @@ void testFroxelDensityLerpHelpers() {
                "screen depth maps to froxel sample coords");
     expectTrue(mapped.tileX0 < desc.tilesX && mapped.tileY0 < desc.tilesY, "mapped tile coords in range");
     expectTrue(mapped.sliceZ0 < desc.slicesZ, "mapped slice in range");
+
+    fuse::u32 rejectedDepth = 0u;
+    expectTrue(!fuse::renderer::FroxelGridLayout::mapScreenDepthToSampleCoords(
+                   0.5f, 0.5f, 0.01f, desc, camera, mapped),
+               "sample coords reject depth below near plane");
+    expectTrue(!fuse::renderer::FroxelGridLayout::mapScreenDepthToFroxelIndex(
+                   0.5f, 0.5f, 200.f, desc, camera, rejectedDepth),
+               "froxel index rejects depth above far plane");
+
+    fuse::renderer::FroxelSampleCoords mappedScreen{};
+    expectTrue(fuse::renderer::FroxelGridLayout::mapScreenDepthToSampleCoords(
+                   0.25f, 0.25f, 3.16f, desc, camera, mappedScreen),
+               "screen coords map for density sample");
+    const fuse::f32 expectedScreen =
+        fuse::renderer::froxel_util::sampleDensityTrilinear(grid, desc, mappedScreen);
+    const fuse::f32 screenSample = fuse::renderer::froxel_util::sampleDensityAtScreen(
+        grid, desc, camera, 0.25f, 0.25f, 3.16f);
+    expectNear(screenSample, expectedScreen, 1e-5f, "screen-space trilinear density sample");
+
+    fuse::renderer::FroxelGridDesc zeroGrid{};
+    zeroGrid.tilesX = 0u;
+    fuse::renderer::FroxelDensityGrid emptyGrid{};
+    expectNear(fuse::renderer::froxel_util::sampleDensityAtScreen(emptyGrid, zeroGrid, camera, 0.5f, 0.5f, 10.f),
+               0.f,
+               1e-6f,
+               "empty grid screen sample returns zero");
 }
 
 void testEmptySceneVolumetricFog() {
@@ -183,6 +238,14 @@ void testEmptySceneVolumetricFog() {
     expectNear(stats.lastDensity, 0.f, 1e-6f, "empty scene fog density is zero");
     expectTrue(stats.framesRecorded == 0u, "empty scene fog does not advance frame count");
 
+    fuse::renderer::VolumetricFogParams zeroMarch{};
+    zeroMarch.density = 0.02f;
+    zeroMarch.march_steps = 0u;
+    fuse::renderer::VolumetricFogPassStats zeroMarchStats{};
+    expectTrue(!fuse::renderer::record_volumetric_fog_pass(zeroMarch, zeroMarchStats),
+               "zero march steps skip fog pass");
+    expectTrue(!zeroMarchStats.ready, "zero march steps leave stats not ready");
+
     fuse::renderer::FroxelGridDesc desc{};
     desc.tilesX = 2;
     desc.tilesY = 2;
@@ -193,16 +256,28 @@ void testEmptySceneVolumetricFog() {
     expectTrue(grid.density.size() == desc.froxelCount(), "empty scene populate allocates grid");
     expectTrue(grid.density.front() == 0.f && grid.density.back() == 0.f, "empty scene populate leaves zero density");
 
+    fuse::renderer::FroxelDensityGrid allocated{};
+    allocated.allocate(desc);
+    expectTrue(allocated.density.size() == desc.froxelCount(), "allocate sizes density buffer");
+    expectTrue(!allocated.isEmpty(), "allocated froxel grid is non-empty");
+
     fuse::renderer::FroxelGridDesc zeroGrid{};
     zeroGrid.tilesX = 0u;
     fuse::renderer::FroxelDensityGrid emptyGrid{};
     fuse::renderer::froxel_util::populateFromAnalyticFog(emptyGrid, zeroGrid, camera, params);
     expectTrue(emptyGrid.density.empty(), "zero-dimension grid stays empty");
+    emptyGrid.allocate(zeroGrid);
+    expectTrue(emptyGrid.isEmpty(), "allocate on zero-dimension grid stays empty");
 
     fuse::renderer::FroxelSampleCoords coords{};
     coords.sliceZ0 = 0u;
     expectNear(fuse::renderer::froxel_util::sampleDensityTrilinear(emptyGrid, zeroGrid, coords), 0.f, 1e-6f,
                "empty grid sample returns zero");
+
+    fuse::u32 zeroIndex = 0u;
+    expectTrue(!fuse::renderer::FroxelGridLayout::mapScreenDepthToFroxelIndex(
+                   0.5f, 0.5f, 10.f, zeroGrid, camera, zeroIndex),
+               "zero-dimension grid rejects screen mapping");
 }
 
 void testFroxelPopulateFromAnalyticFog() {

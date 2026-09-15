@@ -29,6 +29,11 @@ f32 froxelDensityAt(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u
 
 } // namespace
 
+void FroxelDensityGrid::allocate(const FroxelGridDesc& desc) {
+    const FroxelGridDesc clampedDesc = FroxelGridDesc::clampCounts(desc);
+    density.assign(clampedDesc.froxelCount(), 0.f);
+}
+
 FroxelGridDesc FroxelGridDesc::clampCounts(const FroxelGridDesc& raw) {
     FroxelGridDesc out = raw;
     if (out.tilesX > kMaxTilesX) {
@@ -157,6 +162,21 @@ bool FroxelGridLayout::mapScreenDepthToSampleCoords(f32 screenX,
     return true;
 }
 
+bool FroxelGridLayout::mapScreenDepthToFroxelIndex(f32 screenX,
+                                                   f32 screenY,
+                                                   f32 viewDepth,
+                                                   const FroxelGridDesc& desc,
+                                                   const FroxelCameraDesc& camera,
+                                                   u32& outFroxelIndex) {
+    FroxelSampleCoords coords{};
+    if (!mapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, coords)) {
+        return false;
+    }
+
+    outFroxelIndex = froxelIndex(coords.tileX0, coords.tileY0, coords.sliceZ0, desc);
+    return true;
+}
+
 namespace froxel_util {
 
 f32 lerpDensity(f32 a, f32 b, f32 t) {
@@ -189,12 +209,29 @@ f32 sampleDensityTrilinear(const FroxelDensityGrid& grid,
     return lerpDensity(nearSlice, farSlice, coords.tz);
 }
 
+f32 sampleDensityAtScreen(const FroxelDensityGrid& grid,
+                          const FroxelGridDesc& desc,
+                          const FroxelCameraDesc& camera,
+                          f32 screenX,
+                          f32 screenY,
+                          f32 viewDepth) {
+    if (grid.isEmpty()) {
+        return 0.f;
+    }
+
+    FroxelSampleCoords coords{};
+    if (!FroxelGridLayout::mapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, coords)) {
+        return 0.f;
+    }
+    return sampleDensityTrilinear(grid, desc, coords);
+}
+
 void populateFromAnalyticFog(FroxelDensityGrid& grid,
                              const FroxelGridDesc& desc,
                              const FroxelCameraDesc& camera,
                              const VolumetricFogParams& params) {
     const FroxelGridDesc clampedDesc = FroxelGridDesc::clampCounts(desc);
-    grid.density.assign(clampedDesc.froxelCount(), 0.f);
+    grid.allocate(clampedDesc);
     if (clampedDesc.froxelCount() == 0u || params.density <= 0.f || params.march_steps == 0u) {
         return;
     }

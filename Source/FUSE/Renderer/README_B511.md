@@ -20,7 +20,7 @@ CPU-first scaffolding for Track B5.11 under `fuse_rhi`. Implements analytic lens
 
 ## Tests
 
-`fuse_volumetric_lighting` (`ctest` name `fuse_volumetric_lighting_b511`) covers fog density falloff, froxel grid indexing/clamp/count limits, exponential slice layout, density lerp extremes, empty-scene path (zero density / zero-dimension grid), bilinear/trilinear density lerp, analytic fog populate, light-shaft occlusion, lens-flare element generation, pass recording, and deferred pipeline pass registration.
+`fuse_volumetric_lighting` (`ctest` name `fuse_volumetric_lighting_b511`) covers fog density falloff, froxel grid indexing/clamp/count limits (including oversized decode and depth/screen rejection), exponential slice layout, density lerp extremes, screen-space trilinear sampling, empty-scene path (zero density / zero march / zero-dimension grid), bilinear/trilinear density lerp, analytic fog populate, light-shaft occlusion, lens-flare element generation, pass recording, and deferred pipeline pass registration.
 
 ## Upstream / downstream
 
