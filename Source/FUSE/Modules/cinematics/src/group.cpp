@@ -26,6 +26,16 @@ PropertyTrack& TrackGroup::add_property_track(const std::string& label) {
     return static_cast<PropertyTrack&>(*tracks_.back());
 }
 
+AudioTrack& TrackGroup::add_audio_track(const std::string& label) {
+    tracks_.push_back(std::make_unique<AudioTrack>(label));
+    return static_cast<AudioTrack&>(*tracks_.back());
+}
+
+EventTrack& TrackGroup::add_event_track(const std::string& label) {
+    tracks_.push_back(std::make_unique<EventTrack>(label));
+    return static_cast<EventTrack&>(*tracks_.back());
+}
+
 TrackSpan TrackGroup::span() const {
     TrackSpan span;
     bool found = false;

@@ -15,6 +15,8 @@ enum class TrackKind {
     Camera,
     Sprite,
     Property,
+    Audio,
+    Event,
 };
 
 struct TrackSpan {
