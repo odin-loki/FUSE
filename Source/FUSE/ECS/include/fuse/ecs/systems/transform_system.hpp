@@ -30,6 +30,12 @@ public:
     /// Count root transforms (`parent` invalid) with `dirty == true`.
     [[nodiscard]] static u32 count_dirty_roots(Registry& reg);
 
+    /// Returns true when at least one root transform has `dirty == true`.
+    [[nodiscard]] static bool has_dirty_roots(Registry& reg);
+
+    /// Count root transforms (`parent` invalid), regardless of `dirty`.
+    [[nodiscard]] static u32 count_roots(Registry& reg);
+
     /// Returns false when the registry has no `Transform` components (empty-transform guard).
     [[nodiscard]] static bool has_any_transforms(Registry& reg);
 
