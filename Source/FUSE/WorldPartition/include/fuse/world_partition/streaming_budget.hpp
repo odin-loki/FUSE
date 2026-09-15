@@ -18,6 +18,7 @@ struct StreamingBudget {
 struct StreamingBudgetCounters {
     u32 rejected_loads = 0;   ///< Loads rejected after eviction could not free budget
     u32 budget_evictions = 0; ///< Resident cells queued for unload to make room
+    u32 eviction_skipped = 0; ///< Budget pressure with no evictable resident candidate
     u64 bytes_evicted = 0;    ///< Resident bytes released by budget-driven evictions
 };
 
@@ -75,11 +76,39 @@ enum class EvictionPolicy : u8 {
     return !byte_budget_unlimited(max_resident_bytes) && resident_bytes >= max_resident_bytes;
 }
 
+[[nodiscard]] inline bool needs_budget_eviction(u32 max_loaded_cells, u32 resident_count, u64 max_resident_bytes,
+                                                u64 resident_bytes, u64 incoming_bytes) {
+    return !can_accept_resident_cell(max_loaded_cells, resident_count) ||
+           would_exceed_byte_budget(max_resident_bytes, resident_bytes, incoming_bytes);
+}
+
+[[nodiscard]] inline u32 clamp_pending_submits(u32 pending, u32 max_pending) {
+    if (max_pending == 0u) {
+        return pending;
+    }
+    return pending < max_pending ? pending : max_pending;
+}
+
 /// Higher score evicts sooner. Distance policy uses unload distance priority; LRU uses age.
 [[nodiscard]] inline f32 eviction_score_for(f32 unload_distance_priority, u32 last_touch_tick, u32 current_tick,
                                           EvictionPolicy policy) {
     switch (policy) {
     case EvictionPolicy::DistanceFromFocus:
+        return unload_distance_priority;
+    case EvictionPolicy::Lru:
+        return static_cast<f32>(current_tick - last_touch_tick);
+    }
+    return unload_distance_priority;
+}
+
+/// Budget-pressure eviction score — prefers residency focus distance over stream-out unload priority.
+[[nodiscard]] inline f32 budget_eviction_score(f32 focus_distance, f32 unload_distance_priority, u32 last_touch_tick,
+                                               u32 current_tick, EvictionPolicy policy) {
+    switch (policy) {
+    case EvictionPolicy::DistanceFromFocus:
+        if (focus_distance >= 0.f && focus_distance > unload_distance_priority) {
+            return focus_distance;
+        }
         return unload_distance_priority;
     case EvictionPolicy::Lru:
         return static_cast<f32>(current_tick - last_touch_tick);

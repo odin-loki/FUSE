@@ -138,16 +138,24 @@ f32 WorldPartition::eviction_score_for_(const WorldCell& cell) const {
     return eviction_score_for(distance_priority, cell.last_touch_tick, m_tick, m_desc.eviction_policy);
 }
 
+f32 WorldPartition::budget_eviction_score_for_(const WorldCell& cell) const {
+    const f32 focus_distance = m_residency_set.focus_distance_for(cell.coord);
+    const f32 distance_priority =
+        m_streaming.unload_priority_for(cell.coord, m_desc.cell_size);
+    return budget_eviction_score(focus_distance, distance_priority, cell.last_touch_tick, m_tick,
+                                 m_desc.eviction_policy);
+}
+
 void WorldPartition::evict_for_budget_(f32 incoming_priority) {
     while (!can_accept_load_(m_desc.default_cell_bytes)) {
         WorldCell* best_candidate = nullptr;
         f32 best_score = -1.f;
 
-        if (m_desc.eviction_policy == EvictionPolicy::DistanceFromFocus && !m_residency_set.empty()) {
+        if (m_desc.eviction_policy == EvictionPolicy::DistanceFromFocus && m_residency_set.has_eviction_candidate()) {
             const GridCoord eviction_coord = m_residency_set.pick_eviction_candidate();
             best_candidate = const_cast<WorldCell*>(find_cell_(eviction_coord));
             if (best_candidate != nullptr) {
-                best_score = eviction_score_for_(*best_candidate);
+                best_score = budget_eviction_score_for_(*best_candidate);
             }
         } else {
             for (auto& entry : m_cells) {
@@ -156,7 +164,7 @@ void WorldPartition::evict_for_budget_(f32 incoming_priority) {
                     continue;
                 }
 
-                const f32 score = eviction_score_for_(cell);
+                const f32 score = budget_eviction_score_for_(cell);
                 if (score > best_score) {
                     best_score = score;
                     best_candidate = &cell;
@@ -165,17 +173,25 @@ void WorldPartition::evict_for_budget_(f32 incoming_priority) {
         }
 
         if (best_candidate == nullptr || best_score <= 0.f) {
+            ++m_budget_counters.eviction_skipped;
             break;
         }
 
-        if (incoming_priority > 0.f && best_score <= incoming_priority &&
-            m_desc.eviction_policy == EvictionPolicy::DistanceFromFocus) {
+        if (incoming_priority > 0.f && incoming_priority < std::numeric_limits<f32>::max() &&
+            best_score > incoming_priority && m_desc.eviction_policy == EvictionPolicy::DistanceFromFocus) {
+            ++m_budget_counters.eviction_skipped;
             break;
         }
+
+        const f32 focus_distance = m_residency_set.focus_distance_for(best_candidate->coord);
+        const f32 streaming_priority =
+            m_streaming.unload_priority_for(best_candidate->coord, m_desc.cell_size);
+        const f32 unload_priority =
+            rank_unload_priority_stub(streaming_priority, best_candidate->unload_priority, focus_distance);
 
         m_budget_counters.budget_evictions += 1u;
         m_budget_counters.bytes_evicted += best_candidate->resident_bytes;
-        queue_unload_(best_candidate->coord, best_score);
+        queue_unload_(best_candidate->coord, unload_priority);
     }
 
     process_queues_();
@@ -423,7 +439,9 @@ void WorldPartition::collect_stream_candidates_(fuse::ecs::vec3 camera_pos) {
 
         if (m_streaming.should_unload(cell.coord, m_desc.cell_size)) {
             const f32 streaming_priority = m_streaming.unload_priority_for(cell.coord, m_desc.cell_size);
-            const f32 priority = effective_unload_priority(streaming_priority, cell.unload_priority);
+            const f32 focus_distance = m_residency_set.focus_distance_for(cell.coord);
+            const f32 priority =
+                rank_unload_priority_stub(streaming_priority, cell.unload_priority, focus_distance);
             queue_unload_(cell.coord, priority);
         }
     }
