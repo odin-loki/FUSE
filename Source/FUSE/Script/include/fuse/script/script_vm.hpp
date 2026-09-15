@@ -25,10 +25,18 @@ public:
     [[nodiscard]] usize loaded_chunk_count() const { return m_loadedChunks.size(); }
     [[nodiscard]] const std::vector<std::string>& loaded_chunks() const { return m_loadedChunks; }
 
+    /// True when `FUSE_SCRIPT_LUA=1` and the VM initialized a Lua state.
+    [[nodiscard]] bool has_lua_backend() const;
+
 private:
     bool m_initialized = false;
     ScriptBackendKind m_backend = ScriptBackendKind::Null;
     std::vector<std::string> m_loadedChunks;
+
+#if defined(FUSE_SCRIPT_LUA) && FUSE_SCRIPT_LUA
+    struct LuaState;
+    LuaState* m_lua = nullptr;
+#endif
 };
 
 } // namespace fuse::script
