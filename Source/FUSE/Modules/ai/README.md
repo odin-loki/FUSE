@@ -28,4 +28,4 @@ UAISK script modules are mapped in `fuse/ai/uaisk_template_hooks.hpp` and docume
 
 ## Spatial query (blackboard)
 
-`fuse/ai/spatial_query.hpp` provides CPU stubs for same-team ally radius filter and nearest-ally lookup. `BehaviorRuntime` publishes `AllyCandidate` snapshots each eval; BT leaves `bb.condition.allies_in_radius` and `bb.action.nearest_ally` read them through `BehaviorEvalContext::allies`. See [TRACK-B-AI.md](../../../docs/unification/TRACK-B-AI.md) § Blackboard spatial query.
+`fuse/ai/spatial_query.hpp` provides CPU stubs for same-team ally radius count/filter and nearest-ally lookup (with optional max-radius cap and deterministic tie-break). `BehaviorRuntime` publishes `AllyCandidate` snapshots each eval; BT leaves `bb.condition.allies_in_radius` and `bb.action.nearest_ally` read them through `BehaviorEvalContext::allies` (null/empty → Failure). `bb.action.nearest_ally` may also write the ally `agentIndex` to a blackboard scalar via `scalar=N`. See [TRACK-B-AI.md](../../../docs/unification/TRACK-B-AI.md) § Blackboard spatial query.

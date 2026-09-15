@@ -253,18 +253,13 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
             return result;
         }
 
-        const NearestAllyResult nearest = find_nearest_ally(agentIndex,
-                                                          agent.teamId,
-                                                          agent.x,
-                                                          agent.y,
-                                                          *ctx.allies);
+        const NearestAllyResult nearest = find_nearest_ally_within_radius(agentIndex,
+                                                                        agent.teamId,
+                                                                        agent.x,
+                                                                        agent.y,
+                                                                        node.threshold,
+                                                                        *ctx.allies);
         if (!nearest.found) {
-            result.status = BehaviorStatus::Failure;
-            return result;
-        }
-
-        const float maxRadius = node.threshold;
-        if (maxRadius > 0.f && !within_radius(nearest.distanceSq, maxRadius)) {
             result.status = BehaviorStatus::Failure;
             return result;
         }
@@ -273,6 +268,11 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
         result.wroteFlag = true;
         result.flagIndex = node.flagIndex;
         result.flagValue = true;
+        if (node.scalarSlot < Blackboard::kMaxScalars) {
+            result.wroteScalar = true;
+            result.scalarIndex = node.scalarSlot;
+            result.scalarValue = static_cast<float>(nearest.allyIndex);
+        }
         return result;
     }
     }

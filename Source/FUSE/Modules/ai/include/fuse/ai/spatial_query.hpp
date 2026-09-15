@@ -31,6 +31,14 @@ struct RadiusFilterPolicy {
 [[nodiscard]] bool within_radius(float distanceSq, float radius);
 [[nodiscard]] float effective_radius(const RadiusFilterPolicy& policy);
 
+/// Count same-team allies within `radius` of (`x`, `y`), excluding `selfIndex`.
+[[nodiscard]] u32 count_allies_in_radius(u32 selfIndex,
+                                           u32 teamId,
+                                           float x,
+                                           float y,
+                                           float radius,
+                                           const std::vector<AllyCandidate>& allies);
+
 /// Collect ally indices on the same team within `radius` of (`x`, `y`), excluding `selfIndex`.
 [[nodiscard]] u32 filter_allies_in_radius(u32 selfIndex,
                                           u32 teamId,
@@ -40,12 +48,21 @@ struct RadiusFilterPolicy {
                                           const std::vector<AllyCandidate>& allies,
                                           std::vector<u32>& outIndices);
 
-/// Find the nearest same-team ally (excluding self). Returns `found=false` when none exist.
+/// Find the nearest same-team ally (excluding self). Ties break toward the lowest `agentIndex`.
+/// Returns `found=false` when none exist.
 [[nodiscard]] NearestAllyResult find_nearest_ally(u32 selfIndex,
                                                   u32 teamId,
                                                   float x,
                                                   float y,
                                                   const std::vector<AllyCandidate>& allies);
+
+/// Like `find_nearest_ally`, but only considers allies within `maxRadius` (0 = unlimited).
+[[nodiscard]] NearestAllyResult find_nearest_ally_within_radius(u32 selfIndex,
+                                                                u32 teamId,
+                                                                float x,
+                                                                float y,
+                                                                float maxRadius,
+                                                                const std::vector<AllyCandidate>& allies);
 
 /// Success when at least `policy.minCount` allies lie within `policy.radius`.
 [[nodiscard]] bool allies_in_radius_satisfied(u32 selfIndex,

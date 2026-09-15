@@ -54,13 +54,17 @@
 
 | API | Role |
 |-----|------|
+| `count_allies_in_radius` | Count same-team allies within radius (excludes self) |
 | `filter_allies_in_radius` | Collect same-team ally indices within radius (excludes self) |
-| `find_nearest_ally` | Nearest same-team ally by squared distance |
+| `find_nearest_ally` | Nearest same-team ally by squared distance (tie → lowest `agentIndex`) |
+| `find_nearest_ally_within_radius` | Nearest ally capped by optional max radius (0 = unlimited) |
 | `allies_in_radius_satisfied` | `RadiusFilterPolicy` (`radius`, `minCount`) predicate |
 
-`bb.condition.allies_in_radius` maps `threshold` → radius and `loopCount` → `minCount` (default 1). `bb.action.nearest_ally` maps `threshold` → optional max radius (0 = unlimited) and `flag` → blackboard slot written on success.
+`bb.condition.allies_in_radius` maps `threshold` → radius and `loopCount` → `minCount` (default 1). `bb.action.nearest_ally` maps `threshold` → optional max radius (0 = unlimited), `flag` → bool slot on success, and optional `scalar` → ally `agentIndex` written as float.
 
-**Deferred:** faction masks, 3D positions, navmesh reachability, blackboard slots for ally handle/index.
+Spatial leaves fail when `BehaviorEvalContext::allies` is null or empty. `BlackboardView` default-constructed reads return false / zero.
+
+**Deferred:** faction masks, 3D positions, navmesh reachability.
 
 ---
 
@@ -109,4 +113,4 @@ cmake --build build-fuse --target fuse_ai_tests
 ./build-fuse/Source/FUSE/Modules/ai/tests/fuse_ai_tests
 ```
 
-Tests cover registry parity, composite child-status aggregation (sequence/selector/parallel with success/fail thresholds and abort-on-fail), blackboard try-get/set bounds + typed scalars, blackboard set/get leaves, wait + runtime commit, multi-agent parallel eval, radius filter (self/team exclusion, minCount policy), and nearest-ally BT leaves.
+Tests cover registry parity, composite child-status aggregation (sequence/selector/parallel with success/fail thresholds, abort-on-fail, and parallel+spatial children), empty blackboard view + empty/null ally context, blackboard try-get/set bounds + typed scalars, blackboard set/get leaves, wait + runtime commit, multi-agent parallel eval, radius filter (empty list, self/team exclusion, minCount policy, count parity), and nearest-ally BT leaves (scalar slot write, max-radius reject).

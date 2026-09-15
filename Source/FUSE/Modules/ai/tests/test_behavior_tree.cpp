@@ -776,6 +776,122 @@ void testNearestAllyActionLeaf() {
     expectTrue(result.flagValue, "nearest ally action marks ally found");
 }
 
+void testSpatialLeavesFailWithoutAlliesContext() {
+    const std::vector<fuse::ai::NodeLoadSpec> radiusSpecs = {
+        {"bb.condition.allies_in_radius", 10.f, 0, 2, {}, {}},
+    };
+    const std::vector<fuse::ai::NodeLoadSpec> nearestSpecs = {
+        {"bb.action.nearest_ally", 20.f, 2, 1, {}, {}},
+    };
+
+    fuse::ai::BehaviorTree radiusTree;
+    fuse::ai::BehaviorTree nearestTree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(radiusSpecs, 0, radiusTree), "radius leaf loads");
+    expectTrue(fuse::ai::loadTreeFromSpecs(nearestSpecs, 0, nearestTree), "nearest leaf loads");
+
+    fuse::ai::AgentSnapshot agent;
+    agent.teamId = 1;
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const fuse::ai::BehaviorTickResult nullAlliesRadius =
+        radiusTree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(nullAlliesRadius.status == fuse::ai::BehaviorStatus::Failure,
+               "allies_in_radius fails when ally context is missing");
+
+    const fuse::ai::BehaviorTickResult nullAlliesNearest =
+        nearestTree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(nullAlliesNearest.status == fuse::ai::BehaviorStatus::Failure,
+               "nearest_ally fails when ally context is missing");
+}
+
+void testSpatialLeavesFailWithEmptyAllies() {
+    const std::vector<fuse::ai::NodeLoadSpec> specs = {
+        {"bb.condition.allies_in_radius", 10.f, 0, 1, {}, {}},
+    };
+
+    fuse::ai::BehaviorTree tree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(specs, 0, tree), "empty-allies radius tree loads");
+
+    fuse::ai::AgentSnapshot agent;
+    agent.teamId = 1;
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const std::vector<fuse::ai::AllyCandidate> allies;
+    fuse::ai::BehaviorEvalContext ctx;
+    ctx.allies = &allies;
+
+    const fuse::ai::BehaviorTickResult result =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board), ctx);
+    expectTrue(result.status == fuse::ai::BehaviorStatus::Failure,
+               "allies_in_radius fails when ally list is empty");
+}
+
+void testEmptyBlackboardViewReadsFalse() {
+    fuse::ai::BlackboardView emptyView;
+    bool flag = true;
+    float scalar = 1.f;
+    expectTrue(!emptyView.tryGetFlag(0, 0, flag), "empty blackboard view rejects flag read");
+    expectTrue(!flag, "empty blackboard view clears flag output");
+    expectTrue(!emptyView.tryGetScalar(0, 0, scalar), "empty blackboard view rejects scalar read");
+    expectTrue(scalar == 0.f, "empty blackboard view returns zero scalar");
+}
+
+void testNearestAllyWritesScalarSlot() {
+    fuse::ai::NodeLoadSpec spec;
+    spec.typeId = "bb.action.nearest_ally";
+    spec.threshold = 20.f;
+    spec.flagIndex = 2;
+    spec.scalarSlot = 1;
+
+    fuse::ai::BehaviorTree tree;
+    expectTrue(fuse::ai::loadTreeFromSpecs({spec}, 0, tree), "nearest ally scalar tree loads");
+
+    fuse::ai::AgentSnapshot agent;
+    agent.teamId = 1;
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const std::vector<fuse::ai::AllyCandidate> allies = makeTestAllies();
+    fuse::ai::BehaviorEvalContext ctx;
+    ctx.allies = &allies;
+
+    const fuse::ai::BehaviorTickResult result =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board), ctx);
+    expectTrue(result.status == fuse::ai::BehaviorStatus::Success, "nearest ally scalar action succeeds");
+    expectTrue(result.wroteScalar, "nearest ally writes scalar slot");
+    expectTrue(result.scalarIndex == 1u, "nearest ally targets configured scalar slot");
+    expectTrue(result.scalarValue == 1.f, "nearest ally scalar stores ally agent index");
+}
+
+void testParallelSpatialChildStatusAggregation() {
+    const std::vector<fuse::ai::NodeLoadSpec> specs = {
+        {"bb.condition.allies_in_radius", 10.f, 0, 2, {}, {}},
+        {"bb.action.set_flag", 0.f, 3, 1, {}, {}},
+        {"bb.parallel", 0.f, 0, 1, {}, {0, 1}},
+    };
+
+    fuse::ai::BehaviorTree tree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(specs, 2, tree), "parallel spatial tree loads");
+
+    fuse::ai::AgentSnapshot agent;
+    agent.teamId = 1;
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const std::vector<fuse::ai::AllyCandidate> allies = makeTestAllies();
+    fuse::ai::BehaviorEvalContext ctx;
+    ctx.allies = &allies;
+
+    const fuse::ai::BehaviorTickResult result =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board), ctx);
+    expectTrue(result.status == fuse::ai::BehaviorStatus::Success,
+               "parallel succeeds when spatial condition and action both succeed");
+    expectTrue(result.wroteFlag && result.flagIndex == 3u,
+               "parallel returns set_flag side effect from second child");
+}
+
 void testNearestAllyActionFailsBeyondRadius() {
     const std::vector<fuse::ai::NodeLoadSpec> specs = {
         {"bb.action.nearest_ally", 4.f, 1, 1, {}, {}},
@@ -886,8 +1002,13 @@ int main() {
     testRuntimeParallelMultiAgentAggregation();
     testAlliesInRadiusConditionLeaf();
     testAlliesInRadiusConditionFailsSparse();
+    testSpatialLeavesFailWithoutAlliesContext();
+    testSpatialLeavesFailWithEmptyAllies();
+    testEmptyBlackboardViewReadsFalse();
     testNearestAllyActionLeaf();
+    testNearestAllyWritesScalarSlot();
     testNearestAllyActionFailsBeyondRadius();
+    testParallelSpatialChildStatusAggregation();
     g_failures += run_spatial_query_tests();
     fuse::core::shutdown();
 

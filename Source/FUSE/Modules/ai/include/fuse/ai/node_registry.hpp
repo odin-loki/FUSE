@@ -17,6 +17,7 @@ struct NodeLoadSpec {
     float threshold = 0.f;
     u32 flagIndex = 0;
     u32 loopCount = 1;
+    u32 scalarSlot = BehaviorNode::kNoScalarSlot;
     std::string scriptHook;
     std::vector<u32> childIndices;
     u32 successThreshold = 0;
