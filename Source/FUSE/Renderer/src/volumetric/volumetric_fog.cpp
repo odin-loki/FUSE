@@ -90,6 +90,10 @@ u32 FroxelSliceLayout::computeSliceZFromDepth(f32 viewDepth,
     return FroxelGridLayout::clampSliceZ(sliceZ, desc);
 }
 
+bool FroxelGridLayout::isEmptyGrid(const FroxelGridDesc& desc) {
+    return desc.tilesX == 0u || desc.tilesY == 0u || desc.slicesZ == 0u;
+}
+
 u32 FroxelGridLayout::froxelIndex(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc) {
     return (tileY * desc.tilesX + tileX) * desc.slicesZ + sliceZ;
 }
@@ -113,12 +117,37 @@ void FroxelGridLayout::decodeFroxelIndex(u32 index, const FroxelGridDesc& desc, 
     tileY = tileSlice / desc.tilesX;
 }
 
+bool FroxelGridLayout::isValidFroxelIndex(u32 index, const FroxelGridDesc& desc) {
+    return index < desc.froxelCount();
+}
+
+bool FroxelGridLayout::isFroxelIndexOutOfRange(u32 index, const FroxelGridDesc& desc) {
+    const u32 count = desc.froxelCount();
+    return count == 0u || index >= count;
+}
+
 u32 FroxelGridLayout::clampFroxelIndex(u32 index, const FroxelGridDesc& desc) {
     const u32 count = desc.froxelCount();
     if (count == 0u) {
         return 0u;
     }
     return std::min(index, count - 1u);
+}
+
+void FroxelGridLayout::clampSampleCoords(FroxelSampleCoords& coords, const FroxelGridDesc& desc) {
+    if (isEmptyGrid(desc)) {
+        return;
+    }
+
+    coords.tileX0 = clampTileX(coords.tileX0, desc);
+    coords.tileY0 = clampTileY(coords.tileY0, desc);
+    coords.sliceZ0 = clampSliceZ(coords.sliceZ0, desc);
+    coords.tileX1 = std::min(clampTileX(coords.tileX1, desc), desc.tilesX - 1u);
+    coords.tileY1 = std::min(clampTileY(coords.tileY1, desc), desc.tilesY - 1u);
+    coords.sliceZ1 = std::min(clampSliceZ(coords.sliceZ1, desc), desc.slicesZ - 1u);
+    coords.tx = clamp01(coords.tx);
+    coords.ty = clamp01(coords.ty);
+    coords.tz = clamp01(coords.tz);
 }
 
 u32 FroxelGridLayout::clampTileX(u32 tileX, const FroxelGridDesc& desc) {
@@ -192,10 +221,21 @@ bool FroxelGridLayout::mapScreenDepthToFroxelIndex(f32 screenX,
 namespace froxel_util {
 
 f32 lerpDensity(f32 a, f32 b, f32 t) {
+    if (a == b) {
+        return a;
+    }
     return a + (b - a) * clamp01(t);
 }
 
+bool gridMatchesDesc(const FroxelDensityGrid& grid, const FroxelGridDesc& desc) {
+    return grid.matchesDesc(desc);
+}
+
 u32 countNonZeroFroxels(const FroxelDensityGrid& grid, f32 epsilon) {
+    if (grid.isEmpty()) {
+        return 0u;
+    }
+
     u32 count = 0u;
     for (f32 value : grid.density) {
         if (value > epsilon) {
@@ -206,6 +246,10 @@ u32 countNonZeroFroxels(const FroxelDensityGrid& grid, f32 epsilon) {
 }
 
 u32 countEmptyFroxels(const FroxelDensityGrid& grid, f32 epsilon) {
+    if (grid.isEmpty()) {
+        return 0u;
+    }
+
     u32 count = 0u;
     for (f32 value : grid.density) {
         if (value <= epsilon) {
@@ -215,9 +259,22 @@ u32 countEmptyFroxels(const FroxelDensityGrid& grid, f32 epsilon) {
     return count;
 }
 
+f32 sampleDensityAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index) {
+    if (grid.isEmpty() || FroxelGridLayout::isEmptyGrid(desc) || !grid.matchesDesc(desc)) {
+        return 0.f;
+    }
+
+    const u32 clampedIndex = FroxelGridLayout::clampFroxelIndex(index, desc);
+    return grid.density[clampedIndex];
+}
+
 f32 sampleDensityBilinear(const FroxelDensityGrid& grid,
                           const FroxelGridDesc& desc,
                           const FroxelSampleCoords& coords) {
+    if (grid.isEmpty() || FroxelGridLayout::isEmptyGrid(desc) || !grid.matchesDesc(desc)) {
+        return 0.f;
+    }
+
     const f32 d00 = froxelDensityAt(grid, desc, coords.tileX0, coords.tileY0, coords.sliceZ0);
     const f32 d10 = froxelDensityAt(grid, desc, coords.tileX1, coords.tileY0, coords.sliceZ0);
     const f32 d01 = froxelDensityAt(grid, desc, coords.tileX0, coords.tileY1, coords.sliceZ0);
@@ -231,6 +288,10 @@ f32 sampleDensityBilinear(const FroxelDensityGrid& grid,
 f32 sampleDensityTrilinear(const FroxelDensityGrid& grid,
                            const FroxelGridDesc& desc,
                            const FroxelSampleCoords& coords) {
+    if (grid.isEmpty() || FroxelGridLayout::isEmptyGrid(desc) || !grid.matchesDesc(desc)) {
+        return 0.f;
+    }
+
     FroxelSampleCoords slice0 = coords;
     slice0.sliceZ1 = slice0.sliceZ0;
     FroxelSampleCoords slice1 = coords;

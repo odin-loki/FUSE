@@ -328,6 +328,102 @@ void testFroxelPopulateFromAnalyticFog() {
                "analytic populate leaves no empty froxels");
 }
 
+void testFroxelIndexClampAndLerpGuards() {
+    fuse::renderer::FroxelGridDesc desc{};
+    desc.tilesX = 4;
+    desc.tilesY = 2;
+    desc.slicesZ = 3;
+
+    expectTrue(!fuse::renderer::FroxelGridLayout::isEmptyGrid(desc), "non-zero froxel grid is not empty");
+    expectTrue(fuse::renderer::FroxelGridLayout::isValidFroxelIndex(0u, desc), "origin index is valid");
+    expectTrue(fuse::renderer::FroxelGridLayout::isValidFroxelIndex(23u, desc), "last index is valid");
+    expectTrue(!fuse::renderer::FroxelGridLayout::isValidFroxelIndex(24u, desc), "index at count is invalid");
+    expectTrue(fuse::renderer::FroxelGridLayout::isFroxelIndexOutOfRange(24u, desc),
+               "index at count is out of range");
+    expectTrue(!fuse::renderer::FroxelGridLayout::isFroxelIndexOutOfRange(23u, desc),
+               "last index is in range");
+
+    fuse::renderer::FroxelGridDesc zeroDesc{};
+    zeroDesc.tilesX = 0u;
+    expectTrue(fuse::renderer::FroxelGridLayout::isEmptyGrid(zeroDesc), "zero x dimension is empty grid");
+    expectTrue(!fuse::renderer::FroxelGridLayout::isValidFroxelIndex(0u, zeroDesc),
+               "index 0 invalid on empty grid");
+    expectTrue(fuse::renderer::FroxelGridLayout::isFroxelIndexOutOfRange(0u, zeroDesc),
+               "any index out of range on empty grid");
+
+    expectNear(fuse::renderer::froxel_util::lerpDensity(3.f, 3.f, 0.5f), 3.f, 1e-5f,
+               "density lerp with equal endpoints");
+    expectNear(fuse::renderer::froxel_util::lerpDensity(0.f, 0.f, 2.f), 0.f, 1e-5f,
+               "density lerp equal endpoints ignores out-of-range t");
+
+    fuse::renderer::FroxelDensityGrid grid{};
+    grid.allocate(desc);
+    grid.density[0] = 1.f;
+    grid.density[23] = 2.f;
+
+    expectTrue(fuse::renderer::froxel_util::gridMatchesDesc(grid, desc), "grid matches desc");
+    expectNear(fuse::renderer::froxel_util::sampleDensityAtIndex(grid, desc, 0u), 1.f, 1e-5f,
+               "sample at origin index");
+    expectNear(fuse::renderer::froxel_util::sampleDensityAtIndex(grid, desc, 23u), 2.f, 1e-5f,
+               "sample at last index");
+    expectNear(fuse::renderer::froxel_util::sampleDensityAtIndex(grid, desc, 999u), 2.f, 1e-5f,
+               "sample clamps OOB index to last froxel");
+
+    fuse::renderer::FroxelGridDesc mismatched{};
+    mismatched.tilesX = 2;
+    mismatched.tilesY = 2;
+    mismatched.slicesZ = 2;
+    expectTrue(!fuse::renderer::froxel_util::gridMatchesDesc(grid, mismatched),
+               "grid does not match smaller desc");
+    expectNear(fuse::renderer::froxel_util::sampleDensityAtIndex(grid, mismatched, 0u), 0.f, 1e-6f,
+               "sample rejects desc mismatch");
+
+    fuse::renderer::FroxelSampleCoords coords{};
+    coords.tileX0 = 99u;
+    coords.tileY0 = 99u;
+    coords.tileX1 = 99u;
+    coords.tileY1 = 99u;
+    coords.sliceZ0 = 99u;
+    coords.sliceZ1 = 99u;
+    coords.tx = 2.f;
+    coords.ty = -1.f;
+    coords.tz = 3.f;
+    fuse::renderer::FroxelGridLayout::clampSampleCoords(coords, desc);
+    expectTrue(coords.tileX0 == 3u && coords.tileY0 == 1u && coords.sliceZ0 == 2u,
+               "clamp sample coords clamps tile/slice corners");
+    expectTrue(coords.tileX1 == 3u && coords.tileY1 == 1u && coords.sliceZ1 == 2u,
+               "clamp sample coords clamps upper corners");
+    expectNear(coords.tx, 1.f, 1e-5f, "clamp sample coords clamps tx high");
+    expectNear(coords.ty, 0.f, 1e-5f, "clamp sample coords clamps ty low");
+    expectNear(coords.tz, 1.f, 1e-5f, "clamp sample coords clamps tz high");
+
+    fuse::renderer::FroxelSampleCoords unclampedCoords{};
+    unclampedCoords.tileX0 = 0u;
+    unclampedCoords.tileY0 = 0u;
+    unclampedCoords.tileX1 = 1u;
+    unclampedCoords.tileY1 = 1u;
+    unclampedCoords.sliceZ0 = 0u;
+    unclampedCoords.sliceZ1 = 1u;
+    unclampedCoords.tx = 2.f;
+    unclampedCoords.ty = -1.f;
+    unclampedCoords.tz = 3.f;
+    const fuse::f32 clampedTrilinear =
+        fuse::renderer::froxel_util::sampleDensityTrilinear(grid, desc, unclampedCoords);
+    fuse::renderer::FroxelGridLayout::clampSampleCoords(unclampedCoords, desc);
+    const fuse::f32 explicitClamped =
+        fuse::renderer::froxel_util::sampleDensityTrilinear(grid, desc, unclampedCoords);
+    expectNear(clampedTrilinear, explicitClamped, 1e-5f,
+               "trilinear sample clamps OOB interpolation weights via lerpDensity");
+    expectNear(fuse::renderer::froxel_util::sampleDensityTrilinear(grid, mismatched, coords), 0.f, 1e-6f,
+               "trilinear sample rejects desc mismatch");
+
+    fuse::renderer::FroxelDensityGrid emptyGrid{};
+    expectTrue(!fuse::renderer::froxel_util::gridMatchesDesc(emptyGrid, desc),
+               "empty storage does not match desc");
+    expectNear(fuse::renderer::froxel_util::sampleDensityBilinear(emptyGrid, desc, coords), 0.f, 1e-6f,
+               "bilinear sample on empty grid returns zero");
+}
+
 void testZeroDimensionFroxelGrid() {
     fuse::renderer::FroxelGridDesc zeroDesc{};
     zeroDesc.tilesX = 0u;
@@ -468,6 +564,7 @@ int main() {
     testFroxelGridClampAndCountLimits();
     testFroxelSliceDepthDistribution();
     testFroxelDensityLerpHelpers();
+    testFroxelIndexClampAndLerpGuards();
     testEmptySceneVolumetricFog();
     testZeroDimensionFroxelGrid();
     testFroxelPopulateFromAnalyticFog();
