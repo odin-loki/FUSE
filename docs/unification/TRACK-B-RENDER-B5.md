@@ -237,14 +237,14 @@ DOF, motion blur, film grain GPU shader chain, and CUDA histogram reduction rema
 | Component | Location | Notes |
 |-----------|----------|-------|
 | `VolumetricFog` | `include/fuse/renderer/volumetric/volumetric_fog.hpp` | Exponential height fog density + CUDA pass hook |
-| `FroxelGridDesc` / `FroxelGridLayout` | `include/fuse/renderer/volumetric/volumetric_fog.hpp` | Froxel index encode/decode, screen-depth mapping |
-| `FroxelSliceLayout` / `froxel_util` | `include/fuse/renderer/volumetric/volumetric_fog.hpp` | Exponential slice bounds, bilinear/trilinear density lerp |
+| `FroxelGridDesc` / `FroxelGridLayout` | `include/fuse/renderer/volumetric/volumetric_fog.hpp` | Froxel index encode/decode, tile/slice clamp helpers, `clampCounts` limits |
+| `FroxelSliceLayout` / `froxel_util` | `include/fuse/renderer/volumetric/volumetric_fog.hpp` | Exponential slice bounds, `computeSliceZFromDepth`, bilinear/trilinear density lerp |
 | `LightShafts` | `include/fuse/renderer/volumetric/light_shafts.hpp` | Depth-occlusion shaft scaffold |
 | `LensFlare` | `include/fuse/renderer/postprocess/lens_flare.hpp` | Ghost/halo generation + pass hook |
 
 | Test | Validates |
 |------|-----------|
-| `fuse_volumetric_lighting_b511` | Fog density falloff, froxel indexing/slice layout, density lerp, analytic populate, shaft occlusion, lens flare generation, 19-pass graph hooks |
+| `fuse_volumetric_lighting_b511` | Fog density falloff, froxel indexing/clamp/count limits, slice layout, density lerp extremes, empty-scene path, analytic populate, shaft occlusion, lens flare generation, 19-pass graph hooks |
 
 ---
 

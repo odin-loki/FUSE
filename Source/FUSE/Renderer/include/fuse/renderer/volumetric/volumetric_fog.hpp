@@ -27,11 +27,18 @@ struct VolumetricFogPassStats {
 
 /// Froxel grid configuration (B5.11 follow-up — view-aligned volumetric injection grid).
 struct FroxelGridDesc {
+    static constexpr u32 kMaxTilesX = 32u;
+    static constexpr u32 kMaxTilesY = 18u;
+    static constexpr u32 kMaxSlicesZ = 128u;
+
     u32 tilesX = 16;
     u32 tilesY = 9;
     u32 slicesZ = 64;
 
     u32 froxelCount() const { return tilesX * tilesY * slicesZ; }
+
+    /// Clamp tile/slice counts to CPU stub limits; zero dimensions remain zero (empty grid).
+    static FroxelGridDesc clampCounts(const FroxelGridDesc& raw);
 };
 
 /// Camera inputs for froxel depth-slice distribution and screen mapping.
@@ -65,12 +72,17 @@ struct FroxelSampleCoords {
 struct FroxelSliceLayout {
     static f32 computeSliceNearZ(u32 sliceZ, const FroxelGridDesc& desc, const FroxelCameraDesc& camera);
     static f32 computeSliceFarZ(u32 sliceZ, const FroxelGridDesc& desc, const FroxelCameraDesc& camera);
+    static u32 computeSliceZFromDepth(f32 viewDepth, const FroxelGridDesc& desc, const FroxelCameraDesc& camera);
 };
 
 /// Froxel grid indexing helpers — mirrors clustered light layout (B5.4).
 struct FroxelGridLayout {
     static u32 froxelIndex(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc);
     static void decodeFroxelIndex(u32 index, const FroxelGridDesc& desc, u32& tileX, u32& tileY, u32& sliceZ);
+    static u32 clampFroxelIndex(u32 index, const FroxelGridDesc& desc);
+    static u32 clampTileX(u32 tileX, const FroxelGridDesc& desc);
+    static u32 clampTileY(u32 tileY, const FroxelGridDesc& desc);
+    static u32 clampSliceZ(u32 sliceZ, const FroxelGridDesc& desc);
     static bool mapScreenDepthToSampleCoords(f32 screenX,
                                              f32 screenY,
                                              f32 viewDepth,
