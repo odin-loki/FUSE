@@ -2,12 +2,20 @@
 
 namespace fuse::adventure {
 
-bool InteractionSystem::tryInteract(const InteractionRequest& request) {
-    if (request.actor.isValid() && request.target.isValid()) {
-        ++m_successCount;
-        return true;
+InteractResult InteractionSystem::use(InteractContext& ctx, ItemId item, IInteractable& target) {
+    if (ctx.inventory == nullptr || !ctx.inventory->hasInventory(item)) {
+        return InteractResult::Failed;
     }
-    return false;
+
+    return target.onUse(ctx, item);
+}
+
+InteractResult InteractionSystem::pickup(InteractContext& ctx, ItemId item, u32 amount, IInteractable& target) {
+    if (ctx.inventory == nullptr || amount == 0) {
+        return InteractResult::Failed;
+    }
+
+    return target.onPickup(ctx, item, amount);
 }
 
 } // namespace fuse::adventure
