@@ -50,6 +50,33 @@ Vec3 camera_look_direction(const Vec3& position, const Vec3& look_at);
 /// Distance between camera position and look-at point.
 float camera_look_distance(const Vec3& position, const Vec3& look_at);
 
+/// Indices of bracketing keyframes for `time_ms` plus eased segment parameter.
+struct CameraKeyframeBracket {
+    int prev_index = -1;
+    int next_index = -1;
+    float segment_t = 0.f;
+};
+
+/// Find sorted keyframe indices surrounding `time_ms` (holds clamp before first / after last).
+CameraKeyframeBracket find_camera_keyframe_bracket(const std::vector<CameraKeyframe>& keyframes,
+                                                   TimelineMs time_ms,
+                                                   EaseMode ease = EaseMode::Linear);
+
+/// Sample individual camera rails without a `CameraTrack` wrapper.
+Vec3 sample_camera_position(const std::vector<CameraKeyframe>& keyframes,
+                            TimelineMs time_ms,
+                            EaseMode ease = EaseMode::Linear);
+float sample_camera_field_of_view(const std::vector<CameraKeyframe>& keyframes,
+                                  TimelineMs time_ms,
+                                  EaseMode ease = EaseMode::Linear);
+float sample_camera_roll(const std::vector<CameraKeyframe>& keyframes,
+                         TimelineMs time_ms,
+                         EaseMode ease = EaseMode::Linear);
+Vec3 sample_camera_look_at(const std::vector<CameraKeyframe>& keyframes,
+                           TimelineMs time_ms,
+                           EaseMode ease = EaseMode::Linear,
+                           const LookAtResolver* look_at_resolver = nullptr);
+
 /// Camera animation lane (Verve VCameraTrack / VSceneObjectTrack without Torque bridge).
 class CameraTrack : public Track {
 public:

@@ -17,7 +17,9 @@ Verve is Copyright (C) 2014 Violent Tulip, licensed under the **MIT License**. S
 | `TrackGroup` | `Engine/source/Verve/Core/VGroup.h` | Track grouping |
 | `CameraTrack` | `Engine/source/Verve/Extension/Camera/VCameraTrack.h` | Camera keyframe rail (position, FOV, roll, look-at modes, `empty`) |
 | `CameraSample` | Verve camera event sampling | Sampled pose; `look_direction()` / `look_distance()` helpers |
-| `LookAtResolver` | `Engine/source/T3D/camera.cpp` track-object look-at | Entity-bound look-at stub; falls back to fixed `look_at` when unresolved |
+| `LookAtResolver` | `Engine/source/T3D/camera.cpp` track-object look-at | Entity-bound look-at stub; `try_resolve` for not-found; falls back to fixed `look_at` when unresolved |
+| `sample_camera_*` | Verve camera event sampling rails | Direct keyframe-vector sampling (`position`, `field_of_view`, `roll`, `look_at`) |
+| `find_camera_keyframe_bracket` | Verve editor scrub handles | Bracketing keyframe indices + eased segment `t` |
 | `camera_look_direction` | Verve camera forward vector | Normalized aim vector from position to look-at |
 | `SpriteTrack` | `Engine/source/Verve/Extension/SceneObject/VSceneObjectTrack.h` | 2D sprite transform stub |
 | `PropertyTrack` | `Engine/source/Verve/Extension/Motion/VMotionTrack.h` | Scalar property rail stub |

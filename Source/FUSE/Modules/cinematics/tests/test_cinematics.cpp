@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 
 namespace {
 
@@ -287,6 +288,93 @@ void testLookAtResolverFallback() {
     expectNear(resolved.x, 1.f, 0.001f, "unresolved entity falls back to fixed look-at");
     expectNear(resolved.y, 2.f, 0.001f, "unresolved entity falls back to fixed look-at y");
     expectNear(resolved.z, 3.f, 0.001f, "unresolved entity falls back to fixed look-at z");
+}
+
+void testLookAtTryResolveNotFound() {
+    fuse::cinematics::CameraKeyframe keyframe{};
+    keyframe.look_at_mode = fuse::cinematics::CameraLookAtMode::TargetEntity;
+    keyframe.look_at_target_id = "missing";
+    keyframe.look_at = {4.f, 5.f, 6.f};
+
+    fuse::cinematics::LookAtResolver resolver;
+    resolver.set_try_resolve_fn([](const std::string& target_id, fuse::cinematics::Vec3& out) -> bool {
+        if (target_id == "hero") {
+            out = {0.f, 0.f, 0.f};
+            return true;
+        }
+        return false;
+    });
+
+    const fuse::cinematics::Vec3 missing = fuse::cinematics::resolve_look_at_world(keyframe, resolver);
+    expectNear(missing.x, 4.f, 0.001f, "try_resolve miss falls back to fixed look-at");
+    expectNear(missing.y, 5.f, 0.001f, "try_resolve miss falls back to fixed look-at y");
+    expectNear(missing.z, 6.f, 0.001f, "try_resolve miss falls back to fixed look-at z");
+
+    keyframe.look_at_target_id = "hero";
+    const fuse::cinematics::Vec3 origin = fuse::cinematics::resolve_look_at_world(keyframe, resolver);
+    expectNear(origin.x, 0.f, 0.001f, "try_resolve accepts world origin target");
+    expectNear(origin.y, 0.f, 0.001f, "try_resolve accepts world origin target y");
+    expectNear(origin.z, 0.f, 0.001f, "try_resolve accepts world origin target z");
+}
+
+void testCameraLookAtCoincidentEdge() {
+    fuse::cinematics::CameraTrack track("CoincidentAim");
+    fuse::cinematics::CameraKeyframe keyframe{};
+    keyframe.time_ms = 0;
+    keyframe.position = {1.f, 2.f, 3.f};
+    keyframe.look_at = {1.f, 2.f, 3.f};
+    track.add_keyframe(keyframe);
+
+    const fuse::cinematics::CameraSample sample = track.sample_at(0);
+    const fuse::cinematics::Vec3 forward = sample.look_direction();
+    expectNear(forward.z, -1.f, 0.001f, "coincident look-at uses default forward");
+    expectNear(sample.look_distance(), 0.f, 0.001f, "coincident look-at has zero distance");
+}
+
+void testCameraKeyframeSampleHelpers() {
+    std::vector<fuse::cinematics::CameraKeyframe> keyframes;
+    keyframes.push_back({0, {0.f, 0.f, 0.f}, fuse::cinematics::CameraLookAtMode::FixedPoint, {0.f, 0.f, -5.f}, {}, 80.f, 0.f});
+    keyframes.push_back({2'000, {0.f, 0.f, 10.f}, fuse::cinematics::CameraLookAtMode::FixedPoint, {0.f, 0.f, 10.f}, {}, 40.f, 20.f});
+
+    expectNear(fuse::cinematics::sample_camera_position(keyframes, 1'000).z, 5.f, 0.001f, "sample_camera_position midpoint");
+    expectNear(fuse::cinematics::sample_camera_field_of_view(keyframes, 1'000), 60.f, 0.001f, "sample_camera_field_of_view midpoint");
+    expectNear(fuse::cinematics::sample_camera_roll(keyframes, 1'000), 10.f, 0.001f, "sample_camera_roll midpoint");
+    expectNear(fuse::cinematics::sample_camera_look_at(keyframes, 1'000).z, 2.5f, 0.001f, "sample_camera_look_at midpoint");
+
+    const fuse::cinematics::CameraKeyframeBracket before = fuse::cinematics::find_camera_keyframe_bracket(keyframes, -100);
+    expectTrue(before.prev_index == -1, "before first keyframe has no prev");
+    expectTrue(before.next_index == 0, "before first keyframe points at first index");
+
+    const fuse::cinematics::CameraKeyframeBracket mid = fuse::cinematics::find_camera_keyframe_bracket(keyframes, 1'000);
+    expectTrue(mid.prev_index == 0, "mid bracket prev index");
+    expectTrue(mid.next_index == 1, "mid bracket next index");
+    expectNear(mid.segment_t, 0.5f, 0.001f, "mid bracket eased segment t");
+
+    const fuse::cinematics::CameraKeyframeBracket after = fuse::cinematics::find_camera_keyframe_bracket(keyframes, 5'000);
+    expectTrue(after.prev_index == 1, "after last keyframe holds on last index");
+    expectTrue(after.next_index == -1, "after last keyframe has no next");
+}
+
+void testCameraFovHoldExtrapolation() {
+    fuse::cinematics::CameraTrack track("FovHold");
+    fuse::cinematics::CameraKeyframe start{};
+    start.time_ms = 1'000;
+    start.field_of_view = 50.f;
+    fuse::cinematics::CameraKeyframe end{};
+    end.time_ms = 3'000;
+    end.field_of_view = 70.f;
+    track.add_keyframe(start);
+    track.add_keyframe(end);
+    track.sort_keyframes();
+
+    const fuse::cinematics::CameraSample before = track.sample_at(0);
+    expectNear(before.field_of_view, 50.f, 0.001f, "fov holds first keyframe before span");
+
+    const fuse::cinematics::CameraSample after = track.sample_at(10'000);
+    expectNear(after.field_of_view, 70.f, 0.001f, "fov holds last keyframe after span");
+
+    const fuse::cinematics::CameraSample eased = track.sample_at(2'000, fuse::cinematics::EaseMode::SmoothStep);
+    expectNear(eased.field_of_view, 60.f, 0.001f, "fov smoothstep midpoint");
 }
 
 void testCameraTrackMultiKeyframe() {
@@ -590,6 +678,10 @@ int main() {
     testCameraTrackFovExtremes();
     testCameraLookDirection();
     testLookAtResolverFallback();
+    testLookAtTryResolveNotFound();
+    testCameraLookAtCoincidentEdge();
+    testCameraKeyframeSampleHelpers();
+    testCameraFovHoldExtrapolation();
     testCameraTrackMultiKeyframe();
     testSpriteTrackSampling();
     testPropertyTrackSampling();
