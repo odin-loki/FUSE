@@ -55,8 +55,14 @@ BindlessBindingIndex bindlessSamplerBinding(u32 slotIndex);
 /// Per-kind heap ceiling (kMaxTextures / kMaxBuffers / kMaxSamplers).
 u32 bindlessHeapMaxCapacity(BindlessHeapKind kind);
 
-/// Clamps a requested heap size to the per-kind maximum.
+/// Clamps a requested heap size to [0, per-kind maximum].
 u32 clampHeapCapacity(BindlessHeapKind kind, u32 requested);
+
+/// True when the heap table has no reserved slots (capacity == 0).
+bool bindlessHeapIsEmpty(BindlessHeapKind kind, u32 heapCapacity);
+
+/// True when a slot index is outside the current heap table.
+bool bindlessSlotIndexOutOfRange(BindlessHeapKind kind, u32 index, u32 heapCapacity);
 
 /// Packs binding + array index into a single u32 for material tables / push data.
 u32 packBindlessBindingIndex(u32 binding, u32 arrayIndex);
@@ -83,6 +89,9 @@ public:
     bool validateSlot(BindlessSlotHandle handle) const;
     /// True when index is in range but generation does not match or slot is unoccupied.
     bool slotGenerationMismatch(BindlessSlotHandle handle) const;
+    /// Preferred guard for stale handles — true when handle fails validateSlot.
+    bool rejectStaleSlotHandle(BindlessSlotHandle handle) const;
+    bool slotIndexOutOfRange(BindlessHeapKind kind, u32 index) const;
     bool isSlotOccupied(BindlessHeapKind kind, u32 index) const;
     u32 slotGeneration(BindlessHeapKind kind, u32 index) const;
     bool slotIsStorageTexture(u32 index) const;
@@ -102,6 +111,8 @@ public:
     u32 heapMaxCapacity(BindlessHeapKind kind) const { return maxCountFor(kind); }
     u32 heapLiveCount(BindlessHeapKind kind) const;
     u32 heapFreeCount(BindlessHeapKind kind) const;
+    /// True when the heap table has no reserved slots (capacity == 0).
+    bool heapIsEmpty(BindlessHeapKind kind) const;
 
     u32 registerTexture(const Texture& texture, bool storage = false);
     u32 registerBuffer(const Buffer& buffer, bool uniform = false);
