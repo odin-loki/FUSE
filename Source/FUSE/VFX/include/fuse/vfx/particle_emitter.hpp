@@ -57,7 +57,7 @@ public:
 
     void set_position(const math::Vec3& world_pos);
     void set_enabled(bool enabled);
-    void burst(u32 count);
+    u32 burst(u32 count);
 
     void simulate(f32 dt);
     u32 alive_count() const;

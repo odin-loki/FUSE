@@ -32,13 +32,14 @@ void ParticleEmitter::set_enabled(bool enabled) {
     m_enabled = enabled;
 }
 
-void ParticleEmitter::burst(u32 count) {
+u32 ParticleEmitter::burst(u32 count) {
     if (!m_initialized) {
-        return;
+        return 0u;
     }
     const particle_soa::BurstEmitResult result =
         particle_soa::burst_emit(m_particles, m_desc, m_worldPos, count, m_frameSeed);
     m_frameSeed = result.seed_after;
+    return result.emitted;
 }
 
 void ParticleEmitter::simulate(f32 dt) {
