@@ -1,6 +1,6 @@
 # Track B — Vulkan Bootstrap (B2.1–B2.10) + CUDA Ray March (B2.7)
 
-**Status:** B2.1 bootstrap + B2.2 swapchain/frame ring + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.5 command buffer / render graph scaffolding + B2.6 CUDA/interop stubs + B2.7 SDF ray-march CUDA path scaffolding + B2.8 rasterisation pipeline scaffold + B2.9 composite pass scaffold + B2.10 renderer init & main-loop glue  
+**Status:** B2.1 bootstrap + B2.2 swapchain/frame ring + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.5 command buffer / render graph scaffolding + B2.6 CUDA/interop stubs + B2.7 SDF ray-march CUDA path scaffolding + B2.8 rasterisation pipeline scaffold + B2.9 composite pass scaffold + B2.10 renderer init & main-loop glue + **B2.11 Phase 2 deliverables & integration test suite**  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B2.1–B2.5, §B2.6, §B2.7, §B2.8, §B2.9, §B2.10  
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §4.2, §4.4, §5.3  
 **Hybrid integration:** [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md)
@@ -332,6 +332,90 @@ All shutdown steps are idempotent. GPU init and submit require the registered re
 
 ---
 
+## B2.11 — Phase 2 deliverables & integration test suite
+
+**Status:** Headless integration test exercises `RendererBootstrap` → `RhiContext` → `RenderGraph` + `RasterPath` + `CompositePass` together; full production gates from P2 §2.11 remain deferred.
+
+| Deliverable | Location | B2.11 status |
+|-------------|----------|--------------|
+| Phase 2 integration test | `Source/FUSE/Renderer/tests/test_vulkan_phase2_integration.cpp` | **Done** — `fuse_vulkan_phase2_integration` (headless, `FUSE_BUILD_VULKAN` gated) |
+| Per-component unit tests | `Source/FUSE/Renderer/tests/`, `Source/FUSE/Hybrid/tests/` | **Done** — B2.1–B2.10 targets listed below |
+| CI umbrella run | `.github/workflows/fuse-umbrella-linux.yml` | **Done** — Lavapipe headless ICD; no window surface |
+
+### Checklist — scaffold landed (B2.1–B2.10) vs deferred (full P2 gates)
+
+#### Vulkan infrastructure
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Instance/device bootstrap (headless) | **Done** | `VulkanBootstrap`, optional validation layers; stub when loader missing |
+| Physical device selection (discrete over integrated) | **Deferred** | No RTX-specific policy yet |
+| Graphics/compute/transfer queue families | **Deferred** | Single graphics queue path today |
+| Swapchain 1920×1080 triple-buffered + resize | **Deferred** | Headless stub + frame ring sketch only (`SurfaceKind::Headless`) |
+| Frame-in-flight (3 slots) | **Done** | `FrameManager` + fences/semaphores; timeline values not asserted |
+| `vkSetDebugUtilsObjectNameEXT` on all objects | **Deferred** | Debug naming not wired |
+
+#### Resource system
+
+| Item | Status | Notes |
+|------|--------|-------|
+| VMA buffer/texture create/destroy | **Done (scaffold)** | Real VMA when vendored; stub handles otherwise (`fuse_vulkan_resources`) |
+| Bindless descriptor table | **Deferred** | Index free-list only; no descriptor pool |
+| Staging ring wrap / large upload stress | **Deferred** | 64 MiB ring scaffold; no 256 MiB corruption test |
+| Async upload fence timeout | **Deferred** | — |
+| Win32 external memory + `cudaImportExternalMemory` | **Deferred** | `import_vulkan_*` returns `ok=false` (B2.6 stub) |
+
+#### Shader & pipeline system
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Offline SPIR-V fixtures (`spirv-val` clean) | **Done** | Checked-in `.spv`; `fuse_shader_pipeline` |
+| Pipeline cache serialize/restore | **Deferred** | — |
+| Hot-reload < 200 ms | **Deferred** | — |
+| Push constants per-draw (RenderDoc) | **Deferred** | Placeholder layout only |
+
+#### CUDA–Vulkan interop
+
+| Item | Status | Notes |
+|------|--------|-------|
+| `SharedTimeline` 10k-frame race-free | **Deferred** | Stub semaphore wrapper |
+| Vulkan buffer readback via CUDA pointer | **Deferred** | Import API surface only |
+| CUDA texture visible in composite pass | **Deferred** | Composite is logical stub |
+| `cuda-memcheck` / `compute-sanitizer` clean | **Deferred** | No toolkit on CI |
+
+#### Rendering correctness
+
+| Item | Status | Notes |
+|------|--------|-------|
+| White triangle, black background (Week 1 gate) | **Done (headless)** | `RasterPath` clear + triangle; no on-screen present in CI |
+| G-buffer attachments (RenderDoc) | **Deferred** | Deferred renderer scaffold separate from B2.8 path |
+| CUDA ray march vs reference | **Done (CPU ref)** | `fuse_ray_march_stub`; full kernel deferred |
+| SDF normals smooth at surface | **Deferred** | — |
+| Composite blend at all GRIA α | **Done (stub)** | `CompositePass` + graph ordering; no real bindless shader |
+| 60 fps @ 1080p, 10-object SDF (Week 5 gate) | **Deferred** | No present path / perf gate in CI |
+
+#### Performance baselines (RTX 3090)
+
+| Item | Status | Notes |
+|------|--------|-------|
+| GPU frame time < 8 ms @ 1080p | **Deferred** | — |
+| CUDA kernel > 60% occupancy | **Deferred** | — |
+| Zero per-frame heap allocs | **Done (scaffold)** | Fixed `kMaxPassesPerFrame` storage; not profiled under load |
+| Render graph compile < 1 ms CPU | **Deferred** | Not timed in CI |
+
+### Integration test flow (headless)
+
+`fuse_vulkan_phase2_integration` validates the full B2.5–B2.10 wiring in one executable:
+
+1. `fuse::core::initialize()` + render-thread registration
+2. `RendererBootstrap::create()` — `RhiContext` + `FrameManager` + `VulkanBootstrap`
+3. Per frame (3× to exercise triple-buffer ring): `beginFrame` → `submitFrame` with clears + 2D sprites
+4. Asserts: `RenderGraph` compiles (≥ 4 passes, barriers planned), `CommandBufferRecorder` non-empty, `RasterPath` triangle draw, `CompositePass` stats, frame ring slot < 3
+
+Gated by `FUSE_BUILD_VULKAN=ON` (builds `fuse_rhi` and renderer tests). When the Vulkan loader is absent, configure still succeeds; the test asserts stub-backend rejection paths where applicable.
+
+---
+
 ## Desktop vs mobile (design notes)
 
 | Platform | B2.2 stance | Later |
@@ -357,6 +441,7 @@ Portable invariant unchanged: job code emits `RenderCommandList`; platform modul
 | `fuse_render_graph` | Barrier planning, pass culling, command recorder, RHI graph submit |
 | `fuse_composite_pass` | Composite pass scaffold, graph ordering (composite before present), RHI stats |
 | `fuse_renderer_bootstrap` | B2.10 init/shutdown order, FrameManager availability, post-init submit |
+| `fuse_vulkan_phase2_integration` | **B2.11** — `RendererBootstrap` + `RenderGraph` + `RasterPath` + `CompositePass` headless multi-frame |
 | `fuse_hybrid_renderer_bootstrap` | Hybrid glue, shared RhiContext, runFrame lifecycle |
 | `fuse_hybrid_tests` | Existing U4 software renderer regressions |
 | `fuse_cuda_jobs` | `submit_cuda` hook signals counter without CUDA toolkit |
@@ -367,7 +452,7 @@ Portable invariant unchanged: job code emits `RenderCommandList`; platform modul
 Run:
 
 ```bash
-ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_graphics_pipeline|fuse_render_command|fuse_render_graph|fuse_composite_pass|fuse_renderer_bootstrap|fuse_hybrid_renderer|fuse_hybrid|fuse_cuda|fuse_ray_march|fuse_screen_space_effects'
+ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_graphics_pipeline|fuse_render_command|fuse_render_graph|fuse_composite_pass|fuse_renderer_bootstrap|fuse_vulkan_phase2|fuse_hybrid_renderer|fuse_hybrid|fuse_cuda|fuse_ray_march|fuse_screen_space_effects'
 ```
 
 ---
@@ -431,6 +516,7 @@ Thread ownership unchanged: CUDA launch jobs run on worker threads; Vulkan recor
 - [x] B2.8 rasterisation pipeline scaffold — `GraphicsPipeline`, headless clear/triangle `RasterPath`
 - [x] B2.9 composite pass scaffold — `CompositePass`, graph node before present, GRIA blend stub
 - [x] B2.10 renderer init & main-loop glue — `RendererBootstrap`, `HybridRendererBootstrap`, lifecycle tests
+- [x] B2.11 Phase 2 deliverables & integration test suite — checklist in this doc; `fuse_vulkan_phase2_integration`
 - [ ] B2.4 follow-up: bindless descriptor pool + graphics pipeline cache
 - [ ] B2.5 follow-up: real `vkCmdBeginRenderPass` / queue submit wiring (B2.8 draw list)
 - [ ] B2.6 follow-up: `cudaImportExternalMemory`, timeline semaphores, real shared textures
