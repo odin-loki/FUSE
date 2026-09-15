@@ -5,6 +5,30 @@
 
 namespace fuse::renderer {
 
+namespace {
+
+f32 log_luminance_to_bin(f32 luminance, const LuminanceHistogramParams& params) {
+    const f32 safeLum = std::max(luminance, 1e-8f);
+    const f32 logLum = std::log2(safeLum);
+    const f32 range = params.max_log_luminance - params.min_log_luminance;
+    if (range <= 0.f || params.bin_count == 0) {
+        return 0.f;
+    }
+    const f32 normalized = (logLum - params.min_log_luminance) / range;
+    return std::clamp(normalized, 0.f, 1.f) * static_cast<f32>(params.bin_count - 1);
+}
+
+f32 bin_to_log_luminance(u32 bin, const LuminanceHistogramParams& params) {
+    if (params.bin_count <= 1) {
+        return params.min_log_luminance;
+    }
+    const f32 normalized = static_cast<f32>(bin) / static_cast<f32>(params.bin_count - 1);
+    const f32 range = params.max_log_luminance - params.min_log_luminance;
+    return params.min_log_luminance + normalized * range;
+}
+
+} // namespace
+
 f32 compute_rec709_luminance(const fuse::math::Vec3& rgb) {
     return 0.2126f * rgb.x + 0.7152f * rgb.y + 0.0722f * rgb.z;
 }
@@ -17,6 +41,21 @@ f32 luminance_to_ev(f32 luminance, f32 target_luminance) {
 
 f32 clamp_ev(f32 ev, const AutoExposureParams& params) {
     return std::clamp(ev, params.min_ev, params.max_ev);
+}
+
+f32 ema_alpha_for_direction(bool brightening, const AutoExposureParams& params) {
+    return brightening ? params.ema_alpha_up : params.ema_alpha_down;
+}
+
+f32 update_smoothed_luminance(AutoExposureState& state, f32 measured_luminance, const AutoExposureParams& params) {
+    const bool brightening = measured_luminance > state.smoothed_luminance;
+    const f32 alpha = ema_alpha_for_direction(brightening, params);
+    if (state.smoothed_luminance <= 0.f) {
+        state.smoothed_luminance = measured_luminance;
+    } else {
+        state.smoothed_luminance = alpha * measured_luminance + (1.f - alpha) * state.smoothed_luminance;
+    }
+    return state.smoothed_luminance;
 }
 
 f32 update_auto_exposure(AutoExposureState& state, f32 measured_luminance, const AutoExposureParams& params,
@@ -39,6 +78,100 @@ f32 update_auto_exposure(AutoExposureState& state, f32 measured_luminance, const
     }
     state.current_ev = clamp_ev(state.current_ev, params);
     return state.current_ev;
+}
+
+f32 update_auto_exposure_ema(AutoExposureState& state, f32 measured_luminance, const AutoExposureParams& params,
+                             f32 delta_seconds) {
+    const f32 adaptedLuminance = update_smoothed_luminance(state, measured_luminance, params);
+    state.measured_luminance = adaptedLuminance;
+    return update_auto_exposure(state, adaptedLuminance, params, delta_seconds);
+}
+
+void LuminanceHistogram::reset() {
+    m_bins.assign(m_params.bin_count, 0u);
+    m_sampleCount = 0;
+}
+
+void LuminanceHistogram::init(const LuminanceHistogramParams& params) {
+    m_params = params;
+    if (m_params.bin_count == 0) {
+        m_params.bin_count = 1;
+    }
+    reset();
+}
+
+void LuminanceHistogram::accumulateLuminance(f32 luminance) {
+    if (m_bins.empty()) {
+        init(m_params);
+    }
+    const u32 bin = static_cast<u32>(std::round(log_luminance_to_bin(luminance, m_params)));
+    const u32 clampedBin = std::min(bin, m_params.bin_count - 1);
+    ++m_bins[clampedBin];
+    ++m_sampleCount;
+}
+
+void LuminanceHistogram::accumulate(const fuse::math::Vec3& rgb) {
+    accumulateLuminance(compute_rec709_luminance(rgb));
+}
+
+u32 LuminanceHistogram::occupiedBinCount() const {
+    u32 occupied = 0;
+    for (u32 count : m_bins) {
+        if (count > 0) {
+            ++occupied;
+        }
+    }
+    return occupied;
+}
+
+f32 LuminanceHistogram::averageLuminance() const {
+    if (m_sampleCount == 0 || m_bins.empty()) {
+        return 0.f;
+    }
+
+    f64 weightedLog = 0.0;
+    for (u32 bin = 0; bin < m_bins.size(); ++bin) {
+        weightedLog += static_cast<f64>(m_bins[bin]) * static_cast<f64>(bin_to_log_luminance(bin, m_params));
+    }
+    const f32 averageLog = static_cast<f32>(weightedLog / static_cast<f64>(m_sampleCount));
+    return std::pow(2.f, averageLog);
+}
+
+f32 LuminanceHistogram::percentileLuminance(f32 percentile) const {
+    if (m_sampleCount == 0 || m_bins.empty()) {
+        return 0.f;
+    }
+
+    const f32 clampedPercentile = std::clamp(percentile, 0.f, 1.f);
+    const u32 targetCount = static_cast<u32>(std::ceil(clampedPercentile * static_cast<f32>(m_sampleCount)));
+    const u32 desiredCount = std::max(targetCount, 1u);
+
+    u32 running = 0;
+    for (u32 bin = 0; bin < m_bins.size(); ++bin) {
+        running += m_bins[bin];
+        if (running >= desiredCount) {
+            return std::pow(2.f, bin_to_log_luminance(bin, m_params));
+        }
+    }
+
+    return std::pow(2.f, bin_to_log_luminance(static_cast<u32>(m_bins.size() - 1), m_params));
+}
+
+f32 LuminanceHistogram::meteringLuminance() const {
+    return percentileLuminance(m_params.metering_percentile);
+}
+
+f32 LuminanceHistogram::measureFromSamples(const fuse::math::Vec3* samples, u32 count,
+                                           const LuminanceHistogramParams& params) {
+    LuminanceHistogram histogram;
+    histogram.init(params);
+    if (samples == nullptr || count == 0) {
+        return 0.f;
+    }
+    for (u32 i = 0; i < count; ++i) {
+        histogram.accumulate(samples[i]);
+    }
+    return histogram.meteringLuminance();
 }
 
 void ExposureMeter::reset() {
@@ -80,7 +213,14 @@ void AutoExposure::destroy() {
 }
 
 f32 AutoExposure::updateFromLuminance(f32 measured_luminance, f32 delta_seconds) {
+    if (m_params.use_ema_adaptation) {
+        return update_auto_exposure_ema(m_state, measured_luminance, m_params, delta_seconds);
+    }
     return update_auto_exposure(m_state, measured_luminance, m_params, delta_seconds);
+}
+
+f32 AutoExposure::updateFromHistogram(const LuminanceHistogram& histogram, f32 delta_seconds) {
+    return updateFromLuminance(histogram.meteringLuminance(), delta_seconds);
 }
 
 f32 AutoExposure::updateFromSamples(const fuse::math::Vec3* samples, u32 count, f32 delta_seconds) {

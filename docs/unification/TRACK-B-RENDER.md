@@ -1,6 +1,6 @@
 # Track B — Own Renderer (B5 deferred pipeline)
 
-**Status:** B5.2 G-buffer layout validation + B5.3 PBR material parameter blocks + **B5.4 clustered light grid deepen** + B5.5 CSM light-space AABB deepen + **B5.11 volumetric froxel grid deepen** + B5.6 DDGI probe grid indexing deepened + B5.9 TAA jitter/history deepened  
+**Status:** B5.2 G-buffer layout validation + B5.3 PBR material parameter blocks + **B5.4 clustered light grid deepen** + B5.5 CSM light-space AABB deepen + **B5.10 post-process tonemap/auto-exposure deepen** + **B5.11 volumetric froxel grid deepen** + B5.6 DDGI probe grid indexing deepened + B5.9 TAA jitter/history deepened  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B5  
 **Detail:** [TRACK-B-RENDER-B5.md](./TRACK-B-RENDER-B5.md) — full B5.1–B5.12 scope, tests, gates  
 **Depends on:** [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) (RHI bootstrap, render graph, CUDA job lane)
@@ -109,6 +109,21 @@ ctest --test-dir build --output-on-failure -R fuse_material_system
 
 ```bash
 ctest --test-dir build --output-on-failure -R fuse_ddgi
+```
+
+---
+
+## B5.10 deepen — Post-process tonemap curve + auto-exposure (CPU)
+
+| Component | Notes |
+|-----------|-------|
+| `TonemapCurveKind` / `make_reinhard_curve_params` / `make_aces_curve_params` | Reinhard extended + Hill ACES curve presets applied before tone-map operator |
+| `AutoExposureParams::use_ema_adaptation` | Optional EMA luminance smoothing with asymmetric up/down alpha |
+| `LuminanceHistogram` | Log-luminance binning, percentile metering, empty-histogram guard |
+| `fuse_post_process_b510` | Reinhard/ACES curve clamp, EMA convergence, empty histogram |
+
+```bash
+ctest --test-dir build --output-on-failure -R fuse_post_process_b510
 ```
 
 ---

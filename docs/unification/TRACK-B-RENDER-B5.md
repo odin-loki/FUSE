@@ -212,18 +212,19 @@ See [B5.7-SCREEN-SPACE-EFFECTS.md](./B5.7-SCREEN-SPACE-EFFECTS.md) for component
 
 ## B5.10 — Post-Processing Stack
 
-**Status:** CPU-first `PostStack` scaffold landed — bloom, ACES/neutral tonemap, color grade stages; **B5.10 deepen** adds tonemap curve + auto-exposure CPU stubs.
+**Status:** CPU-first `PostStack` scaffold landed — bloom, ACES/neutral tonemap, color grade stages; **B5.10 deepen** adds tonemap curve presets, EMA exposure adaptation, and log-luminance histogram metering stubs.
 
 | Component | Location | Notes |
 |-----------|----------|-------|
 | `PostStack` | `include/fuse/renderer/postprocess/post_stack.hpp` | Three-stage chain: bloom → tonemap → color grade |
 | `Bloom` / `ToneMap` / `ColorGrade` | `postprocess/bloom.hpp`, `tonemap.hpp`, `color_grade.hpp` | CPU pixel path for unit tests |
-| `TonemapCurve` | `postprocess/tonemap_curve.hpp` | Filmic S-curve stub applied before tone-map operator |
-| `AutoExposure` / `ExposureMeter` | `postprocess/auto_exposure.hpp` | Histogram-free metering + temporal EV adaptation stub |
+| `TonemapCurve` | `postprocess/tonemap_curve.hpp` | Filmic / Reinhard / ACES curve presets (`make_reinhard_curve_params`, `make_aces_curve_params`) |
+| `AutoExposure` / `ExposureMeter` | `postprocess/auto_exposure.hpp` | Average metering + optional EMA adaptation (`use_ema_adaptation`) |
+| `LuminanceHistogram` | `postprocess/auto_exposure.hpp` | Log-luminance binning + percentile metering stub |
 
 | Test | Validates |
 |------|-----------|
-| `fuse_post_process_b510` | Bloom threshold, ACES clamp, neutral 0.18 grey calibration, stage chain, tonemap curve identity/rolloff, EV metering/adaptation, auto-exposure integration |
+| `fuse_post_process_b510` | Bloom threshold, ACES clamp, neutral 0.18 grey calibration, stage chain, tonemap curve identity/rolloff/Reinhard+ACES clamp, EMA convergence, empty histogram, EV metering/adaptation, auto-exposure integration |
 
 DOF, motion blur, film grain GPU shader chain, and CUDA histogram reduction remain future work.
 
@@ -327,6 +328,9 @@ DOF, motion blur, film grain GPU shader chain, and CUDA histogram reduction rema
 |------|--------|-------|
 | Bloom threshold gate | **Done (stub)** | `fuse_post_process_b510` black-frame test |
 | Tonemap curve S-curve rolloff | **Done (stub)** | `fuse_post_process_b510` filmic curve tests |
+| Reinhard/ACES curve preset clamp | **Done (stub)** | `fuse_post_process_b510` Reinhard+ACES curve clamp tests |
+| Auto-exposure EMA adaptation | **Done (stub)** | `fuse_post_process_b510` EMA convergence test |
+| Log-luminance histogram metering | **Done (stub)** | `fuse_post_process_b510` empty histogram + percentile metering |
 | Auto-exposure EV metering/adaptation | **Done (stub)** | `fuse_post_process_b510` luminance→EV + clamp tests |
 | DOF circle of confusion thin-lens formula | **Deferred** | — |
 | Motion blur velocity trail | **Deferred** | — |
@@ -396,7 +400,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_screen_space_effects'
 ### B5.10–B5.11 (post-process, lens flare / volumetric)
 
 - [x] **B5.10** `PostStack` CPU scaffold — bloom, tonemap, color grade (`fuse_post_process_b510`)
-- [x] **B5.10 deepen** Tonemap curve + auto-exposure CPU stubs wired into `PostStack`
+- [x] **B5.10 deepen** Tonemap curve presets (Reinhard/ACES), EMA exposure adaptation, log-luminance histogram metering
 - [x] **B5.11** Volumetric fog, light shafts, lens flare scaffolds + graph hooks (`fuse_volumetric_lighting_b511`)
 - [ ] GPU post-process shader chain (deferred — B2.4 bindless descriptor pool)
 - [ ] Full volumetric fog CUDA kernel (deferred — B2.6 interop)
