@@ -1,0 +1,34 @@
+add_executable(fuse_physics_data_tests
+    test_physics_data.cpp
+)
+
+target_link_libraries(fuse_physics_data_tests PRIVATE fuse_physics)
+add_test(NAME fuse_physics_data_tests COMMAND fuse_physics_data_tests)
+
+add_executable(fuse_physics_broadphase_tests
+    test_spatial_hash.cpp
+)
+
+target_link_libraries(fuse_physics_broadphase_tests PRIVATE fuse_physics)
+add_test(NAME fuse_physics_broadphase_tests COMMAND fuse_physics_broadphase_tests)
+
+add_executable(fuse_physics_narrowphase_tests
+    test_narrowphase.cpp
+)
+
+target_link_libraries(fuse_physics_narrowphase_tests PRIVATE fuse_physics)
+add_test(NAME fuse_physics_narrowphase_tests COMMAND fuse_physics_narrowphase_tests)
+
+add_executable(fuse_physics_pipeline_tests
+    test_physics_pipeline.cpp
+)
+
+target_link_libraries(fuse_physics_pipeline_tests PRIVATE fuse_physics)
+add_test(NAME fuse_physics_pipeline_tests COMMAND fuse_physics_pipeline_tests)
+
+add_executable(fuse_physics_world_composition_tests
+    test_world_composition.cpp
+)
+
+target_link_libraries(fuse_physics_world_composition_tests PRIVATE fuse_world3d fuse_physics)
+add_test(NAME fuse_physics_world_composition_tests COMMAND fuse_physics_world_composition_tests)

@@ -14,7 +14,7 @@ target_include_directories(fuse_world2d
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
-target_link_libraries(fuse_world2d PUBLIC fuse_core)
+target_link_libraries(fuse_world2d PUBLIC fuse_core fuse_physics)
 target_compile_features(fuse_world2d PUBLIC cxx_std_17)
 
 if(FUSE_BUILD_CORE_TESTS)
