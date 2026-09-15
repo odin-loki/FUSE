@@ -141,4 +141,14 @@ inline u32 ResidencySet::find_index_(GridCoord coord) const {
     return it != m_index.end() ? it->second : static_cast<u32>(-1);
 }
 
+/// Stub: register a resident cell; rejects invalid focus distance.
+[[nodiscard]] inline bool try_add_resident(ResidencySet& set, GridCoord coord, f32 focus_distance) {
+    return set.add(coord, focus_distance);
+}
+
+/// Stub: evict a cell from the resident set.
+[[nodiscard]] inline bool try_remove_resident(ResidencySet& set, GridCoord coord) {
+    return set.remove(coord);
+}
+
 } // namespace fuse::world_partition

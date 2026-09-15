@@ -33,9 +33,24 @@ struct CompletedStreamingRequest {
 /// Worker-side I/O stub — production wiring reads cell assets from disk.
 using StreamingWorkFn = std::function<bool(GridCoord coord, StreamingRequestKind kind)>;
 
+/// Raise pending priority when the same coord/kind is re-queued (stub heuristic).
+[[nodiscard]] f32 promote_streaming_priority(f32 current, f32 incoming);
+
+/// Lower pending priority when focus moves away (scale clamped to [0, 1]).
+[[nodiscard]] f32 demote_streaming_priority(f32 current, f32 scale);
+
 /// Async request queue stub backed by JobScheduler (mirrors fuse::io VFS async loads).
 class StreamingRequestQueue {
 public:
+    /// Queue a request for later submission. Promotes priority when the same coord/kind is already pending.
+    bool enqueue(StreamingRequest request);
+
+    /// Lower priority for a pending request (returns false when not found).
+    bool demote(GridCoord coord, StreamingRequestKind kind, f32 scale);
+
+    /// Submit up to `budget` highest-priority pending requests. Returns the number submitted.
+    u32 flush(u32 budget, StreamingWorkFn work);
+
     /// Submit work to JobScheduler. Returns false when the scheduler is unavailable or
     /// `max_pending_submits` would be exceeded.
     bool submit(StreamingRequest request, StreamingWorkFn work);
@@ -45,6 +60,7 @@ public:
 
     void set_max_pending_submits(u32 max_pending) { m_max_pending_submits = max_pending; }
     [[nodiscard]] u32 max_pending_submits() const { return m_max_pending_submits; }
+    [[nodiscard]] u32 pending_enqueue_count() const;
     [[nodiscard]] u32 pending_submit_count() const;
 
     [[nodiscard]] u32 in_flight_count() const;
@@ -54,12 +70,20 @@ public:
     void clear();
 
 private:
+    struct PendingStreamingRequest {
+        StreamingRequest request{};
+        u64 enqueue_sequence = 0;
+    };
+
+    [[nodiscard]] bool would_exceed_budget_() const;
     void push_completed_(CompletedStreamingRequest completed);
 
     mutable std::mutex m_mutex;
     u32 m_inFlight = 0;
     u64 m_submit_sequence = 0;
+    u64 m_enqueue_sequence = 0;
     u32 m_max_pending_submits = 0; ///< 0 = unlimited pending (in-flight + completed buffer)
+    std::vector<PendingStreamingRequest> m_pending;
     std::vector<CompletedStreamingRequest> m_completed;
 };
 

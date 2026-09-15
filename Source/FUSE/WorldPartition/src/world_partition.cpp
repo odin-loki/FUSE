@@ -325,6 +325,7 @@ void WorldPartition::process_queues_() {
             StreamingRequest async_request{};
             async_request.coord = coord;
             async_request.kind = StreamingRequestKind::Unload;
+            async_request.priority = request.priority;
             if (!m_async_queue.submit(async_request, make_worker_stub_())) {
                 execute_unload_(*cell);
             }
@@ -379,14 +380,14 @@ void WorldPartition::execute_load_(WorldCell& cell) {
 
     const fuse::ecs::vec3 cell_center = grid_to_world_center(cell.coord, m_desc.cell_size);
     const f32 focus_distance = m_streaming.planar_distance_to(cell_center);
-    (void)m_residency_set.add(cell.coord, focus_distance);
+    (void)try_add_resident(m_residency_set, cell.coord, focus_distance);
 }
 
 void WorldPartition::execute_unload_(WorldCell& cell) {
     if (m_callbacks.on_unload != nullptr) {
         m_callbacks.on_unload(cell);
     }
-    (void)m_residency_set.remove(cell.coord);
+    (void)try_remove_resident(m_residency_set, cell.coord);
     cell.entities.clear();
     cell.residency = CellResidencyState::Unloaded;
     cell.visible = false;

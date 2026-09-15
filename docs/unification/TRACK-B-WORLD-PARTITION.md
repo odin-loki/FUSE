@@ -11,12 +11,12 @@
 | Component | Location | Notes |
 |-----------|----------|-------|
 | Residency helpers | `grid_cell.hpp` | `is_unloading_state`, `is_transitional_state`, `is_queued_state`, `unload_priority` |
-| `ResidencySet` | `residency_set.hpp` | Focus-distance resident set: `add`/`remove`, `pick_eviction_candidate`, `collect_eviction_candidates` (farthest first) |
+| `ResidencySet` | `residency_set.hpp` | Focus-distance resident set: `add`/`remove`, `try_add_resident`/`try_remove_resident` stubs, `pick_eviction_candidate`, `collect_eviction_candidates` (farthest first) |
 | `StreamingBudget` | `streaming_budget.hpp` | Per-tick caps, `max_resident_bytes`, `EvictionPolicy` (distance / LRU), `StreamingBudgetCounters`, headroom/clamp helpers |
 | `StreamingVolume` | `streaming_volume.hpp` | `load_priority_for` (closer first), `unload_priority_for` (farther first) |
-| `StreamingRequestQueue` | `streaming_request_queue.hpp/.cpp` | Mutex-backed completion buffer; priority-first drain with FIFO tie-break; worker I/O stub via `JobScheduler::submit` |
+| `StreamingRequestQueue` | `streaming_request_queue.hpp/.cpp` | Pending `enqueue`/`flush` with coord+kind dedupe; priority-first drain with FIFO tie-break; worker I/O stub via `JobScheduler::submit` |
 | `WorldPartition` deepen | `world_partition.hpp/.cpp` | `ResidencySet` tracking, `StreamingBudgetCounters`, resident-cell + byte budget rejection, priority-aware eviction, budget-aware `process_queues_`, `drain_completed_requests()` |
-| Tests | `tests/test_world_partition.cpp` | Budget helper/clamp/counters, eviction-candidate ordering, empty-residency reject, distance + LRU eviction, queue FIFO/empty/priority drain, residency set, batch/in-flight tracking, async residency |
+| Tests | `tests/test_world_partition.cpp` | Budget helper/clamp/counters, eviction-candidate ordering, empty-residency reject/stub ops, distance + LRU eviction, queue enqueue/flush/FIFO/empty/mixed-kind completion ordering, residency set, batch/in-flight tracking, async residency |
 
 **Not in scope (follow-up PRs):** binary cell asset I/O, scene spawn on load, dirty-cell save, GPU residency.
 
@@ -61,21 +61,25 @@ const fuse::u32 inFlight = partition.in_flight_request_count();
 
 ```cpp
 fuse::world_partition::StreamingRequestQueue queue;
-queue.submit({coord, fuse::world_partition::StreamingRequestKind::Load, priority},
+queue.enqueue({coord, fuse::world_partition::StreamingRequestKind::Load, priority});
+queue.flush(budget, [](fuse::world_partition::GridCoord, fuse::world_partition::StreamingRequestKind) {
+    return true; // worker I/O stub
+});
+queue.submit({coord, fuse::world_partition::StreamingRequestKind::Unload, unload_priority},
              [](fuse::world_partition::GridCoord, fuse::world_partition::StreamingRequestKind) {
-                 return true; // worker I/O stub
+                 return true;
              });
 ```
 
-`drain_completed` returns completions highest-priority-first; equal priorities preserve FIFO submit order via `submit_sequence`. `empty()` is true when no work is in-flight and the completion buffer is drained.
+`enqueue` dedupes by coord+kind and promotes priority via `promote_streaming_priority`. `flush` submits the highest-priority pending batch with FIFO tie-break on equal priority. `drain_completed` returns completions highest-priority-first; equal priorities preserve FIFO submit order via `submit_sequence`. `empty()` is true when no work is pending, in-flight, or buffered for drain. `WorldPartition` propagates unload priority into async submissions so mixed load/unload completions sort correctly.
 
 `ResidencySet` tracks loaded cells by planar focus distance — `WorldPartition` refreshes distances each `update` and uses `pick_eviction_candidate()` under `EvictionPolicy::DistanceFromFocus`:
 
 ```cpp
 fuse::world_partition::ResidencySet residency;
-residency.add(coord, focus_distance);
+try_add_resident(residency, coord, focus_distance);
 const auto evict = residency.pick_eviction_candidate(); // farthest cell
-residency.remove(coord);
+try_remove_resident(residency, coord);
 ```
 
 ---
@@ -117,7 +121,8 @@ ctest --test-dir build --output-on-failure -R fuse_world_partition_b76
 | Unload priority | `unload_priority_for` ordering; farther cells evict first |
 | Streaming budget | Per-tick caps; resident-cell + byte budget rejection |
 | Eviction | Distance-from-focus (`ResidencySet`) and LRU ordering |
-| `StreamingRequestQueue` | Submit, priority-ordered drain, FIFO tie-break, empty drain, pending-cap reject, in-flight tracking |
+| `StreamingRequestQueue` | Enqueue/flush ordering, promote/demote, priority-ordered drain, mixed-kind completion order, FIFO tie-break, empty drain, pending-cap reject, in-flight tracking |
+| Empty residency stubs | `try_add_resident`/`try_remove_resident` reject invalid ops; empty set has no eviction candidates |
 | Async residency | `Loading` → `Resident` → `Unloading` → `Unloaded` with 1 worker |
 | Streaming update | Camera-driven load/unload with async cap |
 
@@ -129,7 +134,9 @@ ctest --test-dir build --output-on-failure -R fuse_world_partition_b76
 - [x] Unload priority + per-tick / byte / resident-cell streaming budget stubs
 - [x] LRU + distance eviction policy stubs
 - [x] Load enqueue rejection + priority-aware eviction
-- [x] Queue drain priority ordering + FIFO tie-break + empty drain
+- [x] Queue enqueue/flush ordering + drain priority ordering + FIFO tie-break + empty drain
+- [x] Mixed load/unload completion ordering (unload priority propagated to async queue)
+- [x] Residency add/remove stubs (`try_add_resident` / `try_remove_resident`)
 - [x] `ResidencySet` focus-distance add/remove + eviction candidate list
 - [x] `StreamingBudgetCounters` + headroom/clamp helpers
 - [x] Empty-residency budget rejection tests
