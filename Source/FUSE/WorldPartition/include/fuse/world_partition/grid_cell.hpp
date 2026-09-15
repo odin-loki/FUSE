@@ -85,6 +85,7 @@ struct WorldCell {
     CellResidencyState residency = CellResidencyState::Unloaded;
     bool visible = false;
     f32 load_priority = 0.f;
+    f32 unload_priority = 0.f;
     std::vector<fuse::ecs::EntityID> entities;
 };
 

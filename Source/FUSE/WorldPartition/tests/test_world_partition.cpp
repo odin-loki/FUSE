@@ -88,6 +88,11 @@ void testStreamingVolumeHysteresis() {
     const fuse::world_partition::GridCoord far_cell{10, 0};
     expectTrue(!volume.should_load(far_cell, 256.f), "distant cell should not load");
     expectTrue(volume.should_unload(far_cell, 256.f), "distant cell should unload when resident");
+
+    const fuse::f32 near_priority = volume.unload_priority_for({1, 0}, 256.f);
+    const fuse::f32 far_priority = volume.unload_priority_for({10, 0}, 256.f);
+    expectTrue(far_priority > near_priority, "farther cells receive higher unload priority");
+    expectTrue(near_priority == 0.f, "cells inside stream-out radius have zero unload priority");
 }
 
 bool g_unload_called = false;
@@ -139,7 +144,7 @@ void testWorldPartitionStreamingUpdate() {
     desc.stream_in_distance = 400.f;
     desc.stream_out_distance = 700.f;
     desc.max_loaded_cells = 16;
-    desc.max_async_in_flight = 1;
+    desc.budget.max_async_in_flight = 1;
     desc.async_loading = true;
     partition.init(desc);
 
@@ -193,12 +198,120 @@ void testStreamingRequestQueueStub() {
     });
 }
 
+void testStreamingBudgetCaps() {
+    fuse::world_partition::WorldPartition partition;
+    fuse::world_partition::WorldPartitionDesc desc{};
+    desc.async_loading = false;
+    desc.stream_in_distance = 800.f;
+    desc.budget.max_loads_per_tick = 1;
+    desc.max_loaded_cells = 16;
+    partition.init(desc);
+
+    const fuse::ecs::vec3 camera{128.f, 0.f, 128.f, 0.f};
+    partition.update(camera);
+
+    expectEq(partition.loaded_cell_count(), 1u, "load budget limits synchronous loads per tick");
+    expectTrue(partition.queued_load_count() >= 1u, "remaining loads stay queued");
+
+    partition.update(camera);
+    expectTrue(partition.loaded_cell_count() >= 2u, "next tick processes another load within budget");
+
+    partition.destroy();
+}
+
+void testUnloadPriorityOrdering() {
+    fuse::world_partition::WorldPartition partition;
+    fuse::world_partition::WorldPartitionDesc desc{};
+    desc.async_loading = false;
+    desc.stream_out_distance = 300.f;
+    desc.budget.max_unloads_per_tick = 1;
+    desc.max_loaded_cells = 8;
+    partition.init(desc);
+
+    const fuse::world_partition::GridCoord near_cell{1, 0};
+    const fuse::world_partition::GridCoord far_cell{5, 0};
+    partition.force_load(near_cell);
+    partition.force_load(far_cell);
+    expectTrue(partition.cell_loaded(near_cell) && partition.cell_loaded(far_cell),
+               "both cells resident before eviction");
+
+    const fuse::ecs::vec3 camera{0.f, 0.f, 0.f, 0.f};
+    partition.update(camera);
+
+    expectTrue(partition.cell_residency(far_cell) == fuse::world_partition::CellResidencyState::Unloaded,
+               "farther cell evicts first within unload budget");
+    expectTrue(partition.cell_residency(near_cell) == fuse::world_partition::CellResidencyState::QueuedUnload,
+               "nearer cell stays queued until the next unload tick");
+
+    partition.destroy();
+}
+
+void testStreamingRequestQueueMultipleSubmits() {
+    withScheduler(2, [] {
+        fuse::world_partition::StreamingRequestQueue queue;
+        std::atomic<fuse::u32> worker_count{0};
+
+        for (fuse::u32 i = 0; i < 3u; ++i) {
+            fuse::world_partition::StreamingRequest request{};
+            request.coord = {static_cast<fuse::s32>(i), 0};
+            request.kind = fuse::world_partition::StreamingRequestKind::Load;
+            request.priority = static_cast<fuse::f32>(i);
+            expectTrue(queue.submit(request, [&](fuse::world_partition::GridCoord, fuse::world_partition::StreamingRequestKind) {
+                worker_count.fetch_add(1u);
+                return true;
+            }), "batch submit succeeds");
+        }
+
+        for (int attempt = 0; attempt < 200 && queue.completed_count() < 3u; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        std::vector<fuse::world_partition::CompletedStreamingRequest> completed;
+        expectEq(queue.drain_completed(completed), 3u, "drain returns all completed requests");
+        expectEq(worker_count.load(), 3u, "all worker stubs executed");
+        expectEq(queue.in_flight_count(), 0u, "in-flight count returns to zero after drain");
+    });
+}
+
+void testStreamingRequestQueueInFlightTracking() {
+    withScheduler(1, [] {
+        fuse::world_partition::StreamingRequestQueue queue;
+        std::atomic<bool> gate_open{false};
+
+        fuse::world_partition::StreamingRequest request{};
+        request.coord = {9, 9};
+        request.kind = fuse::world_partition::StreamingRequestKind::Unload;
+
+        expectTrue(queue.submit(request, [&](fuse::world_partition::GridCoord, fuse::world_partition::StreamingRequestKind) {
+            while (!gate_open.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            return true;
+        }), "blocking submit tracks in-flight");
+
+        for (int attempt = 0; attempt < 50 && queue.in_flight_count() == 0u; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        expectEq(queue.in_flight_count(), 1u, "in-flight count rises while worker runs");
+
+        gate_open.store(true);
+        for (int attempt = 0; attempt < 100 && queue.completed_count() == 0u; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        std::vector<fuse::world_partition::CompletedStreamingRequest> completed;
+        expectEq(queue.drain_completed(completed), 1u, "blocking job completes after gate opens");
+        expectTrue(completed[0].kind == fuse::world_partition::StreamingRequestKind::Unload,
+                   "completed request preserves unload kind");
+    });
+}
+
 void testWorldPartitionAsyncResidency() {
     withScheduler(1, [] {
         fuse::world_partition::WorldPartition partition;
         fuse::world_partition::WorldPartitionDesc desc{};
         desc.async_loading = true;
-        desc.max_async_in_flight = 2;
+        desc.budget.max_async_in_flight = 2;
         desc.max_loaded_cells = 4;
         partition.init(desc);
 
@@ -246,7 +359,11 @@ int main() {
     testStreamingVolumeHysteresis();
     testWorldPartitionLoadUnloadStubs();
     testWorldPartitionStreamingUpdate();
+    testStreamingBudgetCaps();
+    testUnloadPriorityOrdering();
     testStreamingRequestQueueStub();
+    testStreamingRequestQueueMultipleSubmits();
+    testStreamingRequestQueueInFlightTracking();
     testWorldPartitionAsyncResidency();
     fuse::core::shutdown();
 
