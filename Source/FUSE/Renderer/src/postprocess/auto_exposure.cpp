@@ -47,13 +47,22 @@ f32 ema_alpha_for_direction(bool brightening, const AutoExposureParams& params) 
     return brightening ? params.ema_alpha_up : params.ema_alpha_down;
 }
 
+bool is_brightening_luminance(f32 measured_luminance, f32 reference_luminance) {
+    return measured_luminance > reference_luminance;
+}
+
+f32 ema_blend(f32 previous, f32 measured, f32 alpha) {
+    const f32 clampedAlpha = std::clamp(alpha, 0.f, 1.f);
+    return clampedAlpha * measured + (1.f - clampedAlpha) * previous;
+}
+
 f32 update_smoothed_luminance(AutoExposureState& state, f32 measured_luminance, const AutoExposureParams& params) {
-    const bool brightening = measured_luminance > state.smoothed_luminance;
+    const bool brightening = is_brightening_luminance(measured_luminance, state.smoothed_luminance);
     const f32 alpha = ema_alpha_for_direction(brightening, params);
     if (state.smoothed_luminance <= 0.f) {
         state.smoothed_luminance = measured_luminance;
     } else {
-        state.smoothed_luminance = alpha * measured_luminance + (1.f - alpha) * state.smoothed_luminance;
+        state.smoothed_luminance = ema_blend(state.smoothed_luminance, measured_luminance, alpha);
     }
     return state.smoothed_luminance;
 }
@@ -104,14 +113,25 @@ void LuminanceHistogram::accumulateLuminance(f32 luminance) {
     if (m_bins.empty()) {
         init(m_params);
     }
-    const u32 bin = static_cast<u32>(std::round(log_luminance_to_bin(luminance, m_params)));
-    const u32 clampedBin = std::min(bin, m_params.bin_count - 1);
+    const u32 clampedBin = logBinIndex(luminance, m_params);
     ++m_bins[clampedBin];
     ++m_sampleCount;
 }
 
 void LuminanceHistogram::accumulate(const fuse::math::Vec3& rgb) {
     accumulateLuminance(compute_rec709_luminance(rgb));
+}
+
+u32 LuminanceHistogram::logBinIndex(f32 luminance, const LuminanceHistogramParams& params) {
+    if (params.bin_count == 0) {
+        return 0;
+    }
+    const u32 bin = static_cast<u32>(std::round(log_luminance_to_bin(luminance, params)));
+    return std::min(bin, params.bin_count - 1);
+}
+
+f32 LuminanceHistogram::binCenterLuminance(u32 bin, const LuminanceHistogramParams& params) {
+    return std::pow(2.f, bin_to_log_luminance(bin, params));
 }
 
 u32 LuminanceHistogram::occupiedBinCount() const {

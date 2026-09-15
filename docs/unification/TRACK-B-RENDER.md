@@ -124,9 +124,11 @@ ctest --test-dir build --output-on-failure -R fuse_ddgi
 | Component | Notes |
 |-----------|-------|
 | `TonemapCurveKind` / `make_reinhard_curve_params` / `make_aces_curve_params` | Reinhard extended + Hill ACES curve presets applied before tone-map operator |
+| `TonemapCurveEndpoints` / `evaluate_tonemap_curve_endpoints` | Black/white anchor evaluation + `tonemap_curve_preserves_black` calibration guard |
 | `AutoExposureParams::use_ema_adaptation` | Optional EMA luminance smoothing with asymmetric up/down alpha |
-| `LuminanceHistogram` | Log-luminance binning, percentile metering, empty-histogram guard |
-| `fuse_post_process_b510` | Reinhard/ACES curve clamp, EMA convergence, empty histogram |
+| `is_brightening_luminance` / `ema_blend` | Directional EMA helpers used by `update_smoothed_luminance` |
+| `LuminanceHistogram` | Log-luminance binning (`logBinIndex`, `binCenterLuminance`), percentile metering, `isEmpty` guard |
+| `fuse_post_process_b510` | Curve endpoint anchors, asymmetric EMA adapt, empty histogram + bin helpers |
 
 ```bash
 ctest --test-dir build --output-on-failure -R fuse_post_process_b510

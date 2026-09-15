@@ -32,6 +32,8 @@ f32 compute_rec709_luminance(const fuse::math::Vec3& rgb);
 f32 luminance_to_ev(f32 luminance, f32 target_luminance);
 f32 clamp_ev(f32 ev, const AutoExposureParams& params);
 f32 ema_alpha_for_direction(bool brightening, const AutoExposureParams& params);
+bool is_brightening_luminance(f32 measured_luminance, f32 reference_luminance);
+f32 ema_blend(f32 previous, f32 measured, f32 alpha);
 f32 update_smoothed_luminance(AutoExposureState& state, f32 measured_luminance, const AutoExposureParams& params);
 f32 update_auto_exposure(AutoExposureState& state, f32 measured_luminance, const AutoExposureParams& params,
                          f32 delta_seconds);
@@ -55,7 +57,10 @@ public:
     void accumulate(const fuse::math::Vec3& rgb);
     void accumulateLuminance(f32 luminance);
 
+    bool isEmpty() const { return m_sampleCount == 0; }
     u32 sampleCount() const { return m_sampleCount; }
+    static u32 logBinIndex(f32 luminance, const LuminanceHistogramParams& params);
+    static f32 binCenterLuminance(u32 bin, const LuminanceHistogramParams& params);
     u32 occupiedBinCount() const;
     f32 averageLuminance() const;
     f32 percentileLuminance(f32 percentile) const;
