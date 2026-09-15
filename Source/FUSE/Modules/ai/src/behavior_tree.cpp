@@ -6,17 +6,58 @@ namespace fuse::ai {
 
 namespace {
 
-BehaviorTickResult aggregateParallelChildren(const BehaviorTickResult& a, const BehaviorTickResult& b) {
-    if (a.status == BehaviorStatus::Running) {
-        return a;
+constexpr u32 kParallelChildCount = 2;
+
+BehaviorTickResult mergeParallelSideEffects(const BehaviorTickResult& current,
+                                            const BehaviorTickResult& child) {
+    if (child.wroteFlag) {
+        return child;
     }
-    if (b.status == BehaviorStatus::Running) {
-        return b;
+    return current;
+}
+
+BehaviorTickResult aggregateParallelChildren(const BehaviorTickResult& first,
+                                             const BehaviorTickResult& second,
+                                             const ParallelPolicy& policy,
+                                             bool secondTicked) {
+    const u32 activeChildCount = secondTicked ? kParallelChildCount : 1u;
+    const u32 successNeeded =
+        policy.successThreshold > 0 ? policy.successThreshold : activeChildCount;
+    const u32 failLimit = policy.failThreshold > 0 ? policy.failThreshold : 1u;
+
+    u32 successCount = 0;
+    u32 failCount = 0;
+    u32 runningCount = 0;
+    BehaviorTickResult merged;
+
+    const BehaviorTickResult* children[2] = {&first, &second};
+    for (u32 childIndex = 0; childIndex < activeChildCount; ++childIndex) {
+        const BehaviorTickResult& child = *children[childIndex];
+        if (child.status == BehaviorStatus::Success) {
+            ++successCount;
+        } else if (child.status == BehaviorStatus::Failure) {
+            ++failCount;
+        } else {
+            ++runningCount;
+        }
+        merged = mergeParallelSideEffects(merged, child);
     }
-    if (a.status == BehaviorStatus::Failure || b.status == BehaviorStatus::Failure) {
-        return b.status == BehaviorStatus::Failure ? b : a;
+
+    BehaviorTickResult result = merged;
+    if (runningCount > 0) {
+        result.status = BehaviorStatus::Running;
+        return result;
     }
-    return b.wroteFlag ? b : a;
+    if (failCount >= failLimit) {
+        result.status = BehaviorStatus::Failure;
+        return result;
+    }
+    if (successCount >= successNeeded) {
+        result.status = BehaviorStatus::Success;
+        return result;
+    }
+    result.status = BehaviorStatus::Failure;
+    return result;
 }
 
 u32 waitTicksForNode(const BehaviorNode& node) {
@@ -62,9 +103,20 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
         return tickNode(node.childB, agentIndex, agent, board, ctx);
     }
     case NodeKind::Parallel: {
+        const ParallelPolicy& policy = node.parallelPolicy;
+        const u32 failLimit = policy.failThreshold > 0 ? policy.failThreshold : 1u;
+
         const BehaviorTickResult first = tickNode(node.childA, agentIndex, agent, board, ctx);
-        const BehaviorTickResult second = tickNode(node.childB, agentIndex, agent, board, ctx);
-        return aggregateParallelChildren(first, second);
+        const u32 failCountAfterFirst =
+            first.status == BehaviorStatus::Failure ? 1u : 0u;
+        const bool tickSecond =
+            !policy.abortOnFail || failCountAfterFirst < failLimit;
+
+        BehaviorTickResult second;
+        if (tickSecond) {
+            second = tickNode(node.childB, agentIndex, agent, board, ctx);
+        }
+        return aggregateParallelChildren(first, second, policy, tickSecond);
     }
     case NodeKind::Inverter: {
         BehaviorTickResult child = tickNode(node.childA, agentIndex, agent, board, ctx);

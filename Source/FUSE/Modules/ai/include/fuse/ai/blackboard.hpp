@@ -10,19 +10,33 @@ namespace fuse::ai {
 class Blackboard {
 public:
     static constexpr u32 kMaxFlags = 8;
+    static constexpr u32 kMaxScalars = 4;
 
     void resize(u32 agentCount);
     u32 agentCount() const { return m_agentCount; }
 
     void setFlag(u32 agentIndex, u32 flagIndex, bool value);
+    bool trySetFlag(u32 agentIndex, u32 flagIndex, bool value);
     bool getFlag(u32 agentIndex, u32 flagIndex) const { return flag(agentIndex, flagIndex); }
+    bool tryGetFlag(u32 agentIndex, u32 flagIndex, bool& outValue) const;
     bool flag(u32 agentIndex, u32 flagIndex) const;
 
+    void setScalar(u32 agentIndex, u32 slotIndex, float value);
+    bool trySetScalar(u32 agentIndex, u32 slotIndex, float value);
+    float scalar(u32 agentIndex, u32 slotIndex) const;
+    bool tryGetScalar(u32 agentIndex, u32 slotIndex, float& outValue) const;
+
     void clearFlags(u32 agentIndex);
+    void clearScalars(u32 agentIndex);
 
 private:
+    bool isValidAgent(u32 agentIndex) const { return agentIndex < m_agentCount; }
+    bool isValidFlag(u32 flagIndex) const { return flagIndex < kMaxFlags; }
+    bool isValidScalar(u32 slotIndex) const { return slotIndex < kMaxScalars; }
+
     u32 m_agentCount = 0;
     std::vector<u8> m_flags;
+    std::vector<float> m_scalars;
 };
 
 /// Immutable view passed to worker BT eval jobs.
@@ -32,7 +46,11 @@ public:
     explicit BlackboardView(const Blackboard& board);
 
     bool getFlag(u32 agentIndex, u32 flagIndex) const { return flag(agentIndex, flagIndex); }
+    bool tryGetFlag(u32 agentIndex, u32 flagIndex, bool& outValue) const;
     bool flag(u32 agentIndex, u32 flagIndex) const;
+
+    float scalar(u32 agentIndex, u32 slotIndex) const;
+    bool tryGetScalar(u32 agentIndex, u32 slotIndex, float& outValue) const;
 
 private:
     const Blackboard* m_board = nullptr;

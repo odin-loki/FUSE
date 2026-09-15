@@ -273,6 +273,46 @@ void testBlackboardDirectGetSet() {
     expectTrue(!board.getFlag(0, 3), "clearFlags resets agent slots");
 }
 
+void testBlackboardTryGetSetBounds() {
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    bool value = false;
+    expectTrue(!board.tryGetFlag(99, 0, value), "tryGetFlag rejects out-of-range agent");
+    expectTrue(!board.tryGetFlag(0, fuse::ai::Blackboard::kMaxFlags, value),
+               "tryGetFlag rejects out-of-range flag");
+    expectTrue(!board.trySetFlag(0, fuse::ai::Blackboard::kMaxFlags, true),
+               "trySetFlag rejects out-of-range flag");
+    expectTrue(!board.trySetFlag(4, 0, true), "trySetFlag rejects out-of-range agent");
+
+    expectTrue(board.trySetFlag(0, 2, true), "trySetFlag accepts valid slot");
+    expectTrue(board.tryGetFlag(0, 2, value) && value, "tryGetFlag reads valid slot");
+
+    fuse::ai::BlackboardView view(board);
+    expectTrue(!view.tryGetFlag(4, 0, value), "view tryGetFlag rejects invalid agent");
+    expectTrue(view.tryGetFlag(0, 2, value) && value, "view tryGetFlag reads committed slot");
+}
+
+void testBlackboardTypedScalars() {
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    expectTrue(board.trySetScalar(0, 1, 3.5f), "trySetScalar accepts valid slot");
+    float scalar = 0.f;
+    expectTrue(board.tryGetScalar(0, 1, scalar), "tryGetScalar reads valid slot");
+    expectTrue(scalar == 3.5f, "scalar value round-trips");
+
+    expectTrue(!board.trySetScalar(0, fuse::ai::Blackboard::kMaxScalars, 1.f),
+               "trySetScalar rejects out-of-range slot");
+    expectTrue(!board.tryGetScalar(2, 0, scalar), "tryGetScalar rejects out-of-range agent");
+
+    board.clearScalars(0);
+    expectTrue(board.scalar(0, 1) == 0.f, "clearScalars resets agent slots");
+
+    fuse::ai::BlackboardView view(board);
+    expectTrue(view.scalar(0, 1) == 0.f, "view scalar reads cleared slot");
+}
+
 void testBlackboardSetGetLeaves() {
     const std::vector<fuse::ai::NodeLoadSpec> setSpecs = {
         {"bb.action.blackboard_set", 1.f, 2, 1, {}, {}},
@@ -433,6 +473,123 @@ void testSelectorChildStatusAggregation() {
                "selector falls through to second child success");
     expectTrue(result.wroteFlag && result.flagIndex == 1u,
                "selector returns second child side effects");
+}
+
+fuse::ai::BehaviorTree makeParallelTree(fuse::ai::NodeKind childAKind,
+                                      fuse::ai::NodeKind childBKind,
+                                      const fuse::ai::ParallelPolicy& policy,
+                                      fuse::u32 childAFlag = 0,
+                                      fuse::u32 childBFlag = 1) {
+    fuse::ai::BehaviorTree tree;
+    tree.addNode({childAKind, 0.f, childAFlag, 1, 0, 0});
+    tree.addNode({childBKind, 0.f, childBFlag, 1, 0, 0});
+    fuse::ai::BehaviorNode parallel;
+    parallel.kind = fuse::ai::NodeKind::Parallel;
+    parallel.childA = 0;
+    parallel.childB = 1;
+    parallel.parallelPolicy = policy;
+    tree.addNode(std::move(parallel));
+    tree.setRoot(2);
+    return tree;
+}
+
+void testParallelPolicyAllSuccess() {
+    const fuse::ai::ParallelPolicy policy;
+    fuse::ai::BehaviorTree tree = makeParallelTree(fuse::ai::NodeKind::ActionSetFlag,
+                                                 fuse::ai::NodeKind::ActionSetFlag,
+                                                 policy);
+
+    fuse::ai::AgentSnapshot agent;
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const fuse::ai::BehaviorTickResult result =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(result.status == fuse::ai::BehaviorStatus::Success,
+               "parallel all-success with default policy");
+    expectTrue(result.wroteFlag && result.flagIndex == 1u,
+               "parallel all-success prefers later child side effect");
+}
+
+void testParallelPolicyThresholdFailTolerance() {
+    fuse::ai::ParallelPolicy policy;
+    policy.successThreshold = 1;
+    policy.failThreshold = 2;
+
+    fuse::ai::BehaviorTree tree = makeParallelTree(fuse::ai::NodeKind::ActionSetFlag,
+                                                 fuse::ai::NodeKind::ConditionDistanceLess,
+                                                 policy);
+
+    fuse::ai::AgentSnapshot agent;
+    agent.targetX = 20.f;
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const fuse::ai::BehaviorTickResult result =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(result.status == fuse::ai::BehaviorStatus::Success,
+               "parallel tolerates one failure when fail threshold is 2");
+    expectTrue(result.wroteFlag && result.flagIndex == 0u,
+               "parallel still returns successful child side effect");
+}
+
+void testParallelPolicySuccessThresholdFail() {
+    fuse::ai::ParallelPolicy policy;
+    policy.successThreshold = 2;
+
+    fuse::ai::BehaviorTree tree = makeParallelTree(fuse::ai::NodeKind::ConditionDistanceLess,
+                                                 fuse::ai::NodeKind::ConditionDistanceGreater,
+                                                 policy);
+
+    fuse::ai::AgentSnapshot agent;
+    agent.targetX = 10.f;
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const fuse::ai::BehaviorTickResult result =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(result.status == fuse::ai::BehaviorStatus::Failure,
+               "parallel fails when success threshold is not met");
+    expectTrue(!result.wroteFlag, "parallel threshold fail has no flag side effects");
+}
+
+void testParallelPolicyAbortOnFail() {
+    fuse::ai::ParallelPolicy policy;
+    policy.abortOnFail = true;
+
+    fuse::ai::BehaviorTree tree = makeParallelTree(fuse::ai::NodeKind::ConditionDistanceLess,
+                                                 fuse::ai::NodeKind::ActionSetFlag,
+                                                 policy,
+                                                 0,
+                                                 3);
+
+    fuse::ai::AgentSnapshot agent;
+    agent.targetX = 20.f;
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const fuse::ai::BehaviorTickResult result =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(result.status == fuse::ai::BehaviorStatus::Failure,
+               "parallel abort-on-fail returns failure");
+    expectTrue(!result.wroteFlag,
+               "parallel abort-on-fail skips remaining child side effects");
+}
+
+void testParallelPolicyTextLoader() {
+    const std::string text = R"(
+bb.action.set_flag flag=0
+bb.condition.distance_less threshold=5
+bb.parallel children=0,1 success=1 fail=2 abort=1
+root=2
+)";
+
+    fuse::ai::BehaviorTree tree;
+    std::string error;
+    expectTrue(fuse::ai::loadTreeFromText(text, tree, &error), "parallel policy text loads");
+    expectTrue(tree.node(2).parallelPolicy.successThreshold == 1u, "text loader sets success threshold");
+    expectTrue(tree.node(2).parallelPolicy.failThreshold == 2u, "text loader sets fail threshold");
+    expectTrue(tree.node(2).parallelPolicy.abortOnFail, "text loader sets abort-on-fail");
 }
 
 void testParallelChildStatusAggregation() {
@@ -709,9 +866,16 @@ int main() {
     testGuideBotMoveTowardLeaf();
     testWaitLeaf();
     testBlackboardDirectGetSet();
+    testBlackboardTryGetSetBounds();
+    testBlackboardTypedScalars();
     testBlackboardSetGetLeaves();
     testSequenceChildStatusAggregation();
     testSelectorChildStatusAggregation();
+    testParallelPolicyAllSuccess();
+    testParallelPolicyThresholdFailTolerance();
+    testParallelPolicySuccessThresholdFail();
+    testParallelPolicyAbortOnFail();
+    testParallelPolicyTextLoader();
     testParallelChildStatusAggregation();
     testDistanceGreaterCondition();
     testDistanceActionLeaf();

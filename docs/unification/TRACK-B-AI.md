@@ -12,7 +12,7 @@
 |-----------|----------|-------|
 | `NodeRegistry` / `NodeLoadSpec` | `Modules/ai/include/fuse/ai/node_registry.hpp` | BadBehaviour `DECLARE_CONOBJECT` analogue |
 | `BehaviorTree` / `BehaviorNode` | `Modules/ai/include/fuse/ai/behavior_tree.hpp` | Flat evaluator; job-safe `tick()` |
-| `Blackboard` / `BlackboardView` | `Modules/ai/include/fuse/ai/blackboard.hpp` | Per-agent flags; `setFlag` / `getFlag` |
+| `Blackboard` / `BlackboardView` | `Modules/ai/include/fuse/ai/blackboard.hpp` | Per-agent flags + float scalars; `trySet` / `tryGet` bounds checks |
 | `spatial_query` | `Modules/ai/include/fuse/ai/spatial_query.hpp` | Ally radius filter + nearest-ally lookup stubs |
 | `BehaviorRuntime` | `Modules/ai/include/fuse/ai/behavior_runtime.hpp` | Snapshot → `parallel_for` eval → commit |
 | `loadTreeFromText` | `Modules/ai/include/fuse/ai/tree_loader.hpp` | Compact `.bt`-style text loader |
@@ -30,7 +30,7 @@
 |---------|------|-------------------|
 | `bb.sequence` | Composite | Fail fast on first non-success |
 | `bb.selector` | Composite | Succeed fast on first success |
-| `bb.parallel` | Composite | Running > Failure > Success; both children ticked |
+| `bb.parallel` | Composite | `ParallelPolicy`: success/fail thresholds, optional `abortOnFail` |
 | `bb.inverter` | Decorator | Flip Success ↔ Failure |
 | `bb.loop` | Decorator | Repeat child `loopCount` times |
 | `bb.succeed_always` | Decorator | Force Success unless child Running |
@@ -66,13 +66,38 @@
 
 ## Parallel composite aggregation
 
-`bb.parallel` ticks **both** children every frame and merges status:
+`bb.parallel` uses `ParallelPolicy` on `BehaviorNode`:
 
-1. If either child is **Running** → return Running (left child preferred for side effects).
-2. Else if either child **Failed** → return Failure (failing child preferred).
-3. Else both **Succeeded** → return Success (later child's flag write wins).
+| Field | Default | Meaning |
+|-------|---------|---------|
+| `successThreshold` | 0 | Minimum child successes required; 0 = all active children |
+| `failThreshold` | 1 | Failures tolerated before composite fails |
+| `abortOnFail` | false | Stop ticking remaining children once fail threshold is reached |
+
+Text loader keys: `success=N`, `fail=N`, `abort=1`.
+
+Aggregation over ticked children:
+
+1. Any child **Running** → return Running.
+2. `failCount >= failThreshold` → return Failure.
+3. `successCount >= successThreshold` → return Success (later child's flag write wins).
+4. Otherwise → Failure.
+
+With defaults (`successThreshold=0`, `failThreshold=1`, `abortOnFail=false`), both children tick each frame and the composite fails on the first child failure — matching the prior U5 slice.
 
 `BehaviorRuntime::evaluate` uses a separate axis of parallelism: `JobScheduler::parallel_for` over agents, each with its own `waitStartTicks` slice. Game thread commits `wroteFlag` results via `Blackboard::setFlag`.
+
+---
+
+## Blackboard hardening
+
+| API | Role |
+|-----|------|
+| `trySetFlag` / `tryGetFlag` | Bounds-checked bool slot access; returns false on invalid agent or flag index |
+| `setScalar` / `tryGetScalar` | Optional typed float slots (`kMaxScalars = 4`) per agent |
+| `clearScalars` | Reset float slots for one agent |
+
+`BlackboardView` mirrors read-only `tryGetFlag` / `tryGetScalar` for worker BT eval.
 
 ---
 
@@ -84,4 +109,4 @@ cmake --build build-fuse --target fuse_ai_tests
 ./build-fuse/Source/FUSE/Modules/ai/tests/fuse_ai_tests
 ```
 
-Tests cover registry parity, composite child-status aggregation (sequence/selector/parallel), blackboard set/get leaves, wait + runtime commit, multi-agent parallel eval, radius filter (self/team exclusion, minCount policy), and nearest-ally BT leaves.
+Tests cover registry parity, composite child-status aggregation (sequence/selector/parallel with success/fail thresholds and abort-on-fail), blackboard try-get/set bounds + typed scalars, blackboard set/get leaves, wait + runtime commit, multi-agent parallel eval, radius filter (self/team exclusion, minCount policy), and nearest-ally BT leaves.

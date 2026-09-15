@@ -126,6 +126,22 @@ bool parseNodeLine(const std::string& line, NodeLoadSpec& outSpec, std::string* 
             }
         } else if (key == "hook") {
             outSpec.scriptHook = value;
+        } else if (key == "success") {
+            if (!parseU32(value, outSpec.successThreshold)) {
+                if (errorOut) {
+                    *errorOut = "invalid success threshold: " + value;
+                }
+                return false;
+            }
+        } else if (key == "fail") {
+            if (!parseU32(value, outSpec.failThreshold)) {
+                if (errorOut) {
+                    *errorOut = "invalid fail threshold: " + value;
+                }
+                return false;
+            }
+        } else if (key == "abort") {
+            outSpec.abortOnFail = value == "1" || value == "true" || value == "yes";
         } else {
             if (errorOut) {
                 *errorOut = "unknown node attribute: " + key;
