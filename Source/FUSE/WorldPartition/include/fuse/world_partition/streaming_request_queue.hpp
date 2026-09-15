@@ -25,6 +25,7 @@ struct StreamingRequest {
 struct CompletedStreamingRequest {
     GridCoord coord{};
     StreamingRequestKind kind = StreamingRequestKind::Load;
+    f32 priority = 0.f;
     bool success = true;
 };
 
@@ -34,11 +35,16 @@ using StreamingWorkFn = std::function<bool(GridCoord coord, StreamingRequestKind
 /// Async request queue stub backed by JobScheduler (mirrors fuse::io VFS async loads).
 class StreamingRequestQueue {
 public:
-    /// Submit work to JobScheduler. Returns false when the scheduler is unavailable.
+    /// Submit work to JobScheduler. Returns false when the scheduler is unavailable or
+    /// `max_pending_submits` would be exceeded.
     bool submit(StreamingRequest request, StreamingWorkFn work);
 
-    /// Move completed requests into `out` and clear the internal completion buffer.
+    /// Move completed requests into `out` (highest priority first) and clear the buffer.
     u32 drain_completed(std::vector<CompletedStreamingRequest>& out);
+
+    void set_max_pending_submits(u32 max_pending) { m_max_pending_submits = max_pending; }
+    [[nodiscard]] u32 max_pending_submits() const { return m_max_pending_submits; }
+    [[nodiscard]] u32 pending_submit_count() const;
 
     [[nodiscard]] u32 in_flight_count() const;
     [[nodiscard]] u32 completed_count() const;
@@ -50,6 +56,7 @@ private:
 
     mutable std::mutex m_mutex;
     u32 m_inFlight = 0;
+    u32 m_max_pending_submits = 0; ///< 0 = unlimited pending (in-flight + completed buffer)
     std::vector<CompletedStreamingRequest> m_completed;
 };
 

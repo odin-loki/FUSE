@@ -17,7 +17,9 @@ struct WorldPartitionDesc {
     f32 stream_in_distance = 512.f;
     f32 stream_out_distance = 600.f;
     u32 max_loaded_cells = 64;
+    u64 default_cell_bytes = 1u << 20; ///< Stub per-cell resident footprint (1 MiB)
     StreamingBudget budget{};
+    EvictionPolicy eviction_policy = EvictionPolicy::DistanceFromFocus;
     bool async_loading = true;
 };
 
@@ -47,10 +49,13 @@ public:
     [[nodiscard]] CellResidencyState cell_residency(GridCoord coord) const;
     [[nodiscard]] u32 loaded_cell_count() const;
     [[nodiscard]] u32 resident_cell_count() const;
+    [[nodiscard]] u64 resident_byte_count() const;
     [[nodiscard]] u32 queued_load_count() const;
     [[nodiscard]] u32 queued_unload_count() const;
+    [[nodiscard]] u32 rejected_load_count() const;
     [[nodiscard]] u32 in_flight_request_count() const;
     [[nodiscard]] u32 pending_completion_count() const;
+    [[nodiscard]] u32 current_tick() const { return m_tick; }
     [[nodiscard]] const WorldCell* find_cell(GridCoord coord) const;
     [[nodiscard]] const WorldPartitionDesc& desc() const { return m_desc; }
 
@@ -70,9 +75,13 @@ private:
 
     WorldCell& ensure_cell_(GridCoord coord);
     [[nodiscard]] const WorldCell* find_cell_(GridCoord coord) const;
-    void queue_load_(GridCoord coord, f32 priority);
+    [[nodiscard]] bool queue_load_(GridCoord coord, f32 priority);
     void queue_unload_(GridCoord coord, f32 priority);
     void process_queues_();
+    void evict_for_budget_(f32 incoming_priority);
+    [[nodiscard]] bool can_accept_load_(u64 incoming_bytes) const;
+    void touch_cell_(WorldCell& cell);
+    [[nodiscard]] f32 eviction_score_for_(const WorldCell& cell) const;
     void drain_completed_requests_();
     void execute_load_(WorldCell& cell);
     void execute_unload_(WorldCell& cell);
@@ -83,6 +92,8 @@ private:
 
     WorldPartitionDesc m_desc{};
     CellLoadCallbacks m_callbacks{};
+    u32 m_tick = 0;
+    u32 m_rejected_load_count = 0;
     std::unordered_map<u64, WorldCell> m_cells;
     std::vector<LoadRequest> m_load_queue;
     std::vector<UnloadRequest> m_unload_queue;

@@ -86,6 +86,8 @@ struct WorldCell {
     bool visible = false;
     f32 load_priority = 0.f;
     f32 unload_priority = 0.f;
+    u64 resident_bytes = 0;   ///< Stub resident footprint for byte-budget accounting
+    u32 last_touch_tick = 0;    ///< Game-thread tick when cell was last referenced (LRU eviction)
     std::vector<fuse::ecs::EntityID> entities;
 };
 

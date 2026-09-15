@@ -29,9 +29,12 @@ void WorldPartition::destroy() {
     m_completed_batch_.clear();
     m_async_queue.clear();
     m_callbacks = {};
+    m_tick = 0;
+    m_rejected_load_count = 0;
 }
 
 void WorldPartition::update(fuse::ecs::vec3 camera_pos) {
+    ++m_tick;
     drain_completed_requests_();
     m_streaming.center = camera_pos;
     collect_stream_candidates_(camera_pos);
@@ -39,7 +42,7 @@ void WorldPartition::update(fuse::ecs::vec3 camera_pos) {
 }
 
 void WorldPartition::force_load(GridCoord coord) {
-    queue_load_(coord, std::numeric_limits<f32>::max());
+    (void)queue_load_(coord, std::numeric_limits<f32>::max());
     process_queues_();
 }
 
@@ -70,7 +73,19 @@ u32 WorldPartition::loaded_cell_count() const {
 
 u32 WorldPartition::resident_cell_count() const { return loaded_cell_count(); }
 
+u64 WorldPartition::resident_byte_count() const {
+    u64 bytes = 0;
+    for (const auto& entry : m_cells) {
+        if (is_resident_state(entry.second.residency)) {
+            bytes += entry.second.resident_bytes;
+        }
+    }
+    return bytes;
+}
+
 u32 WorldPartition::queued_load_count() const { return static_cast<u32>(m_load_queue.size()); }
+
+u32 WorldPartition::rejected_load_count() const { return m_rejected_load_count; }
 
 u32 WorldPartition::queued_unload_count() const { return static_cast<u32>(m_unload_queue.size()); }
 
@@ -105,11 +120,71 @@ const WorldCell* WorldPartition::find_cell_(GridCoord coord) const {
     return it != m_cells.end() ? &it->second : nullptr;
 }
 
-void WorldPartition::queue_load_(GridCoord coord, f32 priority) {
+bool WorldPartition::can_accept_load_(u64 incoming_bytes) const {
+    if (!can_accept_resident_cell(m_desc.max_loaded_cells, resident_cell_count())) {
+        return false;
+    }
+    return !would_exceed_byte_budget(m_desc.budget.max_resident_bytes, resident_byte_count(), incoming_bytes);
+}
+
+void WorldPartition::touch_cell_(WorldCell& cell) {
+    cell.last_touch_tick = m_tick;
+}
+
+f32 WorldPartition::eviction_score_for_(const WorldCell& cell) const {
+    const f32 distance_priority =
+        m_streaming.unload_priority_for(cell.coord, m_desc.cell_size);
+    return eviction_score_for(distance_priority, cell.last_touch_tick, m_tick, m_desc.eviction_policy);
+}
+
+void WorldPartition::evict_for_budget_(f32 incoming_priority) {
+    while (!can_accept_load_(m_desc.default_cell_bytes)) {
+        WorldCell* best_candidate = nullptr;
+        f32 best_score = -1.f;
+
+        for (auto& entry : m_cells) {
+            WorldCell& cell = entry.second;
+            if (!is_resident_state(cell.residency)) {
+                continue;
+            }
+
+            const f32 score = eviction_score_for_(cell);
+            if (score > best_score) {
+                best_score = score;
+                best_candidate = &cell;
+            }
+        }
+
+        if (best_candidate == nullptr || best_score <= 0.f) {
+            break;
+        }
+
+        if (incoming_priority > 0.f && best_score <= incoming_priority &&
+            m_desc.eviction_policy == EvictionPolicy::DistanceFromFocus) {
+            break;
+        }
+
+        queue_unload_(best_candidate->coord, best_score);
+    }
+
+    process_queues_();
+}
+
+bool WorldPartition::queue_load_(GridCoord coord, f32 priority) {
     WorldCell& cell = ensure_cell_(coord);
     if (is_resident_state(cell.residency) || is_loading_state(cell.residency)) {
         cell.load_priority = std::max(cell.load_priority, priority);
-        return;
+        touch_cell_(cell);
+        return true;
+    }
+
+    const u64 incoming_bytes = cell.resident_bytes > 0u ? cell.resident_bytes : m_desc.default_cell_bytes;
+    if (!can_accept_load_(incoming_bytes)) {
+        evict_for_budget_(priority);
+    }
+    if (!can_accept_load_(incoming_bytes)) {
+        ++m_rejected_load_count;
+        return false;
     }
 
     cell.residency = CellResidencyState::QueuedLoad;
@@ -121,10 +196,11 @@ void WorldPartition::queue_load_(GridCoord coord, f32 priority) {
                                              });
     if (already_queued != m_load_queue.end()) {
         already_queued->priority = std::max(already_queued->priority, priority);
-        return;
+        return true;
     }
 
     m_load_queue.push_back({coord, priority});
+    return true;
 }
 
 void WorldPartition::queue_unload_(GridCoord coord, f32 priority) {
@@ -283,8 +359,12 @@ void WorldPartition::execute_load_(WorldCell& cell) {
     if (m_callbacks.on_load != nullptr) {
         m_callbacks.on_load(cell);
     }
+    if (cell.resident_bytes == 0u) {
+        cell.resident_bytes = m_desc.default_cell_bytes;
+    }
     cell.residency = CellResidencyState::Resident;
     cell.visible = true;
+    touch_cell_(cell);
 }
 
 void WorldPartition::execute_unload_(WorldCell& cell) {
@@ -296,6 +376,8 @@ void WorldPartition::execute_unload_(WorldCell& cell) {
     cell.visible = false;
     cell.load_priority = 0.f;
     cell.unload_priority = 0.f;
+    cell.resident_bytes = 0u;
+    cell.last_touch_tick = 0u;
 }
 
 void WorldPartition::collect_stream_candidates_(fuse::ecs::vec3 camera_pos) {
@@ -307,7 +389,7 @@ void WorldPartition::collect_stream_candidates_(fuse::ecs::vec3 camera_pos) {
             const GridCoord coord{camera_cell.x + dx, camera_cell.y + dz};
             if (m_streaming.should_load(coord, m_desc.cell_size)) {
                 const f32 priority = m_streaming.load_priority_for(coord, m_desc.cell_size);
-                queue_load_(coord, priority);
+                (void)queue_load_(coord, priority);
             }
         }
     }

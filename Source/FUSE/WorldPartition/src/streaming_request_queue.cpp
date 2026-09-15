@@ -2,6 +2,8 @@
 
 #include <fuse/jobs/job_scheduler.hpp>
 
+#include <algorithm>
+
 namespace fuse::world_partition {
 
 bool StreamingRequestQueue::submit(StreamingRequest request, StreamingWorkFn work) {
@@ -16,6 +18,9 @@ bool StreamingRequestQueue::submit(StreamingRequest request, StreamingWorkFn wor
 
     {
         std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_max_pending_submits > 0u && m_inFlight + static_cast<u32>(m_completed.size()) >= m_max_pending_submits) {
+            return false;
+        }
         ++m_inFlight;
     }
 
@@ -23,6 +28,7 @@ bool StreamingRequestQueue::submit(StreamingRequest request, StreamingWorkFn wor
         CompletedStreamingRequest completed{};
         completed.coord = request.coord;
         completed.kind = request.kind;
+        completed.priority = request.priority;
         completed.success = work(request.coord, request.kind);
         push_completed_(std::move(completed));
 
@@ -42,8 +48,18 @@ u32 StreamingRequestQueue::drain_completed(std::vector<CompletedStreamingRequest
         batch.swap(m_completed);
     }
 
+    std::sort(batch.begin(), batch.end(),
+              [](const CompletedStreamingRequest& a, const CompletedStreamingRequest& b) {
+                  return a.priority > b.priority;
+              });
+
     out.insert(out.end(), batch.begin(), batch.end());
     return static_cast<u32>(batch.size());
+}
+
+u32 StreamingRequestQueue::pending_submit_count() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_inFlight + static_cast<u32>(m_completed.size());
 }
 
 u32 StreamingRequestQueue::in_flight_count() const {
