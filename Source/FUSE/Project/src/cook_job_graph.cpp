@@ -6,8 +6,6 @@
 #include <algorithm>
 #include <filesystem>
 #include <sstream>
-#include <unordered_map>
-#include <unordered_set>
 
 namespace fuse::project {
 
@@ -77,22 +75,11 @@ const char* cookStageStatusName(CookStageStatus status) {
 
 void CookJobGraph::clear() {
     m_jobs.clear();
-    m_edges.clear();
+    m_dep_graph.clear();
 }
 
 void CookJobGraph::add_edge_(const std::string& from_job_id, const std::string& to_job_id) {
-    if (from_job_id.empty() || to_job_id.empty() || from_job_id == to_job_id) {
-        return;
-    }
-
-    const auto duplicate = std::find_if(m_edges.begin(), m_edges.end(), [&](const CookJobDependencyEdge& edge) {
-        return edge.from_job_id == from_job_id && edge.to_job_id == to_job_id;
-    });
-    if (duplicate != m_edges.end()) {
-        return;
-    }
-
-    m_edges.push_back({from_job_id, to_job_id});
+    (void)m_dep_graph.add_edge(from_job_id, to_job_id);
 }
 
 CookJob* CookJobGraph::find_job_(const std::string& job_id) {
@@ -128,6 +115,7 @@ void CookJobGraph::build_from_manifest(const CookManifest& manifest) {
         job.source_path = entry.source_path;
         job.output_path = entry.output_path;
         job.stages = make_pending_stages();
+        m_dep_graph.add_node(job.id);
         m_jobs.push_back(std::move(job));
     }
 
@@ -161,66 +149,15 @@ void CookJobGraph::build_from_manifest(const CookManifest& manifest) {
 }
 
 CookJobGraphOrderResult CookJobGraph::topological_order() const {
-    CookJobGraphOrderResult result;
-
-    if (m_jobs.empty()) {
-        return result;
-    }
-
-    std::unordered_map<std::string, u32> indegree;
-    std::unordered_map<std::string, std::vector<std::string>> adjacency;
-
-    for (const CookJob& job : m_jobs) {
-        indegree[job.id] = 0;
-        adjacency[job.id] = {};
-    }
-
-    for (const CookJobDependencyEdge& edge : m_edges) {
-        if (indegree.find(edge.from_job_id) == indegree.end() ||
-            indegree.find(edge.to_job_id) == indegree.end()) {
-            continue;
-        }
-        adjacency[edge.from_job_id].push_back(edge.to_job_id);
-        ++indegree[edge.to_job_id];
-    }
-
-    std::vector<std::string> queue;
-    for (const auto& pair : indegree) {
-        if (pair.second == 0) {
-            queue.push_back(pair.first);
-        }
-    }
-    std::sort(queue.begin(), queue.end());
-
-    while (!queue.empty()) {
-        const std::string current = queue.front();
-        queue.erase(queue.begin());
-        result.order.push_back(current);
-
-        for (const std::string& next : adjacency[current]) {
-            auto it = indegree.find(next);
-            if (it == indegree.end()) {
-                continue;
-            }
-            if (--it->second == 0) {
-                queue.push_back(next);
-                std::sort(queue.begin(), queue.end());
-            }
-        }
-    }
-
-    if (result.order.size() != m_jobs.size()) {
-        result.order.clear();
-        result.cycle_detected = true;
-        result.ok = false;
-    }
-
-    return result;
+    return m_dep_graph.topological_order();
 }
 
 bool CookJobGraph::has_cycle() const {
-    const CookJobGraphOrderResult order = topological_order();
-    return order.cycle_detected;
+    return m_dep_graph.has_cycle();
+}
+
+CookDependencyCycleResult CookJobGraph::cycle_edges() const {
+    return m_dep_graph.detect_cycle_edges();
 }
 
 bool CookJobGraph::run_job_stages_(CookJob& job, AssetCooker& cooker, const CookManifest& manifest,
@@ -283,7 +220,7 @@ bool CookJobGraph::run_job_stages_(CookJob& job, AssetCooker& cooker, const Cook
 
 CookJobGraphExecuteResult CookJobGraph::execute(AssetCooker& cooker, const CookManifest& manifest) {
     CookJobGraphExecuteResult result;
-    result.edges = m_edges;
+    result.edges = m_dep_graph.edges();
     result.jobs = m_jobs;
     const CookJobGraphOrderResult order = topological_order();
     result.execution_order = order.order;
