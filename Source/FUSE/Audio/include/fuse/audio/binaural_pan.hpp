@@ -48,6 +48,9 @@ BinauralPanAngles compute_binaural_angles(const Vec3& world_relative, const List
 /// Clamp pan position to [-1, 1].
 float clamp_pan_position(float pan);
 
+/// Map azimuth (radians) to a pan position in [-1, 1] for ILD stub sampling.
+float compute_pan_position_from_azimuth(float azimuth, float max_ild_pan = 1.f);
+
 /// Sample L/R gains for a pan law at the endpoints and interior.
 PanLawGains sample_pan_law(float pan, PanLaw law);
 
@@ -57,6 +60,10 @@ BinauralPanGains compute_binaural_pan_gains(const BinauralPanAngles& angles,
 
 /// Convenience — angles and gains from listener-local offset.
 BinauralPanGains compute_binaural_pan_gains(const Vec3& rel_listener,
+                                             const BinauralPanParams& params = {});
+
+/// Convenience — world-space offset through `basis`, then compute gains.
+BinauralPanGains compute_binaural_pan_gains(const Vec3& world_relative, const ListenerBasis& basis,
                                              const BinauralPanParams& params = {});
 
 /// Clamp per-ear gains to [0, 1].

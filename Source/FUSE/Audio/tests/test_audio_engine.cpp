@@ -646,6 +646,128 @@ void testListenerOrientationEdgeCases() {
     expectNear(local.z, 5.f, 1e-4f, "safe basis preserves forward mapping for degenerate input");
 }
 
+void testPanPositionFromAzimuthEndpoints() {
+    expectNear(fuse::audio::compute_pan_position_from_azimuth(0.f), 0.f, 1e-5f,
+               "ahead azimuth maps to centre pan");
+    expectNear(fuse::audio::compute_pan_position_from_azimuth(1.5707963f), 1.f, 1e-4f,
+               "right azimuth maps to hard-right pan");
+    expectNear(fuse::audio::compute_pan_position_from_azimuth(-1.5707963f), -1.f, 1e-4f,
+               "left azimuth maps to hard-left pan");
+    expectNear(fuse::audio::compute_pan_position_from_azimuth(3.1415926f), 0.f, 1e-4f,
+               "behind azimuth maps to centre pan");
+    expectNear(fuse::audio::compute_pan_position_from_azimuth(2.f, 4.f), 1.f, 1e-5f,
+               "overscaled azimuth pan clamps to one");
+}
+
+void testEqualPowerPanPreservesEnergy() {
+    for (float pan = -1.f; pan <= 1.f; pan += 0.25f) {
+        const fuse::audio::PanLawGains gains =
+            fuse::audio::sample_pan_law(pan, fuse::audio::PanLaw::EqualPower);
+        const float energy = gains.left * gains.left + gains.right * gains.right;
+        expectNear(energy, 1.f, 1e-4f, "equal-power pan preserves unit energy");
+    }
+}
+
+void testBinauralPanElevationEndpoints() {
+    const fuse::audio::BinauralPanAngles above =
+        fuse::audio::compute_binaural_angles(fuse::audio::Vec3{0.f, 5.f, 0.f});
+    expectNear(above.elevation, 1.5707963f, 1e-4f, "pure above offset is +pi/2 elevation");
+
+    const fuse::audio::BinauralPanAngles below =
+        fuse::audio::compute_binaural_angles(fuse::audio::Vec3{0.f, -5.f, 0.f});
+    expectNear(below.elevation, -1.5707963f, 1e-4f, "pure below offset is -pi/2 elevation");
+
+    const fuse::audio::BinauralPanGains ahead =
+        fuse::audio::compute_binaural_pan_gains(fuse::audio::Vec3{0.f, 0.f, 5.f});
+    const fuse::audio::BinauralPanGains elevated =
+        fuse::audio::compute_binaural_pan_gains(fuse::audio::Vec3{0.f, 5.f, 0.f});
+    const float ahead_energy = ahead.left + ahead.right;
+    const float elevated_energy = elevated.left + elevated.right;
+    expectTrue(elevated_energy < ahead_energy,
+               "elevated source attenuates both ears via elevation rolloff");
+    expectTrue(std::fabs(elevated.left - elevated.right) < 1e-3f,
+               "elevation keeps left/right symmetric");
+}
+
+void testBinauralPanCoLocatedAngles() {
+    const fuse::audio::BinauralPanAngles angles =
+        fuse::audio::compute_binaural_angles(fuse::audio::Vec3{});
+    expectNear(angles.azimuth, 0.f, 1e-5f, "co-located source has zero azimuth");
+    expectNear(angles.elevation, 0.f, 1e-5f, "co-located source has zero elevation");
+
+    const fuse::audio::BinauralPanGains gains =
+        fuse::audio::compute_binaural_pan_gains(fuse::audio::Vec3{});
+    expectNear(gains.left, gains.right, 1e-3f, "co-located source keeps symmetric gains");
+    expectNear(gains.itd_seconds, 0.f, 1e-5f, "co-located source has zero ITD stub");
+}
+
+void testBinauralPanWorldSpaceGains() {
+    const fuse::audio::ListenerBasis basis =
+        fuse::audio::make_listener_basis(fuse::audio::Vec3{0.f, 0.f, -1.f}, fuse::audio::Vec3{0.f, 1.f, 0.f});
+    const fuse::audio::Vec3 world_offset{5.f, 0.f, 0.f};
+    const fuse::audio::BinauralPanGains world_gains =
+        fuse::audio::compute_binaural_pan_gains(world_offset, basis);
+    const fuse::audio::BinauralPanGains local_gains =
+        fuse::audio::compute_binaural_pan_gains(fuse::audio::Vec3{5.f, 0.f, 0.f});
+    expectNear(world_gains.left, local_gains.left, 1e-4f,
+               "world-space gains match listener-local for aligned basis");
+    expectNear(world_gains.right, local_gains.right, 1e-4f,
+               "world-space gains match listener-local for aligned basis");
+}
+
+void testHrtfDistanceFactorZeroEndpoint() {
+    expectNear(fuse::audio::compute_hrtf_distance_factor(0.f), 0.25f, 1e-5f,
+               "zero attenuation uses min_spatial_blend");
+    expectNear(fuse::audio::compute_hrtf_distance_factor(0.f,
+                                                         fuse::audio::BinauralPanParams{}),
+               0.25f, 1e-5f, "default params min_spatial_blend is 0.25");
+}
+
+void testListenerOrientationZeroUp() {
+    expectTrue(!fuse::audio::is_listener_orientation_valid(fuse::audio::Vec3{0.f, 0.f, -1.f},
+                                                           fuse::audio::Vec3{}),
+               "zero up is invalid listener orientation");
+
+    const fuse::audio::Vec3 safe_up =
+        fuse::audio::sanitize_listener_up(fuse::audio::Vec3{0.f, 0.f, -1.f}, fuse::audio::Vec3{});
+    expectNear(safe_up.y, 1.f, 1e-5f, "zero up falls back to world up when forward allows");
+}
+
+void testDegenerateListenerOrientationMix() {
+    fuse::audio::SpatialMixer mixer;
+    mixer.configure(48000, 32, true);
+
+    fuse::audio::AudioRegistry registry;
+    const fuse::audio::EntityId listener_entity = registry.create_entity();
+    fuse::audio::AudioListener* listener = registry.set_listener(listener_entity);
+    listener->forward = fuse::audio::Vec3{};
+    listener->up = fuse::audio::Vec3{};
+
+    const fuse::audio::EntityId source_entity = registry.create_entity();
+    registry.set_position(source_entity, fuse::audio::Vec3{-5.f, 0.f, -5.f});
+
+    std::vector<float> pcm(48000, 0.5f);
+    fuse::audio::AudioClip clip;
+    clip.load_from_pcm(pcm.data(), 48000, 1, 48000);
+    fuse::HandleMap<fuse::audio::AudioClip> clips;
+    const auto clip_handle = clips.insert(std::move(clip));
+
+    fuse::audio::AudioSourceDesc source_desc;
+    source_desc.clip = clip_handle;
+    source_desc.spatial = true;
+    source_desc.looping = true;
+    fuse::audio::AudioSource* source = registry.add_source(source_entity, source_desc);
+    source->playing = true;
+
+    std::vector<float> stereo_out;
+    mixer.mix(registry, clips, 1.f / 60.f, stereo_out, 256);
+
+    expectTrue(bufferEnergy(stereo_out) > 0.f,
+               "degenerate listener orientation still mixes spatial sources");
+    expectTrue(channelEnergy(stereo_out, 0) > channelEnergy(stereo_out, 1) + 0.05f,
+               "safe basis preserves lateral pan for degenerate orientation");
+}
+
 void testEmptyListenerSpatialMix() {
     fuse::audio::SpatialMixer mixer;
     mixer.configure(48000, 32, true);
@@ -1457,7 +1579,15 @@ int main() {
     testBinauralPanDistanceFactorNarrowsImage();
     testPanLawCurveEndpoints();
     testBinauralPanAzimuthEndpoints();
+    testPanPositionFromAzimuthEndpoints();
+    testEqualPowerPanPreservesEnergy();
+    testBinauralPanElevationEndpoints();
+    testBinauralPanCoLocatedAngles();
+    testBinauralPanWorldSpaceGains();
+    testHrtfDistanceFactorZeroEndpoint();
     testListenerOrientationEdgeCases();
+    testListenerOrientationZeroUp();
+    testDegenerateListenerOrientationMix();
     testEmptyListenerSpatialMix();
     testHrtfPanEdgeCases();
     testOcclusionStub();
