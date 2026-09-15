@@ -1,4 +1,5 @@
 #include <fuse/renderer/atmosphere/sky_scatter.hpp>
+#include <fuse/renderer/atmosphere/sun_disk.hpp>
 
 #include <cmath>
 
@@ -48,6 +49,9 @@ math::Vec3 compute_sky_colour(const math::Vec3& /*ray_origin*/, const math::Vec3
     if (max_channel > 1e-6f) {
         colour = colour * (1.f / max_channel);
     }
+
+    const math::Vec3 sun_color{1.f, 0.95f, 0.85f};
+    colour = composite_sun_disk(colour, view_dir, sun_dir, sun_color, 1.f);
 
     return colour;
 }
