@@ -3,6 +3,7 @@
 #include <fuse/cinematics/look_at.hpp>
 
 #include <algorithm>
+#include <cmath>
 
 namespace fuse::cinematics {
 
@@ -123,6 +124,39 @@ Vec3 sample_look_at_rail(const std::vector<CameraKeyframe>& keyframes,
 }
 
 } // namespace
+
+namespace {
+
+constexpr float kLookDirectionEpsilon = 1e-6f;
+constexpr Vec3 kDefaultLookForward{0.f, 0.f, -1.f};
+
+} // namespace
+
+Vec3 camera_look_direction(const Vec3& position, const Vec3& look_at) {
+    const Vec3 delta{look_at.x - position.x, look_at.y - position.y, look_at.z - position.z};
+    const float length_sq = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
+    if (length_sq <= kLookDirectionEpsilon * kLookDirectionEpsilon) {
+        return kDefaultLookForward;
+    }
+
+    const float inv_length = 1.f / std::sqrt(length_sq);
+    return {delta.x * inv_length, delta.y * inv_length, delta.z * inv_length};
+}
+
+float camera_look_distance(const Vec3& position, const Vec3& look_at) {
+    const float dx = look_at.x - position.x;
+    const float dy = look_at.y - position.y;
+    const float dz = look_at.z - position.z;
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+Vec3 CameraSample::look_direction() const {
+    return camera_look_direction(position, look_at);
+}
+
+float CameraSample::look_distance() const {
+    return camera_look_distance(position, look_at);
+}
 
 CameraTrack::CameraTrack(const std::string& label) : Track(label) {}
 

@@ -15,8 +15,10 @@ Verve is Copyright (C) 2014 Violent Tulip, licensed under the **MIT License**. S
 | `Track` | `Engine/source/Verve/Core/VTrack.h` | Ordered event lane, span, interpolation |
 | `TimelineEvent` | `Engine/source/Verve/Core/VEvent.h` | Trigger time + duration keyframe |
 | `TrackGroup` | `Engine/source/Verve/Core/VGroup.h` | Track grouping |
-| `CameraTrack` | `Engine/source/Verve/Extension/Camera/VCameraTrack.h` | Camera keyframe rail (position, FOV, roll, look-at modes) |
-| `LookAtResolver` | `Engine/source/T3D/camera.cpp` track-object look-at | Entity-bound look-at stub for `CameraLookAtMode::TargetEntity` |
+| `CameraTrack` | `Engine/source/Verve/Extension/Camera/VCameraTrack.h` | Camera keyframe rail (position, FOV, roll, look-at modes, `empty`) |
+| `CameraSample` | Verve camera event sampling | Sampled pose; `look_direction()` / `look_distance()` helpers |
+| `LookAtResolver` | `Engine/source/T3D/camera.cpp` track-object look-at | Entity-bound look-at stub; falls back to fixed `look_at` when unresolved |
+| `camera_look_direction` | Verve camera forward vector | Normalized aim vector from position to look-at |
 | `SpriteTrack` | `Engine/source/Verve/Extension/SceneObject/VSceneObjectTrack.h` | 2D sprite transform stub |
 | `PropertyTrack` | `Engine/source/Verve/Extension/Motion/VMotionTrack.h` | Scalar property rail stub |
 | `AudioTrack` | `Engine/source/Verve/Extension/SoundEffect/VSoundEffectTrack.h` | Sound-effect lane + volume keyframes stub |
@@ -57,6 +59,8 @@ lookAt.set_resolve_fn([](const std::string& id) {
     return id == "hero" ? fuse::cinematics::Vec3{100.f, 0.f, 0.f} : fuse::cinematics::Vec3{};
 });
 const auto camSample = camera.sample_at(1'000, fuse::cinematics::EaseMode::Linear, &lookAt);
+const fuse::cinematics::Vec3 aim = camSample.look_direction();
+const float aimDistance = camSample.look_distance();
 
 auto& sprite = group.add_sprite_track("Hero");
 sprite.add_keyframe({0, 0.f, 0.f, 1.f});
