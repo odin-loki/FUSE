@@ -160,9 +160,9 @@ void ChunkGrid::update_chunk_lod_(TerrainChunk& chunk, vec3 camera_pos) {
     const LodTransition transition = compute_lod_transition(distance, m_desc.lod_levels);
     const bool lod_changed = chunk.lod != transition.lod;
     chunk.lod = transition.lod;
-    chunk.morph_factor = transition.morph_factor;
+    chunk.morph_factor = clamp_morph_factor(transition.morph_factor);
     chunk.world_bounds = chunk_world_bounds(chunk.chunk_coord, transition.lod);
-    chunk.dirty = chunk.loaded && (lod_changed || transition.morph_factor > 0.f);
+    chunk.dirty = chunk.loaded && (lod_changed || chunk.morph_factor > 0.f);
 }
 
 void ChunkGrid::collect_stream_candidates_(vec3 camera_pos) {
@@ -280,6 +280,7 @@ void ChunkGrid::process_queues_() {
             async_request.chunk_index = request.chunk_index;
             async_request.kind = LodResidencyRequestKind::Load;
             async_request.priority = request.priority;
+            async_request.morph_snapshot = capture_morph_snapshot(chunk.lod, chunk.morph_factor);
             if (!m_async_queue.submit(async_request, make_worker_stub_())) {
                 execute_load_(chunk);
             }
@@ -310,6 +311,7 @@ void ChunkGrid::process_queues_() {
             LodResidencyRequest async_request{};
             async_request.chunk_index = chunk_index;
             async_request.kind = LodResidencyRequestKind::Unload;
+            async_request.morph_snapshot = capture_morph_snapshot(chunk.lod, chunk.morph_factor);
             if (!m_async_queue.submit(async_request, make_worker_stub_())) {
                 execute_unload_(chunk);
             }
@@ -344,6 +346,7 @@ void ChunkGrid::apply_completed_request_(const CompletedLodResidencyRequest& com
     if (completed.kind == LodResidencyRequestKind::Load) {
         if (chunk.residency == ChunkResidencyState::Loading) {
             execute_load_(chunk);
+            sync_morph_after_residency(chunk, completed.morph_snapshot);
         }
         return;
     }
@@ -351,6 +354,7 @@ void ChunkGrid::apply_completed_request_(const CompletedLodResidencyRequest& com
     if (completed.kind == LodResidencyRequestKind::Unload) {
         if (chunk.residency == ChunkResidencyState::Unloading) {
             execute_unload_(chunk);
+            chunk.morph_factor = 0.f;
         }
     }
 }

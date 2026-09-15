@@ -1,8 +1,23 @@
 #include <fuse/terrain/lod_residency_queue.hpp>
 
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/terrain/lod.hpp>
 
 namespace fuse::terrain {
+
+LodResidencyMorphSnapshot capture_morph_snapshot(u32 lod, f32 morph_factor) {
+    LodResidencyMorphSnapshot snapshot{};
+    snapshot.lod = lod;
+    snapshot.morph_factor = clamp_morph_factor(morph_factor);
+    return snapshot;
+}
+
+void sync_morph_after_residency(TerrainChunk& chunk, const LodResidencyMorphSnapshot& snapshot) {
+    if (chunk.lod == snapshot.lod) {
+        chunk.morph_factor = snapshot.morph_factor;
+    }
+    chunk.dirty = chunk.loaded && (chunk.morph_factor > 0.f);
+}
 
 bool LodResidencyQueue::submit(LodResidencyRequest request, LodResidencyWorkFn work) {
     if (work == nullptr) {
@@ -23,6 +38,7 @@ bool LodResidencyQueue::submit(LodResidencyRequest request, LodResidencyWorkFn w
         CompletedLodResidencyRequest completed{};
         completed.chunk_index = request.chunk_index;
         completed.kind = request.kind;
+        completed.morph_snapshot = request.morph_snapshot;
         completed.success = work(request.chunk_index, request.kind);
         push_completed_(std::move(completed));
 
