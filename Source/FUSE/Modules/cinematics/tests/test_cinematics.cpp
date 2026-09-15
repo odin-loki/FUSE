@@ -247,9 +247,10 @@ void testCameraTrackFovExtremes() {
     expectNear(end.field_of_view, fuse::cinematics::kMaxFovDeg, 0.001f, "fov clamps at max keyframe");
 
     const fuse::cinematics::CameraSample mid = track.sample_at(500);
-    const float expected_mid = fuse::cinematics::lerp_fov(0.f, 200.f, 0.5f);
-    expectNear(mid.field_of_view, expected_mid, 0.001f, "fov midpoint clamps after lerp");
-    expectNear(expected_mid, 100.f, 0.001f, "lerp_fov clamps interior blend");
+    const float expected_mid =
+        fuse::cinematics::lerp_fov(fuse::cinematics::kMinFovDeg, fuse::cinematics::kMaxFovDeg, 0.5f);
+    expectNear(mid.field_of_view, expected_mid, 0.001f, "fov midpoint clamps after lerp on normalized keyframes");
+    expectNear(expected_mid, 90.f, 0.001f, "lerp_fov midpoint of clamped extremes");
 }
 
 void testCameraLookDirection() {
@@ -472,6 +473,106 @@ void testCameraTrackMultiKeyframe() {
     expectNear(hold.position.z, 10.f, 0.001f, "three-keyframe position midpoint");
     expectNear(hold.field_of_view, 50.f, 0.001f, "three-keyframe fov midpoint");
     expectNear(hold.roll_deg, 2.5f, 0.001f, "three-keyframe roll midpoint");
+}
+
+void testNormalizeCameraKeyframe() {
+    fuse::cinematics::CameraKeyframe keyframe{};
+    keyframe.field_of_view = -5.f;
+    fuse::cinematics::normalize_camera_keyframe(keyframe);
+    expectNear(keyframe.field_of_view, fuse::cinematics::kMinFovDeg, 0.001f, "normalize clamps below min fov");
+
+    keyframe.field_of_view = 250.f;
+    fuse::cinematics::normalize_camera_keyframe(keyframe);
+    expectNear(keyframe.field_of_view, fuse::cinematics::kMaxFovDeg, 0.001f, "normalize clamps above max fov");
+
+    keyframe.field_of_view = 75.f;
+    fuse::cinematics::normalize_camera_keyframe(keyframe);
+    expectNear(keyframe.field_of_view, 75.f, 0.001f, "normalize preserves in-range fov");
+}
+
+void testCameraTrackAddKeyframeFovGuard() {
+    fuse::cinematics::CameraTrack track("Guarded");
+    fuse::cinematics::CameraKeyframe wide{};
+    wide.time_ms = 0;
+    wide.field_of_view = 0.f;
+    track.add_keyframe(wide);
+
+    expectNear(track.keyframes().front().field_of_view, fuse::cinematics::kMinFovDeg, 0.001f,
+               "add_keyframe normalizes fov on insert");
+
+    const fuse::cinematics::CameraSample sample = track.sample_at(0);
+    expectNear(sample.field_of_view, fuse::cinematics::kMinFovDeg, 0.001f, "sampled fov matches normalized keyframe");
+}
+
+void testCameraTrackNeedsLookAtResolver() {
+    fuse::cinematics::CameraTrack fixed("FixedOnly");
+    fixed.add_keyframe({0, {0.f, 0.f, 5.f}, fuse::cinematics::CameraLookAtMode::FixedPoint, {0.f, 0.f, 0.f}, {}, 60.f, 0.f});
+    expectTrue(!fixed.needs_look_at_resolver(), "fixed-point track does not need resolver");
+
+    std::vector<fuse::cinematics::CameraKeyframe> fixedKeyframes = fixed.keyframes();
+    expectTrue(!fuse::cinematics::camera_track_needs_look_at_resolver(fixedKeyframes),
+               "fixed-point vector does not need resolver");
+
+    fuse::cinematics::CameraTrack entity("Follow");
+    fuse::cinematics::CameraKeyframe follow{};
+    follow.time_ms = 0;
+    follow.look_at_mode = fuse::cinematics::CameraLookAtMode::TargetEntity;
+    follow.look_at_target_id = "hero";
+    entity.add_keyframe(follow);
+    expectTrue(entity.needs_look_at_resolver(), "entity look-at track needs resolver");
+    expectTrue(fuse::cinematics::camera_track_needs_look_at_resolver(entity.keyframes()),
+               "entity look-at vector needs resolver");
+}
+
+void testSampleCameraKeyframe() {
+    fuse::cinematics::CameraKeyframe keyframe{};
+    keyframe.time_ms = 500;
+    keyframe.position = {1.f, 2.f, 3.f};
+    keyframe.look_at = {4.f, 5.f, 6.f};
+    keyframe.field_of_view = 200.f;
+    keyframe.roll_deg = 30.f;
+
+    const fuse::cinematics::CameraSample sample = fuse::cinematics::sample_camera_keyframe(keyframe);
+    expectNear(sample.position.x, 1.f, 0.001f, "single keyframe position");
+    expectNear(sample.look_at.z, 6.f, 0.001f, "single keyframe look-at");
+    expectNear(sample.field_of_view, fuse::cinematics::kMaxFovDeg, 0.001f, "single keyframe fov clamped");
+    expectNear(sample.roll_deg, 30.f, 0.001f, "single keyframe roll");
+}
+
+void testEntityLookAtWithoutResolver() {
+    fuse::cinematics::CameraTrack track("NoResolver");
+    fuse::cinematics::CameraKeyframe keyframe{};
+    keyframe.time_ms = 0;
+    keyframe.position = {0.f, 2.f, 5.f};
+    keyframe.look_at_mode = fuse::cinematics::CameraLookAtMode::TargetEntity;
+    keyframe.look_at_target_id = "hero";
+    keyframe.look_at = {3.f, 4.f, 5.f};
+    track.add_keyframe(keyframe);
+
+    const fuse::cinematics::CameraSample sample = track.sample_at(0);
+    expectNear(sample.look_at.x, 3.f, 0.001f, "entity look-at without resolver falls back to fixed point");
+    expectNear(sample.look_at.y, 4.f, 0.001f, "entity look-at without resolver falls back y");
+    expectNear(sample.look_at.z, 5.f, 0.001f, "entity look-at without resolver falls back z");
+}
+
+void testDefaultCameraLookAtForPosition() {
+    const fuse::cinematics::Vec3 position{10.f, 20.f, 30.f};
+    const fuse::cinematics::Vec3 aim = fuse::cinematics::default_camera_look_at_for_position(position, 5.f);
+    expectNear(aim.x, 10.f, 0.001f, "default look-at preserves x");
+    expectNear(aim.y, 20.f, 0.001f, "default look-at preserves y");
+    expectNear(aim.z, 25.f, 0.001f, "default look-at offsets along -Z");
+}
+
+void testCameraBracketSmoothStep() {
+    std::vector<fuse::cinematics::CameraKeyframe> keyframes;
+    keyframes.push_back({0, {}, fuse::cinematics::CameraLookAtMode::FixedPoint, {}, {}, 60.f, 0.f});
+    keyframes.push_back({2'000, {}, fuse::cinematics::CameraLookAtMode::FixedPoint, {}, {}, 40.f, 0.f});
+
+    const fuse::cinematics::CameraKeyframeBracket bracket =
+        fuse::cinematics::find_camera_keyframe_bracket(keyframes, 1'000, fuse::cinematics::EaseMode::SmoothStep);
+    expectTrue(bracket.prev_index == 0, "smoothstep bracket prev index");
+    expectTrue(bracket.next_index == 1, "smoothstep bracket next index");
+    expectNear(bracket.segment_t, 0.5f, 0.001f, "smoothstep bracket eased segment t at midpoint");
 }
 
 void testSpriteTrackSampling() {
@@ -772,6 +873,13 @@ int main() {
     testCameraTrackClearKeyframes();
     testCameraDuplicateKeyframeTime();
     testCameraTrackMultiKeyframe();
+    testNormalizeCameraKeyframe();
+    testCameraTrackAddKeyframeFovGuard();
+    testCameraTrackNeedsLookAtResolver();
+    testSampleCameraKeyframe();
+    testEntityLookAtWithoutResolver();
+    testDefaultCameraLookAtForPosition();
+    testCameraBracketSmoothStep();
     testSpriteTrackSampling();
     testPropertyTrackSampling();
     testTimelineContentSpan();

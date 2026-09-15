@@ -62,6 +62,19 @@ bool camera_keyframes_empty(const std::vector<CameraKeyframe>& keyframes);
 /// True when `keyframe` binds look-at to an entity id (requires `LookAtResolver` stub).
 bool camera_keyframe_uses_entity_look_at(const CameraKeyframe& keyframe);
 
+/// True when any keyframe in `keyframes` requires a `LookAtResolver` at sample time.
+bool camera_track_needs_look_at_resolver(const std::vector<CameraKeyframe>& keyframes);
+
+/// Clamp FOV and leave other fields untouched (editor / import guard).
+void normalize_camera_keyframe(CameraKeyframe& keyframe);
+
+/// Sample a single keyframe without interpolation (hold pose stub).
+CameraSample sample_camera_keyframe(const CameraKeyframe& keyframe,
+                                    const LookAtResolver* look_at_resolver = nullptr);
+
+/// Default world look-at point `distance` units along -Z from `position`.
+Vec3 default_camera_look_at_for_position(const Vec3& position, float distance = 10.f);
+
 /// Indices of bracketing keyframes for `time_ms` plus eased segment parameter.
 struct CameraKeyframeBracket {
     int prev_index = -1;
@@ -107,6 +120,9 @@ public:
     void sort_keyframes();
 
     bool empty() const { return keyframes_.empty(); }
+
+    /// True when any keyframe binds look-at to an entity id.
+    bool needs_look_at_resolver() const;
 
     /// Earliest through latest keyframe time (requires sorted keyframes for tight bounds).
     TrackSpan keyframe_span() const;
