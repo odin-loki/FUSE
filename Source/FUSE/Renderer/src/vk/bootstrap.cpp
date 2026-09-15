@@ -38,15 +38,28 @@ bool VulkanBootstrap::initialize(const VulkanBootstrapDesc& desc) {
         return true;
     }
 
-    if (desc.createSwapchainPlaceholder) {
+    if (desc.createFrameManager) {
+        m_frameManager = FrameManager::create(*m_device);
+        if (m_frameManager) {
+            m_status.frameManagerReady = m_frameManager->isReady();
+        }
+    }
+
+    if (desc.createSwapchain) {
         m_swapchain = VulkanSwapchain::create(*m_device, desc.swapchain);
         if (m_swapchain) {
-            m_status.swapchainPlaceholderReady = m_swapchain->isReady();
+            m_status.swapchainReady = m_swapchain->isReady();
+            m_status.swapchainHeadless = m_swapchain->isHeadless();
             m_status.message = m_swapchain->info().message;
         }
     } else {
-        m_status.swapchainPlaceholderReady = false;
-        m_status.message = "Swapchain deferred (B2.2)";
+        m_status.swapchainReady = false;
+        m_status.swapchainHeadless = true;
+        m_status.message = "Swapchain deferred";
+    }
+
+    if (m_status.frameManagerReady && m_status.message.empty()) {
+        m_status.message = m_frameManager->info().message;
     }
 
     return true;

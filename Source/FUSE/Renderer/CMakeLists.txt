@@ -13,8 +13,10 @@ set(FUSE_RHI_PUBLIC_HEADERS
     include/fuse/renderer/vk/bindless.hpp
     include/fuse/renderer/vk/bootstrap.hpp
     include/fuse/renderer/vk/device.hpp
+    include/fuse/renderer/vk/frame.hpp
     include/fuse/renderer/vk/instance.hpp
     include/fuse/renderer/vk/pipeline_layout.hpp
+    include/fuse/renderer/vk/surface.hpp
     include/fuse/renderer/vk/swapchain.hpp
 )
 
@@ -29,8 +31,10 @@ set(FUSE_RHI_SOURCES
     src/vk/bindless.cpp
     src/vk/bootstrap.cpp
     src/vk/device.cpp
+    src/vk/frame.cpp
     src/vk/instance.cpp
     src/vk/pipeline_layout.cpp
+    src/vk/surface.cpp
     src/vk/swapchain.cpp
 )
 

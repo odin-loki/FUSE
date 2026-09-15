@@ -1,29 +1,31 @@
-# Track B — Vulkan Bootstrap (B2.1 kickoff)
+# Track B — Vulkan Bootstrap (B2.1–B2.4)
 
-**Status:** B2.1 bootstrap + B2.3 resource/bindless scaffolding + B2.4 shader scaffold; swapchain/present deferred to B2.2  
-**Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B2.1  
-**Threading:** [architecture-parallel.md](./architecture-parallel.md) §4.4, §5.3  
+**Status:** B2.1 bootstrap + B2.2 swapchain/frame ring + B2.3 resource/bindless scaffolding + B2.4 shader scaffold  
+**Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B2.1–B2.4  
+**Threading:** [architecture-parallel.md](./architecture-parallel.md) §4.2, §4.4, §5.3  
 **Hybrid integration:** [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md)
 
 ---
 
-## Scope (this PR)
+## Scope
 
 | Component | Location | Notes |
 |-----------|----------|-------|
 | `RenderCommandList` | `Source/FUSE/Renderer/` | Per-frame draws/clears merged on render thread |
 | `VulkanInstance` / `VulkanDevice` | `Source/FUSE/Renderer/include/fuse/renderer/vk/` | Headless bootstrap; optional validation layers |
-| `VulkanSwapchain` | same | **Placeholder** — records desc, no `VkSwapchainKHR` yet |
+| `VulkanSurface` | same | Headless vs external `VkSurfaceKHR` abstraction |
+| `VulkanSwapchain` | same | Real `VkSwapchainKHR` when External surface + WSI; headless stub otherwise |
+| `FrameManager` | same | Triple-buffered fence/semaphore ring aligned with `FrameBarrier` |
 | `ResourceManager` / `GpuAllocator` | `Source/FUSE/Renderer/` | Handle-based buffers/images; VMA when vendored, stub otherwise |
 | `BindlessDescriptors` | `Source/FUSE/Renderer/include/fuse/renderer/vk/` | Index table scaffolding (descriptor pool deferred to B2.4 follow-up) |
 | `HandleMap<T>` | `Source/FUSE/Core/include/fuse/` | Generation-checked slots for GPU resources |
 | `ShaderCompiler` / `ShaderModule` | `Source/FUSE/Renderer/include/fuse/renderer/shader/` | Offline-first — loads checked-in `.spv` fixtures |
 | `PipelineLayout` | `Source/FUSE/Renderer/include/fuse/renderer/vk/pipeline_layout.hpp` | Placeholder layout (push constants only; bindless sets deferred) |
-| `RhiContext` | `Source/FUSE/Renderer/` | Accepts command lists on `renderThread()` |
+| `RhiContext` | `Source/FUSE/Renderer/` | `beginFrame` / `submitFrame` on `renderThread()` |
 | `fuse::platform::gl_context.hpp` | `Source/FUSE/Core/` | Portable “may touch GPU” guard |
 | `HybridComposer` wiring | `Source/FUSE/Hybrid/` | Dual path: software `PlaceholderRenderer` **and** RHI command mirror |
 
-**Not in scope:** Engine marriage, real swapchain/present, MoltenVK/Android surface wiring, full bindless descriptor pool, graphics pipeline cache, hot-reload watchers.
+**Not in scope:** Engine marriage, real present in CI (no window surface), MoltenVK/Android surface wiring, full bindless descriptor pool, graphics pipeline cache, hot-reload watchers.
 
 ---
 
@@ -50,7 +52,7 @@ CMake discovers Vulkan quietly in `Source/FUSE/CMakeLists.txt`; `fuse_rhi` alway
 Only `fuse::platform::renderThread()` may:
 
 - Create/destroy GPU contexts (v1 bootstrap on same thread as Hybrid `render()`)
-- Submit `RenderCommandList` to `RhiContext`
+- Call `RhiContext::beginFrame()` / `submitFrame()`
 
 Workers produce snapshot SOA / staging data only. Job code never includes `<vulkan/vulkan.h>`.
 
@@ -58,7 +60,9 @@ Workers produce snapshot SOA / staging data only. Job code never includes `<vulk
 
 1. Assert render thread (`platform::isRenderThread()`)
 2. Execute software placeholder (existing U4 tests)
-3. When `FUSE_HAS_VULKAN_RHI`: reset `RenderCommandList`, mirror clears/sprites, `RhiContext::submitFrame()`
+3. When `FUSE_HAS_VULKAN_RHI`: reset `RenderCommandList`, mirror clears/sprites, `beginFrame(ctx.frameIndex)`, `submitFrame()`
+
+**Frame barrier alignment:** `FrameBarrier` at end of tick ensures jobs for frame `N` complete before render record. `FrameManager::signalTickComplete()` + `beginFrame(frameIndex)` mirror that sync point on the GPU path.
 
 ---
 
@@ -70,44 +74,53 @@ enum class VulkanBackendMode : u8 { Stub, Headless };
 
 | Mode | When | Instance | Device | Swapchain |
 |------|------|----------|--------|-----------|
-| **Stub** | No loader / no ICD | — | — | placeholder message only |
-| **Headless** | Loader + ICD (incl. Lavapipe) | `VkInstance` | `VkDevice` + queues | placeholder (no surface) |
+| **Stub** | No loader / no ICD | — | — | — |
+| **Headless** | Loader + ICD (incl. Lavapipe), no surface | `VkInstance` | `VkDevice` + queues | stub (records desc, no `VkSwapchainKHR`) |
+| **Presentable** | External `VkSurfaceKHR` + `VK_KHR_swapchain` | `VkInstance` + WSI ext* | `VkDevice` | real `VkSwapchainKHR` |
 
-Device extensions from master plan B2.1 are **requested when supported**; missing extensions do not fail headless bootstrap.
+\*WSI instance extensions (`VK_KHR_surface`, platform surface) must be enabled by the platform module that creates the surface — not yet wired in CI.
 
 `GpuAllocator` creates a real `VmaAllocator` when `third_party/VulkanMemoryAllocator/include/vk_mem_alloc.h` is present; otherwise stub bookkeeping handles are issued and `VulkanDeviceInfo::vmaAllocator` stays null until VMA is vendored.
 
 ---
 
-## Desktop vs mobile (design notes)
+## Surface abstraction (B2.2)
 
-| Platform | B2.1 stance | Later |
-|----------|-------------|-------|
-| Linux/Windows desktop | Headless bootstrap + Lavapipe/discrete ICD | B2.2 swapchain + Qt viewport |
-| macOS | Same API surface; MoltenVK behind platform module | Dedicated `FUSE_PLATFORM_MACOS` RHI backend |
-| iOS / Android | Stub compile (`FUSE_BUILD_VULKAN=OFF` in mobile CI) | GLES/Metal/Vulkan queue ownership per §4.4 |
+```cpp
+enum class SurfaceKind : u8 { Headless, External };
+```
 
-Portable invariant unchanged: job code emits `RenderCommandList`; platform module selects Vulkan/Metal/GLES backend.
+| Kind | `nativeSurface` | Swapchain behaviour |
+|------|-----------------|---------------------|
+| **Headless** | `nullptr` | Records width/height/imageCount; **no** `VkSwapchainKHR` (CI / Lavapipe default) |
+| **External** | opaque `VkSurfaceKHR*` | Creates real swapchain when device has `VK_KHR_swapchain` and queue supports present |
+
+Headless is intentional for CI: Lavapipe provides an ICD but umbrella tests run without a window. Editor Qt viewport (`U6`) will pass `SurfaceKind::External`.
 
 ---
 
-## Tests
+## Frame ring (B2.2 sketch)
 
-| Target | Validates |
-|--------|-----------|
-| `fuse_vulkan_bootstrap` | Instance/device or stub path; render-thread submit |
-| `fuse_vulkan_resources` | `HandleMap`, bindless index recycle, buffer/texture create/destroy |
-| `fuse_shader_pipeline` | SPIR-V I/O, offline compiler, shader module + pipeline layout (stub or Vulkan) |
-| `fuse_render_command_list` | Hybrid mirrors commands without breaking placeholder pixels |
-| `fuse_hybrid_tests` | Existing U4 software renderer regressions |
+`kFramesInFlight = 3` — triple-buffered slot ring:
 
-Run:
+| Per-slot sync | Role |
+|---------------|------|
+| `image_available` | swapchain acquire signal (used when presentable) |
+| `render_finished` | present wait |
+| `in_flight_fence` | CPU wait before reusing slot |
 
-```bash
-ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_render_command|fuse_hybrid'
-```
+Lifecycle per frame:
 
-### B2.3 — Resources & bindless scaffolding
+1. Tick completes → `FrameBarrier::signalTickJobsComplete()` (game thread)
+2. Render thread → `FrameManager::signalTickComplete()` + `beginFrame(frameIndex)` (waits prior fence)
+3. Record `RenderCommandList` + placeholder software path
+4. `endFrame()` advances ring index
+
+Command pools, descriptor pools, and scratch allocators deferred to B2.3+.
+
+---
+
+## B2.3 — Resources & bindless scaffolding
 
 | Piece | Path | Behaviour |
 |-------|------|-----------|
@@ -117,16 +130,6 @@ ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|
 | `BindlessDescriptors` | `vk/bindless.hpp` | Free-list indices only until descriptor pool lands |
 
 Optional VMA: place [VulkanMemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) at `third_party/VulkanMemoryAllocator/include/vk_mem_alloc.h` and reconfigure.
-
----
-
-## CI story (honest)
-
-1. **Linux umbrella** — `FUSE_BUILD_VULKAN=ON`, Mesa Lavapipe for headless ICD; Khronos validation layers used when installed, otherwise stub message (non-fatal).
-2. **Android NDK** — `FUSE_BUILD_VULKAN=OFF`; `fuse_core` + `fuse_hybrid` unchanged.
-3. **iOS stub workflow** — unchanged; Vulkan deferred.
-
-No GPU on runner is OK: stub backend keeps configure/build green; when Lavapipe is present, B2.1 tests exercise real instance/device creation.
 
 ---
 
@@ -160,13 +163,53 @@ cmake -B build -DFUSE_UMBRELLA=ON -DFUSE_BUILD_VULKAN=ON -DFUSE_SHADER_GLSLANG=O
 
 When `FUSE_SHADER_GLSLANG=ON` but glslang is missing, configure continues with offline SPIR-V only.
 
-**Not in scope (other agents / later milestones):** swapchain present, bindless descriptor sets, graphics pipeline cache, hot-reload watchers.
+---
+
+## Desktop vs mobile (design notes)
+
+| Platform | B2.2 stance | Later |
+|----------|-------------|-------|
+| Linux/Windows desktop | Headless bootstrap + Lavapipe/discrete ICD; real swapchain via External surface | Editor Qt viewport |
+| macOS | Same API surface; MoltenVK behind platform module | Dedicated `FUSE_PLATFORM_MACOS` RHI backend |
+| iOS / Android | Stub compile (`FUSE_BUILD_VULKAN=OFF` in mobile CI) | GLES/Metal/Vulkan queue ownership per §4.4 |
+
+Portable invariant unchanged: job code emits `RenderCommandList`; platform module selects Vulkan/Metal/GLES backend and supplies `SurfaceDesc`.
 
 ---
 
-## Next (B2.2+)
+## Tests
 
-- [ ] `VkSwapchainKHR` + triple-buffered frame ring (B2.2 — other agent)
+| Target | Validates |
+|--------|-----------|
+| `fuse_vulkan_bootstrap` | Instance/device or stub path; surface abstraction; render-thread submit |
+| `fuse_vulkan_swapchain` | Headless swapchain desc; frame ring advance; external surface graceful failure |
+| `fuse_vulkan_resources` | `HandleMap`, bindless index recycle, buffer/texture create/destroy |
+| `fuse_shader_pipeline` | SPIR-V I/O, offline compiler, shader module + pipeline layout (stub or Vulkan) |
+| `fuse_render_command_list` | Hybrid mirrors commands without breaking placeholder pixels |
+| `fuse_hybrid_tests` | Existing U4 software renderer regressions |
+
+Run:
+
+```bash
+ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_render_command|fuse_hybrid'
+```
+
+---
+
+## CI story (honest)
+
+1. **Linux umbrella** — `FUSE_BUILD_VULKAN=ON`, Mesa Lavapipe for headless ICD; Khronos validation layers used when installed, otherwise stub message (non-fatal). Swapchain stays **headless** (no `VkSurfaceKHR`); frame ring exercises real fences/semaphores.
+2. **Android NDK** — `FUSE_BUILD_VULKAN=OFF`; `fuse_core` + `fuse_hybrid` unchanged.
+3. **iOS stub workflow** — unchanged; Vulkan deferred.
+
+No GPU window on runner is OK: stub backend keeps configure/build green; when Lavapipe is present, tests exercise real instance/device + frame sync objects.
+
+---
+
+## Next
+
+- [x] `VkSwapchainKHR` path behind surface abstraction (External surface; headless stub documented)
+- [x] Triple-buffered frame ring sketch aligned with `FrameBarrier`
 - [x] B2.3 resource handles + stub/VMA allocator + bindless index table
 - [x] B2.4 shader scaffold — offline SPIR-V, shader module, pipeline layout placeholder
 - [ ] B2.4 follow-up: bindless descriptor pool + graphics pipeline cache

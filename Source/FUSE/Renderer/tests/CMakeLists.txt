@@ -2,6 +2,10 @@ add_executable(fuse_vulkan_bootstrap test_vulkan_bootstrap.cpp)
 target_link_libraries(fuse_vulkan_bootstrap PRIVATE fuse_rhi)
 add_test(NAME fuse_vulkan_bootstrap COMMAND fuse_vulkan_bootstrap)
 
+add_executable(fuse_vulkan_swapchain test_vulkan_swapchain.cpp)
+target_link_libraries(fuse_vulkan_swapchain PRIVATE fuse_rhi)
+add_test(NAME fuse_vulkan_swapchain COMMAND fuse_vulkan_swapchain)
+
 add_executable(fuse_vulkan_resources test_vulkan_resources.cpp)
 target_link_libraries(fuse_vulkan_resources PRIVATE fuse_rhi)
 add_test(NAME fuse_vulkan_resources COMMAND fuse_vulkan_resources)
