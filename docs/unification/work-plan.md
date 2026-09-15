@@ -55,6 +55,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Parallel** | Stream A; can start **B stub** (`Source/FUSE/CMakeLists.txt` empty options) |
 | **Exit** | One `cmake` configure builds T3D app + T2D engine target; zero secret scripts |
 | **Deps** | WP-00 |
+| **Status** | ✅ Done (U1 PR) — umbrella CMake, `fuse_core` target, BUILD.md, Linux + Android CI |
 
 ---
 
@@ -81,6 +82,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Emscripten** | Stub profile only (`FUSE_JOBS_SINGLE_THREAD`) — **does not gate** WP-03 exit |
 | **Exit** | Job tests pass on Linux + **one mobile target** (iOS sim or Android NDK); work-stealing on 4+ core desktop; `FUSE_JOBS_SINGLE_THREAD` works; background reduces `N` |
 | **Deps** | WP-01 (cmake target); architecture-parallel §3.1–3.6 |
+| **Status** | 🚧 Stub landed (U1 PR) — `computeWorkerCount()` + platform/job headers; fiber scheduler pending |
 
 ---
 
@@ -228,15 +230,17 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 ## 6. Immediate next 5 actions (after this PR merges)
 
-1. **Locked:** Platform scope = desktop + mobile — no further confirmation needed on worker adaptive formula ([architecture-parallel.md §3.1.1](./architecture-parallel.md)).
+1. ✅ **Locked:** Platform scope = desktop + mobile — worker adaptive formula implemented in `fuse::jobs::computeWorkerCount()`.
 
-2. **WP-01 (U1):** Umbrella CMake + `docs/unification/BUILD.md` — document **Win/Linux/macOS + iOS + Android** configure paths (from T2D `CMakeLists.txt`); `FUSE_PLATFORM_*` options.
+2. ✅ **WP-01 (U1):** Umbrella CMake + [BUILD.md](./BUILD.md) — Win/Linux/macOS + iOS + Android paths; `FUSE_PLATFORM_*` options.
 
-3. **WP-03 stub:** `Source/FUSE/Core/jobs/` + `Core/include/fuse/platform/` — `computeWorkerCount()`, `getPowerState()` stubs; tests for desktop vs mobile profile math.
+3. ✅ **WP-03 stub:** `Source/FUSE/Core/include/fuse/jobs/` + `fuse/platform/` — stubs + worker-count tests (`fuse_core_tests`).
 
-4. **WP-02 prep:** Prefix rename script prototype for top `Con::` collisions (unchanged).
+4. ✅ **WP-02 prep:** [Tools/FUSE/prefix_legacy_symbols.py](../../Tools/FUSE/prefix_legacy_symbols.py) — dry-run prefix planner.
 
-5. **CI:** Linux umbrella configure **plus** matrix row for **Android NDK** or **iOS simulator** compile of `fuse_core` stub only (no full link required for U1).
+5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
+
+**Next:** WP-02 one-process smoke (`fuse_t3d_legacy` / `fuse_t2d_legacy`); WP-03 fiber scheduler implementation.
 
 ---
 

@@ -1,0 +1,41 @@
+# FUSE platform profile detection and cache options.
+# Aligns with docs/unification/architecture-parallel.md and T2D platform matrix.
+
+option(FUSE_PLATFORM_WINDOWS "FUSE target profile: Windows desktop" OFF)
+option(FUSE_PLATFORM_LINUX "FUSE target profile: Linux desktop" OFF)
+option(FUSE_PLATFORM_MACOS "FUSE target profile: macOS desktop" OFF)
+option(FUSE_PLATFORM_IOS "FUSE target profile: iOS" OFF)
+option(FUSE_PLATFORM_ANDROID "FUSE target profile: Android" OFF)
+
+if(ANDROID)
+    set(FUSE_PLATFORM_ANDROID ON CACHE BOOL "FUSE target profile: Android" FORCE)
+elseif(IOS OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(FUSE_PLATFORM_IOS ON CACHE BOOL "FUSE target profile: iOS" FORCE)
+elseif(WIN32)
+    set(FUSE_PLATFORM_WINDOWS ON CACHE BOOL "FUSE target profile: Windows desktop" FORCE)
+elseif(APPLE)
+    set(FUSE_PLATFORM_MACOS ON CACHE BOOL "FUSE target profile: macOS desktop" FORCE)
+elseif(UNIX)
+    set(FUSE_PLATFORM_LINUX ON CACHE BOOL "FUSE target profile: Linux desktop" FORCE)
+endif()
+
+set(FUSE_PLATFORM_MOBILE OFF)
+if(FUSE_PLATFORM_IOS OR FUSE_PLATFORM_ANDROID)
+    set(FUSE_PLATFORM_MOBILE ON)
+endif()
+
+set(FUSE_PLATFORM_DESKTOP OFF)
+if(FUSE_PLATFORM_WINDOWS OR FUSE_PLATFORM_LINUX OR FUSE_PLATFORM_MACOS)
+    set(FUSE_PLATFORM_DESKTOP ON)
+endif()
+
+function(fuse_log_platform_profile)
+    message(STATUS "FUSE platform profile:")
+    message(STATUS "  desktop : ${FUSE_PLATFORM_DESKTOP}")
+    message(STATUS "  mobile  : ${FUSE_PLATFORM_MOBILE}")
+    message(STATUS "  windows : ${FUSE_PLATFORM_WINDOWS}")
+    message(STATUS "  linux   : ${FUSE_PLATFORM_LINUX}")
+    message(STATUS "  macos   : ${FUSE_PLATFORM_MACOS}")
+    message(STATUS "  ios     : ${FUSE_PLATFORM_IOS}")
+    message(STATUS "  android : ${FUSE_PLATFORM_ANDROID}")
+endfunction()

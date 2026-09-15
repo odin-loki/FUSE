@@ -1,0 +1,44 @@
+name: FUSE fuse_core (Android NDK)
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+    branches: [main, development]
+
+concurrency:
+  group: ci-${{ github.actor }}-${{ github.head_ref || github.run_number }}-${{ github.ref }}-fuse-android
+  cancel-in-progress: true
+
+jobs:
+  fuse-core-android:
+    name: fuse_core arm64-v8a compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake
+
+      - name: Setup NDK
+        uses: nttld/setup-ndk@v1
+        id: android-ndk
+        with:
+          ndk-version: r26d
+          add-to-path: false
+
+      - name: Configure fuse_core for Android
+        run: |
+          cmake -B build-android -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=${{ steps.android-ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DFUSE_UMBRELLA=ON \
+            -DFUSE_BUILD_CORE=ON \
+            -DFUSE_BUILD_CORE_TESTS=OFF \
+            -DFUSE_BUILD_T3D=OFF \
+            -DFUSE_BUILD_T2D=OFF
+
+      - name: Build fuse_core stub
+        run: cmake --build build-android --target fuse_core

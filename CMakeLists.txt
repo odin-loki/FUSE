@@ -1,87 +1,64 @@
-cmake_minimum_required (VERSION 3.21.0)
-set (CMAKE_CXX_STANDARD 17)
-set(CMAKE_CONFIGURATION_TYPES "Debug;RelWithDebInfo;Release" CACHE STRING "" FORCE)
+cmake_minimum_required(VERSION 3.21.0)
 
-find_program(GIT_EXECUTABLE git)
-if(GIT_EXECUTABLE)
-    option(GIT_IN_USE "use Git" ON)
-else()
-    option(GIT_IN_USE "use Git" OFF)
+# -----------------------------------------------------------------------------
+# FUSE umbrella entry (U1) — wraps Torque3D, optional Torque2D, and fuse_core.
+#
+# Legacy T3D-only path (unchanged workflow):
+#   cmake -B build -DTORQUE_APP_NAME=Torque3D
+#
+# Umbrella path (default when TORQUE_APP_NAME is unset):
+#   cmake -B build -DFUSE_UMBRELLA=ON
+# -----------------------------------------------------------------------------
+set(TORQUE_APP_NAME "" CACHE STRING "Torque3D application name (required for FUSE_BUILD_T3D)")
+
+set(_fuse_umbrella_default ON)
+if(NOT "${TORQUE_APP_NAME}" STREQUAL "")
+    set(_fuse_umbrella_default OFF)
+endif()
+option(FUSE_UMBRELLA "Enable the FUSE umbrella build (fuse_core + optional legacy engines)" ${_fuse_umbrella_default})
+
+if(NOT FUSE_UMBRELLA)
+    include("${CMAKE_SOURCE_DIR}/cmake/LegacyTorque3D.cmake")
+    return()
 endif()
 
-# An application name must be set first
-set(TORQUE_APP_NAME "" CACHE STRING "the app name")
-if("${TORQUE_APP_NAME}" STREQUAL "")
-	message(FATAL_ERROR "Please set TORQUE_APP_NAME first")
+project(FUSE VERSION 0.1.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+include("${CMAKE_SOURCE_DIR}/cmake/FusePlatforms.cmake")
+fuse_log_platform_profile()
+
+option(FUSE_BUILD_CORE "Build fuse_core library and tests" ON)
+option(FUSE_BUILD_CORE_TESTS "Build fuse_core unit tests (fuse_core_tests)" ON)
+option(FUSE_BUILD_T3D "Build Torque3D application target(s)" ON)
+option(FUSE_BUILD_T2D "Build Torque2D engine target (requires submodule)" ON)
+
+if(FUSE_BUILD_T3D AND "${TORQUE_APP_NAME}" STREQUAL "")
+    set(TORQUE_APP_NAME "Torque3D" CACHE STRING "Torque3D application name" FORCE)
+    message(STATUS "FUSE: defaulting TORQUE_APP_NAME to Torque3D for FUSE_BUILD_T3D")
 endif()
 
-
-include("${CMAKE_SOURCE_DIR}/Tools/CMake/torque_macros.cmake")
-include("${CMAKE_SOURCE_DIR}/Tools/CMake/torque_configs.cmake")
-
-# Ensure multi-core compilation is enabled for everything
-add_compile_options($<$<CXX_COMPILER_ID:MSVC>:/MP>)
-
-project(${TORQUE_APP_NAME})
-
-# Once an app name is determined, we know what our project pathing structure should look like
-set(TORQUE_APP_ROOT_DIRECTORY "${CMAKE_SOURCE_DIR}/My Projects/${TORQUE_APP_NAME}")
-set(TORQUE_APP_GAME_DIRECTORY "${TORQUE_APP_ROOT_DIRECTORY}/game")
-
-#library handling
-set(TORQUE_LIB_ROOT_DIRECTORY "${CMAKE_SOURCE_DIR}/Engine/lib")
-set(TORQUE_LIB_TARG_DIRECTORY "${CMAKE_BINARY_DIR}/Engine/lib")
-set(TORQUE_SOURCE_DIRECTROY "${CMAKE_SOURCE_DIR}/Engine/source")
-
-# Ensure all possible configurations end up in the project directory
-set(CMAKE_INSTALL_PREFIX "${TORQUE_APP_ROOT_DIRECTORY}" CACHE STRING "" FORCE)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${TORQUE_APP_GAME_DIRECTORY}")
-set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/Tools/CMake/finders")
-
-foreach( OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES} )
-    string( TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG )
-    set( CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} "${TORQUE_APP_GAME_DIRECTORY}" )
-endforeach( OUTPUTCONFIG CMAKE_CONFIGURATION_TYPES )
-
-# Detect CPU Information
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "arm")
-    if( CMAKE_CXX_SIZEOF_DATA_PTR EQUAL 8 )
-        set( TORQUE_CPU_ARM64 ON )
-    elseif( CMAKE_CXX_SIZEOF_DATA_PTR EQUAL 4 )
-        set( TORQUE_CPU_ARM32 ON )
+if(FUSE_BUILD_CORE)
+    if(FUSE_BUILD_CORE_TESTS)
+        enable_testing()
     endif()
-else()
-    if( CMAKE_CXX_SIZEOF_DATA_PTR EQUAL 8 )
-        set( TORQUE_CPU_X64 ON )
-    elseif( CMAKE_CXX_SIZEOF_DATA_PTR EQUAL 4 )
-        set( TORQUE_CPU_X32 ON )
+    add_subdirectory(Source/FUSE)
+endif()
+
+if(FUSE_BUILD_T3D)
+    if("${TORQUE_APP_NAME}" STREQUAL "")
+        message(FATAL_ERROR "FUSE_BUILD_T3D requires TORQUE_APP_NAME")
+    endif()
+    include("${CMAKE_SOURCE_DIR}/cmake/LegacyTorque3D.cmake")
+endif()
+
+if(FUSE_BUILD_T2D)
+    include("${CMAKE_SOURCE_DIR}/cmake/FuseTorque2D.cmake")
+    fuse_configure_torque2d()
+    if(NOT FUSE_T2D_AVAILABLE)
+        message(STATUS "FUSE_BUILD_T2D=ON but Torque2D unavailable — continuing without T2D target")
     endif()
 endif()
-
-if(NOT TORQUE_SCRIPT_EXTENSION)
-    set(TORQUE_SCRIPT_EXTENSION "tscript" CACHE STRING "The default script extension to use for TorqueScript files")
-endif()
-mark_as_advanced(TORQUE_SCRIPT_EXTENSION)
-
-set(TORQUE_MODULE_USER_PATH "" CACHE PATH "Additional search path for modules aside from the default Tools/CMake/modules.")
-mark_as_advanced(TORQUE_MODULE_USER_PATH)
-
-
-# Install Torque template
-if(NOT TORQUE_TEMPLATE)
-    set(TORQUE_TEMPLATE "BaseGame" CACHE STRING "the template to use")
-endif()
-
-if (NOT TORQUE_INSTALLED_TEMPLATE)
-    installTemplate(${TORQUE_TEMPLATE})
-    set(TORQUE_INSTALLED_TEMPLATE TRUE CACHE BOOL "Whether or not the game template is installed. This may be reset to false (or removed) to force a reinstall.")
-endif(NOT TORQUE_INSTALLED_TEMPLATE)
-
-# Generate torqueConfig.h in our temp directory
-configure_file("${CMAKE_SOURCE_DIR}/Tools/CMake/torqueConfig.h.in" "${TORQUE_APP_ROOT_DIRECTORY}/source/torqueConfig.h")
-
-if(APPLE)
-include("${CMAKE_SOURCE_DIR}/Tools/CMake/torqueMacOSconfigs.cmake")
-endif(APPLE)
-
-add_subdirectory(Engine)
