@@ -17,6 +17,8 @@ bool ScriptHost::init() {
 
 void ScriptHost::shutdown() {
     clear_callbacks();
+    m_updateRegistry.clear_scripts();
+    m_updateRegistry.clear_errors();
     m_vm.shutdown();
     m_initialized = false;
     m_nextCallbackId = 1;
@@ -93,6 +95,13 @@ void ScriptHost::dispatch_update(f32 dt, ecs::EntityID entity) {
     ctx.entity = entity;
     ctx.dt = dt;
     dispatch(ScriptEventKind::OnUpdate, ctx);
+}
+
+void ScriptHost::tick_update_scripts(f32 dt, ecs::EntityID entity) {
+    if (!m_initialized) {
+        return;
+    }
+    m_updateRegistry.tick(dt, entity);
 }
 
 ScriptLoadResult ScriptHost::load_string(const char* source, const char* chunk_name) {

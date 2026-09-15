@@ -160,4 +160,57 @@ bool values_equal(const ScriptValue& lhs, const ScriptValue& rhs) {
     }
 }
 
+void PropertyStore::set_property(const std::string& name, const ScriptValue& value) {
+    m_properties[name] = value;
+}
+
+bool PropertyStore::has_property(const std::string& name) const {
+    return m_properties.find(name) != m_properties.end();
+}
+
+const ScriptValue* PropertyStore::get_property(const std::string& name) const {
+    const auto it = m_properties.find(name);
+    return (it != m_properties.end()) ? &it->second : nullptr;
+}
+
+ScriptValue PropertyStore::get_property_or(const std::string& name,
+                                           const ScriptValue& default_value) const {
+    const ScriptValue* value = get_property(name);
+    return (value != nullptr) ? *value : default_value;
+}
+
+bool PropertyStore::remove_property(const std::string& name) {
+    return m_properties.erase(name) > 0;
+}
+
+void PropertyStore::clear() {
+    m_properties.clear();
+}
+
+void MethodTable::register_method(const std::string& name, ScriptMethodFn fn) {
+    if (fn) {
+        m_methods[name] = std::move(fn);
+    }
+}
+
+bool MethodTable::unregister_method(const std::string& name) {
+    return m_methods.erase(name) > 0;
+}
+
+bool MethodTable::has_method(const std::string& name) const {
+    return m_methods.find(name) != m_methods.end();
+}
+
+ScriptValue MethodTable::invoke(const std::string& name, const ScriptValue* args, usize argc) const {
+    const auto it = m_methods.find(name);
+    if (it == m_methods.end() || !it->second) {
+        return push_nil();
+    }
+    return it->second(args, argc);
+}
+
+void MethodTable::clear() {
+    m_methods.clear();
+}
+
 } // namespace fuse::script::bind
