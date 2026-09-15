@@ -29,6 +29,7 @@ struct ToiBufferSoA {
     bool push(const TOIResult& result);
     void sortByToi();
     u32 compact();
+    u32 applyMaxCapacityClamp();
     u32 compactAndSort();
     bool isEmpty() const { return activeCount == 0u; }
     bool isSortedByToi() const;

@@ -160,7 +160,7 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 - [x] `PhysicsManager` runs `CcdPipeline` sweep when `enableCcd=true`
 - [x] `ToiBufferSoA` — per-pair slot clear/reuse + compact; push/sort-by-TOI + `maxCapacity` clamp
 - [x] `fuse_physics_ccd_tests` — sphere-plane + thin-slab + AABB segment TOI helpers, sweep hit/miss smoke
-- [x] `fuse_physics_ccd_tests` — buffer sort order, empty buffer, capacity clamp, stable tie-break, `isSortedByToi`, multi-pair `runCcdIntoBuffer` earliest-first ordering
+- [x] `fuse_physics_ccd_tests` — buffer sort order, empty buffer, capacity clamp, stable tie-break, `isSortedByToi`, multi-pair `runCcdIntoBuffer` earliest-first ordering, post-sort `applyMaxCapacityClamp`
 - [ ] High-velocity tunneling through thin wall — catalog `ccd.tunneling` (analytic smoke landed; full gameplay acceptance deferred)
 
 #### Destruction
@@ -199,7 +199,7 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 - **Broadphase jobify (CPU stub):** `runBroadphaseIntoBuffer` / `runBroadphase2DIntoBuffer` read immutable `RigidBodySoA` + `CollisionShapeSoA` snapshots and write reusable `PairBufferSoA` slots via `fuse::jobs::parallel_for` over shape→cell build + per-cell candidate generation; `aabbOverlap` / `sphereAabbOverlap` stubs are available for optional downstream refine; falls back to serial when `JobScheduler` is single-threaded or uninitialized
 - **PBD constraint iteration (CPU stub):** each substep builds `ContactIslandGraph` from contacts + distance constraints; `parallel_for` dispatches non-empty islands while contacts within an island resolve sequentially (Gauss-Seidel). `SolverWorkBuffers` holds reusable manifolds, per-body `PositionDelta` slots, and per-constraint lambda warm-start buffers. `clearPositionDeltasForIslandBodies` resets all body slots in an island before its sequential constraint pass so parallel workers never race on shared scratch. `seedContactLambdaFromImpulse` / `seedDistanceLambda` copy narrowphase impulse stubs and prior lambdas into cold slots. `accumulateDistanceSpringCorrection` / `accumulateContactCorrection` write disjoint body slots (job-safe SoA); `applyPositionDeltas` commits corrections after each constraint pass. Lambdas persist across substeps (cleared only on the first substep of a frame) for warm-start. `SolverParams::iterations` configures the max pass count; `residualTolerance` enables early-exit when max constraint violation drops below threshold; `lastConstraintResidual()` surfaces the stub for tests
 - **Narrowphase job-safe slots (CPU stub):** `runNarrowphaseIntoBuffer` assigns one output slot per candidate pair index; workers write only their slot, then `ContactBufferSoA::compact()` gathers valid manifolds without shared mutable pair state (serial dispatch on CPU stub; slot layout matches parallel kernel path). `ContactManifold` stores up to four point slots with normal/penetration, warm-start impulse stubs, and a cached `frictionBasis`; `ContactBufferSoA` mirrors tangent1/tangent2 in SoA columns via `buildFrictionTangentBases` / `tangentBasisAt`. `buildTangentBasis` / `isOrthonormalTangentBasis` / `projectTangentialVelocity` provide friction tangent frames for the solver stub.
-- **CCD job-safe slots (CPU stub):** `runCcdIntoBuffer` assigns one TOI slot per candidate pair; workers write only their slot, then `ToiBufferSoA::compactAndSort()` gathers valid impacts and orders earliest-first with deterministic body-index tie-break. `push` / `setMaxCapacity` support direct TOI gathering with overflow clamp (`droppedCount`); `isSortedByToi()` validates ascending order; `earliestToi()` reads the first sorted impact. `sweptSphereSphere` / `sweptSpherePlane` / `sweptSphereSlabZ` / `sweptSphereAabb` cover analytic sweep stubs; sphere-box dispatch builds a centered AABB from shape half-extents. `PhysicsManager` reuses `m_toiBuffer_` each step
+- **CCD job-safe slots (CPU stub):** `runCcdIntoBuffer` assigns one TOI slot per candidate pair; workers write only their slot, then `ToiBufferSoA::compactAndSort()` gathers valid impacts, orders earliest-first with deterministic body-index tie-break, and `applyMaxCapacityClamp()` drops excess impacts after sort. `push` / `setMaxCapacity` support direct TOI gathering with overflow clamp (`droppedCount`); `isSortedByToi()` validates ascending order; `earliestToi()` reads the first sorted impact. `sweptSphereSphere` / `sweptSpherePlane` / `sweptSphereSlabZ` / `sweptSphereAabb` cover analytic sweep stubs; sphere-box dispatch builds a centered AABB from shape half-extents. `PhysicsManager` reuses `m_toiBuffer_` each step
 
 ---
 
@@ -218,7 +218,7 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 | `fuse_collision_events` | Register/unregister, Enter/Trigger dispatch |
 | `fuse_phase4_deliverables` | Catalog non-empty, category counts, automated smoke |
 | `fuse_physics_phase4_integration` | B4.11 end-to-end: broadphase → narrowphase → PBD/CCD → `PhysicsManager` |
-| `fuse_physics_ccd_tests` | B4.6 CCD sweep helpers, `ToiBufferSoA` push/sort/clamp/`isSortedByToi`, sphere/plane/slab/AABB TOI hit/miss, multi-pair sort order, job-safe pair dispatch |
+| `fuse_physics_ccd_tests` | B4.6 CCD sweep helpers, `ToiBufferSoA` push/sort/clamp/`applyMaxCapacityClamp`/`isSortedByToi`, sphere/plane/slab/AABB TOI hit/miss, multi-pair sort order, job-safe pair dispatch |
 
 Run:
 
@@ -253,7 +253,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_physics|fuse_voxel|fuse_soft
 - [x] B4.4 CPU deepen — island-partitioned constraint iterations, job-safe `SolverWorkBuffers`, rest-length spring tests
 - [x] B4.4 CPU deepen — configurable iteration count, lambda warm-start, residual early-exit stub, job-safe constraint accumulation helpers
 - [x] B4.4 CPU deepen — island split/empty-island partition, per-island delta clearing, lambda warm-start seed stubs
-- [x] B4.6 CPU deepen — `ToiBufferSoA` push/sort/clamp/`isSortedByToi`/`compactAndSort`, stable body-index tie-break, sphere/plane/slab/AABB sweep hit/miss helpers, sphere-box AABB dispatch, job-safe `runCcdIntoBuffer`
+- [x] B4.6 CPU deepen — `ToiBufferSoA` push/sort/clamp/`applyMaxCapacityClamp`/`isSortedByToi`/`compactAndSort`, stable body-index tie-break, sphere/plane/slab/AABB sweep hit/miss helpers, sphere-box AABB dispatch, job-safe `runCcdIntoBuffer`
 - [ ] B4.4–B4.6 CUDA: PBD kernels, Barnes-Hut GPU, CCD sweep GPU (CPU stubs on main via #29)
 - [ ] B3.5 SVO integration — real carve + dual contouring mesh extraction
 - [ ] Wire `PhysicsManager` to `fuse::renderer::cuda::StreamManager`

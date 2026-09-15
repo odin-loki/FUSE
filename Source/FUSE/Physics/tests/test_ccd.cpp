@@ -86,6 +86,48 @@ void testSelectEarliestToiPrefersSoonerImpact() {
     expectNear(chosen.toi, 0.2f, 1e-5f, "selectEarliestToi picks smaller TOI");
 }
 
+void testSelectEarliestToiHandlesInvalidInput() {
+    TOIResult valid{};
+    valid.valid = true;
+    valid.toi = 0.35f;
+
+    TOIResult invalid{};
+    const TOIResult chosen = selectEarliestToi(valid, invalid);
+    expectTrue(chosen.valid, "selectEarliestToi returns valid operand when one input invalid");
+    expectNear(chosen.toi, 0.35f, 1e-5f, "selectEarliestToi preserves valid TOI");
+}
+
+void testIsToiInWindowBoundary() {
+    expectTrue(isToiInWindow(0.f), "TOI window includes t=0");
+    expectTrue(isToiInWindow(1.f), "TOI window includes t=1");
+    expectTrue(!isToiInWindow(-0.001f), "TOI window rejects negative time");
+    expectTrue(!isToiInWindow(1.001f), "TOI window rejects time beyond segment end");
+}
+
+void testMakeToiAtContactRejectsOutOfWindow() {
+    const TOIResult inWindow =
+        makeToiAtContact(0.5f, {0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 1u, 2u);
+    expectTrue(inWindow.valid, "makeToiAtContact accepts in-window TOI");
+
+    const TOIResult beyondWindow =
+        makeToiAtContact(1.5f, {0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 1u, 2u);
+    expectTrue(!beyondWindow.valid, "makeToiAtContact rejects out-of-window TOI");
+}
+
+void testSweptSpherePlaneAlreadyOverlapping() {
+    const TOIResult result = sweptSpherePlane(
+        {0.f, 0.f, 0.f}, {0.f, 0.f, 10.f}, 1.f, {0.f, 0.f, 1.f}, 0.f);
+    expectTrue(result.valid, "sphere penetrating plane reports immediate TOI");
+    expectNear(result.toi, 0.f, 1e-5f, "penetrating sphere returns t=0");
+}
+
+void testSweptSphereAabbRejectsStationaryMiss() {
+    const aabb box{{-1.f, -1.f, 4.f}, {1.f, 1.f, 6.f}};
+    const TOIResult result =
+        sweptSphereAabb({0.f, 0.f, -5.f}, {0.f, 0.f, 0.f}, 0.5f, box);
+    expectTrue(!result.valid, "stationary sphere outside AABB returns invalid TOI");
+}
+
 void testToiBufferPushSortOrder() {
     ToiBufferSoA buffer;
     buffer.reserve(4u);
@@ -238,6 +280,40 @@ void testToiBufferCapacityClamp() {
     expectTrue(buffer.droppedCount == 1u, "dropped count tracks clamped pushes");
 }
 
+void testToiBufferApplyMaxCapacityClamp() {
+    ToiBufferSoA buffer;
+    buffer.setMaxCapacity(2u);
+    buffer.preparePairSlots(4u);
+
+    TOIResult late{};
+    late.valid = true;
+    late.toi = 0.9f;
+    late.bodyA = 1u;
+
+    TOIResult mid = late;
+    mid.toi = 0.5f;
+    mid.bodyA = 2u;
+
+    TOIResult early = late;
+    early.toi = 0.1f;
+    early.bodyA = 3u;
+
+    buffer.writeSlot(0u, late);
+    buffer.writeSlot(1u, early);
+    buffer.writeSlot(3u, mid);
+
+    buffer.compact();
+    buffer.sortByToi();
+    expectTrue(buffer.activeCount == 3u, "compact gathers all valid slots before clamp");
+
+    expectTrue(buffer.applyMaxCapacityClamp() == 2u, "applyMaxCapacityClamp truncates to max capacity");
+    expectTrue(buffer.activeCount == 2u, "active count stops at max capacity after clamp");
+    expectTrue(buffer.droppedCount == 1u, "dropped count tracks truncated TOIs");
+    expectNear(buffer.resultAt(0u).toi, 0.1f, 1e-5f, "clamp keeps earliest TOI");
+    expectNear(buffer.resultAt(1u).toi, 0.5f, 1e-5f, "clamp keeps next-earliest TOI");
+    expectTrue(buffer.isSortedByToi(), "clamped buffer remains sorted");
+}
+
 void testSweptSphereAabbFindsImpact() {
     const aabb box{{-1.f, -1.f, 4.f}, {1.f, 1.f, 6.f}};
     const TOIResult result =
@@ -275,6 +351,40 @@ void testToiBufferClearReuse() {
     buffer.writeSlot(1u, second);
     buffer.writeSlot(3u, first);
     expectTrue(buffer.compact() == 2u, "reuse after clear compacts new TOIs");
+}
+
+void testRunCcdIntoBufferMaxCapacityKeepsEarliest() {
+    RigidBodySoA bodies;
+    CollisionShapeSoA shapes;
+
+    const u32 nearSphere = bodies.addBody({0.f, 0.f, 0.f}, 1.f, RB_CCD);
+    const u32 midSphere = bodies.addBody({0.f, 0.f, 0.f}, 1.f, RB_CCD);
+    const u32 farSphere = bodies.addBody({0.f, 0.f, 0.f}, 1.f, RB_CCD);
+    const u32 target = bodies.addBody({8.f, 0.f, 0.f}, 1.f, 0);
+
+    bodies.linearVelocities[nearSphere] = {25.f, 0.f, 0.f};
+    bodies.linearVelocities[midSphere] = {16.f, 0.f, 0.f};
+    bodies.linearVelocities[farSphere] = {12.f, 0.f, 0.f};
+
+    shapes.addShape(CollisionShapeType::Sphere, nearSphere, {0.5f, 0.f, 0.f});
+    shapes.addShape(CollisionShapeType::Sphere, midSphere, {0.5f, 0.f, 0.f});
+    shapes.addShape(CollisionShapeType::Sphere, farSphere, {0.5f, 0.f, 0.f});
+    shapes.addShape(CollisionShapeType::Sphere, target, {0.5f, 0.f, 0.f});
+
+    const std::vector<broadphase::CandidatePair> pairs = {
+        {farSphere, target},
+        {nearSphere, target},
+        {midSphere, target},
+    };
+
+    ToiBufferSoA buffer;
+    buffer.setMaxCapacity(1u);
+    runCcdIntoBuffer(pairs, bodies, shapes, 1.f, buffer);
+
+    expectTrue(buffer.activeCount == 1u, "max-capacity CCD keeps one earliest impact");
+    expectTrue(buffer.droppedCount == 2u, "max-capacity CCD drops later impacts");
+    expectTrue(buffer.resultAt(0u).bodyA == nearSphere, "max-capacity CCD keeps fastest mover");
+    expectTrue(buffer.isSortedByToi(), "max-capacity CCD buffer remains sorted");
 }
 
 void testRunCcdIntoBufferSortsEarliestFirst() {
@@ -424,6 +534,11 @@ int main() {
     testSweptSphereSlabFindsThinWallImpact();
     testSweptSphereSlabRejectsMiss();
     testSelectEarliestToiPrefersSoonerImpact();
+    testSelectEarliestToiHandlesInvalidInput();
+    testIsToiInWindowBoundary();
+    testMakeToiAtContactRejectsOutOfWindow();
+    testSweptSpherePlaneAlreadyOverlapping();
+    testSweptSphereAabbRejectsStationaryMiss();
     testToiBufferPushSortOrder();
     testToiBufferStableSortTieBreak();
     testToiBufferEmpty();
@@ -431,9 +546,11 @@ int main() {
     testRunCcdIntoBufferEmptyPairs();
     testToiBufferEarliestToi();
     testToiBufferCapacityClamp();
+    testToiBufferApplyMaxCapacityClamp();
     testSweptSphereAabbFindsImpact();
     testSweptSphereAabbRejectsMiss();
     testToiBufferClearReuse();
+    testRunCcdIntoBufferMaxCapacityKeepsEarliest();
     testRunCcdIntoBufferSortsEarliestFirst();
     testRunCcdIntoBufferSphereBoxAabb();
     testRunCcdIntoBufferJobSafe();
