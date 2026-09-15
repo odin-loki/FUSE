@@ -35,6 +35,16 @@ struct RateEmitResult {
                                                   const math::Vec3& origin, f32 dt, f32 emit_accum,
                                                   u64 seed);
 
+struct LifetimeCullResult {
+    u32 culled = 0;
+    u32 alive_after = 0;
+    std::vector<u32> dead_slots;
+};
+
+/// Age live slots by `dt` and recycle expired particles without integrating motion or attributes.
+/// Uses `parallel_for` when the job scheduler has workers; otherwise runs serially.
+[[nodiscard]] LifetimeCullResult lifetime_cull(ParticleSoA& soa, f32 dt, u32 grain_size = 64u);
+
 struct SimStepResult {
     u32 alive_after = 0;
     std::vector<u32> dead_slots;

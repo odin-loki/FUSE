@@ -8,7 +8,7 @@ CPU-first particle VFX scaffolding for Track B7.7. Implements emitter descriptor
 |--------|------|
 | `vfx_desc.hpp` | System limits and backend selection |
 | `particle_emitter.hpp` | `ParticleEmitterDesc`, CPU `ParticleSoA`, `ParticleEmitter` |
-| `particle_soa_ops.hpp` | Standalone `burst_emit`, `accumulate_rate_emit`, `simulate_step` CPU stubs |
+| `particle_soa_ops.hpp` | Standalone `burst_emit`, `accumulate_rate_emit`, `lifetime_cull`, `simulate_step` CPU stubs |
 | `particle_gpu.hpp` | `ParticleGpuBufferLayout`, `ParticleGpuDispatch`, `ParticleGpuMirror`, `ParticleSoAGPU` |
 | `effect_instance.hpp` | Spawned effect playback state |
 | `particle_system.hpp` | Emitter/effect registry and frame update |
@@ -27,7 +27,7 @@ CPU-first particle VFX scaffolding for Track B7.7. Implements emitter descriptor
 
 ## Tests
 
-`fuse_vfx_tests` (`ctest` name `fuse_vfx_runtime`) covers standalone SoA burst/rate/sim helpers (deterministic seed fill, age/kill, parallel parity), emitter burst/rate emission (including `burst(0)`, capacity clamp, burst+rate interleave), free-list slot recycling after partial expiry, attribute interpolation, drag integration, parallel vs single-thread simulation parity (grain boundaries, single particle, all-dead, multi-worker), GPU buffer layout alignment (per-column 16-byte offsets, padding, multi-capacity validation), simulate/emit dispatch counts (`forFrame`, block boundaries, `gridDimX`), CPU mirror pack/unpack round trips (full-capacity fill, undersized unpack guard), `spawn_effect` burst_count, effect instance duration, system spawn/update cleanup, and handle lifecycle without GPU or renderer dependencies.
+`fuse_vfx_tests` (`ctest` name `fuse_vfx_runtime`) covers standalone SoA burst/rate/cull/sim helpers (emit count reporting, `burst_emit(0)`, deterministic seed fill, `lifetime_cull` partial/full expiry without integration, age/kill via `simulate_step`, parallel parity), emitter burst/rate emission (including `burst(0)`, capacity clamp, burst+rate interleave), free-list slot recycling after partial expiry, attribute interpolation, drag integration, parallel vs single-thread simulation parity (grain boundaries, single particle, all-dead, multi-worker), GPU buffer layout alignment (per-column 16-byte offsets, padding, multi-capacity validation), simulate/emit dispatch counts (`forFrame`, block boundaries, `gridDimX`), CPU mirror pack/unpack round trips (full-capacity fill, undersized unpack guard), `spawn_effect` burst_count, effect instance duration, system spawn/update cleanup, and handle lifecycle without GPU or renderer dependencies.
 
 ## Build
 
