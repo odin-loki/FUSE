@@ -549,6 +549,138 @@ void testFatalHandlerHook() {
     expectTrue(captureState.context.line == 99u, "fatal handler receives line");
 }
 
+void testHasEventsAndEmptyBufferGuards() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(!fuse::profiler::hasEvents(), "reset leaves hasEvents false");
+    expectTrue(fuse::profiler::eventCount() == 0u, "reset leaves event count at zero");
+
+    const fuse::profiler::ProfileEvent& emptyEvent = fuse::profiler::eventAt(0);
+    expectTrue(emptyEvent.name == nullptr, "eventAt on empty buffer returns sentinel with null name");
+    expectTrue(emptyEvent.phase == fuse::profiler::EventPhase::Begin,
+               "eventAt sentinel keeps default begin phase");
+
+    const fuse::profiler::ProfileEvent& oobEvent = fuse::profiler::eventAt(99);
+    expectTrue(oobEvent.name == nullptr, "eventAt out-of-range returns sentinel with null name");
+
+    {
+        FUSE_PROFILE_SCOPE("guard_scope");
+    }
+
+    expectTrue(fuse::profiler::hasEvents(), "hasEvents true after recording scope");
+    expectTrue(fuse::profiler::eventAt(0).name != nullptr, "eventAt(0) valid after recording");
+    expectTrue(fuse::profiler::eventAt(2).name == nullptr, "eventAt past count returns sentinel");
+}
+
+void testNestedAsyncFlowDepth() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 outerFlowId = fuse::profiler::nextFlowId();
+    const fuse::u32 innerFlowId = fuse::profiler::nextFlowId();
+
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("outer_flow", outerFlowId);
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("inner_flow", innerFlowId);
+    FUSE_PROFILE_ASYNC_FLOW_END("inner_flow", innerFlowId);
+    FUSE_PROFILE_ASYNC_FLOW_END("outer_flow", outerFlowId);
+
+    expectTrue(fuse::profiler::eventCount() == 4u, "nested flows emit four events");
+    expectTrue(fuse::profiler::maxFlowNestingDepth() == 2u, "max flow nesting depth tracks inner flow");
+
+    const fuse::profiler::ProfileEvent& outerStart = fuse::profiler::eventAt(0);
+    const fuse::profiler::ProfileEvent& innerStart = fuse::profiler::eventAt(1);
+    const fuse::profiler::ProfileEvent& innerFinish = fuse::profiler::eventAt(2);
+    const fuse::profiler::ProfileEvent& outerFinish = fuse::profiler::eventAt(3);
+
+    expectTrue(outerStart.flowNestingDepth == 1u, "outer flow start records depth 1");
+    expectTrue(innerStart.flowNestingDepth == 2u, "inner flow start records depth 2");
+    expectTrue(innerFinish.flowNestingDepth == 2u, "inner flow finish records depth 2");
+    expectTrue(outerFinish.flowNestingDepth == 1u, "outer flow finish records depth 1");
+
+    const std::string json = fuse::profiler::exportChromeTraceJson();
+    expectTrue(json.find("\"args\":{\"flow_depth\":1}") != std::string::npos,
+               "chrome export includes outer flow depth");
+    expectTrue(json.find("\"args\":{\"flow_depth\":2}") != std::string::npos,
+               "chrome export includes inner flow depth");
+}
+
+void testCounterSnapshotAtFrame() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::beginFrame();
+    fuse::profiler::beginFrame();
+    FUSE_PROFILE_COUNTER_SNAPSHOT_AT_FRAME("frame_budget", 8192);
+    FUSE_PROFILE_COUNTER_SNAPSHOT_AT_FRAME("frame_time_ms", 12.5);
+
+    expectTrue(fuse::profiler::eventCount() == 2u, "snapshot_at_frame counters emit two events");
+
+    const fuse::profiler::ProfileEvent& intCounter = fuse::profiler::eventAt(0);
+    const fuse::profiler::ProfileEvent& floatCounter = fuse::profiler::eventAt(1);
+    expectTrue(intCounter.counterSnapshotFrame == 2u, "int counter records current frame index");
+    expectTrue(floatCounter.counterSnapshotFrame == 2u, "float counter records current frame index");
+    expectTrue(intCounter.counterIntValue == 8192, "int counter value preserved with frame snapshot");
+    expectTrue(floatCounter.counterKind == fuse::profiler::CounterValueKind::Float,
+               "float snapshot counter kind preserved");
+
+    const std::string json = fuse::profiler::exportChromeTraceJson();
+    expectTrue(json.find("\"args\":{\"value\":8192,\"snapshot_at_frame\":2}") != std::string::npos,
+               "chrome export includes int counter snapshot_at_frame");
+    expectTrue(json.find("\"args\":{\"value\":12.5,\"snapshot_at_frame\":2}") != std::string::npos,
+               "chrome export includes float counter snapshot_at_frame");
+}
+
+void testCounterSnapshotAtFrameInsideScope() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::beginFrame();
+    {
+        FUSE_PROFILE_SCOPE("budget_scope");
+        FUSE_PROFILE_COUNTER_SNAPSHOT_AT_FRAME("scoped_frame_budget", 128);
+    }
+
+    const fuse::profiler::ProfileEvent& counter = fuse::profiler::eventAt(1);
+    expectTrue(counter.nestingDepth == 1u, "snapshot counter inside scope inherits depth");
+    expectTrue(counter.counterSnapshotFrame == 1u, "snapshot counter inside scope records frame index");
+
+    const std::string json = fuse::profiler::exportChromeTraceJson();
+    expectTrue(json.find("\"args\":{\"value\":128,\"depth\":1,\"snapshot_at_frame\":1}") != std::string::npos,
+               "chrome export includes depth and snapshot_at_frame for scoped counter");
+}
+
+void testChromeTraceEscapedLowControlChars() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    FUSE_PROFILE_COUNTER("bell\x07" "char", 1);
+
+    const std::string json = fuse::profiler::exportChromeTraceJson();
+    expectTrue(json.find("\"name\":\"bell\\u0007char\"") != std::string::npos,
+               "chrome export escapes low control characters as unicode");
+}
+
+void testNestedFlowInsideScopeExportsBothDepths() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    {
+        FUSE_PROFILE_SCOPE("flow_scope");
+        FUSE_PROFILE_ASYNC_FLOW_BEGIN("scoped_flow", flowId);
+        FUSE_PROFILE_ASYNC_FLOW_END("scoped_flow", flowId);
+    }
+
+    const fuse::profiler::ProfileEvent& flowStart = fuse::profiler::eventAt(1);
+    expectTrue(flowStart.nestingDepth == 1u, "flow inside scope inherits scope depth");
+    expectTrue(flowStart.flowNestingDepth == 1u, "flow inside scope records flow depth");
+
+    const std::string json = fuse::profiler::exportChromeTraceJson();
+    expectTrue(json.find("\"args\":{\"depth\":1,\"flow_depth\":1}") != std::string::npos,
+               "chrome export includes scope and flow depth for nested flow");
+}
+
 void testVerifyMacro() {
     resetState();
     fuse::assertion::setSuppressAbortForTests(true);
@@ -592,6 +724,12 @@ int main() {
     testMultipleAsyncFlowsInNestedScopes();
     testChromeTraceExportFrameIndex();
     testChromeTraceExportMixedEvents();
+    testHasEventsAndEmptyBufferGuards();
+    testNestedAsyncFlowDepth();
+    testCounterSnapshotAtFrame();
+    testCounterSnapshotAtFrameInsideScope();
+    testChromeTraceEscapedLowControlChars();
+    testNestedFlowInsideScopeExportsBothDepths();
     testFatalHandlerHook();
     testVerifyMacro();
 

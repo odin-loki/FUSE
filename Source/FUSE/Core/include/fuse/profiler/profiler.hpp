@@ -28,9 +28,11 @@ struct ProfileEvent {
     u32 threadId = 0;
     u32 scopeId = 0;
     u32 nestingDepth = 0;
+    u32 flowNestingDepth = 0;
     CounterValueKind counterKind = CounterValueKind::None;
     s64 counterIntValue = 0;
     f64 counterFloatValue = 0.0;
+    u32 counterSnapshotFrame = 0;
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -58,6 +60,8 @@ void endFrame();
 u32 frameIndex();
 u32 eventCount();
 u32 maxNestingDepth();
+u32 maxFlowNestingDepth();
+bool hasEvents();
 const ProfileEvent& eventAt(u32 index);
 void reset();
 
@@ -74,12 +78,25 @@ void endAsyncFlow(const char* name, u32 flowId);
 void sampleCounter(const char* track, s64 value);
 void sampleCounterFloat(const char* track, f64 value);
 
+/// Counter sample with `snapshot_at_frame` metadata — records `frameIndex()` for frame-aligned budgets.
+void sampleCounterSnapshotAtFrame(const char* track, s64 value);
+void sampleCounterFloatSnapshotAtFrame(const char* track, f64 value);
+
 template<typename T>
 inline void sampleCounterDispatch(const char* track, T value) {
     if constexpr (std::is_floating_point_v<T>) {
         sampleCounterFloat(track, static_cast<f64>(value));
     } else {
         sampleCounter(track, static_cast<s64>(value));
+    }
+}
+
+template<typename T>
+inline void sampleCounterSnapshotAtFrameDispatch(const char* track, T value) {
+    if constexpr (std::is_floating_point_v<T>) {
+        sampleCounterFloatSnapshotAtFrame(track, static_cast<f64>(value));
+    } else {
+        sampleCounterSnapshotAtFrame(track, static_cast<s64>(value));
     }
 }
 
@@ -93,10 +110,13 @@ std::string exportChromeTraceJson();
 #define FUSE_PROFILE_ASYNC_FLOW_BEGIN(name, flowId) ((void)0)
 #define FUSE_PROFILE_ASYNC_FLOW_END(name, flowId) ((void)0)
 #define FUSE_PROFILE_COUNTER(track, value) ((void)0)
+#define FUSE_PROFILE_COUNTER_SNAPSHOT_AT_FRAME(track, value) ((void)0)
 #else
 #define FUSE_PROFILE_SCOPE_IMPL(line, name) ::fuse::profiler::ProfileScope _fuse_profile_scope_##line(name)
 #define FUSE_PROFILE_SCOPE(name) FUSE_PROFILE_SCOPE_IMPL(__LINE__, name)
 #define FUSE_PROFILE_ASYNC_FLOW_BEGIN(name, flowId) ::fuse::profiler::beginAsyncFlow(name, flowId)
 #define FUSE_PROFILE_ASYNC_FLOW_END(name, flowId) ::fuse::profiler::endAsyncFlow(name, flowId)
 #define FUSE_PROFILE_COUNTER(track, value) ::fuse::profiler::sampleCounterDispatch(track, value)
+#define FUSE_PROFILE_COUNTER_SNAPSHOT_AT_FRAME(track, value) \
+    ::fuse::profiler::sampleCounterSnapshotAtFrameDispatch(track, value)
 #endif
