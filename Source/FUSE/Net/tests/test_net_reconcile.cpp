@@ -1,5 +1,6 @@
 #include <fuse/net/input_history.hpp>
 #include <fuse/net/reconcile.hpp>
+#include <fuse/net/rollback_buffer.hpp>
 
 #include "test_helpers.hpp"
 
@@ -53,6 +54,62 @@ void run_reconcile_tests() {
     expectTrue(via_buffer_mismatch.action == fuse::net::ReconcileAction::Mismatch,
                "buffer reconcile_authoritative detects mismatch");
     expectTrue(!buffer_method.prediction_matches(11), "mismatch leaves prediction divergent");
+
+    fuse::net::RollbackBuffer rollback_buffer;
+    rollback_buffer.init(8);
+
+    fuse::net::GameSnapshot snapshot{};
+    snapshot.frame = 5;
+    snapshot.checksum = 55;
+    rollback_buffer.store_snapshot(5, snapshot);
+
+    fuse::net::PlayerInput rollback_local{};
+    rollback_local.frame = 5;
+    rollback_local.axis_lx = 300;
+    rollback_buffer.store_local_input(5, rollback_local);
+
+    fuse::net::PlayerInput remote = rollback_local;
+    const fuse::net::ReconcileResult buffer_confirmed =
+        fuse::net::reconcile_rollback_buffer(rollback_buffer, 5, remote);
+    expectTrue(buffer_confirmed.action == fuse::net::ReconcileAction::Confirmed,
+               "rollback buffer reconcile confirms matching remote input");
+    expectTrue(rollback_buffer.inputs_match(5), "rollback buffer inputs_match after confirm");
+
+    remote.axis_lx = 999;
+    const fuse::net::ReconcileResult buffer_mismatch =
+        fuse::net::reconcile_rollback_buffer(rollback_buffer, 5, remote);
+    expectTrue(buffer_mismatch.action == fuse::net::ReconcileAction::Mismatch,
+               "rollback buffer reconcile flags mismatch");
+    expectTrue(!rollback_buffer.inputs_match(5), "rollback buffer inputs_match false after mismatch");
+
+    fuse::net::RollbackBuffer empty_buffer;
+    empty_buffer.init(4);
+    fuse::net::GameSnapshot only_snapshot{};
+    only_snapshot.frame = 2;
+    empty_buffer.store_snapshot(2, only_snapshot);
+    fuse::net::PlayerInput remote_without_local{};
+    remote_without_local.frame = 2;
+    const fuse::net::ReconcileResult buffer_no_local =
+        empty_buffer.reconcile_remote_input(2, remote_without_local);
+    expectTrue(buffer_no_local.action == fuse::net::ReconcileAction::NoOp,
+               "rollback buffer reconcile without local prediction is NoOp");
+    expectTrue(empty_buffer.remote_confirmed(2), "remote input still recorded without local prediction");
+
+    fuse::net::RollbackBuffer wrapped;
+    wrapped.init(4);
+    for (fuse::u32 frame = 0; frame < 6; ++frame) {
+        fuse::net::GameSnapshot snap{};
+        snap.frame = frame;
+        snap.checksum = frame;
+        wrapped.store_snapshot(frame, snap);
+    }
+    fuse::net::PlayerInput stale_remote{};
+    stale_remote.frame = 1;
+    const fuse::net::ReconcileResult evicted_buffer =
+        fuse::net::reconcile_rollback_buffer(wrapped, 1, stale_remote);
+    expectTrue(evicted_buffer.action == fuse::net::ReconcileAction::NoOp,
+               "rollback buffer reconcile on evicted frame returns NoOp");
+    expectTrue(!wrapped.remote_confirmed(1), "evicted frame remote input is not recorded");
 }
 
 } // namespace fuse::net::tests

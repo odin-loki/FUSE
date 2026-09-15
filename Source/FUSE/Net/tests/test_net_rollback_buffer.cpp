@@ -5,6 +5,12 @@
 namespace fuse::net::tests {
 
 void run_rollback_buffer_tests() {
+    fuse::net::RollbackBuffer empty;
+    empty.init(8);
+    expectTrue(empty.stored_frame_count() == 0u, "empty buffer reports zero stored frames");
+    expectTrue(!empty.evict_oldest_snapshot().has_value(), "evict_oldest on empty buffer returns nullopt");
+    expectTrue(!empty.has_local_input(0u), "empty buffer has no local input");
+
     fuse::net::RollbackBuffer buffer;
     buffer.init(8);
 
@@ -25,6 +31,7 @@ void run_rollback_buffer_tests() {
     expectTrue(!buffer.has_frame(2), "frame 2 not stored");
     expectTrue(buffer.oldest_stored_frame() == 0, "oldest frame tracked");
     expectTrue(buffer.newest_stored_frame() == 1, "newest frame tracked");
+    expectTrue(buffer.stored_frame_count() == 2u, "stored frame count tracks span");
 
     const fuse::net::GameSnapshot* loaded = buffer.snapshot(1);
     expectTrue(loaded != nullptr, "snapshot lookup succeeds");
@@ -34,7 +41,9 @@ void run_rollback_buffer_tests() {
     local.frame = 1;
     local.axis_lx = 42;
     buffer.store_local_input(1, local);
+    expectTrue(buffer.has_local_input(1), "local input presence tracked");
     expectTrue(buffer.local_input(1).axis_lx == 42, "local input stored in slot");
+    expectTrue(!buffer.has_local_input(0), "local input absent on other frames");
 
     fuse::net::PlayerInput remote{};
     remote.frame = 1;
@@ -42,6 +51,30 @@ void run_rollback_buffer_tests() {
     buffer.store_remote_input(1, remote, true);
     expectTrue(buffer.remote_confirmed(1), "remote input marked confirmed");
     expectTrue(buffer.remote_input(1).axis_lx == 99, "remote input stored in slot");
+    expectTrue(!buffer.inputs_match(1), "inputs_match false when local and remote differ");
+
+    remote.axis_lx = 42;
+    buffer.store_remote_input(1, remote, true);
+    expectTrue(buffer.inputs_match(1), "inputs_match true when payloads align");
+
+    for (fuse::u32 frame = 0; frame < 10; ++frame) {
+        fuse::net::GameSnapshot snap = frame0;
+        snap.frame = frame;
+        snap.checksum = frame;
+        buffer.store_snapshot(frame, snap);
+    }
+
+    expectTrue(buffer.capacity() == 8, "capacity clamped to requested size");
+    expectTrue(buffer.oldest_stored_frame() == 2, "oldest snapshot evicted after ring wrap");
+    expectTrue(buffer.newest_stored_frame() == 9, "newest snapshot tracked across wrap");
+    expectTrue(buffer.stored_frame_count() == 8u, "stored frame count capped at capacity");
+    expectTrue(!buffer.has_frame(1), "evicted snapshot no longer queryable");
+
+    const std::optional<fuse::net::GameSnapshot> evicted = buffer.evict_oldest_snapshot();
+    expectTrue(evicted.has_value(), "evict_oldest returns oldest snapshot");
+    expectTrue(evicted->frame == 2u, "evict_oldest returns oldest frame first");
+    expectTrue(buffer.stored_frame_count() == 7u, "evict_oldest shrinks retained count");
+    expectTrue(!buffer.has_frame(2u), "evicted frame no longer queryable");
 }
 
 } // namespace fuse::net::tests
