@@ -13,6 +13,7 @@ if(FUSE_BUILD_CUDA)
 endif()
 
 add_subdirectory(Core)
+add_subdirectory(ECS)
 add_subdirectory(World2D)
 add_subdirectory(World3D)
 
