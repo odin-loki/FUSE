@@ -485,6 +485,94 @@ void testWarmStartLambdaFeedsAccumulation() {
     expectNear(std::get<1>(warm), std::get<1>(cold), 1e-4f, "warm-start reaches same projected distance");
 }
 
+void testIslandSplitPartitionsDisconnectedSprings() {
+    ContactIslandGraph graph;
+    std::vector<narrowphase::ContactManifold> contacts;
+    std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+        DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f},
+    };
+
+    graph.build(4, contacts, constraints);
+
+    expectTrue(graph.constrainedIslandCount() == 2u,
+               "disconnected spring pairs split into separate constrained islands");
+    expectTrue(graph.islandCount() >= graph.constrainedIslandCount(),
+               "total islands include optional empty body-only islands");
+
+    const u32 islandFor01 = graph.bodyIsland(0);
+    const u32 islandFor23 = graph.bodyIsland(2);
+    expectTrue(islandFor01 != islandFor23, "island split keeps disconnected spring groups apart");
+    expectTrue(!graph.island(islandFor01).isEmpty(), "first spring pair island carries constraints");
+    expectTrue(!graph.island(islandFor23).isEmpty(), "second spring pair island carries constraints");
+}
+
+void testEmptyIslandHasNoConstraints() {
+    ContactIslandGraph graph;
+    std::vector<narrowphase::ContactManifold> contacts;
+    std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+    };
+
+    graph.build(3, contacts, constraints);
+
+    bool foundEmpty = false;
+    for (u32 islandIndex = 0; islandIndex < graph.islandCount(); ++islandIndex) {
+        const ContactIslandGraph::Island& island = graph.island(islandIndex);
+        if (island.isEmpty()) {
+            foundEmpty = true;
+            expectTrue(island.bodyIndices.size() == 1u,
+                       "empty island holds a lone unconstrained body");
+            expectTrue(island.contactIndices.empty(), "empty island has no contacts");
+            expectTrue(island.distanceIndices.empty(), "empty island has no distance constraints");
+        }
+    }
+
+    expectTrue(foundEmpty, "unconstrained body yields an empty island");
+    expectTrue(graph.bodyIsland(2) != graph.bodyIsland(0),
+               "empty island body maps separately from constrained group");
+    expectTrue(graph.constrainedIslandCount() == 1u,
+               "only the connected spring pair forms a constrained island");
+}
+
+void testWarmStartLambdaSeedHelpers() {
+    SolverWorkBuffers work;
+    work.init(2, 1, 1);
+    work.ensureLambdaCapacity(1, 1);
+
+    const f32 dt = 1.f / 60.f;
+    work.seedContactLambdaFromImpulse(0, 2.5f, dt);
+    expectTrue(std::fabs(work.contactLambdas()[0]) > 1e-6f,
+               "contact lambda seeded from warm-start impulse stub");
+
+    work.seedContactLambdaFromImpulse(0, 5.f, dt);
+    expectNear(work.contactLambdas()[0], 2.5f * dt, 1e-6f,
+               "contact lambda seed preserves existing warm-start value");
+
+    work.seedDistanceLambda(0, 0.25f);
+    expectNear(work.distanceLambdas()[0], 0.25f, 1e-6f, "distance lambda seeded from prior value");
+
+    work.seedDistanceLambda(0, 0.5f);
+    expectNear(work.distanceLambdas()[0], 0.25f, 1e-6f,
+               "distance lambda seed preserves accumulated warm-start value");
+}
+
+void testLambdasPersistWithoutMidFrameClear() {
+    SolverWorkBuffers work;
+    work.init(2, 0, 1);
+    work.ensureLambdaCapacity(0, 1);
+    work.distanceLambda(0) = 0.42f;
+
+    // Later substeps in PBDSolver::step skip clearLambdas(); ensureLambdaCapacity must not reset slots.
+    work.ensureLambdaCapacity(0, 1);
+    expectNear(work.distanceLambdas()[0], 0.42f, 1e-6f,
+               "distance lambda persists across substeps when clearLambdas is not invoked");
+
+    work.clearLambdas();
+    expectNear(work.distanceLambdas()[0], 0.f, 1e-6f,
+               "clearLambdas resets warm-start slots on the first substep of a frame");
+}
+
 void testEarlyExitWhenResidualBelowTolerance() {
     CollisionShapeSoA shapes;
     RigidBodySoA bodies;
@@ -532,6 +620,10 @@ int main() {
     testConstraintResidualDecreasesWithIterations();
     testDistanceLambdaAccumulatesInSolver();
     testWarmStartLambdaFeedsAccumulation();
+    testIslandSplitPartitionsDisconnectedSprings();
+    testEmptyIslandHasNoConstraints();
+    testWarmStartLambdaSeedHelpers();
+    testLambdasPersistWithoutMidFrameClear();
     testEarlyExitWhenResidualBelowTolerance();
     fuse::core::shutdown();
 

@@ -22,12 +22,20 @@ struct SolverWorkBuffers {
     void clear();
 
     void clearPositionDeltas();
+    /// Clear a single body slot (job-safe when islands partition bodies).
+    void clearPositionDeltaForBody(u32 bodyIndex);
     /// Clear only the slots touched by a constraint pair (job-safe across parallel islands).
     void clearPositionDeltasForBodies(u32 bodyA, u32 bodyB);
+    /// Clear all body slots listed in an island before sequential constraint passes.
+    void clearPositionDeltasForIslandBodies(const std::vector<u32>& bodyIndices);
     void applyPositionDeltas(RigidBodySoA& bodies) const;
 
     void ensureLambdaCapacity(u32 contactCount, u32 distanceCount);
     void clearLambdas();
+    /// Seed contact lambda from narrowphase warm-start impulse stub (XPBD warm-start).
+    void seedContactLambdaFromImpulse(u32 contactIndex, f32 warmNormalImpulse, f32 dt);
+    /// Copy prior distance lambda when slot is still cold (warm-start across substeps/frames).
+    void seedDistanceLambda(u32 distanceIndex, f32 priorLambda);
     f32& contactLambda(u32 contactIndex);
     f32& distanceLambda(u32 distanceIndex);
 

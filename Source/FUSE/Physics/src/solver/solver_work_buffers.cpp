@@ -46,6 +46,28 @@ f32& SolverWorkBuffers::distanceLambda(u32 distanceIndex) {
     return distanceLambdas_[distanceIndex];
 }
 
+void SolverWorkBuffers::seedContactLambdaFromImpulse(u32 contactIndex,
+                                                     f32 warmNormalImpulse,
+                                                     f32 dt) {
+    if (warmNormalImpulse == 0.f || dt <= 0.f) {
+        return;
+    }
+    f32& lambda = contactLambda(contactIndex);
+    if (lambda == 0.f) {
+        lambda = warmNormalImpulse * dt;
+    }
+}
+
+void SolverWorkBuffers::seedDistanceLambda(u32 distanceIndex, f32 priorLambda) {
+    if (priorLambda == 0.f) {
+        return;
+    }
+    f32& lambda = distanceLambda(distanceIndex);
+    if (lambda == 0.f) {
+        lambda = priorLambda;
+    }
+}
+
 void SolverWorkBuffers::clearPositionDeltas() {
     for (PositionDelta& slot : positionDeltas_) {
         slot.delta = {};
@@ -53,14 +75,21 @@ void SolverWorkBuffers::clearPositionDeltas() {
     }
 }
 
-void SolverWorkBuffers::clearPositionDeltasForBodies(u32 bodyA, u32 bodyB) {
-    if (bodyA < positionDeltas_.size()) {
-        positionDeltas_[bodyA].delta = {};
-        positionDeltas_[bodyA].writeCount = 0;
+void SolverWorkBuffers::clearPositionDeltaForBody(u32 bodyIndex) {
+    if (bodyIndex < positionDeltas_.size()) {
+        positionDeltas_[bodyIndex].delta = {};
+        positionDeltas_[bodyIndex].writeCount = 0;
     }
-    if (bodyB < positionDeltas_.size()) {
-        positionDeltas_[bodyB].delta = {};
-        positionDeltas_[bodyB].writeCount = 0;
+}
+
+void SolverWorkBuffers::clearPositionDeltasForBodies(u32 bodyA, u32 bodyB) {
+    clearPositionDeltaForBody(bodyA);
+    clearPositionDeltaForBody(bodyB);
+}
+
+void SolverWorkBuffers::clearPositionDeltasForIslandBodies(const std::vector<u32>& bodyIndices) {
+    for (u32 bodyIndex : bodyIndices) {
+        clearPositionDeltaForBody(bodyIndex);
     }
 }
 

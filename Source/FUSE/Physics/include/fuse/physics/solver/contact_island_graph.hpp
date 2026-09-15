@@ -16,6 +16,9 @@ struct ContactIslandGraph {
         std::vector<u32> bodyIndices;
         std::vector<u32> contactIndices;
         std::vector<u32> distanceIndices;
+
+        /// True when the island has no contacts or distance constraints (lone body stub).
+        bool isEmpty() const { return contactIndices.empty() && distanceIndices.empty(); }
     };
 
     void build(u32 bodyCount,
@@ -25,6 +28,8 @@ struct ContactIslandGraph {
     void clear();
 
     u32 islandCount() const { return static_cast<u32>(islands_.size()); }
+    /// Islands that carry at least one contact or distance constraint.
+    u32 constrainedIslandCount() const;
     const Island& island(u32 index) const { return islands_[index]; }
 
     /// Body → island id, or `invalidIsland` when the body has no constraints.

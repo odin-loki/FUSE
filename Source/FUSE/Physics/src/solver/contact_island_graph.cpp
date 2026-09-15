@@ -106,6 +106,16 @@ void ContactIslandGraph::build(u32 bodyCount,
     });
 }
 
+u32 ContactIslandGraph::constrainedIslandCount() const {
+    u32 count = 0;
+    for (const Island& island : islands_) {
+        if (!island.isEmpty()) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 u32 ContactIslandGraph::bodyIsland(u32 bodyIndex) const {
     if (bodyIndex >= parent_.size()) {
         return invalidIsland;
