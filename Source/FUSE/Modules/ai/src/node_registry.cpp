@@ -72,6 +72,47 @@ BehaviorNode makeActionSetFlag(const NodeLoadSpec& spec) {
     return node;
 }
 
+BehaviorNode makeActionBlackboardSet(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::ActionBlackboardSet;
+    node.flagIndex = spec.flagIndex;
+    node.threshold = spec.threshold;
+    node.scriptHook = spec.scriptHook;
+    return node;
+}
+
+BehaviorNode makeConditionBlackboardGet(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::ConditionBlackboardGet;
+    node.flagIndex = spec.flagIndex;
+    return node;
+}
+
+BehaviorNode makeConditionDistanceGreater(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::ConditionDistanceGreater;
+    node.threshold = spec.threshold;
+    return node;
+}
+
+BehaviorNode makeActionWait(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::ActionWait;
+    node.threshold = spec.threshold;
+    node.loopCount = spec.loopCount;
+    node.scriptHook = spec.scriptHook;
+    return node;
+}
+
+BehaviorNode makeActionDistance(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::ActionDistance;
+    node.threshold = spec.threshold;
+    node.flagIndex = spec.flagIndex;
+    node.scriptHook = spec.scriptHook;
+    return node;
+}
+
 BehaviorNode makeActionMoveToward(const NodeLoadSpec& spec) {
     BehaviorNode node;
     node.kind = NodeKind::ActionMoveToward;
@@ -121,9 +162,14 @@ void NodeRegistry::registerBuiltins() {
     registerFactory("bb.succeed_always", makeSucceedAlways);
     registerFactory("bb.root", makeRoot);
 
-    // BadBehaviour leaf/ + FUSE demo conditions
+    // BadBehaviour leaf/ + FUSE demo conditions/actions
     registerFactory("bb.condition.distance_less", makeConditionDistanceLess);
+    registerFactory("bb.condition.distance_greater", makeConditionDistanceGreater);
+    registerFactory("bb.condition.blackboard_get", makeConditionBlackboardGet);
     registerFactory("bb.action.set_flag", makeActionSetFlag);
+    registerFactory("bb.action.blackboard_set", makeActionBlackboardSet);
+    registerFactory("bb.action.wait", makeActionWait);
+    registerFactory("bb.action.distance", makeActionDistance);
 
     // GuideBot navigation leaf stub — third_party/addons/GuideBot/.../guideBot/actionMove.h
     registerFactory("gb.action.move_toward", makeActionMoveToward);

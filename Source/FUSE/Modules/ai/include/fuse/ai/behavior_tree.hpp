@@ -30,8 +30,20 @@ enum class NodeKind {
     SucceedAlways,
     Root,
     ConditionDistanceLess,
+    ConditionDistanceGreater,
+    ConditionBlackboardGet,
     ActionSetFlag,
+    ActionBlackboardSet,
+    ActionWait,
+    ActionDistance,
     ActionMoveToward,
+};
+
+/// Optional per-tick eval state for leaves that span frames (wait) or read runtime tick count.
+struct BehaviorEvalContext {
+    u32 tickCount = 0;
+    /// Per-node wait start tick for the current agent; length == tree nodeCount, 0 = not waiting.
+    u32* waitStartTicks = nullptr;
 };
 
 /// Flat behavior-tree node — ore analogue: BadBehaviour composite/decorator/leaf nodes.
@@ -59,7 +71,8 @@ public:
     /// Evaluate one agent against immutable inputs (safe from worker threads).
     BehaviorTickResult tick(u32 agentIndex,
                             const AgentSnapshot& agent,
-                            const BlackboardView& board) const;
+                            const BlackboardView& board,
+                            const BehaviorEvalContext& ctx = {}) const;
 
     /// Demo tree: Sequence(ConditionDistanceLess(5), ActionSetFlag(0)).
     static BehaviorTree makePatrolWhenNearTarget();
@@ -71,7 +84,8 @@ private:
     BehaviorTickResult tickNode(u32 nodeIndex,
                                 u32 agentIndex,
                                 const AgentSnapshot& agent,
-                                const BlackboardView& board) const;
+                                const BlackboardView& board,
+                                const BehaviorEvalContext& ctx) const;
 
     std::vector<BehaviorNode> m_nodes;
     u32 m_root = 0;

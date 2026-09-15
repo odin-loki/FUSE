@@ -89,8 +89,15 @@ void testRegistryBuiltinNodes() {
     expectTrue(registry.hasFactory("bb.loop"), "bb.loop registered");
     expectTrue(registry.hasFactory("bb.succeed_always"), "bb.succeed_always registered");
     expectTrue(registry.hasFactory("bb.root"), "bb.root registered");
+    expectTrue(registry.hasFactory("bb.condition.distance_less"), "bb.condition.distance_less registered");
+    expectTrue(registry.hasFactory("bb.condition.distance_greater"), "bb.condition.distance_greater registered");
+    expectTrue(registry.hasFactory("bb.condition.blackboard_get"), "bb.condition.blackboard_get registered");
+    expectTrue(registry.hasFactory("bb.action.set_flag"), "bb.action.set_flag registered");
+    expectTrue(registry.hasFactory("bb.action.blackboard_set"), "bb.action.blackboard_set registered");
+    expectTrue(registry.hasFactory("bb.action.wait"), "bb.action.wait registered");
+    expectTrue(registry.hasFactory("bb.action.distance"), "bb.action.distance registered");
     expectTrue(registry.hasFactory("gb.action.move_toward"), "gb.action.move_toward registered");
-    expectTrue(registry.registeredTypeIds().size() >= 9u, "registry exposes built-in type ids");
+    expectTrue(registry.registeredTypeIds().size() >= 14u, "registry exposes built-in type ids");
 }
 
 void testInverterDecorator() {
@@ -219,6 +226,144 @@ void testUaiskTemplateHooks() {
                "UAISK aiBehaviors maps to selector");
 }
 
+void testWaitLeaf() {
+    const std::vector<fuse::ai::NodeLoadSpec> specs = {
+        {"bb.action.wait", 0.f, 0, 3, {}, {}},
+    };
+
+    fuse::ai::BehaviorTree tree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(specs, 0, tree), "wait leaf loads");
+
+    fuse::ai::AgentSnapshot agent;
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    std::vector<fuse::u32> waitStarts(tree.nodeCount(), 0);
+    fuse::ai::BehaviorEvalContext ctx;
+    ctx.waitStartTicks = waitStarts.data();
+
+    for (fuse::u32 tick = 0; tick < 3; ++tick) {
+        ctx.tickCount = tick;
+        const fuse::ai::BehaviorTickResult result =
+            tree.tick(0, agent, fuse::ai::BlackboardView(board), ctx);
+        expectTrue(result.status == fuse::ai::BehaviorStatus::Running, "wait stays running");
+    }
+
+    ctx.tickCount = 3;
+    const fuse::ai::BehaviorTickResult done =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board), ctx);
+    expectTrue(done.status == fuse::ai::BehaviorStatus::Success, "wait completes after ticks");
+}
+
+void testBlackboardSetGetLeaves() {
+    const std::vector<fuse::ai::NodeLoadSpec> setSpecs = {
+        {"bb.action.blackboard_set", 1.f, 2, 1, {}, {}},
+    };
+    const std::vector<fuse::ai::NodeLoadSpec> getSpecs = {
+        {"bb.condition.blackboard_get", 0.f, 2, 1, {}, {}},
+    };
+
+    fuse::ai::BehaviorTree setTree;
+    fuse::ai::BehaviorTree getTree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(setSpecs, 0, setTree), "blackboard set loads");
+    expectTrue(fuse::ai::loadTreeFromSpecs(getSpecs, 0, getTree), "blackboard get loads");
+
+    fuse::ai::AgentSnapshot agent;
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const fuse::ai::BehaviorTickResult setResult =
+        setTree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(setResult.status == fuse::ai::BehaviorStatus::Success, "blackboard set succeeds");
+    expectTrue(setResult.wroteFlag, "blackboard set writes flag");
+    expectTrue(setResult.flagIndex == 2u, "blackboard set targets configured flag");
+    expectTrue(setResult.flagValue, "blackboard set writes true");
+
+    board.setFlag(0, 2, true);
+    const fuse::ai::BehaviorTickResult getResult =
+        getTree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(getResult.status == fuse::ai::BehaviorStatus::Success, "blackboard get succeeds when flag set");
+}
+
+void testDistanceGreaterCondition() {
+    const std::vector<fuse::ai::NodeLoadSpec> specs = {
+        {"bb.condition.distance_greater", 5.f, 0, 1, {}, {}},
+    };
+
+    fuse::ai::BehaviorTree tree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(specs, 0, tree), "distance greater loads");
+
+    fuse::ai::AgentSnapshot far;
+    far.x = 0.f;
+    far.y = 0.f;
+    far.targetX = 10.f;
+    far.targetY = 0.f;
+
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const fuse::ai::BehaviorTickResult result =
+        tree.tick(0, far, fuse::ai::BlackboardView(board));
+    expectTrue(result.status == fuse::ai::BehaviorStatus::Success, "distance greater succeeds when far");
+}
+
+void testDistanceActionLeaf() {
+    const std::vector<fuse::ai::NodeLoadSpec> specs = {
+        {"bb.action.distance", 5.f, 1, 1, {}, {}},
+    };
+
+    fuse::ai::BehaviorTree tree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(specs, 0, tree), "distance action loads");
+
+    fuse::ai::AgentSnapshot near;
+    near.x = 0.f;
+    near.y = 0.f;
+    near.targetX = 3.f;
+    near.targetY = 0.f;
+
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const fuse::ai::BehaviorTickResult result =
+        tree.tick(0, near, fuse::ai::BlackboardView(board));
+    expectTrue(result.status == fuse::ai::BehaviorStatus::Success, "distance action succeeds");
+    expectTrue(result.wroteFlag, "distance action writes within-range flag");
+    expectTrue(result.flagIndex == 1u, "distance action uses configured flag");
+    expectTrue(result.flagValue, "distance action marks within threshold");
+}
+
+void testWaitViaRuntime() {
+    const std::vector<fuse::ai::NodeLoadSpec> specs = {
+        {"bb.action.wait", 0.f, 0, 2, {}, {}},
+        {"bb.action.set_flag", 0.f, 0, 1, {}, {}},
+        {"bb.sequence", 0.f, 0, 1, {}, {0, 1}},
+    };
+
+    fuse::ai::BehaviorTree tree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(specs, 2, tree), "wait sequence loads");
+
+    fuse::ai::BehaviorRuntime runtime;
+    runtime.setTree(tree);
+    runtime.addAgent({});
+
+    auto& scheduler = fuse::jobs::JobScheduler::instance();
+    scheduler.shutdown();
+    scheduler.initialize(2);
+
+    fuse::frame::FrameCtx ctx;
+    for (fuse::u32 frame = 0; frame < 3; ++frame) {
+        ctx.frameIndex = frame;
+        runtime.buildSnapshots();
+        runtime.evaluate(ctx);
+        runtime.commit();
+    }
+
+    expectTrue(runtime.blackboard().flag(0, 0), "set_flag runs after wait completes");
+    expectTrue(runtime.tickCount() == 3u, "runtime advanced through wait frames");
+
+    scheduler.shutdown();
+}
+
 void testRuntimeParallelEval() {
     fuse::ai::BehaviorRuntime runtime;
     runtime.setTree(fuse::ai::BehaviorTree::makePatrolWhenNearTargetFromRegistry());
@@ -267,6 +412,11 @@ int main() {
     testLoopDecorator();
     testSucceedAlwaysDecorator();
     testGuideBotMoveTowardLeaf();
+    testWaitLeaf();
+    testBlackboardSetGetLeaves();
+    testDistanceGreaterCondition();
+    testDistanceActionLeaf();
+    testWaitViaRuntime();
     testTextLoader();
     testUaiskTemplateHooks();
     testRuntimeParallelEval();

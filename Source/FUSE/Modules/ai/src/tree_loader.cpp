@@ -103,6 +103,20 @@ bool parseNodeLine(const std::string& line, NodeLoadSpec& outSpec, std::string* 
                 }
                 return false;
             }
+        } else if (key == "ticks") {
+            if (!parseU32(value, outSpec.loopCount)) {
+                if (errorOut) {
+                    *errorOut = "invalid wait ticks: " + value;
+                }
+                return false;
+            }
+        } else if (key == "value") {
+            if (!parseFloat(value, outSpec.threshold)) {
+                if (errorOut) {
+                    *errorOut = "invalid blackboard value: " + value;
+                }
+                return false;
+            }
         } else if (key == "children") {
             if (!parseChildren(value, outSpec.childIndices)) {
                 if (errorOut) {
