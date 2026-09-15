@@ -5,24 +5,36 @@
 
 namespace fuse::editor {
 
+struct MaterialEditState;
+
 /// UI/inspector metadata for one material property field (B6.7 deepen).
 struct MaterialPropertyDescriptor {
     MaterialPropertyId id = MaterialPropertyId::Roughness;
     const char* label = "";
     f32 minValue = 0.f;
     f32 maxValue = 1.f;
+    bool isVec3 = false;
 };
 
 /// Number of bindable material inspector properties.
 [[nodiscard]] u32 materialPropertyCount();
 
+/// Stable property order for inspector widget iteration (B6.7 deepen follow-up).
+[[nodiscard]] MaterialPropertyId materialPropertyIdAt(u32 index);
+
 /// Metadata for slider/field widgets (B6.7 deepen).
 [[nodiscard]] MaterialPropertyDescriptor materialPropertyDescriptor(MaterialPropertyId id);
+
+/// True when the property stores a vec3 (base color) rather than a scalar.
+[[nodiscard]] bool materialPropertyIsVec3(MaterialPropertyId id);
 
 /// Clamp helpers — authoring edits stay in valid PBR ranges (B6.7 deepen).
 [[nodiscard]] f32 clampRoughness(f32 value);
 [[nodiscard]] f32 clampMetallic(f32 value);
 [[nodiscard]] f32 clampBaseColorComponent(f32 value);
 [[nodiscard]] u8 clampShadingModel(u8 value);
+
+/// Clamp all fields in an authoring-side material edit state (B6.7 deepen follow-up).
+void clampMaterialEditState(MaterialEditState& state);
 
 } // namespace fuse::editor

@@ -237,6 +237,77 @@ void testMaterialEditorPanelEmptyCatalog() {
     expectTrue(cmds.appliedCount() == 0u, "empty catalog posts no commands");
 }
 
+void testMaterialPropertyInspectEnumeration() {
+    expectTrue(fuse::editor::materialPropertyCount() == 4u, "four bindable material properties");
+
+    expectTrue(fuse::editor::materialPropertyIdAt(0u) == fuse::editor::MaterialPropertyId::Roughness,
+               "index 0 is roughness");
+    expectTrue(fuse::editor::materialPropertyIdAt(1u) == fuse::editor::MaterialPropertyId::Metallic,
+               "index 1 is metallic");
+    expectTrue(fuse::editor::materialPropertyIdAt(2u) == fuse::editor::MaterialPropertyId::BaseColor,
+               "index 2 is base color");
+    expectTrue(fuse::editor::materialPropertyIdAt(3u) == fuse::editor::MaterialPropertyId::ShadingModel,
+               "index 3 is shading model");
+
+    for (fuse::u32 i = 0u; i < fuse::editor::materialPropertyCount(); ++i) {
+        const fuse::editor::MaterialPropertyId id = fuse::editor::materialPropertyIdAt(i);
+        const fuse::editor::MaterialPropertyDescriptor desc =
+            fuse::editor::materialPropertyDescriptor(id);
+        expectTrue(desc.id == id, "descriptor id matches enumeration index");
+        expectTrue(desc.label != nullptr && desc.label[0] != '\0', "descriptor label populated");
+        expectTrue(desc.isVec3 == fuse::editor::materialPropertyIsVec3(id),
+                   "descriptor vec3 flag matches helper");
+    }
+
+    expectTrue(fuse::editor::materialPropertyIsVec3(fuse::editor::MaterialPropertyId::BaseColor),
+               "base color is vec3");
+    expectTrue(!fuse::editor::materialPropertyIsVec3(fuse::editor::MaterialPropertyId::Roughness),
+               "roughness is scalar");
+}
+
+void testMaterialEditStateBulkClamp() {
+    fuse::editor::MaterialEditState state{};
+    state.roughness = -0.25f;
+    state.metallic = 2.f;
+    state.baseColorR = 1.5f;
+    state.baseColorG = -0.1f;
+    state.baseColorB = 0.5f;
+    state.shadingModel = 99u;
+
+    fuse::editor::clampMaterialEditState(state);
+
+    expectTrue(state.roughness == 0.f, "bulk clamp pins roughness low");
+    expectTrue(state.metallic == 1.f, "bulk clamp pins metallic high");
+    expectTrue(state.baseColorR == 1.f && state.baseColorG == 0.f && state.baseColorB == 0.5f,
+               "bulk clamp pins base color channels");
+    expectTrue(state.shadingModel == 5u, "bulk clamp pins shading model");
+}
+
+void testMaterialPropertyBindingRefreshClamp() {
+    fuse::editor::EditorState state;
+    fuse::editor::MaterialEditorPanel panel;
+    panel.sync(state, 1u);
+    panel.selectMaterial(0u);
+
+    fuse::editor::MaterialEditState badState{};
+    badState.roughness = 3.f;
+    badState.metallic = -1.f;
+    badState.baseColorR = 2.f;
+    badState.baseColorG = -0.5f;
+    badState.baseColorB = 0.25f;
+    badState.shadingModel = 8u;
+
+    panel.propertyBinding().refreshFromEditState(badState);
+
+    expectTrue(panel.editState().roughness == 1.f, "refresh clamps roughness");
+    expectTrue(panel.editState().metallic == 0.f, "refresh clamps metallic");
+    expectTrue(panel.editState().baseColorR == 1.f, "refresh clamps base color r");
+    expectTrue(panel.editState().baseColorG == 0.f, "refresh clamps base color g");
+    expectTrue(panel.editState().baseColorB == 0.25f, "refresh keeps in-range base color b");
+    expectTrue(panel.editState().shadingModel == 5u, "refresh clamps shading model");
+    expectTrue(!panel.needsPanelRefresh(), "refresh clears panel dirty flags");
+}
+
 void testMaterialPropertyBindingClamp() {
     fuse::editor::EditorState state;
     fuse::editor::MaterialEditorPanel panel;
@@ -425,6 +496,9 @@ int main() {
     testMaterialEditorPanelPropertyCoalescing();
     testMaterialPropertyBindingGetSet();
     testMaterialPropertyBindingRoundtrip();
+    testMaterialPropertyInspectEnumeration();
+    testMaterialEditStateBulkClamp();
+    testMaterialPropertyBindingRefreshClamp();
     testMaterialEditorPanelEmptyCatalog();
     testMaterialPropertyBindingClamp();
     testMaterialPropertyBindingDirtyCoalesce();

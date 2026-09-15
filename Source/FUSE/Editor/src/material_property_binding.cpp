@@ -233,6 +233,7 @@ void MaterialPropertyBinding::refreshFromEditState(const MaterialEditState& stat
     }
 
     *m_editState = state;
+    clampMaterialEditState(*m_editState);
     markPanelRefreshed();
 }
 
