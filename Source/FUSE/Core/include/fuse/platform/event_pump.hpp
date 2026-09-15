@@ -37,6 +37,12 @@ public:
     /// Poll one queued event. Returns false when the queue is empty.
     bool pollEvent(PlatformEvent& outEvent);
 
+    /// True when the synthetic queue holds at least one event.
+    bool hasPendingEvents() const;
+
+    /// Number of events waiting in the synthetic queue (0 when empty).
+    u32 pendingEventCount() const;
+
     /// Drain the OS event queue — no-op in the B1.7 stub.
     void processOsEvents();
 
@@ -45,6 +51,12 @@ public:
 
     /// Test / headless hook — enqueue a synthetic event.
     void pushSyntheticEvent(const PlatformEvent& event);
+
+    /// Stub helpers — enqueue window lifecycle events for tests and headless runners.
+    void pushWindowResized(Window& window);
+    void pushWindowFocusGained(Window& window);
+    void pushWindowFocusLost(Window& window);
+    void pushWindowCloseRequested(Window& window);
 
     void requestQuit();
     bool quitRequested() const;

@@ -48,6 +48,7 @@ void testWindowStubStoresDescription() {
 void testWindowResizeAndCloseRequest() {
     fuse::platform::Window window;
     expectTrue(window.isValid(), "default window is valid");
+    expectTrue(window.isFocused(), "default window starts focused");
 
     window.resize(800, 600);
     expectEq(window.width(), 800u, "resize updates width");
@@ -59,6 +60,61 @@ void testWindowResizeAndCloseRequest() {
     window.clearCloseRequest();
     expectTrue(window.closeRequest() == fuse::platform::WindowCloseRequest::None,
                "close request cleared");
+}
+
+void testWindowResizeNotifiesPump() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    window.resize(800, 600, &pump);
+    expectEq(pump.pendingEventCount(), 1u, "resize enqueues one event");
+
+    fuse::platform::PlatformEvent event;
+    expectTrue(pump.pollEvent(event), "resize event polled");
+    expectTrue(event.type == fuse::platform::PlatformEventType::WindowResized, "resize type");
+    expectEq(event.width, 800u, "resize width in event");
+    expectEq(event.height, 600u, "resize height in event");
+    expectTrue(event.window == &window, "resize window pointer");
+
+    window.resize(800, 600, &pump);
+    expectEq(pump.pendingEventCount(), 0u, "no-op resize does not enqueue");
+}
+
+void testWindowFocusEventsNotifyPump() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    window.setFocused(false, &pump);
+    expectTrue(!window.isFocused(), "focus cleared");
+
+    fuse::platform::PlatformEvent lost;
+    expectTrue(pump.pollEvent(lost), "focus lost polled");
+    expectTrue(lost.type == fuse::platform::PlatformEventType::WindowFocusLost, "focus lost type");
+    expectTrue(lost.window == &window, "focus lost window pointer");
+
+    window.setFocused(false, &pump);
+    expectEq(pump.pendingEventCount(), 0u, "duplicate focus lost does not enqueue");
+
+    window.setFocused(true, &pump);
+    fuse::platform::PlatformEvent gained;
+    expectTrue(pump.pollEvent(gained), "focus gained polled");
+    expectTrue(gained.type == fuse::platform::PlatformEventType::WindowFocusGained,
+               "focus gained type");
+}
+
+void testWindowCloseRequestedNotifiesPump() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    window.requestClose(&pump);
+    expectTrue(window.closeRequest() == fuse::platform::WindowCloseRequest::Requested,
+               "close request recorded with pump");
+
+    fuse::platform::PlatformEvent event;
+    expectTrue(pump.pollEvent(event), "close requested polled");
+    expectTrue(event.type == fuse::platform::PlatformEventType::WindowCloseRequested,
+               "close requested type");
+    expectTrue(event.window == &window, "close requested window pointer");
 }
 
 void testVulkanSurfaceWireIsHeadless() {
@@ -109,6 +165,75 @@ void testEventPumpOsDrainIsNoOp() {
 
     fuse::platform::PlatformEvent event;
     expectTrue(!pump.pollEvent(event), "OS drain produces no events in stub");
+    expectTrue(!pump.hasPendingEvents(), "queue empty after OS drain");
+    expectEq(pump.pendingEventCount(), 0u, "pending count zero after OS drain");
+}
+
+void testEventPumpPollQueueFifoOrder() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    for (fuse::u32 index = 0; index < 5u; ++index) {
+        fuse::platform::PlatformEvent event;
+        event.type = fuse::platform::PlatformEventType::WindowResized;
+        event.window = &window;
+        event.width = 640u + index;
+        event.height = 480u + index;
+        pump.pushSyntheticEvent(event);
+    }
+
+    expectEq(pump.pendingEventCount(), 5u, "five events queued");
+
+    for (fuse::u32 index = 0; index < 5u; ++index) {
+        fuse::platform::PlatformEvent polled;
+        expectTrue(pump.pollEvent(polled), "fifo poll succeeds");
+        expectEq(polled.width, 640u + index, "fifo width order preserved");
+        expectEq(polled.height, 480u + index, "fifo height order preserved");
+    }
+
+    expectTrue(!pump.hasPendingEvents(), "queue drained");
+}
+
+void testEventPumpPollQueueOverflowDropsTail() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    fuse::platform::PlatformEvent marker;
+    marker.type = fuse::platform::PlatformEventType::WindowResized;
+    marker.window = &window;
+    marker.width = 111u;
+    marker.height = 222u;
+    pump.pushSyntheticEvent(marker);
+
+    for (fuse::u32 index = 0; index < 32u; ++index) {
+        fuse::platform::PlatformEvent event;
+        event.type = fuse::platform::PlatformEventType::WindowResized;
+        event.window = &window;
+        event.width = 1000u + index;
+        event.height = 2000u + index;
+        pump.pushSyntheticEvent(event);
+    }
+
+    expectEq(pump.pendingEventCount(), 31u, "ring buffer caps at capacity minus one slot");
+
+    fuse::platform::PlatformEvent first;
+    expectTrue(pump.pollEvent(first), "oldest event still available");
+    expectEq(first.width, 111u, "marker event preserved at head");
+}
+
+void testEventPumpClearSyntheticEvents() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    pump.pushWindowResized(window);
+    pump.pushWindowFocusLost(window);
+    expectTrue(pump.hasPendingEvents(), "events queued before clear");
+
+    pump.clearSyntheticEvents();
+    expectEq(pump.pendingEventCount(), 0u, "clear empties queue");
+
+    fuse::platform::PlatformEvent event;
+    expectTrue(!pump.pollEvent(event), "poll returns false after clear");
 }
 
 void testMobileProfileStillUsesWindowStub() {
@@ -131,10 +256,16 @@ void testMobileProfileStillUsesWindowStub() {
 int main() {
     testWindowStubStoresDescription();
     testWindowResizeAndCloseRequest();
+    testWindowResizeNotifiesPump();
+    testWindowFocusEventsNotifyPump();
+    testWindowCloseRequestedNotifiesPump();
     testVulkanSurfaceWireIsHeadless();
     testEventPumpSyntheticEvents();
     testEventPumpQuitFlow();
     testEventPumpOsDrainIsNoOp();
+    testEventPumpPollQueueFifoOrder();
+    testEventPumpPollQueueOverflowDropsTail();
+    testEventPumpClearSyntheticEvents();
     testMobileProfileStillUsesWindowStub();
 
     if (g_failures == 0) {

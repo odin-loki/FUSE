@@ -1,6 +1,6 @@
-# Track B — Core B1.7 Platform Window & Event Pump (stubs)
+# Track B — Core B1.7 Platform Window & Event Pump (deepen follow-up)
 
-**Status:** B1.7 `fuse::platform::Window` / `EventPump` desktop + mobile no-op stubs on `fuse_core`  
+**Status:** B1.7 deepen follow-up — resize/focus event stubs, poll-queue introspection, FIFO/overflow tests on `fuse_core`  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B1.7  
 **Vulkan wiring:** [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) §Surface abstraction (External kind)  
 **Related:** B7.8 surface-loss hooks (`surface_loss.hpp`) fire when mobile WSI recreates drawables
@@ -14,7 +14,7 @@
 | `window.hpp` | `Source/FUSE/Core/include/fuse/platform/` | `Window`, `WindowDesc`, `VulkanSurfaceWire` |
 | `event_pump.hpp` | same | `EventPump`, `PlatformEvent` queue |
 | `platform_window.cpp` | `Source/FUSE/Core/src/platform/` | Desktop + mobile no-op stub backend |
-| `test_platform_window.cpp` | `Source/FUSE/Core/tests/` | Window metadata, quit flow, Vulkan wire metadata |
+| `test_platform_window.cpp` | `Source/FUSE/Core/tests/` | Window metadata, resize/focus/close notify stubs, poll-queue FIFO/overflow, quit flow, Vulkan wire metadata |
 
 **Not in scope (follow-up PRs):** Win32 / X11 / Wayland window creation, Android `ANativeWindow` / iOS `UIView` wiring, raw input (`input.hpp`), DPI awareness, real OS event translation, GLFW.
 
@@ -52,6 +52,15 @@ window.resize(1920, 1080);
 window.requestClose();
 ```
 
+Optional `EventPump*` on `resize`, `setFocused`, and `requestClose` enqueues synthetic lifecycle events when geometry or focus changes (headless tests and future OS backends share the same queue):
+
+```cpp
+fuse::platform::EventPump pump;
+window.resize(1920, 1080, &pump);   // WindowResized when dimensions change
+window.setFocused(false, &pump);      // WindowFocusLost on transition
+window.requestClose(&pump);           // WindowCloseRequested
+```
+
 The B1.7 stub:
 
 - Stores title and geometry in host memory
@@ -78,12 +87,29 @@ while (pump.pumpOnce()) {
         event.window == &window) {
       pump.requestQuit();
     }
+    if (event.type == fuse::platform::PlatformEventType::WindowResized &&
+        event.window == &window) {
+      // swapchain recreate stub …
+    }
+    if (event.type == fuse::platform::PlatformEventType::WindowFocusLost &&
+        event.window == &window) {
+      // pause input / duck audio …
+    }
   }
   // game tick …
 }
 ```
 
-`processOsEvents()` is a **no-op** on desktop and mobile until platform backends land. Tests and headless runners may call `pushSyntheticEvent()` to simulate resize / quit without a display server.
+`processOsEvents()` is a **no-op** on desktop and mobile until platform backends land. Tests and headless runners may call `pushSyntheticEvent()` or the `pushWindow*` helpers to simulate resize / focus / quit without a display server.
+
+Poll-queue introspection for tests:
+
+```cpp
+if (pump.hasPendingEvents()) {
+  const fuse::u32 queued = pump.pendingEventCount();
+  // drain or assert FIFO order …
+}
+```
 
 ---
 
@@ -118,14 +144,16 @@ CI continues to run Lavapipe headless (`SurfaceKind::Headless`). Presentable swa
 
 | Test binary | CTest name | Coverage |
 |-------------|------------|----------|
-| `fuse_core_platform_window_tests` | `fuse_core_platform_window` | Window desc storage, resize/close, Vulkan wire metadata, synthetic events, quit flow, mobile profile no-op |
+| `fuse_core_platform_window_tests` | `fuse_core_platform_window` | Window desc storage, resize/focus/close notify stubs, poll-queue FIFO/overflow, Vulkan wire metadata, synthetic events, quit flow, mobile profile no-op |
 
 ---
 
-## Gates (B1.7)
+## Gates (B1.7 deepen follow-up)
 
 - [x] `fuse::platform::Window` stub on FUSE APIs (not ungated Torque guts)
 - [x] `fuse::platform::EventPump` desktop + mobile no-op
+- [x] Resize / focus / close-requested synthetic event stubs (`pushWindow*`, optional pump on `Window` mutators)
+- [x] Poll-queue introspection (`hasPendingEvents`, `pendingEventCount`) + FIFO/overflow tests
 - [x] Vulkan External surface wire notes (`VulkanSurfaceWire` + this doc)
 - [x] Unit tests + this doc
 - [ ] Win32 / Linux WSI window backends — deferred
