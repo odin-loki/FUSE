@@ -6,6 +6,29 @@
 
 namespace fuse::renderer {
 
+namespace {
+
+#if defined(FUSE_VULKAN_BACKEND)
+/// Clear a slot fence that was marked in-flight without a matching queue submit (headless stub).
+bool clearStubInFlightFence(VkDevice device, FrameSyncData& slot) {
+    if (slot.inFlightFence == nullptr) {
+        return true;
+    }
+
+    auto fence = static_cast<VkFence>(slot.inFlightFence);
+    const VkResult status = vkGetFenceStatus(device, fence);
+    if (status == VK_SUCCESS) {
+        return vkResetFences(device, 1, &fence) == VK_SUCCESS;
+    }
+    if (status == VK_NOT_READY) {
+        return true;
+    }
+    return false;
+}
+#endif
+
+} // namespace
+
 std::unique_ptr<FrameManager> FrameManager::create(VulkanDevice& device) {
     auto manager = std::unique_ptr<FrameManager>(new FrameManager());
     if (!manager->initialize(device)) {
@@ -160,11 +183,19 @@ bool FrameManager::waitInFlightFence(u32 slotIndex) {
 
     if (slot.fenceSignaled) {
         auto fence = static_cast<VkFence>(slot.inFlightFence);
-        if (vkWaitForFences(static_cast<VkDevice>(m_device), 1, &fence, VK_TRUE, UINT64_MAX) !=
-            VK_SUCCESS) {
+        const VkResult status = vkGetFenceStatus(static_cast<VkDevice>(m_device), fence);
+        if (status == VK_NOT_READY) {
+            if (!clearStubInFlightFence(static_cast<VkDevice>(m_device), slot)) {
+                return false;
+            }
+        } else if (status == VK_SUCCESS) {
+            if (vkResetFences(static_cast<VkDevice>(m_device), 1, &fence) != VK_SUCCESS) {
+                return false;
+            }
+        } else if (vkWaitForFences(static_cast<VkDevice>(m_device), 1, &fence, VK_TRUE, UINT64_MAX) !=
+                   VK_SUCCESS) {
             return false;
-        }
-        if (vkResetFences(static_cast<VkDevice>(m_device), 1, &fence) != VK_SUCCESS) {
+        } else if (vkResetFences(static_cast<VkDevice>(m_device), 1, &fence) != VK_SUCCESS) {
             return false;
         }
     }
@@ -188,8 +219,9 @@ void FrameManager::beginFrame(u32 frameIndex) {
 
     FrameSyncData& slot = m_slots[m_info.currentIndex % kFramesInFlight];
     if (slot.fenceSignaled && slot.inFlightFence != nullptr) {
-        auto fence = static_cast<VkFence>(slot.inFlightFence);
-        vkResetFences(static_cast<VkDevice>(m_device), 1, &fence);
+        if (!clearStubInFlightFence(static_cast<VkDevice>(m_device), slot)) {
+            return;
+        }
     }
     slot.fenceSignaled = false;
 #else

@@ -208,6 +208,191 @@ void testFenceWaitHelpers() {
                "wait-all helper succeeds on fresh ring");
 }
 
+void testMultipleFrameCycles() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        return;
+    }
+#else
+    return;
+#endif
+
+    auto presentPath = fuse::renderer::PresentPath::create(*bootstrap);
+    for (fuse::u32 frame = 0; frame < 3u; ++frame) {
+        expectTrue(presentPath->beginFrame(frame), "beginFrame succeeds for multi-frame loop");
+        expectTrue(presentPath->endFrame(), "endFrame succeeds for multi-frame loop");
+        expectTrue(presentPath->state() == fuse::renderer::PresentPathState::Idle,
+                   "endFrame returns to Idle each iteration");
+    }
+    expectEq(presentPath->status().presentedFrames, 3u, "presented frame counter tracks three cycles");
+    expectEq(presentPath->status().fenceWaitCount, 3u, "fence wait counter tracks three cycles");
+}
+
+void testResizeCoalescing() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        return;
+    }
+#else
+    return;
+#endif
+
+    auto presentPath = fuse::renderer::PresentPath::create(*bootstrap);
+    presentPath->requestResize(800, 600);
+    presentPath->requestResize(1920, 1080);
+    expectTrue(presentPath->hasPendingResize(), "resize still pending after coalesce");
+
+    expectTrue(presentPath->recreateSwapchain(), "explicit recreate applies coalesced dimensions");
+    expectEq(presentPath->status().width, 1920u, "coalesced resize width applied");
+    expectEq(presentPath->status().height, 1080u, "coalesced resize height applied");
+    expectEq(presentPath->status().swapchainRecreateCount, 1u, "coalesced resize counts as one recreate");
+}
+
+void testRecreateWithoutPendingResize() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        return;
+    }
+#else
+    return;
+#endif
+
+    auto presentPath = fuse::renderer::PresentPath::create(*bootstrap);
+    expectTrue(presentPath->recreateSwapchain(), "recreate without pending resize is a no-op success");
+    expectTrue(!presentPath->hasPendingResize(), "no pending resize after no-op recreate");
+    expectEq(presentPath->status().swapchainRecreateCount, 0u, "no-op recreate does not bump counter");
+}
+
+void testFenceWaitOutOfBounds() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        return;
+    }
+#else
+    return;
+#endif
+
+    fuse::renderer::FrameManager* frameManager = bootstrap->frameManager();
+    expectTrue(frameManager != nullptr && frameManager->isReady(), "frame manager ready");
+
+    expectTrue(!fuse::renderer::isValidFrameSlotIndex(fuse::renderer::kFramesInFlight),
+               "slot index at ring size is invalid");
+    expectTrue(!fuse::renderer::waitInFlightFenceForSlot(*frameManager, fuse::renderer::kFramesInFlight),
+               "OOB slot fence wait rejected");
+    expectTrue(!fuse::renderer::waitInFlightFenceForSlot(*frameManager, 99u),
+               "far OOB slot fence wait rejected");
+}
+
+void testFenceWaitAfterEndFrame() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        return;
+    }
+#else
+    return;
+#endif
+
+    fuse::renderer::FrameManager* frameManager = bootstrap->frameManager();
+    expectTrue(frameManager != nullptr && frameManager->isReady(), "frame manager ready");
+
+    expectTrue(fuse::renderer::waitAllInFlightFences(*frameManager),
+               "clear initial signaled fences on fresh ring");
+    expectEq(fuse::renderer::countPendingInFlightFences(*frameManager), 0u,
+             "ring has no pending in-flight fences after wait-all");
+
+    const fuse::u32 slotBeforeEnd = frameManager->currentIndex();
+    frameManager->signalTickComplete();
+    frameManager->beginFrame(0u);
+    frameManager->endFrame();
+
+    expectEq(fuse::renderer::countPendingInFlightFences(*frameManager), 1u,
+             "endFrame marks submitted slot in-flight");
+
+    expectTrue(fuse::renderer::waitInFlightFenceForSlot(*frameManager, slotBeforeEnd),
+               "wait submitted slot after endFrame succeeds");
+    expectEq(fuse::renderer::countPendingInFlightFences(*frameManager), 0u,
+             "fence wait clears pending count");
+}
+
+void testMarkReadyWithoutAcquire() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        return;
+    }
+#else
+    return;
+#endif
+
+    auto presentPath = fuse::renderer::PresentPath::create(*bootstrap);
+    expectTrue(!presentPath->markReadyToPresent(), "mark ready without acquire rejected");
+    expectTrue(presentPath->state() == fuse::renderer::PresentPathState::Idle,
+               "invalid mark ready keeps Idle");
+}
+
+void testPresentFromIdle() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        return;
+    }
+#else
+    return;
+#endif
+
+    auto presentPath = fuse::renderer::PresentPath::create(*bootstrap);
+    expectTrue(!presentPath->presentImage(), "present from Idle rejected");
+    expectTrue(presentPath->state() == fuse::renderer::PresentPathState::Idle,
+               "failed present from Idle stays Idle");
+}
+
+void testResizePreservesVsyncMode() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        return;
+    }
+#else
+    return;
+#endif
+
+    auto presentPath = fuse::renderer::PresentPath::create(*bootstrap);
+    presentPath->setVsyncMode(fuse::renderer::VsyncMode::Mailbox);
+    presentPath->requestResize(640, 480);
+    expectTrue(presentPath->recreateSwapchain(), "resize recreate succeeds");
+    expectTrue(presentPath->vsyncMode() == fuse::renderer::VsyncMode::Mailbox,
+               "vsync mode preserved across resize recreate");
+}
+
 void testReadyToPresentTransition() {
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
@@ -244,6 +429,14 @@ int main() {
     testInvalidStateTransitions();
     testVsyncModeSwitch();
     testFenceWaitHelpers();
+    testMultipleFrameCycles();
+    testResizeCoalescing();
+    testRecreateWithoutPendingResize();
+    testFenceWaitOutOfBounds();
+    testFenceWaitAfterEndFrame();
+    testMarkReadyWithoutAcquire();
+    testPresentFromIdle();
+    testResizePreservesVsyncMode();
     testReadyToPresentTransition();
 
     fuse::core::shutdown();

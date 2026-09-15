@@ -23,6 +23,18 @@
 
 **Not in scope (follow-up PRs):** Real `VkDescriptorPool` updates (B2.4), async upload fences, CUDA shared allocations, real GPU memory budgets.
 
+### Present / swapchain path (B2.2 cross-ref)
+
+CPU-side acquire/present lifecycle lives alongside resource teardown in `fuse_rhi`:
+
+| Component | Location | Notes |
+|-----------|----------|-------|
+| `PresentPath` | `include/fuse/renderer/vk/present_path.hpp` | Acquire/present/recreate state machine; `fenceWaitCount`, resize coalescing |
+| `fence_wait.hpp` | `include/fuse/renderer/vk/fence_wait.hpp` | `waitCurrentInFlightFence`, `countPendingInFlightFences`, OOB slot guard |
+| `test_rhi_present_path_stub` | `Source/FUSE/Renderer/tests/` | Headless state transitions, recreate path, fence-wait edge cases |
+
+See [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) §B2.2 for the full state diagram and WSI wiring.
+
 ---
 
 ## Build
