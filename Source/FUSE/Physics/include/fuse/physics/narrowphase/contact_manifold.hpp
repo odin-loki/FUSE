@@ -8,10 +8,15 @@ namespace fuse::physics::narrowphase {
 
 constexpr u32 kMaxContactPointsPerManifold = 4u;
 
-struct ContactPointSlot {
+struct ContactPoint {
     vec3 point{};
     f32 penetration = 0.f;
+
+    /// Per-point tangent frame sharing the manifold contact normal (B4.3 deepen).
+    TangentBasis tangent_basis(vec3 contactNormal) const;
 };
+
+using ContactPointSlot = ContactPoint;
 
 /// Narrowphase contact manifold with multi-point slots and warm-start impulse stubs (B4.3 deepen).
 struct ContactManifold {
@@ -33,13 +38,14 @@ struct ContactManifold {
     bool valid = false;
 
     void reset();
+    void clear();
     void addPoint(vec3 point, f32 penetration);
     void syncLegacyFields();
     void buildFrictionBasis();
 
     bool empty() const { return pointCount == 0u; }
     bool hasFrictionBasis() const;
-    const ContactPointSlot& pointAt(u32 index) const;
+    const ContactPoint& pointAt(u32 index) const;
     f32 maxPenetration() const;
 };
 

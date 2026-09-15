@@ -11,6 +11,7 @@ add_library(fuse_physics STATIC
     src/narrowphase/collision_dispatch.cpp
     src/narrowphase/contact_buffer.cpp
     src/narrowphase/contact_manifold.cpp
+    src/narrowphase/contact_pair.cpp
     src/narrowphase/box_box.cpp
     src/narrowphase/friction.cpp
     src/narrowphase/gjk.cpp
@@ -28,6 +29,7 @@ add_library(fuse_physics STATIC
     include/fuse/physics/narrowphase/collision_dispatch.hpp
     include/fuse/physics/narrowphase/contact_buffer.hpp
     include/fuse/physics/narrowphase/contact_manifold.hpp
+    include/fuse/physics/narrowphase/contact_pair.hpp
     include/fuse/physics/narrowphase/friction.hpp
     include/fuse/physics/narrowphase/gjk.hpp
     include/fuse/physics/physics_data.hpp
