@@ -137,6 +137,98 @@ void testArchetypeMatchesMultipleWithout() {
                "missing With rejects archetype even when Without would pass");
 }
 
+void testQueryFilterEmptyAndConflict() {
+    const fuse::ecs::QueryFilter empty = fuse::ecs::make_query_filter();
+    expectTrue(fuse::ecs::query_filter_empty(empty), "default make_query_filter is empty");
+
+    const fuse::ecs::QueryFilter withOnly =
+        fuse::ecs::make_query_filter(fuse::ecs::With<fuse::ecs::Transform>{});
+    expectTrue(!fuse::ecs::query_filter_empty(withOnly), "With-only filter is not empty");
+    expectTrue(!fuse::ecs::query_filter_has_conflict(withOnly), "With-only filter has no conflict");
+
+    const fuse::ecs::QueryFilter withoutOnly =
+        fuse::ecs::make_query_filter(fuse::ecs::With<>{}, fuse::ecs::Without<fuse::ecs::TagStatic>{});
+    expectTrue(!fuse::ecs::query_filter_empty(withoutOnly), "Without-only filter is not empty");
+    expectTrue(!fuse::ecs::query_filter_has_conflict(withoutOnly), "Without-only filter has no conflict");
+
+    fuse::ecs::QueryFilter conflicting = fuse::ecs::make_query_filter(
+        fuse::ecs::With<fuse::ecs::Transform>{}, fuse::ecs::Without<fuse::ecs::Transform>{});
+    expectTrue(fuse::ecs::query_filter_has_conflict(conflicting),
+               "same type in With and Without is a conflict");
+}
+
+void testArchetypeMatchesConflictingFilter() {
+    const fuse::ecs::Archetype archetype = makeArchetypeWithComponents({
+        std::type_index(typeid(fuse::ecs::Transform)),
+    });
+
+    fuse::ecs::QueryFilter conflicting = fuse::ecs::make_query_filter(
+        fuse::ecs::With<fuse::ecs::Transform>{}, fuse::ecs::Without<fuse::ecs::Transform>{});
+    expectTrue(!fuse::ecs::archetype_matches(archetype, conflicting),
+               "conflicting filter rejects every archetype");
+}
+
+void testArchetypeMatchesWithoutOnly() {
+    const fuse::ecs::Archetype dynamicBody = makeArchetypeWithComponents({
+        std::type_index(typeid(fuse::ecs::Transform)),
+        std::type_index(typeid(fuse::ecs::RigidBody)),
+    });
+    const fuse::ecs::Archetype staticBody = makeArchetypeWithComponents({
+        std::type_index(typeid(fuse::ecs::Transform)),
+        std::type_index(typeid(fuse::ecs::RigidBody)),
+        std::type_index(typeid(fuse::ecs::TagStatic)),
+    });
+
+    expectTrue(fuse::ecs::archetype_matches(dynamicBody, fuse::ecs::Without<fuse::ecs::TagStatic>{}),
+               "Without-only accepts archetype missing excluded type");
+    expectTrue(!fuse::ecs::archetype_matches(staticBody, fuse::ecs::Without<fuse::ecs::TagStatic>{}),
+               "Without-only rejects archetype carrying excluded type");
+}
+
+void testArchetypeMatchesZeroEntityArchetype() {
+    const fuse::ecs::Archetype emptyRows = makeArchetypeWithComponents({
+        std::type_index(typeid(fuse::ecs::Transform)),
+        std::type_index(typeid(fuse::ecs::RigidBody)),
+    });
+    expectEq(static_cast<fuse::u32>(emptyRows.count()), 0u, "synthetic archetype has zero entities");
+
+    const fuse::ecs::QueryFilter filter =
+        fuse::ecs::make_query_filter(fuse::ecs::With<fuse::ecs::Transform, fuse::ecs::RigidBody>{});
+    expectTrue(fuse::ecs::archetype_matches(emptyRows, filter),
+               "zero-entity archetype still matches signature filter");
+
+    const std::vector<fuse::ecs::Archetype> table = {emptyRows};
+    expectEq(fuse::ecs::count_matching_archetypes(table, filter), 1u,
+             "count_matching_archetypes includes zero-entity signatures");
+}
+
+void testEachQueryEmptyRegistry() {
+    fuse::ecs::Registry reg;
+    reg.init(8);
+
+    fuse::u32 seen = 0;
+    reg.each_query<fuse::ecs::Transform>(
+        [&](fuse::ecs::EntityID, fuse::ecs::Transform&) { ++seen; });
+    expectEq(seen, 0u, "each_query on empty registry visits zero entities");
+
+    reg.each_query<fuse::ecs::Transform, fuse::ecs::RigidBody>(
+        [&](fuse::ecs::EntityID, fuse::ecs::Transform&, fuse::ecs::RigidBody&) { ++seen; },
+        fuse::ecs::Without<fuse::ecs::TagStatic>{});
+    expectEq(seen, 0u, "each_query With/Without on empty registry visits zero entities");
+
+    fuse::jobs::JobScheduler::instance().shutdown();
+    fuse::jobs::JobScheduler::instance().initialize(2);
+    std::atomic<fuse::u32> parallelSeen{0};
+    reg.each_query_parallel<fuse::ecs::Transform>(
+        [&](fuse::ecs::EntityID, fuse::ecs::Transform&) {
+            parallelSeen.fetch_add(1u, std::memory_order_relaxed);
+        },
+        1);
+    fuse::jobs::JobScheduler::instance().shutdown();
+    expectEq(parallelSeen.load(std::memory_order_relaxed), 0u,
+             "each_query_parallel on empty registry visits zero entities");
+}
+
 void testEachQueryWithWithoutFilters() {
     fuse::ecs::Registry reg;
     reg.init(64);
@@ -343,6 +435,11 @@ int main() {
     testArchetypeMatchesEmptyArchetype();
     testCompileTimeArchetypeMatches();
     testArchetypeMatchesMultipleWithout();
+    testQueryFilterEmptyAndConflict();
+    testArchetypeMatchesConflictingFilter();
+    testArchetypeMatchesWithoutOnly();
+    testArchetypeMatchesZeroEntityArchetype();
+    testEachQueryEmptyRegistry();
     testEachQueryWithWithoutFilters();
     testEachQueryEmptyMatch();
     testEachWithWithoutMatchesEachQuery();
