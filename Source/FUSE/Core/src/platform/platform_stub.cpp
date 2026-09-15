@@ -1,4 +1,4 @@
-#include <fuse/platform/power.hpp>
+#include <fuse/platform/profile.hpp>
 #include <fuse/platform/thread.hpp>
 
 #include <atomic>
@@ -8,10 +8,6 @@ namespace fuse::platform {
 
 namespace {
 std::atomic<ThreadId> g_renderThreadId{0};
-}
-
-PowerState getPowerState() {
-    return PowerState::Normal;
 }
 
 u32 getCoreCount() {
@@ -24,11 +20,7 @@ u32 getPerformanceCoreCount() {
 }
 
 u32 recommendedFiberStackBytes() {
-#if defined(FUSE_PLATFORM_MOBILE) && FUSE_PLATFORM_MOBILE
-    return 32u * 1024u;
-#else
-    return 64u * 1024u;
-#endif
+    return currentJobProfileLimits().fiberStackBytes;
 }
 
 void registerRenderThread() {

@@ -1,5 +1,6 @@
 #include <fuse/config.hpp>
 #include <fuse/jobs/worker_count.hpp>
+#include <fuse/platform/profile.hpp>
 #include <fuse/platform/thread.hpp>
 
 #include <algorithm>
@@ -65,12 +66,7 @@ u32 computeWorkerCountForCurrentPlatform() {
     params.usableCores = platform::getCoreCount();
     params.performanceCores = platform::getPerformanceCoreCount();
     params.powerState = platform::getPowerState();
-
-#if defined(FUSE_PLATFORM_MOBILE) && FUSE_PLATFORM_MOBILE
-    params.mobileProfile = true;
-#else
-    params.mobileProfile = false;
-#endif
+    params.mobileProfile = platform::isMobileProfile();
 
     return computeWorkerCount(params);
 }

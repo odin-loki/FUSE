@@ -25,6 +25,10 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/math/vec.hpp
     include/fuse/math/sdf.hpp
     include/fuse/platform/power.hpp
+    include/fuse/platform/lifecycle.hpp
+    include/fuse/platform/surface_loss.hpp
+    include/fuse/platform/crash_report.hpp
+    include/fuse/platform/profile.hpp
     include/fuse/platform/thread.hpp
     include/fuse/platform/fiber.hpp
     include/fuse/platform/gl_context.hpp
@@ -43,6 +47,7 @@ set(FUSE_CORE_SOURCES
     src/jobs/job_counter.cpp
     src/jobs/cuda_jobs.cpp
     src/platform/platform_stub.cpp
+    src/platform/platform_hardening.cpp
 )
 
 if(WIN32)
