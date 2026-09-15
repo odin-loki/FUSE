@@ -40,6 +40,7 @@ option(FUSE_BUILD_PROJECT "Build fuse_project library + project.json loader (U7/
 option(FUSE_BUILD_PARITY_DEMOS "Build U8 parity demo binaries under Source/FUSE/Apps" ON)
 option(FUSE_BUILD_TOOLS "Build Tools/FUSE CLI utilities (fuse_import dry-run)" ON)
 option(FUSE_BUILD_AUDIO "Build fuse_audio spatial audio engine (B7.2)" ON)
+option(FUSE_BUILD_SCRIPT "Build fuse_script Lua-ready host stubs (B7.3)" ON)
 option(FUSE_BUILD_MODULES "Build fuse_* feature modules (U5)" ON)
 option(FUSE_BUILD_EDITOR_API "Build fuse_editor_api command queue + editor host (U6/WP-08)" ON)
 option(FUSE_BUILD_EDITOR "Build fuse_editor Qt 6 desktop shell (requires Qt6; desktop-only)" OFF)
