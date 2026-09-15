@@ -72,7 +72,7 @@ SceneBuildSystem::build → SceneData (draw items, SDF, lights)
 SceneManager::update (stub tick — systems wired in integration test)
 ```
 
-`Registry::each_parallel` parallelizes row iteration per matching archetype via `JobScheduler::parallel_for` (default batch size 256; `batchSize == 0` clamps to 1). `TransformSystemOptions::parallelDirtyRoots` selects the parallel dirty-root pass (default on). `TransformSystem::recompute_world_matrix` is the shared CPU stub for local/world matrix recompute; dirty-root serial/parallel stubs delegate to it before the hierarchy walk. `Registry::each_query` / `each_query_parallel` accept compile-time `With<...>` required types and an optional trailing `Without<...>` exclusion tag; `archetype_matches` evaluates filters before row iteration. Managed-memory columns at production scale remain **deferred** to B4+ physics/GPU paths. Current columns use `std::vector<std::byte>` on the CPU.
+`Registry::each_parallel` parallelizes row iteration per matching archetype via `JobScheduler::parallel_for` (default batch size 256; `batchSize == 0` clamps to 1). `TransformSystemOptions::parallelDirtyRoots` selects the parallel dirty-root pass (default on). `TransformSystem::recompute_world_matrix` is the shared CPU stub for local/world matrix recompute; dirty-root serial/parallel stubs delegate to it before the hierarchy walk. `Registry::each` / `each_parallel` and `each_query` / `each_query_parallel` share the same With/Without filter path — pass a trailing `Without<...>` tag to exclude component types. `archetype_matches(archetype, filter)` evaluates runtime `QueryFilter` values; overloads taking `With<...>` / `Without<...>` tags provide compile-time filter construction. Managed-memory columns at production scale remain **deferred** to B4+ physics/GPU paths. Current columns use `std::vector<std::byte>` on the CPU.
 
 ---
 
@@ -122,7 +122,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_ecs|fuse_scene'
 | Target | Validates |
 |--------|-----------|
 | `fuse_ecs_registry` | Create/destroy, stale handles, add/get/remove, archetype migration, `each` |
-| `fuse_ecs_query_filter` | `archetype_matches` With/Without filters; `each_query` serial/parallel coverage (atomic visit counts) |
+| `fuse_ecs_query_filter` | `archetype_matches` With/Without filters (runtime + compile-time tags); `each`/`each_query`/`each_parallel`/`each_query_parallel` include/exclude, empty match, and serial/parallel parity (atomic visit counts) |
 | `fuse_ecs_each_parallel` | `each_parallel` visit/mutation parity vs `each`; batchSize edge cases (0, oversized, empty); With/Without query smoke; `TransformSystem` serial/parallel dirty-root paths + matrix parity |
 | `fuse_ecs_components` | Component names, defaults, registry storage for lights/tags |
 | `fuse_ecs_system_scheduler` | System dependency DAG execution order |
