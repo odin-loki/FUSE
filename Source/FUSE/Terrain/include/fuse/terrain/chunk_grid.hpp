@@ -2,6 +2,7 @@
 
 #include <fuse/terrain/lod.hpp>
 #include <fuse/terrain/lod_residency_queue.hpp>
+#include <fuse/terrain/lod_residency_set.hpp>
 #include <fuse/terrain/terrain_desc.hpp>
 #include <fuse/types.hpp>
 
@@ -35,6 +36,7 @@ public:
     [[nodiscard]] u32 queued_unload_count() const;
     [[nodiscard]] u32 in_flight_request_count() const;
     [[nodiscard]] u32 pending_completion_count() const;
+    [[nodiscard]] const LodResidencySet& residency_set() const { return m_residency_set; }
 
     /// Apply JobScheduler completions queued since the last drain (also called from update_lod).
     u32 drain_completed_requests();
@@ -51,11 +53,11 @@ private:
     void rebuild_chunks();
     void drain_completed_requests_();
     void collect_stream_candidates_(vec3 camera_pos);
-    void process_queues_();
+    void process_queues_(vec3 camera_pos);
     void queue_load_(u32 chunk_index, f32 priority);
     void queue_unload_(u32 chunk_index);
-    void execute_load_(TerrainChunk& chunk);
-    void execute_unload_(TerrainChunk& chunk);
+    void execute_load_(u32 chunk_index, TerrainChunk& chunk, f32 focus_distance);
+    void execute_unload_(u32 chunk_index, TerrainChunk& chunk);
     void apply_completed_request_(const CompletedLodResidencyRequest& completed);
     void update_chunk_lod_(TerrainChunk& chunk, vec3 camera_pos);
     [[nodiscard]] f32 chunk_stream_distance_(ivec2 coord, vec3 camera_pos) const;
@@ -68,6 +70,7 @@ private:
     std::vector<LoadRequest> m_load_queue;
     std::vector<u32> m_unload_queue;
     LodResidencyQueue m_async_queue{};
+    LodResidencySet m_residency_set{};
     std::vector<CompletedLodResidencyRequest> m_completed_batch_;
     u32 m_chunks_per_axis = 0;
     bool m_initialized = false;

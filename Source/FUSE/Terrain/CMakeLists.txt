@@ -5,7 +5,9 @@ set(FUSE_TERRAIN_PUBLIC_HEADERS
     include/fuse/terrain/terrain_desc.hpp
     include/fuse/terrain/heightfield.hpp
     include/fuse/terrain/lod.hpp
+    include/fuse/terrain/lod_residency_budget.hpp
     include/fuse/terrain/lod_residency_queue.hpp
+    include/fuse/terrain/lod_residency_set.hpp
     include/fuse/terrain/chunk_grid.hpp
     include/fuse/terrain/queries.hpp
     include/fuse/terrain/terrain.hpp

@@ -1,6 +1,7 @@
 #include <fuse/terrain/chunk_grid.hpp>
 
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/terrain/lod_residency_budget.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -31,12 +32,14 @@ void ChunkGrid::destroy() {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
-    for (TerrainChunk& chunk : m_chunks) {
+    for (u32 index = 0; index < m_chunks.size(); ++index) {
+        TerrainChunk& chunk = m_chunks[index];
         if (is_resident_state(chunk.residency) || is_transitional_state(chunk.residency)) {
-            execute_unload_(chunk);
+            execute_unload_(index, chunk);
         }
     }
     m_chunks.clear();
+    m_residency_set.clear();
     m_lod_levels.clear();
     m_load_queue.clear();
     m_unload_queue.clear();
@@ -84,7 +87,7 @@ void ChunkGrid::update_lod(vec3 camera_pos, f32 /*dt*/) {
     }
 
     collect_stream_candidates_(camera_pos);
-    process_queues_();
+    process_queues_(camera_pos);
 }
 
 u32 ChunkGrid::visible_chunk_count() const {
@@ -159,8 +162,9 @@ void ChunkGrid::update_chunk_lod_(TerrainChunk& chunk, vec3 camera_pos) {
     const f32 distance = chunk_stream_distance_(chunk.chunk_coord, camera_pos);
 
     const LodTransition transition = compute_lod_transition(distance, m_desc.lod_levels);
-    const bool lod_changed = chunk.lod != transition.lod;
-    chunk.lod = transition.lod;
+    const u32 clamped_lod = clamp_lod_level(transition.lod, m_desc.lod_levels);
+    const bool lod_changed = chunk.lod != clamped_lod;
+    chunk.lod = clamped_lod;
     chunk.morph_factor = clamp_morph_factor(transition.morph_factor);
     chunk.world_bounds = chunk_world_bounds(chunk.chunk_coord, transition.lod);
     chunk.dirty = chunk.loaded && (lod_changed || chunk.morph_factor > 0.f);
@@ -173,6 +177,10 @@ void ChunkGrid::collect_stream_candidates_(vec3 camera_pos) {
     for (u32 index = 0; index < m_chunks.size(); ++index) {
         TerrainChunk& chunk = m_chunks[index];
         const f32 distance = chunk_stream_distance_(chunk.chunk_coord, camera_pos);
+
+        if (is_resident_state(chunk.residency)) {
+            m_residency_set.update_focus_distance(index, distance);
+        }
 
         if (distance < load_radius) {
             const f32 priority = load_radius - distance;
@@ -251,17 +259,17 @@ LodResidencyWorkFn ChunkGrid::make_worker_stub_() const {
     };
 }
 
-void ChunkGrid::process_queues_() {
+void ChunkGrid::process_queues_(vec3 camera_pos) {
     std::sort(m_load_queue.begin(), m_load_queue.end(),
               [](const LoadRequest& a, const LoadRequest& b) { return a.priority > b.priority; });
 
     const bool async_jobs = use_async_jobs_();
-    const u32 max_resident =
-        m_desc.max_resident_chunks > 0 ? m_desc.max_resident_chunks : static_cast<u32>(m_chunks.size());
-    const u32 max_per_tick = async_jobs ? m_desc.max_async_in_flight : static_cast<u32>(m_load_queue.size());
+    const u32 max_per_tick =
+        async_jobs ? m_desc.max_async_in_flight : effective_tick_budget(static_cast<u32>(m_load_queue.size()), 0u);
     u32 processed = 0;
 
-    while (!m_load_queue.empty() && resident_chunk_count() < max_resident && processed < max_per_tick) {
+    while (!m_load_queue.empty() && can_accept_resident_chunk(m_desc.max_resident_chunks, resident_chunk_count()) &&
+           processed < max_per_tick) {
         if (async_jobs && m_async_queue.in_flight_count() >= m_desc.max_async_in_flight) {
             break;
         }
@@ -274,6 +282,7 @@ void ChunkGrid::process_queues_() {
             continue;
         }
 
+        const f32 focus_distance = chunk_stream_distance_(chunk.chunk_coord, camera_pos);
         chunk.residency = ChunkResidencyState::Loading;
 
         if (async_jobs) {
@@ -283,10 +292,10 @@ void ChunkGrid::process_queues_() {
             async_request.priority = request.priority;
             async_request.morph_snapshot = capture_morph_snapshot(chunk.lod, chunk.morph_factor);
             if (!m_async_queue.submit(async_request, make_worker_stub_())) {
-                execute_load_(chunk);
+                execute_load_(request.chunk_index, chunk, focus_distance);
             }
         } else {
-            execute_load_(chunk);
+            execute_load_(request.chunk_index, chunk, focus_distance);
         }
 
         ++processed;
@@ -314,10 +323,10 @@ void ChunkGrid::process_queues_() {
             async_request.kind = LodResidencyRequestKind::Unload;
             async_request.morph_snapshot = capture_morph_snapshot(chunk.lod, chunk.morph_factor);
             if (!m_async_queue.submit(async_request, make_worker_stub_())) {
-                execute_unload_(chunk);
+                execute_unload_(chunk_index, chunk);
             }
         } else {
-            execute_unload_(chunk);
+            execute_unload_(chunk_index, chunk);
         }
     }
 }
@@ -346,7 +355,8 @@ void ChunkGrid::apply_completed_request_(const CompletedLodResidencyRequest& com
 
     if (completed.kind == LodResidencyRequestKind::Load) {
         if (chunk.residency == ChunkResidencyState::Loading) {
-            execute_load_(chunk);
+            const f32 focus_distance = chunk_stream_distance_(chunk.chunk_coord, {0.f, 0.f, 0.f});
+            execute_load_(completed.chunk_index, chunk, focus_distance);
             sync_morph_after_residency(chunk, completed.morph_snapshot);
         }
         return;
@@ -354,22 +364,24 @@ void ChunkGrid::apply_completed_request_(const CompletedLodResidencyRequest& com
 
     if (completed.kind == LodResidencyRequestKind::Unload) {
         if (chunk.residency == ChunkResidencyState::Unloading) {
-            execute_unload_(chunk);
+            execute_unload_(completed.chunk_index, chunk);
             chunk.morph_factor = 0.f;
         }
     }
 }
 
-void ChunkGrid::execute_load_(TerrainChunk& chunk) {
+void ChunkGrid::execute_load_(u32 chunk_index, TerrainChunk& chunk, f32 focus_distance) {
     chunk.residency = ChunkResidencyState::Resident;
     chunk.loaded = true;
+    m_residency_set.add(chunk_index, focus_distance);
 }
 
-void ChunkGrid::execute_unload_(TerrainChunk& chunk) {
+void ChunkGrid::execute_unload_(u32 chunk_index, TerrainChunk& chunk) {
     chunk.residency = ChunkResidencyState::Unloaded;
     chunk.loaded = false;
     chunk.load_priority = 0.f;
     chunk.dirty = false;
+    m_residency_set.remove(chunk_index);
 }
 
 } // namespace fuse::terrain
