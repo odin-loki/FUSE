@@ -10,7 +10,7 @@
 
 | Component | Location | Notes |
 |-----------|----------|-------|
-| `InterestManager` | `interest_management.hpp/.cpp` | Relevance/unload radii, hysteresis, observer AOI evaluation, scope snapshots |
+| `InterestManager` | `interest_management.hpp/.cpp` | Relevance/unload radii, hysteresis, observer AOI evaluation, scope snapshots, position updates |
 | `InterestPriorityQueue` | `interest_management.hpp/.cpp` | Max-priority replication ordering stub |
 | `InterestScopeSet` / `InterestSetDiff` | `interest_management.hpp/.cpp` | Enter/leave set diff between AOI evaluations |
 | `filter_candidates_in_radius` | `interest_management.hpp/.cpp` | Radius filter stub (no hysteresis) for candidate lists |
@@ -54,7 +54,7 @@ while (queue.pop(next)) {
 }
 ```
 
-`classify_interest`, `compute_relevance_priority`, and `filter_candidates_in_radius` are exposed for unit tests and future ghost managers. `InterestScopeSet` + `diff_interest_scope_sets` report entities that entered or left scope between evaluations; `InterestManager::compute_scope_diff` compares the last two `evaluate()` snapshots.
+`classify_interest`, `compute_relevance_priority`, and `filter_candidates_in_radius` are exposed for unit tests and future ghost managers. `filter_candidates_in_radius` returns in-scope entries sorted by replication priority. `InterestScopeSet` + `diff_interest_scope_sets` report entities that entered or left scope between evaluations (sorted by entity id); `InterestManager::compute_scope_diff` compares the last two `evaluate()` snapshots. `update_entity_position`, `is_entity_in_scope`, and `scope_changed_since_last_evaluate` support ghost managers without re-registering entities each tick.
 
 ---
 
@@ -163,7 +163,7 @@ ctest --test-dir build --output-on-failure -R fuse_net_b74
 
 | Check | Validates |
 |-------|-----------|
-| `test_net_interest_management` | Relevance/unload radii, radius filter, hysteresis, enter/leave diff, priority queue ordering (empty + tie-break) |
+| `test_net_interest_management` | Relevance/unload radii, radius filter (priority order), empty scope, enter/leave diff, position updates, priority queue ordering (empty + tie-break) |
 | `test_net_checksum` | FNV-1a determinism, combine, snapshot verify |
 | `test_net_input_history` | Empty `pop_oldest`, `clear`, ring wrap eviction bounds, post-wrap reconcile, `inputs_equal` |
 | `test_net_reconcile` | Confirmed / mismatch / NoOp reconcile paths, `reconcile_authoritative` |

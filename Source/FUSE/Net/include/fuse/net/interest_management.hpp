@@ -53,6 +53,7 @@ struct InterestScopeSet {
 
     void clear();
     void build_from_entries(const std::vector<InterestEntry>& entries);
+    [[nodiscard]] bool contains(ecs::EntityID entity) const;
     [[nodiscard]] bool empty() const { return entities.empty(); }
     [[nodiscard]] u32 size() const { return static_cast<u32>(entities.size()); }
 };
@@ -61,6 +62,8 @@ struct InterestScopeSet {
 struct InterestSetDiff {
     std::vector<ecs::EntityID> entered;
     std::vector<ecs::EntityID> left;
+
+    [[nodiscard]] bool empty() const { return entered.empty() && left.empty(); }
 };
 
 void diff_interest_scope_sets(const InterestScopeSet& previous, const InterestScopeSet& current,
@@ -81,6 +84,8 @@ public:
     [[nodiscard]] ecs::vec3 observer_position() const { return m_observer; }
 
     void register_entity(InterestCandidate candidate);
+    /// Update a registered entity position. Returns false when the entity is not registered.
+    [[nodiscard]] bool update_entity_position(ecs::EntityID entity, ecs::vec3 position);
     void clear_entities();
 
     /// Recompute scope/priority for all registered entities.
@@ -88,12 +93,16 @@ public:
 
     [[nodiscard]] const std::vector<InterestEntry>& entries() const { return m_entries; }
     [[nodiscard]] u32 in_scope_count() const;
+    /// Query scope for one entity after the latest `evaluate()` call.
+    [[nodiscard]] bool is_entity_in_scope(ecs::EntityID entity) const;
 
     /// Snapshot of in-scope entities from the last `evaluate()` call.
     [[nodiscard]] const InterestScopeSet& scope_set() const { return m_scope_set; }
 
     /// Diff current scope against the previous evaluation's scope set.
     void compute_scope_diff(InterestSetDiff& out) const;
+    /// True when the last two `evaluate()` calls produced different in-scope sets.
+    [[nodiscard]] bool scope_changed_since_last_evaluate() const;
 
 private:
     InterestPolicy m_policy{};

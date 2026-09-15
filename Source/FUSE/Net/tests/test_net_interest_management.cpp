@@ -236,6 +236,99 @@ void run_interest_management_tests() {
     expectTrue(order_queue.pop(tie_second), "priority tie-break second pop succeeds");
     expectTrue(tie_first.entity.index == 60u, "equal priority prefers closer entity");
     expectTrue(order_queue.empty(), "queue empty after tie-break drain");
+
+    // --- empty scope set ---
+    fuse::net::InterestManager empty_manager;
+    empty_manager.set_policy(policy);
+    empty_manager.set_observer_position(origin);
+    empty_manager.register_entity({make_entity(70), {500.f, 0.f, 0.f, 0.f}, 0.f});
+    empty_manager.register_entity({make_entity(71), {600.f, 0.f, 0.f, 0.f}, 0.f});
+    empty_manager.evaluate();
+    expectTrue(empty_manager.scope_set().empty(), "all far entities produce empty scope set");
+    expectTrue(empty_manager.in_scope_count() == 0u, "empty scope has zero in-scope count");
+    expectTrue(!empty_manager.is_entity_in_scope(make_entity(70)),
+               "is_entity_in_scope returns false for out-of-scope entity");
+
+    fuse::net::InterestSetDiff empty_first_diff{};
+    empty_manager.compute_scope_diff(empty_first_diff);
+    expectTrue(empty_first_diff.empty(), "first empty-scope evaluation diff is empty");
+
+    empty_manager.set_observer_position({490.f, 0.f, 0.f, 0.f});
+    empty_manager.evaluate();
+    fuse::net::InterestSetDiff empty_to_scope_diff{};
+    empty_manager.compute_scope_diff(empty_to_scope_diff);
+    expectTrue(empty_to_scope_diff.entered.size() == 1u,
+               "moving observer into range enters one entity");
+    expectTrue(empty_to_scope_diff.entered[0].index == 70u,
+               "entered entity is nearest to new observer position");
+    expectTrue(empty_to_scope_diff.left.empty(), "empty-to-scoped diff has no leaves");
+    expectTrue(empty_manager.scope_changed_since_last_evaluate(),
+               "scope_changed_since_last_evaluate detects enter");
+
+    // --- scope set contains + sorted diff output ---
+    fuse::net::InterestScopeSet scope_a;
+    fuse::net::InterestScopeSet scope_b;
+    scope_a.entities = {make_entity(3), make_entity(1), make_entity(2)};
+    scope_b.entities = {make_entity(4), make_entity(2)};
+
+    fuse::net::InterestSetDiff sorted_diff{};
+    fuse::net::diff_interest_scope_sets(scope_a, scope_b, sorted_diff);
+    expectTrue(sorted_diff.entered.size() == 1u && sorted_diff.entered[0].index == 4u,
+               "diff entered set is sorted and contains new entity");
+    expectTrue(sorted_diff.left.size() == 2u && sorted_diff.left[0].index == 1u &&
+                   sorted_diff.left[1].index == 3u,
+               "diff left set is sorted by entity index");
+
+    expectTrue(scope_b.contains(make_entity(2)), "scope set contains reports in-scope entity");
+    expectTrue(!scope_b.contains(make_entity(99)), "scope set contains rejects unknown entity");
+
+    // --- update_entity_position enter/leave ---
+    fuse::net::InterestManager update_manager;
+    update_manager.set_policy(policy);
+    update_manager.set_observer_position(origin);
+    const fuse::ecs::EntityID moving_entity = make_entity(80);
+    update_manager.register_entity({moving_entity, {200.f, 0.f, 0.f, 0.f}, 0.f});
+    update_manager.evaluate();
+    expectTrue(update_manager.scope_set().empty(), "entity starts out of scope");
+
+    expectTrue(update_manager.update_entity_position(moving_entity, {10.f, 0.f, 0.f, 0.f}),
+               "update_entity_position succeeds for registered entity");
+    expectTrue(!update_manager.update_entity_position(make_entity(999), {0.f, 0.f, 0.f, 0.f}),
+               "update_entity_position rejects unknown entity");
+    update_manager.evaluate();
+    fuse::net::InterestSetDiff position_diff{};
+    update_manager.compute_scope_diff(position_diff);
+    expectTrue(position_diff.entered.size() == 1u && position_diff.entered[0] == moving_entity,
+               "moving entity into radius enters scope");
+    expectTrue(update_manager.is_entity_in_scope(moving_entity),
+               "is_entity_in_scope true after position update");
+
+    expectTrue(update_manager.update_entity_position(moving_entity, {500.f, 0.f, 0.f, 0.f}),
+               "update_entity_position can move entity back out");
+    update_manager.evaluate();
+    fuse::net::InterestSetDiff leave_diff{};
+    update_manager.compute_scope_diff(leave_diff);
+    expectTrue(leave_diff.left.size() == 1u && leave_diff.left[0] == moving_entity,
+               "moving entity out of radius leaves scope");
+    expectTrue(leave_diff.entered.empty(), "leave-only diff has no enters");
+
+    // --- radius filter priority ordering + always-relevant scope ---
+    std::vector<fuse::net::InterestCandidate> priority_candidates;
+    priority_candidates.push_back({make_entity(90), {40.f, 0.f, 0.f, 0.f}, 0.f});
+    priority_candidates.push_back({make_entity(91), {2.f, 0.f, 0.f, 0.f}, 0.5f});
+    priority_candidates.push_back({make_entity(92), {4.f, 0.f, 0.f, 0.f}, 0.f});
+
+    std::vector<fuse::net::InterestEntry> priority_filtered;
+    const fuse::u32 priority_filtered_count =
+        fuse::net::filter_candidates_in_radius(origin, policy, priority_candidates, priority_filtered);
+    expectTrue(priority_filtered_count == 3u, "radius filter keeps all in-range candidates");
+    expectTrue(priority_filtered.size() == 3u, "radius filter output size matches count");
+    expectTrue(priority_filtered[0].entity.index == 91u,
+               "radius filter sorts highest priority first");
+    expectTrue(priority_filtered[0].scope == fuse::net::InterestScope::AlwaysRelevant,
+               "radius filter marks inner-radius entities always relevant");
+    expectTrue(priority_filtered[0].priority >= priority_filtered[1].priority,
+               "radius filter output is priority descending");
 }
 
 } // namespace fuse::net::tests
