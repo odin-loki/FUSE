@@ -39,6 +39,10 @@ using StreamingWorkFn = std::function<bool(GridCoord coord, StreamingRequestKind
 /// Lower pending priority when focus moves away (scale clamped to [0, 1]).
 [[nodiscard]] f32 demote_streaming_priority(f32 current, f32 scale);
 
+/// Priority ordering: higher priority first, unload before load at equal priority, FIFO tie-break.
+[[nodiscard]] int compare_streaming_request_order(f32 priority_a, StreamingRequestKind kind_a, u64 sequence_a,
+                                                  f32 priority_b, StreamingRequestKind kind_b, u64 sequence_b);
+
 /// Async request queue stub backed by JobScheduler (mirrors fuse::io VFS async loads).
 class StreamingRequestQueue {
 public:
@@ -62,6 +66,8 @@ public:
     [[nodiscard]] u32 max_pending_submits() const { return m_max_pending_submits; }
     [[nodiscard]] u32 pending_enqueue_count() const;
     [[nodiscard]] u32 pending_submit_count() const;
+    /// Pending priority for coord/kind, or -1 when not enqueued.
+    [[nodiscard]] f32 pending_priority_for(GridCoord coord, StreamingRequestKind kind) const;
 
     [[nodiscard]] u32 in_flight_count() const;
     [[nodiscard]] u32 completed_count() const;

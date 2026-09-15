@@ -93,6 +93,7 @@ private:
     void collect_stream_candidates_(fuse::ecs::vec3 camera_pos);
     [[nodiscard]] bool use_async_jobs_() const;
     [[nodiscard]] StreamingWorkFn make_worker_stub_() const;
+    void flush_async_queue_(u32 max_submits);
 
     WorldPartitionDesc m_desc{};
     CellLoadCallbacks m_callbacks{};

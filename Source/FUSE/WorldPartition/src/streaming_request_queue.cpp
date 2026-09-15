@@ -14,6 +14,20 @@ f32 demote_streaming_priority(f32 current, f32 scale) {
     return current * std::clamp(scale, 0.f, 1.f);
 }
 
+int compare_streaming_request_order(f32 priority_a, StreamingRequestKind kind_a, u64 sequence_a,
+                                    f32 priority_b, StreamingRequestKind kind_b, u64 sequence_b) {
+    if (priority_a != priority_b) {
+        return priority_a > priority_b ? 1 : -1;
+    }
+    if (kind_a != kind_b) {
+        return kind_a == StreamingRequestKind::Unload ? 1 : -1;
+    }
+    if (sequence_a != sequence_b) {
+        return sequence_a < sequence_b ? 1 : -1;
+    }
+    return 0;
+}
+
 bool StreamingRequestQueue::enqueue(StreamingRequest request) {
     std::lock_guard<std::mutex> lock(m_mutex);
     const auto existing = std::find_if(m_pending.begin(), m_pending.end(),
@@ -63,10 +77,9 @@ u32 StreamingRequestQueue::flush(u32 budget, StreamingWorkFn work) {
 
         std::sort(m_pending.begin(), m_pending.end(),
                   [](const PendingStreamingRequest& a, const PendingStreamingRequest& b) {
-                      if (a.request.priority != b.request.priority) {
-                          return a.request.priority > b.request.priority;
-                      }
-                      return a.enqueue_sequence < b.enqueue_sequence;
+                      return compare_streaming_request_order(a.request.priority, a.request.kind,
+                                                             a.enqueue_sequence, b.request.priority,
+                                                             b.request.kind, b.enqueue_sequence) > 0;
                   });
 
         const u32 count = std::min(budget, static_cast<u32>(m_pending.size()));
@@ -76,9 +89,18 @@ u32 StreamingRequestQueue::flush(u32 budget, StreamingWorkFn work) {
 
     u32 submitted = 0u;
     for (PendingStreamingRequest& pending : batch) {
-        if (submit(std::move(pending.request), work)) {
+        StreamingRequest request = pending.request;
+        const u64 enqueue_sequence = pending.enqueue_sequence;
+        if (submit(std::move(request), work)) {
             ++submitted;
+            continue;
         }
+
+        std::lock_guard<std::mutex> lock(m_mutex);
+        PendingStreamingRequest restored{};
+        restored.request = pending.request;
+        restored.enqueue_sequence = enqueue_sequence;
+        m_pending.push_back(std::move(restored));
     }
     return submitted;
 }
@@ -130,10 +152,8 @@ u32 StreamingRequestQueue::drain_completed(std::vector<CompletedStreamingRequest
 
     std::sort(batch.begin(), batch.end(),
               [](const CompletedStreamingRequest& a, const CompletedStreamingRequest& b) {
-                  if (a.priority != b.priority) {
-                      return a.priority > b.priority;
-                  }
-                  return a.submit_sequence < b.submit_sequence;
+                  return compare_streaming_request_order(a.priority, a.kind, a.submit_sequence,
+                                                         b.priority, b.kind, b.submit_sequence) > 0;
               });
 
     out.insert(out.end(), batch.begin(), batch.end());
@@ -148,6 +168,16 @@ u32 StreamingRequestQueue::pending_enqueue_count() const {
 u32 StreamingRequestQueue::pending_submit_count() const {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_inFlight + static_cast<u32>(m_completed.size());
+}
+
+f32 StreamingRequestQueue::pending_priority_for(GridCoord coord, StreamingRequestKind kind) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const auto existing = std::find_if(m_pending.begin(), m_pending.end(),
+                                       [&](const PendingStreamingRequest& pending) {
+                                           return pending.request.coord == coord &&
+                                                  pending.request.kind == kind;
+                                       });
+    return existing != m_pending.end() ? existing->request.priority : -1.f;
 }
 
 u32 StreamingRequestQueue::in_flight_count() const {
