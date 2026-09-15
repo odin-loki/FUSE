@@ -50,6 +50,9 @@ public:
     /// Completed loads waiting for drain (observable from any thread).
     u32 completedLoadCount() const;
 
+    /// Stub: completed load ids in FIFO completion order (no drain).
+    std::vector<LoadId> peekCompletedLoadOrder() const;
+
     /// Game thread: inspect the most recent drain batch (tests / logging).
     const std::vector<CompletedLoad>& lastDrainedLoads() const { return m_lastDrained; }
 

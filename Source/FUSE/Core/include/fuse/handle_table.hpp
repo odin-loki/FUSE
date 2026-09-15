@@ -10,7 +10,8 @@
 namespace fuse {
 
 /// Generation-checked live table with a worker → game publish queue (WP-04).
-/// I/O jobs call enqueuePublish(); the game thread calls commit() to install handles.
+/// I/O jobs call enqueuePublish(); only the game thread may call commit() to install
+/// live handles. Pending publishes are invisible to get() until commit runs.
 template <typename T>
 class HandleTable {
 public:
