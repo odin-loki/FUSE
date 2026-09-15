@@ -1,6 +1,6 @@
 # Track B — Script Host (B7.3 deepen follow-up)
 
-**Status:** B7.3 deepen follow-up — script console REPL registry/history deepen + per-script OnUpdate/bind stubs landed  
+**Status:** B7.3 deepen follow-up — script console REPL lookup/complete stubs + registry/history deepen + per-script OnUpdate/bind stubs landed  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.3  
 **Threading:** Game-thread facade; hot-reload and ECS `Script` component deferred
 
@@ -73,10 +73,12 @@ Built-in command stubs:
 | `backend` | Reports attached `ScriptHost` VM backend + loaded chunk count |
 | `load <path>` | Dispatches `ScriptHost::load_file` |
 | `run <lua>` | Dispatches `ScriptHost::load_string` with chunk name `repl` |
+| `describe <name>` | Reports `built-in`, `custom`, or `unknown` for a command name |
+| `complete <prefix>` | Returns space-separated command names matching a prefix (autocomplete stub) |
 
-Custom commands register via `register_command` / `unregister_command` and participate in `help` / `list` output (sorted alphabetically). Custom handlers may **shadow** built-in names — dispatch checks the custom map first, then built-ins. `has_command` / `is_built_in_command` expose lookup for tooling. Unknown commands return `UnknownCommand` with an `unknown command: <name>` error string.
+Custom commands register via `register_command` / `unregister_command` and participate in `help` / `list` output (sorted alphabetically). Custom handlers may **shadow** built-in names — dispatch checks the custom map first, then built-ins. `has_command` / `is_built_in_command` / `is_custom_command` / `command_kind` expose lookup for tooling. Unknown commands return `UnknownCommand` with an `unknown command: <name>` error string.
 
-`ScriptConsoleCommandRegistry` owns built-in and custom handler maps; `ScriptConsole::dispatch_` delegates by name (custom overrides are checked before built-ins). Registry unit tests cover register/dispatch failure paths and unknown-command errors directly (not only via `ScriptConsole::execute`).
+`ScriptConsoleCommandRegistry` owns built-in and custom handler maps; `ScriptConsole::dispatch_` delegates by name (custom overrides are checked before built-ins). `lookup_kind` and `commands_with_prefix` support `describe` / `complete` stubs and future editor wiring. Registry unit tests cover register/dispatch failure paths, duplicate built-in rejection, unregister failures, and unknown-command errors directly (not only via `ScriptConsole::execute`).
 
 **History buffer** — `ScriptConsoleHistoryBuffer` ring buffer (default 64 entries, configurable via `setHistoryCapacity`):
 
@@ -139,7 +141,7 @@ ctest --test-dir build --output-on-failure -R fuse_script
 
 | Target | Validates |
 |--------|-----------|
-| `fuse_script_b73` | Host init (null or Lua backend), load stubs / parse errors, callback register/dispatch/unregister, multi-frame `OnUpdate` dt propagation, zero-dt and event-isolation edge cases, `dispatch_update`, per-script tick order / disable / error isolation, `PropertyStore` + `MethodTable` bind stubs, primitive + ECS bind round-trips, `values_equal`, Lua hello-world and stack round-trip when linked, `ScriptConsole` built-in/custom command dispatch (including custom shadow of built-ins), `ScriptConsoleCommandRegistry` register/dispatch/unknown-command paths, `ScriptConsoleHistoryBuffer` ring wrap + clear, history buffer eviction/navigation, host `load`/`run`/`backend` wiring |
+| `fuse_script_b73` | Host init (null or Lua backend), load stubs / parse errors, callback register/dispatch/unregister, multi-frame `OnUpdate` dt propagation, zero-dt and event-isolation edge cases, `dispatch_update`, per-script tick order / disable / error isolation, `PropertyStore` + `MethodTable` bind stubs, primitive + ECS bind round-trips, `values_equal`, Lua hello-world and stack round-trip when linked, `ScriptConsole` built-in/custom command dispatch (including custom shadow of built-ins), `describe` / `complete` lookup stubs, `ScriptConsoleCommandRegistry` register/dispatch/lookup_kind/unknown-command paths, `ScriptConsoleHistoryBuffer` ring wrap + clear + whitespace/null rejection, history buffer eviction/navigation, host `load`/`run`/`backend` wiring |
 
 Run:
 

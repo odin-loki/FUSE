@@ -137,6 +137,24 @@ void testCommandRegistryDirect() {
 
     expectTrue(!registry.register_built_in(nullptr, {}), "built-in rejects null name");
     expectTrue(!registry.register_custom("noop", {}), "custom rejects null handler");
+    expectTrue(!registry.register_custom(nullptr, {}), "custom rejects null name");
+
+    expectTrue(registry.register_built_in("builtin_probe",
+                                          [](fuse::script::ScriptConsole& /*repl*/,
+                                             const char* /*args*/) {
+                                              return fuse::script::ScriptConsoleCommandResult{
+                                                  fuse::script::ScriptConsoleCommandStatus::Ok,
+                                                  "builtin"};
+                                          }),
+               "register built-in command on registry");
+    expectTrue(!registry.register_built_in("builtin_probe",
+                                           [](fuse::script::ScriptConsole& /*repl*/,
+                                              const char* /*args*/) {
+                                               return fuse::script::ScriptConsoleCommandResult{
+                                                   fuse::script::ScriptConsoleCommandStatus::Ok,
+                                                   "duplicate"};
+                                           }),
+               "built-in rejects duplicate name");
 
     expectTrue(registry.register_custom("probe", [&](fuse::script::ScriptConsole& /*repl*/,
                                                     const char* /*args*/) {
@@ -150,6 +168,15 @@ void testCommandRegistryDirect() {
     expectTrue(registry.is_custom("probe"), "probe is custom");
     expectTrue(!registry.is_built_in("probe"), "probe is not built-in");
     expectTrue(!registry.has_command("missing"), "registry lacks unknown command");
+    expectTrue(registry.lookup_kind("probe") == fuse::script::ScriptConsoleCommandKind::Custom,
+               "lookup_kind reports custom");
+    expectTrue(registry.lookup_kind("builtin_probe") ==
+                   fuse::script::ScriptConsoleCommandKind::BuiltIn,
+               "lookup_kind reports built-in");
+    expectTrue(registry.lookup_kind("missing") == fuse::script::ScriptConsoleCommandKind::Unknown,
+               "lookup_kind reports unknown");
+    expectTrue(registry.lookup_kind(nullptr) == fuse::script::ScriptConsoleCommandKind::Unknown,
+               "lookup_kind rejects null name");
 
     const auto dispatched = registry.dispatch("probe", console, "");
     expectTrue(dispatched.ok(), "registry dispatch succeeds");
@@ -165,11 +192,20 @@ void testCommandRegistryDirect() {
     const auto empty = registry.dispatch("", console, "");
     expectTrue(empty.status == fuse::script::ScriptConsoleCommandStatus::InvalidArgument,
                "registry rejects empty command name");
+
+    expectTrue(!registry.unregister_custom("missing"), "unregister unknown custom fails");
+    expectTrue(registry.unregister_custom("probe"), "unregister custom succeeds");
+    expectTrue(!registry.has_command("probe"), "unregistered custom is gone");
 }
 
 void testHistoryBufferRingWrapDirect() {
     fuse::script::ScriptConsoleHistoryBuffer history;
     history.setCapacity(3);
+
+    history.push(nullptr);
+    history.push("   ");
+    history.push("\t");
+    expectTrue(history.count() == 0u, "history ignores null and whitespace-only lines");
 
     history.push("alpha");
     history.push("beta");
@@ -234,6 +270,65 @@ void testHistoryClearStub() {
     expectTrue(console.historyCount() == 0u, "history clear empties buffer");
 }
 
+void testDescribeAndCompleteStubs() {
+    fuse::script::ScriptConsole console;
+
+    const auto builtin = console.execute("describe echo");
+    expectTrue(builtin.ok(), "describe built-in succeeds");
+    expectTrue(builtin.output == "echo: built-in", "describe reports built-in kind");
+
+    expectTrue(console.register_command("probe", [](fuse::script::ScriptConsole& /*repl*/,
+                                                    const char* /*args*/) {
+                   return fuse::script::ScriptConsoleCommandResult{
+                       fuse::script::ScriptConsoleCommandStatus::Ok, "ok"};
+               }),
+               "register custom for describe test");
+
+    expectTrue(console.is_custom_command("probe"), "is_custom_command reports custom");
+    expectTrue(console.command_kind("probe") == fuse::script::ScriptConsoleCommandKind::Custom,
+               "command_kind reports custom");
+
+    const auto custom = console.execute("describe probe");
+    expectTrue(custom.ok(), "describe custom succeeds");
+    expectTrue(custom.output == "probe: custom", "describe reports custom kind");
+
+    const auto unknown = console.execute("describe missing");
+    expectTrue(unknown.ok(), "describe unknown succeeds");
+    expectTrue(unknown.output == "missing: unknown", "describe reports unknown kind");
+
+    const auto invalid = console.execute("describe");
+    expectTrue(invalid.status == fuse::script::ScriptConsoleCommandStatus::InvalidArgument,
+               "describe without args fails");
+
+    const auto complete = console.execute("complete he");
+    expectTrue(complete.ok(), "complete prefix succeeds");
+    expectTrue(complete.output.find("help") != std::string::npos, "complete matches help");
+
+    const auto history_match = console.execute("complete hi");
+    expectTrue(history_match.ok(), "complete history prefix succeeds");
+    expectTrue(history_match.output.find("history") != std::string::npos,
+               "complete matches history command");
+
+    const auto no_match = console.execute("complete zzz");
+    expectTrue(no_match.ok(), "complete with no matches succeeds");
+    expectTrue(no_match.output.empty(), "complete with no matches returns empty");
+
+    console.unregister_command("probe");
+}
+
+void testEmptyLineSkipsHistory() {
+    fuse::script::ScriptConsole console;
+    console.setHistoryCapacity(4);
+
+    const auto empty = console.execute("   ");
+    expectTrue(empty.status == fuse::script::ScriptConsoleCommandStatus::InvalidArgument,
+               "whitespace-only line is invalid");
+    expectTrue(console.historyCount() == 0u, "whitespace-only line does not push history");
+
+    console.execute("echo one");
+    expectTrue(console.historyCount() == 1u, "valid command pushes history");
+}
+
 void testCustomCommandDispatch() {
     fuse::script::ScriptConsole console;
     int invoke_count = 0;
@@ -270,6 +365,8 @@ void run_script_console_tests() {
     testHistoryBufferRingWrapDirect();
     testHistoryBufferAndNavigation();
     testHistoryClearStub();
+    testEmptyLineSkipsHistory();
+    testDescribeAndCompleteStubs();
     testHostDispatchLoadAndRun();
     testCustomCommandShadowsBuiltIn();
     testCustomCommandDispatch();

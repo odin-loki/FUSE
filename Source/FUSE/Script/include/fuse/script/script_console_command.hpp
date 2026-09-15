@@ -15,6 +15,12 @@ enum class ScriptConsoleCommandStatus : u8 {
     BackendUnavailable,
 };
 
+enum class ScriptConsoleCommandKind : u8 {
+    Unknown,
+    BuiltIn,
+    Custom,
+};
+
 struct ScriptConsoleCommandResult {
     ScriptConsoleCommandStatus status = ScriptConsoleCommandStatus::UnknownCommand;
     std::string output;

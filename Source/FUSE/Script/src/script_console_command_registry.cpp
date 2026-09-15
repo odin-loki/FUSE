@@ -83,6 +83,34 @@ bool ScriptConsoleCommandRegistry::is_custom(const char* name) const {
     return m_customHandlers.find(std::string(name)) != m_customHandlers.end();
 }
 
+ScriptConsoleCommandKind ScriptConsoleCommandRegistry::lookup_kind(const char* name) const {
+    if (name == nullptr || name[0] == '\0') {
+        return ScriptConsoleCommandKind::Unknown;
+    }
+
+    const std::string key(name);
+    if (m_customHandlers.find(key) != m_customHandlers.end()) {
+        return ScriptConsoleCommandKind::Custom;
+    }
+    if (m_builtInHandlers.find(key) != m_builtInHandlers.end()) {
+        return ScriptConsoleCommandKind::BuiltIn;
+    }
+    return ScriptConsoleCommandKind::Unknown;
+}
+
+std::vector<std::string> ScriptConsoleCommandRegistry::commands_with_prefix(const char* prefix) const {
+    const std::string needle = prefix != nullptr ? prefix : "";
+    std::vector<std::string> matches;
+
+    for (const auto& name : command_names()) {
+        if (needle.empty() || name.compare(0, needle.size(), needle) == 0) {
+            matches.push_back(name);
+        }
+    }
+
+    return matches;
+}
+
 std::vector<std::string> ScriptConsoleCommandRegistry::command_names() const {
     std::vector<std::string> names;
     names.reserve(m_builtInHandlers.size() + m_customHandlers.size());

@@ -24,6 +24,8 @@ public:
     [[nodiscard]] bool has_command(const char* name) const;
     [[nodiscard]] bool is_built_in(const char* name) const;
     [[nodiscard]] bool is_custom(const char* name) const;
+    [[nodiscard]] ScriptConsoleCommandKind lookup_kind(const char* name) const;
+    [[nodiscard]] std::vector<std::string> commands_with_prefix(const char* prefix) const;
 
     [[nodiscard]] usize built_in_count() const { return m_builtInHandlers.size(); }
     [[nodiscard]] usize custom_count() const { return m_customHandlers.size(); }
