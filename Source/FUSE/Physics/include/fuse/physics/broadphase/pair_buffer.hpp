@@ -25,8 +25,13 @@ struct PairBufferSoA {
     void clear();
     void preparePairSlots(u32 slotCount);
     void writeSlot(u32 slot, u32 idxA, u32 idxB);
+    void invalidateSlot(u32 slot);
     bool push(u32 idxA, u32 idxB);
     u32 compact();
+    void sortCanonical();
+    u32 applyMaxCapacityClamp();
+    u32 compactAndClamp();
+    bool isSortedCanonical() const;
     bool containsCanonicalPair(u32 idxA, u32 idxB) const;
     CandidatePair pairAt(u32 index) const;
     std::vector<CandidatePair> toVector() const;

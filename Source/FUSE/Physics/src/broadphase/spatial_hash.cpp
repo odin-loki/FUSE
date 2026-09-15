@@ -161,6 +161,10 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
 }
 
 void dedupeBuffer(PairBufferSoA& buffer) {
+    if (buffer.isEmpty()) {
+        return;
+    }
+
     std::vector<CandidatePair> pairs = buffer.toVector();
     dedupePairs(pairs);
 
@@ -168,6 +172,31 @@ void dedupeBuffer(PairBufferSoA& buffer) {
     for (const CandidatePair& pair : pairs) {
         buffer.push(pair.bodyA, pair.bodyB);
     }
+}
+
+f32 bodyShapeRadius(const CollisionShapeSoA& shapes, u32 bodyIndex) {
+    for (u32 shapeIndex = 0; shapeIndex < shapes.count(); ++shapeIndex) {
+        if (shapeBodyIndex(shapes, shapeIndex) == bodyIndex) {
+            return shapeRadius(shapes, shapeIndex);
+        }
+    }
+    return 0.5f;
+}
+
+bool pairPassesAabbRefine(
+    u32 bodyA,
+    u32 bodyB,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (bodyA >= bodies.count() || bodyB >= bodies.count()) {
+        return false;
+    }
+
+    const vec3 posA = bodies.positions[bodyA];
+    const vec3 posB = bodies.positions[bodyB];
+    const f32 radiusA = bodyShapeRadius(shapes, bodyA);
+    const f32 radiusB = bodyShapeRadius(shapes, bodyB);
+    return sphereAabbOverlap(posA, radiusA, posB, radiusB);
 }
 
 void runBroadphaseIntoBufferInternal(
@@ -249,9 +278,44 @@ void runBroadphaseIntoBufferInternal(
         }
         dedupeBuffer(buffer);
     }
+
+    if (buffer.maxCapacity > 0u) {
+        buffer.applyMaxCapacityClamp();
+    }
+}
+
+void refineBroadphasePairsParallelImpl(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    PairBufferSoA& buffer) {
+    if (buffer.isEmpty() || bodies.count() == 0 || shapes.count() == 0) {
+        return;
+    }
+
+    const u32 pairCount = buffer.activeCount;
+    fuse::jobs::parallel_for(0u, pairCount, kPlanePairGrainSize, [&](u32 pairIndex) {
+        if (pairIndex >= buffer.activeCount || buffer.validFlags[pairIndex] == 0u) {
+            return;
+        }
+
+        const u32 bodyA = buffer.bodyA[pairIndex];
+        const u32 bodyB = buffer.bodyB[pairIndex];
+        if (!pairPassesAabbRefine(bodyA, bodyB, bodies, shapes)) {
+            buffer.invalidateSlot(pairIndex);
+        }
+    });
+
+    buffer.compact();
 }
 
 } // namespace
+
+void refineBroadphasePairsParallel(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    PairBufferSoA& buffer) {
+    refineBroadphasePairsParallelImpl(bodies, shapes, buffer);
+}
 
 void runBroadphaseIntoBuffer(
     const RigidBodySoA& bodies,

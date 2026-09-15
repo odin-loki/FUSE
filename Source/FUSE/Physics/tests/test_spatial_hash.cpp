@@ -309,6 +309,117 @@ void testPairBufferMaxCapacityClamp() {
     expectEq(buffer.activeCount, 2u, "active count stops at max capacity");
 }
 
+void testPairBufferApplyMaxCapacityClamp() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.push(2u, 3u);
+    buffer.push(0u, 1u);
+    buffer.push(4u, 5u);
+    expectEq(buffer.activeCount, 3u, "buffer holds three pairs before post clamp");
+
+    buffer.setMaxCapacity(2u);
+    expectEq(buffer.applyMaxCapacityClamp(), 2u, "applyMaxCapacityClamp truncates to max capacity");
+    expectEq(buffer.activeCount, 2u, "active count reflects post clamp");
+    expectEq(buffer.droppedCount, 1u, "dropped count tracks post clamp excess");
+    expectTrue(buffer.isSortedCanonical(), "applyMaxCapacityClamp leaves canonical sort order");
+    expectTrue(buffer.containsCanonicalPair(0u, 1u), "clamp keeps lowest canonical pair");
+    expectTrue(buffer.containsCanonicalPair(2u, 3u), "clamp keeps second canonical pair");
+}
+
+void testPairBufferCompactAndClamp() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.setMaxCapacity(1u);
+    buffer.preparePairSlots(3u);
+    buffer.writeSlot(0u, 0u, 1u);
+    buffer.writeSlot(2u, 2u, 3u);
+    expectEq(buffer.compactAndClamp(), 1u, "compactAndClamp gathers then clamps");
+    expectEq(buffer.activeCount, 1u, "compactAndClamp active count");
+    expectTrue(buffer.isSortedCanonical(), "compactAndClamp output is canonically sorted");
+}
+
+void testBroadphaseEmptyShapesGuard() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+
+    fuse::physics::broadphase::SpatialHashParams params;
+    params.cellSize = 2.f;
+    params.tableSize = 128;
+
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    fuse::physics::broadphase::runBroadphaseIntoBuffer(bodies, shapes, params, buffer);
+    expectTrue(buffer.isEmpty(), "bodies without shapes emit zero pairs");
+    expectEq(buffer.activeCount, 0u, "empty shapes guard leaves zero active pairs");
+}
+
+void testBroadphaseMaxCapacityIntegration() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    bodies.addBody({0.5f, 0.f, 0.f}, 1.f);
+    bodies.addBody({1.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 1, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 2, {1.f, 0.f, 0.f});
+
+    fuse::physics::broadphase::SpatialHashParams params;
+    params.cellSize = 4.f;
+    params.tableSize = 64;
+    params.bodyCount = bodies.count();
+
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.setMaxCapacity(1u);
+    fuse::physics::broadphase::runBroadphaseIntoBuffer(bodies, shapes, params, buffer);
+    expectEq(buffer.activeCount, 1u, "broadphase honors maxCapacity after dedupe");
+    expectTrue(buffer.droppedCount >= 1u, "broadphase records dropped pairs beyond maxCapacity");
+}
+
+void testRefineBroadphasePairsParallel() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    bodies.addBody({0.5f, 0.f, 0.f}, 1.f);
+    bodies.addBody({20.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 1, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 2, {1.f, 0.f, 0.f});
+
+    fuse::physics::broadphase::SpatialHashParams params;
+    params.cellSize = 2.f;
+    params.tableSize = 128;
+    params.bodyCount = bodies.count();
+
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.push(0u, 1u);
+    buffer.push(0u, 2u);
+    expectEq(buffer.activeCount, 2u, "refine test starts with two candidate pairs");
+
+    fuse::physics::broadphase::PairBufferSoA singleThreaded = buffer;
+    fuse::physics::broadphase::PairBufferSoA multiThreaded = buffer;
+    withScheduler(0u, [&] {
+        fuse::physics::broadphase::refineBroadphasePairsParallel(bodies, shapes, singleThreaded);
+    });
+    withScheduler(4u, [&] {
+        fuse::physics::broadphase::refineBroadphasePairsParallel(bodies, shapes, multiThreaded);
+    });
+
+    expectEq(singleThreaded.activeCount, 1u, "refine removes separated pair");
+    expectTrue(singleThreaded.containsCanonicalPair(0u, 1u), "refine keeps overlapping pair");
+    expectTrue(pairListsEqual(singleThreaded.toVector(), multiThreaded.toVector()),
+               "parallel refine matches single-thread output");
+}
+
+void testRefineBroadphaseEmptyBufferGuard() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    fuse::physics::broadphase::PairBufferSoA buffer;
+
+    fuse::physics::broadphase::refineBroadphasePairsParallel(bodies, shapes, buffer);
+    expectTrue(buffer.isEmpty(), "refine on empty buffer is a no-op");
+}
+
 void testBroadphase2DParallelParity() {
     fuse::physics::RigidBodySoA bodies;
     fuse::physics::CollisionShapeSoA shapes;
@@ -412,14 +523,20 @@ int main() {
     testPairBufferSoAClearReuse();
     testPairBufferSlotCompact();
     testPairBufferMaxCapacityClamp();
+    testPairBufferApplyMaxCapacityClamp();
+    testPairBufferCompactAndClamp();
     testBroadphaseEmptyScene();
+    testBroadphaseEmptyShapesGuard();
     testBroadphaseFindsOverlappingPair();
     testBodiesStraddlingCells();
     testBroadphasePairCount();
+    testBroadphaseMaxCapacityIntegration();
     testBroadphaseMatchesBruteForce();
     testBroadphaseParallelParity();
     testBroadphaseSoABufferParity();
     testBroadphase2DParallelParity();
+    testRefineBroadphasePairsParallel();
+    testRefineBroadphaseEmptyBufferGuard();
     testBroadphaseLargeScene();
 
     if (g_failures == 0) {
