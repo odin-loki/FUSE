@@ -14,6 +14,7 @@ struct ContactManifold {
     vec3 contactPoint{};
     vec3 contactNormal{};
     f32 penetrationDepth = 0.f;
+    f32 minSeparation = 0.f;
     u32 bodyA = 0;
     u32 bodyB = 0;
     bool valid = false;
@@ -48,6 +49,7 @@ FUSE_PHYSICS_INLINE ContactManifold collideSphereSphere(
     };
     manifold.contactNormal = normal;
     manifold.penetrationDepth = sumRadius - dist;
+    manifold.minSeparation = sumRadius;
     manifold.bodyA = idxA;
     manifold.bodyB = idxB;
     manifold.valid = true;
@@ -74,6 +76,7 @@ FUSE_PHYSICS_INLINE ContactManifold collideSpherePlane(
     };
     manifold.contactNormal = planeNormal;
     manifold.penetrationDepth = sphereRadius - dist;
+    manifold.minSeparation = sphereRadius;
     manifold.bodyA = idxSphere;
     manifold.bodyB = idxPlane;
     manifold.valid = true;

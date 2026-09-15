@@ -6,6 +6,9 @@ add_library(fuse_physics STATIC
     src/broadphase/spatial_hash.cpp
     src/narrowphase/collision_dispatch.cpp
     src/narrowphase/gjk.cpp
+    src/pbd_solver.cpp
+    src/barnes_hut.cpp
+    src/ccd.cpp
     include/fuse/physics/broadphase/spatial_hash.hpp
     include/fuse/physics/config.hpp
     include/fuse/physics/math.hpp
@@ -16,6 +19,9 @@ add_library(fuse_physics STATIC
     include/fuse/physics/physics_world_2d.hpp
     include/fuse/physics/physics_world_3d.hpp
     include/fuse/physics/types.hpp
+    include/fuse/physics/solver/pbd_solver.hpp
+    include/fuse/physics/nbody/barnes_hut.hpp
+    include/fuse/physics/ccd/ccd.hpp
 )
 
 add_library(fuse::physics ALIAS fuse_physics)

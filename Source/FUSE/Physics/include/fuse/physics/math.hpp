@@ -32,9 +32,32 @@ struct vec3 {
     vec3 operator+(const vec3& other) const { return {x + other.x, y + other.y, z + other.z}; }
     vec3 operator-(const vec3& other) const { return {x - other.x, y - other.y, z - other.z}; }
     vec3 operator*(f32 scalar) const { return {x * scalar, y * scalar, z * scalar}; }
+    vec3 operator/(f32 scalar) const { return {x / scalar, y / scalar, z / scalar}; }
+
+    vec3& operator+=(const vec3& other) {
+        x += other.x;
+        y += other.y;
+        z += other.z;
+        return *this;
+    }
+
+    vec3& operator-=(const vec3& other) {
+        x -= other.x;
+        y -= other.y;
+        z -= other.z;
+        return *this;
+    }
 
     f32 dot(const vec3& other) const { return x * other.x + y * other.y + z * other.z; }
     f32 length() const { return std::sqrt(dot(*this)); }
+
+    vec3 normalized() const {
+        const f32 len = length();
+        if (len < 1e-10f) {
+            return {0.f, 1.f, 0.f};
+        }
+        return *this / len;
+    }
 };
 
 struct ivec2 {
