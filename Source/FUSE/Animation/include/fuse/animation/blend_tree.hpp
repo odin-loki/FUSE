@@ -13,6 +13,7 @@ namespace fuse::animation {
 struct BlendNode {
     virtual ~BlendNode() = default;
     virtual void evaluate(f32 dt, const Skeleton& skel, Pose& out) = 0;
+    virtual void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out);
 };
 
 struct ClipNode : BlendNode {
@@ -22,6 +23,7 @@ struct ClipNode : BlendNode {
     bool looping = true;
 
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
+    void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
 };
 
 struct BlendNode2 : BlendNode {
@@ -30,6 +32,7 @@ struct BlendNode2 : BlendNode {
     f32* blend_param = nullptr;
 
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
+    void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
 };
 
 /// 1D blend space — interpolates clips along a single runtime parameter axis.
@@ -43,6 +46,7 @@ struct BlendSpace1D : BlendNode {
     f32* param = nullptr;
 
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
+    void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
 };
 
 /// 2D blend space — distance-weighted clip blend in a 2D parameter plane (stub).
@@ -56,7 +60,23 @@ struct BlendSpace2D : BlendNode {
     vec2* param = nullptr;
 
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
+    void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
 };
+
+/// Bracket indices and interpolation alpha for a 1D blend-space parameter sample.
+struct BlendSpace1DSample {
+    u32 lower_index = 0;
+    u32 upper_index = 0;
+    f32 alpha = 0.f;
+};
+
+/// Normalized per-entry weights for a 2D blend-space parameter sample.
+struct BlendSpace2DSample {
+    std::vector<f32> weights;
+};
+
+BlendSpace1DSample sample_blend_space_1d(const BlendSpace1D& space, f32 value);
+BlendSpace2DSample sample_blend_space_2d(const BlendSpace2D& space, vec2 value);
 
 /// Layered blend — applies a masked upper-body layer over a base pose.
 struct LayeredBlendNode : BlendNode {
@@ -66,12 +86,26 @@ struct LayeredBlendNode : BlendNode {
     f32 layer_weight = 1.f;
 
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
+    void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
+};
+
+/// Additive layer — adds masked local TRS delta relative to bind pose over a base pose.
+struct AdditiveBlendNode : BlendNode {
+    std::unique_ptr<BlendNode> base;
+    std::unique_ptr<BlendNode> layer;
+    std::vector<u32> masked_bones;
+    f32 layer_weight = 1.f;
+
+    void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
+    void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
 };
 
 struct AnimStateMachine : BlendNode {
     struct State {
         std::string name;
         std::unique_ptr<BlendNode> node;
+        std::function<void()> on_enter;
+        std::function<void()> on_exit;
     };
 
     struct Transition {
@@ -84,13 +118,20 @@ struct AnimStateMachine : BlendNode {
     std::vector<State> states;
     std::vector<Transition> transitions;
     u32 active_state = 0;
+    u32 pending_state = 0;
+    bool is_transitioning = false;
     f32 blend_time = 0.f;
     f32 blend_duration = 0.2f;
     Pose blend_from_pose;
+    PoseSoA blend_from_pose_soa;
 
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
+    void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
     void add_state(std::string name, std::unique_ptr<BlendNode> node);
     void add_transition(const char* from, const char* to, f32 duration, std::function<bool()> condition);
+
+    /// Crossfade blend weight in [0, 1] while transitioning; 0 when idle.
+    f32 crossfade_alpha() const;
 };
 
 } // namespace fuse::animation

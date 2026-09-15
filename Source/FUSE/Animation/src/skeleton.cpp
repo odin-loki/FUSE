@@ -100,6 +100,53 @@ void PoseSoA::compute_world_transforms(const Skeleton& skel) {
     }
 }
 
+void add_pose_soa(const PoseSoA& base,
+                  const PoseSoA& delta,
+                  const PoseSoA& bind,
+                  f32 weight,
+                  const std::vector<u32>& masked_bones,
+                  PoseSoA& out) {
+    const f32 clamped = std::clamp(weight, 0.f, 1.f);
+    out = base;
+
+    for (u32 boneIndex : masked_bones) {
+        if (boneIndex >= out.bone_count) {
+            continue;
+        }
+
+        const vec3 deltaPos = {
+            delta.local_positions[boneIndex].x - bind.local_positions[boneIndex].x,
+            delta.local_positions[boneIndex].y - bind.local_positions[boneIndex].y,
+            delta.local_positions[boneIndex].z - bind.local_positions[boneIndex].z,
+            0.f,
+        };
+        out.local_positions[boneIndex] = {
+            base.local_positions[boneIndex].x + clamped * deltaPos.x,
+            base.local_positions[boneIndex].y + clamped * deltaPos.y,
+            base.local_positions[boneIndex].z + clamped * deltaPos.z,
+            0.f,
+        };
+
+        const quat bindRot = bind.local_rotations[boneIndex];
+        const quat deltaRot = delta.local_rotations[boneIndex];
+        const quat additiveRot = lerp(bindRot, deltaRot, 1.f);
+        out.local_rotations[boneIndex] = lerp(base.local_rotations[boneIndex], additiveRot, clamped);
+
+        const vec3 deltaScale = {
+            delta.local_scales[boneIndex].x - bind.local_scales[boneIndex].x,
+            delta.local_scales[boneIndex].y - bind.local_scales[boneIndex].y,
+            delta.local_scales[boneIndex].z - bind.local_scales[boneIndex].z,
+            0.f,
+        };
+        out.local_scales[boneIndex] = {
+            base.local_scales[boneIndex].x + clamped * deltaScale.x,
+            base.local_scales[boneIndex].y + clamped * deltaScale.y,
+            base.local_scales[boneIndex].z + clamped * deltaScale.z,
+            0.f,
+        };
+    }
+}
+
 void blend_pose_soa(const PoseSoA& a, const PoseSoA& b, f32 weight, PoseSoA& out) {
     const f32 clamped = std::clamp(weight, 0.f, 1.f);
     const u32 count = std::max(a.bone_count, b.bone_count);

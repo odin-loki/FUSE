@@ -1,6 +1,6 @@
 # Track B — Animation System (B7.1 deepen)
 
-**Status:** B7.1 deepen — `PoseSoA` pose buffers, hierarchy-aware clip evaluate, layered blend weights, closed-form two-bone IK, retarget map stubs  
+**Status:** B7.1 deepen — `PoseSoA` pose buffers, hierarchy-aware clip evaluate, blend-tree `evaluate_soa`, 1D/2D parameter sampling, additive layer stub, state enter/exit + crossfade, closed-form two-bone IK, retarget map stubs  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.1  
 **Source narrative:** [P7.md](../sources/P7.md) §7.1
 
@@ -14,13 +14,15 @@
 | `Pose` / `PoseSoA` | `Animation/include/fuse/animation/skeleton.hpp` | AoS world matrices; SoA local TRS columns + `allocate` / `resize` / `clear` |
 | `blend_pose_soa` | `Animation/src/skeleton.cpp` | Per-bone local TRS lerp into a reusable output buffer |
 | `AnimationClip` | `Animation/include/fuse/animation/clip.hpp` | `evaluate` (SoA) composes channel TRS onto bind; `sample` (AoS) wrapper |
-| `BlendNode` graph | `Animation/include/fuse/animation/blend_tree.hpp` | `ClipNode`, `BlendNode2`, `BlendSpace1D/2D`, `LayeredBlendNode`, state machine |
+| `BlendNode` graph | `Animation/include/fuse/animation/blend_tree.hpp` | `ClipNode`, `BlendNode2`, `BlendSpace1D/2D`, `LayeredBlendNode`, `AdditiveBlendNode`, state machine |
+| `sample_blend_space_1d/2d` | `Animation/src/blend_tree.cpp` | Parameter-space weight sampling for 1D bracketing and 2D inverse-distance weights |
+| `add_pose_soa` | `Animation/src/skeleton.cpp` | Masked additive local TRS delta relative to bind pose |
 | `FABRIKChain` / `TwoBoneIK` | `Animation/include/fuse/animation/ik_solver.hpp` | FABRIK stub; closed-form two-bone IK (AoS + SoA) |
 | `RetargetMap` | `Animation/include/fuse/animation/retarget.hpp` | Name-driven bone map + local TRS copy stub |
 | `skin_vertices` | `Animation/include/fuse/animation/skinning.hpp` | CPU linear blend skinning (`Cuda` when `FUSE_HAS_CUDA`) |
 | `Animator` | `Animation/include/fuse/animation/animator.hpp` | Game-thread facade over state machine + pose cache |
 
-**Not in scope (deferred):** CUDA skinning device path, job-system parallel clip eval, additive blend layers, animation asset import, GPU pose upload.
+**Not in scope (deferred):** CUDA skinning device path, job-system parallel clip eval, full quaternion additive rotation, animation asset import, GPU pose upload.
 
 ---
 
@@ -51,9 +53,21 @@ Buffer helpers:
 
 `AnimationClip::evaluate` starts from bind pose, samples sparse per-bone position/rotation/scale channels, composes each channel transform onto the bone's bind-local matrix, decomposes back into SoA columns, then walks the hierarchy.
 
-### Layered blend weights
+### Blend tree PoseSoA evaluation
 
-`LayeredBlendNode` evaluates base and layer subgraphs, converts both poses to SoA, then for each index in `masked_bones` lerps local TRS by `layer_weight` (clamped to `[0, 1]`). Bones **not** listed in `masked_bones` keep the base pose unchanged. World matrices are recomputed after masking.
+All `BlendNode` types expose `evaluate_soa(dt, skel, out)` alongside the legacy `evaluate` AoS path. `ClipNode` calls `AnimationClip::evaluate` directly; blend/layer/state nodes accumulate in SoA space via `blend_pose_soa` / `add_pose_soa`, then call `compute_world_transforms`.
+
+`sample_blend_space_1d` returns bracket indices and interpolation alpha for a runtime parameter. `sample_blend_space_2d` returns normalized inverse-distance weights per entry.
+
+### Layered and additive blend weights
+
+`LayeredBlendNode` evaluates base and layer subgraphs in SoA, then for each index in `masked_bones` lerps local TRS by `layer_weight` (clamped to `[0, 1]`). Bones **not** listed in `masked_bones` keep the base pose unchanged.
+
+`AdditiveBlendNode` adds a masked local TRS delta relative to bind pose: `out = base + weight * (layer - bind)` on position/scale; rotation uses a bind-relative lerp stub. `add_pose_soa` implements the masked accumulation helper.
+
+### State machine crossfade
+
+`AnimStateMachine` supports per-state `on_enter` / `on_exit` callbacks. Transitions capture the outgoing pose, crossfade toward the target state over `blend_duration`, and expose `crossfade_alpha()` in `[0, 1]` (0 when idle). Weight is clamped; `active_state` advances when alpha reaches 1.
 
 ### Two-bone IK (closed form)
 
@@ -112,6 +126,13 @@ ctest --test-dir build --output-on-failure -R fuse_animation_runtime
 | `testLayeredBlendMask` | Masked bone at 0.5 layer weight |
 | `testLayeredBlendWeights` | Layer weight 0 / 1 / fractional / clamped |
 | `testLayeredBlendUnmaskedBone` | Parent stays base when only child is masked |
+| `testBlendSpace1DParameterSample` | 1D parameter bracket/alpha sampling |
+| `testBlendSpace2D` | 2D blend-space `evaluate_soa` |
+| `testBlendSpace2DParameterSample` | 2D normalized weight sampling |
+| `testAdditiveBlendLayer` | Masked additive local TRS delta |
+| `testBlendTreeEvaluateSoA` | `BlendNode2::evaluate_soa` local lerp |
+| `testStateMachineEnterExit` | `on_enter` / `on_exit` callbacks |
+| `testStateMachineCrossfadeClamp` | Crossfade alpha mid-transition and reset |
 | `testStateMachineTransition` | Condition-driven state change |
 | `testFabrikConverges` | FABRIK end-effector error bound |
 | `testSkinningCpuPath` | CPU skinning applies bone transform |
@@ -124,7 +145,10 @@ ctest --test-dir build --output-on-failure -R fuse_animation_runtime
 - [x] `PoseSoA` local TRS columns with `allocate` / `resize` / `clear`
 - [x] `blend_pose_soa` helper for SoA accumulation
 - [x] `AnimationClip::evaluate` hierarchy-aware SoA path
-- [x] `BlendSpace1D`, `BlendSpace2D`, `LayeredBlendNode` stubs
+- [x] `BlendSpace1D`, `BlendSpace2D`, `LayeredBlendNode`, `AdditiveBlendNode` stubs
+- [x] `sample_blend_space_1d/2d` parameter sampling helpers
+- [x] `BlendNode::evaluate_soa` PoseSoA integration across blend graph
+- [x] `AnimStateMachine` enter/exit callbacks and `crossfade_alpha`
 - [x] Layered blend weight sweep and unmasked-bone isolation tests
 - [x] Pose buffer clear/reuse tests
 - [x] Closed-form `TwoBoneIK` (AoS + SoA) with reach/clamp tests

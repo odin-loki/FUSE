@@ -10,7 +10,7 @@ CPU-first skeletal animation scaffolding for Track B7.1. Implements the P7 pipel
 |--------|------|
 | `skeleton.hpp` | Bone hierarchy, bind pose, `Pose` (AoS), `PoseSoA` (local TRS columns) |
 | `clip.hpp` | Keyframe channels, `evaluate` (SoA) and `sample` (AoS) |
-| `blend_tree.hpp` | `ClipNode`, `BlendNode2`, `BlendSpace1D/2D`, `LayeredBlendNode`, state machine |
+| `blend_tree.hpp` | `ClipNode`, `BlendNode2`, `BlendSpace1D/2D`, `LayeredBlendNode`, `AdditiveBlendNode`, state machine |
 | `ik_solver.hpp` | FABRIK stub; closed-form two-bone IK (AoS + SoA) |
 | `retarget.hpp` | Name-driven `RetargetMap` bone pairing and pose copy stub |
 | `skinning.hpp` | CPU linear blend skinning (`Cuda` when `FUSE_HAS_CUDA`) |
@@ -31,12 +31,13 @@ CPU-first skeletal animation scaffolding for Track B7.1. Implements the P7 pipel
 
 ## Blend tree (stub)
 
-- **BlendSpace1D** — bracketing blend between clips along one runtime parameter (e.g. speed).
-- **BlendSpace2D** — inverse-distance weighted blend in a 2D parameter plane (velocity X/Y stub).
-- **LayeredBlendNode** — masked upper-body layer over a base pose using `PoseSoA` local TRS blending.
+- **BlendSpace1D / 2D** — parameter sampling via `sample_blend_space_1d/2d`, evaluated through `evaluate_soa`.
+- **LayeredBlendNode** — masked override blend over a base pose in SoA local TRS.
+- **AdditiveBlendNode** — masked bind-relative local TRS delta via `add_pose_soa`.
+- **AnimStateMachine** — `on_enter` / `on_exit` callbacks, crossfade weight via `crossfade_alpha()`.
 
 ## Tests
 
-`fuse_animation_tests` (`ctest` name `fuse_animation_runtime`) covers skeleton hierarchy, `PoseSoA` propagation, roundtrip, resize defaults, buffer clear/reuse, `blend_pose_soa` rotation/scale/output reuse, clip evaluate/sample, blend interpolation, 1D blend space, layered mask weight sweeps (0/1/fractional/clamped) and unmasked-bone isolation, two-bone IK reach/clamp (AoS + SoA), retarget map pairing/apply, state transitions, FABRIK convergence, skinning, and animator ticks without GPU or editor dependencies.
+`fuse_animation_tests` (`ctest` name `fuse_animation_runtime`) covers skeleton hierarchy, `PoseSoA` propagation, roundtrip, resize defaults, buffer clear/reuse, `blend_pose_soa` rotation/scale/output reuse, clip evaluate/sample, blend interpolation, 1D/2D blend spaces and parameter sampling, `evaluate_soa`, layered and additive mask weight sweeps, state enter/exit and crossfade clamp, two-bone IK reach/clamp (AoS + SoA), retarget map pairing/apply, FABRIK convergence, skinning, and animator ticks without GPU or editor dependencies.
 
 Track B narrative: [docs/unification/TRACK-B-ANIMATION.md](../../../docs/unification/TRACK-B-ANIMATION.md).

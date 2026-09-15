@@ -50,4 +50,12 @@ struct PoseSoA {
 
 void blend_pose_soa(const PoseSoA& a, const PoseSoA& b, f32 weight, PoseSoA& out);
 
+/// Additive local TRS delta from bind pose: out = base + weight * (delta - bind) on masked bones.
+void add_pose_soa(const PoseSoA& base,
+                  const PoseSoA& delta,
+                  const PoseSoA& bind,
+                  f32 weight,
+                  const std::vector<u32>& masked_bones,
+                  PoseSoA& out);
+
 } // namespace fuse::animation
