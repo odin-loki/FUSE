@@ -43,11 +43,22 @@ using StreamingWorkFn = std::function<bool(GridCoord coord, StreamingRequestKind
 [[nodiscard]] int compare_streaming_request_order(f32 priority_a, StreamingRequestKind kind_a, u64 sequence_a,
                                                   f32 priority_b, StreamingRequestKind kind_b, u64 sequence_b);
 
+/// Sort pending requests by priority (highest first) without removing them. Returns count copied.
+[[nodiscard]] u32 order_by_priority(std::vector<StreamingRequest>& out,
+                                    const std::vector<StreamingRequest>& pending,
+                                    const std::vector<u64>& enqueue_sequences);
+
 /// Async request queue stub backed by JobScheduler (mirrors fuse::io VFS async loads).
 class StreamingRequestQueue {
 public:
     /// Queue a request for later submission. Promotes priority when the same coord/kind is already pending.
     bool enqueue(StreamingRequest request);
+
+    /// Remove the highest-priority pending request into `out`. Returns false when the pending queue is empty.
+    bool dequeue(StreamingRequest& out);
+
+    /// Copy pending requests into `out` in priority order without removing them. Returns 0 when empty.
+    [[nodiscard]] u32 order_by_priority(std::vector<StreamingRequest>& out) const;
 
     /// Lower priority for a pending request (returns false when not found).
     bool demote(GridCoord coord, StreamingRequestKind kind, f32 scale);
@@ -82,6 +93,7 @@ private:
     };
 
     [[nodiscard]] bool would_exceed_budget_() const;
+    void sort_pending_by_priority_();
     void push_completed_(CompletedStreamingRequest completed);
 
     mutable std::mutex m_mutex;

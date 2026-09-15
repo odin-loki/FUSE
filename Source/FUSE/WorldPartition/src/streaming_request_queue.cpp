@@ -28,6 +28,49 @@ int compare_streaming_request_order(f32 priority_a, StreamingRequestKind kind_a,
     return 0;
 }
 
+u32 order_by_priority(std::vector<StreamingRequest>& out,
+                      const std::vector<StreamingRequest>& pending,
+                      const std::vector<u64>& enqueue_sequences) {
+    if (pending.empty()) {
+        out.clear();
+        return 0u;
+    }
+
+    struct OrderedEntry {
+        StreamingRequest request{};
+        u64 enqueue_sequence = 0;
+    };
+
+    std::vector<OrderedEntry> ordered;
+    ordered.reserve(pending.size());
+    for (std::size_t i = 0; i < pending.size(); ++i) {
+        ordered.push_back({pending[i], enqueue_sequences[i]});
+    }
+
+    std::sort(ordered.begin(), ordered.end(),
+              [](const OrderedEntry& a, const OrderedEntry& b) {
+                  return compare_streaming_request_order(a.request.priority, a.request.kind,
+                                                         a.enqueue_sequence, b.request.priority,
+                                                         b.request.kind, b.enqueue_sequence) > 0;
+              });
+
+    out.clear();
+    out.reserve(ordered.size());
+    for (const OrderedEntry& entry : ordered) {
+        out.push_back(entry.request);
+    }
+    return static_cast<u32>(ordered.size());
+}
+
+void StreamingRequestQueue::sort_pending_by_priority_() {
+    std::sort(m_pending.begin(), m_pending.end(),
+              [](const PendingStreamingRequest& a, const PendingStreamingRequest& b) {
+                  return compare_streaming_request_order(a.request.priority, a.request.kind,
+                                                         a.enqueue_sequence, b.request.priority,
+                                                         b.request.kind, b.enqueue_sequence) > 0;
+              });
+}
+
 bool StreamingRequestQueue::enqueue(StreamingRequest request) {
     std::lock_guard<std::mutex> lock(m_mutex);
     const auto existing = std::find_if(m_pending.begin(), m_pending.end(),
@@ -46,6 +89,36 @@ bool StreamingRequestQueue::enqueue(StreamingRequest request) {
     pending.enqueue_sequence = ++m_enqueue_sequence;
     m_pending.push_back(std::move(pending));
     return true;
+}
+
+bool StreamingRequestQueue::dequeue(StreamingRequest& out) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_pending.empty()) {
+        return false;
+    }
+
+    sort_pending_by_priority_();
+    out = std::move(m_pending.front().request);
+    m_pending.erase(m_pending.begin());
+    return true;
+}
+
+u32 StreamingRequestQueue::order_by_priority(std::vector<StreamingRequest>& out) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_pending.empty()) {
+        out.clear();
+        return 0u;
+    }
+
+    std::vector<StreamingRequest> pending;
+    std::vector<u64> sequences;
+    pending.reserve(m_pending.size());
+    sequences.reserve(m_pending.size());
+    for (const PendingStreamingRequest& pending_request : m_pending) {
+        pending.push_back(pending_request.request);
+        sequences.push_back(pending_request.enqueue_sequence);
+    }
+    return fuse::world_partition::order_by_priority(out, pending, sequences);
 }
 
 bool StreamingRequestQueue::demote(GridCoord coord, StreamingRequestKind kind, f32 scale) {
@@ -75,12 +148,7 @@ u32 StreamingRequestQueue::flush(u32 budget, StreamingWorkFn work) {
             return 0u;
         }
 
-        std::sort(m_pending.begin(), m_pending.end(),
-                  [](const PendingStreamingRequest& a, const PendingStreamingRequest& b) {
-                      return compare_streaming_request_order(a.request.priority, a.request.kind,
-                                                             a.enqueue_sequence, b.request.priority,
-                                                             b.request.kind, b.enqueue_sequence) > 0;
-                  });
+        sort_pending_by_priority_();
 
         const u32 count = std::min(budget, static_cast<u32>(m_pending.size()));
         batch.assign(m_pending.begin(), m_pending.begin() + static_cast<std::ptrdiff_t>(count));
