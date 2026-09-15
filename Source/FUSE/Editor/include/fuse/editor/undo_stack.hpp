@@ -40,6 +40,7 @@ public:
     static constexpr u32 kMaxHistory = 256;
 
     void execute(std::unique_ptr<UndoCommand> command);
+    void push(std::unique_ptr<UndoCommand> command) { execute(std::move(command)); }
     void undo();
     void redo();
 
