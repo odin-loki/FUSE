@@ -30,7 +30,9 @@ struct AutoExposureState {
 
 f32 compute_rec709_luminance(const fuse::math::Vec3& rgb);
 f32 luminance_to_ev(f32 luminance, f32 target_luminance);
+f32 ev_to_luminance(f32 ev, f32 target_luminance);
 f32 clamp_ev(f32 ev, const AutoExposureParams& params);
+void reset_auto_exposure_state(AutoExposureState& state);
 f32 ema_alpha_for_direction(bool brightening, const AutoExposureParams& params);
 bool is_brightening_luminance(f32 measured_luminance, f32 reference_luminance);
 f32 ema_blend(f32 previous, f32 measured, f32 alpha);
@@ -74,6 +76,13 @@ private:
     u32 m_sampleCount = 0;
 };
 
+/// Batch histogram accumulation helpers (B5.10 deepen).
+namespace histogram_util {
+void accumulateSamples(LuminanceHistogram& histogram, const fuse::math::Vec3* samples, u32 count);
+f32 measurePercentile(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
+                      f32 percentile);
+} // namespace histogram_util
+
 /// CPU histogram-free exposure meter stub (CUDA reduction deferred).
 class ExposureMeter {
 public:
@@ -99,6 +108,7 @@ public:
     bool isReady() const { return m_ready; }
     void init();
     void destroy();
+    void reset();
 
     f32 updateFromSamples(const fuse::math::Vec3* samples, u32 count, f32 delta_seconds);
     f32 updateFromHistogram(const LuminanceHistogram& histogram, f32 delta_seconds);

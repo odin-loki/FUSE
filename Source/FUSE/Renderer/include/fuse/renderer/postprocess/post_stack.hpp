@@ -58,6 +58,7 @@ public:
     const ColorGrade& colorGrade() const { return m_colorGrade; }
 
     f32 updateAutoExposure(const fuse::math::Vec3* samples, u32 count, f32 delta_seconds);
+    f32 updateAutoExposureFromHistogram(const LuminanceHistogram& histogram, f32 delta_seconds);
 
     static u32 stageCount() { return static_cast<u32>(PostProcessStage::Count); }
     static const char* stageName(PostProcessStage stage);
