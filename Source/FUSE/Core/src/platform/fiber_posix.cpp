@@ -86,6 +86,10 @@ bool cooperativeFibersAvailable() {
     return true;
 }
 
+const char* fiberBackendName() {
+    return "posix-ucontext";
+}
+
 FiberContext* fiberAllocateContext() {
     return new FiberContext();
 }
@@ -151,6 +155,10 @@ namespace fuse::platform {
 
 bool cooperativeFibersAvailable() {
     return false; // JobCounter::wait() uses condition-variable blocking on these platforms
+}
+
+const char* fiberBackendName() {
+    return "stub";
 }
 
 FiberContext* fiberAllocateContext() {
