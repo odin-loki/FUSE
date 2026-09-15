@@ -315,4 +315,40 @@ inline bool rayIntervalAabb(const AABB& box, const Vec3& origin, const Vec3& dir
     return box.rayInterval(origin, direction, tEnter, tExit);
 }
 
+inline bool rayIntervalClampedAabb(const AABB& box, const Vec3& origin, const Vec3& direction, f32 tMin,
+                                   f32 tMax, f32& tEnter, f32& tExit) {
+    return box.rayIntervalClamped(origin, direction, tMin, tMax, tEnter, tExit);
+}
+
+inline bool rayHitsAabb(const AABB& box, const Vec3& origin, const Vec3& direction, f32 tMin = 0.f,
+                        f32 tMax = std::numeric_limits<f32>::max()) {
+    return box.rayHits(origin, direction, tMin, tMax);
+}
+
+inline bool tryPlaneSignedDistance(const Vec4& plane, const Vec3& point, f32& distance,
+                                   f32 epsilon = 1e-8f) {
+    return fuse::math::tryPlaneSignedDistance(plane, point, distance, epsilon);
+}
+
+inline bool tryClassifyPoint(const Vec4& plane, const Vec3& point, PlaneSide& side, f32 epsilon = 1e-5f) {
+    return fuse::math::tryClassifyPoint(plane, point, side, epsilon);
+}
+
+inline bool rayIntersectPlane(const Vec4& plane, const Vec3& origin, const Vec3& direction, f32& t,
+                              f32 epsilon = 1e-8f) {
+    return fuse::math::rayIntersectPlane(plane, origin, direction, t, epsilon);
+}
+
+inline bool isRigid(const fuse::math::Mat4& matrix, f32 epsilon = 1e-4f) {
+    return fuse::math::isRigid(matrix, epsilon);
+}
+
+inline Vec3 extractTranslation(const fuse::math::Mat4& matrix, f32 epsilon = 1e-5f) {
+    return fuse::math::extractTranslation(matrix, epsilon);
+}
+
+inline Vec3 transformDirection(const Mat4& matrix, const Vec3& direction) {
+    return fuse::math::transformDirection(matrix.toScalar(), direction);
+}
+
 } // namespace fuse::math::simd

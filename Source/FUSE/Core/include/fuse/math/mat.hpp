@@ -119,6 +119,11 @@ inline Mat4 fromTRS(const Vec3& position, const Quat& rotation, const Vec3& scal
     return result;
 }
 
+/// Rigid transform (rotation + translation, unit scale) without building a full TRS matrix.
+inline Mat4 fromRotationTranslation(const Quat& rotation, const Vec3& translation) {
+    return fromTRS(translation, rotation, {1.f, 1.f, 1.f});
+}
+
 /// True when the upper 3×3 block columns are mutually orthogonal with unit length (pure rotation).
 inline bool isOrthogonalUpper3x3(const Mat4& matrix, f32 epsilon = 1e-4f) {
     const Vec3 x{matrix.data[0], matrix.data[1], matrix.data[2]};
@@ -208,6 +213,19 @@ inline Mat4 inverseAffine(const Mat4& matrix) {
 inline bool isAffine(const Mat4& matrix, f32 epsilon = 1e-5f) {
     return std::fabs(matrix.data[3]) <= epsilon && std::fabs(matrix.data[7]) <= epsilon &&
            std::fabs(matrix.data[11]) <= epsilon && std::fabs(matrix.data[15] - 1.f) <= epsilon;
+}
+
+/// True when the matrix is an affine rigid transform (orthogonal upper 3×3 with uniform column length).
+inline bool isRigid(const Mat4& matrix, f32 epsilon = 1e-4f) {
+    return isAffine(matrix, epsilon) && isRigidUpper3x3(matrix, epsilon);
+}
+
+/// Translation column of an affine matrix; returns zero when the matrix is not affine.
+inline Vec3 extractTranslation(const Mat4& matrix, f32 epsilon = 1e-5f) {
+    if (!isAffine(matrix, epsilon)) {
+        return {};
+    }
+    return {matrix.data[12], matrix.data[13], matrix.data[14]};
 }
 
 /// Uniform column length of a rigid upper 3×3 block; returns `0` when the block is not rigid.
@@ -323,6 +341,10 @@ inline Vec3 transformDirection(const Mat3& matrix, const Vec3& direction) {
         matrix.data[1] * direction.x + matrix.data[4] * direction.y + matrix.data[7] * direction.z,
         matrix.data[2] * direction.x + matrix.data[5] * direction.y + matrix.data[8] * direction.z,
     };
+}
+
+inline Vec3 transformDirection(const Mat4& matrix, const Vec3& direction) {
+    return transformDirection(matrix.upper3x3(), direction);
 }
 
 inline Mat4 operator*(const Mat4& a, const Mat4& b) { return multiply(a, b); }

@@ -25,6 +25,16 @@ inline bool isDegeneratePlane(const Vec4& plane, f32 epsilon = 1e-8f) {
     return lenSq < epsilon * epsilon;
 }
 
+/// Writes signed distance when the plane normal is non-degenerate; returns false on early-out.
+inline bool tryPlaneSignedDistance(const Vec4& plane, const Vec3& point, f32& distance,
+                                   f32 epsilon = 1e-8f) {
+    if (isDegeneratePlane(plane, epsilon)) {
+        return false;
+    }
+    distance = planeSignedDistance(plane, point);
+    return true;
+}
+
 /// Normalizes `plane` in place; returns false when the normal length is below `epsilon`.
 inline bool tryNormalizePlane(Vec4& plane, f32 epsilon = 1e-8f) {
     const f32 lenSq = plane.x * plane.x + plane.y * plane.y + plane.z * plane.z;
@@ -63,6 +73,32 @@ inline PlaneSide classifyPoint(const Vec4& plane, const Vec3& point, f32 epsilon
         return PlaneSide::Behind;
     }
     return PlaneSide::On;
+}
+
+/// Classifies a point when the plane is usable; returns false on degenerate early-out.
+inline bool tryClassifyPoint(const Vec4& plane, const Vec3& point, PlaneSide& side, f32 epsilon = 1e-5f) {
+    if (isDegeneratePlane(plane, epsilon)) {
+        return false;
+    }
+    side = classifyPoint(plane, point, epsilon);
+    return true;
+}
+
+/// Ray-plane intersection for `origin + t * direction`. Returns false on parallel rays or degenerate planes.
+inline bool rayIntersectPlane(const Vec4& plane, const Vec3& origin, const Vec3& direction, f32& t,
+                              f32 epsilon = 1e-8f) {
+    if (isDegeneratePlane(plane, epsilon)) {
+        return false;
+    }
+
+    const f32 denominator = plane.x * direction.x + plane.y * direction.y + plane.z * direction.z;
+    if (std::fabs(denominator) <= epsilon) {
+        return false;
+    }
+
+    const f32 numerator = -(planeSignedDistance(plane, origin));
+    t = numerator / denominator;
+    return true;
 }
 
 /// Positive-vertex test for an AABB against a plane (frustum culling convention).
