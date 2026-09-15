@@ -1,6 +1,6 @@
 # Track B — Script Host (B7.3 deepen follow-up)
 
-**Status:** B7.3 deepen follow-up — Lua stack bridge, `dispatch_update`, bind equality landed  
+**Status:** B7.3 deepen follow-up — `ScriptConsole` REPL stubs, history buffer, command dispatch landed  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.3  
 **Threading:** Game-thread facade; hot-reload and ECS `Script` component deferred
 
@@ -12,11 +12,12 @@
 |-----------|----------|-------|
 | `ScriptHost` | `Source/FUSE/Script/include/fuse/script/script_host.hpp` | Init/shutdown, callback registry, dispatch, `dispatch_update` |
 | `ScriptVM` | `Source/FUSE/Script/include/fuse/script/script_vm.hpp` | Null backend or optional Lua compile/run |
+| `ScriptConsole` | `Source/FUSE/Script/include/fuse/script/script_console.hpp` | Headless REPL — built-in command stubs, history buffer, host dispatch |
 | Bind helpers | `Source/FUSE/Script/include/fuse/script/script_bind.hpp` | Tagged `ScriptValue` carriers + `values_equal` |
 | Lua stack bridge | `Source/FUSE/Script/include/fuse/script/script_bind_lua.hpp` | `push_to_stack` / `read_from_stack` when `FUSE_SCRIPT_LUA=1` |
 | Callbacks | `Source/FUSE/Script/include/fuse/script/script_callback.hpp` | `OnStart`, `OnUpdate`, `OnDestroy`, collision/trigger hooks |
 
-**Not in scope:** ECS `Script` component, hot-reload watcher, physics/input API bindings, per-entity `lua_ref`.
+**Not in scope:** ECS `Script` component, hot-reload watcher, physics/input API bindings, per-entity `lua_ref`, Qt editor console chrome.
 
 ---
 
@@ -41,6 +42,32 @@ Dispatch edge cases covered by tests:
 - Zero `dt` still invokes `OnUpdate` handlers.
 - `dispatch_update` on an uninitialized host is a no-op.
 - Event kind isolation — `OnStart` dispatch does not invoke `OnUpdate` handlers (and vice versa).
+
+### Script console / REPL
+
+`ScriptConsole` is a headless REPL facade for editor and tooling integration (distinct from `fuse::editor::ConsolePanel` log chrome).
+
+Built-in command stubs:
+
+| Command | Behaviour |
+|---------|-----------|
+| `help` | Lists built-in and registered custom commands |
+| `echo <text>` | Returns argument text as output |
+| `clear` | Clears accumulated output lines |
+| `history` | Prints indexed command history |
+| `backend` | Reports attached `ScriptHost` VM backend + loaded chunk count |
+| `load <path>` | Dispatches `ScriptHost::load_file` |
+| `run <lua>` | Dispatches `ScriptHost::load_string` with chunk name `repl` |
+
+Custom commands register via `register_command` / `unregister_command` and participate in `help` output.
+
+**History buffer** — ring buffer (default 64 entries, configurable via `setHistoryCapacity`):
+
+- Skips consecutive duplicate lines (same as editor console coalescing).
+- Evicts oldest entries on overflow.
+- `recallHistory(previous)` supports up/down navigation for REPL recall; `resetHistoryNavigation` returns to the live input position.
+
+`attach(ScriptHost*)` wires `load`, `run`, and `backend` to the game-thread host. Detached consoles still run local stubs (`help`, `echo`, `history`, `clear`).
 
 ### Bind helpers
 
@@ -90,7 +117,7 @@ ctest --test-dir build --output-on-failure -R fuse_script
 
 | Target | Validates |
 |--------|-----------|
-| `fuse_script_b73` | Host init (null or Lua backend), load stubs / parse errors, callback register/dispatch/unregister, multi-frame `OnUpdate` dt propagation, zero-dt and event-isolation edge cases, `dispatch_update`, primitive + ECS bind round-trips, `values_equal`, Lua hello-world and stack round-trip when linked |
+| `fuse_script_b73` | Host init (null or Lua backend), load stubs / parse errors, callback register/dispatch/unregister, multi-frame `OnUpdate` dt propagation, zero-dt and event-isolation edge cases, `dispatch_update`, primitive + ECS bind round-trips, `values_equal`, Lua hello-world and stack round-trip when linked, `ScriptConsole` built-in/custom command dispatch, history buffer eviction/navigation, host `load`/`run`/`backend` wiring |
 
 Run:
 
@@ -109,6 +136,7 @@ ctest --test-dir build --output-on-failure -R fuse_script
 - [x] `load_string` / `load_file` with parse-error reporting when Lua linked
 - [x] Bind helpers for nil/bool/number/string + `EntityID` / `Transform`
 - [x] `values_equal` + Lua stack push/pop bridge when linked
+- [x] `ScriptConsole` REPL stubs + history buffer + command dispatch tests
 - [x] CTest target green in umbrella CI
 - [ ] ECS `Script` component + per-entity `lua_ref` (follow-up)
 - [ ] Hot-reload watcher (follow-up)
@@ -121,6 +149,7 @@ ctest --test-dir build --output-on-failure -R fuse_script
 - [ ] `ScriptHotReload` file watcher (master plan sketch)
 - [ ] Engine API surface (`Entity.*`, `Physics.*`, `Input.*`) as Lua bindings
 - [ ] Wire stack bridge into callback dispatch (pass `ctx` fields to Lua handlers)
+- [ ] Wire `ScriptConsole` into `fuse::editor::ConsolePanel` command line (U6 chrome)
 
 ---
 
@@ -128,3 +157,4 @@ ctest --test-dir build --output-on-failure -R fuse_script
 
 - [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.3
 - [TRACK-B-ECS.md](./TRACK-B-ECS.md) — `EntityID` / `Transform` types consumed by bind helpers
+- [TRACK-B-EDITOR.md](./TRACK-B-EDITOR.md) — `ConsolePanel` log buffer (B6.11); REPL wiring deferred

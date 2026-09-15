@@ -1,4 +1,5 @@
 add_executable(fuse_script_tests
+    test_script_console.cpp
     test_script_host.cpp
 )
 
