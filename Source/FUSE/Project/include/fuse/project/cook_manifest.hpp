@@ -42,6 +42,8 @@ struct CookRecord {
     std::string output_path;
     CookStatus status = CookStatus::InvalidInput;
     bool ok = false;
+    bool cache_hit = false;
+    u64 content_hash = 0;
     std::string note;
 };
 

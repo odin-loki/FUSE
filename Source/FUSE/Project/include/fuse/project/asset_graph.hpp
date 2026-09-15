@@ -21,6 +21,7 @@ public:
     bool load(const std::string& path);
 
     [[nodiscard]] usize asset_count() const { return m_assets.size(); }
+    [[nodiscard]] const std::string* source_path_for(const std::string& output_path) const;
     void clear();
 
 private:

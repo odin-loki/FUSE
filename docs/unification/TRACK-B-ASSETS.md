@@ -1,6 +1,6 @@
 # Track B — Asset Pipeline (B7.9)
 
-**Status:** B7.9 offline cook/import stubs + job graph deepen landed  
+**Status:** B7.9 offline cook/import stubs + job graph + content-hash cache deepen landed  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.9  
 **Source narrative:** [P7.md](../sources/P7.md) §7.9
 
@@ -15,6 +15,8 @@
 | `AssetGraph` | `Source/FUSE/Project/include/fuse/project/asset_graph.hpp` | Dependency tracking + dirty scan stub |
 | `AssetCooker` | `Source/FUSE/Project/include/fuse/project/asset_cooker.hpp` | Mesh/texture/audio cook stubs |
 | `CookJobGraph` | `Source/FUSE/Project/include/fuse/project/cook_job_graph.hpp` | import→process→pack stage graph + dependency edges |
+| `CookContentHash` | `Source/FUSE/Project/include/fuse/project/cook_content_hash.hpp` | FNV-1a file+desc hashing for cache keys |
+| `CookCache` | `Source/FUSE/Project/include/fuse/project/cook_cache.hpp` | Content-hashed cook output cache + invalidation |
 | `ImportPipeline` | `Source/FUSE/Project/include/fuse/project/import_pipeline.hpp` | Project-scoped plan/execute facade |
 | `fuse_cook` CLI | `Tools/FUSE/fuse_cook.cpp` | Headless cook dry-run (mirrors `fuse_import` pattern) |
 
@@ -35,6 +37,24 @@
 ### Cook job graph (B7.9 deepen)
 
 Each manifest asset expands into a three-stage job: **import** (source validation) → **process** (kind-specific stub transform) → **pack** (`cook_entry`). `CookJobGraph::build_from_manifest` records explicit manifest dependencies plus implicit edges when one job's `output_path` feeds another's `source_path`. `execute` topologically orders jobs, runs stages sequentially, and **short-circuits** remaining stages on failure. Dependent jobs are skipped when an upstream job fails. `CookJobGraphExecuteResult` reports `failed_job_id`, `failed_stage`, and `failure_note`; `AssetCooker::cook_manifest` routes through the graph and maps stage summaries into `CookRecord::note`.
+
+### Content-hash cook cache (B7.9 deepen)
+
+`CookContentHash` computes deterministic FNV-1a keys from source file bytes plus import descriptor knobs (`hash_mesh_import`, `hash_texture_import`, `hash_audio_import`, `hash_manifest_entry`). Identical source+desc inputs produce identical hashes; descriptor or file changes alter the key.
+
+`CookCache` stores `CookCacheEntry` records keyed by content hash. `AssetCooker` consults the cache before stub cooks:
+
+- **Miss** — runs the stub cook, stores the entry, sets `CookRecord::cache_hit = false` and appends `(cache miss)` to the note.
+- **Hit** — returns the cached output path without re-running stages, sets `CookRecord::cache_hit = true`, increments hit stats.
+
+Invalidation paths:
+
+- `CookCache::invalidate(hash)` — drop one entry by content hash.
+- `CookCache::invalidate_source(path)` — drop all entries sourced from a file.
+- `CookCache::invalidate_all()` — clear the cache.
+- `AssetCooker::cook_dirty` — invalidates cache entries for dirty asset sources before stub reimport.
+
+`CookCacheStats` tracks hits, misses, and invalidations. The cache persists to JSON via `save`/`load` for offline cook follow-up.
 
 ### Import pipeline
 
@@ -90,7 +110,7 @@ ctest --test-dir build --output-on-failure -R fuse_assets
 
 | Target | Validates |
 |--------|-----------|
-| `fuse_assets_b79` | Cook manifest parse, asset graph save/load, cooker stub, job graph stage ordering + failure short-circuit, pipeline dry-run, project plan |
+| `fuse_assets_b79` | Cook manifest parse, asset graph save/load, cooker stub, job graph stage ordering + failure short-circuit, content-hash cache hit/miss + invalidation, pipeline dry-run, project plan |
 
 Run:
 
@@ -106,6 +126,7 @@ ctest --test-dir build --output-on-failure -R fuse_assets_b79
 - [x] Cook manifest types + minimal JSON loader
 - [x] `AssetGraph` dirty scan + persistence stub
 - [x] `CookJobGraph` import→process→pack stages + dependency edges + failure reporting
+- [x] `CookContentHash` + `CookCache` content-hash keys, hit/miss stats, invalidation hooks
 - [x] `fuse_cook` CLI dry-run
 - [x] CTest target green in umbrella CI
 - [ ] Real mesh/texture/audio encoders (follow-up)
