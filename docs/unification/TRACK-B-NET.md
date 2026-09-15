@@ -1,6 +1,6 @@
 # Track B — B7.4 Networking (deepen)
 
-**Status:** Snapshot delta field masks, verified apply path, snapshot history ring, AOI stubs, input prediction history, reconcile stub, and shared checksum helpers on `fuse_net`  
+**Status:** Snapshot delta field masks, entity bitset validation, verified apply path, snapshot history ring wrap, AOI stubs, input prediction history, reconcile stub, and shared checksum helpers on `fuse_net`  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.4  
 **Depends on:** B3 ECS (`fuse_ecs`), initial B7.4 transport/rollback scaffolding
 
@@ -21,7 +21,7 @@
 | `RollbackBuffer` | `rollback_buffer.hpp/.cpp` | 64-frame snapshot + input ring (unchanged capacity) |
 | `SnapshotHistoryRing` | `snapshot_delta.hpp/.cpp` | Snapshot-only ring delegating to `RollbackBuffer`; `apply_delta_and_store` |
 | `RollbackManager` | `rollback.hpp/.cpp` | Records predicted locals; reconciles on remote apply |
-| Snapshot deltas | `snapshot_delta.hpp/.cpp` | Field masks, entity bitsets, encode/decode, verified apply + delta checksum |
+| Snapshot deltas | `snapshot_delta.hpp/.cpp` | Field masks, entity bitset validation, encode/decode, verified apply + delta checksum |
 | Transport | `transport.hpp` | Loopback + ENet/Steam stubs |
 
 **Not in scope (follow-up PRs):** ENet process-pair smoke, session matchmaking, desync telemetry UI, full GGPO input delay, frustum/LOS refinement of AOI.
@@ -118,7 +118,7 @@ const bool ok = fuse::net::verify_snapshot_checksum(snapshot);
 
 ## Snapshot delta / state-sync deepen
 
-Entity patches carry per-component field masks (`SnapshotEcsField`, `SnapshotPhysicsField`) and a `changed_entity_mask` bitset (stub: up to 64 entity indices). `compute_snapshot_delta` compares baseline vs current snapshots; `apply_snapshot_delta_verified` checks baseline checksum before reconstructing the target frame.
+Entity patches carry per-component field masks (`SnapshotEcsField`, `SnapshotPhysicsField`) and a `changed_entity_mask` bitset (stub: up to 64 entity indices). `validate_changed_entity_mask` and `entity_index_in_changed_mask` keep patch rows and mask bits aligned. `compute_snapshot_delta` compares baseline vs current snapshots; `apply_snapshot_delta_verified` checks baseline checksum and entity-mask consistency before reconstructing the target frame. `SnapshotHistoryRing::stored_frame_count` reports retained frames across ring eviction.
 
 ```cpp
 #include <fuse/net/snapshot_delta.hpp>
@@ -166,7 +166,7 @@ ctest --test-dir build --output-on-failure -R fuse_net_b74
 | `test_net_input_history` | `push_frame` / `pop_oldest`, ring wrap eviction, `inputs_equal` |
 | `test_net_reconcile` | Confirmed / mismatch / NoOp reconcile paths, `reconcile_authoritative` |
 | `test_net_rollback_window` | Rewind bounds, `resimulate_frame_count`, `RollbackManager::rewind_to` |
-| `test_net_snapshot_delta` | Empty delta, single-field mask, multi-entity bitset, wire roundtrip, checksum mismatch, history ring |
+| `test_net_snapshot_delta` | Empty delta, partial field-mask apply, entity bitset validation, multi-entity bitset, wire roundtrip, checksum mismatch, history ring wrap |
 | `fuse_net_b74` (umbrella) | Transport, serializer, rollback, buffer, delta, interpolation, AOI |
 
 ---
@@ -178,8 +178,8 @@ ctest --test-dir build --output-on-failure -R fuse_net_b74
 - [x] Reconcile stub (`reconcile_predicted_input`, `InputHistoryBuffer::reconcile_authoritative`)
 - [x] Rollback window helpers (`can_rewind_to_frame`, `resimulate_frame_count`, `RollbackManager::rewind_to`)
 - [x] Shared checksum helpers + tests
-- [x] Snapshot delta field masks, entity bitsets, verified apply + delta checksum
-- [x] `SnapshotHistoryRing` reuses `RollbackBuffer` for rollback-friendly snapshot history
+- [x] Snapshot delta field masks, entity bitset validation, verified apply + delta checksum
+- [x] `SnapshotHistoryRing` reuses `RollbackBuffer`; `stored_frame_count` + wrap-safe `apply_delta_and_store`
 - [x] `RollbackManager` records predictions and reconciles remotes
 - [ ] ENet / Steam real backends (follow-up)
 - [ ] Process-pair net smoke (follow-up, see [TRACK-B-PHASE7.md](./TRACK-B-PHASE7.md))

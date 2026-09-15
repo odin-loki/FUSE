@@ -60,9 +60,20 @@ struct DeltaApplyResult {
     GameSnapshot snapshot{};
     bool base_checksum_ok = false;
     bool target_checksum_ok = false;
+    /// True when `changed_entity_mask` bits align with `entity_patches` (EntityPatch only).
+    bool entity_mask_ok = true;
 };
 
 [[nodiscard]] bool snapshots_equivalent(const GameSnapshot& base, const GameSnapshot& target);
+
+/// Returns true when bit `entity_index` is set in a delta entity mask (indices >= 64 are ignored).
+[[nodiscard]] bool entity_index_in_changed_mask(u64 changed_entity_mask, u32 entity_index);
+
+/// Popcount of set bits in `changed_entity_mask` (stub: up to 64 entity indices).
+[[nodiscard]] u32 count_changed_entities_in_mask(u64 changed_entity_mask);
+
+/// True when every patch index has a matching mask bit and no stray mask bits are set.
+[[nodiscard]] bool validate_changed_entity_mask(const SnapshotDelta& delta);
 
 [[nodiscard]] SnapshotDelta compute_snapshot_delta(const GameSnapshot& base, const GameSnapshot& target);
 [[nodiscard]] GameSnapshot apply_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta);
@@ -85,6 +96,7 @@ public:
     [[nodiscard]] u32 capacity() const { return m_buffer.capacity(); }
     [[nodiscard]] u32 oldest_frame() const { return m_buffer.oldest_stored_frame(); }
     [[nodiscard]] u32 newest_frame() const { return m_buffer.newest_stored_frame(); }
+    [[nodiscard]] u32 stored_frame_count() const;
     [[nodiscard]] bool has_frame(u32 frame) const { return m_buffer.has_frame(frame); }
 
     void push(GameSnapshot snapshot);
