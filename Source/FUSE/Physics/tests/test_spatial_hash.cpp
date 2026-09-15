@@ -275,12 +275,62 @@ void testPairBufferSoAClearReuse() {
     buffer.push(2u, 3u);
     expectEq(buffer.activeCount, 2u, "pair buffer push increments active count");
 
+    const std::size_t capacityAfterPush = buffer.bodyA.capacity();
     buffer.clear();
     expectEq(buffer.activeCount, 0u, "pair buffer clear resets active count");
+    expectTrue(buffer.isEmpty(), "cleared pair buffer reports empty");
+    expectTrue(buffer.bodyA.capacity() >= capacityAfterPush,
+               "pair buffer clear preserves reserved capacity");
 
     buffer.push(4u, 5u);
     expectEq(buffer.activeCount, 1u, "pair buffer reuses storage after clear");
     expectEq(buffer.toVector().size(), 1u, "pair buffer toVector after reuse");
+    expectTrue(buffer.containsCanonicalPair(4u, 5u), "containsCanonicalPair finds pushed pair");
+}
+
+void testPairBufferSlotCompact() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.preparePairSlots(4u);
+    buffer.writeSlot(0u, 1u, 2u);
+    buffer.writeSlot(2u, 3u, 4u);
+    expectEq(buffer.compact(), 2u, "slot compact gathers valid pair slots");
+    expectTrue(buffer.containsCanonicalPair(1u, 2u), "compact preserves first slot pair");
+    expectTrue(buffer.containsCanonicalPair(3u, 4u), "compact preserves second slot pair");
+    expectEq(buffer.toVector().size(), 2u, "toVector reflects compacted active count");
+}
+
+void testPairBufferMaxCapacityClamp() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.setMaxCapacity(2u);
+    expectTrue(buffer.push(0u, 1u), "push accepts pair under capacity");
+    expectTrue(buffer.push(2u, 3u), "push accepts second pair at capacity");
+    expectTrue(!buffer.push(4u, 5u), "push rejects pair beyond max capacity");
+    expectEq(buffer.droppedCount, 1u, "dropped count tracks clamped pushes");
+    expectEq(buffer.activeCount, 2u, "active count stops at max capacity");
+}
+
+void testBroadphase2DParallelParity() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    populateRandomSpheres(64u, bodies, shapes);
+
+    fuse::physics::broadphase::SpatialHashParams params;
+    params.cellSize = 1.f;
+    params.tableSize = 512;
+    params.bodyCount = bodies.count();
+
+    fuse::physics::broadphase::PairBufferSoA singleThreaded;
+    fuse::physics::broadphase::PairBufferSoA multiThreaded;
+    withScheduler(0u, [&] {
+        fuse::physics::broadphase::runBroadphase2DIntoBuffer(bodies, shapes, params, singleThreaded);
+    });
+    withScheduler(4u, [&] {
+        fuse::physics::broadphase::runBroadphase2DIntoBuffer(bodies, shapes, params, multiThreaded);
+    });
+
+    expectTrue(pairListsEqual(singleThreaded.toVector(), multiThreaded.toVector()),
+               "2D SoA broadphase matches single-thread output");
+    expectEq(singleThreaded.activeCount, multiThreaded.activeCount, "2D SoA pair counts match");
 }
 
 void testBroadphaseSoABufferParity() {
@@ -360,6 +410,8 @@ int main() {
     testSpatialHashFunction();
     testAabbOverlapStub();
     testPairBufferSoAClearReuse();
+    testPairBufferSlotCompact();
+    testPairBufferMaxCapacityClamp();
     testBroadphaseEmptyScene();
     testBroadphaseFindsOverlappingPair();
     testBodiesStraddlingCells();
@@ -367,6 +419,7 @@ int main() {
     testBroadphaseMatchesBruteForce();
     testBroadphaseParallelParity();
     testBroadphaseSoABufferParity();
+    testBroadphase2DParallelParity();
     testBroadphaseLargeScene();
 
     if (g_failures == 0) {

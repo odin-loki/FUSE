@@ -29,9 +29,9 @@ void PairBufferSoA::clear() {
     activeCount = 0;
     pairSlotCount = 0;
     droppedCount = 0;
-    bodyA.clear();
-    bodyB.clear();
-    validFlags.clear();
+    bodyA.resize(0);
+    bodyB.resize(0);
+    validFlags.resize(0);
 }
 
 void PairBufferSoA::preparePairSlots(u32 slotCount) {
@@ -87,10 +87,23 @@ u32 PairBufferSoA::compact() {
     }
 
     activeCount = writeIndex;
-    for (u32 i = activeCount; i < pairSlotCount; ++i) {
-        validFlags[i] = 0u;
-    }
+    pairSlotCount = activeCount;
+    bodyA.resize(activeCount);
+    bodyB.resize(activeCount);
+    validFlags.resize(activeCount);
     return activeCount;
+}
+
+bool PairBufferSoA::containsCanonicalPair(u32 idxA, u32 idxB) const {
+    if (idxA > idxB) {
+        std::swap(idxA, idxB);
+    }
+    for (u32 i = 0; i < activeCount; ++i) {
+        if (validFlags[i] != 0u && bodyA[i] == idxA && bodyB[i] == idxB) {
+            return true;
+        }
+    }
+    return false;
 }
 
 CandidatePair PairBufferSoA::pairAt(u32 index) const {

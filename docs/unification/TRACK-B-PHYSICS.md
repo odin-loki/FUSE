@@ -124,7 +124,7 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 - [x] `fuse_physics_broadphase_tests` — parallel vs single-thread scheduler parity + 1k-scene smoke
 - [x] `fuse_physics_broadphase_tests` — 256-sphere brute-force reference match
 - [x] `PairBufferSoA` — per-pair slot clear/reuse + compact; job-safe `runBroadphaseIntoBuffer`
-- [x] `fuse_physics_broadphase_tests` — empty scene, pair count, AABB overlap stubs, SoA parallel vs serial parity
+- [x] `fuse_physics_broadphase_tests` — empty scene, pair count, AABB overlap stubs, SoA parallel vs serial parity, slot compact, max-capacity clamp, 2D broadphase parity
 - [ ] 10k random spheres vs brute force O(n²) — catalog `broadphase.spatial_hash_10k` (1k parity smoke landed; full 10k deferred)
 - [x] Bodies straddling multiple cells — edge case
 - [ ] GPU radix sort — deferred to CUDA B4.1
@@ -197,7 +197,7 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 - Physics simulation data lives on the CUDA **Physics** stream (`CUDAStreamKind::Physics` from B2.6 `StreamManager`)
 - CPU gameplay code queues destruction events and reads query results after `step()` — no GPU record from job workers
 - Collision callbacks dispatch on the game thread after solver step (same frame as ECS sync)
-- **Broadphase jobify (CPU stub):** `runBroadphaseIntoBuffer` / `runBroadphase2DIntoBuffer` read immutable `RigidBodySoA` + `CollisionShapeSoA` snapshots and write reusable `PairBufferSoA` slots via `fuse::jobs::parallel_for` over shape→cell build + per-cell candidate generation; `aabbOverlap` / `sphereAabbOverlap` stubs are available for optional downstream refine; falls back to serial when `JobScheduler` is single-threaded or uninitialized
+- **Broadphase jobify (CPU stub):** `runBroadphaseIntoBuffer` / `runBroadphase2DIntoBuffer` read immutable `RigidBodySoA` + `CollisionShapeSoA` snapshots and write reusable `PairBufferSoA` slots via `fuse::jobs::parallel_for` over shape→cell build + per-cell candidate generation (`preparePairSlots` → disjoint `writeSlot` per cell → `compact` → dedupe); `PairBufferSoA::clear` preserves reserved capacity; `setMaxCapacity` clamps overflow via `droppedCount`; `aabbOverlap` / `sphereAabbOverlap` stubs are available for optional downstream refine; falls back to serial when `JobScheduler` is single-threaded or uninitialized
 - **PBD constraint iteration (CPU stub):** each substep builds `ContactIslandGraph` from contacts + distance constraints; `parallel_for` dispatches non-empty islands while contacts within an island resolve sequentially (Gauss-Seidel). `SolverWorkBuffers` holds reusable manifolds, per-body `PositionDelta` slots, and per-constraint lambda warm-start buffers. `clearPositionDeltasForBodies` resets only the two body slots touched by each constraint; `applyPositionDeltas` commits corrections and clears touched slots before the next constraint in an island pass so parallel workers never race on shared scratch. `seedContactLambdaFromImpulse` / `seedDistanceLambda` copy narrowphase impulse stubs and prior-frame distance lambdas into cold slots after `clearLambdas`. `accumulateDistanceSpringCorrection` / `accumulateContactCorrection` write disjoint body slots (job-safe SoA). Lambdas persist across substeps (cleared only on the first substep of a frame) for warm-start. `SolverParams::iterations` configures the max pass count; `residualTolerance` enables early-exit when max constraint violation drops below threshold; `lastConstraintResidual()` surfaces the stub for tests
 - **Narrowphase job-safe slots (CPU stub):** `runNarrowphaseIntoBuffer` assigns one output slot per candidate pair index; workers write only their slot, then `ContactBufferSoA::compact()` gathers valid manifolds without shared mutable pair state (serial dispatch on CPU stub; slot layout matches parallel kernel path). `ContactManifold` stores up to four point slots with normal/penetration, warm-start impulse stubs, and a cached `frictionBasis`; `ContactBufferSoA` mirrors tangent1/tangent2 in SoA columns via `buildFrictionTangentBases` / `tangentBasisAt`. `buildTangentBasis` / `isOrthonormalTangentBasis` / `projectTangentialVelocity` provide friction tangent frames for the solver stub.
 - **CCD job-safe slots (CPU stub):** `runCcdIntoBuffer` assigns one TOI slot per candidate pair; workers write only their slot, then `ToiBufferSoA::compactAndSort()` gathers valid impacts and orders earliest-first with deterministic body-index tie-break. `push` / `setMaxCapacity` support direct TOI gathering with overflow clamp (`droppedCount`); `isSortedByToi()` validates ascending order; `earliestToi()` reads the first sorted impact. `sweptSphereSphere` / `sweptSpherePlane` / `sweptSphereSlabZ` / `sweptSphereAabb` cover analytic sweep stubs; sphere-box dispatch builds a centered AABB from shape half-extents. `PhysicsManager` reuses `m_toiBuffer_` each step
@@ -209,7 +209,7 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 | Target | Validates |
 |--------|-----------|
 | `fuse_physics_data_tests` | B4.1 SoA allocate/addBody |
-| `fuse_physics_broadphase_tests` | B4.2 spatial hash pairs, `PairBufferSoA`, AABB overlap stubs, empty scene, parallel jobify parity, straddling cells, brute-force reference |
+| `fuse_physics_broadphase_tests` | B4.2 spatial hash pairs, `PairBufferSoA` slot compact/capacity reuse, AABB overlap stubs, empty scene, 3D/2D parallel jobify parity, straddling cells, brute-force reference |
 | `fuse_physics_narrowphase_tests` | B4.3 analytic + GJK stubs, box/capsule-sphere/box-box, SoA contact buffer reuse, manifold fill, empty contacts, friction basis, tangent SoA round-trip |
 | `fuse_physics_pipeline_tests` | B4.1 frame pipeline step |
 | `fuse_physics_world_composition_tests` | World3D + physics composition |
@@ -251,6 +251,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_physics|fuse_voxel|fuse_soft
 - [x] B4.3 narrowphase deepen — multi-point manifolds, warm-start impulses, `friction.hpp`, axis-aligned box-box stub
 - [x] B4.2 CPU broadphase jobify — `parallel_for` over shape→cell build + per-cell candidate generation stubs
 - [x] B4.2 CPU broadphase deepen — `PairBufferSoA`, `runBroadphaseIntoBuffer`, AABB overlap refine stubs, pipeline buffer reuse
+- [x] B4.2 CPU broadphase deepen — per-cell slot dispatch stub (`preparePairSlots`/`writeSlot`/`compact`), capacity-preserving clear, max-capacity clamp, 2D parity tests
 - [x] B4.4 CPU deepen — island-partitioned constraint iterations, job-safe `SolverWorkBuffers`, rest-length spring tests
 - [x] B4.4 CPU deepen — configurable iteration count, lambda warm-start, residual early-exit stub, job-safe constraint accumulation helpers
 - [x] B4.4 CPU deepen — per-pair delta clearing in island passes, apply-and-reset slots, frame-to-frame distance lambda warm-start

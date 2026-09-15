@@ -18,6 +18,8 @@ struct PairBufferSoA {
     u32 maxCapacity = 0;
     u32 droppedCount = 0;
 
+    bool isEmpty() const { return activeCount == 0u; }
+
     void reserve(u32 capacity);
     void setMaxCapacity(u32 capacity);
     void clear();
@@ -25,6 +27,7 @@ struct PairBufferSoA {
     void writeSlot(u32 slot, u32 idxA, u32 idxB);
     bool push(u32 idxA, u32 idxB);
     u32 compact();
+    bool containsCanonicalPair(u32 idxA, u32 idxB) const;
     CandidatePair pairAt(u32 index) const;
     std::vector<CandidatePair> toVector() const;
 };
