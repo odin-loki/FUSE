@@ -46,6 +46,10 @@ public:
     bool isValid() const { return m_info.valid; }
 
     void* nativeHandle() const;
+    void* nativePhysicalDevice() const;
+    void* instanceHandle() const;
+    void setVmaAllocator(void* allocator);
+
     const VulkanQueues& queues() const { return m_info.queues; }
 
 private:

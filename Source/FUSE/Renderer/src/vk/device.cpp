@@ -89,6 +89,21 @@ void* VulkanDevice::nativeHandle() const {
     return m_handle;
 }
 
+void* VulkanDevice::nativePhysicalDevice() const {
+    return m_physicalDevice;
+}
+
+void* VulkanDevice::instanceHandle() const {
+    if (m_instance == nullptr) {
+        return nullptr;
+    }
+    return m_instance->nativeHandle();
+}
+
+void VulkanDevice::setVmaAllocator(void* allocator) {
+    m_info.vmaAllocator = allocator;
+}
+
 bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& desc) {
     m_instance = &instance;
 
@@ -207,7 +222,7 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
     m_info.queues.compute = computeQueue;
     m_info.queues.transfer = transferQueue;
     m_info.vmaAllocator = nullptr;
-    m_info.message = "Logical device ready (VMA deferred)";
+    m_info.message = "Logical device ready (VMA via GpuAllocator)";
     return true;
 #else
     (void)desc;

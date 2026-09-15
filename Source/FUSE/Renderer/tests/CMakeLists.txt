@@ -2,6 +2,10 @@ add_executable(fuse_vulkan_bootstrap test_vulkan_bootstrap.cpp)
 target_link_libraries(fuse_vulkan_bootstrap PRIVATE fuse_rhi)
 add_test(NAME fuse_vulkan_bootstrap COMMAND fuse_vulkan_bootstrap)
 
+add_executable(fuse_vulkan_resources test_vulkan_resources.cpp)
+target_link_libraries(fuse_vulkan_resources PRIVATE fuse_rhi)
+add_test(NAME fuse_vulkan_resources COMMAND fuse_vulkan_resources)
+
 add_executable(fuse_shader_pipeline test_shader_pipeline.cpp)
 target_link_libraries(fuse_shader_pipeline PRIVATE fuse_rhi)
 target_compile_definitions(fuse_shader_pipeline PRIVATE
