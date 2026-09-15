@@ -74,12 +74,42 @@ struct RGPassDesc {
     bool isCuda = false;
 };
 
+enum class RGPassDependencyKind : u32 {
+    Explicit = 0,
+    ResourceAccess = 1,
+};
+
+/// Directed edge: `fromPassIndex` must complete before `toPassIndex` runs.
+struct RGPassDependencyEdge {
+    u32 fromPassIndex = 0;
+    u32 toPassIndex = 0;
+    RGPassDependencyKind kind = RGPassDependencyKind::Explicit;
+};
+
+enum class RGResourceLifetimePhase : u32 {
+    Unknown = 0,
+    Imported = 1,
+    TransientCreated = 2,
+};
+
+/// CPU-side first/last pass indices for a graph resource (release stub deferred).
+struct RGResourceLifetime {
+    u32 resourceId = 0;
+    bool isTexture = true;
+    u32 firstPassIndex = static_cast<u32>(-1);
+    u32 lastPassIndex = static_cast<u32>(-1);
+    RGResourceLifetimePhase phase = RGResourceLifetimePhase::Unknown;
+};
+
 struct RenderGraphCompileInfo {
     u32 passCount = 0;
     u32 executablePassCount = 0;
     u32 culledPassCount = 0;
     u32 barrierCount = 0;
+    u32 dependencyEdgeCount = 0;
+    u32 resourceLifetimeCount = 0;
     bool compiled = false;
+    bool usedDeclarationOrderFallback = false;
 };
 
 struct RenderGraphExecuteInfo {
@@ -101,6 +131,7 @@ public:
     RGTextureRef createTransient(const TextureDesc& desc);
 
     void addPass(const RGPassDesc& desc);
+    void addPassDependency(u32 fromPassIndex, u32 toPassIndex);
     void compile();
 
     RenderGraphExecuteInfo execute(VulkanDevice& device,
@@ -109,6 +140,10 @@ public:
 
     const RenderGraphCompileInfo& compileInfo() const { return m_compileInfo; }
     const std::vector<RGBarrier>& plannedBarriers() const { return m_barriers; }
+    const std::vector<RGPassDependencyEdge>& dependencyEdges() const { return m_dependencyEdges; }
+    const std::vector<RGResourceLifetime>& resourceLifetimes() const { return m_resourceLifetimes; }
+    /// Pass indices in execution order after `compile()` (non-culled passes only).
+    const std::vector<u32>& compileOrder() const { return m_compileOrder; }
     u32 backbufferIndex() const { return m_backbufferIndex; }
 
 private:
@@ -134,6 +169,9 @@ private:
     TextureState& textureStateAt(u32 textureId);
     void planBarriersForPass(const PassNode& pass);
     void cullUnusedPasses();
+    void buildDependencyEdges();
+    void resolveCompileOrder();
+    void assignResourceLifetimes();
     void assignExecutionOrder();
 
     u32 m_backbufferIndex = 0;
@@ -143,6 +181,10 @@ private:
     std::vector<PassNode> m_passes;
     std::vector<RGBarrier> m_barriers;
     std::vector<TextureState> m_textureStates;
+    std::vector<RGPassDependencyEdge> m_explicitEdges;
+    std::vector<RGPassDependencyEdge> m_dependencyEdges;
+    std::vector<RGResourceLifetime> m_resourceLifetimes;
+    std::vector<u32> m_compileOrder;
 };
 
 void populateRenderGraphFromCommandList(RenderGraph& graph,

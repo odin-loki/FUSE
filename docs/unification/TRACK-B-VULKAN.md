@@ -183,6 +183,19 @@ Per-slot command pools and primary command buffers are allocated when the Vulkan
 | `FrameCommandData` | `vk/frame.hpp` | Per-slot `VkCommandPool` + primary `VkCommandBuffer` when backend active |
 | `RhiContext` integration | `rhi_context.cpp` | `submitFrame()` populates graph, compiles, executes into recorder, advances frame ring |
 
+### B2.5 follow-up — pass dependency edges & resource lifetimes (stub)
+
+`RenderGraph::compile()` now builds a directed dependency graph before barrier planning:
+
+| Piece | API | Behaviour |
+|-------|-----|-----------|
+| Explicit edges | `addPassDependency(from, to)` | Producer pass must finish before consumer pass |
+| Resource edges | `RGPassDependencyKind::ResourceAccess` | Chains passes that touch the same texture/buffer in declaration order |
+| Compile order | `compileOrder()` | Topological sort of non-culled passes; falls back to declaration order on cycles |
+| Lifetime stubs | `resourceLifetimes()` | CPU-side `firstPassIndex` / `lastPassIndex` per resource (`Imported` vs `TransientCreated`) |
+
+GPU release / alias reuse remains deferred — lifetimes are planning metadata only. `fuse_render_graph` covers explicit reordering, resource-edge derivation, and transient lifetime tagging.
+
 ### Render graph API (sketch)
 
 ```cpp
@@ -569,6 +582,7 @@ Thread ownership unchanged: CUDA launch jobs run on worker threads; Vulkan recor
 - [x] Own Hybrid presentable path stubs — `PlatformWindow` (null/GLFW), `VulkanPresentable`, `HybridRendererBootstrap` wiring
 - [x] B2.2 present path deepen — `PresentPath`, `VsyncMode`, acquire/present/fence-wait/resize recreate stubs + CI state-machine tests
 - [x] B2.3 resource deepen — stub/VMA alloc stats, destroy-order teardown, `fuse_rhi_resource_destroy_order` (see [TRACK-B-RHI.md](./TRACK-B-RHI.md))
+- [x] B2.5 render graph deepen — pass dependency edges, resource lifetime stubs, compile-order tests
 - [ ] Editor Qt native surface (`U6` viewport) → `SwapchainDesc.surface`
 - [ ] Android Vulkan WSI + MoltenVK macOS module
 
