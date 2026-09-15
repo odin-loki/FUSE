@@ -94,6 +94,10 @@ bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason*
     return m_resolve.wouldSkip(desc, m_history, reason);
 }
 
+void TaaPass::stampObservedHistoryGeneration(TaaResolveDesc& desc) const {
+    fuse::renderer::stampObservedHistoryGeneration(desc, m_history);
+}
+
 bool TaaPass::resolveFrame(const TaaResolveDesc& desc, void* cudaStream) {
     if (!m_stats.ready) {
         m_stats.message = "TAA pass not ready";

@@ -9,14 +9,38 @@ f32 clampF32(f32 value, f32 minValue, f32 maxValue) {
     return std::max(minValue, std::min(maxValue, value));
 }
 
-TaaResolveSkipReason classifySkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+} // namespace
+
+bool taaResolveDimensionsValid(u32 width, u32 height) {
+    return width > 0u && height > 0u;
+}
+
+bool taaResolveSkipReasonIsBlocking(TaaResolveSkipReason reason) {
+    return reason != TaaResolveSkipReason::None;
+}
+
+bool taaResolveDimensionsMatch(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return history.matchesDimensions(desc.width, desc.height);
+}
+
+bool taaResolveBypassesHistoryGenerationGuard(const TaaResolveDesc& desc) {
+    return desc.observed_history_generation == kTaaResolveNoHistoryGeneration;
+}
+
+void stampObservedHistoryGeneration(TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    if (taaResolveBypassesHistoryGenerationGuard(desc)) {
+        desc.observed_history_generation = history.invalidateGeneration();
+    }
+}
+
+TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!history.isReady()) {
         return TaaResolveSkipReason::HistoryNotReady;
     }
-    if (desc.width == 0u || desc.height == 0u) {
+    if (!taaResolveDimensionsValid(desc.width, desc.height)) {
         return TaaResolveSkipReason::InvalidDimensions;
     }
-    if (!history.matchesDimensions(desc.width, desc.height)) {
+    if (!taaResolveDimensionsMatch(desc, history)) {
         return TaaResolveSkipReason::DimensionMismatch;
     }
     if (desc.surfaces.current_frame == nullptr || desc.surfaces.output == nullptr) {
@@ -32,14 +56,12 @@ TaaResolveSkipReason classifySkip(const TaaResolveDesc& desc, const TaaHistoryBu
             return TaaResolveSkipReason::MissingDepthBuffer;
         }
     }
-    if (desc.observed_history_generation != kTaaResolveNoHistoryGeneration &&
+    if (!taaResolveBypassesHistoryGenerationGuard(desc) &&
         history.isHistoryStale(desc.observed_history_generation)) {
         return TaaResolveSkipReason::StaleHistoryGeneration;
     }
     return TaaResolveSkipReason::None;
 }
-
-} // namespace
 
 TAAParams clampTaaParams(const TAAParams& raw) {
     TAAParams clamped = raw;
@@ -94,19 +116,19 @@ void TaaResolve::resetBookkeeping() {
 
 bool TaaResolve::wouldSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                            TaaResolveSkipReason* reason) const {
-    const TaaResolveSkipReason skip = classifySkip(desc, history);
+    const TaaResolveSkipReason skip = classifyTaaResolveSkip(desc, history);
     if (reason != nullptr) {
         *reason = skip;
     }
-    return skip != TaaResolveSkipReason::None;
+    return taaResolveSkipReasonIsBlocking(skip);
 }
 
 bool TaaResolve::resolve(const TaaResolveDesc& desc, TaaHistoryBuffer& history, void* /*cudaStream*/) {
     m_stats = {};
     m_message.clear();
 
-    const TaaResolveSkipReason skip = classifySkip(desc, history);
-    if (skip != TaaResolveSkipReason::None) {
+    const TaaResolveSkipReason skip = classifyTaaResolveSkip(desc, history);
+    if (taaResolveSkipReasonIsBlocking(skip)) {
         m_stats.skipped = true;
         m_stats.skip_reason = skip;
         switch (skip) {
