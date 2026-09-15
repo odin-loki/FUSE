@@ -181,6 +181,34 @@ void testAllyContextAvailable() {
     expectTrue(!fuse::ai::ally_context_available(&empty), "ally context unavailable when empty");
 }
 
+void testIsValidAllyRadius() {
+    expectTrue(fuse::ai::is_valid_ally_radius(5.f), "positive radius is valid");
+    expectTrue(!fuse::ai::is_valid_ally_radius(0.f), "zero radius is invalid");
+    expectTrue(!fuse::ai::is_valid_ally_radius(-1.f), "negative radius is invalid");
+}
+
+void testRadiusSqFromPolicy() {
+    fuse::ai::RadiusFilterPolicy policy;
+    policy.radius = 5.f;
+    expectNear(fuse::ai::radius_sq_from_policy(policy), 25.f, 1e-4f,
+               "radius_sq_from_policy squares effective radius");
+    policy.radius = -3.f;
+    expectNear(fuse::ai::radius_sq_from_policy(policy), 0.f, 1e-4f,
+               "radius_sq_from_policy clamps negative radius to zero");
+}
+
+void testNearestAllyDistanceSq() {
+    const std::vector<fuse::ai::AllyCandidate> allies = makeSquad();
+
+    const float nearestSq =
+        fuse::ai::nearest_ally_distance_sq(0, 1, 0.f, 0.f, allies);
+    expectNear(nearestSq, 25.f, 1e-4f, "nearest_ally_distance_sq returns closest ally distance");
+
+    const float noneSq =
+        fuse::ai::nearest_ally_distance_sq(5, 2, 6.f, 0.f, allies);
+    expectNear(noneSq, 0.f, 1e-4f, "nearest_ally_distance_sq returns zero when no allies");
+}
+
 } // namespace
 
 int run_spatial_query_tests() {
@@ -198,5 +226,8 @@ int run_spatial_query_tests() {
     testNearestAllyNoMatchOtherTeam();
     testHasAnyAllyInRadius();
     testAllyContextAvailable();
+    testIsValidAllyRadius();
+    testRadiusSqFromPolicy();
+    testNearestAllyDistanceSq();
     return g_failures;
 }

@@ -10,10 +10,18 @@ constexpr u32 kParallelChildCount = 2;
 
 BehaviorTickResult mergeParallelSideEffects(const BehaviorTickResult& current,
                                             const BehaviorTickResult& child) {
+    BehaviorTickResult merged = current;
     if (child.wroteFlag) {
-        return child;
+        merged.wroteFlag = true;
+        merged.flagIndex = child.flagIndex;
+        merged.flagValue = child.flagValue;
     }
-    return current;
+    if (child.wroteScalar) {
+        merged.wroteScalar = true;
+        merged.scalarIndex = child.scalarIndex;
+        merged.scalarValue = child.scalarValue;
+    }
+    return merged;
 }
 
 BehaviorTickResult aggregateParallelChildren(const BehaviorTickResult& first,
@@ -112,12 +120,17 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
         }
 
         const u32 failLimit = policy.failThreshold > 0 ? policy.failThreshold : 1u;
+        const u32 successNeeded =
+            policy.successThreshold > 0 ? policy.successThreshold : kParallelChildCount;
 
         const BehaviorTickResult first = tickNode(node.childA, agentIndex, agent, board, ctx);
         const u32 failCountAfterFirst =
             first.status == BehaviorStatus::Failure ? 1u : 0u;
+        const u32 successCountAfterFirst =
+            first.status == BehaviorStatus::Success ? 1u : 0u;
         const bool tickSecond =
-            !policy.abortOnFail || failCountAfterFirst < failLimit;
+            (!policy.abortOnFail || failCountAfterFirst < failLimit) &&
+            (!policy.abortOnSuccess || successCountAfterFirst < successNeeded);
 
         BehaviorTickResult second;
         if (tickSecond) {
@@ -338,6 +351,22 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
         const u32 slot = node.scalarSlot < Blackboard::kMaxScalars ? node.scalarSlot : 0u;
         result.status = board.isScalarEmpty(agentIndex, slot) ? BehaviorStatus::Success
                                                               : BehaviorStatus::Failure;
+        return result;
+    }
+    case NodeKind::GuardBlackboardFlagEmpty: {
+        BehaviorTickResult result;
+        if (!board.isBound()) {
+            result.status = BehaviorStatus::Failure;
+            return result;
+        }
+        const u32 flag = node.flagIndex < Blackboard::kMaxFlags ? node.flagIndex : 0u;
+        result.status = board.isFlagEmpty(agentIndex, flag) ? BehaviorStatus::Success
+                                                            : BehaviorStatus::Failure;
+        return result;
+    }
+    case NodeKind::GuardBlackboardEmpty: {
+        BehaviorTickResult result;
+        result.status = board.agentCount() == 0u ? BehaviorStatus::Success : BehaviorStatus::Failure;
         return result;
     }
     case NodeKind::GuardAllyContext: {

@@ -48,6 +48,8 @@ enum class NodeKind {
     ActionAlliesCount,
     GuardBlackboardBound,
     GuardBlackboardScalarEmpty,
+    GuardBlackboardFlagEmpty,
+    GuardBlackboardEmpty,
     GuardAllyContext,
 };
 
@@ -68,6 +70,8 @@ struct ParallelPolicy {
     u32 failThreshold = 1;
     /// When true, stop ticking remaining children once fail threshold is reached.
     bool abortOnFail = false;
+    /// When true, stop ticking remaining children once success threshold is met.
+    bool abortOnSuccess = false;
     /// When true, fail immediately when the blackboard view is not bound.
     bool requireBoundBlackboard = false;
     /// When true, fail immediately when ally context is null or empty.
