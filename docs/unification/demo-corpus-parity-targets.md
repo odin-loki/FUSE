@@ -14,13 +14,13 @@ Aligned with [FUSE_UNIFIED_PRESTARTER.md](../plans/FUSE_UNIFIED_PRESTARTER.md) �
 
 | FUSE demo ID | Proves | Status |
 |--------------|--------|--------|
-| `demo_3d_empty` | 3D dimension path | Placeholder — see §2 |
-| `demo_2d_sprites` | 2D dimension path | Placeholder — see §3 |
-| `demo_hybrid_hud` | Shared frame / compositor | New — no legacy single demo |
-| `demo_ai_bt` | `fuse_ai` on 3D + 2D agents | Maps to BadBehaviour + UAISK + GuideBot |
-| `demo_timeline` | `fuse_cinematics` | Maps to Verve |
-| `demo_fx` | `fuse_fx` | Maps to AFX |
-| `demo_adventure_stub` | `fuse_adventure` interactions | Maps to 3DAAK |
+| `demo_3d_empty` | 3D dimension path | ✅ Stub binary + `project.json` |
+| `demo_2d_sprites` | 2D dimension path | ✅ Stub binary + `project.json` |
+| `demo_hybrid_hud` | Shared frame / compositor | ✅ U4 scaffold (`demo_hybrid_hud`) |
+| `demo_ai_bt` | `fuse_ai` on 3D + 2D agents | ✅ Stub binary + `project.json` |
+| `demo_timeline` | `fuse_cinematics` | ✅ Stub binary + `project.json` |
+| `demo_fx` | `fuse_fx` | ✅ Stub binary + `project.json` |
+| `demo_adventure_stub` | `fuse_adventure` interactions | ✅ Stub binary + `project.json` |
 
 Future location: `Samples/unification/<demo_id>/` (stubs in [Samples/unification/README.md](../../Samples/unification/README.md)).
 
@@ -151,5 +151,5 @@ Per prestarter §1.3 and §17:
 ## 8. Gate U0 checklist item
 
 - [x] Parity demo list frozen (minimum set documented)
-- [ ] `Samples/unification/` stubs created (see README)
-- [ ] Converters (U7) can import golden paths
+- [x] `Samples/unification/` stubs created (see README)
+- [x] Converters (U7) can import golden paths (stub importers + `fuse_import` dry-run)

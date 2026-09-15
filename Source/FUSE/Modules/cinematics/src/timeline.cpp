@@ -13,6 +13,16 @@ void Timeline::tick(const frame::FrameCtx& ctx) {
     m_playhead += ctx.dt;
 }
 
+float Timeline::duration() const {
+    float maxEnd = 0.f;
+    for (const Track& track : m_tracks) {
+        if (track.endTime > maxEnd) {
+            maxEnd = track.endTime;
+        }
+    }
+    return maxEnd;
+}
+
 void Timeline::play() {
     m_playing = true;
 }

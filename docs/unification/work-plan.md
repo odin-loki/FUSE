@@ -158,6 +158,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | L |
 | **Scope** | `project.json`, importers, cookers under `Tools/FUSE/` |
 | **Deps** | WP-06 |
+| **Status** | ✅ Minimal — `fuse_project` loader, T3D/T2D importer stubs, `fuse_import` CLI, [U7-PROJECT-FORMAT.md](./U7-PROJECT-FORMAT.md) |
 
 ---
 
@@ -168,6 +169,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | M |
 | **Scope** | `Samples/unification/demo_*` per [demo-corpus-parity-targets.md](./demo-corpus-parity-targets.md) |
 | **Deps** | WP-07 (subset), WP-09 |
+| **Status** | ✅ Minimum set — seven `project.json` stubs + headless demo binaries wired in CI |
 
 ---
 
@@ -212,8 +214,9 @@ WP-00 → WP-01 → WP-02 ──────────────────
 | **U3** | Shared services | I/O job publishes handle; TSan plan live |
 | **U4** | Hybrid demo | `parallel_for` cull; frame barrier; game-thread GFX — 🚧 scaffolding + software demo |
 | **U5** | Feature modules | Five `fuse_*` targets; `fuse_ai` BT slice + tests — 🚧 scaffolds + ore backlog ([U5-MODULES.md](./U5-MODULES.md)) |
-| **U6** | Editor PIE | UI/game thread queue proven — 🚧 `fuse_editor_api` stub only |
-| **U8** | Parity demos | `demo_hybrid_hud` under parallel tick |
+| **U6** | Editor PIE | UI/game thread queue proven — 🚧 `fuse_editor_api` stub + expanded tests |
+| **U7** | Project format | `fuse_project` + `fuse_import` dry-run — ✅ minimal schema v1 |
+| **U8** | Parity demos | Seven demo binaries + `Samples/unification/` stubs — ✅ minimum set |
 | **P3 (Track A)** | Job system tests | Fiber scheduler + single-thread fallback |
 
 ---
@@ -247,7 +250,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 
-**Next:** WP-07 ore extraction per module; WP-04 async I/O lane + handle table; WP-06 real RHI hookup (Track B).
+**Next:** WP-07 ore extraction per module; WP-04 async I/O lane + handle table; WP-06 real RHI hookup (Track B); U7 `.fuselevel` cookers.
 
 ---
 

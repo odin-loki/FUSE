@@ -35,6 +35,7 @@ Physics, gfx, and net remain composition/dual-backend. No physical `Engine/` + T
 | [vfs-mount-plan.md](./vfs-mount-plan.md) | WP-04 VFS mount prefixes (`/game`, `/t3d`, `/t2d`) |
 | [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md) | U4 hybrid composer, worlds, software demo |
 | [U5-MODULES.md](./U5-MODULES.md) | U5 feature module scaffolds, `fuse_ai` vertical slice, ore backlog |
+| [U7-PROJECT-FORMAT.md](./U7-PROJECT-FORMAT.md) | U7 `project.json` schema, importer stubs, `fuse_import` CLI |
 
 **Related (not U0):**
 - [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) — Track A/B port (consult for alignment only)
@@ -46,6 +47,10 @@ Physics, gfx, and net remain composition/dual-backend. No physical `Engine/` + T
 **WP-03–05 (in progress):** Cooperative POSIX fiber wait, shared services stubs (logger/handle/allocator/VFS), greenfield scene hierarchy — see [wp03-fiber-remaining.md](./wp03-fiber-remaining.md). U2 full Engine init blockers unchanged ([U2-SMOKE.md §3](./U2-SMOKE.md#3-honest-blockers--full-dual-legacy-engine-init)).
 
 **WP-06 / U4 (scaffolding):** Dimension APIs + hybrid frame — [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md). `demo_hybrid_hud` runs 3D clear + spinning 2D sprite via software placeholder renderer (no real GL yet).
+
+**WP-09 / U7 (minimal):** `fuse_project` loads versioned `project.json`; T3D/T2D importer stubs + `fuse_import` dry-run CLI — [U7-PROJECT-FORMAT.md](./U7-PROJECT-FORMAT.md).
+
+**WP-10 / U8 (minimum set):** Seven parity demos under `Samples/unification/` with headless binaries (`demo_3d_empty`, `demo_2d_sprites`, …) — see [Samples/unification/README.md](../../Samples/unification/README.md).
 
 ---
 

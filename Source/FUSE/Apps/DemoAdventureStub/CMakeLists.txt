@@ -1,0 +1,4 @@
+add_executable(demo_adventure_stub main.cpp)
+target_include_directories(demo_adventure_stub PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../Common)
+target_link_libraries(demo_adventure_stub PRIVATE fuse_adventure fuse_project fuse_core)
+target_compile_features(demo_adventure_stub PRIVATE cxx_std_17)

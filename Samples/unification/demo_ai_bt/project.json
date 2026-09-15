@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "name": "demo_ai_bt",
+  "dimensions": {
+    "enable3D": true,
+    "enable2D": true,
+    "enableUI": false
+  },
+  "modules": {
+    "ai": true,
+    "cinematics": false,
+    "fx": false,
+    "mechanics": false,
+    "adventure": false
+  },
+  "defaultWorld3D": "worlds/behavior_testbed.fuselevel",
+  "defaultWorld2D": "worlds/sprite_agent.fuselevel"
+}

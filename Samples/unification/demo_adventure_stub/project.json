@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "name": "demo_adventure_stub",
+  "dimensions": {
+    "enable3D": true,
+    "enable2D": true,
+    "enableUI": false
+  },
+  "modules": {
+    "ai": false,
+    "cinematics": false,
+    "fx": false,
+    "mechanics": true,
+    "adventure": true
+  },
+  "defaultWorld3D": "worlds/outpost.fuselevel",
+  "defaultWorld2D": "worlds/interact_2d.fuselevel"
+}

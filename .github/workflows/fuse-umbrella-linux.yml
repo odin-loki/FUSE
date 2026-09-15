@@ -22,7 +22,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ninja-build cmake g++-13
 
-      - name: Configure umbrella (core + legacy + smoke)
+      - name: Configure umbrella (core + legacy + smoke + U7/U8)
         run: |
           cmake -B build-fuse -G Ninja \
             -DCMAKE_CXX_COMPILER=g++-13 \
@@ -33,6 +33,9 @@ jobs:
             -DFUSE_BUILD_LEGACY=ON \
             -DFUSE_BUILD_SMOKE=ON \
             -DFUSE_BUILD_HYBRID_DEMO=ON \
+            -DFUSE_BUILD_PROJECT=ON \
+            -DFUSE_BUILD_PARITY_DEMOS=ON \
+            -DFUSE_BUILD_TOOLS=ON \
             -DFUSE_BUILD_T3D=OFF \
             -DFUSE_BUILD_T2D=OFF
 
@@ -44,6 +47,20 @@ jobs:
 
       - name: Run demo_hybrid_hud
         run: ./build-fuse/Source/FUSE/Apps/HybridHud/demo_hybrid_hud
+
+      - name: Run U8 parity demos
+        run: |
+          ./build-fuse/Source/FUSE/Apps/Demo3DEmpty/demo_3d_empty Samples/unification/demo_3d_empty
+          ./build-fuse/Source/FUSE/Apps/Demo2DSprites/demo_2d_sprites Samples/unification/demo_2d_sprites
+          ./build-fuse/Source/FUSE/Apps/DemoAiBt/demo_ai_bt Samples/unification/demo_ai_bt
+          ./build-fuse/Source/FUSE/Apps/DemoTimeline/demo_timeline Samples/unification/demo_timeline
+          ./build-fuse/Source/FUSE/Apps/DemoFx/demo_fx Samples/unification/demo_fx
+          ./build-fuse/Source/FUSE/Apps/DemoAdventureStub/demo_adventure_stub Samples/unification/demo_adventure_stub
+
+      - name: Run fuse_import dry-run
+        run: |
+          ./build-fuse/Tools/FUSE/fuse_import --project Samples/unification/demo_3d_empty
+          ./build-fuse/Tools/FUSE/fuse_import --source Templates/BaseGame/game/data/ExampleModule/levels/ExampleLevel.mis
 
       - name: Verify prefix shims
         run: |

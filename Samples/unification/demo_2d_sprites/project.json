@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "name": "demo_2d_sprites",
+  "dimensions": {
+    "enable3D": false,
+    "enable2D": true,
+    "enableUI": false
+  },
+  "modules": {
+    "ai": false,
+    "cinematics": false,
+    "fx": false,
+    "mechanics": false,
+    "adventure": false
+  },
+  "defaultWorld3D": "",
+  "defaultWorld2D": "worlds/sprites.fuselevel"
+}
