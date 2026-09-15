@@ -4,6 +4,24 @@
 
 namespace fuse::editor {
 
+PlayWorldSnapshot PlayWorldSnapshot::capture(EditorScene& editorScene) {
+    PlayWorldSnapshot snapshot;
+    editorScene.registry().each<ecs::Transform>(
+        [&snapshot](ecs::EntityID id, const ecs::Transform& transform) {
+            snapshot.entities.push_back({id, transform});
+        });
+    return snapshot;
+}
+
+void PlayWorldSnapshot::apply(EditorScene& editorScene) const {
+    for (const std::pair<ecs::EntityID, ecs::Transform>& entry : entities) {
+        ecs::Transform* transform = editorScene.registry().get<ecs::Transform>(entry.first);
+        if (transform != nullptr) {
+            *transform = entry.second;
+        }
+    }
+}
+
 void PlaySession::start(EditorScene& editorScene, scene::Scene& scene, EditorState& state,
                         PlayModePhysicsState& physics) {
     if (isActive()) {
@@ -11,8 +29,11 @@ void PlaySession::start(EditorScene& editorScene, scene::Scene& scene, EditorSta
     }
 
     captureDirtySnapshot_(editorScene, state);
+    captureWorldSnapshot_(editorScene);
     m_controller.enterPlay(scene, physics);
     m_sessionTickCount = 0;
+    m_tickAccumulator = 0.f;
+    m_coalescedDirtyCount = 0;
 
     state.playing = true;
     state.paused = false;
@@ -25,8 +46,12 @@ void PlaySession::stop(EditorScene& editorScene, scene::Scene& scene, EditorStat
     }
 
     m_controller.stop(scene, physics);
+    restoreWorldSnapshot_(editorScene);
     restoreDirtySnapshot_(editorScene, state);
     m_sessionTickCount = 0;
+    m_tickAccumulator = 0.f;
+    m_coalescedDirtyCount = 0;
+    m_hasWorldSnapshot = false;
 
     state.playing = false;
     state.paused = false;
@@ -56,13 +81,19 @@ void PlaySession::tick(f32 dt, EditorScene& editorScene, PlayModePhysicsState& p
     }
 
     ++m_sessionTickCount;
+    m_tickAccumulator += dt;
     ++physics.stepCount;
 
-    editorScene.registry().each<ecs::Transform>([](ecs::EntityID, ecs::Transform& transform) {
-        transform.dirty = true;
-    });
+    coalesceTransformDirty_(editorScene);
+}
 
-    (void)dt;
+PlayWorldSnapshot PlaySession::captureWorldSnapshot(EditorScene& editorScene) const {
+    return PlayWorldSnapshot::capture(editorScene);
+}
+
+void PlaySession::restoreWorldSnapshot(EditorScene& editorScene,
+                                       const PlayWorldSnapshot& snapshot) const {
+    snapshot.apply(editorScene);
 }
 
 void PlaySession::captureDirtySnapshot_(EditorScene& editorScene, const EditorState& state) {
@@ -83,6 +114,30 @@ void PlaySession::restoreDirtySnapshot_(EditorScene& editorScene, EditorState& s
             transform->dirty = entry.second;
         }
     }
+}
+
+void PlaySession::captureWorldSnapshot_(EditorScene& editorScene) {
+    m_worldSnapshot = PlayWorldSnapshot::capture(editorScene);
+    m_hasWorldSnapshot = true;
+}
+
+void PlaySession::restoreWorldSnapshot_(EditorScene& editorScene) const {
+    if (!m_hasWorldSnapshot) {
+        return;
+    }
+
+    m_worldSnapshot.apply(editorScene);
+}
+
+void PlaySession::coalesceTransformDirty_(EditorScene& editorScene) {
+    editorScene.registry().each<ecs::Transform>([this](ecs::EntityID, ecs::Transform& transform) {
+        if (transform.dirty) {
+            ++m_coalescedDirtyCount;
+            return;
+        }
+
+        transform.dirty = true;
+    });
 }
 
 } // namespace fuse::editor

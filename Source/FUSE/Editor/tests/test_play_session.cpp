@@ -19,6 +19,13 @@ void expectTrue(bool condition, const char* message) {
     }
 }
 
+void expectNear(float actual, float expected, float epsilon, const char* message) {
+    if (actual < expected - epsilon || actual > expected + epsilon) {
+        std::fprintf(stderr, "FAIL: %s (got %.6f expected %.6f)\n", message, actual, expected);
+        ++g_failures;
+    }
+}
+
 void testPlaySessionStartStopAndDirtyRestore() {
     fuse::editor::EditorScene editorScene;
     editorScene.init();
@@ -44,9 +51,11 @@ void testPlaySessionStartStopAndDirtyRestore() {
     session.start(editorScene, scene, state, physics);
     expectTrue(session.isActive(), "play session starts active");
     expectTrue(session.isPlaying(), "play session enters playing state");
+    expectTrue(session.hasWorldSnapshot(), "play session captures world snapshot on start");
     expectTrue(state.playing, "editor state marks playing on start");
     expectTrue(!state.paused, "editor state clears paused on start");
     expectTrue(physics.simulationActive, "play session enables physics on start");
+    expectTrue(session.tickAccumulator() == 0.f, "tick accumulator starts at zero");
 
     scene.addObjectName("RuntimeSpawn");
     scene.setName("Mutated");
@@ -54,6 +63,7 @@ void testPlaySessionStartStopAndDirtyRestore() {
 
     session.tick(1.f / 60.f, editorScene, physics);
     expectTrue(session.sessionTickCount() == 1u, "play session ticks while playing");
+    expectTrue(session.tickAccumulator() > 0.f, "tick accumulator advances on tick");
     expectTrue(physics.stepCount == 1u, "physics step count advances on tick");
     const fuse::ecs::Transform* playerAfterTick =
         editorScene.registry().get<fuse::ecs::Transform>(player);
@@ -62,6 +72,7 @@ void testPlaySessionStartStopAndDirtyRestore() {
 
     session.stop(editorScene, scene, state, physics);
     expectTrue(!session.isActive(), "play session stops");
+    expectTrue(!session.hasWorldSnapshot(), "play session clears world snapshot on stop");
     expectTrue(!state.playing, "editor state clears playing on stop");
     expectTrue(state.sceneModified, "play session restores scene modified flag");
     const fuse::ecs::Transform* playerAfterStop =
@@ -75,6 +86,7 @@ void testPlaySessionStartStopAndDirtyRestore() {
     expectTrue(scene.name() == "EditorScene", "play session restores scene snapshot");
     expectTrue(scene.objectCount() == 1u, "play session restores scene object table");
     expectTrue(session.sessionTickCount() == 0u, "play session resets tick count on stop");
+    expectTrue(session.tickAccumulator() == 0.f, "play session resets tick accumulator on stop");
 
     editorScene.destroy();
 }
@@ -117,12 +129,106 @@ void testPlaySessionPauseSkipsTick() {
     editorScene.destroy();
 }
 
+void testPlaySessionWorldSnapshotRoundtrip() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    const fuse::ecs::EntityID entity = editorScene.registry().create();
+    fuse::ecs::Transform& transform = editorScene.registry().add<fuse::ecs::Transform>(entity);
+    transform.position.x = 3.f;
+    transform.position.y = 4.f;
+    transform.position.z = 5.f;
+    transform.dirty = false;
+
+    fuse::editor::PlaySession session;
+    const fuse::editor::PlayWorldSnapshot captured = session.captureWorldSnapshot(editorScene);
+    expectTrue(captured.entities.size() == 1u, "world snapshot captures entity count");
+
+    transform.position.x = 99.f;
+    transform.position.y = 88.f;
+    transform.position.z = 77.f;
+
+    session.restoreWorldSnapshot(editorScene, captured);
+    const fuse::ecs::Transform* restored = editorScene.registry().get<fuse::ecs::Transform>(entity);
+    expectTrue(restored != nullptr, "world snapshot restore keeps entity alive");
+    expectNear(restored->position.x, 3.f, 1e-4f, "world snapshot restores position x");
+    expectNear(restored->position.y, 4.f, 1e-4f, "world snapshot restores position y");
+    expectNear(restored->position.z, 5.f, 1e-4f, "world snapshot restores position z");
+
+    editorScene.destroy();
+}
+
+void testPlaySessionDirtyCoalesceAndClearsOnStop() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    const fuse::ecs::EntityID entity = editorScene.registry().create();
+    fuse::ecs::Transform& transform = editorScene.registry().add<fuse::ecs::Transform>(entity);
+    transform.dirty = false;
+    transform.position.x = 1.f;
+
+    fuse::scene::Scene scene("CoalesceTest");
+    fuse::editor::EditorState state;
+    state.sceneModified = false;
+
+    fuse::editor::PlaySession session;
+    fuse::editor::PlayModePhysicsState physics;
+
+    session.start(editorScene, scene, state, physics);
+    session.tick(1.f / 60.f, editorScene, physics);
+    expectTrue(transform.dirty, "first play tick marks transform dirty");
+    expectTrue(session.coalescedDirtyCount() == 0u, "first dirty mark is not coalesced");
+
+    session.tick(1.f / 60.f, editorScene, physics);
+    expectTrue(session.coalescedDirtyCount() == 1u, "second tick coalesces already-dirty transform");
+    expectTrue(session.sessionTickCount() == 2u, "second tick still advances session counter");
+
+    transform.position.x = 42.f;
+    session.stop(editorScene, scene, state, physics);
+
+    expectTrue(!transform.dirty, "dirty clears on stop when pre-play was clean");
+    expectNear(transform.position.x, 1.f, 1e-4f, "world snapshot restores mutated transform on stop");
+    expectTrue(!state.sceneModified, "mark clean after stop preserves pre-play clean document flag");
+    expectTrue(session.coalescedDirtyCount() == 0u, "coalesce counter resets on stop");
+
+    editorScene.destroy();
+}
+
+void testPlaySessionStartStopCycle() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+    const fuse::ecs::EntityID entity = editorScene.registry().create();
+    editorScene.registry().add<fuse::ecs::Transform>(entity);
+
+    fuse::scene::Scene scene("CycleTest");
+    scene.addObjectName("Prop");
+    fuse::editor::EditorState state;
+    fuse::editor::PlaySession session;
+    fuse::editor::PlayModePhysicsState physics;
+
+    for (int cycle = 0; cycle < 3; ++cycle) {
+        session.start(editorScene, scene, state, physics);
+        expectTrue(session.isPlaying(), "start/stop cycle enters playing");
+        session.tick(0.016f, editorScene, physics);
+        scene.addObjectName("Runtime");
+        session.stop(editorScene, scene, state, physics);
+        expectTrue(!session.isActive(), "start/stop cycle returns to stopped");
+        expectTrue(scene.objectCount() == 1u, "start/stop cycle restores scene each iteration");
+        expectTrue(session.tickAccumulator() == 0.f, "start/stop cycle resets tick accumulator");
+    }
+
+    editorScene.destroy();
+}
+
 } // namespace
 
 int main() {
     fuse::core::initialize();
     testPlaySessionStartStopAndDirtyRestore();
     testPlaySessionPauseSkipsTick();
+    testPlaySessionWorldSnapshotRoundtrip();
+    testPlaySessionDirtyCoalesceAndClearsOnStop();
+    testPlaySessionStartStopCycle();
     fuse::core::shutdown();
 
     if (g_failures == 0) {
