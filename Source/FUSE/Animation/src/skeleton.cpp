@@ -175,6 +175,19 @@ void accumulate_weighted_pose_soa(PoseSoA& result,
     accumulated_weight += weight;
 }
 
+void finalize_weighted_pose_soa(PoseSoA& pose,
+                                f32 accumulated_weight,
+                                const Skeleton& skel,
+                                PoseSoA& out) {
+    if (accumulated_weight <= 0.f) {
+        out = PoseSoA::from_bind_pose(skel);
+        return;
+    }
+
+    pose.compute_world_transforms(skel);
+    out = pose;
+}
+
 void blend_pose_soa(const PoseSoA& a, const PoseSoA& b, f32 weight, PoseSoA& out) {
     const f32 clamped = std::clamp(weight, 0.f, 1.f);
     const u32 count = std::max(a.bone_count, b.bone_count);

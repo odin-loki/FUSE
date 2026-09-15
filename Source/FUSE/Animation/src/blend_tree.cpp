@@ -278,13 +278,7 @@ void BlendSpace2D::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
         accumulate_weighted_pose_soa(result, accumulatedWeight, entrySoa, sample.weights[i]);
     }
 
-    if (accumulatedWeight <= 0.f) {
-        out = PoseSoA::from_bind_pose(skel);
-        return;
-    }
-
-    result.compute_world_transforms(skel);
-    out = result;
+    finalize_weighted_pose_soa(result, accumulatedWeight, skel, out);
 }
 
 void LayeredBlendNode::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
@@ -361,6 +355,38 @@ void AnimStateMachine::reset() {
     blend_time = 0.f;
     blend_duration = 0.2f;
     has_entered_initial = false;
+}
+
+s32 AnimStateMachine::find_state_index(const char* name) const {
+    if (name == nullptr) {
+        return -1;
+    }
+
+    for (u32 i = 0; i < states.size(); ++i) {
+        if (states[i].name == name) {
+            return static_cast<s32>(i);
+        }
+    }
+    return -1;
+}
+
+u32 AnimStateMachine::outgoing_transition_count(u32 from_state) const {
+    u32 count = 0;
+    for (const Transition& transition : transitions) {
+        if (transition.from == from_state) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+bool AnimStateMachine::has_transition(u32 from_state, u32 to_state) const {
+    for (const Transition& transition : transitions) {
+        if (transition.from == from_state && transition.to == to_state) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void AnimStateMachine::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
