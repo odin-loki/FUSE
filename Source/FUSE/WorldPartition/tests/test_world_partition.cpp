@@ -1,6 +1,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/world_partition/grid_cell.hpp>
+#include <fuse/world_partition/residency_set.hpp>
 #include <fuse/world_partition/streaming_request_queue.hpp>
 #include <fuse/world_partition/streaming_volume.hpp>
 #include <fuse/world_partition/world_partition.hpp>
@@ -448,6 +449,100 @@ void testStreamingRequestQueuePendingReject() {
     });
 }
 
+void testStreamingRequestQueueEmptyDrain() {
+    fuse::world_partition::StreamingRequestQueue queue;
+    expectTrue(queue.empty(), "fresh queue is empty");
+    expectEq(queue.in_flight_count(), 0u, "fresh queue has zero in-flight");
+    expectEq(queue.completed_count(), 0u, "fresh queue has zero completed");
+
+    std::vector<fuse::world_partition::CompletedStreamingRequest> completed;
+    expectEq(queue.drain_completed(completed), 0u, "drain on empty queue returns zero");
+    expectTrue(completed.empty(), "empty drain leaves output vector empty");
+    expectTrue(queue.empty(), "queue remains empty after drain");
+}
+
+void testStreamingRequestQueueFifoOrdering() {
+    withScheduler(1, [] {
+        fuse::world_partition::StreamingRequestQueue queue;
+        std::atomic<fuse::u32> worker_count{0};
+
+        for (fuse::u32 i = 0; i < 3u; ++i) {
+            fuse::world_partition::StreamingRequest request{};
+            request.coord = {static_cast<fuse::s32>(i), 0};
+            request.kind = fuse::world_partition::StreamingRequestKind::Load;
+            request.priority = 5.f;
+            expectTrue(queue.submit(request, [&](fuse::world_partition::GridCoord,
+                                                 fuse::world_partition::StreamingRequestKind) {
+                worker_count.fetch_add(1u);
+                return true;
+            }), "equal-priority submit succeeds");
+        }
+
+        for (int attempt = 0; attempt < 200 && queue.completed_count() < 3u; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        std::vector<fuse::world_partition::CompletedStreamingRequest> completed;
+        expectEq(queue.drain_completed(completed), 3u, "drain returns all equal-priority requests");
+        expectEq(worker_count.load(), 3u, "all equal-priority workers executed");
+        expectTrue(completed[0].coord.x == 0 && completed[1].coord.x == 1 && completed[2].coord.x == 2,
+                   "equal-priority drain preserves FIFO submit order");
+        expectTrue(completed[0].submit_sequence < completed[1].submit_sequence &&
+                       completed[1].submit_sequence < completed[2].submit_sequence,
+                   "submit sequence increases in FIFO order");
+    });
+}
+
+void testResidencySetFocusDistance() {
+    fuse::world_partition::ResidencySet residency;
+    expectTrue(residency.empty(), "new residency set is empty");
+
+    const fuse::world_partition::GridCoord near_cell{0, 0};
+    const fuse::world_partition::GridCoord far_cell{5, 0};
+    expectTrue(residency.add(near_cell, 100.f), "add near cell");
+    expectTrue(residency.add(far_cell, 900.f), "add far cell");
+    expectEq(residency.size(), 2u, "two resident cells tracked");
+    expectTrue(residency.contains(near_cell) && residency.contains(far_cell), "contains resident coords");
+
+    expectTrue(residency.pick_eviction_candidate() == far_cell, "farthest focus distance evicts first");
+    expectNear(residency.focus_distance_for(far_cell), 900.f, 1e-4f, "focus distance stored for far cell");
+
+    expectTrue(residency.update_focus_distance(near_cell, 50.f), "update near focus distance");
+    expectTrue(residency.pick_eviction_candidate() == far_cell, "far cell still evicts first after update");
+
+    expectTrue(residency.remove(near_cell), "remove near cell");
+    expectEq(residency.size(), 1u, "size drops after remove");
+    expectTrue(!residency.contains(near_cell), "removed cell no longer resident");
+    expectTrue(residency.pick_eviction_candidate() == far_cell, "remaining cell is eviction candidate");
+
+    residency.clear();
+    expectTrue(residency.empty(), "clear empties residency set");
+    expectTrue(residency.pick_eviction_candidate() == fuse::world_partition::GridCoord{}, "empty set has no candidate");
+}
+
+void testWorldPartitionResidencySetTracking() {
+    fuse::world_partition::WorldPartition partition;
+    fuse::world_partition::WorldPartitionDesc desc{};
+    desc.async_loading = false;
+    desc.max_loaded_cells = 4;
+    partition.init(desc);
+
+    const fuse::world_partition::GridCoord near_cell{1, 0};
+    const fuse::world_partition::GridCoord far_cell{5, 0};
+    partition.force_load(near_cell);
+    partition.force_load(far_cell);
+    expectEq(partition.residency_set().size(), 2u, "residency set tracks loaded cells");
+    expectTrue(partition.residency_set().pick_eviction_candidate() == far_cell,
+               "partition residency set prefers farther cell for eviction");
+
+    partition.force_unload(far_cell);
+    expectEq(partition.residency_set().size(), 1u, "unload removes cell from residency set");
+    expectTrue(partition.residency_set().contains(near_cell), "near cell remains in residency set");
+    expectTrue(!partition.residency_set().contains(far_cell), "unloaded cell no longer tracked");
+
+    partition.destroy();
+}
+
 void testWorldPartitionAsyncResidency() {
     withScheduler(1, [] {
         fuse::world_partition::WorldPartition partition;
@@ -511,6 +606,10 @@ int main() {
     testStreamingRequestQueueInFlightTracking();
     testStreamingRequestQueueDrainOrdering();
     testStreamingRequestQueuePendingReject();
+    testStreamingRequestQueueEmptyDrain();
+    testStreamingRequestQueueFifoOrdering();
+    testResidencySetFocusDistance();
+    testWorldPartitionResidencySetTracking();
     testWorldPartitionAsyncResidency();
     fuse::core::shutdown();
 
