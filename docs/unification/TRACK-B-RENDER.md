@@ -1,6 +1,6 @@
 # Track B — Own Renderer (B5 deferred pipeline)
 
-**Status:** B5.2 G-buffer layout validation + B5.3 PBR material parameter blocks + **B5.4 clustered light grid deepen** + B5.5 CSM light-space AABB deepen + **B5.10 post-process tonemap/auto-exposure deepen** + **B5.11 volumetric froxel grid deepen** + B5.6 DDGI probe grid indexing deepened + B5.9 TAA jitter/history deepened  
+**Status:** B5.2 G-buffer layout validation + B5.3 PBR material parameter blocks + **B5.4 clustered light grid deepen** + **B5.5 CSM split-distance validation + batch light-space matrices deepen** + **B5.10 post-process tonemap/auto-exposure deepen** + **B5.11 volumetric froxel grid deepen** + B5.6 DDGI probe grid indexing deepened + B5.9 TAA jitter/history deepened  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B5  
 **Detail:** [TRACK-B-RENDER-B5.md](./TRACK-B-RENDER-B5.md) — full B5.1–B5.12 scope, tests, gates  
 **Depends on:** [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) (RHI bootstrap, render graph, CUDA job lane)
@@ -39,10 +39,10 @@ ctest --test-dir build --output-on-failure -R fuse_gbuffer
 
 | Component | Notes |
 |-----------|-------|
-| `CascadedShadowMapLayout` | Uniform/log/practical split schemes, cascade count clamp, batch near/far/range + split-distance helpers, cascade frustum corners, split + range validation |
-| `CascadeLightSpaceLayout` | Light-view matrix, world-frustum → light-space AABB, ortho bounds fit + texel stabilisation, per-cascade `CascadeLightSpaceMatrices` bookkeeping |
+| `CascadedShadowMapLayout` | Uniform/log/practical split schemes, cascade count clamp, batch near/far/range + split-distance helpers, `validateSplitDistances`, `isEmptyCascadeFrustum`, cascade frustum corners, split + range validation |
+| `CascadeLightSpaceLayout` | Light-view matrix, world-frustum → light-space AABB, ortho bounds fit + `validateOrthoBounds`, texel stabilisation, `buildAllCascadeLightSpaceMatrices` batch builder, degenerate light-direction guard |
 | `DirectionalShadow` | Delegates cascade view-projection to `buildCascadeLightSpaceMatrices` |
-| `fuse_shadow_system` | Split schemes, variable cascade count, split-distance batch, ortho fit/stabilise, light-space matrix bookkeeping, empty/degenerate frustum paths, atlas, shadow pass graph |
+| `fuse_shadow_system` | Split schemes, variable/single cascade count, split-distance validation, ortho bounds validation, batch matrix builder, empty/degenerate frustum paths, atlas, shadow pass graph |
 
 ```bash
 ctest --test-dir build --output-on-failure -R fuse_shadow_system

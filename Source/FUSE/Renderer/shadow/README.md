@@ -8,14 +8,14 @@ CPU-side cascaded shadow map scaffolding for Track B5.5. Implements the P5 §5.5
 
 | Header | Role |
 |--------|------|
-| `shadow/csm.hpp` | `CascadedShadowMapDesc`, `CascadedShadowMapData`, uniform/log/practical split helpers, cascade count clamp, `CascadeLightSpaceLayout` world-corner AABB stubs |
+| `shadow/csm.hpp` | `CascadedShadowMapDesc`, `CascadedShadowMapData`, uniform/log/practical split helpers, cascade count clamp, split-distance validation, empty-frustum detection, `CascadeLightSpaceLayout` world-corner AABB + batch matrix stubs |
 | `shadow/shadow_atlas.hpp` | `ShadowAtlas` — packs cascades into a single depth atlas |
 | `shadow/directional_shadow.hpp` | `DirectionalShadow` — owns atlas + per-cascade depth targets |
 | `shadow/shadow_pass.hpp` | `ShadowPass` — inserts the `shadow_maps` render-graph pass |
 
 ## Tests
 
-`fuse_shadow_system` covers cascade split schemes (uniform/log/practical), count clamp, split/range math, light-space AABB corner containment + empty frustum, 2×2 atlas layout, directional shadow allocation/update, and render-graph pass registration.
+`fuse_shadow_system` covers cascade split schemes (uniform/log/practical), count clamp (including single-cascade), split-distance validation, light-space AABB corner containment + empty frustum, batch matrix builder, 2×2 atlas layout, directional shadow allocation/update, and render-graph pass registration.
 
 ## Upstream / downstream
 
