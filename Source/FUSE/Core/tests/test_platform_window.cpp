@@ -532,6 +532,59 @@ void testEventPumpPumpOnceEmptyQueueEarlyOut() {
     expectEq(pump.pendingEventCount(), 0u, "empty pumpOnce leaves queue empty");
 }
 
+void testEventPumpHasPendingEventType() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    expectTrue(!pump.hasPendingEventType(fuse::platform::PlatformEventType::WindowResized),
+               "empty queue has no pending resize type");
+
+    pump.pushWindowResized(window);
+    pump.pushWindowFocusLost(window);
+    expectTrue(pump.hasPendingEventType(fuse::platform::PlatformEventType::WindowResized),
+               "queued resize type is discoverable");
+    expectTrue(!pump.hasPendingEventType(fuse::platform::PlatformEventType::Quit),
+               "quit type not pending before request");
+
+    pump.requestQuit();
+    expectTrue(pump.hasPendingEventType(fuse::platform::PlatformEventType::Quit),
+               "quit type pending after requestQuit");
+    expectEq(pump.pendingEventCount(), 3u, "type scan does not remove queued events");
+}
+
+void testEventPumpInvalidResizeExtentGuard() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    fuse::platform::PlatformEvent invalidWidth;
+    invalidWidth.type = fuse::platform::PlatformEventType::WindowResized;
+    invalidWidth.window = &window;
+    invalidWidth.width = 0;
+    invalidWidth.height = 600;
+    pump.pushSyntheticEvent(invalidWidth);
+    expectEq(pump.pendingEventCount(), 0u, "zero-width resize is rejected");
+
+    fuse::platform::PlatformEvent invalidHeight;
+    invalidHeight.type = fuse::platform::PlatformEventType::WindowResized;
+    invalidHeight.window = &window;
+    invalidHeight.width = 800;
+    invalidHeight.height = 0;
+    pump.pushSyntheticEvent(invalidHeight);
+    expectEq(pump.pendingEventCount(), 0u, "zero-height resize is rejected");
+
+    fuse::platform::PlatformEvent nullWindow;
+    nullWindow.type = fuse::platform::PlatformEventType::WindowResized;
+    nullWindow.window = nullptr;
+    nullWindow.width = 800;
+    nullWindow.height = 600;
+    pump.pushSyntheticEvent(nullWindow);
+    expectEq(pump.pendingEventCount(), 0u, "null-window resize is rejected");
+
+    window.resize(800, 600, &pump);
+    expectTrue(pump.hasPendingResizeFor(window), "valid resize still enqueues");
+    expectTrue(pump.pendingResizeExtentFor(window).pending, "valid resize extent is pending");
+}
+
 void testEventPumpHasPendingResizeFor() {
     fuse::platform::EventPump pump;
     fuse::platform::Window left;
@@ -601,6 +654,8 @@ int main() {
     testEventPumpLastCoalescedResizeRecord();
     testEventPumpStatsSnapshot();
     testEventPumpPumpOnceEmptyQueueEarlyOut();
+    testEventPumpHasPendingEventType();
+    testEventPumpInvalidResizeExtentGuard();
     testEventPumpHasPendingResizeFor();
     testMobileProfileStillUsesWindowStub();
 

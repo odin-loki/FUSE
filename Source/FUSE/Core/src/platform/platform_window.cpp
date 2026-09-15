@@ -184,6 +184,23 @@ bool EventPump::peekEventType(PlatformEventType& outType) const {
     return true;
 }
 
+bool EventPump::hasPendingEventType(PlatformEventType type) const {
+    if (type == PlatformEventType::None || m_syntheticHead == m_syntheticTail) {
+        return false;
+    }
+
+    u32 index = m_syntheticHead;
+    while (index != m_syntheticTail) {
+        if (m_syntheticEvents[index].type == type) {
+            return true;
+        }
+
+        index = (index + 1u) % kMaxSyntheticEvents;
+    }
+
+    return false;
+}
+
 bool EventPump::hasPendingEvents() const {
     return m_syntheticHead != m_syntheticTail;
 }
@@ -213,7 +230,8 @@ PendingResizeExtent EventPump::pendingResizeExtentFor(const Window& window) cons
     u32 index = m_syntheticHead;
     while (index != m_syntheticTail) {
         const PlatformEvent& pending = m_syntheticEvents[index];
-        if (pending.type == PlatformEventType::WindowResized && pending.window == &window) {
+        if (pending.type == PlatformEventType::WindowResized && pending.window == &window &&
+            isValidResizeExtent_(pending.width, pending.height)) {
             extent.width = pending.width;
             extent.height = pending.height;
             extent.pending = true;
@@ -284,9 +302,13 @@ u32 EventPump::drainEvents(std::vector<PlatformEvent>& out) {
     return drained;
 }
 
+bool EventPump::isValidResizeExtent_(u32 width, u32 height) {
+    return width > 0u && height > 0u;
+}
+
 bool EventPump::tryCoalescePendingResize_(const PlatformEvent& event) {
     if (event.type != PlatformEventType::WindowResized || event.window == nullptr ||
-        m_syntheticHead == m_syntheticTail) {
+        !isValidResizeExtent_(event.width, event.height) || m_syntheticHead == m_syntheticTail) {
         return false;
     }
 
@@ -326,6 +348,11 @@ void EventPump::enqueueSyntheticEvent_(const PlatformEvent& event) {
 }
 
 void EventPump::pushSyntheticEvent(const PlatformEvent& event) {
+    if (event.type == PlatformEventType::WindowResized &&
+        (event.window == nullptr || !isValidResizeExtent_(event.width, event.height))) {
+        return;
+    }
+
     if (tryCoalescePendingResize_(event)) {
         return;
     }

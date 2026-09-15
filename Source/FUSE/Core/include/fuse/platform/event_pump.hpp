@@ -68,6 +68,9 @@ public:
     /// Inspect only the front event type without removing it. Returns false when empty.
     bool peekEventType(PlatformEventType& outType) const;
 
+    /// True when a queued event matches `type` (does not remove events).
+    bool hasPendingEventType(PlatformEventType type) const;
+
     /// True when the synthetic queue holds at least one event.
     bool hasPendingEvents() const;
 
@@ -123,6 +126,7 @@ public:
     void resetEventStats();
 
 private:
+    static bool isValidResizeExtent_(u32 width, u32 height);
     bool tryCoalescePendingResize_(const PlatformEvent& event);
     void enqueueSyntheticEvent_(const PlatformEvent& event);
     bool m_quitRequested = false;
