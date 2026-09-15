@@ -1,6 +1,6 @@
 # Track B — Vulkan Bootstrap (B2.1 kickoff)
 
-**Status:** Scaffolding landed — headless instance/device + command-list path; swapchain/present deferred to B2.2  
+**Status:** B2.1 bootstrap + B2.3 resource/bindless scaffolding + B2.4 shader scaffold; swapchain/present deferred to B2.2  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B2.1  
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §4.4, §5.3  
 **Hybrid integration:** [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md)
@@ -14,11 +14,16 @@
 | `RenderCommandList` | `Source/FUSE/Renderer/` | Per-frame draws/clears merged on render thread |
 | `VulkanInstance` / `VulkanDevice` | `Source/FUSE/Renderer/include/fuse/renderer/vk/` | Headless bootstrap; optional validation layers |
 | `VulkanSwapchain` | same | **Placeholder** — records desc, no `VkSwapchainKHR` yet |
+| `ResourceManager` / `GpuAllocator` | `Source/FUSE/Renderer/` | Handle-based buffers/images; VMA when vendored, stub otherwise |
+| `BindlessDescriptors` | `Source/FUSE/Renderer/include/fuse/renderer/vk/` | Index table scaffolding (descriptor pool deferred to B2.4 follow-up) |
+| `HandleMap<T>` | `Source/FUSE/Core/include/fuse/` | Generation-checked slots for GPU resources |
+| `ShaderCompiler` / `ShaderModule` | `Source/FUSE/Renderer/include/fuse/renderer/shader/` | Offline-first — loads checked-in `.spv` fixtures |
+| `PipelineLayout` | `Source/FUSE/Renderer/include/fuse/renderer/vk/pipeline_layout.hpp` | Placeholder layout (push constants only; bindless sets deferred) |
 | `RhiContext` | `Source/FUSE/Renderer/` | Accepts command lists on `renderThread()` |
 | `fuse::platform::gl_context.hpp` | `Source/FUSE/Core/` | Portable “may touch GPU” guard |
 | `HybridComposer` wiring | `Source/FUSE/Hybrid/` | Dual path: software `PlaceholderRenderer` **and** RHI command mirror |
 
-**Not in scope:** Engine marriage, VMA integration, real swapchain/present, MoltenVK/Android surface wiring (stubs documented below).
+**Not in scope:** Engine marriage, real swapchain/present, MoltenVK/Android surface wiring, full bindless descriptor pool, graphics pipeline cache, hot-reload watchers.
 
 ---
 
@@ -70,7 +75,7 @@ enum class VulkanBackendMode : u8 { Stub, Headless };
 
 Device extensions from master plan B2.1 are **requested when supported**; missing extensions do not fail headless bootstrap.
 
-VMA (`VmaAllocator`) field exists as `nullptr` — wired in a follow-up once third-party policy lands.
+`GpuAllocator` creates a real `VmaAllocator` when `third_party/VulkanMemoryAllocator/include/vk_mem_alloc.h` is present; otherwise stub bookkeeping handles are issued and `VulkanDeviceInfo::vmaAllocator` stays null until VMA is vendored.
 
 ---
 
@@ -91,14 +96,27 @@ Portable invariant unchanged: job code emits `RenderCommandList`; platform modul
 | Target | Validates |
 |--------|-----------|
 | `fuse_vulkan_bootstrap` | Instance/device or stub path; render-thread submit |
+| `fuse_vulkan_resources` | `HandleMap`, bindless index recycle, buffer/texture create/destroy |
+| `fuse_shader_pipeline` | SPIR-V I/O, offline compiler, shader module + pipeline layout (stub or Vulkan) |
 | `fuse_render_command_list` | Hybrid mirrors commands without breaking placeholder pixels |
 | `fuse_hybrid_tests` | Existing U4 software renderer regressions |
 
 Run:
 
 ```bash
-ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_render_command|fuse_hybrid'
+ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_render_command|fuse_hybrid'
 ```
+
+### B2.3 — Resources & bindless scaffolding
+
+| Piece | Path | Behaviour |
+|-------|------|-----------|
+| Typed handles | `resources.hpp` | `TextureHandle`, `BufferHandle`, `SamplerHandle` |
+| `GpuAllocator` | `vk/allocator.hpp` | VMA path when header vendored; stub IDs otherwise |
+| `ResourceManager` | `resource_manager.hpp` | Create/destroy + bindless index assignment; 64 MiB staging ring |
+| `BindlessDescriptors` | `vk/bindless.hpp` | Free-list indices only until descriptor pool lands |
+
+Optional VMA: place [VulkanMemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) at `third_party/VulkanMemoryAllocator/include/vk_mem_alloc.h` and reconfigure.
 
 ---
 
@@ -142,25 +160,16 @@ cmake -B build -DFUSE_UMBRELLA=ON -DFUSE_BUILD_VULKAN=ON -DFUSE_SHADER_GLSLANG=O
 
 When `FUSE_SHADER_GLSLANG=ON` but glslang is missing, configure continues with offline SPIR-V only.
 
-### Tests
-
-| Target | Validates |
-|--------|-----------|
-| `fuse_shader_pipeline` | SPIR-V I/O, offline compiler, shader module + pipeline layout (stub or Vulkan) |
-
-```bash
-ctest --test-dir build --output-on-failure -R fuse_shader_pipeline
-```
-
-**Not in scope (other agents / later milestones):** swapchain present, VMA integration, bindless descriptor sets, graphics pipeline cache, hot-reload watchers.
+**Not in scope (other agents / later milestones):** swapchain present, bindless descriptor sets, graphics pipeline cache, hot-reload watchers.
 
 ---
 
 ## Next (B2.2+)
 
-- [ ] `VkSwapchainKHR` + triple-buffered frame ring
-- [ ] VMA + bindless descriptor scaffolding (B2.3)
-- [ ] Graphics pipeline builder + content-hashed cache (B2.4 follow-up)
+- [ ] `VkSwapchainKHR` + triple-buffered frame ring (B2.2 — other agent)
+- [x] B2.3 resource handles + stub/VMA allocator + bindless index table
+- [x] B2.4 shader scaffold — offline SPIR-V, shader module, pipeline layout placeholder
+- [ ] B2.4 follow-up: bindless descriptor pool + graphics pipeline cache
 - [ ] Replace `PlaceholderRenderer` present path incrementally — keep software fallback for headless CI
 - [ ] Editor Qt native surface (`U6` viewport) → `SwapchainDesc.surface`
 - [ ] Android Vulkan WSI + MoltenVK macOS module

@@ -3,10 +3,14 @@
 set(FUSE_RHI_PUBLIC_HEADERS
     include/fuse/renderer/render_command_list.hpp
     include/fuse/renderer/rhi_context.hpp
+    include/fuse/renderer/resources.hpp
+    include/fuse/renderer/resource_manager.hpp
     include/fuse/renderer/shader/shader_compiler.hpp
     include/fuse/renderer/shader/shader_io.hpp
     include/fuse/renderer/shader/shader_module.hpp
     include/fuse/renderer/shader/shader_types.hpp
+    include/fuse/renderer/vk/allocator.hpp
+    include/fuse/renderer/vk/bindless.hpp
     include/fuse/renderer/vk/bootstrap.hpp
     include/fuse/renderer/vk/device.hpp
     include/fuse/renderer/vk/instance.hpp
@@ -16,10 +20,13 @@ set(FUSE_RHI_PUBLIC_HEADERS
 
 set(FUSE_RHI_SOURCES
     src/render_command_list.cpp
+    src/resource_manager.cpp
     src/rhi_context.cpp
     src/shader/shader_compiler.cpp
     src/shader/shader_io.cpp
     src/shader/shader_module.cpp
+    src/vk/allocator.cpp
+    src/vk/bindless.cpp
     src/vk/bootstrap.cpp
     src/vk/device.cpp
     src/vk/instance.cpp
@@ -41,6 +48,16 @@ target_include_directories(fuse_rhi
 
 target_link_libraries(fuse_rhi PUBLIC fuse_core)
 target_compile_features(fuse_rhi PUBLIC cxx_std_17)
+
+# Optional VMA — stub allocator when header not vendored.
+set(FUSE_VMA_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/third_party/VulkanMemoryAllocator/include")
+if(EXISTS "${FUSE_VMA_INCLUDE_DIR}/vk_mem_alloc.h")
+    target_include_directories(fuse_rhi PRIVATE "${FUSE_VMA_INCLUDE_DIR}")
+    target_compile_definitions(fuse_rhi PRIVATE FUSE_VMA_AVAILABLE=1)
+    message(STATUS "FUSE: VMA found at ${FUSE_VMA_INCLUDE_DIR}")
+else()
+    message(STATUS "FUSE: VMA not found — fuse_rhi uses stub GpuAllocator")
+endif()
 
 if(FUSE_VULKAN_BACKEND)
     target_link_libraries(fuse_rhi PUBLIC Vulkan::Vulkan)
