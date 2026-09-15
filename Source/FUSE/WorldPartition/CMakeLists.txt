@@ -2,11 +2,13 @@
 
 set(FUSE_WORLD_PARTITION_PUBLIC_HEADERS
     include/fuse/world_partition/grid_cell.hpp
+    include/fuse/world_partition/streaming_request_queue.hpp
     include/fuse/world_partition/streaming_volume.hpp
     include/fuse/world_partition/world_partition.hpp
 )
 
 set(FUSE_WORLD_PARTITION_SOURCES
+    src/streaming_request_queue.cpp
     src/world_partition.cpp
 )
 

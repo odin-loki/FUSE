@@ -3,6 +3,7 @@
 #include <fuse/ecs/math/vec.hpp>
 #include <fuse/types.hpp>
 #include <fuse/world_partition/grid_cell.hpp>
+#include <fuse/world_partition/streaming_request_queue.hpp>
 #include <fuse/world_partition/streaming_volume.hpp>
 
 #include <unordered_map>
@@ -15,6 +16,7 @@ struct WorldPartitionDesc {
     f32 stream_in_distance = 512.f;
     f32 stream_out_distance = 600.f;
     u32 max_loaded_cells = 64;
+    u32 max_async_in_flight = 4;
     bool async_loading = true;
 };
 
@@ -44,8 +46,15 @@ public:
     [[nodiscard]] CellResidencyState cell_residency(GridCoord coord) const;
     [[nodiscard]] u32 loaded_cell_count() const;
     [[nodiscard]] u32 resident_cell_count() const;
+    [[nodiscard]] u32 queued_load_count() const;
+    [[nodiscard]] u32 queued_unload_count() const;
+    [[nodiscard]] u32 in_flight_request_count() const;
+    [[nodiscard]] u32 pending_completion_count() const;
     [[nodiscard]] const WorldCell* find_cell(GridCoord coord) const;
     [[nodiscard]] const WorldPartitionDesc& desc() const { return m_desc; }
+
+    /// Apply JobScheduler completions queued since the last drain (also called from update).
+    u32 drain_completed_requests();
 
 private:
     struct LoadRequest {
@@ -58,9 +67,13 @@ private:
     void queue_load_(GridCoord coord, f32 priority);
     void queue_unload_(GridCoord coord);
     void process_queues_();
+    void drain_completed_requests_();
     void execute_load_(WorldCell& cell);
     void execute_unload_(WorldCell& cell);
+    void apply_completed_request_(const CompletedStreamingRequest& completed);
     void collect_stream_candidates_(fuse::ecs::vec3 camera_pos);
+    [[nodiscard]] bool use_async_jobs_() const;
+    [[nodiscard]] StreamingWorkFn make_worker_stub_() const;
 
     WorldPartitionDesc m_desc{};
     CellLoadCallbacks m_callbacks{};
@@ -68,6 +81,8 @@ private:
     std::vector<LoadRequest> m_load_queue;
     std::vector<GridCoord> m_unload_queue;
     StreamingVolume m_streaming{};
+    StreamingRequestQueue m_async_queue{};
+    std::vector<CompletedStreamingRequest> m_completed_batch_;
 };
 
 } // namespace fuse::world_partition
