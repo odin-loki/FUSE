@@ -102,6 +102,24 @@ void run_input_history_tests() {
     expectTrue(wrap_result.action == fuse::net::ReconcileAction::Confirmed,
                "reconcile succeeds for retained frame after ring wrap");
     expectTrue(wrap_reconcile.prediction_matches(5u), "prediction confirmed after wrap reconcile");
+
+    fuse::net::PlayerInput evicted_authority{};
+    evicted_authority.frame = 1;
+    const fuse::net::ReconcileResult evicted_result =
+        wrap_reconcile.reconcile_authoritative(1, evicted_authority);
+    expectTrue(evicted_result.action == fuse::net::ReconcileAction::NoOp,
+               "reconcile on evicted frame returns NoOp");
+    expectTrue(!wrap_reconcile.has_confirmed(1u), "evicted frame is not restored by reconcile");
+
+    fuse::net::InputHistoryBuffer zero_capacity;
+    zero_capacity.init(4);
+    zero_capacity.clear();
+    const fuse::net::ReconcileResult zero_result =
+        zero_capacity.reconcile_authoritative(0, fuse::net::PlayerInput{});
+    expectTrue(zero_result.action == fuse::net::ReconcileAction::NoOp,
+               "reconcile on cleared history returns NoOp");
+    expectTrue(zero_capacity.stored_frame_count() == 0u, "cleared history reconcile has no side effects");
+    expectTrue(!zero_capacity.has_confirmed(0u), "cleared history does not record reconcile input");
 }
 
 } // namespace fuse::net::tests

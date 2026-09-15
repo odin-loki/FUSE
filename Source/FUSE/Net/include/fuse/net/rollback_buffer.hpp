@@ -8,6 +8,8 @@
 
 namespace fuse::net {
 
+struct ReconcileResult;
+
 /// Ring buffer of per-frame rollback data — snapshots plus confirmed inputs (B7.4).
 class RollbackBuffer {
 public:
@@ -17,7 +19,9 @@ public:
     [[nodiscard]] u32 capacity() const { return m_capacity; }
     [[nodiscard]] u32 oldest_stored_frame() const { return m_oldest_frame; }
     [[nodiscard]] u32 newest_stored_frame() const { return m_newest_frame; }
+    [[nodiscard]] u32 stored_frame_count() const;
     [[nodiscard]] bool has_frame(u32 frame) const;
+    [[nodiscard]] bool has_local_input(u32 frame) const;
 
     void store_snapshot(u32 frame, GameSnapshot snapshot);
     /// Evicts the oldest retained snapshot (no-op when empty).
@@ -32,12 +36,20 @@ public:
     [[nodiscard]] PlayerInput remote_input(u32 frame) const;
     [[nodiscard]] bool remote_confirmed(u32 frame) const;
 
+    /// True when both local and remote inputs exist and `inputs_equal` returns true.
+    [[nodiscard]] bool inputs_match(u32 frame) const;
+
+    /// Record confirmed remote input and compare against the stored local prediction.
+    [[nodiscard]] ReconcileResult reconcile_remote_input(u32 frame, const PlayerInput& remote);
+
 private:
     struct FrameSlot {
+        u32 frame = 0;
         GameSnapshot snapshot{};
         PlayerInput local_input{};
         PlayerInput remote_input{};
         bool has_snapshot = false;
+        bool has_local_input = false;
         bool remote_confirmed = false;
     };
 
