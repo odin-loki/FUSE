@@ -31,7 +31,23 @@ void TransformSystem::update_hierarchy(Registry& reg, EntityID id, const mat4& p
     });
 }
 
+bool TransformSystem::has_any_transforms(Registry& reg) {
+    bool found = false;
+    reg.each<Transform>([&](EntityID, Transform&) { found = true; });
+    return found;
+}
+
+u32 TransformSystem::count_transforms(Registry& reg) {
+    u32 count = 0;
+    reg.each<Transform>([&](EntityID, Transform&) { ++count; });
+    return count;
+}
+
 void TransformSystem::update_dirty_roots_serial(Registry& reg) {
+    if (!has_any_transforms(reg)) {
+        return;
+    }
+
     reg.each<Transform>([&](EntityID, Transform& transform) {
         if (transform.parent.valid() || !transform.dirty) {
             return;
@@ -42,6 +58,10 @@ void TransformSystem::update_dirty_roots_serial(Registry& reg) {
 }
 
 void TransformSystem::update_dirty_roots_parallel(Registry& reg, u32 batchSize) {
+    if (!has_any_transforms(reg)) {
+        return;
+    }
+
     const u32 grain = detail::normalize_batch_size(batchSize);
     reg.each_parallel<Transform>([&](EntityID, Transform& transform) {
         if (transform.parent.valid() || !transform.dirty) {
@@ -53,6 +73,10 @@ void TransformSystem::update_dirty_roots_parallel(Registry& reg, u32 batchSize) 
 }
 
 u32 TransformSystem::count_dirty_roots(Registry& reg) {
+    if (!has_any_transforms(reg)) {
+        return 0;
+    }
+
     u32 count = 0;
     reg.each<Transform>([&](EntityID, Transform& transform) {
         if (!transform.parent.valid() && transform.dirty) {
@@ -63,6 +87,10 @@ u32 TransformSystem::count_dirty_roots(Registry& reg) {
 }
 
 void TransformSystem::update(Registry& reg, const TransformSystemOptions& options) {
+    if (!has_any_transforms(reg)) {
+        return;
+    }
+
     std::vector<EntityID> roots;
     reg.each<Transform>([&](EntityID id, Transform& transform) {
         if (!transform.parent.valid()) {

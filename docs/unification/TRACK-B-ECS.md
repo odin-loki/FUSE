@@ -18,7 +18,7 @@
 | `IsComponentV` trait | `include/fuse/ecs/component.hpp` | Plain data + `component_name` string (C++17) |
 | Math types (`vec3`, `quat`, `mat4`) | `include/fuse/ecs/math/vec.hpp` | Minimal POD until shared `fuse/math` lands in Core |
 | Core components | `include/fuse/ecs/components/` | Transform, Mesh, SDFObject, RigidBody, Camera, lights, tags |
-| `TransformSystem` | `include/fuse/ecs/systems/transform_system.hpp` | Hierarchy + optional `each_parallel` dirty-root pass; `count_dirty_roots` tally (B3.3) |
+| `TransformSystem` | `include/fuse/ecs/systems/transform_system.hpp` | Hierarchy + optional `each_parallel` dirty-root pass; `count_dirty_roots` / `has_any_transforms` / `count_transforms`; empty-transform guards on update and dirty-root stubs (B3.3) |
 | `CullingSystem` | `include/fuse/ecs/systems/culling_system.hpp` | BVH + frustum cull for meshes/SDF/lights (B3.3) |
 | `SceneBuildSystem` | `include/fuse/ecs/systems/scene_build_system.hpp` | `CullResult` → `SceneData` draw/SDF/light payloads (B3.3) |
 | `CameraSystem` | `include/fuse/ecs/systems/camera_system.hpp` | Active camera view/proj/frustum (B3.8) |
@@ -125,6 +125,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_ecs|fuse_scene'
 | `fuse_ecs_registry` | Create/destroy, stale handles, add/get/remove, archetype migration, `each` |
 | `fuse_ecs_query_filter` | `archetype_matches` With/Without filters (runtime + compile-time tags, Without-only, multi-Without, conflict guard); `query_filter_empty` / `query_filter_equal` / `count_matching_archetypes` / `count_matching_entities`; `each`/`each_query`/`each_parallel`/`each_query_parallel` include/exclude, empty registry/match, zero-entity archetype, empty-filter-all-archetypes, and serial/parallel parity (atomic visit counts + `each_query_with_without_parallel_matches_serial`) |
 | `fuse_ecs_each_parallel` | `each_parallel` visit/mutation parity vs `each`; `detail::iteration_parity` `each`/`each_query` visit-count + dirty-root parity helpers; batchSize edge cases (0, oversized, empty registry); dirty propagation to clean children and deep hierarchy; `count_dirty_roots`; dirty-root skip guards; empty-registry `TransformSystem::update`; multi-batch/worker serial/parallel matrix parity |
+| `fuse_ecs_transform_system` | `has_any_transforms` / `count_transforms` empty guards; non-transform entity no-op; dirty-root serial/parallel stub parity (empty + many roots); clean-root no-op passes |
 | `fuse_ecs_components` | Component names, defaults, registry storage for lights/tags |
 | `fuse_ecs_system_scheduler` | System dependency DAG execution order |
 | `fuse_ecs_bvh` | SAH BVH ray cast, frustum query vs brute force, refit |
@@ -162,6 +163,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_ecs|fuse_scene'
 - [x] `each_parallel<T>` produces identical results to `each<T>` across randomised cases (`fuse_ecs_each_parallel`; 100k scale deferred)
 - [x] `each_parallel` batchSize edge cases (0 → 1, oversized grain, empty registry) use atomic visit counts (`fuse_ecs_each_parallel`)
 - [x] `TransformSystem` serial vs parallel dirty-root paths produce identical world matrices (`fuse_ecs_each_parallel`)
+- [x] `TransformSystem` empty-transform guards no-op update and dirty-root stubs (`fuse_ecs_transform_system`)
 - [x] `QueryFilter` With/Without archetype matching + `each_query` / `each_query_parallel` coverage (`fuse_ecs_query_filter`)
 
 ### B3.4 — Bounding Volume Hierarchy

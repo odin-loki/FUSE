@@ -30,6 +30,12 @@ public:
     /// Count root transforms (`parent` invalid) with `dirty == true`.
     [[nodiscard]] static u32 count_dirty_roots(Registry& reg);
 
+    /// Returns false when the registry has no `Transform` components (empty-transform guard).
+    [[nodiscard]] static bool has_any_transforms(Registry& reg);
+
+    /// Count entities with a `Transform` component.
+    [[nodiscard]] static u32 count_transforms(Registry& reg);
+
 private:
     static void update_hierarchy(Registry& reg, EntityID id, const mat4& parent_matrix);
 };
