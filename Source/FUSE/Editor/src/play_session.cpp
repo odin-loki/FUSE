@@ -45,6 +45,7 @@ void PlaySession::start(EditorScene& editorScene, scene::Scene& scene, EditorSta
     m_tickAccumulator = 0.f;
     m_coalescedDirtyCount = 0;
     m_skippedInactiveTickCount = 0;
+    m_skippedInactiveFixedStepCount = 0;
 
     state.playing = true;
     state.paused = false;
@@ -63,6 +64,7 @@ void PlaySession::stop(EditorScene& editorScene, scene::Scene& scene, EditorStat
     m_tickAccumulator = 0.f;
     m_coalescedDirtyCount = 0;
     m_skippedInactiveTickCount = 0;
+    m_skippedInactiveFixedStepCount = 0;
     m_hasWorldSnapshot = false;
     m_hasDirtySnapshot = false;
 
@@ -89,7 +91,7 @@ void PlaySession::resume(scene::Scene& scene, EditorState& state, PlayModePhysic
 }
 
 void PlaySession::tick(f32 dt, EditorScene& editorScene, PlayModePhysicsState& physics) {
-    if (!m_controller.isPlaying() || !physics.simulationActive) {
+    if (!m_controller.isPlaying() || !physics.simulationActive || dt < 0.f) {
         ++m_skippedInactiveTickCount;
         return;
     }
@@ -99,13 +101,18 @@ void PlaySession::tick(f32 dt, EditorScene& editorScene, PlayModePhysicsState& p
 }
 
 u32 PlaySession::consumeFixedSteps(f32 fixedDt, EditorScene& editorScene,
-                                   PlayModePhysicsState& physics) {
+                                   PlayModePhysicsState& physics, u32 maxSteps) {
     if (!m_controller.isPlaying() || !physics.simulationActive || fixedDt <= 0.f) {
+        ++m_skippedInactiveFixedStepCount;
         return 0;
     }
 
     u32 steps = 0;
     while (m_tickAccumulator >= fixedDt) {
+        if (maxSteps > 0 && steps >= maxSteps) {
+            break;
+        }
+
         m_tickAccumulator -= fixedDt;
         simulateStep_(editorScene, physics);
         ++steps;
@@ -115,9 +122,17 @@ u32 PlaySession::consumeFixedSteps(f32 fixedDt, EditorScene& editorScene,
 }
 
 u32 PlaySession::tickFixedStep(f32 dt, f32 fixedDt, EditorScene& editorScene,
-                               PlayModePhysicsState& physics) {
+                               PlayModePhysicsState& physics, u32 maxSteps) {
     tick(dt, editorScene, physics);
-    return consumeFixedSteps(fixedDt, editorScene, physics);
+    return consumeFixedSteps(fixedDt, editorScene, physics, maxSteps);
+}
+
+u32 PlaySession::pendingFixedStepCount(f32 fixedDt) const {
+    if (fixedDt <= 0.f) {
+        return 0;
+    }
+
+    return static_cast<u32>(m_tickAccumulator / fixedDt);
 }
 
 PlayWorldSnapshot PlaySession::captureWorldSnapshot(EditorScene& editorScene) const {
@@ -168,6 +183,14 @@ void PlaySession::captureDirtySnapshot_(EditorScene& editorScene, const EditorSt
     editorScene.registry().each<ecs::Transform>([this](ecs::EntityID id, const ecs::Transform& transform) {
         m_dirtySnapshot.transformDirty.push_back({id, transform.dirty});
     });
+    std::sort(m_dirtySnapshot.transformDirty.begin(), m_dirtySnapshot.transformDirty.end(),
+              [](const std::pair<ecs::EntityID, bool>& lhs,
+                 const std::pair<ecs::EntityID, bool>& rhs) {
+                  if (lhs.first.index != rhs.first.index) {
+                      return lhs.first.index < rhs.first.index;
+                  }
+                  return lhs.first.generation < rhs.first.generation;
+              });
     m_hasDirtySnapshot = true;
 }
 
