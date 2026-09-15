@@ -329,6 +329,89 @@ void run_interest_management_tests() {
                "radius filter marks inner-radius entities always relevant");
     expectTrue(priority_filtered[0].priority >= priority_filtered[1].priority,
                "radius filter output is priority descending");
+
+    // --- count_candidates_in_radius ---
+    expectTrue(fuse::net::count_candidates_in_radius(origin, policy, candidates) == filtered_count,
+               "count_candidates_in_radius matches filter output size");
+    expectTrue(fuse::net::count_candidates_in_radius(origin, policy, empty_candidates) == 0u,
+               "count on empty candidate list is zero");
+
+    fuse::net::InterestPolicy tight_policy{};
+    tight_policy.relevance_radius = 6.f;
+    tight_policy.always_relevant_radius = 5.f;
+    std::vector<fuse::net::InterestCandidate> tight_candidates;
+    tight_candidates.push_back({make_entity(100), {2.f, 0.f, 0.f, 0.f}, 0.f});
+    tight_candidates.push_back({make_entity(101), {10.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(fuse::net::count_candidates_in_radius(origin, tight_policy, tight_candidates) == 1u,
+               "tight relevance radius keeps only in-sphere candidates");
+    std::vector<fuse::net::InterestEntry> tight_filtered;
+    expectTrue(fuse::net::filter_candidates_in_radius(origin, tight_policy, tight_candidates,
+                                                      tight_filtered) == 1u,
+               "tight relevance radius filter matches count");
+    expectTrue(tight_filtered[0].entity.index == 100u,
+               "tight relevance filter keeps nearest candidate");
+    expectTrue(tight_filtered[0].scope == fuse::net::InterestScope::AlwaysRelevant,
+               "tight relevance filter marks inner entity always relevant");
+
+    // --- InterestSetDiff::apply_to ---
+    fuse::net::InterestScopeSet applied_scope;
+    applied_scope.entities = {make_entity(1), make_entity(2), make_entity(3)};
+    fuse::net::InterestSetDiff patch_diff{};
+    patch_diff.entered = {make_entity(4)};
+    patch_diff.left = {make_entity(2)};
+    patch_diff.apply_to(applied_scope);
+    expectTrue(applied_scope.size() == 3u, "apply_to preserves net scope size");
+    expectTrue(applied_scope.contains(make_entity(1)), "apply_to keeps unchanged entities");
+    expectTrue(applied_scope.contains(make_entity(3)), "apply_to keeps unchanged entities");
+    expectTrue(applied_scope.contains(make_entity(4)), "apply_to inserts entered entity");
+    expectTrue(!applied_scope.contains(make_entity(2)), "apply_to removes left entity");
+
+    fuse::net::InterestSetDiff noop_diff{};
+    const fuse::net::InterestScopeSet before_noop = applied_scope;
+    noop_diff.apply_to(applied_scope);
+    expectTrue(applied_scope.equal_to(before_noop), "empty diff apply_to is a no-op");
+
+    // --- evaluate_and_diff ---
+    fuse::net::InterestManager eval_diff_manager;
+    eval_diff_manager.set_policy(policy);
+    eval_diff_manager.set_observer_position(origin);
+    eval_diff_manager.register_entity({make_entity(110), {10.f, 0.f, 0.f, 0.f}, 0.f});
+    fuse::net::InterestSetDiff eval_first{};
+    eval_diff_manager.evaluate_and_diff(eval_first);
+    expectTrue(eval_first.empty(), "evaluate_and_diff first pass is empty");
+
+    eval_diff_manager.register_entity({make_entity(111), {12.f, 0.f, 0.f, 0.f}, 0.f});
+    fuse::net::InterestSetDiff eval_second{};
+    eval_diff_manager.evaluate_and_diff(eval_second);
+    expectTrue(eval_second.entered.size() == 1u && eval_second.entered[0].index == 111u,
+               "evaluate_and_diff reports newly scoped entity");
+
+    fuse::net::InterestScopeSet replicated_scope;
+    replicated_scope.entities = {make_entity(110)};
+    eval_second.apply_to(replicated_scope);
+    expectTrue(replicated_scope.contains(make_entity(111)),
+               "apply_to replicates enter from evaluate_and_diff");
+    expectTrue(replicated_scope.size() == 2u, "apply_to grows replicated scope on enter");
+
+    // --- empty scope transitions ---
+    fuse::net::InterestManager transition_manager;
+    transition_manager.set_policy(policy);
+    transition_manager.set_observer_position(origin);
+    transition_manager.register_entity({make_entity(120), {500.f, 0.f, 0.f, 0.f}, 0.f});
+    fuse::net::InterestSetDiff transition_first{};
+    transition_manager.evaluate_and_diff(transition_first);
+    fuse::net::InterestSetDiff transition_second{};
+    transition_manager.evaluate_and_diff(transition_second);
+    expectTrue(transition_manager.scope_set().empty(), "repeated empty-scope evaluate stays empty");
+    expectTrue(transition_second.empty(), "empty-to-empty evaluate_and_diff stays empty");
+
+    transition_manager.clear_entities();
+    transition_manager.register_entity({make_entity(121), {10.f, 0.f, 0.f, 0.f}, 0.f});
+    fuse::net::InterestSetDiff after_clear{};
+    transition_manager.evaluate_and_diff(after_clear);
+    expectTrue(after_clear.empty(), "first evaluate after clear_entities has empty diff");
+    expectTrue(transition_manager.scope_set().contains(make_entity(121)),
+               "scope repopulates after clear_entities");
 }
 
 } // namespace fuse::net::tests

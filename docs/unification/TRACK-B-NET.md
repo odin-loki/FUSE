@@ -12,8 +12,9 @@
 |-----------|----------|-------|
 | `InterestManager` | `interest_management.hpp/.cpp` | Relevance/unload radii, hysteresis, observer AOI evaluation, scope snapshots, position updates |
 | `InterestPriorityQueue` | `interest_management.hpp/.cpp` | Max-priority replication ordering stub |
-| `InterestScopeSet` / `InterestSetDiff` | `interest_management.hpp/.cpp` | Enter/leave set diff between AOI evaluations |
+| `InterestScopeSet` / `InterestSetDiff` | `interest_management.hpp/.cpp` | Enter/leave set diff between AOI evaluations; `apply_to` incremental scope updates |
 | `filter_candidates_in_radius` | `interest_management.hpp/.cpp` | Radius filter stub (no hysteresis) for candidate lists |
+| `count_candidates_in_radius` | `interest_management.hpp/.cpp` | In-scope candidate count without building entry rows |
 | `InputHistoryBuffer` | `input_history.hpp/.cpp` | 128-frame ring with `push_frame` / `pop_oldest`, predicted + confirmed `PlayerInput` |
 | `reconcile_predicted_input` | `reconcile.hpp/.cpp` | Compare authoritative input against local prediction |
 | Rollback window helpers | `rollback_window.hpp/.cpp` | `earliest_rewindable_frame`, `can_rewind_to_frame`, `clamp_rewind_target`, `resimulate_frame_count` |
@@ -54,7 +55,7 @@ while (queue.pop(next)) {
 }
 ```
 
-`classify_interest`, `compute_relevance_priority`, and `filter_candidates_in_radius` are exposed for unit tests and future ghost managers. `filter_candidates_in_radius` returns in-scope entries sorted by replication priority. `InterestScopeSet` + `diff_interest_scope_sets` report entities that entered or left scope between evaluations (sorted by entity id); `InterestManager::compute_scope_diff` compares the last two `evaluate()` snapshots. `update_entity_position`, `is_entity_in_scope`, and `scope_changed_since_last_evaluate` support ghost managers without re-registering entities each tick.
+`classify_interest`, `compute_relevance_priority`, `filter_candidates_in_radius`, and `count_candidates_in_radius` are exposed for unit tests and future ghost managers. `filter_candidates_in_radius` returns in-scope entries sorted by replication priority. `InterestScopeSet` + `diff_interest_scope_sets` report entities that entered or left scope between evaluations (sorted by entity id); `InterestSetDiff::apply_to` applies enter/leave to a scope snapshot for incremental ghost updates. `InterestManager::compute_scope_diff` compares the last two `evaluate()` snapshots; `evaluate_and_diff` combines both calls. `update_entity_position`, `is_entity_in_scope`, and `scope_changed_since_last_evaluate` support ghost managers without re-registering entities each tick.
 
 ---
 
@@ -163,7 +164,7 @@ ctest --test-dir build --output-on-failure -R fuse_net_b74
 
 | Check | Validates |
 |-------|-----------|
-| `test_net_interest_management` | Relevance/unload radii, radius filter (priority order), empty scope, enter/leave diff, position updates, priority queue ordering (empty + tie-break) |
+| `test_net_interest_management` | Relevance/unload radii, radius filter (priority order), `count_candidates_in_radius`, empty scope, enter/leave diff + `apply_to`, `evaluate_and_diff`, position updates, priority queue ordering (empty + tie-break) |
 | `test_net_checksum` | FNV-1a determinism, combine, snapshot verify |
 | `test_net_input_history` | Empty `pop_oldest`, `clear`, ring wrap eviction bounds, post-wrap reconcile, `inputs_equal` |
 | `test_net_reconcile` | Confirmed / mismatch / NoOp reconcile paths, `reconcile_authoritative` |
