@@ -2,6 +2,7 @@
 
 #include <fuse/editor/command_stack.hpp>
 #include <fuse/editor/editor_state.hpp>
+#include <fuse/editor/material_property_binding.hpp>
 #include <fuse/types.hpp>
 
 namespace fuse::renderer {
@@ -23,7 +24,7 @@ struct MaterialEditState {
 /// Headless material editor panel stub (B6.7).
 class MaterialEditorPanel {
 public:
-    static constexpr u32 kInvalidMaterialId = UINT32_MAX;
+    static constexpr u32 kInvalidMaterialId = MaterialPropertyBinding::kInvalidMaterialId;
 
     void sync(const EditorState& state, u32 materialCount);
     void syncFromMaterialSystem(const EditorState& state, renderer::MaterialSystem& materials);
@@ -31,8 +32,12 @@ public:
     [[nodiscard]] u32 selectedMaterialId() const { return m_selectedMatId; }
     [[nodiscard]] u32 catalogCount() const { return m_catalogCount; }
     [[nodiscard]] const MaterialEditState& editState() const { return m_editState; }
+    [[nodiscard]] const MaterialPropertyBinding& propertyBinding() const { return m_binding; }
+    [[nodiscard]] MaterialPropertyBinding& propertyBinding() { return m_binding; }
     [[nodiscard]] bool previewDirty() const { return m_previewDirty; }
     [[nodiscard]] bool editDirty() const { return m_editDirty; }
+    [[nodiscard]] bool needsPanelRefresh() const { return m_binding.needsPanelRefresh(); }
+    [[nodiscard]] u32 coalescedPropertyDirtyCount() const { return m_binding.coalescedDirtyCount(); }
 
     bool selectMaterial(u32 materialId);
     bool setRoughness(f32 roughness, CommandStack& cmds);
@@ -41,16 +46,19 @@ public:
     bool setShadingModel(u8 shadingModel, CommandStack& cmds);
     bool pushToMaterialSystem(renderer::MaterialSystem& materials, CommandStack& cmds);
 
+    void refreshPanel();
     void clearPreviewDirty() { m_previewDirty = false; }
     void clearEditDirty() { m_editDirty = false; }
 
 private:
-    bool postMaterialProperty_(const char* propertyName, const std::string& propertyValue,
-                               CommandStack& cmds);
+    void bindSelectedMaterial_();
+    void unbindSelectedMaterial_();
+    void markEditDirty_();
 
     u32 m_selectedMatId = kInvalidMaterialId;
     u32 m_catalogCount = 0;
     MaterialEditState m_editState{};
+    MaterialPropertyBinding m_binding;
     bool m_previewDirty = true;
     bool m_editDirty = false;
 };

@@ -20,10 +20,26 @@ Handle<Object> materialHandle(u32 materialId) {
 
 } // namespace
 
+void MaterialEditorPanel::bindSelectedMaterial_() {
+    if (m_selectedMatId != kInvalidMaterialId) {
+        m_binding.bind(m_selectedMatId, m_editState);
+    }
+}
+
+void MaterialEditorPanel::unbindSelectedMaterial_() {
+    m_binding.unbind();
+}
+
+void MaterialEditorPanel::markEditDirty_() {
+    m_previewDirty = true;
+    m_editDirty = true;
+}
+
 void MaterialEditorPanel::sync(const EditorState& /*state*/, u32 materialCount) {
     m_catalogCount = materialCount;
     if (m_selectedMatId >= m_catalogCount) {
         m_selectedMatId = kInvalidMaterialId;
+        unbindSelectedMaterial_();
     }
     m_previewDirty = true;
 }
@@ -44,6 +60,7 @@ void MaterialEditorPanel::syncFromMaterialSystem(const EditorState& state,
         m_editState.roughness = material.roughness;
         m_editState.metallic = material.metallic;
         m_editState.shadingModel = static_cast<u8>(material.shadingModel);
+        m_binding.refreshFromEditState(m_editState);
         m_previewDirty = false;
         m_editDirty = false;
     }
@@ -59,67 +76,50 @@ bool MaterialEditorPanel::selectMaterial(u32 materialId) {
     }
 
     m_selectedMatId = materialId;
+    bindSelectedMaterial_();
     m_previewDirty = true;
     return true;
 }
 
-bool MaterialEditorPanel::postMaterialProperty_(const char* propertyName,
-                                                const std::string& propertyValue,
-                                                CommandStack& cmds) {
-    if (m_selectedMatId == kInvalidMaterialId) {
-        return false;
-    }
-
-    m_previewDirty = true;
-    m_editDirty = true;
-
-    EditorCommand command;
-    command.kind = CommandKind::SetProperty;
-    command.target = materialHandle(m_selectedMatId);
-    command.propertyName = propertyName;
-    command.propertyValue = propertyValue;
-    cmds.execute(std::move(command));
-    return true;
+void MaterialEditorPanel::refreshPanel() {
+    m_binding.markPanelRefreshed();
+    m_previewDirty = false;
 }
 
 bool MaterialEditorPanel::setRoughness(f32 roughness, CommandStack& cmds) {
-    if (m_selectedMatId == kInvalidMaterialId) {
+    if (!m_binding.isBound()) {
         return false;
     }
 
-    m_editState.roughness = roughness;
-    return postMaterialProperty_("material.roughness", std::to_string(roughness), cmds);
+    markEditDirty_();
+    return m_binding.setRoughness(roughness, cmds);
 }
 
 bool MaterialEditorPanel::setMetallic(f32 metallic, CommandStack& cmds) {
-    if (m_selectedMatId == kInvalidMaterialId) {
+    if (!m_binding.isBound()) {
         return false;
     }
 
-    m_editState.metallic = metallic;
-    return postMaterialProperty_("material.metallic", std::to_string(metallic), cmds);
+    markEditDirty_();
+    return m_binding.setMetallic(metallic, cmds);
 }
 
 bool MaterialEditorPanel::setBaseColor(f32 r, f32 g, f32 b, CommandStack& cmds) {
-    if (m_selectedMatId == kInvalidMaterialId) {
+    if (!m_binding.isBound()) {
         return false;
     }
 
-    m_editState.baseColorR = r;
-    m_editState.baseColorG = g;
-    m_editState.baseColorB = b;
-
-    const std::string value = std::to_string(r) + "," + std::to_string(g) + "," + std::to_string(b);
-    return postMaterialProperty_("material.baseColor", value, cmds);
+    markEditDirty_();
+    return m_binding.setBaseColor(r, g, b, cmds);
 }
 
 bool MaterialEditorPanel::setShadingModel(u8 shadingModel, CommandStack& cmds) {
-    if (m_selectedMatId == kInvalidMaterialId) {
+    if (!m_binding.isBound()) {
         return false;
     }
 
-    m_editState.shadingModel = shadingModel;
-    return postMaterialProperty_("material.shadingModel", std::to_string(shadingModel), cmds);
+    markEditDirty_();
+    return m_binding.setShadingModel(shadingModel, cmds);
 }
 
 bool MaterialEditorPanel::pushToMaterialSystem(renderer::MaterialSystem& materials,
@@ -148,7 +148,7 @@ bool MaterialEditorPanel::pushToMaterialSystem(renderer::MaterialSystem& materia
     command.propertyName = "material";
     command.propertyValue = std::to_string(m_selectedMatId);
     cmds.execute(std::move(command));
-    m_previewDirty = false;
+    refreshPanel();
     m_editDirty = false;
     return true;
 #else

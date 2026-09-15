@@ -3,6 +3,7 @@
 #include <fuse/editor/editor_scene.hpp>
 #include <fuse/editor/editor_state.hpp>
 #include <fuse/editor/material_editor_panel.hpp>
+#include <fuse/editor/material_property_binding.hpp>
 #include <fuse/editor/property_inspector.hpp>
 #include <fuse/editor/sdf_sculpt_panel.hpp>
 #include <fuse/ecs/components/sdf_object.hpp>
@@ -127,6 +128,80 @@ void testMaterialEditorPanelPropertyCoalescing() {
     expectTrue(panel.editState().roughness == 0.6f, "coalesced edit state keeps latest roughness");
 }
 
+void testMaterialPropertyBindingGetSet() {
+    fuse::editor::EditorState state;
+    fuse::editor::MaterialEditorPanel panel;
+    panel.sync(state, 1u);
+    panel.selectMaterial(0u);
+
+    fuse::editor::MaterialPropertyBinding& binding = panel.propertyBinding();
+    expectTrue(binding.isBound(), "selection binds property table");
+    expectTrue(binding.boundMaterialId() == 0u, "binding tracks material id");
+
+    fuse::f32 roughness = 0.f;
+    expectTrue(binding.getRoughness(roughness), "get roughness succeeds when bound");
+    expectTrue(roughness == 0.5f, "get roughness returns edit-state default");
+
+    fuse::editor::CommandStack cmds;
+    expectTrue(binding.setMetallic(0.42f, cmds), "set metallic via binding succeeds");
+    fuse::f32 metallic = 0.f;
+    expectTrue(binding.getMetallic(metallic), "get metallic round-trips");
+    expectTrue(metallic == 0.42f, "binding get reflects set");
+    expectTrue(panel.editState().metallic == 0.42f, "panel edit state mirrors binding set");
+}
+
+void testMaterialPropertyBindingDirtyCoalesce() {
+    fuse::editor::EditorState state;
+    fuse::editor::MaterialEditorPanel panel;
+    panel.sync(state, 1u);
+    panel.selectMaterial(0u);
+
+    fuse::editor::CommandStack cmds;
+    expectTrue(panel.setRoughness(0.3f, cmds), "first roughness edit accepted");
+    expectTrue(panel.needsPanelRefresh(), "panel refresh pending after property edit");
+    expectTrue(panel.propertyBinding().isPropertyDirty(fuse::editor::MaterialPropertyId::Roughness),
+               "roughness property marked dirty");
+
+    expectTrue(panel.setRoughness(0.4f, cmds), "second roughness edit accepted");
+    expectTrue(panel.setRoughness(0.5f, cmds), "third roughness edit accepted");
+    expectTrue(panel.coalescedPropertyDirtyCount() == 2u,
+               "repeat roughness edits coalesce dirty notifications");
+
+    panel.refreshPanel();
+    expectTrue(!panel.needsPanelRefresh(), "refreshPanel clears panel refresh flag");
+    expectTrue(!panel.propertyBinding().isPropertyDirty(fuse::editor::MaterialPropertyId::Roughness),
+               "refreshPanel clears property dirty flags");
+    expectTrue(panel.coalescedPropertyDirtyCount() == 0u,
+               "refreshPanel resets coalesced dirty counter");
+}
+
+void testMaterialPropertyBindingUnbound() {
+    fuse::editor::MaterialPropertyBinding binding;
+    expectTrue(!binding.isBound(), "default binding is unbound");
+
+    fuse::f32 value = 0.f;
+    expectTrue(!binding.getRoughness(value), "unbound get roughness fails");
+    expectTrue(!binding.getMetallic(value), "unbound get metallic fails");
+
+    fuse::f32 r = 0.f;
+    fuse::f32 g = 0.f;
+    fuse::f32 b = 0.f;
+    expectTrue(!binding.getBaseColor(r, g, b), "unbound get base color fails");
+
+    fuse::u8 shadingModel = 0u;
+    expectTrue(!binding.getShadingModel(shadingModel), "unbound get shading model fails");
+
+    fuse::editor::CommandStack cmds;
+    expectTrue(!binding.setRoughness(0.1f, cmds), "unbound set roughness fails");
+    expectTrue(cmds.appliedCount() == 0u, "unbound set posts no commands");
+
+    fuse::editor::EditorState state;
+    fuse::editor::MaterialEditorPanel panel;
+    panel.sync(state, 1u);
+    expectTrue(!panel.propertyBinding().isBound(), "panel without selection stays unbound");
+    expectTrue(!panel.setRoughness(0.2f, cmds), "panel set without selection fails");
+}
+
 #ifdef FUSE_VULKAN_BACKEND
 void testMaterialEditorPanelMaterialSystemBridge() {
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
@@ -221,6 +296,9 @@ int main() {
     testMaterialEditorPanelSelection();
     testMaterialEditorPanelPropertyBindings();
     testMaterialEditorPanelPropertyCoalescing();
+    testMaterialPropertyBindingGetSet();
+    testMaterialPropertyBindingDirtyCoalesce();
+    testMaterialPropertyBindingUnbound();
 #ifdef FUSE_VULKAN_BACKEND
     testMaterialEditorPanelMaterialSystemBridge();
 #endif
