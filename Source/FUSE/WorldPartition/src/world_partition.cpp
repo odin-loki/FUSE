@@ -28,6 +28,7 @@ void WorldPartition::destroy() {
     m_unload_queue.clear();
     m_completed_batch_.clear();
     m_async_queue.clear();
+    m_residency_set.clear();
     m_callbacks = {};
     m_tick = 0;
     m_rejected_load_count = 0;
@@ -142,16 +143,24 @@ void WorldPartition::evict_for_budget_(f32 incoming_priority) {
         WorldCell* best_candidate = nullptr;
         f32 best_score = -1.f;
 
-        for (auto& entry : m_cells) {
-            WorldCell& cell = entry.second;
-            if (!is_resident_state(cell.residency)) {
-                continue;
+        if (m_desc.eviction_policy == EvictionPolicy::DistanceFromFocus && !m_residency_set.empty()) {
+            const GridCoord eviction_coord = m_residency_set.pick_eviction_candidate();
+            best_candidate = const_cast<WorldCell*>(find_cell_(eviction_coord));
+            if (best_candidate != nullptr) {
+                best_score = eviction_score_for_(*best_candidate);
             }
+        } else {
+            for (auto& entry : m_cells) {
+                WorldCell& cell = entry.second;
+                if (!is_resident_state(cell.residency)) {
+                    continue;
+                }
 
-            const f32 score = eviction_score_for_(cell);
-            if (score > best_score) {
-                best_score = score;
-                best_candidate = &cell;
+                const f32 score = eviction_score_for_(cell);
+                if (score > best_score) {
+                    best_score = score;
+                    best_candidate = &cell;
+                }
             }
         }
 
@@ -365,12 +374,17 @@ void WorldPartition::execute_load_(WorldCell& cell) {
     cell.residency = CellResidencyState::Resident;
     cell.visible = true;
     touch_cell_(cell);
+
+    const fuse::ecs::vec3 cell_center = grid_to_world_center(cell.coord, m_desc.cell_size);
+    const f32 focus_distance = m_streaming.planar_distance_to(cell_center);
+    (void)m_residency_set.add(cell.coord, focus_distance);
 }
 
 void WorldPartition::execute_unload_(WorldCell& cell) {
     if (m_callbacks.on_unload != nullptr) {
         m_callbacks.on_unload(cell);
     }
+    (void)m_residency_set.remove(cell.coord);
     cell.entities.clear();
     cell.residency = CellResidencyState::Unloaded;
     cell.visible = false;
@@ -399,6 +413,11 @@ void WorldPartition::collect_stream_candidates_(fuse::ecs::vec3 camera_pos) {
         if (!is_resident_state(cell.residency)) {
             continue;
         }
+
+        const fuse::ecs::vec3 cell_center = grid_to_world_center(cell.coord, m_desc.cell_size);
+        const f32 focus_distance = m_streaming.planar_distance_to(cell_center);
+        (void)m_residency_set.update_focus_distance(cell.coord, focus_distance);
+
         if (m_streaming.should_unload(cell.coord, m_desc.cell_size)) {
             const f32 priority = m_streaming.unload_priority_for(cell.coord, m_desc.cell_size);
             queue_unload_(cell.coord, priority);

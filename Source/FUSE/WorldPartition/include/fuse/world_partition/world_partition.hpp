@@ -3,6 +3,7 @@
 #include <fuse/ecs/math/vec.hpp>
 #include <fuse/types.hpp>
 #include <fuse/world_partition/grid_cell.hpp>
+#include <fuse/world_partition/residency_set.hpp>
 #include <fuse/world_partition/streaming_budget.hpp>
 #include <fuse/world_partition/streaming_request_queue.hpp>
 #include <fuse/world_partition/streaming_volume.hpp>
@@ -50,6 +51,7 @@ public:
     [[nodiscard]] u32 loaded_cell_count() const;
     [[nodiscard]] u32 resident_cell_count() const;
     [[nodiscard]] u64 resident_byte_count() const;
+    [[nodiscard]] const ResidencySet& residency_set() const { return m_residency_set; }
     [[nodiscard]] u32 queued_load_count() const;
     [[nodiscard]] u32 queued_unload_count() const;
     [[nodiscard]] u32 rejected_load_count() const;
@@ -99,6 +101,7 @@ private:
     std::vector<UnloadRequest> m_unload_queue;
     StreamingVolume m_streaming{};
     StreamingRequestQueue m_async_queue{};
+    ResidencySet m_residency_set{};
     std::vector<CompletedStreamingRequest> m_completed_batch_;
 };
 

@@ -26,6 +26,7 @@ struct CompletedStreamingRequest {
     GridCoord coord{};
     StreamingRequestKind kind = StreamingRequestKind::Load;
     f32 priority = 0.f;
+    u64 submit_sequence = 0; ///< FIFO tie-break when priorities match
     bool success = true;
 };
 
@@ -48,6 +49,7 @@ public:
 
     [[nodiscard]] u32 in_flight_count() const;
     [[nodiscard]] u32 completed_count() const;
+    [[nodiscard]] bool empty() const;
 
     void clear();
 
@@ -56,6 +58,7 @@ private:
 
     mutable std::mutex m_mutex;
     u32 m_inFlight = 0;
+    u64 m_submit_sequence = 0;
     u32 m_max_pending_submits = 0; ///< 0 = unlimited pending (in-flight + completed buffer)
     std::vector<CompletedStreamingRequest> m_completed;
 };

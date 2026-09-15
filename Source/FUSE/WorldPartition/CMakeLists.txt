@@ -2,6 +2,7 @@
 
 set(FUSE_WORLD_PARTITION_PUBLIC_HEADERS
     include/fuse/world_partition/grid_cell.hpp
+    include/fuse/world_partition/residency_set.hpp
     include/fuse/world_partition/streaming_budget.hpp
     include/fuse/world_partition/streaming_request_queue.hpp
     include/fuse/world_partition/streaming_volume.hpp
