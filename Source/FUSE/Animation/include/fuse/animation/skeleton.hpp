@@ -50,6 +50,17 @@ struct PoseSoA {
 
 void blend_pose_soa(const PoseSoA& a, const PoseSoA& b, f32 weight, PoseSoA& out);
 
+/// Copy local TRS columns and bone count from src into dst (world transforms are not copied).
+void copy_pose_soa_local(const PoseSoA& src, PoseSoA& dst);
+
+/// Incrementally accumulate a weighted pose into result for multi-entry blend spaces.
+/// On first contribution (accumulated_weight == 0), result is seeded from entry.
+/// Subsequent calls blend entry in proportionally to its weight relative to the running total.
+void accumulate_weighted_pose_soa(PoseSoA& result,
+                                  f32& accumulated_weight,
+                                  const PoseSoA& entry,
+                                  f32 weight);
+
 /// Additive local TRS delta from bind pose: out = base + weight * (delta - bind) on masked bones.
 void add_pose_soa(const PoseSoA& base,
                   const PoseSoA& delta,

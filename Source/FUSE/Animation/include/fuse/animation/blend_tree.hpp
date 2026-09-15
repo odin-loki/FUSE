@@ -49,7 +49,7 @@ struct BlendSpace1D : BlendNode {
     void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
 };
 
-/// 2D blend space — distance-weighted clip blend in a 2D parameter plane (stub).
+/// 2D blend space — distance-weighted clip blend in a 2D parameter plane.
 struct BlendSpace2D : BlendNode {
     struct Entry {
         vec2 param{};
@@ -124,6 +124,7 @@ struct AnimStateMachine : BlendNode {
     f32 blend_duration = 0.2f;
     Pose blend_from_pose;
     PoseSoA blend_from_pose_soa;
+    bool has_entered_initial = false;
 
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
     void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
@@ -132,6 +133,9 @@ struct AnimStateMachine : BlendNode {
 
     /// Crossfade blend weight in [0, 1] while transitioning; 0 when idle.
     f32 crossfade_alpha() const;
+
+    /// Reset to the first state without firing enter/exit callbacks.
+    void reset();
 };
 
 } // namespace fuse::animation

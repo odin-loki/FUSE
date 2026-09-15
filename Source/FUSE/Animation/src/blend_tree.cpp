@@ -266,7 +266,6 @@ void BlendSpace2D::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
     const vec2 value = param ? *param : vec2{};
     const BlendSpace2DSample sample = sample_blend_space_2d(*this, value);
     PoseSoA result = PoseSoA::from_bind_pose(skel);
-    bool hasPose = false;
     f32 accumulatedWeight = 0.f;
 
     for (u32 i = 0; i < entries.size(); ++i) {
@@ -276,22 +275,10 @@ void BlendSpace2D::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
 
         PoseSoA entrySoa = PoseSoA::from_bind_pose(skel);
         entries[i].clip->evaluate_soa(dt, skel, entrySoa);
-
-        if (!hasPose) {
-            result = entrySoa;
-            accumulatedWeight = sample.weights[i];
-            hasPose = true;
-            continue;
-        }
-
-        const f32 alpha = sample.weights[i] / (accumulatedWeight + sample.weights[i]);
-        PoseSoA blended = PoseSoA::allocate(result.bone_count);
-        blend_poses_soa(result, entrySoa, alpha, blended);
-        result = blended;
-        accumulatedWeight += sample.weights[i];
+        accumulate_weighted_pose_soa(result, accumulatedWeight, entrySoa, sample.weights[i]);
     }
 
-    if (!hasPose) {
+    if (accumulatedWeight <= 0.f) {
         out = PoseSoA::from_bind_pose(skel);
         return;
     }
@@ -358,10 +345,22 @@ void AdditiveBlendNode::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
 }
 
 f32 AnimStateMachine::crossfade_alpha() const {
-    if (!is_transitioning || blend_duration <= 0.f) {
+    if (!is_transitioning) {
         return 0.f;
     }
+    if (blend_duration <= 0.f) {
+        return 1.f;
+    }
     return std::clamp(blend_time / blend_duration, 0.f, 1.f);
+}
+
+void AnimStateMachine::reset() {
+    active_state = 0;
+    pending_state = 0;
+    is_transitioning = false;
+    blend_time = 0.f;
+    blend_duration = 0.2f;
+    has_entered_initial = false;
 }
 
 void AnimStateMachine::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
@@ -372,6 +371,13 @@ void AnimStateMachine::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) 
 
     if (active_state >= states.size()) {
         active_state = 0;
+    }
+
+    if (!has_entered_initial) {
+        has_entered_initial = true;
+        if (states[active_state].on_enter) {
+            states[active_state].on_enter();
+        }
     }
 
     if (is_transitioning) {
@@ -403,7 +409,10 @@ void AnimStateMachine::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) 
     }
 
     for (const Transition& transition : transitions) {
-        if (transition.from != active_state || !transition.condition || !transition.condition()) {
+        if (transition.from != active_state || transition.to == active_state) {
+            continue;
+        }
+        if (!transition.condition || !transition.condition()) {
             continue;
         }
         if (transition.to >= states.size()) {
@@ -417,7 +426,7 @@ void AnimStateMachine::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) 
         blend_from_pose_soa = out;
         pending_state = transition.to;
         blend_duration = transition.blend_duration;
-        blend_time = dt;
+        blend_time = blend_duration <= 0.f ? blend_duration : dt;
         is_transitioning = true;
 
         PoseSoA targetSoa = PoseSoA::from_bind_pose(skel);
@@ -426,6 +435,18 @@ void AnimStateMachine::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) 
         }
 
         const f32 alpha = crossfade_alpha();
+        if (alpha >= 1.f) {
+            active_state = pending_state;
+            is_transitioning = false;
+            blend_time = 0.f;
+            out = targetSoa;
+            out.compute_world_transforms(skel);
+            if (states[active_state].on_enter) {
+                states[active_state].on_enter();
+            }
+            return;
+        }
+
         blend_poses_soa(blend_from_pose_soa, targetSoa, alpha, out);
         out.compute_world_transforms(skel);
         return;
@@ -440,6 +461,13 @@ void AnimStateMachine::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
 
     if (active_state >= states.size()) {
         active_state = 0;
+    }
+
+    if (!has_entered_initial) {
+        has_entered_initial = true;
+        if (states[active_state].on_enter) {
+            states[active_state].on_enter();
+        }
     }
 
     if (is_transitioning) {
@@ -470,7 +498,10 @@ void AnimStateMachine::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
     }
 
     for (const Transition& transition : transitions) {
-        if (transition.from != active_state || !transition.condition || !transition.condition()) {
+        if (transition.from != active_state || transition.to == active_state) {
+            continue;
+        }
+        if (!transition.condition || !transition.condition()) {
             continue;
         }
         if (transition.to >= states.size()) {
@@ -484,7 +515,7 @@ void AnimStateMachine::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
         blend_from_pose = activePose;
         pending_state = transition.to;
         blend_duration = transition.blend_duration;
-        blend_time = dt;
+        blend_time = blend_duration <= 0.f ? blend_duration : dt;
         is_transitioning = true;
 
         Pose targetPose = Pose::make_bind_pose(skel);
@@ -493,6 +524,17 @@ void AnimStateMachine::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
         }
 
         const f32 alpha = crossfade_alpha();
+        if (alpha >= 1.f) {
+            active_state = pending_state;
+            is_transitioning = false;
+            blend_time = 0.f;
+            out = targetPose;
+            if (states[active_state].on_enter) {
+                states[active_state].on_enter();
+            }
+            return;
+        }
+
         blend_poses(blend_from_pose, targetPose, alpha, out);
         return;
     }
@@ -519,7 +561,7 @@ void AnimStateMachine::add_transition(const char* from,
         }
     }
 
-    if (fromIndex < 0 || toIndex < 0) {
+    if (fromIndex < 0 || toIndex < 0 || fromIndex == toIndex) {
         return;
     }
 
