@@ -215,6 +215,278 @@ void testParallelSimulationParity() {
     expectNear(parallelY, serialY, 1e-4f, "parallel simulation matches serial integration");
 }
 
+void testParticleEmitterBurstZero() {
+    fuse::vfx::ParticleEmitter emitter{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 8;
+
+    emitter.init(desc);
+    emitter.burst(0);
+    expectEq(emitter.alive_count(), 0u, "burst(0) emits nothing");
+    expectEq(emitter.free_slot_count(), 8u, "burst(0) leaves all slots free");
+}
+
+void testParticleEmitterUninitializedBurst() {
+    fuse::vfx::ParticleEmitter emitter{};
+    emitter.burst(4);
+    expectEq(emitter.alive_count(), 0u, "burst on uninitialized emitter is a no-op");
+}
+
+void testSimulateNonPositiveDt() {
+    fuse::vfx::ParticleEmitter emitter{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 4;
+    desc.emit_rate = 0.f;
+    desc.lifetime_min = 5.f;
+    desc.lifetime_max = 5.f;
+
+    emitter.init(desc);
+    emitter.burst(2);
+    const fuse::f32 yBefore = emitter.particles().positions[0].y;
+
+    emitter.simulate(0.f);
+    expectEq(emitter.alive_count(), 2u, "simulate(0) does not expire particles");
+    expectNear(emitter.particles().positions[0].y, yBefore, 1e-5f, "simulate(0) does not integrate");
+
+    emitter.simulate(-0.1f);
+    expectEq(emitter.alive_count(), 2u, "simulate(negative dt) is a no-op");
+}
+
+void testDisabledEmitterSkipsSimulation() {
+    fuse::vfx::ParticleEmitter emitter{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 2;
+    desc.emit_rate = 0.f;
+    desc.lifetime_min = 0.1f;
+    desc.lifetime_max = 0.1f;
+    desc.gravity = {0.f, -10.f, 0.f};
+
+    emitter.init(desc);
+    emitter.burst(1);
+    const fuse::f32 yBefore = emitter.particles().positions[0].y;
+
+    emitter.set_enabled(false);
+    emitter.simulate(1.f);
+    expectEq(emitter.alive_count(), 1u, "disabled emitter keeps particles alive");
+    expectNear(emitter.particles().positions[0].y, yBefore, 1e-5f,
+               "disabled emitter does not integrate motion");
+}
+
+void testPartialSlotRecycle() {
+    fuse::vfx::ParticleEmitter emitter{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 4;
+    desc.emit_rate = 0.f;
+    desc.lifetime_min = 0.2f;
+    desc.lifetime_max = 0.2f;
+
+    emitter.init(desc);
+    emitter.burst(4);
+    expectEq(emitter.free_slot_count(), 0u, "full emitter has no free slots");
+
+    emitter.simulate(0.15f);
+    expectEq(emitter.alive_count(), 4u, "particles still alive before lifetime ends");
+    expectEq(emitter.free_slot_count(), 0u, "no slots recycled before expiry");
+
+    emitter.simulate(0.1f);
+    expectEq(emitter.alive_count(), 0u, "all particles expired");
+    expectEq(emitter.free_slot_count(), 4u, "expired particles return all slots");
+
+    emitter.burst(2);
+    expectEq(emitter.alive_count(), 2u, "partial burst after recycle");
+    expectEq(emitter.free_slot_count(), 2u, "two slots remain free after partial burst");
+}
+
+void testFreeListReuseAfterMixedExpiry() {
+    fuse::vfx::ParticleEmitter emitter{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 6;
+    desc.emit_rate = 0.f;
+    desc.lifetime_min = 0.4f;
+    desc.lifetime_max = 0.4f;
+
+    emitter.init(desc);
+    emitter.burst(3);
+    emitter.simulate(0.25f);
+    expectEq(emitter.alive_count(), 3u, "first burst remains alive before expiry window");
+
+    emitter.simulate(0.2f);
+    expectEq(emitter.alive_count(), 0u, "first burst expires and returns slots");
+    expectEq(emitter.free_slot_count(), 6u, "all slots available after first burst expiry");
+
+    emitter.burst(2);
+    expectEq(emitter.alive_count(), 2u, "second burst allocates recycled slots");
+    expectEq(emitter.free_slot_count(), 4u, "free list shrinks after second burst");
+
+    emitter.simulate(0.5f);
+    expectEq(emitter.alive_count(), 0u, "second burst expires cleanly");
+    expectEq(emitter.free_slot_count(), 6u, "slots fully recycled after second expiry");
+}
+
+void testBurstThenRateFill() {
+    fuse::vfx::ParticleEmitter emitter{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 8;
+    desc.emit_rate = 10.f;
+    desc.lifetime_min = 10.f;
+    desc.lifetime_max = 10.f;
+
+    emitter.init(desc);
+    emitter.burst(5);
+    expectEq(emitter.alive_count(), 5u, "burst pre-fills half capacity");
+    expectEq(emitter.free_slot_count(), 3u, "remaining free slots after burst");
+
+    emitter.simulate(0.5f);
+    expectEq(emitter.alive_count(), 8u, "rate emission fills remaining capacity");
+    expectEq(emitter.free_slot_count(), 0u, "rate emission exhausts free list at capacity");
+}
+
+void testEmitRateAccumulatorAtCapacity() {
+    fuse::vfx::ParticleEmitter emitter{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 2;
+    desc.emit_rate = 100.f;
+    desc.lifetime_min = 10.f;
+    desc.lifetime_max = 10.f;
+
+    emitter.init(desc);
+    emitter.simulate(1.f);
+    expectEq(emitter.alive_count(), 2u, "rate emission stops at capacity");
+    expectEq(emitter.free_slot_count(), 0u, "capacity leaves no free slots");
+
+    emitter.simulate(1.f);
+    expectEq(emitter.alive_count(), 2u, "rate emission at capacity does not over-emit");
+}
+
+template <typename Body>
+void expectParallelParity(fuse::u32 workers, Body&& setupAndSimulate) {
+    fuse::u32 serialAlive = 0;
+    fuse::f32 serialChecksum = 0.f;
+    withScheduler(0, [&] {
+        fuse::vfx::ParticleEmitter emitter{};
+        setupAndSimulate(emitter);
+        serialAlive = emitter.alive_count();
+        for (fuse::u32 i = 0; i < emitter.particles().capacity; ++i) {
+            if (emitter.particles().alive_flags[i] != 0U) {
+                serialChecksum += emitter.particles().positions[i].y;
+            }
+        }
+        emitter.destroy();
+    });
+
+    fuse::u32 parallelAlive = 0;
+    fuse::f32 parallelChecksum = 0.f;
+    withScheduler(workers, [&] {
+        fuse::vfx::ParticleEmitter emitter{};
+        setupAndSimulate(emitter);
+        parallelAlive = emitter.alive_count();
+        for (fuse::u32 i = 0; i < emitter.particles().capacity; ++i) {
+            if (emitter.particles().alive_flags[i] != 0U) {
+                parallelChecksum += emitter.particles().positions[i].y;
+            }
+        }
+        emitter.destroy();
+    });
+
+    expectEq(parallelAlive, serialAlive, "parallel alive count matches serial");
+    expectNear(parallelChecksum, serialChecksum, 1e-3f, "parallel integration checksum matches serial");
+}
+
+void testParallelGrainBoundary() {
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 65;
+    desc.emit_rate = 0.f;
+    desc.lifetime_min = 2.f;
+    desc.lifetime_max = 2.f;
+    desc.gravity = {0.f, -1.f, 0.f};
+    desc.drag = 0.01f;
+
+    auto setup = [&](fuse::vfx::ParticleEmitter& emitter) {
+        emitter.init(desc);
+        emitter.set_position({0.f, 2.f, 0.f});
+        emitter.burst(65);
+        emitter.simulate(0.1f);
+    };
+
+    expectParallelParity(4, setup);
+}
+
+void testParallelSingleParticle() {
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 1;
+    desc.emit_rate = 0.f;
+    desc.lifetime_min = 3.f;
+    desc.lifetime_max = 3.f;
+    desc.gravity = {0.f, -5.f, 0.f};
+
+    auto setup = [&](fuse::vfx::ParticleEmitter& emitter) {
+        emitter.init(desc);
+        emitter.burst(1);
+        emitter.simulate(0.05f);
+    };
+
+    expectParallelParity(4, setup);
+}
+
+void testParallelAllDeadNoOp() {
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 32;
+    desc.emit_rate = 0.f;
+    desc.lifetime_min = 0.05f;
+    desc.lifetime_max = 0.05f;
+
+    auto setup = [&](fuse::vfx::ParticleEmitter& emitter) {
+        emitter.init(desc);
+        emitter.burst(16);
+        emitter.simulate(0.1f);
+        expectEq(emitter.alive_count(), 0u, "precondition: all particles expired");
+        emitter.simulate(0.25f);
+    };
+
+    expectParallelParity(4, setup);
+}
+
+void testParallelMultiWorkerParity() {
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 128;
+    desc.emit_rate = 0.f;
+    desc.lifetime_min = 1.5f;
+    desc.lifetime_max = 1.5f;
+    desc.gravity = {0.f, -9.81f, 0.f};
+    desc.drag = 0.1f;
+    desc.velocity_min = {-2.f, 1.f, -2.f};
+    desc.velocity_max = {2.f, 3.f, 2.f};
+
+    auto setup = [&](fuse::vfx::ParticleEmitter& emitter) {
+        emitter.init(desc);
+        emitter.set_position({1.f, 4.f, -1.f});
+        emitter.burst(96);
+        emitter.simulate(0.2f);
+    };
+
+#if !FUSE_JOBS_SINGLE_THREAD
+    expectParallelParity(1, setup);
+    expectParallelParity(2, setup);
+#endif
+    expectParallelParity(4, setup);
+}
+
+void testParticleSystemSpawnBurstCount() {
+    fuse::vfx::ParticleSystem system{};
+    system.init({});
+
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 16;
+    desc.emit_rate = 0.f;
+    desc.lifetime_min = 5.f;
+    desc.lifetime_max = 5.f;
+
+    const fuse::Handle<fuse::vfx::EffectInstance> effect =
+        system.spawn_effect(desc, {0.f, 0.f, 0.f}, 10.f, 6u);
+    expectTrue(effect.isValid(), "spawn_effect with burst_count returns valid handle");
+    expectEq(system.alive_particle_count(), 6u, "spawn_effect burst_count seeds particles");
+}
+
 void testEffectInstanceLifecycle() {
     fuse::vfx::EffectInstance effect{};
     effect.duration = 1.f;
@@ -286,14 +558,27 @@ int main() {
     fuse::core::initialize();
 
     testParticleEmitterBurstAndSimulate();
+    testParticleEmitterBurstZero();
+    testParticleEmitterUninitializedBurst();
     testParticleEmitterBurstCapacity();
+    testSimulateNonPositiveDt();
+    testDisabledEmitterSkipsSimulation();
+    testPartialSlotRecycle();
+    testFreeListReuseAfterMixedExpiry();
+    testBurstThenRateFill();
+    testEmitRateAccumulatorAtCapacity();
     testParticleEmitterEmitRate();
     testParticleEmitterEmitRateSteadyState();
     testParticleAttributeInterpolation();
     testParticleDragIntegration();
     testParallelSimulationParity();
+    testParallelGrainBoundary();
+    testParallelSingleParticle();
+    testParallelAllDeadNoOp();
+    testParallelMultiWorkerParity();
     testEffectInstanceLifecycle();
     testParticleSystemSpawnAndUpdate();
+    testParticleSystemSpawnBurstCount();
     testParticleSystemEmitterHandles();
 
     fuse::core::shutdown();

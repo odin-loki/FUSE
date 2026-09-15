@@ -15,8 +15,8 @@ CPU-first particle VFX scaffolding for Track B7.7. Implements emitter descriptor
 
 `spawn → simulate → (render deferred)`
 
-- **Emit** — rate-based or burst emission into CPU SoA slots via O(1) free-list allocation
-- **Simulate** — gravity, drag, lifetime aging, size/color/alpha interpolation over `parallel_for` (serial when the job scheduler is single-threaded)
+- **Emit** — rate-based or burst emission into CPU SoA slots via O(1) free-list allocation (`free_slot_count()` for diagnostics)
+- **Simulate** — gravity, drag, lifetime aging, size/color/alpha interpolation over `parallel_for` (serial when the job scheduler is single-threaded); non-positive `dt` and disabled emitters are no-ops
 - **Render** — not implemented in this milestone
 
 ## Particle SoA
@@ -25,7 +25,7 @@ CPU-first particle VFX scaffolding for Track B7.7. Implements emitter descriptor
 
 ## Tests
 
-`fuse_vfx_tests` (`ctest` name `fuse_vfx_runtime`) covers burst/rate emission, capacity clamping, slot recycling, attribute interpolation, drag integration, parallel vs single-thread simulation parity, effect instance duration, system spawn/update cleanup, and handle lifecycle without GPU or renderer dependencies.
+`fuse_vfx_tests` (`ctest` name `fuse_vfx_runtime`) covers burst/rate emission (including `burst(0)`, capacity clamp, burst+rate interleave), free-list slot recycling after partial expiry, attribute interpolation, drag integration, parallel vs single-thread simulation parity (grain boundaries, single particle, all-dead, multi-worker), `spawn_effect` burst_count, effect instance duration, system spawn/update cleanup, and handle lifecycle without GPU or renderer dependencies.
 
 ## Build
 

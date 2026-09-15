@@ -63,6 +63,7 @@ public:
 
     void simulate(f32 dt);
     u32 alive_count() const;
+    u32 free_slot_count() const { return static_cast<u32>(m_particles.free_slots.size()); }
 
     const ParticleEmitterDesc& desc() const { return m_desc; }
     const math::Vec3& position() const { return m_worldPos; }

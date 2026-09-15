@@ -22,7 +22,7 @@ public:
     void destroy_emitter(Handle<ParticleEmitter> handle);
 
     Handle<EffectInstance> spawn_effect(const ParticleEmitterDesc& desc, const math::Vec3& position,
-                                        f32 duration = 0.f);
+                                        f32 duration = 0.f, u32 burst_count = 1);
     void stop_effect(Handle<EffectInstance> handle);
 
     ParticleEmitter* get_emitter(Handle<ParticleEmitter> handle);
