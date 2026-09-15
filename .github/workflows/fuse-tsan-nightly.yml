@@ -1,0 +1,56 @@
+name: FUSE fuse_core (TSan nightly)
+
+on:
+  schedule:
+    # 03:00 UTC daily
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  fuse-core-tsan:
+    name: fuse_core tests (ThreadSanitizer)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake g++-13
+
+      - name: Configure fuse_core tests with TSan
+        run: |
+          cmake -B build-tsan -G Ninja \
+            -DCMAKE_CXX_COMPILER=g++-13 \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DFUSE_UMBRELLA=ON \
+            -DFUSE_BUILD_CORE=ON \
+            -DFUSE_BUILD_CORE_TESTS=ON \
+            -DFUSE_CORE_ENABLE_TSAN=ON \
+            -DFUSE_BUILD_LEGACY=OFF \
+            -DFUSE_BUILD_SMOKE=OFF \
+            -DFUSE_BUILD_HYBRID_DEMO=OFF \
+            -DFUSE_BUILD_PROJECT=OFF \
+            -DFUSE_BUILD_PARITY_DEMOS=OFF \
+            -DFUSE_BUILD_TOOLS=OFF \
+            -DFUSE_BUILD_EDITOR_API=OFF \
+            -DFUSE_BUILD_MODULES=OFF \
+            -DFUSE_BUILD_AUDIO=OFF \
+            -DFUSE_BUILD_SCRIPT=OFF \
+            -DFUSE_BUILD_VULKAN=OFF \
+            -DFUSE_BUILD_CUDA=OFF \
+            -DFUSE_BUILD_T3D=OFF \
+            -DFUSE_BUILD_T2D=OFF
+
+      - name: Build fuse_core test targets
+        run: |
+          cmake --build build-tsan --target \
+            fuse_core_tests \
+            fuse_core_job_tests \
+            fuse_core_fiber_tests \
+            fuse_core_services_tests \
+            fuse_core_platform_hardening_tests \
+            fuse_core_io_handle_tests
+
+      - name: Run fuse_core CTest (TSan)
+        run: ctest --test-dir build-tsan -R '^fuse_core_' --output-on-failure
