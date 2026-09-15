@@ -11,12 +11,12 @@
 | Component | Location | Notes |
 |-----------|----------|-------|
 | `EntityID` | `include/fuse/ecs/entity.hpp` | Index + generation handle; stale detection O(1) |
-| `Registry` | `include/fuse/ecs/registry.hpp` | Create/destroy, add/remove/get/has, `each` bulk iteration |
+| `Registry` | `include/fuse/ecs/registry.hpp` | Create/destroy, add/remove/get/has, `each` + `each_parallel` bulk iteration |
 | `Archetype` / `ComponentColumn` | `include/fuse/ecs/archetype.hpp` | SoA columns keyed by `std::type_index`; archetype migration on add/remove |
 | `IsComponentV` trait | `include/fuse/ecs/component.hpp` | Plain data + `component_name` string (C++17) |
 | Math types (`vec3`, `quat`, `mat4`) | `include/fuse/ecs/math/vec.hpp` | Minimal POD until shared `fuse/math` lands in Core |
 | Core components | `include/fuse/ecs/components/` | Transform, Mesh, SDFObject, RigidBody, Camera, lights, tags |
-| `TransformSystem` | `include/fuse/ecs/systems/transform_system.hpp` | Hierarchy + dirty-root parallel update (B3.3) |
+| `TransformSystem` | `include/fuse/ecs/systems/transform_system.hpp` | Hierarchy + optional `each_parallel` dirty-root pass (B3.3) |
 | `CullingSystem` | `include/fuse/ecs/systems/culling_system.hpp` | BVH + frustum cull for meshes/SDF/lights (B3.3) |
 | `SceneBuildSystem` | `include/fuse/ecs/systems/scene_build_system.hpp` | `CullResult` → `SceneData` draw/SDF/light payloads (B3.3) |
 | `CameraSystem` | `include/fuse/ecs/systems/camera_system.hpp` | Active camera view/proj/frustum (B3.8) |
@@ -25,7 +25,7 @@
 | `fuse::scene::SceneManager` | `Source/FUSE/Scene/include/fuse/scene/scene_manager.hpp` | ECS runtime container + BVH/SVO stubs (B3.6) |
 | `fuse::scene::SVO` | `Source/FUSE/Scene/include/fuse/scene/svo.hpp` | Voxel octree scaffold (B3.5) |
 
-**Not in scope (follow-up):** CUDA-managed ECS columns, `each_parallel` parity harness at 100k scale, GPU SDF buffer upload, renderer `SceneData` consumption, full `SceneManager::update` system wiring.
+**Not in scope (follow-up):** CUDA-managed ECS columns, `each_parallel` parity harness at 100k scale (smaller parity test ships in `fuse_ecs_each_parallel`), GPU SDF buffer upload, renderer `SceneData` consumption, full `SceneManager::update` system wiring.
 
 ---
 
@@ -71,7 +71,7 @@ SceneBuildSystem::build → SceneData (draw items, SDF, lights)
 SceneManager::update (stub tick — systems wired in integration test)
 ```
 
-Managed-memory columns and `each_parallel` at production scale are **deferred** to B4+ physics/GPU paths. Current columns use `std::vector<std::byte>` on the CPU.
+`Registry::each_parallel` parallelizes row iteration per matching archetype via `JobScheduler::parallel_for` (default batch size 256). `TransformSystemOptions::parallelDirtyRoots` selects the parallel dirty-root pass (default on). Managed-memory columns at production scale remain **deferred** to B4+ physics/GPU paths. Current columns use `std::vector<std::byte>` on the CPU.
 
 ---
 
@@ -121,6 +121,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_ecs|fuse_scene'
 | Target | Validates |
 |--------|-----------|
 | `fuse_ecs_registry` | Create/destroy, stale handles, add/get/remove, archetype migration, `each` |
+| `fuse_ecs_each_parallel` | `each_parallel` visit/mutation parity vs `each`; `TransformSystem` serial/parallel dirty-root paths |
 | `fuse_ecs_components` | Component names, defaults, registry storage for lights/tags |
 | `fuse_ecs_system_scheduler` | System dependency DAG execution order |
 | `fuse_ecs_bvh` | SAH BVH ray cast, frustum query vs brute force, refit |
@@ -153,7 +154,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_ecs|fuse_scene'
 - [x] **B3.3** `TransformSystem`, `CullingSystem`, `SceneBuildSystem`, `SystemScheduler` on FUSE APIs
 - [x] Transform hierarchy propagates parent translation to children (`fuse_ecs_systems`)
 - [x] System scheduler honours declared dependencies (`fuse_ecs_system_scheduler`)
-- [ ] `each_parallel` parity harness vs `each` at 100k entities (deferred — job scheduler parity test)
+- [x] `each_parallel` parity harness vs `each` (`fuse_ecs_each_parallel`; 100k scale deferred)
 
 ### B3.4 — Bounding Volume Hierarchy
 

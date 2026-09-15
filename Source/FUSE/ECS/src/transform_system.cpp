@@ -1,6 +1,5 @@
 #include <fuse/ecs/systems/transform_system.hpp>
 
-#include <fuse/jobs/parallel_for.hpp>
 #include <fuse/types.hpp>
 
 #include <vector>
@@ -27,7 +26,33 @@ void TransformSystem::update_hierarchy(Registry& reg, EntityID id, const mat4& p
     });
 }
 
-void TransformSystem::update(Registry& reg) {
+void TransformSystem::update_dirty_roots_serial(Registry& reg) {
+    reg.each<Transform>([&](EntityID, Transform& transform) {
+        if (transform.parent.valid() || !transform.dirty) {
+            return;
+        }
+
+        const mat4 local = from_trs(transform.position, transform.rotation, transform.scale);
+        transform.local_to_world = local;
+        transform.world_to_local = inverse_affine(local);
+        transform.dirty = false;
+    });
+}
+
+void TransformSystem::update_dirty_roots_parallel(Registry& reg, u32 batchSize) {
+    reg.each_parallel<Transform>([&](EntityID, Transform& transform) {
+        if (transform.parent.valid() || !transform.dirty) {
+            return;
+        }
+
+        const mat4 local = from_trs(transform.position, transform.rotation, transform.scale);
+        transform.local_to_world = local;
+        transform.world_to_local = inverse_affine(local);
+        transform.dirty = false;
+    }, batchSize);
+}
+
+void TransformSystem::update(Registry& reg, const TransformSystemOptions& options) {
     std::vector<EntityID> roots;
     reg.each<Transform>([&](EntityID id, Transform& transform) {
         if (!transform.parent.valid()) {
@@ -35,23 +60,11 @@ void TransformSystem::update(Registry& reg) {
         }
     });
 
-    std::vector<EntityID> dirty_roots;
-    reg.each<Transform>([&](EntityID id, Transform& transform) {
-        if (!transform.parent.valid() && transform.dirty) {
-            dirty_roots.push_back(id);
-        }
-    });
-
-    jobs::parallel_for(static_cast<u32>(dirty_roots.size()), [&](u32 index) {
-        Transform* transform = reg.get<Transform>(dirty_roots[index]);
-        if (transform == nullptr) {
-            return;
-        }
-        const mat4 local = from_trs(transform->position, transform->rotation, transform->scale);
-        transform->local_to_world = local;
-        transform->world_to_local = inverse_affine(local);
-        transform->dirty = false;
-    });
+    if (options.parallelDirtyRoots) {
+        update_dirty_roots_parallel(reg, options.batchSize);
+    } else {
+        update_dirty_roots_serial(reg);
+    }
 
     for (EntityID root : roots) {
         Transform* transform = reg.get<Transform>(root);
