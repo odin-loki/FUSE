@@ -48,11 +48,33 @@ float evaluate_occlusion_gain(float visibility, const OcclusionParams& params) {
     return params.min_gain + (1.f - params.min_gain) * clamped;
 }
 
-float compute_blocker_visibility(const Vec3& listener, const Vec3& source, const AABB& blocker) {
+float evaluate_occlusion_hf_gain(float visibility, const OcclusionParams& params) {
+    const float clamped = std::clamp(visibility, 0.f, 1.f);
+    const float hf_floor = std::clamp(params.hf_attenuation, 0.f, 1.f);
+    return hf_floor + (1.f - hf_floor) * clamped;
+}
+
+OcclusionAttenuation evaluate_occlusion_attenuation(float visibility, const OcclusionParams& params) {
+    return {evaluate_occlusion_gain(visibility, params),
+            evaluate_occlusion_hf_gain(visibility, params)};
+}
+
+float compute_blocker_visibility(const Vec3& listener, const Vec3& source, const AABB& blocker,
+                                 const OcclusionParams& params) {
     if (!segment_intersects_aabb(listener, source, blocker)) {
         return 1.f;
     }
-    return 0.25f;
+    return std::clamp(params.blocked_visibility, 0.f, 1.f);
+}
+
+float compute_blockers_visibility(const Vec3& listener, const Vec3& source, const AABB* blockers,
+                                  u32 blocker_count, const OcclusionParams& params) {
+    float visibility = 1.f;
+    for (u32 i = 0; i < blocker_count; ++i) {
+        visibility = std::min(visibility,
+                               compute_blocker_visibility(listener, source, blockers[i], params));
+    }
+    return visibility;
 }
 
 } // namespace fuse::audio

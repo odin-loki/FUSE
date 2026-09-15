@@ -123,6 +123,20 @@ void AudioEngine::clear_reverb_zones() {
     m_cpuReverb.reset();
 }
 
+void AudioEngine::set_reverb_send_level(float send_level) {
+    const float clamped = std::clamp(send_level, 0.f, 1.f);
+    for (ReverbZone& zone : m_reverbZones) {
+        zone.send_level = clamped;
+    }
+}
+
+float AudioEngine::reverb_send_level() const {
+    if (m_reverbZones.empty()) {
+        return 0.f;
+    }
+    return m_reverbZones.front().send_level;
+}
+
 void AudioEngine::apply_reverb_(std::vector<float>& stereo_buffer, u32 frames) {
     if (m_reverbZones.empty() || m_cpuReverb.ir_length() == 0) {
         return;
@@ -130,7 +144,8 @@ void AudioEngine::apply_reverb_(std::vector<float>& stereo_buffer, u32 frames) {
 
     m_dryBuffer.resize(frames);
     std::vector<float> wet(frames, 0.f);
-    const float wet_dry = m_reverbZones.front().wet_dry;
+    const ReverbZone& zone = m_reverbZones.front();
+    const float wet_mix = std::clamp(zone.wet_dry, 0.f, 1.f) * std::clamp(zone.send_level, 0.f, 1.f);
 
     for (u32 frame = 0; frame < frames; ++frame) {
         m_dryBuffer[frame] = 0.5f * (stereo_buffer[static_cast<usize>(frame) * 2]
@@ -141,7 +156,7 @@ void AudioEngine::apply_reverb_(std::vector<float>& stereo_buffer, u32 frames) {
 
     for (u32 frame = 0; frame < frames; ++frame) {
         const float dry = m_dryBuffer[frame];
-        const float mixed = dry * (1.f - wet_dry) + wet[frame] * wet_dry;
+        const float mixed = dry * (1.f - wet_mix) + wet[frame] * wet_mix;
         stereo_buffer[static_cast<usize>(frame) * 2] = mixed;
         stereo_buffer[static_cast<usize>(frame) * 2 + 1] = mixed;
     }

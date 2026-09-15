@@ -326,6 +326,29 @@ void testOcclusionStub() {
                    && fuse::audio::evaluate_occlusion_gain(0.5f, params) < 1.f,
                "partial visibility interpolates gain");
 
+    params.min_gain = 0.2f;
+    expectNear(fuse::audio::evaluate_occlusion_gain(0.f, params), 0.2f, 1e-5f,
+               "custom min_gain floor is honoured");
+
+    params = fuse::audio::OcclusionParams{};
+    expectNear(fuse::audio::evaluate_occlusion_hf_gain(1.f, params), 1.f, 1e-5f,
+               "full visibility keeps HF energy");
+    expectNear(fuse::audio::evaluate_occlusion_hf_gain(0.f, params), 0.6f, 1e-5f,
+               "zero visibility rolls off HF toward hf_attenuation");
+    expectTrue(fuse::audio::evaluate_occlusion_hf_gain(0.5f, params) > 0.6f
+                   && fuse::audio::evaluate_occlusion_hf_gain(0.5f, params) < 1.f,
+               "partial visibility interpolates HF gain");
+
+    const fuse::audio::OcclusionAttenuation full =
+        fuse::audio::evaluate_occlusion_attenuation(1.f, params);
+    expectNear(full.gain, 1.f, 1e-5f, "attenuation bundle exposes unity gain");
+    expectNear(full.hf_gain, 1.f, 1e-5f, "attenuation bundle exposes unity HF gain");
+
+    const fuse::audio::OcclusionAttenuation blocked =
+        fuse::audio::evaluate_occlusion_attenuation(0.f, params);
+    expectNear(blocked.gain, 0.1f, 1e-5f, "attenuation bundle exposes min gain");
+    expectNear(blocked.hf_gain, 0.6f, 1e-5f, "attenuation bundle exposes HF floor");
+
     const fuse::audio::AABB blocker{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
     expectNear(fuse::audio::compute_blocker_visibility(fuse::audio::Vec3{0.f, 0.f, 0.f},
                                                        fuse::audio::Vec3{10.f, 0.f, 0.f}, blocker),
@@ -333,6 +356,22 @@ void testOcclusionStub() {
     expectNear(fuse::audio::compute_blocker_visibility(fuse::audio::Vec3{5.f, 0.f, 0.f},
                                                        fuse::audio::Vec3{10.f, 0.f, 0.f}, blocker),
                1.f, 1e-5f, "segment outside blocker AABB is not occluded");
+
+    params.blocked_visibility = 0.5f;
+    expectNear(fuse::audio::compute_blocker_visibility(fuse::audio::Vec3{0.f, 0.f, 0.f},
+                                                       fuse::audio::Vec3{10.f, 0.f, 0.f}, blocker,
+                                                       params),
+               0.5f, 1e-5f, "blocked_visibility parameter is configurable");
+
+    const fuse::audio::AABB blockers[] = {blocker, {{8.f, -1.f, -1.f}, {12.f, 1.f, 1.f}}};
+    expectNear(fuse::audio::compute_blockers_visibility(fuse::audio::Vec3{0.f, 0.f, 0.f},
+                                                        fuse::audio::Vec3{20.f, 0.f, 0.f},
+                                                        blockers, 2, params),
+               0.5f, 1e-5f, "multiple blockers take minimum visibility");
+    expectNear(fuse::audio::compute_blockers_visibility(fuse::audio::Vec3{0.f, 0.f, 0.f},
+                                                        fuse::audio::Vec3{20.f, 0.f, 0.f},
+                                                        blockers, 0, params),
+               1.f, 1e-5f, "empty blocker list is fully visible");
 }
 
 void testOcclusionReducesMixOutput() {
@@ -455,6 +494,142 @@ void testPlayAtPositionsSource() {
     expectTrue(!engine.last_mix_buffer().empty(), "panned source still mixes");
 }
 
+void testReverbSendLevelDryMix() {
+    fuse::audio::AudioEngine engine;
+    fuse::audio::AudioDesc desc;
+    desc.frames_per_buf = 64;
+    desc.cuda_reverb = false;
+    engine.init(desc);
+
+    std::vector<float> pcm(4096, 0.5f);
+    fuse::audio::AudioClip source_clip;
+    source_clip.load_from_pcm(pcm.data(), 4096, 1, 48000);
+    const auto source_handle = engine.register_clip(std::move(source_clip));
+
+    const float ir_samples[] = {1.f, 0.5f, 0.25f};
+    fuse::audio::AudioClip ir_clip;
+    ir_clip.load_from_pcm(ir_samples, 3, 1, 48000);
+    const auto ir_handle = engine.register_clip(std::move(ir_clip));
+
+    fuse::audio::AudioRegistry registry;
+    registry.set_listener(registry.create_entity());
+    const fuse::audio::EntityId source_entity = registry.create_entity();
+    registry.set_position(source_entity, fuse::audio::Vec3{0.f, 0.f, -5.f});
+    fuse::audio::AudioSourceDesc source_desc;
+    source_desc.clip = source_handle;
+    source_desc.spatial = false;
+    source_desc.looping = true;
+    fuse::audio::AudioSource* source = registry.add_source(source_entity, source_desc);
+    source->playing = true;
+
+    engine.update(registry, 1.f / 60.f);
+    const float dry_energy = bufferEnergy(engine.last_mix_buffer());
+
+    fuse::audio::AudioEngine::ReverbZone zone;
+    zone.impulse_response = ir_handle;
+    zone.wet_dry = 0.f;
+    zone.send_level = 1.f;
+    engine.add_reverb_zone(zone);
+    source->play_head = 0.f;
+    engine.update(registry, 1.f / 60.f);
+    const float zero_send_energy = bufferEnergy(engine.last_mix_buffer());
+
+    expectTrue(dry_energy > 0.f, "dry mix produces energy");
+    expectNear(zero_send_energy, dry_energy, dry_energy * 0.05f + 1e-4f,
+               "zero wet_dry send leaves dry mix unchanged");
+    expectNear(engine.reverb_send_level(), 1.f, 1e-5f, "default reverb send level is unity");
+}
+
+void testReverbSendLevelWetMix() {
+    fuse::audio::AudioEngine engine;
+    fuse::audio::AudioDesc desc;
+    desc.frames_per_buf = 64;
+    desc.cuda_reverb = false;
+    engine.init(desc);
+
+    std::vector<float> pcm(4096, 0.5f);
+    fuse::audio::AudioClip source_clip;
+    source_clip.load_from_pcm(pcm.data(), 4096, 1, 48000);
+    const auto source_handle = engine.register_clip(std::move(source_clip));
+
+    const float ir_samples[] = {1.f, 0.5f, 0.25f};
+    fuse::audio::AudioClip ir_clip;
+    ir_clip.load_from_pcm(ir_samples, 3, 1, 48000);
+    const auto ir_handle = engine.register_clip(std::move(ir_clip));
+
+    fuse::audio::AudioRegistry registry;
+    registry.set_listener(registry.create_entity());
+    const fuse::audio::EntityId source_entity = registry.create_entity();
+    fuse::audio::AudioSourceDesc source_desc;
+    source_desc.clip = source_handle;
+    source_desc.spatial = false;
+    source_desc.looping = true;
+    fuse::audio::AudioSource* source = registry.add_source(source_entity, source_desc);
+    source->playing = true;
+
+    fuse::audio::AudioEngine::ReverbZone zone;
+    zone.impulse_response = ir_handle;
+    zone.wet_dry = 1.f;
+    zone.send_level = 1.f;
+    engine.add_reverb_zone(zone);
+    engine.update(registry, 1.f / 60.f);
+    const float wet_energy = bufferEnergy(engine.last_mix_buffer());
+
+    zone.wet_dry = 0.f;
+    engine.clear_reverb_zones();
+    engine.add_reverb_zone(zone);
+    source->play_head = 0.f;
+    engine.update(registry, 1.f / 60.f);
+    const float dry_energy = bufferEnergy(engine.last_mix_buffer());
+
+    expectTrue(wet_energy > dry_energy * 1.05f, "full reverb send increases mix energy");
+}
+
+void testReverbSendLevelScalesMixOutput() {
+    fuse::audio::AudioEngine engine;
+    fuse::audio::AudioDesc desc;
+    desc.frames_per_buf = 64;
+    desc.cuda_reverb = false;
+    engine.init(desc);
+
+    std::vector<float> pcm(4096, 0.5f);
+    fuse::audio::AudioClip source_clip;
+    source_clip.load_from_pcm(pcm.data(), 4096, 1, 48000);
+    const auto source_handle = engine.register_clip(std::move(source_clip));
+
+    const float ir_samples[] = {1.f, 0.5f, 0.25f};
+    fuse::audio::AudioClip ir_clip;
+    ir_clip.load_from_pcm(ir_samples, 3, 1, 48000);
+    const auto ir_handle = engine.register_clip(std::move(ir_clip));
+
+    fuse::audio::AudioRegistry registry;
+    registry.set_listener(registry.create_entity());
+    const fuse::audio::EntityId source_entity = registry.create_entity();
+    fuse::audio::AudioSourceDesc source_desc;
+    source_desc.clip = source_handle;
+    source_desc.spatial = false;
+    source_desc.looping = true;
+    fuse::audio::AudioSource* source = registry.add_source(source_entity, source_desc);
+    source->playing = true;
+
+    fuse::audio::AudioEngine::ReverbZone zone;
+    zone.impulse_response = ir_handle;
+    zone.wet_dry = 0.8f;
+    zone.send_level = 1.f;
+    engine.add_reverb_zone(zone);
+    engine.update(registry, 1.f / 60.f);
+    const float full_send_energy = bufferEnergy(engine.last_mix_buffer());
+
+    engine.set_reverb_send_level(0.25f);
+    source->play_head = 0.f;
+    engine.update(registry, 1.f / 60.f);
+    const float reduced_send_energy = bufferEnergy(engine.last_mix_buffer());
+
+    expectNear(engine.reverb_send_level(), 0.25f, 1e-5f, "set_reverb_send_level updates active zone");
+    expectTrue(full_send_energy > reduced_send_energy, "lower send level reduces wet mix contribution");
+    expectTrue(reduced_send_energy > 0.f, "partial send still produces audible output");
+}
+
 void testConvolutionReverbCpuMatchesReference() {
     const float input[] = {1.f, 0.f, 0.5f, -0.25f, 0.1f, 0.f, 0.f, 0.f};
     const float ir[] = {0.8f, 0.2f, 0.1f};
@@ -525,6 +700,9 @@ int main() {
     testHrtfPanEdgeCases();
     testOcclusionStub();
     testOcclusionReducesMixOutput();
+    testReverbSendLevelDryMix();
+    testReverbSendLevelWetMix();
+    testReverbSendLevelScalesMixOutput();
     testSpatialPanRespectsListenerOrientation();
     testPlayAtPositionsSource();
     testConvolutionReverbCpuMatchesReference();

@@ -35,10 +35,13 @@ public:
         AABB bounds;
         Handle<AudioClip> impulse_response = Handle<AudioClip>::invalid();
         float wet_dry = 0.3f;
+        float send_level = 1.f;
     };
 
     void add_reverb_zone(const ReverbZone& zone);
     void clear_reverb_zones();
+    void set_reverb_send_level(float send_level);
+    float reverb_send_level() const;
 
     bool is_initialized() const { return m_initialized; }
     const AudioDesc& desc() const { return m_desc; }

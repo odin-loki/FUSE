@@ -91,7 +91,7 @@ void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>
         const Vec3 world_rel = source->position - listener_pos;
         const Vec3 rel = listener != nullptr ? to_listener_space(world_rel, basis) : world_rel;
         const float bus_gain = m_busMixer.effective_gain(source->desc.bus);
-        const float occlusion_gain = evaluate_occlusion_gain(source->desc.occlusion);
+        const OcclusionAttenuation occlusion = evaluate_occlusion_attenuation(source->desc.occlusion);
 
         for (u32 frame = 0; frame < frames; ++frame) {
             const float local_t = source->play_head + static_cast<float>(frame) / static_cast<float>(m_sampleRate);
@@ -102,7 +102,7 @@ void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>
                 mono = 0.5f * (sample_clip(*clip, local_t * clip->sample_rate, 0)
                                + sample_clip(*clip, local_t * clip->sample_rate, 1));
             }
-            mono *= source->desc.volume * source->desc.pitch * occlusion_gain;
+            mono *= source->desc.volume * source->desc.pitch * occlusion.gain * occlusion.hf_gain;
 
             float left = 0.f;
             float right = 0.f;
