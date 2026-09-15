@@ -22,6 +22,7 @@ struct ClusterDesc {
     u32 maxLightsPerCluster = 256;
 
     u32 clusterCount() const { return tilesX * tilesY * slicesZ; }
+    bool isEmpty() const { return clusterCount() == 0u; }
 
     /// Clamp tile/slice/light caps to CPU stub limits; zero dimensions remain zero (empty grid).
     static ClusterDesc clampCounts(const ClusterDesc& raw);
@@ -44,6 +45,12 @@ struct ClusterGridSoA {
     std::vector<ClusterAABB> aabbs;
     std::vector<ClusterGridEntry> grid;
     std::vector<u32> lightList;
+
+    /// Resize AABB/grid storage for a clamped cluster desc; clears the flat light list.
+    void allocate(const ClusterDesc& desc);
+    /// Drop all cluster entries and the flat light list.
+    void clear();
+    bool isEmpty() const { return grid.empty(); }
 };
 
 /// GPU buffer handles for cluster build + light cull kernels (CUDA deferred).
@@ -99,6 +106,12 @@ struct ClusterLightGridLayout {
 /// CPU light-to-cluster assignment stubs — mirrors CUDA cull kernel list append.
 namespace cluster_util {
 bool tryAssignLight(std::vector<u32>& clusterLights, u32 lightIdx, u32 maxLightsPerCluster);
+/// Batch-assign candidate lights; returns overflow count dropped at per-cluster capacity.
+u32 assignLights(std::vector<u32>& clusterLights,
+                 const std::vector<u32>& candidates,
+                 u32 maxLightsPerCluster);
+/// Copy light indices assigned to one cluster from the rebuilt flat grid.
+u32 lookupClusterLights(const ClusterGridSoA& grid, u32 clusterIdx, std::vector<u32>& outLights);
 u32 countAssignedLights(const ClusterGridSoA& grid, u32 clusterCount);
 u32 countEmptyClusters(const ClusterGridSoA& grid, u32 clusterCount);
 } // namespace cluster_util
