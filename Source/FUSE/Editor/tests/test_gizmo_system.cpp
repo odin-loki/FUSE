@@ -340,6 +340,111 @@ void testSnapValueModeAware() {
                "snapValue passthrough when translate snap disabled");
 }
 
+void testTryBeginDragGuards() {
+    fuse::editor::GizmoSystem gizmo;
+    fuse::editor::GizmoTransform transform{};
+    fuse::editor::GizmoResult result{};
+
+    fuse::editor::GizmoHitTest emptyHit{};
+    emptyHit.viewportHeight = 0.f;
+    expectTrue(!gizmo.tryBeginDrag(emptyHit, transform, result),
+               "tryBeginDrag rejects empty viewport");
+    expectTrue(!result.active, "empty viewport leaves drag inactive");
+    expectTrue(!gizmo.isDragging(), "empty viewport does not start drag");
+
+    fuse::editor::GizmoRay emptyRay{};
+    expectTrue(!gizmo.tryBeginDrag(emptyRay, transform, result),
+               "tryBeginDrag rejects empty ray");
+    expectTrue(!gizmo.isDragging(), "empty ray does not start drag");
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+    expectTrue(gizmo.tryBeginDrag(hit, transform, result), "tryBeginDrag accepts valid screen hit");
+    expectTrue(result.active, "valid screen hit activates drag");
+    expectTrue(result.axis == fuse::editor::GizmoAxis::X, "valid screen hit records axis");
+    gizmo.endDrag();
+
+    const fuse::editor::GizmoRay xRay = rayAlongX();
+    expectTrue(gizmo.tryBeginDrag(xRay, transform, result), "tryBeginDrag accepts valid ray");
+    expectTrue(result.axis == fuse::editor::GizmoAxis::X, "valid ray records axis");
+    gizmo.endDrag();
+}
+
+void testUpdateDragEmptyViewportGuard() {
+    fuse::editor::GizmoSystem gizmo;
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    fuse::editor::GizmoTransform transform{};
+    gizmo.beginDrag(hit, transform);
+
+    hit.viewportWidth = 0.f;
+    const fuse::editor::GizmoResult update = gizmo.updateDrag(hit);
+    expectTrue(!update.changed, "updateDrag ignores empty viewport");
+    expectTrue(gizmo.isDragging(), "empty viewport update keeps drag active");
+}
+
+void testCycleModeCancelsDrag() {
+    fuse::editor::GizmoSystem gizmo;
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    fuse::editor::GizmoTransform transform{};
+    gizmo.beginDrag(hit, transform);
+    expectTrue(gizmo.isDragging(), "drag active before cycle");
+
+    gizmo.cycleMode();
+    expectTrue(!gizmo.isDragging(), "cycleMode cancels active drag");
+    expectTrue(gizmo.mode() == fuse::editor::GizmoMode::Rotate, "cycleMode advances mode");
+}
+
+void testSnapDragDeltaModeAware() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.5f;
+    snap.angleStepDegrees = 15.f;
+    snap.scaleSnap = true;
+    snap.scaleGridStep = 0.25f;
+
+    expectTrue(fuse::editor::isSnapEnabled(fuse::editor::GizmoMode::Translate, snap),
+               "translate snap enabled when flag set");
+    expectTrue(!fuse::editor::isSnapEnabled(fuse::editor::GizmoMode::Rotate, snap),
+               "rotate snap disabled when flag unset");
+
+    expectNear(fuse::editor::snapDragDelta(0.37f, fuse::editor::GizmoMode::Translate, snap), 0.5f,
+               0.001f, "snapDragDelta snaps translate delta");
+    expectNear(fuse::editor::snapDragDelta(0.37f, fuse::editor::GizmoMode::Rotate, snap), 0.37f,
+               0.001f, "snapDragDelta passthrough when rotate snap disabled");
+
+    snap.rotateSnap = true;
+    expectNear(fuse::editor::snapDragDelta(0.4f, fuse::editor::GizmoMode::Rotate, snap), 0.5235988f,
+               0.01f, "snapDragDelta snaps rotate delta when enabled");
+}
+
+void testPickAxisFromRayEmptyGuard() {
+    fuse::editor::GizmoTransform transform{};
+    fuse::editor::GizmoRay emptyRay{};
+    expectTrue(fuse::editor::pickAxisFromRay(emptyRay, transform, fuse::editor::GizmoMode::Translate,
+                                             fuse::editor::GizmoSpace::World, 0.f,
+                                             fuse::editor::GizmoSystem::kPickRadius) ==
+                   fuse::editor::GizmoAxis::None,
+               "pickAxisFromRay rejects zero axis length");
+    expectTrue(fuse::editor::pickAxisFromRay(emptyRay, transform, fuse::editor::GizmoMode::Translate,
+                                             fuse::editor::GizmoSpace::World,
+                                             fuse::editor::GizmoSystem::kAxisLength, 0.f) ==
+                   fuse::editor::GizmoAxis::None,
+               "pickAxisFromRay rejects zero pick radius");
+}
+
 void testDirtyFlagOnEndDrag() {
     fuse::editor::GizmoSystem gizmo;
     fuse::editor::CommandStack commandStack;
@@ -381,6 +486,11 @@ int main() {
     testDeltaApplyRoundtrip();
     testSetModeCancelsDrag();
     testTryPickAxisGuards();
+    testTryBeginDragGuards();
+    testUpdateDragEmptyViewportGuard();
+    testCycleModeCancelsDrag();
+    testSnapDragDeltaModeAware();
+    testPickAxisFromRayEmptyGuard();
     testDirtyFlagOnEndDrag();
 
     if (g_failures != 0) {

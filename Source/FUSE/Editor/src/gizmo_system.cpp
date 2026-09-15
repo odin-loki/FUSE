@@ -154,6 +154,10 @@ bool hitTestAxisPlane(const GizmoRay& ray, const math::Vec3& planeNormal,
 
 GizmoAxis pickAxisFromRay(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
                           GizmoSpace space, f32 axisLength, f32 pickRadius) {
+    if (isRayEmpty(ray) || axisLength <= kEpsilon || pickRadius <= kEpsilon) {
+        return GizmoAxis::None;
+    }
+
     const math::Vec3 origin = gizmoPosition(transform);
     const math::Quat orientation = gizmoRotation(transform);
 
@@ -226,25 +230,39 @@ f32 snapScale(f32 value, f32 gridStep) {
     return std::round(value / gridStep) * gridStep;
 }
 
-f32 snapValue(f32 value, GizmoMode mode, const GizmoSnapSettings& settings) {
+bool isSnapEnabled(GizmoMode mode, const GizmoSnapSettings& settings) {
     switch (mode) {
     case GizmoMode::Translate:
-        if (!settings.translateSnap) {
-            return value;
-        }
+        return settings.translateSnap;
+    case GizmoMode::Rotate:
+        return settings.rotateSnap;
+    case GizmoMode::Scale:
+        return settings.scaleSnap;
+    }
+    return false;
+}
+
+f32 snapValue(f32 value, GizmoMode mode, const GizmoSnapSettings& settings) {
+    if (!isSnapEnabled(mode, settings)) {
+        return value;
+    }
+
+    switch (mode) {
+    case GizmoMode::Translate:
         return snapToGrid(value, settings.gridSize);
     case GizmoMode::Rotate:
-        if (!settings.rotateSnap) {
-            return value;
-        }
         return snapAngleRadians(value, settings.angleStepDegrees);
     case GizmoMode::Scale:
-        if (!settings.scaleSnap) {
-            return value;
-        }
         return snapScale(value, settings.scaleGridStep);
     }
     return value;
+}
+
+f32 snapDragDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings) {
+    if (!isSnapEnabled(mode, settings)) {
+        return delta;
+    }
+    return snapValue(delta, mode, settings);
 }
 
 bool isRayEmpty(const GizmoRay& ray) {
@@ -464,7 +482,16 @@ bool GizmoSystem::setMode(GizmoMode mode) {
 }
 
 void GizmoSystem::cycleMode() {
-    m_mode = cycleGizmoMode(m_mode);
+    const GizmoMode next = cycleGizmoMode(m_mode);
+    if (next == m_mode) {
+        return;
+    }
+
+    m_mode = next;
+    if (m_dragging) {
+        m_dragging = false;
+        m_activeAxis = GizmoAxis::None;
+    }
 }
 
 GizmoAxis GizmoSystem::pickAxis(const GizmoRay& ray, const GizmoTransform& transform) const {
@@ -487,9 +514,22 @@ bool GizmoSystem::tryPickAxis(const GizmoHitTest& hit, GizmoAxis& outAxis) const
 
 GizmoResult GizmoSystem::beginDrag(const GizmoHitTest& hit, const GizmoTransform& current) {
     GizmoResult result;
+    if (!tryBeginDrag(hit, current, result)) {
+        return result;
+    }
+    return result;
+}
+
+bool GizmoSystem::tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& current,
+                               GizmoResult& out) {
+    out = {};
+    if (isHitTestEmpty(hit)) {
+        return false;
+    }
+
     m_activeAxis = pickAxisScreen_(hit);
     if (m_activeAxis == GizmoAxis::None) {
-        return result;
+        return false;
     }
 
     m_dragging = true;
@@ -497,16 +537,33 @@ GizmoResult GizmoSystem::beginDrag(const GizmoHitTest& hit, const GizmoTransform
     m_currentTransform = current;
     m_lastHit = hit;
 
-    result.active = true;
-    result.axis = m_activeAxis;
-    result.transform = m_currentTransform;
-    return result;
+    out.active = true;
+    out.axis = m_activeAxis;
+    out.transform = m_currentTransform;
+    return true;
+}
+
+bool GizmoSystem::tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current,
+                               GizmoResult& out) {
+    out = {};
+    if (!tryPickAxis(ray, current, m_activeAxis)) {
+        return false;
+    }
+
+    m_dragging = true;
+    m_startTransform = current;
+    m_currentTransform = current;
+    m_lastHit = {};
+
+    out.active = true;
+    out.axis = m_activeAxis;
+    out.transform = m_currentTransform;
+    return true;
 }
 
 GizmoResult GizmoSystem::beginDrag(const GizmoRay& ray, const GizmoTransform& current) {
     GizmoResult result;
-    m_activeAxis = pickAxis(ray, current);
-    if (m_activeAxis == GizmoAxis::None) {
+    if (!tryPickAxis(ray, current, m_activeAxis)) {
         return result;
     }
 
@@ -523,7 +580,7 @@ GizmoResult GizmoSystem::beginDrag(const GizmoRay& ray, const GizmoTransform& cu
 
 GizmoResult GizmoSystem::updateDrag(const GizmoHitTest& hit) {
     GizmoResult result;
-    if (!m_dragging) {
+    if (!m_dragging || isHitTestEmpty(hit)) {
         return result;
     }
 
@@ -568,7 +625,7 @@ GizmoTransform GizmoSystem::applyAxisDelta_(const GizmoHitTest& hit,
                                             const GizmoTransform& base) const {
     const f32 dx = normalizedX(hit) - normalizedX(m_lastHit);
     const f32 dy = normalizedY(hit) - normalizedY(m_lastHit);
-    const f32 delta = dx + dy;
+    const f32 delta = snapDragDelta(dx + dy, m_mode, m_snap);
 
     switch (m_mode) {
     case GizmoMode::Translate: {

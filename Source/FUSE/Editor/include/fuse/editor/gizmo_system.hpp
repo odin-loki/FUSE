@@ -94,6 +94,12 @@ f32 snapScale(f32 value, f32 gridStep);
 /// Mode-aware scalar snap for the active gizmo channel (B6.4 deepen follow-up).
 f32 snapValue(f32 value, GizmoMode mode, const GizmoSnapSettings& settings);
 
+/// True when the active gizmo mode has snap enabled (B6.4 deepen follow-up).
+bool isSnapEnabled(GizmoMode mode, const GizmoSnapSettings& settings);
+
+/// Mode-aware snap for accumulated screen-space drag deltas (B6.4 deepen follow-up).
+f32 snapDragDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings);
+
 /// Empty-hit guards — reject degenerate pick inputs before axis tests (B6.4 deepen follow-up).
 bool isRayEmpty(const GizmoRay& ray);
 bool isHitTestEmpty(const GizmoHitTest& hit);
@@ -157,6 +163,9 @@ public:
 
     GizmoResult beginDrag(const GizmoHitTest& hit, const GizmoTransform& current);
     GizmoResult beginDrag(const GizmoRay& ray, const GizmoTransform& current);
+    /// Guarded begin-drag — returns false on empty viewport / miss picks (B6.4 deepen follow-up).
+    bool tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& current, GizmoResult& out);
+    bool tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current, GizmoResult& out);
     GizmoResult updateDrag(const GizmoHitTest& hit);
     GizmoResult endDrag();
 
