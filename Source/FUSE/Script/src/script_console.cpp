@@ -119,19 +119,25 @@ ScriptConsoleCommandResult ScriptConsole::executeLine_(const char* line, bool re
     }
 
     const std::string trimmed_line = trim(line);
-    if (record_history) {
-        m_history.push(line);
-        resetHistoryNavigation();
-    }
-
-    if (command != "repeat") {
-        m_lastExecutedLine = trimmed_line;
-    }
 
     ScriptConsoleCommandResult result = dispatch_(command.c_str(), args.c_str());
     if (!result.output.empty()) {
         appendOutput_(result.output);
     }
+
+    if (result.ok()) {
+        if (command != "repeat") {
+            m_lastExecutedLine = trimmed_line;
+        }
+        if (record_history) {
+            const bool history_clear = (command == "history" && args == "clear");
+            if (!history_clear) {
+                m_history.push(line);
+                resetHistoryNavigation();
+            }
+        }
+    }
+
     return result;
 }
 
@@ -187,6 +193,27 @@ void ScriptConsole::registerBuiltIns_() {
             out << matches[i];
         }
         return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, out.str()};
+    });
+
+    m_commands.register_built_in("resolve", [](ScriptConsole& console, const char* args) {
+        if (args == nullptr || args[0] == '\0') {
+            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
+                                              "resolve requires a partial command name"};
+        }
+
+        const std::string resolved = console.m_commands.unique_prefix_match(args);
+        if (!resolved.empty()) {
+            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, resolved};
+        }
+
+        const std::vector<std::string> matches = console.m_commands.commands_with_prefix(args);
+        if (matches.empty()) {
+            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::UnknownCommand,
+                                              std::string("no command matches: ") + args};
+        }
+
+        return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
+                                          std::string("ambiguous prefix: ") + args};
     });
 
     m_commands.register_built_in("suggest", [](ScriptConsole& console, const char* args) {
