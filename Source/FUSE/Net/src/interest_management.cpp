@@ -146,34 +146,56 @@ bool InterestScopeSet::equal_to(const InterestScopeSet& other) const {
     return true;
 }
 
-void InterestSetDiff::apply_diff(InterestScopeSet& scope) const {
+void InterestSetDiff::clear() {
+    entered.clear();
+    left.clear();
+}
+
+bool InterestSetDiff::apply_diff(InterestScopeSet& scope) const {
     if (empty()) {
-        return;
+        return false;
     }
 
+    bool changed = false;
     for (const ecs::EntityID& entity : left) {
-        (void)scope.remove_entity(entity);
+        if (scope.remove_entity(entity)) {
+            changed = true;
+        }
     }
     for (const ecs::EntityID& entity : entered) {
-        (void)scope.insert_entity(entity);
+        if (scope.insert_entity(entity)) {
+            changed = true;
+        }
     }
+    return changed;
 }
 
 bool is_empty_interest_diff(const InterestSetDiff& diff) {
     return diff.empty();
 }
 
+bool has_scope_enters(const InterestSetDiff& diff) {
+    return diff.has_enters();
+}
+
+bool has_scope_leaves(const InterestSetDiff& diff) {
+    return diff.has_leaves();
+}
+
 u32 count_scope_diff_entities(const InterestSetDiff& diff) {
     return static_cast<u32>(diff.entered.size() + diff.left.size());
 }
 
-void diff_interest_scope_sets(const InterestScopeSet& previous, const InterestScopeSet& current,
+bool diff_interest_scope_sets(const InterestScopeSet& previous, const InterestScopeSet& current,
                               InterestSetDiff& out) {
-    out.entered.clear();
-    out.left.clear();
+    out.clear();
+
+    if (previous.equal_to(current)) {
+        return false;
+    }
 
     if (previous.empty() && current.empty()) {
-        return;
+        return false;
     }
 
     for (const ecs::EntityID& entity : current.entities) {
@@ -190,6 +212,7 @@ void diff_interest_scope_sets(const InterestScopeSet& previous, const InterestSc
 
     sort_entities_(out.entered);
     sort_entities_(out.left);
+    return !out.empty();
 }
 
 u32 count_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
@@ -361,12 +384,15 @@ void InterestManager::evaluate() {
 
 bool InterestManager::evaluate_and_diff(InterestSetDiff& out) {
     evaluate();
-    compute_scope_diff(out);
-    return !out.empty();
+    return compute_scope_diff(out);
 }
 
-void InterestManager::compute_scope_diff(InterestSetDiff& out) const {
-    diff_interest_scope_sets(m_previous_scope_set, m_scope_set, out);
+bool InterestManager::compute_scope_diff(InterestSetDiff& out) const {
+    if (!scope_changed_since_last_evaluate()) {
+        out.clear();
+        return false;
+    }
+    return diff_interest_scope_sets(m_previous_scope_set, m_scope_set, out);
 }
 
 bool InterestManager::scope_changed_since_last_evaluate() const {
@@ -388,6 +414,15 @@ u32 InterestManager::in_scope_count() const {
         }
     }
     return count;
+}
+
+u32 InterestManager::count_registered_in_radius() const {
+    return count_candidates_in_radius(m_observer, m_policy, m_candidates, m_previous_scope_set);
+}
+
+u32 InterestManager::filter_registered_in_radius(std::vector<InterestEntry>& out_entries) const {
+    return filter_candidates_in_radius(m_observer, m_policy, m_candidates, m_previous_scope_set,
+                                       out_entries);
 }
 
 bool InterestPriorityQueue::higher_priority_(const InterestEntry& a, const InterestEntry& b) {

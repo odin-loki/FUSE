@@ -512,6 +512,107 @@ void run_interest_management_tests() {
     const fuse::net::InterestScopeSet alias_before_guard = alias_scope;
     guarded_empty_diff.apply_diff(alias_scope);
     expectTrue(alias_scope.equal_to(alias_before_guard), "apply_diff no-op on empty diff");
+    expectTrue(!guarded_empty_diff.apply_diff(alias_scope),
+               "apply_diff returns false on empty diff");
+
+    // --- diff_interest_scope_sets bool return + equal-set guard ---
+    fuse::net::InterestScopeSet equal_a;
+    fuse::net::InterestScopeSet equal_b;
+    equal_a.entities = {make_entity(1), make_entity(2)};
+    equal_b.entities = {make_entity(2), make_entity(1)};
+    fuse::net::InterestSetDiff equal_diff{};
+    expectTrue(!fuse::net::diff_interest_scope_sets(equal_a, equal_b, equal_diff),
+               "diff_interest_scope_sets returns false for equal scope sets");
+    expectTrue(equal_diff.empty(), "equal-set diff guard clears output");
+
+    fuse::net::InterestScopeSet diff_prev;
+    fuse::net::InterestScopeSet diff_curr;
+    diff_prev.entities = {make_entity(1)};
+    diff_curr.entities = {make_entity(1), make_entity(2)};
+    fuse::net::InterestSetDiff bool_diff{};
+    expectTrue(fuse::net::diff_interest_scope_sets(diff_prev, diff_curr, bool_diff),
+               "diff_interest_scope_sets returns true when scope grows");
+    expectTrue(bool_diff.has_enters() && !bool_diff.has_leaves(),
+               "has_scope_enters/has_scope_leaves classify enter-only diff");
+    expectTrue(fuse::net::has_scope_enters(bool_diff), "has_scope_enters free helper");
+    expectTrue(!fuse::net::has_scope_leaves(bool_diff), "has_scope_leaves rejects enter-only diff");
+
+    fuse::net::InterestSetDiff leave_only_diff{};
+    leave_only_diff.left = {make_entity(5)};
+    expectTrue(!leave_only_diff.has_enters(), "has_enters false for leave-only diff");
+    expectTrue(leave_only_diff.has_leaves(), "has_leaves true for leave-only diff");
+    expectTrue(fuse::net::has_scope_leaves(leave_only_diff), "has_scope_leaves free helper");
+
+    // --- compute_scope_diff bool return ---
+    fuse::net::InterestManager scope_diff_manager;
+    scope_diff_manager.set_policy(policy);
+    scope_diff_manager.set_observer_position(origin);
+    scope_diff_manager.register_entity({make_entity(150), {10.f, 0.f, 0.f, 0.f}, 0.f});
+    scope_diff_manager.evaluate();
+    fuse::net::InterestSetDiff unchanged_diff{};
+    expectTrue(!scope_diff_manager.compute_scope_diff(unchanged_diff),
+               "compute_scope_diff returns false when scope unchanged");
+    expectTrue(unchanged_diff.empty(), "unchanged compute_scope_diff clears output");
+
+    scope_diff_manager.register_entity({make_entity(151), {12.f, 0.f, 0.f, 0.f}, 0.f});
+    scope_diff_manager.evaluate();
+    fuse::net::InterestSetDiff changed_diff{};
+    expectTrue(scope_diff_manager.compute_scope_diff(changed_diff),
+               "compute_scope_diff returns true when scope changed");
+    expectTrue(changed_diff.has_enters(), "changed compute_scope_diff fills entered set");
+
+    // --- registered radius filter/count on manager ---
+    fuse::net::InterestManager registered_manager;
+    registered_manager.set_policy(hysteresis_policy);
+    registered_manager.set_observer_position(origin);
+    registered_manager.register_entity({make_entity(160), {40.f, 0.f, 0.f, 0.f}, 0.f});
+    registered_manager.register_entity({make_entity(161), {55.f, 0.f, 0.f, 0.f}, 0.f});
+    registered_manager.evaluate();
+
+    expectTrue(registered_manager.count_registered_in_radius() == 1u,
+               "count_registered_in_radius without prior hysteresis keeps relevance only");
+    std::vector<fuse::net::InterestEntry> registered_filtered;
+    expectTrue(registered_manager.filter_registered_in_radius(registered_filtered) == 1u,
+               "filter_registered_in_radius matches count without hysteresis");
+    expectTrue(registered_filtered.size() == 1u,
+               "filter_registered_in_radius output size matches count");
+    expectTrue(registered_filtered[0].entity.index == 160u,
+               "filter_registered_in_radius keeps in-relevance entity");
+
+    fuse::net::InterestManager hysteresis_manager;
+    hysteresis_manager.set_policy(hysteresis_policy);
+    hysteresis_manager.set_observer_position(origin);
+    hysteresis_manager.register_entity({make_entity(162), {40.f, 0.f, 0.f, 0.f}, 0.f});
+    hysteresis_manager.register_entity({make_entity(163), {45.f, 0.f, 0.f, 0.f}, 0.f});
+    hysteresis_manager.evaluate();
+    expectTrue(hysteresis_manager.update_entity_position(make_entity(163), {55.f, 0.f, 0.f, 0.f}),
+               "update moves entity past relevance while prior scope retains it");
+    hysteresis_manager.evaluate();
+    expectTrue(hysteresis_manager.in_scope_count() == 2u,
+               "evaluate keeps hysteresis entity in scope after position update");
+    expectTrue(hysteresis_manager.count_registered_in_radius() == 2u,
+               "count_registered_in_radius uses prior scope hysteresis after evaluate");
+    std::vector<fuse::net::InterestEntry> hysteresis_registered;
+    expectTrue(hysteresis_manager.filter_registered_in_radius(hysteresis_registered) == 2u,
+               "filter_registered_in_radius uses prior scope hysteresis after evaluate");
+
+    bool saw_registered_hysteresis = false;
+    for (const fuse::net::InterestEntry& entry : hysteresis_registered) {
+        if (entry.entity.index == 163u) {
+            saw_registered_hysteresis = true;
+        }
+    }
+    expectTrue(saw_registered_hysteresis,
+               "filter_registered_in_radius retains hysteresis entity from prior scope");
+
+    // --- InterestSetDiff::clear ---
+    fuse::net::InterestSetDiff clearable_diff{};
+    clearable_diff.entered = {make_entity(1)};
+    clearable_diff.left = {make_entity(2)};
+    clearable_diff.clear();
+    expectTrue(clearable_diff.empty(), "InterestSetDiff::clear empties entered and left");
+    expectTrue(!fuse::net::has_scope_enters(clearable_diff),
+               "cleared diff has no enters via helper");
 }
 
 } // namespace fuse::net::tests
