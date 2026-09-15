@@ -1,13 +1,14 @@
 # WP-03 — Cooperative fiber wait (incremental)
 
-**Status:** Landed (POSIX ucontext on Linux/macOS)  
-**Deferred:** Win32 Fibers, ARM asm stacks, Emscripten coarse pool
+**Status:** Landed (POSIX ucontext on desktop Linux/macOS)  
+**Deferred:** Win32 Fibers, Android/iOS dedicated backends, Emscripten coarse pool
 
 ---
 
 ## Shipped
 
-- `fuse/platform/fiber.hpp` + `fiber_posix.cpp` — stack switching via `ucontext` on native POSIX
+- `fuse/platform/fiber.hpp` + `fiber_posix.cpp` — stack switching via `ucontext` on **desktop** Linux/macOS
+- **Android / iOS / mobile:** `cooperativeFibersAvailable()` is false — same fiber API, but `JobCounter::wait()` blocks on condition variables (no ucontext; NDK omits `getcontext`/`makecontext`/`swapcontext`)
 - Worker threads run jobs on a dedicated job fiber; `JobCounter::wait()` on workers yields to the scheduler fiber instead of blocking the OS thread on a condition variable
 - ASan fiber annotations when built with `-fsanitize=address`
 - Scheduler refuses new jobs on a worker whose job fiber is suspended in a cooperative wait (prevents fiber stack corruption)
@@ -19,7 +20,8 @@
 |------|-------|
 | Per-job fiber pools | Today one job fiber per worker; nested waits OK, not arbitrary coroutine depth |
 | Windows fiber backend | `ConvertThreadToFiber` / `SwitchToFiber` under `Core/src/platform/win/` |
-| Apple platform split | Share POSIX backend or migrate to `makecontext` replacement when glibc removes ucontext |
+| Android / iOS native backend | Today CV fallback only; future: asm/stackful coroutine or platform fiber API |
+| Apple desktop ucontext | Deprecated but used on macOS desktop; migrate when glibc removes ucontext |
 | Emscripten | `FUSE_JOBS_SINGLE_THREAD` / coarse pool per architecture-parallel §3.5 |
 | Hot-path mutex removal | `JobCounter` still uses mutex for CV fallback and waiter lists |
 | I/O + render dependency chains | Needs WP-04 handle commit + WP-06 frame barrier |

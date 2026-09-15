@@ -1,6 +1,9 @@
 #include <fuse/platform/fiber.hpp>
 
-#if (defined(__linux__) || defined(__APPLE__)) && !defined(__EMSCRIPTEN__)
+// ucontext is unavailable on Android NDK (aarch64) and deprecated on iOS.
+// Mobile builds use the CV fallback below; cooperativeFibersAvailable() returns false.
+#if (defined(__linux__) || defined(__APPLE__)) && !defined(__EMSCRIPTEN__) && !defined(__ANDROID__) && \
+    !(defined(FUSE_PLATFORM_MOBILE) && FUSE_PLATFORM_MOBILE)
 #define FUSE_HAS_UCONTEXT 1
 #include <ucontext.h>
 #endif
@@ -142,12 +145,12 @@ void fiberDestroy(FiberContext* ctx) {
 
 } // namespace fuse::platform
 
-#else // !FUSE_HAS_UCONTEXT
+#else // !FUSE_HAS_UCONTEXT — Android, iOS, Emscripten, and other non-ucontext targets
 
 namespace fuse::platform {
 
 bool cooperativeFibersAvailable() {
-    return false;
+    return false; // JobCounter::wait() uses condition-variable blocking on these platforms
 }
 
 FiberContext* fiberAllocateContext() {
