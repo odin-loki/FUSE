@@ -32,3 +32,10 @@ add_executable(fuse_core_services_tests
 
 target_link_libraries(fuse_core_services_tests PRIVATE fuse_core)
 add_test(NAME fuse_core_services COMMAND fuse_core_services_tests)
+
+add_executable(fuse_core_platform_hardening_tests
+    test_platform_hardening.cpp
+)
+
+target_link_libraries(fuse_core_platform_hardening_tests PRIVATE fuse_core)
+add_test(NAME fuse_core_platform_hardening COMMAND fuse_core_platform_hardening_tests)
