@@ -71,7 +71,7 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 ### `fuse_cinematics`
 
 - `Timeline`, `Playhead`, `Track`, `TimelineEvent`, `TrackGroup` — Verve `VController`/`VTrack`/`VEvent`/`VGroup` kernel (see [U5-MODULES-cinematics.md](./U5-MODULES-cinematics.md))
-- Typed tracks: `CameraTrack`, `SpriteTrack`, `PropertyTrack`, `AudioTrack`, `EventTrack`
+- Typed tracks: `CameraTrack` (FOV/roll keyframes + `LookAtResolver` stub), `SpriteTrack`, `PropertyTrack`, `AudioTrack`, `EventTrack`
 - `Playhead::scrub_to`, `Timeline::scrub_to` — editor seek without playback; forward scrub enqueues cues
 - `CueQueue` — pending cue buffer with `drain()` for game-thread commit
 - Tests: `fuse_cinematics_tests` (30s advance, track span, interpolation, scrub, cue queue)

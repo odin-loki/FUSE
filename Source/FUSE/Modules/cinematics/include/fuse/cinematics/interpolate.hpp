@@ -21,9 +21,18 @@ enum class EaseMode {
     SmoothStep,
 };
 
+constexpr float kMinFovDeg = 1.f;
+constexpr float kMaxFovDeg = 179.f;
+
 float clamp01(float t);
 float lerp(float a, float b, float t);
 Vec3 lerp_vec3(const Vec3& a, const Vec3& b, float t);
+
+/// Clamp vertical FOV to a sane perspective range before sampling.
+float clamp_fov(float fov_deg);
+
+/// Linear FOV blend with clamped output (Verve camera events carry FOV keyframes).
+float lerp_fov(float a, float b, float t);
 
 float apply_ease(EaseMode mode, float t);
 

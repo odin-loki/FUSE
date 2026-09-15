@@ -15,7 +15,8 @@ Verve is Copyright (C) 2014 Violent Tulip, licensed under the **MIT License**. S
 | `Track` | `Engine/source/Verve/Core/VTrack.h` | Ordered event lane, span, interpolation |
 | `TimelineEvent` | `Engine/source/Verve/Core/VEvent.h` | Trigger time + duration keyframe |
 | `TrackGroup` | `Engine/source/Verve/Core/VGroup.h` | Track grouping |
-| `CameraTrack` | `Engine/source/Verve/Extension/Camera/VCameraTrack.h` | Camera keyframe rail + sampling stub |
+| `CameraTrack` | `Engine/source/Verve/Extension/Camera/VCameraTrack.h` | Camera keyframe rail (position, FOV, roll, look-at modes) |
+| `LookAtResolver` | `Engine/source/T3D/camera.cpp` track-object look-at | Entity-bound look-at stub for `CameraLookAtMode::TargetEntity` |
 | `SpriteTrack` | `Engine/source/Verve/Extension/SceneObject/VSceneObjectTrack.h` | 2D sprite transform stub |
 | `PropertyTrack` | `Engine/source/Verve/Extension/Motion/VMotionTrack.h` | Scalar property rail stub |
 | `AudioTrack` | `Engine/source/Verve/Extension/SoundEffect/VSoundEffectTrack.h` | Sound-effect lane + volume keyframes stub |
@@ -34,8 +35,27 @@ auto& group = timeline.add_group("Director");
 
 auto& camera = group.add_camera_track("MainCam");
 camera.set_target_camera_id("player_cam");
-camera.add_keyframe({0, {0, 0, 5}, {0, 0, 0}, 60.f});
-camera.add_keyframe({2'000, {0, 0, 10}, {0, 0, 0}, 45.f});
+
+fuse::cinematics::CameraKeyframe intro{};
+intro.time_ms = 0;
+intro.position = {0.f, 0.f, 5.f};
+intro.look_at = {0.f, 0.f, 0.f};
+intro.field_of_view = 60.f;
+camera.add_keyframe(intro);
+
+fuse::cinematics::CameraKeyframe dolly{};
+dolly.time_ms = 2'000;
+dolly.position = {0.f, 0.f, 10.f};
+dolly.look_at_mode = fuse::cinematics::CameraLookAtMode::TargetEntity;
+dolly.look_at_target_id = "hero";
+dolly.field_of_view = 45.f;
+camera.add_keyframe(dolly);
+
+fuse::cinematics::LookAtResolver lookAt;
+lookAt.set_resolve_fn([](const std::string& id) {
+    return id == "hero" ? fuse::cinematics::Vec3{100.f, 0.f, 0.f} : fuse::cinematics::Vec3{};
+});
+const auto camSample = camera.sample_at(1'000, fuse::cinematics::EaseMode::Linear, &lookAt);
 
 auto& sprite = group.add_sprite_track("Hero");
 sprite.add_keyframe({0, 0.f, 0.f, 1.f});

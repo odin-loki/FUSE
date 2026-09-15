@@ -1,0 +1,32 @@
+#pragma once
+
+// Ore: Engine/source/T3D/camera.cpp (setTrackObject / look-at modes)
+//      Verve VCameraTrack scene-object binding (entity target without Torque bridge)
+
+#include <fuse/cinematics/camera_track.hpp>
+
+#include <functional>
+#include <string>
+
+namespace fuse::cinematics {
+
+/// Stub resolver for entity-bound look-at (game thread provides world positions).
+class LookAtResolver {
+public:
+    using ResolveFn = std::function<Vec3(const std::string& target_id)>;
+
+    void set_resolve_fn(ResolveFn fn) { resolve_fn_ = std::move(fn); }
+    bool can_resolve() const { return static_cast<bool>(resolve_fn_); }
+
+    Vec3 resolve(const std::string& target_id) const {
+        return resolve_fn_ ? resolve_fn_(target_id) : Vec3{};
+    }
+
+private:
+    ResolveFn resolve_fn_;
+};
+
+/// Resolve a keyframe's look-at to world space (fixed point or entity stub).
+Vec3 resolve_look_at_world(const CameraKeyframe& keyframe, const LookAtResolver& resolver);
+
+} // namespace fuse::cinematics
