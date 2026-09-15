@@ -13,8 +13,8 @@
 |-----------|----------|-------|
 | `PhysicsPipeline` / `RigidBodySoA` | `physics_pipeline.hpp`, `physics_data.hpp` | B4.1–B4.3 broad/narrow phase stubs |
 | `SpatialHash` / `PairBufferSoA` / `Gjk` | `broadphase/`, `narrowphase/` | B4.2–B4.3 CPU reference paths; broadphase jobifies shape→cell + per-cell candidate generation via `fuse::jobs::parallel_for`, writes reusable SoA pair slots via `runBroadphaseIntoBuffer`, and exposes `aabbOverlap` / `sphereAabbOverlap` stubs for downstream refine; narrowphase writes one contact slot per candidate pair then compacts |
-| `ContactManifold` / `ContactBufferSoA` | `narrowphase/contact_manifold.hpp`, `contact_buffer.hpp` | Multi-point slots (up to 4), normal/penetration per point, warm-start impulse stubs |
-| `buildTangentBasis` / `clampFrictionImpulse` | `narrowphase/friction.hpp` | Coulomb friction cone clamp + tangent basis helper (CPU stub) |
+| `ContactManifold` / `ContactBufferSoA` | `narrowphase/contact_manifold.hpp`, `contact_buffer.hpp` | Multi-point slots (up to 4), normal/penetration per point, warm-start impulse stubs, per-contact friction tangent SoA columns |
+| `buildTangentBasis` / `clampFrictionImpulse` | `narrowphase/friction.hpp` | Coulomb friction cone clamp + tangent basis helper, `buildTangentBasisForManifold`, `projectTangentialVelocity` (CPU stub) |
 | `collideBoxBox` | `narrowphase/box_box.cpp` | Axis-aligned box-box stub emitting four face contact points |
 | `PhysicsWorld2D` / `PhysicsWorld3D` | `physics_world_*.hpp` | World composition hooks |
 | `DestructionSystem` / `DestructionEvent` | `destruction/` | B4.7 SVO carve → debris spawn scaffold |
@@ -135,7 +135,7 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 - [x] `fuse_physics_narrowphase_tests` — axis-aligned box-sphere + Y-axis capsule-sphere stubs
 - [x] `ContactBufferSoA` — per-pair slot clear/reuse + compact; job-safe `runNarrowphaseIntoBuffer`
 - [x] `ContactManifold` — multi-point slots, `reset`/`maxPenetration`, warm-start impulse stubs
-- [x] `fuse_physics_narrowphase_tests` — manifold fill cap, empty separated contacts, orthonormal friction basis
+- [x] `fuse_physics_narrowphase_tests` — manifold fill cap, empty separated contacts, orthonormal friction basis, tangent SoA round-trip
 - [x] `ContactBufferSoA` — multi-point slots, warm-start impulse stubs, box-box four-point manifolds
 - [x] `fuse_physics_narrowphase_tests` — friction clamp + tangent basis, box-box contact count
 - [ ] Sphere-sphere vs Bullet within 0.001f — catalog `narrowphase.sphere_sphere`
@@ -198,7 +198,7 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 - Collision callbacks dispatch on the game thread after solver step (same frame as ECS sync)
 - **Broadphase jobify (CPU stub):** `runBroadphaseIntoBuffer` / `runBroadphase2DIntoBuffer` read immutable `RigidBodySoA` + `CollisionShapeSoA` snapshots and write reusable `PairBufferSoA` slots via `fuse::jobs::parallel_for` over shape→cell build + per-cell candidate generation; `aabbOverlap` / `sphereAabbOverlap` stubs are available for optional downstream refine; falls back to serial when `JobScheduler` is single-threaded or uninitialized
 - **PBD constraint iteration (CPU stub):** each substep builds `ContactIslandGraph` from contacts + distance constraints; `parallel_for` dispatches non-empty islands while contacts within an island resolve sequentially (Gauss-Seidel). `SolverWorkBuffers` holds reusable manifolds, per-body `PositionDelta` slots, and per-constraint lambda warm-start buffers. `clearPositionDeltasForIslandBodies` resets all body slots in an island before its sequential constraint pass so parallel workers never race on shared scratch. `seedContactLambdaFromImpulse` / `seedDistanceLambda` copy narrowphase impulse stubs and prior lambdas into cold slots. `accumulateDistanceSpringCorrection` / `accumulateContactCorrection` write disjoint body slots (job-safe SoA); `applyPositionDeltas` commits corrections after each constraint pass. Lambdas persist across substeps (cleared only on the first substep of a frame) for warm-start. `SolverParams::iterations` configures the max pass count; `residualTolerance` enables early-exit when max constraint violation drops below threshold; `lastConstraintResidual()` surfaces the stub for tests
-- **Narrowphase job-safe slots (CPU stub):** `runNarrowphaseIntoBuffer` assigns one output slot per candidate pair index; workers write only their slot, then `ContactBufferSoA::compact()` gathers valid manifolds without shared mutable pair state (serial dispatch on CPU stub; slot layout matches parallel kernel path). `ContactManifold` stores up to four point slots with normal/penetration and warm-start impulse stubs; `buildTangentBasis` / `isOrthonormalTangentBasis` provide friction tangent frames for the solver stub. Each slot stores up to four contact points plus warm-start normal/tangent impulse stubs for solver reuse.
+- **Narrowphase job-safe slots (CPU stub):** `runNarrowphaseIntoBuffer` assigns one output slot per candidate pair index; workers write only their slot, then `ContactBufferSoA::compact()` gathers valid manifolds without shared mutable pair state (serial dispatch on CPU stub; slot layout matches parallel kernel path). `ContactManifold` stores up to four point slots with normal/penetration, warm-start impulse stubs, and a cached `frictionBasis`; `ContactBufferSoA` mirrors tangent1/tangent2 in SoA columns via `buildFrictionTangentBases` / `tangentBasisAt`. `buildTangentBasis` / `isOrthonormalTangentBasis` / `projectTangentialVelocity` provide friction tangent frames for the solver stub.
 - **CCD job-safe slots (CPU stub):** `runCcdIntoBuffer` assigns one TOI slot per candidate pair; workers write only their slot, then `ToiBufferSoA::compactAndSort()` gathers valid impacts and orders earliest-first with deterministic body-index tie-break. `push` / `setMaxCapacity` support direct TOI gathering with overflow clamp (`droppedCount`); `isSortedByToi()` validates ascending order; `earliestToi()` reads the first sorted impact. `sweptSphereSphere` / `sweptSpherePlane` / `sweptSphereSlabZ` / `sweptSphereAabb` cover analytic sweep stubs; sphere-box dispatch builds a centered AABB from shape half-extents. `PhysicsManager` reuses `m_toiBuffer_` each step
 
 ---
@@ -209,7 +209,7 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 |--------|-----------|
 | `fuse_physics_data_tests` | B4.1 SoA allocate/addBody |
 | `fuse_physics_broadphase_tests` | B4.2 spatial hash pairs, `PairBufferSoA`, AABB overlap stubs, empty scene, parallel jobify parity, straddling cells, brute-force reference |
-| `fuse_physics_narrowphase_tests` | B4.3 analytic + GJK stubs, box/capsule-sphere/box-box, SoA contact buffer reuse, manifold fill, empty contacts, friction basis |
+| `fuse_physics_narrowphase_tests` | B4.3 analytic + GJK stubs, box/capsule-sphere/box-box, SoA contact buffer reuse, manifold fill, empty contacts, friction basis, tangent SoA round-trip |
 | `fuse_physics_pipeline_tests` | B4.1 frame pipeline step |
 | `fuse_physics_world_composition_tests` | World3D + physics composition |
 | `fuse_voxel_destruction` | Carve radius derivation, SVO carve/query, debris spawn counters |
@@ -246,6 +246,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_physics|fuse_voxel|fuse_soft
 - [x] B4.1–B4.3 composed: `RigidBodySoA`, spatial hash, narrow phase, `PhysicsPipeline`
 - [x] B4.3 narrowphase deepen — `ContactBufferSoA`, box-sphere / capsule-sphere stubs, job-safe pair dispatch
 - [x] B4.3 narrowphase deepen — `ContactManifold` multi-point slots, friction tangent basis, empty-contact + orthogonality tests
+- [x] B4.3 narrowphase deepen — per-contact friction tangent SoA columns, `buildFrictionTangentBases`, tangential velocity projection tests
 - [x] B4.3 narrowphase deepen — multi-point manifolds, warm-start impulses, `friction.hpp`, axis-aligned box-box stub
 - [x] B4.2 CPU broadphase jobify — `parallel_for` over shape→cell build + per-cell candidate generation stubs
 - [x] B4.2 CPU broadphase deepen — `PairBufferSoA`, `runBroadphaseIntoBuffer`, AABB overlap refine stubs, pipeline buffer reuse

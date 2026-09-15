@@ -1,5 +1,7 @@
 #include <fuse/physics/narrowphase/friction.hpp>
 
+#include <fuse/physics/narrowphase/contact_manifold.hpp>
+
 #include <algorithm>
 #include <cmath>
 
@@ -23,6 +25,13 @@ TangentBasis buildTangentBasis(vec3 normal) {
     const vec3 tangent1 = cross(reference, unitNormal).normalized();
     const vec3 tangent2 = cross(unitNormal, tangent1).normalized();
     return {tangent1, tangent2};
+}
+
+TangentBasis buildTangentBasisForManifold(const ContactManifold& manifold) {
+    if (manifold.hasFrictionBasis()) {
+        return manifold.frictionBasis;
+    }
+    return buildTangentBasis(manifold.contactNormal);
 }
 
 bool isOrthonormalTangentBasis(vec3 normal, const TangentBasis& basis, f32 epsilon) {

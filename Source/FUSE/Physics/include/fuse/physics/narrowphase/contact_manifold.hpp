@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/physics/math.hpp>
+#include <fuse/physics/narrowphase/friction.hpp>
 #include <fuse/types.hpp>
 
 namespace fuse::physics::narrowphase {
@@ -24,6 +25,7 @@ struct ContactManifold {
     ContactPointSlot points[kMaxContactPointsPerManifold]{};
     f32 warmNormalImpulse = 0.f;
     vec2 warmTangentImpulse{};
+    TangentBasis frictionBasis{};
 
     // Legacy single-point mirror used by PBD solver and existing tests.
     vec3 contactPoint{};
@@ -33,8 +35,11 @@ struct ContactManifold {
     void reset();
     void addPoint(vec3 point, f32 penetration);
     void syncLegacyFields();
+    void buildFrictionBasis();
 
     bool empty() const { return pointCount == 0u; }
+    bool hasFrictionBasis() const;
+    const ContactPointSlot& pointAt(u32 index) const;
     f32 maxPenetration() const;
 };
 
