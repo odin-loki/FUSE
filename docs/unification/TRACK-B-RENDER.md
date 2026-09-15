@@ -106,15 +106,16 @@ ctest --test-dir build --output-on-failure -R fuse_material_system
 
 | Component | Notes |
 |-----------|-------|
-| `ProbeGridCoord` / `ProbeGridLayout` | Index ↔ coord decode, `clampProbeIndex`, world→grid mapping, `clampWorldToProbeGridCoord`, atlas texel origins |
+| `ProbeGridCoord` / `ProbeGridLayout` | Index ↔ coord decode, `isEmptyGrid`, `clampProbeIndex`, `probeCoordFromClampedIndex`, `buildProbeSampleCoords`, world→grid mapping, atlas texel origins |
 | `ProbeValidityFlags` | Border/interior/face-edge classification + `has_trilinear_neighbourhood` |
-| `DdgiIrradianceEncoding` | Octahedral direction encode/decode, `directionToTexelOffset`, atlas texel lookup |
+| `DdgiIrradianceEncoding` / `DdgiTileBilinearCoords` | Octahedral direction encode/decode, `buildTileBilinearCoords`, atlas texel lookup |
 | `ddgi_util::lerpIrradiance` | Spatial irradiance blend — clamps `t` to [0, 1] |
 | `ddgi_util::bilinearTileIrradiance` | Bilinear lerp within a probe's octahedral tile (CPU stub) |
-| `ddgi_util::trilinearProbeIrradiance` | 8-corner trilinear sample from CPU cache — OOB world positions clamp to grid edge |
-| `DDGI::sampleIrradiance` | Uses trilinear probe interpolation (was nearest-probe) |
+| `ddgi_util::sampleDirectionalIrradianceAtProbe` | Per-probe octahedral bilinear stub weighted by surface direction |
+| `ddgi_util::trilinearProbeIrradiance` / `trilinearDirectionalProbeIrradiance` | 8-corner trilinear sample from CPU cache — OOB world positions clamp to grid edge |
+| `DDGI::sampleIrradiance` | Uses trilinear directional probe interpolation via `world_normal` |
 
-`fuse_ddgi` also covers empty-grid scheduling/sample paths, OOB index clamp, and 1×1×1 border validity.
+`fuse_ddgi` covers empty-grid scheduling/sample paths, OOB index clamp, border validity (face-edge + 1×1×1), probe sample coords, and directional octahedral tile sampling.
 
 ```bash
 ctest --test-dir build --output-on-failure -R fuse_ddgi

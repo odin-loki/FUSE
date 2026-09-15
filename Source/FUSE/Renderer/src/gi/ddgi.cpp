@@ -16,6 +16,10 @@ fuse::math::Vec3 defaultAmbientIrradiance() {
 
 } // namespace
 
+bool ProbeGridLayout::isEmptyGrid(const DDGIDesc& desc) {
+    return desc.grid_dims.x == 0u || desc.grid_dims.y == 0u || desc.grid_dims.z == 0u;
+}
+
 ProbeGridCoord ProbeGridLayout::probeCoordFromIndex(const DDGIDesc& desc, u32 probe_index) {
     ProbeGridCoord coord{};
     const u32 grid_x = desc.grid_dims.x;
@@ -31,6 +35,10 @@ ProbeGridCoord ProbeGridLayout::probeCoordFromIndex(const DDGIDesc& desc, u32 pr
     coord.y = rem / grid_x;
     coord.x = rem % grid_x;
     return coord;
+}
+
+ProbeGridCoord ProbeGridLayout::probeCoordFromClampedIndex(const DDGIDesc& desc, u32 probe_index) {
+    return probeCoordFromIndex(desc, clampProbeIndex(probe_index, desc));
 }
 
 u32 ProbeGridLayout::probeIndexFromCoord(const DDGIDesc& desc, const ProbeGridCoord& coord) {
@@ -91,6 +99,32 @@ u32 ProbeGridLayout::clampProbeIndex(u32 probe_index, const DDGIDesc& desc) {
     return std::min(probe_index, count - 1u);
 }
 
+bool ProbeGridLayout::buildProbeSampleCoords(const DDGIDesc& desc,
+                                             const fuse::math::Vec3& world_position,
+                                             ProbeSampleCoords& out_coords) {
+    if (isEmptyGrid(desc)) {
+        return false;
+    }
+
+    const fuse::math::Vec3 grid_coord = worldToProbeGridCoord(desc, world_position);
+    const fuse::math::Vec3 clamped = clampWorldToProbeGridCoord(desc, grid_coord);
+
+    const u32 max_x = desc.grid_dims.x - 1u;
+    const u32 max_y = desc.grid_dims.y - 1u;
+    const u32 max_z = desc.grid_dims.z - 1u;
+
+    out_coords.x0 = static_cast<u32>(std::floor(clamped.x));
+    out_coords.y0 = static_cast<u32>(std::floor(clamped.y));
+    out_coords.z0 = static_cast<u32>(std::floor(clamped.z));
+    out_coords.x1 = std::min(out_coords.x0 + 1u, max_x);
+    out_coords.y1 = std::min(out_coords.y0 + 1u, max_y);
+    out_coords.z1 = std::min(out_coords.z0 + 1u, max_z);
+    out_coords.tx = clamped.x - static_cast<f32>(out_coords.x0);
+    out_coords.ty = clamped.y - static_cast<f32>(out_coords.y0);
+    out_coords.tz = clamped.z - static_cast<f32>(out_coords.z0);
+    return true;
+}
+
 fuse::math::Vec2 DdgiIrradianceEncoding::encodeDirection(const fuse::math::Vec3& direction) {
     fuse::math::Vec3 n = direction.normalized();
     const f32 sum = std::fabs(n.x) + std::fabs(n.y) + std::fabs(n.z);
@@ -134,6 +168,24 @@ fuse::math::Vec2 DdgiIrradianceEncoding::directionToTexelOffset(const fuse::math
     const fuse::math::Vec2 uv = directionToAtlasUV(direction);
     const f32 max_texel = static_cast<f32>(irradiance_res - 1u);
     return {std::clamp(uv.x * max_texel, 0.f, max_texel), std::clamp(uv.y * max_texel, 0.f, max_texel)};
+}
+
+bool DdgiIrradianceEncoding::buildTileBilinearCoords(const fuse::math::Vec3& direction,
+                                                     u32 irradiance_res,
+                                                     DdgiTileBilinearCoords& out_coords) {
+    if (irradiance_res == 0u) {
+        return false;
+    }
+
+    const fuse::math::Vec2 offset = directionToTexelOffset(direction, irradiance_res);
+    const f32 max_texel = static_cast<f32>(irradiance_res - 1u);
+    out_coords.texel_u0 = static_cast<u32>(std::floor(offset.x));
+    out_coords.texel_v0 = static_cast<u32>(std::floor(offset.y));
+    out_coords.texel_u1 = std::min(out_coords.texel_u0 + 1u, static_cast<u32>(max_texel));
+    out_coords.texel_v1 = std::min(out_coords.texel_v0 + 1u, static_cast<u32>(max_texel));
+    out_coords.tu = offset.x - static_cast<f32>(out_coords.texel_u0);
+    out_coords.tv = offset.y - static_cast<f32>(out_coords.texel_v0);
+    return true;
 }
 
 f32 DdgiIrradianceEncoding::angularErrorRadians(const fuse::math::Vec3& a, const fuse::math::Vec3& b) {
@@ -270,58 +322,119 @@ fuse::math::Vec3 bilinearTileIrradiance(const fuse::math::Vec3* samples, f32 u, 
     return lerpIrradiance(row0, row1, clamped_v);
 }
 
+fuse::math::Vec3 sampleDirectionalIrradianceAtProbe(const IrradianceCacheEntry& entry,
+                                                    const fuse::math::Vec3& direction,
+                                                    u32 irradiance_res) {
+    DdgiTileBilinearCoords coords{};
+    if (!DdgiIrradianceEncoding::buildTileBilinearCoords(direction, irradiance_res, coords)) {
+        return {};
+    }
+
+    const auto texel_direction = [&](u32 texel_u, u32 texel_v) -> fuse::math::Vec3 {
+        if (irradiance_res == 0u) {
+            return {};
+        }
+        const f32 max_texel = static_cast<f32>(irradiance_res - 1u);
+        const fuse::math::Vec2 encoded = {static_cast<f32>(texel_u) / max_texel,
+                                            static_cast<f32>(texel_v) / max_texel};
+        return DdgiIrradianceEncoding::decodeDirection(encoded);
+    };
+
+    const fuse::math::Vec3 sample_dir = direction.normalized();
+    const auto weighted = [&](u32 texel_u, u32 texel_v) -> fuse::math::Vec3 {
+        const fuse::math::Vec3 texel_dir = texel_direction(texel_u, texel_v);
+        const f32 weight = std::max(0.f, sample_dir.dot(texel_dir));
+        return entry.irradiance * weight;
+    };
+
+    const fuse::math::Vec3 samples[4] = {weighted(coords.texel_u0, coords.texel_v0),
+                                         weighted(coords.texel_u1, coords.texel_v0),
+                                         weighted(coords.texel_u0, coords.texel_v1),
+                                         weighted(coords.texel_u1, coords.texel_v1)};
+    return bilinearTileIrradiance(samples, coords.tu, coords.tv);
+}
+
 fuse::math::Vec3 trilinearProbeIrradiance(const DDGIDesc& desc,
                                           const fuse::math::Vec3& world_position,
                                           const IrradianceCacheEntry* cache,
                                           u32 cache_count) {
-    if (cache == nullptr || cache_count == 0u || desc.grid_dims.x == 0u || desc.grid_dims.y == 0u ||
-        desc.grid_dims.z == 0u) {
+    if (cache == nullptr || cache_count == 0u || ProbeGridLayout::isEmptyGrid(desc)) {
         return {};
     }
 
-    const fuse::math::Vec3 grid_coord = ProbeGridLayout::worldToProbeGridCoord(desc, world_position);
+    ProbeSampleCoords coords{};
+    if (!ProbeGridLayout::buildProbeSampleCoords(desc, world_position, coords)) {
+        return {};
+    }
 
     const auto sample_probe = [&](u32 x, u32 y, u32 z) -> fuse::math::Vec3 {
-        const ProbeGridCoord coord{x, y, z};
-        const u32 index = ProbeGridLayout::probeIndexFromCoord(desc, coord);
+        const ProbeGridCoord probe_coord{x, y, z};
+        const u32 index = ProbeGridLayout::probeIndexFromCoord(desc, probe_coord);
         if (index == UINT32_MAX || index >= cache_count) {
             return {};
         }
         return cache[index].irradiance;
     };
 
-    const u32 max_x = desc.grid_dims.x - 1u;
-    const u32 max_y = desc.grid_dims.y - 1u;
-    const u32 max_z = desc.grid_dims.z - 1u;
+    const fuse::math::Vec3 c000 = sample_probe(coords.x0, coords.y0, coords.z0);
+    const fuse::math::Vec3 c100 = sample_probe(coords.x1, coords.y0, coords.z0);
+    const fuse::math::Vec3 c010 = sample_probe(coords.x0, coords.y1, coords.z0);
+    const fuse::math::Vec3 c110 = sample_probe(coords.x1, coords.y1, coords.z0);
+    const fuse::math::Vec3 c001 = sample_probe(coords.x0, coords.y0, coords.z1);
+    const fuse::math::Vec3 c101 = sample_probe(coords.x1, coords.y0, coords.z1);
+    const fuse::math::Vec3 c011 = sample_probe(coords.x0, coords.y1, coords.z1);
+    const fuse::math::Vec3 c111 = sample_probe(coords.x1, coords.y1, coords.z1);
 
-    const u32 x0 = static_cast<u32>(std::clamp(std::floor(grid_coord.x), 0.f, static_cast<f32>(max_x)));
-    const u32 y0 = static_cast<u32>(std::clamp(std::floor(grid_coord.y), 0.f, static_cast<f32>(max_y)));
-    const u32 z0 = static_cast<u32>(std::clamp(std::floor(grid_coord.z), 0.f, static_cast<f32>(max_z)));
-    const u32 x1 = std::min(x0 + 1u, max_x);
-    const u32 y1 = std::min(y0 + 1u, max_y);
-    const u32 z1 = std::min(z0 + 1u, max_z);
+    const fuse::math::Vec3 c00 = lerpIrradiance(c000, c100, coords.tx);
+    const fuse::math::Vec3 c10 = lerpIrradiance(c010, c110, coords.tx);
+    const fuse::math::Vec3 c01 = lerpIrradiance(c001, c101, coords.tx);
+    const fuse::math::Vec3 c11 = lerpIrradiance(c011, c111, coords.tx);
 
-    const f32 tx = std::clamp(grid_coord.x - static_cast<f32>(x0), 0.f, 1.f);
-    const f32 ty = std::clamp(grid_coord.y - static_cast<f32>(y0), 0.f, 1.f);
-    const f32 tz = std::clamp(grid_coord.z - static_cast<f32>(z0), 0.f, 1.f);
+    const fuse::math::Vec3 c0 = lerpIrradiance(c00, c10, coords.ty);
+    const fuse::math::Vec3 c1 = lerpIrradiance(c01, c11, coords.ty);
+    return lerpIrradiance(c0, c1, coords.tz);
+}
 
-    const fuse::math::Vec3 c000 = sample_probe(x0, y0, z0);
-    const fuse::math::Vec3 c100 = sample_probe(x1, y0, z0);
-    const fuse::math::Vec3 c010 = sample_probe(x0, y1, z0);
-    const fuse::math::Vec3 c110 = sample_probe(x1, y1, z0);
-    const fuse::math::Vec3 c001 = sample_probe(x0, y0, z1);
-    const fuse::math::Vec3 c101 = sample_probe(x1, y0, z1);
-    const fuse::math::Vec3 c011 = sample_probe(x0, y1, z1);
-    const fuse::math::Vec3 c111 = sample_probe(x1, y1, z1);
+fuse::math::Vec3 trilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
+                                                     const fuse::math::Vec3& world_position,
+                                                     const fuse::math::Vec3& direction,
+                                                     const IrradianceCacheEntry* cache,
+                                                     u32 cache_count) {
+    if (cache == nullptr || cache_count == 0u || ProbeGridLayout::isEmptyGrid(desc)) {
+        return {};
+    }
 
-    const fuse::math::Vec3 c00 = lerpIrradiance(c000, c100, tx);
-    const fuse::math::Vec3 c10 = lerpIrradiance(c010, c110, tx);
-    const fuse::math::Vec3 c01 = lerpIrradiance(c001, c101, tx);
-    const fuse::math::Vec3 c11 = lerpIrradiance(c011, c111, tx);
+    ProbeSampleCoords coords{};
+    if (!ProbeGridLayout::buildProbeSampleCoords(desc, world_position, coords)) {
+        return {};
+    }
 
-    const fuse::math::Vec3 c0 = lerpIrradiance(c00, c10, ty);
-    const fuse::math::Vec3 c1 = lerpIrradiance(c01, c11, ty);
-    return lerpIrradiance(c0, c1, tz);
+    const auto sample_probe = [&](u32 x, u32 y, u32 z) -> fuse::math::Vec3 {
+        const ProbeGridCoord probe_coord{x, y, z};
+        const u32 index = ProbeGridLayout::probeIndexFromCoord(desc, probe_coord);
+        if (index == UINT32_MAX || index >= cache_count) {
+            return {};
+        }
+        return sampleDirectionalIrradianceAtProbe(cache[index], direction, desc.irradiance_res);
+    };
+
+    const fuse::math::Vec3 c000 = sample_probe(coords.x0, coords.y0, coords.z0);
+    const fuse::math::Vec3 c100 = sample_probe(coords.x1, coords.y0, coords.z0);
+    const fuse::math::Vec3 c010 = sample_probe(coords.x0, coords.y1, coords.z0);
+    const fuse::math::Vec3 c110 = sample_probe(coords.x1, coords.y1, coords.z0);
+    const fuse::math::Vec3 c001 = sample_probe(coords.x0, coords.y0, coords.z1);
+    const fuse::math::Vec3 c101 = sample_probe(coords.x1, coords.y0, coords.z1);
+    const fuse::math::Vec3 c011 = sample_probe(coords.x0, coords.y1, coords.z1);
+    const fuse::math::Vec3 c111 = sample_probe(coords.x1, coords.y1, coords.z1);
+
+    const fuse::math::Vec3 c00 = lerpIrradiance(c000, c100, coords.tx);
+    const fuse::math::Vec3 c10 = lerpIrradiance(c010, c110, coords.tx);
+    const fuse::math::Vec3 c01 = lerpIrradiance(c001, c101, coords.tx);
+    const fuse::math::Vec3 c11 = lerpIrradiance(c011, c111, coords.tx);
+
+    const fuse::math::Vec3 c0 = lerpIrradiance(c00, c10, coords.ty);
+    const fuse::math::Vec3 c1 = lerpIrradiance(c01, c11, coords.ty);
+    return lerpIrradiance(c0, c1, coords.tz);
 }
 
 u32 nearestProbeIndex(const DDGIDesc& desc, const fuse::math::Vec3& world_position) {
@@ -502,10 +615,14 @@ DDGISampleResult DDGI::sampleIrradiance(const DDGISampleRequest& request) const 
     }
 
     result.nearest_probe = nearest;
-    result.irradiance = ddgi_util::trilinearProbeIrradiance(m_desc,
-                                                           request.world_position,
-                                                           m_cache.data(),
-                                                           static_cast<u32>(m_cache.size()));
+    const fuse::math::Vec3 sample_direction =
+        request.world_normal.dot(request.world_normal) > 1e-8f ? request.world_normal.normalized()
+                                                               : fuse::math::Vec3{0.f, 1.f, 0.f};
+    result.irradiance = ddgi_util::trilinearDirectionalProbeIrradiance(m_desc,
+                                                                       request.world_position,
+                                                                       sample_direction,
+                                                                       m_cache.data(),
+                                                                       static_cast<u32>(m_cache.size()));
     result.valid = true;
     return result;
 }

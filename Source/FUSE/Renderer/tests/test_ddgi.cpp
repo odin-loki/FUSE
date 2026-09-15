@@ -125,16 +125,57 @@ void testProbeIndexClamp() {
         fuse::renderer::ProbeGridLayout::clampProbeGridCoord(desc, {9, 9, 9});
     expectTrue(clampedCoord.x == 3u && clampedCoord.y == 1u && clampedCoord.z == 2u,
                "probe coord clamped to grid max per axis");
+
+    const fuse::renderer::ProbeGridCoord fromClamped =
+        fuse::renderer::ProbeGridLayout::probeCoordFromClampedIndex(desc, 999u);
+    expectTrue(fromClamped.x == 3u && fromClamped.y == 1u && fromClamped.z == 2u,
+               "probeCoordFromClampedIndex maps OOB index to last coord");
+}
+
+void testProbeSampleCoords() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_origin = {0.f, 0.f, 0.f};
+    desc.probe_spacing = {1.f, 1.f, 1.f};
+    desc.grid_dims = {2, 2, 2};
+
+    fuse::renderer::ProbeSampleCoords centre{};
+    expectTrue(fuse::renderer::ProbeGridLayout::buildProbeSampleCoords(desc, {0.5f, 0.5f, 0.5f}, centre),
+               "buildProbeSampleCoords succeeds on interior sample");
+    expectTrue(centre.x0 == 0u && centre.x1 == 1u, "centre sample spans x0/x1");
+    expectNear(centre.tx, 0.5f, 1e-5f, "centre tx is 0.5");
+
+    fuse::renderer::ProbeSampleCoords border{};
+    expectTrue(fuse::renderer::ProbeGridLayout::buildProbeSampleCoords(desc, {0.f, 0.f, 0.f}, border),
+               "buildProbeSampleCoords succeeds on border sample");
+    expectTrue(border.x0 == 0u && border.x1 == 1u && border.y0 == 0u && border.y1 == 1u,
+               "border sample still has neighbour indices for 2x2x2 grid");
+    expectNear(border.tx, 0.f, 1e-5f, "border tx is 0");
+
+    fuse::renderer::ProbeSampleCoords oob{};
+    expectTrue(fuse::renderer::ProbeGridLayout::buildProbeSampleCoords(desc, {100.f, 100.f, 100.f}, oob),
+               "buildProbeSampleCoords succeeds on OOB high sample");
+    expectTrue(oob.x0 == 1u && oob.x1 == 1u && oob.y0 == 1u && oob.y1 == 1u && oob.z0 == 1u && oob.z1 == 1u,
+               "OOB high sample clamps to max corner indices");
 }
 
 void testEmptyProbeGrid() {
     fuse::renderer::DDGIDesc desc{};
     desc.grid_dims = {0, 8, 16};
 
+    expectTrue(fuse::renderer::ProbeGridLayout::isEmptyGrid(desc), "zero x dimension is empty grid");
     expectTrue(fuse::renderer::ddgi_util::probeCount(desc) == 0u, "zero-dimension grid has zero probes");
     expectTrue(fuse::renderer::ProbeGridLayout::clampProbeIndex(5u, desc) == 0u,
                "empty grid index clamp returns 0");
     expectTrue(!fuse::renderer::ProbeGridLayout::isValidProbeIndex(desc, 0u), "index 0 invalid on empty grid");
+
+    const fuse::renderer::ProbeGridCoord clampedEmpty =
+        fuse::renderer::ProbeGridLayout::probeCoordFromClampedIndex(desc, 99u);
+    expectTrue(clampedEmpty.x == 0u && clampedEmpty.y == 0u && clampedEmpty.z == 0u,
+               "empty grid clamped coord is origin");
+
+    fuse::renderer::ProbeSampleCoords emptyCoords{};
+    expectTrue(!fuse::renderer::ProbeGridLayout::buildProbeSampleCoords(desc, {0.f, 0.f, 0.f}, emptyCoords),
+               "empty grid buildProbeSampleCoords returns false");
 
     const fuse::renderer::ProbeValidityFlags emptyFlags =
         fuse::renderer::ProbeGridLayout::probeValidity(desc, {0, 0, 0});
@@ -209,6 +250,14 @@ void testIrradianceOctahedralEncoding() {
     const fuse::f32 error = fuse::renderer::DdgiIrradianceEncoding::angularErrorRadians(up, decoded);
     expectTrue(error < 0.001f, "octahedral direction round-trip < 0.001 rad");
 
+    fuse::renderer::DdgiTileBilinearCoords tileCoords{};
+    expectTrue(fuse::renderer::DdgiIrradianceEncoding::buildTileBilinearCoords(up, 8u, tileCoords),
+               "buildTileBilinearCoords succeeds for +Y");
+    expectTrue(tileCoords.texel_u1 >= tileCoords.texel_u0 && tileCoords.texel_v1 >= tileCoords.texel_v0,
+               "tile bilinear texel indices are ordered");
+    expectTrue(tileCoords.tu >= 0.f && tileCoords.tu <= 1.f && tileCoords.tv >= 0.f && tileCoords.tv <= 1.f,
+               "tile bilinear fractions stay in unit range");
+
     fuse::renderer::DDGIDesc desc{};
     desc.grid_dims = {2, 2, 2};
     desc.irradiance_res = 8;
@@ -220,6 +269,35 @@ void testIrradianceOctahedralEncoding() {
     expectTrue(texel.x >= origin.x && texel.y >= origin.y, "atlas texel within probe tile");
     expectTrue(texel.x < origin.x + static_cast<fuse::f32>(desc.irradiance_res),
                "atlas texel x within tile width");
+}
+
+void testDirectionalProbeIrradiance() {
+    fuse::renderer::IrradianceCacheEntry entry{};
+    entry.irradiance = {1.f, 0.5f, 0.25f};
+
+    const fuse::math::Vec3 upSample =
+        fuse::renderer::ddgi_util::sampleDirectionalIrradianceAtProbe(entry, {0.f, 1.f, 0.f}, 8u);
+    expectTrue(upSample.x > 0.f, "directional sample toward +Y is non-zero");
+
+    const fuse::math::Vec3 downSample =
+        fuse::renderer::ddgi_util::sampleDirectionalIrradianceAtProbe(entry, {0.f, -1.f, 0.f}, 8u);
+    expectTrue(downSample.x <= upSample.x, "directional sample away from +Y is weaker");
+
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_origin = {0.f, 0.f, 0.f};
+    desc.probe_spacing = {1.f, 1.f, 1.f};
+    desc.grid_dims = {2, 2, 2};
+    desc.irradiance_res = 8;
+
+    std::vector<fuse::renderer::IrradianceCacheEntry> cache(8);
+    for (fuse::u32 i = 0; i < 8u; ++i) {
+        cache[i].irradiance = {1.f, 1.f, 1.f};
+    }
+
+    const fuse::math::Vec3 directional =
+        fuse::renderer::ddgi_util::trilinearDirectionalProbeIrradiance(
+            desc, {0.5f, 0.5f, 0.5f}, {0.f, 1.f, 0.f}, cache.data(), static_cast<fuse::u32>(cache.size()));
+    expectTrue(directional.x > 0.f, "trilinear directional sample is non-zero at grid centre");
 }
 
 void testProbeAtlasLayout() {
@@ -358,6 +436,7 @@ void testDdgiInitUpdateSample() {
 
     fuse::renderer::DDGISampleRequest sampleRequest{};
     sampleRequest.world_position = fuse::renderer::ddgi_util::probeWorldPosition(desc, 0u);
+    sampleRequest.world_normal = {0.f, 1.f, 0.f};
     const fuse::renderer::DDGISampleResult sample = ddgi.sampleIrradiance(sampleRequest);
     expectTrue(sample.valid, "irradiance sample valid");
     expectTrue(sample.nearest_probe == 0u, "nearest probe at origin cell");
@@ -394,10 +473,12 @@ int main() {
     testProbeGridIndexing();
     testProbeGridWorldCoord();
     testProbeIndexClamp();
+    testProbeSampleCoords();
     testEmptyProbeGrid();
     testProbeValidityFlags();
     testProbeAtlasLayout();
     testIrradianceOctahedralEncoding();
+    testDirectionalProbeIrradiance();
     testIrradianceLerp();
     testBilinearTileIrradiance();
     testTrilinearProbeIrradiance();
