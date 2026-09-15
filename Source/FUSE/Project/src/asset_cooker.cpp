@@ -70,9 +70,10 @@ CookRecord AssetCooker::cook_with_cache_(CookAssetKind kind,
                                          u64 upstream_hash,
                                          const char* stub_note) {
     const u64 cache_key = combine_cook_cache_key(content_hash, upstream_hash);
+    const bool cacheable = is_valid_cook_cache_key(cache_key);
 
     CookCacheEntry cached;
-    if (m_cache.lookup(cache_key, &cached) == CookCacheLookup::Hit) {
+    if (cacheable && m_cache.lookup(cache_key, &cached) == CookCacheLookup::Hit) {
         CookRecord record;
         record.kind = kind;
         record.source_path = source_path;
@@ -89,7 +90,7 @@ CookRecord AssetCooker::cook_with_cache_(CookAssetKind kind,
     record.content_hash = cache_key;
     record.cache_hit = false;
 
-    if (record.ok) {
+    if (record.ok && cacheable) {
         CookCacheEntry entry;
         entry.content_hash = cache_key;
         entry.upstream_hash = upstream_hash;
