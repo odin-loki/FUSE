@@ -65,4 +65,25 @@ bool VulkanBootstrap::initialize(const VulkanBootstrapDesc& desc) {
     return true;
 }
 
+bool VulkanBootstrap::ensureSwapchain(const SwapchainDesc& desc) {
+    if (!m_device || !m_device->isValid()) {
+        m_status.message = "ensureSwapchain requires a valid Vulkan device";
+        return false;
+    }
+
+    m_swapchain.reset();
+    m_swapchain = VulkanSwapchain::create(*m_device, desc);
+    if (!m_swapchain) {
+        m_status.swapchainReady = false;
+        m_status.swapchainHeadless = true;
+        m_status.message = "Swapchain allocation failed";
+        return false;
+    }
+
+    m_status.swapchainReady = m_swapchain->isReady();
+    m_status.swapchainHeadless = m_swapchain->isHeadless();
+    m_status.message = m_swapchain->info().message;
+    return true;
+}
+
 } // namespace fuse::renderer

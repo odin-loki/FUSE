@@ -16,4 +16,8 @@ if(FUSE_BUILD_VULKAN)
     add_executable(fuse_hybrid_renderer_bootstrap test_hybrid_renderer_bootstrap.cpp)
     target_link_libraries(fuse_hybrid_renderer_bootstrap PRIVATE fuse_hybrid fuse_core)
     add_test(NAME fuse_hybrid_renderer_bootstrap COMMAND fuse_hybrid_renderer_bootstrap)
+
+    add_executable(fuse_hybrid_vulkan_presentable test_vulkan_presentable_stub.cpp)
+    target_link_libraries(fuse_hybrid_vulkan_presentable PRIVATE fuse_hybrid fuse_core)
+    add_test(NAME fuse_hybrid_vulkan_presentable COMMAND fuse_hybrid_vulkan_presentable)
 endif()

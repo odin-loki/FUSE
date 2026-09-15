@@ -17,6 +17,9 @@ struct VulkanInstanceDesc {
     const char* appName = "FUSE";
     u32 appVersion = 1;
     bool enableValidation = true;
+    /// Optional WSI / platform extensions (e.g. GLFW `glfwGetRequiredInstanceExtensions`).
+    const char* const* extraExtensions = nullptr;
+    u32 extraExtensionCount = 0;
 };
 
 struct VulkanInstanceInfo {

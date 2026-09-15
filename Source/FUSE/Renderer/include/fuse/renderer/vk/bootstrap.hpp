@@ -49,6 +49,9 @@ public:
     const VulkanSwapchain* swapchain() const { return m_swapchain.get(); }
     const FrameManager* frameManager() const { return m_frameManager.get(); }
 
+    /// Create or replace swapchain after External surface wiring (B2.2 presentable follow-up).
+    bool ensureSwapchain(const SwapchainDesc& desc);
+
 private:
     VulkanBootstrap() = default;
     bool initialize(const VulkanBootstrapDesc& desc);
