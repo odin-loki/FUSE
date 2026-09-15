@@ -27,6 +27,9 @@ public:
     /// CPU stub: parallel dirty-root world-matrix pass (entities with no parent).
     static void update_dirty_roots_parallel(Registry& reg, u32 batchSize);
 
+    /// Count root transforms (`parent` invalid) with `dirty == true`.
+    [[nodiscard]] static u32 count_dirty_roots(Registry& reg);
+
 private:
     static void update_hierarchy(Registry& reg, EntityID id, const mat4& parent_matrix);
 };

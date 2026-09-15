@@ -12,13 +12,13 @@
 |-----------|----------|-------|
 | `EntityID` | `include/fuse/ecs/entity.hpp` | Index + generation handle; stale detection O(1) |
 | `Registry` | `include/fuse/ecs/registry.hpp` | Create/destroy, add/remove/get/has, `each` + `each_parallel` bulk iteration |
-| `detail::parallel_iteration` / `detail::iteration_parity` | `include/fuse/ecs/detail/` | Shared `normalize_batch_size`; serial/parallel visit-count + transform matrix parity helpers |
+| `detail::parallel_iteration` / `detail::iteration_parity` | `include/fuse/ecs/detail/` | Shared `normalize_batch_size`; `each`/`each_query` visit-count parity; `transform_registries_match` + dirty-root serial/parallel parity helpers |
 | `QueryFilter` / `With` / `Without` | `include/fuse/ecs/query_filter.hpp` | Archetype-scoped query filters; `query_filter_empty` / `query_filter_has_conflict` / `count_matching_archetypes`; `each_query` / `each_query_parallel` (B3 deepen) |
 | `Archetype` / `ComponentColumn` | `include/fuse/ecs/archetype.hpp` | SoA columns keyed by `std::type_index`; archetype migration on add/remove |
 | `IsComponentV` trait | `include/fuse/ecs/component.hpp` | Plain data + `component_name` string (C++17) |
 | Math types (`vec3`, `quat`, `mat4`) | `include/fuse/ecs/math/vec.hpp` | Minimal POD until shared `fuse/math` lands in Core |
 | Core components | `include/fuse/ecs/components/` | Transform, Mesh, SDFObject, RigidBody, Camera, lights, tags |
-| `TransformSystem` | `include/fuse/ecs/systems/transform_system.hpp` | Hierarchy + optional `each_parallel` dirty-root pass (B3.3) |
+| `TransformSystem` | `include/fuse/ecs/systems/transform_system.hpp` | Hierarchy + optional `each_parallel` dirty-root pass; `count_dirty_roots` tally (B3.3) |
 | `CullingSystem` | `include/fuse/ecs/systems/culling_system.hpp` | BVH + frustum cull for meshes/SDF/lights (B3.3) |
 | `SceneBuildSystem` | `include/fuse/ecs/systems/scene_build_system.hpp` | `CullResult` → `SceneData` draw/SDF/light payloads (B3.3) |
 | `CameraSystem` | `include/fuse/ecs/systems/camera_system.hpp` | Active camera view/proj/frustum (B3.8) |
@@ -124,7 +124,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_ecs|fuse_scene'
 |--------|-----------|
 | `fuse_ecs_registry` | Create/destroy, stale handles, add/get/remove, archetype migration, `each` |
 | `fuse_ecs_query_filter` | `archetype_matches` With/Without filters (runtime + compile-time tags, Without-only, conflict guard); `query_filter_empty` / `count_matching_archetypes`; `each`/`each_query`/`each_parallel`/`each_query_parallel` include/exclude, empty registry/match, zero-entity archetype, and serial/parallel parity (atomic visit counts) |
-| `fuse_ecs_each_parallel` | `each_parallel` visit/mutation parity vs `each`; `detail::iteration_parity` visit-count helpers; batchSize edge cases (0, oversized, empty registry); dirty propagation to clean children; dirty-root stub + full `TransformSystem` serial/parallel matrix parity |
+| `fuse_ecs_each_parallel` | `each_parallel` visit/mutation parity vs `each`; `detail::iteration_parity` `each`/`each_query` visit-count + dirty-root parity helpers; batchSize edge cases (0, oversized, empty registry); dirty propagation to clean children and deep hierarchy; `count_dirty_roots`; dirty-root skip guards; empty-registry `TransformSystem::update`; multi-batch/worker serial/parallel matrix parity |
 | `fuse_ecs_components` | Component names, defaults, registry storage for lights/tags |
 | `fuse_ecs_system_scheduler` | System dependency DAG execution order |
 | `fuse_ecs_bvh` | SAH BVH ray cast, frustum query vs brute force, refit |

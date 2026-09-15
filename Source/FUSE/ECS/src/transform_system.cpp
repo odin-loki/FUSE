@@ -52,6 +52,16 @@ void TransformSystem::update_dirty_roots_parallel(Registry& reg, u32 batchSize) 
     }, grain);
 }
 
+u32 TransformSystem::count_dirty_roots(Registry& reg) {
+    u32 count = 0;
+    reg.each<Transform>([&](EntityID, Transform& transform) {
+        if (!transform.parent.valid() && transform.dirty) {
+            ++count;
+        }
+    });
+    return count;
+}
+
 void TransformSystem::update(Registry& reg, const TransformSystemOptions& options) {
     std::vector<EntityID> roots;
     reg.each<Transform>([&](EntityID id, Transform& transform) {
