@@ -70,7 +70,11 @@ std::optional<InputHistoryFrame> InputHistoryBuffer::pop_oldest() {
 }
 
 const InputHistoryBuffer::InputSlot* InputHistoryBuffer::slot_(u32 frame) const {
-    if (m_capacity == 0) {
+    if (m_capacity == 0 || !m_has_any_frame) {
+        return nullptr;
+    }
+
+    if (frame < m_oldest_frame || frame > m_newest_frame) {
         return nullptr;
     }
 

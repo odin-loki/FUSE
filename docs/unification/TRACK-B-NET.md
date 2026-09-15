@@ -16,7 +16,7 @@
 | `filter_candidates_in_radius` | `interest_management.hpp/.cpp` | Radius filter stub (no hysteresis) for candidate lists |
 | `InputHistoryBuffer` | `input_history.hpp/.cpp` | 128-frame ring with `push_frame` / `pop_oldest`, predicted + confirmed `PlayerInput` |
 | `reconcile_predicted_input` | `reconcile.hpp/.cpp` | Compare authoritative input against local prediction |
-| Rollback window helpers | `rollback_window.hpp/.cpp` | `can_rewind_to_frame`, `resimulate_frame_count` bounds stubs |
+| Rollback window helpers | `rollback_window.hpp/.cpp` | `earliest_rewindable_frame`, `can_rewind_to_frame`, `clamp_rewind_target`, `resimulate_frame_count` |
 | Checksum helpers | `checksum.hpp/.cpp` | FNV-1a over snapshot blobs; shared by rollback + delta paths |
 | `RollbackBuffer` | `rollback_buffer.hpp/.cpp` | 64-frame snapshot + input ring (unchanged capacity) |
 | `SnapshotHistoryRing` | `snapshot_delta.hpp/.cpp` | Snapshot-only ring delegating to `RollbackBuffer`; `apply_delta_and_store` |
@@ -91,8 +91,10 @@ Pure bounds helpers and `RollbackManager` rewind stubs keep rollback depth expli
 #include <fuse/net/rollback_window.hpp>
 #include <fuse/net/rollback.hpp>
 
-if (fuse::net::can_rewind_to_frame(current, target, max_rollback)) {
-    const fuse::u32 steps = fuse::net::resimulate_frame_count(target, current);
+const fuse::u32 earliest = fuse::net::earliest_rewindable_frame(current, max_rollback);
+const fuse::u32 clamped = fuse::net::clamp_rewind_target(current, target, max_rollback);
+if (fuse::net::can_rewind_to_frame(current, clamped, max_rollback)) {
+    const fuse::u32 steps = fuse::net::resimulate_frame_count(clamped, current);
     // ...
 }
 
@@ -163,9 +165,9 @@ ctest --test-dir build --output-on-failure -R fuse_net_b74
 |-------|-----------|
 | `test_net_interest_management` | Relevance/unload radii, radius filter, hysteresis, enter/leave diff, priority queue ordering (empty + tie-break) |
 | `test_net_checksum` | FNV-1a determinism, combine, snapshot verify |
-| `test_net_input_history` | `push_frame` / `pop_oldest`, ring wrap eviction, `inputs_equal` |
+| `test_net_input_history` | Empty `pop_oldest`, `clear`, ring wrap eviction bounds, post-wrap reconcile, `inputs_equal` |
 | `test_net_reconcile` | Confirmed / mismatch / NoOp reconcile paths, `reconcile_authoritative` |
-| `test_net_rollback_window` | Rewind bounds, `resimulate_frame_count`, `RollbackManager::rewind_to` |
+| `test_net_rollback_window` | `earliest_rewindable_frame`, `clamp_rewind_target`, rewind bounds, `RollbackManager::rewind_to` |
 | `test_net_snapshot_delta` | Empty delta, partial field-mask apply, entity bitset validation, multi-entity bitset, wire roundtrip, checksum mismatch, history ring wrap |
 | `fuse_net_b74` (umbrella) | Transport, serializer, rollback, buffer, delta, interpolation, AOI |
 
@@ -176,7 +178,7 @@ ctest --test-dir build --output-on-failure -R fuse_net_b74
 - [x] Interest management AOI stubs (`InterestManager`, relevance radii, priority queue, enter/leave diff, radius filter)
 - [x] Expanded input history ring (128 frames, `push_frame` / `pop_oldest`, predicted + confirmed)
 - [x] Reconcile stub (`reconcile_predicted_input`, `InputHistoryBuffer::reconcile_authoritative`)
-- [x] Rollback window helpers (`can_rewind_to_frame`, `resimulate_frame_count`, `RollbackManager::rewind_to`)
+- [x] Rollback window helpers (`earliest_rewindable_frame`, `clamp_rewind_target`, `can_rewind_to_frame`, `resimulate_frame_count`, `RollbackManager::rewind_to`)
 - [x] Shared checksum helpers + tests
 - [x] Snapshot delta field masks, entity bitset validation, verified apply + delta checksum
 - [x] `SnapshotHistoryRing` reuses `RollbackBuffer`; `stored_frame_count` + wrap-safe `apply_delta_and_store`

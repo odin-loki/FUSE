@@ -2,13 +2,25 @@
 
 namespace fuse::net {
 
+u32 earliest_rewindable_frame(u32 current_frame, u32 max_rollback_frames) {
+    return current_frame > max_rollback_frames ? current_frame - max_rollback_frames : 0;
+}
+
 bool can_rewind_to_frame(u32 current_frame, u32 target_frame, u32 max_rollback_frames) {
     if (target_frame > current_frame) {
         return false;
     }
 
-    const u32 distance = current_frame - target_frame;
-    return distance <= max_rollback_frames;
+    return target_frame >= earliest_rewindable_frame(current_frame, max_rollback_frames);
+}
+
+u32 clamp_rewind_target(u32 current_frame, u32 target_frame, u32 max_rollback_frames) {
+    if (target_frame > current_frame) {
+        return current_frame;
+    }
+
+    const u32 earliest = earliest_rewindable_frame(current_frame, max_rollback_frames);
+    return target_frame < earliest ? earliest : target_frame;
 }
 
 u32 resimulate_frame_count(u32 from_frame, u32 to_frame) {
