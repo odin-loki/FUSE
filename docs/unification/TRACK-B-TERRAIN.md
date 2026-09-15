@@ -1,6 +1,6 @@
 # Track B — Terrain System (B7.5 deepen)
 
-**Status:** B7.5 deepen — adjacent LOD morph helpers, skirt/seam vertex counts, residency queue priority/budget  
+**Status:** B7.5 deepen — LOD residency set, skirt/morph stubs, budget clamp helpers, residency queue priority/budget  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.5  
 **Source narrative:** [P7.md](../sources/P7.md) §7.5
 
@@ -16,7 +16,10 @@
 | `clamp_morph_factor` / `blend_morph_between_lods` | `Source/FUSE/Terrain/src/lod.cpp` | Morph clamp + blend between fine/coarse rings |
 | `clamp_adjacent_lod_pair` / `blend_adjacent_lod_morph` | `Source/FUSE/Terrain/src/lod.cpp` | Adjacent LOD pair morph clamp + factor blend |
 | `compute_lod_mesh_vertex_counts` | `Source/FUSE/Terrain/src/lod.cpp` | CPU stub — grid + skirt + seam vertex budgets per LOD |
+| `LodSkirtParams` / `clamp_skirt_params` | `Source/FUSE/Terrain/src/lod.cpp` | Skirt depth/segment clamp + strip vertex count stub |
 | `morph_vertex_position` | `Source/FUSE/Terrain/src/lod.cpp` | CPU stub — snap XZ toward coarser grid |
+| `LodResidencySet` | `lod_residency_set.hpp` | Focus-distance resident chunk set with eviction ordering |
+| `LodResidencyBudget` / clamp helpers | `lod_residency_budget.hpp` | `clamp_lod_level`, resident headroom, tick/pending budget clamps |
 | `LodResidencyQueue` | `lod_residency_queue.hpp/.cpp` | Mutex-backed completion buffer; enqueue promote/demote, budget clamp, priority drain |
 | `promote_residency_priority` / `demote_residency_priority` | `lod_residency_queue.cpp` | Pending load priority raise/lower stubs |
 | `capture_morph_snapshot` / `sync_morph_after_residency` | `lod_residency_queue.cpp` | Keep morph in sync across async promotion/demotion |
@@ -58,9 +61,17 @@ Y (height) is preserved — GPU heightmap displacement handles vertical detail l
 
 `make_adjacent_lod_pair` exposes the fine/coarse ring pair for a transition; `blend_morph_between_lods` lerps XZ toward the coarser grid using `clamp_adjacent_lod_pair`. `blend_adjacent_lod_morph` blends morph factors with `[0, 1]` clamp on both endpoints and blend weight.
 
+### LOD residency set
+
+`LodResidencySet` tracks resident chunk indices with planar focus distance (mirrors B7.6 `ResidencySet`). `ChunkGrid` adds/removes entries on load/unload and refreshes focus distance each `update_lod`. `pick_eviction_candidate` / `collect_eviction_candidates` return farthest-first eviction order for future byte/cell cap pressure.
+
+### Budget clamp helpers
+
+`lod_residency_budget.hpp` exposes `clamp_lod_level`, `resident_chunk_headroom`, `can_accept_resident_chunk`, `effective_tick_budget`, and `clamp_pending_submits`. `ChunkGrid::process_queues_` uses these when enforcing `TerrainDesc::max_resident_chunks` and per-tick submission caps.
+
 ### Skirt / seam vertex budget (CPU stub)
 
-`compute_lod_mesh_vertex_counts` estimates displaced-grid vertices, four-edge skirts, and optional T-junction seam verts when a neighbor differs by `seam_neighbor_lod_delta`:
+`compute_lod_mesh_vertex_counts` estimates displaced-grid vertices, four-edge skirts (with optional `LodSkirtParams` segment multiplier), and optional T-junction seam verts when a neighbor differs by `seam_neighbor_lod_delta`:
 
 | Bucket | Formula (stub) |
 |--------|----------------|
@@ -165,6 +176,10 @@ ctest --test-dir build --output-on-failure -R fuse_terrain
 | `testMorphFactorClamp` | `clamp_morph_factor` and snapshot clamp |
 | `testAdjacentLodPair` | Fine/coarse pair + `blend_morph_between_lods` |
 | `testAdjacentLodMorphBlend` | `clamp_adjacent_lod_pair` + `blend_adjacent_lod_morph` |
+| `testLodResidencySetAddRemove` | Residency set add/remove/update/clear/eviction order |
+| `testLodClampHelpers` | `clamp_lod_level` + resident/tick budget clamps |
+| `testLodSkirtStubs` | Skirt param clamp + segment vertex multiplier |
+| `testEmptyTerrainResidency` | Empty residency set + far-camera zero residents |
 | `testLodMeshVertexCounts` | Grid/skirt/seam vertex budget sanity |
 | `testResidencyMorphSync` | `sync_morph_after_residency` on LOD match/mismatch |
 | `testResidencyPriorityPromoteDemote` | Priority raise/lower helper stubs |
@@ -196,6 +211,9 @@ ctest --test-dir build --output-on-failure -R fuse_terrain
 - [x] `compute_lod_mesh_vertex_counts` skirt/seam vertex stub
 - [x] Residency queue morph snapshot + `sync_morph_after_residency`
 - [x] Residency queue promote/demote priority + budget clamp + priority drain
+- [x] `LodResidencySet` focus-distance tracking + eviction candidate ordering
+- [x] `LodResidencyBudget` clamp helpers (`clamp_lod_level`, resident headroom)
+- [x] Skirt param clamp + segment vertex multiplier stub
 - [x] Adjacent LOD morph clamp + factor blend helpers
 - [x] `fuse_terrain_b75` CTest target green
 - [x] No owning raw pointers in public FUSE APIs

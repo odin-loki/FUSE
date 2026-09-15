@@ -84,8 +84,23 @@ vec3 blend_morph_between_lods(vec3 position, const AdjacentLodPair& pair, f32 ba
     return {fine.x + (coarse.x - fine.x) * t, position.y, fine.z + (coarse.z - fine.z) * t};
 }
 
+LodSkirtParams clamp_skirt_params(const LodSkirtParams& params, f32 max_depth) {
+    LodSkirtParams clamped = params;
+    clamped.depth = std::clamp(params.depth, 0.f, std::max(max_depth, 0.f));
+    clamped.segments = std::max(params.segments, 1u);
+    return clamped;
+}
+
+u32 compute_skirt_vertex_strip_count(u32 edge_vertex_count, u32 segments) {
+    if (edge_vertex_count == 0u || segments == 0u) {
+        return 0u;
+    }
+    return edge_vertex_count * std::max(segments, 1u);
+}
+
 LodMeshVertexCounts compute_lod_mesh_vertex_counts(u32 chunk_resolution, u32 lod, u32 max_lod_levels,
-                                                   bool include_skirts, u32 seam_neighbor_lod_delta) {
+                                                   bool include_skirts, u32 seam_neighbor_lod_delta,
+                                                   const LodSkirtParams& skirt_params) {
     LodMeshVertexCounts counts{};
     if (chunk_resolution == 0 || max_lod_levels == 0) {
         return counts;
@@ -97,7 +112,10 @@ LodMeshVertexCounts compute_lod_mesh_vertex_counts(u32 chunk_resolution, u32 lod
     const u32 verts_per_edge = lod_cells + 1;
 
     counts.grid_vertices = verts_per_edge * verts_per_edge;
-    counts.skirt_vertices = include_skirts ? 4u * verts_per_edge : 0u;
+    if (include_skirts) {
+        const LodSkirtParams clamped_skirt = clamp_skirt_params(skirt_params, 64.f);
+        counts.skirt_vertices = 4u * compute_skirt_vertex_strip_count(verts_per_edge, clamped_skirt.segments);
+    }
     counts.seam_vertices =
         seam_neighbor_lod_delta > 0 ? 4u * seam_neighbor_lod_delta * verts_per_edge : 0u;
     counts.total_vertices = counts.grid_vertices + counts.skirt_vertices + counts.seam_vertices;

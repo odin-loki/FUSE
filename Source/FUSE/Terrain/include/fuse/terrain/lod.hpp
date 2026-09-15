@@ -34,6 +34,18 @@ struct LodMeshVertexCounts {
     u32 total_vertices = 0;
 };
 
+/// Vertical skirt strip parameters for chunk edge hiding (CPU stub).
+struct LodSkirtParams {
+    f32 depth = 4.f;    ///< Vertical drop in metres below the displaced surface
+    u32 segments = 1;   ///< Vertical strips per edge (>= 1)
+};
+
+/// Clamp skirt depth and segment count to sane CPU-stub ranges.
+[[nodiscard]] LodSkirtParams clamp_skirt_params(const LodSkirtParams& params, f32 max_depth);
+
+/// Count skirt strip vertices along one chunk edge.
+[[nodiscard]] u32 compute_skirt_vertex_strip_count(u32 edge_vertex_count, u32 segments);
+
 /// Select LOD index from camera distance to chunk centre (stub heuristic).
 [[nodiscard]] u32 select_lod_level(f32 distance_to_chunk, u32 max_lod_levels, f32 lod_bias = 1.f);
 
@@ -61,7 +73,8 @@ struct LodMeshVertexCounts {
 /// Count displaced-grid, skirt, and seam vertices for a chunk at the given LOD (CPU stub).
 [[nodiscard]] LodMeshVertexCounts compute_lod_mesh_vertex_counts(u32 chunk_resolution, u32 lod, u32 max_lod_levels,
                                                                  bool include_skirts = true,
-                                                                 u32 seam_neighbor_lod_delta = 0);
+                                                                 u32 seam_neighbor_lod_delta = 0,
+                                                                 const LodSkirtParams& skirt_params = {});
 
 /// Build LOD table for a terrain description.
 [[nodiscard]] LodLevel make_lod_level(const TerrainDesc& desc, u32 level);

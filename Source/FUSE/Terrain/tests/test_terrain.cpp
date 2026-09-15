@@ -3,7 +3,9 @@
 #include <fuse/terrain/chunk_grid.hpp>
 #include <fuse/terrain/heightfield.hpp>
 #include <fuse/terrain/lod.hpp>
+#include <fuse/terrain/lod_residency_budget.hpp>
 #include <fuse/terrain/lod_residency_queue.hpp>
+#include <fuse/terrain/lod_residency_set.hpp>
 #include <fuse/terrain/queries.hpp>
 #include <fuse/terrain/terrain.hpp>
 
@@ -152,6 +154,91 @@ void testAdjacentLodPair() {
         fuse::terrain::morph_vertex_position(original, pair.coarse_lod, pair.morph_factor, base_stride);
     expectNear(blended.x, morphed.x, 0.01f, "blend matches coarse morph at same factor");
     expectNear(blended.z, morphed.z, 0.01f, "blend matches coarse morph Z");
+}
+
+void testLodResidencySetAddRemove() {
+    fuse::terrain::LodResidencySet residency;
+    expectTrue(residency.empty(), "new residency set is empty");
+    expectEq(residency.pick_eviction_candidate(), fuse::terrain::kInvalidChunkIndex,
+             "empty set has no eviction candidate");
+
+    expectTrue(residency.add(1u, 100.f), "add near chunk");
+    expectTrue(residency.add(5u, 900.f), "add far chunk");
+    expectEq(residency.size(), 2u, "two resident chunks tracked");
+    expectTrue(residency.contains(1u) && residency.contains(5u), "contains resident chunks");
+    expectNear(residency.focus_distance_for(5u), 900.f, 1e-4f, "focus distance stored for far chunk");
+
+    expectTrue(residency.update_focus_distance(1u, 50.f), "update near focus distance");
+    expectEq(residency.pick_eviction_candidate(), 5u, "farthest focus distance evicts first");
+
+    expectTrue(residency.remove(1u), "remove near chunk");
+    expectEq(residency.size(), 1u, "size drops after remove");
+    expectTrue(!residency.contains(1u), "removed chunk no longer resident");
+    expectEq(residency.pick_eviction_candidate(), 5u, "remaining chunk is eviction candidate");
+
+    const auto candidates = residency.collect_eviction_candidates();
+    expectEq(static_cast<fuse::u32>(candidates.size()), 1u, "one eviction candidate remains");
+    expectEq(candidates[0], 5u, "eviction candidate matches remaining chunk");
+
+    residency.clear();
+    expectTrue(residency.empty(), "clear empties residency set");
+}
+
+void testLodClampHelpers() {
+    expectEq(fuse::terrain::clamp_lod_level(99u, 4u), 3u, "lod clamps to max ring");
+    expectEq(fuse::terrain::clamp_lod_level(0u, 0u), 0u, "zero max lod levels returns zero");
+    expectEq(fuse::terrain::clamp_lod_level(2u, 8u), 2u, "in-range lod unchanged");
+
+    expectTrue(fuse::terrain::resident_cap_unlimited(0u), "zero resident cap is unlimited");
+    expectEq(fuse::terrain::resident_chunk_headroom(4u, 2u), 2u, "resident headroom subtracts count");
+    expectEq(fuse::terrain::resident_chunk_headroom(2u, 4u), 0u, "over-cap headroom is zero");
+    expectTrue(fuse::terrain::can_accept_resident_chunk(4u, 3u), "under cap accepts chunk");
+    expectTrue(!fuse::terrain::can_accept_resident_chunk(4u, 4u), "at cap rejects chunk");
+    expectEq(fuse::terrain::effective_tick_budget(8u, 3u), 3u, "tick budget clamps to cap");
+    expectEq(fuse::terrain::clamp_pending_submits(5u, 2u), 2u, "pending submits clamp to cap");
+}
+
+void testLodSkirtStubs() {
+    const fuse::terrain::LodSkirtParams raw{12.f, 0u};
+    const fuse::terrain::LodSkirtParams clamped = fuse::terrain::clamp_skirt_params(raw, 8.f);
+    expectNear(clamped.depth, 8.f, 0.001f, "skirt depth clamps to max");
+    expectEq(clamped.segments, 1u, "zero segments clamp to one");
+
+    expectEq(fuse::terrain::compute_skirt_vertex_strip_count(5u, 2u), 10u, "strip count multiplies edge verts");
+    expectEq(fuse::terrain::compute_skirt_vertex_strip_count(0u, 2u), 0u, "zero edge verts yields zero strips");
+
+    const fuse::terrain::TerrainDesc desc = makeTestDesc();
+    const fuse::terrain::LodMeshVertexCounts defaultSkirts =
+        fuse::terrain::compute_lod_mesh_vertex_counts(desc.chunk_resolution, 0, desc.lod_levels);
+    const fuse::terrain::LodMeshVertexCounts extraSegments =
+        fuse::terrain::compute_lod_mesh_vertex_counts(desc.chunk_resolution, 0, desc.lod_levels, true, 0u,
+                                                      {4.f, 2u});
+    expectTrue(extraSegments.skirt_vertices > defaultSkirts.skirt_vertices,
+               "extra skirt segments increase skirt vertex count");
+}
+
+void testEmptyTerrainResidency() {
+    fuse::terrain::LodResidencySet residency;
+    expectTrue(residency.collect_eviction_candidates().empty(), "empty residency has no candidates");
+    expectTrue(!residency.remove(0u), "remove on empty set fails");
+    expectTrue(!residency.add(0u, -1.f), "negative focus distance rejected");
+
+    fuse::terrain::ChunkGrid grid{};
+    expectEq(grid.chunk_count(), 0u, "uninitialized grid has no chunks");
+    expectTrue(grid.residency_set().empty(), "uninitialized grid has empty residency set");
+
+    fuse::terrain::TerrainDesc desc = makeTestDesc();
+    desc.async_loading = false;
+    grid.init(desc);
+    grid.update_lod({desc.world_size * 8.f, 0.f, desc.world_size * 8.f}, 0.016f);
+    expectEq(grid.resident_chunk_count(), 0u, "far camera keeps terrain empty");
+    expectTrue(grid.residency_set().empty(), "no residents tracked when camera is far");
+    grid.destroy();
+    expectTrue(grid.residency_set().empty(), "destroy clears residency set");
+
+    const fuse::terrain::LodTransition transition = fuse::terrain::compute_lod_transition(4.f, 0u);
+    expectEq(transition.lod, 0u, "zero max lod levels keeps lod at zero");
+    expectNear(transition.morph_factor, 0.f, 0.001f, "zero max lod levels has no morph");
 }
 
 void testLodMeshVertexCounts() {
@@ -419,6 +506,7 @@ void testChunkGridLodTransitions() {
     grid.update_lod({0.f, 0.f, 0.f}, 0.016f);
     expectTrue(grid.visible_chunk_count() > 0, "camera near terrain loads chunks");
     expectTrue(grid.resident_chunk_count() == grid.visible_chunk_count(), "resident count matches visible");
+    expectEq(grid.residency_set().size(), grid.resident_chunk_count(), "residency set tracks loaded chunks");
 
     bool hasMorphingChunk = false;
     for (fuse::u32 i = 0; i < grid.chunk_count(); ++i) {
@@ -539,6 +627,10 @@ int main() {
     testMorphFactorClamp();
     testAdjacentLodPair();
     testAdjacentLodMorphBlend();
+    testLodResidencySetAddRemove();
+    testLodClampHelpers();
+    testLodSkirtStubs();
+    testEmptyTerrainResidency();
     testLodMeshVertexCounts();
     testResidencyMorphSync();
     testResidencyPriorityPromoteDemote();
