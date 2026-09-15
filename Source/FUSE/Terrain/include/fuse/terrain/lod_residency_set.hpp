@@ -33,6 +33,7 @@ public:
     [[nodiscard]] f32 focus_distance_for(u32 chunk_index) const;
     [[nodiscard]] u32 size() const { return static_cast<u32>(m_entries.size()); }
     [[nodiscard]] bool empty() const { return m_entries.empty(); }
+    [[nodiscard]] bool has_eviction_candidate() const { return !m_entries.empty(); }
 
     /// Chunk with the largest focus distance (evict first). Returns `kInvalidChunkIndex` when empty.
     [[nodiscard]] u32 pick_eviction_candidate() const;
@@ -120,7 +121,10 @@ inline std::vector<u32> LodResidencySet::collect_eviction_candidates(u32 max_cou
     std::vector<LodResidencyEntry> sorted = m_entries;
     std::sort(sorted.begin(), sorted.end(),
               [](const LodResidencyEntry& a, const LodResidencyEntry& b) {
-                  return a.focus_distance > b.focus_distance;
+                  if (a.focus_distance != b.focus_distance) {
+                      return a.focus_distance > b.focus_distance;
+                  }
+                  return a.chunk_index > b.chunk_index;
               });
 
     const u32 limit = max_count == 0u ? static_cast<u32>(sorted.size())
@@ -151,6 +155,18 @@ inline u32 LodResidencySet::find_index_(u32 chunk_index) const {
 /// Stub: evict a chunk from the resident set.
 [[nodiscard]] inline bool try_remove_resident(LodResidencySet& set, u32 chunk_index) {
     return set.remove(chunk_index);
+}
+
+/// Stub: register residency after a successful async load completes on the game thread.
+[[nodiscard]] inline bool apply_residency_on_load_complete(LodResidencySet& set, u32 chunk_index,
+                                                              f32 focus_distance, bool success) {
+    return success ? try_add_resident(set, chunk_index, focus_distance) : false;
+}
+
+/// Stub: clear residency after a successful async unload completes on the game thread.
+[[nodiscard]] inline bool apply_residency_on_unload_complete(LodResidencySet& set, u32 chunk_index,
+                                                              bool success) {
+    return success ? try_remove_resident(set, chunk_index) : false;
 }
 
 } // namespace fuse::terrain

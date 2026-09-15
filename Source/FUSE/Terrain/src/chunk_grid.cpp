@@ -194,14 +194,21 @@ void ChunkGrid::collect_stream_candidates_(vec3 camera_pos) {
 
 void ChunkGrid::evict_for_resident_cap_(f32 incoming_priority) {
     const f32 load_radius = effective_load_radius();
-    while (is_at_resident_cap(m_desc.max_resident_chunks, resident_chunk_count())) {
+    while (needs_budget_eviction(m_desc.max_resident_chunks, resident_chunk_count())) {
+        if (!m_residency_set.has_eviction_candidate()) {
+            ++m_budget_counters.eviction_skipped;
+            break;
+        }
+
         const u32 eviction_index = m_residency_set.pick_eviction_candidate();
         if (eviction_index == kInvalidChunkIndex) {
+            ++m_budget_counters.eviction_skipped;
             break;
         }
 
         const f32 resident_focus_distance = m_residency_set.focus_distance_for(eviction_index);
         if (!incoming_outranks_resident(incoming_priority, load_radius, resident_focus_distance)) {
+            ++m_budget_counters.eviction_skipped;
             break;
         }
 
@@ -400,7 +407,7 @@ void ChunkGrid::apply_completed_request_(const CompletedLodResidencyRequest& com
 void ChunkGrid::execute_load_(u32 chunk_index, TerrainChunk& chunk, f32 focus_distance) {
     chunk.residency = ChunkResidencyState::Resident;
     chunk.loaded = true;
-    m_residency_set.add(chunk_index, focus_distance);
+    (void)apply_residency_on_load_complete(m_residency_set, chunk_index, focus_distance, true);
 }
 
 void ChunkGrid::execute_unload_(u32 chunk_index, TerrainChunk& chunk) {
@@ -408,7 +415,7 @@ void ChunkGrid::execute_unload_(u32 chunk_index, TerrainChunk& chunk) {
     chunk.loaded = false;
     chunk.load_priority = 0.f;
     chunk.dirty = false;
-    m_residency_set.remove(chunk_index);
+    (void)apply_residency_on_unload_complete(m_residency_set, chunk_index, true);
 }
 
 } // namespace fuse::terrain
