@@ -56,3 +56,10 @@ target_link_libraries(fuse_editor_phase6_integration_tests
         fuse_core
 )
 add_test(NAME fuse_editor_phase6_integration COMMAND fuse_editor_phase6_integration_tests)
+
+add_executable(fuse_editor_play_session_tests
+    test_play_session.cpp
+)
+
+target_link_libraries(fuse_editor_play_session_tests PRIVATE fuse_editor_api fuse_core fuse_scene)
+add_test(NAME fuse_editor_play_session COMMAND fuse_editor_play_session_tests)

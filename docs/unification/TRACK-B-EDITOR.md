@@ -24,6 +24,7 @@
 | `ProfilerPanel` | `profiler_panel.hpp` | B6.10 — 256-frame ring buffer of `FrameProfileData` |
 | `ConsolePanel` | `console_panel.hpp` | B6.11 — log buffer, level/text filters, command exec stub |
 | `PlayModeController` | `play_mode_controller.hpp` | B6.12 — scene snapshot / restore + `PlayModePhysicsState` flag |
+| `PlaySession` | `play_session.hpp` | B6.12 deepen — PIE start/stop, tick-while-playing, ECS dirty-flag restore |
 | `EditorHost` | `editor_host.hpp` | `CommandQueue` (UI→game) + `UndoStack` (B6.2) |
 
 **Not in scope:** Qt dock widgets, embedded Vulkan viewport, `QUndoStack` adapter, live material preview RT, real picking/rendering, Qt asset grid/profiler plots/console chrome.
@@ -52,6 +53,7 @@
 - **Profiler panel** — `ProfilerPanel::pushFrameData` writes a 256-frame ring buffer; `setPaused(true)` freezes capture.
 - **Console panel** — `ConsolePanel::addLog` uses `fuse::log::Level`, coalesces duplicate lines, supports level/text filters via `filteredLines()`.
 - **Play mode** — `PlayModeController` snapshots `fuse::scene::Scene` on `enterPlay` and restores on `stop`; `PlayModePhysicsState` tracks simulation-active flag until `PhysicsManager` wiring lands.
+- **PIE play session** — `PlaySession` wraps the controller with `EditorState` sync, `tick(dt)` while playing (paused sessions skip ticks), and per-entity `Transform::dirty` + `sceneModified` snapshot/restore on stop.
 
 ---
 
@@ -93,6 +95,7 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 | `fuse_editor_hierarchy_model` | `fuse_editor_hierarchy_model_tests` | B6.5 flatten, search, reparent + undo |
 | `fuse_editor_panels_b69_b612` | `fuse_editor_panels_b69_b612_tests` | B6.9–B6.12 asset/profiler/console/play-mode stubs |
 | `fuse_editor_phase6_integration` | `fuse_editor_phase6_integration_tests` | **B6.13** — `UndoStack` + `SceneHierarchyPanel` + `ViewportPanel` headless wiring |
+| `fuse_editor_play_session` | `fuse_editor_play_session_tests` | B6.12 deepen — PIE session start/stop, tick-while-playing, dirty-flag restore |
 
 ---
 
@@ -183,6 +186,7 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 - [x] Pause / resume / stop with snapshot restore
 - [x] `PlayModePhysicsState` simulation-active flag
 - [x] `fuse_editor_panels_b69_b612` play-mode lifecycle coverage
+- [x] `PlaySession` PIE deepen — start/stop, tick while playing, dirty-flag restore (`fuse_editor_play_session`)
 - [ ] `PhysicsManager` wiring during play (deferred — B4 integration)
 - [ ] Qt play transport toolbar (U6 follow-up)
 
