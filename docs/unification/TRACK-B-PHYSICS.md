@@ -256,6 +256,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_physics|fuse_voxel|fuse_soft
 - [x] B4.4 CPU deepen — configurable iteration count, lambda warm-start, residual early-exit stub, job-safe constraint accumulation helpers
 - [x] B4.4 CPU deepen — per-pair delta clearing in island passes, apply-and-reset slots, frame-to-frame distance lambda warm-start
 - [x] B4.4 CPU deepen — island split/empty-island partition, per-island delta clearing, lambda warm-start seed stubs
+- [x] B4.4 CPU deepen — `extract_island` / `solve_island_job` / `per_pair_delta_application` / `frame_lambda_warm_start` island-solve stubs with empty-island guards
 - [x] B4.6 CPU deepen — `ToiBufferSoA` push/sort/clamp/`applyMaxCapacityClamp`/`isSortedByToi`/`compactAndSort`, stable body-index tie-break, sphere/plane/slab/AABB sweep hit/miss helpers, sphere-box AABB dispatch, job-safe `runCcdIntoBuffer`
 - [ ] B4.4–B4.6 CUDA: PBD kernels, Barnes-Hut GPU, CCD sweep GPU (CPU stubs on main via #29)
 - [ ] B3.5 SVO integration — real carve + dual contouring mesh extraction

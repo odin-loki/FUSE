@@ -1,5 +1,6 @@
 #include <fuse/physics/solver/pbd_solver.hpp>
 #include <fuse/physics/solver/constraint_accumulation.hpp>
+#include <fuse/physics/solver/pbd_island_solve.hpp>
 
 #include <fuse/jobs/parallel_for.hpp>
 
@@ -129,47 +130,15 @@ void PBDSolver::resolveIslandConstraints(RigidBodySoA& bodies,
                                          const ContactIslandGraph::Island& island,
                                          const SolverParams& params,
                                          f32 dt) {
-    const std::vector<narrowphase::ContactManifold>& contacts = workBuffers_.contactManifolds();
-    std::vector<PositionDelta>& positionDeltas = workBuffers_.positionDeltas();
-
-    for (u32 contactIndex : island.contactIndices) {
-        if (contactIndex >= contacts.size()) {
-            continue;
-        }
-        const narrowphase::ContactManifold& contact = contacts[contactIndex];
-        workBuffers_.clearPositionDeltasForBodies(contact.bodyA, contact.bodyB);
-        const f32 invMassA = effectiveInvMass(bodies, contact.bodyA);
-        const f32 invMassB = effectiveInvMass(bodies, contact.bodyB);
-        f32& lambda = workBuffers_.contactLambda(contactIndex);
-        accumulateContactCorrection(bodies,
-                                  contact,
-                                  invMassA,
-                                  invMassB,
-                                  dt,
-                                  params.contactCompliance,
-                                  lambda,
-                                  positionDeltas);
-        workBuffers_.applyPositionDeltas(bodies);
-    }
-
-    for (u32 distanceIndex : island.distanceIndices) {
-        if (distanceIndex >= distanceConstraints_.size()) {
-            continue;
-        }
-        const DistanceConstraint& constraint = distanceConstraints_[distanceIndex];
-        workBuffers_.clearPositionDeltasForBodies(constraint.bodyA, constraint.bodyB);
-        const f32 invMassA = effectiveInvMass(bodies, constraint.bodyA);
-        const f32 invMassB = effectiveInvMass(bodies, constraint.bodyB);
-        f32& lambda = workBuffers_.distanceLambda(distanceIndex);
-        accumulateDistanceSpringCorrection(bodies,
-                                           constraint,
-                                           invMassA,
-                                           invMassB,
-                                           dt,
-                                           lambda,
-                                           positionDeltas);
-        workBuffers_.applyPositionDeltas(bodies);
-    }
+    solve_island_job(bodies,
+                     island,
+                     workBuffers_,
+                     distanceConstraints_,
+                     dt,
+                     params.contactCompliance,
+                     [](const RigidBodySoA& bodySoA, u32 index) {
+                         return effectiveInvMass(bodySoA, index);
+                     });
 }
 
 void PBDSolver::runConstraintIterations(RigidBodySoA& bodies, const SolverParams& params, f32 dt) {
@@ -206,11 +175,11 @@ void PBDSolver::runConstraintIterations(RigidBodySoA& bodies, const SolverParams
             }
         } else {
             fuse::jobs::parallel_for(0, islandCount, kIslandGrainSize, [&](u32 islandIndex) {
-                const ContactIslandGraph::Island& island = islandGraph_.island(islandIndex);
-                if (island.isEmpty()) {
+                const IslandSolveJob job = extract_island(islandGraph_, islandIndex);
+                if (job.empty || job.island == nullptr) {
                     return;
                 }
-                resolveIslandConstraints(bodies, island, params, dt);
+                resolveIslandConstraints(bodies, *job.island, params, dt);
             });
         }
 
@@ -296,12 +265,7 @@ void PBDSolver::step(RigidBodySoA& bodies,
         predict(bodies, params, subDt);
         generateContacts(bodies, shapes, params);
         if (substep == 0u) {
-            workBuffers_.clearLambdas();
-            for (u32 distanceIndex = 0; distanceIndex < distanceConstraints_.size(); ++distanceIndex) {
-                if (distanceIndex < priorDistanceLambdas.size()) {
-                    workBuffers_.seedDistanceLambda(distanceIndex, priorDistanceLambdas[distanceIndex]);
-                }
-            }
+            frame_lambda_warm_start(workBuffers_, distanceConstraints_, priorDistanceLambdas);
         }
         runConstraintIterations(bodies, params, subDt);
         updateVelocities(bodies, subDt);
