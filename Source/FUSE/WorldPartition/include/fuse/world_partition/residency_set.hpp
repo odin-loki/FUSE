@@ -2,6 +2,7 @@
 
 #include <fuse/types.hpp>
 #include <fuse/world_partition/grid_cell.hpp>
+#include <fuse/world_partition/streaming_budget.hpp>
 
 #include <algorithm>
 #include <unordered_map>
@@ -165,6 +166,24 @@ inline u32 ResidencySet::find_index_(GridCoord coord) const {
 [[nodiscard]] inline bool apply_residency_on_unload_complete(ResidencySet& set, GridCoord coord,
                                                               bool success) {
     return success ? try_remove_resident(set, coord) : false;
+}
+
+/// Pick the farthest coord from `candidates` eligible for budget eviction under `policy`.
+/// Returns `{0,0}` and leaves `out_score` at -1 when no candidate qualifies.
+template <typename ScoreFn>
+[[nodiscard]] inline GridCoord pick_budget_eviction_candidate(const std::vector<GridCoord>& candidates,
+                                                              ScoreFn&& score_fn, f32 incoming_priority,
+                                                              EvictionPolicy policy, f32& out_score) {
+    out_score = -1.f;
+    for (const GridCoord coord : candidates) {
+        const f32 score = score_fn(coord);
+        if (!can_evict_for_incoming(incoming_priority, score, policy)) {
+            continue;
+        }
+        out_score = score;
+        return coord;
+    }
+    return {};
 }
 
 } // namespace fuse::world_partition

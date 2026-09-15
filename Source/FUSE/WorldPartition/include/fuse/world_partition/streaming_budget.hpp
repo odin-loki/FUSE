@@ -3,6 +3,7 @@
 #include <fuse/types.hpp>
 
 #include <algorithm>
+#include <limits>
 
 namespace fuse::world_partition {
 
@@ -114,6 +115,29 @@ enum class EvictionPolicy : u8 {
         return static_cast<f32>(current_tick - last_touch_tick);
     }
     return unload_distance_priority;
+}
+
+/// True when an incoming load outranks a resident cell for budget eviction (closer wins).
+[[nodiscard]] inline bool incoming_outranks_eviction(f32 incoming_priority, f32 eviction_score) {
+    if (incoming_priority <= 0.f) {
+        return false;
+    }
+    if (incoming_priority >= std::numeric_limits<f32>::max()) {
+        return true;
+    }
+    return incoming_priority >= eviction_score;
+}
+
+/// True when a budget eviction candidate is eligible under distance policy pressure checks.
+[[nodiscard]] inline bool can_evict_for_incoming(f32 incoming_priority, f32 eviction_score,
+                                                EvictionPolicy policy) {
+    if (eviction_score <= 0.f) {
+        return false;
+    }
+    if (policy != EvictionPolicy::DistanceFromFocus) {
+        return true;
+    }
+    return incoming_outranks_eviction(incoming_priority, eviction_score);
 }
 
 } // namespace fuse::world_partition

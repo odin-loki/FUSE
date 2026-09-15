@@ -81,8 +81,9 @@ private:
     [[nodiscard]] bool queue_load_(GridCoord coord, f32 priority);
     void queue_unload_(GridCoord coord, f32 priority);
     void process_queues_();
-    void evict_for_budget_(f32 incoming_priority);
+    void evict_for_budget_(f32 incoming_priority, u64 incoming_bytes);
     [[nodiscard]] bool can_accept_load_(u64 incoming_bytes) const;
+    [[nodiscard]] WorldCell* find_budget_eviction_candidate_(f32 incoming_priority, f32& out_score);
     void touch_cell_(WorldCell& cell);
     [[nodiscard]] f32 eviction_score_for_(const WorldCell& cell) const;
     [[nodiscard]] f32 budget_eviction_score_for_(const WorldCell& cell) const;
