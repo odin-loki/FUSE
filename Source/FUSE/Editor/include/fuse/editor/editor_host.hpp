@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/editor/command_queue.hpp>
+#include <fuse/editor/undo_stack.hpp>
 #include <fuse/types.hpp>
 
 namespace fuse::editor {
@@ -12,6 +13,9 @@ public:
     CommandQueue& commandQueue() { return m_queue; }
     const CommandQueue& commandQueue() const { return m_queue; }
 
+    UndoStack& undoStack() { return m_undoStack; }
+    const UndoStack& undoStack() const { return m_undoStack; }
+
     void postFromUi(EditorCommand command);
     void gameTick();
 
@@ -19,6 +23,7 @@ public:
 
 private:
     CommandQueue m_queue;
+    UndoStack m_undoStack;
     u32 m_gameTickCount = 0;
 };
 
