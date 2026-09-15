@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/project/cook_dependency_graph.hpp>
 #include <fuse/project/cook_manifest.hpp>
 
 #include <string>
@@ -28,12 +29,6 @@ struct CookStageRecord {
     std::string note;
 };
 
-/// Directed edge: `from_job_id` must complete before `to_job_id` runs.
-struct CookJobDependencyEdge {
-    std::string from_job_id;
-    std::string to_job_id;
-};
-
 /// One manifest asset expanded into import → process → pack stages (B7.9 deepen stub).
 struct CookJob {
     std::string id;
@@ -47,13 +42,6 @@ struct CookJob {
     bool cache_hit = false;
     u64 content_hash = 0;
     std::string skip_note;
-};
-
-/// Topological ordering stub — Kahn with stable tie-breaking; empty order when cyclic.
-struct CookJobGraphOrderResult {
-    std::vector<std::string> order;
-    bool cycle_detected = false;
-    bool ok = true;
 };
 
 struct CookJobGraphExecuteResult {
@@ -77,9 +65,11 @@ public:
 
     [[nodiscard]] bool empty() const { return m_jobs.empty(); }
     [[nodiscard]] const std::vector<CookJob>& jobs() const { return m_jobs; }
-    [[nodiscard]] const std::vector<CookJobDependencyEdge>& edges() const { return m_edges; }
+    [[nodiscard]] const std::vector<CookJobDependencyEdge>& edges() const { return m_dep_graph.edges(); }
+    [[nodiscard]] const CookDependencyGraph& dependency_graph() const { return m_dep_graph; }
     [[nodiscard]] CookJobGraphOrderResult topological_order() const;
     [[nodiscard]] bool has_cycle() const;
+    [[nodiscard]] CookDependencyCycleResult cycle_edges() const;
 
     CookJobGraphExecuteResult execute(AssetCooker& cooker, const CookManifest& manifest);
 
@@ -94,7 +84,7 @@ private:
                          CookJobGraphExecuteResult& result);
 
     std::vector<CookJob> m_jobs;
-    std::vector<CookJobDependencyEdge> m_edges;
+    CookDependencyGraph m_dep_graph;
 };
 
 const char* cookStageKindName(CookStageKind kind);

@@ -3,6 +3,7 @@
 #include <fuse/project/asset_graph.hpp>
 #include <fuse/project/cook_cache.hpp>
 #include <fuse/project/cook_content_hash.hpp>
+#include <fuse/project/cook_dependency_graph.hpp>
 #include <fuse/project/cook_job_graph.hpp>
 #include <fuse/project/cook_manifest.hpp>
 #include <fuse/project/import_pipeline.hpp>
@@ -184,6 +185,99 @@ void testCookJobGraphImplicitOutputSourceEdge() {
     expectTrue(order.ok, "implicit edge graph orders ok");
     expectTrue(order.order.size() == 2u, "two jobs ordered via implicit edge");
     expectTrue(order.order[0] == entryA.output_path, "producer runs first via implicit edge");
+}
+
+void testCookDependencyGraphEmptyGuards() {
+    fuse::project::CookDependencyGraph graph;
+    expectTrue(graph.empty(), "default dependency graph is empty");
+    expectTrue(graph.node_count() == 0u, "empty graph has zero nodes");
+    expectTrue(graph.edge_count() == 0u, "empty graph has zero edges");
+    expectTrue(!graph.has_cycle(), "empty dependency graph has no cycle");
+
+    const fuse::project::CookJobGraphOrderResult order = graph.topological_order();
+    expectTrue(order.ok, "empty dependency graph topo ok");
+    expectTrue(order.order.empty(), "empty dependency graph topo order empty");
+
+    const fuse::project::CookDependencyCycleResult cycles = graph.detect_cycle_edges();
+    expectTrue(!cycles.cycle_detected, "empty dependency graph reports no cycle edges");
+    expectTrue(cycles.cycle_edges.empty(), "empty dependency graph cycle edge list empty");
+
+    expectTrue(!graph.add_edge("a", "b"), "edge rejected when nodes missing");
+    expectTrue(!graph.add_edge("", "b"), "edge rejected for empty from id");
+    expectTrue(!graph.add_edge("a", ""), "edge rejected for empty to id");
+
+    graph.add_node("solo");
+    expectTrue(!graph.empty(), "graph with one node is not empty");
+    expectTrue(!graph.add_edge("solo", "solo"), "self-loop edge rejected");
+    expectTrue(!graph.add_edge("solo", "missing"), "edge to unknown node rejected");
+    expectTrue(!graph.add_edge("missing", "solo"), "edge from unknown node rejected");
+
+    graph.add_node("next");
+    expectTrue(graph.add_edge("solo", "next"), "valid edge accepted");
+    expectTrue(graph.edge_count() == 1u, "one edge recorded");
+    expectTrue(!graph.add_edge("solo", "next"), "duplicate edge rejected");
+}
+
+void testCookDependencyGraphTopologicalOrder() {
+    fuse::project::CookDependencyGraph graph;
+    graph.add_node("a");
+    graph.add_node("b");
+    graph.add_node("c");
+    expectTrue(graph.add_edge("a", "b"), "a->b edge added");
+    expectTrue(graph.add_edge("a", "c"), "a->c edge added");
+    expectTrue(graph.add_edge("b", "c"), "b->c edge added");
+
+    const fuse::project::CookJobGraphOrderResult order = graph.topological_order();
+    expectTrue(order.ok, "diamond dependency graph topo ok");
+    expectTrue(!order.cycle_detected, "diamond dependency graph acyclic");
+    expectTrue(order.order.size() == 3u, "three nodes ordered");
+    expectTrue(order.order[0] == "a", "root precedes branches");
+    expectTrue(order.order[2] == "c", "merge node runs last");
+}
+
+void testCookDependencyGraphCycleEdges() {
+    fuse::project::CookDependencyGraph graph;
+    graph.add_node("a");
+    graph.add_node("b");
+    expectTrue(graph.add_edge("a", "b"), "forward edge added");
+    expectTrue(graph.add_edge("b", "a"), "back edge added");
+
+    const fuse::project::CookJobGraphOrderResult order = graph.topological_order();
+    expectTrue(!order.ok, "two-node cycle topo not ok");
+    expectTrue(order.cycle_detected, "two-node cycle detected");
+    expectTrue(order.order.empty(), "cyclic graph yields empty topo order");
+
+    const fuse::project::CookDependencyCycleResult cycles = graph.detect_cycle_edges();
+    expectTrue(cycles.cycle_detected, "cycle edge probe reports cycle");
+    expectTrue(!cycles.cycle_edges.empty(), "cycle edge probe returns back edges");
+    expectTrue(cycles.cycle_edges[0].from_job_id == "b", "back edge starts at b");
+    expectTrue(cycles.cycle_edges[0].to_job_id == "a", "back edge closes on a");
+}
+
+void testCookJobGraphCycleEdgesIntegration() {
+    fuse::project::CookManifest manifest;
+
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = "/tmp/fuse_b79_cycle_edge_a.obj";
+    entryA.output_path = "/tmp/fuse_b79_cycle_edge_a.fusemesh";
+    entryA.dependencies.push_back("/tmp/fuse_b79_cycle_edge_b.fusemesh");
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = "/tmp/fuse_b79_cycle_edge_b.obj";
+    entryB.output_path = "/tmp/fuse_b79_cycle_edge_b.fusemesh";
+    entryB.dependencies.push_back("/tmp/fuse_b79_cycle_edge_a.fusemesh");
+    manifest.assets.push_back(entryB);
+
+    fuse::project::CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    const fuse::project::CookDependencyCycleResult cycles = graph.cycle_edges();
+    expectTrue(cycles.cycle_detected, "manifest cycle exposes cycle edges");
+    expectTrue(cycles.cycle_edges.size() >= 1u, "at least one cycle edge reported");
+    expectTrue(graph.dependency_graph().node_count() == 2u, "dependency graph mirrors job count");
 }
 
 void testCookJobGraphCycleDetectDirect() {
@@ -897,6 +991,10 @@ int main() {
     testAssetGraphRoundTrip();
     testAssetCookerStub();
     testCookJobGraphEmpty();
+    testCookDependencyGraphEmptyGuards();
+    testCookDependencyGraphTopologicalOrder();
+    testCookDependencyGraphCycleEdges();
+    testCookJobGraphCycleEdgesIntegration();
     testCookJobGraphTopologicalOrderDirect();
     testCookJobGraphImplicitOutputSourceEdge();
     testCookJobGraphCycleDetectDirect();
