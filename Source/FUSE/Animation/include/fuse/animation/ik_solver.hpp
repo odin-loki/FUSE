@@ -24,8 +24,13 @@ struct TwoBoneIK {
     u32 end_bone = 0;
     vec3 target = {};
     vec3 pole_vector = {0.f, 1.f, 0.f, 0.f};
+    f32 reach_epsilon = 1e-4f;
 
-    void solve(Pose& pose, const Skeleton& skel);
+    /// Closed-form two-bone IK (O(1)). Returns false when bone indices are invalid.
+    bool solve(Pose& pose, const Skeleton& skel);
+
+    /// SoA variant — writes local positions for the three-bone chain, then recomputes world transforms.
+    bool solve(PoseSoA& pose, const Skeleton& skel);
 };
 
 } // namespace fuse::animation

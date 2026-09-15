@@ -2,6 +2,7 @@
 #include <fuse/animation/blend_tree.hpp>
 #include <fuse/animation/clip.hpp>
 #include <fuse/animation/ik_solver.hpp>
+#include <fuse/animation/retarget.hpp>
 #include <fuse/animation/skinning.hpp>
 #include <fuse/animation/skeleton.hpp>
 #include <fuse/core/init.hpp>
@@ -57,6 +58,45 @@ fuse::animation::Skeleton makeThreeBoneSkeleton() {
     grandchild.local_transform.data[13] = 1.f;
 
     skel.bones.push_back(grandchild);
+    skel.bone_count = 3;
+    return skel;
+}
+
+fuse::animation::Skeleton makeLimbSkeleton() {
+    fuse::animation::Skeleton skel;
+
+    fuse::animation::Bone root{};
+    std::strncpy(root.name, "hip", sizeof(root.name) - 1);
+    root.parent_index = -1;
+    root.local_transform = fuse::animation::mat4::identity();
+
+    fuse::animation::Bone knee{};
+    std::strncpy(knee.name, "knee", sizeof(knee.name) - 1);
+    knee.parent_index = 0;
+    knee.local_transform = fuse::animation::mat4::identity();
+    knee.local_transform.data[13] = 1.f;
+
+    fuse::animation::Bone ankle{};
+    std::strncpy(ankle.name, "ankle", sizeof(ankle.name) - 1);
+    ankle.parent_index = 1;
+    ankle.local_transform = fuse::animation::mat4::identity();
+    ankle.local_transform.data[13] = 1.f;
+
+    skel.bones = {root, knee, ankle};
+    skel.bone_count = 3;
+    return skel;
+}
+
+fuse::animation::Skeleton makeRetargetTargetSkeleton() {
+    fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+
+    fuse::animation::Bone prop{};
+    std::strncpy(prop.name, "prop", sizeof(prop.name) - 1);
+    prop.parent_index = 0;
+    prop.local_transform = fuse::animation::mat4::identity();
+    prop.local_transform.data[12] = 2.f;
+
+    skel.bones.push_back(prop);
     skel.bone_count = 3;
     return skel;
 }
@@ -412,6 +452,148 @@ void testPoseBufferClearReuse() {
     expectNear(pose.bone_world_transforms[1].data[13], 3.f, 1e-4f, "pose buffer reuse after clear and resize");
 }
 
+void testPoseSoAToPoseRoundtrip() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::PoseSoA soa = fuse::animation::PoseSoA::from_bind_pose(skel);
+    soa.local_positions[1] = {0.f, 4.f, 0.f, 0.f};
+    soa.compute_world_transforms(skel);
+
+    const fuse::animation::Pose pose = soa.to_pose();
+    expectTrue(pose.bone_count == soa.bone_count, "pose soa to_pose preserves bone count");
+    expectNear(pose.bone_world_transforms[1].data[13], 4.f, 1e-4f, "pose soa to_pose copies world transforms");
+}
+
+void testPoseSoAResizeDefaults() {
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::allocate(4);
+    pose.resize(3);
+    expectTrue(pose.bone_count == 3u, "pose resize sets bone count");
+    expectNear(pose.local_rotations[2].w, 1.f, 1e-4f, "pose resize seeds identity rotation");
+    expectNear(pose.local_scales[2].x, 1.f, 1e-4f, "pose resize seeds unit scale");
+
+    pose.resize(1);
+    expectTrue(pose.bone_count == 1u, "pose shrink reduces bone count");
+    expectTrue(pose.local_positions.size() == 1u, "pose shrink drops excess columns");
+}
+
+void testBlendPoseSoARotationScale() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::PoseSoA poseA = fuse::animation::PoseSoA::from_bind_pose(skel);
+    fuse::animation::PoseSoA poseB = fuse::animation::PoseSoA::from_bind_pose(skel);
+    poseA.local_scales[0] = {1.f, 1.f, 1.f, 0.f};
+    poseB.local_scales[0] = {3.f, 3.f, 3.f, 0.f};
+    poseB.local_rotations[0] = {0.f, 0.7071068f, 0.f, 0.7071068f};
+
+    fuse::animation::PoseSoA out = fuse::animation::PoseSoA::allocate(2);
+    fuse::animation::blend_pose_soa(poseA, poseB, 0.5f, out);
+    expectNear(out.local_scales[0].x, 2.f, 1e-4f, "blend_pose_soa lerps local scale");
+    expectNear(std::fabs(out.local_rotations[0].y), 0.3826834f, 0.05f, "blend_pose_soa lerps local rotation");
+}
+
+void testTwoBoneIKReachable() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+    fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
+
+    fuse::animation::TwoBoneIK ik;
+    ik.root_bone = 0;
+    ik.mid_bone = 1;
+    ik.end_bone = 2;
+    ik.target = {1.f, 1.f, 0.f, 0.f};
+    ik.pole_vector = {0.f, 0.f, 1.f, 0.f};
+    expectTrue(ik.solve(pose, skel), "two bone ik solves reachable target");
+
+    const fuse::animation::vec3 end = {
+        pose.bone_world_transforms[2].data[12],
+        pose.bone_world_transforms[2].data[13],
+        pose.bone_world_transforms[2].data[14],
+        0.f,
+    };
+    const fuse::f32 error = std::sqrt((end.x - ik.target.x) * (end.x - ik.target.x) +
+                                      (end.y - ik.target.y) * (end.y - ik.target.y) +
+                                      (end.z - ik.target.z) * (end.z - ik.target.z));
+    expectTrue(error < 0.05f, "two bone ik end effector reaches target");
+
+    const fuse::f32 upperLen = 1.f;
+    const fuse::f32 lowerLen = 1.f;
+    const fuse::animation::vec3 mid = {
+        pose.bone_world_transforms[1].data[12],
+        pose.bone_world_transforms[1].data[13],
+        pose.bone_world_transforms[1].data[14],
+        0.f,
+    };
+    const fuse::animation::vec3 root = {0.f, 0.f, 0.f, 0.f};
+    const fuse::f32 upperDist = std::sqrt((mid.x - root.x) * (mid.x - root.x) + (mid.y - root.y) * (mid.y - root.y) +
+                                          (mid.z - root.z) * (mid.z - root.z));
+    const fuse::f32 lowerDist = std::sqrt((end.x - mid.x) * (end.x - mid.x) + (end.y - mid.y) * (end.y - mid.y) +
+                                          (end.z - mid.z) * (end.z - mid.z));
+    expectNear(upperDist, upperLen, 0.05f, "two bone ik preserves upper length");
+    expectNear(lowerDist, lowerLen, 0.05f, "two bone ik preserves lower length");
+}
+
+void testTwoBoneIKUnreachableClamps() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+    fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
+
+    fuse::animation::TwoBoneIK ik;
+    ik.root_bone = 0;
+    ik.mid_bone = 1;
+    ik.end_bone = 2;
+    ik.target = {10.f, 0.f, 0.f, 0.f};
+    ik.pole_vector = {0.f, 1.f, 0.f, 0.f};
+    expectTrue(ik.solve(pose, skel), "two bone ik clamps unreachable target");
+
+    const fuse::animation::vec3 end = {
+        pose.bone_world_transforms[2].data[12],
+        pose.bone_world_transforms[2].data[13],
+        pose.bone_world_transforms[2].data[14],
+        0.f,
+    };
+    const fuse::f32 reach = std::sqrt(end.x * end.x + end.y * end.y + end.z * end.z);
+    expectNear(reach, 2.f, 0.05f, "two bone ik stretches to max reach when target is out of range");
+}
+
+void testTwoBoneIKSoA() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::from_bind_pose(skel);
+
+    fuse::animation::TwoBoneIK ik;
+    ik.root_bone = 0;
+    ik.mid_bone = 1;
+    ik.end_bone = 2;
+    ik.target = {0.5f, 1.5f, 0.f, 0.f};
+    ik.pole_vector = {0.f, 0.f, 1.f, 0.f};
+    expectTrue(ik.solve(pose, skel), "two bone ik soa path solves");
+
+    pose.compute_world_transforms(skel);
+    expectNear(pose.bone_world_transforms[2].data[12], ik.target.x, 0.05f, "two bone ik soa reaches target x");
+    expectNear(pose.bone_world_transforms[2].data[13], ik.target.y, 0.05f, "two bone ik soa reaches target y");
+}
+
+void testRetargetMapBuildByName() {
+    const fuse::animation::Skeleton source = makeTwoBoneSkeleton();
+    const fuse::animation::Skeleton target = makeRetargetTargetSkeleton();
+
+    const fuse::animation::RetargetMap map = fuse::animation::RetargetMap::build_by_name(source, target);
+    expectTrue(map.is_valid(), "retarget map is valid after name pairing");
+    expectTrue(map.bone_map.size() == 2u, "retarget map pairs shared bone names only");
+    expectTrue(map.source_bone_count == 2u, "retarget map records source bone count");
+    expectTrue(map.target_bone_count == 3u, "retarget map records target bone count");
+}
+
+void testRetargetApplyPoseSoA() {
+    const fuse::animation::Skeleton sourceSkel = makeTwoBoneSkeleton();
+    const fuse::animation::Skeleton targetSkel = makeRetargetTargetSkeleton();
+    const fuse::animation::RetargetMap map = fuse::animation::RetargetMap::build_by_name(sourceSkel, targetSkel);
+
+    fuse::animation::PoseSoA sourcePose = fuse::animation::PoseSoA::from_bind_pose(sourceSkel);
+    sourcePose.local_positions[1] = {0.f, 6.f, 0.f, 0.f};
+    sourcePose.compute_world_transforms(sourceSkel);
+
+    fuse::animation::PoseSoA targetPose = fuse::animation::PoseSoA::from_bind_pose(targetSkel);
+    map.apply_pose_soa(sourcePose, targetSkel, targetPose);
+    expectNear(targetPose.local_positions[1].y, 6.f, 1e-4f, "retarget copies mapped local translation");
+    expectNear(targetPose.bone_world_transforms[2].data[12], 2.f, 1e-4f, "retarget leaves unmapped prop bone at bind");
+}
+
 void testBlendPoseSoAReuse() {
     const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
     fuse::animation::PoseSoA poseA = fuse::animation::PoseSoA::from_bind_pose(skel);
@@ -465,7 +647,15 @@ int main() {
     testLayeredBlendWeights();
     testLayeredBlendUnmaskedBone();
     testPoseBufferClearReuse();
+    testPoseSoAToPoseRoundtrip();
+    testPoseSoAResizeDefaults();
+    testBlendPoseSoARotationScale();
     testBlendPoseSoAReuse();
+    testTwoBoneIKReachable();
+    testTwoBoneIKUnreachableClamps();
+    testTwoBoneIKSoA();
+    testRetargetMapBuildByName();
+    testRetargetApplyPoseSoA();
     testStateMachineTransition();
     testFabrikConverges();
     testSkinningCpuPath();
