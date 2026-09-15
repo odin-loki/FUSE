@@ -18,6 +18,10 @@ add_executable(fuse_vulkan_resources test_vulkan_resources.cpp)
 target_link_libraries(fuse_vulkan_resources PRIVATE fuse_rhi)
 add_test(NAME fuse_vulkan_resources COMMAND fuse_vulkan_resources)
 
+add_executable(fuse_bindless_descriptors test_bindless_descriptors.cpp)
+target_link_libraries(fuse_bindless_descriptors PRIVATE fuse_rhi)
+add_test(NAME fuse_bindless_descriptors COMMAND fuse_bindless_descriptors)
+
 add_executable(fuse_shader_pipeline test_shader_pipeline.cpp)
 target_link_libraries(fuse_shader_pipeline PRIVATE fuse_rhi)
 target_compile_definitions(fuse_shader_pipeline PRIVATE

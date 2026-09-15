@@ -12,11 +12,70 @@ static constexpr u32 kMaxTextures = 65536;
 static constexpr u32 kMaxBuffers = 65536;
 static constexpr u32 kMaxSamplers = 1024;
 
-/// Global descriptor table scaffolding — stub indices until B2.4 pipeline wiring.
+/// Vulkan bindless set layout bindings (master plan B2.3).
+static constexpr u32 kBindlessBindingStorageImages = 0;
+static constexpr u32 kBindlessBindingSampledImages = 1;
+static constexpr u32 kBindlessBindingSamplers = 2;
+static constexpr u32 kBindlessBindingStorageBuffers = 3;
+static constexpr u32 kBindlessBindingUniformBuffers = 4;
+
+enum class BindlessHeapKind : u8 {
+    Texture,
+    Buffer,
+    Sampler,
+};
+
+/// Generation-checked slot into a bindless heap table.
+struct BindlessSlotHandle {
+    BindlessHeapKind kind = BindlessHeapKind::Texture;
+    u32 index = UINT32_MAX;
+    u32 generation = 0;
+
+    bool isValid() const { return index != UINT32_MAX; }
+
+    bool operator==(const BindlessSlotHandle& other) const {
+        return kind == other.kind && index == other.index && generation == other.generation;
+    }
+
+    bool operator!=(const BindlessSlotHandle& other) const { return !(*this == other); }
+
+    static BindlessSlotHandle invalid() { return {}; }
+};
+
+/// Shader-visible descriptor array location for a heap slot.
+struct BindlessBindingIndex {
+    u32 binding = 0;
+    u32 arrayIndex = 0;
+};
+
+BindlessBindingIndex bindlessTextureBinding(u32 slotIndex, bool storage = false);
+BindlessBindingIndex bindlessBufferBinding(u32 slotIndex, bool uniform = false);
+BindlessBindingIndex bindlessSamplerBinding(u32 slotIndex);
+
+/// Packs binding + array index into a single u32 for material tables / push data.
+u32 packBindlessBindingIndex(u32 binding, u32 arrayIndex);
+bool unpackBindlessBindingIndex(u32 packed, u32& binding, u32& arrayIndex);
+
+/// Global descriptor table scaffolding — CPU heap with generation handles until B2.4 pool wiring.
 class BindlessDescriptors {
 public:
     void init(const VulkanDevice& device);
     void destroy(const VulkanDevice& device);
+
+    BindlessSlotHandle allocateTextureSlot(bool storage = false);
+    BindlessSlotHandle allocateBufferSlot();
+    BindlessSlotHandle allocateSamplerSlot();
+    void freeTextureSlot(BindlessSlotHandle handle);
+    void freeBufferSlot(BindlessSlotHandle handle);
+    void freeSamplerSlot(BindlessSlotHandle handle);
+
+    bool validateSlot(BindlessSlotHandle handle) const;
+    bool isSlotOccupied(BindlessHeapKind kind, u32 index) const;
+    u32 slotGeneration(BindlessHeapKind kind, u32 index) const;
+
+    /// Sparse table growth stub — never shrinks; rejects above per-kind caps.
+    bool resizeHeap(BindlessHeapKind kind, u32 newCapacity);
+    u32 heapCapacity(BindlessHeapKind kind) const;
 
     u32 registerTexture(const Texture& texture, bool storage = false);
     u32 registerBuffer(const Buffer& buffer);
@@ -33,13 +92,26 @@ public:
     u32 registeredSamplerCount() const;
 
 private:
+    struct Slot {
+        u32 generation = 0;
+        bool occupied = false;
+        bool storage = false;
+    };
+
+    BindlessSlotHandle allocateSlot(std::vector<Slot>& slots, std::vector<u32>& freeList, u32 maxCount,
+                                    BindlessHeapKind kind, bool storageFlag);
+    void freeSlot(std::vector<Slot>& slots, std::vector<u32>& freeList, BindlessSlotHandle handle);
+    const std::vector<Slot>& slotsFor(BindlessHeapKind kind) const;
+    std::vector<Slot>& slotsFor(BindlessHeapKind kind);
+    u32 maxCountFor(BindlessHeapKind kind) const;
+
     void* m_pool = nullptr;
     void* m_layout = nullptr;
     void* m_set = nullptr;
 
-    std::vector<u32> m_textureSlots;
-    std::vector<u32> m_bufferSlots;
-    std::vector<u32> m_samplerSlots;
+    std::vector<Slot> m_textureSlots;
+    std::vector<Slot> m_bufferSlots;
+    std::vector<Slot> m_samplerSlots;
     std::vector<u32> m_freeTextureIndices;
     std::vector<u32> m_freeBufferIndices;
     std::vector<u32> m_freeSamplerIndices;

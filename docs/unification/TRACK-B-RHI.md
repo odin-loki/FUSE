@@ -15,9 +15,13 @@
 | `GpuAllocator` | `include/fuse/renderer/vk/allocator.hpp` | Stub + VMA paths record alloc/free; `refreshVmaPoolStats()` |
 | `ResourceManager` | `include/fuse/renderer/resource_manager.hpp` | Ordered teardown: samplers → textures → user buffers → staging ring |
 | `HandleMap::forEachOccupied` | `include/fuse/handle_map.hpp` | Safe bulk destroy without mutating during iteration |
+| `BindlessDescriptors` | `include/fuse/renderer/vk/bindless.hpp` | Generation slot handles, binding-index helpers, sparse resize stub |
 | `test_rhi_resource_destroy_order` | `Source/FUSE/Renderer/tests/` | Headless destroy-order + stats hook acceptance |
+| `test_bindless_descriptors` | `Source/FUSE/Renderer/tests/` | Alloc/free reuse, generation bump, OOB reject, binding pack |
 
-**Not in scope (follow-up PRs):** Bindless descriptor pool (B2.4), async upload fences, CUDA shared allocations, real GPU memory budgets.
+**B2.3 bindless deepen:** `BindlessDescriptors` CPU heap — generation `BindlessSlotHandle`, alloc/free reuse, binding-index helpers, sparse `resizeHeap` stub. See `fuse_bindless_descriptors` tests.
+
+**Not in scope (follow-up PRs):** Real `VkDescriptorPool` updates (B2.4), async upload fences, CUDA shared allocations, real GPU memory budgets.
 
 ---
 
@@ -25,8 +29,8 @@
 
 ```bash
 cmake -B build -DFUSE_UMBRELLA=ON -DFUSE_BUILD_VULKAN=ON -DFUSE_BUILD_CORE_TESTS=ON
-cmake --build build --target fuse_rhi_resource_destroy_order fuse_vulkan_resources
-ctest --test-dir build -R 'fuse_rhi_resource_destroy_order|fuse_vulkan_resources'
+cmake --build build --target fuse_rhi_resource_destroy_order fuse_vulkan_resources fuse_bindless_descriptors
+ctest --test-dir build -R 'fuse_rhi_resource_destroy_order|fuse_vulkan_resources|fuse_bindless_descriptors'
 ```
 
 Optional VMA (developer machines):
@@ -86,6 +90,7 @@ Individual `destroyTexture` / `destroyBuffer` / `destroySampler` calls follow th
 |-------------|------------|----------|
 | `fuse_rhi_resource_destroy_order` | `fuse_rhi_resource_destroy_order` | Explicit destroy order, destroy-all, staging ring guard, stats + global hook |
 | `fuse_vulkan_resources` | `fuse_vulkan_resources` | Handle map generation, bindless recycle, create/destroy smoke |
+| `fuse_bindless_descriptors` | `fuse_bindless_descriptors` | Slot handle generations, binding helpers, sparse resize, legacy register API |
 
 All tests run headless — stub allocator path when VMA is absent; Lavapipe path when Vulkan ICD is available.
 
@@ -97,5 +102,6 @@ All tests run headless — stub allocator path when VMA is absent; Lavapipe path
 - [x] VMA pool stats hook surface + stub counters
 - [x] ResourceManager ordered destroy-all + CPU/headless tests
 - [x] Track doc (this file) + `TRACK-B-VULKAN.md` checklist update
+- [x] Bindless CPU heap deepen — generation handles, binding helpers, sparse resize stub
 - [ ] Bindless descriptor pool + real descriptor updates (B2.4 follow-up)
 - [ ] Async upload + fence completion (B2.3+)
