@@ -16,4 +16,18 @@ EffectDescriptor EffectDescriptor::makeSparkBurst() {
     return descriptor;
 }
 
+EffectDescriptor EffectDescriptor::makeMuzzleFlash() {
+    EffectDescriptor descriptor;
+    descriptor.id = "muzzle_flash";
+    descriptor.duration = 0.12f;
+    descriptor.loopCount = 1;
+
+    EffectEntry entry;
+    entry.effectTypeId = "light_flash";
+    entry.timing.lifetime = 0.12f;
+    entry.timing.fadeOut = 0.05f;
+    descriptor.entries.push_back(entry);
+    return descriptor;
+}
+
 } // namespace fuse::fx

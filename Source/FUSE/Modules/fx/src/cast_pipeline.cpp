@@ -107,6 +107,10 @@ void CastPipeline::enterPhase(CastInstance& instance, SpellPhase phase) {
     instance.phaseElapsed = 0.f;
     instance.state = stateForPhase(phase);
 
+    if (m_phaseEnterHook) {
+        m_phaseEnterHook(instance, phase);
+    }
+
     if (!isTimedPhase(phase)) {
         advanceInstance(instance, 0.f);
     }

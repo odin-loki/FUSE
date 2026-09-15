@@ -1,6 +1,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/fx/effect_descriptor.hpp>
 #include <fuse/fx/fx_composer.hpp>
+#include <fuse/fx/fx_defs.hpp>
 #include <fuse/fx/spell_descriptor.hpp>
 #include <fuse/handle.hpp>
 #include <fuse/object.hpp>
@@ -23,36 +24,54 @@ void expectTrue(bool condition, const char* message) {
 void testRegisterDescriptors() {
     fuse::fx::FxComposer composer;
     const fuse::fx::EffectDescriptor spark = fuse::fx::EffectDescriptor::makeSparkBurst();
+    const fuse::fx::EffectDescriptor muzzle = fuse::fx::EffectDescriptor::makeMuzzleFlash();
     const fuse::fx::SpellDescriptor fireball = fuse::fx::SpellDescriptor::makeFireball();
 
     expectTrue(composer.registerEffect(spark), "spark effect registers");
+    expectTrue(composer.registerEffect(muzzle), "muzzle flash effect registers");
     expectTrue(composer.registerSpell(fireball), "fireball spell registers");
-    expectTrue(composer.effectCount() == 1u, "one effect descriptor");
+    expectTrue(composer.effectCount() == 2u, "two effect descriptors");
     expectTrue(composer.spellCount() == 1u, "one spell descriptor");
     expectTrue(composer.findEffect("spark_burst") != nullptr, "spark effect lookup");
+    expectTrue(composer.findEffect("muzzle_flash") != nullptr, "muzzle flash effect lookup");
     expectTrue(composer.findSpell("fireball") != nullptr, "fireball spell lookup");
 }
 
-void testTickEffectAttachment() {
+void testSocketAttachAndTimeline() {
     fuse::fx::FxComposer composer;
     composer.registerEffect(fuse::fx::EffectDescriptor::makeSparkBurst());
+    composer.registerEffect(fuse::fx::EffectDescriptor::makeMuzzleFlash());
 
-    fuse::fx::FxSocket socket;
-    socket.kind = fuse::fx::FxSocketKind::Sprite2D;
-    socket.effectId = "spark_burst";
-    composer.attach(socket);
+    fuse::fx::FxSocket spriteSocket;
+    spriteSocket.kind = fuse::fx::FxSocketKind::Sprite2D;
+    spriteSocket.owner = fuse::Handle<fuse::Object>(10, 1);
+    spriteSocket.effectId = "spark_burst";
+    expectTrue(composer.attach(spriteSocket), "sprite socket attaches");
+
+    fuse::fx::FxSocket shapeSocket;
+    shapeSocket.kind = fuse::fx::FxSocketKind::Shape3D;
+    shapeSocket.owner = fuse::Handle<fuse::Object>(11, 1);
+    shapeSocket.effectId = "muzzle_flash";
+    expectTrue(composer.attach(shapeSocket), "shape socket attaches");
+
+    fuse::fx::FxSocket badSocket;
+    badSocket.effectId = "unknown_effect";
+    expectTrue(!composer.attach(badSocket), "unknown effect rejected");
+
+    expectTrue(composer.attachmentCount() == 2u, "two sockets attached");
+    expectTrue(composer.sockets().size() == 2u, "socket list size");
+    expectTrue(composer.effectTimeline().activeCount() == 2u, "two active effect playbacks");
 
     fuse::frame::FrameCtx ctx;
-    ctx.dt = 1.f / 60.f;
-    ctx.frameIndex = 1;
+    ctx.dt = 0.2f;
 
-    for (fuse::u32 frame = 0; frame < 5; ++frame) {
+    while (composer.effectTimeline().activeCount() > 0) {
         composer.tick(ctx);
-        ++ctx.frameIndex;
     }
 
-    expectTrue(composer.attachmentCount() == 1u, "one socket attached");
-    expectTrue(composer.tickCount() == 5u, "composer tick count advanced");
+    expectTrue(composer.effectTimeline().completedCount() == 2u, "both effects completed");
+    expectTrue(composer.effectTimeline().instances()[0].state == fuse::fx::EffectPlaybackState::Done,
+               "first playback done");
 }
 
 void testCastPipelineAndResiduals() {
@@ -82,6 +101,8 @@ void testCastPipelineAndResiduals() {
     expectTrue(composer.castPipeline().completedCount() == 1u, "cast completed");
     expectTrue(composer.castPipeline().instances()[0].state == fuse::fx::CastState::Done,
                "cast reached done state");
+    expectTrue(residualSpawns == 1u, "impact phase spawned one residual");
+    expectTrue(composer.residuals().activeCount() == 1u, "one active residual from cast");
 
     fuse::fx::ResidualEntry residue;
     residue.kind = fuse::fx::ResidualKind::Zodiac;
@@ -90,16 +111,43 @@ void testCastPipelineAndResiduals() {
     residue.fadeDuration = 0.2f;
     composer.residuals().enqueue(residue);
 
-    expectTrue(residualSpawns == 1u, "residual hook fired once");
-    expectTrue(composer.residuals().activeCount() == 1u, "one active residual");
+    expectTrue(residualSpawns == 2u, "manual residual hook fired");
+    expectTrue(composer.residuals().activeCount() == 2u, "two active residuals");
+
+    ctx.dt = 0.6f;
+    composer.tick(ctx);
+    expectTrue(composer.residuals().activeCount() == 1u, "short residual expired first");
+
+    ctx.dt = 3.f;
+    composer.tick(ctx);
+    expectTrue(composer.residuals().activeCount() == 0u, "cast residual expired after full lifetime");
+    expectTrue(composer.residuals().totalExpired() == 2u, "residual expiry counted");
+}
+
+void testFireballPhaseProgression() {
+    fuse::fx::FxComposer composer;
+    composer.registerSpell(fuse::fx::SpellDescriptor::makeFireball());
+
+    fuse::fx::CastBinding binding;
+    binding.caster = fuse::Handle<fuse::Object>(3, 1);
+    expectTrue(composer.beginCast("fireball", binding), "fireball cast begins");
+
+    fuse::frame::FrameCtx ctx;
+    ctx.dt = 0.1f;
 
     composer.tick(ctx);
-    expectTrue(composer.residuals().activeCount() == 1u, "residual still active mid-life");
+    expectTrue(composer.castPipeline().instances()[0].phase == fuse::fx::SpellPhase::Casting,
+               "starts in casting phase");
 
-    ctx.dt = 1.f;
+    ctx.dt = 0.3f;
     composer.tick(ctx);
-    expectTrue(composer.residuals().activeCount() == 0u, "residual expired after fade");
-    expectTrue(composer.residuals().totalExpired() == 1u, "residual expiry counted");
+    expectTrue(composer.castPipeline().instances()[0].phase == fuse::fx::SpellPhase::Casting,
+               "still casting before duration elapses");
+
+    ctx.dt = 0.2f;
+    composer.tick(ctx);
+    expectTrue(composer.castPipeline().instances()[0].phase == fuse::fx::SpellPhase::Delivery,
+               "instant launch phase advances to delivery");
 }
 
 } // namespace
@@ -107,8 +155,9 @@ void testCastPipelineAndResiduals() {
 int main() {
     fuse::core::initialize();
     testRegisterDescriptors();
-    testTickEffectAttachment();
+    testSocketAttachAndTimeline();
     testCastPipelineAndResiduals();
+    testFireballPhaseProgression();
     fuse::core::shutdown();
 
     if (g_failures == 0) {
