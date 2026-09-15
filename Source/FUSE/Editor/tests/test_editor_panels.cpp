@@ -227,14 +227,106 @@ void testMaterialEditorPanelEmptyCatalog() {
     panel.sync(state, 0u);
 
     expectTrue(panel.catalogCount() == 0u, "empty catalog reports zero materials");
+    expectTrue(panel.isCatalogEmpty(), "empty catalog helper reports empty");
+    expectTrue(!panel.hasSelectedMaterial(), "empty catalog has no selection");
     expectTrue(panel.selectedMaterialId() == fuse::editor::MaterialEditorPanel::kInvalidMaterialId,
-               "empty catalog has no selection");
+               "empty catalog has no selection id");
     expectTrue(!panel.propertyBinding().isBound(), "empty catalog keeps binding unbound");
+    expectTrue(!panel.propertyBinding().canPostProperty(), "empty catalog cannot post properties");
 
     fuse::editor::CommandStack cmds;
     expectTrue(!panel.selectMaterial(0u), "select fails on empty catalog");
     expectTrue(!panel.setRoughness(0.5f, cmds), "edit fails without selection");
     expectTrue(cmds.appliedCount() == 0u, "empty catalog posts no commands");
+}
+
+void testMaterialSlotValidationHelpers() {
+    expectTrue(fuse::editor::isMaterialCatalogEmpty(0u), "zero catalog count is empty");
+    expectTrue(!fuse::editor::isMaterialCatalogEmpty(3u), "non-zero catalog is not empty");
+
+    expectTrue(fuse::editor::isMaterialSlotValid(0u, 3u), "first slot valid in three-material catalog");
+    expectTrue(fuse::editor::isMaterialSlotValid(2u, 3u), "last slot valid in three-material catalog");
+    expectTrue(!fuse::editor::isMaterialSlotValid(3u, 3u), "out-of-range slot rejected");
+    expectTrue(!fuse::editor::isMaterialSlotValid(0u, 0u), "any slot invalid in empty catalog");
+
+    expectTrue(fuse::editor::isInvalidMaterialSlot(99u, 2u), "far out-of-range slot is invalid");
+    expectTrue(!fuse::editor::isInvalidMaterialSlot(1u, 2u), "in-range slot is not invalid");
+
+    expectTrue(fuse::editor::canBindMaterialSlot(0u, 2u), "first slot can bind");
+    expectTrue(!fuse::editor::canBindMaterialSlot(2u, 2u), "out-of-range slot cannot bind");
+    expectTrue(fuse::editor::kInvalidMaterialSlot == fuse::editor::MaterialPropertyBinding::kInvalidMaterialId,
+               "invalid slot sentinel matches binding sentinel");
+}
+
+void testMaterialEditorPanelInvalidSlotSelection() {
+    fuse::editor::EditorState state;
+    fuse::editor::MaterialEditorPanel panel;
+    panel.sync(state, 2u);
+
+    expectTrue(!panel.isCatalogEmpty(), "two-material catalog is not empty");
+    expectTrue(!panel.hasSelectedMaterial(), "panel starts without selection");
+
+    expectTrue(!panel.selectMaterial(2u), "select rejects out-of-range slot");
+    expectTrue(!panel.hasSelectedMaterial(), "invalid select leaves panel unselected");
+    expectTrue(!panel.propertyBinding().isBound(), "invalid select keeps binding unbound");
+
+    fuse::editor::CommandStack cmds;
+    expectTrue(!panel.setRoughness(0.5f, cmds), "edit fails after invalid select");
+    expectTrue(cmds.appliedCount() == 0u, "invalid slot posts no commands");
+
+    expectTrue(panel.selectMaterial(1u), "valid select succeeds");
+    expectTrue(panel.hasSelectedMaterial(), "valid select marks material selected");
+    expectTrue(panel.propertyBinding().canPostProperty(), "bound panel can post properties");
+}
+
+void testMaterialPropertyBindingTryGuards() {
+    fuse::editor::MaterialPropertyBinding binding;
+    fuse::f32 value = 0.f;
+    fuse::f32 r = 0.f;
+    fuse::f32 g = 0.f;
+    fuse::f32 b = 0.f;
+    fuse::editor::CommandStack cmds;
+
+    expectTrue(!binding.canPostProperty(), "unbound binding cannot post");
+    expectTrue(!binding.tryGetProperty(fuse::editor::MaterialPropertyId::Roughness, value),
+               "tryGetProperty fails when unbound");
+    expectTrue(!binding.trySetProperty(fuse::editor::MaterialPropertyId::Roughness, 0.5f, cmds),
+               "trySetProperty fails when unbound");
+    expectTrue(!binding.tryGetPropertyVec3(fuse::editor::MaterialPropertyId::BaseColor, r, g, b),
+               "tryGetPropertyVec3 fails when unbound");
+    expectTrue(!binding.trySetPropertyVec3(fuse::editor::MaterialPropertyId::BaseColor, 0.1f, 0.2f, 0.3f,
+                                          cmds),
+               "trySetPropertyVec3 fails when unbound");
+    expectTrue(cmds.appliedCount() == 0u, "try guards post no commands when unbound");
+
+    fuse::editor::EditorState state;
+    fuse::editor::MaterialEditorPanel panel;
+    panel.sync(state, 1u);
+    panel.selectMaterial(0u);
+    fuse::editor::MaterialPropertyBinding& bound = panel.propertyBinding();
+
+    expectTrue(bound.canPostProperty(), "bound panel binding can post");
+    expectTrue(bound.trySetProperty(fuse::editor::MaterialPropertyId::Roughness, 0.33f, cmds),
+               "trySetProperty succeeds when bound");
+    expectTrue(bound.tryGetProperty(fuse::editor::MaterialPropertyId::Roughness, value),
+               "tryGetProperty succeeds when bound");
+    expectTrue(value == 0.33f, "tryGetProperty returns edited value");
+
+    expectTrue(!bound.tryGetProperty(fuse::editor::MaterialPropertyId::BaseColor, value),
+               "tryGetProperty rejects vec3 property id");
+    expectTrue(!bound.trySetProperty(fuse::editor::MaterialPropertyId::BaseColor, 0.5f, cmds),
+               "trySetProperty rejects vec3 property id");
+}
+
+void testMaterialPropertyIdValidation() {
+    expectTrue(fuse::editor::isMaterialPropertyIdValid(fuse::editor::MaterialPropertyId::Roughness),
+               "roughness id is valid");
+    expectTrue(fuse::editor::isMaterialPropertyIdValid(fuse::editor::MaterialPropertyId::Metallic),
+               "metallic id is valid");
+    expectTrue(fuse::editor::isMaterialPropertyIdValid(fuse::editor::MaterialPropertyId::BaseColor),
+               "base color id is valid");
+    expectTrue(fuse::editor::isMaterialPropertyIdValid(fuse::editor::MaterialPropertyId::ShadingModel),
+               "shading model id is valid");
 }
 
 void testMaterialPropertyInspectEnumeration() {
@@ -406,6 +498,38 @@ void testPropertyInspectorMeshMaterialId() {
     scene.destroy();
 }
 
+void testPropertyInspectorMeshMaterialInvalidSlot() {
+    fuse::editor::EditorScene scene;
+    scene.init();
+
+    const fuse::ecs::EntityID entity = scene.registry().create();
+    scene.registry().add<fuse::ecs::Transform>(entity);
+    fuse::ecs::Mesh mesh{};
+    mesh.material_id = 0u;
+    scene.registry().add<fuse::ecs::Mesh>(entity, mesh);
+
+    fuse::editor::EditorState state;
+    state.primarySelection = entity;
+
+    fuse::editor::PropertyInspector inspector;
+    inspector.sync(state, scene);
+
+    fuse::editor::CommandStack cmds;
+    expectTrue(!inspector.trySetMeshMaterialId(3u, 2u, scene, cmds),
+               "invalid mesh slot rejected against catalog");
+    expectTrue(scene.registry().get<fuse::ecs::Mesh>(entity)->material_id == 0u,
+               "invalid slot edit leaves mesh material id unchanged");
+    expectTrue(cmds.appliedCount() == 0u, "invalid slot posts no command");
+
+    expectTrue(inspector.trySetMeshMaterialId(1u, 2u, scene, cmds),
+               "valid mesh slot accepted against catalog");
+    expectTrue(scene.registry().get<fuse::ecs::Mesh>(entity)->material_id == 1u,
+               "valid slot updates mesh material id");
+    expectTrue(cmds.appliedCount() == 1u, "valid slot posts one command");
+
+    scene.destroy();
+}
+
 void testMaterialPropertyBindingUnbound() {
     fuse::editor::MaterialPropertyBinding binding;
     expectTrue(!binding.isBound(), "default binding is unbound");
@@ -567,10 +691,15 @@ int main() {
     testMaterialEditStateBulkClamp();
     testMaterialPropertyBindingRefreshClamp();
     testMaterialEditorPanelEmptyCatalog();
+    testMaterialSlotValidationHelpers();
+    testMaterialEditorPanelInvalidSlotSelection();
+    testMaterialPropertyBindingTryGuards();
+    testMaterialPropertyIdValidation();
     testMaterialPropertyBindingClamp();
     testMaterialPropertyBindingDirtyCoalesce();
     testMaterialPropertyBindingUnbound();
     testPropertyInspectorMeshMaterialId();
+    testPropertyInspectorMeshMaterialInvalidSlot();
 #ifdef FUSE_VULKAN_BACKEND
     testMaterialEditorPanelMaterialSystemBridge();
 #endif

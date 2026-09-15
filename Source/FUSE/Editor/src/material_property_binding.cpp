@@ -206,6 +206,35 @@ bool MaterialPropertyBinding::setPropertyVec3(MaterialPropertyId id, f32 x, f32 
     return postProperty_(id, value, cmds);
 }
 
+bool MaterialPropertyBinding::tryGetProperty(MaterialPropertyId id, f32& out) const {
+    if (!canPostProperty() || !isMaterialPropertyIdValid(id)) {
+        return false;
+    }
+    return getProperty(id, out);
+}
+
+bool MaterialPropertyBinding::trySetProperty(MaterialPropertyId id, f32 value, CommandStack& cmds) {
+    if (!canPostProperty() || !isMaterialPropertyIdValid(id)) {
+        return false;
+    }
+    return setProperty(id, value, cmds);
+}
+
+bool MaterialPropertyBinding::tryGetPropertyVec3(MaterialPropertyId id, f32& x, f32& y, f32& z) const {
+    if (!canPostProperty() || !isMaterialPropertyIdValid(id) || id != MaterialPropertyId::BaseColor) {
+        return false;
+    }
+    return getPropertyVec3(id, x, y, z);
+}
+
+bool MaterialPropertyBinding::trySetPropertyVec3(MaterialPropertyId id, f32 x, f32 y, f32 z,
+                                               CommandStack& cmds) {
+    if (!canPostProperty() || !isMaterialPropertyIdValid(id) || id != MaterialPropertyId::BaseColor) {
+        return false;
+    }
+    return setPropertyVec3(id, x, y, z, cmds);
+}
+
 bool MaterialPropertyBinding::isPropertyDirty(MaterialPropertyId id) const {
     return (m_dirtyMask & propertyBit_(id)) != 0u;
 }
