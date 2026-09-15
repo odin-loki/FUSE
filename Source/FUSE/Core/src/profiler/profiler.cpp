@@ -89,6 +89,29 @@ u32 currentFlowNestingDepth() {
     return threadLocalFlowNestingDepth();
 }
 
+std::string formatCounterArgsJson(const ProfileEvent& event) {
+    std::string args = "\"args\":{\"value\":";
+    if (event.counterKind == CounterValueKind::Float) {
+        char valueBuffer[64];
+        std::snprintf(valueBuffer, sizeof(valueBuffer), "%.17g", event.counterFloatValue);
+        args += valueBuffer;
+    } else {
+        args += std::to_string(static_cast<long long>(event.counterIntValue));
+    }
+
+    if (event.nestingDepth > 0u) {
+        args += ",\"depth\":" + std::to_string(event.nestingDepth);
+    }
+    if (event.flowNestingDepth > 0u) {
+        args += ",\"flow_depth\":" + std::to_string(event.flowNestingDepth);
+    }
+    if (event.counterSnapshotFrame > 0u) {
+        args += ",\"snapshot_at_frame\":" + std::to_string(event.counterSnapshotFrame);
+    }
+    args += '}';
+    return args;
+}
+
 std::string escapeJsonString(const char* value) {
     std::string escaped;
     if (value == nullptr) {
@@ -279,6 +302,10 @@ u32 nextFlowId() {
 }
 
 void beginAsyncFlow(const char* name, u32 flowId) {
+    if (!g_enabled.load(std::memory_order_acquire)) {
+        return;
+    }
+
     const u32 flowDepth = pushFlowNestingDepth();
     recordEvent(name,
                 EventPhase::FlowStart,
@@ -288,6 +315,10 @@ void beginAsyncFlow(const char* name, u32 flowId) {
 }
 
 void endAsyncFlow(const char* name, u32 flowId) {
+    if (!g_enabled.load(std::memory_order_acquire)) {
+        return;
+    }
+
     const u32 flowDepth = currentFlowNestingDepth();
     recordEvent(name,
                 EventPhase::FlowFinish,
@@ -302,7 +333,7 @@ void sampleCounter(const char* track, s64 value) {
                 EventPhase::Counter,
                 0u,
                 currentNestingDepth(),
-                0u,
+                currentFlowNestingDepth(),
                 CounterValueKind::Int,
                 value,
                 0.0,
@@ -314,7 +345,7 @@ void sampleCounterFloat(const char* track, f64 value) {
                 EventPhase::Counter,
                 0u,
                 currentNestingDepth(),
-                0u,
+                currentFlowNestingDepth(),
                 CounterValueKind::Float,
                 0,
                 value,
@@ -326,7 +357,7 @@ void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
                 EventPhase::Counter,
                 0u,
                 currentNestingDepth(),
-                0u,
+                currentFlowNestingDepth(),
                 CounterValueKind::Int,
                 value,
                 0.0,
@@ -338,7 +369,7 @@ void sampleCounterFloatSnapshotAtFrame(const char* track, f64 value) {
                 EventPhase::Counter,
                 0u,
                 currentNestingDepth(),
-                0u,
+                currentFlowNestingDepth(),
                 CounterValueKind::Float,
                 0,
                 value,
@@ -497,116 +528,24 @@ std::string exportChromeTraceJson() {
                               event.scopeId);
             }
             break;
-        case EventPhase::Counter:
-            if (event.counterKind == CounterValueKind::Float) {
-                if (event.counterSnapshotFrame > 0u && event.nestingDepth > 0u) {
-                    std::snprintf(buffer,
-                                  sizeof(buffer),
-                                  "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
-                                  "\"tid\":%u,\"args\":{\"value\":%.17g,\"depth\":%u,"
-                                  "\"snapshot_at_frame\":%u}}",
-                                  first ? "" : ",",
-                                  escapedName.c_str(),
-                                  category,
-                                  phase,
-                                  static_cast<unsigned long long>(timestampUs),
-                                  event.threadId,
-                                  event.counterFloatValue,
-                                  event.nestingDepth,
-                                  event.counterSnapshotFrame);
-                } else if (event.counterSnapshotFrame > 0u) {
-                    std::snprintf(buffer,
-                                  sizeof(buffer),
-                                  "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
-                                  "\"tid\":%u,\"args\":{\"value\":%.17g,\"snapshot_at_frame\":%u}}",
-                                  first ? "" : ",",
-                                  escapedName.c_str(),
-                                  category,
-                                  phase,
-                                  static_cast<unsigned long long>(timestampUs),
-                                  event.threadId,
-                                  event.counterFloatValue,
-                                  event.counterSnapshotFrame);
-                } else if (event.nestingDepth > 0u) {
-                    std::snprintf(buffer,
-                                  sizeof(buffer),
-                                  "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
-                                  "\"tid\":%u,\"args\":{\"value\":%.17g,\"depth\":%u}}",
-                                  first ? "" : ",",
-                                  escapedName.c_str(),
-                                  category,
-                                  phase,
-                                  static_cast<unsigned long long>(timestampUs),
-                                  event.threadId,
-                                  event.counterFloatValue,
-                                  event.nestingDepth);
-                } else {
-                    std::snprintf(buffer,
-                                  sizeof(buffer),
-                                  "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
-                                  "\"tid\":%u,\"args\":{\"value\":%.17g}}",
-                                  first ? "" : ",",
-                                  escapedName.c_str(),
-                                  category,
-                                  phase,
-                                  static_cast<unsigned long long>(timestampUs),
-                                  event.threadId,
-                                  event.counterFloatValue);
-                }
-            } else if (event.counterSnapshotFrame > 0u && event.nestingDepth > 0u) {
-                std::snprintf(buffer,
-                              sizeof(buffer),
-                              "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
-                              "\"tid\":%u,\"args\":{\"value\":%lld,\"depth\":%u,\"snapshot_at_frame\":%u}}",
-                              first ? "" : ",",
-                              escapedName.c_str(),
-                              category,
-                              phase,
-                              static_cast<unsigned long long>(timestampUs),
-                              event.threadId,
-                              static_cast<long long>(event.counterIntValue),
-                              event.nestingDepth,
-                              event.counterSnapshotFrame);
-            } else if (event.counterSnapshotFrame > 0u) {
-                std::snprintf(buffer,
-                              sizeof(buffer),
-                              "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
-                              "\"tid\":%u,\"args\":{\"value\":%lld,\"snapshot_at_frame\":%u}}",
-                              first ? "" : ",",
-                              escapedName.c_str(),
-                              category,
-                              phase,
-                              static_cast<unsigned long long>(timestampUs),
-                              event.threadId,
-                              static_cast<long long>(event.counterIntValue),
-                              event.counterSnapshotFrame);
-            } else if (event.nestingDepth > 0u) {
-                std::snprintf(buffer,
-                              sizeof(buffer),
-                              "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
-                              "\"tid\":%u,\"args\":{\"value\":%lld,\"depth\":%u}}",
-                              first ? "" : ",",
-                              escapedName.c_str(),
-                              category,
-                              phase,
-                              static_cast<unsigned long long>(timestampUs),
-                              event.threadId,
-                              static_cast<long long>(event.counterIntValue),
-                              event.nestingDepth);
-            } else {
-                std::snprintf(buffer,
-                              sizeof(buffer),
-                              "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
-                              "\"tid\":%u,\"args\":{\"value\":%lld}}",
-                              first ? "" : ",",
-                              escapedName.c_str(),
-                              category,
-                              phase,
-                              static_cast<unsigned long long>(timestampUs),
-                              event.threadId,
-                              static_cast<long long>(event.counterIntValue));
-            }
-            break;
+        case EventPhase::Counter: {
+            char counterHeader[512];
+            std::snprintf(counterHeader,
+                          sizeof(counterHeader),
+                          "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
+                          "\"tid\":%u,",
+                          first ? "" : ",",
+                          escapedName.c_str(),
+                          category,
+                          phase,
+                          static_cast<unsigned long long>(timestampUs),
+                          event.threadId);
+            json += counterHeader;
+            json += formatCounterArgsJson(event);
+            json += '}';
+            first = false;
+            continue;
+        }
         }
         json += buffer;
         first = false;
