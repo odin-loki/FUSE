@@ -31,13 +31,13 @@ CPU-first skeletal animation scaffolding for Track B7.1. Implements the P7 pipel
 
 ## Blend tree (stub)
 
-- **BlendSpace1D / 2D** — parameter sampling via `sample_blend_space_1d/2d`, evaluated through `evaluate_soa`; empty entry lists fall back to bind pose.
+- **BlendSpace1D / 2D** — parameter sampling via `sample_blend_space_1d/2d`, evaluated through `evaluate_soa`; empty entry lists fall back to bind pose via `finalize_weighted_pose_soa`.
 - **LayeredBlendNode** — masked override blend over a base pose in SoA local TRS.
-- **AdditiveBlendNode** — masked bind-relative local TRS delta via `add_pose_soa`.
-- **AnimStateMachine** — `on_enter` / `on_exit` callbacks (initial state enters on first tick), crossfade weight via `crossfade_alpha()`, zero-duration instant snap, `reset()` for state rewind.
+- **AdditiveBlendNode** — masked bind-relative local TRS delta via `add_pose_soa` (`layer_weight` clamped to `[0, 1]`).
+- **AnimStateMachine** — `on_enter` / `on_exit` callbacks (initial state enters on first tick), crossfade weight via `crossfade_alpha()`, zero-duration instant snap, `reset()` for state rewind, and `find_state_index` / `outgoing_transition_count` / `has_transition` edge queries.
 
 ## Tests
 
-`fuse_animation_tests` (`ctest` name `fuse_animation_runtime`) covers skeleton hierarchy, `PoseSoA` propagation, roundtrip, resize defaults, buffer clear/reuse, `blend_pose_soa` / `accumulate_weighted_pose_soa` / `copy_pose_soa_local`, clip evaluate/sample, blend interpolation and weight clamping, empty blend-tree fallbacks, 1D/2D blend spaces and parameter sampling, `evaluate_soa`, layered and additive mask weight sweeps, state enter/exit, initial `on_enter`, zero-duration snap, self-transition rejection, crossfade non-interrupt, two-bone IK reach/clamp/in-place/empty-skeleton (AoS + SoA), retarget map pairing/identity/empty-skeleton/apply, FABRIK convergence, skinning, and animator ticks without GPU or editor dependencies.
+`fuse_animation_tests` (`ctest` name `fuse_animation_runtime`) covers skeleton hierarchy, `PoseSoA` propagation, roundtrip, resize defaults, buffer clear/reuse, `blend_pose_soa` / `accumulate_weighted_pose_soa` / `finalize_weighted_pose_soa` / `copy_pose_soa_local`, clip evaluate/sample, blend interpolation and weight clamping, empty clip/1D/2D blend-tree fallbacks, 1D/2D blend spaces and parameter sampling, `evaluate_soa`, layered and additive mask weight sweeps, state enter/exit, initial `on_enter`, zero-duration snap, self-transition rejection, transition edge queries, false-condition guard, first-transition priority, `reset()`, crossfade non-interrupt, two-bone IK reach/clamp/in-place/empty-skeleton (AoS + SoA), retarget map pairing/identity/empty-skeleton/apply, FABRIK convergence, skinning, and animator ticks without GPU or editor dependencies.
 
 Track B narrative: [docs/unification/TRACK-B-ANIMATION.md](../../../docs/unification/TRACK-B-ANIMATION.md).

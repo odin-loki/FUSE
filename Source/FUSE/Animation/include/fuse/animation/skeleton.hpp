@@ -61,6 +61,13 @@ void accumulate_weighted_pose_soa(PoseSoA& result,
                                   const PoseSoA& entry,
                                   f32 weight);
 
+/// Finalize a weighted accumulation: bind pose when no weight was contributed, otherwise
+/// recompute world transforms from the accumulated local TRS columns.
+void finalize_weighted_pose_soa(PoseSoA& pose,
+                                f32 accumulated_weight,
+                                const Skeleton& skel,
+                                PoseSoA& out);
+
 /// Additive local TRS delta from bind pose: out = base + weight * (delta - bind) on masked bones.
 void add_pose_soa(const PoseSoA& base,
                   const PoseSoA& delta,

@@ -136,6 +136,15 @@ struct AnimStateMachine : BlendNode {
 
     /// Reset to the first state without firing enter/exit callbacks.
     void reset();
+
+    /// Lookup a state index by name; returns -1 when not found.
+    s32 find_state_index(const char* name) const;
+
+    /// Count registered transitions whose source state matches `from_state`.
+    u32 outgoing_transition_count(u32 from_state) const;
+
+    /// True when a transition edge exists from `from_state` to `to_state`.
+    bool has_transition(u32 from_state, u32 to_state) const;
 };
 
 } // namespace fuse::animation
