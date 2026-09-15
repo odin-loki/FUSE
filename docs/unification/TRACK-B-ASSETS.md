@@ -36,7 +36,7 @@
 
 ### Cook job graph (B7.9 deepen)
 
-Each manifest asset expands into a three-stage job: **import** (source validation) → **process** (kind-specific stub transform) → **pack** (`cook_entry`). `CookJobGraph::build_from_manifest` records explicit manifest dependencies plus implicit edges when one job's `output_path` feeds another's `source_path`. `execute` topologically orders jobs (Kahn's algorithm with stable tie-breaking), **rejects cyclic graphs** via `has_cycle()` / `cycle_detected`, runs stages sequentially, and **short-circuits** remaining stages on failure. Dependent jobs are skipped when an upstream job fails. `CookJobGraphExecuteResult` reports `failed_job_id`, `failed_stage`, `cycle_detected`, and `failure_note`; `AssetCooker::cook_manifest` routes through the graph and maps stage summaries into `CookRecord::note`.
+Each manifest asset expands into a three-stage job: **import** (source validation) → **process** (kind-specific stub transform) → **pack** (`cook_entry`). `CookJobGraph::build_from_manifest` records explicit manifest dependencies plus implicit edges when one job's `output_path` feeds another's `source_path`. `topological_order()` (Kahn with stable tie-breaking) and `has_cycle()` expose ordering/cycle stubs without running cooks; `execute` reuses the same ordering, **rejects cyclic graphs** via `cycle_detected`, runs stages sequentially, and **short-circuits** remaining stages on failure. Dependent jobs are skipped when an upstream job fails. `CookJobGraphExecuteResult` reports `failed_job_id`, `failed_stage`, `cycle_detected`, and `failure_note`; `AssetCooker::cook_manifest` routes through the graph and maps stage summaries into `CookRecord::note`.
 
 ### Content-hash cook cache (B7.9 deepen)
 
@@ -114,7 +114,7 @@ ctest --test-dir build --output-on-failure -R fuse_assets
 
 | Target | Validates |
 |--------|-----------|
-| `fuse_assets_b79` | Cook manifest parse, asset graph save/load, cooker stub, job graph linear chain + diamond DAG ordering, cycle reject, failure short-circuit, content-hash cache hit/miss + mtime keys + empty-key guards + upstream/chain invalidation, pipeline dry-run, project plan |
+| `fuse_assets_b79` | Cook manifest parse, asset graph save/load, cooker stub, job graph empty/topo/cycle stubs + implicit edges + linear chain + diamond DAG ordering, cycle reject, failure short-circuit, content-hash cache hit/miss + mtime keys + empty-key guards + upstream/chain invalidation, pipeline dry-run, project plan |
 
 Run:
 
