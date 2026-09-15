@@ -6,9 +6,11 @@
 #include <fuse/vfx/particle_soa_ops.hpp>
 #include <fuse/vfx/particle_system.hpp>
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace {
 
@@ -996,6 +998,135 @@ void testParticleGpuFramePlan() {
     expectTrue(gpu.validateAgainstLayout(0x8000u, 256u), "frame plan gpuPointers match layout");
 }
 
+void testParticleGpuColumnSpanChain() {
+    using fuse::vfx::ParticleGpuBufferLayout;
+    using fuse::vfx::ParticleGpuColumn;
+
+    const fuse::u32 capacities[] = {1u, 17u, 65u, 256u};
+    for (const fuse::u32 capacity : capacities) {
+        expectTrue(ParticleGpuBufferLayout::validateColumnSpanChain(capacity),
+                   "column span chain is contiguous and aligned");
+
+        const std::array<fuse::vfx::ParticleGpuColumnSpan, 8> spans =
+            ParticleGpuBufferLayout::collectColumnSpans(capacity);
+        expectEq(static_cast<fuse::u32>(spans.size()), 8u, "collectColumnSpans returns eight columns");
+
+        fuse::usize previous_end = 0u;
+        for (fuse::u32 index = 0; index < spans.size(); ++index) {
+            const fuse::vfx::ParticleGpuColumnSpan& span = spans[index];
+            expectTrue(span.offset >= previous_end, "column spans do not overlap");
+            expectEq(span.slot_count, capacity, "column span covers full capacity");
+            expectEq(static_cast<fuse::u32>(span.element_size),
+                     static_cast<fuse::u32>(ParticleGpuBufferLayout::elementSize(static_cast<ParticleGpuColumn>(index))),
+                     "column span element size matches layout");
+            previous_end = span.endOffset();
+        }
+
+        const fuse::usize alive_end =
+            spans.back().endOffset() +
+            ParticleGpuBufferLayout::paddingAfterColumn(ParticleGpuColumn::AliveFlags, capacity);
+        expectEq(static_cast<fuse::u32>(alive_end),
+                 static_cast<fuse::u32>(ParticleGpuBufferLayout::packedDeviceBytes(capacity)),
+                 "final column span plus tail padding matches packed SSBO size");
+    }
+
+    expectTrue(!ParticleGpuBufferLayout::validateColumnSpanChain(0u), "zero capacity span chain is invalid");
+}
+
+void testParticleGpuDispatchPaddingThreadGuards() {
+    using fuse::vfx::ParticleGpuBufferLayout;
+    using fuse::vfx::ParticleGpuDispatch;
+    using fuse::vfx::particle_gpu_util::isPaddingThread;
+    using fuse::vfx::particle_gpu_util::threadCoversElement;
+
+    expectTrue(!threadCoversElement(0u, 0u), "threadCoversElement rejects zero elements");
+    expectTrue(!isPaddingThread(0u, 0u), "isPaddingThread rejects zero elements");
+    expectTrue(threadCoversElement(99u, 100u), "threadCoversElement accepts in-range index");
+    expectTrue(!threadCoversElement(100u, 100u), "threadCoversElement rejects out-of-range index");
+    expectTrue(isPaddingThread(100u, 100u), "isPaddingThread flags out-of-range index");
+    expectTrue(!isPaddingThread(99u, 100u), "isPaddingThread accepts in-range index");
+
+    const fuse::vfx::ParticleGpuDispatch partial = ParticleGpuDispatch::forSimulate(100u);
+    expectEq(partial.firstSimPaddingThread(100u), 100u, "first sim padding thread starts at slot count");
+    expectTrue(!partial.isSimPaddingThread(99u, 100u), "last covered sim thread is not padding");
+    expectTrue(partial.isSimPaddingThread(100u, 100u), "first sim padding thread is flagged");
+    expectTrue(partial.isSimPaddingThread(255u, 100u), "last sim padding thread is flagged");
+    expectTrue(!partial.isSimPaddingThread(0u, 0u), "zero slot sim has no padding threads");
+
+    const fuse::vfx::ParticleGpuDispatch emit = ParticleGpuDispatch::forEmit(200u);
+    expectEq(emit.firstEmitPaddingThread(200u), 200u, "first emit padding thread starts at emit count");
+    expectTrue(!emit.isEmitPaddingThread(199u, 200u), "last covered emit thread is not padding");
+    expectTrue(emit.isEmitPaddingThread(200u, 200u), "first emit padding thread is flagged");
+    expectTrue(!emit.isEmitPaddingThread(0u, 0u), "zero emit has no padding threads");
+
+    const fuse::vfx::ParticleGpuDispatch exact =
+        ParticleGpuDispatch::forSimulate(ParticleGpuBufferLayout::kSimBlockSize);
+    expectEq(exact.firstSimPaddingThread(ParticleGpuBufferLayout::kSimBlockSize),
+             ParticleGpuBufferLayout::kSimBlockSize,
+             "exact sim grid starts padding at capacity");
+    expectTrue(!exact.isSimPaddingThread(ParticleGpuBufferLayout::kSimBlockSize - 1u,
+                                          ParticleGpuBufferLayout::kSimBlockSize),
+               "exact sim grid has no padding threads");
+}
+
+void testParticleGpuMirrorSyncGuards() {
+    using fuse::vfx::ParticleGpuBufferLayout;
+    using fuse::vfx::ParticleGpuSyncGuard;
+
+    fuse::vfx::ParticleSoA cpu{};
+    fuse::vfx::particle_soa::init(cpu, 8u);
+
+    fuse::vfx::ParticleGpuMirror mirror{};
+    expectEq(static_cast<fuse::u32>(mirror.syncGuardForCpu(cpu)),
+             static_cast<fuse::u32>(ParticleGpuSyncGuard::MirrorUninitialized),
+             "uninitialized mirror reports mirror guard");
+    expectTrue(mirror.canSyncFromCpuSoA(cpu), "uninitialized mirror can resize-sync from CPU");
+    expectTrue(!mirror.canWriteToCpuSoA(cpu), "uninitialized mirror cannot write to CPU");
+    expectTrue(mirror.trySyncFromCpuSoA(cpu), "trySyncFromCpuSoA resizes uninitialized mirror");
+    expectEq(mirror.capacity, 8u, "trySyncFromCpuSoA sets mirror capacity");
+    expectEq(static_cast<fuse::u32>(mirror.syncGuardForCpu(cpu)),
+             static_cast<fuse::u32>(ParticleGpuSyncGuard::Ok),
+             "synced mirror reports ok guard");
+
+    fuse::vfx::ParticleSoA smaller{};
+    fuse::vfx::particle_soa::init(smaller, 4u);
+    expectEq(static_cast<fuse::u32>(mirror.syncGuardForCpu(smaller)),
+             static_cast<fuse::u32>(ParticleGpuSyncGuard::CapacityMismatch),
+             "capacity mismatch reports mismatch guard");
+    expectTrue(!mirror.trySyncFromCpuSoA(smaller), "trySyncFromCpuSoA rejects capacity mismatch");
+    expectEq(static_cast<fuse::u32>(mirror.writeGuardForCpu(smaller)),
+             static_cast<fuse::u32>(ParticleGpuSyncGuard::CapacityMismatch),
+             "write guard rejects capacity mismatch");
+
+    fuse::vfx::ParticleSoA empty{};
+    expectEq(static_cast<fuse::u32>(mirror.syncGuardForCpu(empty)),
+             static_cast<fuse::u32>(ParticleGpuSyncGuard::CpuUninitialized),
+             "empty CPU reports cpu guard");
+    expectTrue(!mirror.trySyncFromCpuSoA(empty), "trySyncFromCpuSoA rejects empty CPU");
+
+    expectTrue(ParticleGpuBufferLayout::syncGuardName(ParticleGpuSyncGuard::Ok) != nullptr,
+               "sync guard name is defined");
+    expectTrue(std::strcmp(ParticleGpuBufferLayout::syncGuardName(ParticleGpuSyncGuard::CapacityMismatch),
+                           "capacity_mismatch") == 0,
+               "sync guard name matches mismatch reason");
+}
+
+void testParticleGpuFramePlanPaddingAndBuffers() {
+    const fuse::vfx::ParticleGpuFramePlan plan = fuse::vfx::ParticleGpuFramePlan::forStub(100u, 200u, 48u);
+    expectTrue(plan.buffersSizedForCapacity(), "frame plan buffers match capacity sizing");
+    expectEq(plan.simPaddingThreadCount(), 156u, "frame plan reports sim padding threads");
+    expectEq(plan.emitPaddingThreadCount(), 56u, "frame plan reports emit padding threads");
+
+    fuse::vfx::ParticleGpuFramePlan mismatched = plan;
+    mismatched.buffers.deviceBytes -= 16u;
+    expectTrue(!mismatched.buffersSizedForCapacity(), "undersized buffer fails sizing guard");
+
+    const fuse::vfx::ParticleGpuFramePlan idle = fuse::vfx::ParticleGpuFramePlan::forStub(0u, 0u, 0u);
+    expectEq(idle.simPaddingThreadCount(), 0u, "idle frame has zero sim padding");
+    expectEq(idle.emitPaddingThreadCount(), 0u, "idle frame has zero emit padding");
+    expectTrue(idle.buffersSizedForCapacity(), "idle frame buffers still validate");
+}
+
 void testParticleGpuMirrorSyncAndWriteGuard() {
     fuse::vfx::ParticleEmitter emitter{};
     fuse::vfx::ParticleEmitterDesc desc{};
@@ -1609,6 +1740,10 @@ int main() {
     testParticleGpuColumnSpan();
     testParticleGpuSoAValidation();
     testParticleGpuDispatchPaddingAndSkip();
+    testParticleGpuColumnSpanChain();
+    testParticleGpuDispatchPaddingThreadGuards();
+    testParticleGpuMirrorSyncGuards();
+    testParticleGpuFramePlanPaddingAndBuffers();
     testParticleGpuFramePlan();
     testParticleGpuMirrorSyncAndWriteGuard();
     testParticleGpuPointerBundle();

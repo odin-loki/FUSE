@@ -4,9 +4,18 @@
 #include <fuse/types.hpp>
 #include <fuse/vfx/particle_emitter.hpp>
 
+#include <array>
 #include <vector>
 
 namespace fuse::vfx {
+
+/// CPU mirror sync preconditions for stub tests — production upload paths use the same guards.
+enum class ParticleGpuSyncGuard : u8 {
+    Ok,
+    MirrorUninitialized,
+    CpuUninitialized,
+    CapacityMismatch,
+};
 
 /// GPU SoA column identifiers — mirrors P7 `ParticleSoAGPU` device arrays.
 enum class ParticleGpuColumn : u8 {
@@ -69,7 +78,10 @@ struct ParticleGpuBufferLayout {
     static u64 columnDeviceAddress(ParticleGpuColumn column, u64 base, u32 capacity);
     static bool validatePackedLayout(u32 capacity);
     static bool isColumnOffsetAligned(ParticleGpuColumn column, u32 capacity);
+    static bool validateColumnSpanChain(u32 capacity);
+    static std::array<ParticleGpuColumnSpan, 8> collectColumnSpans(u32 capacity);
     static const char* columnName(ParticleGpuColumn column);
+    static const char* syncGuardName(ParticleGpuSyncGuard guard);
 };
 
 /// CUDA launch grid bookkeeping for simulate/emit kernels.
@@ -97,6 +109,10 @@ struct ParticleGpuDispatch {
     }
     [[nodiscard]] u32 simPaddingThreads(u32 capacity) const;
     [[nodiscard]] u32 emitPaddingThreads(u32 emit_count) const;
+    [[nodiscard]] u32 firstSimPaddingThread(u32 slot_count) const;
+    [[nodiscard]] u32 firstEmitPaddingThread(u32 emit_count) const;
+    [[nodiscard]] bool isSimPaddingThread(u32 global_thread_index, u32 slot_count) const;
+    [[nodiscard]] bool isEmitPaddingThread(u32 global_thread_index, u32 emit_count) const;
 };
 
 /// Logical GPU buffer handles — production wiring maps these to `renderer::BufferHandle`.
@@ -125,6 +141,12 @@ struct ParticleGpuMirror {
     void reserve(u32 particle_capacity);
     void clear();
     void syncFromCpuSoA(const ParticleSoA& cpu);
+    [[nodiscard]] bool trySyncFromCpuSoA(const ParticleSoA& cpu);
+
+    [[nodiscard]] ParticleGpuSyncGuard syncGuardForCpu(const ParticleSoA& cpu) const;
+    [[nodiscard]] ParticleGpuSyncGuard writeGuardForCpu(const ParticleSoA& cpu) const;
+    [[nodiscard]] bool canSyncFromCpuSoA(const ParticleSoA& cpu) const;
+    [[nodiscard]] bool canWriteToCpuSoA(const ParticleSoA& cpu) const;
 
     [[nodiscard]] static ParticleGpuMirror fromCpuSoA(const ParticleSoA& cpu);
     [[nodiscard]] bool writeToCpuSoA(ParticleSoA& cpu) const;
@@ -152,6 +174,9 @@ struct ParticleGpuFramePlan {
     [[nodiscard]] bool skipSimLaunch() const;
     [[nodiscard]] bool skipEmitLaunch() const;
     [[nodiscard]] bool isIdle() const { return skipSimLaunch() && skipEmitLaunch(); }
+    [[nodiscard]] bool buffersSizedForCapacity() const;
+    [[nodiscard]] u32 simPaddingThreadCount() const;
+    [[nodiscard]] u32 emitPaddingThreadCount() const;
     [[nodiscard]] ParticleSoAGPU gpuPointers(u64 packed_device_address) const;
 };
 
@@ -159,6 +184,8 @@ namespace particle_gpu_util {
 [[nodiscard]] u32 gridDimX(u32 element_count, u32 block_size);
 [[nodiscard]] u32 coveredThreadCount(u32 block_count, u32 block_size);
 [[nodiscard]] u32 paddingThreads(u32 element_count, u32 block_count, u32 block_size);
+[[nodiscard]] bool threadCoversElement(u32 thread_index, u32 element_count);
+[[nodiscard]] bool isPaddingThread(u32 thread_index, u32 element_count);
 } // namespace particle_gpu_util
 
 } // namespace fuse::vfx
