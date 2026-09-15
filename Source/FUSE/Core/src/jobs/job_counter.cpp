@@ -18,12 +18,15 @@ void JobCounter::add(u32 delta) {
 }
 
 void JobCounter::signal() {
-    const u32 prev = m_remaining.fetch_sub(1, std::memory_order_acq_rel);
+    std::lock_guard<std::mutex> lock(m_waitMutex);
+    const u32 prev = m_remaining.fetch_sub(1, std::memory_order_relaxed);
     if (prev == 1) {
-        resumeFiberWaiters();
-        std::lock_guard<std::mutex> lock(m_waitMutex);
         m_waitCv.notify_all();
     }
+}
+
+void JobCounter::synchronizeCompletion() {
+    std::lock_guard<std::mutex> lock(m_waitMutex);
 }
 
 bool JobCounter::isComplete() const {
@@ -40,6 +43,7 @@ void JobCounter::wait() {
     }
 
     if (detail::workerWaitOnCounter(this)) {
+        synchronizeCompletion();
         return;
     }
 

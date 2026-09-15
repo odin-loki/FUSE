@@ -13,6 +13,24 @@
 
 namespace {
 
+fuse::u32 serialParallelForChecksum(fuse::u32 begin, fuse::u32 end, fuse::u32 grainSize) {
+    fuse::u32 checksum = 0;
+    if (grainSize == 0) {
+        grainSize = 1;
+    }
+    for (fuse::u32 chunk = begin; chunk < end; chunk += grainSize) {
+        const fuse::u32 chunkEnd = (chunk + grainSize < end) ? (chunk + grainSize) : end;
+        for (fuse::u32 i = chunk; i < chunkEnd; ++i) {
+            checksum += i * 3u + (i % 5u);
+        }
+    }
+    return checksum;
+}
+
+} // namespace
+
+namespace {
+
 int g_failures = 0;
 
 void expectTrue(bool condition, const char* message) {
@@ -83,7 +101,9 @@ void testCooperativeWorkerWait() {
             gate.signal();
         });
 
-        gate.wait();
+        while (!waiterResumed.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
     });
 
     expectTrue(waiterResumed.load(std::memory_order_acquire), "worker resumed after cooperative wait");
@@ -115,6 +135,112 @@ void testSingleThreadFallback() {
     });
 }
 
+void testParallelSerialFallbackParity() {
+    constexpr fuse::u32 count = 256u;
+    constexpr fuse::u32 grain = 11u;
+    const fuse::u32 expected = serialParallelForChecksum(0u, count, grain);
+
+    std::atomic<fuse::u32> parallelChecksum{0};
+    withScheduler(4, [&] {
+        fuse::jobs::parallel_for(0u, count, grain, [&parallelChecksum](fuse::u32 i) {
+            parallelChecksum.fetch_add(i * 3u + (i % 5u), std::memory_order_relaxed);
+        });
+    });
+
+    fuse::u32 fallbackChecksum = 0;
+    withScheduler(0, [&] {
+        fuse::jobs::parallel_for(0u, count, grain, [&fallbackChecksum](fuse::u32 i) {
+            fallbackChecksum += i * 3u + (i % 5u);
+        });
+    });
+
+    expectEq(parallelChecksum.load(std::memory_order_relaxed), expected,
+             "multi-worker parallel_for matches serial reference");
+    expectEq(fallbackChecksum, expected, "single-thread fallback matches serial reference");
+}
+
+void testNestedParallelForParity() {
+    constexpr fuse::u32 outer = 24u;
+    constexpr fuse::u32 inner = 16u;
+    std::vector<fuse::u32> parallelGrid(outer * inner, 0u);
+    std::vector<fuse::u32> serialGrid(outer * inner, 0u);
+
+    for (fuse::u32 o = 0; o < outer; ++o) {
+        for (fuse::u32 i = 0; i < inner; ++i) {
+            serialGrid[o * inner + i] = o * inner + i;
+        }
+    }
+
+    // One outer task iterates rows serially so only one worker enters cooperative wait.
+    withScheduler(4, [&] {
+        fuse::jobs::parallel_for(0u, outer, outer, [&](fuse::u32 o) {
+            fuse::jobs::parallel_for(0u, inner, 3u, [&](fuse::u32 i) {
+                parallelGrid[o * inner + i] = o * inner + i;
+            });
+        });
+    });
+
+    for (fuse::u32 o = 0; o < outer; ++o) {
+        for (fuse::u32 i = 0; i < inner; ++i) {
+            const fuse::u32 idx = o * inner + i;
+            if (parallelGrid[idx] != serialGrid[idx]) {
+                std::fprintf(stderr, "FAIL: nested parallel_for mismatch at (%u,%u)\n", o, i);
+                ++g_failures;
+                return;
+            }
+        }
+    }
+}
+
+void testNestedParallelForSerialFallbackParity() {
+    constexpr fuse::u32 outer = 12u;
+    constexpr fuse::u32 inner = 10u;
+    std::vector<fuse::u32> parallelGrid(outer * inner, 0u);
+    std::vector<fuse::u32> fallbackGrid(outer * inner, 0u);
+
+    auto fillGrid = [](std::vector<fuse::u32>& grid, fuse::u32 outerCount, fuse::u32 innerCount) {
+        fuse::jobs::parallel_for(0u, outerCount, outerCount, [&](fuse::u32 o) {
+            fuse::jobs::parallel_for(0u, innerCount, 2u, [&](fuse::u32 i) {
+                grid[o * innerCount + i] = (o + 1u) * (i + 1u);
+            });
+        });
+    };
+
+    withScheduler(4, [&] { fillGrid(parallelGrid, outer, inner); });
+    withScheduler(0, [&] { fillGrid(fallbackGrid, outer, inner); });
+
+    for (fuse::u32 idx = 0; idx < outer * inner; ++idx) {
+        if (parallelGrid[idx] != fallbackGrid[idx]) {
+            std::fprintf(stderr, "FAIL: nested parallel vs fallback mismatch at index %u\n", idx);
+            ++g_failures;
+            return;
+        }
+    }
+}
+
+void testNestedParallelForWithCooperativeWait() {
+    if (!fuse::platform::cooperativeFibersAvailable()) {
+        std::printf("SKIP: cooperative fibers unavailable for nested wait regression\n");
+        return;
+    }
+
+    // One outer chunk so a single worker enters cooperative wait while peers drain inner jobs.
+    constexpr fuse::u32 outer = 32u;
+    constexpr fuse::u32 inner = 64u;
+    std::atomic<fuse::u32> visitCount{0};
+
+    withScheduler(4, [&] {
+        fuse::jobs::parallel_for(0u, outer, outer, [&](fuse::u32 /*o*/) {
+            fuse::jobs::parallel_for(0u, inner, 4u, [&](fuse::u32 /*i*/) {
+                visitCount.fetch_add(1u, std::memory_order_relaxed);
+            });
+        });
+    });
+
+    expectEq(visitCount.load(std::memory_order_relaxed), outer * inner,
+             "nested parallel_for with cooperative waits visits every index");
+}
+
 } // namespace
 
 int main() {
@@ -122,6 +248,10 @@ int main() {
     testCooperativeWorkerWait();
     testParallelForMatchesSerial();
     testSingleThreadFallback();
+    testParallelSerialFallbackParity();
+    testNestedParallelForParity();
+    testNestedParallelForSerialFallbackParity();
+    testNestedParallelForWithCooperativeWait();
 
     if (g_failures == 0) {
         std::printf("fuse_core job tests: all checks passed\n");

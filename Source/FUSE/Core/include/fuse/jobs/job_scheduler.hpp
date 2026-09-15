@@ -4,6 +4,7 @@
 #include <fuse/types.hpp>
 
 #include <functional>
+#include <memory>
 
 namespace fuse::jobs {
 
@@ -35,6 +36,8 @@ private:
     JobScheduler(const JobScheduler&) = delete;
     JobScheduler& operator=(const JobScheduler&) = delete;
 
+    void drainActiveJobs();
+
     struct Impl;
     Impl* m_impl = nullptr;
 
@@ -55,18 +58,22 @@ void JobScheduler::parallel_for(u32 begin, u32 end, u32 grainSize, const Body& b
         return;
     }
 
-    JobCounter counter(0);
+    struct ParallelForState {
+        JobCounter counter{0};
+    };
+    auto state = std::make_shared<ParallelForState>();
     for (u32 chunk = begin; chunk < end; chunk += grainSize) {
         const u32 chunkEnd = (chunk + grainSize < end) ? (chunk + grainSize) : end;
-        counter.add(1);
-        submit([chunk, chunkEnd, &body, &counter]() {
+        state->counter.add(1);
+        submit([state, chunk, chunkEnd, &body]() {
             for (u32 i = chunk; i < chunkEnd; ++i) {
                 body(i);
             }
-            counter.signal();
+            state->counter.signal();
         });
     }
-    counter.wait();
+    state->counter.wait();
+    drainActiveJobs();
 }
 
 } // namespace fuse::jobs
