@@ -2,6 +2,7 @@
 #include <fuse/io/vfs.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/jobs/parallel_for.hpp>
+#include <fuse/legacy/parallel_for.hpp>
 #include <fuse/legacy/t2d/api.hpp>
 #include <fuse/legacy/t3d/api.hpp>
 #include <fuse/log/logger.hpp>
@@ -45,6 +46,9 @@ int main() {
     fuse::log::info("vfs mounts: %u", fuse::io::VirtualFileSystem::instance().mountCount());
 
     runJobSmoke();
+
+    check(fuse::legacy::parallel_for_smoke_sum(0u, 100u, 10u) == 4950u,
+          "legacy parallel_for adapter sum matches serial expectation");
 
     check(fuse::legacy::t3d::initialize(), "fuse_t3d_legacy initialize");
     check(fuse::legacy::t2d::initialize(), "fuse_t2d_legacy initialize");

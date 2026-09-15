@@ -18,5 +18,5 @@ target_compile_definitions(fuse_t2d_legacy
         FUSE_T2D_LEGACY_PREFIX=${FUSE_T2D_LEGACY_PREFIX}
 )
 
-target_link_libraries(fuse_t2d_legacy PUBLIC fuse_core)
+target_link_libraries(fuse_t2d_legacy PUBLIC fuse_core fuse_legacy_common)
 target_compile_features(fuse_t2d_legacy PUBLIC cxx_std_17)
