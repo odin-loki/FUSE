@@ -26,6 +26,9 @@ struct RetargetMap {
     /// Source bone index for a target bone, or -1 when unmapped.
     [[nodiscard]] s32 find_source_bone(u32 target_bone) const;
 
+    /// Target bone index for a source bone, or -1 when unmapped.
+    [[nodiscard]] s32 find_target_bone(u32 source_bone) const;
+
     /// Pair bones that share the same name in source and target skeletons.
     static RetargetMap build_by_name(const Skeleton& source, const Skeleton& target);
 

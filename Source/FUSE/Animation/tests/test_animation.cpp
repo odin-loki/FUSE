@@ -795,6 +795,53 @@ void testTwoBoneIKInPlace() {
     expectTrue(error < 0.05f, "two bone ik in place reaches target from offset root");
 }
 
+void testTwoBoneIKChainOrder() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+
+    fuse::animation::TwoBoneIK duplicateMid;
+    duplicateMid.root_bone = 0;
+    duplicateMid.mid_bone = 0;
+    duplicateMid.end_bone = 1;
+    expectTrue(!duplicateMid.has_valid_chain(skel), "two bone ik rejects duplicate bone indices");
+
+    fuse::animation::TwoBoneIK wrongOrder;
+    wrongOrder.root_bone = 0;
+    wrongOrder.mid_bone = 2;
+    wrongOrder.end_bone = 1;
+    expectTrue(!wrongOrder.has_valid_chain(skel), "two bone ik rejects non-chain bone order");
+
+    fuse::animation::TwoBoneIK outOfRange;
+    outOfRange.root_bone = 0;
+    outOfRange.mid_bone = 1;
+    outOfRange.end_bone = 99;
+    expectTrue(!outOfRange.has_valid_chain(skel), "two bone ik rejects out of range end bone");
+}
+
+void testTwoBoneIKMaxReach() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+    fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
+
+    fuse::animation::TwoBoneIK ik;
+    ik.root_bone = 0;
+    ik.mid_bone = 1;
+    ik.end_bone = 2;
+    ik.reach_epsilon = 0.001f;
+    expectNear(ik.max_reach(pose), 1.999f, 0.01f, "two bone ik max reach from bind pose segment lengths");
+
+    ik.target = {10.f, 0.f, 0.f, 0.f};
+    ik.pole_vector = {0.f, 1.f, 0.f, 0.f};
+    expectTrue(ik.solve(pose, skel), "two bone ik clamps unreachable target using max reach");
+
+    const fuse::animation::vec3 end = {
+        pose.bone_world_transforms[2].data[12],
+        pose.bone_world_transforms[2].data[13],
+        pose.bone_world_transforms[2].data[14],
+        0.f,
+    };
+    const fuse::f32 reach = std::sqrt(end.x * end.x + end.y * end.y + end.z * end.z);
+    expectNear(reach, ik.max_reach(pose), 0.05f, "two bone ik clamped end matches max reach");
+}
+
 void testRetargetMapBuildByName() {
     const fuse::animation::Skeleton source = makeTwoBoneSkeleton();
     const fuse::animation::Skeleton target = makeRetargetTargetSkeleton();
@@ -877,6 +924,29 @@ void testRetargetIdentity() {
     map.apply_pose(sourceAoS, skel, targetAoS);
     expectNear(targetPose.bone_world_transforms[1].data[13], targetAoS.bone_world_transforms[1].data[13], 1e-4f,
                "retarget identity apply_pose matches soa world transform");
+}
+
+void testRetargetFindTargetBone() {
+    const fuse::animation::Skeleton source = makeTwoBoneSkeleton();
+    const fuse::animation::Skeleton target = makeRetargetTargetSkeleton();
+    const fuse::animation::RetargetMap map = fuse::animation::RetargetMap::build_by_name(source, target);
+    expectTrue(map.find_target_bone(0) == 0, "retarget find_target_bone maps root");
+    expectTrue(map.find_target_bone(1) == 1, "retarget find_target_bone maps child");
+    expectTrue(map.find_target_bone(99) == -1, "retarget find_target_bone returns -1 when unmapped");
+}
+
+void testRetargetTranslationScale() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::RetargetMap map = fuse::animation::RetargetMap::build_identity(skel);
+    map.bone_map[1].translation_scale = 0.5f;
+
+    fuse::animation::PoseSoA sourcePose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    sourcePose.local_positions[1] = {0.f, 8.f, 0.f, 0.f};
+    sourcePose.compute_world_transforms(skel);
+
+    fuse::animation::PoseSoA targetPose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    map.apply_pose_soa(sourcePose, skel, targetPose);
+    expectNear(targetPose.local_positions[1].y, 4.f, 1e-4f, "retarget translation scale halves mapped translation");
 }
 
 void testBlendPoseSoAReuse() {
@@ -1340,11 +1410,15 @@ int main() {
     testTwoBoneIKSoA();
     testTwoBoneIKEmptySkeleton();
     testTwoBoneIKInPlace();
+    testTwoBoneIKChainOrder();
+    testTwoBoneIKMaxReach();
     testRetargetMapBuildByName();
     testRetargetApplyPoseSoA();
     testRetargetApplyPose();
     testRetargetEmptySkeleton();
     testRetargetIdentity();
+    testRetargetFindTargetBone();
+    testRetargetTranslationScale();
     testEmptyBlendSpace1D();
     testEmptyBlendSpace2D();
     testEmptyStateMachine();

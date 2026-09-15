@@ -23,11 +23,11 @@ CPU-first skeletal animation scaffolding for Track B7.1. Implements the P7 pipel
 ## IK (stub)
 
 - **FABRIKChain** — iterative reach toward a world-space target.
-- **TwoBoneIK** — O(1) law-of-cosines limb solver with pole-vector bend plane; clamps unreachable targets; solves in-place via `has_valid_chain` validation.
+- **TwoBoneIK** — O(1) law-of-cosines limb solver with pole-vector bend plane; clamps unreachable targets via `max_reach`; parent-chain `has_valid_chain` validation; solves in-place.
 
 ## Retarget (stub)
 
-`RetargetMap::build_by_name` pairs source/target bones by name; `build_identity` maps a skeleton onto itself. `find_source_bone` / `mapped_bone_count` support lookup. `apply_pose_soa` copies mapped local TRS into a target skeleton bind pose and recomputes world transforms.
+`RetargetMap::build_by_name` pairs source/target bones by name; `build_identity` maps a skeleton onto itself. `find_source_bone` / `find_target_bone` / `mapped_bone_count` support lookup. `apply_pose_soa` copies mapped local TRS (with optional `translation_scale`) into a target skeleton bind pose and recomputes world transforms.
 
 ## Blend tree (stub)
 

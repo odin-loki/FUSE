@@ -24,6 +24,15 @@ s32 RetargetMap::find_source_bone(u32 target_bone) const {
     return -1;
 }
 
+s32 RetargetMap::find_target_bone(u32 source_bone) const {
+    for (const RetargetBoneEntry& entry : bone_map) {
+        if (entry.source_bone == source_bone) {
+            return static_cast<s32>(entry.target_bone);
+        }
+    }
+    return -1;
+}
+
 RetargetMap RetargetMap::build_identity(const Skeleton& skel) {
     RetargetMap map{};
     map.source_bone_count = static_cast<u32>(skel.bones.size());

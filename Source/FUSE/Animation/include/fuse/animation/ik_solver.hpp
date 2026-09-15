@@ -26,8 +26,11 @@ struct TwoBoneIK {
     vec3 pole_vector = {0.f, 1.f, 0.f, 0.f};
     f32 reach_epsilon = 1e-4f;
 
-    /// Returns false when the skeleton is empty or bone indices are out of range.
+    /// Returns false when the skeleton is empty, indices are out of range, duplicated, or not a root→mid→end chain.
     [[nodiscard]] bool has_valid_chain(const Skeleton& skel) const;
+
+    /// Upper + lower segment length from the current pose, minus `reach_epsilon` (matches clamp behaviour).
+    [[nodiscard]] f32 max_reach(const Pose& pose) const;
 
     /// Closed-form two-bone IK (O(1)). Solves in-place on the current pose; returns false when invalid.
     bool solve(Pose& pose, const Skeleton& skel);
