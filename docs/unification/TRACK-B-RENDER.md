@@ -143,12 +143,13 @@ ctest --test-dir build --output-on-failure -R fuse_post_process_b510
 | `TaaJitterLayout::halton` | CPU Halton reference for bases 2 and 3 |
 | `TaaJitterLayout::validateSequenceLength` | Rejects zero or >64 frame sequences |
 | `TaaJitterLayout::sequencePeriod` / `frameIndexInSequence` | Jitter cycle length + frame→slot mapping |
+| `TaaJitterLayout::offsetForFrameIndex` | Halton offset for monotonic frame counters (wraps with period) |
 | `TaaJitterLayout::fillHaltonSequence` | Full Halton (2,3) table for projection jitter |
 | `TaaHistoryBuffer::hasValidHistory` | Invalid until first resolve; cleared on resize |
 | `TaaHistoryBuffer::accumulatedFrames` | Monotonic resolve counter |
-| `TaaResolveStats::first_frame` | First warm-up frame before history reuse |
-| `TaaResolve::resetBookkeeping` | Clears resolve stats; `TaaPass::destroy` resets validity path |
-| `fuse_taa_pass` | Layout helpers, sequence period, validity reset, empty history, resolve bookkeeping |
+| `TaaResolveStats::first_frame` / `effective_blend` | First warm-up frame uses full current weight (1.0) |
+| `TaaResolve::resetBookkeeping` | Clears resolve stats; `TaaPass::destroy` / `invalidateHistory` reset validity path |
+| `fuse_taa_pass` | Layout helpers, sequence period/wrap, offsetForFrameIndex, validity reset, empty history, resolve bookkeeping |
 
 ```bash
 ctest --test-dir build --output-on-failure -R fuse_taa_pass

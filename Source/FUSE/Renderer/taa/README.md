@@ -18,6 +18,7 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaJitterLayout::validateSequenceLength(length)` — rejects zero or >64 frame sequences
 - `TaaJitterLayout::sequencePeriod(length)` — returns the jitter cycle length (0 when invalid)
 - `TaaJitterLayout::frameIndexInSequence(frame, length)` — maps a monotonic frame counter into the active slot
+- `TaaJitterLayout::offsetForFrameIndex(frame, length)` — Halton offset for a monotonic frame counter (wraps with period)
 - `TaaJitterLayout::fillHaltonSequence(length, out)` — fills a Halton (2,3) table for projection jitter
 - `TaaJitter` honours `TaaJitterDesc::sequence_length` (default 8) when advancing and wrapping
 
@@ -27,7 +28,9 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaHistoryBuffer::accumulatedFrames()` — monotonic frame counter reset on invalidate/resize
 - `TaaHistoryBuffer::invalidateHistory()` — clears validity (called on resize)
 - `TaaResolveStats::first_frame` — set when resolve runs before history is warm
+- `TaaResolveStats::effective_blend` — 1.0 on first warm-up frame, else `TAAParams::blend_factor`
 - `TaaResolve::resetBookkeeping()` — clears resolve stats/message (called on `TaaPass::destroy`)
+- `TaaPass::invalidateHistory()` — clears history validity without destroying buffers
 
 ## Pipeline (stub)
 

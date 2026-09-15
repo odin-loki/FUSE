@@ -46,6 +46,11 @@ fuse::math::Vec2 TaaJitterLayout::haltonNdcOffset(u32 index, u32 width, u32 heig
     return {(pixel.x - 0.5f) * 2.f / safeWidth, (pixel.y - 0.5f) * 2.f / safeHeight};
 }
 
+fuse::math::Vec2 TaaJitterLayout::offsetForFrameIndex(u32 frameIndex, u32 sequenceLength) {
+    const u32 slot = frameIndexInSequence(frameIndex, sequenceLength);
+    return haltonPixelOffset(slot, sequenceLength);
+}
+
 void TaaJitterLayout::fillHaltonSequence(u32 length, fuse::math::Vec2* out) {
     if (out == nullptr || !validateSequenceLength(length)) {
         return;

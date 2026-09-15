@@ -44,6 +44,7 @@ public:
 
     fuse::math::Vec2 currentJitterNdc() const;
     void advanceJitter();
+    void invalidateHistory();
 
     bool resolveFrame(const TaaResolveDesc& desc, void* cudaStream = nullptr);
 
