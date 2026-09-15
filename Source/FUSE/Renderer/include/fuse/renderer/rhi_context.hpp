@@ -1,6 +1,8 @@
 #pragma once
 
+#include <fuse/renderer/command_buffer.hpp>
 #include <fuse/renderer/render_command_list.hpp>
+#include <fuse/renderer/render_graph.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
 #include <fuse/renderer/vk/raster_path.hpp>
 
@@ -36,6 +38,11 @@ public:
 
     u32 submittedFrameCount() const { return m_submittedFrames; }
     u32 lastSubmittedCommandCount() const { return m_lastCommandCount; }
+    u32 lastGraphPassCount() const { return m_lastGraphPassCount; }
+    u32 lastGraphBarrierCount() const { return m_lastGraphBarrierCount; }
+    u32 lastRecordedCommandCount() const { return m_lastRecordedCommands; }
+    const RenderGraph& renderGraph() const { return m_renderGraph; }
+    const CommandBufferRecorder& commandRecorder() const { return m_commandRecorder; }
     u32 currentFrameSlot() const;
     const RasterPathStats& lastRasterStats() const { return m_lastRasterStats; }
 
@@ -48,8 +55,13 @@ private:
     Desc m_desc;
     std::unique_ptr<RasterPath> m_rasterPath;
     RasterPathStats m_lastRasterStats{};
+    RenderGraph m_renderGraph;
+    CommandBufferRecorder m_commandRecorder;
     u32 m_submittedFrames = 0;
     u32 m_lastCommandCount = 0;
+    u32 m_lastGraphPassCount = 0;
+    u32 m_lastGraphBarrierCount = 0;
+    u32 m_lastRecordedCommands = 0;
 };
 
 } // namespace fuse::renderer

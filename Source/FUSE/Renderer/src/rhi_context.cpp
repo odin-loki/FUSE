@@ -70,6 +70,8 @@ bool RhiContext::beginFrame(u32 frameIndex) {
 
     frameManager->signalTickComplete();
     frameManager->beginFrame(frameIndex);
+    m_renderGraph.beginFrame(frameIndex);
+    m_commandRecorder.reset();
     return true;
 }
 
@@ -87,7 +89,22 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
         if (!frameManager->tickComplete()) {
             frameManager->signalTickComplete();
             frameManager->beginFrame(frameIndex);
+            m_renderGraph.beginFrame(frameIndex);
+            m_commandRecorder.reset();
         }
+
+        populateRenderGraphFromCommandList(m_renderGraph, commands);
+        m_renderGraph.compile();
+
+        VulkanDevice* device = m_bootstrap->device();
+        if (device != nullptr) {
+            const RenderGraphExecuteInfo executeInfo =
+                m_renderGraph.execute(*device, *frameManager, m_commandRecorder);
+            m_lastGraphPassCount = executeInfo.executedPassCount;
+            m_lastRecordedCommands = executeInfo.recordedCommands;
+        }
+
+        m_lastGraphBarrierCount = m_renderGraph.compileInfo().barrierCount;
         frameManager->endFrame();
     }
 

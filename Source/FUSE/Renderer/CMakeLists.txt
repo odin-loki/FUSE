@@ -1,7 +1,9 @@
 # fuse_rhi — Track B Vulkan bootstrap + render command list (B2.1) + shader scaffold (B2.4)
 
 set(FUSE_RHI_PUBLIC_HEADERS
+    include/fuse/renderer/command_buffer.hpp
     include/fuse/renderer/render_command_list.hpp
+    include/fuse/renderer/render_graph.hpp
     include/fuse/renderer/rhi_context.hpp
     include/fuse/renderer/resources.hpp
     include/fuse/renderer/resource_manager.hpp
@@ -27,7 +29,9 @@ set(FUSE_RHI_PUBLIC_HEADERS
 )
 
 set(FUSE_RHI_SOURCES
+    src/command_buffer.cpp
     src/render_command_list.cpp
+    src/render_graph.cpp
     src/resource_manager.cpp
     src/rhi_context.cpp
     src/shader/shader_compiler.cpp
