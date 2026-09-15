@@ -164,7 +164,7 @@ WorldCell* WorldPartition::find_budget_eviction_candidate_(f32 incoming_priority
             },
             incoming_priority, m_desc.eviction_policy, out_score);
 
-        if (picked == GridCoord{} || out_score <= 0.f) {
+        if (!is_valid_grid_coord(picked) || out_score <= 0.f) {
             return nullptr;
         }
         return const_cast<WorldCell*>(find_cell_(picked));
@@ -190,13 +190,15 @@ WorldCell* WorldPartition::find_budget_eviction_candidate_(f32 incoming_priority
 }
 
 void WorldPartition::evict_for_budget_(f32 incoming_priority, u64 incoming_bytes) {
-    if (!needs_budget_eviction(m_desc.max_loaded_cells, resident_cell_count(), m_desc.budget.max_resident_bytes,
-                               resident_byte_count(), incoming_bytes)) {
+    if (!needs_budget_eviction_for_incoming(m_desc.max_loaded_cells, resident_cell_count(),
+                                            m_desc.budget.max_resident_bytes, resident_byte_count(),
+                                            incoming_bytes)) {
         return;
     }
 
-    while (needs_budget_eviction(m_desc.max_loaded_cells, resident_cell_count(), m_desc.budget.max_resident_bytes,
-                                 resident_byte_count(), incoming_bytes)) {
+    while (needs_budget_eviction_for_incoming(m_desc.max_loaded_cells, resident_cell_count(),
+                                              m_desc.budget.max_resident_bytes, resident_byte_count(),
+                                              incoming_bytes)) {
         f32 best_score = -1.f;
         WorldCell* best_candidate = find_budget_eviction_candidate_(incoming_priority, best_score);
 
@@ -228,8 +230,9 @@ bool WorldPartition::queue_load_(GridCoord coord, f32 priority) {
     }
 
     const u64 incoming_bytes = cell.resident_bytes > 0u ? cell.resident_bytes : m_desc.default_cell_bytes;
-    if (needs_budget_eviction(m_desc.max_loaded_cells, resident_cell_count(), m_desc.budget.max_resident_bytes,
-                              resident_byte_count(), incoming_bytes)) {
+    if (needs_budget_eviction_for_incoming(m_desc.max_loaded_cells, resident_cell_count(),
+                                           m_desc.budget.max_resident_bytes, resident_byte_count(),
+                                           incoming_bytes)) {
         evict_for_budget_(priority, incoming_bytes);
     }
     if (!can_accept_load_(incoming_bytes)) {

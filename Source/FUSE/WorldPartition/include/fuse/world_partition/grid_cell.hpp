@@ -20,6 +20,13 @@ struct GridCoord {
     bool operator!=(const GridCoord& other) const { return !(*this == other); }
 };
 
+/// Sentinel returned by guarded eviction picks when no candidate exists.
+inline constexpr GridCoord kInvalidGridCoord{-1, -1};
+
+[[nodiscard]] inline bool is_valid_grid_coord(GridCoord coord) {
+    return coord.x >= 0 && coord.y >= 0;
+}
+
 [[nodiscard]] inline u64 grid_coord_key(GridCoord coord) {
     return static_cast<u64>(static_cast<u32>(coord.x)) |
            (static_cast<u64>(static_cast<u32>(coord.y)) << 32u);

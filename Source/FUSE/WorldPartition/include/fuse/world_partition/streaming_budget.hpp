@@ -77,10 +77,29 @@ enum class EvictionPolicy : u8 {
     return !byte_budget_unlimited(max_resident_bytes) && resident_bytes >= max_resident_bytes;
 }
 
+[[nodiscard]] inline bool would_exceed_cell_cap(u32 max_loaded_cells, u32 resident_count,
+                                                u32 incoming_count = 1u) {
+    if (incoming_count == 0u) {
+        return false;
+    }
+    return !can_accept_resident_cell(max_loaded_cells, resident_count + incoming_count - 1u);
+}
+
 [[nodiscard]] inline bool needs_budget_eviction(u32 max_loaded_cells, u32 resident_count, u64 max_resident_bytes,
                                                 u64 resident_bytes, u64 incoming_bytes) {
     return !can_accept_resident_cell(max_loaded_cells, resident_count) ||
            would_exceed_byte_budget(max_resident_bytes, resident_bytes, incoming_bytes);
+}
+
+[[nodiscard]] inline bool needs_budget_eviction_for_incoming(u32 max_loaded_cells, u32 resident_count,
+                                                             u64 max_resident_bytes, u64 resident_bytes,
+                                                             u64 incoming_bytes, u32 incoming_count = 1u) {
+    return would_exceed_cell_cap(max_loaded_cells, resident_count, incoming_count) ||
+           would_exceed_byte_budget(max_resident_bytes, resident_bytes, incoming_bytes);
+}
+
+[[nodiscard]] inline u32 clamp_eviction_batch(u32 requested, u32 headroom) {
+    return requested < headroom ? requested : headroom;
 }
 
 [[nodiscard]] inline u32 clamp_pending_submits(u32 pending, u32 max_pending) {

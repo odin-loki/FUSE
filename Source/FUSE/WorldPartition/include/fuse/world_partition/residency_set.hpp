@@ -109,7 +109,7 @@ inline f32 ResidencySet::focus_distance_for(GridCoord coord) const {
 
 inline GridCoord ResidencySet::pick_eviction_candidate() const {
     const std::vector<GridCoord> candidates = collect_eviction_candidates(1);
-    return candidates.empty() ? GridCoord{} : candidates.front();
+    return candidates.empty() ? kInvalidGridCoord : candidates.front();
 }
 
 inline std::vector<GridCoord> ResidencySet::collect_eviction_candidates(u32 max_count) const {
@@ -168,8 +168,13 @@ inline u32 ResidencySet::find_index_(GridCoord coord) const {
     return success ? try_remove_resident(set, coord) : false;
 }
 
+/// Empty-set guard: returns `kInvalidGridCoord` when no eviction candidate exists.
+[[nodiscard]] inline GridCoord pick_eviction_candidate_guarded(const ResidencySet& set) {
+    return set.has_eviction_candidate() ? set.pick_eviction_candidate() : kInvalidGridCoord;
+}
+
 /// Pick the farthest coord from `candidates` eligible for budget eviction under `policy`.
-/// Returns `{0,0}` and leaves `out_score` at -1 when no candidate qualifies.
+/// Returns `kInvalidGridCoord` and leaves `out_score` at -1 when no candidate qualifies.
 template <typename ScoreFn>
 [[nodiscard]] inline GridCoord pick_budget_eviction_candidate(const std::vector<GridCoord>& candidates,
                                                               ScoreFn&& score_fn, f32 incoming_priority,
@@ -183,7 +188,23 @@ template <typename ScoreFn>
         out_score = score;
         return coord;
     }
-    return {};
+    return kInvalidGridCoord;
+}
+
+/// Return coords from `candidates` eligible for budget eviction, preserving farthest-first order.
+template <typename ScoreFn>
+[[nodiscard]] inline std::vector<GridCoord> collect_budget_eviction_candidates(
+    const std::vector<GridCoord>& candidates, ScoreFn&& score_fn, f32 incoming_priority,
+    EvictionPolicy policy) {
+    std::vector<GridCoord> eligible;
+    eligible.reserve(candidates.size());
+    for (const GridCoord coord : candidates) {
+        const f32 score = score_fn(coord);
+        if (can_evict_for_incoming(incoming_priority, score, policy)) {
+            eligible.push_back(coord);
+        }
+    }
+    return eligible;
 }
 
 } // namespace fuse::world_partition
