@@ -66,6 +66,10 @@ jobs:
           ./build-fuse/Tools/FUSE/fuse_import --project Samples/unification/demo_3d_empty
           ./build-fuse/Tools/FUSE/fuse_import --source Templates/BaseGame/game/data/ExampleModule/levels/ExampleLevel.mis
 
+      - name: Run fuse_cook dry-run
+        run: |
+          ./build-fuse/Tools/FUSE/fuse_cook --project Samples/unification/demo_3d_empty --dry-run
+
       - name: Verify prefix shims
         run: |
           python3 Tools/FUSE/prefix_legacy_symbols.py --verify-shims --dimension t3d
