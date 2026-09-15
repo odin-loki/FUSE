@@ -30,6 +30,9 @@ public:
     /// Clamp time into [0, duration] when duration is positive.
     void clamp_time();
 
+    /// Seek without changing playback state (editor scrub / VController::setTime).
+    void scrub_to(TimelineMs time_ms);
+
 private:
     TimelineMs time_ms_ = 0;
     TimelineMs duration_ms_ = 5000;

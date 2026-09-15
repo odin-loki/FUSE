@@ -3,6 +3,7 @@
 // Ore: Engine/source/Verve/Core/VController.h, VController.cpp (processTick, play/pause/stop)
 //      third_party/addons/Verve/Engine/source/Verve/Core/VController.h
 
+#include <fuse/cinematics/cue_queue.hpp>
 #include <fuse/cinematics/group.hpp>
 #include <fuse/cinematics/playhead.hpp>
 
@@ -44,6 +45,12 @@ public:
     /// Advance playback by `delta_ms` (wall-clock ms × time scale applied internally).
     void advance(TimelineMs delta_ms);
 
+    /// Seek playhead without starting playback; optionally enqueue forward-crossed cues.
+    void scrub_to(TimelineMs time_ms, bool enqueue_cues = true);
+
+    CueQueue& cue_queue() { return cue_queue_; }
+    const CueQueue& cue_queue() const { return cue_queue_; }
+
     void on_update(TimelineUpdateCallback callback);
     void on_controller_event(TimelineEventCallback callback);
 
@@ -53,9 +60,11 @@ public:
 private:
     void post_event(ControllerEvent event);
     void handle_sequence_end();
+    void collect_cues_forward(TimelineMs from_ms, TimelineMs to_ms);
 
     Playhead playhead_;
     std::vector<TrackGroup> groups_;
+    CueQueue cue_queue_;
     bool loop_ = false;
     TimelineUpdateCallback update_callback_;
     TimelineEventCallback event_callback_;

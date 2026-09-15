@@ -18,6 +18,9 @@ Verve is Copyright (C) 2014 Violent Tulip, licensed under the **MIT License**. S
 | `CameraTrack` | `Engine/source/Verve/Extension/Camera/VCameraTrack.h` | Camera keyframe rail + sampling stub |
 | `SpriteTrack` | `Engine/source/Verve/Extension/SceneObject/VSceneObjectTrack.h` | 2D sprite transform stub |
 | `PropertyTrack` | `Engine/source/Verve/Extension/Motion/VMotionTrack.h` | Scalar property rail stub |
+| `AudioTrack` | `Engine/source/Verve/Extension/SoundEffect/VSoundEffectTrack.h` | Sound-effect lane + volume keyframes stub |
+| `EventTrack` | `Engine/source/Verve/Extension/Script/VScriptEventTrack.h` | Script/director cue lane stub |
+| `CueQueue` | Verve track event dispatch (editor scrub + advance) | Pending cue buffer for game-thread drain |
 | `interpolate` | `Engine/source/Verve/Core/VTrack.cpp` | `lerp`, easing, `calculateInterp` helpers |
 
 Submodule reference copy (same layout): `third_party/addons/Verve/Engine/source/Verve/Core/`.
@@ -37,6 +40,12 @@ camera.add_keyframe({2'000, {0, 0, 10}, {0, 0, 0}, 45.f});
 auto& sprite = group.add_sprite_track("Hero");
 sprite.add_keyframe({0, 0.f, 0.f, 1.f});
 sprite.add_keyframe({1'000, 100.f, 50.f, 0.f});
+
+auto& cues = group.add_event_track("Director");
+cues.add_event({"door_open", 1'000});
+
+timeline.scrub_to(2'000); // enqueues forward-crossed cues into timeline.cue_queue()
+const auto pending = timeline.cue_queue().drain();
 
 timeline.play();
 timeline.advance(100); // ms per tick

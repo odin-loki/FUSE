@@ -5,6 +5,9 @@ add_library(fuse_cinematics STATIC
     src/camera_track.cpp
     src/sprite_track.cpp
     src/property_track.cpp
+    src/audio_track.cpp
+    src/event_track.cpp
+    src/cue_queue.cpp
     src/group.cpp
     src/playhead.cpp
     src/timeline.cpp
@@ -15,6 +18,9 @@ add_library(fuse_cinematics STATIC
     include/fuse/cinematics/camera_track.hpp
     include/fuse/cinematics/sprite_track.hpp
     include/fuse/cinematics/property_track.hpp
+    include/fuse/cinematics/audio_track.hpp
+    include/fuse/cinematics/event_track.hpp
+    include/fuse/cinematics/cue_queue.hpp
     include/fuse/cinematics/group.hpp
     include/fuse/cinematics/playhead.hpp
     include/fuse/cinematics/timeline.hpp

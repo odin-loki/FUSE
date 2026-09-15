@@ -117,12 +117,54 @@ void Timeline::advance(TimelineMs delta_ms) {
         update_callback_(current, effective_delta);
     }
 
+    if (playhead_.is_playing_forward() && effective_delta > 0) {
+        collect_cues_forward(current, current + effective_delta);
+    }
+
     playhead_.set_time_ms(current + effective_delta);
     playhead_.clamp_time();
 
     if ((playhead_.is_playing_forward() && playhead_.time_ms() >= duration)
         || (!playhead_.is_playing_forward() && playhead_.time_ms() <= 0)) {
         handle_sequence_end();
+    }
+}
+
+void Timeline::scrub_to(TimelineMs time_ms, bool enqueue_cues) {
+    const TimelineMs previous = playhead_.time_ms();
+    playhead_.scrub_to(time_ms);
+
+    if (enqueue_cues && playhead_.time_ms() > previous) {
+        collect_cues_forward(previous, playhead_.time_ms());
+    }
+}
+
+void Timeline::collect_cues_forward(TimelineMs from_ms, TimelineMs to_ms) {
+    if (to_ms <= from_ms) {
+        return;
+    }
+
+    for (const TrackGroup& group : groups_) {
+        for (const std::unique_ptr<Track>& track : group.tracks()) {
+            if (!track || !track->enabled()) {
+                continue;
+            }
+
+            for (const TimelineEvent& event : track->events()) {
+                if (!event.enabled()) {
+                    continue;
+                }
+
+                const TimelineMs trigger = event.trigger_ms();
+                if (trigger > from_ms && trigger <= to_ms) {
+                    cue_queue_.enqueue(CueEntry{event.label(),
+                                                track->label(),
+                                                group.label(),
+                                                track->kind(),
+                                                trigger});
+                }
+            }
+        }
     }
 }
 

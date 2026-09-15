@@ -1,4 +1,7 @@
+#include <fuse/cinematics/audio_track.hpp>
 #include <fuse/cinematics/camera_track.hpp>
+#include <fuse/cinematics/cue_queue.hpp>
+#include <fuse/cinematics/event_track.hpp>
 #include <fuse/cinematics/interpolate.hpp>
 #include <fuse/cinematics/property_track.hpp>
 #include <fuse/cinematics/sprite_track.hpp>
@@ -214,6 +217,100 @@ void testTimelineContentSpan() {
     expectTrue(timeline.suggested_duration_ms() == 5'000, "suggested duration from content");
 }
 
+void testPlayheadScrub() {
+    fuse::cinematics::Playhead playhead;
+    playhead.set_duration_ms(10'000);
+    playhead.set_state(fuse::cinematics::PlaybackState::Paused);
+
+    playhead.scrub_to(2'500);
+    expectTrue(playhead.time_ms() == 2'500, "scrub sets playhead time");
+    expectTrue(playhead.is_paused(), "scrub preserves paused state");
+
+    playhead.scrub_to(99'000);
+    expectTrue(playhead.time_ms() == 10'000, "scrub clamps to duration");
+}
+
+void testTimelineScrubEnqueuesCues() {
+    fuse::cinematics::Timeline timeline;
+    fuse::cinematics::TrackGroup& group = timeline.add_group("Director");
+    fuse::cinematics::EventTrack& events = group.add_event_track("ScriptCues");
+    events.set_script_hook_id("on_cutscene");
+    events.add_event(fuse::cinematics::TimelineEvent("door_open", 1'000));
+    events.add_event(fuse::cinematics::TimelineEvent("dialog_start", 3'000));
+    events.sort_events();
+
+    timeline.playhead().set_duration_ms(10'000);
+    timeline.scrub_to(0, false);
+    timeline.scrub_to(2'500);
+
+    expectTrue(timeline.cue_queue().pending_count() == 1, "forward scrub enqueues crossed cue");
+    expectTrue(timeline.cue_queue().pending()[0].label == "door_open", "scrub cue label");
+
+    timeline.cue_queue().clear();
+    timeline.scrub_to(5'000);
+    expectTrue(timeline.cue_queue().pending_count() == 1, "second scrub enqueues next cue");
+    expectTrue(timeline.cue_queue().pending()[0].label == "dialog_start", "second scrub cue label");
+
+    timeline.cue_queue().clear();
+    timeline.scrub_to(1'500);
+    expectTrue(timeline.cue_queue().empty(), "backward scrub does not enqueue cues");
+}
+
+void testAdvanceEnqueuesCues() {
+    fuse::cinematics::Timeline timeline;
+    fuse::cinematics::TrackGroup& group = timeline.add_group("Audio");
+    fuse::cinematics::AudioTrack& audio = group.add_audio_track("Stinger");
+    audio.set_sound_asset_id("sfx_intro");
+    audio.add_event(fuse::cinematics::TimelineEvent("play_stinger", 500));
+    audio.sort_events();
+
+    timeline.playhead().set_duration_ms(5'000);
+    timeline.play();
+    timeline.advance(600);
+
+    expectTrue(timeline.cue_queue().pending_count() == 1, "advance enqueues crossed cue");
+    expectTrue(timeline.cue_queue().pending()[0].track_kind == fuse::cinematics::TrackKind::Audio,
+               "advance cue carries track kind");
+}
+
+void testCueQueueDrain() {
+    fuse::cinematics::CueQueue queue;
+    fuse::u32 hook_count = 0;
+    queue.set_dispatch_hook([&hook_count](const fuse::cinematics::CueEntry&) { ++hook_count; });
+
+    queue.enqueue({"a", "TrackA", "GroupA", fuse::cinematics::TrackKind::Event, 100});
+    queue.enqueue({"b", "TrackB", "GroupA", fuse::cinematics::TrackKind::Generic, 200});
+
+    expectTrue(queue.pending_count() == 2, "queue holds pending cues");
+    expectTrue(queue.total_enqueued() == 2, "queue counts enqueued cues");
+    expectTrue(hook_count == 2, "dispatch hook fires per enqueue");
+
+    const std::vector<fuse::cinematics::CueEntry> drained = queue.drain();
+    expectTrue(drained.size() == 2, "drain moves all cues out");
+    expectTrue(queue.empty(), "drain clears pending");
+    expectTrue(drained[1].label == "b", "drain preserves order");
+}
+
+void testAudioTrackVolume() {
+    fuse::cinematics::AudioTrack track("Ambience");
+    track.set_sound_asset_id("wind_loop");
+    track.add_keyframe({0, 0.f});
+    track.add_keyframe({2'000, 1.f});
+    track.sort_keyframes();
+
+    expectTrue(track.kind() == fuse::cinematics::TrackKind::Audio, "audio track kind");
+    expectNear(track.volume_at(1'000), 0.5f, 0.001f, "audio volume midpoint");
+}
+
+void testEventTrackKind() {
+    fuse::cinematics::EventTrack track("DirectorCue");
+    track.set_script_hook_id("cutscene_hook");
+    track.add_event(fuse::cinematics::TimelineEvent("fade_in", 0, 500));
+
+    expectTrue(track.kind() == fuse::cinematics::TrackKind::Event, "event track kind");
+    expectTrue(track.script_hook_id() == "cutscene_hook", "event track hook id");
+}
+
 } // namespace
 
 int main() {
@@ -230,6 +327,12 @@ int main() {
     testSpriteTrackSampling();
     testPropertyTrackSampling();
     testTimelineContentSpan();
+    testPlayheadScrub();
+    testTimelineScrubEnqueuesCues();
+    testAdvanceEnqueuesCues();
+    testCueQueueDrain();
+    testAudioTrackVolume();
+    testEventTrackKind();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

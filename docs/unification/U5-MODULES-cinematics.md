@@ -1,19 +1,22 @@
 # U5 Module: fuse_cinematics
 
-**Status:** Deepened Verve track kernel (camera / sprite / property stubs)  
+**Status:** Deepened Verve track kernel (camera / sprite / property / audio / event stubs, scrub + cue queue)  
 **Target:** `Source/FUSE/Modules/cinematics/`  
 **Ore:** Verve MIT — `Engine/source/Verve/Core/` and `third_party/addons/Verve/Engine/source/Verve/Core/`
 
 ## Harvested concepts
 
 - **Timeline** — from `VController` (play/pause/stop, duration, time scale, loop, `processTick` advance)
-- **Playhead** — current ms position and playback state
+- **Playhead** — current ms position, playback state, `scrub_to` seek without starting playback
 - **Track** — from `VTrack` (sorted events, span, `calculateInterp`)
 - **TimelineEvent** — from `VEvent` (trigger time, duration, active span)
 - **TrackGroup** — from `VGroup`
 - **CameraTrack** — from `VCameraTrack` / `VSceneObjectTrack` (camera keyframes, `sample_at`)
 - **SpriteTrack** — from `VSceneObjectTrack` (2D sprite transform stub)
 - **PropertyTrack** — from `VMotionTrack` (scalar property rail stub)
+- **AudioTrack** — from `VSoundEffectTrack` (sound asset id + volume keyframes stub)
+- **EventTrack** — from `VScriptEventTrack` (script hook id + cue events)
+- **CueQueue** — forward-crossed event dispatch during `scrub_to` / `advance` (game-thread `drain`)
 - **interpolate** — `lerp`, `lerp_vec3`, `apply_ease`, `calculate_track_interp` (Verve `calculateInterp`)
 
 ## Not in scope (later PRs)
@@ -27,7 +30,7 @@
 ## Build / test
 
 - CMake: `FUSE_BUILD_MODULES=ON` (default) builds `fuse_cinematics`
-- CTest: `fuse_cinematics_tests` — 30s timeline advance, track span, interpolation, typed track sampling, interpolate helpers
+- CTest: `fuse_cinematics_tests` — 30s timeline advance, track span, interpolation, typed track sampling, playhead scrub, cue queue drain, advance/scrub cue enqueue
 
 ## License
 
