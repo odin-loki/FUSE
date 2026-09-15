@@ -23,6 +23,8 @@ struct SolverParams {
     f32 sleepLinearThreshold = 0.01f;
     f32 sleepAngularThreshold = 0.01f;
     f32 sleepTimeRequired = 0.5f;
+    /// Max constraint violation (residual stub) for early exit; 0 disables.
+    f32 residualTolerance = 0.f;
     broadphase::SpatialHashParams broadphase{};
 };
 
@@ -42,6 +44,7 @@ public:
     u32 contactCount() const { return lastContactCount_; }
     u32 activeBodyCount() const { return lastActiveCount_; }
     u32 lastIterationCount() const { return lastIterationCount_; }
+    f32 lastConstraintResidual() const { return lastConstraintResidual_; }
     const ContactIslandGraph& islandGraph() const { return islandGraph_; }
     const SolverWorkBuffers& workBuffers() const { return workBuffers_; }
 
@@ -55,13 +58,7 @@ private:
                                   const ContactIslandGraph::Island& island,
                                   const SolverParams& params,
                                   f32 dt);
-    void resolveContact(RigidBodySoA& bodies,
-                        const narrowphase::ContactManifold& contact,
-                        const SolverParams& params,
-                        f32 dt);
-    void resolveDistanceConstraint(RigidBodySoA& bodies,
-                                   const DistanceConstraint& constraint,
-                                   f32 dt);
+    f32 measureConstraintResidual_(RigidBodySoA& bodies) const;
     void updateVelocities(RigidBodySoA& bodies, f32 dt);
     void applyDamping(RigidBodySoA& bodies, const SolverParams& params);
     void detectSleep(RigidBodySoA& bodies, const SolverParams& params, f32 dt);
@@ -74,6 +71,7 @@ private:
     u32 lastContactCount_ = 0;
     u32 lastActiveCount_ = 0;
     u32 lastIterationCount_ = 0;
+    f32 lastConstraintResidual_ = 0.f;
 };
 
 } // namespace fuse::physics

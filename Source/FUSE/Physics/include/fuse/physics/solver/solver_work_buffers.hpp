@@ -24,6 +24,11 @@ struct SolverWorkBuffers {
     void clearPositionDeltas();
     void applyPositionDeltas(RigidBodySoA& bodies) const;
 
+    void ensureLambdaCapacity(u32 contactCount, u32 distanceCount);
+    void clearLambdas();
+    f32& contactLambda(u32 contactIndex);
+    f32& distanceLambda(u32 distanceIndex);
+
     u32 bodyCapacity() const { return static_cast<u32>(positionDeltas_.size()); }
     u32 contactCapacity() const { return static_cast<u32>(contactManifolds_.capacity()); }
 
@@ -33,9 +38,14 @@ struct SolverWorkBuffers {
     std::vector<PositionDelta>& positionDeltas() { return positionDeltas_; }
     const std::vector<PositionDelta>& positionDeltas() const { return positionDeltas_; }
 
+    const std::vector<f32>& contactLambdas() const { return contactLambdas_; }
+    const std::vector<f32>& distanceLambdas() const { return distanceLambdas_; }
+
 private:
     std::vector<PositionDelta> positionDeltas_;
     std::vector<narrowphase::ContactManifold> contactManifolds_;
+    std::vector<f32> contactLambdas_;
+    std::vector<f32> distanceLambdas_;
     u32 maxConstraints_ = 0;
 };
 

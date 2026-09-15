@@ -1,4 +1,5 @@
 #include <fuse/physics/solver/pbd_solver.hpp>
+#include <fuse/physics/solver/constraint_accumulation.hpp>
 
 #include <fuse/jobs/parallel_for.hpp>
 
@@ -25,11 +26,6 @@ f32 effectiveInvMass(const RigidBodySoA& bodies, u32 index) {
     return bodies.invMasses[index];
 }
 
-vec3 worldAnchor(const RigidBodySoA& bodies, u32 bodyIndex, const vec3& localAnchor) {
-    (void)localAnchor;
-    return bodies.predictedPositions[bodyIndex];
-}
-
 } // namespace
 
 void PBDSolver::init(u32 maxBodies, u32 maxContacts, u32 maxConstraints) {
@@ -42,6 +38,7 @@ void PBDSolver::init(u32 maxBodies, u32 maxContacts, u32 maxConstraints) {
     lastContactCount_ = 0;
     lastActiveCount_ = 0;
     lastIterationCount_ = 0;
+    lastConstraintResidual_ = 0.f;
 }
 
 void PBDSolver::destroy() {
@@ -53,6 +50,7 @@ void PBDSolver::destroy() {
     lastContactCount_ = 0;
     lastActiveCount_ = 0;
     lastIterationCount_ = 0;
+    lastConstraintResidual_ = 0.f;
 }
 
 void PBDSolver::setDistanceConstraints(const std::vector<DistanceConstraint>& constraints) {
@@ -119,80 +117,12 @@ void PBDSolver::generateContacts(RigidBodySoA& bodies,
     }
 }
 
-void PBDSolver::resolveContact(RigidBodySoA& bodies,
-                               const narrowphase::ContactManifold& contact,
-                               const SolverParams& params,
-                               f32 dt) {
-    if (!contact.valid) {
-        return;
-    }
-
-    const u32 a = contact.bodyA;
-    const u32 b = contact.bodyB;
-    const f32 invMassA = effectiveInvMass(bodies, a);
-    const f32 invMassB = effectiveInvMass(bodies, b);
-    const f32 weightSum = invMassA + invMassB;
-    if (weightSum < 1e-10f) {
-        return;
-    }
-
-    const vec3 pa = bodies.predictedPositions[a];
-    const vec3 pb = bodies.predictedPositions[b];
-    const vec3 diff = pa - pb;
-    const f32 constraint = diff.dot(contact.contactNormal) - contact.minSeparation;
-    if (constraint >= 0.f) {
-        return;
-    }
-
-    const f32 alpha = params.contactCompliance / (dt * dt);
-    const f32 deltaLambda = -constraint / (weightSum + alpha);
-    const vec3 deltaPosition = contact.contactNormal * deltaLambda;
-
-    bodies.predictedPositions[a] += deltaPosition * invMassA;
-    bodies.predictedPositions[b] -= deltaPosition * invMassB;
-
-    const vec3 relativeVelocity = (pa - pb) * (1.f / dt);
-    const f32 normalVelocity = relativeVelocity.dot(contact.contactNormal);
-    vec3 tangentialVelocity = relativeVelocity - contact.contactNormal * normalVelocity;
-    const f32 tangentialLength = tangentialVelocity.length();
-    if (tangentialLength > 1e-6f) {
-        const f32 frictionCoeff = bodies.frictionDynamic[a];
-        const f32 frictionCorrection =
-            std::min(frictionCoeff * std::fabs(deltaLambda), tangentialLength * weightSum) / weightSum;
-        const vec3 tangentialDir = tangentialVelocity * (1.f / tangentialLength);
-        bodies.predictedPositions[a] -= tangentialDir * (frictionCorrection * invMassA);
-        bodies.predictedPositions[b] += tangentialDir * (frictionCorrection * invMassB);
-    }
-}
-
-void PBDSolver::resolveDistanceConstraint(RigidBodySoA& bodies,
-                                          const DistanceConstraint& constraint,
-                                          f32 dt) {
-    const u32 a = constraint.bodyA;
-    const u32 b = constraint.bodyB;
-    const f32 invMassA = effectiveInvMass(bodies, a);
-    const f32 invMassB = effectiveInvMass(bodies, b);
-    const f32 weightSum = invMassA + invMassB;
-    if (weightSum < 1e-10f) {
-        return;
-    }
-
-    const vec3 anchorA = worldAnchor(bodies, a, constraint.localAnchorA);
-    const vec3 anchorB = worldAnchor(bodies, b, constraint.localAnchorB);
-    const vec3 diff = anchorA - anchorB;
-    const f32 distance = diff.length();
-    if (distance < 1e-8f) {
-        return;
-    }
-
-    const vec3 normal = diff * (1.f / distance);
-    const f32 constraintValue = distance - constraint.restLength;
-    const f32 alpha = constraint.compliance / (dt * dt);
-    const f32 deltaLambda = -constraintValue / (weightSum + alpha);
-    const vec3 deltaPosition = normal * deltaLambda;
-
-    bodies.predictedPositions[a] += deltaPosition * invMassA;
-    bodies.predictedPositions[b] -= deltaPosition * invMassB;
+f32 PBDSolver::measureConstraintResidual_(RigidBodySoA& bodies) const {
+    return measureConstraintResidual(
+        bodies,
+        workBuffers_.contactManifolds(),
+        distanceConstraints_,
+        [](const RigidBodySoA& bodySoA, u32 index) { return effectiveInvMass(bodySoA, index); });
 }
 
 void PBDSolver::resolveIslandConstraints(RigidBodySoA& bodies,
@@ -200,40 +130,87 @@ void PBDSolver::resolveIslandConstraints(RigidBodySoA& bodies,
                                          const SolverParams& params,
                                          f32 dt) {
     const std::vector<narrowphase::ContactManifold>& contacts = workBuffers_.contactManifolds();
+    std::vector<PositionDelta>& positionDeltas = workBuffers_.positionDeltas();
 
     for (u32 contactIndex : island.contactIndices) {
-        if (contactIndex < contacts.size()) {
-            resolveContact(bodies, contacts[contactIndex], params, dt);
+        if (contactIndex >= contacts.size()) {
+            continue;
         }
+        workBuffers_.clearPositionDeltas();
+        const narrowphase::ContactManifold& contact = contacts[contactIndex];
+        const f32 invMassA = effectiveInvMass(bodies, contact.bodyA);
+        const f32 invMassB = effectiveInvMass(bodies, contact.bodyB);
+        f32& lambda = workBuffers_.contactLambda(contactIndex);
+        accumulateContactCorrection(bodies,
+                                  contact,
+                                  invMassA,
+                                  invMassB,
+                                  dt,
+                                  params.contactCompliance,
+                                  lambda,
+                                  positionDeltas);
+        workBuffers_.applyPositionDeltas(bodies);
     }
 
     for (u32 distanceIndex : island.distanceIndices) {
-        if (distanceIndex < distanceConstraints_.size()) {
-            resolveDistanceConstraint(bodies, distanceConstraints_[distanceIndex], dt);
+        if (distanceIndex >= distanceConstraints_.size()) {
+            continue;
         }
+        workBuffers_.clearPositionDeltas();
+        const DistanceConstraint& constraint = distanceConstraints_[distanceIndex];
+        const f32 invMassA = effectiveInvMass(bodies, constraint.bodyA);
+        const f32 invMassB = effectiveInvMass(bodies, constraint.bodyB);
+        f32& lambda = workBuffers_.distanceLambda(distanceIndex);
+        accumulateDistanceSpringCorrection(bodies,
+                                           constraint,
+                                           invMassA,
+                                           invMassB,
+                                           dt,
+                                           lambda,
+                                           positionDeltas);
+        workBuffers_.applyPositionDeltas(bodies);
     }
 }
 
 void PBDSolver::runConstraintIterations(RigidBodySoA& bodies, const SolverParams& params, f32 dt) {
-    const u32 iterationCount = std::max(1u, params.iterations);
-    lastIterationCount_ = iterationCount;
+    const u32 maxIterations = std::max(1u, params.iterations);
+    lastIterationCount_ = 0;
+    lastConstraintResidual_ = 0.f;
 
     islandGraph_.build(bodies.count(), workBuffers_.contactManifolds(), distanceConstraints_);
+    workBuffers_.ensureLambdaCapacity(static_cast<u32>(workBuffers_.contactManifolds().size()),
+                                      static_cast<u32>(distanceConstraints_.size()));
 
-    for (u32 iter = 0; iter < iterationCount; ++iter) {
-        workBuffers_.clearPositionDeltas();
-
+    for (u32 iter = 0; iter < maxIterations; ++iter) {
         const u32 islandCount = islandGraph_.islandCount();
         if (islandCount == 0) {
-            for (const DistanceConstraint& constraint : distanceConstraints_) {
-                resolveDistanceConstraint(bodies, constraint, dt);
+            for (u32 distanceIndex = 0; distanceIndex < distanceConstraints_.size(); ++distanceIndex) {
+                workBuffers_.clearPositionDeltas();
+                const DistanceConstraint& constraint = distanceConstraints_[distanceIndex];
+                const f32 invMassA = effectiveInvMass(bodies, constraint.bodyA);
+                const f32 invMassB = effectiveInvMass(bodies, constraint.bodyB);
+                f32& lambda = workBuffers_.distanceLambda(distanceIndex);
+                accumulateDistanceSpringCorrection(bodies,
+                                                   constraint,
+                                                   invMassA,
+                                                   invMassB,
+                                                   dt,
+                                                   lambda,
+                                                   workBuffers_.positionDeltas());
+                workBuffers_.applyPositionDeltas(bodies);
             }
-            continue;
+        } else {
+            fuse::jobs::parallel_for(0, islandCount, kIslandGrainSize, [&](u32 islandIndex) {
+                resolveIslandConstraints(bodies, islandGraph_.island(islandIndex), params, dt);
+            });
         }
 
-        fuse::jobs::parallel_for(0, islandCount, kIslandGrainSize, [&](u32 islandIndex) {
-            resolveIslandConstraints(bodies, islandGraph_.island(islandIndex), params, dt);
-        });
+        lastConstraintResidual_ = measureConstraintResidual_(bodies);
+        ++lastIterationCount_;
+
+        if (params.residualTolerance > 0.f && lastConstraintResidual_ <= params.residualTolerance) {
+            break;
+        }
     }
 }
 
@@ -297,6 +274,7 @@ void PBDSolver::step(RigidBodySoA& bodies,
         lastContactCount_ = 0;
         lastActiveCount_ = 0;
         lastIterationCount_ = 0;
+        lastConstraintResidual_ = 0.f;
         return;
     }
 
@@ -307,6 +285,9 @@ void PBDSolver::step(RigidBodySoA& bodies,
     for (u32 substep = 0; substep < std::max(1u, params.substeps); ++substep) {
         predict(bodies, params, subDt);
         generateContacts(bodies, shapes, params);
+        if (substep == 0u) {
+            workBuffers_.clearLambdas();
+        }
         runConstraintIterations(bodies, params, subDt);
         updateVelocities(bodies, subDt);
     }
