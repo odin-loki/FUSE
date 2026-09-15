@@ -126,13 +126,14 @@ void testTonemapCurveEnabledCompressesHighlights() {
 }
 
 void testTonemapCurveEndpoints() {
-    fuse::renderer::TonemapCurveParams filmic{};
-    filmic.enabled = true;
+    const fuse::renderer::TonemapCurveParams filmic = fuse::renderer::make_filmic_curve_params();
     const fuse::renderer::TonemapCurveEndpoints filmicEndpoints =
         fuse::renderer::evaluate_tonemap_curve_endpoints(filmic);
     expectNear(filmicEndpoints.black_output, 0.f, 1e-4f, "filmic curve maps black to zero");
     expectTrue(filmicEndpoints.white_output > 0.f && filmicEndpoints.white_output <= 1.f,
                "filmic curve maps white input into display range");
+    expectTrue(fuse::renderer::tonemap_curve_output_span(filmic) > 0.f, "filmic curve has positive output span");
+    expectTrue(filmic.kind == fuse::renderer::TonemapCurveKind::Filmic, "filmic preset kind");
 
     const fuse::renderer::TonemapCurveParams reinhard = fuse::renderer::make_reinhard_curve_params();
     const fuse::renderer::TonemapCurveEndpoints reinhardEndpoints =
@@ -182,6 +183,13 @@ void testLuminanceToEvCalibration() {
     expectNear(fuse::renderer::luminance_to_ev(0.18f, 0.18f), 0.f, 1e-5f, "0.18 grey is 0 EV offset");
     expectTrue(fuse::renderer::luminance_to_ev(0.36f, 0.18f) > 0.f, "brighter scene yields positive EV");
     expectTrue(fuse::renderer::luminance_to_ev(0.09f, 0.18f) < 0.f, "darker scene yields negative EV");
+    expectNear(fuse::renderer::ev_to_luminance(0.f, 0.18f), 0.18f, 1e-5f, "0 EV maps back to target luminance");
+    expectNear(fuse::renderer::ev_to_luminance(1.f, 0.18f), 0.36f, 1e-4f, "+1 EV doubles target luminance");
+
+    const fuse::math::Vec3 hdr{0.25f, 0.5f, 0.1f};
+    const fuse::math::Vec3 exposed = fuse::renderer::apply_exposure_ev(hdr, 1.f);
+    expectNear(exposed.x, hdr.x * 2.f, 1e-5f, "exposure EV scales red channel");
+    expectNear(exposed.y, hdr.y * 2.f, 1e-5f, "exposure EV scales green channel");
 }
 
 void testAutoExposureEmaAsymmetricAlpha() {
@@ -231,6 +239,23 @@ void testAutoExposureEmaConverges() {
     expectNear(state.smoothed_luminance, 0.72f, 0.05f, "ema smoothed luminance converges");
 }
 
+void testLuminanceHistogramPercentileDistribution() {
+    fuse::renderer::LuminanceHistogram histogram{};
+    fuse::renderer::LuminanceHistogramParams params{};
+    histogram.init(params);
+
+    const fuse::math::Vec3 samples[] = {{0.09f, 0.09f, 0.09f}, {0.18f, 0.18f, 0.18f}, {0.36f, 0.36f, 0.36f}};
+    fuse::renderer::histogram_util::accumulateSamples(histogram, samples, 3u);
+
+    expectTrue(!histogram.isEmpty(), "batch accumulate leaves histogram non-empty");
+    expectTrue(histogram.sampleCount() == 3u, "batch accumulate records sample count");
+    expectTrue(histogram.occupiedBinCount() > 1u, "spread samples occupy multiple bins");
+    expectTrue(histogram.meteringLuminance() >= 0.09f && histogram.meteringLuminance() <= 0.36f,
+               "median metering stays within sample luminance range");
+    expectNear(fuse::renderer::histogram_util::measurePercentile(samples, 3u, params, 0.5f),
+               histogram.meteringLuminance(), 1e-5f, "utility percentile matches histogram metering");
+}
+
 void testLuminanceHistogramEmpty() {
     fuse::renderer::LuminanceHistogram histogram{};
     fuse::renderer::LuminanceHistogramParams params{};
@@ -277,6 +302,49 @@ void testExposureMeterAverage() {
     expectNear(average, 0.27f, 1e-4f, "meter averages rec709 luminance");
 }
 
+void testAutoExposureReset() {
+    fuse::renderer::AutoExposure exposure{};
+    exposure.init();
+
+    fuse::renderer::AutoExposureParams params{};
+    params.adaptation_speed_up = 8.f;
+    params.adaptation_speed_down = 8.f;
+    exposure.setParams(params);
+    exposure.updateFromLuminance(0.72f, 0.5f);
+    expectTrue(exposure.currentEv() > 0.f, "exposure adapts before reset");
+
+    exposure.reset();
+    expectNear(exposure.currentEv(), 0.f, 1e-6f, "reset clears adapted EV");
+    expectNear(exposure.state().measured_luminance, 0.f, 1e-6f, "reset clears measured luminance");
+    expectNear(exposure.state().smoothed_luminance, 0.f, 1e-6f, "reset clears smoothed luminance");
+
+    exposure.destroy();
+}
+
+void testPostStackHistogramAutoExposure() {
+    fuse::renderer::PostStack stack{};
+    stack.init({});
+
+    fuse::renderer::LuminanceHistogram histogram{};
+    fuse::renderer::LuminanceHistogramParams histParams{};
+    histogram.init(histParams);
+    histogram.accumulate({1.f, 1.f, 1.f});
+    histogram.accumulate({0.8f, 0.8f, 0.8f});
+
+    fuse::renderer::AutoExposureParams autoParams{};
+    autoParams.enabled = true;
+    autoParams.adaptation_speed_up = 8.f;
+    autoParams.adaptation_speed_down = 8.f;
+    stack.setAutoExposureParams(autoParams);
+
+    const fuse::f32 ev = stack.updateAutoExposureFromHistogram(histogram, 0.5f);
+    expectTrue(ev > 0.f, "histogram metering path adapts upward for bright scene");
+    expectNear(stack.autoExposure().state().measured_luminance, histogram.meteringLuminance(), 1e-4f,
+               "histogram path stores metering luminance");
+
+    stack.destroy();
+}
+
 void testPostStackAutoExposureIntegration() {
     fuse::renderer::PostStack stack{};
     stack.init({});
@@ -317,7 +385,10 @@ int main() {
     testLuminanceToEvCalibration();
     testAutoExposureEmaAsymmetricAlpha();
     testAutoExposureEmaConverges();
+    testLuminanceHistogramPercentileDistribution();
     testLuminanceHistogramEmpty();
+    testAutoExposureReset();
+    testPostStackHistogramAutoExposure();
     testAutoExposureClampsAndAdapts();
     testExposureMeterAverage();
     testPostStackAutoExposureIntegration();

@@ -39,6 +39,11 @@ f32 luminance_to_ev(f32 luminance, f32 target_luminance) {
     return std::log2(safeLum / safeTarget);
 }
 
+f32 ev_to_luminance(f32 ev, f32 target_luminance) {
+    const f32 safeTarget = std::max(target_luminance, 1e-8f);
+    return safeTarget * std::pow(2.f, ev);
+}
+
 f32 clamp_ev(f32 ev, const AutoExposureParams& params) {
     return std::clamp(ev, params.min_ev, params.max_ev);
 }
@@ -95,6 +100,31 @@ f32 update_auto_exposure_ema(AutoExposureState& state, f32 measured_luminance, c
     state.measured_luminance = adaptedLuminance;
     return update_auto_exposure(state, adaptedLuminance, params, delta_seconds);
 }
+
+void reset_auto_exposure_state(AutoExposureState& state) {
+    state = {};
+}
+
+namespace histogram_util {
+
+void accumulateSamples(LuminanceHistogram& histogram, const fuse::math::Vec3* samples, u32 count) {
+    if (samples == nullptr || count == 0) {
+        return;
+    }
+    for (u32 i = 0; i < count; ++i) {
+        histogram.accumulate(samples[i]);
+    }
+}
+
+f32 measurePercentile(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
+                      f32 percentile) {
+    LuminanceHistogram histogram;
+    histogram.init(params);
+    accumulateSamples(histogram, samples, count);
+    return histogram.percentileLuminance(percentile);
+}
+
+} // namespace histogram_util
 
 void LuminanceHistogram::reset() {
     m_bins.assign(m_params.bin_count, 0u);
@@ -230,6 +260,10 @@ void AutoExposure::init() {
 void AutoExposure::destroy() {
     m_state = {};
     m_ready = false;
+}
+
+void AutoExposure::reset() {
+    reset_auto_exposure_state(m_state);
 }
 
 f32 AutoExposure::updateFromLuminance(f32 measured_luminance, f32 delta_seconds) {

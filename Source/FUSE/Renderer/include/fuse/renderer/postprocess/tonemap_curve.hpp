@@ -38,6 +38,7 @@ struct TonemapCurveParams {
     AcesCurveParams aces{};
 };
 
+TonemapCurveParams make_filmic_curve_params(const TonemapCurveParams& overrides = {});
 TonemapCurveParams make_reinhard_curve_params(const ReinhardCurveParams& reinhard = {});
 TonemapCurveParams make_aces_curve_params(const AcesCurveParams& aces = {});
 
@@ -51,7 +52,10 @@ struct TonemapCurveEndpoints {
 
 TonemapCurveEndpoints evaluate_tonemap_curve_endpoints(const TonemapCurveParams& params,
                                                          f32 white_input = 1.f);
+/// Display-range span between evaluated white and black anchors (B5.10 deepen).
+f32 tonemap_curve_output_span(const TonemapCurveParams& params, f32 white_input = 1.f);
 bool tonemap_curve_preserves_black(const TonemapCurveParams& params, f32 epsilon = 1e-4f);
+fuse::math::Vec3 apply_exposure_ev(const fuse::math::Vec3& hdr, f32 ev_stops);
 
 f32 evaluate_reinhard_curve_channel(f32 channel, const ReinhardCurveParams& params);
 f32 evaluate_aces_curve_channel(f32 channel, const AcesCurveParams& params);

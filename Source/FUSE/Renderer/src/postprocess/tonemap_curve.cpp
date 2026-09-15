@@ -40,6 +40,19 @@ f32 hill_aces_channel(f32 channel, f32 contrast, f32 shoulder) {
 
 } // namespace
 
+TonemapCurveParams make_filmic_curve_params(const TonemapCurveParams& overrides) {
+    TonemapCurveParams params{};
+    params.kind = TonemapCurveKind::Filmic;
+    params.enabled = true;
+    params.toe_strength = overrides.toe_strength;
+    params.toe_length = overrides.toe_length;
+    params.shoulder_strength = overrides.shoulder_strength;
+    params.shoulder_length = overrides.shoulder_length;
+    params.shoulder_angle = overrides.shoulder_angle;
+    params.gamma = overrides.gamma;
+    return params;
+}
+
 TonemapCurveParams make_reinhard_curve_params(const ReinhardCurveParams& reinhard) {
     TonemapCurveParams params{};
     params.kind = TonemapCurveKind::Reinhard;
@@ -65,9 +78,19 @@ TonemapCurveEndpoints evaluate_tonemap_curve_endpoints(const TonemapCurveParams&
     return endpoints;
 }
 
+f32 tonemap_curve_output_span(const TonemapCurveParams& params, f32 white_input) {
+    const TonemapCurveEndpoints endpoints = evaluate_tonemap_curve_endpoints(params, white_input);
+    return endpoints.white_output - endpoints.black_output;
+}
+
 bool tonemap_curve_preserves_black(const TonemapCurveParams& params, f32 epsilon) {
     const f32 black = evaluate_tonemap_curve_channel(0.f, params);
     return black <= epsilon;
+}
+
+fuse::math::Vec3 apply_exposure_ev(const fuse::math::Vec3& hdr, f32 ev_stops) {
+    const f32 scale = std::pow(2.f, ev_stops);
+    return {hdr.x * scale, hdr.y * scale, hdr.z * scale};
 }
 
 f32 evaluate_reinhard_curve_channel(f32 channel, const ReinhardCurveParams& params) {

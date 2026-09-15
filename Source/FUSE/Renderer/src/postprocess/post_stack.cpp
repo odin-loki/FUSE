@@ -57,6 +57,10 @@ f32 PostStack::updateAutoExposure(const fuse::math::Vec3* samples, u32 count, f3
     return m_autoExposure.updateFromSamples(samples, count, delta_seconds);
 }
 
+f32 PostStack::updateAutoExposureFromHistogram(const LuminanceHistogram& histogram, f32 delta_seconds) {
+    return m_autoExposure.updateFromHistogram(histogram, delta_seconds);
+}
+
 fuse::math::Vec3 PostStack::processPixel(const fuse::math::Vec3& hdr_input, u64 frame_seed) {
     m_stats = {};
 
@@ -66,7 +70,7 @@ fuse::math::Vec3 PostStack::processPixel(const fuse::math::Vec3& hdr_input, u64 
     const f32 manualEv = m_colorGrade.params().exposure;
     const f32 autoEv = m_autoExposure.params().enabled ? m_autoExposure.currentEv() : 0.f;
     m_stats.auto_exposure_ev = autoEv;
-    const fuse::math::Vec3 exposed = bloomed * std::pow(2.f, manualEv + autoEv);
+    const fuse::math::Vec3 exposed = apply_exposure_ev(bloomed, manualEv + autoEv);
 
     const fuse::math::Vec3 curved = m_tonemapCurve.apply(exposed);
     m_stats.tonemap_curve_ran = m_tonemapCurve.params().enabled;
