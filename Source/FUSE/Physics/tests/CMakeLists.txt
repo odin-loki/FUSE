@@ -56,3 +56,24 @@ add_executable(fuse_physics_ccd_tests
 target_link_libraries(fuse_physics_ccd_tests PRIVATE fuse_physics fuse_core)
 target_compile_features(fuse_physics_ccd_tests PRIVATE cxx_std_17)
 add_test(NAME fuse_physics_ccd_tests COMMAND fuse_physics_ccd_tests)
+
+# B4.7–B4.11
+add_executable(fuse_voxel_destruction test_voxel_destruction.cpp)
+target_link_libraries(fuse_voxel_destruction PRIVATE fuse_physics)
+add_test(NAME fuse_voxel_destruction COMMAND fuse_voxel_destruction)
+
+add_executable(fuse_softbody test_softbody.cpp)
+target_link_libraries(fuse_softbody PRIVATE fuse_physics)
+add_test(NAME fuse_softbody COMMAND fuse_softbody)
+
+add_executable(fuse_physics_manager test_physics_manager.cpp)
+target_link_libraries(fuse_physics_manager PRIVATE fuse_physics)
+add_test(NAME fuse_physics_manager COMMAND fuse_physics_manager)
+
+add_executable(fuse_collision_events test_collision_events.cpp)
+target_link_libraries(fuse_collision_events PRIVATE fuse_physics)
+add_test(NAME fuse_collision_events COMMAND fuse_collision_events)
+
+add_executable(fuse_phase4_deliverables test_phase4_deliverables.cpp)
+target_link_libraries(fuse_phase4_deliverables PRIVATE fuse_physics)
+add_test(NAME fuse_phase4_deliverables COMMAND fuse_phase4_deliverables)

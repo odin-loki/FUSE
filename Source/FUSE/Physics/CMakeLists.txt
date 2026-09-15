@@ -1,4 +1,7 @@
+# fuse_physics — Track B physics (B4.1–B4.11 scaffolds)
+
 add_library(fuse_physics STATIC
+    # B4.1–B4.6 foundation (main)
     src/physics_data.cpp
     src/physics_pipeline.cpp
     src/physics_world_2d.cpp
@@ -22,6 +25,21 @@ add_library(fuse_physics STATIC
     include/fuse/physics/solver/pbd_solver.hpp
     include/fuse/physics/nbody/barnes_hut.hpp
     include/fuse/physics/ccd/ccd.hpp
+    # B4.7–B4.11 scaffolds
+    src/destruction/voxel_destruction.cpp
+    src/events/collision_events.cpp
+    src/phase4_test_registry.cpp
+    src/physics_manager.cpp
+    src/softbody/cloth_simulator.cpp
+    src/softbody/particle_system.cpp
+    src/spatial/svo.cpp
+    include/fuse/physics/destruction/voxel_destruction.hpp
+    include/fuse/physics/events/collision_events.hpp
+    include/fuse/physics/phase4_test_registry.hpp
+    include/fuse/physics/physics_manager.hpp
+    include/fuse/physics/softbody/cloth_simulator.hpp
+    include/fuse/physics/softbody/particle_system.hpp
+    include/fuse/physics/spatial/svo.hpp
 )
 
 add_library(fuse::physics ALIAS fuse_physics)
@@ -31,7 +49,7 @@ target_include_directories(fuse_physics
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
-target_link_libraries(fuse_physics PUBLIC fuse_core)
+target_link_libraries(fuse_physics PUBLIC fuse_core fuse_ecs)
 target_compile_features(fuse_physics PUBLIC cxx_std_17)
 
 if(FUSE_BUILD_CORE_TESTS)
