@@ -40,6 +40,10 @@ bool splitFractionNearOne(f32 splitFraction) {
     return std::fabs(splitFraction - 1.f) <= 1e-5f;
 }
 
+bool splitDistanceNearFarPlane(f32 splitDistance, f32 farPlane) {
+    return std::fabs(splitDistance - farPlane) <= 1e-4f;
+}
+
 fuse::math::Vec3 buildCameraBasis(const ShadowCameraParams& camera,
                                   fuse::math::Vec3& outRight,
                                   fuse::math::Vec3& outUp) {
@@ -198,6 +202,37 @@ bool CascadedShadowMapLayout::validateSplitMonotonicity(const f32 splitFractions
     return splitFractionNearOne(splitFractions[clampedCount - 1u]);
 }
 
+bool CascadedShadowMapLayout::validateSplitDistances(const f32 splitDistances[],
+                                                     u32 cascadeCount,
+                                                     const ShadowCameraParams& camera) {
+    const u32 clampedCount = clampCascadeCount(cascadeCount);
+    if (clampedCount == 0u || splitDistances == nullptr || camera.farPlane <= camera.nearPlane) {
+        return false;
+    }
+
+    f32 previousDistance = camera.nearPlane - 1.f;
+    for (u32 cascade = 0; cascade < clampedCount; ++cascade) {
+        const f32 distance = splitDistances[cascade];
+        if (distance < previousDistance) {
+            return false;
+        }
+        previousDistance = distance;
+    }
+
+    return splitDistanceNearFarPlane(splitDistances[clampedCount - 1u], camera.farPlane);
+}
+
+bool CascadedShadowMapLayout::isEmptyCascadeFrustum(u32 cascadeIndex,
+                                                    const CascadedShadowMapDesc& desc,
+                                                    const ShadowCameraParams& camera) {
+    if (camera.farPlane <= camera.nearPlane) {
+        return true;
+    }
+
+    const CascadeRange range = computeCascadeRange(cascadeIndex, desc, camera);
+    return range.nearZ >= range.farZ;
+}
+
 f32 CascadedShadowMapLayout::computeCascadeNearZ(u32 cascadeIndex,
                                                  const CascadedShadowMapDesc& desc,
                                                  const ShadowCameraParams& camera) {
@@ -324,6 +359,17 @@ fuse::math::Vec3 CascadeLightSpaceLayout::computeCascadeFocus(u32 cascadeIndex,
 bool CascadeLightSpaceLayout::isDegenerateCascadeRange(const CascadeRange& range,
                                                        const ShadowCameraParams& camera) {
     return range.nearZ >= range.farZ || camera.farPlane <= camera.nearPlane;
+}
+
+bool CascadeLightSpaceLayout::isDegenerateLightDirection(const fuse::math::Vec3& lightDirection) {
+    return lightDirection.length() < 1e-8f;
+}
+
+bool CascadeLightSpaceLayout::validateOrthoBounds(const CascadeOrthoBounds& bounds) {
+    const f32 width = bounds.right - bounds.left;
+    const f32 height = bounds.top - bounds.bottom;
+    const f32 depth = bounds.farPlane - bounds.nearPlane;
+    return width > 1e-8f && height > 1e-8f && depth > 1e-8f;
 }
 
 fuse::math::Mat4 CascadeLightSpaceLayout::buildLightView(const fuse::math::Vec3& focus,
@@ -472,6 +518,10 @@ CascadeLightSpaceMatrices CascadeLightSpaceLayout::buildCascadeLightSpaceMatrice
         return matrices;
     }
 
+    if (isDegenerateLightDirection(lightDirection)) {
+        return matrices;
+    }
+
     const fuse::math::Vec3 focus = computeCascadeFocus(cascadeIndex, desc, camera);
     const fuse::math::AABB lightAabb = computeCascadeLightSpaceAabb(cascadeIndex, desc, camera, lightDirection);
     if (isEmptyLightSpaceAabb(lightAabb)) {
@@ -487,6 +537,22 @@ CascadeLightSpaceMatrices CascadeLightSpaceLayout::buildCascadeLightSpaceMatrice
     matrices.lightViewProj = multiplyShadowMatrices(matrices.lightProjection, matrices.lightView);
     matrices.valid = true;
     return matrices;
+}
+
+u32 CascadeLightSpaceLayout::buildAllCascadeLightSpaceMatrices(
+    const CascadedShadowMapDesc& desc,
+    const ShadowCameraParams& camera,
+    const fuse::math::Vec3& lightDirection,
+    CascadeLightSpaceMatrices outMatrices[kCascadeCount]) {
+    u32 validCount = 0u;
+    for (u32 cascade = 0; cascade < kCascadeCount; ++cascade) {
+        outMatrices[cascade] =
+            buildCascadeLightSpaceMatrices(cascade, desc, camera, lightDirection);
+        if (outMatrices[cascade].valid) {
+            ++validCount;
+        }
+    }
+    return validCount;
 }
 
 } // namespace fuse::renderer

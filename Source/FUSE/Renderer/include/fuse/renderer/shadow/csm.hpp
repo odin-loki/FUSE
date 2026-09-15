@@ -96,6 +96,12 @@ struct CascadedShadowMapLayout {
                                       const ShadowCameraParams& camera,
                                       CascadedShadowMapDesc& desc);
     static bool validateSplitMonotonicity(const f32 splitFractions[], u32 cascadeCount);
+    static bool validateSplitDistances(const f32 splitDistances[],
+                                       u32 cascadeCount,
+                                       const ShadowCameraParams& camera);
+    static bool isEmptyCascadeFrustum(u32 cascadeIndex,
+                                      const CascadedShadowMapDesc& desc,
+                                      const ShadowCameraParams& camera);
     static f32 computeCascadeNearZ(u32 cascadeIndex, const CascadedShadowMapDesc& desc, const ShadowCameraParams& camera);
     static f32 computeCascadeFarZ(u32 cascadeIndex, const CascadedShadowMapDesc& desc, const ShadowCameraParams& camera);
     static CascadeRange computeCascadeRange(u32 cascadeIndex,
@@ -143,6 +149,8 @@ struct CascadeLightSpaceLayout {
                                                 const CascadedShadowMapDesc& desc,
                                                 const ShadowCameraParams& camera);
     static bool isDegenerateCascadeRange(const CascadeRange& range, const ShadowCameraParams& camera);
+    static bool isDegenerateLightDirection(const fuse::math::Vec3& lightDirection);
+    static bool validateOrthoBounds(const CascadeOrthoBounds& bounds);
     static fuse::math::Mat4 buildLightView(const fuse::math::Vec3& focus, const fuse::math::Vec3& lightDirection);
     static bool isEmptyLightSpaceAabb(const fuse::math::AABB& aabb);
     static fuse::math::AABB computeLightSpaceAabbFromWorldCorners(const fuse::math::Vec3 worldCorners[8],
@@ -164,6 +172,11 @@ struct CascadeLightSpaceLayout {
                                                                     const CascadedShadowMapDesc& desc,
                                                                     const ShadowCameraParams& camera,
                                                                     const fuse::math::Vec3& lightDirection);
+    /// Build per-cascade light-space matrices for all slots; returns count of valid cascades.
+    static u32 buildAllCascadeLightSpaceMatrices(const CascadedShadowMapDesc& desc,
+                                                 const ShadowCameraParams& camera,
+                                                 const fuse::math::Vec3& lightDirection,
+                                                 CascadeLightSpaceMatrices outMatrices[kCascadeCount]);
 };
 
 } // namespace fuse::renderer

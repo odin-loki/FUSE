@@ -272,6 +272,147 @@ void testVariableCascadeCount() {
     expectNear(threeDistances[2], 80.f, 0.001f, "three-cascade last split reaches far plane");
 }
 
+void testValidateSplitDistances() {
+    using fuse::renderer::CascadeSplitParams;
+    using fuse::renderer::CascadeSplitScheme;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+
+    ShadowCameraParams camera{};
+    camera.nearPlane = 0.5f;
+    camera.farPlane = 200.f;
+
+    CascadeSplitParams params{};
+    params.scheme = CascadeSplitScheme::Practical;
+    params.lambda = 0.5f;
+    params.cascadeCount = 4u;
+
+    fuse::f32 distances[fuse::renderer::kMaxCascadeCount]{};
+    CascadedShadowMapLayout::computeSplitDistances(params, camera, distances);
+    expectTrue(CascadedShadowMapLayout::validateSplitDistances(distances, 4u, camera),
+               "practical split distances pass distance validation");
+
+    fuse::f32 invalidDistances[fuse::renderer::kMaxCascadeCount]{50.f, 40.f, 120.f, 200.f};
+    expectTrue(!CascadedShadowMapLayout::validateSplitDistances(invalidDistances, 4u, camera),
+               "non-monotonic split distances rejected");
+
+    fuse::f32 truncatedDistances[fuse::renderer::kMaxCascadeCount]{50.f, 100.f, 150.f, 180.f};
+    expectTrue(!CascadedShadowMapLayout::validateSplitDistances(truncatedDistances, 4u, camera),
+               "split distances must reach far plane");
+}
+
+void testSingleCascadeCount() {
+    using fuse::renderer::CascadeSplitParams;
+    using fuse::renderer::CascadeSplitScheme;
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+
+    ShadowCameraParams camera{};
+    camera.nearPlane = 2.f;
+    camera.farPlane = 60.f;
+
+    CascadeSplitParams singleParams{};
+    singleParams.scheme = CascadeSplitScheme::Uniform;
+    singleParams.cascadeCount = 1u;
+
+    fuse::f32 fractions[fuse::renderer::kMaxCascadeCount]{};
+    CascadedShadowMapLayout::computeSplitFractions(singleParams, camera, fractions);
+    expectTrue(CascadedShadowMapLayout::validateSplitMonotonicity(fractions, 1u),
+               "single-cascade split fractions valid");
+    expectNear(fractions[0], 1.f, 0.001f, "single cascade covers full depth range");
+
+    fuse::f32 distances[fuse::renderer::kMaxCascadeCount]{};
+    CascadedShadowMapLayout::computeSplitDistances(singleParams, camera, distances);
+    expectTrue(CascadedShadowMapLayout::validateSplitDistances(distances, 1u, camera),
+               "single-cascade split distances valid");
+    expectNear(distances[0], 60.f, 0.001f, "single cascade split reaches far plane");
+
+    CascadedShadowMapDesc populatedDesc{};
+    CascadedShadowMapLayout::populateCascadeSplits(singleParams, camera, populatedDesc);
+    const fuse::renderer::CascadeRange range =
+        CascadedShadowMapLayout::computeCascadeRange(0u, populatedDesc, camera);
+    expectNear(range.nearZ, 2.f, 0.001f, "single cascade near equals camera near");
+    expectNear(range.farZ, 60.f, 0.001f, "single cascade far equals camera far");
+    expectTrue(!CascadedShadowMapLayout::isEmptyCascadeFrustum(0u, populatedDesc, camera),
+               "single-cascade frustum is non-empty");
+}
+
+void testIsEmptyCascadeFrustum() {
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+
+    CascadedShadowMapDesc desc{};
+    ShadowCameraParams camera{};
+    camera.nearPlane = 5.f;
+    camera.farPlane = 100.f;
+
+    expectTrue(!CascadedShadowMapLayout::isEmptyCascadeFrustum(0u, desc, camera),
+               "default cascade frustum is non-empty");
+
+    ShadowCameraParams invertedCamera = camera;
+    invertedCamera.nearPlane = 50.f;
+    invertedCamera.farPlane = 10.f;
+    expectTrue(CascadedShadowMapLayout::isEmptyCascadeFrustum(0u, desc, invertedCamera),
+               "inverted camera planes yield empty frustum");
+
+    CascadedShadowMapDesc flatDesc{};
+    flatDesc.cascadeSplits[0] = 0.5f;
+    flatDesc.cascadeSplits[1] = 0.5f;
+    flatDesc.cascadeSplits[2] = 1.f;
+    flatDesc.cascadeSplits[3] = 1.f;
+    expectTrue(CascadedShadowMapLayout::isEmptyCascadeFrustum(1u, flatDesc, camera),
+               "zero-thickness cascade slice flagged empty");
+}
+
+void testBuildAllCascadeLightSpaceMatrices() {
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::ShadowCameraParams;
+    using fuse::renderer::kCascadeCount;
+
+    CascadedShadowMapDesc desc{};
+    ShadowCameraParams camera{};
+    camera.position = {0.f, 4.f, 8.f};
+    camera.forward = {0.f, -0.1f, -1.f};
+    camera.nearPlane = 0.1f;
+    camera.farPlane = 120.f;
+    camera.fovDegrees = 65.f;
+    camera.aspect = 1.333f;
+
+    const fuse::math::Vec3 sunDirection{-0.25f, -1.f, -0.2f};
+    fuse::renderer::CascadeLightSpaceMatrices matrices[fuse::renderer::kCascadeCount]{};
+    const fuse::u32 validCount =
+        CascadeLightSpaceLayout::buildAllCascadeLightSpaceMatrices(desc, camera, sunDirection, matrices);
+
+    expectTrue(validCount == kCascadeCount, "all default cascades produce valid matrices");
+    for (fuse::u32 cascade = 0; cascade < kCascadeCount; ++cascade) {
+        expectTrue(matrices[cascade].valid, "batch-built cascade matrix valid");
+        expectTrue(CascadeLightSpaceLayout::validateOrthoBounds(matrices[cascade].orthoBounds),
+                   "batch-built ortho bounds valid");
+    }
+
+    const fuse::u32 degenerateCount = CascadeLightSpaceLayout::buildAllCascadeLightSpaceMatrices(
+        desc, camera, {0.f, 0.f, 0.f}, matrices);
+    expectTrue(degenerateCount == 0u, "zero light direction yields no valid matrices");
+}
+
+void testValidateOrthoBounds() {
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadeOrthoBounds;
+
+    const CascadeOrthoBounds valid{-5.f, 5.f, -3.f, 3.f, 1.f, 10.f};
+    expectTrue(CascadeLightSpaceLayout::validateOrthoBounds(valid), "positive ortho extents valid");
+
+    const CascadeOrthoBounds flat{0.f, 0.f, -1.f, 1.f, 0.f, 5.f};
+    expectTrue(!CascadeLightSpaceLayout::validateOrthoBounds(flat), "zero-width ortho bounds rejected");
+
+    const fuse::math::AABB emptyAabb{{1.f, 1.f, 1.f}, {-1.f, -1.f, -1.f}};
+    const CascadeOrthoBounds emptyFit = CascadeLightSpaceLayout::fitOrthoBoundsFromLightSpaceAabb(emptyAabb);
+    expectTrue(!CascadeLightSpaceLayout::validateOrthoBounds(emptyFit), "empty aabb fit rejected");
+}
+
 void testLightSpaceAabbContainsCorners() {
     using fuse::renderer::CascadeLightSpaceLayout;
     using fuse::renderer::CascadedShadowMapDesc;
@@ -537,6 +678,9 @@ int main() {
     testCascadeSplitValidation();
     testCascadeSplitSchemes();
     testCascadeCountClamp();
+    testValidateSplitDistances();
+    testSingleCascadeCount();
+    testIsEmptyCascadeFrustum();
     testBatchSplitDistances();
     testVariableCascadeCount();
     testBatchCascadeFarZs();
@@ -546,6 +690,8 @@ int main() {
     testEmptyFrustumLightSpaceAabb();
     testOrthoBoundsFitAndStabilisation();
     testLightSpaceMatrixBookkeeping();
+    testBuildAllCascadeLightSpaceMatrices();
+    testValidateOrthoBounds();
     testDegenerateCascadeMatrices();
     testLightSpaceAabb();
     testShadowAtlasLayout();
