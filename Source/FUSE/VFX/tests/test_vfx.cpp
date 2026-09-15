@@ -615,7 +615,7 @@ void testParticleGpuMirrorRoundTrip() {
     copy.alive_flags.assign(desc.max_particles, 0u);
     copy.free_slots = emitter.particles().free_slots;
 
-    mirror.writeToCpuSoA(copy);
+    expectTrue(mirror.writeToCpuSoA(copy), "mirror write succeeds on matching capacity");
     expectEq(copy.count, emitter.alive_count(), "mirror write restores alive count");
     expectNear(copy.positions[0].y, emitter.particles().positions[0].y, 1e-5f,
                "mirror write copies integrated position");
@@ -746,7 +746,7 @@ void testParticleGpuMirrorParity() {
     cpu.colors.assign(capacity, {});
     cpu.alphas.assign(capacity, 0.f);
     cpu.alive_flags.assign(capacity, 0u);
-    mirror.writeToCpuSoA(cpu);
+    expectTrue(mirror.writeToCpuSoA(cpu), "writeToCpuSoA succeeds on matching capacity");
     expectTrue(mirror.matchesCpuSoA(cpu), "writeToCpuSoA round trip matches mirror");
 }
 
@@ -868,7 +868,7 @@ void testParticleGpuMirrorFullCapacityRoundTrip() {
     expected.colors.assign(capacity, {});
     expected.alphas.assign(capacity, 0.f);
     expected.alive_flags.assign(capacity, 0u);
-    mirror.writeToCpuSoA(expected);
+    expectTrue(mirror.writeToCpuSoA(expected), "mirror write succeeds for full capacity");
     expectTrue(restored.matchesCpuSoA(expected), "full-capacity round trip preserves columns");
     expectNear(expected.positions[capacity - 1].x, static_cast<fuse::f32>(capacity - 1), 1e-5f,
                "mirror write copies last slot position");
@@ -888,6 +888,167 @@ void testParticleGpuMirrorUndersizedUnpack() {
     expectEq(restored.alive_count, 0u, "undersized unpack yields empty mirror");
     expectTrue(restored.positions[0].x == 0.f && restored.positions[0].y == 0.f && restored.positions[0].z == 0.f,
                "undersized unpack does not populate columns");
+}
+
+void testParticleGpuColumnSpan() {
+    using fuse::vfx::ParticleGpuBufferLayout;
+    using fuse::vfx::ParticleGpuColumn;
+
+    const fuse::u32 capacity = 65u;
+    const fuse::vfx::ParticleGpuColumnSpan positions =
+        ParticleGpuBufferLayout::columnSpan(ParticleGpuColumn::Positions, capacity);
+    expectEq(positions.offset, 0u, "positions span starts at zero");
+    expectEq(positions.slot_count, capacity, "positions span covers full capacity");
+    expectEq(static_cast<fuse::u32>(positions.element_size), static_cast<fuse::u32>(sizeof(fuse::math::Vec3)),
+             "positions span element size");
+
+    const fuse::vfx::ParticleGpuColumnSpan velocities =
+        ParticleGpuBufferLayout::columnSpan(ParticleGpuColumn::Velocities, capacity);
+    expectTrue(velocities.offset >= positions.endOffset(), "velocities span follows positions");
+    expectTrue(velocities.offset % 16u == 0u, "velocities span offset is aligned");
+
+    const fuse::vfx::ParticleGpuColumnSpan alive =
+        ParticleGpuBufferLayout::columnSpan(ParticleGpuColumn::AliveFlags, capacity);
+    expectEq(static_cast<fuse::u32>(alive.element_size), static_cast<fuse::u32>(sizeof(fuse::u32)),
+             "alive_flags span element size");
+    expectTrue(alive.endOffset() <= ParticleGpuBufferLayout::packedDeviceBytes(capacity),
+               "alive_flags span fits packed SSBO");
+
+    expectEq(ParticleGpuBufferLayout::columnIndex(ParticleGpuColumn::Colors), 5u, "colors column index");
+}
+
+void testParticleGpuSoAValidation() {
+    const fuse::u32 capacity = 32u;
+    const fuse::u64 base = 0x4000u;
+
+    fuse::vfx::ParticleGpuMirror mirror{};
+    mirror.reserve(capacity);
+    mirror.alive_flags[0] = 1u;
+    mirror.alive_count = 1u;
+
+    const fuse::vfx::ParticleSoAGPU gpu = mirror.toGpuPointers(base);
+    expectTrue(gpu.hasDeviceBinding(), "GPU bundle reports device binding");
+    expectTrue(gpu.allColumnPointersBound(), "GPU bundle binds all columns");
+    expectTrue(gpu.validateAgainstLayout(base, capacity), "GPU bundle matches packed layout");
+
+    const fuse::vfx::ParticleSoAGPU empty = mirror.toGpuPointers(0u);
+    expectTrue(!empty.hasDeviceBinding(), "null base yields unbound GPU bundle");
+    expectTrue(!empty.allColumnPointersBound(), "null base leaves column pointers unset");
+    expectTrue(empty.validateAgainstLayout(0u, capacity), "null base validates as unbound");
+
+    fuse::vfx::ParticleSoAGPU mismatched = gpu;
+    mismatched.capacity = capacity + 1u;
+    expectTrue(!mismatched.validateAgainstLayout(base, capacity), "capacity mismatch fails validation");
+}
+
+void testParticleGpuDispatchPaddingAndSkip() {
+    using fuse::vfx::ParticleGpuBufferLayout;
+    using fuse::vfx::ParticleGpuDispatch;
+
+    const fuse::vfx::ParticleGpuDispatch partial = ParticleGpuDispatch::forSimulate(100u);
+    expectEq(partial.simPaddingThreads(100u), 156u, "partial simulate grid pads to block multiple");
+    expectTrue(!partial.shouldSkipSimLaunch(100u), "non-zero capacity sim launches");
+    expectTrue(partial.shouldSkipSimLaunch(0u), "zero capacity skips sim launch");
+
+    const fuse::vfx::ParticleGpuDispatch emit = ParticleGpuDispatch::forEmit(200u);
+    expectEq(emit.emitPaddingThreads(200u), 56u, "partial emit grid pads to block multiple");
+    expectTrue(!emit.shouldSkipEmitLaunch(200u), "non-zero emit launches");
+    expectTrue(emit.shouldSkipEmitLaunch(0u), "zero emit count skips launch");
+
+    const fuse::vfx::ParticleGpuDispatch exact =
+        ParticleGpuDispatch::forSimulate(ParticleGpuBufferLayout::kSimBlockSize);
+    expectEq(exact.simPaddingThreads(ParticleGpuBufferLayout::kSimBlockSize), 0u,
+             "exact simulate grid has no padding threads");
+
+    expectEq(fuse::vfx::particle_gpu_util::paddingThreads(0u, 4u, 64u), 0u,
+             "paddingThreads returns zero for zero elements");
+    expectEq(fuse::vfx::particle_gpu_util::paddingThreads(200u, 4u, 64u), 56u,
+             "paddingThreads matches emit padding");
+}
+
+void testParticleGpuFramePlan() {
+    const fuse::vfx::ParticleGpuFramePlan active =
+        fuse::vfx::ParticleGpuFramePlan::forStub(256u, 32u, 48u);
+    expectEq(active.capacity, 256u, "frame plan carries capacity");
+    expectEq(active.emit_count, 32u, "frame plan carries emit count");
+    expectEq(active.alive_count, 48u, "frame plan carries alive count");
+    expectTrue(!active.skipSimLaunch(), "active frame simulates");
+    expectTrue(!active.skipEmitLaunch(), "active frame emits");
+    expectTrue(!active.isIdle(), "active frame is not idle");
+    expectEq(static_cast<fuse::u32>(active.buffers.deviceBytes),
+             static_cast<fuse::u32>(fuse::vfx::ParticleGpuBufferLayout::packedDeviceBytes(256u)),
+             "frame plan sizes packed SSBO");
+
+    const fuse::vfx::ParticleGpuFramePlan sim_only =
+        fuse::vfx::ParticleGpuFramePlan::forStub(128u, 0u, 10u);
+    expectTrue(!sim_only.skipSimLaunch(), "sim-only frame still simulates");
+    expectTrue(sim_only.skipEmitLaunch(), "sim-only frame skips emit launch");
+    expectTrue(!sim_only.isIdle(), "sim-only frame is not fully idle");
+
+    const fuse::vfx::ParticleGpuFramePlan idle =
+        fuse::vfx::ParticleGpuFramePlan::forStub(0u, 0u, 0u);
+    expectTrue(idle.skipSimLaunch(), "idle frame skips sim launch");
+    expectTrue(idle.skipEmitLaunch(), "idle frame skips emit launch");
+    expectTrue(idle.isIdle(), "idle frame is idle");
+
+    const fuse::vfx::ParticleSoAGPU gpu = active.gpuPointers(0x8000u);
+    expectEq(gpu.count, 48u, "frame plan gpuPointers carries alive count");
+    expectTrue(gpu.validateAgainstLayout(0x8000u, 256u), "frame plan gpuPointers match layout");
+}
+
+void testParticleGpuMirrorSyncAndWriteGuard() {
+    fuse::vfx::ParticleEmitter emitter{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 8;
+    desc.emit_rate = 0.f;
+    desc.lifetime_min = 2.f;
+    desc.lifetime_max = 2.f;
+    desc.gravity = {0.f, -2.f, 0.f};
+
+    emitter.init(desc);
+    emitter.burst(2);
+    emitter.simulate(0.05f);
+
+    fuse::vfx::ParticleGpuMirror mirror{};
+    mirror.reserve(desc.max_particles);
+    mirror.syncFromCpuSoA(emitter.particles());
+    expectTrue(mirror.matchesCpuSoA(emitter.particles()), "syncFromCpuSoA matches CPU SoA");
+
+    emitter.simulate(0.05f);
+    mirror.syncFromCpuSoA(emitter.particles());
+    expectTrue(mirror.matchesCpuSoA(emitter.particles()), "syncFromCpuSoA refreshes after simulate");
+
+    fuse::vfx::ParticleSoA copy{};
+    copy.capacity = desc.max_particles;
+    copy.positions.assign(desc.max_particles, {});
+    copy.velocities.assign(desc.max_particles, {});
+    copy.ages.assign(desc.max_particles, 0.f);
+    copy.lifetimes.assign(desc.max_particles, 0.f);
+    copy.sizes.assign(desc.max_particles, 0.f);
+    copy.colors.assign(desc.max_particles, {});
+    copy.alphas.assign(desc.max_particles, 0.f);
+    copy.alive_flags.assign(desc.max_particles, 0u);
+
+    expectTrue(mirror.writeToCpuSoA(copy), "writeToCpuSoA succeeds on matching capacity");
+    expectTrue(mirror.matchesCpuSoA(copy), "writeToCpuSoA produces CPU parity");
+
+    fuse::vfx::ParticleSoA mismatched{};
+    mismatched.capacity = desc.max_particles + 4u;
+    mismatched.positions.assign(mismatched.capacity, {});
+    mismatched.velocities.assign(mismatched.capacity, {});
+    mismatched.ages.assign(mismatched.capacity, 0.f);
+    mismatched.lifetimes.assign(mismatched.capacity, 0.f);
+    mismatched.sizes.assign(mismatched.capacity, 0.f);
+    mismatched.colors.assign(mismatched.capacity, {});
+    mismatched.alphas.assign(mismatched.capacity, 0.f);
+    mismatched.alive_flags.assign(mismatched.capacity, 0u);
+    expectTrue(!mirror.writeToCpuSoA(mismatched), "writeToCpuSoA rejects capacity mismatch");
+
+    const std::vector<fuse::u8> packed = mirror.packToDeviceLayout();
+    expectTrue(mirror.packedBytesFit(packed), "packedBytesFit accepts full layout buffer");
+    expectTrue(!mirror.packedBytesFit(std::vector<fuse::u8>(packed.size() / 2u, 0u)),
+               "packedBytesFit rejects undersized buffer");
+    expectTrue(mirror.isEmpty() == (mirror.alive_count == 0u), "isEmpty tracks alive count");
 }
 
 void testSoaOpsEmptyBurst() {
@@ -1445,6 +1606,11 @@ int main() {
     testParticleGpuMirrorRoundTrip();
     testParticleGpuMirrorFullCapacityRoundTrip();
     testParticleGpuMirrorUndersizedUnpack();
+    testParticleGpuColumnSpan();
+    testParticleGpuSoAValidation();
+    testParticleGpuDispatchPaddingAndSkip();
+    testParticleGpuFramePlan();
+    testParticleGpuMirrorSyncAndWriteGuard();
     testParticleGpuPointerBundle();
     testParticleGpuLayoutSize();
     testParticleGpuEmptyDispatch();

@@ -32,6 +32,21 @@ struct ParticleSoAGPU {
     u64 alive_flags = 0;
     u32 count = 0;
     u32 capacity = 0;
+
+    [[nodiscard]] bool hasDeviceBinding() const { return positions != 0u && capacity > 0u; }
+    [[nodiscard]] bool allColumnPointersBound() const;
+    [[nodiscard]] bool validateAgainstLayout(u64 packed_base, u32 expected_capacity) const;
+};
+
+/// Byte span of one packed SoA column inside the device SSBO.
+struct ParticleGpuColumnSpan {
+    usize offset = 0u;
+    usize byte_size = 0u;
+    usize element_size = 0u;
+    u32 slot_count = 0u;
+
+    [[nodiscard]] usize endOffset() const { return offset + byte_size; }
+    [[nodiscard]] bool isEmpty() const { return byte_size == 0u || slot_count == 0u; }
 };
 
 /// Per-column byte sizing and packed SSBO layout helpers.
@@ -41,9 +56,11 @@ struct ParticleGpuBufferLayout {
     static constexpr usize kColumnAlignment = 16u;
 
     static u32 columnCount();
+    static u32 columnIndex(ParticleGpuColumn column);
     static usize columnAlignment();
     static usize elementSize(ParticleGpuColumn column);
     static usize columnByteSize(ParticleGpuColumn column, u32 capacity);
+    static ParticleGpuColumnSpan columnSpan(ParticleGpuColumn column, u32 capacity);
     static usize columnDeviceOffset(ParticleGpuColumn column, u32 capacity);
     static usize paddingAfterColumn(ParticleGpuColumn column, u32 capacity);
     static usize packedDeviceBytes(u32 capacity);
@@ -74,6 +91,12 @@ struct ParticleGpuDispatch {
     [[nodiscard]] bool isEmpty() const { return simBlockCount == 0u && emitBlockCount == 0u; }
     [[nodiscard]] bool hasSimLaunch() const { return simBlockCount > 0u; }
     [[nodiscard]] bool hasEmitLaunch() const { return emitBlockCount > 0u; }
+    [[nodiscard]] bool shouldSkipSimLaunch(u32 capacity) const { return capacity == 0u || !hasSimLaunch(); }
+    [[nodiscard]] bool shouldSkipEmitLaunch(u32 emit_count) const {
+        return emit_count == 0u || !hasEmitLaunch();
+    }
+    [[nodiscard]] u32 simPaddingThreads(u32 capacity) const;
+    [[nodiscard]] u32 emitPaddingThreads(u32 emit_count) const;
 };
 
 /// Logical GPU buffer handles — production wiring maps these to `renderer::BufferHandle`.
@@ -101,9 +124,12 @@ struct ParticleGpuMirror {
 
     void reserve(u32 particle_capacity);
     void clear();
+    void syncFromCpuSoA(const ParticleSoA& cpu);
 
     [[nodiscard]] static ParticleGpuMirror fromCpuSoA(const ParticleSoA& cpu);
-    void writeToCpuSoA(ParticleSoA& cpu) const;
+    [[nodiscard]] bool writeToCpuSoA(ParticleSoA& cpu) const;
+    [[nodiscard]] bool isEmpty() const { return alive_count == 0u; }
+    [[nodiscard]] bool packedBytesFit(const std::vector<u8>& bytes) const;
 
     [[nodiscard]] std::vector<u8> packToDeviceLayout() const;
     [[nodiscard]] static ParticleGpuMirror unpackFromDeviceLayout(const std::vector<u8>& bytes, u32 capacity);
@@ -114,9 +140,25 @@ struct ParticleGpuMirror {
     [[nodiscard]] ParticleSoAGPU toGpuPointers(u64 packed_device_address) const;
 };
 
+/// Per-frame GPU stub plan: buffer sizing, dispatch counts, and empty-launch guards.
+struct ParticleGpuFramePlan {
+    ParticleGpuBuffers buffers{};
+    ParticleGpuDispatch dispatch{};
+    u32 capacity = 0u;
+    u32 emit_count = 0u;
+    u32 alive_count = 0u;
+
+    [[nodiscard]] static ParticleGpuFramePlan forStub(u32 particle_capacity, u32 emit_count, u32 alive_count);
+    [[nodiscard]] bool skipSimLaunch() const;
+    [[nodiscard]] bool skipEmitLaunch() const;
+    [[nodiscard]] bool isIdle() const { return skipSimLaunch() && skipEmitLaunch(); }
+    [[nodiscard]] ParticleSoAGPU gpuPointers(u64 packed_device_address) const;
+};
+
 namespace particle_gpu_util {
 [[nodiscard]] u32 gridDimX(u32 element_count, u32 block_size);
 [[nodiscard]] u32 coveredThreadCount(u32 block_count, u32 block_size);
+[[nodiscard]] u32 paddingThreads(u32 element_count, u32 block_count, u32 block_size);
 } // namespace particle_gpu_util
 
 } // namespace fuse::vfx

@@ -22,6 +22,10 @@ usize alignUp(usize value, usize alignment) {
 
 u32 ParticleGpuBufferLayout::columnCount() { return 8u; }
 
+u32 ParticleGpuBufferLayout::columnIndex(ParticleGpuColumn column) {
+    return static_cast<u32>(column);
+}
+
 usize ParticleGpuBufferLayout::columnAlignment() { return kColumnAlignment; }
 
 usize ParticleGpuBufferLayout::elementSize(ParticleGpuColumn column) {
@@ -43,6 +47,15 @@ usize ParticleGpuBufferLayout::elementSize(ParticleGpuColumn column) {
 
 usize ParticleGpuBufferLayout::columnByteSize(ParticleGpuColumn column, u32 capacity) {
     return elementSize(column) * static_cast<usize>(capacity);
+}
+
+ParticleGpuColumnSpan ParticleGpuBufferLayout::columnSpan(ParticleGpuColumn column, u32 capacity) {
+    ParticleGpuColumnSpan span{};
+    span.offset = columnDeviceOffset(column, capacity);
+    span.element_size = elementSize(column);
+    span.byte_size = columnByteSize(column, capacity);
+    span.slot_count = capacity;
+    return span;
 }
 
 usize ParticleGpuBufferLayout::columnDeviceOffset(ParticleGpuColumn column, u32 capacity) {
@@ -174,6 +187,14 @@ ParticleGpuDispatch ParticleGpuDispatch::forFrame(u32 capacity, u32 emit_count) 
     return dispatch;
 }
 
+u32 ParticleGpuDispatch::simPaddingThreads(u32 capacity) const {
+    return particle_gpu_util::paddingThreads(capacity, simBlockCount, simThreadCount);
+}
+
+u32 ParticleGpuDispatch::emitPaddingThreads(u32 emit_count) const {
+    return particle_gpu_util::paddingThreads(emit_count, emitBlockCount, emitThreadCount);
+}
+
 ParticleGpuBuffers ParticleGpuBuffers::forCapacity(u32 particle_capacity) {
     ParticleGpuBuffers buffers{};
     buffers.capacity = particle_capacity;
@@ -205,6 +226,22 @@ void ParticleGpuMirror::clear() {
     alive_count = 0;
 }
 
+void ParticleGpuMirror::syncFromCpuSoA(const ParticleSoA& cpu) {
+    if (cpu.capacity != capacity) {
+        reserve(cpu.capacity);
+    }
+
+    positions = cpu.positions;
+    velocities = cpu.velocities;
+    ages = cpu.ages;
+    lifetimes = cpu.lifetimes;
+    sizes = cpu.sizes;
+    colors = cpu.colors;
+    alphas = cpu.alphas;
+    alive_flags = cpu.alive_flags;
+    alive_count = cpu.count;
+}
+
 ParticleGpuMirror ParticleGpuMirror::fromCpuSoA(const ParticleSoA& cpu) {
     ParticleGpuMirror mirror{};
     mirror.reserve(cpu.capacity);
@@ -220,9 +257,9 @@ ParticleGpuMirror ParticleGpuMirror::fromCpuSoA(const ParticleSoA& cpu) {
     return mirror;
 }
 
-void ParticleGpuMirror::writeToCpuSoA(ParticleSoA& cpu) const {
+bool ParticleGpuMirror::writeToCpuSoA(ParticleSoA& cpu) const {
     if (cpu.capacity != capacity) {
-        return;
+        return false;
     }
 
     cpu.positions = positions;
@@ -234,6 +271,7 @@ void ParticleGpuMirror::writeToCpuSoA(ParticleSoA& cpu) const {
     cpu.alphas = alphas;
     cpu.alive_flags = alive_flags;
     cpu.count = alive_count;
+    return true;
 }
 
 std::vector<u8> ParticleGpuMirror::packToDeviceLayout() const {
@@ -371,6 +409,39 @@ bool ParticleGpuMirror::matchesCpuSoA(const ParticleSoA& cpu) const {
     return true;
 }
 
+bool ParticleGpuMirror::packedBytesFit(const std::vector<u8>& bytes) const {
+    return bytes.size() >= ParticleGpuBufferLayout::packedDeviceBytes(capacity);
+}
+
+bool ParticleSoAGPU::allColumnPointersBound() const {
+    if (capacity == 0u) {
+        return false;
+    }
+
+    return positions != 0u && velocities != 0u && ages != 0u && lifetimes != 0u && sizes != 0u &&
+           colors != 0u && alphas != 0u && alive_flags != 0u;
+}
+
+bool ParticleSoAGPU::validateAgainstLayout(u64 packed_base, u32 expected_capacity) const {
+    if (capacity != expected_capacity) {
+        return false;
+    }
+    if (capacity == 0u || packed_base == 0u) {
+        return !hasDeviceBinding();
+    }
+    if (!allColumnPointersBound()) {
+        return false;
+    }
+
+    const u64 expected_positions =
+        ParticleGpuBufferLayout::columnDeviceAddress(ParticleGpuColumn::Positions, packed_base, capacity);
+    const u64 expected_alive_flags =
+        ParticleGpuBufferLayout::columnDeviceAddress(ParticleGpuColumn::AliveFlags, packed_base, capacity);
+
+    return positions == expected_positions && alive_flags == expected_alive_flags &&
+           velocities > positions && alive_flags > alphas;
+}
+
 ParticleSoAGPU ParticleGpuMirror::toGpuPointers(u64 packed_device_address) const {
     ParticleSoAGPU gpu{};
     gpu.capacity = capacity;
@@ -391,6 +462,38 @@ ParticleSoAGPU ParticleGpuMirror::toGpuPointers(u64 packed_device_address) const
     return gpu;
 }
 
+ParticleGpuFramePlan ParticleGpuFramePlan::forStub(u32 particle_capacity, u32 frame_emit_count, u32 frame_alive_count) {
+    ParticleGpuFramePlan plan{};
+    plan.capacity = particle_capacity;
+    plan.emit_count = frame_emit_count;
+    plan.alive_count = frame_alive_count;
+    plan.buffers = ParticleGpuBuffers::forCapacity(particle_capacity);
+    plan.dispatch = ParticleGpuDispatch::forFrame(particle_capacity, frame_emit_count);
+    return plan;
+}
+
+bool ParticleGpuFramePlan::skipSimLaunch() const {
+    return dispatch.shouldSkipSimLaunch(capacity);
+}
+
+bool ParticleGpuFramePlan::skipEmitLaunch() const {
+    return dispatch.shouldSkipEmitLaunch(emit_count);
+}
+
+ParticleSoAGPU ParticleGpuFramePlan::gpuPointers(u64 packed_device_address) const {
+    if (packed_device_address == 0u || capacity == 0u) {
+        ParticleSoAGPU gpu{};
+        gpu.capacity = capacity;
+        gpu.count = alive_count;
+        return gpu;
+    }
+
+    ParticleGpuMirror mirror{};
+    mirror.reserve(capacity);
+    mirror.alive_count = alive_count;
+    return mirror.toGpuPointers(packed_device_address);
+}
+
 namespace particle_gpu_util {
 
 u32 gridDimX(u32 element_count, u32 block_size) {
@@ -402,6 +505,14 @@ u32 gridDimX(u32 element_count, u32 block_size) {
 
 u32 coveredThreadCount(u32 block_count, u32 block_size) {
     return block_count * block_size;
+}
+
+u32 paddingThreads(u32 element_count, u32 block_count, u32 block_size) {
+    if (element_count == 0u || block_count == 0u || block_size == 0u) {
+        return 0u;
+    }
+    const u32 covered = coveredThreadCount(block_count, block_size);
+    return covered > element_count ? covered - element_count : 0u;
 }
 
 } // namespace particle_gpu_util
