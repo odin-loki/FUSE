@@ -18,8 +18,9 @@
 | `compute_lod_mesh_vertex_counts` | `Source/FUSE/Terrain/src/lod.cpp` | CPU stub — grid + skirt + seam vertex budgets per LOD |
 | `LodSkirtParams` / `clamp_skirt_params` | `Source/FUSE/Terrain/src/lod.cpp` | Skirt depth/segment clamp + strip vertex count stub |
 | `morph_vertex_position` | `Source/FUSE/Terrain/src/lod.cpp` | CPU stub — snap XZ toward coarser grid |
-| `LodResidencySet` | `lod_residency_set.hpp` | Focus-distance resident chunk set with eviction ordering |
-| `LodResidencyBudget` / clamp helpers | `lod_residency_budget.hpp` | `clamp_lod_level`, resident headroom, tick/pending budget clamps |
+| `LodResidencySet` | `lod_residency_set.hpp` | Focus-distance resident chunk set with eviction ordering; `try_add_resident` / `try_remove_resident` stubs |
+| `LodResidencyBudget` / clamp helpers | `lod_residency_budget.hpp` | `clamp_lod_level`, resident headroom, tick/pending budget clamps, `incoming_outranks_resident` |
+| `LodResidencyBudgetCounters` | `lod_residency_budget.hpp` | `rejected_loads` / `budget_evictions` tracked by `ChunkGrid` |
 | `LodResidencyQueue` | `lod_residency_queue.hpp/.cpp` | Mutex-backed completion buffer; enqueue promote/demote, budget clamp, priority drain |
 | `promote_residency_priority` / `demote_residency_priority` | `lod_residency_queue.cpp` | Pending load priority raise/lower stubs |
 | `capture_morph_snapshot` / `sync_morph_after_residency` | `lod_residency_queue.cpp` | Keep morph in sync across async promotion/demotion |
@@ -63,7 +64,7 @@ Y (height) is preserved — GPU heightmap displacement handles vertical detail l
 
 ### LOD residency set
 
-`LodResidencySet` tracks resident chunk indices with planar focus distance (mirrors B7.6 `ResidencySet`). `ChunkGrid` adds/removes entries on load/unload and refreshes focus distance each `update_lod`. `pick_eviction_candidate` / `collect_eviction_candidates` return farthest-first eviction order for future byte/cell cap pressure.
+`LodResidencySet` tracks resident chunk indices with planar focus distance (mirrors B7.6 `ResidencySet`). `ChunkGrid` adds/removes entries on load/unload and refreshes focus distance each `update_lod`. `pick_eviction_candidate` / `collect_eviction_candidates` return farthest-first eviction order. When `max_resident_chunks` would be exceeded, `queue_load_` calls `evict_for_resident_cap_` to queue unload of the farthest resident that the incoming chunk outranks (`incoming_outranks_resident`); rejected loads increment `budget_counters().rejected_loads`.
 
 ### Budget clamp helpers
 
@@ -177,6 +178,10 @@ ctest --test-dir build --output-on-failure -R fuse_terrain
 | `testAdjacentLodPair` | Fine/coarse pair + `blend_morph_between_lods` |
 | `testAdjacentLodMorphBlend` | `clamp_adjacent_lod_pair` + `blend_adjacent_lod_morph` |
 | `testLodResidencySetAddRemove` | Residency set add/remove/update/clear/eviction order |
+| `testCollectEvictionCandidatesOrdering` | Farthest-first eviction candidate list + limit |
+| `testResidencyHelperStubs` | `try_add_resident` / `try_remove_resident` |
+| `testIncomingOutranksResident` | Incoming-vs-resident priority helper |
+| `testChunkGridResidentCapEviction` | Cap pressure evicts farthest resident |
 | `testLodClampHelpers` | `clamp_lod_level` + resident/tick budget clamps |
 | `testLodSkirtStubs` | Skirt param clamp + segment vertex multiplier |
 | `testEmptyTerrainResidency` | Empty residency set + far-camera zero residents |
@@ -213,6 +218,8 @@ ctest --test-dir build --output-on-failure -R fuse_terrain
 - [x] Residency queue promote/demote priority + budget clamp + priority drain
 - [x] `LodResidencySet` focus-distance tracking + eviction candidate ordering
 - [x] `LodResidencyBudget` clamp helpers (`clamp_lod_level`, resident headroom)
+- [x] `LodResidencyBudgetCounters` + `ChunkGrid` cap-pressure eviction via `evict_for_resident_cap_`
+- [x] `try_add_resident` / `try_remove_resident` residency stubs
 - [x] Skirt param clamp + segment vertex multiplier stub
 - [x] Adjacent LOD morph clamp + factor blend helpers
 - [x] `fuse_terrain_b75` CTest target green

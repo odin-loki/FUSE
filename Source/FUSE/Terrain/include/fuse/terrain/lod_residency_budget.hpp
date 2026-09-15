@@ -13,6 +13,12 @@ struct LodResidencyBudget {
     u32 max_loads_per_tick = 1;
 };
 
+/// Budget pressure counters tracked by `ChunkGrid` (mirrors B7.6 `StreamingBudgetCounters`).
+struct LodResidencyBudgetCounters {
+    u32 rejected_loads = 0;   ///< Loads rejected after eviction could not free a slot
+    u32 budget_evictions = 0; ///< Resident chunks queued for unload to make room
+};
+
 /// Clamp a discrete LOD index to the valid range for a terrain description.
 [[nodiscard]] inline u32 clamp_lod_level(u32 lod, u32 max_lod_levels) {
     if (max_lod_levels == 0u) {
@@ -50,6 +56,15 @@ struct LodResidencyBudget {
         return pending;
     }
     return pending < max_pending ? pending : max_pending;
+}
+
+/// True when an incoming load (higher `priority` = closer) should evict a resident at `resident_focus_distance`.
+[[nodiscard]] inline bool incoming_outranks_resident(f32 incoming_priority, f32 load_radius, f32 resident_focus_distance) {
+    if (incoming_priority <= 0.f || load_radius <= 0.f) {
+        return false;
+    }
+    const f32 incoming_distance = load_radius - incoming_priority;
+    return incoming_distance < resident_focus_distance;
 }
 
 } // namespace fuse::terrain
