@@ -16,6 +16,9 @@ enum class GizmoMode {
     Scale,
 };
 
+/// Advance translate → rotate → scale → translate (B6.4 deepen).
+GizmoMode cycleGizmoMode(GizmoMode mode);
+
 enum class GizmoAxis {
     None,
     X,
@@ -48,6 +51,8 @@ struct GizmoSnapSettings {
     f32 gridSize = 1.f;
     bool rotateSnap = false;
     f32 angleStepDegrees = 15.f;
+    bool scaleSnap = false;
+    f32 scaleGridStep = 0.1f;
 };
 
 struct GizmoTransform {
@@ -84,6 +89,10 @@ GizmoAxis pickAxisFromRay(const GizmoRay& ray, const GizmoTransform& transform, 
 
 f32 snapToGrid(f32 value, f32 gridSize);
 f32 snapAngleRadians(f32 radians, f32 stepDegrees);
+f32 snapScale(f32 value, f32 gridStep);
+
+/// Screen-space dead-zone check before axis pick (B6.4 deepen).
+bool isScreenHitMiss(const GizmoHitTest& hit, GizmoMode mode);
 GizmoTransform snapTransform(const GizmoTransform& transform, GizmoMode mode,
                              const GizmoSnapSettings& settings);
 
@@ -111,6 +120,7 @@ public:
 
     void setMode(GizmoMode mode);
     GizmoMode mode() const { return m_mode; }
+    void cycleMode();
 
     void setSpace(GizmoSpace space) { m_space = space; }
     GizmoSpace space() const { return m_space; }

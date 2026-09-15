@@ -51,6 +51,18 @@ math::Vec3 segmentEnd(const math::Vec3& origin, GizmoAxis axis, const math::Quat
 
 } // namespace
 
+GizmoMode cycleGizmoMode(GizmoMode mode) {
+    switch (mode) {
+    case GizmoMode::Translate:
+        return GizmoMode::Rotate;
+    case GizmoMode::Rotate:
+        return GizmoMode::Scale;
+    case GizmoMode::Scale:
+        return GizmoMode::Translate;
+    }
+    return GizmoMode::Translate;
+}
+
 bool hitTestAxisSegment(const GizmoRay& ray, const math::Vec3& segmentStart,
                         const math::Vec3& segmentEnd, f32 radius, f32& outT) {
     const math::Vec3 segment = segmentEnd - segmentStart;
@@ -207,6 +219,27 @@ f32 snapAngleRadians(f32 radians, f32 stepDegrees) {
     return std::round(radians / stepRadians) * stepRadians;
 }
 
+f32 snapScale(f32 value, f32 gridStep) {
+    if (gridStep <= kEpsilon) {
+        return value;
+    }
+    return std::round(value / gridStep) * gridStep;
+}
+
+bool isScreenHitMiss(const GizmoHitTest& hit, GizmoMode mode) {
+    const f32 x = normalizedX(hit);
+    const f32 y = normalizedY(hit);
+
+    if (mode == GizmoMode::Scale) {
+        const bool inUniformHandle = x > 0.4f && x < 0.6f && y > 0.4f && y < 0.6f;
+        const bool onAxisBand = x < 0.33f || y < 0.33f;
+        return !inUniformHandle && !onAxisBand;
+    }
+
+    const bool inDeadZone = x > 0.33f && x < 0.66f && y > 0.33f && y < 0.66f;
+    return inDeadZone;
+}
+
 GizmoTransform snapTransform(const GizmoTransform& transform, GizmoMode mode,
                              const GizmoSnapSettings& settings) {
     GizmoTransform out = transform;
@@ -226,6 +259,11 @@ GizmoTransform snapTransform(const GizmoTransform& transform, GizmoMode mode,
         }
         break;
     case GizmoMode::Scale:
+        if (settings.scaleSnap) {
+            out.scaleX = snapScale(out.scaleX, settings.scaleGridStep);
+            out.scaleY = snapScale(out.scaleY, settings.scaleGridStep);
+            out.scaleZ = snapScale(out.scaleZ, settings.scaleGridStep);
+        }
         break;
     }
     return out;
@@ -347,6 +385,10 @@ void GizmoSystem::setMode(GizmoMode mode) {
     m_mode = mode;
 }
 
+void GizmoSystem::cycleMode() {
+    m_mode = cycleGizmoMode(m_mode);
+}
+
 GizmoAxis GizmoSystem::pickAxis(const GizmoRay& ray, const GizmoTransform& transform) const {
     return pickAxisFromRay(ray, transform, m_mode, m_space, kAxisLength, kPickRadius);
 }
@@ -427,6 +469,10 @@ GizmoResult GizmoSystem::endDrag() {
 }
 
 GizmoAxis GizmoSystem::pickAxisScreen_(const GizmoHitTest& hit) const {
+    if (isScreenHitMiss(hit, m_mode)) {
+        return GizmoAxis::None;
+    }
+
     const f32 x = normalizedX(hit);
     const f32 y = normalizedY(hit);
 
