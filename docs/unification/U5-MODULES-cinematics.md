@@ -19,6 +19,8 @@
 - **AudioTrack** — from `VSoundEffectTrack` (sound asset id + volume keyframes stub)
 - **EventTrack** — from `VScriptEventTrack` (script hook id + cue events)
 - **CueQueue** — forward-crossed event dispatch during `scrub_to` / `advance` (game-thread `drain`)
+- **CuePayload** — typed stub payloads (`ScriptHook`, `AudioClip`, `Custom`) attached to each `CueEntry`
+- **Consume-once ledger** — `Timeline` tracks fired cue keys; loop / `reset` clears so cues re-arm
 - **interpolate** — `lerp`, `lerp_vec3`, `apply_ease`, `calculate_track_interp` (Verve `calculateInterp`)
 
 ## Not in scope (later PRs)
@@ -32,7 +34,7 @@
 ## Build / test
 
 - CMake: `FUSE_BUILD_MODULES=ON` (default) builds `fuse_cinematics`
-- CTest: `fuse_cinematics_tests` — 30s timeline advance, track span, interpolation, typed track sampling (camera FOV/roll/look-at modes), playhead scrub, cue queue drain, advance/scrub cue enqueue
+- CTest: `fuse_cinematics_tests` — 30s timeline advance, track span, interpolation, typed track sampling (camera FOV/roll/look-at modes), playhead scrub, cue queue drain, advance/scrub cue enqueue, scrub order, consume-once, loop reset, empty timeline, cue payload stubs
 
 ## License
 

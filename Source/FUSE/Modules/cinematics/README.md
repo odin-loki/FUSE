@@ -22,6 +22,7 @@ Verve is Copyright (C) 2014 Violent Tulip, licensed under the **MIT License**. S
 | `AudioTrack` | `Engine/source/Verve/Extension/SoundEffect/VSoundEffectTrack.h` | Sound-effect lane + volume keyframes stub |
 | `EventTrack` | `Engine/source/Verve/Extension/Script/VScriptEventTrack.h` | Script/director cue lane stub |
 | `CueQueue` | Verve track event dispatch (editor scrub + advance) | Pending cue buffer for game-thread drain |
+| `CuePayload` | VScriptEventTrack / VSoundEffectTrack cue args | Typed stub payload on each `CueEntry` |
 | `interpolate` | `Engine/source/Verve/Core/VTrack.cpp` | `lerp`, easing, `calculateInterp` helpers |
 
 Submodule reference copy (same layout): `third_party/addons/Verve/Engine/source/Verve/Core/`.

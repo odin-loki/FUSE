@@ -3,6 +3,7 @@
 // Ore: Verve VTrack event firing + VScriptEventTrack cue dispatch (stub queue for game-thread drain)
 //      Engine/source/Verve/Extension/Script/VScriptEventTrack.h
 
+#include <fuse/cinematics/cue_payload.hpp>
 #include <fuse/cinematics/track.hpp>
 #include <fuse/cinematics/types.hpp>
 
@@ -13,11 +14,13 @@
 namespace fuse::cinematics {
 
 struct CueEntry {
+    std::string cue_key;
     std::string label;
     std::string track_label;
     std::string group_label;
     TrackKind track_kind = TrackKind::Generic;
     TimelineMs trigger_ms = 0;
+    CuePayload payload;
 };
 
 using CueDispatchHook = std::function<void(const CueEntry&)>;

@@ -1,7 +1,11 @@
 #include <fuse/cinematics/timeline.hpp>
 
+#include <fuse/cinematics/audio_track.hpp>
+#include <fuse/cinematics/event_track.hpp>
+
 #include <algorithm>
 #include <cmath>
+#include <sstream>
 
 namespace fuse::cinematics {
 
@@ -44,6 +48,7 @@ void Timeline::reset(TimelineMs time_ms) {
     playhead_.set_time_ms(time_ms);
     playhead_.clamp_time();
     playhead_.set_state(PlaybackState::Stopped);
+    clear_consumed_cues();
     post_event(ControllerEvent::Reset);
 }
 
@@ -139,6 +144,50 @@ void Timeline::scrub_to(TimelineMs time_ms, bool enqueue_cues) {
     }
 }
 
+std::string Timeline::make_cue_key(const std::string& group_label,
+                                   const std::string& track_label,
+                                   const std::string& event_label,
+                                   TimelineMs trigger_ms) {
+    std::ostringstream key;
+    key << group_label << '|' << track_label << '|' << event_label << '|' << trigger_ms;
+    return key.str();
+}
+
+CuePayload Timeline::make_cue_payload(const Track& track, const TimelineEvent& event) {
+    CuePayload payload;
+    payload.custom_key = event.label();
+
+    if (const auto* event_track = dynamic_cast<const EventTrack*>(&track)) {
+        payload.kind = CuePayloadKind::ScriptHook;
+        payload.hook_id = event_track->script_hook_id();
+        return payload;
+    }
+
+    if (const auto* audio_track = dynamic_cast<const AudioTrack*>(&track)) {
+        payload.kind = CuePayloadKind::AudioClip;
+        payload.asset_id = audio_track->sound_asset_id();
+        return payload;
+    }
+
+    payload.kind = CuePayloadKind::Custom;
+    return payload;
+}
+
+bool Timeline::is_cue_consumed(const std::string& cue_key) const {
+    return std::find(consumed_cue_keys_.begin(), consumed_cue_keys_.end(), cue_key)
+           != consumed_cue_keys_.end();
+}
+
+void Timeline::mark_cue_consumed(const std::string& cue_key) {
+    if (!is_cue_consumed(cue_key)) {
+        consumed_cue_keys_.push_back(cue_key);
+    }
+}
+
+void Timeline::clear_consumed_cues() {
+    consumed_cue_keys_.clear();
+}
+
 void Timeline::collect_cues_forward(TimelineMs from_ms, TimelineMs to_ms) {
     if (to_ms <= from_ms) {
         return;
@@ -157,11 +206,22 @@ void Timeline::collect_cues_forward(TimelineMs from_ms, TimelineMs to_ms) {
 
                 const TimelineMs trigger = event.trigger_ms();
                 if (trigger > from_ms && trigger <= to_ms) {
-                    cue_queue_.enqueue(CueEntry{event.label(),
-                                                track->label(),
-                                                group.label(),
-                                                track->kind(),
-                                                trigger});
+                    const std::string cue_key =
+                        make_cue_key(group.label(), track->label(), event.label(), trigger);
+                    if (is_cue_consumed(cue_key)) {
+                        continue;
+                    }
+
+                    CueEntry entry;
+                    entry.cue_key = cue_key;
+                    entry.label = event.label();
+                    entry.track_label = track->label();
+                    entry.group_label = group.label();
+                    entry.track_kind = track->kind();
+                    entry.trigger_ms = trigger;
+                    entry.payload = make_cue_payload(*track, event);
+                    cue_queue_.enqueue(entry);
+                    mark_cue_consumed(cue_key);
                 }
             }
         }
@@ -195,6 +255,7 @@ void Timeline::post_event(ControllerEvent event) {
 void Timeline::handle_sequence_end() {
     if (loop_) {
         post_event(ControllerEvent::Loop);
+        clear_consumed_cues();
         playhead_.set_time_ms(playhead_.is_playing_forward() ? 0 : playhead_.duration_ms());
         return;
     }
