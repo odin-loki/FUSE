@@ -244,7 +244,7 @@ CUDA nodes (`is_cuda`) are first-class in the API; graph execution remains a no-
 | `GpuAllocator` | `vk/allocator.hpp` | VMA path when header vendored; stub IDs + byte bookkeeping otherwise |
 | `GpuAllocStats` | `vk/gpu_alloc_stats.hpp` | Buffer/image counters; VMA pool snapshot via `refreshVmaPoolStats()` |
 | `ResourceManager` | `resource_manager.hpp` | Create/destroy + bindless index assignment; ordered destroy-all |
-| `BindlessDescriptors` | `vk/bindless.hpp` | Free-list indices only until descriptor pool lands |
+| `BindlessDescriptors` | `vk/bindless.hpp` | CPU heap: generation `BindlessSlotHandle`, binding-index helpers, sparse resize stub; VkDescriptorPool deferred |
 
 **B2.3 deepen:** [TRACK-B-RHI.md](./TRACK-B-RHI.md) — stub alloc stats, destroy-order teardown, `fuse_rhi_resource_destroy_order` tests.
 
@@ -415,7 +415,7 @@ All shutdown steps are idempotent. GPU init and submit require the registered re
 | Item | Status | Notes |
 |------|--------|-------|
 | VMA buffer/texture create/destroy | **Done (scaffold)** | Real VMA when vendored; stub handles otherwise (`fuse_vulkan_resources`) |
-| Bindless descriptor table | **Deferred** | Index free-list only; no descriptor pool |
+| Bindless descriptor table | **Done (CPU stub)** | Generation slot handles + binding helpers; no VkDescriptorPool yet |
 | Staging ring wrap / large upload stress | **Deferred** | 64 MiB ring scaffold; no 256 MiB corruption test |
 | Async upload fence timeout | **Deferred** | — |
 | Win32 external memory + `cudaImportExternalMemory` | **Deferred** | `import_vulkan_*` returns `ok=false` (B2.6 stub) |
@@ -490,6 +490,7 @@ Portable invariant unchanged: job code emits `RenderCommandList`; platform modul
 | `fuse_vulkan_bootstrap` | Instance/device or stub path; surface abstraction; render-thread submit |
 | `fuse_vulkan_swapchain` | Headless swapchain desc; frame ring advance; external surface graceful failure |
 | `fuse_vulkan_resources` | `HandleMap`, bindless index recycle, buffer/texture create/destroy |
+| `fuse_bindless_descriptors` | Generation slot handles, alloc/free reuse, binding-index helpers, sparse resize stub |
 | `fuse_rhi_resource_destroy_order` | B2.3 deepen — destroy-order teardown, staging ring guard, GPU alloc stats + hook |
 | `fuse_shader_pipeline` | SPIR-V I/O, offline compiler, shader module + pipeline layout (stub or Vulkan) |
 | `fuse_graphics_pipeline` | `VkGraphicsPipeline`, headless `RasterPath` clear + triangle, `RhiContext` wiring |
