@@ -16,6 +16,8 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 
 - `TaaJitterLayout::halton(index, base)` — CPU Halton reference used by tests and custom sequence lengths
 - `TaaJitterLayout::validateSequenceLength(length)` — rejects zero or >64 frame sequences
+- `TaaJitterLayout::sequencePeriod(length)` — returns the jitter cycle length (0 when invalid)
+- `TaaJitterLayout::frameIndexInSequence(frame, length)` — maps a monotonic frame counter into the active slot
 - `TaaJitterLayout::fillHaltonSequence(length, out)` — fills a Halton (2,3) table for projection jitter
 - `TaaJitter` honours `TaaJitterDesc::sequence_length` (default 8) when advancing and wrapping
 
@@ -25,6 +27,7 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaHistoryBuffer::accumulatedFrames()` — monotonic frame counter reset on invalidate/resize
 - `TaaHistoryBuffer::invalidateHistory()` — clears validity (called on resize)
 - `TaaResolveStats::first_frame` — set when resolve runs before history is warm
+- `TaaResolve::resetBookkeeping()` — clears resolve stats/message (called on `TaaPass::destroy`)
 
 ## Pipeline (stub)
 
@@ -37,7 +40,7 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 
 ## Tests
 
-`fuse_taa_pass` (`ctest` name `fuse_taa_pass`) covers Halton layout helpers, custom sequence length, history validity flags, ping-pong, resolve validation, `TaaPass` lifecycle, and render-graph registration.
+`fuse_taa_pass` (`ctest` name `fuse_taa_pass`) covers Halton layout helpers, sequence period/wrap, custom sequence length, history validity flags, empty-history rejection, validity reset after invalidate, ping-pong, resolve validation, `TaaPass` lifecycle, and render-graph registration.
 
 ```bash
 ctest --test-dir build --output-on-failure -R fuse_taa_pass

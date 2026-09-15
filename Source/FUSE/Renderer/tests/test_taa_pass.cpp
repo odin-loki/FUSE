@@ -66,6 +66,26 @@ void testJitterSequenceLayout() {
     expectNear(sequence[7].y, 0.889f, 1e-3f, "filled sequence slot 7 Y");
 }
 
+void testJitterSequencePeriod() {
+    using fuse::renderer::TaaJitterLayout;
+
+    expectTrue(TaaJitterLayout::sequencePeriod(8u) == 8u, "default sequence period is 8");
+    expectTrue(TaaJitterLayout::sequencePeriod(0u) == 0u, "invalid sequence period is zero");
+    expectTrue(TaaJitterLayout::sequencePeriod(fuse::renderer::kTaaMaxJitterSequenceLength + 1u) == 0u,
+               "oversized sequence period is zero");
+
+    fuse::renderer::TaaJitter jitter;
+    const fuse::math::Vec2 periodStart = jitter.currentPixelOffset();
+    for (fuse::u32 frame = 0u; frame < 8u; ++frame) {
+        expectTrue(TaaJitterLayout::frameIndexInSequence(frame, 8u) == frame,
+                   "frame index maps into sequence slot");
+        jitter.advance();
+    }
+    expectTrue(jitter.index() == 0u, "default sequence wraps after one period");
+    const fuse::math::Vec2 periodEnd = jitter.currentPixelOffset();
+    expectNear(periodEnd.x, periodStart.x, 1e-5f, "sequence period returns to first sample");
+}
+
 void testCustomJitterSequenceLength() {
     fuse::renderer::TaaJitterDesc desc{};
     desc.sequence_length = 4u;
@@ -164,6 +184,64 @@ void testHistoryValidityFlags() {
     expectTrue(!history.hasValidHistory(), "resize invalidates history");
     expectTrue(history.desc().width == 128u, "history resized width");
     expectTrue(history.desc().height == 128u, "history resized height");
+
+    history.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
+void testEmptyHistoryResolve() {
+    fuse::renderer::TaaHistoryBuffer history;
+    expectTrue(!history.isReady(), "default history buffer is not ready");
+    expectTrue(!history.hasValidHistory(), "default history buffer has no valid history");
+    expectTrue(history.accumulatedFrames() == 0u, "default history buffer has zero accumulated frames");
+
+    fuse::renderer::TaaResolve resolve;
+    fuse::renderer::TaaResolveDesc desc{};
+    desc.width = 64;
+    desc.height = 64;
+    desc.surfaces.current_frame = reinterpret_cast<void*>(0x1);
+    desc.surfaces.output = reinterpret_cast<void*>(0x2);
+    expectTrue(!resolve.resolve(desc, history), "resolve rejects empty history buffer");
+    expectTrue(!resolve.lastStats().resolved, "empty history resolve stats not marked resolved");
+}
+
+void testValidityResetAfterInvalidate() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for validity reset test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaHistoryBuffer history;
+    fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
+    expectTrue(history.init(resources, historyDesc), "history ready for validity reset");
+
+    fuse::renderer::TaaResolve resolve;
+    fuse::renderer::TaaResolveDesc desc{};
+    desc.width = 64;
+    desc.height = 64;
+    desc.surfaces.current_frame = reinterpret_cast<void*>(0x1);
+    desc.surfaces.output = reinterpret_cast<void*>(0x2);
+
+    expectTrue(resolve.resolve(desc, history), "initial resolve succeeds");
+    expectTrue(resolve.lastStats().first_frame, "initial resolve marks first frame");
+    expectTrue(history.hasValidHistory(), "history valid after initial resolve");
+
+    history.invalidateHistory();
+    expectTrue(!history.hasValidHistory(), "invalidate clears history validity");
+    expectTrue(history.accumulatedFrames() == 0u, "invalidate clears accumulated frames");
+
+    resolve.resetBookkeeping();
+    expectTrue(resolve.resolve(desc, history), "resolve succeeds after validity reset");
+    expectTrue(resolve.lastStats().first_frame, "first frame flagged after validity reset");
+    expectTrue(resolve.lastStats().accumulated_frames == 1u, "accumulated frames restart after reset");
 
     history.destroy();
     resources.destroy();
@@ -278,11 +356,14 @@ int main() {
 
     testHaltonJitterSequence();
     testJitterSequenceLayout();
+    testJitterSequencePeriod();
     testCustomJitterSequenceLength();
     testHaltonComputeMatchesTable();
     testJitterNdcOffset();
     testHistoryBufferPingPong();
     testHistoryValidityFlags();
+    testEmptyHistoryResolve();
+    testValidityResetAfterInvalidate();
     testResolveStub();
     testTaaPassLifecycle();
     testTaaPassGraphHook();

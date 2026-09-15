@@ -11,6 +11,7 @@ namespace fuse::renderer {
 class TaaResolve {
 public:
     bool resolve(const TaaResolveDesc& desc, TaaHistoryBuffer& history, void* cudaStream = nullptr);
+    void resetBookkeeping();
 
     const TaaResolveStats& lastStats() const { return m_stats; }
     const std::string& lastMessage() const { return m_message; }

@@ -48,6 +48,7 @@ bool TaaPass::init(ResourceManager& resources) {
 void TaaPass::destroy() {
     m_history.destroy();
     m_jitter.reset();
+    m_resolve.resetBookkeeping();
     m_stats.framesResolved = 0;
     m_stats.lastJitterNdc = {};
     m_stats.ready = false;

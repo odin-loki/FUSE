@@ -200,13 +200,13 @@ See [B5.7-SCREEN-SPACE-EFFECTS.md](./B5.7-SCREEN-SPACE-EFFECTS.md) for component
 
 | Component | Location | Notes |
 |-----------|----------|-------|
-| `TaaJitterLayout` / `TaaJitter` | `taa/taa_jitter.hpp` | Halton (2,3) reference, configurable sequence length (≤64) |
+| `TaaJitterLayout` / `TaaJitter` | `taa/taa_jitter.hpp` | Halton (2,3) reference, sequence period/frame-index helpers, configurable length (≤64) |
 | `TaaHistoryBuffer` | `taa/taa_history.hpp` | Ping-pong colour history + `hasValidHistory` / `accumulatedFrames` |
-| `TaaResolve` / `TaaPass` | `taa/taa_resolve.hpp`, `taa/taa_pass.hpp` | Resolve stub records first-frame + validity; CUDA kernel deferred |
+| `TaaResolve` / `TaaPass` | `taa/taa_resolve.hpp`, `taa/taa_pass.hpp` | Resolve stub records first-frame + validity, `resetBookkeeping`; CUDA kernel deferred |
 
 | Test | Validates |
 |------|-----------|
-| `fuse_taa_pass` | Halton layout, custom sequence length, history validity, ping-pong, resolve stub, graph hook |
+| `fuse_taa_pass` | Halton layout, sequence period, validity reset, empty history, ping-pong, resolve stub, graph hook |
 
 ---
 

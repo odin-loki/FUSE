@@ -2,6 +2,11 @@
 
 namespace fuse::renderer {
 
+void TaaResolve::resetBookkeeping() {
+    m_stats = {};
+    m_message.clear();
+}
+
 bool TaaResolve::resolve(const TaaResolveDesc& desc, TaaHistoryBuffer& history, void* /*cudaStream*/) {
     m_stats = {};
     m_message.clear();
