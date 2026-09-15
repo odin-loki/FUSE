@@ -18,6 +18,9 @@ struct PlayWorldSnapshot {
 
     static PlayWorldSnapshot capture(EditorScene& editorScene);
     void apply(EditorScene& editorScene) const;
+
+    bool empty() const { return entities.empty(); }
+    usize entityCount() const { return entities.size(); }
 };
 
 /// PIE play-session orchestrator (B6.12 deepen) — wraps `PlayModeController` with
@@ -34,6 +37,8 @@ public:
     void resume(scene::Scene& scene, EditorState& state, PlayModePhysicsState& physics);
 
     void tick(f32 dt, EditorScene& editorScene, PlayModePhysicsState& physics);
+    /// Drains `tickAccumulator()` in `fixedDt` slices while playing; returns steps simulated.
+    u32 consumeFixedSteps(f32 fixedDt, EditorScene& editorScene, PlayModePhysicsState& physics);
 
     bool isActive() const { return m_controller.state() != PlayModeController::State::Stopped; }
     bool isPlaying() const { return m_controller.isPlaying(); }
@@ -60,6 +65,7 @@ private:
     void restoreDirtySnapshot_(EditorScene& editorScene, EditorState& state) const;
     void captureWorldSnapshot_(EditorScene& editorScene);
     void restoreWorldSnapshot_(EditorScene& editorScene) const;
+    void simulateStep_(EditorScene& editorScene, PlayModePhysicsState& physics);
     void coalesceTransformDirty_(EditorScene& editorScene);
 
     PlayModeController m_controller;

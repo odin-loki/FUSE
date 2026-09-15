@@ -2,6 +2,8 @@
 
 #include <fuse/ecs/components/transform.hpp>
 
+#include <algorithm>
+
 namespace fuse::editor {
 
 PlayWorldSnapshot PlayWorldSnapshot::capture(EditorScene& editorScene) {
@@ -10,6 +12,14 @@ PlayWorldSnapshot PlayWorldSnapshot::capture(EditorScene& editorScene) {
         [&snapshot](ecs::EntityID id, const ecs::Transform& transform) {
             snapshot.entities.push_back({id, transform});
         });
+    std::sort(snapshot.entities.begin(), snapshot.entities.end(),
+              [](const std::pair<ecs::EntityID, ecs::Transform>& lhs,
+                 const std::pair<ecs::EntityID, ecs::Transform>& rhs) {
+                  if (lhs.first.index != rhs.first.index) {
+                      return lhs.first.index < rhs.first.index;
+                  }
+                  return lhs.first.generation < rhs.first.generation;
+              });
     return snapshot;
 }
 
@@ -80,11 +90,24 @@ void PlaySession::tick(f32 dt, EditorScene& editorScene, PlayModePhysicsState& p
         return;
     }
 
-    ++m_sessionTickCount;
     m_tickAccumulator += dt;
-    ++physics.stepCount;
+    simulateStep_(editorScene, physics);
+}
 
-    coalesceTransformDirty_(editorScene);
+u32 PlaySession::consumeFixedSteps(f32 fixedDt, EditorScene& editorScene,
+                                   PlayModePhysicsState& physics) {
+    if (!m_controller.isPlaying() || !physics.simulationActive || fixedDt <= 0.f) {
+        return 0;
+    }
+
+    u32 steps = 0;
+    while (m_tickAccumulator >= fixedDt) {
+        m_tickAccumulator -= fixedDt;
+        simulateStep_(editorScene, physics);
+        ++steps;
+    }
+
+    return steps;
 }
 
 PlayWorldSnapshot PlaySession::captureWorldSnapshot(EditorScene& editorScene) const {
@@ -127,6 +150,12 @@ void PlaySession::restoreWorldSnapshot_(EditorScene& editorScene) const {
     }
 
     m_worldSnapshot.apply(editorScene);
+}
+
+void PlaySession::simulateStep_(EditorScene& editorScene, PlayModePhysicsState& physics) {
+    ++m_sessionTickCount;
+    ++physics.stepCount;
+    coalesceTransformDirty_(editorScene);
 }
 
 void PlaySession::coalesceTransformDirty_(EditorScene& editorScene) {
