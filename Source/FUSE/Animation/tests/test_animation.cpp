@@ -362,7 +362,7 @@ void testFabrikConverges() {
     chain.bone_indices = {0, 1};
     chain.target = {0.5f, 2.f, 0.f, 0.f};
     chain.max_iterations = 8;
-    chain.solve(pose, skel);
+    expectTrue(chain.solve(pose, skel), "fabrik solve succeeds for valid two-bone chain");
 
     const fuse::animation::vec3 end = {
         pose.bone_world_transforms[1].data[12],
@@ -765,7 +765,7 @@ void testTwoBoneIKEmptySkeleton() {
     fuse::animation::FABRIKChain chain;
     chain.bone_indices = {0, 1};
     chain.target = {0.f, 1.f, 0.f, 0.f};
-    chain.solve(pose, empty);
+    expectTrue(!chain.solve(pose, empty), "fabrik solve returns false on empty skeleton");
     expectTrue(pose.bone_count == 0u, "fabrik on empty skeleton leaves pose empty");
 }
 
@@ -956,6 +956,18 @@ void testTwoBoneIKSolveHelpers() {
     const fuse::animation::vec3 target = {10.f, 0.f, 0.f, 0.f};
     const fuse::f32 reachEpsilon = 0.001f;
 
+    fuse::f32 upperLen = 0.f;
+    fuse::f32 lowerLen = 0.f;
+    expectTrue(fuse::animation::two_bone_segment_lengths(root, mid, end, upperLen, lowerLen),
+               "two_bone_segment_lengths extracts limb segment lengths");
+    expectNear(upperLen, 1.f, 1e-4f, "two_bone_segment_lengths upper segment");
+    expectNear(lowerLen, 1.f, 1e-4f, "two_bone_segment_lengths lower segment");
+
+    expectTrue(!fuse::animation::is_two_bone_target_reachable(root, target, upperLen, lowerLen, reachEpsilon),
+               "is_two_bone_target_reachable rejects out-of-range target");
+    expectTrue(fuse::animation::is_two_bone_target_reachable(root, {1.f, 1.f, 0.f, 0.f}, upperLen, lowerLen, reachEpsilon),
+               "is_two_bone_target_reachable accepts in-range target");
+
     const fuse::animation::vec3 clamped =
         fuse::animation::clamp_two_bone_target(root, target, 1.f, 1.f, reachEpsilon);
     const fuse::f32 clampedDist = std::sqrt(clamped.x * clamped.x + clamped.y * clamped.y + clamped.z * clamped.z);
@@ -970,6 +982,8 @@ void testTwoBoneIKSolveHelpers() {
     expectTrue(endError < 0.05f, "solve_two_bone_positions helper end effector error bound");
 
     fuse::animation::vec3 collapsedMid = root;
+    expectTrue(!fuse::animation::two_bone_segment_lengths(root, collapsedMid, end, upperLen, lowerLen),
+               "two_bone_segment_lengths rejects collapsed upper segment");
     expectTrue(!fuse::animation::solve_two_bone_positions(root, collapsedMid, end, {1.f, 1.f, 0.f, 0.f},
                                                           {0.f, 0.f, 1.f, 0.f}, reachEpsilon, solvedMid, solvedEnd),
                "solve_two_bone_positions rejects zero-length upper segment");
@@ -1014,6 +1028,7 @@ void testFabrikChainGuards() {
 
     fuse::animation::FABRIKChain emptyChain;
     expectTrue(!emptyChain.has_valid_chain(skel), "fabrik rejects empty bone index list");
+    expectTrue(!emptyChain.solve(pose, skel), "fabrik solve returns false for empty chain");
 
     fuse::animation::FABRIKChain outOfRange;
     outOfRange.bone_indices = {0, 99};
@@ -1021,9 +1036,15 @@ void testFabrikChainGuards() {
 
     const fuse::f32 endYBefore = pose.bone_world_transforms[1].data[13];
     outOfRange.target = {0.f, 5.f, 0.f, 0.f};
-    outOfRange.solve(pose, skel);
+    expectTrue(!outOfRange.solve(pose, skel), "fabrik solve returns false for invalid chain");
     expectNear(pose.bone_world_transforms[1].data[13], endYBefore, 1e-4f,
                "fabrik solve no-ops when chain indices are invalid");
+
+    fuse::animation::FABRIKChain validChain;
+    validChain.bone_indices = {0, 1};
+    validChain.target = {0.5f, 2.f, 0.f, 0.f};
+    validChain.max_iterations = 8;
+    expectTrue(validChain.solve(pose, skel), "fabrik solve returns true for valid chain");
 }
 
 void testRetargetAddBoneMapping() {
@@ -1036,10 +1057,27 @@ void testRetargetAddBoneMapping() {
     expectTrue(map.is_source_mapped(0), "retarget is_source_mapped true after mapping");
     expectTrue(map.is_target_mapped(0), "retarget is_target_mapped true after mapping");
     expectTrue(!map.add_bone_mapping(1, 0), "retarget add_bone_mapping rejects duplicate target bone");
+    expectTrue(!map.add_bone_mapping(0, 1), "retarget add_bone_mapping rejects duplicate source bone");
     expectTrue(!map.add_bone_mapping(99, 1), "retarget add_bone_mapping rejects out of range source");
     expectTrue(map.add_bone_mapping(1, 1, 0.5f), "retarget add_bone_mapping accepts second entry");
     expectTrue(map.is_valid(), "retarget manual map is valid after add_bone_mapping");
     expectTrue(map.mapped_bone_count() == 2u, "retarget manual map records two mappings");
+}
+
+void testRetargetApplyInvalidMap() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::RetargetMap map{};
+    map.source_bone_count = skel.bone_count;
+    map.target_bone_count = skel.bone_count;
+    expectTrue(!map.is_valid(), "retarget map without entries is invalid");
+
+    fuse::animation::PoseSoA poseSoa = fuse::animation::PoseSoA::from_bind_pose(skel);
+    map.apply_pose_soa(poseSoa, skel, poseSoa);
+    expectTrue(poseSoa.bone_count == 0u, "retarget apply_pose_soa clears output when map is invalid");
+
+    fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
+    map.apply_pose(pose, skel, pose);
+    expectTrue(pose.bone_count == 0u, "retarget apply_pose clears output when map is invalid");
 }
 
 void testRetargetClear() {
@@ -1672,6 +1710,7 @@ int main() {
     testTwoBoneIKDegenerateSegments();
     testFabrikChainGuards();
     testRetargetAddBoneMapping();
+    testRetargetApplyInvalidMap();
     testRetargetClear();
     testEmptyBlendSpace1D();
     testEmptyBlendSpace2D();
