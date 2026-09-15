@@ -14,6 +14,7 @@ enum class CommandRecordKind : u8 {
     DrawIndexed = 5,
     Draw = 6,
     Present = 7,
+    Composite = 8,
 };
 
 struct CommandRecord {
@@ -22,6 +23,7 @@ struct CommandRecord {
     float clearR = 0.f;
     float clearG = 0.f;
     float clearB = 0.f;
+    float compositeBlend = 0.f;
     u32 textureId = 0;
     u32 fromLayout = 0;
     u32 toLayout = 0;
@@ -41,6 +43,7 @@ public:
     void clearColor(float r, float g, float b);
     void draw(u32 instanceCount);
     void drawIndexed(u32 indexCount);
+    void composite(float blend);
     void present();
 
     bool isRecording() const { return m_recording; }

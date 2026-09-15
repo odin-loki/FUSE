@@ -1,7 +1,7 @@
 # Track B — Vulkan Bootstrap (B2.1–B2.8)
 
-**Status:** B2.1 bootstrap + B2.2 swapchain/frame ring + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.5 command buffer / render graph scaffolding + B2.6 CUDA/interop stubs + B2.8 rasterisation pipeline scaffold  
-**Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B2.1–B2.5, §B2.6, §B2.8  
+**Status:** B2.1 bootstrap + B2.2 swapchain/frame ring + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.5 command buffer / render graph scaffolding + B2.6 CUDA/interop stubs + B2.8 rasterisation pipeline scaffold + B2.9 composite pass scaffold  
+**Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B2.1–B2.5, §B2.6, §B2.8, §B2.9  
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §4.2, §4.4, §5.3  
 **Hybrid integration:** [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md)
 
@@ -25,7 +25,8 @@
 | `RenderGraph` | `Source/FUSE/Renderer/` | Pass dependency sketch, barrier planning, culling |
 | `RenderPass` / `GraphicsPipeline` | `Source/FUSE/Renderer/include/fuse/renderer/vk/` | B2.8 headless raster scaffold — `VkPipeline` from B2.4 fixtures |
 | `RasterPath` | same | Offscreen clear + triangle stub wired through `RhiContext::submitFrame` |
-| `RhiContext` | `Source/FUSE/Renderer/` | `beginFrame` / `submitFrame` on `renderThread()`; compiles graph per frame + optional `RasterPath` |
+| `CompositePass` | `composite_pass.hpp` | B2.9 stub — merges raster + CUDA textures into backbuffer before present |
+| `RhiContext` | `Source/FUSE/Renderer/` | `beginFrame` / `submitFrame` on `renderThread()`; compiles graph per frame + optional `RasterPath` + `CompositePass` |
 | `fuse::platform::gl_context.hpp` | `Source/FUSE/Core/` | Portable “may touch GPU” guard |
 | `HybridComposer` wiring | `Source/FUSE/Hybrid/` | Dual path: software `PlaceholderRenderer` **and** RHI command mirror |
 
@@ -132,7 +133,7 @@ Per-slot command pools and primary command buffers are allocated when the Vulkan
 |-----------|----------|-------|
 | `CommandBufferRecorder` | `include/fuse/renderer/command_buffer.hpp` | Records logical pass/barrier/clear/draw/present commands for tests |
 | `RenderGraph` | `include/fuse/renderer/render_graph.hpp` | Pass nodes declare texture/buffer accesses; `compile()` plans barriers + culls unused passes |
-| `populateRenderGraphFromCommandList` | `render_graph.cpp` | Maps `RenderCommandList` clears/sprites → graph passes (clear → sprites2d → present) |
+| `populateRenderGraphFromCommandList` | `render_graph.cpp` | Maps `RenderCommandList` clears/sprites → graph passes (clear → sprites2d → composite → present) |
 | `FrameCommandData` | `vk/frame.hpp` | Per-slot `VkCommandPool` + primary `VkCommandBuffer` when backend active |
 | `RhiContext` integration | `rhi_context.cpp` | `submitFrame()` populates graph, compiles, executes into recorder, advances frame ring |
 
@@ -236,6 +237,30 @@ CI exercises the path headlessly (no `VkSurfaceKHR`). Full G-buffer layout, draw
 
 ---
 
+## B2.9 — Composite pass (scaffold)
+
+**Status:** Logical composite pass + render-graph node landed; real bindless composite shader deferred.
+
+| Component | Location | Notes |
+|-----------|----------|-------|
+| `CompositePass` | `include/fuse/renderer/composite_pass.hpp` | Stub records GRIA blend; lazy-created via `RhiContext` |
+| `addCompositePassToGraph` | `composite_pass.cpp` | Inserts `composite` pass before `present` — reads raster + CUDA transients, writes backbuffer |
+| `CommandBufferRecorder::composite` | `command_buffer.hpp` | Logical composite command for tests |
+| `RhiContext` wiring | `rhi_context.cpp` | `enableCompositePass` + `CompositePassDesc::defaultBlend`; stats via `lastCompositeStats()` |
+
+### Hybrid ordering alignment
+
+`HybridComposer::render()` mirrors **3D clear → 2D sprites → UI overlay** into `RenderCommandList`. The render graph maps that to:
+
+1. `clear3d` — 3D background
+2. `sprites2d` — 2D scene + UI overlay draws
+3. `composite` — blend raster (B2.8) + CUDA (B2.7) into backbuffer (`mix(cuda, raster, blend)` per P2 §2.9)
+4. `present` — swapchain / headless sink
+
+No Hybrid code changes required: `submitFrame()` owns graph population and composite recording.
+
+---
+
 ## Desktop vs mobile (design notes)
 
 | Platform | B2.2 stance | Later |
@@ -259,6 +284,7 @@ Portable invariant unchanged: job code emits `RenderCommandList`; platform modul
 | `fuse_graphics_pipeline` | `VkGraphicsPipeline`, headless `RasterPath` clear + triangle, `RhiContext` wiring |
 | `fuse_render_command_list` | Hybrid mirrors commands without breaking placeholder pixels |
 | `fuse_render_graph` | Barrier planning, pass culling, command recorder, RHI graph submit |
+| `fuse_composite_pass` | Composite pass scaffold, graph ordering (composite before present), RHI stats |
 | `fuse_hybrid_tests` | Existing U4 software renderer regressions |
 | `fuse_cuda_jobs` | `submit_cuda` hook signals counter without CUDA toolkit |
 | `fuse_cuda_interop` | Vulkan/CUDA import + timeline stubs degrade on CI |
@@ -266,7 +292,7 @@ Portable invariant unchanged: job code emits `RenderCommandList`; platform modul
 Run:
 
 ```bash
-ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_graphics_pipeline|fuse_render_command|fuse_render_graph|fuse_hybrid|fuse_cuda'
+ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_graphics_pipeline|fuse_render_command|fuse_render_graph|fuse_composite_pass|fuse_hybrid|fuse_cuda'
 ```
 
 ---
@@ -325,6 +351,7 @@ Thread ownership unchanged: CUDA launch jobs run on worker threads; Vulkan recor
 - [x] B2.5 command buffer recording stubs + render graph compile/execute scaffolding
 - [x] B2.6 CUDA job/interop stubs — `FUSE_BUILD_CUDA` gated, CI passes without toolkit
 - [x] B2.8 rasterisation pipeline scaffold — `GraphicsPipeline`, headless clear/triangle `RasterPath`
+- [x] B2.9 composite pass scaffold — `CompositePass`, graph node before present, GRIA blend stub
 - [ ] B2.4 follow-up: bindless descriptor pool + graphics pipeline cache
 - [ ] B2.5 follow-up: real `vkCmdBeginRenderPass` / queue submit wiring (B2.8 draw list)
 - [ ] B2.6 follow-up: `cudaImportExternalMemory`, timeline semaphores, real shared textures

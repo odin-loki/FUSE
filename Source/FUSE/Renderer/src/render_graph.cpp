@@ -1,4 +1,4 @@
-#include <fuse/renderer/render_graph.hpp>
+#include <fuse/renderer/composite_pass.hpp>
 
 namespace fuse::renderer {
 namespace {
@@ -317,9 +317,12 @@ RGTextureAccess g_backbufferPresent{};
 
 } // namespace
 
-void populateRenderGraphFromCommandList(RenderGraph& graph, const RenderCommandList& commands) {
+void populateRenderGraphFromCommandList(RenderGraph& graph,
+                                        const RenderCommandList& commands,
+                                        float compositeBlend) {
     g_clearPassCount = 0;
     g_drawPassCount = 0;
+    resetCompositePassGraphStorage();
 
     g_backbufferColorWrite.texture = {RenderGraph::kBackbufferTextureId};
     g_backbufferColorWrite.access = RGResourceAccess::ColorAttachmentWrite;
@@ -374,6 +377,8 @@ void populateRenderGraphFromCommandList(RenderGraph& graph, const RenderCommandL
     }
 
     if (wroteColor || spriteDrawCount > 0u) {
+        addCompositePassToGraph(graph, compositeBlend);
+
         RGPassDesc present{};
         present.name = "present";
         present.execute = executePresentPass;

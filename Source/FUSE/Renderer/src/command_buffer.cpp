@@ -99,6 +99,17 @@ void CommandBufferRecorder::drawIndexed(u32 indexCount) {
     m_records.push_back(record);
 }
 
+void CommandBufferRecorder::composite(float blend) {
+    if (!m_recording) {
+        return;
+    }
+
+    CommandRecord record;
+    record.kind = CommandRecordKind::Composite;
+    record.compositeBlend = blend;
+    m_records.push_back(record);
+}
+
 void CommandBufferRecorder::present() {
     if (!m_recording) {
         return;
