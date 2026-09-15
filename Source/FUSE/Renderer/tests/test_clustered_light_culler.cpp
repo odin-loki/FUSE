@@ -36,6 +36,21 @@ void testClusterDescCount() {
     expectTrue(desc.clusterCount() == 16u * 9u * 24u, "cluster count product");
 }
 
+void testClusterDescClampCounts() {
+    fuse::renderer::ClusterDesc oversized{};
+    oversized.tilesX = 999u;
+    oversized.tilesY = 999u;
+    oversized.slicesZ = 999u;
+    oversized.maxLightsPerCluster = 999u;
+
+    const fuse::renderer::ClusterDesc clamped = fuse::renderer::ClusterDesc::clampCounts(oversized);
+    expectTrue(clamped.tilesX == fuse::renderer::ClusterDesc::kMaxTilesX, "tilesX clamped to max");
+    expectTrue(clamped.tilesY == fuse::renderer::ClusterDesc::kMaxTilesY, "tilesY clamped to max");
+    expectTrue(clamped.slicesZ == fuse::renderer::ClusterDesc::kMaxSlicesZ, "slicesZ clamped to max");
+    expectTrue(clamped.maxLightsPerCluster == fuse::renderer::ClusterDesc::kMaxLightsPerCluster,
+               "maxLightsPerCluster clamped to max");
+}
+
 void testClusterIndex() {
     fuse::renderer::ClusterDesc desc{};
     desc.tilesX = 4;
@@ -62,7 +77,10 @@ void testClusterGridClampAndScreenMapping() {
     expectTrue(fuse::renderer::ClusterGridLayout::clampClusterIndex(999u, desc) == 23u,
                "cluster index clamped to grid bounds");
     expectTrue(fuse::renderer::ClusterGridLayout::clampTileX(99u, desc) == 3u, "tile X clamp");
+    expectTrue(fuse::renderer::ClusterGridLayout::clampTileY(99u, desc) == 1u, "tile Y clamp");
     expectTrue(fuse::renderer::ClusterGridLayout::clampSliceZ(99u, desc) == 2u, "slice Z clamp");
+    expectTrue(fuse::renderer::ClusterGridLayout::clusterIndex(0u, 0u, 0u, desc) == 0u, "origin cluster index");
+    expectTrue(fuse::renderer::ClusterGridLayout::clusterIndex(3u, 1u, 2u, desc) == 23u, "last cluster index");
 
     fuse::renderer::ClusterCameraDesc camera{};
     camera.nearPlane = 1.f;
@@ -82,6 +100,17 @@ void testClusterGridClampAndScreenMapping() {
     expectTrue(!fuse::renderer::ClusterGridLayout::mapScreenDepthToClusterIndex(
                    0.5f, 0.5f, 0.01f, desc, camera, outOfRange),
                "depth below near plane rejected");
+
+    fuse::u32 aboveFar = 0u;
+    expectTrue(!fuse::renderer::ClusterGridLayout::mapScreenDepthToClusterIndex(
+                   0.5f, 0.5f, 200.f, desc, camera, aboveFar),
+               "depth above far plane rejected");
+
+    fuse::u32 clampedScreen = 0u;
+    expectTrue(fuse::renderer::ClusterGridLayout::mapScreenDepthToClusterIndex(
+                   -0.5f, 1.5f, 10.f, desc, camera, clampedScreen),
+               "out-of-range screen coords clamp to grid");
+    expectTrue(clampedScreen < desc.clusterCount(), "clamped screen maps to valid cluster");
 }
 
 void testSliceDepthDistribution() {
@@ -120,6 +149,40 @@ void testLightGridRebuildOverflowClamp() {
     expectTrue(grid.lightList.size() == 4u, "flat list respects per-cluster cap");
     expectTrue(fuse::renderer::ClusterLightGridLayout::validateContiguousOffsets(grid, clusterCount),
                "clamped grid offsets remain contiguous");
+}
+
+void testEmptyGridRebuild() {
+    fuse::renderer::ClusterGridSoA grid{};
+    grid.grid.resize(4u);
+    grid.lightList = {0u, 1u, 2u};
+
+    const fuse::u32 dropped = fuse::renderer::ClusterLightGridLayout::rebuildLightGrid(grid, 0u, {}, 4u);
+    expectTrue(dropped == 0u, "zero cluster rebuild drops nothing");
+    expectTrue(grid.grid.empty(), "zero cluster rebuild clears grid entries");
+    expectTrue(grid.lightList.empty(), "zero cluster rebuild clears light list");
+}
+
+void testClusterUtilAssignmentCounts() {
+    std::vector<fuse::u32> clusterLights;
+    expectTrue(fuse::renderer::cluster_util::tryAssignLight(clusterLights, 0u, 2u), "first assign succeeds");
+    expectTrue(fuse::renderer::cluster_util::tryAssignLight(clusterLights, 1u, 2u), "second assign succeeds");
+    expectTrue(!fuse::renderer::cluster_util::tryAssignLight(clusterLights, 2u, 2u),
+               "third assign rejected at capacity");
+    expectTrue(clusterLights.size() == 2u, "cluster list stores assigned lights only");
+
+    fuse::renderer::ClusterGridSoA grid{};
+    const fuse::u32 clusterCount = 3u;
+    const std::vector<std::vector<fuse::u32>> perClusterLights = {
+        {0u, 2u},
+        {},
+        {1u},
+    };
+    fuse::renderer::ClusterLightGridLayout::rebuildLightGrid(grid, clusterCount, perClusterLights);
+
+    expectTrue(fuse::renderer::cluster_util::countAssignedLights(grid, clusterCount) == 3u,
+               "assigned light count matches flat list");
+    expectTrue(fuse::renderer::cluster_util::countEmptyClusters(grid, clusterCount) == 1u,
+               "empty cluster count matches grid");
 }
 
 void testLightGridRebuildLayout() {
@@ -280,6 +343,11 @@ void testEmptySceneCull() {
         }
     }
     expectTrue(emptyClusters == desc.clusterCount(), "all clusters empty with no lights");
+    expectTrue(fuse::renderer::cluster_util::countAssignedLights(culler.gridSoA(), desc.clusterCount()) == 0u,
+               "assignment count zero for empty scene");
+    expectTrue(fuse::renderer::cluster_util::countEmptyClusters(culler.gridSoA(), desc.clusterCount()) ==
+                   desc.clusterCount(),
+               "empty cluster count matches grid size");
 
     culler.destroy();
     resources.destroy();
@@ -367,11 +435,14 @@ int main() {
     fuse::core::initialize();
 
     testClusterDescCount();
+    testClusterDescClampCounts();
     testClusterIndex();
     testClusterGridClampAndScreenMapping();
     testSliceDepthDistribution();
     testLightGridRebuildLayout();
     testLightGridRebuildOverflowClamp();
+    testEmptyGridRebuild();
+    testClusterUtilAssignmentCounts();
     testCullerInitAndClusterBuild();
     testLightCullAssignsAndSkips();
     testEmptySceneCull();

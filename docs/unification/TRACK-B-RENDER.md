@@ -54,11 +54,13 @@ ctest --test-dir build --output-on-failure -R fuse_shadow_system
 
 | Component | Notes |
 |-----------|-------|
+| `ClusterDesc::clampCounts` | Tile/slice/light caps clamped to CPU stub maxima (mirrors froxel layout) |
 | `ClusterGridLayout` | Tile/cluster index encode/decode, bounds clamp, screen-depth → cluster index |
 | `ClusterSliceLayout` | Exponential slice near/far + `computeSliceZFromDepth` (mirrors froxel layout) |
-| `ClusterLightGridLayout` | Flat light-list packing with per-cluster capacity clamp |
+| `ClusterLightGridLayout` | Flat light-list packing with per-cluster capacity clamp; zero-cluster rebuild clears SoA |
+| `cluster_util` | `tryAssignLight`, `countAssignedLights`, `countEmptyClusters` assignment stubs |
 | `ClusteredLightCullerStats` | `clustersAtCapacity` / `lightsDroppedOverflow` overflow reporting |
-| `fuse_clustered_light_culler` | Index round-trip, screen mapping, rebuild overflow clamp, empty scene, capacity stats |
+| `fuse_clustered_light_culler` | Desc clamp, index round-trip, screen/depth clamp paths, empty grid, assignment counts, overflow |
 
 ```bash
 ctest --test-dir build --output-on-failure -R fuse_clustered_light_culler
