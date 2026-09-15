@@ -322,6 +322,91 @@ void testNestedParallelForVisitCountSingleThread() {
              "single-thread nested parallel_for visits every index");
 }
 
+void testNestedParallelForMultiWorkerVisitCount() {
+#if FUSE_JOBS_SINGLE_THREAD
+    std::printf("SKIP: multi-worker visit count requires a worker pool\n");
+    return;
+#else
+    constexpr fuse::u32 outer = 24u;
+    constexpr fuse::u32 inner = 48u;
+    std::atomic<fuse::u32> visitCount{0};
+
+    // Single outer chunk: one worker enters cooperative wait; peers drain inner jobs.
+    withScheduler(4, [&] {
+        fuse::jobs::parallel_for(0u, outer, outer, [&](fuse::u32 /*o*/) {
+            fuse::jobs::parallel_for(0u, inner, 5u, [&](fuse::u32 /*i*/) {
+                visitCount.fetch_add(1u, std::memory_order_relaxed);
+            });
+        });
+    });
+
+    expectEq(visitCount.load(std::memory_order_relaxed), outer * inner,
+             "multi-worker nested parallel_for visits every index");
+#endif
+}
+
+void testNestedParallelForStressVisitCoverage() {
+    constexpr fuse::u32 outerCount = 24u;
+    constexpr fuse::u32 innerCount = 32u;
+    constexpr fuse::u32 iterations = 16u;
+
+#if FUSE_JOBS_SINGLE_THREAD
+    const fuse::u32 workerOptions[] = {0u};
+#else
+    const fuse::u32 workerOptions[] = {0u, 2u, 4u, 8u};
+#endif
+    const fuse::u32 innerGrains[] = {1u, 4u, 8u, 16u};
+
+    for (fuse::u32 workers : workerOptions) {
+        withScheduler(workers, [&] {
+            const fuse::u32 outerGrainsSingleThread[] = {1u, 4u, outerCount};
+            const fuse::u32 outerGrainsMultiWorker[] = {outerCount};
+            const fuse::u32* outerGrains = (workers == 0u) ? outerGrainsSingleThread : outerGrainsMultiWorker;
+            const fuse::u32 outerGrainCount = (workers == 0u) ? 3u : 1u;
+
+            for (fuse::u32 outerGrainIndex = 0; outerGrainIndex < outerGrainCount; ++outerGrainIndex) {
+                const fuse::u32 outerGrain = outerGrains[outerGrainIndex];
+                for (fuse::u32 innerGrain : innerGrains) {
+                    for (fuse::u32 iteration = 0; iteration < iterations; ++iteration) {
+                        std::vector<std::atomic<bool>> visited(outerCount * innerCount);
+                        for (auto& slot : visited) {
+                            slot.store(false, std::memory_order_relaxed);
+                        }
+
+                        fuse::jobs::parallel_for(0u, outerCount, outerGrain, [&](fuse::u32 o) {
+                            fuse::jobs::parallel_for(0u, innerCount, innerGrain, [&](fuse::u32 i) {
+                                const fuse::u32 idx = o * innerCount + i;
+                                visited[idx].store(true, std::memory_order_relaxed);
+                            });
+                        });
+
+                        fuse::u32 visitedCount = 0;
+                        for (fuse::u32 idx = 0; idx < outerCount * innerCount; ++idx) {
+                            if (visited[idx].load(std::memory_order_relaxed)) {
+                                ++visitedCount;
+                            }
+                        }
+
+                        if (visitedCount != outerCount * innerCount) {
+                            std::fprintf(stderr,
+                                         "FAIL: nested stress visit coverage workers=%u outerGrain=%u "
+                                         "innerGrain=%u iter=%u (expected %u, got %u)\n",
+                                         workers,
+                                         outerGrain,
+                                         innerGrain,
+                                         iteration,
+                                         outerCount * innerCount,
+                                         visitedCount);
+                            ++g_failures;
+                            return;
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
 void testNestedParallelForWithCooperativeWait() {
     if (!fuse::platform::cooperativeFibersAvailable()) {
         std::printf("SKIP: cooperative fibers unavailable for nested wait regression\n");
@@ -424,6 +509,8 @@ int main() {
     testNestedParallelForParity();
     testNestedParallelForSerialFallbackParity();
     testNestedParallelForVisitCountSingleThread();
+    testNestedParallelForMultiWorkerVisitCount();
+    testNestedParallelForStressVisitCoverage();
     testNestedParallelForWithCooperativeWait();
     testSingleThreadSubmitRunsInline();
     testSingleThreadNestedCounterWait();

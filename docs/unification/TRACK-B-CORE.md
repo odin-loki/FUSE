@@ -14,7 +14,7 @@
 | **B1.2** | Type system & handles | `fuse::types`, `Handle<T>`, `Object` | ✅ | `fuse_core_services` | Fixed-width aliases, generation handles, object hierarchy |
 | **B1.3** | Memory & allocators | `fuse::alloc` (frame/pool/stack) | ✅ | `fuse_core_allocator`, `fuse_core_services` | Frame bump + pool/stack allocators with stats hooks (#70); GPU allocators deferred |
 | **B1.4** | Math library | `fuse::math` | ✅ | `fuse_core_math` | Vec/Mat/Quat/AABB/Frustum/SDF — B1.4 SIMD deepen: `simd` CPU stubs, plane classify/clip, Mat4/AABB edge tests — [TRACK-B-MATH.md](./TRACK-B-MATH.md) |
-| **B1.5** | Job system & fibers | `fuse::jobs` | ✅ | `fuse_core_jobs`, `fuse_core_fiber`, `fuse_cuda_jobs` | Scheduler, `JobCounter`, `parallel_for`, work-steal policy stubs (`work_steal.hpp`), CUDA job lane stub |
+| **B1.5** | Job system & fibers | `fuse::jobs` | ✅ | `fuse_core_jobs`, `fuse_core_fiber`, `fuse_cuda_jobs`, `fuse_core_jobs_single_thread` | Scheduler, `JobCounter`, `parallel_for`, work-steal policy stubs (`work_steal.hpp`), nested `parallel_for` parity + per-index atomic visit stress (TSan nightly), CUDA job lane stub |
 | **B1.6** | Logging, assert & profiler | `fuse::log`, `fuse::assertion`, `fuse::profiler` | ✅ | `fuse_core_profiler_assert` | Nested scopes, chrome JSON (`B`/`E`, async `s`/`f`, counter `C`); platform thread-id stubs — [TRACK-B-CORE-B16.md](./TRACK-B-CORE-B16.md) |
 | **B1.7** | Platform & window | `fuse::platform::Window`, `EventPump` | ✅ | `fuse_core_platform_window`, `fuse_core_platform_hardening` | Window + event-pump stubs (#69); B1.7 deepen — resize/focus/close notify, poll-queue drain/coalesce — [TRACK-B-CORE-B17.md](./TRACK-B-CORE-B17.md) |
 
@@ -101,7 +101,8 @@ Existing per-subsystem tests remain the authoritative unit coverage:
 | CTest name | B1 area |
 |------------|---------|
 | `fuse_core_worker_count` | B1.5 |
-| `fuse_core_jobs` | B1.5 |
+| `fuse_core_jobs` | B1.5 — nested `parallel_for` parity, multi-worker visit count, per-index atomic stress |
+| `fuse_core_jobs_single_thread` | B1.5 — `FUSE_JOBS_SINGLE_THREAD` nested parity + visit stress (`FUSE_JOBS_SINGLE_THREAD=ON` CI job) |
 | `fuse_core_fiber` | B1.5 |
 | `fuse_cuda_jobs` | B1.5 |
 | `fuse_core_services` | B1.2 |
