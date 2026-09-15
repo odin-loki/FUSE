@@ -57,6 +57,9 @@ f32 tonemap_curve_output_span(const TonemapCurveParams& params, f32 white_input 
 bool tonemap_curve_preserves_black(const TonemapCurveParams& params, f32 epsilon = 1e-4f);
 /// True when black/white anchors stay in display range with positive span (B5.10 deepen).
 bool tonemap_curve_endpoints_valid(const TonemapCurveEndpoints& endpoints, f32 epsilon = 1e-4f);
+/// Evaluate + validate curve black/white anchors in one call (B5.10 deepen).
+bool tonemap_curve_has_valid_endpoints(const TonemapCurveParams& params, f32 white_input = 1.f,
+                                       f32 epsilon = 1e-4f);
 /// Evaluate curve output at mid-grey for calibration checks (B5.10 deepen).
 f32 tonemap_curve_mid_grey_output(const TonemapCurveParams& params, f32 mid_grey = 0.18f);
 fuse::math::Vec3 apply_exposure_ev(const fuse::math::Vec3& hdr, f32 ev_stops);
