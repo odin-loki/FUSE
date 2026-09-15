@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/renderer/deferred/gbuffer.hpp>
+#include <fuse/renderer/lighting/clustered.hpp>
 #include <fuse/renderer/render_graph.hpp>
 #include <fuse/types.hpp>
 
@@ -47,7 +48,7 @@ public:
     explicit DeferredFramePipeline(const DeferredFramePipelineDesc& desc = {});
 
     void resetGraphStorage();
-    void buildGraph(RenderGraph& graph, const GBuffer& gbuffer);
+    void buildGraph(RenderGraph& graph, const GBuffer& gbuffer, ClusteredLightCuller* culler = nullptr);
 
     static const char* passName(DeferredPassId id);
     static u32 passCount() { return static_cast<u32>(DeferredPassId::Count); }

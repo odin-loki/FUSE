@@ -26,11 +26,20 @@ bool DeferredRenderer::init(ResourceManager& resources) {
     }
 
     m_materials.init(resources);
+
+    ClusterDesc clusterDesc{};
+    clusterDesc.tilesX = 4;
+    clusterDesc.tilesY = 4;
+    clusterDesc.slicesZ = 4;
+    clusterDesc.maxLightsPerCluster = 64;
+    m_lightCuller.init(clusterDesc, resources);
+
     m_stats.ready = true;
     return true;
 }
 
 void DeferredRenderer::destroy() {
+    m_lightCuller.destroy();
     m_gbuffer.destroy();
     m_materials.destroy();
     m_resources = nullptr;
@@ -43,7 +52,7 @@ bool DeferredRenderer::buildFrameGraph(RenderGraph& graph, u32 backbufferIndex) 
     }
 
     graph.beginFrame(backbufferIndex);
-    m_pipeline.buildGraph(graph, m_gbuffer);
+    m_pipeline.buildGraph(graph, m_gbuffer, m_lightCuller.isReady() ? &m_lightCuller : nullptr);
     graph.compile();
 
     ++m_stats.framesBuilt;

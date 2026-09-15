@@ -55,3 +55,7 @@ add_test(NAME fuse_deferred_pipeline COMMAND fuse_deferred_pipeline)
 add_executable(fuse_shadow_system test_shadow_system.cpp)
 target_link_libraries(fuse_shadow_system PRIVATE fuse_rhi)
 add_test(NAME fuse_shadow_system COMMAND fuse_shadow_system)
+
+add_executable(fuse_clustered_light_culler test_clustered_light_culler.cpp)
+target_link_libraries(fuse_clustered_light_culler PRIVATE fuse_rhi)
+add_test(NAME fuse_clustered_light_culler COMMAND fuse_clustered_light_culler)
