@@ -4,6 +4,10 @@ add_subdirectory(Core)
 add_subdirectory(World2D)
 add_subdirectory(World3D)
 
+if(FUSE_BUILD_AUDIO)
+    add_subdirectory(Audio)
+endif()
+
 if(FUSE_BUILD_VULKAN)
     find_package(Vulkan QUIET)
     if(Vulkan_FOUND)
