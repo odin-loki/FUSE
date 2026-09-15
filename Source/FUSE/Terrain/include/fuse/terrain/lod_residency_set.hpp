@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/terrain/lod_residency_budget.hpp>
 #include <fuse/types.hpp>
 
 #include <algorithm>
@@ -167,6 +168,29 @@ inline u32 LodResidencySet::find_index_(u32 chunk_index) const {
 [[nodiscard]] inline bool apply_residency_on_unload_complete(LodResidencySet& set, u32 chunk_index,
                                                               bool success) {
     return success ? try_remove_resident(set, chunk_index) : false;
+}
+
+/// Empty-set guard: returns `kInvalidChunkIndex` when no eviction candidate exists.
+[[nodiscard]] inline u32 pick_eviction_candidate_guarded(const LodResidencySet& set) {
+    return set.has_eviction_candidate() ? set.pick_eviction_candidate() : kInvalidChunkIndex;
+}
+
+/// Pick the farthest chunk from `candidates` eligible for budget eviction under `policy`.
+/// Returns `kInvalidChunkIndex` and leaves `out_score` at -1 when no candidate qualifies.
+template <typename ScoreFn>
+[[nodiscard]] inline u32 pick_budget_eviction_candidate(const std::vector<u32>& candidates, ScoreFn&& score_fn,
+                                                        f32 incoming_priority, f32 load_radius,
+                                                        LodEvictionPolicy policy, f32& out_score) {
+    out_score = -1.f;
+    for (const u32 chunk_index : candidates) {
+        const f32 score = score_fn(chunk_index);
+        if (!can_evict_for_incoming(incoming_priority, score, load_radius, policy)) {
+            continue;
+        }
+        out_score = score;
+        return chunk_index;
+    }
+    return kInvalidChunkIndex;
 }
 
 } // namespace fuse::terrain

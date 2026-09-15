@@ -200,14 +200,13 @@ void ChunkGrid::evict_for_resident_cap_(f32 incoming_priority) {
             break;
         }
 
-        const u32 eviction_index = m_residency_set.pick_eviction_candidate();
+        const std::vector<u32> candidates = m_residency_set.collect_eviction_candidates();
+        f32 eviction_score = -1.f;
+        const u32 eviction_index = pick_budget_eviction_candidate(
+            candidates,
+            [&](u32 chunk_index) { return m_residency_set.focus_distance_for(chunk_index); },
+            incoming_priority, load_radius, LodEvictionPolicy::DistanceFromFocus, eviction_score);
         if (eviction_index == kInvalidChunkIndex) {
-            ++m_budget_counters.eviction_skipped;
-            break;
-        }
-
-        const f32 resident_focus_distance = m_residency_set.focus_distance_for(eviction_index);
-        if (!incoming_outranks_resident(incoming_priority, load_radius, resident_focus_distance)) {
             ++m_budget_counters.eviction_skipped;
             break;
         }

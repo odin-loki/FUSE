@@ -220,6 +220,94 @@ void testIncomingOutranksResident() {
                "zero incoming priority never outranks");
 }
 
+void testIncomingOutranksEviction() {
+    expectTrue(!fuse::terrain::incoming_outranks_eviction(0.f, 100.f),
+               "zero incoming priority does not outrank eviction score");
+    expectTrue(fuse::terrain::incoming_outranks_eviction(150.f, 100.f),
+               "higher incoming priority outranks resident score");
+    expectTrue(!fuse::terrain::incoming_outranks_eviction(50.f, 100.f),
+               "lower incoming priority blocked from evicting farther resident");
+    expectTrue(fuse::terrain::can_evict_for_incoming(20.f, 100.f, 24.f,
+                                                     fuse::terrain::LodEvictionPolicy::DistanceFromFocus),
+               "can evict when incoming outranks under distance policy");
+    expectTrue(!fuse::terrain::can_evict_for_incoming(5.f, 10.f, 24.f,
+                                                      fuse::terrain::LodEvictionPolicy::DistanceFromFocus),
+               "cannot evict when incoming does not outrank");
+    expectTrue(fuse::terrain::can_evict_for_incoming(0.f, 100.f, 24.f,
+                                                     fuse::terrain::LodEvictionPolicy::Lru),
+               "LRU policy ignores incoming outrank check");
+    expectTrue(!fuse::terrain::can_evict_for_incoming(20.f, 0.f, 24.f,
+                                                      fuse::terrain::LodEvictionPolicy::DistanceFromFocus),
+               "zero eviction score blocks distance-policy eviction");
+}
+
+void testPickBudgetEvictionCandidate() {
+    fuse::terrain::LodResidencySet residency;
+    expectTrue(residency.add(1u, 10.f), "add near chunk");
+    expectTrue(residency.add(3u, 15.f), "add mid chunk");
+    expectTrue(residency.add(5u, 20.f), "add far chunk");
+
+    const auto candidates = residency.collect_eviction_candidates();
+    const fuse::f32 load_radius = 24.f;
+    fuse::f32 score = -1.f;
+    const fuse::u32 blocked = fuse::terrain::pick_budget_eviction_candidate(
+        candidates,
+        [&](fuse::u32 chunk_index) { return residency.focus_distance_for(chunk_index); }, 1.f, load_radius,
+        fuse::terrain::LodEvictionPolicy::DistanceFromFocus, score);
+    expectEq(blocked, fuse::terrain::kInvalidChunkIndex, "weak incoming blocked from evicting any resident");
+    expectNear(score, -1.f, 1e-4f, "blocked pick leaves score unset");
+
+    const fuse::u32 picked = fuse::terrain::pick_budget_eviction_candidate(
+        candidates,
+        [&](fuse::u32 chunk_index) { return residency.focus_distance_for(chunk_index); }, 20.f, load_radius,
+        fuse::terrain::LodEvictionPolicy::DistanceFromFocus, score);
+    expectEq(picked, 5u, "eligible incoming evicts farthest resident first");
+    expectNear(score, 20.f, 1e-4f, "picked candidate score recorded");
+}
+
+void testPickEvictionCandidateGuarded() {
+    fuse::terrain::LodResidencySet residency;
+    expectEq(fuse::terrain::pick_eviction_candidate_guarded(residency), fuse::terrain::kInvalidChunkIndex,
+             "empty set guarded pick returns invalid index");
+    expectTrue(residency.add(4u, 200.f), "add resident chunk");
+    expectEq(fuse::terrain::pick_eviction_candidate_guarded(residency), 4u,
+             "guarded pick returns eviction candidate when set non-empty");
+}
+
+void testBudgetEvictionScore() {
+    expectNear(fuse::terrain::budget_eviction_score(900.f, 0.f, 0u, 10u,
+                                                  fuse::terrain::LodEvictionPolicy::DistanceFromFocus),
+               900.f, 1e-4f, "budget score prefers focus distance");
+    expectNear(fuse::terrain::budget_eviction_score(-1.f, 50.f, 0u, 10u,
+                                                  fuse::terrain::LodEvictionPolicy::DistanceFromFocus),
+               50.f, 1e-4f, "budget score falls back to unload priority");
+    expectNear(fuse::terrain::budget_eviction_score(100.f, 0.f, 2u, 10u,
+                                                  fuse::terrain::LodEvictionPolicy::Lru),
+               8.f, 1e-4f, "budget score uses LRU age");
+    expectNear(fuse::terrain::eviction_score_for(250.f, 3u, 10u,
+                                               fuse::terrain::LodEvictionPolicy::DistanceFromFocus),
+               250.f, 1e-4f, "eviction score uses focus distance");
+}
+
+void testResidentCapIncomingGuards() {
+    expectTrue(!fuse::terrain::would_exceed_resident_cap(0u, 100u, 1u),
+               "unlimited cap never exceeds with incoming");
+    expectTrue(!fuse::terrain::would_exceed_resident_cap(4u, 2u, 0u),
+               "zero incoming never exceeds cap");
+    expectTrue(!fuse::terrain::would_exceed_resident_cap(4u, 3u, 1u),
+               "incoming fits within headroom");
+    expectTrue(fuse::terrain::would_exceed_resident_cap(4u, 4u, 1u),
+               "incoming exceeds when at cap");
+    expectTrue(fuse::terrain::needs_budget_eviction_for_incoming(2u, 2u, 1u),
+               "needs eviction when incoming would exceed cap");
+
+    fuse::terrain::LodResidencyBudget budget{};
+    budget.max_loads_per_tick = 3u;
+    expectEq(fuse::terrain::clamp_loads_per_tick(8u, budget), 3u, "clamp loads per tick to budget cap");
+    expectEq(fuse::terrain::clamp_eviction_batch(5u, 2u), 2u, "eviction batch clamps to headroom");
+    expectEq(fuse::terrain::clamp_eviction_batch(1u, 4u), 1u, "eviction batch unchanged under headroom");
+}
+
 void testChunkGridResidentCapEviction() {
     fuse::terrain::ChunkGrid grid{};
     fuse::terrain::TerrainDesc desc = makeTestDesc();
@@ -750,6 +838,11 @@ int main() {
     testEvictionCandidateTieBreak();
     testResidencyHelperStubs();
     testIncomingOutranksResident();
+    testIncomingOutranksEviction();
+    testPickBudgetEvictionCandidate();
+    testPickEvictionCandidateGuarded();
+    testBudgetEvictionScore();
+    testResidentCapIncomingGuards();
     testLodResidencySetAddRemove();
     testLodClampHelpers();
     testLodSkirtStubs();
