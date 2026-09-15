@@ -193,8 +193,9 @@ void PhysicsManager::runCcdSweep_(f32 dt) {
 
     const std::vector<broadphase::CandidatePair> pairs =
         broadphase::runBroadphase(m_soa_, m_shapes_, hashParams);
-    std::vector<TOIResult> toiResults;
-    m_lastCcdHitCount_ = m_ccdPipeline_.sweepPairs(m_soa_, m_shapes_, pairs, dt, toiResults);
+    m_toiBuffer_.reserve(static_cast<u32>(pairs.size()));
+    runCcdIntoBuffer(pairs, m_soa_, m_shapes_, dt, m_toiBuffer_);
+    m_lastCcdHitCount_ = m_toiBuffer_.activeCount;
 }
 
 void PhysicsManager::processDestructionEvents_(PhysicsRegistry& registry, PhysicsResourceManager& resources) {

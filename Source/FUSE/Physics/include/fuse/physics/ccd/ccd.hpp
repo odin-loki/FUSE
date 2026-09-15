@@ -21,6 +21,31 @@ struct TOIResult {
     bool valid = false;
 };
 
+struct ToiBufferSoA;
+
+FUSE_PHYSICS_INLINE bool isToiInWindow(f32 toi) {
+    return toi >= 0.f && toi <= 1.f;
+}
+
+FUSE_PHYSICS_INLINE TOIResult makeToiAtContact(f32 toi,
+                                               vec3 contactPoint,
+                                               vec3 contactNormal,
+                                               u32 idxA,
+                                               u32 idxB) {
+    if (!isToiInWindow(toi)) {
+        return {.valid = false};
+    }
+
+    return {
+        .toi = toi,
+        .contactPoint = contactPoint,
+        .contactNormal = contactNormal,
+        .bodyA = idxA,
+        .bodyB = idxB,
+        .valid = true,
+    };
+}
+
 FUSE_PHYSICS_INLINE TOIResult sweptSphereSphere(vec3 posA0,
                                                vec3 velA,
                                                f32 radiusA,
@@ -49,7 +74,7 @@ FUSE_PHYSICS_INLINE TOIResult sweptSphereSphere(vec3 posA0,
     const f32 t1 = (-b + sqrtDisc) / (2.f * a);
 
     const f32 toi = (t0 >= 0.f) ? t0 : t1;
-    if (toi < 0.f || toi > 1.f) {
+    if (!isToiInWindow(toi)) {
         return {.valid = false};
     }
 
@@ -66,6 +91,69 @@ FUSE_PHYSICS_INLINE TOIResult sweptSphereSphere(vec3 posA0,
     };
 }
 
+/// Sphere swept against infinite plane (`planeDistance` matches narrowphase sphere-plane convention).
+FUSE_PHYSICS_INLINE TOIResult sweptSpherePlane(vec3 pos0,
+                                              vec3 vel,
+                                              f32 radius,
+                                              vec3 planeNormal,
+                                              f32 planeDistance) {
+    const f32 signedDist0 = pos0.dot(planeNormal) - planeDistance;
+    const f32 velAlongNormal = vel.dot(planeNormal);
+
+    if (signedDist0 <= radius && signedDist0 >= -radius) {
+        return makeToiAtContact(0.f, pos0 - planeNormal * radius, planeNormal, 0, 0);
+    }
+
+    if (std::fabs(velAlongNormal) < 1e-10f) {
+        return {.valid = false};
+    }
+
+    if (signedDist0 > radius && velAlongNormal >= 0.f) {
+        return {.valid = false};
+    }
+
+    const f32 toi = (radius - signedDist0) / velAlongNormal;
+    if (!isToiInWindow(toi)) {
+        return {.valid = false};
+    }
+
+    const vec3 hitCenter = pos0 + vel * toi;
+    return makeToiAtContact(toi, hitCenter - planeNormal * radius, planeNormal, 0, 0);
+}
+
+FUSE_PHYSICS_INLINE TOIResult selectEarliestToi(const TOIResult& a, const TOIResult& b) {
+    if (!a.valid) {
+        return b;
+    }
+    if (!b.valid) {
+        return a;
+    }
+    return (a.toi <= b.toi) ? a : b;
+}
+
+/// Thin axis-aligned slab along Z (half thickness in `slabHalfThickness`).
+FUSE_PHYSICS_INLINE TOIResult sweptSphereSlabZ(vec3 pos0,
+                                              vec3 vel,
+                                              f32 radius,
+                                              f32 slabCenterZ,
+                                              f32 slabHalfThickness) {
+    const f32 slabMin = slabCenterZ - slabHalfThickness;
+    const f32 slabMax = slabCenterZ + slabHalfThickness;
+
+    const TOIResult frontFace =
+        sweptSpherePlane(pos0, vel, radius, {0.f, 0.f, 1.f}, slabMax);
+    const TOIResult backFace =
+        sweptSpherePlane(pos0, vel, radius, {0.f, 0.f, -1.f}, -slabMin);
+    return selectEarliestToi(frontFace, backFace);
+}
+
+/// Job-safe CCD: one output slot per candidate pair, then compact valid TOIs.
+void runCcdIntoBuffer(const std::vector<broadphase::CandidatePair>& pairs,
+                      const RigidBodySoA& bodies,
+                      const CollisionShapeSoA& shapes,
+                      f32 dt,
+                      ToiBufferSoA& buffer);
+
 /// B4.6 — CCD dispatch stub (pair sweep + RB_CCD flag filter).
 class CcdPipeline {
 public:
@@ -78,8 +166,6 @@ public:
     u32 resultCount() const { return lastResultCount_; }
 
 private:
-    bool shapeIsSphere(const CollisionShapeSoA& shapes, u32 shapeIndex, f32& outRadius) const;
-
     mutable u32 lastResultCount_ = 0;
 };
 

@@ -1,6 +1,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/physics/broadphase/spatial_hash.hpp>
 #include <fuse/physics/ccd/ccd.hpp>
+#include <fuse/physics/ccd/toi_buffer.hpp>
 #include <fuse/physics/physics_data.hpp>
 
 #include <cmath>
@@ -46,6 +47,67 @@ void testSweptSphereSphereRejectsMiss() {
     expectTrue(!result.valid, "parallel miss returns invalid TOI");
 }
 
+void testSweptSpherePlaneFindsWallImpact() {
+    const TOIResult result = sweptSpherePlane(
+        {0.f, 0.f, 0.f}, {0.f, 0.f, 50.f}, 0.5f, {0.f, 0.f, 1.f}, 5.f);
+    expectTrue(result.valid, "fast sphere detects plane wall impact");
+    expectNear(result.toi, 0.11f, 0.02f, "plane TOI prevents tunneling through wall at z=5");
+}
+
+void testSweptSphereSlabFindsThinWallImpact() {
+    const TOIResult result = sweptSphereSlabZ(
+        {0.f, 0.f, 0.f}, {0.f, 0.f, 100.f}, 0.5f, 5.f, 0.05f);
+    expectTrue(result.valid, "fast sphere detects thin slab wall impact");
+    expectTrue(result.toi < 0.15f, "slab TOI occurs before discrete end-of-step tunnel");
+}
+
+void testToiBufferClearReuse() {
+    ToiBufferSoA buffer;
+    buffer.reserve(8u);
+    buffer.preparePairSlots(2u);
+    TOIResult first{};
+    first.valid = true;
+    first.toi = 0.25f;
+    first.bodyA = 0u;
+    first.bodyB = 1u;
+    buffer.writeSlot(0u, first);
+    expectTrue(buffer.compact() == 1u, "compact keeps valid TOI slot");
+
+    buffer.clear();
+    expectTrue(buffer.activeCount == 0u, "clear resets active count");
+    expectTrue(buffer.pairSlotCount == 0u, "clear resets pair slots");
+
+    buffer.preparePairSlots(4u);
+    TOIResult second = first;
+    second.bodyB = 2u;
+    buffer.writeSlot(1u, second);
+    buffer.writeSlot(3u, first);
+    expectTrue(buffer.compact() == 2u, "reuse after clear compacts new TOIs");
+}
+
+void testRunCcdIntoBufferJobSafe() {
+    RigidBodySoA bodies;
+    CollisionShapeSoA shapes;
+
+    const u32 fastSphere = bodies.addBody({0.f, 0.f, 0.f}, 1.f, RB_CCD);
+    const u32 wallBody = bodies.addBody({0.f, 0.f, 5.f}, 0.f, RB_STATIC);
+    bodies.linearVelocities[fastSphere] = {0.f, 0.f, 50.f};
+    shapes.addShape(CollisionShapeType::Sphere, fastSphere, {0.5f, 0.f, 0.f});
+    shapes.addShape(CollisionShapeType::Box, wallBody, {10.f, 10.f, 0.05f});
+
+    const std::vector<broadphase::CandidatePair> pairs = {{fastSphere, wallBody}};
+
+    ToiBufferSoA buffer;
+    buffer.reserve(1u);
+    runCcdIntoBuffer(pairs, bodies, shapes, 1.f, buffer);
+
+    expectTrue(buffer.activeCount == 1u, "job-safe CCD resolves sphere-thin-wall pair");
+    const TOIResult result = buffer.resultAt(0u);
+    expectTrue(result.valid, "buffer TOI valid");
+    expectTrue(result.bodyA == fastSphere && result.bodyB == wallBody, "buffer preserves body indices");
+    expectTrue(result.toi < 0.15f, "buffer TOI catches fast mover before tunneling");
+}
+
 void testCcdPipelineFiltersRbCcdFlag() {
     RigidBodySoA bodies;
     CollisionShapeSoA shapes;
@@ -84,14 +146,39 @@ void testCcdPipelineSkipsUnflaggedBodies() {
     expectTrue(count == 0u, "CCD pipeline skips pairs without RB_CCD flag");
 }
 
+void testCcdPipelineSpherePlanePair() {
+    RigidBodySoA bodies;
+    CollisionShapeSoA shapes;
+
+    const u32 fastSphere = bodies.addBody({0.f, 5.f, 0.f}, 1.f, RB_CCD);
+    const u32 ground = bodies.addBody({0.f, 0.f, 0.f}, 0.f, RB_STATIC);
+    bodies.linearVelocities[fastSphere] = {0.f, -10.f, 0.f};
+    shapes.addShape(CollisionShapeType::Sphere, fastSphere, {1.f, 0.f, 0.f});
+    shapes.addShape(CollisionShapeType::Plane, ground, {0.f, 1.f, 0.f}, 0.f);
+
+    std::vector<broadphase::CandidatePair> pairs = {{fastSphere, ground}};
+    std::vector<TOIResult> results;
+
+    CcdPipeline pipeline;
+    const u32 count = pipeline.sweepPairs(bodies, shapes, pairs, 1.f, results);
+    expectTrue(count == 1u, "CCD pipeline handles sphere-plane sweep");
+    expectTrue(!results.empty() && results[0].valid, "sphere-plane TOI is valid");
+    expectNear(results[0].toi, 0.4f, 0.03f, "sphere-plane TOI matches analytic sweep");
+}
+
 } // namespace
 
 int main() {
     fuse::core::initialize();
     testSweptSphereSphereFindsImpact();
     testSweptSphereSphereRejectsMiss();
+    testSweptSpherePlaneFindsWallImpact();
+    testSweptSphereSlabFindsThinWallImpact();
+    testToiBufferClearReuse();
+    testRunCcdIntoBufferJobSafe();
     testCcdPipelineFiltersRbCcdFlag();
     testCcdPipelineSkipsUnflaggedBodies();
+    testCcdPipelineSpherePlanePair();
     fuse::core::shutdown();
 
     if (g_failures == 0) {
