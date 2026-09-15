@@ -1,6 +1,6 @@
 # Track B — Own Renderer (B5 deferred pipeline)
 
-**Status:** B5.2 G-buffer layout validation + B5.3 PBR material parameter blocks + B5.5 CSM light-space AABB deepen + **B5.11 volumetric froxel grid deepen**  
+**Status:** B5.2 G-buffer layout validation + B5.3 PBR material parameter blocks + B5.5 CSM light-space AABB deepen + **B5.11 volumetric froxel grid deepen** + B5.6 DDGI probe grid indexing deepened  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B5  
 **Detail:** [TRACK-B-RENDER-B5.md](./TRACK-B-RENDER-B5.md) — full B5.1–B5.12 scope, tests, gates  
 **Depends on:** [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) (RHI bootstrap, render graph, CUDA job lane)
@@ -78,6 +78,21 @@ ctest --test-dir build --output-on-failure -R fuse_volumetric_lighting_b511
 
 ```bash
 ctest --test-dir build --output-on-failure -R fuse_material_system
+```
+
+---
+
+## B5.6 deepen — DDGI probe grid indexing + irradiance lerp
+
+| Component | Notes |
+|-----------|-------|
+| `ProbeGridCoord` / `ProbeGridLayout` | Index ↔ coord decode, world→grid mapping, atlas texel origins |
+| `ddgi_util::lerpIrradiance` | Spatial irradiance blend between probe samples |
+| `ddgi_util::trilinearProbeIrradiance` | 8-corner trilinear sample from CPU cache |
+| `DDGI::sampleIrradiance` | Uses trilinear probe interpolation (was nearest-probe) |
+
+```bash
+ctest --test-dir build --output-on-failure -R fuse_ddgi
 ```
 
 ---

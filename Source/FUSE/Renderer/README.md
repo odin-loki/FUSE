@@ -38,5 +38,5 @@ CUDA compute passes, dual-kawase bloom pyramids, and histogram auto-exposure are
 
 | Test | Coverage |
 |------|----------|
-| `fuse_ddgi` | Grid math, hysteresis blend, probe scheduling, init/update/sample, pipeline slot |
+| `fuse_ddgi` | Grid math, probe indexing, atlas layout, trilinear irradiance lerp, hysteresis blend, probe scheduling, init/update/sample, pipeline slot |
 | `fuse_post_process_b510` | Bloom thresholding, ACES clamping, neutral 0.18 grey calibration, tonemap curve rolloff, auto-exposure EV metering/adaptation, stage ordering, `PostStack` facade |

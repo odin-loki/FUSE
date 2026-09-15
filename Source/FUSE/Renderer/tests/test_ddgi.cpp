@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -56,6 +57,87 @@ void testProbeGridMath() {
 
     expectTrue(fuse::renderer::ddgi_util::irradianceAtlasWidth(desc) == 16u, "irradiance atlas width");
     expectTrue(fuse::renderer::ddgi_util::irradianceAtlasHeight(desc) == 32u, "irradiance atlas height");
+}
+
+void testProbeGridIndexing() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {4, 2, 3};
+
+    const fuse::renderer::ProbeGridCoord coord =
+        fuse::renderer::ProbeGridLayout::probeCoordFromIndex(desc, 17u);
+    expectTrue(coord.x == 1u && coord.y == 0u && coord.z == 2u, "probe index 17 decodes to (1,0,2)");
+
+    const fuse::u32 roundTrip =
+        fuse::renderer::ProbeGridLayout::probeIndexFromCoord(desc, coord);
+    expectTrue(roundTrip == 17u, "probe coord round-trips to index 17");
+
+    expectTrue(fuse::renderer::ProbeGridLayout::isValidProbeIndex(desc, 23u), "last probe index valid");
+    expectTrue(!fuse::renderer::ProbeGridLayout::isValidProbeIndex(desc, 24u), "out-of-range probe index");
+
+    const fuse::renderer::ProbeGridCoord invalid{4, 0, 0};
+    expectTrue(!fuse::renderer::ProbeGridLayout::isValidProbeCoord(desc, invalid), "x out of range");
+}
+
+void testProbeGridWorldCoord() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_origin = {0.f, 0.f, 0.f};
+    desc.probe_spacing = {2.f, 2.f, 2.f};
+    desc.grid_dims = {3, 3, 3};
+
+    const fuse::math::Vec3 gridCoord =
+        fuse::renderer::ProbeGridLayout::worldToProbeGridCoord(desc, {4.f, 2.f, 6.f});
+    expectNear(gridCoord.x, 2.f, 1e-5f, "world x maps to grid coord 2");
+    expectNear(gridCoord.y, 1.f, 1e-5f, "world y maps to grid coord 1");
+    expectNear(gridCoord.z, 3.f, 1e-5f, "world z maps to grid coord 3");
+
+    const fuse::renderer::ProbeGridCoord clamped =
+        fuse::renderer::ProbeGridLayout::clampProbeGridCoord(desc, {9, 9, 9});
+    expectTrue(clamped.x == 2u && clamped.y == 2u && clamped.z == 2u, "clamp to grid max");
+}
+
+void testProbeAtlasLayout() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {4, 2, 3};
+    desc.irradiance_res = 8;
+    desc.depth_res = 16;
+
+    const fuse::renderer::ProbeGridCoord coord{1, 1, 2};
+    const fuse::math::Vec2 irradianceOrigin =
+        fuse::renderer::ProbeGridLayout::probeIrradianceAtlasOrigin(desc, coord);
+    expectNear(irradianceOrigin.x, 8.f, 1e-5f, "irradiance atlas x origin");
+    expectNear(irradianceOrigin.y, 40.f, 1e-5f, "irradiance atlas y origin");
+
+    const fuse::math::Vec2 depthOrigin = fuse::renderer::ProbeGridLayout::probeDepthAtlasOrigin(desc, coord);
+    expectNear(depthOrigin.x, 16.f, 1e-5f, "depth atlas x origin");
+    expectNear(depthOrigin.y, 80.f, 1e-5f, "depth atlas y origin");
+}
+
+void testIrradianceLerp() {
+    const fuse::math::Vec3 a{1.f, 0.f, 0.f};
+    const fuse::math::Vec3 b{0.f, 1.f, 0.f};
+    const fuse::math::Vec3 mid = fuse::renderer::ddgi_util::lerpIrradiance(a, b, 0.5f);
+    expectNear(mid.x, 0.5f, 1e-5f, "lerp midpoint x");
+    expectNear(mid.y, 0.5f, 1e-5f, "lerp midpoint y");
+}
+
+void testTrilinearProbeIrradiance() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_origin = {0.f, 0.f, 0.f};
+    desc.probe_spacing = {1.f, 1.f, 1.f};
+    desc.grid_dims = {2, 2, 2};
+
+    std::vector<fuse::renderer::IrradianceCacheEntry> cache(8);
+    for (fuse::u32 i = 0; i < 8u; ++i) {
+        cache[i].irradiance = {static_cast<fuse::f32>(i), 0.f, 0.f};
+    }
+
+    const fuse::math::Vec3 centre = fuse::renderer::ddgi_util::trilinearProbeIrradiance(
+        desc, {0.5f, 0.5f, 0.5f}, cache.data(), static_cast<fuse::u32>(cache.size()));
+    expectNear(centre.x, 3.5f, 1e-4f, "trilinear centre averages eight probes");
+
+    const fuse::math::Vec3 corner = fuse::renderer::ddgi_util::trilinearProbeIrradiance(
+        desc, {0.f, 0.f, 0.f}, cache.data(), static_cast<fuse::u32>(cache.size()));
+    expectNear(corner.x, 0.f, 1e-5f, "trilinear at probe 0 returns probe 0 irradiance");
 }
 
 void testProbeScheduling() {
@@ -144,6 +226,11 @@ int main() {
 
     testDdgiDescDefaults();
     testProbeGridMath();
+    testProbeGridIndexing();
+    testProbeGridWorldCoord();
+    testProbeAtlasLayout();
+    testIrradianceLerp();
+    testTrilinearProbeIrradiance();
     testProbeScheduling();
     testHysteresisBlend();
     testDdgiInitUpdateSample();
