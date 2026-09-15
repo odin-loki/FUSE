@@ -97,5 +97,9 @@ struct TaaResolveStats {
 
 /// Human-readable label for resolve skip reasons (logging / tests).
 const char* taaResolveSkipReasonLabel(TaaResolveSkipReason reason);
+/// True when width and height are both non-zero (resolve dimension preflight).
+bool taaResolveDimensionsValid(u32 width, u32 height);
+/// True when resolve would bail before history update (`skip_reason != None`).
+bool taaResolveSkipReasonIsBlocking(TaaResolveSkipReason reason);
 
 } // namespace fuse::renderer

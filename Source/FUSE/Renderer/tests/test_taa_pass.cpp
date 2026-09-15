@@ -273,6 +273,12 @@ void testClampTaaParams() {
 }
 
 void testResolveSkipReasonLabels() {
+    expectTrue(!fuse::renderer::taaResolveSkipReasonIsBlocking(fuse::renderer::TaaResolveSkipReason::None),
+               "None skip reason is not blocking");
+    expectTrue(fuse::renderer::taaResolveSkipReasonIsBlocking(
+                   fuse::renderer::TaaResolveSkipReason::HistoryNotReady),
+               "HistoryNotReady skip reason is blocking");
+
     expectTrue(std::strcmp(fuse::renderer::taaResolveSkipReasonLabel(fuse::renderer::TaaResolveSkipReason::None),
                            "none") == 0,
                "None skip reason label");
@@ -304,6 +310,199 @@ void testResolveSkipReasonLabels() {
                                fuse::renderer::TaaResolveSkipReason::StaleHistoryGeneration),
                            "stale_history_generation") == 0,
                "StaleHistoryGeneration skip reason label");
+}
+
+void testResolveDimensionHelpers() {
+    expectTrue(fuse::renderer::taaResolveDimensionsValid(64u, 64u), "non-zero dimensions are valid");
+    expectTrue(!fuse::renderer::taaResolveDimensionsValid(0u, 64u), "zero width is invalid");
+    expectTrue(!fuse::renderer::taaResolveDimensionsValid(64u, 0u), "zero height is invalid");
+    expectTrue(!fuse::renderer::taaResolveDimensionsValid(0u, 0u), "zero width and height are invalid");
+
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for dimension helper test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaHistoryBuffer history;
+    fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
+    expectTrue(history.init(resources, historyDesc), "history ready for dimension helper test");
+
+    fuse::renderer::TaaResolveDesc desc{};
+    desc.width = 64;
+    desc.height = 64;
+    expectTrue(fuse::renderer::taaResolveDimensionsMatch(desc, history), "matching dimensions");
+    expectTrue(!fuse::renderer::taaResolveDimensionsMatch(
+                   fuse::renderer::TaaResolveDesc{.width = 128, .height = 64}, history),
+               "width mismatch");
+    expectTrue(!fuse::renderer::taaResolveDimensionsMatch(
+                   fuse::renderer::TaaResolveDesc{.width = 64, .height = 32}, history),
+               "height mismatch");
+
+    history.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
+void testClassifyTaaResolveSkipPriority() {
+    fuse::renderer::TaaHistoryBuffer emptyHistory;
+    fuse::renderer::TaaResolveDesc desc{};
+    desc.width = 64;
+    desc.height = 64;
+    desc.surfaces.current_frame = reinterpret_cast<void*>(0x1);
+    desc.surfaces.output = reinterpret_cast<void*>(0x2);
+
+    expectTrue(fuse::renderer::classifyTaaResolveSkip(desc, emptyHistory) ==
+                   fuse::renderer::TaaResolveSkipReason::HistoryNotReady,
+               "HistoryNotReady wins over later checks");
+
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for classify priority test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaHistoryBuffer history;
+    fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
+    expectTrue(history.init(resources, historyDesc), "history ready for classify priority test");
+
+    desc.width = 0;
+    desc.height = 64;
+    expectTrue(fuse::renderer::classifyTaaResolveSkip(desc, history) ==
+                   fuse::renderer::TaaResolveSkipReason::InvalidDimensions,
+               "InvalidDimensions wins when history is ready");
+
+    desc.width = 64;
+    desc.height = 0;
+    expectTrue(fuse::renderer::classifyTaaResolveSkip(desc, history) ==
+                   fuse::renderer::TaaResolveSkipReason::InvalidDimensions,
+               "zero height classified as InvalidDimensions");
+
+    desc.width = 128;
+    desc.height = 64;
+    expectTrue(fuse::renderer::classifyTaaResolveSkip(desc, history) ==
+                   fuse::renderer::TaaResolveSkipReason::DimensionMismatch,
+               "DimensionMismatch wins over surface checks");
+
+    desc.width = 64;
+    desc.surfaces.current_frame = nullptr;
+    expectTrue(fuse::renderer::classifyTaaResolveSkip(desc, history) ==
+                   fuse::renderer::TaaResolveSkipReason::MissingSurfaces,
+               "MissingSurfaces wins when dimensions match");
+
+    history.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
+void testHistoryGenerationGuardBypass() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for generation guard bypass test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaHistoryBuffer history;
+    fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
+    expectTrue(history.init(resources, historyDesc), "history ready for generation guard bypass test");
+
+    fuse::renderer::TaaResolveDesc desc{};
+    desc.width = 64;
+    desc.height = 64;
+    desc.surfaces.current_frame = reinterpret_cast<void*>(0x1);
+    desc.surfaces.output = reinterpret_cast<void*>(0x2);
+    desc.observed_history_generation = fuse::renderer::kTaaResolveNoHistoryGeneration;
+
+    expectTrue(fuse::renderer::taaResolveBypassesHistoryGenerationGuard(desc),
+               "sentinel bypasses history generation guard");
+
+    fuse::renderer::TaaResolve resolve;
+    expectTrue(resolve.resolve(desc, history), "resolve succeeds with generation guard bypassed");
+    history.invalidateHistory();
+
+    desc.observed_history_generation = 0u;
+    expectTrue(!fuse::renderer::taaResolveBypassesHistoryGenerationGuard(desc),
+               "explicit generation enables guard");
+    expectTrue(fuse::renderer::classifyTaaResolveSkip(desc, history) ==
+                   fuse::renderer::TaaResolveSkipReason::StaleHistoryGeneration,
+               "stale generation classified when guard enabled");
+    expectTrue(!resolve.resolve(desc, history), "resolve rejects stale generation when guard enabled");
+
+    history.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
+void testStampObservedHistoryGeneration() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for stamp generation test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaPassDesc passDesc{};
+    passDesc.width = 64;
+    passDesc.height = 64;
+
+    auto pass = fuse::renderer::TaaPass::create(passDesc);
+    expectTrue(pass->init(resources), "TaaPass initialized for stamp generation test");
+    expectTrue(pass->historyInvalidateGeneration() == 0u, "initial invalidate generation is zero");
+
+    fuse::renderer::TaaResolveDesc desc{};
+    desc.width = 64;
+    desc.height = 64;
+    desc.surfaces.current_frame = reinterpret_cast<void*>(0x1);
+    desc.surfaces.output = reinterpret_cast<void*>(0x2);
+    expectTrue(desc.observed_history_generation == fuse::renderer::kTaaResolveNoHistoryGeneration,
+               "desc starts with no-guard sentinel");
+
+    pass->stampObservedHistoryGeneration(desc);
+    expectTrue(desc.observed_history_generation == 0u, "stamp fills current invalidate generation");
+    expectTrue(!fuse::renderer::taaResolveBypassesHistoryGenerationGuard(desc),
+               "stamp enables generation guard");
+
+    expectTrue(pass->resolveFrame(desc), "resolve succeeds with stamped generation");
+    pass->invalidateHistory();
+    expectTrue(pass->historyInvalidateGeneration() == 1u, "invalidate bumps pass generation");
+
+    desc.observed_history_generation = 0u;
+    fuse::renderer::TaaResolveSkipReason skipReason = fuse::renderer::TaaResolveSkipReason::None;
+    expectTrue(pass->wouldSkipResolve(desc, &skipReason), "stamped generation becomes stale after invalidate");
+    expectTrue(skipReason == fuse::renderer::TaaResolveSkipReason::StaleHistoryGeneration,
+               "stale generation after invalidate");
+
+    desc.observed_history_generation = fuse::renderer::kTaaResolveNoHistoryGeneration;
+    pass->stampObservedHistoryGeneration(desc);
+    expectTrue(desc.observed_history_generation == 1u, "restamp picks up bumped generation");
+    expectTrue(!pass->wouldSkipResolve(desc), "restamped generation passes preflight");
+
+    pass->destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
 }
 
 void testInvalidDimensionsSkipReason() {
@@ -889,6 +1088,10 @@ int main() {
     testHistoryValidityFlags();
     testClampTaaParams();
     testResolveSkipReasonLabels();
+    testResolveDimensionHelpers();
+    testClassifyTaaResolveSkipPriority();
+    testHistoryGenerationGuardBypass();
+    testStampObservedHistoryGeneration();
     testInvalidDimensionsSkipReason();
     testDimensionMismatchResolve();
     testMissingSurfacesSkipReason();

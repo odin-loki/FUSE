@@ -44,6 +44,11 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaResolveSkipReason::MissingVelocityBuffer` / `MissingDepthBuffer` — rejection enabled but surface missing when `enforce_rejection_surfaces` is set
 - `TaaResolveSkipReason::StaleHistoryGeneration` — `observed_history_generation` differs from `invalidateGeneration()`
 - `taaResolveSkipReasonLabel(reason)` — stable string label for skip reasons
+- `classifyTaaResolveSkip(desc, history)` — public skip classifier (same ordering as `wouldSkip`)
+- `taaResolveDimensionsValid(w, h)` / `taaResolveDimensionsMatch(desc, history)` — dimension preflight helpers
+- `taaResolveBypassesHistoryGenerationGuard(desc)` — true when `observed_history_generation` uses the no-guard sentinel
+- `taaResolveSkipReasonIsBlocking(reason)` — true when resolve would bail before history update
+- `stampObservedHistoryGeneration(desc, history)` — fill observed generation from history when sentinel is set
 - `TaaResolve::wouldSkip(desc, history, &reason)` — preflight skip check without mutating history
 - `TaaResolve::resetBookkeeping()` — clears resolve stats/message (called on `TaaPass::destroy` / `invalidateHistory`)
 - `TaaPass::invalidateHistory()` — clears history validity and resolve bookkeeping without destroying buffers
@@ -51,6 +56,8 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaPass::matchesDimensions(w, h)` — true when pass and history dimensions align
 - `TaaPass::needsHistoryWarmup()` — true until the first successful resolve
 - `TaaPass::wouldSkipResolve(desc, &reason)` — pass-level preflight skip check
+- `TaaPass::historyInvalidateGeneration()` — current history invalidate epoch
+- `TaaPass::stampObservedHistoryGeneration(desc)` — stamp observed generation from pass history
 - `TaaPass::syncJitterToFrameIndex(frame)` — align pass jitter to a monotonic frame counter
 
 ## Pipeline (stub)

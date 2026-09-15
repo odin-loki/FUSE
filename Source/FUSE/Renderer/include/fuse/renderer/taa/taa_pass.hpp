@@ -50,8 +50,11 @@ public:
     void resize(u32 width, u32 height);
     bool matchesDimensions(u32 width, u32 height) const;
     bool needsHistoryWarmup() const { return m_history.needsWarmup(); }
+    u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// Preflight resolve without mutating history (delegates to `TaaResolve::wouldSkip`).
     bool wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason = nullptr) const;
+    /// Stamp `observed_history_generation` from pass history when still at the no-guard sentinel.
+    void stampObservedHistoryGeneration(TaaResolveDesc& desc) const;
 
     bool resolveFrame(const TaaResolveDesc& desc, void* cudaStream = nullptr);
 
