@@ -62,6 +62,75 @@ InterestScope classify_interest(f32 distance_sq, const InterestPolicy& policy, b
     return InterestScope::OutOfScope;
 }
 
+bool within_relevance_radius(f32 distance_sq, const InterestPolicy& policy, bool was_in_scope) {
+    return classify_interest(distance_sq, policy, was_in_scope) != InterestScope::OutOfScope;
+}
+
+namespace {
+
+bool contains_entity_(const std::vector<ecs::EntityID>& entities, ecs::EntityID entity) {
+    for (const ecs::EntityID& candidate : entities) {
+        if (candidate == entity) {
+            return true;
+        }
+    }
+    return false;
+}
+
+} // namespace
+
+void InterestScopeSet::clear() {
+    entities.clear();
+}
+
+void InterestScopeSet::build_from_entries(const std::vector<InterestEntry>& entries) {
+    entities.clear();
+    for (const InterestEntry& entry : entries) {
+        if (entry.scope != InterestScope::OutOfScope) {
+            entities.push_back(entry.entity);
+        }
+    }
+}
+
+void diff_interest_scope_sets(const InterestScopeSet& previous, const InterestScopeSet& current,
+                              InterestSetDiff& out) {
+    out.entered.clear();
+    out.left.clear();
+
+    for (const ecs::EntityID& entity : current.entities) {
+        if (!contains_entity_(previous.entities, entity)) {
+            out.entered.push_back(entity);
+        }
+    }
+
+    for (const ecs::EntityID& entity : previous.entities) {
+        if (!contains_entity_(current.entities, entity)) {
+            out.left.push_back(entity);
+        }
+    }
+}
+
+u32 filter_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
+                                const std::vector<InterestCandidate>& candidates,
+                                std::vector<InterestEntry>& out_entries) {
+    out_entries.clear();
+    for (const InterestCandidate& candidate : candidates) {
+        const f32 distance_sq = distance_sq_3d(observer, candidate.position);
+        if (!within_relevance_radius(distance_sq, policy)) {
+            continue;
+        }
+
+        InterestEntry entry{};
+        entry.entity = candidate.entity;
+        entry.distance_sq = distance_sq;
+        entry.scope = classify_interest(distance_sq, policy);
+        entry.priority = compute_relevance_priority(distance_sq, policy, candidate.priority_boost);
+        out_entries.push_back(entry);
+    }
+
+    return static_cast<u32>(out_entries.size());
+}
+
 f32 compute_relevance_priority(f32 distance_sq, const InterestPolicy& policy, f32 priority_boost) {
     const InterestScope scope = classify_interest(distance_sq, policy, false);
     if (scope == InterestScope::OutOfScope) {
@@ -96,6 +165,9 @@ void InterestManager::clear_entities() {
     m_candidates.clear();
     m_entries.clear();
     m_was_in_scope.clear();
+    m_scope_set.clear();
+    m_previous_scope_set.clear();
+    m_has_scope_snapshot = false;
 }
 
 void InterestManager::evaluate() {
@@ -117,6 +189,19 @@ void InterestManager::evaluate() {
         entry.priority = compute_relevance_priority(distance_sq, m_policy, candidate.priority_boost);
         m_was_in_scope[i] = scope != InterestScope::OutOfScope;
     }
+
+    if (m_has_scope_snapshot) {
+        m_previous_scope_set = m_scope_set;
+    }
+    m_scope_set.build_from_entries(m_entries);
+    if (!m_has_scope_snapshot) {
+        m_previous_scope_set = m_scope_set;
+        m_has_scope_snapshot = true;
+    }
+}
+
+void InterestManager::compute_scope_diff(InterestSetDiff& out) const {
+    diff_interest_scope_sets(m_previous_scope_set, m_scope_set, out);
 }
 
 u32 InterestManager::in_scope_count() const {
