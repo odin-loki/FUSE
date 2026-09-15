@@ -1,42 +1,6 @@
 #include <fuse/renderer/shadow/directional_shadow.hpp>
 
-#include <cmath>
-
 namespace fuse::renderer {
-namespace {
-
-ShadowMat4 makeOrthographic(f32 left, f32 right, f32 bottom, f32 top, f32 nearPlane, f32 farPlane) {
-    ShadowMat4 projection = ShadowMat4::identity();
-    projection.data[0] = 2.f / (right - left);
-    projection.data[5] = 2.f / (top - bottom);
-    projection.data[10] = -1.f / (farPlane - nearPlane);
-    projection.data[12] = -(right + left) / (right - left);
-    projection.data[13] = -(top + bottom) / (top - bottom);
-    projection.data[14] = -nearPlane / (farPlane - nearPlane);
-    return projection;
-}
-
-ShadowMat4 multiply(const ShadowMat4& a, const ShadowMat4& b) {
-    ShadowMat4 out{};
-    for (u32 column = 0; column < 4u; ++column) {
-        for (u32 row = 0; row < 4u; ++row) {
-            f32 sum = 0.f;
-            for (u32 k = 0; k < 4u; ++k) {
-                sum += a.data[k * 4u + row] * b.data[column * 4u + k];
-            }
-            out.data[column * 4u + row] = sum;
-        }
-    }
-    return out;
-}
-
-ShadowMat4 fromMat4(const fuse::math::Mat4& matrix) {
-    ShadowMat4 out{};
-    out.data = matrix.data;
-    return out;
-}
-
-} // namespace
 
 bool DirectionalShadow::init(ResourceManager& resources, const DirectionalShadowDesc& desc) {
     destroy();
@@ -106,45 +70,11 @@ void DirectionalShadow::update(const ShadowCameraParams& camera, const fuse::mat
 void DirectionalShadow::computeCascadeMatrix_(u32 cascade,
                                               const ShadowCameraParams& camera,
                                               const fuse::math::Vec3& sunDirection) {
-    const CascadeRange range = CascadedShadowMapLayout::computeCascadeRange(cascade, m_desc.csm, camera);
-    const f32 midDistance = (range.nearZ + range.farZ) * 0.5f;
-
-    const fuse::math::Vec3 forward = camera.forward.normalized();
-    const fuse::math::Vec3 focus = camera.position + forward * midDistance;
-
-    const fuse::math::AABB lightAabb =
-        CascadeLightSpaceLayout::computeCascadeLightSpaceAabb(cascade, m_desc.csm, camera, sunDirection);
-    const ShadowMat4 view = fromMat4(CascadeLightSpaceLayout::buildLightView(focus, sunDirection));
-
-    f32 left = lightAabb.min.x;
-    f32 right = lightAabb.max.x;
-    f32 bottom = lightAabb.min.y;
-    f32 top = lightAabb.max.y;
-    const f32 nearPlane = -lightAabb.max.z;
-    const f32 farPlane = -lightAabb.min.z;
-
-    if (m_desc.csm.stabilise) {
-        const f32 resolution = static_cast<f32>(m_desc.csm.resolution);
-        const f32 texelWorldSizeX = (right - left) / resolution;
-        const f32 texelWorldSizeY = (top - bottom) / resolution;
-        if (texelWorldSizeX > 1e-8f && texelWorldSizeY > 1e-8f) {
-            const f32 centerX = (left + right) * 0.5f;
-            const f32 centerY = (bottom + top) * 0.5f;
-            const f32 halfExtentX =
-                std::ceil((right - left) * 0.5f / texelWorldSizeX + 0.5f) * texelWorldSizeX;
-            const f32 halfExtentY =
-                std::ceil((top - bottom) * 0.5f / texelWorldSizeY + 0.5f) * texelWorldSizeY;
-            const f32 snappedCenterX = std::floor(centerX / texelWorldSizeX + 0.5f) * texelWorldSizeX;
-            const f32 snappedCenterY = std::floor(centerY / texelWorldSizeY + 0.5f) * texelWorldSizeY;
-            left = snappedCenterX - halfExtentX;
-            right = snappedCenterX + halfExtentX;
-            bottom = snappedCenterY - halfExtentY;
-            top = snappedCenterY + halfExtentY;
-        }
+    const CascadeLightSpaceMatrices matrices =
+        CascadeLightSpaceLayout::buildCascadeLightSpaceMatrices(cascade, m_desc.csm, camera, sunDirection);
+    if (matrices.valid) {
+        m_data.lightViewProj[cascade] = matrices.lightViewProj;
     }
-
-    const ShadowMat4 projection = makeOrthographic(left, right, bottom, top, nearPlane, farPlane);
-    m_data.lightViewProj[cascade] = multiply(projection, view);
 }
 
 } // namespace fuse::renderer

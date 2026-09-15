@@ -117,8 +117,32 @@ struct CascadedShadowMapLayout {
                                                             const ShadowCameraParams& camera);
 };
 
+/// Orthographic projection extents in light view space.
+struct CascadeOrthoBounds {
+    f32 left = 0.f;
+    f32 right = 0.f;
+    f32 bottom = 0.f;
+    f32 top = 0.f;
+    f32 nearPlane = 0.f;
+    f32 farPlane = 0.f;
+};
+
+/// Per-cascade light-space matrix bookkeeping (CPU stub).
+struct CascadeLightSpaceMatrices {
+    ShadowMat4 lightView{};
+    ShadowMat4 lightProjection{};
+    ShadowMat4 lightViewProj{};
+    CascadeOrthoBounds orthoBounds{};
+    fuse::math::AABB lightSpaceAabb{};
+    bool valid = false;
+};
+
 /// Light-space fitting helpers for orthographic shadow projections (CPU stub).
 struct CascadeLightSpaceLayout {
+    static fuse::math::Vec3 computeCascadeFocus(u32 cascadeIndex,
+                                                const CascadedShadowMapDesc& desc,
+                                                const ShadowCameraParams& camera);
+    static bool isDegenerateCascadeRange(const CascadeRange& range, const ShadowCameraParams& camera);
     static fuse::math::Mat4 buildLightView(const fuse::math::Vec3& focus, const fuse::math::Vec3& lightDirection);
     static bool isEmptyLightSpaceAabb(const fuse::math::AABB& aabb);
     static fuse::math::AABB computeLightSpaceAabbFromWorldCorners(const fuse::math::Vec3 worldCorners[8],
@@ -129,6 +153,17 @@ struct CascadeLightSpaceLayout {
                                                         const CascadedShadowMapDesc& desc,
                                                         const ShadowCameraParams& camera,
                                                         const fuse::math::Vec3& lightDirection);
+    static CascadeOrthoBounds fitOrthoBoundsFromLightSpaceAabb(const fuse::math::AABB& aabb);
+    static CascadeOrthoBounds stabiliseOrthoExtents(const CascadeOrthoBounds& bounds,
+                                                    u32 shadowMapResolution,
+                                                    bool enableStabilisation);
+    static ShadowMat4 buildOrthographicShadowProjection(const CascadeOrthoBounds& bounds);
+    static ShadowMat4 multiplyShadowMatrices(const ShadowMat4& a, const ShadowMat4& b);
+    static ShadowMat4 shadowMat4FromMat4(const fuse::math::Mat4& matrix);
+    static CascadeLightSpaceMatrices buildCascadeLightSpaceMatrices(u32 cascadeIndex,
+                                                                    const CascadedShadowMapDesc& desc,
+                                                                    const ShadowCameraParams& camera,
+                                                                    const fuse::math::Vec3& lightDirection);
 };
 
 } // namespace fuse::renderer
