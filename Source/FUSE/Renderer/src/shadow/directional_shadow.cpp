@@ -57,20 +57,7 @@ void DirectionalShadow::update(const ShadowCameraParams& camera, const fuse::mat
         return;
     }
 
-    if (CascadeLightSpaceLayout::isEmptyLightDirection(sunDirection) ||
-        CascadedShadowMapLayout::isEmptyCameraDepthRange(camera)) {
-        CascadeShadowDataLayout::clearAllCascadeSlots(m_data);
-        ++m_stats.framesUpdated;
-        return;
-    }
-
-    const fuse::math::Vec3 lightDir = sunDirection.normalized();
-    for (u32 cascade = 0; cascade < kCascadeCount; ++cascade) {
-        computeCascadeMatrix_(cascade, camera, lightDir);
-        m_data.cascadeFarZ[cascade] =
-            CascadedShadowMapLayout::computeCascadeFarZ(cascade, m_desc.csm, camera);
-    }
-
+    CascadeShadowDataLayout::populateCascadeShadowData(m_desc.csm, camera, sunDirection, kCascadeCount, m_data);
     ++m_stats.framesUpdated;
 }
 
