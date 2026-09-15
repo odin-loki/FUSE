@@ -232,12 +232,23 @@ fuse::math::Vec2 DdgiIrradianceEncoding::clampEncodedUV(const fuse::math::Vec2& 
     return {std::clamp(encoded.x, 0.f, 1.f), std::clamp(encoded.y, 0.f, 1.f)};
 }
 
-fuse::math::Vec2 DdgiIrradianceEncoding::encodeDirection(const fuse::math::Vec3& direction) {
-    fuse::math::Vec3 n = direction.normalized();
-    const f32 length_sq = n.dot(n);
-    if (length_sq < 1e-8f) {
-        return {0.5f, 0.5f};
+bool DdgiIrradianceEncoding::isEmptyDirection(const fuse::math::Vec3& direction) {
+    return direction.dot(direction) < 1e-8f;
+}
+
+fuse::math::Vec3 DdgiIrradianceEncoding::resolveSampleDirection(const fuse::math::Vec3& direction,
+                                                                const fuse::math::Vec3& fallback) {
+    if (!isEmptyDirection(direction)) {
+        return direction.normalized();
     }
+    if (!isEmptyDirection(fallback)) {
+        return fallback.normalized();
+    }
+    return {0.f, 1.f, 0.f};
+}
+
+fuse::math::Vec2 DdgiIrradianceEncoding::encodeDirection(const fuse::math::Vec3& direction) {
+    fuse::math::Vec3 n = resolveSampleDirection(direction);
 
     const f32 sum = std::fabs(n.x) + std::fabs(n.y) + std::fabs(n.z);
     if (sum > 1e-8f) {
@@ -402,7 +413,42 @@ u32 countInteriorProbes(const DDGIDesc& desc) {
     if (count == 0u) {
         return 0u;
     }
-    return count - countBorderProbes(desc);
+
+    const u32 interior_x = desc.grid_dims.x > 2u ? desc.grid_dims.x - 2u : 0u;
+    const u32 interior_y = desc.grid_dims.y > 2u ? desc.grid_dims.y - 2u : 0u;
+    const u32 interior_z = desc.grid_dims.z > 2u ? desc.grid_dims.z - 2u : 0u;
+    return interior_x * interior_y * interior_z;
+}
+
+ProbeBorderCounts countProbesByBorderKind(const DDGIDesc& desc) {
+    ProbeBorderCounts counts{};
+    counts.total = probeCount(desc);
+    if (counts.total == 0u) {
+        return counts;
+    }
+
+    counts.interior = countInteriorProbes(desc);
+    counts.border = counts.total - counts.interior;
+
+    for (u32 i = 0u; i < counts.total; ++i) {
+        const ProbeGridCoord coord = ProbeGridLayout::probeCoordFromIndex(desc, i);
+        switch (ProbeGridLayout::probeBorderKind(desc, coord)) {
+        case ProbeBorderKind::Interior:
+            break;
+        case ProbeBorderKind::Face:
+            ++counts.face;
+            break;
+        case ProbeBorderKind::Edge:
+            ++counts.edge;
+            break;
+        case ProbeBorderKind::Corner:
+            ++counts.corner;
+            break;
+        case ProbeBorderKind::Invalid:
+            break;
+        }
+    }
+    return counts;
 }
 
 fuse::math::Vec3 probeWorldPosition(const DDGIDesc& desc, u32 probe_index) {
@@ -489,8 +535,14 @@ fuse::math::Vec3 bilinearTileIrradiance(const fuse::math::Vec3* samples, f32 u, 
 fuse::math::Vec3 sampleDirectionalIrradianceAtProbe(const IrradianceCacheEntry& entry,
                                                     const fuse::math::Vec3& direction,
                                                     u32 irradiance_res) {
+    if (irradiance_res == 0u) {
+        return {};
+    }
+
+    const fuse::math::Vec3 sample_dir = DdgiIrradianceEncoding::resolveSampleDirection(direction);
+
     DdgiTileBilinearCoords coords{};
-    if (!DdgiIrradianceEncoding::buildTileBilinearCoords(direction, irradiance_res, coords)) {
+    if (!DdgiIrradianceEncoding::buildTileBilinearCoords(sample_dir, irradiance_res, coords)) {
         return {};
     }
 
@@ -504,7 +556,6 @@ fuse::math::Vec3 sampleDirectionalIrradianceAtProbe(const IrradianceCacheEntry& 
         return DdgiIrradianceEncoding::decodeDirection(encoded);
     };
 
-    const fuse::math::Vec3 sample_dir = direction.normalized();
     const auto weighted = [&](u32 texel_u, u32 texel_v) -> fuse::math::Vec3 {
         const fuse::math::Vec3 texel_dir = texel_direction(texel_u, texel_v);
         const f32 weight = std::max(0.f, sample_dir.dot(texel_dir));
@@ -568,6 +619,8 @@ fuse::math::Vec3 trilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
         return {};
     }
 
+    const fuse::math::Vec3 sample_direction = DdgiIrradianceEncoding::resolveSampleDirection(direction);
+
     ProbeSampleCoords coords{};
     if (!ProbeGridLayout::buildProbeSampleCoords(desc, world_position, coords)) {
         return {};
@@ -579,7 +632,7 @@ fuse::math::Vec3 trilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
         if (index == UINT32_MAX || index >= cache_count) {
             return {};
         }
-        return sampleDirectionalIrradianceAtProbe(cache[index], direction, desc.irradiance_res);
+        return sampleDirectionalIrradianceAtProbe(cache[index], sample_direction, desc.irradiance_res);
     };
 
     const fuse::math::Vec3 c000 = sample_probe(coords.x0, coords.y0, coords.z0);
@@ -784,8 +837,7 @@ DDGISampleResult DDGI::sampleIrradiance(const DDGISampleRequest& request) const 
 
     result.nearest_probe = nearest;
     const fuse::math::Vec3 sample_direction =
-        request.world_normal.dot(request.world_normal) > 1e-8f ? request.world_normal.normalized()
-                                                               : fuse::math::Vec3{0.f, 1.f, 0.f};
+        DdgiIrradianceEncoding::resolveSampleDirection(request.world_normal);
     result.irradiance = ddgi_util::trilinearDirectionalProbeIrradiance(m_desc,
                                                                        request.world_position,
                                                                        sample_direction,

@@ -131,9 +131,23 @@ struct ProbeSampleCoords {
     f32 tz = 0.f;
 };
 
+/// Per-kind probe counts for border shell classification (B5.6 deepen).
+struct ProbeBorderCounts {
+    u32 total = 0;
+    u32 interior = 0;
+    u32 border = 0;
+    u32 face = 0;
+    u32 edge = 0;
+    u32 corner = 0;
+};
+
 /// CPU-side octahedral direction encoding for probe irradiance atlas tiles (B5.6 deepen).
 /// Mirrors `GBufferEncoding` and the deferred-shade probe sampling path.
 struct DdgiIrradianceEncoding {
+    static bool isEmptyDirection(const fuse::math::Vec3& direction);
+    /// Normalizes `direction`, or `fallback` when empty; +Y when both are degenerate.
+    static fuse::math::Vec3 resolveSampleDirection(const fuse::math::Vec3& direction,
+                                                   const fuse::math::Vec3& fallback = {0.f, 1.f, 0.f});
     static fuse::math::Vec2 encodeDirection(const fuse::math::Vec3& direction);
     static fuse::math::Vec3 decodeDirection(const fuse::math::Vec2& encoded);
     /// Clamp encoded octahedral UV to the unit square before decode/atlas lookup.
@@ -204,6 +218,8 @@ u32 probeCount(const DDGIDesc& desc);
 u32 countBorderProbes(const DDGIDesc& desc);
 /// Returns 0 when the grid is empty.
 u32 countInteriorProbes(const DDGIDesc& desc);
+/// Face/edge/corner breakdown; all fields zero on empty grid.
+ProbeBorderCounts countProbesByBorderKind(const DDGIDesc& desc);
 fuse::math::Vec3 probeWorldPosition(const DDGIDesc& desc, u32 probe_index);
 /// World position after `clampProbeIndex` — safe for OOB scheduling indices.
 fuse::math::Vec3 probeWorldPositionClamped(const DDGIDesc& desc, u32 probe_index);
