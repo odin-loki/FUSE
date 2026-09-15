@@ -33,6 +33,29 @@ void expectVec3Near(const fuse::math::Vec3& value, const fuse::math::Vec3& expec
     expectNear(value.z, expected.z, epsilon, message);
 }
 
+void expectAabbNear(const fuse::math::AABB& value, const fuse::math::AABB& expected, f32 epsilon,
+                    const char* message) {
+    expectVec3Near(value.min, expected.min, epsilon, message);
+    expectVec3Near(value.max, expected.max, epsilon, message);
+}
+
+bool mat4Near(const fuse::math::Mat4& value, const fuse::math::Mat4& expected, f32 epsilon) {
+    for (u32 i = 0; i < 16; ++i) {
+        if (std::fabs(value.data[i] - expected.data[i]) > epsilon) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void expectMat4Near(const fuse::math::Mat4& value, const fuse::math::Mat4& expected, f32 epsilon,
+                    const char* message) {
+    if (!mat4Near(value, expected, epsilon)) {
+        std::fprintf(stderr, "FAIL: %s\n", message);
+        ++g_failures;
+    }
+}
+
 void testVecBasics() {
     const fuse::math::Vec3 a{1.f, 2.f, 3.f};
     const fuse::math::Vec3 b{4.f, 5.f, 6.f};
@@ -73,6 +96,52 @@ void testMat4InverseAffine() {
     const fuse::math::Mat4 product = matrix * inverse;
     const fuse::math::Vec3 round_trip = fuse::math::transformPoint(product, {1.f, 2.f, 3.f});
     expectVec3Near(round_trip, {1.f, 2.f, 3.f}, 1e-4f, "Mat4 inverseAffine round-trip preserves points");
+}
+
+void testMat4MultiplyEdgeCases() {
+    const fuse::math::Mat4 identity = fuse::math::Mat4::identity();
+    const fuse::math::Mat4 translate =
+        fuse::math::fromTRS({3.f, -2.f, 7.f}, fuse::math::Quat::identity(), {1.f, 1.f, 1.f});
+    const fuse::math::Mat4 rotate =
+        fuse::math::fromTRS({0.f, 0.f, 0.f}, fuse::math::fromAxisAngle({0.f, 0.f, 1.f}, 1.2f), {1.f, 1.f, 1.f});
+    const fuse::math::Mat4 chain = translate * rotate;
+
+    expectMat4Near(identity * translate, translate, 1e-5f, "Mat4 left identity multiply");
+    expectMat4Near(translate * identity, translate, 1e-5f, "Mat4 right identity multiply");
+
+    const fuse::math::Mat4 assocLeft = (translate * rotate) * chain;
+    const fuse::math::Mat4 assocRight = translate * (rotate * chain);
+    expectMat4Near(assocLeft, assocRight, 1e-4f, "Mat4 multiply associativity");
+
+    const fuse::math::Vec3 probe{1.f, 0.f, 0.f};
+    const fuse::math::Vec3 chained = fuse::math::transformPoint(chain, probe);
+    const fuse::math::Vec3 staged =
+        fuse::math::transformPoint(translate, fuse::math::transformPoint(rotate, probe));
+    expectVec3Near(chained, staged, 1e-4f, "Mat4 chained multiply matches staged transforms");
+}
+
+void testMat4InverseEdgeCases() {
+    const fuse::math::Mat4 identity = fuse::math::Mat4::identity();
+    expectMat4Near(fuse::math::inverseAffine(identity), identity, 1e-5f, "Mat4 inverse of identity");
+
+    const fuse::math::Mat4 translation =
+        fuse::math::fromTRS({-4.f, 2.f, 1.f}, fuse::math::Quat::identity(), {1.f, 1.f, 1.f});
+    const fuse::math::Mat4 inverseTranslation = fuse::math::inverseAffine(translation);
+    expectVec3Near(fuse::math::transformPoint(translation * inverseTranslation, {5.f, 6.f, 7.f}),
+                   {5.f, 6.f, 7.f}, 1e-4f, "Mat4 translation inverse round-trip");
+
+    const fuse::math::Mat4 rotation =
+        fuse::math::fromTRS({0.f, 0.f, 0.f}, fuse::math::fromAxisAngle({1.f, 0.f, 0.f}, 0.75f),
+                             {1.f, 1.f, 1.f});
+    const fuse::math::Mat4 inverseRotation = fuse::math::inverseAffine(rotation);
+    expectMat4Near(rotation * inverseRotation, identity, 1e-4f, "Mat4 pure rotation inverse product");
+
+    const fuse::math::Mat4 rigid =
+        fuse::math::fromTRS({1.f, -3.f, 2.f}, fuse::math::fromAxisAngle({0.f, 1.f, 0.f}, -0.4f),
+                            {1.f, 1.f, 1.f});
+    const fuse::math::Mat4 inverseRigid = fuse::math::inverseAffine(rigid);
+    expectMat4Near(inverseRigid * rigid, identity, 1e-4f, "Mat4 rigid-body inverse on left");
+    expectMat4Near(rigid * inverseRigid, identity, 1e-4f, "Mat4 rigid-body inverse on right");
 }
 
 void testMat3Upper3x3() {
@@ -127,6 +196,36 @@ void testAabbRayIntersect() {
     expectNear(miss, -1.f, 1e-5f, "AABB ray miss above box");
 }
 
+void testAabbTransformHelpers() {
+    const fuse::math::AABB local{{-1.f, -2.f, -3.f}, {1.f, 2.f, 3.f}};
+
+    const fuse::math::Mat4 translate =
+        fuse::math::fromTRS({5.f, 0.f, -1.f}, fuse::math::Quat::identity(), {1.f, 1.f, 1.f});
+    const fuse::math::AABB translated = fuse::math::transformAabb(translate, local);
+    expectAabbNear(translated, {{4.f, -2.f, -4.f}, {6.f, 2.f, 2.f}}, 1e-4f,
+                   "AABB transformAabb applies translation");
+
+    const fuse::math::Mat4 rotate =
+        fuse::math::fromTRS({0.f, 0.f, 0.f}, fuse::math::fromAxisAngle({0.f, 1.f, 0.f}, 1.5707963f),
+                            {1.f, 1.f, 1.f});
+    const fuse::math::AABB rotatedFast = fuse::math::transformAabb(rotate, local);
+    const fuse::math::AABB rotatedExact = fuse::math::transformAabbCorners(rotate, local);
+    expectAabbNear(rotatedFast, rotatedExact, 1e-4f, "AABB transformAabb matches corner reference");
+
+    const fuse::math::Mat4 rigid =
+        fuse::math::fromTRS({2.f, 1.f, -1.f}, fuse::math::fromAxisAngle({0.f, 0.f, 1.f}, 0.5f),
+                            {1.f, 1.f, 1.f});
+    const fuse::math::AABB worldFast = fuse::math::transformAabb(rigid, local);
+    const fuse::math::AABB worldExact = fuse::math::transformAabbCorners(rigid, local);
+    expectAabbNear(worldFast, worldExact, 1e-4f, "AABB rigid transform envelope matches corners");
+
+    const fuse::math::Mat4 scaled =
+        fuse::math::fromTRS({0.f, 0.f, 0.f}, fuse::math::Quat::identity(), {2.f, 3.f, 4.f});
+    const fuse::math::AABB scaledExact = fuse::math::transformAabbCorners(scaled, local);
+    expectAabbNear(scaledExact, {{-2.f, -6.f, -12.f}, {2.f, 6.f, 12.f}}, 1e-4f,
+                   "AABB corner transform handles non-uniform scale");
+}
+
 void testFrustumCulling() {
     const fuse::math::Mat4 view = fuse::math::lookAt({0.f, 0.f, 5.f}, {0.f, 0.f, 0.f}, {0.f, 1.f, 0.f});
     const fuse::math::Mat4 projection = fuse::math::perspective(60.f, 16.f / 9.f, 0.1f, 100.f);
@@ -151,13 +250,16 @@ void testSdfPrimitives() {
 int main() {
     testVecBasics();
     testMat4MultiplyIdentity();
+    testMat4MultiplyEdgeCases();
     testMat4TransformPoint();
     testMat4InverseAffine();
+    testMat4InverseEdgeCases();
     testMat3Upper3x3();
     testQuatRotation();
     testQuatSlerp();
     testAabbOverlap();
     testAabbRayIntersect();
+    testAabbTransformHelpers();
     testFrustumCulling();
     testSdfPrimitives();
 

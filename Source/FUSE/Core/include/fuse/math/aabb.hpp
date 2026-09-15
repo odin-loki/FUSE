@@ -1,8 +1,10 @@
 #pragma once
 
+#include <fuse/math/mat.hpp>
 #include <fuse/math/vec.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 
@@ -83,5 +85,52 @@ struct AABB {
         return tmin >= 0.f ? tmin : tmax;
     }
 };
+
+/// Transforms an AABB through an affine matrix using the absolute linear-part envelope.
+/// Requires an orthogonal 3x3 upper block (rotation ± uniform scale); non-uniform scale
+/// should use `transformAabbCorners` for an exact axis-aligned result.
+inline AABB transformAabb(const Mat4& matrix, const AABB& box) {
+    const Vec3 center = box.center();
+    const Vec3 extents = box.extents();
+    const Vec3 newCenter = transformPoint(matrix, center);
+
+    const Mat3 linear = matrix.upper3x3();
+    const Vec3 newExtents{
+        std::abs(linear.at(0, 0)) * extents.x + std::abs(linear.at(0, 1)) * extents.y +
+            std::abs(linear.at(0, 2)) * extents.z,
+        std::abs(linear.at(1, 0)) * extents.x + std::abs(linear.at(1, 1)) * extents.y +
+            std::abs(linear.at(1, 2)) * extents.z,
+        std::abs(linear.at(2, 0)) * extents.x + std::abs(linear.at(2, 1)) * extents.y +
+            std::abs(linear.at(2, 2)) * extents.z,
+    };
+    return AABB::fromCenterExtents(newCenter, newExtents);
+}
+
+/// Exact world-space AABB by transforming all eight corners (reference path for tests).
+inline AABB transformAabbCorners(const Mat4& matrix, const AABB& box) {
+    const std::array<Vec3, 8> corners = {{
+        {box.min.x, box.min.y, box.min.z},
+        {box.min.x, box.min.y, box.max.z},
+        {box.min.x, box.max.y, box.min.z},
+        {box.min.x, box.max.y, box.max.z},
+        {box.max.x, box.min.y, box.min.z},
+        {box.max.x, box.min.y, box.max.z},
+        {box.max.x, box.max.y, box.min.z},
+        {box.max.x, box.max.y, box.max.z},
+    }};
+
+    Vec3 outMin = transformPoint(matrix, corners[0]);
+    Vec3 outMax = outMin;
+    for (u32 i = 1; i < corners.size(); ++i) {
+        const Vec3 point = transformPoint(matrix, corners[i]);
+        outMin.x = std::min(outMin.x, point.x);
+        outMin.y = std::min(outMin.y, point.y);
+        outMin.z = std::min(outMin.z, point.z);
+        outMax.x = std::max(outMax.x, point.x);
+        outMax.y = std::max(outMax.y, point.y);
+        outMax.z = std::max(outMax.z, point.z);
+    }
+    return {outMin, outMax};
+}
 
 } // namespace fuse::math
