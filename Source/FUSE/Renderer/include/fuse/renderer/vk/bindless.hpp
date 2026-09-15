@@ -52,6 +52,12 @@ BindlessBindingIndex bindlessTextureBinding(u32 slotIndex, bool storage = false)
 BindlessBindingIndex bindlessBufferBinding(u32 slotIndex, bool uniform = false);
 BindlessBindingIndex bindlessSamplerBinding(u32 slotIndex);
 
+/// Per-kind heap ceiling (kMaxTextures / kMaxBuffers / kMaxSamplers).
+u32 bindlessHeapMaxCapacity(BindlessHeapKind kind);
+
+/// Clamps a requested heap size to the per-kind maximum.
+u32 clampHeapCapacity(BindlessHeapKind kind, u32 requested);
+
 /// Packs binding + array index into a single u32 for material tables / push data.
 u32 packBindlessBindingIndex(u32 binding, u32 arrayIndex);
 bool unpackBindlessBindingIndex(u32 packed, u32& binding, u32& arrayIndex);
@@ -75,17 +81,25 @@ public:
     void freeSlot(BindlessSlotHandle handle);
 
     bool validateSlot(BindlessSlotHandle handle) const;
+    /// True when index is in range but generation does not match or slot is unoccupied.
+    bool slotGenerationMismatch(BindlessSlotHandle handle) const;
     bool isSlotOccupied(BindlessHeapKind kind, u32 index) const;
     u32 slotGeneration(BindlessHeapKind kind, u32 index) const;
     bool slotIsStorageTexture(u32 index) const;
     bool slotIsUniformBuffer(u32 index) const;
 
+    /// Current handle for an occupied slot; invalid when unoccupied or out of range.
+    BindlessSlotHandle slotHandleAt(BindlessHeapKind kind, u32 index) const;
+
     /// Shader binding for a validated slot handle; returns empty binding when invalid.
     BindlessBindingIndex bindingIndexForHandle(BindlessSlotHandle handle) const;
+    /// Binding lookup by heap index without a generation handle; empty when unoccupied.
+    BindlessBindingIndex bindingIndexForSlot(BindlessHeapKind kind, u32 index) const;
 
     /// Sparse table growth stub — never shrinks; rejects above per-kind caps.
     bool resizeHeap(BindlessHeapKind kind, u32 newCapacity);
     u32 heapCapacity(BindlessHeapKind kind) const;
+    u32 heapMaxCapacity(BindlessHeapKind kind) const { return maxCountFor(kind); }
     u32 heapLiveCount(BindlessHeapKind kind) const;
     u32 heapFreeCount(BindlessHeapKind kind) const;
 

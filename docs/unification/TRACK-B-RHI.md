@@ -15,11 +15,11 @@
 | `GpuAllocator` | `include/fuse/renderer/vk/allocator.hpp` | Stub + VMA paths record alloc/free; `refreshVmaPoolStats()` |
 | `ResourceManager` | `include/fuse/renderer/resource_manager.hpp` | Ordered teardown: samplers → textures → user buffers → staging ring |
 | `HandleMap::forEachOccupied` | `include/fuse/handle_map.hpp` | Safe bulk destroy without mutating during iteration |
-| `BindlessDescriptors` | `include/fuse/renderer/vk/bindless.hpp` | Generation slot handles, UBO/SSBO + sampled/storage variants, handle register/unregister, binding-index helpers, handle pack/unpack, heap counts, sparse resize stub |
+| `BindlessDescriptors` | `include/fuse/renderer/vk/bindless.hpp` | Generation slot handles, UBO/SSBO + sampled/storage variants, handle register/unregister, `slotGenerationMismatch` / `slotHandleAt`, `bindingIndexForSlot`, `clampHeapCapacity`, binding-index helpers, handle pack/unpack, heap counts, sparse resize stub |
 | `test_rhi_resource_destroy_order` | `Source/FUSE/Renderer/tests/` | Headless destroy-order + stats hook acceptance |
-| `test_bindless_descriptors` | `Source/FUSE/Renderer/tests/` | Alloc/free reuse, generation bump, OOB reject, uniform buffer slots, handle register API, invalid/double-free guards, binding pack, handle pack, cap exhaustion |
+| `test_bindless_descriptors` | `Source/FUSE/Renderer/tests/` | Alloc/free reuse, generation bump, OOB reject, uniform buffer slots, handle register API, invalid/double-free guards, generation mismatch guards, slot handle lookup, capacity clamp, binding pack, handle pack, cap exhaustion |
 
-**B2.3 bindless deepen:** `BindlessDescriptors` CPU heap — generation `BindlessSlotHandle`, alloc/free reuse (`freeSlot` / `unregisterSlot`), UBO vs SSBO slot flag, `registerTextureSlot` / `registerBufferSlot` / `registerSamplerSlot`, `bindingIndexForHandle`, `packBindlessSlotHandle` / `unpackBindlessSlotHandle`, `heapLiveCount` / `heapFreeCount`, sparse `resizeHeap` stub. See `fuse_bindless_descriptors` tests.
+**B2.3 bindless deepen:** `BindlessDescriptors` CPU heap — generation `BindlessSlotHandle`, alloc/free reuse (`freeSlot` / `unregisterSlot`), UBO vs SSBO slot flag, `registerTextureSlot` / `registerBufferSlot` / `registerSamplerSlot`, `slotGenerationMismatch`, `slotHandleAt`, `bindingIndexForHandle` / `bindingIndexForSlot`, `clampHeapCapacity` / `heapMaxCapacity`, `packBindlessSlotHandle` / `unpackBindlessSlotHandle`, `heapLiveCount` / `heapFreeCount`, sparse `resizeHeap` stub (clamps above per-kind caps). See `fuse_bindless_descriptors` tests.
 
 **Not in scope (follow-up PRs):** Real `VkDescriptorPool` updates (B2.4), async upload fences, CUDA shared allocations, real GPU memory budgets.
 
@@ -102,7 +102,7 @@ Individual `destroyTexture` / `destroyBuffer` / `destroySampler` calls follow th
 |-------------|------------|----------|
 | `fuse_rhi_resource_destroy_order` | `fuse_rhi_resource_destroy_order` | Explicit destroy order, destroy-all, staging ring guard, stats + global hook |
 | `fuse_vulkan_resources` | `fuse_vulkan_resources` | Handle map generation, bindless recycle, create/destroy smoke |
-| `fuse_bindless_descriptors` | `fuse_bindless_descriptors` | Slot handle generations, UBO/SSBO slots, handle register/unregister, binding helpers, handle pack/unpack, heap counts, invalid/double-free guards, cap exhaustion, legacy register API |
+| `fuse_bindless_descriptors` | `fuse_bindless_descriptors` | Slot handle generations, UBO/SSBO slots, handle register/unregister, generation mismatch guards, slot handle lookup, capacity clamp, binding helpers, handle pack/unpack, heap counts, invalid/double-free guards, cap exhaustion, legacy register API |
 
 All tests run headless — stub allocator path when VMA is absent; Lavapipe path when Vulkan ICD is available.
 

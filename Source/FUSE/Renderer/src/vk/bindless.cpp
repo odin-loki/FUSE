@@ -29,6 +29,23 @@ BindlessBindingIndex bindlessSamplerBinding(u32 slotIndex) {
     return {kBindlessBindingSamplers, slotIndex};
 }
 
+u32 bindlessHeapMaxCapacity(BindlessHeapKind kind) {
+    switch (kind) {
+    case BindlessHeapKind::Texture:
+        return kMaxTextures;
+    case BindlessHeapKind::Buffer:
+        return kMaxBuffers;
+    case BindlessHeapKind::Sampler:
+        return kMaxSamplers;
+    }
+    return 0;
+}
+
+u32 clampHeapCapacity(BindlessHeapKind kind, u32 requested) {
+    const u32 maxCap = bindlessHeapMaxCapacity(kind);
+    return requested > maxCap ? maxCap : requested;
+}
+
 u32 packBindlessBindingIndex(u32 binding, u32 arrayIndex) {
     return (binding << 24u) | (arrayIndex & 0xFFFFFFu);
 }
@@ -227,6 +244,20 @@ bool BindlessDescriptors::validateSlot(BindlessSlotHandle handle) const {
     return slot.occupied && slot.generation == handle.generation;
 }
 
+bool BindlessDescriptors::slotGenerationMismatch(BindlessSlotHandle handle) const {
+    if (!m_initialized || !handle.isValid()) {
+        return false;
+    }
+
+    const std::vector<Slot>& slots = slotsFor(handle.kind);
+    if (handle.index >= slots.size()) {
+        return false;
+    }
+
+    const Slot& slot = slots[handle.index];
+    return !slot.occupied || slot.generation != handle.generation;
+}
+
 bool BindlessDescriptors::isSlotOccupied(BindlessHeapKind kind, u32 index) const {
     const std::vector<Slot>& slots = slotsFor(kind);
     if (index >= slots.size()) {
@@ -257,6 +288,24 @@ bool BindlessDescriptors::slotIsUniformBuffer(u32 index) const {
     return m_bufferSlots[index].storage;
 }
 
+BindlessSlotHandle BindlessDescriptors::slotHandleAt(BindlessHeapKind kind, u32 index) const {
+    if (!m_initialized) {
+        return BindlessSlotHandle::invalid();
+    }
+
+    const std::vector<Slot>& slots = slotsFor(kind);
+    if (index >= slots.size()) {
+        return BindlessSlotHandle::invalid();
+    }
+
+    const Slot& slot = slots[index];
+    if (!slot.occupied) {
+        return BindlessSlotHandle::invalid();
+    }
+
+    return BindlessSlotHandle{kind, index, slot.generation};
+}
+
 BindlessBindingIndex BindlessDescriptors::bindingIndexForHandle(BindlessSlotHandle handle) const {
     if (!validateSlot(handle)) {
         return {};
@@ -271,6 +320,10 @@ BindlessBindingIndex BindlessDescriptors::bindingIndexForHandle(BindlessSlotHand
         return bindlessSamplerBinding(handle.index);
     }
     return {};
+}
+
+BindlessBindingIndex BindlessDescriptors::bindingIndexForSlot(BindlessHeapKind kind, u32 index) const {
+    return bindingIndexForHandle(slotHandleAt(kind, index));
 }
 
 u32 BindlessDescriptors::heapLiveCount(BindlessHeapKind kind) const {
@@ -294,6 +347,7 @@ bool BindlessDescriptors::resizeHeap(BindlessHeapKind kind, u32 newCapacity) {
         return false;
     }
 
+    newCapacity = clampHeapCapacity(kind, newCapacity);
     const u32 cap = maxCountFor(kind);
     if (newCapacity > cap) {
         return false;
