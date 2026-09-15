@@ -11,11 +11,18 @@ namespace fuse::renderer {
 /// Triple-buffered frame ring — aligned with architecture-parallel FrameBarrier sync point.
 static constexpr u32 kFramesInFlight = 3;
 
+struct FrameCommandData {
+    void* commandPool = nullptr;     // VkCommandPool
+    void* primaryCommandBuffer = nullptr; // VkCommandBuffer
+    void* transferCommandBuffer = nullptr; // VkCommandBuffer
+};
+
 struct FrameSyncData {
     void* imageAvailable = nullptr;  // VkSemaphore — swapchain acquire signal
     void* renderFinished = nullptr;  // VkSemaphore — present wait
     void* inFlightFence = nullptr;   // VkFence — CPU wait before reusing slot
     bool fenceSignaled = false;
+    FrameCommandData commands{};
 };
 
 struct FrameManagerInfo {
@@ -43,6 +50,7 @@ public:
 
     const FrameSyncData& current() const;
     const FrameSyncData& slot(u32 index) const;
+    void* currentCommandBuffer() const;
 
     /// Waits on the current slot fence, advances ring index. Call after tick barrier, before render record.
     void beginFrame(u32 frameIndex);

@@ -1,7 +1,7 @@
-# Track B — Vulkan Bootstrap (B2.1–B2.4)
+# Track B — Vulkan Bootstrap (B2.1–B2.8)
 
-**Status:** B2.1 bootstrap + B2.2 swapchain/frame ring + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.6 CUDA/interop stubs + B2.8 rasterisation pipeline scaffold  
-**Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B2.1–B2.4, §B2.6, §B2.8  
+**Status:** B2.1 bootstrap + B2.2 swapchain/frame ring + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.5 command buffer / render graph scaffolding + B2.6 CUDA/interop stubs + B2.8 rasterisation pipeline scaffold  
+**Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B2.1–B2.5, §B2.6, §B2.8  
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §4.2, §4.4, §5.3  
 **Hybrid integration:** [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md)
 
@@ -21,9 +21,11 @@
 | `HandleMap<T>` | `Source/FUSE/Core/include/fuse/` | Generation-checked slots for GPU resources |
 | `ShaderCompiler` / `ShaderModule` | `Source/FUSE/Renderer/include/fuse/renderer/shader/` | Offline-first — loads checked-in `.spv` fixtures |
 | `PipelineLayout` | `Source/FUSE/Renderer/include/fuse/renderer/vk/pipeline_layout.hpp` | Placeholder layout (push constants only; bindless sets deferred) |
+| `CommandBufferRecorder` | `Source/FUSE/Renderer/` | Stub logical command recording (pass/barrier/clear/draw/present) |
+| `RenderGraph` | `Source/FUSE/Renderer/` | Pass dependency sketch, barrier planning, culling |
 | `RenderPass` / `GraphicsPipeline` | `Source/FUSE/Renderer/include/fuse/renderer/vk/` | B2.8 headless raster scaffold — `VkPipeline` from B2.4 fixtures |
 | `RasterPath` | same | Offscreen clear + triangle stub wired through `RhiContext::submitFrame` |
-| `RhiContext` | `Source/FUSE/Renderer/` | `beginFrame` / `submitFrame` on `renderThread()` |
+| `RhiContext` | `Source/FUSE/Renderer/` | `beginFrame` / `submitFrame` on `renderThread()`; compiles graph per frame + optional `RasterPath` |
 | `fuse::platform::gl_context.hpp` | `Source/FUSE/Core/` | Portable “may touch GPU” guard |
 | `HybridComposer` wiring | `Source/FUSE/Hybrid/` | Dual path: software `PlaceholderRenderer` **and** RHI command mirror |
 
@@ -62,7 +64,7 @@ Workers produce snapshot SOA / staging data only. Job code never includes `<vulk
 
 1. Assert render thread (`platform::isRenderThread()`)
 2. Execute software placeholder (existing U4 tests)
-3. When `FUSE_HAS_VULKAN_RHI`: reset `RenderCommandList`, mirror clears/sprites, `beginFrame(ctx.frameIndex)`, `submitFrame()`
+3. When `FUSE_HAS_VULKAN_RHI`: reset `RenderCommandList`, mirror clears/sprites, `beginFrame(ctx.frameIndex)`, `submitFrame()` (builds + compiles `RenderGraph`, records stub commands)
 
 **Frame barrier alignment:** `FrameBarrier` at end of tick ensures jobs for frame `N` complete before render record. `FrameManager::signalTickComplete()` + `beginFrame(frameIndex)` mirror that sync point on the GPU path.
 
@@ -118,7 +120,59 @@ Lifecycle per frame:
 3. Record `RenderCommandList` + placeholder software path
 4. `endFrame()` advances ring index
 
-Command pools, descriptor pools, and scratch allocators deferred to B2.3+.
+Per-slot command pools and primary command buffers are allocated when the Vulkan backend is active (B2.5). Descriptor pools and scratch allocators remain deferred.
+
+---
+
+## B2.5 — Command buffer & render graph scaffolding
+
+**Status:** CPU-side graph compile + stub command recording landed; real `vkCmd*` wiring deferred to B2.8+.
+
+| Component | Location | Notes |
+|-----------|----------|-------|
+| `CommandBufferRecorder` | `include/fuse/renderer/command_buffer.hpp` | Records logical pass/barrier/clear/draw/present commands for tests |
+| `RenderGraph` | `include/fuse/renderer/render_graph.hpp` | Pass nodes declare texture/buffer accesses; `compile()` plans barriers + culls unused passes |
+| `populateRenderGraphFromCommandList` | `render_graph.cpp` | Maps `RenderCommandList` clears/sprites → graph passes (clear → sprites2d → present) |
+| `FrameCommandData` | `vk/frame.hpp` | Per-slot `VkCommandPool` + primary `VkCommandBuffer` when backend active |
+| `RhiContext` integration | `rhi_context.cpp` | `submitFrame()` populates graph, compiles, executes into recorder, advances frame ring |
+
+### Render graph API (sketch)
+
+```cpp
+enum class RGResourceAccess : u32 {
+  ColorAttachmentWrite, DepthAttachmentWrite, ShaderRead, ShaderWrite,
+  TransferSrc, TransferDst, Present, CUDAWrite, CUDARead,
+};
+
+struct RGPassDesc {
+  const char* name;
+  RGPassExecuteFn execute;          // void(*)(void* cmd, void* userData)
+  const RGTextureAccess* textureAccesses;
+  u32 textureAccessCount;
+  bool is_compute = false;
+  bool is_cuda = false;
+};
+
+class RenderGraph {
+  void beginFrame(u32 backbufferIndex);
+  void addPass(const RGPassDesc& desc);
+  void compile();                   // barrier planning + pass culling
+  RenderGraphExecuteInfo execute(VulkanDevice&, FrameManager&, CommandBufferRecorder&);
+};
+```
+
+CUDA nodes (`is_cuda`) are first-class in the API; graph execution remains a no-op stub until B2.6 timeline wiring lands.
+
+### Per-frame flow (B2.5)
+
+1. `HybridComposer::render()` mirrors draws into `RenderCommandList` (unchanged U4 software path).
+2. `RhiContext::beginFrame(frameIndex)` → `FrameManager::beginFrame` + `RenderGraph::beginFrame`.
+3. `populateRenderGraphFromCommandList()` builds passes from mirrored commands.
+4. `RenderGraph::compile()` inserts layout-transition barriers (CPU plan only).
+5. `RenderGraph::execute()` records logical commands via `CommandBufferRecorder` using the current slot's primary command buffer handle.
+6. `FrameManager::endFrame()` advances the ring.
+
+**Gates:** no per-frame heap allocs in the hot path (`kMaxPassesPerFrame` fixed storage for hybrid mirror); no manual `vkCmdPipelineBarrier` outside graph planning (barriers are graph-owned, even when recording is stubbed).
 
 ---
 
@@ -204,6 +258,7 @@ Portable invariant unchanged: job code emits `RenderCommandList`; platform modul
 | `fuse_shader_pipeline` | SPIR-V I/O, offline compiler, shader module + pipeline layout (stub or Vulkan) |
 | `fuse_graphics_pipeline` | `VkGraphicsPipeline`, headless `RasterPath` clear + triangle, `RhiContext` wiring |
 | `fuse_render_command_list` | Hybrid mirrors commands without breaking placeholder pixels |
+| `fuse_render_graph` | Barrier planning, pass culling, command recorder, RHI graph submit |
 | `fuse_hybrid_tests` | Existing U4 software renderer regressions |
 | `fuse_cuda_jobs` | `submit_cuda` hook signals counter without CUDA toolkit |
 | `fuse_cuda_interop` | Vulkan/CUDA import + timeline stubs degrade on CI |
@@ -211,7 +266,7 @@ Portable invariant unchanged: job code emits `RenderCommandList`; platform modul
 Run:
 
 ```bash
-ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_graphics_pipeline|fuse_render_command|fuse_hybrid|fuse_cuda'
+ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_graphics_pipeline|fuse_render_command|fuse_render_graph|fuse_hybrid|fuse_cuda'
 ```
 
 ---
@@ -267,9 +322,11 @@ Thread ownership unchanged: CUDA launch jobs run on worker threads; Vulkan recor
 - [x] Triple-buffered frame ring sketch aligned with `FrameBarrier`
 - [x] B2.3 resource handles + stub/VMA allocator + bindless index table
 - [x] B2.4 shader scaffold — offline SPIR-V, shader module, pipeline layout placeholder
+- [x] B2.5 command buffer recording stubs + render graph compile/execute scaffolding
 - [x] B2.6 CUDA job/interop stubs — `FUSE_BUILD_CUDA` gated, CI passes without toolkit
 - [x] B2.8 rasterisation pipeline scaffold — `GraphicsPipeline`, headless clear/triangle `RasterPath`
 - [ ] B2.4 follow-up: bindless descriptor pool + graphics pipeline cache
+- [ ] B2.5 follow-up: real `vkCmdBeginRenderPass` / queue submit wiring (B2.8 draw list)
 - [ ] B2.6 follow-up: `cudaImportExternalMemory`, timeline semaphores, real shared textures
 - [ ] Replace `PlaceholderRenderer` present path incrementally — keep software fallback for headless CI
 - [ ] Editor Qt native surface (`U6` viewport) → `SwapchainDesc.surface`

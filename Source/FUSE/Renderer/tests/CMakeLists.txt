@@ -27,3 +27,7 @@ target_compile_definitions(fuse_graphics_pipeline PRIVATE
     FUSE_SHADER_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/Source/FUSE/Renderer/shaders/fixtures"
 )
 add_test(NAME fuse_graphics_pipeline COMMAND fuse_graphics_pipeline)
+
+add_executable(fuse_render_graph test_render_graph.cpp)
+target_link_libraries(fuse_render_graph PRIVATE fuse_rhi)
+add_test(NAME fuse_render_graph COMMAND fuse_render_graph)
