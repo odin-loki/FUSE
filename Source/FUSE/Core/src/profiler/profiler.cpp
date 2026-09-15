@@ -60,7 +60,9 @@ void recordEvent(const char* name,
                  EventPhase phase,
                  u32 scopeId,
                  u32 nestingDepth,
-                 s64 counterValue = 0) {
+                 CounterValueKind counterKind = CounterValueKind::None,
+                 s64 counterIntValue = 0,
+                 f64 counterFloatValue = 0.0) {
     if (!g_enabled.load(std::memory_order_acquire)) {
         return;
     }
@@ -73,7 +75,9 @@ void recordEvent(const char* name,
         fuse::platform::chromeTraceThreadId(),
         scopeId,
         nestingDepth,
-        counterValue,
+        counterKind,
+        counterIntValue,
+        counterFloatValue,
     };
 
     const u32 count = g_eventCount.load(std::memory_order_acquire);
@@ -194,7 +198,11 @@ void endAsyncFlow(const char* name, u32 flowId) {
 }
 
 void sampleCounter(const char* track, s64 value) {
-    recordEvent(track, EventPhase::Counter, 0u, 0u, value);
+    recordEvent(track, EventPhase::Counter, 0u, 0u, CounterValueKind::Int, value, 0.0);
+}
+
+void sampleCounterFloat(const char* track, f64 value) {
+    recordEvent(track, EventPhase::Counter, 0u, 0u, CounterValueKind::Float, 0, value);
 }
 
 std::string exportChromeTraceJson() {
@@ -259,17 +267,31 @@ std::string exportChromeTraceJson() {
                           event.scopeId);
             break;
         case EventPhase::Counter:
-            std::snprintf(buffer,
-                          sizeof(buffer),
-                          "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
-                          "\"tid\":%u,\"args\":{\"value\":%lld}}",
-                          first ? "" : ",",
-                          event.name,
-                          category,
-                          phase,
-                          static_cast<unsigned long long>(timestampUs),
-                          event.threadId,
-                          static_cast<long long>(event.counterValue));
+            if (event.counterKind == CounterValueKind::Float) {
+                std::snprintf(buffer,
+                              sizeof(buffer),
+                              "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
+                              "\"tid\":%u,\"args\":{\"value\":%.17g}}",
+                              first ? "" : ",",
+                              event.name,
+                              category,
+                              phase,
+                              static_cast<unsigned long long>(timestampUs),
+                              event.threadId,
+                              event.counterFloatValue);
+            } else {
+                std::snprintf(buffer,
+                              sizeof(buffer),
+                              "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
+                              "\"tid\":%u,\"args\":{\"value\":%lld}}",
+                              first ? "" : ",",
+                              event.name,
+                              category,
+                              phase,
+                              static_cast<unsigned long long>(timestampUs),
+                              event.threadId,
+                              static_cast<long long>(event.counterIntValue));
+            }
             break;
         }
         json += buffer;

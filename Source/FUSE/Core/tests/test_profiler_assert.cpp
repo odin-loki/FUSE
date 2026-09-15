@@ -237,8 +237,9 @@ void testCounterSamples() {
     expectTrue(first.phase == fuse::profiler::EventPhase::Counter, "counter event phase is Counter");
     expectTrue(second.phase == fuse::profiler::EventPhase::Counter, "second counter event phase is Counter");
     expectTrue(std::string(first.name) == "frame_alloc_bytes", "counter track name preserved");
-    expectTrue(first.counterValue == 4096, "counter value preserved");
-    expectTrue(second.counterValue == 3, "second counter value preserved");
+    expectTrue(first.counterKind == fuse::profiler::CounterValueKind::Int, "int counter kind preserved");
+    expectTrue(first.counterIntValue == 4096, "counter value preserved");
+    expectTrue(second.counterIntValue == 3, "second counter value preserved");
 
     const std::string json = fuse::profiler::exportChromeTraceJson();
     expectTrue(json.find("\"cat\":\"counter\"") != std::string::npos, "counter uses counter category");
@@ -249,6 +250,69 @@ void testCounterSamples() {
                "chrome trace exports counter value args");
     expectTrue(json.find("\"args\":{\"value\":3}") != std::string::npos,
                "chrome trace exports second counter value");
+}
+
+void testFloatCounterSamples() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    FUSE_PROFILE_COUNTER("frame_time_ms", 16.667);
+    FUSE_PROFILE_COUNTER("gpu_utilization", 0.75);
+
+    expectTrue(fuse::profiler::eventCount() == 2u, "float counter samples emit one event each");
+
+    const fuse::profiler::ProfileEvent& first = fuse::profiler::eventAt(0);
+    const fuse::profiler::ProfileEvent& second = fuse::profiler::eventAt(1);
+    expectTrue(first.phase == fuse::profiler::EventPhase::Counter, "float counter event phase is Counter");
+    expectTrue(first.counterKind == fuse::profiler::CounterValueKind::Float, "float counter kind preserved");
+    expectTrue(first.counterFloatValue > 16.666 && first.counterFloatValue < 16.668,
+               "float counter value preserved");
+    expectTrue(second.counterFloatValue == 0.75, "second float counter value preserved");
+
+    const std::string json = fuse::profiler::exportChromeTraceJson();
+    expectTrue(json.find("\"name\":\"frame_time_ms\"") != std::string::npos,
+               "chrome trace includes float counter track name");
+    expectTrue(json.find("\"args\":{\"value\":16.667") != std::string::npos,
+               "chrome trace exports float counter value args");
+    expectTrue(json.find("\"args\":{\"value\":0.75}") != std::string::npos,
+               "chrome trace exports second float counter value");
+}
+
+void testAsyncFlowMatchingIdsInExport() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 flowId = 77u;
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("paired_flow", flowId);
+    FUSE_PROFILE_ASYNC_FLOW_END("paired_flow", flowId);
+
+    const std::string json = fuse::profiler::exportChromeTraceJson();
+    const std::string flowIdToken = "\"id\":" + std::to_string(flowId);
+    const auto firstId = json.find(flowIdToken);
+    const auto secondId = json.find(flowIdToken, firstId == std::string::npos ? 0u : firstId + 1u);
+    expectTrue(firstId != std::string::npos, "flow start exports matching flow id");
+    expectTrue(secondId != std::string::npos, "flow finish exports matching flow id");
+    expectTrue(json.find("\"ph\":\"s\"") != std::string::npos && json.find("\"ph\":\"f\"") != std::string::npos,
+               "paired flow exports start and finish phases");
+}
+
+void testChromeTraceNestingDepthExport() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    {
+        FUSE_PROFILE_SCOPE("depth_outer");
+        {
+            FUSE_PROFILE_SCOPE("depth_inner");
+        }
+    }
+
+    const std::string json = fuse::profiler::exportChromeTraceJson();
+    expectTrue(json.find("\"args\":{\"depth\":1}") != std::string::npos,
+               "chrome trace exports outer scope depth");
+    expectTrue(json.find("\"args\":{\"depth\":2}") != std::string::npos,
+               "chrome trace exports inner scope depth");
+    expectTrue(fuse::profiler::maxNestingDepth() == 2u, "nesting depth tracks two-level stack");
 }
 
 void testChromeTraceExportMixedEvents() {
@@ -333,6 +397,9 @@ int main() {
     testAsyncFlowStubs();
     testAsyncFlowCrossThread();
     testCounterSamples();
+    testFloatCounterSamples();
+    testAsyncFlowMatchingIdsInExport();
+    testChromeTraceNestingDepthExport();
     testChromeTraceExportMixedEvents();
     testFatalHandlerHook();
     testVerifyMacro();

@@ -3,6 +3,7 @@
 #include <fuse/types.hpp>
 
 #include <string>
+#include <type_traits>
 
 namespace fuse::profiler {
 
@@ -14,6 +15,12 @@ enum class EventPhase : u8 {
     Counter,
 };
 
+enum class CounterValueKind : u8 {
+    None,
+    Int,
+    Float,
+};
+
 struct ProfileEvent {
     const char* name = nullptr;
     u64 timestampNs = 0;
@@ -21,7 +28,9 @@ struct ProfileEvent {
     u32 threadId = 0;
     u32 scopeId = 0;
     u32 nestingDepth = 0;
-    s64 counterValue = 0;
+    CounterValueKind counterKind = CounterValueKind::None;
+    s64 counterIntValue = 0;
+    f64 counterFloatValue = 0.0;
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -59,8 +68,18 @@ u32 nextFlowId();
 void beginAsyncFlow(const char* name, u32 flowId);
 void endAsyncFlow(const char* name, u32 flowId);
 
-/// Counter sample stub — emits chrome `ph:"C"` events for budget overlays.
+/// Counter sample stubs — emit chrome `ph:"C"` events for budget overlays.
 void sampleCounter(const char* track, s64 value);
+void sampleCounterFloat(const char* track, f64 value);
+
+template<typename T>
+inline void sampleCounterDispatch(const char* track, T value) {
+    if constexpr (std::is_floating_point_v<T>) {
+        sampleCounterFloat(track, static_cast<f64>(value));
+    } else {
+        sampleCounter(track, static_cast<s64>(value));
+    }
+}
 
 /// Stub export for chrome://tracing offline analysis (not hot path).
 std::string exportChromeTraceJson();
@@ -77,5 +96,5 @@ std::string exportChromeTraceJson();
 #define FUSE_PROFILE_SCOPE(name) FUSE_PROFILE_SCOPE_IMPL(__LINE__, name)
 #define FUSE_PROFILE_ASYNC_FLOW_BEGIN(name, flowId) ::fuse::profiler::beginAsyncFlow(name, flowId)
 #define FUSE_PROFILE_ASYNC_FLOW_END(name, flowId) ::fuse::profiler::endAsyncFlow(name, flowId)
-#define FUSE_PROFILE_COUNTER(track, value) ::fuse::profiler::sampleCounter(track, value)
+#define FUSE_PROFILE_COUNTER(track, value) ::fuse::profiler::sampleCounterDispatch(track, value)
 #endif
