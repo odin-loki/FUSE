@@ -139,6 +139,75 @@ void testSleepDetection() {
     expectTrue((bodies.flags[sphere] & RB_SLEEPING) != 0u, "resting body enters sleep state");
 }
 
+void testRestLengthSpringRecovery() {
+    RigidBodySoA bodies;
+    CollisionShapeSoA shapes;
+
+    const u32 anchor = bodies.addBody({0.f, 0.f, 0.f}, 0.f, RB_STATIC);
+    const u32 bob = bodies.addBody({3.f, 0.f, 0.f}, 1.f, 0);
+    shapes.addShape(CollisionShapeType::Sphere, anchor, {0.05f, 0.f, 0.f});
+    shapes.addShape(CollisionShapeType::Sphere, bob, {0.05f, 0.f, 0.f});
+
+    PBDSolver solver;
+    solver.init(2, 4, 1);
+    solver.setDistanceConstraints({DistanceConstraint{
+        .bodyA = anchor,
+        .bodyB = bob,
+        .restLength = 2.f,
+        .compliance = 0.001f,
+    }});
+
+    SolverParams params;
+    params.substeps = 2;
+    params.iterations = 24;
+    params.gravity = {};
+    params.broadphase.cellSize = 4.f;
+
+    bodies.positions[bob] = {4.5f, 0.f, 0.f};
+    for (int i = 0; i < 80; ++i) {
+        solver.step(bodies, shapes, params, 1.f / 60.f);
+    }
+
+    const f32 dist = (bodies.positions[anchor] - bodies.positions[bob]).length();
+    expectNear(dist, 2.f, 0.08f, "spring constraint recovers rest length after stretch");
+}
+
+void testSolverIterationParity() {
+    RigidBodySoA lowBodies;
+    RigidBodySoA highBodies;
+    CollisionShapeSoA lowShapes;
+    CollisionShapeSoA highShapes;
+
+    const u32 bodyA = lowBodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+    const u32 bodyB = lowBodies.addBody({1.2f, 0.f, 0.f}, 1.f, 0);
+    lowShapes.addShape(CollisionShapeType::Sphere, bodyA, {1.f, 0.f, 0.f});
+    lowShapes.addShape(CollisionShapeType::Sphere, bodyB, {1.f, 0.f, 0.f});
+
+    highBodies = lowBodies;
+    highShapes = lowShapes;
+
+    PBDSolver lowSolver;
+    PBDSolver highSolver;
+    lowSolver.init(2, 4, 0);
+    highSolver.init(2, 4, 0);
+
+    SolverParams lowParams;
+    lowParams.substeps = 1;
+    lowParams.iterations = 2;
+    lowParams.broadphase.cellSize = 4.f;
+
+    SolverParams highParams = lowParams;
+    highParams.iterations = 24;
+
+    lowSolver.step(lowBodies, lowShapes, lowParams, 1.f / 60.f);
+    highSolver.step(highBodies, highShapes, highParams, 1.f / 60.f);
+
+    const f32 lowSep = (lowBodies.positions[bodyA] - lowBodies.positions[bodyB]).length();
+    const f32 highSep = (highBodies.positions[bodyA] - highBodies.positions[bodyB]).length();
+    expectTrue(highSep >= lowSep, "more solver iterations increase separation for overlapping spheres");
+    expectNear(highSep, 2.f, 0.05f, "high iteration count reaches target separation");
+}
+
 } // namespace
 
 int main() {
@@ -146,6 +215,8 @@ int main() {
     testSphereGroundFallTime();
     testOverlappingSpheresSeparate();
     testDistanceConstraintHoldsLength();
+    testRestLengthSpringRecovery();
+    testSolverIterationParity();
     testSleepDetection();
     fuse::core::shutdown();
 

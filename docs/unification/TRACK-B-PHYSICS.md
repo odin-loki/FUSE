@@ -20,7 +20,7 @@
 | `PhysicsManager` | `Source/FUSE/Physics/include/fuse/physics/physics_manager.hpp` | ECS ↔ SoA bridge scaffold |
 | `CollisionEventSystem` | `Source/FUSE/Physics/include/fuse/physics/events/` | Enter/Stay/Exit/Trigger callback bus |
 | `Phase4TestRegistry` | `Source/FUSE/Physics/include/fuse/physics/phase4_test_registry.hpp` | B4.11 checklist + automated smoke |
-| `PbdSolver` | `solver/pbd_solver.hpp` | B4.4 stub (B4.4–B4.6 owned by sibling PR #29) |
+| `PbdSolver` | `solver/pbd_solver.hpp` | B4.4 CPU XPBD stub — reusable job-safe buffers, parallel distance constraints |
 
 **Composed APIs:** B4.7–B4.11 use `fuse::ecs::EntityID`, `fuse::physics::vec3`/`quat` from `math.hpp`, and B4.1 `RigidBodySoA` vectors — no duplicate entity/math types.
 
@@ -73,6 +73,21 @@ Full dual contouring, fragment flood-fill clustering, and GPU debris rigid-body 
 | CUDA kernels | deferred | `cloth_kernels.cuh` from master plan — not vendored in this PR |
 
 Cloth exposes `vertexBuffer` / `indexBuffer` handle placeholders for renderer consumption (B2.6 interop follow-up).
+
+---
+
+## B4.4 — CPU PBD solver deepen (stub)
+
+`PBDSolver::step()` follows the master-plan loop: predict → generate contacts → **N solver iterations** (contacts sequential Gauss-Seidel, distance constraints parallel Jacobi) → velocity update → damping/sleep.
+
+| Piece | Behaviour |
+|-------|-----------|
+| Job-safe buffers | `contactManifolds_`, `collisionSnapshot_`, `positionSnapshot_`, `jacobiDeltas_` pre-allocated in `init()` — no per-step heap churn |
+| Contact pass | Sequential XPBD over broadphase/narrowphase manifolds (Gauss-Seidel) |
+| Distance / spring pass | Jacobi XPBD via `parallel_for` over constraints; per-grain correction buckets merged into `jacobiDeltas_` |
+| Iteration count | `SolverParams::iterations` (default 10) × `substeps` (default 4) |
+
+CUDA `pbd_resolve_*_kernel` atomics remain deferred to B4.4–B4.6 GPU path; the CPU stub mirrors the parallel distance-constraint grain layout.
 
 ---
 
@@ -131,6 +146,7 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 #### Solver (PBD)
 
 - [x] `fuse_physics_pbd_tests` — gravity fall, separation, distance constraint, sleep
+- [x] `fuse_physics_pbd_tests` — rest-length spring recovery, iteration-count parity
 - [ ] Stack of 10 spheres stable 5s — catalog `solver.stack_stability`
 - [ ] Restitution / friction analytical match — deferred
 
@@ -174,6 +190,7 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 - CPU gameplay code queues destruction events and reads query results after `step()` — no GPU record from job workers
 - Collision callbacks dispatch on the game thread after solver step (same frame as ECS sync)
 - **Broadphase jobify (CPU stub):** `runBroadphase` / `runBroadphase2D` read immutable `RigidBodySoA` + `CollisionShapeSoA` snapshots and write disjoint per-cell / per-dynamic pair buffers via `fuse::jobs::parallel_for`; falls back to serial when `JobScheduler` is single-threaded or uninitialized
+- **PBD distance constraints (CPU stub):** `PBDSolver::resolveDistanceConstraints` snapshots predicted positions, writes per-grain correction buckets via `parallel_for`, merges into pre-allocated `jacobiDeltas_`, then applies corrections; contact manifolds reuse `contactManifolds_` scratch across substeps
 
 ---
 
@@ -187,6 +204,7 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 | `fuse_physics_pipeline_tests` | B4.1 frame pipeline step |
 | `fuse_physics_world_composition_tests` | World3D + physics composition |
 | `fuse_voxel_destruction` | Carve radius derivation, SVO carve/query, debris spawn counters |
+| `fuse_physics_pbd_tests` | B4.4 gravity/separation/distance/sleep + rest-length spring + iteration parity |
 | `fuse_softbody` | `ParticleSoA` lifecycle, cloth init, pinned corners, wind |
 | `fuse_physics_manager` | Init/step lifecycle, queries, destruction event queue |
 | `fuse_collision_events` | Register/unregister, Enter/Trigger dispatch |
@@ -218,6 +236,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_physics|fuse_voxel|fuse_soft
 - [x] B4.11 deliverable registry — checklist catalog + automated smoke + phase-4 integration test
 - [x] B4.1–B4.3 composed: `RigidBodySoA`, spatial hash, narrow phase, `PhysicsPipeline`
 - [x] B4.2 CPU broadphase jobify — `parallel_for` over shape→cell build + per-cell candidate generation stubs
+- [x] B4.4 CPU PBD deepen — job-safe solver buffers, rest-length spring tests, iteration parity
 - [ ] B4.4–B4.6 upstream: CUDA PBD, Barnes-Hut, CCD kernels (sibling PR #29)
 - [ ] B3.5 SVO integration — real carve + dual contouring mesh extraction
 - [ ] Wire `PhysicsManager` to `fuse::renderer::cuda::StreamManager`

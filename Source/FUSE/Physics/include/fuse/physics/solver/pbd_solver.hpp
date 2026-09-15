@@ -6,6 +6,7 @@
 
 #include <fuse/types.hpp>
 
+#include <utility>
 #include <vector>
 
 namespace fuse::physics {
@@ -49,9 +50,10 @@ public:
     u32 activeBodyCount() const { return lastActiveCount_; }
 
 private:
-    std::vector<narrowphase::ContactManifold> generateContacts(const RigidBodySoA& bodies,
-                                                               const CollisionShapeSoA& shapes,
-                                                               const SolverParams& params) const;
+    void syncCollisionSnapshot_(const RigidBodySoA& bodies);
+    void generateContacts(const RigidBodySoA& bodies,
+                          const CollisionShapeSoA& shapes,
+                          const SolverParams& params);
     void predict(RigidBodySoA& bodies, const SolverParams& params, f32 dt);
     void resolveContacts(RigidBodySoA& bodies,
                          const std::vector<narrowphase::ContactManifold>& manifolds,
@@ -63,8 +65,13 @@ private:
     void detectSleep(RigidBodySoA& bodies, const SolverParams& params, f32 dt);
 
     std::vector<DistanceConstraint> distanceConstraints_;
+    std::vector<narrowphase::ContactManifold> contactManifolds_;
+    RigidBodySoA collisionSnapshot_;
+    std::vector<vec3> positionSnapshot_;
+    std::vector<vec3> jacobiDeltas_;
     u32 maxBodies_ = 0;
     u32 maxContacts_ = 0;
+    u32 maxConstraints_ = 0;
     u32 lastContactCount_ = 0;
     u32 lastActiveCount_ = 0;
 };
