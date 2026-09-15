@@ -31,6 +31,10 @@ struct AnimationClip {
 
     std::vector<BoneChannels> bone_channels;
 
+    /// Sample animated local TRS channels and propagate hierarchy into world matrices.
+    void evaluate(f32 time, const Skeleton& skel, PoseSoA& out_pose) const;
+
+    /// Convenience wrapper that returns an AoS pose for skinning and legacy callers.
     void sample(f32 time, const Skeleton& skel, Pose& out_pose) const;
     bool save(const char* path) const;
     bool load(const char* path);

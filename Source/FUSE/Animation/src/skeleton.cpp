@@ -1,5 +1,6 @@
 #include <fuse/animation/skeleton.hpp>
 
+#include <algorithm>
 #include <cstring>
 
 namespace fuse::animation {
@@ -32,14 +33,90 @@ mat4 Skeleton::compute_world_transform(u32 bone_idx) const {
 }
 
 Pose Pose::make_bind_pose(const Skeleton& skel) {
-    Pose pose;
-    pose.bone_count = skel.bone_count;
-    pose.bone_world_transforms.resize(skel.bones.size(), mat4::identity());
+    return PoseSoA::from_bind_pose(skel).to_pose();
+}
+
+PoseSoA PoseSoA::allocate(u32 bone_capacity) {
+    PoseSoA pose{};
+    pose.local_positions.reserve(bone_capacity);
+    pose.local_rotations.reserve(bone_capacity);
+    pose.local_scales.reserve(bone_capacity);
+    pose.bone_world_transforms.reserve(bone_capacity);
+    return pose;
+}
+
+void PoseSoA::resize(u32 count) {
+    bone_count = count;
+    local_positions.resize(count, {});
+    local_rotations.resize(count, {0.f, 0.f, 0.f, 1.f});
+    local_scales.resize(count, {1.f, 1.f, 1.f, 0.f});
+    bone_world_transforms.resize(count, mat4::identity());
+}
+
+void PoseSoA::clear() {
+    bone_count = 0;
+    local_positions.clear();
+    local_rotations.clear();
+    local_scales.clear();
+    bone_world_transforms.clear();
+}
+
+PoseSoA PoseSoA::from_bind_pose(const Skeleton& skel) {
+    PoseSoA pose = allocate(static_cast<u32>(skel.bones.size()));
+    pose.resize(static_cast<u32>(skel.bones.size()));
 
     for (u32 i = 0; i < skel.bones.size(); ++i) {
-        pose.bone_world_transforms[i] = skel.compute_world_transform(i);
+        decompose_trs(skel.bones[i].local_transform,
+                      pose.local_positions[i],
+                      pose.local_rotations[i],
+                      pose.local_scales[i]);
     }
+
+    pose.compute_world_transforms(skel);
     return pose;
+}
+
+Pose PoseSoA::to_pose() const {
+    Pose pose;
+    pose.bone_count = bone_count;
+    pose.bone_world_transforms = bone_world_transforms;
+    return pose;
+}
+
+void PoseSoA::compute_world_transforms(const Skeleton& skel) {
+    const u32 count = static_cast<u32>(skel.bones.size());
+    if (bone_count != count) {
+        resize(count);
+    }
+
+    for (u32 i = 0; i < count; ++i) {
+        const mat4 local = mat4_from_trs(local_positions[i], local_rotations[i], local_scales[i]);
+        const s32 parent = skel.bones[i].parent_index;
+        if (parent >= 0 && static_cast<u32>(parent) < count) {
+            bone_world_transforms[i] = mat4_multiply(bone_world_transforms[static_cast<u32>(parent)], local);
+        } else {
+            bone_world_transforms[i] = local;
+        }
+    }
+}
+
+void blend_pose_soa(const PoseSoA& a, const PoseSoA& b, f32 weight, PoseSoA& out) {
+    const f32 clamped = std::clamp(weight, 0.f, 1.f);
+    const u32 count = std::max(a.bone_count, b.bone_count);
+    out.resize(count);
+
+    for (u32 i = 0; i < count; ++i) {
+        const vec3 posA = (i < a.local_positions.size()) ? a.local_positions[i] : vec3{};
+        const vec3 posB = (i < b.local_positions.size()) ? b.local_positions[i] : vec3{};
+        const quat rotA = (i < a.local_rotations.size()) ? a.local_rotations[i] : quat{0.f, 0.f, 0.f, 1.f};
+        const quat rotB = (i < b.local_rotations.size()) ? b.local_rotations[i] : quat{0.f, 0.f, 0.f, 1.f};
+        const vec3 scaleA = (i < a.local_scales.size()) ? a.local_scales[i] : vec3{1.f, 1.f, 1.f, 0.f};
+        const vec3 scaleB = (i < b.local_scales.size()) ? b.local_scales[i] : vec3{1.f, 1.f, 1.f, 0.f};
+
+        out.local_positions[i] = lerp(posA, posB, clamped);
+        out.local_rotations[i] = lerp(rotA, rotB, clamped);
+        out.local_scales[i] = lerp(scaleA, scaleB, clamped);
+    }
 }
 
 } // namespace fuse::animation
