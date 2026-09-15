@@ -46,6 +46,12 @@ struct LodMeshVertexCounts {
 /// Build the adjacent LOD pair for a clipmap transition (fine = transition.lod, coarse = fine + 1).
 [[nodiscard]] AdjacentLodPair make_adjacent_lod_pair(const LodTransition& transition, u32 max_lod_levels);
 
+/// Clamp an adjacent LOD pair morph factor to [0, 1].
+[[nodiscard]] AdjacentLodPair clamp_adjacent_lod_pair(const AdjacentLodPair& pair);
+
+/// Blend two morph factors toward adjacent LOD coarsening (result clamped to [0, 1]).
+[[nodiscard]] f32 blend_adjacent_lod_morph(f32 from_morph, f32 to_morph, f32 t);
+
 /// Blend vertex XZ between fine and coarse LOD grids using an adjacent LOD pair.
 [[nodiscard]] vec3 blend_morph_between_lods(vec3 position, const AdjacentLodPair& pair, f32 base_stride);
 

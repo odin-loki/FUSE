@@ -58,14 +58,28 @@ AdjacentLodPair make_adjacent_lod_pair(const LodTransition& transition, u32 max_
     return pair;
 }
 
+AdjacentLodPair clamp_adjacent_lod_pair(const AdjacentLodPair& pair) {
+    AdjacentLodPair clamped = pair;
+    clamped.morph_factor = clamp_morph_factor(pair.morph_factor);
+    return clamped;
+}
+
+f32 blend_adjacent_lod_morph(f32 from_morph, f32 to_morph, f32 t) {
+    const f32 clamped_from = clamp_morph_factor(from_morph);
+    const f32 clamped_to = clamp_morph_factor(to_morph);
+    const f32 clamped_t = clamp_morph_factor(t);
+    return clamped_from + (clamped_to - clamped_from) * clamped_t;
+}
+
 vec3 blend_morph_between_lods(vec3 position, const AdjacentLodPair& pair, f32 base_stride) {
-    if (pair.morph_factor <= 0.f || pair.fine_lod == pair.coarse_lod || base_stride <= 0.f) {
+    const AdjacentLodPair clamped = clamp_adjacent_lod_pair(pair);
+    if (clamped.morph_factor <= 0.f || clamped.fine_lod == clamped.coarse_lod || base_stride <= 0.f) {
         return position;
     }
 
-    const vec3 fine = morph_vertex_position(position, pair.fine_lod, 0.f, base_stride);
-    const vec3 coarse = morph_vertex_position(position, pair.coarse_lod, 1.f, base_stride);
-    const f32 t = pair.morph_factor;
+    const vec3 fine = morph_vertex_position(position, clamped.fine_lod, 0.f, base_stride);
+    const vec3 coarse = morph_vertex_position(position, clamped.coarse_lod, 1.f, base_stride);
+    const f32 t = clamped.morph_factor;
 
     return {fine.x + (coarse.x - fine.x) * t, position.y, fine.z + (coarse.z - fine.z) * t};
 }
