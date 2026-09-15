@@ -134,8 +134,9 @@ void Window::setFocused(bool focused, EventPump* pump) {
 }
 
 void Window::requestClose(EventPump* pump) {
+    const bool alreadyRequested = m_closeRequest == WindowCloseRequest::Requested;
     m_closeRequest = WindowCloseRequest::Requested;
-    if (pump != nullptr) {
+    if (pump != nullptr && !alreadyRequested) {
         pump->pushWindowCloseRequested(*this);
     }
 }
@@ -195,14 +196,57 @@ bool EventPump::pumpOnce() {
     return !m_quitRequested;
 }
 
-void EventPump::pushSyntheticEvent(const PlatformEvent& event) {
-    const u32 nextTail = (m_syntheticTail + 1) % kMaxSyntheticEvents;
+u32 EventPump::drainEvents(std::vector<PlatformEvent>& out) {
+    u32 drained = 0;
+    PlatformEvent event;
+    while (pollEvent(event)) {
+        out.push_back(event);
+        ++drained;
+    }
+    return drained;
+}
+
+bool EventPump::tryCoalescePendingResize_(const PlatformEvent& event) {
+    if (event.type != PlatformEventType::WindowResized || event.window == nullptr ||
+        m_syntheticHead == m_syntheticTail) {
+        return false;
+    }
+
+    u32 index = (m_syntheticTail + kMaxSyntheticEvents - 1u) % kMaxSyntheticEvents;
+    while (true) {
+        PlatformEvent& pending = m_syntheticEvents[index];
+        if (pending.type == PlatformEventType::WindowResized && pending.window == event.window) {
+            pending.width = event.width;
+            pending.height = event.height;
+            return true;
+        }
+
+        if (index == m_syntheticHead) {
+            break;
+        }
+
+        index = (index + kMaxSyntheticEvents - 1u) % kMaxSyntheticEvents;
+    }
+
+    return false;
+}
+
+void EventPump::enqueueSyntheticEvent_(const PlatformEvent& event) {
+    const u32 nextTail = (m_syntheticTail + 1u) % kMaxSyntheticEvents;
     if (nextTail == m_syntheticHead) {
         return;
     }
 
     m_syntheticEvents[m_syntheticTail] = event;
     m_syntheticTail = nextTail;
+}
+
+void EventPump::pushSyntheticEvent(const PlatformEvent& event) {
+    if (tryCoalescePendingResize_(event)) {
+        return;
+    }
+
+    enqueueSyntheticEvent_(event);
 }
 
 void EventPump::pushWindowResized(Window& window) {

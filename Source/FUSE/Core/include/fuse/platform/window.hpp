@@ -78,7 +78,7 @@ public:
     /// When `pump` is non-null, enqueues `WindowFocusGained` / `WindowFocusLost` on change.
     void setFocused(bool focused, EventPump* pump = nullptr);
 
-    /// When `pump` is non-null, enqueues `WindowCloseRequested`.
+    /// When `pump` is non-null, enqueues `WindowCloseRequested` once per close cycle.
     void requestClose(EventPump* pump = nullptr);
     WindowCloseRequest closeRequest() const { return m_closeRequest; }
     void clearCloseRequest();
