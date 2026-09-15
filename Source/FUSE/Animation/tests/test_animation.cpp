@@ -193,6 +193,110 @@ void testSkinningCpuPath() {
     expectNear(output.positions[0].x, 1.f, 1e-4f, "skinning applies bone transform");
 }
 
+void testPoseSoAHierarchy() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    expectTrue(pose.bone_count == 2u, "pose soa bone count");
+    expectNear(pose.bone_world_transforms[1].data[13], 1.f, 1e-4f, "pose soa bind child offset");
+
+    pose.local_positions[1] = {0.f, 2.f, 0.f, 0.f};
+    pose.compute_world_transforms(skel);
+    expectNear(pose.bone_world_transforms[1].data[13], 2.f, 1e-4f, "pose soa hierarchy propagation");
+}
+
+void testClipEvaluateLocalChannels() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::AnimationClip clip{};
+    clip.duration = 1.f;
+    clip.looping = false;
+
+    fuse::animation::AnimationClip::BoneChannels channels{};
+    channels.bone_index = 1;
+    channels.position.times = {0.f, 1.f};
+    channels.position.values_vec3 = {{0.f, 1.f, 0.f, 0.f}, {0.f, 2.f, 0.f, 0.f}};
+    channels.rotation.times = {0.f, 1.f};
+    channels.rotation.values_quat = {
+        {0.f, 0.f, 0.f, 1.f},
+        {0.f, 0.7071068f, 0.f, 0.7071068f},
+    };
+    clip.bone_channels.push_back(channels);
+
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    clip.evaluate(1.f, skel, pose);
+    expectNear(pose.bone_world_transforms[1].data[13], 3.f, 1e-3f, "clip evaluate composes position onto bind local");
+    expectNear(std::fabs(pose.bone_world_transforms[1].data[0]), std::fabs(pose.bone_world_transforms[1].data[10]),
+               0.2f,
+               "clip evaluate applies rotation channel");
+}
+
+void testBlendSpace1D() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+
+    fuse::animation::AnimationClip walk{};
+    walk.duration = 1.f;
+    fuse::animation::AnimationClip::BoneChannels walkChannel{};
+    walkChannel.bone_index = 1;
+    walkChannel.position.times = {0.f, 1.f};
+    walkChannel.position.values_vec3 = {{0.f, 1.f, 0.f, 0.f}, {0.f, 1.f, 0.f, 0.f}};
+    walk.bone_channels.push_back(walkChannel);
+
+    fuse::animation::AnimationClip run{};
+    run.duration = 1.f;
+    fuse::animation::AnimationClip::BoneChannels runChannel{};
+    runChannel.bone_index = 1;
+    runChannel.position.times = {0.f, 1.f};
+    runChannel.position.values_vec3 = {{0.f, 4.f, 0.f, 0.f}, {0.f, 4.f, 0.f, 0.f}};
+    run.bone_channels.push_back(runChannel);
+
+    fuse::animation::BlendSpace1D space;
+    auto walkNode = std::make_unique<fuse::animation::ClipNode>();
+    walkNode->clip = &walk;
+    auto runNode = std::make_unique<fuse::animation::ClipNode>();
+    runNode->clip = &run;
+    space.entries.push_back({0.f, std::move(walkNode)});
+    space.entries.push_back({1.f, std::move(runNode)});
+
+    fuse::f32 speed = 0.5f;
+    space.param = &speed;
+
+    fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
+    space.evaluate(0.f, skel, pose);
+    expectNear(pose.bone_world_transforms[1].data[13], 3.5f, 0.05f, "blend space 1d interpolates composed clip poses");
+}
+
+void testLayeredBlendMask() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+
+    fuse::animation::AnimationClip baseClip{};
+    baseClip.duration = 1.f;
+    fuse::animation::AnimationClip::BoneChannels baseChannel{};
+    baseChannel.bone_index = 1;
+    baseChannel.position.values_vec3 = {{0.f, 1.f, 0.f, 0.f}};
+    baseClip.bone_channels.push_back(baseChannel);
+
+    fuse::animation::AnimationClip layerClip{};
+    layerClip.duration = 1.f;
+    fuse::animation::AnimationClip::BoneChannels layerChannel{};
+    layerChannel.bone_index = 1;
+    layerChannel.position.values_vec3 = {{0.f, 5.f, 0.f, 0.f}};
+    layerClip.bone_channels.push_back(layerChannel);
+
+    auto baseNode = std::make_unique<fuse::animation::ClipNode>();
+    baseNode->clip = &baseClip;
+    auto layerNode = std::make_unique<fuse::animation::ClipNode>();
+    layerNode->clip = &layerClip;
+
+    fuse::animation::LayeredBlendNode layered;
+    layered.base = std::move(baseNode);
+    layered.layer = std::move(layerNode);
+    layered.masked_bones = {1};
+    layered.layer_weight = 0.5f;
+
+    fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
+    layered.evaluate(0.f, skel, pose);
+    expectNear(pose.bone_world_transforms[1].data[13], 4.f, 0.05f, "layered blend applies masked bone");
+}
+
 void testAnimatorTick() {
     const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
     fuse::animation::Animator animator;
@@ -218,8 +322,12 @@ void testAnimatorTick() {
 int main() {
     fuse::core::initialize();
     testSkeletonHierarchy();
+    testPoseSoAHierarchy();
     testClipSampling();
+    testClipEvaluateLocalChannels();
     testBlendNodeInterpolation();
+    testBlendSpace1D();
+    testLayeredBlendMask();
     testStateMachineTransition();
     testFabrikConverges();
     testSkinningCpuPath();

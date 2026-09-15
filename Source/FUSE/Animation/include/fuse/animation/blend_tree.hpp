@@ -32,6 +32,42 @@ struct BlendNode2 : BlendNode {
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
 };
 
+/// 1D blend space — interpolates clips along a single runtime parameter axis.
+struct BlendSpace1D : BlendNode {
+    struct Entry {
+        f32 param_value = 0.f;
+        std::unique_ptr<ClipNode> clip;
+    };
+
+    std::vector<Entry> entries;
+    f32* param = nullptr;
+
+    void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
+};
+
+/// 2D blend space — distance-weighted clip blend in a 2D parameter plane (stub).
+struct BlendSpace2D : BlendNode {
+    struct Entry {
+        vec2 param{};
+        std::unique_ptr<ClipNode> clip;
+    };
+
+    std::vector<Entry> entries;
+    vec2* param = nullptr;
+
+    void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
+};
+
+/// Layered blend — applies a masked upper-body layer over a base pose.
+struct LayeredBlendNode : BlendNode {
+    std::unique_ptr<BlendNode> base;
+    std::unique_ptr<BlendNode> layer;
+    std::vector<u32> masked_bones;
+    f32 layer_weight = 1.f;
+
+    void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
+};
+
 struct AnimStateMachine : BlendNode {
     struct State {
         std::string name;

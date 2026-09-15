@@ -31,4 +31,23 @@ struct Pose {
     static Pose make_bind_pose(const Skeleton& skel);
 };
 
+/// Structure-of-arrays bone pose — local TRS columns plus computed world matrices.
+struct PoseSoA {
+    std::vector<vec3> local_positions;
+    std::vector<quat> local_rotations;
+    std::vector<vec3> local_scales;
+    std::vector<mat4> bone_world_transforms;
+    u32 bone_count = 0;
+
+    static PoseSoA allocate(u32 bone_capacity);
+    void resize(u32 bone_count);
+    void clear();
+
+    static PoseSoA from_bind_pose(const Skeleton& skel);
+    Pose to_pose() const;
+    void compute_world_transforms(const Skeleton& skel);
+};
+
+void blend_pose_soa(const PoseSoA& a, const PoseSoA& b, f32 weight, PoseSoA& out);
+
 } // namespace fuse::animation

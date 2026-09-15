@@ -40,6 +40,14 @@ u32 find_segment(const std::vector<f32>& times, f32 time) {
     return static_cast<u32>(std::distance(times.begin(), it) - 1);
 }
 
+bool channel_has_vec3(const KeyframeChannel& channel) {
+    return !channel.values_vec3.empty();
+}
+
+bool channel_has_quat(const KeyframeChannel& channel) {
+    return !channel.values_quat.empty();
+}
+
 } // namespace
 
 vec3 KeyframeChannel::sample_vec3(f32 time) const {
@@ -74,56 +82,64 @@ quat KeyframeChannel::sample_quat(f32 time) const {
     return lerp(values_quat[segment], values_quat[next], alpha);
 }
 
-void AnimationClip::sample(f32 time, const Skeleton& skel, Pose& out_pose) const {
-    out_pose = Pose::make_bind_pose(skel);
+namespace {
+
+mat4 build_channel_local(const AnimationClip::BoneChannels& channels, f32 sample_time) {
+    const vec3 position =
+        channel_has_vec3(channels.position) ? channels.position.sample_vec3(sample_time) : vec3{};
+    const quat rotation =
+        channel_has_quat(channels.rotation) ? channels.rotation.sample_quat(sample_time) : quat{};
+    const vec3 scale =
+        channel_has_vec3(channels.scale) ? channels.scale.sample_vec3(sample_time) : vec3{1.f, 1.f, 1.f, 0.f};
+
+    mat4 local = mat4::identity();
+    local.data[0] = scale.x;
+    local.data[5] = scale.y;
+    local.data[10] = scale.z;
+    local.data[12] = position.x;
+    local.data[13] = position.y;
+    local.data[14] = position.z;
+
+    if (rotation.w != 1.f || rotation.x != 0.f || rotation.y != 0.f || rotation.z != 0.f) {
+        local = mat4_multiply(local, mat4_from_trs({}, rotation, {1.f, 1.f, 1.f, 0.f}));
+    }
+    return local;
+}
+
+} // namespace
+
+void AnimationClip::evaluate(f32 time, const Skeleton& skel, PoseSoA& out_pose) const {
+    out_pose = PoseSoA::from_bind_pose(skel);
     const f32 sample_time = clamp_time(time, duration, looping);
 
     for (const BoneChannels& channels : bone_channels) {
-        if (channels.bone_index >= out_pose.bone_world_transforms.size()) {
+        if (channels.bone_index >= out_pose.bone_count) {
             continue;
         }
 
-        const vec3 position = channels.position.sample_vec3(sample_time);
-        const quat rotation = channels.rotation.sample_quat(sample_time);
-        const vec3 scale = channels.scale.sample_vec3(sample_time);
-
-        mat4 local = mat4::identity();
-        local.data[0] = scale.x;
-        local.data[5] = scale.y;
-        local.data[10] = scale.z;
-        local.data[12] = position.x;
-        local.data[13] = position.y;
-        local.data[14] = position.z;
-
-        if (rotation.w != 1.f || rotation.x != 0.f || rotation.y != 0.f || rotation.z != 0.f) {
-            const f32 xx = rotation.x * rotation.x;
-            const f32 yy = rotation.y * rotation.y;
-            const f32 zz = rotation.z * rotation.z;
-            const f32 xy = rotation.x * rotation.y;
-            const f32 xz = rotation.x * rotation.z;
-            const f32 yz = rotation.y * rotation.z;
-            const f32 wx = rotation.w * rotation.x;
-            const f32 wy = rotation.w * rotation.y;
-            const f32 wz = rotation.w * rotation.z;
-
-            mat4 rot = mat4::identity();
-            rot.data[0] = 1.f - 2.f * (yy + zz);
-            rot.data[1] = 2.f * (xy + wz);
-            rot.data[2] = 2.f * (xz - wy);
-            rot.data[4] = 2.f * (xy - wz);
-            rot.data[5] = 1.f - 2.f * (xx + zz);
-            rot.data[6] = 2.f * (yz + wx);
-            rot.data[8] = 2.f * (xz + wy);
-            rot.data[9] = 2.f * (yz - wx);
-            rot.data[10] = 1.f - 2.f * (xx + yy);
-            local = mat4_multiply(local, rot);
+        const bool hasPosition = channel_has_vec3(channels.position);
+        const bool hasRotation = channel_has_quat(channels.rotation);
+        const bool hasScale = channel_has_vec3(channels.scale);
+        if (!hasPosition && !hasRotation && !hasScale) {
+            continue;
         }
 
-        out_pose.bone_world_transforms[channels.bone_index] =
-            skel.compute_world_transform(channels.bone_index);
-        out_pose.bone_world_transforms[channels.bone_index] =
-            mat4_multiply(out_pose.bone_world_transforms[channels.bone_index], local);
+        const mat4 channel_local = build_channel_local(channels, sample_time);
+        const mat4 bind_local = skel.bones[channels.bone_index].local_transform;
+        const mat4 combined = mat4_multiply(bind_local, channel_local);
+        decompose_trs(combined,
+                      out_pose.local_positions[channels.bone_index],
+                      out_pose.local_rotations[channels.bone_index],
+                      out_pose.local_scales[channels.bone_index]);
     }
+
+    out_pose.compute_world_transforms(skel);
+}
+
+void AnimationClip::sample(f32 time, const Skeleton& skel, Pose& out_pose) const {
+    PoseSoA soa = PoseSoA::from_bind_pose(skel);
+    evaluate(time, skel, soa);
+    out_pose = soa.to_pose();
 }
 
 bool AnimationClip::save(const char* path) const {
