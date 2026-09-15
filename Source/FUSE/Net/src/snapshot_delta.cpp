@@ -317,6 +317,14 @@ bool physics_field_mask_contains(u8 mask, SnapshotPhysicsField field) {
     return (mask & static_cast<u8>(field)) == static_cast<u8>(field);
 }
 
+u8 ecs_field_mask_union(u8 a, u8 b) {
+    return a | b;
+}
+
+u8 physics_field_mask_union(u8 a, u8 b) {
+    return a | b;
+}
+
 u32 ecs_field_mask_count(u8 mask) {
     return popcount_u8(mask);
 }
@@ -353,6 +361,45 @@ bool validate_changed_entity_mask(const SnapshotDelta& delta) {
     }
 
     return true;
+}
+
+bool validate_entity_patch_masks(const SnapshotEntityPatch& patch) {
+    if (patch.changed_ecs_fields == 0 && patch.changed_physics_fields == 0) {
+        return false;
+    }
+    if (patch.changed_ecs_fields != 0 && patch.ecs_bytes.empty()) {
+        return false;
+    }
+    if (patch.changed_physics_fields != 0 && patch.physics_bytes.empty()) {
+        return false;
+    }
+    return true;
+}
+
+bool validate_delta_payload(const SnapshotDelta& delta) {
+    switch (delta.kind) {
+    case SnapshotDeltaKind::None:
+        return delta.entity_patches.empty() && delta.full_ecs_state.empty() && delta.full_physics_state.empty() &&
+               delta.changed_entity_mask == 0;
+    case SnapshotDeltaKind::Full:
+        return delta.entity_patches.empty() && delta.changed_entity_mask == 0;
+    case SnapshotDeltaKind::EntityPatch:
+        if (delta.entity_patches.empty()) {
+            return false;
+        }
+        for (const SnapshotEntityPatch& patch : delta.entity_patches) {
+            if (!validate_entity_patch_masks(patch)) {
+                return false;
+            }
+        }
+        return validate_changed_entity_mask(delta);
+    }
+
+    return false;
+}
+
+bool is_empty_snapshot_delta(const SnapshotDelta& delta) {
+    return delta.kind == SnapshotDeltaKind::None;
 }
 
 SnapshotDelta compute_snapshot_delta(const GameSnapshot& base, const GameSnapshot& target) {
@@ -529,6 +576,8 @@ SnapshotDeltaPreflight preflight_snapshot_delta(const GameSnapshot& base, const 
     SnapshotDeltaPreflight result;
     result.base_checksum_ok = verify_delta_base_checksum(base, delta);
     result.entity_mask_ok = validate_changed_entity_mask(delta);
+    result.base_frame_ok = delta.base_frame == base.frame;
+    result.payload_ok = validate_delta_payload(delta);
     return result;
 }
 
@@ -537,6 +586,8 @@ DeltaApplyResult apply_snapshot_delta_verified(const GameSnapshot& base, const S
     const SnapshotDeltaPreflight preflight = preflight_snapshot_delta(base, delta);
     result.base_checksum_ok = preflight.base_checksum_ok;
     result.entity_mask_ok = preflight.entity_mask_ok;
+    result.base_frame_ok = preflight.base_frame_ok;
+    result.payload_ok = preflight.payload_ok;
     result.snapshot = apply_snapshot_delta(base, delta);
 
     if (delta.target_checksum != 0) {
@@ -665,6 +716,10 @@ std::optional<GameSnapshot> SnapshotHistoryRing::pop_oldest() {
 }
 
 bool SnapshotHistoryRing::can_apply_delta(u32 base_frame, const SnapshotDelta& delta) const {
+    if (delta.base_frame != base_frame) {
+        return false;
+    }
+
     const GameSnapshot* base = m_buffer.snapshot(base_frame);
     if (base == nullptr) {
         return false;

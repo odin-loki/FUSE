@@ -63,14 +63,24 @@ struct DeltaApplyResult {
     bool target_checksum_ok = false;
     /// True when `changed_entity_mask` bits align with `entity_patches` (EntityPatch only).
     bool entity_mask_ok = true;
+    /// True when `delta.base_frame` matches the baseline snapshot frame.
+    bool base_frame_ok = true;
+    /// True when delta kind, masks, and payload bytes are structurally consistent.
+    bool payload_ok = true;
 };
 
 /// Preflight checks before applying a delta (baseline checksum + entity mask consistency).
 struct SnapshotDeltaPreflight {
     bool base_checksum_ok = false;
     bool entity_mask_ok = true;
+    /// True when `delta.base_frame` matches the stored baseline snapshot frame.
+    bool base_frame_ok = true;
+    /// True when delta kind, masks, and payload bytes are structurally consistent.
+    bool payload_ok = true;
 
-    [[nodiscard]] bool can_apply() const { return base_checksum_ok && entity_mask_ok; }
+    [[nodiscard]] bool can_apply() const {
+        return base_checksum_ok && entity_mask_ok && base_frame_ok && payload_ok;
+    }
 };
 
 [[nodiscard]] bool snapshots_equivalent(const GameSnapshot& base, const GameSnapshot& target);
@@ -80,6 +90,12 @@ struct SnapshotDeltaPreflight {
 
 /// True when `mask` includes every `SnapshotPhysicsField` bit in `field`.
 [[nodiscard]] bool physics_field_mask_contains(u8 mask, SnapshotPhysicsField field);
+
+/// Bitwise union of two ECS field masks.
+[[nodiscard]] u8 ecs_field_mask_union(u8 a, u8 b);
+
+/// Bitwise union of two physics field masks.
+[[nodiscard]] u8 physics_field_mask_union(u8 a, u8 b);
 
 /// Popcount of set ECS field bits in `mask`.
 [[nodiscard]] u32 ecs_field_mask_count(u8 mask);
@@ -95,6 +111,15 @@ struct SnapshotDeltaPreflight {
 
 /// True when every patch index has a matching mask bit and no stray mask bits are set.
 [[nodiscard]] bool validate_changed_entity_mask(const SnapshotDelta& delta);
+
+/// True when a patch row carries at least one field mask with matching payload bytes.
+[[nodiscard]] bool validate_entity_patch_masks(const SnapshotEntityPatch& patch);
+
+/// True when delta kind, entity mask, and payload bytes are internally consistent.
+[[nodiscard]] bool validate_delta_payload(const SnapshotDelta& delta);
+
+/// True for `SnapshotDeltaKind::None` deltas (no-op bandwidth payload).
+[[nodiscard]] bool is_empty_snapshot_delta(const SnapshotDelta& delta);
 
 [[nodiscard]] SnapshotDelta compute_snapshot_delta(const GameSnapshot& base, const GameSnapshot& target);
 [[nodiscard]] GameSnapshot apply_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta);
@@ -121,6 +146,7 @@ public:
     [[nodiscard]] u32 oldest_frame() const { return m_buffer.oldest_stored_frame(); }
     [[nodiscard]] u32 newest_frame() const { return m_buffer.newest_stored_frame(); }
     [[nodiscard]] u32 stored_frame_count() const;
+    [[nodiscard]] bool empty() const { return stored_frame_count() == 0; }
     [[nodiscard]] bool has_frame(u32 frame) const { return m_buffer.has_frame(frame); }
 
     void push(GameSnapshot snapshot);

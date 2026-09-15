@@ -97,6 +97,8 @@ void run_snapshot_delta_tests() {
     const fuse::net::SnapshotDelta empty_delta = fuse::net::compute_snapshot_delta(base, base);
     expectTrue(empty_delta.kind == fuse::net::SnapshotDeltaKind::None, "identical snapshots produce none delta");
     expectTrue(empty_delta.changed_entity_mask == 0, "empty delta has zero entity mask");
+    expectTrue(fuse::net::is_empty_snapshot_delta(empty_delta), "empty delta helper reports none kind");
+    expectTrue(fuse::net::validate_delta_payload(empty_delta), "empty delta payload validates");
 
     const fuse::net::GameSnapshot empty_applied = fuse::net::apply_snapshot_delta(base, empty_delta);
     expectTrue(fuse::net::snapshots_equivalent(base, empty_applied), "empty delta preserves baseline state");
@@ -162,6 +164,20 @@ void run_snapshot_delta_tests() {
                "physics mask helper reports velocity field");
     expectTrue(fuse::net::physics_field_mask_count(patch_delta.entity_patches[0].changed_physics_fields) == 1u,
                "physics mask popcount matches changed fields");
+    const fuse::u8 ecs_union = fuse::net::ecs_field_mask_union(
+        static_cast<fuse::u8>(fuse::net::SnapshotEcsField::Position),
+        static_cast<fuse::u8>(fuse::net::SnapshotEcsField::Rotation));
+    expectTrue(fuse::net::ecs_field_mask_contains(ecs_union, fuse::net::SnapshotEcsField::Position),
+               "ecs mask union retains position bit");
+    expectTrue(fuse::net::ecs_field_mask_contains(ecs_union, fuse::net::SnapshotEcsField::Rotation),
+               "ecs mask union retains rotation bit");
+    const fuse::u8 physics_union = fuse::net::physics_field_mask_union(
+        static_cast<fuse::u8>(fuse::net::SnapshotPhysicsField::LinearVelocity),
+        static_cast<fuse::u8>(fuse::net::SnapshotPhysicsField::Mass));
+    expectTrue(fuse::net::physics_field_mask_count(physics_union) == 2u, "physics mask union popcount");
+    expectTrue(fuse::net::validate_entity_patch_masks(patch_delta.entity_patches[0]),
+               "computed patch masks validate");
+    expectTrue(!fuse::net::is_empty_snapshot_delta(patch_delta), "patch delta is not empty");
     expectTrue(empty_history.can_apply_delta(base.frame, patch_delta), "history ring preflights patch delta");
 
     fuse::net::SnapshotDelta bad_checksum_delta = patch_delta;
@@ -169,6 +185,23 @@ void run_snapshot_delta_tests() {
     const fuse::net::DeltaApplyResult bad_base =
         fuse::net::apply_snapshot_delta_verified(base, bad_checksum_delta);
     expectTrue(!bad_base.base_checksum_ok, "checksum mismatch detected on baseline");
+
+    fuse::net::SnapshotDelta bad_frame_delta = patch_delta;
+    bad_frame_delta.base_frame = 99u;
+    const fuse::net::SnapshotDeltaPreflight bad_frame_preflight =
+        fuse::net::preflight_snapshot_delta(base, bad_frame_delta);
+    expectTrue(!bad_frame_preflight.base_frame_ok, "preflight rejects mismatched base frame");
+    expectTrue(!bad_frame_preflight.can_apply(), "preflight can_apply fails on frame mismatch");
+    expectTrue(!empty_history.can_apply_delta(base.frame, bad_frame_delta),
+               "history ring rejects delta with mismatched base_frame field");
+
+    fuse::net::SnapshotDelta empty_patch_delta = patch_delta;
+    empty_patch_delta.entity_patches.clear();
+    expectTrue(!fuse::net::validate_delta_payload(empty_patch_delta),
+               "entity patch kind with no rows fails payload validation");
+    const fuse::net::SnapshotDeltaPreflight bad_payload_preflight =
+        fuse::net::preflight_snapshot_delta(base, empty_patch_delta);
+    expectTrue(!bad_payload_preflight.payload_ok, "preflight rejects invalid entity patch payload");
 
     const fuse::u64 delta_hash_a = fuse::net::compute_delta_checksum(patch_delta);
     const fuse::u64 delta_hash_b = fuse::net::compute_delta_checksum(patch_delta);
@@ -321,6 +354,12 @@ void run_snapshot_delta_tests() {
     expectTrue(!wrap_history.has_frame(7u), "history ring pop_oldest removes evicted frame");
 
     expectTrue(!wrap_history.can_apply_delta(99u, wrap_delta), "history ring rejects missing baseline frame");
+
+    fuse::net::SnapshotHistoryRing empty_ring;
+    empty_ring.init(4);
+    expectTrue(empty_ring.empty(), "uninitialized history ring reports empty");
+    expectTrue(!empty_ring.pop_oldest().has_value(), "pop_oldest on empty history ring returns nullopt");
+    expectTrue(!empty_ring.can_apply_delta(0u, empty_delta), "empty history ring rejects delta apply");
 
     fuse::net::GameSnapshot high_index_base =
         make_entity_snapshot(40, 64, 1, {1.f, 0.f, 0.f, 1.f}, {0.f, 0.f, 0.f, 0.f}, 1.f);
