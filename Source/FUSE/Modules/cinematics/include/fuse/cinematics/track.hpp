@@ -1,27 +1,53 @@
 #pragma once
 
-#include <fuse/types.hpp>
+// Ore: Engine/source/Verve/Core/VTrack.h, VTrack.cpp (sort, span, next-event walk)
+//      third_party/addons/Verve/Engine/source/Verve/Core/VTrack.h
+
+#include <fuse/cinematics/event.hpp>
 
 #include <string>
+#include <vector>
 
 namespace fuse::cinematics {
 
-enum class TrackKind {
-    Transform2D,
-    Transform3D,
-    Camera,
-    Audio,
-    FxEvent,
+struct TrackSpan {
+    TimelineMs start_ms = 0;
+    TimelineMs end_ms = 0;
+
+    TimelineMs length_ms() const { return end_ms - start_ms; }
+    bool empty() const { return end_ms <= start_ms; }
 };
 
-/// Single timeline lane — ore analogue: Verve VTrack / VMotionTrack.
-/// TODO(U5 extract): third_party/addons/Verve/Engine/source/Verve/Core/VTrack.h
-/// TODO(U5 extract): Engine/source/Verve/ already in FUSE root — refactor here, do not re-merge.
-struct Track {
-    std::string name;
-    TrackKind kind = TrackKind::Transform3D;
-    float startTime = 0.f;
-    float endTime = 0.f;
+/// Ordered event lane on the timeline (Verve VTrack).
+class Track {
+public:
+    explicit Track(const std::string& label = "DefaultTrack");
+
+    const std::string& label() const { return label_; }
+    void set_label(const std::string& label) { label_ = label; }
+
+    bool enabled() const { return enabled_; }
+    void set_enabled(bool enabled) { enabled_ = enabled; }
+
+    const std::vector<TimelineEvent>& events() const { return events_; }
+    std::vector<TimelineEvent>& events() { return events_; }
+
+    void add_event(const TimelineEvent& event);
+    void sort_events();
+
+    /// Earliest trigger through latest finish across enabled events.
+    TrackSpan span() const;
+
+    /// Normalized position within the track at `time_ms` (0..1), Verve calculateInterp.
+    float interpolation_at(TimelineMs time_ms, TimelineMs sequence_duration_ms) const;
+
+    /// Index of the next enabled event at or after `time_ms`, or -1.
+    int next_event_index(TimelineMs time_ms) const;
+
+private:
+    std::string label_;
+    bool enabled_ = true;
+    std::vector<TimelineEvent> events_;
 };
 
 } // namespace fuse::cinematics
