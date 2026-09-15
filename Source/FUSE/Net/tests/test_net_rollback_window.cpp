@@ -41,14 +41,14 @@ void run_rollback_window_tests() {
     expectTrue(rollback.current_frame() == 6u, "rollback advanced to frame 6");
     expectTrue(rollback.can_rewind_to(4), "snapshot within window is rewindable");
     expectTrue(!rollback.can_rewind_to(1), "snapshot outside window is not rewindable");
+    expectTrue(!rollback.rewind_to(1), "rewind_to rejects out-of-window frame");
+    expectTrue(!rollback.rewind_to(rollback.current_frame() + 1), "rewind_to rejects future frame");
     expectTrue(rollback.resimulate_count_to(6) == 0u, "resimulate count zero at current frame");
     expectTrue(rollback.resimulate_count_to(8) == 2u, "resimulate count stub reports forward gap");
 
     const fuse::f32 position_before = registry.get<fuse::ecs::Transform>(entity)->position.x;
     expectTrue(rollback.rewind_to(4), "rewind_to succeeds inside window");
     expectTrue(rollback.current_frame() == 4u, "rewind_to updates current frame");
-    expectTrue(!rollback.rewind_to(1), "rewind_to rejects out-of-window frame");
-    expectTrue(!rollback.rewind_to(rollback.current_frame() + 1), "rewind_to rejects future frame");
 
     const fuse::f32 position_after = registry.get<fuse::ecs::Transform>(entity)->position.x;
     expectTrue(position_after != position_before, "rewind_to restored earlier snapshot state");
