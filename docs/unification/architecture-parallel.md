@@ -3,6 +3,7 @@
 **Phase:** U0 architecture (stakeholder direction)  
 **Date:** 2026-09-15  
 **Status:** Target design — documentation only  
+**Platform policy (locked):** **Desktop + mobile from day one** — Windows, Linux, macOS, iOS, Android. Emscripten/web optional later. See §3.4, §4.4, §12.
 **Evidence base:** [concurrency-inventory.md](./concurrency-inventory.md)  
 **Aligns with:** [merge-strategy-2d-extends.md](./merge-strategy-2d-extends.md), [unified-layout.md](./unified-layout.md), [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) B1.5 / P3
 
@@ -18,6 +19,7 @@
 4. **Composition over false inheritance for MT** — physics, gfx devices, and net stacks are **composed** behind facades ([merge-strategy-2d-extends.md](./merge-strategy-2d-extends.md)); never inherit Box2D or GL contexts up the scene tree.
 5. **Deterministic fallback** — single-threaded mode (`FUSE_JOBS_SINGLE_THREAD=1`) for replay, tests, and bisect; behaviour must match modulo timing.
 6. **Sanitizers as gates** — ASan on all CI smoke; TSan job on parallel paths from U3 onward.
+7. **Platform-neutral hot path** — worker sizing, fiber stacks, I/O budgets, and render-thread rules must be valid on **2-core phones** and **16-core desktops** without `#ifdef` in gameplay code; platform differences live in `fuse::platform` only.
 
 ---
 
@@ -65,13 +67,39 @@
 | Role | Count | Responsibilities | Must not |
 |------|-------|------------------|----------|
 | **Game thread** | 1 | Input sampling, `Sim`/`fuse::Object` mutation, script host callbacks, render **recording** + present (v1), job sync points | Block on mutex in hot path; call legacy `Con::execute` from workers |
-| **Job workers** | `max(1, physical_cores - 2)` default | Fiber scheduling, `parallel_for`, asset decode, mesh cook, BT eval (read-only phase), FX sim buffers | Touch `fuse::Object` without command buffer; Open GL/D3D on v1 |
-| **I/O thread(s)** | 0–2 (default 1) | Blocking read/decompress; hands buffers to job queue | Publish handles without game-thread commit |
+| **Job workers** | **Adaptive** `N` (§3.1.1) — desktop & mobile | Fiber scheduling, `parallel_for`, asset decode, mesh cook, BT eval (read-only phase), FX sim buffers | Touch `fuse::Object` without command buffer; GPU submit on v1 |
+| **I/O thread(s)** | 0–1 (mobile), 0–2 (desktop) | Blocking read/decompress; **budgeted** per frame (§3.4) | Publish handles without game-thread commit |
 | **Audio thread** | 1 | Device feed (OpenAL/FMOD pattern from T3D `SFXUpdateThread`) | Scene graph access |
 | **Net poll** | Game thread (v1) | Packet read/write integrated in tick | — |
 | **Qt UI thread** | 1 (editor only) | Widgets, inspectors, timelines | Direct `fuse::Object*` — use Editor API + queued commands |
 
-**Worker count policy (recommended default):** `physical_cores - 2`, minimum 1, maximum 16; reserve one core for game thread and one for OS/audio. Override via `project.json` → `jobs.worker_count` and env `FUSE_JOB_WORKERS`.
+#### 3.1.1 Adaptive worker count (locked formula)
+
+Stakeholder formula: **`N = clamp(usable_cores - reserve, min, max)`** with platform profiles — not desktop-only `cores - 2`.
+
+| Profile | `usable_cores` | `reserve` | `min` | `max` | Typical `N` |
+|---------|----------------|-----------|-------|-------|-------------|
+| **Desktop** (Win/Linux/macOS) | `hardware_concurrency()` | 2 (game + OS/audio headroom) | 1 | 16 | 6 on 8-core |
+| **Mobile native** (iOS/Android) | active/perf cores (API query) | 1 (game thread) | 1 | **4** | 2–3 on phone |
+| **Background / low power** | same | all but 0 | 0 | **1** | 0–1 |
+| **Thermal throttle** | same | +1 dynamic | 1 | prior max / 2 | auto halve |
+
+```cpp
+// fuse::jobs::computeWorkerCount() — implemented in fuse_core (WP-03)
+u32 N = clamp(usable_cores - reserve, minWorkers, maxWorkers);
+```
+
+**Runtime inputs:**
+- `fuse::platform::getCoreCount()`, `getPerformanceCoreCount()` (big/little on ARM)
+- `fuse::platform::getPowerState()` → `Normal` | `LowPower` | `Thermal` | `Background`
+- Overrides: `project.json` → `jobs.worker_count` (hard cap), env `FUSE_JOB_WORKERS`
+
+**Evidence (T2D lineage):** `third_party/Torque2D/CMakeLists.txt` L10–11 wires Win/macOS/Linux/**iOS/Android/Emscripten**; iOS uses GLES (`CMakeLists.txt` L319); Android `NativeActivity` + `libtorque2d.so` (L147–189). Mobile `backgrounded` flags in `platformiOS/platformiOS.h` L78, `platformAndroid/platformAndroid.h` L70 — FUSE must mirror for worker pool reduction.
+
+**No desktop-only assumptions in hot path:**
+- Fiber default stack: **32 KiB mobile**, **64 KiB desktop** (query via `fuse::platform::recommendedFiberStackBytes()` — do not hardcode master-plan 64K everywhere).
+- Thread priorities: `fuse::platform::setThreadPriority()` — no `THREAD_PRIORITY_TIME_CRITICAL` on game thread mobile.
+- I/O budget: max **2 ms/frame** mobile foreground, **8 ms** desktop for async read completion on game thread (configurable).
 
 ### 3.2 Job system — recommendation
 
@@ -89,6 +117,57 @@
 
 - **Fibers** cheaply express fork-join (`parallel_for`), staggered asset dependencies, and "wait for N jobs" without parking worker threads — matches master plan hot-path rule (no `std::condition_variable` on gameplay path).
 - **OS threads** remain the pool backing fibers; I/O and audio stay real threads due to blocking APIs.
+
+### 3.4 Platform abstraction (`fuse_core`)
+
+All thread/fiber primitives **must** be implemented per target — no gameplay code includes `<pthread.h>`, Win32 thread APIs, or `std::thread` directly.
+
+| API (header) | Responsibility | Platforms |
+|--------------|----------------|-----------|
+| `fuse/platform/thread.hpp` | `ThreadId`, `thisThread()`, affinity hints | Win, Linux, macOS, iOS, Android |
+| `fuse/platform/fiber.hpp` | Fiber create/switch/yield (or pool backend) | All native; **Emscripten: see §3.5** |
+| `fuse/platform/mutex.hpp` | Non-hot-path only (logging, I/O handoff) | All |
+| `fuse/platform/power.hpp` | Foreground/background, thermal, low-power callbacks | iOS, Android, macOS, Win (where available) |
+| `fuse/platform/gl_context.hpp` | **Which thread may call GPU** (§4.4) | GLES, Metal, Vulkan, D3D |
+
+**Layout:** `Source/FUSE/Core/include/fuse/platform/` — implemented under `Core/src/platform/{win,posix,apple,android}/`.
+
+**T2D ore map (thread entry):**
+
+| Platform | Thread/Mutex source |
+|----------|---------------------|
+| iOS | `platformiOS/iOSThread.mm`, `iOSMutex.mm` |
+| Android | `platformAndroid/AndroidThread.cpp`, `AndroidMutex.cpp` |
+| Emscripten | `platformEmscripten/EmscriptenThread.cpp`, `EmscriptenMutex.cpp` |
+| Desktop POSIX | `platformX86UNIX/`, shared `platform/threads/thread.h` |
+
+Legacy trees stay quarantined; **FUSE core re-implements or wraps** only the minimal surface needed for jobs + lifecycle — do not link dual `platform/threads/` trees raw.
+
+### 3.5 Emscripten / web (deferred, non-blocking)
+
+T2D ships Emscripten (`CMakeLists.txt` L72–76, `platformEmscripten/`). Web constraints:
+
+| Concern | Native (iOS/Android/desktop) | Emscripten (later) |
+|---------|------------------------------|---------------------|
+| Fibers + work-stealing | **Primary** path | May conflict with WASM stack/pthread model |
+| **Default for web** | — | **`FUSE_JOBS_COARSE_POOL`** or `FUSE_JOBS_SINGLE_THREAD=1` — pthread pool with **no fiber yield** until proven |
+| Blocks mobile? | **No** — separate CMake option `FUSE_PLATFORM_EMSCRIPTEN` |
+
+**Recommendation (locked):** Ship **mobile native** on fiber scheduler (WP-03); add Emscripten profile in U7+ without refactoring native hot path. CI may omit Emscripten job tests initially.
+
+### 3.6 Battery, background, and lifecycle
+
+When `fuse::platform::getPowerState() == Background` (mirrors T2D `backgrounded`):
+
+| Action | Behaviour |
+|--------|-----------|
+| Job workers | `N → min(N, 1)`; drain non-essential `parallel_for` |
+| I/O | Pause speculative prefetch; cancel decode jobs with cancellation points |
+| Render | Skip present if OS suspended GL (iOS/Android); game thread may sleep |
+| Audio | Duck or pause per platform policy |
+| Net | Maintain connection only if game requests; no worker spin |
+
+**Resume:** ramp `N` over 2–3 frames (avoid thermal spike). iOS `iOSTime.mm` L121 skips advance when backgrounded — FUSE scheduler hooks same signal.
 
 ---
 
@@ -127,7 +206,24 @@
 | Version | Model | Rationale |
 |---------|-------|-----------|
 | **v1 (U4–U6)** | Record + execute on **game thread** | T3D/T2D both assume main-thread GFX; Theora explicitly cannot upload on workers (`theoraTexture.h` L151–152) |
-| **v2 (Track B)** | Render graph record on game thread, execute on **async compute/graphics queue** where RHI allows | Requires FUSE RHI abstraction; dual GL contexts not attempted |
+| **v2 (Track B)** | Render graph record on game thread, execute on **async compute/graphics queue** where RHI allows | Requires FUSE RHI abstraction; **mobile-safe** (see §4.4) |
+
+### 4.4 Graphics context affinity (desktop + mobile)
+
+Design threading rules that survive **GLES (iOS/Android)**, **Metal (iOS/macOS)**, **Vulkan (Track B desktop lead)**, and **D3D11 (T3D legacy)** without rewriting the job model.
+
+| Rule | Desktop | Mobile (iOS/Android) | Job interaction |
+|------|---------|----------------------|-----------------|
+| **Context owner thread** | Game thread owns GL/D3D context v1 | Game thread owns **GLES/Metal drawable** v1 | Workers **never** call `gl*` / `vkQueueSubmit` / `Metal` in v1 |
+| **Upload path** | Staging buffer filled by jobs → game thread `upload()` | Same; respect **buffer sub-data** limits on GLES | `RenderUploadCommand` queue |
+| **Secondary context / RHI** | Track B: optional async compute queue | **Same API** — Metal/Vulkan mobile use explicit queue ownership | Record on game thread; submit may move to RHI thread **only** when `fuse::platform::gl_context.hpp` allows |
+| **Surface loss** | Resize recreate | Android/iOS context loss on background | Game thread recreates; workers idle |
+
+**Portable invariant (locked):** *Only the thread returned by `fuse::platform::renderThread()` may touch the GPU context in v1.* Default: game thread. Track B may set render thread = dedicated RHI thread **per platform module**, but job code stays identical — it only produces `RenderCommandList`.
+
+**T2D evidence:** iOS `platformiOS/iOSGL2ES.mm`, Android `platformAndroid/AndroidGL2ES.cpp` — GLES on game/main loop thread; no worker GL.
+
+**Anti-pattern:** Desktop-only "second GL context on worker" — forbidden on mobile; do not bake into FUSE APIs.
 
 ---
 
@@ -248,25 +344,35 @@ UI thread (Qt)                    Game thread
 | Sharing `Mutex` on `SimObject` across engines | Dual legacy + race |
 | `SceneObject3D : b2World` or gfx device inheritance | Violates composition boundary (R16) |
 | Parallel script VM without proof | U3+ gate |
-| Separate render thread + dual GL (v1) | Context hell on Win/Linux/macOS |
+| Separate render thread + dual GL (v1) | Breaks mobile GLES/Metal; context hell on desktop |
+| Desktop-only worker formula (`cores-2` always) | Starves or overheats phones; violates locked platform policy |
+| Unbounded I/O on background mobile | Battery drain; violates lifecycle §3.6 |
 | Merging addon Engine for "more threads" | Forbidden — ore only |
 
 ---
 
-## 12. Stakeholder questions & recommended defaults
+## 12. Stakeholder decisions (locked) & remaining questions
 
-Coordinator may confirm; **work proceeds with defaults** unless overridden.
+### Locked (2026-09-15)
 
-| # | Question | Options | **Recommended default** |
-|---|----------|---------|-------------------------|
-| Q1 | Target platforms (MT policy) | Desktop only / +mobile / +web | **Desktop first** (Win/Linux/macOS); mobile/web keep T2D single-thread compat path until RHI rewrite |
-| Q2 | Job model | Fiber work-stealing vs thread pool | **Fiber work-stealing** (master plan B1.5) |
-| Q3 | Max worker policy | Fixed cap vs auto | **Auto:** `cores - 2`, cap 16, min 1 |
-| Q4 | Editor process model | In-process PIE vs out-of-process | **In-process** (one program) |
-| Q5 | Hard realtime | Fixed tick vs best-effort | **Best-effort** variable dt; optional fixed sim step for networking only |
-| Q6 | Render thread (v1) | Same thread vs async | **Same thread** record+present until Track B RHI |
-| Q7 | TSan in CI | Nightly vs per-PR | **Nightly** from U3; ASan per-PR |
-| Q8 | Determinism for MP | Lockstep vs async | **Defer** — single-player determinism mode first |
+| Decision | Value |
+|----------|-------|
+| **Platform scope** | **Desktop + mobile from start** — Windows, Linux, macOS, **iOS, Android** (T2D lineage). Emscripten optional later. |
+| **Job model (native)** | **Fiber work-stealing** (master plan B1.5) |
+| **Worker count** | **Adaptive:** `N = clamp(usable_cores - reserve, min, max)` — desktop max 16; **mobile max 4**; background max 1 |
+| **GFX threading v1** | **Game thread** owns GPU context; rules portable to GLES/Metal/Vulkan |
+| **Background** | Reduce worker pool + pause speculative I/O when app backgrounded |
+| **Emscripten** | **Deferred** — coarse pool or single-thread default; does **not** block mobile native |
+| **`fuse_core` platform API** | Required for thread/fiber/power/GL-context rules on all native targets |
+
+### Remaining (coordinator may still confirm)
+
+| # | Question | **Default** |
+|---|----------|-------------|
+| Q4 | Editor in-process PIE | **Yes** (desktop editor; mobile ships runtime-only) |
+| Q5 | Hard realtime | **Best-effort** variable dt |
+| Q7 | TSan CI | **Nightly** from U3 |
+| Q8 | MP determinism | **Defer** |
 
 See also [work-plan.md](./work-plan.md) for scheduling.
 

@@ -12,6 +12,7 @@ This directory contains evidence-based inventory and collision analysis for merg
 **Stakeholder direction (2026-09-15):**
 - **2D→3D extension merge** for scene/object identity — [merge-strategy-2d-extends.md](./merge-strategy-2d-extends.md)
 - **Multi-threading first-class** — fiber job spine, game-thread mutation, handle-based cross-thread rules — [architecture-parallel.md](./architecture-parallel.md)
+- **Desktop + mobile from start** (locked) — adaptive worker count, background pool reduction, portable GLES/Metal/Vulkan threading rules; Emscripten deferred
 
 Physics, gfx, and net remain composition/dual-backend. No physical `Engine/` + T2D source marriage.
 
@@ -72,9 +73,9 @@ Physics, gfx, and net remain composition/dual-backend. No physical `Engine/` + T
 
 ---
 
-## Stakeholder questions (coordinator)
+## Stakeholder decisions (locked)
 
-Non-blocking defaults in [architecture-parallel.md §12](./architecture-parallel.md#12-stakeholder-questions--recommended-defaults): fiber scheduler, `cores-2` workers, in-process editor, game-thread GFX v1, desktop-first platforms.
+Platform scope, adaptive workers, mobile GFX threading, background lifecycle — [architecture-parallel.md §12](./architecture-parallel.md#12-stakeholder-decisions-locked--remaining-questions). Remaining optional: editor in-process, MP determinism.
 
 ---
 

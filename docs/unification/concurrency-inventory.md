@@ -183,7 +183,20 @@ StandardMainLoop::doMainLoop()          [app/mainLoop.cpp]
 
 ### 3.6 T2D config hint
 
-`third_party/Torque2D/engine/source/torqueConfig.h` L90 — comment references ability to "perform operations in parallel" (build/config level; no in-tree job system).
+`third_party/Torque2D/engine/source/torqueConfig.h` L87–90 — `TORQUE_MULTITHREAD` define: *"does not make the entire engine thread-safe nor is it a magic bullet"* for parallelism.
+
+### 3.7 Mobile & web platform trees (FUSE must honour)
+
+| Platform | Path | Thread / sync | GFX | Lifecycle |
+|----------|------|---------------|-----|-----------|
+| **iOS** | `platformiOS/` (41+ files) | `iOSThread.mm`, `iOSMutex.mm` | `iOSGL2ES.mm` — **OpenGL ES** | `backgrounded` in `platformiOS.h` L78; `iOSTime.mm` skips when backgrounded |
+| **Android** | `platformAndroid/` (50+ files) | `AndroidThread.cpp`, `AndroidMutex.cpp` | `AndroidGL2ES.cpp` | `backgrounded` in `platformAndroid.h` L70 |
+| **Emscripten** | `platformEmscripten/` (30+ files) | `EmscriptenThread.cpp` — limited | `EmscriptenGL2ES.cpp` | `backgrounded` in `EmscriptenWindow.cpp` |
+| **macOS desktop** | `platformOSX/` | `osxTime.mm` checks `backgrounded` | Desktop GL | — |
+
+**CMake evidence:** `third_party/Torque2D/CMakeLists.txt` L10–11 — targets Win, macOS, Linux, **iOS, Android, Emscripten**. iOS explicit `CMAKE_SYSTEM_NAME=iOS` (L108–110); GLES not desktop GL (L319).
+
+**FUSE implication:** Job worker caps and background drain are **required** for parity with T2D mobile behaviour — not optional desktop stretch goals. See [architecture-parallel.md](./architecture-parallel.md) §3.1.1, §3.6.
 
 ---
 

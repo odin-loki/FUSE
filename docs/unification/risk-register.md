@@ -32,6 +32,8 @@ Likelihood: **High** / **Medium** / **Low**
 | R17 | Data races on scene graph / SimObject | Critical | High | U3–U6 | **Open** — handles + snapshots |
 | R18 | GL/GFX context affinity on worker threads | High | Medium | U4 | **Open** — game-thread record v1 |
 | R19 | Job scheduler scope creep / blocking waits | Medium | Medium | U3 | **Open** — fiber yield policy |
+| R20 | Mobile thermal throttling / battery drain | High | High | U3–U6 | **Open** — adaptive N, background drain |
+| R21 | GLES/Metal context on wrong thread | Critical | Medium | U4 | **Open** — renderThread() invariant |
 
 ---
 
@@ -282,6 +284,26 @@ Likelihood: **High** / **Medium** / **Low**
 
 ---
 
+### R20 — Mobile thermal / battery
+
+**Evidence:** Phones have 2–8 cores with thermal limits; T2D tracks `backgrounded` on iOS/Android (`platformiOS.h`, `platformAndroid.h`); desktop `cores-2` formula overheats or wastes battery on mobile.
+
+**Impact:** Frame drops, OS kills app, poor store ratings.
+
+**Mitigation:** Adaptive `N = clamp(cores - reserve, min, max)` with **mobile max 4**; background `N ≤ 1`; I/O frame budgets ([architecture-parallel.md](./architecture-parallel.md) §3.1.1, §3.6); WP-03 + Agent G in [work-plan.md](./work-plan.md).
+
+---
+
+### R21 — GPU context affinity (mobile GLES/Metal)
+
+**Evidence:** T2D GLES on main thread (`iOSGL2ES.mm`, `AndroidGL2ES.cpp`); T3D forbids worker texture upload (`theoraTexture.h`).
+
+**Impact:** Black screen, GL errors, crashes on device if desktop-only render-thread assumptions leak.
+
+**Mitigation:** `fuse::platform::renderThread()` invariant; workers produce staging buffers only (§4.4); Track B RHI must preserve rule on Metal/Vulkan mobile.
+
+---
+
 ## Decision gates (from prestarter §18)
 
 | Gate | Risk IDs | Recommendation |
@@ -292,6 +314,7 @@ Likelihood: **High** / **Medium** / **Low**
 | 2D→3D scene merge | R16, R17 | Inheritance for SceneObject2D/3D only; MT via handles/snapshots |
 | Job model | R19 | Fiber work-stealing default — [architecture-parallel.md](./architecture-parallel.md) §12 |
 | Editor in-process | R17 | Qt UI thread vs game thread queue |
+| Mobile platform scope | R20, R21 | Desktop + mobile locked — adaptive jobs + portable GFX |
 | Multiprocess fallback | R11 | **Forbidden after U4** |
 | Product SKU | R06 | Unified binary with `FUSE_WITH_2D` / `FUSE_WITH_3D` flags |
 

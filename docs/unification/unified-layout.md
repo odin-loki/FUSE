@@ -55,8 +55,10 @@ FUSE/                                    # repo root (today)
 │       ├── Core/                        # L0 — fuse_core
 │       │   ├── include/fuse/           # public headers: types, handles, allocators, math, log
 │       │   │   ├── object.h            # fuse::Object — shared root (replaces dual SimObject over time)
-│       │   │   └── jobs/               # JobScheduler, JobCounter, parallel_for — MT spine
+│       │   │   ├── jobs/               # JobScheduler, JobCounter, parallel_for — MT spine
+│       │   │   └── platform/           # thread, fiber, power, gl_context — Win/Linux/mac/iOS/Android
 │       │   └── src/
+│       │       └── platform/           # {win,posix,apple,android}/ implementations
 │       │
 │       ├── Services/                    # L1 — shared services (strangle from U3)
 │       │   ├── Assets/

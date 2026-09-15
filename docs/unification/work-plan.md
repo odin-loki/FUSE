@@ -4,7 +4,8 @@
 **Date:** 2026-09-15  
 **Horizon:** Now → U8 exit + Track A P3 job spine in parallel with U1–U4  
 **Architecture:** [architecture-parallel.md](./architecture-parallel.md)  
-**Evidence:** [concurrency-inventory.md](./concurrency-inventory.md)
+**Evidence:** [concurrency-inventory.md](./concurrency-inventory.md)  
+**Platform policy (locked):** Desktop **and** mobile (iOS/Android) from start — adaptive workers, lifecycle-aware pools, portable GFX threading rules.
 
 **Effort bands:** **S** (days, 1 agent) · **M** (1–2 weeks) · **L** (multi-week, multi-stream) · **XL** (phase gate)
 
@@ -74,10 +75,12 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | Field | Value |
 |-------|-------|
 | **Effort** | L |
-| **Scope** | `Source/FUSE/Core/jobs/` — fiber pool, `JobCounter`, `parallel_for`, single-thread fallback; unit tests |
+| **Scope** | `Source/FUSE/Core/jobs/` + `Core/platform/` — fiber pool, `JobCounter`, `parallel_for`, **`computeWorkerCount()`** (desktop + mobile profiles), single-thread fallback; unit tests |
 | **Parallel** | **Runs parallel to WP-02** once `fuse_core` stub lands (U1) |
-| **Exit** | Job tests pass; microbench shows work-stealing on 4+ cores; `FUSE_JOBS_SINGLE_THREAD` works |
-| **Deps** | WP-01 (cmake target); architecture-parallel §3.2 |
+| **Mobile** | iOS + Android CI compile of job stubs; adaptive `N` max 4; 32 KiB fiber stacks on mobile |
+| **Emscripten** | Stub profile only (`FUSE_JOBS_SINGLE_THREAD`) — **does not gate** WP-03 exit |
+| **Exit** | Job tests pass on Linux + **one mobile target** (iOS sim or Android NDK); work-stealing on 4+ core desktop; `FUSE_JOBS_SINGLE_THREAD` works; background reduces `N` |
+| **Deps** | WP-01 (cmake target); architecture-parallel §3.1–3.6 |
 
 ---
 
@@ -111,8 +114,9 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 |-------|-------|
 | **Effort** | XL |
 | **Scope** | `World2D`, `World3D`, `IDimension`, `HybridComposer`; parallel cull `parallel_for`; game-thread physics |
-| **MT note** | Frame barrier; render record on game thread v1 |
-| **Exit** | Demo: 3D clear + spinning 2D sprite one window; TSan clean on cull path |
+| **MT note** | Frame barrier; **portable** render record on `fuse::platform::renderThread()` (game thread v1); GLES + desktop GL |
+| **Mobile** | Hybrid demo runs on iOS **or** Android device/sim; respect surface loss / background |
+| **Exit** | Demo: 3D clear + spinning 2D sprite one window (desktop + one mobile); TSan clean on cull path |
 | **Deps** | WP-05, WP-03 |
 
 ---
@@ -209,12 +213,13 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 | Agent / team | After gate | Focus |
 |--------------|------------|-------|
-| **Agent A** | U1 | CMake, CI, legacy wrap |
-| **Agent B** | U1 | `fuse_core` + jobs (WP-03) |
+| **Agent A** | U1 | CMake, CI, legacy wrap — **include iOS/Android toolchain matrix** |
+| **Agent B** | U1 | `fuse_core` + jobs + **`fuse/platform`** (WP-03) |
 | **Agent C** | U3 | Scene types + adapters (WP-05) |
 | **Agent D** | U4 | World2D OR World3D (split) |
 | **Agent E** | U5 | One addon module each |
-| **Agent F** | U6 | Qt editor shell |
+| **Agent F** | U6 | Qt editor shell (desktop) |
+| **Agent G** | U3 | Mobile lifecycle hooks (background worker drain) |
 | **Docs** | U0+ | Keep inventory current when code lands |
 
 **Merge rule:** All product code obeys [architecture-parallel.md](./architecture-parallel.md) §5–6 before parallel scene tick merges.
@@ -223,15 +228,15 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 ## 6. Immediate next 5 actions (after this PR merges)
 
-1. **Stakeholder/coordinator:** Confirm [architecture-parallel.md §12](./architecture-parallel.md#12-stakeholder-questions--recommended-defaults) defaults (or overrides) — especially editor in-process and worker count policy.
+1. **Locked:** Platform scope = desktop + mobile — no further confirmation needed on worker adaptive formula ([architecture-parallel.md §3.1.1](./architecture-parallel.md)).
 
-2. **WP-01 (U1):** Branch `cursor/u1-umbrella-cmake-62b4` — extend root `CMakeLists.txt`; add `Source/FUSE/CMakeLists.txt` with `fuse_core` INTERFACE stub and `FUSE_BUILD_*` options; write `docs/unification/BUILD.md`.
+2. **WP-01 (U1):** Umbrella CMake + `docs/unification/BUILD.md` — document **Win/Linux/macOS + iOS + Android** configure paths (from T2D `CMakeLists.txt`); `FUSE_PLATFORM_*` options.
 
-3. **WP-03 stub:** In same or follow-up branch, add `Source/FUSE/Core/jobs/` headers-only skeleton + empty test target wired into umbrella (no legacy link yet).
+3. **WP-03 stub:** `Source/FUSE/Core/jobs/` + `Core/include/fuse/platform/` — `computeWorkerCount()`, `getPowerState()` stubs; tests for desktop vs mobile profile math.
 
-4. **WP-02 prep:** From [symbol-collision-report.md](./symbol-collision-report.md), draft prefix rename script prototype for top 50 `Con::` / `Platform::` symbols — doc-only PR or `tools/` script without enabling link.
+4. **WP-02 prep:** Prefix rename script prototype for top `Con::` collisions (unchanged).
 
-5. **CI:** Add Linux job that configures umbrella with `FUSE_BUILD_T2D=ON` + `FUSE_BUILD_T3D=ON` (build may fail until WP-02 — allow `continue-on-error` until U1 gate, then harden).
+5. **CI:** Linux umbrella configure **plus** matrix row for **Android NDK** or **iOS simulator** compile of `fuse_core` stub only (no full link required for U1).
 
 ---
 
