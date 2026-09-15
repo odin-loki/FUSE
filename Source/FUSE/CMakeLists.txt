@@ -20,6 +20,7 @@ add_subdirectory(Net)
 add_subdirectory(VFX)
 add_subdirectory(Terrain)
 add_subdirectory(WorldPartition)
+add_subdirectory(Phase7)
 add_subdirectory(World2D)
 add_subdirectory(World3D)
 

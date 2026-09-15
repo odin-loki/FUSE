@@ -1,0 +1,3 @@
+add_executable(fuse_phase7_integration test_phase7_integration.cpp)
+target_link_libraries(fuse_phase7_integration PRIVATE fuse_phase7)
+add_test(NAME fuse_phase7_integration COMMAND fuse_phase7_integration)
