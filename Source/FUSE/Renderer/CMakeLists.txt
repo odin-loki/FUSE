@@ -15,7 +15,10 @@ set(FUSE_RHI_PUBLIC_HEADERS
     include/fuse/renderer/vk/device.hpp
     include/fuse/renderer/vk/frame.hpp
     include/fuse/renderer/vk/instance.hpp
+    include/fuse/renderer/vk/graphics_pipeline.hpp
     include/fuse/renderer/vk/pipeline_layout.hpp
+    include/fuse/renderer/vk/raster_path.hpp
+    include/fuse/renderer/vk/render_pass.hpp
     include/fuse/renderer/vk/surface.hpp
     include/fuse/renderer/vk/swapchain.hpp
     include/fuse/renderer/cuda/interop.hpp
@@ -36,7 +39,10 @@ set(FUSE_RHI_SOURCES
     src/vk/device.cpp
     src/vk/frame.cpp
     src/vk/instance.cpp
+    src/vk/graphics_pipeline.cpp
     src/vk/pipeline_layout.cpp
+    src/vk/raster_path.cpp
+    src/vk/render_pass.cpp
     src/vk/surface.cpp
     src/vk/swapchain.cpp
     src/cuda/interop.cpp
@@ -58,6 +64,9 @@ target_include_directories(fuse_rhi
 
 target_link_libraries(fuse_rhi PUBLIC fuse_core)
 target_compile_features(fuse_rhi PUBLIC cxx_std_17)
+target_compile_definitions(fuse_rhi PRIVATE
+    FUSE_SHADER_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/Source/FUSE/Renderer/shaders/fixtures"
+)
 
 # Optional VMA — stub allocator when header not vendored.
 set(FUSE_VMA_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/third_party/VulkanMemoryAllocator/include")
