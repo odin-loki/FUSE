@@ -949,6 +949,43 @@ void testRetargetTranslationScale() {
     expectNear(targetPose.local_positions[1].y, 4.f, 1e-4f, "retarget translation scale halves mapped translation");
 }
 
+void testTwoBoneMaxReachHelper() {
+    const fuse::f32 reachEpsilon = 0.001f;
+    expectNear(fuse::animation::two_bone_max_reach(1.f, 1.f, reachEpsilon), 1.999f, 1e-4f,
+               "two_bone_max_reach matches upper + lower - epsilon");
+    expectNear(fuse::animation::two_bone_max_reach(0.f, 1.f, reachEpsilon), 0.f, 1e-6f,
+               "two_bone_max_reach returns zero for degenerate upper segment");
+
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+    fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
+    fuse::animation::TwoBoneIK ik;
+    ik.root_bone = 0;
+    ik.mid_bone = 1;
+    ik.end_bone = 2;
+    ik.reach_epsilon = reachEpsilon;
+    expectNear(ik.max_reach(pose), fuse::animation::two_bone_max_reach(1.f, 1.f, reachEpsilon), 1e-4f,
+               "two bone ik max_reach matches public helper from bind pose");
+}
+
+void testNormalizeIkPoleVector() {
+    const fuse::animation::vec3 rootToTarget = {1.f, 0.f, 0.f, 0.f};
+    const fuse::animation::vec3 zeroPole = {0.f, 0.f, 0.f, 0.f};
+    const fuse::animation::vec3 fallback =
+        fuse::animation::normalize_ik_pole_vector(zeroPole, rootToTarget);
+    const fuse::f32 fallbackLen =
+        std::sqrt(fallback.x * fallback.x + fallback.y * fallback.y + fallback.z * fallback.z);
+    expectNear(fallbackLen, 1.f, 1e-4f, "normalize_ik_pole_vector picks unit axis for zero pole hint");
+
+    const fuse::animation::vec3 parallelPole = {2.f, 0.f, 0.f, 0.f};
+    const fuse::animation::vec3 parallelFallback =
+        fuse::animation::normalize_ik_pole_vector(parallelPole, rootToTarget);
+    const fuse::f32 parallelLen =
+        std::sqrt(parallelFallback.x * parallelFallback.x + parallelFallback.y * parallelFallback.y +
+                   parallelFallback.z * parallelFallback.z);
+    expectNear(parallelLen, 1.f, 1e-4f, "normalize_ik_pole_vector picks unit axis for parallel pole hint");
+    expectTrue(std::fabs(parallelFallback.x) < 1e-4f, "parallel pole fallback is perpendicular to root-to-target");
+}
+
 void testTwoBoneIKSolveHelpers() {
     const fuse::animation::vec3 root = {0.f, 0.f, 0.f, 0.f};
     const fuse::animation::vec3 mid = {0.f, 1.f, 0.f, 0.f};
@@ -967,6 +1004,10 @@ void testTwoBoneIKSolveHelpers() {
                "is_two_bone_target_reachable rejects out-of-range target");
     expectTrue(fuse::animation::is_two_bone_target_reachable(root, {1.f, 1.f, 0.f, 0.f}, upperLen, lowerLen, reachEpsilon),
                "is_two_bone_target_reachable accepts in-range target");
+    expectTrue(!fuse::animation::is_two_bone_target_reachable(root, root, upperLen, lowerLen, reachEpsilon),
+               "is_two_bone_target_reachable rejects target at root within reach epsilon");
+    expectNear(fuse::animation::two_bone_max_reach(upperLen, lowerLen, reachEpsilon), 1.999f, 1e-4f,
+               "two_bone_max_reach helper matches clamp limit");
 
     const fuse::animation::vec3 clamped =
         fuse::animation::clamp_two_bone_target(root, target, 1.f, 1.f, reachEpsilon);
@@ -1030,6 +1071,11 @@ void testFabrikChainGuards() {
     expectTrue(!emptyChain.has_valid_chain(skel), "fabrik rejects empty bone index list");
     expectTrue(!emptyChain.solve(pose, skel), "fabrik solve returns false for empty chain");
 
+    fuse::animation::FABRIKChain singleBone;
+    singleBone.bone_indices = {0};
+    expectTrue(!singleBone.has_valid_chain(skel), "fabrik rejects single-bone chain");
+    expectTrue(!singleBone.solve(pose, skel), "fabrik solve returns false for single-bone chain");
+
     fuse::animation::FABRIKChain outOfRange;
     outOfRange.bone_indices = {0, 99};
     expectTrue(!outOfRange.has_valid_chain(skel), "fabrik rejects out of range bone indices");
@@ -1062,6 +1108,21 @@ void testRetargetAddBoneMapping() {
     expectTrue(map.add_bone_mapping(1, 1, 0.5f), "retarget add_bone_mapping accepts second entry");
     expectTrue(map.is_valid(), "retarget manual map is valid after add_bone_mapping");
     expectTrue(map.mapped_bone_count() == 2u, "retarget manual map records two mappings");
+}
+
+void testRetargetApplyEmptySourcePose() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    const fuse::animation::RetargetMap map = fuse::animation::RetargetMap::build_identity(skel);
+
+    fuse::animation::PoseSoA emptySource = fuse::animation::PoseSoA::allocate(0);
+    fuse::animation::PoseSoA targetPose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    map.apply_pose_soa(emptySource, skel, targetPose);
+    expectTrue(targetPose.bone_count == 0u, "retarget apply_pose_soa clears output when source pose is empty");
+
+    fuse::animation::Pose emptyAoS{};
+    fuse::animation::Pose targetAoS = fuse::animation::Pose::make_bind_pose(skel);
+    map.apply_pose(emptyAoS, skel, targetAoS);
+    expectTrue(targetAoS.bone_count == 0u, "retarget apply_pose clears output when source pose is empty");
 }
 
 void testRetargetApplyInvalidMap() {
@@ -1705,11 +1766,14 @@ int main() {
     testRetargetIdentity();
     testRetargetFindTargetBone();
     testRetargetTranslationScale();
+    testTwoBoneMaxReachHelper();
+    testNormalizeIkPoleVector();
     testTwoBoneIKSolveHelpers();
     testTwoBoneIKZeroPoleVector();
     testTwoBoneIKDegenerateSegments();
     testFabrikChainGuards();
     testRetargetAddBoneMapping();
+    testRetargetApplyEmptySourcePose();
     testRetargetApplyInvalidMap();
     testRetargetClear();
     testEmptyBlendSpace1D();

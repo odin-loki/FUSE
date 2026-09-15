@@ -24,6 +24,9 @@ namespace fuse::animation {
                                                  f32 lower_len,
                                                  f32 reach_epsilon);
 
+/// Maximum root→target distance before clamping (upper + lower − `reach_epsilon`).
+[[nodiscard]] f32 two_bone_max_reach(f32 upper_len, f32 lower_len, f32 reach_epsilon);
+
 /// Clamp `target` to the reachable sphere defined by segment lengths and `reach_epsilon`.
 [[nodiscard]] vec3 clamp_two_bone_target(const vec3& root,
                                           const vec3& target,
@@ -49,10 +52,10 @@ struct FABRIKChain {
     f32 min_angle_deg = 0.f;
     f32 max_angle_deg = 160.f;
 
-    /// Returns false when the skeleton or bone index list is empty, or any index is out of range.
+    /// Returns false when the skeleton is empty, the index list has fewer than two bones, or any index is out of range.
     [[nodiscard]] bool has_valid_chain(const Skeleton& skel) const;
 
-    /// Returns false when the skeleton or bone index list is empty, or any index is out of range.
+    /// Returns false when `has_valid_chain` is false.
     [[nodiscard]] bool solve(Pose& pose, const Skeleton& skel);
 };
 

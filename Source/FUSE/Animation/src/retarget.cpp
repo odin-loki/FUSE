@@ -106,7 +106,7 @@ RetargetMap RetargetMap::build_by_name(const Skeleton& source, const Skeleton& t
 void RetargetMap::apply_pose_soa(const PoseSoA& source_pose,
                                  const Skeleton& target_skel,
                                  PoseSoA& out_pose) const {
-    if (target_skel.bones.empty() || !is_valid()) {
+    if (target_skel.bones.empty() || source_pose.bone_count == 0 || !is_valid()) {
         out_pose.clear();
         return;
     }
@@ -135,7 +135,7 @@ void RetargetMap::apply_pose_soa(const PoseSoA& source_pose,
 void RetargetMap::apply_pose(const Pose& source_pose,
                              const Skeleton& target_skel,
                              Pose& out_pose) const {
-    if (target_skel.bones.empty() || !is_valid()) {
+    if (target_skel.bones.empty() || source_pose.bone_count == 0 || !is_valid()) {
         out_pose.bone_count = 0;
         out_pose.bone_world_transforms.clear();
         return;
