@@ -16,6 +16,7 @@ void run_input_history_tests();
 void run_reconcile_tests();
 void run_snapshot_delta_tests();
 void run_state_sync_tests();
+void run_interest_management_tests();
 
 } // namespace fuse::net::tests
 
@@ -31,6 +32,7 @@ int main() {
     fuse::net::tests::run_reconcile_tests();
     fuse::net::tests::run_snapshot_delta_tests();
     fuse::net::tests::run_state_sync_tests();
+    fuse::net::tests::run_interest_management_tests();
 
     fuse::core::shutdown();
 

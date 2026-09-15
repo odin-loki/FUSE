@@ -8,6 +8,7 @@ add_executable(fuse_net_tests
     test_net_reconcile.cpp
     test_net_snapshot_delta.cpp
     test_net_state_sync.cpp
+    test_net_interest_management.cpp
     test_main.cpp
 )
 

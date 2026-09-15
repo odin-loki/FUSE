@@ -16,6 +16,7 @@ Deterministic rollback and authoritative state-sync scaffolding for Track B7.4. 
 | `rollback_buffer.hpp` | Ring buffer of per-frame snapshots and confirmed inputs |
 | `snapshot_delta.hpp` | `SnapshotDelta` / entity patches for bandwidth-friendly sync |
 | `state_sync.hpp` | `ClientInterpolator`, `StateSyncDeltaBroadcaster`, entity deltas |
+| `interest_management.hpp` | AOI relevance radii, `InterestManager`, `InterestPriorityQueue` |
 
 ## Input prediction history
 
@@ -36,8 +37,18 @@ Deterministic rollback and authoritative state-sync scaffolding for Track B7.4. 
 
 Use `create_transport(TransportBackend)` to instantiate the active backend.
 
+## Interest management (AOI)
+
+Server-side area-of-interest scaffolding mirrors Torque ghost scoping with FUSE-native relevance radii:
+
+- **`InterestPolicy`** — `relevance_radius`, optional `unload_radius` (default 1.25×), inner `always_relevant_radius`
+- **`InterestManager`** — registers entity positions, evaluates scope/priority for an observer
+- **`InterestPriorityQueue`** — max-priority heap for replication ordering (closest / always-relevant first)
+
+Hysteresis keeps entities in scope until they pass the unload radius, matching B7.5 terrain streaming semantics.
+
 ## Tests
 
-`fuse_net_tests` (`ctest` name `fuse_net_b74`) covers loopback channels/stats, serializer round-trip, rollback resimulation, rollback buffer retention, checksum helpers, input history eviction, reconcile outcomes, snapshot delta apply/serialize, and client interpolation without ENet or Steam dependencies.
+`fuse_net_tests` (`ctest` name `fuse_net_b74`) covers loopback channels/stats, serializer round-trip, rollback resimulation, rollback buffer retention, checksum helpers, input history eviction, reconcile outcomes, snapshot delta apply/serialize, client interpolation, relevance radius classification/hysteresis, and interest priority queue ordering without ENet or Steam dependencies.
 
 See [docs/unification/TRACK-B-NET.md](../../docs/unification/TRACK-B-NET.md) for the B7.4 deepen checklist.

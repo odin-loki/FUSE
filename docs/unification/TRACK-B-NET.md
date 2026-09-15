@@ -1,6 +1,6 @@
 # Track B — B7.4 Networking (deepen)
 
-**Status:** Expanded input prediction history, reconcile stub, and shared checksum helpers on `fuse_net`  
+**Status:** Interest management AOI stubs, input prediction history, reconcile stub, and shared checksum helpers on `fuse_net`  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.4  
 **Depends on:** B3 ECS (`fuse_ecs`), initial B7.4 transport/rollback scaffolding
 
@@ -10,6 +10,8 @@
 
 | Component | Location | Notes |
 |-----------|----------|-------|
+| `InterestManager` | `interest_management.hpp/.cpp` | Relevance/unload radii, hysteresis, observer AOI evaluation |
+| `InterestPriorityQueue` | `interest_management.hpp/.cpp` | Max-priority replication ordering stub |
 | `InputHistoryBuffer` | `input_history.hpp/.cpp` | 128-frame ring of predicted + confirmed `PlayerInput` |
 | `reconcile_predicted_input` | `reconcile.hpp/.cpp` | Compare authoritative input against local prediction |
 | Checksum helpers | `checksum.hpp/.cpp` | FNV-1a over snapshot blobs; shared by rollback + delta paths |
@@ -17,7 +19,37 @@
 | `RollbackManager` | `rollback.hpp/.cpp` | Records predicted locals; reconciles on remote apply |
 | Transport / deltas | `transport.hpp`, `snapshot_delta.hpp` | Loopback + delta stubs from prior deepen PR |
 
-**Not in scope (follow-up PRs):** ENet process-pair smoke, session matchmaking, desync telemetry UI, full GGPO input delay.
+**Not in scope (follow-up PRs):** ENet process-pair smoke, session matchmaking, desync telemetry UI, full GGPO input delay, frustum/LOS refinement of AOI.
+
+---
+
+## Interest management (AOI)
+
+Torque ghost scoping maps to FUSE relevance radii with unload hysteresis (same 1.25× default as B7.5 terrain streaming):
+
+```cpp
+#include <fuse/net/interest_management.hpp>
+
+fuse::net::InterestPolicy policy{};
+policy.relevance_radius = 128.f;
+policy.always_relevant_radius = 8.f;
+
+fuse::net::InterestManager manager;
+manager.set_policy(policy);
+manager.set_observer_position({0.f, 0.f, 0.f, 0.f});
+manager.register_entity({entity_id, {40.f, 0.f, 0.f, 0.f}, 0.f});
+manager.evaluate();
+
+fuse::net::InterestPriorityQueue queue;
+queue.build_from_manager(manager);
+
+fuse::net::InterestEntry next{};
+while (queue.pop(next)) {
+    // replicate `next.entity` in priority order
+}
+```
+
+`classify_interest` and `compute_relevance_priority` are exposed for unit tests and future ghost managers.
 
 ---
 
@@ -78,15 +110,17 @@ ctest --test-dir build --output-on-failure -R fuse_net_b74
 
 | Check | Validates |
 |-------|-----------|
+| `test_net_interest_management` | Relevance/unload radii, hysteresis, priority computation, queue ordering |
 | `test_net_checksum` | FNV-1a determinism, combine, snapshot verify |
 | `test_net_input_history` | Predicted/confirmed retention, ring eviction, `inputs_equal` |
 | `test_net_reconcile` | Confirmed / mismatch / NoOp reconcile paths |
-| `fuse_net_b74` (umbrella) | Transport, serializer, rollback, buffer, delta, interpolation |
+| `fuse_net_b74` (umbrella) | Transport, serializer, rollback, buffer, delta, interpolation, AOI |
 
 ---
 
 ## Gates (B7.4 deepen)
 
+- [x] Interest management AOI stubs (`InterestManager`, relevance radii, priority queue)
 - [x] Expanded input history ring (128 frames, predicted + confirmed)
 - [x] Reconcile stub (`reconcile_predicted_input`)
 - [x] Shared checksum helpers + tests
