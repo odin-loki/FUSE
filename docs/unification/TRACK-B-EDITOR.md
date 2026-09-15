@@ -1,6 +1,6 @@
 # Track B — Editor Panels (B6.2–B6.13)
 
-**Status:** B6.2 undo stack + B6.3–B6.5 core panel stubs + B6.6–B6.8 inspector/material/sculpt API stubs + B6.9–B6.12 asset/profiler/console/play-mode stubs landed; **B6.13** Phase 6 integration gate + checklist complete; **B6.2 deepen** — `CommandStack` `push`/undo/redo, coalescing, dirty tracking, `evictedCount`, full snapshot restore + `UndoStackSnapshot` metadata stub; **B6.4 deepen** — `GizmoSystem` ray axis/plane hit tests, local/world delta helpers, translate/rotate snap stubs, `CommandStack`/`EditorState` dirty marking; **B6.7 deepen** — material property bindings (`roughness`/`metallic`/`baseColor`/`shadingModel`), `editDirty`/`previewDirty` flags, `MaterialSystem` push/sync bridge tests  
+**Status:** B6.2 undo stack + B6.3–B6.5 core panel stubs + B6.6–B6.8 inspector/material/sculpt API stubs + B6.9–B6.12 asset/profiler/console/play-mode stubs landed; **B6.13** Phase 6 integration gate + checklist complete; **B6.2 deepen** — `CommandStack` `push`/undo/redo, coalescing, dirty tracking, `evictedCount`, full snapshot restore + `UndoStackSnapshot` metadata stub; **B6.4 deepen** — `GizmoSystem` ray axis/plane hit tests, local/world delta helpers, translate/rotate snap stubs, `CommandStack`/`EditorState` dirty marking; **B6.7 deepen** — material property bindings (`roughness`/`metallic`/`baseColor`/`shadingModel`), `editDirty`/`previewDirty` flags, `MaterialSystem` push/sync bridge tests; **B6.7 deepen follow-up** — `MaterialPropertyBinding` bind/get/set stubs, per-property dirty coalesce, `needsPanelRefresh`/`refreshPanel` helpers  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B6.2–B6.13  
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §2.1–§4, [U6-EDITOR.md](./U6-EDITOR.md)
 
@@ -19,6 +19,7 @@
 | `EditorState` / `EditorScene` | `editor_state.hpp`, `editor_scene.hpp` | Selection + ECS registry for panel tests |
 | `PropertyInspector` | `property_inspector.hpp` | B6.6 — component section model + live ECS edits |
 | `MaterialEditorPanel` | `material_editor_panel.hpp` | B6.7 — catalog/selection + `MaterialEditState`; B6.7 deepen — property bindings + dirty flags |
+| `MaterialPropertyBinding` | `material_property_binding.hpp` | B6.7 deepen follow-up — bind/get/set stubs, per-property dirty coalesce, panel refresh helpers |
 | `SdfSculptPanel` | `sdf_sculpt_panel.hpp` | B6.8 — brush state + stroke spacing / symmetry |
 | `AssetBrowser` | `asset_browser.hpp` | B6.9 — filesystem scan + type classification + search filter |
 | `ProfilerPanel` | `profiler_panel.hpp` | B6.10 — 256-frame ring buffer of `FrameProfileData` |
@@ -98,7 +99,7 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 |------------|--------|-----------|
 | `fuse_editor_command_queue` | `fuse_editor_api_tests` | UI→game command queue |
 | `fuse_editor_host` | `fuse_editor_host_tests` | `EditorHost::gameTick()` drain |
-| `fuse_editor_panels` | `fuse_editor_panels_tests` | B6.6–B6.8 inspector/material/sculpt API; B6.7 deepen property bindings + dirty flags |
+| `fuse_editor_panels` | `fuse_editor_panels_tests` | B6.6–B6.8 inspector/material/sculpt API; B6.7 deepen property bindings + dirty flags; B6.7 deepen follow-up bind/get/set + dirty coalesce + unbound |
 | `fuse_editor_command_stack` | `fuse_editor_command_stack_tests` | B6.2 `UndoStack` LIFO, merge, rename/reparent, `MAX_HISTORY`, 100-step chain, empty-stack no-ops, snapshot metadata; `CommandStack` push/undo/redo, coalescing, redo-branch clear, dirty tracking, snapshot restore, `evictedCount` |
 | `fuse_editor_hierarchy_model` | `fuse_editor_hierarchy_model_tests` | B6.5 flatten, search, reparent + undo |
 | `fuse_editor_panels_b69_b612` | `fuse_editor_panels_b69_b612_tests` | B6.9–B6.12 asset/profiler/console/play-mode stubs |
@@ -177,6 +178,13 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 - **Property bindings** — `setRoughness`, `setMetallic`, `setBaseColor`, `setShadingModel` post `material.*` `SetProperty` envelopes with material-id `target` for slider coalescing.
 - **Dirty flags** — `previewDirty` marks preview RT stale; `editDirty` tracks unsaved authoring edits until `pushToMaterialSystem` or `syncFromMaterialSystem`.
 - **Tests** — `fuse_editor_panels` covers bindings, coalescing, dirty flags, and optional `MaterialSystem` round-trip when Vulkan is enabled.
+
+#### B6.7 deepen follow-up — `MaterialPropertyBinding`
+
+- **`MaterialPropertyBinding`** — `bind`/`unbind` to a `MaterialEditState`; per-property `get*`/`set*` stubs post the same `material.*` envelopes as the panel helpers.
+- **Dirty coalesce** — repeat edits to the same property increment `coalescedDirtyCount()` while a single property dirty bit stays set until `markPanelRefreshed()`.
+- **Panel refresh** — `needsPanelRefresh()` / `refreshPanel()` on `MaterialEditorPanel`; unbound get/set returns false without posting commands.
+- **Tests** — `fuse_editor_panels` adds bind/get/set round-trip, dirty coalesce, and unbound coverage.
 
 ### B6.8 — SDF Sculpt Panel
 

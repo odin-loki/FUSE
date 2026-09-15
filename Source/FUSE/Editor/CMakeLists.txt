@@ -9,6 +9,7 @@ set(FUSE_EDITOR_API_SOURCES
     src/gizmo_system.cpp
     src/hierarchy_model.cpp
     src/material_editor_panel.cpp
+    src/material_property_binding.cpp
     src/play_mode_controller.cpp
     src/play_session.cpp
     src/profiler_panel.cpp
@@ -30,6 +31,7 @@ set(FUSE_EDITOR_API_HEADERS
     include/fuse/editor/gizmo_system.hpp
     include/fuse/editor/hierarchy_model.hpp
     include/fuse/editor/material_editor_panel.hpp
+    include/fuse/editor/material_property_binding.hpp
     include/fuse/editor/play_mode_controller.hpp
     include/fuse/editor/play_session.hpp
     include/fuse/editor/profiler_panel.hpp
