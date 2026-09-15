@@ -2,7 +2,7 @@
 
 **Phase:** U4 (WP-06)  
 **Date:** 2026-09-15  
-**Status:** Scaffolding landed — software placeholder renderer; real GL/Vulkan deferred to Track B
+**Status:** Frame barrier + JobScheduler cull orchestration deepened — software placeholder renderer; real GL/Vulkan deferred to Track B
 
 ---
 
@@ -17,7 +17,7 @@
 | `HybridComposer` | `Source/FUSE/Hybrid/` | 3D clear → 2D sprites → UI overlay order |
 | `PlaceholderRenderer` | `Source/FUSE/Hybrid/` | 320×240 RGBA software buffer (honest stub) |
 | `demo_hybrid_hud` | `Source/FUSE/Apps/HybridHud/` | 60-frame spin demo |
-| Tests | `fuse_hybrid_tests`, `fuse_world2d_tests` | MT snapshot cull + compositor flags |
+| Tests | `fuse_hybrid_tests`, `fuse_world2d_tests`, `fuse_core_frame_barrier_tests` | MT snapshot cull, compositor flags, `FrameBarrier` unit + hybrid integration |
 
 ---
 
@@ -26,8 +26,13 @@
 ```
 game thread:
   1. HybridComposer::tick(ctx)
-       - World3D::tick  → build snapshot → parallel_for cull
-       - World2D::tick  → build snapshot → parallel_for cull
+       - FrameBarrier::beginTick(frameIndex)
+       - World3D::tickGameThread  → physics + immutable snapshot (serial)
+       - World2D::tickGameThread  → physics + immutable snapshot (serial)
+       - JobScheduler::submit per enabled dimension:
+           World3D::runParallelCull  → internal parallel_for over snapshot
+           World2D::runParallelCull  → internal parallel_for over snapshot
+       - JobCounter::wait()  (dimension culls may overlap)
        - FrameBarrier::signalTickJobsComplete()
   2. HybridComposer::render(ctx)  [render thread only]
        - 3D clear colour (PlaceholderRenderer)
@@ -36,8 +41,10 @@ game thread:
 ```
 
 **Threading rules enforced:**
-- Scene graph mutation stays on the game thread (`World2D::addSprite`, etc.).
+- Scene graph mutation stays on the game thread (`World2D::addSprite`, `tickGameThread`, etc.).
+- `HybridComposer::tick` forks dimension cull jobs via `JobScheduler::submit`; each world's `runParallelCull` uses `jobs::parallel_for` over its snapshot only.
 - Workers read `SceneSnapshot2D` / `SceneSnapshot3D` only — no raw `SceneObject*` in `parallel_for` bodies.
+- `FrameBarrier::signalTickJobsComplete()` runs only after the outer `JobCounter` join (all dimension culls finished).
 - GPU touch gated by `fuse::platform::isRenderThread()` (registered at `fuse::core::initialize()`).
 
 ---
@@ -80,11 +87,11 @@ ctest --test-dir build
 | `IDimension` / `World2D` / `World3D` / `HybridComposer` headers stable for modules | ✅ |
 | Demo: empty 3D clear + spinning 2D sprite in one process | ✅ (`demo_hybrid_hud`, software renderer) |
 | Dimension enable/disable from project flags | ✅ |
-| `parallel_for` cull stub | ✅ |
-| Frame barrier between tick and render | ✅ |
+| `parallel_for` cull stub (per-world + composer JobScheduler fork) | ✅ |
+| Frame barrier between tick and render | ✅ (`fuse_core_frame_barrier_tests`, hybrid integration) |
 | `renderThread()` ownership honoured | ✅ |
 | No cross-thread raw `SceneObject*` in cull path | ✅ (tests) |
-| TSan clean on cull path | ⏳ nightly job not wired yet |
+| TSan clean on cull path | ⏳ `fuse-tsan-nightly` workflow (cull + barrier tests included) |
 | Real GLES/Vulkan present to window/swapchain | ❌ Track B RHI |
 | Legacy T3D/T2D gfx backends wired | ❌ strangler phase |
 | HDR / tonemap shared pass | ❌ Track B |

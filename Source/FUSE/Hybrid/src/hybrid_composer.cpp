@@ -1,5 +1,7 @@
 #include <fuse/hybrid/hybrid_composer.hpp>
 
+#include <fuse/jobs/job_counter.hpp>
+#include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/log/logger.hpp>
 #include <fuse/platform/gl_context.hpp>
 #include <fuse/platform/thread.hpp>
@@ -80,13 +82,34 @@ void HybridComposer::recordSprite2D(float x, float y, float rotation, u8 r, u8 g
 void HybridComposer::tick(frame::FrameCtx& ctx) {
     m_barrier.beginTick(ctx.frameIndex);
 
+    // Game-thread snapshot build — scene mutation and snapshot publish stay serial.
     if (m_world3D && m_flags.enable3D) {
-        m_world3D->tick(ctx);
+        m_world3D->tickGameThread(ctx);
     }
     if (m_world2D && m_flags.enable2D) {
-        m_world2D->tick(ctx);
+        m_world2D->tickGameThread(ctx);
     }
 
+    // Fork dimension cull jobs via JobScheduler; each world uses parallel_for internally.
+    jobs::JobCounter cullJobs(0);
+    auto& scheduler = jobs::JobScheduler::instance();
+
+    if (m_world3D && m_flags.enable3D) {
+        cullJobs.add(1);
+        scheduler.submit([this, &cullJobs]() {
+            m_world3D->runParallelCull();
+            cullJobs.signal();
+        });
+    }
+    if (m_world2D && m_flags.enable2D) {
+        cullJobs.add(1);
+        scheduler.submit([this, &cullJobs]() {
+            m_world2D->runParallelCull();
+            cullJobs.signal();
+        });
+    }
+
+    cullJobs.wait();
     m_barrier.signalTickJobsComplete();
     m_barrier.waitForTickComplete();
     ++m_frameCount;

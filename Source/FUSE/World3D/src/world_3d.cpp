@@ -105,7 +105,7 @@ void World3D::runParallelCull() {
     m_snapshot.setVisibleCount(visible);
 }
 
-void World3D::tick(frame::FrameCtx& ctx) {
+void World3D::tickGameThread(frame::FrameCtx& ctx) {
     if (!m_enabled) {
         return;
     }
@@ -117,6 +117,10 @@ void World3D::tick(frame::FrameCtx& ctx) {
     }
 
     buildSnapshot();
+}
+
+void World3D::tick(frame::FrameCtx& ctx) {
+    tickGameThread(ctx);
     runParallelCull();
 }
 
