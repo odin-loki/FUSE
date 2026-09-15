@@ -32,6 +32,15 @@ struct SSAOParams {
     f32 strength = 1.5f;
     f32 max_radius_px = 64.f;
     u64 frame_seed = 0;
+
+    /// Cross-bilateral blur (P5 §5.7 `hbao_blur_kernel`).
+    bool enable_blur = true;
+    f32 blur_depth_threshold = 0.001f;
+    f32 blur_normal_threshold = 0.95f;
+
+    /// Contact-aware AO shaping — boosts occlusion when depth/normal agree (concave contact).
+    f32 contact_depth_scale = 0.05f;
+    f32 contact_normal_power = 2.f;
 };
 
 /// Screen-space reflections — P5 §5.7.
@@ -55,6 +64,12 @@ struct SSRParams {
     f32 max_distance = 20.f;
     f32 fade_screen_edge = 0.1f;
     bool use_hiz = true;
+
+    /// Contact hardening — sharpens reflections as the hit distance shrinks.
+    bool contact_hardening = true;
+    f32 contact_distance = 0.5f;
+    f32 contact_roughness_floor = 0.02f;
+    f32 contact_harden_exponent = 2.f;
 };
 
 /// Screen-space global illumination stub — reserved for B5.7+ quality tier.

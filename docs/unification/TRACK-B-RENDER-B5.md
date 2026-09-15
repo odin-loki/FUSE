@@ -163,13 +163,13 @@ SDF soft shadows and deferred shading sampling deferred to B2.6 interop + B5.4 C
 
 ## B5.7 — Screen-Space Effects (CUDA)
 
-**Status:** SSAO / SSR / SSGI API + job wiring landed in `fuse_compute`; full kernels and G-buffer interop deferred.
+**Status:** SSAO / SSR / SSGI API + job wiring landed in `fuse_compute`; B5.7 follow-up expanded stub params, contact-harden helpers, and CPU validation tests. Full kernels and G-buffer interop deferred.
 
-See [B5.7-SCREEN-SPACE-EFFECTS.md](./B5.7-SCREEN-SPACE-EFFECTS.md) for component table, backend modes, and deferred pipeline slot (`DeferredPassId::ScreenSpaceAo`).
+See [B5.7-SCREEN-SPACE-EFFECTS.md](./B5.7-SCREEN-SPACE-EFFECTS.md) for component table, backend modes, contact helpers, and deferred pipeline slot (`DeferredPassId::ScreenSpaceAo`).
 
 | Test | Validates |
 |------|-----------|
-| `fuse_screen_space_effects_stub` | CPU reference samples, launches, `submit_*_job` counter signal |
+| `fuse_screen_space_effects_stub` | CPU reference samples, blur/contact helpers, param validation, launches, `submit_*_job` counter signal |
 
 ---
 
@@ -407,7 +407,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_screen_space_effects'
 - [ ] Wire `DeferredRenderer` into `RhiContext::submitFrame` (replace hybrid placeholder incrementally)
 - [ ] B5.4 follow-up: CUDA cluster AABB build + deferred shade kernels (CPU light-grid rebuild stub landed)
 - [ ] B5.5 follow-up: SDF soft shadows in `fuse_compute` (CSM split + light-space AABB stubs landed)
-- [ ] B5.7 follow-up: G-buffer `cudaInterop` surface import via B2.6
+- [ ] B5.7 follow-up: G-buffer `cudaInterop` surface import via B2.6 (stub params + contact-harden CPU helpers landed)
 - [ ] B5.10 follow-up: DOF / motion blur / film grain GPU shader chain; CUDA histogram auto-exposure
 - [ ] B5.11 follow-up: Full volumetric fog CUDA kernel + lens flare GPU composite
 - [ ] Scene `SceneData` → deferred G-buffer draw list handoff (B3 → B5 bridge)

@@ -5,6 +5,7 @@ set(FUSE_COMPUTE_PUBLIC_HEADERS
     include/fuse/compute/ray_march_job.hpp
     include/fuse/compute/screen_space_effects.hpp
     include/fuse/compute/screen_space_effects_job.hpp
+    include/fuse/compute/screen_space_contact.hpp
 )
 
 set(FUSE_COMPUTE_SOURCES
@@ -12,6 +13,7 @@ set(FUSE_COMPUTE_SOURCES
     src/ray_march_host.cpp
     src/ray_march_job.cpp
     src/screen_space_effects_cpu.cpp
+    src/screen_space_contact.cpp
     src/screen_space_effects_host.cpp
     src/screen_space_effects_job.cpp
 )

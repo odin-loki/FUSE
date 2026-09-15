@@ -1,4 +1,8 @@
 #include <fuse/compute/screen_space_effects.hpp>
+#include <fuse/compute/screen_space_contact.hpp>
+
+#include <algorithm>
+#include <cmath>
 
 namespace fuse::compute {
 
@@ -21,8 +25,10 @@ f32 ssao_center_sample(const SSAOParams& params) {
         return 0.f;
     }
 
-    // Flat reference scene: full visibility with strength shaping only.
-    return clamp01(1.f / params.strength);
+    // Flat reference scene with contact shaping at the center tap.
+    const f32 baseVisibility = clamp01(1.f / params.strength);
+    const f32 contactWeight = ssao_contact_ao_weight(0.f, 1.f, params);
+    return clamp01(baseVisibility * contactWeight);
 }
 
 f32 ssr_center_sample(const SSRParams& params) {
@@ -30,9 +36,12 @@ f32 ssr_center_sample(const SSRParams& params) {
         return 0.f;
     }
 
-    // Stub path reports no screen-space hit.
+    // Center pixel: no ray hit, but report edge fade and contact-hardening readiness.
+    const f32 edgeFade = ssr_screen_edge_fade(0.5f, 0.5f, params);
+    const f32 hardenedRoughness = ssr_contact_harden_roughness(params.max_distance, 0.5f, params);
     (void)params.max_steps;
-    return 0.f;
+    (void)params.use_hiz;
+    return clamp01(edgeFade * (1.f - hardenedRoughness));
 }
 
 f32 ssgi_center_sample(const SSGIParams& params) {
@@ -46,13 +55,11 @@ f32 ssgi_center_sample(const SSGIParams& params) {
 }
 
 bool launch_ssao_cpu(const SSAOParams& params) {
-    (void)params;
-    return true;
+    return validate_ssao_params(params);
 }
 
 bool launch_ssr_cpu(const SSRParams& params) {
-    (void)params;
-    return true;
+    return validate_ssr_params(params);
 }
 
 bool launch_ssgi_cpu(const SSGIParams& params) {
