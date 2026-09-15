@@ -19,6 +19,10 @@ struct PairBufferSoA {
     u32 droppedCount = 0;
 
     bool isEmpty() const { return activeCount == 0u; }
+    bool hasValidPairs() const { return activeCount > 0u; }
+    /// True when both dense and slot storage are empty (safe to skip SoA scans).
+    bool canSkipSoAIteration() const { return activeCount == 0u && pairSlotCount == 0u; }
+    bool slotIsValid(u32 slot) const;
 
     void reserve(u32 capacity);
     void setMaxCapacity(u32 capacity);
