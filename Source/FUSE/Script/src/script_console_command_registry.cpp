@@ -2,6 +2,7 @@
 
 #include <fuse/script/script_console.hpp>
 
+#include <algorithm>
 #include <sstream>
 
 namespace fuse::script {
@@ -25,12 +26,7 @@ bool ScriptConsoleCommandRegistry::register_custom(const char* name, CommandHand
         return false;
     }
 
-    const std::string key(name);
-    if (m_builtInHandlers.find(key) != m_builtInHandlers.end()) {
-        return false;
-    }
-
-    m_customHandlers[key] = std::move(handler);
+    m_customHandlers[std::string(name)] = std::move(handler);
     return true;
 }
 
@@ -61,17 +57,46 @@ ScriptConsoleCommandResult ScriptConsoleCommandRegistry::dispatch(const char* na
     return {ScriptConsoleCommandStatus::UnknownCommand, "unknown command: " + key};
 }
 
+bool ScriptConsoleCommandRegistry::has_command(const char* name) const {
+    if (name == nullptr || name[0] == '\0') {
+        return false;
+    }
+
+    const std::string key(name);
+    return m_customHandlers.find(key) != m_customHandlers.end() ||
+           m_builtInHandlers.find(key) != m_builtInHandlers.end();
+}
+
+bool ScriptConsoleCommandRegistry::is_built_in(const char* name) const {
+    if (name == nullptr || name[0] == '\0') {
+        return false;
+    }
+
+    return m_builtInHandlers.find(std::string(name)) != m_builtInHandlers.end();
+}
+
+bool ScriptConsoleCommandRegistry::is_custom(const char* name) const {
+    if (name == nullptr || name[0] == '\0') {
+        return false;
+    }
+
+    return m_customHandlers.find(std::string(name)) != m_customHandlers.end();
+}
+
 std::vector<std::string> ScriptConsoleCommandRegistry::command_names() const {
     std::vector<std::string> names;
     names.reserve(m_builtInHandlers.size() + m_customHandlers.size());
 
     for (const auto& entry : m_builtInHandlers) {
-        names.push_back(entry.first);
+        if (m_customHandlers.find(entry.first) == m_customHandlers.end()) {
+            names.push_back(entry.first);
+        }
     }
     for (const auto& entry : m_customHandlers) {
         names.push_back(entry.first);
     }
 
+    std::sort(names.begin(), names.end());
     return names;
 }
 

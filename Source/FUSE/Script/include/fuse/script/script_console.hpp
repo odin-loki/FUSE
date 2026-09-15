@@ -42,6 +42,8 @@ public:
 
     bool register_command(const char* name, ScriptConsoleCommandRegistry::CommandHandler handler);
     bool unregister_command(const char* name);
+    [[nodiscard]] bool has_command(const char* name) const { return m_commands.has_command(name); }
+    [[nodiscard]] bool is_built_in_command(const char* name) const { return m_commands.is_built_in(name); }
     [[nodiscard]] usize built_in_command_count() const { return m_commands.built_in_count(); }
     [[nodiscard]] usize custom_command_count() const { return m_commands.custom_count(); }
 

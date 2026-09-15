@@ -18,6 +18,7 @@ public:
     [[nodiscard]] const std::string& at(u32 index) const;
 
     void push(const char* line);
+    void clear();
 
     /// Navigate history (`previous=true` recalls older entries).
     [[nodiscard]] const std::string& recall(bool previous);

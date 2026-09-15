@@ -1,5 +1,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/script/script_console.hpp>
+#include <fuse/script/script_console_command_registry.hpp>
+#include <fuse/script/script_console_history.hpp>
 #include <fuse/script/script_host.hpp>
 
 #include <cstdio>
@@ -128,6 +130,110 @@ void testHostDispatchLoadAndRun() {
     host.shutdown();
 }
 
+void testCommandRegistryDirect() {
+    fuse::script::ScriptConsole console;
+    fuse::script::ScriptConsoleCommandRegistry registry;
+    int invoke_count = 0;
+
+    expectTrue(!registry.register_built_in(nullptr, {}), "built-in rejects null name");
+    expectTrue(!registry.register_custom("noop", {}), "custom rejects null handler");
+
+    expectTrue(registry.register_custom("probe", [&](fuse::script::ScriptConsole& /*repl*/,
+                                                    const char* /*args*/) {
+                   ++invoke_count;
+                   return fuse::script::ScriptConsoleCommandResult{
+                       fuse::script::ScriptConsoleCommandStatus::Ok, "probe-ok"};
+               }),
+               "register custom command on registry");
+
+    expectTrue(registry.has_command("probe"), "registry has custom command");
+    expectTrue(registry.is_custom("probe"), "probe is custom");
+    expectTrue(!registry.is_built_in("probe"), "probe is not built-in");
+    expectTrue(!registry.has_command("missing"), "registry lacks unknown command");
+
+    const auto dispatched = registry.dispatch("probe", console, "");
+    expectTrue(dispatched.ok(), "registry dispatch succeeds");
+    expectTrue(dispatched.output == "probe-ok", "registry dispatch returns handler output");
+    expectTrue(invoke_count == 1, "registry dispatch invokes handler");
+
+    const auto unknown = registry.dispatch("missing", console, "");
+    expectTrue(unknown.status == fuse::script::ScriptConsoleCommandStatus::UnknownCommand,
+               "registry unknown command status");
+    expectTrue(unknown.output.find("unknown command:") != std::string::npos,
+               "registry unknown command error string");
+
+    const auto empty = registry.dispatch("", console, "");
+    expectTrue(empty.status == fuse::script::ScriptConsoleCommandStatus::InvalidArgument,
+               "registry rejects empty command name");
+}
+
+void testHistoryBufferRingWrapDirect() {
+    fuse::script::ScriptConsoleHistoryBuffer history;
+    history.setCapacity(3);
+
+    history.push("alpha");
+    history.push("beta");
+    history.push("gamma");
+    expectTrue(history.count() == 3u, "history reaches capacity");
+    expectTrue(history.at(0) == "alpha", "oldest entry at index 0");
+
+    history.push("delta");
+    expectTrue(history.count() == 3u, "history stays capped after wrap");
+    expectTrue(history.at(0) == "beta", "wrap evicts oldest entry");
+    expectTrue(history.at(2) == "delta", "newest entry retained after wrap");
+
+    history.push("epsilon");
+    expectTrue(history.at(0) == "gamma", "second wrap evicts prior oldest");
+    expectTrue(history.at(2) == "epsilon", "second wrap retains newest");
+
+    history.clear();
+    expectTrue(history.count() == 0u, "history clear resets count");
+    expectTrue(history.recall(true).empty(), "recall on empty history returns empty");
+
+    history.setCapacity(1);
+    history.push("solo");
+    history.push("next");
+    expectTrue(history.count() == 1u, "capacity-one ring keeps one entry");
+    expectTrue(history.at(0) == "next", "capacity-one ring retains newest");
+}
+
+void testCustomCommandShadowsBuiltIn() {
+    fuse::script::ScriptConsole console;
+    expectTrue(console.is_built_in_command("echo"), "echo is a built-in");
+
+    expectTrue(console.register_command("echo", [](fuse::script::ScriptConsole& /*repl*/,
+                                                   const char* /*args*/) {
+                   return fuse::script::ScriptConsoleCommandResult{
+                       fuse::script::ScriptConsoleCommandStatus::Ok, "shadowed"};
+               }),
+               "custom command can shadow built-in name");
+
+    expectTrue(console.has_command("echo"), "shadowed echo is registered");
+    expectTrue(console.is_built_in_command("echo"), "built-in echo metadata remains");
+    expectTrue(console.custom_command_count() >= 1u, "custom shadow increments custom count");
+
+    const auto shadowed = console.execute("echo original");
+    expectTrue(shadowed.ok(), "shadowed echo dispatch succeeds");
+    expectTrue(shadowed.output == "shadowed", "custom handler shadows built-in echo");
+
+    expectTrue(console.unregister_command("echo"), "unregister shadow restores built-in path");
+    const auto restored = console.execute("echo restored");
+    expectTrue(restored.ok(), "built-in echo restored after unregister");
+    expectTrue(restored.output == "restored", "built-in echo returns args again");
+}
+
+void testHistoryClearStub() {
+    fuse::script::ScriptConsole console;
+    console.execute("echo one");
+    console.execute("echo two");
+    expectTrue(console.historyCount() == 2u, "history has entries before clear");
+
+    const auto cleared = console.execute("history clear");
+    expectTrue(cleared.ok(), "history clear stub succeeds");
+    expectTrue(cleared.output == "history cleared", "history clear stub message");
+    expectTrue(console.historyCount() == 0u, "history clear empties buffer");
+}
+
 void testCustomCommandDispatch() {
     fuse::script::ScriptConsole console;
     int invoke_count = 0;
@@ -160,7 +266,11 @@ void testCustomCommandDispatch() {
 
 void run_script_console_tests() {
     testBuiltInCommandDispatch();
+    testCommandRegistryDirect();
+    testHistoryBufferRingWrapDirect();
     testHistoryBufferAndNavigation();
+    testHistoryClearStub();
     testHostDispatchLoadAndRun();
+    testCustomCommandShadowsBuiltIn();
     testCustomCommandDispatch();
 }

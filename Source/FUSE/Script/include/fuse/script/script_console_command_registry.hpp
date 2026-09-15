@@ -21,6 +21,10 @@ public:
     [[nodiscard]] ScriptConsoleCommandResult dispatch(const char* name, ScriptConsole& console,
                                                       const char* args) const;
 
+    [[nodiscard]] bool has_command(const char* name) const;
+    [[nodiscard]] bool is_built_in(const char* name) const;
+    [[nodiscard]] bool is_custom(const char* name) const;
+
     [[nodiscard]] usize built_in_count() const { return m_builtInHandlers.size(); }
     [[nodiscard]] usize custom_count() const { return m_customHandlers.size(); }
     [[nodiscard]] std::vector<std::string> command_names() const;
