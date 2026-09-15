@@ -65,6 +65,18 @@ enum class CellResidencyState : u8 {
     return state == CellResidencyState::QueuedLoad || state == CellResidencyState::Loading;
 }
 
+[[nodiscard]] inline bool is_unloading_state(CellResidencyState state) {
+    return state == CellResidencyState::QueuedUnload || state == CellResidencyState::Unloading;
+}
+
+[[nodiscard]] inline bool is_transitional_state(CellResidencyState state) {
+    return is_loading_state(state) || is_unloading_state(state);
+}
+
+[[nodiscard]] inline bool is_queued_state(CellResidencyState state) {
+    return state == CellResidencyState::QueuedLoad || state == CellResidencyState::QueuedUnload;
+}
+
 /// One spatial cell in the world partition grid.
 struct WorldCell {
     GridCoord coord{};

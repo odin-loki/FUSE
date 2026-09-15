@@ -1,11 +1,16 @@
 #include <fuse/core/init.hpp>
+#include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/world_partition/grid_cell.hpp>
+#include <fuse/world_partition/streaming_request_queue.hpp>
 #include <fuse/world_partition/streaming_volume.hpp>
 #include <fuse/world_partition/world_partition.hpp>
 
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <thread>
 
 namespace {
 
@@ -25,6 +30,22 @@ void expectNear(fuse::f32 actual, fuse::f32 expected, fuse::f32 epsilon, const c
     }
 }
 
+void expectEq(fuse::u32 actual, fuse::u32 expected, const char* message) {
+    if (actual != expected) {
+        std::fprintf(stderr, "FAIL: %s (expected %u, got %u)\n", message, expected, actual);
+        ++g_failures;
+    }
+}
+
+template <typename Body>
+void withScheduler(fuse::u32 workers, Body&& body) {
+    auto& scheduler = fuse::jobs::JobScheduler::instance();
+    scheduler.shutdown();
+    scheduler.initialize(workers);
+    body();
+    scheduler.shutdown();
+}
+
 void testGridCoordHelpers() {
     const fuse::world_partition::GridCoord coord{2, -1};
     expectTrue(fuse::world_partition::grid_coord_key(coord) != 0u, "grid key is non-zero");
@@ -37,6 +58,22 @@ void testGridCoordHelpers() {
     const fuse::spatial::AABB bounds = fuse::world_partition::grid_cell_bounds({0, 0}, 256.f);
     expectNear(bounds.min.x, 0.f, 1e-4f, "cell min x");
     expectNear(bounds.max.x, 256.f, 1e-4f, "cell max x");
+}
+
+void testResidencyStateHelpers() {
+    using fuse::world_partition::CellResidencyState;
+    expectTrue(fuse::world_partition::is_loading_state(CellResidencyState::QueuedLoad),
+               "QueuedLoad is loading state");
+    expectTrue(fuse::world_partition::is_loading_state(CellResidencyState::Loading),
+               "Loading is loading state");
+    expectTrue(fuse::world_partition::is_unloading_state(CellResidencyState::QueuedUnload),
+               "QueuedUnload is unloading state");
+    expectTrue(fuse::world_partition::is_unloading_state(CellResidencyState::Unloading),
+               "Unloading is unloading state");
+    expectTrue(fuse::world_partition::is_transitional_state(CellResidencyState::Loading),
+               "Loading is transitional");
+    expectTrue(fuse::world_partition::is_queued_state(CellResidencyState::QueuedLoad),
+               "QueuedLoad is queued");
 }
 
 void testStreamingVolumeHysteresis() {
@@ -102,11 +139,15 @@ void testWorldPartitionStreamingUpdate() {
     desc.stream_in_distance = 400.f;
     desc.stream_out_distance = 700.f;
     desc.max_loaded_cells = 16;
+    desc.max_async_in_flight = 1;
     desc.async_loading = true;
     partition.init(desc);
 
     fuse::ecs::vec3 camera{128.f, 0.f, 128.f, 0.f};
-    partition.update(camera);
+    for (int frame = 0; frame < 32 && partition.loaded_cell_count() == 0u; ++frame) {
+        partition.update(camera);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
     expectTrue(partition.loaded_cell_count() >= 1u, "update loads cells near camera");
 
     const fuse::world_partition::GridCoord camera_cell =
@@ -122,14 +163,91 @@ void testWorldPartitionStreamingUpdate() {
     partition.destroy();
 }
 
+void testStreamingRequestQueueStub() {
+    withScheduler(1, [] {
+        fuse::world_partition::StreamingRequestQueue queue;
+        std::atomic<bool> worker_ran{false};
+
+        fuse::world_partition::StreamingRequest request{};
+        request.coord = {3, 4};
+        request.kind = fuse::world_partition::StreamingRequestKind::Load;
+        request.priority = 10.f;
+
+        const bool submitted = queue.submit(request, [&](fuse::world_partition::GridCoord coord,
+                                                         fuse::world_partition::StreamingRequestKind kind) {
+            worker_ran.store(coord.x == 3 && coord.y == 4 &&
+                             kind == fuse::world_partition::StreamingRequestKind::Load);
+            return true;
+        });
+        expectTrue(submitted, "queue submits to JobScheduler");
+
+        for (int attempt = 0; attempt < 100 && queue.completed_count() == 0u; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        std::vector<fuse::world_partition::CompletedStreamingRequest> completed;
+        expectEq(queue.drain_completed(completed), 1u, "drain returns completed request");
+        expectTrue(worker_ran.load(), "worker stub ran on scheduler thread");
+        expectTrue(completed[0].success, "completed request reports success");
+        expectEq(queue.in_flight_count(), 0u, "in-flight count returns to zero");
+    });
+}
+
+void testWorldPartitionAsyncResidency() {
+    withScheduler(1, [] {
+        fuse::world_partition::WorldPartition partition;
+        fuse::world_partition::WorldPartitionDesc desc{};
+        desc.async_loading = true;
+        desc.max_async_in_flight = 2;
+        desc.max_loaded_cells = 4;
+        partition.init(desc);
+
+        fuse::world_partition::CellLoadCallbacks callbacks{};
+        callbacks.on_load = on_test_load;
+        callbacks.on_unload = on_test_unload;
+        partition.set_callbacks(callbacks);
+
+        const fuse::world_partition::GridCoord origin{0, 0};
+        partition.force_load(origin);
+
+        expectTrue(partition.cell_residency(origin) == fuse::world_partition::CellResidencyState::Loading ||
+                       partition.cell_residency(origin) == fuse::world_partition::CellResidencyState::Resident,
+                   "force_load submits async work");
+
+        for (int frame = 0; frame < 64 && !partition.cell_loaded(origin); ++frame) {
+            partition.drain_completed_requests();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        expectTrue(partition.cell_loaded(origin), "async load completes after drain");
+        expectEq(partition.in_flight_request_count(), 0u, "no in-flight requests after completion");
+
+        partition.force_unload(origin);
+        for (int frame = 0; frame < 64 &&
+                            partition.cell_residency(origin) !=
+                                fuse::world_partition::CellResidencyState::Unloaded;
+             ++frame) {
+            partition.drain_completed_requests();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        expectTrue(partition.cell_residency(origin) == fuse::world_partition::CellResidencyState::Unloaded,
+                   "async unload returns to Unloaded");
+        partition.destroy();
+    });
+}
+
 } // namespace
 
 int main() {
     fuse::core::initialize();
     testGridCoordHelpers();
+    testResidencyStateHelpers();
     testStreamingVolumeHysteresis();
     testWorldPartitionLoadUnloadStubs();
     testWorldPartitionStreamingUpdate();
+    testStreamingRequestQueueStub();
+    testWorldPartitionAsyncResidency();
     fuse::core::shutdown();
 
     if (g_failures == 0) {
