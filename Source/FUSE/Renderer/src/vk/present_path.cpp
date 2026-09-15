@@ -2,6 +2,7 @@
 
 #include <fuse/renderer/vk/bootstrap.hpp>
 #include <fuse/renderer/vk/fence_wait.hpp>
+#include <fuse/renderer/vk/swapchain_util.hpp>
 
 namespace fuse::renderer {
 
@@ -27,6 +28,34 @@ void PresentPath::refreshDimensions() {
     m_status.headless = true;
     m_status.width = 0;
     m_status.height = 0;
+}
+
+bool PresentPath::canAcquire() const {
+    if (m_status.state != PresentPathState::FenceWaited) {
+        return false;
+    }
+
+    const VulkanSwapchain* swapchain = m_bootstrap.swapchain();
+    if (swapchain == nullptr) {
+        return m_status.headless;
+    }
+    return m_status.headless || isSwapchainPresentable(*swapchain);
+}
+
+bool PresentPath::canPresent() const {
+    if (m_status.state != PresentPathState::ImageAcquired &&
+        m_status.state != PresentPathState::ReadyToPresent) {
+        return false;
+    }
+
+    const VulkanSwapchain* swapchain = m_bootstrap.swapchain();
+    if (swapchain == nullptr) {
+        return m_status.headless;
+    }
+    if (isEmptyAcquireResult(m_status.acquiredImageIndex)) {
+        return m_status.headless || isSwapchainEmpty(*swapchain);
+    }
+    return isSwapchainPresentable(*swapchain);
 }
 
 bool PresentPath::processPendingResize() {
@@ -88,10 +117,13 @@ bool PresentPath::waitInFlightFence() {
 
     FrameManager* frameManager = m_bootstrap.frameManager();
     if (frameManager != nullptr && frameManager->isReady()) {
+        m_status.lastPendingFenceCount = countPendingInFlightFences(*frameManager);
         if (!waitCurrentInFlightFence(*frameManager)) {
             m_status.message = "In-flight fence wait failed";
             return false;
         }
+    } else {
+        m_status.lastPendingFenceCount = 0;
     }
 
     ++m_status.fenceWaitCount;
@@ -120,7 +152,8 @@ u32 PresentPath::acquireImage() {
     m_status.acquireAttempted = true;
     m_status.acquiredImageIndex = imageIndex;
     m_status.state = PresentPathState::ImageAcquired;
-    if (imageIndex == UINT32_MAX) {
+    if (isEmptyAcquireResult(imageIndex)) {
+        ++m_status.emptyAcquireCount;
         m_status.message = m_status.headless ? "Headless acquire stub (no swapchain image)"
                                              : "Swapchain acquire returned no image";
     } else {
@@ -151,12 +184,17 @@ bool PresentPath::presentImage() {
     VulkanSwapchain* swapchain = m_bootstrap.swapchain();
 
     bool presented = false;
-    if (swapchain != nullptr && swapchain->isReady() && frameManager != nullptr && frameManager->isReady() &&
-        m_status.acquiredImageIndex != UINT32_MAX) {
+    const bool useEmptyPresentStub =
+        swapchain == nullptr || isSwapchainEmpty(*swapchain) ||
+        isEmptyAcquireResult(m_status.acquiredImageIndex) || frameManager == nullptr ||
+        !frameManager->isReady();
+
+    if (useEmptyPresentStub) {
+        presented = true;
+        ++m_status.emptyPresentCount;
+    } else {
         const FrameSyncData& slot = frameManager->current();
         presented = swapchain->present(slot.renderFinished, m_status.acquiredImageIndex);
-    } else {
-        presented = true;
     }
 
     m_status.presentAttempted = true;
@@ -224,6 +262,16 @@ void PresentPath::setVsyncMode(VsyncMode mode) {
 }
 
 void PresentPath::requestResize(u32 width, u32 height) {
+    if (!isValidSwapchainExtent(width, height)) {
+        ++m_status.resizeRejectedCount;
+        m_status.message = "Resize rejected — extent must be non-zero";
+        return;
+    }
+
+    if (m_status.resizePending) {
+        ++m_status.resizeCoalesceCount;
+    }
+
     m_status.pendingResizeWidth = width;
     m_status.pendingResizeHeight = height;
     m_status.resizePending = true;

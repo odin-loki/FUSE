@@ -40,6 +40,11 @@ struct PresentPathStatus {
     u64 presentedFrames = 0;
     u32 fenceWaitCount = 0;
     u32 swapchainRecreateCount = 0;
+    u32 resizeCoalesceCount = 0;
+    u32 resizeRejectedCount = 0;
+    u32 emptyAcquireCount = 0;
+    u32 emptyPresentCount = 0;
+    u32 lastPendingFenceCount = 0;
     std::string message;
 };
 
@@ -50,6 +55,12 @@ public:
 
     const PresentPathStatus& status() const { return m_status; }
     PresentPathState state() const { return m_status.state; }
+
+    /// Pre-flight: fence waited and swapchain can acquire (or headless stub path).
+    bool canAcquire() const;
+
+    /// Pre-flight: image acquired (or headless stub) and ready to present.
+    bool canPresent() const;
 
     /// Wait on the current slot in-flight fence before acquire (stub-safe when headless).
     bool waitInFlightFence();

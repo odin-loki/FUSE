@@ -3,6 +3,7 @@
 #include <fuse/renderer/vk/frame.hpp>
 #include <fuse/renderer/vk/surface.hpp>
 #include <fuse/renderer/vk/swapchain.hpp>
+#include <fuse/renderer/vk/swapchain_util.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -14,6 +15,13 @@ int g_failures = 0;
 void expectTrue(bool condition, const char* message) {
     if (!condition) {
         std::fprintf(stderr, "FAIL: %s\n", message);
+        ++g_failures;
+    }
+}
+
+void expectEq(fuse::u32 actual, fuse::u32 expected, const char* message) {
+    if (actual != expected) {
+        std::fprintf(stderr, "FAIL: %s (got %u, expected %u)\n", message, actual, expected);
         ++g_failures;
     }
 }
@@ -118,6 +126,103 @@ void testExternalSurfaceWithoutHandleFailsGracefully() {
 #endif
 }
 
+void testAcquireOnEmptySwapchain() {
+    fuse::renderer::VulkanInstanceDesc instanceDesc{};
+    instanceDesc.enableValidation = false;
+
+    auto instance = fuse::renderer::VulkanInstance::create(instanceDesc);
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!instance->isValid()) {
+        return;
+    }
+
+    auto device = fuse::renderer::VulkanDevice::create(*instance);
+    if (!device->isValid()) {
+        return;
+    }
+
+    fuse::renderer::SwapchainDesc swapDesc{};
+    swapDesc.surface.kind = fuse::renderer::SurfaceKind::Headless;
+    swapDesc.width = 800;
+    swapDesc.height = 600;
+
+    auto swapchain = fuse::renderer::VulkanSwapchain::create(*device, swapDesc);
+    expectTrue(swapchain != nullptr, "headless swapchain allocated");
+    expectTrue(swapchain->isEmpty(), "headless swapchain is empty");
+    expectTrue(!swapchain->hasImages(), "headless swapchain has no images");
+    expectTrue(!fuse::renderer::isSwapchainPresentable(*swapchain),
+               "empty swapchain is not presentable");
+    expectTrue(fuse::renderer::isSwapchainEmpty(*swapchain), "util agrees swapchain is empty");
+
+    expectEq(swapchain->acquireNextImage(nullptr), UINT32_MAX, "acquire on empty swapchain returns sentinel");
+    expectTrue(!swapchain->present(nullptr, UINT32_MAX), "present with empty index rejected");
+#else
+    (void)instance;
+#endif
+}
+
+void testPresentEmptyImageIndex() {
+    fuse::renderer::VulkanInstanceDesc instanceDesc{};
+    instanceDesc.enableValidation = false;
+
+    auto instance = fuse::renderer::VulkanInstance::create(instanceDesc);
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!instance->isValid()) {
+        return;
+    }
+
+    auto device = fuse::renderer::VulkanDevice::create(*instance);
+    if (!device->isValid()) {
+        return;
+    }
+
+    fuse::renderer::SwapchainDesc swapDesc{};
+    swapDesc.surface.kind = fuse::renderer::SurfaceKind::External;
+    swapDesc.surface.nativeSurface = nullptr;
+    swapDesc.width = 800;
+    swapDesc.height = 600;
+
+    auto swapchain = fuse::renderer::VulkanSwapchain::create(*device, swapDesc);
+    expectTrue(swapchain != nullptr, "invalid-surface swapchain allocated");
+    expectTrue(swapchain->isEmpty(), "invalid surface yields empty swapchain");
+    expectTrue(fuse::renderer::isEmptyAcquireResult(UINT32_MAX), "UINT32_MAX is empty acquire sentinel");
+    expectTrue(!swapchain->present(nullptr, UINT32_MAX), "present with UINT32_MAX rejected on empty swapchain");
+#else
+    (void)instance;
+#endif
+}
+
+void testZeroExtentRebuildRejected() {
+    fuse::renderer::VulkanInstanceDesc instanceDesc{};
+    instanceDesc.enableValidation = false;
+
+    auto instance = fuse::renderer::VulkanInstance::create(instanceDesc);
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!instance->isValid()) {
+        return;
+    }
+
+    auto device = fuse::renderer::VulkanDevice::create(*instance);
+    if (!device->isValid()) {
+        return;
+    }
+
+    fuse::renderer::SwapchainDesc swapDesc{};
+    swapDesc.surface.kind = fuse::renderer::SurfaceKind::Headless;
+    swapDesc.width = 640;
+    swapDesc.height = 480;
+
+    auto swapchain = fuse::renderer::VulkanSwapchain::create(*device, swapDesc);
+    expectTrue(swapchain != nullptr, "headless swapchain allocated");
+    expectTrue(!swapchain->rebuild(*device, 0, 0), "zero extent rebuild rejected");
+    expectTrue(swapchain->info().width == 640u, "width unchanged after rejected rebuild");
+    expectTrue(!fuse::renderer::isValidSwapchainExtent(0, 720), "zero width extent invalid");
+    expectTrue(!fuse::renderer::isValidSwapchainExtent(1280, 0), "zero height extent invalid");
+#else
+    (void)instance;
+#endif
+}
+
 } // namespace
 
 int main() {
@@ -126,6 +231,9 @@ int main() {
     testHeadlessSwapchainRecordsDesc();
     testFrameRingAdvances();
     testExternalSurfaceWithoutHandleFailsGracefully();
+    testAcquireOnEmptySwapchain();
+    testPresentEmptyImageIndex();
+    testZeroExtentRebuildRejected();
 
     fuse::core::shutdown();
 
