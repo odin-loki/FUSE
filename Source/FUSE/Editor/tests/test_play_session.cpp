@@ -228,6 +228,116 @@ void testPlaySessionDirtyCoalesceAndClearsOnStop() {
     editorScene.destroy();
 }
 
+void testPlaySessionIdempotentStartStop() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    const fuse::ecs::EntityID entity = editorScene.registry().create();
+    editorScene.registry().add<fuse::ecs::Transform>(entity);
+
+    fuse::scene::Scene scene("IdempotentTest");
+    fuse::editor::EditorState state;
+    fuse::editor::PlaySession session;
+    fuse::editor::PlayModePhysicsState physics;
+
+    session.start(editorScene, scene, state, physics);
+    session.start(editorScene, scene, state, physics);
+    expectTrue(session.isPlaying(), "second start is a no-op while active");
+    expectTrue(session.sessionTickCount() == 0u, "idempotent start does not advance ticks");
+
+    session.stop(editorScene, scene, state, physics);
+    session.stop(editorScene, scene, state, physics);
+    expectTrue(!session.isActive(), "second stop is a no-op while stopped");
+    expectTrue(!state.playing, "idempotent stop leaves editor idle");
+
+    editorScene.destroy();
+}
+
+void testPlaySessionConsumeFixedSteps() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    const fuse::ecs::EntityID entity = editorScene.registry().create();
+    editorScene.registry().add<fuse::ecs::Transform>(entity);
+
+    fuse::scene::Scene scene("FixedStepTest");
+    fuse::editor::EditorState state;
+    fuse::editor::PlaySession session;
+    fuse::editor::PlayModePhysicsState physics;
+
+    constexpr float kFixedDt = 1.f / 60.f;
+
+    session.start(editorScene, scene, state, physics);
+    session.tick(kFixedDt * 0.5f, editorScene, physics);
+    expectTrue(session.consumeFixedSteps(kFixedDt, editorScene, physics) == 0u,
+               "fixed steps wait until accumulator reaches threshold");
+
+    session.tick(kFixedDt * 0.5f, editorScene, physics);
+    expectTrue(session.consumeFixedSteps(kFixedDt, editorScene, physics) == 1u,
+               "fixed steps drain one slice from accumulator");
+    expectTrue(session.tickAccumulator() < kFixedDt, "fixed steps leave remainder in accumulator");
+    expectTrue(session.sessionTickCount() == 3u,
+               "fixed steps add to per-frame ticks from variable timestep stub");
+    expectTrue(physics.stepCount == 3u, "fixed steps add to physics steps from variable stub");
+
+    session.tick(kFixedDt * 3.f, editorScene, physics);
+    expectTrue(session.consumeFixedSteps(kFixedDt, editorScene, physics) == 3u,
+               "fixed steps drain multiple slices in one call");
+    expectTrue(session.sessionTickCount() == 7u, "fixed steps accumulate with per-frame ticks");
+
+    session.stop(editorScene, scene, state, physics);
+    expectTrue(session.consumeFixedSteps(kFixedDt, editorScene, physics) == 0u,
+               "fixed steps are skipped while stopped");
+
+    editorScene.destroy();
+}
+
+void testPlaySessionFullTransformSnapshotRoundtrip() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    const fuse::ecs::EntityID first = editorScene.registry().create();
+    fuse::ecs::Transform& firstTransform = editorScene.registry().add<fuse::ecs::Transform>(first);
+    firstTransform.position.x = 1.f;
+    firstTransform.rotation.y = 0.707f;
+    firstTransform.rotation.w = 0.707f;
+    firstTransform.scale.x = 2.f;
+    firstTransform.scale.y = 2.f;
+    firstTransform.scale.z = 2.f;
+
+    const fuse::ecs::EntityID second = editorScene.registry().create();
+    fuse::ecs::Transform& secondTransform = editorScene.registry().add<fuse::ecs::Transform>(second);
+    secondTransform.position.z = 9.f;
+    secondTransform.scale.x = 0.5f;
+
+    fuse::editor::PlaySession session;
+    const fuse::editor::PlayWorldSnapshot captured = session.captureWorldSnapshot(editorScene);
+    expectTrue(captured.entityCount() == 2u, "full snapshot captures all entities");
+    expectTrue(!captured.empty(), "full snapshot is not empty");
+    expectTrue(captured.entities.front().first.index <= captured.entities.back().first.index,
+               "full snapshot stores entities in stable id order");
+
+    firstTransform.position.x = 99.f;
+    firstTransform.rotation.x = 1.f;
+    firstTransform.rotation.w = 0.f;
+    firstTransform.scale.x = 5.f;
+    secondTransform.position.z = 77.f;
+
+    session.restoreWorldSnapshot(editorScene, captured);
+    const fuse::ecs::Transform* restoredFirst =
+        editorScene.registry().get<fuse::ecs::Transform>(first);
+    const fuse::ecs::Transform* restoredSecond =
+        editorScene.registry().get<fuse::ecs::Transform>(second);
+    expectTrue(restoredFirst != nullptr && restoredSecond != nullptr,
+               "full snapshot restore keeps entities alive");
+    expectNear(restoredFirst->position.x, 1.f, 1e-4f, "full snapshot restores position");
+    expectNear(restoredFirst->rotation.y, 0.707f, 1e-3f, "full snapshot restores rotation");
+    expectNear(restoredFirst->scale.x, 2.f, 1e-4f, "full snapshot restores scale");
+    expectNear(restoredSecond->position.z, 9.f, 1e-4f, "full snapshot restores second entity");
+
+    editorScene.destroy();
+}
+
 void testPlaySessionStartStopCycle() {
     fuse::editor::EditorScene editorScene;
     editorScene.init();
@@ -263,7 +373,10 @@ int main() {
     testPlaySessionWorldSnapshotRoundtrip();
     testPlaySessionEmptyWorld();
     testPlaySessionDirtyCoalesceAndClearsOnStop();
+    testPlaySessionIdempotentStartStop();
+    testPlaySessionConsumeFixedSteps();
     testPlaySessionStartStopCycle();
+    testPlaySessionFullTransformSnapshotRoundtrip();
     fuse::core::shutdown();
 
     if (g_failures == 0) {
