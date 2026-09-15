@@ -44,6 +44,8 @@ Physics, gfx, and net remain composition/dual-backend. No physical `Engine/` + T
 
 **WP-03–05 (in progress):** Cooperative POSIX fiber wait, shared services stubs (logger/handle/allocator/VFS), greenfield scene hierarchy — see [wp03-fiber-remaining.md](./wp03-fiber-remaining.md). U2 full Engine init blockers unchanged ([U2-SMOKE.md §3](./U2-SMOKE.md#3-honest-blockers--full-dual-legacy-engine-init)).
 
+**WP-06 / U4 (scaffolding):** Dimension APIs + hybrid frame — [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md). `demo_hybrid_hud` runs 3D clear + spinning 2D sprite via software placeholder renderer (no real GL yet).
+
 ---
 
 ## Gate U0 checklist

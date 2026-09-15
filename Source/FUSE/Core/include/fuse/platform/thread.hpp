@@ -15,8 +15,14 @@ u32 getPerformanceCoreCount();
 /// Recommended fiber stack size for the active platform profile.
 u32 recommendedFiberStackBytes();
 
+/// Register the game/render thread (call once from main loop thread).
+void registerRenderThread();
+
 /// Thread that may record/submit GPU work (v1: game thread).
 ThreadId renderThread();
+
+/// True when called from the registered render thread.
+bool isRenderThread();
 
 /// Platform-specific priority hint (no-op stub in U1).
 void setThreadPriority(ThreadId thread, int priority);

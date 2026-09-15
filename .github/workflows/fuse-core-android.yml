@@ -40,5 +40,5 @@ jobs:
             -DFUSE_BUILD_T3D=OFF \
             -DFUSE_BUILD_T2D=OFF
 
-      - name: Build fuse_core stub
-        run: cmake --build build-android --target fuse_core
+      - name: Build fuse_core + hybrid stack
+        run: cmake --build build-android --target fuse_core fuse_hybrid

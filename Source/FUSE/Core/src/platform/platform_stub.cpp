@@ -1,9 +1,14 @@
 #include <fuse/platform/power.hpp>
 #include <fuse/platform/thread.hpp>
 
+#include <atomic>
 #include <thread>
 
 namespace fuse::platform {
+
+namespace {
+std::atomic<ThreadId> g_renderThreadId{0};
+}
 
 PowerState getPowerState() {
     return PowerState::Normal;
@@ -26,8 +31,22 @@ u32 recommendedFiberStackBytes() {
 #endif
 }
 
+void registerRenderThread() {
+    const ThreadId id = static_cast<ThreadId>(std::hash<std::thread::id>{}(std::this_thread::get_id()));
+    g_renderThreadId.store(id, std::memory_order_release);
+}
+
 ThreadId renderThread() {
-    return static_cast<ThreadId>(std::hash<std::thread::id>{}(std::this_thread::get_id()));
+    return g_renderThreadId.load(std::memory_order_acquire);
+}
+
+bool isRenderThread() {
+    const ThreadId registered = g_renderThreadId.load(std::memory_order_acquire);
+    if (registered == 0) {
+        return true;
+    }
+    const ThreadId current = static_cast<ThreadId>(std::hash<std::thread::id>{}(std::this_thread::get_id()));
+    return current == registered;
 }
 
 void setThreadPriority(ThreadId /*thread*/, int /*priority*/) {

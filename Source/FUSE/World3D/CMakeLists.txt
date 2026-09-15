@@ -1,6 +1,10 @@
 add_library(fuse_world3d STATIC
     src/scene_object_3d.cpp
+    src/scene_snapshot.cpp
+    src/world_3d.cpp
     include/fuse/world3d/scene_object_3d.hpp
+    include/fuse/world3d/scene_snapshot.hpp
+    include/fuse/world3d/world_3d.hpp
 )
 
 add_library(fuse::world3d ALIAS fuse_world3d)

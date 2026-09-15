@@ -1,6 +1,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/jobs/worker_count.hpp>
+#include <fuse/platform/thread.hpp>
 
 namespace fuse::core {
 
@@ -15,6 +16,7 @@ bool initialize() {
 
     const u32 workers = jobs::computeWorkerCountForCurrentPlatform();
     jobs::JobScheduler::instance().initialize(workers);
+    platform::registerRenderThread();
     g_initialized = true;
     return true;
 }
