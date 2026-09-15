@@ -25,9 +25,17 @@ enum class CastState : u8 {
 };
 
 /// Socket attachment target — ore analogue: AFX constraint / effectron host kinds.
-enum class FxSocketKind {
+enum class FxSocketKind : u8 {
     Sprite2D,
     Shape3D,
+};
+
+/// Effectron playback lifecycle — ore analogue: `afxEffectron` ACTIVE/DONE states.
+enum class EffectPlaybackState : u8 {
+    Inactive = 0,
+    Active,
+    Cleanup,
+    Done,
 };
 
 /// Transient world decoration — ore analogue: `afxResidueMgr` in `afxResidueMgr.h`.

@@ -1,13 +1,16 @@
 add_library(fuse_fx STATIC
     src/cast_pipeline.cpp
     src/effect_descriptor.cpp
+    src/effect_timeline.cpp
     src/fx_composer.cpp
     src/residual_effects.cpp
     src/spell_descriptor.cpp
     include/fuse/fx/cast_pipeline.hpp
     include/fuse/fx/effect_descriptor.hpp
+    include/fuse/fx/effect_timeline.hpp
     include/fuse/fx/fx_composer.hpp
     include/fuse/fx/fx_defs.hpp
+    include/fuse/fx/fx_socket.hpp
     include/fuse/fx/residual_effects.hpp
     include/fuse/fx/spell_descriptor.hpp
 )

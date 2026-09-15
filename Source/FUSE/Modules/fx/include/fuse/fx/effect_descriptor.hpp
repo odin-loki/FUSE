@@ -33,6 +33,7 @@ struct EffectDescriptor {
     std::vector<EffectEntry> entries;
 
     static EffectDescriptor makeSparkBurst();
+    static EffectDescriptor makeMuzzleFlash();
 };
 
 } // namespace fuse::fx

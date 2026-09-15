@@ -6,6 +6,7 @@
 #include <fuse/object.hpp>
 #include <fuse/types.hpp>
 
+#include <functional>
 #include <vector>
 
 namespace fuse::fx {
@@ -26,9 +27,13 @@ struct CastInstance {
     bool finished = false;
 };
 
-/// Game-thread cast state machine stub — ore analogue: `afxMagicSpell::change_state_*`.
+using CastPhaseEnterHook = std::function<void(CastInstance&, SpellPhase)>;
+
+/// Game-thread cast state machine — ore analogue: `afxMagicSpell::change_state_*`.
 class CastPipeline {
 public:
+    void setPhaseEnterHook(CastPhaseEnterHook hook) { m_phaseEnterHook = std::move(hook); }
+
     void beginCast(const SpellDescriptor& spell, const CastBinding& binding);
     void tick(float dt);
 
@@ -42,6 +47,7 @@ private:
     void finishInstance(CastInstance& instance);
 
     std::vector<CastInstance> m_instances;
+    CastPhaseEnterHook m_phaseEnterHook;
     u32 m_completedCount = 0;
 };
 
