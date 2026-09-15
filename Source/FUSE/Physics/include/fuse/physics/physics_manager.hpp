@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/physics/ccd/ccd.hpp>
 #include <fuse/physics/destruction/voxel_destruction.hpp>
 #include <fuse/physics/events/collision_events.hpp>
 #include <fuse/physics/physics_data.hpp>
@@ -53,23 +54,28 @@ public:
     const PhysicsManagerDesc& desc() const { return m_desc; }
     u32 stepCount() const { return m_stepCount; }
     u32 pendingDestructionEvents() const { return static_cast<u32>(m_destructionEvents_.size()); }
+    u32 lastCcdHitCount() const { return m_lastCcdHitCount_; }
     const RigidBodySoA& bodies() const { return m_soa_; }
+    const CollisionShapeSoA& shapes() const { return m_shapes_; }
 
 private:
     void syncEcsToSoa_(PhysicsRegistry& registry);
     void syncSoaToEcs_(PhysicsRegistry& registry);
+    void runCcdSweep_(f32 dt);
     void processDestructionEvents_(PhysicsRegistry& registry, PhysicsResourceManager& resources);
 
     PhysicsManagerDesc m_desc{};
     RigidBodySoA m_soa_{};
     CollisionShapeSoA m_shapes_{};
     PBDSolver m_solver_{};
+    CcdPipeline m_ccdPipeline_{};
     CollisionEventSystem m_collisionEvents_{};
     std::vector<fuse::ecs::EntityID> m_bodyToEntity_{};
     std::unordered_map<u32, u32> m_entityToBodyIdx_{};
     std::vector<DestructionEvent> m_destructionEvents_{};
     PhysicsResourceManager m_resources_{};
     u32 m_stepCount = 0;
+    u32 m_lastCcdHitCount_ = 0;
     bool m_initialized = false;
 };
 

@@ -1,5 +1,7 @@
 #include <fuse/physics/physics_manager.hpp>
 
+#include <fuse/physics/broadphase/spatial_hash.hpp>
+
 #include <algorithm>
 
 namespace fuse::physics {
@@ -20,6 +22,7 @@ void PhysicsManager::destroy() {
     m_entityToBodyIdx_.clear();
     m_destructionEvents_.clear();
     m_stepCount = 0;
+    m_lastCcdHitCount_ = 0;
     m_initialized = false;
 }
 
@@ -29,6 +32,13 @@ void PhysicsManager::step(PhysicsRegistry& registry, f32 dt, PhysicsStreamManage
     }
 
     syncEcsToSoa_(registry);
+
+    if (m_desc.enableCcd) {
+        runCcdSweep_(dt);
+    } else {
+        m_lastCcdHitCount_ = 0;
+    }
+
     m_solver_.step(m_soa_, m_shapes_, m_desc.solver, dt);
     syncSoaToEcs_(registry);
 
@@ -145,17 +155,46 @@ void PhysicsManager::pushDestructionEvent(const DestructionEvent& event) {
 void PhysicsManager::syncEcsToSoa_(PhysicsRegistry& registry) {
     if (m_soa_.count() == 0 && registry.entityCount > 0) {
         const u32 bodyCount = std::min(registry.entityCount, m_desc.maxBodies);
-        for (u32 i = 0; i < bodyCount; ++i) {
-            m_soa_.addBody({}, 1.f, 0);
+
+        const u32 groundIndex = m_soa_.addBody({0.f, 0.f, 0.f}, 0.f, RB_STATIC);
+        m_shapes_.addShape(CollisionShapeType::Plane, groundIndex, {0.f, 1.f, 0.f}, 0.f);
+        const fuse::ecs::EntityID groundEntity{1, 1};
+        m_bodyToEntity_.push_back(groundEntity);
+        m_entityToBodyIdx_[groundEntity.index] = groundIndex;
+
+        for (u32 i = 1; i < bodyCount; ++i) {
+            const u32 bodyIndex = m_soa_.addBody({0.f, 2.f, 0.f}, 1.f, 0);
+            m_shapes_.addShape(CollisionShapeType::Sphere, bodyIndex, {0.5f, 0.f, 0.f});
             const fuse::ecs::EntityID entityId{i + 1, 1};
             m_bodyToEntity_.push_back(entityId);
-            m_entityToBodyIdx_[entityId.index] = i;
+            m_entityToBodyIdx_[entityId.index] = bodyIndex;
         }
     }
 }
 
 void PhysicsManager::syncSoaToEcs_(PhysicsRegistry& /*registry*/) {
     // Stub — managed-memory writeback deferred to full B4.9 CUDA path.
+}
+
+void PhysicsManager::runCcdSweep_(f32 dt) {
+    m_lastCcdHitCount_ = 0;
+    if (m_soa_.count() == 0 || m_shapes_.count() == 0) {
+        return;
+    }
+
+    broadphase::SpatialHashParams hashParams = m_desc.solver.broadphase;
+    hashParams.bodyCount = m_soa_.count();
+    if (hashParams.tableSize == 0) {
+        hashParams.tableSize = std::max(1024u, hashParams.bodyCount * 8u);
+    }
+    if (hashParams.cellSize <= 0.f) {
+        hashParams.cellSize = 2.f;
+    }
+
+    const std::vector<broadphase::CandidatePair> pairs =
+        broadphase::runBroadphase(m_soa_, m_shapes_, hashParams);
+    std::vector<TOIResult> toiResults;
+    m_lastCcdHitCount_ = m_ccdPipeline_.sweepPairs(m_soa_, m_shapes_, pairs, dt, toiResults);
 }
 
 void PhysicsManager::processDestructionEvents_(PhysicsRegistry& registry, PhysicsResourceManager& resources) {
