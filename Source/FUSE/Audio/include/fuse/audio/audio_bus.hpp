@@ -60,6 +60,15 @@ public:
     bool bus_soloed(AudioBus bus) const;
     bool any_bus_soloed() const;
 
+    /// Clear solo flags on all category buses.
+    void clear_all_solo();
+
+    /// Clear explicit mute flags on all category buses.
+    void clear_all_mute();
+
+    /// Number of category buses currently soloed (excludes Master).
+    u32 soloed_category_count() const;
+
     /// True when \p bus is valid and effective gain is above the mute epsilon.
     bool should_apply_bus_gain(AudioBus bus) const;
 
@@ -81,6 +90,25 @@ float compute_effective_output_gain(const AudioBusMixer& mixer, AudioBus bus,
 /// Effective output gain with mute/solo/empty-bus early-outs (returns 0 when \c should_mix_bus is false).
 float compute_mix_output_gain(const AudioBusMixer& mixer, AudioBus bus,
                               float listener_master_volume);
+
+/// True when \p bus is invalid (\c Count or out of range) — empty-bus mix guard.
+bool is_empty_bus_mix(AudioBus bus);
+
+/// True when a mix gain is at or below the mute epsilon after clamping.
+bool is_silent_mix_gain(float mix_gain);
+
+/// Early-out predicate — true when \p bus should be skipped in the mix path.
+bool should_skip_bus_mix(const AudioBusMixer& mixer, AudioBus bus);
+
+/// True when solo mode is active and \p bus is a non-solo category bus.
+bool is_bus_solo_silenced(const AudioBusMixer& mixer, AudioBus bus);
+
+/// Scale \p sample by \p mix_gain; returns 0 when mix gain is silent.
+float apply_bus_mix_sample(float sample, float mix_gain);
+
+/// One-shot bus mix sample with mute/solo/empty-bus guards.
+float compute_bus_mix_sample(float sample, const AudioBusMixer& mixer, AudioBus bus,
+                             float listener_master_volume);
 
 /// True when \p bus is valid and its effective gain is zero (muted stub).
 bool is_bus_muted(const AudioBusMixer& mixer, AudioBus bus);

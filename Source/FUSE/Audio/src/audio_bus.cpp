@@ -152,15 +152,35 @@ bool AudioBusMixer::bus_soloed(AudioBus bus) const {
 }
 
 bool AudioBusMixer::any_bus_soloed() const {
+    return soloed_category_count() > 0;
+}
+
+void AudioBusMixer::clear_all_solo() {
+    for (u32 i = 0; i < static_cast<u32>(AudioBus::Count); ++i) {
+        m_solo[i] = false;
+    }
+}
+
+void AudioBusMixer::clear_all_mute() {
+    for (u32 i = 0; i < static_cast<u32>(AudioBus::Count); ++i) {
+        if (static_cast<AudioBus>(i) == AudioBus::Master) {
+            continue;
+        }
+        m_muted[i] = false;
+    }
+}
+
+u32 AudioBusMixer::soloed_category_count() const {
+    u32 count = 0;
     for (u32 i = 0; i < static_cast<u32>(AudioBus::Count); ++i) {
         if (static_cast<AudioBus>(i) == AudioBus::Master) {
             continue;
         }
         if (m_solo[i]) {
-            return true;
+            ++count;
         }
     }
-    return false;
+    return count;
 }
 
 bool AudioBusMixer::should_apply_bus_gain(AudioBus bus) const {
@@ -205,10 +225,42 @@ float compute_effective_output_gain(const AudioBusMixer& mixer, AudioBus bus,
 
 float compute_mix_output_gain(const AudioBusMixer& mixer, AudioBus bus,
                               float listener_master_volume) {
-    if (!mixer.should_mix_bus(bus)) {
+    if (should_skip_bus_mix(mixer, bus)) {
         return 0.f;
     }
     return compute_effective_output_gain(mixer, bus, listener_master_volume);
+}
+
+bool is_empty_bus_mix(AudioBus bus) {
+    return !is_valid_audio_bus(bus);
+}
+
+bool is_silent_mix_gain(float mix_gain) {
+    return !is_audible_bus_gain(mix_gain);
+}
+
+bool should_skip_bus_mix(const AudioBusMixer& mixer, AudioBus bus) {
+    return !mixer.should_mix_bus(bus);
+}
+
+bool is_bus_solo_silenced(const AudioBusMixer& mixer, AudioBus bus) {
+    if (!mixer.any_bus_soloed() || bus == AudioBus::Master || !is_valid_audio_bus(bus)) {
+        return false;
+    }
+    return !mixer.bus_soloed(bus);
+}
+
+float apply_bus_mix_sample(float sample, float mix_gain) {
+    if (is_silent_mix_gain(mix_gain)) {
+        return 0.f;
+    }
+    return sample * clamp_bus_gain(mix_gain);
+}
+
+float compute_bus_mix_sample(float sample, const AudioBusMixer& mixer, AudioBus bus,
+                             float listener_master_volume) {
+    const float mix_gain = compute_mix_output_gain(mixer, bus, listener_master_volume);
+    return apply_bus_mix_sample(sample, mix_gain);
 }
 
 bool is_bus_muted(const AudioBusMixer& mixer, AudioBus bus) {
