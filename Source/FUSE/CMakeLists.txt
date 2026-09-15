@@ -1,5 +1,16 @@
 # FUSE product source umbrella — L0 fuse_core and future layers.
 
+set(FUSE_CUDA_BACKEND FALSE)
+if(FUSE_BUILD_CUDA)
+    find_package(CUDAToolkit QUIET)
+    if(CUDAToolkit_FOUND)
+        set(FUSE_CUDA_BACKEND TRUE)
+        message(STATUS "FUSE: CUDA toolkit found — FUSE_HAS_CUDA enabled")
+    else()
+        message(STATUS "FUSE: FUSE_BUILD_CUDA=ON but toolkit not found — CUDA stub path only")
+    endif()
+endif()
+
 add_subdirectory(Core)
 add_subdirectory(World2D)
 add_subdirectory(World3D)
