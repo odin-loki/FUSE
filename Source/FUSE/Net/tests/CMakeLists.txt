@@ -2,6 +2,8 @@ add_executable(fuse_net_tests
     test_net_transport.cpp
     test_net_serializer.cpp
     test_net_rollback.cpp
+    test_net_rollback_buffer.cpp
+    test_net_snapshot_delta.cpp
     test_net_state_sync.cpp
     test_main.cpp
 )

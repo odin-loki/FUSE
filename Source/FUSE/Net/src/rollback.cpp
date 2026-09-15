@@ -32,6 +32,7 @@ f32 axis_to_float(std::int16_t axis) {
 void RollbackManager::init(u32 max_rollback_frames) {
     destroy();
     m_max_rollback = std::min(max_rollback_frames, kMaxFrames - 1u);
+    m_buffer.init(kMaxFrames);
     m_current_frame = 0;
     m_confirmed_frame = 0;
     m_rolling_back = false;
@@ -44,10 +45,7 @@ void RollbackManager::destroy() {
     m_confirmed_frame = 0;
     m_rolling_back = false;
     m_last_dt = 1.f / 60.f;
-    m_local_inputs = {};
-    m_remote_inputs = {};
-    m_remote_confirmed = {};
-    m_snapshots = {};
+    m_buffer.clear();
 }
 
 void RollbackManager::bind_registry(ecs::Registry* registry) { m_registry = registry; }
@@ -158,8 +156,8 @@ void RollbackManager::integrate_frame_(u32 frame, f32 dt) {
         return;
     }
 
-    const u32 slot = frame_slot_(frame);
-    const PlayerInput input = m_remote_confirmed[slot] ? m_remote_inputs[slot] : m_local_inputs[slot];
+    const PlayerInput input =
+        m_buffer.remote_confirmed(frame) ? m_buffer.remote_input(frame) : m_buffer.local_input(frame);
     const f32 dx = axis_to_float(input.axis_lx) * dt;
     const f32 dy = axis_to_float(input.axis_ly) * dt;
 
@@ -178,10 +176,10 @@ void RollbackManager::integrate_frame_(u32 frame, f32 dt) {
 }
 
 void RollbackManager::save_snapshot(u32 frame) {
-    const u32 slot = frame_slot_(frame);
-    GameSnapshot& snapshot = m_snapshots[slot];
+    GameSnapshot snapshot;
     snapshot.frame = frame;
     capture_registry_state_(snapshot);
+    m_buffer.store_snapshot(frame, std::move(snapshot));
 }
 
 bool RollbackManager::apply_remote_input(const PlayerInput& input) {
@@ -189,9 +187,7 @@ bool RollbackManager::apply_remote_input(const PlayerInput& input) {
         return false;
     }
 
-    const u32 slot = frame_slot_(input.frame);
-    m_remote_inputs[slot] = input;
-    m_remote_confirmed[slot] = true;
+    m_buffer.store_remote_input(input.frame, input, true);
 
     if (input.frame < m_current_frame) {
         if (m_current_frame - input.frame > m_max_rollback) {
@@ -214,8 +210,7 @@ bool RollbackManager::apply_remote_input(const PlayerInput& input) {
 }
 
 void RollbackManager::set_local_input(const PlayerInput& input) {
-    const u32 slot = frame_slot_(input.frame);
-    m_local_inputs[slot] = input;
+    m_buffer.store_local_input(input.frame, input);
 }
 
 void RollbackManager::tick(f32 dt) {
@@ -226,8 +221,10 @@ void RollbackManager::tick(f32 dt) {
 }
 
 void RollbackManager::rollback_to_(u32 frame) {
-    const u32 slot = frame_slot_(frame);
-    restore_registry_state_(m_snapshots[slot]);
+    const GameSnapshot* snapshot = m_buffer.snapshot(frame);
+    if (snapshot != nullptr) {
+        restore_registry_state_(*snapshot);
+    }
 }
 
 void RollbackManager::resimulate_to_(u32 target_frame, f32 dt) {

@@ -27,7 +27,7 @@ Submodule detail:
 | B7.1 Animation | [Source/FUSE/Animation/README.md](../../Source/FUSE/Animation/README.md) |
 | B7.2 Audio | `Source/FUSE/Audio/` (see `fuse_audio_b72` tests) |
 | B7.3 Script | [TRACK-B-SCRIPT.md](./TRACK-B-SCRIPT.md) |
-| B7.4 Net | `Source/FUSE/Net/` (see `fuse_net_b74` tests) |
+| B7.4 Net | [Source/FUSE/Net/README.md](../../Source/FUSE/Net/README.md) |
 | B7.5 Terrain | [TRACK-B-TERRAIN.md](./TRACK-B-TERRAIN.md) |
 | B7.6 World partition | [Source/FUSE/WorldPartition/README.md](../../Source/FUSE/WorldPartition/README.md) |
 | B7.7 VFX | [Source/FUSE/VFX/README.md](../../Source/FUSE/VFX/README.md) |

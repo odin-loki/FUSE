@@ -47,6 +47,7 @@ void run_rollback_tests() {
     const fuse::ecs::Transform* after = registry.get<fuse::ecs::Transform>(entity);
     expectTrue(after != nullptr, "transform survives rollback");
     expectTrue(after->position.x != position_before_rollback, "rollback resimulation changed position");
+    expectTrue(rollback.buffer().has_frame(1), "rollback buffer retains resimulated frame");
 
     fuse::net::PlayerInput future{};
     future.frame = rollback.current_frame() + 4;
