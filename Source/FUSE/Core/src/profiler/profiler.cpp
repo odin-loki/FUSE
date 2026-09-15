@@ -74,6 +74,21 @@ std::string escapeJsonString(const char* value) {
         case '\\':
             escaped += "\\\\";
             break;
+        case '\n':
+            escaped += "\\n";
+            break;
+        case '\r':
+            escaped += "\\r";
+            break;
+        case '\t':
+            escaped += "\\t";
+            break;
+        case '\b':
+            escaped += "\\b";
+            break;
+        case '\f':
+            escaped += "\\f";
+            break;
         default:
             escaped.push_back(*cursor);
             break;
