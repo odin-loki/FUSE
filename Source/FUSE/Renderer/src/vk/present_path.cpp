@@ -272,13 +272,19 @@ void PresentPath::requestResize(u32 width, u32 height) {
         ++m_status.resizeCoalesceCount;
     }
 
+    const bool midPresentCycle =
+        m_status.state == PresentPathState::FenceWaited ||
+        m_status.state == PresentPathState::ImageAcquired ||
+        m_status.state == PresentPathState::ReadyToPresent;
+
     m_status.pendingResizeWidth = width;
     m_status.pendingResizeHeight = height;
     m_status.resizePending = true;
-    if (m_status.state != PresentPathState::ResizePending) {
+    if (!midPresentCycle && m_status.state != PresentPathState::ResizePending) {
         m_status.state = PresentPathState::ResizePending;
     }
-    m_status.message = "Resize queued — recreate on next fence wait or recreateSwapchain()";
+    m_status.message = midPresentCycle ? "Resize deferred until present cycle completes"
+                                       : "Resize queued — recreate on next fence wait or recreateSwapchain()";
 }
 
 bool PresentPath::recreateSwapchain() {
