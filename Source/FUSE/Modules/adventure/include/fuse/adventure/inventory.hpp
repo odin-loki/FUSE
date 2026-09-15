@@ -1,27 +1,43 @@
 #pragma once
 
+#include <fuse/adventure/item_id.hpp>
 #include <fuse/types.hpp>
 
-#include <string>
-#include <vector>
+#include <unordered_map>
 
 namespace fuse::adventure {
 
-/// Inventory slot stub — ore analogue: 3DAAK adventure scripts/systems.
-/// TODO(U5 extract): third_party/addons/3DAAK/Templates/.../scripts/ inventory flow.
-struct InventoryItem {
-    std::string id;
-    u32 quantity = 0;
-};
-
+/// Scripted inventory bag — mirrors 3DAAK `ShapeBase::incInventory` /
+/// `decInventory` / `hasInventory` / `getInventory` / `setInventory`.
 class Inventory {
 public:
-    void addItem(std::string id, u32 quantity);
-    u32 itemCount() const { return static_cast<u32>(m_items.size()); }
-    u32 quantityOf(const std::string& id) const;
+    using MaxLimits = std::unordered_map<std::string, u32>;
+
+    Inventory() = default;
+    explicit Inventory(MaxLimits maxLimits);
+
+    void setMaxLimit(ItemId item, u32 maxCount);
+    u32 maxInventory(ItemId item) const;
+
+    bool hasInventory(ItemId item) const;
+    u32 getInventory(ItemId item) const;
+
+    /// Returns the amount actually added (may be less than requested).
+    u32 incInventory(ItemId item, u32 amount);
+
+    /// Returns the amount actually removed.
+    u32 decInventory(ItemId item, u32 amount);
+
+    /// Sets inventory count, clamped to [0, maxInventory]. Returns final value.
+    u32 setInventory(ItemId item, u32 value);
+
+    void clear();
 
 private:
-    std::vector<InventoryItem> m_items;
+    u32 clampToMax(ItemId item, u32 value) const;
+
+    MaxLimits m_maxLimits;
+    std::unordered_map<std::string, u32> m_counts;
 };
 
 } // namespace fuse::adventure
