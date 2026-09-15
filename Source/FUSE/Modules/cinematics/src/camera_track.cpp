@@ -140,6 +140,36 @@ bool camera_keyframe_uses_entity_look_at(const CameraKeyframe& keyframe) {
     return keyframe.look_at_mode == CameraLookAtMode::TargetEntity && !keyframe.look_at_target_id.empty();
 }
 
+bool camera_track_needs_look_at_resolver(const std::vector<CameraKeyframe>& keyframes) {
+    for (const CameraKeyframe& keyframe : keyframes) {
+        if (camera_keyframe_uses_entity_look_at(keyframe)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void normalize_camera_keyframe(CameraKeyframe& keyframe) {
+    keyframe.field_of_view = clamp_fov(keyframe.field_of_view);
+}
+
+CameraSample sample_camera_keyframe(const CameraKeyframe& keyframe,
+                                    const LookAtResolver* look_at_resolver) {
+    LookAtResolver fallback;
+    const LookAtResolver& resolver = look_at_resolver ? *look_at_resolver : fallback;
+
+    CameraSample sample;
+    sample.position = keyframe.position;
+    sample.look_at = resolve_look_at_world(keyframe, resolver);
+    sample.field_of_view = clamp_fov(keyframe.field_of_view);
+    sample.roll_deg = keyframe.roll_deg;
+    return sample;
+}
+
+Vec3 default_camera_look_at_for_position(const Vec3& position, float distance) {
+    return {position.x, position.y, position.z - distance};
+}
+
 CameraKeyframeBracket find_camera_keyframe_bracket(const std::vector<CameraKeyframe>& keyframes,
                                                  TimelineMs time_ms,
                                                  EaseMode ease) {
@@ -238,7 +268,13 @@ float CameraSample::look_distance() const {
 CameraTrack::CameraTrack(const std::string& label) : Track(label) {}
 
 void CameraTrack::add_keyframe(const CameraKeyframe& keyframe) {
-    keyframes_.push_back(keyframe);
+    CameraKeyframe normalized = keyframe;
+    normalize_camera_keyframe(normalized);
+    keyframes_.push_back(normalized);
+}
+
+bool CameraTrack::needs_look_at_resolver() const {
+    return camera_track_needs_look_at_resolver(keyframes_);
 }
 
 void CameraTrack::clear_keyframes() {
