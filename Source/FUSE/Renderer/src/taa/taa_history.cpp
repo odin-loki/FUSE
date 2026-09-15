@@ -1,0 +1,87 @@
+#include <fuse/renderer/taa/taa_history.hpp>
+
+namespace fuse::renderer {
+
+bool TaaHistoryBuffer::init(ResourceManager& resources, const TaaHistoryBufferDesc& desc) {
+    destroy();
+    m_resources = &resources;
+    m_desc = desc;
+    m_activeIndex = 0u;
+
+    if (m_desc.width == 0u || m_desc.height == 0u) {
+        return false;
+    }
+
+    TextureDesc textureDesc{};
+    textureDesc.width = m_desc.width;
+    textureDesc.height = m_desc.height;
+    textureDesc.format = GpuFormat::R16G16B16A16Sfloat;
+    textureDesc.usage = static_cast<ImageUsage>(
+        static_cast<u32>(ImageUsage::Sampled) | static_cast<u32>(ImageUsage::Storage) |
+        static_cast<u32>(ImageUsage::TransferDst));
+    textureDesc.cudaInterop = true;
+    textureDesc.name = "taa_history_a";
+    m_buffers[0] = m_resources->createTexture(textureDesc);
+
+    textureDesc.name = "taa_history_b";
+    m_buffers[1] = m_resources->createTexture(textureDesc);
+
+    m_ready = m_buffers[0].isValid() && m_buffers[1].isValid();
+    return m_ready;
+}
+
+void TaaHistoryBuffer::resize(u32 width, u32 height) {
+    if (m_desc.width == width && m_desc.height == height) {
+        return;
+    }
+
+    if (m_resources == nullptr) {
+        m_desc.width = width;
+        m_desc.height = height;
+        return;
+    }
+
+    TaaHistoryBufferDesc resized{};
+    resized.width = width;
+    resized.height = height;
+    init(*m_resources, resized);
+}
+
+void TaaHistoryBuffer::destroy() {
+    releaseTargets();
+    m_resources = nullptr;
+    m_desc = {};
+    m_activeIndex = 0u;
+    m_ready = false;
+}
+
+TextureHandle TaaHistoryBuffer::read() const {
+    return m_buffers[m_activeIndex];
+}
+
+TextureHandle TaaHistoryBuffer::write() const {
+    return m_buffers[(m_activeIndex + 1u) % 2u];
+}
+
+void TaaHistoryBuffer::swap() {
+    m_activeIndex = (m_activeIndex + 1u) % 2u;
+}
+
+void TaaHistoryBuffer::releaseTargets() {
+    if (m_resources == nullptr) {
+        m_buffers[0] = TextureHandle{};
+        m_buffers[1] = TextureHandle{};
+        return;
+    }
+
+    if (m_buffers[0].isValid()) {
+        m_resources->destroyTexture(m_buffers[0]);
+    }
+    if (m_buffers[1].isValid()) {
+        m_resources->destroyTexture(m_buffers[1]);
+    }
+    m_buffers[0] = TextureHandle{};
+    m_buffers[1] = TextureHandle{};
+}
+
+} // namespace fuse::renderer
