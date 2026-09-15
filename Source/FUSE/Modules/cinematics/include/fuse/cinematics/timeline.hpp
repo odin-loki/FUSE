@@ -19,6 +19,7 @@ public:
     void tick(const frame::FrameCtx& ctx);
 
     float playhead() const { return m_playhead; }
+    float duration() const;
     bool isPlaying() const { return m_playing; }
     void play();
     void stop();

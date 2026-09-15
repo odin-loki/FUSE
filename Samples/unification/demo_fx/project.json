@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "name": "demo_fx",
+  "dimensions": {
+    "enable3D": true,
+    "enable2D": true,
+    "enableUI": false
+  },
+  "modules": {
+    "ai": false,
+    "cinematics": false,
+    "fx": true,
+    "mechanics": false,
+    "adventure": false
+  },
+  "defaultWorld3D": "worlds/afx_minimal.fuselevel",
+  "defaultWorld2D": "worlds/afx_sprite.fuselevel"
+}
