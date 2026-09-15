@@ -13,6 +13,9 @@ set(FUSE_RHI_PUBLIC_HEADERS
     include/fuse/renderer/gi/ddgi.hpp
     include/fuse/renderer/gi/ddgi_kernels.hpp
     include/fuse/renderer/lighting/clustered.hpp
+    include/fuse/renderer/postprocess/lens_flare.hpp
+    include/fuse/renderer/volumetric/light_shafts.hpp
+    include/fuse/renderer/volumetric/volumetric_fog.hpp
     include/fuse/renderer/material/material.hpp
     include/fuse/renderer/material/material_system.hpp
     include/fuse/renderer/postprocess/bloom.hpp
@@ -66,6 +69,9 @@ set(FUSE_RHI_SOURCES
     src/deferred/gbuffer.cpp
     src/gi/ddgi.cpp
     src/lighting/clustered_light_culler.cpp
+    src/postprocess/lens_flare.cpp
+    src/volumetric/light_shafts.cpp
+    src/volumetric/volumetric_fog.cpp
     src/material/material.cpp
     src/material/material_system.cpp
     src/postprocess/bloom.cpp

@@ -79,3 +79,7 @@ add_test(NAME fuse_ddgi COMMAND fuse_ddgi)
 add_executable(fuse_post_process_stack test_post_process_stack.cpp)
 target_link_libraries(fuse_post_process_stack PRIVATE fuse_rhi)
 add_test(NAME fuse_post_process_b510 COMMAND fuse_post_process_stack)
+
+add_executable(fuse_volumetric_lighting test_volumetric_lighting.cpp)
+target_link_libraries(fuse_volumetric_lighting PRIVATE fuse_rhi)
+add_test(NAME fuse_volumetric_lighting_b511 COMMAND fuse_volumetric_lighting)

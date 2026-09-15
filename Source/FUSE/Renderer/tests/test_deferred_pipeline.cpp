@@ -23,8 +23,8 @@ void expectTrue(bool condition, const char* message) {
 }
 
 void testPassSchedule() {
-    expectTrue(fuse::renderer::DeferredFramePipeline::passCount() == 16u,
-               "deferred pipeline exposes 16 passes");
+    expectTrue(fuse::renderer::DeferredFramePipeline::passCount() == 19u,
+               "deferred pipeline exposes 19 passes");
     expectTrue(std::string(fuse::renderer::DeferredFramePipeline::passName(
                    fuse::renderer::DeferredPassId::GBuffer)) == "gbuffer",
                "gbuffer pass name");
@@ -58,8 +58,8 @@ void testDeferredGraphBuild() {
     expectTrue(graph.compileInfo().passCount == fuse::renderer::DeferredFramePipeline::passCount(),
                "all deferred passes registered");
     expectTrue(graph.compileInfo().executablePassCount > 0u, "executable passes present");
-    expectTrue(renderer->pipeline().lastStats().cudaPassCount == 6u, "six CUDA passes scheduled");
-    expectTrue(renderer->pipeline().lastStats().vulkanPassCount == 10u, "ten Vulkan passes scheduled");
+    expectTrue(renderer->pipeline().lastStats().cudaPassCount == 7u, "seven CUDA passes scheduled");
+    expectTrue(renderer->pipeline().lastStats().vulkanPassCount == 12u, "twelve Vulkan passes scheduled");
 
     renderer->destroy();
     resources.destroy();
