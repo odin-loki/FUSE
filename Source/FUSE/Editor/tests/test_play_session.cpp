@@ -158,6 +158,40 @@ void testPlaySessionWorldSnapshotRoundtrip() {
     editorScene.destroy();
 }
 
+void testPlaySessionEmptyWorld() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    fuse::scene::Scene scene("EmptyWorld");
+    fuse::editor::EditorState state;
+    fuse::editor::PlaySession session;
+    fuse::editor::PlayModePhysicsState physics;
+
+    const fuse::editor::PlayWorldSnapshot emptyCapture = session.captureWorldSnapshot(editorScene);
+    expectTrue(emptyCapture.entities.empty(), "empty world snapshot has no entities");
+
+    session.start(editorScene, scene, state, physics);
+    expectTrue(session.hasWorldSnapshot(), "empty world play session captures snapshot on start");
+    expectTrue(session.worldSnapshot().entities.empty(), "empty world play snapshot stays empty");
+    expectTrue(session.isPlaying(), "empty world play session enters playing");
+
+    session.tick(0.016f, editorScene, physics);
+    expectTrue(session.sessionTickCount() == 1u, "empty world session still ticks");
+    expectTrue(session.coalescedDirtyCount() == 0u, "empty world has no dirty coalesce events");
+
+    scene.setName("MutatedEmpty");
+    session.stop(editorScene, scene, state, physics);
+    expectTrue(!session.isActive(), "empty world play session stops cleanly");
+    expectTrue(scene.name() == "EmptyWorld", "empty world restores scene snapshot on stop");
+    expectTrue(!session.hasWorldSnapshot(), "empty world clears snapshot on stop");
+
+    session.restoreWorldSnapshot(editorScene, emptyCapture);
+    expectTrue(session.captureWorldSnapshot(editorScene).entities.empty(),
+               "empty world roundtrip leaves registry empty");
+
+    editorScene.destroy();
+}
+
 void testPlaySessionDirtyCoalesceAndClearsOnStop() {
     fuse::editor::EditorScene editorScene;
     editorScene.init();
@@ -227,6 +261,7 @@ int main() {
     testPlaySessionStartStopAndDirtyRestore();
     testPlaySessionPauseSkipsTick();
     testPlaySessionWorldSnapshotRoundtrip();
+    testPlaySessionEmptyWorld();
     testPlaySessionDirtyCoalesceAndClearsOnStop();
     testPlaySessionStartStopCycle();
     fuse::core::shutdown();

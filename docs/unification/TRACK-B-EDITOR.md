@@ -1,6 +1,6 @@
 # Track B — Editor Panels (B6.2–B6.13)
 
-**Status:** B6.2 undo stack + B6.3–B6.5 core panel stubs + B6.6–B6.8 inspector/material/sculpt API stubs + B6.9–B6.12 asset/profiler/console/play-mode stubs landed; **B6.13** Phase 6 integration gate + checklist complete; **B6.2 deepen** — `CommandStack` `push`/undo/redo, coalescing (`propertyValueBefore` baseline), dirty tracking, `peekUndo`/`peekRedo`, `evictedCount`, full snapshot restore + `UndoStackSnapshot` depth rewind restore + dirty stub; **B6.4 deepen** — `GizmoSystem` ray axis/plane hit tests, local/world delta helpers, translate/rotate snap stubs, `CommandStack`/`EditorState` dirty marking; **B6.7 deepen** — material property bindings (`roughness`/`metallic`/`baseColor`/`shadingModel`), `editDirty`/`previewDirty` flags, `MaterialSystem` push/sync bridge tests; **B6.7 deepen follow-up** — `MaterialPropertyBinding` bind/get/set stubs, per-property dirty coalesce, `needsPanelRefresh`/`refreshPanel` helpers  
+**Status:** B6.2 undo stack + B6.3–B6.5 core panel stubs + B6.6–B6.8 inspector/material/sculpt API stubs + B6.9–B6.12 asset/profiler/console/play-mode stubs landed; **B6.13** Phase 6 integration gate + checklist complete; **B6.12 deepen** — `PlaySession` tick accumulator, `PlayWorldSnapshot` ECS capture/restore, coalesced dirty restore on stop; **B6.2 deepen** — `CommandStack` `push`/undo/redo, coalescing (`propertyValueBefore` baseline), dirty tracking, `peekUndo`/`peekRedo`, `evictedCount`, full snapshot restore + `UndoStackSnapshot` depth rewind restore + dirty stub; **B6.4 deepen** — `GizmoSystem` ray axis/plane hit tests, local/world delta helpers, translate/rotate snap stubs, `CommandStack`/`EditorState` dirty marking; **B6.7 deepen** — material property bindings (`roughness`/`metallic`/`baseColor`/`shadingModel`), `editDirty`/`previewDirty` flags, `MaterialSystem` push/sync bridge tests; **B6.7 deepen follow-up** — `MaterialPropertyBinding` bind/get/set stubs, per-property dirty coalesce, `needsPanelRefresh`/`refreshPanel` helpers  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B6.2–B6.13  
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §2.1–§4, [U6-EDITOR.md](./U6-EDITOR.md)
 
@@ -104,7 +104,7 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 | `fuse_editor_hierarchy_model` | `fuse_editor_hierarchy_model_tests` | B6.5 flatten, search, reparent + undo |
 | `fuse_editor_panels_b69_b612` | `fuse_editor_panels_b69_b612_tests` | B6.9–B6.12 asset/profiler/console/play-mode stubs |
 | `fuse_editor_phase6_integration` | `fuse_editor_phase6_integration_tests` | **B6.13** — `UndoStack` + `SceneHierarchyPanel` + `ViewportPanel` headless wiring |
-| `fuse_editor_play_session` | `fuse_editor_play_session_tests` | B6.12 deepen — PIE start/stop cycle, tick accumulator, world snapshot roundtrip, coalesced dirty + clean restore on stop |
+| `fuse_editor_play_session` | `fuse_editor_play_session_tests` | B6.12 deepen — PIE start/stop cycle, tick accumulator, world snapshot roundtrip, empty world, coalesced dirty + clean restore on stop |
 | `fuse_editor_gizmo_system` | `fuse_editor_gizmo_system_tests` | B6.4 deepen — mode switch, axis pick extremes, snap helpers, delta roundtrip, dirty flags |
 
 ---
@@ -222,7 +222,7 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 - [x] Pause / resume / stop with snapshot restore
 - [x] `PlayModePhysicsState` simulation-active flag
 - [x] `fuse_editor_panels_b69_b612` play-mode lifecycle coverage
-- [x] `PlaySession` PIE deepen — start/stop cycle, tick accumulator, `PlayWorldSnapshot` roundtrip, coalesced dirty + clean restore on stop (`fuse_editor_play_session`)
+- [x] `PlaySession` PIE deepen — start/stop cycle, tick accumulator, `PlayWorldSnapshot` roundtrip, empty world, coalesced dirty + clean restore on stop (`fuse_editor_play_session`)
 - [ ] `PhysicsManager` wiring during play (deferred — B4 integration)
 - [ ] Qt play transport toolbar (U6 follow-up)
 
