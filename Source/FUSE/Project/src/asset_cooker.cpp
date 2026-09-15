@@ -1,5 +1,6 @@
 #include <fuse/project/asset_cooker.hpp>
 
+#include <fuse/project/cook_content_hash.hpp>
 #include <fuse/log/logger.hpp>
 
 #include <sstream>
@@ -46,11 +47,48 @@ CookRecord makeStubRecord(CookAssetKind kind,
 
 } // namespace
 
+CookRecord AssetCooker::cook_with_cache_(CookAssetKind kind,
+                                         const std::string& source_path,
+                                         const std::string& output_path,
+                                         u64 content_hash,
+                                         const char* stub_note) {
+    CookCacheEntry cached;
+    if (m_cache.lookup(content_hash, &cached) == CookCacheLookup::Hit) {
+        CookRecord record;
+        record.kind = kind;
+        record.source_path = source_path;
+        record.output_path = cached.output_path;
+        record.status = CookStatus::Ok;
+        record.ok = true;
+        record.cache_hit = true;
+        record.content_hash = content_hash;
+        record.note = "cache hit";
+        return record;
+    }
+
+    CookRecord record = makeStubRecord(kind, source_path, output_path, stub_note);
+    record.content_hash = content_hash;
+    record.cache_hit = false;
+
+    if (record.ok) {
+        CookCacheEntry entry;
+        entry.content_hash = content_hash;
+        entry.output_path = output_path;
+        entry.source_path = source_path;
+        entry.kind = kind;
+        m_cache.store(entry);
+        record.note = std::string(stub_note) + " (cache miss)";
+    }
+
+    return record;
+}
+
 CookRecord AssetCooker::cook_mesh(const MeshImportDesc& desc) {
     std::ostringstream note;
     note << "stub mesh cook (lods=" << (desc.generate_lods ? desc.lod_count : 0u)
          << ", compress=" << (desc.compress ? "on" : "off") << ")";
-    return makeStubRecord(CookAssetKind::Mesh, desc.input_path, desc.output_path, note.str().c_str());
+    const u64 content_hash = hash_mesh_import(desc);
+    return cook_with_cache_(CookAssetKind::Mesh, desc.input_path, desc.output_path, content_hash, note.str().c_str());
 }
 
 CookRecord AssetCooker::cook_texture(const TextureImportDesc& desc) {
@@ -58,14 +96,16 @@ CookRecord AssetCooker::cook_texture(const TextureImportDesc& desc) {
     std::ostringstream note;
     note << "stub texture cook (compression=" << compression
          << ", mipmaps=" << (desc.generate_mipmaps ? "on" : "off") << ")";
-    return makeStubRecord(CookAssetKind::Texture, desc.input_path, desc.output_path, note.str().c_str());
+    const u64 content_hash = hash_texture_import(desc);
+    return cook_with_cache_(CookAssetKind::Texture, desc.input_path, desc.output_path, content_hash, note.str().c_str());
 }
 
 CookRecord AssetCooker::cook_audio(const AudioImportDesc& desc) {
     std::ostringstream note;
     note << "stub audio cook (rate=" << desc.target_sample_rate
          << ", format=" << (desc.format == AudioImportDesc::Format::OGG_VORBIS ? "ogg" : "pcm_f32") << ")";
-    return makeStubRecord(CookAssetKind::Audio, desc.input_path, desc.output_path, note.str().c_str());
+    const u64 content_hash = hash_audio_import(desc);
+    return cook_with_cache_(CookAssetKind::Audio, desc.input_path, desc.output_path, content_hash, note.str().c_str());
 }
 
 CookRecord AssetCooker::cook_entry(const CookManifestEntry& entry) {
@@ -120,6 +160,10 @@ CookBatchResult AssetCooker::cook_dirty(AssetGraph& graph, const std::string& pr
     result.records.reserve(dirty.size());
 
     for (const std::string& output_path : dirty) {
+        if (const std::string* source_path = graph.source_path_for(output_path)) {
+            m_cache.invalidate_source(*source_path);
+        }
+
         CookRecord record;
         record.output_path = output_path;
         record.status = CookStatus::Ok;

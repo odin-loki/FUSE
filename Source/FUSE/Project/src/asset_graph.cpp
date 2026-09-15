@@ -258,4 +258,12 @@ void AssetGraph::clear() {
     m_dirty.clear();
 }
 
+const std::string* AssetGraph::source_path_for(const std::string& output_path) const {
+    const AssetRecord* record = find_asset(output_path);
+    if (!record) {
+        return nullptr;
+    }
+    return &record->source_path;
+}
+
 } // namespace fuse::project
