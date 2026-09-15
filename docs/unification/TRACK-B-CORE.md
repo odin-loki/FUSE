@@ -13,7 +13,7 @@
 | **B1.1** | Project structure & build | Umbrella CMake + `fuse_core` | ✅ | CI umbrella workflow | U1 landed — [BUILD.md](./BUILD.md); C++17 host today (C++23 + shipping preset deferred) |
 | **B1.2** | Type system & handles | `fuse::types`, `Handle<T>`, `Object` | ✅ | `fuse_core_services` | Fixed-width aliases, generation handles, object hierarchy |
 | **B1.3** | Memory & allocators | `fuse::alloc` (frame/pool/stack) | ✅ | `fuse_core_allocator`, `fuse_core_services` | Frame bump + pool/stack allocators with stats hooks (#70); GPU allocators deferred |
-| **B1.4** | Math library | `fuse::math` | ✅ | `fuse_core_math` | Vec/Mat/Quat/AABB/Frustum/SDF — see [TRACK-B-MATH.md](./TRACK-B-MATH.md) |
+| **B1.4** | Math library | `fuse::math` | ✅ | `fuse_core_math` | Vec/Mat/Quat/AABB/Frustum/SDF — B1.4 deepen follow-up: Mat4 multiply/inverse edge tests, AABB transform helpers — [TRACK-B-MATH.md](./TRACK-B-MATH.md) |
 | **B1.5** | Job system & fibers | `fuse::jobs` | ✅ | `fuse_core_jobs`, `fuse_core_fiber`, `fuse_cuda_jobs` | Scheduler, `JobCounter`, `parallel_for`, CUDA job lane stub |
 | **B1.6** | Logging, assert & profiler | `fuse::log`, `fuse::assertion`, `fuse::profiler` | ✅ | `fuse_core_profiler_assert` | Nested scopes, chrome JSON (`displayTimeUnit`, `tid`, `id`, `args.depth`); platform thread-id stubs — [TRACK-B-CORE-B16.md](./TRACK-B-CORE-B16.md) |
 | **B1.7** | Platform & window | `fuse::platform::Window`, `EventPump` | ✅ | `fuse_core_platform_window`, `fuse_core_platform_hardening` | Window + event-pump stubs (#69); B1.7 deepen — resize/focus notify + poll-queue tests — [TRACK-B-CORE-B17.md](./TRACK-B-CORE-B17.md) |
@@ -49,7 +49,7 @@ fuse::core::Phase1TestRegistry::runIntegrationSmoke(); // jobs + math + handles 
 | Subsystem | API exercised | CMake gate |
 |-----------|---------------|------------|
 | B1.5 Jobs | `core::initialize`, `parallel_for` over math transforms | always |
-| B1.4 Math | `Mat4::fromTRS`, `transformPoint`, `AABB::contains` | always |
+| B1.4 Math | `Mat4::fromTRS`, `transformPoint`, `AABB::contains`, `transformAabb` | always |
 | B1.2/B1.3 Handles | `HandleTable` worker publish + game-thread `commit` | always |
 | B1.2 I/O + VFS | `VirtualFileSystem::submitLoadAsync` → `drainCompletedLoads` → handle resolve | always |
 | B1.6 Profiler | `FUSE_PROFILE_SCOPE`, `beginFrame`/`endFrame`, chrome JSON export | always |
@@ -137,6 +137,7 @@ Existing per-subsystem tests remain the authoritative unit coverage:
 - [ ] Wire remaining §B1.8 acceptance items to real backends as B1.1–B1.7 implementations mature
 - [ ] C++23 host + shipping preset when umbrella CMake upgrades
 - [ ] Pool/linear/GPU allocator suite (B1.3 deepen)
+- [ ] SIMD `vec4`/`mat4` lanes with scalar reference parity (B1.4 SIMD follow-up)
 - [ ] Lock-free async logger ring (B1.6 logging follow-up)
 
 ---
