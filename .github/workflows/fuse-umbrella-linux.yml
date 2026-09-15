@@ -20,7 +20,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build cmake g++-13
+          sudo apt-get install -y ninja-build cmake g++-13 libvulkan-dev mesa-vulkan-drivers vulkan-tools
 
       - name: Configure umbrella (core + legacy + smoke + U7/U8)
         run: |
@@ -38,6 +38,7 @@ jobs:
             -DFUSE_BUILD_TOOLS=ON \
             -DFUSE_BUILD_EDITOR_API=ON \
             -DFUSE_BUILD_EDITOR=OFF \
+            -DFUSE_BUILD_VULKAN=ON \
             -DFUSE_BUILD_T3D=OFF \
             -DFUSE_BUILD_T2D=OFF
 

@@ -1,0 +1,3 @@
+add_executable(fuse_vulkan_bootstrap test_vulkan_bootstrap.cpp)
+target_link_libraries(fuse_vulkan_bootstrap PRIVATE fuse_rhi)
+add_test(NAME fuse_vulkan_bootstrap COMMAND fuse_vulkan_bootstrap)

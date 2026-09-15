@@ -127,6 +127,19 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 
 ---
 
+### WP-06b — Track B Vulkan bootstrap (B2.1 kickoff)
+
+| Field | Value |
+|-------|-------|
+| **Effort** | M |
+| **Scope** | `fuse_rhi` instance/device/swapchain placeholder, `RenderCommandList`, `gl_context.hpp`, Hybrid dual-path wiring, `FUSE_BUILD_VULKAN` |
+| **MT note** | Submit on `renderThread()` only; workers stay snapshot-only |
+| **Exit** | Headless bootstrap tests green; CI honest stub/Lavapipe story; U4 placeholder renderer unchanged |
+| **Deps** | WP-06 scaffolding |
+| **Status** | 🚧 Kickoff — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) |
+
+---
+
 ### WP-07 — U5 Feature modules (parallel per module)
 
 | Field | Value |
@@ -250,7 +263,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 
-**Next:** WP-07 ore extraction per module; WP-04 async I/O lane + handle table; WP-06 real RHI hookup (Track B); U7 `.fuselevel` cookers.
+**Next:** WP-07 ore extraction per module; WP-04 async I/O lane + handle table; **WP-06b Track B B2.2 swapchain** (bootstrap landed — [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md)); U7 `.fuselevel` cookers.
 
 ---
 
