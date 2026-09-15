@@ -1,6 +1,6 @@
 # Track B — Editor Panels (B6.2–B6.13)
 
-**Status:** B6.2 undo stack + B6.3–B6.5 core panel stubs + B6.6–B6.8 inspector/material/sculpt API stubs + B6.9–B6.12 asset/profiler/console/play-mode stubs landed; **B6.13** Phase 6 integration gate + checklist complete; **B6.12 deepen** — `PlaySession` tick accumulator, `PlayWorldSnapshot` ECS capture/restore, coalesced dirty restore on stop; **B6.2 deepen** — `CommandStack` `push`/undo/redo, coalescing (`propertyValueBefore` baseline), dirty tracking, `peekUndo`/`peekRedo`, `evictedCount`, full snapshot restore + `UndoStackSnapshot` depth rewind restore + dirty stub; **B6.4 deepen** — `GizmoSystem` ray axis/plane hit tests, local/world delta helpers, translate/rotate snap stubs, `CommandStack`/`EditorState` dirty marking; **B6.7 deepen** — material property bindings (`roughness`/`metallic`/`baseColor`/`shadingModel`), `editDirty`/`previewDirty` flags, `MaterialSystem` push/sync bridge tests; **B6.7 deepen follow-up** — `MaterialPropertyBinding` bind/get/set stubs, per-property dirty coalesce, `needsPanelRefresh`/`refreshPanel` helpers  
+**Status:** B6.2 undo stack + B6.3–B6.5 core panel stubs + B6.6–B6.8 inspector/material/sculpt API stubs + B6.9–B6.12 asset/profiler/console/play-mode stubs landed; **B6.13** Phase 6 integration gate + checklist complete; **B6.12 deepen** — `PlaySession` tick accumulator, `PlayWorldSnapshot` ECS capture/restore, coalesced dirty restore on stop; **B6.2 deepen** — `CommandStack` `push`/undo/redo, coalescing (`propertyValueBefore` baseline), dirty tracking, `peekUndo`/`peekRedo`, `evictedCount`, full snapshot restore + `UndoStackSnapshot` depth rewind restore + dirty stub; **B6.4 deepen** — `GizmoSystem` ray axis/plane hit tests, local/world delta helpers, translate/rotate snap stubs, `CommandStack`/`EditorState` dirty marking; **B6.4 deepen follow-up** — `cycleGizmoMode`/`cycleMode`, screen dead-zone miss stub (`isScreenHitMiss`), scale grid snap (`scaleSnap`/`snapScale`), hit-test miss + snap grid tests; **B6.7 deepen** — material property bindings (`roughness`/`metallic`/`baseColor`/`shadingModel`), `editDirty`/`previewDirty` flags, `MaterialSystem` push/sync bridge tests; **B6.7 deepen follow-up** — `MaterialPropertyBinding` bind/get/set stubs, per-property dirty coalesce, `needsPanelRefresh`/`refreshPanel` helpers  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B6.2–B6.13  
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §2.1–§4, [U6-EDITOR.md](./U6-EDITOR.md)
 
@@ -14,7 +14,7 @@
 | `SetObjectNameCommand` / `ReparentObjectCommand` | same | Core hierarchy rename/reparent commands |
 | `CommandStack` / `CommandStackSnapshot` | `Source/FUSE/Editor/include/fuse/editor/command_stack.hpp` | `EditorCommand` envelope history for B6.6–B6.8 panel stubs; coalescing with `propertyValueBefore`, dirty tracking, `peekUndo`/`peekRedo`, snapshot restore (B6.2 deepen) |
 | `ViewportPanel` | `Source/FUSE/Editor/include/fuse/editor/viewport_panel.hpp` | B6.3 — camera + resize stub |
-| `GizmoSystem` | `Source/FUSE/Editor/include/fuse/editor/gizmo_system.hpp` | B6.4 — translate/rotate/scale drag stub; B6.4 deepen — ray hit tests, snap, delta helpers |
+| `GizmoSystem` | `Source/FUSE/Editor/include/fuse/editor/gizmo_system.hpp` | B6.4 — translate/rotate/scale drag stub; B6.4 deepen — ray hit tests, snap, delta helpers; B6.4 deepen follow-up — mode cycle, screen miss stub, scale snap |
 | `HierarchyModel` / `SceneHierarchyPanel` | `hierarchy_model.hpp`, `scene_hierarchy_panel.hpp` | B6.5 — flatten, search, reparent via `UndoStack` |
 | `EditorState` / `EditorScene` | `editor_state.hpp`, `editor_scene.hpp` | Selection + ECS registry for panel tests |
 | `PropertyInspector` | `property_inspector.hpp` | B6.6 — component section model + live ECS edits |
@@ -105,7 +105,7 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 | `fuse_editor_panels_b69_b612` | `fuse_editor_panels_b69_b612_tests` | B6.9–B6.12 asset/profiler/console/play-mode stubs |
 | `fuse_editor_phase6_integration` | `fuse_editor_phase6_integration_tests` | **B6.13** — `UndoStack` + `SceneHierarchyPanel` + `ViewportPanel` headless wiring |
 | `fuse_editor_play_session` | `fuse_editor_play_session_tests` | B6.12 deepen — PIE start/stop cycle, tick accumulator, world snapshot roundtrip, empty world, coalesced dirty + clean restore on stop |
-| `fuse_editor_gizmo_system` | `fuse_editor_gizmo_system_tests` | B6.4 deepen — mode switch, axis pick extremes, snap helpers, delta roundtrip, dirty flags |
+| `fuse_editor_gizmo_system` | `fuse_editor_gizmo_system_tests` | B6.4 deepen — mode switch, axis pick extremes, snap helpers, delta roundtrip, dirty flags; B6.4 deepen follow-up — hit-test miss, snap grid, `cycleMode` |
 
 ---
 
@@ -143,8 +143,11 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 - [x] `GizmoSpace` local/world + `applyTranslateDelta` / `applyRotateDelta` / `applyScaleDelta` helpers
 - [x] Ray vs axis segment / plane hit-test stubs (`hitTestAxisSegment`, `hitTestAxisPlane`, `pickAxisFromRay`)
 - [x] Translate grid snap + rotate angle snap stubs (`GizmoSnapSettings`, `snapTransform`)
+- [x] Scale grid snap stub (`scaleSnap`, `snapScale`)
+- [x] `cycleGizmoMode` / `GizmoSystem::cycleMode` for translate → rotate → scale cycling
+- [x] Screen dead-zone hit-test miss stub (`isScreenHitMiss`) + segment/plane miss coverage
 - [x] `CommandStack` + `EditorState::sceneModified` dirty marking on `endDrag`
-- [x] `fuse_editor_gizmo_system` — mode switch, axis pick extremes, snap, delta roundtrip
+- [x] `fuse_editor_gizmo_system` — mode switch, hit-test miss, snap grid, axis pick extremes, delta roundtrip
 - [ ] Screen-space gizmo rendering + hover highlight (deferred)
 
 ### B6.5 — Scene Hierarchy Panel

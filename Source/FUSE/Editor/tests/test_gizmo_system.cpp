@@ -43,6 +43,16 @@ void testModeSwitch() {
     gizmo.setMode(fuse::editor::GizmoMode::Scale);
     expectTrue(gizmo.mode() == fuse::editor::GizmoMode::Scale, "mode switches to scale");
 
+    gizmo.cycleMode();
+    expectTrue(gizmo.mode() == fuse::editor::GizmoMode::Translate, "cycle mode wraps scale to translate");
+
+    expectTrue(fuse::editor::cycleGizmoMode(fuse::editor::GizmoMode::Translate) ==
+                   fuse::editor::GizmoMode::Rotate,
+               "cycleGizmoMode advances translate to rotate");
+    expectTrue(fuse::editor::cycleGizmoMode(fuse::editor::GizmoMode::Rotate) ==
+                   fuse::editor::GizmoMode::Scale,
+               "cycleGizmoMode advances rotate to scale");
+
     gizmo.setSpace(fuse::editor::GizmoSpace::Local);
     expectTrue(gizmo.space() == fuse::editor::GizmoSpace::Local, "space switches to local");
 }
@@ -133,8 +143,53 @@ void testHitTestSegmentAndPlane() {
     expectNear(planeT, 1.f, 0.001f, "plane hit distance matches expectation");
 }
 
-void testSnapHelpers() {
+void testHitTestMiss() {
+    fuse::editor::GizmoRay missRay;
+    missRay.origin = {0.f, 5.f, 0.f};
+    missRay.direction = {1.f, 0.f, 0.f};
+    fuse::f32 missT = -1.f;
+    expectTrue(!fuse::editor::hitTestAxisSegment(missRay, {0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, 0.1f,
+                                                missT),
+               "segment hit-test misses when ray is far from axis");
+
+    fuse::editor::GizmoRay parallelRay;
+    parallelRay.origin = {0.f, 0.f, 0.f};
+    parallelRay.direction = {0.f, 1.f, 0.f};
+    fuse::f32 parallelT = -1.f;
+    expectTrue(!fuse::editor::hitTestAxisPlane(parallelRay, {0.f, 0.f, 1.f}, {0.f, 0.f, 0.f},
+                                               parallelT),
+               "plane hit-test misses when ray is parallel to plane");
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 50.f;
+    hit.screenY = 50.f;
+    expectTrue(fuse::editor::isScreenHitMiss(hit, fuse::editor::GizmoMode::Translate),
+               "screen dead zone reports miss in translate mode");
+
+    fuse::editor::GizmoSystem gizmo;
+    expectTrue(gizmo.pickAxis(hit) == fuse::editor::GizmoAxis::None,
+               "screen pick returns none in translate dead zone");
+
+    gizmo.setMode(fuse::editor::GizmoMode::Scale);
+    expectTrue(gizmo.pickAxis(hit) == fuse::editor::GizmoAxis::Uniform,
+               "scale mode still picks uniform handle at screen center");
+
+    hit.screenX = 70.f;
+    hit.screenY = 70.f;
+    expectTrue(fuse::editor::isScreenHitMiss(hit, fuse::editor::GizmoMode::Scale),
+               "scale mode reports miss outside axis bands and uniform handle");
+
+    fuse::editor::GizmoTransform transform{};
+    expectTrue(gizmo.pickAxis(missRay, transform) == fuse::editor::GizmoAxis::None,
+               "gizmo ray pick misses when ray is far from axes");
+}
+
+void testSnapGrid() {
     expectNear(fuse::editor::snapToGrid(1.37f, 0.5f), 1.5f, 0.001f, "translate snaps to grid");
+    expectNear(fuse::editor::snapToGrid(-2.74f, 1.f), -3.f, 0.001f, "translate snap handles negative values");
+    expectNear(fuse::editor::snapScale(1.23f, 0.1f), 1.2f, 0.001f, "scale snaps to grid step");
     expectNear(fuse::editor::snapAngleRadians(0.4f, 15.f), 0.5235988f, 0.01f,
                "rotation snaps to angle step");
 
@@ -150,6 +205,20 @@ void testSnapHelpers() {
         fuse::editor::snapTransform(transform, fuse::editor::GizmoMode::Translate, snap);
     expectNear(snapped.posX, 2.f, 0.001f, "snap transform rounds X");
     expectNear(snapped.posY, -2.f, 0.001f, "snap transform rounds Y");
+    expectNear(snapped.posZ, 0.f, 0.001f, "snap transform rounds Z to grid");
+
+    snap.translateSnap = false;
+    snap.scaleSnap = true;
+    snap.scaleGridStep = 0.25f;
+    transform.scaleX = 1.37f;
+    transform.scaleY = 0.88f;
+    transform.scaleZ = 2.01f;
+
+    const fuse::editor::GizmoTransform scaleSnapped =
+        fuse::editor::snapTransform(transform, fuse::editor::GizmoMode::Scale, snap);
+    expectNear(scaleSnapped.scaleX, 1.25f, 0.001f, "snap transform rounds scale X");
+    expectNear(scaleSnapped.scaleY, 1.f, 0.001f, "snap transform rounds scale Y");
+    expectNear(scaleSnapped.scaleZ, 2.f, 0.001f, "snap transform rounds scale Z");
 }
 
 void testDeltaApplyRoundtrip() {
@@ -225,7 +294,8 @@ int main() {
     testScreenAxisPickExtremes();
     testRayAxisPickExtremes();
     testHitTestSegmentAndPlane();
-    testSnapHelpers();
+    testHitTestMiss();
+    testSnapGrid();
     testDeltaApplyRoundtrip();
     testDirtyFlagOnEndDrag();
 
