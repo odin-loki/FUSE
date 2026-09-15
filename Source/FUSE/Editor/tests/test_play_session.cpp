@@ -463,6 +463,138 @@ void testPlaySessionEmptySessionGuards() {
     editorScene.destroy();
 }
 
+void testPlaySessionFixedStepMaxStepsCap() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    const fuse::ecs::EntityID entity = editorScene.registry().create();
+    editorScene.registry().add<fuse::ecs::Transform>(entity);
+
+    fuse::scene::Scene scene("MaxStepsTest");
+    fuse::editor::EditorState state;
+    fuse::editor::PlaySession session;
+    fuse::editor::PlayModePhysicsState physics;
+
+    constexpr float kFixedDt = 1.f / 60.f;
+
+    session.start(editorScene, scene, state, physics);
+    session.tick(kFixedDt * 5.f, editorScene, physics);
+    expectTrue(session.consumeFixedSteps(kFixedDt, editorScene, physics, 2u) == 2u,
+               "maxSteps cap limits fixed slices per call");
+    expectTrue(session.pendingFixedStepCount(kFixedDt) == 3u,
+               "pendingFixedStepCount reports deferred accumulator slices");
+    expectTrue(session.consumeFixedSteps(kFixedDt, editorScene, physics, 0u) == 3u,
+               "unlimited maxSteps drains remaining accumulator");
+    expectTrue(session.pendingFixedStepCount(kFixedDt) == 0u,
+               "pendingFixedStepCount clears after full drain");
+
+    session.stop(editorScene, scene, state, physics);
+    editorScene.destroy();
+}
+
+void testPlaySessionNegativeDtGuard() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    const fuse::ecs::EntityID entity = editorScene.registry().create();
+    editorScene.registry().add<fuse::ecs::Transform>(entity);
+
+    fuse::scene::Scene scene("NegativeDtTest");
+    fuse::editor::EditorState state;
+    fuse::editor::PlaySession session;
+    fuse::editor::PlayModePhysicsState physics;
+
+    session.start(editorScene, scene, state, physics);
+    session.tick(-0.016f, editorScene, physics);
+    expectTrue(session.skippedInactiveTickCount() == 1u,
+               "negative dt increments inactive tick skip counter");
+    expectTrue(session.sessionTickCount() == 0u, "negative dt does not simulate");
+    expectTrue(session.tickAccumulator() == 0.f, "negative dt does not advance accumulator");
+
+    session.tick(0.016f, editorScene, physics);
+    expectTrue(session.sessionTickCount() == 1u, "valid dt resumes simulation");
+
+    session.stop(editorScene, scene, state, physics);
+    editorScene.destroy();
+}
+
+void testPlaySessionPausedFixedStepSkipCounter() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    const fuse::ecs::EntityID entity = editorScene.registry().create();
+    editorScene.registry().add<fuse::ecs::Transform>(entity);
+
+    fuse::scene::Scene scene("PausedFixedStepTest");
+    fuse::editor::EditorState state;
+    fuse::editor::PlaySession session;
+    fuse::editor::PlayModePhysicsState physics;
+
+    constexpr float kFixedDt = 1.f / 60.f;
+
+    session.start(editorScene, scene, state, physics);
+    session.tick(kFixedDt, editorScene, physics);
+
+    session.pause(scene, state, physics);
+    expectTrue(session.consumeFixedSteps(kFixedDt, editorScene, physics) == 0u,
+               "paused session does not consume fixed steps");
+    expectTrue(session.skippedInactiveFixedStepCount() == 1u,
+               "paused fixed-step drain increments inactive fixed-step skip counter");
+    expectTrue(session.tickFixedStep(kFixedDt, kFixedDt, editorScene, physics) == 0u,
+               "tickFixedStep is guarded while paused");
+    expectTrue(session.skippedInactiveFixedStepCount() == 2u,
+               "paused tickFixedStep increments inactive fixed-step skip counter");
+
+    session.resume(scene, state, physics);
+    expectTrue(session.consumeFixedSteps(kFixedDt, editorScene, physics) == 1u,
+               "resumed session drains fixed steps again");
+
+    session.stop(editorScene, scene, state, physics);
+    editorScene.destroy();
+}
+
+void testPlaySessionDirtySnapshotEntityCountAndOrder() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    const fuse::ecs::EntityID second = editorScene.registry().create();
+    editorScene.registry().add<fuse::ecs::Transform>(second);
+    editorScene.registry().get<fuse::ecs::Transform>(second)->dirty = true;
+
+    const fuse::ecs::EntityID first = editorScene.registry().create();
+    editorScene.registry().add<fuse::ecs::Transform>(first);
+    editorScene.registry().get<fuse::ecs::Transform>(first)->dirty = false;
+
+    fuse::scene::Scene scene("DirtySnapshotOrderTest");
+    fuse::editor::EditorState state;
+    state.sceneModified = false;
+
+    fuse::editor::PlaySession session;
+    fuse::editor::PlayModePhysicsState physics;
+
+    session.start(editorScene, scene, state, physics);
+    expectTrue(session.hasDirtySnapshot(), "dirty snapshot captured on start");
+    expectTrue(session.dirtySnapshotEntityCount() == 2u,
+               "dirty snapshot captures per-entity dirty flags");
+
+    editorScene.registry().get<fuse::ecs::Transform>(first)->dirty = true;
+    editorScene.registry().get<fuse::ecs::Transform>(second)->dirty = false;
+    state.sceneModified = true;
+
+    session.restoreDirtyFlags(editorScene, state);
+    expectTrue(!editorScene.registry().get<fuse::ecs::Transform>(first)->dirty,
+               "dirty restore reapplies pre-play clean flag for first entity");
+    expectTrue(editorScene.registry().get<fuse::ecs::Transform>(second)->dirty,
+               "dirty restore reapplies pre-play dirty flag for second entity");
+    expectTrue(!state.sceneModified, "dirty restore reapplies pre-play scene modified flag");
+
+    session.stop(editorScene, scene, state, physics);
+    expectTrue(session.dirtySnapshotEntityCount() == 0u,
+               "dirty snapshot entity count clears on stop");
+
+    editorScene.destroy();
+}
+
 void testPlaySessionStartStopCycle() {
     fuse::editor::EditorScene editorScene;
     editorScene.init();
@@ -504,6 +636,10 @@ int main() {
     testPlaySessionDrainWorldSnapshot();
     testPlaySessionDirtyFlagRestoreAndDrain();
     testPlaySessionEmptySessionGuards();
+    testPlaySessionFixedStepMaxStepsCap();
+    testPlaySessionNegativeDtGuard();
+    testPlaySessionPausedFixedStepSkipCounter();
+    testPlaySessionDirtySnapshotEntityCountAndOrder();
     testPlaySessionStartStopCycle();
     testPlaySessionFullTransformSnapshotRoundtrip();
     fuse::core::shutdown();

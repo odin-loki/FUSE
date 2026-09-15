@@ -38,9 +38,12 @@ public:
 
     void tick(f32 dt, EditorScene& editorScene, PlayModePhysicsState& physics);
     /// Drains `tickAccumulator()` in `fixedDt` slices while playing; returns steps simulated.
-    u32 consumeFixedSteps(f32 fixedDt, EditorScene& editorScene, PlayModePhysicsState& physics);
+    /// @param maxSteps 0 = unlimited; otherwise caps slices simulated this call (spiral guard).
+    u32 consumeFixedSteps(f32 fixedDt, EditorScene& editorScene, PlayModePhysicsState& physics,
+                          u32 maxSteps = 0);
     /// PIE frame update: `tick(dt)` then drain fixed slices; returns fixed steps simulated.
-    u32 tickFixedStep(f32 dt, f32 fixedDt, EditorScene& editorScene, PlayModePhysicsState& physics);
+    u32 tickFixedStep(f32 dt, f32 fixedDt, EditorScene& editorScene, PlayModePhysicsState& physics,
+                      u32 maxSteps = 0);
 
     bool isActive() const { return m_controller.state() != PlayModeController::State::Stopped; }
     bool isPlaying() const { return m_controller.isPlaying(); }
@@ -50,6 +53,12 @@ public:
     f32 tickAccumulator() const { return m_tickAccumulator; }
     u32 coalescedDirtyCount() const { return m_coalescedDirtyCount; }
     u32 skippedInactiveTickCount() const { return m_skippedInactiveTickCount; }
+    u32 skippedInactiveFixedStepCount() const { return m_skippedInactiveFixedStepCount; }
+    /// Remaining fixed slices in `tickAccumulator()` at the last `consumeFixedSteps` call.
+    u32 pendingFixedStepCount(f32 fixedDt) const;
+    u32 dirtySnapshotEntityCount() const {
+        return m_hasDirtySnapshot ? static_cast<u32>(m_dirtySnapshot.transformDirty.size()) : 0u;
+    }
     bool hasWorldSnapshot() const { return m_hasWorldSnapshot; }
     bool hasDirtySnapshot() const { return m_hasDirtySnapshot; }
 
@@ -86,6 +95,7 @@ private:
     f32 m_tickAccumulator = 0.f;
     u32 m_coalescedDirtyCount = 0;
     u32 m_skippedInactiveTickCount = 0;
+    u32 m_skippedInactiveFixedStepCount = 0;
 };
 
 } // namespace fuse::editor
