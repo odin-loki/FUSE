@@ -66,6 +66,13 @@ void testClusterIndex() {
     fuse::u32 sliceZ = 0u;
     fuse::renderer::ClusterGridLayout::decodeClusterIndex(17u, desc, tileX, tileY, sliceZ);
     expectTrue(tileX == 1u && tileY == 1u && sliceZ == 2u, "cluster index decode round-trip");
+
+    fuse::u32 oversizedTileX = 0u;
+    fuse::u32 oversizedTileY = 0u;
+    fuse::u32 oversizedSliceZ = 0u;
+    fuse::renderer::ClusterGridLayout::decodeClusterIndex(999u, desc, oversizedTileX, oversizedTileY, oversizedSliceZ);
+    expectTrue(oversizedTileX == 3u && oversizedTileY == 1u && oversizedSliceZ == 2u,
+               "decode clamps oversized cluster index");
 }
 
 void testClusterGridClampAndScreenMapping() {
@@ -170,6 +177,14 @@ void testClusterUtilAssignmentCounts() {
                "third assign rejected at capacity");
     expectTrue(clusterLights.size() == 2u, "cluster list stores assigned lights only");
 
+    std::vector<fuse::u32> batchClusterLights;
+    const std::vector<fuse::u32> candidates = {10u, 11u, 12u, 13u};
+    const fuse::u32 batchDropped =
+        fuse::renderer::cluster_util::assignLights(batchClusterLights, candidates, 2u);
+    expectTrue(batchDropped == 2u, "batch assign drops overflow lights");
+    expectTrue(batchClusterLights.size() == 2u, "batch assign stores capacity-limited lights");
+    expectTrue(batchClusterLights[0] == 10u && batchClusterLights[1] == 11u, "batch assign preserves order");
+
     fuse::renderer::ClusterGridSoA grid{};
     const fuse::u32 clusterCount = 3u;
     const std::vector<std::vector<fuse::u32>> perClusterLights = {
@@ -183,6 +198,78 @@ void testClusterUtilAssignmentCounts() {
                "assigned light count matches flat list");
     expectTrue(fuse::renderer::cluster_util::countEmptyClusters(grid, clusterCount) == 1u,
                "empty cluster count matches grid");
+
+    std::vector<fuse::u32> cluster0Lights;
+    expectTrue(fuse::renderer::cluster_util::lookupClusterLights(grid, 0u, cluster0Lights) == 2u,
+               "lookup returns cluster light count");
+    expectTrue(cluster0Lights.size() == 2u && cluster0Lights[0] == 0u && cluster0Lights[1] == 2u,
+               "lookup copies cluster light indices");
+
+    std::vector<fuse::u32> emptyClusterLights;
+    expectTrue(fuse::renderer::cluster_util::lookupClusterLights(grid, 1u, emptyClusterLights) == 0u,
+               "lookup on empty cluster returns zero");
+    expectTrue(emptyClusterLights.empty(), "lookup clears output for empty cluster");
+}
+
+void testClusterGridSoAAllocate() {
+    fuse::renderer::ClusterDesc desc{};
+    desc.tilesX = 2;
+    desc.tilesY = 2;
+    desc.slicesZ = 2;
+
+    fuse::renderer::ClusterGridSoA grid{};
+    grid.lightList = {99u};
+    grid.allocate(desc);
+
+    expectTrue(grid.aabbs.size() == desc.clusterCount(), "allocate sizes aabb storage");
+    expectTrue(grid.grid.size() == desc.clusterCount(), "allocate sizes grid entries");
+    expectTrue(grid.lightList.empty(), "allocate clears flat light list");
+    expectTrue(!grid.isEmpty(), "allocated grid is non-empty");
+
+    grid.clear();
+    expectTrue(grid.isEmpty(), "cleared grid is empty");
+    expectTrue(grid.aabbs.empty() && grid.grid.empty() && grid.lightList.empty(), "clear drops all storage");
+}
+
+void testZeroDimensionClusterGrid() {
+    fuse::renderer::ClusterDesc zeroDesc{};
+    zeroDesc.tilesX = 0u;
+    zeroDesc.tilesY = 0u;
+    zeroDesc.slicesZ = 0u;
+    expectTrue(zeroDesc.isEmpty(), "zero tiles yields empty cluster desc");
+    expectTrue(zeroDesc.clusterCount() == 0u, "zero-dimension cluster count is zero");
+
+    fuse::u32 tileX = 99u;
+    fuse::u32 tileY = 99u;
+    fuse::u32 sliceZ = 99u;
+    fuse::renderer::ClusterGridLayout::decodeClusterIndex(5u, zeroDesc, tileX, tileY, sliceZ);
+    expectTrue(tileX == 0u && tileY == 0u && sliceZ == 0u, "decode on empty grid returns origin");
+
+    expectTrue(fuse::renderer::ClusterGridLayout::clampClusterIndex(99u, zeroDesc) == 0u,
+               "clamp cluster index on empty grid returns zero");
+    expectTrue(fuse::renderer::ClusterGridLayout::clampTileX(99u, zeroDesc) == 0u, "clamp tile X on empty grid");
+    expectTrue(fuse::renderer::ClusterGridLayout::clampTileY(99u, zeroDesc) == 0u, "clamp tile Y on empty grid");
+    expectTrue(fuse::renderer::ClusterGridLayout::clampSliceZ(99u, zeroDesc) == 0u, "clamp slice Z on empty grid");
+
+    fuse::renderer::ClusterCameraDesc camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+    fuse::u32 clusterIndex = 0u;
+    expectTrue(!fuse::renderer::ClusterGridLayout::mapScreenDepthToClusterIndex(
+                   0.5f, 0.5f, 10.f, zeroDesc, camera, clusterIndex),
+               "screen mapping rejects empty cluster grid");
+
+    fuse::renderer::ClusterGridSoA grid{};
+    grid.allocate(zeroDesc);
+    expectTrue(grid.isEmpty(), "allocate on zero-dimension desc stays empty");
+
+    const fuse::u32 dropped =
+        fuse::renderer::ClusterLightGridLayout::rebuildLightGrid(grid, 0u, {}, 4u);
+    expectTrue(dropped == 0u, "zero cluster rebuild on empty grid drops nothing");
+    expectTrue(fuse::renderer::cluster_util::countAssignedLights(grid, 0u) == 0u,
+               "assignment count zero for empty grid");
+    expectTrue(fuse::renderer::cluster_util::countEmptyClusters(grid, 0u) == 0u,
+               "empty cluster count zero when cluster count is zero");
 }
 
 void testLightGridRebuildLayout() {
@@ -443,6 +530,8 @@ int main() {
     testLightGridRebuildOverflowClamp();
     testEmptyGridRebuild();
     testClusterUtilAssignmentCounts();
+    testClusterGridSoAAllocate();
+    testZeroDimensionClusterGrid();
     testCullerInitAndClusterBuild();
     testLightCullAssignsAndSkips();
     testEmptySceneCull();

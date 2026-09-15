@@ -106,14 +106,15 @@ Pass schedule (19 total — 12 Vulkan, 7 CUDA):
 
 ## B5.4 — Clustered Deferred Shading
 
-**Status:** CPU cluster grid SoA + `ClusteredLightCuller` stub landed; tile/cluster index helpers, depth-slice mapping, light-grid rebuild overflow clamp, and assignment stats deepened (B5.4 follow-up); CUDA kernels deferred.
+**Status:** CPU cluster grid SoA + `ClusteredLightCuller` stub landed; tile/cluster index helpers, depth-slice mapping, light-grid rebuild overflow clamp, assignment lookup/count stubs, and zero-dimension grid paths deepened (B5.4 follow-up); CUDA kernels deferred.
 
 | Component | Location | Notes |
 |-----------|----------|-------|
-| `ClusterDesc` / `ClusterAABB` / `ClusterGridSoA` | `lighting/clustered.hpp` | 3D screen cluster grid types |
-| `ClusterGridLayout` | `lighting/clustered.hpp` | Tile/cluster index encode/decode, bounds clamp, screen-depth → cluster index |
+| `ClusterDesc` / `ClusterAABB` / `ClusterGridSoA` | `lighting/clustered.hpp` | 3D screen cluster grid types; `ClusterGridSoA::allocate` / `clear` |
+| `ClusterGridLayout` | `lighting/clustered.hpp` | Tile/cluster index encode/decode (oversized decode clamp), bounds clamp, screen-depth → cluster index |
 | `ClusterSliceLayout` | `lighting/clustered.hpp` | Exponential depth-slice near/far bounds + `computeSliceZFromDepth` (mirrors froxel layout) |
 | `ClusterLightGridLayout` | `lighting/clustered.hpp` | Flat light-list packing, per-cluster capacity clamp, contiguous offset validation |
+| `cluster_util` | `lighting/clustered.hpp` | `tryAssignLight`, `assignLights`, `lookupClusterLights`, assignment/count helpers |
 | `ClusteredLightCuller` | `lighting/clustered_light_culler.cpp` | CPU stub — builds cluster AABBs, sphere-culls point/spot lights, overflow stats, `rebuildLightGrid()` packs offsets |
 | `DeferredFramePipeline` | `deferred/frame_pipeline.cpp` | `ClusteredLightCull` pass invokes culler when wired |
 
@@ -121,7 +122,7 @@ CUDA `build_cluster_aabbs_kernel` / `cull_lights_kernel` / `deferred_shade_kerne
 
 | Test | Validates |
 |------|-----------|
-| `fuse_clustered_light_culler` | Cluster count/index encode-decode, screen-depth mapping, slice depth distribution, light-grid rebuild + overflow clamp, culler init, CPU cull assignment + capacity stats, empty scene, contiguous offsets, deferred pipeline wiring |
+| `fuse_clustered_light_culler` | Cluster count/index encode-decode + oversized decode clamp, zero-dimension grid, screen-depth mapping, slice depth distribution, grid allocate/clear, light-grid rebuild + overflow clamp, assignment lookup/counts, culler init, CPU cull capacity stats, empty scene, contiguous offsets, deferred pipeline wiring |
 | `fuse_deferred_pipeline` | Full B5.1 schedule (includes `clustered_light_cull` pass name) |
 
 ---

@@ -24,6 +24,20 @@ f32 clamp01(f32 value) {
 
 } // namespace
 
+void ClusterGridSoA::allocate(const ClusterDesc& desc) {
+    const ClusterDesc clampedDesc = ClusterDesc::clampCounts(desc);
+    const u32 clusterCount = clampedDesc.clusterCount();
+    aabbs.assign(clusterCount, ClusterAABB{});
+    grid.assign(clusterCount, ClusterGridEntry{});
+    lightList.clear();
+}
+
+void ClusterGridSoA::clear() {
+    aabbs.clear();
+    grid.clear();
+    lightList.clear();
+}
+
 ClusterDesc ClusterDesc::clampCounts(const ClusterDesc& raw) {
     ClusterDesc out = raw;
     if (out.tilesX > kMaxTilesX) {
@@ -47,6 +61,41 @@ bool cluster_util::tryAssignLight(std::vector<u32>& clusterLights, u32 lightIdx,
     }
     clusterLights.push_back(lightIdx);
     return true;
+}
+
+u32 cluster_util::assignLights(std::vector<u32>& clusterLights,
+                                const std::vector<u32>& candidates,
+                                u32 maxLightsPerCluster) {
+    u32 dropped = 0u;
+    for (u32 lightIdx : candidates) {
+        if (!tryAssignLight(clusterLights, lightIdx, maxLightsPerCluster)) {
+            ++dropped;
+        }
+    }
+    return dropped;
+}
+
+u32 cluster_util::lookupClusterLights(const ClusterGridSoA& grid, u32 clusterIdx, std::vector<u32>& outLights) {
+    outLights.clear();
+    if (clusterIdx >= grid.grid.size()) {
+        return 0u;
+    }
+
+    const ClusterGridEntry& entry = grid.grid[clusterIdx];
+    if (entry.count == 0u) {
+        return 0u;
+    }
+
+    const u32 endOffset = entry.offset + entry.count;
+    if (endOffset > grid.lightList.size()) {
+        return 0u;
+    }
+
+    outLights.reserve(entry.count);
+    for (u32 offset = entry.offset; offset < endOffset; ++offset) {
+        outLights.push_back(grid.lightList[offset]);
+    }
+    return entry.count;
 }
 
 u32 cluster_util::countAssignedLights(const ClusterGridSoA& grid, u32 clusterCount) {
@@ -87,8 +136,9 @@ void ClusterGridLayout::decodeClusterIndex(u32 index, const ClusterDesc& desc, u
         return;
     }
 
-    sliceZ = index % desc.slicesZ;
-    const u32 tileSlice = index / desc.slicesZ;
+    const u32 clampedIndex = clampClusterIndex(index, desc);
+    sliceZ = clampedIndex % desc.slicesZ;
+    const u32 tileSlice = clampedIndex / desc.slicesZ;
     tileX = tileSlice % desc.tilesX;
     tileY = tileSlice / desc.tilesX;
 }
@@ -256,8 +306,7 @@ void ClusteredLightCuller::init(const ClusterDesc& desc, ResourceManager& resour
         return;
     }
 
-    m_gridSoA.aabbs.resize(clusterCount);
-    m_gridSoA.grid.resize(clusterCount);
+    m_gridSoA.allocate(m_desc);
     m_stats.ready = true;
 }
 
@@ -290,8 +339,15 @@ void ClusteredLightCuller::updateClusters(const ClusterCameraDesc& camera) {
     }
 
     const u32 clusterCount = m_desc.clusterCount();
-    m_gridSoA.aabbs.resize(clusterCount);
-    m_gridSoA.grid.resize(clusterCount);
+    if (clusterCount == 0u) {
+        m_gridSoA.clear();
+        m_stats.clustersBuilt = 0;
+        return;
+    }
+
+    if (m_gridSoA.aabbs.size() != clusterCount || m_gridSoA.grid.size() != clusterCount) {
+        m_gridSoA.allocate(m_desc);
+    }
 
     for (u32 sliceZ = 0; sliceZ < m_desc.slicesZ; ++sliceZ) {
         const f32 nearZ = ClusterSliceLayout::computeSliceNearZ(sliceZ, m_desc, camera);
