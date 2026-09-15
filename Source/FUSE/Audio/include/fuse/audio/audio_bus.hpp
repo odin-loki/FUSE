@@ -39,6 +39,9 @@ public:
     /// Listener master volume × effective bus gain.
     float effective_output_gain(AudioBus bus, float listener_master_volume) const;
 
+    /// Reset all bus gains to unity and restore default parent routing.
+    void reset_gains();
+
 private:
     float m_gains[static_cast<u32>(AudioBus::Count)] = {1.f, 1.f, 1.f, 1.f};
     AudioBus m_parents[static_cast<u32>(AudioBus::Count)] = {
