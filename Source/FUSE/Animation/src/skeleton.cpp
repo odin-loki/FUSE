@@ -221,6 +221,16 @@ bool pose_soa_matches_bind(const PoseSoA& pose, const Skeleton& skel, f32 epsilo
     return true;
 }
 
+bool needs_pose_soa_bind_fallback(const PoseSoA& pose, const Skeleton& skel) {
+    return pose.bone_count == 0 || pose.bone_count != skel.bone_count;
+}
+
+void ensure_pose_soa_bind_fallback(PoseSoA& pose, const Skeleton& skel) {
+    if (needs_pose_soa_bind_fallback(pose, skel)) {
+        pose = PoseSoA::from_bind_pose(skel);
+    }
+}
+
 void blend_pose_soa(const PoseSoA& a, const PoseSoA& b, f32 weight, PoseSoA& out) {
     const f32 clamped = std::clamp(weight, 0.f, 1.f);
     const u32 count = std::max(a.bone_count, b.bone_count);

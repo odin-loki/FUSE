@@ -31,6 +31,8 @@ struct BlendNode2 : BlendNode {
     std::unique_ptr<BlendNode> b;
     f32* blend_param = nullptr;
 
+    [[nodiscard]] bool is_empty() const;
+
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
     void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
 };
@@ -45,6 +47,8 @@ struct BlendSpace1D : BlendNode {
     std::vector<Entry> entries;
     f32* param = nullptr;
 
+    [[nodiscard]] bool is_empty() const;
+
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
     void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
 };
@@ -58,6 +62,8 @@ struct BlendSpace2D : BlendNode {
 
     std::vector<Entry> entries;
     vec2* param = nullptr;
+
+    [[nodiscard]] bool is_empty() const;
 
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
     void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
@@ -85,6 +91,8 @@ struct LayeredBlendNode : BlendNode {
     std::vector<u32> masked_bones;
     f32 layer_weight = 1.f;
 
+    [[nodiscard]] bool is_empty() const;
+
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
     void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
 };
@@ -95,6 +103,8 @@ struct AdditiveBlendNode : BlendNode {
     std::unique_ptr<BlendNode> layer;
     std::vector<u32> masked_bones;
     f32 layer_weight = 1.f;
+
+    [[nodiscard]] bool is_empty() const;
 
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
     void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
@@ -130,6 +140,8 @@ struct AnimStateMachine : BlendNode {
     void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
     void add_state(std::string name, std::unique_ptr<BlendNode> node);
     void add_transition(const char* from, const char* to, f32 duration, std::function<bool()> condition);
+
+    [[nodiscard]] bool is_empty() const;
 
     /// Crossfade blend weight in [0, 1] while transitioning; 0 when idle.
     f32 crossfade_alpha() const;
@@ -184,6 +196,15 @@ struct AnimStateMachine : BlendNode {
 
     /// True when the state at `state_index` has a non-null blend node.
     bool has_state_node(u32 state_index) const;
+
+    /// Index of the transition edge from `from_state` to `to_state`, or -1 when missing.
+    s32 find_transition_index(u32 from_state, u32 to_state) const;
+
+    /// True when a transition edge exists and its condition passes (or no condition is set).
+    bool transition_condition_passes(u32 from_state, u32 to_state) const;
+
+    /// True when a named transition edge exists and its condition passes.
+    bool can_transition(const char* from, const char* to) const;
 };
 
 } // namespace fuse::animation
