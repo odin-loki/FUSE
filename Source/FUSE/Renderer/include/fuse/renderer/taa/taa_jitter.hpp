@@ -20,6 +20,8 @@ struct TaaJitterLayout {
     static fuse::math::Vec2 haltonPixelOffset(u32 index, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     static fuse::math::Vec2 haltonNdcOffset(u32 index, u32 width, u32 height,
                                             u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// Halton offset for a monotonic frame counter (wraps via `frameIndexInSequence`).
+    static fuse::math::Vec2 offsetForFrameIndex(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     static void fillHaltonSequence(u32 length, fuse::math::Vec2* out);
 };
 

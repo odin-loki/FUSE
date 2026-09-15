@@ -52,6 +52,8 @@ struct TaaResolveStats {
     u32 width = 0;
     u32 height = 0;
     f32 last_blend = 0.f;
+    /// Blend weight applied this frame — 1.0 on first warm-up frame (no history reuse).
+    f32 effective_blend = 0.f;
     bool history_swapped = false;
     bool first_frame = false;
     bool has_valid_history = false;

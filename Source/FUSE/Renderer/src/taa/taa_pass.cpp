@@ -64,6 +64,10 @@ void TaaPass::advanceJitter() {
     m_stats.lastJitterNdc = currentJitterNdc();
 }
 
+void TaaPass::invalidateHistory() {
+    m_history.invalidateHistory();
+}
+
 bool TaaPass::resolveFrame(const TaaResolveDesc& desc, void* cudaStream) {
     if (!m_stats.ready) {
         m_stats.message = "TAA pass not ready";

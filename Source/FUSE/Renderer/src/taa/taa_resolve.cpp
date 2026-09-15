@@ -27,6 +27,7 @@ bool TaaResolve::resolve(const TaaResolveDesc& desc, TaaHistoryBuffer& history, 
     }
 
     m_stats.first_frame = !history.hasValidHistory();
+    const f32 effectiveBlend = m_stats.first_frame ? 1.f : desc.params.blend_factor;
     history.markResolved();
     history.swap();
 
@@ -34,6 +35,7 @@ bool TaaResolve::resolve(const TaaResolveDesc& desc, TaaHistoryBuffer& history, 
     m_stats.width = desc.width;
     m_stats.height = desc.height;
     m_stats.last_blend = desc.params.blend_factor;
+    m_stats.effective_blend = effectiveBlend;
     m_stats.history_swapped = true;
     m_stats.has_valid_history = history.hasValidHistory();
     m_stats.accumulated_frames = history.accumulatedFrames();

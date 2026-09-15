@@ -79,11 +79,18 @@ void testJitterSequencePeriod() {
     for (fuse::u32 frame = 0u; frame < 8u; ++frame) {
         expectTrue(TaaJitterLayout::frameIndexInSequence(frame, 8u) == frame,
                    "frame index maps into sequence slot");
+        const fuse::math::Vec2 frameOffset = TaaJitterLayout::offsetForFrameIndex(frame, 8u);
+        const fuse::math::Vec2 slotOffset = TaaJitterLayout::haltonPixelOffset(frame, 8u);
+        expectNear(frameOffset.x, slotOffset.x, 1e-5f, "offsetForFrameIndex matches slot offset X");
+        expectNear(frameOffset.y, slotOffset.y, 1e-5f, "offsetForFrameIndex matches slot offset Y");
         jitter.advance();
     }
     expectTrue(jitter.index() == 0u, "default sequence wraps after one period");
     const fuse::math::Vec2 periodEnd = jitter.currentPixelOffset();
     expectNear(periodEnd.x, periodStart.x, 1e-5f, "sequence period returns to first sample");
+
+    const fuse::math::Vec2 wrappedOffset = TaaJitterLayout::offsetForFrameIndex(8u, 8u);
+    expectNear(wrappedOffset.x, periodStart.x, 1e-5f, "offsetForFrameIndex wraps with sequence period");
 }
 
 void testCustomJitterSequenceLength() {
@@ -280,12 +287,14 @@ void testResolveStub() {
     expectTrue(resolve.lastStats().has_valid_history, "resolve marks history valid");
     expectTrue(resolve.lastStats().accumulated_frames == 1u, "resolve increments accumulated frames");
     expectNear(resolve.lastStats().last_blend, 0.15f, 1e-5f, "resolve records blend factor");
+    expectNear(resolve.lastStats().effective_blend, 1.f, 1e-5f, "first resolve uses full current weight");
 
     desc.surfaces.current_frame = reinterpret_cast<void*>(0x3);
     desc.surfaces.output = reinterpret_cast<void*>(0x4);
     expectTrue(resolve.resolve(desc, history), "second resolve succeeds");
     expectTrue(!resolve.lastStats().first_frame, "second resolve is not first frame");
     expectTrue(resolve.lastStats().accumulated_frames == 2u, "second resolve increments accumulated frames");
+    expectNear(resolve.lastStats().effective_blend, 0.15f, 1e-5f, "subsequent resolve uses configured blend");
 
     fuse::renderer::TaaResolveDesc invalid{};
     invalid.width = 64;
@@ -340,6 +349,48 @@ void testTaaPassLifecycle() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testTaaPassInvalidateHistory() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for TaaPass invalidate test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaPassDesc passDesc{};
+    passDesc.width = 64;
+    passDesc.height = 64;
+
+    auto pass = fuse::renderer::TaaPass::create(passDesc);
+    expectTrue(pass->init(resources), "TaaPass initialized for invalidate test");
+
+    fuse::renderer::TaaResolveDesc resolveDesc{};
+    resolveDesc.width = 64;
+    resolveDesc.height = 64;
+    resolveDesc.surfaces.current_frame = reinterpret_cast<void*>(0x10);
+    resolveDesc.surfaces.output = reinterpret_cast<void*>(0x20);
+    expectTrue(pass->resolveFrame(resolveDesc), "initial resolve succeeds");
+    expectTrue(pass->history().hasValidHistory(), "history valid before invalidate");
+
+    pass->invalidateHistory();
+    expectTrue(!pass->history().hasValidHistory(), "TaaPass invalidate clears history validity");
+    expectTrue(pass->history().accumulatedFrames() == 0u, "TaaPass invalidate clears accumulated frames");
+
+    expectTrue(pass->resolveFrame(resolveDesc), "resolve succeeds after TaaPass invalidate");
+    expectTrue(pass->resolve().lastStats().first_frame, "first frame flagged after TaaPass invalidate");
+
+    pass->destroy();
+    expectTrue(!pass->history().isReady(), "TaaPass destroy releases history buffers");
+
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
 void testTaaPassGraphHook() {
     fuse::renderer::RenderGraph graph;
     fuse::renderer::resetTaaPassGraphStorage();
@@ -366,6 +417,7 @@ int main() {
     testValidityResetAfterInvalidate();
     testResolveStub();
     testTaaPassLifecycle();
+    testTaaPassInvalidateHistory();
     testTaaPassGraphHook();
 
     fuse::core::shutdown();
