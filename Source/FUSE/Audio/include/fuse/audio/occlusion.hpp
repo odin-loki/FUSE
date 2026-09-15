@@ -12,6 +12,21 @@ struct OcclusionParams {
     float blocked_visibility = 0.25f;
 };
 
+/// Clamp per-source visibility into the occlusion pipeline domain.
+float clamp_occlusion_visibility(float visibility);
+
+/// True when visibility is at or above unity after clamping — skips attenuation mapping.
+bool is_fully_visible_occlusion(float visibility);
+
+/// True when visibility is at or below zero after clamping — skips blocker ray evaluation.
+bool is_fully_occluded_occlusion(float visibility);
+
+/// True when a blocker list pointer is non-null and carries at least one AABB.
+bool has_occlusion_blockers(const AABB* blockers, u32 blocker_count);
+
+/// Co-located listener/source positions skip segment-vs-AABB blocker evaluation.
+bool should_skip_blocker_evaluation(const Vec3& listener, const Vec3& source);
+
 /// Map visibility [0, 1] to a gain multiplier. Fully occluded sources retain `min_gain`.
 float evaluate_occlusion_gain(float visibility, const OcclusionParams& params = {});
 
