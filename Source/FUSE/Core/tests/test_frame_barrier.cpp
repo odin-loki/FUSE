@@ -47,6 +47,61 @@ void testWaitForTickCompleteIsNoOpInV1() {
     expectTrue(!barrier.tickJobsComplete(), "waitForTickComplete does not auto-signal in v1");
 }
 
+void testWaitBeforeSignalLeavesIncomplete() {
+    fuse::frame::FrameBarrier barrier;
+    barrier.beginTick(11u);
+    barrier.waitForTickComplete();
+    expectTrue(!barrier.tickJobsComplete(), "wait before signal leaves tick incomplete");
+    expectEq(barrier.frameIndex(), 11u, "wait before signal preserves frame index");
+}
+
+void testWaitAfterSignalPreservesComplete() {
+    fuse::frame::FrameBarrier barrier;
+    barrier.beginTick(5u);
+    barrier.signalTickJobsComplete();
+    expectTrue(barrier.tickJobsComplete(), "signal marks complete before wait");
+
+    barrier.waitForTickComplete();
+    expectTrue(barrier.tickJobsComplete(), "wait after signal keeps tick complete");
+    expectEq(barrier.frameIndex(), 5u, "wait after signal preserves frame index");
+}
+
+void testMultipleWaitCallsAreIdempotent() {
+    fuse::frame::FrameBarrier barrier;
+    barrier.beginTick(2u);
+    barrier.signalTickJobsComplete();
+
+    for (int i = 0; i < 4; ++i) {
+        barrier.waitForTickComplete();
+    }
+
+    expectTrue(barrier.tickJobsComplete(), "repeated wait calls stay complete");
+    expectEq(barrier.frameIndex(), 2u, "repeated wait calls preserve frame index");
+}
+
+void testWaitDoesNotAdvanceFrameIndex() {
+    fuse::frame::FrameBarrier barrier;
+
+    barrier.beginTick(99u);
+    barrier.waitForTickComplete();
+    barrier.signalTickJobsComplete();
+    barrier.waitForTickComplete();
+
+    expectEq(barrier.frameIndex(), 99u, "wait/signal cycle does not bump frame index");
+}
+
+void testBeginTickAfterWaitResetsPreviousFrame() {
+    fuse::frame::FrameBarrier barrier;
+
+    barrier.beginTick(1u);
+    barrier.signalTickJobsComplete();
+    barrier.waitForTickComplete();
+
+    barrier.beginTick(2u);
+    expectEq(barrier.frameIndex(), 2u, "second beginTick stores new frame index");
+    expectTrue(!barrier.tickJobsComplete(), "second beginTick clears completion after prior wait");
+}
+
 void testSequentialFramesAdvanceIndex() {
     fuse::frame::FrameBarrier barrier;
 
@@ -64,6 +119,11 @@ int main() {
     testBeginTickResetsState();
     testSignalMarksComplete();
     testWaitForTickCompleteIsNoOpInV1();
+    testWaitBeforeSignalLeavesIncomplete();
+    testWaitAfterSignalPreservesComplete();
+    testMultipleWaitCallsAreIdempotent();
+    testWaitDoesNotAdvanceFrameIndex();
+    testBeginTickAfterWaitResetsPreviousFrame();
     testSequentialFramesAdvanceIndex();
 
     if (g_failures == 0) {

@@ -46,7 +46,7 @@ void testHybridTickSignalsFrameBarrier() {
     composer.tick(ctx);
 
     expectEq(composer.frameBarrier().frameIndex(), 9u, "barrier records tick frame index");
-    expectTrue(composer.frameBarrier().tickJobsComplete(), "barrier complete after JobScheduler cull join");
+    expectTrue(composer.frameBarrier().tickJobsComplete(), "barrier complete after dimension cull joins");
     expectEq(composer.frameCount(), 1u, "frame counter advanced");
     expectEq(world2D.readSnapshot().sprites().size(), 1u, "2D snapshot built before cull");
     expectTrue(world2D.readSnapshot().visibleCount() == 1u, "parallel cull ran via composer tick");

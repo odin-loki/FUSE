@@ -1,7 +1,5 @@
 #include <fuse/hybrid/hybrid_composer.hpp>
 
-#include <fuse/jobs/job_counter.hpp>
-#include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/log/logger.hpp>
 #include <fuse/platform/gl_context.hpp>
 #include <fuse/platform/thread.hpp>
@@ -90,26 +88,16 @@ void HybridComposer::tick(frame::FrameCtx& ctx) {
         m_world2D->tickGameThread(ctx);
     }
 
-    // Fork dimension cull jobs via JobScheduler; each world uses parallel_for internally.
-    jobs::JobCounter cullJobs(0);
-    auto& scheduler = jobs::JobScheduler::instance();
-
+    // Game-thread cull dispatch — each world parallelizes internally via parallel_for.
+    // Dimension culls run serially on the game thread so nested parallel_for does not
+    // block worker threads waiting on inner JobCounters (see fuse_hybrid_tests cull edges).
     if (m_world3D && m_flags.enable3D) {
-        cullJobs.add(1);
-        scheduler.submit([this, &cullJobs]() {
-            m_world3D->runParallelCull();
-            cullJobs.signal();
-        });
+        m_world3D->runParallelCull();
     }
     if (m_world2D && m_flags.enable2D) {
-        cullJobs.add(1);
-        scheduler.submit([this, &cullJobs]() {
-            m_world2D->runParallelCull();
-            cullJobs.signal();
-        });
+        m_world2D->runParallelCull();
     }
 
-    cullJobs.wait();
     m_barrier.signalTickJobsComplete();
     m_barrier.waitForTickComplete();
     ++m_frameCount;

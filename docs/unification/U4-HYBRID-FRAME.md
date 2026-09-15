@@ -2,7 +2,7 @@
 
 **Phase:** U4 (WP-06)  
 **Date:** 2026-09-15  
-**Status:** Frame barrier + JobScheduler cull orchestration deepened — software placeholder renderer; real GL/Vulkan deferred to Track B
+**Status:** Frame barrier wait semantics + parallel cull batch edge cases covered in tests — software placeholder renderer; real GL/Vulkan deferred to Track B
 
 ---
 
@@ -17,7 +17,7 @@
 | `HybridComposer` | `Source/FUSE/Hybrid/` | 3D clear → 2D sprites → UI overlay order |
 | `PlaceholderRenderer` | `Source/FUSE/Hybrid/` | 320×240 RGBA software buffer (honest stub) |
 | `demo_hybrid_hud` | `Source/FUSE/Apps/HybridHud/` | 60-frame spin demo |
-| Tests | `fuse_hybrid_tests`, `fuse_world2d_tests`, `fuse_core_frame_barrier_tests` | MT snapshot cull, compositor flags, `FrameBarrier` unit + hybrid integration |
+| Tests | `fuse_hybrid_tests`, `fuse_world2d_tests`, `fuse_core_frame_barrier_tests` | MT snapshot cull, compositor flags, `FrameBarrier` wait/idempotency, cull batch edges (empty/partial/frustum) |
 
 ---
 
@@ -29,10 +29,8 @@ game thread:
        - FrameBarrier::beginTick(frameIndex)
        - World3D::tickGameThread  → physics + immutable snapshot (serial)
        - World2D::tickGameThread  → physics + immutable snapshot (serial)
-       - JobScheduler::submit per enabled dimension:
-           World3D::runParallelCull  → internal parallel_for over snapshot
-           World2D::runParallelCull  → internal parallel_for over snapshot
-       - JobCounter::wait()  (dimension culls may overlap)
+       - World3D::runParallelCull → internal parallel_for over snapshot
+       - World2D::runParallelCull → internal parallel_for over snapshot
        - FrameBarrier::signalTickJobsComplete()
   2. HybridComposer::render(ctx)  [render thread only]
        - 3D clear colour (PlaceholderRenderer)
@@ -42,9 +40,9 @@ game thread:
 
 **Threading rules enforced:**
 - Scene graph mutation stays on the game thread (`World2D::addSprite`, `tickGameThread`, etc.).
-- `HybridComposer::tick` forks dimension cull jobs via `JobScheduler::submit`; each world's `runParallelCull` uses `jobs::parallel_for` over its snapshot only.
+- `HybridComposer::tick` runs dimension culls serially on the game thread; each world's `runParallelCull` fans out via `jobs::parallel_for` over its snapshot.
 - Workers read `SceneSnapshot2D` / `SceneSnapshot3D` only — no raw `SceneObject*` in `parallel_for` bodies.
-- `FrameBarrier::signalTickJobsComplete()` runs only after the outer `JobCounter` join (all dimension culls finished).
+- `FrameBarrier::signalTickJobsComplete()` runs only after all dimension culls finish (each joins its internal `parallel_for`).
 - GPU touch gated by `fuse::platform::isRenderThread()` (registered at `fuse::core::initialize()`).
 
 ---
@@ -87,7 +85,7 @@ ctest --test-dir build
 | `IDimension` / `World2D` / `World3D` / `HybridComposer` headers stable for modules | ✅ |
 | Demo: empty 3D clear + spinning 2D sprite in one process | ✅ (`demo_hybrid_hud`, software renderer) |
 | Dimension enable/disable from project flags | ✅ |
-| `parallel_for` cull stub (per-world + composer JobScheduler fork) | ✅ |
+| `parallel_for` cull stub (per-world + composer game-thread dispatch) | ✅ |
 | Frame barrier between tick and render | ✅ (`fuse_core_frame_barrier_tests`, hybrid integration) |
 | `renderThread()` ownership honoured | ✅ |
 | No cross-thread raw `SceneObject*` in cull path | ✅ (tests) |
@@ -110,6 +108,21 @@ ctest --test-dir build
 5. **Hybrid compose** — GPU blit from 3D colour+depth target to 2D overlay target.
 6. **Async upload lane** — staging buffers filled by jobs, committed on render thread.
 7. **Editor PIE viewport** — Qt GL widget integration (U6).
+
+---
+
+## Test coverage (U4 follow-up)
+
+| Area | Target | Edge cases exercised |
+|------|--------|----------------------|
+| `FrameBarrier::waitForTickComplete` | `fuse_core_frame_barrier_tests` | wait before/after signal, repeated waits, frame index stability across wait cycles |
+| `parallel_for` cull batches | `fuse_hybrid_tests` (`test_frame_pipeline_mt.cpp`) | empty range, grain > count, partial final batch (9 sprites / grain 8) |
+| World cull stubs | `fuse_hybrid_tests` (`test_parallel_cull_edge.cpp`) | empty snapshot, single sprite, all offscreen, mixed visibility, 3D frustum Z bound |
+| Composer orchestration | hybrid integration + cull edge tests | dual-dimension cull before barrier signal, sequential tick barrier reset |
+
+`FrameBarrier::waitForTickComplete()` remains a v1 no-op hook (jobs are joined via internal `parallel_for` waits before `signalTickJobsComplete()`); tests document that contract so future async tick lanes can extend wait without breaking callers.
+
+Dimension culls dispatch on the **game thread** (not nested inside `JobScheduler::submit`) so each world's internal `parallel_for` can use worker threads without deadlocking when both 2D and 3D have snapshot entries.
 
 ---
 
