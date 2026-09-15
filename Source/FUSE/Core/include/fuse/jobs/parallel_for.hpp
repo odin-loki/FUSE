@@ -1,22 +1,16 @@
 #pragma once
 
+#include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/types.hpp>
+
 #include <functional>
 
 namespace fuse::jobs {
 
-/// Parallel index range (stub — executes serially when workers == 0).
+/// Submit a parallel index range via the global scheduler.
 template <typename Body>
-void parallel_for(u32 begin, u32 end, u32 grainSize, const Body& body) {
-    if (grainSize == 0) {
-        grainSize = 1;
-    }
-    for (u32 i = begin; i < end; i += grainSize) {
-        const u32 chunkEnd = (i + grainSize < end) ? (i + grainSize) : end;
-        for (u32 j = i; j < chunkEnd; ++j) {
-            body(j);
-        }
-    }
+inline void parallel_for(u32 begin, u32 end, u32 grainSize, const Body& body) {
+    JobScheduler::instance().parallel_for(begin, end, grainSize, body);
 }
 
 inline void parallel_for(u32 count, const std::function<void(u32)>& body) {

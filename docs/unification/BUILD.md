@@ -11,7 +11,10 @@ The root `CMakeLists.txt` is the **FUSE umbrella** entry point. It can build:
 | `FUSE_BUILD_CORE` | ON | `fuse_core` static library + optional `fuse_core_tests` |
 | `FUSE_BUILD_T3D` | ON | Legacy Torque3D app (`TORQUE_APP_NAME`, default `Torque3D`) |
 | `FUSE_BUILD_T2D` | ON | Torque2D engine via `fuse_torque2d` external project (if submodule present) |
-| `FUSE_BUILD_CORE_TESTS` | ON | CTest target `fuse_core_worker_count` |
+| `FUSE_BUILD_CORE_TESTS` | ON | CTest targets `fuse_core_worker_count`, `fuse_core_jobs` |
+| `FUSE_BUILD_LEGACY` | ON | `fuse_t3d_legacy`, `fuse_t2d_legacy` quarantine static libs |
+| `FUSE_BUILD_SMOKE` | ON | `fuse_runtime_smoke` one-process test binary |
+| `FUSE_SMOKE_ENABLE_ASAN` | OFF | AddressSanitizer for smoke target |
 
 Legacy Torque3D-only workflow is **unchanged**:
 
@@ -41,7 +44,27 @@ Full T3D/T2D builds need the dependencies documented in upstream Torque READMEs 
 
 ## Configure — desktop (Linux example)
 
-### fuse_core + tests only (fast CI path)
+### fuse_core + smoke (U2 fast CI path)
+
+```bash
+cmake -B build -G Ninja \
+  -DCMAKE_CXX_COMPILER=g++-13 \
+  -DFUSE_UMBRELLA=ON \
+  -DFUSE_BUILD_CORE=ON \
+  -DFUSE_BUILD_CORE_TESTS=ON \
+  -DFUSE_BUILD_LEGACY=ON \
+  -DFUSE_BUILD_SMOKE=ON \
+  -DFUSE_BUILD_T3D=OFF \
+  -DFUSE_BUILD_T2D=OFF
+
+cmake --build build
+ctest --test-dir build --output-on-failure
+./build/Source/FUSE/Apps/RuntimeSmoke/fuse_runtime_smoke
+```
+
+See [U2-SMOKE.md](./U2-SMOKE.md) for quarantine strategy and blockers.
+
+### fuse_core + tests only (fastest CI path)
 
 ```bash
 cmake -B build -G Ninja \

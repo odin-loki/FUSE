@@ -33,6 +33,9 @@ fuse_log_platform_profile()
 
 option(FUSE_BUILD_CORE "Build fuse_core library and tests" ON)
 option(FUSE_BUILD_CORE_TESTS "Build fuse_core unit tests (fuse_core_tests)" ON)
+option(FUSE_BUILD_LEGACY "Build fuse_t3d_legacy / fuse_t2d_legacy quarantine libs" ON)
+option(FUSE_BUILD_SMOKE "Build fuse_runtime_smoke one-process test binary" ON)
+option(FUSE_SMOKE_ENABLE_ASAN "Enable AddressSanitizer for fuse_runtime_smoke" OFF)
 option(FUSE_BUILD_T3D "Build Torque3D application target(s)" ON)
 option(FUSE_BUILD_T2D "Build Torque2D engine target (requires submodule)" ON)
 
