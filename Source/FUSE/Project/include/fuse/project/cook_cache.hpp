@@ -56,7 +56,11 @@ public:
                                  const std::vector<CookJob>& jobs);
     void invalidate_all();
 
+    /// Recompute content keys from stored paths/kinds and drop entries whose source changed (B7.9 deepen).
+    u32 prune_stale_entries();
+
     void clear();
+    [[nodiscard]] bool empty() const { return m_entries.empty(); }
     [[nodiscard]] const CookCacheStats& stats() const { return m_stats; }
     [[nodiscard]] usize entry_count() const { return m_entries.size(); }
 

@@ -958,6 +958,64 @@ void testCookCacheOutputInvalidation() {
     expectTrue(cooker.cache().entry_count() == 0u, "cache empty after output invalidation");
     expectTrue(cooker.cache().lookup(seeded.content_hash) == fuse::project::CookCacheLookup::Miss,
                "lookup misses after output invalidation");
+
+    expectTrue(cooker.cache().invalidate_output("") == 0u, "empty output path is a no-op");
+    expectTrue(cooker.cache().invalidate_output(desc.output_path) == 0u,
+               "output invalidation on empty cache is a no-op");
+}
+
+void testCookCachePruneStaleEntries() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_batch_prune.obj", "# batch prune v1\n");
+
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_batch_prune.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord first = cooker.cook_mesh(desc);
+    expectTrue(first.ok, "seed cook for batch prune ok");
+    expectTrue(cooker.cache().entry_count() == 1u, "one entry before batch prune");
+
+    writeTempFile(source, "# batch prune v2\n");
+    expectTrue(cooker.cache().lookup(first.content_hash) == fuse::project::CookCacheLookup::Hit,
+               "stale entry still present before explicit prune");
+
+    const fuse::u32 removed = cooker.cache().prune_stale_entries();
+    expectTrue(removed == 1u, "batch prune removes stale entry");
+    expectTrue(cooker.cache().entry_count() == 0u, "cache empty after batch prune");
+    expectTrue(cooker.cache().lookup(first.content_hash) == fuse::project::CookCacheLookup::Miss,
+               "lookup misses after batch prune");
+    expectTrue(cooker.cache().stats().invalidations >= 1u, "batch prune counted as invalidation");
+
+    expectTrue(cooker.cache().prune_stale_entries() == 0u, "prune on empty cache is a no-op");
+}
+
+void testCookCacheEmptyGuards() {
+    fuse::project::CookCache cache;
+    expectTrue(cache.empty(), "fresh cache is empty");
+    expectTrue(cache.entry_count() == 0u, "fresh cache has zero entries");
+
+    expectTrue(cache.prune_stale_entries() == 0u, "prune on empty cache returns zero");
+    expectTrue(cache.invalidate_output("/tmp/fuse_b79_missing.fusemesh") == 0u,
+               "output invalidation on empty cache returns zero");
+    expectTrue(cache.invalidate_source("/tmp/fuse_b79_missing.obj") == 0u,
+               "source invalidation on empty cache returns zero");
+    expectTrue(cache.invalidate_stale_content_for_source("/tmp/fuse_b79_missing.obj", 42u) == 0u,
+               "stale-content invalidation on empty cache returns zero");
+
+    cache.invalidate_all();
+    expectTrue(cache.empty(), "invalidate_all on empty cache stays empty");
+    expectTrue(cache.stats().invalidations == 0u, "invalidate_all on empty cache does not bump stats");
+
+    const std::string cachePath = "/tmp/fuse_b79_empty_cache.json";
+    expectTrue(cache.save(cachePath), "empty cache saves valid JSON");
+    fuse::project::CookCache loaded;
+    expectTrue(loaded.load(cachePath), "empty cache JSON loads");
+    expectTrue(loaded.empty(), "loaded empty cache stays empty");
+    expectTrue(loaded.entry_count() == 0u, "loaded empty cache has zero entries");
+
+    expectTrue(!cache.save(""), "save rejects empty path");
+    expectTrue(!cache.load(""), "load rejects empty path");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
@@ -1016,6 +1074,8 @@ int main() {
     testCookCacheInvalidation();
     testCookCacheContentChangePrunesStale();
     testCookCacheOutputInvalidation();
+    testCookCachePruneStaleEntries();
+    testCookCacheEmptyGuards();
     testCookManifestCacheHitsOnSecondRun();
     testCookCacheInvalidateChain();
     testCookCacheStaleDependencyHashInvalidation();

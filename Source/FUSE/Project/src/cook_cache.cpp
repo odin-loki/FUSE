@@ -1,11 +1,44 @@
 #include <fuse/project/cook_cache.hpp>
 
+#include <fuse/project/cook_content_hash.hpp>
+#include <fuse/project/import_desc.hpp>
+
 #include <fstream>
 #include <sstream>
 
 namespace fuse::project {
 
 namespace {
+
+u64 recompute_cache_key_for_entry_(const CookCacheEntry& entry) {
+    u64 source_hash = 0;
+    switch (entry.kind) {
+    case CookAssetKind::Mesh: {
+        MeshImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        source_hash = hash_mesh_import(desc);
+        break;
+    }
+    case CookAssetKind::Texture: {
+        TextureImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        source_hash = hash_texture_import(desc);
+        break;
+    }
+    case CookAssetKind::Audio: {
+        AudioImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        source_hash = hash_audio_import(desc);
+        break;
+    }
+    case CookAssetKind::Shader:
+        return 0;
+    }
+    return combine_cook_cache_key(source_hash, entry.upstream_hash);
+}
 
 std::string escapeJson(const std::string& text) {
     std::string out;
@@ -141,6 +174,10 @@ std::vector<std::string> CookCache::invalidate_stale_upstream_hashes(
 }
 
 u32 CookCache::invalidate_source(const std::string& source_path) {
+    if (source_path.empty() || m_entries.empty()) {
+        return 0;
+    }
+
     u32 removed = 0;
     for (auto it = m_entries.begin(); it != m_entries.end();) {
         if (it->source_path == source_path) {
@@ -155,7 +192,7 @@ u32 CookCache::invalidate_source(const std::string& source_path) {
 }
 
 u32 CookCache::invalidate_stale_content_for_source(const std::string& source_path, u64 current_content_hash) {
-    if (source_path.empty()) {
+    if (source_path.empty() || m_entries.empty()) {
         return 0;
     }
 
@@ -178,7 +215,7 @@ u32 CookCache::invalidate_stale_content_for_source(const std::string& source_pat
 }
 
 u32 CookCache::invalidate_output(const std::string& output_path) {
-    if (output_path.empty()) {
+    if (output_path.empty() || m_entries.empty()) {
         return 0;
     }
 
@@ -196,11 +233,32 @@ u32 CookCache::invalidate_output(const std::string& output_path) {
 }
 
 void CookCache::invalidate_all() {
-    const u32 removed = static_cast<u32>(m_entries.size());
-    if (removed > 0) {
-        m_stats.invalidations += removed;
+    if (m_entries.empty()) {
+        return;
     }
+
+    const u32 removed = static_cast<u32>(m_entries.size());
+    m_stats.invalidations += removed;
     m_entries.clear();
+}
+
+u32 CookCache::prune_stale_entries() {
+    if (m_entries.empty()) {
+        return 0;
+    }
+
+    u32 removed = 0;
+    for (auto it = m_entries.begin(); it != m_entries.end();) {
+        const u64 current_key = recompute_cache_key_for_entry_(*it);
+        if (!is_valid_cook_cache_key(current_key) || it->content_hash != current_key) {
+            it = m_entries.erase(it);
+            ++removed;
+            ++m_stats.invalidations;
+        } else {
+            ++it;
+        }
+    }
+    return removed;
 }
 
 void CookCache::clear() {
@@ -209,6 +267,10 @@ void CookCache::clear() {
 }
 
 bool CookCache::save(const std::string& path) const {
+    if (path.empty()) {
+        return false;
+    }
+
     std::ostringstream out;
     out << "{\n  \"schemaVersion\": 1,\n  \"entries\": [\n";
 
@@ -238,6 +300,10 @@ bool CookCache::save(const std::string& path) const {
 }
 
 bool CookCache::load(const std::string& path) {
+    if (path.empty()) {
+        return false;
+    }
+
     std::ifstream file(path, std::ios::binary);
     if (!file) {
         return false;
@@ -352,7 +418,7 @@ bool CookCache::load(const std::string& path) {
         cursor = objectEnd + 1;
     }
 
-    return !m_entries.empty();
+    return true;
 }
 
 } // namespace fuse::project
