@@ -129,7 +129,8 @@ void HybridComposer::render(frame::FrameCtx& ctx) {
 
 #if defined(FUSE_HAS_VULKAN_RHI)
     if (m_rhiContext && platform::requireGpuContextThread()) {
-        m_rhiContext->submitFrame(m_commandList);
+        m_rhiContext->beginFrame(ctx.frameIndex);
+        m_rhiContext->submitFrame(m_commandList, ctx.frameIndex);
     }
 #endif
 

@@ -58,7 +58,7 @@ void testOfflineCompiler() {
 void testShaderModuleAndPipelineLayout() {
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchainPlaceholder = false;
+    bootstrapDesc.createSwapchain = false;
 
     auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
     expectTrue(bootstrap != nullptr, "bootstrap allocated for shader tests");

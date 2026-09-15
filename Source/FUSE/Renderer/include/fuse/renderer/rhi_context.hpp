@@ -7,7 +7,7 @@
 
 namespace fuse::renderer {
 
-/// Headless RHI context for Track B bootstrap — accepts command lists on the render thread.
+/// Headless RHI context for Track B — accepts command lists on the render thread.
 class RhiContext {
 public:
     struct Desc {
@@ -23,11 +23,15 @@ public:
     const VulkanBootstrap& bootstrap() const { return *m_bootstrap; }
     VulkanBootstrap& bootstrap() { return *m_bootstrap; }
 
-    /// Records commands for a future B2.2 swapchain submit. Returns false off render thread.
-    bool submitFrame(const RenderCommandList& commands);
+    /// Begin frame slot after tick barrier. Returns false off render thread.
+    bool beginFrame(u32 frameIndex);
+
+    /// Records commands and advances frame ring. Returns false off render thread.
+    bool submitFrame(const RenderCommandList& commands, u32 frameIndex = 0);
 
     u32 submittedFrameCount() const { return m_submittedFrames; }
     u32 lastSubmittedCommandCount() const { return m_lastCommandCount; }
+    u32 currentFrameSlot() const;
 
 private:
     explicit RhiContext(std::unique_ptr<VulkanBootstrap> bootstrap);

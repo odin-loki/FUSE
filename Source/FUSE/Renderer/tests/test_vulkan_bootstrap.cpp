@@ -2,6 +2,7 @@
 #include <fuse/platform/gl_context.hpp>
 #include <fuse/renderer/rhi_context.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
+#include <fuse/renderer/vk/surface.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -20,7 +21,7 @@ void expectTrue(bool condition, const char* message) {
 void testBootstrapHeadless() {
     fuse::renderer::VulkanBootstrapDesc desc{};
     desc.instance.enableValidation = false;
-    desc.createSwapchainPlaceholder = true;
+    desc.createSwapchain = true;
 
     auto bootstrap = fuse::renderer::VulkanBootstrap::create(desc);
     expectTrue(bootstrap != nullptr, "bootstrap object allocated");
@@ -29,13 +30,33 @@ void testBootstrapHeadless() {
 #if defined(FUSE_VULKAN_BACKEND)
     expectTrue(status.instanceReady, "Vulkan instance created when loader available");
     expectTrue(status.deviceReady, "Vulkan device created when GPU/ICD available");
+    expectTrue(status.frameManagerReady, "frame ring created when device ready");
 #else
     expectTrue(!status.instanceReady, "stub mode keeps instance unavailable");
     expectTrue(status.mode == fuse::renderer::VulkanBackendMode::Stub, "stub backend mode");
 #endif
 
-    expectTrue(!status.swapchainPlaceholderReady,
-               "swapchain remains placeholder until B2.2 surface wiring");
+    expectTrue(status.swapchainHeadless, "CI headless path has no VkSurfaceKHR");
+#if defined(FUSE_VULKAN_BACKEND)
+    expectTrue(!status.swapchainReady, "headless swapchain is not presentable");
+#else
+    expectTrue(!status.swapchainReady, "stub mode has no swapchain");
+#endif
+}
+
+void testSurfaceAbstraction() {
+    fuse::renderer::SurfaceDesc headless{};
+    headless.kind = fuse::renderer::SurfaceKind::Headless;
+    const fuse::renderer::VulkanSurface headlessSurface =
+        fuse::renderer::VulkanSurface::fromDesc(headless);
+    expectTrue(headlessSurface.info().valid, "headless surface is valid");
+    expectTrue(!headlessSurface.isPresentable(), "headless surface is not presentable");
+
+    fuse::renderer::SurfaceDesc external{};
+    external.kind = fuse::renderer::SurfaceKind::External;
+    const fuse::renderer::VulkanSurface invalidExternal =
+        fuse::renderer::VulkanSurface::fromDesc(external);
+    expectTrue(!invalidExternal.info().valid, "external surface without handle is invalid");
 }
 
 void testRhiContextSubmitOnRenderThread() {
@@ -50,10 +71,14 @@ void testRhiContextSubmitOnRenderThread() {
     commands.drawSprite2D(0.f, 0.f, 0.f, 255, 128, 64);
 
     expectTrue(fuse::platform::mayTouchGpuContext(), "main thread registered as render thread");
-    const bool submitted = context->submitFrame(commands);
+#if defined(FUSE_VULKAN_BACKEND)
+    expectTrue(context->beginFrame(0u), "beginFrame accepted on render thread");
+#endif
+    const bool submitted = context->submitFrame(commands, 0u);
 #if defined(FUSE_VULKAN_BACKEND)
     expectTrue(submitted, "command list accepted when Vulkan device ready");
     expectTrue(context->lastSubmittedCommandCount() == 2u, "two commands recorded");
+    expectTrue(context->submittedFrameCount() == 1u, "one frame submitted");
 #else
     expectTrue(!submitted, "stub mode rejects GPU submit");
 #endif
@@ -65,6 +90,7 @@ int main() {
     fuse::core::initialize();
 
     testBootstrapHeadless();
+    testSurfaceAbstraction();
     testRhiContextSubmitOnRenderThread();
 
     fuse::core::shutdown();
