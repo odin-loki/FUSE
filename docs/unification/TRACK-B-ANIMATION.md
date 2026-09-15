@@ -1,6 +1,6 @@
 # Track B — Animation System (B7.1 deepen)
 
-**Status:** B7.1 deepen — `PoseSoA` pose buffers + `accumulate_weighted_pose_soa` / `copy_pose_soa_local` / `finalize_weighted_pose_soa` / `pose_soa_matches_bind` helpers, hierarchy-aware clip evaluate, blend-tree `evaluate_soa`, 1D/2D parameter sampling (empty-tree bind-pose fallback), additive/layered empty-node bind fallback, state enter/exit + crossfade (initial `on_enter`, zero-duration snap, self-transition guard, bidirectional transition edge queries + blend-duration lookup + active/pending state names), closed-form two-bone IK (in-place solve + `has_valid_chain` parent-chain validation + `max_reach`), retarget map stubs (`build_identity`, `find_source_bone` / `find_target_bone`, `translation_scale`, empty-skeleton guards)  
+**Status:** B7.1 deepen — `PoseSoA` pose buffers + `accumulate_weighted_pose_soa` / `copy_pose_soa_local` / `finalize_weighted_pose_soa` / `pose_soa_matches_bind` helpers, hierarchy-aware clip evaluate, blend-tree `evaluate_soa`, 1D/2D parameter sampling (empty-tree bind-pose fallback), additive/layered empty-node bind fallback, state enter/exit + crossfade (initial `on_enter`, zero-duration snap, self-transition guard, bidirectional transition edge queries + blend-duration lookup + active/pending state names), closed-form two-bone IK (public `solve_two_bone_positions` / `clamp_two_bone_target` / `normalize_ik_pole_vector` helpers, in-place solve + `has_valid_chain` parent-chain validation + `has_degenerate_segments` + `effective_pole_vector` zero/parallel pole fallback + `max_reach`), FABRIK `has_valid_chain` empty/out-of-range guards, retarget map stubs (`build_identity`, `add_bone_mapping` / `clear` / `is_source_mapped` / `is_target_mapped`, `find_source_bone` / `find_target_bone`, `translation_scale`, empty-skeleton guards)  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.1  
 **Source narrative:** [P7.md](../sources/P7.md) §7.1
 
@@ -21,8 +21,8 @@
 | `BlendNode` graph | `Animation/include/fuse/animation/blend_tree.hpp` | `ClipNode`, `BlendNode2`, `BlendSpace1D/2D`, `LayeredBlendNode`, `AdditiveBlendNode`, state machine |
 | `sample_blend_space_1d/2d` | `Animation/src/blend_tree.cpp` | Parameter-space weight sampling for 1D bracketing and 2D inverse-distance weights |
 | `add_pose_soa` | `Animation/src/skeleton.cpp` | Masked additive local TRS delta relative to bind pose |
-| `FABRIKChain` / `TwoBoneIK` | `Animation/include/fuse/animation/ik_solver.hpp` | FABRIK stub; closed-form two-bone IK (in-place AoS + SoA, parent-chain `has_valid_chain`, `max_reach`) |
-| `RetargetMap` | `Animation/include/fuse/animation/retarget.hpp` | Name-driven bone map, `build_identity`, `find_source_bone` / `find_target_bone`, `translation_scale`, local TRS copy stub |
+| `FABRIKChain` / `TwoBoneIK` | `Animation/include/fuse/animation/ik_solver.hpp` | FABRIK stub with `has_valid_chain`; closed-form two-bone IK (public solve helpers, in-place AoS + SoA, parent-chain `has_valid_chain`, `has_degenerate_segments`, `effective_pole_vector`, `max_reach`) |
+| `RetargetMap` | `Animation/include/fuse/animation/retarget.hpp` | Name-driven bone map, `build_identity`, `add_bone_mapping` / `clear` / `is_source_mapped` / `is_target_mapped`, `find_source_bone` / `find_target_bone`, `translation_scale`, local TRS copy stub |
 | `skin_vertices` | `Animation/include/fuse/animation/skinning.hpp` | CPU linear blend skinning (`Cuda` when `FUSE_HAS_CUDA`) |
 | `Animator` | `Animation/include/fuse/animation/animator.hpp` | Game-thread facade over state machine + pose cache |
 
@@ -75,11 +75,11 @@ All `BlendNode` types expose `evaluate_soa(dt, skel, out)` alongside the legacy 
 
 ### Two-bone IK (closed form)
 
-`TwoBoneIK::solve` uses law-of-cosines shoulder angle plus a pole-vector bend plane to place the mid joint in O(1). Targets beyond `upper + lower` bone length are clamped along the root→target ray. `max_reach` reports the same clamp limit from the current pose segment lengths minus `reach_epsilon`. When the pole vector is parallel to the root→target axis, a secondary fallback axis is chosen so the bend plane remains stable. `has_valid_chain` rejects empty skeletons, out-of-range or duplicate bone indices, and non root→mid→end parent chains. Solvers operate in-place on the current pose (only seeding bind pose when the output buffer is empty or mismatched). Both `Pose` (world translation writeback) and `PoseSoA` (local position writes + hierarchy recompute) entry points are provided.
+`solve_two_bone_positions`, `clamp_two_bone_target`, and `normalize_ik_pole_vector` expose the core O(1) limb solver for tests and tooling. `TwoBoneIK::solve` uses law-of-cosines shoulder angle plus a pole-vector bend plane to place the mid joint. Targets beyond `upper + lower` bone length are clamped along the root→target ray. `max_reach` reports the same clamp limit from the current pose segment lengths minus `reach_epsilon`. `effective_pole_vector` normalizes the pole hint and picks a stable bend axis when the hint is zero or parallel to the root→target direction. `has_valid_chain` rejects empty skeletons, out-of-range or duplicate bone indices, and non root→mid→end parent chains. `has_degenerate_segments` rejects near-zero limb segments. `FABRIKChain::has_valid_chain` rejects empty index lists and out-of-range bone indices before iteration. Solvers operate in-place on the current pose (only seeding bind pose when the output buffer is empty or mismatched). Both `Pose` (world translation writeback) and `PoseSoA` (local position writes + hierarchy recompute) entry points are provided.
 
 ### Retarget map (stub)
 
-`RetargetMap::build_by_name` pairs bones with matching `Bone::name` strings. `build_identity` maps each bone index to itself for same-skeleton reuse. `find_source_bone` / `find_target_bone` and `mapped_bone_count` support bidirectional lookup without scanning `bone_map`. `apply_pose_soa` seeds the target skeleton bind pose, copies mapped local TRS columns from the source pose (scaled by per-entry `translation_scale`), and recomputes world transforms. `apply_pose` (AoS stub) copies mapped world transforms directly; unmapped target bones remain at bind pose. Empty skeletons or empty maps clear the output pose and return early. Rotation/scale offsets and animation-space retargeting are deferred.
+`RetargetMap::build_by_name` pairs bones with matching `Bone::name` strings. `build_identity` maps each bone index to itself for same-skeleton reuse. `add_bone_mapping` appends manual correspondences (rejecting duplicate target bones and out-of-range indices); `clear` resets the map. `is_source_mapped` / `is_target_mapped` and `find_source_bone` / `find_target_bone` support bidirectional lookup. `apply_pose_soa` seeds the target skeleton bind pose, copies mapped local TRS columns from the source pose (scaled by per-entry `translation_scale`), and recomputes world transforms. `apply_pose` (AoS stub) copies mapped world transforms directly; unmapped target bones remain at bind pose. Empty skeletons or empty maps clear the output pose and return early. Rotation/scale offsets and animation-space retargeting are deferred.
 
 ---
 
@@ -126,6 +126,10 @@ ctest --test-dir build --output-on-failure -R fuse_animation_runtime
 | `testTwoBoneIKInPlace` | In-place IK preserves root offset while reaching target |
 | `testTwoBoneIKChainOrder` | Duplicate, out-of-range, and non-chain bone indices rejected |
 | `testTwoBoneIKMaxReach` | `max_reach` matches unreachable clamp distance |
+| `testTwoBoneIKSolveHelpers` | Public `clamp_two_bone_target` / `solve_two_bone_positions` helpers |
+| `testTwoBoneIKZeroPoleVector` | Zero pole hint uses fallback bend axis via `effective_pole_vector` |
+| `testTwoBoneIKDegenerateSegments` | Collapsed limb segments rejected by `has_degenerate_segments` |
+| `testFabrikChainGuards` | FABRIK `has_valid_chain` empty/out-of-range guards |
 | `testRetargetMapBuildByName` | Name pairing and validity |
 | `testRetargetApplyPoseSoA` | Mapped local TRS copy; unmapped bones stay at bind |
 | `testRetargetApplyPose` | AoS world-transform copy stub for mapped bones |
@@ -133,6 +137,8 @@ ctest --test-dir build --output-on-failure -R fuse_animation_runtime
 | `testRetargetIdentity` | `build_identity` round-trips local/world TRS unchanged |
 | `testRetargetFindTargetBone` | `find_target_bone` reverse lookup |
 | `testRetargetTranslationScale` | Per-entry `translation_scale` applied in `apply_pose_soa` |
+| `testRetargetAddBoneMapping` | Manual `add_bone_mapping` with duplicate/out-of-range rejection |
+| `testRetargetClear` | `clear` resets map and lookup helpers |
 | `testClipSampling` | AoS `sample` position channel |
 | `testClipEvaluateLocalChannels` | SoA `evaluate` composes position + rotation |
 | `testBlendNodeInterpolation` | `BlendNode2` world translation lerp |
@@ -187,8 +193,9 @@ ctest --test-dir build --output-on-failure -R fuse_animation_runtime
 - [x] `AnimStateMachine` enter/exit callbacks and `crossfade_alpha`
 - [x] Layered blend weight sweep and unmasked-bone isolation tests
 - [x] Pose buffer clear/reuse tests
-- [x] Closed-form `TwoBoneIK` (in-place AoS + SoA) with reach/clamp, pole-bend, parent-chain validation, `max_reach`, and empty-skeleton tests
-- [x] `RetargetMap` name pairing, `build_identity`, bidirectional lookup helpers, `translation_scale`, and `apply_pose_soa` / `apply_pose` stubs
+- [x] Closed-form `TwoBoneIK` (public solve helpers, in-place AoS + SoA) with reach/clamp, pole-bend, zero/parallel pole fallback, degenerate-segment guard, parent-chain validation, `max_reach`, and empty-skeleton tests
+- [x] `FABRIKChain::has_valid_chain` empty/out-of-range index guards
+- [x] `RetargetMap` name pairing, `build_identity`, `add_bone_mapping` / `clear` / `is_source_mapped` / `is_target_mapped`, bidirectional lookup helpers, `translation_scale`, and `apply_pose_soa` / `apply_pose` stubs
 - [x] Expanded `PoseSoA` roundtrip, resize, and rotation/scale blend tests
 - [x] `fuse_animation_runtime` CTest target green
 - [x] Empty blend-tree / state-machine bind-pose fallback tests

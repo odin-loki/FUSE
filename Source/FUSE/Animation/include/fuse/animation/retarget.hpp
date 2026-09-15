@@ -23,6 +23,15 @@ struct RetargetMap {
     [[nodiscard]] bool is_valid() const;
     [[nodiscard]] u32 mapped_bone_count() const { return static_cast<u32>(bone_map.size()); }
 
+    /// Drop all mappings and reset bone counts to zero.
+    void clear();
+
+    /// Append a mapping when indices are in range and the target bone is not already mapped.
+    [[nodiscard]] bool add_bone_mapping(u32 source_bone, u32 target_bone, f32 translation_scale = 1.f);
+
+    [[nodiscard]] bool is_source_mapped(u32 source_bone) const;
+    [[nodiscard]] bool is_target_mapped(u32 target_bone) const;
+
     /// Source bone index for a target bone, or -1 when unmapped.
     [[nodiscard]] s32 find_source_bone(u32 target_bone) const;
 
