@@ -129,7 +129,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_ecs|fuse_scene'
 | `fuse_ecs_phase3_integration` | **B3.9** end-to-end: `SceneManager` + `Registry` + all Phase 3 systems + `spatial::BVH` |
 | `fuse_scene_manager` | SceneManager init, ECS camera, stub update, ray/sphere queries |
 | `fuse_scene_svo` | SVO set/get, fill, carve, SDF query, ray cast |
-| `fuse_scene_b37_b39` | Camera matrices, serialiser round-trip, project I/O |
+| `fuse_scene_b37_b39` | Camera matrices/projection helpers, entity+transform serialiser round-trip, `SceneSnapshot` capture/restore, project I/O |
 
 Run Phase 3 suite:
 
@@ -180,12 +180,15 @@ ctest --test-dir build --output-on-failure -R 'fuse_ecs|fuse_scene'
 ### B3.7 — Scene serialisation
 
 - [x] **B3.7** `SceneSerialiser` + `project_io` round-trip (`fuse_scene_b37_b39`)
+- [x] Entity + `SceneEntityTransform` table round-trip (header `reserved[1]='T'`; legacy name-only files load with identity transforms)
+- [x] In-memory `SceneSnapshot::capture` / `apply` for play-mode restore stubs
 - [ ] 10k-entity byte-identical save/load (deferred — scale test)
 
 ### B3.8 — Camera system
 
 - [x] **B3.8** `CameraSystem::update` fills view, projection, view_projection, frustum for active camera
 - [x] Camera frustum drives `CullingSystem` (`fuse_ecs_systems`, `fuse_ecs_phase3_integration`)
+- [x] `fuse::Camera::projectWorldPoint` / `worldToNdc` projection helpers (`fuse_scene_b37_b39`)
 - [ ] `update_free_camera` input controller (deferred — editor/debug follow-up)
 
 ### B3.9 — Phase 3 deliverables & integration

@@ -41,19 +41,12 @@ void PlayModeController::stop(scene::Scene& scene, PlayModePhysicsState& physics
 }
 
 void PlayModeController::takeSnapshot_(const scene::Scene& scene) {
-    m_snapshot.name = scene.name();
-    m_snapshot.camera = scene.camera();
-    m_snapshot.objectNames = scene.objectNames();
+    m_snapshot = scene.captureSnapshot();
     m_hasSnapshot = true;
 }
 
 void PlayModeController::restoreSnapshot_(scene::Scene& scene) {
-    scene.setName(m_snapshot.name);
-    scene.camera() = m_snapshot.camera;
-    scene.clearObjects();
-    for (const std::string& objectName : m_snapshot.objectNames) {
-        scene.addObjectName(objectName);
-    }
+    m_snapshot.apply(scene);
 }
 
 } // namespace fuse::editor

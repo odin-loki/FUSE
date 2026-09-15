@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/scene/scene.hpp>
+#include <fuse/scene/scene_snapshot.hpp>
 #include <fuse/types.hpp>
 
 #include <string>
@@ -34,17 +35,12 @@ public:
     bool hasSnapshot() const { return m_hasSnapshot; }
 
 private:
-    struct SceneSnapshot {
-        std::string name;
-        fuse::Camera camera;
-        std::vector<std::string> objectNames;
-    };
+    fuse::scene::SceneSnapshot m_snapshot{};
 
     void takeSnapshot_(const scene::Scene& scene);
     void restoreSnapshot_(scene::Scene& scene);
 
     State m_state = State::Stopped;
-    SceneSnapshot m_snapshot{};
     bool m_hasSnapshot = false;
 };
 

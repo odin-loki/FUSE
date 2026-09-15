@@ -55,10 +55,58 @@ void testCameraOrientationRoundTrip() {
     expectNear(camera.pitchDeg, 15.f, 0.001f, "camera pitch preserved");
 }
 
+void testCameraProjectionHelpers() {
+    fuse::Camera camera;
+    camera.setPosition(0.f, 0.f, 10.f);
+    camera.setOrientation(180.f, 0.f);
+    camera.fovDeg = 90.f;
+    camera.aspectRatio = 1.f;
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+    camera.update();
+
+    expectTrue(camera.matricesValid(), "projection helpers require valid matrices");
+    expectTrue(camera.viewProjectionMatrixRow(3, 3) != 0.f, "view-projection matrix populated");
+
+    const fuse::Camera::ProjectedPoint origin = camera.projectWorldPoint(0.f, 0.f, 0.f);
+    expectTrue(!origin.behindCamera, "world origin in front of camera");
+    expectTrue(origin.clipW > 0.f, "clip w positive for visible point");
+
+    float ndcX = 0.f;
+    float ndcY = 0.f;
+    float ndcZ = 0.f;
+    expectTrue(camera.worldToNdc(0.f, 0.f, 0.f, ndcX, ndcY, ndcZ), "worldToNdc succeeds for origin");
+    expectNear(ndcX, 0.f, 0.05f, "origin projects near ndc center x");
+    expectNear(ndcY, 0.f, 0.05f, "origin projects near ndc center y");
+
+    const fuse::Camera::ProjectedPoint behind = camera.projectWorldPoint(0.f, 0.f, 20.f);
+    expectTrue(behind.behindCamera, "point behind camera flagged");
+    expectTrue(!camera.worldToNdc(0.f, 0.f, 20.f, ndcX, ndcY, ndcZ), "worldToNdc rejects behind camera");
+}
+
+void testCameraProjectionOffCenter() {
+    fuse::Camera camera;
+    camera.setPosition(0.f, 0.f, 10.f);
+    camera.setOrientation(180.f, 0.f);
+    camera.fovDeg = 90.f;
+    camera.aspectRatio = 1.f;
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+    camera.update();
+
+    float ndcX = 0.f;
+    float ndcY = 0.f;
+    float ndcZ = 0.f;
+    expectTrue(camera.worldToNdc(2.f, 0.f, 0.f, ndcX, ndcY, ndcZ), "offset point projects");
+    expectTrue(ndcX > 0.1f, "positive x world point lands right of center in ndc");
+}
+
 } // namespace
 
 int test_camera_main() {
     testCameraUpdate();
     testCameraOrientationRoundTrip();
+    testCameraProjectionHelpers();
+    testCameraProjectionOffCenter();
     return g_failures;
 }

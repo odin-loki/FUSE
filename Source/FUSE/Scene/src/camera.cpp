@@ -154,4 +154,45 @@ float Camera::projectionMatrixRow(u32 row, u32 col) const {
     return m_projection[col * 4 + row];
 }
 
+float Camera::viewProjectionMatrixRow(u32 row, u32 col) const {
+    return m_viewProjection[col * 4 + row];
+}
+
+Camera::ProjectedPoint Camera::projectWorldPoint(float worldX, float worldY, float worldZ) const {
+    ProjectedPoint result;
+    if (!m_matricesValid) {
+        return result;
+    }
+
+    const float x = worldX;
+    const float y = worldY;
+    const float z = worldZ;
+    const float w = 1.f;
+
+    result.clipX = m_viewProjection[0] * x + m_viewProjection[4] * y + m_viewProjection[8] * z +
+                   m_viewProjection[12] * w;
+    result.clipY = m_viewProjection[1] * x + m_viewProjection[5] * y + m_viewProjection[9] * z +
+                   m_viewProjection[13] * w;
+    result.clipZ = m_viewProjection[2] * x + m_viewProjection[6] * y + m_viewProjection[10] * z +
+                   m_viewProjection[14] * w;
+    result.clipW = m_viewProjection[3] * x + m_viewProjection[7] * y + m_viewProjection[11] * z +
+                   m_viewProjection[15] * w;
+    result.behindCamera = result.clipW <= 0.f;
+    return result;
+}
+
+bool Camera::worldToNdc(float worldX, float worldY, float worldZ, float& ndcX, float& ndcY,
+                         float& ndcZ) const {
+    const ProjectedPoint projected = projectWorldPoint(worldX, worldY, worldZ);
+    if (projected.behindCamera) {
+        return false;
+    }
+
+    const float invW = 1.f / projected.clipW;
+    ndcX = projected.clipX * invW;
+    ndcY = projected.clipY * invW;
+    ndcZ = projected.clipZ * invW;
+    return true;
+}
+
 } // namespace fuse
