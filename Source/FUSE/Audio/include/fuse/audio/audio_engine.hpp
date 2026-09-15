@@ -8,6 +8,7 @@
 #include <fuse/audio/audio_registry.hpp>
 #include <fuse/audio/conv_reverb_cpu.hpp>
 #include <fuse/audio/math.hpp>
+#include <fuse/audio/reverb_zones.hpp>
 #include <fuse/audio/spatial_mixer.hpp>
 #include <fuse/handle.hpp>
 #include <fuse/handle_map.hpp>
@@ -53,8 +54,16 @@ public:
     AudioBusMixer& bus_mixer() { return m_mixer.bus_mixer(); }
     const AudioBusMixer& bus_mixer() const { return m_mixer.bus_mixer(); }
 
+    SpatialMixer& spatial_mixer() { return m_mixer; }
+    const SpatialMixer& spatial_mixer() const { return m_mixer; }
+
+    void set_occlusion_blockers(const AABB* blockers, u32 blocker_count) {
+        m_mixer.set_occlusion_blockers(blockers, blocker_count);
+    }
+    void clear_occlusion_blockers() { m_mixer.clear_occlusion_blockers(); }
+
 private:
-    void apply_reverb_(std::vector<float>& stereo_buffer, u32 frames);
+    void apply_reverb_(std::vector<float>& stereo_buffer, u32 frames, const Vec3& listener_pos);
     void sync_backend_sources_(AudioRegistry& registry);
 
     AudioDesc m_desc{};

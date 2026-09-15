@@ -1,6 +1,7 @@
 #include <fuse/audio/audio_engine.hpp>
 
 #include <fuse/audio/attenuation.hpp>
+#include <fuse/audio/reverb_zones.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -35,10 +36,11 @@ void AudioEngine::update(AudioRegistry& registry, float dt) {
 
     const u32 frames = m_desc.frames_per_buf;
     m_mixer.mix(registry, m_clips, dt, m_mixBuffer, frames);
-    apply_reverb_(m_mixBuffer, frames);
-    sync_backend_sources_(registry);
 
     const AudioListener* listener = registry.listener();
+    const Vec3 listener_pos = listener != nullptr ? listener->position : Vec3{};
+    apply_reverb_(m_mixBuffer, frames, listener_pos);
+    sync_backend_sources_(registry);
     if (listener != nullptr) {
         m_backend.set_listener_position(listener->position.x, listener->position.y,
                                       listener->position.z);
@@ -137,15 +139,28 @@ float AudioEngine::reverb_send_level() const {
     return m_reverbZones.front().send_level;
 }
 
-void AudioEngine::apply_reverb_(std::vector<float>& stereo_buffer, u32 frames) {
+void AudioEngine::apply_reverb_(std::vector<float>& stereo_buffer, u32 frames,
+                                const Vec3& listener_pos) {
     if (m_reverbZones.empty() || m_cpuReverb.ir_length() == 0) {
+        return;
+    }
+
+    std::vector<ReverbZoneParams> zone_params;
+    zone_params.reserve(m_reverbZones.size());
+    for (const ReverbZone& zone : m_reverbZones) {
+        zone_params.push_back({zone.bounds, zone.wet_dry, zone.send_level});
+    }
+
+    const ReverbZoneBlend blend =
+        blend_reverb_zones(listener_pos, zone_params.data(),
+                           static_cast<u32>(zone_params.size()));
+    if (blend.active_zone_count == 0) {
         return;
     }
 
     m_dryBuffer.resize(frames);
     std::vector<float> wet(frames, 0.f);
-    const ReverbZone& zone = m_reverbZones.front();
-    const float wet_mix = std::clamp(zone.wet_dry, 0.f, 1.f) * std::clamp(zone.send_level, 0.f, 1.f);
+    const float wet_mix = blend.wet_dry * blend.send_level;
 
     for (u32 frame = 0; frame < frames; ++frame) {
         m_dryBuffer[frame] = 0.5f * (stereo_buffer[static_cast<usize>(frame) * 2]
