@@ -6,7 +6,9 @@
 
 namespace fuse::world3d {
 
-World3D::World3D() : m_root(std::make_unique<SceneObject3D>("World3DRoot")) {}
+World3D::World3D() : m_root(std::make_unique<SceneObject3D>("World3DRoot")) {
+    m_physics.init();
+}
 
 World3D::~World3D() = default;
 
@@ -28,6 +30,35 @@ void World3D::addObject(SceneObject3D* object) {
     m_objects.push_back(object);
     if (m_root) {
         m_root->addChild(object);
+    }
+    if (m_physicsEnabled) {
+        const u32 bodyIndex = m_physics.addSphereBody(object->x(), object->y(), object->z(), 0.5f, 1.f);
+        m_physicsBodyIndices.push_back(bodyIndex);
+    }
+}
+
+void World3D::syncPhysicsFromScene() {
+    for (usize i = 0; i < m_objects.size() && i < m_physicsBodyIndices.size(); ++i) {
+        const SceneObject3D* object = m_objects[i];
+        if (object == nullptr) {
+            continue;
+        }
+        m_physics.setBodyPosition(m_physicsBodyIndices[i], object->x(), object->y(), object->z());
+    }
+}
+
+void World3D::syncSceneFromPhysics() {
+    for (usize i = 0; i < m_objects.size() && i < m_physicsBodyIndices.size(); ++i) {
+        SceneObject3D* object = m_objects[i];
+        if (object == nullptr) {
+            continue;
+        }
+        float x = 0.f;
+        float y = 0.f;
+        float z = 0.f;
+        m_physics.getBodyPosition(m_physicsBodyIndices[i], x, y, z);
+        object->setPosition(x, y);
+        object->setZ(z);
     }
 }
 
@@ -74,9 +105,15 @@ void World3D::runParallelCull() {
     m_snapshot.setVisibleCount(visible);
 }
 
-void World3D::tick(frame::FrameCtx& /*ctx*/) {
+void World3D::tick(frame::FrameCtx& ctx) {
     if (!m_enabled) {
         return;
+    }
+
+    if (m_physicsEnabled) {
+        syncPhysicsFromScene();
+        m_physics.step(ctx.dt);
+        syncSceneFromPhysics();
     }
 
     buildSnapshot();

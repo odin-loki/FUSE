@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/dimension/idimension.hpp>
+#include <fuse/physics/physics_world_3d.hpp>
 #include <fuse/world3d/scene_object_3d.hpp>
 #include <fuse/world3d/scene_snapshot.hpp>
 
@@ -36,9 +37,16 @@ public:
     float clearColorB() const { return m_clearB; }
     void setClearColor(float r, float g, float b);
 
+    physics::PhysicsWorld3D& physics() { return m_physics; }
+    const physics::PhysicsWorld3D& physics() const { return m_physics; }
+    void setPhysicsEnabled(bool enabled) { m_physicsEnabled = enabled; }
+    bool isPhysicsEnabled() const { return m_physicsEnabled; }
+
 private:
     void buildSnapshot();
     void runParallelCull();
+    void syncPhysicsFromScene();
+    void syncSceneFromPhysics();
 
     bool m_enabled = true;
     dimension::WorldHandle m_activeWorld = dimension::WorldHandle::invalid();
@@ -51,6 +59,10 @@ private:
     float m_clearR = 0.1f;
     float m_clearG = 0.15f;
     float m_clearB = 0.25f;
+
+    physics::PhysicsWorld3D m_physics;
+    std::vector<u32> m_physicsBodyIndices;
+    bool m_physicsEnabled = false;
 };
 
 } // namespace fuse::world3d

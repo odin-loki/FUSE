@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/dimension/idimension.hpp>
+#include <fuse/physics/physics_world_2d.hpp>
 #include <fuse/world2d/scene_object_2d.hpp>
 #include <fuse/world2d/scene_snapshot.hpp>
 
@@ -31,9 +32,16 @@ public:
     void addSprite(SceneObject2D* sprite);
     const SceneSnapshot2D& readSnapshot() const { return m_snapshot; }
 
+    physics::PhysicsWorld2D& physics() { return m_physics; }
+    const physics::PhysicsWorld2D& physics() const { return m_physics; }
+    void setPhysicsEnabled(bool enabled) { m_physicsEnabled = enabled; }
+    bool isPhysicsEnabled() const { return m_physicsEnabled; }
+
 private:
     void buildSnapshot(frame::FrameCtx& ctx);
     void runParallelCull();
+    void syncPhysicsFromScene();
+    void syncSceneFromPhysics();
 
     bool m_enabled = true;
     dimension::WorldHandle m_activeWorld = dimension::WorldHandle::invalid();
@@ -42,6 +50,10 @@ private:
 
     SceneSnapshot2D m_snapshot;
     std::vector<bool> m_cullVisible;
+
+    physics::PhysicsWorld2D m_physics;
+    std::vector<u32> m_physicsBodyIndices;
+    bool m_physicsEnabled = false;
 };
 
 } // namespace fuse::world2d
