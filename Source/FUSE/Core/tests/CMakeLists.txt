@@ -14,6 +14,16 @@ target_link_libraries(fuse_core_job_tests PRIVATE fuse_core)
 fuse_core_apply_tsan(fuse_core_job_tests)
 add_test(NAME fuse_core_jobs COMMAND fuse_core_job_tests)
 
+if(FUSE_JOBS_SINGLE_THREAD)
+    add_executable(fuse_core_job_single_thread_tests
+        test_jobs_single_thread.cpp
+    )
+
+    target_link_libraries(fuse_core_job_single_thread_tests PRIVATE fuse_core)
+    fuse_core_apply_tsan(fuse_core_job_single_thread_tests)
+    add_test(NAME fuse_core_jobs_single_thread COMMAND fuse_core_job_single_thread_tests)
+endif()
+
 add_executable(fuse_core_fiber_tests
     test_fiber.cpp
 )

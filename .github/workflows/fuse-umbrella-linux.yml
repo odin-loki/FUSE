@@ -75,6 +75,37 @@ jobs:
           python3 Tools/FUSE/prefix_legacy_symbols.py --verify-shims --dimension t3d
           python3 Tools/FUSE/prefix_legacy_symbols.py --verify-shims --dimension t2d
 
+  fuse-core-single-thread:
+    name: fuse_core jobs (FUSE_JOBS_SINGLE_THREAD)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake g++-13
+
+      - name: Configure fuse_core single-thread profile
+        run: |
+          cmake -B build-st -G Ninja \
+            -DCMAKE_CXX_COMPILER=g++-13 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DFUSE_UMBRELLA=ON \
+            -DFUSE_BUILD_CORE=ON \
+            -DFUSE_BUILD_CORE_TESTS=ON \
+            -DFUSE_JOBS_SINGLE_THREAD=ON \
+            -DFUSE_BUILD_T3D=OFF \
+            -DFUSE_BUILD_T2D=OFF
+
+      - name: Build
+        run: cmake --build build-st --config Release
+
+      - name: Run single-thread CTest
+        run: |
+          ctest --test-dir build-st --output-on-failure \
+            -R 'fuse_core_jobs|fuse_core_jobs_single_thread|fuse_core_worker_count|fuse_core_fiber'
+
   fuse-smoke-asan:
     name: fuse_runtime_smoke (ASan)
     runs-on: ubuntu-latest

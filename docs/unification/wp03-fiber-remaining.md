@@ -1,7 +1,7 @@
 # WP-03 — Cooperative fiber wait (incremental)
 
 **Status:** Landed (POSIX ucontext on desktop Linux/macOS; Win32 fibers on Windows)  
-**Deferred:** Android/iOS dedicated backends, Emscripten coarse pool
+**Deferred:** Android/iOS dedicated backends, Emscripten pthread coarse pool
 
 ---
 
@@ -15,6 +15,8 @@
 - Scheduler refuses new jobs on a worker whose job fiber is suspended in a cooperative wait (prevents fiber stack corruption)
 - Game/submit thread `wait()` still uses condition variables (expected for fork-join root)
 - `fiberBackendName()` diagnostic (`posix-ucontext`, `win32`, or `stub`) + `fuse_core_fiber` unit tests (swap round-trip on desktop; compile-gated backend name checks elsewhere)
+- **`FUSE_JOBS_SINGLE_THREAD` compile-time profile** — `computeWorkerCount()` → `0`, scheduler `submit()` inline, serial `parallel_for`; Linux CI job + `fuse_core_jobs_single_thread` tests
+- **Emscripten stub profile documented** — `FUSE_PLATFORM_EMSCRIPTEN` + default `FUSE_JOBS_SINGLE_THREAD=ON`; fiber `stub` backend; does **not** gate desktop/mobile WP-03 exit (see [BUILD.md](./BUILD.md#emscripten-stub-profile-deferred-non-blocking))
 
 ## Remaining (honest limit)
 
@@ -23,7 +25,7 @@
 | Per-job fiber pools | Today one job fiber per worker; nested waits OK, not arbitrary coroutine depth |
 | Android / iOS native backend | Today CV fallback only; future: asm/stackful coroutine or platform fiber API |
 | Apple desktop ucontext | Deprecated but used on macOS desktop; migrate when glibc removes ucontext |
-| Emscripten | `FUSE_JOBS_SINGLE_THREAD` / coarse pool per architecture-parallel §3.5 |
+| Emscripten pthread coarse pool | Stub profile shipped (`FUSE_JOBS_SINGLE_THREAD` + fiber `stub`); `FUSE_JOBS_COARSE_POOL` deferred per architecture-parallel §3.5 |
 | Hot-path mutex removal | `JobCounter` still uses mutex for CV fallback and waiter lists |
 | I/O + render dependency chains | Needs WP-04 handle commit + WP-06 frame barrier |
 | Win32 ASan fiber annotations | POSIX has `__sanitizer_*_switch_fiber`; Windows backend not yet instrumented |

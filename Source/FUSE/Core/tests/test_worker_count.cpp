@@ -79,12 +79,29 @@ void testHardCap() {
 
 } // namespace
 
+#if FUSE_JOBS_SINGLE_THREAD
+void testSingleThreadMacroForcesZero() {
+    fuse::jobs::WorkerCountParams params;
+    params.usableCores = 32;
+    params.performanceCores = 16;
+    params.mobileProfile = false;
+    params.powerState = fuse::platform::PowerState::Normal;
+    params.hardCap = 8;
+
+    expectEq(fuse::jobs::computeWorkerCount(params), 0u, "single-thread macro forces zero workers");
+}
+#endif
+
 int main() {
+#if FUSE_JOBS_SINGLE_THREAD
+    testSingleThreadMacroForcesZero();
+#else
     testDesktopProfile();
     testMobileProfile();
     testBackgroundProfile();
     testThermalProfile();
     testHardCap();
+#endif
 
     if (g_failures == 0) {
         std::printf("fuse_core_tests: all worker-count checks passed\n");

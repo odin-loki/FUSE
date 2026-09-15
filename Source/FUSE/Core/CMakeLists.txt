@@ -1,6 +1,11 @@
 # fuse_core — L0 FUSE core library (jobs + platform + shared services, U1/WP-03+)
 
-option(FUSE_JOBS_SINGLE_THREAD "Force single-threaded job execution (tests/replay)" OFF)
+if(EMSCRIPTEN)
+    set(_fuse_jobs_single_thread_default ON)
+else()
+    set(_fuse_jobs_single_thread_default OFF)
+endif()
+option(FUSE_JOBS_SINGLE_THREAD "Force single-threaded job execution (tests/replay/Emscripten stub)" ${_fuse_jobs_single_thread_default})
 
 set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/types.hpp

@@ -2,6 +2,7 @@
 #include <fuse/jobs/job_counter.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/jobs/parallel_for.hpp>
+#include <fuse/jobs/worker_count.hpp>
 #include <fuse/jobs/worker_context.hpp>
 #include <fuse/platform/fiber.hpp>
 
@@ -60,7 +61,13 @@ void testCounterWait() {
     fuse::jobs::JobCounter counter(2);
     std::atomic<bool> done{false};
 
-    withScheduler(2, [&] {
+#if FUSE_JOBS_SINGLE_THREAD
+    const fuse::u32 workers = 0;
+#else
+    const fuse::u32 workers = 2;
+#endif
+
+    withScheduler(workers, [&] {
         fuse::jobs::JobScheduler::instance().submit([&] {
             counter.signal();
             fuse::jobs::JobScheduler::instance().submit([&] {
@@ -76,10 +83,15 @@ void testCounterWait() {
 }
 
 void testCooperativeWorkerWait() {
+#if FUSE_JOBS_SINGLE_THREAD
+    std::printf("SKIP: cooperative worker wait requires a worker pool\n");
+    return;
+#else
     if (!fuse::platform::cooperativeFibersAvailable()) {
         std::printf("SKIP: cooperative fibers unavailable on this platform\n");
         return;
     }
+#endif
 
     fuse::jobs::JobCounter gate(1);
     std::atomic<bool> waiterResumed{false};
@@ -110,7 +122,13 @@ void testCooperativeWorkerWait() {
 }
 
 void testParallelForMatchesSerial() {
-    withScheduler(4, [&] {
+#if FUSE_JOBS_SINGLE_THREAD
+    const fuse::u32 workers = 0;
+#else
+    const fuse::u32 workers = 4;
+#endif
+
+    withScheduler(workers, [&] {
         std::atomic<fuse::u32> parallelSum{0};
         fuse::u32 serialSum = 0;
 
@@ -241,6 +259,69 @@ void testNestedParallelForWithCooperativeWait() {
              "nested parallel_for with cooperative waits visits every index");
 }
 
+void testSingleThreadSubmitRunsInline() {
+    withScheduler(0, [&] {
+        std::atomic<int> phase{0};
+        fuse::jobs::JobScheduler::instance().submit([&] {
+            expectEq(static_cast<fuse::u32>(phase.load(std::memory_order_relaxed)), 0u,
+                     "zero-worker submit runs before caller continues");
+            phase.store(1, std::memory_order_release);
+        });
+        expectEq(static_cast<fuse::u32>(phase.load(std::memory_order_acquire)), 1u,
+                 "zero-worker submit completes inline");
+    });
+}
+
+void testSingleThreadNestedCounterWait() {
+    fuse::jobs::JobCounter counter(2);
+    std::atomic<bool> nestedDone{false};
+
+    withScheduler(0, [&] {
+        auto& scheduler = fuse::jobs::JobScheduler::instance();
+        scheduler.submit([&] {
+            counter.signal();
+            scheduler.submit([&] {
+                counter.signal();
+                nestedDone.store(true, std::memory_order_release);
+            });
+        });
+        counter.wait();
+    });
+
+    expectTrue(nestedDone.load(std::memory_order_acquire), "zero-worker nested jobs complete");
+    expectTrue(counter.isComplete(), "zero-worker counter reaches zero");
+}
+
+void testSingleThreadParallelForGrainSizes() {
+    withScheduler(0, [&] {
+        for (fuse::u32 grain : {1u, 3u, 16u, 64u}) {
+            fuse::u32 parallelSum = 0;
+            fuse::u32 serialSum = 0;
+
+            fuse::jobs::parallel_for(0u, 200u, grain, [&parallelSum](fuse::u32 i) {
+                parallelSum += i;
+            });
+            for (fuse::u32 i = 0; i < 200u; ++i) {
+                serialSum += i;
+            }
+
+            expectEq(parallelSum, serialSum, "zero-worker parallel_for matches serial for varied grain");
+        }
+    });
+}
+
+#if FUSE_JOBS_SINGLE_THREAD
+void testCompileTimeSingleThreadMacro() {
+    expectTrue(FUSE_JOBS_SINGLE_THREAD == 1, "FUSE_JOBS_SINGLE_THREAD macro forces compile-time fallback");
+    expectEq(fuse::jobs::computeWorkerCount({}), 0u, "computeWorkerCount returns 0 when macro is set");
+
+    withScheduler(4, [&] {
+        expectTrue(fuse::jobs::JobScheduler::instance().isSingleThreaded(),
+                   "initialize honors compile-time single-thread clamp");
+    });
+}
+#endif
+
 } // namespace
 
 int main() {
@@ -252,6 +333,12 @@ int main() {
     testNestedParallelForParity();
     testNestedParallelForSerialFallbackParity();
     testNestedParallelForWithCooperativeWait();
+    testSingleThreadSubmitRunsInline();
+    testSingleThreadNestedCounterWait();
+    testSingleThreadParallelForGrainSizes();
+#if FUSE_JOBS_SINGLE_THREAD
+    testCompileTimeSingleThreadMacro();
+#endif
 
     if (g_failures == 0) {
         std::printf("fuse_core job tests: all checks passed\n");
