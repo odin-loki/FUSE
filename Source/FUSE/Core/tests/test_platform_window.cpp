@@ -296,6 +296,18 @@ void testEventPumpCoalesceResizeEvents() {
                "focus event type preserved after resize coalesce");
 }
 
+void testEventPumpDrainEventsEmptyQueue() {
+    fuse::platform::EventPump pump;
+
+    expectTrue(!pump.hasPendingEvents(), "fresh pump has empty queue");
+    expectEq(pump.pendingEventCount(), 0u, "pending count zero on fresh pump");
+
+    std::vector<fuse::platform::PlatformEvent> drained;
+    expectEq(pump.drainEvents(drained), 0u, "drainEvents on empty queue returns zero");
+    expectTrue(drained.empty(), "drainEvents leaves output vector empty");
+    expectTrue(!pump.quitRequested(), "empty drain does not request quit");
+}
+
 void testEventPumpDrainEventsHelper() {
     fuse::platform::EventPump pump;
     fuse::platform::Window window;
@@ -315,6 +327,31 @@ void testEventPumpDrainEventsHelper() {
                "drain preserves fifo quit last");
     expectEq(pump.pendingEventCount(), 0u, "drain empties queue");
     expectTrue(pump.quitRequested(), "drain still marks quit when Quit event polled");
+
+    expectEq(pump.drainEvents(drained), 0u, "second drain on empty queue returns zero");
+    expectEq(drained.size(), 3u, "second drain appends nothing");
+}
+
+void testEventPumpCoalesceIsPerWindow() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window left;
+    fuse::platform::Window right;
+
+    left.resize(800, 600, &pump);
+    right.resize(1024, 768, &pump);
+    left.resize(1280, 720, &pump);
+
+    expectEq(pump.pendingEventCount(), 2u, "coalesce does not merge resizes across windows");
+
+    fuse::platform::PlatformEvent first;
+    expectTrue(pump.pollEvent(first), "left resize polled first");
+    expectTrue(first.window == &left, "first resize belongs to left window");
+    expectEq(first.width, 1280u, "left resize coalesced to latest width");
+
+    fuse::platform::PlatformEvent second;
+    expectTrue(pump.pollEvent(second), "right resize polled second");
+    expectTrue(second.window == &right, "second resize belongs to right window");
+    expectEq(second.width, 1024u, "right resize keeps its own dimensions");
 }
 
 void testMobileProfileStillUsesWindowStub() {
@@ -349,7 +386,9 @@ int main() {
     testEventPumpPollQueueOverflowDropsTail();
     testEventPumpClearSyntheticEvents();
     testEventPumpCoalesceResizeEvents();
+    testEventPumpDrainEventsEmptyQueue();
     testEventPumpDrainEventsHelper();
+    testEventPumpCoalesceIsPerWindow();
     testMobileProfileStillUsesWindowStub();
 
     if (g_failures == 0) {
