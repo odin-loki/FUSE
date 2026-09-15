@@ -11,7 +11,9 @@
 - **Track** — from `VTrack` (sorted events, span, `calculateInterp`)
 - **TimelineEvent** — from `VEvent` (trigger time, duration, active span)
 - **TrackGroup** — from `VGroup`
-- **CameraTrack** — from `VCameraTrack` / `VSceneObjectTrack` (camera keyframes, `sample_at`)
+- **CameraTrack** — from `VCameraTrack` / `VSceneObjectTrack` (position/FOV/roll keyframes, `keyframe_span`, `sample_at`)
+- **LookAtResolver** — entity-bound look-at stub (`CameraLookAtMode::TargetEntity`) without Torque `setTrackObject`
+- **lerp_fov** — clamped vertical-FOV interpolation for camera keyframe rails
 - **SpriteTrack** — from `VSceneObjectTrack` (2D sprite transform stub)
 - **PropertyTrack** — from `VMotionTrack` (scalar property rail stub)
 - **AudioTrack** — from `VSoundEffectTrack` (sound asset id + volume keyframes stub)
@@ -30,7 +32,7 @@
 ## Build / test
 
 - CMake: `FUSE_BUILD_MODULES=ON` (default) builds `fuse_cinematics`
-- CTest: `fuse_cinematics_tests` — 30s timeline advance, track span, interpolation, typed track sampling, playhead scrub, cue queue drain, advance/scrub cue enqueue
+- CTest: `fuse_cinematics_tests` — 30s timeline advance, track span, interpolation, typed track sampling (camera FOV/roll/look-at modes), playhead scrub, cue queue drain, advance/scrub cue enqueue
 
 ## License
 

@@ -3,6 +3,7 @@ add_library(fuse_cinematics STATIC
     src/interpolate.cpp
     src/track.cpp
     src/camera_track.cpp
+    src/look_at.cpp
     src/sprite_track.cpp
     src/property_track.cpp
     src/audio_track.cpp
@@ -16,6 +17,7 @@ add_library(fuse_cinematics STATIC
     include/fuse/cinematics/interpolate.hpp
     include/fuse/cinematics/track.hpp
     include/fuse/cinematics/camera_track.hpp
+    include/fuse/cinematics/look_at.hpp
     include/fuse/cinematics/sprite_track.hpp
     include/fuse/cinematics/property_track.hpp
     include/fuse/cinematics/audio_track.hpp

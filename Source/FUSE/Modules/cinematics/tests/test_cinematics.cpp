@@ -3,6 +3,7 @@
 #include <fuse/cinematics/cue_queue.hpp>
 #include <fuse/cinematics/event_track.hpp>
 #include <fuse/cinematics/interpolate.hpp>
+#include <fuse/cinematics/look_at.hpp>
 #include <fuse/cinematics/property_track.hpp>
 #include <fuse/cinematics/sprite_track.hpp>
 #include <fuse/cinematics/timeline.hpp>
@@ -134,6 +135,12 @@ void testInterpolateHelpers() {
     expectNear(mid.z, 15.f, 0.001f, "lerp_vec3 z");
 }
 
+void testFovLerpHelpers() {
+    expectNear(fuse::cinematics::lerp_fov(60.f, 30.f, 0.5f), 45.f, 0.001f, "lerp_fov midpoint");
+    expectNear(fuse::cinematics::clamp_fov(0.f), fuse::cinematics::kMinFovDeg, 0.001f, "clamp_fov min");
+    expectNear(fuse::cinematics::clamp_fov(200.f), fuse::cinematics::kMaxFovDeg, 0.001f, "clamp_fov max");
+}
+
 void testCameraTrackSampling() {
     fuse::cinematics::CameraTrack track("MainCamera");
     track.set_target_camera_id("player_cam");
@@ -143,12 +150,14 @@ void testCameraTrackSampling() {
     start.position = {0.f, 0.f, 5.f};
     start.look_at = {0.f, 0.f, 0.f};
     start.field_of_view = 60.f;
+    start.roll_deg = 0.f;
 
     fuse::cinematics::CameraKeyframe end{};
     end.time_ms = 2'000;
     end.position = {0.f, 0.f, 10.f};
-    end.look_at = {0.f, 0.f, 0.f};
+    end.look_at = {10.f, 0.f, 0.f};
     end.field_of_view = 45.f;
+    end.roll_deg = 90.f;
 
     track.add_keyframe(start);
     track.add_keyframe(end);
@@ -156,9 +165,61 @@ void testCameraTrackSampling() {
 
     expectTrue(track.kind() == fuse::cinematics::TrackKind::Camera, "camera track kind");
 
+    const fuse::cinematics::TrackSpan span = track.keyframe_span();
+    expectTrue(span.start_ms == 0, "camera keyframe span start");
+    expectTrue(span.end_ms == 2'000, "camera keyframe span end");
+
     const fuse::cinematics::CameraSample mid = track.sample_at(1'000);
     expectNear(mid.position.z, 7.5f, 0.001f, "camera z midpoint");
+    expectNear(mid.look_at.x, 5.f, 0.001f, "camera look-at x midpoint");
     expectNear(mid.field_of_view, 52.5f, 0.001f, "camera fov midpoint");
+    expectNear(mid.roll_deg, 45.f, 0.001f, "camera roll midpoint");
+}
+
+void testCameraLookAtTargetEntity() {
+    fuse::cinematics::CameraTrack track("FollowHero");
+    fuse::cinematics::LookAtResolver resolver;
+    resolver.set_resolve_fn([](const std::string& target_id) -> fuse::cinematics::Vec3 {
+        if (target_id == "hero") {
+            return {100.f, 0.f, 0.f};
+        }
+        return {};
+    });
+
+    fuse::cinematics::CameraKeyframe start{};
+    start.time_ms = 0;
+    start.position = {0.f, 2.f, 5.f};
+    start.look_at_mode = fuse::cinematics::CameraLookAtMode::TargetEntity;
+    start.look_at_target_id = "hero";
+
+    fuse::cinematics::CameraKeyframe end{};
+    end.time_ms = 1'000;
+    end.position = {0.f, 2.f, 10.f};
+    end.look_at_mode = fuse::cinematics::CameraLookAtMode::FixedPoint;
+    end.look_at = {0.f, 0.f, 0.f};
+
+    track.add_keyframe(start);
+    track.add_keyframe(end);
+    track.sort_keyframes();
+
+    const fuse::cinematics::CameraSample startSample = track.sample_at(0, fuse::cinematics::EaseMode::Linear, &resolver);
+    expectNear(startSample.look_at.x, 100.f, 0.001f, "entity look-at resolves at start");
+
+    const fuse::cinematics::CameraSample mid = track.sample_at(500, fuse::cinematics::EaseMode::Linear, &resolver);
+    expectNear(mid.look_at.x, 50.f, 0.001f, "entity-to-fixed look-at midpoint");
+}
+
+void testCameraTrackMultiKeyframe() {
+    fuse::cinematics::CameraTrack track("Dolly");
+    track.add_keyframe({0, {0.f, 0.f, 0.f}, fuse::cinematics::CameraLookAtMode::FixedPoint, {}, {}, 70.f, 0.f});
+    track.add_keyframe({1'000, {0.f, 0.f, 5.f}, fuse::cinematics::CameraLookAtMode::FixedPoint, {}, {}, 60.f, 15.f});
+    track.add_keyframe({3'000, {0.f, 0.f, 15.f}, fuse::cinematics::CameraLookAtMode::FixedPoint, {}, {}, 40.f, -10.f});
+    track.sort_keyframes();
+
+    const fuse::cinematics::CameraSample hold = track.sample_at(2'000);
+    expectNear(hold.position.z, 10.f, 0.001f, "three-keyframe position midpoint");
+    expectNear(hold.field_of_view, 50.f, 0.001f, "three-keyframe fov midpoint");
+    expectNear(hold.roll_deg, 2.5f, 0.001f, "three-keyframe roll midpoint");
 }
 
 void testSpriteTrackSampling() {
@@ -323,7 +384,10 @@ int main() {
     testNextEventIndex();
     testEventTriggerDetection();
     testInterpolateHelpers();
+    testFovLerpHelpers();
     testCameraTrackSampling();
+    testCameraLookAtTargetEntity();
+    testCameraTrackMultiKeyframe();
     testSpriteTrackSampling();
     testPropertyTrackSampling();
     testTimelineContentSpan();

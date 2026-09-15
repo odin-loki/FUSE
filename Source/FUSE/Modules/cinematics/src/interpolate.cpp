@@ -17,6 +17,14 @@ Vec3 lerp_vec3(const Vec3& a, const Vec3& b, float t) {
     return {lerp(a.x, b.x, t), lerp(a.y, b.y, t), lerp(a.z, b.z, t)};
 }
 
+float clamp_fov(float fov_deg) {
+    return std::max(kMinFovDeg, std::min(kMaxFovDeg, fov_deg));
+}
+
+float lerp_fov(float a, float b, float t) {
+    return clamp_fov(lerp(a, b, t));
+}
+
 float apply_ease(EaseMode mode, float t) {
     const float clamped = clamp01(t);
     switch (mode) {

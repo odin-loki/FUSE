@@ -11,17 +11,31 @@
 
 namespace fuse::cinematics {
 
+class LookAtResolver;
+
+/// How a camera keyframe resolves its look-at point.
+enum class CameraLookAtMode {
+    /// World-space point stored on the keyframe (`CameraKeyframe::look_at`).
+    FixedPoint,
+    /// Resolve world position from `look_at_target_id` via `LookAtResolver`.
+    TargetEntity,
+};
+
 struct CameraKeyframe {
     TimelineMs time_ms = 0;
     Vec3 position{};
+    CameraLookAtMode look_at_mode = CameraLookAtMode::FixedPoint;
     Vec3 look_at{};
+    std::string look_at_target_id;
     float field_of_view = 60.f;
+    float roll_deg = 0.f;
 };
 
 struct CameraSample {
     Vec3 position{};
     Vec3 look_at{};
     float field_of_view = 60.f;
+    float roll_deg = 0.f;
 };
 
 /// Camera animation lane (Verve VCameraTrack / VSceneObjectTrack without Torque bridge).
@@ -38,9 +52,15 @@ public:
     std::vector<CameraKeyframe>& keyframes() { return keyframes_; }
 
     void add_keyframe(const CameraKeyframe& keyframe);
+    void clear_keyframes();
     void sort_keyframes();
 
-    CameraSample sample_at(TimelineMs time_ms, EaseMode ease = EaseMode::Linear) const;
+    /// Earliest through latest keyframe time (requires sorted keyframes for tight bounds).
+    TrackSpan keyframe_span() const;
+
+    CameraSample sample_at(TimelineMs time_ms,
+                           EaseMode ease = EaseMode::Linear,
+                           const LookAtResolver* look_at_resolver = nullptr) const;
 
 private:
     std::string target_camera_id_;
