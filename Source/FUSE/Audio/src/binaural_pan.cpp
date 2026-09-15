@@ -31,6 +31,10 @@ float clamp_pan_position(float pan) {
     return std::clamp(pan, -1.f, 1.f);
 }
 
+float compute_pan_position_from_azimuth(float azimuth, float max_ild_pan) {
+    return clamp_pan_position(std::sin(azimuth) * max_ild_pan);
+}
+
 PanLawGains sample_pan_law(float pan, PanLaw law) {
     const float clamped = clamp_pan_position(pan);
     switch (law) {
@@ -62,7 +66,7 @@ BinauralPanGains compute_binaural_pan_gains(const BinauralPanAngles& angles,
                                              const BinauralPanParams& params) {
     BinauralPanGains gains;
 
-    const float pan = clamp_pan_position(std::sin(angles.azimuth) * params.max_ild_pan);
+    const float pan = compute_pan_position_from_azimuth(angles.azimuth, params.max_ild_pan);
     const PanLawGains pan_gains = sample_pan_law(pan, params.pan_law);
     gains.left = pan_gains.left;
     gains.right = pan_gains.right;
@@ -80,6 +84,11 @@ BinauralPanGains compute_binaural_pan_gains(const BinauralPanAngles& angles,
 BinauralPanGains compute_binaural_pan_gains(const Vec3& rel_listener,
                                              const BinauralPanParams& params) {
     return compute_binaural_pan_gains(compute_binaural_angles(rel_listener), params);
+}
+
+BinauralPanGains compute_binaural_pan_gains(const Vec3& world_relative, const ListenerBasis& basis,
+                                             const BinauralPanParams& params) {
+    return compute_binaural_pan_gains(compute_binaural_angles(world_relative, basis), params);
 }
 
 void clamp_binaural_pan_gains(BinauralPanGains& gains) {
