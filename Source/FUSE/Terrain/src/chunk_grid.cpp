@@ -31,6 +31,10 @@ ivec2 ChunkGrid::world_to_chunk_coord(f32 world_x, f32 world_z) const {
     return {x, z};
 }
 
+f32 ChunkGrid::base_chunk_stride() const {
+    return m_desc.world_size / static_cast<f32>(std::max(m_chunks_per_axis, 1u));
+}
+
 AABB ChunkGrid::chunk_world_bounds(ivec2 coord, u32 lod) const {
     const LodLevel& level = m_lod_levels[std::min(lod, static_cast<u32>(m_lod_levels.size()) - 1)];
     const f32 chunk_size = m_desc.world_size / static_cast<f32>(m_chunks_per_axis) * level.world_stride;
@@ -54,12 +58,14 @@ void ChunkGrid::update_lod(vec3 camera_pos, f32 /*dt*/) {
         const f32 dz = centre.z - camera_pos.z;
         const f32 distance = std::sqrt(dx * dx + dz * dz);
 
-        const u32 new_lod = select_lod_level(distance, m_desc.lod_levels);
-        chunk.lod = new_lod;
-        chunk.world_bounds = chunk_world_bounds(chunk.chunk_coord, new_lod);
+        const LodTransition transition = compute_lod_transition(distance, m_desc.lod_levels);
+        const bool lod_changed = chunk.lod != transition.lod;
+        chunk.lod = transition.lod;
+        chunk.morph_factor = transition.morph_factor;
+        chunk.world_bounds = chunk_world_bounds(chunk.chunk_coord, transition.lod);
         const f32 load_radius = m_desc.world_size * 0.75f;
         chunk.loaded = distance < load_radius;
-        chunk.dirty = chunk.loaded;
+        chunk.dirty = chunk.loaded && (lod_changed || transition.morph_factor > 0.f);
     }
 }
 
