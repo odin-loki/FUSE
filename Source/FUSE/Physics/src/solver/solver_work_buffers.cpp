@@ -53,6 +53,17 @@ void SolverWorkBuffers::clearPositionDeltas() {
     }
 }
 
+void SolverWorkBuffers::clearPositionDeltasForBodies(u32 bodyA, u32 bodyB) {
+    if (bodyA < positionDeltas_.size()) {
+        positionDeltas_[bodyA].delta = {};
+        positionDeltas_[bodyA].writeCount = 0;
+    }
+    if (bodyB < positionDeltas_.size()) {
+        positionDeltas_[bodyB].delta = {};
+        positionDeltas_[bodyB].writeCount = 0;
+    }
+}
+
 void SolverWorkBuffers::applyPositionDeltas(RigidBodySoA& bodies) const {
     const u32 count = std::min(bodies.count(), static_cast<u32>(positionDeltas_.size()));
     for (u32 i = 0; i < count; ++i) {

@@ -136,8 +136,8 @@ void PBDSolver::resolveIslandConstraints(RigidBodySoA& bodies,
         if (contactIndex >= contacts.size()) {
             continue;
         }
-        workBuffers_.clearPositionDeltas();
         const narrowphase::ContactManifold& contact = contacts[contactIndex];
+        workBuffers_.clearPositionDeltasForBodies(contact.bodyA, contact.bodyB);
         const f32 invMassA = effectiveInvMass(bodies, contact.bodyA);
         const f32 invMassB = effectiveInvMass(bodies, contact.bodyB);
         f32& lambda = workBuffers_.contactLambda(contactIndex);
@@ -156,8 +156,8 @@ void PBDSolver::resolveIslandConstraints(RigidBodySoA& bodies,
         if (distanceIndex >= distanceConstraints_.size()) {
             continue;
         }
-        workBuffers_.clearPositionDeltas();
         const DistanceConstraint& constraint = distanceConstraints_[distanceIndex];
+        workBuffers_.clearPositionDeltasForBodies(constraint.bodyA, constraint.bodyB);
         const f32 invMassA = effectiveInvMass(bodies, constraint.bodyA);
         const f32 invMassB = effectiveInvMass(bodies, constraint.bodyB);
         f32& lambda = workBuffers_.distanceLambda(distanceIndex);
@@ -185,8 +185,8 @@ void PBDSolver::runConstraintIterations(RigidBodySoA& bodies, const SolverParams
         const u32 islandCount = islandGraph_.islandCount();
         if (islandCount == 0) {
             for (u32 distanceIndex = 0; distanceIndex < distanceConstraints_.size(); ++distanceIndex) {
-                workBuffers_.clearPositionDeltas();
                 const DistanceConstraint& constraint = distanceConstraints_[distanceIndex];
+                workBuffers_.clearPositionDeltasForBodies(constraint.bodyA, constraint.bodyB);
                 const f32 invMassA = effectiveInvMass(bodies, constraint.bodyA);
                 const f32 invMassB = effectiveInvMass(bodies, constraint.bodyB);
                 f32& lambda = workBuffers_.distanceLambda(distanceIndex);
