@@ -27,6 +27,9 @@ struct OcclusionAttenuation {
 OcclusionAttenuation evaluate_occlusion_attenuation(float visibility,
                                                   const OcclusionParams& params = {});
 
+/// Segment-vs-AABB ray stub — true when the listener→source segment intersects the box.
+bool segment_intersects_aabb(const Vec3& listener, const Vec3& source, const AABB& blocker);
+
 /// Line-of-sight stub — returns reduced visibility when a blocker AABB intersects the segment.
 float compute_blocker_visibility(const Vec3& listener, const Vec3& source, const AABB& blocker,
                                const OcclusionParams& params = {});
@@ -34,5 +37,13 @@ float compute_blocker_visibility(const Vec3& listener, const Vec3& source, const
 /// Combine visibility across multiple blocker AABBs — returns the minimum visibility encountered.
 float compute_blockers_visibility(const Vec3& listener, const Vec3& source, const AABB* blockers,
                                   u32 blocker_count, const OcclusionParams& params = {});
+
+/// Blocker occlusion amount in [0, 1] — 0 = clear LOS, 1 = fully blocked by geometry.
+float compute_blocker_factor(const Vec3& listener, const Vec3& source, const AABB& blocker,
+                             const OcclusionParams& params = {});
+
+/// Maximum blocker factor across multiple AABBs (worst-case occlusion along the segment).
+float compute_blockers_factor(const Vec3& listener, const Vec3& source, const AABB* blockers,
+                                u32 blocker_count, const OcclusionParams& params = {});
 
 } // namespace fuse::audio

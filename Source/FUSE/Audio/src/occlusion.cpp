@@ -5,8 +5,6 @@
 
 namespace fuse::audio {
 
-namespace {
-
 bool segment_intersects_aabb(const Vec3& start, const Vec3& end, const AABB& box) {
     const Vec3 dir = end - start;
     float t_min = 0.f;
@@ -41,8 +39,6 @@ bool segment_intersects_aabb(const Vec3& start, const Vec3& end, const AABB& box
     return t_min <= t_max;
 }
 
-} // namespace
-
 float evaluate_occlusion_gain(float visibility, const OcclusionParams& params) {
     const float clamped = std::clamp(visibility, 0.f, 1.f);
     return params.min_gain + (1.f - params.min_gain) * clamped;
@@ -75,6 +71,23 @@ float compute_blockers_visibility(const Vec3& listener, const Vec3& source, cons
                                compute_blocker_visibility(listener, source, blockers[i], params));
     }
     return visibility;
+}
+
+float compute_blocker_factor(const Vec3& listener, const Vec3& source, const AABB& blocker,
+                             const OcclusionParams& params) {
+    return 1.f - compute_blocker_visibility(listener, source, blocker, params);
+}
+
+float compute_blockers_factor(const Vec3& listener, const Vec3& source, const AABB* blockers,
+                              u32 blocker_count, const OcclusionParams& params) {
+    if (blockers == nullptr || blocker_count == 0) {
+        return 0.f;
+    }
+    float factor = 0.f;
+    for (u32 i = 0; i < blocker_count; ++i) {
+        factor = std::max(factor, compute_blocker_factor(listener, source, blockers[i], params));
+    }
+    return factor;
 }
 
 } // namespace fuse::audio

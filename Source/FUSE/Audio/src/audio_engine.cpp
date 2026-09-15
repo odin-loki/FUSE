@@ -1,6 +1,7 @@
 #include <fuse/audio/audio_engine.hpp>
 
 #include <fuse/audio/attenuation.hpp>
+#include <fuse/audio/occlusion.hpp>
 #include <fuse/audio/reverb_zones.hpp>
 
 #include <algorithm>
@@ -194,11 +195,20 @@ void AudioEngine::sync_backend_sources_(AudioRegistry& registry) {
         attenuation_params.max_dist = source->desc.max_distance;
         attenuation_params.rolloff = source->desc.rolloff;
 
-        const float attenuation = source->desc.spatial && registry.listener() != nullptr
-            ? compute_attenuation(source->position.distance(registry.listener()->position),
-                                  attenuation_params)
+        const AudioListener* listener = registry.listener();
+        const float distance = listener != nullptr
+            ? source->position.distance(listener->position)
+            : 0.f;
+        const float distance_attenuation = source->desc.spatial && listener != nullptr
+            ? compute_attenuation(distance, attenuation_params)
             : 1.f;
-        const float gain = source->desc.volume * attenuation;
+        const float visibility = listener != nullptr
+            ? m_mixer.compute_source_visibility(listener->position, source->position,
+                                                source->desc.occlusion)
+            : std::clamp(source->desc.occlusion, 0.f, 1.f);
+        const OcclusionAttenuation occlusion = evaluate_occlusion_attenuation(visibility);
+        const float gain =
+            source->desc.volume * distance_attenuation * occlusion.gain * occlusion.hf_gain;
         m_backend.set_source_gain(source->backend_source, gain);
         m_backend.set_source_position(source->backend_source, source->position.x,
                                       source->position.y, source->position.z);
