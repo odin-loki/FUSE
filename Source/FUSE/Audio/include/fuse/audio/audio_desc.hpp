@@ -27,6 +27,7 @@ struct AudioSourceDesc {
     AttenuationCurve attenuation = AttenuationCurve::Linear;
     float rolloff = 1.f;
     AudioBus bus = AudioBus::Sfx;
+    float occlusion = 1.f;
     bool looping = false;
     bool spatial = true;
     bool play_on_awake = false;

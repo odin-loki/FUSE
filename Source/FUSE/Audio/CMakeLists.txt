@@ -11,6 +11,7 @@ set(FUSE_AUDIO_PUBLIC_HEADERS
     include/fuse/audio/audio_bus.hpp
     include/fuse/audio/conv_reverb_cpu.hpp
     include/fuse/audio/math.hpp
+    include/fuse/audio/occlusion.hpp
     include/fuse/audio/reverb_cuda.hpp
     include/fuse/audio/spatial_mixer.hpp
 )
@@ -23,6 +24,7 @@ set(FUSE_AUDIO_SOURCES
     src/audio_engine.cpp
     src/audio_registry.cpp
     src/conv_reverb_cpu.cpp
+    src/occlusion.cpp
     src/reverb_cuda.cpp
     src/spatial_mixer.cpp
 )

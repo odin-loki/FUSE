@@ -4,6 +4,7 @@
 #include <fuse/audio/audio_clip.hpp>
 #include <fuse/audio/audio_components.hpp>
 #include <fuse/audio/audio_desc.hpp>
+#include <fuse/audio/audio_bus.hpp>
 #include <fuse/audio/audio_registry.hpp>
 #include <fuse/audio/conv_reverb_cpu.hpp>
 #include <fuse/audio/math.hpp>
@@ -45,6 +46,9 @@ public:
 
     const std::vector<float>& last_mix_buffer() const { return m_mixBuffer; }
     const ConvReverbCpu& cpu_reverb() const { return m_cpuReverb; }
+
+    AudioBusMixer& bus_mixer() { return m_mixer.bus_mixer(); }
+    const AudioBusMixer& bus_mixer() const { return m_mixer.bus_mixer(); }
 
 private:
     void apply_reverb_(std::vector<float>& stereo_buffer, u32 frames);
