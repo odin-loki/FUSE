@@ -191,7 +191,62 @@ cmake --build build-ios --target fuse_core
 | `fuse/platform/thread.hpp` | `getCoreCount`, `renderThread`, … |
 | `fuse/platform/power.hpp` | `getPowerState()` |
 
-Single-thread fallback: configure with `-DFUSE_JOBS_SINGLE_THREAD=ON` or define `FUSE_JOBS_SINGLE_THREAD=1` at compile time. When set, `computeWorkerCount()` returns `0`.
+### Single-thread fallback (`FUSE_JOBS_SINGLE_THREAD`)
+
+Configure with `-DFUSE_JOBS_SINGLE_THREAD=ON` or define `FUSE_JOBS_SINGLE_THREAD=1` at compile time. When set:
+
+| API | Behaviour |
+|-----|-----------|
+| `computeWorkerCount()` | Always returns `0` (all power/mobile profiles) |
+| `JobScheduler::initialize(N)` | Clamps `N` to `0`; `submit()` runs inline on the caller thread |
+| `parallel_for` | Serial loop on the caller thread |
+| `JobCounter::wait()` | Condition-variable wait on the caller thread (no worker fibers) |
+
+Desktop CI runs the default multi-thread profile. A dedicated Linux job builds with `-DFUSE_JOBS_SINGLE_THREAD=ON` and runs `fuse_core_jobs`, `fuse_core_jobs_single_thread`, `fuse_core_worker_count`, and `fuse_core_fiber` (see `.github/workflows/fuse-umbrella-linux.yml`).
+
+```bash
+cmake -B build-st -G Ninja \
+  -DFUSE_UMBRELLA=ON \
+  -DFUSE_BUILD_CORE=ON \
+  -DFUSE_BUILD_CORE_TESTS=ON \
+  -DFUSE_JOBS_SINGLE_THREAD=ON \
+  -DFUSE_BUILD_T3D=OFF \
+  -DFUSE_BUILD_T2D=OFF
+
+cmake --build build-st
+ctest --test-dir build-st --output-on-failure \
+  -R 'fuse_core_jobs|fuse_core_jobs_single_thread|fuse_core_worker_count|fuse_core_fiber'
+```
+
+Use for deterministic replay, golden tests, and bisect. Behaviour must match the parallel scheduler modulo timing (architecture-parallel §3.1).
+
+### Emscripten stub profile (deferred, non-blocking)
+
+Web builds are a **separate CMake profile** (`FUSE_PLATFORM_EMSCRIPTEN`) and **do not gate** WP-03 exit on desktop or mobile native targets.
+
+| Concern | Native desktop / mobile | Emscripten (U7+) |
+|---------|-------------------------|------------------|
+| Fiber backend | POSIX ucontext / Win32 / CV fallback | `stub` — no cooperative yield |
+| Job workers | Adaptive `N` from `computeWorkerCount()` | **`FUSE_JOBS_SINGLE_THREAD` defaults ON** — all jobs on caller thread |
+| Work-stealing | Primary path | Deferred (`FUSE_JOBS_COARSE_POOL` may follow) |
+| CI | Linux + Android NDK + iOS sim | Optional; not required for WP-03 |
+
+When targeting Emscripten, `FUSE_JOBS_SINGLE_THREAD` defaults to `ON` in `Source/FUSE/Core/CMakeLists.txt`. Override with `-DFUSE_JOBS_SINGLE_THREAD=OFF` only after a pthread coarse-pool backend is proven safe for WASM stacks.
+
+```bash
+# Future web profile (requires Emscripten SDK; CI may omit initially)
+emcmake cmake -B build-wasm -G Ninja \
+  -DFUSE_UMBRELLA=ON \
+  -DFUSE_BUILD_CORE=ON \
+  -DFUSE_BUILD_CORE_TESTS=ON \
+  -DFUSE_BUILD_T3D=OFF \
+  -DFUSE_BUILD_T2D=OFF
+
+cmake --build build-wasm
+ctest --test-dir build-wasm --output-on-failure -R fuse_core_jobs
+```
+
+See [architecture-parallel.md](./architecture-parallel.md) §3.5 and [wp03-fiber-remaining.md](./wp03-fiber-remaining.md).
 
 ---
 
