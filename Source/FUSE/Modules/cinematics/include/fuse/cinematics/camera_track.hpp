@@ -36,7 +36,19 @@ struct CameraSample {
     Vec3 look_at{};
     float field_of_view = 60.f;
     float roll_deg = 0.f;
+
+    /// Unit vector from `position` toward `look_at` (default forward when coincident).
+    Vec3 look_direction() const;
+
+    /// Euclidean distance between `position` and `look_at`.
+    float look_distance() const;
 };
+
+/// Normalized direction from camera position to look-at point.
+Vec3 camera_look_direction(const Vec3& position, const Vec3& look_at);
+
+/// Distance between camera position and look-at point.
+float camera_look_distance(const Vec3& position, const Vec3& look_at);
 
 /// Camera animation lane (Verve VCameraTrack / VSceneObjectTrack without Torque bridge).
 class CameraTrack : public Track {
@@ -54,6 +66,8 @@ public:
     void add_keyframe(const CameraKeyframe& keyframe);
     void clear_keyframes();
     void sort_keyframes();
+
+    bool empty() const { return keyframes_.empty(); }
 
     /// Earliest through latest keyframe time (requires sorted keyframes for tight bounds).
     TrackSpan keyframe_span() const;

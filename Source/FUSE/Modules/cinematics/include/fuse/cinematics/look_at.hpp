@@ -27,6 +27,7 @@ private:
 };
 
 /// Resolve a keyframe's look-at to world space (fixed point or entity stub).
+/// Falls back to `keyframe.look_at` when entity mode is unset or the resolver cannot resolve.
 Vec3 resolve_look_at_world(const CameraKeyframe& keyframe, const LookAtResolver& resolver);
 
 } // namespace fuse::cinematics

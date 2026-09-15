@@ -210,6 +210,85 @@ void testCameraLookAtTargetEntity() {
     expectNear(mid.look_at.x, 50.f, 0.001f, "entity-to-fixed look-at midpoint");
 }
 
+void testCameraTrackEmpty() {
+    fuse::cinematics::CameraTrack track("EmptyCam");
+    expectTrue(track.empty(), "fresh camera track has no keyframes");
+
+    const fuse::cinematics::TrackSpan span = track.keyframe_span();
+    expectTrue(span.start_ms == 0 && span.end_ms == 0, "empty track span is zero");
+
+    const fuse::cinematics::CameraSample sample = track.sample_at(500);
+    expectNear(sample.position.x, 0.f, 0.001f, "empty track position default");
+    expectNear(sample.look_at.x, 0.f, 0.001f, "empty track look-at default");
+    expectNear(sample.field_of_view, 60.f, 0.001f, "empty track fov default");
+    expectNear(sample.roll_deg, 0.f, 0.001f, "empty track roll default");
+    expectNear(sample.look_distance(), 0.f, 0.001f, "empty track look distance");
+}
+
+void testCameraTrackFovExtremes() {
+    fuse::cinematics::CameraTrack track("WideNarrow");
+    fuse::cinematics::CameraKeyframe wide{};
+    wide.time_ms = 0;
+    wide.field_of_view = 0.f;
+
+    fuse::cinematics::CameraKeyframe narrow{};
+    narrow.time_ms = 1'000;
+    narrow.field_of_view = 200.f;
+
+    track.add_keyframe(wide);
+    track.add_keyframe(narrow);
+    track.sort_keyframes();
+
+    const fuse::cinematics::CameraSample start = track.sample_at(0);
+    expectNear(start.field_of_view, fuse::cinematics::kMinFovDeg, 0.001f, "fov clamps at min keyframe");
+
+    const fuse::cinematics::CameraSample end = track.sample_at(1'000);
+    expectNear(end.field_of_view, fuse::cinematics::kMaxFovDeg, 0.001f, "fov clamps at max keyframe");
+
+    const fuse::cinematics::CameraSample mid = track.sample_at(500);
+    const float expected_mid = fuse::cinematics::lerp_fov(0.f, 200.f, 0.5f);
+    expectNear(mid.field_of_view, expected_mid, 0.001f, "fov midpoint clamps after lerp");
+    expectNear(expected_mid, 100.f, 0.001f, "lerp_fov clamps interior blend");
+}
+
+void testCameraLookDirection() {
+    fuse::cinematics::CameraTrack track("Aim");
+    fuse::cinematics::CameraKeyframe start{};
+    start.time_ms = 0;
+    start.position = {0.f, 0.f, 0.f};
+    start.look_at = {0.f, 0.f, -10.f};
+
+    fuse::cinematics::CameraKeyframe end{};
+    end.time_ms = 1'000;
+    end.position = {10.f, 0.f, 0.f};
+    end.look_at = {10.f, 0.f, 10.f};
+
+    track.add_keyframe(start);
+    track.add_keyframe(end);
+    track.sort_keyframes();
+
+    const fuse::cinematics::CameraSample sample = track.sample_at(0);
+    const fuse::cinematics::Vec3 forward = sample.look_direction();
+    expectNear(forward.z, -1.f, 0.001f, "look direction points down -Z at start");
+    expectNear(sample.look_distance(), 10.f, 0.001f, "look distance at start");
+
+    const fuse::cinematics::Vec3 helper = fuse::cinematics::camera_look_direction(sample.position, sample.look_at);
+    expectNear(helper.z, forward.z, 0.001f, "helper matches sample look direction");
+}
+
+void testLookAtResolverFallback() {
+    fuse::cinematics::CameraKeyframe keyframe{};
+    keyframe.look_at_mode = fuse::cinematics::CameraLookAtMode::TargetEntity;
+    keyframe.look_at_target_id = "missing";
+    keyframe.look_at = {1.f, 2.f, 3.f};
+
+    fuse::cinematics::LookAtResolver resolver;
+    const fuse::cinematics::Vec3 resolved = fuse::cinematics::resolve_look_at_world(keyframe, resolver);
+    expectNear(resolved.x, 1.f, 0.001f, "unresolved entity falls back to fixed look-at");
+    expectNear(resolved.y, 2.f, 0.001f, "unresolved entity falls back to fixed look-at y");
+    expectNear(resolved.z, 3.f, 0.001f, "unresolved entity falls back to fixed look-at z");
+}
+
 void testCameraTrackMultiKeyframe() {
     fuse::cinematics::CameraTrack track("Dolly");
     track.add_keyframe({0, {0.f, 0.f, 0.f}, fuse::cinematics::CameraLookAtMode::FixedPoint, {}, {}, 70.f, 0.f});
@@ -507,6 +586,10 @@ int main() {
     testFovLerpHelpers();
     testCameraTrackSampling();
     testCameraLookAtTargetEntity();
+    testCameraTrackEmpty();
+    testCameraTrackFovExtremes();
+    testCameraLookDirection();
+    testLookAtResolverFallback();
     testCameraTrackMultiKeyframe();
     testSpriteTrackSampling();
     testPropertyTrackSampling();
