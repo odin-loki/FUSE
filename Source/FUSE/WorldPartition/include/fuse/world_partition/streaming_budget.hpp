@@ -14,6 +14,13 @@ struct StreamingBudget {
     u64 max_resident_bytes = 0; ///< 0 = unlimited byte budget
 };
 
+/// Budget pressure counters surfaced to tooling and tests (B7.6 deepen).
+struct StreamingBudgetCounters {
+    u32 rejected_loads = 0;   ///< Loads rejected after eviction could not free budget
+    u32 budget_evictions = 0; ///< Resident cells queued for unload to make room
+    u64 bytes_evicted = 0;    ///< Resident bytes released by budget-driven evictions
+};
+
 /// Eviction ordering when resident caps are exceeded (B7.6 stub).
 enum class EvictionPolicy : u8 {
     DistanceFromFocus, ///< Farther cells beyond stream-out radius evict first
@@ -47,6 +54,25 @@ enum class EvictionPolicy : u8 {
 
 [[nodiscard]] inline bool can_accept_resident_cell(u32 max_loaded_cells, u32 resident_count) {
     return resident_count < max_loaded_cells;
+}
+
+[[nodiscard]] inline u32 resident_cell_headroom(u32 max_loaded_cells, u32 resident_count) {
+    return resident_count < max_loaded_cells ? max_loaded_cells - resident_count : 0u;
+}
+
+[[nodiscard]] inline u64 clamp_incoming_bytes(u64 bytes_remaining, u64 incoming_bytes) {
+    if (bytes_remaining == ~0ull || incoming_bytes == 0u) {
+        return incoming_bytes;
+    }
+    return incoming_bytes < bytes_remaining ? incoming_bytes : bytes_remaining;
+}
+
+[[nodiscard]] inline bool is_at_cell_cap(u32 max_loaded_cells, u32 resident_count) {
+    return resident_count >= max_loaded_cells;
+}
+
+[[nodiscard]] inline bool is_at_byte_cap(u64 max_resident_bytes, u64 resident_bytes) {
+    return !byte_budget_unlimited(max_resident_bytes) && resident_bytes >= max_resident_bytes;
 }
 
 /// Higher score evicts sooner. Distance policy uses unload distance priority; LRU uses age.
