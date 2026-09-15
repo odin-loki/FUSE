@@ -87,6 +87,17 @@ struct LodResidencyBudgetCounters {
     return pending < max_pending ? pending : max_pending;
 }
 
+[[nodiscard]] inline bool can_submit_async_load(u32 in_flight, u32 max_async_in_flight) {
+    return max_async_in_flight == 0u || in_flight < max_async_in_flight;
+}
+
+[[nodiscard]] inline u32 async_in_flight_headroom(u32 max_async_in_flight, u32 in_flight) {
+    if (max_async_in_flight == 0u) {
+        return ~0u;
+    }
+    return in_flight < max_async_in_flight ? max_async_in_flight - in_flight : 0u;
+}
+
 [[nodiscard]] inline u32 clamp_eviction_batch(u32 requested, u32 headroom) {
     return requested < headroom ? requested : headroom;
 }
