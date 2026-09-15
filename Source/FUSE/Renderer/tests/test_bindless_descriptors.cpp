@@ -242,6 +242,112 @@ void testSamplerCapExhaustion() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testUniformBufferSlots() {
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    const fuse::renderer::BindlessSlotHandle ssbo = bindless.allocateBufferSlot(false);
+    const fuse::renderer::BindlessSlotHandle ubo = bindless.allocateBufferSlot(true);
+    expectTrue(ssbo.isValid() && ubo.isValid(), "ssbo and ubo slots allocated");
+    expectTrue(!bindless.slotIsUniformBuffer(ssbo.index), "ssbo slot not uniform");
+    expectTrue(bindless.slotIsUniformBuffer(ubo.index), "ubo slot marked uniform");
+
+    const fuse::renderer::BindlessBindingIndex ssboBinding = bindless.bindingIndexForHandle(ssbo);
+    const fuse::renderer::BindlessBindingIndex uboBinding = bindless.bindingIndexForHandle(ubo);
+    expectTrue(ssboBinding.binding == fuse::renderer::kBindlessBindingStorageBuffers, "ssbo binding");
+    expectTrue(uboBinding.binding == fuse::renderer::kBindlessBindingUniformBuffers, "ubo binding");
+
+    bindless.destroy(*bootstrap->device());
+}
+
+void testHandleRegisterUnregister() {
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    const fuse::renderer::Texture texture{};
+    const fuse::renderer::Buffer buffer{};
+    const fuse::renderer::BindlessSlotHandle texHandle = bindless.registerTextureSlot(texture, true);
+    const fuse::renderer::BindlessSlotHandle bufHandle = bindless.registerBufferSlot(buffer, true);
+    const fuse::renderer::BindlessSlotHandle sampHandle = bindless.registerSamplerSlot(nullptr);
+
+    expectTrue(bindless.validateSlot(texHandle), "texture slot handle valid");
+    expectTrue(bindless.validateSlot(bufHandle), "buffer slot handle valid");
+    expectTrue(bindless.validateSlot(sampHandle), "sampler slot handle valid");
+    expectTrue(bindless.slotIsStorageTexture(texHandle.index), "storage texture via handle API");
+    expectTrue(bindless.slotIsUniformBuffer(bufHandle.index), "uniform buffer via handle API");
+
+    bindless.unregisterSlot(texHandle);
+    bindless.unregisterSlot(bufHandle);
+    bindless.unregisterSlot(sampHandle);
+    expectTrue(!bindless.validateSlot(texHandle), "texture handle stale after unregister");
+    expectTrue(!bindless.validateSlot(bufHandle), "buffer handle stale after unregister");
+    expectTrue(!bindless.validateSlot(sampHandle), "sampler handle stale after unregister");
+    expectTrue(bindless.heapLiveCount(fuse::renderer::BindlessHeapKind::Texture) == 0u,
+               "texture heap empty after handle unregister");
+
+    bindless.destroy(*bootstrap->device());
+}
+
+void testInvalidHandleUnregister() {
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    expectTrue(!bindless.validateSlot(fuse::renderer::BindlessSlotHandle::invalid()),
+               "default invalid handle rejected");
+    bindless.unregisterSlot(fuse::renderer::BindlessSlotHandle::invalid());
+    expectTrue(bindless.heapLiveCount(fuse::renderer::BindlessHeapKind::Texture) == 0u,
+               "invalid unregister is no-op");
+
+    const fuse::renderer::BindlessSlotHandle live = bindless.allocateTextureSlot(false);
+    const fuse::renderer::BindlessSlotHandle stale{
+        fuse::renderer::BindlessHeapKind::Texture, live.index, live.generation + 99u};
+    bindless.unregisterSlot(stale);
+    expectTrue(bindless.validateSlot(live), "stale unregister leaves live slot");
+
+    bindless.destroy(*bootstrap->device());
+}
+
+void testGenerationMonotonicReuse() {
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::BindlessSlotHandle handle = bindless.allocateSamplerSlot();
+    expectTrue(handle.generation == 1u, "initial sampler generation is 1");
+    const u32 index = handle.index;
+
+    for (u32 cycle = 0; cycle < 64u; ++cycle) {
+        bindless.freeSamplerSlot(handle);
+        const u32 genAfterFree = bindless.slotGeneration(fuse::renderer::BindlessHeapKind::Sampler, index);
+        expectTrue(genAfterFree == handle.generation + 1u, "generation increments on each free");
+        handle = bindless.allocateSamplerSlot();
+        expectTrue(handle.index == index, "same index reused across cycles");
+        expectTrue(handle.generation == genAfterFree, "reused handle carries bumped generation");
+    }
+
+    bindless.destroy(*bootstrap->device());
+}
+
+void testDoubleFreeValidHandle() {
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    const fuse::renderer::BindlessSlotHandle handle = bindless.allocateBufferSlot(false);
+    bindless.freeBufferSlot(handle);
+    expectTrue(!bindless.validateSlot(handle), "handle invalid after first free");
+    bindless.freeBufferSlot(handle);
+    expectTrue(bindless.heapLiveCount(fuse::renderer::BindlessHeapKind::Buffer) == 0u,
+               "double-free with stale handle is no-op");
+    expectTrue(bindless.heapFreeCount(fuse::renderer::BindlessHeapKind::Buffer) == 1u,
+               "slot not double-enqueued on free list");
+
+    bindless.destroy(*bootstrap->device());
+}
+
 void testLegacyRegisterUnregister() {
     auto bootstrap = makeBootstrap();
     fuse::renderer::BindlessDescriptors bindless;
@@ -278,6 +384,11 @@ int main() {
     testBindingFromHandle();
     testHeapCounts();
     testSamplerCapExhaustion();
+    testUniformBufferSlots();
+    testHandleRegisterUnregister();
+    testInvalidHandleUnregister();
+    testGenerationMonotonicReuse();
+    testDoubleFreeValidHandle();
     testLegacyRegisterUnregister();
 
     fuse::core::shutdown();
