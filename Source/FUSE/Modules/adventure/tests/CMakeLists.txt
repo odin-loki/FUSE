@@ -13,3 +13,11 @@ add_executable(fuse_adventure_interact_tests
 target_link_libraries(fuse_adventure_interact_tests PRIVATE fuse_adventure fuse_core)
 target_compile_features(fuse_adventure_interact_tests PRIVATE cxx_std_17)
 add_test(NAME fuse_adventure_interact COMMAND fuse_adventure_interact_tests)
+
+add_executable(fuse_adventure_vertical_slice_tests
+    test_vertical_slice.cpp
+)
+
+target_link_libraries(fuse_adventure_vertical_slice_tests PRIVATE fuse_adventure fuse_mechanics fuse_core)
+target_compile_features(fuse_adventure_vertical_slice_tests PRIVATE cxx_std_17)
+add_test(NAME fuse_adventure_vertical_slice COMMAND fuse_adventure_vertical_slice_tests)

@@ -1,5 +1,7 @@
 #include <fuse/mechanics/interactable.hpp>
 
+#include <algorithm>
+
 namespace fuse::mechanics {
 
 bool InteractableInterface::canInteract(const InteractionContext& ctx) const {
@@ -37,16 +39,24 @@ void InteractableComponent::registerInterfaces(Component* owner) {
     owner->registerCachedInterface("mechanics", "interactable", this, &m_interactableInterface);
 }
 
+void InteractableComponent::setSupportedVerbs(std::vector<std::string> verbs) {
+    m_supportedVerbs = std::move(verbs);
+}
+
+bool InteractableComponent::supportsVerb(const std::string& verb) const {
+    if (verb.empty()) {
+        return true;
+    }
+
+    return std::find(m_supportedVerbs.begin(), m_supportedVerbs.end(), verb) != m_supportedVerbs.end();
+}
+
 bool InteractableComponent::canInteract(const InteractionContext& ctx) const {
     if (!isEnabled()) {
         return false;
     }
 
-    if (!ctx.verb.empty() && ctx.verb != "use") {
-        return false;
-    }
-
-    return true;
+    return supportsVerb(ctx.verb);
 }
 
 bool InteractableComponent::interact(InteractionContext& ctx) {

@@ -1,7 +1,7 @@
 # demo_adventure_stub
 
-**Status:** Scaffold — `fuse_adventure` APIs live in `Source/FUSE/Modules/adventure/`.  
-**Proves:** Inventory add/remove, use/pickup interaction, and puzzle-gate scaffolding.  
+**Status:** Vertical slice — `fuse_adventure` + `fuse_mechanics` bridge live in `Source/FUSE/Modules/`.  
+**Proves:** Inventory add/remove, mechanics-registry dispatch, use/pickup interaction, and puzzle-gate unlock (Outpost key flow).  
 **Legacy golden source:** `third_party/addons/3DAAK/Templates/Full/game/levels/Outpost.mis`
 
 ## 3DAAK ore mapping

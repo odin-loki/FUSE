@@ -104,13 +104,22 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 
 ### `fuse_mechanics`
 
-- `Component` + `Interactable` stubs
-- TODO: extract GMK `SimComponent` from `third_party/addons/GMK/Engine/source/component/`
+- **Component kernel** (`Component`, `ComponentInterface`, `ComponentInterfaceCache`) — GMK `SimComponent` pattern without SimObject/Con::
+- **Interactable surface** (`IInteractable`, `InteractableComponent`, `InteractableInterface`) with verb/item `InteractionContext`
+- **Inventory provider** (`IInventoryProvider`, `InventoryProviderInterface`) — string-keyed instigator bag for adventure bridge
+- **Registry** (`MechanicsRegistry`) — explicit registration + component-tree `resolveInteractable`
+- Tests: `fuse_mechanics_tests`, `fuse_mechanics_inventory_provider`
+- TODO: extract remaining GMK `SimComponent` leaves from `third_party/addons/GMK/Engine/source/component/`
 
 ### `fuse_adventure`
 
-- `Inventory` + `InteractionSystem` stubs sharing mechanics handles
-- TODO: extract 3DAAK interaction/inventory scripts as FUSE APIs + `Samples/Modules/adventure/`
+- **Inventory** (`Inventory`, `InventoryComponent`) — 3DAAK `ShapeBase::incInventory` / `decInventory` / `hasInventory` parity
+- **Interaction** (`InteractionSystem`, `IInteractable`, `PickupInteractable`, `PuzzleGate`)
+- **Mechanics bridge** (`AdventureInteractableComponent`, `MechanicsBridge`) — dispatches mechanics `InteractionContext` through adventure use/pickup
+- Links `fuse_mechanics`; vertical slice: pickup key → use on puzzle gate (Outpost flow)
+- Tests: `fuse_adventure_inventory`, `fuse_adventure_interact`, `fuse_adventure_vertical_slice`
+- Demo: `demo_adventure_stub` exercises inventory + door unlock
+- TODO: extract remaining 3DAAK interaction scripts as FUSE APIs + `Samples/Modules/adventure/`
 
 ---
 
@@ -156,8 +165,8 @@ ctest --test-dir build-fuse --output-on-failure
 | `fuse_ai` | BT drives 2D + 3D agents in hybrid demo | 🚧 registry + decorators landed; 3D agent stub next |
 | `fuse_cinematics` | 30s timeline moves camera + sprite | 🚧 kernel + tests; hybrid drive next |
 | `fuse_fx` | AFX on 3D model + 2D sprite | 🚧 socket attach + effect timeline + fireball cast path; hybrid drive next |
-| `fuse_mechanics` | One 3D interactable | ⬜ scaffold |
-| `fuse_adventure` | Pick-up / use in 3D + 2D interface | ⬜ scaffold |
+| `fuse_mechanics` | One 3D interactable | 🚧 component + interactable + registry; hybrid demo next |
+| `fuse_adventure` | Pick-up / use in 3D + 2D interface | 🚧 inventory + interaction vertical slice + `demo_adventure_stub` |
 
 ---
 
