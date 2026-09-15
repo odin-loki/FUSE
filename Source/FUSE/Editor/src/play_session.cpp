@@ -32,6 +32,16 @@ void PlayWorldSnapshot::apply(EditorScene& editorScene) const {
     }
 }
 
+const ecs::Transform* PlayWorldSnapshot::findTransform(ecs::EntityID id) const {
+    for (const std::pair<ecs::EntityID, ecs::Transform>& entry : entities) {
+        if (entry.first.index == id.index && entry.first.generation == id.generation) {
+            return &entry.second;
+        }
+    }
+
+    return nullptr;
+}
+
 void PlaySession::start(EditorScene& editorScene, scene::Scene& scene, EditorState& state,
                         PlayModePhysicsState& physics) {
     if (isActive()) {
@@ -46,6 +56,7 @@ void PlaySession::start(EditorScene& editorScene, scene::Scene& scene, EditorSta
     m_coalescedDirtyCount = 0;
     m_skippedInactiveTickCount = 0;
     m_skippedInactiveFixedStepCount = 0;
+    m_maxStepsCapHitCount = 0;
 
     state.playing = true;
     state.paused = false;
@@ -65,6 +76,7 @@ void PlaySession::stop(EditorScene& editorScene, scene::Scene& scene, EditorStat
     m_coalescedDirtyCount = 0;
     m_skippedInactiveTickCount = 0;
     m_skippedInactiveFixedStepCount = 0;
+    m_maxStepsCapHitCount = 0;
     m_hasWorldSnapshot = false;
     m_hasDirtySnapshot = false;
 
@@ -118,6 +130,10 @@ u32 PlaySession::consumeFixedSteps(f32 fixedDt, EditorScene& editorScene,
         ++steps;
     }
 
+    if (maxSteps > 0 && steps >= maxSteps && m_tickAccumulator >= fixedDt) {
+        ++m_maxStepsCapHitCount;
+    }
+
     return steps;
 }
 
@@ -133,6 +149,28 @@ u32 PlaySession::pendingFixedStepCount(f32 fixedDt) const {
     }
 
     return static_cast<u32>(m_tickAccumulator / fixedDt);
+}
+
+bool PlaySession::hasPendingFixedSteps(f32 fixedDt) const {
+    return pendingFixedStepCount(fixedDt) > 0;
+}
+
+f32 PlaySession::tickAccumulatorRemainder(f32 fixedDt) const {
+    if (fixedDt <= 0.f) {
+        return 0.f;
+    }
+
+    return m_tickAccumulator - static_cast<f32>(pendingFixedStepCount(fixedDt)) * fixedDt;
+}
+
+f32 PlaySession::clampTickAccumulator(f32 maxSeconds) {
+    if (maxSeconds <= 0.f || m_tickAccumulator <= maxSeconds) {
+        return 0.f;
+    }
+
+    const f32 overflow = m_tickAccumulator - maxSeconds;
+    m_tickAccumulator = maxSeconds;
+    return overflow;
 }
 
 PlayWorldSnapshot PlaySession::captureWorldSnapshot(EditorScene& editorScene) const {

@@ -21,6 +21,9 @@ struct PlayWorldSnapshot {
 
     bool empty() const { return entities.empty(); }
     usize entityCount() const { return entities.size(); }
+
+    /// Lookup captured transform by entity id — nullptr when absent (B6.12 deepen follow-up).
+    const ecs::Transform* findTransform(ecs::EntityID id) const;
 };
 
 /// PIE play-session orchestrator (B6.12 deepen) — wraps `PlayModeController` with
@@ -54,10 +57,22 @@ public:
     u32 coalescedDirtyCount() const { return m_coalescedDirtyCount; }
     u32 skippedInactiveTickCount() const { return m_skippedInactiveTickCount; }
     u32 skippedInactiveFixedStepCount() const { return m_skippedInactiveFixedStepCount; }
+    /// Times `consumeFixedSteps`/`tickFixedStep` hit the maxSteps cap with pending slices left.
+    u32 maxStepsCapHitCount() const { return m_maxStepsCapHitCount; }
     /// Remaining fixed slices in `tickAccumulator()` at the last `consumeFixedSteps` call.
     u32 pendingFixedStepCount(f32 fixedDt) const;
+    /// True when `pendingFixedStepCount(fixedDt) > 0` (B6.12 deepen follow-up).
+    bool hasPendingFixedSteps(f32 fixedDt) const;
+    /// Sub-fixed remainder in `tickAccumulator()` after whole slices (B6.12 deepen follow-up).
+    f32 tickAccumulatorRemainder(f32 fixedDt) const;
+    /// Clamp hitch-frame accumulator growth — returns amount clamped off (spiral guard).
+    f32 clampTickAccumulator(f32 maxSeconds);
     u32 dirtySnapshotEntityCount() const {
         return m_hasDirtySnapshot ? static_cast<u32>(m_dirtySnapshot.transformDirty.size()) : 0u;
+    }
+    /// Pre-play `EditorState::sceneModified` captured in dirty snapshot (B6.12 deepen follow-up).
+    bool dirtySnapshotSceneModified() const {
+        return m_hasDirtySnapshot && m_dirtySnapshot.sceneModified;
     }
     bool hasWorldSnapshot() const { return m_hasWorldSnapshot; }
     bool hasDirtySnapshot() const { return m_hasDirtySnapshot; }
@@ -96,6 +111,7 @@ private:
     u32 m_coalescedDirtyCount = 0;
     u32 m_skippedInactiveTickCount = 0;
     u32 m_skippedInactiveFixedStepCount = 0;
+    u32 m_maxStepsCapHitCount = 0;
 };
 
 } // namespace fuse::editor

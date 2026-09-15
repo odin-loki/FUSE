@@ -481,6 +481,8 @@ void testPlaySessionFixedStepMaxStepsCap() {
     session.tick(kFixedDt * 5.f, editorScene, physics);
     expectTrue(session.consumeFixedSteps(kFixedDt, editorScene, physics, 2u) == 2u,
                "maxSteps cap limits fixed slices per call");
+    expectTrue(session.maxStepsCapHitCount() == 1u,
+               "maxSteps cap increments cap-hit counter when slices remain");
     expectTrue(session.pendingFixedStepCount(kFixedDt) == 3u,
                "pendingFixedStepCount reports deferred accumulator slices");
     expectTrue(session.consumeFixedSteps(kFixedDt, editorScene, physics, 0u) == 3u,
@@ -621,6 +623,204 @@ void testPlaySessionStartStopCycle() {
     editorScene.destroy();
 }
 
+void testPlaySessionZeroFixedDtSkipCounter() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    const fuse::ecs::EntityID entity = editorScene.registry().create();
+    editorScene.registry().add<fuse::ecs::Transform>(entity);
+
+    fuse::scene::Scene scene("ZeroFixedDtTest");
+    fuse::editor::EditorState state;
+    fuse::editor::PlaySession session;
+    fuse::editor::PlayModePhysicsState physics;
+
+    session.start(editorScene, scene, state, physics);
+    session.tick(0.016f, editorScene, physics);
+
+    expectTrue(session.consumeFixedSteps(0.f, editorScene, physics) == 0u,
+               "zero fixedDt does not consume fixed steps");
+    expectTrue(session.skippedInactiveFixedStepCount() == 1u,
+               "zero fixedDt increments inactive fixed-step skip counter");
+    expectTrue(session.consumeFixedSteps(-0.016f, editorScene, physics) == 0u,
+               "negative fixedDt does not consume fixed steps");
+    expectTrue(session.skippedInactiveFixedStepCount() == 2u,
+               "negative fixedDt increments inactive fixed-step skip counter");
+
+    session.stop(editorScene, scene, state, physics);
+    editorScene.destroy();
+}
+
+void testPlaySessionPauseInactiveTickCounter() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    const fuse::ecs::EntityID entity = editorScene.registry().create();
+    editorScene.registry().add<fuse::ecs::Transform>(entity);
+
+    fuse::scene::Scene scene("PauseInactiveTickTest");
+    fuse::editor::EditorState state;
+    fuse::editor::PlaySession session;
+    fuse::editor::PlayModePhysicsState physics;
+
+    session.start(editorScene, scene, state, physics);
+    session.tick(0.016f, editorScene, physics);
+    expectTrue(session.skippedInactiveTickCount() == 0u,
+               "active tick does not increment inactive skip counter");
+
+    session.pause(scene, state, physics);
+    session.tick(0.016f, editorScene, physics);
+    expectTrue(session.skippedInactiveTickCount() == 1u,
+               "paused tick increments inactive skip counter");
+
+    session.resume(scene, state, physics);
+    session.tick(0.016f, editorScene, physics);
+    expectTrue(session.skippedInactiveTickCount() == 1u,
+               "resumed tick does not add inactive skip events");
+
+    session.stop(editorScene, scene, state, physics);
+    editorScene.destroy();
+}
+
+void testPlaySessionDirtySnapshotSceneModifiedAccessor() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    const fuse::ecs::EntityID entity = editorScene.registry().create();
+    editorScene.registry().add<fuse::ecs::Transform>(entity);
+
+    fuse::scene::Scene scene("DirtySceneModifiedTest");
+    fuse::editor::EditorState state;
+    state.sceneModified = true;
+
+    fuse::editor::PlaySession session;
+    fuse::editor::PlayModePhysicsState physics;
+
+    expectTrue(!session.dirtySnapshotSceneModified(),
+               "dirtySnapshotSceneModified guarded before capture");
+
+    session.start(editorScene, scene, state, physics);
+    expectTrue(session.dirtySnapshotSceneModified(),
+               "dirtySnapshotSceneModified reflects captured scene modified flag");
+
+    state.sceneModified = false;
+    session.restoreDirtyFlags(editorScene, state);
+    expectTrue(state.sceneModified, "restoreDirtyFlags still restores scene modified flag");
+    expectTrue(session.dirtySnapshotSceneModified(),
+               "dirtySnapshotSceneModified stays valid until drained");
+
+    session.stop(editorScene, scene, state, physics);
+    expectTrue(!session.dirtySnapshotSceneModified(),
+               "dirtySnapshotSceneModified clears on stop");
+
+    editorScene.destroy();
+}
+
+void testPlaySessionHasPendingFixedStepsAndRemainder() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    const fuse::ecs::EntityID entity = editorScene.registry().create();
+    editorScene.registry().add<fuse::ecs::Transform>(entity);
+
+    fuse::scene::Scene scene("PendingRemainderTest");
+    fuse::editor::EditorState state;
+    fuse::editor::PlaySession session;
+    fuse::editor::PlayModePhysicsState physics;
+
+    constexpr float kFixedDt = 1.f / 60.f;
+
+    session.start(editorScene, scene, state, physics);
+    expectTrue(!session.hasPendingFixedSteps(kFixedDt),
+               "hasPendingFixedSteps false with empty accumulator");
+
+    session.tick(kFixedDt * 2.5f, editorScene, physics);
+    expectTrue(session.hasPendingFixedSteps(kFixedDt),
+               "hasPendingFixedSteps true after partial fixed accumulation");
+    expectTrue(session.pendingFixedStepCount(kFixedDt) == 2u,
+               "pendingFixedStepCount reports whole slices");
+    expectNear(session.tickAccumulatorRemainder(kFixedDt), kFixedDt * 0.5f, 1e-5f,
+               "tickAccumulatorRemainder reports sub-fixed remainder");
+
+    session.stop(editorScene, scene, state, physics);
+    editorScene.destroy();
+}
+
+void testPlaySessionClampTickAccumulator() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    const fuse::ecs::EntityID entity = editorScene.registry().create();
+    editorScene.registry().add<fuse::ecs::Transform>(entity);
+
+    fuse::scene::Scene scene("ClampAccumulatorTest");
+    fuse::editor::EditorState state;
+    fuse::editor::PlaySession session;
+    fuse::editor::PlayModePhysicsState physics;
+
+    session.start(editorScene, scene, state, physics);
+    session.tick(0.5f, editorScene, physics);
+    expectNear(session.clampTickAccumulator(0.25f), 0.25f, 1e-5f,
+               "clampTickAccumulator returns overflow amount");
+    expectNear(session.tickAccumulator(), 0.25f, 1e-5f,
+               "clampTickAccumulator caps accumulator to maxSeconds");
+    expectTrue(session.clampTickAccumulator(0.5f) == 0.f,
+               "clampTickAccumulator no-ops when under cap");
+
+    session.stop(editorScene, scene, state, physics);
+    editorScene.destroy();
+}
+
+void testPlaySessionTickFixedStepMaxStepsCap() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    const fuse::ecs::EntityID entity = editorScene.registry().create();
+    editorScene.registry().add<fuse::ecs::Transform>(entity);
+
+    fuse::scene::Scene scene("TickFixedStepMaxStepsTest");
+    fuse::editor::EditorState state;
+    fuse::editor::PlaySession session;
+    fuse::editor::PlayModePhysicsState physics;
+
+    constexpr float kFixedDt = 1.f / 60.f;
+
+    session.start(editorScene, scene, state, physics);
+    expectTrue(session.tickFixedStep(kFixedDt * 5.f, kFixedDt, editorScene, physics, 2u) == 2u,
+               "tickFixedStep respects maxSteps cap on fixed drain");
+    expectTrue(session.hasPendingFixedSteps(kFixedDt),
+               "tickFixedStep leaves pending slices after maxSteps cap");
+    expectTrue(session.maxStepsCapHitCount() == 1u,
+               "tickFixedStep increments maxSteps cap hit counter");
+    expectTrue(session.tickFixedStep(0.f, kFixedDt, editorScene, physics, 0u) == 3u,
+               "tickFixedStep drains remaining slices with unlimited maxSteps");
+
+    session.stop(editorScene, scene, state, physics);
+    editorScene.destroy();
+}
+
+void testPlaySessionWorldSnapshotFindTransform() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    const fuse::ecs::EntityID entity = editorScene.registry().create();
+    fuse::ecs::Transform& transform = editorScene.registry().add<fuse::ecs::Transform>(entity);
+    transform.position.x = 7.f;
+
+    const fuse::ecs::EntityID missing = editorScene.registry().create();
+
+    fuse::editor::PlaySession session;
+    const fuse::editor::PlayWorldSnapshot captured = session.captureWorldSnapshot(editorScene);
+
+    const fuse::ecs::Transform* found = captured.findTransform(entity);
+    expectTrue(found != nullptr, "findTransform locates captured entity");
+    expectNear(found->position.x, 7.f, 1e-4f, "findTransform returns captured transform payload");
+    expectTrue(captured.findTransform(missing) == nullptr,
+               "findTransform returns nullptr for entities without transforms");
+
+    editorScene.destroy();
+}
+
 } // namespace
 
 int main() {
@@ -640,6 +840,13 @@ int main() {
     testPlaySessionNegativeDtGuard();
     testPlaySessionPausedFixedStepSkipCounter();
     testPlaySessionDirtySnapshotEntityCountAndOrder();
+    testPlaySessionZeroFixedDtSkipCounter();
+    testPlaySessionPauseInactiveTickCounter();
+    testPlaySessionDirtySnapshotSceneModifiedAccessor();
+    testPlaySessionHasPendingFixedStepsAndRemainder();
+    testPlaySessionClampTickAccumulator();
+    testPlaySessionTickFixedStepMaxStepsCap();
+    testPlaySessionWorldSnapshotFindTransform();
     testPlaySessionStartStopCycle();
     testPlaySessionFullTransformSnapshotRoundtrip();
     fuse::core::shutdown();
