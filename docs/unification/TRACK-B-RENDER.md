@@ -1,6 +1,6 @@
 # Track B — Own Renderer (B5 deferred pipeline)
 
-**Status:** B5.2 G-buffer layout validation + B5.3 PBR material parameter blocks + B5.5 CSM light-space AABB deepen + **B5.11 volumetric froxel grid deepen** + B5.6 DDGI probe grid indexing deepened + B5.9 TAA jitter/history deepened  
+**Status:** B5.2 G-buffer layout validation + B5.3 PBR material parameter blocks + **B5.4 clustered light grid deepen** + B5.5 CSM light-space AABB deepen + **B5.11 volumetric froxel grid deepen** + B5.6 DDGI probe grid indexing deepened + B5.9 TAA jitter/history deepened  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B5  
 **Detail:** [TRACK-B-RENDER-B5.md](./TRACK-B-RENDER-B5.md) — full B5.1–B5.12 scope, tests, gates  
 **Depends on:** [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) (RHI bootstrap, render graph, CUDA job lane)
@@ -46,6 +46,22 @@ ctest --test-dir build --output-on-failure -R fuse_gbuffer
 
 ```bash
 ctest --test-dir build --output-on-failure -R fuse_shadow_system
+```
+
+---
+
+## B5.4 deepen — Clustered light grid / tile assignment (CPU)
+
+| Component | Notes |
+|-----------|-------|
+| `ClusterGridLayout` | Tile/cluster index encode/decode, bounds clamp, screen-depth → cluster index |
+| `ClusterSliceLayout` | Exponential slice near/far + `computeSliceZFromDepth` (mirrors froxel layout) |
+| `ClusterLightGridLayout` | Flat light-list packing with per-cluster capacity clamp |
+| `ClusteredLightCullerStats` | `clustersAtCapacity` / `lightsDroppedOverflow` overflow reporting |
+| `fuse_clustered_light_culler` | Index round-trip, screen mapping, rebuild overflow clamp, empty scene, capacity stats |
+
+```bash
+ctest --test-dir build --output-on-failure -R fuse_clustered_light_culler
 ```
 
 ---

@@ -38,14 +38,6 @@ struct ClusterGridSoA {
     std::vector<u32> lightList;
 };
 
-/// CPU light-grid packing helpers — mirrors the GPU offset rebuild pass.
-struct ClusterLightGridLayout {
-    static void rebuildLightGrid(ClusterGridSoA& grid,
-                                 u32 clusterCount,
-                                 const std::vector<std::vector<u32>>& perClusterLights);
-    static bool validateContiguousOffsets(const ClusterGridSoA& grid, u32 clusterCount);
-};
-
 /// GPU buffer handles for cluster build + light cull kernels (CUDA deferred).
 struct ClusterBuffers {
     BufferHandle clusterAabbs{};
@@ -68,6 +60,32 @@ struct ClusterCameraDesc {
 struct ClusterSliceLayout {
     static f32 computeSliceNearZ(u32 sliceZ, const ClusterDesc& desc, const ClusterCameraDesc& camera);
     static f32 computeSliceFarZ(u32 sliceZ, const ClusterDesc& desc, const ClusterCameraDesc& camera);
+    static u32 computeSliceZFromDepth(f32 viewDepth, const ClusterDesc& desc, const ClusterCameraDesc& camera);
+};
+
+/// Tile/cluster indexing helpers — mirrors froxel layout (B5.4 CPU path).
+struct ClusterGridLayout {
+    static u32 clusterIndex(u32 tileX, u32 tileY, u32 sliceZ, const ClusterDesc& desc);
+    static void decodeClusterIndex(u32 index, const ClusterDesc& desc, u32& tileX, u32& tileY, u32& sliceZ);
+    static u32 clampClusterIndex(u32 index, const ClusterDesc& desc);
+    static u32 clampTileX(u32 tileX, const ClusterDesc& desc);
+    static u32 clampTileY(u32 tileY, const ClusterDesc& desc);
+    static u32 clampSliceZ(u32 sliceZ, const ClusterDesc& desc);
+    static bool mapScreenDepthToClusterIndex(f32 screenX,
+                                             f32 screenY,
+                                             f32 viewDepth,
+                                             const ClusterDesc& desc,
+                                             const ClusterCameraDesc& camera,
+                                             u32& outClusterIndex);
+};
+
+/// CPU light-grid packing helpers — mirrors the GPU offset rebuild pass.
+struct ClusterLightGridLayout {
+    static u32 rebuildLightGrid(ClusterGridSoA& grid,
+                                u32 clusterCount,
+                                const std::vector<std::vector<u32>>& perClusterLights,
+                                u32 maxLightsPerCluster = 0u);
+    static bool validateContiguousOffsets(const ClusterGridSoA& grid, u32 clusterCount);
 };
 
 /// Renderer-side point light input (decoupled from ECS).
@@ -103,6 +121,8 @@ struct ClusteredLightCullerStats {
     u32 lightsCulled = 0;
     u32 lightListEntries = 0;
     u32 cullPassCount = 0;
+    u32 clustersAtCapacity = 0;
+    u32 lightsDroppedOverflow = 0;
 };
 
 /// CPU stub for clustered light assignment — CUDA kernels deferred to B5.4 follow-up.
@@ -132,7 +152,9 @@ public:
     const ClusterGridSoA& gridSoA() const { return m_gridSoA; }
     const ClusterDesc& desc() const { return m_desc; }
 
-    static u32 clusterIndex(u32 tileX, u32 tileY, u32 sliceZ, const ClusterDesc& desc);
+    static u32 clusterIndex(u32 tileX, u32 tileY, u32 sliceZ, const ClusterDesc& desc) {
+        return ClusterGridLayout::clusterIndex(tileX, tileY, sliceZ, desc);
+    }
 
 private:
     bool sphereIntersectsAabb(const fuse::math::Vec3& center, f32 radius, const ClusterAABB& aabb) const;
