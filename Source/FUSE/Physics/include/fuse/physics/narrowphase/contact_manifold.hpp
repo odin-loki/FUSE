@@ -30,8 +30,12 @@ struct ContactManifold {
     f32 penetrationDepth = 0.f;
     bool valid = false;
 
+    void reset();
     void addPoint(vec3 point, f32 penetration);
     void syncLegacyFields();
+
+    bool empty() const { return pointCount == 0u; }
+    f32 maxPenetration() const;
 };
 
 inline ContactManifold invalidContactManifold() {
