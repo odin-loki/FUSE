@@ -93,6 +93,47 @@ void testJitterSequencePeriod() {
     expectNear(wrappedOffset.x, periodStart.x, 1e-5f, "offsetForFrameIndex wraps with sequence period");
 }
 
+void testJitterLargeFrameWrap() {
+    using fuse::renderer::TaaJitterLayout;
+
+    expectTrue(TaaJitterLayout::frameIndexInSequence(1008u, 8u) == 0u,
+               "large frame index wraps to sequence start");
+    expectTrue(TaaJitterLayout::frameIndexInSequence(0xFFFFFFFFu, 8u) == 7u,
+               "UINT32_MAX frame index maps into final slot");
+
+    const fuse::math::Vec2 start = TaaJitterLayout::offsetForFrameIndex(0u, 8u);
+    const fuse::math::Vec2 wrapped = TaaJitterLayout::offsetForFrameIndex(1008u, 8u);
+    expectNear(wrapped.x, start.x, 1e-5f, "offsetForFrameIndex wraps across many periods");
+    expectNear(wrapped.y, start.y, 1e-5f, "offsetForFrameIndex Y wraps across many periods");
+}
+
+void testNdcOffsetForFrameIndex() {
+    using fuse::renderer::TaaJitterLayout;
+
+    const fuse::math::Vec2 ndc0 = TaaJitterLayout::ndcOffsetForFrameIndex(0u, 1920u, 1080u, 8u);
+    const fuse::math::Vec2 ndcDirect =
+        TaaJitterLayout::haltonNdcOffset(0u, 1920u, 1080u, 8u);
+    expectNear(ndc0.x, ndcDirect.x, 1e-6f, "ndcOffsetForFrameIndex matches haltonNdcOffset at slot 0");
+    expectNear(ndc0.y, ndcDirect.y, 1e-6f, "ndcOffsetForFrameIndex Y matches haltonNdcOffset at slot 0");
+
+    const fuse::math::Vec2 ndcWrapped = TaaJitterLayout::ndcOffsetForFrameIndex(8u, 1920u, 1080u, 8u);
+    expectNear(ndcWrapped.x, ndc0.x, 1e-6f, "ndcOffsetForFrameIndex wraps with sequence period");
+}
+
+void testJitterSyncToFrameIndex() {
+    fuse::renderer::TaaJitter jitter;
+    jitter.syncToFrameIndex(5u);
+    expectTrue(jitter.index() == 5u, "syncToFrameIndex sets slot directly");
+
+    const fuse::math::Vec2 synced = jitter.currentPixelOffset();
+    const fuse::math::Vec2 expected = fuse::renderer::TaaJitterLayout::offsetForFrameIndex(5u, 8u);
+    expectNear(synced.x, expected.x, 1e-5f, "syncToFrameIndex offset matches offsetForFrameIndex");
+    expectNear(synced.y, expected.y, 1e-5f, "syncToFrameIndex Y matches offsetForFrameIndex");
+
+    jitter.syncToFrameIndex(13u);
+    expectTrue(jitter.index() == 5u, "syncToFrameIndex wraps monotonic frame counter");
+}
+
 void testCustomJitterSequenceLength() {
     fuse::renderer::TaaJitterDesc desc{};
     desc.sequence_length = 4u;
@@ -177,10 +218,12 @@ void testHistoryValidityFlags() {
     fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
     expectTrue(history.init(resources, historyDesc), "history ready for validity checks");
     expectTrue(!history.hasValidHistory(), "history invalid before first resolve");
+    expectTrue(history.needsWarmup(), "history needs warmup before first resolve");
     expectTrue(history.accumulatedFrames() == 0u, "no accumulated frames before resolve");
 
     history.markResolved();
     expectTrue(history.hasValidHistory(), "history valid after first resolve");
+    expectTrue(!history.needsWarmup(), "history no longer needs warmup after resolve");
     expectTrue(history.accumulatedFrames() == 1u, "one accumulated frame after first resolve");
 
     history.invalidateHistory();
@@ -211,6 +254,7 @@ void testEmptyHistoryResolve() {
     desc.surfaces.output = reinterpret_cast<void*>(0x2);
     expectTrue(!resolve.resolve(desc, history), "resolve rejects empty history buffer");
     expectTrue(!resolve.lastStats().resolved, "empty history resolve stats not marked resolved");
+    expectTrue(resolve.lastStats().skipped, "empty history resolve stats marked skipped");
 }
 
 void testValidityResetAfterInvalidate() {
@@ -408,6 +452,9 @@ int main() {
     testHaltonJitterSequence();
     testJitterSequenceLayout();
     testJitterSequencePeriod();
+    testJitterLargeFrameWrap();
+    testNdcOffsetForFrameIndex();
+    testJitterSyncToFrameIndex();
     testCustomJitterSequenceLength();
     testHaltonComputeMatchesTable();
     testJitterNdcOffset();

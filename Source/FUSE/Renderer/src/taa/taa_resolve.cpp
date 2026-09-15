@@ -12,16 +12,19 @@ bool TaaResolve::resolve(const TaaResolveDesc& desc, TaaHistoryBuffer& history, 
     m_message.clear();
 
     if (!history.isReady()) {
+        m_stats.skipped = true;
         m_message = "TAA resolve skipped — history buffer not ready";
         return false;
     }
 
     if (desc.width == 0u || desc.height == 0u) {
+        m_stats.skipped = true;
         m_message = "TAA resolve skipped — invalid dimensions";
         return false;
     }
 
     if (desc.surfaces.current_frame == nullptr || desc.surfaces.output == nullptr) {
+        m_stats.skipped = true;
         m_message = "TAA resolve skipped — missing current/output surfaces";
         return false;
     }
