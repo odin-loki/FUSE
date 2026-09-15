@@ -13,3 +13,11 @@ add_executable(fuse_mechanics_inventory_provider_tests
 target_link_libraries(fuse_mechanics_inventory_provider_tests PRIVATE fuse_mechanics fuse_core)
 target_compile_features(fuse_mechanics_inventory_provider_tests PRIVATE cxx_std_17)
 add_test(NAME fuse_mechanics_inventory_provider COMMAND fuse_mechanics_inventory_provider_tests)
+
+add_executable(fuse_mechanics_action_stub_tests
+    test_action_stubs.cpp
+)
+
+target_link_libraries(fuse_mechanics_action_stub_tests PRIVATE fuse_mechanics fuse_core)
+target_compile_features(fuse_mechanics_action_stub_tests PRIVATE cxx_std_17)
+add_test(NAME fuse_mechanics_action_stubs COMMAND fuse_mechanics_action_stub_tests)
