@@ -38,4 +38,17 @@ FrictionImpulse clampFrictionImpulse(
 /// Project a relative velocity onto the tangent basis.
 vec2 projectTangentialVelocity(vec3 relativeVelocity, const TangentBasis& basis);
 
+/// Returns true when friction tangent frames should not be built for this manifold (B4.3 deepen).
+bool should_skip_friction_tangents(const ContactManifold& manifold);
+
+/// Returns true when both friction coefficients are zero or normal impulse is negligible (B4.3 deepen).
+bool should_skip_friction_solve(
+    f32 staticFriction,
+    f32 dynamicFriction,
+    f32 normalImpulse = 0.f,
+    f32 impulseEpsilon = 1e-8f);
+
+/// Returns true when tangential speed is below the solver stub threshold (B4.3 deepen).
+bool hasNegligibleTangentialVelocity(vec2 projected, f32 speedThreshold = 1e-6f);
+
 } // namespace fuse::physics::narrowphase

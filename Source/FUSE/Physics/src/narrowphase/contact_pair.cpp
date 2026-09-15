@@ -1,6 +1,7 @@
 #include <fuse/physics/narrowphase/contact_pair.hpp>
 
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
+#include <fuse/physics/narrowphase/friction.hpp>
 
 #include <cmath>
 
@@ -157,20 +158,79 @@ ContactManifold dispatchShapePair(
 
 } // namespace
 
-bool is_invalid_contact_pair(
+bool is_trigger_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies) {
+    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
+        return false;
+    }
+    const bool triggerA = (bodies.flags[pair.bodyA] & RB_TRIGGER) != 0u;
+    const bool triggerB = (bodies.flags[pair.bodyB] & RB_TRIGGER) != 0u;
+    return triggerA && triggerB;
+}
+
+bool is_unsupported_shape_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes) {
+    const u32 shapeA = findShapeForBody(shapes, pair.bodyA, CollisionShapeType::Sphere);
+    const u32 shapeB = findShapeForBody(shapes, pair.bodyB, CollisionShapeType::Sphere);
+    if (shapeA >= shapes.count() || shapeB >= shapes.count()) {
+        return true;
+    }
+
+    const CollisionShapeType typeA = shapeType(shapes, shapeA);
+    const CollisionShapeType typeB = shapeType(shapes, shapeB);
+
+    const auto isSupported = [](CollisionShapeType type) {
+        switch (type) {
+        case CollisionShapeType::Sphere:
+        case CollisionShapeType::Box:
+        case CollisionShapeType::Capsule:
+        case CollisionShapeType::Plane:
+            return true;
+        default:
+            return false;
+        }
+    };
+
+    if (!isSupported(typeA) || !isSupported(typeB)) {
+        return true;
+    }
+
+    if (typeA == CollisionShapeType::Plane && typeB == CollisionShapeType::Plane) {
+        return true;
+    }
+
+    return false;
+}
+
+ContactPairRejectReason contact_pair_reject_reason(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     if (pair.bodyA == pair.bodyB) {
-        return true;
+        return ContactPairRejectReason::SelfPair;
     }
     if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
-        return true;
+        return ContactPairRejectReason::OutOfRangeBody;
     }
     if (!hasShapeForBody(shapes, pair.bodyA) || !hasShapeForBody(shapes, pair.bodyB)) {
-        return true;
+        return ContactPairRejectReason::MissingShape;
     }
-    return false;
+    if (is_trigger_contact_pair(pair, bodies)) {
+        return ContactPairRejectReason::BothTriggers;
+    }
+    if (is_unsupported_shape_pair(pair, shapes)) {
+        return ContactPairRejectReason::UnsupportedShapePair;
+    }
+    return ContactPairRejectReason::None;
+}
+
+bool is_invalid_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return contact_pair_reject_reason(pair, bodies, shapes) != ContactPairRejectReason::None;
 }
 
 ContactManifold detect_contacts_pair(
@@ -189,7 +249,7 @@ bool generate_contact_manifold(ContactManifold& manifold) {
         return false;
     }
 
-    manifold.pruneNonPenetratingPoints();
+    manifold.pruneContactPoints();
     if (manifold.empty()) {
         manifold.clear();
         return false;
@@ -215,8 +275,12 @@ bool generate_contact_manifold(ContactManifold& manifold) {
 }
 
 void compute_friction_tangents(ContactManifold& manifold) {
-    if (!manifold.hasValidNormal()) {
+    if (should_skip_friction_tangents(manifold)) {
         manifold.frictionBasis = {};
+        return;
+    }
+
+    if (manifold.hasFrictionBasis()) {
         return;
     }
 

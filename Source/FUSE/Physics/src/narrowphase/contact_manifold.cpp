@@ -68,6 +68,74 @@ void ContactManifold::pruneNonPenetratingPoints(f32 epsilon) {
     syncLegacyFields();
 }
 
+void ContactManifold::pruneToMaxPoints(u32 maxPoints) {
+    if (maxPoints == 0u || pointCount <= maxPoints) {
+        return;
+    }
+
+    u32 keep[kMaxContactPointsPerManifold]{};
+    for (u32 i = 0u; i < pointCount; ++i) {
+        keep[i] = i;
+    }
+
+    std::sort(
+        keep,
+        keep + pointCount,
+        [this](u32 lhs, u32 rhs) { return points[lhs].penetration > points[rhs].penetration; });
+
+    ContactPoint trimmed[kMaxContactPointsPerManifold]{};
+    for (u32 i = 0u; i < maxPoints; ++i) {
+        trimmed[i] = points[keep[i]];
+    }
+
+    for (u32 i = 0u; i < kMaxContactPointsPerManifold; ++i) {
+        points[i] = trimmed[i];
+    }
+    pointCount = maxPoints;
+    syncLegacyFields();
+}
+
+void ContactManifold::pruneDuplicatePoints(f32 positionEpsilon) {
+    if (pointCount <= 1u) {
+        return;
+    }
+
+    const f32 epsilonSq = positionEpsilon * positionEpsilon;
+    u32 writeIndex = 0u;
+    for (u32 readIndex = 0u; readIndex < pointCount; ++readIndex) {
+        bool duplicate = false;
+        for (u32 existing = 0u; existing < writeIndex; ++existing) {
+            const vec3 delta = points[readIndex].point - points[existing].point;
+            if (delta.dot(delta) <= epsilonSq) {
+                if (points[readIndex].penetration > points[existing].penetration) {
+                    points[existing] = points[readIndex];
+                }
+                duplicate = true;
+                break;
+            }
+        }
+        if (duplicate) {
+            continue;
+        }
+        if (writeIndex != readIndex) {
+            points[writeIndex] = points[readIndex];
+        }
+        ++writeIndex;
+    }
+
+    for (u32 i = writeIndex; i < pointCount; ++i) {
+        points[i] = {};
+    }
+    pointCount = writeIndex;
+    syncLegacyFields();
+}
+
+void ContactManifold::pruneContactPoints(f32 separationEpsilon, f32 duplicateEpsilon) {
+    pruneNonPenetratingPoints(separationEpsilon);
+    pruneDuplicatePoints(duplicateEpsilon);
+    pruneToMaxPoints(kMaxContactPointsPerManifold);
+}
+
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};
     if (index >= pointCount) {

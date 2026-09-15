@@ -7,10 +7,36 @@
 
 namespace fuse::physics::narrowphase {
 
+/// Diagnostic reason a broadphase pair is rejected before narrowphase dispatch (B4.3 deepen).
+enum class ContactPairRejectReason : u8 {
+    None = 0,
+    SelfPair,
+    OutOfRangeBody,
+    MissingShape,
+    BothTriggers,
+    UnsupportedShapePair,
+};
+
+/// Returns the first reject reason for a pair, or `None` when dispatch may proceed.
+ContactPairRejectReason contact_pair_reject_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
 /// Returns true when narrowphase should skip this pair (self, OOB bodies, or missing shapes).
 bool is_invalid_contact_pair(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when both bodies are trigger volumes (no contact response stub).
+bool is_trigger_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies);
+
+/// Returns true when the resolved shape types have no narrowphase dispatch path.
+bool is_unsupported_shape_pair(
+    const broadphase::CandidatePair& pair,
     const CollisionShapeSoA& shapes);
 
 /// Run shape dispatch for one broadphase candidate pair (B4.3 deepen).
