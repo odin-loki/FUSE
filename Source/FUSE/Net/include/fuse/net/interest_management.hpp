@@ -54,6 +54,11 @@ struct InterestScopeSet {
     void clear();
     void build_from_entries(const std::vector<InterestEntry>& entries);
     [[nodiscard]] bool contains(ecs::EntityID entity) const;
+    /// Sorted insert — returns false when the entity is already present.
+    [[nodiscard]] bool insert_entity(ecs::EntityID entity);
+    /// Remove one entity — returns false when the entity is not present.
+    [[nodiscard]] bool remove_entity(ecs::EntityID entity);
+    [[nodiscard]] bool equal_to(const InterestScopeSet& other) const;
     [[nodiscard]] bool empty() const { return entities.empty(); }
     [[nodiscard]] u32 size() const { return static_cast<u32>(entities.size()); }
 };
@@ -64,10 +69,17 @@ struct InterestSetDiff {
     std::vector<ecs::EntityID> left;
 
     [[nodiscard]] bool empty() const { return entered.empty() && left.empty(); }
+
+    /// Apply enter/leave to a scope snapshot (ghost manager incremental update stub).
+    void apply_to(InterestScopeSet& scope) const;
 };
 
 void diff_interest_scope_sets(const InterestScopeSet& previous, const InterestScopeSet& current,
                               InterestSetDiff& out);
+
+/// Count in-scope candidates without building entry rows (no hysteresis).
+[[nodiscard]] u32 count_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
+                                               const std::vector<InterestCandidate>& candidates);
 
 /// Radius filter stub — collects in-scope entries for an observer (no hysteresis).
 [[nodiscard]] u32 filter_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
@@ -90,6 +102,8 @@ public:
 
     /// Recompute scope/priority for all registered entities.
     void evaluate();
+    /// Recompute scope and fill `out` with enter/leave vs the previous evaluation.
+    void evaluate_and_diff(InterestSetDiff& out);
 
     [[nodiscard]] const std::vector<InterestEntry>& entries() const { return m_entries; }
     [[nodiscard]] u32 in_scope_count() const;

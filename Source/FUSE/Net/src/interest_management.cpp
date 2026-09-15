@@ -115,6 +115,46 @@ bool InterestScopeSet::contains(ecs::EntityID entity) const {
     return contains_entity_(entities, entity);
 }
 
+bool InterestScopeSet::insert_entity(ecs::EntityID entity) {
+    if (contains(entity)) {
+        return false;
+    }
+    entities.push_back(entity);
+    sort_entities_(entities);
+    return true;
+}
+
+bool InterestScopeSet::remove_entity(ecs::EntityID entity) {
+    for (u32 i = 0; i < entities.size(); ++i) {
+        if (entities[i] == entity) {
+            entities.erase(entities.begin() + static_cast<std::ptrdiff_t>(i));
+            return true;
+        }
+    }
+    return false;
+}
+
+bool InterestScopeSet::equal_to(const InterestScopeSet& other) const {
+    if (entities.size() != other.entities.size()) {
+        return false;
+    }
+    for (u32 i = 0; i < entities.size(); ++i) {
+        if (entities[i] != other.entities[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void InterestSetDiff::apply_to(InterestScopeSet& scope) const {
+    for (const ecs::EntityID& entity : left) {
+        (void)scope.remove_entity(entity);
+    }
+    for (const ecs::EntityID& entity : entered) {
+        (void)scope.insert_entity(entity);
+    }
+}
+
 void diff_interest_scope_sets(const InterestScopeSet& previous, const InterestScopeSet& current,
                               InterestSetDiff& out) {
     out.entered.clear();
@@ -134,6 +174,18 @@ void diff_interest_scope_sets(const InterestScopeSet& previous, const InterestSc
 
     sort_entities_(out.entered);
     sort_entities_(out.left);
+}
+
+u32 count_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
+                               const std::vector<InterestCandidate>& candidates) {
+    u32 count = 0;
+    for (const InterestCandidate& candidate : candidates) {
+        const f32 distance_sq = distance_sq_3d(observer, candidate.position);
+        if (within_relevance_radius(distance_sq, policy)) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 u32 filter_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
@@ -237,6 +289,11 @@ void InterestManager::evaluate() {
     }
 }
 
+void InterestManager::evaluate_and_diff(InterestSetDiff& out) {
+    evaluate();
+    compute_scope_diff(out);
+}
+
 void InterestManager::compute_scope_diff(InterestSetDiff& out) const {
     diff_interest_scope_sets(m_previous_scope_set, m_scope_set, out);
 }
@@ -245,17 +302,7 @@ bool InterestManager::scope_changed_since_last_evaluate() const {
     if (!m_has_scope_snapshot) {
         return false;
     }
-
-    if (m_previous_scope_set.size() != m_scope_set.size()) {
-        return true;
-    }
-
-    for (u32 i = 0; i < m_scope_set.size(); ++i) {
-        if (m_previous_scope_set.entities[i] != m_scope_set.entities[i]) {
-            return true;
-        }
-    }
-    return false;
+    return !m_previous_scope_set.equal_to(m_scope_set);
 }
 
 bool InterestManager::is_entity_in_scope(ecs::EntityID entity) const {
