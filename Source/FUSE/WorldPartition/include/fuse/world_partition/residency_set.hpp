@@ -173,6 +173,20 @@ inline u32 ResidencySet::find_index_(GridCoord coord) const {
     return set.has_eviction_candidate() ? set.pick_eviction_candidate() : kInvalidGridCoord;
 }
 
+/// Guard: returns false when coord is invalid or not resident.
+[[nodiscard]] inline bool contains_resident_guarded(const ResidencySet& set, GridCoord coord) {
+    return is_valid_grid_coord(coord) && set.contains(coord);
+}
+
+/// Guard: clears residency set; returns false when already empty.
+[[nodiscard]] inline bool clear_residency_guarded(ResidencySet& set) {
+    if (set.empty()) {
+        return false;
+    }
+    set.clear();
+    return true;
+}
+
 /// Pick the farthest coord from `candidates` eligible for budget eviction under `policy`.
 /// Returns `kInvalidGridCoord` and leaves `out_score` at -1 when no candidate qualifies.
 template <typename ScoreFn>

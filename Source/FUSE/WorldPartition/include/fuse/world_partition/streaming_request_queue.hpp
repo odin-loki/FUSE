@@ -105,4 +105,19 @@ private:
     std::vector<CompletedStreamingRequest> m_completed;
 };
 
+/// Dequeue helper: removes highest-priority pending request when non-empty.
+[[nodiscard]] inline bool try_dequeue_pending(StreamingRequestQueue& queue, StreamingRequest& out) {
+    return queue.dequeue(out);
+}
+
+/// Peek helper: copies highest-priority pending request without removing it.
+[[nodiscard]] inline bool peek_highest_pending(const StreamingRequestQueue& queue, StreamingRequest& out) {
+    std::vector<StreamingRequest> ordered;
+    if (queue.order_by_priority(ordered) == 0u) {
+        return false;
+    }
+    out = ordered.front();
+    return true;
+}
+
 } // namespace fuse::world_partition
