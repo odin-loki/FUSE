@@ -226,7 +226,76 @@ f32 snapScale(f32 value, f32 gridStep) {
     return std::round(value / gridStep) * gridStep;
 }
 
+f32 snapValue(f32 value, GizmoMode mode, const GizmoSnapSettings& settings) {
+    switch (mode) {
+    case GizmoMode::Translate:
+        if (!settings.translateSnap) {
+            return value;
+        }
+        return snapToGrid(value, settings.gridSize);
+    case GizmoMode::Rotate:
+        if (!settings.rotateSnap) {
+            return value;
+        }
+        return snapAngleRadians(value, settings.angleStepDegrees);
+    case GizmoMode::Scale:
+        if (!settings.scaleSnap) {
+            return value;
+        }
+        return snapScale(value, settings.scaleGridStep);
+    }
+    return value;
+}
+
+bool isRayEmpty(const GizmoRay& ray) {
+    return ray.direction.length() < kEpsilon;
+}
+
+bool isHitTestEmpty(const GizmoHitTest& hit) {
+    return hit.viewportWidth <= kEpsilon || hit.viewportHeight <= kEpsilon;
+}
+
+bool tryPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+                 GizmoSpace space, f32 axisLength, f32 pickRadius, GizmoAxis& outAxis) {
+    outAxis = GizmoAxis::None;
+    if (isRayEmpty(ray)) {
+        return false;
+    }
+
+    outAxis = pickAxisFromRay(ray, transform, mode, space, axisLength, pickRadius);
+    return outAxis != GizmoAxis::None;
+}
+
+bool tryPickAxis(const GizmoHitTest& hit, GizmoMode mode, GizmoAxis& outAxis) {
+    outAxis = GizmoAxis::None;
+    if (isHitTestEmpty(hit) || isScreenHitMiss(hit, mode)) {
+        return false;
+    }
+
+    const f32 x = normalizedX(hit);
+    const f32 y = normalizedY(hit);
+
+    if (mode == GizmoMode::Scale && x > 0.4f && x < 0.6f && y > 0.4f && y < 0.6f) {
+        outAxis = GizmoAxis::Uniform;
+        return true;
+    }
+    if (x < 0.33f) {
+        outAxis = GizmoAxis::X;
+        return true;
+    }
+    if (y < 0.33f) {
+        outAxis = GizmoAxis::Y;
+        return true;
+    }
+    outAxis = GizmoAxis::Z;
+    return true;
+}
+
 bool isScreenHitMiss(const GizmoHitTest& hit, GizmoMode mode) {
+    if (isHitTestEmpty(hit)) {
+        return true;
+    }
+
     const f32 x = normalizedX(hit);
     const f32 y = normalizedY(hit);
 
@@ -381,8 +450,17 @@ GizmoTransform applyScaleDelta(const GizmoTransform& base, GizmoAxis axis,
     return out;
 }
 
-void GizmoSystem::setMode(GizmoMode mode) {
+bool GizmoSystem::setMode(GizmoMode mode) {
+    if (m_mode == mode) {
+        return false;
+    }
+
     m_mode = mode;
+    if (m_dragging) {
+        m_dragging = false;
+        m_activeAxis = GizmoAxis::None;
+    }
+    return true;
 }
 
 void GizmoSystem::cycleMode() {
@@ -395,6 +473,16 @@ GizmoAxis GizmoSystem::pickAxis(const GizmoRay& ray, const GizmoTransform& trans
 
 GizmoAxis GizmoSystem::pickAxis(const GizmoHitTest& hit) const {
     return pickAxisScreen_(hit);
+}
+
+bool GizmoSystem::tryPickAxis(const GizmoRay& ray, const GizmoTransform& transform,
+                              GizmoAxis& outAxis) const {
+    return fuse::editor::tryPickAxis(ray, transform, m_mode, m_space, kAxisLength, kPickRadius,
+                                     outAxis);
+}
+
+bool GizmoSystem::tryPickAxis(const GizmoHitTest& hit, GizmoAxis& outAxis) const {
+    return fuse::editor::tryPickAxis(hit, m_mode, outAxis);
 }
 
 GizmoResult GizmoSystem::beginDrag(const GizmoHitTest& hit, const GizmoTransform& current) {
@@ -469,23 +557,11 @@ GizmoResult GizmoSystem::endDrag() {
 }
 
 GizmoAxis GizmoSystem::pickAxisScreen_(const GizmoHitTest& hit) const {
-    if (isScreenHitMiss(hit, m_mode)) {
+    GizmoAxis axis = GizmoAxis::None;
+    if (!fuse::editor::tryPickAxis(hit, m_mode, axis)) {
         return GizmoAxis::None;
     }
-
-    const f32 x = normalizedX(hit);
-    const f32 y = normalizedY(hit);
-
-    if (m_mode == GizmoMode::Scale && x > 0.4f && x < 0.6f && y > 0.4f && y < 0.6f) {
-        return GizmoAxis::Uniform;
-    }
-    if (x < 0.33f) {
-        return GizmoAxis::X;
-    }
-    if (y < 0.33f) {
-        return GizmoAxis::Y;
-    }
-    return GizmoAxis::Z;
+    return axis;
 }
 
 GizmoTransform GizmoSystem::applyAxisDelta_(const GizmoHitTest& hit,
