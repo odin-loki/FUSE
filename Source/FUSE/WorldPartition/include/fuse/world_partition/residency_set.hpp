@@ -31,6 +31,7 @@ public:
     [[nodiscard]] f32 focus_distance_for(GridCoord coord) const;
     [[nodiscard]] u32 size() const { return static_cast<u32>(m_entries.size()); }
     [[nodiscard]] bool empty() const { return m_entries.empty(); }
+    [[nodiscard]] bool has_eviction_candidate() const { return !m_entries.empty(); }
 
     /// Coord with the largest focus distance (evict first). Returns {0,0} when empty.
     [[nodiscard]] GridCoord pick_eviction_candidate() const;
@@ -118,7 +119,10 @@ inline std::vector<GridCoord> ResidencySet::collect_eviction_candidates(u32 max_
     std::vector<ResidencyEntry> sorted = m_entries;
     std::sort(sorted.begin(), sorted.end(),
               [](const ResidencyEntry& a, const ResidencyEntry& b) {
-                  return a.focus_distance > b.focus_distance;
+                  if (a.focus_distance != b.focus_distance) {
+                      return a.focus_distance > b.focus_distance;
+                  }
+                  return grid_coord_key(a.coord) > grid_coord_key(b.coord);
               });
 
     const u32 limit = max_count == 0u ? static_cast<u32>(sorted.size())

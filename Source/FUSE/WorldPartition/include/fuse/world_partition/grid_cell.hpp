@@ -82,6 +82,12 @@ enum class CellResidencyState : u8 {
     return std::max(streaming_priority, stored_priority);
 }
 
+/// Rank unload pressure for eviction queue ordering (B7.6 stub).
+[[nodiscard]] inline f32 rank_unload_priority_stub(f32 streaming_priority, f32 stored_priority,
+                                                   f32 focus_distance) {
+    return std::max({streaming_priority, stored_priority, focus_distance});
+}
+
 /// One spatial cell in the world partition grid.
 struct WorldCell {
     GridCoord coord{};

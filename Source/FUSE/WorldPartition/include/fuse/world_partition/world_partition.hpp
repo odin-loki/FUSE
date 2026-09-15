@@ -85,6 +85,7 @@ private:
     [[nodiscard]] bool can_accept_load_(u64 incoming_bytes) const;
     void touch_cell_(WorldCell& cell);
     [[nodiscard]] f32 eviction_score_for_(const WorldCell& cell) const;
+    [[nodiscard]] f32 budget_eviction_score_for_(const WorldCell& cell) const;
     void drain_completed_requests_();
     void execute_load_(WorldCell& cell);
     void execute_unload_(WorldCell& cell);

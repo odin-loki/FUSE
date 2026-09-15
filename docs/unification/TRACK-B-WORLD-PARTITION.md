@@ -10,13 +10,13 @@
 
 | Component | Location | Notes |
 |-----------|----------|-------|
-| Residency helpers | `grid_cell.hpp` | `is_unloading_state`, `is_transitional_state`, `is_queued_state`, `unload_priority` |
-| `ResidencySet` | `residency_set.hpp` | Focus-distance resident set: `add`/`remove`, `try_add_resident`/`try_remove_resident` stubs, `pick_eviction_candidate`, `collect_eviction_candidates` (farthest first) |
-| `StreamingBudget` | `streaming_budget.hpp` | Per-tick caps, `max_resident_bytes`, `EvictionPolicy` (distance / LRU), `StreamingBudgetCounters`, headroom/clamp helpers |
+| Residency helpers | `grid_cell.hpp` | `is_unloading_state`, `is_transitional_state`, `is_queued_state`, `effective_unload_priority`, `rank_unload_priority_stub` |
+| `ResidencySet` | `residency_set.hpp` | Focus-distance resident set: `add`/`remove`, `try_add_resident`/`try_remove_resident` stubs, `has_eviction_candidate`, `pick_eviction_candidate`, `collect_eviction_candidates` (farthest-first with grid-key tie-break) |
+| `StreamingBudget` | `streaming_budget.hpp` | Per-tick caps, `max_resident_bytes`, `EvictionPolicy` (distance / LRU), `StreamingBudgetCounters` (`rejected_loads`, `budget_evictions`, `eviction_skipped`, `bytes_evicted`), headroom/clamp helpers, `budget_eviction_score`, `needs_budget_eviction` |
 | `StreamingVolume` | `streaming_volume.hpp` | `load_priority_for` (closer first), `unload_priority_for` (farther first) |
 | `StreamingRequestQueue` | `streaming_request_queue.hpp/.cpp` | Pending `enqueue`/`flush` with coord+kind dedupe; priority-first drain with FIFO tie-break; worker I/O stub via `JobScheduler::submit` |
 | `WorldPartition` deepen | `world_partition.hpp/.cpp` | `ResidencySet` tracking, `StreamingBudgetCounters`, resident-cell + byte budget rejection, priority-aware eviction, budget-aware `process_queues_`, `drain_completed_requests()` |
-| Tests | `tests/test_world_partition.cpp` | Budget helper/clamp/counters, eviction-candidate ordering, empty-residency reject/stub ops, distance + LRU eviction, queue enqueue/flush/FIFO/empty/mixed-kind completion ordering, residency set, batch/in-flight tracking, async residency |
+| Tests | `tests/test_world_partition.cpp` | Budget helper/clamp/counters, `budget_eviction_score` + `rank_unload_priority_stub`, eviction-candidate ordering/tie-break, empty-residency reject/stub ops, distance + LRU eviction, byte/cell cap eviction swap, queue enqueue/flush/FIFO/empty/mixed-kind completion ordering, residency set, batch/in-flight tracking, async residency |
 
 **Not in scope (follow-up PRs):** binary cell asset I/O, scene spawn on load, dirty-cell save, GPU residency.
 
@@ -105,7 +105,7 @@ ctest --test-dir build --output-on-failure -R fuse_world_partition_b76
 | `budget.max_async_in_flight` | Cap concurrent JobScheduler submissions per partition |
 | `budget.max_resident_bytes` | Reject load enqueue when resident bytes would exceed cap (0 = unlimited) |
 | `eviction_policy` | `DistanceFromFocus` (default) or `Lru` (`last_touch_tick`) |
-| `rejected_load_count()` / `budget_counters()` | Loads rejected after eviction could not free budget; `budget_evictions` and `bytes_evicted` track eviction pressure |
+| `rejected_load_count()` / `budget_counters()` | Loads rejected after eviction could not free budget; `budget_evictions`, `eviction_skipped`, and `bytes_evicted` track eviction pressure |
 | Single-threaded scheduler | Falls back to synchronous execute path |
 
 ---
@@ -116,10 +116,10 @@ ctest --test-dir build --output-on-failure -R fuse_world_partition_b76
 |-------|-----------|
 | Residency helpers | `is_*_state` predicates |
 | `ResidencySet` | Add/remove, `collect_eviction_candidates` ordering, focus-distance eviction candidate, clear/empty |
-| Budget helpers | `resident_cell_headroom`, `clamp_incoming_bytes`, cap predicates |
-| Budget counters | Eviction vs rejection accounting on cell/byte cap pressure |
-| Unload priority | `unload_priority_for` ordering; farther cells evict first |
-| Streaming budget | Per-tick caps; resident-cell + byte budget rejection |
+| Budget helpers | `resident_cell_headroom`, `clamp_incoming_bytes`, `clamp_pending_submits`, `needs_budget_eviction`, cap predicates |
+| Budget counters | Eviction vs rejection vs `eviction_skipped` accounting on cell/byte cap pressure |
+| Unload priority | `unload_priority_for`, `rank_unload_priority_stub`, `budget_eviction_score` focus-distance eviction |
+| Streaming budget | Per-tick caps; resident-cell + byte budget eviction swap |
 | Eviction | Distance-from-focus (`ResidencySet`) and LRU ordering |
 | `StreamingRequestQueue` | Enqueue/flush ordering, promote/demote, priority-ordered drain, mixed-kind completion order, FIFO tie-break, empty drain, pending-cap reject, in-flight tracking |
 | Empty residency stubs | `try_add_resident`/`try_remove_resident` reject invalid ops; empty set has no eviction candidates |
@@ -138,8 +138,9 @@ ctest --test-dir build --output-on-failure -R fuse_world_partition_b76
 - [x] Mixed load/unload completion ordering (unload priority propagated to async queue)
 - [x] Residency add/remove stubs (`try_add_resident` / `try_remove_resident`)
 - [x] `ResidencySet` focus-distance add/remove + eviction candidate list
-- [x] `StreamingBudgetCounters` + headroom/clamp helpers
-- [x] Empty-residency budget rejection tests
+- [x] `StreamingBudgetCounters` + headroom/clamp/`needs_budget_eviction` helpers + `eviction_skipped`
+- [x] `budget_eviction_score` focus-distance eviction + `rank_unload_priority_stub`
+- [x] Empty-residency budget rejection + `eviction_skipped` tests
 - [x] JobScheduler async request queue stub
 - [x] Game-thread drain applies callbacks
 - [x] Queue batch / in-flight acceptance tests

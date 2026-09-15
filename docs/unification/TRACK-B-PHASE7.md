@@ -15,7 +15,7 @@
 | **B7.3** | Scripting | `fuse_script` | ✅ | `fuse_script_b73` | Lua-ready `ScriptHost` / null `ScriptVM`; ECS bind helpers |
 | **B7.4** | Networking | `fuse_net` | ✅ | `fuse_net_b74` | Loopback transport, serializer, rollback + state-sync stubs |
 | **B7.5** | Terrain | `fuse_terrain` | ✅ | `fuse_terrain_b75` | Heightfield, chunk LOD grid, `Terrain` facade |
-| **B7.6** | World partition | `fuse_world_partition` | ✅ | `fuse_world_partition_b76` | Grid cells, streaming volume, residency lifecycle, JobScheduler async queue |
+| **B7.6** | World partition | `fuse_world_partition` | ✅ | `fuse_world_partition_b76` | Grid cells, residency eviction/budget counters, unload priority stubs, JobScheduler async queue |
 | **B7.7** | VFX | `fuse_vfx` | ✅ | `fuse_vfx_runtime` | CPU `ParticleSystem`, emitters, effect instances |
 | **B7.8** | Platform hardening | `fuse_core` (`fuse::platform`) | ✅ | `fuse_core_platform_hardening` | Lifecycle, surface-loss, crash-report, desktop/mobile profile hooks |
 | **B7.9** | Asset pipeline | `fuse_project` + `Tools/FUSE` | ✅ | `fuse_assets_b79` | Cook manifest, `AssetGraph`, content-hash cache (path+mtime+bytes keys), `ImportPipeline`, `fuse_cook` / `fuse_import` CLI |
