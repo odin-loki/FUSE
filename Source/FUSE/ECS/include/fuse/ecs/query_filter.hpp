@@ -26,6 +26,9 @@ struct QueryFilter {
 /// True when any type appears in both `with` and `without`.
 [[nodiscard]] bool query_filter_has_conflict(const QueryFilter& filter);
 
+/// True when both filters carry the same With/Without type sets (order-independent).
+[[nodiscard]] bool query_filter_equal(const QueryFilter& lhs, const QueryFilter& rhs);
+
 template <typename... WithTs, typename... WithoutTs>
 [[nodiscard]] QueryFilter make_query_filter(With<WithTs...> = {}, Without<WithoutTs...> = {}) {
     QueryFilter filter;
@@ -36,6 +39,9 @@ template <typename... WithTs, typename... WithoutTs>
 
 /// Count archetypes whose component signature satisfies `filter` (ignores entity row count).
 [[nodiscard]] u32 count_matching_archetypes(const std::vector<Archetype>& archetypes, const QueryFilter& filter);
+
+/// Sum entity row counts for archetypes whose signature satisfies `filter`.
+[[nodiscard]] u32 count_matching_entities(const std::vector<Archetype>& archetypes, const QueryFilter& filter);
 
 /// True when `archetype` contains every `with` type and none of the `without` types.
 [[nodiscard]] bool archetype_matches(const Archetype& archetype, const QueryFilter& filter);
