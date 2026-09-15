@@ -195,17 +195,17 @@ See [B5.7-SCREEN-SPACE-EFFECTS.md](./B5.7-SCREEN-SPACE-EFFECTS.md) for component
 
 ## B5.9 — Temporal Anti-Aliasing
 
-**Status:** Halton jitter, ping-pong history buffers, resolve facade landed.
+**Status:** Halton jitter layout helpers, history validity flags, and resolve bookkeeping deepened (B5.9 follow-up); CUDA kernel deferred.
 
 | Component | Location | Notes |
 |-----------|----------|-------|
-| `TaaJitter` | `taa/taa_jitter.hpp` | 8-frame Halton (2,3) sub-pixel offset |
-| `TaaHistoryBuffer` | `taa/taa_history.hpp` | Ping-pong colour history targets |
-| `TaaResolve` / `TaaPass` | `taa/taa_resolve.hpp`, `taa/taa_pass.hpp` | Resolve stub; CUDA kernel deferred |
+| `TaaJitterLayout` / `TaaJitter` | `taa/taa_jitter.hpp` | Halton (2,3) reference, configurable sequence length (≤64) |
+| `TaaHistoryBuffer` | `taa/taa_history.hpp` | Ping-pong colour history + `hasValidHistory` / `accumulatedFrames` |
+| `TaaResolve` / `TaaPass` | `taa/taa_resolve.hpp`, `taa/taa_pass.hpp` | Resolve stub records first-frame + validity; CUDA kernel deferred |
 
 | Test | Validates |
 |------|-----------|
-| `fuse_taa_pass` | Halton sequence, history ping-pong, resolve stub, graph hook |
+| `fuse_taa_pass` | Halton layout, custom sequence length, history validity, ping-pong, resolve stub, graph hook |
 
 ---
 
@@ -414,6 +414,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_screen_space_effects'
 - [ ] B5.4 follow-up: CUDA cluster AABB build + deferred shade kernels (CPU light-grid rebuild stub landed)
 - [ ] B5.5 follow-up: SDF soft shadows in `fuse_compute` (CSM split + light-space AABB stubs landed)
 - [ ] B5.7 follow-up: G-buffer `cudaInterop` surface import via B2.6 (stub params + contact-harden CPU helpers landed)
+- [ ] B5.9 follow-up: CUDA `taa_resolve_kernel` (CPU jitter/history validity stub landed)
 - [ ] B5.10 follow-up: DOF / motion blur / film grain GPU shader chain; CUDA histogram auto-exposure
 - [x] B5.11 follow-up: Froxel grid indexing stubs, density lerp helpers, CPU tests (`fuse_volumetric_lighting_b511`)
 - [ ] B5.11 follow-up: Full volumetric fog CUDA kernel + lens flare GPU composite
@@ -424,7 +425,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_screen_space_effects'
 
 ## Related docs
 
-- [TRACK-B-RENDER.md](./TRACK-B-RENDER.md) — B5.2/B5.3/B5.6 deepen summary (G-buffer validation, material blocks, DDGI probe grid)
+- [TRACK-B-RENDER.md](./TRACK-B-RENDER.md) — B5.2/B5.3/B5.5/B5.6/B5.9 deepen summary (G-buffer validation, material blocks, CSM AABB, DDGI probe grid, TAA jitter/history)
 - [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) — RHI bootstrap, render graph, CUDA job lane (B2)
 - [TRACK-B-ECS.md](./TRACK-B-ECS.md) — scene data producer (B3)
 - [B5.7-SCREEN-SPACE-EFFECTS.md](./B5.7-SCREEN-SPACE-EFFECTS.md) — SSAO/SSR/SSGI detail

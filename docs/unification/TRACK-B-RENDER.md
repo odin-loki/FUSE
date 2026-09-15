@@ -1,6 +1,6 @@
 # Track B — Own Renderer (B5 deferred pipeline)
 
-**Status:** B5.2 G-buffer layout validation + B5.3 PBR material parameter blocks + B5.5 CSM light-space AABB deepen + **B5.11 volumetric froxel grid deepen** + B5.6 DDGI probe grid indexing deepened  
+**Status:** B5.2 G-buffer layout validation + B5.3 PBR material parameter blocks + B5.5 CSM light-space AABB deepen + **B5.11 volumetric froxel grid deepen** + B5.6 DDGI probe grid indexing deepened + B5.9 TAA jitter/history deepened  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B5  
 **Detail:** [TRACK-B-RENDER-B5.md](./TRACK-B-RENDER-B5.md) — full B5.1–B5.12 scope, tests, gates  
 **Depends on:** [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) (RHI bootstrap, render graph, CUDA job lane)
@@ -93,6 +93,24 @@ ctest --test-dir build --output-on-failure -R fuse_material_system
 
 ```bash
 ctest --test-dir build --output-on-failure -R fuse_ddgi
+```
+
+---
+
+## B5.9 deepen — TAA jitter sequence + history validity (CPU)
+
+| Component | Validates |
+|-----------|-----------|
+| `TaaJitterLayout::halton` | CPU Halton reference for bases 2 and 3 |
+| `TaaJitterLayout::validateSequenceLength` | Rejects zero or >64 frame sequences |
+| `TaaJitterLayout::fillHaltonSequence` | Full Halton (2,3) table for projection jitter |
+| `TaaHistoryBuffer::hasValidHistory` | Invalid until first resolve; cleared on resize |
+| `TaaHistoryBuffer::accumulatedFrames` | Monotonic resolve counter |
+| `TaaResolveStats::first_frame` | First warm-up frame before history reuse |
+| `fuse_taa_pass` | Layout helpers, custom sequence length, validity flags, resolve bookkeeping |
+
+```bash
+ctest --test-dir build --output-on-failure -R fuse_taa_pass
 ```
 
 ---

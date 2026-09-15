@@ -6,7 +6,20 @@
 
 namespace fuse::renderer {
 
-/// 8-frame Halton (2,3) sub-pixel jitter — projection-matrix offset scaffold (B5.9).
+static constexpr u32 kTaaDefaultJitterSequenceLength = 8;
+static constexpr u32 kTaaMaxJitterSequenceLength = 64;
+
+/// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
+struct TaaJitterLayout {
+    static f32 halton(u32 index, u32 base);
+    static bool validateSequenceLength(u32 length);
+    static fuse::math::Vec2 haltonPixelOffset(u32 index, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    static fuse::math::Vec2 haltonNdcOffset(u32 index, u32 width, u32 height,
+                                            u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    static void fillHaltonSequence(u32 length, fuse::math::Vec2* out);
+};
+
+/// Sub-pixel jitter state — advances through a Halton sequence each frame (B5.9).
 class TaaJitter {
 public:
     explicit TaaJitter(const TaaJitterDesc& desc = {});
@@ -24,7 +37,7 @@ public:
     static fuse::math::Vec2 haltonNdcOffset(u32 index, u32 width, u32 height);
 
 private:
-    u32 m_sequenceLength = 8;
+    u32 m_sequenceLength = kTaaDefaultJitterSequenceLength;
     u32 m_index = 0;
 };
 

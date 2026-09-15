@@ -1,34 +1,67 @@
 #include <fuse/renderer/taa/taa_jitter.hpp>
 
 namespace fuse::renderer {
-namespace {
 
-constexpr f32 kHaltonX[8] = {0.5f, 0.25f, 0.75f, 0.125f, 0.625f, 0.375f, 0.875f, 0.0625f};
-constexpr f32 kHaltonY[8] = {0.333f, 0.667f, 0.111f, 0.444f, 0.778f, 0.222f, 0.556f, 0.889f};
+f32 TaaJitterLayout::halton(u32 index, u32 base) {
+    if (base < 2u) {
+        return 0.f;
+    }
 
-} // namespace
-
-TaaJitter::TaaJitter(const TaaJitterDesc& desc)
-    : m_sequenceLength(desc.sequence_length > 0u ? desc.sequence_length : 8u) {}
-
-fuse::math::Vec2 TaaJitter::haltonPixelOffset(u32 index) {
-    const u32 slot = index % 8u;
-    return {kHaltonX[slot], kHaltonY[slot]};
+    f32 result = 0.f;
+    f32 fraction = 1.f;
+    while (index > 0u) {
+        fraction /= static_cast<f32>(base);
+        result += fraction * static_cast<f32>(index % base);
+        index /= base;
+    }
+    return result;
 }
 
-fuse::math::Vec2 TaaJitter::haltonNdcOffset(u32 index, u32 width, u32 height) {
-    const fuse::math::Vec2 pixel = haltonPixelOffset(index);
+bool TaaJitterLayout::validateSequenceLength(u32 length) {
+    return length > 0u && length <= kTaaMaxJitterSequenceLength;
+}
+
+fuse::math::Vec2 TaaJitterLayout::haltonPixelOffset(u32 index, u32 sequenceLength) {
+    const u32 safeLength = validateSequenceLength(sequenceLength) ? sequenceLength : kTaaDefaultJitterSequenceLength;
+    const u32 slot = index % safeLength;
+    return {halton(slot + 1u, 2u), halton(slot + 1u, 3u)};
+}
+
+fuse::math::Vec2 TaaJitterLayout::haltonNdcOffset(u32 index, u32 width, u32 height, u32 sequenceLength) {
+    const fuse::math::Vec2 pixel = haltonPixelOffset(index, sequenceLength);
     const f32 safeWidth = width > 0u ? static_cast<f32>(width) : 1.f;
     const f32 safeHeight = height > 0u ? static_cast<f32>(height) : 1.f;
     return {(pixel.x - 0.5f) * 2.f / safeWidth, (pixel.y - 0.5f) * 2.f / safeHeight};
 }
 
+void TaaJitterLayout::fillHaltonSequence(u32 length, fuse::math::Vec2* out) {
+    if (out == nullptr || !validateSequenceLength(length)) {
+        return;
+    }
+
+    for (u32 i = 0u; i < length; ++i) {
+        out[i] = haltonPixelOffset(i, length);
+    }
+}
+
+TaaJitter::TaaJitter(const TaaJitterDesc& desc)
+    : m_sequenceLength(TaaJitterLayout::validateSequenceLength(desc.sequence_length) ? desc.sequence_length
+                                                                                     : kTaaDefaultJitterSequenceLength) {}
+
+fuse::math::Vec2 TaaJitter::haltonPixelOffset(u32 index) {
+    return TaaJitterLayout::haltonPixelOffset(index, kTaaDefaultJitterSequenceLength);
+}
+
+fuse::math::Vec2 TaaJitter::haltonNdcOffset(u32 index, u32 width, u32 height) {
+    return TaaJitterLayout::haltonNdcOffset(index, width, height, kTaaDefaultJitterSequenceLength);
+}
+
 fuse::math::Vec2 TaaJitter::currentPixelOffset() const {
-    return haltonPixelOffset(m_index);
+    return TaaJitterLayout::haltonPixelOffset(m_index, m_sequenceLength);
 }
 
 fuse::math::Vec2 TaaJitter::currentNdcOffset(u32 width, u32 height) const {
-    return haltonNdcOffset(m_index, width, height);
+    return TaaJitterLayout::haltonNdcOffset(m_index, width, height, m_sequenceLength);
 }
 
 void TaaJitter::advance() {

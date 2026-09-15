@@ -7,6 +7,7 @@ bool TaaHistoryBuffer::init(ResourceManager& resources, const TaaHistoryBufferDe
     m_resources = &resources;
     m_desc = desc;
     m_activeIndex = 0u;
+    m_validity = {};
 
     if (m_desc.width == 0u || m_desc.height == 0u) {
         return false;
@@ -35,6 +36,8 @@ void TaaHistoryBuffer::resize(u32 width, u32 height) {
         return;
     }
 
+    invalidateHistory();
+
     if (m_resources == nullptr) {
         m_desc.width = width;
         m_desc.height = height;
@@ -51,6 +54,7 @@ void TaaHistoryBuffer::destroy() {
     releaseTargets();
     m_resources = nullptr;
     m_desc = {};
+    m_validity = {};
     m_activeIndex = 0u;
     m_ready = false;
 }
@@ -65,6 +69,16 @@ TextureHandle TaaHistoryBuffer::write() const {
 
 void TaaHistoryBuffer::swap() {
     m_activeIndex = (m_activeIndex + 1u) % 2u;
+}
+
+void TaaHistoryBuffer::invalidateHistory() {
+    m_validity.hasValidHistory = false;
+    m_validity.accumulatedFrames = 0u;
+}
+
+void TaaHistoryBuffer::markResolved() {
+    m_validity.hasValidHistory = true;
+    ++m_validity.accumulatedFrames;
 }
 
 void TaaHistoryBuffer::releaseTargets() {

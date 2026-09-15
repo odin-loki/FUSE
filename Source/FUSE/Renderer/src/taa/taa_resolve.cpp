@@ -21,17 +21,24 @@ bool TaaResolve::resolve(const TaaResolveDesc& desc, TaaHistoryBuffer& history, 
         return false;
     }
 
+    m_stats.first_frame = !history.hasValidHistory();
+    history.markResolved();
+    history.swap();
+
     m_stats.resolved = true;
     m_stats.width = desc.width;
     m_stats.height = desc.height;
     m_stats.last_blend = desc.params.blend_factor;
     m_stats.history_swapped = true;
-    history.swap();
+    m_stats.has_valid_history = history.hasValidHistory();
+    m_stats.accumulated_frames = history.accumulatedFrames();
 
 #if defined(FUSE_HAS_CUDA)
-    m_message = "TAA resolve recorded (CUDA kernel deferred)";
+    m_message = m_stats.first_frame ? "TAA resolve recorded — first frame (CUDA kernel deferred)"
+                                    : "TAA resolve recorded (CUDA kernel deferred)";
 #else
-    m_message = "TAA resolve recorded (CPU stub — no CUDA toolkit)";
+    m_message = m_stats.first_frame ? "TAA resolve recorded — first frame (CPU stub — no CUDA toolkit)"
+                                    : "TAA resolve recorded (CPU stub — no CUDA toolkit)";
 #endif
 
     return true;
