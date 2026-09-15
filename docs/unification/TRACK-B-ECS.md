@@ -12,6 +12,7 @@
 |-----------|----------|-------|
 | `EntityID` | `include/fuse/ecs/entity.hpp` | Index + generation handle; stale detection O(1) |
 | `Registry` | `include/fuse/ecs/registry.hpp` | Create/destroy, add/remove/get/has, `each` + `each_parallel` bulk iteration |
+| `QueryFilter` / `With` / `Without` | `include/fuse/ecs/query_filter.hpp` | Archetype-scoped query filters; `each_query` / `each_query_parallel` (B3 deepen) |
 | `Archetype` / `ComponentColumn` | `include/fuse/ecs/archetype.hpp` | SoA columns keyed by `std::type_index`; archetype migration on add/remove |
 | `IsComponentV` trait | `include/fuse/ecs/component.hpp` | Plain data + `component_name` string (C++17) |
 | Math types (`vec3`, `quat`, `mat4`) | `include/fuse/ecs/math/vec.hpp` | Minimal POD until shared `fuse/math` lands in Core |
@@ -71,7 +72,7 @@ SceneBuildSystem::build → SceneData (draw items, SDF, lights)
 SceneManager::update (stub tick — systems wired in integration test)
 ```
 
-`Registry::each_parallel` parallelizes row iteration per matching archetype via `JobScheduler::parallel_for` (default batch size 256). `TransformSystemOptions::parallelDirtyRoots` selects the parallel dirty-root pass (default on). Managed-memory columns at production scale remain **deferred** to B4+ physics/GPU paths. Current columns use `std::vector<std::byte>` on the CPU.
+`Registry::each_parallel` parallelizes row iteration per matching archetype via `JobScheduler::parallel_for` (default batch size 256). `TransformSystemOptions::parallelDirtyRoots` selects the parallel dirty-root pass (default on). `Registry::each_query` / `each_query_parallel` accept compile-time `With<...>` required types and an optional trailing `Without<...>` exclusion tag; `archetype_matches` evaluates filters before row iteration. Managed-memory columns at production scale remain **deferred** to B4+ physics/GPU paths. Current columns use `std::vector<std::byte>` on the CPU.
 
 ---
 
@@ -121,6 +122,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_ecs|fuse_scene'
 | Target | Validates |
 |--------|-----------|
 | `fuse_ecs_registry` | Create/destroy, stale handles, add/get/remove, archetype migration, `each` |
+| `fuse_ecs_query_filter` | `archetype_matches` With/Without filters; `each_query` serial/parallel coverage |
 | `fuse_ecs_each_parallel` | `each_parallel` visit/mutation parity vs `each`; `TransformSystem` serial/parallel dirty-root paths |
 | `fuse_ecs_components` | Component names, defaults, registry storage for lights/tags |
 | `fuse_ecs_system_scheduler` | System dependency DAG execution order |
@@ -154,7 +156,9 @@ ctest --test-dir build --output-on-failure -R 'fuse_ecs|fuse_scene'
 - [x] **B3.3** `TransformSystem`, `CullingSystem`, `SceneBuildSystem`, `SystemScheduler` on FUSE APIs
 - [x] Transform hierarchy propagates parent translation to children (`fuse_ecs_systems`)
 - [x] System scheduler honours declared dependencies (`fuse_ecs_system_scheduler`)
-- [x] `each_parallel` parity harness vs `each` (`fuse_ecs_each_parallel`; 100k scale deferred)
+- [x] `each<T>` iterates exactly the correct entities — no missed entities, no spurious iterations (`fuse_ecs_registry`)
+- [x] `each_parallel<T>` produces identical results to `each<T>` across randomised cases (`fuse_ecs_each_parallel`; 100k scale deferred)
+- [x] `QueryFilter` With/Without archetype matching + `each_query` / `each_query_parallel` coverage (`fuse_ecs_query_filter`)
 
 ### B3.4 — Bounding Volume Hierarchy
 
@@ -202,6 +206,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_ecs|fuse_scene'
 
 ## Next
 
+- [ ] Runtime query builder / cached query descriptors (deferred — compile-time With/Without stubs ship first)
 - [ ] Wire `TransformSystem` + `CameraSystem` inside `SceneManager::update` (replace scaffold comments)
 - [ ] Bridge `Mesh` handles → `renderer::BufferHandle` when scene submit lands
 - [ ] Managed/pinned column allocators for CUDA physics path (B4)

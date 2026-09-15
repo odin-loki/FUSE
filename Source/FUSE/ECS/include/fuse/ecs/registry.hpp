@@ -3,6 +3,7 @@
 #include <fuse/ecs/archetype.hpp>
 #include <fuse/ecs/component.hpp>
 #include <fuse/ecs/entity.hpp>
+#include <fuse/ecs/query_filter.hpp>
 #include <fuse/jobs/parallel_for.hpp>
 
 #include <algorithm>
@@ -43,9 +44,25 @@ public:
     template <typename... Ts, typename Fn>
     void each(Fn&& fn);
 
+    /// Iterates entities matching required With component types.
+    template <typename... WithTs, typename Fn>
+    void each_query(Fn&& fn);
+
+    /// Iterates entities matching With types while excluding Without types.
+    template <typename... WithTs, typename... WithoutTs, typename Fn>
+    void each_query(Fn&& fn, Without<WithoutTs...> exclude);
+
     /// Parallel iteration over matching archetypes via JobScheduler::parallel_for.
     template <typename... Ts, typename Fn>
     void each_parallel(Fn&& fn, u32 batchSize = 256);
+
+    /// Parallel iteration with required With component types.
+    template <typename... WithTs, typename Fn>
+    void each_query_parallel(Fn&& fn, u32 batchSize = 256);
+
+    /// Parallel iteration with With/Without component filters.
+    template <typename... WithTs, typename... WithoutTs, typename Fn>
+    void each_query_parallel(Fn&& fn, Without<WithoutTs...> exclude, u32 batchSize = 256);
 
     [[nodiscard]] usize archetype_count() const { return m_archetypes.size(); }
 
@@ -72,6 +89,12 @@ private:
         static_assert(IsComponentV<T>, "T must be a plain ECS component with component_name");
         static_assert(std::is_trivially_destructible<T>::value, "components must be trivially destructible");
     }
+
+    template <typename... WithTs, typename Fn>
+    void each_query_impl_(const QueryFilter& filter, Fn&& fn);
+
+    template <typename... WithTs, typename Fn>
+    void each_query_parallel_impl_(const QueryFilter& filter, Fn&& fn, u32 batchSize);
 
     std::vector<EntityRecord> m_records;
     std::vector<u32> m_free_list;
@@ -187,44 +210,64 @@ bool Registry::has(EntityID id) const {
 
 template <typename... Ts, typename Fn>
 void Registry::each(Fn&& fn) {
-    const std::vector<std::type_index> required = {std::type_index(typeid(Ts))...};
+    each_query<Ts...>(std::forward<Fn>(fn));
+}
 
+template <typename... WithTs, typename Fn>
+void Registry::each_query(Fn&& fn) {
+    (assertComponent<WithTs>(), ...);
+    each_query_impl_<WithTs...>(make_query_filter(With<WithTs...>{}), std::forward<Fn>(fn));
+}
+
+template <typename... WithTs, typename... WithoutTs, typename Fn>
+void Registry::each_query(Fn&& fn, Without<WithoutTs...> /*exclude*/) {
+    (assertComponent<WithTs>(), ...);
+    (assertComponent<WithoutTs>(), ...);
+    each_query_impl_<WithTs...>(make_query_filter(With<WithTs...>{}, Without<WithoutTs...>{}), std::forward<Fn>(fn));
+}
+
+template <typename... WithTs, typename Fn>
+void Registry::each_query_impl_(const QueryFilter& filter, Fn&& fn) {
     for (Archetype& archetype : m_archetypes) {
-        bool matches = true;
-        for (const std::type_index& type : required) {
-            if (!archetype.has_component(type)) {
-                matches = false;
-                break;
-            }
-        }
-        if (!matches) {
+        if (!archetype_matches(archetype, filter)) {
             continue;
         }
 
         for (usize row = 0; row < archetype.count(); ++row) {
             EntityID id = archetype.entities[row];
-            fn(id, *static_cast<Ts*>(archetype.find_column(std::type_index(typeid(Ts)))->at(row))...);
+            fn(id, *static_cast<WithTs*>(archetype.find_column(std::type_index(typeid(WithTs)))->at(row))...);
         }
     }
 }
 
 template <typename... Ts, typename Fn>
 void Registry::each_parallel(Fn&& fn, u32 batchSize) {
+    each_query_parallel<Ts...>(std::forward<Fn>(fn), batchSize);
+}
+
+template <typename... WithTs, typename Fn>
+void Registry::each_query_parallel(Fn&& fn, u32 batchSize) {
+    (assertComponent<WithTs>(), ...);
+    each_query_parallel_impl_<WithTs...>(make_query_filter(With<WithTs...>{}), std::forward<Fn>(fn), batchSize);
+}
+
+template <typename... WithTs, typename... WithoutTs, typename Fn>
+void Registry::each_query_parallel(Fn&& fn, Without<WithoutTs...> /*exclude*/, u32 batchSize) {
+    (assertComponent<WithTs>(), ...);
+    (assertComponent<WithoutTs>(), ...);
+    each_query_parallel_impl_<WithTs...>(make_query_filter(With<WithTs...>{}, Without<WithoutTs...>{}),
+                                         std::forward<Fn>(fn),
+                                         batchSize);
+}
+
+template <typename... WithTs, typename Fn>
+void Registry::each_query_parallel_impl_(const QueryFilter& filter, Fn&& fn, u32 batchSize) {
     if (batchSize == 0) {
         batchSize = 1;
     }
 
-    const std::vector<std::type_index> required = {std::type_index(typeid(Ts))...};
-
     for (Archetype& archetype : m_archetypes) {
-        bool matches = true;
-        for (const std::type_index& type : required) {
-            if (!archetype.has_component(type)) {
-                matches = false;
-                break;
-            }
-        }
-        if (!matches) {
+        if (!archetype_matches(archetype, filter)) {
             continue;
         }
 
@@ -235,7 +278,7 @@ void Registry::each_parallel(Fn&& fn, u32 batchSize) {
 
         jobs::parallel_for(0, static_cast<u32>(rowCount), batchSize, [&](u32 row) {
             EntityID id = archetype.entities[row];
-            fn(id, *static_cast<Ts*>(archetype.find_column(std::type_index(typeid(Ts)))->at(row))...);
+            fn(id, *static_cast<WithTs*>(archetype.find_column(std::type_index(typeid(WithTs)))->at(row))...);
         });
     }
 }

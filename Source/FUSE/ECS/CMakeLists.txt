@@ -3,6 +3,7 @@ set(FUSE_ECS_PUBLIC_HEADERS
     include/fuse/ecs/component.hpp
     include/fuse/ecs/archetype.hpp
     include/fuse/ecs/registry.hpp
+    include/fuse/ecs/query_filter.hpp
     include/fuse/ecs/math/vec.hpp
     include/fuse/ecs/math/mat.hpp
     include/fuse/ecs/components/transform.hpp
@@ -25,6 +26,7 @@ set(FUSE_ECS_PUBLIC_HEADERS
 set(FUSE_ECS_SOURCES
     src/archetype.cpp
     src/registry.cpp
+    src/query_filter.cpp
     src/math/mat.cpp
     src/transform_system.cpp
     src/camera_system.cpp
