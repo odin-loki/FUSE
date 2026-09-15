@@ -93,6 +93,12 @@ void runBroadphase2DIntoBuffer(
     const SpatialHashParams& params,
     PairBufferSoA& buffer);
 
+/// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
+void refineBroadphasePairsParallel(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    PairBufferSoA& buffer);
+
 /// CPU stub of the CUDA broad-phase pipeline (B4.2).
 /// Phase 1 jobifies shape→cell insertion; phase 2 jobifies per-cell candidate generation
 /// via `fuse::jobs::parallel_for` (serial when the job scheduler is single-threaded).
