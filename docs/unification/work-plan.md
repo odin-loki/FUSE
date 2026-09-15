@@ -96,7 +96,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **MT note** | Publish asset handles from I/O jobs; game thread commit; TSan nightly begins |
 | **Exit** | Both dims log via FUSE logger; one asset loaded via VFS from job; handle rules documented |
 | **Deps** | WP-02, WP-03 (partial — I/O can use thread pool before fibers complete) |
-| **Status** | 🚧 Started — logger, Handle, frame allocator, VFS stub; async I/O + handle table deferred |
+| **Status** | ✅ Logger, Handle, frame allocator, VFS mount + async I/O lane; HandleTable game-thread commit; see [vfs-mount-plan.md](./vfs-mount-plan.md) |
 
 ---
 
@@ -263,7 +263,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 
-**Next:** WP-07 ore extraction per module; WP-04 async I/O lane + handle table; **WP-06b Track B B2.2 swapchain** (bootstrap landed — [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md)); U7 `.fuselevel` cookers.
+**Next:** WP-07 ore extraction per module; **WP-06b Track B B2.2 swapchain** (bootstrap landed — [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md)); U7 `.fuselevel` cookers.
 
 ---
 

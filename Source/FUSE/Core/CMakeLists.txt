@@ -7,6 +7,7 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/config.hpp
     include/fuse/handle.hpp
     include/fuse/handle_map.hpp
+    include/fuse/handle_table.hpp
     include/fuse/frame/frame_ctx.hpp
     include/fuse/frame/frame_barrier.hpp
     include/fuse/dimension/world_handle.hpp
@@ -15,6 +16,7 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/core/init.hpp
     include/fuse/log/logger.hpp
     include/fuse/alloc/frame_allocator.hpp
+    include/fuse/io/asset.hpp
     include/fuse/io/vfs.hpp
     include/fuse/jobs/worker_count.hpp
     include/fuse/jobs/worker_context.hpp

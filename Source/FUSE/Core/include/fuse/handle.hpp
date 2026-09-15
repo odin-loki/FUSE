@@ -7,7 +7,7 @@
 namespace fuse {
 
 /// Generation/epoch handle stub (Track A P4 / WP-04).
-/// Workers publish handles; the game thread resolves through HandleTable (future).
+/// Workers publish payloads; the game thread resolves through HandleTable::commit().
 template <typename T>
 class Handle {
 public:
