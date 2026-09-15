@@ -20,6 +20,7 @@ This directory contains evidence-based inventory and collision analysis for merg
 | [addon-ore-catalog.md](./addon-ore-catalog.md) | All seven addons: patches vs scripts vs art; licenses; kernel entry points |
 | [demo-corpus-parity-targets.md](./demo-corpus-parity-targets.md) | Frozen minimum U8 demo set mapped to legacy missions and T2D toybox |
 | [risk-register.md](./risk-register.md) | Box2D vs T3D physics, Gui, net, symbols, dual VMs, mobile/web, addon ore, … |
+| [unified-layout.md](./unified-layout.md) | Target monorepo tree, migration map (today→target), U0–U2 stay-put policy, naming conventions |
 
 **Related (not U0):**
 - [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) — Track A/B port (consult for alignment only)
@@ -39,6 +40,7 @@ This directory contains evidence-based inventory and collision analysis for merg
 | Addon ore catalog lists kernel entry points for all seven addons | ✅ [addon-ore-catalog.md](./addon-ore-catalog.md) |
 | Parity demo list frozen (minimum set) | ✅ [demo-corpus-parity-targets.md](./demo-corpus-parity-targets.md) |
 | Risk register published | ✅ [risk-register.md](./risk-register.md) |
+| Unified file layout proposed | ✅ [unified-layout.md](./unified-layout.md) |
 
 **U0 exit:** Documentation complete; stakeholder review of matrix recommendations and decision gates (script host, physics, 2D renderer, multiprocess policy) before U1 umbrella CMake.
 
