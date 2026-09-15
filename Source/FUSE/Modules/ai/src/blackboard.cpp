@@ -97,4 +97,12 @@ float BlackboardView::scalar(u32 agentIndex, u32 slotIndex) const {
     return m_board ? m_board->scalar(agentIndex, slotIndex) : 0.f;
 }
 
+bool BlackboardView::isScalarEmpty(u32 agentIndex, u32 slotIndex) const {
+    float value = 0.f;
+    if (!tryGetScalar(agentIndex, slotIndex, value)) {
+        return true;
+    }
+    return value == 0.f;
+}
+
 } // namespace fuse::ai

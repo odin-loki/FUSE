@@ -14,6 +14,7 @@ public:
 
     void resize(u32 agentCount);
     u32 agentCount() const { return m_agentCount; }
+    bool isEmpty() const { return m_agentCount == 0; }
 
     void setFlag(u32 agentIndex, u32 flagIndex, bool value);
     bool trySetFlag(u32 agentIndex, u32 flagIndex, bool value);
@@ -44,6 +45,9 @@ class BlackboardView {
 public:
     BlackboardView() = default;
     explicit BlackboardView(const Blackboard& board);
+
+    bool isBound() const { return m_board != nullptr; }
+    bool isScalarEmpty(u32 agentIndex, u32 slotIndex) const;
 
     bool getFlag(u32 agentIndex, u32 flagIndex) const { return flag(agentIndex, flagIndex); }
     bool tryGetFlag(u32 agentIndex, u32 flagIndex, bool& outValue) const;

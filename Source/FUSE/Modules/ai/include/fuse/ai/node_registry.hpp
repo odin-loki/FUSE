@@ -23,6 +23,8 @@ struct NodeLoadSpec {
     u32 successThreshold = 0;
     u32 failThreshold = 1;
     bool abortOnFail = false;
+    bool requireBoundBlackboard = false;
+    bool requireAllyContext = false;
 };
 
 /// Factory signature — builds a flat BehaviorNode from a load spec.

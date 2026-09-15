@@ -104,6 +104,13 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
     }
     case NodeKind::Parallel: {
         const ParallelPolicy& policy = node.parallelPolicy;
+        if (policy.requireBoundBlackboard && !board.isBound()) {
+            return {};
+        }
+        if (policy.requireAllyContext && !ally_context_available(ctx.allies)) {
+            return {};
+        }
+
         const u32 failLimit = policy.failThreshold > 0 ? policy.failThreshold : 1u;
 
         const BehaviorTickResult first = tickNode(node.childA, agentIndex, agent, board, ctx);
@@ -228,7 +235,7 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
     }
     case NodeKind::ConditionAlliesInRadius: {
         BehaviorTickResult result;
-        if (!ctx.allies) {
+        if (!ally_context_available(ctx.allies)) {
             result.status = BehaviorStatus::Failure;
             return result;
         }
@@ -246,9 +253,51 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
         result.status = satisfied ? BehaviorStatus::Success : BehaviorStatus::Failure;
         return result;
     }
+    case NodeKind::ConditionAnyAllyInRadius: {
+        BehaviorTickResult result;
+        if (!ally_context_available(ctx.allies)) {
+            result.status = BehaviorStatus::Failure;
+            return result;
+        }
+
+        const bool found = has_any_ally_in_radius(agentIndex,
+                                                  agent.teamId,
+                                                  agent.x,
+                                                  agent.y,
+                                                  node.threshold,
+                                                  *ctx.allies);
+        result.status = found ? BehaviorStatus::Success : BehaviorStatus::Failure;
+        return result;
+    }
+    case NodeKind::ActionAlliesCount: {
+        BehaviorTickResult result;
+        if (!ally_context_available(ctx.allies)) {
+            result.status = BehaviorStatus::Failure;
+            return result;
+        }
+
+        const u32 count = count_allies_in_radius(agentIndex,
+                                                 agent.teamId,
+                                                 agent.x,
+                                                 agent.y,
+                                                 node.threshold,
+                                                 *ctx.allies);
+        result.status = BehaviorStatus::Success;
+        if (node.scalarSlot < Blackboard::kMaxScalars) {
+            result.wroteScalar = true;
+            result.scalarIndex = node.scalarSlot;
+            result.scalarValue = static_cast<float>(count);
+        }
+        if (node.flagIndex < Blackboard::kMaxFlags) {
+            result.wroteFlag = true;
+            result.flagIndex = node.flagIndex;
+            result.flagValue = count > 0;
+        }
+        return result;
+    }
     case NodeKind::ActionNearestAlly: {
         BehaviorTickResult result;
-        if (!ctx.allies) {
+        if (!ally_context_available(ctx.allies)) {
             result.status = BehaviorStatus::Failure;
             return result;
         }
@@ -273,6 +322,28 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
             result.scalarIndex = node.scalarSlot;
             result.scalarValue = static_cast<float>(nearest.allyIndex);
         }
+        return result;
+    }
+    case NodeKind::GuardBlackboardBound: {
+        BehaviorTickResult result;
+        result.status = board.isBound() ? BehaviorStatus::Success : BehaviorStatus::Failure;
+        return result;
+    }
+    case NodeKind::GuardBlackboardScalarEmpty: {
+        BehaviorTickResult result;
+        if (!board.isBound()) {
+            result.status = BehaviorStatus::Failure;
+            return result;
+        }
+        const u32 slot = node.scalarSlot < Blackboard::kMaxScalars ? node.scalarSlot : 0u;
+        result.status = board.isScalarEmpty(agentIndex, slot) ? BehaviorStatus::Success
+                                                              : BehaviorStatus::Failure;
+        return result;
+    }
+    case NodeKind::GuardAllyContext: {
+        BehaviorTickResult result;
+        result.status = ally_context_available(ctx.allies) ? BehaviorStatus::Success
+                                                           : BehaviorStatus::Failure;
         return result;
     }
     }

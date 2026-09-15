@@ -36,6 +36,8 @@ BehaviorNode makeParallel(const NodeLoadSpec& spec) {
     node.parallelPolicy.successThreshold = spec.successThreshold;
     node.parallelPolicy.failThreshold = spec.failThreshold;
     node.parallelPolicy.abortOnFail = spec.abortOnFail;
+    node.parallelPolicy.requireBoundBlackboard = spec.requireBoundBlackboard;
+    node.parallelPolicy.requireAllyContext = spec.requireAllyContext;
     return node;
 }
 
@@ -150,6 +152,43 @@ BehaviorNode makeActionNearestAlly(const NodeLoadSpec& spec) {
     return node;
 }
 
+BehaviorNode makeConditionAnyAllyInRadius(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::ConditionAnyAllyInRadius;
+    node.threshold = spec.threshold;
+    return node;
+}
+
+BehaviorNode makeActionAlliesCount(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::ActionAlliesCount;
+    node.threshold = spec.threshold;
+    node.flagIndex = spec.flagIndex;
+    node.scalarSlot = spec.scalarSlot;
+    return node;
+}
+
+BehaviorNode makeGuardBlackboardBound(const NodeLoadSpec& spec) {
+    (void)spec;
+    BehaviorNode node;
+    node.kind = NodeKind::GuardBlackboardBound;
+    return node;
+}
+
+BehaviorNode makeGuardBlackboardScalarEmpty(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::GuardBlackboardScalarEmpty;
+    node.scalarSlot = spec.scalarSlot;
+    return node;
+}
+
+BehaviorNode makeGuardAllyContext(const NodeLoadSpec& spec) {
+    (void)spec;
+    BehaviorNode node;
+    node.kind = NodeKind::GuardAllyContext;
+    return node;
+}
+
 } // namespace
 
 NodeRegistry& NodeRegistry::instance() {
@@ -205,7 +244,14 @@ void NodeRegistry::registerBuiltins() {
 
     // FUSE spatial query leaves — blackboard ally lookup stubs (BadBehaviour ScriptedBehavior pattern)
     registerFactory("bb.condition.allies_in_radius", makeConditionAlliesInRadius);
+    registerFactory("bb.condition.any_ally_in_radius", makeConditionAnyAllyInRadius);
     registerFactory("bb.action.nearest_ally", makeActionNearestAlly);
+    registerFactory("bb.action.allies_count", makeActionAlliesCount);
+
+    // FUSE guard leaves — empty blackboard / ally-context preconditions
+    registerFactory("bb.guard.blackboard_bound", makeGuardBlackboardBound);
+    registerFactory("bb.guard.blackboard_scalar_empty", makeGuardBlackboardScalarEmpty);
+    registerFactory("bb.guard.ally_context", makeGuardAllyContext);
 }
 
 std::vector<std::string> NodeRegistry::registeredTypeIds() const {
