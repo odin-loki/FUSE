@@ -46,11 +46,20 @@ struct TaaHistoryValidity {
     u32 accumulatedFrames = 0;
 };
 
+/// Why a resolve request bailed before history update (B5.9 deepen).
+enum class TaaResolveSkipReason : u8 {
+    None = 0,
+    HistoryNotReady,
+    InvalidDimensions,
+    MissingSurfaces,
+};
+
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {
     bool resolved = false;
     /// Set when resolve bails before history update (empty history, bad dimensions, missing surfaces).
     bool skipped = false;
+    TaaResolveSkipReason skip_reason = TaaResolveSkipReason::None;
     u32 width = 0;
     u32 height = 0;
     f32 last_blend = 0.f;

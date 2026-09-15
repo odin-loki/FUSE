@@ -64,8 +64,14 @@ void TaaPass::advanceJitter() {
     m_stats.lastJitterNdc = currentJitterNdc();
 }
 
+void TaaPass::syncJitterToFrameIndex(u32 frameIndex) {
+    m_jitter.syncToFrameIndex(frameIndex);
+    m_stats.lastJitterNdc = currentJitterNdc();
+}
+
 void TaaPass::invalidateHistory() {
     m_history.invalidateHistory();
+    m_resolve.resetBookkeeping();
 }
 
 bool TaaPass::resolveFrame(const TaaResolveDesc& desc, void* cudaStream) {

@@ -60,10 +60,13 @@ void testJitterSequenceLayout() {
     expectNear(computed.y, 0.333f, 1e-3f, "layout Halton Y matches default table");
 
     fuse::math::Vec2 sequence[8]{};
-    TaaJitterLayout::fillHaltonSequence(8u, sequence);
+    expectTrue(TaaJitterLayout::fillHaltonSequence(8u, sequence), "fillHaltonSequence succeeds for valid length");
     expectNear(sequence[0].x, 0.5f, 1e-5f, "filled sequence slot 0 X");
     expectNear(sequence[7].x, 0.0625f, 1e-5f, "filled sequence slot 7 X");
     expectNear(sequence[7].y, 0.889f, 1e-3f, "filled sequence slot 7 Y");
+
+    expectTrue(!TaaJitterLayout::fillHaltonSequence(0u, sequence), "fillHaltonSequence rejects zero length");
+    expectTrue(!TaaJitterLayout::fillHaltonSequence(8u, nullptr), "fillHaltonSequence rejects null output");
 }
 
 void testJitterSequencePeriod() {
@@ -124,6 +127,7 @@ void testJitterSyncToFrameIndex() {
     fuse::renderer::TaaJitter jitter;
     jitter.syncToFrameIndex(5u);
     expectTrue(jitter.index() == 5u, "syncToFrameIndex sets slot directly");
+    expectTrue(jitter.monotonicFrameIndex() == 5u, "syncToFrameIndex sets monotonic frame counter");
 
     const fuse::math::Vec2 synced = jitter.currentPixelOffset();
     const fuse::math::Vec2 expected = fuse::renderer::TaaJitterLayout::offsetForFrameIndex(5u, 8u);
@@ -132,6 +136,14 @@ void testJitterSyncToFrameIndex() {
 
     jitter.syncToFrameIndex(13u);
     expectTrue(jitter.index() == 5u, "syncToFrameIndex wraps monotonic frame counter");
+    expectTrue(jitter.monotonicFrameIndex() == 13u, "syncToFrameIndex preserves monotonic frame counter");
+
+    jitter.advance();
+    expectTrue(jitter.monotonicFrameIndex() == 14u, "advance increments monotonic frame counter");
+    expectTrue(jitter.index() == 6u, "advance wraps slot from monotonic counter");
+
+    jitter.reset();
+    expectTrue(jitter.monotonicFrameIndex() == 0u, "reset clears monotonic frame counter");
 }
 
 void testCustomJitterSequenceLength() {
@@ -252,9 +264,16 @@ void testEmptyHistoryResolve() {
     desc.height = 64;
     desc.surfaces.current_frame = reinterpret_cast<void*>(0x1);
     desc.surfaces.output = reinterpret_cast<void*>(0x2);
+    fuse::renderer::TaaResolveSkipReason skipReason = fuse::renderer::TaaResolveSkipReason::None;
+    expectTrue(resolve.wouldSkip(desc, history, &skipReason), "wouldSkip detects empty history buffer");
+    expectTrue(skipReason == fuse::renderer::TaaResolveSkipReason::HistoryNotReady,
+               "empty history skip reason is HistoryNotReady");
+
     expectTrue(!resolve.resolve(desc, history), "resolve rejects empty history buffer");
     expectTrue(!resolve.lastStats().resolved, "empty history resolve stats not marked resolved");
     expectTrue(resolve.lastStats().skipped, "empty history resolve stats marked skipped");
+    expectTrue(resolve.lastStats().skip_reason == fuse::renderer::TaaResolveSkipReason::HistoryNotReady,
+               "empty history resolve records skip reason");
 }
 
 void testValidityResetAfterInvalidate() {
@@ -424,15 +443,33 @@ void testTaaPassInvalidateHistory() {
     pass->invalidateHistory();
     expectTrue(!pass->history().hasValidHistory(), "TaaPass invalidate clears history validity");
     expectTrue(pass->history().accumulatedFrames() == 0u, "TaaPass invalidate clears accumulated frames");
+    expectTrue(!pass->resolve().lastStats().resolved, "TaaPass invalidate resets resolve bookkeeping");
 
     expectTrue(pass->resolveFrame(resolveDesc), "resolve succeeds after TaaPass invalidate");
     expectTrue(pass->resolve().lastStats().first_frame, "first frame flagged after TaaPass invalidate");
+    expectTrue(pass->resolve().lastStats().accumulated_frames == 1u,
+               "accumulated frames restart after TaaPass invalidate");
 
     pass->destroy();
     expectTrue(!pass->history().isReady(), "TaaPass destroy releases history buffers");
 
     resources.destroy();
     bindless.destroy(*bootstrap->device());
+}
+
+void testTaaPassSyncJitterToFrameIndex() {
+    fuse::renderer::TaaPassDesc passDesc{};
+    passDesc.width = 128;
+    passDesc.height = 128;
+
+    auto pass = fuse::renderer::TaaPass::create(passDesc);
+    pass->syncJitterToFrameIndex(3u);
+    const fuse::math::Vec2 synced = pass->currentJitterNdc();
+    const fuse::math::Vec2 expected =
+        fuse::renderer::TaaJitterLayout::ndcOffsetForFrameIndex(3u, 128u, 128u, 8u);
+    expectNear(synced.x, expected.x, 1e-6f, "TaaPass syncJitterToFrameIndex matches layout NDC offset");
+    expectNear(synced.y, expected.y, 1e-6f, "TaaPass syncJitterToFrameIndex Y matches layout NDC offset");
+    expectTrue(pass->jitter().monotonicFrameIndex() == 3u, "TaaPass syncJitterToFrameIndex sets monotonic counter");
 }
 
 void testTaaPassGraphHook() {
@@ -465,6 +502,7 @@ int main() {
     testResolveStub();
     testTaaPassLifecycle();
     testTaaPassInvalidateHistory();
+    testTaaPassSyncJitterToFrameIndex();
     testTaaPassGraphHook();
 
     fuse::core::shutdown();

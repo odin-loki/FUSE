@@ -44,6 +44,8 @@ public:
 
     fuse::math::Vec2 currentJitterNdc() const;
     void advanceJitter();
+    /// Align jitter to a monotonic frame counter (wraps with sequence period).
+    void syncJitterToFrameIndex(u32 frameIndex);
     void invalidateHistory();
 
     bool resolveFrame(const TaaResolveDesc& desc, void* cudaStream = nullptr);
