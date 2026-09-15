@@ -756,6 +756,145 @@ void testSnapshotAtFrameCounterInsideNestedFlowAndScope() {
                "chrome export includes scope depth, flow depth, and snapshot_at_frame");
 }
 
+void testIsEmptyAndIsValidEventIndex() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::isEmpty(), "reset leaves profiler buffer empty");
+    expectTrue(!fuse::profiler::hasEvents(), "isEmpty mirrors hasEvents on reset");
+    expectTrue(!fuse::profiler::isValidEventIndex(0), "index 0 invalid on empty buffer");
+    expectTrue(!fuse::profiler::isValidEventIndex(99), "out-of-range index invalid on empty buffer");
+
+    FUSE_PROFILE_COUNTER("probe", 1);
+    expectTrue(!fuse::profiler::isEmpty(), "counter sample clears isEmpty");
+    expectTrue(fuse::profiler::isValidEventIndex(0), "index 0 valid after recording");
+    expectTrue(!fuse::profiler::isValidEventIndex(1), "index past count invalid");
+    expectTrue(!fuse::profiler::isValidEventIndex(99), "far out-of-range index invalid");
+}
+
+void testEmptyEventSentinel() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::profiler::ProfileEvent& sentinel = fuse::profiler::emptyEvent();
+    expectTrue(sentinel.name == nullptr, "emptyEvent sentinel has null name");
+    expectTrue(&fuse::profiler::eventAt(0) == &sentinel, "eventAt on empty buffer returns emptyEvent");
+    expectTrue(&fuse::profiler::eventAt(42) == &sentinel, "eventAt out-of-range returns emptyEvent");
+
+    FUSE_PROFILE_SCOPE("sentinel_scope");
+    expectTrue(fuse::profiler::eventAt(0).name != nullptr, "eventAt(0) valid after recording");
+    expectTrue(&fuse::profiler::eventAt(99) == &sentinel, "eventAt past count still returns emptyEvent");
+}
+
+void testActiveDepthQueries() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::activeNestingDepth() == 0u, "active scope depth starts at zero");
+    expectTrue(fuse::profiler::activeFlowNestingDepth() == 0u, "active flow depth starts at zero");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    {
+        FUSE_PROFILE_SCOPE("depth_outer");
+        expectTrue(fuse::profiler::activeNestingDepth() == 1u, "outer scope raises active nesting depth");
+        {
+            FUSE_PROFILE_SCOPE("depth_inner");
+            expectTrue(fuse::profiler::activeNestingDepth() == 2u, "inner scope raises active nesting depth");
+            FUSE_PROFILE_ASYNC_FLOW_BEGIN("depth_flow", flowId);
+            expectTrue(fuse::profiler::activeFlowNestingDepth() == 1u,
+                       "flow begin raises active flow nesting depth");
+            FUSE_PROFILE_COUNTER("depth_counter", 5);
+            FUSE_PROFILE_ASYNC_FLOW_END("depth_flow", flowId);
+            expectTrue(fuse::profiler::activeFlowNestingDepth() == 0u,
+                       "flow end restores active flow nesting depth");
+        }
+        expectTrue(fuse::profiler::activeNestingDepth() == 1u, "inner scope exit restores outer depth");
+    }
+    expectTrue(fuse::profiler::activeNestingDepth() == 0u, "all scopes closed restores zero depth");
+}
+
+void testCrossThreadFlowDepthIsThreadLocal() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 flowId = 42u;
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("job_handoff", flowId);
+    expectTrue(fuse::profiler::activeFlowNestingDepth() == 1u,
+               "flow begin raises depth on originating thread only");
+
+    std::atomic<bool> workerDone{false};
+    std::atomic<fuse::u32> workerFlowDepth{0};
+    std::thread worker([&]() {
+        workerFlowDepth.store(fuse::profiler::activeFlowNestingDepth(), std::memory_order_release);
+        FUSE_PROFILE_ASYNC_FLOW_END("job_handoff", flowId);
+        workerDone.store(true, std::memory_order_release);
+    });
+    worker.join();
+    expectTrue(workerDone.load(std::memory_order_acquire), "worker thread completed");
+
+    expectTrue(workerFlowDepth.load(std::memory_order_acquire) == 0u,
+               "worker thread flow depth stays zero before cross-thread end");
+    expectTrue(fuse::profiler::activeFlowNestingDepth() == 1u,
+               "originating thread flow depth remains until local pop");
+    expectTrue(fuse::profiler::eventCount() == 2u,
+               "cross-thread flow records begin on main and finish on worker");
+}
+
+void testNullTrackCounterGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::sampleCounter(nullptr, 42);
+    fuse::profiler::sampleCounterFloat(nullptr, 1.5);
+    fuse::profiler::sampleCounterSnapshotAtFrame(nullptr, 7);
+    fuse::profiler::sampleCounterFloatSnapshotAtFrame(nullptr, 2.5);
+
+    expectTrue(fuse::profiler::isEmpty(), "null counter tracks record nothing");
+    expectTrue(fuse::profiler::exportChromeTraceJson().find("\"traceEvents\":[]") != std::string::npos,
+               "null counter tracks leave chrome export empty");
+}
+
+void testDisabledProfilerPreservesActiveDepths() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::setEnabled(false);
+    {
+        FUSE_PROFILE_SCOPE("ignored_scope");
+        const fuse::u32 flowId = fuse::profiler::nextFlowId();
+        FUSE_PROFILE_ASYNC_FLOW_BEGIN("ignored_flow", flowId);
+        FUSE_PROFILE_COUNTER("ignored_counter", 1);
+        FUSE_PROFILE_ASYNC_FLOW_END("ignored_flow", flowId);
+    }
+
+    expectTrue(fuse::profiler::activeNestingDepth() == 0u,
+               "disabled profiler does not mutate active scope depth");
+    expectTrue(fuse::profiler::activeFlowNestingDepth() == 0u,
+               "disabled profiler does not mutate active flow depth");
+    expectTrue(fuse::profiler::isEmpty(), "disabled profiler leaves buffer empty");
+}
+
+void testCounterScopeAndFlowDepthCombined() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    {
+        FUSE_PROFILE_SCOPE("combo_scope");
+        FUSE_PROFILE_ASYNC_FLOW_BEGIN("combo_flow", flowId);
+        FUSE_PROFILE_COUNTER("combo_budget", 99);
+        FUSE_PROFILE_ASYNC_FLOW_END("combo_flow", flowId);
+    }
+
+    const fuse::profiler::ProfileEvent& counter = fuse::profiler::eventAt(2);
+    expectTrue(counter.nestingDepth == 1u, "combo counter inherits scope depth");
+    expectTrue(counter.flowNestingDepth == 1u, "combo counter inherits flow depth");
+
+    const std::string json = fuse::profiler::exportChromeTraceJson();
+    expectTrue(json.find("\"args\":{\"value\":99,\"depth\":1,\"flow_depth\":1}") != std::string::npos,
+               "combo counter export includes scope and flow depth");
+}
+
 void testVerifyMacro() {
     resetState();
     fuse::assertion::setSuppressAbortForTests(true);
@@ -808,6 +947,13 @@ int main() {
     testDisabledProfilerDoesNotMutateFlowNestingDepth();
     testCounterInsideNestedFlowRecordsFlowDepth();
     testSnapshotAtFrameCounterInsideNestedFlowAndScope();
+    testIsEmptyAndIsValidEventIndex();
+    testEmptyEventSentinel();
+    testActiveDepthQueries();
+    testCrossThreadFlowDepthIsThreadLocal();
+    testNullTrackCounterGuard();
+    testDisabledProfilerPreservesActiveDepths();
+    testCounterScopeAndFlowDepthCombined();
     testFatalHandlerHook();
     testVerifyMacro();
 

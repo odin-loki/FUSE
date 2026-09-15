@@ -61,8 +61,25 @@ u32 frameIndex();
 u32 eventCount();
 u32 maxNestingDepth();
 u32 maxFlowNestingDepth();
+
+/// Thread-local scope nesting depth (0 when no active `FUSE_PROFILE_SCOPE` on this thread).
+u32 activeNestingDepth();
+
+/// Thread-local async flow nesting depth (0 when no open `FUSE_PROFILE_ASYNC_FLOW_BEGIN`).
+u32 activeFlowNestingDepth();
+
+/// True when the ring buffer holds zero recorded events.
+bool isEmpty();
+
+/// True when `index` is in `[0, eventCount())`.
+bool isValidEventIndex(u32 index);
+
 bool hasEvents();
 const ProfileEvent& eventAt(u32 index);
+
+/// Sentinel returned by `eventAt` on empty or out-of-range access.
+const ProfileEvent& emptyEvent();
+
 void reset();
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).

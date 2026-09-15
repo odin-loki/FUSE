@@ -155,6 +155,10 @@ std::string escapeJsonString(const char* value) {
     return escaped;
 }
 
+bool canRecordEvents() {
+    return g_enabled.load(std::memory_order_acquire);
+}
+
 void recordEvent(const char* name,
                  EventPhase phase,
                  u32 scopeId,
@@ -164,7 +168,11 @@ void recordEvent(const char* name,
                  s64 counterIntValue = 0,
                  f64 counterFloatValue = 0.0,
                  u32 counterSnapshotFrame = 0u) {
-    if (!g_enabled.load(std::memory_order_acquire)) {
+    if (!canRecordEvents()) {
+        return;
+    }
+
+    if (name == nullptr) {
         return;
     }
 
@@ -267,15 +275,36 @@ u32 maxFlowNestingDepth() {
     return g_maxFlowNestingDepth.load(std::memory_order_acquire);
 }
 
+u32 activeNestingDepth() {
+    return currentNestingDepth();
+}
+
+u32 activeFlowNestingDepth() {
+    return currentFlowNestingDepth();
+}
+
+bool isEmpty() {
+    return eventCount() == 0u;
+}
+
+bool isValidEventIndex(u32 index) {
+    const u32 count = eventCount();
+    return count > 0u && index < count;
+}
+
 bool hasEvents() {
-    return eventCount() > 0u;
+    return !isEmpty();
+}
+
+const ProfileEvent& emptyEvent() {
+    static const ProfileEvent kEmpty{};
+    return kEmpty;
 }
 
 const ProfileEvent& eventAt(u32 index) {
-    static const ProfileEvent kEmpty{};
     const u32 count = eventCount();
-    if (count == 0u || index >= count) {
-        return kEmpty;
+    if (!isValidEventIndex(index)) {
+        return emptyEvent();
     }
 
     const u32 head = g_writeHead.load(std::memory_order_acquire);
@@ -302,7 +331,7 @@ u32 nextFlowId() {
 }
 
 void beginAsyncFlow(const char* name, u32 flowId) {
-    if (!g_enabled.load(std::memory_order_acquire)) {
+    if (!canRecordEvents() || name == nullptr) {
         return;
     }
 
@@ -315,7 +344,7 @@ void beginAsyncFlow(const char* name, u32 flowId) {
 }
 
 void endAsyncFlow(const char* name, u32 flowId) {
-    if (!g_enabled.load(std::memory_order_acquire)) {
+    if (!canRecordEvents() || name == nullptr) {
         return;
     }
 
@@ -329,6 +358,10 @@ void endAsyncFlow(const char* name, u32 flowId) {
 }
 
 void sampleCounter(const char* track, s64 value) {
+    if (track == nullptr) {
+        return;
+    }
+
     recordEvent(track,
                 EventPhase::Counter,
                 0u,
@@ -341,6 +374,10 @@ void sampleCounter(const char* track, s64 value) {
 }
 
 void sampleCounterFloat(const char* track, f64 value) {
+    if (track == nullptr) {
+        return;
+    }
+
     recordEvent(track,
                 EventPhase::Counter,
                 0u,
@@ -353,6 +390,10 @@ void sampleCounterFloat(const char* track, f64 value) {
 }
 
 void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
+    if (track == nullptr) {
+        return;
+    }
+
     recordEvent(track,
                 EventPhase::Counter,
                 0u,
@@ -365,6 +406,10 @@ void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
 }
 
 void sampleCounterFloatSnapshotAtFrame(const char* track, f64 value) {
+    if (track == nullptr) {
+        return;
+    }
+
     recordEvent(track,
                 EventPhase::Counter,
                 0u,
