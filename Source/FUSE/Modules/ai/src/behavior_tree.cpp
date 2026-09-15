@@ -1,5 +1,6 @@
 #include <fuse/ai/behavior_tree.hpp>
 #include <fuse/ai/node_registry.hpp>
+#include <fuse/ai/spatial_query.hpp>
 
 namespace fuse::ai {
 
@@ -171,6 +172,55 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
             result.flagIndex = node.flagIndex;
             result.flagValue = true;
         }
+        return result;
+    }
+    case NodeKind::ConditionAlliesInRadius: {
+        BehaviorTickResult result;
+        if (!ctx.allies) {
+            result.status = BehaviorStatus::Failure;
+            return result;
+        }
+
+        RadiusFilterPolicy policy;
+        policy.radius = node.threshold;
+        policy.minCount = node.loopCount > 0 ? node.loopCount : 1u;
+
+        const bool satisfied = allies_in_radius_satisfied(agentIndex,
+                                                        agent.teamId,
+                                                        agent.x,
+                                                        agent.y,
+                                                        policy,
+                                                        *ctx.allies);
+        result.status = satisfied ? BehaviorStatus::Success : BehaviorStatus::Failure;
+        return result;
+    }
+    case NodeKind::ActionNearestAlly: {
+        BehaviorTickResult result;
+        if (!ctx.allies) {
+            result.status = BehaviorStatus::Failure;
+            return result;
+        }
+
+        const NearestAllyResult nearest = find_nearest_ally(agentIndex,
+                                                          agent.teamId,
+                                                          agent.x,
+                                                          agent.y,
+                                                          *ctx.allies);
+        if (!nearest.found) {
+            result.status = BehaviorStatus::Failure;
+            return result;
+        }
+
+        const float maxRadius = node.threshold;
+        if (maxRadius > 0.f && !within_radius(nearest.distanceSq, maxRadius)) {
+            result.status = BehaviorStatus::Failure;
+            return result;
+        }
+
+        result.status = BehaviorStatus::Success;
+        result.wroteFlag = true;
+        result.flagIndex = node.flagIndex;
+        result.flagValue = true;
         return result;
     }
     }

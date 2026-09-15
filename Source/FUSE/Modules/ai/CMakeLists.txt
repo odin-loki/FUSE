@@ -4,12 +4,14 @@ add_library(fuse_ai STATIC
     src/blackboard.cpp
     src/behavior_runtime.cpp
     src/node_registry.cpp
+    src/spatial_query.cpp
     src/tree_loader.cpp
     include/fuse/ai/agent_snapshot.hpp
     include/fuse/ai/blackboard.hpp
     include/fuse/ai/behavior_tree.hpp
     include/fuse/ai/behavior_runtime.hpp
     include/fuse/ai/node_registry.hpp
+    include/fuse/ai/spatial_query.hpp
     include/fuse/ai/tree_loader.hpp
     include/fuse/ai/uaisk_template_hooks.hpp
 )

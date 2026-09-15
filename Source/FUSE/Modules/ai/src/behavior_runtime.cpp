@@ -42,11 +42,26 @@ void BehaviorRuntime::buildSnapshots() {
         snap.y = binding.y;
         snap.targetX = binding.targetX;
         snap.targetY = binding.targetY;
+        snap.teamId = binding.teamId;
         m_snapshots.push_back(snap);
     }
 
     if (m_results.size() != m_snapshots.size()) {
         m_results.assign(m_snapshots.size(), BehaviorTickResult{});
+    }
+}
+
+void BehaviorRuntime::buildAllyCandidates() {
+    m_allies.clear();
+    m_allies.reserve(m_bindings.size());
+    for (u32 agentIndex = 0; agentIndex < static_cast<u32>(m_bindings.size()); ++agentIndex) {
+        const AgentBinding& binding = m_bindings[agentIndex];
+        AllyCandidate candidate;
+        candidate.agentIndex = agentIndex;
+        candidate.x = binding.x;
+        candidate.y = binding.y;
+        candidate.teamId = binding.teamId;
+        m_allies.push_back(candidate);
     }
 }
 
@@ -56,6 +71,8 @@ void BehaviorRuntime::evaluate(const frame::FrameCtx& ctx) {
         return;
     }
 
+    buildAllyCandidates();
+
     const BlackboardView boardView(m_blackboard);
     auto& scheduler = fuse::jobs::JobScheduler::instance();
     const u32 nodeCount = m_tree.nodeCount();
@@ -63,6 +80,7 @@ void BehaviorRuntime::evaluate(const frame::FrameCtx& ctx) {
     scheduler.parallel_for(0, static_cast<u32>(m_snapshots.size()), 1, [&](u32 agentIndex) {
         BehaviorEvalContext evalCtx;
         evalCtx.tickCount = m_tickCount;
+        evalCtx.allies = &m_allies;
         if (nodeCount > 0) {
             evalCtx.waitStartTicks = m_waitStartTicks.data() + static_cast<std::size_t>(agentIndex) * nodeCount;
         }

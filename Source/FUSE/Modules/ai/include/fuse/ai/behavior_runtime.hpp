@@ -3,6 +3,7 @@
 #include <fuse/ai/agent_snapshot.hpp>
 #include <fuse/ai/behavior_tree.hpp>
 #include <fuse/ai/blackboard.hpp>
+#include <fuse/ai/spatial_query.hpp>
 #include <fuse/frame/frame_ctx.hpp>
 #include <fuse/handle.hpp>
 #include <fuse/object.hpp>
@@ -18,6 +19,7 @@ struct AgentBinding {
     float y = 0.f;
     float targetX = 0.f;
     float targetY = 0.f;
+    u32 teamId = 0;
 };
 
 /// Game-thread facade: build snapshots, jobify BT eval, commit blackboard writes.
@@ -50,11 +52,13 @@ public:
 
 private:
     void ensureWaitState();
+    void buildAllyCandidates();
 
     BehaviorTree m_tree;
     std::vector<AgentBinding> m_bindings;
     std::vector<AgentSnapshot> m_snapshots;
     std::vector<BehaviorTickResult> m_results;
+    std::vector<AllyCandidate> m_allies;
     Blackboard m_blackboard;
     std::vector<u32> m_waitStartTicks;
     u32 m_tickCount = 0;

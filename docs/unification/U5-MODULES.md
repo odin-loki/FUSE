@@ -43,12 +43,13 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 ### Implemented
 
 - **Node registry** (`NodeRegistry`, `loadTreeFromSpecs`, `loadTreeFromText`) — BadBehaviour `DECLARE_CONOBJECT` pattern without SimObject/Con::
-- Built-in type ids: `bb.sequence`, `bb.selector`, `bb.parallel`, `bb.inverter`, `bb.loop`, `bb.succeed_always`, `bb.root`, `bb.condition.distance_less`, `bb.condition.distance_greater`, `bb.condition.blackboard_get`, `bb.action.set_flag`, `bb.action.blackboard_set`, `bb.action.wait`, `bb.action.distance`, `gb.action.move_toward`
+- Built-in type ids: `bb.sequence`, `bb.selector`, `bb.parallel`, `bb.inverter`, `bb.loop`, `bb.succeed_always`, `bb.root`, `bb.condition.distance_less`, `bb.condition.distance_greater`, `bb.condition.blackboard_get`, `bb.condition.allies_in_radius`, `bb.action.set_flag`, `bb.action.blackboard_set`, `bb.action.wait`, `bb.action.distance`, `bb.action.nearest_ally`, `gb.action.move_toward`
 - Flat behavior tree evaluator with decorator support (Inverter, Loop, SucceedAlways, Root)
 - `BehaviorRuntime`: `buildSnapshots()` → `evaluate()` (`JobScheduler::parallel_for`) → `commit()`
 - Demo tree `makePatrolWhenNearTarget()` + registry/text load equivalents
 - UAISK script-only template hooks (`uaisk_template_hooks.hpp`, `Samples/Modules/ai/uaisk-templates/`)
-- Unit tests: `fuse_ai_tests` — registry parity, composite child-status aggregation (sequence/selector/parallel), leaf nodes (wait, blackboard set/get, distance), text loader, UAISK hooks, multi-agent parallel runtime
+- Blackboard spatial query stubs: `spatial_query.hpp` — ally radius filter, nearest-ally lookup; `teamId` on `AgentSnapshot` / `AgentBinding`
+- Unit tests: `fuse_ai_tests` — registry parity, composite child-status aggregation (sequence/selector/parallel), leaf nodes (wait, blackboard set/get, distance, allies_in_radius, nearest_ally), spatial query radius filter, text loader, UAISK hooks, multi-agent parallel runtime
 - Hybrid demo: `demo_hybrid_hud` ticks `BehaviorRuntime` each frame after `HybridComposer::tick`
 
 ### Ore extraction (BadBehaviour / GuideBot / UAISK)
