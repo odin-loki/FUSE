@@ -739,6 +739,189 @@ void testLightSpaceAabb() {
     expectNear(rebuilt.max.z, aabb.max.z, 0.001f, "rebuilt light-space max z matches");
 }
 
+void testClampSplitParams() {
+    using fuse::renderer::CascadeSplitParams;
+    using fuse::renderer::CascadedShadowMapLayout;
+
+    CascadeSplitParams raw{};
+    raw.lambda = 2.5f;
+    raw.cascadeCount = 99u;
+
+    const CascadeSplitParams clamped = CascadeSplitParams::clampParams(raw);
+    expectTrue(clamped.cascadeCount == fuse::renderer::kMaxCascadeCount, "cascade count clamped to max");
+    expectNear(clamped.lambda, 1.f, 0.001f, "lambda clamped to unit interval");
+    expectNear(CascadedShadowMapLayout::clampSplitLambda(-0.25f), 0.f, 0.001f, "negative lambda clamped to zero");
+    expectNear(CascadedShadowMapLayout::clampSplitFraction(1.5f), 1.f, 0.001f, "split fraction clamped to one");
+}
+
+void testShadowMat4ClearAndIdentity() {
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::ShadowMat4;
+
+    ShadowMat4 matrix = ShadowMat4::identity();
+    expectTrue(matrix.isIdentity(), "fresh identity reports identity");
+    matrix.data[3] = 0.5f;
+    expectTrue(!matrix.isIdentity(), "modified matrix is not identity");
+    matrix.clear();
+    expectTrue(matrix.isIdentity(), "cleared matrix returns to identity");
+    expectTrue(!CascadeLightSpaceLayout::shadowMat4IsPopulated(matrix),
+               "cleared matrix is not populated for shadow upload");
+}
+
+void testShouldSkipCascadeShadowBuild() {
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+
+    CascadedShadowMapDesc desc{};
+    ShadowCameraParams camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+
+    const fuse::math::Vec3 sunDirection{0.f, -1.f, 0.f};
+    expectTrue(!CascadeLightSpaceLayout::shouldSkipCascadeShadowBuild(0u, desc, camera, sunDirection),
+               "default cascade is not skipped");
+
+    expectTrue(CascadeLightSpaceLayout::shouldSkipCascadeShadowBuild(0u, desc, camera, {0.f, 0.f, 0.f}),
+               "zero light direction skips cascade build");
+    expectTrue(CascadeLightSpaceLayout::isEmptyLightDirection({0.f, 0.f, 0.f}),
+               "zero light direction flagged empty");
+
+    ShadowCameraParams invertedCamera = camera;
+    invertedCamera.nearPlane = 50.f;
+    invertedCamera.farPlane = 10.f;
+    expectTrue(CascadedShadowMapLayout::isEmptyCameraDepthRange(invertedCamera),
+               "inverted camera depth range flagged empty");
+    expectTrue(CascadeLightSpaceLayout::shouldSkipCascadeShadowBuild(0u, desc, invertedCamera, sunDirection),
+               "inverted camera skips cascade build");
+
+    CascadedShadowMapDesc flatDesc{};
+    flatDesc.cascadeSplits[0] = 0.5f;
+    flatDesc.cascadeSplits[1] = 0.5f;
+    flatDesc.cascadeSplits[2] = 1.f;
+    flatDesc.cascadeSplits[3] = 1.f;
+    expectTrue(CascadeLightSpaceLayout::shouldSkipCascadeShadowBuild(1u, flatDesc, camera, sunDirection),
+               "zero-thickness cascade slice skipped");
+}
+
+void testCountValidCascadeMatrixSlots() {
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+
+    CascadedShadowMapDesc desc{};
+    ShadowCameraParams camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+
+    const fuse::math::Vec3 sunDirection{0.f, -1.f, 0.f};
+    expectTrue(CascadeLightSpaceLayout::countValidCascadeMatrixSlots(desc, camera, sunDirection, 4u) == 4u,
+               "default four cascades all eligible");
+
+    expectTrue(CascadeLightSpaceLayout::countValidCascadeMatrixSlots(desc, camera, {0.f, 0.f, 0.f}, 4u) == 0u,
+               "empty light direction yields zero eligible cascades");
+
+    CascadedShadowMapDesc flatDesc{};
+    flatDesc.cascadeSplits[0] = 0.5f;
+    flatDesc.cascadeSplits[1] = 0.5f;
+    flatDesc.cascadeSplits[2] = 1.f;
+    flatDesc.cascadeSplits[3] = 1.f;
+    expectTrue(CascadeLightSpaceLayout::countValidCascadeMatrixSlots(flatDesc, camera, sunDirection, 4u) == 2u,
+               "zero-thickness cascade excluded from eligible count");
+    expectTrue(CascadedShadowMapLayout::countNonEmptyCascadeFrustums(flatDesc, camera, 4u) == 2u,
+               "non-empty cascade count matches eligible matrix slots");
+}
+
+void testPopulateCascadeShadowData() {
+    using fuse::renderer::CascadeShadowDataLayout;
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapData;
+    using fuse::renderer::ShadowCameraParams;
+
+    CascadedShadowMapDesc desc{};
+    ShadowCameraParams camera{};
+    camera.position = {0.f, 5.f, 10.f};
+    camera.forward = {0.f, -0.2f, -1.f};
+    camera.nearPlane = 0.1f;
+    camera.farPlane = 150.f;
+
+    CascadedShadowMapData data{};
+    const fuse::math::Vec3 sunDirection{-0.2f, -1.f, -0.1f};
+    const fuse::u32 populatedCount =
+        CascadeShadowDataLayout::populateCascadeShadowData(desc, camera, sunDirection, 4u, data);
+
+    expectTrue(populatedCount == 4u, "populate fills all default cascades");
+    expectTrue(CascadeShadowDataLayout::countPopulatedCascadeMatrices(data, 4u) == 4u,
+               "populated matrix count matches batch result");
+    expectTrue(data.cascadeFarZ[0] > camera.nearPlane, "populated far z written for first cascade");
+    expectTrue(CascadeLightSpaceLayout::shadowMat4IsPopulated(data.lightViewProj[0]),
+               "populated view-projection is non-identity");
+
+    const fuse::u32 emptyLightCount =
+        CascadeShadowDataLayout::populateCascadeShadowData(desc, camera, {0.f, 0.f, 0.f}, 4u, data);
+    expectTrue(emptyLightCount == 0u, "empty light direction clears populated data");
+    expectTrue(CascadeShadowDataLayout::countPopulatedCascadeMatrices(data, 4u) == 0u,
+               "cleared data has zero populated matrices");
+    expectTrue(data.lightViewProj[0].isIdentity(), "cleared cascade slot returns identity matrix");
+}
+
+void testClearCascadeShadowDataSlots() {
+    using fuse::renderer::CascadeShadowDataLayout;
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadedShadowMapData;
+    using fuse::renderer::ShadowMat4;
+
+    CascadedShadowMapData data{};
+    data.lightViewProj[0].data[0] = 2.f;
+    data.cascadeFarZ[0] = 42.f;
+
+    CascadeShadowDataLayout::clearCascadeSlot(0u, data);
+    expectTrue(data.lightViewProj[0].isIdentity(), "clearCascadeSlot resets matrix");
+    expectNear(data.cascadeFarZ[0], 0.f, 0.001f, "clearCascadeSlot resets far z");
+
+    data.lightViewProj[1].data[5] = 3.f;
+    data.lightViewProj[2].data[10] = 4.f;
+    CascadeShadowDataLayout::clearAllCascadeSlots(data);
+    expectTrue(data.lightViewProj[1].isIdentity() && data.lightViewProj[2].isIdentity(),
+               "clearAllCascadeSlots resets every slot");
+    expectTrue(!CascadeLightSpaceLayout::shadowMat4IsPopulated(data.lightViewProj[1]),
+               "cleared slots are not populated");
+    expectTrue(ShadowMat4::identity().isIdentity(), "identity helper remains identity");
+}
+
+void testEmptyLightDirectionDirectionalShadowUpdate() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for empty-light guard test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    expectTrue(resources.init(*bootstrap->device(), bindless), "resource manager ready for empty-light guard");
+
+    fuse::renderer::DirectionalShadow shadows;
+    expectTrue(shadows.init(resources, {}), "directional shadow initialized for empty-light guard");
+
+    fuse::renderer::ShadowCameraParams camera{};
+    camera.farPlane = 200.f;
+    shadows.update(camera, {-0.3f, -1.f, -0.2f});
+    expectTrue(shadows.data().lightViewProj[0].data[15] != 0.f, "valid light direction populates matrix");
+
+    shadows.update(camera, {0.f, 0.f, 0.f});
+    expectTrue(shadows.data().lightViewProj[0].isIdentity(), "empty light direction clears cascade matrix");
+    expectTrue(shadows.stats().framesUpdated == 2u, "empty-light update still advances stats");
+
+    shadows.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
 void testShadowAtlasLayout() {
     using fuse::renderer::ShadowAtlas;
     using fuse::renderer::ShadowAtlasDesc;
@@ -858,6 +1041,13 @@ int main() {
     testValidateOrthoBounds();
     testDegenerateCascadeMatrices();
     testLightSpaceAabb();
+    testClampSplitParams();
+    testShadowMat4ClearAndIdentity();
+    testShouldSkipCascadeShadowBuild();
+    testCountValidCascadeMatrixSlots();
+    testPopulateCascadeShadowData();
+    testClearCascadeShadowDataSlots();
+    testEmptyLightDirectionDirectionalShadowUpdate();
     testShadowAtlasLayout();
     testDirectionalShadowAllocation();
     testShadowPassGraph();

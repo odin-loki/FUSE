@@ -57,6 +57,13 @@ void DirectionalShadow::update(const ShadowCameraParams& camera, const fuse::mat
         return;
     }
 
+    if (CascadeLightSpaceLayout::isEmptyLightDirection(sunDirection) ||
+        CascadedShadowMapLayout::isEmptyCameraDepthRange(camera)) {
+        CascadeShadowDataLayout::clearAllCascadeSlots(m_data);
+        ++m_stats.framesUpdated;
+        return;
+    }
+
     const fuse::math::Vec3 lightDir = sunDirection.normalized();
     for (u32 cascade = 0; cascade < kCascadeCount; ++cascade) {
         computeCascadeMatrix_(cascade, camera, lightDir);
@@ -70,10 +77,17 @@ void DirectionalShadow::update(const ShadowCameraParams& camera, const fuse::mat
 void DirectionalShadow::computeCascadeMatrix_(u32 cascade,
                                               const ShadowCameraParams& camera,
                                               const fuse::math::Vec3& sunDirection) {
+    if (CascadeLightSpaceLayout::shouldSkipCascadeShadowBuild(cascade, m_desc.csm, camera, sunDirection)) {
+        CascadeShadowDataLayout::clearCascadeSlot(cascade, m_data);
+        return;
+    }
+
     const CascadeLightSpaceMatrices matrices =
         CascadeLightSpaceLayout::buildCascadeLightSpaceMatrices(cascade, m_desc.csm, camera, sunDirection);
     if (matrices.valid) {
         m_data.lightViewProj[cascade] = matrices.lightViewProj;
+    } else {
+        CascadeShadowDataLayout::clearCascadeSlot(cascade, m_data);
     }
 }
 

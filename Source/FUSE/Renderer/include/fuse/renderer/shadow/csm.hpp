@@ -27,6 +27,9 @@ struct CascadeSplitParams {
     CascadeSplitScheme scheme = CascadeSplitScheme::Uniform;
     f32 lambda = 0.5f;
     u32 cascadeCount = kCascadeCount;
+
+    /// Clamp cascade count and lambda to CPU stub limits.
+    static CascadeSplitParams clampParams(const CascadeSplitParams& raw);
 };
 
 /// Column-major 4×4 matrix for light view-projection (Vulkan / GLSL convention).
@@ -34,6 +37,8 @@ struct ShadowMat4 {
     std::array<f32, 16> data{};
 
     static ShadowMat4 identity();
+    void clear();
+    bool isIdentity() const;
 };
 
 /// Per-cascade configuration — mirrors P5 CSMDesc.
@@ -78,6 +83,9 @@ struct CascadedShadowMapLayout {
     static u32 cascadeCount() { return kCascadeCount; }
     static u32 clampCascadeCount(u32 requestedCount);
     static u32 clampCascadeIndex(u32 cascadeIndex, u32 cascadeCount);
+    static f32 clampSplitLambda(f32 lambda);
+    static f32 clampSplitFraction(f32 fraction);
+    static bool isEmptyCameraDepthRange(const ShadowCameraParams& camera);
     static GpuFormat depthFormat() { return GpuFormat::R32Sfloat; }
     static const char* debugName(u32 cascadeIndex);
     static f32 computeSplitFraction(u32 cascadeIndex,
@@ -104,6 +112,10 @@ struct CascadedShadowMapLayout {
     static void populateCascadeSplits(const CascadeSplitParams& params,
                                       const ShadowCameraParams& camera,
                                       CascadedShadowMapDesc& desc);
+    /// Write clamped split params into `desc.cascadeSplits` for the first `cascadeCount` slots.
+    static void populateCascadeSplitsClamped(const CascadeSplitParams& params,
+                                             const ShadowCameraParams& camera,
+                                             CascadedShadowMapDesc& desc);
     static bool validateSplitMonotonicity(const f32 splitFractions[], u32 cascadeCount);
     static bool validateSplitDistances(const f32 splitDistances[],
                                        u32 cascadeCount,
@@ -142,6 +154,19 @@ struct CascadeOrthoBounds {
     f32 farPlane = 0.f;
 };
 
+/// GPU cascade payload population and slot clearing (CPU stub).
+struct CascadeShadowDataLayout {
+    static void clearCascadeSlot(u32 cascadeIndex, CascadedShadowMapData& data);
+    static void clearAllCascadeSlots(CascadedShadowMapData& data);
+    static u32 countPopulatedCascadeMatrices(const CascadedShadowMapData& data, u32 cascadeCount);
+    /// Populate far-Z and light view-projection slots; returns count of populated matrices.
+    static u32 populateCascadeShadowData(const CascadedShadowMapDesc& desc,
+                                         const ShadowCameraParams& camera,
+                                         const fuse::math::Vec3& lightDirection,
+                                         u32 cascadeCount,
+                                         CascadedShadowMapData& outData);
+};
+
 /// Per-cascade light-space matrix bookkeeping (CPU stub).
 struct CascadeLightSpaceMatrices {
     ShadowMat4 lightView{};
@@ -159,6 +184,15 @@ struct CascadeLightSpaceLayout {
                                                 const ShadowCameraParams& camera);
     static bool isDegenerateCascadeRange(const CascadeRange& range, const ShadowCameraParams& camera);
     static bool isDegenerateLightDirection(const fuse::math::Vec3& lightDirection);
+    static bool isEmptyLightDirection(const fuse::math::Vec3& lightDirection);
+    static bool shouldSkipCascadeShadowBuild(u32 cascadeIndex,
+                                             const CascadedShadowMapDesc& desc,
+                                             const ShadowCameraParams& camera,
+                                             const fuse::math::Vec3& lightDirection);
+    static u32 countValidCascadeMatrixSlots(const CascadedShadowMapDesc& desc,
+                                            const ShadowCameraParams& camera,
+                                            const fuse::math::Vec3& lightDirection,
+                                            u32 cascadeCount);
     static bool validateOrthoBounds(const CascadeOrthoBounds& bounds);
     static fuse::math::Mat4 buildLightView(const fuse::math::Vec3& focus, const fuse::math::Vec3& lightDirection);
     static bool isEmptyLightSpaceAabb(const fuse::math::AABB& aabb);
