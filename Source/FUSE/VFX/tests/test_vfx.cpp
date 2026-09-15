@@ -3,6 +3,7 @@
 #include <fuse/vfx/effect_instance.hpp>
 #include <fuse/vfx/particle_emitter.hpp>
 #include <fuse/vfx/particle_gpu.hpp>
+#include <fuse/vfx/particle_soa_ops.hpp>
 #include <fuse/vfx/particle_system.hpp>
 
 #include <cmath>
@@ -637,6 +638,148 @@ void testParticleGpuPointerBundle() {
     expectTrue(gpu.alive_flags > gpu.alphas, "alive_flags pointer is last column");
 }
 
+void testSoaOpsBurstFill() {
+    fuse::vfx::ParticleSoA soa{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 8;
+    desc.lifetime_min = 2.f;
+    desc.lifetime_max = 2.f;
+    desc.velocity_min = {1.f, 0.f, 0.f};
+    desc.velocity_max = {1.f, 0.f, 0.f};
+
+    fuse::vfx::particle_soa::init(soa, desc.max_particles);
+    const fuse::vfx::particle_soa::BurstEmitResult burst =
+        fuse::vfx::particle_soa::burst_emit(soa, desc, {0.f, 1.f, 0.f}, 5u, 42u);
+
+    expectEq(burst.emitted, 5u, "soa burst_emit fills requested count");
+    expectEq(soa.count, 5u, "soa count tracks burst emissions");
+    expectEq(static_cast<fuse::u32>(soa.free_slots.size()), 3u, "soa free list shrinks after burst");
+
+    const fuse::vfx::particle_soa::BurstEmitResult clamped =
+        fuse::vfx::particle_soa::burst_emit(soa, desc, {}, 10u, burst.seed_after);
+    expectEq(clamped.emitted, 3u, "soa burst_emit clamps to remaining free slots");
+    expectEq(soa.count, 8u, "soa burst_emit reaches capacity");
+}
+
+void testSoaOpsDeterministicSeed() {
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 4;
+    desc.lifetime_min = 1.f;
+    desc.lifetime_max = 1.f;
+    desc.position_spread = {0.25f, 0.f, 0.25f};
+    desc.velocity_min = {-1.f, 0.f, -1.f};
+    desc.velocity_max = {1.f, 2.f, 1.f};
+
+    fuse::vfx::ParticleSoA left{};
+    fuse::vfx::ParticleSoA right{};
+    fuse::vfx::particle_soa::init(left, desc.max_particles);
+    fuse::vfx::particle_soa::init(right, desc.max_particles);
+
+    const fuse::u64 seed = 0xDEADBEEFu;
+    (void)fuse::vfx::particle_soa::burst_emit(left, desc, {1.f, 2.f, 3.f}, 3u, seed);
+    (void)fuse::vfx::particle_soa::burst_emit(right, desc, {1.f, 2.f, 3.f}, 3u, seed);
+
+    for (fuse::u32 i = 0; i < desc.max_particles; ++i) {
+        if (left.alive_flags[i] == 0U) {
+            continue;
+        }
+        expectNear(left.positions[i].x, right.positions[i].x, 1e-6f, "deterministic burst position.x");
+        expectNear(left.positions[i].y, right.positions[i].y, 1e-6f, "deterministic burst position.y");
+        expectNear(left.velocities[i].z, right.velocities[i].z, 1e-6f, "deterministic burst velocity.z");
+        expectNear(left.lifetimes[i], right.lifetimes[i], 1e-6f, "deterministic burst lifetime");
+    }
+}
+
+void testSoaOpsAgeKill() {
+    fuse::vfx::ParticleSoA soa{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 4;
+    desc.lifetime_min = 0.2f;
+    desc.lifetime_max = 0.2f;
+    desc.gravity = {};
+    desc.drag = 0.f;
+    desc.velocity_min = {};
+    desc.velocity_max = {};
+
+    fuse::vfx::particle_soa::init(soa, desc.max_particles);
+    (void)fuse::vfx::particle_soa::burst_emit(soa, desc, {}, 4u, 7u);
+    expectEq(soa.count, 4u, "precondition: four live particles");
+
+    const fuse::vfx::particle_soa::SimStepResult step =
+        fuse::vfx::particle_soa::simulate_step(soa, desc, 0.25f);
+    expectEq(step.alive_after, 0u, "soa simulate_step kills expired particles");
+    expectEq(static_cast<fuse::u32>(step.dead_slots.size()), 4u, "soa simulate_step collects dead slots");
+    expectEq(static_cast<fuse::u32>(soa.free_slots.size()), 4u, "soa simulate_step recycles all slots");
+}
+
+void testSoaOpsRateEmit() {
+    fuse::vfx::ParticleSoA soa{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 6;
+    desc.emit_rate = 10.f;
+    desc.lifetime_min = 5.f;
+    desc.lifetime_max = 5.f;
+
+    fuse::vfx::particle_soa::init(soa, desc.max_particles);
+    fuse::f32 accum = 0.f;
+    fuse::u64 seed = 99u;
+    const fuse::vfx::particle_soa::RateEmitResult first =
+        fuse::vfx::particle_soa::accumulate_rate_emit(soa, desc, {}, 0.5f, accum, seed);
+    expectTrue(first.emitted >= 4u && first.emitted <= 6u, "soa rate emit produces particles from accumulator");
+    expectTrue(first.accum_after >= 0.f && first.accum_after < 1.f, "soa rate emit leaves fractional remainder");
+
+    const fuse::vfx::particle_soa::RateEmitResult second =
+        fuse::vfx::particle_soa::accumulate_rate_emit(soa, desc, {}, 0.5f, first.accum_after, first.seed_after);
+    expectEq(soa.count, 6u, "soa rate emit respects capacity");
+    expectNear(second.accum_after, 0.f, 1e-5f, "soa rate emit clears accumulator at capacity");
+}
+
+void testSoaOpsParallelParity() {
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 96;
+    desc.lifetime_min = 1.5f;
+    desc.lifetime_max = 1.5f;
+    desc.gravity = {0.f, -4.f, 0.f};
+    desc.drag = 0.05f;
+    desc.velocity_min = {-1.f, 1.f, -1.f};
+    desc.velocity_max = {1.f, 3.f, 1.f};
+
+    fuse::f32 serialChecksum = 0.f;
+    fuse::u32 serialAlive = 0;
+    withScheduler(0, [&] {
+        fuse::vfx::ParticleSoA soa{};
+        fuse::vfx::particle_soa::init(soa, desc.max_particles);
+        (void)fuse::vfx::particle_soa::burst_emit(soa, desc, {0.f, 3.f, 0.f}, 80u, 1234u);
+        const fuse::vfx::particle_soa::SimStepResult step =
+            fuse::vfx::particle_soa::simulate_step(soa, desc, 0.15f);
+        serialAlive = step.alive_after;
+        for (fuse::u32 i = 0; i < soa.capacity; ++i) {
+            if (soa.alive_flags[i] != 0U) {
+                serialChecksum += soa.positions[i].y + soa.velocities[i].y;
+            }
+        }
+    });
+
+    fuse::f32 parallelChecksum = 0.f;
+    fuse::u32 parallelAlive = 0;
+    withScheduler(4, [&] {
+        fuse::vfx::ParticleSoA soa{};
+        fuse::vfx::particle_soa::init(soa, desc.max_particles);
+        (void)fuse::vfx::particle_soa::burst_emit(soa, desc, {0.f, 3.f, 0.f}, 80u, 1234u);
+        const fuse::vfx::particle_soa::SimStepResult step =
+            fuse::vfx::particle_soa::simulate_step(soa, desc, 0.15f);
+        parallelAlive = step.alive_after;
+        for (fuse::u32 i = 0; i < soa.capacity; ++i) {
+            if (soa.alive_flags[i] != 0U) {
+                parallelChecksum += soa.positions[i].y + soa.velocities[i].y;
+            }
+        }
+    });
+
+    expectEq(parallelAlive, serialAlive, "soa simulate_step parallel alive count matches serial");
+    expectNear(parallelChecksum, serialChecksum, 1e-3f, "soa simulate_step parallel checksum matches serial");
+}
+
 void testParticleSystemEmitterHandles() {
     fuse::vfx::ParticleSystem system{};
     system.init({});
@@ -682,6 +825,11 @@ int main() {
     testParallelSingleParticle();
     testParallelAllDeadNoOp();
     testParallelMultiWorkerParity();
+    testSoaOpsBurstFill();
+    testSoaOpsDeterministicSeed();
+    testSoaOpsAgeKill();
+    testSoaOpsRateEmit();
+    testSoaOpsParallelParity();
     testParticleGpuBufferLayout();
     testParticleGpuDispatchCounts();
     testParticleGpuMirrorRoundTrip();
