@@ -4,9 +4,14 @@ set(FUSE_EDITOR_API_SOURCES
     src/command_queue.cpp
     src/command_stack.cpp
     src/editor_host.cpp
+    src/gizmo_system.cpp
+    src/hierarchy_model.cpp
     src/property_inspector.cpp
     src/material_editor_panel.cpp
     src/sdf_sculpt_panel.cpp
+    src/scene_hierarchy_panel.cpp
+    src/undo_stack.cpp
+    src/viewport_panel.cpp
 )
 
 set(FUSE_EDITOR_API_HEADERS
@@ -15,9 +20,14 @@ set(FUSE_EDITOR_API_HEADERS
     include/fuse/editor/editor_host.hpp
     include/fuse/editor/editor_scene.hpp
     include/fuse/editor/editor_state.hpp
-    include/fuse/editor/property_inspector.hpp
+    include/fuse/editor/gizmo_system.hpp
+    include/fuse/editor/hierarchy_model.hpp
     include/fuse/editor/material_editor_panel.hpp
+    include/fuse/editor/property_inspector.hpp
+    include/fuse/editor/scene_hierarchy_panel.hpp
     include/fuse/editor/sdf_sculpt_panel.hpp
+    include/fuse/editor/undo_stack.hpp
+    include/fuse/editor/viewport_panel.hpp
 )
 
 add_library(fuse_editor_api STATIC
