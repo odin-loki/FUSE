@@ -31,16 +31,24 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaHistoryBuffer::needsWarmup()` — inverse of `hasValidHistory` for resolve warm-up gating
 - `TaaHistoryBuffer::accumulatedFrames()` — monotonic frame counter reset on invalidate/resize
 - `TaaHistoryBuffer::invalidateGeneration()` — bumped on invalidate/resize for stale-history detection
+- `TaaHistoryBuffer::isHistoryStale(observedGeneration)` — true when a consumer's epoch differs from current history
 - `TaaHistoryBuffer::matchesDimensions(w, h)` — true when resolve dimensions match allocated history
+- `clampTaaParams(params)` — clamps blend/rejection/gamma knobs to safe ranges
+- `computeEffectiveBlend(firstFrame, params)` — 1.0 on warm-up frame, else clamped `blend_factor`
+- `taaResolveRequiresVelocity/Depth(params)` — true when rejection thresholds require G-buffer surfaces
 - `TaaHistoryBuffer::invalidateHistory()` — clears validity (called on resize)
 - `TaaResolveStats::first_frame` — set when resolve runs before history is warm
 - `TaaResolveStats::effective_blend` — 1.0 on first warm-up frame, else `TAAParams::blend_factor`
 - `TaaResolveStats::skipped` / `skip_reason` — set when resolve bails before history update
 - `TaaResolveSkipReason::DimensionMismatch` — resolve dimensions differ from history buffer allocation
+- `TaaResolveSkipReason::MissingVelocityBuffer` / `MissingDepthBuffer` — rejection enabled but surface missing when `enforce_rejection_surfaces` is set
+- `TaaResolveSkipReason::StaleHistoryGeneration` — `observed_history_generation` differs from `invalidateGeneration()`
 - `taaResolveSkipReasonLabel(reason)` — stable string label for skip reasons
 - `TaaResolve::wouldSkip(desc, history, &reason)` — preflight skip check without mutating history
 - `TaaResolve::resetBookkeeping()` — clears resolve stats/message (called on `TaaPass::destroy` / `invalidateHistory`)
 - `TaaPass::invalidateHistory()` — clears history validity and resolve bookkeeping without destroying buffers
+- `TaaPass::resize(w, h)` — resizes history targets and invalidates accumulated frames
+- `TaaPass::matchesDimensions(w, h)` — true when pass and history dimensions align
 - `TaaPass::needsHistoryWarmup()` — true until the first successful resolve
 - `TaaPass::wouldSkipResolve(desc, &reason)` — pass-level preflight skip check
 - `TaaPass::syncJitterToFrameIndex(frame)` — align pass jitter to a monotonic frame counter

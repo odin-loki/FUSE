@@ -20,6 +20,8 @@ public:
     bool needsWarmup() const { return !m_validity.hasValidHistory; }
     u32 accumulatedFrames() const { return m_validity.accumulatedFrames; }
     u32 invalidateGeneration() const { return m_validity.invalidateGeneration; }
+    /// True when a consumer's observed generation differs from the current history epoch.
+    bool isHistoryStale(u32 observedGeneration) const;
     bool matchesDimensions(u32 width, u32 height) const;
     const TaaHistoryBufferDesc& desc() const { return m_desc; }
     const TaaHistoryValidity& validity() const { return m_validity; }

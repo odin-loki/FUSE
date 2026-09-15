@@ -73,6 +73,10 @@ void TaaHistoryBuffer::swap() {
     m_activeIndex = (m_activeIndex + 1u) % 2u;
 }
 
+bool TaaHistoryBuffer::isHistoryStale(u32 observedGeneration) const {
+    return observedGeneration != m_validity.invalidateGeneration;
+}
+
 bool TaaHistoryBuffer::matchesDimensions(u32 width, u32 height) const {
     return m_desc.width == width && m_desc.height == height;
 }
