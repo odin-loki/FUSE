@@ -123,6 +123,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Mobile** | Hybrid demo runs on iOS **or** Android device/sim; respect surface loss / background |
 | **Exit** | Demo: 3D clear + spinning 2D sprite one window (desktop + one mobile); TSan clean on cull path |
 | **Deps** | WP-05, WP-03 |
+| **Status** | 🚧 Scaffolding — `IDimension`, worlds, `HybridComposer`, `demo_hybrid_hud`, tests; software renderer only — see [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md) |
 
 ---
 
@@ -207,7 +208,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 | **U1** | Umbrella build | `fuse_core` cmake target exists |
 | **U2** | One-process smoke | ASan init; jobs optional — ✅ smoke + quarantine libs |
 | **U3** | Shared services | I/O job publishes handle; TSan plan live |
-| **U4** | Hybrid demo | `parallel_for` cull; frame barrier; game-thread GFX |
+| **U4** | Hybrid demo | `parallel_for` cull; frame barrier; game-thread GFX — 🚧 scaffolding + software demo |
 | **U6** | Editor PIE | UI/game thread queue proven |
 | **U8** | Parity demos | `demo_hybrid_hud` under parallel tick |
 | **P3 (Track A)** | Job system tests | Fiber scheduler + single-thread fallback |
@@ -243,7 +244,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 
-**Next:** WP-04 async I/O lane + handle table; WP-05 legacy adapters; WP-06 hybrid frame.
+**Next:** WP-04 async I/O lane + handle table; WP-05 legacy adapters; WP-06 real RHI hookup (Track B).
 
 ---
 

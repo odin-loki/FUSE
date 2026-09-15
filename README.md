@@ -13,6 +13,8 @@ This repository is a fork of [TorqueGameEngines/Torque3D](https://github.com/Tor
 
 Port track first (Track A), then feature tracks (Track B). Work happens on **`main`**.
 
+**U4 gate (WP-06):** Dimension APIs + hybrid frame scaffolding — [`docs/unification/U4-HYBRID-FRAME.md`](docs/unification/U4-HYBRID-FRAME.md). Run `demo_hybrid_hud` after umbrella configure (`FUSE_BUILD_HYBRID_DEMO=ON`). Software placeholder renderer only; real GL/Vulkan is Track B.
+
 ---
 
 # Upstream: Torque 3D (TorqueGameEngines)

@@ -6,6 +6,10 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/types.hpp
     include/fuse/config.hpp
     include/fuse/handle.hpp
+    include/fuse/frame/frame_ctx.hpp
+    include/fuse/frame/frame_barrier.hpp
+    include/fuse/dimension/world_handle.hpp
+    include/fuse/dimension/idimension.hpp
     include/fuse/object.hpp
     include/fuse/core/init.hpp
     include/fuse/log/logger.hpp
@@ -24,6 +28,7 @@ set(FUSE_CORE_PUBLIC_HEADERS
 set(FUSE_CORE_SOURCES
     src/fuse_core_stub.cpp
     src/core/init.cpp
+    src/frame/frame_barrier.cpp
     src/object.cpp
     src/log/logger.cpp
     src/alloc/frame_allocator.cpp

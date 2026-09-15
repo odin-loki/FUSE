@@ -32,6 +32,7 @@ jobs:
             -DFUSE_BUILD_CORE_TESTS=ON \
             -DFUSE_BUILD_LEGACY=ON \
             -DFUSE_BUILD_SMOKE=ON \
+            -DFUSE_BUILD_HYBRID_DEMO=ON \
             -DFUSE_BUILD_T3D=OFF \
             -DFUSE_BUILD_T2D=OFF
 
@@ -40,6 +41,9 @@ jobs:
 
       - name: Run CTest
         run: ctest --test-dir build-fuse --output-on-failure
+
+      - name: Run demo_hybrid_hud
+        run: ./build-fuse/Source/FUSE/Apps/HybridHud/demo_hybrid_hud
 
       - name: Verify prefix shims
         run: |
