@@ -130,9 +130,6 @@ void testSparseResizeStub() {
     expectTrue(bindless.resizeHeap(fuse::renderer::BindlessHeapKind::Texture, 64u), "shrink is no-op stub");
     expectTrue(bindless.heapCapacity(fuse::renderer::BindlessHeapKind::Texture) == 128u, "capacity unchanged on shrink");
 
-    expectTrue(!bindless.resizeHeap(fuse::renderer::BindlessHeapKind::Texture, fuse::renderer::kMaxTextures + 1u),
-               "resize above cap rejected");
-
     const fuse::renderer::BindlessSlotHandle handle = bindless.allocateTextureSlot(false);
     expectTrue(handle.index == 0u, "alloc after resize still sequential from zero");
 
@@ -348,6 +345,163 @@ void testDoubleFreeValidHandle() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testClampHeapCapacity() {
+    expectTrue(fuse::renderer::clampHeapCapacity(fuse::renderer::BindlessHeapKind::Texture, 100u) == 100u,
+               "requested below cap unchanged");
+    expectTrue(fuse::renderer::clampHeapCapacity(fuse::renderer::BindlessHeapKind::Texture,
+                                                 fuse::renderer::kMaxTextures + 500u) ==
+                   fuse::renderer::kMaxTextures,
+               "texture request clamped to max");
+    expectTrue(fuse::renderer::clampHeapCapacity(fuse::renderer::BindlessHeapKind::Sampler, 99999u) ==
+                   fuse::renderer::kMaxSamplers,
+               "sampler request clamped to max");
+    expectTrue(fuse::renderer::bindlessHeapMaxCapacity(fuse::renderer::BindlessHeapKind::Buffer) ==
+                   fuse::renderer::kMaxBuffers,
+               "heap max capacity helper matches constant");
+
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+    expectTrue(bindless.heapMaxCapacity(fuse::renderer::BindlessHeapKind::Texture) ==
+                   fuse::renderer::kMaxTextures,
+               "instance max capacity matches kind ceiling");
+    fuse::renderer::BindlessDescriptors bindlessClamp;
+    bindlessClamp.init(*bootstrap->device());
+    expectTrue(bindlessClamp.resizeHeap(fuse::renderer::BindlessHeapKind::Texture,
+                                        fuse::renderer::kMaxTextures + 1u),
+               "resize above cap clamps instead of failing");
+    expectTrue(bindlessClamp.heapCapacity(fuse::renderer::BindlessHeapKind::Texture) ==
+                   fuse::renderer::kMaxTextures,
+               "clamped resize grows to max capacity");
+    bindlessClamp.destroy(*bootstrap->device());
+
+    bindless.destroy(*bootstrap->device());
+}
+
+void testSlotGenerationMismatch() {
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    const fuse::renderer::BindlessSlotHandle live = bindless.allocateTextureSlot(false);
+    expectTrue(!bindless.slotGenerationMismatch(live), "live handle has no generation mismatch");
+
+    const fuse::renderer::BindlessSlotHandle stale{
+        fuse::renderer::BindlessHeapKind::Texture, live.index, live.generation + 1u};
+    expectTrue(bindless.slotGenerationMismatch(stale), "wrong generation flagged as mismatch");
+    expectTrue(!bindless.validateSlot(stale), "mismatch handle fails validateSlot");
+
+    bindless.freeTextureSlot(live);
+    expectTrue(bindless.slotGenerationMismatch(live), "freed handle is generation mismatch");
+    expectTrue(!bindless.slotGenerationMismatch(
+                   fuse::renderer::BindlessSlotHandle{fuse::renderer::BindlessHeapKind::Texture, 9999u, 1u}),
+               "OOB handle is not a generation mismatch");
+
+    bindless.destroy(*bootstrap->device());
+}
+
+void testSlotHandleAtAndBindingForSlot() {
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    const fuse::renderer::BindlessSlotHandle allocated = bindless.allocateBufferSlot(true);
+    const fuse::renderer::BindlessSlotHandle at = bindless.slotHandleAt(fuse::renderer::BindlessHeapKind::Buffer,
+                                                                        allocated.index);
+    expectTrue(at == allocated, "slotHandleAt matches allocate handle");
+    expectTrue(bindless.validateSlot(at), "slotHandleAt handle validates");
+
+    const fuse::renderer::BindlessBindingIndex fromSlot =
+        bindless.bindingIndexForSlot(fuse::renderer::BindlessHeapKind::Buffer, allocated.index);
+    const fuse::renderer::BindlessBindingIndex fromHandle = bindless.bindingIndexForHandle(allocated);
+    expectTrue(fromSlot.binding == fromHandle.binding && fromSlot.arrayIndex == fromHandle.arrayIndex,
+               "bindingIndexForSlot matches handle lookup");
+    expectTrue(fromSlot.binding == fuse::renderer::kBindlessBindingUniformBuffers, "ubo binding via slot index");
+
+    bindless.freeBufferSlot(allocated);
+    expectTrue(!bindless.slotHandleAt(fuse::renderer::BindlessHeapKind::Buffer, allocated.index).isValid(),
+               "slotHandleAt invalid after free");
+    expectTrue(bindless.bindingIndexForSlot(fuse::renderer::BindlessHeapKind::Buffer, allocated.index).binding == 0u,
+               "bindingIndexForSlot empty after free");
+
+    bindless.destroy(*bootstrap->device());
+}
+
+void testFreeSlotUnifiedDispatch() {
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    const fuse::renderer::BindlessSlotHandle texture = bindless.allocateTextureSlot(true);
+    const fuse::renderer::BindlessSlotHandle buffer = bindless.allocateBufferSlot(false);
+    const fuse::renderer::BindlessSlotHandle sampler = bindless.allocateSamplerSlot();
+
+    bindless.freeSlot(texture);
+    bindless.freeSlot(buffer);
+    bindless.freeSlot(sampler);
+    expectTrue(bindless.heapLiveCount(fuse::renderer::BindlessHeapKind::Texture) == 0u,
+               "freeSlot clears texture heap");
+    expectTrue(bindless.heapLiveCount(fuse::renderer::BindlessHeapKind::Buffer) == 0u,
+               "freeSlot clears buffer heap");
+    expectTrue(bindless.heapLiveCount(fuse::renderer::BindlessHeapKind::Sampler) == 0u,
+               "freeSlot clears sampler heap");
+
+    bindless.destroy(*bootstrap->device());
+}
+
+void testStorageFlagsClearedOnFree() {
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    const fuse::renderer::BindlessSlotHandle storageTex = bindless.allocateTextureSlot(true);
+    const fuse::renderer::BindlessSlotHandle ubo = bindless.allocateBufferSlot(true);
+    expectTrue(bindless.slotIsStorageTexture(storageTex.index), "storage texture flagged");
+    expectTrue(bindless.slotIsUniformBuffer(ubo.index), "uniform buffer flagged");
+
+    bindless.freeTextureSlot(storageTex);
+    bindless.freeBufferSlot(ubo);
+    expectTrue(!bindless.slotIsStorageTexture(storageTex.index), "storage flag cleared on free");
+    expectTrue(!bindless.slotIsUniformBuffer(ubo.index), "uniform flag cleared on free");
+
+    const fuse::renderer::BindlessSlotHandle reusedTex = bindless.allocateTextureSlot(false);
+    const fuse::renderer::BindlessSlotHandle reusedBuf = bindless.allocateBufferSlot(false);
+    expectTrue(reusedTex.index == storageTex.index, "texture slot reused");
+    expectTrue(reusedBuf.index == ubo.index, "buffer slot reused");
+    expectTrue(!bindless.slotIsStorageTexture(reusedTex.index), "reused texture defaults to sampled");
+    expectTrue(!bindless.slotIsUniformBuffer(reusedBuf.index), "reused buffer defaults to ssbo");
+
+    bindless.destroy(*bootstrap->device());
+}
+
+void testBufferCapExhaustion() {
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    std::vector<fuse::renderer::BindlessSlotHandle> handles;
+    handles.reserve(256u);
+    for (u32 i = 0; i < 256u; ++i) {
+        const fuse::renderer::BindlessSlotHandle handle = bindless.allocateBufferSlot(i % 2u == 0u);
+        expectTrue(handle.isValid(), "buffer slot allocated within test cap");
+        handles.push_back(handle);
+    }
+
+    bindless.resizeHeap(fuse::renderer::BindlessHeapKind::Buffer, fuse::renderer::kMaxBuffers);
+    for (u32 i = 256u; i < fuse::renderer::kMaxBuffers; ++i) {
+        const fuse::renderer::BindlessSlotHandle handle = bindless.allocateBufferSlot(false);
+        expectTrue(handle.isValid(), "buffer slot allocated up to max");
+        handles.push_back(handle);
+    }
+
+    expectTrue(bindless.heapLiveCount(fuse::renderer::BindlessHeapKind::Buffer) ==
+                   fuse::renderer::kMaxBuffers,
+               "buffer heap at capacity");
+    expectTrue(!bindless.allocateBufferSlot(false).isValid(), "alloc beyond buffer cap rejected");
+
+    bindless.destroy(*bootstrap->device());
+}
+
 void testLegacyRegisterUnregister() {
     auto bootstrap = makeBootstrap();
     fuse::renderer::BindlessDescriptors bindless;
@@ -389,6 +543,12 @@ int main() {
     testInvalidHandleUnregister();
     testGenerationMonotonicReuse();
     testDoubleFreeValidHandle();
+    testClampHeapCapacity();
+    testSlotGenerationMismatch();
+    testSlotHandleAtAndBindingForSlot();
+    testFreeSlotUnifiedDispatch();
+    testStorageFlagsClearedOnFree();
+    testBufferCapExhaustion();
     testLegacyRegisterUnregister();
 
     fuse::core::shutdown();
