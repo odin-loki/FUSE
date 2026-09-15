@@ -15,6 +15,7 @@ endif()
 add_subdirectory(Core)
 add_subdirectory(ECS)
 add_subdirectory(Physics)
+add_subdirectory(Net)
 add_subdirectory(World2D)
 add_subdirectory(World3D)
 
