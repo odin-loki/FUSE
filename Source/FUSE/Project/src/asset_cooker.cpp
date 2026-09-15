@@ -91,6 +91,8 @@ CookRecord AssetCooker::cook_with_cache_(CookAssetKind kind,
     record.cache_hit = false;
 
     if (record.ok && cacheable) {
+        m_cache.invalidate_stale_content_for_source(source_path, cache_key);
+
         CookCacheEntry entry;
         entry.content_hash = cache_key;
         entry.upstream_hash = upstream_hash;

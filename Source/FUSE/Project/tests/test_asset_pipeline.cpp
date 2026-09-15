@@ -811,6 +811,83 @@ void testCookDirtyInvalidatesCache() {
     expectTrue(cooker.cache().stats().invalidations >= 1u, "dirty invalidation counted");
 }
 
+void testContentHashByteSensitivity() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_hash_bytes.obj", "# bytes v1\n");
+
+    const fuse::u64 hash_before = fuse::project::hash_file_content(source);
+    expectTrue(hash_before != 0, "byte-aware file hash is non-zero");
+
+    writeTempFile(source, "# bytes v2\n");
+
+    const fuse::u64 hash_after = fuse::project::hash_file_content(source);
+    expectTrue(hash_after != hash_before, "content byte change alters content hash key");
+}
+
+void testCookCacheContentChangePrunesStale() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_prune_mesh.obj", "# prune v1\n");
+
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_prune_mesh.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord first = cooker.cook_mesh(desc);
+    expectTrue(first.ok, "first cook ok");
+    expectTrue(!first.cache_hit, "first cook misses");
+    expectTrue(cooker.cache().entry_count() == 1u, "one cache entry after first cook");
+
+    writeTempFile(source, "# prune v2\n");
+    const fuse::project::CookRecord second = cooker.cook_mesh(desc);
+    expectTrue(second.ok, "post-change cook ok");
+    expectTrue(!second.cache_hit, "post-change cook misses with new hash");
+    expectTrue(second.content_hash != first.content_hash, "content change yields new cache key");
+    expectTrue(cooker.cache().entry_count() == 1u, "stale entry pruned on store");
+    expectTrue(cooker.cache().stats().invalidations >= 1u, "stale prune counted as invalidation");
+
+    const fuse::project::CookRecord third = cooker.cook_mesh(desc);
+    expectTrue(third.cache_hit, "third cook hits with current hash");
+}
+
+void testCookCacheOutputInvalidation() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_outinv_mesh.obj", "# output inv\n");
+
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_outinv_mesh.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
+    expectTrue(seeded.ok, "seed cook ok");
+    expectTrue(cooker.cache().entry_count() == 1u, "cache seeded");
+
+    expectTrue(cooker.cache().invalidate_output(desc.output_path) == 1u, "output invalidation removes entry");
+    expectTrue(cooker.cache().entry_count() == 0u, "cache empty after output invalidation");
+    expectTrue(cooker.cache().lookup(seeded.content_hash) == fuse::project::CookCacheLookup::Miss,
+               "lookup misses after output invalidation");
+}
+
+void testCookManifestCacheHitsOnSecondRun() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_rehit_mesh.obj", "# rehit mesh\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entry;
+    entry.kind = fuse::project::CookAssetKind::Mesh;
+    entry.source_path = source;
+    entry.output_path = "/tmp/fuse_b79_rehit_mesh.fusemesh";
+    manifest.assets.push_back(entry);
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookBatchResult first = cooker.cook_manifest(manifest);
+    expectTrue(first.ok, "first manifest cook ok");
+    expectTrue(!first.records[0].cache_hit, "first manifest cook misses");
+
+    const fuse::project::CookBatchResult second = cooker.cook_manifest(manifest);
+    expectTrue(second.ok, "second manifest cook ok");
+    expectTrue(second.records[0].cache_hit, "second manifest cook hits cache");
+    expectTrue(cooker.cache().stats().hits >= 1u, "manifest re-run records cache hits");
+    expectTrue(cooker.cache().entry_count() == 1u, "single cache entry retained");
+}
+
 } // namespace
 
 int main() {
@@ -835,9 +912,13 @@ int main() {
     testPlanForProject();
     testContentHashDeterministic();
     testContentHashMtimeSensitivity();
+    testContentHashByteSensitivity();
     testContentHashDescSensitivity();
     testCookCacheHitMiss();
     testCookCacheInvalidation();
+    testCookCacheContentChangePrunesStale();
+    testCookCacheOutputInvalidation();
+    testCookManifestCacheHitsOnSecondRun();
     testCookCacheInvalidateChain();
     testCookCacheStaleDependencyHashInvalidation();
     testCookCacheUpstreamInvalidation();
