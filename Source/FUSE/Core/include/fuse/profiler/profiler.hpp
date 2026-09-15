@@ -16,6 +16,8 @@ struct ProfileEvent {
     u64 timestampNs = 0;
     EventPhase phase = EventPhase::Begin;
     u32 threadId = 0;
+    u32 scopeId = 0;
+    u32 nestingDepth = 0;
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -29,6 +31,8 @@ public:
 
 private:
     const char* m_name = nullptr;
+    u32 m_scopeId = 0;
+    u32 m_nestingDepth = 0;
     bool m_active = false;
 };
 
@@ -40,6 +44,7 @@ void endFrame();
 
 u32 frameIndex();
 u32 eventCount();
+u32 maxNestingDepth();
 const ProfileEvent& eventAt(u32 index);
 void reset();
 
@@ -51,5 +56,6 @@ std::string exportChromeTraceJson();
 #if defined(FUSE_NO_PROFILER) && FUSE_NO_PROFILER
 #define FUSE_PROFILE_SCOPE(name) ((void)0)
 #else
-#define FUSE_PROFILE_SCOPE(name) ::fuse::profiler::ProfileScope _fuse_profile_scope_##__LINE__(name)
+#define FUSE_PROFILE_SCOPE_IMPL(line, name) ::fuse::profiler::ProfileScope _fuse_profile_scope_##line(name)
+#define FUSE_PROFILE_SCOPE(name) FUSE_PROFILE_SCOPE_IMPL(__LINE__, name)
 #endif

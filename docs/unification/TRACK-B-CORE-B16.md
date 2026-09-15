@@ -85,7 +85,35 @@ const std::string trace = fuse::profiler::exportChromeTraceJson();
 // Load in chrome://tracing — stub emits valid {"traceEvents":[...]} JSON
 ```
 
-Ring buffer holds up to 4096 `ProfileEvent` records (name, timestamp ns, begin/end phase, thread id). `setEnabled(false)` makes `FUSE_PROFILE_SCOPE` a no-op without recompiling.
+Ring buffer holds up to 4096 `ProfileEvent` records (name, timestamp ns, begin/end phase, chrome `tid`, paired `scopeId`, nesting depth). `setEnabled(false)` makes `FUSE_PROFILE_SCOPE` a no-op without recompiling.
+
+Nested scopes preserve stack order (`outer B → inner B → inner E → outer E`) and track `maxNestingDepth()` for flame-graph scaffolding.
+
+### Thread-id stubs
+
+Profiler events call `fuse::platform::chromeTraceThreadId()` (low 32 bits of `currentThreadId()`). Register the process main thread once at startup so `isMainThread()` resolves correctly in multi-threaded smoke:
+
+```cpp
+fuse::platform::registerMainThread();
+// worker threads get distinct tid values automatically
+```
+
+### chrome://tracing export
+
+`exportChromeTraceJson()` emits a minimal but valid trace document:
+
+| Field | Value |
+|-------|-------|
+| `displayTimeUnit` | `"ns"` |
+| `metadata.name` | `"FUSE CPU profiler"` |
+| `traceEvents[].ph` | `"B"` / `"E"` begin/end pairs |
+| `traceEvents[].ts` | microseconds (`timestampNs / 1000`) |
+| `traceEvents[].pid` | `1` (single-process stub) |
+| `traceEvents[].tid` | `chromeTraceThreadId()` |
+| `traceEvents[].id` | paired `scopeId` per `FUSE_PROFILE_SCOPE` |
+| `traceEvents[].args.depth` | 1-based nesting depth |
+
+Load the JSON in `chrome://tracing` for offline inspection; Qt flame-graph panel (B6.10) will consume the same event buffer later.
 
 ---
 
@@ -93,7 +121,7 @@ Ring buffer holds up to 4096 `ProfileEvent` records (name, timestamp ns, begin/e
 
 | Test binary | CTest name | Coverage |
 |-------------|------------|----------|
-| `fuse_core_profiler_assert_tests` | `fuse_core_profiler_assert` | Scope begin/end, disable flag, frame index, chrome JSON, fatal hook, `FUSE_VERIFY` |
+| `fuse_core_profiler_assert_tests` | `fuse_core_profiler_assert` | Scope begin/end, nested zone ordering, thread-id stubs, disable flag, frame index, chrome JSON fields, fatal hook, `FUSE_VERIFY` |
 
 ---
 

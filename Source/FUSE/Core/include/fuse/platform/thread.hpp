@@ -15,6 +15,21 @@ u32 getPerformanceCoreCount();
 /// Recommended fiber stack size for the active platform profile.
 u32 recommendedFiberStackBytes();
 
+/// Stable id for the calling OS thread (hash stub until platform backends land).
+ThreadId currentThreadId();
+
+/// Low 32-bit tid for chrome://tracing JSON export.
+u32 chromeTraceThreadId();
+
+/// Register the process main thread (call once from entry).
+void registerMainThread();
+
+/// Registered main thread id; 0 when registerMainThread() was not called.
+ThreadId mainThreadId();
+
+/// True when called from the registered main thread (true before registration).
+bool isMainThread();
+
 /// Register the game/render thread (call once from main loop thread).
 void registerRenderThread();
 
