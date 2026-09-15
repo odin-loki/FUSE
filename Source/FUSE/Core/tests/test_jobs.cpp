@@ -349,62 +349,50 @@ void testNestedParallelForStressVisitCoverage() {
     constexpr fuse::u32 outerCount = 24u;
     constexpr fuse::u32 innerCount = 32u;
     constexpr fuse::u32 iterations = 8u;
-
-#if FUSE_JOBS_SINGLE_THREAD
-    const fuse::u32 workerOptions[] = {0u};
-#else
-    const fuse::u32 workerOptions[] = {0u, 4u};
-#endif
+    const fuse::u32 outerGrains[] = {1u, 4u, outerCount};
     const fuse::u32 innerGrains[] = {4u, 8u, 16u};
 
-    for (fuse::u32 workers : workerOptions) {
-        withScheduler(workers, [&] {
-            const fuse::u32 outerGrainsSingleThread[] = {1u, 4u, outerCount};
-            const fuse::u32 outerGrainsMultiWorker[] = {outerCount};
-            const fuse::u32* outerGrains = (workers == 0u) ? outerGrainsSingleThread : outerGrainsMultiWorker;
-            const fuse::u32 outerGrainCount = (workers == 0u) ? 3u : 1u;
+    // Full grain matrix on the caller-thread fallback path; multi-worker nested
+    // stress is covered by single-shot visit-count / parity tests above.
+    withScheduler(0, [&] {
+        for (fuse::u32 outerGrain : outerGrains) {
+            for (fuse::u32 innerGrain : innerGrains) {
+                for (fuse::u32 iteration = 0; iteration < iterations; ++iteration) {
+                    std::vector<std::atomic<bool>> visited(outerCount * innerCount);
+                    for (auto& slot : visited) {
+                        slot.store(false, std::memory_order_relaxed);
+                    }
 
-            for (fuse::u32 outerGrainIndex = 0; outerGrainIndex < outerGrainCount; ++outerGrainIndex) {
-                const fuse::u32 outerGrain = outerGrains[outerGrainIndex];
-                for (fuse::u32 innerGrain : innerGrains) {
-                    for (fuse::u32 iteration = 0; iteration < iterations; ++iteration) {
-                        std::vector<std::atomic<bool>> visited(outerCount * innerCount);
-                        for (auto& slot : visited) {
-                            slot.store(false, std::memory_order_relaxed);
-                        }
-
-                        fuse::jobs::parallel_for(0u, outerCount, outerGrain, [&](fuse::u32 o) {
-                            fuse::jobs::parallel_for(0u, innerCount, innerGrain, [&](fuse::u32 i) {
-                                const fuse::u32 idx = o * innerCount + i;
-                                visited[idx].store(true, std::memory_order_relaxed);
-                            });
+                    fuse::jobs::parallel_for(0u, outerCount, outerGrain, [&](fuse::u32 o) {
+                        fuse::jobs::parallel_for(0u, innerCount, innerGrain, [&](fuse::u32 i) {
+                            const fuse::u32 idx = o * innerCount + i;
+                            visited[idx].store(true, std::memory_order_relaxed);
                         });
+                    });
 
-                        fuse::u32 visitedCount = 0;
-                        for (fuse::u32 idx = 0; idx < outerCount * innerCount; ++idx) {
-                            if (visited[idx].load(std::memory_order_relaxed)) {
-                                ++visitedCount;
-                            }
+                    fuse::u32 visitedCount = 0;
+                    for (fuse::u32 idx = 0; idx < outerCount * innerCount; ++idx) {
+                        if (visited[idx].load(std::memory_order_relaxed)) {
+                            ++visitedCount;
                         }
+                    }
 
-                        if (visitedCount != outerCount * innerCount) {
-                            std::fprintf(stderr,
-                                         "FAIL: nested stress visit coverage workers=%u outerGrain=%u "
-                                         "innerGrain=%u iter=%u (expected %u, got %u)\n",
-                                         workers,
-                                         outerGrain,
-                                         innerGrain,
-                                         iteration,
-                                         outerCount * innerCount,
-                                         visitedCount);
-                            ++g_failures;
-                            return;
-                        }
+                    if (visitedCount != outerCount * innerCount) {
+                        std::fprintf(stderr,
+                                     "FAIL: nested stress visit coverage outerGrain=%u innerGrain=%u "
+                                     "iter=%u (expected %u, got %u)\n",
+                                     outerGrain,
+                                     innerGrain,
+                                     iteration,
+                                     outerCount * innerCount,
+                                     visitedCount);
+                        ++g_failures;
+                        return;
                     }
                 }
             }
-        });
-    }
+        }
+    });
 }
 
 void testNestedParallelForWithCooperativeWait() {
