@@ -5,8 +5,21 @@
 
 namespace fuse::audio {
 
-/// Binaural pan stub parameters — ILD equal-power pan + Woodworth ITD placeholder.
+/// Stereo pan law used for ILD stub gains.
+enum class PanLaw {
+    EqualPower,
+    Linear,
+};
+
+/// Per-channel gains from a pan position in [-1, 1] (left .. right).
+struct PanLawGains {
+    float left = 0.5f;
+    float right = 0.5f;
+};
+
+/// Binaural pan stub parameters — ILD pan law + Woodworth ITD placeholder.
 struct BinauralPanParams {
+    PanLaw pan_law = PanLaw::EqualPower;
     float max_itd_seconds = 0.0007f;
     float max_ild_pan = 1.f;
     float elevation_rolloff = 0.15f;
@@ -32,7 +45,13 @@ BinauralPanAngles compute_binaural_angles(const Vec3& rel_listener);
 /// Transform a world-space offset through `basis`, then compute angles.
 BinauralPanAngles compute_binaural_angles(const Vec3& world_relative, const ListenerBasis& basis);
 
-/// ILD stub via equal-power pan; ITD stub scales with sin(azimuth).
+/// Clamp pan position to [-1, 1].
+float clamp_pan_position(float pan);
+
+/// Sample L/R gains for a pan law at the endpoints and interior.
+PanLawGains sample_pan_law(float pan, PanLaw law);
+
+/// ILD stub via selected pan law; ITD stub scales with sin(azimuth).
 BinauralPanGains compute_binaural_pan_gains(const BinauralPanAngles& angles,
                                              const BinauralPanParams& params = {});
 
