@@ -59,12 +59,33 @@ void testRegistryInteractStub() {
     expectTrue(registry.interactableCount() == 0u, "registry unregisters interactable");
 }
 
+void testRegistryResolvesComponentTree() {
+    fuse::mechanics::Component root("root");
+    fuse::mechanics::InteractableComponent lever("lever");
+
+    expectTrue(root.addComponent(&lever), "root accepts lever child");
+    expectTrue(root.attach(), "component hierarchy attaches");
+
+    auto* resolved = fuse::mechanics::MechanicsRegistry::resolveInteractable(&lever);
+    expectTrue(resolved != nullptr, "registry resolves interactable from component tree");
+
+    fuse::mechanics::MechanicsRegistry registry;
+    fuse::mechanics::InteractionContext ctx;
+    ctx.verb = "pickup";
+    ctx.item = "key";
+
+    expectTrue(registry.canInteract(&lever, ctx), "component-tree interactable accepts pickup verb");
+    expectTrue(registry.interact(&lever, ctx), "registry dispatches through component tree");
+    expectTrue(lever.interactionCount() == 1u, "component-tree interaction counted");
+}
+
 } // namespace
 
 int main() {
     fuse::core::initialize();
     testComponentRegistersCachedInterface();
     testRegistryInteractStub();
+    testRegistryResolvesComponentTree();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

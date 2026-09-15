@@ -1,10 +1,12 @@
 add_library(fuse_mechanics STATIC
     src/component_interface.cpp
     src/component.cpp
+    src/inventory_provider.cpp
     src/interactable.cpp
     src/registry.cpp
     include/fuse/mechanics/component_interface.hpp
     include/fuse/mechanics/component.hpp
+    include/fuse/mechanics/inventory_provider.hpp
     include/fuse/mechanics/interactable.hpp
     include/fuse/mechanics/registry.hpp
 )
