@@ -4,6 +4,7 @@
 #include <fuse/ecs/systems/transform_system.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <unordered_map>
@@ -51,15 +52,15 @@ void testEachParallelVisitsSameEntities() {
         ++serialCount;
     });
 
-    fuse::u32 parallelCount = 0;
+    std::atomic<fuse::u32> parallelCount{0};
     withScheduler(4, [&] {
         reg.each_parallel<fuse::ecs::Transform>([&](fuse::ecs::EntityID, fuse::ecs::Transform&) {
-            ++parallelCount;
+            parallelCount.fetch_add(1u, std::memory_order_relaxed);
         }, 8);
     });
 
     expectEq(serialCount, 64u, "serial each visits all transforms");
-    expectEq(parallelCount, 64u, "each_parallel visits all transforms");
+    expectEq(parallelCount.load(std::memory_order_relaxed), 64u, "each_parallel visits all transforms");
 }
 
 void testEachParallelMutationParity() {
