@@ -188,7 +188,36 @@ bool TwoBoneIK::has_valid_chain(const Skeleton& skel) const {
     }
 
     const u32 boneCount = static_cast<u32>(skel.bones.size());
-    return root_bone < boneCount && mid_bone < boneCount && end_bone < boneCount;
+    if (root_bone >= boneCount || mid_bone >= boneCount || end_bone >= boneCount) {
+        return false;
+    }
+
+    if (root_bone == mid_bone || mid_bone == end_bone || root_bone == end_bone) {
+        return false;
+    }
+
+    if (skel.bones[mid_bone].parent_index != static_cast<s32>(root_bone)) {
+        return false;
+    }
+
+    if (skel.bones[end_bone].parent_index != static_cast<s32>(mid_bone)) {
+        return false;
+    }
+
+    return true;
+}
+
+f32 TwoBoneIK::max_reach(const Pose& pose) const {
+    if (root_bone >= pose.bone_count || mid_bone >= pose.bone_count || end_bone >= pose.bone_count) {
+        return 0.f;
+    }
+
+    const vec3 root = bone_translation(pose, root_bone);
+    const vec3 mid = bone_translation(pose, mid_bone);
+    const vec3 end = bone_translation(pose, end_bone);
+    const f32 upperLen = vec3_distance(root, mid);
+    const f32 lowerLen = vec3_distance(mid, end);
+    return upperLen + lowerLen - reach_epsilon;
 }
 
 bool TwoBoneIK::solve(Pose& pose, const Skeleton& skel) {
