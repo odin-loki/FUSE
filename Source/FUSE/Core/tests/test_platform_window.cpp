@@ -354,6 +354,106 @@ void testEventPumpCoalesceIsPerWindow() {
     expectEq(second.width, 1024u, "right resize keeps its own dimensions");
 }
 
+void testEventPumpPeekEventEmptyQueueGuard() {
+    fuse::platform::EventPump pump;
+
+    fuse::platform::PlatformEvent peeked;
+    peeked.type = fuse::platform::PlatformEventType::WindowCloseRequested;
+    expectTrue(!pump.peekEvent(peeked), "peekEvent returns false on empty queue");
+    expectTrue(peeked.type == fuse::platform::PlatformEventType::None,
+               "peekEvent resets outEvent on empty queue");
+}
+
+void testEventPumpPeekEventDoesNotPop() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    pump.pushWindowResized(window);
+    expectEq(pump.pendingEventCount(), 1u, "resize queued before peek");
+
+    fuse::platform::PlatformEvent peeked;
+    expectTrue(pump.peekEvent(peeked), "peekEvent succeeds with pending event");
+    expectTrue(peeked.type == fuse::platform::PlatformEventType::WindowResized, "peek sees resize");
+    expectEq(pump.pendingEventCount(), 1u, "peek does not remove queued event");
+
+    fuse::platform::PlatformEvent polled;
+    expectTrue(pump.pollEvent(polled), "poll still drains after peek");
+    expectTrue(polled.type == fuse::platform::PlatformEventType::WindowResized, "polled resize matches peek");
+}
+
+void testEventPumpPollEventEmptyQueueGuard() {
+    fuse::platform::EventPump pump;
+
+    fuse::platform::PlatformEvent event;
+    event.type = fuse::platform::PlatformEventType::Quit;
+    expectTrue(!pump.pollEvent(event), "pollEvent returns false on empty queue");
+    expectTrue(event.type == fuse::platform::PlatformEventType::None,
+               "pollEvent resets outEvent on empty queue");
+}
+
+void testEventPumpDroppedEventCount() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    expectEq(pump.droppedEventCount(), 0u, "no drops on fresh pump");
+
+    pump.pushWindowResized(window);
+    fuse::platform::PlatformEvent marker;
+    marker.type = fuse::platform::PlatformEventType::WindowFocusLost;
+    marker.window = &window;
+    pump.pushSyntheticEvent(marker);
+
+    for (fuse::u32 index = 0; index < 32u; ++index) {
+        fuse::platform::PlatformEvent event;
+        event.type = fuse::platform::PlatformEventType::WindowFocusGained;
+        event.window = &window;
+        pump.pushSyntheticEvent(event);
+    }
+
+    expectEq(pump.droppedEventCount(), 3u, "overflow increments droppedEventCount for each tail drop");
+    expectEq(pump.pendingEventCount(), 31u, "ring buffer still capped after overflow");
+}
+
+void testEventPumpCoalescedResizeCount() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    expectEq(pump.coalescedResizeCount(), 0u, "no coalesces on fresh pump");
+
+    window.resize(800, 600, &pump);
+    window.resize(1024, 768, &pump);
+    window.resize(1280, 720, &pump);
+    expectEq(pump.coalescedResizeCount(), 2u, "two duplicate resizes coalesced");
+    expectEq(pump.pendingEventCount(), 1u, "coalesced resizes leave one queued event");
+
+    pump.resetEventStats();
+    expectEq(pump.coalescedResizeCount(), 0u, "resetEventStats clears coalesce counter");
+    expectEq(pump.pendingEventCount(), 1u, "resetEventStats does not drain queue");
+}
+
+void testEventPumpHasPendingResizeFor() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window left;
+    fuse::platform::Window right;
+
+    expectTrue(!pump.hasPendingResizeFor(left), "empty queue has no pending resize");
+    expectTrue(!pump.hasPendingResizeFor(right), "empty queue has no pending resize for right");
+
+    left.resize(800, 600, &pump);
+    expectTrue(pump.hasPendingResizeFor(left), "left resize is pending");
+    expectTrue(!pump.hasPendingResizeFor(right), "right window has no pending resize yet");
+
+    pump.pushWindowFocusLost(left);
+    left.resize(1024, 768, &pump);
+    expectTrue(pump.hasPendingResizeFor(left), "coalesced resize still pending for left");
+    expectEq(pump.pendingEventCount(), 2u, "resize + focus events remain distinct");
+
+    fuse::platform::PlatformEvent event;
+    expectTrue(pump.pollEvent(event), "drain resize event");
+    expectTrue(!pump.hasPendingResizeFor(left), "resize no longer pending after poll");
+    expectTrue(pump.hasPendingEvents(), "focus event still pending");
+}
+
 void testMobileProfileStillUsesWindowStub() {
     const fuse::platform::PlatformProfile previous =
         fuse::platform::setActiveProfileOverride(fuse::platform::PlatformProfile::Mobile);
@@ -389,6 +489,12 @@ int main() {
     testEventPumpDrainEventsEmptyQueue();
     testEventPumpDrainEventsHelper();
     testEventPumpCoalesceIsPerWindow();
+    testEventPumpPeekEventEmptyQueueGuard();
+    testEventPumpPeekEventDoesNotPop();
+    testEventPumpPollEventEmptyQueueGuard();
+    testEventPumpDroppedEventCount();
+    testEventPumpCoalescedResizeCount();
+    testEventPumpHasPendingResizeFor();
     testMobileProfileStillUsesWindowStub();
 
     if (g_failures == 0) {
