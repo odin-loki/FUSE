@@ -15,6 +15,7 @@ add_library(fuse_physics STATIC
     src/solver/contact_island_graph.cpp
     src/barnes_hut.cpp
     src/ccd.cpp
+    src/ccd/toi_buffer.cpp
     include/fuse/physics/broadphase/spatial_hash.hpp
     include/fuse/physics/config.hpp
     include/fuse/physics/math.hpp
@@ -32,6 +33,7 @@ add_library(fuse_physics STATIC
     include/fuse/physics/solver/contact_island_graph.hpp
     include/fuse/physics/nbody/barnes_hut.hpp
     include/fuse/physics/ccd/ccd.hpp
+    include/fuse/physics/ccd/toi_buffer.hpp
     # B4.7–B4.11 scaffolds
     src/destruction/voxel_destruction.cpp
     src/events/collision_events.cpp
