@@ -15,6 +15,8 @@ public:
     void setCapacity(u32 capacity);
     [[nodiscard]] u32 capacity() const { return m_capacity; }
     [[nodiscard]] u32 count() const { return m_size; }
+    [[nodiscard]] bool is_empty() const { return m_size == 0; }
+    [[nodiscard]] bool is_valid_index(u32 index) const { return index < m_size; }
     [[nodiscard]] const std::string& at(u32 index) const;
 
     void push(const char* line);
