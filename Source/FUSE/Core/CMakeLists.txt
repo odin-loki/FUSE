@@ -87,6 +87,19 @@ if(FUSE_JOBS_SINGLE_THREAD)
     target_compile_definitions(fuse_core PUBLIC FUSE_JOBS_SINGLE_THREAD=1)
 endif()
 
+if(FUSE_CORE_ENABLE_TSAN)
+    if(FUSE_SMOKE_ENABLE_ASAN)
+        message(FATAL_ERROR "FUSE_CORE_ENABLE_TSAN and FUSE_SMOKE_ENABLE_ASAN are mutually exclusive")
+    endif()
+    function(fuse_core_apply_tsan target)
+        target_compile_options(${target} PRIVATE -fsanitize=thread -fno-omit-frame-pointer)
+        target_link_options(${target} PRIVATE -fsanitize=thread)
+    endfunction()
+else()
+    function(fuse_core_apply_tsan target)
+    endfunction()
+endif()
+
 target_compile_features(fuse_core PUBLIC cxx_std_17)
 target_link_libraries(fuse_core PUBLIC Threads::Threads)
 
@@ -100,6 +113,8 @@ if(FUSE_CUDA_BACKEND)
     target_compile_definitions(fuse_core PUBLIC FUSE_HAS_CUDA=1)
     target_link_libraries(fuse_core PUBLIC CUDA::cudart)
 endif()
+
+fuse_core_apply_tsan(fuse_core)
 
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)

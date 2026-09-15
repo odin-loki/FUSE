@@ -47,6 +47,7 @@ option(FUSE_BUILD_EDITOR "Build fuse_editor Qt 6 desktop shell (requires Qt6; de
 option(FUSE_BUILD_VULKAN "Build fuse_rhi Vulkan bootstrap (Track B B2.1)" ON)
 option(FUSE_BUILD_CUDA "Build optional CUDA job lane, interop stubs, and fuse_compute (Track B B2.6–B2.7, B5.7 screen-space stubs)" OFF)
 option(FUSE_SMOKE_ENABLE_ASAN "Enable AddressSanitizer for fuse_runtime_smoke" OFF)
+option(FUSE_CORE_ENABLE_TSAN "Enable ThreadSanitizer for fuse_core and fuse_core_tests" OFF)
 option(FUSE_BUILD_T3D "Build Torque3D application target(s)" ON)
 option(FUSE_BUILD_T2D "Build Torque2D engine target (requires submodule)" ON)
 

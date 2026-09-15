@@ -3,6 +3,7 @@ add_executable(fuse_core_tests
 )
 
 target_link_libraries(fuse_core_tests PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_tests)
 add_test(NAME fuse_core_worker_count COMMAND fuse_core_tests)
 
 add_executable(fuse_core_job_tests
@@ -10,6 +11,7 @@ add_executable(fuse_core_job_tests
 )
 
 target_link_libraries(fuse_core_job_tests PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_job_tests)
 add_test(NAME fuse_core_jobs COMMAND fuse_core_job_tests)
 
 add_executable(fuse_core_fiber_tests
@@ -17,6 +19,7 @@ add_executable(fuse_core_fiber_tests
 )
 
 target_link_libraries(fuse_core_fiber_tests PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_fiber_tests)
 add_test(NAME fuse_core_fiber COMMAND fuse_core_fiber_tests)
 
 add_executable(fuse_cuda_job_tests
@@ -24,6 +27,7 @@ add_executable(fuse_cuda_job_tests
 )
 
 target_link_libraries(fuse_cuda_job_tests PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_cuda_job_tests)
 add_test(NAME fuse_cuda_jobs COMMAND fuse_cuda_job_tests)
 
 add_executable(fuse_core_services_tests
@@ -31,6 +35,7 @@ add_executable(fuse_core_services_tests
 )
 
 target_link_libraries(fuse_core_services_tests PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_services_tests)
 add_test(NAME fuse_core_services COMMAND fuse_core_services_tests)
 
 add_executable(fuse_core_platform_hardening_tests
@@ -38,6 +43,7 @@ add_executable(fuse_core_platform_hardening_tests
 )
 
 target_link_libraries(fuse_core_platform_hardening_tests PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_platform_hardening_tests)
 add_test(NAME fuse_core_platform_hardening COMMAND fuse_core_platform_hardening_tests)
 
 add_executable(fuse_core_io_handle_tests
@@ -45,6 +51,7 @@ add_executable(fuse_core_io_handle_tests
 )
 
 target_link_libraries(fuse_core_io_handle_tests PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_io_handle_tests)
 add_test(NAME fuse_core_io_handle COMMAND fuse_core_io_handle_tests)
 
 add_executable(fuse_core_profiler_assert_tests

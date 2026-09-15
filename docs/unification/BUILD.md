@@ -17,6 +17,7 @@ The root `CMakeLists.txt` is the **FUSE umbrella** entry point. It can build:
 | `FUSE_BUILD_HYBRID_DEMO` | ON | `demo_hybrid_hud` U4 hybrid frame demo (software renderer) |
 | `FUSE_BUILD_MODULES` | ON | L3 feature modules (`fuse_cinematics`, …) |
 | `FUSE_SMOKE_ENABLE_ASAN` | OFF | AddressSanitizer for smoke target |
+| `FUSE_CORE_ENABLE_TSAN` | OFF | ThreadSanitizer for `fuse_core` and `fuse_core_*` tests |
 
 Legacy Torque3D-only workflow is **unchanged**:
 
@@ -80,6 +81,28 @@ cmake -B build -G Ninja \
 
 cmake --build build
 ctest --test-dir build --output-on-failure
+```
+
+### fuse_core tests — ThreadSanitizer (nightly CI)
+
+Scheduled workflow: [`.github/workflows/fuse-tsan-nightly.yml`](../../.github/workflows/fuse-tsan-nightly.yml) (03:00 UTC daily; `workflow_dispatch` for manual runs). Builds only `fuse_core_*` CTest targets with `-fsanitize=thread` via `FUSE_CORE_ENABLE_TSAN=ON`. Does not run on push/PR — existing CI is unchanged.
+
+Local repro:
+
+```bash
+cmake -B build-tsan -G Ninja \
+  -DCMAKE_CXX_COMPILER=g++-13 \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DFUSE_UMBRELLA=ON \
+  -DFUSE_BUILD_CORE=ON \
+  -DFUSE_BUILD_CORE_TESTS=ON \
+  -DFUSE_CORE_ENABLE_TSAN=ON \
+  -DFUSE_BUILD_T3D=OFF \
+  -DFUSE_BUILD_T2D=OFF
+
+cmake --build build-tsan --target fuse_core_tests fuse_core_job_tests fuse_core_fiber_tests \
+  fuse_core_services_tests fuse_core_platform_hardening_tests fuse_core_io_handle_tests
+ctest --test-dir build-tsan -R '^fuse_core_' --output-on-failure
 ```
 
 ### Full umbrella (T3D + T2D + fuse_core)
