@@ -31,6 +31,8 @@ public:
 
     [[nodiscard]] u32 selectedMaterialId() const { return m_selectedMatId; }
     [[nodiscard]] u32 catalogCount() const { return m_catalogCount; }
+    [[nodiscard]] bool isCatalogEmpty() const { return m_catalogCount == 0u; }
+    [[nodiscard]] bool hasSelectedMaterial() const { return m_selectedMatId != kInvalidMaterialId; }
     [[nodiscard]] const MaterialEditState& editState() const { return m_editState; }
     [[nodiscard]] const MaterialPropertyBinding& propertyBinding() const { return m_binding; }
     [[nodiscard]] MaterialPropertyBinding& propertyBinding() { return m_binding; }

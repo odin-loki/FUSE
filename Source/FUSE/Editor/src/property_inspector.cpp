@@ -1,5 +1,6 @@
 #include <fuse/editor/property_inspector.hpp>
 
+#include <fuse/editor/material_property_inspect.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/object.hpp>
 
@@ -123,12 +124,21 @@ bool PropertyInspector::getMeshMaterialId(const EditorScene& scene, u32& out) co
 }
 
 bool PropertyInspector::setMeshMaterialId(u32 materialId, EditorScene& scene, CommandStack& cmds) {
+    return trySetMeshMaterialId(materialId, UINT32_MAX, scene, cmds);
+}
+
+bool PropertyInspector::trySetMeshMaterialId(u32 materialId, u32 catalogCount, EditorScene& scene,
+                                             CommandStack& cmds) {
     if (!m_target.valid()) {
         return false;
     }
 
     ecs::Mesh* mesh = scene.registry().get<ecs::Mesh>(m_target);
     if (mesh == nullptr) {
+        return false;
+    }
+
+    if (catalogCount != UINT32_MAX && isInvalidMaterialSlot(materialId, catalogCount)) {
         return false;
     }
 
