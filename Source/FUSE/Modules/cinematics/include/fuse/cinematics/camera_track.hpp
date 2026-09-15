@@ -31,10 +31,13 @@ struct CameraKeyframe {
     float roll_deg = 0.f;
 };
 
+/// Default vertical FOV (degrees) for empty tracks and unset keyframes.
+constexpr float kDefaultCameraFovDeg = 60.f;
+
 struct CameraSample {
     Vec3 position{};
     Vec3 look_at{};
-    float field_of_view = 60.f;
+    float field_of_view = kDefaultCameraFovDeg;
     float roll_deg = 0.f;
 
     /// Unit vector from `position` toward `look_at` (default forward when coincident).
@@ -49,6 +52,15 @@ Vec3 camera_look_direction(const Vec3& position, const Vec3& look_at);
 
 /// Distance between camera position and look-at point.
 float camera_look_distance(const Vec3& position, const Vec3& look_at);
+
+/// Canonical pose when a track or keyframe list has no entries.
+CameraSample default_camera_sample();
+
+/// True when `keyframes` has no entries (editor / rail guard).
+bool camera_keyframes_empty(const std::vector<CameraKeyframe>& keyframes);
+
+/// True when `keyframe` binds look-at to an entity id (requires `LookAtResolver` stub).
+bool camera_keyframe_uses_entity_look_at(const CameraKeyframe& keyframe);
 
 /// Indices of bracketing keyframes for `time_ms` plus eased segment parameter.
 struct CameraKeyframeBracket {

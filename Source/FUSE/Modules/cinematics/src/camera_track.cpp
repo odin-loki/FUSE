@@ -87,7 +87,7 @@ float sample_fov_rail(const std::vector<CameraKeyframe>& keyframes, TimelineMs t
         previous = &keyframe;
     }
 
-    return previous ? clamp_fov(previous->field_of_view) : kMinFovDeg;
+    return previous ? clamp_fov(previous->field_of_view) : kDefaultCameraFovDeg;
 }
 
 Vec3 sample_look_at_rail(const std::vector<CameraKeyframe>& keyframes,
@@ -128,6 +128,18 @@ constexpr Vec3 kDefaultLookForward{0.f, 0.f, -1.f};
 
 } // namespace
 
+CameraSample default_camera_sample() {
+    return {};
+}
+
+bool camera_keyframes_empty(const std::vector<CameraKeyframe>& keyframes) {
+    return keyframes.empty();
+}
+
+bool camera_keyframe_uses_entity_look_at(const CameraKeyframe& keyframe) {
+    return keyframe.look_at_mode == CameraLookAtMode::TargetEntity && !keyframe.look_at_target_id.empty();
+}
+
 CameraKeyframeBracket find_camera_keyframe_bracket(const std::vector<CameraKeyframe>& keyframes,
                                                  TimelineMs time_ms,
                                                  EaseMode ease) {
@@ -163,18 +175,27 @@ CameraKeyframeBracket find_camera_keyframe_bracket(const std::vector<CameraKeyfr
 Vec3 sample_camera_position(const std::vector<CameraKeyframe>& keyframes,
                             TimelineMs time_ms,
                             EaseMode ease) {
+    if (keyframes.empty()) {
+        return {};
+    }
     return sample_vec3_rail(keyframes, time_ms, &CameraKeyframe::position, ease);
 }
 
 float sample_camera_field_of_view(const std::vector<CameraKeyframe>& keyframes,
                                   TimelineMs time_ms,
                                   EaseMode ease) {
+    if (keyframes.empty()) {
+        return kDefaultCameraFovDeg;
+    }
     return sample_fov_rail(keyframes, time_ms, ease);
 }
 
 float sample_camera_roll(const std::vector<CameraKeyframe>& keyframes,
                          TimelineMs time_ms,
                          EaseMode ease) {
+    if (keyframes.empty()) {
+        return 0.f;
+    }
     return sample_scalar_rail(keyframes, time_ms, &CameraKeyframe::roll_deg, ease);
 }
 
@@ -182,6 +203,9 @@ Vec3 sample_camera_look_at(const std::vector<CameraKeyframe>& keyframes,
                            TimelineMs time_ms,
                            EaseMode ease,
                            const LookAtResolver* look_at_resolver) {
+    if (keyframes.empty()) {
+        return {};
+    }
     return sample_look_at_rail(keyframes, time_ms, ease, look_at_resolver);
 }
 
@@ -247,7 +271,7 @@ CameraSample CameraTrack::sample_at(TimelineMs time_ms,
                                     EaseMode ease,
                                     const LookAtResolver* look_at_resolver) const {
     if (keyframes_.empty()) {
-        return {};
+        return default_camera_sample();
     }
 
     CameraSample sample;
