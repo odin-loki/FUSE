@@ -50,6 +50,18 @@ const char* backendLabel(ScriptBackendKind kind) {
     }
 }
 
+const char* commandKindLabel(ScriptConsoleCommandKind kind) {
+    switch (kind) {
+    case ScriptConsoleCommandKind::BuiltIn:
+        return "built-in";
+    case ScriptConsoleCommandKind::Custom:
+        return "custom";
+    case ScriptConsoleCommandKind::Unknown:
+    default:
+        return "unknown";
+    }
+}
+
 } // namespace
 
 void ScriptConsole::attach(ScriptHost* host) {
@@ -119,6 +131,34 @@ void ScriptConsole::registerBuiltIns_() {
 
     m_commands.register_built_in("list", [](ScriptConsole& console, const char* /*args*/) {
         return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, console.m_commands.formatCommandLines()};
+    });
+
+    m_commands.register_built_in("describe", [](ScriptConsole& console, const char* args) {
+        if (args == nullptr || args[0] == '\0') {
+            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
+                                              "describe requires a command name"};
+        }
+
+        const ScriptConsoleCommandKind kind = console.m_commands.lookup_kind(args);
+        std::ostringstream out;
+        out << args << ": " << commandKindLabel(kind);
+        return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, out.str()};
+    });
+
+    m_commands.register_built_in("complete", [](ScriptConsole& console, const char* args) {
+        const std::vector<std::string> matches = console.m_commands.commands_with_prefix(args);
+        if (matches.empty()) {
+            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, std::string{}};
+        }
+
+        std::ostringstream out;
+        for (std::size_t i = 0; i < matches.size(); ++i) {
+            if (i > 0) {
+                out << ' ';
+            }
+            out << matches[i];
+        }
+        return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, out.str()};
     });
 
     m_commands.register_built_in("echo", [](ScriptConsole& /*console*/, const char* args) {
