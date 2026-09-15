@@ -16,11 +16,20 @@ struct MaterialPropertyDescriptor {
     bool isVec3 = false;
 };
 
+/// Sentinel returned by `materialPropertyIndexOf` when the id is not enumerated.
+inline constexpr u32 kInvalidMaterialPropertyIndex = UINT32_MAX;
+
 /// Number of bindable material inspector properties.
 [[nodiscard]] u32 materialPropertyCount();
 
+/// True when `index` is safe for `materialPropertyIdAt` / descriptor lookup.
+[[nodiscard]] bool isMaterialPropertyIndexValid(u32 index);
+
 /// Stable property order for inspector widget iteration (B6.7 deepen follow-up).
 [[nodiscard]] MaterialPropertyId materialPropertyIdAt(u32 index);
+
+/// Reverse lookup — inspector row index for a property id, or `kInvalidMaterialPropertyIndex`.
+[[nodiscard]] u32 materialPropertyIndexOf(MaterialPropertyId id);
 
 /// Metadata for slider/field widgets (B6.7 deepen).
 [[nodiscard]] MaterialPropertyDescriptor materialPropertyDescriptor(MaterialPropertyId id);
@@ -33,6 +42,9 @@ struct MaterialPropertyDescriptor {
 [[nodiscard]] f32 clampMetallic(f32 value);
 [[nodiscard]] f32 clampBaseColorComponent(f32 value);
 [[nodiscard]] u8 clampShadingModel(u8 value);
+
+/// Clamp a scalar inspector edit for the given property id (B6.7 deepen follow-up).
+[[nodiscard]] f32 clampMaterialPropertyScalar(MaterialPropertyId id, f32 value);
 
 /// Clamp all fields in an authoring-side material edit state (B6.7 deepen follow-up).
 void clampMaterialEditState(MaterialEditState& state);
