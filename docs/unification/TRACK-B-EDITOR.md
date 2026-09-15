@@ -1,6 +1,6 @@
 # Track B — Editor Panels (B6.2–B6.13)
 
-**Status:** B6.2 undo stack + B6.3–B6.5 core panel stubs + B6.6–B6.8 inspector/material/sculpt API stubs + B6.9–B6.12 asset/profiler/console/play-mode stubs landed; **B6.13** Phase 6 integration gate + checklist complete; **B6.2 deepen** — `CommandStack` coalescing, dirty tracking, snapshot restore + `UndoStack` `MAX_HISTORY` eviction; **B6.7 deepen** — material property bindings (`roughness`/`metallic`/`baseColor`/`shadingModel`), `editDirty`/`previewDirty` flags, `MaterialSystem` push/sync bridge tests  
+**Status:** B6.2 undo stack + B6.3–B6.5 core panel stubs + B6.6–B6.8 inspector/material/sculpt API stubs + B6.9–B6.12 asset/profiler/console/play-mode stubs landed; **B6.13** Phase 6 integration gate + checklist complete; **B6.2 deepen** — `CommandStack` coalescing, dirty tracking, snapshot restore + `UndoStack` `MAX_HISTORY` eviction; **B6.4 deepen** — `GizmoSystem` ray axis/plane hit tests, local/world delta helpers, translate/rotate snap stubs, `CommandStack`/`EditorState` dirty marking; **B6.7 deepen** — material property bindings (`roughness`/`metallic`/`baseColor`/`shadingModel`), `editDirty`/`previewDirty` flags, `MaterialSystem` push/sync bridge tests  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B6.2–B6.13  
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §2.1–§4, [U6-EDITOR.md](./U6-EDITOR.md)
 
@@ -14,7 +14,7 @@
 | `SetObjectNameCommand` / `ReparentObjectCommand` | same | Core hierarchy rename/reparent commands |
 | `CommandStack` / `CommandStackSnapshot` | `Source/FUSE/Editor/include/fuse/editor/command_stack.hpp` | `EditorCommand` envelope history for B6.6–B6.8 panel stubs; coalescing, dirty tracking, snapshot restore (B6.2 deepen) |
 | `ViewportPanel` | `Source/FUSE/Editor/include/fuse/editor/viewport_panel.hpp` | B6.3 — camera + resize stub |
-| `GizmoSystem` | `Source/FUSE/Editor/include/fuse/editor/gizmo_system.hpp` | B6.4 — translate/rotate/scale drag stub |
+| `GizmoSystem` | `Source/FUSE/Editor/include/fuse/editor/gizmo_system.hpp` | B6.4 — translate/rotate/scale drag stub; B6.4 deepen — ray hit tests, snap, delta helpers |
 | `HierarchyModel` / `SceneHierarchyPanel` | `hierarchy_model.hpp`, `scene_hierarchy_panel.hpp` | B6.5 — flatten, search, reparent via `UndoStack` |
 | `EditorState` / `EditorScene` | `editor_state.hpp`, `editor_scene.hpp` | Selection + ECS registry for panel tests |
 | `PropertyInspector` | `property_inspector.hpp` | B6.6 — component section model + live ECS edits |
@@ -103,6 +103,7 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 | `fuse_editor_panels_b69_b612` | `fuse_editor_panels_b69_b612_tests` | B6.9–B6.12 asset/profiler/console/play-mode stubs |
 | `fuse_editor_phase6_integration` | `fuse_editor_phase6_integration_tests` | **B6.13** — `UndoStack` + `SceneHierarchyPanel` + `ViewportPanel` headless wiring |
 | `fuse_editor_play_session` | `fuse_editor_play_session_tests` | B6.12 deepen — PIE session start/stop, tick-while-playing, dirty-flag restore |
+| `fuse_editor_gizmo_system` | `fuse_editor_gizmo_system_tests` | B6.4 deepen — mode switch, axis pick extremes, snap helpers, delta roundtrip, dirty flags |
 
 ---
 
@@ -133,8 +134,12 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 
 - [x] `GizmoSystem` headless drag stub — translate/rotate/scale modes
 - [x] Axis-constrained drag delta accumulation
+- [x] `GizmoSpace` local/world + `applyTranslateDelta` / `applyRotateDelta` / `applyScaleDelta` helpers
+- [x] Ray vs axis segment / plane hit-test stubs (`hitTestAxisSegment`, `hitTestAxisPlane`, `pickAxisFromRay`)
+- [x] Translate grid snap + rotate angle snap stubs (`GizmoSnapSettings`, `snapTransform`)
+- [x] `CommandStack` + `EditorState::sceneModified` dirty marking on `endDrag`
+- [x] `fuse_editor_gizmo_system` — mode switch, axis pick extremes, snap, delta roundtrip
 - [ ] Screen-space gizmo rendering + hover highlight (deferred)
-- [ ] Snap-to-grid quantisation (deferred)
 
 ### B6.5 — Scene Hierarchy Panel
 
@@ -229,6 +234,7 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 | Viewport | Headless camera + resize stub | **Done** | `ViewportPanel` |
 | Viewport | Framebuffer rebuild on resize | **Deferred** | Needs Vulkan surface |
 | Gizmos | Headless drag delta stub | **Done** | `GizmoSystem` |
+| Gizmos | Ray hit tests + snap + delta helpers | **Done** | `fuse_editor_gizmo_system` |
 | Gizmos | Screen-space axis rendering | **Deferred** | — |
 | Hierarchy | Flatten + search + reparent via undo | **Done** | `fuse_editor_hierarchy_model` |
 | Hierarchy | Drag-and-drop UI | **Deferred** | Qt U6 |

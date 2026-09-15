@@ -1,6 +1,10 @@
 #pragma once
 
+#include <fuse/editor/command_stack.hpp>
+#include <fuse/editor/editor_state.hpp>
 #include <fuse/handle.hpp>
+#include <fuse/math/quat.hpp>
+#include <fuse/math/vec.hpp>
 #include <fuse/object.hpp>
 #include <fuse/types.hpp>
 
@@ -20,6 +24,32 @@ enum class GizmoAxis {
     Uniform,
 };
 
+enum class GizmoSpace {
+    Local,
+    World,
+};
+
+/// Screen-space hit payload for legacy drag stubs (B6.4).
+struct GizmoHitTest {
+    f32 screenX = 0.f;
+    f32 screenY = 0.f;
+    f32 viewportWidth = 1.f;
+    f32 viewportHeight = 1.f;
+};
+
+/// World-space pick ray for analytic axis / plane hit tests (B6.4 deepen).
+struct GizmoRay {
+    math::Vec3 origin;
+    math::Vec3 direction;
+};
+
+struct GizmoSnapSettings {
+    bool translateSnap = false;
+    f32 gridSize = 1.f;
+    bool rotateSnap = false;
+    f32 angleStepDegrees = 15.f;
+};
+
 struct GizmoTransform {
     f32 posX = 0.f;
     f32 posY = 0.f;
@@ -33,13 +63,6 @@ struct GizmoTransform {
     f32 scaleZ = 1.f;
 };
 
-struct GizmoHitTest {
-    f32 screenX = 0.f;
-    f32 screenY = 0.f;
-    f32 viewportWidth = 1.f;
-    f32 viewportHeight = 1.f;
-};
-
 struct GizmoResult {
     bool active = false;
     bool changed = false;
@@ -47,33 +70,88 @@ struct GizmoResult {
     GizmoTransform transform;
 };
 
+/// Ray vs finite axis segment (capsule radius) — returns closest ray parameter `outT`.
+bool hitTestAxisSegment(const GizmoRay& ray, const math::Vec3& segmentStart,
+                        const math::Vec3& segmentEnd, f32 radius, f32& outT);
+
+/// Ray vs infinite plane — returns ray parameter `outT` when the ray hits the plane.
+bool hitTestAxisPlane(const GizmoRay& ray, const math::Vec3& planeNormal,
+                      const math::Vec3& planePoint, f32& outT);
+
+/// Pick the closest gizmo axis (or uniform scale handle) along `ray`.
+GizmoAxis pickAxisFromRay(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+                          GizmoSpace space, f32 axisLength, f32 pickRadius);
+
+f32 snapToGrid(f32 value, f32 gridSize);
+f32 snapAngleRadians(f32 radians, f32 stepDegrees);
+GizmoTransform snapTransform(const GizmoTransform& transform, GizmoMode mode,
+                             const GizmoSnapSettings& settings);
+
+math::Vec3 gizmoPosition(const GizmoTransform& transform);
+math::Quat gizmoRotation(const GizmoTransform& transform);
+math::Vec3 gizmoScale(const GizmoTransform& transform);
+GizmoTransform gizmoFromMath(const math::Vec3& position, const math::Quat& rotation,
+                             const math::Vec3& scale);
+
+GizmoTransform applyTranslateDelta(const GizmoTransform& base, GizmoAxis axis,
+                                   const math::Vec3& delta, GizmoSpace space);
+GizmoTransform applyRotateDelta(const GizmoTransform& base, GizmoAxis axis, f32 deltaRadians,
+                                GizmoSpace space);
+GizmoTransform applyScaleDelta(const GizmoTransform& base, GizmoAxis axis,
+                               const math::Vec3& delta, GizmoSpace space);
+
 /// Headless in-viewport gizmo API (B6.4).
 class GizmoSystem {
 public:
     static constexpr f32 kScreenSize = 120.f;
     static constexpr f32 kLineWidth = 2.5f;
     static constexpr f32 kArrowSize = 0.2f;
+    static constexpr f32 kAxisLength = 1.f;
+    static constexpr f32 kPickRadius = 0.08f;
 
     void setMode(GizmoMode mode);
     GizmoMode mode() const { return m_mode; }
 
+    void setSpace(GizmoSpace space) { m_space = space; }
+    GizmoSpace space() const { return m_space; }
+
+    void setSnapSettings(const GizmoSnapSettings& settings) { m_snap = settings; }
+    const GizmoSnapSettings& snapSettings() const { return m_snap; }
+
     void setTarget(Handle<Object> target) { m_target = target; }
     Handle<Object> target() const { return m_target; }
 
+    void setCommandStack(CommandStack* stack) { m_commandStack = stack; }
+    void setEditorState(EditorState* state) { m_editorState = state; }
+
+    [[nodiscard]] bool transformDirty() const { return m_transformDirty; }
+    void clearTransformDirty() { m_transformDirty = false; }
+
+    GizmoAxis pickAxis(const GizmoRay& ray, const GizmoTransform& transform) const;
+    GizmoAxis pickAxis(const GizmoHitTest& hit) const;
+
     GizmoResult beginDrag(const GizmoHitTest& hit, const GizmoTransform& current);
+    GizmoResult beginDrag(const GizmoRay& ray, const GizmoTransform& current);
     GizmoResult updateDrag(const GizmoHitTest& hit);
     GizmoResult endDrag();
 
     bool isDragging() const { return m_dragging; }
 
 private:
-    GizmoAxis pickAxis_(const GizmoHitTest& hit) const;
+    GizmoAxis pickAxisScreen_(const GizmoHitTest& hit) const;
     GizmoTransform applyAxisDelta_(const GizmoHitTest& hit, const GizmoTransform& base) const;
+    GizmoTransform applySnapping_(const GizmoTransform& transform) const;
+    void markDirty_();
 
     GizmoMode m_mode = GizmoMode::Translate;
+    GizmoSpace m_space = GizmoSpace::World;
+    GizmoSnapSettings m_snap{};
     Handle<Object> m_target = Handle<Object>::invalid();
+    CommandStack* m_commandStack = nullptr;
+    EditorState* m_editorState = nullptr;
     GizmoAxis m_activeAxis = GizmoAxis::None;
     bool m_dragging = false;
+    bool m_transformDirty = false;
     GizmoTransform m_startTransform;
     GizmoTransform m_currentTransform;
     GizmoHitTest m_lastHit;

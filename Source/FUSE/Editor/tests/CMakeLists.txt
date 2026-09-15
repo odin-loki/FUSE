@@ -63,3 +63,10 @@ add_executable(fuse_editor_play_session_tests
 
 target_link_libraries(fuse_editor_play_session_tests PRIVATE fuse_editor_api fuse_core fuse_scene)
 add_test(NAME fuse_editor_play_session COMMAND fuse_editor_play_session_tests)
+
+add_executable(fuse_editor_gizmo_system_tests
+    test_gizmo_system.cpp
+)
+
+target_link_libraries(fuse_editor_gizmo_system_tests PRIVATE fuse_editor_api fuse_core)
+add_test(NAME fuse_editor_gizmo_system COMMAND fuse_editor_gizmo_system_tests)
