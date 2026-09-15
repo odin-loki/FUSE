@@ -8,6 +8,7 @@ void run_rollback_buffer_tests() {
     fuse::net::RollbackBuffer empty;
     empty.init(8);
     expectTrue(empty.stored_frame_count() == 0u, "empty buffer reports zero stored frames");
+    expectTrue(empty.empty(), "fresh rollback buffer reports empty");
     expectTrue(!empty.evict_oldest_snapshot().has_value(), "evict_oldest on empty buffer returns nullopt");
     expectTrue(!empty.has_local_input(0u), "empty buffer has no local input");
 
@@ -75,6 +76,7 @@ void run_rollback_buffer_tests() {
     expectTrue(evicted->frame == 2u, "evict_oldest returns oldest frame first");
     expectTrue(buffer.stored_frame_count() == 7u, "evict_oldest shrinks retained count");
     expectTrue(!buffer.has_frame(2u), "evicted frame no longer queryable");
+    expectTrue(!buffer.empty(), "rollback buffer non-empty after snapshot store");
 }
 
 } // namespace fuse::net::tests

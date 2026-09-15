@@ -4,19 +4,49 @@
 
 namespace fuse::net {
 
+bool can_reconcile_input_frame(const InputHistoryBuffer& history, u32 frame) {
+    if (history.capacity() == 0) {
+        return false;
+    }
+
+    if (history.empty()) {
+        return true;
+    }
+
+    if (frame < history.oldest_stored_frame()) {
+        return false;
+    }
+
+    if (frame > history.newest_stored_frame()) {
+        return false;
+    }
+
+    return true;
+}
+
+bool can_reconcile_rollback_frame(const RollbackBuffer& buffer, u32 frame) {
+    if (buffer.capacity() == 0 || buffer.empty()) {
+        return false;
+    }
+
+    if (frame < buffer.oldest_stored_frame()) {
+        return false;
+    }
+
+    if (frame > buffer.newest_stored_frame()) {
+        return false;
+    }
+
+    return buffer.has_frame(frame);
+}
+
 ReconcileResult reconcile_predicted_input(InputHistoryBuffer& history, u32 frame,
                                           const PlayerInput& authoritative) {
     ReconcileResult result{};
     result.frame = frame;
 
-    if (history.capacity() == 0) {
+    if (!can_reconcile_input_frame(history, frame)) {
         return result;
-    }
-
-    if (history.stored_frame_count() > 0) {
-        if (frame < history.oldest_stored_frame()) {
-            return result;
-        }
     }
 
     history.store_confirmed(frame, authoritative);
@@ -39,15 +69,7 @@ ReconcileResult reconcile_rollback_buffer(RollbackBuffer& buffer, u32 frame, con
     ReconcileResult result{};
     result.frame = frame;
 
-    if (buffer.capacity() == 0) {
-        return result;
-    }
-
-    if (buffer.stored_frame_count() > 0 && frame < buffer.oldest_stored_frame()) {
-        return result;
-    }
-
-    if (!buffer.has_frame(frame)) {
+    if (!can_reconcile_rollback_frame(buffer, frame)) {
         return result;
     }
 

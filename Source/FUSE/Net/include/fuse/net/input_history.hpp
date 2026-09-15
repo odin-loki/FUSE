@@ -30,6 +30,7 @@ public:
     [[nodiscard]] u32 oldest_stored_frame() const { return m_oldest_frame; }
     [[nodiscard]] u32 newest_stored_frame() const { return m_newest_frame; }
     [[nodiscard]] u32 stored_frame_count() const;
+    [[nodiscard]] bool empty() const { return stored_frame_count() == 0; }
     [[nodiscard]] bool has_frame(u32 frame) const;
 
     /// Push a predicted local input for `frame` (ring may evict the oldest retained frame).
