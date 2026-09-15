@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 
 #if !FUSE_JOBS_SINGLE_THREAD
 int main() {
@@ -131,6 +132,92 @@ void testParallelForParity() {
     });
 }
 
+void testNestedParallelForParity() {
+    constexpr fuse::u32 outer = 20u;
+    constexpr fuse::u32 inner = 24u;
+    std::vector<fuse::u32> grid(outer * inner, 0u);
+
+    withScheduler(0, [&] {
+        fuse::jobs::parallel_for(0u, outer, 4u, [&](fuse::u32 o) {
+            fuse::jobs::parallel_for(0u, inner, 3u, [&](fuse::u32 i) {
+                grid[o * inner + i] = o * inner + i;
+            });
+        });
+    });
+
+    for (fuse::u32 o = 0; o < outer; ++o) {
+        for (fuse::u32 i = 0; i < inner; ++i) {
+            const fuse::u32 idx = o * inner + i;
+            expectEq(grid[idx], idx, "single-thread nested parallel_for fills every cell");
+        }
+    }
+}
+
+void testNestedParallelForVisitCount() {
+    constexpr fuse::u32 outer = 16u;
+    constexpr fuse::u32 inner = 32u;
+    std::atomic<fuse::u32> visitCount{0};
+
+    withScheduler(0, [&] {
+        fuse::jobs::parallel_for(0u, outer, outer, [&](fuse::u32 /*o*/) {
+            fuse::jobs::parallel_for(0u, inner, 4u, [&](fuse::u32 /*i*/) {
+                visitCount.fetch_add(1u, std::memory_order_relaxed);
+            });
+        });
+    });
+
+    expectEq(visitCount.load(std::memory_order_relaxed), outer * inner,
+             "single-thread nested parallel_for visits every index");
+}
+
+void testNestedParallelForStressVisitCoverage() {
+    constexpr fuse::u32 outerCount = 24u;
+    constexpr fuse::u32 innerCount = 32u;
+    constexpr fuse::u32 iterations = 8u;
+    const fuse::u32 outerGrains[] = {1u, 4u, outerCount};
+    const fuse::u32 innerGrains[] = {4u, 8u, 16u};
+
+    withScheduler(0, [&] {
+        for (fuse::u32 outerGrain : outerGrains) {
+            for (fuse::u32 innerGrain : innerGrains) {
+                for (fuse::u32 iteration = 0; iteration < iterations; ++iteration) {
+                    std::vector<std::atomic<bool>> visited(outerCount * innerCount);
+                    for (auto& slot : visited) {
+                        slot.store(false, std::memory_order_relaxed);
+                    }
+
+                    fuse::jobs::parallel_for(0u, outerCount, outerGrain, [&](fuse::u32 o) {
+                        fuse::jobs::parallel_for(0u, innerCount, innerGrain, [&](fuse::u32 i) {
+                            const fuse::u32 idx = o * innerCount + i;
+                            visited[idx].store(true, std::memory_order_relaxed);
+                        });
+                    });
+
+                    fuse::u32 visitedCount = 0;
+                    for (fuse::u32 idx = 0; idx < outerCount * innerCount; ++idx) {
+                        if (visited[idx].load(std::memory_order_relaxed)) {
+                            ++visitedCount;
+                        }
+                    }
+
+                    if (visitedCount != outerCount * innerCount) {
+                        std::fprintf(stderr,
+                                     "FAIL: nested stress visit coverage outerGrain=%u innerGrain=%u iter=%u "
+                                     "(expected %u, got %u)\n",
+                                     outerGrain,
+                                     innerGrain,
+                                     iteration,
+                                     outerCount * innerCount,
+                                     visitedCount);
+                        ++g_failures;
+                        return;
+                    }
+                }
+            }
+        }
+    });
+}
+
 void testEmscriptenStubProfileWhenApplicable() {
 #if defined(__EMSCRIPTEN__)
     expectEq(fuse::platform::fiberBackendName(), "stub", "Emscripten uses fiber stub backend");
@@ -151,6 +238,9 @@ int main() {
     testSubmitRunsInline();
     testNestedCounterWait();
     testParallelForParity();
+    testNestedParallelForParity();
+    testNestedParallelForVisitCount();
+    testNestedParallelForStressVisitCoverage();
     testEmscriptenStubProfileWhenApplicable();
 
     if (g_failures == 0) {

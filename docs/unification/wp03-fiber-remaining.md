@@ -47,7 +47,7 @@ Nightly job: [`.github/workflows/fuse-tsan-nightly.yml`](../../.github/workflows
 | `JobCounter` teardown vs in-flight `signal()` | TSan race on `m_fiberWaiters` / mutex when `wait()` returned before `signal()` released `m_waitMutex` | Removed unused fiber-waiter list; `wait()` calls `synchronizeCompletion()` to serialize with the final `signal()` |
 | Shared `Impl::useFibers` bool | Potential torn read when fiber allocation fails on one worker while others observe the flag | `std::atomic<bool>` with acquire/release loads |
 
-Regression tests: `fuse_core_jobs` — `testParallelSerialFallbackParity`, `testNestedParallelForParity`, `testNestedParallelForSerialFallbackParity`, `testNestedParallelForWithCooperativeWait`, work-steal helper/integration tests (`testWorkSteal*`), `testNestedParallelForVisitCountSingleThread`.
+Regression tests: `fuse_core_jobs` — `testParallelSerialFallbackParity`, `testNestedParallelForParity`, `testNestedParallelForSerialFallbackParity`, `testNestedParallelForWithCooperativeWait`, `testNestedParallelForMultiWorkerVisitCount`, `testNestedParallelForStressVisitCoverage` (per-index `atomic<bool>` visit matrix on zero-worker path; avoids aggregate-count flakes), work-steal helper/integration tests (`testWorkSteal*`), `testNestedParallelForVisitCountSingleThread`; `fuse_core_jobs_single_thread` — nested parity + full-grain visit stress under `FUSE_JOBS_SINGLE_THREAD`.
 
 ### Remaining (documented, not yet eliminated)
 
