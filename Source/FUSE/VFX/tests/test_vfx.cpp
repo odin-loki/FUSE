@@ -1245,6 +1245,131 @@ void testSoaOpsParallelParity() {
     expectNear(parallelChecksum, serialChecksum, 1e-3f, "soa simulate_step parallel checksum matches serial");
 }
 
+void testSoaOpsClampBurstCount() {
+    fuse::vfx::ParticleSoA soa{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 6;
+    desc.lifetime_min = 1.f;
+    desc.lifetime_max = 1.f;
+
+    fuse::vfx::particle_soa::init(soa, desc.max_particles);
+    expectEq(fuse::vfx::particle_soa::clamp_burst_count(soa, 10u), 6u, "clamp_burst_count on empty soa returns capacity");
+    expectTrue(!fuse::vfx::particle_soa::is_at_capacity(soa), "empty soa is not at capacity");
+    expectTrue(!fuse::vfx::particle_soa::has_live_particles(soa), "empty soa has no live particles");
+
+    (void)fuse::vfx::particle_soa::burst_emit(soa, desc, {}, 4u, 1u);
+    expectEq(fuse::vfx::particle_soa::clamp_burst_count(soa, 5u), 2u, "clamp_burst_count respects remaining free slots");
+    expectTrue(fuse::vfx::particle_soa::has_live_particles(soa), "burst soa has live particles");
+    expectTrue(!fuse::vfx::particle_soa::is_at_capacity(soa), "partial soa is not at capacity");
+
+    (void)fuse::vfx::particle_soa::burst_emit(soa, desc, {}, 2u, 2u);
+    expectEq(fuse::vfx::particle_soa::clamp_burst_count(soa, 1u), 0u, "clamp_burst_count at capacity returns zero");
+    expectTrue(fuse::vfx::particle_soa::is_at_capacity(soa), "full soa is at capacity");
+}
+
+void testSoaOpsBurstClampedFlag() {
+    fuse::vfx::ParticleSoA soa{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 3;
+    desc.lifetime_min = 1.f;
+    desc.lifetime_max = 1.f;
+
+    fuse::vfx::particle_soa::init(soa, desc.max_particles);
+
+    const fuse::vfx::particle_soa::BurstEmitResult exact =
+        fuse::vfx::particle_soa::burst_emit(soa, desc, {}, 2u, 5u);
+    expectTrue(!exact.clamped, "exact burst is not clamped");
+    expectEq(exact.emitted, 2u, "exact burst emits requested count");
+
+    const fuse::vfx::particle_soa::BurstEmitResult overflow =
+        fuse::vfx::particle_soa::burst_emit(soa, desc, {}, 5u, exact.seed_after);
+    expectTrue(overflow.clamped, "overflow burst reports clamped");
+    expectEq(overflow.requested, 5u, "overflow burst reports requested count");
+    expectEq(overflow.emitted, 1u, "overflow burst emits only remaining slot");
+}
+
+void testSoaOpsSimulateStepEmptyGuard() {
+    fuse::vfx::ParticleSoA soa{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 8;
+
+    fuse::vfx::particle_soa::init(soa, desc.max_particles);
+    const fuse::vfx::particle_soa::SimStepResult empty =
+        fuse::vfx::particle_soa::simulate_step(soa, desc, 0.1f);
+    expectEq(empty.alive_after, 0u, "simulate_step on empty soa stays empty");
+    expectEq(empty.integrated, 0u, "simulate_step on empty soa integrates nothing");
+    expectEq(empty.culled, 0u, "simulate_step on empty soa culls nothing");
+    expectEq(static_cast<fuse::u32>(empty.dead_slots.size()), 0u, "simulate_step on empty soa collects no slots");
+}
+
+void testSoaOpsSimulateStepIntegratedCounts() {
+    fuse::vfx::ParticleSoA soa{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 4;
+    desc.lifetime_min = 1.f;
+    desc.lifetime_max = 1.f;
+    desc.gravity = {};
+    desc.drag = 0.f;
+    desc.velocity_min = {};
+    desc.velocity_max = {};
+
+    fuse::vfx::particle_soa::init(soa, desc.max_particles);
+    (void)fuse::vfx::particle_soa::burst_emit(soa, desc, {}, 4u, 11u);
+    soa.lifetimes[0] = 0.1f;
+    soa.lifetimes[1] = 0.1f;
+    soa.lifetimes[2] = 1.f;
+    soa.lifetimes[3] = 1.f;
+
+    const fuse::vfx::particle_soa::SimStepResult step =
+        fuse::vfx::particle_soa::simulate_step(soa, desc, 0.2f);
+    expectEq(step.culled, 2u, "simulate_step reports culled short-lived slots");
+    expectEq(step.integrated, 2u, "simulate_step reports integrated survivors");
+    expectEq(step.alive_after, 2u, "simulate_step alive_after matches integrated count");
+    expectEq(step.integrated + step.culled, 4u, "simulate_step integrated plus culled equals live input");
+}
+
+void testSoaOpsRateEmitAtCapacityFlag() {
+    fuse::vfx::ParticleSoA soa{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 2;
+    desc.emit_rate = 50.f;
+    desc.lifetime_min = 5.f;
+    desc.lifetime_max = 5.f;
+
+    fuse::vfx::particle_soa::init(soa, desc.max_particles);
+    const fuse::vfx::particle_soa::RateEmitResult fill =
+        fuse::vfx::particle_soa::accumulate_rate_emit(soa, desc, {}, 1.f, 0.f, 7u);
+    expectEq(fill.emitted, 2u, "rate emit fills to capacity");
+    expectTrue(fill.at_capacity, "rate emit at capacity clears accumulator");
+    expectNear(fill.accum_after, 0.f, 1e-5f, "rate emit at capacity zeroes accumulator");
+
+    fuse::vfx::ParticleSoA zero_cap_soa{};
+    fuse::vfx::particle_soa::init(zero_cap_soa, 0u);
+    const fuse::vfx::particle_soa::RateEmitResult zero_capacity =
+        fuse::vfx::particle_soa::accumulate_rate_emit(zero_cap_soa, desc, {}, 1.f, 0.5f, 1u);
+    expectEq(zero_capacity.emitted, 0u, "rate emit on zero-capacity soa emits nothing");
+    expectNear(zero_capacity.accum_after, 0.5f, 1e-5f, "rate emit on zero-capacity soa preserves accumulator");
+}
+
+void testParticleEmitterBurstReturnsEmitted() {
+    fuse::vfx::ParticleEmitter emitter{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 5;
+    desc.emit_rate = 0.f;
+    desc.lifetime_min = 1.f;
+    desc.lifetime_max = 1.f;
+
+    expectEq(emitter.burst(3u), 0u, "uninitialized burst returns zero emitted");
+
+    emitter.init(desc);
+    expectEq(emitter.burst(3u), 3u, "burst returns emitted count");
+    expectEq(emitter.alive_count(), 3u, "burst return matches alive count");
+
+    expectEq(emitter.burst(5u), 2u, "clamped burst returns actual emitted count");
+    expectEq(emitter.alive_count(), 5u, "clamped burst reaches capacity");
+    expectEq(emitter.burst(1u), 0u, "burst at capacity returns zero");
+}
+
 void testParticleSystemEmitterHandles() {
     fuse::vfx::ParticleSystem system{};
     system.init({});
@@ -1304,6 +1429,12 @@ int main() {
     testSoaOpsAgeKill();
     testSoaOpsRateEmit();
     testSoaOpsRateEmitEmpty();
+    testSoaOpsClampBurstCount();
+    testSoaOpsBurstClampedFlag();
+    testSoaOpsSimulateStepEmptyGuard();
+    testSoaOpsSimulateStepIntegratedCounts();
+    testSoaOpsRateEmitAtCapacityFlag();
+    testParticleEmitterBurstReturnsEmitted();
     testSoaOpsParallelParity();
     testParticleGpuBufferLayout();
     testParticleGpuColumnAlignment();
