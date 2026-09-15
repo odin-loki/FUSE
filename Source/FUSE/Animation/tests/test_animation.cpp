@@ -748,6 +748,53 @@ void testTwoBoneIKSoA() {
     expectNear(pose.bone_world_transforms[2].data[13], ik.target.y, 0.05f, "two bone ik soa reaches target y");
 }
 
+void testTwoBoneIKEmptySkeleton() {
+    const fuse::animation::Skeleton empty{};
+    fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(empty);
+    fuse::animation::PoseSoA poseSoa = fuse::animation::PoseSoA::from_bind_pose(empty);
+
+    fuse::animation::TwoBoneIK ik;
+    ik.root_bone = 0;
+    ik.mid_bone = 1;
+    ik.end_bone = 2;
+    ik.target = {1.f, 1.f, 0.f, 0.f};
+    expectTrue(!ik.has_valid_chain(empty), "two bone ik rejects empty skeleton");
+    expectTrue(!ik.solve(pose, empty), "two bone ik aos rejects empty skeleton");
+    expectTrue(!ik.solve(poseSoa, empty), "two bone ik soa rejects empty skeleton");
+
+    fuse::animation::FABRIKChain chain;
+    chain.bone_indices = {0, 1};
+    chain.target = {0.f, 1.f, 0.f, 0.f};
+    chain.solve(pose, empty);
+    expectTrue(pose.bone_count == 0u, "fabrik on empty skeleton leaves pose empty");
+}
+
+void testTwoBoneIKInPlace() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+    fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
+    pose.bone_world_transforms[0].data[12] = 3.f;
+
+    fuse::animation::TwoBoneIK ik;
+    ik.root_bone = 0;
+    ik.mid_bone = 1;
+    ik.end_bone = 2;
+    ik.target = {4.f, 1.f, 0.f, 0.f};
+    ik.pole_vector = {0.f, 0.f, 1.f, 0.f};
+    expectTrue(ik.solve(pose, skel), "two bone ik solves in place on existing pose");
+
+    expectNear(pose.bone_world_transforms[0].data[12], 3.f, 1e-4f, "two bone ik preserves root translation");
+    const fuse::animation::vec3 end = {
+        pose.bone_world_transforms[2].data[12],
+        pose.bone_world_transforms[2].data[13],
+        pose.bone_world_transforms[2].data[14],
+        0.f,
+    };
+    const fuse::f32 error = std::sqrt((end.x - ik.target.x) * (end.x - ik.target.x) +
+                                      (end.y - ik.target.y) * (end.y - ik.target.y) +
+                                      (end.z - ik.target.z) * (end.z - ik.target.z));
+    expectTrue(error < 0.05f, "two bone ik in place reaches target from offset root");
+}
+
 void testRetargetMapBuildByName() {
     const fuse::animation::Skeleton source = makeTwoBoneSkeleton();
     const fuse::animation::Skeleton target = makeRetargetTargetSkeleton();
@@ -786,6 +833,50 @@ void testRetargetApplyPose() {
     map.apply_pose(sourcePose, targetSkel, targetPose);
     expectNear(targetPose.bone_world_transforms[1].data[13], 6.f, 1e-4f, "retarget apply_pose copies mapped world transform");
     expectNear(targetPose.bone_world_transforms[2].data[12], 2.f, 1e-4f, "retarget apply_pose leaves unmapped bones at bind");
+}
+
+void testRetargetEmptySkeleton() {
+    const fuse::animation::Skeleton empty{};
+    const fuse::animation::RetargetMap byName = fuse::animation::RetargetMap::build_by_name(empty, empty);
+    const fuse::animation::RetargetMap identity = fuse::animation::RetargetMap::build_identity(empty);
+    expectTrue(!byName.is_valid(), "retarget build_by_name on empty skeleton is invalid");
+    expectTrue(!identity.is_valid(), "retarget build_identity on empty skeleton is invalid");
+    expectTrue(identity.mapped_bone_count() == 0u, "retarget identity on empty skeleton maps zero bones");
+
+    fuse::animation::PoseSoA poseSoa = fuse::animation::PoseSoA::allocate(2);
+    byName.apply_pose_soa(poseSoa, empty, poseSoa);
+    expectTrue(poseSoa.bone_count == 0u, "retarget apply_pose_soa on empty skeleton clears output");
+
+    fuse::animation::Pose pose{};
+    byName.apply_pose(pose, empty, pose);
+    expectTrue(pose.bone_count == 0u, "retarget apply_pose on empty skeleton clears output");
+}
+
+void testRetargetIdentity() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    const fuse::animation::RetargetMap map = fuse::animation::RetargetMap::build_identity(skel);
+    expectTrue(map.is_valid(), "retarget identity map is valid");
+    expectTrue(map.mapped_bone_count() == skel.bone_count, "retarget identity maps every bone");
+    expectTrue(map.find_source_bone(1) == 1, "retarget find_source_bone returns mapped index");
+    expectTrue(map.find_source_bone(99) == -1, "retarget find_source_bone returns -1 when unmapped");
+
+    fuse::animation::PoseSoA sourcePose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    sourcePose.local_positions[1] = {0.f, 6.f, 0.f, 0.f};
+    sourcePose.local_scales[0] = {2.f, 2.f, 2.f, 0.f};
+    sourcePose.compute_world_transforms(skel);
+
+    fuse::animation::PoseSoA targetPose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    map.apply_pose_soa(sourcePose, skel, targetPose);
+    expectNear(targetPose.local_positions[1].y, 6.f, 1e-4f, "retarget identity preserves local translation");
+    expectNear(targetPose.local_scales[0].x, 2.f, 1e-4f, "retarget identity preserves local scale");
+    expectNear(targetPose.bone_world_transforms[1].data[13], sourcePose.bone_world_transforms[1].data[13], 1e-4f,
+               "retarget identity preserves world transforms");
+
+    fuse::animation::Pose sourceAoS = sourcePose.to_pose();
+    fuse::animation::Pose targetAoS = fuse::animation::Pose::make_bind_pose(skel);
+    map.apply_pose(sourceAoS, skel, targetAoS);
+    expectNear(targetPose.bone_world_transforms[1].data[13], targetAoS.bone_world_transforms[1].data[13], 1e-4f,
+               "retarget identity apply_pose matches soa world transform");
 }
 
 void testBlendPoseSoAReuse() {
@@ -1067,9 +1158,13 @@ int main() {
     testTwoBoneIKPoleBend();
     testTwoBoneIKUnreachableClamps();
     testTwoBoneIKSoA();
+    testTwoBoneIKEmptySkeleton();
+    testTwoBoneIKInPlace();
     testRetargetMapBuildByName();
     testRetargetApplyPoseSoA();
     testRetargetApplyPose();
+    testRetargetEmptySkeleton();
+    testRetargetIdentity();
     testEmptyBlendSpace1D();
     testEmptyBlendSpace2D();
     testEmptyStateMachine();

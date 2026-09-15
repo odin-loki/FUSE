@@ -26,7 +26,10 @@ struct TwoBoneIK {
     vec3 pole_vector = {0.f, 1.f, 0.f, 0.f};
     f32 reach_epsilon = 1e-4f;
 
-    /// Closed-form two-bone IK (O(1)). Returns false when bone indices are invalid.
+    /// Returns false when the skeleton is empty or bone indices are out of range.
+    [[nodiscard]] bool has_valid_chain(const Skeleton& skel) const;
+
+    /// Closed-form two-bone IK (O(1)). Solves in-place on the current pose; returns false when invalid.
     bool solve(Pose& pose, const Skeleton& skel);
 
     /// SoA variant — writes local positions for the three-bone chain, then recomputes world transforms.
