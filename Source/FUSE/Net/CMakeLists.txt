@@ -11,6 +11,7 @@ set(FUSE_NET_PUBLIC_HEADERS
     include/fuse/net/rollback_buffer.hpp
     include/fuse/net/snapshot_delta.hpp
     include/fuse/net/state_sync.hpp
+    include/fuse/net/interest_management.hpp
 )
 
 set(FUSE_NET_SOURCES
@@ -23,6 +24,7 @@ set(FUSE_NET_SOURCES
     src/rollback_buffer.cpp
     src/snapshot_delta.cpp
     src/state_sync.cpp
+    src/interest_management.cpp
 )
 
 add_library(fuse_net STATIC
