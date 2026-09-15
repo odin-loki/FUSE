@@ -32,6 +32,8 @@ Physics, gfx, and net remain composition/dual-backend. No physical `Engine/` + T
 | [concurrency-inventory.md](./concurrency-inventory.md) | Datamine: T3D ThreadPool, T2D single-thread loop, frame assumptions (paths, counts) |
 | [architecture-parallel.md](./architecture-parallel.md) | **MT spine:** process model, job system, frame pipeline, editor threading, safety |
 | [work-plan.md](./work-plan.md) | Ordered WPs U1–U8 + parallel workstreams; immediate next 5 actions |
+| [vfs-mount-plan.md](./vfs-mount-plan.md) | WP-04 VFS mount prefixes (`/game`, `/t3d`, `/t2d`) |
+| [wp03-fiber-remaining.md](./wp03-fiber-remaining.md) | WP-03 cooperative fiber — shipped vs deferred |
 
 **Related (not U0):**
 - [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) — Track A/B port (consult for alignment only)
@@ -39,6 +41,8 @@ Physics, gfx, and net remain composition/dual-backend. No physical `Engine/` + T
 
 **U1 deliverable:** [BUILD.md](./BUILD.md) (umbrella CMake + `fuse_core` stub) — ✅ landed in U1 PR.  
 **U2 deliverable:** [U2-SMOKE.md](./U2-SMOKE.md) (quarantine libs + `fuse_runtime_smoke`) — ✅ U2 PR.
+
+**WP-03–05 (in progress):** Cooperative POSIX fiber wait, shared services stubs (logger/handle/allocator/VFS), greenfield scene hierarchy — see [wp03-fiber-remaining.md](./wp03-fiber-remaining.md). U2 full Engine init blockers unchanged ([U2-SMOKE.md §3](./U2-SMOKE.md#3-honest-blockers--full-dual-legacy-engine-init)).
 
 ---
 

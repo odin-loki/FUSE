@@ -83,7 +83,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Emscripten** | Stub profile only (`FUSE_JOBS_SINGLE_THREAD`) — **does not gate** WP-03 exit |
 | **Exit** | Job tests pass on Linux + **one mobile target** (iOS sim or Android NDK); work-stealing on 4+ core desktop; `FUSE_JOBS_SINGLE_THREAD` works; background reduces `N` |
 | **Deps** | WP-01 (cmake target); architecture-parallel §3.1–3.6 |
-| **Status** | 🚧 Thread-pool scheduler landed (U2 PR); cooperative fiber switch deferred |
+| **Status** | ✅ Cooperative fiber wait on POSIX (Linux CI); Win/Emscripten backends deferred — see [wp03-fiber-remaining.md](./wp03-fiber-remaining.md) |
 
 ---
 
@@ -96,6 +96,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **MT note** | Publish asset handles from I/O jobs; game thread commit; TSan nightly begins |
 | **Exit** | Both dims log via FUSE logger; one asset loaded via VFS from job; handle rules documented |
 | **Deps** | WP-02, WP-03 (partial — I/O can use thread pool before fibers complete) |
+| **Status** | 🚧 Started — logger, Handle, frame allocator, VFS stub; async I/O + handle table deferred |
 
 ---
 
@@ -108,6 +109,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Parallel** | Overlaps late WP-04 |
 | **Exit** | Unit tests for hierarchy; adapter round-trip one legacy object; **no** cross-thread raw pointers |
 | **Deps** | WP-04 handles; [merge-strategy-2d-extends.md](./merge-strategy-2d-extends.md) |
+| **Status** | 🚧 Started — `fuse::Object`, `SceneObject2D`, `SceneObject3D` + hierarchy tests; legacy adapters stubbed |
 
 ---
 
@@ -241,7 +243,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 
-**Next:** Incremental Engine source into quarantine libs (U2.1); WP-03 cooperative fiber switch; WP-04 shared services.
+**Next:** WP-04 async I/O lane + handle table; WP-05 legacy adapters; WP-06 hybrid frame.
 
 ---
 

@@ -7,8 +7,8 @@
 
 namespace fuse::jobs {
 
-/// Work-stealing thread pool with fiber-compatible API surface (U2).
-/// OS-thread backed; cooperative fiber switch is deferred to a later WP-03 slice.
+/// Work-stealing scheduler with optional cooperative fibers on worker threads (WP-03).
+/// OS threads back the pool; JobCounter::wait() yields on workers when fibers are available.
 class JobScheduler {
 public:
     using JobFn = std::function<void()>;
