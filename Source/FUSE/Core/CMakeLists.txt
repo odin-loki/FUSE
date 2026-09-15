@@ -15,6 +15,8 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/object.hpp
     include/fuse/core/init.hpp
     include/fuse/log/logger.hpp
+    include/fuse/assert.hpp
+    include/fuse/profiler/profiler.hpp
     include/fuse/alloc/frame_allocator.hpp
     include/fuse/io/asset.hpp
     include/fuse/io/vfs.hpp
@@ -42,6 +44,8 @@ set(FUSE_CORE_SOURCES
     src/frame/frame_barrier.cpp
     src/object.cpp
     src/log/logger.cpp
+    src/assert/fatal_handler.cpp
+    src/profiler/profiler.cpp
     src/alloc/frame_allocator.cpp
     src/io/vfs.cpp
     src/jobs/worker_count.cpp
@@ -85,6 +89,12 @@ endif()
 
 target_compile_features(fuse_core PUBLIC cxx_std_17)
 target_link_libraries(fuse_core PUBLIC Threads::Threads)
+
+target_compile_definitions(fuse_core
+    PUBLIC
+        $<$<CONFIG:Debug>:FUSE_DEBUG=1>
+        $<$<CONFIG:RelWithDebInfo>:FUSE_PROFILE=1>
+)
 
 if(FUSE_CUDA_BACKEND)
     target_compile_definitions(fuse_core PUBLIC FUSE_HAS_CUDA=1)

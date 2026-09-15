@@ -46,3 +46,10 @@ add_executable(fuse_core_io_handle_tests
 
 target_link_libraries(fuse_core_io_handle_tests PRIVATE fuse_core)
 add_test(NAME fuse_core_io_handle COMMAND fuse_core_io_handle_tests)
+
+add_executable(fuse_core_profiler_assert_tests
+    test_profiler_assert.cpp
+)
+
+target_link_libraries(fuse_core_profiler_assert_tests PRIVATE fuse_core)
+add_test(NAME fuse_core_profiler_assert COMMAND fuse_core_profiler_assert_tests)
