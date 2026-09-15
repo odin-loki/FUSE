@@ -30,13 +30,19 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaHistoryBuffer::hasValidHistory()` — false until the first successful resolve
 - `TaaHistoryBuffer::needsWarmup()` — inverse of `hasValidHistory` for resolve warm-up gating
 - `TaaHistoryBuffer::accumulatedFrames()` — monotonic frame counter reset on invalidate/resize
+- `TaaHistoryBuffer::invalidateGeneration()` — bumped on invalidate/resize for stale-history detection
+- `TaaHistoryBuffer::matchesDimensions(w, h)` — true when resolve dimensions match allocated history
 - `TaaHistoryBuffer::invalidateHistory()` — clears validity (called on resize)
 - `TaaResolveStats::first_frame` — set when resolve runs before history is warm
 - `TaaResolveStats::effective_blend` — 1.0 on first warm-up frame, else `TAAParams::blend_factor`
 - `TaaResolveStats::skipped` / `skip_reason` — set when resolve bails before history update
+- `TaaResolveSkipReason::DimensionMismatch` — resolve dimensions differ from history buffer allocation
+- `taaResolveSkipReasonLabel(reason)` — stable string label for skip reasons
 - `TaaResolve::wouldSkip(desc, history, &reason)` — preflight skip check without mutating history
 - `TaaResolve::resetBookkeeping()` — clears resolve stats/message (called on `TaaPass::destroy` / `invalidateHistory`)
 - `TaaPass::invalidateHistory()` — clears history validity and resolve bookkeeping without destroying buffers
+- `TaaPass::needsHistoryWarmup()` — true until the first successful resolve
+- `TaaPass::wouldSkipResolve(desc, &reason)` — pass-level preflight skip check
 - `TaaPass::syncJitterToFrameIndex(frame)` — align pass jitter to a monotonic frame counter
 
 ## Pipeline (stub)

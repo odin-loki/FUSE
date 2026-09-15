@@ -3,11 +3,13 @@
 namespace fuse::renderer {
 
 bool TaaHistoryBuffer::init(ResourceManager& resources, const TaaHistoryBufferDesc& desc) {
+    const u32 preservedGeneration = m_validity.invalidateGeneration;
     destroy();
     m_resources = &resources;
     m_desc = desc;
     m_activeIndex = 0u;
     m_validity = {};
+    m_validity.invalidateGeneration = preservedGeneration;
 
     if (m_desc.width == 0u || m_desc.height == 0u) {
         return false;
@@ -71,9 +73,14 @@ void TaaHistoryBuffer::swap() {
     m_activeIndex = (m_activeIndex + 1u) % 2u;
 }
 
+bool TaaHistoryBuffer::matchesDimensions(u32 width, u32 height) const {
+    return m_desc.width == width && m_desc.height == height;
+}
+
 void TaaHistoryBuffer::invalidateHistory() {
     m_validity.hasValidHistory = false;
     m_validity.accumulatedFrames = 0u;
+    ++m_validity.invalidateGeneration;
 }
 
 void TaaHistoryBuffer::markResolved() {

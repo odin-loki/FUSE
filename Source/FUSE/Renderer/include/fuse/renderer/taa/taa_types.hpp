@@ -44,6 +44,8 @@ struct TaaResolveDesc {
 struct TaaHistoryValidity {
     bool hasValidHistory = false;
     u32 accumulatedFrames = 0;
+    /// Bumped on invalidate/resize — consumers can detect stale history reads.
+    u32 invalidateGeneration = 0;
 };
 
 /// Why a resolve request bailed before history update (B5.9 deepen).
@@ -51,6 +53,7 @@ enum class TaaResolveSkipReason : u8 {
     None = 0,
     HistoryNotReady,
     InvalidDimensions,
+    DimensionMismatch,
     MissingSurfaces,
 };
 
@@ -69,6 +72,11 @@ struct TaaResolveStats {
     bool first_frame = false;
     bool has_valid_history = false;
     u32 accumulated_frames = 0;
+    /// `TaaHistoryBuffer::invalidateGeneration()` at resolve time.
+    u32 history_invalidate_generation = 0;
 };
+
+/// Human-readable label for resolve skip reasons (logging / tests).
+const char* taaResolveSkipReasonLabel(TaaResolveSkipReason reason);
 
 } // namespace fuse::renderer

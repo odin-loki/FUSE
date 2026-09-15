@@ -74,6 +74,10 @@ void TaaPass::invalidateHistory() {
     m_resolve.resetBookkeeping();
 }
 
+bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
+    return m_resolve.wouldSkip(desc, m_history, reason);
+}
+
 bool TaaPass::resolveFrame(const TaaResolveDesc& desc, void* cudaStream) {
     if (!m_stats.ready) {
         m_stats.message = "TAA pass not ready";

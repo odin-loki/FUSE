@@ -10,6 +10,9 @@ TaaResolveSkipReason classifySkip(const TaaResolveDesc& desc, const TaaHistoryBu
     if (desc.width == 0u || desc.height == 0u) {
         return TaaResolveSkipReason::InvalidDimensions;
     }
+    if (!history.matchesDimensions(desc.width, desc.height)) {
+        return TaaResolveSkipReason::DimensionMismatch;
+    }
     if (desc.surfaces.current_frame == nullptr || desc.surfaces.output == nullptr) {
         return TaaResolveSkipReason::MissingSurfaces;
     }
@@ -17,6 +20,22 @@ TaaResolveSkipReason classifySkip(const TaaResolveDesc& desc, const TaaHistoryBu
 }
 
 } // namespace
+
+const char* taaResolveSkipReasonLabel(TaaResolveSkipReason reason) {
+    switch (reason) {
+    case TaaResolveSkipReason::None:
+        return "none";
+    case TaaResolveSkipReason::HistoryNotReady:
+        return "history_not_ready";
+    case TaaResolveSkipReason::InvalidDimensions:
+        return "invalid_dimensions";
+    case TaaResolveSkipReason::DimensionMismatch:
+        return "dimension_mismatch";
+    case TaaResolveSkipReason::MissingSurfaces:
+        return "missing_surfaces";
+    }
+    return "unknown";
+}
 
 void TaaResolve::resetBookkeeping() {
     m_stats = {};
@@ -47,6 +66,9 @@ bool TaaResolve::resolve(const TaaResolveDesc& desc, TaaHistoryBuffer& history, 
         case TaaResolveSkipReason::InvalidDimensions:
             m_message = "TAA resolve skipped — invalid dimensions";
             break;
+        case TaaResolveSkipReason::DimensionMismatch:
+            m_message = "TAA resolve skipped — resolve dimensions do not match history buffer";
+            break;
         case TaaResolveSkipReason::MissingSurfaces:
             m_message = "TAA resolve skipped — missing current/output surfaces";
             break;
@@ -69,6 +91,7 @@ bool TaaResolve::resolve(const TaaResolveDesc& desc, TaaHistoryBuffer& history, 
     m_stats.history_swapped = true;
     m_stats.has_valid_history = history.hasValidHistory();
     m_stats.accumulated_frames = history.accumulatedFrames();
+    m_stats.history_invalidate_generation = history.invalidateGeneration();
 
 #if defined(FUSE_HAS_CUDA)
     m_message = m_stats.first_frame ? "TAA resolve recorded — first frame (CUDA kernel deferred)"
