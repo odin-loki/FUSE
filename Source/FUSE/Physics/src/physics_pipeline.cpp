@@ -6,6 +6,10 @@ void PhysicsPipeline::init(const PhysicsPipelineDesc& desc) {
     m_desc = desc;
     m_bodies.reserve(desc.maxBodies);
     m_contactBuffer.reserve(desc.maxPairs > 0 ? desc.maxPairs : 16384u);
+    m_pairBuffer.reserve(desc.maxPairs > 0 ? desc.maxPairs : 16384u);
+    if (desc.maxPairs > 0) {
+        m_pairBuffer.setMaxCapacity(desc.maxPairs);
+    }
     m_hashParams.cellSize = desc.cellSize;
     m_hashParams.tableSize = desc.maxBodies > 0 ? desc.maxBodies * 2u : 1024u;
     m_initialized = true;
@@ -14,6 +18,7 @@ void PhysicsPipeline::init(const PhysicsPipelineDesc& desc) {
 void PhysicsPipeline::reset() {
     m_bodies.clear();
     m_shapes.clear();
+    m_pairBuffer.clear();
     m_candidatePairs.clear();
     m_contactBuffer.clear();
     m_contacts.clear();
@@ -57,13 +62,11 @@ void PhysicsPipeline::step(f32 dt) {
     integrateStub(dt);
 
     if (m_desc.broadphaseMode == BroadphaseMode::SpatialHash2D) {
-        m_candidatePairs = broadphase::runBroadphase2D(m_bodies, m_shapes, m_hashParams);
+        broadphase::runBroadphase2DIntoBuffer(m_bodies, m_shapes, m_hashParams, m_pairBuffer);
     } else {
-        m_candidatePairs = broadphase::runBroadphase(m_bodies, m_shapes, m_hashParams);
+        broadphase::runBroadphaseIntoBuffer(m_bodies, m_shapes, m_hashParams, m_pairBuffer);
     }
-    if (m_desc.maxPairs > 0 && m_candidatePairs.size() > m_desc.maxPairs) {
-        m_candidatePairs.resize(m_desc.maxPairs);
-    }
+    m_candidatePairs = m_pairBuffer.toVector();
 
     narrowphase::runNarrowphaseIntoBuffer(m_candidatePairs, m_bodies, m_shapes, m_contactBuffer);
     m_contacts = m_contactBuffer.toVector();

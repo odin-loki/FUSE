@@ -1,3 +1,4 @@
+#include <fuse/physics/broadphase/pair_buffer.hpp>
 #include <fuse/physics/broadphase/spatial_hash.hpp>
 
 #include <fuse/jobs/parallel_for.hpp>
@@ -130,14 +131,31 @@ void populateShapeCells(
     }
 }
 
-std::vector<CandidatePair> runBroadphaseInternal(
+void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer) {
+    for (const CandidatePair& pair : pairs) {
+        buffer.push(pair.bodyA, pair.bodyB);
+    }
+}
+
+void dedupeBuffer(PairBufferSoA& buffer) {
+    std::vector<CandidatePair> pairs = buffer.toVector();
+    dedupePairs(pairs);
+
+    buffer.clear();
+    for (const CandidatePair& pair : pairs) {
+        buffer.push(pair.bodyA, pair.bodyB);
+    }
+}
+
+void runBroadphaseIntoBufferInternal(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     const SpatialHashParams& params,
-    bool use2D) {
-    std::vector<CandidatePair> pairs;
+    bool use2D,
+    PairBufferSoA& buffer) {
+    buffer.clear();
     if (bodies.count() == 0 || shapes.count() == 0) {
-        return pairs;
+        return;
     }
 
     const u32 tableSize = params.tableSize > 0 ? params.tableSize : 1024u;
@@ -157,9 +175,9 @@ std::vector<CandidatePair> runBroadphaseInternal(
     });
 
     for (const std::vector<CandidatePair>& bucketPairs : cellPairs) {
-        pairs.insert(pairs.end(), bucketPairs.begin(), bucketPairs.end());
+        mergePairsIntoBuffer(bucketPairs, buffer);
     }
-    dedupePairs(pairs);
+    dedupeBuffer(buffer);
 
     std::vector<u32> planeBodies;
     std::vector<u32> dynamicBodies;
@@ -177,9 +195,9 @@ std::vector<CandidatePair> runBroadphaseInternal(
 
     if (!planeBodies.empty() && !dynamicBodies.empty()) {
         std::unordered_set<u64> existing;
-        existing.reserve(pairs.size() * 2 + 1);
-        for (const CandidatePair& pair : pairs) {
-            const u64 key = (static_cast<u64>(pair.bodyA) << 32) | pair.bodyB;
+        existing.reserve(buffer.activeCount * 2 + 1);
+        for (u32 i = 0; i < buffer.activeCount; ++i) {
+            const u64 key = (static_cast<u64>(buffer.bodyA[i]) << 32) | buffer.bodyB[i];
             existing.insert(key);
         }
 
@@ -200,28 +218,48 @@ std::vector<CandidatePair> runBroadphaseInternal(
         });
 
         for (const std::vector<CandidatePair>& bucketPairs : dynamicPlanePairs) {
-            pairs.insert(pairs.end(), bucketPairs.begin(), bucketPairs.end());
+            mergePairsIntoBuffer(bucketPairs, buffer);
         }
-        dedupePairs(pairs);
+        dedupeBuffer(buffer);
     }
-
-    return pairs;
 }
 
 } // namespace
+
+void runBroadphaseIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    PairBufferSoA& buffer) {
+    runBroadphaseIntoBufferInternal(bodies, shapes, params, false, buffer);
+}
+
+void runBroadphase2DIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    PairBufferSoA& buffer) {
+    runBroadphaseIntoBufferInternal(bodies, shapes, params, true, buffer);
+}
 
 std::vector<CandidatePair> runBroadphase(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     const SpatialHashParams& params) {
-    return runBroadphaseInternal(bodies, shapes, params, false);
+    PairBufferSoA buffer;
+    buffer.reserve(params.bodyCount > 0 ? params.bodyCount * 4u : 256u);
+    runBroadphaseIntoBuffer(bodies, shapes, params, buffer);
+    return buffer.toVector();
 }
 
 std::vector<CandidatePair> runBroadphase2D(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     const SpatialHashParams& params) {
-    return runBroadphaseInternal(bodies, shapes, params, true);
+    PairBufferSoA buffer;
+    buffer.reserve(params.bodyCount > 0 ? params.bodyCount * 4u : 256u);
+    runBroadphase2DIntoBuffer(bodies, shapes, params, buffer);
+    return buffer.toVector();
 }
 
 } // namespace fuse::physics::broadphase

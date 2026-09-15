@@ -53,6 +53,46 @@ FUSE_PHYSICS_INLINE ivec2 worldToCell2D(vec2 position, f32 cellSize) {
     };
 }
 
+FUSE_PHYSICS_INLINE aabb aabbFromSphere(vec3 center, f32 radius) {
+    return {
+        {center.x - radius, center.y - radius, center.z - radius},
+        {center.x + radius, center.y + radius, center.z + radius},
+    };
+}
+
+FUSE_PHYSICS_INLINE aabb aabbFromBox(vec3 center, vec3 halfExtents) {
+    return {
+        {center.x - halfExtents.x, center.y - halfExtents.y, center.z - halfExtents.z},
+        {center.x + halfExtents.x, center.y + halfExtents.y, center.z + halfExtents.z},
+    };
+}
+
+FUSE_PHYSICS_INLINE bool aabbOverlap(const aabb& a, const aabb& b) {
+    return a.min.x <= b.max.x && a.max.x >= b.min.x && a.min.y <= b.max.y && a.max.y >= b.min.y &&
+           a.min.z <= b.max.z && a.max.z >= b.min.z;
+}
+
+/// Sphere overlap stub via expanded AABB test (CPU reference for CUDA broadphase refine).
+FUSE_PHYSICS_INLINE bool sphereAabbOverlap(vec3 centerA, f32 radiusA, vec3 centerB, f32 radiusB) {
+    return aabbOverlap(aabbFromSphere(centerA, radiusA), aabbFromSphere(centerB, radiusB));
+}
+
+struct PairBufferSoA;
+
+/// Job-safe broadphase: parallel shape→cell + per-cell pair generation into reusable SoA slots.
+void runBroadphaseIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    PairBufferSoA& buffer);
+
+/// Job-safe 2D broadphase into reusable SoA pair slots.
+void runBroadphase2DIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    PairBufferSoA& buffer);
+
 /// CPU stub of the CUDA broad-phase pipeline (B4.2).
 /// Phase 1 jobifies shape→cell insertion; phase 2 jobifies per-cell candidate generation
 /// via `fuse::jobs::parallel_for` (serial when the job scheduler is single-threaded).
