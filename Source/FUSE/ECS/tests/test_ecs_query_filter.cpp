@@ -574,6 +574,108 @@ void testEachQueryEmptyRegistryWithoutOnlyArchetype() {
              "Without-only query on empty registry visits zero entities");
 }
 
+void testQueryFilterIsRunnable() {
+    const fuse::ecs::QueryFilter withOnly =
+        fuse::ecs::make_query_filter(fuse::ecs::With<fuse::ecs::Transform>{});
+    expectTrue(fuse::ecs::query_filter_is_runnable(withOnly), "With-only filter is runnable");
+
+    const fuse::ecs::QueryFilter withoutOnly =
+        fuse::ecs::make_query_filter(fuse::ecs::With<>{}, fuse::ecs::Without<fuse::ecs::TagStatic>{});
+    expectTrue(fuse::ecs::query_filter_is_runnable(withoutOnly), "Without-only filter is runnable");
+
+    const fuse::ecs::QueryFilter empty = fuse::ecs::make_query_filter();
+    expectTrue(fuse::ecs::query_filter_is_runnable(empty), "empty filter is runnable");
+
+    fuse::ecs::QueryFilter conflicting = fuse::ecs::make_query_filter(
+        fuse::ecs::With<fuse::ecs::Transform>{}, fuse::ecs::Without<fuse::ecs::Transform>{});
+    expectTrue(!fuse::ecs::query_filter_is_runnable(conflicting),
+               "conflicting filter is not runnable");
+    expectTrue(fuse::ecs::query_filter_has_conflict(conflicting),
+               "conflicting filter reports has_conflict");
+}
+
+void testHasMatchingArchetypesEmptyTableAndConflict() {
+    const fuse::ecs::Archetype typed = makeArchetypeWithComponents({
+        std::type_index(typeid(fuse::ecs::Transform)),
+    });
+    const std::vector<fuse::ecs::Archetype> table = {typed};
+    const fuse::ecs::QueryFilter filter =
+        fuse::ecs::make_query_filter(fuse::ecs::With<fuse::ecs::Transform>{});
+
+    expectTrue(fuse::ecs::has_matching_archetypes(table, filter),
+               "has_matching_archetypes accepts matching signature");
+    expectTrue(!fuse::ecs::has_matching_archetypes({}, filter),
+               "has_matching_archetypes rejects empty archetype table");
+
+    fuse::ecs::QueryFilter conflicting = fuse::ecs::make_query_filter(
+        fuse::ecs::With<fuse::ecs::Transform>{}, fuse::ecs::Without<fuse::ecs::Transform>{});
+    expectTrue(!fuse::ecs::has_matching_archetypes(table, conflicting),
+               "has_matching_archetypes rejects conflicting filter even with matching archetype");
+}
+
+void testCountMatchingArchetypesConflictingFilter() {
+    const fuse::ecs::Archetype typed = makeArchetypeWithComponents({
+        std::type_index(typeid(fuse::ecs::Transform)),
+    });
+    const std::vector<fuse::ecs::Archetype> table = {typed};
+
+    fuse::ecs::QueryFilter conflicting = fuse::ecs::make_query_filter(
+        fuse::ecs::With<fuse::ecs::Transform>{}, fuse::ecs::Without<fuse::ecs::Transform>{});
+    expectEq(fuse::ecs::count_matching_archetypes(table, conflicting), 0u,
+             "count_matching_archetypes returns zero for conflicting filters");
+}
+
+void testCountMatchingEntitiesEmptyTable() {
+    const fuse::ecs::QueryFilter filter =
+        fuse::ecs::make_query_filter(fuse::ecs::With<fuse::ecs::Transform>{});
+
+    expectEq(fuse::ecs::count_matching_archetypes({}, filter), 0u,
+             "count_matching_archetypes returns zero for empty archetype table");
+    expectEq(fuse::ecs::count_matching_entities({}, filter), 0u,
+             "count_matching_entities returns zero for empty archetype table");
+    expectTrue(!fuse::ecs::has_matching_archetypes({}, filter),
+               "has_matching_archetypes returns false for empty archetype table");
+}
+
+void testHasMatchingArchetypesAlignsWithCounts() {
+    fuse::ecs::Archetype dynamicBody = makeArchetypeWithComponents({
+        std::type_index(typeid(fuse::ecs::Transform)),
+        std::type_index(typeid(fuse::ecs::RigidBody)),
+    });
+    dynamicBody.append_entity(fuse::ecs::EntityID{0, 1});
+
+    fuse::ecs::Archetype staticBody = makeArchetypeWithComponents({
+        std::type_index(typeid(fuse::ecs::Transform)),
+        std::type_index(typeid(fuse::ecs::RigidBody)),
+        std::type_index(typeid(fuse::ecs::TagStatic)),
+    });
+    staticBody.append_entity(fuse::ecs::EntityID{1, 1});
+
+    const std::vector<fuse::ecs::Archetype> table = {dynamicBody, staticBody};
+    const fuse::ecs::QueryFilter filter = fuse::ecs::make_query_filter(
+        fuse::ecs::With<fuse::ecs::Transform, fuse::ecs::RigidBody>{},
+        fuse::ecs::Without<fuse::ecs::TagStatic>{});
+
+    expectTrue(fuse::ecs::query_filter_is_runnable(filter), "dynamic-body filter is runnable");
+    expectTrue(fuse::ecs::has_matching_archetypes(table, filter),
+               "has_matching_archetypes true when count_matching_archetypes is non-zero");
+    expectEq(fuse::ecs::count_matching_archetypes(table, filter), 1u,
+             "count_matching_archetypes finds one matching signature");
+    expectEq(fuse::ecs::count_matching_entities(table, filter), 1u,
+             "count_matching_entities sums rows from matching signature only");
+
+    const fuse::ecs::QueryFilter missingWith =
+        fuse::ecs::make_query_filter(fuse::ecs::With<fuse::ecs::Transform, fuse::ecs::TagPlayer>{});
+    expectTrue(fuse::ecs::query_filter_is_runnable(missingWith),
+               "missing With filter remains runnable");
+    expectTrue(!fuse::ecs::has_matching_archetypes(table, missingWith),
+               "has_matching_archetypes false when no signature satisfies With set");
+    expectEq(fuse::ecs::count_matching_archetypes(table, missingWith), 0u,
+             "count_matching_archetypes returns zero when With set is unsatisfied");
+    expectEq(fuse::ecs::count_matching_entities(table, missingWith), 0u,
+             "count_matching_entities returns zero when With set is unsatisfied");
+}
+
 } // namespace
 
 int main() {
@@ -598,6 +700,11 @@ int main() {
     testArchetypeMatchesMultipleWithoutTypes();
     testCountMatchingEntitiesMatchesEachQuery();
     testEachQueryEmptyRegistryWithoutOnlyArchetype();
+    testQueryFilterIsRunnable();
+    testHasMatchingArchetypesEmptyTableAndConflict();
+    testCountMatchingArchetypesConflictingFilter();
+    testCountMatchingEntitiesEmptyTable();
+    testHasMatchingArchetypesAlignsWithCounts();
 
     if (g_failures == 0) {
         std::printf("fuse_ecs_query_filter_tests: all checks passed\n");

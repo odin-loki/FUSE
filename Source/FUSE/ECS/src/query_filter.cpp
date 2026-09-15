@@ -17,6 +17,10 @@ bool query_filter_has_conflict(const QueryFilter& filter) {
     return false;
 }
 
+bool query_filter_is_runnable(const QueryFilter& filter) {
+    return !query_filter_has_conflict(filter);
+}
+
 namespace {
 
 bool type_index_sets_equal(const std::vector<std::type_index>& lhs, const std::vector<std::type_index>& rhs) {
@@ -39,6 +43,10 @@ bool query_filter_equal(const QueryFilter& lhs, const QueryFilter& rhs) {
 }
 
 u32 count_matching_archetypes(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
+    if (archetypes.empty() || query_filter_has_conflict(filter)) {
+        return 0;
+    }
+
     u32 count = 0;
     for (const Archetype& archetype : archetypes) {
         if (archetype_matches(archetype, filter)) {
@@ -49,7 +57,7 @@ u32 count_matching_archetypes(const std::vector<Archetype>& archetypes, const Qu
 }
 
 u32 count_matching_entities(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
-    if (query_filter_has_conflict(filter)) {
+    if (archetypes.empty() || query_filter_has_conflict(filter)) {
         return 0;
     }
 
@@ -60,6 +68,10 @@ u32 count_matching_entities(const std::vector<Archetype>& archetypes, const Quer
         }
     }
     return count;
+}
+
+bool has_matching_archetypes(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
+    return count_matching_archetypes(archetypes, filter) > 0;
 }
 
 bool archetype_matches(const Archetype& archetype, const QueryFilter& filter) {
