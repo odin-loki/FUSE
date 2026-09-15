@@ -47,7 +47,7 @@ CandidatePair canonicalPair(u32 bodyA, u32 bodyB) {
 }
 
 void appendPair(std::vector<CandidatePair>& pairs, u32 bodyA, u32 bodyB) {
-    if (bodyA == bodyB) {
+    if (!isValidCandidatePair(bodyA, bodyB)) {
         return;
     }
     pairs.push_back(canonicalPair(bodyA, bodyB));
@@ -84,12 +84,18 @@ std::vector<u32> uniqueOccupants(const std::vector<u32>& occupants) {
 }
 
 u32 countPairsForCell(const std::vector<u32>& occupants) {
+    if (occupants.size() < 2u) {
+        return 0u;
+    }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
     const u32 bodyCount = static_cast<u32>(uniqueBodies.size());
     return bodyCount > 1u ? bodyCount * (bodyCount - 1u) / 2u : 0u;
 }
 
 void generatePairsForCell(const std::vector<u32>& occupants, std::vector<CandidatePair>& out) {
+    if (occupants.size() < 2u) {
+        return;
+    }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
     for (usize i = 0; i < uniqueBodies.size(); ++i) {
         for (usize j = i + 1; j < uniqueBodies.size(); ++j) {
@@ -102,6 +108,9 @@ void writePairsForCellSlots(
     const std::vector<u32>& occupants,
     u32 slotStart,
     PairBufferSoA& buffer) {
+    if (occupants.size() < 2u) {
+        return;
+    }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
     u32 slot = slotStart;
     for (usize i = 0; i < uniqueBodies.size(); ++i) {
@@ -126,13 +135,13 @@ void populateShapeCells(
     const vec3 position = bodies.positions[bodyIndex];
     const f32 radius = shapeRadius(shapes, shapeIndex);
     const f32 cellSize = params.cellSize > 0.f ? params.cellSize : 1.f;
-    const u32 tableSize = params.tableSize > 0 ? params.tableSize : 1u;
+    const u32 tableSize = clampTableSize(params.tableSize);
+    const u32 maxSpan = params.maxCellSpanPerAxis;
 
     if (use2D) {
-        const ivec2 minCell = worldToCell2D({position.x, position.y}, cellSize);
-        const ivec2 maxCell = worldToCell2D({position.x + radius, position.y + radius}, cellSize);
-        for (s32 cy = minCell.y; cy <= maxCell.y; ++cy) {
-            for (s32 cx = minCell.x; cx <= maxCell.x; ++cx) {
+        const CellRange2 range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
+        for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
+            for (s32 cx = range.minCell.x; cx <= range.maxCell.x; ++cx) {
                 const u32 key = spatialHash2D(cx, cy, tableSize);
                 cells.insert(key, bodyIndex);
             }
@@ -140,13 +149,10 @@ void populateShapeCells(
         return;
     }
 
-    const ivec3 minCell =
-        worldToCell({position.x - radius, position.y - radius, position.z - radius}, cellSize);
-    const ivec3 maxCell =
-        worldToCell({position.x + radius, position.y + radius, position.z + radius}, cellSize);
-    for (s32 cz = minCell.z; cz <= maxCell.z; ++cz) {
-        for (s32 cy = minCell.y; cy <= maxCell.y; ++cy) {
-            for (s32 cx = minCell.x; cx <= maxCell.x; ++cx) {
+    const CellRange3 range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
+    for (s32 cz = range.minCell.z; cz <= range.maxCell.z; ++cz) {
+        for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
+            for (s32 cx = range.minCell.x; cx <= range.maxCell.x; ++cx) {
                 const u32 key = spatialHash(cx, cy, cz, tableSize);
                 cells.insert(key, bodyIndex);
             }
@@ -161,7 +167,7 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
 }
 
 void dedupeBuffer(PairBufferSoA& buffer) {
-    if (buffer.isEmpty()) {
+    if (buffer.canSkipSoAIteration()) {
         return;
     }
 
@@ -188,7 +194,7 @@ bool pairPassesAabbRefine(
     u32 bodyB,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
-    if (bodyA >= bodies.count() || bodyB >= bodies.count()) {
+    if (!isValidCandidatePair(bodyA, bodyB, bodies.count())) {
         return false;
     }
 
@@ -210,7 +216,7 @@ void runBroadphaseIntoBufferInternal(
         return;
     }
 
-    const u32 tableSize = params.tableSize > 0 ? params.tableSize : 1024u;
+    const u32 tableSize = clampTableSize(params.tableSize);
     CellBuckets cells(tableSize);
 
     const u32 shapeCount = shapes.count();
@@ -226,6 +232,10 @@ void runBroadphaseIntoBufferInternal(
     }
 
     buffer.preparePairSlots(totalCellSlots);
+    if (totalCellSlots == 0u) {
+        return;
+    }
+
     fuse::jobs::parallel_for(0u, tableSize, kCellGrainSize, [&](u32 cellIndex) {
         if (cells.buckets[cellIndex].empty()) {
             return;
@@ -288,18 +298,22 @@ void refineBroadphasePairsParallelImpl(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     PairBufferSoA& buffer) {
-    if (buffer.isEmpty() || bodies.count() == 0 || shapes.count() == 0) {
+    if (buffer.canSkipSoAIteration() || bodies.count() == 0 || shapes.count() == 0) {
         return;
     }
 
     const u32 pairCount = buffer.activeCount;
     fuse::jobs::parallel_for(0u, pairCount, kPlanePairGrainSize, [&](u32 pairIndex) {
-        if (pairIndex >= buffer.activeCount || buffer.validFlags[pairIndex] == 0u) {
+        if (pairIndex >= buffer.activeCount || !buffer.slotIsValid(pairIndex)) {
             return;
         }
 
         const u32 bodyA = buffer.bodyA[pairIndex];
         const u32 bodyB = buffer.bodyB[pairIndex];
+        if (!isValidCandidatePair(bodyA, bodyB, bodies.count())) {
+            buffer.invalidateSlot(pairIndex);
+            return;
+        }
         if (!pairPassesAabbRefine(bodyA, bodyB, bodies, shapes)) {
             buffer.invalidateSlot(pairIndex);
         }

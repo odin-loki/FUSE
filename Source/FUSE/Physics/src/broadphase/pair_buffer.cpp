@@ -44,7 +44,7 @@ void PairBufferSoA::preparePairSlots(u32 slotCount) {
 }
 
 void PairBufferSoA::writeSlot(u32 slot, u32 idxA, u32 idxB) {
-    if (slot >= pairSlotCount || idxA == idxB) {
+    if (slot >= pairSlotCount || !isValidCandidatePair(idxA, idxB)) {
         return;
     }
 
@@ -62,7 +62,7 @@ void PairBufferSoA::invalidateSlot(u32 slot) {
 }
 
 bool PairBufferSoA::push(u32 idxA, u32 idxB) {
-    if (idxA == idxB) {
+    if (!isValidCandidatePair(idxA, idxB)) {
         return false;
     }
 
@@ -82,6 +82,11 @@ bool PairBufferSoA::push(u32 idxA, u32 idxB) {
 
 u32 PairBufferSoA::compact() {
     const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+    if (scanCount == 0u) {
+        activeCount = 0u;
+        pairSlotCount = 0u;
+        return activeCount;
+    }
     if (scanCount == 0u) {
         activeCount = 0u;
         pairSlotCount = 0u;
@@ -110,7 +115,7 @@ u32 PairBufferSoA::compact() {
 }
 
 void PairBufferSoA::sortCanonical() {
-    if (activeCount <= 1u) {
+    if (canSkipSoAIteration() || activeCount <= 1u) {
         return;
     }
 
@@ -142,7 +147,7 @@ void PairBufferSoA::sortCanonical() {
 }
 
 u32 PairBufferSoA::applyMaxCapacityClamp() {
-    if (maxCapacity == 0u || activeCount <= maxCapacity) {
+    if (canSkipSoAIteration() || maxCapacity == 0u || activeCount <= maxCapacity) {
         return activeCount;
     }
 
@@ -165,7 +170,7 @@ u32 PairBufferSoA::compactAndClamp() {
 }
 
 bool PairBufferSoA::isSortedCanonical() const {
-    if (activeCount <= 1u) {
+    if (canSkipSoAIteration() || activeCount <= 1u) {
         return true;
     }
 
@@ -192,31 +197,47 @@ bool PairBufferSoA::isSortedCanonical() const {
 }
 
 bool PairBufferSoA::containsCanonicalPair(u32 idxA, u32 idxB) const {
+    if (canSkipSoAIteration() || !isValidCandidatePair(idxA, idxB)) {
+        return false;
+    }
+
     if (idxA > idxB) {
         std::swap(idxA, idxB);
     }
     for (u32 i = 0; i < activeCount; ++i) {
-        if (validFlags[i] != 0u && bodyA[i] == idxA && bodyB[i] == idxB) {
+        if (validFlags[i] == 0u) {
+            continue;
+        }
+        if (bodyA[i] == idxA && bodyB[i] == idxB) {
             return true;
         }
     }
     return false;
 }
 
+bool PairBufferSoA::slotIsValid(u32 slot) const {
+    return slot < validFlags.size() && validFlags[slot] != 0u;
+}
+
 CandidatePair PairBufferSoA::pairAt(u32 index) const {
-    if (index >= activeCount || validFlags[index] == 0u) {
+    if (canSkipSoAIteration() || index >= activeCount || !slotIsValid(index)) {
         return {};
     }
     return {bodyA[index], bodyB[index]};
 }
 
 std::vector<CandidatePair> PairBufferSoA::toVector() const {
+    if (canSkipSoAIteration()) {
+        return {};
+    }
+
     std::vector<CandidatePair> pairs;
     pairs.reserve(activeCount);
     for (u32 i = 0; i < activeCount; ++i) {
-        if (validFlags[i] != 0u) {
-            pairs.push_back(pairAt(i));
+        if (!slotIsValid(i)) {
+            continue;
         }
+        pairs.push_back(pairAt(i));
     }
     return pairs;
 }
