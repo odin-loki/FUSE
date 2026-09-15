@@ -49,6 +49,23 @@ template <typename... WithTs, typename... WithoutTs>
 /// True when at least one archetype signature satisfies `filter` (empty table or conflicting filters yield false).
 [[nodiscard]] bool has_matching_archetypes(const std::vector<Archetype>& archetypes, const QueryFilter& filter);
 
+/// True when at least one entity row lives in an archetype whose signature satisfies `filter`.
+[[nodiscard]] bool has_matching_entities(const std::vector<Archetype>& archetypes, const QueryFilter& filter);
+
+/// Preflight result for archetype-table queries — bundles runnable/conflict and empty-table guards.
+struct QueryFilterPreflight {
+    bool runnable = false;
+    bool empty_table = true;
+    u32 matching_archetypes = 0;
+    u32 matching_entities = 0;
+
+    [[nodiscard]] bool can_iterate() const { return runnable && matching_entities > 0; }
+};
+
+/// Evaluate runnable/conflict and empty-table guards plus matching archetype/entity counts.
+[[nodiscard]] QueryFilterPreflight preflight_query_filter(const std::vector<Archetype>& archetypes,
+                                                          const QueryFilter& filter);
+
 /// True when `archetype` contains every `with` type and none of the `without` types.
 [[nodiscard]] bool archetype_matches(const Archetype& archetype, const QueryFilter& filter);
 

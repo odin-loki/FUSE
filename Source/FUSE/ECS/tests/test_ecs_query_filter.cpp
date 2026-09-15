@@ -637,6 +637,96 @@ void testCountMatchingEntitiesEmptyTable() {
                "has_matching_archetypes returns false for empty archetype table");
 }
 
+void testHasMatchingEntitiesDistinguishesZeroRowArchetypes() {
+    fuse::ecs::Archetype zeroRow = makeArchetypeWithComponents({
+        std::type_index(typeid(fuse::ecs::Transform)),
+        std::type_index(typeid(fuse::ecs::RigidBody)),
+    });
+    fuse::ecs::Archetype populated = makeArchetypeWithComponents({
+        std::type_index(typeid(fuse::ecs::Transform)),
+    });
+    populated.append_entity(fuse::ecs::EntityID{0, 1});
+
+    const std::vector<fuse::ecs::Archetype> table = {zeroRow, populated};
+    const fuse::ecs::QueryFilter bodyFilter = fuse::ecs::make_query_filter(
+        fuse::ecs::With<fuse::ecs::Transform, fuse::ecs::RigidBody>{});
+    const fuse::ecs::QueryFilter transformFilter =
+        fuse::ecs::make_query_filter(fuse::ecs::With<fuse::ecs::Transform>{});
+
+    expectTrue(fuse::ecs::has_matching_archetypes(table, bodyFilter),
+               "zero-row archetype still counts as matching signature");
+    expectTrue(!fuse::ecs::has_matching_entities(table, bodyFilter),
+               "zero-row matching archetype yields no matching entities");
+    expectTrue(fuse::ecs::has_matching_entities(table, transformFilter),
+               "populated matching archetype yields matching entities");
+}
+
+void testPreflightQueryFilterBundlesGuardsAndCounts() {
+    fuse::ecs::Archetype dynamicBody = makeArchetypeWithComponents({
+        std::type_index(typeid(fuse::ecs::Transform)),
+        std::type_index(typeid(fuse::ecs::RigidBody)),
+    });
+    dynamicBody.append_entity(fuse::ecs::EntityID{0, 1});
+    dynamicBody.append_entity(fuse::ecs::EntityID{1, 1});
+
+    const std::vector<fuse::ecs::Archetype> table = {dynamicBody};
+    const fuse::ecs::QueryFilter filter = fuse::ecs::make_query_filter(
+        fuse::ecs::With<fuse::ecs::Transform, fuse::ecs::RigidBody>{},
+        fuse::ecs::Without<fuse::ecs::TagStatic>{});
+
+    const fuse::ecs::QueryFilterPreflight preflight = fuse::ecs::preflight_query_filter(table, filter);
+    expectTrue(preflight.runnable, "preflight marks runnable filter");
+    expectTrue(!preflight.empty_table, "preflight sees non-empty archetype table");
+    expectEq(preflight.matching_archetypes, 1u, "preflight counts matching archetype");
+    expectEq(preflight.matching_entities, 2u, "preflight sums matching entity rows");
+    expectTrue(preflight.can_iterate(), "preflight can_iterate when entities are present");
+
+    const fuse::ecs::QueryFilterPreflight emptyTable = fuse::ecs::preflight_query_filter({}, filter);
+    expectTrue(emptyTable.runnable, "preflight keeps runnable flag on empty table");
+    expectTrue(emptyTable.empty_table, "preflight marks empty archetype table");
+    expectEq(emptyTable.matching_archetypes, 0u, "preflight skips counts on empty table");
+    expectEq(emptyTable.matching_entities, 0u, "preflight skips entity sum on empty table");
+    expectTrue(!emptyTable.can_iterate(), "preflight can_iterate false on empty table");
+
+    fuse::ecs::QueryFilter conflicting = fuse::ecs::make_query_filter(
+        fuse::ecs::With<fuse::ecs::Transform>{}, fuse::ecs::Without<fuse::ecs::Transform>{});
+    const fuse::ecs::QueryFilterPreflight conflictPreflight = fuse::ecs::preflight_query_filter(table, conflicting);
+    expectTrue(!conflictPreflight.runnable, "preflight marks conflicting filter as not runnable");
+    expectEq(conflictPreflight.matching_archetypes, 0u, "preflight zeroes counts for conflicting filter");
+    expectEq(conflictPreflight.matching_entities, 0u, "preflight zeroes entity sum for conflicting filter");
+    expectTrue(!conflictPreflight.can_iterate(), "preflight can_iterate false for conflicting filter");
+}
+
+void testPreflightAlignsWithCountHelpers() {
+    fuse::ecs::Archetype dynamicBody = makeArchetypeWithComponents({
+        std::type_index(typeid(fuse::ecs::Transform)),
+        std::type_index(typeid(fuse::ecs::RigidBody)),
+    });
+    dynamicBody.append_entity(fuse::ecs::EntityID{0, 1});
+
+    fuse::ecs::Archetype staticBody = makeArchetypeWithComponents({
+        std::type_index(typeid(fuse::ecs::Transform)),
+        std::type_index(typeid(fuse::ecs::RigidBody)),
+        std::type_index(typeid(fuse::ecs::TagStatic)),
+    });
+    staticBody.append_entity(fuse::ecs::EntityID{1, 1});
+
+    const std::vector<fuse::ecs::Archetype> table = {dynamicBody, staticBody};
+    const fuse::ecs::QueryFilter filter = fuse::ecs::make_query_filter(
+        fuse::ecs::With<fuse::ecs::Transform, fuse::ecs::RigidBody>{},
+        fuse::ecs::Without<fuse::ecs::TagStatic>{});
+
+    const fuse::ecs::QueryFilterPreflight preflight = fuse::ecs::preflight_query_filter(table, filter);
+    expectEq(preflight.matching_archetypes, fuse::ecs::count_matching_archetypes(table, filter),
+             "preflight archetype count matches count_matching_archetypes");
+    expectEq(preflight.matching_entities, fuse::ecs::count_matching_entities(table, filter),
+             "preflight entity count matches count_matching_entities");
+    expectTrue(preflight.can_iterate() == fuse::ecs::has_matching_entities(table, filter),
+               "preflight can_iterate matches has_matching_entities");
+    expectTrue((preflight.matching_archetypes > 0) == fuse::ecs::has_matching_archetypes(table, filter),
+               "preflight archetype count aligns with has_matching_archetypes");
+}
+
 void testHasMatchingArchetypesAlignsWithCounts() {
     fuse::ecs::Archetype dynamicBody = makeArchetypeWithComponents({
         std::type_index(typeid(fuse::ecs::Transform)),
@@ -704,6 +794,9 @@ int main() {
     testHasMatchingArchetypesEmptyTableAndConflict();
     testCountMatchingArchetypesConflictingFilter();
     testCountMatchingEntitiesEmptyTable();
+    testHasMatchingEntitiesDistinguishesZeroRowArchetypes();
+    testPreflightQueryFilterBundlesGuardsAndCounts();
+    testPreflightAlignsWithCountHelpers();
     testHasMatchingArchetypesAlignsWithCounts();
 
     if (g_failures == 0) {
