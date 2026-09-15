@@ -43,7 +43,7 @@ bool query_filter_equal(const QueryFilter& lhs, const QueryFilter& rhs) {
 }
 
 u32 count_matching_archetypes(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
-    if (archetypes.empty() || query_filter_has_conflict(filter)) {
+    if (archetypes.empty() || !query_filter_is_runnable(filter)) {
         return 0;
     }
 
@@ -57,7 +57,7 @@ u32 count_matching_archetypes(const std::vector<Archetype>& archetypes, const Qu
 }
 
 u32 count_matching_entities(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
-    if (archetypes.empty() || query_filter_has_conflict(filter)) {
+    if (archetypes.empty() || !query_filter_is_runnable(filter)) {
         return 0;
     }
 
@@ -71,11 +71,44 @@ u32 count_matching_entities(const std::vector<Archetype>& archetypes, const Quer
 }
 
 bool has_matching_archetypes(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
-    return count_matching_archetypes(archetypes, filter) > 0;
+    if (archetypes.empty() || !query_filter_is_runnable(filter)) {
+        return false;
+    }
+
+    for (const Archetype& archetype : archetypes) {
+        if (archetype_matches(archetype, filter)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool has_matching_entities(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
+    return preflight_query_filter(archetypes, filter).can_iterate();
+}
+
+QueryFilterPreflight preflight_query_filter(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
+    QueryFilterPreflight result;
+    result.runnable = query_filter_is_runnable(filter);
+    result.empty_table = archetypes.empty();
+
+    if (!result.runnable || result.empty_table) {
+        return result;
+    }
+
+    for (const Archetype& archetype : archetypes) {
+        if (!archetype_matches(archetype, filter)) {
+            continue;
+        }
+
+        ++result.matching_archetypes;
+        result.matching_entities += static_cast<u32>(archetype.count());
+    }
+    return result;
 }
 
 bool archetype_matches(const Archetype& archetype, const QueryFilter& filter) {
-    if (query_filter_has_conflict(filter)) {
+    if (!query_filter_is_runnable(filter)) {
         return false;
     }
 
