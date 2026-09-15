@@ -91,15 +91,16 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 
 ---
 
-## 5. WP-08 editor API boundary (thin start)
+## 5. WP-08 editor boundary (U6)
 
 | Target | Header | Role |
 |--------|--------|------|
-| `fuse_editor_api` | `fuse/editor/command_queue.hpp` | UI thread `post()` → game thread `drain()` |
+| `fuse_editor_api` | `fuse/editor/command_queue.hpp`, `fuse/editor/editor_host.hpp` | UI `postFromUi()` → game `gameTick()` / `drain()` |
+| `fuse_editor` | Qt 6 shell (`FUSE_BUILD_EDITOR`) | Project hub + viewport placeholder (desktop-only) |
 
 - **No Qt** in `fuse_core` or module headers
-- Full Qt 6 editor panes deferred to U6 / WP-08 full slice
-- Test: `fuse_editor_command_queue` (`fuse_editor_api_tests`)
+- Full editor UX: [U6-EDITOR.md](./U6-EDITOR.md)
+- Tests: `fuse_editor_command_queue`, `fuse_editor_host` (headless; no Qt required in CI)
 
 ---
 

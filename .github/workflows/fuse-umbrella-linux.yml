@@ -36,6 +36,8 @@ jobs:
             -DFUSE_BUILD_PROJECT=ON \
             -DFUSE_BUILD_PARITY_DEMOS=ON \
             -DFUSE_BUILD_TOOLS=ON \
+            -DFUSE_BUILD_EDITOR_API=ON \
+            -DFUSE_BUILD_EDITOR=OFF \
             -DFUSE_BUILD_T3D=OFF \
             -DFUSE_BUILD_T2D=OFF
 

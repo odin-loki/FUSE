@@ -147,7 +147,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | L |
 | **Scope** | In-process PIE; UI thread vs game thread command queue; one feature pane |
 | **Deps** | WP-06, WP-05 |
-| **Status** | 🚧 Thin start — `fuse_editor_api` command queue stub + test (no Qt yet) |
+| **Status** | ✅ Minimal slice — `fuse_editor_api` + `EditorHost`, Qt 6 `fuse_editor` shell (conditional), headless `fuse_editor_host` test — [U6-EDITOR.md](./U6-EDITOR.md) |
 
 ---
 

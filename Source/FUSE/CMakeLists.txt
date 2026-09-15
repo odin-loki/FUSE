@@ -13,7 +13,7 @@ if(FUSE_BUILD_MODULES)
     add_subdirectory(Modules)
 endif()
 
-if(FUSE_BUILD_EDITOR_API)
+if(FUSE_BUILD_EDITOR_API OR FUSE_BUILD_EDITOR)
     add_subdirectory(Editor)
 endif()
 
