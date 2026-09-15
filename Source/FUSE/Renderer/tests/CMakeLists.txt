@@ -35,3 +35,7 @@ add_test(NAME fuse_render_graph COMMAND fuse_render_graph)
 add_executable(fuse_composite_pass test_composite_pass.cpp)
 target_link_libraries(fuse_composite_pass PRIVATE fuse_rhi)
 add_test(NAME fuse_composite_pass COMMAND fuse_composite_pass)
+
+add_executable(fuse_renderer_bootstrap test_renderer_bootstrap.cpp)
+target_link_libraries(fuse_renderer_bootstrap PRIVATE fuse_rhi)
+add_test(NAME fuse_renderer_bootstrap COMMAND fuse_renderer_bootstrap)

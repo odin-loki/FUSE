@@ -1,7 +1,9 @@
 add_library(fuse_hybrid STATIC
     src/hybrid_composer.cpp
+    src/hybrid_renderer_bootstrap.cpp
     src/placeholder_renderer.cpp
     include/fuse/hybrid/hybrid_composer.hpp
+    include/fuse/hybrid/hybrid_renderer_bootstrap.hpp
     include/fuse/hybrid/placeholder_renderer.hpp
     include/fuse/hybrid/project_flags.hpp
 )

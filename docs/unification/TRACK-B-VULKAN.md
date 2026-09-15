@@ -1,7 +1,7 @@
-# Track B — Vulkan Bootstrap (B2.1–B2.9) + CUDA Ray March (B2.7)
+# Track B — Vulkan Bootstrap (B2.1–B2.10) + CUDA Ray March (B2.7)
 
-**Status:** B2.1 bootstrap + B2.2 swapchain/frame ring + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.5 command buffer / render graph scaffolding + B2.6 CUDA/interop stubs + B2.7 SDF ray-march CUDA path scaffolding + B2.8 rasterisation pipeline scaffold + B2.9 composite pass scaffold  
-**Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B2.1–B2.5, §B2.6, §B2.7, §B2.8, §B2.9  
+**Status:** B2.1 bootstrap + B2.2 swapchain/frame ring + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.5 command buffer / render graph scaffolding + B2.6 CUDA/interop stubs + B2.7 SDF ray-march CUDA path scaffolding + B2.8 rasterisation pipeline scaffold + B2.9 composite pass scaffold + B2.10 renderer init & main-loop glue  
+**Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B2.1–B2.5, §B2.6, §B2.7, §B2.8, §B2.9, §B2.10  
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §4.2, §4.4, §5.3  
 **Hybrid integration:** [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md)
 
@@ -27,6 +27,8 @@
 | `RasterPath` | same | Offscreen clear + triangle stub wired through `RhiContext::submitFrame` |
 | `CompositePass` | `composite_pass.hpp` | B2.9 stub — merges raster + CUDA textures into backbuffer before present |
 | `RhiContext` | `Source/FUSE/Renderer/` | `beginFrame` / `submitFrame` on `renderThread()`; compiles graph per frame + optional `RasterPath` + `CompositePass` |
+| `RendererBootstrap` | `Source/FUSE/Renderer/include/fuse/renderer/renderer_bootstrap.hpp` | B2.10 single init path for `RhiContext` + `FrameManager` |
+| `HybridRendererBootstrap` | `Source/FUSE/Hybrid/include/fuse/hybrid/hybrid_renderer_bootstrap.hpp` | B2.10 runtime glue — wires `RendererBootstrap` into `HybridComposer` (`FUSE_BUILD_VULKAN` only) |
 | `fuse::platform::gl_context.hpp` | `Source/FUSE/Core/` | Portable “may touch GPU” guard |
 | `HybridComposer` wiring | `Source/FUSE/Hybrid/` | Dual path: software `PlaceholderRenderer` **and** RHI command mirror |
 | `CUDAJobDesc` / `submit_cuda` | `Source/FUSE/Core/include/fuse/jobs/cuda_jobs.hpp` | Job-lane CUDA dispatch via `JobScheduler` |
@@ -294,6 +296,42 @@ No Hybrid code changes required: `submitFrame()` owns graph population and compo
 
 ---
 
+## B2.10 — Renderer init & main-loop glue
+
+**Status:** Single init path for `fuse_rhi` + `FrameManager` + `HybridComposer`; lifecycle documented; init/shutdown order tests landed.
+
+| Component | Location | Notes |
+|-----------|----------|-------|
+| `RendererBootstrap` | `include/fuse/renderer/renderer_bootstrap.hpp` | Creates `RhiContext` (which owns `VulkanBootstrap` + `FrameManager`) on the render thread |
+| `HybridRendererBootstrap` | `include/fuse/hybrid/hybrid_renderer_bootstrap.hpp` | Owns `RendererBootstrap` + `HybridComposer`; shares one `RhiContext` via `setSharedRhiContext` |
+| `HybridComposer::setSharedRhiContext` | `hybrid_composer.hpp` | Injected context from bootstrap; lazy owned context remains for legacy tests |
+
+### Lifecycle (init order)
+
+1. `fuse::core::initialize()` — job scheduler + `platform::registerRenderThread()`
+2. `RendererBootstrap::create(desc)` — allocates `RhiContext` → `VulkanBootstrap` → `FrameManager` (+ optional `RasterPath` on first submit)
+3. `HybridRendererBootstrap::create(desc)` — step 2 plus `HybridComposer::setSharedRhiContext(shared RhiContext)`
+4. Per frame: `tick(ctx)` → (optional modules) → `render(ctx)` or `runFrame(ctx)`
+   - `HybridComposer::render()` mirrors software + RHI command list, then `RhiContext::beginFrame` / `submitFrame`
+5. `HybridRendererBootstrap::shutdown()` — detach shared context, destroy `RhiContext` / `FrameManager`
+6. `RendererBootstrap::shutdown()` — same RHI tear-down when used without hybrid glue
+7. `fuse::core::shutdown()` — job scheduler last
+
+All shutdown steps are idempotent. GPU init and submit require the registered render thread (`platform::mayTouchGpuContext()`).
+
+`HybridRendererBootstrap` sources and renderer headers are compiled into `fuse_hybrid` only when `FUSE_BUILD_VULKAN=ON`. Android CI keeps `FUSE_BUILD_VULKAN=OFF`, so `fuse_hybrid` stays software-only with no `fuse/renderer/*` includes.
+
+### Consumers
+
+| Binary / test | Uses B2.10 path |
+|---------------|-----------------|
+| `demo_hybrid_hud` | `HybridRendererBootstrap` when `FUSE_HAS_VULKAN_RHI`; software-only `HybridComposer` otherwise |
+| `fuse_runtime_smoke` | Optional `RendererBootstrap` init/shutdown when `FUSE_HAS_VULKAN_RHI` |
+| `fuse_renderer_bootstrap` | Init/shutdown order + frame submit after bootstrap |
+| `fuse_hybrid_renderer_bootstrap` | Hybrid glue + shared `RhiContext` wiring |
+
+---
+
 ## Desktop vs mobile (design notes)
 
 | Platform | B2.2 stance | Later |
@@ -318,6 +356,8 @@ Portable invariant unchanged: job code emits `RenderCommandList`; platform modul
 | `fuse_render_command_list` | Hybrid mirrors commands without breaking placeholder pixels |
 | `fuse_render_graph` | Barrier planning, pass culling, command recorder, RHI graph submit |
 | `fuse_composite_pass` | Composite pass scaffold, graph ordering (composite before present), RHI stats |
+| `fuse_renderer_bootstrap` | B2.10 init/shutdown order, FrameManager availability, post-init submit |
+| `fuse_hybrid_renderer_bootstrap` | Hybrid glue, shared RhiContext, runFrame lifecycle |
 | `fuse_hybrid_tests` | Existing U4 software renderer regressions |
 | `fuse_cuda_jobs` | `submit_cuda` hook signals counter without CUDA toolkit |
 | `fuse_cuda_interop` | Vulkan/CUDA import + timeline stubs degrade on CI |
@@ -326,7 +366,7 @@ Portable invariant unchanged: job code emits `RenderCommandList`; platform modul
 Run:
 
 ```bash
-ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_graphics_pipeline|fuse_render_command|fuse_render_graph|fuse_composite_pass|fuse_hybrid|fuse_cuda|fuse_ray_march'
+ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_graphics_pipeline|fuse_render_command|fuse_render_graph|fuse_composite_pass|fuse_renderer_bootstrap|fuse_hybrid_renderer|fuse_hybrid|fuse_cuda|fuse_ray_march'
 ```
 
 ---
@@ -389,6 +429,7 @@ Thread ownership unchanged: CUDA launch jobs run on worker threads; Vulkan recor
 - [x] B2.7 SDF ray-march scaffold — `fuse_compute`, CPU reference tracer, placeholder `.cu` kernel
 - [x] B2.8 rasterisation pipeline scaffold — `GraphicsPipeline`, headless clear/triangle `RasterPath`
 - [x] B2.9 composite pass scaffold — `CompositePass`, graph node before present, GRIA blend stub
+- [x] B2.10 renderer init & main-loop glue — `RendererBootstrap`, `HybridRendererBootstrap`, lifecycle tests
 - [ ] B2.4 follow-up: bindless descriptor pool + graphics pipeline cache
 - [ ] B2.5 follow-up: real `vkCmdBeginRenderPass` / queue submit wiring (B2.8 draw list)
 - [ ] B2.6 follow-up: `cudaImportExternalMemory`, timeline semaphores, real shared textures

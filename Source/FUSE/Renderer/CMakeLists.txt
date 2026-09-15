@@ -5,6 +5,7 @@ set(FUSE_RHI_PUBLIC_HEADERS
     include/fuse/renderer/composite_pass.hpp
     include/fuse/renderer/render_command_list.hpp
     include/fuse/renderer/render_graph.hpp
+    include/fuse/renderer/renderer_bootstrap.hpp
     include/fuse/renderer/rhi_context.hpp
     include/fuse/renderer/resources.hpp
     include/fuse/renderer/resource_manager.hpp
@@ -35,6 +36,7 @@ set(FUSE_RHI_SOURCES
     src/render_command_list.cpp
     src/render_graph.cpp
     src/resource_manager.cpp
+    src/renderer_bootstrap.cpp
     src/rhi_context.cpp
     src/shader/shader_compiler.cpp
     src/shader/shader_io.cpp
