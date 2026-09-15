@@ -1,11 +1,17 @@
 #include <fuse/vfx/particle_emitter.hpp>
 
+#include <fuse/jobs/parallel_for.hpp>
+
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <mutex>
 
 namespace fuse::vfx {
 
 namespace {
+
+constexpr u32 kSimGrainSize = 64u;
 
 u64 mix_seed(u64 seed) {
     seed ^= seed >> 33U;
@@ -35,6 +41,11 @@ void ParticleEmitter::init(const ParticleEmitterDesc& desc) {
     m_particles.colors.assign(desc.max_particles, {});
     m_particles.alphas.assign(desc.max_particles, 0.f);
     m_particles.alive_flags.assign(desc.max_particles, 0U);
+    m_particles.free_slots.clear();
+    m_particles.free_slots.reserve(desc.max_particles);
+    for (u32 i = desc.max_particles; i > 0u; --i) {
+        m_particles.free_slots.push_back(i - 1u);
+    }
     m_particles.count = 0;
     m_enabled = true;
     m_emitAccum = 0.f;
@@ -65,7 +76,7 @@ void ParticleEmitter::burst(u32 count) {
         return;
     }
     for (u32 i = 0; i < count; ++i) {
-        if (find_dead_slot_() == UINT32_MAX) {
+        if (m_particles.free_slots.empty()) {
             break;
         }
         emit_particle_(m_frameSeed++);
@@ -77,37 +88,27 @@ void ParticleEmitter::simulate(f32 dt) {
         return;
     }
 
-    u32 alive = 0;
-    for (u32 i = 0; i < m_particles.capacity; ++i) {
-        if (m_particles.alive_flags[i] == 0U) {
-            continue;
+    std::vector<u32> deadSlots;
+    deadSlots.reserve(m_particles.capacity / 8u + 1u);
+    std::mutex deadMutex;
+    std::atomic<u32> aliveCount{0};
+
+    fuse::jobs::parallel_for(0u, m_particles.capacity, kSimGrainSize, [&](u32 index) {
+        if (m_particles.alive_flags[index] == 0U) {
+            return;
         }
+        integrate_particle_(index, dt, deadSlots, deadMutex, aliveCount);
+    });
 
-        m_particles.ages[i] += dt / std::max(m_particles.lifetimes[i], 1e-4f);
-        if (m_particles.ages[i] >= 1.f) {
-            m_particles.alive_flags[i] = 0U;
-            continue;
-        }
-
-        math::Vec3& velocity = m_particles.velocities[i];
-        velocity = velocity + m_desc.gravity * dt;
-        velocity = velocity * (1.f - m_desc.drag * dt);
-
-        math::Vec3& position = m_particles.positions[i];
-        position = position + velocity * dt;
-
-        const f32 t = m_particles.ages[i];
-        m_particles.sizes[i] = m_desc.size_start + (m_desc.size_end - m_desc.size_start) * t;
-        m_particles.colors[i] = m_desc.color_start + (m_desc.color_end - m_desc.color_start) * t;
-        m_particles.alphas[i] = m_desc.alpha_start + (m_desc.alpha_end - m_desc.alpha_start) * t;
-        ++alive;
+    m_particles.count = aliveCount.load(std::memory_order_relaxed);
+    for (u32 slot : deadSlots) {
+        m_particles.free_slots.push_back(slot);
     }
-    m_particles.count = alive;
 
     if (m_desc.emit_rate > 0.f) {
         m_emitAccum += m_desc.emit_rate * dt;
         while (m_emitAccum >= 1.f) {
-            if (find_dead_slot_() == UINT32_MAX) {
+            if (m_particles.free_slots.empty()) {
                 m_emitAccum = 0.f;
                 break;
             }
@@ -121,17 +122,41 @@ u32 ParticleEmitter::alive_count() const {
     return m_particles.count;
 }
 
-u32 ParticleEmitter::find_dead_slot_() const {
-    for (u32 i = 0; i < m_particles.capacity; ++i) {
-        if (m_particles.alive_flags[i] == 0U) {
-            return i;
-        }
+u32 ParticleEmitter::allocate_slot_() {
+    if (m_particles.free_slots.empty()) {
+        return UINT32_MAX;
     }
-    return UINT32_MAX;
+    const u32 slot = m_particles.free_slots.back();
+    m_particles.free_slots.pop_back();
+    return slot;
+}
+
+void ParticleEmitter::integrate_particle_(u32 index, f32 dt, std::vector<u32>& dead_slots,
+                                          std::mutex& dead_mutex, std::atomic<u32>& alive_count) {
+    m_particles.ages[index] += dt / std::max(m_particles.lifetimes[index], 1e-4f);
+    if (m_particles.ages[index] >= 1.f) {
+        m_particles.alive_flags[index] = 0U;
+        std::lock_guard<std::mutex> guard(dead_mutex);
+        dead_slots.push_back(index);
+        return;
+    }
+
+    math::Vec3& velocity = m_particles.velocities[index];
+    velocity = velocity + m_desc.gravity * dt;
+    velocity = velocity * (1.f - m_desc.drag * dt);
+
+    math::Vec3& position = m_particles.positions[index];
+    position = position + velocity * dt;
+
+    const f32 t = m_particles.ages[index];
+    m_particles.sizes[index] = m_desc.size_start + (m_desc.size_end - m_desc.size_start) * t;
+    m_particles.colors[index] = m_desc.color_start + (m_desc.color_end - m_desc.color_start) * t;
+    m_particles.alphas[index] = m_desc.alpha_start + (m_desc.alpha_end - m_desc.alpha_start) * t;
+    alive_count.fetch_add(1U, std::memory_order_relaxed);
 }
 
 void ParticleEmitter::emit_particle_(u64 seed) {
-    const u32 slot = find_dead_slot_();
+    const u32 slot = allocate_slot_();
     if (slot == UINT32_MAX) {
         return;
     }

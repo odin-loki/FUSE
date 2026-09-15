@@ -3,6 +3,8 @@
 #include <fuse/math/vec.hpp>
 #include <fuse/types.hpp>
 
+#include <atomic>
+#include <mutex>
 #include <vector>
 
 namespace fuse::vfx {
@@ -34,6 +36,8 @@ struct ParticleEmitterDesc {
     f32 stretch_factor = 2.f;
 };
 
+/// Structure-of-arrays particle storage. Each column is dense over capacity; `alive_flags`
+/// marks live slots. `free_slots` holds dead indices for O(1) emission without scanning.
 struct ParticleSoA {
     std::vector<math::Vec3> positions;
     std::vector<math::Vec3> velocities;
@@ -43,6 +47,7 @@ struct ParticleSoA {
     std::vector<math::Vec3> colors;
     std::vector<f32> alphas;
     std::vector<u32> alive_flags;
+    std::vector<u32> free_slots;
     u32 count = 0;
     u32 capacity = 0;
 };
@@ -66,8 +71,10 @@ public:
     const ParticleSoA& particles() const { return m_particles; }
 
 private:
-    u32 find_dead_slot_() const;
+    u32 allocate_slot_();
     void emit_particle_(u64 seed);
+    void integrate_particle_(u32 index, f32 dt, std::vector<u32>& dead_slots, std::mutex& dead_mutex,
+                             std::atomic<u32>& alive_count);
     f32 sample_range_(f32 min_value, f32 max_value, u64& seed) const;
 
     ParticleEmitterDesc m_desc{};
