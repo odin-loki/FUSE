@@ -120,6 +120,8 @@ struct FroxelGridLayout {
 /// CPU froxel density interpolation helpers — mirrors CUDA trilinear sample stub.
 namespace froxel_util {
 f32 lerpDensity(f32 a, f32 b, f32 t);
+/// True when density storage is non-empty, the froxel desc is non-zero, and sizes match.
+bool canAccessDensityGrid(const FroxelDensityGrid& grid, const FroxelGridDesc& desc);
 /// True when density storage matches the clamped froxel count for `desc`.
 bool gridMatchesDesc(const FroxelDensityGrid& grid, const FroxelGridDesc& desc);
 /// Count froxels with density above `epsilon`; returns 0 when the grid is empty.
@@ -128,10 +130,25 @@ u32 countNonZeroFroxels(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
 u32 countEmptyFroxels(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
 /// Read density at a clamped flat froxel index; returns 0 when grid/desc mismatch or empty.
 f32 sampleDensityAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index);
+/// Read density at clamped tile/slice coords; returns 0 when grid/desc mismatch or empty.
+f32 sampleDensityAtTile(const FroxelDensityGrid& grid,
+                          const FroxelGridDesc& desc,
+                          u32 tileX,
+                          u32 tileY,
+                          u32 sliceZ);
 /// Write density at a clamped flat froxel index; returns false when grid/desc mismatch or empty.
 bool writeDensityAtIndex(FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index, f32 value);
+/// Write density at clamped tile/slice coords; returns false when grid/desc mismatch or empty.
+bool writeDensityAtTile(FroxelDensityGrid& grid,
+                        const FroxelGridDesc& desc,
+                        u32 tileX,
+                        u32 tileY,
+                        u32 sliceZ,
+                        f32 value);
 /// True when non-zero + empty froxel counts sum to storage size (empty grid is vacuously true).
 bool validateDensityCounts(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
+/// Storage/desc match plus density count partition invariant (empty storage is vacuously true).
+bool validateGridDensity(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, f32 epsilon = 1e-6f);
 f32 sampleDensityBilinear(const FroxelDensityGrid& grid,
                           const FroxelGridDesc& desc,
                           const FroxelSampleCoords& coords);

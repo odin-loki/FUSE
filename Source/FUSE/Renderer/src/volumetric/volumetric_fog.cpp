@@ -235,6 +235,10 @@ f32 lerpDensity(f32 a, f32 b, f32 t) {
     return a + (b - a) * clamp01(t);
 }
 
+bool canAccessDensityGrid(const FroxelDensityGrid& grid, const FroxelGridDesc& desc) {
+    return !grid.isEmpty() && !FroxelGridLayout::isEmptyGrid(desc) && grid.matchesDesc(desc);
+}
+
 bool gridMatchesDesc(const FroxelDensityGrid& grid, const FroxelGridDesc& desc) {
     return grid.matchesDesc(desc);
 }
@@ -268,7 +272,7 @@ u32 countEmptyFroxels(const FroxelDensityGrid& grid, f32 epsilon) {
 }
 
 f32 sampleDensityAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index) {
-    if (grid.isEmpty() || FroxelGridLayout::isEmptyGrid(desc) || !grid.matchesDesc(desc)) {
+    if (!canAccessDensityGrid(grid, desc)) {
         return 0.f;
     }
 
@@ -276,13 +280,41 @@ f32 sampleDensityAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& de
     return grid.density[clampedIndex];
 }
 
+f32 sampleDensityAtTile(const FroxelDensityGrid& grid,
+                        const FroxelGridDesc& desc,
+                        u32 tileX,
+                        u32 tileY,
+                        u32 sliceZ) {
+    if (!canAccessDensityGrid(grid, desc)) {
+        return 0.f;
+    }
+
+    const u32 index = FroxelGridLayout::froxelIndexClamped(tileX, tileY, sliceZ, desc);
+    return grid.density[index];
+}
+
 bool writeDensityAtIndex(FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index, f32 value) {
-    if (grid.isEmpty() || FroxelGridLayout::isEmptyGrid(desc) || !grid.matchesDesc(desc)) {
+    if (!canAccessDensityGrid(grid, desc)) {
         return false;
     }
 
     const u32 clampedIndex = FroxelGridLayout::clampFroxelIndex(index, desc);
     grid.density[clampedIndex] = value;
+    return true;
+}
+
+bool writeDensityAtTile(FroxelDensityGrid& grid,
+                        const FroxelGridDesc& desc,
+                        u32 tileX,
+                        u32 tileY,
+                        u32 sliceZ,
+                        f32 value) {
+    if (!canAccessDensityGrid(grid, desc)) {
+        return false;
+    }
+
+    const u32 index = FroxelGridLayout::froxelIndexClamped(tileX, tileY, sliceZ, desc);
+    grid.density[index] = value;
     return true;
 }
 
@@ -294,10 +326,20 @@ bool validateDensityCounts(const FroxelDensityGrid& grid, f32 epsilon) {
     return countNonZeroFroxels(grid, epsilon) + countEmptyFroxels(grid, epsilon) == grid.density.size();
 }
 
+bool validateGridDensity(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, f32 epsilon) {
+    if (grid.isEmpty()) {
+        return true;
+    }
+    if (!gridMatchesDesc(grid, desc)) {
+        return false;
+    }
+    return validateDensityCounts(grid, epsilon);
+}
+
 f32 sampleDensityBilinear(const FroxelDensityGrid& grid,
                           const FroxelGridDesc& desc,
                           const FroxelSampleCoords& coords) {
-    if (grid.isEmpty() || FroxelGridLayout::isEmptyGrid(desc) || !grid.matchesDesc(desc)) {
+    if (!canAccessDensityGrid(grid, desc)) {
         return 0.f;
     }
 
@@ -317,7 +359,7 @@ f32 sampleDensityBilinear(const FroxelDensityGrid& grid,
 f32 sampleDensityTrilinear(const FroxelDensityGrid& grid,
                            const FroxelGridDesc& desc,
                            const FroxelSampleCoords& coords) {
-    if (grid.isEmpty() || FroxelGridLayout::isEmptyGrid(desc) || !grid.matchesDesc(desc)) {
+    if (!canAccessDensityGrid(grid, desc)) {
         return 0.f;
     }
 
@@ -340,7 +382,7 @@ f32 sampleDensityAtScreen(const FroxelDensityGrid& grid,
                           f32 screenX,
                           f32 screenY,
                           f32 viewDepth) {
-    if (grid.isEmpty() || FroxelGridLayout::isEmptyGrid(desc) || !grid.matchesDesc(desc)) {
+    if (!canAccessDensityGrid(grid, desc)) {
         return 0.f;
     }
 
@@ -357,7 +399,7 @@ void populateFromAnalyticFog(FroxelDensityGrid& grid,
                              const VolumetricFogParams& params) {
     const FroxelGridDesc clampedDesc = FroxelGridDesc::clampCounts(desc);
     grid.allocate(clampedDesc);
-    if (clampedDesc.froxelCount() == 0u || params.density <= 0.f || params.march_steps == 0u) {
+    if (FroxelGridLayout::isEmptyGrid(clampedDesc) || params.density <= 0.f || params.march_steps == 0u) {
         return;
     }
 
@@ -368,11 +410,15 @@ void populateFromAnalyticFog(FroxelDensityGrid& grid,
 
         for (u32 tileY = 0; tileY < clampedDesc.tilesY; ++tileY) {
             for (u32 tileX = 0; tileX < clampedDesc.tilesX; ++tileX) {
-                const u32 index = FroxelGridLayout::froxelIndex(tileX, tileY, sliceZ, clampedDesc);
                 const math::Vec3 world_pos{camera.position.x,
                                            params.base_height + viewDepth * 0.01f,
                                            camera.position.z};
-                grid.density[index] = sample_volumetric_fog_density(params, world_pos);
+                writeDensityAtTile(grid,
+                                   clampedDesc,
+                                   tileX,
+                                   tileY,
+                                   sliceZ,
+                                   sample_volumetric_fog_density(params, world_pos));
             }
         }
     }
