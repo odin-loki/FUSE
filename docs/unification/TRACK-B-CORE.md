@@ -15,7 +15,7 @@
 | **B1.3** | Memory & allocators | `fuse::alloc` (frame/pool/stack) | ✅ | `fuse_core_allocator`, `fuse_core_services` | Frame bump + pool/stack allocators with stats hooks (#70); GPU allocators deferred |
 | **B1.4** | Math library | `fuse::math` | ✅ | `fuse_core_math` | Vec/Mat/Quat/AABB/Frustum/SDF — B1.4 deepen follow-up: Mat4 multiply/inverse edge tests, AABB transform helpers — [TRACK-B-MATH.md](./TRACK-B-MATH.md) |
 | **B1.5** | Job system & fibers | `fuse::jobs` | ✅ | `fuse_core_jobs`, `fuse_core_fiber`, `fuse_cuda_jobs` | Scheduler, `JobCounter`, `parallel_for`, CUDA job lane stub |
-| **B1.6** | Logging, assert & profiler | `fuse::log`, `fuse::assertion`, `fuse::profiler` | ✅ | `fuse_core_profiler_assert` | Nested scopes, chrome JSON (`displayTimeUnit`, `tid`, `id`, `args.depth`); platform thread-id stubs — [TRACK-B-CORE-B16.md](./TRACK-B-CORE-B16.md) |
+| **B1.6** | Logging, assert & profiler | `fuse::log`, `fuse::assertion`, `fuse::profiler` | ✅ | `fuse_core_profiler_assert` | Nested scopes, chrome JSON (`B`/`E`, async `s`/`f`, counter `C`); platform thread-id stubs — [TRACK-B-CORE-B16.md](./TRACK-B-CORE-B16.md) |
 | **B1.7** | Platform & window | `fuse::platform::Window`, `EventPump` | ✅ | `fuse_core_platform_window`, `fuse_core_platform_hardening` | Window + event-pump stubs (#69); B1.7 deepen — resize/focus notify + poll-queue tests — [TRACK-B-CORE-B17.md](./TRACK-B-CORE-B17.md) |
 
 Submodule detail:
@@ -52,7 +52,7 @@ fuse::core::Phase1TestRegistry::runIntegrationSmoke(); // jobs + math + handles 
 | B1.4 Math | `Mat4::fromTRS`, `transformPoint`, `AABB::contains`, `transformAabb` | always |
 | B1.2/B1.3 Handles | `HandleTable` worker publish + game-thread `commit` | always |
 | B1.2 I/O + VFS | `VirtualFileSystem::submitLoadAsync` → `drainCompletedLoads` → handle resolve | always |
-| B1.6 Profiler | `FUSE_PROFILE_SCOPE`, `beginFrame`/`endFrame`, chrome JSON export | always |
+| B1.6 Profiler | `FUSE_PROFILE_SCOPE`, async flow + counter stubs, `beginFrame`/`endFrame`, chrome JSON export | always |
 | B1.7 Platform | `Window` stub metadata + `VulkanSurfaceWire` null surface | always |
 
 No OS WSI surface, CUDA device, or Torque legacy is required — the smoke validates stub data paths and cross-lane wiring only.
