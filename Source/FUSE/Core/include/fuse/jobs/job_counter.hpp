@@ -5,7 +5,6 @@
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
-#include <vector>
 
 namespace fuse::jobs {
 
@@ -29,15 +28,11 @@ public:
     void wait();
 
 private:
-    friend struct detail::WorkerState;
-
-    void registerFiberWaiter(detail::WorkerState* worker);
-    void resumeFiberWaiters();
+    void synchronizeCompletion();
 
     std::atomic<u32> m_remaining;
     mutable std::mutex m_waitMutex;
     std::condition_variable m_waitCv;
-    std::vector<detail::WorkerState*> m_fiberWaiters;
 };
 
 } // namespace fuse::jobs

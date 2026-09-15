@@ -27,7 +27,7 @@ struct WorkerState {
     platform::FiberContext* jobFiber = nullptr;
     JobScheduler::JobFn pendingJob;
     JobCounter* waitingOn = nullptr;
-    bool waitSatisfied = false;
+    bool waitSatisfied = false; // owned by this worker's scheduler/job fibers only
 
     static void jobFiberLoop(void* arg) {
         auto* self = static_cast<WorkerState*>(arg);
@@ -50,7 +50,6 @@ struct WorkerState {
     void yieldOnCounter(JobCounter* counter) {
         waitingOn = counter;
         waitSatisfied = false;
-        counter->registerFiberWaiter(this);
         platform::fiberSwap(jobFiber, schedulerFiber);
         waitingOn = nullptr;
     }
@@ -61,11 +60,6 @@ struct WorkerState {
         }
     }
 
-    void onCounterComplete(JobCounter* counter) {
-        if (waitingOn == counter) {
-            waitSatisfied = true;
-        }
-    }
 };
 
 bool isWorkerThread() {
@@ -101,32 +95,34 @@ struct JobScheduler::Impl {
     std::condition_variable waitCv;
     std::atomic<bool> stop{false};
     std::atomic<u32> activeJobs{0};
+    std::atomic<bool> useFibers{false};
     u32 workerCount = 0;
-    bool useFibers = false;
 
     void workerLoop(u32 index) {
         detail::WorkerState& state = *workerStates[index];
         detail::g_workerState = &state;
 
-        if (useFibers) {
+        const bool fibersRequested = useFibers.load(std::memory_order_acquire);
+        if (fibersRequested) {
             state.schedulerFiber = platform::fiberAllocateContext();
             platform::fiberCaptureCurrent(state.schedulerFiber);
 
             const u32 stackBytes = platform::recommendedFiberStackBytes();
             state.jobFiber = platform::fiberCreate(stackBytes, detail::WorkerState::jobFiberLoop, &state);
             if (!state.jobFiber) {
-                useFibers = false;
+                useFibers.store(false, std::memory_order_release);
             }
         }
 
         while (!stop.load(std::memory_order_acquire)) {
-            if (useFibers && state.waitingOn && state.waitingOn->isComplete()) {
+            const bool fibersEnabled = useFibers.load(std::memory_order_acquire);
+            if (fibersEnabled && state.waitingOn && state.waitingOn->isComplete()) {
                 state.waitSatisfied = true;
                 platform::fiberSwap(state.schedulerFiber, state.jobFiber);
                 continue;
             }
 
-            if (useFibers && state.waitingOn && !state.waitingOn->isComplete()) {
+            if (fibersEnabled && state.waitingOn && !state.waitingOn->isComplete()) {
                 std::this_thread::yield();
                 continue;
             }
@@ -141,7 +137,7 @@ struct JobScheduler::Impl {
             }
 
             activeJobs.fetch_add(1, std::memory_order_relaxed);
-            if (useFibers && state.jobFiber) {
+            if (fibersEnabled && state.jobFiber) {
                 state.runJob(std::move(job));
             } else {
                 job();
@@ -150,7 +146,7 @@ struct JobScheduler::Impl {
             waitCv.notify_all();
         }
 
-        if (useFibers) {
+        if (useFibers.load(std::memory_order_acquire)) {
             platform::fiberDestroy(state.jobFiber);
             platform::fiberDestroy(state.schedulerFiber);
             state.jobFiber = nullptr;
@@ -214,22 +210,6 @@ struct JobScheduler::Impl {
     }
 };
 
-void JobCounter::registerFiberWaiter(detail::WorkerState* worker) {
-    std::lock_guard<std::mutex> lock(m_waitMutex);
-    m_fiberWaiters.push_back(worker);
-}
-
-void JobCounter::resumeFiberWaiters() {
-    std::vector<detail::WorkerState*> waiters;
-    {
-        std::lock_guard<std::mutex> lock(m_waitMutex);
-        waiters.swap(m_fiberWaiters);
-    }
-    for (detail::WorkerState* worker : waiters) {
-        worker->onCounterComplete(this);
-    }
-}
-
 JobScheduler& JobScheduler::instance() {
     static JobScheduler scheduler;
     return scheduler;
@@ -261,7 +241,7 @@ void JobScheduler::initialize(u32 workerCount) {
     m_impl->queues.resize(workerCount);
     m_impl->queueMutexes = std::vector<std::mutex>(workerCount);
     m_impl->workerStates.resize(workerCount);
-    m_impl->useFibers = platform::cooperativeFibersAvailable();
+    m_impl->useFibers.store(platform::cooperativeFibersAvailable(), std::memory_order_release);
 
     for (u32 i = 0; i < workerCount; ++i) {
         m_impl->workerStates[i] = std::make_unique<detail::WorkerState>();
@@ -294,6 +274,12 @@ void JobScheduler::shutdown() {
 
     m_workerCount = 0;
     m_initialized = false;
+}
+
+void JobScheduler::drainActiveJobs() {
+    if (m_impl) {
+        m_impl->drain();
+    }
 }
 
 void JobScheduler::submit(JobFn job) {

@@ -29,3 +29,30 @@
 | Win32 ASan fiber annotations | POSIX has `__sanitizer_*_switch_fiber`; Windows backend not yet instrumented |
 
 See [architecture-parallel.md](./architecture-parallel.md) §3.2–3.3 and [work-plan.md](./work-plan.md) WP-03.
+
+---
+
+## TSan nightly — known race surfaces
+
+Nightly job: [`.github/workflows/fuse-tsan-nightly.yml`](../../.github/workflows/fuse-tsan-nightly.yml) (`FUSE_CORE_ENABLE_TSAN=ON`, `fuse_core_*` CTest only).
+
+### Fixed (regression-covered)
+
+| Surface | Symptom | Mitigation |
+|---------|---------|------------|
+| Cross-thread `WorkerState` mutation on `JobCounter::signal()` | TSan data race on `waitingOn` when one worker signaled a counter while another worker's scheduler fiber cleared `waitingOn` after cooperative `wait()` | Cooperative wakeups poll `waitingOn->isComplete()` on the owning worker only; no cross-thread `WorkerState` writes |
+| `JobCounter` teardown vs in-flight `signal()` | TSan race on `m_fiberWaiters` / mutex when `wait()` returned before `signal()` released `m_waitMutex` | Removed unused fiber-waiter list; `wait()` calls `synchronizeCompletion()` to serialize with the final `signal()` |
+| Shared `Impl::useFibers` bool | Potential torn read when fiber allocation fails on one worker while others observe the flag | `std::atomic<bool>` with acquire/release loads |
+
+Regression tests: `fuse_core_jobs` — `testParallelSerialFallbackParity`, `testNestedParallelForParity`, `testNestedParallelForSerialFallbackParity`, `testNestedParallelForWithCooperativeWait`.
+
+### Remaining (documented, not yet eliminated)
+
+| Surface | Risk | Notes |
+|---------|------|-------|
+| Eager fiber wake queue | Perf only — workers poll `waitingOn->isComplete()` today | Explicit wake list deferred; avoids cross-thread `WorkerState` mutation |
+| `JobCounter::wait()` CV path (game/submit thread) | Expected — mutex + `condition_variable` for non-worker waiters | Not a fiber hot path; documented in Shipped § above |
+| Work-stealing deque locks | Contention only — each queue has its own mutex | TSan-clean; perf tuning deferred |
+| `parallel_for` body captures `&body` | User responsibility — lambdas with stale references across nested `parallel_for` are UB | Tests use stack-local functors; callers must not capture temporaries |
+| Fiber stack depth | Logic bug, not a data race — one job fiber per worker; nested `parallel_for` + `wait()` is OK, arbitrary coroutine depth is not | See per-job fiber pools row above |
+| Concurrent nested `parallel_for` on all workers | **Deadlock** when every worker is cooperatively waiting on an inner counter and none steal (by design) | Safe pattern: single outer chunk (`grain >= outer`) or serial outer driver; see `fuse_core_jobs` nested parity tests |
