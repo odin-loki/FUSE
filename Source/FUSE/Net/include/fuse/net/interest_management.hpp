@@ -70,16 +70,25 @@ struct InterestSetDiff {
 
     [[nodiscard]] bool empty() const { return entered.empty() && left.empty(); }
 
+    void clear();
+
     /// Apply enter/leave to a scope snapshot (ghost manager incremental update stub).
-    void apply_diff(InterestScopeSet& scope) const;
-    void apply_to(InterestScopeSet& scope) const { apply_diff(scope); }
+    /// Returns true when at least one entity was inserted or removed.
+    [[nodiscard]] bool apply_diff(InterestScopeSet& scope) const;
+    void apply_to(InterestScopeSet& scope) const { (void)apply_diff(scope); }
+
+    [[nodiscard]] bool has_enters() const { return !entered.empty(); }
+    [[nodiscard]] bool has_leaves() const { return !left.empty(); }
 };
 
 [[nodiscard]] bool is_empty_interest_diff(const InterestSetDiff& diff);
+[[nodiscard]] bool has_scope_enters(const InterestSetDiff& diff);
+[[nodiscard]] bool has_scope_leaves(const InterestSetDiff& diff);
 [[nodiscard]] u32 count_scope_diff_entities(const InterestSetDiff& diff);
 
-void diff_interest_scope_sets(const InterestScopeSet& previous, const InterestScopeSet& current,
-                              InterestSetDiff& out);
+/// Returns true when `out` is non-empty.
+[[nodiscard]] bool diff_interest_scope_sets(const InterestScopeSet& previous, const InterestScopeSet& current,
+                                            InterestSetDiff& out);
 
 /// Count in-scope candidates without building entry rows (no hysteresis).
 [[nodiscard]] u32 count_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
@@ -121,10 +130,16 @@ public:
     /// Returns true when `out` is non-empty.
     [[nodiscard]] bool evaluate_and_diff(InterestSetDiff& out);
 
+    [[nodiscard]] const std::vector<InterestCandidate>& candidates() const { return m_candidates; }
     [[nodiscard]] const std::vector<InterestEntry>& entries() const { return m_entries; }
     [[nodiscard]] u32 in_scope_count() const;
     /// Query scope for one entity after the latest `evaluate()` call.
     [[nodiscard]] bool is_entity_in_scope(ecs::EntityID entity) const;
+
+    /// Count registered candidates in scope for the current observer (uses prior scope hysteresis).
+    [[nodiscard]] u32 count_registered_in_radius() const;
+    /// Filter registered candidates in scope for the current observer (uses prior scope hysteresis).
+    [[nodiscard]] u32 filter_registered_in_radius(std::vector<InterestEntry>& out_entries) const;
 
     /// Snapshot of in-scope entities from the last `evaluate()` call.
     [[nodiscard]] const InterestScopeSet& scope_set() const { return m_scope_set; }
@@ -132,7 +147,8 @@ public:
     [[nodiscard]] const InterestScopeSet& previous_scope_set() const { return m_previous_scope_set; }
 
     /// Diff current scope against the previous evaluation's scope set.
-    void compute_scope_diff(InterestSetDiff& out) const;
+    /// Returns true when `out` is non-empty.
+    [[nodiscard]] bool compute_scope_diff(InterestSetDiff& out) const;
     /// True when the last two `evaluate()` calls produced different in-scope sets.
     [[nodiscard]] bool scope_changed_since_last_evaluate() const;
 
