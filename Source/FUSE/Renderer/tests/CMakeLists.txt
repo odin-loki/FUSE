@@ -39,3 +39,15 @@ add_test(NAME fuse_composite_pass COMMAND fuse_composite_pass)
 add_executable(fuse_renderer_bootstrap test_renderer_bootstrap.cpp)
 target_link_libraries(fuse_renderer_bootstrap PRIVATE fuse_rhi)
 add_test(NAME fuse_renderer_bootstrap COMMAND fuse_renderer_bootstrap)
+
+add_executable(fuse_gbuffer test_gbuffer.cpp)
+target_link_libraries(fuse_gbuffer PRIVATE fuse_rhi)
+add_test(NAME fuse_gbuffer COMMAND fuse_gbuffer)
+
+add_executable(fuse_material_system test_material_system.cpp)
+target_link_libraries(fuse_material_system PRIVATE fuse_rhi)
+add_test(NAME fuse_material_system COMMAND fuse_material_system)
+
+add_executable(fuse_deferred_pipeline test_deferred_pipeline.cpp)
+target_link_libraries(fuse_deferred_pipeline PRIVATE fuse_rhi)
+add_test(NAME fuse_deferred_pipeline COMMAND fuse_deferred_pipeline)

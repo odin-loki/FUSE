@@ -3,6 +3,11 @@
 set(FUSE_RHI_PUBLIC_HEADERS
     include/fuse/renderer/command_buffer.hpp
     include/fuse/renderer/composite_pass.hpp
+    include/fuse/renderer/deferred/deferred_renderer.hpp
+    include/fuse/renderer/deferred/frame_pipeline.hpp
+    include/fuse/renderer/deferred/gbuffer.hpp
+    include/fuse/renderer/material/material.hpp
+    include/fuse/renderer/material/material_system.hpp
     include/fuse/renderer/render_command_list.hpp
     include/fuse/renderer/render_graph.hpp
     include/fuse/renderer/renderer_bootstrap.hpp
@@ -33,6 +38,11 @@ set(FUSE_RHI_PUBLIC_HEADERS
 set(FUSE_RHI_SOURCES
     src/command_buffer.cpp
     src/composite_pass.cpp
+    src/deferred/deferred_renderer.cpp
+    src/deferred/frame_pipeline.cpp
+    src/deferred/gbuffer.cpp
+    src/material/material.cpp
+    src/material/material_system.cpp
     src/render_command_list.cpp
     src/render_graph.cpp
     src/resource_manager.cpp
