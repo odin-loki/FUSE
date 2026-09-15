@@ -10,6 +10,7 @@ void run_input_history_tests() {
     empty.init(8);
     expectTrue(!empty.pop_oldest().has_value(), "pop_oldest on empty history returns nullopt");
     expectTrue(empty.stored_frame_count() == 0u, "empty history reports zero stored frames");
+    expectTrue(empty.empty(), "fresh history reports empty");
     expectTrue(!empty.has_frame(0u), "empty history has no frames");
 
     fuse::net::InputHistoryBuffer history;
@@ -120,6 +121,42 @@ void run_input_history_tests() {
                "reconcile on cleared history returns NoOp");
     expectTrue(zero_capacity.stored_frame_count() == 0u, "cleared history reconcile has no side effects");
     expectTrue(!zero_capacity.has_confirmed(0u), "cleared history does not record reconcile input");
+
+    fuse::net::InputHistoryBuffer evict_before_write;
+    evict_before_write.init(4);
+    for (fuse::u32 frame = 0; frame < 4; ++frame) {
+        fuse::net::PlayerInput input{};
+        input.frame = frame;
+        input.buttons = frame + 10;
+        evict_before_write.push_frame(frame, input);
+    }
+    expectTrue(evict_before_write.has_frame(0u), "frame 0 retained before wrap write");
+    expectTrue(evict_before_write.predicted(0u).buttons == 10u, "frame 0 payload retained before wrap");
+
+    fuse::net::PlayerInput wrap_input{};
+    wrap_input.frame = 4;
+    wrap_input.buttons = 99;
+    evict_before_write.push_frame(4, wrap_input);
+
+    expectTrue(!evict_before_write.has_frame(0u), "evict-before-write clears wrapped slot");
+    expectTrue(evict_before_write.has_frame(4u), "wrap write retains newest frame");
+    expectTrue(evict_before_write.predicted(4u).buttons == 99u, "wrap write stores new payload");
+    expectTrue(evict_before_write.oldest_stored_frame() == 1u, "evict-before-write advances oldest frame");
+    expectTrue(!evict_before_write.empty(), "non-empty history after wrap write");
+
+    fuse::net::InputHistoryBuffer bounded;
+    bounded.init(4);
+    for (fuse::u32 frame = 2; frame < 6; ++frame) {
+        fuse::net::PlayerInput input{};
+        input.frame = frame;
+        bounded.push_frame(frame, input);
+    }
+    expectTrue(fuse::net::can_reconcile_input_frame(bounded, 5u),
+               "can_reconcile accepts newest retained frame");
+    expectTrue(!fuse::net::can_reconcile_input_frame(bounded, 1u),
+               "can_reconcile rejects evicted frame");
+    expectTrue(!fuse::net::can_reconcile_input_frame(bounded, 6u),
+               "can_reconcile rejects future frame beyond newest");
 }
 
 } // namespace fuse::net::tests

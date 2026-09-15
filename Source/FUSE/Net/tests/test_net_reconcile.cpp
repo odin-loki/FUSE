@@ -110,6 +110,40 @@ void run_reconcile_tests() {
     expectTrue(evicted_buffer.action == fuse::net::ReconcileAction::NoOp,
                "rollback buffer reconcile on evicted frame returns NoOp");
     expectTrue(!wrapped.remote_confirmed(1), "evicted frame remote input is not recorded");
+
+    fuse::net::RollbackBuffer future_buffer;
+    future_buffer.init(4);
+    for (fuse::u32 frame = 0; frame < 4; ++frame) {
+        fuse::net::GameSnapshot snap{};
+        snap.frame = frame;
+        future_buffer.store_snapshot(frame, snap);
+    }
+    fuse::net::PlayerInput future_remote{};
+    future_remote.frame = 9;
+    const fuse::net::ReconcileResult future_result =
+        fuse::net::reconcile_rollback_buffer(future_buffer, 9, future_remote);
+    expectTrue(future_result.action == fuse::net::ReconcileAction::NoOp,
+               "rollback buffer reconcile rejects future frame beyond newest");
+    expectTrue(!future_buffer.remote_confirmed(9), "future frame remote input is not recorded");
+    expectTrue(fuse::net::can_reconcile_rollback_frame(future_buffer, 3u),
+               "can_reconcile accepts newest retained rollback frame");
+    expectTrue(!fuse::net::can_reconcile_rollback_frame(future_buffer, 9u),
+               "can_reconcile rejects future rollback frame");
+
+    fuse::net::InputHistoryBuffer future_history;
+    future_history.init(4);
+    for (fuse::u32 frame = 0; frame < 4; ++frame) {
+        fuse::net::PlayerInput predicted{};
+        predicted.frame = frame;
+        future_history.push_frame(frame, predicted);
+    }
+    fuse::net::PlayerInput future_authority{};
+    future_authority.frame = 8;
+    const fuse::net::ReconcileResult future_history_result =
+        fuse::net::reconcile_predicted_input(future_history, 8, future_authority);
+    expectTrue(future_history_result.action == fuse::net::ReconcileAction::NoOp,
+               "input history reconcile rejects future frame beyond newest");
+    expectTrue(!future_history.has_confirmed(8u), "future frame is not stored by reconcile guard");
 }
 
 } // namespace fuse::net::tests

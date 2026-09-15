@@ -19,6 +19,12 @@ struct ReconcileResult {
     u32 frame = 0;
 };
 
+/// True when `frame` is within the input history ring (or history is empty with non-zero capacity).
+[[nodiscard]] bool can_reconcile_input_frame(const InputHistoryBuffer& history, u32 frame);
+
+/// True when `frame` maps to a retained rollback-buffer snapshot within the ring window.
+[[nodiscard]] bool can_reconcile_rollback_frame(const RollbackBuffer& buffer, u32 frame);
+
 /// Records authoritative input and compares it against the predicted local history (B7.4 stub).
 [[nodiscard]] ReconcileResult reconcile_predicted_input(InputHistoryBuffer& history, u32 frame,
                                                           const PlayerInput& authoritative);
