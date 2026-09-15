@@ -1,9 +1,11 @@
 add_library(fuse_world2d STATIC
     src/scene_object_2d.cpp
     src/scene_snapshot.cpp
+    src/transform_stubs.cpp
     src/world_2d.cpp
     include/fuse/world2d/scene_object_2d.hpp
     include/fuse/world2d/scene_snapshot.hpp
+    include/fuse/world2d/transform_stubs.hpp
     include/fuse/world2d/world_2d.hpp
 )
 

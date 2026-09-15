@@ -47,4 +47,17 @@ void Object::removeChild(Object* child) {
     child->m_parent = nullptr;
 }
 
+void Object::reparent(Object* newParent) {
+    if (newParent == m_parent) {
+        return;
+    }
+    if (newParent) {
+        newParent->addChild(this);
+        return;
+    }
+    if (m_parent) {
+        m_parent->removeChild(this);
+    }
+}
+
 } // namespace fuse

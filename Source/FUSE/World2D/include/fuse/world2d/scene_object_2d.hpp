@@ -2,6 +2,7 @@
 
 #include <fuse/object.hpp>
 #include <fuse/types.hpp>
+#include <fuse/world2d/transform_stubs.hpp>
 
 namespace fuse {
 
@@ -17,6 +18,9 @@ public:
     float x() const { return m_x; }
     float y() const { return m_y; }
     void setPosition(float x, float y);
+
+    LocalTransform2D localTransform() const;
+    WorldTransform2D worldTransform() const;
 
     s32 layer() const { return m_layer; }
     void setLayer(s32 layer) { m_layer = layer; }

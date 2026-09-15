@@ -109,7 +109,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Parallel** | Overlaps late WP-04 |
 | **Exit** | Unit tests for hierarchy; adapter round-trip one legacy object; **no** cross-thread raw pointers |
 | **Deps** | WP-04 handles; [merge-strategy-2d-extends.md](./merge-strategy-2d-extends.md) |
-| **Status** | 🚧 Started — `fuse::Object`, `SceneObject2D`, `SceneObject3D` + hierarchy tests; legacy adapters stubbed |
+| **Status** | 🚧 Deepened — transform stubs, snapshot SoA fill, reparent tests; legacy adapters stub-only — see [WP-05-SCENE-HIERARCHY.md](./WP-05-SCENE-HIERARCHY.md) |
 
 ---
 

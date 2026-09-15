@@ -63,6 +63,12 @@ void testObjectHierarchy() {
     root.addChild(&child);
     expectTrue(child.parent() == &root, "child links to parent");
     expectTrue(root.children().size() == 1u, "parent tracks child");
+
+    fuse::Object group("group");
+    root.addChild(&group);
+    child.reparent(&group);
+    expectTrue(child.parent() == &group, "reparent updates parent link");
+    expectTrue(root.children().size() == 1u, "reparent removes child from old parent");
 }
 
 } // namespace

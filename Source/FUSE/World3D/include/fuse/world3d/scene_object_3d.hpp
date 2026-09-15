@@ -17,6 +17,9 @@ public:
     float z() const { return m_z; }
     void setZ(float z) { m_z = z; }
 
+    LocalTransform3D localTransform3D() const;
+    WorldTransform3D worldTransform3D() const;
+
 private:
     float m_z = 0.f;
 };

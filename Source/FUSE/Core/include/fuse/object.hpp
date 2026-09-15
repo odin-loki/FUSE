@@ -30,6 +30,8 @@ public:
 
     void addChild(Object* child);
     void removeChild(Object* child);
+    /// Detach from current parent and attach under newParent (nullptr unparents).
+    void reparent(Object* newParent);
 
     Handle<Object> handle() const { return m_handle; }
 
