@@ -5,6 +5,7 @@ option(FUSE_JOBS_SINGLE_THREAD "Force single-threaded job execution (tests/repla
 set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/types.hpp
     include/fuse/config.hpp
+    include/fuse/core/init.hpp
     include/fuse/jobs/worker_count.hpp
     include/fuse/jobs/job_scheduler.hpp
     include/fuse/jobs/job_counter.hpp
@@ -15,11 +16,14 @@ set(FUSE_CORE_PUBLIC_HEADERS
 
 set(FUSE_CORE_SOURCES
     src/fuse_core_stub.cpp
+    src/core/init.cpp
     src/jobs/worker_count.cpp
-    src/jobs/job_scheduler_stub.cpp
-    src/jobs/job_counter_stub.cpp
+    src/jobs/job_scheduler.cpp
+    src/jobs/job_counter.cpp
     src/platform/platform_stub.cpp
 )
+
+find_package(Threads REQUIRED)
 
 add_library(fuse_core STATIC
     ${FUSE_CORE_SOURCES}
@@ -45,6 +49,7 @@ if(FUSE_JOBS_SINGLE_THREAD)
 endif()
 
 target_compile_features(fuse_core PUBLIC cxx_std_17)
+target_link_libraries(fuse_core PUBLIC Threads::Threads)
 
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)

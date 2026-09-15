@@ -68,6 +68,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **MT note** | Single-threaded smoke OK; **no** parallel tick yet |
 | **Exit** | Core stub + both legacy inits in one process; documented remaining symbol conflicts trending down |
 | **Deps** | WP-01 |
+| **Status** | ✅ Done (U2 PR) — prefixed quarantine libs + smoke binary; full Engine init blocked (see [U2-SMOKE.md](./U2-SMOKE.md)) |
 
 ---
 
@@ -82,7 +83,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Emscripten** | Stub profile only (`FUSE_JOBS_SINGLE_THREAD`) — **does not gate** WP-03 exit |
 | **Exit** | Job tests pass on Linux + **one mobile target** (iOS sim or Android NDK); work-stealing on 4+ core desktop; `FUSE_JOBS_SINGLE_THREAD` works; background reduces `N` |
 | **Deps** | WP-01 (cmake target); architecture-parallel §3.1–3.6 |
-| **Status** | 🚧 Stub landed (U1 PR) — `computeWorkerCount()` + platform/job headers; fiber scheduler pending |
+| **Status** | 🚧 Thread-pool scheduler landed (U2 PR); cooperative fiber switch deferred |
 
 ---
 
@@ -202,7 +203,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 | Gate | Unification | MT add-on criterion |
 |------|-------------|---------------------|
 | **U1** | Umbrella build | `fuse_core` cmake target exists |
-| **U2** | One-process smoke | ASan init; jobs optional |
+| **U2** | One-process smoke | ASan init; jobs optional — ✅ smoke + quarantine libs |
 | **U3** | Shared services | I/O job publishes handle; TSan plan live |
 | **U4** | Hybrid demo | `parallel_for` cull; frame barrier; game-thread GFX |
 | **U6** | Editor PIE | UI/game thread queue proven |
@@ -240,7 +241,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 
-**Next:** WP-02 one-process smoke (`fuse_t3d_legacy` / `fuse_t2d_legacy`); WP-03 fiber scheduler implementation.
+**Next:** Incremental Engine source into quarantine libs (U2.1); WP-03 cooperative fiber switch; WP-04 shared services.
 
 ---
 

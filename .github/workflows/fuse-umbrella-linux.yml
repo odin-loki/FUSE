@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   fuse-core-linux:
-    name: fuse_core + worker-count tests
+    name: fuse_core + tests + smoke
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,7 +22,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ninja-build cmake g++-13
 
-      - name: Configure umbrella (fuse_core only)
+      - name: Configure umbrella (core + legacy + smoke)
         run: |
           cmake -B build-fuse -G Ninja \
             -DCMAKE_CXX_COMPILER=g++-13 \
@@ -30,11 +30,48 @@ jobs:
             -DFUSE_UMBRELLA=ON \
             -DFUSE_BUILD_CORE=ON \
             -DFUSE_BUILD_CORE_TESTS=ON \
+            -DFUSE_BUILD_LEGACY=ON \
+            -DFUSE_BUILD_SMOKE=ON \
             -DFUSE_BUILD_T3D=OFF \
             -DFUSE_BUILD_T2D=OFF
 
-      - name: Build fuse_core and tests
+      - name: Build
         run: cmake --build build-fuse --config Release
 
       - name: Run CTest
         run: ctest --test-dir build-fuse --output-on-failure
+
+      - name: Verify prefix shims
+        run: |
+          python3 Tools/FUSE/prefix_legacy_symbols.py --verify-shims --dimension t3d
+          python3 Tools/FUSE/prefix_legacy_symbols.py --verify-shims --dimension t2d
+
+  fuse-smoke-asan:
+    name: fuse_runtime_smoke (ASan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake g++-13
+
+      - name: Configure smoke with ASan
+        run: |
+          cmake -B build-asan -G Ninja \
+            -DCMAKE_CXX_COMPILER=g++-13 \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DFUSE_UMBRELLA=ON \
+            -DFUSE_BUILD_CORE=ON \
+            -DFUSE_BUILD_CORE_TESTS=OFF \
+            -DFUSE_BUILD_LEGACY=ON \
+            -DFUSE_BUILD_SMOKE=ON \
+            -DFUSE_SMOKE_ENABLE_ASAN=ON \
+            -DFUSE_BUILD_T3D=OFF \
+            -DFUSE_BUILD_T2D=OFF
+
+      - name: Build and run smoke
+        run: |
+          cmake --build build-asan --target fuse_runtime_smoke
+          ./build-asan/Source/FUSE/Apps/RuntimeSmoke/fuse_runtime_smoke

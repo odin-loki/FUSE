@@ -2,23 +2,30 @@
 
 #include <fuse/types.hpp>
 
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
+
 namespace fuse::jobs {
 
-/// Dependency counter for fork-join jobs (stub — U1/WP-03).
+/// Dependency counter for fork-join jobs.
 class JobCounter {
 public:
-    explicit JobCounter(u32 initial = 0) : m_remaining(initial) {}
+    explicit JobCounter(u32 initial = 0);
 
-    void reset(u32 value) { m_remaining = value; }
-    void signal() { if (m_remaining > 0) { --m_remaining; } }
-    bool isComplete() const { return m_remaining == 0; }
-    u32 remaining() const { return m_remaining; }
+    void reset(u32 value);
+    void add(u32 delta);
+    void signal();
+    bool isComplete() const;
+    u32 remaining() const;
 
-    /// Yield until complete (stub: no-op spin check).
+    /// Block until remaining reaches zero (worker threads may continue scheduling).
     void wait();
 
 private:
-    u32 m_remaining;
+    std::atomic<u32> m_remaining;
+    mutable std::mutex m_waitMutex;
+    std::condition_variable m_waitCv;
 };
 
 } // namespace fuse::jobs

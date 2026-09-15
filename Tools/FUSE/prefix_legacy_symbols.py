@@ -177,10 +177,41 @@ def build_plan(dimension: str) -> dict:
     }
 
 
+SHIM_ROOTS = {
+    "t3d": REPO_ROOT / "Source" / "FUSE" / "Legacy" / "T3D" / "src",
+    "t2d": REPO_ROOT / "Source" / "FUSE" / "Legacy" / "T2D" / "src",
+}
+
+SHIM_REQUIRED_SYMBOLS = {
+    "t3d": ["fuse_t3d_Con_execute", "fuse_t3d_Con_printf", "fuse_t3d_StringTable_intern"],
+    "t2d": ["fuse_t2d_Con_execute", "fuse_t2d_Con_printf", "fuse_t2d_StringTable_intern"],
+}
+
+
+def verify_shims(dimension: str) -> dict:
+    root = SHIM_ROOTS[dimension]
+    required = SHIM_REQUIRED_SYMBOLS[dimension]
+    text = ""
+    if root.exists():
+        for path in root.rglob("*"):
+            if path.suffix in {".cpp", ".h"}:
+                text += path.read_text(encoding="utf-8", errors="ignore") + "\n"
+
+    missing = [symbol for symbol in required if symbol not in text]
+    return {
+        "dimension": dimension,
+        "shim_root": str(root.relative_to(REPO_ROOT)),
+        "required_symbols": required,
+        "missing_symbols": missing,
+        "ok": len(missing) == 0,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="FUSE legacy symbol prefix planner (WP-02 prep)")
     parser.add_argument("--list-con", action="store_true", help="Print Con:: symbols from collision report")
     parser.add_argument("--plan", action="store_true", help="Scan sources and emit rename plan")
+    parser.add_argument("--verify-shims", action="store_true", help="Verify U2 quarantine shims export required prefixed symbols")
     parser.add_argument("--dimension", choices=["t3d", "t2d"], default="t3d")
     parser.add_argument("--output", type=Path, help="Write JSON plan to this path")
     args = parser.parse_args()
@@ -189,6 +220,11 @@ def main() -> int:
         for symbol in load_doc_con_list():
             print(symbol)
         return 0
+
+    if args.verify_shims:
+        report = verify_shims(args.dimension)
+        print(json.dumps(report, indent=2))
+        return 0 if report["ok"] else 2
 
     if args.plan:
         plan = build_plan(args.dimension)
