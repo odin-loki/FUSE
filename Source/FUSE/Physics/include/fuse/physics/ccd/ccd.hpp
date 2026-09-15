@@ -122,6 +122,13 @@ FUSE_PHYSICS_INLINE TOIResult sweptSpherePlane(vec3 pos0,
     return makeToiAtContact(toi, hitCenter - planeNormal * radius, planeNormal, 0, 0);
 }
 
+FUSE_PHYSICS_INLINE aabb makeCenteredAabb(vec3 center, vec3 halfExtents) {
+    return {
+        center - halfExtents,
+        center + halfExtents,
+    };
+}
+
 FUSE_PHYSICS_INLINE TOIResult selectEarliestToi(const TOIResult& a, const TOIResult& b) {
     if (!a.valid) {
         return b;
