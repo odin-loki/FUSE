@@ -735,6 +735,92 @@ void testStreamingRequestQueueEnqueuePromoteDemote() {
     expectNear(fuse::world_partition::demote_streaming_priority(8.f, 0.5f), 4.f, 1e-4f, "demote helper");
 }
 
+void testStreamingRequestQueueFlushBudget() {
+    withScheduler(1, [] {
+        fuse::world_partition::StreamingRequestQueue queue;
+        queue.set_max_pending_submits(2);
+
+        for (fuse::u32 i = 0; i < 3u; ++i) {
+            fuse::world_partition::StreamingRequest request{};
+            request.coord = {static_cast<fuse::s32>(i), 0};
+            request.kind = fuse::world_partition::StreamingRequestKind::Load;
+            request.priority = static_cast<fuse::f32>(i);
+            expectTrue(queue.enqueue(request), "enqueue pending request");
+        }
+
+        expectEq(queue.flush(2, [](fuse::world_partition::GridCoord,
+                                   fuse::world_partition::StreamingRequestKind) { return true; }),
+                 2u, "flush respects budget cap");
+        expectEq(queue.pending_enqueue_count(), 1u, "flush leaves lower-priority pending request");
+        expectNear(queue.pending_priority_for({0, 0}, fuse::world_partition::StreamingRequestKind::Load), 0.f,
+                   1e-4f, "pending lookup returns surviving priority");
+
+        for (int attempt = 0; attempt < 100 && queue.completed_count() < 2u; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        std::vector<fuse::world_partition::CompletedStreamingRequest> completed;
+        queue.drain_completed(completed);
+        expectEq(completed.size(), 2u, "flush submits complete");
+        expectTrue(completed[0].coord.x == 2, "flush submits highest priority first");
+    });
+}
+
+void testStreamingRequestQueueEqualPriorityKindOrdering() {
+    withScheduler(2, [] {
+        fuse::world_partition::StreamingRequestQueue queue;
+
+        fuse::world_partition::StreamingRequest load{};
+        load.coord = {0, 0};
+        load.kind = fuse::world_partition::StreamingRequestKind::Load;
+        load.priority = 5.f;
+
+        fuse::world_partition::StreamingRequest unload{};
+        unload.coord = {1, 0};
+        unload.kind = fuse::world_partition::StreamingRequestKind::Unload;
+        unload.priority = 5.f;
+
+        expectTrue(queue.submit(load, [](fuse::world_partition::GridCoord,
+                                         fuse::world_partition::StreamingRequestKind) { return true; }),
+                   "submit equal-priority load");
+        expectTrue(queue.submit(unload, [](fuse::world_partition::GridCoord,
+                                           fuse::world_partition::StreamingRequestKind) { return true; }),
+                   "submit equal-priority unload");
+
+        for (int attempt = 0; attempt < 200 && queue.completed_count() < 2u; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        std::vector<fuse::world_partition::CompletedStreamingRequest> completed;
+        expectEq(queue.drain_completed(completed), 2u, "equal-priority drain returns both completions");
+        expectTrue(completed[0].kind == fuse::world_partition::StreamingRequestKind::Unload,
+                   "equal-priority drain prefers unload before load");
+        expectTrue(completed[1].kind == fuse::world_partition::StreamingRequestKind::Load,
+                   "equal-priority load follows unload");
+    });
+}
+
+void testApplyResidencyCompletionStubs() {
+    fuse::world_partition::ResidencySet residency;
+    const fuse::world_partition::GridCoord coord{2, 3};
+
+    expectTrue(!fuse::world_partition::apply_residency_on_load_complete(residency, coord, 100.f, false),
+               "failed load completion does not add residency");
+    expectTrue(residency.empty(), "failed load leaves residency empty");
+
+    expectTrue(fuse::world_partition::apply_residency_on_load_complete(residency, coord, 100.f, true),
+               "successful load completion adds residency");
+    expectTrue(residency.contains(coord), "load stub marks coord resident");
+
+    expectTrue(!fuse::world_partition::apply_residency_on_unload_complete(residency, coord, false),
+               "failed unload completion keeps residency");
+    expectTrue(residency.contains(coord), "failed unload leaves coord resident");
+
+    expectTrue(fuse::world_partition::apply_residency_on_unload_complete(residency, coord, true),
+               "successful unload completion removes residency");
+    expectTrue(residency.empty(), "unload stub clears residency set");
+}
+
 void testStreamingRequestQueueMixedCompletionOrdering() {
     withScheduler(2, [] {
         fuse::world_partition::StreamingRequestQueue queue;
@@ -798,6 +884,38 @@ void testResidencySetEmptyStubOperations() {
     expectTrue(fuse::world_partition::try_add_resident(residency, missing, 100.f), "add stub succeeds");
     expectTrue(fuse::world_partition::try_remove_resident(residency, missing), "remove stub succeeds");
     expectTrue(residency.empty(), "residency empty after stub remove");
+}
+
+void testWorldPartitionAsyncEnqueueFlushCarryover() {
+    withScheduler(1, [] {
+        fuse::world_partition::WorldPartition partition;
+        fuse::world_partition::WorldPartitionDesc desc{};
+        desc.async_loading = true;
+        desc.budget.max_async_in_flight = 1;
+        desc.budget.max_loads_per_tick = 2;
+        desc.max_loaded_cells = 4;
+        partition.init(desc);
+
+        const fuse::world_partition::GridCoord low{0, 0};
+        const fuse::world_partition::GridCoord high{1, 0};
+        partition.force_load(low);
+        partition.force_load(high);
+
+        expectTrue(partition.cell_residency(low) == fuse::world_partition::CellResidencyState::Loading ||
+                       partition.cell_residency(high) == fuse::world_partition::CellResidencyState::Loading,
+                   "async force_load enqueues work");
+
+        for (int frame = 0; frame < 64 && partition.loaded_cell_count() < 2u; ++frame) {
+            partition.drain_completed_requests();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        expectTrue(partition.cell_loaded(low) && partition.cell_loaded(high),
+                   "enqueue/flush carryover completes both loads");
+        expectEq(partition.in_flight_request_count(), 0u, "no in-flight work after both loads complete");
+
+        partition.destroy();
+    });
 }
 
 void testWorldPartitionAsyncResidency() {
@@ -874,10 +992,14 @@ int main() {
     testStreamingRequestQueueFifoOrdering();
     testStreamingRequestQueueEnqueueFlushOrdering();
     testStreamingRequestQueueEnqueuePromoteDemote();
+    testStreamingRequestQueueFlushBudget();
+    testStreamingRequestQueueEqualPriorityKindOrdering();
+    testApplyResidencyCompletionStubs();
     testStreamingRequestQueueMixedCompletionOrdering();
     testResidencySetEmptyStubOperations();
     testResidencySetFocusDistance();
     testWorldPartitionResidencySetTracking();
+    testWorldPartitionAsyncEnqueueFlushCarryover();
     testWorldPartitionAsyncResidency();
     fuse::core::shutdown();
 

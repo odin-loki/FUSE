@@ -277,20 +277,31 @@ StreamingWorkFn WorldPartition::make_worker_stub_() const {
     };
 }
 
+void WorldPartition::flush_async_queue_(u32 max_submits) {
+    if (max_submits == 0u) {
+        return;
+    }
+    (void)m_async_queue.flush(max_submits, make_worker_stub_());
+}
+
 void WorldPartition::process_queues_() {
+    const bool async_jobs = use_async_jobs_();
+    if (async_jobs) {
+        const u32 pending_slots =
+            m_desc.budget.max_async_in_flight > m_async_queue.in_flight_count()
+                ? m_desc.budget.max_async_in_flight - m_async_queue.in_flight_count()
+                : 0u;
+        flush_async_queue_(pending_slots);
+    }
+
     std::sort(m_load_queue.begin(), m_load_queue.end(),
               [](const LoadRequest& a, const LoadRequest& b) { return a.priority > b.priority; });
 
-    const bool async_jobs = use_async_jobs_();
     const u32 load_budget =
         effective_tick_budget(static_cast<u32>(m_load_queue.size()), m_desc.budget.max_loads_per_tick, false);
     u32 processed = 0;
 
     while (!m_load_queue.empty() && resident_cell_count() < m_desc.max_loaded_cells && processed < load_budget) {
-        if (async_jobs && m_async_queue.in_flight_count() >= m_desc.budget.max_async_in_flight) {
-            break;
-        }
-
         const LoadRequest request = m_load_queue.front();
         m_load_queue.erase(m_load_queue.begin());
 
@@ -306,9 +317,7 @@ void WorldPartition::process_queues_() {
             async_request.coord = request.coord;
             async_request.kind = StreamingRequestKind::Load;
             async_request.priority = request.priority;
-            if (!m_async_queue.submit(async_request, make_worker_stub_())) {
-                execute_load_(cell);
-            }
+            (void)m_async_queue.enqueue(async_request);
         } else {
             execute_load_(cell);
         }
@@ -316,16 +325,21 @@ void WorldPartition::process_queues_() {
         ++processed;
     }
 
+    if (async_jobs && processed > 0u) {
+        const u32 pending_slots =
+            m_desc.budget.max_async_in_flight > m_async_queue.in_flight_count()
+                ? m_desc.budget.max_async_in_flight - m_async_queue.in_flight_count()
+                : 0u;
+        flush_async_queue_(pending_slots);
+    }
+
     std::sort(m_unload_queue.begin(), m_unload_queue.end(),
               [](const UnloadRequest& a, const UnloadRequest& b) { return a.priority > b.priority; });
 
     const u32 unload_budget =
         effective_tick_budget(static_cast<u32>(m_unload_queue.size()), m_desc.budget.max_unloads_per_tick, false);
+    u32 unloaded = 0u;
     for (u32 i = 0; i < unload_budget && !m_unload_queue.empty(); ++i) {
-        if (async_jobs && m_async_queue.in_flight_count() >= m_desc.budget.max_async_in_flight) {
-            break;
-        }
-
         const UnloadRequest request = m_unload_queue.front();
         m_unload_queue.erase(m_unload_queue.begin());
         const GridCoord coord = request.coord;
@@ -342,12 +356,20 @@ void WorldPartition::process_queues_() {
             async_request.coord = coord;
             async_request.kind = StreamingRequestKind::Unload;
             async_request.priority = request.priority;
-            if (!m_async_queue.submit(async_request, make_worker_stub_())) {
-                execute_unload_(*cell);
-            }
+            (void)m_async_queue.enqueue(async_request);
         } else {
             execute_unload_(*cell);
         }
+
+        ++unloaded;
+    }
+
+    if (async_jobs && unloaded > 0u) {
+        const u32 pending_slots =
+            m_desc.budget.max_async_in_flight > m_async_queue.in_flight_count()
+                ? m_desc.budget.max_async_in_flight - m_async_queue.in_flight_count()
+                : 0u;
+        flush_async_queue_(pending_slots);
     }
 }
 
@@ -356,6 +378,14 @@ void WorldPartition::drain_completed_requests_() {
     m_async_queue.drain_completed(m_completed_batch_);
     for (const CompletedStreamingRequest& completed : m_completed_batch_) {
         apply_completed_request_(completed);
+    }
+
+    if (use_async_jobs_()) {
+        const u32 pending_slots =
+            m_desc.budget.max_async_in_flight > m_async_queue.in_flight_count()
+                ? m_desc.budget.max_async_in_flight - m_async_queue.in_flight_count()
+                : 0u;
+        flush_async_queue_(pending_slots);
     }
 }
 
@@ -396,14 +426,14 @@ void WorldPartition::execute_load_(WorldCell& cell) {
 
     const fuse::ecs::vec3 cell_center = grid_to_world_center(cell.coord, m_desc.cell_size);
     const f32 focus_distance = m_streaming.planar_distance_to(cell_center);
-    (void)try_add_resident(m_residency_set, cell.coord, focus_distance);
+    (void)apply_residency_on_load_complete(m_residency_set, cell.coord, focus_distance, true);
 }
 
 void WorldPartition::execute_unload_(WorldCell& cell) {
     if (m_callbacks.on_unload != nullptr) {
         m_callbacks.on_unload(cell);
     }
-    (void)try_remove_resident(m_residency_set, cell.coord);
+    (void)apply_residency_on_unload_complete(m_residency_set, cell.coord, true);
     cell.entities.clear();
     cell.residency = CellResidencyState::Unloaded;
     cell.visible = false;

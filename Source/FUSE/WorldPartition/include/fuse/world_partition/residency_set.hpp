@@ -155,4 +155,16 @@ inline u32 ResidencySet::find_index_(GridCoord coord) const {
     return set.remove(coord);
 }
 
+/// Stub: register residency after a successful async load completes on the game thread.
+[[nodiscard]] inline bool apply_residency_on_load_complete(ResidencySet& set, GridCoord coord,
+                                                            f32 focus_distance, bool success) {
+    return success ? try_add_resident(set, coord, focus_distance) : false;
+}
+
+/// Stub: clear residency after a successful async unload completes on the game thread.
+[[nodiscard]] inline bool apply_residency_on_unload_complete(ResidencySet& set, GridCoord coord,
+                                                              bool success) {
+    return success ? try_remove_resident(set, coord) : false;
+}
+
 } // namespace fuse::world_partition
