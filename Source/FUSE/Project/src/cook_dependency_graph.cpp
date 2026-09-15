@@ -315,6 +315,170 @@ CookInvalidationClosureResult CookDependencyGraph::transitive_successors(
     return result;
 }
 
+std::vector<std::string> flatten_topological_layers(const CookDependencyLayerResult& layers) {
+    if (!layers.ok || layers.cycle_detected) {
+        return {};
+    }
+
+    std::vector<std::string> flat;
+    for (const std::vector<std::string>& layer : layers.layers) {
+        flat.insert(flat.end(), layer.begin(), layer.end());
+    }
+    return flat;
+}
+
+std::optional<std::size_t> layer_index_for(const CookDependencyLayerResult& layers, const std::string& node_id) {
+    if (!layers.ok || layers.cycle_detected || node_id.empty()) {
+        return std::nullopt;
+    }
+
+    for (std::size_t index = 0; index < layers.layers.size(); ++index) {
+        const std::vector<std::string>& layer = layers.layers[index];
+        if (std::find(layer.begin(), layer.end(), node_id) != layer.end()) {
+            return index;
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::size_t max_parallel_layer_width(const CookDependencyLayerResult& layers) {
+    if (!layers.ok || layers.cycle_detected || layers.layers.empty()) {
+        return 0;
+    }
+
+    std::size_t width = 0;
+    for (const std::vector<std::string>& layer : layers.layers) {
+        width = std::max(width, layer.size());
+    }
+    return width;
+}
+
+bool CookDependencyGraph::layers_match_topological_order() const {
+    if (m_nodes.empty()) {
+        return true;
+    }
+
+    const CookDependencyLayerResult layers = topological_layers();
+    if (!layers.ok || layers.cycle_detected) {
+        return false;
+    }
+
+    const CookJobGraphOrderResult order = topological_order();
+    if (!order.ok || order.cycle_detected) {
+        return false;
+    }
+
+    return flatten_topological_layers(layers) == order.order;
+}
+
+CookInvalidationClosureResult CookDependencyGraph::transitive_predecessors(const std::string& to_job_id) const {
+    CookInvalidationClosureResult result;
+
+    if (to_job_id.empty() || m_nodes.empty() || !has_node_(to_job_id)) {
+        result.ok = false;
+        return result;
+    }
+
+    std::unordered_map<std::string, std::vector<std::string>> reverse_adjacency;
+    for (const std::string& node : m_nodes) {
+        reverse_adjacency[node] = {};
+    }
+    for (const CookJobDependencyEdge& edge : m_edges) {
+        if (reverse_adjacency.find(edge.from_job_id) != reverse_adjacency.end() &&
+            reverse_adjacency.find(edge.to_job_id) != reverse_adjacency.end()) {
+            reverse_adjacency[edge.to_job_id].push_back(edge.from_job_id);
+        }
+    }
+
+    std::queue<std::string> queue;
+    std::unordered_set<std::string> visited;
+    queue.push(to_job_id);
+    visited.insert(to_job_id);
+
+    while (!queue.empty()) {
+        const std::string current = queue.front();
+        queue.pop();
+
+        const auto adj_it = reverse_adjacency.find(current);
+        if (adj_it == reverse_adjacency.end()) {
+            continue;
+        }
+
+        for (const std::string& previous : adj_it->second) {
+            if (visited.insert(previous).second) {
+                result.job_ids.push_back(previous);
+                queue.push(previous);
+            }
+        }
+    }
+
+    std::sort(result.job_ids.begin(), result.job_ids.end());
+    return result;
+}
+
+bool CookDependencyGraph::is_reachable_successor(const std::string& from_job_id,
+                                                 const std::string& to_job_id) const {
+    if (from_job_id.empty() || to_job_id.empty() || m_nodes.empty()) {
+        return false;
+    }
+    if (from_job_id == to_job_id) {
+        return has_node_(from_job_id);
+    }
+    if (!has_node_(from_job_id) || !has_node_(to_job_id)) {
+        return false;
+    }
+
+    const CookInvalidationClosureResult closure = transitive_successors(from_job_id);
+    if (!closure.ok) {
+        return false;
+    }
+
+    return std::find(closure.job_ids.begin(), closure.job_ids.end(), to_job_id) != closure.job_ids.end();
+}
+
+CookInvalidationBatchResult CookDependencyGraph::invalidation_closure_for(
+    const std::vector<std::string>& seed_job_ids) const {
+    CookInvalidationBatchResult result;
+
+    if (m_nodes.empty()) {
+        result.ok = false;
+        return result;
+    }
+
+    if (seed_job_ids.empty()) {
+        return result;
+    }
+
+    std::unordered_set<std::string> merged;
+    bool any_valid_seed = false;
+
+    for (const std::string& seed : seed_job_ids) {
+        if (seed.empty()) {
+            continue;
+        }
+
+        const CookInvalidationClosureResult closure = transitive_successors(seed);
+        if (!closure.ok) {
+            continue;
+        }
+
+        any_valid_seed = true;
+        for (const std::string& job_id : closure.job_ids) {
+            merged.insert(job_id);
+        }
+    }
+
+    if (!any_valid_seed) {
+        result.ok = false;
+        return result;
+    }
+
+    result.job_ids.assign(merged.begin(), merged.end());
+    std::sort(result.job_ids.begin(), result.job_ids.end());
+    return result;
+}
+
 CookDependencyCycleResult CookDependencyGraph::detect_cycle_edges() const {
     CookDependencyCycleResult result;
 

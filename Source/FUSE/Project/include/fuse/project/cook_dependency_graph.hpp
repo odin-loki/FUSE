@@ -2,6 +2,7 @@
 
 #include <fuse/types.hpp>
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -39,6 +40,22 @@ struct CookInvalidationClosureResult {
     std::vector<std::string> job_ids;
 };
 
+/// Union of downstream closures for multiple seeds — guarded when the graph is empty or every seed is invalid.
+struct CookInvalidationBatchResult {
+    bool ok = true;
+    std::vector<std::string> job_ids;
+};
+
+/// Flatten parallel topo layers into a single schedule (empty when layers are cyclic or unsettled).
+[[nodiscard]] std::vector<std::string> flatten_topological_layers(const CookDependencyLayerResult& layers);
+
+/// Zero-based layer index for `node_id`, or nullopt when layers are invalid or the node is absent.
+[[nodiscard]] std::optional<std::size_t> layer_index_for(const CookDependencyLayerResult& layers,
+                                                         const std::string& node_id);
+
+/// Maximum parallel width across settled layers (zero when layers are cyclic or empty).
+[[nodiscard]] std::size_t max_parallel_layer_width(const CookDependencyLayerResult& layers);
+
 /// Cook job dependency graph — topo sort, cycle-edge detection, empty-graph guards (B7.9 deepen).
 class CookDependencyGraph {
 public:
@@ -67,11 +84,25 @@ public:
 
     [[nodiscard]] CookJobGraphOrderResult topological_order() const;
     [[nodiscard]] CookDependencyLayerResult topological_layers() const;
+
+    /// True when `topological_layers()` flattens to the same order as `topological_order()` (empty graph is vacuously true).
+    [[nodiscard]] bool layers_match_topological_order() const;
+
     [[nodiscard]] bool has_cycle() const;
     [[nodiscard]] CookDependencyCycleResult detect_cycle_edges() const;
 
     /// All nodes reachable along outgoing edges from `from_job_id` (invalidation guard on empty/unknown seeds).
     [[nodiscard]] CookInvalidationClosureResult transitive_successors(const std::string& from_job_id) const;
+
+    /// All nodes reachable along incoming edges to `to_job_id` (upstream invalidation guard on empty/unknown seeds).
+    [[nodiscard]] CookInvalidationClosureResult transitive_predecessors(const std::string& to_job_id) const;
+
+    /// Reachability probe along outgoing edges — false when ids are empty, unknown, or the graph is empty.
+    [[nodiscard]] bool is_reachable_successor(const std::string& from_job_id, const std::string& to_job_id) const;
+
+    /// Union of downstream closures for multiple seeds — skips unknown seeds; guarded when the graph is empty.
+    [[nodiscard]] CookInvalidationBatchResult invalidation_closure_for(
+        const std::vector<std::string>& seed_job_ids) const;
 
 private:
     [[nodiscard]] bool has_node_(const std::string& node_id) const;
