@@ -108,6 +108,10 @@ void ToiBufferSoA::sortByToi() {
 }
 
 u32 ToiBufferSoA::compact() {
+    if (pairSlotCount == 0u) {
+        return activeCount;
+    }
+
     u32 writeIndex = 0;
     for (u32 readIndex = 0; readIndex < pairSlotCount; ++readIndex) {
         if (validFlags[readIndex] == 0u) {
@@ -132,7 +136,7 @@ u32 ToiBufferSoA::compact() {
 }
 
 u32 ToiBufferSoA::applyMaxCapacityClamp() {
-    if (maxCapacity == 0u || activeCount <= maxCapacity) {
+    if (isEmpty() || maxCapacity == 0u || activeCount <= maxCapacity) {
         return activeCount;
     }
 
@@ -148,7 +152,15 @@ u32 ToiBufferSoA::applyMaxCapacityClamp() {
 }
 
 u32 ToiBufferSoA::compactAndSort() {
+    if (isEmpty() && pairSlotCount == 0u) {
+        return 0u;
+    }
+
     compact();
+    if (isEmpty()) {
+        return 0u;
+    }
+
     sortByToi();
     return applyMaxCapacityClamp();
 }
@@ -190,6 +202,9 @@ bool ToiBufferSoA::isSortedByToi() const {
 }
 
 TOIResult ToiBufferSoA::earliestToi() const {
+    if (isEmpty()) {
+        return {};
+    }
     return resultAt(0u);
 }
 
