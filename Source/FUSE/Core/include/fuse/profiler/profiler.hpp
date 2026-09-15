@@ -74,7 +74,7 @@ void beginAsyncFlow(const char* name, u32 flowId);
 void endAsyncFlow(const char* name, u32 flowId);
 
 /// Counter sample stubs — emit chrome `ph:"C"` events for budget overlays.
-/// Inherits the active scope nesting depth when sampled inside `FUSE_PROFILE_SCOPE`.
+/// Inherits the active scope and async flow nesting depth when sampled inside profiled slices.
 void sampleCounter(const char* track, s64 value);
 void sampleCounterFloat(const char* track, f64 value);
 

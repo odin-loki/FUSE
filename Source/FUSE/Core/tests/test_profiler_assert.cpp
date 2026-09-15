@@ -357,14 +357,15 @@ void testNestedAsyncFlowWithinScope() {
     expectTrue(flowStart.nestingDepth == 2u, "flow start inherits inner scope depth");
     expectTrue(flowFinish.nestingDepth == 2u, "flow finish inherits inner scope depth");
     expectTrue(counter.nestingDepth == 2u, "counter sample inherits inner scope depth");
+    expectTrue(counter.flowNestingDepth == 1u, "counter sample inherits async flow depth");
 
     const std::string json = fuse::profiler::exportChromeTraceJson();
     expectTrue(json.find("\"name\":\"nested_io\"") != std::string::npos,
                "nested flow export keeps flow name");
     expectTrue(json.find("\"args\":{\"depth\":2}") != std::string::npos,
                "nested flow export includes inner scope depth");
-    expectTrue(json.find("\"args\":{\"value\":12,\"depth\":2}") != std::string::npos,
-               "nested counter export includes scope depth");
+    expectTrue(json.find("\"args\":{\"value\":12,\"depth\":2,\"flow_depth\":1}") != std::string::npos,
+               "nested counter export includes scope and flow depth");
 }
 
 void testDisabledProfilerSkipsAsyncFlowAndCounter() {
@@ -681,6 +682,80 @@ void testNestedFlowInsideScopeExportsBothDepths() {
                "chrome export includes scope and flow depth for nested flow");
 }
 
+void testDisabledProfilerDoesNotMutateFlowNestingDepth() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::setEnabled(false);
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("ignored_outer", flowId);
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("ignored_inner", flowId + 1u);
+    FUSE_PROFILE_ASYNC_FLOW_END("ignored_inner", flowId + 1u);
+    FUSE_PROFILE_ASYNC_FLOW_END("ignored_outer", flowId);
+
+    expectTrue(fuse::profiler::eventCount() == 0u, "disabled profiler skips nested async flow events");
+    expectTrue(fuse::profiler::maxFlowNestingDepth() == 0u,
+               "disabled profiler does not mutate max flow nesting depth");
+
+    fuse::profiler::setEnabled(true);
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("enabled_flow", flowId);
+    FUSE_PROFILE_ASYNC_FLOW_END("enabled_flow", flowId);
+    expectTrue(fuse::profiler::maxFlowNestingDepth() == 1u,
+               "flow nesting depth resumes cleanly after re-enable");
+}
+
+void testCounterInsideNestedFlowRecordsFlowDepth() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 outerFlowId = fuse::profiler::nextFlowId();
+    const fuse::u32 innerFlowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("budget_outer", outerFlowId);
+    FUSE_PROFILE_COUNTER("outer_budget", 10);
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("budget_inner", innerFlowId);
+    FUSE_PROFILE_COUNTER("inner_budget", 20);
+    FUSE_PROFILE_ASYNC_FLOW_END("budget_inner", innerFlowId);
+    FUSE_PROFILE_ASYNC_FLOW_END("budget_outer", outerFlowId);
+
+    const fuse::profiler::ProfileEvent& outerCounter = fuse::profiler::eventAt(1);
+    const fuse::profiler::ProfileEvent& innerCounter = fuse::profiler::eventAt(3);
+    expectTrue(outerCounter.flowNestingDepth == 1u, "counter in outer flow records flow depth 1");
+    expectTrue(innerCounter.flowNestingDepth == 2u, "counter in inner flow records flow depth 2");
+
+    const std::string json = fuse::profiler::exportChromeTraceJson();
+    expectTrue(json.find("\"name\":\"outer_budget\"") != std::string::npos,
+               "nested flow counter export keeps outer track name");
+    expectTrue(json.find("\"args\":{\"value\":10,\"flow_depth\":1}") != std::string::npos,
+               "chrome export includes flow_depth for outer counter");
+    expectTrue(json.find("\"args\":{\"value\":20,\"flow_depth\":2}") != std::string::npos,
+               "chrome export includes flow_depth for inner counter");
+}
+
+void testSnapshotAtFrameCounterInsideNestedFlowAndScope() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::beginFrame();
+    fuse::profiler::beginFrame();
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    {
+        FUSE_PROFILE_SCOPE("snapshot_scope");
+        FUSE_PROFILE_ASYNC_FLOW_BEGIN("snapshot_flow", flowId);
+        FUSE_PROFILE_COUNTER_SNAPSHOT_AT_FRAME("combined_budget", 256);
+        FUSE_PROFILE_ASYNC_FLOW_END("snapshot_flow", flowId);
+    }
+
+    const fuse::profiler::ProfileEvent& counter = fuse::profiler::eventAt(2);
+    expectTrue(counter.nestingDepth == 1u, "snapshot counter inherits scope depth");
+    expectTrue(counter.flowNestingDepth == 1u, "snapshot counter inherits flow depth");
+    expectTrue(counter.counterSnapshotFrame == 2u, "snapshot counter records frame index");
+
+    const std::string json = fuse::profiler::exportChromeTraceJson();
+    expectTrue(json.find("\"args\":{\"value\":256,\"depth\":1,\"flow_depth\":1,\"snapshot_at_frame\":2}")
+                   != std::string::npos,
+               "chrome export includes scope depth, flow depth, and snapshot_at_frame");
+}
+
 void testVerifyMacro() {
     resetState();
     fuse::assertion::setSuppressAbortForTests(true);
@@ -730,6 +805,9 @@ int main() {
     testCounterSnapshotAtFrameInsideScope();
     testChromeTraceEscapedLowControlChars();
     testNestedFlowInsideScopeExportsBothDepths();
+    testDisabledProfilerDoesNotMutateFlowNestingDepth();
+    testCounterInsideNestedFlowRecordsFlowDepth();
+    testSnapshotAtFrameCounterInsideNestedFlowAndScope();
     testFatalHandlerHook();
     testVerifyMacro();
 
