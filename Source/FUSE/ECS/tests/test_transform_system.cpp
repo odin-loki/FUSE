@@ -1,6 +1,7 @@
 #include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/detail/iteration_parity.hpp>
+#include <fuse/ecs/math/mat.hpp>
 #include <fuse/ecs/registry.hpp>
 #include <fuse/ecs/systems/transform_system.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
@@ -179,6 +180,141 @@ void testDirtyRootSerialParallelParityManyRoots() {
     });
 }
 
+void testHasDirtyRootsEmptyRegistryGuard() {
+    fuse::ecs::Registry reg;
+    reg.init(8);
+
+    expectTrue(!fuse::ecs::TransformSystem::has_dirty_roots(reg),
+               "has_dirty_roots is false on empty registry");
+    expectEq(fuse::ecs::TransformSystem::count_roots(reg), 0u,
+             "count_roots is zero on empty registry");
+}
+
+void testHasDirtyRootsMixedScene() {
+    fuse::ecs::Registry reg;
+    reg.init(32);
+
+    const fuse::ecs::EntityID dirtyRoot = reg.create();
+    const fuse::ecs::EntityID cleanRoot = reg.create();
+    const fuse::ecs::EntityID child = reg.create();
+
+    fuse::ecs::Transform dirtyRootTransform{};
+    dirtyRootTransform.position = {1.f, 0.f, 0.f, 1.f};
+    dirtyRootTransform.dirty = true;
+    reg.add(dirtyRoot, dirtyRootTransform);
+
+    fuse::ecs::Transform cleanRootTransform{};
+    cleanRootTransform.dirty = false;
+    cleanRootTransform.local_to_world = fuse::ecs::mat4::identity();
+    cleanRootTransform.world_to_local = fuse::ecs::mat4::identity();
+    reg.add(cleanRoot, cleanRootTransform);
+
+    fuse::ecs::Transform childTransform{};
+    childTransform.position = {0.f, 2.f, 0.f, 1.f};
+    childTransform.parent = dirtyRoot;
+    childTransform.dirty = true;
+    reg.add(child, childTransform);
+
+    expectTrue(fuse::ecs::TransformSystem::has_dirty_roots(reg),
+               "dirty root makes has_dirty_roots true");
+    expectEq(fuse::ecs::TransformSystem::count_dirty_roots(reg), 1u,
+             "only the dirty root is counted");
+    expectEq(fuse::ecs::TransformSystem::count_roots(reg), 2u,
+             "count_roots includes clean and dirty roots");
+}
+
+void testCountRootsIgnoresChildren() {
+    fuse::ecs::Registry reg;
+    reg.init(16);
+
+    const fuse::ecs::EntityID root = reg.create();
+    const fuse::ecs::EntityID child = reg.create();
+
+    fuse::ecs::Transform rootTransform{};
+    rootTransform.dirty = true;
+    reg.add(root, rootTransform);
+
+    fuse::ecs::Transform childTransform{};
+    childTransform.parent = root;
+    childTransform.dirty = true;
+    reg.add(child, childTransform);
+
+    expectEq(fuse::ecs::TransformSystem::count_roots(reg), 1u,
+             "count_roots ignores child transforms");
+    expectEq(fuse::ecs::TransformSystem::count_dirty_roots(reg), 1u,
+             "dirty child does not inflate dirty-root tally");
+}
+
+void testNoDirtyRootsDirtyRootStubsEarlyOut() {
+    fuse::ecs::Registry reg;
+    reg.init(16);
+
+    const fuse::ecs::EntityID root = reg.create();
+    const fuse::ecs::EntityID child = reg.create();
+
+    fuse::ecs::Transform rootTransform{};
+    rootTransform.dirty = false;
+    rootTransform.local_to_world = fuse::ecs::mat4::identity();
+    rootTransform.world_to_local = fuse::ecs::mat4::identity();
+    reg.add(root, rootTransform);
+
+    fuse::ecs::Transform childTransform{};
+    childTransform.position = {0.f, 3.f, 0.f, 1.f};
+    childTransform.parent = root;
+    childTransform.dirty = true;
+    reg.add(child, childTransform);
+
+    expectTrue(!fuse::ecs::TransformSystem::has_dirty_roots(reg),
+               "clean root scene has no dirty roots");
+
+    fuse::ecs::TransformSystem::update_dirty_roots_serial(reg);
+    withScheduler(2, [&] {
+        fuse::ecs::TransformSystem::update_dirty_roots_parallel(reg, 4);
+    });
+
+    const fuse::ecs::Transform* updatedChild = reg.get<fuse::ecs::Transform>(child);
+    expectTrue(updatedChild != nullptr, "child survives no-dirty-root stub early-out");
+    expectTrue(updatedChild->dirty, "dirty-root stubs leave dirty child untouched");
+    expectTrue(updatedChild->local_to_world.data[13] == 0.f,
+               "dirty-root stubs leave child matrix untouched when no dirty roots");
+}
+
+void testNoDirtyRootsUpdateHierarchyStillRuns() {
+    fuse::ecs::Registry reg;
+    reg.init(16);
+
+    const fuse::ecs::EntityID root = reg.create();
+    const fuse::ecs::EntityID child = reg.create();
+
+    fuse::ecs::Transform rootTransform{};
+    rootTransform.position = {2.f, 0.f, 0.f, 1.f};
+    rootTransform.dirty = false;
+    rootTransform.local_to_world =
+        fuse::ecs::from_trs(rootTransform.position, rootTransform.rotation, rootTransform.scale);
+    rootTransform.world_to_local = fuse::ecs::inverse_affine(rootTransform.local_to_world);
+    reg.add(root, rootTransform);
+
+    fuse::ecs::Transform childTransform{};
+    childTransform.position = {0.f, 4.f, 0.f, 1.f};
+    childTransform.parent = root;
+    childTransform.dirty = true;
+    reg.add(child, childTransform);
+
+    withScheduler(2, [&] {
+        fuse::ecs::TransformSystemOptions options{};
+        options.parallelDirtyRoots = true;
+        fuse::ecs::TransformSystem::update(reg, options);
+    });
+
+    const fuse::ecs::Transform* updatedChild = reg.get<fuse::ecs::Transform>(child);
+    expectTrue(updatedChild != nullptr, "child exists after update with no dirty roots");
+    expectTrue(updatedChild->local_to_world.data[12] == 2.f,
+               "hierarchy pass updates dirty child when dirty-root pass early-outs");
+    expectTrue(updatedChild->local_to_world.data[13] == 4.f,
+               "hierarchy pass preserves child local Y when dirty-root pass early-outs");
+    expectTrue(!updatedChild->dirty, "hierarchy pass clears child dirty flag");
+}
+
 void testCountTransformsMatchesEach() {
     fuse::ecs::Registry reg;
     reg.init(64);
@@ -211,6 +347,11 @@ int main() {
     testNonTransformRegistryUpdateNoOp();
     testCleanRootsDirtyRootStubsNoOp();
     testDirtyRootSerialParallelParityManyRoots();
+    testHasDirtyRootsEmptyRegistryGuard();
+    testHasDirtyRootsMixedScene();
+    testCountRootsIgnoresChildren();
+    testNoDirtyRootsDirtyRootStubsEarlyOut();
+    testNoDirtyRootsUpdateHierarchyStillRuns();
     testCountTransformsMatchesEach();
 
     if (g_failures == 0) {

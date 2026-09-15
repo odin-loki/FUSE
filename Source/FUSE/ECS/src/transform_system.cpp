@@ -43,8 +43,26 @@ u32 TransformSystem::count_transforms(Registry& reg) {
     return count;
 }
 
-void TransformSystem::update_dirty_roots_serial(Registry& reg) {
+bool TransformSystem::has_dirty_roots(Registry& reg) {
+    return count_dirty_roots(reg) > 0;
+}
+
+u32 TransformSystem::count_roots(Registry& reg) {
     if (!has_any_transforms(reg)) {
+        return 0;
+    }
+
+    u32 count = 0;
+    reg.each<Transform>([&](EntityID, Transform& transform) {
+        if (!transform.parent.valid()) {
+            ++count;
+        }
+    });
+    return count;
+}
+
+void TransformSystem::update_dirty_roots_serial(Registry& reg) {
+    if (!has_any_transforms(reg) || !has_dirty_roots(reg)) {
         return;
     }
 
@@ -58,7 +76,7 @@ void TransformSystem::update_dirty_roots_serial(Registry& reg) {
 }
 
 void TransformSystem::update_dirty_roots_parallel(Registry& reg, u32 batchSize) {
-    if (!has_any_transforms(reg)) {
+    if (!has_any_transforms(reg) || !has_dirty_roots(reg)) {
         return;
     }
 
@@ -98,10 +116,12 @@ void TransformSystem::update(Registry& reg, const TransformSystemOptions& option
         }
     });
 
-    if (options.parallelDirtyRoots) {
-        update_dirty_roots_parallel(reg, options.batchSize);
-    } else {
-        update_dirty_roots_serial(reg);
+    if (has_dirty_roots(reg)) {
+        if (options.parallelDirtyRoots) {
+            update_dirty_roots_parallel(reg, options.batchSize);
+        } else {
+            update_dirty_roots_serial(reg);
+        }
     }
 
     for (EntityID root : roots) {
