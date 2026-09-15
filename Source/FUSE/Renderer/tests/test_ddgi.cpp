@@ -110,6 +110,52 @@ void testProbeGridWorldCoord() {
     expectNear(clampedGrid.z, 2.f, 1e-5f, "OOB grid z clamped to max");
 }
 
+void testProbeIndexClamp() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {4, 2, 3};
+
+    expectTrue(fuse::renderer::ProbeGridLayout::clampProbeIndex(17u, desc) == 17u,
+               "in-range probe index unchanged");
+    expectTrue(fuse::renderer::ProbeGridLayout::clampProbeIndex(999u, desc) == 23u,
+               "OOB probe index clamped to last probe");
+    expectTrue(fuse::renderer::ProbeGridLayout::clampProbeIndex(0u, desc) == 0u,
+               "origin probe index unchanged");
+
+    const fuse::renderer::ProbeGridCoord clampedCoord =
+        fuse::renderer::ProbeGridLayout::clampProbeGridCoord(desc, {9, 9, 9});
+    expectTrue(clampedCoord.x == 3u && clampedCoord.y == 1u && clampedCoord.z == 2u,
+               "probe coord clamped to grid max per axis");
+}
+
+void testEmptyProbeGrid() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {0, 8, 16};
+
+    expectTrue(fuse::renderer::ddgi_util::probeCount(desc) == 0u, "zero-dimension grid has zero probes");
+    expectTrue(fuse::renderer::ProbeGridLayout::clampProbeIndex(5u, desc) == 0u,
+               "empty grid index clamp returns 0");
+    expectTrue(!fuse::renderer::ProbeGridLayout::isValidProbeIndex(desc, 0u), "index 0 invalid on empty grid");
+
+    const fuse::renderer::ProbeValidityFlags emptyFlags =
+        fuse::renderer::ProbeGridLayout::probeValidity(desc, {0, 0, 0});
+    expectTrue(!emptyFlags.valid, "validity invalid on empty grid");
+
+    fuse::u32 indices[8]{};
+    fuse::u32 count = 99u;
+    fuse::renderer::ddgi_util::scheduleProbeUpdates(0u, 0u, 64u, indices, 8u, &count);
+    expectTrue(count == 0u, "empty grid schedules zero probes");
+
+    const fuse::math::Vec3 emptySample = fuse::renderer::ddgi_util::trilinearProbeIrradiance(
+        desc, {0.f, 0.f, 0.f}, nullptr, 0u);
+    expectNear(emptySample.x, 0.f, 1e-5f, "empty grid trilinear sample returns zero");
+    expectTrue(fuse::renderer::ddgi_util::nearestProbeIndex(desc, {0.f, 0.f, 0.f}) == UINT32_MAX,
+               "nearest probe on empty grid is UINT32_MAX");
+
+    const fuse::math::Vec2 texelOffset =
+        fuse::renderer::DdgiIrradianceEncoding::directionToTexelOffset({0.f, 1.f, 0.f}, 0u);
+    expectNear(texelOffset.x, 0.f, 1e-5f, "zero irradiance_res yields zero texel offset");
+}
+
 void testProbeValidityFlags() {
     fuse::renderer::DDGIDesc desc{};
     desc.grid_dims = {3, 3, 3};
@@ -122,6 +168,14 @@ void testProbeValidityFlags() {
     expectTrue(!cornerFlags.interior, "corner probe not interior");
     expectTrue(!cornerFlags.has_trilinear_neighbourhood, "corner lacks trilinear neighbourhood");
 
+    const fuse::renderer::ProbeGridCoord faceEdge{0, 1, 1};
+    const fuse::renderer::ProbeValidityFlags faceFlags =
+        fuse::renderer::ProbeGridLayout::probeValidity(desc, faceEdge);
+    expectTrue(faceFlags.valid, "face-edge probe valid");
+    expectTrue(faceFlags.is_border, "face-edge probe is border");
+    expectTrue(!faceFlags.interior, "face-edge probe not interior");
+    expectTrue(!faceFlags.has_trilinear_neighbourhood, "face-edge lacks trilinear neighbourhood");
+
     const fuse::renderer::ProbeGridCoord interior{1, 1, 1};
     const fuse::renderer::ProbeValidityFlags interiorFlags =
         fuse::renderer::ProbeGridLayout::probeValidity(desc, interior);
@@ -129,6 +183,14 @@ void testProbeValidityFlags() {
     expectTrue(!interiorFlags.is_border, "interior probe not border");
     expectTrue(interiorFlags.interior, "interior probe flagged interior");
     expectTrue(interiorFlags.has_trilinear_neighbourhood, "interior has trilinear neighbourhood");
+
+    fuse::renderer::DDGIDesc single{};
+    single.grid_dims = {1, 1, 1};
+    const fuse::renderer::ProbeValidityFlags loneProbe =
+        fuse::renderer::ProbeGridLayout::probeValidity(single, {0, 0, 0});
+    expectTrue(loneProbe.valid, "1x1x1 lone probe valid");
+    expectTrue(loneProbe.is_border, "1x1x1 lone probe is border");
+    expectTrue(!loneProbe.has_trilinear_neighbourhood, "1x1x1 lacks trilinear neighbourhood");
 
     const fuse::renderer::ProbeValidityFlags fromIndex =
         fuse::renderer::ProbeGridLayout::probeValidityFromIndex(desc, 13u);
@@ -331,6 +393,8 @@ int main() {
     testProbeGridMath();
     testProbeGridIndexing();
     testProbeGridWorldCoord();
+    testProbeIndexClamp();
+    testEmptyProbeGrid();
     testProbeValidityFlags();
     testProbeAtlasLayout();
     testIrradianceOctahedralEncoding();

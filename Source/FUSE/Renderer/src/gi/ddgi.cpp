@@ -83,6 +83,14 @@ ProbeValidityFlags ProbeGridLayout::probeValidityFromIndex(const DDGIDesc& desc,
     return probeValidity(desc, probeCoordFromIndex(desc, probe_index));
 }
 
+u32 ProbeGridLayout::clampProbeIndex(u32 probe_index, const DDGIDesc& desc) {
+    const u32 count = ddgi_util::probeCount(desc);
+    if (count == 0u) {
+        return 0u;
+    }
+    return std::min(probe_index, count - 1u);
+}
+
 fuse::math::Vec2 DdgiIrradianceEncoding::encodeDirection(const fuse::math::Vec3& direction) {
     fuse::math::Vec3 n = direction.normalized();
     const f32 sum = std::fabs(n.x) + std::fabs(n.y) + std::fabs(n.z);

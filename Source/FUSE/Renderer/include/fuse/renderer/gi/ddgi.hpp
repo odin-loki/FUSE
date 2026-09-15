@@ -119,6 +119,8 @@ struct ProbeGridLayout {
     static bool isBorderProbeCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
     static ProbeValidityFlags probeValidity(const DDGIDesc& desc, const ProbeGridCoord& coord);
     static ProbeValidityFlags probeValidityFromIndex(const DDGIDesc& desc, u32 probe_index);
+    /// Clamp a flat probe index to [0, probeCount - 1]; returns 0 when the grid is empty.
+    static u32 clampProbeIndex(u32 probe_index, const DDGIDesc& desc);
     /// Fractional grid coordinates — origin cell centre is (0,0,0).
     static fuse::math::Vec3 worldToProbeGridCoord(const DDGIDesc& desc,
                                                   const fuse::math::Vec3& world_position);
