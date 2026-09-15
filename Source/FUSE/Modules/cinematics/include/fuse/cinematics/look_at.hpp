@@ -14,16 +14,43 @@ namespace fuse::cinematics {
 class LookAtResolver {
 public:
     using ResolveFn = std::function<Vec3(const std::string& target_id)>;
+    using TryResolveFn = std::function<bool(const std::string& target_id, Vec3& out)>;
 
-    void set_resolve_fn(ResolveFn fn) { resolve_fn_ = std::move(fn); }
-    bool can_resolve() const { return static_cast<bool>(resolve_fn_); }
+    void set_resolve_fn(ResolveFn fn) {
+        resolve_fn_ = std::move(fn);
+        try_resolve_fn_ = nullptr;
+    }
+
+    void set_try_resolve_fn(TryResolveFn fn) {
+        try_resolve_fn_ = std::move(fn);
+        resolve_fn_ = nullptr;
+    }
+
+    bool can_resolve() const { return static_cast<bool>(resolve_fn_ || try_resolve_fn_); }
 
     Vec3 resolve(const std::string& target_id) const {
-        return resolve_fn_ ? resolve_fn_(target_id) : Vec3{};
+        Vec3 out{};
+        if (try_resolve(target_id, out)) {
+            return out;
+        }
+        return {};
+    }
+
+    /// Returns true when the target was found. Legacy `resolve_fn` always succeeds.
+    bool try_resolve(const std::string& target_id, Vec3& out) const {
+        if (try_resolve_fn_) {
+            return try_resolve_fn_(target_id, out);
+        }
+        if (resolve_fn_) {
+            out = resolve_fn_(target_id);
+            return true;
+        }
+        return false;
     }
 
 private:
     ResolveFn resolve_fn_;
+    TryResolveFn try_resolve_fn_;
 };
 
 /// Resolve a keyframe's look-at to world space (fixed point or entity stub).
