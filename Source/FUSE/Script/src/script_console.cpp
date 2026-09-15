@@ -134,7 +134,13 @@ void ScriptConsole::registerBuiltIns_() {
         return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, "output cleared"};
     });
 
-    m_commands.register_built_in("history", [](ScriptConsole& console, const char* /*args*/) {
+    m_commands.register_built_in("history", [](ScriptConsole& console, const char* args) {
+        if (args != nullptr && std::strcmp(args, "clear") == 0) {
+            console.m_history.clear();
+            console.resetHistoryNavigation();
+            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, "history cleared"};
+        }
+
         std::ostringstream out;
         out << "history (" << console.historyCount() << ')';
         for (u32 i = 0; i < console.historyCount(); ++i) {

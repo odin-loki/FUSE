@@ -10,6 +10,8 @@ Lua-ready script host for Track B7.3. Uses a null backend when Lua is unavailabl
 | `script_update.hpp` | Per-script OnUpdate registry — dt accumulation, enable/disable, error isolation |
 | `script_vm.hpp` | Null or Lua VM with `load_string` / `load_file` |
 | `script_console.hpp` | Headless REPL — built-in command stubs, history buffer, dispatch to `ScriptHost` |
+| `script_console_command_registry.hpp` | Named built-in/custom command registry with shadowing + sorted `help`/`list` |
+| `script_console_history.hpp` | Fixed-capacity history ring buffer with recall navigation + `clear` |
 | `script_console_command_registry.hpp` | Named command registry + dispatch-by-name |
 | `script_console_history.hpp` | Fixed-capacity history ring buffer with recall navigation |
 | `script_bind.hpp` | Tagged `ScriptValue` helpers (primitives + ECS types) + `values_equal` + `PropertyStore` / `MethodTable` |

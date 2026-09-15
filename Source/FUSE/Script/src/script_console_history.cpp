@@ -58,6 +58,13 @@ const std::string& ScriptConsoleHistoryBuffer::at(u32 index) const {
     return m_entries[ringIndex_(index)];
 }
 
+void ScriptConsoleHistoryBuffer::clear() {
+    m_entries.clear();
+    m_start = 0;
+    m_size = 0;
+    m_navigationCursor = -1;
+}
+
 void ScriptConsoleHistoryBuffer::push(const char* line) {
     if (line == nullptr) {
         return;
