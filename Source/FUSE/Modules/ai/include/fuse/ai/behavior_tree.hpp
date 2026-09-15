@@ -4,6 +4,7 @@
 #include <fuse/ai/blackboard.hpp>
 #include <fuse/types.hpp>
 
+#include <string>
 #include <vector>
 
 namespace fuse::ai {
@@ -24,18 +25,25 @@ struct BehaviorTickResult {
 enum class NodeKind {
     Sequence,
     Selector,
+    Inverter,
+    Loop,
+    SucceedAlways,
+    Root,
     ConditionDistanceLess,
     ActionSetFlag,
+    ActionMoveToward,
 };
 
-/// Flat behavior-tree node — ore analogue: BadBehaviour Branch/Behavior nodes.
-/// TODO(U5 extract): map to third_party/addons/BadBehaviour/Engine/source/BadBehavior/core/
+/// Flat behavior-tree node — ore analogue: BadBehaviour composite/decorator/leaf nodes.
+/// Ore: third_party/addons/BadBehaviour/Engine/source/BadBehavior/
 struct BehaviorNode {
     NodeKind kind = NodeKind::Sequence;
     float threshold = 0.f;
     u32 flagIndex = 0;
+    u32 loopCount = 1;
     u32 childA = 0;
     u32 childB = 0;
+    std::string scriptHook;
 };
 
 /// Job-friendly BT evaluator — read-only snapshot + blackboard view, no scene mutation.
@@ -46,6 +54,7 @@ public:
 
     u32 nodeCount() const { return static_cast<u32>(m_nodes.size()); }
     u32 rootIndex() const { return m_root; }
+    const BehaviorNode& node(u32 index) const { return m_nodes.at(index); }
 
     /// Evaluate one agent against immutable inputs (safe from worker threads).
     BehaviorTickResult tick(u32 agentIndex,
@@ -54,6 +63,9 @@ public:
 
     /// Demo tree: Sequence(ConditionDistanceLess(5), ActionSetFlag(0)).
     static BehaviorTree makePatrolWhenNearTarget();
+
+    /// Same patrol demo built through NodeRegistry load path.
+    static BehaviorTree makePatrolWhenNearTargetFromRegistry();
 
 private:
     BehaviorTickResult tickNode(u32 nodeIndex,
