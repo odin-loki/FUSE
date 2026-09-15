@@ -389,6 +389,43 @@ bool AnimStateMachine::has_transition(u32 from_state, u32 to_state) const {
     return false;
 }
 
+u32 AnimStateMachine::incoming_transition_count(u32 to_state) const {
+    u32 count = 0;
+    for (const Transition& transition : transitions) {
+        if (transition.to == to_state) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+f32 AnimStateMachine::transition_blend_duration(u32 from_state, u32 to_state) const {
+    for (const Transition& transition : transitions) {
+        if (transition.from == from_state && transition.to == to_state) {
+            return transition.blend_duration;
+        }
+    }
+    return -1.f;
+}
+
+const char* AnimStateMachine::state_name(u32 state_index) const {
+    if (state_index >= states.size()) {
+        return "";
+    }
+    return states[state_index].name.c_str();
+}
+
+const char* AnimStateMachine::active_state_name() const {
+    return state_name(active_state);
+}
+
+const char* AnimStateMachine::pending_state_name() const {
+    if (!is_transitioning) {
+        return "";
+    }
+    return state_name(pending_state);
+}
+
 void AnimStateMachine::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
     if (states.empty()) {
         out = PoseSoA::from_bind_pose(skel);

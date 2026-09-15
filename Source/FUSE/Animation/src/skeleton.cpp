@@ -1,6 +1,7 @@
 #include <fuse/animation/skeleton.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace fuse::animation {
@@ -186,6 +187,38 @@ void finalize_weighted_pose_soa(PoseSoA& pose,
 
     pose.compute_world_transforms(skel);
     out = pose;
+}
+
+bool pose_soa_matches_bind(const PoseSoA& pose, const Skeleton& skel, f32 epsilon) {
+    const PoseSoA bind = PoseSoA::from_bind_pose(skel);
+    if (pose.bone_count != bind.bone_count) {
+        return false;
+    }
+
+    for (u32 i = 0; i < pose.bone_count; ++i) {
+        const vec3& pos = pose.local_positions[i];
+        const vec3& bindPos = bind.local_positions[i];
+        if (std::fabs(pos.x - bindPos.x) > epsilon || std::fabs(pos.y - bindPos.y) > epsilon ||
+            std::fabs(pos.z - bindPos.z) > epsilon) {
+            return false;
+        }
+
+        const quat& rot = pose.local_rotations[i];
+        const quat& bindRot = bind.local_rotations[i];
+        if (std::fabs(rot.x - bindRot.x) > epsilon || std::fabs(rot.y - bindRot.y) > epsilon ||
+            std::fabs(rot.z - bindRot.z) > epsilon || std::fabs(rot.w - bindRot.w) > epsilon) {
+            return false;
+        }
+
+        const vec3& scale = pose.local_scales[i];
+        const vec3& bindScale = bind.local_scales[i];
+        if (std::fabs(scale.x - bindScale.x) > epsilon || std::fabs(scale.y - bindScale.y) > epsilon ||
+            std::fabs(scale.z - bindScale.z) > epsilon) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 void blend_pose_soa(const PoseSoA& a, const PoseSoA& b, f32 weight, PoseSoA& out) {

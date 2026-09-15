@@ -1,6 +1,6 @@
 # Track B — Animation System (B7.1 deepen)
 
-**Status:** B7.1 deepen — `PoseSoA` pose buffers + `accumulate_weighted_pose_soa` / `copy_pose_soa_local` / `finalize_weighted_pose_soa` helpers, hierarchy-aware clip evaluate, blend-tree `evaluate_soa`, 1D/2D parameter sampling (empty-tree bind-pose fallback), additive layer stub, state enter/exit + crossfade (initial `on_enter`, zero-duration snap, self-transition guard, transition edge queries), closed-form two-bone IK (in-place solve + `has_valid_chain` parent-chain validation + `max_reach`), retarget map stubs (`build_identity`, `find_source_bone` / `find_target_bone`, `translation_scale`, empty-skeleton guards)  
+**Status:** B7.1 deepen — `PoseSoA` pose buffers + `accumulate_weighted_pose_soa` / `copy_pose_soa_local` / `finalize_weighted_pose_soa` / `pose_soa_matches_bind` helpers, hierarchy-aware clip evaluate, blend-tree `evaluate_soa`, 1D/2D parameter sampling (empty-tree bind-pose fallback), additive/layered empty-node bind fallback, state enter/exit + crossfade (initial `on_enter`, zero-duration snap, self-transition guard, bidirectional transition edge queries + blend-duration lookup + active/pending state names), closed-form two-bone IK (in-place solve + `has_valid_chain` parent-chain validation + `max_reach`), retarget map stubs (`build_identity`, `find_source_bone` / `find_target_bone`, `translation_scale`, empty-skeleton guards)  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.1  
 **Source narrative:** [P7.md](../sources/P7.md) §7.1
 
@@ -16,6 +16,7 @@
 | `accumulate_weighted_pose_soa` | `Animation/src/skeleton.cpp` | Incremental weighted pose accumulation for multi-entry blend spaces |
 | `finalize_weighted_pose_soa` | `Animation/src/skeleton.cpp` | Bind-pose fallback or hierarchy recompute after weighted accumulation |
 | `copy_pose_soa_local` | `Animation/src/skeleton.cpp` | Copy local TRS columns between `PoseSoA` buffers |
+| `pose_soa_matches_bind` | `Animation/src/skeleton.cpp` | Compare local TRS columns against skeleton bind pose |
 | `AnimationClip` | `Animation/include/fuse/animation/clip.hpp` | `evaluate` (SoA) composes channel TRS onto bind; `sample` (AoS) wrapper |
 | `BlendNode` graph | `Animation/include/fuse/animation/blend_tree.hpp` | `ClipNode`, `BlendNode2`, `BlendSpace1D/2D`, `LayeredBlendNode`, `AdditiveBlendNode`, state machine |
 | `sample_blend_space_1d/2d` | `Animation/src/blend_tree.cpp` | Parameter-space weight sampling for 1D bracketing and 2D inverse-distance weights |
@@ -70,7 +71,7 @@ All `BlendNode` types expose `evaluate_soa(dt, skel, out)` alongside the legacy 
 
 ### State machine crossfade
 
-`AnimStateMachine` supports per-state `on_enter` / `on_exit` callbacks. The initial state's `on_enter` fires on the first `evaluate` call. Transitions capture the outgoing pose, crossfade toward the target state over `blend_duration`, and expose `crossfade_alpha()` in `[0, 1]` (0 when idle). A zero `blend_duration` snaps instantly to the target pose. Self-transitions are rejected at registration; transitions are not re-evaluated mid-crossfade. Weight is clamped; `active_state` advances when alpha reaches 1. `reset()` returns to the first state without callbacks. `find_state_index`, `outgoing_transition_count`, and `has_transition` expose registered state/edge queries for tests and tooling.
+`AnimStateMachine` supports per-state `on_enter` / `on_exit` callbacks. The initial state's `on_enter` fires on the first `evaluate` call. Transitions capture the outgoing pose, crossfade toward the target state over `blend_duration`, and expose `crossfade_alpha()` in `[0, 1]` (0 when idle). A zero `blend_duration` snaps instantly to the target pose. Self-transitions are rejected at registration; transitions are not re-evaluated mid-crossfade. Weight is clamped; `active_state` advances when alpha reaches 1. `reset()` returns to the first state without callbacks. `find_state_index`, `outgoing_transition_count`, `incoming_transition_count`, `has_transition`, and `transition_blend_duration` expose registered state/edge queries for tests and tooling. `state_name`, `active_state_name`, and `pending_state_name` report human-readable state labels during evaluation.
 
 ### Two-bone IK (closed form)
 
@@ -157,7 +158,10 @@ ctest --test-dir build --output-on-failure -R fuse_animation_runtime
 | `testCopyPoseSoALocal` | Local TRS column copy helper |
 | `testEmptyClipNode` / `testEmptyBlendSpace1DSoA` | Null clip and empty 1D SoA bind-pose fallback |
 | `testAdditiveBlendWeightClamp` | Additive layer weight clamp to `[0, 1]` |
-| `testStateMachineFindStateAndEdges` | State lookup and outgoing transition edge queries |
+| `testStateMachineFindStateAndEdges` | State lookup, outgoing/incoming edge counts, blend-duration lookup |
+| `testStateMachineEvaluateSoACrossfade` | SoA crossfade path, pending/active state names |
+| `testEmptyLayeredBlendNode` / `testEmptyAdditiveBlendNode` | Null-child layered/additive nodes return bind pose |
+| `testPoseSoAMatchesBind` | `pose_soa_matches_bind` helper |
 | `testStateMachineConditionFalse` | False condition leaves active state unchanged |
 | `testStateMachineFirstTransitionWins` | First matching transition wins when multiple are true |
 | `testStateMachineReset` | `reset()` clears crossfade without extra callbacks |
@@ -190,7 +194,8 @@ ctest --test-dir build --output-on-failure -R fuse_animation_runtime
 - [x] Empty blend-tree / state-machine bind-pose fallback tests
 - [x] Blend weight clamp and state transition edge-case tests
 - [x] `accumulate_weighted_pose_soa` / `copy_pose_soa_local` / `finalize_weighted_pose_soa` PoseSoA helpers
-- [x] State machine transition edge queries (`find_state_index`, `outgoing_transition_count`, `has_transition`)
+- [x] State machine transition edge queries (`find_state_index`, `outgoing_transition_count`, `incoming_transition_count`, `has_transition`, `transition_blend_duration`, state name helpers)
+- [x] `pose_soa_matches_bind` helper and empty layered/additive blend-node fallback tests
 - [x] Additive blend weight clamp, empty clip/1D SoA, and state reset/edge-case tests
 - [ ] CUDA skinning device kernel — deferred
 - [ ] Job-system parallel evaluate — deferred

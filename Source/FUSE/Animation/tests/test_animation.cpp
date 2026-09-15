@@ -1269,14 +1269,23 @@ void testStateMachineFindStateAndEdges() {
     machine.add_state("run", nullptr);
     machine.add_state("jump", nullptr);
     machine.add_transition("idle", "run", 0.2f, []() { return false; });
-    machine.add_transition("idle", "jump", 0.2f, []() { return false; });
-    machine.add_transition("run", "idle", 0.2f, []() { return false; });
+    machine.add_transition("idle", "jump", 0.35f, []() { return false; });
+    machine.add_transition("run", "idle", 0.15f, []() { return false; });
 
     expectTrue(machine.find_state_index("idle") == 0, "find state index locates idle");
     expectTrue(machine.find_state_index("missing") < 0, "find state index rejects unknown name");
     expectTrue(machine.outgoing_transition_count(0u) == 2u, "outgoing transition count from idle");
+    expectTrue(machine.incoming_transition_count(0u) == 1u, "incoming transition count to idle");
+    expectTrue(machine.incoming_transition_count(1u) == 1u, "incoming transition count to run");
     expectTrue(machine.has_transition(0u, 1u), "has transition detects idle to run edge");
     expectTrue(!machine.has_transition(1u, 2u), "has transition rejects missing edge");
+    expectNear(machine.transition_blend_duration(0u, 1u), 0.2f, 1e-4f, "transition blend duration lookup");
+    expectNear(machine.transition_blend_duration(0u, 2u), 0.35f, 1e-4f, "transition blend duration for second edge");
+    expectNear(machine.transition_blend_duration(1u, 0u), 0.15f, 1e-4f, "transition blend duration for return edge");
+    expectTrue(machine.transition_blend_duration(2u, 0u) < 0.f, "transition blend duration rejects missing edge");
+    expectTrue(std::strcmp(machine.state_name(1u), "run") == 0, "state name lookup by index");
+    expectTrue(machine.state_name(99u)[0] == '\0', "state name lookup rejects invalid index");
+    expectTrue(std::strcmp(machine.active_state_name(), "idle") == 0, "active state name defaults to first state");
 }
 
 void testStateMachineConditionFalse() {
@@ -1323,6 +1332,63 @@ void testStateMachineFirstTransitionWins() {
     machine.evaluate(0.f, skel, pose);
     expectTrue(machine.active_state == 1u, "state machine takes first matching transition");
     expectTrue(machine.has_transition(0u, 1u), "first transition edge remains registered");
+}
+
+void testStateMachineEvaluateSoACrossfade() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::AnimationClip idle = makePositionClip(1, 1.f);
+    fuse::animation::AnimationClip run = makePositionClip(1, 6.f);
+
+    fuse::animation::AnimStateMachine machine;
+    auto idleNode = std::make_unique<fuse::animation::ClipNode>();
+    idleNode->clip = &idle;
+    auto runNode = std::make_unique<fuse::animation::ClipNode>();
+    runNode->clip = &run;
+    machine.add_state("idle", std::move(idleNode));
+    machine.add_state("run", std::move(runNode));
+
+    bool shouldRun = true;
+    machine.add_transition("idle", "run", 0.2f, [&]() { return shouldRun; });
+
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    machine.evaluate_soa(0.1f, skel, pose);
+    expectTrue(machine.is_transitioning, "state machine soa path begins crossfade");
+    expectTrue(std::strcmp(machine.pending_state_name(), "run") == 0, "pending state name during crossfade");
+    expectNear(machine.crossfade_alpha(), 0.5f, 1e-4f, "state machine soa crossfade alpha mid transition");
+    expectNear(pose.local_positions[1].y, 4.5f, 0.05f, "state machine soa crossfade lerps local position");
+
+    machine.evaluate_soa(0.2f, skel, pose);
+    expectTrue(machine.active_state == 1u, "state machine soa path completes transition");
+    expectTrue(machine.pending_state_name()[0] == '\0', "pending state name clears after transition");
+    expectNear(pose.local_positions[1].y, 7.f, 0.05f, "state machine soa path lands on target pose");
+}
+
+void testEmptyLayeredBlendNode() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::LayeredBlendNode layered;
+
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    layered.evaluate_soa(0.f, skel, pose);
+    expectTrue(fuse::animation::pose_soa_matches_bind(pose, skel), "empty layered blend returns bind pose");
+}
+
+void testEmptyAdditiveBlendNode() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::AdditiveBlendNode additive;
+
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    additive.evaluate_soa(0.f, skel, pose);
+    expectTrue(fuse::animation::pose_soa_matches_bind(pose, skel), "empty additive blend returns bind pose");
+}
+
+void testPoseSoAMatchesBind() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    const fuse::animation::PoseSoA bind = fuse::animation::PoseSoA::from_bind_pose(skel);
+    expectTrue(fuse::animation::pose_soa_matches_bind(bind, skel), "bind pose matches bind helper");
+
+    fuse::animation::PoseSoA edited = bind;
+    edited.local_positions[1].y = 3.f;
+    expectTrue(!fuse::animation::pose_soa_matches_bind(edited, skel), "edited pose fails bind match helper");
 }
 
 void testStateMachineReset() {
@@ -1433,6 +1499,10 @@ int main() {
     testEmptyBlendSpace1DSoA();
     testAdditiveBlendWeightClamp();
     testStateMachineFindStateAndEdges();
+    testStateMachineEvaluateSoACrossfade();
+    testEmptyLayeredBlendNode();
+    testEmptyAdditiveBlendNode();
+    testPoseSoAMatchesBind();
     testStateMachineConditionFalse();
     testStateMachineFirstTransitionWins();
     testStateMachineReset();

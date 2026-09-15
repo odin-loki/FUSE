@@ -76,4 +76,7 @@ void add_pose_soa(const PoseSoA& base,
                   const std::vector<u32>& masked_bones,
                   PoseSoA& out);
 
+/// True when every local TRS column matches the skeleton bind pose within epsilon.
+bool pose_soa_matches_bind(const PoseSoA& pose, const Skeleton& skel, f32 epsilon = 1e-4f);
+
 } // namespace fuse::animation
