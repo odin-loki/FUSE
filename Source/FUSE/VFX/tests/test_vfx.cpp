@@ -1,4 +1,5 @@
 #include <fuse/core/init.hpp>
+#include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/vfx/effect_instance.hpp>
 #include <fuse/vfx/particle_emitter.hpp>
 #include <fuse/vfx/particle_system.hpp>
@@ -25,6 +26,22 @@ void expectNear(fuse::f32 actual, fuse::f32 expected, fuse::f32 epsilon, const c
     }
 }
 
+void expectEq(fuse::u32 actual, fuse::u32 expected, const char* message) {
+    if (actual != expected) {
+        std::fprintf(stderr, "FAIL: %s (expected %u, got %u)\n", message, expected, actual);
+        ++g_failures;
+    }
+}
+
+template <typename Body>
+void withScheduler(fuse::u32 workers, Body&& body) {
+    auto& scheduler = fuse::jobs::JobScheduler::instance();
+    scheduler.shutdown();
+    scheduler.initialize(workers);
+    body();
+    scheduler.shutdown();
+}
+
 void testParticleEmitterBurstAndSimulate() {
     fuse::vfx::ParticleEmitter emitter{};
     fuse::vfx::ParticleEmitterDesc desc{};
@@ -42,7 +59,7 @@ void testParticleEmitterBurstAndSimulate() {
     emitter.burst(3);
 
     expectTrue(emitter.initialized(), "emitter initialized");
-    expectTrue(emitter.alive_count() == 3u, "burst emits requested particles");
+    expectEq(emitter.alive_count(), 3u, "burst emits requested particles");
 
     const fuse::f32 yBefore = emitter.particles().positions[0].y;
     emitter.simulate(0.1f);
@@ -50,7 +67,31 @@ void testParticleEmitterBurstAndSimulate() {
     expectTrue(yAfter < yBefore, "gravity integrates particle downward");
 
     emitter.simulate(1.f);
-    expectTrue(emitter.alive_count() == 0u, "particles expire after lifetime");
+    expectEq(emitter.alive_count(), 0u, "particles expire after lifetime");
+}
+
+void testParticleEmitterBurstCapacity() {
+    fuse::vfx::ParticleEmitter emitter{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 4;
+    desc.emit_rate = 0.f;
+    desc.lifetime_min = 10.f;
+    desc.lifetime_max = 10.f;
+
+    emitter.init(desc);
+    emitter.burst(4);
+    expectEq(emitter.alive_count(), 4u, "burst fills capacity");
+
+    emitter.burst(2);
+    expectEq(emitter.alive_count(), 4u, "burst beyond capacity is clamped");
+
+    emitter.simulate(11.f);
+    expectEq(emitter.alive_count(), 0u, "expired particles return slots to free list");
+    expectEq(static_cast<fuse::u32>(emitter.particles().free_slots.size()), 4u,
+             "all slots recycled after expiry");
+
+    emitter.burst(1);
+    expectEq(emitter.alive_count(), 1u, "slot reuse allows emission after expiry");
 }
 
 void testParticleEmitterEmitRate() {
@@ -65,6 +106,113 @@ void testParticleEmitterEmitRate() {
     emitter.simulate(0.5f);
     expectTrue(emitter.alive_count() >= 4u, "emit rate produces particles over time");
     expectTrue(emitter.alive_count() <= 8u, "emit rate respects capacity");
+}
+
+void testParticleEmitterEmitRateSteadyState() {
+    fuse::vfx::ParticleEmitter emitter{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 64;
+    desc.emit_rate = 20.f;
+    desc.lifetime_min = 1.f;
+    desc.lifetime_max = 1.f;
+
+    emitter.init(desc);
+    for (fuse::u32 step = 0; step < 200u; ++step) {
+        emitter.simulate(0.01f);
+    }
+    const fuse::u32 afterWarmup = emitter.alive_count();
+    expectTrue(afterWarmup >= 18u && afterWarmup <= 22u,
+               "steady-state emit rate approximates particles per second");
+}
+
+void testParticleAttributeInterpolation() {
+    fuse::vfx::ParticleEmitter emitter{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 1;
+    desc.emit_rate = 0.f;
+    desc.lifetime_min = 2.f;
+    desc.lifetime_max = 2.f;
+    desc.size_start = 1.f;
+    desc.size_end = 0.f;
+    desc.color_start = {1.f, 0.f, 0.f};
+    desc.color_end = {0.f, 1.f, 0.f};
+    desc.alpha_start = 1.f;
+    desc.alpha_end = 0.f;
+    desc.gravity = {};
+    desc.drag = 0.f;
+    desc.velocity_min = {};
+    desc.velocity_max = {};
+
+    emitter.init(desc);
+    emitter.burst(1);
+    emitter.simulate(1.f);
+
+    const fuse::vfx::ParticleSoA& particles = emitter.particles();
+    expectNear(particles.sizes[0], 0.5f, 0.05f, "size interpolates over normalized lifetime");
+    expectNear(particles.colors[0].x, 0.5f, 0.05f, "color red channel interpolates");
+    expectNear(particles.colors[0].y, 0.5f, 0.05f, "color green channel interpolates");
+    expectNear(particles.alphas[0], 0.5f, 0.05f, "alpha interpolates over normalized lifetime");
+}
+
+void testParticleDragIntegration() {
+    fuse::vfx::ParticleEmitter emitter{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 1;
+    desc.emit_rate = 0.f;
+    desc.lifetime_min = 5.f;
+    desc.lifetime_max = 5.f;
+    desc.gravity = {};
+    desc.drag = 1.f;
+    desc.velocity_min = {10.f, 0.f, 0.f};
+    desc.velocity_max = {10.f, 0.f, 0.f};
+
+    emitter.init(desc);
+    emitter.burst(1);
+    emitter.simulate(0.5f);
+
+    const fuse::f32 speed = emitter.particles().velocities[0].x;
+    expectTrue(speed < 10.f && speed > 0.f, "drag reduces velocity magnitude");
+}
+
+void testParallelSimulationParity() {
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 128;
+    desc.emit_rate = 0.f;
+    desc.lifetime_min = 2.f;
+    desc.lifetime_max = 2.f;
+    desc.gravity = {0.f, -9.81f, 0.f};
+    desc.drag = 0.05f;
+    desc.velocity_min = {-1.f, 2.f, -1.f};
+    desc.velocity_max = {1.f, 4.f, 1.f};
+
+    fuse::f32 serialY = 0.f;
+    fuse::u32 serialAlive = 0;
+    withScheduler(0, [&] {
+        fuse::vfx::ParticleEmitter emitter{};
+        emitter.init(desc);
+        emitter.set_position({0.f, 5.f, 0.f});
+        emitter.burst(64);
+        emitter.simulate(0.25f);
+        serialAlive = emitter.alive_count();
+        serialY = emitter.particles().positions[0].y;
+        emitter.destroy();
+    });
+
+    fuse::f32 parallelY = 0.f;
+    fuse::u32 parallelAlive = 0;
+    withScheduler(4, [&] {
+        fuse::vfx::ParticleEmitter emitter{};
+        emitter.init(desc);
+        emitter.set_position({0.f, 5.f, 0.f});
+        emitter.burst(64);
+        emitter.simulate(0.25f);
+        parallelAlive = emitter.alive_count();
+        parallelY = emitter.particles().positions[0].y;
+        emitter.destroy();
+    });
+
+    expectEq(parallelAlive, serialAlive, "parallel simulation matches serial alive count");
+    expectNear(parallelY, serialY, 1e-4f, "parallel simulation matches serial integration");
 }
 
 void testEffectInstanceLifecycle() {
@@ -100,15 +248,15 @@ void testParticleSystemSpawnAndUpdate() {
     const fuse::Handle<fuse::vfx::EffectInstance> effect =
         system.spawn_effect(emitterDesc, {1.f, 0.f, 0.f}, 0.25f);
     expectTrue(effect.isValid(), "spawn_effect returns valid handle");
-    expectTrue(system.effect_count() == 1u, "spawn registers one effect");
-    expectTrue(system.emitter_count() == 1u, "spawn creates backing emitter");
+    expectEq(system.effect_count(), 1u, "spawn registers one effect");
+    expectEq(system.emitter_count(), 1u, "spawn creates backing emitter");
     expectTrue(system.alive_particle_count() >= 1u, "spawned effect emits particles");
 
     system.update(0.1f);
     expectTrue(system.alive_particle_count() >= 1u, "update keeps particles alive");
 
     system.update(0.2f);
-    expectTrue(system.effect_count() == 0u, "finished effect is cleaned up");
+    expectEq(system.effect_count(), 0u, "finished effect is cleaned up");
 }
 
 void testParticleSystemEmitterHandles() {
@@ -125,10 +273,10 @@ void testParticleSystemEmitterHandles() {
     fuse::vfx::ParticleEmitter* emitter = system.get_emitter(handle);
     expectTrue(emitter != nullptr, "emitter handle resolves");
     emitter->burst(2);
-    expectTrue(system.alive_particle_count() == 2u, "system aggregates alive particles");
+    expectEq(system.alive_particle_count(), 2u, "system aggregates alive particles");
 
     system.destroy_emitter(handle);
-    expectTrue(system.emitter_count() == 0u, "destroy_emitter removes emitter");
+    expectEq(system.emitter_count(), 0u, "destroy_emitter removes emitter");
     expectTrue(system.get_emitter(handle) == nullptr, "destroyed handle no longer resolves");
 }
 
@@ -138,7 +286,12 @@ int main() {
     fuse::core::initialize();
 
     testParticleEmitterBurstAndSimulate();
+    testParticleEmitterBurstCapacity();
     testParticleEmitterEmitRate();
+    testParticleEmitterEmitRateSteadyState();
+    testParticleAttributeInterpolation();
+    testParticleDragIntegration();
+    testParallelSimulationParity();
     testEffectInstanceLifecycle();
     testParticleSystemSpawnAndUpdate();
     testParticleSystemEmitterHandles();

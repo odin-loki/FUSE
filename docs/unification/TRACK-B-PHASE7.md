@@ -30,7 +30,7 @@ Submodule detail:
 | B7.4 Net | [Source/FUSE/Net/README.md](../../Source/FUSE/Net/README.md) |
 | B7.5 Terrain | [TRACK-B-TERRAIN.md](./TRACK-B-TERRAIN.md) |
 | B7.6 World partition | [Source/FUSE/WorldPartition/README.md](../../Source/FUSE/WorldPartition/README.md), [TRACK-B-WORLD-PARTITION.md](./TRACK-B-WORLD-PARTITION.md) |
-| B7.7 VFX | [Source/FUSE/VFX/README.md](../../Source/FUSE/VFX/README.md) |
+| B7.7 VFX | [TRACK-B-VFX.md](./TRACK-B-VFX.md), [Source/FUSE/VFX/README.md](../../Source/FUSE/VFX/README.md) |
 | B7.8 Platform | [TRACK-B-PLATFORM.md](./TRACK-B-PLATFORM.md) |
 | B7.9 Assets | [TRACK-B-ASSETS.md](./TRACK-B-ASSETS.md) |
 

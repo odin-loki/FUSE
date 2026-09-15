@@ -1,6 +1,6 @@
-# fuse_vfx — B7.7 VFX System (stub)
+# fuse_vfx — B7.7 VFX System
 
-CPU-first particle VFX scaffolding for Track B7.7. Implements emitter descriptors, CPU reference simulation, effect instances, and a `ParticleSystem` facade. GPU/CUDA simulation and billboard rendering are deferred.
+CPU-first particle VFX scaffolding for Track B7.7. Implements emitter descriptors, SoA particle storage with free-list slot recycling, jobified CPU reference simulation, effect instances, and a `ParticleSystem` facade. GPU/CUDA simulation and billboard rendering are deferred.
 
 ## Layout
 
@@ -15,13 +15,17 @@ CPU-first particle VFX scaffolding for Track B7.7. Implements emitter descriptor
 
 `spawn → simulate → (render deferred)`
 
-- **Emit** — rate-based or burst emission into CPU SoA slots
-- **Simulate** — gravity, drag, lifetime aging (SDF collision stubbed off)
+- **Emit** — rate-based or burst emission into CPU SoA slots via O(1) free-list allocation
+- **Simulate** — gravity, drag, lifetime aging, size/color/alpha interpolation over `parallel_for` (serial when the job scheduler is single-threaded)
 - **Render** — not implemented in this milestone
+
+## Particle SoA
+
+`ParticleSoA` stores per-particle columns (`positions`, `velocities`, `ages`, `lifetimes`, `sizes`, `colors`, `alphas`, `alive_flags`) dense over a fixed capacity. Dead slot indices live in `free_slots` so burst and rate emission avoid linear scans. Simulation integrates each live slot independently; expired slots return to the free list after the parallel pass.
 
 ## Tests
 
-`fuse_vfx_tests` (`ctest` name `fuse_vfx_runtime`) covers emitter burst/rate simulation, effect instance duration, system spawn/update cleanup, and handle lifecycle without GPU or renderer dependencies.
+`fuse_vfx_tests` (`ctest` name `fuse_vfx_runtime`) covers burst/rate emission, capacity clamping, slot recycling, attribute interpolation, drag integration, parallel vs single-thread simulation parity, effect instance duration, system spawn/update cleanup, and handle lifecycle without GPU or renderer dependencies.
 
 ## Build
 
