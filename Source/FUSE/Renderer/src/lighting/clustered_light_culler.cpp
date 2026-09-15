@@ -38,6 +38,11 @@ void ClusterGridSoA::clear() {
     lightList.clear();
 }
 
+bool ClusterGridSoA::matchesDesc(const ClusterDesc& desc) const {
+    const u32 clusterCount = ClusterDesc::clampCounts(desc).clusterCount();
+    return aabbs.size() == clusterCount && grid.size() == clusterCount;
+}
+
 ClusterDesc ClusterDesc::clampCounts(const ClusterDesc& raw) {
     ClusterDesc out = raw;
     if (out.tilesX > kMaxTilesX) {
@@ -110,7 +115,24 @@ u32 cluster_util::countAssignedLights(const ClusterGridSoA& grid, u32 clusterCou
     return total;
 }
 
+u32 cluster_util::countNonEmptyClusters(const ClusterGridSoA& grid, u32 clusterCount) {
+    if (clusterCount == 0u || grid.grid.size() < clusterCount) {
+        return 0u;
+    }
+
+    u32 nonEmpty = 0u;
+    for (u32 clusterIdx = 0; clusterIdx < clusterCount; ++clusterIdx) {
+        if (grid.grid[clusterIdx].count > 0u) {
+            ++nonEmpty;
+        }
+    }
+    return nonEmpty;
+}
+
 u32 cluster_util::countEmptyClusters(const ClusterGridSoA& grid, u32 clusterCount) {
+    if (clusterCount == 0u) {
+        return 0u;
+    }
     if (grid.grid.size() < clusterCount) {
         return clusterCount;
     }
@@ -126,6 +148,10 @@ u32 cluster_util::countEmptyClusters(const ClusterGridSoA& grid, u32 clusterCoun
 
 u32 ClusterGridLayout::clusterIndex(u32 tileX, u32 tileY, u32 sliceZ, const ClusterDesc& desc) {
     return (tileY * desc.tilesX + tileX) * desc.slicesZ + sliceZ;
+}
+
+u32 ClusterGridLayout::clusterIndexClamped(u32 tileX, u32 tileY, u32 sliceZ, const ClusterDesc& desc) {
+    return clusterIndex(clampTileX(tileX, desc), clampTileY(tileY, desc), clampSliceZ(sliceZ, desc), desc);
 }
 
 void ClusterGridLayout::decodeClusterIndex(u32 index, const ClusterDesc& desc, u32& tileX, u32& tileY, u32& sliceZ) {
@@ -185,12 +211,10 @@ bool ClusterGridLayout::mapScreenDepthToClusterIndex(f32 screenX,
         return false;
     }
 
-    const u32 tileX = clampTileX(static_cast<u32>(clamp01(screenX) * static_cast<f32>(desc.tilesX)),
-                                 desc);
-    const u32 tileY = clampTileY(static_cast<u32>(clamp01(screenY) * static_cast<f32>(desc.tilesY)),
-                                 desc);
+    const u32 tileX = static_cast<u32>(clamp01(screenX) * static_cast<f32>(desc.tilesX));
+    const u32 tileY = static_cast<u32>(clamp01(screenY) * static_cast<f32>(desc.tilesY));
     const u32 sliceZ = ClusterSliceLayout::computeSliceZFromDepth(viewDepth, desc, camera);
-    outClusterIndex = clusterIndex(tileX, tileY, sliceZ, desc);
+    outClusterIndex = clusterIndexClamped(tileX, tileY, sliceZ, desc);
     return true;
 }
 
