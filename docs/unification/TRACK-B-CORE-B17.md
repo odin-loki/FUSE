@@ -113,7 +113,7 @@ if (pump.hasPendingEvents()) {
 }
 
 std::vector<fuse::platform::PlatformEvent> drained;
-const fuse::u32 moved = pump.drainEvents(drained); // FIFO into `drained`
+const fuse::u32 moved = pump.drainEvents(drained); // FIFO into `drained` (0 when empty)
 ```
 
 ---
@@ -149,7 +149,7 @@ CI continues to run Lavapipe headless (`SurfaceKind::Headless`). Presentable swa
 
 | Test binary | CTest name | Coverage |
 |-------------|------------|----------|
-| `fuse_core_platform_window_tests` | `fuse_core_platform_window` | Window desc storage, resize/focus/close notify stubs, poll-queue FIFO/overflow/coalesce, `drainEvents`, Vulkan wire metadata, synthetic events, quit flow, mobile profile no-op |
+| `fuse_core_platform_window_tests` | `fuse_core_platform_window` | Window desc storage, resize/focus/close notify stubs, poll-queue FIFO/overflow/coalesce (per-window), empty-queue + ordered `drainEvents`, Vulkan wire metadata, synthetic events, quit flow, mobile profile no-op |
 
 ---
 
