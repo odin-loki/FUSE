@@ -28,6 +28,7 @@ Likelihood: **High** / **Medium** / **Low**
 | R13 | Track B renderer before U2 one-process | High | Medium | U0–U2 | **Open** |
 | R14 | StringTable / singleton init order | Critical | High | U2 | **Open** |
 | R15 | Qt scope / U6 vertical slice slips | High | Medium | U6 | **Open** |
+| R16 | Inheritance misuse across physics/gfx/net | High | Medium | U4 | **Open** — mitigated by policy |
 
 ---
 
@@ -227,13 +228,29 @@ Likelihood: **High** / **Medium** / **Low**
 
 ---
 
+### R16 — Inheritance misuse (physics / gfx / net)
+
+**Evidence:** Stakeholder 2D→3D extension strategy ([merge-strategy-2d-extends.md](./merge-strategy-2d-extends.md)) applies inheritance only to scene/object identity. Temptation to “unify” by subclassing `Box2DWorld`, T3D `SceneObject`, or `GameConnection` for convenience.
+
+**Impact:** Fragile hybrids — wrong lifetime coupling, impossible hybrid physics, renderer lock-in, link collisions resurface.
+
+**Mitigation:**
+- **Composition boundary:** `World2D` / `World3D` compose physics backends; `SceneObject2D/3D` hold render component refs — no backend inheritance.
+- Code review gate at U4: reject PRs that inherit across physics/gfx/net layers.
+- Document do/don't table in merge-strategy doc.
+
+**Related risks:** R03 (physics), R04 (gfx), R05 (net).
+
+---
+
 ## Decision gates (from prestarter §18)
 
 | Gate | Risk IDs | Recommendation |
 |------|----------|----------------|
 | Script host end-state | R02 | Decide by end of U3 |
-| Physics end-state | R03 | Box2D for 2D short-term; revisit Track B |
-| 2D renderer | R04, R06 | Keep T2D GL until Vulkan 2D path exists |
+| Physics end-state | R03, R16 | Box2D for 2D short-term; composition only — no World3D : Box2D |
+| 2D renderer | R04, R06, R16 | Keep T2D GL until Vulkan 2D; render via composition on SceneObject* |
+| 2D→3D scene merge | R16 | Inheritance for SceneObject2D/3D only; see merge-strategy doc |
 | Multiprocess fallback | R11 | **Forbidden after U4** |
 | Product SKU | R06 | Unified binary with `FUSE_WITH_2D` / `FUSE_WITH_3D` flags |
 

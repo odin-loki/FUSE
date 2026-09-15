@@ -9,6 +9,8 @@ This directory contains evidence-based inventory and collision analysis for merg
 
 **Constraint:** Investigation and documentation only — no addon `Engine/` merges into FUSE `Engine/` in this phase.
 
+**Stakeholder direction (2026-09-15):** Intelligent source merge via **2D→3D extension** for scene/object identity — [merge-strategy-2d-extends.md](./merge-strategy-2d-extends.md). Physics, gfx, and net remain composition/dual-backend. No physical `Engine/` + T2D source marriage.
+
 ---
 
 ## Documents
@@ -21,6 +23,7 @@ This directory contains evidence-based inventory and collision analysis for merg
 | [demo-corpus-parity-targets.md](./demo-corpus-parity-targets.md) | Frozen minimum U8 demo set mapped to legacy missions and T2D toybox |
 | [risk-register.md](./risk-register.md) | Box2D vs T3D physics, Gui, net, symbols, dual VMs, mobile/web, addon ore, … |
 | [unified-layout.md](./unified-layout.md) | Target monorepo tree, migration map (today→target), U0–U2 stay-put policy, naming conventions |
+| [merge-strategy-2d-extends.md](./merge-strategy-2d-extends.md) | **Stakeholder:** selective 2D→3D inheritance merge; composition boundaries; U2–U4 sequencing |
 
 **Related (not U0):**
 - [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) — Track A/B port (consult for alignment only)
@@ -36,7 +39,8 @@ This directory contains evidence-based inventory and collision analysis for merg
 |------|--------|
 | Collision report published under `docs/unification/` | ✅ [symbol-collision-report.md](./symbol-collision-report.md) |
 | Subsystem matrix published | ✅ [subsystem-matrix.md](./subsystem-matrix.md) |
-| Stakeholder sign-off on Merge / Dual / Replace column | ⏳ **Pending review** |
+| Stakeholder direction: 2D→3D extension merge (sim/objects) | ✅ [merge-strategy-2d-extends.md](./merge-strategy-2d-extends.md) |
+| Remaining sign-off: script host, physics end-state, 2D renderer | ⏳ **Pending review** |
 | Addon ore catalog lists kernel entry points for all seven addons | ✅ [addon-ore-catalog.md](./addon-ore-catalog.md) |
 | Parity demo list frozen (minimum set) | ✅ [demo-corpus-parity-targets.md](./demo-corpus-parity-targets.md) |
 | Risk register published | ✅ [risk-register.md](./risk-register.md) |
@@ -49,10 +53,11 @@ This directory contains evidence-based inventory and collision analysis for merg
 ## Key findings (executive)
 
 1. **Cannot link raw T3D + T2D** — 237 filename collisions, 311+ class collisions, 33 `Con::` API overlaps. U2 requires prefixed static libraries.
-2. **Gui and console are the hottest collision domains** — 45+ Gui* classes; identical `SimObject` / `ConsoleObject` hierarchies.
-3. **Physics and gfx stay dual** — Box2D (2D) vs T3D collision; separate render paths until U4 compositor and Track B.
-4. **Addons are mostly content** — kernels are small (BadBehaviour 74 files, Verve 163, GMK component 26); AFX/Verve already in FUSE root `Engine/source/`.
-5. **UAISK is scripts-only** — template pack for `fuse_ai`, no C++ ore.
+2. **Merge strategy:** lift shared DNA into `fuse::Object` → `SceneObject2D` → `SceneObject3D`; physics/gfx/net stay composition-only.
+3. **Gui and console are the hottest collision domains** — 45+ Gui* classes; identical `SimObject` / `ConsoleObject` hierarchies (addressed by greenfield hierarchy, not dual link).
+4. **Physics and gfx stay dual (composed)** — Box2D behind `World2D`; T3D collision behind `World3D`; render refs on scene objects — no inheritance across backends.
+5. **Addons are mostly content** — kernels are small (BadBehaviour 74 files, Verve 163, GMK component 26); AFX/Verve already in FUSE root `Engine/source/`.
+6. **UAISK is scripts-only** — template pack for `fuse_ai`, no C++ ore.
 
 ---
 

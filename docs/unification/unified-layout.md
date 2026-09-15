@@ -15,7 +15,9 @@ This document proposes the **end-state monorepo layout** for the one-program FUS
 
 - **Do not merge** addon `Engine/` trees into FUSE `Engine/` ([addon-ore-catalog.md](./addon-ore-catalog.md), prestarter §2.2).
 - **Do not** big-bang move `Engine/` before U1 umbrella CMake exists — current T3D `generateProjects` / root `CMakeLists.txt` must keep working.
+- **Do not** physically marry `Engine/source` and `third_party/Torque2D/engine/source` — strangler only ([merge-strategy-2d-extends.md](./merge-strategy-2d-extends.md)).
 - New product code lives under `fuse::` namespaces and `Source/FUSE/` CMake targets; legacy stays quarantined until stranglers finish.
+- **Inheritance direction (stakeholder):** `fuse::SceneObject3D : SceneObject2D` — 3D extends 2D for scene identity; physics/gfx/net use **composition**, not inheritance.
 
 ---
 
@@ -52,6 +54,7 @@ FUSE/                                    # repo root (today)
 │       │
 │       ├── Core/                        # L0 — fuse_core
 │       │   ├── include/fuse/           # public headers: types, handles, allocators, math, log, jobs
+│       │   │   └── object.h            # fuse::Object — shared root (replaces dual SimObject over time)
 │       │   └── src/
 │       │
 │       ├── Services/                    # L1 — shared services (strangle from U3)
@@ -71,11 +74,19 @@ FUSE/                                    # repo root (today)
 │       │       ├── CMakeLists.txt
 │       │       └── README.md
 │       │
-│       ├── World3D/                     # L2a strangler home (U4+) — new code only
-│       │   └── include/fuse/world3d/
+│       ├── World2D/                     # L2b strangler home (U3–U4) — 2D base hierarchy
+│       │   ├── include/fuse/world2d/
+│       │   │   ├── scene_object_2d.h   # fuse::SceneObject2D : Object
+│       │   │   ├── world_2d.h          # fuse::World2D (composes Box2D — no inheritance)
+│       │   │   └── camera_2d.h
+│       │   └── src/
 │       │
-│       ├── World2D/                     # L2b strangler home (U4+)
-│       │   └── include/fuse/world2d/
+│       ├── World3D/                     # L2a strangler home (U4+) — 3D extends 2D
+│       │   ├── include/fuse/world3d/
+│       │   │   ├── scene_object_3d.h   # fuse::SceneObject3D : SceneObject2D
+│       │   │   ├── world_3d.h          # fuse::World3D (composes T3D collision — no inheritance)
+│       │   │   └── camera_3d.h         # fuse::Camera3D : SceneObject3D (or Camera2D chain)
+│       │   └── src/
 │       │
 │       ├── Hybrid/                      # U4 compositor
 │       │   └── Composer/
@@ -271,8 +282,8 @@ FUSE/                                    # repo root (today)
 | `fuse::` | All new FUSE product code |
 | `fuse::core::` | L0 types, allocators, handles, math, log |
 | `fuse::services::` | L1 assets, audio, input, vfs, script host |
-| `fuse::world3d::` | L2a public dimension API |
-| `fuse::world2d::` | L2b public dimension API |
+| `fuse::world2d::` | L2b public dimension API — `SceneObject2D`, `World2D`, `Camera2D` |
+| `fuse::world3d::` | L2a public dimension API — `SceneObject3D : SceneObject2D`, `World3D`, `Camera3D` |
 | `fuse::modules::ai::` etc. | L3 feature modules |
 | `fuse::editor::` | L4 editor API (Qt-free headers) |
 | `fuse::legacy::t3d::` | Thin adapters over quarantined T3D |
@@ -348,8 +359,10 @@ Repo ships **templates** under `Templates/FUSE/` and **parity demos** under `Sam
 
 | Prestaster rule | Layout enforcement |
 |-----------------|-------------------|
-| L0–L4 layer cake | `Source/FUSE/{Core,Services,World3D,World2D,Modules,Editor}` |
+| L0–L4 layer cake | `Source/FUSE/{Core,Services,World2D,World3D,Modules,Editor}` |
+| 2D→3D extension merge | `World2D/Scene/` base; `World3D/Scene/` extends 2D — see [merge-strategy-2d-extends.md](./merge-strategy-2d-extends.md) |
 | No addon Engine → Engine merge | Addons stay in `third_party/addons/`; extract to `Modules/` |
+| No physical Engine+T2D source marry | Legacy wrapped in `Legacy/` only |
 | `fuse::` for new code | `include/fuse/` public headers |
 | Legacy quarantine | `Legacy/T3D`, `Legacy/T2D` CMake wraps — no path merge |
 | One program binaries | `Apps/Runtime`, `Editor/` |
