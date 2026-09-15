@@ -206,6 +206,72 @@ void testCascadeCountClamp() {
     expectTrue(CascadedShadowMapLayout::clampCascadeIndex(9u, 3u) == 2u, "cascade index clamped to count-1");
 }
 
+void testBatchSplitDistances() {
+    using fuse::renderer::CascadeSplitParams;
+    using fuse::renderer::CascadeSplitScheme;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+
+    ShadowCameraParams camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+
+    CascadeSplitParams params{};
+    params.scheme = CascadeSplitScheme::Uniform;
+    params.cascadeCount = 4u;
+
+    fuse::f32 distances[fuse::renderer::kMaxCascadeCount]{};
+    CascadedShadowMapLayout::computeSplitDistances(params, camera, distances);
+
+    expectNear(distances[0], CascadedShadowMapLayout::computeSplitDistance(0u, params, camera), 0.001f,
+               "batch split distance matches scalar helper");
+    expectNear(distances[3], 100.f, 0.001f, "batch last split reaches far plane");
+    expectTrue(distances[1] > distances[0] && distances[2] > distances[1] && distances[3] > distances[2],
+               "batch split distances monotonic");
+}
+
+void testVariableCascadeCount() {
+    using fuse::renderer::CascadeSplitParams;
+    using fuse::renderer::CascadeSplitScheme;
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+
+    ShadowCameraParams camera{};
+    camera.nearPlane = 0.25f;
+    camera.farPlane = 80.f;
+
+    CascadeSplitParams twoCascadeParams{};
+    twoCascadeParams.scheme = CascadeSplitScheme::Uniform;
+    twoCascadeParams.cascadeCount = 2u;
+
+    fuse::f32 twoFractions[fuse::renderer::kMaxCascadeCount]{};
+    CascadedShadowMapLayout::computeSplitFractions(twoCascadeParams, camera, twoFractions);
+    expectTrue(CascadedShadowMapLayout::validateSplitMonotonicity(twoFractions, 2u),
+               "two-cascade split fractions monotonic");
+    expectNear(twoFractions[0], 0.5f, 0.001f, "two-cascade first split at midpoint");
+    expectNear(twoFractions[1], 1.f, 0.001f, "two-cascade last split reaches far");
+
+    CascadedShadowMapDesc populatedDesc{};
+    CascadedShadowMapLayout::populateCascadeSplits(twoCascadeParams, camera, populatedDesc);
+    const fuse::renderer::CascadeRange firstRange =
+        CascadedShadowMapLayout::computeCascadeRange(0u, populatedDesc, camera);
+    const fuse::renderer::CascadeRange secondRange =
+        CascadedShadowMapLayout::computeCascadeRange(1u, populatedDesc, camera);
+    expectTrue(firstRange.nearZ < firstRange.farZ, "two-cascade first range ordered");
+    expectNear(secondRange.nearZ, firstRange.farZ, 0.001f, "two-cascade ranges chain without gaps");
+
+    CascadeSplitParams threeCascadeParams{};
+    threeCascadeParams.scheme = CascadeSplitScheme::Logarithmic;
+    threeCascadeParams.cascadeCount = 3u;
+
+    fuse::f32 threeDistances[fuse::renderer::kMaxCascadeCount]{};
+    CascadedShadowMapLayout::computeSplitDistances(threeCascadeParams, camera, threeDistances);
+    expectTrue(threeDistances[2] > threeDistances[1] && threeDistances[1] > threeDistances[0],
+               "three-cascade split distances monotonic");
+    expectNear(threeDistances[2], 80.f, 0.001f, "three-cascade last split reaches far plane");
+}
+
 void testLightSpaceAabbContainsCorners() {
     using fuse::renderer::CascadeLightSpaceLayout;
     using fuse::renderer::CascadedShadowMapDesc;
@@ -259,6 +325,86 @@ void testEmptyFrustumLightSpaceAabb() {
         CascadeLightSpaceLayout::computeLightSpaceAabbFromWorldCorners(collapsedCorners, lightView);
     expectTrue(!CascadeLightSpaceLayout::isEmptyLightSpaceAabb(pointAabb), "degenerate point frustum is valid");
     expectNear(pointAabb.min.x, pointAabb.max.x, 0.001f, "degenerate frustum aabb has zero extent");
+}
+
+void testOrthoBoundsFitAndStabilisation() {
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadeOrthoBounds;
+
+    const fuse::math::AABB aabb{{-4.f, -2.f, -8.f}, {6.f, 3.f, -1.f}};
+    const CascadeOrthoBounds fitted = CascadeLightSpaceLayout::fitOrthoBoundsFromLightSpaceAabb(aabb);
+    expectNear(fitted.left, -4.f, 0.001f, "fitted ortho left from aabb");
+    expectNear(fitted.right, 6.f, 0.001f, "fitted ortho right from aabb");
+    expectNear(fitted.nearPlane, 1.f, 0.001f, "fitted ortho near from aabb z");
+    expectNear(fitted.farPlane, 8.f, 0.001f, "fitted ortho far from aabb z");
+
+    const CascadeOrthoBounds stabilised =
+        CascadeLightSpaceLayout::stabiliseOrthoExtents(fitted, 1024u, true);
+    expectTrue(stabilised.right >= fitted.right, "stabilised ortho expands or preserves right bound");
+    expectTrue(stabilised.top >= fitted.top, "stabilised ortho expands or preserves top bound");
+
+    const CascadeOrthoBounds unchanged =
+        CascadeLightSpaceLayout::stabiliseOrthoExtents(fitted, 1024u, false);
+    expectNear(unchanged.left, fitted.left, 0.001f, "stabilisation disabled preserves left bound");
+}
+
+void testLightSpaceMatrixBookkeeping() {
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+
+    CascadedShadowMapDesc desc{};
+    ShadowCameraParams camera{};
+    camera.position = {1.f, 6.f, 14.f};
+    camera.forward = {0.f, -0.25f, -1.f};
+    camera.nearPlane = 0.1f;
+    camera.farPlane = 200.f;
+    camera.fovDegrees = 70.f;
+    camera.aspect = 1.6f;
+
+    const fuse::math::Vec3 sunDirection{-0.2f, -1.f, -0.15f};
+    const auto matrices =
+        CascadeLightSpaceLayout::buildCascadeLightSpaceMatrices(0u, desc, camera, sunDirection);
+
+    expectTrue(matrices.valid, "valid cascade yields light-space matrices");
+    expectTrue(!CascadeLightSpaceLayout::isEmptyLightSpaceAabb(matrices.lightSpaceAabb),
+               "matrix bookkeeping retains light-space aabb");
+    expectTrue(matrices.orthoBounds.right > matrices.orthoBounds.left, "ortho bounds have horizontal extent");
+    expectTrue(matrices.lightViewProj.data[15] != 0.f, "view-projection matrix populated");
+
+    const fuse::math::Vec3 focus = CascadeLightSpaceLayout::computeCascadeFocus(0u, desc, camera);
+    const fuse::renderer::CascadeRange range = CascadedShadowMapLayout::computeCascadeRange(0u, desc, camera);
+    const fuse::math::Vec3 expectedFocus =
+        camera.position + camera.forward.normalized() * ((range.nearZ + range.farZ) * 0.5f);
+    expectNear(focus.x, expectedFocus.x, 0.001f, "cascade focus matches midpoint");
+    expectNear(focus.z, expectedFocus.z, 0.001f, "cascade focus z matches midpoint");
+}
+
+void testDegenerateCascadeMatrices() {
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadeOrthoBounds;
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+
+    CascadedShadowMapDesc desc{};
+    ShadowCameraParams camera{};
+    camera.nearPlane = 20.f;
+    camera.farPlane = 5.f;
+
+    const fuse::renderer::CascadeRange range = CascadedShadowMapLayout::computeCascadeRange(0u, desc, camera);
+    expectTrue(CascadeLightSpaceLayout::isDegenerateCascadeRange(range, camera),
+               "inverted camera planes flagged degenerate");
+
+    const auto matrices =
+        CascadeLightSpaceLayout::buildCascadeLightSpaceMatrices(0u, desc, camera, {0.f, -1.f, 0.f});
+    expectTrue(!matrices.valid, "degenerate cascade range yields invalid matrices");
+
+    const CascadeOrthoBounds emptyFit =
+        CascadeLightSpaceLayout::fitOrthoBoundsFromLightSpaceAabb({{1.f, 1.f, 1.f}, {-1.f, -1.f, -1.f}});
+    const auto emptyProjection = CascadeLightSpaceLayout::buildOrthographicShadowProjection(emptyFit);
+    expectNear(emptyProjection.data[0], 1.f, 0.001f, "empty aabb yields identity projection stub");
 }
 
 void testLightSpaceAabb() {
@@ -391,11 +537,16 @@ int main() {
     testCascadeSplitValidation();
     testCascadeSplitSchemes();
     testCascadeCountClamp();
+    testBatchSplitDistances();
+    testVariableCascadeCount();
     testBatchCascadeFarZs();
     testBatchCascadeNearZsAndRanges();
     testCascadeFrustumCorners();
     testLightSpaceAabbContainsCorners();
     testEmptyFrustumLightSpaceAabb();
+    testOrthoBoundsFitAndStabilisation();
+    testLightSpaceMatrixBookkeeping();
+    testDegenerateCascadeMatrices();
     testLightSpaceAabb();
     testShadowAtlasLayout();
     testDirectionalShadowAllocation();

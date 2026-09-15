@@ -312,6 +312,20 @@ CascadeFrustumCorners CascadedShadowMapLayout::buildCascadeFrustumCorners(
     return corners;
 }
 
+fuse::math::Vec3 CascadeLightSpaceLayout::computeCascadeFocus(u32 cascadeIndex,
+                                                              const CascadedShadowMapDesc& desc,
+                                                              const ShadowCameraParams& camera) {
+    const CascadeRange range = CascadedShadowMapLayout::computeCascadeRange(cascadeIndex, desc, camera);
+    const f32 midDistance = (range.nearZ + range.farZ) * 0.5f;
+    const fuse::math::Vec3 forward = camera.forward.normalized();
+    return camera.position + forward * midDistance;
+}
+
+bool CascadeLightSpaceLayout::isDegenerateCascadeRange(const CascadeRange& range,
+                                                       const ShadowCameraParams& camera) {
+    return range.nearZ >= range.farZ || camera.farPlane <= camera.nearPlane;
+}
+
 fuse::math::Mat4 CascadeLightSpaceLayout::buildLightView(const fuse::math::Vec3& focus,
                                                          const fuse::math::Vec3& lightDirection) {
     const fuse::math::Vec3 lightDir = lightDirection.normalized();
@@ -369,6 +383,110 @@ fuse::math::AABB CascadeLightSpaceLayout::computeCascadeLightSpaceAabb(
         CascadedShadowMapLayout::buildCascadeFrustumCorners(cascadeIndex, desc, camera);
     const fuse::math::Mat4 lightView = buildLightView(focus, lightDirection);
     return computeLightSpaceAabb(corners, lightView);
+}
+
+CascadeOrthoBounds CascadeLightSpaceLayout::fitOrthoBoundsFromLightSpaceAabb(const fuse::math::AABB& aabb) {
+    if (isEmptyLightSpaceAabb(aabb)) {
+        return {};
+    }
+
+    return {aabb.min.x, aabb.max.x, aabb.min.y, aabb.max.y, -aabb.max.z, -aabb.min.z};
+}
+
+CascadeOrthoBounds CascadeLightSpaceLayout::stabiliseOrthoExtents(const CascadeOrthoBounds& bounds,
+                                                                  u32 shadowMapResolution,
+                                                                  bool enableStabilisation) {
+    if (!enableStabilisation || shadowMapResolution == 0u) {
+        return bounds;
+    }
+
+    CascadeOrthoBounds stabilised = bounds;
+    const f32 resolution = static_cast<f32>(shadowMapResolution);
+    const f32 texelWorldSizeX = (bounds.right - bounds.left) / resolution;
+    const f32 texelWorldSizeY = (bounds.top - bounds.bottom) / resolution;
+    if (texelWorldSizeX <= 1e-8f || texelWorldSizeY <= 1e-8f) {
+        return stabilised;
+    }
+
+    const f32 centerX = (bounds.left + bounds.right) * 0.5f;
+    const f32 centerY = (bounds.bottom + bounds.top) * 0.5f;
+    const f32 halfExtentX =
+        std::ceil((bounds.right - bounds.left) * 0.5f / texelWorldSizeX + 0.5f) * texelWorldSizeX;
+    const f32 halfExtentY =
+        std::ceil((bounds.top - bounds.bottom) * 0.5f / texelWorldSizeY + 0.5f) * texelWorldSizeY;
+    const f32 snappedCenterX = std::floor(centerX / texelWorldSizeX + 0.5f) * texelWorldSizeX;
+    const f32 snappedCenterY = std::floor(centerY / texelWorldSizeY + 0.5f) * texelWorldSizeY;
+    stabilised.left = snappedCenterX - halfExtentX;
+    stabilised.right = snappedCenterX + halfExtentX;
+    stabilised.bottom = snappedCenterY - halfExtentY;
+    stabilised.top = snappedCenterY + halfExtentY;
+    return stabilised;
+}
+
+ShadowMat4 CascadeLightSpaceLayout::buildOrthographicShadowProjection(const CascadeOrthoBounds& bounds) {
+    ShadowMat4 projection = ShadowMat4::identity();
+    const f32 width = bounds.right - bounds.left;
+    const f32 height = bounds.top - bounds.bottom;
+    const f32 depth = bounds.farPlane - bounds.nearPlane;
+    if (width <= 1e-8f || height <= 1e-8f || depth <= 1e-8f) {
+        return projection;
+    }
+
+    projection.data[0] = 2.f / width;
+    projection.data[5] = 2.f / height;
+    projection.data[10] = -1.f / depth;
+    projection.data[12] = -(bounds.right + bounds.left) / width;
+    projection.data[13] = -(bounds.top + bounds.bottom) / height;
+    projection.data[14] = -bounds.nearPlane / depth;
+    return projection;
+}
+
+ShadowMat4 CascadeLightSpaceLayout::multiplyShadowMatrices(const ShadowMat4& a, const ShadowMat4& b) {
+    ShadowMat4 out{};
+    for (u32 column = 0; column < 4u; ++column) {
+        for (u32 row = 0; row < 4u; ++row) {
+            f32 sum = 0.f;
+            for (u32 k = 0; k < 4u; ++k) {
+                sum += a.data[k * 4u + row] * b.data[column * 4u + k];
+            }
+            out.data[column * 4u + row] = sum;
+        }
+    }
+    return out;
+}
+
+ShadowMat4 CascadeLightSpaceLayout::shadowMat4FromMat4(const fuse::math::Mat4& matrix) {
+    ShadowMat4 out{};
+    out.data = matrix.data;
+    return out;
+}
+
+CascadeLightSpaceMatrices CascadeLightSpaceLayout::buildCascadeLightSpaceMatrices(
+    u32 cascadeIndex,
+    const CascadedShadowMapDesc& desc,
+    const ShadowCameraParams& camera,
+    const fuse::math::Vec3& lightDirection) {
+    CascadeLightSpaceMatrices matrices{};
+    const CascadeRange range = CascadedShadowMapLayout::computeCascadeRange(cascadeIndex, desc, camera);
+    if (isDegenerateCascadeRange(range, camera)) {
+        return matrices;
+    }
+
+    const fuse::math::Vec3 focus = computeCascadeFocus(cascadeIndex, desc, camera);
+    const fuse::math::AABB lightAabb = computeCascadeLightSpaceAabb(cascadeIndex, desc, camera, lightDirection);
+    if (isEmptyLightSpaceAabb(lightAabb)) {
+        return matrices;
+    }
+
+    matrices.lightView = shadowMat4FromMat4(buildLightView(focus, lightDirection));
+    matrices.lightSpaceAabb = lightAabb;
+    matrices.orthoBounds = stabiliseOrthoExtents(fitOrthoBoundsFromLightSpaceAabb(lightAabb),
+                                                 desc.resolution,
+                                                 desc.stabilise);
+    matrices.lightProjection = buildOrthographicShadowProjection(matrices.orthoBounds);
+    matrices.lightViewProj = multiplyShadowMatrices(matrices.lightProjection, matrices.lightView);
+    matrices.valid = true;
+    return matrices;
 }
 
 } // namespace fuse::renderer

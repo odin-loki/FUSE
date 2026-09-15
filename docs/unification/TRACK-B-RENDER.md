@@ -39,10 +39,10 @@ ctest --test-dir build --output-on-failure -R fuse_gbuffer
 
 | Component | Notes |
 |-----------|-------|
-| `CascadedShadowMapLayout` | Uniform/log/practical split schemes, cascade count clamp, batch near/far/range helpers, cascade frustum corners, split + range validation |
-| `CascadeLightSpaceLayout` | Light-view matrix + world-frustum-corner light-space AABB stub with empty-frustum detection |
-| `DirectionalShadow` | Orthographic projection fitted from light-space AABB with texel stabilisation |
-| `fuse_shadow_system` | Split scheme monotonicity, AABB corner contain, empty frustum, atlas, shadow pass graph |
+| `CascadedShadowMapLayout` | Uniform/log/practical split schemes, cascade count clamp, batch near/far/range + split-distance helpers, cascade frustum corners, split + range validation |
+| `CascadeLightSpaceLayout` | Light-view matrix, world-frustum → light-space AABB, ortho bounds fit + texel stabilisation, per-cascade `CascadeLightSpaceMatrices` bookkeeping |
+| `DirectionalShadow` | Delegates cascade view-projection to `buildCascadeLightSpaceMatrices` |
+| `fuse_shadow_system` | Split schemes, variable cascade count, split-distance batch, ortho fit/stabilise, light-space matrix bookkeeping, empty/degenerate frustum paths, atlas, shadow pass graph |
 
 ```bash
 ctest --test-dir build --output-on-failure -R fuse_shadow_system
