@@ -44,6 +44,10 @@ public:
     template <typename... Ts, typename Fn>
     void each(Fn&& fn);
 
+    /// Iterates entities with required types while excluding Without types.
+    template <typename... WithTs, typename... WithoutTs, typename Fn>
+    void each(Fn&& fn, Without<WithoutTs...> exclude);
+
     /// Iterates entities matching required With component types.
     template <typename... WithTs, typename Fn>
     void each_query(Fn&& fn);
@@ -55,6 +59,10 @@ public:
     /// Parallel iteration over matching archetypes via JobScheduler::parallel_for.
     template <typename... Ts, typename Fn>
     void each_parallel(Fn&& fn, u32 batchSize = 256);
+
+    /// Parallel iteration with With/Without component filters.
+    template <typename... WithTs, typename... WithoutTs, typename Fn>
+    void each_parallel(Fn&& fn, Without<WithoutTs...> exclude, u32 batchSize = 256);
 
     /// Parallel iteration with required With component types.
     template <typename... WithTs, typename Fn>
@@ -213,6 +221,11 @@ void Registry::each(Fn&& fn) {
     each_query<Ts...>(std::forward<Fn>(fn));
 }
 
+template <typename... WithTs, typename... WithoutTs, typename Fn>
+void Registry::each(Fn&& fn, Without<WithoutTs...> exclude) {
+    each_query<WithTs...>(std::forward<Fn>(fn), exclude);
+}
+
 template <typename... WithTs, typename Fn>
 void Registry::each_query(Fn&& fn) {
     (assertComponent<WithTs>(), ...);
@@ -243,6 +256,11 @@ void Registry::each_query_impl_(const QueryFilter& filter, Fn&& fn) {
 template <typename... Ts, typename Fn>
 void Registry::each_parallel(Fn&& fn, u32 batchSize) {
     each_query_parallel<Ts...>(std::forward<Fn>(fn), batchSize);
+}
+
+template <typename... WithTs, typename... WithoutTs, typename Fn>
+void Registry::each_parallel(Fn&& fn, Without<WithoutTs...> exclude, u32 batchSize) {
+    each_query_parallel<WithTs...>(std::forward<Fn>(fn), exclude, batchSize);
 }
 
 template <typename... WithTs, typename Fn>

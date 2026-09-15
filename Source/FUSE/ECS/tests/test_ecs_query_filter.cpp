@@ -100,6 +100,43 @@ void testArchetypeMatchesEmptyArchetype() {
                "empty archetype fails non-empty With filter");
 }
 
+void testCompileTimeArchetypeMatches() {
+    const fuse::ecs::Archetype dynamicBody = makeArchetypeWithComponents({
+        std::type_index(typeid(fuse::ecs::Transform)),
+        std::type_index(typeid(fuse::ecs::RigidBody)),
+    });
+    const fuse::ecs::Archetype staticBody = makeArchetypeWithComponents({
+        std::type_index(typeid(fuse::ecs::Transform)),
+        std::type_index(typeid(fuse::ecs::RigidBody)),
+        std::type_index(typeid(fuse::ecs::TagStatic)),
+    });
+
+    expectTrue(fuse::ecs::archetype_matches(dynamicBody, fuse::ecs::With<fuse::ecs::Transform, fuse::ecs::RigidBody>{}),
+               "compile-time With accepts matching archetype");
+    expectTrue(!fuse::ecs::archetype_matches(staticBody,
+                                             fuse::ecs::With<fuse::ecs::Transform, fuse::ecs::RigidBody>{},
+                                             fuse::ecs::Without<fuse::ecs::TagStatic>{}),
+               "compile-time Without rejects tagged archetype");
+}
+
+void testArchetypeMatchesMultipleWithout() {
+    const fuse::ecs::Archetype tagged = makeArchetypeWithComponents({
+        std::type_index(typeid(fuse::ecs::Transform)),
+        std::type_index(typeid(fuse::ecs::TagStatic)),
+    });
+
+    expectTrue(fuse::ecs::archetype_matches(tagged, fuse::ecs::With<fuse::ecs::Transform>{}),
+               "With-only filter accepts tagged archetype");
+    expectTrue(!fuse::ecs::archetype_matches(tagged,
+                                             fuse::ecs::With<fuse::ecs::Transform>{},
+                                             fuse::ecs::Without<fuse::ecs::TagStatic>{}),
+               "single Without rejects tagged archetype");
+    expectTrue(!fuse::ecs::archetype_matches(tagged,
+                                             fuse::ecs::With<fuse::ecs::Transform, fuse::ecs::RigidBody>{},
+                                             fuse::ecs::Without<fuse::ecs::TagStatic>{}),
+               "missing With rejects archetype even when Without would pass");
+}
+
 void testEachQueryWithWithoutFilters() {
     fuse::ecs::Registry reg;
     reg.init(64);
@@ -123,6 +160,124 @@ void testEachQueryWithWithoutFilters() {
         },
         fuse::ecs::Without<fuse::ecs::TagStatic>{});
     expectEq(seen, 1u, "each_query With/Without visits one entity");
+}
+
+void testEachQueryEmptyMatch() {
+    fuse::ecs::Registry reg;
+    reg.init(64);
+
+    for (int i = 0; i < 3; ++i) {
+        const fuse::ecs::EntityID id = reg.create();
+        reg.add<fuse::ecs::Transform>(id);
+        reg.add<fuse::ecs::RigidBody>(id);
+        reg.add<fuse::ecs::TagStatic>(id);
+    }
+
+    fuse::u32 seen = 0;
+    reg.each_query<fuse::ecs::Transform, fuse::ecs::RigidBody>(
+        [&](fuse::ecs::EntityID, fuse::ecs::Transform&, fuse::ecs::RigidBody&) { ++seen; },
+        fuse::ecs::Without<fuse::ecs::TagStatic>{});
+    expectEq(seen, 0u, "each_query With/Without visits zero entities when all are excluded");
+}
+
+void testEachWithWithoutMatchesEachQuery() {
+    fuse::ecs::Registry reg;
+    reg.init(64);
+
+    const fuse::ecs::EntityID dynamicBody = reg.create();
+    const fuse::ecs::EntityID staticBody = reg.create();
+
+    reg.add<fuse::ecs::Transform>(dynamicBody);
+    reg.add<fuse::ecs::RigidBody>(dynamicBody);
+    reg.add<fuse::ecs::Transform>(staticBody);
+    reg.add<fuse::ecs::RigidBody>(staticBody);
+    reg.add<fuse::ecs::TagStatic>(staticBody);
+
+    fuse::u32 eachCount = 0;
+    reg.each<fuse::ecs::Transform, fuse::ecs::RigidBody>(
+        [&](fuse::ecs::EntityID id, fuse::ecs::Transform&, fuse::ecs::RigidBody&) {
+            expectTrue(id == dynamicBody, "each With/Without skips static bodies");
+            ++eachCount;
+        },
+        fuse::ecs::Without<fuse::ecs::TagStatic>{});
+
+    fuse::u32 queryCount = 0;
+    reg.each_query<fuse::ecs::Transform, fuse::ecs::RigidBody>(
+        [&](fuse::ecs::EntityID id, fuse::ecs::Transform&, fuse::ecs::RigidBody&) {
+            expectTrue(id == dynamicBody, "each_query With/Without skips static bodies");
+            ++queryCount;
+        },
+        fuse::ecs::Without<fuse::ecs::TagStatic>{});
+
+    expectEq(eachCount, 1u, "each With/Without visits one entity");
+    expectEq(queryCount, 1u, "each_query With/Without visits one entity");
+}
+
+void testEachParallelWithWithoutMatchesEachQueryParallel() {
+    fuse::ecs::Registry reg;
+    reg.init(64);
+
+    fuse::ecs::EntityID ids[4];
+    for (int i = 0; i < 4; ++i) {
+        ids[i] = reg.create();
+        reg.add<fuse::ecs::Transform>(ids[i]);
+        reg.add<fuse::ecs::RigidBody>(ids[i]);
+        if (i % 2 == 0) {
+            reg.add<fuse::ecs::TagStatic>(ids[i]);
+        }
+    }
+
+    std::atomic<fuse::u32> eachParallelCount{0};
+    std::vector<std::atomic<bool>> eachSeen(4);
+    for (auto& slot : eachSeen) {
+        slot.store(false, std::memory_order_relaxed);
+    }
+
+    fuse::jobs::JobScheduler::instance().shutdown();
+    fuse::jobs::JobScheduler::instance().initialize(4);
+    reg.each_parallel<fuse::ecs::Transform, fuse::ecs::RigidBody>(
+        [&](fuse::ecs::EntityID id, fuse::ecs::Transform&, fuse::ecs::RigidBody&) {
+            if (id.index < eachSeen.size()) {
+                eachSeen[id.index].store(true, std::memory_order_relaxed);
+            }
+            eachParallelCount.fetch_add(1u, std::memory_order_relaxed);
+        },
+        fuse::ecs::Without<fuse::ecs::TagStatic>{},
+        1);
+
+    std::atomic<fuse::u32> queryParallelCount{0};
+    std::vector<std::atomic<bool>> querySeen(4);
+    for (auto& slot : querySeen) {
+        slot.store(false, std::memory_order_relaxed);
+    }
+    reg.each_query_parallel<fuse::ecs::Transform, fuse::ecs::RigidBody>(
+        [&](fuse::ecs::EntityID id, fuse::ecs::Transform&, fuse::ecs::RigidBody&) {
+            if (id.index < querySeen.size()) {
+                querySeen[id.index].store(true, std::memory_order_relaxed);
+            }
+            queryParallelCount.fetch_add(1u, std::memory_order_relaxed);
+        },
+        fuse::ecs::Without<fuse::ecs::TagStatic>{},
+        1);
+    fuse::jobs::JobScheduler::instance().shutdown();
+
+    expectEq(eachParallelCount.load(std::memory_order_relaxed), 2u, "each_parallel With/Without finds two bodies");
+    expectEq(queryParallelCount.load(std::memory_order_relaxed), 2u, "each_query_parallel With/Without finds two bodies");
+
+    std::vector<fuse::u32> eachParallelIndices;
+    std::vector<fuse::u32> queryParallelIndices;
+    for (fuse::u32 i = 0; i < eachSeen.size(); ++i) {
+        if (eachSeen[i].load(std::memory_order_relaxed)) {
+            eachParallelIndices.push_back(i);
+        }
+        if (querySeen[i].load(std::memory_order_relaxed)) {
+            queryParallelIndices.push_back(i);
+        }
+    }
+    std::sort(eachParallelIndices.begin(), eachParallelIndices.end());
+    std::sort(queryParallelIndices.begin(), queryParallelIndices.end());
+    expectTrue(eachParallelIndices == queryParallelIndices,
+               "each_parallel With/Without matches each_query_parallel coverage");
 }
 
 void testEachQueryParallelMatchesSerial() {
@@ -186,7 +341,12 @@ int main() {
     testArchetypeMatchesWithRequiredComponents();
     testArchetypeMatchesWithoutExcludedComponents();
     testArchetypeMatchesEmptyArchetype();
+    testCompileTimeArchetypeMatches();
+    testArchetypeMatchesMultipleWithout();
     testEachQueryWithWithoutFilters();
+    testEachQueryEmptyMatch();
+    testEachWithWithoutMatchesEachQuery();
+    testEachParallelWithWithoutMatchesEachQueryParallel();
     testEachQueryParallelMatchesSerial();
 
     if (g_failures == 0) {

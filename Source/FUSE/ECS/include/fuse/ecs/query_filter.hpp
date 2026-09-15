@@ -31,4 +31,15 @@ template <typename... WithTs, typename... WithoutTs>
 /// True when `archetype` contains every `with` type and none of the `without` types.
 [[nodiscard]] bool archetype_matches(const Archetype& archetype, const QueryFilter& filter);
 
+/// Compile-time With/Without convenience over `make_query_filter` + `archetype_matches`.
+template <typename... WithTs>
+[[nodiscard]] bool archetype_matches(const Archetype& archetype, With<WithTs...>) {
+    return archetype_matches(archetype, make_query_filter(With<WithTs...>{}));
+}
+
+template <typename... WithTs, typename... WithoutTs>
+[[nodiscard]] bool archetype_matches(const Archetype& archetype, With<WithTs...>, Without<WithoutTs...>) {
+    return archetype_matches(archetype, make_query_filter(With<WithTs...>{}, Without<WithoutTs...>{}));
+}
+
 } // namespace fuse::ecs
