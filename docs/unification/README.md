@@ -35,6 +35,7 @@ Physics, gfx, and net remain composition/dual-backend. No physical `Engine/` + T
 | [vfs-mount-plan.md](./vfs-mount-plan.md) | WP-04 VFS mount prefixes (`/game`, `/t3d`, `/t2d`) |
 | [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md) | U4 hybrid composer, worlds, software demo |
 | [U5-MODULES.md](./U5-MODULES.md) | U5 feature module scaffolds, `fuse_ai` vertical slice, ore backlog |
+| [U6-EDITOR.md](./U6-EDITOR.md) | U6 Qt 6 editor shell, command queue, desktop-only policy |
 | [U7-PROJECT-FORMAT.md](./U7-PROJECT-FORMAT.md) | U7 `project.json` schema, importer stubs, `fuse_import` CLI |
 
 **Related (not U0):**
@@ -49,6 +50,8 @@ Physics, gfx, and net remain composition/dual-backend. No physical `Engine/` + T
 **WP-06 / U4 (scaffolding):** Dimension APIs + hybrid frame — [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md). `demo_hybrid_hud` runs 3D clear + spinning 2D sprite via software placeholder renderer (no real GL yet).
 
 **WP-09 / U7 (minimal):** `fuse_project` loads versioned `project.json`; T3D/T2D importer stubs + `fuse_import` dry-run CLI — [U7-PROJECT-FORMAT.md](./U7-PROJECT-FORMAT.md).
+
+**WP-08 / U6 (minimal):** Qt 6 `fuse_editor` desktop shell (conditional on Qt6) + Qt-free `fuse_editor_api` / `EditorHost` — [U6-EDITOR.md](./U6-EDITOR.md).
 
 **WP-10 / U8 (minimum set):** Seven parity demos under `Samples/unification/` with headless binaries (`demo_3d_empty`, `demo_2d_sprites`, …) — see [Samples/unification/README.md](../../Samples/unification/README.md).
 
