@@ -111,6 +111,27 @@ usize ParticleGpuBufferLayout::packedDeviceBytes(u32 capacity) {
     return total;
 }
 
+usize ParticleGpuBufferLayout::dataColumnBytes(u32 capacity) {
+    usize total = 0u;
+    for (u32 index = 0; index < columnCount(); ++index) {
+        total += columnByteSize(static_cast<ParticleGpuColumn>(index), capacity);
+    }
+    return total;
+}
+
+usize ParticleGpuBufferLayout::packingOverheadBytes(u32 capacity) {
+    const usize packed = packedDeviceBytes(capacity);
+    const usize raw = dataColumnBytes(capacity);
+    return packed >= raw ? packed - raw : 0u;
+}
+
+u64 ParticleGpuBufferLayout::columnDeviceAddress(ParticleGpuColumn column, u64 base, u32 capacity) {
+    if (base == 0u || capacity == 0u) {
+        return 0u;
+    }
+    return base + columnDeviceOffset(column, capacity);
+}
+
 bool ParticleGpuBufferLayout::validatePackedLayout(u32 capacity) {
     if (capacity == 0u) {
         return false;
@@ -306,13 +327,23 @@ ParticleGpuMirror ParticleGpuMirror::unpackFromDeviceLayout(const std::vector<u8
         }
     }
 
-    mirror.alive_count = 0;
-    for (u32 slot = 0; slot < mirror.capacity; ++slot) {
-        if (mirror.alive_flags[slot] != 0u) {
-            ++mirror.alive_count;
+    mirror.syncAliveCountFromFlags();
+    return mirror;
+}
+
+void ParticleGpuMirror::syncAliveCountFromFlags() {
+    alive_count = 0;
+    for (u32 slot = 0; slot < capacity; ++slot) {
+        if (alive_flags[slot] != 0u) {
+            ++alive_count;
         }
     }
-    return mirror;
+}
+
+bool ParticleGpuMirror::matchesPackedLayout(const std::vector<u8>& bytes) const {
+    const std::vector<u8> packed = packToDeviceLayout();
+    return packed.size() == bytes.size() &&
+           (packed.empty() || std::memcmp(packed.data(), bytes.data(), packed.size()) == 0);
 }
 
 bool ParticleGpuMirror::matchesCpuSoA(const ParticleSoA& cpu) const {
@@ -349,14 +380,14 @@ ParticleSoAGPU ParticleGpuMirror::toGpuPointers(u64 packed_device_address) const
         return gpu;
     }
 
-    gpu.positions = packed_device_address + ParticleGpuBufferLayout::columnDeviceOffset(ParticleGpuColumn::Positions, capacity);
-    gpu.velocities = packed_device_address + ParticleGpuBufferLayout::columnDeviceOffset(ParticleGpuColumn::Velocities, capacity);
-    gpu.ages = packed_device_address + ParticleGpuBufferLayout::columnDeviceOffset(ParticleGpuColumn::Ages, capacity);
-    gpu.lifetimes = packed_device_address + ParticleGpuBufferLayout::columnDeviceOffset(ParticleGpuColumn::Lifetimes, capacity);
-    gpu.sizes = packed_device_address + ParticleGpuBufferLayout::columnDeviceOffset(ParticleGpuColumn::Sizes, capacity);
-    gpu.colors = packed_device_address + ParticleGpuBufferLayout::columnDeviceOffset(ParticleGpuColumn::Colors, capacity);
-    gpu.alphas = packed_device_address + ParticleGpuBufferLayout::columnDeviceOffset(ParticleGpuColumn::Alphas, capacity);
-    gpu.alive_flags = packed_device_address + ParticleGpuBufferLayout::columnDeviceOffset(ParticleGpuColumn::AliveFlags, capacity);
+    gpu.positions = ParticleGpuBufferLayout::columnDeviceAddress(ParticleGpuColumn::Positions, packed_device_address, capacity);
+    gpu.velocities = ParticleGpuBufferLayout::columnDeviceAddress(ParticleGpuColumn::Velocities, packed_device_address, capacity);
+    gpu.ages = ParticleGpuBufferLayout::columnDeviceAddress(ParticleGpuColumn::Ages, packed_device_address, capacity);
+    gpu.lifetimes = ParticleGpuBufferLayout::columnDeviceAddress(ParticleGpuColumn::Lifetimes, packed_device_address, capacity);
+    gpu.sizes = ParticleGpuBufferLayout::columnDeviceAddress(ParticleGpuColumn::Sizes, packed_device_address, capacity);
+    gpu.colors = ParticleGpuBufferLayout::columnDeviceAddress(ParticleGpuColumn::Colors, packed_device_address, capacity);
+    gpu.alphas = ParticleGpuBufferLayout::columnDeviceAddress(ParticleGpuColumn::Alphas, packed_device_address, capacity);
+    gpu.alive_flags = ParticleGpuBufferLayout::columnDeviceAddress(ParticleGpuColumn::AliveFlags, packed_device_address, capacity);
     return gpu;
 }
 
