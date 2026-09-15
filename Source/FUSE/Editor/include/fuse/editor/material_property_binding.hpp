@@ -28,6 +28,9 @@ public:
     [[nodiscard]] bool isBound() const { return m_materialId != kInvalidMaterialId; }
     [[nodiscard]] u32 boundMaterialId() const { return m_materialId; }
 
+    /// Binding guard — bound with a live edit-state pointer (B6.7 deepen).
+    [[nodiscard]] bool canPostProperty() const { return isBound() && m_editState != nullptr; }
+
     bool getRoughness(f32& out) const;
     bool getMetallic(f32& out) const;
     bool getBaseColor(f32& r, f32& g, f32& b) const;
@@ -43,6 +46,12 @@ public:
     bool setProperty(MaterialPropertyId id, f32 value, CommandStack& cmds);
     bool getPropertyVec3(MaterialPropertyId id, f32& x, f32& y, f32& z) const;
     bool setPropertyVec3(MaterialPropertyId id, f32 x, f32 y, f32 z, CommandStack& cmds);
+
+    /// Guarded get/set — early-out when unbound or property id invalid (B6.7 deepen).
+    bool tryGetProperty(MaterialPropertyId id, f32& out) const;
+    bool trySetProperty(MaterialPropertyId id, f32 value, CommandStack& cmds);
+    bool tryGetPropertyVec3(MaterialPropertyId id, f32& x, f32& y, f32& z) const;
+    bool trySetPropertyVec3(MaterialPropertyId id, f32 x, f32 y, f32 z, CommandStack& cmds);
 
     [[nodiscard]] bool isPropertyDirty(MaterialPropertyId id) const;
     [[nodiscard]] bool needsPanelRefresh() const { return m_panelRefreshPending; }

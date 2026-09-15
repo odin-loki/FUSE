@@ -19,8 +19,26 @@ struct MaterialPropertyDescriptor {
 /// Sentinel returned by `materialPropertyIndexOf` when the id is not enumerated.
 inline constexpr u32 kInvalidMaterialPropertyIndex = UINT32_MAX;
 
+/// Catalog slot sentinel — matches `MaterialPropertyBinding::kInvalidMaterialId`.
+inline constexpr u32 kInvalidMaterialSlot = UINT32_MAX;
+
 /// Number of bindable material inspector properties.
 [[nodiscard]] u32 materialPropertyCount();
+
+/// True when the catalog has no materials (B6.7 deepen — empty-material early-out).
+[[nodiscard]] bool isMaterialCatalogEmpty(u32 catalogCount);
+
+/// True when `materialId` indexes a slot in `[0, catalogCount)` (B6.7 deepen).
+[[nodiscard]] bool isMaterialSlotValid(u32 materialId, u32 catalogCount);
+
+/// Convenience inverse of `isMaterialSlotValid` (B6.7 deepen).
+[[nodiscard]] bool isInvalidMaterialSlot(u32 materialId, u32 catalogCount);
+
+/// True when `id` maps to a bindable inspector property (B6.7 deepen).
+[[nodiscard]] bool isMaterialPropertyIdValid(MaterialPropertyId id);
+
+/// Binding guard — slot must be valid before inspector bind (B6.7 deepen).
+[[nodiscard]] bool canBindMaterialSlot(u32 materialId, u32 catalogCount);
 
 /// True when `index` is safe for `materialPropertyIdAt` / descriptor lookup.
 [[nodiscard]] bool isMaterialPropertyIndexValid(u32 index);

@@ -1,5 +1,6 @@
 #include <fuse/editor/material_editor_panel.hpp>
 
+#include <fuse/editor/material_property_inspect.hpp>
 #include <fuse/handle.hpp>
 #include <fuse/object.hpp>
 
@@ -21,9 +22,11 @@ Handle<Object> materialHandle(u32 materialId) {
 } // namespace
 
 void MaterialEditorPanel::bindSelectedMaterial_() {
-    if (m_selectedMatId != kInvalidMaterialId) {
-        m_binding.bind(m_selectedMatId, m_editState);
+    if (!canBindMaterialSlot(m_selectedMatId, m_catalogCount)) {
+        unbindSelectedMaterial_();
+        return;
     }
+    m_binding.bind(m_selectedMatId, m_editState);
 }
 
 void MaterialEditorPanel::unbindSelectedMaterial_() {
@@ -71,7 +74,7 @@ void MaterialEditorPanel::syncFromMaterialSystem(const EditorState& state,
 }
 
 bool MaterialEditorPanel::selectMaterial(u32 materialId) {
-    if (materialId >= m_catalogCount) {
+    if (isMaterialCatalogEmpty(m_catalogCount) || isInvalidMaterialSlot(materialId, m_catalogCount)) {
         return false;
     }
 
@@ -87,7 +90,7 @@ void MaterialEditorPanel::refreshPanel() {
 }
 
 bool MaterialEditorPanel::setRoughness(f32 roughness, CommandStack& cmds) {
-    if (!m_binding.isBound()) {
+    if (!hasSelectedMaterial() || !m_binding.canPostProperty()) {
         return false;
     }
 
@@ -96,7 +99,7 @@ bool MaterialEditorPanel::setRoughness(f32 roughness, CommandStack& cmds) {
 }
 
 bool MaterialEditorPanel::setMetallic(f32 metallic, CommandStack& cmds) {
-    if (!m_binding.isBound()) {
+    if (!hasSelectedMaterial() || !m_binding.canPostProperty()) {
         return false;
     }
 
@@ -105,7 +108,7 @@ bool MaterialEditorPanel::setMetallic(f32 metallic, CommandStack& cmds) {
 }
 
 bool MaterialEditorPanel::setBaseColor(f32 r, f32 g, f32 b, CommandStack& cmds) {
-    if (!m_binding.isBound()) {
+    if (!hasSelectedMaterial() || !m_binding.canPostProperty()) {
         return false;
     }
 
@@ -114,7 +117,7 @@ bool MaterialEditorPanel::setBaseColor(f32 r, f32 g, f32 b, CommandStack& cmds) 
 }
 
 bool MaterialEditorPanel::setShadingModel(u8 shadingModel, CommandStack& cmds) {
-    if (!m_binding.isBound()) {
+    if (!hasSelectedMaterial() || !m_binding.canPostProperty()) {
         return false;
     }
 

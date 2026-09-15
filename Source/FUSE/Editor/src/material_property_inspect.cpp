@@ -27,6 +27,36 @@ u32 materialPropertyCount() {
     return static_cast<u32>(sizeof(kMaterialPropertyOrder) / sizeof(kMaterialPropertyOrder[0]));
 }
 
+bool isMaterialCatalogEmpty(u32 catalogCount) {
+    return catalogCount == 0u;
+}
+
+bool isMaterialSlotValid(u32 materialId, u32 catalogCount) {
+    if (isMaterialCatalogEmpty(catalogCount)) {
+        return false;
+    }
+    return materialId < catalogCount;
+}
+
+bool isInvalidMaterialSlot(u32 materialId, u32 catalogCount) {
+    return !isMaterialSlotValid(materialId, catalogCount);
+}
+
+bool isMaterialPropertyIdValid(MaterialPropertyId id) {
+    switch (id) {
+    case MaterialPropertyId::Roughness:
+    case MaterialPropertyId::Metallic:
+    case MaterialPropertyId::BaseColor:
+    case MaterialPropertyId::ShadingModel:
+        return true;
+    }
+    return false;
+}
+
+bool canBindMaterialSlot(u32 materialId, u32 catalogCount) {
+    return isMaterialSlotValid(materialId, catalogCount);
+}
+
 bool isMaterialPropertyIndexValid(u32 index) {
     return index < materialPropertyCount();
 }

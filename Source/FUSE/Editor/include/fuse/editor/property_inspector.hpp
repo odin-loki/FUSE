@@ -37,6 +37,9 @@ public:
     /// Mesh material slot helpers for material inspector wiring (B6.7 deepen).
     [[nodiscard]] bool getMeshMaterialId(const EditorScene& scene, u32& out) const;
     bool setMeshMaterialId(u32 materialId, EditorScene& scene, CommandStack& cmds);
+    /// Catalog-validated mesh slot edit — rejects invalid slots (B6.7 deepen).
+    bool trySetMeshMaterialId(u32 materialId, u32 catalogCount, EditorScene& scene,
+                              CommandStack& cmds);
 
 private:
     void appendSectionIfPresent(const char* componentName, ecs::EntityID id, EditorScene& scene);
