@@ -27,11 +27,24 @@ u32 materialPropertyCount() {
     return static_cast<u32>(sizeof(kMaterialPropertyOrder) / sizeof(kMaterialPropertyOrder[0]));
 }
 
+bool isMaterialPropertyIndexValid(u32 index) {
+    return index < materialPropertyCount();
+}
+
 MaterialPropertyId materialPropertyIdAt(u32 index) {
-    if (index >= materialPropertyCount()) {
+    if (!isMaterialPropertyIndexValid(index)) {
         return MaterialPropertyId::Roughness;
     }
     return kMaterialPropertyOrder[index];
+}
+
+u32 materialPropertyIndexOf(MaterialPropertyId id) {
+    for (u32 i = 0u; i < materialPropertyCount(); ++i) {
+        if (kMaterialPropertyOrder[i] == id) {
+            return i;
+        }
+    }
+    return kInvalidMaterialPropertyIndex;
 }
 
 bool materialPropertyIsVec3(MaterialPropertyId id) {
@@ -66,6 +79,20 @@ f32 clampBaseColorComponent(f32 value) {
 
 u8 clampShadingModel(u8 value) {
     return static_cast<u8>(std::min(value, kMaxShadingModel));
+}
+
+f32 clampMaterialPropertyScalar(MaterialPropertyId id, f32 value) {
+    switch (id) {
+    case MaterialPropertyId::Roughness:
+        return clampRoughness(value);
+    case MaterialPropertyId::Metallic:
+        return clampMetallic(value);
+    case MaterialPropertyId::BaseColor:
+        return clampBaseColorComponent(value);
+    case MaterialPropertyId::ShadingModel:
+        return static_cast<f32>(clampShadingModel(static_cast<u8>(value)));
+    }
+    return clampUnit_(value);
 }
 
 void clampMaterialEditState(MaterialEditState& state) {

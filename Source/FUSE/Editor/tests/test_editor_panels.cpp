@@ -249,8 +249,23 @@ void testMaterialPropertyInspectEnumeration() {
     expectTrue(fuse::editor::materialPropertyIdAt(3u) == fuse::editor::MaterialPropertyId::ShadingModel,
                "index 3 is shading model");
 
+    expectTrue(fuse::editor::isMaterialPropertyIndexValid(0u), "index 0 is valid");
+    expectTrue(fuse::editor::isMaterialPropertyIndexValid(3u), "last index is valid");
+    expectTrue(!fuse::editor::isMaterialPropertyIndexValid(4u), "out-of-range index rejected");
+    expectTrue(!fuse::editor::isMaterialPropertyIndexValid(99u), "far out-of-range index rejected");
+
+    expectTrue(fuse::editor::materialPropertyIndexOf(fuse::editor::MaterialPropertyId::Roughness) == 0u,
+               "roughness index lookup");
+    expectTrue(fuse::editor::materialPropertyIndexOf(fuse::editor::MaterialPropertyId::Metallic) == 1u,
+               "metallic index lookup");
+    expectTrue(fuse::editor::materialPropertyIndexOf(fuse::editor::MaterialPropertyId::BaseColor) == 2u,
+               "base color index lookup");
+    expectTrue(fuse::editor::materialPropertyIndexOf(fuse::editor::MaterialPropertyId::ShadingModel) == 3u,
+               "shading model index lookup");
+
     for (fuse::u32 i = 0u; i < fuse::editor::materialPropertyCount(); ++i) {
         const fuse::editor::MaterialPropertyId id = fuse::editor::materialPropertyIdAt(i);
+        expectTrue(fuse::editor::materialPropertyIndexOf(id) == i, "index/id round-trip");
         const fuse::editor::MaterialPropertyDescriptor desc =
             fuse::editor::materialPropertyDescriptor(id);
         expectTrue(desc.id == id, "descriptor id matches enumeration index");
@@ -263,6 +278,24 @@ void testMaterialPropertyInspectEnumeration() {
                "base color is vec3");
     expectTrue(!fuse::editor::materialPropertyIsVec3(fuse::editor::MaterialPropertyId::Roughness),
                "roughness is scalar");
+}
+
+void testMaterialPropertyInspectScalarClamp() {
+    expectTrue(fuse::editor::clampMaterialPropertyScalar(fuse::editor::MaterialPropertyId::Roughness,
+                                                           -0.5f) == 0.f,
+               "scalar clamp pins roughness low");
+    expectTrue(fuse::editor::clampMaterialPropertyScalar(fuse::editor::MaterialPropertyId::Roughness,
+                                                           1.5f) == 1.f,
+               "scalar clamp pins roughness high");
+    expectTrue(fuse::editor::clampMaterialPropertyScalar(fuse::editor::MaterialPropertyId::Metallic,
+                                                           2.f) == 1.f,
+               "scalar clamp pins metallic");
+    expectTrue(fuse::editor::clampMaterialPropertyScalar(fuse::editor::MaterialPropertyId::BaseColor,
+                                                           -0.1f) == 0.f,
+               "scalar clamp pins base color channel low");
+    expectTrue(fuse::editor::clampMaterialPropertyScalar(fuse::editor::MaterialPropertyId::ShadingModel,
+                                                           99.f) == 5.f,
+               "scalar clamp pins shading model");
 }
 
 void testMaterialEditStateBulkClamp() {
@@ -389,15 +422,48 @@ void testMaterialPropertyBindingUnbound() {
     fuse::u8 shadingModel = 0u;
     expectTrue(!binding.getShadingModel(shadingModel), "unbound get shading model fails");
 
+    expectTrue(!binding.getProperty(fuse::editor::MaterialPropertyId::Roughness, value),
+               "unbound generic get roughness fails");
+    expectTrue(!binding.getProperty(fuse::editor::MaterialPropertyId::Metallic, value),
+               "unbound generic get metallic fails");
+    expectTrue(!binding.getProperty(fuse::editor::MaterialPropertyId::ShadingModel, value),
+               "unbound generic get shading model fails");
+    expectTrue(!binding.getPropertyVec3(fuse::editor::MaterialPropertyId::BaseColor, r, g, b),
+               "unbound generic get base color fails");
+
     fuse::editor::CommandStack cmds;
     expectTrue(!binding.setRoughness(0.1f, cmds), "unbound set roughness fails");
+    expectTrue(!binding.setMetallic(0.2f, cmds), "unbound set metallic fails");
+    expectTrue(!binding.setBaseColor(0.3f, 0.4f, 0.5f, cmds), "unbound set base color fails");
+    expectTrue(!binding.setShadingModel(1u, cmds), "unbound set shading model fails");
+    expectTrue(!binding.setProperty(fuse::editor::MaterialPropertyId::Roughness, 0.1f, cmds),
+               "unbound generic set roughness fails");
+    expectTrue(!binding.setProperty(fuse::editor::MaterialPropertyId::Metallic, 0.2f, cmds),
+               "unbound generic set metallic fails");
+    expectTrue(!binding.setProperty(fuse::editor::MaterialPropertyId::ShadingModel, 1.f, cmds),
+               "unbound generic set shading model fails");
+    expectTrue(!binding.setPropertyVec3(fuse::editor::MaterialPropertyId::BaseColor, 0.1f, 0.2f, 0.3f,
+                                        cmds),
+               "unbound generic set base color fails");
     expectTrue(cmds.appliedCount() == 0u, "unbound set posts no commands");
+
+    expectTrue(!binding.isPropertyDirty(fuse::editor::MaterialPropertyId::Roughness),
+               "unbound property is not dirty");
+    expectTrue(!binding.needsPanelRefresh(), "unbound binding does not request refresh");
+
+    fuse::editor::MaterialEditState externalState{};
+    externalState.roughness = 0.75f;
+    binding.refreshFromEditState(externalState);
+    expectTrue(!binding.isBound(), "refresh on unbound binding stays unbound");
 
     fuse::editor::EditorState state;
     fuse::editor::MaterialEditorPanel panel;
     panel.sync(state, 1u);
     expectTrue(!panel.propertyBinding().isBound(), "panel without selection stays unbound");
     expectTrue(!panel.setRoughness(0.2f, cmds), "panel set without selection fails");
+    expectTrue(!panel.setMetallic(0.3f, cmds), "panel metallic set without selection fails");
+    expectTrue(!panel.setBaseColor(0.1f, 0.2f, 0.3f, cmds), "panel base color set without selection fails");
+    expectTrue(!panel.setShadingModel(2u, cmds), "panel shading model set without selection fails");
 }
 
 #ifdef FUSE_VULKAN_BACKEND
@@ -497,6 +563,7 @@ int main() {
     testMaterialPropertyBindingGetSet();
     testMaterialPropertyBindingRoundtrip();
     testMaterialPropertyInspectEnumeration();
+    testMaterialPropertyInspectScalarClamp();
     testMaterialEditStateBulkClamp();
     testMaterialPropertyBindingRefreshClamp();
     testMaterialEditorPanelEmptyCatalog();
