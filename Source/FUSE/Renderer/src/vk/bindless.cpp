@@ -43,7 +43,23 @@ u32 bindlessHeapMaxCapacity(BindlessHeapKind kind) {
 
 u32 clampHeapCapacity(BindlessHeapKind kind, u32 requested) {
     const u32 maxCap = bindlessHeapMaxCapacity(kind);
-    return requested > maxCap ? maxCap : requested;
+    if (requested > maxCap) {
+        return maxCap;
+    }
+    return requested;
+}
+
+bool bindlessHeapIsEmpty(BindlessHeapKind kind, u32 heapCapacity) {
+    (void)kind;
+    return heapCapacity == 0u;
+}
+
+bool bindlessSlotIndexOutOfRange(BindlessHeapKind kind, u32 index, u32 heapCapacity) {
+    (void)kind;
+    if (bindlessHeapIsEmpty(kind, heapCapacity)) {
+        return true;
+    }
+    return index >= heapCapacity;
 }
 
 u32 packBindlessBindingIndex(u32 binding, u32 arrayIndex) {
@@ -165,7 +181,13 @@ BindlessSlotHandle BindlessDescriptors::allocateSlot(std::vector<Slot>& slots, s
 
 void BindlessDescriptors::freeSlot(std::vector<Slot>& slots, std::vector<u32>& freeList,
                                  BindlessSlotHandle handle) {
-    if (!m_initialized || !handle.isValid() || handle.index >= slots.size()) {
+    if (!m_initialized || !handle.isValid()) {
+        return;
+    }
+    if (bindlessHeapIsEmpty(handle.kind, static_cast<u32>(slots.size()))) {
+        return;
+    }
+    if (bindlessSlotIndexOutOfRange(handle.kind, handle.index, static_cast<u32>(slots.size()))) {
         return;
     }
 
@@ -236,7 +258,10 @@ bool BindlessDescriptors::validateSlot(BindlessSlotHandle handle) const {
     }
 
     const std::vector<Slot>& slots = slotsFor(handle.kind);
-    if (handle.index >= slots.size()) {
+    if (bindlessHeapIsEmpty(handle.kind, static_cast<u32>(slots.size()))) {
+        return false;
+    }
+    if (bindlessSlotIndexOutOfRange(handle.kind, handle.index, static_cast<u32>(slots.size()))) {
         return false;
     }
 
@@ -250,7 +275,10 @@ bool BindlessDescriptors::slotGenerationMismatch(BindlessSlotHandle handle) cons
     }
 
     const std::vector<Slot>& slots = slotsFor(handle.kind);
-    if (handle.index >= slots.size()) {
+    if (bindlessHeapIsEmpty(handle.kind, static_cast<u32>(slots.size()))) {
+        return false;
+    }
+    if (bindlessSlotIndexOutOfRange(handle.kind, handle.index, static_cast<u32>(slots.size()))) {
         return false;
     }
 
@@ -258,9 +286,20 @@ bool BindlessDescriptors::slotGenerationMismatch(BindlessSlotHandle handle) cons
     return !slot.occupied || slot.generation != handle.generation;
 }
 
+bool BindlessDescriptors::rejectStaleSlotHandle(BindlessSlotHandle handle) const {
+    return !validateSlot(handle);
+}
+
+bool BindlessDescriptors::slotIndexOutOfRange(BindlessHeapKind kind, u32 index) const {
+    return bindlessSlotIndexOutOfRange(kind, index, heapCapacity(kind));
+}
+
 bool BindlessDescriptors::isSlotOccupied(BindlessHeapKind kind, u32 index) const {
     const std::vector<Slot>& slots = slotsFor(kind);
-    if (index >= slots.size()) {
+    if (bindlessHeapIsEmpty(kind, static_cast<u32>(slots.size()))) {
+        return false;
+    }
+    if (bindlessSlotIndexOutOfRange(kind, index, static_cast<u32>(slots.size()))) {
         return false;
     }
     return slots[index].occupied;
@@ -268,21 +307,32 @@ bool BindlessDescriptors::isSlotOccupied(BindlessHeapKind kind, u32 index) const
 
 u32 BindlessDescriptors::slotGeneration(BindlessHeapKind kind, u32 index) const {
     const std::vector<Slot>& slots = slotsFor(kind);
-    if (index >= slots.size()) {
+    if (bindlessHeapIsEmpty(kind, static_cast<u32>(slots.size()))) {
+        return 0;
+    }
+    if (bindlessSlotIndexOutOfRange(kind, index, static_cast<u32>(slots.size()))) {
         return 0;
     }
     return slots[index].generation;
 }
 
 bool BindlessDescriptors::slotIsStorageTexture(u32 index) const {
-    if (index >= m_textureSlots.size()) {
+    if (bindlessHeapIsEmpty(BindlessHeapKind::Texture, static_cast<u32>(m_textureSlots.size()))) {
+        return false;
+    }
+    if (bindlessSlotIndexOutOfRange(BindlessHeapKind::Texture, index,
+                                    static_cast<u32>(m_textureSlots.size()))) {
         return false;
     }
     return m_textureSlots[index].storage;
 }
 
 bool BindlessDescriptors::slotIsUniformBuffer(u32 index) const {
-    if (index >= m_bufferSlots.size()) {
+    if (bindlessHeapIsEmpty(BindlessHeapKind::Buffer, static_cast<u32>(m_bufferSlots.size()))) {
+        return false;
+    }
+    if (bindlessSlotIndexOutOfRange(BindlessHeapKind::Buffer, index,
+                                    static_cast<u32>(m_bufferSlots.size()))) {
         return false;
     }
     return m_bufferSlots[index].storage;
@@ -294,7 +344,10 @@ BindlessSlotHandle BindlessDescriptors::slotHandleAt(BindlessHeapKind kind, u32 
     }
 
     const std::vector<Slot>& slots = slotsFor(kind);
-    if (index >= slots.size()) {
+    if (bindlessHeapIsEmpty(kind, static_cast<u32>(slots.size()))) {
+        return BindlessSlotHandle::invalid();
+    }
+    if (bindlessSlotIndexOutOfRange(kind, index, static_cast<u32>(slots.size()))) {
         return BindlessSlotHandle::invalid();
     }
 
@@ -307,7 +360,7 @@ BindlessSlotHandle BindlessDescriptors::slotHandleAt(BindlessHeapKind kind, u32 
 }
 
 BindlessBindingIndex BindlessDescriptors::bindingIndexForHandle(BindlessSlotHandle handle) const {
-    if (!validateSlot(handle)) {
+    if (rejectStaleSlotHandle(handle)) {
         return {};
     }
 
@@ -323,11 +376,21 @@ BindlessBindingIndex BindlessDescriptors::bindingIndexForHandle(BindlessSlotHand
 }
 
 BindlessBindingIndex BindlessDescriptors::bindingIndexForSlot(BindlessHeapKind kind, u32 index) const {
+    if (heapIsEmpty(kind)) {
+        return {};
+    }
+    if (slotIndexOutOfRange(kind, index)) {
+        return {};
+    }
     return bindingIndexForHandle(slotHandleAt(kind, index));
 }
 
 u32 BindlessDescriptors::heapLiveCount(BindlessHeapKind kind) const {
-    return countLiveSlots(slotsFor(kind));
+    const std::vector<Slot>& slots = slotsFor(kind);
+    if (bindlessHeapIsEmpty(kind, static_cast<u32>(slots.size()))) {
+        return 0;
+    }
+    return countLiveSlots(slots);
 }
 
 u32 BindlessDescriptors::heapFreeCount(BindlessHeapKind kind) const {
@@ -342,15 +405,18 @@ u32 BindlessDescriptors::heapFreeCount(BindlessHeapKind kind) const {
     return 0;
 }
 
+bool BindlessDescriptors::heapIsEmpty(BindlessHeapKind kind) const {
+    return bindlessHeapIsEmpty(kind, heapCapacity(kind));
+}
+
 bool BindlessDescriptors::resizeHeap(BindlessHeapKind kind, u32 newCapacity) {
     if (!m_initialized) {
         return false;
     }
 
     newCapacity = clampHeapCapacity(kind, newCapacity);
-    const u32 cap = maxCountFor(kind);
-    if (newCapacity > cap) {
-        return false;
+    if (newCapacity == 0u) {
+        return true;
     }
 
     std::vector<Slot>& slots = slotsFor(kind);

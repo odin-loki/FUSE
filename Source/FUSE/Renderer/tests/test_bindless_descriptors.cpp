@@ -523,6 +523,86 @@ void testLegacyRegisterUnregister() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testHeapIsEmptyEarlyOuts() {
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    expectTrue(bindless.heapIsEmpty(fuse::renderer::BindlessHeapKind::Texture), "texture heap empty after init");
+    expectTrue(fuse::renderer::bindlessHeapIsEmpty(fuse::renderer::BindlessHeapKind::Buffer, 0u),
+               "free helper reports empty at zero capacity");
+    expectTrue(bindless.slotIndexOutOfRange(fuse::renderer::BindlessHeapKind::Texture, 0u),
+               "index zero is out of range on empty heap");
+    expectTrue(!bindless.isSlotOccupied(fuse::renderer::BindlessHeapKind::Texture, 0u),
+               "occupied check early-outs on empty heap");
+    expectTrue(bindless.slotGeneration(fuse::renderer::BindlessHeapKind::Texture, 0u) == 0u,
+               "generation lookup early-outs on empty heap");
+    expectTrue(!bindless.slotHandleAt(fuse::renderer::BindlessHeapKind::Texture, 0u).isValid(),
+               "slotHandleAt early-outs on empty heap");
+    expectTrue(bindless.bindingIndexForSlot(fuse::renderer::BindlessHeapKind::Texture, 0u).binding == 0u,
+               "bindingIndexForSlot early-outs on empty heap");
+
+    const fuse::renderer::BindlessSlotHandle invalidHandle{
+        fuse::renderer::BindlessHeapKind::Texture, 0u, 1u};
+    expectTrue(!bindless.slotGenerationMismatch(invalidHandle),
+               "generation mismatch false on empty heap handle");
+    expectTrue(bindless.rejectStaleSlotHandle(invalidHandle), "rejectStale treats empty-heap handle as stale");
+
+    bindless.destroy(*bootstrap->device());
+}
+
+void testRejectStaleSlotHandleGuard() {
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    const fuse::renderer::BindlessSlotHandle live = bindless.allocateTextureSlot(false);
+    expectTrue(!bindless.rejectStaleSlotHandle(live), "live handle passes rejectStale guard");
+
+    const fuse::renderer::BindlessSlotHandle stale{
+        fuse::renderer::BindlessHeapKind::Texture, live.index, live.generation + 1u};
+    expectTrue(bindless.rejectStaleSlotHandle(stale), "wrong generation rejected by guard");
+    expectTrue(bindless.slotGenerationMismatch(stale), "mismatch agrees with rejectStale");
+
+    bindless.freeTextureSlot(live);
+    expectTrue(bindless.rejectStaleSlotHandle(live), "freed handle rejected by guard");
+    expectTrue(bindless.bindingIndexForHandle(live).binding == 0u,
+               "binding lookup uses rejectStale guard after free");
+
+    bindless.destroy(*bootstrap->device());
+}
+
+void testBindlessRangeHelpers() {
+    expectTrue(fuse::renderer::bindlessSlotIndexOutOfRange(fuse::renderer::BindlessHeapKind::Sampler, 0u, 0u),
+               "index zero out of range when capacity zero");
+    expectTrue(!fuse::renderer::bindlessSlotIndexOutOfRange(fuse::renderer::BindlessHeapKind::Sampler, 0u, 4u),
+               "index zero in range when capacity positive");
+    expectTrue(fuse::renderer::bindlessSlotIndexOutOfRange(fuse::renderer::BindlessHeapKind::Sampler, 4u, 4u),
+               "index equal to capacity is out of range");
+
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+    expectTrue(bindless.resizeHeap(fuse::renderer::BindlessHeapKind::Sampler, 0u),
+               "resize to zero is no-op success");
+    expectTrue(bindless.heapIsEmpty(fuse::renderer::BindlessHeapKind::Sampler),
+               "heap remains empty after zero resize");
+    expectTrue(bindless.slotIndexOutOfRange(fuse::renderer::BindlessHeapKind::Sampler, 0u),
+               "instance range helper sees empty heap");
+
+    bindless.destroy(*bootstrap->device());
+}
+
+void testClampHeapCapacityBounds() {
+    expectTrue(fuse::renderer::clampHeapCapacity(fuse::renderer::BindlessHeapKind::Texture, 0u) == 0u,
+               "zero request stays zero");
+    expectTrue(fuse::renderer::clampHeapCapacity(fuse::renderer::BindlessHeapKind::Buffer, UINT32_MAX) ==
+                   fuse::renderer::kMaxBuffers,
+               "UINT32_MAX request clamped to buffer max");
+    expectTrue(fuse::renderer::clampHeapCapacity(fuse::renderer::BindlessHeapKind::Sampler, 1u) == 1u,
+               "small sampler request unchanged below cap");
+}
+
 } // namespace
 
 int main() {
@@ -550,6 +630,10 @@ int main() {
     testStorageFlagsClearedOnFree();
     testBufferCapExhaustion();
     testLegacyRegisterUnregister();
+    testHeapIsEmptyEarlyOuts();
+    testRejectStaleSlotHandleGuard();
+    testBindlessRangeHelpers();
+    testClampHeapCapacityBounds();
 
     fuse::core::shutdown();
 
