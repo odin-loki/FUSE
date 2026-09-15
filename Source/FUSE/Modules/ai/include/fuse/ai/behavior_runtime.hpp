@@ -49,11 +49,14 @@ public:
     u32 tickCount() const { return m_tickCount; }
 
 private:
+    void ensureWaitState();
+
     BehaviorTree m_tree;
     std::vector<AgentBinding> m_bindings;
     std::vector<AgentSnapshot> m_snapshots;
     std::vector<BehaviorTickResult> m_results;
     Blackboard m_blackboard;
+    std::vector<u32> m_waitStartTicks;
     u32 m_tickCount = 0;
 };
 

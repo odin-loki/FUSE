@@ -7,6 +7,7 @@ namespace fuse::ai {
 
 void BehaviorRuntime::setTree(const BehaviorTree& tree) {
     m_tree = tree;
+    m_waitStartTicks.clear();
 }
 
 void BehaviorRuntime::clearAgents() {
@@ -14,11 +15,18 @@ void BehaviorRuntime::clearAgents() {
     m_snapshots.clear();
     m_results.clear();
     m_blackboard.resize(0);
+    m_waitStartTicks.clear();
 }
 
 void BehaviorRuntime::addAgent(const AgentBinding& binding) {
     m_bindings.push_back(binding);
     m_blackboard.resize(static_cast<u32>(m_bindings.size()));
+    ensureWaitState();
+}
+
+void BehaviorRuntime::ensureWaitState() {
+    const std::size_t perAgent = m_tree.nodeCount();
+    m_waitStartTicks.assign(m_bindings.size() * perAgent, 0);
 }
 
 void BehaviorRuntime::buildSnapshots() {
@@ -38,6 +46,8 @@ void BehaviorRuntime::buildSnapshots() {
     if (m_results.size() != m_snapshots.size()) {
         m_results.assign(m_snapshots.size(), BehaviorTickResult{});
     }
+
+    ensureWaitState();
 }
 
 void BehaviorRuntime::evaluate(const frame::FrameCtx& ctx) {
@@ -48,9 +58,15 @@ void BehaviorRuntime::evaluate(const frame::FrameCtx& ctx) {
 
     const BlackboardView boardView(m_blackboard);
     auto& scheduler = fuse::jobs::JobScheduler::instance();
+    const u32 nodeCount = m_tree.nodeCount();
 
     scheduler.parallel_for(0, static_cast<u32>(m_snapshots.size()), 1, [&](u32 agentIndex) {
-        m_results[agentIndex] = m_tree.tick(agentIndex, m_snapshots[agentIndex], boardView);
+        BehaviorEvalContext evalCtx;
+        evalCtx.tickCount = m_tickCount;
+        if (nodeCount > 0) {
+            evalCtx.waitStartTicks = m_waitStartTicks.data() + static_cast<std::size_t>(agentIndex) * nodeCount;
+        }
+        m_results[agentIndex] = m_tree.tick(agentIndex, m_snapshots[agentIndex], boardView, evalCtx);
     });
 }
 

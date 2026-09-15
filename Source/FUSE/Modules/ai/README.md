@@ -9,7 +9,7 @@ FUSE AI module extracted from addon **ore** (read-only submodules). No addon `En
 | `NodeRegistry` / `bb.*` type ids | `third_party/addons/BadBehaviour/Engine/source/BadBehavior/core/` | MIT (Guy Allard) |
 | `bb.sequence`, `bb.selector` | `.../BadBehavior/composite/Sequence.h`, `Selector.h` | MIT |
 | `bb.inverter`, `bb.loop`, `bb.succeed_always`, `bb.root` | `.../BadBehavior/decorator/` | MIT |
-| `bb.action.set_flag` (demo leaf) | `.../BadBehavior/leaf/ScriptedBehavior.h` (pattern) | MIT |
+| `bb.action.set_flag`, `bb.action.wait`, `bb.action.blackboard_set`, `bb.condition.blackboard_get`, `bb.action.distance` | `.../BadBehavior/leaf/ScriptedBehavior.h` (pattern) | MIT |
 | `gb.action.move_toward` | `third_party/addons/GuideBot/guideBotT3D/engine/lib/guideBot/include/guideBot/actionMove.h` | Custom — see `guidebot_license_agreement.txt` |
 | UAISK template hooks (scripts only) | `third_party/addons/UAISK/.../UAISK/*.cs` | MIT |
 
