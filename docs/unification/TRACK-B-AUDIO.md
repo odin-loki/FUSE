@@ -1,6 +1,6 @@
 # Track B — Spatial Audio Engine (B7.2 deepen)
 
-**Status:** B7.2 deepen — azimuth→pan mapping, elevation/co-located pan edges, degenerate listener mix  
+**Status:** B7.2 deepen — empty-HRTF guards, attenuation coupling stubs, listener pan helpers  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.2  
 **Source narrative:** [P7.md](../sources/P7.md) §7.2
 
@@ -19,6 +19,9 @@
 | `PanLaw` / `sample_pan_law` | `Source/FUSE/Audio/include/fuse/audio/binaural_pan.hpp` | Equal-power and linear stereo pan law curves |
 | `compute_pan_position_from_azimuth` | `Source/FUSE/Audio/include/fuse/audio/binaural_pan.hpp` | Azimuth (radians) → clamped pan position for ILD stub |
 | `BinauralPanParams` / `compute_binaural_*` | `Source/FUSE/Audio/include/fuse/audio/binaural_pan.hpp` | Listener-local/world-space azimuth/elevation, selectable pan law, ITD stub, distance blend |
+| `HrtfIrStub` / `has_hrtf_ir` / `should_apply_hrtf_pan` | `Source/FUSE/Audio/include/fuse/audio/binaural_pan.hpp` | Empty-IR guard and HRTF bypass for disabled/co-located sources |
+| `compute_listener_basis` / listener-position pan helpers | `Source/FUSE/Audio/include/fuse/audio/binaural_pan.hpp` | `AudioListener` → basis and world-space binaural angles/gains |
+| `HrtfAttenuationCoupling` / `apply_hrtf_attenuation_coupling` | `Source/FUSE/Audio/include/fuse/audio/binaural_pan.hpp` | Distance + occlusion spatial blend stub |
 | `ReverbZoneParams` / `blend_reverb_zones` | `Source/FUSE/Audio/include/fuse/audio/reverb_zones.hpp` | Zone AABB membership + overlapping wet/dry blend + dry/wet sample stubs |
 | `SpatialMixer` | `Source/FUSE/Audio/include/fuse/audio/spatial_mixer.hpp` | CPU HRTF-lite pan + curve attenuation + bus routing + blocker occlusion |
 | `AudioEngine` | `Source/FUSE/Audio/include/fuse/audio/audio_engine.hpp` | OpenAL backend sync, CUDA/CPU reverb facade, zone blend + occlusion blockers |
@@ -60,7 +63,7 @@
 
 ### HRTF-lite panning
 
-`apply_hrtf_pan` delegates to `compute_binaural_pan_gains` for ILD (selected pan law) and a Woodworth-style ITD stub (`max_itd_seconds * sin(azimuth)`). `apply_hrtf_distance_factor` narrows the binaural image when distance attenuation is low. Edge cases:
+`apply_hrtf_pan` delegates to `compute_binaural_pan_gains_guarded` for ILD (selected pan law) and a Woodworth-style ITD stub (`max_itd_seconds * sin(azimuth)`). `apply_hrtf_attenuation_coupling` narrows the binaural image from distance attenuation and occlusion LF gain. `SpatialMixer::compute_source_binaural_pan_gains` centralises the guarded pan path. Edge cases:
 
 | Case | Behaviour |
 |------|-----------|
@@ -73,6 +76,9 @@
 | No listener entity | World-relative pan; unity master gain |
 | Degenerate forward/up | Safe basis falls back to default orientation |
 | Low distance attenuation | `min_spatial_blend` narrows L/R spread toward mono |
+| Empty HRTF IR stub | `has_hrtf_ir` false — ILD/ITD pan fallback (convolution deferred) |
+| HRTF disabled or co-located | `should_apply_hrtf_pan` false — centre mono via `make_centre_binaural_pan_gains` |
+| Low occlusion LF gain | `HrtfAttenuationCoupling` narrows spatial image toward centre |
 
 ### Bus gains (stub)
 
@@ -190,6 +196,13 @@ ctest --test-dir build --output-on-failure -R fuse_audio
 | `testBinauralPanCoLocatedAngles` | Zero-offset azimuth/elevation/ITD and symmetric gains |
 | `testBinauralPanWorldSpaceGains` | World-space `compute_binaural_pan_gains` via listener basis |
 | `testHrtfDistanceFactorZeroEndpoint` | Zero attenuation → `min_spatial_blend` |
+| `testEmptyHrtfIrGuard` | `has_hrtf_ir` null/zero-length/valid IR stubs |
+| `testShouldApplyHrtfPanGuards` | Disabled/co-located bypass; guarded centre pan |
+| `testListenerBinauralPanHelpers` | `AudioListener` world-space angles/gains via basis |
+| `testCentrePanHelpers` | Centre pan factory, spread metric, `is_centre_panned` |
+| `testHrtfAttenuationCoupling` | Distance/occlusion spatial blend narrows pan spread |
+| `testSpatialMixerBinauralPanGuards` | Mixer guarded pan for disabled/co-located |
+| `testSpatialMixerAttenuationCoupling` | Mixer occlusion coupling narrows binaural image |
 | `testListenerOrientationEdgeCases` | Degenerate forward/up sanitization and safe basis |
 | `testListenerOrientationZeroUp` | Zero up vector is invalid and sanitized |
 | `testDegenerateListenerOrientationMix` | SpatialMixer safe-basis path with zero forward/up |
@@ -228,6 +241,10 @@ ctest --test-dir build --output-on-failure -R fuse_audio
 - [x] Listener orientation helpers: validity check, sanitization, safe basis for degenerate input
 - [x] Pan endpoint, empty-listener, and orientation edge-case tests
 - [x] Azimuth→pan mapping, elevation/co-located edges, world-space gains, degenerate listener mix
+- [x] Empty-HRTF IR guards (`has_hrtf_ir`, `should_apply_hrtf_pan`, `compute_binaural_pan_gains_guarded`)
+- [x] Listener orientation pan helpers (`compute_listener_basis`, listener-position binaural APIs)
+- [x] Attenuation coupling stubs (`HrtfAttenuationCoupling`, `apply_hrtf_attenuation_coupling`)
+- [x] `SpatialMixer::compute_source_binaural_pan_gains` centralises guarded pan + coupling
 - [x] Occlusion visibility pipeline (`combine_occlusion_visibility`, `compute_effective_visibility`, `evaluate_occlusion_from_blockers`)
 - [x] Reverb wet/dry blend stubs (`compute_effective_wet_mix`, `blend_dry_wet_sample`, `count_listener_reverb_zones`)
 - [x] Occlusion segment-vs-AABB blocker factor 0..1 wired into spatial attenuation + backend sync

@@ -723,6 +723,133 @@ void testHrtfDistanceFactorZeroEndpoint() {
                0.25f, 1e-5f, "default params min_spatial_blend is 0.25");
 }
 
+void testEmptyHrtfIrGuard() {
+    const fuse::audio::HrtfIrStub empty{};
+    expectTrue(!fuse::audio::has_hrtf_ir(empty), "null IR samples are empty");
+
+    const float samples[] = {1.f, 0.5f};
+    const fuse::audio::HrtfIrStub zero_length{samples, 0};
+    expectTrue(!fuse::audio::has_hrtf_ir(zero_length), "zero-length IR is empty");
+
+    const fuse::audio::HrtfIrStub valid{samples, 2};
+    expectTrue(fuse::audio::has_hrtf_ir(valid), "non-empty IR stub is valid");
+}
+
+void testShouldApplyHrtfPanGuards() {
+    const fuse::audio::Vec3 offset{5.f, 0.f, 0.f};
+    expectTrue(fuse::audio::should_apply_hrtf_pan(true, offset),
+               "enabled HRTF with offset applies pan");
+    expectTrue(!fuse::audio::should_apply_hrtf_pan(false, offset),
+               "disabled HRTF bypasses pan");
+    expectTrue(!fuse::audio::should_apply_hrtf_pan(true, fuse::audio::Vec3{}),
+               "co-located source bypasses pan");
+
+    const fuse::audio::BinauralPanGains guarded =
+        fuse::audio::compute_binaural_pan_gains_guarded(false, offset);
+    expectTrue(fuse::audio::is_centre_panned(guarded), "guarded disabled HRTF returns centre pan");
+    expectNear(guarded.itd_seconds, 0.f, 1e-5f, "guarded disabled HRTF has zero ITD");
+}
+
+void testListenerBinauralPanHelpers() {
+    fuse::audio::AudioListener listener;
+    listener.position = fuse::audio::Vec3{0.f, 0.f, 0.f};
+    listener.forward = fuse::audio::Vec3{0.f, 0.f, -1.f};
+    listener.up = fuse::audio::Vec3{0.f, 1.f, 0.f};
+
+    const fuse::audio::Vec3 source_pos{5.f, 0.f, -5.f};
+    const fuse::audio::BinauralPanAngles angles =
+        fuse::audio::compute_binaural_angles(listener, source_pos);
+    const fuse::audio::BinauralPanGains gains =
+        fuse::audio::compute_binaural_pan_gains(listener, source_pos);
+
+    const fuse::audio::Vec3 local =
+        fuse::audio::to_listener_space(source_pos - listener.position,
+                                       fuse::audio::compute_listener_basis(listener));
+    const fuse::audio::BinauralPanAngles local_angles =
+        fuse::audio::compute_binaural_angles(local);
+    const fuse::audio::BinauralPanGains local_gains =
+        fuse::audio::compute_binaural_pan_gains(local);
+    expectNear(angles.azimuth, local_angles.azimuth, 1e-4f,
+               "listener helper azimuth matches listener-local offset");
+    expectNear(angles.elevation, local_angles.elevation, 1e-4f,
+               "listener helper elevation matches listener-local offset");
+    expectNear(gains.left, local_gains.left, 1e-4f,
+               "listener helper gains match listener-local offset");
+    expectNear(gains.right, local_gains.right, 1e-4f,
+               "listener helper gains match listener-local offset");
+}
+
+void testCentrePanHelpers() {
+    const fuse::audio::BinauralPanGains centre = fuse::audio::make_centre_binaural_pan_gains();
+    expectNear(centre.left, 0.5f, 1e-5f, "centre pan left is 0.5");
+    expectNear(centre.right, 0.5f, 1e-5f, "centre pan right is 0.5");
+    expectTrue(fuse::audio::is_centre_panned(centre), "centre gains are centre-panned");
+    expectNear(fuse::audio::compute_pan_spread(centre), 0.f, 1e-5f, "centre pan has zero spread");
+
+    const fuse::audio::BinauralPanGains wide =
+        fuse::audio::compute_binaural_pan_gains(fuse::audio::Vec3{5.f, 0.f, 0.f});
+    expectTrue(fuse::audio::compute_pan_spread(wide) > 0.5f, "hard-right offset has wide spread");
+    expectTrue(!fuse::audio::is_centre_panned(wide), "lateral offset is not centre-panned");
+}
+
+void testHrtfAttenuationCoupling() {
+    fuse::audio::BinauralPanGains wide =
+        fuse::audio::compute_binaural_pan_gains(fuse::audio::Vec3{5.f, 0.f, 0.f});
+    const float wide_spread = fuse::audio::compute_pan_spread(wide);
+
+    fuse::audio::BinauralPanGains distance_narrow = wide;
+    fuse::audio::apply_hrtf_attenuation_coupling(distance_narrow, 0.2f, 1.f);
+    const float distance_spread = fuse::audio::compute_pan_spread(distance_narrow);
+
+    fuse::audio::BinauralPanGains occlusion_narrow = wide;
+    fuse::audio::HrtfAttenuationCoupling coupling;
+    coupling.occlusion_weight = 1.f;
+    fuse::audio::apply_hrtf_attenuation_coupling(occlusion_narrow, 1.f, 0.1f, coupling);
+    const float occlusion_spread = fuse::audio::compute_pan_spread(occlusion_narrow);
+
+    expectTrue(distance_spread < wide_spread, "distance coupling narrows pan spread");
+    expectTrue(occlusion_spread < wide_spread, "occlusion coupling narrows pan spread");
+    expectNear(fuse::audio::compute_hrtf_spatial_blend(1.f, 1.f), 1.f, 1e-5f,
+               "unity distance and occlusion preserve full spatial blend");
+    expectNear(fuse::audio::compute_hrtf_spatial_blend(0.f, 0.f), 0.25f, 1e-5f,
+               "zero distance and occlusion use min_spatial_blend");
+}
+
+void testSpatialMixerBinauralPanGuards() {
+    fuse::audio::SpatialMixer mixer;
+    mixer.configure(48000, 32, true);
+
+    const fuse::audio::Vec3 rel{5.f, 0.f, 0.f};
+    const fuse::audio::BinauralPanGains enabled =
+        mixer.compute_source_binaural_pan_gains(rel, 1.f, 1.f);
+    expectTrue(fuse::audio::compute_pan_spread(enabled) > 0.5f,
+               "mixer returns wide pan for lateral offset");
+
+    mixer.configure(48000, 32, false);
+    const fuse::audio::BinauralPanGains disabled =
+        mixer.compute_source_binaural_pan_gains(rel, 1.f, 1.f);
+    expectTrue(fuse::audio::is_centre_panned(disabled), "mixer guards disabled HRTF to centre");
+
+    mixer.configure(48000, 32, true);
+    const fuse::audio::BinauralPanGains co_located =
+        mixer.compute_source_binaural_pan_gains(fuse::audio::Vec3{}, 1.f, 1.f);
+    expectTrue(fuse::audio::is_centre_panned(co_located), "mixer guards co-located source to centre");
+}
+
+void testSpatialMixerAttenuationCoupling() {
+    fuse::audio::SpatialMixer mixer;
+    mixer.configure(48000, 32, true);
+
+    const fuse::audio::Vec3 rel{5.f, 0.f, 0.f};
+    const fuse::audio::BinauralPanGains full =
+        mixer.compute_source_binaural_pan_gains(rel, 1.f, 1.f);
+    const fuse::audio::BinauralPanGains occluded =
+        mixer.compute_source_binaural_pan_gains(rel, 1.f, 0.1f);
+    expectTrue(fuse::audio::compute_pan_spread(occluded)
+                   < fuse::audio::compute_pan_spread(full),
+               "mixer occlusion coupling narrows binaural image");
+}
+
 void testListenerOrientationZeroUp() {
     expectTrue(!fuse::audio::is_listener_orientation_valid(fuse::audio::Vec3{0.f, 0.f, -1.f},
                                                            fuse::audio::Vec3{}),
@@ -1617,6 +1744,13 @@ int main() {
     testBinauralPanCoLocatedAngles();
     testBinauralPanWorldSpaceGains();
     testHrtfDistanceFactorZeroEndpoint();
+    testEmptyHrtfIrGuard();
+    testShouldApplyHrtfPanGuards();
+    testListenerBinauralPanHelpers();
+    testCentrePanHelpers();
+    testHrtfAttenuationCoupling();
+    testSpatialMixerBinauralPanGuards();
+    testSpatialMixerAttenuationCoupling();
     testListenerOrientationEdgeCases();
     testListenerOrientationZeroUp();
     testDegenerateListenerOrientationMix();
