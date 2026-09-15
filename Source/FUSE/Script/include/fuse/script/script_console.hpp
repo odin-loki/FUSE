@@ -31,7 +31,9 @@ public:
     void setHistoryCapacity(u32 capacity);
     [[nodiscard]] u32 historyCapacity() const { return m_history.capacity(); }
     [[nodiscard]] u32 historyCount() const { return m_history.count(); }
+    [[nodiscard]] bool historyIsEmpty() const { return m_history.is_empty(); }
     [[nodiscard]] const std::string& historyAt(u32 index) const { return m_history.at(index); }
+    [[nodiscard]] bool canRepeat() const { return !m_lastExecutedLine.empty(); }
 
     /// Navigate command history (`previous=true` recalls older entries).
     [[nodiscard]] const std::string& recallHistory(bool previous) { return m_history.recall(previous); }

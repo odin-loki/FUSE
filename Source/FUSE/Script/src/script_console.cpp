@@ -130,8 +130,10 @@ ScriptConsoleCommandResult ScriptConsole::executeLine_(const char* line, bool re
             m_lastExecutedLine = trimmed_line;
         }
         if (record_history) {
-            const bool history_clear = (command == "history" && args == "clear");
-            if (!history_clear) {
+            const bool skip_history =
+                command == "repeat" || (command == "history" && args == "clear") ||
+                (command == "history" && args.empty() && m_history.is_empty());
+            if (!skip_history) {
                 m_history.push(line);
                 resetHistoryNavigation();
             }
@@ -142,8 +144,12 @@ ScriptConsoleCommandResult ScriptConsole::executeLine_(const char* line, bool re
 }
 
 void ScriptConsole::registerBuiltIns_() {
-    m_commands.register_built_in("repeat", [](ScriptConsole& console, const char* /*args*/) {
-        if (console.m_lastExecutedLine.empty()) {
+    m_commands.register_built_in("repeat", [](ScriptConsole& console, const char* args) {
+        if (args != nullptr && args[0] != '\0') {
+            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
+                                              "repeat does not accept arguments"};
+        }
+        if (!console.canRepeat()) {
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
                                               "no command to repeat"};
         }
@@ -196,24 +202,30 @@ void ScriptConsole::registerBuiltIns_() {
     });
 
     m_commands.register_built_in("resolve", [](ScriptConsole& console, const char* args) {
-        if (args == nullptr || args[0] == '\0') {
+        if (args == nullptr) {
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
                                               "resolve requires a partial command name"};
         }
 
-        const std::string resolved = console.m_commands.unique_prefix_match(args);
+        const std::string partial = trim(args);
+        if (partial.empty()) {
+            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
+                                              "resolve requires a partial command name"};
+        }
+
+        const std::string resolved = console.m_commands.unique_prefix_match(partial.c_str());
         if (!resolved.empty()) {
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, resolved};
         }
 
-        const std::vector<std::string> matches = console.m_commands.commands_with_prefix(args);
+        const std::vector<std::string> matches = console.m_commands.commands_with_prefix(partial.c_str());
         if (matches.empty()) {
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::UnknownCommand,
-                                              std::string("no command matches: ") + args};
+                                              std::string("no command matches: ") + partial};
         }
 
         return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
-                                          std::string("ambiguous prefix: ") + args};
+                                          std::string("ambiguous prefix: ") + partial};
     });
 
     m_commands.register_built_in("suggest", [](ScriptConsole& console, const char* args) {
@@ -252,9 +264,17 @@ void ScriptConsole::registerBuiltIns_() {
 
     m_commands.register_built_in("history", [](ScriptConsole& console, const char* args) {
         if (args != nullptr && std::strcmp(args, "clear") == 0) {
+            if (console.historyIsEmpty()) {
+                return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, "history already empty"};
+            }
+
             console.m_history.clear();
             console.resetHistoryNavigation();
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, "history cleared"};
+        }
+
+        if (console.historyIsEmpty()) {
+            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, "history is empty"};
         }
 
         std::ostringstream out;

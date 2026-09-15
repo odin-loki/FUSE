@@ -290,6 +290,14 @@ void testHistoryClearStub() {
     expectTrue(cleared.ok(), "history clear stub succeeds");
     expectTrue(cleared.output == "history cleared", "history clear stub message");
     expectTrue(console.historyCount() == 0u, "history clear empties buffer");
+    expectTrue(console.historyIsEmpty(), "history clear leaves buffer empty");
+
+    const auto already_empty = console.execute("history clear");
+    expectTrue(already_empty.ok(), "history clear on empty buffer succeeds");
+    expectTrue(already_empty.output == "history already empty",
+               "history clear on empty buffer early-out message");
+    expectTrue(console.historyCount() == 0u,
+               "history clear on empty buffer does not push history");
 }
 
 void testDescribeAndCompleteStubs() {
@@ -354,21 +362,34 @@ void testEmptyLineSkipsHistory() {
 void testRepeatDispatchStub() {
     fuse::script::ScriptConsole console;
 
+    expectTrue(!console.canRepeat(), "canRepeat false before any successful command");
+
     const auto empty_repeat = console.execute("repeat");
     expectTrue(empty_repeat.status == fuse::script::ScriptConsoleCommandStatus::InvalidArgument,
                "repeat without prior command fails");
     expectTrue(empty_repeat.output == "no command to repeat",
                "repeat without prior command message");
+    expectTrue(console.historyCount() == 0u, "failed repeat does not push history");
 
     const auto echoed = console.execute("echo repeat-me");
     expectTrue(echoed.ok(), "setup command for repeat succeeds");
     expectTrue(console.lastExecutedLine() == "echo repeat-me", "last executed line tracked");
+    expectTrue(console.canRepeat(), "canRepeat true after successful command");
+    expectTrue(console.historyCount() == 1u, "setup command pushes history");
 
     const auto repeated = console.execute("repeat");
     expectTrue(repeated.ok(), "repeat re-dispatches last command");
     expectTrue(repeated.output == "repeat-me", "repeat returns prior command output");
     expectTrue(console.lastExecutedLine() == "echo repeat-me",
                "repeat does not overwrite last executed line");
+    expectTrue(console.historyCount() == 1u,
+               "repeat re-dispatches without recording repeat or duplicate echoed line");
+
+    const auto repeat_with_args = console.execute("repeat extra");
+    expectTrue(repeat_with_args.status == fuse::script::ScriptConsoleCommandStatus::InvalidArgument,
+               "repeat with arguments fails");
+    expectTrue(repeat_with_args.output == "repeat does not accept arguments",
+               "repeat with arguments guard message");
 }
 
 void testPrefixMatchAndCompletionHelpers() {
@@ -501,12 +522,31 @@ void testLastExecutedLineGuards() {
                "successful command updates last executed line");
 }
 
+void testEmptyHistoryEarlyOuts() {
+    fuse::script::ScriptConsole console;
+
+    expectTrue(console.historyIsEmpty(), "fresh console history is empty");
+
+    const auto empty_list = console.execute("history");
+    expectTrue(empty_list.ok(), "history on empty buffer succeeds");
+    expectTrue(empty_list.output == "history is empty", "history empty early-out message");
+    expectTrue(console.historyCount() == 0u, "history listing does not record on empty buffer");
+
+    fuse::script::ScriptConsoleHistoryBuffer history;
+    expectTrue(history.recall(false).empty(), "recall down on empty history returns empty");
+    expectTrue(history.recall(true).empty(), "recall up on empty history returns empty");
+}
+
 void testResolveCommandStub() {
     fuse::script::ScriptConsole console;
 
     const auto invalid = console.execute("resolve");
     expectTrue(invalid.status == fuse::script::ScriptConsoleCommandStatus::InvalidArgument,
                "resolve without args fails");
+
+    const auto whitespace = console.execute("resolve    ");
+    expectTrue(whitespace.status == fuse::script::ScriptConsoleCommandStatus::InvalidArgument,
+               "resolve with whitespace-only args fails");
 
     const auto ambiguous = console.execute("resolve h");
     expectTrue(ambiguous.status == fuse::script::ScriptConsoleCommandStatus::InvalidArgument,
@@ -571,6 +611,7 @@ void run_script_console_tests() {
     testLastExecutedLineGuards();
     testHistoryBufferAndNavigation();
     testHistoryClearStub();
+    testEmptyHistoryEarlyOuts();
     testEmptyLineSkipsHistory();
     testDescribeAndCompleteStubs();
     testPrefixMatchAndCompletionHelpers();
