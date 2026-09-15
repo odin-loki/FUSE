@@ -70,8 +70,9 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 
 ### `fuse_cinematics`
 
-- `Timeline` + `Track` stubs with playhead advance on game thread
-- TODO: extract `VController`, `VTrack`, `VEvent` from `Engine/source/Verve/` (already in FUSE root) into this target
+- `Timeline`, `Playhead`, `Track`, `TimelineEvent`, `TrackGroup` — Verve `VController`/`VTrack`/`VEvent`/`VGroup` kernel (see [U5-MODULES-cinematics.md](./U5-MODULES-cinematics.md))
+- Tests: `fuse_cinematics_tests` (30s advance, track span, interpolation)
+- TODO: Torque bridge tracks (`VMotionTrack`, `VPath`, …) and hybrid demo camera/sprite drive
 
 ### `fuse_fx`
 
@@ -130,7 +131,7 @@ ctest --test-dir build-fuse --output-on-failure
 | Module | Gate | This PR |
 |--------|------|---------|
 | `fuse_ai` | BT drives 2D + 3D agents in hybrid demo | 🚧 registry + decorators landed; 3D agent stub next |
-| `fuse_cinematics` | 30s timeline moves camera + sprite | ⬜ scaffold |
+| `fuse_cinematics` | 30s timeline moves camera + sprite | 🚧 kernel + tests; hybrid drive next |
 | `fuse_fx` | AFX on 3D model + 2D sprite | ⬜ scaffold |
 | `fuse_mechanics` | One 3D interactable | ⬜ scaffold |
 | `fuse_adventure` | Pick-up / use in 3D + 2D interface | ⬜ scaffold |
