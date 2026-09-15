@@ -1,0 +1,42 @@
+# FUSE fuse_core iOS simulator compile (stub workflow)
+#
+# GitHub-hosted Linux runners cannot build for iOS. Run this workflow on a macOS
+# runner with Xcode installed, or locally:
+#
+#   cmake -B build-ios -G Xcode \
+#     -DCMAKE_SYSTEM_NAME=iOS \
+#     -DCMAKE_OSX_SYSROOT=iphonesimulator \
+#     -DCMAKE_OSX_ARCHITECTURES=arm64 \
+#     -DFUSE_UMBRELLA=ON -DFUSE_BUILD_CORE=ON \
+#     -DFUSE_BUILD_T3D=OFF -DFUSE_BUILD_T2D=OFF
+#   cmake --build build-ios --target fuse_core
+#
+# See docs/unification/BUILD.md for full mobile notes.
+
+name: FUSE fuse_core (iOS simulator)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fuse-core-ios:
+    name: fuse_core iphonesimulator (manual / macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure fuse_core for iOS simulator
+        run: |
+          cmake -B build-ios -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphonesimulator \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DFUSE_UMBRELLA=ON \
+            -DFUSE_BUILD_CORE=ON \
+            -DFUSE_BUILD_CORE_TESTS=OFF \
+            -DFUSE_BUILD_T3D=OFF \
+            -DFUSE_BUILD_T2D=OFF
+
+      - name: Build fuse_core stub
+        run: cmake --build build-ios --config Release --target fuse_core

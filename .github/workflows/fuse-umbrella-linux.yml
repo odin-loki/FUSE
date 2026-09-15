@@ -1,0 +1,40 @@
+name: FUSE Umbrella (Linux)
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+    branches: [main, development]
+
+concurrency:
+  group: ci-${{ github.actor }}-${{ github.head_ref || github.run_number }}-${{ github.ref }}-fuse-linux
+  cancel-in-progress: true
+
+jobs:
+  fuse-core-linux:
+    name: fuse_core + worker-count tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake g++-13
+
+      - name: Configure umbrella (fuse_core only)
+        run: |
+          cmake -B build-fuse -G Ninja \
+            -DCMAKE_CXX_COMPILER=g++-13 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DFUSE_UMBRELLA=ON \
+            -DFUSE_BUILD_CORE=ON \
+            -DFUSE_BUILD_CORE_TESTS=ON \
+            -DFUSE_BUILD_T3D=OFF \
+            -DFUSE_BUILD_T2D=OFF
+
+      - name: Build fuse_core and tests
+        run: cmake --build build-fuse --config Release
+
+      - name: Run CTest
+        run: ctest --test-dir build-fuse --output-on-failure

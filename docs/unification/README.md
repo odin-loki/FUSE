@@ -37,7 +37,7 @@ Physics, gfx, and net remain composition/dual-backend. No physical `Engine/` + T
 - [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) — Track A/B port (consult for alignment only)
 - [third_party/addons/README.md](../../third_party/addons/README.md) — submodule acquisition map
 
-**Future U1 deliverable:** `BUILD.md` (umbrella CMake) — not started in U0.
+**U1 deliverable:** [BUILD.md](./BUILD.md) (umbrella CMake + `fuse_core` stub) — ✅ landed in U1 PR.
 
 ---
 
@@ -56,6 +56,7 @@ Physics, gfx, and net remain composition/dual-backend. No physical `Engine/` + T
 | Concurrency inventory (evidence) | ✅ [concurrency-inventory.md](./concurrency-inventory.md) |
 | Parallel architecture proposed | ✅ [architecture-parallel.md](./architecture-parallel.md) |
 | Work plan / backlog | ✅ [work-plan.md](./work-plan.md) |
+| Umbrella build guide (U1) | ✅ [BUILD.md](./BUILD.md) |
 
 **U0 exit:** Documentation complete; stakeholder review of matrix recommendations and decision gates (script host, physics, 2D renderer, multiprocess policy) before U1 umbrella CMake.
 
