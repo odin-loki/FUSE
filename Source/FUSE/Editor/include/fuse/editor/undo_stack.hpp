@@ -15,6 +15,9 @@ struct UndoStackSnapshot {
     u32 undoCount = 0;
     u32 redoCount = 0;
     u32 evictedCount = 0;
+    u32 coalescedOps = 0;
+    u32 baselineUndoCount = 0;
+    u32 baselineRedoCount = 0;
     bool dirty = false;
     u32 dirtyRevision = 0;
     std::vector<std::string> undoDescriptions;
@@ -50,10 +53,17 @@ public:
     u32 undoCount() const { return static_cast<u32>(m_undo.size()); }
     u32 redoCount() const { return static_cast<u32>(m_redo.size()); }
     u32 evictedCount() const { return m_evictedCount; }
+    u32 coalescedOps() const { return m_coalescedOps; }
 
     [[nodiscard]] bool isDirty() const { return m_dirty; }
     u32 dirtyRevision() const { return m_dirtyRevision; }
     void markClean();
+    /// Records the current undo/redo depth as the saved-document baseline (B6.2 deepen).
+    void set_baseline_state();
+    [[nodiscard]] bool isAtBaseline() const;
+
+    /// True when undo/redo depth differs from the last `set_baseline_state` call.
+    [[nodiscard]] bool hasUnsavedChanges() const { return !isAtBaseline(); }
 
     std::string peekUndoDescription() const;
     std::string peekRedoDescription() const;
@@ -71,6 +81,9 @@ private:
     std::vector<std::unique_ptr<UndoCommand>> m_undo;
     std::vector<std::unique_ptr<UndoCommand>> m_redo;
     u32 m_evictedCount = 0;
+    u32 m_coalescedOps = 0;
+    u32 m_baselineUndoCount = 0;
+    u32 m_baselineRedoCount = 0;
     bool m_dirty = false;
     u32 m_dirtyRevision = 0;
 };

@@ -29,6 +29,7 @@ void UndoStack::execute(std::unique_ptr<UndoCommand> command) {
 
     if (!m_undo.empty() && m_undo.back()->merge(*command)) {
         m_undo.back()->execute();
+        ++m_coalescedOps;
         markDirty_();
         return;
     }
@@ -38,6 +39,16 @@ void UndoStack::execute(std::unique_ptr<UndoCommand> command) {
     m_redo.clear();
     evictOldestIfNeeded_();
     markDirty_();
+}
+
+void UndoStack::set_baseline_state() {
+    m_baselineUndoCount = undoCount();
+    m_baselineRedoCount = redoCount();
+    markClean();
+}
+
+bool UndoStack::isAtBaseline() const {
+    return undoCount() == m_baselineUndoCount;
 }
 
 void UndoStack::undo() {
@@ -61,6 +72,7 @@ void UndoStack::redo() {
     m_redo.pop_back();
     command->execute();
     m_undo.push_back(std::move(command));
+    evictOldestIfNeeded_();
     markDirty_();
 }
 
@@ -82,6 +94,9 @@ void UndoStack::clear() {
     m_undo.clear();
     m_redo.clear();
     m_evictedCount = 0;
+    m_coalescedOps = 0;
+    m_baselineUndoCount = 0;
+    m_baselineRedoCount = 0;
     m_dirty = false;
     m_dirtyRevision = 0;
 }
@@ -95,6 +110,9 @@ UndoStackSnapshot UndoStack::captureSnapshot() const {
     snapshot.undoCount = undoCount();
     snapshot.redoCount = redoCount();
     snapshot.evictedCount = m_evictedCount;
+    snapshot.coalescedOps = m_coalescedOps;
+    snapshot.baselineUndoCount = m_baselineUndoCount;
+    snapshot.baselineRedoCount = m_baselineRedoCount;
     snapshot.dirty = m_dirty;
     snapshot.dirtyRevision = m_dirtyRevision;
     snapshot.undoDescriptions.reserve(m_undo.size());
@@ -122,6 +140,9 @@ void UndoStack::restoreSnapshot(const UndoStackSnapshot& snapshot) {
     }
 
     m_evictedCount = snapshot.evictedCount;
+    m_coalescedOps = snapshot.coalescedOps;
+    m_baselineUndoCount = snapshot.baselineUndoCount;
+    m_baselineRedoCount = snapshot.baselineRedoCount;
     m_dirty = snapshot.dirty;
     m_dirtyRevision = snapshot.dirtyRevision;
 }

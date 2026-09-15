@@ -445,6 +445,90 @@ void testUndoStackPushAlias() {
     expectTrue(stack.undoCount() == 1u, "push alias records undo step");
 }
 
+void testUndoStackCoalescedOps() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "drag"));
+    stack.execute(std::make_unique<CounterCommand>(counter, 1, 3, "drag"));
+    stack.execute(std::make_unique<CounterCommand>(counter, 3, 6, "drag"));
+
+    expectTrue(stack.coalescedOps() == 2u, "merged commands increment coalescedOps");
+    expectTrue(stack.undoCount() == 1u, "coalesced edits remain one undo step");
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 6, 7, "other"));
+    expectTrue(stack.coalescedOps() == 2u, "non-mergeable command does not bump coalescedOps");
+}
+
+void testUndoStackSetBaselineState() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "step"));
+    stack.set_baseline_state();
+
+    expectTrue(stack.isAtBaseline(), "baseline set after first command");
+    expectTrue(!stack.isDirty(), "set_baseline_state clears dirty flag");
+    expectTrue(!stack.hasUnsavedChanges(), "baseline matches current depth");
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 1, 2, "edit"));
+    expectTrue(stack.hasUnsavedChanges(), "new command moves away from baseline");
+    expectTrue(stack.isDirty(), "execute after baseline marks dirty");
+
+    stack.undo();
+    expectTrue(stack.isAtBaseline(), "undo back to baseline depth");
+    expectTrue(!stack.hasUnsavedChanges(), "undo restores baseline alignment");
+}
+
+void testUndoStackEmptyStackGuardsDirtyRevision() {
+    fuse::editor::UndoStack stack;
+
+    expectTrue(stack.dirtyRevision() == 0u, "empty stack revision starts at zero");
+
+    stack.undo();
+    stack.redo();
+    stack.push(nullptr);
+
+    expectTrue(stack.dirtyRevision() == 0u, "empty-stack undo/redo/null push do not bump revision");
+    expectTrue(!stack.isDirty(), "empty-stack guards leave stack clean");
+    expectTrue(stack.coalescedOps() == 0u, "null push does not increment coalescedOps");
+}
+
+void testUndoStackPushClearsRedoBranch() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    stack.push(std::make_unique<CounterCommand>(counter, 0, 1, "first"));
+    stack.push(std::make_unique<CounterCommand>(counter, 1, 2, "second"));
+    stack.undo();
+    expectTrue(stack.canRedo(), "redo available after undo");
+
+    stack.push(std::make_unique<CounterCommand>(counter, 1, 4, "third"));
+    expectTrue(!stack.canRedo(), "new push clears redo branch");
+    expectTrue(counter == 4, "push applies latest value");
+    expectTrue(stack.undoCount() == 2u, "push after undo appends undo step");
+}
+
+void testUndoStackSnapshotBaselineRoundTrip() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "drag"));
+    stack.execute(std::make_unique<CounterCommand>(counter, 1, 3, "drag"));
+    stack.set_baseline_state();
+
+    const fuse::editor::UndoStackSnapshot snapshot = stack.captureSnapshot();
+    expectTrue(snapshot.coalescedOps == 1u, "snapshot captures coalescedOps");
+    expectTrue(snapshot.baselineUndoCount == 1u, "snapshot captures baseline undo depth");
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 3, 5, "after save"));
+    stack.restoreSnapshot(snapshot);
+
+    expectTrue(stack.coalescedOps() == snapshot.coalescedOps, "restore brings back coalescedOps");
+    expectTrue(stack.isAtBaseline(), "restore brings back baseline alignment");
+    expectTrue(counter == 3, "restore rewinds scene state to snapshot depth");
+}
+
 void testUndoStackSnapshotCapture() {
     fuse::editor::UndoStack stack;
     int counter = 0;
@@ -496,6 +580,11 @@ int main() {
     testCommandStackStackDepthRoundTrip();
     testUndoStackDirtyTracking();
     testUndoStackPushAlias();
+    testUndoStackCoalescedOps();
+    testUndoStackSetBaselineState();
+    testUndoStackEmptyStackGuardsDirtyRevision();
+    testUndoStackPushClearsRedoBranch();
+    testUndoStackSnapshotBaselineRoundTrip();
     testUndoStackSnapshotCapture();
     fuse::core::shutdown();
 
