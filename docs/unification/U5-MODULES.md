@@ -42,23 +42,27 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 
 ### Implemented
 
-- Flat behavior tree nodes (`Sequence`, `Selector`, `ConditionDistanceLess`, `ActionSetFlag`)
+- **Node registry** (`NodeRegistry`, `loadTreeFromSpecs`, `loadTreeFromText`) — BadBehaviour `DECLARE_CONOBJECT` pattern without SimObject/Con::
+- Built-in type ids: `bb.sequence`, `bb.selector`, `bb.inverter`, `bb.loop`, `bb.succeed_always`, `bb.root`, `bb.condition.distance_less`, `bb.action.set_flag`, `gb.action.move_toward`
+- Flat behavior tree evaluator with decorator support (Inverter, Loop, SucceedAlways, Root)
 - `BehaviorRuntime`: `buildSnapshots()` → `evaluate()` (`JobScheduler::parallel_for`) → `commit()`
-- Demo tree `makePatrolWhenNearTarget()` — patrol flag when agent within 5 units of target
-- Unit tests: `fuse_ai_tests` (`ctest` name `fuse_ai_behavior_tree`)
+- Demo tree `makePatrolWhenNearTarget()` + registry/text load equivalents
+- UAISK script-only template hooks (`uaisk_template_hooks.hpp`, `Samples/Modules/ai/uaisk-templates/`)
+- Unit tests: `fuse_ai_tests` — registry parity, decorators, text loader, UAISK hooks, parallel runtime
 - Hybrid demo: `demo_hybrid_hud` ticks `BehaviorRuntime` each frame after `HybridComposer::tick`
 
-### Ore extraction backlog (BadBehaviour / GuideBot / UAISK)
+### Ore extraction (BadBehaviour / GuideBot / UAISK)
 
-| Priority | Source path | FUSE destination |
-|----------|-------------|------------------|
-| P0 | `third_party/addons/BadBehaviour/Engine/source/BadBehavior/core/` | Replace flat nodes with ore node registry |
-| P1 | `third_party/addons/BadBehaviour/Engine/source/BadBehavior/decorator/` | Decorators (`Loop`, `Inverter`, …) |
-| P1 | `third_party/addons/BadBehaviour/Engine/source/BadBehavior/leaf/` | Scripted / compiled leaves |
-| P2 | `third_party/addons/GuideBot/guideBotT3D/engine/.../guideBot/` | Navigation helpers (check custom license) |
-| P3 | `third_party/addons/UAISK/.../UAISK/*.cs` | Templates under `Samples/Modules/ai/` only |
+| Status | Source path | FUSE destination |
+|--------|-------------|------------------|
+| ✅ P0 | `third_party/addons/BadBehaviour/Engine/source/BadBehavior/core/` | `node_registry.hpp`, flat `BehaviorNode` |
+| ✅ P1 | `.../BadBehavior/composite/` | `bb.sequence`, `bb.selector` |
+| ✅ P1 | `.../BadBehavior/decorator/` | `bb.inverter`, `bb.loop`, `bb.succeed_always`, `bb.root` |
+| 🚧 P1 | `.../BadBehavior/leaf/` | Scripted/compiled leaves — demo `bb.action.set_flag` only |
+| 🚧 P2 | `third_party/addons/GuideBot/.../guideBot/actionMove.h` | `gb.action.move_toward` stub (custom license) |
+| ✅ P3 | `third_party/addons/UAISK/.../UAISK/*.cs` | Template hooks + `Samples/Modules/ai/uaisk-templates/` |
 
-**Do not compile** from `third_party/addons/*/Engine/` — extract kernels into `Source/FUSE/Modules/ai/`.
+**Do not compile** from `third_party/addons/*/Engine/` — extract kernels into `Source/FUSE/Modules/ai/`. See [Modules/ai/README.md](../../Source/FUSE/Modules/ai/README.md).
 
 ---
 
@@ -125,7 +129,7 @@ ctest --test-dir build-fuse --output-on-failure
 
 | Module | Gate | This PR |
 |--------|------|---------|
-| `fuse_ai` | BT drives 2D + 3D agents in hybrid demo | 🚧 2D HUD agent only; 3D agent stub next |
+| `fuse_ai` | BT drives 2D + 3D agents in hybrid demo | 🚧 registry + decorators landed; 3D agent stub next |
 | `fuse_cinematics` | 30s timeline moves camera + sprite | ⬜ scaffold |
 | `fuse_fx` | AFX on 3D model + 2D sprite | ⬜ scaffold |
 | `fuse_mechanics` | One 3D interactable | ⬜ scaffold |
