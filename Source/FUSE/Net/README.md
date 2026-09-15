@@ -28,7 +28,7 @@ Deterministic rollback and authoritative state-sync scaffolding for Track B7.4. 
 
 ## Snapshot deltas
 
-`compute_snapshot_delta(base, target)` emits `SnapshotDeltaKind::None`, `EntityPatch`, or `Full` depending on how many entity rows changed. `apply_snapshot_delta` reconstructs a target snapshot from a base frame plus delta payload. `StateSyncDeltaBroadcaster` maps authoritative `StateSyncSnapshot` bundles into the same delta path.
+`compute_snapshot_delta(base, target)` emits `SnapshotDeltaKind::None`, `EntityPatch`, or `Full` depending on how many entity rows changed. Entity patches include `SnapshotEcsField` / `SnapshotPhysicsField` masks and a `changed_entity_mask` bitset. `apply_snapshot_delta` reconstructs a target snapshot from a base frame plus delta payload; `apply_snapshot_delta_verified` checks baseline/target checksums. `SnapshotHistoryRing` stores recent snapshots via `RollbackBuffer` and supports `apply_delta_and_store`. `StateSyncDeltaBroadcaster` maps authoritative `StateSyncSnapshot` bundles into the same delta path.
 
 ## Transport stubs
 
