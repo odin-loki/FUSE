@@ -42,6 +42,54 @@ LodTransition compute_lod_transition(f32 distance_to_chunk, u32 max_lod_levels, 
     return result;
 }
 
+f32 clamp_morph_factor(f32 morph_factor) {
+    return std::clamp(morph_factor, 0.f, 1.f);
+}
+
+AdjacentLodPair make_adjacent_lod_pair(const LodTransition& transition, u32 max_lod_levels) {
+    AdjacentLodPair pair{};
+    if (max_lod_levels == 0) {
+        return pair;
+    }
+
+    pair.fine_lod = std::min(transition.lod, max_lod_levels - 1);
+    pair.coarse_lod = std::min(pair.fine_lod + 1, max_lod_levels - 1);
+    pair.morph_factor = clamp_morph_factor(transition.morph_factor);
+    return pair;
+}
+
+vec3 blend_morph_between_lods(vec3 position, const AdjacentLodPair& pair, f32 base_stride) {
+    if (pair.morph_factor <= 0.f || pair.fine_lod == pair.coarse_lod || base_stride <= 0.f) {
+        return position;
+    }
+
+    const vec3 fine = morph_vertex_position(position, pair.fine_lod, 0.f, base_stride);
+    const vec3 coarse = morph_vertex_position(position, pair.coarse_lod, 1.f, base_stride);
+    const f32 t = pair.morph_factor;
+
+    return {fine.x + (coarse.x - fine.x) * t, position.y, fine.z + (coarse.z - fine.z) * t};
+}
+
+LodMeshVertexCounts compute_lod_mesh_vertex_counts(u32 chunk_resolution, u32 lod, u32 max_lod_levels,
+                                                   bool include_skirts, u32 seam_neighbor_lod_delta) {
+    LodMeshVertexCounts counts{};
+    if (chunk_resolution == 0 || max_lod_levels == 0) {
+        return counts;
+    }
+
+    const u32 clamped_lod = std::min(lod, max_lod_levels - 1);
+    const u32 texel_step = static_cast<u32>(1u << std::min(clamped_lod, 31u));
+    const u32 lod_cells = std::max(chunk_resolution / texel_step, 1u);
+    const u32 verts_per_edge = lod_cells + 1;
+
+    counts.grid_vertices = verts_per_edge * verts_per_edge;
+    counts.skirt_vertices = include_skirts ? 4u * verts_per_edge : 0u;
+    counts.seam_vertices =
+        seam_neighbor_lod_delta > 0 ? 4u * seam_neighbor_lod_delta * verts_per_edge : 0u;
+    counts.total_vertices = counts.grid_vertices + counts.skirt_vertices + counts.seam_vertices;
+    return counts;
+}
+
 vec3 morph_vertex_position(vec3 position, u32 lod, f32 morph_factor, f32 base_stride) {
     if (lod == 0 || morph_factor <= 0.f || base_stride <= 0.f) {
         return position;

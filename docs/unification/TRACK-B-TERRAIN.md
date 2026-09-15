@@ -1,6 +1,6 @@
 # Track B — Terrain System (B7.5 deepen)
 
-**Status:** B7.5 deepen — clipmap LOD residency queue + morph factor tests landed  
+**Status:** B7.5 deepen — adjacent LOD morph helpers, skirt/seam vertex counts, residency morph sync  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.5  
 **Source narrative:** [P7.md](../sources/P7.md) §7.5
 
@@ -12,9 +12,12 @@
 |-----------|----------|-------|
 | `TerrainDesc` / `TerrainChunk` | `Source/FUSE/Terrain/include/fuse/terrain/terrain_desc.hpp` | Resolution, world size, LOD count; `morph_factor` + `ChunkResidencyState` per chunk |
 | `Heightfield` | `Source/FUSE/Terrain/include/fuse/terrain/heightfield.hpp` | CPU heightmap, bilinear `sample_height` / `sample_normal` |
-| `LodLevel` / `LodTransition` | `Source/FUSE/Terrain/include/fuse/terrain/lod.hpp` | Distance-based LOD rings + morph band |
+| `LodLevel` / `LodTransition` / `AdjacentLodPair` | `Source/FUSE/Terrain/include/fuse/terrain/lod.hpp` | Distance-based LOD rings + morph band + adjacent LOD pair |
+| `clamp_morph_factor` / `blend_morph_between_lods` | `Source/FUSE/Terrain/src/lod.cpp` | Morph clamp + blend between fine/coarse rings |
+| `compute_lod_mesh_vertex_counts` | `Source/FUSE/Terrain/src/lod.cpp` | CPU stub — grid + skirt + seam vertex budgets per LOD |
 | `morph_vertex_position` | `Source/FUSE/Terrain/src/lod.cpp` | CPU stub — snap XZ toward coarser grid |
-| `LodResidencyQueue` | `lod_residency_queue.hpp/.cpp` | Mutex-backed completion buffer; worker I/O stub via `JobScheduler::submit` |
+| `LodResidencyQueue` | `lod_residency_queue.hpp/.cpp` | Mutex-backed completion buffer; morph snapshot on submit/drain |
+| `capture_morph_snapshot` / `sync_morph_after_residency` | `lod_residency_queue.cpp` | Keep morph in sync across async promotion/demotion |
 | `ChunkGrid` | `Source/FUSE/Terrain/include/fuse/terrain/chunk_grid.hpp` | Clipmap ring LOD update, morph-factor tracking, async residency queue |
 | `sample_height` / `raycast_heightfield` | `Source/FUSE/Terrain/include/fuse/terrain/queries.hpp` | Query APIs for gameplay and physics |
 | `Terrain` | `Source/FUSE/Terrain/include/fuse/terrain/terrain.hpp` | Facade: generate, deform, LOD, visible chunks |
@@ -51,6 +54,18 @@ morphed = lerp(position, round(position / grid) * grid, morph_factor)
 
 Y (height) is preserved — GPU heightmap displacement handles vertical detail later. `ChunkGrid::update_lod` writes `morph_factor` onto each `TerrainChunk` and marks chunks `dirty` when LOD changes or morph is active.
 
+`make_adjacent_lod_pair` exposes the fine/coarse ring pair for a transition; `blend_morph_between_lods` lerps XZ toward the coarser grid using `clamp_morph_factor`.
+
+### Skirt / seam vertex budget (CPU stub)
+
+`compute_lod_mesh_vertex_counts` estimates displaced-grid vertices, four-edge skirts, and optional T-junction seam verts when a neighbor differs by `seam_neighbor_lod_delta`:
+
+| Bucket | Formula (stub) |
+|--------|----------------|
+| `grid_vertices` | `(cells + 1)²` where `cells = chunk_resolution / 2^lod` |
+| `skirt_vertices` | `4 × (cells + 1)` |
+| `seam_vertices` | `4 × seam_neighbor_lod_delta × (cells + 1)` when delta > 0 |
+
 ### LOD residency lifecycle
 
 ```
@@ -60,7 +75,7 @@ Unloaded ──queue──▶ QueuedLoad ──submit──▶ Loading ──dra
    └── drain ◀── Unloading ◀── submit ◀── QueuedUnload
 ```
 
-Game thread owns `TerrainChunk` state. Worker threads only run the `LodResidencyWorkFn` stub (disk read simulation in production). Camera distance drives load/unload with hysteresis (`load_radius` vs `load_radius * 1.25`).
+Game thread owns `TerrainChunk` state. Worker threads only run the `LodResidencyWorkFn` stub (disk read simulation in production). Camera distance drives load/unload with hysteresis (`load_radius` vs `load_radius * 1.25`). Each async request carries a `LodResidencyMorphSnapshot`; `sync_morph_after_residency` reapplies morph when the chunk LOD still matches the snapshot at completion.
 
 ### Async residency queue
 
@@ -137,6 +152,10 @@ ctest --test-dir build --output-on-failure -R fuse_terrain
 | `testHeightfieldSampling` | Bilinear height and flat normal |
 | `testLodSelection` | Distance-based LOD and stride growth |
 | `testLodTransitionMorphBand` | Morph ramp, ring edge, and boundary reset |
+| `testMorphFactorClamp` | `clamp_morph_factor` and snapshot clamp |
+| `testAdjacentLodPair` | Fine/coarse pair + `blend_morph_between_lods` |
+| `testLodMeshVertexCounts` | Grid/skirt/seam vertex budget sanity |
+| `testResidencyMorphSync` | `sync_morph_after_residency` on LOD match/mismatch |
 | `testVertexMorphSnapsToGrid` | Full/half morph, LOD 0 skip, zero morph |
 | `testChunkResidencyStateHelpers` | `is_*_state` predicates |
 | `testLodResidencyQueueStub` | Submit, worker execution, drain |
@@ -157,6 +176,9 @@ ctest --test-dir build --output-on-failure -R fuse_terrain
 - [x] `LodResidencyQueue` JobScheduler async stub
 - [x] `ChunkGrid` game-thread drain applies residency transitions
 - [x] Expanded morph factor tests (ramp, interpolation, boundary)
+- [x] `AdjacentLodPair` + `blend_morph_between_lods` helpers
+- [x] `compute_lod_mesh_vertex_counts` skirt/seam vertex stub
+- [x] Residency queue morph snapshot + `sync_morph_after_residency`
 - [x] `fuse_terrain_b75` CTest target green
 - [x] No owning raw pointers in public FUSE APIs
 

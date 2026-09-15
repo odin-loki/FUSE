@@ -116,6 +116,89 @@ void testLodTransitionMorphBand() {
     expectTrue(farTransition.morph_factor >= 0.f && farTransition.morph_factor <= 1.f, "morph factor clamped");
 }
 
+void testMorphFactorClamp() {
+    expectNear(fuse::terrain::clamp_morph_factor(-0.5f), 0.f, 0.001f, "negative morph clamps to zero");
+    expectNear(fuse::terrain::clamp_morph_factor(0.f), 0.f, 0.001f, "zero morph unchanged");
+    expectNear(fuse::terrain::clamp_morph_factor(0.42f), 0.42f, 0.001f, "in-range morph unchanged");
+    expectNear(fuse::terrain::clamp_morph_factor(1.f), 1.f, 0.001f, "unity morph unchanged");
+    expectNear(fuse::terrain::clamp_morph_factor(1.5f), 1.f, 0.001f, "above-one morph clamps to one");
+
+    const fuse::terrain::LodResidencyMorphSnapshot snapshot =
+        fuse::terrain::capture_morph_snapshot(2, 2.f);
+    expectEq(snapshot.lod, 2u, "snapshot preserves lod");
+    expectNear(snapshot.morph_factor, 1.f, 0.001f, "snapshot clamps morph factor");
+}
+
+void testAdjacentLodPair() {
+    const fuse::terrain::TerrainDesc desc = makeTestDesc();
+
+    const fuse::terrain::LodTransition transition = fuse::terrain::compute_lod_transition(7.f, desc.lod_levels);
+    const fuse::terrain::AdjacentLodPair pair = fuse::terrain::make_adjacent_lod_pair(transition, desc.lod_levels);
+    expectEq(pair.fine_lod, transition.lod, "adjacent pair fine lod matches transition");
+    expectEq(pair.coarse_lod, pair.fine_lod + 1, "adjacent pair coarse lod is fine + 1");
+    expectTrue(pair.morph_factor >= 0.f && pair.morph_factor <= 1.f, "adjacent pair morph clamped");
+
+    const fuse::terrain::LodTransition maxTransition =
+        fuse::terrain::compute_lod_transition(1000.f, desc.lod_levels);
+    const fuse::terrain::AdjacentLodPair maxPair =
+        fuse::terrain::make_adjacent_lod_pair(maxTransition, desc.lod_levels);
+    expectEq(maxPair.fine_lod, desc.lod_levels - 1, "max ring clamps fine lod");
+    expectEq(maxPair.coarse_lod, desc.lod_levels - 1, "max ring coarse lod stays at finest available");
+
+    const fuse::f32 base_stride = desc.world_size / static_cast<fuse::f32>(desc.chunk_resolution);
+    const fuse::terrain::vec3 original{base_stride * 1.5f, 3.f, base_stride * 2.5f};
+    const fuse::terrain::vec3 blended = fuse::terrain::blend_morph_between_lods(original, pair, base_stride);
+    const fuse::terrain::vec3 morphed =
+        fuse::terrain::morph_vertex_position(original, pair.coarse_lod, pair.morph_factor, base_stride);
+    expectNear(blended.x, morphed.x, 0.01f, "blend matches coarse morph at same factor");
+    expectNear(blended.z, morphed.z, 0.01f, "blend matches coarse morph Z");
+}
+
+void testLodMeshVertexCounts() {
+    const fuse::terrain::TerrainDesc desc = makeTestDesc();
+
+    const fuse::terrain::LodMeshVertexCounts lod0 =
+        fuse::terrain::compute_lod_mesh_vertex_counts(desc.chunk_resolution, 0, desc.lod_levels);
+    expectEq(lod0.grid_vertices, (desc.chunk_resolution + 1) * (desc.chunk_resolution + 1),
+             "LOD 0 grid vertex count");
+    expectEq(lod0.skirt_vertices, 4u * (desc.chunk_resolution + 1), "LOD 0 skirt vertex count");
+    expectEq(lod0.seam_vertices, 0u, "LOD 0 has no seam verts without neighbor delta");
+    expectEq(lod0.total_vertices, lod0.grid_vertices + lod0.skirt_vertices + lod0.seam_vertices,
+             "LOD 0 total vertex count");
+
+    const fuse::terrain::LodMeshVertexCounts lod1 =
+        fuse::terrain::compute_lod_mesh_vertex_counts(desc.chunk_resolution, 1, desc.lod_levels);
+    const fuse::u32 lod1_edge = desc.chunk_resolution / 2u + 1u;
+    expectEq(lod1.grid_vertices, lod1_edge * lod1_edge, "LOD 1 grid vertex count halves stride");
+    expectTrue(lod1.total_vertices < lod0.total_vertices, "coarser LOD has fewer total vertices");
+
+    const fuse::terrain::LodMeshVertexCounts withSeam =
+        fuse::terrain::compute_lod_mesh_vertex_counts(desc.chunk_resolution, 0, desc.lod_levels, true, 1u);
+    expectTrue(withSeam.seam_vertices > 0u, "neighbor LOD delta adds seam vertices");
+    expectEq(withSeam.total_vertices, withSeam.grid_vertices + withSeam.skirt_vertices + withSeam.seam_vertices,
+             "seam total includes all buckets");
+}
+
+void testResidencyMorphSync() {
+    fuse::terrain::TerrainChunk chunk{};
+    chunk.lod = 1;
+    chunk.morph_factor = 0.75f;
+    chunk.loaded = true;
+    chunk.residency = fuse::terrain::ChunkResidencyState::Resident;
+
+    const fuse::terrain::LodResidencyMorphSnapshot snapshot =
+        fuse::terrain::capture_morph_snapshot(chunk.lod, chunk.morph_factor);
+    chunk.morph_factor = 0.f;
+    fuse::terrain::sync_morph_after_residency(chunk, snapshot);
+    expectNear(chunk.morph_factor, 0.75f, 0.001f, "morph restored when lod matches snapshot");
+    expectTrue(chunk.dirty, "restored morph marks chunk dirty");
+
+    chunk.lod = 2;
+    chunk.morph_factor = 0.f;
+    fuse::terrain::sync_morph_after_residency(chunk, snapshot);
+    expectNear(chunk.morph_factor, 0.f, 0.001f, "morph not applied when lod diverged during async I/O");
+}
+
 void testVertexMorphSnapsToGrid() {
     const fuse::terrain::TerrainDesc desc = makeTestDesc();
     const fuse::terrain::LodLevel lod1 = fuse::terrain::make_lod_level(desc, 1);
@@ -171,6 +254,7 @@ void testLodResidencyQueueStub() {
         request.chunk_index = 5;
         request.kind = fuse::terrain::LodResidencyRequestKind::Load;
         request.priority = 12.f;
+        request.morph_snapshot = fuse::terrain::capture_morph_snapshot(1, 0.5f);
 
         const bool submitted = queue.submit(request, [&](fuse::u32 chunk_index,
                                                          fuse::terrain::LodResidencyRequestKind kind) {
@@ -187,6 +271,9 @@ void testLodResidencyQueueStub() {
         expectEq(queue.drain_completed(completed), 1u, "drain returns completed request");
         expectTrue(worker_ran.load(), "worker stub ran on scheduler thread");
         expectTrue(completed[0].success, "completed request reports success");
+        expectEq(completed[0].morph_snapshot.lod, 1u, "completed request carries morph snapshot lod");
+        expectNear(completed[0].morph_snapshot.morph_factor, 0.5f, 0.001f,
+                   "completed request carries morph snapshot factor");
         expectEq(queue.in_flight_count(), 0u, "in-flight count returns to zero");
     });
 }
@@ -317,6 +404,10 @@ int main() {
     testHeightfieldSampling();
     testLodSelection();
     testLodTransitionMorphBand();
+    testMorphFactorClamp();
+    testAdjacentLodPair();
+    testLodMeshVertexCounts();
+    testResidencyMorphSync();
     testVertexMorphSnapsToGrid();
     testChunkResidencyStateHelpers();
     testLodResidencyQueueStub();
