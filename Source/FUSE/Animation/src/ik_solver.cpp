@@ -40,6 +40,14 @@ f32 vec3_distance(const vec3& a, const vec3& b) {
     return vec3_length(vec3_sub(a, b));
 }
 
+vec3 pick_fallback_bend_axis(const vec3& dir) {
+    vec3 bendAxis = vec3_cross(dir, {0.f, 0.f, 1.f, 0.f});
+    if (vec3_length(bendAxis) < 1e-6f) {
+        bendAxis = vec3_cross(dir, {0.f, 1.f, 0.f, 0.f});
+    }
+    return vec3_normalize(bendAxis);
+}
+
 void set_bone_translation(Pose& pose, u32 bone_idx, const vec3& position) {
     if (bone_idx >= pose.bone_world_transforms.size()) {
         return;
@@ -63,58 +71,91 @@ vec3 bone_translation_soa(const PoseSoA& pose, u32 bone_idx) {
     return mat4_translation(pose.bone_world_transforms[bone_idx]);
 }
 
+void write_local_position(PoseSoA& pose, u32 bone_idx, const vec3& world_position, const Skeleton& skel) {
+    if (bone_idx >= pose.bone_count) {
+        return;
+    }
+
+    const s32 parent = skel.bones[bone_idx].parent_index;
+    if (parent >= 0 && static_cast<u32>(parent) < pose.bone_count) {
+        const vec3 parentWorld = bone_translation_soa(pose, static_cast<u32>(parent));
+        pose.local_positions[bone_idx] = vec3_sub(world_position, parentWorld);
+    } else {
+        pose.local_positions[bone_idx] = world_position;
+    }
+}
+
+} // namespace
+
+vec3 normalize_ik_pole_vector(const vec3& pole, const vec3& root_to_target) {
+    const vec3 dir = vec3_normalize(root_to_target);
+    if (vec3_length(pole) < 1e-6f) {
+        return pick_fallback_bend_axis(dir);
+    }
+
+    vec3 bendAxis = vec3_cross(dir, pole);
+    if (vec3_length(bendAxis) < 1e-6f) {
+        return pick_fallback_bend_axis(dir);
+    }
+    return vec3_normalize(bendAxis);
+}
+
+vec3 clamp_two_bone_target(const vec3& root,
+                            const vec3& target,
+                            f32 upper_len,
+                            f32 lower_len,
+                            f32 reach_epsilon) {
+    vec3 delta = vec3_sub(target, root);
+    f32 dist = vec3_length(delta);
+    const f32 maxReach = upper_len + lower_len - reach_epsilon;
+
+    if (dist > maxReach) {
+        const vec3 dir = vec3_normalize(delta);
+        return {
+            root.x + dir.x * maxReach,
+            root.y + dir.y * maxReach,
+            root.z + dir.z * maxReach,
+            0.f,
+        };
+    }
+
+    if (dist < reach_epsilon) {
+        return {
+            root.x,
+            root.y + reach_epsilon,
+            root.z,
+            0.f,
+        };
+    }
+
+    return target;
+}
+
 bool solve_two_bone_positions(const vec3& root,
-                              const vec3& mid_bind,
-                              const vec3& end_bind,
-                              const vec3& target,
-                              const vec3& pole_vector,
-                              f32 reach_epsilon,
-                              vec3& out_mid,
-                              vec3& out_end) {
+                               const vec3& mid_bind,
+                               const vec3& end_bind,
+                               const vec3& target,
+                               const vec3& pole_vector,
+                               f32 reach_epsilon,
+                               vec3& out_mid,
+                               vec3& out_end) {
     const f32 upperLen = vec3_distance(root, mid_bind);
     const f32 lowerLen = vec3_distance(mid_bind, end_bind);
     if (upperLen < 1e-6f || lowerLen < 1e-6f) {
         return false;
     }
 
-    vec3 delta = vec3_sub(target, root);
-    f32 dist = vec3_length(delta);
-    const f32 maxReach = upperLen + lowerLen - reach_epsilon;
-
-    vec3 effectiveTarget = target;
-    if (dist > maxReach) {
-        const vec3 dir = vec3_normalize(delta);
-        effectiveTarget = {
-            root.x + dir.x * maxReach,
-            root.y + dir.y * maxReach,
-            root.z + dir.z * maxReach,
-            0.f,
-        };
-        dist = maxReach;
-    }
-    if (dist < reach_epsilon) {
-        dist = reach_epsilon;
-        delta = {0.f, reach_epsilon, 0.f, 0.f};
-    } else {
-        delta = vec3_sub(effectiveTarget, root);
-        dist = vec3_length(delta);
-    }
-
+    const vec3 effectiveTarget = clamp_two_bone_target(root, target, upperLen, lowerLen, reach_epsilon);
+    vec3 delta = vec3_sub(effectiveTarget, root);
+    const f32 dist = vec3_length(delta);
     const vec3 dir = vec3_normalize(delta);
+
     const f32 cosShoulder =
         (upperLen * upperLen + dist * dist - lowerLen * lowerLen) / (2.f * upperLen * dist);
     const f32 clampedCos = std::clamp(cosShoulder, -1.f, 1.f);
     const f32 shoulderSin = std::sqrt(std::max(0.f, 1.f - clampedCos * clampedCos));
 
-    vec3 bendAxis = vec3_cross(dir, pole_vector);
-    if (vec3_length(bendAxis) < 1e-6f) {
-        bendAxis = vec3_cross(dir, {0.f, 0.f, 1.f, 0.f});
-        if (vec3_length(bendAxis) < 1e-6f) {
-            bendAxis = vec3_cross(dir, {0.f, 1.f, 0.f, 0.f});
-        }
-    }
-    bendAxis = vec3_normalize(bendAxis);
-
+    const vec3 bendAxis = normalize_ik_pole_vector(pole_vector, delta);
     const vec3 secondaryAxis = vec3_normalize(vec3_cross(bendAxis, dir));
     const vec3 upperDir = {
         dir.x * clampedCos + secondaryAxis.x * shoulderSin,
@@ -133,24 +174,22 @@ bool solve_two_bone_positions(const vec3& root,
     return true;
 }
 
-void write_local_position(PoseSoA& pose, u32 bone_idx, const vec3& world_position, const Skeleton& skel) {
-    if (bone_idx >= pose.bone_count) {
-        return;
+bool FABRIKChain::has_valid_chain(const Skeleton& skel) const {
+    if (bone_indices.empty() || skel.bones.empty()) {
+        return false;
     }
 
-    const s32 parent = skel.bones[bone_idx].parent_index;
-    if (parent >= 0 && static_cast<u32>(parent) < pose.bone_count) {
-        const vec3 parentWorld = bone_translation_soa(pose, static_cast<u32>(parent));
-        pose.local_positions[bone_idx] = vec3_sub(world_position, parentWorld);
-    } else {
-        pose.local_positions[bone_idx] = world_position;
+    const u32 boneCount = static_cast<u32>(skel.bones.size());
+    for (u32 boneIdx : bone_indices) {
+        if (boneIdx >= boneCount) {
+            return false;
+        }
     }
+    return true;
 }
 
-} // namespace
-
 void FABRIKChain::solve(Pose& pose, const Skeleton& skel) {
-    if (bone_indices.empty() || skel.bones.empty()) {
+    if (!has_valid_chain(skel)) {
         return;
     }
 
@@ -207,6 +246,17 @@ bool TwoBoneIK::has_valid_chain(const Skeleton& skel) const {
     return true;
 }
 
+bool TwoBoneIK::has_degenerate_segments(const Pose& pose) const {
+    if (root_bone >= pose.bone_count || mid_bone >= pose.bone_count || end_bone >= pose.bone_count) {
+        return true;
+    }
+
+    const vec3 root = bone_translation(pose, root_bone);
+    const vec3 mid = bone_translation(pose, mid_bone);
+    const vec3 end = bone_translation(pose, end_bone);
+    return vec3_distance(root, mid) < 1e-6f || vec3_distance(mid, end) < 1e-6f;
+}
+
 f32 TwoBoneIK::max_reach(const Pose& pose) const {
     if (root_bone >= pose.bone_count || mid_bone >= pose.bone_count || end_bone >= pose.bone_count) {
         return 0.f;
@@ -220,8 +270,18 @@ f32 TwoBoneIK::max_reach(const Pose& pose) const {
     return upperLen + lowerLen - reach_epsilon;
 }
 
+vec3 TwoBoneIK::effective_pole_vector(const Pose& pose) const {
+    if (root_bone >= pose.bone_count) {
+        return normalize_ik_pole_vector(pole_vector, {0.f, 1.f, 0.f, 0.f});
+    }
+
+    const vec3 root = bone_translation(pose, root_bone);
+    const vec3 rootToTarget = vec3_sub(target, root);
+    return normalize_ik_pole_vector(pole_vector, rootToTarget);
+}
+
 bool TwoBoneIK::solve(Pose& pose, const Skeleton& skel) {
-    if (!has_valid_chain(skel)) {
+    if (!has_valid_chain(skel) || has_degenerate_segments(pose)) {
         return false;
     }
 
@@ -251,6 +311,11 @@ bool TwoBoneIK::solve(PoseSoA& pose, const Skeleton& skel) {
 
     if (pose.bone_count != static_cast<u32>(skel.bones.size()) || pose.local_positions.empty()) {
         pose = PoseSoA::from_bind_pose(skel);
+    }
+
+    Pose aosPose = pose.to_pose();
+    if (has_degenerate_segments(aosPose)) {
+        return false;
     }
 
     const vec3 root = bone_translation_soa(pose, root_bone);

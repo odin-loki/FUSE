@@ -949,6 +949,111 @@ void testRetargetTranslationScale() {
     expectNear(targetPose.local_positions[1].y, 4.f, 1e-4f, "retarget translation scale halves mapped translation");
 }
 
+void testTwoBoneIKSolveHelpers() {
+    const fuse::animation::vec3 root = {0.f, 0.f, 0.f, 0.f};
+    const fuse::animation::vec3 mid = {0.f, 1.f, 0.f, 0.f};
+    const fuse::animation::vec3 end = {0.f, 2.f, 0.f, 0.f};
+    const fuse::animation::vec3 target = {10.f, 0.f, 0.f, 0.f};
+    const fuse::f32 reachEpsilon = 0.001f;
+
+    const fuse::animation::vec3 clamped =
+        fuse::animation::clamp_two_bone_target(root, target, 1.f, 1.f, reachEpsilon);
+    const fuse::f32 clampedDist = std::sqrt(clamped.x * clamped.x + clamped.y * clamped.y + clamped.z * clamped.z);
+    expectNear(clampedDist, 1.999f, 0.01f, "clamp_two_bone_target limits unreachable target");
+
+    fuse::animation::vec3 solvedMid{};
+    fuse::animation::vec3 solvedEnd{};
+    expectTrue(fuse::animation::solve_two_bone_positions(root, mid, end, {1.f, 1.f, 0.f, 0.f}, {0.f, 0.f, 1.f, 0.f},
+                                                         reachEpsilon, solvedMid, solvedEnd),
+               "solve_two_bone_positions helper reaches reachable target");
+    const fuse::f32 endError = std::sqrt((solvedEnd.x - 1.f) * (solvedEnd.x - 1.f) + (solvedEnd.y - 1.f) * (solvedEnd.y - 1.f));
+    expectTrue(endError < 0.05f, "solve_two_bone_positions helper end effector error bound");
+
+    fuse::animation::vec3 collapsedMid = root;
+    expectTrue(!fuse::animation::solve_two_bone_positions(root, collapsedMid, end, {1.f, 1.f, 0.f, 0.f},
+                                                          {0.f, 0.f, 1.f, 0.f}, reachEpsilon, solvedMid, solvedEnd),
+               "solve_two_bone_positions rejects zero-length upper segment");
+}
+
+void testTwoBoneIKZeroPoleVector() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+    fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
+
+    fuse::animation::TwoBoneIK ik;
+    ik.root_bone = 0;
+    ik.mid_bone = 1;
+    ik.end_bone = 2;
+    ik.target = {1.f, 1.f, 0.f, 0.f};
+    ik.pole_vector = {0.f, 0.f, 0.f, 0.f};
+    expectTrue(ik.solve(pose, skel), "two bone ik zero pole vector uses fallback bend axis");
+
+    const fuse::animation::vec3 bendAxis = ik.effective_pole_vector(pose);
+    const fuse::f32 axisLen = std::sqrt(bendAxis.x * bendAxis.x + bendAxis.y * bendAxis.y + bendAxis.z * bendAxis.z);
+    expectNear(axisLen, 1.f, 1e-4f, "effective_pole_vector returns unit axis for zero pole hint");
+}
+
+void testTwoBoneIKDegenerateSegments() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+    fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
+    pose.bone_world_transforms[1].data[12] = pose.bone_world_transforms[0].data[12];
+    pose.bone_world_transforms[1].data[13] = pose.bone_world_transforms[0].data[13];
+    pose.bone_world_transforms[1].data[14] = pose.bone_world_transforms[0].data[14];
+
+    fuse::animation::TwoBoneIK ik;
+    ik.root_bone = 0;
+    ik.mid_bone = 1;
+    ik.end_bone = 2;
+    ik.target = {1.f, 1.f, 0.f, 0.f};
+    expectTrue(ik.has_degenerate_segments(pose), "two bone ik detects collapsed upper segment");
+    expectTrue(!ik.solve(pose, skel), "two bone ik rejects degenerate limb segments");
+}
+
+void testFabrikChainGuards() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
+
+    fuse::animation::FABRIKChain emptyChain;
+    expectTrue(!emptyChain.has_valid_chain(skel), "fabrik rejects empty bone index list");
+
+    fuse::animation::FABRIKChain outOfRange;
+    outOfRange.bone_indices = {0, 99};
+    expectTrue(!outOfRange.has_valid_chain(skel), "fabrik rejects out of range bone indices");
+
+    const fuse::f32 endYBefore = pose.bone_world_transforms[1].data[13];
+    outOfRange.target = {0.f, 5.f, 0.f, 0.f};
+    outOfRange.solve(pose, skel);
+    expectNear(pose.bone_world_transforms[1].data[13], endYBefore, 1e-4f,
+               "fabrik solve no-ops when chain indices are invalid");
+}
+
+void testRetargetAddBoneMapping() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::RetargetMap map{};
+    map.source_bone_count = skel.bone_count;
+    map.target_bone_count = skel.bone_count;
+
+    expectTrue(map.add_bone_mapping(0, 0), "retarget add_bone_mapping accepts first entry");
+    expectTrue(map.is_source_mapped(0), "retarget is_source_mapped true after mapping");
+    expectTrue(map.is_target_mapped(0), "retarget is_target_mapped true after mapping");
+    expectTrue(!map.add_bone_mapping(1, 0), "retarget add_bone_mapping rejects duplicate target bone");
+    expectTrue(!map.add_bone_mapping(99, 1), "retarget add_bone_mapping rejects out of range source");
+    expectTrue(map.add_bone_mapping(1, 1, 0.5f), "retarget add_bone_mapping accepts second entry");
+    expectTrue(map.is_valid(), "retarget manual map is valid after add_bone_mapping");
+    expectTrue(map.mapped_bone_count() == 2u, "retarget manual map records two mappings");
+}
+
+void testRetargetClear() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::RetargetMap map = fuse::animation::RetargetMap::build_identity(skel);
+    expectTrue(map.is_valid(), "retarget identity map valid before clear");
+
+    map.clear();
+    expectTrue(!map.is_valid(), "retarget clear invalidates map");
+    expectTrue(map.mapped_bone_count() == 0u, "retarget clear drops all mappings");
+    expectTrue(map.source_bone_count == 0u, "retarget clear resets source bone count");
+    expectTrue(!map.is_target_mapped(0), "retarget is_target_mapped false after clear");
+}
+
 void testBlendPoseSoAReuse() {
     const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
     fuse::animation::PoseSoA poseA = fuse::animation::PoseSoA::from_bind_pose(skel);
@@ -1485,6 +1590,12 @@ int main() {
     testRetargetIdentity();
     testRetargetFindTargetBone();
     testRetargetTranslationScale();
+    testTwoBoneIKSolveHelpers();
+    testTwoBoneIKZeroPoleVector();
+    testTwoBoneIKDegenerateSegments();
+    testFabrikChainGuards();
+    testRetargetAddBoneMapping();
+    testRetargetClear();
     testEmptyBlendSpace1D();
     testEmptyBlendSpace2D();
     testEmptyStateMachine();

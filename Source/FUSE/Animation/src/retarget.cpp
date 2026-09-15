@@ -15,6 +15,39 @@ bool RetargetMap::is_valid() const {
     return !bone_map.empty();
 }
 
+void RetargetMap::clear() {
+    bone_map.clear();
+    source_bone_count = 0;
+    target_bone_count = 0;
+}
+
+bool RetargetMap::add_bone_mapping(u32 source_bone, u32 target_bone, f32 translation_scale) {
+    if (source_bone_count > 0 && source_bone >= source_bone_count) {
+        return false;
+    }
+    if (target_bone_count > 0 && target_bone >= target_bone_count) {
+        return false;
+    }
+    if (is_target_mapped(target_bone)) {
+        return false;
+    }
+
+    RetargetBoneEntry entry{};
+    entry.source_bone = source_bone;
+    entry.target_bone = target_bone;
+    entry.translation_scale = translation_scale;
+    bone_map.push_back(entry);
+    return true;
+}
+
+bool RetargetMap::is_source_mapped(u32 source_bone) const {
+    return find_target_bone(source_bone) >= 0;
+}
+
+bool RetargetMap::is_target_mapped(u32 target_bone) const {
+    return find_source_bone(target_bone) >= 0;
+}
+
 s32 RetargetMap::find_source_bone(u32 target_bone) const {
     for (const RetargetBoneEntry& entry : bone_map) {
         if (entry.target_bone == target_bone) {
