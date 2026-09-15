@@ -33,9 +33,12 @@ f32 luminance_to_ev(f32 luminance, f32 target_luminance);
 f32 ev_to_luminance(f32 ev, f32 target_luminance);
 f32 compute_target_ev(f32 measured_luminance, const AutoExposureParams& params);
 f32 clamp_ev(f32 ev, const AutoExposureParams& params);
+bool auto_exposure_ev_anchor_valid(f32 ev, const AutoExposureParams& params);
 void reset_auto_exposure_state(AutoExposureState& state);
 /// Reset temporal state while preserving a scene-load EV anchor (B5.10 deepen).
 void reset_auto_exposure_state_to(AutoExposureState& state, f32 ev = 0.f);
+/// Reset temporal state with EV anchor clamped to `AutoExposureParams` range (B5.10 deepen).
+void reset_auto_exposure_state_to_clamped(AutoExposureState& state, f32 ev, const AutoExposureParams& params);
 f32 ema_alpha_for_direction(bool brightening, const AutoExposureParams& params);
 bool is_brightening_luminance(f32 measured_luminance, f32 reference_luminance);
 f32 ema_blend(f32 previous, f32 measured, f32 alpha);
@@ -52,6 +55,9 @@ struct LuminanceHistogramParams {
     f32 max_log_luminance = 8.f;
     f32 metering_percentile = 0.5f;
 };
+
+/// True when histogram binning and percentile knobs are usable (B5.10 deepen).
+bool luminance_histogram_params_valid(const LuminanceHistogramParams& params);
 
 class LuminanceHistogram {
 public:
@@ -79,16 +85,22 @@ private:
     u32 m_sampleCount = 0;
 };
 
+void reset_luminance_histogram(LuminanceHistogram& histogram);
+
 /// Batch histogram accumulation helpers (B5.10 deepen).
 namespace histogram_util {
 /// True when a sample buffer can contribute metering (non-null and non-empty).
 bool hasMeteringSamples(const fuse::math::Vec3* samples, u32 count);
+/// True when a histogram has accumulated samples (B5.10 deepen).
+bool hasMeteringHistogram(const LuminanceHistogram& histogram);
 void accumulateSamples(LuminanceHistogram& histogram, const fuse::math::Vec3* samples, u32 count);
 f32 measurePercentile(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
                       f32 percentile);
 /// Percentile metering from samples; returns 0 when `count == 0` (B5.10 deepen).
 f32 meterFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
                      f32 percentile);
+/// Percentile metering from histogram; returns 0 when empty (B5.10 deepen).
+f32 meterFromHistogram(const LuminanceHistogram& histogram, f32 percentile);
 } // namespace histogram_util
 
 /// CPU histogram-free exposure meter stub (CUDA reduction deferred).
@@ -96,6 +108,7 @@ class ExposureMeter {
 public:
     void reset();
     void accumulate(const fuse::math::Vec3& rgb);
+    bool isEmpty() const { return m_sampleCount == 0; }
     f32 averageLuminance() const;
     u32 sampleCount() const { return m_sampleCount; }
 
@@ -105,6 +118,8 @@ private:
     f64 m_luminanceSum = 0.0;
     u32 m_sampleCount = 0;
 };
+
+void reset_exposure_meter(ExposureMeter& meter);
 
 /// Host-side auto-exposure pass stub (CUDA histogram deferred).
 class AutoExposure {

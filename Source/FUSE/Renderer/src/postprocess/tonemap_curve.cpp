@@ -88,6 +88,22 @@ bool tonemap_curve_preserves_black(const TonemapCurveParams& params, f32 epsilon
     return black <= epsilon;
 }
 
+bool tonemap_curve_params_valid(const TonemapCurveParams& params) {
+    if (!params.enabled) {
+        return true;
+    }
+    if (params.gamma <= 0.f) {
+        return false;
+    }
+    if (params.kind == TonemapCurveKind::Reinhard && params.reinhard.white_point <= 0.f) {
+        return false;
+    }
+    if (params.kind == TonemapCurveKind::ACES && params.aces.contrast < 0.f) {
+        return false;
+    }
+    return true;
+}
+
 bool tonemap_curve_endpoints_valid(const TonemapCurveEndpoints& endpoints, f32 epsilon) {
     if (endpoints.black_output < 0.f || endpoints.black_output > epsilon) {
         return false;
@@ -99,6 +115,12 @@ bool tonemap_curve_endpoints_valid(const TonemapCurveEndpoints& endpoints, f32 e
 }
 
 bool tonemap_curve_has_valid_endpoints(const TonemapCurveParams& params, f32 white_input, f32 epsilon) {
+    if (!params.enabled) {
+        return true;
+    }
+    if (!tonemap_curve_params_valid(params)) {
+        return false;
+    }
     const TonemapCurveEndpoints endpoints = evaluate_tonemap_curve_endpoints(params, white_input);
     return tonemap_curve_endpoints_valid(endpoints, epsilon);
 }
