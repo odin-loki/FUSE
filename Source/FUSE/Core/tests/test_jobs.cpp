@@ -91,18 +91,18 @@ void testCooperativeWorkerWait() {
 
 void testParallelForMatchesSerial() {
     withScheduler(4, [&] {
-        fuse::u32 parallelSum = 0;
+        std::atomic<fuse::u32> parallelSum{0};
         fuse::u32 serialSum = 0;
 
         fuse::jobs::parallel_for(0u, 256u, 8u, [&parallelSum](fuse::u32 i) {
-            parallelSum += i;
+            parallelSum.fetch_add(i, std::memory_order_relaxed);
         });
 
         for (fuse::u32 i = 0; i < 256u; ++i) {
             serialSum += i;
         }
 
-        expectEq(parallelSum, serialSum, "parallel_for sum matches serial");
+        expectEq(parallelSum.load(std::memory_order_relaxed), serialSum, "parallel_for sum matches serial");
     });
 }
 

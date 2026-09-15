@@ -16,3 +16,22 @@ target_compile_definitions(fuse_shader_pipeline PRIVATE
     FUSE_SHADER_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/Source/FUSE/Renderer/shaders/fixtures"
 )
 add_test(NAME fuse_shader_pipeline COMMAND fuse_shader_pipeline)
+
+add_executable(fuse_cuda_interop test_cuda_interop.cpp)
+target_link_libraries(fuse_cuda_interop PRIVATE fuse_rhi)
+add_test(NAME fuse_cuda_interop COMMAND fuse_cuda_interop)
+
+add_executable(fuse_graphics_pipeline test_graphics_pipeline.cpp)
+target_link_libraries(fuse_graphics_pipeline PRIVATE fuse_rhi)
+target_compile_definitions(fuse_graphics_pipeline PRIVATE
+    FUSE_SHADER_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/Source/FUSE/Renderer/shaders/fixtures"
+)
+add_test(NAME fuse_graphics_pipeline COMMAND fuse_graphics_pipeline)
+
+add_executable(fuse_render_graph test_render_graph.cpp)
+target_link_libraries(fuse_render_graph PRIVATE fuse_rhi)
+add_test(NAME fuse_render_graph COMMAND fuse_render_graph)
+
+add_executable(fuse_composite_pass test_composite_pass.cpp)
+target_link_libraries(fuse_composite_pass PRIVATE fuse_rhi)
+add_test(NAME fuse_composite_pass COMMAND fuse_composite_pass)

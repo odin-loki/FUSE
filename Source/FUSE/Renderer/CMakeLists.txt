@@ -1,7 +1,10 @@
 # fuse_rhi — Track B Vulkan bootstrap + render command list (B2.1) + shader scaffold (B2.4)
 
 set(FUSE_RHI_PUBLIC_HEADERS
+    include/fuse/renderer/command_buffer.hpp
+    include/fuse/renderer/composite_pass.hpp
     include/fuse/renderer/render_command_list.hpp
+    include/fuse/renderer/render_graph.hpp
     include/fuse/renderer/rhi_context.hpp
     include/fuse/renderer/resources.hpp
     include/fuse/renderer/resource_manager.hpp
@@ -15,13 +18,22 @@ set(FUSE_RHI_PUBLIC_HEADERS
     include/fuse/renderer/vk/device.hpp
     include/fuse/renderer/vk/frame.hpp
     include/fuse/renderer/vk/instance.hpp
+    include/fuse/renderer/vk/graphics_pipeline.hpp
     include/fuse/renderer/vk/pipeline_layout.hpp
+    include/fuse/renderer/vk/raster_path.hpp
+    include/fuse/renderer/vk/render_pass.hpp
     include/fuse/renderer/vk/surface.hpp
     include/fuse/renderer/vk/swapchain.hpp
+    include/fuse/renderer/cuda/interop.hpp
+    include/fuse/renderer/cuda/vk_sync.hpp
+    include/fuse/renderer/cuda/stream_manager.hpp
 )
 
 set(FUSE_RHI_SOURCES
+    src/command_buffer.cpp
+    src/composite_pass.cpp
     src/render_command_list.cpp
+    src/render_graph.cpp
     src/resource_manager.cpp
     src/rhi_context.cpp
     src/shader/shader_compiler.cpp
@@ -33,9 +45,15 @@ set(FUSE_RHI_SOURCES
     src/vk/device.cpp
     src/vk/frame.cpp
     src/vk/instance.cpp
+    src/vk/graphics_pipeline.cpp
     src/vk/pipeline_layout.cpp
+    src/vk/raster_path.cpp
+    src/vk/render_pass.cpp
     src/vk/surface.cpp
     src/vk/swapchain.cpp
+    src/cuda/interop.cpp
+    src/cuda/vk_sync.cpp
+    src/cuda/stream_manager.cpp
 )
 
 add_library(fuse_rhi STATIC
@@ -52,6 +70,9 @@ target_include_directories(fuse_rhi
 
 target_link_libraries(fuse_rhi PUBLIC fuse_core)
 target_compile_features(fuse_rhi PUBLIC cxx_std_17)
+target_compile_definitions(fuse_rhi PRIVATE
+    FUSE_SHADER_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/Source/FUSE/Renderer/shaders/fixtures"
+)
 
 # Optional VMA — stub allocator when header not vendored.
 set(FUSE_VMA_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/third_party/VulkanMemoryAllocator/include")
@@ -69,6 +90,11 @@ if(FUSE_VULKAN_BACKEND)
     message(STATUS "FUSE: fuse_rhi using Vulkan loader")
 else()
     message(STATUS "FUSE: fuse_rhi built in stub mode (Vulkan loader not found)")
+endif()
+
+if(FUSE_CUDA_BACKEND)
+    target_compile_definitions(fuse_rhi PUBLIC FUSE_HAS_CUDA=1)
+    target_link_libraries(fuse_rhi PUBLIC CUDA::cudart)
 endif()
 
 option(FUSE_SHADER_GLSLANG "Enable runtime glslang shader compilation in fuse_rhi (optional; CI uses offline .spv fixtures)" OFF)
