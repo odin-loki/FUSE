@@ -9,6 +9,7 @@ set(FUSE_AUDIO_PUBLIC_HEADERS
     include/fuse/audio/audio_registry.hpp
     include/fuse/audio/attenuation.hpp
     include/fuse/audio/audio_bus.hpp
+    include/fuse/audio/binaural_pan.hpp
     include/fuse/audio/conv_reverb_cpu.hpp
     include/fuse/audio/math.hpp
     include/fuse/audio/occlusion.hpp
@@ -19,6 +20,7 @@ set(FUSE_AUDIO_PUBLIC_HEADERS
 
 set(FUSE_AUDIO_SOURCES
     src/attenuation.cpp
+    src/binaural_pan.cpp
     src/audio_bus.cpp
     src/audio_backend.cpp
     src/audio_clip.cpp
