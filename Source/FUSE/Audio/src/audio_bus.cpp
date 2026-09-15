@@ -56,9 +56,14 @@ float AudioBusMixer::routed_bus_gain(AudioBus bus) const {
 
     float gain = bus_gain(bus);
     AudioBus current = bus_parent(bus);
+    u32 hops = 0;
     while (current != AudioBus::Master) {
         gain *= bus_gain(current);
         current = bus_parent(current);
+        ++hops;
+        if (hops >= static_cast<u32>(AudioBus::Count)) {
+            break;
+        }
     }
     return gain;
 }
@@ -72,6 +77,16 @@ float AudioBusMixer::effective_gain(AudioBus bus) const {
 
 float AudioBusMixer::effective_output_gain(AudioBus bus, float listener_master_volume) const {
     return clamp_bus_gain(listener_master_volume) * effective_gain(bus);
+}
+
+void AudioBusMixer::reset_gains() {
+    for (u32 i = 0; i < static_cast<u32>(AudioBus::Count); ++i) {
+        m_gains[i] = 1.f;
+    }
+    m_parents[static_cast<u32>(AudioBus::Master)] = AudioBus::Master;
+    m_parents[static_cast<u32>(AudioBus::Sfx)] = AudioBus::Master;
+    m_parents[static_cast<u32>(AudioBus::Music)] = AudioBus::Master;
+    m_parents[static_cast<u32>(AudioBus::Voice)] = AudioBus::Master;
 }
 
 } // namespace fuse::audio

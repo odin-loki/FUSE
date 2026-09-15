@@ -198,6 +198,125 @@ void testBusChainRouting() {
                "voice parent routes through sfx");
 }
 
+void testBusMasterParentLocked() {
+    fuse::audio::AudioBusMixer mixer;
+    mixer.set_bus_parent(fuse::audio::AudioBus::Master, fuse::audio::AudioBus::Sfx);
+    expectTrue(mixer.bus_parent(fuse::audio::AudioBus::Master) == fuse::audio::AudioBus::Master,
+               "master bus parent stays locked to master");
+}
+
+void testBusRoutingCycleGuard() {
+    fuse::audio::AudioBusMixer mixer;
+    mixer.set_bus_gain(fuse::audio::AudioBus::Sfx, 0.5f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Voice, 0.8f);
+    mixer.set_bus_parent(fuse::audio::AudioBus::Voice, fuse::audio::AudioBus::Sfx);
+    mixer.set_bus_parent(fuse::audio::AudioBus::Sfx, fuse::audio::AudioBus::Voice);
+
+    const float routed = mixer.routed_bus_gain(fuse::audio::AudioBus::Voice);
+    expectTrue(std::isfinite(routed), "cyclic parent routing terminates without infinite loop");
+    expectTrue(routed >= 0.f && routed <= 1.f, "cyclic routing gain stays in stub range");
+}
+
+void testBusEffectiveOutputGainEndpoints() {
+    fuse::audio::AudioBusMixer mixer;
+    mixer.set_bus_gain(fuse::audio::AudioBus::Master, 0.8f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Music, 0.5f);
+
+    expectNear(mixer.effective_output_gain(fuse::audio::AudioBus::Music, 1.f), 0.4f, 1e-5f,
+               "unity listener volume passes through effective bus gain");
+    expectNear(mixer.effective_output_gain(fuse::audio::AudioBus::Music, 0.f), 0.f, 1e-5f,
+               "zero listener volume silences output");
+    expectNear(mixer.effective_output_gain(fuse::audio::AudioBus::Music, 1.5f), 0.4f, 1e-5f,
+               "listener volume above unity clamps before multiply");
+}
+
+void testBusResetGains() {
+    fuse::audio::AudioBusMixer mixer;
+    mixer.set_bus_gain(fuse::audio::AudioBus::Master, 0.25f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Sfx, 0.5f);
+    mixer.set_bus_parent(fuse::audio::AudioBus::Voice, fuse::audio::AudioBus::Sfx);
+
+    mixer.reset_gains();
+    expectNear(mixer.bus_gain(fuse::audio::AudioBus::Master), 1.f, 1e-5f,
+               "reset restores unity master gain");
+    expectNear(mixer.effective_gain(fuse::audio::AudioBus::Sfx), 1.f, 1e-5f,
+               "reset restores default effective routing");
+    expectTrue(mixer.bus_parent(fuse::audio::AudioBus::Voice) == fuse::audio::AudioBus::Master,
+               "reset restores default parent routing");
+}
+
+void testEmptyCustomAttenuationCurve() {
+    fuse::audio::AttenuationParams params;
+    params.curve = fuse::audio::AttenuationCurve::Custom;
+    params.min_dist = 1.f;
+    params.max_dist = 50.f;
+    params.keypoint_count = 0;
+
+    expectNear(fuse::audio::sample_attenuation_curve(10.f, params), 1.f, 1e-5f,
+               "empty custom curve samples unity gain");
+    expectNear(fuse::audio::sample_attenuation_at_min(params), 1.f, 1e-5f,
+               "empty custom curve min endpoint is unity");
+    expectNear(fuse::audio::compute_attenuation(25.f, params), 1.f, 1e-5f,
+               "empty custom curve inside range stays full gain until max");
+    expectNear(fuse::audio::sample_attenuation_at_max(params), 0.f, 1e-5f,
+               "max distance endpoint is silent");
+}
+
+void testMakeAttenuationParamsFromDesc() {
+    fuse::audio::AudioSourceDesc desc;
+    desc.attenuation = fuse::audio::AttenuationCurve::Custom;
+    desc.min_distance = 2.f;
+    desc.max_distance = 40.f;
+    desc.rolloff = 1.5f;
+    desc.attenuation_keypoints[0] = {2.f, 1.f};
+    desc.attenuation_keypoints[1] = {20.f, 0.25f};
+    desc.attenuation_keypoint_count = 2;
+
+    const fuse::audio::AttenuationParams params = fuse::audio::make_attenuation_params(desc);
+    expectTrue(params.curve == fuse::audio::AttenuationCurve::Custom, "desc curve is copied");
+    expectNear(params.min_dist, 2.f, 1e-5f, "desc min distance is copied");
+    expectNear(params.max_dist, 40.f, 1e-5f, "desc max distance is copied");
+    expectNear(params.rolloff, 1.5f, 1e-5f, "desc rolloff is copied");
+    expectTrue(params.keypoint_count == 2, "desc keypoint count is copied");
+    expectNear(params.keypoints[1].gain, 0.25f, 1e-5f, "desc keypoints are copied");
+}
+
+void testAttenuationCurveSampleEndpoints() {
+    fuse::audio::AttenuationParams params;
+    params.min_dist = 1.f;
+    params.max_dist = 50.f;
+    params.rolloff = 1.f;
+
+    params.curve = fuse::audio::AttenuationCurve::Linear;
+    expectNear(fuse::audio::sample_attenuation_at_min(params), 1.f, 1e-5f,
+               "linear curve is unity at min distance");
+    expectNear(fuse::audio::sample_attenuation_at_max(params), 0.f, 1e-5f,
+               "linear curve is silent at max distance");
+
+    params.curve = fuse::audio::AttenuationCurve::Logarithmic;
+    expectNear(fuse::audio::sample_attenuation_at_min(params), 1.f, 1e-5f,
+               "logarithmic curve is unity at min distance");
+
+    params.curve = fuse::audio::AttenuationCurve::Exponential;
+    expectNear(fuse::audio::sample_attenuation_at_min(params), 1.f, 1e-5f,
+               "exponential curve is unity at min distance");
+
+    params.curve = fuse::audio::AttenuationCurve::Inverse;
+    expectNear(fuse::audio::sample_attenuation_at_min(params), 1.f, 1e-5f,
+               "inverse curve is unity at min distance");
+    expectTrue(fuse::audio::sample_attenuation_curve(10.f, params) < 1.f,
+               "inverse curve falls off past min distance");
+
+    params.curve = fuse::audio::AttenuationCurve::Custom;
+    params.keypoints[0] = {1.f, 0.75f};
+    params.keypoints[1] = {50.f, 0.f};
+    params.keypoint_count = 2;
+    expectNear(fuse::audio::sample_attenuation_at_min(params), 0.75f, 1e-5f,
+               "custom curve min endpoint uses first keypoint gain");
+    expectNear(fuse::audio::sample_attenuation_at_max(params), 0.f, 1e-5f,
+               "custom curve max endpoint is silent");
+}
+
 void testAttenuationCurveExtremes() {
     fuse::audio::AttenuationParams params;
     params.min_dist = 1.f;
@@ -1239,6 +1358,13 @@ int main() {
     testBusGainClampsNegative();
     testBusGainClampsAboveUnity();
     testBusChainRouting();
+    testBusMasterParentLocked();
+    testBusRoutingCycleGuard();
+    testBusEffectiveOutputGainEndpoints();
+    testBusResetGains();
+    testEmptyCustomAttenuationCurve();
+    testMakeAttenuationParamsFromDesc();
+    testAttenuationCurveSampleEndpoints();
     testAttenuationCurveExtremes();
     testAttenuationGainClamp();
     testCustomAttenuationCurveAffectsMix();

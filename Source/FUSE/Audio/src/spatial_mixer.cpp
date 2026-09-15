@@ -106,16 +106,7 @@ void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>
             continue;
         }
 
-        AttenuationParams attenuation_params;
-        attenuation_params.curve = source->desc.attenuation;
-        attenuation_params.min_dist = source->desc.min_distance;
-        attenuation_params.max_dist = source->desc.max_distance;
-        attenuation_params.rolloff = source->desc.rolloff;
-        attenuation_params.keypoint_count = std::min(source->desc.attenuation_keypoint_count,
-                                                     AttenuationParams::max_keypoints);
-        for (u32 kp = 0; kp < attenuation_params.keypoint_count; ++kp) {
-            attenuation_params.keypoints[kp] = source->desc.attenuation_keypoints[kp];
-        }
+        const AttenuationParams attenuation_params = make_attenuation_params(source->desc);
 
         const float distance = source->position.distance(listener_pos);
         const float distance_attenuation = source->desc.spatial
@@ -130,7 +121,8 @@ void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>
 
         const Vec3 world_rel = source->position - listener_pos;
         const Vec3 rel = listener != nullptr ? to_listener_space(world_rel, basis) : world_rel;
-        const float bus_gain = m_busMixer.effective_gain(source->desc.bus);
+        const float output_gain =
+            m_busMixer.effective_output_gain(source->desc.bus, m_lastMasterGain);
 
         for (u32 frame = 0; frame < frames; ++frame) {
             const float local_t = source->play_head + static_cast<float>(frame) / static_cast<float>(m_sampleRate);
@@ -152,9 +144,8 @@ void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>
                 right = mono;
             }
 
-            const float master = m_lastMasterGain * bus_gain;
-            stereo_out[static_cast<usize>(frame) * 2] += left * master;
-            stereo_out[static_cast<usize>(frame) * 2 + 1] += right * master;
+            stereo_out[static_cast<usize>(frame) * 2] += left * output_gain;
+            stereo_out[static_cast<usize>(frame) * 2 + 1] += right * output_gain;
         }
     }
 }

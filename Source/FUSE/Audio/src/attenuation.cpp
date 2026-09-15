@@ -1,5 +1,7 @@
 #include <fuse/audio/attenuation.hpp>
 
+#include <fuse/audio/audio_desc.hpp>
+
 #include <algorithm>
 #include <cmath>
 
@@ -91,6 +93,31 @@ float compute_attenuation(float distance, const AttenuationParams& params) {
     }
 
     return sample_attenuation_curve(distance, params);
+}
+
+AttenuationParams make_attenuation_params(const AudioSourceDesc& desc) {
+    AttenuationParams params;
+    params.curve = desc.attenuation;
+    params.min_dist = desc.min_distance;
+    params.max_dist = desc.max_distance;
+    params.rolloff = desc.rolloff;
+    params.keypoint_count =
+        std::min(desc.attenuation_keypoint_count, AttenuationParams::max_keypoints);
+    for (u32 kp = 0; kp < params.keypoint_count; ++kp) {
+        params.keypoints[kp] = desc.attenuation_keypoints[kp];
+    }
+    return params;
+}
+
+float sample_attenuation_at_min(const AttenuationParams& params) {
+    if (params.curve == AttenuationCurve::Custom && params.keypoint_count > 0) {
+        return std::clamp(params.keypoints[0].gain, 0.f, 1.f);
+    }
+    return sample_attenuation_curve(params.min_dist, params);
+}
+
+float sample_attenuation_at_max(const AttenuationParams& params) {
+    return compute_attenuation(params.max_dist, params);
 }
 
 } // namespace fuse::audio
