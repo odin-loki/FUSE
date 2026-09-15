@@ -74,10 +74,10 @@ struct BehaviorNode {
     float threshold = 0.f;
     u32 flagIndex = 0;
     u32 loopCount = 1;
-    u32 scalarSlot = kNoScalarSlot;
     u32 childA = 0;
     u32 childB = 0;
     ParallelPolicy parallelPolicy;
+    u32 scalarSlot = kNoScalarSlot;
     std::string scriptHook;
 };
 

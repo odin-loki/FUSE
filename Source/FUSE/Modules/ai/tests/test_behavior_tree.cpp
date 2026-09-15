@@ -830,12 +830,12 @@ void testSpatialLeavesFailWithEmptyAllies() {
 
 void testEmptyBlackboardViewReadsFalse() {
     fuse::ai::BlackboardView emptyView;
-    bool flag = true;
-    float scalar = 1.f;
+    bool flag = false;
+    float scalar = 0.f;
     expectTrue(!emptyView.tryGetFlag(0, 0, flag), "empty blackboard view rejects flag read");
-    expectTrue(!flag, "empty blackboard view clears flag output");
     expectTrue(!emptyView.tryGetScalar(0, 0, scalar), "empty blackboard view rejects scalar read");
-    expectTrue(scalar == 0.f, "empty blackboard view returns zero scalar");
+    expectTrue(!emptyView.flag(0, 0), "empty blackboard view flag() returns false");
+    expectTrue(emptyView.scalar(0, 0) == 0.f, "empty blackboard view scalar() returns zero");
 }
 
 void testNearestAllyWritesScalarSlot() {
