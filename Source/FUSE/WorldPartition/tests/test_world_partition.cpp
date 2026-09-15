@@ -529,6 +529,64 @@ void testRankUnloadPriorityStub() {
     expectNear(fuse::world_partition::rank_unload_priority_stub(1.f, 3.f, 9.f), 9.f, 1e-4f, "focus distance can dominate");
 }
 
+void testRankUnloadPriority() {
+    expectNear(fuse::world_partition::rank_unload_priority(0.f, 0.f, 0.f), 0.f, 1e-4f, "rank unload all-zero");
+    expectNear(fuse::world_partition::rank_unload_priority(2.f, 8.f, 5.f), 8.f, 1e-4f, "rank unload picks max");
+    expectNear(fuse::world_partition::rank_unload_priority_stub(4.f, 1.f, 6.f),
+               fuse::world_partition::rank_unload_priority(4.f, 1.f, 6.f), 1e-4f,
+               "stub alias matches rank_unload_priority");
+}
+
+void testIncomingOutranksEviction() {
+    expectTrue(!fuse::world_partition::incoming_outranks_eviction(0.f, 100.f),
+               "zero incoming priority does not outrank");
+    expectTrue(fuse::world_partition::incoming_outranks_eviction(150.f, 100.f),
+               "higher incoming priority outranks resident score");
+    expectTrue(!fuse::world_partition::incoming_outranks_eviction(50.f, 100.f),
+               "lower incoming priority blocked from evicting farther resident");
+    expectTrue(fuse::world_partition::can_evict_for_incoming(150.f, 100.f,
+                                                             fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               "can evict when incoming outranks under distance policy");
+    expectTrue(!fuse::world_partition::can_evict_for_incoming(50.f, 100.f,
+                                                              fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               "cannot evict when incoming does not outrank");
+    expectTrue(fuse::world_partition::can_evict_for_incoming(0.f, 100.f,
+                                                              fuse::world_partition::EvictionPolicy::Lru),
+               "LRU policy ignores incoming outrank check");
+}
+
+void testPickBudgetEvictionCandidate() {
+    fuse::world_partition::ResidencySet residency;
+    const fuse::world_partition::GridCoord near_cell{1, 0};
+    const fuse::world_partition::GridCoord mid_cell{3, 0};
+    const fuse::world_partition::GridCoord far_cell{5, 0};
+    residency.add(near_cell, 100.f);
+    residency.add(mid_cell, 500.f);
+    residency.add(far_cell, 900.f);
+
+    const auto candidates = residency.collect_eviction_candidates();
+    fuse::f32 score = -1.f;
+    const fuse::world_partition::GridCoord blocked =
+        fuse::world_partition::pick_budget_eviction_candidate(
+            candidates,
+            [&](fuse::world_partition::GridCoord coord) {
+                return residency.focus_distance_for(coord);
+            },
+            50.f, fuse::world_partition::EvictionPolicy::DistanceFromFocus, score);
+    expectTrue(blocked == fuse::world_partition::GridCoord{}, "farthest blocked when incoming too weak");
+    expectNear(score, -1.f, 1e-4f, "blocked pick leaves score unset");
+
+    const fuse::world_partition::GridCoord picked =
+        fuse::world_partition::pick_budget_eviction_candidate(
+            candidates,
+            [&](fuse::world_partition::GridCoord coord) {
+                return residency.focus_distance_for(coord);
+            },
+            600.f, fuse::world_partition::EvictionPolicy::DistanceFromFocus, score);
+    expectTrue(picked == mid_cell, "skips blocked farthest and picks next eligible candidate");
+    expectNear(score, 500.f, 1e-4f, "picked candidate score recorded");
+}
+
 void testBudgetEvictionScoreStub() {
     expectNear(fuse::world_partition::budget_eviction_score(900.f, 0.f, 0u, 10u,
                                                             fuse::world_partition::EvictionPolicy::DistanceFromFocus),
@@ -974,6 +1032,9 @@ int main() {
     testStreamingBudgetHelperFunctions();
     testEffectiveUnloadPriority();
     testRankUnloadPriorityStub();
+    testRankUnloadPriority();
+    testIncomingOutranksEviction();
+    testPickBudgetEvictionCandidate();
     testBudgetEvictionScoreStub();
     testCollectEvictionCandidatesOrdering();
     testBudgetEvictionCounters();
