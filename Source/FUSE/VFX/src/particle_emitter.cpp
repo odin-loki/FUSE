@@ -46,7 +46,7 @@ void ParticleEmitter::simulate(f32 dt) {
         return;
     }
 
-    particle_soa::simulate_step(m_particles, m_desc, dt);
+    (void)particle_soa::simulate_step(m_particles, m_desc, dt);
 
     if (m_desc.emit_rate > 0.f) {
         const particle_soa::RateEmitResult rate =
