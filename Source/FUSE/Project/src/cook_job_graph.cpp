@@ -265,6 +265,8 @@ bool CookJobGraph::run_job_stages_(CookJob& job, AssetCooker& cooker, CookJobGra
 
     pack_stage.status = CookStageStatus::Ok;
     pack_stage.note = packed.note.empty() ? "packed" : packed.note;
+    job.content_hash = packed.content_hash;
+    job.cache_hit = packed.cache_hit;
     job.ok = true;
     return true;
 }
@@ -344,6 +346,8 @@ CookBatchResult cookBatchFromJobGraphResult(const CookJobGraphExecuteResult& gra
         record.source_path = job.source_path;
         record.output_path = job.output_path;
         record.ok = job.ok;
+        record.content_hash = job.content_hash;
+        record.cache_hit = job.cache_hit;
         record.note = job.skipped ? job.skip_note : format_stage_summary(job);
 
         if (job.skipped) {

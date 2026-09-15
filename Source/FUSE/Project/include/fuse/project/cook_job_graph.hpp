@@ -44,6 +44,8 @@ struct CookJob {
     std::vector<CookStageRecord> stages;
     bool ok = false;
     bool skipped = false;
+    bool cache_hit = false;
+    u64 content_hash = 0;
     std::string skip_note;
 };
 
