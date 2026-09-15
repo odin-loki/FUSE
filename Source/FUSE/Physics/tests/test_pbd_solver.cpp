@@ -1,12 +1,15 @@
 #include <fuse/core/init.hpp>
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
 #include <fuse/physics/physics_data.hpp>
+#include <fuse/physics/solver/constraint_accumulation.hpp>
 #include <fuse/physics/solver/contact_island_graph.hpp>
 #include <fuse/physics/solver/pbd_solver.hpp>
+#include <fuse/physics/solver/solver_work_buffers.hpp>
 
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <tuple>
 
 namespace {
 
@@ -410,6 +413,78 @@ void testConstraintResidualDecreasesWithIterations() {
     expectTrue(residualMany <= 0.05f, "constraint residual reaches tolerance stub after enough iterations");
 }
 
+void testDistanceLambdaAccumulatesInSolver() {
+    RigidBodySoA bodies;
+    CollisionShapeSoA shapes;
+
+    const u32 bodyA = bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+    const u32 bodyB = bodies.addBody({2.05f, 0.f, 0.f}, 1.f, 0);
+    shapes.addShape(CollisionShapeType::Sphere, bodyA, {0.1f, 0.f, 0.f});
+    shapes.addShape(CollisionShapeType::Sphere, bodyB, {0.1f, 0.f, 0.f});
+
+    PBDSolver solver;
+    solver.init(2, 0, 1);
+    solver.setDistanceConstraints({DistanceConstraint{
+        .bodyA = bodyA,
+        .bodyB = bodyB,
+        .restLength = 2.f,
+    }});
+
+    SolverParams params;
+    params.substeps = 1;
+    params.iterations = 1;
+    params.gravity = {};
+    params.broadphase.cellSize = 4.f;
+
+    solver.step(bodies, shapes, params, 1.f / 60.f);
+    expectTrue(solver.workBuffers().distanceLambdas().size() >= 1u,
+               "solver retains per-distance lambda warm-start slot");
+    expectTrue(std::fabs(solver.workBuffers().distanceLambdas()[0]) > 1e-6f,
+               "solver accumulates distance lambda during constraint iteration");
+}
+
+void testWarmStartLambdaFeedsAccumulation() {
+    RigidBodySoA bodies;
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+    bodies.addBody({2.05f, 0.f, 0.f}, 1.f, 0);
+    bodies.predictedPositions = bodies.positions;
+
+    const DistanceConstraint constraint{
+        .bodyA = 0,
+        .bodyB = 1,
+        .restLength = 2.f,
+    };
+
+    SolverWorkBuffers work;
+    work.init(2, 0, 1);
+    const f32 dt = 1.f / 60.f;
+    const f32 invMass = 1.f;
+
+    auto runPass = [&](f32 startLambda) {
+        RigidBodySoA localBodies = bodies;
+        f32 lambda = startLambda;
+        work.clearPositionDeltasForBodies(constraint.bodyA, constraint.bodyB);
+        const f32 violation = accumulateDistanceSpringCorrection(localBodies,
+                                                                 constraint,
+                                                                 invMass,
+                                                                 invMass,
+                                                                 dt,
+                                                                 lambda,
+                                                                 work.positionDeltas());
+        work.applyPositionDeltas(localBodies);
+        const f32 dist = (localBodies.predictedPositions[0] - localBodies.predictedPositions[1]).length();
+        return std::tuple<f32, f32, f32>{lambda, dist, violation};
+    };
+
+    const auto cold = runPass(0.f);
+    const auto warm = runPass(0.05f);
+
+    expectTrue(std::get<2>(cold) > 0.f, "spring correction reports constraint violation");
+    expectTrue(std::fabs(std::get<0>(warm) - std::get<0>(cold)) > 1e-6f,
+               "warm-start lambda seeds accumulation differently than cold start");
+    expectNear(std::get<1>(warm), std::get<1>(cold), 1e-4f, "warm-start reaches same projected distance");
+}
+
 void testEarlyExitWhenResidualBelowTolerance() {
     CollisionShapeSoA shapes;
     RigidBodySoA bodies;
@@ -455,6 +530,8 @@ int main() {
     testRestLengthSpringConvergesUnderIterations();
     testMultiIslandIndependentSolve();
     testConstraintResidualDecreasesWithIterations();
+    testDistanceLambdaAccumulatesInSolver();
+    testWarmStartLambdaFeedsAccumulation();
     testEarlyExitWhenResidualBelowTolerance();
     fuse::core::shutdown();
 

@@ -22,6 +22,8 @@ struct SolverWorkBuffers {
     void clear();
 
     void clearPositionDeltas();
+    /// Clear only the slots touched by a constraint pair (job-safe across parallel islands).
+    void clearPositionDeltasForBodies(u32 bodyA, u32 bodyB);
     void applyPositionDeltas(RigidBodySoA& bodies) const;
 
     void ensureLambdaCapacity(u32 contactCount, u32 distanceCount);
