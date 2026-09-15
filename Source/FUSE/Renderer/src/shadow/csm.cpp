@@ -8,6 +8,34 @@ namespace {
 
 constexpr f32 kPi = 3.14159265f;
 
+f32 splitBlendParameter(u32 cascadeIndex, u32 cascadeCount) {
+    if (cascadeCount == 0u) {
+        return 0.f;
+    }
+    return static_cast<f32>(cascadeIndex + 1u) / static_cast<f32>(cascadeCount);
+}
+
+f32 computeUniformSplitFraction(f32 splitT) {
+    return splitT;
+}
+
+f32 computeLogarithmicSplitFraction(f32 splitT, f32 nearPlane, f32 farPlane) {
+    if (farPlane <= nearPlane || nearPlane <= 0.f) {
+        return 0.f;
+    }
+
+    const f32 depthRatio = farPlane / nearPlane;
+    const f32 logDistance = nearPlane * std::pow(depthRatio, splitT);
+    return (logDistance - nearPlane) / (farPlane - nearPlane);
+}
+
+f32 computePracticalSplitFraction(f32 splitT, f32 nearPlane, f32 farPlane, f32 lambda) {
+    const f32 uniform = computeUniformSplitFraction(splitT);
+    const f32 logarithmic = computeLogarithmicSplitFraction(splitT, nearPlane, farPlane);
+    const f32 blend = std::clamp(lambda, 0.f, 1.f);
+    return blend * uniform + (1.f - blend) * logarithmic;
+}
+
 fuse::math::Vec3 buildCameraBasis(const ShadowCameraParams& camera,
                                   fuse::math::Vec3& outRight,
                                   fuse::math::Vec3& outUp) {
@@ -42,6 +70,120 @@ const char* CascadedShadowMapLayout::debugName(u32 cascadeIndex) {
     default:
         return "shadow_cascade_unknown";
     }
+}
+
+u32 CascadedShadowMapLayout::clampCascadeCount(u32 requestedCount) {
+    if (requestedCount < kMinCascadeCount) {
+        return kMinCascadeCount;
+    }
+    if (requestedCount > kMaxCascadeCount) {
+        return kMaxCascadeCount;
+    }
+    return requestedCount;
+}
+
+u32 CascadedShadowMapLayout::clampCascadeIndex(u32 cascadeIndex, u32 cascadeCount) {
+    const u32 clampedCount = clampCascadeCount(cascadeCount);
+    if (clampedCount == 0u) {
+        return 0u;
+    }
+    if (cascadeIndex >= clampedCount) {
+        return clampedCount - 1u;
+    }
+    return cascadeIndex;
+}
+
+f32 CascadedShadowMapLayout::computeSplitFraction(u32 cascadeIndex,
+                                                  const CascadeSplitParams& params,
+                                                  const ShadowCameraParams& camera) {
+    if (camera.farPlane <= camera.nearPlane) {
+        return 0.f;
+    }
+
+    const f32 distance = computeSplitDistance(cascadeIndex, params, camera);
+    return (distance - camera.nearPlane) / (camera.farPlane - camera.nearPlane);
+}
+
+f32 CascadedShadowMapLayout::computeSplitDistance(u32 cascadeIndex,
+                                                  const CascadeSplitParams& params,
+                                                  const ShadowCameraParams& camera) {
+    const u32 cascadeCount = clampCascadeCount(params.cascadeCount);
+    if (cascadeCount == 0u || camera.farPlane <= camera.nearPlane) {
+        return camera.nearPlane;
+    }
+
+    const u32 clampedIndex = clampCascadeIndex(cascadeIndex, cascadeCount);
+    const f32 splitT = splitBlendParameter(clampedIndex, cascadeCount);
+
+    switch (params.scheme) {
+    case CascadeSplitScheme::Uniform:
+        return camera.nearPlane + computeUniformSplitFraction(splitT) * (camera.farPlane - camera.nearPlane);
+    case CascadeSplitScheme::Logarithmic:
+        return computeLogarithmicSplitFraction(splitT, camera.nearPlane, camera.farPlane) *
+                   (camera.farPlane - camera.nearPlane) +
+               camera.nearPlane;
+    case CascadeSplitScheme::Practical:
+        return camera.nearPlane +
+               computePracticalSplitFraction(splitT, camera.nearPlane, camera.farPlane, params.lambda) *
+                   (camera.farPlane - camera.nearPlane);
+    default:
+        return camera.nearPlane + computeUniformSplitFraction(splitT) * (camera.farPlane - camera.nearPlane);
+    }
+}
+
+void CascadedShadowMapLayout::computeSplitFractions(const CascadeSplitParams& params,
+                                                    const ShadowCameraParams& camera,
+                                                    f32 outFractions[kMaxCascadeCount]) {
+    const u32 cascadeCount = clampCascadeCount(params.cascadeCount);
+    for (u32 cascade = 0; cascade < kMaxCascadeCount; ++cascade) {
+        if (cascade < cascadeCount) {
+            outFractions[cascade] = computeSplitFraction(cascade, params, camera);
+        } else {
+            outFractions[cascade] = 1.f;
+        }
+    }
+}
+
+void CascadedShadowMapLayout::computeSplitDistances(const CascadeSplitParams& params,
+                                                    const ShadowCameraParams& camera,
+                                                    f32 outDistances[kMaxCascadeCount]) {
+    const u32 cascadeCount = clampCascadeCount(params.cascadeCount);
+    for (u32 cascade = 0; cascade < kMaxCascadeCount; ++cascade) {
+        if (cascade < cascadeCount) {
+            outDistances[cascade] = computeSplitDistance(cascade, params, camera);
+        } else {
+            outDistances[cascade] = camera.farPlane;
+        }
+    }
+}
+
+void CascadedShadowMapLayout::populateCascadeSplits(const CascadeSplitParams& params,
+                                                    const ShadowCameraParams& camera,
+                                                    CascadedShadowMapDesc& desc) {
+    const u32 cascadeCount = clampCascadeCount(params.cascadeCount);
+    computeSplitFractions(params, camera, desc.cascadeSplits);
+
+    if (cascadeCount > 0u) {
+        desc.cascadeSplits[cascadeCount - 1u] = 1.f;
+    }
+}
+
+bool CascadedShadowMapLayout::validateSplitMonotonicity(const f32 splitFractions[], u32 cascadeCount) {
+    const u32 clampedCount = clampCascadeCount(cascadeCount);
+    if (clampedCount == 0u || splitFractions == nullptr) {
+        return false;
+    }
+
+    f32 previousSplit = -1.f;
+    for (u32 cascade = 0; cascade < clampedCount; ++cascade) {
+        const f32 split = splitFractions[cascade];
+        if (split < previousSplit) {
+            return false;
+        }
+        previousSplit = split;
+    }
+
+    return splitFractions[clampedCount - 1u] == 1.f;
 }
 
 f32 CascadedShadowMapLayout::computeCascadeNearZ(u32 cascadeIndex,
@@ -165,13 +307,22 @@ fuse::math::Mat4 CascadeLightSpaceLayout::buildLightView(const fuse::math::Vec3&
     return fuse::math::lookAt(lightPos, focus, {0.f, 1.f, 0.f});
 }
 
-fuse::math::AABB CascadeLightSpaceLayout::computeLightSpaceAabb(const CascadeFrustumCorners& corners,
-                                                                const fuse::math::Mat4& lightView) {
+bool CascadeLightSpaceLayout::isEmptyLightSpaceAabb(const fuse::math::AABB& aabb) {
+    return aabb.min.x > aabb.max.x || aabb.min.y > aabb.max.y || aabb.min.z > aabb.max.z;
+}
+
+fuse::math::AABB CascadeLightSpaceLayout::computeLightSpaceAabbFromWorldCorners(
+    const fuse::math::Vec3 worldCorners[8],
+    const fuse::math::Mat4& lightView) {
+    if (worldCorners == nullptr) {
+        return {{1.f, 1.f, 1.f}, {-1.f, -1.f, -1.f}};
+    }
+
     fuse::math::AABB aabb = fuse::math::AABB::fromCenterExtents(
-        fuse::math::transformPoint(lightView, corners.corners[0]), {});
+        fuse::math::transformPoint(lightView, worldCorners[0]), {});
 
     for (u32 cornerIdx = 1; cornerIdx < 8u; ++cornerIdx) {
-        const fuse::math::Vec3 lightSpace = fuse::math::transformPoint(lightView, corners.corners[cornerIdx]);
+        const fuse::math::Vec3 lightSpace = fuse::math::transformPoint(lightView, worldCorners[cornerIdx]);
         aabb.min.x = std::min(aabb.min.x, lightSpace.x);
         aabb.min.y = std::min(aabb.min.y, lightSpace.y);
         aabb.min.z = std::min(aabb.min.z, lightSpace.z);
@@ -183,12 +334,21 @@ fuse::math::AABB CascadeLightSpaceLayout::computeLightSpaceAabb(const CascadeFru
     return aabb;
 }
 
+fuse::math::AABB CascadeLightSpaceLayout::computeLightSpaceAabb(const CascadeFrustumCorners& corners,
+                                                                const fuse::math::Mat4& lightView) {
+    return computeLightSpaceAabbFromWorldCorners(corners.corners, lightView);
+}
+
 fuse::math::AABB CascadeLightSpaceLayout::computeCascadeLightSpaceAabb(
     u32 cascadeIndex,
     const CascadedShadowMapDesc& desc,
     const ShadowCameraParams& camera,
     const fuse::math::Vec3& lightDirection) {
     const CascadeRange range = CascadedShadowMapLayout::computeCascadeRange(cascadeIndex, desc, camera);
+    if (range.nearZ >= range.farZ || camera.farPlane <= camera.nearPlane) {
+        return {{1.f, 1.f, 1.f}, {-1.f, -1.f, -1.f}};
+    }
+
     const fuse::math::Vec3 forward = camera.forward.normalized();
     const f32 midDistance = (range.nearZ + range.farZ) * 0.5f;
     const fuse::math::Vec3 focus = camera.position + forward * midDistance;

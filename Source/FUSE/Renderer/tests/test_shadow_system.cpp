@@ -145,6 +145,122 @@ void testCascadeFrustumCorners() {
     expectTrue(corners.corners[4].z < corners.corners[0].z, "far corners deeper than near corners");
 }
 
+void testCascadeSplitSchemes() {
+    using fuse::renderer::CascadeSplitParams;
+    using fuse::renderer::CascadeSplitScheme;
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+
+    ShadowCameraParams camera{};
+    camera.nearPlane = 0.5f;
+    camera.farPlane = 500.f;
+
+    CascadeSplitParams uniformParams{};
+    uniformParams.scheme = CascadeSplitScheme::Uniform;
+    uniformParams.cascadeCount = 4u;
+
+    fuse::f32 uniformFractions[fuse::renderer::kMaxCascadeCount]{};
+    CascadedShadowMapLayout::computeSplitFractions(uniformParams, camera, uniformFractions);
+    expectTrue(CascadedShadowMapLayout::validateSplitMonotonicity(uniformFractions, 4u),
+               "uniform split fractions monotonic");
+    expectNear(uniformFractions[0], 0.25f, 0.001f, "uniform first split at 25%");
+    expectNear(uniformFractions[3], 1.f, 0.001f, "uniform last split reaches far");
+
+    CascadeSplitParams logParams{};
+    logParams.scheme = CascadeSplitScheme::Logarithmic;
+    logParams.cascadeCount = 4u;
+
+    fuse::f32 logFractions[fuse::renderer::kMaxCascadeCount]{};
+    CascadedShadowMapLayout::computeSplitFractions(logParams, camera, logFractions);
+    expectTrue(CascadedShadowMapLayout::validateSplitMonotonicity(logFractions, 4u),
+               "logarithmic split fractions monotonic");
+    expectTrue(logFractions[0] < uniformFractions[0], "log first split closer than uniform");
+
+    CascadeSplitParams practicalParams{};
+    practicalParams.scheme = CascadeSplitScheme::Practical;
+    practicalParams.lambda = 0.75f;
+    practicalParams.cascadeCount = 4u;
+
+    fuse::f32 practicalFractions[fuse::renderer::kMaxCascadeCount]{};
+    CascadedShadowMapLayout::computeSplitFractions(practicalParams, camera, practicalFractions);
+    expectTrue(CascadedShadowMapLayout::validateSplitMonotonicity(practicalFractions, 4u),
+               "practical split fractions monotonic");
+    expectTrue(practicalFractions[0] > logFractions[0] && practicalFractions[0] < uniformFractions[0],
+               "practical first split between log and uniform");
+
+    CascadedShadowMapDesc populatedDesc{};
+    CascadedShadowMapLayout::populateCascadeSplits(practicalParams, camera, populatedDesc);
+    expectTrue(CascadedShadowMapLayout::validateCascadeSplits(populatedDesc),
+               "populated practical splits pass cascade validation");
+}
+
+void testCascadeCountClamp() {
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::kMaxCascadeCount;
+    using fuse::renderer::kMinCascadeCount;
+
+    expectTrue(CascadedShadowMapLayout::clampCascadeCount(0u) == kMinCascadeCount, "zero cascades clamped up");
+    expectTrue(CascadedShadowMapLayout::clampCascadeCount(99u) == kMaxCascadeCount, "excess cascades clamped down");
+    expectTrue(CascadedShadowMapLayout::clampCascadeCount(3u) == 3u, "in-range cascade count preserved");
+    expectTrue(CascadedShadowMapLayout::clampCascadeIndex(9u, 3u) == 2u, "cascade index clamped to count-1");
+}
+
+void testLightSpaceAabbContainsCorners() {
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+
+    CascadedShadowMapDesc desc{};
+    ShadowCameraParams camera{};
+    camera.position = {2.f, 8.f, 12.f};
+    camera.forward = {0.f, -0.3f, -1.f};
+    camera.nearPlane = 0.2f;
+    camera.farPlane = 150.f;
+    camera.fovDegrees = 75.f;
+    camera.aspect = 1.777f;
+
+    const auto corners = CascadedShadowMapLayout::buildCascadeFrustumCorners(1u, desc, camera);
+    const fuse::renderer::CascadeRange range = CascadedShadowMapLayout::computeCascadeRange(1u, desc, camera);
+    const fuse::math::Vec3 focus =
+        camera.position + camera.forward.normalized() * ((range.nearZ + range.farZ) * 0.5f);
+    const fuse::math::Vec3 sunDirection{-0.4f, -1.f, -0.1f};
+    const fuse::math::Mat4 lightView = CascadeLightSpaceLayout::buildLightView(focus, sunDirection);
+    const auto aabb = CascadeLightSpaceLayout::computeLightSpaceAabbFromWorldCorners(corners.corners, lightView);
+
+    expectTrue(!CascadeLightSpaceLayout::isEmptyLightSpaceAabb(aabb), "valid frustum yields non-empty aabb");
+    for (fuse::u32 cornerIdx = 0; cornerIdx < 8u; ++cornerIdx) {
+        const fuse::math::Vec3 lightSpace = fuse::math::transformPoint(lightView, corners.corners[cornerIdx]);
+        expectTrue(aabb.contains(lightSpace), "light-space aabb contains transformed frustum corner");
+    }
+}
+
+void testEmptyFrustumLightSpaceAabb() {
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+
+    CascadedShadowMapDesc desc{};
+    ShadowCameraParams camera{};
+    camera.nearPlane = 10.f;
+    camera.farPlane = 5.f;
+
+    const auto aabb = CascadeLightSpaceLayout::computeCascadeLightSpaceAabb(0u, desc, camera, {0.f, -1.f, 0.f});
+    expectTrue(CascadeLightSpaceLayout::isEmptyLightSpaceAabb(aabb), "inverted near/far yields empty aabb");
+
+    fuse::math::Vec3 collapsedCorners[8]{};
+    for (fuse::u32 i = 0; i < 8u; ++i) {
+        collapsedCorners[i] = {3.f, 4.f, 5.f};
+    }
+    const fuse::math::Mat4 lightView = CascadeLightSpaceLayout::buildLightView({3.f, 4.f, 5.f}, {0.f, -1.f, 0.f});
+    const auto pointAabb =
+        CascadeLightSpaceLayout::computeLightSpaceAabbFromWorldCorners(collapsedCorners, lightView);
+    expectTrue(!CascadeLightSpaceLayout::isEmptyLightSpaceAabb(pointAabb), "degenerate point frustum is valid");
+    expectNear(pointAabb.min.x, pointAabb.max.x, 0.001f, "degenerate frustum aabb has zero extent");
+}
+
 void testLightSpaceAabb() {
     using fuse::renderer::CascadeLightSpaceLayout;
     using fuse::renderer::CascadedShadowMapDesc;
@@ -273,9 +389,13 @@ int main() {
 
     testCascadeLayout();
     testCascadeSplitValidation();
+    testCascadeSplitSchemes();
+    testCascadeCountClamp();
     testBatchCascadeFarZs();
     testBatchCascadeNearZsAndRanges();
     testCascadeFrustumCorners();
+    testLightSpaceAabbContainsCorners();
+    testEmptyFrustumLightSpaceAabb();
     testLightSpaceAabb();
     testShadowAtlasLayout();
     testDirectionalShadowAllocation();
