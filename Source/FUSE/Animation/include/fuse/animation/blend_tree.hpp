@@ -143,8 +143,23 @@ struct AnimStateMachine : BlendNode {
     /// Count registered transitions whose source state matches `from_state`.
     u32 outgoing_transition_count(u32 from_state) const;
 
+    /// Count registered transitions whose destination state matches `to_state`.
+    u32 incoming_transition_count(u32 to_state) const;
+
     /// True when a transition edge exists from `from_state` to `to_state`.
     bool has_transition(u32 from_state, u32 to_state) const;
+
+    /// Blend duration for a registered edge, or -1 when the edge is missing.
+    f32 transition_blend_duration(u32 from_state, u32 to_state) const;
+
+    /// Name of the active state, or empty when the index is invalid.
+    const char* state_name(u32 state_index) const;
+
+    /// Name of the active state, or empty when idle/invalid.
+    const char* active_state_name() const;
+
+    /// Name of the pending crossfade target, or empty when not transitioning.
+    const char* pending_state_name() const;
 };
 
 } // namespace fuse::animation
