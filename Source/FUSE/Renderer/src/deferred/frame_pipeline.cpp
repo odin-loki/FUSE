@@ -2,6 +2,9 @@
 
 #include <fuse/renderer/command_buffer.hpp>
 #include <fuse/renderer/lighting/clustered.hpp>
+#include <fuse/renderer/postprocess/lens_flare.hpp>
+#include <fuse/renderer/volumetric/light_shafts.hpp>
+#include <fuse/renderer/volumetric/volumetric_fog.hpp>
 
 namespace fuse::renderer {
 namespace {
@@ -89,6 +92,9 @@ DeferredFramePipeline::DeferredFramePipeline(const DeferredFramePipelineDesc& de
 
 void DeferredFramePipeline::resetGraphStorage() {
     g_deferredPassCount = 0;
+    resetVolumetricFogPassGraphStorage();
+    resetLightShaftsPassGraphStorage();
+    resetLensFlarePassGraphStorage();
 }
 
 const char* DeferredFramePipeline::passName(DeferredPassId id) {
@@ -123,6 +129,12 @@ const char* DeferredFramePipeline::passName(DeferredPassId id) {
         return "taa_resolve";
     case DeferredPassId::PostProcessStack:
         return "post_process_stack";
+    case DeferredPassId::VolumetricFog:
+        return "volumetric_fog";
+    case DeferredPassId::LightShafts:
+        return "light_shafts";
+    case DeferredPassId::LensFlare:
+        return "lens_flare";
     case DeferredPassId::UiCompositePresent:
         return "ui_composite_present";
     default:
@@ -207,14 +219,19 @@ void DeferredFramePipeline::buildGraph(RenderGraph& graph,
     addDeferredPass(graph, DeferredPassId::SdfShadows, true, nullptr, 0u);
     addDeferredPass(graph, DeferredPassId::ScreenSpaceAo, true, nullptr, 0u);
 
+    RGTextureAccess volumetricDepthRead = makeGBufferAccess(depthTexture, RGResourceAccess::CUDARead);
+    addVolumetricFogPassToGraph(graph, &volumetricDepthRead, 1u);
+
     addDeferredPass(graph, DeferredPassId::CudaToVkSignal, false, nullptr, 0u);
 
     RGTextureAccess transparentWrite = makeGBufferAccess({RenderGraph::kBackbufferTextureId},
                                                          RGResourceAccess::ColorAttachmentWrite);
     addDeferredPass(graph, DeferredPassId::TransparentPass, false, &transparentWrite, 1u);
     addDeferredPass(graph, DeferredPassId::AtmosphereSky, false, &transparentWrite, 1u);
+    addLightShaftsPassToGraph(graph, transparentWrite.texture);
     addDeferredPass(graph, DeferredPassId::TaaResolve, false, &transparentWrite, 1u);
     addDeferredPass(graph, DeferredPassId::PostProcessStack, false, &transparentWrite, 1u);
+    addLensFlarePassToGraph(graph, transparentWrite.texture);
 
     RGTextureAccess presentAccess = makeGBufferAccess({RenderGraph::kBackbufferTextureId},
                                                         RGResourceAccess::Present);
@@ -225,7 +242,7 @@ void DeferredFramePipeline::buildGraph(RenderGraph& graph,
         (void)emissiveWrite;
     }
 
-    m_stats.passCount = g_deferredPassCount;
+    m_stats.passCount = g_deferredPassCount + 3u;
     m_stats.vulkanPassCount = 0u;
     m_stats.cudaPassCount = 0u;
     for (u32 i = 0; i < g_deferredPassCount; ++i) {
@@ -236,6 +253,8 @@ void DeferredFramePipeline::buildGraph(RenderGraph& graph,
             ++m_stats.vulkanPassCount;
         }
     }
+    ++m_stats.cudaPassCount;
+    m_stats.vulkanPassCount += 2u;
 }
 
 } // namespace fuse::renderer

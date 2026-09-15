@@ -24,7 +24,10 @@ enum class DeferredPassId : u8 {
     AtmosphereSky = 12,
     TaaResolve = 13,
     PostProcessStack = 14,
-    UiCompositePresent = 15,
+    VolumetricFog = 15,
+    LightShafts = 16,
+    LensFlare = 17,
+    UiCompositePresent = 18,
     Count,
 };
 
