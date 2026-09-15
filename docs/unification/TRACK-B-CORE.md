@@ -16,7 +16,7 @@
 | **B1.4** | Math library | `fuse::math` | ✅ | `fuse_core_math` | Vec/Mat/Quat/AABB/Frustum/SDF — B1.4 SIMD deepen: `simd` CPU stubs, plane classify/clip, Mat4/AABB edge tests — [TRACK-B-MATH.md](./TRACK-B-MATH.md) |
 | **B1.5** | Job system & fibers | `fuse::jobs` | ✅ | `fuse_core_jobs`, `fuse_core_fiber`, `fuse_cuda_jobs` | Scheduler, `JobCounter`, `parallel_for`, work-steal policy stubs (`work_steal.hpp`), CUDA job lane stub |
 | **B1.6** | Logging, assert & profiler | `fuse::log`, `fuse::assertion`, `fuse::profiler` | ✅ | `fuse_core_profiler_assert` | Nested scopes, chrome JSON (`B`/`E`, async `s`/`f`, counter `C`); platform thread-id stubs — [TRACK-B-CORE-B16.md](./TRACK-B-CORE-B16.md) |
-| **B1.7** | Platform & window | `fuse::platform::Window`, `EventPump` | ✅ | `fuse_core_platform_window`, `fuse_core_platform_hardening` | Window + event-pump stubs (#69); B1.7 deepen — resize/focus notify + poll-queue tests — [TRACK-B-CORE-B17.md](./TRACK-B-CORE-B17.md) |
+| **B1.7** | Platform & window | `fuse::platform::Window`, `EventPump` | ✅ | `fuse_core_platform_window`, `fuse_core_platform_hardening` | Window + event-pump stubs (#69); B1.7 deepen — resize/focus/close notify, poll-queue drain/coalesce — [TRACK-B-CORE-B17.md](./TRACK-B-CORE-B17.md) |
 
 Submodule detail:
 

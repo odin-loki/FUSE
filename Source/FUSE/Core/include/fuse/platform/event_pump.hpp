@@ -2,6 +2,8 @@
 
 #include <fuse/types.hpp>
 
+#include <vector>
+
 namespace fuse::platform {
 
 class Window;
@@ -49,7 +51,13 @@ public:
     /// Pump OS events then poll until the queue is empty. Returns false when quit was requested.
     bool pumpOnce();
 
+    /// Move all queued synthetic events into `out` (FIFO order). Returns count moved.
+    u32 drainEvents(std::vector<PlatformEvent>& out);
+
     /// Test / headless hook — enqueue a synthetic event.
+    ///
+    /// Pending `WindowResized` events for the same `window` pointer are coalesced
+    /// in-place (latest width/height wins) instead of enqueueing duplicates.
     void pushSyntheticEvent(const PlatformEvent& event);
 
     /// Stub helpers — enqueue window lifecycle events for tests and headless runners.
@@ -65,6 +73,8 @@ public:
     void clearSyntheticEvents();
 
 private:
+    bool tryCoalescePendingResize_(const PlatformEvent& event);
+    void enqueueSyntheticEvent_(const PlatformEvent& event);
     bool m_quitRequested = false;
     u32 m_syntheticHead = 0;
     u32 m_syntheticTail = 0;

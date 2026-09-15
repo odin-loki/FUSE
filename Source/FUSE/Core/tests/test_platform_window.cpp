@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -115,6 +116,33 @@ void testWindowCloseRequestedNotifiesPump() {
     expectTrue(event.type == fuse::platform::PlatformEventType::WindowCloseRequested,
                "close requested type");
     expectTrue(event.window == &window, "close requested window pointer");
+
+    window.requestClose(&pump);
+    expectEq(pump.pendingEventCount(), 0u, "duplicate close request does not enqueue");
+}
+
+void testWindowFocusEdgeTransitions() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    window.setFocused(false, &pump);
+    window.setFocused(false, &pump);
+    expectEq(pump.pendingEventCount(), 1u, "only one focus-lost when already blurred");
+
+    window.setFocused(true, &pump);
+    window.setFocused(true, &pump);
+    expectEq(pump.pendingEventCount(), 2u, "only one focus-gained when already focused");
+
+    fuse::platform::PlatformEvent first;
+    expectTrue(pump.pollEvent(first), "focus lost polled first");
+    expectTrue(first.type == fuse::platform::PlatformEventType::WindowFocusLost,
+               "first edge event is focus lost");
+
+    fuse::platform::PlatformEvent second;
+    expectTrue(pump.pollEvent(second), "focus gained polled second");
+    expectTrue(second.type == fuse::platform::PlatformEventType::WindowFocusGained,
+               "second edge event is focus gained");
+    expectTrue(!pump.hasPendingEvents(), "focus edge sequence fully drained");
 }
 
 void testVulkanSurfaceWireIsHeadless() {
@@ -173,22 +201,26 @@ void testEventPumpPollQueueFifoOrder() {
     fuse::platform::EventPump pump;
     fuse::platform::Window window;
 
-    for (fuse::u32 index = 0; index < 5u; ++index) {
-        fuse::platform::PlatformEvent event;
-        event.type = fuse::platform::PlatformEventType::WindowResized;
-        event.window = &window;
-        event.width = 640u + index;
-        event.height = 480u + index;
-        pump.pushSyntheticEvent(event);
-    }
+    pump.pushWindowResized(window);
+    pump.pushWindowFocusLost(window);
+    pump.pushWindowFocusGained(window);
+    pump.pushWindowCloseRequested(window);
+    pump.requestQuit();
 
-    expectEq(pump.pendingEventCount(), 5u, "five events queued");
+    expectEq(pump.pendingEventCount(), 5u, "five distinct events queued");
+
+    const fuse::platform::PlatformEventType expectedOrder[] = {
+        fuse::platform::PlatformEventType::WindowResized,
+        fuse::platform::PlatformEventType::WindowFocusLost,
+        fuse::platform::PlatformEventType::WindowFocusGained,
+        fuse::platform::PlatformEventType::WindowCloseRequested,
+        fuse::platform::PlatformEventType::Quit,
+    };
 
     for (fuse::u32 index = 0; index < 5u; ++index) {
         fuse::platform::PlatformEvent polled;
         expectTrue(pump.pollEvent(polled), "fifo poll succeeds");
-        expectEq(polled.width, 640u + index, "fifo width order preserved");
-        expectEq(polled.height, 480u + index, "fifo height order preserved");
+        expectTrue(polled.type == expectedOrder[index], "fifo event type order preserved");
     }
 
     expectTrue(!pump.hasPendingEvents(), "queue drained");
@@ -198,19 +230,17 @@ void testEventPumpPollQueueOverflowDropsTail() {
     fuse::platform::EventPump pump;
     fuse::platform::Window window;
 
+    pump.pushWindowResized(window);
+
     fuse::platform::PlatformEvent marker;
-    marker.type = fuse::platform::PlatformEventType::WindowResized;
+    marker.type = fuse::platform::PlatformEventType::WindowFocusLost;
     marker.window = &window;
-    marker.width = 111u;
-    marker.height = 222u;
     pump.pushSyntheticEvent(marker);
 
     for (fuse::u32 index = 0; index < 32u; ++index) {
         fuse::platform::PlatformEvent event;
-        event.type = fuse::platform::PlatformEventType::WindowResized;
+        event.type = fuse::platform::PlatformEventType::WindowFocusGained;
         event.window = &window;
-        event.width = 1000u + index;
-        event.height = 2000u + index;
         pump.pushSyntheticEvent(event);
     }
 
@@ -218,7 +248,8 @@ void testEventPumpPollQueueOverflowDropsTail() {
 
     fuse::platform::PlatformEvent first;
     expectTrue(pump.pollEvent(first), "oldest event still available");
-    expectEq(first.width, 111u, "marker event preserved at head");
+    expectTrue(first.type == fuse::platform::PlatformEventType::WindowResized,
+               "marker resize event preserved at head");
 }
 
 void testEventPumpClearSyntheticEvents() {
@@ -234,6 +265,56 @@ void testEventPumpClearSyntheticEvents() {
 
     fuse::platform::PlatformEvent event;
     expectTrue(!pump.pollEvent(event), "poll returns false after clear");
+}
+
+void testEventPumpCoalesceResizeEvents() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    window.resize(800, 600, &pump);
+    window.resize(1024, 768, &pump);
+    expectEq(pump.pendingEventCount(), 1u, "duplicate resize coalesces to one event");
+
+    fuse::platform::PlatformEvent coalesced;
+    expectTrue(pump.pollEvent(coalesced), "coalesced resize polled");
+    expectEq(coalesced.width, 1024u, "coalesced resize keeps latest width");
+    expectEq(coalesced.height, 768u, "coalesced resize keeps latest height");
+
+    pump.pushWindowResized(window);
+    pump.pushWindowFocusLost(window);
+    window.resize(640, 480, &pump);
+    expectEq(pump.pendingEventCount(), 2u, "resize coalesces without reordering focus event");
+
+    fuse::platform::PlatformEvent resized;
+    expectTrue(pump.pollEvent(resized), "coalesced resize before focus event");
+    expectEq(resized.width, 640u, "coalesced resize before focus keeps latest width");
+    expectEq(resized.height, 480u, "coalesced resize before focus keeps latest height");
+
+    fuse::platform::PlatformEvent focusLost;
+    expectTrue(pump.pollEvent(focusLost), "focus event preserved after resize coalesce");
+    expectTrue(focusLost.type == fuse::platform::PlatformEventType::WindowFocusLost,
+               "focus event type preserved after resize coalesce");
+}
+
+void testEventPumpDrainEventsHelper() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    pump.pushWindowResized(window);
+    pump.pushWindowFocusGained(window);
+    pump.requestQuit();
+
+    std::vector<fuse::platform::PlatformEvent> drained;
+    expectEq(pump.drainEvents(drained), 3u, "drainEvents returns moved count");
+    expectEq(drained.size(), 3u, "drainEvents appends all queued events");
+    expectTrue(drained[0].type == fuse::platform::PlatformEventType::WindowResized,
+               "drain preserves fifo resize first");
+    expectTrue(drained[1].type == fuse::platform::PlatformEventType::WindowFocusGained,
+               "drain preserves fifo focus second");
+    expectTrue(drained[2].type == fuse::platform::PlatformEventType::Quit,
+               "drain preserves fifo quit last");
+    expectEq(pump.pendingEventCount(), 0u, "drain empties queue");
+    expectTrue(pump.quitRequested(), "drain still marks quit when Quit event polled");
 }
 
 void testMobileProfileStillUsesWindowStub() {
@@ -259,6 +340,7 @@ int main() {
     testWindowResizeNotifiesPump();
     testWindowFocusEventsNotifyPump();
     testWindowCloseRequestedNotifiesPump();
+    testWindowFocusEdgeTransitions();
     testVulkanSurfaceWireIsHeadless();
     testEventPumpSyntheticEvents();
     testEventPumpQuitFlow();
@@ -266,6 +348,8 @@ int main() {
     testEventPumpPollQueueFifoOrder();
     testEventPumpPollQueueOverflowDropsTail();
     testEventPumpClearSyntheticEvents();
+    testEventPumpCoalesceResizeEvents();
+    testEventPumpDrainEventsHelper();
     testMobileProfileStillUsesWindowStub();
 
     if (g_failures == 0) {
