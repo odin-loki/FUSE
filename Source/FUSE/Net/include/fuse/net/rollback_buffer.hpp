@@ -20,6 +20,8 @@ public:
     [[nodiscard]] bool has_frame(u32 frame) const;
 
     void store_snapshot(u32 frame, GameSnapshot snapshot);
+    /// Evicts the oldest retained snapshot (no-op when empty).
+    [[nodiscard]] std::optional<GameSnapshot> evict_oldest_snapshot();
     [[nodiscard]] const GameSnapshot* snapshot(u32 frame) const;
     [[nodiscard]] GameSnapshot* snapshot_mut(u32 frame);
 

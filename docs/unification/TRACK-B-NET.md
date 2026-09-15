@@ -19,9 +19,9 @@
 | Rollback window helpers | `rollback_window.hpp/.cpp` | `earliest_rewindable_frame`, `can_rewind_to_frame`, `clamp_rewind_target`, `resimulate_frame_count` |
 | Checksum helpers | `checksum.hpp/.cpp` | FNV-1a over snapshot blobs; shared by rollback + delta paths |
 | `RollbackBuffer` | `rollback_buffer.hpp/.cpp` | 64-frame snapshot + input ring (unchanged capacity) |
-| `SnapshotHistoryRing` | `snapshot_delta.hpp/.cpp` | Snapshot-only ring delegating to `RollbackBuffer`; `apply_delta_and_store` |
+| `SnapshotHistoryRing` | `snapshot_delta.hpp/.cpp` | Snapshot-only ring delegating to `RollbackBuffer`; `can_apply_delta`, `pop_oldest`, `apply_delta_and_store` |
 | `RollbackManager` | `rollback.hpp/.cpp` | Records predicted locals; reconciles on remote apply |
-| Snapshot deltas | `snapshot_delta.hpp/.cpp` | Field masks, entity bitset validation, encode/decode, verified apply + delta checksum |
+| Snapshot deltas | `snapshot_delta.hpp/.cpp` | Field mask helpers, entity bitset validation, `preflight_snapshot_delta`, encode/decode, verified apply + delta checksum |
 | Transport | `transport.hpp` | Loopback + ENet/Steam stubs |
 
 **Not in scope (follow-up PRs):** ENet process-pair smoke, session matchmaking, desync telemetry UI, full GGPO input delay, frustum/LOS refinement of AOI.
@@ -120,7 +120,7 @@ const bool ok = fuse::net::verify_snapshot_checksum(snapshot);
 
 ## Snapshot delta / state-sync deepen
 
-Entity patches carry per-component field masks (`SnapshotEcsField`, `SnapshotPhysicsField`) and a `changed_entity_mask` bitset (stub: up to 64 entity indices). `validate_changed_entity_mask` and `entity_index_in_changed_mask` keep patch rows and mask bits aligned. `compute_snapshot_delta` compares baseline vs current snapshots; `apply_snapshot_delta_verified` checks baseline checksum and entity-mask consistency before reconstructing the target frame. `SnapshotHistoryRing::stored_frame_count` reports retained frames across ring eviction.
+Entity patches carry per-component field masks (`SnapshotEcsField`, `SnapshotPhysicsField`) and a `changed_entity_mask` bitset (stub: up to 64 entity indices; indices ≥ 64 force `Full` delta). `ecs_field_mask_contains` / `physics_field_mask_contains` and mask popcount helpers inspect changed-component bitsets. `validate_changed_entity_mask` and `entity_index_in_changed_mask` keep patch rows and mask bits aligned. `preflight_snapshot_delta` checks baseline checksum and entity-mask consistency; `apply_snapshot_delta_verified` reconstructs the target frame. `SnapshotHistoryRing::can_apply_delta` and `apply_delta_and_store` gate on preflight plus target checksum; `pop_oldest` evicts the oldest retained snapshot across ring wrap.
 
 ```cpp
 #include <fuse/net/snapshot_delta.hpp>
@@ -168,7 +168,7 @@ ctest --test-dir build --output-on-failure -R fuse_net_b74
 | `test_net_input_history` | Empty `pop_oldest`, `clear`, ring wrap eviction bounds, post-wrap reconcile, `inputs_equal` |
 | `test_net_reconcile` | Confirmed / mismatch / NoOp reconcile paths, `reconcile_authoritative` |
 | `test_net_rollback_window` | `earliest_rewindable_frame`, `clamp_rewind_target`, rewind bounds, `RollbackManager::rewind_to` |
-| `test_net_snapshot_delta` | Empty delta, partial field-mask apply, entity bitset validation, multi-entity bitset, wire roundtrip, checksum mismatch, history ring wrap |
+| `test_net_snapshot_delta` | Empty delta + preflight/history apply, partial ECS/physics field-mask apply, entity bitset validation, multi-entity bitset, wire roundtrip, checksum mismatch, history ring wrap + `pop_oldest`, entity index ≥ 64 full fallback |
 | `fuse_net_b74` (umbrella) | Transport, serializer, rollback, buffer, delta, interpolation, AOI |
 
 ---

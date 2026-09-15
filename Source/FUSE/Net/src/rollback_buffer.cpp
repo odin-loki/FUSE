@@ -34,6 +34,31 @@ std::optional<u32> RollbackBuffer::slot_index_(u32 frame) const {
     return slot;
 }
 
+std::optional<GameSnapshot> RollbackBuffer::evict_oldest_snapshot() {
+    if (!m_has_any_frame || m_capacity == 0) {
+        return std::nullopt;
+    }
+
+    const u32 frame = m_oldest_frame;
+    std::optional<GameSnapshot> evicted;
+    const std::optional<u32> slot = slot_index_(frame);
+    if (slot.has_value()) {
+        evicted = m_slots[*slot].snapshot;
+        m_slots[*slot].has_snapshot = false;
+        m_slots[*slot].snapshot = {};
+    }
+
+    if (m_oldest_frame == m_newest_frame) {
+        m_has_any_frame = false;
+        m_oldest_frame = 0;
+        m_newest_frame = 0;
+    } else {
+        ++m_oldest_frame;
+    }
+
+    return evicted;
+}
+
 void RollbackBuffer::store_snapshot(u32 frame, GameSnapshot snapshot) {
     if (m_capacity == 0) {
         return;

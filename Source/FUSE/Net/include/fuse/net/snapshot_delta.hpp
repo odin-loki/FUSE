@@ -6,6 +6,7 @@
 #include <fuse/net/serializer.hpp>
 #include <fuse/types.hpp>
 
+#include <optional>
 #include <vector>
 
 namespace fuse::net {
@@ -64,7 +65,27 @@ struct DeltaApplyResult {
     bool entity_mask_ok = true;
 };
 
+/// Preflight checks before applying a delta (baseline checksum + entity mask consistency).
+struct SnapshotDeltaPreflight {
+    bool base_checksum_ok = false;
+    bool entity_mask_ok = true;
+
+    [[nodiscard]] bool can_apply() const { return base_checksum_ok && entity_mask_ok; }
+};
+
 [[nodiscard]] bool snapshots_equivalent(const GameSnapshot& base, const GameSnapshot& target);
+
+/// True when `mask` includes every `SnapshotEcsField` bit in `field`.
+[[nodiscard]] bool ecs_field_mask_contains(u8 mask, SnapshotEcsField field);
+
+/// True when `mask` includes every `SnapshotPhysicsField` bit in `field`.
+[[nodiscard]] bool physics_field_mask_contains(u8 mask, SnapshotPhysicsField field);
+
+/// Popcount of set ECS field bits in `mask`.
+[[nodiscard]] u32 ecs_field_mask_count(u8 mask);
+
+/// Popcount of set physics field bits in `mask`.
+[[nodiscard]] u32 physics_field_mask_count(u8 mask);
 
 /// Returns true when bit `entity_index` is set in a delta entity mask (indices >= 64 are ignored).
 [[nodiscard]] bool entity_index_in_changed_mask(u64 changed_entity_mask, u32 entity_index);
@@ -77,6 +98,9 @@ struct DeltaApplyResult {
 
 [[nodiscard]] SnapshotDelta compute_snapshot_delta(const GameSnapshot& base, const GameSnapshot& target);
 [[nodiscard]] GameSnapshot apply_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta);
+
+/// Checks baseline checksum and entity-mask consistency without reconstructing state.
+[[nodiscard]] SnapshotDeltaPreflight preflight_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta);
 
 /// Reconstructs `target` from `base` + `delta`, verifying baseline checksum and optional target checksum.
 [[nodiscard]] DeltaApplyResult apply_snapshot_delta_verified(const GameSnapshot& base, const SnapshotDelta& delta);
@@ -100,8 +124,13 @@ public:
     [[nodiscard]] bool has_frame(u32 frame) const { return m_buffer.has_frame(frame); }
 
     void push(GameSnapshot snapshot);
+    /// Evicts the oldest retained snapshot (no-op when empty).
+    [[nodiscard]] std::optional<GameSnapshot> pop_oldest();
     [[nodiscard]] const GameSnapshot* get(u32 frame) const;
     [[nodiscard]] const GameSnapshot* newest() const;
+
+    /// True when `base_frame` is retained and `preflight_snapshot_delta` would succeed.
+    [[nodiscard]] bool can_apply_delta(u32 base_frame, const SnapshotDelta& delta) const;
 
     /// Applies `delta` against a stored baseline frame and pushes the reconstructed snapshot.
     [[nodiscard]] bool apply_delta_and_store(u32 base_frame, const SnapshotDelta& delta, GameSnapshot* out = nullptr);
