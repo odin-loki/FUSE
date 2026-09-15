@@ -1,6 +1,13 @@
 #include <fuse/core/init.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/script/script_bind.hpp>
+#if defined(FUSE_SCRIPT_LUA) && FUSE_SCRIPT_LUA
+#include <fuse/script/script_bind_lua.hpp>
+extern "C" {
+#include <lauxlib.h>
+#include <lua.h>
+}
+#endif
 #include <fuse/script/script_host.hpp>
 #include <fuse/types.hpp>
 
@@ -177,6 +184,70 @@ void testOnUpdateDispatchWithDeltaTime() {
     host.shutdown();
 }
 
+void testOnUpdateDispatchEdgeCases() {
+    fuse::script::ScriptHost host;
+    host.init();
+
+    fuse::ecs::EntityID entity{11u, 4u};
+    int update_count = 0;
+    fuse::f32 last_dt = -1.f;
+
+    host.register_callback(fuse::script::ScriptEventKind::OnUpdate,
+                           [&](const fuse::script::ScriptCallbackContext& ctx) {
+                               ++update_count;
+                               last_dt = ctx.dt;
+                               expectTrue(ctx.entity == entity, "dispatch_update entity");
+                           });
+
+    host.dispatch_update(0.f, entity);
+    expectTrue(update_count == 1, "zero dt still dispatches on_update");
+    expectTrue(last_dt == 0.f, "zero dt preserved");
+
+    host.dispatch_update(0.05f, entity);
+    expectTrue(update_count == 2, "dispatch_update increments handler count");
+    expectNear(last_dt, 0.05f, 1e-6f, "dispatch_update dt");
+
+    int on_start_count = 0;
+    host.register_callback(fuse::script::ScriptEventKind::OnStart,
+                           [&](const fuse::script::ScriptCallbackContext& ctx) {
+                               ++on_start_count;
+                               expectTrue(ctx.entity == entity, "on_start entity preserved");
+                           });
+
+    fuse::script::ScriptCallbackContext start_ctx;
+    start_ctx.entity = entity;
+    start_ctx.dt = 99.f;
+    host.dispatch(fuse::script::ScriptEventKind::OnStart, start_ctx);
+    expectTrue(on_start_count == 1, "on_start dispatched once");
+    expectTrue(update_count == 2, "on_start dispatch does not invoke on_update");
+
+    host.dispatch_update(0.01f, entity);
+    expectTrue(on_start_count == 1, "dispatch_update does not invoke on_start");
+    expectTrue(update_count == 3, "dispatch_update still reaches on_update handlers");
+
+    fuse::script::ScriptHost uninitialized_host;
+    uninitialized_host.dispatch_update(0.016f, entity);
+    expectTrue(uninitialized_host.callback_count() == 0u,
+               "dispatch_update on uninitialized host is no-op");
+
+    host.shutdown();
+}
+
+void testBindHelpersValuesEqual() {
+    expectTrue(fuse::script::bind::values_equal(fuse::script::bind::push_nil(),
+                                                fuse::script::bind::push_nil()),
+               "nil values equal");
+    expectTrue(!fuse::script::bind::values_equal(fuse::script::bind::push_nil(),
+                                                 fuse::script::bind::push_bool(false)),
+               "nil and bool differ");
+    expectTrue(fuse::script::bind::values_equal(fuse::script::bind::push_number(2.0),
+                                                fuse::script::bind::push_number(2.0)),
+               "number values equal");
+    expectTrue(fuse::script::bind::values_equal(fuse::script::bind::push_string("abc"),
+                                                fuse::script::bind::push_string("abc")),
+               "string values equal");
+}
+
 void testBindHelpersPrimitives() {
     const fuse::script::bind::ScriptValue nil_value = fuse::script::bind::push_nil();
     expectTrue(fuse::script::bind::is_nil(nil_value), "nil value tagged");
@@ -239,6 +310,46 @@ void testLuaLoadsHelloWorld() {
 
     host.shutdown();
 }
+
+void testLuaBindStackRoundTrip() {
+    lua_State* L = luaL_newstate();
+    expectTrue(L != nullptr, "lua state for bind round-trip");
+
+    const fuse::script::bind::ScriptValue samples[] = {
+        fuse::script::bind::push_nil(),
+        fuse::script::bind::push_bool(true),
+        fuse::script::bind::push_number(42.5),
+        fuse::script::bind::push_string("fuse"),
+        fuse::script::bind::push_entity_id(fuse::ecs::EntityID{3u, 1u}),
+    };
+
+    fuse::ecs::Transform transform;
+    transform.position = {4.f, 5.f, 6.f, 1.f};
+    transform.rotation = {0.f, 0.707f, 0.f, 0.707f};
+    transform.scale = {1.f, 2.f, 3.f, 0.f};
+    transform.dirty = true;
+    transform.parent = fuse::ecs::EntityID{8u, 2u};
+
+    for (const fuse::script::bind::ScriptValue& sample : samples) {
+        fuse::script::bind::lua::push_to_stack(L, sample);
+        const fuse::script::bind::ScriptValue round_trip =
+            fuse::script::bind::lua::read_from_stack(L, -1);
+        expectTrue(fuse::script::bind::values_equal(sample, round_trip),
+                   "lua stack round-trip preserves tagged value");
+        lua_pop(L, 1);
+    }
+
+    const fuse::script::bind::ScriptValue transform_value =
+        fuse::script::bind::push_transform(transform);
+    fuse::script::bind::lua::push_to_stack(L, transform_value);
+    const fuse::script::bind::ScriptValue restored =
+        fuse::script::bind::lua::read_from_stack(L, -1);
+    expectTrue(fuse::script::bind::values_equal(transform_value, restored),
+               "transform round-trips through lua stack");
+    lua_pop(L, 1);
+
+    lua_close(L);
+}
 #endif
 
 } // namespace
@@ -250,10 +361,13 @@ int main() {
     testLoadStringAndFileStubs();
     testCallbackRegisterDispatchUnregister();
     testOnUpdateDispatchWithDeltaTime();
+    testOnUpdateDispatchEdgeCases();
     testBindHelpersPrimitives();
+    testBindHelpersValuesEqual();
     testBindHelpersEntityAndTransform();
 #if defined(FUSE_SCRIPT_LUA) && FUSE_SCRIPT_LUA
     testLuaLoadsHelloWorld();
+    testLuaBindStackRoundTrip();
 #endif
 
     if (g_failures != 0) {

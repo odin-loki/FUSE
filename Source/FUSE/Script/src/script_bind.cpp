@@ -126,4 +126,38 @@ const char* kind_name(ScriptValueKind kind) {
     }
 }
 
+bool values_equal(const ScriptValue& lhs, const ScriptValue& rhs) {
+    if (lhs.kind != rhs.kind) {
+        return false;
+    }
+
+    switch (lhs.kind) {
+    case ScriptValueKind::Nil:
+        return true;
+    case ScriptValueKind::Bool:
+        return lhs.bool_value == rhs.bool_value;
+    case ScriptValueKind::Number:
+        return lhs.number_value == rhs.number_value;
+    case ScriptValueKind::String:
+        return lhs.string_value == rhs.string_value;
+    case ScriptValueKind::EntityId:
+        return lhs.entity_id == rhs.entity_id;
+    case ScriptValueKind::Transform:
+        return lhs.transform.position.x == rhs.transform.position.x &&
+               lhs.transform.position.y == rhs.transform.position.y &&
+               lhs.transform.position.z == rhs.transform.position.z &&
+               lhs.transform.rotation.x == rhs.transform.rotation.x &&
+               lhs.transform.rotation.y == rhs.transform.rotation.y &&
+               lhs.transform.rotation.z == rhs.transform.rotation.z &&
+               lhs.transform.rotation.w == rhs.transform.rotation.w &&
+               lhs.transform.scale.x == rhs.transform.scale.x &&
+               lhs.transform.scale.y == rhs.transform.scale.y &&
+               lhs.transform.scale.z == rhs.transform.scale.z &&
+               lhs.transform.dirty == rhs.transform.dirty &&
+               lhs.transform.parent == rhs.transform.parent;
+    default:
+        return false;
+    }
+}
+
 } // namespace fuse::script::bind

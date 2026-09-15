@@ -36,6 +36,9 @@ public:
 
     void dispatch(ScriptEventKind kind, const ScriptCallbackContext& ctx);
 
+    /// Convenience for per-frame `OnUpdate` handlers — sets `ctx.dt` and `ctx.entity`.
+    void dispatch_update(f32 dt, ecs::EntityID entity = ecs::EntityID::null());
+
     ScriptLoadResult load_string(const char* source, const char* chunk_name = "chunk");
     ScriptLoadResult load_file(const char* path);
 

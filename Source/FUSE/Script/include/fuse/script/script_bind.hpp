@@ -53,4 +53,7 @@ struct ScriptValue {
 
 [[nodiscard]] const char* kind_name(ScriptValueKind kind);
 
+/// Deep equality for tagged values (kind + payload).
+[[nodiscard]] bool values_equal(const ScriptValue& lhs, const ScriptValue& rhs);
+
 } // namespace fuse::script::bind

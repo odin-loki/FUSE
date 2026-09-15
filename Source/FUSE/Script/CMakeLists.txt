@@ -2,6 +2,7 @@
 
 set(FUSE_SCRIPT_PUBLIC_HEADERS
     include/fuse/script/script_bind.hpp
+    include/fuse/script/script_bind_lua.hpp
     include/fuse/script/script_callback.hpp
     include/fuse/script/script_host.hpp
     include/fuse/script/script_result.hpp
@@ -10,6 +11,7 @@ set(FUSE_SCRIPT_PUBLIC_HEADERS
 
 set(FUSE_SCRIPT_SOURCES
     src/script_bind.cpp
+    src/script_bind_lua.cpp
     src/script_host.cpp
     src/script_vm.cpp
 )

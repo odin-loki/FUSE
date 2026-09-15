@@ -88,6 +88,13 @@ void ScriptHost::dispatch(ScriptEventKind kind, const ScriptCallbackContext& ctx
     }
 }
 
+void ScriptHost::dispatch_update(f32 dt, ecs::EntityID entity) {
+    ScriptCallbackContext ctx;
+    ctx.entity = entity;
+    ctx.dt = dt;
+    dispatch(ScriptEventKind::OnUpdate, ctx);
+}
+
 ScriptLoadResult ScriptHost::load_string(const char* source, const char* chunk_name) {
     if (!m_initialized) {
         return {ScriptLoadStatus::BackendUnavailable, "script host not initialized"};
