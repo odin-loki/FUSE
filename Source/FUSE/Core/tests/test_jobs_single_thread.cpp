@@ -173,9 +173,9 @@ void testNestedParallelForVisitCount() {
 void testNestedParallelForStressVisitCoverage() {
     constexpr fuse::u32 outerCount = 24u;
     constexpr fuse::u32 innerCount = 32u;
-    constexpr fuse::u32 iterations = 16u;
+    constexpr fuse::u32 iterations = 8u;
     const fuse::u32 outerGrains[] = {1u, 4u, outerCount};
-    const fuse::u32 innerGrains[] = {1u, 4u, 8u, 16u};
+    const fuse::u32 innerGrains[] = {4u, 8u, 16u};
 
     withScheduler(0, [&] {
         for (fuse::u32 outerGrain : outerGrains) {

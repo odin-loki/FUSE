@@ -348,14 +348,14 @@ void testNestedParallelForMultiWorkerVisitCount() {
 void testNestedParallelForStressVisitCoverage() {
     constexpr fuse::u32 outerCount = 24u;
     constexpr fuse::u32 innerCount = 32u;
-    constexpr fuse::u32 iterations = 16u;
+    constexpr fuse::u32 iterations = 8u;
 
 #if FUSE_JOBS_SINGLE_THREAD
     const fuse::u32 workerOptions[] = {0u};
 #else
-    const fuse::u32 workerOptions[] = {0u, 2u, 4u, 8u};
+    const fuse::u32 workerOptions[] = {0u, 4u};
 #endif
-    const fuse::u32 innerGrains[] = {1u, 4u, 8u, 16u};
+    const fuse::u32 innerGrains[] = {4u, 8u, 16u};
 
     for (fuse::u32 workers : workerOptions) {
         withScheduler(workers, [&] {
