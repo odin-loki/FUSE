@@ -377,6 +377,90 @@ void testCameraFovHoldExtrapolation() {
     expectNear(eased.field_of_view, 60.f, 0.001f, "fov smoothstep midpoint");
 }
 
+void testCameraSampleHelpersEmpty() {
+    const std::vector<fuse::cinematics::CameraKeyframe> empty;
+
+    expectTrue(fuse::cinematics::camera_keyframes_empty(empty), "empty keyframe vector guard");
+    expectNear(fuse::cinematics::sample_camera_position(empty, 500).x, 0.f, 0.001f, "empty position rail");
+    expectNear(fuse::cinematics::sample_camera_field_of_view(empty, 500),
+               fuse::cinematics::kDefaultCameraFovDeg,
+               0.001f,
+               "empty fov rail uses default");
+    expectNear(fuse::cinematics::sample_camera_roll(empty, 500), 0.f, 0.001f, "empty roll rail");
+    expectNear(fuse::cinematics::sample_camera_look_at(empty, 500).x, 0.f, 0.001f, "empty look-at rail");
+
+    const fuse::cinematics::CameraKeyframeBracket bracket =
+        fuse::cinematics::find_camera_keyframe_bracket(empty, 1'000);
+    expectTrue(bracket.prev_index == -1, "empty bracket has no prev");
+    expectTrue(bracket.next_index == -1, "empty bracket has no next");
+    expectNear(bracket.segment_t, 0.f, 0.001f, "empty bracket segment t");
+}
+
+void testDefaultCameraSample() {
+    const fuse::cinematics::CameraSample defaults = fuse::cinematics::default_camera_sample();
+    expectNear(defaults.field_of_view, fuse::cinematics::kDefaultCameraFovDeg, 0.001f, "default sample fov");
+    expectNear(defaults.roll_deg, 0.f, 0.001f, "default sample roll");
+
+    fuse::cinematics::CameraTrack track("Defaults");
+    const fuse::cinematics::CameraSample sampled = track.sample_at(1'000);
+    expectNear(sampled.field_of_view, defaults.field_of_view, 0.001f, "empty track matches default sample fov");
+    expectNear(sampled.roll_deg, defaults.roll_deg, 0.001f, "empty track matches default sample roll");
+}
+
+void testCameraKeyframeEntityLookAtStub() {
+    fuse::cinematics::CameraKeyframe fixed{};
+    fixed.look_at_mode = fuse::cinematics::CameraLookAtMode::FixedPoint;
+    fixed.look_at_target_id = "ignored";
+    expectTrue(!fuse::cinematics::camera_keyframe_uses_entity_look_at(fixed),
+               "fixed point mode does not use entity look-at");
+
+    fuse::cinematics::CameraKeyframe entity{};
+    entity.look_at_mode = fuse::cinematics::CameraLookAtMode::TargetEntity;
+    entity.look_at_target_id = "hero";
+    expectTrue(fuse::cinematics::camera_keyframe_uses_entity_look_at(entity),
+               "entity mode with id uses entity look-at");
+
+    entity.look_at_target_id.clear();
+    expectTrue(!fuse::cinematics::camera_keyframe_uses_entity_look_at(entity),
+               "entity mode without id is not entity-bound");
+}
+
+void testCameraTrackClearKeyframes() {
+    fuse::cinematics::CameraTrack track("Clearable");
+    track.add_keyframe({0, {0.f, 0.f, 5.f}, fuse::cinematics::CameraLookAtMode::FixedPoint, {}, {}, 70.f, 10.f});
+    expectTrue(!track.empty(), "track has keyframes before clear");
+
+    track.clear_keyframes();
+    expectTrue(track.empty(), "clear_keyframes empties track");
+    expectTrue(track.keyframe_span().start_ms == 0 && track.keyframe_span().end_ms == 0,
+               "cleared track span is zero");
+
+    const fuse::cinematics::CameraSample sample = track.sample_at(250);
+    expectNear(sample.field_of_view, fuse::cinematics::kDefaultCameraFovDeg, 0.001f, "cleared track fov default");
+    expectNear(sample.roll_deg, 0.f, 0.001f, "cleared track roll default");
+}
+
+void testCameraDuplicateKeyframeTime() {
+    fuse::cinematics::CameraTrack track("CoincidentTimes");
+    fuse::cinematics::CameraKeyframe first{};
+    first.time_ms = 1'000;
+    first.field_of_view = 40.f;
+    first.roll_deg = 5.f;
+
+    fuse::cinematics::CameraKeyframe duplicate{};
+    duplicate.time_ms = 1'000;
+    duplicate.field_of_view = 80.f;
+    duplicate.roll_deg = 15.f;
+
+    track.add_keyframe(first);
+    track.add_keyframe(duplicate);
+    track.sort_keyframes();
+
+    const fuse::cinematics::CameraSample at_time = track.sample_at(1'000);
+    expectNear(at_time.field_of_view, 80.f, 0.001f, "duplicate time picks later fov keyframe");
+    expectNear(at_time.roll_deg, 15.f, 0.001f, "duplicate time picks later roll keyframe");
+}
+
 void testCameraTrackMultiKeyframe() {
     fuse::cinematics::CameraTrack track("Dolly");
     track.add_keyframe({0, {0.f, 0.f, 0.f}, fuse::cinematics::CameraLookAtMode::FixedPoint, {}, {}, 70.f, 0.f});
@@ -682,6 +766,11 @@ int main() {
     testCameraLookAtCoincidentEdge();
     testCameraKeyframeSampleHelpers();
     testCameraFovHoldExtrapolation();
+    testCameraSampleHelpersEmpty();
+    testDefaultCameraSample();
+    testCameraKeyframeEntityLookAtStub();
+    testCameraTrackClearKeyframes();
+    testCameraDuplicateKeyframeTime();
     testCameraTrackMultiKeyframe();
     testSpriteTrackSampling();
     testPropertyTrackSampling();
