@@ -44,6 +44,7 @@ void PlaySession::start(EditorScene& editorScene, scene::Scene& scene, EditorSta
     m_sessionTickCount = 0;
     m_tickAccumulator = 0.f;
     m_coalescedDirtyCount = 0;
+    m_skippedInactiveTickCount = 0;
 
     state.playing = true;
     state.paused = false;
@@ -61,7 +62,9 @@ void PlaySession::stop(EditorScene& editorScene, scene::Scene& scene, EditorStat
     m_sessionTickCount = 0;
     m_tickAccumulator = 0.f;
     m_coalescedDirtyCount = 0;
+    m_skippedInactiveTickCount = 0;
     m_hasWorldSnapshot = false;
+    m_hasDirtySnapshot = false;
 
     state.playing = false;
     state.paused = false;
@@ -87,6 +90,7 @@ void PlaySession::resume(scene::Scene& scene, EditorState& state, PlayModePhysic
 
 void PlaySession::tick(f32 dt, EditorScene& editorScene, PlayModePhysicsState& physics) {
     if (!m_controller.isPlaying() || !physics.simulationActive) {
+        ++m_skippedInactiveTickCount;
         return;
     }
 
@@ -110,13 +114,51 @@ u32 PlaySession::consumeFixedSteps(f32 fixedDt, EditorScene& editorScene,
     return steps;
 }
 
+u32 PlaySession::tickFixedStep(f32 dt, f32 fixedDt, EditorScene& editorScene,
+                               PlayModePhysicsState& physics) {
+    tick(dt, editorScene, physics);
+    return consumeFixedSteps(fixedDt, editorScene, physics);
+}
+
 PlayWorldSnapshot PlaySession::captureWorldSnapshot(EditorScene& editorScene) const {
     return PlayWorldSnapshot::capture(editorScene);
 }
 
 void PlaySession::restoreWorldSnapshot(EditorScene& editorScene,
                                        const PlayWorldSnapshot& snapshot) const {
+    if (snapshot.empty()) {
+        return;
+    }
+
     snapshot.apply(editorScene);
+}
+
+bool PlaySession::drainWorldSnapshot(EditorScene& editorScene) {
+    if (!m_hasWorldSnapshot) {
+        return false;
+    }
+
+    m_worldSnapshot.apply(editorScene);
+    m_hasWorldSnapshot = false;
+    return true;
+}
+
+void PlaySession::restoreDirtyFlags(EditorScene& editorScene, EditorState& state) const {
+    if (!m_hasDirtySnapshot) {
+        return;
+    }
+
+    restoreDirtySnapshot_(editorScene, state);
+}
+
+bool PlaySession::drainDirtySnapshot(EditorScene& editorScene, EditorState& state) {
+    if (!m_hasDirtySnapshot) {
+        return false;
+    }
+
+    restoreDirtySnapshot_(editorScene, state);
+    m_hasDirtySnapshot = false;
+    return true;
 }
 
 void PlaySession::captureDirtySnapshot_(EditorScene& editorScene, const EditorState& state) {
@@ -126,9 +168,14 @@ void PlaySession::captureDirtySnapshot_(EditorScene& editorScene, const EditorSt
     editorScene.registry().each<ecs::Transform>([this](ecs::EntityID id, const ecs::Transform& transform) {
         m_dirtySnapshot.transformDirty.push_back({id, transform.dirty});
     });
+    m_hasDirtySnapshot = true;
 }
 
 void PlaySession::restoreDirtySnapshot_(EditorScene& editorScene, EditorState& state) const {
+    if (!m_hasDirtySnapshot) {
+        return;
+    }
+
     state.sceneModified = m_dirtySnapshot.sceneModified;
 
     for (const std::pair<ecs::EntityID, bool>& entry : m_dirtySnapshot.transformDirty) {

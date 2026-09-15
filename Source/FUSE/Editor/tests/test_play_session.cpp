@@ -338,6 +338,131 @@ void testPlaySessionFullTransformSnapshotRoundtrip() {
     editorScene.destroy();
 }
 
+void testPlaySessionTickFixedStep() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    const fuse::ecs::EntityID entity = editorScene.registry().create();
+    editorScene.registry().add<fuse::ecs::Transform>(entity);
+
+    fuse::scene::Scene scene("TickFixedStepTest");
+    fuse::editor::EditorState state;
+    fuse::editor::PlaySession session;
+    fuse::editor::PlayModePhysicsState physics;
+
+    constexpr float kFixedDt = 1.f / 60.f;
+
+    session.start(editorScene, scene, state, physics);
+    expectTrue(session.tickFixedStep(kFixedDt, kFixedDt, editorScene, physics) == 1u,
+               "tickFixedStep drains one fixed slice per frame at target dt");
+    expectTrue(session.sessionTickCount() == 2u,
+               "tickFixedStep runs variable tick plus one fixed slice");
+    expectTrue(session.tickAccumulator() < kFixedDt,
+               "tickFixedStep leaves sub-fixed remainder in accumulator");
+
+    session.stop(editorScene, scene, state, physics);
+    expectTrue(session.tickFixedStep(kFixedDt, kFixedDt, editorScene, physics) == 0u,
+               "tickFixedStep is guarded while stopped");
+
+    editorScene.destroy();
+}
+
+void testPlaySessionDrainWorldSnapshot() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    const fuse::ecs::EntityID entity = editorScene.registry().create();
+    fuse::ecs::Transform& transform = editorScene.registry().add<fuse::ecs::Transform>(entity);
+    transform.position.x = 2.f;
+    transform.position.y = 3.f;
+
+    fuse::scene::Scene scene("DrainWorldTest");
+    fuse::editor::EditorState state;
+    fuse::editor::PlaySession session;
+    fuse::editor::PlayModePhysicsState physics;
+
+    session.start(editorScene, scene, state, physics);
+    expectTrue(session.hasWorldSnapshot(), "drain test captures world snapshot on start");
+
+    transform.position.x = 99.f;
+    expectTrue(session.drainWorldSnapshot(editorScene),
+               "drainWorldSnapshot applies stored snapshot");
+    expectTrue(!session.hasWorldSnapshot(), "drainWorldSnapshot clears snapshot flag");
+    expectNear(transform.position.x, 2.f, 1e-4f, "drainWorldSnapshot restores captured position");
+    expectTrue(!session.drainWorldSnapshot(editorScene),
+               "second drainWorldSnapshot is guarded when empty");
+
+    session.stop(editorScene, scene, state, physics);
+    editorScene.destroy();
+}
+
+void testPlaySessionDirtyFlagRestoreAndDrain() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    const fuse::ecs::EntityID entity = editorScene.registry().create();
+    fuse::ecs::Transform& transform = editorScene.registry().add<fuse::ecs::Transform>(entity);
+    transform.dirty = false;
+
+    fuse::scene::Scene scene("DirtyDrainTest");
+    fuse::editor::EditorState state;
+    state.sceneModified = true;
+
+    fuse::editor::PlaySession session;
+    fuse::editor::PlayModePhysicsState physics;
+
+    session.start(editorScene, scene, state, physics);
+    expectTrue(session.hasDirtySnapshot(), "dirty snapshot captured on start");
+
+    transform.dirty = true;
+    state.sceneModified = false;
+
+    session.restoreDirtyFlags(editorScene, state);
+    expectTrue(!transform.dirty, "restoreDirtyFlags restores pre-play transform dirty flag");
+    expectTrue(state.sceneModified, "restoreDirtyFlags restores pre-play scene modified flag");
+    expectTrue(session.hasDirtySnapshot(), "restoreDirtyFlags keeps snapshot until drained");
+
+    transform.dirty = true;
+    state.sceneModified = false;
+    expectTrue(session.drainDirtySnapshot(editorScene, state),
+               "drainDirtySnapshot restores captured dirty flags");
+    expectTrue(!session.hasDirtySnapshot(), "drainDirtySnapshot clears dirty snapshot flag");
+    expectTrue(!transform.dirty, "drainDirtySnapshot restores transform dirty after replay");
+    expectTrue(state.sceneModified, "drainDirtySnapshot restores scene modified after replay");
+    expectTrue(!session.drainDirtySnapshot(editorScene, state),
+               "second drainDirtySnapshot is guarded when empty");
+
+    session.stop(editorScene, scene, state, physics);
+    editorScene.destroy();
+}
+
+void testPlaySessionEmptySessionGuards() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    fuse::scene::Scene scene("GuardTest");
+    fuse::editor::EditorState state;
+    fuse::editor::PlaySession session;
+    fuse::editor::PlayModePhysicsState physics;
+
+    session.tick(0.016f, editorScene, physics);
+    expectTrue(session.skippedInactiveTickCount() == 1u,
+               "tick increments skipped counter while session inactive");
+    expectTrue(session.sessionTickCount() == 0u, "inactive tick does not simulate");
+
+    fuse::editor::PlayWorldSnapshot emptySnapshot;
+    session.restoreWorldSnapshot(editorScene, emptySnapshot);
+    expectTrue(!session.hasWorldSnapshot(), "empty restoreWorldSnapshot is a no-op guard");
+    expectTrue(!session.drainWorldSnapshot(editorScene),
+               "drainWorldSnapshot guarded with no captured snapshot");
+    expectTrue(!session.hasDirtySnapshot(), "no dirty snapshot before start");
+    session.restoreDirtyFlags(editorScene, state);
+    expectTrue(!session.drainDirtySnapshot(editorScene, state),
+               "drainDirtySnapshot guarded before capture");
+
+    editorScene.destroy();
+}
+
 void testPlaySessionStartStopCycle() {
     fuse::editor::EditorScene editorScene;
     editorScene.init();
@@ -375,6 +500,10 @@ int main() {
     testPlaySessionDirtyCoalesceAndClearsOnStop();
     testPlaySessionIdempotentStartStop();
     testPlaySessionConsumeFixedSteps();
+    testPlaySessionTickFixedStep();
+    testPlaySessionDrainWorldSnapshot();
+    testPlaySessionDirtyFlagRestoreAndDrain();
+    testPlaySessionEmptySessionGuards();
     testPlaySessionStartStopCycle();
     testPlaySessionFullTransformSnapshotRoundtrip();
     fuse::core::shutdown();
