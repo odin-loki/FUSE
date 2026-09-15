@@ -65,6 +65,9 @@ float compute_blocker_visibility(const Vec3& listener, const Vec3& source, const
 
 float compute_blockers_visibility(const Vec3& listener, const Vec3& source, const AABB* blockers,
                                   u32 blocker_count, const OcclusionParams& params) {
+    if (blockers == nullptr || blocker_count == 0) {
+        return 1.f;
+    }
     float visibility = 1.f;
     for (u32 i = 0; i < blocker_count; ++i) {
         visibility = std::min(visibility,

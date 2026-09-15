@@ -33,6 +33,10 @@ u32 count_listener_reverb_zones(const Vec3& listener, const ReverbZoneParams* zo
 /// Effective wet mix scalar [0, 1] from a zone blend result.
 float compute_effective_wet_mix(const ReverbZoneBlend& blend);
 
+/// One-shot effective wet mix from listener position and zone list (empty list → 0).
+float compute_effective_wet_mix(const Vec3& listener, const ReverbZoneParams* zones,
+                                u32 zone_count);
+
 /// Linear dry/wet sample blend stub — wet_mix in [0, 1].
 float blend_dry_wet_sample(float dry, float wet, float wet_mix);
 
