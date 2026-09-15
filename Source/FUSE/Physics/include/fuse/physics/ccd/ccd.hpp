@@ -7,6 +7,7 @@
 
 #include <fuse/types.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -129,6 +130,62 @@ FUSE_PHYSICS_INLINE TOIResult selectEarliestToi(const TOIResult& a, const TOIRes
         return a;
     }
     return (a.toi <= b.toi) ? a : b;
+}
+
+/// Sphere swept along a segment against an axis-aligned box (slab TOI stub).
+FUSE_PHYSICS_INLINE TOIResult sweptSphereAabb(vec3 pos0,
+                                              vec3 vel,
+                                              f32 radius,
+                                              aabb box) {
+    const vec3 expandedMin = {box.min.x - radius, box.min.y - radius, box.min.z - radius};
+    const vec3 expandedMax = {box.max.x + radius, box.max.y + radius, box.max.z + radius};
+
+    f32 tMin = 0.f;
+    f32 tMax = 1.f;
+
+    const f32 origins[3] = {pos0.x, pos0.y, pos0.z};
+    const f32 deltas[3] = {vel.x, vel.y, vel.z};
+    const f32 mins[3] = {expandedMin.x, expandedMin.y, expandedMin.z};
+    const f32 maxs[3] = {expandedMax.x, expandedMax.y, expandedMax.z};
+
+    for (int axis = 0; axis < 3; ++axis) {
+        const f32 origin = origins[axis];
+        const f32 delta = deltas[axis];
+        const f32 boxMin = mins[axis];
+        const f32 boxMax = maxs[axis];
+
+        if (std::fabs(delta) < 1e-10f) {
+            if (origin < boxMin || origin > boxMax) {
+                return {.valid = false};
+            }
+            continue;
+        }
+
+        const f32 inv = 1.f / delta;
+        f32 t0 = (boxMin - origin) * inv;
+        f32 t1 = (boxMax - origin) * inv;
+        if (t0 > t1) {
+            std::swap(t0, t1);
+        }
+        tMin = std::max(tMin, t0);
+        tMax = std::min(tMax, t1);
+        if (tMin > tMax) {
+            return {.valid = false};
+        }
+    }
+
+    if (!isToiInWindow(tMin)) {
+        return {.valid = false};
+    }
+
+    const vec3 hitCenter = pos0 + vel * tMin;
+    const vec3 closest = {
+        std::max(box.min.x, std::min(hitCenter.x, box.max.x)),
+        std::max(box.min.y, std::min(hitCenter.y, box.max.y)),
+        std::max(box.min.z, std::min(hitCenter.z, box.max.z)),
+    };
+    const vec3 normal = (hitCenter - closest).normalized();
+    return makeToiAtContact(tMin, closest, normal, 0, 0);
 }
 
 /// Thin axis-aligned slab along Z (half thickness in `slabHalfThickness`).

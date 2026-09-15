@@ -1,5 +1,7 @@
 #include <fuse/physics/ccd/toi_buffer.hpp>
 
+#include <algorithm>
+
 namespace fuse::physics {
 
 void ToiBufferSoA::reserve(u32 capacity) {
@@ -11,14 +13,20 @@ void ToiBufferSoA::reserve(u32 capacity) {
     validFlags.reserve(capacity);
 }
 
+void ToiBufferSoA::setMaxCapacity(u32 capacity) {
+    maxCapacity = capacity;
+}
+
 void ToiBufferSoA::clear() {
     activeCount = 0;
     pairSlotCount = 0;
+    droppedCount = 0;
 }
 
 void ToiBufferSoA::preparePairSlots(u32 pairCount) {
     pairSlotCount = pairCount;
     activeCount = 0;
+    droppedCount = 0;
     toiValues.assign(pairCount, 0.f);
     contactPoints.assign(pairCount, {});
     contactNormals.assign(pairCount, {});
@@ -38,6 +46,59 @@ void ToiBufferSoA::writeSlot(u32 slot, const TOIResult& result) {
     bodyA[slot] = result.bodyA;
     bodyB[slot] = result.bodyB;
     validFlags[slot] = 1u;
+}
+
+bool ToiBufferSoA::push(const TOIResult& result) {
+    if (!result.valid) {
+        return false;
+    }
+
+    if (maxCapacity > 0u && activeCount >= maxCapacity) {
+        ++droppedCount;
+        return false;
+    }
+
+    toiValues.push_back(result.toi);
+    contactPoints.push_back(result.contactPoint);
+    contactNormals.push_back(result.contactNormal);
+    bodyA.push_back(result.bodyA);
+    bodyB.push_back(result.bodyB);
+    validFlags.push_back(1u);
+    ++activeCount;
+    return true;
+}
+
+void ToiBufferSoA::sortByToi() {
+    if (activeCount <= 1u) {
+        return;
+    }
+
+    std::vector<u32> order(activeCount);
+    for (u32 i = 0; i < activeCount; ++i) {
+        order[i] = i;
+    }
+
+    std::sort(order.begin(), order.end(), [&](u32 lhs, u32 rhs) {
+        return toiValues[lhs] < toiValues[rhs];
+    });
+
+    const auto reorder = [&](auto& values) {
+        using Value = typename std::decay_t<decltype(values)>::value_type;
+        std::vector<Value> sorted(activeCount);
+        for (u32 i = 0; i < activeCount; ++i) {
+            sorted[i] = values[order[i]];
+        }
+        for (u32 i = 0; i < activeCount; ++i) {
+            values[i] = sorted[i];
+        }
+    };
+
+    reorder(toiValues);
+    reorder(contactPoints);
+    reorder(contactNormals);
+    reorder(bodyA);
+    reorder(bodyB);
+    reorder(validFlags);
 }
 
 u32 ToiBufferSoA::compact() {
