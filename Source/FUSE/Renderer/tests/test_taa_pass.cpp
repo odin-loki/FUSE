@@ -253,6 +253,25 @@ void testHistoryValidityFlags() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testClampTaaParams() {
+    fuse::renderer::TAAParams raw{};
+    raw.blend_factor = 2.f;
+    raw.velocity_rejection = -0.5f;
+    raw.depth_rejection = -1.f;
+    raw.clamp_gamma = 0.5f;
+
+    const fuse::renderer::TAAParams clamped = fuse::renderer::clampTaaParams(raw);
+    expectNear(clamped.blend_factor, 1.f, 1e-5f, "blend_factor clamped to 1");
+    expectNear(clamped.velocity_rejection, 0.f, 1e-5f, "velocity_rejection clamped to zero");
+    expectNear(clamped.depth_rejection, 0.f, 1e-5f, "depth_rejection clamped to zero");
+    expectNear(clamped.clamp_gamma, 1.f, 1e-5f, "clamp_gamma clamped to 1");
+
+    expectNear(fuse::renderer::computeEffectiveBlend(true, raw), 1.f, 1e-5f,
+               "first frame effective blend is full current weight");
+    expectNear(fuse::renderer::computeEffectiveBlend(false, raw), 1.f, 1e-5f,
+               "subsequent effective blend uses clamped blend_factor");
+}
+
 void testResolveSkipReasonLabels() {
     expectTrue(std::strcmp(fuse::renderer::taaResolveSkipReasonLabel(fuse::renderer::TaaResolveSkipReason::None),
                            "none") == 0,
@@ -273,6 +292,18 @@ void testResolveSkipReasonLabels() {
                                fuse::renderer::TaaResolveSkipReason::MissingSurfaces),
                            "missing_surfaces") == 0,
                "MissingSurfaces skip reason label");
+    expectTrue(std::strcmp(fuse::renderer::taaResolveSkipReasonLabel(
+                               fuse::renderer::TaaResolveSkipReason::MissingVelocityBuffer),
+                           "missing_velocity_buffer") == 0,
+               "MissingVelocityBuffer skip reason label");
+    expectTrue(std::strcmp(fuse::renderer::taaResolveSkipReasonLabel(
+                               fuse::renderer::TaaResolveSkipReason::MissingDepthBuffer),
+                           "missing_depth_buffer") == 0,
+               "MissingDepthBuffer skip reason label");
+    expectTrue(std::strcmp(fuse::renderer::taaResolveSkipReasonLabel(
+                               fuse::renderer::TaaResolveSkipReason::StaleHistoryGeneration),
+                           "stale_history_generation") == 0,
+               "StaleHistoryGeneration skip reason label");
 }
 
 void testInvalidDimensionsSkipReason() {
@@ -380,6 +411,103 @@ void testMissingSurfacesSkipReason() {
     expectTrue(!resolve.resolve(desc, history), "resolve rejects missing surfaces");
     expectTrue(resolve.lastStats().skip_reason == fuse::renderer::TaaResolveSkipReason::MissingSurfaces,
                "resolve records MissingSurfaces skip reason");
+
+    history.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
+void testMissingVelocityDepthSkipReason() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for velocity/depth skip test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaHistoryBuffer history;
+    fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
+    expectTrue(history.init(resources, historyDesc), "history ready for velocity/depth skip test");
+
+    fuse::renderer::TaaResolve resolve;
+    fuse::renderer::TaaResolveDesc desc{};
+    desc.width = 64;
+    desc.height = 64;
+    desc.surfaces.current_frame = reinterpret_cast<void*>(0x1);
+    desc.surfaces.output = reinterpret_cast<void*>(0x2);
+    desc.params.velocity_rejection = 0.5f;
+    desc.enforce_rejection_surfaces = true;
+
+    fuse::renderer::TaaResolveSkipReason skipReason = fuse::renderer::TaaResolveSkipReason::None;
+    expectTrue(resolve.wouldSkip(desc, history, &skipReason), "wouldSkip detects missing velocity buffer");
+    expectTrue(skipReason == fuse::renderer::TaaResolveSkipReason::MissingVelocityBuffer,
+               "missing velocity buffer skip reason");
+    expectTrue(!resolve.resolve(desc, history), "resolve rejects missing velocity buffer");
+    expectTrue(resolve.lastStats().skip_reason == fuse::renderer::TaaResolveSkipReason::MissingVelocityBuffer,
+               "resolve records MissingVelocityBuffer skip reason");
+
+    desc.params.velocity_rejection = 0.f;
+    desc.params.depth_rejection = 0.25f;
+    skipReason = fuse::renderer::TaaResolveSkipReason::None;
+    expectTrue(resolve.wouldSkip(desc, history, &skipReason), "wouldSkip detects missing depth buffer");
+    expectTrue(skipReason == fuse::renderer::TaaResolveSkipReason::MissingDepthBuffer,
+               "missing depth buffer skip reason");
+
+    desc.params.depth_rejection = 0.f;
+    expectTrue(!resolve.wouldSkip(desc, history, &skipReason), "wouldSkip passes when rejection disabled");
+
+    history.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
+void testStaleHistoryGenerationSkipReason() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for stale generation test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaHistoryBuffer history;
+    fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
+    expectTrue(history.init(resources, historyDesc), "history ready for stale generation test");
+    expectTrue(!history.isHistoryStale(0u), "generation zero is current after init");
+
+    fuse::renderer::TaaResolve resolve;
+    fuse::renderer::TaaResolveDesc desc{};
+    desc.width = 64;
+    desc.height = 64;
+    desc.surfaces.current_frame = reinterpret_cast<void*>(0x1);
+    desc.surfaces.output = reinterpret_cast<void*>(0x2);
+    desc.observed_history_generation = 0u;
+
+    expectTrue(resolve.resolve(desc, history), "resolve succeeds with current generation");
+    history.invalidateHistory();
+    expectTrue(history.isHistoryStale(0u), "invalidate marks prior generation stale");
+
+    desc.observed_history_generation = 0u;
+    fuse::renderer::TaaResolveSkipReason skipReason = fuse::renderer::TaaResolveSkipReason::None;
+    expectTrue(resolve.wouldSkip(desc, history, &skipReason), "wouldSkip detects stale generation");
+    expectTrue(skipReason == fuse::renderer::TaaResolveSkipReason::StaleHistoryGeneration,
+               "stale generation skip reason");
+    expectTrue(!resolve.resolve(desc, history), "resolve rejects stale generation");
+    expectTrue(resolve.lastStats().skip_reason == fuse::renderer::TaaResolveSkipReason::StaleHistoryGeneration,
+               "resolve records StaleHistoryGeneration skip reason");
+
+    desc.observed_history_generation = history.invalidateGeneration();
+    expectTrue(!resolve.wouldSkip(desc, history, &skipReason), "wouldSkip passes with updated generation");
+    expectTrue(resolve.resolve(desc, history), "resolve succeeds with updated generation");
 
     history.destroy();
     resources.destroy();
@@ -633,6 +761,50 @@ void testTaaPassInvalidateHistory() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testTaaPassResize() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for pass resize test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaPassDesc passDesc{};
+    passDesc.width = 64;
+    passDesc.height = 64;
+
+    auto pass = fuse::renderer::TaaPass::create(passDesc);
+    expectTrue(pass->init(resources), "TaaPass initialized for resize test");
+    expectTrue(pass->matchesDimensions(64u, 64u), "pass matches initial dimensions");
+
+    fuse::renderer::TaaResolveDesc resolveDesc{};
+    resolveDesc.width = 64;
+    resolveDesc.height = 64;
+    resolveDesc.surfaces.current_frame = reinterpret_cast<void*>(0x10);
+    resolveDesc.surfaces.output = reinterpret_cast<void*>(0x20);
+    expectTrue(pass->resolveFrame(resolveDesc), "initial resolve succeeds");
+    expectTrue(pass->history().hasValidHistory(), "history valid before resize");
+
+    pass->resize(128, 128);
+    expectTrue(pass->matchesDimensions(128u, 128u), "pass matches resized dimensions");
+    expectTrue(!pass->history().hasValidHistory(), "resize invalidates history validity");
+    expectTrue(pass->needsHistoryWarmup(), "pass needs warmup after resize");
+
+    resolveDesc.width = 128;
+    resolveDesc.height = 128;
+    expectTrue(!pass->wouldSkipResolve(resolveDesc), "wouldSkipResolve passes at new dimensions");
+    expectTrue(pass->resolveFrame(resolveDesc), "resolve succeeds after resize");
+
+    pass->destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
 void testTaaPassWouldSkipResolve() {
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
@@ -715,16 +887,20 @@ int main() {
     testJitterNdcOffset();
     testHistoryBufferPingPong();
     testHistoryValidityFlags();
+    testClampTaaParams();
     testResolveSkipReasonLabels();
     testInvalidDimensionsSkipReason();
     testDimensionMismatchResolve();
     testMissingSurfacesSkipReason();
+    testMissingVelocityDepthSkipReason();
+    testStaleHistoryGenerationSkipReason();
     testHistoryInvalidateGeneration();
     testEmptyHistoryResolve();
     testValidityResetAfterInvalidate();
     testResolveStub();
     testTaaPassLifecycle();
     testTaaPassInvalidateHistory();
+    testTaaPassResize();
     testTaaPassWouldSkipResolve();
     testTaaPassSyncJitterToFrameIndex();
     testTaaPassGraphHook();

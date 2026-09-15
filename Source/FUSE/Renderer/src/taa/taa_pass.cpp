@@ -74,6 +74,22 @@ void TaaPass::invalidateHistory() {
     m_resolve.resetBookkeeping();
 }
 
+void TaaPass::resize(u32 width, u32 height) {
+    if (m_desc.width == width && m_desc.height == height) {
+        return;
+    }
+
+    m_desc.width = width;
+    m_desc.height = height;
+    if (m_stats.ready) {
+        m_history.resize(width, height);
+    }
+}
+
+bool TaaPass::matchesDimensions(u32 width, u32 height) const {
+    return m_desc.width == width && m_desc.height == height && m_history.matchesDimensions(width, height);
+}
+
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
     return m_resolve.wouldSkip(desc, m_history, reason);
 }

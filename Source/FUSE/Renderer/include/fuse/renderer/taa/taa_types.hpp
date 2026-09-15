@@ -32,12 +32,19 @@ struct TaaResolveSurfaces {
     void* output = nullptr;
 };
 
+/// Sentinel for `TaaResolveDesc::observed_history_generation` — skip stale-history guard.
+static constexpr u32 kTaaResolveNoHistoryGeneration = 0xFFFFFFFFu;
+
 /// Per-frame resolve request — consumed by `TaaResolve` / `TaaPass`.
 struct TaaResolveDesc {
     TaaResolveSurfaces surfaces{};
     TAAParams params{};
     u32 width = 0;
     u32 height = 0;
+    /// When not `kTaaResolveNoHistoryGeneration`, resolve bails if this differs from `invalidateGeneration()`.
+    u32 observed_history_generation = kTaaResolveNoHistoryGeneration;
+    /// When true, resolve requires velocity/depth surfaces when rejection params are active.
+    bool enforce_rejection_surfaces = false;
 };
 
 /// History accumulation bookkeeping tracked alongside ping-pong targets.
@@ -55,7 +62,19 @@ enum class TaaResolveSkipReason : u8 {
     InvalidDimensions,
     DimensionMismatch,
     MissingSurfaces,
+    MissingVelocityBuffer,
+    MissingDepthBuffer,
+    StaleHistoryGeneration,
 };
+
+/// Clamp TAA tuning knobs to safe ranges for the CPU resolve stub.
+TAAParams clampTaaParams(const TAAParams& raw);
+/// True when `velocity_rejection` is active and resolve must receive a velocity surface.
+bool taaResolveRequiresVelocity(const TAAParams& params);
+/// True when `depth_rejection` is active and resolve must receive a depth surface.
+bool taaResolveRequiresDepth(const TAAParams& params);
+/// Blend weight applied this frame — 1.0 on first warm-up frame, else clamped `blend_factor`.
+f32 computeEffectiveBlend(bool firstFrame, const TAAParams& params);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {

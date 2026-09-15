@@ -47,6 +47,8 @@ public:
     /// Align jitter to a monotonic frame counter (wraps with sequence period).
     void syncJitterToFrameIndex(u32 frameIndex);
     void invalidateHistory();
+    void resize(u32 width, u32 height);
+    bool matchesDimensions(u32 width, u32 height) const;
     bool needsHistoryWarmup() const { return m_history.needsWarmup(); }
     /// Preflight resolve without mutating history (delegates to `TaaResolve::wouldSkip`).
     bool wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason = nullptr) const;

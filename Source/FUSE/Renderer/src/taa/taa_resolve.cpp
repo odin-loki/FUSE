@@ -1,7 +1,13 @@
 #include <fuse/renderer/taa/taa_resolve.hpp>
 
+#include <algorithm>
+
 namespace fuse::renderer {
 namespace {
+
+f32 clampF32(f32 value, f32 minValue, f32 maxValue) {
+    return std::max(minValue, std::min(maxValue, value));
+}
 
 TaaResolveSkipReason classifySkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!history.isReady()) {
@@ -16,10 +22,48 @@ TaaResolveSkipReason classifySkip(const TaaResolveDesc& desc, const TaaHistoryBu
     if (desc.surfaces.current_frame == nullptr || desc.surfaces.output == nullptr) {
         return TaaResolveSkipReason::MissingSurfaces;
     }
+
+    if (desc.enforce_rejection_surfaces) {
+        const TAAParams params = clampTaaParams(desc.params);
+        if (taaResolveRequiresVelocity(params) && desc.surfaces.velocity_buffer == nullptr) {
+            return TaaResolveSkipReason::MissingVelocityBuffer;
+        }
+        if (taaResolveRequiresDepth(params) && desc.surfaces.depth_buffer == nullptr) {
+            return TaaResolveSkipReason::MissingDepthBuffer;
+        }
+    }
+    if (desc.observed_history_generation != kTaaResolveNoHistoryGeneration &&
+        history.isHistoryStale(desc.observed_history_generation)) {
+        return TaaResolveSkipReason::StaleHistoryGeneration;
+    }
     return TaaResolveSkipReason::None;
 }
 
 } // namespace
+
+TAAParams clampTaaParams(const TAAParams& raw) {
+    TAAParams clamped = raw;
+    clamped.blend_factor = clampF32(raw.blend_factor, 0.f, 1.f);
+    clamped.velocity_rejection = std::max(0.f, raw.velocity_rejection);
+    clamped.depth_rejection = std::max(0.f, raw.depth_rejection);
+    clamped.clamp_gamma = std::max(1.f, raw.clamp_gamma);
+    return clamped;
+}
+
+bool taaResolveRequiresVelocity(const TAAParams& params) {
+    return params.velocity_rejection > 0.f;
+}
+
+bool taaResolveRequiresDepth(const TAAParams& params) {
+    return params.depth_rejection > 0.f;
+}
+
+f32 computeEffectiveBlend(bool firstFrame, const TAAParams& params) {
+    if (firstFrame) {
+        return 1.f;
+    }
+    return clampTaaParams(params).blend_factor;
+}
 
 const char* taaResolveSkipReasonLabel(TaaResolveSkipReason reason) {
     switch (reason) {
@@ -33,6 +77,12 @@ const char* taaResolveSkipReasonLabel(TaaResolveSkipReason reason) {
         return "dimension_mismatch";
     case TaaResolveSkipReason::MissingSurfaces:
         return "missing_surfaces";
+    case TaaResolveSkipReason::MissingVelocityBuffer:
+        return "missing_velocity_buffer";
+    case TaaResolveSkipReason::MissingDepthBuffer:
+        return "missing_depth_buffer";
+    case TaaResolveSkipReason::StaleHistoryGeneration:
+        return "stale_history_generation";
     }
     return "unknown";
 }
@@ -72,21 +122,31 @@ bool TaaResolve::resolve(const TaaResolveDesc& desc, TaaHistoryBuffer& history, 
         case TaaResolveSkipReason::MissingSurfaces:
             m_message = "TAA resolve skipped — missing current/output surfaces";
             break;
+        case TaaResolveSkipReason::MissingVelocityBuffer:
+            m_message = "TAA resolve skipped — velocity rejection enabled but velocity buffer missing";
+            break;
+        case TaaResolveSkipReason::MissingDepthBuffer:
+            m_message = "TAA resolve skipped — depth rejection enabled but depth buffer missing";
+            break;
+        case TaaResolveSkipReason::StaleHistoryGeneration:
+            m_message = "TAA resolve skipped — history invalidate generation is stale";
+            break;
         default:
             break;
         }
         return false;
     }
 
+    const TAAParams params = clampTaaParams(desc.params);
     m_stats.first_frame = !history.hasValidHistory();
-    const f32 effectiveBlend = m_stats.first_frame ? 1.f : desc.params.blend_factor;
+    const f32 effectiveBlend = computeEffectiveBlend(m_stats.first_frame, params);
     history.markResolved();
     history.swap();
 
     m_stats.resolved = true;
     m_stats.width = desc.width;
     m_stats.height = desc.height;
-    m_stats.last_blend = desc.params.blend_factor;
+    m_stats.last_blend = params.blend_factor;
     m_stats.effective_blend = effectiveBlend;
     m_stats.history_swapped = true;
     m_stats.has_valid_history = history.hasValidHistory();
