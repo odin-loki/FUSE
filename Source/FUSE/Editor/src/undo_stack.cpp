@@ -22,6 +22,28 @@ void UndoStack::markDirty_() {
     ++m_dirtyRevision;
 }
 
+void UndoStack::syncBaselineDirty_() {
+    if (!m_baselineConfigured) {
+        markDirty_();
+        return;
+    }
+
+    if (isAtBaseline()) {
+        markClean();
+        return;
+    }
+
+    markDirty_();
+}
+
+u32 UndoStack::coalescedOpsSinceBaseline() const {
+    if (m_coalescedOps < m_coalescedOpsAtBaseline) {
+        return 0u;
+    }
+
+    return m_coalescedOps - m_coalescedOpsAtBaseline;
+}
+
 void UndoStack::execute(std::unique_ptr<UndoCommand> command) {
     if (!command) {
         return;
@@ -44,6 +66,8 @@ void UndoStack::execute(std::unique_ptr<UndoCommand> command) {
 void UndoStack::set_baseline_state() {
     m_baselineUndoCount = undoCount();
     m_baselineRedoCount = redoCount();
+    m_coalescedOpsAtBaseline = m_coalescedOps;
+    m_baselineConfigured = true;
     markClean();
 }
 
@@ -60,7 +84,7 @@ void UndoStack::undo() {
     m_undo.pop_back();
     command->undo();
     m_redo.push_back(std::move(command));
-    markDirty_();
+    syncBaselineDirty_();
 }
 
 void UndoStack::redo() {
@@ -73,7 +97,7 @@ void UndoStack::redo() {
     command->execute();
     m_undo.push_back(std::move(command));
     evictOldestIfNeeded_();
-    markDirty_();
+    syncBaselineDirty_();
 }
 
 std::string UndoStack::peekUndoDescription() const {
@@ -95,8 +119,10 @@ void UndoStack::clear() {
     m_redo.clear();
     m_evictedCount = 0;
     m_coalescedOps = 0;
+    m_coalescedOpsAtBaseline = 0;
     m_baselineUndoCount = 0;
     m_baselineRedoCount = 0;
+    m_baselineConfigured = false;
     m_dirty = false;
     m_dirtyRevision = 0;
 }
@@ -111,8 +137,10 @@ UndoStackSnapshot UndoStack::captureSnapshot() const {
     snapshot.redoCount = redoCount();
     snapshot.evictedCount = m_evictedCount;
     snapshot.coalescedOps = m_coalescedOps;
+    snapshot.coalescedOpsAtBaseline = m_coalescedOpsAtBaseline;
     snapshot.baselineUndoCount = m_baselineUndoCount;
     snapshot.baselineRedoCount = m_baselineRedoCount;
+    snapshot.baselineConfigured = m_baselineConfigured;
     snapshot.dirty = m_dirty;
     snapshot.dirtyRevision = m_dirtyRevision;
     snapshot.undoDescriptions.reserve(m_undo.size());
@@ -141,8 +169,10 @@ void UndoStack::restoreSnapshot(const UndoStackSnapshot& snapshot) {
 
     m_evictedCount = snapshot.evictedCount;
     m_coalescedOps = snapshot.coalescedOps;
+    m_coalescedOpsAtBaseline = snapshot.coalescedOpsAtBaseline;
     m_baselineUndoCount = snapshot.baselineUndoCount;
     m_baselineRedoCount = snapshot.baselineRedoCount;
+    m_baselineConfigured = snapshot.baselineConfigured;
     m_dirty = snapshot.dirty;
     m_dirtyRevision = snapshot.dirtyRevision;
 }
