@@ -41,8 +41,47 @@ void testClusterIndex() {
     desc.tilesX = 4;
     desc.tilesY = 2;
     desc.slicesZ = 3;
-    expectTrue(fuse::renderer::ClusteredLightCuller::clusterIndex(1, 1, 2, desc) == 17u,
+    expectTrue(fuse::renderer::ClusterGridLayout::clusterIndex(1, 1, 2, desc) == 17u,
                "cluster index layout");
+    expectTrue(fuse::renderer::ClusteredLightCuller::clusterIndex(1, 1, 2, desc) == 17u,
+               "culler cluster index delegates to grid layout");
+
+    fuse::u32 tileX = 0u;
+    fuse::u32 tileY = 0u;
+    fuse::u32 sliceZ = 0u;
+    fuse::renderer::ClusterGridLayout::decodeClusterIndex(17u, desc, tileX, tileY, sliceZ);
+    expectTrue(tileX == 1u && tileY == 1u && sliceZ == 2u, "cluster index decode round-trip");
+}
+
+void testClusterGridClampAndScreenMapping() {
+    fuse::renderer::ClusterDesc desc{};
+    desc.tilesX = 4;
+    desc.tilesY = 2;
+    desc.slicesZ = 3;
+
+    expectTrue(fuse::renderer::ClusterGridLayout::clampClusterIndex(999u, desc) == 23u,
+               "cluster index clamped to grid bounds");
+    expectTrue(fuse::renderer::ClusterGridLayout::clampTileX(99u, desc) == 3u, "tile X clamp");
+    expectTrue(fuse::renderer::ClusterGridLayout::clampSliceZ(99u, desc) == 2u, "slice Z clamp");
+
+    fuse::renderer::ClusterCameraDesc camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+
+    const fuse::u32 midSlice =
+        fuse::renderer::ClusterSliceLayout::computeSliceZFromDepth(10.f, desc, camera);
+    expectTrue(midSlice < desc.slicesZ, "depth maps into slice range");
+
+    fuse::u32 clusterIndex = 0u;
+    expectTrue(fuse::renderer::ClusterGridLayout::mapScreenDepthToClusterIndex(
+                   0.5f, 0.5f, 10.f, desc, camera, clusterIndex),
+               "screen depth maps to cluster index");
+    expectTrue(clusterIndex < desc.clusterCount(), "mapped cluster index in bounds");
+
+    fuse::u32 outOfRange = 0u;
+    expectTrue(!fuse::renderer::ClusterGridLayout::mapScreenDepthToClusterIndex(
+                   0.5f, 0.5f, 0.01f, desc, camera, outOfRange),
+               "depth below near plane rejected");
 }
 
 void testSliceDepthDistribution() {
@@ -61,6 +100,26 @@ void testSliceDepthDistribution() {
     expectNear(slice0Near, 1.f, 0.001f, "first slice starts at near plane");
     expectTrue(slice0Far > slice0Near, "slice far exceeds near");
     expectNear(slice3Far, 100.f, 0.001f, "last slice reaches far plane");
+}
+
+void testLightGridRebuildOverflowClamp() {
+    fuse::renderer::ClusterGridSoA grid{};
+    const fuse::u32 clusterCount = 2u;
+    grid.grid.resize(clusterCount);
+
+    const std::vector<std::vector<fuse::u32>> perClusterLights = {
+        {0u, 1u, 2u, 3u},
+        {4u, 5u},
+    };
+
+    const fuse::u32 dropped = fuse::renderer::ClusterLightGridLayout::rebuildLightGrid(
+        grid, clusterCount, perClusterLights, 2u);
+
+    expectTrue(dropped == 2u, "overflow lights dropped during rebuild");
+    expectTrue(grid.grid[0].count == 2u, "cluster 0 count clamped");
+    expectTrue(grid.lightList.size() == 4u, "flat list respects per-cluster cap");
+    expectTrue(fuse::renderer::ClusterLightGridLayout::validateContiguousOffsets(grid, clusterCount),
+               "clamped grid offsets remain contiguous");
 }
 
 void testLightGridRebuildLayout() {
@@ -182,6 +241,95 @@ void testLightCullAssignsAndSkips() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testEmptySceneCull() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for empty scene cull test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::ClusterDesc desc{};
+    desc.tilesX = 2;
+    desc.tilesY = 2;
+    desc.slicesZ = 2;
+    desc.maxLightsPerCluster = 4;
+
+    fuse::renderer::ClusteredLightCuller culler;
+    culler.init(desc, resources);
+
+    fuse::renderer::ClusterCameraDesc camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 50.f;
+
+    culler.cullLights({}, {}, camera);
+    expectTrue(culler.stats().lightListEntries == 0u, "empty scene has zero light list entries");
+    expectTrue(culler.stats().lightsCulled == 0u, "empty scene culls zero lights");
+    expectTrue(culler.stats().lightsDroppedOverflow == 0u, "empty scene has no overflow");
+    expectTrue(culler.stats().clustersAtCapacity == 0u, "empty scene has no full clusters");
+
+    fuse::u32 emptyClusters = 0u;
+    for (const fuse::renderer::ClusterGridEntry& entry : culler.gridSoA().grid) {
+        if (entry.count == 0u) {
+            ++emptyClusters;
+        }
+    }
+    expectTrue(emptyClusters == desc.clusterCount(), "all clusters empty with no lights");
+
+    culler.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
+void testLightCullCapacityClamp() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for capacity clamp test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::ClusterDesc desc{};
+    desc.tilesX = 1;
+    desc.tilesY = 1;
+    desc.slicesZ = 1;
+    desc.maxLightsPerCluster = 2;
+
+    fuse::renderer::ClusteredLightCuller culler;
+    culler.init(desc, resources);
+
+    fuse::renderer::ClusterCameraDesc camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 50.f;
+
+    std::vector<fuse::renderer::PointLightInput> lights;
+    for (fuse::u32 i = 0; i < 5u; ++i) {
+        fuse::renderer::PointLightInput light{};
+        light.position = {0.f, 0.f, -5.f};
+        light.radius = 100.f;
+        lights.push_back(light);
+    }
+
+    culler.cullLights(lights, {}, camera);
+    expectTrue(culler.gridSoA().grid[0].count == 2u, "cluster stores at most maxLightsPerCluster");
+    expectTrue(culler.stats().lightsDroppedOverflow == 3u, "excess intersecting lights dropped");
+    expectTrue(culler.stats().clustersAtCapacity == 1u, "single cluster reported at capacity");
+
+    culler.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
 void testDeferredPipelineWiresClusterPass() {
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
@@ -220,10 +368,14 @@ int main() {
 
     testClusterDescCount();
     testClusterIndex();
+    testClusterGridClampAndScreenMapping();
     testSliceDepthDistribution();
     testLightGridRebuildLayout();
+    testLightGridRebuildOverflowClamp();
     testCullerInitAndClusterBuild();
     testLightCullAssignsAndSkips();
+    testEmptySceneCull();
+    testLightCullCapacityClamp();
     testDeferredPipelineWiresClusterPass();
 
     fuse::core::shutdown();

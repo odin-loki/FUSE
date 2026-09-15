@@ -106,21 +106,22 @@ Pass schedule (19 total — 12 Vulkan, 7 CUDA):
 
 ## B5.4 — Clustered Deferred Shading
 
-**Status:** CPU cluster grid SoA + `ClusteredLightCuller` stub landed; light-grid rebuild + slice layout helpers deepened (B5 follow-up); CUDA kernels deferred.
+**Status:** CPU cluster grid SoA + `ClusteredLightCuller` stub landed; tile/cluster index helpers, depth-slice mapping, light-grid rebuild overflow clamp, and assignment stats deepened (B5.4 follow-up); CUDA kernels deferred.
 
 | Component | Location | Notes |
 |-----------|----------|-------|
 | `ClusterDesc` / `ClusterAABB` / `ClusterGridSoA` | `lighting/clustered.hpp` | 3D screen cluster grid types |
-| `ClusterSliceLayout` | `lighting/clustered.hpp` | Exponential depth-slice near/far helpers (CPU tests, no GPU) |
-| `ClusterLightGridLayout` | `lighting/clustered.hpp` | Flat light-list packing + contiguous offset validation |
-| `ClusteredLightCuller` | `lighting/clustered_light_culler.cpp` | CPU stub — builds cluster AABBs, sphere-culls point/spot lights, `rebuildLightGrid()` packs offsets |
+| `ClusterGridLayout` | `lighting/clustered.hpp` | Tile/cluster index encode/decode, bounds clamp, screen-depth → cluster index |
+| `ClusterSliceLayout` | `lighting/clustered.hpp` | Exponential depth-slice near/far bounds + `computeSliceZFromDepth` (mirrors froxel layout) |
+| `ClusterLightGridLayout` | `lighting/clustered.hpp` | Flat light-list packing, per-cluster capacity clamp, contiguous offset validation |
+| `ClusteredLightCuller` | `lighting/clustered_light_culler.cpp` | CPU stub — builds cluster AABBs, sphere-culls point/spot lights, overflow stats, `rebuildLightGrid()` packs offsets |
 | `DeferredFramePipeline` | `deferred/frame_pipeline.cpp` | `ClusteredLightCull` pass invokes culler when wired |
 
 CUDA `build_cluster_aabbs_kernel` / `cull_lights_kernel` / `deferred_shade_kernel` remain future work.
 
 | Test | Validates |
 |------|-----------|
-| `fuse_clustered_light_culler` | Cluster count/index, slice depth distribution, light-grid rebuild layout, culler init, CPU cull assignment, contiguous offsets, deferred pipeline wiring |
+| `fuse_clustered_light_culler` | Cluster count/index encode-decode, screen-depth mapping, slice depth distribution, light-grid rebuild + overflow clamp, culler init, CPU cull assignment + capacity stats, empty scene, contiguous offsets, deferred pipeline wiring |
 | `fuse_deferred_pipeline` | Full B5.1 schedule (includes `clustered_light_cull` pass name) |
 
 ---
@@ -282,8 +283,9 @@ DOF, motion blur, film grain GPU shader chain, and CUDA histogram reduction rema
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Cluster culler assigns zero lights to empty clusters | **Done** | `fuse_clustered_light_culler` |
+| Cluster culler assigns zero lights to empty clusters | **Done** | `fuse_clustered_light_culler` empty-scene test |
 | Light grid rebuild produces contiguous offsets | **Done (stub)** | `ClusterLightGridLayout::rebuildLightGrid` + `validateContiguousOffsets` |
+| Per-cluster light capacity clamp + overflow stats | **Done (stub)** | `maxLightsPerCluster` clamp in cull + rebuild; `clustersAtCapacity` / `lightsDroppedOverflow` stats |
 | 1000 point lights — no light leaking (visual) | **Deferred** | CPU cull stub only |
 | Clustered cull + deferred shade < 3 ms @ 1080p (CUDA events) | **Deferred** | No CUDA shade kernel |
 | CSM correct shadow across 4 cascades (visual) | **Deferred** | Allocation + matrix stubs only |
@@ -411,7 +413,8 @@ ctest --test-dir build --output-on-failure -R 'fuse_screen_space_effects'
 ## Next
 
 - [ ] Wire `DeferredRenderer` into `RhiContext::submitFrame` (replace hybrid placeholder incrementally)
-- [ ] B5.4 follow-up: CUDA cluster AABB build + deferred shade kernels (CPU light-grid rebuild stub landed)
+- [x] B5.4 follow-up: Cluster grid index/decode/screen-depth helpers, slice-Z mapping, overflow clamp + CPU tests (`fuse_clustered_light_culler`)
+- [ ] B5.4 follow-up: CUDA cluster AABB build + deferred shade kernels
 - [ ] B5.5 follow-up: SDF soft shadows in `fuse_compute` (CSM split + light-space AABB stubs landed)
 - [ ] B5.7 follow-up: G-buffer `cudaInterop` surface import via B2.6 (stub params + contact-harden CPU helpers landed)
 - [ ] B5.9 follow-up: CUDA `taa_resolve_kernel` (CPU jitter/history validity stub landed)
