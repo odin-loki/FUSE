@@ -100,6 +100,30 @@ vec3 normalize_ik_pole_vector(const vec3& pole, const vec3& root_to_target) {
     return vec3_normalize(bendAxis);
 }
 
+bool two_bone_segment_lengths(const vec3& root,
+                               const vec3& mid,
+                               const vec3& end,
+                               f32& out_upper_len,
+                               f32& out_lower_len) {
+    out_upper_len = vec3_distance(root, mid);
+    out_lower_len = vec3_distance(mid, end);
+    return out_upper_len >= 1e-6f && out_lower_len >= 1e-6f;
+}
+
+bool is_two_bone_target_reachable(const vec3& root,
+                                   const vec3& target,
+                                   f32 upper_len,
+                                   f32 lower_len,
+                                   f32 reach_epsilon) {
+    if (upper_len < 1e-6f || lower_len < 1e-6f) {
+        return false;
+    }
+
+    const f32 dist = vec3_distance(root, target);
+    const f32 maxReach = upper_len + lower_len - reach_epsilon;
+    return dist <= maxReach && dist >= reach_epsilon;
+}
+
 vec3 clamp_two_bone_target(const vec3& root,
                             const vec3& target,
                             f32 upper_len,
@@ -188,9 +212,9 @@ bool FABRIKChain::has_valid_chain(const Skeleton& skel) const {
     return true;
 }
 
-void FABRIKChain::solve(Pose& pose, const Skeleton& skel) {
+bool FABRIKChain::solve(Pose& pose, const Skeleton& skel) {
     if (!has_valid_chain(skel)) {
-        return;
+        return false;
     }
 
     if (pose.bone_count != static_cast<u32>(skel.bones.size()) || pose.bone_world_transforms.empty()) {
@@ -219,6 +243,8 @@ void FABRIKChain::solve(Pose& pose, const Skeleton& skel) {
             set_bone_translation(pose, *it, parent);
         }
     }
+
+    return true;
 }
 
 bool TwoBoneIK::has_valid_chain(const Skeleton& skel) const {

@@ -26,7 +26,7 @@ struct RetargetMap {
     /// Drop all mappings and reset bone counts to zero.
     void clear();
 
-    /// Append a mapping when indices are in range and the target bone is not already mapped.
+    /// Append a mapping when indices are in range and neither bone is already mapped.
     [[nodiscard]] bool add_bone_mapping(u32 source_bone, u32 target_bone, f32 translation_scale = 1.f);
 
     [[nodiscard]] bool is_source_mapped(u32 source_bone) const;
@@ -45,9 +45,11 @@ struct RetargetMap {
     static RetargetMap build_identity(const Skeleton& skel);
 
     /// Copy mapped local TRS from a source pose into a target PoseSoA (unmapped bones keep bind pose).
+    /// No-ops and clears `out_pose` when the map is invalid or the target skeleton is empty.
     void apply_pose_soa(const PoseSoA& source_pose, const Skeleton& target_skel, PoseSoA& out_pose) const;
 
     /// Copy mapped world transforms from a source pose into a target Pose (AoS stub).
+    /// No-ops and clears `out_pose` when the map is invalid or the target skeleton is empty.
     void apply_pose(const Pose& source_pose, const Skeleton& target_skel, Pose& out_pose) const;
 };
 

@@ -10,6 +10,20 @@ namespace fuse::animation {
 /// Normalize a pole hint; when zero or parallel to `root_to_target`, pick a stable bend axis.
 [[nodiscard]] vec3 normalize_ik_pole_vector(const vec3& pole, const vec3& root_to_target);
 
+/// Segment lengths from three world-space joint positions. Returns false when either length is near zero.
+[[nodiscard]] bool two_bone_segment_lengths(const vec3& root,
+                                             const vec3& mid,
+                                             const vec3& end,
+                                             f32& out_upper_len,
+                                             f32& out_lower_len);
+
+/// True when `target` lies within the reachable sphere (upper + lower − `reach_epsilon`).
+[[nodiscard]] bool is_two_bone_target_reachable(const vec3& root,
+                                                 const vec3& target,
+                                                 f32 upper_len,
+                                                 f32 lower_len,
+                                                 f32 reach_epsilon);
+
 /// Clamp `target` to the reachable sphere defined by segment lengths and `reach_epsilon`.
 [[nodiscard]] vec3 clamp_two_bone_target(const vec3& root,
                                           const vec3& target,
@@ -38,7 +52,8 @@ struct FABRIKChain {
     /// Returns false when the skeleton or bone index list is empty, or any index is out of range.
     [[nodiscard]] bool has_valid_chain(const Skeleton& skel) const;
 
-    void solve(Pose& pose, const Skeleton& skel);
+    /// Returns false when the skeleton or bone index list is empty, or any index is out of range.
+    [[nodiscard]] bool solve(Pose& pose, const Skeleton& skel);
 };
 
 struct TwoBoneIK {
