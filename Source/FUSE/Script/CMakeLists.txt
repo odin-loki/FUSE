@@ -1,4 +1,4 @@
-# fuse_script — B7.3 Lua-ready script host stubs
+# fuse_script — B7.3 Lua-ready script host (null backend + optional Lua)
 
 set(FUSE_SCRIPT_PUBLIC_HEADERS
     include/fuse/script/script_bind.hpp

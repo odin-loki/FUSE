@@ -2,11 +2,15 @@
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/script/script_bind.hpp>
 #include <fuse/script/script_host.hpp>
+#include <fuse/types.hpp>
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <string>
+#include <vector>
 
 namespace {
 
@@ -19,13 +23,27 @@ void expectTrue(bool condition, const char* message) {
     }
 }
 
+void expectNear(fuse::f32 actual, fuse::f32 expected, fuse::f32 epsilon, const char* message) {
+    if (std::fabs(actual - expected) > epsilon) {
+        std::fprintf(stderr, "FAIL: %s (got %f expected %f)\n", message, actual, expected);
+        ++g_failures;
+    }
+}
+
 void testHostInitializes() {
     fuse::script::ScriptHost host;
     expectTrue(host.init(), "script host initializes");
     expectTrue(host.is_initialized(), "script host reports initialized");
     expectTrue(host.vm().is_initialized(), "script VM initializes with host");
+#if defined(FUSE_SCRIPT_LUA) && FUSE_SCRIPT_LUA
+    expectTrue(host.vm().has_lua_backend(), "lua backend active when FUSE_SCRIPT_LUA=1");
+    expectTrue(host.vm().backend_kind() == fuse::script::ScriptBackendKind::Lua,
+               "backend kind is Lua when linked");
+#else
+    expectTrue(!host.vm().has_lua_backend(), "null backend has no lua state");
     expectTrue(host.vm().backend_kind() == fuse::script::ScriptBackendKind::Null,
                "default backend is null stub");
+#endif
     host.shutdown();
     expectTrue(!host.is_initialized(), "script host shuts down");
 }
@@ -35,7 +53,7 @@ void testLoadStringAndFileStubs() {
     host.init();
 
     const auto string_result = host.load_string("return 1", "bootstrap");
-    expectTrue(string_result.ok(), "load_string succeeds on null backend");
+    expectTrue(string_result.ok(), "load_string succeeds");
     expectTrue(host.vm().loaded_chunk_count() == 1u, "load_string records one chunk");
 
     const auto missing_file = host.load_file("/tmp/fuse_script_missing_b73.lua");
@@ -55,6 +73,13 @@ void testLoadStringAndFileStubs() {
     const auto file_result = host.load_file(script_path.string().c_str());
     expectTrue(file_result.ok(), "existing file load succeeds");
     expectTrue(host.vm().loaded_chunk_count() == 2u, "load_file records chunk after load_string");
+
+#if defined(FUSE_SCRIPT_LUA) && FUSE_SCRIPT_LUA
+    const auto parse_error = host.load_string("function bad(", "syntax_error");
+    expectTrue(!parse_error.ok(), "invalid lua source fails load");
+    expectTrue(parse_error.status == fuse::script::ScriptLoadStatus::ParseError,
+               "invalid lua reports ParseError");
+#endif
 
     host.shutdown();
 }
@@ -107,6 +132,77 @@ void testCallbackRegisterDispatchUnregister() {
     host.shutdown();
 }
 
+void testOnUpdateDispatchWithDeltaTime() {
+    fuse::script::ScriptHost host;
+    host.init();
+
+    fuse::ecs::EntityID entity{7u, 3u};
+    std::vector<fuse::f32> received_dt;
+    int dispatch_count = 0;
+
+    host.register_callback(fuse::script::ScriptEventKind::OnUpdate,
+                           [&](const fuse::script::ScriptCallbackContext& ctx) {
+                               ++dispatch_count;
+                               received_dt.push_back(ctx.dt);
+                               expectTrue(ctx.entity == entity, "on_update entity preserved");
+                           });
+
+    host.register_callback(fuse::script::ScriptEventKind::OnUpdate,
+                           [&](const fuse::script::ScriptCallbackContext& ctx) {
+                               received_dt.push_back(ctx.dt);
+                           });
+
+    fuse::script::ScriptCallbackContext ctx;
+    ctx.entity = entity;
+
+    ctx.dt = 0.016f;
+    host.dispatch(fuse::script::ScriptEventKind::OnUpdate, ctx);
+    ctx.dt = 0.033f;
+    host.dispatch(fuse::script::ScriptEventKind::OnUpdate, ctx);
+    ctx.dt = 0.008f;
+    host.dispatch(fuse::script::ScriptEventKind::OnUpdate, ctx);
+
+    expectTrue(dispatch_count == 3, "primary on_update handler invoked each frame");
+    expectTrue(received_dt.size() == 6u, "both on_update handlers receive each dispatch");
+    expectTrue(received_dt[0] == 0.016f && received_dt[1] == 0.016f, "frame 1 dt propagated");
+    expectTrue(received_dt[2] == 0.033f && received_dt[3] == 0.033f, "frame 2 dt propagated");
+    expectTrue(received_dt[4] == 0.008f && received_dt[5] == 0.008f, "frame 3 dt propagated");
+
+    fuse::f32 accumulated = 0.f;
+    for (const fuse::f32 dt : received_dt) {
+        accumulated += dt;
+    }
+    expectNear(accumulated, 0.114f, 1e-5f, "on_update handlers observe summed frame dt");
+
+    host.shutdown();
+}
+
+void testBindHelpersPrimitives() {
+    const fuse::script::bind::ScriptValue nil_value = fuse::script::bind::push_nil();
+    expectTrue(fuse::script::bind::is_nil(nil_value), "nil value tagged");
+    expectTrue(fuse::script::bind::kind_name(nil_value.kind) == std::string("nil"),
+               "nil kind name");
+
+    const fuse::script::bind::ScriptValue bool_value = fuse::script::bind::push_bool(true);
+    expectTrue(fuse::script::bind::is_bool(bool_value), "bool value tagged");
+    expectTrue(fuse::script::bind::to_bool(bool_value), "bool round-trips");
+    expectTrue(fuse::script::bind::to_bool(fuse::script::bind::push_nil(), true),
+               "nil coerces to default bool");
+
+    const fuse::script::bind::ScriptValue number_value = fuse::script::bind::push_number(3.5);
+    expectTrue(fuse::script::bind::is_number(number_value), "number value tagged");
+    expectTrue(fuse::script::bind::to_number(number_value) == 3.5, "number round-trips");
+    expectTrue(fuse::script::bind::to_number(fuse::script::bind::push_nil(), 9.0) == 9.0,
+               "nil coerces to default number");
+
+    const fuse::script::bind::ScriptValue string_value =
+        fuse::script::bind::push_string("fuse_script");
+    expectTrue(fuse::script::bind::is_string(string_value), "string value tagged");
+    expectTrue(fuse::script::bind::to_string(string_value) == "fuse_script", "string round-trips");
+    expectTrue(fuse::script::bind::to_string(fuse::script::bind::push_nil()).empty(),
+               "nil coerces to empty string");
+}
+
 void testBindHelpersEntityAndTransform() {
     const fuse::ecs::EntityID entity{9u, 2u};
     const fuse::script::bind::ScriptValue entity_value =
@@ -114,6 +210,8 @@ void testBindHelpersEntityAndTransform() {
     expectTrue(fuse::script::bind::is_entity_id(entity_value), "entity value tagged");
     const fuse::ecs::EntityID round_trip = fuse::script::bind::to_entity_id(entity_value);
     expectTrue(round_trip == entity, "entity id round-trips through bind helper");
+    expectTrue(fuse::script::bind::kind_name(entity_value.kind) == std::string("entity_id"),
+               "entity kind name");
 
     fuse::ecs::Transform transform;
     transform.position = {1.f, 2.f, 3.f, 1.f};
@@ -130,6 +228,19 @@ void testBindHelpersEntityAndTransform() {
     expectTrue(restored.dirty, "transform dirty flag preserved");
 }
 
+#if defined(FUSE_SCRIPT_LUA) && FUSE_SCRIPT_LUA
+void testLuaLoadsHelloWorld() {
+    fuse::script::ScriptHost host;
+    host.init();
+
+    const auto result = host.load_string("print('fuse_script_lua')", "hello");
+    expectTrue(result.ok(), "lua hello-world chunk loads and runs");
+    expectTrue(host.vm().loaded_chunk_count() == 1u, "lua chunk recorded");
+
+    host.shutdown();
+}
+#endif
+
 } // namespace
 
 int main() {
@@ -138,7 +249,12 @@ int main() {
     testHostInitializes();
     testLoadStringAndFileStubs();
     testCallbackRegisterDispatchUnregister();
+    testOnUpdateDispatchWithDeltaTime();
+    testBindHelpersPrimitives();
     testBindHelpersEntityAndTransform();
+#if defined(FUSE_SCRIPT_LUA) && FUSE_SCRIPT_LUA
+    testLuaLoadsHelloWorld();
+#endif
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d test failure(s)\n", g_failures);
