@@ -1,5 +1,9 @@
 #include <fuse/renderer/composite_pass.hpp>
 
+#include <algorithm>
+#include <unordered_map>
+#include <vector>
+
 namespace fuse::renderer {
 namespace {
 
@@ -56,6 +60,10 @@ void RenderGraph::reset() {
     m_passes.clear();
     m_barriers.clear();
     m_textureStates.clear();
+    m_explicitEdges.clear();
+    m_dependencyEdges.clear();
+    m_resourceLifetimes.clear();
+    m_compileOrder.clear();
 
     TextureState& backbuffer = textureStateAt(kBackbufferTextureId);
     backbuffer.imported = true;
@@ -105,6 +113,24 @@ void RenderGraph::addPass(const RGPassDesc& desc) {
                                    desc.bufferAccesses + desc.bufferAccessCount);
     }
     m_passes.push_back(std::move(node));
+}
+
+void RenderGraph::addPassDependency(u32 fromPassIndex, u32 toPassIndex) {
+    if (fromPassIndex >= m_passes.size() || toPassIndex >= m_passes.size() ||
+        fromPassIndex == toPassIndex) {
+        return;
+    }
+
+    const auto duplicate = std::find_if(m_explicitEdges.begin(), m_explicitEdges.end(),
+                                        [&](const RGPassDependencyEdge& edge) {
+                                            return edge.fromPassIndex == fromPassIndex &&
+                                                   edge.toPassIndex == toPassIndex;
+                                        });
+    if (duplicate != m_explicitEdges.end()) {
+        return;
+    }
+
+    m_explicitEdges.push_back({fromPassIndex, toPassIndex, RGPassDependencyKind::Explicit});
 }
 
 RGImageLayout RenderGraph::layoutForAccess(RGResourceAccess access) const {
@@ -216,6 +242,13 @@ void RenderGraph::cullUnusedPasses() {
                     }
                 }
             }
+            for (const RGPassDependencyEdge& edge : m_explicitEdges) {
+                if (edge.toPassIndex == i && edge.fromPassIndex < m_passes.size() &&
+                    !required[edge.fromPassIndex]) {
+                    required[edge.fromPassIndex] = true;
+                    changed = true;
+                }
+            }
         }
     }
 
@@ -224,12 +257,169 @@ void RenderGraph::cullUnusedPasses() {
     }
 }
 
+void RenderGraph::buildDependencyEdges() {
+    m_dependencyEdges = m_explicitEdges;
+
+    auto addResourceEdge = [&](u32 fromPassIndex, u32 toPassIndex) {
+        if (fromPassIndex == toPassIndex || fromPassIndex >= m_passes.size() ||
+            toPassIndex >= m_passes.size()) {
+            return;
+        }
+        if (m_passes[fromPassIndex].culled || m_passes[toPassIndex].culled) {
+            return;
+        }
+
+        const auto duplicate = std::find_if(m_dependencyEdges.begin(), m_dependencyEdges.end(),
+                                            [&](const RGPassDependencyEdge& edge) {
+                                                return edge.fromPassIndex == fromPassIndex &&
+                                                       edge.toPassIndex == toPassIndex;
+                                            });
+        if (duplicate != m_dependencyEdges.end()) {
+            return;
+        }
+
+        m_dependencyEdges.push_back(
+            {fromPassIndex, toPassIndex, RGPassDependencyKind::ResourceAccess});
+    };
+
+    std::unordered_map<u32, u32> lastTexturePass;
+    std::unordered_map<u32, u32> lastBufferPass;
+
+    for (u32 passIndex = 0; passIndex < m_passes.size(); ++passIndex) {
+        if (m_passes[passIndex].culled) {
+            continue;
+        }
+
+        for (const RGTextureAccess& access : m_passes[passIndex].textureAccesses) {
+            const u32 textureId = access.texture.id;
+            const auto previous = lastTexturePass.find(textureId);
+            if (previous != lastTexturePass.end()) {
+                addResourceEdge(previous->second, passIndex);
+            }
+            lastTexturePass[textureId] = passIndex;
+        }
+
+        for (const RGBufferAccess& access : m_passes[passIndex].bufferAccesses) {
+            const u32 bufferId = access.buffer.id;
+            const auto previous = lastBufferPass.find(bufferId);
+            if (previous != lastBufferPass.end()) {
+                addResourceEdge(previous->second, passIndex);
+            }
+            lastBufferPass[bufferId] = passIndex;
+        }
+    }
+}
+
+void RenderGraph::resolveCompileOrder() {
+    m_compileOrder.clear();
+    m_compileInfo.usedDeclarationOrderFallback = false;
+
+    std::vector<u32> activePasses;
+    for (u32 passIndex = 0; passIndex < m_passes.size(); ++passIndex) {
+        if (!m_passes[passIndex].culled) {
+            activePasses.push_back(passIndex);
+        }
+    }
+
+    if (activePasses.empty()) {
+        return;
+    }
+
+    std::unordered_map<u32, u32> indegree;
+    std::unordered_map<u32, std::vector<u32>> adjacency;
+    for (const u32 passIndex : activePasses) {
+        indegree[passIndex] = 0;
+        adjacency[passIndex] = {};
+    }
+
+    for (const RGPassDependencyEdge& edge : m_dependencyEdges) {
+        if (indegree.find(edge.fromPassIndex) == indegree.end() ||
+            indegree.find(edge.toPassIndex) == indegree.end()) {
+            continue;
+        }
+        adjacency[edge.fromPassIndex].push_back(edge.toPassIndex);
+        ++indegree[edge.toPassIndex];
+    }
+
+    std::vector<u32> ready;
+    for (const u32 passIndex : activePasses) {
+        if (indegree[passIndex] == 0) {
+            ready.push_back(passIndex);
+        }
+    }
+    std::sort(ready.begin(), ready.end());
+
+    while (!ready.empty()) {
+        const u32 current = ready.front();
+        ready.erase(ready.begin());
+        m_compileOrder.push_back(current);
+
+        for (const u32 next : adjacency[current]) {
+            auto it = indegree.find(next);
+            if (it == indegree.end()) {
+                continue;
+            }
+            if (--it->second == 0) {
+                ready.push_back(next);
+            }
+        }
+        std::sort(ready.begin(), ready.end());
+    }
+
+    if (m_compileOrder.size() != activePasses.size()) {
+        m_compileInfo.usedDeclarationOrderFallback = true;
+        m_compileOrder = activePasses;
+    }
+}
+
+void RenderGraph::assignResourceLifetimes() {
+    m_resourceLifetimes.clear();
+
+    auto recordAccess = [&](u32 resourceId, bool isTexture, u32 passIndex) {
+        const auto existing = std::find_if(m_resourceLifetimes.begin(), m_resourceLifetimes.end(),
+                                           [&](const RGResourceLifetime& lifetime) {
+                                               return lifetime.resourceId == resourceId &&
+                                                      lifetime.isTexture == isTexture;
+                                           });
+        if (existing == m_resourceLifetimes.end()) {
+            RGResourceLifetime lifetime;
+            lifetime.resourceId = resourceId;
+            lifetime.isTexture = isTexture;
+            lifetime.firstPassIndex = passIndex;
+            lifetime.lastPassIndex = passIndex;
+            if (isTexture) {
+                const TextureState& state = textureStateAt(resourceId);
+                lifetime.phase = state.transient ? RGResourceLifetimePhase::TransientCreated
+                                                 : RGResourceLifetimePhase::Imported;
+            } else {
+                lifetime.phase = RGResourceLifetimePhase::Imported;
+            }
+            m_resourceLifetimes.push_back(lifetime);
+            return;
+        }
+
+        existing->firstPassIndex = std::min(existing->firstPassIndex, passIndex);
+        existing->lastPassIndex = std::max(existing->lastPassIndex, passIndex);
+    };
+
+    for (const u32 passIndex : m_compileOrder) {
+        const PassNode& pass = m_passes[passIndex];
+        for (const RGTextureAccess& access : pass.textureAccesses) {
+            recordAccess(access.texture.id, true, passIndex);
+        }
+        for (const RGBufferAccess& access : pass.bufferAccesses) {
+            recordAccess(access.buffer.id, false, passIndex);
+        }
+    }
+}
+
 void RenderGraph::assignExecutionOrder() {
     u32 order = 0;
     for (PassNode& pass : m_passes) {
-        if (!pass.culled) {
-            pass.order = order++;
-        }
+        pass.order = static_cast<u32>(-1);
+    }
+    for (const u32 passIndex : m_compileOrder) {
+        m_passes[passIndex].order = order++;
     }
     m_compileInfo.executablePassCount = order;
     m_compileInfo.culledPassCount = m_compileInfo.passCount - order;
@@ -241,21 +431,23 @@ void RenderGraph::compile() {
     m_compileInfo.passCount = static_cast<u32>(m_passes.size());
 
     cullUnusedPasses();
+    buildDependencyEdges();
+    resolveCompileOrder();
+    assignResourceLifetimes();
 
     m_textureStates.clear();
     TextureState& backbuffer = textureStateAt(kBackbufferTextureId);
     backbuffer.imported = true;
     backbuffer.layout = RGImageLayout::Undefined;
 
-    for (PassNode& pass : m_passes) {
-        if (pass.culled) {
-            continue;
-        }
-        planBarriersForPass(pass);
+    for (const u32 passIndex : m_compileOrder) {
+        planBarriersForPass(m_passes[passIndex]);
     }
 
     assignExecutionOrder();
     m_compileInfo.barrierCount = static_cast<u32>(m_barriers.size());
+    m_compileInfo.dependencyEdgeCount = static_cast<u32>(m_dependencyEdges.size());
+    m_compileInfo.resourceLifetimeCount = static_cast<u32>(m_resourceLifetimes.size());
     m_compileInfo.compiled = true;
 }
 
@@ -280,10 +472,8 @@ RenderGraphExecuteInfo RenderGraph::execute(VulkanDevice& device,
                                  static_cast<u32>(barrier.toLayout));
     }
 
-    for (const PassNode& pass : m_passes) {
-        if (pass.culled) {
-            continue;
-        }
+    for (const u32 passIndex : m_compileOrder) {
+        const PassNode& pass = m_passes[passIndex];
 
         recorder.beginPass(pass.desc.name != nullptr ? pass.desc.name : "pass");
         if (pass.desc.isCuda) {
