@@ -25,6 +25,7 @@ struct BehaviorTickResult {
 enum class NodeKind {
     Sequence,
     Selector,
+    Parallel,
     Inverter,
     Loop,
     SucceedAlways,

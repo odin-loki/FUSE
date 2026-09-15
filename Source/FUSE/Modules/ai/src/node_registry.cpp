@@ -28,6 +28,14 @@ BehaviorNode makeSelector(const NodeLoadSpec& spec) {
     return node;
 }
 
+BehaviorNode makeParallel(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::Parallel;
+    node.childA = firstChild(spec);
+    node.childB = secondChild(spec);
+    return node;
+}
+
 BehaviorNode makeInverter(const NodeLoadSpec& spec) {
     BehaviorNode node;
     node.kind = NodeKind::Inverter;
@@ -155,6 +163,7 @@ void NodeRegistry::registerBuiltins() {
     // BadBehaviour composite/ — third_party/addons/BadBehaviour/Engine/source/BadBehavior/composite/
     registerFactory("bb.sequence", makeSequence);
     registerFactory("bb.selector", makeSelector);
+    registerFactory("bb.parallel", makeParallel);
 
     // BadBehaviour decorator/ — third_party/addons/BadBehaviour/Engine/source/BadBehavior/decorator/
     registerFactory("bb.inverter", makeInverter);

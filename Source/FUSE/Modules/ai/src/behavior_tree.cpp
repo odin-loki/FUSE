@@ -5,6 +5,19 @@ namespace fuse::ai {
 
 namespace {
 
+BehaviorTickResult aggregateParallelChildren(const BehaviorTickResult& a, const BehaviorTickResult& b) {
+    if (a.status == BehaviorStatus::Running) {
+        return a;
+    }
+    if (b.status == BehaviorStatus::Running) {
+        return b;
+    }
+    if (a.status == BehaviorStatus::Failure || b.status == BehaviorStatus::Failure) {
+        return b.status == BehaviorStatus::Failure ? b : a;
+    }
+    return b.wroteFlag ? b : a;
+}
+
 u32 waitTicksForNode(const BehaviorNode& node) {
     if (node.loopCount > 0) {
         return node.loopCount;
@@ -46,6 +59,11 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
             return first;
         }
         return tickNode(node.childB, agentIndex, agent, board, ctx);
+    }
+    case NodeKind::Parallel: {
+        const BehaviorTickResult first = tickNode(node.childA, agentIndex, agent, board, ctx);
+        const BehaviorTickResult second = tickNode(node.childB, agentIndex, agent, board, ctx);
+        return aggregateParallelChildren(first, second);
     }
     case NodeKind::Inverter: {
         BehaviorTickResult child = tickNode(node.childA, agentIndex, agent, board, ctx);
