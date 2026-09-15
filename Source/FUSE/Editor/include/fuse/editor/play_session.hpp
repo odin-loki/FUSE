@@ -39,6 +39,8 @@ public:
     void tick(f32 dt, EditorScene& editorScene, PlayModePhysicsState& physics);
     /// Drains `tickAccumulator()` in `fixedDt` slices while playing; returns steps simulated.
     u32 consumeFixedSteps(f32 fixedDt, EditorScene& editorScene, PlayModePhysicsState& physics);
+    /// PIE frame update: `tick(dt)` then drain fixed slices; returns fixed steps simulated.
+    u32 tickFixedStep(f32 dt, f32 fixedDt, EditorScene& editorScene, PlayModePhysicsState& physics);
 
     bool isActive() const { return m_controller.state() != PlayModeController::State::Stopped; }
     bool isPlaying() const { return m_controller.isPlaying(); }
@@ -47,11 +49,18 @@ public:
     u32 sessionTickCount() const { return m_sessionTickCount; }
     f32 tickAccumulator() const { return m_tickAccumulator; }
     u32 coalescedDirtyCount() const { return m_coalescedDirtyCount; }
+    u32 skippedInactiveTickCount() const { return m_skippedInactiveTickCount; }
     bool hasWorldSnapshot() const { return m_hasWorldSnapshot; }
+    bool hasDirtySnapshot() const { return m_hasDirtySnapshot; }
 
     const PlayWorldSnapshot& worldSnapshot() const { return m_worldSnapshot; }
     PlayWorldSnapshot captureWorldSnapshot(EditorScene& editorScene) const;
     void restoreWorldSnapshot(EditorScene& editorScene, const PlayWorldSnapshot& snapshot) const;
+    /// Applies the stored PIE world snapshot when present; returns true when drained.
+    bool drainWorldSnapshot(EditorScene& editorScene);
+    void restoreDirtyFlags(EditorScene& editorScene, EditorState& state) const;
+    /// Restores captured dirty flags when present; returns true when drained.
+    bool drainDirtySnapshot(EditorScene& editorScene, EditorState& state);
 
     const PlayModeController& controller() const { return m_controller; }
 
@@ -72,9 +81,11 @@ private:
     DirtySnapshot m_dirtySnapshot{};
     PlayWorldSnapshot m_worldSnapshot{};
     bool m_hasWorldSnapshot = false;
+    bool m_hasDirtySnapshot = false;
     u32 m_sessionTickCount = 0;
     f32 m_tickAccumulator = 0.f;
     u32 m_coalescedDirtyCount = 0;
+    u32 m_skippedInactiveTickCount = 0;
 };
 
 } // namespace fuse::editor
