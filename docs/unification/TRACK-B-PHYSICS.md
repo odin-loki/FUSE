@@ -12,7 +12,7 @@
 | Component | Location | Notes |
 |-----------|----------|-------|
 | `PhysicsPipeline` / `RigidBodySoA` | `physics_pipeline.hpp`, `physics_data.hpp` | B4.1–B4.3 broad/narrow phase stubs |
-| `SpatialHash` / `Gjk` | `broadphase/`, `narrowphase/` | B4.2–B4.3 CPU reference paths; broadphase jobifies shape→cell + per-cell candidate generation via `fuse::jobs::parallel_for` |
+| `SpatialHash` / `Gjk` | `broadphase/`, `narrowphase/` | B4.2–B4.3 CPU reference paths; broadphase jobifies shape→cell + per-cell candidate generation via `fuse::jobs::parallel_for`; narrowphase writes one contact slot per candidate pair then compacts |
 | `PhysicsWorld2D` / `PhysicsWorld3D` | `physics_world_*.hpp` | World composition hooks |
 | `DestructionSystem` / `DestructionEvent` | `destruction/` | B4.7 SVO carve → debris spawn scaffold |
 | `Svo` | `Source/FUSE/Physics/include/fuse/physics/spatial/` | Minimal carve/query until Track A B3.5 |
@@ -126,6 +126,8 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 #### Narrow phase
 
 - [x] `fuse_physics_narrowphase_tests` — analytic sphere/plane + GJK stub paths
+- [x] `fuse_physics_narrowphase_tests` — axis-aligned box-sphere + Y-axis capsule-sphere stubs
+- [x] `ContactBufferSoA` — per-pair slot clear/reuse + compact; job-safe `runNarrowphaseIntoBuffer`
 - [ ] Sphere-sphere vs Bullet within 0.001f — catalog `narrowphase.sphere_sphere`
 - [ ] Capsule-capsule degeneracies
 - [ ] EPA / SDF smooth normals — deferred
@@ -179,6 +181,7 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 - Collision callbacks dispatch on the game thread after solver step (same frame as ECS sync)
 - **Broadphase jobify (CPU stub):** `runBroadphase` / `runBroadphase2D` read immutable `RigidBodySoA` + `CollisionShapeSoA` snapshots and write disjoint per-cell / per-dynamic pair buffers via `fuse::jobs::parallel_for`; falls back to serial when `JobScheduler` is single-threaded or uninitialized
 - **PBD constraint iteration (CPU stub):** each substep builds `ContactIslandGraph` from contacts + distance constraints; `parallel_for` dispatches islands while contacts within an island resolve sequentially (Gauss-Seidel). `SolverWorkBuffers` holds reusable manifolds and per-body `PositionDelta` slots for future accumulate-then-apply CUDA parity
+- **Narrowphase job-safe slots (CPU stub):** `runNarrowphaseIntoBuffer` assigns one output slot per candidate pair index; workers write only their slot, then `ContactBufferSoA::compact()` gathers valid manifolds without shared mutable pair state (serial dispatch on CPU stub; slot layout matches parallel kernel path)
 
 ---
 
@@ -188,7 +191,7 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 |--------|-----------|
 | `fuse_physics_data_tests` | B4.1 SoA allocate/addBody |
 | `fuse_physics_broadphase_tests` | B4.2 spatial hash pairs, parallel jobify parity, straddling cells, brute-force reference |
-| `fuse_physics_narrowphase_tests` | B4.3 analytic + GJK stubs |
+| `fuse_physics_narrowphase_tests` | B4.3 analytic + GJK stubs, box/capsule-sphere, SoA contact buffer reuse |
 | `fuse_physics_pipeline_tests` | B4.1 frame pipeline step |
 | `fuse_physics_world_composition_tests` | World3D + physics composition |
 | `fuse_voxel_destruction` | Carve radius derivation, SVO carve/query, debris spawn counters |
@@ -222,6 +225,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_physics|fuse_voxel|fuse_soft
 - [x] B4.10 collision events scaffold — callback registration + dispatch
 - [x] B4.11 deliverable registry — checklist catalog + automated smoke + phase-4 integration test
 - [x] B4.1–B4.3 composed: `RigidBodySoA`, spatial hash, narrow phase, `PhysicsPipeline`
+- [x] B4.3 narrowphase deepen — `ContactBufferSoA`, box-sphere / capsule-sphere stubs, job-safe pair dispatch
 - [x] B4.2 CPU broadphase jobify — `parallel_for` over shape→cell build + per-cell candidate generation stubs
 - [x] B4.4 CPU deepen — island-partitioned constraint iterations, job-safe `SolverWorkBuffers`, rest-length spring tests
 - [ ] B4.4–B4.6 CUDA: PBD kernels, Barnes-Hut GPU, CCD sweep GPU (CPU stubs on main via #29)

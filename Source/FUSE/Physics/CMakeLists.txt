@@ -8,6 +8,7 @@ add_library(fuse_physics STATIC
     src/physics_world_3d.cpp
     src/broadphase/spatial_hash.cpp
     src/narrowphase/collision_dispatch.cpp
+    src/narrowphase/contact_buffer.cpp
     src/narrowphase/gjk.cpp
     src/pbd_solver.cpp
     src/solver/solver_work_buffers.cpp
@@ -18,6 +19,7 @@ add_library(fuse_physics STATIC
     include/fuse/physics/config.hpp
     include/fuse/physics/math.hpp
     include/fuse/physics/narrowphase/collision_dispatch.hpp
+    include/fuse/physics/narrowphase/contact_buffer.hpp
     include/fuse/physics/narrowphase/gjk.hpp
     include/fuse/physics/physics_data.hpp
     include/fuse/physics/physics_pipeline.hpp

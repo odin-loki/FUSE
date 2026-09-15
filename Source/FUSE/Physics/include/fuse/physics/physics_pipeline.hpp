@@ -2,6 +2,7 @@
 
 #include <fuse/physics/broadphase/spatial_hash.hpp>
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
+#include <fuse/physics/narrowphase/contact_buffer.hpp>
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/types.hpp>
 
@@ -35,6 +36,7 @@ public:
     const CollisionShapeSoA& shapes() const { return m_shapes; }
     const std::vector<broadphase::CandidatePair>& candidatePairs() const { return m_candidatePairs; }
     const std::vector<narrowphase::ContactManifold>& contacts() const { return m_contacts; }
+    const narrowphase::ContactBufferSoA& contactBuffer() const { return m_contactBuffer; }
 
     u32 bodyCount() const { return m_bodies.count(); }
     u32 contactCount() const;
@@ -48,6 +50,7 @@ private:
     CollisionShapeSoA m_shapes;
     broadphase::SpatialHashParams m_hashParams{};
     std::vector<broadphase::CandidatePair> m_candidatePairs;
+    narrowphase::ContactBufferSoA m_contactBuffer;
     std::vector<narrowphase::ContactManifold> m_contacts;
     f32 m_lastDt = 0.f;
     bool m_initialized = false;
