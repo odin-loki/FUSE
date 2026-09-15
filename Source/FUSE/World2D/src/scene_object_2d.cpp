@@ -1,4 +1,5 @@
 #include <fuse/world2d/scene_object_2d.hpp>
+#include <fuse/world2d/transform_stubs.hpp>
 
 namespace fuse {
 
