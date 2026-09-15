@@ -1,10 +1,28 @@
 # WP-08 / U6 — editor API boundary (Qt-free) + optional Qt 6 shell.
 
-add_library(fuse_editor_api STATIC
+set(FUSE_EDITOR_API_SOURCES
     src/command_queue.cpp
+    src/command_stack.cpp
     src/editor_host.cpp
+    src/property_inspector.cpp
+    src/material_editor_panel.cpp
+    src/sdf_sculpt_panel.cpp
+)
+
+set(FUSE_EDITOR_API_HEADERS
     include/fuse/editor/command_queue.hpp
+    include/fuse/editor/command_stack.hpp
     include/fuse/editor/editor_host.hpp
+    include/fuse/editor/editor_scene.hpp
+    include/fuse/editor/editor_state.hpp
+    include/fuse/editor/property_inspector.hpp
+    include/fuse/editor/material_editor_panel.hpp
+    include/fuse/editor/sdf_sculpt_panel.hpp
+)
+
+add_library(fuse_editor_api STATIC
+    ${FUSE_EDITOR_API_SOURCES}
+    ${FUSE_EDITOR_API_HEADERS}
 )
 
 add_library(fuse::editor_api ALIAS fuse_editor_api)
@@ -14,8 +32,15 @@ target_include_directories(fuse_editor_api
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
-target_link_libraries(fuse_editor_api PUBLIC fuse_core)
+target_link_libraries(fuse_editor_api PUBLIC fuse_core fuse_ecs)
 target_compile_features(fuse_editor_api PUBLIC cxx_std_17)
+
+if(FUSE_BUILD_VULKAN)
+    target_link_libraries(fuse_editor_api PUBLIC fuse_rhi)
+    if(FUSE_VULKAN_BACKEND)
+        target_compile_definitions(fuse_editor_api PUBLIC FUSE_VULKAN_BACKEND=1)
+    endif()
+endif()
 
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)

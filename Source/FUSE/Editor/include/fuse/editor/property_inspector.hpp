@@ -1,0 +1,44 @@
+#pragma once
+
+#include <fuse/editor/command_stack.hpp>
+#include <fuse/editor/editor_scene.hpp>
+#include <fuse/editor/editor_state.hpp>
+#include <fuse/ecs/components/camera.hpp>
+#include <fuse/ecs/components/light.hpp>
+#include <fuse/ecs/components/mesh.hpp>
+#include <fuse/ecs/components/rigidbody.hpp>
+#include <fuse/ecs/components/sdf_object.hpp>
+#include <fuse/ecs/components/transform.hpp>
+#include <fuse/ecs/entity.hpp>
+#include <fuse/types.hpp>
+
+#include <string>
+#include <vector>
+
+namespace fuse::editor {
+
+/// Headless property inspector model (B6.6) — Qt widgets deferred to `fuse_editor`.
+class PropertyInspector {
+public:
+    struct ComponentSection {
+        std::string componentName;
+        u32 exposedFieldCount = 0;
+    };
+
+    void sync(const EditorState& state, EditorScene& scene);
+
+    [[nodiscard]] bool hasSelection() const { return m_target.valid(); }
+    [[nodiscard]] ecs::EntityID target() const { return m_target; }
+    [[nodiscard]] const std::vector<ComponentSection>& sections() const { return m_sections; }
+
+    bool setTransformPosition(const ecs::vec3& position, EditorScene& scene, CommandStack& cmds);
+    bool setSdfBlendAlpha(f32 alpha, EditorScene& scene, CommandStack& cmds);
+
+private:
+    void appendSectionIfPresent(const char* componentName, ecs::EntityID id, EditorScene& scene);
+
+    ecs::EntityID m_target = ecs::EntityID::null();
+    std::vector<ComponentSection> m_sections;
+};
+
+} // namespace fuse::editor
