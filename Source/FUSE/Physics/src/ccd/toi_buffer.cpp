@@ -79,7 +79,13 @@ void ToiBufferSoA::sortByToi() {
     }
 
     std::sort(order.begin(), order.end(), [&](u32 lhs, u32 rhs) {
-        return toiValues[lhs] < toiValues[rhs];
+        if (toiValues[lhs] != toiValues[rhs]) {
+            return toiValues[lhs] < toiValues[rhs];
+        }
+        if (bodyA[lhs] != bodyA[rhs]) {
+            return bodyA[lhs] < bodyA[rhs];
+        }
+        return bodyB[lhs] < bodyB[rhs];
     });
 
     const auto reorder = [&](auto& values) {
@@ -123,6 +129,48 @@ u32 ToiBufferSoA::compact() {
         validFlags[i] = 0u;
     }
     return activeCount;
+}
+
+u32 ToiBufferSoA::compactAndSort() {
+    const u32 count = compact();
+    sortByToi();
+    return count;
+}
+
+bool ToiBufferSoA::isSortedByToi() const {
+    if (activeCount <= 1u) {
+        return true;
+    }
+
+    for (u32 i = 1; i < activeCount; ++i) {
+        if (validFlags[i] == 0u || validFlags[i - 1u] == 0u) {
+            continue;
+        }
+
+        const f32 prevToi = toiValues[i - 1u];
+        const f32 currToi = toiValues[i];
+        if (currToi < prevToi) {
+            return false;
+        }
+        if (currToi != prevToi) {
+            continue;
+        }
+
+        const u32 prevBodyA = bodyA[i - 1u];
+        const u32 currBodyA = bodyA[i];
+        if (currBodyA < prevBodyA) {
+            return false;
+        }
+        if (currBodyA != prevBodyA) {
+            continue;
+        }
+
+        if (bodyB[i] < bodyB[i - 1u]) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 TOIResult ToiBufferSoA::earliestToi() const {

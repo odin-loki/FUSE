@@ -54,11 +54,36 @@ void testSweptSpherePlaneFindsWallImpact() {
     expectNear(result.toi, 0.11f, 0.02f, "plane TOI prevents tunneling through wall at z=5");
 }
 
+void testSweptSpherePlaneRejectsMiss() {
+    const TOIResult result = sweptSpherePlane(
+        {0.f, 0.f, 10.f}, {0.f, 0.f, 50.f}, 0.5f, {0.f, 0.f, 1.f}, 5.f);
+    expectTrue(!result.valid, "sphere moving away from plane returns invalid TOI");
+}
+
 void testSweptSphereSlabFindsThinWallImpact() {
     const TOIResult result = sweptSphereSlabZ(
         {0.f, 0.f, 0.f}, {0.f, 0.f, 100.f}, 0.5f, 5.f, 0.05f);
     expectTrue(result.valid, "fast sphere detects thin slab wall impact");
     expectTrue(result.toi < 0.15f, "slab TOI occurs before discrete end-of-step tunnel");
+}
+
+void testSweptSphereSlabRejectsMiss() {
+    const TOIResult result = sweptSphereSlabZ(
+        {0.f, 0.f, 10.f}, {0.f, 0.f, 50.f}, 0.5f, 5.f, 0.05f);
+    expectTrue(!result.valid, "sphere moving away from Z slab returns invalid TOI");
+}
+
+void testSelectEarliestToiPrefersSoonerImpact() {
+    TOIResult early{};
+    early.valid = true;
+    early.toi = 0.2f;
+
+    TOIResult late = early;
+    late.toi = 0.8f;
+
+    const TOIResult chosen = selectEarliestToi(late, early);
+    expectTrue(chosen.valid, "selectEarliestToi returns valid when both inputs valid");
+    expectNear(chosen.toi, 0.2f, 1e-5f, "selectEarliestToi picks smaller TOI");
 }
 
 void testToiBufferPushSortOrder() {
@@ -89,6 +114,37 @@ void testToiBufferPushSortOrder() {
     expectNear(buffer.resultAt(1u).toi, 0.4f, 1e-5f, "sort orders middle TOI");
     expectNear(buffer.resultAt(2u).toi, 0.75f, 1e-5f, "sort places latest TOI last");
     expectTrue(buffer.resultAt(0u).bodyA == 3u, "sort preserves body metadata");
+    expectTrue(buffer.isSortedByToi(), "sort leaves buffer in ascending TOI order");
+}
+
+void testToiBufferStableSortTieBreak() {
+    ToiBufferSoA buffer;
+
+    TOIResult first{};
+    first.valid = true;
+    first.toi = 0.5f;
+    first.bodyA = 2u;
+    first.bodyB = 1u;
+
+    TOIResult second = first;
+    second.bodyA = 1u;
+    second.bodyB = 3u;
+
+    TOIResult third = first;
+    third.bodyA = 1u;
+    third.bodyB = 1u;
+
+    buffer.push(first);
+    buffer.push(second);
+    buffer.push(third);
+    buffer.sortByToi();
+
+    expectTrue(buffer.isSortedByToi(), "equal-TOI buffer reports sorted");
+    expectTrue(buffer.resultAt(0u).bodyA == 1u && buffer.resultAt(0u).bodyB == 1u,
+               "equal TOI tie-break prefers lower bodyA then bodyB");
+    expectTrue(buffer.resultAt(1u).bodyA == 1u && buffer.resultAt(1u).bodyB == 3u,
+               "equal TOI tie-break orders same bodyA by bodyB");
+    expectTrue(buffer.resultAt(2u).bodyA == 2u, "equal TOI tie-break places higher bodyA last");
 }
 
 void testToiBufferEmpty() {
@@ -102,6 +158,40 @@ void testToiBufferEmpty() {
     buffer.sortByToi();
     expectTrue(buffer.activeCount == 0u, "sort on empty buffer is no-op");
     expectTrue(buffer.toVector().empty(), "toVector on empty buffer returns empty");
+    expectTrue(buffer.isSortedByToi(), "empty buffer reports sorted");
+}
+
+void testToiBufferCompactAndSort() {
+    ToiBufferSoA buffer;
+    buffer.preparePairSlots(3u);
+
+    TOIResult late{};
+    late.valid = true;
+    late.toi = 0.9f;
+    late.bodyA = 1u;
+    late.bodyB = 2u;
+
+    TOIResult early = late;
+    early.toi = 0.2f;
+    early.bodyA = 3u;
+
+    buffer.writeSlot(2u, late);
+    buffer.writeSlot(0u, early);
+
+    expectTrue(buffer.compactAndSort() == 2u, "compactAndSort gathers valid slots");
+    expectTrue(buffer.isSortedByToi(), "compactAndSort leaves ascending TOI order");
+    expectNear(buffer.resultAt(0u).toi, 0.2f, 1e-5f, "compactAndSort places earliest TOI first");
+}
+
+void testRunCcdIntoBufferEmptyPairs() {
+    RigidBodySoA bodies;
+    CollisionShapeSoA shapes;
+    ToiBufferSoA buffer;
+
+    runCcdIntoBuffer({}, bodies, shapes, 1.f, buffer);
+
+    expectTrue(buffer.isEmpty(), "empty pair list yields empty buffer");
+    expectTrue(buffer.isSortedByToi(), "empty runCcdIntoBuffer buffer is sorted");
 }
 
 void testToiBufferEarliestToi() {
@@ -330,9 +420,15 @@ int main() {
     testSweptSphereSphereFindsImpact();
     testSweptSphereSphereRejectsMiss();
     testSweptSpherePlaneFindsWallImpact();
+    testSweptSpherePlaneRejectsMiss();
     testSweptSphereSlabFindsThinWallImpact();
+    testSweptSphereSlabRejectsMiss();
+    testSelectEarliestToiPrefersSoonerImpact();
     testToiBufferPushSortOrder();
+    testToiBufferStableSortTieBreak();
     testToiBufferEmpty();
+    testToiBufferCompactAndSort();
+    testRunCcdIntoBufferEmptyPairs();
     testToiBufferEarliestToi();
     testToiBufferCapacityClamp();
     testSweptSphereAabbFindsImpact();
