@@ -26,13 +26,62 @@ f32 evaluate_filmic_curve(f32 x, const TonemapCurveParams& params) {
     return mapped;
 }
 
+f32 hill_aces_channel(f32 channel, f32 contrast, f32 shoulder) {
+    constexpr f32 a = 2.51f;
+    constexpr f32 b = 0.03f;
+    constexpr f32 c = 2.43f;
+    constexpr f32 d = 0.59f;
+    constexpr f32 e = 0.14f;
+    const f32 scaled = channel * contrast;
+    const f32 mapped = (scaled * (a * scaled + b)) / (scaled * (c * scaled + d) + e);
+    const f32 shoulderBlend = mapped / (1.f + shoulder * mapped);
+    return shoulderBlend;
+}
+
 } // namespace
+
+TonemapCurveParams make_reinhard_curve_params(const ReinhardCurveParams& reinhard) {
+    TonemapCurveParams params{};
+    params.kind = TonemapCurveKind::Reinhard;
+    params.enabled = true;
+    params.reinhard = reinhard;
+    return params;
+}
+
+TonemapCurveParams make_aces_curve_params(const AcesCurveParams& aces) {
+    TonemapCurveParams params{};
+    params.kind = TonemapCurveKind::ACES;
+    params.enabled = true;
+    params.aces = aces;
+    return params;
+}
+
+f32 evaluate_reinhard_curve_channel(f32 channel, const ReinhardCurveParams& params) {
+    const f32 exposed = std::max(channel, 0.f) * std::pow(2.f, params.exposure_bias);
+    const f32 whitePoint = std::max(params.white_point, 1e-4f);
+    const f32 numerator = exposed * (1.f + exposed / (whitePoint * whitePoint));
+    const f32 denominator = 1.f + exposed;
+    return std::clamp(numerator / denominator, 0.f, 1.f);
+}
+
+f32 evaluate_aces_curve_channel(f32 channel, const AcesCurveParams& params) {
+    return std::clamp(hill_aces_channel(std::max(channel, 0.f), params.contrast, params.shoulder), 0.f, 1.f);
+}
 
 f32 evaluate_tonemap_curve_channel(f32 channel, const TonemapCurveParams& params) {
     if (!params.enabled) {
         return channel;
     }
-    return std::clamp(evaluate_filmic_curve(channel, params), 0.f, 1.f);
+
+    switch (params.kind) {
+    case TonemapCurveKind::Reinhard:
+        return evaluate_reinhard_curve_channel(channel, params.reinhard);
+    case TonemapCurveKind::ACES:
+        return evaluate_aces_curve_channel(channel, params.aces);
+    case TonemapCurveKind::Filmic:
+    default:
+        return std::clamp(evaluate_filmic_curve(channel, params), 0.f, 1.f);
+    }
 }
 
 fuse::math::Vec3 apply_tonemap_curve(const fuse::math::Vec3& hdr, const TonemapCurveParams& params) {

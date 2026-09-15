@@ -125,6 +125,24 @@ void testTonemapCurveEnabledCompressesHighlights() {
     expectTrue(curved.x >= 0.f && curved.x <= 1.f, "curved red stays in range");
 }
 
+void testTonemapCurveReinhardAcesClamp() {
+    const fuse::renderer::TonemapCurveParams reinhard = fuse::renderer::make_reinhard_curve_params();
+    const fuse::renderer::TonemapCurveParams aces = fuse::renderer::make_aces_curve_params();
+    const fuse::math::Vec3 extreme{128.f, 64.f, 32.f};
+
+    const fuse::math::Vec3 reinhardCurved = fuse::renderer::apply_tonemap_curve(extreme, reinhard);
+    const fuse::math::Vec3 acesCurved = fuse::renderer::apply_tonemap_curve(extreme, aces);
+
+    expectTrue(reinhardCurved.x >= 0.f && reinhardCurved.x <= 1.f, "reinhard curve clamps red");
+    expectTrue(reinhardCurved.y >= 0.f && reinhardCurved.y <= 1.f, "reinhard curve clamps green");
+    expectTrue(reinhardCurved.z >= 0.f && reinhardCurved.z <= 1.f, "reinhard curve clamps blue");
+    expectTrue(acesCurved.x >= 0.f && acesCurved.x <= 1.f, "aces curve clamps red");
+    expectTrue(acesCurved.y >= 0.f && acesCurved.y <= 1.f, "aces curve clamps green");
+    expectTrue(acesCurved.z >= 0.f && acesCurved.z <= 1.f, "aces curve clamps blue");
+    expectTrue(reinhard.kind == fuse::renderer::TonemapCurveKind::Reinhard, "reinhard preset kind");
+    expectTrue(aces.kind == fuse::renderer::TonemapCurveKind::ACES, "aces preset kind");
+}
+
 void testTonemapOperators() {
     const fuse::math::Vec3 grey{0.18f, 0.18f, 0.18f};
     const fuse::math::Vec3 aces = fuse::renderer::apply_tone_map(grey, fuse::renderer::ToneMapper::ACES);
@@ -141,6 +159,42 @@ void testLuminanceToEvCalibration() {
     expectNear(fuse::renderer::luminance_to_ev(0.18f, 0.18f), 0.f, 1e-5f, "0.18 grey is 0 EV offset");
     expectTrue(fuse::renderer::luminance_to_ev(0.36f, 0.18f) > 0.f, "brighter scene yields positive EV");
     expectTrue(fuse::renderer::luminance_to_ev(0.09f, 0.18f) < 0.f, "darker scene yields negative EV");
+}
+
+void testAutoExposureEmaConverges() {
+    fuse::renderer::AutoExposureParams params{};
+    params.use_ema_adaptation = true;
+    params.ema_alpha_up = 0.35f;
+    params.ema_alpha_down = 0.35f;
+    params.adaptation_speed_up = 12.f;
+    params.adaptation_speed_down = 12.f;
+    params.target_luminance = 0.18f;
+
+    fuse::renderer::AutoExposureState state{};
+    const fuse::f32 targetEv = fuse::renderer::luminance_to_ev(0.72f, 0.18f);
+    fuse::f32 previousEv = fuse::renderer::update_auto_exposure_ema(state, 0.72f, params, 0.1f);
+    for (int i = 0; i < 24; ++i) {
+        const fuse::f32 nextEv = fuse::renderer::update_auto_exposure_ema(state, 0.72f, params, 0.1f);
+        expectTrue(nextEv >= previousEv - 1e-4f, "ema exposure adapts upward without undershoot");
+        previousEv = nextEv;
+    }
+
+    expectNear(previousEv, targetEv, 0.15f, "ema exposure settles near target EV");
+    expectNear(state.smoothed_luminance, 0.72f, 0.05f, "ema smoothed luminance converges");
+}
+
+void testLuminanceHistogramEmpty() {
+    fuse::renderer::LuminanceHistogram histogram{};
+    fuse::renderer::LuminanceHistogramParams params{};
+    histogram.init(params);
+
+    expectTrue(histogram.sampleCount() == 0u, "empty histogram has zero samples");
+    expectTrue(histogram.occupiedBinCount() == 0u, "empty histogram has no occupied bins");
+    expectNear(histogram.averageLuminance(), 0.f, 1e-6f, "empty histogram average is zero");
+    expectNear(histogram.percentileLuminance(0.5f), 0.f, 1e-6f, "empty histogram percentile is zero");
+    expectNear(histogram.meteringLuminance(), 0.f, 1e-6f, "empty histogram metering is zero");
+    expectNear(fuse::renderer::LuminanceHistogram::measureFromSamples(nullptr, 0u, params), 0.f, 1e-6f,
+               "empty sample buffer yields zero metering");
 }
 
 void testAutoExposureClampsAndAdapts() {
@@ -201,8 +255,11 @@ int main() {
     testPostStackProcessPixel();
     testTonemapCurveDisabledIsIdentity();
     testTonemapCurveEnabledCompressesHighlights();
+    testTonemapCurveReinhardAcesClamp();
     testTonemapOperators();
     testLuminanceToEvCalibration();
+    testAutoExposureEmaConverges();
+    testLuminanceHistogramEmpty();
     testAutoExposureClampsAndAdapts();
     testExposureMeterAverage();
     testPostStackAutoExposureIntegration();

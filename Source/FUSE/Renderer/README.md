@@ -28,9 +28,9 @@ CUDA compute passes, dual-kawase bloom pyramids, and histogram auto-exposure are
 | Header | Role |
 |--------|------|
 | `postprocess/bloom.hpp` | `BloomParams`, CPU threshold/extract stub |
-| `postprocess/tonemap_curve.hpp` | `TonemapCurveParams`, filmic S-curve pre-tonemap stub |
+| `postprocess/tonemap_curve.hpp` | `TonemapCurveParams`, filmic/Reinhard/ACES curve presets |
 | `postprocess/tonemap.hpp` | `ToneMapper`, `aces_tonemap()`, host tone-map pass |
-| `postprocess/auto_exposure.hpp` | `AutoExposureParams`, `ExposureMeter`, temporal EV adaptation stub |
+| `postprocess/auto_exposure.hpp` | `AutoExposureParams`, `ExposureMeter`, `LuminanceHistogram`, EMA adaptation stub |
 | `postprocess/color_grade.hpp` | `ColorGradeParams`, exposure/saturation/CDL stub |
 | `postprocess/post_stack.hpp` | `PostStack` facade chaining the stages |
 
@@ -39,4 +39,4 @@ CUDA compute passes, dual-kawase bloom pyramids, and histogram auto-exposure are
 | Test | Coverage |
 |------|----------|
 | `fuse_ddgi` | Grid math, probe indexing, atlas layout, trilinear irradiance lerp, hysteresis blend, probe scheduling, init/update/sample, pipeline slot |
-| `fuse_post_process_b510` | Bloom thresholding, ACES clamping, neutral 0.18 grey calibration, tonemap curve rolloff, auto-exposure EV metering/adaptation, stage ordering, `PostStack` facade |
+| `fuse_post_process_b510` | Bloom thresholding, ACES clamping, neutral 0.18 grey calibration, tonemap curve rolloff/Reinhard+ACES clamp, EMA convergence, empty histogram, auto-exposure EV metering/adaptation, stage ordering, `PostStack` facade |
