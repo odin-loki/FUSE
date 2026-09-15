@@ -2,6 +2,7 @@
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/vfx/effect_instance.hpp>
 #include <fuse/vfx/particle_emitter.hpp>
+#include <fuse/vfx/particle_gpu.hpp>
 #include <fuse/vfx/particle_system.hpp>
 
 #include <cmath>
@@ -531,6 +532,111 @@ void testParticleSystemSpawnAndUpdate() {
     expectEq(system.effect_count(), 0u, "finished effect is cleaned up");
 }
 
+void testParticleGpuBufferLayout() {
+    using fuse::vfx::ParticleGpuBufferLayout;
+    using fuse::vfx::ParticleGpuColumn;
+
+    expectTrue(ParticleGpuBufferLayout::columnCount() == 8u, "eight GPU SoA columns");
+    expectTrue(ParticleGpuBufferLayout::elementSize(ParticleGpuColumn::Positions) == sizeof(fuse::math::Vec3),
+               "positions column element size");
+    expectTrue(ParticleGpuBufferLayout::elementSize(ParticleGpuColumn::AliveFlags) == sizeof(fuse::u32),
+               "alive_flags column element size");
+
+    const fuse::u32 capacity = 64u;
+    expectTrue(ParticleGpuBufferLayout::validatePackedLayout(capacity), "packed layout is contiguous and aligned");
+    expectTrue(ParticleGpuBufferLayout::columnDeviceOffset(ParticleGpuColumn::Positions, capacity) == 0u,
+               "positions column starts at offset zero");
+    expectTrue(ParticleGpuBufferLayout::columnDeviceOffset(ParticleGpuColumn::Velocities, capacity) >=
+                   ParticleGpuBufferLayout::columnByteSize(ParticleGpuColumn::Positions, capacity),
+               "velocities column follows positions");
+
+    const fuse::usize total = ParticleGpuBufferLayout::packedDeviceBytes(capacity);
+    expectTrue(total > ParticleGpuBufferLayout::columnByteSize(ParticleGpuColumn::Positions, capacity),
+               "packed SSBO includes alignment padding");
+}
+
+void testParticleGpuDispatchCounts() {
+    const fuse::vfx::ParticleGpuDispatch sim = fuse::vfx::ParticleGpuDispatch::forSimulate(4096u);
+    expectEq(sim.simThreadCount, fuse::vfx::ParticleGpuBufferLayout::kSimBlockSize, "simulate block size");
+    expectEq(sim.simBlockCount, 16u, "4096 particles dispatch 16 blocks of 256");
+    expectEq(sim.totalSimThreads(), 4096u, "simulate launch covers full capacity");
+
+    const fuse::vfx::ParticleGpuDispatch partial = fuse::vfx::ParticleGpuDispatch::forSimulate(100u);
+    expectEq(partial.simBlockCount, 1u, "partial capacity rounds up to one block");
+    expectTrue(partial.totalSimThreads() >= 100u, "simulate launch covers partial capacity");
+
+    const fuse::vfx::ParticleGpuDispatch emit = fuse::vfx::ParticleGpuDispatch::forEmit(200u);
+    expectEq(emit.emitThreadCount, fuse::vfx::ParticleGpuBufferLayout::kEmitBlockSize, "emit block size");
+    expectEq(emit.emitBlockCount, 4u, "200 emit threads need four 64-wide blocks");
+    expectTrue(emit.totalEmitThreads() >= 200u, "emit launch covers requested count");
+
+    const fuse::vfx::ParticleGpuDispatch noEmit = fuse::vfx::ParticleGpuDispatch::forEmit(0u);
+    expectEq(noEmit.emitBlockCount, 0u, "zero emit count skips launch");
+}
+
+void testParticleGpuMirrorRoundTrip() {
+    fuse::vfx::ParticleEmitter emitter{};
+    fuse::vfx::ParticleEmitterDesc desc{};
+    desc.max_particles = 8;
+    desc.emit_rate = 0.f;
+    desc.lifetime_min = 5.f;
+    desc.lifetime_max = 5.f;
+    desc.gravity = {0.f, -1.f, 0.f};
+    desc.drag = 0.f;
+    desc.velocity_min = {0.f, 2.f, 0.f};
+    desc.velocity_max = {0.f, 2.f, 0.f};
+
+    emitter.init(desc);
+    emitter.burst(3);
+    emitter.simulate(0.1f);
+
+    const fuse::vfx::ParticleGpuMirror mirror = fuse::vfx::ParticleGpuMirror::fromCpuSoA(emitter.particles());
+    expectTrue(mirror.matchesCpuSoA(emitter.particles()), "mirror matches live CPU SoA");
+
+    const std::vector<fuse::u8> packed = mirror.packToDeviceLayout();
+    expectEq(static_cast<fuse::u32>(packed.size()),
+             static_cast<fuse::u32>(fuse::vfx::ParticleGpuBufferLayout::packedDeviceBytes(desc.max_particles)),
+             "packed bytes match layout size");
+
+    const fuse::vfx::ParticleGpuMirror restored =
+        fuse::vfx::ParticleGpuMirror::unpackFromDeviceLayout(packed, desc.max_particles);
+    expectTrue(restored.matchesCpuSoA(emitter.particles()), "device-layout round trip preserves live slots");
+
+    fuse::vfx::ParticleSoA copy{};
+    copy.capacity = desc.max_particles;
+    copy.positions.assign(desc.max_particles, {});
+    copy.velocities.assign(desc.max_particles, {});
+    copy.ages.assign(desc.max_particles, 0.f);
+    copy.lifetimes.assign(desc.max_particles, 0.f);
+    copy.sizes.assign(desc.max_particles, 0.f);
+    copy.colors.assign(desc.max_particles, {});
+    copy.alphas.assign(desc.max_particles, 0.f);
+    copy.alive_flags.assign(desc.max_particles, 0u);
+    copy.free_slots = emitter.particles().free_slots;
+
+    mirror.writeToCpuSoA(copy);
+    expectEq(copy.count, emitter.alive_count(), "mirror write restores alive count");
+    expectNear(copy.positions[0].y, emitter.particles().positions[0].y, 1e-5f,
+               "mirror write copies integrated position");
+}
+
+void testParticleGpuPointerBundle() {
+    const fuse::u32 capacity = 32u;
+    const fuse::u64 base = 0x1000u;
+
+    fuse::vfx::ParticleGpuMirror mirror{};
+    mirror.reserve(capacity);
+    mirror.alive_flags[0] = 1u;
+    mirror.alive_count = 1u;
+
+    const fuse::vfx::ParticleSoAGPU gpu = mirror.toGpuPointers(base);
+    expectEq(gpu.capacity, capacity, "GPU bundle carries capacity");
+    expectEq(gpu.count, 1u, "GPU bundle carries alive count");
+    expectTrue(gpu.positions == base, "positions pointer uses packed base");
+    expectTrue(gpu.velocities > gpu.positions, "velocities pointer follows aligned positions column");
+    expectTrue(gpu.alive_flags > gpu.alphas, "alive_flags pointer is last column");
+}
+
 void testParticleSystemEmitterHandles() {
     fuse::vfx::ParticleSystem system{};
     system.init({});
@@ -576,6 +682,10 @@ int main() {
     testParallelSingleParticle();
     testParallelAllDeadNoOp();
     testParallelMultiWorkerParity();
+    testParticleGpuBufferLayout();
+    testParticleGpuDispatchCounts();
+    testParticleGpuMirrorRoundTrip();
+    testParticleGpuPointerBundle();
     testEffectInstanceLifecycle();
     testParticleSystemSpawnAndUpdate();
     testParticleSystemSpawnBurstCount();
