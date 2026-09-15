@@ -79,6 +79,11 @@ void testClusterIndex() {
                "clamped cluster index maps OOB coords to last cell");
     expectTrue(fuse::renderer::ClusterGridLayout::clusterIndexClamped(1u, 1u, 2u, desc) == 17u,
                "clamped cluster index preserves in-bounds coords");
+    expectTrue(fuse::renderer::ClusterGridLayout::maxClusterIndex(desc) == 23u,
+               "max cluster index matches last cell");
+    expectTrue(fuse::renderer::ClusterGridLayout::clampClusterIndex(999u, desc) ==
+                   fuse::renderer::ClusterGridLayout::maxClusterIndex(desc),
+               "clamp cluster index agrees with max index");
 }
 
 void testClusterGridClampAndScreenMapping() {
@@ -218,6 +223,8 @@ void testClusterUtilAssignmentCounts() {
                "empty cluster count matches grid");
     expectTrue(fuse::renderer::cluster_util::validatePopulationCounts(grid, clusterCount),
                "population counts sum to cluster count");
+    expectTrue(fuse::renderer::cluster_util::validateGridPopulation(grid, clusterCount),
+               "grid population includes contiguous offsets");
     expectTrue(fuse::renderer::cluster_util::clusterLightCount(grid, 0u) == 2u, "cluster light count for cluster 0");
     expectTrue(fuse::renderer::cluster_util::clusterLightCount(grid, 1u) == 0u, "cluster light count for empty cluster");
     expectTrue(fuse::renderer::cluster_util::clusterLightCount(grid, 99u) == 0u,
@@ -252,13 +259,19 @@ void testClusterCapacityAndPopulationValidation() {
                "zero max lights reports no clusters at capacity");
     expectTrue(fuse::renderer::cluster_util::validatePopulationCounts(grid, clusterCount),
                "capacity-clamped grid preserves population invariant");
+    expectTrue(fuse::renderer::cluster_util::validateGridPopulation(grid, clusterCount),
+               "capacity-clamped grid preserves contiguous offsets");
 
     fuse::renderer::ClusterGridSoA undersized{};
     undersized.grid.resize(2u);
     expectTrue(!fuse::renderer::cluster_util::validatePopulationCounts(undersized, clusterCount),
                "undersized grid fails population validation");
+    expectTrue(!fuse::renderer::cluster_util::validateGridPopulation(undersized, clusterCount),
+               "undersized grid fails grid population validation");
     expectTrue(fuse::renderer::cluster_util::validatePopulationCounts(undersized, 0u),
                "zero cluster count is vacuously valid");
+    expectTrue(fuse::renderer::cluster_util::validateGridPopulation(undersized, 0u),
+               "zero cluster count vacuously validates grid population");
 }
 
 void testClusterGridSoAAllocate() {
@@ -307,6 +320,8 @@ void testClusterIndexClampAndGridGuards() {
                "index 0 invalid on empty grid");
     expectTrue(fuse::renderer::ClusterGridLayout::isClusterIndexOutOfRange(0u, zeroDesc),
                "any index out of range on empty grid");
+    expectTrue(fuse::renderer::ClusterGridLayout::maxClusterIndex(zeroDesc) == 0u,
+               "max cluster index on empty grid is zero");
 
     fuse::renderer::ClusterDesc desc{};
     desc.tilesX = 2;
@@ -354,6 +369,61 @@ void testClusterIndexClampAndGridGuards() {
                "empty cluster count after partial assignment");
     expectTrue(fuse::renderer::cluster_util::validatePopulationCounts(grid, clusterCount),
                "population counts sum after partial assignment");
+    expectTrue(fuse::renderer::cluster_util::validateGridPopulation(grid, clusterCount),
+               "grid population valid after partial assignment");
+}
+
+void testClusterLookupAtIndexGuards() {
+    fuse::renderer::ClusterDesc desc{};
+    desc.tilesX = 2;
+    desc.tilesY = 2;
+    desc.slicesZ = 1;
+
+    fuse::renderer::ClusterGridSoA grid{};
+    const fuse::u32 clusterCount = desc.clusterCount();
+    const std::vector<std::vector<fuse::u32>> perClusterLights = {
+        {0u, 1u},
+        {},
+        {2u},
+        {3u, 4u},
+    };
+    fuse::renderer::ClusterLightGridLayout::rebuildLightGrid(grid, clusterCount, perClusterLights, 2u);
+
+    std::vector<fuse::u32> originLights;
+    expectTrue(fuse::renderer::cluster_util::lookupClusterLightsAtIndex(grid, desc, 0u, originLights) == 2u,
+               "lookup at origin index returns cluster count");
+    expectTrue(originLights.size() == 2u && originLights[0] == 0u && originLights[1] == 1u,
+               "lookup at origin copies assigned lights");
+
+    std::vector<fuse::u32> clampedLastLights;
+    expectTrue(fuse::renderer::cluster_util::lookupClusterLightsAtIndex(grid, desc, 999u, clampedLastLights) == 2u,
+               "lookup at OOB index clamps to last cluster");
+    expectTrue(clampedLastLights.size() == 2u && clampedLastLights[0] == 3u && clampedLastLights[1] == 4u,
+               "lookup at clamped last index copies assigned lights");
+
+    std::vector<fuse::u32> emptyClusterLights;
+    expectTrue(fuse::renderer::cluster_util::lookupClusterLightsAtIndex(grid, desc, 1u, emptyClusterLights) == 0u,
+               "lookup at empty cluster returns zero");
+    expectTrue(emptyClusterLights.empty(), "lookup at empty cluster clears output");
+
+    fuse::renderer::ClusterGridSoA emptyGrid{};
+    std::vector<fuse::u32> emptyStorageLights;
+    expectTrue(fuse::renderer::cluster_util::lookupClusterLightsAtIndex(emptyGrid, desc, 0u, emptyStorageLights) == 0u,
+               "lookup on empty storage returns zero");
+
+    fuse::renderer::ClusterDesc mismatched{};
+    mismatched.tilesX = 1;
+    mismatched.tilesY = 1;
+    mismatched.slicesZ = 1;
+    std::vector<fuse::u32> mismatchedLights;
+    expectTrue(fuse::renderer::cluster_util::lookupClusterLightsAtIndex(grid, mismatched, 0u, mismatchedLights) == 0u,
+               "lookup rejects desc mismatch");
+
+    fuse::renderer::ClusterDesc zeroDesc{};
+    zeroDesc.tilesX = 0u;
+    std::vector<fuse::u32> zeroGridLights;
+    expectTrue(fuse::renderer::cluster_util::lookupClusterLightsAtIndex(grid, zeroDesc, 0u, zeroGridLights) == 0u,
+               "lookup rejects empty grid desc");
 }
 
 void testZeroDimensionClusterGrid() {
@@ -502,6 +572,8 @@ void testLightCullAssignsAndSkips() {
     expectTrue(fuse::renderer::ClusterLightGridLayout::validateContiguousOffsets(culler.gridSoA(),
                                                                                  desc.clusterCount()),
                "culler light grid offsets contiguous");
+    expectTrue(fuse::renderer::cluster_util::validateGridPopulation(culler.gridSoA(), desc.clusterCount()),
+               "culler grid population valid after assign/skip cull");
 
     culler.rebuildLightGrid();
     expectTrue(fuse::renderer::ClusterLightGridLayout::validateContiguousOffsets(culler.gridSoA(),
@@ -568,6 +640,10 @@ void testEmptySceneCull() {
                    desc.clusterCount(),
                "empty cluster count matches grid size");
     expectTrue(culler.gridSoA().matchesDesc(desc), "empty scene grid matches desc");
+    expectTrue(fuse::renderer::cluster_util::validatePopulationCounts(culler.gridSoA(), desc.clusterCount()),
+               "empty scene population counts valid");
+    expectTrue(fuse::renderer::cluster_util::validateGridPopulation(culler.gridSoA(), desc.clusterCount()),
+               "empty scene grid population valid");
 
     culler.destroy();
     resources.destroy();
@@ -734,6 +810,8 @@ void testLightCullCapacityClamp() {
                "capacity helper matches culler overflow stats");
     expectTrue(culler.stats().lightsDroppedOverflow == 3u, "excess intersecting lights dropped");
     expectTrue(culler.stats().clustersAtCapacity == 1u, "single cluster reported at capacity");
+    expectTrue(fuse::renderer::cluster_util::validateGridPopulation(culler.gridSoA(), desc.clusterCount()),
+               "capacity-clamped cull preserves grid population");
 
     culler.destroy();
     resources.destroy();
@@ -788,6 +866,7 @@ int main() {
     testClusterCapacityAndPopulationValidation();
     testClusterGridSoAAllocate();
     testClusterIndexClampAndGridGuards();
+    testClusterLookupAtIndexGuards();
     testZeroDimensionClusterGrid();
     testCullerInitClampsOversizedDesc();
     testEmptyGridRecordCullPassSkips();
