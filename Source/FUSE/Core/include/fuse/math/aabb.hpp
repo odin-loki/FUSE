@@ -161,4 +161,8 @@ inline AABB transformAabbCorners(const Mat4& matrix, const AABB& box) {
     return {outMin, outMax};
 }
 
+inline AABB mergeAabb(const AABB& a, const AABB& b) {
+    return a.merge(b);
+}
+
 } // namespace fuse::math

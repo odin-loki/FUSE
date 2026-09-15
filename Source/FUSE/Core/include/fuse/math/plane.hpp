@@ -33,6 +33,10 @@ inline PlaneSide classifyPoint(const Vec4& plane, const Vec3& point, f32 epsilon
 
 /// Positive-vertex test for an AABB against a plane (frustum culling convention).
 inline PlaneSide classifyAabb(const Vec4& plane, const AABB& box) {
+    if (box.isEmpty()) {
+        return PlaneSide::Behind;
+    }
+
     const Vec3 positive{
         plane.x >= 0.f ? box.max.x : box.min.x,
         plane.y >= 0.f ? box.max.y : box.min.y,

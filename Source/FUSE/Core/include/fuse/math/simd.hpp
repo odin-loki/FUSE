@@ -255,7 +255,7 @@ inline AABB transformAabb(const Mat4& matrix, const AABB& box) {
 }
 
 inline AABB mergeAabb(const AABB& a, const AABB& b) {
-    return a.merge(b);
+    return fuse::math::mergeAabb(a, b);
 }
 
 inline f32 rayIntersectAabb(const AABB& box, const Vec3& origin, const Vec3& direction) {
@@ -271,6 +271,11 @@ inline PlaneSide classifyAabb(const Vec4& plane, const AABB& box) {
 
 inline bool clipSegmentAgainstPlane(const Vec4& plane, Vec3& a, Vec3& b, f32 epsilon = 1e-5f) {
     return fuse::math::clipSegmentAgainstPlane(plane, a, b, epsilon);
+}
+
+inline u32 clipPolygonAgainstPlane(const Vec4& plane, const Vec3* input, u32 inputCount, Vec3* output,
+                                   u32 maxOutput, f32 epsilon = 1e-5f) {
+    return fuse::math::clipPolygonAgainstPlane(plane, input, inputCount, output, maxOutput, epsilon);
 }
 
 } // namespace fuse::math::simd
