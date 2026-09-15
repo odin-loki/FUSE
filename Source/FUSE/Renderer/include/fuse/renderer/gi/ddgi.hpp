@@ -89,18 +89,49 @@ struct ProbeGridCoord {
     u32 z = 0;
 };
 
+/// Per-probe validity flags for border/interior classification (B5.6 deepen).
+struct ProbeValidityFlags {
+    bool valid = false;
+    bool is_border = false;
+    bool interior = false;
+    /// True when the probe has a full 2×2×2 neighbourhood for trilinear sampling.
+    bool has_trilinear_neighbourhood = false;
+};
+
+/// CPU-side octahedral direction encoding for probe irradiance atlas tiles (B5.6 deepen).
+/// Mirrors `GBufferEncoding` and the deferred-shade probe sampling path.
+struct DdgiIrradianceEncoding {
+    static fuse::math::Vec2 encodeDirection(const fuse::math::Vec3& direction);
+    static fuse::math::Vec3 decodeDirection(const fuse::math::Vec2& encoded);
+    /// Unit-square UV within a probe's octahedral tile.
+    static fuse::math::Vec2 directionToAtlasUV(const fuse::math::Vec3& direction);
+    /// Texel offset within a probe tile — clamped to [0, irradiance_res - 1].
+    static fuse::math::Vec2 directionToTexelOffset(const fuse::math::Vec3& direction, u32 irradiance_res);
+    static f32 angularErrorRadians(const fuse::math::Vec3& a, const fuse::math::Vec3& b);
+};
+
 /// Probe grid indexing + atlas layout helpers — mirrors deferred-shade probe sampling.
 struct ProbeGridLayout {
     static ProbeGridCoord probeCoordFromIndex(const DDGIDesc& desc, u32 probe_index);
     static u32 probeIndexFromCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
     static bool isValidProbeCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
     static bool isValidProbeIndex(const DDGIDesc& desc, u32 probe_index);
+    static bool isBorderProbeCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
+    static ProbeValidityFlags probeValidity(const DDGIDesc& desc, const ProbeGridCoord& coord);
+    static ProbeValidityFlags probeValidityFromIndex(const DDGIDesc& desc, u32 probe_index);
     /// Fractional grid coordinates — origin cell centre is (0,0,0).
     static fuse::math::Vec3 worldToProbeGridCoord(const DDGIDesc& desc,
                                                   const fuse::math::Vec3& world_position);
+    /// Clamp fractional grid coordinates to the valid probe index range.
+    static fuse::math::Vec3 clampWorldToProbeGridCoord(const DDGIDesc& desc,
+                                                       const fuse::math::Vec3& grid_coord);
     static ProbeGridCoord clampProbeGridCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
     /// Top-left texel of the probe's octahedral irradiance tile in the atlas.
     static fuse::math::Vec2 probeIrradianceAtlasOrigin(const DDGIDesc& desc, const ProbeGridCoord& coord);
+    /// Absolute atlas texel for a world-space direction sample within a probe tile.
+    static fuse::math::Vec2 probeIrradianceAtlasTexel(const DDGIDesc& desc,
+                                                      const ProbeGridCoord& coord,
+                                                      const fuse::math::Vec3& direction);
     /// Top-left texel of the probe's depth-variance tile in the atlas.
     static fuse::math::Vec2 probeDepthAtlasOrigin(const DDGIDesc& desc, const ProbeGridCoord& coord);
 };
@@ -123,6 +154,9 @@ fuse::math::Vec3 blendIrradiance(const fuse::math::Vec3& previous,
                                  const fuse::math::Vec3& incoming,
                                  f32 hysteresis);
 fuse::math::Vec3 lerpIrradiance(const fuse::math::Vec3& a, const fuse::math::Vec3& b, f32 t);
+/// Bilinear irradiance lerp within a probe's octahedral tile (CPU stub).
+/// `samples` must point to four irradiance values in [00, 10, 01, 11] order.
+fuse::math::Vec3 bilinearTileIrradiance(const fuse::math::Vec3* samples, f32 u, f32 v);
 fuse::math::Vec3 trilinearProbeIrradiance(const DDGIDesc& desc,
                                           const fuse::math::Vec3& world_position,
                                           const IrradianceCacheEntry* cache,
