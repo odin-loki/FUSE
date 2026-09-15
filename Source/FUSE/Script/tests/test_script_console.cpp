@@ -21,13 +21,19 @@ void expectTrue(bool condition, const char* message) {
 
 void testBuiltInCommandDispatch() {
     fuse::script::ScriptConsole console;
-    expectTrue(console.built_in_command_count() >= 6u, "built-in command stubs registered");
+    expectTrue(console.built_in_command_count() >= 7u, "built-in command stubs registered");
 
     const auto help = console.execute("help");
     expectTrue(help.ok(), "help command succeeds");
     expectTrue(help.output.find("commands:") != std::string::npos, "help lists commands");
     expectTrue(help.output.find("echo") != std::string::npos, "help includes echo");
     expectTrue(help.output.find("load") != std::string::npos, "help includes load");
+    expectTrue(help.output.find("list") != std::string::npos, "help includes list");
+
+    const auto listed = console.execute("list");
+    expectTrue(listed.ok(), "list command succeeds");
+    expectTrue(listed.output.find("help") != std::string::npos, "list includes help");
+    expectTrue(listed.output.find('\n') != std::string::npos, "list emits one command per line");
 
     const auto echoed = console.execute("echo fuse_script_repl");
     expectTrue(echoed.ok(), "echo command succeeds");
@@ -42,6 +48,8 @@ void testBuiltInCommandDispatch() {
     expectTrue(!unknown.ok(), "unknown command fails");
     expectTrue(unknown.status == fuse::script::ScriptConsoleCommandStatus::UnknownCommand,
                "unknown command status");
+    expectTrue(unknown.output.find("unknown command:") != std::string::npos,
+               "unknown command returns error string");
 }
 
 void testHistoryBufferAndNavigation() {

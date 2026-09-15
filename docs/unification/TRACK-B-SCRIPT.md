@@ -14,6 +14,8 @@
 | `ScriptUpdateRegistry` | `Source/FUSE/Script/include/fuse/script/script_update.hpp` | Per-script OnUpdate tick, dt accumulation, enable/disable, error isolation |
 | `ScriptVM` | `Source/FUSE/Script/include/fuse/script/script_vm.hpp` | Null backend or optional Lua compile/run |
 | `ScriptConsole` | `Source/FUSE/Script/include/fuse/script/script_console.hpp` | Headless REPL — built-in command stubs, history buffer, host dispatch |
+| `ScriptConsoleCommandRegistry` | `Source/FUSE/Script/include/fuse/script/script_console_command_registry.hpp` | Named built-in/custom command registry + dispatch-by-name |
+| `ScriptConsoleHistoryBuffer` | `Source/FUSE/Script/include/fuse/script/script_console_history.hpp` | Fixed-capacity history ring buffer with recall navigation |
 | Bind helpers | `Source/FUSE/Script/include/fuse/script/script_bind.hpp` | Tagged `ScriptValue` carriers + `values_equal` + `PropertyStore` / `MethodTable` |
 | Lua stack bridge | `Source/FUSE/Script/include/fuse/script/script_bind_lua.hpp` | `push_to_stack` / `read_from_stack` when `FUSE_SCRIPT_LUA=1` |
 | Callbacks | `Source/FUSE/Script/include/fuse/script/script_callback.hpp` | `OnStart`, `OnUpdate`, `OnDestroy`, collision/trigger hooks |
@@ -63,7 +65,8 @@ Built-in command stubs:
 
 | Command | Behaviour |
 |---------|-----------|
-| `help` | Lists built-in and registered custom commands |
+| `help` | Lists built-in and registered custom commands (single-line `commands:` prefix) |
+| `list` | Lists built-in and registered custom commands (one name per line) |
 | `echo <text>` | Returns argument text as output |
 | `clear` | Clears accumulated output lines |
 | `history` | Prints indexed command history |
@@ -71,9 +74,11 @@ Built-in command stubs:
 | `load <path>` | Dispatches `ScriptHost::load_file` |
 | `run <lua>` | Dispatches `ScriptHost::load_string` with chunk name `repl` |
 
-Custom commands register via `register_command` / `unregister_command` and participate in `help` output.
+Custom commands register via `register_command` / `unregister_command` and participate in `help` / `list` output. Unknown commands return `UnknownCommand` with an `unknown command: <name>` error string.
 
-**History buffer** — ring buffer (default 64 entries, configurable via `setHistoryCapacity`):
+`ScriptConsoleCommandRegistry` owns built-in and custom handler maps; `ScriptConsole::dispatch_` delegates by name (custom overrides are checked before built-ins).
+
+**History buffer** — `ScriptConsoleHistoryBuffer` ring buffer (default 64 entries, configurable via `setHistoryCapacity`):
 
 - Skips consecutive duplicate lines (same as editor console coalescing).
 - Evicts oldest entries on overflow.
