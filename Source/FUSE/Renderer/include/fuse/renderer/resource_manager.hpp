@@ -17,6 +17,12 @@ public:
         usize stagingRingBytes = 64u * 1024u * 1024u;
     };
 
+    struct LiveCounts {
+        u32 textures = 0;
+        u32 buffers = 0;
+        u32 samplers = 0;
+    };
+
     ResourceManager() = default;
     ~ResourceManager();
 
@@ -45,7 +51,11 @@ public:
     usize stagingRingCapacity() const { return m_stagingRingCapacity; }
     usize stagingRingOffset() const { return m_stagingOffset; }
 
+    LiveCounts liveCounts() const;
+    const GpuAllocStats* allocatorStats() const;
+
 private:
+    void destroyAllResources();
     bool ensureStagingRing();
 
     VulkanDevice* m_device = nullptr;

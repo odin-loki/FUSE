@@ -228,9 +228,12 @@ CUDA nodes (`is_cuda`) are first-class in the API; graph execution remains a no-
 | Piece | Path | Behaviour |
 |-------|------|-----------|
 | Typed handles | `resources.hpp` | `TextureHandle`, `BufferHandle`, `SamplerHandle` |
-| `GpuAllocator` | `vk/allocator.hpp` | VMA path when header vendored; stub IDs otherwise |
-| `ResourceManager` | `resource_manager.hpp` | Create/destroy + bindless index assignment; 64 MiB staging ring |
+| `GpuAllocator` | `vk/allocator.hpp` | VMA path when header vendored; stub IDs + byte bookkeeping otherwise |
+| `GpuAllocStats` | `vk/gpu_alloc_stats.hpp` | Buffer/image counters; VMA pool snapshot via `refreshVmaPoolStats()` |
+| `ResourceManager` | `resource_manager.hpp` | Create/destroy + bindless index assignment; ordered destroy-all |
 | `BindlessDescriptors` | `vk/bindless.hpp` | Free-list indices only until descriptor pool lands |
+
+**B2.3 deepen:** [TRACK-B-RHI.md](./TRACK-B-RHI.md) — stub alloc stats, destroy-order teardown, `fuse_rhi_resource_destroy_order` tests.
 
 Optional VMA: place [VulkanMemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) at `third_party/VulkanMemoryAllocator/include/vk_mem_alloc.h` and reconfigure.
 
@@ -474,6 +477,7 @@ Portable invariant unchanged: job code emits `RenderCommandList`; platform modul
 | `fuse_vulkan_bootstrap` | Instance/device or stub path; surface abstraction; render-thread submit |
 | `fuse_vulkan_swapchain` | Headless swapchain desc; frame ring advance; external surface graceful failure |
 | `fuse_vulkan_resources` | `HandleMap`, bindless index recycle, buffer/texture create/destroy |
+| `fuse_rhi_resource_destroy_order` | B2.3 deepen — destroy-order teardown, staging ring guard, GPU alloc stats + hook |
 | `fuse_shader_pipeline` | SPIR-V I/O, offline compiler, shader module + pipeline layout (stub or Vulkan) |
 | `fuse_graphics_pipeline` | `VkGraphicsPipeline`, headless `RasterPath` clear + triangle, `RhiContext` wiring |
 | `fuse_render_command_list` | Hybrid mirrors commands without breaking placeholder pixels |
@@ -564,6 +568,7 @@ Thread ownership unchanged: CUDA launch jobs run on worker threads; Vulkan recor
 - [ ] Replace `PlaceholderRenderer` present path incrementally — keep software fallback for headless CI
 - [x] Own Hybrid presentable path stubs — `PlatformWindow` (null/GLFW), `VulkanPresentable`, `HybridRendererBootstrap` wiring
 - [x] B2.2 present path deepen — `PresentPath`, `VsyncMode`, acquire/present/fence-wait/resize recreate stubs + CI state-machine tests
+- [x] B2.3 resource deepen — stub/VMA alloc stats, destroy-order teardown, `fuse_rhi_resource_destroy_order` (see [TRACK-B-RHI.md](./TRACK-B-RHI.md))
 - [ ] Editor Qt native surface (`U6` viewport) → `SwapchainDesc.surface`
 - [ ] Android Vulkan WSI + MoltenVK macOS module
 
@@ -571,6 +576,7 @@ Thread ownership unchanged: CUDA launch jobs run on worker threads; Vulkan recor
 
 ## Related docs
 
+- [TRACK-B-RHI.md](./TRACK-B-RHI.md) — B2.3 resource allocation deepen (stats, destroy order)
 - [work-plan.md](./work-plan.md) — Track B kickoff entry
 - [BUILD.md](./BUILD.md) — umbrella CMake options
 - [risk-register.md](./risk-register.md) R21 — render thread invariant
