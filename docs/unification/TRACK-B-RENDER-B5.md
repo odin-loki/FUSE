@@ -62,7 +62,7 @@ Pass schedule (19 total — 12 Vulkan, 7 CUDA):
 
 ## B5.2 — G-Buffer Layout
 
-**Status:** Six-attachment layout + octahedral normal encoding landed.
+**Status:** Six-attachment layout + octahedral normal encoding + **CPU MRT pack/unpack validation** landed.
 
 | Attachment | Format | Role |
 |------------|--------|------|
@@ -73,25 +73,34 @@ Pass schedule (19 total — 12 Vulkan, 7 CUDA):
 | RT4 Depth | R32F | Reversed-Z depth |
 | RT5 Emissive | RGBA16F | Emissive radiance |
 
+| Component | Location | Notes |
+|-----------|----------|-------|
+| `GBufferLayout::channelCount` | `deferred/gbuffer.hpp` | Per-attachment channel validation (CPU) |
+| `GBufferLayout::validateAttachmentFormats` | `deferred/gbuffer.cpp` | All slots resolve to non-`Undefined` formats |
+| `GBufferPacking` | `deferred/gbuffer.hpp` | `pack` / `unpack` mirror `shaders/common/gbuffer.glsl` |
+
 | Test | Validates |
 |------|-----------|
-| `fuse_gbuffer` | Formats, octahedral round-trip < 0.001 angular error, allocation |
+| `fuse_gbuffer` | Formats, channel counts, layout validation, octahedral round-trip < 0.001 angular error, MRT pack round-trip, allocation |
 
 ---
 
 ## B5.3 — PBR Material System
 
-**Status:** `Material` POD + `MaterialSystem` bindless SSBO scaffold landed.
+**Status:** `Material` POD + `MaterialSystem` bindless SSBO scaffold + **parameter block extension rows** landed.
 
 | Component | Notes |
 |-----------|-------|
-| `ShadingModel` | Standard, Emissive, Subsurface, Clearcoat, Cloth, Hair |
-| `Material::pack()` | GPU SSBO layout — base colour, roughness, metallic, emissive, flags |
+| `ShadingModel` | Opaque, Translucent, Emissive, SubsurfaceSSS, ClearCoat, Cloth |
+| `MaterialParameterBlock` | `SubsurfaceParams`, `ClearCoatParams`, `ClothParams` authoring stubs |
+| `MaterialFlagBits` | Procedural + bindless map presence (normal/AO/metallic) |
+| `Material::pack()` | GPU SSBO layout — core PBR row + `subsurfaceBlock` / `clearCoatBlock` / `clothBlock` |
+| `MaterialLayout::validateGpuStruct` | SSBO stride / offset checks for CPU tests |
 | `MaterialSystem::registerMaterial` / `flushGpuBuffer` | CPU table → GPU buffer upload stub |
 
 | Test | Validates |
 |------|-----------|
-| `fuse_material_system` | Pack/unpack, register/flush, SSBO allocation |
+| `fuse_material_system` | Pack extension blocks, texture flags, GPU layout validation, register/flush, SSBO allocation |
 
 ---
 
@@ -402,6 +411,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_screen_space_effects'
 
 ## Related docs
 
+- [TRACK-B-RENDER.md](./TRACK-B-RENDER.md) — B5.2/B5.3 deepen summary (G-buffer validation, material parameter blocks)
 - [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) — RHI bootstrap, render graph, CUDA job lane (B2)
 - [TRACK-B-ECS.md](./TRACK-B-ECS.md) — scene data producer (B3)
 - [B5.7-SCREEN-SPACE-EFFECTS.md](./B5.7-SCREEN-SPACE-EFFECTS.md) — SSAO/SSR/SSGI detail

@@ -23,6 +23,8 @@ struct GBufferLayout {
     static GpuFormat format(GBufferAttachment attachment);
     static const char* debugName(GBufferAttachment attachment);
     static u32 attachmentCount() { return static_cast<u32>(GBufferAttachment::Count); }
+    static u32 channelCount(GBufferAttachment attachment);
+    static bool validateAttachmentFormats();
 };
 
 /// CPU-side octahedral normal encoding — mirrors shaders/common/gbuffer.glsl.
@@ -42,6 +44,21 @@ struct GBufferPackedData {
     f32 velocityX = 0.f;
     f32 velocityY = 0.f;
     u8 shadingModel = 0;
+};
+
+/// CPU MRT channel bundle — mirrors `write_gbuffer` outputs in shaders/common/gbuffer.glsl.
+struct GBufferMrt {
+    fuse::math::Vec4 rt0{}; // xy = oct normal, w = AO
+    fuse::math::Vec4 rt1{}; // rgb = albedo, a = opacity
+    fuse::math::Vec4 rt2{}; // r = roughness, g = metallic, b = emissive mask, a = shading model / 255
+    fuse::math::Vec4 rt3{}; // xy = velocity
+    fuse::math::Vec4 rt5{}; // rgb = emissive radiance
+};
+
+/// CPU pack/unpack helpers — kept in sync with gbuffer.glsl for layout validation tests.
+struct GBufferPacking {
+    static GBufferMrt pack(const GBufferPackedData& data, f32 alpha = 1.f);
+    static GBufferPackedData unpack(const GBufferMrt& mrt);
 };
 
 struct GBufferTargets {

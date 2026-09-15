@@ -23,6 +23,35 @@ GpuFormat GBufferLayout::format(GBufferAttachment attachment) {
     }
 }
 
+u32 GBufferLayout::channelCount(GBufferAttachment attachment) {
+    switch (attachment) {
+    case GBufferAttachment::NormalAo:
+    case GBufferAttachment::AlbedoAlpha:
+    case GBufferAttachment::RoughMetalEmissiveShading:
+    case GBufferAttachment::Emissive:
+        return 4u;
+    case GBufferAttachment::Velocity:
+        return 2u;
+    case GBufferAttachment::Depth:
+        return 1u;
+    default:
+        return 0u;
+    }
+}
+
+bool GBufferLayout::validateAttachmentFormats() {
+    for (u32 i = 0; i < attachmentCount(); ++i) {
+        const auto attachment = static_cast<GBufferAttachment>(i);
+        if (GBufferLayout::format(attachment) == GpuFormat::Undefined) {
+            return false;
+        }
+        if (GBufferLayout::channelCount(attachment) == 0u) {
+            return false;
+        }
+    }
+    return true;
+}
+
 const char* GBufferLayout::debugName(GBufferAttachment attachment) {
     switch (attachment) {
     case GBufferAttachment::NormalAo:
@@ -76,6 +105,36 @@ fuse::math::Vec3 GBufferEncoding::decodeNormal(const fuse::math::Vec2& encoded) 
 f32 GBufferEncoding::angularErrorRadians(const fuse::math::Vec3& a, const fuse::math::Vec3& b) {
     const f32 dot = std::clamp(a.normalized().dot(b.normalized()), -1.f, 1.f);
     return std::acos(dot);
+}
+
+GBufferMrt GBufferPacking::pack(const GBufferPackedData& data, f32 alpha) {
+    GBufferMrt mrt{};
+    const fuse::math::Vec2 encodedNormal = GBufferEncoding::encodeNormal(data.normal);
+    mrt.rt0 = {encodedNormal.x, encodedNormal.y, 0.f, data.ao};
+    mrt.rt1 = {data.albedo.x, data.albedo.y, data.albedo.z, alpha};
+
+    const f32 emissiveMag = data.emissive.length();
+    mrt.rt2 = {data.roughness,
+               data.metallic,
+               emissiveMag > 0.001f ? 1.f : 0.f,
+               static_cast<f32>(data.shadingModel) / 255.f};
+    mrt.rt3 = {data.velocityX, data.velocityY, 0.f, 0.f};
+    mrt.rt5 = {data.emissive.x, data.emissive.y, data.emissive.z, 0.f};
+    return mrt;
+}
+
+GBufferPackedData GBufferPacking::unpack(const GBufferMrt& mrt) {
+    GBufferPackedData data{};
+    data.normal = GBufferEncoding::decodeNormal({mrt.rt0.x, mrt.rt0.y});
+    data.ao = mrt.rt0.w;
+    data.albedo = {mrt.rt1.x, mrt.rt1.y, mrt.rt1.z};
+    data.roughness = mrt.rt2.x;
+    data.metallic = mrt.rt2.y;
+    data.emissive = {mrt.rt5.x, mrt.rt5.y, mrt.rt5.z};
+    data.velocityX = mrt.rt3.x;
+    data.velocityY = mrt.rt3.y;
+    data.shadingModel = static_cast<u8>(std::lround(mrt.rt2.w * 255.f));
+    return data;
 }
 
 bool GBuffer::init(ResourceManager& resources, const GBufferDesc& desc) {
