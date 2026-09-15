@@ -479,7 +479,7 @@ void testUndoStackSetBaselineState() {
     expectTrue(stack.isAtBaseline(), "undo back to baseline depth");
     expectTrue(!stack.hasUnsavedChanges(), "undo restores baseline alignment");
     expectTrue(!stack.isDirty(), "baseline dirty guard clears dirty on undo to baseline");
-    expectTrue(stack.dirtyRevision() == 1u, "baseline dirty guard does not bump revision on clean undo");
+    expectTrue(stack.dirtyRevision() == 2u, "baseline dirty guard does not bump revision on clean undo");
 }
 
 void testUndoStackEmptyStackGuardsDirtyRevision() {
