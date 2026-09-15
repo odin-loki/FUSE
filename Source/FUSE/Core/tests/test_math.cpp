@@ -245,6 +245,126 @@ void testSdfPrimitives() {
     expectNear(fuse::math::SDF::sphere({3.f, 0.f, 0.f}, 2.f), 1.f, 1e-5f, "SDF sphere surface distance");
 }
 
+void testSimdMat4Parity() {
+    const fuse::math::Mat4 scalarTranslate =
+        fuse::math::fromTRS({3.f, -2.f, 7.f}, fuse::math::Quat::identity(), {1.f, 1.f, 1.f});
+    const fuse::math::Mat4 scalarRotate =
+        fuse::math::fromTRS({0.f, 0.f, 0.f}, fuse::math::fromAxisAngle({0.f, 0.f, 1.f}, 1.2f), {1.f, 1.f, 1.f});
+    const fuse::math::simd::Mat4 simdTranslate = fuse::math::simd::Mat4::fromScalar(scalarTranslate);
+    const fuse::math::simd::Mat4 simdRotate = fuse::math::simd::Mat4::fromScalar(scalarRotate);
+
+    const fuse::math::simd::Mat4 simdProduct = fuse::math::simd::multiply(simdTranslate, simdRotate);
+    const fuse::math::Mat4 scalarProduct = scalarTranslate * scalarRotate;
+    expectMat4Near(simdProduct.toScalar(), scalarProduct, 1e-4f, "simd Mat4 multiply matches scalar");
+
+    const fuse::math::simd::Mat4 simdIdentity = fuse::math::simd::Mat4::identity();
+    expectMat4Near(fuse::math::simd::multiply(simdIdentity, simdTranslate).toScalar(), scalarTranslate, 1e-5f,
+                   "simd Mat4 left identity multiply");
+
+    const fuse::math::Vec3 probe{1.f, 0.f, 0.f};
+    const fuse::math::Vec3 simdPoint = fuse::math::simd::transformPoint(simdProduct, probe);
+    const fuse::math::Vec3 scalarPoint = fuse::math::transformPoint(scalarProduct, probe);
+    expectVec3Near(simdPoint, scalarPoint, 1e-4f, "simd transformPoint matches scalar");
+}
+
+void testSimdMat4InverseEdgeCases() {
+    const fuse::math::Mat4 scalarRigid =
+        fuse::math::fromTRS({1.f, -3.f, 2.f}, fuse::math::fromAxisAngle({0.f, 1.f, 0.f}, -0.4f), {1.f, 1.f, 1.f});
+    const fuse::math::simd::Mat4 simdRigid = fuse::math::simd::Mat4::fromScalar(scalarRigid);
+    const fuse::math::simd::Mat4 simdInverse = fuse::math::simd::inverseAffine(simdRigid);
+    const fuse::math::Mat4 scalarInverse = fuse::math::inverseAffine(scalarRigid);
+
+    expectMat4Near(simdInverse.toScalar(), scalarInverse, 1e-4f, "simd inverseAffine matches scalar");
+    expectMat4Near(fuse::math::simd::multiply(simdRigid, simdInverse).toScalar(), fuse::math::Mat4::identity(),
+                   1e-4f, "simd rigid inverse product is identity");
+
+    const fuse::math::simd::Mat4 skewed = fuse::math::simd::Mat4::fromScalar(
+        fuse::math::fromTRS({0.f, 0.f, 0.f}, fuse::math::fromAxisAngle({1.f, 2.f, 0.5f}, 0.9f), {1.f, 1.f, 1.f}));
+    const fuse::math::simd::Mat4 ortho = fuse::math::simd::orthonormalize(skewed);
+    expectTrue(fuse::math::simd::isOrthogonalUpper3x3(ortho), "simd orthonormalize yields orthogonal upper 3x3");
+}
+
+void testSimdAabbStubs() {
+    const fuse::math::AABB local{{-1.f, -2.f, -3.f}, {1.f, 2.f, 3.f}};
+    const fuse::math::Mat4 scalarRigid =
+        fuse::math::fromTRS({2.f, 1.f, -1.f}, fuse::math::fromAxisAngle({0.f, 0.f, 1.f}, 0.5f), {1.f, 1.f, 1.f});
+    const fuse::math::simd::Mat4 simdRigid = fuse::math::simd::Mat4::fromScalar(scalarRigid);
+
+    const fuse::math::AABB simdWorld = fuse::math::simd::transformAabb(simdRigid, local);
+    const fuse::math::AABB scalarWorld = fuse::math::transformAabb(scalarRigid, local);
+    expectAabbNear(simdWorld, scalarWorld, 1e-4f, "simd transformAabb matches scalar");
+
+    const fuse::math::AABB merged = fuse::math::simd::mergeAabb(local, {{4.f, 4.f, 4.f}, {5.f, 5.f, 5.f}});
+    expectAabbNear(merged, local.merge({{4.f, 4.f, 4.f}, {5.f, 5.f, 5.f}}), 1e-5f, "simd mergeAabb matches scalar");
+
+    const f32 hit = fuse::math::simd::rayIntersectAabb(local, {-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f});
+    expectNear(hit, 2.f, 1e-4f, "simd rayIntersectAabb hits along +X");
+
+    const f32 miss = fuse::math::simd::rayIntersectAabb(local, {-3.f, 5.f, 0.f}, {1.f, 0.f, 0.f});
+    expectNear(miss, -1.f, 1e-5f, "simd rayIntersectAabb misses separated ray");
+}
+
+void testPlaneClassify() {
+    const fuse::math::Vec4 plane{0.f, 1.f, 0.f, -2.f};
+
+    expectTrue(fuse::math::classifyPoint(plane, {0.f, 3.f, 0.f}) == fuse::math::PlaneSide::InFront,
+               "Plane classifyPoint in front");
+    expectTrue(fuse::math::classifyPoint(plane, {0.f, 1.f, 0.f}) == fuse::math::PlaneSide::Behind,
+               "Plane classifyPoint behind");
+    expectTrue(fuse::math::classifyPoint(plane, {0.f, 2.f, 0.f}) == fuse::math::PlaneSide::On,
+               "Plane classifyPoint on plane");
+
+    const fuse::math::AABB above{{0.f, 3.f, 0.f}, {1.f, 4.f, 1.f}};
+    const fuse::math::AABB below{{0.f, 0.f, 0.f}, {1.f, 1.f, 1.f}};
+    const fuse::math::AABB crossing{{0.f, 1.f, 0.f}, {1.f, 3.f, 1.f}};
+
+    expectTrue(fuse::math::classifyAabb(plane, above) == fuse::math::PlaneSide::InFront,
+               "Plane classifyAabb fully in front");
+    expectTrue(fuse::math::classifyAabb(plane, below) == fuse::math::PlaneSide::Behind,
+               "Plane classifyAabb fully behind");
+    expectTrue(fuse::math::classifyAabb(plane, crossing) == fuse::math::PlaneSide::Straddling,
+               "Plane classifyAabb straddles plane");
+}
+
+void testPlaneClip() {
+    const fuse::math::Vec4 plane{1.f, 0.f, 0.f, 0.f};
+
+    fuse::math::Vec3 a{-2.f, 0.f, 0.f};
+    fuse::math::Vec3 b{2.f, 0.f, 0.f};
+    expectTrue(fuse::math::clipSegmentAgainstPlane(plane, a, b), "Plane clip keeps crossing segment");
+    expectNear(a.x, 0.f, 1e-5f, "Plane clip segment start moves to plane");
+    expectNear(b.x, 2.f, 1e-5f, "Plane clip segment end stays in front");
+
+    fuse::math::Vec3 culledA{-3.f, 0.f, 0.f};
+    fuse::math::Vec3 culledB{-1.f, 0.f, 0.f};
+    expectTrue(!fuse::math::clipSegmentAgainstPlane(plane, culledA, culledB),
+               "Plane clip rejects fully behind segment");
+
+    const fuse::math::Vec3 square[4] = {
+        {1.f, -1.f, 0.f},
+        {2.f, -1.f, 0.f},
+        {2.f, 1.f, 0.f},
+        {1.f, 1.f, 0.f},
+    };
+    fuse::math::Vec3 clipped[8]{};
+    const u32 clippedCount =
+        fuse::math::clipPolygonAgainstPlane(plane, square, 4, clipped, 8);
+    expectTrue(clippedCount == 4, "Plane polygon clip keeps square fully in front");
+    expectNear(clipped[0].x, 1.f, 1e-5f, "Plane polygon clip preserves in-front square");
+
+    const fuse::math::Vec3 halfSquare[4] = {
+        {-2.f, -1.f, 0.f},
+        {2.f, -1.f, 0.f},
+        {2.f, 1.f, 0.f},
+        {-2.f, 1.f, 0.f},
+    };
+    fuse::math::Vec3 halfClipped[8]{};
+    const u32 halfCount =
+        fuse::math::clipPolygonAgainstPlane(plane, halfSquare, 4, halfClipped, 8);
+    expectTrue(halfCount == 4, "Plane polygon clip trims crossing quad");
+    expectNear(halfClipped[0].x, 0.f, 1e-4f, "Plane polygon clip inserts plane intersection");
+}
+
 } // namespace
 
 int main() {
@@ -262,6 +382,11 @@ int main() {
     testAabbTransformHelpers();
     testFrustumCulling();
     testSdfPrimitives();
+    testSimdMat4Parity();
+    testSimdMat4InverseEdgeCases();
+    testSimdAabbStubs();
+    testPlaneClassify();
+    testPlaneClip();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d math test(s) failed.\n", g_failures);
