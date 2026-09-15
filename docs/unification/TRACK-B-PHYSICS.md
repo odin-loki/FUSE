@@ -12,7 +12,7 @@
 | Component | Location | Notes |
 |-----------|----------|-------|
 | `PhysicsPipeline` / `RigidBodySoA` | `physics_pipeline.hpp`, `physics_data.hpp` | B4.1–B4.3 broad/narrow phase stubs |
-| `SpatialHash` / `Gjk` | `broadphase/`, `narrowphase/` | B4.2–B4.3 CPU reference paths |
+| `SpatialHash` / `Gjk` | `broadphase/`, `narrowphase/` | B4.2–B4.3 CPU reference paths; broadphase jobifies shape→cell + per-cell candidate generation via `fuse::jobs::parallel_for` |
 | `PhysicsWorld2D` / `PhysicsWorld3D` | `physics_world_*.hpp` | World composition hooks |
 | `DestructionSystem` / `DestructionEvent` | `destruction/` | B4.7 SVO carve → debris spawn scaffold |
 | `Svo` | `Source/FUSE/Physics/include/fuse/physics/spatial/` | Minimal carve/query until Track A B3.5 |
@@ -115,8 +115,10 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 #### Broad phase
 
 - [x] `fuse_physics_broadphase_tests` — spatial hash overlapping pairs (CPU stub)
-- [ ] 10k random spheres vs brute force O(n²) — catalog `broadphase.spatial_hash_10k`
-- [ ] Bodies straddling multiple cells — edge case
+- [x] `fuse_physics_broadphase_tests` — parallel vs single-thread scheduler parity + 1k-scene smoke
+- [x] `fuse_physics_broadphase_tests` — 256-sphere brute-force reference match
+- [ ] 10k random spheres vs brute force O(n²) — catalog `broadphase.spatial_hash_10k` (1k parity smoke landed; full 10k deferred)
+- [x] Bodies straddling multiple cells — edge case
 - [ ] GPU radix sort — deferred to CUDA B4.1
 
 #### Narrow phase
@@ -171,6 +173,7 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 - Physics simulation data lives on the CUDA **Physics** stream (`CUDAStreamKind::Physics` from B2.6 `StreamManager`)
 - CPU gameplay code queues destruction events and reads query results after `step()` — no GPU record from job workers
 - Collision callbacks dispatch on the game thread after solver step (same frame as ECS sync)
+- **Broadphase jobify (CPU stub):** `runBroadphase` / `runBroadphase2D` read immutable `RigidBodySoA` + `CollisionShapeSoA` snapshots and write disjoint per-cell / per-dynamic pair buffers via `fuse::jobs::parallel_for`; falls back to serial when `JobScheduler` is single-threaded or uninitialized
 
 ---
 
@@ -179,7 +182,7 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 | Target | Validates |
 |--------|-----------|
 | `fuse_physics_data_tests` | B4.1 SoA allocate/addBody |
-| `fuse_physics_broadphase_tests` | B4.2 spatial hash pairs |
+| `fuse_physics_broadphase_tests` | B4.2 spatial hash pairs, parallel jobify parity, straddling cells, brute-force reference |
 | `fuse_physics_narrowphase_tests` | B4.3 analytic + GJK stubs |
 | `fuse_physics_pipeline_tests` | B4.1 frame pipeline step |
 | `fuse_physics_world_composition_tests` | World3D + physics composition |
@@ -214,6 +217,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_physics|fuse_voxel|fuse_soft
 - [x] B4.10 collision events scaffold — callback registration + dispatch
 - [x] B4.11 deliverable registry — checklist catalog + automated smoke + phase-4 integration test
 - [x] B4.1–B4.3 composed: `RigidBodySoA`, spatial hash, narrow phase, `PhysicsPipeline`
+- [x] B4.2 CPU broadphase jobify — `parallel_for` over shape→cell build + per-cell candidate generation stubs
 - [ ] B4.4–B4.6 upstream: CUDA PBD, Barnes-Hut, CCD kernels (sibling PR #29)
 - [ ] B3.5 SVO integration — real carve + dual contouring mesh extraction
 - [ ] Wire `PhysicsManager` to `fuse::renderer::cuda::StreamManager`
