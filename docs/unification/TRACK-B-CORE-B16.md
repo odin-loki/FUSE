@@ -1,6 +1,6 @@
 # Track B — Core B1.6 Logging, Assert & Profiler (stubs)
 
-**Status:** B1.6 deepen — async flow/counter inherit scope nesting depth, frame metadata + JSON name escaping in chrome export, empty/nested-flow tests on `fuse_core`  
+**Status:** B1.6 deepen — nested concurrent async flows, counter depth in chrome export, control-char JSON escaping, frame-index metadata tests on `fuse_core`  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B1.6  
 **Related:** Editor `ProfilerPanel` ring buffer (B6.10) consumes frame summaries; this PR owns per-scope CPU events in Core.
 
@@ -132,7 +132,7 @@ Load the JSON in `chrome://tracing` for offline inspection; Qt flame-graph panel
 
 | Test binary | CTest name | Coverage |
 |-------------|------------|----------|
-| `fuse_core_profiler_assert_tests` | `fuse_core_profiler_assert` | Scope begin/end, nested zone ordering, async flow inside nested scopes, int/float counter samples, empty chrome export, JSON name escaping, nesting depth in chrome export, mixed chrome JSON export, thread-id stubs, disable flag (scopes + flow + counter), frame index, fatal hook, `FUSE_VERIFY` |
+| `fuse_core_profiler_assert_tests` | `fuse_core_profiler_assert` | Scope begin/end, nested zone ordering, concurrent async flows in nested scopes, counter samples with scope depth export, empty chrome export, JSON escaping (quotes, backslashes, control chars), nesting depth in chrome export, frame metadata in export, mixed chrome JSON export, thread-id stubs, disable flag (scopes + flow + counter), frame index, fatal hook, `FUSE_VERIFY` |
 
 ---
 
