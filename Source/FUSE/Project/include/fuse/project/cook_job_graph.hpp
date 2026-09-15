@@ -72,7 +72,7 @@ public:
     [[nodiscard]] const std::vector<CookJobDependencyEdge>& edges() const { return m_edges; }
     [[nodiscard]] bool has_cycle() const;
 
-    CookJobGraphExecuteResult execute(AssetCooker& cooker);
+    CookJobGraphExecuteResult execute(AssetCooker& cooker, const CookManifest& manifest);
 
 private:
     void add_edge_(const std::string& from_job_id, const std::string& to_job_id);
@@ -82,7 +82,8 @@ private:
     [[nodiscard]] std::string resolve_job_id_(const std::string& path) const;
     [[nodiscard]] std::vector<std::string> topological_order_() const;
 
-    bool run_job_stages_(CookJob& job, AssetCooker& cooker, CookJobGraphExecuteResult& result);
+    bool run_job_stages_(CookJob& job, AssetCooker& cooker, const CookManifest& manifest,
+                         CookJobGraphExecuteResult& result);
 
     std::vector<CookJob> m_jobs;
     std::vector<CookJobDependencyEdge> m_edges;

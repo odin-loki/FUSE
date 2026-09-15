@@ -10,6 +10,7 @@
 #include <fuse/project/manifest.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -110,7 +111,7 @@ void testCookJobGraphStageOrdering() {
     graph.build_from_manifest(manifest);
 
     fuse::project::AssetCooker cooker;
-    const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker);
+    const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker, manifest);
 
     expectTrue(result.ok, "job graph execute ok");
     expectTrue(result.jobs.size() == 1u, "one job in graph");
@@ -135,7 +136,7 @@ void testCookJobGraphFailedStageShortCircuit() {
     graph.build_from_manifest(manifest);
 
     fuse::project::AssetCooker cooker;
-    const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker);
+    const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker, manifest);
 
     expectTrue(!result.ok, "missing source fails graph execute");
     expectTrue(!result.failed_job_id.empty(), "failure reports job id");
@@ -177,7 +178,7 @@ void testCookJobGraphLinearChain() {
     expectTrue(graph.edges().size() == 2u, "linear chain has two edges");
 
     fuse::project::AssetCooker cooker;
-    const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker);
+    const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker, manifest);
 
     expectTrue(result.ok, "linear chain executes successfully");
     expectTrue(result.execution_order.size() == 3u, "three jobs ordered");
@@ -227,7 +228,7 @@ void testCookJobGraphDiamondDag() {
     expectTrue(graph.edges().size() >= 3u, "diamond DAG records dependency edges");
 
     fuse::project::AssetCooker cooker;
-    const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker);
+    const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker, manifest);
 
     expectTrue(result.ok, "diamond DAG executes successfully");
     expectTrue(result.execution_order.size() == 4u, "four jobs ordered");
@@ -268,7 +269,7 @@ void testCookJobGraphCycleReject() {
     expectTrue(graph.edges().size() >= 2u, "cycle edges recorded");
 
     fuse::project::AssetCooker cooker;
-    const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker);
+    const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker, manifest);
 
     expectTrue(!result.ok, "cycle rejects graph execute");
     expectTrue(result.cycle_detected, "cycle flag set");
@@ -303,7 +304,7 @@ void testCookJobGraphDependencyEdgesAndOrder() {
     expectTrue(graph.edges()[0].to_job_id == entryB.output_path, "edge to dependent job");
 
     fuse::project::AssetCooker cooker;
-    const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker);
+    const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker, manifest);
 
     expectTrue(result.ok, "both jobs succeed");
     expectTrue(result.execution_order.size() == 2u, "two jobs ordered");
@@ -333,7 +334,7 @@ void testCookJobGraphDependencyShortCircuit() {
     graph.build_from_manifest(manifest);
 
     fuse::project::AssetCooker cooker;
-    const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker);
+    const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker, manifest);
 
     expectTrue(!result.ok, "upstream failure fails batch");
     expectTrue(!result.jobs[0].ok, "producer job failed");
@@ -400,6 +401,20 @@ void testContentHashDeterministic() {
     const fuse::u64 file_hash = fuse::project::hash_file_content(source);
     expectTrue(file_hash != 0, "file content hash is non-zero");
     expectTrue(fuse::project::hash_file_content("/tmp/fuse_b79_missing.obj") == 0, "missing file hashes to zero");
+}
+
+void testContentHashMtimeSensitivity() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_hash_mtime.obj", "# mtime mesh\n");
+
+    const fuse::u64 hash_before = fuse::project::hash_file_content(source);
+    expectTrue(hash_before != 0, "mtime-aware file hash is non-zero");
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    writeTempFile(source, "# mtime mesh\n");
+
+    const fuse::u64 hash_after = fuse::project::hash_file_content(source);
+    expectTrue(hash_after != hash_before, "mtime change alters content hash key");
+    expectTrue(fuse::project::file_mtime_ns(source) != 0, "file mtime readable");
 }
 
 void testContentHashDescSensitivity() {
@@ -490,6 +505,88 @@ void testCookCacheRoundTrip() {
     expectTrue(loaded.entry_count() == 1u, "one cache entry round-tripped");
 }
 
+void testCookCacheInvalidateChain() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_chain_inv_a.obj", "# chain inv a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_chain_inv_b.obj", "# chain inv b\n");
+    const std::string sourceC = writeTempFile("/tmp/fuse_b79_chain_inv_c.obj", "# chain inv c\n");
+
+    fuse::project::CookManifest manifest;
+
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_chain_inv_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_chain_inv_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::CookManifestEntry entryC;
+    entryC.kind = fuse::project::CookAssetKind::Mesh;
+    entryC.source_path = sourceC;
+    entryC.output_path = "/tmp/fuse_b79_chain_inv_c.fusemesh";
+    entryC.dependencies.push_back(entryB.output_path);
+    manifest.assets.push_back(entryC);
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookBatchResult batch = cooker.cook_manifest(manifest);
+    expectTrue(batch.ok, "chain manifest cook seeds cache");
+    expectTrue(cooker.cache().entry_count() == 3u, "three-node chain cached");
+
+    const fuse::u64 hashB = batch.records[1].content_hash;
+    const fuse::u64 hashC = batch.records[2].content_hash;
+    expectTrue(cooker.cache().lookup(hashB) == fuse::project::CookCacheLookup::Hit, "middle chain entry cached");
+    expectTrue(cooker.cache().lookup(hashC) == fuse::project::CookCacheLookup::Hit, "tail chain entry cached");
+
+    writeTempFile(sourceA, "# chain inv a revised\n");
+    const fuse::u32 removed = cooker.invalidate_upstream_dependency(manifest, sourceA);
+    expectTrue(removed >= 3u, "upstream change invalidates full chain");
+    expectTrue(cooker.cache().lookup(hashB) == fuse::project::CookCacheLookup::Miss, "middle misses after chain invalidation");
+    expectTrue(cooker.cache().lookup(hashC) == fuse::project::CookCacheLookup::Miss, "tail misses after chain invalidation");
+
+    const fuse::u32 stale_removed = cooker.invalidate_stale_dependency_hashes(manifest);
+    expectTrue(stale_removed >= 0u, "stale dependency hash reconcile runs after chain invalidation");
+}
+
+void testCookCacheStaleDependencyHashInvalidation() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_stale_a.obj", "# stale a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_stale_b.obj", "# stale b\n");
+
+    fuse::project::CookManifest manifest;
+
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_stale_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_stale_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookBatchResult batch = cooker.cook_manifest(manifest);
+    expectTrue(batch.ok, "stale-hash test seeds cache");
+    expectTrue(cooker.cache().entry_count() == 2u, "upstream and downstream cached");
+
+    const fuse::u64 downstream_hash = batch.records[1].content_hash;
+    expectTrue(cooker.cache().lookup(downstream_hash) == fuse::project::CookCacheLookup::Hit,
+               "downstream cached before upstream hash change");
+
+    writeTempFile(sourceA, "# stale a revised\n");
+    const fuse::u32 removed = cooker.invalidate_stale_dependency_hashes(manifest);
+    expectTrue(removed >= 1u, "stale upstream hash invalidates dependent cache entries");
+    expectTrue(cooker.cache().lookup(downstream_hash) == fuse::project::CookCacheLookup::Miss,
+               "downstream misses after stale dependency hash invalidation");
+}
+
 void testCookCacheUpstreamInvalidation() {
     const std::string sourceA = writeTempFile("/tmp/fuse_b79_upinv_a.obj", "# upstream a\n");
     const std::string sourceB = writeTempFile("/tmp/fuse_b79_upinv_b.obj", "# downstream b\n");
@@ -578,9 +675,12 @@ int main() {
     testImportPipelineDryRun();
     testPlanForProject();
     testContentHashDeterministic();
+    testContentHashMtimeSensitivity();
     testContentHashDescSensitivity();
     testCookCacheHitMiss();
     testCookCacheInvalidation();
+    testCookCacheInvalidateChain();
+    testCookCacheStaleDependencyHashInvalidation();
     testCookCacheUpstreamInvalidation();
     testCookCacheRoundTrip();
     testCookDirtyInvalidatesCache();

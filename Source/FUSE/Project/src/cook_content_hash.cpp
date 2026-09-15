@@ -1,5 +1,6 @@
 #include <fuse/project/cook_content_hash.hpp>
 
+#include <filesystem>
 #include <fstream>
 
 namespace fuse::project {
@@ -36,7 +37,19 @@ u64 fnv1a64_combine(u64 left, u64 right) {
     return fnv1a64_bytes(reinterpret_cast<const u8*>(&right), sizeof(right)) ^ (left * kFnvPrime);
 }
 
+u64 file_mtime_ns(const std::string& path) {
+    std::error_code ec;
+    const auto ftime = std::filesystem::last_write_time(std::filesystem::path(path), ec);
+    if (ec) {
+        return 0;
+    }
+    return static_cast<u64>(ftime.time_since_epoch().count());
+}
+
 u64 hash_file_content(const std::string& path) {
+    u64 hash = hash_string(path);
+    hash = fnv1a64_combine(hash, hash_u64(file_mtime_ns(path)));
+
     std::ifstream file(path, std::ios::binary);
     if (!file) {
         return 0;
@@ -44,9 +57,31 @@ u64 hash_file_content(const std::string& path) {
 
     std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     if (contents.empty()) {
-        return fnv1a64_combine(hash_string(path), 0);
+        return fnv1a64_combine(hash, 0);
     }
-    return fnv1a64_combine(hash_string(path), fnv1a64_bytes(reinterpret_cast<const u8*>(contents.data()), contents.size()));
+    return fnv1a64_combine(hash, fnv1a64_bytes(reinterpret_cast<const u8*>(contents.data()), contents.size()));
+}
+
+u64 hash_upstream_dependencies(const std::vector<std::string>& dependency_output_paths,
+                               const CookManifest& manifest) {
+    u64 hash = 0;
+    for (const std::string& dependency_output : dependency_output_paths) {
+        hash = fnv1a64_combine(hash, hash_string(dependency_output));
+        for (const CookManifestEntry& asset : manifest.assets) {
+            if (asset.output_path == dependency_output) {
+                hash = fnv1a64_combine(hash, hash_file_content(asset.source_path));
+                break;
+            }
+        }
+    }
+    return hash;
+}
+
+u64 combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    if (upstream_hash == 0) {
+        return source_hash;
+    }
+    return fnv1a64_combine(source_hash, upstream_hash);
 }
 
 u64 hash_mesh_import(const MeshImportDesc& desc) {

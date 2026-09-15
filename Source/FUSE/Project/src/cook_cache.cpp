@@ -108,6 +108,26 @@ u32 CookCache::invalidate_downstream_of(const std::string& output_path,
     return removed;
 }
 
+std::vector<std::string> CookCache::invalidate_stale_upstream_hashes(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) {
+    std::vector<std::string> invalidated;
+    for (const auto& pair : source_upstream_by_path) {
+        const std::string& source_path = pair.first;
+        const u64 current_upstream = pair.second;
+
+        for (auto it = m_entries.begin(); it != m_entries.end();) {
+            if (it->source_path == source_path && it->upstream_hash != current_upstream) {
+                invalidated.push_back(source_path);
+                it = m_entries.erase(it);
+                ++m_stats.invalidations;
+            } else {
+                ++it;
+            }
+        }
+    }
+    return invalidated;
+}
+
 u32 CookCache::invalidate_source(const std::string& source_path) {
     u32 removed = 0;
     for (auto it = m_entries.begin(); it != m_entries.end();) {
@@ -143,6 +163,7 @@ bool CookCache::save(const std::string& path) const {
         const CookCacheEntry& entry = m_entries[i];
         out << "    {\n";
         out << "      \"contentHash\": " << entry.content_hash << ",\n";
+        out << "      \"upstreamHash\": " << entry.upstream_hash << ",\n";
         out << "      \"outputPath\": \"" << escapeJson(entry.output_path) << "\",\n";
         out << "      \"sourcePath\": \"" << escapeJson(entry.source_path) << "\",\n";
         out << "      \"kind\": \"" << cookAssetKindName(entry.kind) << "\"\n";
@@ -236,6 +257,23 @@ bool CookCache::load(const std::string& path) {
                 entry.content_hash = entry.content_hash * 10 +
                                      static_cast<u64>(objectBody[hashCursor] - '0');
                 ++hashCursor;
+            }
+        }
+
+        const std::string upstreamNeedle = "\"upstreamHash\":";
+        const std::size_t upstreamPos = objectBody.find(upstreamNeedle);
+        if (upstreamPos != std::string_view::npos) {
+            std::size_t upstreamCursor = upstreamPos + upstreamNeedle.size();
+            while (upstreamCursor < objectBody.size() &&
+                   !std::isdigit(static_cast<unsigned char>(objectBody[upstreamCursor]))) {
+                ++upstreamCursor;
+            }
+            entry.upstream_hash = 0;
+            while (upstreamCursor < objectBody.size() &&
+                   std::isdigit(static_cast<unsigned char>(objectBody[upstreamCursor]))) {
+                entry.upstream_hash = entry.upstream_hash * 10 +
+                                      static_cast<u64>(objectBody[upstreamCursor] - '0');
+                ++upstreamCursor;
             }
         }
 
