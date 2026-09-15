@@ -71,8 +71,12 @@ struct InterestSetDiff {
     [[nodiscard]] bool empty() const { return entered.empty() && left.empty(); }
 
     /// Apply enter/leave to a scope snapshot (ghost manager incremental update stub).
-    void apply_to(InterestScopeSet& scope) const;
+    void apply_diff(InterestScopeSet& scope) const;
+    void apply_to(InterestScopeSet& scope) const { apply_diff(scope); }
 };
+
+[[nodiscard]] bool is_empty_interest_diff(const InterestSetDiff& diff);
+[[nodiscard]] u32 count_scope_diff_entities(const InterestSetDiff& diff);
 
 void diff_interest_scope_sets(const InterestScopeSet& previous, const InterestScopeSet& current,
                               InterestSetDiff& out);
@@ -81,9 +85,20 @@ void diff_interest_scope_sets(const InterestScopeSet& previous, const InterestSc
 [[nodiscard]] u32 count_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
                                                const std::vector<InterestCandidate>& candidates);
 
+/// Count in-scope candidates using prior scope for unload hysteresis.
+[[nodiscard]] u32 count_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
+                                               const std::vector<InterestCandidate>& candidates,
+                                               const InterestScopeSet& prior_scope);
+
 /// Radius filter stub — collects in-scope entries for an observer (no hysteresis).
 [[nodiscard]] u32 filter_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
                                                 const std::vector<InterestCandidate>& candidates,
+                                                std::vector<InterestEntry>& out_entries);
+
+/// Radius filter with prior scope for unload hysteresis.
+[[nodiscard]] u32 filter_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
+                                                const std::vector<InterestCandidate>& candidates,
+                                                const InterestScopeSet& prior_scope,
                                                 std::vector<InterestEntry>& out_entries);
 
 /// Server-side interest manager — evaluates AOI for an observer against registered entities.
@@ -103,7 +118,8 @@ public:
     /// Recompute scope/priority for all registered entities.
     void evaluate();
     /// Recompute scope and fill `out` with enter/leave vs the previous evaluation.
-    void evaluate_and_diff(InterestSetDiff& out);
+    /// Returns true when `out` is non-empty.
+    [[nodiscard]] bool evaluate_and_diff(InterestSetDiff& out);
 
     [[nodiscard]] const std::vector<InterestEntry>& entries() const { return m_entries; }
     [[nodiscard]] u32 in_scope_count() const;
@@ -112,6 +128,8 @@ public:
 
     /// Snapshot of in-scope entities from the last `evaluate()` call.
     [[nodiscard]] const InterestScopeSet& scope_set() const { return m_scope_set; }
+    /// In-scope entities from the evaluation before the latest `evaluate()` call.
+    [[nodiscard]] const InterestScopeSet& previous_scope_set() const { return m_previous_scope_set; }
 
     /// Diff current scope against the previous evaluation's scope set.
     void compute_scope_diff(InterestSetDiff& out) const;

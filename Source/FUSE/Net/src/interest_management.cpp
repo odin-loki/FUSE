@@ -146,7 +146,11 @@ bool InterestScopeSet::equal_to(const InterestScopeSet& other) const {
     return true;
 }
 
-void InterestSetDiff::apply_to(InterestScopeSet& scope) const {
+void InterestSetDiff::apply_diff(InterestScopeSet& scope) const {
+    if (empty()) {
+        return;
+    }
+
     for (const ecs::EntityID& entity : left) {
         (void)scope.remove_entity(entity);
     }
@@ -155,10 +159,22 @@ void InterestSetDiff::apply_to(InterestScopeSet& scope) const {
     }
 }
 
+bool is_empty_interest_diff(const InterestSetDiff& diff) {
+    return diff.empty();
+}
+
+u32 count_scope_diff_entities(const InterestSetDiff& diff) {
+    return static_cast<u32>(diff.entered.size() + diff.left.size());
+}
+
 void diff_interest_scope_sets(const InterestScopeSet& previous, const InterestScopeSet& current,
                               InterestSetDiff& out) {
     out.entered.clear();
     out.left.clear();
+
+    if (previous.empty() && current.empty()) {
+        return;
+    }
 
     for (const ecs::EntityID& entity : current.entities) {
         if (!contains_entity_(previous.entities, entity)) {
@@ -178,6 +194,10 @@ void diff_interest_scope_sets(const InterestScopeSet& previous, const InterestSc
 
 u32 count_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
                                const std::vector<InterestCandidate>& candidates) {
+    if (candidates.empty()) {
+        return 0;
+    }
+
     u32 count = 0;
     for (const InterestCandidate& candidate : candidates) {
         const f32 distance_sq = distance_sq_3d(observer, candidate.position);
@@ -188,10 +208,32 @@ u32 count_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& 
     return count;
 }
 
+u32 count_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
+                               const std::vector<InterestCandidate>& candidates,
+                               const InterestScopeSet& prior_scope) {
+    if (candidates.empty()) {
+        return 0;
+    }
+
+    u32 count = 0;
+    for (const InterestCandidate& candidate : candidates) {
+        const f32 distance_sq = distance_sq_3d(observer, candidate.position);
+        const bool was_in_scope = prior_scope.contains(candidate.entity);
+        if (within_relevance_radius(distance_sq, policy, was_in_scope)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 u32 filter_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
                                 const std::vector<InterestCandidate>& candidates,
                                 std::vector<InterestEntry>& out_entries) {
     out_entries.clear();
+    if (candidates.empty()) {
+        return 0;
+    }
+
     for (const InterestCandidate& candidate : candidates) {
         const f32 distance_sq = distance_sq_3d(observer, candidate.position);
         if (!within_relevance_radius(distance_sq, policy)) {
@@ -202,6 +244,34 @@ u32 filter_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy&
         entry.entity = candidate.entity;
         entry.distance_sq = distance_sq;
         entry.scope = classify_interest(distance_sq, policy);
+        entry.priority = compute_relevance_priority(distance_sq, policy, candidate.priority_boost);
+        out_entries.push_back(entry);
+    }
+
+    std::sort(out_entries.begin(), out_entries.end(), entry_higher_priority_);
+    return static_cast<u32>(out_entries.size());
+}
+
+u32 filter_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
+                                const std::vector<InterestCandidate>& candidates,
+                                const InterestScopeSet& prior_scope,
+                                std::vector<InterestEntry>& out_entries) {
+    out_entries.clear();
+    if (candidates.empty()) {
+        return 0;
+    }
+
+    for (const InterestCandidate& candidate : candidates) {
+        const f32 distance_sq = distance_sq_3d(observer, candidate.position);
+        const bool was_in_scope = prior_scope.contains(candidate.entity);
+        if (!within_relevance_radius(distance_sq, policy, was_in_scope)) {
+            continue;
+        }
+
+        InterestEntry entry{};
+        entry.entity = candidate.entity;
+        entry.distance_sq = distance_sq;
+        entry.scope = classify_interest(distance_sq, policy, was_in_scope);
         entry.priority = compute_relevance_priority(distance_sq, policy, candidate.priority_boost);
         out_entries.push_back(entry);
     }
@@ -289,9 +359,10 @@ void InterestManager::evaluate() {
     }
 }
 
-void InterestManager::evaluate_and_diff(InterestSetDiff& out) {
+bool InterestManager::evaluate_and_diff(InterestSetDiff& out) {
     evaluate();
     compute_scope_diff(out);
+    return !out.empty();
 }
 
 void InterestManager::compute_scope_diff(InterestSetDiff& out) const {

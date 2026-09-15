@@ -359,7 +359,7 @@ void run_interest_management_tests() {
     fuse::net::InterestSetDiff patch_diff{};
     patch_diff.entered = {make_entity(4)};
     patch_diff.left = {make_entity(2)};
-    patch_diff.apply_to(applied_scope);
+    patch_diff.apply_diff(applied_scope);
     expectTrue(applied_scope.size() == 3u, "apply_to preserves net scope size");
     expectTrue(applied_scope.contains(make_entity(1)), "apply_to keeps unchanged entities");
     expectTrue(applied_scope.contains(make_entity(3)), "apply_to keeps unchanged entities");
@@ -377,12 +377,14 @@ void run_interest_management_tests() {
     eval_diff_manager.set_observer_position(origin);
     eval_diff_manager.register_entity({make_entity(110), {10.f, 0.f, 0.f, 0.f}, 0.f});
     fuse::net::InterestSetDiff eval_first{};
-    eval_diff_manager.evaluate_and_diff(eval_first);
-    expectTrue(eval_first.empty(), "evaluate_and_diff first pass is empty");
+    expectTrue(!eval_diff_manager.evaluate_and_diff(eval_first),
+               "evaluate_and_diff first pass is empty");
+    expectTrue(eval_first.empty(), "evaluate_and_diff first pass clears diff output");
 
     eval_diff_manager.register_entity({make_entity(111), {12.f, 0.f, 0.f, 0.f}, 0.f});
     fuse::net::InterestSetDiff eval_second{};
-    eval_diff_manager.evaluate_and_diff(eval_second);
+    expectTrue(eval_diff_manager.evaluate_and_diff(eval_second),
+               "evaluate_and_diff reports scope change on entity add");
     expectTrue(eval_second.entered.size() == 1u && eval_second.entered[0].index == 111u,
                "evaluate_and_diff reports newly scoped entity");
 
@@ -399,19 +401,117 @@ void run_interest_management_tests() {
     transition_manager.set_observer_position(origin);
     transition_manager.register_entity({make_entity(120), {500.f, 0.f, 0.f, 0.f}, 0.f});
     fuse::net::InterestSetDiff transition_first{};
-    transition_manager.evaluate_and_diff(transition_first);
+    expectTrue(!transition_manager.evaluate_and_diff(transition_first),
+               "first empty-scope evaluate_and_diff returns false");
     fuse::net::InterestSetDiff transition_second{};
-    transition_manager.evaluate_and_diff(transition_second);
+    expectTrue(!transition_manager.evaluate_and_diff(transition_second),
+               "empty-to-empty evaluate_and_diff returns false");
     expectTrue(transition_manager.scope_set().empty(), "repeated empty-scope evaluate stays empty");
     expectTrue(transition_second.empty(), "empty-to-empty evaluate_and_diff stays empty");
 
     transition_manager.clear_entities();
     transition_manager.register_entity({make_entity(121), {10.f, 0.f, 0.f, 0.f}, 0.f});
     fuse::net::InterestSetDiff after_clear{};
-    transition_manager.evaluate_and_diff(after_clear);
+    expectTrue(!transition_manager.evaluate_and_diff(after_clear),
+               "first evaluate after clear_entities returns false");
     expectTrue(after_clear.empty(), "first evaluate after clear_entities has empty diff");
     expectTrue(transition_manager.scope_set().contains(make_entity(121)),
                "scope repopulates after clear_entities");
+
+    // --- is_empty_interest_diff + count_scope_diff_entities ---
+    fuse::net::InterestSetDiff empty_diff_check{};
+    expectTrue(fuse::net::is_empty_interest_diff(empty_diff_check),
+               "is_empty_interest_diff reports empty diff");
+    expectTrue(fuse::net::count_scope_diff_entities(empty_diff_check) == 0u,
+               "count_scope_diff_entities is zero for empty diff");
+
+    fuse::net::InterestSetDiff mixed_diff{};
+    mixed_diff.entered = {make_entity(1), make_entity(2)};
+    mixed_diff.left = {make_entity(3)};
+    expectTrue(!fuse::net::is_empty_interest_diff(mixed_diff),
+               "is_empty_interest_diff rejects non-empty diff");
+    expectTrue(fuse::net::count_scope_diff_entities(mixed_diff) == 3u,
+               "count_scope_diff_entities sums entered and left");
+
+    // --- empty-set diff guard ---
+    fuse::net::InterestScopeSet empty_prev;
+    fuse::net::InterestScopeSet empty_curr;
+    fuse::net::InterestSetDiff both_empty_diff{};
+    fuse::net::diff_interest_scope_sets(empty_prev, empty_curr, both_empty_diff);
+    expectTrue(both_empty_diff.empty(), "diff of two empty scope sets is empty");
+
+    // --- evaluate_and_diff return value + previous_scope_set ---
+    fuse::net::InterestManager return_manager;
+    return_manager.set_policy(policy);
+    return_manager.set_observer_position(origin);
+    return_manager.register_entity({make_entity(130), {10.f, 0.f, 0.f, 0.f}, 0.f});
+    fuse::net::InterestSetDiff return_first{};
+    expectTrue(!return_manager.evaluate_and_diff(return_first),
+               "evaluate_and_diff returns false on first empty diff");
+    expectTrue(return_manager.scope_set().contains(make_entity(130)),
+               "first evaluate_and_diff populates scope set");
+    expectTrue(return_manager.previous_scope_set().equal_to(return_manager.scope_set()),
+               "previous_scope_set matches scope on first evaluation");
+
+    return_manager.register_entity({make_entity(131), {12.f, 0.f, 0.f, 0.f}, 0.f});
+    fuse::net::InterestSetDiff return_second{};
+    expectTrue(return_manager.evaluate_and_diff(return_second),
+               "evaluate_and_diff returns true when scope changes");
+    expectTrue(return_second.entered.size() == 1u && return_second.entered[0].index == 131u,
+               "evaluate_and_diff return path still fills entered set");
+
+    // --- hysteresis-aware radius count/filter ---
+    fuse::net::InterestPolicy hysteresis_policy{};
+    hysteresis_policy.relevance_radius = 50.f;
+    hysteresis_policy.always_relevant_radius = 5.f;
+    hysteresis_policy.unload_radius = 0.f;
+
+    std::vector<fuse::net::InterestCandidate> hysteresis_candidates;
+    hysteresis_candidates.push_back({make_entity(140), {40.f, 0.f, 0.f, 0.f}, 0.f});
+    hysteresis_candidates.push_back({make_entity(141), {55.f, 0.f, 0.f, 0.f}, 0.f});
+
+    expectTrue(fuse::net::count_candidates_in_radius(origin, hysteresis_policy, hysteresis_candidates) == 1u,
+               "radius count without hysteresis drops beyond relevance");
+    fuse::net::InterestScopeSet prior_scope;
+    prior_scope.entities = {make_entity(141)};
+    expectTrue(fuse::net::count_candidates_in_radius(origin, hysteresis_policy, hysteresis_candidates,
+                                                     prior_scope) == 2u,
+               "radius count with prior scope keeps hysteresis entity");
+
+    std::vector<fuse::net::InterestEntry> hysteresis_filtered;
+    const fuse::u32 hysteresis_filtered_count = fuse::net::filter_candidates_in_radius(
+        origin, hysteresis_policy, hysteresis_candidates, prior_scope, hysteresis_filtered);
+    expectTrue(hysteresis_filtered_count == 2u,
+               "hysteresis radius filter count matches prior-scope count");
+    expectTrue(hysteresis_filtered.size() == 2u,
+               "hysteresis radius filter output size matches count");
+
+    bool saw_hysteresis_entity = false;
+    for (const fuse::net::InterestEntry& entry : hysteresis_filtered) {
+        if (entry.entity.index == 141u) {
+            saw_hysteresis_entity = true;
+            expectTrue(entry.scope == fuse::net::InterestScope::InScope,
+                       "hysteresis filter marks retained entity in scope");
+        }
+    }
+    expectTrue(saw_hysteresis_entity, "hysteresis filter retains prior-scope entity");
+
+    // --- apply_diff alias + empty guard ---
+    fuse::net::InterestScopeSet alias_scope;
+    alias_scope.entities = {make_entity(1), make_entity(2)};
+    fuse::net::InterestSetDiff alias_diff{};
+    alias_diff.entered = {make_entity(3)};
+    alias_diff.left = {make_entity(1)};
+    alias_diff.apply_diff(alias_scope);
+    expectTrue(alias_scope.size() == 2u, "apply_diff preserves net scope size");
+    expectTrue(alias_scope.contains(make_entity(2)), "apply_diff keeps unchanged entity");
+    expectTrue(alias_scope.contains(make_entity(3)), "apply_diff inserts entered entity");
+    expectTrue(!alias_scope.contains(make_entity(1)), "apply_diff removes left entity");
+
+    fuse::net::InterestSetDiff guarded_empty_diff{};
+    const fuse::net::InterestScopeSet alias_before_guard = alias_scope;
+    guarded_empty_diff.apply_diff(alias_scope);
+    expectTrue(alias_scope.equal_to(alias_before_guard), "apply_diff no-op on empty diff");
 }
 
 } // namespace fuse::net::tests
