@@ -138,6 +138,7 @@ void runCcdIntoBuffer(const std::vector<broadphase::CandidatePair>& pairs,
     }
 
     buffer.compact();
+    buffer.sortByToi();
 }
 
 u32 CcdPipeline::sweepPairs(const RigidBodySoA& bodies,

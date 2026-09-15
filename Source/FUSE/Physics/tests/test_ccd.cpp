@@ -61,6 +61,85 @@ void testSweptSphereSlabFindsThinWallImpact() {
     expectTrue(result.toi < 0.15f, "slab TOI occurs before discrete end-of-step tunnel");
 }
 
+void testToiBufferPushSortOrder() {
+    ToiBufferSoA buffer;
+    buffer.reserve(4u);
+
+    TOIResult late{};
+    late.valid = true;
+    late.toi = 0.75f;
+    late.bodyA = 1u;
+    late.bodyB = 2u;
+
+    TOIResult early = late;
+    early.toi = 0.1f;
+    early.bodyA = 3u;
+
+    TOIResult mid = late;
+    mid.toi = 0.4f;
+    mid.bodyA = 5u;
+
+    expectTrue(buffer.push(late), "push accepts valid TOI");
+    expectTrue(buffer.push(early), "push accepts second TOI");
+    expectTrue(buffer.push(mid), "push accepts third TOI");
+    expectTrue(buffer.activeCount == 3u, "push grows active count");
+
+    buffer.sortByToi();
+    expectNear(buffer.resultAt(0u).toi, 0.1f, 1e-5f, "sort places earliest TOI first");
+    expectNear(buffer.resultAt(1u).toi, 0.4f, 1e-5f, "sort orders middle TOI");
+    expectNear(buffer.resultAt(2u).toi, 0.75f, 1e-5f, "sort places latest TOI last");
+    expectTrue(buffer.resultAt(0u).bodyA == 3u, "sort preserves body metadata");
+}
+
+void testToiBufferEmpty() {
+    ToiBufferSoA buffer;
+    expectTrue(buffer.activeCount == 0u, "default buffer is empty");
+
+    TOIResult invalid{};
+    expectTrue(!buffer.push(invalid), "push rejects invalid TOI on empty buffer");
+    expectTrue(buffer.resultAt(0u).valid == false, "resultAt on empty buffer is invalid");
+
+    buffer.sortByToi();
+    expectTrue(buffer.activeCount == 0u, "sort on empty buffer is no-op");
+    expectTrue(buffer.toVector().empty(), "toVector on empty buffer returns empty");
+}
+
+void testToiBufferCapacityClamp() {
+    ToiBufferSoA buffer;
+    buffer.setMaxCapacity(2u);
+
+    TOIResult first{};
+    first.valid = true;
+    first.toi = 0.2f;
+
+    TOIResult second = first;
+    second.toi = 0.5f;
+
+    TOIResult third = first;
+    third.toi = 0.8f;
+
+    expectTrue(buffer.push(first), "first push fits capacity");
+    expectTrue(buffer.push(second), "second push fits capacity");
+    expectTrue(!buffer.push(third), "third push is clamped at max capacity");
+    expectTrue(buffer.activeCount == 2u, "active count stops at max capacity");
+    expectTrue(buffer.droppedCount == 1u, "dropped count tracks clamped pushes");
+}
+
+void testSweptSphereAabbFindsImpact() {
+    const aabb box{{-1.f, -1.f, 4.f}, {1.f, 1.f, 6.f}};
+    const TOIResult result =
+        sweptSphereAabb({0.f, 0.f, 0.f}, {0.f, 0.f, 10.f}, 0.5f, box);
+    expectTrue(result.valid, "sphere sweep detects AABB entry");
+    expectTrue(result.toi < 0.5f, "AABB TOI occurs before end of segment");
+}
+
+void testSweptSphereAabbRejectsMiss() {
+    const aabb box{{5.f, 5.f, 5.f}, {6.f, 6.f, 6.f}};
+    const TOIResult result =
+        sweptSphereAabb({0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 0.5f, box);
+    expectTrue(!result.valid, "parallel miss against distant AABB is invalid");
+}
+
 void testToiBufferClearReuse() {
     ToiBufferSoA buffer;
     buffer.reserve(8u);
@@ -174,6 +253,11 @@ int main() {
     testSweptSphereSphereRejectsMiss();
     testSweptSpherePlaneFindsWallImpact();
     testSweptSphereSlabFindsThinWallImpact();
+    testToiBufferPushSortOrder();
+    testToiBufferEmpty();
+    testToiBufferCapacityClamp();
+    testSweptSphereAabbFindsImpact();
+    testSweptSphereAabbRejectsMiss();
     testToiBufferClearReuse();
     testRunCcdIntoBufferJobSafe();
     testCcdPipelineFiltersRbCcdFlag();

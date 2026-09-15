@@ -26,7 +26,7 @@
 | `PBDSolver` | `solver/pbd_solver.hpp` | B4.4 CPU XPBD contacts + distance constraints |
 | `SolverWorkBuffers` | `solver/solver_work_buffers.hpp` | Job-safe per-body delta scratch + reusable contact buffer |
 | `ContactIslandGraph` | `solver/contact_island_graph.hpp` | Connected-component partition for parallel island iteration |
-| `ToiBufferSoA` / `runCcdIntoBuffer` | `ccd/toi_buffer.hpp`, `ccd/ccd.hpp` | Job-safe per-pair TOI slots + sphere/plane/slab sweep helpers |
+| `ToiBufferSoA` / `runCcdIntoBuffer` | `ccd/toi_buffer.hpp`, `ccd/ccd.hpp` | Job-safe per-pair TOI slots, push/sort-by-TOI, capacity clamp + sphere-sphere/plane/slab/AABB sweep helpers |
 
 **Composed APIs:** B4.7–B4.11 use `fuse::ecs::EntityID`, `fuse::physics::vec3`/`quat` from `math.hpp`, and B4.1 `RigidBodySoA` vectors — no duplicate entity/math types.
 
@@ -152,8 +152,9 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 
 - [x] `fuse_physics_ccd_tests` — swept sphere-sphere + `CcdPipeline` RB_CCD filter
 - [x] `PhysicsManager` runs `CcdPipeline` sweep when `enableCcd=true`
-- [x] `ToiBufferSoA` — per-pair slot clear/reuse + compact; job-safe `runCcdIntoBuffer`
-- [x] `fuse_physics_ccd_tests` — sphere-plane + thin-slab TOI helpers, tunneling smoke
+- [x] `ToiBufferSoA` — per-pair slot clear/reuse + compact; push/sort-by-TOI + `maxCapacity` clamp
+- [x] `fuse_physics_ccd_tests` — sphere-plane + thin-slab + AABB segment TOI helpers, tunneling smoke
+- [x] `fuse_physics_ccd_tests` — buffer sort order, empty buffer, capacity clamp
 - [ ] High-velocity tunneling through thin wall — catalog `ccd.tunneling` (analytic smoke landed; full gameplay acceptance deferred)
 
 #### Destruction
@@ -192,7 +193,7 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 - **Broadphase jobify (CPU stub):** `runBroadphase` / `runBroadphase2D` read immutable `RigidBodySoA` + `CollisionShapeSoA` snapshots and write disjoint per-cell / per-dynamic pair buffers via `fuse::jobs::parallel_for`; falls back to serial when `JobScheduler` is single-threaded or uninitialized
 - **PBD constraint iteration (CPU stub):** each substep builds `ContactIslandGraph` from contacts + distance constraints; `parallel_for` dispatches islands while contacts within an island resolve sequentially (Gauss-Seidel). `SolverWorkBuffers` holds reusable manifolds, per-body `PositionDelta` slots, and per-constraint lambda warm-start buffers. `accumulateDistanceSpringCorrection` / `accumulateContactCorrection` write disjoint body slots (job-safe SoA); `applyPositionDeltas` commits corrections after each iteration. `SolverParams::iterations` configures the max pass count; `residualTolerance` enables early-exit when max constraint violation drops below threshold; `lastConstraintResidual()` surfaces the stub for tests
 - **Narrowphase job-safe slots (CPU stub):** `runNarrowphaseIntoBuffer` assigns one output slot per candidate pair index; workers write only their slot, then `ContactBufferSoA::compact()` gathers valid manifolds without shared mutable pair state (serial dispatch on CPU stub; slot layout matches parallel kernel path). Each slot stores up to four contact points plus warm-start normal/tangent impulse stubs for solver reuse.
-- **CCD job-safe slots (CPU stub):** `runCcdIntoBuffer` assigns one TOI slot per candidate pair; workers write only their slot, then `ToiBufferSoA::compact()` gathers valid impacts. `sweptSpherePlane` / `sweptSphereSlabZ` cover fast-mover vs wall stubs; `PhysicsManager` reuses `m_toiBuffer_` each step
+- **CCD job-safe slots (CPU stub):** `runCcdIntoBuffer` assigns one TOI slot per candidate pair; workers write only their slot, then `ToiBufferSoA::compact()` gathers valid impacts and `sortByToi()` orders earliest-first. `push` / `setMaxCapacity` support direct TOI gathering with overflow clamp (`droppedCount`). `sweptSphereSphere` / `sweptSpherePlane` / `sweptSphereSlabZ` / `sweptSphereAabb` cover analytic sweep stubs; `PhysicsManager` reuses `m_toiBuffer_` each step
 
 ---
 
@@ -211,7 +212,7 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 | `fuse_collision_events` | Register/unregister, Enter/Trigger dispatch |
 | `fuse_phase4_deliverables` | Catalog non-empty, category counts, automated smoke |
 | `fuse_physics_phase4_integration` | B4.11 end-to-end: broadphase → narrowphase → PBD/CCD → `PhysicsManager` |
-| `fuse_physics_ccd_tests` | B4.6 CCD sweep helpers, `ToiBufferSoA`, sphere/plane/slab TOI, job-safe pair dispatch |
+| `fuse_physics_ccd_tests` | B4.6 CCD sweep helpers, `ToiBufferSoA` push/sort/clamp, sphere/plane/slab/AABB TOI, job-safe pair dispatch |
 
 Run:
 
@@ -242,7 +243,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_physics|fuse_voxel|fuse_soft
 - [x] B4.2 CPU broadphase jobify — `parallel_for` over shape→cell build + per-cell candidate generation stubs
 - [x] B4.4 CPU deepen — island-partitioned constraint iterations, job-safe `SolverWorkBuffers`, rest-length spring tests
 - [x] B4.4 CPU deepen — configurable iteration count, lambda warm-start, residual early-exit stub, job-safe constraint accumulation helpers
-- [x] B4.6 CPU deepen — `ToiBufferSoA`, sphere/plane/slab sweep helpers, job-safe `runCcdIntoBuffer`
+- [x] B4.6 CPU deepen — `ToiBufferSoA` push/sort/clamp, sphere/plane/slab/AABB sweep helpers, job-safe `runCcdIntoBuffer`
 - [ ] B4.4–B4.6 CUDA: PBD kernels, Barnes-Hut GPU, CCD sweep GPU (CPU stubs on main via #29)
 - [ ] B3.5 SVO integration — real carve + dual contouring mesh extraction
 - [ ] Wire `PhysicsManager` to `fuse::renderer::cuda::StreamManager`
