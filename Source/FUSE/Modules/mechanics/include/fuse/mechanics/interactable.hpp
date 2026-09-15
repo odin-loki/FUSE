@@ -1,28 +1,56 @@
 #pragma once
 
 #include <fuse/handle.hpp>
+#include <fuse/mechanics/component.hpp>
+#include <fuse/mechanics/component_interface.hpp>
 #include <fuse/object.hpp>
-#include <fuse/types.hpp>
 
 #include <string>
 
 namespace fuse::mechanics {
 
-/// Interactable stub — game-thread mutation only.
-/// TODO(U5 extract): GMK component patterns + physics rebind to FUSE composition boundary.
-class Interactable {
-public:
-    Interactable(Handle<Object> owner, std::string prompt);
+/// Player/world interaction payload (FUSE mechanics gate; adventure modules share this shape).
+struct InteractionContext {
+    Handle<Object> instigator = Handle<Object>::invalid();
+    std::string verb;
+};
 
-    Handle<Object> owner() const { return m_owner; }
-    const std::string& prompt() const { return m_prompt; }
-    bool isEnabled() const { return m_enabled; }
-    void setEnabled(bool enabled) { m_enabled = enabled; }
+/// Gameplay interaction surface for mechanics-driven objects.
+class IInteractable {
+public:
+    virtual ~IInteractable() = default;
+
+    virtual bool canInteract(const InteractionContext& ctx) const = 0;
+    virtual bool interact(InteractionContext& ctx) = 0;
+};
+
+/// Cached `IInteractable` accessor (ore: GMK `SimpleComponentInterface`).
+class InteractableInterface : public ComponentInterface {
+public:
+    bool canInteract(const InteractionContext& ctx) const;
+    bool interact(InteractionContext& ctx);
+};
+
+/// Reference interactable component with cached interface registration.
+///
+/// Ore pattern: `third_party/addons/GMK/Engine/source/component/simpleComponent.h`.
+class InteractableComponent : public Component, public IInteractable {
+public:
+    InteractableComponent();
+    explicit InteractableComponent(std::string name);
+
+    const char* typeName() const override { return "InteractableComponent"; }
+
+    void registerInterfaces(Component* owner) override;
+
+    bool canInteract(const InteractionContext& ctx) const override;
+    bool interact(InteractionContext& ctx) override;
+
+    u32 interactionCount() const { return m_interactionCount; }
 
 private:
-    Handle<Object> m_owner;
-    std::string m_prompt;
-    bool m_enabled = true;
+    InteractableInterface m_interactableInterface;
+    u32 m_interactionCount = 0;
 };
 
 } // namespace fuse::mechanics
