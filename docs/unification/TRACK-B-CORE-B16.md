@@ -1,6 +1,6 @@
 # Track B — Core B1.6 Logging, Assert & Profiler (stubs)
 
-**Status:** B1.6 deepen — async chrome flow begin/end stubs, int/float counter samples, expanded export tests on `fuse_core`  
+**Status:** B1.6 deepen — async flow/counter inherit scope nesting depth, frame metadata + JSON name escaping in chrome export, empty/nested-flow tests on `fuse_core`  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B1.6  
 **Related:** Editor `ProfilerPanel` ring buffer (B6.10) consumes frame summaries; this PR owns per-scope CPU events in Core.
 
@@ -113,6 +113,7 @@ fuse::platform::registerMainThread();
 |-------|-------|
 | `displayTimeUnit` | `"ns"` |
 | `metadata.name` | `"FUSE CPU profiler"` |
+| `metadata.frame` | `frameIndex()` at export time |
 | `traceEvents[].ph` | `"B"` / `"E"` scope begin/end; `"s"` / `"f"` async flow start/finish; `"C"` counter sample |
 | `traceEvents[].cat` | `"cpu"` scopes, `"async"` flows, `"counter"` samples |
 | `traceEvents[].ts` | microseconds (`timestampNs / 1000`) |
@@ -120,7 +121,7 @@ fuse::platform::registerMainThread();
 | `traceEvents[].tid` | `chromeTraceThreadId()` |
 | `traceEvents[].id` | paired `scopeId` per `FUSE_PROFILE_SCOPE`, or `flowId` for async flow pairs |
 | `traceEvents[].bp` | `"e"` on flow finish — bind to enclosing slice end |
-| `traceEvents[].args.depth` | 1-based nesting depth (scope events only) |
+| `traceEvents[].args.depth` | Active scope nesting depth (scope, async flow, and counter events when non-zero) |
 | `traceEvents[].args.value` | counter sample payload — integer (`s64`) or float (`f64`) via `FUSE_PROFILE_COUNTER` overload |
 
 Load the JSON in `chrome://tracing` for offline inspection; Qt flame-graph panel (B6.10) will consume the same event buffer later. Async flow stubs correlate I/O and job handoff across threads; counter samples surface allocator and scheduler budgets until GPU markers land (B2+).
@@ -131,7 +132,7 @@ Load the JSON in `chrome://tracing` for offline inspection; Qt flame-graph panel
 
 | Test binary | CTest name | Coverage |
 |-------------|------------|----------|
-| `fuse_core_profiler_assert_tests` | `fuse_core_profiler_assert` | Scope begin/end, nested zone ordering, async flow begin/end (matching `id`), int/float counter samples, nesting depth in chrome export, mixed chrome JSON export, thread-id stubs, disable flag, frame index, fatal hook, `FUSE_VERIFY` |
+| `fuse_core_profiler_assert_tests` | `fuse_core_profiler_assert` | Scope begin/end, nested zone ordering, async flow inside nested scopes, int/float counter samples, empty chrome export, JSON name escaping, nesting depth in chrome export, mixed chrome JSON export, thread-id stubs, disable flag (scopes + flow + counter), frame index, fatal hook, `FUSE_VERIFY` |
 
 ---
 

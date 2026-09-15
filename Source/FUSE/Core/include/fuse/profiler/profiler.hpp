@@ -65,10 +65,12 @@ void reset();
 u32 nextFlowId();
 
 /// Async flow begin/end stubs — typically emitted on different threads for I/O or job handoff.
+/// Records current scope nesting depth so chrome export can correlate flows inside profiled slices.
 void beginAsyncFlow(const char* name, u32 flowId);
 void endAsyncFlow(const char* name, u32 flowId);
 
 /// Counter sample stubs — emit chrome `ph:"C"` events for budget overlays.
+/// Inherits the active scope nesting depth when sampled inside `FUSE_PROFILE_SCOPE`.
 void sampleCounter(const char* track, s64 value);
 void sampleCounterFloat(const char* track, f64 value);
 
