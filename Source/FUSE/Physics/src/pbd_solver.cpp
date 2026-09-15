@@ -132,12 +132,13 @@ void PBDSolver::resolveIslandConstraints(RigidBodySoA& bodies,
     const std::vector<narrowphase::ContactManifold>& contacts = workBuffers_.contactManifolds();
     std::vector<PositionDelta>& positionDeltas = workBuffers_.positionDeltas();
 
+    workBuffers_.clearPositionDeltasForIslandBodies(island.bodyIndices);
+
     for (u32 contactIndex : island.contactIndices) {
         if (contactIndex >= contacts.size()) {
             continue;
         }
         const narrowphase::ContactManifold& contact = contacts[contactIndex];
-        workBuffers_.clearPositionDeltasForBodies(contact.bodyA, contact.bodyB);
         const f32 invMassA = effectiveInvMass(bodies, contact.bodyA);
         const f32 invMassB = effectiveInvMass(bodies, contact.bodyB);
         f32& lambda = workBuffers_.contactLambda(contactIndex);
@@ -157,7 +158,6 @@ void PBDSolver::resolveIslandConstraints(RigidBodySoA& bodies,
             continue;
         }
         const DistanceConstraint& constraint = distanceConstraints_[distanceIndex];
-        workBuffers_.clearPositionDeltasForBodies(constraint.bodyA, constraint.bodyB);
         const f32 invMassA = effectiveInvMass(bodies, constraint.bodyA);
         const f32 invMassB = effectiveInvMass(bodies, constraint.bodyB);
         f32& lambda = workBuffers_.distanceLambda(distanceIndex);
@@ -181,6 +181,11 @@ void PBDSolver::runConstraintIterations(RigidBodySoA& bodies, const SolverParams
     workBuffers_.ensureLambdaCapacity(static_cast<u32>(workBuffers_.contactManifolds().size()),
                                       static_cast<u32>(distanceConstraints_.size()));
 
+    const std::vector<narrowphase::ContactManifold>& contacts = workBuffers_.contactManifolds();
+    for (u32 contactIndex = 0; contactIndex < contacts.size(); ++contactIndex) {
+        workBuffers_.seedContactLambdaFromImpulse(contactIndex, contacts[contactIndex].warmNormalImpulse, dt);
+    }
+
     for (u32 iter = 0; iter < maxIterations; ++iter) {
         const u32 islandCount = islandGraph_.islandCount();
         if (islandCount == 0) {
@@ -201,7 +206,11 @@ void PBDSolver::runConstraintIterations(RigidBodySoA& bodies, const SolverParams
             }
         } else {
             fuse::jobs::parallel_for(0, islandCount, kIslandGrainSize, [&](u32 islandIndex) {
-                resolveIslandConstraints(bodies, islandGraph_.island(islandIndex), params, dt);
+                const ContactIslandGraph::Island& island = islandGraph_.island(islandIndex);
+                if (island.isEmpty()) {
+                    return;
+                }
+                resolveIslandConstraints(bodies, island, params, dt);
             });
         }
 
