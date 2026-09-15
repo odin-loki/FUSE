@@ -14,6 +14,7 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/dimension/idimension.hpp
     include/fuse/object.hpp
     include/fuse/core/init.hpp
+    include/fuse/core/phase1_test_registry.hpp
     include/fuse/log/logger.hpp
     include/fuse/assert.hpp
     include/fuse/profiler/profiler.hpp
@@ -52,6 +53,7 @@ set(FUSE_CORE_PUBLIC_HEADERS
 set(FUSE_CORE_SOURCES
     src/fuse_core_stub.cpp
     src/core/init.cpp
+    src/core/phase1_test_registry.cpp
     src/frame/frame_barrier.cpp
     src/object.cpp
     src/log/logger.cpp
