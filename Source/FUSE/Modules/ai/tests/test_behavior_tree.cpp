@@ -1,6 +1,7 @@
 #include <fuse/ai/behavior_runtime.hpp>
 #include <fuse/ai/behavior_tree.hpp>
 #include <fuse/ai/node_registry.hpp>
+#include <fuse/ai/spatial_query.hpp>
 #include <fuse/ai/tree_loader.hpp>
 #include <fuse/ai/uaisk_template_hooks.hpp>
 #include <fuse/core/init.hpp>
@@ -98,7 +99,9 @@ void testRegistryBuiltinNodes() {
     expectTrue(registry.hasFactory("bb.action.wait"), "bb.action.wait registered");
     expectTrue(registry.hasFactory("bb.action.distance"), "bb.action.distance registered");
     expectTrue(registry.hasFactory("gb.action.move_toward"), "gb.action.move_toward registered");
-    expectTrue(registry.registeredTypeIds().size() >= 15u, "registry exposes built-in type ids");
+    expectTrue(registry.hasFactory("bb.condition.allies_in_radius"), "bb.condition.allies_in_radius registered");
+    expectTrue(registry.hasFactory("bb.action.nearest_ally"), "bb.action.nearest_ally registered");
+    expectTrue(registry.registeredTypeIds().size() >= 17u, "registry exposes built-in type ids");
 }
 
 void testInverterDecorator() {
@@ -527,6 +530,121 @@ void testRuntimeParallelEval() {
     scheduler.shutdown();
 }
 
+std::vector<fuse::ai::AllyCandidate> makeTestAllies() {
+    return {
+        {0, 0.f, 0.f, 1},
+        {1, 5.f, 0.f, 1},
+        {2, 8.f, 0.f, 1},
+        {3, 3.f, 4.f, 1},
+    };
+}
+
+void testAlliesInRadiusConditionLeaf() {
+    const std::vector<fuse::ai::NodeLoadSpec> specs = {
+        {"bb.condition.allies_in_radius", 10.f, 0, 2, {}, {}},
+    };
+
+    fuse::ai::BehaviorTree tree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(specs, 0, tree), "allies in radius condition loads");
+
+    fuse::ai::AgentSnapshot agent;
+    agent.x = 0.f;
+    agent.y = 0.f;
+    agent.teamId = 1;
+
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const std::vector<fuse::ai::AllyCandidate> allies = makeTestAllies();
+    fuse::ai::BehaviorEvalContext ctx;
+    ctx.allies = &allies;
+
+    const fuse::ai::BehaviorTickResult result =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board), ctx);
+    expectTrue(result.status == fuse::ai::BehaviorStatus::Success,
+               "allies in radius succeeds when minCount met");
+}
+
+void testAlliesInRadiusConditionFailsSparse() {
+    const std::vector<fuse::ai::NodeLoadSpec> specs = {
+        {"bb.condition.allies_in_radius", 3.f, 0, 2, {}, {}},
+    };
+
+    fuse::ai::BehaviorTree tree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(specs, 0, tree), "tight radius condition loads");
+
+    fuse::ai::AgentSnapshot agent;
+    agent.x = 0.f;
+    agent.y = 0.f;
+    agent.teamId = 1;
+
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const std::vector<fuse::ai::AllyCandidate> allies = makeTestAllies();
+    fuse::ai::BehaviorEvalContext ctx;
+    ctx.allies = &allies;
+
+    const fuse::ai::BehaviorTickResult result =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board), ctx);
+    expectTrue(result.status == fuse::ai::BehaviorStatus::Failure,
+               "allies in radius fails when not enough allies in tight radius");
+}
+
+void testNearestAllyActionLeaf() {
+    const std::vector<fuse::ai::NodeLoadSpec> specs = {
+        {"bb.action.nearest_ally", 20.f, 2, 1, {}, {}},
+    };
+
+    fuse::ai::BehaviorTree tree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(specs, 0, tree), "nearest ally action loads");
+
+    fuse::ai::AgentSnapshot agent;
+    agent.x = 0.f;
+    agent.y = 0.f;
+    agent.teamId = 1;
+
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const std::vector<fuse::ai::AllyCandidate> allies = makeTestAllies();
+    fuse::ai::BehaviorEvalContext ctx;
+    ctx.allies = &allies;
+
+    const fuse::ai::BehaviorTickResult result =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board), ctx);
+    expectTrue(result.status == fuse::ai::BehaviorStatus::Success, "nearest ally action succeeds");
+    expectTrue(result.wroteFlag, "nearest ally action writes flag");
+    expectTrue(result.flagIndex == 2u, "nearest ally action targets configured flag");
+    expectTrue(result.flagValue, "nearest ally action marks ally found");
+}
+
+void testNearestAllyActionFailsBeyondRadius() {
+    const std::vector<fuse::ai::NodeLoadSpec> specs = {
+        {"bb.action.nearest_ally", 4.f, 1, 1, {}, {}},
+    };
+
+    fuse::ai::BehaviorTree tree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(specs, 0, tree), "nearest ally max-radius action loads");
+
+    fuse::ai::AgentSnapshot agent;
+    agent.x = 0.f;
+    agent.y = 0.f;
+    agent.teamId = 1;
+
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const std::vector<fuse::ai::AllyCandidate> allies = makeTestAllies();
+    fuse::ai::BehaviorEvalContext ctx;
+    ctx.allies = &allies;
+
+    const fuse::ai::BehaviorTickResult result =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board), ctx);
+    expectTrue(result.status == fuse::ai::BehaviorStatus::Failure,
+               "nearest ally action fails when closest ally beyond max radius");
+}
+
 void testRuntimeParallelMultiAgentAggregation() {
     const std::vector<fuse::ai::NodeLoadSpec> specs = {
         {"bb.condition.distance_less", 5.f, 0, 1, {}, {}},
@@ -577,6 +695,8 @@ void testRuntimeParallelMultiAgentAggregation() {
 
 } // namespace
 
+int run_spatial_query_tests();
+
 int main() {
     fuse::core::initialize();
     testPatrolTreeNearTarget();
@@ -600,6 +720,11 @@ int main() {
     testUaiskTemplateHooks();
     testRuntimeParallelEval();
     testRuntimeParallelMultiAgentAggregation();
+    testAlliesInRadiusConditionLeaf();
+    testAlliesInRadiusConditionFailsSparse();
+    testNearestAllyActionLeaf();
+    testNearestAllyActionFailsBeyondRadius();
+    g_failures += run_spatial_query_tests();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

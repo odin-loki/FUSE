@@ -13,6 +13,7 @@
 | `NodeRegistry` / `NodeLoadSpec` | `Modules/ai/include/fuse/ai/node_registry.hpp` | BadBehaviour `DECLARE_CONOBJECT` analogue |
 | `BehaviorTree` / `BehaviorNode` | `Modules/ai/include/fuse/ai/behavior_tree.hpp` | Flat evaluator; job-safe `tick()` |
 | `Blackboard` / `BlackboardView` | `Modules/ai/include/fuse/ai/blackboard.hpp` | Per-agent flags; `setFlag` / `getFlag` |
+| `spatial_query` | `Modules/ai/include/fuse/ai/spatial_query.hpp` | Ally radius filter + nearest-ally lookup stubs |
 | `BehaviorRuntime` | `Modules/ai/include/fuse/ai/behavior_runtime.hpp` | Snapshot → `parallel_for` eval → commit |
 | `loadTreeFromText` | `Modules/ai/include/fuse/ai/tree_loader.hpp` | Compact `.bt`-style text loader |
 | UAISK hooks | `Modules/ai/include/fuse/ai/uaisk_template_hooks.hpp` | Script-only template mapping |
@@ -42,6 +43,24 @@
 | `bb.action.wait` | Leaf | Running for N ticks (`BehaviorEvalContext`) |
 | `bb.action.distance` | Leaf | Write within-range bool to flag |
 | `gb.action.move_toward` | Leaf | GuideBot stub; sets flag when far |
+| `bb.condition.allies_in_radius` | Leaf | Success when `minCount` same-team allies within `threshold` radius |
+| `bb.action.nearest_ally` | Leaf | Write flag when nearest ally found within optional max radius |
+
+---
+
+## Blackboard spatial query (stub)
+
+`BehaviorRuntime::evaluate` builds a read-only `std::vector<AllyCandidate>` from agent bindings each frame. Spatial query leaves read `agent.teamId` and the ally list via `BehaviorEvalContext::allies` — no scene graph pointers on worker threads.
+
+| API | Role |
+|-----|------|
+| `filter_allies_in_radius` | Collect same-team ally indices within radius (excludes self) |
+| `find_nearest_ally` | Nearest same-team ally by squared distance |
+| `allies_in_radius_satisfied` | `RadiusFilterPolicy` (`radius`, `minCount`) predicate |
+
+`bb.condition.allies_in_radius` maps `threshold` → radius and `loopCount` → `minCount` (default 1). `bb.action.nearest_ally` maps `threshold` → optional max radius (0 = unlimited) and `flag` → blackboard slot written on success.
+
+**Deferred:** faction masks, 3D positions, navmesh reachability, blackboard slots for ally handle/index.
 
 ---
 
@@ -65,4 +84,4 @@ cmake --build build-fuse --target fuse_ai_tests
 ./build-fuse/Source/FUSE/Modules/ai/tests/fuse_ai_tests
 ```
 
-Tests cover registry parity, composite child-status aggregation (sequence/selector/parallel), blackboard set/get leaves, wait + runtime commit, and multi-agent parallel eval.
+Tests cover registry parity, composite child-status aggregation (sequence/selector/parallel), blackboard set/get leaves, wait + runtime commit, multi-agent parallel eval, radius filter (self/team exclusion, minCount policy), and nearest-ally BT leaves.

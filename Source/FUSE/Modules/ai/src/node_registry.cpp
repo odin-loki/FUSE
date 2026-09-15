@@ -130,6 +130,22 @@ BehaviorNode makeActionMoveToward(const NodeLoadSpec& spec) {
     return node;
 }
 
+BehaviorNode makeConditionAlliesInRadius(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::ConditionAlliesInRadius;
+    node.threshold = spec.threshold;
+    node.loopCount = spec.loopCount;
+    return node;
+}
+
+BehaviorNode makeActionNearestAlly(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::ActionNearestAlly;
+    node.threshold = spec.threshold;
+    node.flagIndex = spec.flagIndex;
+    return node;
+}
+
 } // namespace
 
 NodeRegistry& NodeRegistry::instance() {
@@ -182,6 +198,10 @@ void NodeRegistry::registerBuiltins() {
 
     // GuideBot navigation leaf stub — third_party/addons/GuideBot/.../guideBot/actionMove.h
     registerFactory("gb.action.move_toward", makeActionMoveToward);
+
+    // FUSE spatial query leaves — blackboard ally lookup stubs (BadBehaviour ScriptedBehavior pattern)
+    registerFactory("bb.condition.allies_in_radius", makeConditionAlliesInRadius);
+    registerFactory("bb.action.nearest_ally", makeActionNearestAlly);
 }
 
 std::vector<std::string> NodeRegistry::registeredTypeIds() const {

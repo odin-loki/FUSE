@@ -13,6 +13,7 @@ struct AgentSnapshot {
     float y = 0.f;
     float targetX = 0.f;
     float targetY = 0.f;
+    u32 teamId = 0;
 
     float distanceToTarget() const;
 };

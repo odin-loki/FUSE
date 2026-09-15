@@ -2,6 +2,7 @@
 
 #include <fuse/ai/agent_snapshot.hpp>
 #include <fuse/ai/blackboard.hpp>
+#include <fuse/ai/spatial_query.hpp>
 #include <fuse/types.hpp>
 
 #include <string>
@@ -38,6 +39,8 @@ enum class NodeKind {
     ActionWait,
     ActionDistance,
     ActionMoveToward,
+    ConditionAlliesInRadius,
+    ActionNearestAlly,
 };
 
 /// Optional per-tick eval state for leaves that span frames (wait) or read runtime tick count.
@@ -45,6 +48,8 @@ struct BehaviorEvalContext {
     u32 tickCount = 0;
     /// Per-node wait start tick for the current agent; length == tree nodeCount, 0 = not waiting.
     u32* waitStartTicks = nullptr;
+    /// Read-only ally list for spatial query leaves (built by BehaviorRuntime each frame).
+    const std::vector<AllyCandidate>* allies = nullptr;
 };
 
 /// Flat behavior-tree node — ore analogue: BadBehaviour composite/decorator/leaf nodes.
