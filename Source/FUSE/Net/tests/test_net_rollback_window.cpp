@@ -9,6 +9,12 @@
 namespace fuse::net::tests {
 
 void run_rollback_window_tests() {
+    expectTrue(fuse::net::earliest_rewindable_frame(10, 4) == 6u, "earliest rewindable frame within window");
+    expectTrue(fuse::net::earliest_rewindable_frame(3, 8) == 0u, "earliest rewindable clamps at frame 0");
+    expectTrue(fuse::net::clamp_rewind_target(10, 8, 4) == 8u, "clamp keeps in-window target");
+    expectTrue(fuse::net::clamp_rewind_target(10, 5, 4) == 6u, "clamp raises target to window start");
+    expectTrue(fuse::net::clamp_rewind_target(10, 12, 4) == 10u, "clamp lowers future target to current");
+
     expectTrue(fuse::net::can_rewind_to_frame(10, 8, 4), "rewind within window allowed");
     expectTrue(!fuse::net::can_rewind_to_frame(10, 5, 4), "rewind beyond window rejected");
     expectTrue(!fuse::net::can_rewind_to_frame(10, 12, 4), "rewind to future rejected");

@@ -1,10 +1,17 @@
 #include <fuse/net/input_history.hpp>
+#include <fuse/net/reconcile.hpp>
 
 #include "test_helpers.hpp"
 
 namespace fuse::net::tests {
 
 void run_input_history_tests() {
+    fuse::net::InputHistoryBuffer empty;
+    empty.init(8);
+    expectTrue(!empty.pop_oldest().has_value(), "pop_oldest on empty history returns nullopt");
+    expectTrue(empty.stored_frame_count() == 0u, "empty history reports zero stored frames");
+    expectTrue(!empty.has_frame(0u), "empty history has no frames");
+
     fuse::net::InputHistoryBuffer history;
     history.init(16);
 
@@ -68,6 +75,33 @@ void run_input_history_tests() {
     expectTrue(popped->predicted.buttons == 3u, "pop_oldest payload matches stored frame");
     expectTrue(push_pop_history.stored_frame_count() == 3u, "pop_oldest shrinks retained count");
     expectTrue(!push_pop_history.has_frame(2u), "popped frame no longer queryable");
+
+    fuse::net::InputHistoryBuffer cleared;
+    cleared.init(4);
+    cleared.push_frame(1, fuse::net::PlayerInput{});
+    cleared.clear();
+    expectTrue(cleared.stored_frame_count() == 0u, "clear resets stored frame count");
+    expectTrue(!cleared.pop_oldest().has_value(), "pop_oldest after clear returns nullopt");
+
+    fuse::net::InputHistoryBuffer wrap_reconcile;
+    wrap_reconcile.init(4);
+    for (fuse::u32 frame = 0; frame < 6; ++frame) {
+        fuse::net::PlayerInput predicted{};
+        predicted.frame = frame;
+        predicted.axis_lx = static_cast<std::int16_t>(frame * 10);
+        wrap_reconcile.push_frame(frame, predicted);
+    }
+
+    expectTrue(!wrap_reconcile.has_frame(1u), "evicted frame before oldest is not queryable");
+    expectTrue(wrap_reconcile.has_frame(5u), "newest frame retained after wrap");
+
+    fuse::net::PlayerInput authority{};
+    authority.frame = 5;
+    authority.axis_lx = 50;
+    const fuse::net::ReconcileResult wrap_result = wrap_reconcile.reconcile_authoritative(5, authority);
+    expectTrue(wrap_result.action == fuse::net::ReconcileAction::Confirmed,
+               "reconcile succeeds for retained frame after ring wrap");
+    expectTrue(wrap_reconcile.prediction_matches(5u), "prediction confirmed after wrap reconcile");
 }
 
 } // namespace fuse::net::tests

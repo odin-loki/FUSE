@@ -10,7 +10,7 @@ Deterministic rollback and authoritative state-sync scaffolding for Track B7.4. 
 | `checksum.hpp` | FNV-1a helpers and `compute_snapshot_checksum` / `verify_snapshot_checksum` |
 | `input_history.hpp` | 128-frame ring with `push_frame` / `pop_oldest`, predicted + confirmed `PlayerInput` |
 | `reconcile.hpp` | `reconcile_predicted_input` — compare authoritative vs predicted locals |
-| `rollback_window.hpp` | `can_rewind_to_frame`, `resimulate_frame_count` rollback bounds stubs |
+| `rollback_window.hpp` | `earliest_rewindable_frame`, `can_rewind_to_frame`, `clamp_rewind_target`, `resimulate_frame_count` |
 | `transport.hpp` | `Transport` abstraction, loopback/ENet/Steam backends, `TransportStats`, factory |
 | `serializer.hpp` | Compact binary message serialisation |
 | `rollback.hpp` | `RollbackManager` GGPO-style resimulation bound to ECS |
@@ -21,7 +21,7 @@ Deterministic rollback and authoritative state-sync scaffolding for Track B7.4. 
 
 ## Input prediction history
 
-`InputHistoryBuffer` stores up to 128 frames of predicted and confirmed `PlayerInput`. Use `push_frame` for local prediction, `pop_oldest` to evict the oldest retained frame, and `reconcile_authoritative` when authoritative input arrives. `RollbackManager::set_local_input` records predictions; `apply_remote_input` calls `reconcile_predicted_input` before resimulation. `can_rewind_to_frame` / `resimulate_frame_count` bound rollback depth; `RollbackManager::rewind_to` restores a stored snapshot without resimulating forward.
+`InputHistoryBuffer` stores up to 128 frames of predicted and confirmed `PlayerInput`. Use `push_frame` for local prediction, `pop_oldest` to evict the oldest retained frame, and `reconcile_authoritative` when authoritative input arrives. Ring eviction clears out-of-window slots so `has_frame` respects `oldest_stored_frame` / `newest_stored_frame`. `RollbackManager::set_local_input` records predictions; `apply_remote_input` calls `reconcile_predicted_input` before resimulation. `earliest_rewindable_frame` / `clamp_rewind_target` / `can_rewind_to_frame` bound rollback depth; `RollbackManager::rewind_to` restores a stored snapshot without resimulating forward.
 
 ## Rollback buffer
 
