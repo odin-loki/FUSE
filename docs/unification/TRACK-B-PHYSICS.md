@@ -20,7 +20,9 @@
 | `PhysicsManager` | `Source/FUSE/Physics/include/fuse/physics/physics_manager.hpp` | ECS ↔ SoA bridge scaffold |
 | `CollisionEventSystem` | `Source/FUSE/Physics/include/fuse/physics/events/` | Enter/Stay/Exit/Trigger callback bus |
 | `Phase4TestRegistry` | `Source/FUSE/Physics/include/fuse/physics/phase4_test_registry.hpp` | B4.11 checklist + automated smoke |
-| `PbdSolver` | `solver/pbd_solver.hpp` | B4.4 stub (B4.4–B4.6 owned by sibling PR #29) |
+| `PBDSolver` | `solver/pbd_solver.hpp` | B4.4 CPU XPBD contacts + distance constraints |
+| `SolverWorkBuffers` | `solver/solver_work_buffers.hpp` | Job-safe per-body delta scratch + reusable contact buffer |
+| `ContactIslandGraph` | `solver/contact_island_graph.hpp` | Connected-component partition for parallel island iteration |
 
 **Composed APIs:** B4.7–B4.11 use `fuse::ecs::EntityID`, `fuse::physics::vec3`/`quat` from `math.hpp`, and B4.1 `RigidBodySoA` vectors — no duplicate entity/math types.
 
@@ -131,6 +133,8 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 #### Solver (PBD)
 
 - [x] `fuse_physics_pbd_tests` — gravity fall, separation, distance constraint, sleep
+- [x] `fuse_physics_pbd_tests` — compliant spring stretch + rest-length recovery after release
+- [x] `fuse_physics_pbd_tests` — contact island graph partitions disconnected groups; iteration count surfaced
 - [ ] Stack of 10 spheres stable 5s — catalog `solver.stack_stability`
 - [ ] Restitution / friction analytical match — deferred
 
@@ -174,6 +178,7 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 - CPU gameplay code queues destruction events and reads query results after `step()` — no GPU record from job workers
 - Collision callbacks dispatch on the game thread after solver step (same frame as ECS sync)
 - **Broadphase jobify (CPU stub):** `runBroadphase` / `runBroadphase2D` read immutable `RigidBodySoA` + `CollisionShapeSoA` snapshots and write disjoint per-cell / per-dynamic pair buffers via `fuse::jobs::parallel_for`; falls back to serial when `JobScheduler` is single-threaded or uninitialized
+- **PBD constraint iteration (CPU stub):** each substep builds `ContactIslandGraph` from contacts + distance constraints; `parallel_for` dispatches islands while contacts within an island resolve sequentially (Gauss-Seidel). `SolverWorkBuffers` holds reusable manifolds and per-body `PositionDelta` slots for future accumulate-then-apply CUDA parity
 
 ---
 
@@ -218,7 +223,8 @@ ctest --test-dir build --output-on-failure -R 'fuse_physics|fuse_voxel|fuse_soft
 - [x] B4.11 deliverable registry — checklist catalog + automated smoke + phase-4 integration test
 - [x] B4.1–B4.3 composed: `RigidBodySoA`, spatial hash, narrow phase, `PhysicsPipeline`
 - [x] B4.2 CPU broadphase jobify — `parallel_for` over shape→cell build + per-cell candidate generation stubs
-- [ ] B4.4–B4.6 upstream: CUDA PBD, Barnes-Hut, CCD kernels (sibling PR #29)
+- [x] B4.4 CPU deepen — island-partitioned constraint iterations, job-safe `SolverWorkBuffers`, rest-length spring tests
+- [ ] B4.4–B4.6 CUDA: PBD kernels, Barnes-Hut GPU, CCD sweep GPU (CPU stubs on main via #29)
 - [ ] B3.5 SVO integration — real carve + dual contouring mesh extraction
 - [ ] Wire `PhysicsManager` to `fuse::renderer::cuda::StreamManager`
 - [ ] Bullet/reference acceptance tests from B4.11 catalog

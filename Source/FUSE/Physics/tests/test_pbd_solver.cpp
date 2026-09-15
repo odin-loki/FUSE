@@ -1,6 +1,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
 #include <fuse/physics/physics_data.hpp>
+#include <fuse/physics/solver/contact_island_graph.hpp>
 #include <fuse/physics/solver/pbd_solver.hpp>
 
 #include <cmath>
@@ -115,6 +116,128 @@ void testDistanceConstraintHoldsLength() {
     expectNear(dist, 2.f, 0.05f, "distance constraint holds rest length under load");
 }
 
+void testCompliantSpringStretchesUnderLoad() {
+    RigidBodySoA bodies;
+    CollisionShapeSoA shapes;
+
+    const u32 bodyA = bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+    const u32 bodyB = bodies.addBody({1.5f, 0.f, 0.f}, 1.f, 0);
+    shapes.addShape(CollisionShapeType::Sphere, bodyA, {0.1f, 0.f, 0.f});
+    shapes.addShape(CollisionShapeType::Sphere, bodyB, {0.1f, 0.f, 0.f});
+
+    PBDSolver solver;
+    solver.init(2, 4, 1);
+    const f32 restLength = 1.5f;
+    solver.setDistanceConstraints({DistanceConstraint{
+        .bodyA = bodyA,
+        .bodyB = bodyB,
+        .restLength = restLength,
+        .compliance = 0.5f,
+    }});
+
+    SolverParams params;
+    params.substeps = 4;
+    params.iterations = 8;
+    params.gravity = {};
+    params.broadphase.cellSize = 4.f;
+
+    for (int i = 0; i < 60; ++i) {
+        bodies.forces[bodyB] = {200.f, 0.f, 0.f};
+        solver.step(bodies, shapes, params, 1.f / 60.f);
+    }
+
+    const f32 dist = (bodies.positions[bodyA] - bodies.positions[bodyB]).length();
+    expectTrue(dist > restLength + 0.05f, "compliant spring stretches beyond rest length under sustained load");
+    expectTrue(dist < restLength + 1.5f, "compliant spring stretch remains bounded");
+}
+
+void testRestLengthSpringRecoversAfterRelease() {
+    RigidBodySoA bodies;
+    CollisionShapeSoA shapes;
+
+    const u32 bodyA = bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+    const u32 bodyB = bodies.addBody({2.f, 0.f, 0.f}, 1.f, 0);
+    shapes.addShape(CollisionShapeType::Sphere, bodyA, {0.1f, 0.f, 0.f});
+    shapes.addShape(CollisionShapeType::Sphere, bodyB, {0.1f, 0.f, 0.f});
+
+    PBDSolver solver;
+    solver.init(2, 4, 1);
+    const f32 restLength = 2.f;
+    solver.setDistanceConstraints({DistanceConstraint{
+        .bodyA = bodyA,
+        .bodyB = bodyB,
+        .restLength = restLength,
+        .compliance = 0.f,
+    }});
+
+    SolverParams params;
+    params.substeps = 4;
+    params.iterations = 24;
+    params.gravity = {};
+    params.broadphase.cellSize = 4.f;
+
+    for (int i = 0; i < 20; ++i) {
+        bodies.forces[bodyB] = {120.f, 0.f, 0.f};
+        solver.step(bodies, shapes, params, 1.f / 60.f);
+    }
+
+    for (int i = 0; i < 80; ++i) {
+        solver.step(bodies, shapes, params, 1.f / 60.f);
+    }
+
+    const f32 dist = (bodies.positions[bodyA] - bodies.positions[bodyB]).length();
+    expectNear(dist, restLength, 0.08f, "rigid rest-length spring recovers after load release");
+}
+
+void testSolverReportsIterationCount() {
+    RigidBodySoA bodies;
+    CollisionShapeSoA shapes;
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+
+    PBDSolver solver;
+    solver.init(1, 0, 0);
+
+    SolverParams params;
+    params.substeps = 1;
+    params.iterations = 17;
+    params.gravity = {};
+
+    solver.step(bodies, shapes, params, 1.f / 60.f);
+    expectTrue(solver.lastIterationCount() == 17u, "solver records configured iteration count");
+}
+
+void testContactIslandPartitionsDisconnectedGroups() {
+    RigidBodySoA bodies;
+    CollisionShapeSoA shapes;
+
+    const u32 bodyA = bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+    const u32 bodyB = bodies.addBody({0.5f, 0.f, 0.f}, 1.f, 0);
+    const u32 bodyC = bodies.addBody({10.f, 0.f, 0.f}, 1.f, 0);
+    shapes.addShape(CollisionShapeType::Sphere, bodyA, {1.f, 0.f, 0.f});
+    shapes.addShape(CollisionShapeType::Sphere, bodyB, {1.f, 0.f, 0.f});
+    shapes.addShape(CollisionShapeType::Sphere, bodyC, {1.f, 0.f, 0.f});
+
+    PBDSolver solver;
+    solver.init(3, 8, 0);
+
+    SolverParams params;
+    params.substeps = 1;
+    params.iterations = 4;
+    params.gravity = {};
+    params.broadphase.cellSize = 4.f;
+
+    solver.step(bodies, shapes, params, 1.f / 60.f);
+
+    const ContactIslandGraph& graph = solver.islandGraph();
+    expectTrue(graph.islandCount() >= 2u, "disconnected contact groups form separate islands");
+
+    const u32 islandA = graph.bodyIsland(bodyA);
+    const u32 islandB = graph.bodyIsland(bodyB);
+    const u32 islandC = graph.bodyIsland(bodyC);
+    expectTrue(islandA == islandB, "touching bodies share an island");
+    expectTrue(islandC != islandA, "isolated body is in a different island");
+}
+
 void testSleepDetection() {
     RigidBodySoA bodies;
     CollisionShapeSoA shapes;
@@ -146,6 +269,10 @@ int main() {
     testSphereGroundFallTime();
     testOverlappingSpheresSeparate();
     testDistanceConstraintHoldsLength();
+    testCompliantSpringStretchesUnderLoad();
+    testRestLengthSpringRecoversAfterRelease();
+    testSolverReportsIterationCount();
+    testContactIslandPartitionsDisconnectedGroups();
     testSleepDetection();
     fuse::core::shutdown();
 

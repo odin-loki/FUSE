@@ -3,6 +3,9 @@
 #include <fuse/physics/broadphase/spatial_hash.hpp>
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
 #include <fuse/physics/physics_data.hpp>
+#include <fuse/physics/solver/contact_island_graph.hpp>
+#include <fuse/physics/solver/distance_constraint.hpp>
+#include <fuse/physics/solver/solver_work_buffers.hpp>
 
 #include <fuse/types.hpp>
 
@@ -23,15 +26,6 @@ struct SolverParams {
     broadphase::SpatialHashParams broadphase{};
 };
 
-struct DistanceConstraint {
-    u32 bodyA = 0;
-    u32 bodyB = 0;
-    vec3 localAnchorA{};
-    vec3 localAnchorB{};
-    f32 restLength = 0.f;
-    f32 compliance = 0.f;
-};
-
 /// B4.4 — CPU PBD/XPBD constraint solver wired to B4.2 broadphase + B4.3 narrowphase.
 class PBDSolver {
 public:
@@ -47,26 +41,39 @@ public:
 
     u32 contactCount() const { return lastContactCount_; }
     u32 activeBodyCount() const { return lastActiveCount_; }
+    u32 lastIterationCount() const { return lastIterationCount_; }
+    const ContactIslandGraph& islandGraph() const { return islandGraph_; }
+    const SolverWorkBuffers& workBuffers() const { return workBuffers_; }
 
 private:
-    std::vector<narrowphase::ContactManifold> generateContacts(const RigidBodySoA& bodies,
-                                                               const CollisionShapeSoA& shapes,
-                                                               const SolverParams& params) const;
+    void generateContacts(RigidBodySoA& bodies,
+                          const CollisionShapeSoA& shapes,
+                          const SolverParams& params);
     void predict(RigidBodySoA& bodies, const SolverParams& params, f32 dt);
-    void resolveContacts(RigidBodySoA& bodies,
-                         const std::vector<narrowphase::ContactManifold>& manifolds,
-                         const SolverParams& params,
-                         f32 dt);
-    void resolveDistanceConstraints(RigidBodySoA& bodies, f32 dt);
+    void runConstraintIterations(RigidBodySoA& bodies, const SolverParams& params, f32 dt);
+    void resolveIslandConstraints(RigidBodySoA& bodies,
+                                  const ContactIslandGraph::Island& island,
+                                  const SolverParams& params,
+                                  f32 dt);
+    void resolveContact(RigidBodySoA& bodies,
+                        const narrowphase::ContactManifold& contact,
+                        const SolverParams& params,
+                        f32 dt);
+    void resolveDistanceConstraint(RigidBodySoA& bodies,
+                                   const DistanceConstraint& constraint,
+                                   f32 dt);
     void updateVelocities(RigidBodySoA& bodies, f32 dt);
     void applyDamping(RigidBodySoA& bodies, const SolverParams& params);
     void detectSleep(RigidBodySoA& bodies, const SolverParams& params, f32 dt);
 
     std::vector<DistanceConstraint> distanceConstraints_;
+    SolverWorkBuffers workBuffers_;
+    ContactIslandGraph islandGraph_;
     u32 maxBodies_ = 0;
     u32 maxContacts_ = 0;
     u32 lastContactCount_ = 0;
     u32 lastActiveCount_ = 0;
+    u32 lastIterationCount_ = 0;
 };
 
 } // namespace fuse::physics

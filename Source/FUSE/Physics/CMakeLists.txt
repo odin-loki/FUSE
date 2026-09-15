@@ -10,6 +10,8 @@ add_library(fuse_physics STATIC
     src/narrowphase/collision_dispatch.cpp
     src/narrowphase/gjk.cpp
     src/pbd_solver.cpp
+    src/solver/solver_work_buffers.cpp
+    src/solver/contact_island_graph.cpp
     src/barnes_hut.cpp
     src/ccd.cpp
     include/fuse/physics/broadphase/spatial_hash.hpp
@@ -22,7 +24,10 @@ add_library(fuse_physics STATIC
     include/fuse/physics/physics_world_2d.hpp
     include/fuse/physics/physics_world_3d.hpp
     include/fuse/physics/types.hpp
+    include/fuse/physics/solver/distance_constraint.hpp
     include/fuse/physics/solver/pbd_solver.hpp
+    include/fuse/physics/solver/solver_work_buffers.hpp
+    include/fuse/physics/solver/contact_island_graph.hpp
     include/fuse/physics/nbody/barnes_hut.hpp
     include/fuse/physics/ccd/ccd.hpp
     # B4.7–B4.11 scaffolds
