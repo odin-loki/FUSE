@@ -1,0 +1,92 @@
+#pragma once
+
+#include <fuse/project/cook_manifest.hpp>
+
+#include <string>
+#include <vector>
+
+namespace fuse::project {
+
+class AssetCooker;
+
+enum class CookStageKind : u8 {
+    Import,
+    Process,
+    Pack,
+};
+
+enum class CookStageStatus : u8 {
+    Pending,
+    Ok,
+    Failed,
+    Skipped,
+};
+
+struct CookStageRecord {
+    CookStageKind kind = CookStageKind::Import;
+    CookStageStatus status = CookStageStatus::Pending;
+    std::string note;
+};
+
+/// Directed edge: `from_job_id` must complete before `to_job_id` runs.
+struct CookJobDependencyEdge {
+    std::string from_job_id;
+    std::string to_job_id;
+};
+
+/// One manifest asset expanded into import → process → pack stages (B7.9 deepen stub).
+struct CookJob {
+    std::string id;
+    CookAssetKind kind = CookAssetKind::Mesh;
+    std::string source_path;
+    std::string output_path;
+    std::vector<std::string> dependency_ids;
+    std::vector<CookStageRecord> stages;
+    bool ok = false;
+    bool skipped = false;
+    std::string skip_note;
+};
+
+struct CookJobGraphExecuteResult {
+    bool ok = false;
+    std::vector<CookJob> jobs;
+    std::vector<CookJobDependencyEdge> edges;
+    std::vector<std::string> execution_order;
+    std::string failed_job_id;
+    CookStageKind failed_stage = CookStageKind::Import;
+    std::string failure_note;
+    std::string summary;
+};
+
+/// Offline cook job graph — stage pipeline + dependency ordering (B7.9 deepen stub).
+class CookJobGraph {
+public:
+    void clear();
+
+    void build_from_manifest(const CookManifest& manifest);
+
+    [[nodiscard]] const std::vector<CookJob>& jobs() const { return m_jobs; }
+    [[nodiscard]] const std::vector<CookJobDependencyEdge>& edges() const { return m_edges; }
+
+    CookJobGraphExecuteResult execute(AssetCooker& cooker);
+
+private:
+    void add_edge_(const std::string& from_job_id, const std::string& to_job_id);
+
+    [[nodiscard]] CookJob* find_job_(const std::string& job_id);
+    [[nodiscard]] const CookJob* find_job_(const std::string& job_id) const;
+    [[nodiscard]] std::string resolve_job_id_(const std::string& path) const;
+    [[nodiscard]] std::vector<std::string> topological_order_() const;
+
+    bool run_job_stages_(CookJob& job, AssetCooker& cooker, CookJobGraphExecuteResult& result);
+
+    std::vector<CookJob> m_jobs;
+    std::vector<CookJobDependencyEdge> m_edges;
+};
+
+const char* cookStageKindName(CookStageKind kind);
+const char* cookStageStatusName(CookStageStatus status);
+
+CookBatchResult cookBatchFromJobGraphResult(const CookJobGraphExecuteResult& graph_result);
+
+} // namespace fuse::project

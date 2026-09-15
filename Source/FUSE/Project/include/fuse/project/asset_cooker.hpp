@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/project/asset_graph.hpp>
+#include <fuse/project/cook_job_graph.hpp>
 #include <fuse/project/cook_manifest.hpp>
 #include <fuse/project/import_desc.hpp>
 
@@ -15,6 +16,7 @@ public:
 
     CookRecord cook_entry(const CookManifestEntry& entry);
     CookBatchResult cook_manifest(const CookManifest& manifest);
+    CookJobGraphExecuteResult cook_manifest_graph(const CookManifest& manifest);
     CookBatchResult cook_dirty(AssetGraph& graph, const std::string& project_dir);
 };
 

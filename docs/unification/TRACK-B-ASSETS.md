@@ -1,6 +1,6 @@
 # Track B — Asset Pipeline (B7.9)
 
-**Status:** B7.9 offline cook/import stubs landed  
+**Status:** B7.9 offline cook/import stubs + job graph deepen landed  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.9  
 **Source narrative:** [P7.md](../sources/P7.md) §7.9
 
@@ -14,6 +14,7 @@
 | Cook manifest | `Source/FUSE/Project/include/fuse/project/cook_manifest.hpp` | `CookManifest`, `CookManifestEntry`, load/parse helpers |
 | `AssetGraph` | `Source/FUSE/Project/include/fuse/project/asset_graph.hpp` | Dependency tracking + dirty scan stub |
 | `AssetCooker` | `Source/FUSE/Project/include/fuse/project/asset_cooker.hpp` | Mesh/texture/audio cook stubs |
+| `CookJobGraph` | `Source/FUSE/Project/include/fuse/project/cook_job_graph.hpp` | import→process→pack stage graph + dependency edges |
 | `ImportPipeline` | `Source/FUSE/Project/include/fuse/project/import_pipeline.hpp` | Project-scoped plan/execute facade |
 | `fuse_cook` CLI | `Tools/FUSE/fuse_cook.cpp` | Headless cook dry-run (mirrors `fuse_import` pattern) |
 
@@ -30,6 +31,10 @@
 ### Asset cooker
 
 `AssetCooker` validates paths and returns `CookRecord` results without writing engine binaries. Existing source files succeed with a stub note; missing sources report `SourceMissing` so CI can distinguish planning from real cooks.
+
+### Cook job graph (B7.9 deepen)
+
+Each manifest asset expands into a three-stage job: **import** (source validation) → **process** (kind-specific stub transform) → **pack** (`cook_entry`). `CookJobGraph::build_from_manifest` records explicit manifest dependencies plus implicit edges when one job's `output_path` feeds another's `source_path`. `execute` topologically orders jobs, runs stages sequentially, and **short-circuits** remaining stages on failure. Dependent jobs are skipped when an upstream job fails. `CookJobGraphExecuteResult` reports `failed_job_id`, `failed_stage`, and `failure_note`; `AssetCooker::cook_manifest` routes through the graph and maps stage summaries into `CookRecord::note`.
 
 ### Import pipeline
 
@@ -85,7 +90,7 @@ ctest --test-dir build --output-on-failure -R fuse_assets
 
 | Target | Validates |
 |--------|-----------|
-| `fuse_assets_b79` | Cook manifest parse, asset graph save/load, cooker stub, pipeline dry-run, project plan |
+| `fuse_assets_b79` | Cook manifest parse, asset graph save/load, cooker stub, job graph stage ordering + failure short-circuit, pipeline dry-run, project plan |
 
 Run:
 
@@ -100,6 +105,7 @@ ctest --test-dir build --output-on-failure -R fuse_assets_b79
 - [x] `AssetCooker` / `ImportPipeline` on FUSE project APIs
 - [x] Cook manifest types + minimal JSON loader
 - [x] `AssetGraph` dirty scan + persistence stub
+- [x] `CookJobGraph` import→process→pack stages + dependency edges + failure reporting
 - [x] `fuse_cook` CLI dry-run
 - [x] CTest target green in umbrella CI
 - [ ] Real mesh/texture/audio encoders (follow-up)
