@@ -2,6 +2,7 @@
 
 #include <fuse/script/script_callback.hpp>
 #include <fuse/script/script_result.hpp>
+#include <fuse/script/script_update.hpp>
 #include <fuse/script/script_vm.hpp>
 #include <fuse/types.hpp>
 
@@ -39,6 +40,12 @@ public:
     /// Convenience for per-frame `OnUpdate` handlers — sets `ctx.dt` and `ctx.entity`.
     void dispatch_update(f32 dt, ecs::EntityID entity = ecs::EntityID::null());
 
+    ScriptUpdateRegistry& update_registry() { return m_updateRegistry; }
+    const ScriptUpdateRegistry& update_registry() const { return m_updateRegistry; }
+
+    /// Tick per-script OnUpdate instances (registration order, error isolation).
+    void tick_update_scripts(f32 dt, ecs::EntityID entity = ecs::EntityID::null());
+
     ScriptLoadResult load_string(const char* source, const char* chunk_name = "chunk");
     ScriptLoadResult load_file(const char* path);
 
@@ -48,6 +55,7 @@ private:
     ScriptCallbackId m_nextCallbackId = 1;
     std::unordered_map<ScriptCallbackId, ScriptCallbackRegistration> m_callbacks;
     std::vector<ScriptCallbackId> m_callbackOrder;
+    ScriptUpdateRegistry m_updateRegistry;
 };
 
 } // namespace fuse::script

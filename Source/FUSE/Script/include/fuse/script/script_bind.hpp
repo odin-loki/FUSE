@@ -4,7 +4,9 @@
 #include <fuse/ecs/entity.hpp>
 #include <fuse/types.hpp>
 
+#include <functional>
 #include <string>
+#include <unordered_map>
 
 namespace fuse::script::bind {
 
@@ -55,5 +57,39 @@ struct ScriptValue {
 
 /// Deep equality for tagged values (kind + payload).
 [[nodiscard]] bool values_equal(const ScriptValue& lhs, const ScriptValue& rhs);
+
+/// Named property table for script instance data (Lua-ready stub until ECS `Script` lands).
+class PropertyStore {
+public:
+    void set_property(const std::string& name, const ScriptValue& value);
+    [[nodiscard]] bool has_property(const std::string& name) const;
+    [[nodiscard]] const ScriptValue* get_property(const std::string& name) const;
+    [[nodiscard]] ScriptValue get_property_or(const std::string& name,
+                                              const ScriptValue& default_value) const;
+    bool remove_property(const std::string& name);
+    void clear();
+    [[nodiscard]] usize count() const { return m_properties.size(); }
+
+private:
+    std::unordered_map<std::string, ScriptValue> m_properties;
+};
+
+using ScriptMethodFn = std::function<ScriptValue(const ScriptValue* args, usize argc)>;
+
+/// Optional named method table for script-facing API stubs.
+class MethodTable {
+public:
+    void register_method(const std::string& name, ScriptMethodFn fn);
+    bool unregister_method(const std::string& name);
+    [[nodiscard]] bool has_method(const std::string& name) const;
+    [[nodiscard]] ScriptValue invoke(const std::string& name,
+                                     const ScriptValue* args = nullptr,
+                                     usize argc = 0) const;
+    void clear();
+    [[nodiscard]] usize count() const { return m_methods.size(); }
+
+private:
+    std::unordered_map<std::string, ScriptMethodFn> m_methods;
+};
 
 } // namespace fuse::script::bind

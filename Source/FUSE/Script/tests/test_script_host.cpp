@@ -9,9 +9,11 @@ extern "C" {
 }
 #endif
 #include <fuse/script/script_host.hpp>
+#include <fuse/script/script_update.hpp>
 #include <fuse/types.hpp>
 
 #include <cmath>
+#include <stdexcept>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -301,6 +303,162 @@ void testBindHelpersEntityAndTransform() {
     expectTrue(restored.dirty, "transform dirty flag preserved");
 }
 
+void testScriptUpdateTickOrderAndAccumulation() {
+    fuse::script::ScriptHost host;
+    host.init();
+
+    fuse::ecs::EntityID entity{5u, 1u};
+    std::vector<std::string> tick_order;
+
+    const fuse::script::ScriptInstanceId first =
+        host.update_registry().register_script("alpha", [&](const fuse::script::ScriptCallbackContext& ctx) {
+            tick_order.push_back("alpha");
+            expectTrue(ctx.dt > 0.f, "alpha receives positive frame dt");
+            expectTrue(ctx.entity == entity, "alpha receives entity");
+        });
+    const fuse::script::ScriptInstanceId second =
+        host.update_registry().register_script("beta", [&](const fuse::script::ScriptCallbackContext& ctx) {
+            tick_order.push_back("beta");
+            expectTrue(ctx.dt > 0.f, "beta receives positive frame dt");
+        });
+
+    expectTrue(first != fuse::script::kInvalidScriptInstance, "first script registered");
+    expectTrue(second != fuse::script::kInvalidScriptInstance, "second script registered");
+    expectTrue(host.update_registry().script_count() == 2u, "two scripts tracked");
+
+    host.tick_update_scripts(0.016f, entity);
+    host.tick_update_scripts(0.033f, entity);
+
+    expectTrue(tick_order.size() == 4u, "each script ticked each frame");
+    expectTrue(tick_order[0] == "alpha" && tick_order[1] == "beta", "frame 1 registration order");
+    expectTrue(tick_order[2] == "alpha" && tick_order[3] == "beta", "frame 2 registration order");
+
+    expectNear(static_cast<fuse::f32>(host.update_registry().accumulated_dt(first)), 0.049f, 1e-5f,
+               "first script accumulates dt");
+    expectNear(static_cast<fuse::f32>(host.update_registry().accumulated_dt(second)), 0.049f, 1e-5f,
+               "second script accumulates dt");
+
+    host.shutdown();
+}
+
+void testScriptUpdateDisableSkips() {
+    fuse::script::ScriptUpdateRegistry registry;
+    int alpha_ticks = 0;
+    int beta_ticks = 0;
+
+    const fuse::script::ScriptInstanceId alpha =
+        registry.register_script("alpha", [&](const fuse::script::ScriptCallbackContext&) {
+            ++alpha_ticks;
+        });
+    const fuse::script::ScriptInstanceId beta =
+        registry.register_script("beta", [&](const fuse::script::ScriptCallbackContext&) {
+            ++beta_ticks;
+        });
+
+    registry.tick(0.01f);
+    expectTrue(alpha_ticks == 1 && beta_ticks == 1, "both scripts tick initially");
+
+    registry.set_enabled(beta, false);
+    expectTrue(!registry.is_enabled(beta), "beta disabled");
+    expectTrue(registry.is_enabled(alpha), "alpha still enabled");
+
+    registry.tick(0.02f);
+    expectTrue(alpha_ticks == 2, "enabled script keeps ticking");
+    expectTrue(beta_ticks == 1, "disabled script skipped");
+    expectNear(static_cast<fuse::f32>(registry.accumulated_dt(alpha)), 0.03f, 1e-5f,
+               "enabled script accumulates across ticks");
+    expectNear(static_cast<fuse::f32>(registry.accumulated_dt(beta)), 0.01f, 1e-5f,
+               "disabled script dt frozen at last tick");
+
+    registry.set_enabled(beta, true);
+    registry.tick(0.005f);
+    expectTrue(beta_ticks == 2, "re-enabled script resumes ticking");
+}
+
+void testScriptUpdateErrorIsolation() {
+    fuse::script::ScriptHost host;
+    host.init();
+
+    int good_ticks = 0;
+    host.update_registry().register_script(
+        "throws",
+        [&](const fuse::script::ScriptCallbackContext&) { throw std::runtime_error("boom"); });
+    host.update_registry().register_script(
+        "good", [&](const fuse::script::ScriptCallbackContext&) { ++good_ticks; });
+
+    host.tick_update_scripts(0.016f);
+    expectTrue(good_ticks == 1, "non-throwing script still ticks after peer error");
+    expectTrue(host.update_registry().error_count() == 1u, "one isolated error recorded");
+    expectTrue(std::string(host.update_registry().last_error()).find("throws") != std::string::npos,
+               "last_error names failing script");
+
+    host.update_registry().clear_errors();
+    expectTrue(host.update_registry().error_count() == 0u, "clear_errors resets count");
+
+    host.tick_update_scripts(0.016f);
+    expectTrue(good_ticks == 2, "good script ticks on second frame");
+    expectTrue(host.update_registry().error_count() == 1u, "throwing script isolated each frame");
+
+    host.shutdown();
+}
+
+void testBindPropertyStore() {
+    fuse::script::bind::PropertyStore store;
+    expectTrue(store.count() == 0u, "property store starts empty");
+
+    store.set_property("health", fuse::script::bind::push_number(100.0));
+    store.set_property("name", fuse::script::bind::push_string("player"));
+    expectTrue(store.count() == 2u, "two properties stored");
+    expectTrue(store.has_property("health"), "health property exists");
+
+    const fuse::script::bind::ScriptValue* health = store.get_property("health");
+    expectTrue(health != nullptr && fuse::script::bind::to_number(*health) == 100.0,
+               "get_property returns stored value");
+
+    const fuse::script::bind::ScriptValue missing =
+        store.get_property_or("missing", fuse::script::bind::push_number(42.0));
+    expectTrue(fuse::script::bind::to_number(missing) == 42.0, "get_property_or default");
+
+    store.set_property("health", fuse::script::bind::push_number(50.0));
+    expectTrue(fuse::script::bind::to_number(*store.get_property("health")) == 50.0,
+               "set_property overwrites");
+
+    expectTrue(store.remove_property("name"), "remove_property succeeds");
+    expectTrue(!store.has_property("name"), "removed property gone");
+    expectTrue(store.count() == 1u, "count after remove");
+
+    store.clear();
+    expectTrue(store.count() == 0u, "clear empties store");
+}
+
+void testBindMethodTable() {
+    fuse::script::bind::MethodTable methods;
+    expectTrue(methods.count() == 0u, "method table starts empty");
+
+    methods.register_method("add", [](const fuse::script::bind::ScriptValue* args, fuse::usize argc) {
+        if (argc < 2u) {
+            return fuse::script::bind::push_nil();
+        }
+        return fuse::script::bind::push_number(fuse::script::bind::to_number(args[0]) +
+                                               fuse::script::bind::to_number(args[1]));
+    });
+
+    expectTrue(methods.has_method("add"), "add method registered");
+    expectTrue(methods.count() == 1u, "one method registered");
+
+    const fuse::script::bind::ScriptValue args[] = {
+        fuse::script::bind::push_number(3.0),
+        fuse::script::bind::push_number(4.0),
+    };
+    const fuse::script::bind::ScriptValue result = methods.invoke("add", args, 2u);
+    expectTrue(fuse::script::bind::to_number(result) == 7.0, "invoke calls registered method");
+
+    expectTrue(fuse::script::bind::is_nil(methods.invoke("missing")), "missing method returns nil");
+
+    expectTrue(methods.unregister_method("add"), "unregister_method succeeds");
+    expectTrue(!methods.has_method("add"), "unregistered method gone");
+}
+
 #if defined(FUSE_SCRIPT_LUA) && FUSE_SCRIPT_LUA
 void testLuaLoadsHelloWorld() {
     fuse::script::ScriptHost host;
@@ -367,6 +525,11 @@ int main() {
     testBindHelpersPrimitives();
     testBindHelpersValuesEqual();
     testBindHelpersEntityAndTransform();
+    testScriptUpdateTickOrderAndAccumulation();
+    testScriptUpdateDisableSkips();
+    testScriptUpdateErrorIsolation();
+    testBindPropertyStore();
+    testBindMethodTable();
     run_script_console_tests();
 #if defined(FUSE_SCRIPT_LUA) && FUSE_SCRIPT_LUA
     testLuaLoadsHelloWorld();

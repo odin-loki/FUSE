@@ -1,6 +1,6 @@
 # Track B — Script Host (B7.3 deepen follow-up)
 
-**Status:** B7.3 deepen follow-up — `ScriptConsole` REPL stubs, history buffer, command dispatch landed  
+**Status:** B7.3 deepen follow-up — per-script OnUpdate registry, property/method bind stubs landed  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.3  
 **Threading:** Game-thread facade; hot-reload and ECS `Script` component deferred
 
@@ -10,10 +10,11 @@
 
 | Component | Location | Notes |
 |-----------|----------|-------|
-| `ScriptHost` | `Source/FUSE/Script/include/fuse/script/script_host.hpp` | Init/shutdown, callback registry, dispatch, `dispatch_update` |
+| `ScriptHost` | `Source/FUSE/Script/include/fuse/script/script_host.hpp` | Init/shutdown, callback registry, dispatch, `dispatch_update`, `tick_update_scripts` |
+| `ScriptUpdateRegistry` | `Source/FUSE/Script/include/fuse/script/script_update.hpp` | Per-script OnUpdate tick, dt accumulation, enable/disable, error isolation |
 | `ScriptVM` | `Source/FUSE/Script/include/fuse/script/script_vm.hpp` | Null backend or optional Lua compile/run |
 | `ScriptConsole` | `Source/FUSE/Script/include/fuse/script/script_console.hpp` | Headless REPL — built-in command stubs, history buffer, host dispatch |
-| Bind helpers | `Source/FUSE/Script/include/fuse/script/script_bind.hpp` | Tagged `ScriptValue` carriers + `values_equal` |
+| Bind helpers | `Source/FUSE/Script/include/fuse/script/script_bind.hpp` | Tagged `ScriptValue` carriers + `values_equal` + `PropertyStore` / `MethodTable` |
 | Lua stack bridge | `Source/FUSE/Script/include/fuse/script/script_bind_lua.hpp` | `push_to_stack` / `read_from_stack` when `FUSE_SCRIPT_LUA=1` |
 | Callbacks | `Source/FUSE/Script/include/fuse/script/script_callback.hpp` | `OnStart`, `OnUpdate`, `OnDestroy`, collision/trigger hooks |
 
@@ -42,6 +43,17 @@ Dispatch edge cases covered by tests:
 - Zero `dt` still invokes `OnUpdate` handlers.
 - `dispatch_update` on an uninitialized host is a no-op.
 - Event kind isolation — `OnStart` dispatch does not invoke `OnUpdate` handlers (and vice versa).
+
+### Per-script OnUpdate registry
+
+`ScriptUpdateRegistry` (owned by `ScriptHost::update_registry()`) manages named script instances with per-frame `tick(dt, entity)`:
+
+- Scripts tick in **registration order** (multi-script order tests).
+- Each instance tracks **accumulated `dt`** across frames.
+- **`set_enabled` / `is_enabled`** — disabled scripts are skipped on tick; accumulated dt freezes at last active frame.
+- **Error isolation** — a throwing script is caught, recorded via `error_count()` / `last_error()`, and remaining scripts continue.
+
+`ScriptHost::tick_update_scripts(dt, entity)` delegates to the registry when initialized.
 
 ### Script console / REPL
 
@@ -84,6 +96,10 @@ Custom commands register via `register_command` / `unregister_command` and parti
 
 `kind_name` returns a stable diagnostic label. `values_equal` compares kind + payload. Coercion helpers return defaults when the tag does not match.
 
+**Property store** — `PropertyStore` holds named `ScriptValue` properties (`set_property`, `get_property`, `get_property_or`, `remove_property`). Intended as a stub for per-entity script instance data until ECS `Script` lands.
+
+**Method table** — `MethodTable` registers optional named `ScriptMethodFn` handlers (`register_method`, `invoke`, `unregister_method`). Missing methods return `nil`.
+
 When `FUSE_SCRIPT_LUA=1`, `fuse::script::bind::lua::push_to_stack` / `read_from_stack` round-trip tagged values through the Lua stack (primitives as native Lua types; ECS types as structured tables).
 
 ---
@@ -117,7 +133,7 @@ ctest --test-dir build --output-on-failure -R fuse_script
 
 | Target | Validates |
 |--------|-----------|
-| `fuse_script_b73` | Host init (null or Lua backend), load stubs / parse errors, callback register/dispatch/unregister, multi-frame `OnUpdate` dt propagation, zero-dt and event-isolation edge cases, `dispatch_update`, primitive + ECS bind round-trips, `values_equal`, Lua hello-world and stack round-trip when linked, `ScriptConsole` built-in/custom command dispatch, history buffer eviction/navigation, host `load`/`run`/`backend` wiring |
+| `fuse_script_b73` | Host init (null or Lua backend), load stubs / parse errors, callback register/dispatch/unregister, multi-frame `OnUpdate` dt propagation, zero-dt and event-isolation edge cases, `dispatch_update`, per-script tick order / disable / error isolation, `PropertyStore` + `MethodTable` bind stubs, primitive + ECS bind round-trips, `values_equal`, Lua hello-world and stack round-trip when linked, `ScriptConsole` built-in/custom command dispatch, history buffer eviction/navigation, host `load`/`run`/`backend` wiring |
 
 Run:
 
@@ -133,6 +149,8 @@ ctest --test-dir build --output-on-failure -R fuse_script
 - [x] Register/unregister script callbacks
 - [x] `OnUpdate` dispatch passes per-frame `dt` to all handlers
 - [x] `dispatch_update` convenience + zero-dt / uninitialized / event-isolation edge cases
+- [x] Per-script `ScriptUpdateRegistry` — tick order, dt accumulation, enable/disable, error isolation
+- [x] `PropertyStore` + `MethodTable` bind stubs
 - [x] `load_string` / `load_file` with parse-error reporting when Lua linked
 - [x] Bind helpers for nil/bool/number/string + `EntityID` / `Transform`
 - [x] `values_equal` + Lua stack push/pop bridge when linked
