@@ -768,6 +768,129 @@ void testStreamingRequestQueueEnqueueFlushOrdering() {
     });
 }
 
+void testStreamingRequestQueueDequeueOrdering() {
+    fuse::world_partition::StreamingRequestQueue queue;
+
+    fuse::world_partition::StreamingRequest low{};
+    low.coord = {0, 0};
+    low.kind = fuse::world_partition::StreamingRequestKind::Load;
+    low.priority = 1.f;
+
+    fuse::world_partition::StreamingRequest high_unload{};
+    high_unload.coord = {1, 0};
+    high_unload.kind = fuse::world_partition::StreamingRequestKind::Unload;
+    high_unload.priority = 5.f;
+
+    fuse::world_partition::StreamingRequest mid{};
+    mid.coord = {2, 0};
+    mid.kind = fuse::world_partition::StreamingRequestKind::Load;
+    mid.priority = 3.f;
+
+    expectTrue(queue.enqueue(low), "enqueue low-priority load");
+    expectTrue(queue.enqueue(high_unload), "enqueue equal-priority unload");
+    expectTrue(queue.enqueue(mid), "enqueue mid-priority load");
+    expectEq(queue.pending_enqueue_count(), 3u, "three requests pending before dequeue");
+
+    fuse::world_partition::StreamingRequest first{};
+    expectTrue(queue.dequeue(first), "dequeue highest-priority pending request");
+    expectTrue(first.kind == fuse::world_partition::StreamingRequestKind::Unload && first.coord.x == 1,
+               "dequeue prefers highest-priority unload");
+
+    fuse::world_partition::StreamingRequest second{};
+    expectTrue(queue.dequeue(second), "dequeue second pending request");
+    expectTrue(second.coord.x == 2 && second.priority == 3.f, "dequeue follows priority order");
+
+    fuse::world_partition::StreamingRequest third{};
+    expectTrue(queue.dequeue(third), "dequeue final pending request");
+    expectTrue(third.coord.x == 0 && third.priority == 1.f, "dequeue drains lowest-priority last");
+    expectEq(queue.pending_enqueue_count(), 0u, "pending queue empty after dequeue drain");
+}
+
+void testStreamingRequestQueueDequeueEmptyGuard() {
+    fuse::world_partition::StreamingRequestQueue queue;
+    expectTrue(queue.empty(), "fresh queue is empty");
+
+    fuse::world_partition::StreamingRequest out{};
+    expectTrue(!queue.dequeue(out), "dequeue on empty queue returns false");
+    expectEq(queue.pending_enqueue_count(), 0u, "empty dequeue leaves pending count at zero");
+
+    std::vector<fuse::world_partition::StreamingRequest> ordered;
+    expectEq(queue.order_by_priority(ordered), 0u, "order_by_priority on empty queue returns zero");
+    expectTrue(ordered.empty(), "order_by_priority leaves output empty");
+}
+
+void testStreamingRequestQueueOrderByPriority() {
+    fuse::world_partition::StreamingRequestQueue queue;
+
+    fuse::world_partition::StreamingRequest first{};
+    first.coord = {0, 0};
+    first.kind = fuse::world_partition::StreamingRequestKind::Load;
+    first.priority = 2.f;
+
+    fuse::world_partition::StreamingRequest second{};
+    second.coord = {1, 0};
+    second.kind = fuse::world_partition::StreamingRequestKind::Unload;
+    second.priority = 2.f;
+
+    fuse::world_partition::StreamingRequest third{};
+    third.coord = {2, 0};
+    third.kind = fuse::world_partition::StreamingRequestKind::Load;
+    third.priority = 9.f;
+
+    expectTrue(queue.enqueue(first), "enqueue first pending request");
+    expectTrue(queue.enqueue(second), "enqueue equal-priority unload");
+    expectTrue(queue.enqueue(third), "enqueue highest-priority load");
+
+    std::vector<fuse::world_partition::StreamingRequest> ordered;
+    expectEq(queue.order_by_priority(ordered), 3u, "order_by_priority returns pending count");
+    expectEq(queue.pending_enqueue_count(), 3u, "order_by_priority does not remove pending requests");
+    expectTrue(ordered[0].coord.x == 2, "order_by_priority lists highest priority first");
+    expectTrue(ordered[1].kind == fuse::world_partition::StreamingRequestKind::Unload,
+               "order_by_priority prefers unload before load at equal priority");
+    expectTrue(ordered[2].coord.x == 0, "order_by_priority preserves FIFO for lowest-priority load");
+
+    std::vector<fuse::world_partition::StreamingRequest> helper_input;
+    std::vector<fuse::u64> sequences;
+    helper_input.push_back(first);
+    sequences.push_back(1u);
+    helper_input.push_back(second);
+    sequences.push_back(2u);
+    helper_input.push_back(third);
+    sequences.push_back(3u);
+
+    std::vector<fuse::world_partition::StreamingRequest> helper_output;
+    expectEq(fuse::world_partition::order_by_priority(helper_output, helper_input, sequences), 3u,
+             "free helper orders requests with enqueue sequence tie-break");
+    expectTrue(helper_output[0].coord.x == 2, "free helper lists highest priority first");
+    expectTrue(helper_output[1].kind == fuse::world_partition::StreamingRequestKind::Unload,
+               "free helper prefers unload before load at equal priority");
+    expectTrue(helper_output[2].coord.x == 0, "free helper preserves FIFO for equal-priority loads");
+
+    fuse::world_partition::StreamingRequest dequeued{};
+    expectTrue(queue.dequeue(dequeued), "dequeue after order_by_priority still succeeds");
+    expectTrue(dequeued.coord.x == 2, "dequeue still removes highest-priority pending request");
+}
+
+void testResidencySetContainsClear() {
+    fuse::world_partition::ResidencySet residency;
+    const fuse::world_partition::GridCoord a{1, 2};
+    const fuse::world_partition::GridCoord b{3, 4};
+
+    expectTrue(!residency.contains(a), "contains returns false before add");
+    expectTrue(residency.empty(), "fresh residency set is empty");
+
+    expectTrue(residency.add(a, 100.f), "add first resident cell");
+    expectTrue(residency.add(b, 500.f), "add second resident cell");
+    expectTrue(residency.contains(a) && residency.contains(b), "contains tracks both residents");
+    expectEq(residency.size(), 2u, "size reflects both residents");
+
+    residency.clear();
+    expectTrue(residency.empty(), "clear empties residency set");
+    expectTrue(!residency.contains(a) && !residency.contains(b), "contains false after clear");
+    expectEq(residency.size(), 0u, "size zero after clear");
+    expectTrue(residency.collect_eviction_candidates().empty(), "no eviction candidates after clear");
+}
+
 void testStreamingRequestQueueEnqueuePromoteDemote() {
     fuse::world_partition::StreamingRequestQueue queue;
 
@@ -1052,6 +1175,10 @@ int main() {
     testStreamingRequestQueueEmptyDrain();
     testStreamingRequestQueueFifoOrdering();
     testStreamingRequestQueueEnqueueFlushOrdering();
+    testStreamingRequestQueueDequeueOrdering();
+    testStreamingRequestQueueDequeueEmptyGuard();
+    testStreamingRequestQueueOrderByPriority();
+    testResidencySetContainsClear();
     testStreamingRequestQueueEnqueuePromoteDemote();
     testStreamingRequestQueueFlushBudget();
     testStreamingRequestQueueEqualPriorityKindOrdering();
