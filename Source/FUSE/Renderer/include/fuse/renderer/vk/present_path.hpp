@@ -38,6 +38,7 @@ struct PresentPathStatus {
     u32 pendingResizeHeight = 0;
     bool resizePending = false;
     u64 presentedFrames = 0;
+    u32 swapchainRecreateCount = 0;
     std::string message;
 };
 
@@ -54,6 +55,9 @@ public:
 
     /// Acquire swapchain image; headless returns UINT32_MAX but advances the state machine.
     u32 acquireImage();
+
+    /// Mark render record complete — transitions ImageAcquired → ReadyToPresent.
+    bool markReadyToPresent();
 
     /// Present the acquired image; headless succeeds without queue submit.
     bool presentImage();

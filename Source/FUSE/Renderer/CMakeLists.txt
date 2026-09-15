@@ -51,6 +51,7 @@ set(FUSE_RHI_PUBLIC_HEADERS
     include/fuse/renderer/vk/bootstrap.hpp
     include/fuse/renderer/vk/device.hpp
     include/fuse/renderer/vk/frame.hpp
+    include/fuse/renderer/vk/fence_wait.hpp
     include/fuse/renderer/vk/instance.hpp
     include/fuse/renderer/vk/present_path.hpp
     include/fuse/renderer/vk/graphics_pipeline.hpp
@@ -110,6 +111,7 @@ set(FUSE_RHI_SOURCES
     src/vk/bootstrap.cpp
     src/vk/device.cpp
     src/vk/frame.cpp
+    src/vk/fence_wait.cpp
     src/vk/instance.cpp
     src/vk/present_path.cpp
     src/vk/graphics_pipeline.cpp

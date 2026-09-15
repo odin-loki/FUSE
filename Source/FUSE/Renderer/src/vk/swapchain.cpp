@@ -279,6 +279,7 @@ bool VulkanSwapchain::rebuild(VulkanDevice& device, u32 width, u32 height) {
         m_desc.height = height;
         m_info.width = width;
         m_info.height = height;
+        ++m_info.recreateCount;
         m_info.message = "Headless swapchain recorded resize (no VkSwapchainKHR)";
         return true;
     }
@@ -292,6 +293,7 @@ bool VulkanSwapchain::rebuild(VulkanDevice& device, u32 width, u32 height) {
         return false;
     }
     m_info.ready = true;
+    ++m_info.recreateCount;
     m_info.message = "VkSwapchainKHR rebuilt";
     return true;
 #else

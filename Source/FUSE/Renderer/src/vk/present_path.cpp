@@ -1,6 +1,7 @@
 #include <fuse/renderer/vk/present_path.hpp>
 
 #include <fuse/renderer/vk/bootstrap.hpp>
+#include <fuse/renderer/vk/fence_wait.hpp>
 
 namespace fuse::renderer {
 
@@ -33,6 +34,20 @@ bool PresentPath::processPendingResize() {
         return true;
     }
 
+    FrameManager* frameManager = m_bootstrap.frameManager();
+    if (frameManager != nullptr && frameManager->isReady()) {
+        const bool waitAllSlots = !m_status.headless;
+        if (waitAllSlots) {
+            if (!waitAllInFlightFences(*frameManager)) {
+                m_status.message = "In-flight fence wait failed before swapchain recreate";
+                return false;
+            }
+        } else if (!waitInFlightFenceForSlot(*frameManager, frameManager->currentIndex())) {
+            m_status.message = "In-flight fence wait failed before swapchain recreate";
+            return false;
+        }
+    }
+
     VulkanDevice* device = m_bootstrap.device();
     VulkanSwapchain* swapchain = m_bootstrap.swapchain();
     if (device == nullptr || !device->isValid() || swapchain == nullptr) {
@@ -40,6 +55,7 @@ bool PresentPath::processPendingResize() {
         m_status.height = m_status.pendingResizeHeight;
         m_status.resizePending = false;
         m_status.state = PresentPathState::Idle;
+        ++m_status.swapchainRecreateCount;
         m_status.message = "Headless resize recorded (no VkSwapchainKHR)";
         return true;
     }
@@ -54,6 +70,7 @@ bool PresentPath::processPendingResize() {
     m_status.headless = swapchain->isHeadless();
     m_status.resizePending = false;
     m_status.state = PresentPathState::Idle;
+    ++m_status.swapchainRecreateCount;
     m_status.message = swapchain->info().message;
     return true;
 }
@@ -71,7 +88,7 @@ bool PresentPath::waitInFlightFence() {
 
     FrameManager* frameManager = m_bootstrap.frameManager();
     if (frameManager != nullptr && frameManager->isReady()) {
-        if (!frameManager->waitInFlightFence(frameManager->currentIndex())) {
+        if (!waitInFlightFenceForSlot(*frameManager, frameManager->currentIndex())) {
             m_status.message = "In-flight fence wait failed";
             return false;
         }
@@ -109,6 +126,17 @@ u32 PresentPath::acquireImage() {
         m_status.message = "Swapchain image acquired";
     }
     return imageIndex;
+}
+
+bool PresentPath::markReadyToPresent() {
+    if (m_status.state != PresentPathState::ImageAcquired) {
+        m_status.message = "markReadyToPresent requires acquired image";
+        return false;
+    }
+
+    m_status.state = PresentPathState::ReadyToPresent;
+    m_status.message = "Render record complete — ready to present";
+    return true;
 }
 
 bool PresentPath::presentImage() {
@@ -159,7 +187,7 @@ bool PresentPath::beginFrame(u32 frameIndex) {
     }
 
     acquireImage();
-    m_status.state = PresentPathState::ImageAcquired;
+    markReadyToPresent();
     return true;
 }
 
