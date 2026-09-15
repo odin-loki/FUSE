@@ -54,6 +54,32 @@ void run_transport_tests() {
 
     expectTrue(fuse::net::active_transport_backend() == fuse::net::TransportBackend::Loopback,
                "default backend is loopback");
+
+    auto loopback = fuse::net::create_transport(fuse::net::TransportBackend::Loopback);
+    expectTrue(loopback != nullptr, "loopback factory succeeds");
+    expectTrue(fuse::net::transport_backend_available(fuse::net::TransportBackend::Loopback),
+               "loopback backend available");
+    expectTrue(!fuse::net::transport_backend_available(fuse::net::TransportBackend::ENet),
+               "ENet backend unavailable in stub build");
+
+    const fuse::net::byte seq_payload_a = 1;
+    const fuse::net::byte seq_payload_b = 2;
+    expectTrue(host.send(1, &seq_payload_a, 1, fuse::net::PacketChannel::UnreliableSeq),
+               "host sends first unreliable-seq packet");
+    expectTrue(host.send(1, &seq_payload_b, 1, fuse::net::PacketChannel::UnreliableSeq),
+               "host sends second unreliable-seq packet");
+
+    fuse::u32 delivered = 0;
+    client.poll([&](const fuse::net::Packet& packet) {
+        ++delivered;
+        expectTrue(packet.sequence >= 1u, "unreliable-seq packet has sequence");
+        expectTrue(packet.data[0] == 2, "newest unreliable-seq payload delivered");
+    });
+    expectTrue(delivered == 1u, "stale unreliable-seq packet dropped");
+
+    const fuse::net::TransportStats host_stats = host.stats();
+    expectTrue(host_stats.packets_sent >= 3u, "transport stats count sends");
+    expectTrue(host_stats.bytes_sent > 0u, "transport stats count bytes");
 }
 
 } // namespace fuse::net::tests

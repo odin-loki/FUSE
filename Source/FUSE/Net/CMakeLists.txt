@@ -3,7 +3,10 @@
 set(FUSE_NET_PUBLIC_HEADERS
     include/fuse/net/transport.hpp
     include/fuse/net/serializer.hpp
+    include/fuse/net/game_state.hpp
     include/fuse/net/rollback.hpp
+    include/fuse/net/rollback_buffer.hpp
+    include/fuse/net/snapshot_delta.hpp
     include/fuse/net/state_sync.hpp
 )
 
@@ -11,6 +14,8 @@ set(FUSE_NET_SOURCES
     src/transport.cpp
     src/serializer.cpp
     src/rollback.cpp
+    src/rollback_buffer.cpp
+    src/snapshot_delta.cpp
     src/state_sync.cpp
 )
 
