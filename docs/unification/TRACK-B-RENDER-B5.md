@@ -97,30 +97,32 @@ Pass schedule (19 total — 12 Vulkan, 7 CUDA):
 
 ## B5.4 — Clustered Deferred Shading
 
-**Status:** CPU cluster grid SoA + `ClusteredLightCuller` stub landed; CUDA kernels deferred.
+**Status:** CPU cluster grid SoA + `ClusteredLightCuller` stub landed; light-grid rebuild + slice layout helpers deepened (B5 follow-up); CUDA kernels deferred.
 
 | Component | Location | Notes |
 |-----------|----------|-------|
 | `ClusterDesc` / `ClusterAABB` / `ClusterGridSoA` | `lighting/clustered.hpp` | 3D screen cluster grid types |
-| `ClusteredLightCuller` | `lighting/clustered_light_culler.cpp` | CPU stub — builds cluster AABBs, sphere-culls point/spot lights |
+| `ClusterSliceLayout` | `lighting/clustered.hpp` | Exponential depth-slice near/far helpers (CPU tests, no GPU) |
+| `ClusterLightGridLayout` | `lighting/clustered.hpp` | Flat light-list packing + contiguous offset validation |
+| `ClusteredLightCuller` | `lighting/clustered_light_culler.cpp` | CPU stub — builds cluster AABBs, sphere-culls point/spot lights, `rebuildLightGrid()` packs offsets |
 | `DeferredFramePipeline` | `deferred/frame_pipeline.cpp` | `ClusteredLightCull` pass invokes culler when wired |
 
 CUDA `build_cluster_aabbs_kernel` / `cull_lights_kernel` / `deferred_shade_kernel` remain future work.
 
 | Test | Validates |
 |------|-----------|
-| `fuse_clustered_light_culler` | Cluster count/index, culler init, CPU cull assignment, deferred pipeline wiring |
+| `fuse_clustered_light_culler` | Cluster count/index, slice depth distribution, light-grid rebuild layout, culler init, CPU cull assignment, contiguous offsets, deferred pipeline wiring |
 | `fuse_deferred_pipeline` | Full B5.1 schedule (includes `clustered_light_cull` pass name) |
 
 ---
 
 ## B5.5 — Shadow System
 
-**Status:** CSM layout + shadow atlas allocation + `ShadowPass` render-graph node landed.
+**Status:** CSM layout + shadow atlas allocation + `ShadowPass` render-graph node landed; cascade split helpers deepened (B5 follow-up).
 
 | Component | Location | Notes |
 |-----------|----------|-------|
-| `CascadedShadowMapLayout` | `shadow/csm.hpp` | 4 cascades, split distances, R32F depth |
+| `CascadedShadowMapLayout` | `shadow/csm.hpp` | 4 cascades, near/far split distances, batch far-Z, split validation, R32F depth |
 | `ShadowAtlas` | `shadow/shadow_atlas.hpp` | Single atlas backing all cascades |
 | `DirectionalShadow` | `shadow/directional_shadow.hpp` | Cascade matrix computation, atlas allocation |
 | `ShadowPass` | `shadow/shadow_pass.hpp` | Records `shadow_maps` into render graph |
@@ -129,7 +131,7 @@ SDF soft shadows and deferred shading sampling deferred to B2.6 interop + B5.4 C
 
 | Test | Validates |
 |------|-----------|
-| `fuse_shadow_system` | Cascade splits, atlas layout, allocation, shadow pass graph |
+| `fuse_shadow_system` | Cascade near/far splits, split validation, batch far-Z, atlas layout, allocation, shadow pass graph |
 
 ---
 
@@ -263,6 +265,7 @@ DOF, motion blur, film grain, and GPU shader chain remain future work.
 | Item | Status | Notes |
 |------|--------|-------|
 | Cluster culler assigns zero lights to empty clusters | **Done** | `fuse_clustered_light_culler` |
+| Light grid rebuild produces contiguous offsets | **Done (stub)** | `ClusterLightGridLayout::rebuildLightGrid` + `validateContiguousOffsets` |
 | 1000 point lights — no light leaking (visual) | **Deferred** | CPU cull stub only |
 | Clustered cull + deferred shade < 3 ms @ 1080p (CUDA events) | **Deferred** | No CUDA shade kernel |
 | CSM correct shadow across 4 cascades (visual) | **Deferred** | Allocation + matrix stubs only |
@@ -324,8 +327,8 @@ DOF, motion blur, film grain, and GPU shader chain remain future work.
 | `fuse_gbuffer` | B5.2 — formats, octahedral encoding, allocation |
 | `fuse_material_system` | B5.3 — pack/unpack, SSBO table |
 | `fuse_deferred_pipeline` | B5.1 — 16-pass schedule, graph build, execute stub |
-| `fuse_clustered_light_culler` | B5.4 — cluster grid, light cull, pipeline wiring |
-| `fuse_shadow_system` | B5.5 — CSM layout, atlas, shadow pass graph |
+| `fuse_clustered_light_culler` | B5.4 — cluster grid, slice depth, light-grid rebuild, light cull, pipeline wiring |
+| `fuse_shadow_system` | B5.5 — CSM near/far splits, validation, atlas, shadow pass graph |
 | `fuse_ddgi` | B5.6 — probe grid, update/sample, pipeline slot |
 | `fuse_screen_space_effects_stub` | B5.7 — SSAO/SSR/SSGI stubs (`fuse_compute`) |
 | `fuse_atmosphere_sky` | B5.8 — scatter, LUT, sky pass graph |
@@ -355,13 +358,13 @@ ctest --test-dir build --output-on-failure -R 'fuse_screen_space_effects'
 - [x] **B5.1** `DeferredFramePipeline` 16-pass schedule on FUSE APIs
 - [x] **B5.2** G-buffer six-attachment layout + octahedral normal encoding
 - [x] **B5.3** `MaterialSystem` bindless SSBO scaffold
-- [x] **B5.4** `ClusteredLightCuller` CPU stub + deferred pipeline wiring
+- [x] **B5.4** `ClusteredLightCuller` CPU stub + light-grid rebuild helpers + deferred pipeline wiring
 - [x] CTest targets green under umbrella CI (`FUSE_BUILD_VULKAN=ON`)
 - [ ] ASan/UBSan on renderer subsystem tests (umbrella ASan covers runtime smoke; renderer-specific ASan optional follow-up)
 
 ### B5.5–B5.9 (shadows, GI, screen-space, atmosphere, TAA)
 
-- [x] **B5.5** `DirectionalShadow` + `ShadowPass` scaffold
+- [x] **B5.5** `DirectionalShadow` + `ShadowPass` scaffold + cascade split helpers
 - [x] **B5.6** `DDGI` probe grid + update/sample stubs
 - [x] **B5.7** SSAO/SSR/SSGI API + job wiring in `fuse_compute`
 - [x] **B5.8** `SkyPass` + Rayleigh/Mie CPU reference + LUT
@@ -387,8 +390,8 @@ ctest --test-dir build --output-on-failure -R 'fuse_screen_space_effects'
 ## Next
 
 - [ ] Wire `DeferredRenderer` into `RhiContext::submitFrame` (replace hybrid placeholder incrementally)
-- [ ] B5.4 follow-up: CUDA cluster AABB build + deferred shade kernels
-- [ ] B5.5 follow-up: SDF soft shadows in `fuse_compute`
+- [ ] B5.4 follow-up: CUDA cluster AABB build + deferred shade kernels (CPU light-grid rebuild stub landed)
+- [ ] B5.5 follow-up: SDF soft shadows in `fuse_compute` (CSM split helpers landed)
 - [ ] B5.7 follow-up: G-buffer `cudaInterop` surface import via B2.6
 - [ ] B5.10 follow-up: DOF / motion blur / film grain GPU shader chain
 - [ ] B5.11 follow-up: Full volumetric fog CUDA kernel + lens flare GPU composite

@@ -28,6 +28,19 @@ const char* CascadedShadowMapLayout::debugName(u32 cascadeIndex) {
     }
 }
 
+f32 CascadedShadowMapLayout::computeCascadeNearZ(u32 cascadeIndex,
+                                                 const CascadedShadowMapDesc& desc,
+                                                 const ShadowCameraParams& camera) {
+    if (cascadeIndex == 0u) {
+        return camera.nearPlane;
+    }
+    if (cascadeIndex >= kCascadeCount) {
+        return camera.farPlane;
+    }
+
+    return computeCascadeFarZ(cascadeIndex - 1u, desc, camera);
+}
+
 f32 CascadedShadowMapLayout::computeCascadeFarZ(u32 cascadeIndex,
                                                 const CascadedShadowMapDesc& desc,
                                                 const ShadowCameraParams& camera) {
@@ -37,6 +50,27 @@ f32 CascadedShadowMapLayout::computeCascadeFarZ(u32 cascadeIndex,
 
     const f32 splitFraction = desc.cascadeSplits[cascadeIndex];
     return camera.nearPlane + splitFraction * (camera.farPlane - camera.nearPlane);
+}
+
+void CascadedShadowMapLayout::computeCascadeFarZs(const CascadedShadowMapDesc& desc,
+                                                const ShadowCameraParams& camera,
+                                                f32 outFarZ[kCascadeCount]) {
+    for (u32 cascade = 0; cascade < kCascadeCount; ++cascade) {
+        outFarZ[cascade] = computeCascadeFarZ(cascade, desc, camera);
+    }
+}
+
+bool CascadedShadowMapLayout::validateCascadeSplits(const CascadedShadowMapDesc& desc) {
+    f32 previousSplit = -1.f;
+    for (u32 cascade = 0; cascade < kCascadeCount; ++cascade) {
+        const f32 split = desc.cascadeSplits[cascade];
+        if (split < previousSplit) {
+            return false;
+        }
+        previousSplit = split;
+    }
+
+    return desc.cascadeSplits[kCascadeCount - 1u] == 1.0f;
 }
 
 } // namespace fuse::renderer

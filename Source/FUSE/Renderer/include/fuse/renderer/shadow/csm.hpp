@@ -49,7 +49,12 @@ struct CascadedShadowMapLayout {
     static u32 cascadeCount() { return kCascadeCount; }
     static GpuFormat depthFormat() { return GpuFormat::R32Sfloat; }
     static const char* debugName(u32 cascadeIndex);
+    static f32 computeCascadeNearZ(u32 cascadeIndex, const CascadedShadowMapDesc& desc, const ShadowCameraParams& camera);
     static f32 computeCascadeFarZ(u32 cascadeIndex, const CascadedShadowMapDesc& desc, const ShadowCameraParams& camera);
+    static void computeCascadeFarZs(const CascadedShadowMapDesc& desc,
+                                    const ShadowCameraParams& camera,
+                                    f32 outFarZ[kCascadeCount]);
+    static bool validateCascadeSplits(const CascadedShadowMapDesc& desc);
 };
 
 } // namespace fuse::renderer

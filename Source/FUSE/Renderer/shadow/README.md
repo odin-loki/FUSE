@@ -8,7 +8,7 @@ CPU-side cascaded shadow map scaffolding for Track B5.5. Implements the P5 §5.5
 
 | Header | Role |
 |--------|------|
-| `shadow/csm.hpp` | `CascadedShadowMapDesc`, `CascadedShadowMapData`, cascade split helpers |
+| `shadow/csm.hpp` | `CascadedShadowMapDesc`, `CascadedShadowMapData`, cascade near/far split helpers, split validation |
 | `shadow/shadow_atlas.hpp` | `ShadowAtlas` — packs cascades into a single depth atlas |
 | `shadow/directional_shadow.hpp` | `DirectionalShadow` — owns atlas + per-cascade depth targets |
 | `shadow/shadow_pass.hpp` | `ShadowPass` — inserts the `shadow_maps` render-graph pass |

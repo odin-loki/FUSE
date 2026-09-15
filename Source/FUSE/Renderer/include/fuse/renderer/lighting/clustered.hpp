@@ -38,6 +38,14 @@ struct ClusterGridSoA {
     std::vector<u32> lightList;
 };
 
+/// CPU light-grid packing helpers — mirrors the GPU offset rebuild pass.
+struct ClusterLightGridLayout {
+    static void rebuildLightGrid(ClusterGridSoA& grid,
+                                 u32 clusterCount,
+                                 const std::vector<std::vector<u32>>& perClusterLights);
+    static bool validateContiguousOffsets(const ClusterGridSoA& grid, u32 clusterCount);
+};
+
 /// GPU buffer handles for cluster build + light cull kernels (CUDA deferred).
 struct ClusterBuffers {
     BufferHandle clusterAabbs{};
@@ -54,6 +62,12 @@ struct ClusterCameraDesc {
     f32 farPlane = 1000.f;
     u32 screenWidth = 1920;
     u32 screenHeight = 1080;
+};
+
+/// Exponential depth-slice bounds — shared by cluster build and CPU tests.
+struct ClusterSliceLayout {
+    static f32 computeSliceNearZ(u32 sliceZ, const ClusterDesc& desc, const ClusterCameraDesc& camera);
+    static f32 computeSliceFarZ(u32 sliceZ, const ClusterDesc& desc, const ClusterCameraDesc& camera);
 };
 
 /// Renderer-side point light input (decoupled from ECS).
@@ -105,6 +119,9 @@ public:
                     const std::vector<SpotLightInput>& spotLights,
                     const ClusterCameraDesc& camera);
 
+    /// Packs per-cluster light indices into the flat light list + grid offsets (CPU rebuild stub).
+    void rebuildLightGrid();
+
     /// Records logical cull pass work for the render graph execute stub.
     void recordCullPass(class CommandBufferRecorder& recorder,
                         const ClusterCameraDesc& camera,
@@ -124,6 +141,7 @@ private:
     ClusterBuffers m_buffers{};
     ClusterGridSoA m_gridSoA{};
     ClusteredLightCullerStats m_stats{};
+    std::vector<std::vector<u32>> m_pendingClusterLights{};
     ResourceManager* m_resources = nullptr;
 };
 
