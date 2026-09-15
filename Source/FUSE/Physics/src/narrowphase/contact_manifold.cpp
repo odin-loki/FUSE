@@ -38,8 +38,34 @@ void ContactManifold::buildFrictionBasis() {
     frictionBasis = buildTangentBasis(contactNormal);
 }
 
+bool ContactManifold::hasValidNormal(f32 epsilon) const {
+    return contactNormal.length() > epsilon;
+}
+
 bool ContactManifold::hasFrictionBasis() const {
+    if (!hasValidNormal()) {
+        return false;
+    }
     return isOrthonormalTangentBasis(contactNormal, frictionBasis);
+}
+
+void ContactManifold::pruneNonPenetratingPoints(f32 epsilon) {
+    u32 writeIndex = 0u;
+    for (u32 readIndex = 0u; readIndex < pointCount; ++readIndex) {
+        if (points[readIndex].penetration < -epsilon) {
+            continue;
+        }
+        if (writeIndex != readIndex) {
+            points[writeIndex] = points[readIndex];
+        }
+        ++writeIndex;
+    }
+
+    for (u32 i = writeIndex; i < pointCount; ++i) {
+        points[i] = {};
+    }
+    pointCount = writeIndex;
+    syncLegacyFields();
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

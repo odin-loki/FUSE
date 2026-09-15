@@ -44,9 +44,13 @@ struct ContactManifold {
     void buildFrictionBasis();
 
     bool empty() const { return pointCount == 0u; }
+    bool hasValidNormal(f32 epsilon = 1e-6f) const;
     bool hasFrictionBasis() const;
     const ContactPoint& pointAt(u32 index) const;
     f32 maxPenetration() const;
+
+    /// Drop separated contact points with penetration below `-epsilon` (B4.3 deepen).
+    void pruneNonPenetratingPoints(f32 epsilon = 1e-6f);
 };
 
 inline ContactManifold invalidContactManifold() {

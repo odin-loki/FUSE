@@ -7,6 +7,12 @@
 
 namespace fuse::physics::narrowphase {
 
+/// Returns true when narrowphase should skip this pair (self, OOB bodies, or missing shapes).
+bool is_invalid_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
 /// Run shape dispatch for one broadphase candidate pair (B4.3 deepen).
 /// Returns an invalid manifold for empty/self pairs or missing shapes.
 ContactManifold detect_contacts_pair(
