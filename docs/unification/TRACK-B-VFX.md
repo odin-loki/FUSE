@@ -1,6 +1,6 @@
 # Track B — VFX System (B7.7 deepen)
 
-**Status:** B7.7 deepen — SoA free-list emission, jobified CPU simulation, expanded burst/rate/parallel tests  
+**Status:** B7.7 deepen — SoA free-list emission, jobified CPU simulation, GPU buffer/dispatch stubs  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.7  
 **Source narrative:** [P7.md](../sources/P7.md) §7.7
 
@@ -11,11 +11,13 @@
 | Component | Location | Notes |
 |-----------|----------|-------|
 | `ParticleSoA` | `Source/FUSE/VFX/include/fuse/vfx/particle_emitter.hpp` | SoA columns + `free_slots` dead-index pool |
+| `ParticleGpuMirror` | `Source/FUSE/VFX/include/fuse/vfx/particle_gpu.hpp` | CPU mirror + packed SSBO layout for stub tests |
+| `ParticleGpuDispatch` | `Source/FUSE/VFX/include/fuse/vfx/particle_gpu.hpp` | Simulate (256) / emit (64) CUDA grid counts |
 | `ParticleEmitter` | `Source/FUSE/VFX/src/particle_emitter.cpp` | Burst/rate emit, gravity/drag/attribute integration |
 | `ParticleSystem` | `Source/FUSE/VFX/include/fuse/vfx/particle_system.hpp` | Emitter/effect registry, frame `update` |
 | `EffectInstance` | `Source/FUSE/VFX/include/fuse/vfx/effect_instance.hpp` | Timed effect playback and auto-destroy |
 
-**Not in scope (deferred):** GPU/CUDA particle kernels, SDF collision, billboard rendering, wind fields, material binding.
+**Not in scope (deferred):** CUDA particle kernels, SDF collision, billboard rendering, wind fields, material binding.
 
 ---
 
@@ -50,6 +52,10 @@ Edge cases covered in tests:
 
 `ParticleSystem::spawn_effect` creates a backing emitter, bursts one particle, and registers an `EffectInstance` with optional duration. Finished effects destroy their emitters during `update`.
 
+### GPU buffer layout (stub)
+
+`ParticleGpuBufferLayout` packs the eight SoA columns (`positions` through `alive_flags`) into a single aligned device SSBO. `ParticleGpuDispatch::forSimulate` and `forEmit` compute block counts for 256-wide simulate and 64-wide emit kernels. `ParticleGpuMirror` copies live CPU columns, packs/unpacks the device layout for unit tests, and builds a `ParticleSoAGPU` pointer bundle — production simulation stays on the CPU reference path until CUDA kernels land.
+
 ---
 
 ## Build
@@ -77,6 +83,9 @@ ctest --test-dir build -R fuse_vfx_runtime --output-on-failure
 | Free list | Partial/mixed expiry recycle, multi-burst slot reuse, `free_slot_count()` after burst and simulate |
 | Integration | Gravity, drag, size/color/alpha interpolation, disabled emitter |
 | Parallel parity | 1/2/4-worker vs serial; grain boundary (65 slots); single particle; all-dead |
+| GPU layout | Column offsets, packed byte size, alignment validation |
+| Dispatch | Simulate/emit block counts, zero-emit skip |
+| CPU mirror | Pack/unpack round trip, `ParticleSoAGPU` pointer bundle |
 | System | Spawn/update cleanup, `spawn_effect` burst_count, emitter handle lifecycle |
 
 ---

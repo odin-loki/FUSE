@@ -3,12 +3,14 @@
 set(FUSE_VFX_PUBLIC_HEADERS
     include/fuse/vfx/vfx_desc.hpp
     include/fuse/vfx/particle_emitter.hpp
+    include/fuse/vfx/particle_gpu.hpp
     include/fuse/vfx/effect_instance.hpp
     include/fuse/vfx/particle_system.hpp
 )
 
 set(FUSE_VFX_SOURCES
     src/particle_emitter.cpp
+    src/particle_gpu.cpp
     src/effect_instance.cpp
     src/particle_system.cpp
 )
