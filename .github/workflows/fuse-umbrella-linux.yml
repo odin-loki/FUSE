@@ -39,6 +39,7 @@ jobs:
             -DFUSE_BUILD_EDITOR_API=ON \
             -DFUSE_BUILD_EDITOR=OFF \
             -DFUSE_BUILD_VULKAN=ON \
+            -DFUSE_BUILD_CUDA=ON \
             -DFUSE_BUILD_T3D=OFF \
             -DFUSE_BUILD_T2D=OFF
 
