@@ -17,7 +17,11 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/log/logger.hpp
     include/fuse/assert.hpp
     include/fuse/profiler/profiler.hpp
+    include/fuse/alloc/alloc_stats.hpp
+    include/fuse/alloc/allocator.hpp
     include/fuse/alloc/frame_allocator.hpp
+    include/fuse/alloc/pool_allocator.hpp
+    include/fuse/alloc/stack_allocator.hpp
     include/fuse/io/asset.hpp
     include/fuse/io/vfs.hpp
     include/fuse/jobs/worker_count.hpp
@@ -52,7 +56,11 @@ set(FUSE_CORE_SOURCES
     src/log/logger.cpp
     src/assert/fatal_handler.cpp
     src/profiler/profiler.cpp
+    src/alloc/alloc_stats.cpp
+    src/alloc/allocator_detail.cpp
     src/alloc/frame_allocator.cpp
+    src/alloc/pool_allocator.cpp
+    src/alloc/stack_allocator.cpp
     src/io/vfs.cpp
     src/jobs/worker_count.cpp
     src/jobs/job_scheduler.cpp
