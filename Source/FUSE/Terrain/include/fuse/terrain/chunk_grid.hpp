@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/terrain/lod.hpp>
+#include <fuse/terrain/lod_residency_budget.hpp>
 #include <fuse/terrain/lod_residency_queue.hpp>
 #include <fuse/terrain/lod_residency_set.hpp>
 #include <fuse/terrain/terrain_desc.hpp>
@@ -37,6 +38,8 @@ public:
     [[nodiscard]] u32 in_flight_request_count() const;
     [[nodiscard]] u32 pending_completion_count() const;
     [[nodiscard]] const LodResidencySet& residency_set() const { return m_residency_set; }
+    [[nodiscard]] const LodResidencyBudgetCounters& budget_counters() const { return m_budget_counters; }
+    [[nodiscard]] u32 rejected_load_count() const { return m_budget_counters.rejected_loads; }
 
     /// Apply JobScheduler completions queued since the last drain (also called from update_lod).
     u32 drain_completed_requests();
@@ -56,6 +59,7 @@ private:
     void process_queues_(vec3 camera_pos);
     void queue_load_(u32 chunk_index, f32 priority);
     void queue_unload_(u32 chunk_index);
+    void evict_for_resident_cap_(f32 incoming_priority);
     void execute_load_(u32 chunk_index, TerrainChunk& chunk, f32 focus_distance);
     void execute_unload_(u32 chunk_index, TerrainChunk& chunk);
     void apply_completed_request_(const CompletedLodResidencyRequest& completed);
@@ -71,6 +75,7 @@ private:
     std::vector<u32> m_unload_queue;
     LodResidencyQueue m_async_queue{};
     LodResidencySet m_residency_set{};
+    LodResidencyBudgetCounters m_budget_counters{};
     std::vector<CompletedLodResidencyRequest> m_completed_batch_;
     u32 m_chunks_per_axis = 0;
     bool m_initialized = false;

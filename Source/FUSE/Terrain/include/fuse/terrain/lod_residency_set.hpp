@@ -143,4 +143,14 @@ inline u32 LodResidencySet::find_index_(u32 chunk_index) const {
     return it != m_index.end() ? it->second : kInvalidChunkIndex;
 }
 
+/// Stub: register a resident chunk; rejects invalid focus distance.
+[[nodiscard]] inline bool try_add_resident(LodResidencySet& set, u32 chunk_index, f32 focus_distance) {
+    return set.add(chunk_index, focus_distance);
+}
+
+/// Stub: evict a chunk from the resident set.
+[[nodiscard]] inline bool try_remove_resident(LodResidencySet& set, u32 chunk_index) {
+    return set.remove(chunk_index);
+}
+
 } // namespace fuse::terrain
