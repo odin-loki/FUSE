@@ -78,4 +78,9 @@ struct quat {
     f32 w = 1.f;
 };
 
+struct aabb {
+    vec3 min{};
+    vec3 max{};
+};
+
 } // namespace fuse::physics
