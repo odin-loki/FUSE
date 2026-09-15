@@ -47,6 +47,9 @@ struct ParticleGpuBufferLayout {
     static usize columnDeviceOffset(ParticleGpuColumn column, u32 capacity);
     static usize paddingAfterColumn(ParticleGpuColumn column, u32 capacity);
     static usize packedDeviceBytes(u32 capacity);
+    static usize dataColumnBytes(u32 capacity);
+    static usize packingOverheadBytes(u32 capacity);
+    static u64 columnDeviceAddress(ParticleGpuColumn column, u64 base, u32 capacity);
     static bool validatePackedLayout(u32 capacity);
     static bool isColumnOffsetAligned(ParticleGpuColumn column, u32 capacity);
     static const char* columnName(ParticleGpuColumn column);
@@ -68,6 +71,9 @@ struct ParticleGpuDispatch {
     [[nodiscard]] bool emitCovers(u32 emit_count) const {
         return emit_count == 0u || totalEmitThreads() >= emit_count;
     }
+    [[nodiscard]] bool isEmpty() const { return simBlockCount == 0u && emitBlockCount == 0u; }
+    [[nodiscard]] bool hasSimLaunch() const { return simBlockCount > 0u; }
+    [[nodiscard]] bool hasEmitLaunch() const { return emitBlockCount > 0u; }
 };
 
 /// Logical GPU buffer handles — production wiring maps these to `renderer::BufferHandle`.
@@ -103,6 +109,8 @@ struct ParticleGpuMirror {
     [[nodiscard]] static ParticleGpuMirror unpackFromDeviceLayout(const std::vector<u8>& bytes, u32 capacity);
 
     [[nodiscard]] bool matchesCpuSoA(const ParticleSoA& cpu) const;
+    [[nodiscard]] bool matchesPackedLayout(const std::vector<u8>& bytes) const;
+    void syncAliveCountFromFlags();
     [[nodiscard]] ParticleSoAGPU toGpuPointers(u64 packed_device_address) const;
 };
 
