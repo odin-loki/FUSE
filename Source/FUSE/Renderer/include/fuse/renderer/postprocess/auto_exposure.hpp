@@ -34,6 +34,8 @@ f32 ev_to_luminance(f32 ev, f32 target_luminance);
 f32 compute_target_ev(f32 measured_luminance, const AutoExposureParams& params);
 f32 clamp_ev(f32 ev, const AutoExposureParams& params);
 void reset_auto_exposure_state(AutoExposureState& state);
+/// Reset temporal state while preserving a scene-load EV anchor (B5.10 deepen).
+void reset_auto_exposure_state_to(AutoExposureState& state, f32 ev = 0.f);
 f32 ema_alpha_for_direction(bool brightening, const AutoExposureParams& params);
 bool is_brightening_luminance(f32 measured_luminance, f32 reference_luminance);
 f32 ema_blend(f32 previous, f32 measured, f32 alpha);
@@ -79,6 +81,8 @@ private:
 
 /// Batch histogram accumulation helpers (B5.10 deepen).
 namespace histogram_util {
+/// True when a sample buffer can contribute metering (non-null and non-empty).
+bool hasMeteringSamples(const fuse::math::Vec3* samples, u32 count);
 void accumulateSamples(LuminanceHistogram& histogram, const fuse::math::Vec3* samples, u32 count);
 f32 measurePercentile(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
                       f32 percentile);
@@ -113,6 +117,7 @@ public:
     void init();
     void destroy();
     void reset();
+    void resetToEv(f32 ev = 0.f);
 
     f32 updateFromSamples(const fuse::math::Vec3* samples, u32 count, f32 delta_seconds);
     f32 updateFromHistogram(const LuminanceHistogram& histogram, f32 delta_seconds);

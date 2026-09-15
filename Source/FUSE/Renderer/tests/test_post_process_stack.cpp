@@ -150,7 +150,18 @@ void testTonemapCurveEndpoints() {
     expectTrue(fuse::renderer::tonemap_curve_endpoints_valid(filmicEndpoints), "filmic endpoints valid");
     expectTrue(fuse::renderer::tonemap_curve_endpoints_valid(reinhardEndpoints), "reinhard endpoints valid");
     expectTrue(fuse::renderer::tonemap_curve_endpoints_valid(acesEndpoints), "aces endpoints valid");
+    expectTrue(fuse::renderer::tonemap_curve_has_valid_endpoints(filmic), "filmic preset passes endpoint validation");
+    expectTrue(fuse::renderer::tonemap_curve_has_valid_endpoints(reinhard), "reinhard preset passes endpoint validation");
+    expectTrue(fuse::renderer::tonemap_curve_has_valid_endpoints(aces), "aces preset passes endpoint validation");
     expectTrue(fuse::renderer::tonemap_curve_mid_grey_output(filmic) > 0.f, "filmic mid-grey stays in range");
+
+    fuse::renderer::TonemapCurveEndpoints invalid{};
+    invalid.black_output = 0.2f;
+    invalid.white_output = 0.1f;
+    expectTrue(!fuse::renderer::tonemap_curve_endpoints_valid(invalid), "inverted endpoints fail validation");
+    invalid = {};
+    invalid.white_output = 1.5f;
+    expectTrue(!fuse::renderer::tonemap_curve_endpoints_valid(invalid), "out-of-range white anchor fails validation");
 }
 
 void testTonemapCurveReinhardAcesClamp() {
@@ -277,6 +288,9 @@ void testLuminanceHistogramEmpty() {
                "empty sample buffer yields zero metering");
     expectNear(fuse::renderer::histogram_util::meterFromSamples(nullptr, 0u, params, 0.5f), 0.f, 1e-6f,
                "meterFromSamples returns zero for empty input");
+    expectTrue(!fuse::renderer::histogram_util::hasMeteringSamples(nullptr, 0u), "empty sample buffer rejected");
+    expectNear(fuse::renderer::histogram_util::measurePercentile(nullptr, 0u, params, 0.5f), 0.f, 1e-6f,
+               "measurePercentile returns zero for empty input");
     expectTrue(fuse::renderer::LuminanceHistogram::logBinIndex(0.18f, params) < params.bin_count,
                "log bin index stays within histogram range");
     expectNear(fuse::renderer::LuminanceHistogram::binCenterLuminance(0u, params),
@@ -348,6 +362,38 @@ void testAutoExposureReset() {
     expectNear(exposure.state().measured_luminance, 0.f, 1e-6f, "reset clears measured luminance");
     expectNear(exposure.state().smoothed_luminance, 0.f, 1e-6f, "reset clears smoothed luminance");
 
+    exposure.updateFromLuminance(0.72f, 0.5f);
+    exposure.resetToEv(-1.f);
+    expectNear(exposure.currentEv(), -1.f, 1e-6f, "resetToEv preserves scene-load EV anchor");
+    expectNear(exposure.state().measured_luminance, 0.f, 1e-6f, "resetToEv clears measured luminance");
+
+    fuse::renderer::AutoExposureState state{};
+    state.current_ev = 2.f;
+    state.measured_luminance = 0.5f;
+    fuse::renderer::reset_auto_exposure_state_to(state, 1.5f);
+    expectNear(state.current_ev, 1.5f, 1e-6f, "reset_auto_exposure_state_to preserves EV anchor");
+    expectNear(state.measured_luminance, 0.f, 1e-6f, "reset_auto_exposure_state_to clears measured luminance");
+
+    exposure.destroy();
+}
+
+void testAutoExposureEmptySamplesNoOp() {
+    fuse::renderer::AutoExposure exposure{};
+    exposure.init();
+
+    fuse::renderer::AutoExposureParams params{};
+    params.adaptation_speed_up = 8.f;
+    params.adaptation_speed_down = 8.f;
+    exposure.setParams(params);
+    exposure.updateFromLuminance(0.72f, 0.5f);
+    const fuse::f32 adaptedEv = exposure.currentEv();
+    expectTrue(adaptedEv > 0.f, "exposure adapts before empty sample update");
+
+    const fuse::f32 unchangedEv = exposure.updateFromSamples(nullptr, 0u, 0.5f);
+    expectNear(unchangedEv, adaptedEv, 1e-6f, "empty sample buffer preserves adapted EV");
+    expectNear(exposure.state().measured_luminance, 0.72f, 1e-6f,
+               "empty sample buffer does not overwrite measured luminance");
+
     exposure.destroy();
 }
 
@@ -389,6 +435,13 @@ void testPostStackResetAutoExposure() {
 
     stack.resetAutoExposure();
     expectNear(stack.autoExposure().currentEv(), 0.f, 1e-6f, "post stack reset clears adapted EV");
+
+    stack.updateAutoExposure(brightFrame, 1u, 0.5f);
+    stack.resetAutoExposureTo(-0.5f);
+    expectNear(stack.autoExposure().currentEv(), -0.5f, 1e-6f, "post stack resetToEv preserves EV anchor");
+
+    const fuse::f32 unchangedEv = stack.updateAutoExposure(nullptr, 0u, 0.5f);
+    expectNear(unchangedEv, -0.5f, 1e-6f, "post stack empty sample update is a no-op");
 
     stack.destroy();
 }
@@ -436,6 +489,7 @@ int main() {
     testLuminanceHistogramPercentileDistribution();
     testLuminanceHistogramEmpty();
     testAutoExposureEmptyHistogramNoOp();
+    testAutoExposureEmptySamplesNoOp();
     testAutoExposureReset();
     testPostStackHistogramAutoExposure();
     testPostStackResetAutoExposure();

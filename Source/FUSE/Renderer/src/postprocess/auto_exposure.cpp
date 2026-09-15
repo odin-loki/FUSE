@@ -105,13 +105,22 @@ f32 update_auto_exposure_ema(AutoExposureState& state, f32 measured_luminance, c
 }
 
 void reset_auto_exposure_state(AutoExposureState& state) {
+    reset_auto_exposure_state_to(state, 0.f);
+}
+
+void reset_auto_exposure_state_to(AutoExposureState& state, f32 ev) {
     state = {};
+    state.current_ev = ev;
 }
 
 namespace histogram_util {
 
+bool hasMeteringSamples(const fuse::math::Vec3* samples, u32 count) {
+    return samples != nullptr && count > 0;
+}
+
 void accumulateSamples(LuminanceHistogram& histogram, const fuse::math::Vec3* samples, u32 count) {
-    if (samples == nullptr || count == 0) {
+    if (!hasMeteringSamples(samples, count)) {
         return;
     }
     for (u32 i = 0; i < count; ++i) {
@@ -121,6 +130,9 @@ void accumulateSamples(LuminanceHistogram& histogram, const fuse::math::Vec3* sa
 
 f32 measurePercentile(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
                       f32 percentile) {
+    if (!hasMeteringSamples(samples, count)) {
+        return 0.f;
+    }
     LuminanceHistogram histogram;
     histogram.init(params);
     accumulateSamples(histogram, samples, count);
@@ -129,7 +141,7 @@ f32 measurePercentile(const fuse::math::Vec3* samples, u32 count, const Luminanc
 
 f32 meterFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
                      f32 percentile) {
-    if (samples == nullptr || count == 0) {
+    if (!hasMeteringSamples(samples, count)) {
         return 0.f;
     }
     return measurePercentile(samples, count, params, percentile);
@@ -277,6 +289,10 @@ void AutoExposure::reset() {
     reset_auto_exposure_state(m_state);
 }
 
+void AutoExposure::resetToEv(f32 ev) {
+    reset_auto_exposure_state_to(m_state, ev);
+}
+
 f32 AutoExposure::updateFromLuminance(f32 measured_luminance, f32 delta_seconds) {
     if (m_params.use_ema_adaptation) {
         return update_auto_exposure_ema(m_state, measured_luminance, m_params, delta_seconds);
@@ -292,6 +308,9 @@ f32 AutoExposure::updateFromHistogram(const LuminanceHistogram& histogram, f32 d
 }
 
 f32 AutoExposure::updateFromSamples(const fuse::math::Vec3* samples, u32 count, f32 delta_seconds) {
+    if (!histogram_util::hasMeteringSamples(samples, count)) {
+        return m_state.current_ev;
+    }
     const f32 average = ExposureMeter::measureAverage(samples, count);
     return updateFromLuminance(average, delta_seconds);
 }

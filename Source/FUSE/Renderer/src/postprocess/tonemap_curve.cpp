@@ -98,6 +98,11 @@ bool tonemap_curve_endpoints_valid(const TonemapCurveEndpoints& endpoints, f32 e
     return endpoints.white_output > endpoints.black_output + epsilon;
 }
 
+bool tonemap_curve_has_valid_endpoints(const TonemapCurveParams& params, f32 white_input, f32 epsilon) {
+    const TonemapCurveEndpoints endpoints = evaluate_tonemap_curve_endpoints(params, white_input);
+    return tonemap_curve_endpoints_valid(endpoints, epsilon);
+}
+
 f32 tonemap_curve_mid_grey_output(const TonemapCurveParams& params, f32 mid_grey) {
     return evaluate_tonemap_curve_channel(std::max(mid_grey, 0.f), params);
 }

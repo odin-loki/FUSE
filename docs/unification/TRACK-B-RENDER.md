@@ -128,14 +128,14 @@ ctest --test-dir build --output-on-failure -R fuse_ddgi
 | Component | Notes |
 |-----------|-------|
 | `TonemapCurveKind` / `make_filmic_curve_params` / `make_reinhard_curve_params` / `make_aces_curve_params` | Filmic + Reinhard extended + Hill ACES curve presets applied before tone-map operator |
-| `TonemapCurveEndpoints` / `evaluate_tonemap_curve_endpoints` / `tonemap_curve_output_span` / `tonemap_curve_endpoints_valid` / `tonemap_curve_mid_grey_output` | Black/white anchor evaluation, display-range span, endpoint validation, mid-grey calibration |
+| `TonemapCurveEndpoints` / `evaluate_tonemap_curve_endpoints` / `tonemap_curve_output_span` / `tonemap_curve_endpoints_valid` / `tonemap_curve_has_valid_endpoints` / `tonemap_curve_mid_grey_output` | Black/white anchor evaluation, display-range span, endpoint validation, mid-grey calibration |
 | `apply_exposure_ev` | Shared EV-stop scaling used by `PostStack` before tonemap curve |
 | `AutoExposureParams::use_ema_adaptation` | Optional EMA luminance smoothing with asymmetric up/down alpha |
-| `compute_target_ev` / `ev_to_luminance` / `reset_auto_exposure_state` / `AutoExposure::reset` / `PostStack::resetAutoExposure` | Target EV helper, inverse metering, scene-boundary state reset |
+| `compute_target_ev` / `ev_to_luminance` / `reset_auto_exposure_state` / `reset_auto_exposure_state_to` / `AutoExposure::reset` / `AutoExposure::resetToEv` / `PostStack::resetAutoExposure` / `PostStack::resetAutoExposureTo` | Target EV helper, inverse metering, scene-boundary state reset |
 | `is_brightening_luminance` / `ema_blend` | Directional EMA helpers used by `update_smoothed_luminance` |
-| `LuminanceHistogram` / `histogram_util` | Log-luminance binning (`logBinIndex`, `binCenterLuminance`), batch accumulate, percentile/`meterFromSamples`, empty no-op guard |
+| `LuminanceHistogram` / `histogram_util` | Log-luminance binning (`logBinIndex`, `binCenterLuminance`), `hasMeteringSamples`, batch accumulate, percentile/`meterFromSamples`, empty no-op guards |
 | `PostStack::updateAutoExposureFromHistogram` | Histogram metering path into auto-exposure facade (skips empty histogram) |
-| `fuse_post_process_b510` | Curve endpoint anchors/validation, EV round-trip/target EV, asymmetric EMA adapt, histogram percentile + empty no-op paths, reset + histogram integration |
+| `fuse_post_process_b510` | Curve endpoint anchors/validation (`tonemap_curve_has_valid_endpoints`), EV round-trip/target EV, asymmetric EMA adapt, histogram percentile + empty sample/histogram no-op paths, reset/resetToEv + histogram integration |
 
 ```bash
 ctest --test-dir build --output-on-failure -R fuse_post_process_b510

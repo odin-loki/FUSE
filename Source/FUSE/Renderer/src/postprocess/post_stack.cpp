@@ -65,6 +65,10 @@ void PostStack::resetAutoExposure() {
     m_autoExposure.reset();
 }
 
+void PostStack::resetAutoExposureTo(f32 ev) {
+    m_autoExposure.resetToEv(ev);
+}
+
 fuse::math::Vec3 PostStack::processPixel(const fuse::math::Vec3& hdr_input, u64 frame_seed) {
     m_stats = {};
 
