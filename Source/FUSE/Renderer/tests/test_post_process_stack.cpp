@@ -446,6 +446,96 @@ void testPostStackResetAutoExposure() {
     stack.destroy();
 }
 
+void testLuminanceHistogramParamsValid() {
+    fuse::renderer::LuminanceHistogramParams valid{};
+    expectTrue(fuse::renderer::luminance_histogram_params_valid(valid), "default histogram params are valid");
+
+    fuse::renderer::LuminanceHistogramParams invalidBins{};
+    invalidBins.bin_count = 0;
+    expectTrue(!fuse::renderer::luminance_histogram_params_valid(invalidBins), "zero bin count rejected");
+
+    fuse::renderer::LuminanceHistogramParams invalidRange{};
+    invalidRange.max_log_luminance = invalidRange.min_log_luminance;
+    expectTrue(!fuse::renderer::luminance_histogram_params_valid(invalidRange), "flat log range rejected");
+
+    fuse::renderer::LuminanceHistogramParams invalidPercentile{};
+    invalidPercentile.metering_percentile = 1.5f;
+    expectTrue(!fuse::renderer::luminance_histogram_params_valid(invalidPercentile),
+               "out-of-range percentile rejected");
+}
+
+void testHistogramUtilMeterFromHistogram() {
+    fuse::renderer::LuminanceHistogram histogram{};
+    histogram.init({});
+
+    expectTrue(!fuse::renderer::histogram_util::hasMeteringHistogram(histogram), "empty histogram rejected");
+    expectNear(fuse::renderer::histogram_util::meterFromHistogram(histogram, 0.5f), 0.f, 1e-6f,
+               "empty histogram metering returns zero");
+
+    histogram.accumulate({0.18f, 0.18f, 0.18f});
+    histogram.accumulate({0.36f, 0.36f, 0.36f});
+    expectTrue(fuse::renderer::histogram_util::hasMeteringHistogram(histogram), "populated histogram accepted");
+    expectNear(fuse::renderer::histogram_util::meterFromHistogram(histogram, 0.5f), histogram.meteringLuminance(),
+               1e-5f, "histogram utility metering matches histogram metering");
+
+    fuse::renderer::reset_luminance_histogram(histogram);
+    expectTrue(histogram.isEmpty(), "reset_luminance_histogram clears samples");
+}
+
+void testExposureMeterEmptyAndReset() {
+    fuse::renderer::ExposureMeter meter{};
+    expectTrue(meter.isEmpty(), "fresh exposure meter is empty");
+    expectNear(meter.averageLuminance(), 0.f, 1e-6f, "empty meter average is zero");
+
+    meter.accumulate({0.18f, 0.18f, 0.18f});
+    expectTrue(!meter.isEmpty(), "meter reports non-empty after accumulate");
+    expectNear(meter.averageLuminance(), 0.18f, 1e-4f, "meter averages accumulated luminance");
+
+    fuse::renderer::reset_exposure_meter(meter);
+    expectTrue(meter.isEmpty(), "reset_exposure_meter clears samples");
+    expectNear(meter.averageLuminance(), 0.f, 1e-6f, "reset meter average is zero");
+}
+
+void testAutoExposureEvAnchorValidationAndClampedReset() {
+    fuse::renderer::AutoExposureParams params{};
+    params.min_ev = -2.f;
+    params.max_ev = 2.f;
+
+    expectTrue(fuse::renderer::auto_exposure_ev_anchor_valid(0.f, params), "zero EV anchor is valid");
+    expectTrue(fuse::renderer::auto_exposure_ev_anchor_valid(2.f, params), "max EV anchor is valid");
+    expectTrue(!fuse::renderer::auto_exposure_ev_anchor_valid(3.f, params), "above-max EV anchor rejected");
+
+    fuse::renderer::AutoExposureState state{};
+    fuse::renderer::reset_auto_exposure_state_to_clamped(state, 5.f, params);
+    expectNear(state.current_ev, 2.f, 1e-6f, "clamped reset pins high EV anchor to max");
+    fuse::renderer::reset_auto_exposure_state_to_clamped(state, -5.f, params);
+    expectNear(state.current_ev, -2.f, 1e-6f, "clamped reset pins low EV anchor to min");
+
+    fuse::renderer::AutoExposure exposure{};
+    exposure.init();
+    exposure.setParams(params);
+    exposure.updateFromLuminance(0.72f, 0.5f);
+    exposure.resetToEv(5.f);
+    expectNear(exposure.currentEv(), 2.f, 1e-6f, "resetToEv clamps high anchor to params range");
+    exposure.destroy();
+}
+
+void testTonemapCurveParamsAndDisabledEndpoints() {
+    const fuse::renderer::TonemapCurveParams filmic = fuse::renderer::make_filmic_curve_params();
+    expectTrue(fuse::renderer::tonemap_curve_params_valid(filmic), "filmic preset params are valid");
+
+    fuse::renderer::TonemapCurveParams invalidGamma = filmic;
+    invalidGamma.gamma = 0.f;
+    expectTrue(!fuse::renderer::tonemap_curve_params_valid(invalidGamma), "non-positive gamma rejected");
+    expectTrue(!fuse::renderer::tonemap_curve_has_valid_endpoints(invalidGamma),
+               "invalid params fail endpoint validation");
+
+    fuse::renderer::TonemapCurveParams disabled{};
+    disabled.enabled = false;
+    expectTrue(fuse::renderer::tonemap_curve_params_valid(disabled), "disabled curve params are valid");
+    expectTrue(fuse::renderer::tonemap_curve_has_valid_endpoints(disabled), "disabled curve skips endpoint validation");
+}
+
 void testPostStackAutoExposureIntegration() {
     fuse::renderer::PostStack stack{};
     stack.init({});
@@ -488,9 +578,14 @@ int main() {
     testAutoExposureEmaConverges();
     testLuminanceHistogramPercentileDistribution();
     testLuminanceHistogramEmpty();
+    testLuminanceHistogramParamsValid();
+    testHistogramUtilMeterFromHistogram();
+    testExposureMeterEmptyAndReset();
     testAutoExposureEmptyHistogramNoOp();
     testAutoExposureEmptySamplesNoOp();
     testAutoExposureReset();
+    testAutoExposureEvAnchorValidationAndClampedReset();
+    testTonemapCurveParamsAndDisabledEndpoints();
     testPostStackHistogramAutoExposure();
     testPostStackResetAutoExposure();
     testAutoExposureClampsAndAdapts();
