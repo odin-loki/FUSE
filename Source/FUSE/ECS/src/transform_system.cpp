@@ -14,20 +14,50 @@ void TransformSystem::recompute_world_matrix(Transform& transform, const mat4& p
     transform.dirty = false;
 }
 
+bool TransformSystem::should_skip_hierarchy_recompute(const Transform& transform) {
+    return !transform.dirty && !transform.parent.valid();
+}
+
+bool TransformSystem::subtree_has_dirty_transforms(Registry& reg, EntityID id) {
+    const Transform* transform = reg.get<Transform>(id);
+    if (transform == nullptr) {
+        return false;
+    }
+    if (transform->dirty) {
+        return true;
+    }
+
+    bool found = false;
+    reg.each<Transform>([&](EntityID child_id, Transform& child) {
+        if (child.parent != id) {
+            return;
+        }
+        if (subtree_has_dirty_transforms(reg, child_id)) {
+            found = true;
+        }
+    });
+    return found;
+}
+
 void TransformSystem::update_hierarchy(Registry& reg, EntityID id, const mat4& parent_matrix) {
     Transform* transform = reg.get<Transform>(id);
     if (transform == nullptr) {
         return;
     }
 
-    if (transform->dirty || transform->parent.valid()) {
+    if (!should_skip_hierarchy_recompute(*transform)) {
         recompute_world_matrix(*transform, parent_matrix);
     }
 
     reg.each<Transform>([&](EntityID child_id, Transform& child) {
-        if (child.parent == id) {
-            update_hierarchy(reg, child_id, transform->local_to_world);
+        if (child.parent != id) {
+            return;
         }
+        if (transform->parent.valid() && should_skip_hierarchy_recompute(*transform) &&
+            !subtree_has_dirty_transforms(reg, child_id)) {
+            return;
+        }
+        update_hierarchy(reg, child_id, transform->local_to_world);
     });
 }
 
@@ -40,6 +70,24 @@ bool TransformSystem::has_any_transforms(Registry& reg) {
 u32 TransformSystem::count_transforms(Registry& reg) {
     u32 count = 0;
     reg.each<Transform>([&](EntityID, Transform&) { ++count; });
+    return count;
+}
+
+bool TransformSystem::has_any_dirty_transforms(Registry& reg) {
+    return count_dirty_transforms(reg) > 0;
+}
+
+u32 TransformSystem::count_dirty_transforms(Registry& reg) {
+    if (!has_any_transforms(reg)) {
+        return 0;
+    }
+
+    u32 count = 0;
+    reg.each<Transform>([&](EntityID, Transform& transform) {
+        if (transform.dirty) {
+            ++count;
+        }
+    });
     return count;
 }
 
@@ -116,12 +164,17 @@ void TransformSystem::update(Registry& reg, const TransformSystemOptions& option
         }
     });
 
-    if (has_dirty_roots(reg)) {
+    const bool dirty_roots_before = has_dirty_roots(reg);
+    if (dirty_roots_before) {
         if (options.parallelDirtyRoots) {
             update_dirty_roots_parallel(reg, options.batchSize);
         } else {
             update_dirty_roots_serial(reg);
         }
+    }
+
+    if (!has_any_dirty_transforms(reg) && !dirty_roots_before) {
+        return;
     }
 
     for (EntityID root : roots) {

@@ -42,6 +42,18 @@ public:
     /// Count entities with a `Transform` component.
     [[nodiscard]] static u32 count_transforms(Registry& reg);
 
+    /// Count transforms with `dirty == true` (roots and children).
+    [[nodiscard]] static u32 count_dirty_transforms(Registry& reg);
+
+    /// Returns true when at least one transform has `dirty == true`.
+    [[nodiscard]] static bool has_any_dirty_transforms(Registry& reg);
+
+    /// Skip hierarchy matrix recompute for clean roots (dirty roots handled in the first pass).
+    [[nodiscard]] static bool should_skip_hierarchy_recompute(const Transform& transform);
+
+    /// Returns true when `id` or any descendant transform has `dirty == true`.
+    [[nodiscard]] static bool subtree_has_dirty_transforms(Registry& reg, EntityID id);
+
 private:
     static void update_hierarchy(Registry& reg, EntityID id, const mat4& parent_matrix);
 };

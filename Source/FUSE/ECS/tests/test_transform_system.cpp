@@ -315,6 +315,206 @@ void testNoDirtyRootsUpdateHierarchyStillRuns() {
     expectTrue(!updatedChild->dirty, "hierarchy pass clears child dirty flag");
 }
 
+void testCountDirtyTransformsEmptyRegistryGuard() {
+    fuse::ecs::Registry reg;
+    reg.init(8);
+
+    expectTrue(!fuse::ecs::TransformSystem::has_any_dirty_transforms(reg),
+               "has_any_dirty_transforms is false on empty registry");
+    expectEq(fuse::ecs::TransformSystem::count_dirty_transforms(reg), 0u,
+             "count_dirty_transforms uses empty-transform guard");
+}
+
+void testCountDirtyTransformsMixedScene() {
+    fuse::ecs::Registry reg;
+    reg.init(32);
+
+    const fuse::ecs::EntityID dirtyRoot = reg.create();
+    const fuse::ecs::EntityID cleanRoot = reg.create();
+    const fuse::ecs::EntityID dirtyChild = reg.create();
+    const fuse::ecs::EntityID cleanChild = reg.create();
+
+    fuse::ecs::Transform dirtyRootTransform{};
+    dirtyRootTransform.dirty = true;
+    reg.add(dirtyRoot, dirtyRootTransform);
+
+    fuse::ecs::Transform cleanRootTransform{};
+    cleanRootTransform.dirty = false;
+    reg.add(cleanRoot, cleanRootTransform);
+
+    fuse::ecs::Transform dirtyChildTransform{};
+    dirtyChildTransform.parent = dirtyRoot;
+    dirtyChildTransform.dirty = true;
+    reg.add(dirtyChild, dirtyChildTransform);
+
+    fuse::ecs::Transform cleanChildTransform{};
+    cleanChildTransform.parent = cleanRoot;
+    cleanChildTransform.dirty = false;
+    reg.add(cleanChild, cleanChildTransform);
+
+    expectTrue(fuse::ecs::TransformSystem::has_any_dirty_transforms(reg),
+               "mixed scene has dirty transforms");
+    expectEq(fuse::ecs::TransformSystem::count_dirty_transforms(reg), 2u,
+             "count_dirty_transforms tallies roots and children");
+}
+
+void testShouldSkipHierarchyRecomputeGuards() {
+    fuse::ecs::Transform cleanRoot{};
+    cleanRoot.dirty = false;
+
+    fuse::ecs::Transform dirtyRoot{};
+    dirtyRoot.dirty = true;
+
+    fuse::ecs::Transform cleanChild{};
+    cleanChild.parent = fuse::ecs::EntityID{1, 1};
+    cleanChild.dirty = false;
+
+    expectTrue(fuse::ecs::TransformSystem::should_skip_hierarchy_recompute(cleanRoot),
+               "clean root skips hierarchy recompute");
+    expectTrue(!fuse::ecs::TransformSystem::should_skip_hierarchy_recompute(dirtyRoot),
+               "dirty root does not skip hierarchy recompute");
+    expectTrue(!fuse::ecs::TransformSystem::should_skip_hierarchy_recompute(cleanChild),
+               "child with parent never skips hierarchy recompute");
+}
+
+void testSubtreeHasDirtyTransformsGuards() {
+    fuse::ecs::Registry reg;
+    reg.init(32);
+
+    const fuse::ecs::EntityID root = reg.create();
+    const fuse::ecs::EntityID mid = reg.create();
+    const fuse::ecs::EntityID leaf = reg.create();
+
+    fuse::ecs::Transform rootTransform{};
+    rootTransform.dirty = false;
+    reg.add(root, rootTransform);
+
+    fuse::ecs::Transform midTransform{};
+    midTransform.parent = root;
+    midTransform.dirty = false;
+    reg.add(mid, midTransform);
+
+    fuse::ecs::Transform leafTransform{};
+    leafTransform.parent = mid;
+    leafTransform.dirty = false;
+    reg.add(leaf, leafTransform);
+
+    expectTrue(!fuse::ecs::TransformSystem::subtree_has_dirty_transforms(reg, root),
+               "clean subtree has no dirty descendants");
+
+    fuse::ecs::Transform* dirtyLeaf = reg.get<fuse::ecs::Transform>(leaf);
+    expectTrue(dirtyLeaf != nullptr, "leaf exists before dirty flag set");
+    dirtyLeaf->dirty = true;
+
+    expectTrue(fuse::ecs::TransformSystem::subtree_has_dirty_transforms(reg, root),
+               "dirty leaf makes root subtree dirty");
+    expectTrue(fuse::ecs::TransformSystem::subtree_has_dirty_transforms(reg, mid),
+               "dirty leaf makes mid subtree dirty");
+    expectTrue(fuse::ecs::TransformSystem::subtree_has_dirty_transforms(reg, leaf),
+               "dirty leaf marks its own subtree dirty");
+}
+
+void testFullyCleanSceneUpdateEarlyOut() {
+    fuse::ecs::Registry reg;
+    reg.init(16);
+
+    const fuse::ecs::EntityID root = reg.create();
+    const fuse::ecs::EntityID child = reg.create();
+
+    fuse::ecs::Transform rootTransform{};
+    rootTransform.position = {3.f, 0.f, 0.f, 1.f};
+    rootTransform.dirty = false;
+    rootTransform.local_to_world =
+        fuse::ecs::from_trs(rootTransform.position, rootTransform.rotation, rootTransform.scale);
+    rootTransform.world_to_local = fuse::ecs::inverse_affine(rootTransform.local_to_world);
+    reg.add(root, rootTransform);
+
+    fuse::ecs::Transform childTransform{};
+    childTransform.position = {0.f, 2.f, 0.f, 1.f};
+    childTransform.parent = root;
+    childTransform.dirty = false;
+    childTransform.local_to_world =
+        fuse::ecs::from_trs({3.f, 2.f, 0.f, 1.f}, childTransform.rotation, childTransform.scale);
+    childTransform.world_to_local = fuse::ecs::inverse_affine(childTransform.local_to_world);
+    reg.add(child, childTransform);
+
+    expectTrue(!fuse::ecs::TransformSystem::has_any_dirty_transforms(reg),
+               "fully clean scene has no dirty transforms");
+
+    withScheduler(2, [&] {
+        fuse::ecs::TransformSystemOptions options{};
+        options.parallelDirtyRoots = true;
+        fuse::ecs::TransformSystem::update(reg, options);
+    });
+
+    const fuse::ecs::Transform* updatedChild = reg.get<fuse::ecs::Transform>(child);
+    expectTrue(updatedChild != nullptr, "child survives fully clean update early-out");
+    expectTrue(updatedChild->local_to_world.data[12] == 3.f,
+               "fully clean hierarchy skip leaves child X unchanged");
+    expectTrue(updatedChild->local_to_world.data[13] == 2.f,
+               "fully clean hierarchy skip leaves child Y unchanged");
+}
+
+void testCleanSubtreeHierarchySkipPreservesMatrices() {
+    fuse::ecs::Registry reg;
+    reg.init(32);
+
+    const fuse::ecs::EntityID dirtyRoot = reg.create();
+    const fuse::ecs::EntityID cleanBranch = reg.create();
+    const fuse::ecs::EntityID cleanLeaf = reg.create();
+    const fuse::ecs::EntityID dirtyChild = reg.create();
+
+    fuse::ecs::Transform dirtyRootTransform{};
+    dirtyRootTransform.position = {1.f, 0.f, 0.f, 1.f};
+    dirtyRootTransform.dirty = true;
+    reg.add(dirtyRoot, dirtyRootTransform);
+
+    fuse::ecs::Transform cleanBranchTransform{};
+    cleanBranchTransform.parent = dirtyRoot;
+    cleanBranchTransform.position = {0.f, 5.f, 0.f, 1.f};
+    cleanBranchTransform.dirty = false;
+    cleanBranchTransform.local_to_world =
+        fuse::ecs::from_trs({1.f, 5.f, 0.f, 1.f}, cleanBranchTransform.rotation, cleanBranchTransform.scale);
+    cleanBranchTransform.world_to_local = fuse::ecs::inverse_affine(cleanBranchTransform.local_to_world);
+    reg.add(cleanBranch, cleanBranchTransform);
+
+    fuse::ecs::Transform cleanLeafTransform{};
+    cleanLeafTransform.parent = cleanBranch;
+    cleanLeafTransform.position = {0.f, 1.f, 0.f, 1.f};
+    cleanLeafTransform.dirty = false;
+    cleanLeafTransform.local_to_world =
+        fuse::ecs::from_trs({1.f, 6.f, 0.f, 1.f}, cleanLeafTransform.rotation, cleanLeafTransform.scale);
+    cleanLeafTransform.world_to_local = fuse::ecs::inverse_affine(cleanLeafTransform.local_to_world);
+    reg.add(cleanLeaf, cleanLeafTransform);
+
+    fuse::ecs::Transform dirtyChildTransform{};
+    dirtyChildTransform.parent = dirtyRoot;
+    dirtyChildTransform.position = {0.f, 3.f, 0.f, 1.f};
+    dirtyChildTransform.dirty = true;
+    reg.add(dirtyChild, dirtyChildTransform);
+
+    withScheduler(2, [&] {
+        fuse::ecs::TransformSystem::update(reg);
+    });
+
+    const fuse::ecs::Transform* updatedBranch = reg.get<fuse::ecs::Transform>(cleanBranch);
+    const fuse::ecs::Transform* updatedLeaf = reg.get<fuse::ecs::Transform>(cleanLeaf);
+    const fuse::ecs::Transform* updatedDirtyChild = reg.get<fuse::ecs::Transform>(dirtyChild);
+
+    expectTrue(updatedBranch != nullptr && updatedLeaf != nullptr && updatedDirtyChild != nullptr,
+               "mixed hierarchy entities survive update");
+    expectTrue(updatedBranch->local_to_world.data[12] == 1.f &&
+                   updatedBranch->local_to_world.data[13] == 5.f,
+               "clean subtree skip preserves branch world matrix");
+    expectTrue(updatedLeaf->local_to_world.data[12] == 1.f &&
+                   updatedLeaf->local_to_world.data[13] == 6.f,
+               "clean subtree skip preserves leaf world matrix");
+    expectTrue(updatedDirtyChild->local_to_world.data[12] == 1.f &&
+                   updatedDirtyChild->local_to_world.data[13] == 3.f,
+               "dirty sibling still recomputes under dirty root");
+    expectTrue(!updatedDirtyChild->dirty, "dirty sibling clears dirty flag after update");
+}
+
 void testCountTransformsMatchesEach() {
     fuse::ecs::Registry reg;
     reg.init(64);
@@ -352,6 +552,12 @@ int main() {
     testCountRootsIgnoresChildren();
     testNoDirtyRootsDirtyRootStubsEarlyOut();
     testNoDirtyRootsUpdateHierarchyStillRuns();
+    testCountDirtyTransformsEmptyRegistryGuard();
+    testCountDirtyTransformsMixedScene();
+    testShouldSkipHierarchyRecomputeGuards();
+    testSubtreeHasDirtyTransformsGuards();
+    testFullyCleanSceneUpdateEarlyOut();
+    testCleanSubtreeHierarchySkipPreservesMatrices();
     testCountTransformsMatchesEach();
 
     if (g_failures == 0) {
