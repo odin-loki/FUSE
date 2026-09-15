@@ -38,3 +38,10 @@ target_link_libraries(fuse_editor_hierarchy_model_tests
         fuse_world3d
 )
 add_test(NAME fuse_editor_hierarchy_model COMMAND fuse_editor_hierarchy_model_tests)
+
+add_executable(fuse_editor_panels_b69_b612_tests
+    test_editor_panels_b69_b612.cpp
+)
+
+target_link_libraries(fuse_editor_panels_b69_b612_tests PRIVATE fuse_editor_api fuse_core fuse_scene)
+add_test(NAME fuse_editor_panels_b69_b612 COMMAND fuse_editor_panels_b69_b612_tests)

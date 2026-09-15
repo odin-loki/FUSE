@@ -1,7 +1,7 @@
-# Track B — Editor Panels (B6.2–B6.8)
+# Track B — Editor Panels (B6.2–B6.12)
 
-**Status:** B6.2 undo stack + B6.3–B6.5 core panel stubs + B6.6–B6.8 inspector/material/sculpt API stubs landed  
-**Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B6.2–B6.8  
+**Status:** B6.2 undo stack + B6.3–B6.5 core panel stubs + B6.6–B6.8 inspector/material/sculpt API stubs + B6.9–B6.12 asset/profiler/console/play-mode stubs landed  
+**Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B6.2–B6.12  
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §2.1–§4, [U6-EDITOR.md](./U6-EDITOR.md)
 
 ---
@@ -20,9 +20,13 @@
 | `PropertyInspector` | `property_inspector.hpp` | B6.6 — component section model + live ECS edits |
 | `MaterialEditorPanel` | `material_editor_panel.hpp` | B6.7 — catalog/selection + `MaterialEditState` |
 | `SdfSculptPanel` | `sdf_sculpt_panel.hpp` | B6.8 — brush state + stroke spacing / symmetry |
+| `AssetBrowser` | `asset_browser.hpp` | B6.9 — filesystem scan + type classification + search filter |
+| `ProfilerPanel` | `profiler_panel.hpp` | B6.10 — 256-frame ring buffer of `FrameProfileData` |
+| `ConsolePanel` | `console_panel.hpp` | B6.11 — log buffer, level/text filters, command exec stub |
+| `PlayModeController` | `play_mode_controller.hpp` | B6.12 — scene snapshot / restore + `PlayModePhysicsState` flag |
 | `EditorHost` | `editor_host.hpp` | `CommandQueue` (UI→game) + `UndoStack` (B6.2) |
 
-**Not in scope:** Qt dock widgets, embedded Vulkan viewport, `QUndoStack` adapter, live material preview RT, real picking/rendering.
+**Not in scope:** Qt dock widgets, embedded Vulkan viewport, `QUndoStack` adapter, live material preview RT, real picking/rendering, Qt asset grid/profiler plots/console chrome.
 
 ---
 
@@ -42,11 +46,18 @@
 
 `ViewportPanel`, `GizmoSystem`, and `SceneHierarchyPanel` are API-only stubs in `fuse_editor_api`. The optional Qt shell (`FUSE_BUILD_EDITOR`) keeps its existing placeholder widget.
 
+### B6.9–B6.12 stubs
+
+- **Asset browser** — `AssetBrowser::init(project_root)` scans with `std::filesystem`; entries classified by extension; `setSearchFilter` narrows results.
+- **Profiler panel** — `ProfilerPanel::pushFrameData` writes a 256-frame ring buffer; `setPaused(true)` freezes capture.
+- **Console panel** — `ConsolePanel::addLog` uses `fuse::log::Level`, coalesces duplicate lines, supports level/text filters via `filteredLines()`.
+- **Play mode** — `PlayModeController` snapshots `fuse::scene::Scene` on `enterPlay` and restores on `stop`; `PlayModePhysicsState` tracks simulation-active flag until `PhysicsManager` wiring lands.
+
 ---
 
 ## Build
 
-`fuse_editor_api` builds with `FUSE_BUILD_EDITOR_API=ON` (default in CI). Tests require no Qt.
+`fuse_editor_api` builds with `FUSE_BUILD_EDITOR_API=ON` (default in CI). Tests require no Qt. Play mode requires `FUSE_BUILD_PROJECT=ON` (default) for `fuse_scene`.
 
 ```bash
 cmake -B build -G Ninja \
@@ -54,6 +65,7 @@ cmake -B build -G Ninja \
   -DFUSE_UMBRELLA=ON \
   -DFUSE_BUILD_CORE=ON \
   -DFUSE_BUILD_CORE_TESTS=ON \
+  -DFUSE_BUILD_PROJECT=ON \
   -DFUSE_BUILD_EDITOR_API=ON \
   -DFUSE_BUILD_EDITOR=OFF \
   -DFUSE_BUILD_VULKAN=ON
@@ -79,6 +91,7 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 | `fuse_editor_panels` | `fuse_editor_panels_tests` | B6.6–B6.8 inspector/material/sculpt API |
 | `fuse_editor_command_stack` | `fuse_editor_command_stack_tests` | B6.2 `UndoStack` LIFO, merge, rename/reparent |
 | `fuse_editor_hierarchy_model` | `fuse_editor_hierarchy_model_tests` | B6.5 flatten, search, reparent + undo |
+| `fuse_editor_panels_b69_b612` | `fuse_editor_panels_b69_b612_tests` | B6.9–B6.12 asset/profiler/console/play-mode stubs |
 
 ---
 
@@ -98,6 +111,14 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 - [x] **B6.7** `MaterialEditorPanel` stub with optional RHI bridge
 - [x] **B6.8** `SdfSculptPanel` brush + stroke command stub
 - [ ] Qt 6 dock wiring for panels (follow-up under `FUSE_BUILD_EDITOR`)
+
+### B6.9–B6.12
+
+- [x] **B6.9** `AssetBrowser` on FUSE APIs (filesystem model, no Qt)
+- [x] **B6.10** `ProfilerPanel` frame history ring buffer
+- [x] **B6.11** `ConsolePanel` log buffer + filters + exec stub
+- [x] **B6.12** `PlayModeController` snapshot enter/pause/resume/stop
+- [ ] Qt chrome for asset grid, profiler plots, console view, play transport (U6 follow-up)
 
 ---
 
