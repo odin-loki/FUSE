@@ -1,6 +1,7 @@
 #include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/tags.hpp>
 #include <fuse/ecs/components/transform.hpp>
+#include <fuse/ecs/detail/iteration_parity.hpp>
 #include <fuse/ecs/registry.hpp>
 #include <fuse/ecs/systems/transform_system.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
@@ -281,16 +282,111 @@ void populateTransformParityScene(fuse::ecs::Registry& reg) {
     reg.add(child, childTransform);
 }
 
-bool transformMatricesMatch(const fuse::ecs::Transform& lhs, const fuse::ecs::Transform& rhs) {
-    for (fuse::u32 i = 0; i < 16; ++i) {
-        if (lhs.local_to_world.data[i] != rhs.local_to_world.data[i]) {
-            return false;
-        }
-        if (lhs.world_to_local.data[i] != rhs.world_to_local.data[i]) {
-            return false;
-        }
+void testEachParallelVisitCountParityHelper() {
+    fuse::ecs::Registry reg;
+    reg.init(64);
+
+    for (fuse::u32 i = 0; i < 32; ++i) {
+        const fuse::ecs::EntityID id = reg.create();
+        reg.add<fuse::ecs::Transform>(id);
     }
-    return lhs.dirty == rhs.dirty;
+
+    withScheduler(4, [&] {
+        expectTrue(fuse::ecs::detail::each_query_parallel_matches_serial<fuse::ecs::Transform>(reg, 0),
+                   "parity helper: batchSize=0 matches serial visit count");
+        expectTrue(fuse::ecs::detail::each_query_parallel_matches_serial<fuse::ecs::Transform>(reg, 8),
+                   "parity helper: batchSize=8 matches serial visit count");
+        expectTrue(fuse::ecs::detail::each_query_parallel_matches_serial<fuse::ecs::Transform>(reg, 1024),
+                   "parity helper: oversized batch matches serial visit count");
+    });
+}
+
+void testEachParallelEmptyRegistryParityHelper() {
+    fuse::ecs::Registry reg;
+    reg.init(8);
+
+    withScheduler(2, [&] {
+        expectTrue(fuse::ecs::detail::each_query_parallel_matches_serial<fuse::ecs::Transform>(reg, 1),
+                   "parity helper: empty registry yields zero serial and parallel visits");
+    });
+}
+
+void testTransformDirtyPropagationToCleanChild() {
+    fuse::ecs::Registry registry;
+    registry.init();
+
+    const fuse::ecs::EntityID parent = registry.create();
+    const fuse::ecs::EntityID child = registry.create();
+
+    fuse::ecs::Transform parentTransform{};
+    parentTransform.position = {0.f, 0.f, 0.f, 1.f};
+    parentTransform.dirty = true;
+    registry.add(parent, parentTransform);
+
+    fuse::ecs::Transform childTransform{};
+    childTransform.position = {0.f, 1.f, 0.f, 1.f};
+    childTransform.parent = parent;
+    childTransform.dirty = true;
+    registry.add(child, childTransform);
+
+    fuse::ecs::TransformSystem::update(registry);
+
+    fuse::ecs::Transform* parentAfterFirst = registry.get<fuse::ecs::Transform>(parent);
+    fuse::ecs::Transform* childAfterFirst = registry.get<fuse::ecs::Transform>(child);
+    expectTrue(parentAfterFirst != nullptr && childAfterFirst != nullptr, "parent/child exist after first update");
+    if (parentAfterFirst == nullptr || childAfterFirst == nullptr) {
+        return;
+    }
+
+    parentAfterFirst->position.x = 10.f;
+    parentAfterFirst->dirty = true;
+    childAfterFirst->dirty = false;
+
+    fuse::ecs::TransformSystem::update(registry);
+
+    const fuse::ecs::Transform* updatedChild = registry.get<fuse::ecs::Transform>(child);
+    expectTrue(updatedChild != nullptr, "child exists after dirty parent move");
+    expectTrue(updatedChild->local_to_world.data[12] == 10.f, "dirty parent propagates X to clean child");
+    expectTrue(updatedChild->local_to_world.data[13] == 1.f, "clean child keeps local Y after parent move");
+    expectTrue(!updatedChild->dirty, "hierarchy pass clears child dirty flag after recompute");
+}
+
+void testDirtyRootStubSerialParallelParity() {
+    fuse::ecs::Registry serialReg;
+    fuse::ecs::Registry parallelReg;
+    serialReg.init(64);
+    parallelReg.init(64);
+
+    for (fuse::u32 i = 0; i < 16; ++i) {
+        const fuse::ecs::EntityID serialId = serialReg.create();
+        const fuse::ecs::EntityID parallelId = parallelReg.create();
+
+        fuse::ecs::Transform transform{};
+        transform.position = {static_cast<float>(i), static_cast<float>(i * 2), 0.f, 1.f};
+        transform.dirty = (i % 2) == 0;
+        serialReg.add(serialId, transform);
+        parallelReg.add(parallelId, transform);
+    }
+
+    fuse::ecs::TransformSystem::update_dirty_roots_serial(serialReg);
+    withScheduler(4, [&] {
+        fuse::ecs::TransformSystem::update_dirty_roots_parallel(parallelReg, 4);
+    });
+
+    std::unordered_map<fuse::u32, fuse::ecs::Transform> serialByIndex;
+    serialReg.each<fuse::ecs::Transform>([&](fuse::ecs::EntityID id, fuse::ecs::Transform& transform) {
+        serialByIndex[id.index] = transform;
+    });
+
+    parallelReg.each<fuse::ecs::Transform>([&](fuse::ecs::EntityID id, fuse::ecs::Transform& transform) {
+        const auto it = serialByIndex.find(id.index);
+        expectTrue(it != serialByIndex.end(), "dirty-root stub parity entity exists in serial snapshot");
+        if (it == serialByIndex.end()) {
+            return;
+        }
+        expectTrue(fuse::ecs::detail::transform_matrices_equal(transform, it->second),
+                   "dirty-root serial/parallel stubs produce identical matrices");
+    });
 }
 
 void testTransformSystemSerialParallelParity() {
@@ -321,7 +417,7 @@ void testTransformSystemSerialParallelParity() {
         if (it == serialByIndex.end()) {
             return;
         }
-        expectTrue(transformMatricesMatch(transform, it->second),
+        expectTrue(fuse::ecs::detail::transform_matrices_equal(transform, it->second),
                    "TransformSystem serial/parallel paths produce identical matrices");
     });
 }
@@ -424,7 +520,11 @@ int main() {
     testEachParallelBatchSizeZero();
     testEachParallelBatchSizeExceedsEntityCount();
     testEachParallelEmptyRegistry();
+    testEachParallelVisitCountParityHelper();
+    testEachParallelEmptyRegistryParityHelper();
     testEachQueryParallelWithWithoutSmoke();
+    testTransformDirtyPropagationToCleanChild();
+    testDirtyRootStubSerialParallelParity();
     testTransformSystemParallelDirtyRoots();
     testTransformSystemSerialDirtyRoots();
     testTransformSystemSerialParallelParity();
