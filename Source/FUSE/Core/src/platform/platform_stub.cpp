@@ -8,7 +8,12 @@ namespace fuse::platform {
 
 namespace {
 std::atomic<ThreadId> g_renderThreadId{0};
+std::atomic<ThreadId> g_mainThreadId{0};
+
+ThreadId hashCurrentThread() {
+    return static_cast<ThreadId>(std::hash<std::thread::id>{}(std::this_thread::get_id()));
 }
+} // namespace
 
 u32 getCoreCount() {
     const unsigned int cores = std::thread::hardware_concurrency();
@@ -23,9 +28,32 @@ u32 recommendedFiberStackBytes() {
     return currentJobProfileLimits().fiberStackBytes;
 }
 
+ThreadId currentThreadId() {
+    return hashCurrentThread();
+}
+
+u32 chromeTraceThreadId() {
+    return static_cast<u32>(currentThreadId() & 0xFFFFFFFFu);
+}
+
+void registerMainThread() {
+    g_mainThreadId.store(currentThreadId(), std::memory_order_release);
+}
+
+ThreadId mainThreadId() {
+    return g_mainThreadId.load(std::memory_order_acquire);
+}
+
+bool isMainThread() {
+    const ThreadId registered = g_mainThreadId.load(std::memory_order_acquire);
+    if (registered == 0) {
+        return true;
+    }
+    return currentThreadId() == registered;
+}
+
 void registerRenderThread() {
-    const ThreadId id = static_cast<ThreadId>(std::hash<std::thread::id>{}(std::this_thread::get_id()));
-    g_renderThreadId.store(id, std::memory_order_release);
+    g_renderThreadId.store(currentThreadId(), std::memory_order_release);
 }
 
 ThreadId renderThread() {
@@ -37,8 +65,7 @@ bool isRenderThread() {
     if (registered == 0) {
         return true;
     }
-    const ThreadId current = static_cast<ThreadId>(std::hash<std::thread::id>{}(std::this_thread::get_id()));
-    return current == registered;
+    return currentThreadId() == registered;
 }
 
 void setThreadPriority(ThreadId /*thread*/, int /*priority*/) {

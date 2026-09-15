@@ -1,10 +1,13 @@
 #include <fuse/assert.hpp>
 #include <fuse/log/logger.hpp>
+#include <fuse/platform/thread.hpp>
 #include <fuse/profiler/profiler.hpp>
 
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <thread>
 
 namespace {
 
@@ -60,18 +63,107 @@ void testFrameBoundaryIncrementsIndex() {
     expectTrue(fuse::profiler::frameIndex() == before + 1u, "beginFrame increments frame index");
 }
 
-void testChromeTraceExport() {
+void testNestedScopeOrdering() {
     resetState();
 
     {
+        FUSE_PROFILE_SCOPE("outer");
+        {
+            FUSE_PROFILE_SCOPE("inner");
+            {
+                FUSE_PROFILE_SCOPE("deepest");
+            }
+        }
+    }
+
+    expectTrue(fuse::profiler::eventCount() == 6u, "three nested scopes emit six events");
+    expectTrue(fuse::profiler::maxNestingDepth() == 3u, "max nesting depth tracks deepest scope");
+
+    const fuse::profiler::ProfileEvent& e0 = fuse::profiler::eventAt(0);
+    const fuse::profiler::ProfileEvent& e1 = fuse::profiler::eventAt(1);
+    const fuse::profiler::ProfileEvent& e2 = fuse::profiler::eventAt(2);
+    const fuse::profiler::ProfileEvent& e3 = fuse::profiler::eventAt(3);
+    const fuse::profiler::ProfileEvent& e4 = fuse::profiler::eventAt(4);
+    const fuse::profiler::ProfileEvent& e5 = fuse::profiler::eventAt(5);
+
+    expectTrue(e0.phase == fuse::profiler::EventPhase::Begin && std::string(e0.name) == "outer",
+               "nested trace begins with outer");
+    expectTrue(e1.phase == fuse::profiler::EventPhase::Begin && std::string(e1.name) == "inner",
+               "nested trace continues with inner begin");
+    expectTrue(e2.phase == fuse::profiler::EventPhase::Begin && std::string(e2.name) == "deepest",
+               "nested trace reaches deepest begin");
+    expectTrue(e3.phase == fuse::profiler::EventPhase::End && std::string(e3.name) == "deepest",
+               "deepest scope ends before inner");
+    expectTrue(e4.phase == fuse::profiler::EventPhase::End && std::string(e4.name) == "inner",
+               "inner scope ends before outer");
+    expectTrue(e5.phase == fuse::profiler::EventPhase::End && std::string(e5.name) == "outer",
+               "outer scope ends last");
+
+    expectTrue(e0.nestingDepth == 1u && e1.nestingDepth == 2u && e2.nestingDepth == 3u,
+               "nesting depth increments per scope level");
+    expectTrue(e0.scopeId == e5.scopeId, "outer begin/end share scope id");
+    expectTrue(e2.scopeId == e3.scopeId, "deepest begin/end share scope id");
+}
+
+void testThreadIdStubs() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    {
+        FUSE_PROFILE_SCOPE("main_thread_scope");
+    }
+
+    const fuse::profiler::ProfileEvent& begin = fuse::profiler::eventAt(0);
+    expectTrue(begin.threadId != 0u, "profiler records non-zero chrome tid");
+    expectTrue(begin.threadId == fuse::platform::chromeTraceThreadId(),
+               "profiler tid matches platform chromeTraceThreadId");
+    expectTrue(fuse::platform::isMainThread(), "main thread stub reports current thread as main");
+
+    std::atomic<bool> workerDone{false};
+    std::atomic<fuse::u32> workerThreadTid{0};
+    std::thread worker([&]() {
+        workerThreadTid.store(fuse::platform::chromeTraceThreadId(), std::memory_order_release);
+        FUSE_PROFILE_SCOPE("worker_scope");
+        workerDone.store(true, std::memory_order_release);
+    });
+    worker.join();
+    expectTrue(workerDone.load(std::memory_order_acquire), "worker thread completed");
+
+    expectTrue(workerThreadTid.load(std::memory_order_acquire) != begin.threadId,
+               "worker thread tid differs from main thread tid");
+    expectTrue(fuse::profiler::eventCount() >= 4u, "worker scope adds begin/end events");
+
+    const fuse::profiler::ProfileEvent& workerBegin = fuse::profiler::eventAt(2);
+    expectTrue(workerBegin.threadId == workerThreadTid.load(std::memory_order_acquire),
+               "worker event tid matches worker chromeTraceThreadId");
+    expectTrue(std::string(workerBegin.name) == "worker_scope", "worker scope name preserved");
+}
+
+void testChromeTraceExport() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    {
         FUSE_PROFILE_SCOPE("chrome_scope");
+        {
+            FUSE_PROFILE_SCOPE("chrome_child");
+        }
     }
 
     const std::string json = fuse::profiler::exportChromeTraceJson();
+    expectTrue(json.find("\"displayTimeUnit\":\"ns\"") != std::string::npos,
+               "chrome trace declares displayTimeUnit");
+    expectTrue(json.find("\"metadata\":{\"name\":\"FUSE CPU profiler\"}") != std::string::npos,
+               "chrome trace includes metadata block");
     expectTrue(json.find("\"traceEvents\":[") != std::string::npos, "chrome trace has traceEvents root");
     expectTrue(json.find("\"name\":\"chrome_scope\"") != std::string::npos, "chrome trace includes scope name");
+    expectTrue(json.find("\"name\":\"chrome_child\"") != std::string::npos, "chrome trace includes nested scope");
     expectTrue(json.find("\"ph\":\"B\"") != std::string::npos, "chrome trace has begin phase");
     expectTrue(json.find("\"ph\":\"E\"") != std::string::npos, "chrome trace has end phase");
+    expectTrue(json.find("\"pid\":1") != std::string::npos, "chrome trace pins process id");
+    expectTrue(json.find("\"tid\":") != std::string::npos, "chrome trace exports thread id");
+    expectTrue(json.find("\"id\":") != std::string::npos, "chrome trace pairs begin/end with id");
+    expectTrue(json.find("\"args\":{\"depth\":") != std::string::npos, "chrome trace exports nesting depth args");
     expectTrue(json.back() == '}', "chrome trace json is closed");
 }
 
@@ -125,6 +217,8 @@ int main() {
     testProfileScopeRecordsEvents();
     testProfilerDisabledSkipsEvents();
     testFrameBoundaryIncrementsIndex();
+    testNestedScopeOrdering();
+    testThreadIdStubs();
     testChromeTraceExport();
     testFatalHandlerHook();
     testVerifyMacro();
