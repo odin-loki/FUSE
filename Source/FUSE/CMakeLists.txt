@@ -36,6 +36,7 @@ add_subdirectory(Hybrid)
 
 if(FUSE_BUILD_PROJECT)
     add_subdirectory(Project)
+    add_subdirectory(Scene)
 endif()
 
 if(FUSE_BUILD_MODULES)
