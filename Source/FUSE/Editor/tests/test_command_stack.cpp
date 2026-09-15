@@ -371,6 +371,80 @@ void testCommandStackEvictedCount() {
     expectTrue(stack.evictedCount() == 5u, "command stack tracks evicted entries");
 }
 
+void testCommandStackPreservesCallerBaseline() {
+    fuse::editor::CommandStack stack;
+
+    fuse::editor::EditorCommand command =
+        makeSetPropertyCommand(1u, "transform.position", "1,2,3");
+    command.propertyValueBefore = "0,0,0";
+    stack.execute(std::move(command));
+
+    const fuse::editor::EditorCommand* peek = stack.peekUndo();
+    expectTrue(peek != nullptr && peek->propertyValueBefore == "0,0,0",
+               "caller-supplied baseline preserved on first push");
+    expectTrue(peek->propertyValue == "1,2,3", "latest value retained");
+}
+
+void testCommandStackPushWithBeforeBaseline() {
+    fuse::editor::CommandStack stack;
+
+    stack.push(makeSetPropertyCommand(1u, "transform.position", "4,5,6"), "1,2,3");
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "7,8,9"));
+
+    const fuse::editor::EditorCommand* peek = stack.peekUndo();
+    expectTrue(peek != nullptr && peek->propertyValueBefore == "1,2,3",
+               "push overload seeds coalesce baseline");
+    expectTrue(peek->propertyValue == "7,8,9", "coalesced push updates latest value");
+    expectTrue(stack.undoDepth() == 1u, "coalesced edits remain one undo step");
+}
+
+void testCommandStackUndoPostsInversePending() {
+    fuse::editor::CommandStack stack;
+
+    stack.push(makeSetPropertyCommand(1u, "transform.position", "1,2,3"), "0,0,0");
+    expectTrue(stack.pendingQueue().pendingCount() == 1u, "execute posts forward edit");
+
+    stack.undo();
+    expectTrue(stack.pendingQueue().pendingCount() == 2u, "undo posts inverse edit");
+    expectTrue(stack.appliedCount() == 2u, "undo increments applied count");
+    expectTrue(stack.canRedo(), "undo leaves redo branch");
+}
+
+void testCommandStackStackDepthRoundTrip() {
+    fuse::editor::CommandStack stack;
+
+    for (fuse::u32 step = 0; step < 8u; ++step) {
+        stack.push(makeSetPropertyCommand(step + 1u, "transform.position",
+                                          std::to_string(step).c_str()),
+                   "baseline");
+    }
+
+    expectTrue(stack.undoDepth() == 8u, "eight pushes yield depth eight");
+
+    for (fuse::u32 step = 0; step < 4u; ++step) {
+        stack.undo();
+    }
+
+    expectTrue(stack.undoDepth() == 4u, "four undos halve depth");
+    expectTrue(stack.redoDepth() == 4u, "four undos populate redo branch");
+
+    for (fuse::u32 step = 0; step < 4u; ++step) {
+        stack.redo();
+    }
+
+    expectTrue(stack.undoDepth() == 8u, "four redos restore depth");
+    expectTrue(stack.redoDepth() == 0u, "redo branch drained after round-trip");
+}
+
+void testUndoStackPushAlias() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    stack.push(std::make_unique<CounterCommand>(counter, 0, 5, "push alias"));
+    expectTrue(counter == 5, "push alias executes command");
+    expectTrue(stack.undoCount() == 1u, "push alias records undo step");
+}
+
 void testUndoStackSnapshotCapture() {
     fuse::editor::UndoStack stack;
     int counter = 0;
@@ -416,7 +490,12 @@ int main() {
     testCommandStackCoalesceUndoRestoresFirstValue();
     testCommandStackPeekUndoRedo();
     testCommandStackEvictedCount();
+    testCommandStackPreservesCallerBaseline();
+    testCommandStackPushWithBeforeBaseline();
+    testCommandStackUndoPostsInversePending();
+    testCommandStackStackDepthRoundTrip();
     testUndoStackDirtyTracking();
+    testUndoStackPushAlias();
     testUndoStackSnapshotCapture();
     fuse::core::shutdown();
 

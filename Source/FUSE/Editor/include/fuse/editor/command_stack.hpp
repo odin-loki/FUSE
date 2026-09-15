@@ -2,6 +2,7 @@
 
 #include <fuse/editor/command_queue.hpp>
 
+#include <string_view>
 #include <vector>
 
 namespace fuse::editor {
@@ -27,6 +28,7 @@ public:
 
     void execute(EditorCommand command);
     void push(EditorCommand command) { execute(std::move(command)); }
+    void push(EditorCommand command, std::string_view beforeValue);
     void undo();
     void redo();
     void clear();

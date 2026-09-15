@@ -37,7 +37,9 @@ void CommandStack::execute(EditorCommand command) {
         return;
     }
 
-    command.propertyValueBefore = command.propertyValue;
+    if (command.propertyValueBefore.empty()) {
+        command.propertyValueBefore = command.propertyValue;
+    }
     m_undoStack.push_back(std::move(command));
     m_redoStack.clear();
     ++m_undoDepth;
@@ -47,6 +49,11 @@ void CommandStack::execute(EditorCommand command) {
 
     m_pending.post(m_undoStack.back());
     ++m_appliedCount;
+}
+
+void CommandStack::push(EditorCommand command, std::string_view beforeValue) {
+    command.propertyValueBefore = beforeValue;
+    execute(std::move(command));
 }
 
 void CommandStack::undo() {
@@ -59,6 +66,18 @@ void CommandStack::undo() {
     --m_undoDepth;
     ++m_redoDepth;
     markDirty_();
+
+    const EditorCommand& undone = m_redoStack.back();
+    if (undone.kind == CommandKind::SetProperty) {
+        EditorCommand inverse;
+        inverse.kind = CommandKind::SetProperty;
+        inverse.target = undone.target;
+        inverse.propertyName = undone.propertyName;
+        inverse.propertyValue = undone.propertyValueBefore;
+        inverse.propertyValueBefore = undone.propertyValue;
+        m_pending.post(inverse);
+        ++m_appliedCount;
+    }
 }
 
 void CommandStack::redo() {
