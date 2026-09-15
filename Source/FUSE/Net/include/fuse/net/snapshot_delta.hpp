@@ -77,9 +77,13 @@ struct SnapshotDeltaPreflight {
     bool base_frame_ok = true;
     /// True when delta kind, masks, and payload bytes are structurally consistent.
     bool payload_ok = true;
+    /// True when per-patch ECS/physics field masks and payload byte lengths align.
+    bool patch_masks_ok = true;
+    /// True for `SnapshotDeltaKind::None` deltas with no patch/full payload bytes.
+    bool empty_delta = false;
 
     [[nodiscard]] bool can_apply() const {
-        return base_checksum_ok && entity_mask_ok && base_frame_ok && payload_ok;
+        return base_checksum_ok && entity_mask_ok && base_frame_ok && payload_ok && patch_masks_ok;
     }
 };
 
@@ -115,11 +119,35 @@ struct SnapshotDeltaPreflight {
 /// True when a patch row carries at least one field mask with matching payload bytes.
 [[nodiscard]] bool validate_entity_patch_masks(const SnapshotEntityPatch& patch);
 
+/// True when `mask` only sets known `SnapshotEcsField` bits.
+[[nodiscard]] bool validate_ecs_field_mask(u8 mask);
+
+/// True when `mask` only sets known `SnapshotPhysicsField` bits.
+[[nodiscard]] bool validate_physics_field_mask(u8 mask);
+
+/// Expected serialized byte length for masked ECS fields.
+[[nodiscard]] u32 expected_masked_ecs_byte_count(u8 mask);
+
+/// Expected serialized byte length for masked physics fields.
+[[nodiscard]] u32 expected_masked_physics_byte_count(u8 mask);
+
+/// True when patch field masks are valid and payload byte lengths match the masks.
+[[nodiscard]] bool validate_entity_patch_payload_sizes(const SnapshotEntityPatch& patch);
+
+/// True when every entity patch row passes mask and payload-size validation.
+[[nodiscard]] bool validate_delta_patch_masks(const SnapshotDelta& delta);
+
 /// True when delta kind, entity mask, and payload bytes are internally consistent.
 [[nodiscard]] bool validate_delta_payload(const SnapshotDelta& delta);
 
-/// True for `SnapshotDeltaKind::None` deltas (no-op bandwidth payload).
+/// True for `SnapshotDeltaKind::None` deltas with no patch/full payload bytes.
 [[nodiscard]] bool is_empty_snapshot_delta(const SnapshotDelta& delta);
+
+/// Entity patch row count (zero for `None` and `Full` kinds).
+[[nodiscard]] u32 count_entity_patches(const SnapshotDelta& delta);
+
+/// True when `delta` carries at least one entity patch row.
+[[nodiscard]] bool has_entity_patches(const SnapshotDelta& delta);
 
 [[nodiscard]] SnapshotDelta compute_snapshot_delta(const GameSnapshot& base, const GameSnapshot& target);
 [[nodiscard]] GameSnapshot apply_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta);
@@ -153,6 +181,7 @@ public:
     /// Evicts the oldest retained snapshot (no-op when empty).
     [[nodiscard]] std::optional<GameSnapshot> pop_oldest();
     [[nodiscard]] const GameSnapshot* get(u32 frame) const;
+    [[nodiscard]] const GameSnapshot* oldest() const;
     [[nodiscard]] const GameSnapshot* newest() const;
 
     /// True when `base_frame` is retained and `preflight_snapshot_delta` would succeed.
@@ -164,5 +193,8 @@ public:
 private:
     RollbackBuffer m_buffer;
 };
+
+/// True when `base_frame` is within the retained history ring window.
+[[nodiscard]] bool can_apply_delta_to_history(const SnapshotHistoryRing& ring, u32 base_frame);
 
 } // namespace fuse::net
