@@ -11,7 +11,7 @@
 | Component | Location | Notes |
 |-----------|----------|-------|
 | `ParticleSoA` | `Source/FUSE/VFX/include/fuse/vfx/particle_emitter.hpp` | SoA columns + `free_slots` dead-index pool |
-| `particle_soa::*` | `Source/FUSE/VFX/include/fuse/vfx/particle_soa_ops.hpp` | Standalone burst/rate emit + `simulate_step` CPU stubs |
+| `particle_soa::*` | `Source/FUSE/VFX/include/fuse/vfx/particle_soa_ops.hpp` | Standalone burst/rate emit, `lifetime_cull`, and `simulate_step` CPU stubs |
 | `ParticleGpuMirror` | `Source/FUSE/VFX/include/fuse/vfx/particle_gpu.hpp` | CPU mirror + packed SSBO layout for stub tests |
 | `ParticleGpuDispatch` | `Source/FUSE/VFX/include/fuse/vfx/particle_gpu.hpp` | Simulate (256) / emit (64) CUDA grid counts |
 | `ParticleEmitter` | `Source/FUSE/VFX/src/particle_emitter.cpp` | Burst/rate emit, gravity/drag/attribute integration |
@@ -26,15 +26,15 @@
 
 ### Emission
 
-- **SoA helpers** — `particle_soa::burst_emit` and `accumulate_rate_emit` fill `ParticleSoA` directly with deterministic `seed` RNG (splitmix-style `mix_seed`). `ParticleEmitter` delegates to these helpers.
-- **Burst** — emit `count` particles in one call; clamped to remaining free slots. `burst(0)` and pre-`init` bursts are no-ops.
+- **SoA helpers** — `particle_soa::burst_emit` and `accumulate_rate_emit` fill `ParticleSoA` directly with deterministic `seed` RNG (splitmix-style `mix_seed`). `BurstEmitResult::emitted` reports the actual fill count (clamped at capacity). `ParticleEmitter` delegates to these helpers.
+- **Burst** — emit `count` particles in one call; clamped to remaining free slots. `burst(0)` / `burst_emit(..., 0, ...)` and pre-`init` bursts are no-ops.
 - **Rate** — accumulator driven by `emit_rate` (particles/second) during `simulate`; accumulator clears when the free list is exhausted at capacity.
 - **Allocation** — `free_slots` provides O(1) slot lookup via `allocate_slot_()`; expired particles return slots after the simulate pass. `free_slot_count()` reports remaining capacity.
 - **Spawn burst** — `ParticleSystem::spawn_effect(..., burst_count)` seeds the backing emitter with an immediate burst (default 1).
 
 ### Simulation
 
-`particle_soa::simulate_step` (used by `ParticleEmitter::simulate`) jobifies per-slot integration via `fuse::jobs::parallel_for` with grain size 64. Each live slot:
+`particle_soa::lifetime_cull` ages live slots and recycles expired particles without integrating motion or attributes — a standalone stub for future GPU kill passes. `particle_soa::simulate_step` (used by `ParticleEmitter::simulate`) jobifies per-slot integration via `fuse::jobs::parallel_for` with grain size 64. Each live slot:
 
 1. Advances normalized age (`age / lifetime`)
 2. Applies gravity and drag to velocity
@@ -80,8 +80,9 @@ ctest --test-dir build -R fuse_vfx_runtime --output-on-failure
 
 | Test area | Coverage |
 |-----------|----------|
-| SoA ops | Direct `burst_emit` fill, deterministic seed parity, `simulate_step` age/kill, rate accumulator |
+| SoA ops | Direct `burst_emit` fill/emit count, `burst_emit(0)`, deterministic seed parity, `lifetime_cull` partial/full expiry, `simulate_step` age/kill, rate accumulator |
 | Burst | Requested count, `burst(0)`, pre-init no-op, capacity clamp, slot recycling |
+| Lifetime cull | Empty SoA, non-positive `dt` no-op, partial expiry without integration, full slot recycle |
 | Emit rate | Steady-state particles/sec, burst+rate fill, capacity accumulator reset |
 | Free list | Partial/mixed expiry recycle, multi-burst slot reuse, `free_slot_count()` after burst and simulate |
 | Integration | Gravity, drag, size/color/alpha interpolation, disabled emitter |
