@@ -1,8 +1,13 @@
 #include <fuse/physics/broadphase/spatial_hash.hpp>
 #include <fuse/physics/physics_data.hpp>
 
+#include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/jobs/parallel_for.hpp>
+
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 
 namespace {
 
@@ -13,6 +18,89 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void expectEq(std::size_t actual, std::size_t expected, const char* message) {
+    if (actual != expected) {
+        std::fprintf(stderr, "FAIL: %s (expected %zu, got %zu)\n", message, expected, actual);
+        ++g_failures;
+    }
+}
+
+bool pairListsContainAll(
+    const std::vector<fuse::physics::broadphase::CandidatePair>& superset,
+    const std::vector<fuse::physics::broadphase::CandidatePair>& subset) {
+    auto canonical = [](fuse::physics::broadphase::CandidatePair pair) {
+        if (pair.bodyA > pair.bodyB) {
+            std::swap(pair.bodyA, pair.bodyB);
+        }
+        return pair;
+    };
+
+    std::vector<fuse::physics::broadphase::CandidatePair> left = superset;
+    for (auto& pair : left) {
+        pair = canonical(pair);
+    }
+    std::sort(left.begin(), left.end(), [](const auto& a, const auto& b) {
+        return a.bodyA < b.bodyA || (a.bodyA == b.bodyA && a.bodyB < b.bodyB);
+    });
+
+    for (const fuse::physics::broadphase::CandidatePair& rawPair : subset) {
+        const fuse::physics::broadphase::CandidatePair pair = canonical(rawPair);
+        const auto it = std::lower_bound(left.begin(), left.end(), pair, [](const auto& a, const auto& b) {
+            return a.bodyA < b.bodyA || (a.bodyA == b.bodyA && a.bodyB < b.bodyB);
+        });
+        if (it == left.end() || it->bodyA != pair.bodyA || it->bodyB != pair.bodyB) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool pairListsEqual(const std::vector<fuse::physics::broadphase::CandidatePair>& lhs,
+                    const std::vector<fuse::physics::broadphase::CandidatePair>& rhs) {
+    if (lhs.size() != rhs.size()) {
+        return false;
+    }
+
+    auto canonical = [](fuse::physics::broadphase::CandidatePair pair) {
+        if (pair.bodyA > pair.bodyB) {
+            std::swap(pair.bodyA, pair.bodyB);
+        }
+        return pair;
+    };
+
+    std::vector<fuse::physics::broadphase::CandidatePair> left = lhs;
+    std::vector<fuse::physics::broadphase::CandidatePair> right = rhs;
+    for (auto& pair : left) {
+        pair = canonical(pair);
+    }
+    for (auto& pair : right) {
+        pair = canonical(pair);
+    }
+
+    std::sort(left.begin(), left.end(), [](const auto& a, const auto& b) {
+        return a.bodyA < b.bodyA || (a.bodyA == b.bodyA && a.bodyB < b.bodyB);
+    });
+    std::sort(right.begin(), right.end(), [](const auto& a, const auto& b) {
+        return a.bodyA < b.bodyA || (a.bodyA == b.bodyA && a.bodyB < b.bodyB);
+    });
+
+    for (std::size_t i = 0; i < left.size(); ++i) {
+        if (left[i].bodyA != right[i].bodyA || left[i].bodyB != right[i].bodyB) {
+            return false;
+        }
+    }
+    return true;
+}
+
+template <typename Body>
+void withScheduler(fuse::u32 workers, Body&& body) {
+    auto& scheduler = fuse::jobs::JobScheduler::instance();
+    scheduler.shutdown();
+    scheduler.initialize(workers);
+    body();
+    scheduler.shutdown();
 }
 
 void testSpatialHashFunction() {
@@ -41,11 +129,152 @@ void testBroadphaseFindsOverlappingPair() {
     expectTrue(!pairs.empty(), "broadphase emits candidate pair for overlapping spheres");
 }
 
+void testBodiesStraddlingCells() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+
+    bodies.addBody({1.9f, 0.f, 0.f}, 1.f);
+    bodies.addBody({2.1f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 1, {1.f, 0.f, 0.f});
+
+    fuse::physics::broadphase::SpatialHashParams params;
+    params.cellSize = 2.f;
+    params.tableSize = 256;
+    params.bodyCount = bodies.count();
+
+    const auto pairs = fuse::physics::broadphase::runBroadphase(bodies, shapes, params);
+    expectTrue(!pairs.empty(), "bodies straddling cells still emit candidate pairs");
+}
+
+std::vector<fuse::physics::broadphase::CandidatePair> bruteForcePairs(
+    const fuse::physics::RigidBodySoA& bodies,
+    const fuse::physics::CollisionShapeSoA& shapes) {
+    std::vector<fuse::physics::broadphase::CandidatePair> pairs;
+    for (fuse::u32 shapeA = 0; shapeA < shapes.count(); ++shapeA) {
+        const fuse::u32 bodyA = shapes.bodyIndices[shapeA];
+        if (bodyA >= bodies.count()) {
+            continue;
+        }
+        const fuse::f32 radiusA = shapes.params[shapeA].x;
+        const fuse::physics::vec3 posA = bodies.positions[bodyA];
+
+        for (fuse::u32 shapeB = shapeA + 1; shapeB < shapes.count(); ++shapeB) {
+            const fuse::u32 bodyB = shapes.bodyIndices[shapeB];
+            if (bodyB >= bodies.count() || bodyA == bodyB) {
+                continue;
+            }
+            const fuse::f32 radiusB = shapes.params[shapeB].x;
+            const fuse::physics::vec3 posB = bodies.positions[bodyB];
+            const fuse::f32 dx = posB.x - posA.x;
+            const fuse::f32 dy = posB.y - posA.y;
+            const fuse::f32 dz = posB.z - posA.z;
+            const fuse::f32 distSq = dx * dx + dy * dy + dz * dz;
+            const fuse::f32 reach = radiusA + radiusB;
+            if (distSq <= reach * reach) {
+                fuse::u32 a = bodyA;
+                fuse::u32 b = bodyB;
+                if (a > b) {
+                    std::swap(a, b);
+                }
+                pairs.push_back({a, b});
+            }
+        }
+    }
+    return pairs;
+}
+
+void populateRandomSpheres(fuse::u32 count,
+                           fuse::physics::RigidBodySoA& bodies,
+                           fuse::physics::CollisionShapeSoA& shapes) {
+    bodies.clear();
+    shapes.clear();
+    for (fuse::u32 i = 0; i < count; ++i) {
+        const fuse::f32 x = static_cast<fuse::f32>((i * 17u) % 100u) * 0.25f;
+        const fuse::f32 y = static_cast<fuse::f32>((i * 31u) % 100u) * 0.25f;
+        const fuse::f32 z = static_cast<fuse::f32>((i * 7u) % 100u) * 0.25f;
+        bodies.addBody({x, y, z}, 1.f);
+        shapes.addShape(fuse::physics::CollisionShapeType::Sphere, i, {0.5f, 0.f, 0.f});
+    }
+}
+
+void testBroadphaseMatchesBruteForce() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    constexpr fuse::u32 kSphereCount = 256u;
+    populateRandomSpheres(kSphereCount, bodies, shapes);
+
+    fuse::physics::broadphase::SpatialHashParams params;
+    params.cellSize = 1.f;
+    params.tableSize = 2048;
+    params.bodyCount = bodies.count();
+
+    const auto hashPairs = fuse::physics::broadphase::runBroadphase(bodies, shapes, params);
+    const auto brutePairs = bruteForcePairs(bodies, shapes);
+    expectTrue(pairListsContainAll(hashPairs, brutePairs),
+               "spatial hash includes all brute-force overlapping pairs");
+    expectTrue(!brutePairs.empty(), "random scene produces at least one true overlap");
+}
+
+void testBroadphaseParallelParity() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    populateRandomSpheres(128u, bodies, shapes);
+
+    fuse::physics::broadphase::SpatialHashParams params;
+    params.cellSize = 1.f;
+    params.tableSize = 1024;
+    params.bodyCount = bodies.count();
+
+    std::vector<fuse::physics::broadphase::CandidatePair> singleThreaded;
+    withScheduler(0u, [&] {
+        singleThreaded = fuse::physics::broadphase::runBroadphase(bodies, shapes, params);
+    });
+
+    std::vector<fuse::physics::broadphase::CandidatePair> multiThreaded;
+    withScheduler(4u, [&] {
+        multiThreaded = fuse::physics::broadphase::runBroadphase(bodies, shapes, params);
+    });
+
+    expectTrue(pairListsEqual(singleThreaded, multiThreaded),
+               "parallel broadphase matches single-thread scheduler output");
+}
+
+void testBroadphaseLargeScene() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    constexpr fuse::u32 kSphereCount = 1024u;
+    populateRandomSpheres(kSphereCount, bodies, shapes);
+
+    fuse::physics::broadphase::SpatialHashParams params;
+    params.cellSize = 1.f;
+    params.tableSize = 4096;
+    params.bodyCount = bodies.count();
+
+    std::vector<fuse::physics::broadphase::CandidatePair> singleThreaded;
+    withScheduler(0u, [&] {
+        singleThreaded = fuse::physics::broadphase::runBroadphase(bodies, shapes, params);
+    });
+
+    std::vector<fuse::physics::broadphase::CandidatePair> multiThreaded;
+    withScheduler(4u, [&] {
+        multiThreaded = fuse::physics::broadphase::runBroadphase(bodies, shapes, params);
+    });
+
+    expectTrue(pairListsEqual(singleThreaded, multiThreaded),
+               "1k-scene parallel broadphase matches single-thread output");
+    expectEq(singleThreaded.size(), multiThreaded.size(), "1k-scene pair counts match");
+}
+
 } // namespace
 
 int main() {
     testSpatialHashFunction();
     testBroadphaseFindsOverlappingPair();
+    testBodiesStraddlingCells();
+    testBroadphaseMatchesBruteForce();
+    testBroadphaseParallelParity();
+    testBroadphaseLargeScene();
 
     if (g_failures == 0) {
         std::printf("fuse_physics_broadphase_tests: all checks passed\n");

@@ -54,6 +54,8 @@ FUSE_PHYSICS_INLINE ivec2 worldToCell2D(vec2 position, f32 cellSize) {
 }
 
 /// CPU stub of the CUDA broad-phase pipeline (B4.2).
+/// Phase 1 jobifies shape→cell insertion; phase 2 jobifies per-cell candidate generation
+/// via `fuse::jobs::parallel_for` (serial when the job scheduler is single-threaded).
 std::vector<CandidatePair> runBroadphase(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
