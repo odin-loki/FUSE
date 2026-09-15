@@ -5,6 +5,7 @@
 #include <fuse/audio/audio_components.hpp>
 #include <fuse/audio/audio_desc.hpp>
 #include <fuse/audio/audio_registry.hpp>
+#include <fuse/audio/binaural_pan.hpp>
 #include <fuse/audio/math.hpp>
 #include <fuse/audio/occlusion.hpp>
 #include <fuse/handle.hpp>
@@ -32,6 +33,11 @@ public:
                                                               const Vec3& source,
                                                               float source_occlusion) const;
 
+    /// Binaural pan gains with empty-HRTF guards and distance/occlusion coupling.
+    BinauralPanGains compute_source_binaural_pan_gains(const Vec3& rel_listener,
+                                                         float distance_attenuation,
+                                                         float occlusion_gain) const;
+
     void mix(const AudioRegistry& registry, const HandleMap<AudioClip>& clips, float dt,
              std::vector<float>& stereo_out, u32 frames);
 
@@ -49,7 +55,8 @@ private:
     std::vector<AABB> m_occlusionBlockers;
 
     float sample_clip(const AudioClip& clip, float play_head, u32 channel) const;
-    void apply_hrtf_pan(float mono_sample, const Vec3& rel, float attenuation, float& left,
+    void apply_hrtf_pan(float mono_sample, const Vec3& rel, float distance_attenuation,
+                        float occlusion_gain, float output_attenuation, float& left,
                         float& right) const;
 };
 

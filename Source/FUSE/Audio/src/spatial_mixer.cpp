@@ -47,6 +47,16 @@ OcclusionAttenuation SpatialMixer::compute_source_occlusion_attenuation(
                                             static_cast<u32>(m_occlusionBlockers.size()));
 }
 
+BinauralPanGains SpatialMixer::compute_source_binaural_pan_gains(const Vec3& rel_listener,
+                                                                 float distance_attenuation,
+                                                                 float occlusion_gain) const {
+    BinauralPanGains pan = compute_binaural_pan_gains_guarded(m_hrtfEnabled, rel_listener);
+    if (should_apply_hrtf_pan(m_hrtfEnabled, rel_listener)) {
+        apply_hrtf_attenuation_coupling(pan, distance_attenuation, occlusion_gain);
+    }
+    return pan;
+}
+
 float SpatialMixer::sample_clip(const AudioClip& clip, float play_head, u32 channel) const {
     if (clip.channel_count == 0 || clip.samples.empty()) {
         return 0.f;
@@ -61,25 +71,19 @@ float SpatialMixer::sample_clip(const AudioClip& clip, float play_head, u32 chan
     return clip.samples[static_cast<usize>(frame) * clip.channel_count + ch];
 }
 
-void SpatialMixer::apply_hrtf_pan(float mono_sample, const Vec3& rel, float attenuation,
-                                  float& left, float& right) const {
-    const float distance = rel.length();
-    if (distance < 1e-5f) {
-        left += mono_sample * attenuation;
-        right += mono_sample * attenuation;
+void SpatialMixer::apply_hrtf_pan(float mono_sample, const Vec3& rel, float distance_attenuation,
+                                  float occlusion_gain, float output_attenuation, float& left,
+                                  float& right) const {
+    if (!should_apply_hrtf_pan(m_hrtfEnabled, rel)) {
+        left += mono_sample * output_attenuation;
+        right += mono_sample * output_attenuation;
         return;
     }
 
-    if (!m_hrtfEnabled) {
-        left += mono_sample * attenuation;
-        right += mono_sample * attenuation;
-        return;
-    }
-
-    BinauralPanGains pan = compute_binaural_pan_gains(rel);
-    apply_hrtf_distance_factor(pan, attenuation);
-    left += mono_sample * attenuation * pan.left;
-    right += mono_sample * attenuation * pan.right;
+    const BinauralPanGains pan =
+        compute_source_binaural_pan_gains(rel, distance_attenuation, occlusion_gain);
+    left += mono_sample * output_attenuation * pan.left;
+    right += mono_sample * output_attenuation * pan.right;
 }
 
 void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>& clips, float dt,
@@ -146,7 +150,8 @@ void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>
             float left = 0.f;
             float right = 0.f;
             if (source->desc.spatial) {
-                apply_hrtf_pan(mono, rel, effective_attenuation, left, right);
+                apply_hrtf_pan(mono, rel, distance_attenuation, occlusion.gain,
+                               effective_attenuation, left, right);
             } else {
                 left = mono;
                 right = mono;

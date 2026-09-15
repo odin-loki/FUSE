@@ -5,6 +5,14 @@
 
 namespace fuse::audio {
 
+bool has_hrtf_ir(const HrtfIrStub& ir) {
+    return ir.samples != nullptr && ir.length > 0;
+}
+
+bool should_apply_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener) {
+    return hrtf_enabled && rel_listener.length() >= 1e-5f;
+}
+
 namespace {
 
 float clamp_unit(float value) {
@@ -91,6 +99,44 @@ BinauralPanGains compute_binaural_pan_gains(const Vec3& world_relative, const Li
     return compute_binaural_pan_gains(compute_binaural_angles(world_relative, basis), params);
 }
 
+ListenerBasis compute_listener_basis(const AudioListener& listener) {
+    return make_listener_basis_safe(listener.forward, listener.up);
+}
+
+BinauralPanAngles compute_binaural_angles(const AudioListener& listener, const Vec3& source_position) {
+    const Vec3 world_relative = source_position - listener.position;
+    return compute_binaural_angles(world_relative, compute_listener_basis(listener));
+}
+
+BinauralPanGains compute_binaural_pan_gains(const AudioListener& listener, const Vec3& source_position,
+                                             const BinauralPanParams& params) {
+    return compute_binaural_pan_gains(compute_binaural_angles(listener, source_position), params);
+}
+
+BinauralPanGains make_centre_binaural_pan_gains() {
+    BinauralPanGains gains;
+    gains.left = 0.5f;
+    gains.right = 0.5f;
+    gains.itd_seconds = 0.f;
+    return gains;
+}
+
+float compute_pan_spread(const BinauralPanGains& gains) {
+    return std::fabs(gains.left - gains.right);
+}
+
+bool is_centre_panned(const BinauralPanGains& gains, float epsilon) {
+    return compute_pan_spread(gains) <= epsilon;
+}
+
+BinauralPanGains compute_binaural_pan_gains_guarded(bool hrtf_enabled, const Vec3& rel_listener,
+                                                    const BinauralPanParams& params) {
+    if (!should_apply_hrtf_pan(hrtf_enabled, rel_listener)) {
+        return make_centre_binaural_pan_gains();
+    }
+    return compute_binaural_pan_gains(rel_listener, params);
+}
+
 void clamp_binaural_pan_gains(BinauralPanGains& gains) {
     gains.left = std::clamp(gains.left, 0.f, 1.f);
     gains.right = std::clamp(gains.right, 0.f, 1.f);
@@ -105,6 +151,27 @@ float compute_hrtf_distance_factor(float distance_attenuation,
 void apply_hrtf_distance_factor(BinauralPanGains& gains, float distance_attenuation,
                                 const BinauralPanParams& params) {
     const float blend = compute_hrtf_distance_factor(distance_attenuation, params);
+    const float centre = 0.5f * (gains.left + gains.right);
+    gains.left = centre + (gains.left - centre) * blend;
+    gains.right = centre + (gains.right - centre) * blend;
+    clamp_binaural_pan_gains(gains);
+}
+
+float compute_hrtf_spatial_blend(float distance_attenuation, float occlusion_gain,
+                                 const HrtfAttenuationCoupling& coupling,
+                                 const BinauralPanParams& params) {
+    const float distance_blend = compute_hrtf_distance_factor(distance_attenuation, params);
+    const float occlusion_blend = compute_hrtf_distance_factor(std::clamp(occlusion_gain, 0.f, 1.f),
+                                                               params);
+    const float weight = std::clamp(coupling.occlusion_weight, 0.f, 1.f);
+    return distance_blend * (1.f - weight) + occlusion_blend * weight;
+}
+
+void apply_hrtf_attenuation_coupling(BinauralPanGains& gains, float distance_attenuation,
+                                     float occlusion_gain, const HrtfAttenuationCoupling& coupling,
+                                     const BinauralPanParams& params) {
+    const float blend = compute_hrtf_spatial_blend(distance_attenuation, occlusion_gain, coupling,
+                                                   params);
     const float centre = 0.5f * (gains.left + gains.right);
     gains.left = centre + (gains.left - centre) * blend;
     gains.right = centre + (gains.right - centre) * blend;

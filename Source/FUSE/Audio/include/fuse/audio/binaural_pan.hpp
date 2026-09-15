@@ -1,9 +1,22 @@
 #pragma once
 
+#include <fuse/audio/audio_components.hpp>
 #include <fuse/audio/math.hpp>
 #include <fuse/types.hpp>
 
 namespace fuse::audio {
+
+/// Stub HRTF impulse-response descriptor — empty IR falls back to ILD/ITD pan.
+struct HrtfIrStub {
+    const float* samples = nullptr;
+    u32 length = 0;
+};
+
+/// True when an HRTF IR stub has non-null, non-empty sample data.
+bool has_hrtf_ir(const HrtfIrStub& ir);
+
+/// True when HRTF pan should run (enabled and source is not co-located).
+bool should_apply_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener);
 
 /// Stereo pan law used for ILD stub gains.
 enum class PanLaw {
@@ -66,8 +79,47 @@ BinauralPanGains compute_binaural_pan_gains(const Vec3& rel_listener,
 BinauralPanGains compute_binaural_pan_gains(const Vec3& world_relative, const ListenerBasis& basis,
                                              const BinauralPanParams& params = {});
 
+/// Build a safe listener basis from an audio listener component.
+ListenerBasis compute_listener_basis(const AudioListener& listener);
+
+/// Azimuth/elevation from listener and source world positions.
+BinauralPanAngles compute_binaural_angles(const AudioListener& listener, const Vec3& source_position);
+
+/// Binaural gains from listener and source world positions.
+BinauralPanGains compute_binaural_pan_gains(const AudioListener& listener, const Vec3& source_position,
+                                             const BinauralPanParams& params = {});
+
+/// Mono centre fallback when HRTF pan is bypassed.
+BinauralPanGains make_centre_binaural_pan_gains();
+
+/// L/R pan spread in [0, 1] — 0 when centre-panned.
+float compute_pan_spread(const BinauralPanGains& gains);
+
+/// True when left and right gains are within \p epsilon of centre pan.
+bool is_centre_panned(const BinauralPanGains& gains, float epsilon = 1e-3f);
+
+/// One-shot binaural gains with empty-HRTF guards (disabled / co-located → centre).
+BinauralPanGains compute_binaural_pan_gains_guarded(bool hrtf_enabled, const Vec3& rel_listener,
+                                                    const BinauralPanParams& params = {});
+
 /// Clamp per-ear gains to [0, 1].
 void clamp_binaural_pan_gains(BinauralPanGains& gains);
+
+/// Attenuation coupling — blends distance and occlusion into spatial image narrowing.
+struct HrtfAttenuationCoupling {
+    float occlusion_weight = 0.5f;
+};
+
+/// Combined spatial blend from distance attenuation and occlusion LF gain.
+float compute_hrtf_spatial_blend(float distance_attenuation, float occlusion_gain,
+                                 const HrtfAttenuationCoupling& coupling = {},
+                                 const BinauralPanParams& params = {});
+
+/// Apply distance + occlusion coupling to narrow the binaural image toward mono centre.
+void apply_hrtf_attenuation_coupling(BinauralPanGains& gains, float distance_attenuation,
+                                     float occlusion_gain,
+                                     const HrtfAttenuationCoupling& coupling = {},
+                                     const BinauralPanParams& params = {});
 
 /// Narrow binaural image at distance — full separation when attenuation is unity.
 float compute_hrtf_distance_factor(float distance_attenuation,
