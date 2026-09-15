@@ -12,6 +12,7 @@ enum class Level : u8 {
     Info = 2,
     Warn = 3,
     Error = 4,
+    Fatal = 5,
 };
 
 using SinkFn = void (*)(Level level, const char* message, void* userData);

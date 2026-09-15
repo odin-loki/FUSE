@@ -13,6 +13,7 @@ const char* levelPrefix(Level level) {
     case Level::Info: return "INFO";
     case Level::Warn: return "WARN";
     case Level::Error: return "ERROR";
+    case Level::Fatal: return "FATAL";
     }
     return "LOG";
 }
