@@ -18,7 +18,10 @@ enum class GpuFormat : u32 {
     Undefined = 0,
     R8G8B8A8Unorm = 37,
     R8G8B8A8Srgb = 43,
+    R16G16Sfloat = 76,
+    R16G16B16A16Sfloat = 97,
     D32Sfloat = 126,
+    R32Sfloat = 100,
 };
 
 enum class BufferUsage : u32 {

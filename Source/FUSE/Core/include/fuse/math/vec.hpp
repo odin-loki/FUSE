@@ -6,6 +6,14 @@
 
 namespace fuse::math {
 
+struct Vec2 {
+    f32 x = 0.f;
+    f32 y = 0.f;
+
+    Vec2() = default;
+    Vec2(f32 x_, f32 y_) : x(x_), y(y_) {}
+};
+
 struct Vec3 {
     f32 x = 0.f;
     f32 y = 0.f;
