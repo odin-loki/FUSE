@@ -75,12 +75,15 @@ struct InterestSetDiff {
     /// Apply enter/leave to a scope snapshot (ghost manager incremental update stub).
     /// Returns true when at least one entity was inserted or removed.
     [[nodiscard]] bool apply_diff(InterestScopeSet& scope) const;
-    void apply_to(InterestScopeSet& scope) const { (void)apply_diff(scope); }
+    /// Alias for `apply_diff` — returns false on empty diff or when scope is unchanged.
+    [[nodiscard]] bool apply_to(InterestScopeSet& scope) const { return apply_diff(scope); }
 
     [[nodiscard]] bool has_enters() const { return !entered.empty(); }
     [[nodiscard]] bool has_leaves() const { return !left.empty(); }
 };
 
+[[nodiscard]] InterestSetDiff make_empty_interest_diff();
+void clear_interest_diff(InterestSetDiff& diff);
 [[nodiscard]] bool is_empty_interest_diff(const InterestSetDiff& diff);
 [[nodiscard]] bool has_scope_enters(const InterestSetDiff& diff);
 [[nodiscard]] bool has_scope_leaves(const InterestSetDiff& diff);
@@ -119,7 +122,11 @@ public:
     void set_observer_position(ecs::vec3 position);
     [[nodiscard]] ecs::vec3 observer_position() const { return m_observer; }
 
-    void register_entity(InterestCandidate candidate);
+    /// Register one entity. Returns false when the entity id is already registered.
+    [[nodiscard]] bool register_entity(InterestCandidate candidate);
+    /// Remove a registered entity. Returns false when the entity is not registered.
+    [[nodiscard]] bool unregister_entity(ecs::EntityID entity);
+    [[nodiscard]] bool is_entity_registered(ecs::EntityID entity) const;
     /// Update a registered entity position. Returns false when the entity is not registered.
     [[nodiscard]] bool update_entity_position(ecs::EntityID entity, ecs::vec3 position);
     void clear_entities();
@@ -138,6 +145,8 @@ public:
 
     /// Count registered candidates in scope for the current observer (uses prior scope hysteresis).
     [[nodiscard]] u32 count_registered_in_radius() const;
+    /// True when at least one registered candidate is in scope for the current observer.
+    [[nodiscard]] bool has_registered_in_radius() const;
     /// Filter registered candidates in scope for the current observer (uses prior scope hysteresis).
     [[nodiscard]] u32 filter_registered_in_radius(std::vector<InterestEntry>& out_entries) const;
 

@@ -359,7 +359,7 @@ void run_interest_management_tests() {
     fuse::net::InterestSetDiff patch_diff{};
     patch_diff.entered = {make_entity(4)};
     patch_diff.left = {make_entity(2)};
-    patch_diff.apply_diff(applied_scope);
+    expectTrue(patch_diff.apply_diff(applied_scope), "apply_diff returns true when scope changes");
     expectTrue(applied_scope.size() == 3u, "apply_to preserves net scope size");
     expectTrue(applied_scope.contains(make_entity(1)), "apply_to keeps unchanged entities");
     expectTrue(applied_scope.contains(make_entity(3)), "apply_to keeps unchanged entities");
@@ -368,7 +368,7 @@ void run_interest_management_tests() {
 
     fuse::net::InterestSetDiff noop_diff{};
     const fuse::net::InterestScopeSet before_noop = applied_scope;
-    noop_diff.apply_to(applied_scope);
+    expectTrue(!noop_diff.apply_to(applied_scope), "apply_to returns false on empty diff");
     expectTrue(applied_scope.equal_to(before_noop), "empty diff apply_to is a no-op");
 
     // --- evaluate_and_diff ---
@@ -390,7 +390,8 @@ void run_interest_management_tests() {
 
     fuse::net::InterestScopeSet replicated_scope;
     replicated_scope.entities = {make_entity(110)};
-    eval_second.apply_to(replicated_scope);
+    expectTrue(eval_second.apply_to(replicated_scope),
+               "apply_to returns true when replicating enter from evaluate_and_diff");
     expectTrue(replicated_scope.contains(make_entity(111)),
                "apply_to replicates enter from evaluate_and_diff");
     expectTrue(replicated_scope.size() == 2u, "apply_to grows replicated scope on enter");
@@ -437,7 +438,8 @@ void run_interest_management_tests() {
     fuse::net::InterestScopeSet empty_prev;
     fuse::net::InterestScopeSet empty_curr;
     fuse::net::InterestSetDiff both_empty_diff{};
-    fuse::net::diff_interest_scope_sets(empty_prev, empty_curr, both_empty_diff);
+    expectTrue(!fuse::net::diff_interest_scope_sets(empty_prev, empty_curr, both_empty_diff),
+               "diff of two empty scope sets returns false");
     expectTrue(both_empty_diff.empty(), "diff of two empty scope sets is empty");
 
     // --- evaluate_and_diff return value + previous_scope_set ---
@@ -502,7 +504,7 @@ void run_interest_management_tests() {
     fuse::net::InterestSetDiff alias_diff{};
     alias_diff.entered = {make_entity(3)};
     alias_diff.left = {make_entity(1)};
-    alias_diff.apply_diff(alias_scope);
+    expectTrue(alias_diff.apply_diff(alias_scope), "apply_diff returns true when scope changes");
     expectTrue(alias_scope.size() == 2u, "apply_diff preserves net scope size");
     expectTrue(alias_scope.contains(make_entity(2)), "apply_diff keeps unchanged entity");
     expectTrue(alias_scope.contains(make_entity(3)), "apply_diff inserts entered entity");
@@ -510,10 +512,9 @@ void run_interest_management_tests() {
 
     fuse::net::InterestSetDiff guarded_empty_diff{};
     const fuse::net::InterestScopeSet alias_before_guard = alias_scope;
-    guarded_empty_diff.apply_diff(alias_scope);
-    expectTrue(alias_scope.equal_to(alias_before_guard), "apply_diff no-op on empty diff");
     expectTrue(!guarded_empty_diff.apply_diff(alias_scope),
                "apply_diff returns false on empty diff");
+    expectTrue(alias_scope.equal_to(alias_before_guard), "apply_diff no-op on empty diff");
 
     // --- diff_interest_scope_sets bool return + equal-set guard ---
     fuse::net::InterestScopeSet equal_a;
@@ -613,6 +614,80 @@ void run_interest_management_tests() {
     expectTrue(clearable_diff.empty(), "InterestSetDiff::clear empties entered and left");
     expectTrue(!fuse::net::has_scope_enters(clearable_diff),
                "cleared diff has no enters via helper");
+
+    // --- make_empty_interest_diff + clear_interest_diff helpers ---
+    const fuse::net::InterestSetDiff factory_empty = fuse::net::make_empty_interest_diff();
+    expectTrue(fuse::net::is_empty_interest_diff(factory_empty),
+               "make_empty_interest_diff produces empty diff");
+
+    fuse::net::InterestSetDiff cleared_via_helper{};
+    cleared_via_helper.entered = {make_entity(1)};
+    cleared_via_helper.left = {make_entity(2)};
+    fuse::net::clear_interest_diff(cleared_via_helper);
+    expectTrue(cleared_via_helper.empty(), "clear_interest_diff empties entered and left");
+    expectTrue(fuse::net::is_empty_interest_diff(cleared_via_helper),
+               "clear_interest_diff leaves is_empty_interest_diff true");
+
+    // --- register_entity / unregister_entity guards ---
+    fuse::net::InterestManager registration_manager;
+    registration_manager.set_policy(policy);
+    registration_manager.set_observer_position(origin);
+    const fuse::ecs::EntityID reg_entity = make_entity(170);
+    expectTrue(registration_manager.register_entity({reg_entity, {10.f, 0.f, 0.f, 0.f}, 0.f}),
+               "register_entity succeeds for new entity");
+    expectTrue(registration_manager.is_entity_registered(reg_entity),
+               "is_entity_registered reports registered entity");
+    expectTrue(!registration_manager.is_entity_registered(make_entity(999)),
+               "is_entity_registered rejects unknown entity");
+    expectTrue(!registration_manager.register_entity({reg_entity, {20.f, 0.f, 0.f, 0.f}, 0.f}),
+               "register_entity rejects duplicate entity id");
+
+    registration_manager.evaluate();
+    expectTrue(registration_manager.unregister_entity(reg_entity),
+               "unregister_entity removes registered entity");
+    expectTrue(!registration_manager.is_entity_registered(reg_entity),
+               "is_entity_registered false after unregister");
+    expectTrue(!registration_manager.unregister_entity(reg_entity),
+               "unregister_entity rejects unknown entity");
+    expectTrue(registration_manager.register_entity({reg_entity, {10.f, 0.f, 0.f, 0.f}, 0.f}),
+               "register_entity succeeds after unregister");
+
+    // --- has_registered_in_radius bool guard ---
+    fuse::net::InterestManager radius_guard_manager;
+    radius_guard_manager.set_policy(hysteresis_policy);
+    radius_guard_manager.set_observer_position(origin);
+    radius_guard_manager.register_entity({make_entity(180), {500.f, 0.f, 0.f, 0.f}, 0.f});
+    radius_guard_manager.evaluate();
+    expectTrue(!radius_guard_manager.has_registered_in_radius(),
+               "has_registered_in_radius false when all registered entities are out of scope");
+    radius_guard_manager.register_entity({make_entity(181), {40.f, 0.f, 0.f, 0.f}, 0.f});
+    radius_guard_manager.evaluate();
+    expectTrue(radius_guard_manager.has_registered_in_radius(),
+               "has_registered_in_radius true when at least one entity is in scope");
+    expectTrue(radius_guard_manager.count_registered_in_radius() > 0u,
+               "has_registered_in_radius agrees with count_registered_in_radius");
+
+    // --- unregister_entity enter/leave via evaluate_and_diff ---
+    fuse::net::InterestManager unregister_diff_manager;
+    unregister_diff_manager.set_policy(policy);
+    unregister_diff_manager.set_observer_position(origin);
+    const fuse::ecs::EntityID removable = make_entity(190);
+    expectTrue(unregister_diff_manager.register_entity({removable, {10.f, 0.f, 0.f, 0.f}, 0.f}),
+               "register_entity succeeds for removable entity");
+    expectTrue(unregister_diff_manager.register_entity({make_entity(191), {12.f, 0.f, 0.f, 0.f}, 0.f}),
+               "register_entity succeeds for second entity");
+    fuse::net::InterestSetDiff unregister_first{};
+    expectTrue(!unregister_diff_manager.evaluate_and_diff(unregister_first),
+               "first evaluate after register returns false");
+    expectTrue(unregister_diff_manager.unregister_entity(removable),
+               "unregister_entity succeeds before diff evaluation");
+    fuse::net::InterestSetDiff unregister_second{};
+    expectTrue(unregister_diff_manager.evaluate_and_diff(unregister_second),
+               "evaluate_and_diff reports scope change after unregister");
+    expectTrue(unregister_second.left.size() == 1u && unregister_second.left[0] == removable,
+               "unregister triggers leave diff for removed in-scope entity");
+    expectTrue(!unregister_diff_manager.is_entity_in_scope(removable),
+               "unregistered entity is not in scope after evaluate");
 }
 
 } // namespace fuse::net::tests
