@@ -169,6 +169,47 @@ void CascadedShadowMapLayout::computeSplitDistances(const CascadeSplitParams& pa
     }
 }
 
+f32 CascadedShadowMapLayout::computeSplitNearDistance(u32 cascadeIndex,
+                                                      const CascadeSplitParams& params,
+                                                      const ShadowCameraParams& camera) {
+    if (cascadeIndex == 0u) {
+        return camera.nearPlane;
+    }
+
+    const u32 cascadeCount = clampCascadeCount(params.cascadeCount);
+    if (cascadeIndex >= cascadeCount) {
+        return camera.farPlane;
+    }
+
+    return computeSplitDistance(cascadeIndex - 1u, params, camera);
+}
+
+void CascadedShadowMapLayout::computeSplitNearDistances(const CascadeSplitParams& params,
+                                                        const ShadowCameraParams& camera,
+                                                        f32 outNearDistances[kMaxCascadeCount]) {
+    const u32 cascadeCount = clampCascadeCount(params.cascadeCount);
+    for (u32 cascade = 0; cascade < kMaxCascadeCount; ++cascade) {
+        if (cascade < cascadeCount) {
+            outNearDistances[cascade] = computeSplitNearDistance(cascade, params, camera);
+        } else {
+            outNearDistances[cascade] = camera.farPlane;
+        }
+    }
+}
+
+u32 CascadedShadowMapLayout::countNonEmptyCascadeFrustums(const CascadedShadowMapDesc& desc,
+                                                          const ShadowCameraParams& camera,
+                                                          u32 cascadeCount) {
+    const u32 activeCount = clampCascadeCount(cascadeCount);
+    u32 nonEmptyCount = 0u;
+    for (u32 cascade = 0; cascade < activeCount; ++cascade) {
+        if (!isEmptyCascadeFrustum(cascade, desc, camera)) {
+            ++nonEmptyCount;
+        }
+    }
+    return nonEmptyCount;
+}
+
 void CascadedShadowMapLayout::populateCascadeSplits(const CascadeSplitParams& params,
                                                     const ShadowCameraParams& camera,
                                                     CascadedShadowMapDesc& desc) {
@@ -439,6 +480,25 @@ CascadeOrthoBounds CascadeLightSpaceLayout::fitOrthoBoundsFromLightSpaceAabb(con
     return {aabb.min.x, aabb.max.x, aabb.min.y, aabb.max.y, -aabb.max.z, -aabb.min.z};
 }
 
+CascadeOrthoBounds CascadeLightSpaceLayout::fitOrthoBoundsFromCascadeFrustum(
+    u32 cascadeIndex,
+    const CascadedShadowMapDesc& desc,
+    const ShadowCameraParams& camera,
+    const fuse::math::Vec3& lightDirection) {
+    const fuse::math::AABB lightAabb = computeCascadeLightSpaceAabb(cascadeIndex, desc, camera, lightDirection);
+    return fitOrthoBoundsFromLightSpaceAabb(lightAabb);
+}
+
+bool CascadeLightSpaceLayout::orthoBoundsContainsLightSpaceAabb(const CascadeOrthoBounds& bounds,
+                                                                const fuse::math::AABB& aabb) {
+    if (isEmptyLightSpaceAabb(aabb) || !validateOrthoBounds(bounds)) {
+        return false;
+    }
+
+    return aabb.min.x >= bounds.left && aabb.max.x <= bounds.right && aabb.min.y >= bounds.bottom &&
+           aabb.max.y <= bounds.top && -aabb.max.z >= bounds.nearPlane && -aabb.min.z <= bounds.farPlane;
+}
+
 CascadeOrthoBounds CascadeLightSpaceLayout::stabiliseOrthoExtents(const CascadeOrthoBounds& bounds,
                                                                   u32 shadowMapResolution,
                                                                   bool enableStabilisation) {
@@ -485,6 +545,16 @@ ShadowMat4 CascadeLightSpaceLayout::buildOrthographicShadowProjection(const Casc
     projection.data[13] = -(bounds.top + bounds.bottom) / height;
     projection.data[14] = -bounds.nearPlane / depth;
     return projection;
+}
+
+bool CascadeLightSpaceLayout::shadowMat4IsPopulated(const ShadowMat4& matrix) {
+    const ShadowMat4 identity = ShadowMat4::identity();
+    for (u32 element = 0; element < 16u; ++element) {
+        if (matrix.data[element] != identity.data[element]) {
+            return true;
+        }
+    }
+    return false;
 }
 
 ShadowMat4 CascadeLightSpaceLayout::multiplyShadowMatrices(const ShadowMat4& a, const ShadowMat4& b) {
@@ -544,14 +614,28 @@ u32 CascadeLightSpaceLayout::buildAllCascadeLightSpaceMatrices(
     const ShadowCameraParams& camera,
     const fuse::math::Vec3& lightDirection,
     CascadeLightSpaceMatrices outMatrices[kCascadeCount]) {
+    return buildAllCascadeLightSpaceMatrices(desc, camera, lightDirection, kCascadeCount, outMatrices);
+}
+
+u32 CascadeLightSpaceLayout::buildAllCascadeLightSpaceMatrices(
+    const CascadedShadowMapDesc& desc,
+    const ShadowCameraParams& camera,
+    const fuse::math::Vec3& lightDirection,
+    u32 cascadeCount,
+    CascadeLightSpaceMatrices outMatrices[kCascadeCount]) {
+    const u32 activeCount = CascadedShadowMapLayout::clampCascadeCount(cascadeCount);
     u32 validCount = 0u;
-    for (u32 cascade = 0; cascade < kCascadeCount; ++cascade) {
-        outMatrices[cascade] =
-            buildCascadeLightSpaceMatrices(cascade, desc, camera, lightDirection);
+    for (u32 cascade = 0; cascade < activeCount; ++cascade) {
+        outMatrices[cascade] = buildCascadeLightSpaceMatrices(cascade, desc, camera, lightDirection);
         if (outMatrices[cascade].valid) {
             ++validCount;
         }
     }
+
+    for (u32 cascade = activeCount; cascade < kCascadeCount; ++cascade) {
+        outMatrices[cascade] = {};
+    }
+
     return validCount;
 }
 

@@ -92,6 +92,15 @@ struct CascadedShadowMapLayout {
     static void computeSplitDistances(const CascadeSplitParams& params,
                                       const ShadowCameraParams& camera,
                                       f32 outDistances[kMaxCascadeCount]);
+    static f32 computeSplitNearDistance(u32 cascadeIndex,
+                                        const CascadeSplitParams& params,
+                                        const ShadowCameraParams& camera);
+    static void computeSplitNearDistances(const CascadeSplitParams& params,
+                                          const ShadowCameraParams& camera,
+                                          f32 outNearDistances[kMaxCascadeCount]);
+    static u32 countNonEmptyCascadeFrustums(const CascadedShadowMapDesc& desc,
+                                            const ShadowCameraParams& camera,
+                                            u32 cascadeCount);
     static void populateCascadeSplits(const CascadeSplitParams& params,
                                       const ShadowCameraParams& camera,
                                       CascadedShadowMapDesc& desc);
@@ -162,10 +171,17 @@ struct CascadeLightSpaceLayout {
                                                         const ShadowCameraParams& camera,
                                                         const fuse::math::Vec3& lightDirection);
     static CascadeOrthoBounds fitOrthoBoundsFromLightSpaceAabb(const fuse::math::AABB& aabb);
+    static CascadeOrthoBounds fitOrthoBoundsFromCascadeFrustum(u32 cascadeIndex,
+                                                               const CascadedShadowMapDesc& desc,
+                                                               const ShadowCameraParams& camera,
+                                                               const fuse::math::Vec3& lightDirection);
+    static bool orthoBoundsContainsLightSpaceAabb(const CascadeOrthoBounds& bounds,
+                                                  const fuse::math::AABB& aabb);
     static CascadeOrthoBounds stabiliseOrthoExtents(const CascadeOrthoBounds& bounds,
                                                     u32 shadowMapResolution,
                                                     bool enableStabilisation);
     static ShadowMat4 buildOrthographicShadowProjection(const CascadeOrthoBounds& bounds);
+    static bool shadowMat4IsPopulated(const ShadowMat4& matrix);
     static ShadowMat4 multiplyShadowMatrices(const ShadowMat4& a, const ShadowMat4& b);
     static ShadowMat4 shadowMat4FromMat4(const fuse::math::Mat4& matrix);
     static CascadeLightSpaceMatrices buildCascadeLightSpaceMatrices(u32 cascadeIndex,
@@ -176,6 +192,12 @@ struct CascadeLightSpaceLayout {
     static u32 buildAllCascadeLightSpaceMatrices(const CascadedShadowMapDesc& desc,
                                                  const ShadowCameraParams& camera,
                                                  const fuse::math::Vec3& lightDirection,
+                                                 CascadeLightSpaceMatrices outMatrices[kCascadeCount]);
+    /// Build light-space matrices for the first `cascadeCount` slots; inactive slots are cleared.
+    static u32 buildAllCascadeLightSpaceMatrices(const CascadedShadowMapDesc& desc,
+                                                 const ShadowCameraParams& camera,
+                                                 const fuse::math::Vec3& lightDirection,
+                                                 u32 cascadeCount,
                                                  CascadeLightSpaceMatrices outMatrices[kCascadeCount]);
 };
 
