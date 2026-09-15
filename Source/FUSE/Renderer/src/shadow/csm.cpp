@@ -36,6 +36,10 @@ f32 computePracticalSplitFraction(f32 splitT, f32 nearPlane, f32 farPlane, f32 l
     return blend * uniform + (1.f - blend) * logarithmic;
 }
 
+bool splitFractionNearOne(f32 splitFraction) {
+    return std::fabs(splitFraction - 1.f) <= 1e-5f;
+}
+
 fuse::math::Vec3 buildCameraBasis(const ShadowCameraParams& camera,
                                   fuse::math::Vec3& outRight,
                                   fuse::math::Vec3& outUp) {
@@ -142,6 +146,10 @@ void CascadedShadowMapLayout::computeSplitFractions(const CascadeSplitParams& pa
             outFractions[cascade] = 1.f;
         }
     }
+
+    if (cascadeCount > 0u) {
+        outFractions[cascadeCount - 1u] = 1.f;
+    }
 }
 
 void CascadedShadowMapLayout::computeSplitDistances(const CascadeSplitParams& params,
@@ -166,6 +174,10 @@ void CascadedShadowMapLayout::populateCascadeSplits(const CascadeSplitParams& pa
     if (cascadeCount > 0u) {
         desc.cascadeSplits[cascadeCount - 1u] = 1.f;
     }
+
+    for (u32 cascade = cascadeCount; cascade < kMaxCascadeCount; ++cascade) {
+        desc.cascadeSplits[cascade] = 1.f;
+    }
 }
 
 bool CascadedShadowMapLayout::validateSplitMonotonicity(const f32 splitFractions[], u32 cascadeCount) {
@@ -183,7 +195,7 @@ bool CascadedShadowMapLayout::validateSplitMonotonicity(const f32 splitFractions
         previousSplit = split;
     }
 
-    return splitFractions[clampedCount - 1u] == 1.f;
+    return splitFractionNearOne(splitFractions[clampedCount - 1u]);
 }
 
 f32 CascadedShadowMapLayout::computeCascadeNearZ(u32 cascadeIndex,
@@ -251,7 +263,7 @@ bool CascadedShadowMapLayout::validateCascadeSplits(const CascadedShadowMapDesc&
         previousSplit = split;
     }
 
-    return desc.cascadeSplits[kCascadeCount - 1u] == 1.0f;
+    return splitFractionNearOne(desc.cascadeSplits[kCascadeCount - 1u]);
 }
 
 bool CascadedShadowMapLayout::validateCascadeRanges(const CascadedShadowMapDesc& desc,
