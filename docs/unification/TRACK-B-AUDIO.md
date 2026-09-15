@@ -1,6 +1,6 @@
 # Track B — Spatial Audio Engine (B7.2 deepen)
 
-**Status:** B7.2 deepen — bus parent-chain routing, inverse/custom attenuation keypoints, curve sampling  
+**Status:** B7.2 deepen — blocker factor API, reverb zone blend extremes, backend occlusion sync  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.2  
 **Source narrative:** [P7.md](../sources/P7.md) §7.2
 
@@ -14,7 +14,7 @@
 | `compute_attenuation` / `sample_attenuation_curve` | `Source/FUSE/Audio/src/attenuation.cpp` | Legacy 3-arg overload + curve-aware sampling with clamp |
 | `ListenerBasis` / `to_listener_space` | `Source/FUSE/Audio/include/fuse/audio/math.hpp` | World → listener-local transform for panning |
 | `AudioBus` / `AudioBusMixer` | `Source/FUSE/Audio/include/fuse/audio/audio_bus.hpp` | Per-category gain stub with parent-chain routing helpers |
-| `OcclusionParams` / `evaluate_occlusion_*` | `Source/FUSE/Audio/include/fuse/audio/occlusion.hpp` | Visibility → LF/HF gain stubs; segment-vs-AABB blocker raycast |
+| `OcclusionParams` / `evaluate_occlusion_*` | `Source/FUSE/Audio/include/fuse/audio/occlusion.hpp` | Visibility → LF/HF gain stubs; segment-vs-AABB ray + blocker factor 0..1 |
 | `BinauralPanParams` / `compute_binaural_*` | `Source/FUSE/Audio/include/fuse/audio/binaural_pan.hpp` | Listener-local azimuth/elevation, ILD equal-power pan, ITD stub, distance blend |
 | `ReverbZoneParams` / `blend_reverb_zones` | `Source/FUSE/Audio/include/fuse/audio/reverb_zones.hpp` | Zone AABB membership + overlapping wet/dry blend |
 | `SpatialMixer` | `Source/FUSE/Audio/include/fuse/audio/spatial_mixer.hpp` | CPU HRTF-lite pan + curve attenuation + bus routing + blocker occlusion |
@@ -67,10 +67,11 @@ effective = bus_mixer.effective_output_gain(source.bus, listener.master_volume)
 
 ### Occlusion (stub)
 
-`AudioSourceDesc::occlusion` is a per-source visibility factor in `[0, 1]`. `SpatialMixer::set_occlusion_blockers` registers world-space AABB blockers; effective visibility is:
+`AudioSourceDesc::occlusion` is a per-source visibility factor in `[0, 1]`. `SpatialMixer::set_occlusion_blockers` registers world-space AABB blockers; `compute_source_visibility` centralises effective visibility:
 
 ```
-visibility = clamp(source.occlusion) * compute_blockers_visibility(listener, source, blockers)
+blocker_factor = compute_blockers_factor(listener, source, blockers)   // 0 = clear, 1 = blocked
+visibility     = clamp(source.occlusion) * (1 - blocker_factor)
 ```
 
 Occlusion helpers map visibility to attenuation multipliers:
@@ -80,10 +81,14 @@ Occlusion helpers map visibility to attenuation multipliers:
 | `evaluate_occlusion_gain` | LF gain with `min_gain` floor (default 0.1) |
 | `evaluate_occlusion_hf_gain` | HF rolloff stub — lerp toward `hf_attenuation` (default 0.6) |
 | `evaluate_occlusion_attenuation` | Bundles LF + HF gains for mixer consumption |
+| `segment_intersects_aabb` | Segment-vs-AABB ray stub for blocker geometry |
 | `compute_blocker_visibility` | Segment-vs-AABB ray stub; returns `blocked_visibility` (default 0.25) |
 | `compute_blockers_visibility` | Minimum visibility across multiple blocker AABBs |
+| `compute_blocker_factor` | Inverse occlusion amount in `[0, 1]` — 0 = clear LOS, 1 = fully blocked |
+| `compute_blockers_factor` | Maximum blocker factor across multiple AABBs |
+| `SpatialMixer::compute_source_visibility` | Combines per-source occlusion with registered blockers |
 
-`SpatialMixer` multiplies distance attenuation by `occlusion.gain * occlusion.hf_gain` before HRTF panning. No HF filter yet — `hf_gain` is a scalar energy stub.
+`SpatialMixer` and `AudioEngine::sync_backend_sources_` multiply distance attenuation by `occlusion.gain * occlusion.hf_gain` before panning/backend gain. No HF filter yet — `hf_gain` is a scalar energy stub.
 
 ### Reverb zones (stub)
 
@@ -148,10 +153,12 @@ ctest --test-dir build --output-on-failure -R fuse_audio
 | `testBinauralPanGainClamp` | Per-ear gains clamp to [0, 1] |
 | `testBinauralPanDistanceFactorNarrowsImage` | Attenuation narrows binaural spread via `apply_hrtf_distance_factor` |
 | `testOcclusionStub` | LF/HF gain mapping, attenuation bundle, multi-blocker visibility |
+| `testBlockerFactorExtremes` | Ray/AABB intersection, blocker factor 0..1, mixer visibility helper |
 | `testOcclusionFactorExtremes` | Unity vs floored effective occlusion gain; blocker visibility extremes |
 | `testOcclusionReducesMixOutput` | Occluded source is quieter with min_gain floor |
 | `testOcclusionBlockerAttenuatesMix` | AABB blocker on LOS reduces spatial mix energy |
 | `testReverbZoneMembership` | Listener inside/outside zone AABB |
+| `testReverbZoneBlendExtremes` | Dry/wet extremes and clamped zone parameters |
 | `testReverbZoneOverlappingBlend` | Overlapping zones average wet/dry; outside yields dry |
 | `testReverbZoneListenerPositionAffectsMix` | Inside zone is wetter than outside |
 | `testReverbSendLevelDryMix` | Zero `wet_dry` leaves dry mix unchanged |
@@ -173,7 +180,7 @@ ctest --test-dir build --output-on-failure -R fuse_audio
 - [x] Bus routing tests cover all categories, chain, clamp, and mix output scaling
 - [x] HRTF-lite pan edge cases (ahead, lateral, behind, co-located, disabled)
 - [x] Binaural pan helpers: azimuth/elevation, ITD/ILD stubs, gain clamp, distance blend
-- [x] Occlusion segment-vs-AABB blockers wired into spatial attenuation path
+- [x] Occlusion segment-vs-AABB blocker factor 0..1 wired into spatial attenuation + backend sync
 - [x] Reverb zone AABB membership + overlapping blend + listener-scoped wet/dry
 - [x] `fuse_audio_b72` CTest target green
 - [x] No owning raw pointers in public FUSE APIs

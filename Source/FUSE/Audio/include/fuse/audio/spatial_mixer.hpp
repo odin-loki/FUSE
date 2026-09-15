@@ -22,6 +22,10 @@ public:
     void set_occlusion_blockers(const AABB* blockers, u32 blocker_count);
     void clear_occlusion_blockers();
 
+    /// Effective visibility [0, 1] from per-source occlusion and registered blockers.
+    float compute_source_visibility(const Vec3& listener, const Vec3& source,
+                                    float source_occlusion) const;
+
     void mix(const AudioRegistry& registry, const HandleMap<AudioClip>& clips, float dt,
              std::vector<float>& stereo_out, u32 frames);
 

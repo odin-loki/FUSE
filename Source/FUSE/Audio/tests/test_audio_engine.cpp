@@ -611,6 +611,44 @@ void testOcclusionReducesMixOutput() {
     expectTrue(occluded_energy > 0.f, "occluded source retains min_gain floor");
 }
 
+void testBlockerFactorExtremes() {
+    const fuse::audio::AABB blocker{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
+
+    expectTrue(fuse::audio::segment_intersects_aabb(fuse::audio::Vec3{-5.f, 0.f, 0.f},
+                                                    fuse::audio::Vec3{5.f, 0.f, 0.f}, blocker),
+               "segment through blocker AABB intersects");
+    expectTrue(!fuse::audio::segment_intersects_aabb(fuse::audio::Vec3{5.f, 0.f, 0.f},
+                                                     fuse::audio::Vec3{10.f, 0.f, 0.f}, blocker),
+               "segment outside blocker AABB does not intersect");
+
+    expectNear(fuse::audio::compute_blocker_factor(fuse::audio::Vec3{5.f, 0.f, 0.f},
+                                                   fuse::audio::Vec3{10.f, 0.f, 0.f}, blocker),
+               0.f, 1e-5f, "clear LOS yields zero blocker factor");
+    expectNear(fuse::audio::compute_blocker_factor(fuse::audio::Vec3{0.f, 0.f, 0.f},
+                                                   fuse::audio::Vec3{10.f, 0.f, 0.f}, blocker),
+               0.75f, 1e-5f, "blocked segment yields 1 - blocked_visibility factor");
+
+    const fuse::audio::AABB blockers[] = {blocker, {{8.f, -1.f, -1.f}, {12.f, 1.f, 1.f}}};
+    expectNear(fuse::audio::compute_blockers_factor(fuse::audio::Vec3{0.f, 0.f, 0.f},
+                                                    fuse::audio::Vec3{20.f, 0.f, 0.f}, blockers, 2),
+               0.75f, 1e-5f, "multiple blockers take maximum factor");
+    expectNear(fuse::audio::compute_blockers_factor(fuse::audio::Vec3{0.f, 0.f, 0.f},
+                                                    fuse::audio::Vec3{20.f, 0.f, 0.f}, nullptr, 0),
+               0.f, 1e-5f, "empty blocker list yields zero factor");
+
+    fuse::audio::SpatialMixer mixer;
+    expectNear(mixer.compute_source_visibility(fuse::audio::Vec3{0.f, 0.f, 0.f},
+                                               fuse::audio::Vec3{10.f, 0.f, 0.f}, 1.f),
+               1.f, 1e-5f, "no blockers preserves source occlusion visibility");
+    mixer.set_occlusion_blockers(&blocker, 1);
+    expectNear(mixer.compute_source_visibility(fuse::audio::Vec3{0.f, 0.f, 0.f},
+                                               fuse::audio::Vec3{10.f, 0.f, 0.f}, 1.f),
+               0.25f, 1e-5f, "blocker factor scales source visibility in mixer");
+    expectNear(mixer.compute_source_visibility(fuse::audio::Vec3{0.f, 0.f, 0.f},
+                                               fuse::audio::Vec3{10.f, 0.f, 0.f}, 0.5f),
+               0.125f, 1e-5f, "source occlusion multiplies blocker-reduced visibility");
+}
+
 void testOcclusionFactorExtremes() {
     fuse::audio::OcclusionParams params;
     const fuse::audio::OcclusionAttenuation full =
@@ -691,6 +729,38 @@ void testReverbZoneMembership() {
                "listener on zone boundary is inside");
     expectTrue(!fuse::audio::listener_in_reverb_zone(fuse::audio::Vec3{6.f, 0.f, 0.f}, zone),
                "listener outside zone is excluded");
+}
+
+void testReverbZoneBlendExtremes() {
+    fuse::audio::ReverbZoneParams dry_zone;
+    dry_zone.bounds = {{-5.f, -5.f, -5.f}, {5.f, 5.f, 5.f}};
+    dry_zone.wet_dry = 0.f;
+    dry_zone.send_level = 0.f;
+
+    fuse::audio::ReverbZoneParams wet_zone;
+    wet_zone.bounds = {{-5.f, -5.f, -5.f}, {5.f, 5.f, 5.f}};
+    wet_zone.wet_dry = 1.f;
+    wet_zone.send_level = 1.f;
+
+    fuse::audio::ReverbZoneParams clamped_zone;
+    clamped_zone.bounds = {{-5.f, -5.f, -5.f}, {5.f, 5.f, 5.f}};
+    clamped_zone.wet_dry = 2.f;
+    clamped_zone.send_level = -0.5f;
+
+    const fuse::audio::ReverbZoneBlend dry =
+        fuse::audio::blend_reverb_zones(fuse::audio::Vec3{0.f, 0.f, 0.f}, &dry_zone, 1);
+    expectNear(dry.wet_dry, 0.f, 1e-5f, "dry zone yields zero wet_dry");
+    expectNear(dry.send_level, 0.f, 1e-5f, "dry zone yields zero send");
+
+    const fuse::audio::ReverbZoneBlend wet =
+        fuse::audio::blend_reverb_zones(fuse::audio::Vec3{0.f, 0.f, 0.f}, &wet_zone, 1);
+    expectNear(wet.wet_dry, 1.f, 1e-5f, "wet zone yields unity wet_dry");
+    expectNear(wet.send_level, 1.f, 1e-5f, "wet zone yields unity send");
+
+    const fuse::audio::ReverbZoneBlend clamped =
+        fuse::audio::blend_reverb_zones(fuse::audio::Vec3{0.f, 0.f, 0.f}, &clamped_zone, 1);
+    expectNear(clamped.wet_dry, 1.f, 1e-5f, "wet_dry above unity clamps to one");
+    expectNear(clamped.send_level, 0.f, 1e-5f, "send_level below zero clamps to zero");
 }
 
 void testReverbZoneOverlappingBlend() {
@@ -1055,10 +1125,12 @@ int main() {
     testBinauralPanDistanceFactorNarrowsImage();
     testHrtfPanEdgeCases();
     testOcclusionStub();
+    testBlockerFactorExtremes();
     testOcclusionFactorExtremes();
     testOcclusionReducesMixOutput();
     testOcclusionBlockerAttenuatesMix();
     testReverbZoneMembership();
+    testReverbZoneBlendExtremes();
     testReverbZoneOverlappingBlend();
     testReverbZoneListenerPositionAffectsMix();
     testReverbSendLevelDryMix();
