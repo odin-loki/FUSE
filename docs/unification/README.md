@@ -1,0 +1,74 @@
+# FUSE Unification — Phase U0 Deliverables
+
+**Engine:** FUSE — Fast Unified Simulation Engine  
+**Phase:** U0 — Inventory & collision map  
+**Date:** 2026-09-15  
+**Plan:** [FUSE_UNIFIED_PRESTARTER.md](../plans/FUSE_UNIFIED_PRESTARTER.md) §5
+
+This directory contains evidence-based inventory and collision analysis for merging Torque3D (repo root), Torque2D (`third_party/Torque2D`), and seven community addons into **one program**.
+
+**Constraint:** Investigation and documentation only — no addon `Engine/` merges into FUSE `Engine/` in this phase.
+
+---
+
+## Documents
+
+| Document | Description |
+|----------|-------------|
+| [symbol-collision-report.md](./symbol-collision-report.md) | Duplicate globals/classes across T3D vs T2D — console, platform, math, util, gui, sim, and more |
+| [subsystem-matrix.md](./subsystem-matrix.md) | Per-subsystem T3D vs T2D comparison with Merge / Keep dual / Replace with FUSE recommendations |
+| [addon-ore-catalog.md](./addon-ore-catalog.md) | All seven addons: patches vs scripts vs art; licenses; kernel entry points |
+| [demo-corpus-parity-targets.md](./demo-corpus-parity-targets.md) | Frozen minimum U8 demo set mapped to legacy missions and T2D toybox |
+| [risk-register.md](./risk-register.md) | Box2D vs T3D physics, Gui, net, symbols, dual VMs, mobile/web, addon ore, … |
+
+**Related (not U0):**
+- [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) — Track A/B port (consult for alignment only)
+- [third_party/addons/README.md](../../third_party/addons/README.md) — submodule acquisition map
+
+**Future U1 deliverable:** `BUILD.md` (umbrella CMake) — not started in U0.
+
+---
+
+## Gate U0 checklist
+
+| Item | Status |
+|------|--------|
+| Collision report published under `docs/unification/` | ✅ [symbol-collision-report.md](./symbol-collision-report.md) |
+| Subsystem matrix published | ✅ [subsystem-matrix.md](./subsystem-matrix.md) |
+| Stakeholder sign-off on Merge / Dual / Replace column | ⏳ **Pending review** |
+| Addon ore catalog lists kernel entry points for all seven addons | ✅ [addon-ore-catalog.md](./addon-ore-catalog.md) |
+| Parity demo list frozen (minimum set) | ✅ [demo-corpus-parity-targets.md](./demo-corpus-parity-targets.md) |
+| Risk register published | ✅ [risk-register.md](./risk-register.md) |
+
+**U0 exit:** Documentation complete; stakeholder review of matrix recommendations and decision gates (script host, physics, 2D renderer, multiprocess policy) before U1 umbrella CMake.
+
+---
+
+## Key findings (executive)
+
+1. **Cannot link raw T3D + T2D** — 237 filename collisions, 311+ class collisions, 33 `Con::` API overlaps. U2 requires prefixed static libraries.
+2. **Gui and console are the hottest collision domains** — 45+ Gui* classes; identical `SimObject` / `ConsoleObject` hierarchies.
+3. **Physics and gfx stay dual** — Box2D (2D) vs T3D collision; separate render paths until U4 compositor and Track B.
+4. **Addons are mostly content** — kernels are small (BadBehaviour 74 files, Verve 163, GMK component 26); AFX/Verve already in FUSE root `Engine/source/`.
+5. **UAISK is scripts-only** — template pack for `fuse_ai`, no C++ ore.
+
+---
+
+## Submodule SHAs (inventory evidence)
+
+| Submodule | Path | Commit (at inventory) |
+|-----------|------|------------------------|
+| Torque2D | `third_party/Torque2D` | `e7b0011a913793fabb5e564549b3d3ddb3913fe9` |
+| GMK | `third_party/addons/GMK` | `e322f148ee2e5fe15cf572472b3644325b4f9e44` |
+| Verve | `third_party/addons/Verve` | `0ea77b28767b665b40ddee0909a74f6bc06cebd3` |
+| BadBehaviour | `third_party/addons/BadBehaviour` | `9fd487314d4636f7e91834acb2994aa56a63f8a7` |
+| GuideBot | `third_party/addons/GuideBot` | `0e1e4230f5aa3f32690476d94f1cdfd3b1bf012e` |
+| UAISK | `third_party/addons/UAISK` | `c8224f7684de68aaa143b2d4252dba3c5b983861` |
+| AFX-Template | `third_party/addons/AFX-Template` | `1907e55b7aac8e0e239f820ec14ad4367ca7430b` |
+| 3DAAK | `third_party/addons/3DAAK` | `8684cd1a65084e52f76131d74520c2fa9e1904a1` |
+
+---
+
+## Next phase
+
+**U1 — Umbrella build:** Root `CMakeLists.txt` as FUSE umbrella; `docs/unification/BUILD.md`; CI configure both legacy targets from one graph. See prestarter §6.
