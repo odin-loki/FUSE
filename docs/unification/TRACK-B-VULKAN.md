@@ -1,7 +1,7 @@
 # Track B — Vulkan Bootstrap (B2.1–B2.4)
 
-**Status:** B2.1 bootstrap + B2.2 swapchain/frame ring + B2.3 resource/bindless scaffolding + B2.4 shader scaffold  
-**Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B2.1–B2.4  
+**Status:** B2.1 bootstrap + B2.2 swapchain/frame ring + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.6 CUDA/interop stubs + B2.8 rasterisation pipeline scaffold  
+**Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B2.1–B2.4, §B2.6, §B2.8  
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §4.2, §4.4, §5.3  
 **Hybrid integration:** [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md)
 
@@ -21,6 +21,8 @@
 | `HandleMap<T>` | `Source/FUSE/Core/include/fuse/` | Generation-checked slots for GPU resources |
 | `ShaderCompiler` / `ShaderModule` | `Source/FUSE/Renderer/include/fuse/renderer/shader/` | Offline-first — loads checked-in `.spv` fixtures |
 | `PipelineLayout` | `Source/FUSE/Renderer/include/fuse/renderer/vk/pipeline_layout.hpp` | Placeholder layout (push constants only; bindless sets deferred) |
+| `RenderPass` / `GraphicsPipeline` | `Source/FUSE/Renderer/include/fuse/renderer/vk/` | B2.8 headless raster scaffold — `VkPipeline` from B2.4 fixtures |
+| `RasterPath` | same | Offscreen clear + triangle stub wired through `RhiContext::submitFrame` |
 | `RhiContext` | `Source/FUSE/Renderer/` | `beginFrame` / `submitFrame` on `renderThread()` |
 | `fuse::platform::gl_context.hpp` | `Source/FUSE/Core/` | Portable “may touch GPU” guard |
 | `HybridComposer` wiring | `Source/FUSE/Hybrid/` | Dual path: software `PlaceholderRenderer` **and** RHI command mirror |
@@ -165,6 +167,21 @@ When `FUSE_SHADER_GLSLANG=ON` but glslang is missing, configure continues with o
 
 ---
 
+## B2.8 — Rasterisation pipeline (scaffold)
+
+**Status:** Headless `VkGraphicsPipeline` + clear/triangle path stub landed.
+
+| Component | Location | Notes |
+|-----------|----------|-------|
+| `RenderPass` | `Source/FUSE/Renderer/include/fuse/renderer/vk/render_pass.hpp` | Single color attachment for headless targets |
+| `GraphicsPipeline` | `graphics_pipeline.hpp` | Built from B2.4 `ShaderModule` + `PipelineLayout` + `RenderPass` |
+| `RasterPath` | `raster_path.hpp` | Offscreen image/framebuffer; records clear + one triangle draw per frame |
+| `RhiContext` wiring | `rhi_context.hpp` | Lazy `RasterPath` creation; `submitFrame` mirrors `RenderCommandList` clears |
+
+CI exercises the path headlessly (no `VkSurfaceKHR`). Full G-buffer layout, draw lists, and CUDA depth handoff remain future B2.8+ / B2.6 work — this PR owns pipeline scaffolding only.
+
+---
+
 ## Desktop vs mobile (design notes)
 
 | Platform | B2.2 stance | Later |
@@ -185,6 +202,7 @@ Portable invariant unchanged: job code emits `RenderCommandList`; platform modul
 | `fuse_vulkan_swapchain` | Headless swapchain desc; frame ring advance; external surface graceful failure |
 | `fuse_vulkan_resources` | `HandleMap`, bindless index recycle, buffer/texture create/destroy |
 | `fuse_shader_pipeline` | SPIR-V I/O, offline compiler, shader module + pipeline layout (stub or Vulkan) |
+| `fuse_graphics_pipeline` | `VkGraphicsPipeline`, headless `RasterPath` clear + triangle, `RhiContext` wiring |
 | `fuse_render_command_list` | Hybrid mirrors commands without breaking placeholder pixels |
 | `fuse_hybrid_tests` | Existing U4 software renderer regressions |
 | `fuse_cuda_jobs` | `submit_cuda` hook signals counter without CUDA toolkit |
@@ -193,7 +211,7 @@ Portable invariant unchanged: job code emits `RenderCommandList`; platform modul
 Run:
 
 ```bash
-ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_render_command|fuse_hybrid|fuse_cuda'
+ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_graphics_pipeline|fuse_render_command|fuse_hybrid|fuse_cuda'
 ```
 
 ---
@@ -250,6 +268,7 @@ Thread ownership unchanged: CUDA launch jobs run on worker threads; Vulkan recor
 - [x] B2.3 resource handles + stub/VMA allocator + bindless index table
 - [x] B2.4 shader scaffold — offline SPIR-V, shader module, pipeline layout placeholder
 - [x] B2.6 CUDA job/interop stubs — `FUSE_BUILD_CUDA` gated, CI passes without toolkit
+- [x] B2.8 rasterisation pipeline scaffold — `GraphicsPipeline`, headless clear/triangle `RasterPath`
 - [ ] B2.4 follow-up: bindless descriptor pool + graphics pipeline cache
 - [ ] B2.6 follow-up: `cudaImportExternalMemory`, timeline semaphores, real shared textures
 - [ ] Replace `PlaceholderRenderer` present path incrementally — keep software fallback for headless CI
