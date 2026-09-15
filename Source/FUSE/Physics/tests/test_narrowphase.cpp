@@ -352,8 +352,19 @@ void testDetectContactsPairEmptyGuards() {
     fuse::physics::CollisionShapeSoA shapes;
     const fuse::u32 bodyA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
     const fuse::u32 bodyB = bodies.addBody({1.5f, 0.f, 0.f}, 1.f);
+    const fuse::u32 bodyNoShape = bodies.addBody({2.f, 0.f, 0.f}, 1.f);
     shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodyA, {1.f, 0.f, 0.f});
     shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodyB, {1.f, 0.f, 0.f});
+
+    expectTrue(
+        fuse::physics::narrowphase::is_invalid_contact_pair({bodyA, bodyA}, bodies, shapes),
+        "invalid guard flags self pair");
+    expectTrue(
+        fuse::physics::narrowphase::is_invalid_contact_pair({bodyA, 99u}, bodies, shapes),
+        "invalid guard flags out-of-range body");
+    expectTrue(
+        fuse::physics::narrowphase::is_invalid_contact_pair({bodyA, bodyNoShape}, bodies, shapes),
+        "invalid guard flags missing shape");
 
     const auto selfPair = fuse::physics::narrowphase::detect_contacts_pair({bodyA, bodyA}, bodies, shapes);
     expectTrue(!selfPair.valid, "self pair returns invalid manifold");
@@ -361,6 +372,17 @@ void testDetectContactsPairEmptyGuards() {
 
     const auto missingPair = fuse::physics::narrowphase::detect_contacts_pair({bodyA, 99u}, bodies, shapes);
     expectTrue(!missingPair.valid, "out-of-range pair returns invalid manifold");
+
+    const auto missingShapePair =
+        fuse::physics::narrowphase::detect_contacts_pair({bodyA, bodyNoShape}, bodies, shapes);
+    expectTrue(!missingShapePair.valid, "missing shape pair returns invalid manifold");
+    expectTrue(missingShapePair.empty(), "missing shape pair has no contact points");
+
+    const fuse::u32 bodySeparated = bodies.addBody({10.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodySeparated, {1.f, 0.f, 0.f});
+    const auto separated =
+        fuse::physics::narrowphase::detect_contacts_pair({bodyA, bodySeparated}, bodies, shapes);
+    expectTrue(!separated.valid, "separated pair returns invalid manifold from detect");
 
     const auto overlap = fuse::physics::narrowphase::detect_contacts_pair({bodyA, bodyB}, bodies, shapes);
     expectTrue(overlap.valid, "valid pair detects contact");
@@ -374,6 +396,25 @@ void testGenerateContactManifoldAndFrictionTangents() {
     expectTrue(!empty.valid, "failed generation clears validity");
     expectTrue(empty.empty(), "failed generation clears points");
 
+    fuse::physics::narrowphase::ContactManifold degenerateNormal{};
+    degenerateNormal.valid = true;
+    degenerateNormal.contactNormal = {};
+    degenerateNormal.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    expectTrue(
+        !fuse::physics::narrowphase::generate_contact_manifold(degenerateNormal),
+        "generate rejects zero-length contact normal");
+    expectTrue(!degenerateNormal.valid, "degenerate normal clears validity");
+
+    fuse::physics::narrowphase::ContactManifold nonPenetrating{};
+    nonPenetrating.valid = true;
+    nonPenetrating.contactNormal = {0.f, 1.f, 0.f};
+    nonPenetrating.addPoint({0.f, 0.f, 0.f}, -0.05f);
+    nonPenetrating.addPoint({1.f, 0.f, 0.f}, -0.1f);
+    expectTrue(
+        !fuse::physics::narrowphase::generate_contact_manifold(nonPenetrating),
+        "generate rejects all non-penetrating points");
+    expectTrue(nonPenetrating.empty(), "non-penetrating prune leaves manifold empty");
+
     fuse::physics::narrowphase::ContactManifold manifold =
         fuse::physics::narrowphase::collideSphereSphere({0.f, 0.f, 0.f}, 1.f, {1.5f, 0.f, 0.f}, 1.f, 0u, 1u);
     expectTrue(manifold.valid, "detected sphere pair is valid before finalize");
@@ -381,11 +422,44 @@ void testGenerateContactManifoldAndFrictionTangents() {
 
     expectTrue(fuse::physics::narrowphase::generate_contact_manifold(manifold), "generate finalizes manifold");
     expectTrue(manifold.hasFrictionBasis(), "generate builds friction basis");
+    expectNear(manifold.contactNormal.length(), 1.f, 1e-4f, "generate normalizes contact normal");
     fuse::physics::narrowphase::compute_friction_tangents(manifold);
     expectTrue(
         fuse::physics::narrowphase::isOrthonormalTangentBasis(
             manifold.contactNormal, manifold.frictionBasis),
         "compute_friction_tangents stores orthonormal basis");
+}
+
+void testManifoldPruneNonPenetratingPoints() {
+    fuse::physics::narrowphase::ContactManifold manifold{};
+    manifold.contactNormal = {0.f, 1.f, 0.f};
+    manifold.addPoint({0.f, 0.f, 0.f}, 0.3f);
+    manifold.addPoint({1.f, 0.f, 0.f}, 0.f);
+    manifold.addPoint({2.f, 0.f, 0.f}, 0.15f);
+    manifold.addPoint({3.f, 0.f, 0.f}, -0.05f);
+
+    manifold.pruneNonPenetratingPoints();
+    expectTrue(manifold.pointCount == 3u, "prune keeps touching and penetrating points");
+    expectNear(manifold.maxPenetration(), 0.3f, 1e-4f, "prune preserves deepest penetration");
+    expectNear(manifold.penetrationDepth, 0.3f, 1e-4f, "prune syncs legacy penetration depth");
+}
+
+void testRunNarrowphaseFinalizesFrictionTangents() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 bodyA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 bodyB = bodies.addBody({1.5f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodyA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodyB, {1.f, 0.f, 0.f});
+
+    const std::vector<fuse::physics::broadphase::CandidatePair> pairs = {{bodyA, bodyB}};
+    fuse::physics::narrowphase::ContactBufferSoA buffer;
+    fuse::physics::narrowphase::runNarrowphaseIntoBuffer(pairs, bodies, shapes, buffer);
+
+    expectTrue(buffer.activeCount == 1u, "narrowphase produces one finalized contact");
+    const auto restored = buffer.manifoldAt(0u);
+    expectTrue(restored.hasFrictionBasis(), "narrowphase buffer stores finalized friction basis");
+    expectNear(restored.contactNormal.length(), 1.f, 1e-4f, "narrowphase buffer stores unit contact normal");
 }
 
 void testContactPointTangentBasisAndManifoldClear() {
@@ -478,6 +552,8 @@ int main() {
     testRunNarrowphaseIntoBufferJobSafe();
     testDetectContactsPairEmptyGuards();
     testGenerateContactManifoldAndFrictionTangents();
+    testManifoldPruneNonPenetratingPoints();
+    testRunNarrowphaseFinalizesFrictionTangents();
     testContactPointTangentBasisAndManifoldClear();
     testContactBufferCapacityClamp();
     testGjkSupportAndEpaStub();

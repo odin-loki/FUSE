@@ -2,6 +2,8 @@
 
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
 
+#include <cmath>
+
 namespace fuse::physics::narrowphase {
 
 namespace {
@@ -28,12 +30,11 @@ u32 findShapeForBody(const CollisionShapeSoA& shapes, u32 bodyIndex, CollisionSh
     return shapes.count();
 }
 
-bool isEmptyPair(const broadphase::CandidatePair& pair, const RigidBodySoA& bodies) {
-    if (pair.bodyA == pair.bodyB) {
-        return true;
-    }
-    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
-        return true;
+bool hasShapeForBody(const CollisionShapeSoA& shapes, u32 bodyIndex) {
+    for (u32 i = 0; i < shapes.count(); ++i) {
+        if (shapes.bodyIndices[i] == bodyIndex) {
+            return true;
+        }
     }
     return false;
 }
@@ -156,11 +157,27 @@ ContactManifold dispatchShapePair(
 
 } // namespace
 
+bool is_invalid_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (pair.bodyA == pair.bodyB) {
+        return true;
+    }
+    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
+        return true;
+    }
+    if (!hasShapeForBody(shapes, pair.bodyA) || !hasShapeForBody(shapes, pair.bodyB)) {
+        return true;
+    }
+    return false;
+}
+
 ContactManifold detect_contacts_pair(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
-    if (isEmptyPair(pair, bodies)) {
+    if (is_invalid_contact_pair(pair, bodies, shapes)) {
         return invalidContactManifold();
     }
     return dispatchShapePair(pair, bodies, shapes);
@@ -172,13 +189,41 @@ bool generate_contact_manifold(ContactManifold& manifold) {
         return false;
     }
 
+    manifold.pruneNonPenetratingPoints();
+    if (manifold.empty()) {
+        manifold.clear();
+        return false;
+    }
+
+    if (!manifold.hasValidNormal()) {
+        manifold.clear();
+        return false;
+    }
+
+    const f32 normalLength = manifold.contactNormal.length();
+    manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+
     manifold.syncLegacyFields();
     compute_friction_tangents(manifold);
+    if (!manifold.hasFrictionBasis()) {
+        manifold.clear();
+        return false;
+    }
+
     manifold.valid = true;
     return true;
 }
 
 void compute_friction_tangents(ContactManifold& manifold) {
+    if (!manifold.hasValidNormal()) {
+        manifold.frictionBasis = {};
+        return;
+    }
+
+    const f32 normalLength = manifold.contactNormal.length();
+    if (std::fabs(normalLength - 1.f) > 1e-4f) {
+        manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+    }
     manifold.buildFrictionBasis();
 }
 
