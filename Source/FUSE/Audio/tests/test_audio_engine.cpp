@@ -236,6 +236,9 @@ void testBusResetGains() {
     mixer.set_bus_gain(fuse::audio::AudioBus::Sfx, 0.5f);
     mixer.set_bus_parent(fuse::audio::AudioBus::Voice, fuse::audio::AudioBus::Sfx);
 
+    mixer.set_bus_muted(fuse::audio::AudioBus::Sfx, true);
+    mixer.set_bus_solo(fuse::audio::AudioBus::Voice, true);
+
     mixer.reset_gains();
     expectNear(mixer.bus_gain(fuse::audio::AudioBus::Master), 1.f, 1e-5f,
                "reset restores unity master gain");
@@ -243,6 +246,9 @@ void testBusResetGains() {
                "reset restores default effective routing");
     expectTrue(mixer.bus_parent(fuse::audio::AudioBus::Voice) == fuse::audio::AudioBus::Master,
                "reset restores default parent routing");
+    expectTrue(!mixer.bus_muted(fuse::audio::AudioBus::Sfx),
+               "reset clears explicit mute flags");
+    expectTrue(!mixer.any_bus_soloed(), "reset clears solo flags");
 }
 
 void testInvalidAudioBusGuards() {
@@ -289,6 +295,81 @@ void testBusMuteGuards() {
                "zero master mutes all category buses");
     expectNear(mixer.effective_gain(fuse::audio::AudioBus::Voice), 0.f, 1e-5f,
                "master mute silences routed effective gain");
+}
+
+void testBusGainClampHelpers() {
+    expectNear(fuse::audio::clamp_listener_master_volume(-0.25f), 0.f, 1e-5f,
+               "listener master clamps negative to zero");
+    expectNear(fuse::audio::clamp_listener_master_volume(1.75f), 1.f, 1e-5f,
+               "listener master clamps above unity");
+    expectTrue(fuse::audio::is_audible_bus_gain(0.5f), "mid-range gain is audible");
+    expectTrue(!fuse::audio::is_audible_bus_gain(0.f), "zero gain is not audible");
+    expectTrue(!fuse::audio::is_audible_bus_gain(-1.f), "negative gain is not audible");
+}
+
+void testBusExplicitMuteEarlyOut() {
+    fuse::audio::AudioBusMixer mixer;
+    mixer.set_bus_gain(fuse::audio::AudioBus::Master, 1.f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Sfx, 0.8f);
+    mixer.set_bus_muted(fuse::audio::AudioBus::Sfx, true);
+
+    expectTrue(mixer.bus_muted(fuse::audio::AudioBus::Sfx), "explicit mute flag is set");
+    expectTrue(fuse::audio::is_bus_muted(mixer, fuse::audio::AudioBus::Sfx),
+               "explicit mute counts as muted");
+    expectTrue(!mixer.should_mix_bus(fuse::audio::AudioBus::Sfx),
+               "explicit mute early-outs mix");
+    expectNear(fuse::audio::compute_mix_output_gain(mixer, fuse::audio::AudioBus::Sfx, 1.f), 0.f,
+               1e-5f, "mix output gain is zero when explicitly muted");
+    expectTrue(mixer.should_mix_bus(fuse::audio::AudioBus::Music),
+               "other buses still mix when only sfx is muted");
+
+    mixer.set_bus_muted(fuse::audio::AudioBus::Master, true);
+    expectTrue(!mixer.bus_muted(fuse::audio::AudioBus::Master),
+               "master mute flag is locked off");
+}
+
+void testBusSoloEarlyOut() {
+    fuse::audio::AudioBusMixer mixer;
+    mixer.set_bus_gain(fuse::audio::AudioBus::Master, 1.f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Sfx, 0.9f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Music, 0.7f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Voice, 0.5f);
+
+    expectTrue(!mixer.any_bus_soloed(), "no solo active by default");
+    mixer.set_bus_solo(fuse::audio::AudioBus::Music, true);
+    expectTrue(mixer.any_bus_soloed(), "solo flag activates solo mode");
+    expectTrue(mixer.bus_soloed(fuse::audio::AudioBus::Music), "music bus is soloed");
+    expectTrue(mixer.should_mix_bus(fuse::audio::AudioBus::Music),
+               "soloed bus should mix");
+    expectTrue(!mixer.should_mix_bus(fuse::audio::AudioBus::Sfx),
+               "non-solo bus is silenced while solo is active");
+    expectTrue(!mixer.should_mix_bus(fuse::audio::AudioBus::Voice),
+               "voice bus is silenced while music is soloed");
+
+    expectNear(fuse::audio::compute_mix_output_gain(mixer, fuse::audio::AudioBus::Music, 1.f),
+               0.7f, 1e-5f, "soloed bus keeps effective output gain");
+    expectNear(fuse::audio::compute_mix_output_gain(mixer, fuse::audio::AudioBus::Sfx, 1.f), 0.f,
+               1e-5f, "non-solo bus mix output is zero");
+
+    mixer.set_bus_solo(fuse::audio::AudioBus::Master, true);
+    expectTrue(!mixer.bus_soloed(fuse::audio::AudioBus::Master),
+               "master solo flag is locked off");
+}
+
+void testComputeMixOutputGainEarlyOut() {
+    const auto invalid =
+        static_cast<fuse::audio::AudioBus>(static_cast<fuse::u8>(fuse::audio::AudioBus::Count));
+
+    fuse::audio::AudioBusMixer mixer;
+    mixer.set_bus_gain(fuse::audio::AudioBus::Master, 0.8f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Voice, 0.5f);
+
+    expectNear(fuse::audio::compute_mix_output_gain(mixer, fuse::audio::AudioBus::Voice, 1.f),
+               0.4f, 1e-5f, "audible bus returns effective output gain");
+    expectNear(fuse::audio::compute_mix_output_gain(mixer, invalid, 0.6f), 0.f, 1e-5f,
+               "invalid bus early-outs to zero mix gain");
+    expectNear(fuse::audio::compute_effective_output_gain(mixer, invalid, 0.6f), 0.6f, 1e-5f,
+               "invalid bus still passes listener master through effective_output_gain");
 }
 
 void testEffectiveGainMasterCascade() {
@@ -1834,6 +1915,10 @@ int main() {
     testBusResetGains();
     testInvalidAudioBusGuards();
     testBusMuteGuards();
+    testBusGainClampHelpers();
+    testBusExplicitMuteEarlyOut();
+    testBusSoloEarlyOut();
+    testComputeMixOutputGainEarlyOut();
     testEffectiveGainMasterCascade();
     testAttenuationParamsValidationGuards();
     testSampleAttenuationCurveGuarded();
