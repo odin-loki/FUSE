@@ -27,4 +27,6 @@ CPU-first skeletal animation scaffolding for Track B7.1. Implements the P7 pipel
 
 ## Tests
 
-`fuse_animation_tests` (`ctest` name `fuse_animation_runtime`) covers skeleton hierarchy, `PoseSoA` propagation, clip evaluate/sample, blend interpolation, 1D blend space, layered masks, state transitions, IK convergence, skinning, and animator ticks without GPU or editor dependencies.
+`fuse_animation_tests` (`ctest` name `fuse_animation_runtime`) covers skeleton hierarchy, `PoseSoA` propagation and buffer clear/reuse, `blend_pose_soa` output reuse, clip evaluate/sample, blend interpolation, 1D blend space, layered mask weight sweeps (0/1/fractional/clamped) and unmasked-bone isolation, state transitions, IK convergence, skinning, and animator ticks without GPU or editor dependencies.
+
+Track B narrative: [docs/unification/TRACK-B-ANIMATION.md](../../../docs/unification/TRACK-B-ANIMATION.md).
