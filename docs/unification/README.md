@@ -33,7 +33,8 @@ Physics, gfx, and net remain composition/dual-backend. No physical `Engine/` + T
 | [architecture-parallel.md](./architecture-parallel.md) | **MT spine:** process model, job system, frame pipeline, editor threading, safety |
 | [work-plan.md](./work-plan.md) | Ordered WPs U1–U8 + parallel workstreams; immediate next 5 actions |
 | [vfs-mount-plan.md](./vfs-mount-plan.md) | WP-04 VFS mount prefixes (`/game`, `/t3d`, `/t2d`) |
-| [wp03-fiber-remaining.md](./wp03-fiber-remaining.md) | WP-03 cooperative fiber — shipped vs deferred |
+| [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md) | U4 hybrid composer, worlds, software demo |
+| [U5-MODULES.md](./U5-MODULES.md) | U5 feature module scaffolds, `fuse_ai` vertical slice, ore backlog |
 
 **Related (not U0):**
 - [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) — Track A/B port (consult for alignment only)

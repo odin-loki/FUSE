@@ -1,3 +1,5 @@
+#include <fuse/ai/behavior_runtime.hpp>
+#include <fuse/ai/behavior_tree.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/dimension/world_handle.hpp>
 #include <fuse/hybrid/hybrid_composer.hpp>
@@ -47,6 +49,15 @@ int main() {
     composer.attachWorld2D(&world2D);
     composer.attachWorld3D(&world3D);
 
+    fuse::ai::BehaviorRuntime aiRuntime;
+    aiRuntime.setTree(fuse::ai::BehaviorTree::makePatrolWhenNearTarget());
+    fuse::ai::AgentBinding hudAgent{};
+    hudAgent.x = 0.f;
+    hudAgent.y = 0.f;
+    hudAgent.targetX = 2.f;
+    hudAgent.targetY = 0.f;
+    aiRuntime.addAgent(hudAgent);
+
     fuse::frame::FrameCtx ctx;
     for (int frame = 0; frame < kFrameCount; ++frame) {
         ctx.dt = kDt;
@@ -54,10 +65,17 @@ int main() {
         ctx.frameIndex = static_cast<fuse::u32>(frame);
 
         composer.tick(ctx);
+
+        aiRuntime.buildSnapshots();
+        aiRuntime.evaluate(ctx);
+        aiRuntime.commit();
+
         composer.render(ctx);
     }
 
     check(composer.frameCount() == static_cast<fuse::u32>(kFrameCount), "all frames ticked");
+    check(aiRuntime.tickCount() == static_cast<fuse::u32>(kFrameCount), "fuse_ai module ticked each frame");
+    check(aiRuntime.blackboard().flag(0, 0), "fuse_ai patrol flag set for near HUD agent");
     check(composer.renderer().sample(160, 120) > 0, "3D clear colour present");
     check(composer.renderer().sample(172, 132) > 0, "spinning 2D sprite visible");
 
