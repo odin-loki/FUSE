@@ -265,6 +265,18 @@ inline f32 rayIntersectAabb(const AABB& box, const Vec3& origin, const Vec3& dir
     return box.rayIntersect(origin, direction);
 }
 
+inline f32 planeSignedDistance(const Vec4& plane, const Vec3& point) {
+    return fuse::math::planeSignedDistance(plane, point);
+}
+
+inline bool isDegeneratePlane(const Vec4& plane, f32 epsilon = 1e-8f) {
+    return fuse::math::isDegeneratePlane(plane, epsilon);
+}
+
+inline PlaneSide classifyPoint(const Vec4& plane, const Vec3& point, f32 epsilon = 1e-5f) {
+    return fuse::math::classifyPoint(plane, point, epsilon);
+}
+
 inline PlaneSide classifyAabb(const Vec4& plane, const AABB& box) {
     return fuse::math::classifyAabb(plane, box);
 }

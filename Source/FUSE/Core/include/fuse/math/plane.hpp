@@ -20,7 +20,16 @@ inline f32 planeSignedDistance(const Vec4& plane, const Vec3& point) {
     return plane.x * point.x + plane.y * point.y + plane.z * point.z + plane.w;
 }
 
+inline bool isDegeneratePlane(const Vec4& plane, f32 epsilon = 1e-8f) {
+    const f32 lenSq = plane.x * plane.x + plane.y * plane.y + plane.z * plane.z;
+    return lenSq < epsilon * epsilon;
+}
+
 inline PlaneSide classifyPoint(const Vec4& plane, const Vec3& point, f32 epsilon = 1e-5f) {
+    if (isDegeneratePlane(plane, epsilon)) {
+        return PlaneSide::On;
+    }
+
     const f32 distance = planeSignedDistance(plane, point);
     if (distance > epsilon) {
         return PlaneSide::InFront;
@@ -35,6 +44,9 @@ inline PlaneSide classifyPoint(const Vec4& plane, const Vec3& point, f32 epsilon
 inline PlaneSide classifyAabb(const Vec4& plane, const AABB& box) {
     if (box.isEmpty()) {
         return PlaneSide::Behind;
+    }
+    if (isDegeneratePlane(plane)) {
+        return PlaneSide::Straddling;
     }
 
     const Vec3 positive{
@@ -63,6 +75,10 @@ inline PlaneSide classifyAabb(const Vec4& plane, const AABB& box) {
 /// Clips a segment `[a, b]` against the positive half-space of `plane`.
 /// Returns false when the segment is fully behind the plane.
 inline bool clipSegmentAgainstPlane(const Vec4& plane, Vec3& a, Vec3& b, f32 epsilon = 1e-5f) {
+    if (isDegeneratePlane(plane, epsilon)) {
+        return true;
+    }
+
     const f32 da = planeSignedDistance(plane, a);
     const f32 db = planeSignedDistance(plane, b);
 
@@ -74,6 +90,10 @@ inline bool clipSegmentAgainstPlane(const Vec4& plane, Vec3& a, Vec3& b, f32 eps
     }
     if (aIn && bIn) {
         return true;
+    }
+
+    if (std::fabs(da - db) <= epsilon) {
+        return aIn;
     }
 
     const f32 t = da / (da - db);
@@ -97,6 +117,15 @@ inline u32 clipPolygonAgainstPlane(const Vec4& plane, const Vec3* input, u32 inp
                                    u32 maxOutput, f32 epsilon = 1e-5f) {
     if (inputCount == 0 || maxOutput == 0) {
         return 0;
+    }
+    if (isDegeneratePlane(plane, epsilon)) {
+        if (inputCount > maxOutput) {
+            return 0;
+        }
+        for (u32 i = 0; i < inputCount; ++i) {
+            output[i] = input[i];
+        }
+        return inputCount;
     }
 
     u32 outCount = 0;

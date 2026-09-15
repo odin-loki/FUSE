@@ -119,6 +119,57 @@ inline Mat4 fromTRS(const Vec3& position, const Quat& rotation, const Vec3& scal
     return result;
 }
 
+/// True when the upper 3×3 block columns are mutually orthogonal with unit length (pure rotation).
+inline bool isOrthogonalUpper3x3(const Mat4& matrix, f32 epsilon = 1e-4f) {
+    const Vec3 x{matrix.data[0], matrix.data[1], matrix.data[2]};
+    const Vec3 y{matrix.data[4], matrix.data[5], matrix.data[6]};
+    const Vec3 z{matrix.data[8], matrix.data[9], matrix.data[10]};
+
+    const f32 xy = std::fabs(x.dot(y));
+    const f32 xz = std::fabs(x.dot(z));
+    const f32 yz = std::fabs(y.dot(z));
+    const f32 xLen = x.length();
+    const f32 yLen = y.length();
+    const f32 zLen = z.length();
+
+    if (xLen < epsilon || yLen < epsilon || zLen < epsilon) {
+        return false;
+    }
+
+    const f32 unitTolerance = epsilon * std::max(1.f, std::max(xLen, std::max(yLen, zLen)));
+    if (std::fabs(xLen - 1.f) > unitTolerance || std::fabs(yLen - 1.f) > unitTolerance ||
+        std::fabs(zLen - 1.f) > unitTolerance) {
+        return false;
+    }
+
+    return xy <= unitTolerance && xz <= unitTolerance && yz <= unitTolerance;
+}
+
+/// True when the upper 3×3 block is orthogonal with uniform column length (rotation ± uniform scale).
+inline bool isRigidUpper3x3(const Mat4& matrix, f32 epsilon = 1e-4f) {
+    const Vec3 x{matrix.data[0], matrix.data[1], matrix.data[2]};
+    const Vec3 y{matrix.data[4], matrix.data[5], matrix.data[6]};
+    const Vec3 z{matrix.data[8], matrix.data[9], matrix.data[10]};
+
+    const f32 xLen = x.length();
+    const f32 yLen = y.length();
+    const f32 zLen = z.length();
+
+    if (xLen < epsilon || yLen < epsilon || zLen < epsilon) {
+        return false;
+    }
+
+    const f32 scaleTolerance = epsilon * std::max(1.f, std::max(xLen, std::max(yLen, zLen)));
+    if (std::fabs(xLen - yLen) > scaleTolerance || std::fabs(yLen - zLen) > scaleTolerance ||
+        std::fabs(xLen - zLen) > scaleTolerance) {
+        return false;
+    }
+
+    const f32 orthoTolerance = scaleTolerance;
+    return std::fabs(x.dot(y)) <= orthoTolerance && std::fabs(x.dot(z)) <= orthoTolerance &&
+           std::fabs(y.dot(z)) <= orthoTolerance;
+}
+
 inline Mat4 inverseAffine(const Mat4& matrix) {
     const f32 r00 = matrix.data[0];
     const f32 r01 = matrix.data[4];
@@ -151,6 +202,15 @@ inline Mat4 inverseAffine(const Mat4& matrix) {
     result.data[14] = -(r02 * tx + r12 * ty + r22 * tz);
     result.data[15] = 1.f;
     return result;
+}
+
+/// Writes `inverseAffine(matrix)` to `out` when the upper 3×3 block is a pure rotation; returns false for any scale.
+inline bool tryInverseAffine(const Mat4& matrix, Mat4& out) {
+    if (!isOrthogonalUpper3x3(matrix)) {
+        return false;
+    }
+    out = inverseAffine(matrix);
+    return true;
 }
 
 inline Mat4 perspective(f32 fov_deg, f32 aspect, f32 near_plane, f32 far_plane) {
