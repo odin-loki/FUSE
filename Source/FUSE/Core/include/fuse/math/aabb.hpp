@@ -28,23 +28,45 @@ struct AABB {
         return 8.f * (e.x * e.y + e.y * e.z + e.x * e.z);
     }
 
+    /// True when any axis has `min > max` (inverted / unset bounds).
+    bool isEmpty() const {
+        return min.x > max.x || min.y > max.y || min.z > max.z;
+    }
+
+    bool isValid() const { return !isEmpty(); }
+
     bool contains(const Vec3& point) const {
+        if (isEmpty()) {
+            return false;
+        }
         return point.x >= min.x && point.x <= max.x && point.y >= min.y && point.y <= max.y &&
                point.z >= min.z && point.z <= max.z;
     }
 
     bool overlaps(const AABB& other) const {
+        if (isEmpty() || other.isEmpty()) {
+            return false;
+        }
         return min.x <= other.max.x && max.x >= other.min.x && min.y <= other.max.y &&
                max.y >= other.min.y && min.z <= other.max.z && max.z >= other.min.z;
     }
 
     AABB merge(const AABB& other) const {
+        if (isEmpty()) {
+            return other;
+        }
+        if (other.isEmpty()) {
+            return *this;
+        }
         return {{std::min(min.x, other.min.x), std::min(min.y, other.min.y), std::min(min.z, other.min.z)},
                 {std::max(max.x, other.max.x), std::max(max.y, other.max.y), std::max(max.z, other.max.z)}};
     }
 
     /// Slab ray intersection. Returns -1 when there is no hit.
     f32 rayIntersect(const Vec3& origin, const Vec3& direction) const {
+        if (isEmpty()) {
+            return -1.f;
+        }
         f32 tmin = 0.f;
         f32 tmax = std::numeric_limits<f32>::max();
 
@@ -90,6 +112,9 @@ struct AABB {
 /// Requires an orthogonal 3x3 upper block (rotation ± uniform scale); non-uniform scale
 /// should use `transformAabbCorners` for an exact axis-aligned result.
 inline AABB transformAabb(const Mat4& matrix, const AABB& box) {
+    if (box.isEmpty()) {
+        return box;
+    }
     const Vec3 center = box.center();
     const Vec3 extents = box.extents();
     const Vec3 newCenter = transformPoint(matrix, center);
@@ -108,6 +133,9 @@ inline AABB transformAabb(const Mat4& matrix, const AABB& box) {
 
 /// Exact world-space AABB by transforming all eight corners (reference path for tests).
 inline AABB transformAabbCorners(const Mat4& matrix, const AABB& box) {
+    if (box.isEmpty()) {
+        return box;
+    }
     const std::array<Vec3, 8> corners = {{
         {box.min.x, box.min.y, box.min.z},
         {box.min.x, box.min.y, box.max.z},
