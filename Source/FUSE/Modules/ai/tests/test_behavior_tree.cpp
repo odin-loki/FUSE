@@ -85,6 +85,7 @@ void testRegistryBuiltinNodes() {
     fuse::ai::NodeRegistry& registry = fuse::ai::NodeRegistry::instance();
     expectTrue(registry.hasFactory("bb.sequence"), "bb.sequence registered");
     expectTrue(registry.hasFactory("bb.selector"), "bb.selector registered");
+    expectTrue(registry.hasFactory("bb.parallel"), "bb.parallel registered");
     expectTrue(registry.hasFactory("bb.inverter"), "bb.inverter registered");
     expectTrue(registry.hasFactory("bb.loop"), "bb.loop registered");
     expectTrue(registry.hasFactory("bb.succeed_always"), "bb.succeed_always registered");
@@ -97,7 +98,7 @@ void testRegistryBuiltinNodes() {
     expectTrue(registry.hasFactory("bb.action.wait"), "bb.action.wait registered");
     expectTrue(registry.hasFactory("bb.action.distance"), "bb.action.distance registered");
     expectTrue(registry.hasFactory("gb.action.move_toward"), "gb.action.move_toward registered");
-    expectTrue(registry.registeredTypeIds().size() >= 14u, "registry exposes built-in type ids");
+    expectTrue(registry.registeredTypeIds().size() >= 15u, "registry exposes built-in type ids");
 }
 
 void testInverterDecorator() {
@@ -255,6 +256,20 @@ void testWaitLeaf() {
     expectTrue(done.status == fuse::ai::BehaviorStatus::Success, "wait completes after ticks");
 }
 
+void testBlackboardDirectGetSet() {
+    fuse::ai::Blackboard board;
+    board.resize(2);
+
+    board.setFlag(0, 3, true);
+    board.setFlag(1, 1, false);
+    expectTrue(board.getFlag(0, 3), "getFlag reads set value");
+    expectTrue(!board.getFlag(1, 1), "getFlag reads cleared value");
+    expectTrue(!board.getFlag(0, 0), "getFlag returns false for unset slot");
+
+    board.clearFlags(0);
+    expectTrue(!board.getFlag(0, 3), "clearFlags resets agent slots");
+}
+
 void testBlackboardSetGetLeaves() {
     const std::vector<fuse::ai::NodeLoadSpec> setSpecs = {
         {"bb.action.blackboard_set", 1.f, 2, 1, {}, {}},
@@ -364,6 +379,118 @@ void testWaitViaRuntime() {
     scheduler.shutdown();
 }
 
+void testSequenceChildStatusAggregation() {
+    const std::vector<fuse::ai::NodeLoadSpec> specs = {
+        {"bb.condition.distance_less", 5.f, 0, 1, {}, {}},
+        {"bb.action.set_flag", 0.f, 0, 1, {}, {}},
+        {"bb.sequence", 0.f, 0, 1, {}, {0, 1}},
+    };
+
+    fuse::ai::BehaviorTree tree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(specs, 2, tree), "sequence aggregation tree loads");
+
+    fuse::ai::AgentSnapshot far;
+    far.x = 0.f;
+    far.y = 0.f;
+    far.targetX = 20.f;
+    far.targetY = 0.f;
+
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const fuse::ai::BehaviorTickResult result =
+        tree.tick(0, far, fuse::ai::BlackboardView(board));
+    expectTrue(result.status == fuse::ai::BehaviorStatus::Failure,
+               "sequence propagates first child failure");
+    expectTrue(!result.wroteFlag, "sequence stops before second child on failure");
+}
+
+void testSelectorChildStatusAggregation() {
+    const std::vector<fuse::ai::NodeLoadSpec> specs = {
+        {"bb.condition.distance_less", 5.f, 0, 1, {}, {}},
+        {"bb.action.set_flag", 0.f, 1, 1, {}, {}},
+        {"bb.selector", 0.f, 0, 1, {}, {0, 1}},
+    };
+
+    fuse::ai::BehaviorTree tree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(specs, 2, tree), "selector aggregation tree loads");
+
+    fuse::ai::AgentSnapshot far;
+    far.x = 0.f;
+    far.y = 0.f;
+    far.targetX = 20.f;
+    far.targetY = 0.f;
+
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const fuse::ai::BehaviorTickResult result =
+        tree.tick(0, far, fuse::ai::BlackboardView(board));
+    expectTrue(result.status == fuse::ai::BehaviorStatus::Success,
+               "selector falls through to second child success");
+    expectTrue(result.wroteFlag && result.flagIndex == 1u,
+               "selector returns second child side effects");
+}
+
+void testParallelChildStatusAggregation() {
+    const std::vector<fuse::ai::NodeLoadSpec> setFlag0 = {
+        {"bb.action.set_flag", 0.f, 0, 1, {}, {}},
+    };
+    const std::vector<fuse::ai::NodeLoadSpec> setFlag1 = {
+        {"bb.action.set_flag", 0.f, 1, 1, {}, {}},
+    };
+    const std::vector<fuse::ai::NodeLoadSpec> failCond = {
+        {"bb.condition.distance_less", 5.f, 0, 1, {}, {}},
+    };
+    const std::vector<fuse::ai::NodeLoadSpec> waitLeaf = {
+        {"bb.action.wait", 0.f, 0, 3, {}, {}},
+    };
+
+    fuse::ai::BehaviorTree successTree;
+    fuse::ai::BehaviorTree failureTree;
+    fuse::ai::BehaviorTree runningTree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(setFlag0, 0, successTree), "parallel child A loads");
+    expectTrue(fuse::ai::loadTreeFromSpecs(setFlag1, 0, successTree), "parallel child B loads");
+    successTree.addNode({fuse::ai::NodeKind::Parallel, 0.f, 0, 1, 0, 1});
+    successTree.setRoot(2);
+
+    expectTrue(fuse::ai::loadTreeFromSpecs(setFlag0, 0, failureTree), "parallel fail child A loads");
+    expectTrue(fuse::ai::loadTreeFromSpecs(failCond, 0, failureTree), "parallel fail child B loads");
+    failureTree.addNode({fuse::ai::NodeKind::Parallel, 0.f, 0, 1, 0, 1});
+    failureTree.setRoot(2);
+
+    expectTrue(fuse::ai::loadTreeFromSpecs(setFlag0, 0, runningTree), "parallel running child A loads");
+    expectTrue(fuse::ai::loadTreeFromSpecs(waitLeaf, 0, runningTree), "parallel running child B loads");
+    runningTree.addNode({fuse::ai::NodeKind::Parallel, 0.f, 0, 1, 0, 1});
+    runningTree.setRoot(2);
+
+    fuse::ai::AgentSnapshot agent;
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const fuse::ai::BehaviorTickResult allSuccess =
+        successTree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(allSuccess.status == fuse::ai::BehaviorStatus::Success,
+               "parallel succeeds when both children succeed");
+    expectTrue(allSuccess.wroteFlag && allSuccess.flagIndex == 1u,
+               "parallel prefers later child flag write on dual success");
+
+    agent.targetX = 20.f;
+    const fuse::ai::BehaviorTickResult anyFailure =
+        failureTree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(anyFailure.status == fuse::ai::BehaviorStatus::Failure,
+               "parallel fails when any child fails");
+
+    agent.targetX = 0.f;
+    std::vector<fuse::u32> waitStarts(runningTree.nodeCount(), 0);
+    fuse::ai::BehaviorEvalContext ctx;
+    ctx.waitStartTicks = waitStarts.data();
+    const fuse::ai::BehaviorTickResult anyRunning =
+        runningTree.tick(0, agent, fuse::ai::BlackboardView(board), ctx);
+    expectTrue(anyRunning.status == fuse::ai::BehaviorStatus::Running,
+               "parallel stays running when any child is running");
+}
+
 void testRuntimeParallelEval() {
     fuse::ai::BehaviorRuntime runtime;
     runtime.setTree(fuse::ai::BehaviorTree::makePatrolWhenNearTargetFromRegistry());
@@ -400,6 +527,54 @@ void testRuntimeParallelEval() {
     scheduler.shutdown();
 }
 
+void testRuntimeParallelMultiAgentAggregation() {
+    const std::vector<fuse::ai::NodeLoadSpec> specs = {
+        {"bb.condition.distance_less", 5.f, 0, 1, {}, {}},
+        {"bb.action.blackboard_set", 1.f, 2, 1, {}, {}},
+        {"bb.sequence", 0.f, 0, 1, {}, {0, 1}},
+    };
+
+    fuse::ai::BehaviorTree tree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(specs, 2, tree), "multi-agent patrol tree loads");
+
+    fuse::ai::BehaviorRuntime runtime;
+    runtime.setTree(tree);
+
+    fuse::ai::AgentBinding near{};
+    near.x = 0.f;
+    near.y = 0.f;
+    near.targetX = 2.f;
+    near.targetY = 0.f;
+
+    fuse::ai::AgentBinding far{};
+    far.x = 0.f;
+    far.y = 0.f;
+    far.targetX = 12.f;
+    far.targetY = 0.f;
+
+    runtime.addAgent(near);
+    runtime.addAgent(far);
+
+    auto& scheduler = fuse::jobs::JobScheduler::instance();
+    scheduler.shutdown();
+    scheduler.initialize(4);
+
+    fuse::frame::FrameCtx ctx;
+    ctx.frameIndex = 1;
+    runtime.buildSnapshots();
+    runtime.evaluate(ctx);
+    runtime.commit();
+
+    expectTrue(runtime.lastResults()[0].status == fuse::ai::BehaviorStatus::Success,
+               "near agent succeeds in parallel eval");
+    expectTrue(runtime.lastResults()[1].status == fuse::ai::BehaviorStatus::Failure,
+               "far agent fails in parallel eval");
+    expectTrue(runtime.blackboard().getFlag(0, 2), "near agent blackboard flag committed");
+    expectTrue(!runtime.blackboard().getFlag(1, 2), "far agent blackboard flag not committed");
+
+    scheduler.shutdown();
+}
+
 } // namespace
 
 int main() {
@@ -413,13 +588,18 @@ int main() {
     testSucceedAlwaysDecorator();
     testGuideBotMoveTowardLeaf();
     testWaitLeaf();
+    testBlackboardDirectGetSet();
     testBlackboardSetGetLeaves();
+    testSequenceChildStatusAggregation();
+    testSelectorChildStatusAggregation();
+    testParallelChildStatusAggregation();
     testDistanceGreaterCondition();
     testDistanceActionLeaf();
     testWaitViaRuntime();
     testTextLoader();
     testUaiskTemplateHooks();
     testRuntimeParallelEval();
+    testRuntimeParallelMultiAgentAggregation();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

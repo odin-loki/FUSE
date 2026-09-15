@@ -35,6 +35,7 @@ Physics, gfx, and net remain composition/dual-backend. No physical `Engine/` + T
 | [vfs-mount-plan.md](./vfs-mount-plan.md) | WP-04 VFS mount prefixes (`/game`, `/t3d`, `/t2d`) |
 | [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md) | U4 hybrid composer, worlds, software demo |
 | [U5-MODULES.md](./U5-MODULES.md) | U5 feature module scaffolds, `fuse_ai` vertical slice, ore backlog |
+| [TRACK-B-AI.md](./TRACK-B-AI.md) | Track B / U5 `fuse_ai` BT registry, parallel composite, runtime threading |
 | [U6-EDITOR.md](./U6-EDITOR.md) | U6 Qt 6 editor shell, command queue, desktop-only policy |
 | [U7-PROJECT-FORMAT.md](./U7-PROJECT-FORMAT.md) | U7 `project.json` schema, importer stubs, `fuse_import` CLI |
 

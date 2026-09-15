@@ -43,12 +43,12 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 ### Implemented
 
 - **Node registry** (`NodeRegistry`, `loadTreeFromSpecs`, `loadTreeFromText`) — BadBehaviour `DECLARE_CONOBJECT` pattern without SimObject/Con::
-- Built-in type ids: `bb.sequence`, `bb.selector`, `bb.inverter`, `bb.loop`, `bb.succeed_always`, `bb.root`, `bb.condition.distance_less`, `bb.condition.distance_greater`, `bb.condition.blackboard_get`, `bb.action.set_flag`, `bb.action.blackboard_set`, `bb.action.wait`, `bb.action.distance`, `gb.action.move_toward`
+- Built-in type ids: `bb.sequence`, `bb.selector`, `bb.parallel`, `bb.inverter`, `bb.loop`, `bb.succeed_always`, `bb.root`, `bb.condition.distance_less`, `bb.condition.distance_greater`, `bb.condition.blackboard_get`, `bb.action.set_flag`, `bb.action.blackboard_set`, `bb.action.wait`, `bb.action.distance`, `gb.action.move_toward`
 - Flat behavior tree evaluator with decorator support (Inverter, Loop, SucceedAlways, Root)
 - `BehaviorRuntime`: `buildSnapshots()` → `evaluate()` (`JobScheduler::parallel_for`) → `commit()`
 - Demo tree `makePatrolWhenNearTarget()` + registry/text load equivalents
 - UAISK script-only template hooks (`uaisk_template_hooks.hpp`, `Samples/Modules/ai/uaisk-templates/`)
-- Unit tests: `fuse_ai_tests` — registry parity, decorators, leaf nodes (wait, blackboard set/get, distance), text loader, UAISK hooks, parallel runtime
+- Unit tests: `fuse_ai_tests` — registry parity, composite child-status aggregation (sequence/selector/parallel), leaf nodes (wait, blackboard set/get, distance), text loader, UAISK hooks, multi-agent parallel runtime
 - Hybrid demo: `demo_hybrid_hud` ticks `BehaviorRuntime` each frame after `HybridComposer::tick`
 
 ### Ore extraction (BadBehaviour / GuideBot / UAISK)
@@ -56,7 +56,7 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 | Status | Source path | FUSE destination |
 |--------|-------------|------------------|
 | ✅ P0 | `third_party/addons/BadBehaviour/Engine/source/BadBehavior/core/` | `node_registry.hpp`, flat `BehaviorNode` |
-| ✅ P1 | `.../BadBehavior/composite/` | `bb.sequence`, `bb.selector` |
+| ✅ P1 | `.../BadBehavior/composite/` | `bb.sequence`, `bb.selector`, `bb.parallel` |
 | ✅ P1 | `.../BadBehavior/decorator/` | `bb.inverter`, `bb.loop`, `bb.succeed_always`, `bb.root` |
 | 🚧 P1 | `.../BadBehavior/leaf/` | Scripted/compiled leaves — `bb.action.set_flag`, `bb.action.wait`, `bb.action.blackboard_set`, `bb.condition.blackboard_get`, `bb.action.distance` |
 | 🚧 P2 | `third_party/addons/GuideBot/.../guideBot/actionMove.h` | `gb.action.move_toward` stub (custom license) |

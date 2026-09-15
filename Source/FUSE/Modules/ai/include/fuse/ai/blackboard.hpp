@@ -15,6 +15,7 @@ public:
     u32 agentCount() const { return m_agentCount; }
 
     void setFlag(u32 agentIndex, u32 flagIndex, bool value);
+    bool getFlag(u32 agentIndex, u32 flagIndex) const { return flag(agentIndex, flagIndex); }
     bool flag(u32 agentIndex, u32 flagIndex) const;
 
     void clearFlags(u32 agentIndex);
@@ -30,6 +31,7 @@ public:
     BlackboardView() = default;
     explicit BlackboardView(const Blackboard& board);
 
+    bool getFlag(u32 agentIndex, u32 flagIndex) const { return flag(agentIndex, flagIndex); }
     bool flag(u32 agentIndex, u32 flagIndex) const;
 
 private:
