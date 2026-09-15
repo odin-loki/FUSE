@@ -1,6 +1,6 @@
-# Track B — Spatial Audio Engine (B7.2 deepen follow-up)
+# Track B — Spatial Audio Engine (B7.2 deepen)
 
-**Status:** B7.2 deepen follow-up — expanded occlusion attenuation stubs, reverb send level tests landed  
+**Status:** B7.2 deepen — AABB occlusion blockers in spatial attenuation path, listener-scoped reverb zone blend  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.2  
 **Source narrative:** [P7.md](../sources/P7.md) §7.2
 
@@ -14,9 +14,10 @@
 | `compute_attenuation` | `Source/FUSE/Audio/src/attenuation.cpp` | Legacy 3-arg overload + curve-aware overload |
 | `ListenerBasis` / `to_listener_space` | `Source/FUSE/Audio/include/fuse/audio/math.hpp` | World → listener-local transform for panning |
 | `AudioBus` / `AudioBusMixer` | `Source/FUSE/Audio/include/fuse/audio/audio_bus.hpp` | Per-category gain stub (Master, Sfx, Music, Voice) |
-| `OcclusionParams` / `evaluate_occlusion_*` | `Source/FUSE/Audio/include/fuse/audio/occlusion.hpp` | Visibility → LF/HF gain stubs; multi-blocker line-of-sight |
-| `SpatialMixer` | `Source/FUSE/Audio/include/fuse/audio/spatial_mixer.hpp` | CPU HRTF-lite pan + curve attenuation + bus routing + occlusion |
-| `AudioEngine` | `Source/FUSE/Audio/include/fuse/audio/audio_engine.hpp` | OpenAL backend sync, CUDA/CPU reverb facade, bus + reverb send accessors |
+| `OcclusionParams` / `evaluate_occlusion_*` | `Source/FUSE/Audio/include/fuse/audio/occlusion.hpp` | Visibility → LF/HF gain stubs; segment-vs-AABB blocker raycast |
+| `ReverbZoneParams` / `blend_reverb_zones` | `Source/FUSE/Audio/include/fuse/audio/reverb_zones.hpp` | Zone AABB membership + overlapping wet/dry blend |
+| `SpatialMixer` | `Source/FUSE/Audio/include/fuse/audio/spatial_mixer.hpp` | CPU HRTF-lite pan + curve attenuation + bus routing + blocker occlusion |
+| `AudioEngine` | `Source/FUSE/Audio/include/fuse/audio/audio_engine.hpp` | OpenAL backend sync, CUDA/CPU reverb facade, zone blend + occlusion blockers |
 
 **Not in scope (deferred):** HRTF impulse-response files, per-source bus sends, ducking/sidechain, real-time CUDA FFT reverb on device, OGG decode, ECS system wiring, dynamic occlusion raycasts, HF IIR/LPF filtering.
 
@@ -61,28 +62,37 @@ effective = listener.master_volume * bus_mixer.effective_gain(source.bus)
 
 ### Occlusion (stub)
 
-`AudioSourceDesc::occlusion` is a visibility factor in `[0, 1]`. Occlusion helpers map visibility to dry-path attenuation:
+`AudioSourceDesc::occlusion` is a per-source visibility factor in `[0, 1]`. `SpatialMixer::set_occlusion_blockers` registers world-space AABB blockers; effective visibility is:
+
+```
+visibility = clamp(source.occlusion) * compute_blockers_visibility(listener, source, blockers)
+```
+
+Occlusion helpers map visibility to attenuation multipliers:
 
 | Helper | Behaviour |
 |--------|-----------|
 | `evaluate_occlusion_gain` | LF gain with `min_gain` floor (default 0.1) |
 | `evaluate_occlusion_hf_gain` | HF rolloff stub — lerp toward `hf_attenuation` (default 0.6) |
 | `evaluate_occlusion_attenuation` | Bundles LF + HF gains for mixer consumption |
-| `compute_blocker_visibility` | Segment-vs-AABB intersection; returns `blocked_visibility` (default 0.25) |
+| `compute_blocker_visibility` | Segment-vs-AABB ray stub; returns `blocked_visibility` (default 0.25) |
 | `compute_blockers_visibility` | Minimum visibility across multiple blocker AABBs |
 
-`SpatialMixer` applies `gain * hf_gain` on the dry mono path. No HF filter yet — `hf_gain` is a scalar energy stub.
+`SpatialMixer` multiplies distance attenuation by `occlusion.gain * occlusion.hf_gain` before HRTF panning. No HF filter yet — `hf_gain` is a scalar energy stub.
 
-### Reverb send (stub)
+### Reverb zones (stub)
 
-`ReverbZone` carries `wet_dry` (mix ratio) and `send_level` (bus send scalar). Effective wet contribution:
+`ReverbZone` carries an AABB `bounds`, `wet_dry` (mix ratio), and `send_level` (bus send scalar). `listener_in_reverb_zone` tests membership; `blend_reverb_zones` averages wet/dry and send across all zones containing the listener.
+
+Effective wet contribution when the listener is inside at least one zone:
 
 ```
-wet_mix = clamp(wet_dry) * clamp(send_level)
-mixed   = dry * (1 - wet_mix) + convolved * wet_mix
+blend     = blend_reverb_zones(listener, zones)
+wet_mix   = blend.wet_dry * blend.send_level
+mixed     = dry * (1 - wet_mix) + convolved * wet_mix
 ```
 
-`AudioEngine::set_reverb_send_level` / `reverb_send_level()` adjust the active zone send without re-adding zones. Convolution runs through `ConvReverbCpu` (CUDA facade deferred).
+When the listener is outside all zones, reverb is skipped (fully dry). `AudioEngine::set_reverb_send_level` / `reverb_send_level()` adjust zone send without re-adding zones. Convolution runs through `ConvReverbCpu` (CUDA facade deferred).
 
 ---
 
@@ -124,7 +134,12 @@ ctest --test-dir build --output-on-failure -R fuse_audio
 | `testBusRoutingAffectsMixOutput` | Bus gain scales spatial mix energy |
 | `testHrtfPanEdgeCases` | Ahead/left/right/behind/co-located pan; HRTF-off is mono |
 | `testOcclusionStub` | LF/HF gain mapping, attenuation bundle, multi-blocker visibility |
+| `testOcclusionFactorExtremes` | Unity vs floored effective occlusion gain; blocker visibility extremes |
 | `testOcclusionReducesMixOutput` | Occluded source is quieter with min_gain floor |
+| `testOcclusionBlockerAttenuatesMix` | AABB blocker on LOS reduces spatial mix energy |
+| `testReverbZoneMembership` | Listener inside/outside zone AABB |
+| `testReverbZoneOverlappingBlend` | Overlapping zones average wet/dry; outside yields dry |
+| `testReverbZoneListenerPositionAffectsMix` | Inside zone is wetter than outside |
 | `testReverbSendLevelDryMix` | Zero `wet_dry` leaves dry mix unchanged |
 | `testReverbSendLevelWetMix` | Full send increases mix energy vs dry |
 | `testReverbSendLevelScalesMixOutput` | `set_reverb_send_level` scales wet contribution |
@@ -134,15 +149,15 @@ ctest --test-dir build --output-on-failure -R fuse_audio
 
 ---
 
-## Gates (B7.2 deepen follow-up)
+## Gates (B7.2 deepen)
 
 - [x] Attenuation curves: linear, logarithmic, exponential
 - [x] Listener orientation affects spatial pan
 - [x] Bus gain stub with master × category routing
 - [x] Bus routing tests cover all categories and mix output scaling
 - [x] HRTF-lite pan edge cases (ahead, lateral, behind, co-located, disabled)
-- [x] Occlusion LF/HF gain stubs with multi-blocker visibility
-- [x] Reverb send level stub + wet/dry mix output tests
+- [x] Occlusion segment-vs-AABB blockers wired into spatial attenuation path
+- [x] Reverb zone AABB membership + overlapping blend + listener-scoped wet/dry
 - [x] `fuse_audio_b72` CTest target green
 - [x] No owning raw pointers in public FUSE APIs
 - [ ] Per-source reverb sends (follow-up)

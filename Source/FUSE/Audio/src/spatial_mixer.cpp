@@ -14,6 +14,18 @@ void SpatialMixer::configure(u32 sample_rate, u32 max_sources, bool hrtf_enabled
     m_hrtfEnabled = hrtf_enabled;
 }
 
+void SpatialMixer::set_occlusion_blockers(const AABB* blockers, u32 blocker_count) {
+    m_occlusionBlockers.clear();
+    if (blockers == nullptr || blocker_count == 0) {
+        return;
+    }
+    m_occlusionBlockers.assign(blockers, blockers + blocker_count);
+}
+
+void SpatialMixer::clear_occlusion_blockers() {
+    m_occlusionBlockers.clear();
+}
+
 float SpatialMixer::sample_clip(const AudioClip& clip, float play_head, u32 channel) const {
     if (clip.channel_count == 0 || clip.samples.empty()) {
         return 0.f;
@@ -84,14 +96,23 @@ void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>
         attenuation_params.rolloff = source->desc.rolloff;
 
         const float distance = source->position.distance(listener_pos);
-        const float attenuation = source->desc.spatial
+        const float distance_attenuation = source->desc.spatial
             ? compute_attenuation(distance, attenuation_params)
             : 1.f;
+
+        float visibility = std::clamp(source->desc.occlusion, 0.f, 1.f);
+        if (!m_occlusionBlockers.empty()) {
+            visibility *= compute_blockers_visibility(listener_pos, source->position,
+                                                      m_occlusionBlockers.data(),
+                                                      static_cast<u32>(m_occlusionBlockers.size()));
+        }
+        const OcclusionAttenuation occlusion = evaluate_occlusion_attenuation(visibility);
+        const float effective_attenuation =
+            distance_attenuation * occlusion.gain * occlusion.hf_gain;
 
         const Vec3 world_rel = source->position - listener_pos;
         const Vec3 rel = listener != nullptr ? to_listener_space(world_rel, basis) : world_rel;
         const float bus_gain = m_busMixer.effective_gain(source->desc.bus);
-        const OcclusionAttenuation occlusion = evaluate_occlusion_attenuation(source->desc.occlusion);
 
         for (u32 frame = 0; frame < frames; ++frame) {
             const float local_t = source->play_head + static_cast<float>(frame) / static_cast<float>(m_sampleRate);
@@ -102,12 +123,12 @@ void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>
                 mono = 0.5f * (sample_clip(*clip, local_t * clip->sample_rate, 0)
                                + sample_clip(*clip, local_t * clip->sample_rate, 1));
             }
-            mono *= source->desc.volume * source->desc.pitch * occlusion.gain * occlusion.hf_gain;
+            mono *= source->desc.volume * source->desc.pitch;
 
             float left = 0.f;
             float right = 0.f;
             if (source->desc.spatial) {
-                apply_hrtf_pan(mono, rel, attenuation, left, right);
+                apply_hrtf_pan(mono, rel, effective_attenuation, left, right);
             } else {
                 left = mono;
                 right = mono;

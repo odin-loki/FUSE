@@ -6,6 +6,7 @@
 #include <fuse/audio/conv_reverb_cpu.hpp>
 #include <fuse/audio/math.hpp>
 #include <fuse/audio/occlusion.hpp>
+#include <fuse/audio/reverb_zones.hpp>
 #include <fuse/audio/spatial_mixer.hpp>
 #include <fuse/core/init.hpp>
 
@@ -416,6 +417,158 @@ void testOcclusionReducesMixOutput() {
     expectTrue(occluded_energy > 0.f, "occluded source retains min_gain floor");
 }
 
+void testOcclusionFactorExtremes() {
+    fuse::audio::OcclusionParams params;
+    const fuse::audio::OcclusionAttenuation full =
+        fuse::audio::evaluate_occlusion_attenuation(1.f, params);
+    const fuse::audio::OcclusionAttenuation blocked =
+        fuse::audio::evaluate_occlusion_attenuation(0.f, params);
+
+    expectNear(full.gain * full.hf_gain, 1.f, 1e-5f,
+               "full visibility preserves unity effective occlusion gain");
+    expectNear(blocked.gain * blocked.hf_gain, 0.1f * 0.6f, 1e-5f,
+               "zero visibility floors effective occlusion gain");
+
+    const fuse::audio::AABB blocker{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
+    expectNear(fuse::audio::compute_blockers_visibility(fuse::audio::Vec3{-5.f, 0.f, 0.f},
+                                                        fuse::audio::Vec3{5.f, 0.f, 0.f},
+                                                        &blocker, 1),
+               0.25f, 1e-5f, "blocker reduces visibility along segment");
+    expectNear(fuse::audio::compute_blockers_visibility(fuse::audio::Vec3{-5.f, 0.f, 0.f},
+                                                        fuse::audio::Vec3{5.f, 0.f, 0.f},
+                                                        nullptr, 0),
+               1.f, 1e-5f, "no blockers leaves visibility at unity");
+}
+
+void testOcclusionBlockerAttenuatesMix() {
+    fuse::audio::AudioEngine engine;
+    fuse::audio::AudioDesc desc;
+    desc.frames_per_buf = 256;
+    engine.init(desc);
+
+    std::vector<float> pcm(48000, 0.5f);
+    fuse::audio::AudioClip clip;
+    clip.load_from_pcm(pcm.data(), 48000, 1, 48000);
+    const auto clip_handle = engine.register_clip(std::move(clip));
+
+    fuse::audio::AudioRegistry registry;
+    const fuse::audio::EntityId listener_entity = registry.create_entity();
+    registry.set_position(listener_entity, fuse::audio::Vec3{-5.f, 0.f, 0.f});
+    registry.set_listener(listener_entity);
+
+    const fuse::audio::EntityId source_entity = registry.create_entity();
+    registry.set_position(source_entity, fuse::audio::Vec3{5.f, 0.f, 0.f});
+    fuse::audio::AudioSourceDesc source_desc;
+    source_desc.clip = clip_handle;
+    source_desc.spatial = true;
+    source_desc.looping = true;
+    source_desc.occlusion = 1.f;
+    fuse::audio::AudioSource* source = registry.add_source(source_entity, source_desc);
+    source->playing = true;
+
+    engine.update(registry, 1.f / 60.f);
+    const float clear_energy = bufferEnergy(engine.last_mix_buffer());
+
+    const fuse::audio::AABB blocker{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
+    engine.set_occlusion_blockers(&blocker, 1);
+    source->play_head = 0.f;
+    engine.update(registry, 1.f / 60.f);
+    const float blocked_energy = bufferEnergy(engine.last_mix_buffer());
+
+    engine.clear_occlusion_blockers();
+    source->play_head = 0.f;
+    engine.update(registry, 1.f / 60.f);
+    const float restored_energy = bufferEnergy(engine.last_mix_buffer());
+
+    expectTrue(blocked_energy < clear_energy * 0.75f,
+               "AABB blocker on line-of-sight attenuates spatial mix");
+    expectTrue(restored_energy > blocked_energy, "clearing blockers restores mix energy");
+}
+
+void testReverbZoneMembership() {
+    fuse::audio::ReverbZoneParams zone;
+    zone.bounds = {{-5.f, -5.f, -5.f}, {5.f, 5.f, 5.f}};
+    zone.wet_dry = 0.4f;
+    zone.send_level = 0.8f;
+
+    expectTrue(fuse::audio::listener_in_reverb_zone(fuse::audio::Vec3{0.f, 0.f, 0.f}, zone),
+               "listener at zone centre is inside");
+    expectTrue(fuse::audio::listener_in_reverb_zone(fuse::audio::Vec3{4.9f, 0.f, 0.f}, zone),
+               "listener on zone boundary is inside");
+    expectTrue(!fuse::audio::listener_in_reverb_zone(fuse::audio::Vec3{6.f, 0.f, 0.f}, zone),
+               "listener outside zone is excluded");
+}
+
+void testReverbZoneOverlappingBlend() {
+    const fuse::audio::ReverbZoneParams zones[] = {
+        {{{-10.f, -10.f, -10.f}, {10.f, 10.f, 10.f}}, 0.2f, 0.5f},
+        {{{-10.f, -10.f, -10.f}, {10.f, 10.f, 10.f}}, 0.6f, 1.f},
+        {{{20.f, -1.f, -1.f}, {30.f, 1.f, 1.f}}, 1.f, 1.f},
+    };
+
+    const fuse::audio::ReverbZoneBlend overlap =
+        fuse::audio::blend_reverb_zones(fuse::audio::Vec3{0.f, 0.f, 0.f}, zones, 3);
+    expectNear(overlap.wet_dry, 0.4f, 1e-5f, "overlapping zones average wet_dry");
+    expectNear(overlap.send_level, 0.75f, 1e-5f, "overlapping zones average send_level");
+    expectTrue(overlap.active_zone_count == 2, "two zones contain the listener");
+
+    const fuse::audio::ReverbZoneBlend outside =
+        fuse::audio::blend_reverb_zones(fuse::audio::Vec3{100.f, 0.f, 0.f}, zones, 3);
+    expectNear(outside.wet_dry, 0.f, 1e-5f, "outside all zones yields dry blend");
+    expectNear(outside.send_level, 0.f, 1e-5f, "outside all zones yields zero send");
+    expectTrue(outside.active_zone_count == 0, "no active zones outside bounds");
+}
+
+void testReverbZoneListenerPositionAffectsMix() {
+    fuse::audio::AudioEngine engine;
+    fuse::audio::AudioDesc desc;
+    desc.frames_per_buf = 64;
+    desc.cuda_reverb = false;
+    engine.init(desc);
+
+    std::vector<float> pcm(4096, 0.5f);
+    fuse::audio::AudioClip source_clip;
+    source_clip.load_from_pcm(pcm.data(), 4096, 1, 48000);
+    const auto source_handle = engine.register_clip(std::move(source_clip));
+
+    const float ir_samples[] = {1.f, 0.5f, 0.25f};
+    fuse::audio::AudioClip ir_clip;
+    ir_clip.load_from_pcm(ir_samples, 3, 1, 48000);
+    const auto ir_handle = engine.register_clip(std::move(ir_clip));
+
+    fuse::audio::AudioRegistry registry;
+    const fuse::audio::EntityId listener_entity = registry.create_entity();
+    registry.set_position(listener_entity, fuse::audio::Vec3{0.f, 0.f, 0.f});
+    fuse::audio::AudioListener* listener = registry.set_listener(listener_entity);
+
+    const fuse::audio::EntityId source_entity = registry.create_entity();
+    fuse::audio::AudioSourceDesc source_desc;
+    source_desc.clip = source_handle;
+    source_desc.spatial = false;
+    source_desc.looping = true;
+    fuse::audio::AudioSource* source = registry.add_source(source_entity, source_desc);
+    source->playing = true;
+
+    fuse::audio::AudioEngine::ReverbZone zone;
+    zone.bounds = {{-5.f, -5.f, -5.f}, {5.f, 5.f, 5.f}};
+    zone.impulse_response = ir_handle;
+    zone.wet_dry = 1.f;
+    zone.send_level = 1.f;
+    engine.add_reverb_zone(zone);
+
+    engine.update(registry, 1.f / 60.f);
+    const float inside_energy = bufferEnergy(engine.last_mix_buffer());
+
+    registry.set_position(listener_entity, fuse::audio::Vec3{50.f, 0.f, 0.f});
+    listener = registry.set_listener(listener_entity);
+    source->play_head = 0.f;
+    engine.update(registry, 1.f / 60.f);
+    const float outside_energy = bufferEnergy(engine.last_mix_buffer());
+
+    expectTrue(inside_energy > outside_energy * 1.05f,
+               "listener inside reverb zone receives wetter mix than outside");
+}
+
 void testSpatialPanRespectsListenerOrientation() {
     fuse::audio::AudioEngine engine;
     fuse::audio::AudioDesc desc;
@@ -699,7 +852,12 @@ int main() {
     testBusRoutingAffectsMixOutput();
     testHrtfPanEdgeCases();
     testOcclusionStub();
+    testOcclusionFactorExtremes();
     testOcclusionReducesMixOutput();
+    testOcclusionBlockerAttenuatesMix();
+    testReverbZoneMembership();
+    testReverbZoneOverlappingBlend();
+    testReverbZoneListenerPositionAffectsMix();
     testReverbSendLevelDryMix();
     testReverbSendLevelWetMix();
     testReverbSendLevelScalesMixOutput();
