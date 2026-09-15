@@ -20,8 +20,10 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/jobs/worker_context.hpp
     include/fuse/jobs/job_scheduler.hpp
     include/fuse/jobs/job_counter.hpp
-    include/fuse/jobs/parallel_for.hpp
     include/fuse/jobs/cuda_jobs.hpp
+    include/fuse/jobs/parallel_for.hpp
+    include/fuse/math/vec.hpp
+    include/fuse/math/sdf.hpp
     include/fuse/platform/power.hpp
     include/fuse/platform/thread.hpp
     include/fuse/platform/fiber.hpp

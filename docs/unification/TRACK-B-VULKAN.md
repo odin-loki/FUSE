@@ -1,7 +1,7 @@
-# Track B — Vulkan Bootstrap (B2.1–B2.8)
+# Track B — Vulkan Bootstrap (B2.1–B2.9) + CUDA Ray March (B2.7)
 
-**Status:** B2.1 bootstrap + B2.2 swapchain/frame ring + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.5 command buffer / render graph scaffolding + B2.6 CUDA/interop stubs + B2.8 rasterisation pipeline scaffold + B2.9 composite pass scaffold  
-**Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B2.1–B2.5, §B2.6, §B2.8, §B2.9  
+**Status:** B2.1 bootstrap + B2.2 swapchain/frame ring + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.5 command buffer / render graph scaffolding + B2.6 CUDA/interop stubs + B2.7 SDF ray-march CUDA path scaffolding + B2.8 rasterisation pipeline scaffold + B2.9 composite pass scaffold  
+**Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B2.1–B2.5, §B2.6, §B2.7, §B2.8, §B2.9  
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §4.2, §4.4, §5.3  
 **Hybrid integration:** [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md)
 
@@ -29,8 +29,13 @@
 | `RhiContext` | `Source/FUSE/Renderer/` | `beginFrame` / `submitFrame` on `renderThread()`; compiles graph per frame + optional `RasterPath` + `CompositePass` |
 | `fuse::platform::gl_context.hpp` | `Source/FUSE/Core/` | Portable “may touch GPU” guard |
 | `HybridComposer` wiring | `Source/FUSE/Hybrid/` | Dual path: software `PlaceholderRenderer` **and** RHI command mirror |
+| `CUDAJobDesc` / `submit_cuda` | `Source/FUSE/Core/include/fuse/jobs/cuda_jobs.hpp` | Job-lane CUDA dispatch via `JobScheduler` |
+| `import_vulkan_buffer` / `import_vulkan_image` | `Source/FUSE/Renderer/include/fuse/renderer/cuda/` | External-memory import deferred — returns `ok=false` until full B2.6 |
+| `StreamManager` | `Source/FUSE/Renderer/include/fuse/renderer/cuda/` | Named streams (Render, Physics, AI, Particles, Upload) |
+| `RayMarchParams` / `submit_ray_march_job` | `Source/FUSE/Compute/` | SDF ray-march pass wired through `submit_cuda` (`fuse_compute`) |
+| `fuse::math::Vec3` / `SDF::sphere` | `Source/FUSE/Core/include/fuse/math/` | Host-side math for CPU reference tracer |
 
-**Not in scope:** Engine marriage, real present in CI (no window surface), MoltenVK/Android surface wiring, full bindless descriptor pool, graphics pipeline cache, hot-reload watchers.
+**Not in scope:** Engine marriage, real present in CI (no window surface), MoltenVK/Android surface wiring, full bindless descriptor pool, graphics pipeline cache, hot-reload watchers, full B2.6 shared-texture interop, render-graph CUDA node execution (B2.5 API only).
 
 ---
 
@@ -222,6 +227,34 @@ When `FUSE_SHADER_GLSLANG=ON` but glslang is missing, configure continues with o
 
 ---
 
+## B2.7 — SDF Ray Marcher (CUDA scaffold)
+
+**Status:** API + job wiring landed in `fuse_compute`; full kernel and B2.6 interop deferred.
+
+| Component | Location | Notes |
+|-----------|----------|-------|
+| `RayMarchParams` | `Compute/include/fuse/compute/ray_march.hpp` | Camera, march settings, GPU-resident `SdfObject` array |
+| `launch_ray_march` | `Compute/src/ray_march_host.cpp` | Host launcher — CPU reference or CUDA stub kernel |
+| `submit_ray_march_job` | `Compute/include/fuse/compute/ray_march_job.hpp` | Wraps `launch_ray_march` in `CUDAJobDesc` → `submit_cuda` |
+| `ray_march.cu` | `Compute/kernels/` | Placeholder `__global__` kernel when toolkit present |
+| `ray_march_center_hit_distance` | `Compute/src/ray_march_cpu.cpp` | CPU sphere-tracer for unit tests |
+
+### Backend modes
+
+```cpp
+enum class RayMarcherMode : u8 { Stub, CpuReference, Cuda };
+```
+
+| Mode | When | Behaviour |
+|------|------|-----------|
+| **CpuReference** | `FUSE_BUILD_CUDA=ON`, no toolkit | Host sphere-tracing against `fuse::math::SDF` primitives |
+| **Cuda** | Toolkit found (`FUSE_HAS_CUDA=1`) | Launches placeholder kernel via B2.6 managed stream |
+| **Stub** | `FUSE_BUILD_CUDA=OFF` | `fuse_compute` not built |
+
+Job workers call `submit_cuda` / `submit_ray_march_job`; they never include `<cuda_runtime.h>`.
+
+---
+
 ## B2.8 — Rasterisation pipeline (scaffold)
 
 **Status:** Headless `VkGraphicsPipeline` + clear/triangle path stub landed.
@@ -233,7 +266,7 @@ When `FUSE_SHADER_GLSLANG=ON` but glslang is missing, configure continues with o
 | `RasterPath` | `raster_path.hpp` | Offscreen image/framebuffer; records clear + one triangle draw per frame |
 | `RhiContext` wiring | `rhi_context.hpp` | Lazy `RasterPath` creation; `submitFrame` mirrors `RenderCommandList` clears |
 
-CI exercises the path headlessly (no `VkSurfaceKHR`). Full G-buffer layout, draw lists, and CUDA depth handoff remain future B2.8+ / B2.6 work — this PR owns pipeline scaffolding only.
+CI exercises the path headlessly (no `VkSurfaceKHR`). Full G-buffer layout, draw lists, and CUDA depth handoff remain future B2.8+ / B2.6 work.
 
 ---
 
@@ -288,11 +321,12 @@ Portable invariant unchanged: job code emits `RenderCommandList`; platform modul
 | `fuse_hybrid_tests` | Existing U4 software renderer regressions |
 | `fuse_cuda_jobs` | `submit_cuda` hook signals counter without CUDA toolkit |
 | `fuse_cuda_interop` | Vulkan/CUDA import + timeline stubs degrade on CI |
+| `fuse_ray_march_stub` | CPU sphere hit distance, `submit_cuda` counter signal, ray-march job wiring |
 
 Run:
 
 ```bash
-ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_graphics_pipeline|fuse_render_command|fuse_render_graph|fuse_composite_pass|fuse_hybrid|fuse_cuda'
+ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_graphics_pipeline|fuse_render_command|fuse_render_graph|fuse_composite_pass|fuse_hybrid|fuse_cuda|fuse_ray_march'
 ```
 
 ---
@@ -302,6 +336,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|
 1. **Linux umbrella** — `FUSE_BUILD_VULKAN=ON`, Mesa Lavapipe for headless ICD; Khronos validation layers used when installed, otherwise stub message (non-fatal). Swapchain stays **headless** (no `VkSurfaceKHR`); frame ring exercises real fences/semaphores.
 2. **Android NDK** — `FUSE_BUILD_VULKAN=OFF`; `fuse_core` + `fuse_hybrid` unchanged.
 3. **iOS stub workflow** — unchanged; Vulkan deferred.
+4. **CUDA** — umbrella Linux enables `FUSE_BUILD_CUDA=ON`; no NVIDIA toolkit required. `fuse_cuda_jobs`, `fuse_cuda_interop`, and `fuse_ray_march_stub` exercise stub paths.
 
 No GPU window on runner is OK: stub backend keeps configure/build green; when Lavapipe is present, tests exercise real instance/device + frame sync objects.
 
@@ -323,16 +358,17 @@ cmake -B build -DFUSE_UMBRELLA=ON -DFUSE_BUILD_CUDA=ON
 
 | Condition | Behaviour |
 |-----------|-----------|
-| `FUSE_BUILD_CUDA=OFF` (default) | No CUDA linkage; `cudaJobsAvailable()` / `interopAvailable()` return false |
-| `FUSE_BUILD_CUDA=ON`, toolkit found | `FUSE_HAS_CUDA=1` — managed stream + named `StreamManager` streams when device present |
-| `FUSE_BUILD_CUDA=ON`, toolkit missing | Stub path identical to OFF — CI stays green without `nvcc` or CUDA drivers |
-| CI Linux umbrella | `FUSE_BUILD_CUDA` stays **OFF** — no CUDA on runners required |
+| `FUSE_BUILD_CUDA=OFF` (default) | No `fuse_compute`; `cuda_jobs` / interop headers not linked into tests |
+| `FUSE_BUILD_CUDA=ON`, toolkit found | `FUSE_HAS_CUDA=1` — managed stream + named `StreamManager` streams + `ray_march.cu` |
+| `FUSE_BUILD_CUDA=ON`, toolkit missing | CPU reference ray marcher + `submit_cuda` stub — CI stays green without `nvcc` |
+| CI Linux umbrella | `FUSE_BUILD_CUDA=ON` — stub path; no NVIDIA toolkit on runners required |
 
 ### API surface
 
 | Component | Location | Notes |
 |-----------|----------|-------|
 | `CUDAJobDesc` / `submit_cuda()` | `Source/FUSE/Core/include/fuse/jobs/cuda_jobs.hpp` | Job-scheduler dispatch; signals `JobCounter` on completion |
+| `fuse_compute` / `submit_ray_march_job` | `Source/FUSE/Compute/` | B2.7 SDF ray-march pass wired through `submit_cuda` |
 | `import_vulkan_buffer` / `import_vulkan_image` | `Source/FUSE/Renderer/include/fuse/renderer/cuda/interop.hpp` | External-memory import deferred — returns `ok=false` until full B2.6 |
 | `SharedTimeline` | `Source/FUSE/Renderer/include/fuse/renderer/cuda/vk_sync.hpp` | Timeline semaphore wrapper stub |
 | `StreamManager` | `Source/FUSE/Renderer/include/fuse/renderer/cuda/stream_manager.hpp` | Named streams (Render, Physics, AI, Particles, Upload) |
@@ -350,6 +386,7 @@ Thread ownership unchanged: CUDA launch jobs run on worker threads; Vulkan recor
 - [x] B2.4 shader scaffold — offline SPIR-V, shader module, pipeline layout placeholder
 - [x] B2.5 command buffer recording stubs + render graph compile/execute scaffolding
 - [x] B2.6 CUDA job/interop stubs — `FUSE_BUILD_CUDA` gated, CI passes without toolkit
+- [x] B2.7 SDF ray-march scaffold — `fuse_compute`, CPU reference tracer, placeholder `.cu` kernel
 - [x] B2.8 rasterisation pipeline scaffold — `GraphicsPipeline`, headless clear/triangle `RasterPath`
 - [x] B2.9 composite pass scaffold — `CompositePass`, graph node before present, GRIA blend stub
 - [ ] B2.4 follow-up: bindless descriptor pool + graphics pipeline cache
