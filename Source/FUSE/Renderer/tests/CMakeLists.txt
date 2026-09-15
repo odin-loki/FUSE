@@ -75,3 +75,7 @@ add_test(NAME fuse_atmosphere_sky COMMAND fuse_atmosphere_sky)
 add_executable(fuse_ddgi test_ddgi.cpp)
 target_link_libraries(fuse_ddgi PRIVATE fuse_rhi)
 add_test(NAME fuse_ddgi COMMAND fuse_ddgi)
+
+add_executable(fuse_post_process_stack test_post_process_stack.cpp)
+target_link_libraries(fuse_post_process_stack PRIVATE fuse_rhi)
+add_test(NAME fuse_post_process_b510 COMMAND fuse_post_process_stack)
