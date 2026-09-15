@@ -1,7 +1,9 @@
 #include <fuse/core/init.hpp>
+#include <fuse/frame/frame_ctx.hpp>
 #include <fuse/hybrid/hybrid_renderer_bootstrap.hpp>
 #include <fuse/hybrid/vulkan_presentable.hpp>
 #include <fuse/platform/window.hpp>
+#include <fuse/renderer/vk/present_path.hpp>
 #include <fuse/renderer/vk/surface.hpp>
 
 #include <cstdio>
@@ -58,6 +60,47 @@ void testExternalSurfaceWiring() {
     expectTrue(surface.nativeHandle() == external.nativeSurface, "opaque handle preserved");
 }
 
+void testPresentPathThroughHybridBootstrap() {
+    fuse::core::initialize();
+
+    fuse::hybrid::HybridRendererBootstrapDesc desc{};
+    desc.presentable.backend = fuse::hybrid::PresentableBackend::Headless;
+    desc.presentable.vsyncMode = fuse::renderer::VsyncMode::Fifo;
+    desc.renderer.rhi.bootstrap.instance.enableValidation = false;
+
+    auto runtime = fuse::hybrid::HybridRendererBootstrap::create(desc);
+    expectTrue(runtime != nullptr, "hybrid runtime allocated");
+    expectTrue(runtime->presentPath() != nullptr, "present path wired through bootstrap");
+
+    fuse::renderer::PresentPath* presentPath = runtime->presentPath();
+    expectTrue(presentPath->waitInFlightFence(), "hybrid present path fence wait");
+    expectTrue(presentPath->acquireImage() == UINT32_MAX, "headless hybrid acquire stub");
+    expectTrue(presentPath->presentImage(), "headless hybrid present stub");
+    expectTrue(presentPath->status().presentedFrames == 1u, "hybrid present frame counted");
+
+    runtime->presentable()->requestResize(800, 600);
+    expectTrue(runtime->presentable()->needsResizeRecreate(), "presentable resize queued");
+    fuse::frame::FrameCtx frameCtx{};
+    runtime->render(frameCtx);
+    expectTrue(presentPath->hasPendingResize(), "render forwards resize to present path");
+    expectTrue(presentPath->waitInFlightFence(), "resize recreate on fence wait");
+    expectTrue(!presentPath->hasPendingResize(), "resize cleared after recreate");
+
+    runtime->shutdown();
+    fuse::core::shutdown();
+}
+
+void testVsyncModeOnPresentableDesc() {
+    fuse::hybrid::VulkanPresentableDesc desc{};
+    desc.vsyncMode = fuse::renderer::VsyncMode::Mailbox;
+
+    auto presentable = fuse::hybrid::VulkanPresentable::create(desc);
+    expectTrue(presentable->vsyncMode() == fuse::renderer::VsyncMode::Mailbox,
+               "presentable stores vsync mode");
+    expectTrue(presentable->swapchainDesc().vsyncMode == fuse::renderer::VsyncMode::Mailbox,
+               "swapchain desc carries vsync mode");
+}
+
 void testHybridBootstrapHeadlessPresentable() {
     fuse::core::initialize();
 
@@ -81,6 +124,8 @@ int main() {
     testGameWindowStub();
     testHeadlessPresentableSurface();
     testExternalSurfaceWiring();
+    testVsyncModeOnPresentableDesc();
+    testPresentPathThroughHybridBootstrap();
     testHybridBootstrapHeadlessPresentable();
 
     if (g_failures == 0) {

@@ -10,11 +10,22 @@
 
 namespace fuse::renderer {
 
+/// Presentation pacing — maps to VkPresentModeKHR when a real swapchain exists.
+enum class VsyncMode : u8 {
+    Fifo = 0,     ///< VK_PRESENT_MODE_FIFO_KHR (default, vsync on)
+    Mailbox = 1,  ///< VK_PRESENT_MODE_MAILBOX_KHR (low latency)
+    Immediate = 2 ///< VK_PRESENT_MODE_IMMEDIATE_KHR (uncapped)
+};
+
+inline bool vsyncEnabled(VsyncMode mode) {
+    return mode == VsyncMode::Fifo;
+}
+
 struct SwapchainDesc {
     SurfaceDesc surface{};
     u32 width = 0;
     u32 height = 0;
-    bool vsync = true;
+    VsyncMode vsyncMode = VsyncMode::Fifo;
     u32 imageCount = 3;
     /// Preferred format when surface path is active (VK_FORMAT_B8G8R8A8_UNORM).
     u32 preferredFormat = 44; // VK_FORMAT_B8G8R8A8_UNORM without including vulkan.h in public API

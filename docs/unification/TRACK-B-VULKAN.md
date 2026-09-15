@@ -120,6 +120,26 @@ Headless is intentional for CI: Lavapipe provides an ICD but umbrella tests run 
 | `VulkanPresentable` | **Headless** | No window; `SurfaceKind::Headless` |
 | `VulkanPresentable` | **PlatformWindow** | Defers swapchain until `VkSurfaceKHR` exists; wires `SurfaceKind::External` |
 | `HybridRendererBootstrap` | either | Owns `VulkanPresentable`; populates `SwapchainDesc.surface` + WSI instance extensions |
+| `PresentPath` | headless or WSI | Acquire / present / fence-wait state machine over `FrameManager` + `VulkanSwapchain` |
+| `VsyncMode` | `Fifo` / `Mailbox` / `Immediate` | Maps to `VkPresentModeKHR`; default `Fifo` for CI |
+
+#### Present path state machine (B2.2 deepen)
+
+CPU-side lifecycle exercised without a real GPU window:
+
+```
+Idle → waitInFlightFence → FenceWaited → acquireImage → ImageAcquired
+     → presentImage → Presented → Idle
+ResizePending → (fence wait) → recreateSwapchain → Idle
+```
+
+| API | Headless CI behaviour |
+|-----|----------------------|
+| `FrameManager::waitInFlightFence` | Slot bookkeeping; real `vkWaitForFences` when backend active |
+| `PresentPath::acquireImage` | Returns `UINT32_MAX`; advances state |
+| `PresentPath::presentImage` | Succeeds without `vkQueuePresentKHR` |
+| `PresentPath::requestResize` | Records dimensions; `rebuild()` on next fence wait |
+| `VulkanPresentable::requestResize` | Queues resize; `HybridRendererBootstrap::render` forwards to `PresentPath` |
 
 ```bash
 # Optional local GLFW window bootstrap (not used in CI):
@@ -462,7 +482,8 @@ Portable invariant unchanged: job code emits `RenderCommandList`; platform modul
 | `fuse_renderer_bootstrap` | B2.10 init/shutdown order, FrameManager availability, post-init submit |
 | `fuse_vulkan_phase2_integration` | **B2.11** — `RendererBootstrap` + `RenderGraph` + `RasterPath` + `CompositePass` headless multi-frame |
 | `fuse_hybrid_renderer_bootstrap` | Hybrid glue, shared RhiContext, runFrame lifecycle |
-| `fuse_hybrid_vulkan_presentable` | Headless-only presentable stubs — null window, External surface wiring, hybrid bootstrap |
+| `fuse_hybrid_vulkan_presentable` | Headless presentable stubs — vsync mode, resize recreate, present-path state machine via hybrid bootstrap |
+| `fuse_rhi_present_path_stub` | RHI `PresentPath` acquire/present/fence-wait/resize stubs without GPU window |
 | `fuse_hybrid_tests` | Existing U4 software renderer regressions |
 | `fuse_cuda_jobs` | `submit_cuda` hook signals counter without CUDA toolkit |
 | `fuse_cuda_interop` | Vulkan/CUDA import + timeline stubs degrade on CI |
@@ -472,7 +493,7 @@ Portable invariant unchanged: job code emits `RenderCommandList`; platform modul
 Run:
 
 ```bash
-ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_graphics_pipeline|fuse_render_command|fuse_render_graph|fuse_composite_pass|fuse_renderer_bootstrap|fuse_vulkan_phase2|fuse_hybrid_renderer|fuse_hybrid_vulkan_presentable|fuse_hybrid|fuse_cuda|fuse_ray_march|fuse_screen_space_effects'
+ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_graphics_pipeline|fuse_render_command|fuse_render_graph|fuse_composite_pass|fuse_renderer_bootstrap|fuse_vulkan_phase2|fuse_hybrid_renderer|fuse_hybrid_vulkan_presentable|fuse_rhi_present_path_stub|fuse_hybrid|fuse_cuda|fuse_ray_march|fuse_screen_space_effects'
 ```
 
 ---
@@ -542,6 +563,7 @@ Thread ownership unchanged: CUDA launch jobs run on worker threads; Vulkan recor
 - [ ] B2.6 follow-up: `cudaImportExternalMemory`, timeline semaphores, real shared textures
 - [ ] Replace `PlaceholderRenderer` present path incrementally — keep software fallback for headless CI
 - [x] Own Hybrid presentable path stubs — `PlatformWindow` (null/GLFW), `VulkanPresentable`, `HybridRendererBootstrap` wiring
+- [x] B2.2 present path deepen — `PresentPath`, `VsyncMode`, acquire/present/fence-wait/resize recreate stubs + CI state-machine tests
 - [ ] Editor Qt native surface (`U6` viewport) → `SwapchainDesc.surface`
 - [ ] Android Vulkan WSI + MoltenVK macOS module
 

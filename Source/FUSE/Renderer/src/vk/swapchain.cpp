@@ -177,14 +177,18 @@ bool VulkanSwapchain::createSwapchainResources(VulkanDevice& device, const Swapc
                                               presentModes.data());
 
     VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
-    if (!desc.vsync) {
+    if (desc.vsyncMode == VsyncMode::Mailbox) {
         for (VkPresentModeKHR mode : presentModes) {
             if (mode == VK_PRESENT_MODE_MAILBOX_KHR) {
                 presentMode = mode;
                 break;
             }
+        }
+    } else if (desc.vsyncMode == VsyncMode::Immediate) {
+        for (VkPresentModeKHR mode : presentModes) {
             if (mode == VK_PRESENT_MODE_IMMEDIATE_KHR) {
                 presentMode = mode;
+                break;
             }
         }
     }

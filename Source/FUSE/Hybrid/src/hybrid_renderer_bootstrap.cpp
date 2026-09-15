@@ -33,10 +33,8 @@ bool HybridRendererBootstrap::initialize() {
     m_status.presentableReady = true;
 
     renderer::RendererBootstrapDesc rendererDesc = m_desc.renderer;
-    renderer::SwapchainDesc& swapDesc = rendererDesc.rhi.bootstrap.swapchain;
-    swapDesc.width = m_presentable->swapchainWidth();
-    swapDesc.height = m_presentable->swapchainHeight();
-    swapDesc.surface = m_presentable->surfaceDesc();
+    renderer::SwapchainDesc swapDesc = m_presentable->swapchainDesc();
+    rendererDesc.rhi.bootstrap.swapchain = swapDesc;
 
     const std::vector<const char*>& wsiExtensions = m_presentable->requiredInstanceExtensions();
     if (!wsiExtensions.empty()) {
@@ -74,6 +72,10 @@ bool HybridRendererBootstrap::initialize() {
         m_status.presentableSurface = true;
     }
 
+    renderer::PresentPathDesc presentDesc{};
+    presentDesc.vsyncMode = m_presentable->vsyncMode();
+    m_presentPath = renderer::PresentPath::create(m_rendererBootstrap->rhiContext()->bootstrap(), presentDesc);
+
     m_composer.setProjectFlags(m_desc.projectFlags);
     m_composer.setSharedRhiContext(m_rendererBootstrap->rhiContext());
     m_status.rendererReady = true;
@@ -89,6 +91,7 @@ void HybridRendererBootstrap::shutdown() {
     }
 
     m_composer.setSharedRhiContext(nullptr);
+    m_presentPath.reset();
     m_rendererBootstrap.reset();
     m_presentable.reset();
     m_status = HybridRendererBootstrapStatus{};
@@ -99,6 +102,12 @@ void HybridRendererBootstrap::tick(frame::FrameCtx& ctx) {
 }
 
 void HybridRendererBootstrap::render(frame::FrameCtx& ctx) {
+    if (m_presentable != nullptr && m_presentPath != nullptr && m_presentable->needsResizeRecreate()) {
+        const VulkanPresentableStatus& presentableStatus = m_presentable->status();
+        m_presentPath->requestResize(presentableStatus.pendingResizeWidth,
+                                     presentableStatus.pendingResizeHeight);
+    }
+
     m_composer.render(ctx);
 }
 
