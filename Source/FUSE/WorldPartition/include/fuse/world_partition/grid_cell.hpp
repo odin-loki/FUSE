@@ -77,6 +77,11 @@ enum class CellResidencyState : u8 {
     return state == CellResidencyState::QueuedLoad || state == CellResidencyState::QueuedUnload;
 }
 
+/// Combine streaming-volume unload priority with any stored cell priority (B7.6 stub).
+[[nodiscard]] inline f32 effective_unload_priority(f32 streaming_priority, f32 stored_priority) {
+    return std::max(streaming_priority, stored_priority);
+}
+
 /// One spatial cell in the world partition grid.
 struct WorldCell {
     GridCoord coord{};

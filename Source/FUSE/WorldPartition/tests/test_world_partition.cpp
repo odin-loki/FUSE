@@ -2,6 +2,7 @@
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/world_partition/grid_cell.hpp>
 #include <fuse/world_partition/residency_set.hpp>
+#include <fuse/world_partition/streaming_budget.hpp>
 #include <fuse/world_partition/streaming_request_queue.hpp>
 #include <fuse/world_partition/streaming_volume.hpp>
 #include <fuse/world_partition/world_partition.hpp>
@@ -493,6 +494,98 @@ void testStreamingRequestQueueFifoOrdering() {
     });
 }
 
+void testStreamingBudgetHelperFunctions() {
+    expectTrue(fuse::world_partition::byte_budget_unlimited(0u), "zero byte cap is unlimited");
+    expectEq(fuse::world_partition::bytes_remaining(2048u, 1024u), 1024u, "bytes remaining subtracts resident");
+    expectEq(fuse::world_partition::bytes_remaining(2048u, 3000u), 0u, "bytes remaining clamps at zero");
+    expectEq(fuse::world_partition::resident_cell_headroom(4u, 2u), 2u, "cell headroom subtracts resident count");
+    expectEq(fuse::world_partition::resident_cell_headroom(2u, 2u), 0u, "cell headroom zero at cap");
+    expectTrue(fuse::world_partition::is_at_cell_cap(2u, 2u), "cell cap predicate");
+    expectTrue(fuse::world_partition::is_at_byte_cap(2048u, 2048u), "byte cap predicate");
+    expectEq(fuse::world_partition::clamp_incoming_bytes(512u, 1024u), 512u, "clamp incoming to remaining");
+    expectEq(fuse::world_partition::clamp_incoming_bytes(~0ull, 1024u), 1024u, "unlimited budget does not clamp");
+}
+
+void testEffectiveUnloadPriority() {
+    expectNear(fuse::world_partition::effective_unload_priority(0.f, 0.f), 0.f, 1e-4f, "zero priorities");
+    expectNear(fuse::world_partition::effective_unload_priority(10.f, 3.f), 10.f, 1e-4f, "streaming priority wins");
+    expectNear(fuse::world_partition::effective_unload_priority(2.f, 8.f), 8.f, 1e-4f, "stored priority wins");
+}
+
+void testCollectEvictionCandidatesOrdering() {
+    fuse::world_partition::ResidencySet residency;
+    const fuse::world_partition::GridCoord near_cell{0, 0};
+    const fuse::world_partition::GridCoord mid_cell{2, 0};
+    const fuse::world_partition::GridCoord far_cell{5, 0};
+
+    residency.add(near_cell, 100.f);
+    residency.add(mid_cell, 500.f);
+    residency.add(far_cell, 900.f);
+
+    const auto all = residency.collect_eviction_candidates();
+    expectEq(static_cast<fuse::u32>(all.size()), 3u, "collect all candidates");
+    expectTrue(all[0] == far_cell && all[1] == mid_cell && all[2] == near_cell,
+               "candidates sorted farthest-first");
+
+    const auto top_two = residency.collect_eviction_candidates(2u);
+    expectEq(static_cast<fuse::u32>(top_two.size()), 2u, "collect limits candidate count");
+    expectTrue(top_two[0] == far_cell && top_two[1] == mid_cell, "limited list keeps eviction order");
+
+    residency.clear();
+    expectTrue(residency.collect_eviction_candidates().empty(), "empty residency has no candidates");
+}
+
+void testBudgetEvictionCounters() {
+    fuse::world_partition::WorldPartition partition;
+    fuse::world_partition::WorldPartitionDesc desc{};
+    desc.async_loading = false;
+    desc.max_loaded_cells = 2;
+    desc.default_cell_bytes = 1024u;
+    desc.stream_in_distance = 1.f;
+    desc.stream_out_distance = 10000.f;
+    desc.eviction_policy = fuse::world_partition::EvictionPolicy::Lru;
+    partition.init(desc);
+
+    const fuse::world_partition::GridCoord old_cell{0, 0};
+    const fuse::world_partition::GridCoord recent_cell{1, 0};
+    const fuse::world_partition::GridCoord incoming{2, 0};
+
+    partition.force_load(old_cell);
+    partition.update({0.f, 0.f, 0.f, 0.f});
+    partition.force_load(recent_cell);
+    expectEq(partition.budget_counters().budget_evictions, 0u, "no evictions before cap pressure");
+
+    partition.force_load(incoming);
+    expectEq(partition.budget_counters().budget_evictions, 1u, "budget eviction increments on cap pressure");
+    expectEq(partition.budget_counters().bytes_evicted, 1024u, "bytes evicted tracks resident footprint");
+    expectEq(partition.budget_counters().rejected_loads, 0u, "successful eviction avoids rejection");
+    expectEq(partition.loaded_cell_count(), 2u, "resident count stays at cap after eviction load");
+
+    partition.destroy();
+}
+
+void testEmptyResidencyBudgetReject() {
+    fuse::world_partition::WorldPartition partition;
+    fuse::world_partition::WorldPartitionDesc desc{};
+    desc.async_loading = false;
+    desc.max_loaded_cells = 0;
+    desc.default_cell_bytes = 1024u;
+    partition.init(desc);
+
+    expectTrue(partition.residency_set().empty(), "partition starts with empty residency set");
+    expectTrue(partition.residency_set().collect_eviction_candidates().empty(),
+               "empty residency yields no eviction candidates");
+
+    const fuse::world_partition::GridCoord origin{0, 0};
+    partition.force_load(origin);
+    expectEq(partition.budget_counters().rejected_loads, 1u, "zero cell cap rejects without eviction candidates");
+    expectEq(partition.budget_counters().budget_evictions, 0u, "no eviction attempted on empty residency");
+    expectTrue(partition.cell_residency(origin) == fuse::world_partition::CellResidencyState::Unloaded,
+               "rejected load stays unloaded");
+
+    partition.destroy();
+}
+
 void testResidencySetFocusDistance() {
     fuse::world_partition::ResidencySet residency;
     expectTrue(residency.empty(), "new residency set is empty");
@@ -596,6 +689,11 @@ int main() {
     testStreamingVolumeHysteresis();
     testWorldPartitionLoadUnloadStubs();
     testWorldPartitionStreamingUpdate();
+    testStreamingBudgetHelperFunctions();
+    testEffectiveUnloadPriority();
+    testCollectEvictionCandidatesOrdering();
+    testBudgetEvictionCounters();
+    testEmptyResidencyBudgetReject();
     testStreamingBudgetCaps();
     testResidentCellBudgetReject();
     testByteBudgetClamp();

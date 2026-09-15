@@ -11,12 +11,12 @@
 | Component | Location | Notes |
 |-----------|----------|-------|
 | Residency helpers | `grid_cell.hpp` | `is_unloading_state`, `is_transitional_state`, `is_queued_state`, `unload_priority` |
-| `ResidencySet` | `residency_set.hpp` | Focus-distance resident set: `add`/`remove`, `pick_eviction_candidate` (farthest first) |
-| `StreamingBudget` | `streaming_budget.hpp` | Per-tick caps, `max_resident_bytes`, `EvictionPolicy` (distance / LRU) |
+| `ResidencySet` | `residency_set.hpp` | Focus-distance resident set: `add`/`remove`, `pick_eviction_candidate`, `collect_eviction_candidates` (farthest first) |
+| `StreamingBudget` | `streaming_budget.hpp` | Per-tick caps, `max_resident_bytes`, `EvictionPolicy` (distance / LRU), `StreamingBudgetCounters`, headroom/clamp helpers |
 | `StreamingVolume` | `streaming_volume.hpp` | `load_priority_for` (closer first), `unload_priority_for` (farther first) |
 | `StreamingRequestQueue` | `streaming_request_queue.hpp/.cpp` | Mutex-backed completion buffer; priority-first drain with FIFO tie-break; worker I/O stub via `JobScheduler::submit` |
-| `WorldPartition` deepen | `world_partition.hpp/.cpp` | `ResidencySet` tracking, resident-cell + byte budget rejection, priority-aware eviction, budget-aware `process_queues_`, `drain_completed_requests()` |
-| Tests | `tests/test_world_partition.cpp` | Budget clamp/reject, distance + LRU eviction, queue FIFO/empty/priority drain, residency set, batch/in-flight tracking, async residency |
+| `WorldPartition` deepen | `world_partition.hpp/.cpp` | `ResidencySet` tracking, `StreamingBudgetCounters`, resident-cell + byte budget rejection, priority-aware eviction, budget-aware `process_queues_`, `drain_completed_requests()` |
+| Tests | `tests/test_world_partition.cpp` | Budget helper/clamp/counters, eviction-candidate ordering, empty-residency reject, distance + LRU eviction, queue FIFO/empty/priority drain, residency set, batch/in-flight tracking, async residency |
 
 **Not in scope (follow-up PRs):** binary cell asset I/O, scene spawn on load, dirty-cell save, GPU residency.
 
@@ -101,7 +101,7 @@ ctest --test-dir build --output-on-failure -R fuse_world_partition_b76
 | `budget.max_async_in_flight` | Cap concurrent JobScheduler submissions per partition |
 | `budget.max_resident_bytes` | Reject load enqueue when resident bytes would exceed cap (0 = unlimited) |
 | `eviction_policy` | `DistanceFromFocus` (default) or `Lru` (`last_touch_tick`) |
-| `rejected_load_count()` | Loads rejected after eviction could not free budget |
+| `rejected_load_count()` / `budget_counters()` | Loads rejected after eviction could not free budget; `budget_evictions` and `bytes_evicted` track eviction pressure |
 | Single-threaded scheduler | Falls back to synchronous execute path |
 
 ---
@@ -111,7 +111,9 @@ ctest --test-dir build --output-on-failure -R fuse_world_partition_b76
 | Check | Validates |
 |-------|-----------|
 | Residency helpers | `is_*_state` predicates |
-| `ResidencySet` | Add/remove, focus-distance eviction candidate, clear/empty |
+| `ResidencySet` | Add/remove, `collect_eviction_candidates` ordering, focus-distance eviction candidate, clear/empty |
+| Budget helpers | `resident_cell_headroom`, `clamp_incoming_bytes`, cap predicates |
+| Budget counters | Eviction vs rejection accounting on cell/byte cap pressure |
 | Unload priority | `unload_priority_for` ordering; farther cells evict first |
 | Streaming budget | Per-tick caps; resident-cell + byte budget rejection |
 | Eviction | Distance-from-focus (`ResidencySet`) and LRU ordering |
@@ -128,7 +130,9 @@ ctest --test-dir build --output-on-failure -R fuse_world_partition_b76
 - [x] LRU + distance eviction policy stubs
 - [x] Load enqueue rejection + priority-aware eviction
 - [x] Queue drain priority ordering + FIFO tie-break + empty drain
-- [x] `ResidencySet` focus-distance add/remove + eviction candidate
+- [x] `ResidencySet` focus-distance add/remove + eviction candidate list
+- [x] `StreamingBudgetCounters` + headroom/clamp helpers
+- [x] Empty-residency budget rejection tests
 - [x] JobScheduler async request queue stub
 - [x] Game-thread drain applies callbacks
 - [x] Queue batch / in-flight acceptance tests

@@ -55,6 +55,7 @@ public:
     [[nodiscard]] u32 queued_load_count() const;
     [[nodiscard]] u32 queued_unload_count() const;
     [[nodiscard]] u32 rejected_load_count() const;
+    [[nodiscard]] const StreamingBudgetCounters& budget_counters() const { return m_budget_counters; }
     [[nodiscard]] u32 in_flight_request_count() const;
     [[nodiscard]] u32 pending_completion_count() const;
     [[nodiscard]] u32 current_tick() const { return m_tick; }
@@ -95,7 +96,7 @@ private:
     WorldPartitionDesc m_desc{};
     CellLoadCallbacks m_callbacks{};
     u32 m_tick = 0;
-    u32 m_rejected_load_count = 0;
+    StreamingBudgetCounters m_budget_counters{};
     std::unordered_map<u64, WorldCell> m_cells;
     std::vector<LoadRequest> m_load_queue;
     std::vector<UnloadRequest> m_unload_queue;

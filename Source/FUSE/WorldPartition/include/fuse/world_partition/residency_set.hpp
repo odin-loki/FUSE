@@ -35,6 +35,9 @@ public:
     /// Coord with the largest focus distance (evict first). Returns {0,0} when empty.
     [[nodiscard]] GridCoord pick_eviction_candidate() const;
 
+    /// Return up to `max_count` coords sorted farthest-first (eviction order).
+    [[nodiscard]] std::vector<GridCoord> collect_eviction_candidates(u32 max_count = 0) const;
+
     void clear();
 
 private:
@@ -103,17 +106,29 @@ inline f32 ResidencySet::focus_distance_for(GridCoord coord) const {
 }
 
 inline GridCoord ResidencySet::pick_eviction_candidate() const {
+    const std::vector<GridCoord> candidates = collect_eviction_candidates(1);
+    return candidates.empty() ? GridCoord{} : candidates.front();
+}
+
+inline std::vector<GridCoord> ResidencySet::collect_eviction_candidates(u32 max_count) const {
     if (m_entries.empty()) {
         return {};
     }
 
-    const auto* best = &m_entries.front();
-    for (const ResidencyEntry& entry : m_entries) {
-        if (entry.focus_distance > best->focus_distance) {
-            best = &entry;
-        }
+    std::vector<ResidencyEntry> sorted = m_entries;
+    std::sort(sorted.begin(), sorted.end(),
+              [](const ResidencyEntry& a, const ResidencyEntry& b) {
+                  return a.focus_distance > b.focus_distance;
+              });
+
+    const u32 limit = max_count == 0u ? static_cast<u32>(sorted.size())
+                                     : std::min(max_count, static_cast<u32>(sorted.size()));
+    std::vector<GridCoord> out;
+    out.reserve(limit);
+    for (u32 i = 0; i < limit; ++i) {
+        out.push_back(sorted[i].coord);
     }
-    return best->coord;
+    return out;
 }
 
 inline void ResidencySet::clear() {

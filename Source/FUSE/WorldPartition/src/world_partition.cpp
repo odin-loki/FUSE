@@ -31,7 +31,7 @@ void WorldPartition::destroy() {
     m_residency_set.clear();
     m_callbacks = {};
     m_tick = 0;
-    m_rejected_load_count = 0;
+    m_budget_counters = {};
 }
 
 void WorldPartition::update(fuse::ecs::vec3 camera_pos) {
@@ -86,7 +86,7 @@ u64 WorldPartition::resident_byte_count() const {
 
 u32 WorldPartition::queued_load_count() const { return static_cast<u32>(m_load_queue.size()); }
 
-u32 WorldPartition::rejected_load_count() const { return m_rejected_load_count; }
+u32 WorldPartition::rejected_load_count() const { return m_budget_counters.rejected_loads; }
 
 u32 WorldPartition::queued_unload_count() const { return static_cast<u32>(m_unload_queue.size()); }
 
@@ -173,6 +173,8 @@ void WorldPartition::evict_for_budget_(f32 incoming_priority) {
             break;
         }
 
+        m_budget_counters.budget_evictions += 1u;
+        m_budget_counters.bytes_evicted += best_candidate->resident_bytes;
         queue_unload_(best_candidate->coord, best_score);
     }
 
@@ -192,7 +194,7 @@ bool WorldPartition::queue_load_(GridCoord coord, f32 priority) {
         evict_for_budget_(priority);
     }
     if (!can_accept_load_(incoming_bytes)) {
-        ++m_rejected_load_count;
+        ++m_budget_counters.rejected_loads;
         return false;
     }
 
@@ -419,7 +421,8 @@ void WorldPartition::collect_stream_candidates_(fuse::ecs::vec3 camera_pos) {
         (void)m_residency_set.update_focus_distance(cell.coord, focus_distance);
 
         if (m_streaming.should_unload(cell.coord, m_desc.cell_size)) {
-            const f32 priority = m_streaming.unload_priority_for(cell.coord, m_desc.cell_size);
+            const f32 streaming_priority = m_streaming.unload_priority_for(cell.coord, m_desc.cell_size);
+            const f32 priority = effective_unload_priority(streaming_priority, cell.unload_priority);
             queue_unload_(cell.coord, priority);
         }
     }
