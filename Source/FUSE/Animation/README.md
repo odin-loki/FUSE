@@ -23,11 +23,11 @@ CPU-first skeletal animation scaffolding for Track B7.1. Implements the P7 pipel
 ## IK (stub)
 
 - **FABRIKChain** — iterative reach toward a world-space target.
-- **TwoBoneIK** — O(1) law-of-cosines limb solver with pole-vector bend plane; clamps unreachable targets.
+- **TwoBoneIK** — O(1) law-of-cosines limb solver with pole-vector bend plane; clamps unreachable targets; solves in-place via `has_valid_chain` validation.
 
 ## Retarget (stub)
 
-`RetargetMap::build_by_name` pairs source/target bones by name. `apply_pose_soa` copies mapped local TRS into a target skeleton bind pose and recomputes world transforms.
+`RetargetMap::build_by_name` pairs source/target bones by name; `build_identity` maps a skeleton onto itself. `find_source_bone` / `mapped_bone_count` support lookup. `apply_pose_soa` copies mapped local TRS into a target skeleton bind pose and recomputes world transforms.
 
 ## Blend tree (stub)
 
@@ -38,6 +38,6 @@ CPU-first skeletal animation scaffolding for Track B7.1. Implements the P7 pipel
 
 ## Tests
 
-`fuse_animation_tests` (`ctest` name `fuse_animation_runtime`) covers skeleton hierarchy, `PoseSoA` propagation, roundtrip, resize defaults, buffer clear/reuse, `blend_pose_soa` / `accumulate_weighted_pose_soa` / `copy_pose_soa_local`, clip evaluate/sample, blend interpolation and weight clamping, empty blend-tree fallbacks, 1D/2D blend spaces and parameter sampling, `evaluate_soa`, layered and additive mask weight sweeps, state enter/exit, initial `on_enter`, zero-duration snap, self-transition rejection, crossfade non-interrupt, two-bone IK reach/clamp (AoS + SoA), retarget map pairing/apply, FABRIK convergence, skinning, and animator ticks without GPU or editor dependencies.
+`fuse_animation_tests` (`ctest` name `fuse_animation_runtime`) covers skeleton hierarchy, `PoseSoA` propagation, roundtrip, resize defaults, buffer clear/reuse, `blend_pose_soa` / `accumulate_weighted_pose_soa` / `copy_pose_soa_local`, clip evaluate/sample, blend interpolation and weight clamping, empty blend-tree fallbacks, 1D/2D blend spaces and parameter sampling, `evaluate_soa`, layered and additive mask weight sweeps, state enter/exit, initial `on_enter`, zero-duration snap, self-transition rejection, crossfade non-interrupt, two-bone IK reach/clamp/in-place/empty-skeleton (AoS + SoA), retarget map pairing/identity/empty-skeleton/apply, FABRIK convergence, skinning, and animator ticks without GPU or editor dependencies.
 
 Track B narrative: [docs/unification/TRACK-B-ANIMATION.md](../../../docs/unification/TRACK-B-ANIMATION.md).

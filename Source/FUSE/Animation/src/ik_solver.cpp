@@ -150,11 +150,13 @@ void write_local_position(PoseSoA& pose, u32 bone_idx, const vec3& world_positio
 } // namespace
 
 void FABRIKChain::solve(Pose& pose, const Skeleton& skel) {
-    if (bone_indices.empty()) {
+    if (bone_indices.empty() || skel.bones.empty()) {
         return;
     }
 
-    pose = Pose::make_bind_pose(skel);
+    if (pose.bone_count != static_cast<u32>(skel.bones.size()) || pose.bone_world_transforms.empty()) {
+        pose = Pose::make_bind_pose(skel);
+    }
     const u32 endBone = bone_indices.back();
 
     for (u32 iteration = 0; iteration < max_iterations; ++iteration) {
@@ -180,12 +182,22 @@ void FABRIKChain::solve(Pose& pose, const Skeleton& skel) {
     }
 }
 
-bool TwoBoneIK::solve(Pose& pose, const Skeleton& skel) {
-    pose = Pose::make_bind_pose(skel);
-    if (root_bone >= pose.bone_world_transforms.size() ||
-        mid_bone >= pose.bone_world_transforms.size() ||
-        end_bone >= pose.bone_world_transforms.size()) {
+bool TwoBoneIK::has_valid_chain(const Skeleton& skel) const {
+    if (skel.bones.empty()) {
         return false;
+    }
+
+    const u32 boneCount = static_cast<u32>(skel.bones.size());
+    return root_bone < boneCount && mid_bone < boneCount && end_bone < boneCount;
+}
+
+bool TwoBoneIK::solve(Pose& pose, const Skeleton& skel) {
+    if (!has_valid_chain(skel)) {
+        return false;
+    }
+
+    if (pose.bone_count != static_cast<u32>(skel.bones.size()) || pose.bone_world_transforms.empty()) {
+        pose = Pose::make_bind_pose(skel);
     }
 
     const vec3 root = bone_translation(pose, root_bone);
@@ -204,9 +216,12 @@ bool TwoBoneIK::solve(Pose& pose, const Skeleton& skel) {
 }
 
 bool TwoBoneIK::solve(PoseSoA& pose, const Skeleton& skel) {
-    pose = PoseSoA::from_bind_pose(skel);
-    if (root_bone >= pose.bone_count || mid_bone >= pose.bone_count || end_bone >= pose.bone_count) {
+    if (!has_valid_chain(skel)) {
         return false;
+    }
+
+    if (pose.bone_count != static_cast<u32>(skel.bones.size()) || pose.local_positions.empty()) {
+        pose = PoseSoA::from_bind_pose(skel);
     }
 
     const vec3 root = bone_translation_soa(pose, root_bone);

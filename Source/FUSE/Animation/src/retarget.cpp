@@ -15,6 +15,31 @@ bool RetargetMap::is_valid() const {
     return !bone_map.empty();
 }
 
+s32 RetargetMap::find_source_bone(u32 target_bone) const {
+    for (const RetargetBoneEntry& entry : bone_map) {
+        if (entry.target_bone == target_bone) {
+            return static_cast<s32>(entry.source_bone);
+        }
+    }
+    return -1;
+}
+
+RetargetMap RetargetMap::build_identity(const Skeleton& skel) {
+    RetargetMap map{};
+    map.source_bone_count = static_cast<u32>(skel.bones.size());
+    map.target_bone_count = map.source_bone_count;
+
+    for (u32 boneIdx = 0; boneIdx < skel.bones.size(); ++boneIdx) {
+        RetargetBoneEntry entry{};
+        entry.source_bone = boneIdx;
+        entry.target_bone = boneIdx;
+        entry.translation_scale = 1.f;
+        map.bone_map.push_back(entry);
+    }
+
+    return map;
+}
+
 RetargetMap RetargetMap::build_by_name(const Skeleton& source, const Skeleton& target) {
     RetargetMap map{};
     map.source_bone_count = static_cast<u32>(source.bones.size());
@@ -39,6 +64,11 @@ RetargetMap RetargetMap::build_by_name(const Skeleton& source, const Skeleton& t
 void RetargetMap::apply_pose_soa(const PoseSoA& source_pose,
                                  const Skeleton& target_skel,
                                  PoseSoA& out_pose) const {
+    if (target_skel.bones.empty() || bone_map.empty()) {
+        out_pose.clear();
+        return;
+    }
+
     out_pose = PoseSoA::from_bind_pose(target_skel);
 
     for (const RetargetBoneEntry& entry : bone_map) {
@@ -63,6 +93,12 @@ void RetargetMap::apply_pose_soa(const PoseSoA& source_pose,
 void RetargetMap::apply_pose(const Pose& source_pose,
                              const Skeleton& target_skel,
                              Pose& out_pose) const {
+    if (target_skel.bones.empty() || bone_map.empty()) {
+        out_pose.bone_count = 0;
+        out_pose.bone_world_transforms.clear();
+        return;
+    }
+
     out_pose = Pose::make_bind_pose(target_skel);
 
     for (const RetargetBoneEntry& entry : bone_map) {
