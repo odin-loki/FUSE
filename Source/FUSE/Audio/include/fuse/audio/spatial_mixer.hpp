@@ -6,6 +6,7 @@
 #include <fuse/audio/audio_desc.hpp>
 #include <fuse/audio/audio_registry.hpp>
 #include <fuse/audio/math.hpp>
+#include <fuse/audio/occlusion.hpp>
 #include <fuse/handle.hpp>
 #include <fuse/handle_map.hpp>
 #include <fuse/types.hpp>
@@ -25,6 +26,11 @@ public:
     /// Effective visibility [0, 1] from per-source occlusion and registered blockers.
     float compute_source_visibility(const Vec3& listener, const Vec3& source,
                                     float source_occlusion) const;
+
+    /// LF/HF occlusion attenuation from per-source occlusion and registered blockers.
+    OcclusionAttenuation compute_source_occlusion_attenuation(const Vec3& listener,
+                                                              const Vec3& source,
+                                                              float source_occlusion) const;
 
     void mix(const AudioRegistry& registry, const HandleMap<AudioClip>& clips, float dt,
              std::vector<float>& stereo_out, u32 frames);

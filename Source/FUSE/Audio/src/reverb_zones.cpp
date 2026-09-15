@@ -58,6 +58,11 @@ float compute_effective_wet_mix(const ReverbZoneBlend& blend) {
     return std::clamp(blend.wet_dry, 0.f, 1.f) * std::clamp(blend.send_level, 0.f, 1.f);
 }
 
+float compute_effective_wet_mix(const Vec3& listener, const ReverbZoneParams* zones,
+                                u32 zone_count) {
+    return compute_effective_wet_mix(blend_reverb_zones(listener, zones, zone_count));
+}
+
 float blend_dry_wet_sample(float dry, float wet, float wet_mix) {
     const float mix = std::clamp(wet_mix, 0.f, 1.f);
     return dry * (1.f - mix) + wet * mix;

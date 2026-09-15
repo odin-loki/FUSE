@@ -1032,6 +1032,10 @@ void testOcclusionFactorExtremes() {
                "blocker factor scales source visibility");
     expectNear(fuse::audio::combine_occlusion_visibility(0.5f, 1.f), 0.f, 1e-5f,
                "full blocker factor silences partial source occlusion");
+    expectNear(fuse::audio::combine_occlusion_visibility(-0.5f, 2.f), 0.f, 1e-5f,
+               "out-of-range inputs clamp before combining visibility");
+    expectNear(fuse::audio::combine_occlusion_visibility(2.f, -1.f), 1.f, 1e-5f,
+               "excess source occlusion with negative blocker factor clamps to unity");
 
     const fuse::audio::AABB blocker{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
     expectNear(fuse::audio::compute_effective_visibility(fuse::audio::Vec3{-5.f, 0.f, 0.f},
@@ -1051,6 +1055,26 @@ void testOcclusionFactorExtremes() {
                "blocker pipeline maps visibility to LF gain");
     expectNear(from_blockers.hf_gain, 0.7f, 1e-5f,
                "blocker pipeline maps visibility to HF gain");
+
+    const fuse::audio::OcclusionAttenuation no_blockers =
+        fuse::audio::evaluate_occlusion_from_blockers(fuse::audio::Vec3{0.f, 0.f, 0.f},
+                                                       fuse::audio::Vec3{10.f, 0.f, 0.f}, 1.f,
+                                                       nullptr, 0);
+    expectNear(no_blockers.gain, 1.f, 1e-5f,
+               "empty blocker list preserves unity LF gain");
+    expectNear(no_blockers.hf_gain, 1.f, 1e-5f,
+               "empty blocker list preserves unity HF gain");
+
+    fuse::audio::SpatialMixer mixer;
+    expectNear(mixer.compute_source_occlusion_attenuation(fuse::audio::Vec3{0.f, 0.f, 0.f},
+                                                          fuse::audio::Vec3{10.f, 0.f, 0.f}, 1.f)
+                   .gain,
+               1.f, 1e-5f, "mixer occlusion attenuation is unity without blockers");
+    mixer.set_occlusion_blockers(&blocker, 1);
+    expectNear(mixer.compute_source_occlusion_attenuation(fuse::audio::Vec3{0.f, 0.f, 0.f},
+                                                          fuse::audio::Vec3{10.f, 0.f, 0.f}, 1.f)
+                   .gain,
+               0.325f, 1e-5f, "mixer occlusion attenuation uses blocker pipeline");
 
     expectNear(fuse::audio::compute_blockers_visibility(fuse::audio::Vec3{-5.f, 0.f, 0.f},
                                                         fuse::audio::Vec3{5.f, 0.f, 0.f},
@@ -1199,6 +1223,10 @@ void testReverbZoneEmptyList() {
     expectTrue(fuse::audio::count_listener_reverb_zones(fuse::audio::Vec3{0.f, 0.f, 0.f},
                                                           nullptr, 0) == 0,
                "count on empty zone list is zero");
+    expectNear(fuse::audio::compute_effective_wet_mix(fuse::audio::Vec3{0.f, 0.f, 0.f}, nullptr, 0),
+               0.f, 1e-5f, "one-shot wet mix on empty zone list is zero");
+    expectNear(fuse::audio::compute_effective_wet_mix(fuse::audio::Vec3{0.f, 0.f, 0.f}, zones, 1),
+               0.8f, 1e-5f, "one-shot wet mix matches blend result inside zone");
 }
 
 void testDryWetBlendStub() {
@@ -1208,6 +1236,10 @@ void testDryWetBlendStub() {
                "unity wet mix returns wet sample");
     expectNear(fuse::audio::blend_dry_wet_sample(0.8f, 0.2f, 0.5f), 0.5f, 1e-5f,
                "mid wet mix linearly blends dry and wet");
+    expectNear(fuse::audio::blend_dry_wet_sample(1.f, 0.f, 1.5f), 0.f, 1e-5f,
+               "wet mix above unity clamps to wet sample");
+    expectNear(fuse::audio::blend_dry_wet_sample(1.f, 0.f, -0.25f), 1.f, 1e-5f,
+               "negative wet mix clamps to dry sample");
 
     fuse::audio::ReverbZoneBlend blend;
     blend.wet_dry = 0.6f;

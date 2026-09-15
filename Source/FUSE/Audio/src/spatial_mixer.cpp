@@ -37,6 +37,16 @@ float SpatialMixer::compute_source_visibility(const Vec3& listener, const Vec3& 
                                         static_cast<u32>(m_occlusionBlockers.size()));
 }
 
+OcclusionAttenuation SpatialMixer::compute_source_occlusion_attenuation(
+    const Vec3& listener, const Vec3& source, float source_occlusion) const {
+    if (m_occlusionBlockers.empty()) {
+        return evaluate_occlusion_attenuation(std::clamp(source_occlusion, 0.f, 1.f));
+    }
+    return evaluate_occlusion_from_blockers(listener, source, source_occlusion,
+                                            m_occlusionBlockers.data(),
+                                            static_cast<u32>(m_occlusionBlockers.size()));
+}
+
 float SpatialMixer::sample_clip(const AudioClip& clip, float play_head, u32 channel) const {
     if (clip.channel_count == 0 || clip.samples.empty()) {
         return 0.f;
@@ -111,9 +121,9 @@ void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>
             ? compute_attenuation(distance, attenuation_params)
             : 1.f;
 
-        const float visibility =
-            compute_source_visibility(listener_pos, source->position, source->desc.occlusion);
-        const OcclusionAttenuation occlusion = evaluate_occlusion_attenuation(visibility);
+        const OcclusionAttenuation occlusion =
+            compute_source_occlusion_attenuation(listener_pos, source->position,
+                                                 source->desc.occlusion);
         const float effective_attenuation =
             distance_attenuation * occlusion.gain * occlusion.hf_gain;
 
