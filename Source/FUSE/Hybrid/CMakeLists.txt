@@ -16,6 +16,11 @@ target_include_directories(fuse_hybrid
 target_link_libraries(fuse_hybrid PUBLIC fuse_world3d fuse_world2d fuse_core)
 target_compile_features(fuse_hybrid PUBLIC cxx_std_17)
 
+if(FUSE_BUILD_VULKAN)
+    target_link_libraries(fuse_hybrid PUBLIC fuse_rhi)
+    target_compile_definitions(fuse_hybrid PUBLIC FUSE_HAS_VULKAN_RHI=1)
+endif()
+
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)
 endif()

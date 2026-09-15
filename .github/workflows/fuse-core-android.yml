@@ -37,6 +37,7 @@ jobs:
             -DFUSE_UMBRELLA=ON \
             -DFUSE_BUILD_CORE=ON \
             -DFUSE_BUILD_CORE_TESTS=OFF \
+            -DFUSE_BUILD_VULKAN=OFF \
             -DFUSE_BUILD_T3D=OFF \
             -DFUSE_BUILD_T2D=OFF
 

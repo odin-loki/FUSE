@@ -3,6 +3,18 @@
 add_subdirectory(Core)
 add_subdirectory(World2D)
 add_subdirectory(World3D)
+
+if(FUSE_BUILD_VULKAN)
+    find_package(Vulkan QUIET)
+    if(Vulkan_FOUND)
+        set(FUSE_VULKAN_BACKEND TRUE)
+    else()
+        set(FUSE_VULKAN_BACKEND FALSE)
+        message(STATUS "FUSE: Vulkan loader not found — fuse_rhi stub backend")
+    endif()
+    add_subdirectory(Renderer)
+endif()
+
 add_subdirectory(Hybrid)
 
 if(FUSE_BUILD_PROJECT)

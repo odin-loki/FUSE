@@ -23,6 +23,7 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/platform/power.hpp
     include/fuse/platform/thread.hpp
     include/fuse/platform/fiber.hpp
+    include/fuse/platform/gl_context.hpp
 )
 
 set(FUSE_CORE_SOURCES

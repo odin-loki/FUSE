@@ -7,6 +7,13 @@
 #include <fuse/world2d/world_2d.hpp>
 #include <fuse/world3d/world_3d.hpp>
 
+#include <memory>
+
+#if defined(FUSE_HAS_VULKAN_RHI)
+#include <fuse/renderer/render_command_list.hpp>
+#include <fuse/renderer/rhi_context.hpp>
+#endif
+
 namespace fuse::hybrid {
 
 /// Hybrid compositor (U4 v1): 3D opaque → 2D scene → UI overlay ordering.
@@ -31,8 +38,22 @@ public:
 
     u32 frameCount() const { return m_frameCount; }
 
+#if defined(FUSE_HAS_VULKAN_RHI)
+    bool hasRhiRecording() const { return true; }
+    const renderer::RenderCommandList& lastCommandList() const { return m_commandList; }
+    renderer::RhiContext* rhiContext();
+    const renderer::RhiContext* rhiContext() const;
+#else
+    bool hasRhiRecording() const { return false; }
+#endif
+
 private:
     void applyProjectFlags();
+#if defined(FUSE_HAS_VULKAN_RHI)
+    void ensureRhiContext();
+    void recordClear3D(float r, float g, float b);
+    void recordSprite2D(float x, float y, float rotation, u8 r, u8 g, u8 b);
+#endif
 
     DimensionFlags m_flags;
     world2d::World2D* m_world2D = nullptr;
@@ -40,6 +61,10 @@ private:
     frame::FrameBarrier m_barrier;
     PlaceholderRenderer m_renderer;
     u32 m_frameCount = 0;
+#if defined(FUSE_HAS_VULKAN_RHI)
+    renderer::RenderCommandList m_commandList;
+    std::unique_ptr<renderer::RhiContext> m_rhiContext;
+#endif
 };
 
 } // namespace fuse::hybrid
