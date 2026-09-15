@@ -10,6 +10,7 @@
 #include <fuse/audio/reverb_zones.hpp>
 #include <fuse/audio/spatial_mixer.hpp>
 #include <fuse/core/init.hpp>
+#include <fuse/handle_map.hpp>
 
 #include <cmath>
 #include <cstdint>
@@ -432,6 +433,129 @@ void testBinauralPanDistanceFactorNarrowsImage() {
     expectTrue(wide_spread < narrow_spread, "attenuated source narrows binaural image");
     expectNear(fuse::audio::compute_hrtf_distance_factor(1.f), 1.f, 1e-5f,
                "unity attenuation preserves full spatial blend");
+}
+
+void testPanLawCurveEndpoints() {
+    const fuse::audio::PanLawGains equal_centre =
+        fuse::audio::sample_pan_law(0.f, fuse::audio::PanLaw::EqualPower);
+    expectNear(equal_centre.left, 0.7071067f, 1e-4f, "equal-power centre favours both ears");
+    expectNear(equal_centre.right, 0.7071067f, 1e-4f, "equal-power centre favours both ears");
+
+    const fuse::audio::PanLawGains equal_left =
+        fuse::audio::sample_pan_law(-1.f, fuse::audio::PanLaw::EqualPower);
+    expectNear(equal_left.left, 1.f, 1e-5f, "equal-power hard-left endpoint is unity left");
+    expectNear(equal_left.right, 0.f, 1e-5f, "equal-power hard-left endpoint is silent right");
+
+    const fuse::audio::PanLawGains equal_right =
+        fuse::audio::sample_pan_law(1.f, fuse::audio::PanLaw::EqualPower);
+    expectNear(equal_right.left, 0.f, 1e-5f, "equal-power hard-right endpoint is silent left");
+    expectNear(equal_right.right, 1.f, 1e-5f, "equal-power hard-right endpoint is unity right");
+
+    const fuse::audio::PanLawGains linear_centre =
+        fuse::audio::sample_pan_law(0.f, fuse::audio::PanLaw::Linear);
+    expectNear(linear_centre.left, 0.5f, 1e-5f, "linear centre splits evenly");
+    expectNear(linear_centre.right, 0.5f, 1e-5f, "linear centre splits evenly");
+
+    const fuse::audio::PanLawGains linear_left =
+        fuse::audio::sample_pan_law(-1.f, fuse::audio::PanLaw::Linear);
+    expectNear(linear_left.left, 1.f, 1e-5f, "linear hard-left endpoint is unity left");
+    expectNear(linear_left.right, 0.f, 1e-5f, "linear hard-left endpoint is silent right");
+
+    const fuse::audio::PanLawGains linear_right =
+        fuse::audio::sample_pan_law(1.f, fuse::audio::PanLaw::Linear);
+    expectNear(linear_right.left, 0.f, 1e-5f, "linear hard-right endpoint is silent left");
+    expectNear(linear_right.right, 1.f, 1e-5f, "linear hard-right endpoint is unity right");
+
+    expectNear(fuse::audio::clamp_pan_position(2.f), 1.f, 1e-5f,
+               "pan position above unity clamps to one");
+    expectNear(fuse::audio::clamp_pan_position(-3.f), -1.f, 1e-5f,
+               "pan position below -unity clamps to minus one");
+}
+
+void testBinauralPanAzimuthEndpoints() {
+    const fuse::audio::BinauralPanAngles right_angle =
+        fuse::audio::compute_binaural_angles(fuse::audio::Vec3{5.f, 0.f, 0.f});
+    expectNear(right_angle.azimuth, 1.5707963f, 1e-4f, "pure right offset is +pi/2 azimuth");
+
+    const fuse::audio::BinauralPanAngles left_angle =
+        fuse::audio::compute_binaural_angles(fuse::audio::Vec3{-5.f, 0.f, 0.f});
+    expectNear(left_angle.azimuth, -1.5707963f, 1e-4f, "pure left offset is -pi/2 azimuth");
+
+    const fuse::audio::BinauralPanGains right_gains =
+        fuse::audio::compute_binaural_pan_gains(fuse::audio::Vec3{5.f, 0.f, 0.f});
+    expectNear(right_gains.left, 0.f, 1e-4f, "hard-right azimuth endpoint silences left ear");
+    expectNear(right_gains.right, 1.f, 1e-4f, "hard-right azimuth endpoint drives right ear");
+
+    const fuse::audio::BinauralPanGains left_gains =
+        fuse::audio::compute_binaural_pan_gains(fuse::audio::Vec3{-5.f, 0.f, 0.f});
+    expectNear(left_gains.left, 1.f, 1e-4f, "hard-left azimuth endpoint drives left ear");
+    expectNear(left_gains.right, 0.f, 1e-4f, "hard-left azimuth endpoint silences right ear");
+
+    fuse::audio::BinauralPanParams linear_params;
+    linear_params.pan_law = fuse::audio::PanLaw::Linear;
+    const fuse::audio::BinauralPanGains linear_right =
+        fuse::audio::compute_binaural_pan_gains(fuse::audio::Vec3{5.f, 0.f, 0.f}, linear_params);
+    expectNear(linear_right.left, 0.f, 1e-4f, "linear pan law hard-right silences left ear");
+    expectNear(linear_right.right, 1.f, 1e-4f, "linear pan law hard-right drives right ear");
+}
+
+void testListenerOrientationEdgeCases() {
+    expectTrue(!fuse::audio::is_listener_orientation_valid(fuse::audio::Vec3{}, fuse::audio::Vec3{0.f, 1.f, 0.f}),
+               "zero forward is invalid listener orientation");
+    expectTrue(!fuse::audio::is_listener_orientation_valid(fuse::audio::Vec3{0.f, 0.f, -1.f},
+                                                           fuse::audio::Vec3{0.f, 0.f, -1.f}),
+               "parallel forward/up is invalid listener orientation");
+    expectTrue(fuse::audio::is_listener_orientation_valid(fuse::audio::Vec3{0.f, 0.f, -1.f},
+                                                          fuse::audio::Vec3{0.f, 1.f, 0.f}),
+               "orthogonal forward/up is valid listener orientation");
+
+    const fuse::audio::Vec3 safe_forward =
+        fuse::audio::sanitize_listener_forward(fuse::audio::Vec3{});
+    expectNear(safe_forward.z, -1.f, 1e-5f, "degenerate forward falls back to default");
+
+    const fuse::audio::Vec3 safe_up =
+        fuse::audio::sanitize_listener_up(fuse::audio::Vec3{0.f, 0.f, -1.f},
+                                          fuse::audio::Vec3{0.f, 0.f, -1.f});
+    expectTrue(std::fabs(safe_up.dot(fuse::audio::Vec3{0.f, 0.f, -1.f})) < 0.9f,
+               "parallel up is replaced with a non-collinear fallback");
+
+    const fuse::audio::ListenerBasis safe_basis =
+        fuse::audio::make_listener_basis_safe(fuse::audio::Vec3{}, fuse::audio::Vec3{});
+    const fuse::audio::Vec3 local =
+        fuse::audio::to_listener_space(fuse::audio::Vec3{1.f, 0.f, -5.f}, safe_basis);
+    expectNear(local.x, 1.f, 1e-4f, "safe basis preserves lateral mapping for degenerate input");
+    expectNear(local.z, 5.f, 1e-4f, "safe basis preserves forward mapping for degenerate input");
+}
+
+void testEmptyListenerSpatialMix() {
+    fuse::audio::SpatialMixer mixer;
+    mixer.configure(48000, 32, true);
+
+    fuse::audio::AudioRegistry registry;
+    const fuse::audio::EntityId source_entity = registry.create_entity();
+    registry.set_position(source_entity, fuse::audio::Vec3{-5.f, 0.f, -5.f});
+
+    std::vector<float> pcm(48000, 0.5f);
+    fuse::audio::AudioClip clip;
+    clip.load_from_pcm(pcm.data(), 48000, 1, 48000);
+    fuse::HandleMap<fuse::audio::AudioClip> clips;
+    const auto clip_handle = clips.insert(std::move(clip));
+
+    fuse::audio::AudioSourceDesc source_desc;
+    source_desc.clip = clip_handle;
+    source_desc.spatial = true;
+    source_desc.looping = true;
+    fuse::audio::AudioSource* source = registry.add_source(source_entity, source_desc);
+    source->playing = true;
+
+    std::vector<float> stereo_out;
+    mixer.mix(registry, clips, 1.f / 60.f, stereo_out, 256);
+
+    expectTrue(registry.listener() == nullptr, "registry has no listener entity");
+    expectNear(mixer.last_master_gain(), 1.f, 1e-5f, "empty listener keeps unity master gain");
+    expectTrue(bufferEnergy(stereo_out) > 0.f, "empty listener still mixes spatial sources");
+    expectTrue(channelEnergy(stereo_out, 0) > channelEnergy(stereo_out, 1) + 0.1f,
+               "empty listener uses world-relative pan without basis transform");
 }
 
 void testHrtfPanEdgeCases() {
@@ -1123,6 +1247,10 @@ int main() {
     testBinauralPanListenerBasisTransform();
     testBinauralPanGainClamp();
     testBinauralPanDistanceFactorNarrowsImage();
+    testPanLawCurveEndpoints();
+    testBinauralPanAzimuthEndpoints();
+    testListenerOrientationEdgeCases();
+    testEmptyListenerSpatialMix();
     testHrtfPanEdgeCases();
     testOcclusionStub();
     testBlockerFactorExtremes();

@@ -11,7 +11,36 @@ float clamp_unit(float value) {
     return std::clamp(value, -1.f, 1.f);
 }
 
+PanLawGains sample_equal_power_pan(float pan) {
+    PanLawGains gains;
+    gains.left = std::sqrt(0.5f * (1.f - pan));
+    gains.right = std::sqrt(0.5f * (1.f + pan));
+    return gains;
+}
+
+PanLawGains sample_linear_pan(float pan) {
+    PanLawGains gains;
+    gains.left = 0.5f * (1.f - pan);
+    gains.right = 0.5f * (1.f + pan);
+    return gains;
+}
+
 } // namespace
+
+float clamp_pan_position(float pan) {
+    return std::clamp(pan, -1.f, 1.f);
+}
+
+PanLawGains sample_pan_law(float pan, PanLaw law) {
+    const float clamped = clamp_pan_position(pan);
+    switch (law) {
+    case PanLaw::Linear:
+        return sample_linear_pan(clamped);
+    case PanLaw::EqualPower:
+    default:
+        return sample_equal_power_pan(clamped);
+    }
+}
 
 BinauralPanAngles compute_binaural_angles(const Vec3& rel_listener) {
     BinauralPanAngles angles;
@@ -33,9 +62,10 @@ BinauralPanGains compute_binaural_pan_gains(const BinauralPanAngles& angles,
                                              const BinauralPanParams& params) {
     BinauralPanGains gains;
 
-    const float pan = std::sin(angles.azimuth) * params.max_ild_pan;
-    gains.left = std::sqrt(0.5f * (1.f - pan));
-    gains.right = std::sqrt(0.5f * (1.f + pan));
+    const float pan = clamp_pan_position(std::sin(angles.azimuth) * params.max_ild_pan);
+    const PanLawGains pan_gains = sample_pan_law(pan, params.pan_law);
+    gains.left = pan_gains.left;
+    gains.right = pan_gains.right;
     gains.itd_seconds = params.max_itd_seconds * std::sin(angles.azimuth);
 
     const float elevation_factor =

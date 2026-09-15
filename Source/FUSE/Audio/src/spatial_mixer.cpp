@@ -84,7 +84,7 @@ void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>
     ListenerBasis basis{};
     if (listener != nullptr) {
         m_lastMasterGain = listener->master_volume;
-        basis = make_listener_basis(listener->forward, listener->up);
+        basis = make_listener_basis_safe(listener->forward, listener->up);
     }
 
     u32 active_sources = 0;
