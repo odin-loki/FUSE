@@ -1,6 +1,10 @@
 # fuse_rhi — Track B Vulkan bootstrap + render command list (B2.1) + shader scaffold (B2.4)
 
 set(FUSE_RHI_PUBLIC_HEADERS
+    include/fuse/renderer/atmosphere/atmosphere_params.hpp
+    include/fuse/renderer/atmosphere/sky_lut.hpp
+    include/fuse/renderer/atmosphere/sky_pass.hpp
+    include/fuse/renderer/atmosphere/sky_scatter.hpp
     include/fuse/renderer/command_buffer.hpp
     include/fuse/renderer/composite_pass.hpp
     include/fuse/renderer/deferred/deferred_renderer.hpp
@@ -46,6 +50,9 @@ set(FUSE_RHI_PUBLIC_HEADERS
 )
 
 set(FUSE_RHI_SOURCES
+    src/atmosphere/sky_lut.cpp
+    src/atmosphere/sky_pass.cpp
+    src/atmosphere/sky_scatter.cpp
     src/command_buffer.cpp
     src/composite_pass.cpp
     src/deferred/deferred_renderer.cpp
