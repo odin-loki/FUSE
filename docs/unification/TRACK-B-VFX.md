@@ -56,7 +56,7 @@ Edge cases covered in tests:
 
 ### GPU buffer layout (stub)
 
-`ParticleGpuBufferLayout` packs the eight SoA columns (`positions` through `alive_flags`) into a single aligned device SSBO. `ParticleGpuDispatch::forSimulate` and `forEmit` compute block counts for 256-wide simulate and 64-wide emit kernels. `ParticleGpuMirror` copies live CPU columns, packs/unpacks the device layout for unit tests, and builds a `ParticleSoAGPU` pointer bundle — production simulation stays on the CPU reference path until CUDA kernels land.
+`ParticleGpuBufferLayout` packs the eight SoA columns (`positions` through `alive_flags`) into a single 16-byte-aligned device SSBO. Helpers expose per-column offsets, padding-after-column, alignment checks, and debug column names for stub validation. `ParticleGpuDispatch::forSimulate`, `forEmit`, and `forFrame` compute block counts for 256-wide simulate and 64-wide emit kernels; `simCovers` / `emitCovers` assert launch grids cover the requested slot/emit counts. `ParticleGpuBuffers::forCapacity` sizes the packed SSBO without device allocation. `ParticleGpuMirror` copies live CPU columns, packs/unpacks the device layout for unit tests, and builds a `ParticleSoAGPU` pointer bundle — production simulation stays on the CPU reference path until CUDA kernels land.
 
 ---
 
@@ -86,9 +86,9 @@ ctest --test-dir build -R fuse_vfx_runtime --output-on-failure
 | Free list | Partial/mixed expiry recycle, multi-burst slot reuse, `free_slot_count()` after burst and simulate |
 | Integration | Gravity, drag, size/color/alpha interpolation, disabled emitter |
 | Parallel parity | 1/2/4-worker vs serial; grain boundary (65 slots); single particle; all-dead |
-| GPU layout | Column offsets, packed byte size, alignment validation |
-| Dispatch | Simulate/emit block counts, zero-emit skip |
-| CPU mirror | Pack/unpack round trip, `ParticleSoAGPU` pointer bundle |
+| GPU layout | Column offsets, 16-byte alignment at multiple capacities, padding, `ParticleGpuBuffers::forCapacity` |
+| Dispatch | Simulate/emit block counts, `forFrame`, exact block boundaries, `simCovers` / `emitCovers`, `gridDimX` util |
+| CPU mirror | Pack/unpack round trip, full-capacity fill, undersized unpack guard, `ParticleSoAGPU` pointer bundle |
 | System | Spawn/update cleanup, `spawn_effect` burst_count, emitter handle lifecycle |
 
 ---

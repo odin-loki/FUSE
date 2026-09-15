@@ -41,11 +41,15 @@ struct ParticleGpuBufferLayout {
     static constexpr usize kColumnAlignment = 16u;
 
     static u32 columnCount();
+    static usize columnAlignment();
     static usize elementSize(ParticleGpuColumn column);
     static usize columnByteSize(ParticleGpuColumn column, u32 capacity);
     static usize columnDeviceOffset(ParticleGpuColumn column, u32 capacity);
+    static usize paddingAfterColumn(ParticleGpuColumn column, u32 capacity);
     static usize packedDeviceBytes(u32 capacity);
     static bool validatePackedLayout(u32 capacity);
+    static bool isColumnOffsetAligned(ParticleGpuColumn column, u32 capacity);
+    static const char* columnName(ParticleGpuColumn column);
 };
 
 /// CUDA launch grid bookkeeping for simulate/emit kernels.
@@ -57,8 +61,13 @@ struct ParticleGpuDispatch {
 
     [[nodiscard]] static ParticleGpuDispatch forSimulate(u32 capacity);
     [[nodiscard]] static ParticleGpuDispatch forEmit(u32 emit_count);
+    [[nodiscard]] static ParticleGpuDispatch forFrame(u32 capacity, u32 emit_count);
     [[nodiscard]] u32 totalSimThreads() const { return simBlockCount * simThreadCount; }
     [[nodiscard]] u32 totalEmitThreads() const { return emitBlockCount * emitThreadCount; }
+    [[nodiscard]] bool simCovers(u32 slot_count) const { return totalSimThreads() >= slot_count; }
+    [[nodiscard]] bool emitCovers(u32 emit_count) const {
+        return emit_count == 0u || totalEmitThreads() >= emit_count;
+    }
 };
 
 /// Logical GPU buffer handles — production wiring maps these to `renderer::BufferHandle`.
@@ -67,6 +76,8 @@ struct ParticleGpuBuffers {
     u64 vertexBuffer = 0;
     u32 capacity = 0;
     usize deviceBytes = 0;
+
+    [[nodiscard]] static ParticleGpuBuffers forCapacity(u32 particle_capacity);
 };
 
 /// CPU-side column mirror for layout/dispatch stub tests — no device readback in production.
