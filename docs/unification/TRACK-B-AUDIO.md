@@ -1,6 +1,6 @@
 # Track B — Spatial Audio Engine (B7.2 deepen)
 
-**Status:** B7.2 deepen — AABB occlusion blockers in spatial attenuation path, listener-scoped reverb zone blend  
+**Status:** B7.2 deepen — bus parent-chain routing, inverse/custom attenuation keypoints, curve sampling  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.2  
 **Source narrative:** [P7.md](../sources/P7.md) §7.2
 
@@ -10,10 +10,10 @@
 
 | Component | Location | Notes |
 |-----------|----------|-------|
-| `AttenuationCurve` / `AttenuationParams` | `Source/FUSE/Audio/include/fuse/audio/attenuation.hpp` | Linear, logarithmic, exponential distance falloff |
-| `compute_attenuation` | `Source/FUSE/Audio/src/attenuation.cpp` | Legacy 3-arg overload + curve-aware overload |
+| `AttenuationCurve` / `AttenuationParams` | `Source/FUSE/Audio/include/fuse/audio/attenuation.hpp` | Linear, logarithmic, exponential, inverse, custom keypoints |
+| `compute_attenuation` / `sample_attenuation_curve` | `Source/FUSE/Audio/src/attenuation.cpp` | Legacy 3-arg overload + curve-aware sampling with clamp |
 | `ListenerBasis` / `to_listener_space` | `Source/FUSE/Audio/include/fuse/audio/math.hpp` | World → listener-local transform for panning |
-| `AudioBus` / `AudioBusMixer` | `Source/FUSE/Audio/include/fuse/audio/audio_bus.hpp` | Per-category gain stub (Master, Sfx, Music, Voice) |
+| `AudioBus` / `AudioBusMixer` | `Source/FUSE/Audio/include/fuse/audio/audio_bus.hpp` | Per-category gain stub with parent-chain routing helpers |
 | `OcclusionParams` / `evaluate_occlusion_*` | `Source/FUSE/Audio/include/fuse/audio/occlusion.hpp` | Visibility → LF/HF gain stubs; segment-vs-AABB blocker raycast |
 | `BinauralPanParams` / `compute_binaural_*` | `Source/FUSE/Audio/include/fuse/audio/binaural_pan.hpp` | Listener-local azimuth/elevation, ILD equal-power pan, ITD stub, distance blend |
 | `ReverbZoneParams` / `blend_reverb_zones` | `Source/FUSE/Audio/include/fuse/audio/reverb_zones.hpp` | Zone AABB membership + overlapping wet/dry blend |
@@ -33,8 +33,10 @@
 | Curve | Behaviour |
 |-------|-----------|
 | **Linear** | `min / (min + (d - min))` — reaches zero at `max_distance` |
-| **Logarithmic** | `min / (min + rolloff * (d - min))` — inverse-distance style |
+| **Logarithmic** | `min / (min + rolloff * (d - min))` — inverse-distance clamped style |
 | **Exponential** | `(d / min)^(-rolloff)` — steeper falloff at distance |
+| **Inverse** | `min / (rolloff * d)` — pure inverse-distance sample |
+| **Custom** | Piecewise-linear interpolation over sorted `(distance, gain)` keypoints |
 
 ### Listener orientation
 
@@ -42,13 +44,13 @@
 
 ### Bus gains (stub)
 
-`AudioBusMixer` holds per-bus gain multipliers. Effective output for a source is:
+`AudioBusMixer` holds per-bus gain multipliers and optional parent routing (default: Sfx/Music/Voice → Master). Effective output for a source is:
 
 ```
-effective = listener.master_volume * bus_mixer.effective_gain(source.bus)
+effective = bus_mixer.effective_output_gain(source.bus, listener.master_volume)
 ```
 
-`effective_gain(bus)` returns `master_gain * bus_gain` for non-master buses. Routing is stub-only — no sub-mix buffers yet. `AudioEngine::bus_mixer()` exposes the mixer for category-level gain control.
+`routed_bus_gain(bus)` multiplies gains along the parent chain; `effective_gain(bus)` includes master. `clamp_bus_gain` keeps stub gains in `[0, 1]`. Routing is stub-only — no sub-mix buffers yet. `AudioEngine::bus_mixer()` exposes the mixer for category-level gain control.
 
 ### HRTF-lite panning
 
@@ -134,6 +136,11 @@ ctest --test-dir build --output-on-failure -R fuse_audio
 | `testBusGains` | `effective_gain` multiplies master × bus |
 | `testBusRoutingAllCategories` | Music and Voice buses route through master |
 | `testBusGainClampsNegative` | Negative gains clamp to zero |
+| `testBusGainClampsAboveUnity` | Gains above unity clamp to one |
+| `testBusChainRouting` | Parent-chain `routed_bus_gain` / `effective_output_gain` |
+| `testAttenuationCurveExtremes` | Min/max distance, linear/inverse/custom curve extremes |
+| `testAttenuationGainClamp` | Custom keypoint gains clamp to `[0, 1]` |
+| `testCustomAttenuationCurveAffectsMix` | Custom keypoints wired through `SpatialMixer` |
 | `testBusRoutingAffectsMixOutput` | Bus gain scales spatial mix energy |
 | `testHrtfPanEdgeCases` | Ahead/left/right/behind/co-located pan; HRTF-off is mono |
 | `testBinauralPanFrontBackSideExtremes` | Front/back centre pan; lateral ITD sign; side ILD asymmetry |
@@ -161,7 +168,9 @@ ctest --test-dir build --output-on-failure -R fuse_audio
 - [x] Attenuation curves: linear, logarithmic, exponential
 - [x] Listener orientation affects spatial pan
 - [x] Bus gain stub with master × category routing
-- [x] Bus routing tests cover all categories and mix output scaling
+- [x] Bus parent-chain routing (`routed_bus_gain`, `effective_output_gain`)
+- [x] Inverse and custom keypoint attenuation curves sampled in spatial path
+- [x] Bus routing tests cover all categories, chain, clamp, and mix output scaling
 - [x] HRTF-lite pan edge cases (ahead, lateral, behind, co-located, disabled)
 - [x] Binaural pan helpers: azimuth/elevation, ITD/ILD stubs, gain clamp, distance blend
 - [x] Occlusion segment-vs-AABB blockers wired into spatial attenuation path

@@ -171,6 +171,82 @@ void testBusGainClampsNegative() {
                "effective gain is zero when bus is clamped");
 }
 
+void testBusGainClampsAboveUnity() {
+    fuse::audio::AudioBusMixer mixer;
+    mixer.set_bus_gain(fuse::audio::AudioBus::Music, 1.5f);
+    expectNear(mixer.bus_gain(fuse::audio::AudioBus::Music), 1.f, 1e-5f,
+               "bus gain above unity clamps to one");
+    expectNear(fuse::audio::clamp_bus_gain(2.f), 1.f, 1e-5f,
+               "clamp_bus_gain helper caps at unity");
+}
+
+void testBusChainRouting() {
+    fuse::audio::AudioBusMixer mixer;
+    mixer.set_bus_gain(fuse::audio::AudioBus::Master, 0.5f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Sfx, 0.8f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Voice, 0.6f);
+    mixer.set_bus_parent(fuse::audio::AudioBus::Voice, fuse::audio::AudioBus::Sfx);
+
+    expectNear(mixer.routed_bus_gain(fuse::audio::AudioBus::Voice), 0.48f, 1e-5f,
+               "voice routed through sfx multiplies category gains");
+    expectNear(mixer.effective_gain(fuse::audio::AudioBus::Voice), 0.24f, 1e-5f,
+               "effective gain walks voice -> sfx -> master chain");
+    expectNear(mixer.effective_output_gain(fuse::audio::AudioBus::Voice, 0.5f), 0.12f, 1e-5f,
+               "effective_output_gain applies listener master on top of bus chain");
+    expectTrue(mixer.bus_parent(fuse::audio::AudioBus::Voice) == fuse::audio::AudioBus::Sfx,
+               "voice parent routes through sfx");
+}
+
+void testAttenuationCurveExtremes() {
+    fuse::audio::AttenuationParams params;
+    params.min_dist = 1.f;
+    params.max_dist = 50.f;
+    params.rolloff = 1.f;
+
+    expectNear(fuse::audio::compute_attenuation(0.5f, params), 1.f, 1e-5f,
+               "inside min distance is full gain");
+    expectNear(fuse::audio::compute_attenuation(50.f, params), 0.f, 1e-5f,
+               "at max distance gain is zero");
+
+    params.curve = fuse::audio::AttenuationCurve::Linear;
+    const float linear_mid = fuse::audio::compute_attenuation(10.f, params);
+    expectTrue(linear_mid > 0.f && linear_mid < 1.f, "linear curve attenuates mid-range");
+
+    params.curve = fuse::audio::AttenuationCurve::Inverse;
+    const float inverse_near = fuse::audio::compute_attenuation(2.f, params);
+    const float inverse_far = fuse::audio::compute_attenuation(20.f, params);
+    expectTrue(inverse_near > inverse_far, "inverse curve falls off with distance");
+    expectNear(fuse::audio::sample_attenuation_curve(1.f, params), 1.f, 1e-5f,
+               "inverse curve is unity at min distance");
+
+    params.curve = fuse::audio::AttenuationCurve::Custom;
+    params.keypoints[0] = {1.f, 1.f};
+    params.keypoints[1] = {25.f, 0.5f};
+    params.keypoints[2] = {50.f, 0.f};
+    params.keypoint_count = 3;
+    expectNear(fuse::audio::compute_attenuation(1.f, params), 1.f, 1e-5f,
+               "custom curve starts at first keypoint gain");
+    expectNear(fuse::audio::compute_attenuation(50.f, params), 0.f, 1e-5f,
+               "custom curve ends at last keypoint gain");
+    expectNear(fuse::audio::sample_attenuation_curve(13.f, params), 0.76f, 1e-2f,
+               "custom curve interpolates between keypoints");
+}
+
+void testAttenuationGainClamp() {
+    fuse::audio::AttenuationParams params;
+    params.min_dist = 1.f;
+    params.max_dist = 100.f;
+    params.curve = fuse::audio::AttenuationCurve::Custom;
+    params.keypoints[0] = {1.f, 1.5f};
+    params.keypoints[1] = {10.f, -0.25f};
+    params.keypoint_count = 2;
+
+    expectNear(fuse::audio::sample_attenuation_curve(1.f, params), 1.f, 1e-5f,
+               "custom keypoint gain above unity clamps to one");
+    expectNear(fuse::audio::sample_attenuation_curve(10.f, params), 0.f, 1e-5f,
+               "custom keypoint gain below zero clamps to zero");
+}
+
 float bufferEnergy(const std::vector<float>& buffer) {
     float sum = 0.f;
     for (float sample : buffer) {
@@ -216,6 +292,51 @@ void testBusRoutingAffectsMixOutput() {
 
     expectTrue(full_energy > reduced_energy * 2.f, "bus gain scales mix output");
     expectTrue(reduced_energy > 0.f, "reduced bus still produces audible output");
+}
+
+void testCustomAttenuationCurveAffectsMix() {
+    fuse::audio::AudioEngine engine;
+    fuse::audio::AudioDesc desc;
+    desc.frames_per_buf = 256;
+    engine.init(desc);
+
+    std::vector<float> pcm(48000, 0.5f);
+    fuse::audio::AudioClip clip;
+    clip.load_from_pcm(pcm.data(), 48000, 1, 48000);
+    const auto clip_handle = engine.register_clip(std::move(clip));
+
+    fuse::audio::AudioRegistry registry;
+    registry.set_listener(registry.create_entity());
+
+    const fuse::audio::EntityId near_entity = registry.create_entity();
+    registry.set_position(near_entity, fuse::audio::Vec3{0.f, 0.f, -2.f});
+    fuse::audio::AudioSourceDesc near_desc;
+    near_desc.clip = clip_handle;
+    near_desc.spatial = true;
+    near_desc.looping = true;
+    near_desc.attenuation = fuse::audio::AttenuationCurve::Custom;
+    near_desc.min_distance = 1.f;
+    near_desc.max_distance = 50.f;
+    near_desc.attenuation_keypoints[0] = {1.f, 1.f};
+    near_desc.attenuation_keypoints[1] = {50.f, 0.1f};
+    near_desc.attenuation_keypoint_count = 2;
+    fuse::audio::AudioSource* near_source = registry.add_source(near_entity, near_desc);
+    near_source->playing = true;
+
+    engine.update(registry, 1.f / 60.f);
+    const float near_energy = bufferEnergy(engine.last_mix_buffer());
+
+    const fuse::audio::EntityId far_entity = registry.create_entity();
+    registry.set_position(far_entity, fuse::audio::Vec3{0.f, 0.f, -40.f});
+    fuse::audio::AudioSourceDesc far_desc = near_desc;
+    fuse::audio::AudioSource* far_source = registry.add_source(far_entity, far_desc);
+    far_source->playing = true;
+    near_source->playing = false;
+
+    engine.update(registry, 1.f / 60.f);
+    const float far_energy = bufferEnergy(engine.last_mix_buffer());
+
+    expectTrue(near_energy > far_energy * 1.5f, "custom attenuation keypoints reduce distant mix");
 }
 
 float channelEnergy(const std::vector<float>& buffer, u32 channel) {
@@ -922,6 +1043,11 @@ int main() {
     testBusGains();
     testBusRoutingAllCategories();
     testBusGainClampsNegative();
+    testBusGainClampsAboveUnity();
+    testBusChainRouting();
+    testAttenuationCurveExtremes();
+    testAttenuationGainClamp();
+    testCustomAttenuationCurveAffectsMix();
     testBusRoutingAffectsMixOutput();
     testBinauralPanFrontBackSideExtremes();
     testBinauralPanListenerBasisTransform();

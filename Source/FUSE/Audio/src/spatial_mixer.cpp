@@ -99,6 +99,11 @@ void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>
         attenuation_params.min_dist = source->desc.min_distance;
         attenuation_params.max_dist = source->desc.max_distance;
         attenuation_params.rolloff = source->desc.rolloff;
+        attenuation_params.keypoint_count = std::min(source->desc.attenuation_keypoint_count,
+                                                     AttenuationParams::max_keypoints);
+        for (u32 kp = 0; kp < attenuation_params.keypoint_count; ++kp) {
+            attenuation_params.keypoints[kp] = source->desc.attenuation_keypoints[kp];
+        }
 
         const float distance = source->position.distance(listener_pos);
         const float distance_attenuation = source->desc.spatial
