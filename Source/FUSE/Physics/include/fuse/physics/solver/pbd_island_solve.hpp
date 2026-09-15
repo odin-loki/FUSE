@@ -19,6 +19,17 @@ struct IslandSolveJob {
     const ContactIslandGraph::Island* island = nullptr;
 };
 
+/// Aggregate counts for parallel dispatch sizing and empty-island early-out stubs.
+struct IslandSolveStats {
+    u32 totalIslands = 0;
+    u32 constrainedCount = 0;
+    u32 emptyCount = 0;
+    u32 dispatchableCount = 0;
+};
+
+/// True when `islandIndex` is in range for `extract_island`.
+bool island_index_valid(const ContactIslandGraph& graph, u32 islandIndex);
+
 /// Returns true when the island carries at least one contact or distance constraint.
 bool island_has_constraints(const ContactIslandGraph::Island& island);
 
@@ -33,6 +44,25 @@ IslandSolveJob extract_island(const ContactIslandGraph& graph, u32 islandIndex);
 
 /// Batch extract all island jobs (parallel dispatch prep stub).
 std::vector<IslandSolveJob> extract_island_jobs(const ContactIslandGraph& graph);
+
+/// Summarize constrained vs empty islands for dispatch prep and early-out guards.
+IslandSolveStats compute_island_solve_stats(const ContactIslandGraph& graph);
+
+/// Count islands that pass `should_solve_island` (non-empty, bound, in-range).
+u32 count_dispatchable_islands(const ContactIslandGraph& graph);
+
+/// True when at least one island would be dispatched this substep.
+bool has_dispatchable_islands(const ContactIslandGraph& graph);
+
+/// Guarded dispatch entry: skips out-of-range, empty, and null-island jobs.
+bool dispatch_solve_island(RigidBodySoA& bodies,
+                           const ContactIslandGraph& graph,
+                           u32 islandIndex,
+                           SolverWorkBuffers& workBuffers,
+                           const std::vector<DistanceConstraint>& distanceConstraints,
+                           f32 dt,
+                           f32 contactCompliance,
+                           const std::function<f32(const RigidBodySoA&, u32)>& invMassFn);
 
 /// Per-constraint-pair delta clear → accumulate → apply (job-safe across parallel islands).
 void per_pair_delta_application(RigidBodySoA& bodies,
@@ -70,5 +100,17 @@ void frame_lambda_warm_start(SolverWorkBuffers& workBuffers,
                              const std::vector<DistanceConstraint>& distanceConstraints,
                              const std::vector<f32>& priorDistanceLambdas,
                              const std::vector<f32>& priorContactLambdas = {});
+
+/// Warm-start only the lambda slots referenced by one island (parallel-safe selective seed).
+void warm_start_island_lambdas(SolverWorkBuffers& workBuffers,
+                               const ContactIslandGraph::Island& island,
+                               const std::vector<f32>& priorDistanceLambdas,
+                               const std::vector<f32>& priorContactLambdas = {});
+
+/// Seed contact impulse warm-start for contacts owned by one island (per-substep stub).
+void warm_start_island_contact_impulses(SolverWorkBuffers& workBuffers,
+                                        const ContactIslandGraph::Island& island,
+                                        const std::vector<narrowphase::ContactManifold>& contacts,
+                                        f32 dt);
 
 } // namespace fuse::physics

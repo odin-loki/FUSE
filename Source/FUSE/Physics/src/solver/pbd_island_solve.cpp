@@ -4,6 +4,10 @@
 
 namespace fuse::physics {
 
+bool island_index_valid(const ContactIslandGraph& graph, u32 islandIndex) {
+    return islandIndex < graph.islandCount();
+}
+
 bool island_has_constraints(const ContactIslandGraph::Island& island) {
     return !island.isEmpty();
 }
@@ -38,6 +42,52 @@ std::vector<IslandSolveJob> extract_island_jobs(const ContactIslandGraph& graph)
         jobs.push_back(extract_island(graph, islandIndex));
     }
     return jobs;
+}
+
+IslandSolveStats compute_island_solve_stats(const ContactIslandGraph& graph) {
+    IslandSolveStats stats{};
+    stats.totalIslands = graph.islandCount();
+    for (u32 islandIndex = 0; islandIndex < stats.totalIslands; ++islandIndex) {
+        const IslandSolveJob job = extract_island(graph, islandIndex);
+        if (job.empty) {
+            ++stats.emptyCount;
+        } else {
+            ++stats.constrainedCount;
+        }
+        if (should_solve_island(job)) {
+            ++stats.dispatchableCount;
+        }
+    }
+    return stats;
+}
+
+u32 count_dispatchable_islands(const ContactIslandGraph& graph) {
+    return compute_island_solve_stats(graph).dispatchableCount;
+}
+
+bool has_dispatchable_islands(const ContactIslandGraph& graph) {
+    return count_dispatchable_islands(graph) > 0u;
+}
+
+bool dispatch_solve_island(RigidBodySoA& bodies,
+                           const ContactIslandGraph& graph,
+                           u32 islandIndex,
+                           SolverWorkBuffers& workBuffers,
+                           const std::vector<DistanceConstraint>& distanceConstraints,
+                           f32 dt,
+                           f32 contactCompliance,
+                           const std::function<f32(const RigidBodySoA&, u32)>& invMassFn) {
+    const IslandSolveJob job = extract_island(graph, islandIndex);
+    if (!should_solve_island(job)) {
+        return false;
+    }
+    return solve_island_job(bodies,
+                            *job.island,
+                            workBuffers,
+                            distanceConstraints,
+                            dt,
+                            contactCompliance,
+                            invMassFn);
 }
 
 void per_pair_delta_application(RigidBodySoA& bodies,
@@ -154,6 +204,44 @@ void frame_lambda_warm_start(SolverWorkBuffers& workBuffers,
         if (lambda == 0.f) {
             lambda = prior;
         }
+    }
+}
+
+void warm_start_island_lambdas(SolverWorkBuffers& workBuffers,
+                               const ContactIslandGraph::Island& island,
+                               const std::vector<f32>& priorDistanceLambdas,
+                               const std::vector<f32>& priorContactLambdas) {
+    for (u32 distanceIndex : island.distanceIndices) {
+        if (distanceIndex < priorDistanceLambdas.size()) {
+            workBuffers.seedDistanceLambda(distanceIndex, priorDistanceLambdas[distanceIndex]);
+        }
+    }
+    for (u32 contactIndex : island.contactIndices) {
+        if (contactIndex >= priorContactLambdas.size()) {
+            continue;
+        }
+        const f32 prior = priorContactLambdas[contactIndex];
+        if (prior == 0.f) {
+            continue;
+        }
+        f32& lambda = workBuffers.contactLambda(contactIndex);
+        if (lambda == 0.f) {
+            lambda = prior;
+        }
+    }
+}
+
+void warm_start_island_contact_impulses(SolverWorkBuffers& workBuffers,
+                                        const ContactIslandGraph::Island& island,
+                                        const std::vector<narrowphase::ContactManifold>& contacts,
+                                        f32 dt) {
+    for (u32 contactIndex : island.contactIndices) {
+        if (contactIndex >= contacts.size()) {
+            continue;
+        }
+        workBuffers.seedContactLambdaFromImpulse(contactIndex,
+                                                 contacts[contactIndex].warmNormalImpulse,
+                                                 dt);
     }
 }
 

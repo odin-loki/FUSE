@@ -173,13 +173,18 @@ void PBDSolver::runConstraintIterations(RigidBodySoA& bodies, const SolverParams
                                                    workBuffers_.positionDeltas());
                 workBuffers_.applyPositionDeltas(bodies);
             }
-        } else {
+        } else if (has_dispatchable_islands(islandGraph_)) {
             fuse::jobs::parallel_for(0, islandCount, kIslandGrainSize, [&](u32 islandIndex) {
-                const IslandSolveJob job = extract_island(islandGraph_, islandIndex);
-                if (!should_solve_island(job)) {
-                    return;
-                }
-                resolveIslandConstraints(bodies, *job.island, params, dt);
+                dispatch_solve_island(bodies,
+                                      islandGraph_,
+                                      islandIndex,
+                                      workBuffers_,
+                                      distanceConstraints_,
+                                      dt,
+                                      params.contactCompliance,
+                                      [](const RigidBodySoA& bodySoA, u32 index) {
+                                          return effectiveInvMass(bodySoA, index);
+                                      });
             });
         }
 
