@@ -16,6 +16,8 @@ public:
 
     bool isReady() const { return m_ready; }
     bool hasValidHistory() const { return m_validity.hasValidHistory; }
+    /// True until the first successful resolve warms the ping-pong targets.
+    bool needsWarmup() const { return !m_validity.hasValidHistory; }
     u32 accumulatedFrames() const { return m_validity.accumulatedFrames; }
     const TaaHistoryBufferDesc& desc() const { return m_desc; }
     const TaaHistoryValidity& validity() const { return m_validity; }

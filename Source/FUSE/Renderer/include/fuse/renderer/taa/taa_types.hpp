@@ -49,6 +49,8 @@ struct TaaHistoryValidity {
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {
     bool resolved = false;
+    /// Set when resolve bails before history update (empty history, bad dimensions, missing surfaces).
+    bool skipped = false;
     u32 width = 0;
     u32 height = 0;
     f32 last_blend = 0.f;
