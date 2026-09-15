@@ -120,4 +120,14 @@ u32 VirtualFileSystem::completedLoadCount() const {
     return static_cast<u32>(m_completed.size());
 }
 
+std::vector<LoadId> VirtualFileSystem::peekCompletedLoadOrder() const {
+    std::lock_guard<std::mutex> lock(m_completedMutex);
+    std::vector<LoadId> order;
+    order.reserve(m_completed.size());
+    for (const CompletedLoad& load : m_completed) {
+        order.push_back(load.id);
+    }
+    return order;
+}
+
 } // namespace fuse::io
