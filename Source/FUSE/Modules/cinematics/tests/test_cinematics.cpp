@@ -1,5 +1,6 @@
 #include <fuse/cinematics/audio_track.hpp>
 #include <fuse/cinematics/camera_track.hpp>
+#include <fuse/cinematics/cue_payload.hpp>
 #include <fuse/cinematics/cue_queue.hpp>
 #include <fuse/cinematics/event_track.hpp>
 #include <fuse/cinematics/interpolate.hpp>
@@ -339,8 +340,23 @@ void testCueQueueDrain() {
     fuse::u32 hook_count = 0;
     queue.set_dispatch_hook([&hook_count](const fuse::cinematics::CueEntry&) { ++hook_count; });
 
-    queue.enqueue({"a", "TrackA", "GroupA", fuse::cinematics::TrackKind::Event, 100});
-    queue.enqueue({"b", "TrackB", "GroupA", fuse::cinematics::TrackKind::Generic, 200});
+    fuse::cinematics::CueEntry cue_a;
+    cue_a.cue_key = "key_a";
+    cue_a.label = "a";
+    cue_a.track_label = "TrackA";
+    cue_a.group_label = "GroupA";
+    cue_a.track_kind = fuse::cinematics::TrackKind::Event;
+    cue_a.trigger_ms = 100;
+    queue.enqueue(cue_a);
+
+    fuse::cinematics::CueEntry cue_b;
+    cue_b.cue_key = "key_b";
+    cue_b.label = "b";
+    cue_b.track_label = "TrackB";
+    cue_b.group_label = "GroupA";
+    cue_b.track_kind = fuse::cinematics::TrackKind::Generic;
+    cue_b.trigger_ms = 200;
+    queue.enqueue(cue_b);
 
     expectTrue(queue.pending_count() == 2, "queue holds pending cues");
     expectTrue(queue.total_enqueued() == 2, "queue counts enqueued cues");
@@ -372,6 +388,110 @@ void testEventTrackKind() {
     expectTrue(track.script_hook_id() == "cutscene_hook", "event track hook id");
 }
 
+void testScrubFiresCuesInOrder() {
+    fuse::cinematics::Timeline timeline;
+    fuse::cinematics::TrackGroup& group = timeline.add_group("Director");
+    fuse::cinematics::EventTrack& events = group.add_event_track("ScriptCues");
+    events.add_event(fuse::cinematics::TimelineEvent("alpha", 1'000));
+    events.add_event(fuse::cinematics::TimelineEvent("beta", 2'000));
+    events.add_event(fuse::cinematics::TimelineEvent("gamma", 3'000));
+    events.sort_events();
+
+    timeline.playhead().set_duration_ms(10'000);
+    timeline.scrub_to(0, false);
+    timeline.scrub_to(3'500);
+
+    const auto& pending = timeline.cue_queue().pending();
+    expectTrue(pending.size() == 3, "single forward scrub enqueues all crossed cues");
+    expectTrue(pending[0].label == "alpha", "first crossed cue order");
+    expectTrue(pending[1].label == "beta", "second crossed cue order");
+    expectTrue(pending[2].label == "gamma", "third crossed cue order");
+}
+
+void testCueConsumeOnceSemantics() {
+    fuse::cinematics::Timeline timeline;
+    fuse::cinematics::TrackGroup& group = timeline.add_group("Director");
+    fuse::cinematics::EventTrack& events = group.add_event_track("ScriptCues");
+    events.add_event(fuse::cinematics::TimelineEvent("door_open", 1'000));
+    events.sort_events();
+
+    timeline.playhead().set_duration_ms(10'000);
+    timeline.scrub_to(0, false);
+    timeline.scrub_to(2'000);
+    expectTrue(timeline.cue_queue().pending_count() == 1, "first forward scrub fires cue");
+
+    timeline.cue_queue().clear();
+    timeline.scrub_to(0, false);
+    timeline.scrub_to(2'000);
+    expectTrue(timeline.cue_queue().empty(), "re-scrub does not re-fire consumed cue");
+}
+
+void testLoopResetClearsConsumedCues() {
+    fuse::cinematics::Timeline timeline;
+    fuse::cinematics::TrackGroup& group = timeline.add_group("Audio");
+    fuse::cinematics::AudioTrack& audio = group.add_audio_track("Stinger");
+    audio.set_sound_asset_id("sfx_loop");
+    audio.add_event(fuse::cinematics::TimelineEvent("play_stinger", 500));
+    audio.sort_events();
+
+    timeline.playhead().set_duration_ms(1'000);
+    timeline.set_loop(true);
+    timeline.play();
+    timeline.advance(600);
+    expectTrue(timeline.cue_queue().pending_count() == 1, "first loop iteration fires cue");
+
+    timeline.cue_queue().drain();
+    timeline.advance(500);
+    expectTrue(timeline.playhead().time_ms() == 0, "loop rewinds playhead to start");
+
+    timeline.advance(600);
+    expectTrue(timeline.cue_queue().pending_count() == 1, "loop reset re-arms consumed cue");
+}
+
+void testEmptyTimelineProducesNoCues() {
+    fuse::cinematics::Timeline timeline;
+    timeline.playhead().set_duration_ms(5'000);
+
+    timeline.scrub_to(0, false);
+    timeline.scrub_to(4'000);
+    expectTrue(timeline.cue_queue().empty(), "empty timeline scrub enqueues no cues");
+
+    timeline.play();
+    timeline.advance(1'000);
+    expectTrue(timeline.cue_queue().empty(), "empty timeline advance enqueues no cues");
+}
+
+void testCuePayloadStubs() {
+    fuse::cinematics::Timeline timeline;
+    fuse::cinematics::TrackGroup& group = timeline.add_group("Scene");
+
+    fuse::cinematics::EventTrack& events = group.add_event_track("Director");
+    events.set_script_hook_id("on_cutscene");
+    events.add_event(fuse::cinematics::TimelineEvent("fade_in", 100));
+    events.sort_events();
+
+    fuse::cinematics::AudioTrack& audio = group.add_audio_track("Ambience");
+    audio.set_sound_asset_id("wind_loop");
+    audio.add_event(fuse::cinematics::TimelineEvent("play_wind", 200));
+    audio.sort_events();
+
+    timeline.playhead().set_duration_ms(5'000);
+    timeline.scrub_to(0, false);
+    timeline.scrub_to(500);
+
+    const auto& pending = timeline.cue_queue().pending();
+    expectTrue(pending.size() == 2, "payload stub test collects both cues");
+
+    expectTrue(pending[0].payload.kind == fuse::cinematics::CuePayloadKind::ScriptHook,
+               "event track payload kind");
+    expectTrue(pending[0].payload.hook_id == "on_cutscene", "event track hook id payload");
+
+    expectTrue(pending[1].payload.kind == fuse::cinematics::CuePayloadKind::AudioClip,
+               "audio track payload kind");
+    expectTrue(pending[1].payload.asset_id == "wind_loop", "audio track asset id payload");
+    expectTrue(!pending[0].cue_key.empty(), "cue key assigned for consume-once ledger");
+}
+
 } // namespace
 
 int main() {
@@ -397,6 +517,11 @@ int main() {
     testCueQueueDrain();
     testAudioTrackVolume();
     testEventTrackKind();
+    testScrubFiresCuesInOrder();
+    testCueConsumeOnceSemantics();
+    testLoopResetClearsConsumedCues();
+    testEmptyTimelineProducesNoCues();
+    testCuePayloadStubs();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

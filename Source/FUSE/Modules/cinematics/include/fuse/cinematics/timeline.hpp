@@ -8,6 +8,7 @@
 #include <fuse/cinematics/playhead.hpp>
 
 #include <functional>
+#include <string>
 #include <vector>
 
 namespace fuse::cinematics {
@@ -57,14 +58,25 @@ public:
     /// Sort events on every track (VController::sort).
     void sort_tracks();
 
+    /// Clear consume-once fired-cue ledger (also called on loop / reset).
+    void clear_consumed_cues();
+
 private:
     void post_event(ControllerEvent event);
     void handle_sequence_end();
     void collect_cues_forward(TimelineMs from_ms, TimelineMs to_ms);
+    static std::string make_cue_key(const std::string& group_label,
+                                    const std::string& track_label,
+                                    const std::string& event_label,
+                                    TimelineMs trigger_ms);
+    static CuePayload make_cue_payload(const Track& track, const TimelineEvent& event);
+    bool is_cue_consumed(const std::string& cue_key) const;
+    void mark_cue_consumed(const std::string& cue_key);
 
     Playhead playhead_;
     std::vector<TrackGroup> groups_;
     CueQueue cue_queue_;
+    std::vector<std::string> consumed_cue_keys_;
     bool loop_ = false;
     TimelineUpdateCallback update_callback_;
     TimelineEventCallback event_callback_;
