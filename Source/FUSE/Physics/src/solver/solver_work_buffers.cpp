@@ -14,6 +14,36 @@ void SolverWorkBuffers::init(u32 maxBodies, u32 maxContacts, u32 maxConstraints)
 void SolverWorkBuffers::clear() {
     clearPositionDeltas();
     contactManifolds_.clear();
+    contactLambdas_.clear();
+    distanceLambdas_.clear();
+}
+
+void SolverWorkBuffers::ensureLambdaCapacity(u32 contactCount, u32 distanceCount) {
+    if (contactLambdas_.size() < contactCount) {
+        contactLambdas_.resize(contactCount, 0.f);
+    }
+    if (distanceLambdas_.size() < distanceCount) {
+        distanceLambdas_.resize(distanceCount, 0.f);
+    }
+}
+
+void SolverWorkBuffers::clearLambdas() {
+    std::fill(contactLambdas_.begin(), contactLambdas_.end(), 0.f);
+    std::fill(distanceLambdas_.begin(), distanceLambdas_.end(), 0.f);
+}
+
+f32& SolverWorkBuffers::contactLambda(u32 contactIndex) {
+    if (contactIndex >= contactLambdas_.size()) {
+        contactLambdas_.resize(contactIndex + 1u, 0.f);
+    }
+    return contactLambdas_[contactIndex];
+}
+
+f32& SolverWorkBuffers::distanceLambda(u32 distanceIndex) {
+    if (distanceIndex >= distanceLambdas_.size()) {
+        distanceLambdas_.resize(distanceIndex + 1u, 0.f);
+    }
+    return distanceLambdas_[distanceIndex];
 }
 
 void SolverWorkBuffers::clearPositionDeltas() {

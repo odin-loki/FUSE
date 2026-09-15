@@ -138,6 +138,8 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 - [x] `fuse_physics_pbd_tests` — gravity fall, separation, distance constraint, sleep
 - [x] `fuse_physics_pbd_tests` — compliant spring stretch + rest-length recovery after release
 - [x] `fuse_physics_pbd_tests` — contact island graph partitions disconnected groups; iteration count surfaced
+- [x] `fuse_physics_pbd_tests` — job-safe distance/spring accumulation, warm-start lambda, residual early-exit stub
+- [x] `fuse_physics_pbd_tests` — rest-length spring converges under N iterations; multi-island independence; residual decreases
 - [ ] Stack of 10 spheres stable 5s — catalog `solver.stack_stability`
 - [ ] Restitution / friction analytical match — deferred
 
@@ -183,7 +185,7 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 - CPU gameplay code queues destruction events and reads query results after `step()` — no GPU record from job workers
 - Collision callbacks dispatch on the game thread after solver step (same frame as ECS sync)
 - **Broadphase jobify (CPU stub):** `runBroadphase` / `runBroadphase2D` read immutable `RigidBodySoA` + `CollisionShapeSoA` snapshots and write disjoint per-cell / per-dynamic pair buffers via `fuse::jobs::parallel_for`; falls back to serial when `JobScheduler` is single-threaded or uninitialized
-- **PBD constraint iteration (CPU stub):** each substep builds `ContactIslandGraph` from contacts + distance constraints; `parallel_for` dispatches islands while contacts within an island resolve sequentially (Gauss-Seidel). `SolverWorkBuffers` holds reusable manifolds and per-body `PositionDelta` slots for future accumulate-then-apply CUDA parity
+- **PBD constraint iteration (CPU stub):** each substep builds `ContactIslandGraph` from contacts + distance constraints; `parallel_for` dispatches islands while contacts within an island resolve sequentially (Gauss-Seidel). `SolverWorkBuffers` holds reusable manifolds, per-body `PositionDelta` slots, and per-constraint lambda warm-start buffers. `accumulateDistanceSpringCorrection` / `accumulateContactCorrection` write disjoint body slots (job-safe SoA); `applyPositionDeltas` commits corrections after each iteration. `SolverParams::iterations` configures the max pass count; `residualTolerance` enables early-exit when max constraint violation drops below threshold; `lastConstraintResidual()` surfaces the stub for tests
 - **Narrowphase job-safe slots (CPU stub):** `runNarrowphaseIntoBuffer` assigns one output slot per candidate pair index; workers write only their slot, then `ContactBufferSoA::compact()` gathers valid manifolds without shared mutable pair state (serial dispatch on CPU stub; slot layout matches parallel kernel path)
 - **CCD job-safe slots (CPU stub):** `runCcdIntoBuffer` assigns one TOI slot per candidate pair; workers write only their slot, then `ToiBufferSoA::compact()` gathers valid impacts. `sweptSpherePlane` / `sweptSphereSlabZ` cover fast-mover vs wall stubs; `PhysicsManager` reuses `m_toiBuffer_` each step
 
@@ -233,6 +235,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_physics|fuse_voxel|fuse_soft
 - [x] B4.3 narrowphase deepen — `ContactBufferSoA`, box-sphere / capsule-sphere stubs, job-safe pair dispatch
 - [x] B4.2 CPU broadphase jobify — `parallel_for` over shape→cell build + per-cell candidate generation stubs
 - [x] B4.4 CPU deepen — island-partitioned constraint iterations, job-safe `SolverWorkBuffers`, rest-length spring tests
+- [x] B4.4 CPU deepen — configurable iteration count, lambda warm-start, residual early-exit stub, job-safe constraint accumulation helpers
 - [x] B4.6 CPU deepen — `ToiBufferSoA`, sphere/plane/slab sweep helpers, job-safe `runCcdIntoBuffer`
 - [ ] B4.4–B4.6 CUDA: PBD kernels, Barnes-Hut GPU, CCD sweep GPU (CPU stubs on main via #29)
 - [ ] B3.5 SVO integration — real carve + dual contouring mesh extraction

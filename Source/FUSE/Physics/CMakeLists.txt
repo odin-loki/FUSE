@@ -12,6 +12,7 @@ add_library(fuse_physics STATIC
     src/narrowphase/gjk.cpp
     src/pbd_solver.cpp
     src/solver/solver_work_buffers.cpp
+    src/solver/constraint_accumulation.cpp
     src/solver/contact_island_graph.cpp
     src/barnes_hut.cpp
     src/ccd.cpp
@@ -30,6 +31,7 @@ add_library(fuse_physics STATIC
     include/fuse/physics/solver/distance_constraint.hpp
     include/fuse/physics/solver/pbd_solver.hpp
     include/fuse/physics/solver/solver_work_buffers.hpp
+    include/fuse/physics/solver/constraint_accumulation.hpp
     include/fuse/physics/solver/contact_island_graph.hpp
     include/fuse/physics/nbody/barnes_hut.hpp
     include/fuse/physics/ccd/ccd.hpp

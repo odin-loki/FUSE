@@ -262,6 +262,184 @@ void testSleepDetection() {
     expectTrue((bodies.flags[sphere] & RB_SLEEPING) != 0u, "resting body enters sleep state");
 }
 
+void testRestLengthSpringConvergesUnderIterations() {
+    CollisionShapeSoA shapes;
+    const f32 restLength = 2.f;
+
+    auto setupChain = [&](RigidBodySoA& bodies) {
+        bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+        bodies.addBody({2.5f, 0.f, 0.f}, 1.f, 0);
+        bodies.addBody({5.5f, 0.f, 0.f}, 1.f, 0);
+        for (u32 i = 0; i < bodies.count(); ++i) {
+            shapes.addShape(CollisionShapeType::Sphere, i, {0.1f, 0.f, 0.f});
+        }
+    };
+
+    RigidBodySoA fewIterBodies;
+    setupChain(fewIterBodies);
+
+    PBDSolver fewIterSolver;
+    fewIterSolver.init(3, 0, 2);
+    fewIterSolver.setDistanceConstraints({
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = restLength},
+        DistanceConstraint{.bodyA = 1, .bodyB = 2, .restLength = restLength},
+    });
+
+    SolverParams fewParams;
+    fewParams.substeps = 1;
+    fewParams.iterations = 1;
+    fewParams.gravity = {};
+    fewParams.broadphase.cellSize = 4.f;
+    fewIterSolver.step(fewIterBodies, shapes, fewParams, 1.f / 60.f);
+    const f32 errFew =
+        std::fabs((fewIterBodies.positions[0] - fewIterBodies.positions[1]).length() - restLength) +
+        std::fabs((fewIterBodies.positions[1] - fewIterBodies.positions[2]).length() - restLength);
+
+    shapes = CollisionShapeSoA{};
+    RigidBodySoA manyIterBodies;
+    setupChain(manyIterBodies);
+
+    PBDSolver manyIterSolver;
+    manyIterSolver.init(3, 0, 2);
+    manyIterSolver.setDistanceConstraints({
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = restLength},
+        DistanceConstraint{.bodyA = 1, .bodyB = 2, .restLength = restLength},
+    });
+
+    SolverParams manyParams = fewParams;
+    manyParams.iterations = 32;
+    manyIterSolver.step(manyIterBodies, shapes, manyParams, 1.f / 60.f);
+    const f32 errMany =
+        std::fabs((manyIterBodies.positions[0] - manyIterBodies.positions[1]).length() - restLength) +
+        std::fabs((manyIterBodies.positions[1] - manyIterBodies.positions[2]).length() - restLength);
+
+    expectTrue(errMany < errFew, "more iterations converge rest-length spring closer to target");
+    expectTrue(errMany < 0.05f, "rest-length spring converges under sufficient iterations");
+}
+
+void testMultiIslandIndependentSolve() {
+    RigidBodySoA bodies;
+    CollisionShapeSoA shapes;
+
+    const u32 pair0A = bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+    const u32 pair0B = bodies.addBody({2.f, 0.f, 0.f}, 1.f, 0);
+    const u32 pair1A = bodies.addBody({20.f, 0.f, 0.f}, 1.f, 0);
+    const u32 pair1B = bodies.addBody({22.f, 0.f, 0.f}, 1.f, 0);
+    for (u32 i = 0; i < bodies.count(); ++i) {
+        shapes.addShape(CollisionShapeType::Sphere, i, {0.1f, 0.f, 0.f});
+    }
+
+    PBDSolver solver;
+    solver.init(4, 0, 2);
+    const f32 restLength = 2.f;
+    solver.setDistanceConstraints({
+        DistanceConstraint{.bodyA = pair0A, .bodyB = pair0B, .restLength = restLength},
+        DistanceConstraint{.bodyA = pair1A, .bodyB = pair1B, .restLength = restLength},
+    });
+
+    SolverParams params;
+    params.substeps = 1;
+    params.iterations = 24;
+    params.gravity = {};
+    params.broadphase.cellSize = 4.f;
+
+    const vec3 pair1BStart = bodies.positions[pair1B];
+    for (int i = 0; i < 40; ++i) {
+        bodies.forces[pair0B] = {80.f, 0.f, 0.f};
+        solver.step(bodies, shapes, params, 1.f / 60.f);
+    }
+
+    const f32 dist0 = (bodies.positions[pair0A] - bodies.positions[pair0B]).length();
+    const f32 dist1 = (bodies.positions[pair1A] - bodies.positions[pair1B]).length();
+    const f32 pair1BShift = (bodies.positions[pair1B] - pair1BStart).length();
+
+    expectNear(dist0, restLength, 0.08f, "loaded island spring holds rest length");
+    expectNear(dist1, restLength, 0.05f, "remote island spring stays at rest length");
+    expectTrue(pair1BShift < 0.05f, "remote island bodies remain independent under local load");
+    expectTrue(solver.islandGraph().islandCount() >= 2u, "disconnected springs form separate islands");
+}
+
+void testConstraintResidualDecreasesWithIterations() {
+    CollisionShapeSoA shapes;
+    const f32 restLength = 2.f;
+
+    auto setupChain = [&](RigidBodySoA& bodies) {
+        bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+        bodies.addBody({2.5f, 0.f, 0.f}, 1.f, 0);
+        bodies.addBody({5.5f, 0.f, 0.f}, 1.f, 0);
+        for (u32 i = 0; i < bodies.count(); ++i) {
+            shapes.addShape(CollisionShapeType::Sphere, i, {0.1f, 0.f, 0.f});
+        }
+    };
+
+    RigidBodySoA fewIterBodies;
+    setupChain(fewIterBodies);
+
+    PBDSolver fewIterSolver;
+    fewIterSolver.init(3, 0, 2);
+    fewIterSolver.setDistanceConstraints({
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = restLength},
+        DistanceConstraint{.bodyA = 1, .bodyB = 2, .restLength = restLength},
+    });
+
+    SolverParams fewParams;
+    fewParams.substeps = 1;
+    fewParams.iterations = 1;
+    fewParams.gravity = {};
+    fewParams.broadphase.cellSize = 4.f;
+    fewIterSolver.step(fewIterBodies, shapes, fewParams, 1.f / 60.f);
+    const f32 residualFew = fewIterSolver.lastConstraintResidual();
+
+    shapes = CollisionShapeSoA{};
+    RigidBodySoA manyIterBodies;
+    setupChain(manyIterBodies);
+
+    PBDSolver manyIterSolver;
+    manyIterSolver.init(3, 0, 2);
+    manyIterSolver.setDistanceConstraints({
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = restLength},
+        DistanceConstraint{.bodyA = 1, .bodyB = 2, .restLength = restLength},
+    });
+
+    SolverParams manyParams = fewParams;
+    manyParams.iterations = 32;
+    manyIterSolver.step(manyIterBodies, shapes, manyParams, 1.f / 60.f);
+    const f32 residualMany = manyIterSolver.lastConstraintResidual();
+
+    expectTrue(residualMany < residualFew, "constraint residual decreases with more iterations");
+    expectTrue(residualMany <= 0.05f, "constraint residual reaches tolerance stub after enough iterations");
+}
+
+void testEarlyExitWhenResidualBelowTolerance() {
+    CollisionShapeSoA shapes;
+    RigidBodySoA bodies;
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+    bodies.addBody({2.05f, 0.f, 0.f}, 1.f, 0);
+    shapes.addShape(CollisionShapeType::Sphere, 0, {0.1f, 0.f, 0.f});
+    shapes.addShape(CollisionShapeType::Sphere, 1, {0.1f, 0.f, 0.f});
+
+    PBDSolver solver;
+    solver.init(2, 0, 1);
+    solver.setDistanceConstraints({DistanceConstraint{
+        .bodyA = 0,
+        .bodyB = 1,
+        .restLength = 2.f,
+    }});
+
+    SolverParams params;
+    params.substeps = 1;
+    params.iterations = 64;
+    params.residualTolerance = 0.02f;
+    params.gravity = {};
+    params.broadphase.cellSize = 4.f;
+
+    solver.step(bodies, shapes, params, 1.f / 60.f);
+    expectTrue(solver.lastIterationCount() < params.iterations,
+               "early-exit stub stops before max iterations when residual is below tolerance");
+    expectTrue(solver.lastConstraintResidual() <= params.residualTolerance,
+               "early-exit stub records residual at or below tolerance");
+}
+
 } // namespace
 
 int main() {
@@ -274,6 +452,10 @@ int main() {
     testSolverReportsIterationCount();
     testContactIslandPartitionsDisconnectedGroups();
     testSleepDetection();
+    testRestLengthSpringConvergesUnderIterations();
+    testMultiIslandIndependentSolve();
+    testConstraintResidualDecreasesWithIterations();
+    testEarlyExitWhenResidualBelowTolerance();
     fuse::core::shutdown();
 
     if (g_failures == 0) {
