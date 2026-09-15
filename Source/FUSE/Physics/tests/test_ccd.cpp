@@ -376,6 +376,116 @@ void testToiBufferCapacityClamp() {
     expectTrue(buffer.droppedCount == 1u, "dropped count tracks clamped pushes");
 }
 
+void testToiBufferCompactAlreadyPacked() {
+    ToiBufferSoA buffer;
+    buffer.preparePairSlots(3u);
+
+    TOIResult first{};
+    first.valid = true;
+    first.toi = 0.2f;
+    first.bodyA = 1u;
+
+    TOIResult second = first;
+    second.toi = 0.5f;
+    second.bodyA = 2u;
+
+    buffer.writeSlot(0u, first);
+    buffer.writeSlot(1u, second);
+
+    expectTrue(buffer.compact() == 2u, "compact on packed slots returns valid count");
+    expectTrue(buffer.activeCount == 2u, "compact on packed slots preserves active count");
+    expectNear(buffer.resultAt(0u).toi, 0.2f, 1e-5f, "packed compact keeps first TOI");
+    expectNear(buffer.resultAt(1u).toi, 0.5f, 1e-5f, "packed compact keeps second TOI");
+}
+
+void testToiBufferCompactAllInvalidSlots() {
+    ToiBufferSoA buffer;
+    buffer.preparePairSlots(4u);
+
+    expectTrue(buffer.compact() == 0u, "compact on all-invalid slots returns zero");
+    expectTrue(buffer.isEmpty(), "compact on all-invalid slots clears active count");
+}
+
+void testToiBufferSortAlreadySortedEarlyOut() {
+    ToiBufferSoA buffer;
+
+    TOIResult first{};
+    first.valid = true;
+    first.toi = 0.1f;
+    first.bodyA = 1u;
+
+    TOIResult second = first;
+    second.toi = 0.4f;
+    second.bodyA = 2u;
+
+    buffer.push(first);
+    buffer.push(second);
+    buffer.sortByToi();
+    expectTrue(buffer.isSortedByToi(), "buffer sorted once reports sorted");
+
+    buffer.sortByToi();
+    expectTrue(buffer.isSortedByToi(), "second sort on sorted buffer is no-op");
+    expectNear(buffer.resultAt(0u).toi, 0.1f, 1e-5f, "sorted early-out preserves earliest TOI");
+    expectNear(buffer.resultAt(1u).toi, 0.4f, 1e-5f, "sorted early-out preserves later TOI");
+}
+
+void testToiBufferApplyMaxCapacityClampEmpty() {
+    ToiBufferSoA buffer;
+    buffer.setMaxCapacity(2u);
+
+    expectTrue(buffer.applyMaxCapacityClamp() == 0u, "clamp on empty buffer returns zero");
+    expectTrue(buffer.isEmpty(), "clamp on empty buffer stays empty");
+    expectTrue(buffer.droppedCount == 0u, "clamp on empty buffer does not increment dropped count");
+}
+
+void testToiBufferApplyMaxCapacityClampPushMode() {
+    ToiBufferSoA buffer;
+
+    TOIResult late{};
+    late.valid = true;
+    late.toi = 0.9f;
+    late.bodyA = 1u;
+
+    TOIResult mid = late;
+    mid.toi = 0.5f;
+    mid.bodyA = 2u;
+
+    TOIResult early = late;
+    early.toi = 0.1f;
+    early.bodyA = 3u;
+
+    buffer.push(late);
+    buffer.push(mid);
+    buffer.push(early);
+    expectTrue(buffer.activeCount == 3u, "push mode accumulates three impacts");
+
+    buffer.setMaxCapacity(2u);
+    expectTrue(buffer.activeCount == 2u, "setMaxCapacity trims push-mode buffer");
+    expectTrue(buffer.droppedCount == 1u, "setMaxCapacity tracks dropped push-mode impacts");
+    expectTrue(buffer.toiValues.size() == 2u, "push-mode clamp shrinks SoA storage");
+    expectNear(buffer.resultAt(0u).toi, 0.1f, 1e-5f, "push-mode clamp keeps earliest TOI");
+    expectNear(buffer.resultAt(1u).toi, 0.5f, 1e-5f, "push-mode clamp keeps next-earliest TOI");
+    expectTrue(buffer.isSortedByToi(), "push-mode clamp leaves sorted order");
+}
+
+void testToiBufferIsFull() {
+    ToiBufferSoA buffer;
+    buffer.setMaxCapacity(2u);
+    expectTrue(!buffer.isFull(), "empty buffer is not full");
+
+    TOIResult result{};
+    result.valid = true;
+    result.toi = 0.3f;
+
+    buffer.push(result);
+    expectTrue(!buffer.isFull(), "partial buffer is not full");
+
+    buffer.push(result);
+    expectTrue(buffer.isFull(), "buffer at max capacity reports full");
+    expectTrue(!buffer.push(result), "push on full buffer is rejected");
+    expectTrue(buffer.droppedCount == 1u, "push on full buffer increments dropped count");
+}
+
 void testToiBufferApplyMaxCapacityClamp() {
     ToiBufferSoA buffer;
     buffer.setMaxCapacity(2u);
@@ -665,6 +775,12 @@ int main() {
     testToiBufferCompactAndSortClampsInOnePass();
     testToiBufferEarliestToi();
     testToiBufferCapacityClamp();
+    testToiBufferCompactAlreadyPacked();
+    testToiBufferCompactAllInvalidSlots();
+    testToiBufferSortAlreadySortedEarlyOut();
+    testToiBufferApplyMaxCapacityClampEmpty();
+    testToiBufferApplyMaxCapacityClampPushMode();
+    testToiBufferIsFull();
     testToiBufferApplyMaxCapacityClamp();
     testSweptSphereAabbFindsImpact();
     testSweptSphereAabbRejectsMiss();

@@ -15,6 +15,12 @@ void ToiBufferSoA::reserve(u32 capacity) {
 
 void ToiBufferSoA::setMaxCapacity(u32 capacity) {
     maxCapacity = capacity;
+    if (maxCapacity > 0u && activeCount > maxCapacity) {
+        if (!isSortedByToi()) {
+            sortByToi();
+        }
+        applyMaxCapacityClamp();
+    }
 }
 
 void ToiBufferSoA::clear() {
@@ -53,7 +59,7 @@ bool ToiBufferSoA::push(const TOIResult& result) {
         return false;
     }
 
-    if (maxCapacity > 0u && activeCount >= maxCapacity) {
+    if (isFull()) {
         ++droppedCount;
         return false;
     }
@@ -69,7 +75,7 @@ bool ToiBufferSoA::push(const TOIResult& result) {
 }
 
 void ToiBufferSoA::sortByToi() {
-    if (activeCount <= 1u) {
+    if (isEmpty() || activeCount <= 1u || isSortedByToi()) {
         return;
     }
 
@@ -112,6 +118,42 @@ u32 ToiBufferSoA::compact() {
         return activeCount;
     }
 
+    u32 validCount = 0u;
+    for (u32 i = 0u; i < pairSlotCount; ++i) {
+        if (validFlags[i] != 0u) {
+            ++validCount;
+        }
+    }
+
+    if (validCount == 0u) {
+        activeCount = 0u;
+        return activeCount;
+    }
+
+    bool alreadyPacked = true;
+    for (u32 i = 0u; i < validCount; ++i) {
+        if (validFlags[i] == 0u) {
+            alreadyPacked = false;
+            break;
+        }
+    }
+    if (alreadyPacked) {
+        for (u32 i = validCount; i < pairSlotCount; ++i) {
+            if (validFlags[i] != 0u) {
+                alreadyPacked = false;
+                break;
+            }
+        }
+    }
+
+    if (alreadyPacked) {
+        activeCount = validCount;
+        for (u32 i = activeCount; i < pairSlotCount; ++i) {
+            validFlags[i] = 0u;
+        }
+        return activeCount;
+    }
+
     u32 writeIndex = 0;
     for (u32 readIndex = 0; readIndex < pairSlotCount; ++readIndex) {
         if (validFlags[readIndex] == 0u) {
@@ -144,6 +186,16 @@ u32 ToiBufferSoA::applyMaxCapacityClamp() {
     droppedCount += excess;
     activeCount = maxCapacity;
 
+    if (pairSlotCount == 0u) {
+        toiValues.resize(activeCount);
+        contactPoints.resize(activeCount);
+        contactNormals.resize(activeCount);
+        bodyA.resize(activeCount);
+        bodyB.resize(activeCount);
+        validFlags.resize(activeCount);
+        return activeCount;
+    }
+
     for (u32 i = activeCount; i < pairSlotCount; ++i) {
         validFlags[i] = 0u;
     }
@@ -161,12 +213,14 @@ u32 ToiBufferSoA::compactAndSort() {
         return 0u;
     }
 
-    sortByToi();
+    if (!isSortedByToi()) {
+        sortByToi();
+    }
     return applyMaxCapacityClamp();
 }
 
 bool ToiBufferSoA::isSortedByToi() const {
-    if (activeCount <= 1u) {
+    if (isEmpty() || activeCount <= 1u) {
         return true;
     }
 
@@ -224,6 +278,10 @@ TOIResult ToiBufferSoA::resultAt(u32 index) const {
 }
 
 std::vector<TOIResult> ToiBufferSoA::toVector() const {
+    if (isEmpty()) {
+        return {};
+    }
+
     std::vector<TOIResult> results;
     results.reserve(activeCount);
     for (u32 i = 0; i < activeCount; ++i) {
