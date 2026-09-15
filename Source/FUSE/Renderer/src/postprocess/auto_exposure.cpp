@@ -44,6 +44,10 @@ f32 ev_to_luminance(f32 ev, f32 target_luminance) {
     return safeTarget * std::pow(2.f, ev);
 }
 
+f32 compute_target_ev(f32 measured_luminance, const AutoExposureParams& params) {
+    return clamp_ev(luminance_to_ev(measured_luminance, params.target_luminance) + params.metering_bias, params);
+}
+
 f32 clamp_ev(f32 ev, const AutoExposureParams& params) {
     return std::clamp(ev, params.min_ev, params.max_ev);
 }
@@ -80,8 +84,7 @@ f32 update_auto_exposure(AutoExposureState& state, f32 measured_luminance, const
         return state.current_ev;
     }
 
-    const f32 targetEv = clamp_ev(luminance_to_ev(measured_luminance, params.target_luminance) + params.metering_bias,
-                                  params);
+    const f32 targetEv = compute_target_ev(measured_luminance, params);
     const f32 deltaEv = targetEv - state.current_ev;
     const f32 speed = deltaEv > 0.f ? params.adaptation_speed_up : params.adaptation_speed_down;
     const f32 maxStep = speed * delta_seconds;
@@ -122,6 +125,14 @@ f32 measurePercentile(const fuse::math::Vec3* samples, u32 count, const Luminanc
     histogram.init(params);
     accumulateSamples(histogram, samples, count);
     return histogram.percentileLuminance(percentile);
+}
+
+f32 meterFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
+                     f32 percentile) {
+    if (samples == nullptr || count == 0) {
+        return 0.f;
+    }
+    return measurePercentile(samples, count, params, percentile);
 }
 
 } // namespace histogram_util
@@ -274,6 +285,9 @@ f32 AutoExposure::updateFromLuminance(f32 measured_luminance, f32 delta_seconds)
 }
 
 f32 AutoExposure::updateFromHistogram(const LuminanceHistogram& histogram, f32 delta_seconds) {
+    if (histogram.isEmpty()) {
+        return m_state.current_ev;
+    }
     return updateFromLuminance(histogram.meteringLuminance(), delta_seconds);
 }
 

@@ -61,6 +61,10 @@ f32 PostStack::updateAutoExposureFromHistogram(const LuminanceHistogram& histogr
     return m_autoExposure.updateFromHistogram(histogram, delta_seconds);
 }
 
+void PostStack::resetAutoExposure() {
+    m_autoExposure.reset();
+}
+
 fuse::math::Vec3 PostStack::processPixel(const fuse::math::Vec3& hdr_input, u64 frame_seed) {
     m_stats = {};
 

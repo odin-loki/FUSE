@@ -147,6 +147,10 @@ void testTonemapCurveEndpoints() {
     expectTrue(fuse::renderer::tonemap_curve_preserves_black(aces), "aces preserves black anchor");
     expectTrue(acesEndpoints.white_output > 0.f && acesEndpoints.white_output <= 1.f,
                "aces white anchor stays in range");
+    expectTrue(fuse::renderer::tonemap_curve_endpoints_valid(filmicEndpoints), "filmic endpoints valid");
+    expectTrue(fuse::renderer::tonemap_curve_endpoints_valid(reinhardEndpoints), "reinhard endpoints valid");
+    expectTrue(fuse::renderer::tonemap_curve_endpoints_valid(acesEndpoints), "aces endpoints valid");
+    expectTrue(fuse::renderer::tonemap_curve_mid_grey_output(filmic) > 0.f, "filmic mid-grey stays in range");
 }
 
 void testTonemapCurveReinhardAcesClamp() {
@@ -185,6 +189,8 @@ void testLuminanceToEvCalibration() {
     expectTrue(fuse::renderer::luminance_to_ev(0.09f, 0.18f) < 0.f, "darker scene yields negative EV");
     expectNear(fuse::renderer::ev_to_luminance(0.f, 0.18f), 0.18f, 1e-5f, "0 EV maps back to target luminance");
     expectNear(fuse::renderer::ev_to_luminance(1.f, 0.18f), 0.36f, 1e-4f, "+1 EV doubles target luminance");
+    expectNear(fuse::renderer::compute_target_ev(0.18f, fuse::renderer::AutoExposureParams{}), 0.f, 1e-5f,
+               "target EV at calibration grey is zero");
 
     const fuse::math::Vec3 hdr{0.25f, 0.5f, 0.1f};
     const fuse::math::Vec3 exposed = fuse::renderer::apply_exposure_ev(hdr, 1.f);
@@ -269,6 +275,8 @@ void testLuminanceHistogramEmpty() {
     expectNear(histogram.meteringLuminance(), 0.f, 1e-6f, "empty histogram metering is zero");
     expectNear(fuse::renderer::LuminanceHistogram::measureFromSamples(nullptr, 0u, params), 0.f, 1e-6f,
                "empty sample buffer yields zero metering");
+    expectNear(fuse::renderer::histogram_util::meterFromSamples(nullptr, 0u, params, 0.5f), 0.f, 1e-6f,
+               "meterFromSamples returns zero for empty input");
     expectTrue(fuse::renderer::LuminanceHistogram::logBinIndex(0.18f, params) < params.bin_count,
                "log bin index stays within histogram range");
     expectNear(fuse::renderer::LuminanceHistogram::binCenterLuminance(0u, params),
@@ -276,6 +284,28 @@ void testLuminanceHistogramEmpty() {
 
     histogram.accumulate({0.18f, 0.18f, 0.18f});
     expectTrue(!histogram.isEmpty(), "histogram reports non-empty after accumulate");
+}
+
+void testAutoExposureEmptyHistogramNoOp() {
+    fuse::renderer::AutoExposure exposure{};
+    exposure.init();
+
+    fuse::renderer::AutoExposureParams params{};
+    params.adaptation_speed_up = 8.f;
+    params.adaptation_speed_down = 8.f;
+    exposure.setParams(params);
+    exposure.updateFromLuminance(0.72f, 0.5f);
+    const fuse::f32 adaptedEv = exposure.currentEv();
+    expectTrue(adaptedEv > 0.f, "exposure adapts before empty histogram update");
+
+    fuse::renderer::LuminanceHistogram histogram{};
+    histogram.init({});
+    const fuse::f32 unchangedEv = exposure.updateFromHistogram(histogram, 0.5f);
+    expectNear(unchangedEv, adaptedEv, 1e-6f, "empty histogram preserves adapted EV");
+    expectNear(exposure.state().measured_luminance, 0.72f, 1e-6f,
+               "empty histogram does not overwrite measured luminance");
+
+    exposure.destroy();
 }
 
 void testAutoExposureClampsAndAdapts() {
@@ -345,6 +375,24 @@ void testPostStackHistogramAutoExposure() {
     stack.destroy();
 }
 
+void testPostStackResetAutoExposure() {
+    fuse::renderer::PostStack stack{};
+    stack.init({});
+
+    fuse::renderer::AutoExposureParams autoParams{};
+    autoParams.adaptation_speed_up = 8.f;
+    autoParams.adaptation_speed_down = 8.f;
+    stack.setAutoExposureParams(autoParams);
+    const fuse::math::Vec3 brightFrame[] = {{1.f, 1.f, 1.f}};
+    stack.updateAutoExposure(brightFrame, 1u, 0.5f);
+    expectTrue(stack.autoExposure().currentEv() > 0.f, "post stack adapts before reset");
+
+    stack.resetAutoExposure();
+    expectNear(stack.autoExposure().currentEv(), 0.f, 1e-6f, "post stack reset clears adapted EV");
+
+    stack.destroy();
+}
+
 void testPostStackAutoExposureIntegration() {
     fuse::renderer::PostStack stack{};
     stack.init({});
@@ -387,8 +435,10 @@ int main() {
     testAutoExposureEmaConverges();
     testLuminanceHistogramPercentileDistribution();
     testLuminanceHistogramEmpty();
+    testAutoExposureEmptyHistogramNoOp();
     testAutoExposureReset();
     testPostStackHistogramAutoExposure();
+    testPostStackResetAutoExposure();
     testAutoExposureClampsAndAdapts();
     testExposureMeterAverage();
     testPostStackAutoExposureIntegration();
