@@ -6,6 +6,8 @@
 
 namespace fuse::platform {
 
+class EventPump;
+
 /// Game-path window description (master plan §B1.7 / P1 §1.7).
 struct WindowDesc {
     const char* title = "FUSE";
@@ -58,6 +60,7 @@ public:
     u32 height() const { return m_height; }
     bool isFullscreen() const { return m_fullscreen; }
     bool vsyncEnabled() const { return m_vsync; }
+    bool isFocused() const { return m_focused; }
 
     NativeWindowHandle nativeHandle() const;
 
@@ -68,10 +71,15 @@ public:
     VulkanSurfaceWire vulkanSurfaceWire() const;
 
     void setTitle(const char* title);
-    void resize(u32 width, u32 height);
+    /// When `pump` is non-null and geometry changes, enqueues `WindowResized`.
+    void resize(u32 width, u32 height, EventPump* pump = nullptr);
     void setFullscreen(bool fullscreen);
 
-    void requestClose();
+    /// When `pump` is non-null, enqueues `WindowFocusGained` / `WindowFocusLost` on change.
+    void setFocused(bool focused, EventPump* pump = nullptr);
+
+    /// When `pump` is non-null, enqueues `WindowCloseRequested`.
+    void requestClose(EventPump* pump = nullptr);
     WindowCloseRequest closeRequest() const { return m_closeRequest; }
     void clearCloseRequest();
 
@@ -82,6 +90,7 @@ private:
     bool m_fullscreen = false;
     bool m_borderless = false;
     bool m_vsync = true;
+    bool m_focused = true;
     WindowCloseRequest m_closeRequest = WindowCloseRequest::None;
     std::string m_title = "FUSE";
 };

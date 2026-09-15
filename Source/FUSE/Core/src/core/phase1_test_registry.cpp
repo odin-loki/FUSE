@@ -44,7 +44,7 @@ const std::vector<Phase1Deliverable> kChecklist = {
     {"logging.profiler_scopes", "CPU ProfileScope ring buffer + chrome JSON", Phase1Module::Logging, true, true},
     {"logging.assert_macros", "FUSE_ASSERT/FUSE_VERIFY fatal hook path", Phase1Module::Logging, true, true},
     {"platform.window_stub", "Window stub stores metadata and null native handle", Phase1Module::Platform, true, true},
-    {"platform.event_pump", "EventPump synthetic queue and quit flow", Phase1Module::Platform, true, true},
+    {"platform.event_pump", "EventPump synthetic queue, resize/focus stubs, poll FIFO", Phase1Module::Platform, true, true},
     {"platform.vulkan_surface", "get_vulkan_surface returns valid VkSurfaceKHR", Phase1Module::Platform, false, false},
     {"io.vfs_async_load", "VFS async read publishes through HandleTable", Phase1Module::Types, true, true},
 };

@@ -41,6 +41,7 @@ Window::Window(Window&& other) noexcept
       m_fullscreen(other.m_fullscreen),
       m_borderless(other.m_borderless),
       m_vsync(other.m_vsync),
+      m_focused(other.m_focused),
       m_closeRequest(other.m_closeRequest),
       m_title(std::move(other.m_title)) {
     other.m_valid = false;
@@ -55,6 +56,7 @@ Window& Window::operator=(Window&& other) noexcept {
         m_fullscreen = other.m_fullscreen;
         m_borderless = other.m_borderless;
         m_vsync = other.m_vsync;
+        m_focused = other.m_focused;
         m_closeRequest = other.m_closeRequest;
         m_title = std::move(other.m_title);
         other.m_valid = false;
@@ -94,12 +96,19 @@ void Window::setTitle(const char* title) {
     m_title = sanitizeTitle(title);
 }
 
-void Window::resize(u32 width, u32 height) {
+void Window::resize(u32 width, u32 height, EventPump* pump) {
+    const u32 previousWidth = m_width;
+    const u32 previousHeight = m_height;
+
     if (width > 0) {
         m_width = width;
     }
     if (height > 0) {
         m_height = height;
+    }
+
+    if (pump != nullptr && (m_width != previousWidth || m_height != previousHeight)) {
+        pump->pushWindowResized(*this);
     }
 }
 
@@ -107,8 +116,28 @@ void Window::setFullscreen(bool fullscreen) {
     m_fullscreen = fullscreen;
 }
 
-void Window::requestClose() {
+void Window::setFocused(bool focused, EventPump* pump) {
+    if (m_focused == focused) {
+        return;
+    }
+
+    m_focused = focused;
+    if (pump == nullptr) {
+        return;
+    }
+
+    if (focused) {
+        pump->pushWindowFocusGained(*this);
+    } else {
+        pump->pushWindowFocusLost(*this);
+    }
+}
+
+void Window::requestClose(EventPump* pump) {
     m_closeRequest = WindowCloseRequest::Requested;
+    if (pump != nullptr) {
+        pump->pushWindowCloseRequested(*this);
+    }
 }
 
 void Window::clearCloseRequest() {
@@ -131,6 +160,22 @@ bool EventPump::pollEvent(PlatformEvent& outEvent) {
     }
 
     return true;
+}
+
+bool EventPump::hasPendingEvents() const {
+    return m_syntheticHead != m_syntheticTail;
+}
+
+u32 EventPump::pendingEventCount() const {
+    if (m_syntheticHead == m_syntheticTail) {
+        return 0;
+    }
+
+    if (m_syntheticTail > m_syntheticHead) {
+        return m_syntheticTail - m_syntheticHead;
+    }
+
+    return kMaxSyntheticEvents - m_syntheticHead + m_syntheticTail;
 }
 
 void EventPump::processOsEvents() {
@@ -158,6 +203,36 @@ void EventPump::pushSyntheticEvent(const PlatformEvent& event) {
 
     m_syntheticEvents[m_syntheticTail] = event;
     m_syntheticTail = nextTail;
+}
+
+void EventPump::pushWindowResized(Window& window) {
+    PlatformEvent event;
+    event.type = PlatformEventType::WindowResized;
+    event.window = &window;
+    event.width = window.width();
+    event.height = window.height();
+    pushSyntheticEvent(event);
+}
+
+void EventPump::pushWindowFocusGained(Window& window) {
+    PlatformEvent event;
+    event.type = PlatformEventType::WindowFocusGained;
+    event.window = &window;
+    pushSyntheticEvent(event);
+}
+
+void EventPump::pushWindowFocusLost(Window& window) {
+    PlatformEvent event;
+    event.type = PlatformEventType::WindowFocusLost;
+    event.window = &window;
+    pushSyntheticEvent(event);
+}
+
+void EventPump::pushWindowCloseRequested(Window& window) {
+    PlatformEvent event;
+    event.type = PlatformEventType::WindowCloseRequested;
+    event.window = &window;
+    pushSyntheticEvent(event);
 }
 
 void EventPump::requestQuit() {
