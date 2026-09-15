@@ -1,7 +1,7 @@
 #include "demo_check.hpp"
 
+#include <fuse/cinematics/camera_track.hpp>
 #include <fuse/cinematics/timeline.hpp>
-#include <fuse/cinematics/track.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/log/logger.hpp>
 #include <fuse/project/loader.hpp>
@@ -25,7 +25,7 @@ int main(int argc, char** argv) {
     fuse::cinematics::Timeline timeline;
     timeline.playhead().set_duration_ms(2'000);
     fuse::cinematics::TrackGroup& group = timeline.add_group("Director");
-    fuse::cinematics::Track& cameraTrack = group.add_track("camera_intro");
+    fuse::cinematics::CameraTrack& cameraTrack = group.add_camera_track("camera_intro");
     cameraTrack.add_event(fuse::cinematics::TimelineEvent("camera_intro", 0, 2'000));
     timeline.play();
 

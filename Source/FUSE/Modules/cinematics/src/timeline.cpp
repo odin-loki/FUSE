@@ -12,6 +12,34 @@ TrackGroup& Timeline::add_group(const std::string& label) {
     return groups_.back();
 }
 
+TrackSpan Timeline::content_span() const {
+    TrackSpan span;
+    bool found = false;
+    for (const TrackGroup& group : groups_) {
+        const TrackSpan group_span = group.span();
+        if (group_span.empty()) {
+            continue;
+        }
+
+        if (!found) {
+            span = group_span;
+            found = true;
+        } else {
+            span.start_ms = std::min(span.start_ms, group_span.start_ms);
+            span.end_ms = std::max(span.end_ms, group_span.end_ms);
+        }
+    }
+    return span;
+}
+
+TimelineMs Timeline::suggested_duration_ms() const {
+    const TrackSpan span = content_span();
+    if (!span.empty()) {
+        return span.end_ms;
+    }
+    return playhead_.duration_ms();
+}
+
 void Timeline::reset(TimelineMs time_ms) {
     playhead_.set_time_ms(time_ms);
     playhead_.clamp_time();
@@ -108,8 +136,10 @@ void Timeline::on_controller_event(TimelineEventCallback callback) {
 
 void Timeline::sort_tracks() {
     for (TrackGroup& group : groups_) {
-        for (Track& track : group.tracks()) {
-            track.sort_events();
+        for (const std::unique_ptr<Track>& track : group.tracks()) {
+            if (track) {
+                track->sort_events();
+            }
         }
     }
 }
