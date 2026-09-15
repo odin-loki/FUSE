@@ -47,6 +47,26 @@ void testSweptSphereSphereRejectsMiss() {
     expectTrue(!result.valid, "parallel miss returns invalid TOI");
 }
 
+void testSweptSphereSphereBoundaryAtOne() {
+    const TOIResult result = sweptSphereSphere(
+        {0.f, 0.f, 0.f}, {9.f, 0.f, 0.f}, 0.5f, {10.f, 0.f, 0.f}, {0.f, 0.f, 0.f}, 0.5f);
+    expectTrue(result.valid, "sphere-sphere sweep accepts impact at t=1 boundary");
+    expectNear(result.toi, 1.f, 1e-4f, "sphere-sphere TOI lands on segment end");
+}
+
+void testSweptSphereSphereRejectsBeyondWindow() {
+    const TOIResult result = sweptSphereSphere(
+        {0.f, 0.f, 0.f}, {15.f, 0.f, 0.f}, 0.5f, {20.f, 0.f, 0.f}, {0.f, 0.f, 0.f}, 0.5f);
+    expectTrue(!result.valid, "sphere-sphere sweep rejects impact beyond t=1");
+}
+
+void testSweptSphereSphereAlreadyTouching() {
+    const TOIResult result = sweptSphereSphere(
+        {0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, 0.5f, {1.f, 0.f, 0.f}, {0.f, 0.f, 0.f}, 0.5f);
+    expectTrue(result.valid, "touching spheres report immediate TOI");
+    expectNear(result.toi, 0.f, 1e-5f, "touching spheres return t=0");
+}
+
 void testSweptSpherePlaneFindsWallImpact() {
     const TOIResult result = sweptSpherePlane(
         {0.f, 0.f, 0.f}, {0.f, 0.f, 50.f}, 0.5f, {0.f, 0.f, 1.f}, 5.f);
@@ -97,6 +117,13 @@ void testSelectEarliestToiHandlesInvalidInput() {
     expectNear(chosen.toi, 0.35f, 1e-5f, "selectEarliestToi preserves valid TOI");
 }
 
+void testSelectEarliestToiBothInvalid() {
+    TOIResult invalidA{};
+    TOIResult invalidB{};
+    const TOIResult chosen = selectEarliestToi(invalidA, invalidB);
+    expectTrue(!chosen.valid, "selectEarliestToi returns invalid when both inputs invalid");
+}
+
 void testIsToiInWindowBoundary() {
     expectTrue(isToiInWindow(0.f), "TOI window includes t=0");
     expectTrue(isToiInWindow(1.f), "TOI window includes t=1");
@@ -108,6 +135,14 @@ void testMakeToiAtContactRejectsOutOfWindow() {
     const TOIResult inWindow =
         makeToiAtContact(0.5f, {0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 1u, 2u);
     expectTrue(inWindow.valid, "makeToiAtContact accepts in-window TOI");
+
+    const TOIResult atZero =
+        makeToiAtContact(0.f, {0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 1u, 2u);
+    expectTrue(atZero.valid, "makeToiAtContact accepts t=0 boundary");
+
+    const TOIResult atOne =
+        makeToiAtContact(1.f, {0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 1u, 2u);
+    expectTrue(atOne.valid, "makeToiAtContact accepts t=1 boundary");
 
     const TOIResult beyondWindow =
         makeToiAtContact(1.5f, {0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 1u, 2u);
@@ -236,6 +271,67 @@ void testRunCcdIntoBufferEmptyPairs() {
     expectTrue(buffer.isSortedByToi(), "empty runCcdIntoBuffer buffer is sorted");
 }
 
+void testToiBufferEarliestToiEmpty() {
+    ToiBufferSoA buffer;
+    expectTrue(buffer.isEmpty(), "default buffer is empty");
+
+    const TOIResult earliest = buffer.earliestToi();
+    expectTrue(!earliest.valid, "earliestToi on empty buffer returns invalid");
+}
+
+void testToiBufferCompactPreservesPushMode() {
+    ToiBufferSoA buffer;
+
+    TOIResult first{};
+    first.valid = true;
+    first.toi = 0.3f;
+    first.bodyA = 1u;
+
+    TOIResult second = first;
+    second.toi = 0.7f;
+    second.bodyA = 2u;
+
+    buffer.push(first);
+    buffer.push(second);
+    expectTrue(buffer.compact() == 2u, "compact preserves push-mode active count");
+    expectTrue(buffer.activeCount == 2u, "push-mode compact leaves active count unchanged");
+}
+
+void testToiBufferCompactAndSortEmpty() {
+    ToiBufferSoA buffer;
+    expectTrue(buffer.compactAndSort() == 0u, "compactAndSort on empty buffer returns zero");
+    expectTrue(buffer.isEmpty(), "compactAndSort on empty buffer stays empty");
+    expectTrue(buffer.isSortedByToi(), "empty compactAndSort buffer reports sorted");
+
+    buffer.preparePairSlots(2u);
+    expectTrue(buffer.compactAndSort() == 0u, "compactAndSort on all-invalid slots returns zero");
+    expectTrue(buffer.isEmpty(), "compactAndSort clears invalid-only slots");
+}
+
+void testToiBufferCompactAndSortClampsInOnePass() {
+    ToiBufferSoA buffer;
+    buffer.setMaxCapacity(1u);
+    buffer.preparePairSlots(3u);
+
+    TOIResult late{};
+    late.valid = true;
+    late.toi = 0.8f;
+    late.bodyA = 1u;
+
+    TOIResult early = late;
+    early.toi = 0.2f;
+    early.bodyA = 2u;
+
+    buffer.writeSlot(0u, late);
+    buffer.writeSlot(2u, early);
+
+    expectTrue(buffer.compactAndSort() == 1u, "compactAndSort clamps to max capacity in one pass");
+    expectTrue(buffer.activeCount == 1u, "clamped buffer keeps one impact");
+    expectTrue(buffer.droppedCount == 1u, "clamped buffer tracks dropped impacts");
+    expectNear(buffer.resultAt(0u).toi, 0.2f, 1e-5f, "compactAndSort keeps earliest TOI after clamp");
+    expectTrue(buffer.isSortedByToi(), "clamped compactAndSort buffer remains sorted");
+}
+
 void testToiBufferEarliestToi() {
     ToiBufferSoA buffer;
     expectTrue(buffer.isEmpty(), "default buffer reports empty");
@@ -327,6 +423,21 @@ void testSweptSphereAabbRejectsMiss() {
     const TOIResult result =
         sweptSphereAabb({0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 0.5f, box);
     expectTrue(!result.valid, "parallel miss against distant AABB is invalid");
+}
+
+void testSweptSphereAabbStartsInsideBox() {
+    const aabb box{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
+    const TOIResult result =
+        sweptSphereAabb({0.f, 0.f, 0.f}, {0.f, 0.f, 5.f}, 0.25f, box);
+    expectTrue(result.valid, "sphere starting inside expanded AABB reports immediate TOI");
+    expectNear(result.toi, 0.f, 1e-5f, "inside AABB sweep returns t=0");
+}
+
+void testSweptSphereAabbRejectsBeyondWindow() {
+    const aabb box{{-1.f, -1.f, 12.f}, {1.f, 1.f, 14.f}};
+    const TOIResult result =
+        sweptSphereAabb({0.f, 0.f, 0.f}, {0.f, 0.f, 5.f}, 0.5f, box);
+    expectTrue(!result.valid, "AABB entry beyond t=1 is invalid");
 }
 
 void testToiBufferClearReuse() {
@@ -529,12 +640,16 @@ int main() {
     fuse::core::initialize();
     testSweptSphereSphereFindsImpact();
     testSweptSphereSphereRejectsMiss();
+    testSweptSphereSphereBoundaryAtOne();
+    testSweptSphereSphereRejectsBeyondWindow();
+    testSweptSphereSphereAlreadyTouching();
     testSweptSpherePlaneFindsWallImpact();
     testSweptSpherePlaneRejectsMiss();
     testSweptSphereSlabFindsThinWallImpact();
     testSweptSphereSlabRejectsMiss();
     testSelectEarliestToiPrefersSoonerImpact();
     testSelectEarliestToiHandlesInvalidInput();
+    testSelectEarliestToiBothInvalid();
     testIsToiInWindowBoundary();
     testMakeToiAtContactRejectsOutOfWindow();
     testSweptSpherePlaneAlreadyOverlapping();
@@ -544,11 +659,17 @@ int main() {
     testToiBufferEmpty();
     testToiBufferCompactAndSort();
     testRunCcdIntoBufferEmptyPairs();
+    testToiBufferEarliestToiEmpty();
+    testToiBufferCompactPreservesPushMode();
+    testToiBufferCompactAndSortEmpty();
+    testToiBufferCompactAndSortClampsInOnePass();
     testToiBufferEarliestToi();
     testToiBufferCapacityClamp();
     testToiBufferApplyMaxCapacityClamp();
     testSweptSphereAabbFindsImpact();
     testSweptSphereAabbRejectsMiss();
+    testSweptSphereAabbStartsInsideBox();
+    testSweptSphereAabbRejectsBeyondWindow();
     testToiBufferClearReuse();
     testRunCcdIntoBufferMaxCapacityKeepsEarliest();
     testRunCcdIntoBufferSortsEarliestFirst();

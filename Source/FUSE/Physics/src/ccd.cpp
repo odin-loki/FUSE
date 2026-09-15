@@ -126,6 +126,11 @@ void runCcdIntoBuffer(const std::vector<broadphase::CandidatePair>& pairs,
                       f32 dt,
                       ToiBufferSoA& buffer) {
     const u32 pairCount = static_cast<u32>(pairs.size());
+    if (pairCount == 0u) {
+        buffer.clear();
+        return;
+    }
+
     buffer.preparePairSlots(pairCount);
 
     // Per-pair slots are job-safe (disjoint writes). Serial dispatch on the CPU stub avoids
