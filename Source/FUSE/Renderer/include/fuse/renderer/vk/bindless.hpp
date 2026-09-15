@@ -67,16 +67,18 @@ public:
     void destroy(const VulkanDevice& device);
 
     BindlessSlotHandle allocateTextureSlot(bool storage = false);
-    BindlessSlotHandle allocateBufferSlot();
+    BindlessSlotHandle allocateBufferSlot(bool uniform = false);
     BindlessSlotHandle allocateSamplerSlot();
     void freeTextureSlot(BindlessSlotHandle handle);
     void freeBufferSlot(BindlessSlotHandle handle);
     void freeSamplerSlot(BindlessSlotHandle handle);
+    void freeSlot(BindlessSlotHandle handle);
 
     bool validateSlot(BindlessSlotHandle handle) const;
     bool isSlotOccupied(BindlessHeapKind kind, u32 index) const;
     u32 slotGeneration(BindlessHeapKind kind, u32 index) const;
     bool slotIsStorageTexture(u32 index) const;
+    bool slotIsUniformBuffer(u32 index) const;
 
     /// Shader binding for a validated slot handle; returns empty binding when invalid.
     BindlessBindingIndex bindingIndexForHandle(BindlessSlotHandle handle) const;
@@ -88,11 +90,17 @@ public:
     u32 heapFreeCount(BindlessHeapKind kind) const;
 
     u32 registerTexture(const Texture& texture, bool storage = false);
-    u32 registerBuffer(const Buffer& buffer);
+    u32 registerBuffer(const Buffer& buffer, bool uniform = false);
     u32 registerSampler(void* samplerHandle);
     void unregisterTexture(u32 index);
     void unregisterBuffer(u32 index);
     void unregisterSampler(u32 index);
+
+    /// Handle-returning register/unregister — preferred over legacy index API.
+    BindlessSlotHandle registerTextureSlot(const Texture& texture, bool storage = false);
+    BindlessSlotHandle registerBufferSlot(const Buffer& buffer, bool uniform = false);
+    BindlessSlotHandle registerSamplerSlot(void* samplerHandle);
+    void unregisterSlot(BindlessSlotHandle handle);
 
     void* layoutHandle() const { return m_layout; }
     void* descriptorSetHandle() const { return m_set; }

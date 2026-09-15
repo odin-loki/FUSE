@@ -170,8 +170,8 @@ BindlessSlotHandle BindlessDescriptors::allocateTextureSlot(bool storage) {
     return allocateSlot(m_textureSlots, m_freeTextureIndices, kMaxTextures, BindlessHeapKind::Texture, storage);
 }
 
-BindlessSlotHandle BindlessDescriptors::allocateBufferSlot() {
-    return allocateSlot(m_bufferSlots, m_freeBufferIndices, kMaxBuffers, BindlessHeapKind::Buffer, false);
+BindlessSlotHandle BindlessDescriptors::allocateBufferSlot(bool uniform) {
+    return allocateSlot(m_bufferSlots, m_freeBufferIndices, kMaxBuffers, BindlessHeapKind::Buffer, uniform);
 }
 
 BindlessSlotHandle BindlessDescriptors::allocateSamplerSlot() {
@@ -197,6 +197,20 @@ void BindlessDescriptors::freeSamplerSlot(BindlessSlotHandle handle) {
         return;
     }
     freeSlot(m_samplerSlots, m_freeSamplerIndices, handle);
+}
+
+void BindlessDescriptors::freeSlot(BindlessSlotHandle handle) {
+    switch (handle.kind) {
+    case BindlessHeapKind::Texture:
+        freeTextureSlot(handle);
+        break;
+    case BindlessHeapKind::Buffer:
+        freeBufferSlot(handle);
+        break;
+    case BindlessHeapKind::Sampler:
+        freeSamplerSlot(handle);
+        break;
+    }
 }
 
 bool BindlessDescriptors::validateSlot(BindlessSlotHandle handle) const {
@@ -236,6 +250,13 @@ bool BindlessDescriptors::slotIsStorageTexture(u32 index) const {
     return m_textureSlots[index].storage;
 }
 
+bool BindlessDescriptors::slotIsUniformBuffer(u32 index) const {
+    if (index >= m_bufferSlots.size()) {
+        return false;
+    }
+    return m_bufferSlots[index].storage;
+}
+
 BindlessBindingIndex BindlessDescriptors::bindingIndexForHandle(BindlessSlotHandle handle) const {
     if (!validateSlot(handle)) {
         return {};
@@ -245,7 +266,7 @@ BindlessBindingIndex BindlessDescriptors::bindingIndexForHandle(BindlessSlotHand
     case BindlessHeapKind::Texture:
         return bindlessTextureBinding(handle.index, m_textureSlots[handle.index].storage);
     case BindlessHeapKind::Buffer:
-        return bindlessBufferBinding(handle.index, false);
+        return bindlessBufferBinding(handle.index, m_bufferSlots[handle.index].storage);
     case BindlessHeapKind::Sampler:
         return bindlessSamplerBinding(handle.index);
     }
@@ -316,9 +337,9 @@ u32 BindlessDescriptors::registerTexture(const Texture& texture, bool storage) {
     return handle.isValid() ? handle.index : UINT32_MAX;
 }
 
-u32 BindlessDescriptors::registerBuffer(const Buffer& buffer) {
+u32 BindlessDescriptors::registerBuffer(const Buffer& buffer, bool uniform) {
     (void)buffer;
-    const BindlessSlotHandle handle = allocateBufferSlot();
+    const BindlessSlotHandle handle = allocateBufferSlot(uniform);
     return handle.isValid() ? handle.index : UINT32_MAX;
 }
 
@@ -350,6 +371,25 @@ u32 BindlessDescriptors::registeredBufferCount() const {
 
 u32 BindlessDescriptors::registeredSamplerCount() const {
     return countLiveSlots(m_samplerSlots);
+}
+
+BindlessSlotHandle BindlessDescriptors::registerTextureSlot(const Texture& texture, bool storage) {
+    (void)texture;
+    return allocateTextureSlot(storage);
+}
+
+BindlessSlotHandle BindlessDescriptors::registerBufferSlot(const Buffer& buffer, bool uniform) {
+    (void)buffer;
+    return allocateBufferSlot(uniform);
+}
+
+BindlessSlotHandle BindlessDescriptors::registerSamplerSlot(void* samplerHandle) {
+    (void)samplerHandle;
+    return allocateSamplerSlot();
+}
+
+void BindlessDescriptors::unregisterSlot(BindlessSlotHandle handle) {
+    freeSlot(handle);
 }
 
 } // namespace fuse::renderer
