@@ -9,12 +9,14 @@
 
 namespace fuse::editor {
 
-/// Captured `UndoStack` metadata for snapshot/restore stubs (B6.2 deepen).
-/// Command payloads remain live on the stack; restore rewinds depth counters only.
+/// Captured `UndoStack` metadata for snapshot/restore (B6.2 deepen).
+/// Restore rewinds live undo/redo depth; command cloning remains deferred.
 struct UndoStackSnapshot {
     u32 undoCount = 0;
     u32 redoCount = 0;
     u32 evictedCount = 0;
+    bool dirty = false;
+    u32 dirtyRevision = 0;
     std::vector<std::string> undoDescriptions;
     std::vector<std::string> redoDescriptions;
 };
@@ -48,6 +50,10 @@ public:
     u32 redoCount() const { return static_cast<u32>(m_redo.size()); }
     u32 evictedCount() const { return m_evictedCount; }
 
+    [[nodiscard]] bool isDirty() const { return m_dirty; }
+    u32 dirtyRevision() const { return m_dirtyRevision; }
+    void markClean();
+
     std::string peekUndoDescription() const;
     std::string peekRedoDescription() const;
 
@@ -59,9 +65,13 @@ public:
 private:
     void evictOldestIfNeeded_();
 
+    void markDirty_();
+
     std::vector<std::unique_ptr<UndoCommand>> m_undo;
     std::vector<std::unique_ptr<UndoCommand>> m_redo;
     u32 m_evictedCount = 0;
+    bool m_dirty = false;
+    u32 m_dirtyRevision = 0;
 };
 
 /// Rename an object and restore the previous name on undo.

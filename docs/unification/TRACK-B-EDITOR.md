@@ -1,6 +1,6 @@
 # Track B — Editor Panels (B6.2–B6.13)
 
-**Status:** B6.2 undo stack + B6.3–B6.5 core panel stubs + B6.6–B6.8 inspector/material/sculpt API stubs + B6.9–B6.12 asset/profiler/console/play-mode stubs landed; **B6.13** Phase 6 integration gate + checklist complete; **B6.2 deepen** — `CommandStack` `push`/undo/redo, coalescing, dirty tracking, `evictedCount`, full snapshot restore + `UndoStackSnapshot` metadata stub; **B6.4 deepen** — `GizmoSystem` ray axis/plane hit tests, local/world delta helpers, translate/rotate snap stubs, `CommandStack`/`EditorState` dirty marking; **B6.7 deepen** — material property bindings (`roughness`/`metallic`/`baseColor`/`shadingModel`), `editDirty`/`previewDirty` flags, `MaterialSystem` push/sync bridge tests; **B6.7 deepen follow-up** — `MaterialPropertyBinding` bind/get/set stubs, per-property dirty coalesce, `needsPanelRefresh`/`refreshPanel` helpers  
+**Status:** B6.2 undo stack + B6.3–B6.5 core panel stubs + B6.6–B6.8 inspector/material/sculpt API stubs + B6.9–B6.12 asset/profiler/console/play-mode stubs landed; **B6.13** Phase 6 integration gate + checklist complete; **B6.2 deepen** — `CommandStack` `push`/undo/redo, coalescing (`propertyValueBefore` baseline), dirty tracking, `peekUndo`/`peekRedo`, `evictedCount`, full snapshot restore + `UndoStackSnapshot` depth rewind restore + dirty stub; **B6.4 deepen** — `GizmoSystem` ray axis/plane hit tests, local/world delta helpers, translate/rotate snap stubs, `CommandStack`/`EditorState` dirty marking; **B6.7 deepen** — material property bindings (`roughness`/`metallic`/`baseColor`/`shadingModel`), `editDirty`/`previewDirty` flags, `MaterialSystem` push/sync bridge tests; **B6.7 deepen follow-up** — `MaterialPropertyBinding` bind/get/set stubs, per-property dirty coalesce, `needsPanelRefresh`/`refreshPanel` helpers  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B6.2–B6.13  
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §2.1–§4, [U6-EDITOR.md](./U6-EDITOR.md)
 
@@ -10,9 +10,9 @@
 
 | Component | Location | Notes |
 |-----------|----------|-------|
-| `UndoCommand` / `UndoStack` / `UndoStackSnapshot` | `Source/FUSE/Editor/include/fuse/editor/undo_stack.hpp` | B6.2 — reversible scene mutations + merge hook; snapshot metadata stub |
+| `UndoCommand` / `UndoStack` / `UndoStackSnapshot` | `Source/FUSE/Editor/include/fuse/editor/undo_stack.hpp` | B6.2 — reversible scene mutations + merge hook; snapshot depth rewind restore + dirty stub |
 | `SetObjectNameCommand` / `ReparentObjectCommand` | same | Core hierarchy rename/reparent commands |
-| `CommandStack` / `CommandStackSnapshot` | `Source/FUSE/Editor/include/fuse/editor/command_stack.hpp` | `EditorCommand` envelope history for B6.6–B6.8 panel stubs; coalescing, dirty tracking, snapshot restore (B6.2 deepen) |
+| `CommandStack` / `CommandStackSnapshot` | `Source/FUSE/Editor/include/fuse/editor/command_stack.hpp` | `EditorCommand` envelope history for B6.6–B6.8 panel stubs; coalescing with `propertyValueBefore`, dirty tracking, `peekUndo`/`peekRedo`, snapshot restore (B6.2 deepen) |
 | `ViewportPanel` | `Source/FUSE/Editor/include/fuse/editor/viewport_panel.hpp` | B6.3 — camera + resize stub |
 | `GizmoSystem` | `Source/FUSE/Editor/include/fuse/editor/gizmo_system.hpp` | B6.4 — translate/rotate/scale drag stub; B6.4 deepen — ray hit tests, snap, delta helpers |
 | `HierarchyModel` / `SceneHierarchyPanel` | `hierarchy_model.hpp`, `scene_hierarchy_panel.hpp` | B6.5 — flatten, search, reparent via `UndoStack` |
@@ -46,10 +46,10 @@
 
 ### B6.2 deepen — command stack + undo history
 
-- **Push / undo / redo** — `CommandStack::push` aliases `execute`; empty-stack undo/redo are no-ops; new `push` after undo clears the redo branch.
-- **Coalescing** — consecutive `SetProperty` commands with the same `target` + `propertyName` collapse into one undo step (slider/drag edits); `coalescedCount()` tracks merges and round-trips in snapshots.
-- **Dirty tracking** — `isDirty()` / `markClean()` / `dirtyRevision()` mirror document-modified state for save prompts.
-- **Snapshot restore** — `CommandStack::captureSnapshot()` / `restoreSnapshot()` copies undo/redo payloads for PIE checkpoints; `UndoStackSnapshot` captures depth + descriptions (restore stub deferred until command cloning).
+- **Push / undo / redo** — `CommandStack::push` aliases `execute`; empty-stack undo/redo are no-ops; new `push` after undo clears the redo branch; `peekUndo()` / `peekRedo()` expose menu labels.
+- **Coalescing** — consecutive `SetProperty` commands with the same `target` + `propertyName` collapse into one undo step (slider/drag edits); `propertyValueBefore` preserves the pre-drag baseline; `coalescedCount()` tracks merges and round-trips in snapshots.
+- **Dirty tracking** — `isDirty()` / `markClean()` / `dirtyRevision()` on both `CommandStack` and `UndoStack` mirror document-modified state for save prompts.
+- **Snapshot restore** — `CommandStack::captureSnapshot()` / `restoreSnapshot()` copies undo/redo payloads for PIE checkpoints; `UndoStackSnapshot` captures depth + descriptions and `restoreSnapshot()` rewinds live undo/redo depth (command cloning still deferred).
 - **MAX_HISTORY** — both `CommandStack` and `UndoStack` cap at 256 entries; oldest commands evicted on overflow (`evictedCount()` on both stacks).
 
 ### Headless panel stubs
@@ -100,7 +100,7 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 | `fuse_editor_command_queue` | `fuse_editor_api_tests` | UI→game command queue |
 | `fuse_editor_host` | `fuse_editor_host_tests` | `EditorHost::gameTick()` drain |
 | `fuse_editor_panels` | `fuse_editor_panels_tests` | B6.6–B6.8 inspector/material/sculpt API; B6.7 deepen property bindings + dirty flags; B6.7 deepen follow-up bind/get/set + dirty coalesce + unbound |
-| `fuse_editor_command_stack` | `fuse_editor_command_stack_tests` | B6.2 `UndoStack` LIFO, merge, rename/reparent, `MAX_HISTORY`, 100-step chain, empty-stack no-ops, snapshot metadata; `CommandStack` push/undo/redo, coalescing, redo-branch clear, dirty tracking, snapshot restore, `evictedCount` |
+| `fuse_editor_command_stack` | `fuse_editor_command_stack_tests` | B6.2 `UndoStack` LIFO, merge, rename/reparent, `MAX_HISTORY`, 100-step chain, empty-stack no-ops, dirty stub, depth-rewind snapshot restore; `CommandStack` push/undo/redo, coalescing baseline, `peekUndo`/`peekRedo`, redo-branch clear, dirty tracking, snapshot restore, `evictedCount` |
 | `fuse_editor_hierarchy_model` | `fuse_editor_hierarchy_model_tests` | B6.5 flatten, search, reparent + undo |
 | `fuse_editor_panels_b69_b612` | `fuse_editor_panels_b69_b612_tests` | B6.9–B6.12 asset/profiler/console/play-mode stubs |
 | `fuse_editor_phase6_integration` | `fuse_editor_phase6_integration_tests` | **B6.13** — `UndoStack` + `SceneHierarchyPanel` + `ViewportPanel` headless wiring |
@@ -121,9 +121,10 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 - [x] `MAX_HISTORY` cap and oldest-command eviction (`UndoStack` + `CommandStack`)
 - [x] 100-command undo chain stress test
 - [x] `CommandStack` `push`/undo/redo with empty-stack no-ops and redo-branch clear on new push
-- [x] `CommandStack` coalescing for consecutive `SetProperty` edits
+- [x] `CommandStack` coalescing for consecutive `SetProperty` edits (`propertyValueBefore` baseline)
 - [x] `CommandStack` dirty tracking + `captureSnapshot` / `restoreSnapshot` (full payload round-trip)
-- [x] `UndoStackSnapshot` metadata capture stub (`restoreSnapshot` deferred)
+- [x] `CommandStack` `peekUndo` / `peekRedo` for menu labels
+- [x] `UndoStackSnapshot` depth rewind restore + dirty stub (`isDirty` / `markClean` / `dirtyRevision`)
 - [x] `evictedCount()` on `CommandStack` and `UndoStack`
 - [ ] `TransformCommand` with drag merge (deferred — needs gizmo wiring)
 

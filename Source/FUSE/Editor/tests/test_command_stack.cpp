@@ -321,9 +321,43 @@ void testCommandStackCoalesceUndoRestoresFirstValue() {
     stack.execute(makeSetPropertyCommand(1u, "transform.position", "4,5,6"));
     stack.execute(makeSetPropertyCommand(1u, "transform.position", "7,8,9"));
 
+    const fuse::editor::EditorCommand* peek = stack.peekUndo();
+    expectTrue(peek != nullptr && peek->propertyValue == "7,8,9", "peek undo shows latest value");
+    expectTrue(peek->propertyValueBefore == "1,2,3", "coalesce preserves drag baseline");
+
     stack.undo();
     expectTrue(stack.undoDepth() == 0u, "single coalesced step undoes in one pop");
     expectTrue(stack.lastApplied() == nullptr, "fully undone stack has no last applied");
+    expectTrue(stack.peekUndo() == nullptr, "peek undo empty after full undo");
+}
+
+void testCommandStackPeekUndoRedo() {
+    fuse::editor::CommandStack stack;
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
+    stack.execute(makeSetPropertyCommand(1u, "sdf.blend_alpha", "0.5"));
+
+    expectTrue(stack.peekUndo()->propertyName == "sdf.blend_alpha", "peek undo returns top undo entry");
+    expectTrue(stack.peekRedo() == nullptr, "peek redo empty before undo");
+
+    stack.undo();
+    expectTrue(stack.peekRedo()->propertyName == "sdf.blend_alpha", "peek redo returns undone entry");
+    expectTrue(stack.peekUndo()->propertyName == "transform.position", "peek undo advances after pop");
+}
+
+void testUndoStackDirtyTracking() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    expectTrue(!stack.isDirty(), "undo stack starts clean");
+    stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "step"));
+    expectTrue(stack.isDirty(), "execute marks undo stack dirty");
+    expectTrue(stack.dirtyRevision() == 1u, "dirty revision increments on execute");
+
+    stack.markClean();
+    stack.undo();
+    expectTrue(stack.isDirty(), "undo marks undo stack dirty");
+    expectTrue(stack.dirtyRevision() == 2u, "dirty revision increments on undo");
 }
 
 void testCommandStackEvictedCount() {
@@ -343,6 +377,7 @@ void testUndoStackSnapshotCapture() {
 
     stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "first"));
     stack.execute(std::make_unique<CounterCommand>(counter, 1, 3, "second"));
+    stack.markClean();
 
     const fuse::editor::UndoStackSnapshot snapshot = stack.captureSnapshot();
     expectTrue(snapshot.undoCount == 2u, "snapshot captures undo depth");
@@ -350,10 +385,13 @@ void testUndoStackSnapshotCapture() {
     expectTrue(snapshot.undoDescriptions.size() == 2u, "snapshot records undo descriptions");
     expectTrue(snapshot.undoDescriptions[0] == "first", "snapshot preserves undo order");
     expectTrue(snapshot.undoDescriptions[1] == "second", "snapshot preserves undo order");
+    expectTrue(!snapshot.dirty, "snapshot captures clean dirty flag");
 
     stack.undo();
     stack.restoreSnapshot(snapshot);
-    expectTrue(stack.undoCount() == 1u, "restore stub is a no-op until command cloning lands");
+    expectTrue(stack.undoCount() == 2u, "restore rewinds depth via redo");
+    expectTrue(counter == 3, "restore replays undone command");
+    expectTrue(!stack.isDirty(), "restore brings back dirty flag");
 }
 
 } // namespace
@@ -376,7 +414,9 @@ int main() {
     testUndoStackEmptyStackNoOps();
     testCommandStackPushClearsRedoBranch();
     testCommandStackCoalesceUndoRestoresFirstValue();
+    testCommandStackPeekUndoRedo();
     testCommandStackEvictedCount();
+    testUndoStackDirtyTracking();
     testUndoStackSnapshotCapture();
     fuse::core::shutdown();
 
