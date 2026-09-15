@@ -173,6 +173,151 @@ void testBlendNodeInterpolation() {
     expectNear(pose.bone_world_transforms[1].data[13], 3.f, 0.05f, "blend node lerps child translation");
 }
 
+void testBlendSpace1DParameterSample() {
+    fuse::animation::BlendSpace1D space;
+    space.entries.push_back({0.f, nullptr});
+    space.entries.push_back({1.f, nullptr});
+    space.entries.push_back({2.f, nullptr});
+
+    const fuse::animation::BlendSpace1DSample sample = fuse::animation::sample_blend_space_1d(space, 0.5f);
+    expectTrue(sample.lower_index == 0u, "blend space 1d sample lower bracket");
+    expectTrue(sample.upper_index == 1u, "blend space 1d sample upper bracket");
+    expectNear(sample.alpha, 0.5f, 1e-4f, "blend space 1d sample alpha");
+}
+
+void testBlendSpace2D() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+
+    fuse::animation::AnimationClip clipA = makePositionClip(1, 1.f);
+    fuse::animation::AnimationClip clipB = makePositionClip(1, 4.f);
+
+    fuse::animation::BlendSpace2D space;
+    auto nodeA = std::make_unique<fuse::animation::ClipNode>();
+    nodeA->clip = &clipA;
+    auto nodeB = std::make_unique<fuse::animation::ClipNode>();
+    nodeB->clip = &clipB;
+    space.entries.push_back({{0.f, 0.f}, std::move(nodeA)});
+    space.entries.push_back({{1.f, 0.f}, std::move(nodeB)});
+
+    fuse::animation::vec2 velocity{0.5f, 0.f};
+    space.param = &velocity;
+
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    space.evaluate_soa(0.f, skel, pose);
+    expectNear(pose.bone_world_transforms[1].data[13], 3.5f, 0.1f, "blend space 2d evaluates into pose soa");
+}
+
+void testBlendSpace2DParameterSample() {
+    fuse::animation::BlendSpace2D space;
+    space.entries.push_back({{0.f, 0.f}, nullptr});
+    space.entries.push_back({{1.f, 0.f}, nullptr});
+
+    const fuse::animation::BlendSpace2DSample sample =
+        fuse::animation::sample_blend_space_2d(space, {0.2f, 0.f});
+    expectTrue(sample.weights.size() == 2u, "blend space 2d sample weight count");
+    expectNear(sample.weights[0] + sample.weights[1], 1.f, 1e-4f, "blend space 2d sample weights normalize");
+    expectTrue(sample.weights[0] > sample.weights[1], "blend space 2d sample favors nearer entry");
+}
+
+void testAdditiveBlendLayer() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::AnimationClip baseClip = makePositionClip(1, 2.f);
+    fuse::animation::AnimationClip layerClip = makePositionClip(1, 5.f);
+
+    auto baseNode = std::make_unique<fuse::animation::ClipNode>();
+    baseNode->clip = &baseClip;
+    auto layerNode = std::make_unique<fuse::animation::ClipNode>();
+    layerNode->clip = &layerClip;
+
+    fuse::animation::AdditiveBlendNode additive;
+    additive.base = std::move(baseNode);
+    additive.layer = std::move(layerNode);
+    additive.masked_bones = {1};
+    additive.layer_weight = 0.5f;
+
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    additive.evaluate_soa(0.f, skel, pose);
+    expectNear(pose.bone_world_transforms[1].data[13], 5.5f, 0.05f, "additive blend applies half delta over base");
+}
+
+void testBlendTreeEvaluateSoA() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::AnimationClip clipA = makePositionClip(1, 1.f);
+    fuse::animation::AnimationClip clipB = makePositionClip(1, 3.f);
+
+    auto nodeA = std::make_unique<fuse::animation::ClipNode>();
+    nodeA->clip = &clipA;
+    auto nodeB = std::make_unique<fuse::animation::ClipNode>();
+    nodeB->clip = &clipB;
+
+    fuse::f32 blend = 0.25f;
+    fuse::animation::BlendNode2 blendNode;
+    blendNode.a = std::move(nodeA);
+    blendNode.b = std::move(nodeB);
+    blendNode.blend_param = &blend;
+
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    blendNode.evaluate_soa(0.f, skel, pose);
+    expectNear(pose.local_positions[1].y, 2.5f, 1e-4f, "blend tree evaluate_soa lerps local position");
+}
+
+void testStateMachineEnterExit() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+
+    fuse::animation::AnimationClip idle = makePositionClip(1, 1.f);
+    fuse::animation::AnimationClip run = makePositionClip(1, 4.f);
+
+    fuse::animation::AnimStateMachine machine;
+    auto idleNode = std::make_unique<fuse::animation::ClipNode>();
+    idleNode->clip = &idle;
+    auto runNode = std::make_unique<fuse::animation::ClipNode>();
+    runNode->clip = &run;
+    machine.add_state("idle", std::move(idleNode));
+    machine.add_state("run", std::move(runNode));
+    machine.states[0].on_exit = []() {};
+    machine.states[1].on_enter = []() {};
+
+    int exitCount = 0;
+    int enterCount = 0;
+    machine.states[0].on_exit = [&]() { ++exitCount; };
+    machine.states[1].on_enter = [&]() { ++enterCount; };
+
+    bool shouldRun = true;
+    machine.add_transition("idle", "run", 0.1f, [&]() { return shouldRun; });
+
+    fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
+    machine.evaluate(0.05f, skel, pose);
+    expectTrue(exitCount == 1, "state machine calls on_exit when leaving");
+    machine.evaluate(0.1f, skel, pose);
+    expectTrue(enterCount == 1, "state machine calls on_enter when entered");
+}
+
+void testStateMachineCrossfadeClamp() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+
+    fuse::animation::AnimationClip idle = makePositionClip(1, 1.f);
+    fuse::animation::AnimationClip run = makePositionClip(1, 4.f);
+
+    fuse::animation::AnimStateMachine machine;
+    auto idleNode = std::make_unique<fuse::animation::ClipNode>();
+    idleNode->clip = &idle;
+    auto runNode = std::make_unique<fuse::animation::ClipNode>();
+    runNode->clip = &run;
+    machine.add_state("idle", std::move(idleNode));
+    machine.add_state("run", std::move(runNode));
+
+    bool shouldRun = true;
+    machine.add_transition("idle", "run", 0.1f, [&]() { return shouldRun; });
+
+    fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
+    machine.evaluate(0.05f, skel, pose);
+    expectNear(machine.crossfade_alpha(), 0.5f, 1e-4f, "state machine crossfade alpha mid transition");
+
+    machine.evaluate(1.f, skel, pose);
+    expectNear(machine.crossfade_alpha(), 0.f, 1e-4f, "state machine crossfade alpha resets after complete");
+    expectTrue(machine.active_state == 1u, "state machine completes transition after crossfade");
+}
+
 void testStateMachineTransition() {
     const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
 
@@ -643,6 +788,11 @@ int main() {
     testClipEvaluateLocalChannels();
     testBlendNodeInterpolation();
     testBlendSpace1D();
+    testBlendSpace1DParameterSample();
+    testBlendSpace2D();
+    testBlendSpace2DParameterSample();
+    testAdditiveBlendLayer();
+    testBlendTreeEvaluateSoA();
     testLayeredBlendMask();
     testLayeredBlendWeights();
     testLayeredBlendUnmaskedBone();
@@ -656,6 +806,8 @@ int main() {
     testTwoBoneIKSoA();
     testRetargetMapBuildByName();
     testRetargetApplyPoseSoA();
+    testStateMachineEnterExit();
+    testStateMachineCrossfadeClamp();
     testStateMachineTransition();
     testFabrikConverges();
     testSkinningCpuPath();
