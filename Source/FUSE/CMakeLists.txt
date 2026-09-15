@@ -24,6 +24,10 @@ if(FUSE_BUILD_AUDIO)
     add_subdirectory(Audio)
 endif()
 
+if(FUSE_BUILD_SCRIPT)
+    add_subdirectory(Script)
+endif()
+
 if(FUSE_BUILD_VULKAN)
     find_package(Vulkan QUIET)
     if(Vulkan_FOUND)
