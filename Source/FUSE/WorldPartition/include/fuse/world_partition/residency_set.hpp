@@ -50,7 +50,7 @@ private:
 };
 
 inline bool ResidencySet::add(GridCoord coord, f32 focus_distance) {
-    if (focus_distance < 0.f) {
+    if (!is_valid_grid_coord(coord) || focus_distance < 0.f) {
         return false;
     }
 
@@ -68,6 +68,10 @@ inline bool ResidencySet::add(GridCoord coord, f32 focus_distance) {
 }
 
 inline bool ResidencySet::remove(GridCoord coord) {
+    if (!is_valid_grid_coord(coord)) {
+        return false;
+    }
+
     const u64 key = grid_coord_key(coord);
     const auto it = m_index.find(key);
     if (it == m_index.end()) {
@@ -87,7 +91,7 @@ inline bool ResidencySet::remove(GridCoord coord) {
 }
 
 inline bool ResidencySet::update_focus_distance(GridCoord coord, f32 focus_distance) {
-    if (focus_distance < 0.f) {
+    if (!is_valid_grid_coord(coord) || focus_distance < 0.f) {
         return false;
     }
 
@@ -146,25 +150,37 @@ inline u32 ResidencySet::find_index_(GridCoord coord) const {
     return it != m_index.end() ? it->second : static_cast<u32>(-1);
 }
 
-/// Stub: register a resident cell; rejects invalid focus distance.
+/// Stub: register a resident cell; rejects invalid coords and focus distance.
 [[nodiscard]] inline bool try_add_resident(ResidencySet& set, GridCoord coord, f32 focus_distance) {
+    if (!is_valid_grid_coord(coord)) {
+        return false;
+    }
     return set.add(coord, focus_distance);
 }
 
-/// Stub: evict a cell from the resident set.
+/// Stub: evict a cell from the resident set; rejects invalid coords.
 [[nodiscard]] inline bool try_remove_resident(ResidencySet& set, GridCoord coord) {
+    if (!is_valid_grid_coord(coord)) {
+        return false;
+    }
     return set.remove(coord);
 }
 
 /// Stub: register residency after a successful async load completes on the game thread.
 [[nodiscard]] inline bool apply_residency_on_load_complete(ResidencySet& set, GridCoord coord,
                                                             f32 focus_distance, bool success) {
+    if (!is_valid_grid_coord(coord)) {
+        return false;
+    }
     return success ? try_add_resident(set, coord, focus_distance) : false;
 }
 
 /// Stub: clear residency after a successful async unload completes on the game thread.
 [[nodiscard]] inline bool apply_residency_on_unload_complete(ResidencySet& set, GridCoord coord,
                                                               bool success) {
+    if (!is_valid_grid_coord(coord)) {
+        return false;
+    }
     return success ? try_remove_resident(set, coord) : false;
 }
 
@@ -195,6 +211,9 @@ template <typename ScoreFn>
                                                               EvictionPolicy policy, f32& out_score) {
     out_score = -1.f;
     for (const GridCoord coord : candidates) {
+        if (!is_valid_grid_coord(coord)) {
+            continue;
+        }
         const f32 score = score_fn(coord);
         if (!can_evict_for_incoming(incoming_priority, score, policy)) {
             continue;
@@ -213,12 +232,50 @@ template <typename ScoreFn>
     std::vector<GridCoord> eligible;
     eligible.reserve(candidates.size());
     for (const GridCoord coord : candidates) {
+        if (!is_valid_grid_coord(coord)) {
+            continue;
+        }
         const f32 score = score_fn(coord);
         if (can_evict_for_incoming(incoming_priority, score, policy)) {
             eligible.push_back(coord);
         }
     }
     return eligible;
+}
+
+/// Empty-set guard: pick budget eviction candidate from a residency set.
+template <typename ScoreFn>
+[[nodiscard]] inline GridCoord pick_budget_eviction_candidate_from_set(const ResidencySet& set,
+                                                                        ScoreFn&& score_fn,
+                                                                        f32 incoming_priority,
+                                                                        EvictionPolicy policy,
+                                                                        f32& out_score) {
+    if (!set.has_eviction_candidate()) {
+        out_score = -1.f;
+        return kInvalidGridCoord;
+    }
+    return pick_budget_eviction_candidate(set.collect_eviction_candidates(), score_fn, incoming_priority,
+                                          policy, out_score);
+}
+
+/// True when the residency set has at least one eligible budget eviction candidate.
+template <typename ScoreFn>
+[[nodiscard]] inline bool has_budget_eviction_candidate(const ResidencySet& set, ScoreFn&& score_fn,
+                                                         f32 incoming_priority, EvictionPolicy policy) {
+    f32 score = -1.f;
+    const GridCoord picked =
+        pick_budget_eviction_candidate_from_set(set, score_fn, incoming_priority, policy, score);
+    return is_valid_grid_coord(picked) && score > 0.f;
+}
+
+/// Combined unload rank for budget-driven eviction (B7.6 deepen).
+[[nodiscard]] inline f32 eviction_unload_priority(f32 streaming_priority, f32 stored_priority,
+                                                   f32 focus_distance, f32 unload_distance_priority,
+                                                   u32 last_touch_tick, u32 current_tick,
+                                                   EvictionPolicy policy) {
+    const f32 budget_score = budget_eviction_score(focus_distance, unload_distance_priority,
+                                                    last_touch_tick, current_tick, policy);
+    return rank_budget_unload_priority(streaming_priority, stored_priority, focus_distance, budget_score);
 }
 
 } // namespace fuse::world_partition

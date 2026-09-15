@@ -159,4 +159,13 @@ enum class EvictionPolicy : u8 {
     return incoming_outranks_eviction(incoming_priority, eviction_score);
 }
 
+/// True when budget pressure exists and the residency set can supply an eviction candidate.
+[[nodiscard]] inline bool can_attempt_budget_eviction(u32 max_loaded_cells, u32 resident_count,
+                                                        u64 max_resident_bytes, u64 resident_bytes,
+                                                        u64 incoming_bytes, bool has_eviction_candidate) {
+    return needs_budget_eviction_for_incoming(max_loaded_cells, resident_count, max_resident_bytes,
+                                              resident_bytes, incoming_bytes) &&
+           has_eviction_candidate;
+}
+
 } // namespace fuse::world_partition

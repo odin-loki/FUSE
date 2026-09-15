@@ -537,6 +537,28 @@ void testRankUnloadPriority() {
                "stub alias matches rank_unload_priority");
 }
 
+void testRankBudgetUnloadPriority() {
+    expectNear(fuse::world_partition::rank_budget_unload_priority(2.f, 8.f, 5.f, 3.f), 8.f, 1e-4f,
+               "rank budget picks unload rank when higher");
+    expectNear(fuse::world_partition::rank_budget_unload_priority(2.f, 3.f, 5.f, 9.f), 9.f, 1e-4f,
+               "rank budget picks budget score when higher");
+    expectNear(fuse::world_partition::eviction_unload_priority(2.f, 3.f, 900.f, 0.f, 0u, 10u,
+                                                              fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               900.f, 1e-4f, "eviction unload priority merges budget focus distance");
+    expectNear(fuse::world_partition::eviction_unload_priority(2.f, 3.f, 0.f, 50.f, 2u, 10u,
+                                                              fuse::world_partition::EvictionPolicy::Lru),
+               8.f, 1e-4f, "eviction unload priority uses LRU budget score");
+}
+
+void testCanAttemptBudgetEviction() {
+    expectTrue(!fuse::world_partition::can_attempt_budget_eviction(2u, 2u, 2048u, 1024u, 1024u, false),
+               "cannot attempt eviction without residency candidate");
+    expectTrue(fuse::world_partition::can_attempt_budget_eviction(2u, 2u, 2048u, 1024u, 1024u, true),
+               "can attempt eviction when pressure and candidate exist");
+    expectTrue(!fuse::world_partition::can_attempt_budget_eviction(4u, 2u, 0u, 1024u, 1024u, true),
+               "cannot attempt eviction when headroom remains");
+}
+
 void testInvalidGridCoordSentinel() {
     expectTrue(!fuse::world_partition::is_valid_grid_coord(fuse::world_partition::kInvalidGridCoord),
                "invalid sentinel coord is not valid");
@@ -649,6 +671,60 @@ void testPickBudgetEvictionCandidate() {
             600.f, fuse::world_partition::EvictionPolicy::DistanceFromFocus, score);
     expectTrue(picked == mid_cell, "skips blocked farthest and picks next eligible candidate");
     expectNear(score, 500.f, 1e-4f, "picked candidate score recorded");
+}
+
+void testPickBudgetEvictionCandidateFromSet() {
+    fuse::world_partition::ResidencySet residency;
+    fuse::f32 score = -1.f;
+    const fuse::world_partition::GridCoord empty_pick =
+        fuse::world_partition::pick_budget_eviction_candidate_from_set(
+            residency,
+            [&](fuse::world_partition::GridCoord) { return 0.f; }, 100.f,
+            fuse::world_partition::EvictionPolicy::DistanceFromFocus, score);
+    expectTrue(empty_pick == fuse::world_partition::kInvalidGridCoord,
+               "empty residency guarded pick returns invalid coord");
+    expectNear(score, -1.f, 1e-4f, "empty residency leaves score unset");
+
+    const fuse::world_partition::GridCoord far_cell{5, 0};
+    residency.add(far_cell, 900.f);
+    const fuse::world_partition::GridCoord picked =
+        fuse::world_partition::pick_budget_eviction_candidate_from_set(
+            residency,
+            [&](fuse::world_partition::GridCoord coord) {
+                return residency.focus_distance_for(coord);
+            },
+            950.f, fuse::world_partition::EvictionPolicy::DistanceFromFocus, score);
+    expectTrue(picked == far_cell, "guarded set pick returns eligible candidate");
+    expectNear(score, 900.f, 1e-4f, "guarded set pick records candidate score");
+}
+
+void testHasBudgetEvictionCandidate() {
+    fuse::world_partition::ResidencySet residency;
+    expectTrue(!fuse::world_partition::has_budget_eviction_candidate(
+                   residency,
+                   [&](fuse::world_partition::GridCoord) { return 0.f; }, 100.f,
+                   fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               "empty residency has no budget eviction candidate");
+
+    const fuse::world_partition::GridCoord near_cell{1, 0};
+    const fuse::world_partition::GridCoord far_cell{5, 0};
+    residency.add(near_cell, 100.f);
+    residency.add(far_cell, 900.f);
+
+    expectTrue(!fuse::world_partition::has_budget_eviction_candidate(
+                   residency,
+                   [&](fuse::world_partition::GridCoord coord) {
+                       return residency.focus_distance_for(coord);
+                   },
+                   50.f, fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               "weak incoming yields no eligible budget candidate");
+    expectTrue(fuse::world_partition::has_budget_eviction_candidate(
+                   residency,
+                   [&](fuse::world_partition::GridCoord coord) {
+                       return residency.focus_distance_for(coord);
+                   },
+                   950.f, fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               "strong incoming finds eligible budget candidate");
 }
 
 void testBudgetEvictionScoreStub() {
@@ -1222,6 +1298,7 @@ void testStreamingRequestQueueMixedCompletionOrdering() {
 void testResidencySetEmptyStubOperations() {
     fuse::world_partition::ResidencySet residency;
     const fuse::world_partition::GridCoord missing{7, 7};
+    const fuse::world_partition::GridCoord invalid = fuse::world_partition::kInvalidGridCoord;
 
     expectTrue(residency.empty(), "fresh residency set is empty");
     expectTrue(!residency.contains(missing), "missing coord not resident");
@@ -1239,6 +1316,37 @@ void testResidencySetEmptyStubOperations() {
     expectTrue(fuse::world_partition::try_add_resident(residency, missing, 100.f), "add stub succeeds");
     expectTrue(fuse::world_partition::try_remove_resident(residency, missing), "remove stub succeeds");
     expectTrue(residency.empty(), "residency empty after stub remove");
+}
+
+void testInvalidCoordResidencyEarlyOuts() {
+    fuse::world_partition::ResidencySet residency;
+    const fuse::world_partition::GridCoord invalid = fuse::world_partition::kInvalidGridCoord;
+    const fuse::world_partition::GridCoord negative{-1, 0};
+
+    expectTrue(!residency.add(invalid, 100.f), "add rejects invalid coord");
+    expectTrue(!residency.add(negative, 100.f), "add rejects negative coord");
+    expectTrue(!residency.remove(invalid), "remove rejects invalid coord");
+    expectTrue(!residency.update_focus_distance(invalid, 50.f), "update rejects invalid coord");
+    expectTrue(!fuse::world_partition::try_add_resident(residency, invalid, 100.f),
+               "try_add_resident rejects invalid coord");
+    expectTrue(!fuse::world_partition::try_remove_resident(residency, invalid),
+               "try_remove_resident rejects invalid coord");
+    expectTrue(!fuse::world_partition::apply_residency_on_load_complete(residency, invalid, 100.f, true),
+               "load completion stub rejects invalid coord");
+    expectTrue(!fuse::world_partition::apply_residency_on_unload_complete(residency, invalid, true),
+               "unload completion stub rejects invalid coord");
+    expectTrue(residency.empty(), "invalid coord ops leave residency empty");
+
+    const auto candidates_with_invalid = std::vector<fuse::world_partition::GridCoord>{
+        invalid, {3, 0}, {1, 0}};
+    const auto eligible = fuse::world_partition::collect_budget_eviction_candidates(
+        candidates_with_invalid,
+        [](fuse::world_partition::GridCoord coord) {
+            return coord.x == 3 ? 500.f : 100.f;
+        },
+        450.f, fuse::world_partition::EvictionPolicy::DistanceFromFocus);
+    expectEq(static_cast<fuse::u32>(eligible.size()), 1u, "invalid coord skipped in budget candidate collect");
+    expectTrue(eligible[0].x == 1, "eligible list ignores invalid coord entries");
 }
 
 void testWorldPartitionAsyncEnqueueFlushCarryover() {
@@ -1330,12 +1438,16 @@ int main() {
     testEffectiveUnloadPriority();
     testRankUnloadPriorityStub();
     testRankUnloadPriority();
+    testRankBudgetUnloadPriority();
+    testCanAttemptBudgetEviction();
     testInvalidGridCoordSentinel();
     testPickEvictionCandidateGuarded();
     testCollectBudgetEvictionCandidates();
     testResidentCapIncomingGuards();
     testIncomingOutranksEviction();
     testPickBudgetEvictionCandidate();
+    testPickBudgetEvictionCandidateFromSet();
+    testHasBudgetEvictionCandidate();
     testBudgetEvictionScoreStub();
     testCollectEvictionCandidatesOrdering();
     testBudgetEvictionCounters();
@@ -1366,6 +1478,7 @@ int main() {
     testApplyResidencyCompletionStubs();
     testStreamingRequestQueueMixedCompletionOrdering();
     testResidencySetEmptyStubOperations();
+    testInvalidCoordResidencyEarlyOuts();
     testResidencySetFocusDistance();
     testWorldPartitionResidencySetTracking();
     testWorldPartitionAsyncEnqueueFlushCarryover();
