@@ -1,4 +1,6 @@
 #include <fuse/core/init.hpp>
+#include <fuse/editor/command_queue.hpp>
+#include <fuse/editor/command_stack.hpp>
 #include <fuse/editor/undo_stack.hpp>
 #include <fuse/object.hpp>
 
@@ -48,6 +50,16 @@ private:
     int m_after;
     std::string m_label;
 };
+
+fuse::editor::EditorCommand makeSetPropertyCommand(fuse::u32 targetIndex, const char* propertyName,
+                                                   const char* propertyValue) {
+    fuse::editor::EditorCommand command;
+    command.kind = fuse::editor::CommandKind::SetProperty;
+    command.target = fuse::Handle<fuse::Object>(targetIndex, 1u);
+    command.propertyName = propertyName;
+    command.propertyValue = propertyValue;
+    return command;
+}
 
 void testUndoRedoLifo() {
     fuse::editor::UndoStack stack;
@@ -107,6 +119,153 @@ void testReparentObjectCommand() {
     expectTrue(child.parent() == &root, "reparent undone");
 }
 
+void testUndoStackMaxHistoryEviction() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    for (int step = 0; step < fuse::editor::UndoStack::kMaxHistory + 10; ++step) {
+        stack.execute(std::make_unique<CounterCommand>(counter, counter, counter + 1,
+                                                       "step " + std::to_string(step)));
+    }
+
+    expectTrue(stack.undoCount() == fuse::editor::UndoStack::kMaxHistory,
+               "undo stack capped at MAX_HISTORY");
+    expectTrue(stack.evictedCount() == 10u, "oldest commands evicted past cap");
+
+    for (fuse::u32 step = 0; step < fuse::editor::UndoStack::kMaxHistory; ++step) {
+        stack.undo();
+    }
+
+    expectTrue(counter == 10, "undo chain restores state after oldest evictions");
+    expectTrue(!stack.canUndo(), "all undo steps consumed");
+}
+
+void testUndoStackHundredCommandChain() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    for (int step = 0; step < 100; ++step) {
+        stack.execute(std::make_unique<CounterCommand>(
+            counter, counter, counter + 1, "increment " + std::to_string(step)));
+    }
+
+    expectTrue(counter == 100, "100 commands applied");
+    expectTrue(stack.undoCount() == 100u, "100 undo steps recorded");
+
+    for (int step = 0; step < 100; ++step) {
+        stack.undo();
+    }
+
+    expectTrue(counter == 0, "100-step undo restores initial state");
+    expectTrue(stack.redoCount() == 100u, "100 redo steps available");
+}
+
+void testCommandStackCoalescesPropertyEdits() {
+    fuse::editor::CommandStack stack;
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "4,5,6"));
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "7,8,9"));
+
+    expectTrue(stack.undoDepth() == 1u, "consecutive property edits coalesce to one undo step");
+    expectTrue(stack.coalescedCount() == 2u, "coalesced count tracks merged commands");
+    expectTrue(stack.appliedCount() == 3u, "pending queue still receives each applied value");
+
+    const fuse::editor::EditorCommand* last = stack.lastApplied();
+    expectTrue(last != nullptr && last->propertyValue == "7,8,9", "last applied value retained");
+
+    stack.execute(makeSetPropertyCommand(1u, "sdf.blend_alpha", "0.5"));
+    expectTrue(stack.undoDepth() == 2u, "different property starts new undo step");
+}
+
+void testCommandStackDoesNotCoalesceDifferentTargets() {
+    fuse::editor::CommandStack stack;
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
+    stack.execute(makeSetPropertyCommand(2u, "transform.position", "4,5,6"));
+
+    expectTrue(stack.undoDepth() == 2u, "different targets do not coalesce");
+    expectTrue(stack.coalescedCount() == 0u, "no coalescing across targets");
+}
+
+void testCommandStackDirtyTracking() {
+    fuse::editor::CommandStack stack;
+
+    expectTrue(!stack.isDirty(), "stack starts clean");
+    expectTrue(stack.dirtyRevision() == 0u, "dirty revision starts at zero");
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
+    expectTrue(stack.isDirty(), "execute marks stack dirty");
+    expectTrue(stack.dirtyRevision() == 1u, "dirty revision increments on execute");
+
+    stack.markClean();
+    expectTrue(!stack.isDirty(), "markClean clears dirty flag");
+    expectTrue(stack.dirtyRevision() == 1u, "dirty revision preserved after markClean");
+
+    stack.undo();
+    expectTrue(stack.isDirty(), "undo marks stack dirty");
+    expectTrue(stack.dirtyRevision() == 2u, "dirty revision increments on undo");
+}
+
+void testCommandStackSnapshotRestore() {
+    fuse::editor::CommandStack stack;
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
+    stack.execute(makeSetPropertyCommand(1u, "sdf.blend_alpha", "0.25"));
+    stack.markClean();
+
+    const fuse::editor::CommandStackSnapshot snapshot = stack.captureSnapshot();
+    expectTrue(snapshot.undoDepth == 2u, "snapshot captures undo depth");
+    expectTrue(!snapshot.dirty, "snapshot captures clean dirty flag");
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "9,9,9"));
+    stack.undo();
+    expectTrue(stack.undoDepth() == 2u, "mutations change stack before restore");
+
+    stack.restoreSnapshot(snapshot);
+    expectTrue(stack.undoDepth() == 2u, "restore brings back undo depth");
+    expectTrue(stack.redoDepth() == 0u, "restore clears redo branch");
+    expectTrue(!stack.isDirty(), "restore brings back dirty flag");
+    expectTrue(stack.dirtyRevision() == snapshot.dirtyRevision, "restore brings back dirty revision");
+
+    const fuse::editor::EditorCommand* last = stack.lastApplied();
+    expectTrue(last != nullptr && last->propertyName == "sdf.blend_alpha",
+               "restore brings back last applied command");
+}
+
+void testCommandStackMaxHistoryEviction() {
+    fuse::editor::CommandStack stack;
+
+    for (fuse::u32 step = 0; step < fuse::editor::CommandStack::kMaxHistory + 5u; ++step) {
+        stack.execute(makeSetPropertyCommand(step + 1u, "transform.position",
+                                             std::to_string(step).c_str()));
+    }
+
+    expectTrue(stack.undoDepth() == fuse::editor::CommandStack::kMaxHistory,
+               "command stack capped at MAX_HISTORY");
+    expectTrue(stack.canUndo(), "evicted stack still supports undo");
+
+    const fuse::editor::EditorCommand* last = stack.lastApplied();
+    expectTrue(last != nullptr && last->target.index() == fuse::editor::CommandStack::kMaxHistory + 5u,
+               "latest command survives eviction");
+}
+
+void testCommandStackUndoRedo() {
+    fuse::editor::CommandStack stack;
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
+    stack.execute(makeSetPropertyCommand(1u, "sdf.blend_alpha", "0.5"));
+
+    expectTrue(stack.canUndo(), "undo available after execute");
+    stack.undo();
+    expectTrue(stack.undoDepth() == 1u, "undo pops latest command");
+    expectTrue(stack.canRedo(), "redo available after undo");
+
+    stack.redo();
+    expectTrue(stack.undoDepth() == 2u, "redo restores command");
+    expectTrue(stack.lastApplied()->propertyName == "sdf.blend_alpha", "redo restores last value");
+}
+
 } // namespace
 
 int main() {
@@ -115,6 +274,14 @@ int main() {
     testMergeConsecutiveCommands();
     testSetObjectNameCommand();
     testReparentObjectCommand();
+    testUndoStackMaxHistoryEviction();
+    testUndoStackHundredCommandChain();
+    testCommandStackCoalescesPropertyEdits();
+    testCommandStackDoesNotCoalesceDifferentTargets();
+    testCommandStackDirtyTracking();
+    testCommandStackSnapshotRestore();
+    testCommandStackMaxHistoryEviction();
+    testCommandStackUndoRedo();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

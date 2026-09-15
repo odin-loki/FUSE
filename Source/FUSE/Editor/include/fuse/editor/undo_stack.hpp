@@ -25,6 +25,8 @@ public:
 /// LIFO undo/redo stack for reversible scene mutations (B6.2).
 class UndoStack {
 public:
+    static constexpr u32 kMaxHistory = 256;
+
     void execute(std::unique_ptr<UndoCommand> command);
     void undo();
     void redo();
@@ -34,6 +36,7 @@ public:
 
     u32 undoCount() const { return static_cast<u32>(m_undo.size()); }
     u32 redoCount() const { return static_cast<u32>(m_redo.size()); }
+    u32 evictedCount() const { return m_evictedCount; }
 
     std::string peekUndoDescription() const;
     std::string peekRedoDescription() const;
@@ -41,8 +44,11 @@ public:
     void clear();
 
 private:
+    void evictOldestIfNeeded_();
+
     std::vector<std::unique_ptr<UndoCommand>> m_undo;
     std::vector<std::unique_ptr<UndoCommand>> m_redo;
+    u32 m_evictedCount = 0;
 };
 
 /// Rename an object and restore the previous name on undo.

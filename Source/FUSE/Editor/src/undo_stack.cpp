@@ -8,6 +8,15 @@ const std::string kEmptyDescription;
 
 } // namespace
 
+void UndoStack::evictOldestIfNeeded_() {
+    if (m_undo.size() <= kMaxHistory) {
+        return;
+    }
+
+    m_undo.erase(m_undo.begin());
+    ++m_evictedCount;
+}
+
 void UndoStack::execute(std::unique_ptr<UndoCommand> command) {
     if (!command) {
         return;
@@ -21,6 +30,7 @@ void UndoStack::execute(std::unique_ptr<UndoCommand> command) {
     command->execute();
     m_undo.push_back(std::move(command));
     m_redo.clear();
+    evictOldestIfNeeded_();
 }
 
 void UndoStack::undo() {
@@ -62,6 +72,7 @@ std::string UndoStack::peekRedoDescription() const {
 void UndoStack::clear() {
     m_undo.clear();
     m_redo.clear();
+    m_evictedCount = 0;
 }
 
 SetObjectNameCommand::SetObjectNameCommand(Object& object, std::string before, std::string after)
