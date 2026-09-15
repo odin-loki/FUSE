@@ -357,6 +357,18 @@ void testProbeBorderCounts() {
     const fuse::renderer::ProbeBorderCounts emptyKind =
         fuse::renderer::ddgi_util::countProbesByBorderKind(empty);
     expectTrue(emptyKind.total == 0u, "empty grid border-kind total is zero");
+    expectTrue(fuse::renderer::ddgi_util::validateBorderCounts(emptyKind),
+               "empty grid border counts are valid");
+
+    expectTrue(fuse::renderer::ddgi_util::validateBorderCounts(byKind),
+               "3x3x3 border counts satisfy invariants");
+    expectTrue(fuse::renderer::ddgi_util::validateBorderCounts(loneKind),
+               "1x1x1 border counts satisfy invariants");
+
+    fuse::renderer::ProbeBorderCounts invalidKind = byKind;
+    invalidKind.face += 1u;
+    expectTrue(!fuse::renderer::ddgi_util::validateBorderCounts(invalidKind),
+               "inflated face count fails border validation");
 }
 
 void testEmptyDirectionGuards() {
@@ -406,6 +418,68 @@ void testEmptyDirectionGuards() {
             desc, {0.5f, 0.5f, 0.5f}, {0.f, 1.f, 0.f}, cache.data(), static_cast<fuse::u32>(cache.size()));
     expectTrue(emptyTrilinear.x > 0.f, "empty direction trilinear sample is non-zero");
     expectNear(emptyTrilinear.x, upTrilinear.x, 1e-4f, "empty direction trilinear matches +Y");
+}
+
+void testDegenerateSpacingGuards() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_origin = {0.f, 0.f, 0.f};
+    desc.probe_spacing = {0.f, 2.f, 2.f};
+    desc.grid_dims = {2, 2, 2};
+
+    expectTrue(fuse::renderer::ProbeGridLayout::isDegenerateSpacing(desc),
+               "zero spacing axis is degenerate");
+    expectTrue(!fuse::renderer::ProbeGridLayout::isDegenerateSpacing(fuse::renderer::DDGIDesc{}),
+               "default spacing is not degenerate");
+
+    const fuse::math::Vec3 gridCoord =
+        fuse::renderer::ProbeGridLayout::worldToProbeGridCoord(desc, {4.f, 2.f, 2.f});
+    expectNear(gridCoord.x, 0.f, 1e-5f, "degenerate spacing yields zero grid coord");
+
+    expectTrue(fuse::renderer::classifyDdgiSampleSkip(desc, true, 8u) ==
+                   fuse::renderer::DdgiSampleSkipReason::DegenerateSpacing,
+               "degenerate spacing blocks irradiance sample");
+    expectTrue(!fuse::renderer::canSampleIrradiance(desc, true, 8u),
+               "canSampleIrradiance false for degenerate spacing");
+}
+
+void testDdgiSampleGuards() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+
+    expectTrue(fuse::renderer::classifyDdgiSampleSkip(desc, false, 8u) ==
+                   fuse::renderer::DdgiSampleSkipReason::NotReady,
+               "not-ready DDGI skips sample");
+    expectTrue(fuse::renderer::classifyDdgiSampleSkip(desc, true, 0u) ==
+                   fuse::renderer::DdgiSampleSkipReason::EmptyCache,
+               "empty cache skips sample");
+    expectTrue(fuse::renderer::classifyDdgiSampleSkip(desc, true, 8u) ==
+                   fuse::renderer::DdgiSampleSkipReason::None,
+               "ready DDGI with cache can sample");
+    expectTrue(fuse::renderer::canSampleIrradiance(desc, true, 8u),
+               "canSampleIrradiance true when guards pass");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+    expectTrue(fuse::renderer::classifyDdgiSampleSkip(empty, true, 8u) ==
+                   fuse::renderer::DdgiSampleSkipReason::EmptyGrid,
+               "empty grid skips sample");
+}
+
+void testTrilinearNeighbourhoodCount() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {3, 3, 3};
+    expectTrue(fuse::renderer::ddgi_util::countProbesWithTrilinearNeighbourhood(desc) == 1u,
+               "3x3x3 has one trilinear-neighbourhood probe");
+
+    fuse::renderer::DDGIDesc slab{};
+    slab.grid_dims = {3, 1, 3};
+    expectTrue(fuse::renderer::ddgi_util::countProbesWithTrilinearNeighbourhood(slab) == 0u,
+               "1-cell-thick slab has no trilinear neighbourhood");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 3, 3};
+    expectTrue(fuse::renderer::ddgi_util::countProbesWithTrilinearNeighbourhood(empty) == 0u,
+               "empty grid trilinear neighbourhood count is zero");
 }
 
 void testProbeWorldPositionClamped() {
@@ -714,6 +788,17 @@ void testDdgiInitUpdateSample() {
     expectTrue(sample.valid, "irradiance sample valid");
     expectTrue(sample.nearest_probe == 0u, "nearest probe at origin cell");
 
+    fuse::renderer::DDGISampleRequest emptyNormalRequest = sampleRequest;
+    emptyNormalRequest.world_normal = {0.f, 0.f, 0.f};
+    const fuse::renderer::DDGISampleResult emptyNormalSample = ddgi.sampleIrradiance(emptyNormalRequest);
+    expectTrue(emptyNormalSample.valid, "empty normal sample still valid via direction resolve");
+    expectTrue(emptyNormalSample.irradiance.x > 0.f, "empty normal sample yields non-zero irradiance");
+
+    fuse::renderer::DDGI notReadyDdgi;
+    const fuse::renderer::DDGISampleResult notReadySample =
+        notReadyDdgi.sampleIrradiance(sampleRequest);
+    expectTrue(!notReadySample.valid, "not-ready DDGI returns invalid sample");
+
     ddgi.destroy();
     expectTrue(!ddgi.isReady(), "DDGI destroyed");
     resources.destroy();
@@ -753,6 +838,9 @@ int main() {
     testClampProbeSampleCoords();
     testProbeBorderCounts();
     testEmptyDirectionGuards();
+    testDegenerateSpacingGuards();
+    testDdgiSampleGuards();
+    testTrilinearNeighbourhoodCount();
     testProbeWorldPositionClamped();
     testProbeAtlasLayout();
     testIrradianceOctahedralEncoding();

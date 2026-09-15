@@ -82,6 +82,15 @@ struct DDGISampleResult {
     bool valid = false;
 };
 
+/// Why an irradiance sample request bailed before cache lookup (B5.6 deepen).
+enum class DdgiSampleSkipReason : u8 {
+    None = 0,
+    NotReady,
+    EmptyGrid,
+    DegenerateSpacing,
+    EmptyCache,
+};
+
 /// Integer probe coordinate within the 3D grid (B5.6 deepen).
 struct ProbeGridCoord {
     u32 x = 0;
@@ -163,9 +172,16 @@ struct DdgiIrradianceEncoding {
     static f32 angularErrorRadians(const fuse::math::Vec3& a, const fuse::math::Vec3& b);
 };
 
+/// Classify why irradiance sampling would skip — same ordering as `DDGI::sampleIrradiance` guards.
+DdgiSampleSkipReason classifyDdgiSampleSkip(const DDGIDesc& desc, bool ready, u32 cache_count);
+/// True when `classifyDdgiSampleSkip` returns `None`.
+bool canSampleIrradiance(const DDGIDesc& desc, bool ready, u32 cache_count);
+
 /// Probe grid indexing + atlas layout helpers — mirrors deferred-shade probe sampling.
 struct ProbeGridLayout {
     static bool isEmptyGrid(const DDGIDesc& desc);
+    /// True when any probe spacing axis is zero or negative.
+    static bool isDegenerateSpacing(const DDGIDesc& desc);
     static ProbeGridCoord probeCoordFromIndex(const DDGIDesc& desc, u32 probe_index);
     /// Decode a clamped flat probe index to grid coordinates; returns origin on empty grid.
     static ProbeGridCoord probeCoordFromClampedIndex(const DDGIDesc& desc, u32 probe_index);
@@ -220,6 +236,10 @@ u32 countBorderProbes(const DDGIDesc& desc);
 u32 countInteriorProbes(const DDGIDesc& desc);
 /// Face/edge/corner breakdown; all fields zero on empty grid.
 ProbeBorderCounts countProbesByBorderKind(const DDGIDesc& desc);
+/// True when interior + border equals total and face + edge + corner equals border.
+bool validateBorderCounts(const ProbeBorderCounts& counts);
+/// Probes with a full 2×2×2 neighbourhood for trilinear sampling; 0 on empty grid.
+u32 countProbesWithTrilinearNeighbourhood(const DDGIDesc& desc);
 fuse::math::Vec3 probeWorldPosition(const DDGIDesc& desc, u32 probe_index);
 /// World position after `clampProbeIndex` — safe for OOB scheduling indices.
 fuse::math::Vec3 probeWorldPositionClamped(const DDGIDesc& desc, u32 probe_index);

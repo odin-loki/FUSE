@@ -20,6 +20,10 @@ bool ProbeGridLayout::isEmptyGrid(const DDGIDesc& desc) {
     return desc.grid_dims.x == 0u || desc.grid_dims.y == 0u || desc.grid_dims.z == 0u;
 }
 
+bool ProbeGridLayout::isDegenerateSpacing(const DDGIDesc& desc) {
+    return desc.probe_spacing.x <= 0.f || desc.probe_spacing.y <= 0.f || desc.probe_spacing.z <= 0.f;
+}
+
 ProbeGridCoord ProbeGridLayout::probeCoordFromIndex(const DDGIDesc& desc, u32 probe_index) {
     ProbeGridCoord coord{};
     const u32 grid_x = desc.grid_dims.x;
@@ -451,6 +455,33 @@ ProbeBorderCounts countProbesByBorderKind(const DDGIDesc& desc) {
     return counts;
 }
 
+bool validateBorderCounts(const ProbeBorderCounts& counts) {
+    if (counts.total == 0u) {
+        return counts.interior == 0u && counts.border == 0u && counts.face == 0u && counts.edge == 0u &&
+               counts.corner == 0u;
+    }
+    if (counts.interior + counts.border != counts.total) {
+        return false;
+    }
+    return counts.face + counts.edge + counts.corner == counts.border;
+}
+
+u32 countProbesWithTrilinearNeighbourhood(const DDGIDesc& desc) {
+    const u32 count = probeCount(desc);
+    if (count == 0u) {
+        return 0u;
+    }
+
+    u32 neighbourhood_count = 0u;
+    for (u32 i = 0u; i < count; ++i) {
+        const ProbeGridCoord coord = ProbeGridLayout::probeCoordFromIndex(desc, i);
+        if (ProbeGridLayout::probeValidity(desc, coord).has_trilinear_neighbourhood) {
+            ++neighbourhood_count;
+        }
+    }
+    return neighbourhood_count;
+}
+
 fuse::math::Vec3 probeWorldPosition(const DDGIDesc& desc, u32 probe_index) {
     if (ProbeGridLayout::isEmptyGrid(desc)) {
         return desc.grid_origin;
@@ -676,6 +707,26 @@ u32 nearestProbeIndex(const DDGIDesc& desc, const fuse::math::Vec3& world_positi
 
 } // namespace ddgi_util
 
+DdgiSampleSkipReason classifyDdgiSampleSkip(const DDGIDesc& desc, bool ready, u32 cache_count) {
+    if (!ready) {
+        return DdgiSampleSkipReason::NotReady;
+    }
+    if (ProbeGridLayout::isEmptyGrid(desc)) {
+        return DdgiSampleSkipReason::EmptyGrid;
+    }
+    if (ProbeGridLayout::isDegenerateSpacing(desc)) {
+        return DdgiSampleSkipReason::DegenerateSpacing;
+    }
+    if (cache_count == 0u) {
+        return DdgiSampleSkipReason::EmptyCache;
+    }
+    return DdgiSampleSkipReason::None;
+}
+
+bool canSampleIrradiance(const DDGIDesc& desc, bool ready, u32 cache_count) {
+    return classifyDdgiSampleSkip(desc, ready, cache_count) == DdgiSampleSkipReason::None;
+}
+
 DdgiInfo ddgi_info() {
     DdgiInfo info{};
 #if defined(FUSE_HAS_CUDA)
@@ -826,7 +877,8 @@ bool DDGI::update(u32 frame_index, void* cuda_stream) {
 
 DDGISampleResult DDGI::sampleIrradiance(const DDGISampleRequest& request) const {
     DDGISampleResult result{};
-    if (!m_ready) {
+    if (classifyDdgiSampleSkip(m_desc, m_ready, static_cast<u32>(m_cache.size())) !=
+        DdgiSampleSkipReason::None) {
         return result;
     }
 
