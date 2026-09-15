@@ -17,6 +17,11 @@ void UndoStack::evictOldestIfNeeded_() {
     ++m_evictedCount;
 }
 
+void UndoStack::markDirty_() {
+    m_dirty = true;
+    ++m_dirtyRevision;
+}
+
 void UndoStack::execute(std::unique_ptr<UndoCommand> command) {
     if (!command) {
         return;
@@ -24,6 +29,7 @@ void UndoStack::execute(std::unique_ptr<UndoCommand> command) {
 
     if (!m_undo.empty() && m_undo.back()->merge(*command)) {
         m_undo.back()->execute();
+        markDirty_();
         return;
     }
 
@@ -31,6 +37,7 @@ void UndoStack::execute(std::unique_ptr<UndoCommand> command) {
     m_undo.push_back(std::move(command));
     m_redo.clear();
     evictOldestIfNeeded_();
+    markDirty_();
 }
 
 void UndoStack::undo() {
@@ -42,6 +49,7 @@ void UndoStack::undo() {
     m_undo.pop_back();
     command->undo();
     m_redo.push_back(std::move(command));
+    markDirty_();
 }
 
 void UndoStack::redo() {
@@ -53,6 +61,7 @@ void UndoStack::redo() {
     m_redo.pop_back();
     command->execute();
     m_undo.push_back(std::move(command));
+    markDirty_();
 }
 
 std::string UndoStack::peekUndoDescription() const {
@@ -73,6 +82,12 @@ void UndoStack::clear() {
     m_undo.clear();
     m_redo.clear();
     m_evictedCount = 0;
+    m_dirty = false;
+    m_dirtyRevision = 0;
+}
+
+void UndoStack::markClean() {
+    m_dirty = false;
 }
 
 UndoStackSnapshot UndoStack::captureSnapshot() const {
@@ -80,6 +95,8 @@ UndoStackSnapshot UndoStack::captureSnapshot() const {
     snapshot.undoCount = undoCount();
     snapshot.redoCount = redoCount();
     snapshot.evictedCount = m_evictedCount;
+    snapshot.dirty = m_dirty;
+    snapshot.dirtyRevision = m_dirtyRevision;
     snapshot.undoDescriptions.reserve(m_undo.size());
     for (const auto& command : m_undo) {
         snapshot.undoDescriptions.push_back(command->description());
@@ -91,10 +108,22 @@ UndoStackSnapshot UndoStack::captureSnapshot() const {
     return snapshot;
 }
 
-void UndoStack::restoreSnapshot(const UndoStackSnapshot& /*snapshot*/) {
-    // Stub: polymorphic UndoCommand payloads are not serialised yet.
-    // Callers use captureSnapshot() for PIE checkpoint metadata until
-    // command cloning lands in a follow-up.
+void UndoStack::restoreSnapshot(const UndoStackSnapshot& snapshot) {
+    while (undoCount() < snapshot.undoCount && canRedo()) {
+        redo();
+    }
+
+    while (undoCount() > snapshot.undoCount && canUndo()) {
+        undo();
+    }
+
+    while (redoCount() > snapshot.redoCount) {
+        m_redo.pop_back();
+    }
+
+    m_evictedCount = snapshot.evictedCount;
+    m_dirty = snapshot.dirty;
+    m_dirtyRevision = snapshot.dirtyRevision;
 }
 
 SetObjectNameCommand::SetObjectNameCommand(Object& object, std::string before, std::string after)

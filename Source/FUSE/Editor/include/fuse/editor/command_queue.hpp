@@ -22,6 +22,8 @@ struct EditorCommand {
     Handle<Object> parent = Handle<Object>::invalid();
     std::string propertyName;
     std::string propertyValue;
+    /// First value in a coalesced drag group — preserved when later edits merge (B6.2 deepen).
+    std::string propertyValueBefore;
 };
 
 /// Thread-safe-ish queue: post from UI thread, drain on game thread.

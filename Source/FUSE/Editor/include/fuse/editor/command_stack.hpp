@@ -14,6 +14,7 @@ struct CommandStackSnapshot {
     u32 redoDepth = 0;
     u32 appliedCount = 0;
     u32 coalescedCount = 0;
+    u32 evictedCount = 0;
     bool dirty = false;
     u32 dirtyRevision = 0;
 };
@@ -47,6 +48,8 @@ public:
     void restoreSnapshot(const CommandStackSnapshot& snapshot);
 
     const EditorCommand* lastApplied() const;
+    const EditorCommand* peekUndo() const;
+    const EditorCommand* peekRedo() const;
     CommandQueue& pendingQueue() { return m_pending; }
     const CommandQueue& pendingQueue() const { return m_pending; }
 

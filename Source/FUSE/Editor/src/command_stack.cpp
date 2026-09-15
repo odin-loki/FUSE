@@ -37,6 +37,7 @@ void CommandStack::execute(EditorCommand command) {
         return;
     }
 
+    command.propertyValueBefore = command.propertyValue;
     m_undoStack.push_back(std::move(command));
     m_redoStack.clear();
     ++m_undoDepth;
@@ -100,6 +101,7 @@ CommandStackSnapshot CommandStack::captureSnapshot() const {
     snapshot.redoDepth = m_redoDepth;
     snapshot.appliedCount = m_appliedCount;
     snapshot.coalescedCount = m_coalescedCount;
+    snapshot.evictedCount = m_evictedCount;
     snapshot.dirty = m_dirty;
     snapshot.dirtyRevision = m_dirtyRevision;
     return snapshot;
@@ -112,6 +114,7 @@ void CommandStack::restoreSnapshot(const CommandStackSnapshot& snapshot) {
     m_redoDepth = snapshot.redoDepth;
     m_appliedCount = snapshot.appliedCount;
     m_coalescedCount = snapshot.coalescedCount;
+    m_evictedCount = snapshot.evictedCount;
     m_dirty = snapshot.dirty;
     m_dirtyRevision = snapshot.dirtyRevision;
 }
@@ -121,6 +124,20 @@ const EditorCommand* CommandStack::lastApplied() const {
         return nullptr;
     }
     return &m_undoStack.back();
+}
+
+const EditorCommand* CommandStack::peekUndo() const {
+    if (m_undoDepth == 0u || m_undoStack.empty()) {
+        return nullptr;
+    }
+    return &m_undoStack.back();
+}
+
+const EditorCommand* CommandStack::peekRedo() const {
+    if (m_redoDepth == 0u || m_redoStack.empty()) {
+        return nullptr;
+    }
+    return &m_redoStack.back();
 }
 
 } // namespace fuse::editor
