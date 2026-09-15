@@ -36,14 +36,26 @@ public:
     EventPump(const EventPump&) = delete;
     EventPump& operator=(const EventPump&) = delete;
 
-    /// Poll one queued event. Returns false when the queue is empty.
+    /// Poll one queued event. Returns false when the queue is empty (outEvent is reset to None).
     bool pollEvent(PlatformEvent& outEvent);
+
+    /// Inspect the front queued event without removing it. Returns false when empty.
+    bool peekEvent(PlatformEvent& outEvent) const;
 
     /// True when the synthetic queue holds at least one event.
     bool hasPendingEvents() const;
 
     /// Number of events waiting in the synthetic queue (0 when empty).
     u32 pendingEventCount() const;
+
+    /// True when a `WindowResized` event for `window` is still queued.
+    bool hasPendingResizeFor(const Window& window) const;
+
+    /// Number of synthetic events dropped because the ring buffer was full.
+    u32 droppedEventCount() const;
+
+    /// Number of `WindowResized` events merged in-place via coalescing.
+    u32 coalescedResizeCount() const;
 
     /// Drain the OS event queue — no-op in the B1.7 stub.
     void processOsEvents();
@@ -72,12 +84,17 @@ public:
 
     void clearSyntheticEvents();
 
+    /// Reset overflow/coalesce counters without touching the queued events.
+    void resetEventStats();
+
 private:
     bool tryCoalescePendingResize_(const PlatformEvent& event);
     void enqueueSyntheticEvent_(const PlatformEvent& event);
     bool m_quitRequested = false;
     u32 m_syntheticHead = 0;
     u32 m_syntheticTail = 0;
+    u32 m_droppedEventCount = 0;
+    u32 m_coalescedResizeCount = 0;
     static constexpr u32 kMaxSyntheticEvents = 32;
     PlatformEvent m_syntheticEvents[kMaxSyntheticEvents]{};
 };
