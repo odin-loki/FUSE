@@ -247,7 +247,7 @@ CUDA nodes (`is_cuda`) are first-class in the API; graph execution remains a no-
 | `GpuAllocator` | `vk/allocator.hpp` | VMA path when header vendored; stub IDs + byte bookkeeping otherwise |
 | `GpuAllocStats` | `vk/gpu_alloc_stats.hpp` | Buffer/image counters; VMA pool snapshot via `refreshVmaPoolStats()` |
 | `ResourceManager` | `resource_manager.hpp` | Create/destroy + bindless index assignment; ordered destroy-all |
-| `BindlessDescriptors` | `vk/bindless.hpp` | CPU heap: generation `BindlessSlotHandle`, binding-index helpers, sparse resize stub; VkDescriptorPool deferred |
+| `BindlessDescriptors` | `vk/bindless.hpp` | CPU heap: generation `BindlessSlotHandle`, binding-from-handle, handle pack/unpack, heap counts, sparse resize stub; VkDescriptorPool deferred |
 
 **B2.3 deepen:** [TRACK-B-RHI.md](./TRACK-B-RHI.md) — stub alloc stats, destroy-order teardown, `fuse_rhi_resource_destroy_order` tests.
 
@@ -493,7 +493,7 @@ Portable invariant unchanged: job code emits `RenderCommandList`; platform modul
 | `fuse_vulkan_bootstrap` | Instance/device or stub path; surface abstraction; render-thread submit |
 | `fuse_vulkan_swapchain` | Headless swapchain desc; frame ring advance; external surface graceful failure |
 | `fuse_vulkan_resources` | `HandleMap`, bindless index recycle, buffer/texture create/destroy |
-| `fuse_bindless_descriptors` | Generation slot handles, alloc/free reuse, binding-index helpers, sparse resize stub |
+| `fuse_bindless_descriptors` | Generation slot handles, alloc/free reuse, binding-from-handle, handle pack/unpack, heap counts, cap exhaustion |
 | `fuse_rhi_resource_destroy_order` | B2.3 deepen — destroy-order teardown, staging ring guard, GPU alloc stats + hook |
 | `fuse_shader_pipeline` | SPIR-V I/O, offline compiler, shader module + pipeline layout (stub or Vulkan) |
 | `fuse_graphics_pipeline` | `VkGraphicsPipeline`, headless `RasterPath` clear + triangle, `RhiContext` wiring |

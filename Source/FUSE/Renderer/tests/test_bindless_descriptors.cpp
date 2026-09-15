@@ -6,8 +6,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
+#include <vector>
 
 using fuse::u32;
+using fuse::u64;
 
 namespace {
 
@@ -107,6 +109,9 @@ void testBindingIndexHelpers() {
     const fuse::renderer::BindlessBindingIndex ubo = fuse::renderer::bindlessBufferBinding(3u, true);
     expectTrue(ubo.binding == fuse::renderer::kBindlessBindingUniformBuffers, "UBO binding");
 
+    const fuse::renderer::BindlessBindingIndex sampler = fuse::renderer::bindlessSamplerBinding(11u);
+    expectTrue(sampler.binding == fuse::renderer::kBindlessBindingSamplers, "sampler binding");
+
     const u32 packed = fuse::renderer::packBindlessBindingIndex(sampled.binding, sampled.arrayIndex);
     u32 binding = 0;
     u32 arrayIndex = 0;
@@ -130,6 +135,109 @@ void testSparseResizeStub() {
 
     const fuse::renderer::BindlessSlotHandle handle = bindless.allocateTextureSlot(false);
     expectTrue(handle.index == 0u, "alloc after resize still sequential from zero");
+
+    bindless.destroy(*bootstrap->device());
+}
+
+void testUninitializedAndInvalidHandles() {
+    fuse::renderer::BindlessDescriptors bindless;
+
+    expectTrue(bindless.allocateTextureSlot(false).isValid() == false, "alloc before init rejected");
+    expectTrue(!bindless.validateSlot(fuse::renderer::BindlessSlotHandle::invalid()), "default invalid handle");
+    expectTrue(bindless.heapLiveCount(fuse::renderer::BindlessHeapKind::Texture) == 0u,
+               "live count zero before init");
+
+    auto bootstrap = makeBootstrap();
+    bindless.init(*bootstrap->device());
+
+    const fuse::renderer::BindlessSlotHandle live = bindless.allocateTextureSlot(false);
+    const fuse::renderer::BindlessSlotHandle wrongGen{
+        fuse::renderer::BindlessHeapKind::Texture, live.index, live.generation + 1u};
+    expectTrue(!bindless.validateSlot(wrongGen), "wrong generation rejected on occupied slot");
+
+    bindless.destroy(*bootstrap->device());
+}
+
+void testHandlePackUnpack() {
+    const fuse::renderer::BindlessSlotHandle handle{fuse::renderer::BindlessHeapKind::Buffer, 12345u, 67890u};
+    const u64 packed = fuse::renderer::packBindlessSlotHandle(handle);
+    const fuse::renderer::BindlessSlotHandle roundTrip = fuse::renderer::unpackBindlessSlotHandle(packed);
+    expectTrue(roundTrip == handle, "slot handle pack/unpack round trip");
+}
+
+void testBindingFromHandle() {
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    const fuse::renderer::BindlessSlotHandle sampled = bindless.allocateTextureSlot(false);
+    const fuse::renderer::BindlessSlotHandle storage = bindless.allocateTextureSlot(true);
+    const fuse::renderer::BindlessBindingIndex sampledBinding = bindless.bindingIndexForHandle(sampled);
+    const fuse::renderer::BindlessBindingIndex storageBinding = bindless.bindingIndexForHandle(storage);
+
+    expectTrue(sampledBinding.binding == fuse::renderer::kBindlessBindingSampledImages,
+               "sampled handle maps to sampled binding");
+    expectTrue(storageBinding.binding == fuse::renderer::kBindlessBindingStorageImages,
+               "storage handle maps to storage binding");
+    expectTrue(bindless.slotIsStorageTexture(storage.index), "storage flag recorded");
+    expectTrue(!bindless.slotIsStorageTexture(sampled.index), "sampled slot not storage");
+
+    const fuse::renderer::BindlessSlotHandle stale{fuse::renderer::BindlessHeapKind::Texture, sampled.index,
+                                                   sampled.generation};
+    bindless.freeTextureSlot(sampled);
+    expectTrue(bindless.bindingIndexForHandle(stale).binding == 0u &&
+                   bindless.bindingIndexForHandle(stale).arrayIndex == 0u,
+               "stale handle returns empty binding");
+
+    const fuse::renderer::BindlessSlotHandle sampler = bindless.allocateSamplerSlot();
+    const fuse::renderer::BindlessBindingIndex samplerBinding = bindless.bindingIndexForHandle(sampler);
+    expectTrue(samplerBinding.binding == fuse::renderer::kBindlessBindingSamplers, "sampler binding from handle");
+
+    bindless.destroy(*bootstrap->device());
+}
+
+void testHeapCounts() {
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    expectTrue(bindless.heapCapacity(fuse::renderer::BindlessHeapKind::Buffer) == 0u, "buffer heap starts empty");
+    expectTrue(bindless.heapFreeCount(fuse::renderer::BindlessHeapKind::Buffer) == 0u, "no free slots initially");
+
+    const fuse::renderer::BindlessSlotHandle a = bindless.allocateBufferSlot();
+    const fuse::renderer::BindlessSlotHandle b = bindless.allocateBufferSlot();
+    expectTrue(bindless.heapLiveCount(fuse::renderer::BindlessHeapKind::Buffer) == 2u, "two live buffer slots");
+    expectTrue(bindless.heapFreeCount(fuse::renderer::BindlessHeapKind::Buffer) == 0u, "no free buffer slots");
+
+    bindless.freeBufferSlot(a);
+    expectTrue(bindless.heapLiveCount(fuse::renderer::BindlessHeapKind::Buffer) == 1u, "one live after free");
+    expectTrue(bindless.heapFreeCount(fuse::renderer::BindlessHeapKind::Buffer) == 1u, "one free after release");
+
+    expectTrue(bindless.resizeHeap(fuse::renderer::BindlessHeapKind::Buffer, 8u), "resize buffer heap");
+    expectTrue(bindless.heapCapacity(fuse::renderer::BindlessHeapKind::Buffer) == 8u, "buffer capacity grown");
+    expectTrue(bindless.heapFreeCount(fuse::renderer::BindlessHeapKind::Buffer) == 7u,
+               "resize pre-seeds free slots minus live");
+
+    bindless.destroy(*bootstrap->device());
+}
+
+void testSamplerCapExhaustion() {
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    std::vector<fuse::renderer::BindlessSlotHandle> handles;
+    handles.reserve(fuse::renderer::kMaxSamplers);
+    for (u32 i = 0; i < fuse::renderer::kMaxSamplers; ++i) {
+        const fuse::renderer::BindlessSlotHandle handle = bindless.allocateSamplerSlot();
+        expectTrue(handle.isValid(), "sampler slot allocated within cap");
+        handles.push_back(handle);
+    }
+
+    expectTrue(bindless.heapLiveCount(fuse::renderer::BindlessHeapKind::Sampler) ==
+                   fuse::renderer::kMaxSamplers,
+               "sampler heap at capacity");
+    expectTrue(!bindless.allocateSamplerSlot().isValid(), "alloc beyond sampler cap rejected");
 
     bindless.destroy(*bootstrap->device());
 }
@@ -165,6 +273,11 @@ int main() {
     testOobReject();
     testBindingIndexHelpers();
     testSparseResizeStub();
+    testUninitializedAndInvalidHandles();
+    testHandlePackUnpack();
+    testBindingFromHandle();
+    testHeapCounts();
+    testSamplerCapExhaustion();
     testLegacyRegisterUnregister();
 
     fuse::core::shutdown();

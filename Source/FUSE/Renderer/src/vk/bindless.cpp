@@ -39,6 +39,19 @@ bool unpackBindlessBindingIndex(u32 packed, u32& binding, u32& arrayIndex) {
     return binding <= kBindlessBindingUniformBuffers;
 }
 
+u64 packBindlessSlotHandle(BindlessSlotHandle handle) {
+    return (static_cast<u64>(static_cast<u8>(handle.kind)) << 61u) |
+           (static_cast<u64>(handle.index) << 32u) | static_cast<u64>(handle.generation);
+}
+
+BindlessSlotHandle unpackBindlessSlotHandle(u64 packed) {
+    BindlessSlotHandle handle{};
+    handle.kind = static_cast<BindlessHeapKind>((packed >> 61u) & 0x7u);
+    handle.index = static_cast<u32>((packed >> 32u) & 0x1FFFFFFFu);
+    handle.generation = static_cast<u32>(packed & 0xFFFFFFFFu);
+    return handle;
+}
+
 void BindlessDescriptors::init(const VulkanDevice& device) {
     if (m_initialized) {
         return;
@@ -214,6 +227,45 @@ u32 BindlessDescriptors::slotGeneration(BindlessHeapKind kind, u32 index) const 
         return 0;
     }
     return slots[index].generation;
+}
+
+bool BindlessDescriptors::slotIsStorageTexture(u32 index) const {
+    if (index >= m_textureSlots.size()) {
+        return false;
+    }
+    return m_textureSlots[index].storage;
+}
+
+BindlessBindingIndex BindlessDescriptors::bindingIndexForHandle(BindlessSlotHandle handle) const {
+    if (!validateSlot(handle)) {
+        return {};
+    }
+
+    switch (handle.kind) {
+    case BindlessHeapKind::Texture:
+        return bindlessTextureBinding(handle.index, m_textureSlots[handle.index].storage);
+    case BindlessHeapKind::Buffer:
+        return bindlessBufferBinding(handle.index, false);
+    case BindlessHeapKind::Sampler:
+        return bindlessSamplerBinding(handle.index);
+    }
+    return {};
+}
+
+u32 BindlessDescriptors::heapLiveCount(BindlessHeapKind kind) const {
+    return countLiveSlots(slotsFor(kind));
+}
+
+u32 BindlessDescriptors::heapFreeCount(BindlessHeapKind kind) const {
+    switch (kind) {
+    case BindlessHeapKind::Texture:
+        return static_cast<u32>(m_freeTextureIndices.size());
+    case BindlessHeapKind::Buffer:
+        return static_cast<u32>(m_freeBufferIndices.size());
+    case BindlessHeapKind::Sampler:
+        return static_cast<u32>(m_freeSamplerIndices.size());
+    }
+    return 0;
 }
 
 bool BindlessDescriptors::resizeHeap(BindlessHeapKind kind, u32 newCapacity) {
