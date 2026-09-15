@@ -82,6 +82,29 @@ struct DDGISampleResult {
     bool valid = false;
 };
 
+/// Integer probe coordinate within the 3D grid (B5.6 deepen).
+struct ProbeGridCoord {
+    u32 x = 0;
+    u32 y = 0;
+    u32 z = 0;
+};
+
+/// Probe grid indexing + atlas layout helpers — mirrors deferred-shade probe sampling.
+struct ProbeGridLayout {
+    static ProbeGridCoord probeCoordFromIndex(const DDGIDesc& desc, u32 probe_index);
+    static u32 probeIndexFromCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
+    static bool isValidProbeCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
+    static bool isValidProbeIndex(const DDGIDesc& desc, u32 probe_index);
+    /// Fractional grid coordinates — origin cell centre is (0,0,0).
+    static fuse::math::Vec3 worldToProbeGridCoord(const DDGIDesc& desc,
+                                                  const fuse::math::Vec3& world_position);
+    static ProbeGridCoord clampProbeGridCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
+    /// Top-left texel of the probe's octahedral irradiance tile in the atlas.
+    static fuse::math::Vec2 probeIrradianceAtlasOrigin(const DDGIDesc& desc, const ProbeGridCoord& coord);
+    /// Top-left texel of the probe's depth-variance tile in the atlas.
+    static fuse::math::Vec2 probeDepthAtlasOrigin(const DDGIDesc& desc, const ProbeGridCoord& coord);
+};
+
 /// CPU-side probe grid helpers — mirrors CUDA scheduling without GPU.
 namespace ddgi_util {
 u32 probeCount(const DDGIDesc& desc);
@@ -99,6 +122,11 @@ void scheduleProbeUpdates(u32 frame_index,
 fuse::math::Vec3 blendIrradiance(const fuse::math::Vec3& previous,
                                  const fuse::math::Vec3& incoming,
                                  f32 hysteresis);
+fuse::math::Vec3 lerpIrradiance(const fuse::math::Vec3& a, const fuse::math::Vec3& b, f32 t);
+fuse::math::Vec3 trilinearProbeIrradiance(const DDGIDesc& desc,
+                                          const fuse::math::Vec3& world_position,
+                                          const IrradianceCacheEntry* cache,
+                                          u32 cache_count);
 u32 nearestProbeIndex(const DDGIDesc& desc, const fuse::math::Vec3& world_position);
 } // namespace ddgi_util
 
