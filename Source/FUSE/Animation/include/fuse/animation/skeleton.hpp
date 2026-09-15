@@ -79,4 +79,10 @@ void add_pose_soa(const PoseSoA& base,
 /// True when every local TRS column matches the skeleton bind pose within epsilon.
 bool pose_soa_matches_bind(const PoseSoA& pose, const Skeleton& skel, f32 epsilon = 1e-4f);
 
+/// True when `pose` has no bones or its bone count does not match the skeleton.
+[[nodiscard]] bool needs_pose_soa_bind_fallback(const PoseSoA& pose, const Skeleton& skel);
+
+/// Seed `pose` from skeleton bind pose when it is empty or mismatched.
+void ensure_pose_soa_bind_fallback(PoseSoA& pose, const Skeleton& skel);
+
 } // namespace fuse::animation
