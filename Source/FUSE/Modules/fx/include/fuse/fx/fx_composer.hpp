@@ -2,9 +2,11 @@
 
 #include <fuse/fx/cast_pipeline.hpp>
 #include <fuse/fx/effect_descriptor.hpp>
+#include <fuse/fx/effect_graph.hpp>
 #include <fuse/fx/effect_timeline.hpp>
 #include <fuse/fx/fx_defs.hpp>
 #include <fuse/fx/fx_socket.hpp>
+#include <fuse/fx/parameter_bind.hpp>
 #include <fuse/fx/residual_effects.hpp>
 #include <fuse/fx/spell_descriptor.hpp>
 #include <fuse/frame/frame_ctx.hpp>
@@ -38,6 +40,12 @@ public:
     EffectTimeline& effectTimeline() { return m_effectTimeline; }
     const EffectTimeline& effectTimeline() const { return m_effectTimeline; }
 
+    EffectGraph& effectGraph() { return m_effectGraph; }
+    const EffectGraph& effectGraph() const { return m_effectGraph; }
+
+    bind::ParameterBinder& parameters() { return m_parameters; }
+    const bind::ParameterBinder& parameters() const { return m_parameters; }
+
     bool beginCast(const std::string& spellId, const CastBinding& binding);
     CastPipeline& castPipeline() { return m_castPipeline; }
     const CastPipeline& castPipeline() const { return m_castPipeline; }
@@ -55,8 +63,10 @@ private:
     std::unordered_map<std::string, SpellDescriptor> m_spells;
     std::vector<FxSocket> m_sockets;
     EffectTimeline m_effectTimeline;
+    EffectGraph m_effectGraph;
     CastPipeline m_castPipeline;
     ResidualEffectQueue m_residuals;
+    bind::ParameterBinder m_parameters;
     u32 m_attachments = 0;
     u32 m_tickCount = 0;
 };

@@ -85,6 +85,7 @@ bool FxComposer::beginCast(const std::string& spellId, const CastBinding& bindin
 void FxComposer::tick(const frame::FrameCtx& ctx) {
     const float dt = (ctx.dt > 0.f) ? ctx.dt : (1.f / 60.f);
     m_effectTimeline.tick(dt);
+    m_effectGraph.tick(dt, m_effects);
     m_castPipeline.tick(dt);
     m_residuals.tick(dt);
     ++m_tickCount;

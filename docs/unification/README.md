@@ -36,6 +36,7 @@ Physics, gfx, and net remain composition/dual-backend. No physical `Engine/` + T
 | [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md) | U4 hybrid composer, worlds, software demo |
 | [U5-MODULES.md](./U5-MODULES.md) | U5 feature module scaffolds, `fuse_ai` vertical slice, ore backlog |
 | [TRACK-B-AI.md](./TRACK-B-AI.md) | Track B / U5 `fuse_ai` BT registry, parallel composite, runtime threading |
+| [TRACK-B-FX.md](./TRACK-B-FX.md) | Track B / U5 `fuse_fx` effect graph tick, parameter bind, AFX vertical slice |
 | [U6-EDITOR.md](./U6-EDITOR.md) | U6 Qt 6 editor shell, command queue, desktop-only policy |
 | [U7-PROJECT-FORMAT.md](./U7-PROJECT-FORMAT.md) | U7 `project.json` schema, importer stubs, `fuse_import` CLI |
 

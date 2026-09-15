@@ -8,6 +8,8 @@ Game-thread FX runtime shaped by Arcane FX concepts already in FUSE root `Engine
 |-----------|----------------|
 | `EffectDescriptor` | `afxEffectronData` (`afxEffectron.h`) |
 | `EffectTimeline` | `afxPhrase` / `afxEffectron` playback (`afxPhrase.h`, `afxEffectron.h`) |
+| `EffectGraph` | `afxEffectGroupData` / `afxEffectVector` group tick (`afxEffectGroup.h`) |
+| `bind::ParameterBinder` | AFX runtime substitution slots (`do_runtime_substitutions`) |
 | `SpellDescriptor` / `SpellPhase` | `afxMagicSpellData` / `afxMagicSpellDefs` (`afxMagicSpell.h`) |
 | `CastPipeline` | `afxMagicSpell` cast state machine (`afxMagicSpell.h`) |
 | `ResidualEffectQueue` | `afxResidueMgr` (`afxResidueMgr.h`) |
@@ -23,13 +25,15 @@ Sample content reference only (no Engine merge): `third_party/addons/AFX-Templat
 - Socket attach validates registered effects and starts `EffectTimeline` playback
 - `CastPipeline` drives spell phases (casting → launch → delivery → impact → linger)
 - Impact phase auto-enqueues residuals from spell impact entries (fireball → scorch zodiac)
-- `FxComposer::tick()` advances effect timeline, casts, and residual lifetimes
+- `EffectGraph` parent/child group tick stub (children activate when parent completes)
+- `bind::ParameterBinder` resolves `caster` / `target` handles into `CastBinding`
+- `FxComposer::tick()` advances effect timeline, effect graph, casts, and residual lifetimes
 
 ## Threading
 
 - Descriptor registration, cast begin, socket attach: **game thread**
-- `tick()` advances effect phrases, cast phases, and residual lifetimes; particle sim jobification deferred
+- `tick()` advances effect phrases, effect graph nodes, cast phases, and residual lifetimes; particle sim jobification deferred
 
 ## Tests
 
-`fuse_fx_tests` (`ctest` name `fuse_fx_runtime`) covers descriptor registry, socket attach rejection, effect timeline completion, fireball phase progression, and cast-to-residual path.
+`fuse_fx_tests` (`ctest` name `fuse_fx_runtime`) covers descriptor registry, socket attach rejection, effect timeline completion, effect graph parent/child and parallel-root tick, parameter bind cast resolution, fireball phase progression, and cast-to-residual path.

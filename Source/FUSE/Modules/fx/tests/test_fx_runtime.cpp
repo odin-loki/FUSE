@@ -1,7 +1,9 @@
 #include <fuse/core/init.hpp>
 #include <fuse/fx/effect_descriptor.hpp>
+#include <fuse/fx/effect_graph.hpp>
 #include <fuse/fx/fx_composer.hpp>
 #include <fuse/fx/fx_defs.hpp>
+#include <fuse/fx/parameter_bind.hpp>
 #include <fuse/fx/spell_descriptor.hpp>
 #include <fuse/handle.hpp>
 #include <fuse/object.hpp>
@@ -124,6 +126,96 @@ void testCastPipelineAndResiduals() {
     expectTrue(composer.residuals().totalExpired() == 2u, "residual expiry counted");
 }
 
+void testEffectGraphParentChildTick() {
+    fuse::fx::FxComposer composer;
+    composer.registerEffect(fuse::fx::EffectDescriptor::makeSparkBurst());
+    composer.registerEffect(fuse::fx::EffectDescriptor::makeMuzzleFlash());
+
+    fuse::fx::EffectGraph& graph = composer.effectGraph();
+    const fuse::u32 parent = graph.addNode("spark_burst");
+    const fuse::u32 child = graph.addNode("muzzle_flash", parent);
+    graph.activate();
+
+    expectTrue(graph.activated(), "graph activated");
+    expectTrue(graph.activeCount() == 1u, "only root active initially");
+    expectTrue(graph.nodes()[1].state == fuse::fx::EffectNodeState::Pending, "child waits for parent");
+
+    fuse::frame::FrameCtx ctx;
+    ctx.dt = 0.2f;
+    composer.tick(ctx);
+    expectTrue(graph.nodes()[0].state == fuse::fx::EffectNodeState::Active, "parent still running");
+    expectTrue(graph.nodes()[1].state == fuse::fx::EffectNodeState::Pending, "child still pending");
+
+    ctx.dt = 0.16f;
+    composer.tick(ctx);
+    expectTrue(graph.nodes()[0].state == fuse::fx::EffectNodeState::Done, "parent completed");
+    expectTrue(graph.nodes()[1].state == fuse::fx::EffectNodeState::Active, "child activated");
+    expectTrue(graph.activeCount() == 1u, "child now sole active node");
+
+    ctx.dt = 0.15f;
+    composer.tick(ctx);
+    expectTrue(graph.completedCount() == 2u, "parent and child completed");
+    expectTrue(graph.activeCount() == 0u, "no active nodes remain");
+    expectTrue(graph.tickCount() == 3u, "graph tick count advanced");
+}
+
+void testEffectGraphParallelRoots() {
+    fuse::fx::FxComposer composer;
+    composer.registerEffect(fuse::fx::EffectDescriptor::makeSparkBurst());
+    composer.registerEffect(fuse::fx::EffectDescriptor::makeMuzzleFlash());
+
+    fuse::fx::EffectGraph& graph = composer.effectGraph();
+    graph.addNode("spark_burst");
+    graph.addNode("muzzle_flash");
+    graph.activate();
+
+    expectTrue(graph.activeCount() == 2u, "both roots active");
+
+    fuse::frame::FrameCtx ctx;
+    ctx.dt = 0.5f;
+    composer.tick(ctx);
+
+    expectTrue(graph.completedCount() == 2u, "parallel roots completed in one tick window");
+    expectTrue(graph.activeCount() == 0u, "graph drained");
+}
+
+void testParameterBindCastResolution() {
+    fuse::fx::bind::ParameterBinder binder;
+    const fuse::Handle<fuse::Object> caster(42, 1);
+    const fuse::Handle<fuse::Object> target(77, 2);
+
+    binder.bindHandle("caster", caster);
+    binder.bindHandle("target", target);
+    binder.bindFloat("intensity", 1.5f);
+
+    expectTrue(binder.has("caster"), "caster slot bound");
+    expectTrue(binder.count() == 3u, "three parameters bound");
+
+    const fuse::fx::CastBinding resolved = binder.resolveCastBinding();
+    expectTrue(resolved.caster == caster, "caster handle resolved");
+    expectTrue(resolved.target == target, "target handle resolved");
+
+    const fuse::fx::bind::ParameterValue* intensity = binder.get("intensity");
+    expectTrue(intensity != nullptr, "intensity slot exists");
+    expectTrue(intensity->kind == fuse::fx::bind::ParameterKind::Float, "intensity is float");
+    expectTrue(intensity->floatValue == 1.5f, "intensity value preserved");
+}
+
+void testParameterBindComposerCast() {
+    fuse::fx::FxComposer composer;
+    composer.registerSpell(fuse::fx::SpellDescriptor::makeFireball());
+
+    composer.parameters().bindHandle("caster", fuse::Handle<fuse::Object>(3, 1));
+    composer.parameters().bindHandle("target", fuse::Handle<fuse::Object>(4, 1));
+
+    expectTrue(composer.beginCast("fireball", composer.parameters().resolveCastBinding()),
+               "bound cast begins");
+    expectTrue(composer.castPipeline().instances()[0].binding.caster.index() == 3u,
+               "cast uses bound caster");
+    expectTrue(composer.castPipeline().instances()[0].binding.target.index() == 4u,
+               "cast uses bound target");
+}
+
 void testFireballPhaseProgression() {
     fuse::fx::FxComposer composer;
     composer.registerSpell(fuse::fx::SpellDescriptor::makeFireball());
@@ -156,6 +248,10 @@ int main() {
     fuse::core::initialize();
     testRegisterDescriptors();
     testSocketAttachAndTimeline();
+    testEffectGraphParentChildTick();
+    testEffectGraphParallelRoots();
+    testParameterBindCastResolution();
+    testParameterBindComposerCast();
     testCastPipelineAndResiduals();
     testFireballPhaseProgression();
     fuse::core::shutdown();

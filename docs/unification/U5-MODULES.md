@@ -82,8 +82,10 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
   - `FxSocket` attach validates registered effects and starts timeline playback
   - `CastPipeline` — spell phase state machine with `CastPhaseEnterHook`
   - Impact phase auto-enqueues `ResidualEffectQueue` entries (fireball scorch path)
-  - `FxComposer::tick()` advances effect timeline, casts, and residuals
-  - Tests: `fuse_fx_tests` — registry, socket reject, timeline completion, phase progression, cast→residual
+  - `EffectGraph` — parent/child group tick stub (`afxEffectGroup` ore)
+  - `bind::ParameterBinder` — runtime `caster` / `target` cast slot resolution
+  - `FxComposer::tick()` advances effect timeline, effect graph, casts, and residuals
+  - Tests: `fuse_fx_tests` — registry, socket reject, timeline completion, graph tick, parameter bind, phase progression, cast→residual
   - Demo: `demo_fx` registers descriptors, attaches 2D/3D sockets, begins fireball cast
 - TODO: refactor remaining `Engine/source/afx/` (218 files) into module; GPU particle pools; sample content from `third_party/addons/AFX-Template/game/`
 
@@ -96,6 +98,7 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 | ✅ P1 | `Engine/source/afx/afxEffectWrapper.h` | `EffectEntry`, `EffectTiming` |
 | ✅ P1 | `Engine/source/afx/afxResidueMgr.h` | `ResidualEffectQueue` |
 | ✅ P1 | `Engine/source/afx/afxChoreographer.h` | `FxComposer` orchestration |
+| ✅ P2 | `Engine/source/afx/afxEffectGroup.h` | `EffectGraph` group tick stub |
 | 🚧 P2 | `Engine/source/afx/afxConstraint.h` | Socket constraint remapping |
 | 🚧 P2 | `Engine/source/afx/util/afxParticlePool.h` | Particle sim jobification |
 | 🚧 P3 | `third_party/addons/AFX-Template/game/` | Sample spell/FX content pack |
@@ -166,7 +169,7 @@ ctest --test-dir build-fuse --output-on-failure
 |--------|------|---------|
 | `fuse_ai` | BT drives 2D + 3D agents in hybrid demo | 🚧 registry + decorators landed; 3D agent stub next |
 | `fuse_cinematics` | 30s timeline moves camera + sprite | 🚧 kernel + tests; hybrid drive next |
-| `fuse_fx` | AFX on 3D model + 2D sprite | 🚧 socket attach + effect timeline + fireball cast path; hybrid drive next |
+| `fuse_fx` | AFX on 3D model + 2D sprite | 🚧 timeline + effect graph + parameter bind; hybrid drive next |
 | `fuse_mechanics` | One 3D interactable | 🚧 component + action stubs + registry; hybrid demo next |
 | `fuse_adventure` | Pick-up / use in 3D + 2D interface | 🚧 inventory + interaction queue + vertical slice + `demo_adventure_stub` |
 
