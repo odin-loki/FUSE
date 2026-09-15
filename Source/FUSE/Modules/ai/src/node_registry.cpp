@@ -36,6 +36,7 @@ BehaviorNode makeParallel(const NodeLoadSpec& spec) {
     node.parallelPolicy.successThreshold = spec.successThreshold;
     node.parallelPolicy.failThreshold = spec.failThreshold;
     node.parallelPolicy.abortOnFail = spec.abortOnFail;
+    node.parallelPolicy.abortOnSuccess = spec.abortOnSuccess;
     node.parallelPolicy.requireBoundBlackboard = spec.requireBoundBlackboard;
     node.parallelPolicy.requireAllyContext = spec.requireAllyContext;
     return node;
@@ -182,6 +183,20 @@ BehaviorNode makeGuardBlackboardScalarEmpty(const NodeLoadSpec& spec) {
     return node;
 }
 
+BehaviorNode makeGuardBlackboardFlagEmpty(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::GuardBlackboardFlagEmpty;
+    node.flagIndex = spec.flagIndex;
+    return node;
+}
+
+BehaviorNode makeGuardBlackboardEmpty(const NodeLoadSpec& spec) {
+    (void)spec;
+    BehaviorNode node;
+    node.kind = NodeKind::GuardBlackboardEmpty;
+    return node;
+}
+
 BehaviorNode makeGuardAllyContext(const NodeLoadSpec& spec) {
     (void)spec;
     BehaviorNode node;
@@ -251,6 +266,8 @@ void NodeRegistry::registerBuiltins() {
     // FUSE guard leaves — empty blackboard / ally-context preconditions
     registerFactory("bb.guard.blackboard_bound", makeGuardBlackboardBound);
     registerFactory("bb.guard.blackboard_scalar_empty", makeGuardBlackboardScalarEmpty);
+    registerFactory("bb.guard.blackboard_flag_empty", makeGuardBlackboardFlagEmpty);
+    registerFactory("bb.guard.blackboard_empty", makeGuardBlackboardEmpty);
     registerFactory("bb.guard.ally_context", makeGuardAllyContext);
 }
 

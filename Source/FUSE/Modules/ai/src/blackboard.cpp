@@ -97,12 +97,28 @@ float BlackboardView::scalar(u32 agentIndex, u32 slotIndex) const {
     return m_board ? m_board->scalar(agentIndex, slotIndex) : 0.f;
 }
 
+u32 BlackboardView::agentCount() const {
+    return m_board ? m_board->agentCount() : 0u;
+}
+
+bool BlackboardView::isAgentValid(u32 agentIndex) const {
+    return m_board && agentIndex < m_board->agentCount();
+}
+
 bool BlackboardView::isScalarEmpty(u32 agentIndex, u32 slotIndex) const {
     float value = 0.f;
     if (!tryGetScalar(agentIndex, slotIndex, value)) {
         return true;
     }
     return value == 0.f;
+}
+
+bool BlackboardView::isFlagEmpty(u32 agentIndex, u32 flagIndex) const {
+    bool value = false;
+    if (!tryGetFlag(agentIndex, flagIndex, value)) {
+        return true;
+    }
+    return !value;
 }
 
 } // namespace fuse::ai

@@ -31,8 +31,16 @@ bool within_radius(float distanceSq, float radius) {
     return distanceSq <= radius_sq_(radius);
 }
 
+bool is_valid_ally_radius(float radius) {
+    return radius > 0.f;
+}
+
 float effective_radius(const RadiusFilterPolicy& policy) {
     return clamp_radius_(policy.radius);
+}
+
+float radius_sq_from_policy(const RadiusFilterPolicy& policy) {
+    return radius_sq_(effective_radius(policy));
 }
 
 u32 count_allies_in_radius(u32 selfIndex,
@@ -144,6 +152,15 @@ bool has_any_ally_in_radius(u32 selfIndex,
                             float radius,
                             const std::vector<AllyCandidate>& allies) {
     return count_allies_in_radius(selfIndex, teamId, x, y, radius, allies) > 0;
+}
+
+float nearest_ally_distance_sq(u32 selfIndex,
+                             u32 teamId,
+                             float x,
+                             float y,
+                             const std::vector<AllyCandidate>& allies) {
+    const NearestAllyResult nearest = find_nearest_ally(selfIndex, teamId, x, y, allies);
+    return nearest.found ? nearest.distanceSq : 0.f;
 }
 
 bool ally_context_available(const std::vector<AllyCandidate>* allies) {

@@ -105,8 +105,10 @@ void testRegistryBuiltinNodes() {
     expectTrue(registry.hasFactory("bb.action.allies_count"), "bb.action.allies_count registered");
     expectTrue(registry.hasFactory("bb.guard.blackboard_bound"), "bb.guard.blackboard_bound registered");
     expectTrue(registry.hasFactory("bb.guard.blackboard_scalar_empty"), "bb.guard.blackboard_scalar_empty registered");
+    expectTrue(registry.hasFactory("bb.guard.blackboard_flag_empty"), "bb.guard.blackboard_flag_empty registered");
+    expectTrue(registry.hasFactory("bb.guard.blackboard_empty"), "bb.guard.blackboard_empty registered");
     expectTrue(registry.hasFactory("bb.guard.ally_context"), "bb.guard.ally_context registered");
-    expectTrue(registry.registeredTypeIds().size() >= 22u, "registry exposes built-in type ids");
+    expectTrue(registry.registeredTypeIds().size() >= 24u, "registry exposes built-in type ids");
 }
 
 void testInverterDecorator() {
@@ -480,6 +482,8 @@ void testSelectorChildStatusAggregation() {
                "selector returns second child side effects");
 }
 
+std::vector<fuse::ai::AllyCandidate> makeTestAllies();
+
 fuse::ai::BehaviorTree makeParallelTree(fuse::ai::NodeKind childAKind,
                                       fuse::ai::NodeKind childBKind,
                                       const fuse::ai::ParallelPolicy& policy,
@@ -579,6 +583,66 @@ void testParallelPolicyAbortOnFail() {
                "parallel abort-on-fail returns failure");
     expectTrue(!result.wroteFlag,
                "parallel abort-on-fail skips remaining child side effects");
+}
+
+void testParallelPolicyAbortOnSuccess() {
+    fuse::ai::ParallelPolicy policy;
+    policy.successThreshold = 1;
+    policy.abortOnSuccess = true;
+
+    fuse::ai::BehaviorTree tree = makeParallelTree(fuse::ai::NodeKind::ActionSetFlag,
+                                                 fuse::ai::NodeKind::ActionSetFlag,
+                                                 policy,
+                                                 0,
+                                                 1);
+
+    fuse::ai::AgentSnapshot agent;
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const fuse::ai::BehaviorTickResult result =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(result.status == fuse::ai::BehaviorStatus::Success,
+               "parallel abort-on-success returns success when threshold met");
+    expectTrue(result.wroteFlag && result.flagIndex == 0u,
+               "parallel abort-on-success keeps first child side effect");
+}
+
+void testParallelScalarSideEffectMerge() {
+    fuse::ai::NodeLoadSpec countSpec;
+    countSpec.typeId = "bb.action.allies_count";
+    countSpec.threshold = 10.f;
+    countSpec.scalarSlot = 0;
+
+    fuse::ai::NodeLoadSpec nearestSpec;
+    nearestSpec.typeId = "bb.action.nearest_ally";
+    nearestSpec.threshold = 20.f;
+    nearestSpec.scalarSlot = 1;
+
+    fuse::ai::NodeLoadSpec parallelSpec;
+    parallelSpec.typeId = "bb.parallel";
+    parallelSpec.childIndices = {0, 1};
+
+    fuse::ai::BehaviorTree tree;
+    expectTrue(fuse::ai::loadTreeFromSpecs({countSpec, nearestSpec, parallelSpec}, 2, tree),
+               "parallel scalar merge tree loads");
+
+    fuse::ai::AgentSnapshot agent;
+    agent.teamId = 1;
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const std::vector<fuse::ai::AllyCandidate> allies = makeTestAllies();
+    fuse::ai::BehaviorEvalContext ctx;
+    ctx.allies = &allies;
+
+    const fuse::ai::BehaviorTickResult result =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board), ctx);
+    expectTrue(result.status == fuse::ai::BehaviorStatus::Success,
+               "parallel scalar merge succeeds when both spatial children succeed");
+    expectTrue(result.wroteScalar && result.scalarIndex == 1u,
+               "parallel scalar merge prefers later child scalar write");
+    expectTrue(result.scalarValue == 1.f, "parallel scalar merge stores nearest ally index");
 }
 
 void testParallelPolicyTextLoader() {
@@ -898,6 +962,83 @@ void testGuardBlackboardScalarEmptyLeaf() {
         tree.tick(0, agent, fuse::ai::BlackboardView(board));
     expectTrue(setScalar.status == fuse::ai::BehaviorStatus::Failure,
                "scalar empty guard fails when slot is set");
+
+    const fuse::ai::BehaviorTickResult unbound =
+        tree.tick(0, agent, fuse::ai::BlackboardView());
+    expectTrue(unbound.status == fuse::ai::BehaviorStatus::Failure,
+               "scalar empty guard fails with unbound view");
+}
+
+void testGuardBlackboardFlagEmptyLeaf() {
+    fuse::ai::NodeLoadSpec spec;
+    spec.typeId = "bb.guard.blackboard_flag_empty";
+    spec.flagIndex = 2;
+
+    fuse::ai::BehaviorTree tree;
+    expectTrue(fuse::ai::loadTreeFromSpecs({spec}, 0, tree), "flag empty guard loads");
+
+    fuse::ai::AgentSnapshot agent;
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const fuse::ai::BehaviorTickResult emptyFlag =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(emptyFlag.status == fuse::ai::BehaviorStatus::Success,
+               "flag empty guard succeeds when flag is false");
+
+    board.setFlag(0, 2, true);
+    const fuse::ai::BehaviorTickResult setFlag =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(setFlag.status == fuse::ai::BehaviorStatus::Failure,
+               "flag empty guard fails when flag is set");
+
+    const fuse::ai::BehaviorTickResult unbound =
+        tree.tick(0, agent, fuse::ai::BlackboardView());
+    expectTrue(unbound.status == fuse::ai::BehaviorStatus::Failure,
+               "flag empty guard fails with unbound view");
+}
+
+void testGuardBlackboardEmptyLeaf() {
+    const std::vector<fuse::ai::NodeLoadSpec> specs = {
+        {"bb.guard.blackboard_empty", 0.f, 0, 1, {}, {}},
+    };
+
+    fuse::ai::BehaviorTree tree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(specs, 0, tree), "blackboard empty guard loads");
+
+    fuse::ai::AgentSnapshot agent;
+    fuse::ai::Blackboard emptyBoard;
+
+    const fuse::ai::BehaviorTickResult empty =
+        tree.tick(0, agent, fuse::ai::BlackboardView(emptyBoard));
+    expectTrue(empty.status == fuse::ai::BehaviorStatus::Success,
+               "blackboard empty guard succeeds when agent count is zero");
+
+    fuse::ai::Blackboard board;
+    board.resize(1);
+    const fuse::ai::BehaviorTickResult populated =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(populated.status == fuse::ai::BehaviorStatus::Failure,
+               "blackboard empty guard fails when agents are allocated");
+}
+
+void testBlackboardViewAgentAndFlagHelpers() {
+    fuse::ai::Blackboard board;
+    board.resize(2);
+    board.setFlag(1, 0, true);
+
+    const fuse::ai::BlackboardView view(board);
+    expectTrue(view.agentCount() == 2u, "blackboard view reports agent count");
+    expectTrue(view.isAgentValid(0), "agent index 0 is valid");
+    expectTrue(view.isAgentValid(1), "agent index 1 is valid");
+    expectTrue(!view.isAgentValid(2), "agent index 2 is out of range");
+    expectTrue(view.isFlagEmpty(0, 0), "unset flag reads as empty");
+    expectTrue(!view.isFlagEmpty(1, 0), "set flag is not empty");
+
+    const fuse::ai::BlackboardView unbound;
+    expectTrue(unbound.agentCount() == 0u, "unbound view reports zero agents");
+    expectTrue(!unbound.isAgentValid(0), "unbound view rejects agent index");
+    expectTrue(unbound.isFlagEmpty(0, 0), "unbound view treats flag as empty");
 }
 
 void testGuardAllyContextLeaf() {
@@ -1196,6 +1337,8 @@ int main() {
     testParallelPolicyThresholdFailTolerance();
     testParallelPolicySuccessThresholdFail();
     testParallelPolicyAbortOnFail();
+    testParallelPolicyAbortOnSuccess();
+    testParallelScalarSideEffectMerge();
     testParallelPolicyTextLoader();
     testParallelChildStatusAggregation();
     testDistanceGreaterCondition();
@@ -1213,6 +1356,9 @@ int main() {
     testBlackboardIsEmptyGuard();
     testGuardBlackboardBoundLeaf();
     testGuardBlackboardScalarEmptyLeaf();
+    testGuardBlackboardFlagEmptyLeaf();
+    testGuardBlackboardEmptyLeaf();
+    testBlackboardViewAgentAndFlagHelpers();
     testGuardAllyContextLeaf();
     testAnyAllyInRadiusConditionLeaf();
     testAlliesCountActionLeaf();

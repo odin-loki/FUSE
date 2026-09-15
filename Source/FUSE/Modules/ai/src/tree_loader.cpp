@@ -142,6 +142,8 @@ bool parseNodeLine(const std::string& line, NodeLoadSpec& outSpec, std::string* 
             }
         } else if (key == "abort") {
             outSpec.abortOnFail = value == "1" || value == "true" || value == "yes";
+        } else if (key == "abort_success") {
+            outSpec.abortOnSuccess = value == "1" || value == "true" || value == "yes";
         } else if (key == "require_board") {
             outSpec.requireBoundBlackboard = value == "1" || value == "true" || value == "yes";
         } else if (key == "require_allies") {
