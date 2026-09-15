@@ -72,7 +72,7 @@ SceneBuildSystem::build → SceneData (draw items, SDF, lights)
 SceneManager::update (stub tick — systems wired in integration test)
 ```
 
-`Registry::each_parallel` parallelizes row iteration per matching archetype via `JobScheduler::parallel_for` (default batch size 256). `TransformSystemOptions::parallelDirtyRoots` selects the parallel dirty-root pass (default on). `Registry::each_query` / `each_query_parallel` accept compile-time `With<...>` required types and an optional trailing `Without<...>` exclusion tag; `archetype_matches` evaluates filters before row iteration. Managed-memory columns at production scale remain **deferred** to B4+ physics/GPU paths. Current columns use `std::vector<std::byte>` on the CPU.
+`Registry::each_parallel` parallelizes row iteration per matching archetype via `JobScheduler::parallel_for` (default batch size 256; `batchSize == 0` clamps to 1). `TransformSystemOptions::parallelDirtyRoots` selects the parallel dirty-root pass (default on). `TransformSystem::recompute_world_matrix` is the shared CPU stub for local/world matrix recompute; dirty-root serial/parallel stubs delegate to it before the hierarchy walk. `Registry::each_query` / `each_query_parallel` accept compile-time `With<...>` required types and an optional trailing `Without<...>` exclusion tag; `archetype_matches` evaluates filters before row iteration. Managed-memory columns at production scale remain **deferred** to B4+ physics/GPU paths. Current columns use `std::vector<std::byte>` on the CPU.
 
 ---
 
@@ -122,8 +122,8 @@ ctest --test-dir build --output-on-failure -R 'fuse_ecs|fuse_scene'
 | Target | Validates |
 |--------|-----------|
 | `fuse_ecs_registry` | Create/destroy, stale handles, add/get/remove, archetype migration, `each` |
-| `fuse_ecs_query_filter` | `archetype_matches` With/Without filters; `each_query` serial/parallel coverage |
-| `fuse_ecs_each_parallel` | `each_parallel` visit/mutation parity vs `each`; `TransformSystem` serial/parallel dirty-root paths |
+| `fuse_ecs_query_filter` | `archetype_matches` With/Without filters; `each_query` serial/parallel coverage (atomic visit counts) |
+| `fuse_ecs_each_parallel` | `each_parallel` visit/mutation parity vs `each`; batchSize edge cases (0, oversized, empty); With/Without query smoke; `TransformSystem` serial/parallel dirty-root paths + matrix parity |
 | `fuse_ecs_components` | Component names, defaults, registry storage for lights/tags |
 | `fuse_ecs_system_scheduler` | System dependency DAG execution order |
 | `fuse_ecs_bvh` | SAH BVH ray cast, frustum query vs brute force, refit |
@@ -158,6 +158,8 @@ ctest --test-dir build --output-on-failure -R 'fuse_ecs|fuse_scene'
 - [x] System scheduler honours declared dependencies (`fuse_ecs_system_scheduler`)
 - [x] `each<T>` iterates exactly the correct entities — no missed entities, no spurious iterations (`fuse_ecs_registry`)
 - [x] `each_parallel<T>` produces identical results to `each<T>` across randomised cases (`fuse_ecs_each_parallel`; 100k scale deferred)
+- [x] `each_parallel` batchSize edge cases (0 → 1, oversized grain, empty registry) use atomic visit counts (`fuse_ecs_each_parallel`)
+- [x] `TransformSystem` serial vs parallel dirty-root paths produce identical world matrices (`fuse_ecs_each_parallel`)
 - [x] `QueryFilter` With/Without archetype matching + `each_query` / `each_query_parallel` coverage (`fuse_ecs_query_filter`)
 
 ### B3.4 — Bounding Volume Hierarchy

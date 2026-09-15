@@ -1,4 +1,5 @@
 #include <fuse/ecs/components/rigidbody.hpp>
+#include <fuse/ecs/components/tags.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/registry.hpp>
 #include <fuse/ecs/systems/transform_system.hpp>
@@ -256,6 +257,163 @@ void testTransformSystemSerialDirtyRoots() {
     expectTrue(!updated->dirty, "serial dirty-root pass clears dirty flag");
 }
 
+void populateTransformParityScene(fuse::ecs::Registry& reg) {
+    reg.init(128);
+
+    const fuse::ecs::EntityID rootA = reg.create();
+    const fuse::ecs::EntityID rootB = reg.create();
+    const fuse::ecs::EntityID child = reg.create();
+
+    fuse::ecs::Transform rootATransform{};
+    rootATransform.position = {1.f, 0.f, 0.f, 1.f};
+    rootATransform.dirty = true;
+    reg.add(rootA, rootATransform);
+
+    fuse::ecs::Transform rootBTransform{};
+    rootBTransform.position = {0.f, 4.f, 0.f, 1.f};
+    rootBTransform.dirty = true;
+    reg.add(rootB, rootBTransform);
+
+    fuse::ecs::Transform childTransform{};
+    childTransform.position = {0.f, 2.f, 0.f, 1.f};
+    childTransform.parent = rootA;
+    childTransform.dirty = true;
+    reg.add(child, childTransform);
+}
+
+bool transformMatricesMatch(const fuse::ecs::Transform& lhs, const fuse::ecs::Transform& rhs) {
+    for (fuse::u32 i = 0; i < 16; ++i) {
+        if (lhs.local_to_world.data[i] != rhs.local_to_world.data[i]) {
+            return false;
+        }
+        if (lhs.world_to_local.data[i] != rhs.world_to_local.data[i]) {
+            return false;
+        }
+    }
+    return lhs.dirty == rhs.dirty;
+}
+
+void testTransformSystemSerialParallelParity() {
+    fuse::ecs::Registry serialReg;
+    fuse::ecs::Registry parallelReg;
+    populateTransformParityScene(serialReg);
+    populateTransformParityScene(parallelReg);
+
+    fuse::ecs::TransformSystemOptions serialOptions{};
+    serialOptions.parallelDirtyRoots = false;
+    fuse::ecs::TransformSystem::update(serialReg, serialOptions);
+
+    withScheduler(4, [&] {
+        fuse::ecs::TransformSystemOptions parallelOptions{};
+        parallelOptions.parallelDirtyRoots = true;
+        parallelOptions.batchSize = 4;
+        fuse::ecs::TransformSystem::update(parallelReg, parallelOptions);
+    });
+
+    std::unordered_map<fuse::u32, fuse::ecs::Transform> serialByIndex;
+    serialReg.each<fuse::ecs::Transform>([&](fuse::ecs::EntityID id, fuse::ecs::Transform& transform) {
+        serialByIndex[id.index] = transform;
+    });
+
+    parallelReg.each<fuse::ecs::Transform>([&](fuse::ecs::EntityID id, fuse::ecs::Transform& transform) {
+        const auto it = serialByIndex.find(id.index);
+        expectTrue(it != serialByIndex.end(), "parallel registry entity exists in serial snapshot");
+        if (it == serialByIndex.end()) {
+            return;
+        }
+        expectTrue(transformMatricesMatch(transform, it->second),
+                   "TransformSystem serial/parallel paths produce identical matrices");
+    });
+}
+
+void testEachParallelBatchSizeZero() {
+    fuse::ecs::Registry reg;
+    reg.init(16);
+
+    for (fuse::u32 i = 0; i < 8; ++i) {
+        const fuse::ecs::EntityID id = reg.create();
+        reg.add<fuse::ecs::Transform>(id);
+    }
+
+    std::atomic<fuse::u32> visitCount{0};
+    withScheduler(2, [&] {
+        reg.each_parallel<fuse::ecs::Transform>([&](fuse::ecs::EntityID, fuse::ecs::Transform&) {
+            visitCount.fetch_add(1u, std::memory_order_relaxed);
+        }, 0);
+    });
+
+    expectEq(visitCount.load(std::memory_order_relaxed), 8u, "batchSize=0 still visits all entities");
+}
+
+void testEachParallelBatchSizeExceedsEntityCount() {
+    fuse::ecs::Registry reg;
+    reg.init(8);
+
+    for (fuse::u32 i = 0; i < 3; ++i) {
+        const fuse::ecs::EntityID id = reg.create();
+        reg.add<fuse::ecs::Transform>(id);
+    }
+
+    std::atomic<fuse::u32> visitCount{0};
+    withScheduler(4, [&] {
+        reg.each_parallel<fuse::ecs::Transform>([&](fuse::ecs::EntityID, fuse::ecs::Transform&) {
+            visitCount.fetch_add(1u, std::memory_order_relaxed);
+        }, 1024);
+    });
+
+    expectEq(visitCount.load(std::memory_order_relaxed), 3u, "batchSize larger than count visits all entities");
+}
+
+void testEachParallelEmptyRegistry() {
+    fuse::ecs::Registry reg;
+    reg.init(8);
+
+    std::atomic<fuse::u32> visitCount{0};
+    withScheduler(2, [&] {
+        reg.each_parallel<fuse::ecs::Transform>([&](fuse::ecs::EntityID, fuse::ecs::Transform&) {
+            visitCount.fetch_add(1u, std::memory_order_relaxed);
+        }, 1);
+    });
+
+    expectEq(visitCount.load(std::memory_order_relaxed), 0u, "empty registry produces zero parallel visits");
+}
+
+void testEachQueryParallelWithWithoutSmoke() {
+    fuse::ecs::Registry reg;
+    reg.init(64);
+
+    const fuse::ecs::EntityID dynamicBody = reg.create();
+    const fuse::ecs::EntityID staticBody = reg.create();
+
+    reg.add<fuse::ecs::Transform>(dynamicBody);
+    reg.add<fuse::ecs::RigidBody>(dynamicBody);
+    reg.add<fuse::ecs::Transform>(staticBody);
+    reg.add<fuse::ecs::RigidBody>(staticBody);
+    reg.add<fuse::ecs::TagStatic>(staticBody);
+
+    std::atomic<fuse::u32> serialCount{0};
+    reg.each_query<fuse::ecs::Transform, fuse::ecs::RigidBody>(
+        [&](fuse::ecs::EntityID id, fuse::ecs::Transform&, fuse::ecs::RigidBody&) {
+            expectTrue(id == dynamicBody, "serial each_query With/Without skips static bodies");
+            serialCount.fetch_add(1u, std::memory_order_relaxed);
+        },
+        fuse::ecs::Without<fuse::ecs::TagStatic>{});
+
+    std::atomic<fuse::u32> parallelCount{0};
+    withScheduler(4, [&] {
+        reg.each_query_parallel<fuse::ecs::Transform, fuse::ecs::RigidBody>(
+            [&](fuse::ecs::EntityID id, fuse::ecs::Transform&, fuse::ecs::RigidBody&) {
+                expectTrue(id == dynamicBody, "parallel each_query With/Without skips static bodies");
+                parallelCount.fetch_add(1u, std::memory_order_relaxed);
+            },
+            fuse::ecs::Without<fuse::ecs::TagStatic>{},
+            2);
+    });
+
+    expectEq(serialCount.load(std::memory_order_relaxed), 1u, "serial With/Without smoke visits one entity");
+    expectEq(parallelCount.load(std::memory_order_relaxed), 1u, "parallel With/Without smoke visits one entity");
+}
+
 } // namespace
 
 int main() {
@@ -263,8 +421,13 @@ int main() {
     testEachParallelStressVisitCoverage();
     testEachParallelMutationParity();
     testEachParallelMultiComponent();
+    testEachParallelBatchSizeZero();
+    testEachParallelBatchSizeExceedsEntityCount();
+    testEachParallelEmptyRegistry();
+    testEachQueryParallelWithWithoutSmoke();
     testTransformSystemParallelDirtyRoots();
     testTransformSystemSerialDirtyRoots();
+    testTransformSystemSerialParallelParity();
 
     if (g_failures == 0) {
         std::printf("fuse_ecs_each_parallel_tests: all checks passed\n");
