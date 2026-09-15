@@ -6,6 +6,7 @@ set(FUSE_ANIMATION_PUBLIC_HEADERS
     include/fuse/animation/clip.hpp
     include/fuse/animation/blend_tree.hpp
     include/fuse/animation/ik_solver.hpp
+    include/fuse/animation/retarget.hpp
     include/fuse/animation/skinning.hpp
     include/fuse/animation/animator.hpp
 )
@@ -15,6 +16,7 @@ set(FUSE_ANIMATION_SOURCES
     src/clip.cpp
     src/blend_tree.cpp
     src/ik_solver.cpp
+    src/retarget.cpp
     src/skinning.cpp
     src/animator.cpp
 )
