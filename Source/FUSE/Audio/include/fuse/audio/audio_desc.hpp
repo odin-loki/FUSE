@@ -1,5 +1,7 @@
 #pragma once
 
+#include <fuse/audio/attenuation.hpp>
+#include <fuse/audio/audio_bus.hpp>
 #include <fuse/handle.hpp>
 #include <fuse/types.hpp>
 
@@ -22,6 +24,9 @@ struct AudioSourceDesc {
     float pitch = 1.f;
     float min_distance = 1.f;
     float max_distance = 50.f;
+    AttenuationCurve attenuation = AttenuationCurve::Linear;
+    float rolloff = 1.f;
+    AudioBus bus = AudioBus::Sfx;
     bool looping = false;
     bool spatial = true;
     bool play_on_awake = false;

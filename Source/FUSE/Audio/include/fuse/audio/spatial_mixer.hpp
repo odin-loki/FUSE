@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/audio/audio_bus.hpp>
 #include <fuse/audio/audio_clip.hpp>
 #include <fuse/audio/audio_components.hpp>
 #include <fuse/audio/audio_desc.hpp>
@@ -22,11 +23,15 @@ public:
 
     float last_master_gain() const { return m_lastMasterGain; }
 
+    AudioBusMixer& bus_mixer() { return m_busMixer; }
+    const AudioBusMixer& bus_mixer() const { return m_busMixer; }
+
 private:
     u32 m_sampleRate = 48000;
     u32 m_maxSources = 256;
     bool m_hrtfEnabled = true;
     float m_lastMasterGain = 1.f;
+    AudioBusMixer m_busMixer;
 
     float sample_clip(const AudioClip& clip, float play_head, u32 channel) const;
     void apply_hrtf_pan(float mono_sample, const Vec3& rel, float attenuation, float& left,
