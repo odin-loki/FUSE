@@ -30,6 +30,21 @@ ReverbZoneBlend blend_reverb_zones(const Vec3& listener, const ReverbZoneParams*
 u32 count_listener_reverb_zones(const Vec3& listener, const ReverbZoneParams* zones,
                                 u32 zone_count);
 
+/// Clamp a wet-mix scalar into [0, 1].
+float clamp_wet_mix(float wet_mix);
+
+/// Complement of a clamped wet mix — dry contribution weight.
+float compute_dry_mix(float wet_mix);
+
+/// True when the blend carries at least one active zone.
+bool has_active_reverb_blend(const ReverbZoneBlend& blend);
+
+/// True when no active zones contribute wet signal (fully dry path).
+bool is_dry_reverb_blend(const ReverbZoneBlend& blend);
+
+/// True when wet convolution should run for the blend result.
+bool should_apply_reverb_wet_mix(const ReverbZoneBlend& blend);
+
 /// Effective wet mix scalar [0, 1] from a zone blend result.
 float compute_effective_wet_mix(const ReverbZoneBlend& blend);
 

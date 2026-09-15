@@ -1109,6 +1109,103 @@ void testHrtfPanEdgeCases() {
                "HRTF disabled produces equal L/R regardless of position");
 }
 
+void testOcclusionEmptyBlockerGuards() {
+    expectTrue(!fuse::audio::has_occlusion_blockers(nullptr, 0),
+               "null blocker list is empty");
+    expectTrue(!fuse::audio::has_occlusion_blockers(nullptr, 3),
+               "null pointer with non-zero count is empty");
+    const fuse::audio::AABB blocker{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
+    expectTrue(fuse::audio::has_occlusion_blockers(&blocker, 1),
+               "non-null blocker list is non-empty");
+    expectTrue(!fuse::audio::has_occlusion_blockers(&blocker, 0),
+               "zero blocker count is empty even with valid pointer");
+
+    expectTrue(fuse::audio::should_skip_blocker_evaluation(fuse::audio::Vec3{1.f, 2.f, 3.f},
+                                                           fuse::audio::Vec3{1.f, 2.f, 3.f}),
+               "co-located listener and source skip blocker evaluation");
+    expectTrue(!fuse::audio::should_skip_blocker_evaluation(fuse::audio::Vec3{0.f, 0.f, 0.f},
+                                                          fuse::audio::Vec3{1.f, 0.f, 0.f}),
+               "separated listener and source evaluate blockers");
+
+    expectNear(fuse::audio::clamp_occlusion_visibility(1.5f), 1.f, 1e-5f,
+               "visibility clamps above unity");
+    expectNear(fuse::audio::clamp_occlusion_visibility(-0.25f), 0.f, 1e-5f,
+               "visibility clamps below zero");
+    expectTrue(fuse::audio::is_fully_visible_occlusion(1.2f),
+               "visibility above unity is fully visible");
+    expectTrue(fuse::audio::is_fully_occluded_occlusion(-0.1f),
+               "visibility below zero is fully occluded");
+    expectTrue(!fuse::audio::is_fully_visible_occlusion(0.5f),
+               "partial visibility is not fully visible");
+    expectTrue(!fuse::audio::is_fully_occluded_occlusion(0.5f),
+               "partial visibility is not fully occluded");
+
+    expectNear(fuse::audio::compute_blockers_factor(fuse::audio::Vec3{0.f, 0.f, 0.f},
+                                                    fuse::audio::Vec3{0.f, 0.f, 0.f}, &blocker, 1),
+               0.f, 1e-5f, "co-located source yields zero blocker factor");
+    expectNear(fuse::audio::compute_effective_visibility(fuse::audio::Vec3{0.f, 0.f, 0.f},
+                                                         fuse::audio::Vec3{0.f, 0.f, 0.f}, 1.f,
+                                                         &blocker, 1),
+               1.f, 1e-5f, "co-located source preserves source occlusion visibility");
+
+    const fuse::audio::OcclusionAttenuation clear =
+        fuse::audio::evaluate_occlusion_attenuation(2.f);
+    expectNear(clear.gain, 1.f, 1e-5f, "fully visible early-out keeps unity LF gain");
+    expectNear(clear.hf_gain, 1.f, 1e-5f, "fully visible early-out keeps unity HF gain");
+
+    const fuse::audio::OcclusionAttenuation silent =
+        fuse::audio::evaluate_occlusion_attenuation(-1.f);
+    expectNear(silent.gain, 0.1f, 1e-5f, "fully occluded early-out floors LF gain");
+    expectNear(silent.hf_gain, 0.6f, 1e-5f, "fully occluded early-out floors HF gain");
+
+    expectNear(fuse::audio::combine_occlusion_visibility(0.8f, 0.f), 0.8f, 1e-5f,
+               "zero blocker factor early-out preserves visibility");
+    expectNear(fuse::audio::combine_occlusion_visibility(0.8f, 1.f), 0.f, 1e-5f,
+               "full blocker factor early-out silences visibility");
+    expectNear(fuse::audio::combine_occlusion_visibility(0.f, 0.5f), 0.f, 1e-5f,
+               "fully occluded source early-out ignores blocker factor");
+}
+
+void testReverbWetMixHelpers() {
+    expectNear(fuse::audio::clamp_wet_mix(1.5f), 1.f, 1e-5f, "wet mix clamps above unity");
+    expectNear(fuse::audio::clamp_wet_mix(-0.2f), 0.f, 1e-5f, "wet mix clamps below zero");
+    expectNear(fuse::audio::compute_dry_mix(0.3f), 0.7f, 1e-5f,
+               "dry mix complements clamped wet mix");
+    expectNear(fuse::audio::compute_dry_mix(2.f), 0.f, 1e-5f,
+               "dry mix is zero when wet mix clamps to unity");
+
+    fuse::audio::ReverbZoneBlend dry;
+    expectTrue(fuse::audio::is_dry_reverb_blend(dry),
+               "default blend is dry");
+    expectTrue(!fuse::audio::has_active_reverb_blend(dry),
+               "default blend has no active zones");
+    expectTrue(!fuse::audio::should_apply_reverb_wet_mix(dry),
+               "dry blend skips wet convolution");
+
+    fuse::audio::ReverbZoneBlend wet;
+    wet.wet_dry = 0.5f;
+    wet.send_level = 0.8f;
+    wet.active_zone_count = 1;
+    expectTrue(fuse::audio::has_active_reverb_blend(wet),
+               "active zone count marks blend active");
+    expectTrue(fuse::audio::should_apply_reverb_wet_mix(wet),
+               "non-zero wet mix applies reverb");
+    expectTrue(!fuse::audio::is_dry_reverb_blend(wet),
+               "active wet blend is not dry");
+
+    fuse::audio::ReverbZoneBlend zero_send = wet;
+    zero_send.send_level = 0.f;
+    expectTrue(fuse::audio::is_dry_reverb_blend(zero_send),
+               "zero send level yields dry blend");
+    expectTrue(!fuse::audio::should_apply_reverb_wet_mix(zero_send),
+               "zero send level skips wet convolution");
+
+    expectNear(fuse::audio::blend_dry_wet_sample(1.f, 0.f, 0.f), 1.f, 1e-5f,
+               "zero wet mix early-out returns dry sample");
+    expectNear(fuse::audio::blend_dry_wet_sample(1.f, 0.f, 1.f), 0.f, 1e-5f,
+               "unity wet mix early-out returns wet sample");
+}
+
 void testOcclusionStub() {
     fuse::audio::OcclusionParams params;
     params.min_gain = 0.1f;
@@ -1868,6 +1965,7 @@ int main() {
     testDegenerateListenerOrientationMix();
     testEmptyListenerSpatialMix();
     testHrtfPanEdgeCases();
+    testOcclusionEmptyBlockerGuards();
     testOcclusionStub();
     testBlockerFactorExtremes();
     testOcclusionFactorExtremes();
@@ -1877,6 +1975,7 @@ int main() {
     testReverbZoneBlendExtremes();
     testReverbZoneOverlappingBlend();
     testReverbZoneEmptyList();
+    testReverbWetMixHelpers();
     testDryWetBlendStub();
     testReverbZoneListenerPositionAffectsMix();
     testReverbSendLevelDryMix();
