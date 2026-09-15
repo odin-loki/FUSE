@@ -1,0 +1,92 @@
+#include <fuse/cinematics/camera_track.hpp>
+
+#include <algorithm>
+
+namespace fuse::cinematics {
+
+namespace {
+
+float sample_scalar_rail(const std::vector<CameraKeyframe>& keyframes,
+                         TimelineMs time_ms,
+                         float (CameraKeyframe::*member),
+                         EaseMode ease) {
+    const CameraKeyframe* previous = nullptr;
+    for (const CameraKeyframe& keyframe : keyframes) {
+        if (time_ms < keyframe.time_ms) {
+            if (!previous) {
+                return keyframe.*member;
+            }
+
+            const TimelineMs span = keyframe.time_ms - previous->time_ms;
+            if (span <= 0) {
+                return keyframe.*member;
+            }
+
+            const float t = apply_ease(ease,
+                                       static_cast<float>(time_ms - previous->time_ms)
+                                           / static_cast<float>(span));
+            return lerp(previous->*member, keyframe.*member, t);
+        }
+
+        previous = &keyframe;
+    }
+
+    return previous ? previous->*member : 0.f;
+}
+
+Vec3 sample_vec3_rail(const std::vector<CameraKeyframe>& keyframes,
+                      TimelineMs time_ms,
+                      Vec3 (CameraKeyframe::*member),
+                      EaseMode ease) {
+    const CameraKeyframe* previous = nullptr;
+    for (const CameraKeyframe& keyframe : keyframes) {
+        if (time_ms < keyframe.time_ms) {
+            if (!previous) {
+                return keyframe.*member;
+            }
+
+            const TimelineMs span = keyframe.time_ms - previous->time_ms;
+            if (span <= 0) {
+                return keyframe.*member;
+            }
+
+            const float t = apply_ease(ease,
+                                       static_cast<float>(time_ms - previous->time_ms)
+                                           / static_cast<float>(span));
+            return lerp_vec3(previous->*member, keyframe.*member, t);
+        }
+
+        previous = &keyframe;
+    }
+
+    return previous ? previous->*member : Vec3{};
+}
+
+} // namespace
+
+CameraTrack::CameraTrack(const std::string& label) : Track(label) {}
+
+void CameraTrack::add_keyframe(const CameraKeyframe& keyframe) {
+    keyframes_.push_back(keyframe);
+}
+
+void CameraTrack::sort_keyframes() {
+    std::stable_sort(keyframes_.begin(), keyframes_.end(),
+                     [](const CameraKeyframe& a, const CameraKeyframe& b) {
+                         return a.time_ms < b.time_ms;
+                     });
+}
+
+CameraSample CameraTrack::sample_at(TimelineMs time_ms, EaseMode ease) const {
+    if (keyframes_.empty()) {
+        return {};
+    }
+
+    CameraSample sample;
+    sample.position = sample_vec3_rail(keyframes_, time_ms, &CameraKeyframe::position, ease);
+    sample.look_at = sample_vec3_rail(keyframes_, time_ms, &CameraKeyframe::look_at, ease);
+    sample.field_of_view = sample_scalar_rail(keyframes_, time_ms, &CameraKeyframe::field_of_view, ease);
+    return sample;
+}
+
+} // namespace fuse::cinematics

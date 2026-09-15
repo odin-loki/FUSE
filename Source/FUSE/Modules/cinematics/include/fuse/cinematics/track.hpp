@@ -10,6 +10,13 @@
 
 namespace fuse::cinematics {
 
+enum class TrackKind {
+    Generic,
+    Camera,
+    Sprite,
+    Property,
+};
+
 struct TrackSpan {
     TimelineMs start_ms = 0;
     TimelineMs end_ms = 0;
@@ -22,6 +29,9 @@ struct TrackSpan {
 class Track {
 public:
     explicit Track(const std::string& label = "DefaultTrack");
+    virtual ~Track() = default;
+
+    virtual TrackKind kind() const { return TrackKind::Generic; }
 
     const std::string& label() const { return label_; }
     void set_label(const std::string& label) { label_ = label; }
@@ -39,12 +49,14 @@ public:
     TrackSpan span() const;
 
     /// Normalized position within the track at `time_ms` (0..1), Verve calculateInterp.
-    float interpolation_at(TimelineMs time_ms, TimelineMs sequence_duration_ms) const;
+    float interpolation_at(TimelineMs time_ms,
+                           TimelineMs sequence_duration_ms,
+                           bool playing_forward = true) const;
 
     /// Index of the next enabled event at or after `time_ms`, or -1.
     int next_event_index(TimelineMs time_ms) const;
 
-private:
+protected:
     std::string label_;
     bool enabled_ = true;
     std::vector<TimelineEvent> events_;

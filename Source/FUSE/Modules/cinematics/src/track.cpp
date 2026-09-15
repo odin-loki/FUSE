@@ -1,7 +1,8 @@
 #include <fuse/cinematics/track.hpp>
 
+#include <fuse/cinematics/interpolate.hpp>
+
 #include <algorithm>
-#include <cmath>
 
 namespace fuse::cinematics {
 
@@ -37,50 +38,10 @@ TrackSpan Track::span() const {
     return span;
 }
 
-float Track::interpolation_at(TimelineMs time_ms, TimelineMs sequence_duration_ms) const {
-    if (sequence_duration_ms <= 0 || time_ms == sequence_duration_ms) {
-        return 1.f;
-    }
-
-    if (events_.empty()) {
-        return static_cast<float>(time_ms) / static_cast<float>(sequence_duration_ms);
-    }
-
-    TimelineMs last_time = 0;
-    for (const TimelineEvent& event : events_) {
-        if (!event.enabled()) {
-            continue;
-        }
-
-        const TimelineMs start_time = event.start_ms();
-        const TimelineMs finish_time = event.finish_ms();
-
-        if (time_ms < start_time) {
-            const TimelineMs segment = start_time - last_time;
-            if (segment <= 0) {
-                return 0.f;
-            }
-            return static_cast<float>(time_ms - last_time) / static_cast<float>(segment);
-        }
-
-        last_time = start_time;
-
-        if (time_ms < finish_time) {
-            const TimelineMs segment = finish_time - last_time;
-            if (segment <= 0) {
-                return 1.f;
-            }
-            return static_cast<float>(time_ms - last_time) / static_cast<float>(segment);
-        }
-
-        last_time = finish_time;
-    }
-
-    const TimelineMs tail = sequence_duration_ms - last_time;
-    if (tail <= 0) {
-        return 1.f;
-    }
-    return static_cast<float>(time_ms - last_time) / static_cast<float>(tail);
+float Track::interpolation_at(TimelineMs time_ms,
+                              TimelineMs sequence_duration_ms,
+                              bool playing_forward) const {
+    return calculate_track_interp_forward(playing_forward, events_, time_ms, sequence_duration_ms);
 }
 
 int Track::next_event_index(TimelineMs time_ms) const {

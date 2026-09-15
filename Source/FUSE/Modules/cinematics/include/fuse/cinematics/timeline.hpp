@@ -30,6 +30,12 @@ public:
     bool loop() const { return loop_; }
     void set_loop(bool loop) { loop_ = loop; }
 
+    /// Union span across all enabled tracks in all groups.
+    TrackSpan content_span() const;
+
+    /// Suggested sequence duration from track content (falls back to playhead duration).
+    TimelineMs suggested_duration_ms() const;
+
     void reset(TimelineMs time_ms = 0);
     void play(TimelineMs time_ms = -1);
     void pause();

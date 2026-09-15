@@ -15,6 +15,10 @@ Verve is Copyright (C) 2014 Violent Tulip, licensed under the **MIT License**. S
 | `Track` | `Engine/source/Verve/Core/VTrack.h` | Ordered event lane, span, interpolation |
 | `TimelineEvent` | `Engine/source/Verve/Core/VEvent.h` | Trigger time + duration keyframe |
 | `TrackGroup` | `Engine/source/Verve/Core/VGroup.h` | Track grouping |
+| `CameraTrack` | `Engine/source/Verve/Extension/Camera/VCameraTrack.h` | Camera keyframe rail + sampling stub |
+| `SpriteTrack` | `Engine/source/Verve/Extension/SceneObject/VSceneObjectTrack.h` | 2D sprite transform stub |
+| `PropertyTrack` | `Engine/source/Verve/Extension/Motion/VMotionTrack.h` | Scalar property rail stub |
+| `interpolate` | `Engine/source/Verve/Core/VTrack.cpp` | `lerp`, easing, `calculateInterp` helpers |
 
 Submodule reference copy (same layout): `third_party/addons/Verve/Engine/source/Verve/Core/`.
 
@@ -24,8 +28,16 @@ Submodule reference copy (same layout): `third_party/addons/Verve/Engine/source/
 fuse::cinematics::Timeline timeline;
 timeline.playhead().set_duration_ms(30'000);
 auto& group = timeline.add_group("Director");
-auto& track = group.add_track("Motion");
-track.add_event({"intro", 2'000, 3'000});
+
+auto& camera = group.add_camera_track("MainCam");
+camera.set_target_camera_id("player_cam");
+camera.add_keyframe({0, {0, 0, 5}, {0, 0, 0}, 60.f});
+camera.add_keyframe({2'000, {0, 0, 10}, {0, 0, 0}, 45.f});
+
+auto& sprite = group.add_sprite_track("Hero");
+sprite.add_keyframe({0, 0.f, 0.f, 1.f});
+sprite.add_keyframe({1'000, 100.f, 50.f, 0.f});
+
 timeline.play();
 timeline.advance(100); // ms per tick
 ```

@@ -1,12 +1,20 @@
 add_library(fuse_cinematics STATIC
     src/event.cpp
+    src/interpolate.cpp
     src/track.cpp
+    src/camera_track.cpp
+    src/sprite_track.cpp
+    src/property_track.cpp
     src/group.cpp
     src/playhead.cpp
     src/timeline.cpp
     include/fuse/cinematics/types.hpp
     include/fuse/cinematics/event.hpp
+    include/fuse/cinematics/interpolate.hpp
     include/fuse/cinematics/track.hpp
+    include/fuse/cinematics/camera_track.hpp
+    include/fuse/cinematics/sprite_track.hpp
+    include/fuse/cinematics/property_track.hpp
     include/fuse/cinematics/group.hpp
     include/fuse/cinematics/playhead.hpp
     include/fuse/cinematics/timeline.hpp
