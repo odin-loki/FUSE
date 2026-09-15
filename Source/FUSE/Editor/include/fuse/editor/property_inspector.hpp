@@ -34,6 +34,10 @@ public:
     bool setTransformPosition(const ecs::vec3& position, EditorScene& scene, CommandStack& cmds);
     bool setSdfBlendAlpha(f32 alpha, EditorScene& scene, CommandStack& cmds);
 
+    /// Mesh material slot helpers for material inspector wiring (B6.7 deepen).
+    [[nodiscard]] bool getMeshMaterialId(const EditorScene& scene, u32& out) const;
+    bool setMeshMaterialId(u32 materialId, EditorScene& scene, CommandStack& cmds);
+
 private:
     void appendSectionIfPresent(const char* componentName, ecs::EntityID id, EditorScene& scene);
 

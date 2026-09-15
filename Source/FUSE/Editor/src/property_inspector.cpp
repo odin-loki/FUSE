@@ -1,7 +1,9 @@
 #include <fuse/editor/property_inspector.hpp>
 
+#include <fuse/ecs/components/mesh.hpp>
 #include <fuse/object.hpp>
 
+#include <algorithm>
 #include <string>
 #include <string_view>
 
@@ -19,7 +21,7 @@ u32 componentFieldCount(const char* componentName) {
         return 4u;
     }
     if (name == ecs::Mesh::component_name) {
-        return 2u;
+        return 3u;
     }
     if (name == ecs::SDFObject::component_name) {
         return 5u;
@@ -102,6 +104,41 @@ bool PropertyInspector::setTransformPosition(const ecs::vec3& position, EditorSc
     command.propertyName = "transform.position";
     command.propertyValue = std::to_string(position.x) + "," + std::to_string(position.y) + "," +
                           std::to_string(position.z);
+    cmds.execute(std::move(command));
+    return true;
+}
+
+bool PropertyInspector::getMeshMaterialId(const EditorScene& scene, u32& out) const {
+    if (!m_target.valid()) {
+        return false;
+    }
+
+    const ecs::Mesh* mesh = scene.registry().get<ecs::Mesh>(m_target);
+    if (mesh == nullptr) {
+        return false;
+    }
+
+    out = mesh->material_id;
+    return true;
+}
+
+bool PropertyInspector::setMeshMaterialId(u32 materialId, EditorScene& scene, CommandStack& cmds) {
+    if (!m_target.valid()) {
+        return false;
+    }
+
+    ecs::Mesh* mesh = scene.registry().get<ecs::Mesh>(m_target);
+    if (mesh == nullptr) {
+        return false;
+    }
+
+    mesh->material_id = materialId;
+
+    EditorCommand command;
+    command.kind = CommandKind::SetProperty;
+    command.target = Handle<Object>(m_target.index, m_target.generation);
+    command.propertyName = "mesh.material_id";
+    command.propertyValue = std::to_string(materialId);
     cmds.execute(std::move(command));
     return true;
 }

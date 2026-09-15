@@ -1,6 +1,7 @@
 #include <fuse/editor/material_property_binding.hpp>
 
 #include <fuse/editor/material_editor_panel.hpp>
+#include <fuse/editor/material_property_inspect.hpp>
 #include <fuse/handle.hpp>
 #include <fuse/object.hpp>
 
@@ -114,43 +115,95 @@ bool MaterialPropertyBinding::postProperty_(MaterialPropertyId id,
 }
 
 bool MaterialPropertyBinding::setRoughness(f32 roughness, CommandStack& cmds) {
-    if (!isBound() || m_editState == nullptr) {
-        return false;
-    }
-
-    m_editState->roughness = roughness;
-    return postProperty_(MaterialPropertyId::Roughness, std::to_string(roughness), cmds);
+    return setProperty(MaterialPropertyId::Roughness, roughness, cmds);
 }
 
 bool MaterialPropertyBinding::setMetallic(f32 metallic, CommandStack& cmds) {
-    if (!isBound() || m_editState == nullptr) {
-        return false;
-    }
-
-    m_editState->metallic = metallic;
-    return postProperty_(MaterialPropertyId::Metallic, std::to_string(metallic), cmds);
+    return setProperty(MaterialPropertyId::Metallic, metallic, cmds);
 }
 
 bool MaterialPropertyBinding::setBaseColor(f32 r, f32 g, f32 b, CommandStack& cmds) {
+    return setPropertyVec3(MaterialPropertyId::BaseColor, r, g, b, cmds);
+}
+
+bool MaterialPropertyBinding::setShadingModel(u8 shadingModel, CommandStack& cmds) {
+    return setProperty(MaterialPropertyId::ShadingModel, static_cast<f32>(shadingModel), cmds);
+}
+
+bool MaterialPropertyBinding::getProperty(MaterialPropertyId id, f32& out) const {
     if (!isBound() || m_editState == nullptr) {
         return false;
     }
 
+    switch (id) {
+    case MaterialPropertyId::Roughness:
+        out = m_editState->roughness;
+        return true;
+    case MaterialPropertyId::Metallic:
+        out = m_editState->metallic;
+        return true;
+    case MaterialPropertyId::ShadingModel:
+        out = static_cast<f32>(m_editState->shadingModel);
+        return true;
+    case MaterialPropertyId::BaseColor:
+        return false;
+    }
+    return false;
+}
+
+bool MaterialPropertyBinding::setProperty(MaterialPropertyId id, f32 value, CommandStack& cmds) {
+    if (!isBound() || m_editState == nullptr) {
+        return false;
+    }
+
+    switch (id) {
+    case MaterialPropertyId::Roughness: {
+        const f32 clamped = clampRoughness(value);
+        m_editState->roughness = clamped;
+        return postProperty_(id, std::to_string(clamped), cmds);
+    }
+    case MaterialPropertyId::Metallic: {
+        const f32 clamped = clampMetallic(value);
+        m_editState->metallic = clamped;
+        return postProperty_(id, std::to_string(clamped), cmds);
+    }
+    case MaterialPropertyId::ShadingModel: {
+        const u8 clamped = clampShadingModel(static_cast<u8>(value));
+        m_editState->shadingModel = clamped;
+        return postProperty_(id, std::to_string(clamped), cmds);
+    }
+    case MaterialPropertyId::BaseColor:
+        return false;
+    }
+    return false;
+}
+
+bool MaterialPropertyBinding::getPropertyVec3(MaterialPropertyId id, f32& x, f32& y, f32& z) const {
+    if (!isBound() || m_editState == nullptr || id != MaterialPropertyId::BaseColor) {
+        return false;
+    }
+
+    x = m_editState->baseColorR;
+    y = m_editState->baseColorG;
+    z = m_editState->baseColorB;
+    return true;
+}
+
+bool MaterialPropertyBinding::setPropertyVec3(MaterialPropertyId id, f32 x, f32 y, f32 z,
+                                              CommandStack& cmds) {
+    if (!isBound() || m_editState == nullptr || id != MaterialPropertyId::BaseColor) {
+        return false;
+    }
+
+    const f32 r = clampBaseColorComponent(x);
+    const f32 g = clampBaseColorComponent(y);
+    const f32 b = clampBaseColorComponent(z);
     m_editState->baseColorR = r;
     m_editState->baseColorG = g;
     m_editState->baseColorB = b;
 
     const std::string value = std::to_string(r) + "," + std::to_string(g) + "," + std::to_string(b);
-    return postProperty_(MaterialPropertyId::BaseColor, value, cmds);
-}
-
-bool MaterialPropertyBinding::setShadingModel(u8 shadingModel, CommandStack& cmds) {
-    if (!isBound() || m_editState == nullptr) {
-        return false;
-    }
-
-    m_editState->shadingModel = shadingModel;
-    return postProperty_(MaterialPropertyId::ShadingModel, std::to_string(shadingModel), cmds);
+    return postProperty_(id, value, cmds);
 }
 
 bool MaterialPropertyBinding::isPropertyDirty(MaterialPropertyId id) const {
