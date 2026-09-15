@@ -88,6 +88,20 @@ bool tonemap_curve_preserves_black(const TonemapCurveParams& params, f32 epsilon
     return black <= epsilon;
 }
 
+bool tonemap_curve_endpoints_valid(const TonemapCurveEndpoints& endpoints, f32 epsilon) {
+    if (endpoints.black_output < 0.f || endpoints.black_output > epsilon) {
+        return false;
+    }
+    if (endpoints.white_output < 0.f || endpoints.white_output > 1.f + epsilon) {
+        return false;
+    }
+    return endpoints.white_output > endpoints.black_output + epsilon;
+}
+
+f32 tonemap_curve_mid_grey_output(const TonemapCurveParams& params, f32 mid_grey) {
+    return evaluate_tonemap_curve_channel(std::max(mid_grey, 0.f), params);
+}
+
 fuse::math::Vec3 apply_exposure_ev(const fuse::math::Vec3& hdr, f32 ev_stops) {
     const f32 scale = std::pow(2.f, ev_stops);
     return {hdr.x * scale, hdr.y * scale, hdr.z * scale};
