@@ -5,6 +5,7 @@
 #include <fuse/audio/audio_registry.hpp>
 #include <fuse/audio/conv_reverb_cpu.hpp>
 #include <fuse/audio/math.hpp>
+#include <fuse/audio/occlusion.hpp>
 #include <fuse/audio/spatial_mixer.hpp>
 #include <fuse/core/init.hpp>
 
@@ -146,12 +147,234 @@ void testBusGains() {
                "master effective gain is master alone");
 }
 
+void testBusRoutingAllCategories() {
+    fuse::audio::AudioBusMixer mixer;
+    mixer.set_bus_gain(fuse::audio::AudioBus::Master, 1.f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Music, 0.6f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Voice, 0.4f);
+    expectNear(mixer.effective_gain(fuse::audio::AudioBus::Music), 0.6f, 1e-5f,
+               "music bus routes through master");
+    expectNear(mixer.effective_gain(fuse::audio::AudioBus::Voice), 0.4f, 1e-5f,
+               "voice bus routes through master");
+    expectNear(mixer.bus_gain(fuse::audio::AudioBus::Sfx), 1.f, 1e-5f,
+               "unset bus keeps unity gain");
+}
+
+void testBusGainClampsNegative() {
+    fuse::audio::AudioBusMixer mixer;
+    mixer.set_bus_gain(fuse::audio::AudioBus::Sfx, -0.5f);
+    expectNear(mixer.bus_gain(fuse::audio::AudioBus::Sfx), 0.f, 1e-5f,
+               "negative bus gain clamps to zero");
+    expectNear(mixer.effective_gain(fuse::audio::AudioBus::Sfx), 0.f, 1e-5f,
+               "effective gain is zero when bus is clamped");
+}
+
+float bufferEnergy(const std::vector<float>& buffer) {
+    float sum = 0.f;
+    for (float sample : buffer) {
+        sum += std::fabs(sample);
+    }
+    return sum;
+}
+
+void testBusRoutingAffectsMixOutput() {
+    fuse::audio::AudioEngine engine;
+    fuse::audio::AudioDesc desc;
+    desc.frames_per_buf = 256;
+    engine.init(desc);
+
+    std::vector<float> pcm(48000, 0.5f);
+    fuse::audio::AudioClip clip;
+    clip.load_from_pcm(pcm.data(), 48000, 1, 48000);
+    const auto clip_handle = engine.register_clip(std::move(clip));
+
+    fuse::audio::AudioRegistry registry;
+    const fuse::audio::EntityId listener_entity = registry.create_entity();
+    registry.set_listener(listener_entity);
+
+    const fuse::audio::EntityId source_entity = registry.create_entity();
+    registry.set_position(source_entity, fuse::audio::Vec3{0.f, 0.f, -5.f});
+    fuse::audio::AudioSourceDesc source_desc;
+    source_desc.clip = clip_handle;
+    source_desc.bus = fuse::audio::AudioBus::Sfx;
+    source_desc.spatial = true;
+    source_desc.looping = true;
+    fuse::audio::AudioSource* source = registry.add_source(source_entity, source_desc);
+    source->playing = true;
+
+    engine.bus_mixer().set_bus_gain(fuse::audio::AudioBus::Master, 1.f);
+    engine.bus_mixer().set_bus_gain(fuse::audio::AudioBus::Sfx, 1.f);
+    engine.update(registry, 1.f / 60.f);
+    const float full_energy = bufferEnergy(engine.last_mix_buffer());
+
+    engine.bus_mixer().set_bus_gain(fuse::audio::AudioBus::Sfx, 0.25f);
+    source->play_head = 0.f;
+    engine.update(registry, 1.f / 60.f);
+    const float reduced_energy = bufferEnergy(engine.last_mix_buffer());
+
+    expectTrue(full_energy > reduced_energy * 2.f, "bus gain scales mix output");
+    expectTrue(reduced_energy > 0.f, "reduced bus still produces audible output");
+}
+
 float channelEnergy(const std::vector<float>& buffer, u32 channel) {
     float sum = 0.f;
     for (fuse::usize i = channel; i < buffer.size(); i += 2) {
         sum += std::fabs(buffer[i]);
     }
     return sum;
+}
+
+float panAsymmetry(fuse::audio::AudioEngine& engine, fuse::audio::AudioRegistry& registry,
+                   const fuse::audio::Vec3& source_pos, const fuse::audio::Vec3& forward) {
+    fuse::audio::AudioListener* listener = registry.listener();
+    listener->forward = forward;
+    for (fuse::audio::EntityId entity : registry.source_entities()) {
+        fuse::audio::AudioSource* source = registry.find_source(entity);
+        if (source != nullptr) {
+            registry.set_position(entity, source_pos);
+            source->play_head = 0.f;
+        }
+    }
+    engine.update(registry, 1.f / 60.f);
+    return channelEnergy(engine.last_mix_buffer(), 0) - channelEnergy(engine.last_mix_buffer(), 1);
+}
+
+void testHrtfPanEdgeCases() {
+    fuse::audio::AudioEngine engine;
+    fuse::audio::AudioDesc desc;
+    desc.frames_per_buf = 256;
+    desc.hrtf_enabled = true;
+    engine.init(desc);
+
+    std::vector<float> pcm(48000, 0.5f);
+    fuse::audio::AudioClip clip;
+    clip.load_from_pcm(pcm.data(), 48000, 1, 48000);
+    const auto clip_handle = engine.register_clip(std::move(clip));
+
+    fuse::audio::AudioRegistry registry;
+    const fuse::audio::EntityId listener_entity = registry.create_entity();
+    registry.set_position(listener_entity, fuse::audio::Vec3{0.f, 0.f, 0.f});
+    registry.set_listener(listener_entity);
+
+    const fuse::audio::EntityId source_entity = registry.create_entity();
+    fuse::audio::AudioSourceDesc source_desc;
+    source_desc.clip = clip_handle;
+    source_desc.spatial = true;
+    source_desc.looping = true;
+    fuse::audio::AudioSource* source = registry.add_source(source_entity, source_desc);
+    source->playing = true;
+
+    const fuse::audio::Vec3 forward{0.f, 0.f, -1.f};
+    const float ahead_asymmetry =
+        panAsymmetry(engine, registry, fuse::audio::Vec3{0.f, 0.f, -5.f}, forward);
+    expectTrue(std::fabs(ahead_asymmetry) < 1e-2f, "source ahead is near-centre panned");
+
+    const float left_asymmetry =
+        panAsymmetry(engine, registry, fuse::audio::Vec3{-5.f, 0.f, -5.f}, forward);
+    expectTrue(left_asymmetry > 0.1f, "source to the left favours left channel");
+
+    const float right_asymmetry =
+        panAsymmetry(engine, registry, fuse::audio::Vec3{5.f, 0.f, -5.f}, forward);
+    expectTrue(right_asymmetry < -0.1f, "source to the right favours right channel");
+
+    const float behind_asymmetry =
+        panAsymmetry(engine, registry, fuse::audio::Vec3{0.f, 0.f, 5.f}, forward);
+    expectTrue(std::fabs(behind_asymmetry) < 0.15f,
+               "source behind listener stays near-centre with HRTF-lite");
+
+    registry.set_position(source_entity, fuse::audio::Vec3{0.f, 0.f, 0.f});
+    source->play_head = 0.f;
+    engine.update(registry, 1.f / 60.f);
+    const float co_located_left = channelEnergy(engine.last_mix_buffer(), 0);
+    const float co_located_right = channelEnergy(engine.last_mix_buffer(), 1);
+    expectTrue(std::fabs(co_located_left - co_located_right) < 1e-3f,
+               "co-located source bypasses pan split");
+
+    fuse::audio::AudioEngine flat_engine;
+    fuse::audio::AudioDesc flat_desc;
+    flat_desc.frames_per_buf = 256;
+    flat_desc.hrtf_enabled = false;
+    flat_engine.init(flat_desc);
+    fuse::audio::AudioClip flat_clip;
+    flat_clip.load_from_pcm(pcm.data(), 48000, 1, 48000);
+    const auto flat_clip_handle = flat_engine.register_clip(std::move(flat_clip));
+    fuse::audio::AudioRegistry flat_registry;
+    flat_registry.set_listener(flat_registry.create_entity());
+    const fuse::audio::EntityId flat_source = flat_registry.create_entity();
+    flat_registry.set_position(flat_source, fuse::audio::Vec3{-5.f, 0.f, -5.f});
+    fuse::audio::AudioSourceDesc flat_source_desc;
+    flat_source_desc.clip = flat_clip_handle;
+    flat_source_desc.spatial = true;
+    flat_source_desc.looping = true;
+    fuse::audio::AudioSource* flat = flat_registry.add_source(flat_source, flat_source_desc);
+    flat->playing = true;
+    flat_engine.update(flat_registry, 1.f / 60.f);
+    const float flat_left = channelEnergy(flat_engine.last_mix_buffer(), 0);
+    const float flat_right = channelEnergy(flat_engine.last_mix_buffer(), 1);
+    expectTrue(std::fabs(flat_left - flat_right) < 1e-3f,
+               "HRTF disabled produces equal L/R regardless of position");
+}
+
+void testOcclusionStub() {
+    fuse::audio::OcclusionParams params;
+    params.min_gain = 0.1f;
+    expectNear(fuse::audio::evaluate_occlusion_gain(1.f, params), 1.f, 1e-5f,
+               "full visibility is unity gain");
+    expectNear(fuse::audio::evaluate_occlusion_gain(0.f, params), 0.1f, 1e-5f,
+               "zero visibility floors at min_gain");
+    expectTrue(fuse::audio::evaluate_occlusion_gain(0.5f, params) > 0.1f
+                   && fuse::audio::evaluate_occlusion_gain(0.5f, params) < 1.f,
+               "partial visibility interpolates gain");
+
+    const fuse::audio::AABB blocker{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
+    expectNear(fuse::audio::compute_blocker_visibility(fuse::audio::Vec3{0.f, 0.f, 0.f},
+                                                       fuse::audio::Vec3{10.f, 0.f, 0.f}, blocker),
+               0.25f, 1e-5f, "blocker on line-of-sight reduces visibility");
+    expectNear(fuse::audio::compute_blocker_visibility(fuse::audio::Vec3{5.f, 0.f, 0.f},
+                                                       fuse::audio::Vec3{10.f, 0.f, 0.f}, blocker),
+               1.f, 1e-5f, "segment outside blocker AABB is not occluded");
+}
+
+void testOcclusionReducesMixOutput() {
+    fuse::audio::AudioEngine engine;
+    fuse::audio::AudioDesc desc;
+    desc.frames_per_buf = 256;
+    engine.init(desc);
+
+    std::vector<float> pcm(48000, 0.5f);
+    fuse::audio::AudioClip clip;
+    clip.load_from_pcm(pcm.data(), 48000, 1, 48000);
+    const auto clip_handle = engine.register_clip(std::move(clip));
+
+    fuse::audio::AudioRegistry registry;
+    registry.set_listener(registry.create_entity());
+
+    const fuse::audio::EntityId source_entity = registry.create_entity();
+    registry.set_position(source_entity, fuse::audio::Vec3{0.f, 0.f, -5.f});
+    fuse::audio::AudioSourceDesc source_desc;
+    source_desc.clip = clip_handle;
+    source_desc.spatial = true;
+    source_desc.looping = true;
+    source_desc.occlusion = 1.f;
+    fuse::audio::AudioSource* source = registry.add_source(source_entity, source_desc);
+    source->playing = true;
+
+    engine.update(registry, 1.f / 60.f);
+    float clear_energy = 0.f;
+    for (float sample : engine.last_mix_buffer()) {
+        clear_energy += std::fabs(sample);
+    }
+
+    source->desc.occlusion = 0.f;
+    source->play_head = 0.f;
+    engine.update(registry, 1.f / 60.f);
+    float occluded_energy = 0.f;
+    for (float sample : engine.last_mix_buffer()) {
+        occluded_energy += std::fabs(sample);
+    }
+
+    expectTrue(occluded_energy < clear_energy * 0.5f, "occlusion stub attenuates mix output");
+    expectTrue(occluded_energy > 0.f, "occluded source retains min_gain floor");
 }
 
 void testSpatialPanRespectsListenerOrientation() {
@@ -296,6 +519,12 @@ int main() {
     testAttenuationCurves();
     testListenerOrientationTransform();
     testBusGains();
+    testBusRoutingAllCategories();
+    testBusGainClampsNegative();
+    testBusRoutingAffectsMixOutput();
+    testHrtfPanEdgeCases();
+    testOcclusionStub();
+    testOcclusionReducesMixOutput();
     testSpatialPanRespectsListenerOrientation();
     testPlayAtPositionsSource();
     testConvolutionReverbCpuMatchesReference();
