@@ -1,13 +1,17 @@
 # WP-08 / U6 — editor API boundary (Qt-free) + optional Qt 6 shell.
 
 set(FUSE_EDITOR_API_SOURCES
+    src/asset_browser.cpp
     src/command_queue.cpp
     src/command_stack.cpp
+    src/console_panel.cpp
     src/editor_host.cpp
     src/gizmo_system.cpp
     src/hierarchy_model.cpp
-    src/property_inspector.cpp
     src/material_editor_panel.cpp
+    src/play_mode_controller.cpp
+    src/profiler_panel.cpp
+    src/property_inspector.cpp
     src/sdf_sculpt_panel.cpp
     src/scene_hierarchy_panel.cpp
     src/undo_stack.cpp
@@ -15,14 +19,18 @@ set(FUSE_EDITOR_API_SOURCES
 )
 
 set(FUSE_EDITOR_API_HEADERS
+    include/fuse/editor/asset_browser.hpp
     include/fuse/editor/command_queue.hpp
     include/fuse/editor/command_stack.hpp
+    include/fuse/editor/console_panel.hpp
     include/fuse/editor/editor_host.hpp
     include/fuse/editor/editor_scene.hpp
     include/fuse/editor/editor_state.hpp
     include/fuse/editor/gizmo_system.hpp
     include/fuse/editor/hierarchy_model.hpp
     include/fuse/editor/material_editor_panel.hpp
+    include/fuse/editor/play_mode_controller.hpp
+    include/fuse/editor/profiler_panel.hpp
     include/fuse/editor/property_inspector.hpp
     include/fuse/editor/scene_hierarchy_panel.hpp
     include/fuse/editor/sdf_sculpt_panel.hpp
@@ -42,7 +50,7 @@ target_include_directories(fuse_editor_api
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
-target_link_libraries(fuse_editor_api PUBLIC fuse_core fuse_ecs)
+target_link_libraries(fuse_editor_api PUBLIC fuse_core fuse_ecs fuse_scene)
 target_compile_features(fuse_editor_api PUBLIC cxx_std_17)
 
 if(FUSE_BUILD_VULKAN)
