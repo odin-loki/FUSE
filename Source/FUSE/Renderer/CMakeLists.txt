@@ -18,6 +18,9 @@ set(FUSE_RHI_PUBLIC_HEADERS
     include/fuse/renderer/vk/pipeline_layout.hpp
     include/fuse/renderer/vk/surface.hpp
     include/fuse/renderer/vk/swapchain.hpp
+    include/fuse/renderer/cuda/interop.hpp
+    include/fuse/renderer/cuda/vk_sync.hpp
+    include/fuse/renderer/cuda/stream_manager.hpp
 )
 
 set(FUSE_RHI_SOURCES
@@ -36,6 +39,9 @@ set(FUSE_RHI_SOURCES
     src/vk/pipeline_layout.cpp
     src/vk/surface.cpp
     src/vk/swapchain.cpp
+    src/cuda/interop.cpp
+    src/cuda/vk_sync.cpp
+    src/cuda/stream_manager.cpp
 )
 
 add_library(fuse_rhi STATIC
@@ -69,6 +75,11 @@ if(FUSE_VULKAN_BACKEND)
     message(STATUS "FUSE: fuse_rhi using Vulkan loader")
 else()
     message(STATUS "FUSE: fuse_rhi built in stub mode (Vulkan loader not found)")
+endif()
+
+if(FUSE_CUDA_BACKEND)
+    target_compile_definitions(fuse_rhi PUBLIC FUSE_HAS_CUDA=1)
+    target_link_libraries(fuse_rhi PUBLIC CUDA::cudart)
 endif()
 
 option(FUSE_SHADER_GLSLANG "Enable runtime glslang shader compilation in fuse_rhi (optional; CI uses offline .spv fixtures)" OFF)

@@ -187,11 +187,13 @@ Portable invariant unchanged: job code emits `RenderCommandList`; platform modul
 | `fuse_shader_pipeline` | SPIR-V I/O, offline compiler, shader module + pipeline layout (stub or Vulkan) |
 | `fuse_render_command_list` | Hybrid mirrors commands without breaking placeholder pixels |
 | `fuse_hybrid_tests` | Existing U4 software renderer regressions |
+| `fuse_cuda_jobs` | `submit_cuda` hook signals counter without CUDA toolkit |
+| `fuse_cuda_interop` | Vulkan/CUDA import + timeline stubs degrade on CI |
 
 Run:
 
 ```bash
-ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_render_command|fuse_hybrid'
+ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_render_command|fuse_hybrid|fuse_cuda'
 ```
 
 ---
@@ -206,13 +208,50 @@ No GPU window on runner is OK: stub backend keeps configure/build green; when La
 
 ---
 
+## B2.6 — CUDA job lane & Vulkan interop (stubs)
+
+**Status:** Optional stubs — `submit_cuda()` hook, external-memory import API surface, timeline sync placeholders  
+**Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B2.6, §B1.5 CUDA-Job Integration  
+**Architecture:** [architecture-parallel.md](./architecture-parallel.md) §3.2 (`submit_cuda` decision gate)
+
+### Build flag — `FUSE_BUILD_CUDA`
+
+```bash
+cmake -B build -DFUSE_UMBRELLA=ON -DFUSE_BUILD_CUDA=ON
+# With CUDA toolkit + GPU: defines FUSE_HAS_CUDA=1
+# Without toolkit (CI default): stub path — configure succeeds, APIs no-op gracefully
+```
+
+| Condition | Behaviour |
+|-----------|-----------|
+| `FUSE_BUILD_CUDA=OFF` (default) | No CUDA linkage; `cudaJobsAvailable()` / `interopAvailable()` return false |
+| `FUSE_BUILD_CUDA=ON`, toolkit found | `FUSE_HAS_CUDA=1` — managed stream + named `StreamManager` streams when device present |
+| `FUSE_BUILD_CUDA=ON`, toolkit missing | Stub path identical to OFF — CI stays green without `nvcc` or CUDA drivers |
+| CI Linux umbrella | `FUSE_BUILD_CUDA` stays **OFF** — no CUDA on runners required |
+
+### API surface
+
+| Component | Location | Notes |
+|-----------|----------|-------|
+| `CUDAJobDesc` / `submit_cuda()` | `Source/FUSE/Core/include/fuse/jobs/cuda_jobs.hpp` | Job-scheduler dispatch; signals `JobCounter` on completion |
+| `import_vulkan_buffer` / `import_vulkan_image` | `Source/FUSE/Renderer/include/fuse/renderer/cuda/interop.hpp` | External-memory import deferred — returns `ok=false` until full B2.6 |
+| `SharedTimeline` | `Source/FUSE/Renderer/include/fuse/renderer/cuda/vk_sync.hpp` | Timeline semaphore wrapper stub |
+| `StreamManager` | `Source/FUSE/Renderer/include/fuse/renderer/cuda/stream_manager.hpp` | Named streams (Render, Physics, AI, Particles, Upload) |
+| `TextureDesc::cudaInterop` / `BufferDesc::cudaInterop` | `resources.hpp` | Flag reserved for shared allocations (B2.3+) |
+
+Thread ownership unchanged: CUDA launch jobs run on worker threads; Vulkan record/submit stays on `renderThread()`. Full timeline-semaphore frame flow (vk→cuda→vk) lands after render graph wiring (separate workstream).
+
+---
+
 ## Next
 
 - [x] `VkSwapchainKHR` path behind surface abstraction (External surface; headless stub documented)
 - [x] Triple-buffered frame ring sketch aligned with `FrameBarrier`
 - [x] B2.3 resource handles + stub/VMA allocator + bindless index table
 - [x] B2.4 shader scaffold — offline SPIR-V, shader module, pipeline layout placeholder
+- [x] B2.6 CUDA job/interop stubs — `FUSE_BUILD_CUDA` gated, CI passes without toolkit
 - [ ] B2.4 follow-up: bindless descriptor pool + graphics pipeline cache
+- [ ] B2.6 follow-up: `cudaImportExternalMemory`, timeline semaphores, real shared textures
 - [ ] Replace `PlaceholderRenderer` present path incrementally — keep software fallback for headless CI
 - [ ] Editor Qt native surface (`U6` viewport) → `SwapchainDesc.surface`
 - [ ] Android Vulkan WSI + MoltenVK macOS module

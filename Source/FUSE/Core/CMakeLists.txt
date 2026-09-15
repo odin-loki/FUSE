@@ -21,6 +21,7 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/jobs/job_scheduler.hpp
     include/fuse/jobs/job_counter.hpp
     include/fuse/jobs/parallel_for.hpp
+    include/fuse/jobs/cuda_jobs.hpp
     include/fuse/platform/power.hpp
     include/fuse/platform/thread.hpp
     include/fuse/platform/fiber.hpp
@@ -38,6 +39,7 @@ set(FUSE_CORE_SOURCES
     src/jobs/worker_count.cpp
     src/jobs/job_scheduler.cpp
     src/jobs/job_counter.cpp
+    src/jobs/cuda_jobs.cpp
     src/platform/platform_stub.cpp
     src/platform/fiber_posix.cpp
 )
@@ -69,6 +71,11 @@ endif()
 
 target_compile_features(fuse_core PUBLIC cxx_std_17)
 target_link_libraries(fuse_core PUBLIC Threads::Threads)
+
+if(FUSE_CUDA_BACKEND)
+    target_compile_definitions(fuse_core PUBLIC FUSE_HAS_CUDA=1)
+    target_link_libraries(fuse_core PUBLIC CUDA::cudart)
+endif()
 
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)
