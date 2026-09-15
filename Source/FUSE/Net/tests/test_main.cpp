@@ -11,6 +11,9 @@ void run_transport_tests();
 void run_serializer_tests();
 void run_rollback_tests();
 void run_rollback_buffer_tests();
+void run_checksum_tests();
+void run_input_history_tests();
+void run_reconcile_tests();
 void run_snapshot_delta_tests();
 void run_state_sync_tests();
 
@@ -23,6 +26,9 @@ int main() {
     fuse::net::tests::run_serializer_tests();
     fuse::net::tests::run_rollback_tests();
     fuse::net::tests::run_rollback_buffer_tests();
+    fuse::net::tests::run_checksum_tests();
+    fuse::net::tests::run_input_history_tests();
+    fuse::net::tests::run_reconcile_tests();
     fuse::net::tests::run_snapshot_delta_tests();
     fuse::net::tests::run_state_sync_tests();
 
