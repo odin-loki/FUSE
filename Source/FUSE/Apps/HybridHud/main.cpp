@@ -8,6 +8,10 @@
 #include <fuse/world2d/world_2d.hpp>
 #include <fuse/world3d/world_3d.hpp>
 
+#if defined(FUSE_HAS_VULKAN_RHI)
+#include <fuse/hybrid/hybrid_renderer_bootstrap.hpp>
+#endif
+
 #include <cstdio>
 #include <cstdlib>
 
@@ -32,7 +36,17 @@ int main() {
 
     check(fuse::core::initialize(), "fuse_core initialize");
 
+#if defined(FUSE_HAS_VULKAN_RHI)
+    fuse::hybrid::HybridRendererBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.renderer.rhi.bootstrap.instance.enableValidation = false;
+    auto runtime = fuse::hybrid::HybridRendererBootstrap::create(bootstrapDesc);
+    check(runtime != nullptr, "HybridRendererBootstrap allocated");
+    check(runtime->isReady(), "B2.10 renderer bootstrap initialized");
+    fuse::hybrid::HybridComposer& composer = runtime->composer();
+#else
     fuse::hybrid::HybridComposer composer;
+#endif
+
     fuse::world2d::World2D world2D;
     fuse::world3d::World3D world3D;
     fuse::SceneObject2D hudSprite("hud_sprite");
@@ -64,13 +78,21 @@ int main() {
         ctx.time = static_cast<float>(frame) * kDt;
         ctx.frameIndex = static_cast<fuse::u32>(frame);
 
+#if defined(FUSE_HAS_VULKAN_RHI)
+        runtime->tick(ctx);
+#else
         composer.tick(ctx);
+#endif
 
         aiRuntime.buildSnapshots();
         aiRuntime.evaluate(ctx);
         aiRuntime.commit();
 
+#if defined(FUSE_HAS_VULKAN_RHI)
+        runtime->render(ctx);
+#else
         composer.render(ctx);
+#endif
     }
 
     check(composer.frameCount() == static_cast<fuse::u32>(kFrameCount), "all frames ticked");
@@ -85,6 +107,9 @@ int main() {
                     composer.renderer().height());
     fuse::log::info("demo_hybrid_hud: real GL/Vulkan presentation deferred to Track B RHI");
 
+#if defined(FUSE_HAS_VULKAN_RHI)
+    runtime->shutdown();
+#endif
     fuse::core::shutdown();
 
     if (g_failures == 0) {

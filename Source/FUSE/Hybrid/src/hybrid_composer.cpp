@@ -33,23 +33,39 @@ void HybridComposer::applyProjectFlags() {
 }
 
 #if defined(FUSE_HAS_VULKAN_RHI)
+void HybridComposer::setSharedRhiContext(renderer::RhiContext* context) {
+    m_sharedRhiContext = context;
+}
+
 void HybridComposer::ensureRhiContext() {
-    if (m_rhiContext) {
+    if (m_sharedRhiContext != nullptr) {
+        return;
+    }
+
+    if (m_ownedRhiContext) {
         return;
     }
 
     renderer::RhiContext::Desc desc{};
     desc.bootstrap.instance.enableValidation = false;
-    m_rhiContext = renderer::RhiContext::create(desc);
+    m_ownedRhiContext = renderer::RhiContext::create(desc);
 }
 
 renderer::RhiContext* HybridComposer::rhiContext() {
+    if (m_sharedRhiContext != nullptr) {
+        return m_sharedRhiContext;
+    }
+
     ensureRhiContext();
-    return m_rhiContext.get();
+    return m_ownedRhiContext.get();
 }
 
 const renderer::RhiContext* HybridComposer::rhiContext() const {
-    return m_rhiContext.get();
+    if (m_sharedRhiContext != nullptr) {
+        return m_sharedRhiContext;
+    }
+
+    return m_ownedRhiContext.get();
 }
 
 void HybridComposer::recordClear3D(float r, float g, float b) {
@@ -128,9 +144,10 @@ void HybridComposer::render(frame::FrameCtx& ctx) {
     }
 
 #if defined(FUSE_HAS_VULKAN_RHI)
-    if (m_rhiContext && platform::requireGpuContextThread()) {
-        m_rhiContext->beginFrame(ctx.frameIndex);
-        m_rhiContext->submitFrame(m_commandList, ctx.frameIndex);
+    renderer::RhiContext* rhi = rhiContext();
+    if (rhi != nullptr && platform::requireGpuContextThread()) {
+        rhi->beginFrame(ctx.frameIndex);
+        rhi->submitFrame(m_commandList, ctx.frameIndex);
     }
 #endif
 

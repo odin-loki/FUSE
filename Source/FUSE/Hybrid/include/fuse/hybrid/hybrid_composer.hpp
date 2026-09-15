@@ -41,6 +41,8 @@ public:
 #if defined(FUSE_HAS_VULKAN_RHI)
     bool hasRhiRecording() const { return true; }
     const renderer::RenderCommandList& lastCommandList() const { return m_commandList; }
+    /// Inject shared RhiContext from RendererBootstrap (B2.10). Null restores lazy create.
+    void setSharedRhiContext(renderer::RhiContext* context);
     renderer::RhiContext* rhiContext();
     const renderer::RhiContext* rhiContext() const;
 #else
@@ -63,7 +65,8 @@ private:
     u32 m_frameCount = 0;
 #if defined(FUSE_HAS_VULKAN_RHI)
     renderer::RenderCommandList m_commandList;
-    std::unique_ptr<renderer::RhiContext> m_rhiContext;
+    renderer::RhiContext* m_sharedRhiContext = nullptr;
+    std::unique_ptr<renderer::RhiContext> m_ownedRhiContext;
 #endif
 };
 

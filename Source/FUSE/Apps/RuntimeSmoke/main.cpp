@@ -6,6 +6,10 @@
 #include <fuse/legacy/t3d/api.hpp>
 #include <fuse/log/logger.hpp>
 
+#if defined(FUSE_HAS_VULKAN_RHI)
+#include <fuse/renderer/renderer_bootstrap.hpp>
+#endif
+
 #include <cstdio>
 #include <cstdlib>
 #include <atomic>
@@ -53,6 +57,17 @@ int main() {
 
     check(fuse::legacy::t3d::stringTableEntryCount() >= 1u, "t3d string table populated");
     check(fuse::legacy::t2d::stringTableEntryCount() >= 1u, "t2d string table populated");
+
+#if defined(FUSE_HAS_VULKAN_RHI)
+    {
+        fuse::renderer::RendererBootstrapDesc rendererDesc{};
+        rendererDesc.rhi.bootstrap.instance.enableValidation = false;
+        auto rendererBootstrap = fuse::renderer::RendererBootstrap::create(rendererDesc);
+        check(rendererBootstrap != nullptr, "RendererBootstrap allocated in smoke process");
+        check(rendererBootstrap->isReady(), "RendererBootstrap init/shutdown path OK");
+        rendererBootstrap->shutdown();
+    }
+#endif
 
     fuse::legacy::t2d::shutdown();
     fuse::legacy::t3d::shutdown();
