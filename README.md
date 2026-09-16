@@ -1,71 +1,83 @@
 # FUSE
 
-**F**ast **U**nified **S**imulation **E**ngine
+**Fast Unified Simulation Engine**
 
-This repository is a fork of [TorqueGameEngines/Torque3D](https://github.com/TorqueGameEngines/Torque3D) (community-maintained MIT Torque 3D), being modernised into **FUSE**: ISO C++23, memory-safe ownership, Vulkan/CUDA, and a **Qt 6** editor.
+One program for 2D, 3D, and hybrid worlds. ISO C++ host, handle-based ownership, a fiber job spine, Vulkan and optional CUDA, and a Qt 6 editor.
 
-- Unification pre-starter (one program): [`docs/plans/FUSE_UNIFIED_PRESTARTER.md`](docs/plans/FUSE_UNIFIED_PRESTARTER.md)
-- Full development plan: [`docs/plans/FUSE_MASTER_PLAN.md`](docs/plans/FUSE_MASTER_PLAN.md)
-- Plan TOC: [`docs/plans/FUSE_MASTER_PLAN_TOC.md`](docs/plans/FUSE_MASTER_PLAN_TOC.md)
-- Source phase docs: [`docs/sources/`](docs/sources/)
-- Torque gameplay/AI/FX addon snapshots (submodules): [`third_party/addons/`](third_party/addons/)
-- **Torque2D** (submodule): [`third_party/Torque2D`](third_party/Torque2D) ← [TorqueGameEngines/Torque2D](https://github.com/TorqueGameEngines/Torque2D)
+*Exact where it matters. Parallel everywhere else.*
 
-Port track first (Track A), then feature tracks (Track B). Work happens on **`main`**.
+- Product docs: [`docs/README.md`](docs/README.md)
+- Getting started: [`docs/getting-started.md`](docs/getting-started.md)
+- Architecture: [`docs/architecture.md`](docs/architecture.md)
+- Build: [`docs/building.md`](docs/building.md)
 
-**U4 gate (WP-06):** Dimension APIs + hybrid frame scaffolding — [`docs/unification/U4-HYBRID-FRAME.md`](docs/unification/U4-HYBRID-FRAME.md). Run `demo_hybrid_hud` after umbrella configure (`FUSE_BUILD_HYBRID_DEMO=ON`). Software placeholder renderer only; real GL/Vulkan is Track B.
+Work happens on **`main`**.
 
 ---
 
-# Upstream: Torque 3D (TorqueGameEngines)
+## What it is
 
-# Torque3D
+FUSE is a single runtime and a single editor:
 
-MIT Licensed Open Source version of [Torque3D](https://torque3d.org) from [GarageGames](http://www.garagegames.com)
+| Target | Role |
+|--------|------|
+| `fuse_runtime` | Game / player process — 2D, 3D, or both in one frame |
+| `fuse_editor` | Qt 6 desktop shell — project hub, viewports, inspectors |
+| `fuse_tools` | CLI cookers and importers |
 
-[![GitHub tag](https://img.shields.io/github/tag/TorqueGameEngines/Torque3D.svg)](https://github.com/TorqueGameEngines/Torque3D/tags)
-[![GitHub release](https://img.shields.io/github/release/TorqueGameEngines/Torque3D.svg)](https://github.com/TorqueGameEngines/Torque3D/releases/latest)
-[![Github All Releases](https://img.shields.io/github/downloads/TorqueGameEngines/Torque3D/total.svg)](https://github.com/TorqueGameEngines/Torque3D/releases/latest)
+Gameplay, AI, FX, cinematics, mechanics, and adventure systems are **engine modules**, not bolt-on kits. 2D and 3D share object identity, assets, input, audio, and networking.
 
-[![Discord](https://img.shields.io/badge/Discord%20-%237289DA.svg?&logo=discord&logoColor=white)](https://discord.com/invite/qdAZxT4)
-[![IRC](https://img.shields.io/badge/irc-%23garagegames-green.svg)](https://kiwiirc.com/client/irc.maxgaming.net/?nick=wiki_user|?#garagegames) 
+Current public APIs live under `fuse::` in [`Source/FUSE/`](Source/FUSE/).
 
-**Build Status:**
+---
 
-[![Windows Build](https://github.com/TorqueGameEngines/Torque3D/actions/workflows/build-windows-msvc.yml/badge.svg)](https://github.com/TorqueGameEngines/Torque3D/actions/workflows/build-windows-msvc.yml)
+## Status
 
-[![Linux Build](https://github.com/TorqueGameEngines/Torque3D/actions/workflows/build-linux-gcc.yml/badge.svg)](https://github.com/TorqueGameEngines/Torque3D/actions/workflows/build-linux-gcc.yml)
+FUSE is under active construction. The umbrella CMake graph, `fuse_core`, dimension worlds, hybrid compositor, feature modules, project format, and headless demos are in tree. The Vulkan renderer, CUDA compute path, and Qt editor are scaffolding toward Track B.
 
-[![MacOSX Build](https://github.com/TorqueGameEngines/Torque3D/actions/workflows/build-macos-clang.yml/badge.svg)](https://github.com/TorqueGameEngines/Torque3D/actions/workflows/build-macos-clang.yml)
+See [`docs/roadmap.md`](docs/roadmap.md) for the phase map.
 
+---
 
+## Quick start
 
-## More Information
+```bash
+git clone --recurse-submodules https://github.com/odin-loki/FUSE.git
+cd FUSE
 
-* [Homepage](https://torque3d.org)
-* [Torque 3D wiki](http://wiki.torque3d.org)
-* [Community forum](https://torque3d.org/forums)
-* [Roadmap](https://github.com/orgs/TorqueGameEngines/projects/1)
-* [Binaries](https://github.com/TorqueGameEngines/Torque3D-Binaries)
-* [Guide Docs](https://docs.torque3d.org/)
-* [Reference Docs](https://reference.torque3d.org/)
-* [Work Blog](https://torque3d.org/blogs/blog/1-work-blog/)
+cmake -B build -G Ninja \
+  -DFUSE_UMBRELLA=ON \
+  -DFUSE_BUILD_CORE=ON \
+  -DFUSE_BUILD_CORE_TESTS=ON \
+  -DFUSE_BUILD_T3D=OFF \
+  -DFUSE_BUILD_T2D=OFF
 
-**Extras:**
-[Torque3D Resources](https://github.com/Torque3DResources) | [Awesome Torque3D](https://github.com/TorqueGameEngines/awesome-torque3d)
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
 
-## Pre-compiled Version
+Run a hybrid demo (software placeholder renderer):
 
-In addition to GitHub we also have a couple of pre-packaged files for you to download if you would prefer to not compile the code yourself.
-They are available from the [Torque3D Binaries](https://github.com/TorqueGameEngines/Torque3D-Binaries) repo.
+```bash
+./build/Source/FUSE/Apps/HybridHud/demo_hybrid_hud
+```
 
-### Legacy Links
-* [Legacy Repository](https://github.com/GarageGames/Torque3D)
-* [GarageGames forum](http://www.garagegames.com/community/forums)
-* [GarageGames professional services](http://services.garagegames.com/)
-* [Project Manager repository](https://github.com/GarageGames/Torque3D-ProjectManager)
-* [Offline documentation repository](https://github.com/Torque3D-GameEngine/Torque3D-Documentation)
+On Windows without Ninja, omit `-G Ninja` and pass `--config Release` to the build step. Full options: [`docs/building.md`](docs/building.md).
 
-# License 
+---
 
-All assets and code are under the [![license](https://img.shields.io/github/license/GarageGames/Torque3D.svg)](https://github.com/GarageGames/Torque3D/blob/master/LICENSE.md)
+## Repository map
+
+```
+Source/FUSE/     Product engine — core, worlds, renderer, modules, editor, apps
+Samples/         Demo projects (`project.json`)
+Tools/FUSE/      Importers and cookers
+docs/            User and engineering documentation
+cmake/           Umbrella platform and target helpers
+```
+
+---
+
+## License
+
+MIT. See [`LICENSE.md`](LICENSE.md). Provenance notes: [`docs/heritage.md`](docs/heritage.md).
