@@ -30,6 +30,21 @@ bool is_empty_hrtf_ir(const HrtfIrStub& ir);
 /// Alias for `has_hrtf_ir` — convolution path is available when true.
 bool should_use_hrtf_ir(const HrtfIrStub& ir);
 
+/// Empty-IR preflight for stub convolution wiring (B7.2 HRTF deepen follow-up).
+struct HrtfIrPreflight {
+    bool has_samples = false;
+    bool length_ok = false;
+    bool is_empty = true;
+    u32 ir_length = 0;
+
+    [[nodiscard]] bool can_use_convolution() const;
+    [[nodiscard]] bool should_fallback_to_ild_itd() const;
+    [[nodiscard]] bool ready_for_stub() const;
+};
+
+/// Build empty-IR preflight from an HRTF IR stub.
+[[nodiscard]] HrtfIrPreflight preflight_hrtf_ir(const HrtfIrStub& ir);
+
 /// HRTF pan routing — empty IR uses ILD/ITD stub; convolution deferred until IR wired.
 enum class HrtfPanPath {
     Bypass,
@@ -60,6 +75,28 @@ bool is_bypass_hrtf_pan_path(HrtfPanPath path);
 
 /// Early-out: true when spatial panning should be skipped (bypass path).
 bool should_skip_hrtf_spatial_pan(HrtfPanPath path);
+
+/// Pan-path preflight for stub HRTF routing (B7.2 HRTF deepen follow-up).
+struct HrtfPanPathPreflight {
+    HrtfPanPath path = HrtfPanPath::Bypass;
+    HrtfIrPreflight ir{};
+    bool hrtf_enabled = false;
+    bool co_located = false;
+    bool skip_spatial_pan = true;
+    bool uses_convolution = false;
+    bool uses_ild_itd_stub = false;
+
+    [[nodiscard]] bool can_apply_spatial_pan() const;
+    [[nodiscard]] bool should_bypass() const;
+    [[nodiscard]] bool ready_for_stub() const;
+};
+
+/// Build pan-path preflight from HRTF enable flag, IR stub, and listener-local offset.
+[[nodiscard]] HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
+                                                            const Vec3& rel_listener);
+
+/// Build pan-path preflight when no IR is wired (ILD/ITD stub or bypass).
+[[nodiscard]] HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener);
 
 /// True when listener and source share the same listener-local position.
 bool is_co_located_hrtf_source(const Vec3& rel_listener);
@@ -221,6 +258,42 @@ bool should_skip_hrtf_attenuation_coupling(HrtfPanPath path);
 /// Combined guard — spatial path and non-unity attenuation warrant narrowing.
 bool should_narrow_hrtf_spatial_image(HrtfPanPath path, float distance_attenuation,
                                       float occlusion_gain);
+
+/// Attenuation-coupling preflight for stub spatial-image narrowing (B7.2 HRTF deepen follow-up).
+struct HrtfAttenuationCouplingPreflight {
+    HrtfPanPath path = HrtfPanPath::Bypass;
+    float distance_attenuation = 1.f;
+    float occlusion_gain = 1.f;
+    float coupling_weight = 0.5f;
+    bool unity_attenuation = true;
+    bool skip_coupling = true;
+    bool should_narrow = false;
+    float spatial_blend = 1.f;
+
+    [[nodiscard]] bool can_apply_coupling() const;
+    [[nodiscard]] bool ready_for_stub() const;
+};
+
+/// Build attenuation-coupling preflight for a resolved pan path.
+[[nodiscard]] HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling(
+    HrtfPanPath path, float distance_attenuation, float occlusion_gain,
+    const HrtfAttenuationCoupling& coupling = {}, const BinauralPanParams& params = {});
+
+/// Combined spatial pan preflight bundling IR, pan path, and attenuation coupling (B7.2 HRTF deepen).
+struct HrtfSpatialPanPreflight {
+    HrtfPanPathPreflight pan{};
+    HrtfAttenuationCouplingPreflight coupling{};
+
+    [[nodiscard]] bool can_apply_spatial_pan() const;
+    [[nodiscard]] bool can_apply_attenuation_coupling() const;
+    [[nodiscard]] bool ready_for_stub() const;
+};
+
+/// Build combined spatial pan preflight for one-shot guarded pan wiring.
+[[nodiscard]] HrtfSpatialPanPreflight preflight_hrtf_spatial_pan(
+    bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener, float distance_attenuation,
+    float occlusion_gain, const HrtfAttenuationCoupling& coupling = {},
+    const BinauralPanParams& params = {});
 
 /// Combined spatial blend from distance attenuation and occlusion LF gain.
 float compute_hrtf_spatial_blend(float distance_attenuation, float occlusion_gain,
