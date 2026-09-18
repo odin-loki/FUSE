@@ -37,6 +37,11 @@ struct FroxelGridDesc {
 
     u32 froxelCount() const { return tilesX * tilesY * slicesZ; }
     bool isEmpty() const { return froxelCount() == 0u; }
+    /// Last valid flat froxel index; returns 0 when the grid has no froxels.
+    u32 maxFroxelIndex() const {
+        const u32 count = froxelCount();
+        return count == 0u ? 0u : count - 1u;
+    }
 
     /// Clamp tile/slice counts to CPU stub limits; zero dimensions remain zero (empty grid).
     static FroxelGridDesc clampCounts(const FroxelGridDesc& raw);
@@ -100,8 +105,14 @@ struct FroxelGridLayout {
     static u32 clampSliceZ(u32 sliceZ, const FroxelGridDesc& desc);
     /// Last valid flat froxel index; returns 0 when the grid has no froxels.
     static u32 maxFroxelIndex(const FroxelGridDesc& desc);
+    /// True when `index` equals the last valid froxel index for a non-empty grid.
+    static bool isAtMaxFroxelIndex(u32 index, const FroxelGridDesc& desc);
+    /// Clamp `index` into range; returns false and zeroes `outIndex` on an empty grid.
+    static bool tryClampFroxelIndex(u32 index, const FroxelGridDesc& desc, u32& outIndex);
     /// Clamp interpolation weights and corner indices to grid bounds.
     static void clampSampleCoords(FroxelSampleCoords& coords, const FroxelGridDesc& desc);
+    /// Clamp sample coords; returns false without modifying `coords` on an empty grid.
+    static bool tryClampSampleCoords(FroxelSampleCoords& coords, const FroxelGridDesc& desc);
     static bool mapScreenDepthToSampleCoords(f32 screenX,
                                              f32 screenY,
                                              f32 viewDepth,
@@ -124,6 +135,10 @@ f32 lerpDensity(f32 a, f32 b, f32 t);
 bool gridMatchesDesc(const FroxelDensityGrid& grid, const FroxelGridDesc& desc);
 /// True when `desc` is non-empty, storage is allocated, and sizes match.
 bool isDensityGridAccessible(const FroxelDensityGrid& grid, const FroxelGridDesc& desc);
+/// Preflight guard before index-based density access; false on empty grid or desc mismatch.
+bool canSampleAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index);
+/// Preflight guard before tile/slice density access; false on empty grid or desc mismatch.
+bool canSampleAtCoord(const FroxelDensityGrid& grid, const FroxelGridDesc& desc);
 /// True when at least one froxel exceeds `epsilon`; false when storage is empty.
 bool hasNonZeroDensity(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
 /// Early-out when the grid is inaccessible or uniformly below `epsilon`.
@@ -134,12 +149,24 @@ u32 countNonZeroFroxels(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
 u32 countEmptyFroxels(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
 /// Read density at a clamped flat froxel index; returns 0 when grid/desc mismatch or empty.
 f32 sampleDensityAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index);
+/// Sample with guard preflight; returns false when `canSampleAtIndex` would reject the request.
+bool trySampleDensityAtIndex(const FroxelDensityGrid& grid,
+                             const FroxelGridDesc& desc,
+                             u32 index,
+                             f32& outDensity);
 /// Read density at clamped tile/slice coords; returns 0 when grid/desc mismatch or empty.
 f32 sampleDensityAtCoord(const FroxelDensityGrid& grid,
                          const FroxelGridDesc& desc,
                          u32 tileX,
                          u32 tileY,
                          u32 sliceZ);
+/// Sample with guard preflight; returns false when `canSampleAtCoord` would reject the request.
+bool trySampleDensityAtCoord(const FroxelDensityGrid& grid,
+                             const FroxelGridDesc& desc,
+                             u32 tileX,
+                             u32 tileY,
+                             u32 sliceZ,
+                             f32& outDensity);
 /// Write density at a clamped flat froxel index; returns false when grid/desc mismatch or empty.
 bool writeDensityAtIndex(FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index, f32 value);
 /// Write density at clamped tile/slice coords; returns false when grid/desc mismatch or empty.
