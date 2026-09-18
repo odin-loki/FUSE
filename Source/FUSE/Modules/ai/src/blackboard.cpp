@@ -121,4 +121,12 @@ bool BlackboardView::isFlagEmpty(u32 agentIndex, u32 flagIndex) const {
     return !value;
 }
 
+bool BlackboardView::isScalarSet(u32 agentIndex, u32 slotIndex) const {
+    return isBound() && isAgentValid(agentIndex) && !isScalarEmpty(agentIndex, slotIndex);
+}
+
+bool BlackboardView::isFlagSet(u32 agentIndex, u32 flagIndex) const {
+    return isBound() && isAgentValid(agentIndex) && !isFlagEmpty(agentIndex, flagIndex);
+}
+
 } // namespace fuse::ai

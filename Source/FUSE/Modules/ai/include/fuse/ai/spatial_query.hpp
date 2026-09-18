@@ -92,4 +92,10 @@ struct RadiusFilterPolicy {
 /// True when `allies` is non-null and contains at least one entry.
 [[nodiscard]] bool ally_context_available(const std::vector<AllyCandidate>* allies);
 
+/// True when `policy.radius` is positive and `policy.minCount` is at least 1.
+[[nodiscard]] bool is_radius_policy_valid(const RadiusFilterPolicy& policy);
+
+/// True when radius is positive and ally context is available.
+[[nodiscard]] bool ally_radius_query_valid(float radius, const std::vector<AllyCandidate>* allies);
+
 } // namespace fuse::ai

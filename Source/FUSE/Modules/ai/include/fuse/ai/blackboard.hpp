@@ -50,7 +50,9 @@ public:
     u32 agentCount() const;
     bool isAgentValid(u32 agentIndex) const;
     bool isScalarEmpty(u32 agentIndex, u32 slotIndex) const;
+    bool isScalarSet(u32 agentIndex, u32 slotIndex) const;
     bool isFlagEmpty(u32 agentIndex, u32 flagIndex) const;
+    bool isFlagSet(u32 agentIndex, u32 flagIndex) const;
 
     bool getFlag(u32 agentIndex, u32 flagIndex) const { return flag(agentIndex, flagIndex); }
     bool tryGetFlag(u32 agentIndex, u32 flagIndex, bool& outValue) const;

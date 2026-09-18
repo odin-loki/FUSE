@@ -197,6 +197,30 @@ void testRadiusSqFromPolicy() {
                "radius_sq_from_policy clamps negative radius to zero");
 }
 
+void testRadiusPolicyValid() {
+    fuse::ai::RadiusFilterPolicy policy;
+    policy.radius = 5.f;
+    policy.minCount = 1;
+    expectTrue(fuse::ai::is_radius_policy_valid(policy), "positive radius and minCount is valid");
+
+    policy.radius = 0.f;
+    expectTrue(!fuse::ai::is_radius_policy_valid(policy), "zero radius policy is invalid");
+
+    policy.radius = 5.f;
+    policy.minCount = 0;
+    expectTrue(!fuse::ai::is_radius_policy_valid(policy), "zero minCount policy is invalid");
+}
+
+void testAllyRadiusQueryValid() {
+    const std::vector<fuse::ai::AllyCandidate> allies = makeSquad();
+    expectTrue(!fuse::ai::ally_radius_query_valid(0.f, &allies),
+               "ally radius query invalid for zero radius");
+    expectTrue(!fuse::ai::ally_radius_query_valid(5.f, nullptr),
+               "ally radius query invalid for null allies");
+    expectTrue(fuse::ai::ally_radius_query_valid(5.f, &allies),
+               "ally radius query valid for positive radius and allies");
+}
+
 void testNearestAllyDistanceSq() {
     const std::vector<fuse::ai::AllyCandidate> allies = makeSquad();
 
@@ -228,6 +252,8 @@ int run_spatial_query_tests() {
     testAllyContextAvailable();
     testIsValidAllyRadius();
     testRadiusSqFromPolicy();
+    testRadiusPolicyValid();
+    testAllyRadiusQueryValid();
     testNearestAllyDistanceSq();
     return g_failures;
 }
