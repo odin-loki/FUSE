@@ -16,11 +16,29 @@ enum class ContactPairRejectReason : u8 {
     BothTriggers,
     UnsupportedShapePair,
     BothStatic,
+    BothSleeping,
+    BothKinematic,
     DegenerateShape,
+};
+
+/// Preflight result for narrowphase pair dispatch (B4.3 deepen pass).
+struct ContactPairDispatchPreflight {
+    ContactPairRejectReason reason = ContactPairRejectReason::None;
+
+    bool can_dispatch() const { return reason == ContactPairRejectReason::None; }
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
 const char* contact_pair_reject_reason_name(ContactPairRejectReason reason);
+
+/// Returns true when the reject reason is structural (self, OOB, missing shape).
+bool contact_pair_reject_reason_is_structural(ContactPairRejectReason reason);
+
+/// Run pair reject guards and return a dispatch preflight summary (B4.3 deepen pass).
+ContactPairDispatchPreflight preflight_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
 
 /// Returns true when `contact_pair_reject_reason` matches `expected` (B4.3 deepen pass).
 bool contact_pair_rejects_for_reason(
@@ -67,6 +85,16 @@ bool is_trigger_contact_pair(
 
 /// Returns true when both bodies carry `RB_STATIC` (no solver response stub, B4.3 deepen pass).
 bool is_static_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies);
+
+/// Returns true when both bodies carry `RB_SLEEPING` (no narrowphase dispatch stub, B4.3 deepen pass).
+bool is_sleeping_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies);
+
+/// Returns true when both bodies carry `RB_KINEMATIC` (no dynamic response stub, B4.3 deepen pass).
+bool is_kinematic_contact_pair(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies);
 

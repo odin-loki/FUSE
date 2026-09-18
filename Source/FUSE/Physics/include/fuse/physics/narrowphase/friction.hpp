@@ -19,6 +19,15 @@ struct FrictionImpulse {
     f32 tangent2 = 0.f;
 };
 
+/// Preflight summary for friction tangent frame rebuild (B4.3 deepen pass).
+struct FrictionBasisPreflight {
+    bool skipTangents = false;
+    bool hasCachedBasis = false;
+    bool basisStale = false;
+
+    bool should_rebuild() const { return !skipTangents && (!hasCachedBasis || basisStale); }
+};
+
 /// Build an orthonormal tangent frame from a contact normal (B4.3 friction stub).
 TangentBasis buildTangentBasis(vec3 normal);
 
@@ -57,6 +66,18 @@ void invalidate_friction_basis(ContactManifold& manifold);
 
 /// Build or reuse an orthonormal tangent frame; returns false when tangents should be skipped (B4.3 deepen pass).
 bool ensure_friction_basis(ContactManifold& manifold);
+
+/// Returns true when a cached basis exists but no longer matches `contactNormal` (B4.3 deepen pass).
+bool friction_basis_is_stale(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Const preflight for tangent frame rebuild without mutating the manifold (B4.3 deepen pass).
+FrictionBasisPreflight preflight_friction_basis(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Rebuild the tangent frame when missing or stale; returns false when tangents should be skipped (B4.3 deepen pass).
+bool rebuild_friction_basis_if_needed(ContactManifold& manifold);
+
+/// Build tangents only when `preflight_friction_basis` reports `should_rebuild` (B4.3 deepen pass).
+void compute_friction_tangents_if_needed(ContactManifold& manifold);
 
 /// Returns true when both friction coefficients are zero or normal impulse is negligible (B4.3 deepen).
 bool should_skip_friction_solve(
