@@ -301,6 +301,21 @@ bool isFlowNestingBalanced() {
     return flowNestingDepth() == 0u;
 }
 
+ChromeTraceExportPreflight preflightChromeTraceExport() {
+    ChromeTraceExportPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.emptyBuffer = isBufferEmpty();
+    preflight.unbalancedScopeNesting = !isScopeNestingBalanced();
+    preflight.unbalancedFlowNesting = !isFlowNestingBalanced();
+    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
+    preflight.bufferFull = isBufferFull();
+    return preflight;
+}
+
+bool canExportChromeTrace() {
+    return preflightChromeTraceExport().canExport();
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -317,8 +332,12 @@ bool isEventIndexValid(u32 index) {
     return index < eventCount();
 }
 
+bool isValidProfileName(const char* name) {
+    return isValidEventName(name);
+}
+
 bool isValidProfileEvent(const ProfileEvent& event) {
-    return event.name != nullptr;
+    return isValidEventName(event.name);
 }
 
 const ProfileEvent& eventAt(u32 index) {
@@ -344,9 +363,26 @@ bool tryEventAt(u32 index, ProfileEvent& outEvent) {
     return isValidProfileEvent(outEvent);
 }
 
+u32 firstEventIndex() {
+    return hasEvents() ? 0u : kInvalidEventIndex;
+}
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     return count > 0u ? count - 1u : kInvalidEventIndex;
+}
+
+bool tryFirstEvent(ProfileEvent& outEvent) {
+    return tryEventAt(0u, outEvent);
+}
+
+bool tryLastEvent(ProfileEvent& outEvent) {
+    const u32 index = lastEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+    return tryEventAt(index, outEvent);
 }
 
 const ProfileEvent& lastEvent() {
