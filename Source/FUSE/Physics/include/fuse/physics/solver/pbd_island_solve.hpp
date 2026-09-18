@@ -55,6 +55,21 @@ struct IslandWarmStartPreflight {
     }
 };
 
+/// Aggregate warm-start coverage for parallel island seeding (B4.4 deepen).
+struct IslandWarmStartStats {
+    u32 totalIslands = 0;
+    u32 skippedCount = 0;
+    u32 warmStartableCount = 0;
+};
+
+/// Bundle preflight diagnostics and dispatch indices for one iteration pass (B4.4 deepen).
+struct IslandSolveDispatchPlan {
+    IslandSolvePreflight preflight{};
+    std::vector<u32> dispatchIndices{};
+
+    bool can_dispatch() const { return preflight.can_dispatch(); }
+};
+
 /// True when `islandIndex` is in range for `extract_island`.
 bool island_index_valid(const ContactIslandGraph& graph, u32 islandIndex);
 
@@ -93,6 +108,22 @@ bool should_skip_island_solve(const ContactIslandGraph& graph);
 
 /// Collect island indices that pass `should_solve_island` (parallel dispatch prep).
 std::vector<u32> collect_dispatchable_island_indices(const ContactIslandGraph& graph);
+
+/// True when a single island index would be dispatched this substep.
+bool island_index_dispatchable(const ContactIslandGraph& graph, u32 islandIndex);
+
+/// Build dispatch plan from graph (preflight + collected indices).
+IslandSolveDispatchPlan build_island_solve_dispatch_plan(const ContactIslandGraph& graph);
+
+/// Dispatch using a pre-built plan; returns count of islands actually solved.
+u32 dispatch_islands_from_plan(RigidBodySoA& bodies,
+                               const ContactIslandGraph& graph,
+                               const IslandSolveDispatchPlan& plan,
+                               SolverWorkBuffers& workBuffers,
+                               const std::vector<DistanceConstraint>& distanceConstraints,
+                               f32 dt,
+                               f32 contactCompliance,
+                               const std::function<f32(const RigidBodySoA&, u32)>& invMassFn);
 
 /// Guarded dispatch entry: skips out-of-range, empty, and null-island jobs.
 bool dispatch_solve_island(RigidBodySoA& bodies,
@@ -191,5 +222,26 @@ bool warm_start_island_contact_impulses_guarded(SolverWorkBuffers& workBuffers,
                                                 const ContactIslandGraph::Island& island,
                                                 const std::vector<narrowphase::ContactManifold>& contacts,
                                                 f32 dt);
+
+/// Summarize warm-start coverage across all islands for parallel seed prep.
+IslandWarmStartStats compute_island_warm_start_stats(const ContactIslandGraph& graph,
+                                                     const std::vector<f32>& priorDistanceLambdas,
+                                                     const std::vector<f32>& priorContactLambdas = {});
+
+/// Early-out guard when no island has prior lambda data to seed.
+bool should_skip_frame_warm_start(const ContactIslandGraph& graph,
+                                  const std::vector<f32>& priorDistanceLambdas,
+                                  const std::vector<f32>& priorContactLambdas = {});
+
+/// Collect island indices that pass warm-start preflight (parallel seed prep).
+std::vector<u32> collect_warm_startable_island_indices(const ContactIslandGraph& graph,
+                                                       const std::vector<f32>& priorDistanceLambdas,
+                                                       const std::vector<f32>& priorContactLambdas = {});
+
+/// Guarded per-island warm-start across all warm-startable islands; returns count seeded.
+u32 warm_start_all_islands_guarded(SolverWorkBuffers& workBuffers,
+                                   const ContactIslandGraph& graph,
+                                   const std::vector<f32>& priorDistanceLambdas,
+                                   const std::vector<f32>& priorContactLambdas = {});
 
 } // namespace fuse::physics
