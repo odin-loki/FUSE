@@ -68,6 +68,9 @@ u32 maxFlowNestingDepth();
 u32 scopeNestingDepth();
 u32 flowNestingDepth();
 u32 openAsyncFlowCount();
+bool hasOpenAsyncFlows();
+
+u32 ringBufferCapacity();
 
 bool hasEvents();
 bool isBufferEmpty();
