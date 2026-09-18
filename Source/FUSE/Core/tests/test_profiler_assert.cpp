@@ -1234,6 +1234,122 @@ void testCrossThreadFlowPreservesOpenCountGuard() {
                "cross-thread finish records worker tid");
 }
 
+void testIsValidProfileNameGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(!fuse::profiler::isValidProfileName(nullptr), "null name is invalid");
+    expectTrue(!fuse::profiler::isValidProfileName(""), "empty string name is invalid");
+    expectTrue(fuse::profiler::isValidProfileName("valid_scope"), "non-empty name is valid");
+
+    {
+        fuse::profiler::ProfileScope emptyScope("");
+    }
+    expectTrue(fuse::profiler::eventCount() == 0u, "empty scope name guarded by isValidProfileName");
+}
+
+void testChromeTraceExportPreflightOnReset() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::profiler::ChromeTraceExportPreflight preflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(preflight.canExport(), "export preflight allows chrome trace on reset");
+    expectTrue(preflight.emptyBuffer, "reset preflight marks empty buffer");
+    expectTrue(!preflight.unbalancedScopeNesting, "reset preflight marks balanced scope nesting");
+    expectTrue(!preflight.unbalancedFlowNesting, "reset preflight marks balanced flow nesting");
+    expectTrue(!preflight.hasOpenAsyncFlows, "reset preflight marks no open async flows");
+    expectTrue(!preflight.bufferFull, "reset preflight marks buffer not full");
+    expectTrue(!preflight.hasCorrelationWarnings(), "reset preflight has no correlation warnings");
+    expectTrue(fuse::profiler::canExportChromeTrace(), "canExportChromeTrace true on reset");
+}
+
+void testChromeTraceExportPreflightWithEvents() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    {
+        FUSE_PROFILE_SCOPE("preflight_scope");
+    }
+
+    const fuse::profiler::ChromeTraceExportPreflight preflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(preflight.canExport(), "export preflight allows chrome trace with events");
+    expectTrue(!preflight.emptyBuffer, "recorded events clear emptyBuffer flag");
+    expectTrue(!preflight.unbalancedScopeNesting, "ended scope leaves balanced scope nesting in preflight");
+    expectTrue(!preflight.unbalancedFlowNesting, "ended scope leaves balanced flow nesting in preflight");
+    expectTrue(!preflight.hasCorrelationWarnings(), "balanced export has no correlation warnings");
+}
+
+void testChromeTraceExportPreflightUnbalancedNesting() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    {
+        FUSE_PROFILE_SCOPE("preflight_outer");
+        FUSE_PROFILE_ASYNC_FLOW_BEGIN("preflight_flow", flowId);
+    }
+
+    const fuse::profiler::ChromeTraceExportPreflight preflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(preflight.canExport(), "export preflight still allows export with open flow");
+    expectTrue(!preflight.emptyBuffer, "unbalanced preflight still has events");
+    expectTrue(preflight.hasOpenAsyncFlows, "preflight marks open async flow");
+    expectTrue(preflight.unbalancedFlowNesting, "preflight marks unbalanced flow nesting");
+    expectTrue(preflight.hasCorrelationWarnings(), "open flow triggers correlation warnings");
+    expectTrue(fuse::profiler::canExportChromeTrace(), "canExportChromeTrace true with warnings");
+}
+
+void testChromeTraceExportPreflightDisabledProfiler() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::setEnabled(false);
+    const fuse::profiler::ChromeTraceExportPreflight preflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(preflight.profilerDisabled, "preflight marks disabled profiler");
+    expectTrue(preflight.canExport(), "disabled profiler still allows chrome export stub");
+    expectTrue(fuse::profiler::canExportChromeTrace(), "canExportChromeTrace true when disabled");
+}
+
+void testFirstEventIndexAndTryFirstEvent() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::firstEventIndex() == fuse::profiler::kInvalidEventIndex,
+               "firstEventIndex invalid on empty buffer");
+
+    fuse::profiler::ProfileEvent outEvent{};
+    expectTrue(!fuse::profiler::tryFirstEvent(outEvent), "tryFirstEvent false on empty buffer");
+    expectTrue(outEvent.name == nullptr, "tryFirstEvent clears output on empty buffer");
+
+    {
+        FUSE_PROFILE_SCOPE("first_scope");
+    }
+
+    expectTrue(fuse::profiler::firstEventIndex() == 0u, "firstEventIndex is zero with events");
+    expectTrue(fuse::profiler::tryFirstEvent(outEvent), "tryFirstEvent true after recording");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::Begin, "tryFirstEvent copies begin phase");
+    expectTrue(outEvent.name != nullptr && std::string(outEvent.name) == "first_scope",
+               "tryFirstEvent copies scope name");
+}
+
+void testTryLastEventGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::ProfileEvent outEvent{};
+    expectTrue(!fuse::profiler::tryLastEvent(outEvent), "tryLastEvent false on empty buffer");
+    expectTrue(outEvent.name == nullptr, "tryLastEvent clears output on empty buffer");
+
+    {
+        FUSE_PROFILE_SCOPE("last_scope");
+    }
+
+    expectTrue(fuse::profiler::tryLastEvent(outEvent), "tryLastEvent true after recording");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::End, "tryLastEvent copies end phase");
+    expectTrue(outEvent.name != nullptr && std::string(outEvent.name) == "last_scope",
+               "tryLastEvent copies scope name");
+    expectTrue(fuse::profiler::isValidProfileEvent(outEvent), "tryLastEvent output passes isValidProfileEvent");
+}
+
 void testVerifyMacro() {
     resetState();
     fuse::assertion::setSuppressAbortForTests(true);
@@ -1309,6 +1425,13 @@ int main() {
     testTryEventAtGuard();
     testResetRestoresNestingBalance();
     testCrossThreadFlowPreservesOpenCountGuard();
+    testIsValidProfileNameGuard();
+    testChromeTraceExportPreflightOnReset();
+    testChromeTraceExportPreflightWithEvents();
+    testChromeTraceExportPreflightUnbalancedNesting();
+    testChromeTraceExportPreflightDisabledProfiler();
+    testFirstEventIndexAndTryFirstEvent();
+    testTryLastEventGuard();
     testFatalHandlerHook();
     testVerifyMacro();
 

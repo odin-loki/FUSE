@@ -72,14 +72,39 @@ bool hasOpenAsyncFlows();
 bool isScopeNestingBalanced();
 bool isFlowNestingBalanced();
 
+/// True when `name` is non-null and non-empty — shared guard for scopes, flows, and counters.
+bool isValidProfileName(const char* name);
+
+/// Read-only chrome trace export diagnostics — no mutation (B1.6 deepen).
+struct ChromeTraceExportPreflight {
+    bool profilerDisabled = false;
+    bool emptyBuffer = false;
+    bool unbalancedScopeNesting = false;
+    bool unbalancedFlowNesting = false;
+    bool hasOpenAsyncFlows = false;
+    bool bufferFull = false;
+
+    bool canExport() const { return true; }
+
+    bool hasCorrelationWarnings() const {
+        return unbalancedScopeNesting || unbalancedFlowNesting || hasOpenAsyncFlows;
+    }
+};
+
+ChromeTraceExportPreflight preflightChromeTraceExport();
+bool canExportChromeTrace();
+
 bool hasEvents();
 bool isBufferEmpty();
 bool isBufferFull();
 bool isEventIndexValid(u32 index);
 bool isValidProfileEvent(const ProfileEvent& event);
+u32 firstEventIndex();
 u32 lastEventIndex();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
+bool tryFirstEvent(ProfileEvent& outEvent);
+bool tryLastEvent(ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 void reset();
 
