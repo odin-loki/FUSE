@@ -136,6 +136,17 @@ enum class EvictionPolicy : u8 {
     return unload_distance_priority;
 }
 
+/// Back-compat alias for earlier B7.6 budget score stubs.
+[[nodiscard]] inline f32 budget_eviction_score_stub(f32 focus_distance, f32 unload_distance_priority,
+                                                     u32 last_touch_tick, u32 current_tick,
+                                                     EvictionPolicy policy) {
+    return budget_eviction_score(focus_distance, unload_distance_priority, last_touch_tick, current_tick,
+                                 policy);
+}
+
+/// True when a computed budget eviction score can evict a resident cell.
+[[nodiscard]] inline bool is_budget_eviction_score_eligible(f32 score) { return score > 0.f; }
+
 /// True when an incoming load outranks a resident cell for budget eviction (closer wins).
 [[nodiscard]] inline bool incoming_outranks_eviction(f32 incoming_priority, f32 eviction_score) {
     if (incoming_priority <= 0.f) {
@@ -166,6 +177,12 @@ enum class EvictionPolicy : u8 {
     return needs_budget_eviction_for_incoming(max_loaded_cells, resident_count, max_resident_bytes,
                                               resident_bytes, incoming_bytes) &&
            has_eviction_candidate;
+}
+
+/// Empty-residency guard: record `eviction_skipped` when pressure exists but no resident can evict.
+[[nodiscard]] inline bool should_record_eviction_skipped_on_empty_residency(bool budget_pressure,
+                                                                             bool has_eviction_candidate) {
+    return budget_pressure && !has_eviction_candidate;
 }
 
 } // namespace fuse::world_partition

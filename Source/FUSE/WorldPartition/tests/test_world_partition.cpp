@@ -542,6 +542,9 @@ void testRankBudgetUnloadPriority() {
                "rank budget picks unload rank when higher");
     expectNear(fuse::world_partition::rank_budget_unload_priority(2.f, 3.f, 5.f, 9.f), 9.f, 1e-4f,
                "rank budget picks budget score when higher");
+    expectNear(fuse::world_partition::rank_budget_unload_priority_stub(2.f, 3.f, 5.f, 9.f),
+               fuse::world_partition::rank_budget_unload_priority(2.f, 3.f, 5.f, 9.f), 1e-4f,
+               "rank budget stub alias matches rank_budget_unload_priority");
     expectNear(fuse::world_partition::eviction_unload_priority(2.f, 3.f, 900.f, 0.f, 0u, 10u,
                                                               fuse::world_partition::EvictionPolicy::DistanceFromFocus),
                900.f, 1e-4f, "eviction unload priority merges budget focus distance");
@@ -557,6 +560,74 @@ void testCanAttemptBudgetEviction() {
                "can attempt eviction when pressure and candidate exist");
     expectTrue(!fuse::world_partition::can_attempt_budget_eviction(4u, 2u, 0u, 1024u, 1024u, true),
                "cannot attempt eviction when headroom remains");
+}
+
+void testCanAttemptBudgetEvictionFromSet() {
+    fuse::world_partition::ResidencySet residency;
+    expectTrue(!fuse::world_partition::can_attempt_budget_eviction_from_set(2u, 2u, 2048u, 1024u, 1024u,
+                                                                            residency),
+               "empty residency cannot attempt budget eviction at cap");
+    expectTrue(!fuse::world_partition::can_attempt_budget_eviction_from_set(4u, 2u, 0u, 1024u, 1024u, residency),
+               "empty residency cannot attempt when headroom remains");
+
+    residency.add({5, 0}, 900.f);
+    expectTrue(fuse::world_partition::can_attempt_budget_eviction_from_set(2u, 2u, 2048u, 1024u, 1024u, residency),
+               "non-empty residency can attempt when pressure and candidate exist");
+}
+
+void testEmptyResidencyEvictionSkipGuard() {
+    expectTrue(!fuse::world_partition::should_record_eviction_skipped_on_empty_residency(false, false),
+               "no skip when budget pressure absent");
+    expectTrue(!fuse::world_partition::should_record_eviction_skipped_on_empty_residency(false, true),
+               "no skip when budget pressure absent even with candidate");
+    expectTrue(fuse::world_partition::should_record_eviction_skipped_on_empty_residency(true, false),
+               "skip when pressure exists but residency empty");
+    expectTrue(!fuse::world_partition::should_record_eviction_skipped_on_empty_residency(true, true),
+               "no skip when pressure and candidate both exist");
+}
+
+void testResidencyEvictionCandidateGuards() {
+    fuse::world_partition::ResidencySet residency;
+    expectTrue(!fuse::world_partition::has_residency_eviction_candidate_guarded(residency),
+               "empty residency guarded candidate check is false");
+
+    const fuse::world_partition::GridCoord cell{2, 2};
+    residency.add(cell, 100.f);
+    expectTrue(fuse::world_partition::has_residency_eviction_candidate_guarded(residency),
+               "non-empty residency guarded candidate check is true");
+    expectNear(fuse::world_partition::focus_distance_for_guarded(residency, cell), 100.f, 1e-4f,
+               "guarded focus distance returns stored value");
+    expectNear(fuse::world_partition::focus_distance_for_guarded(residency, {9, 9}), -1.f, 1e-4f,
+               "guarded focus distance returns -1 for absent coord");
+    expectNear(fuse::world_partition::focus_distance_for_guarded(residency,
+                                                                 fuse::world_partition::kInvalidGridCoord),
+               -1.f, 1e-4f, "guarded focus distance rejects invalid coord");
+}
+
+void testIsBudgetEvictionScoreEligible() {
+    expectTrue(!fuse::world_partition::is_budget_eviction_score_eligible(-1.f),
+               "negative score is not eligible");
+    expectTrue(!fuse::world_partition::is_budget_eviction_score_eligible(0.f), "zero score is not eligible");
+    expectTrue(fuse::world_partition::is_budget_eviction_score_eligible(0.01f),
+               "positive score is eligible");
+}
+
+void testIsValidUnloadRank() {
+    expectTrue(!fuse::world_partition::is_valid_unload_rank(0.f), "zero unload rank is invalid");
+    expectTrue(!fuse::world_partition::is_valid_unload_rank(-5.f), "negative unload rank is invalid");
+    expectTrue(fuse::world_partition::is_valid_unload_rank(0.01f), "positive unload rank is valid");
+}
+
+void testEvictionUnloadPriorityGuarded() {
+    expectNear(fuse::world_partition::eviction_unload_priority_guarded(0.f, 0.f, 900.f, 0.f, 0u, 10u,
+                                                                      fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               900.f, 1e-4f, "guarded unload rank preserves positive budget score");
+    expectNear(fuse::world_partition::eviction_unload_priority_guarded(0.f, 0.f, -1.f, 0.f, 0u, 10u,
+                                                                      fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               0.f, 1e-4f, "guarded unload rank rejects ineligible budget score");
+    expectNear(fuse::world_partition::eviction_unload_priority_guarded(2.f, 3.f, 0.f, 50.f, 2u, 10u,
+                                                                      fuse::world_partition::EvictionPolicy::Lru),
+               8.f, 1e-4f, "guarded unload rank uses LRU budget score when eligible");
 }
 
 void testInvalidGridCoordSentinel() {
@@ -737,6 +808,11 @@ void testBudgetEvictionScoreStub() {
     expectNear(fuse::world_partition::budget_eviction_score(100.f, 0.f, 2u, 10u,
                                                             fuse::world_partition::EvictionPolicy::Lru),
                8.f, 1e-4f, "budget score uses LRU age");
+    expectNear(fuse::world_partition::budget_eviction_score_stub(900.f, 0.f, 0u, 10u,
+                                                                 fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               fuse::world_partition::budget_eviction_score(900.f, 0.f, 0u, 10u,
+                                                            fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               1e-4f, "budget score stub alias matches budget_eviction_score");
 }
 
 void testCollectEvictionCandidatesOrdering() {
@@ -1521,6 +1597,12 @@ int main() {
     testRankUnloadPriority();
     testRankBudgetUnloadPriority();
     testCanAttemptBudgetEviction();
+    testCanAttemptBudgetEvictionFromSet();
+    testEmptyResidencyEvictionSkipGuard();
+    testResidencyEvictionCandidateGuards();
+    testIsBudgetEvictionScoreEligible();
+    testIsValidUnloadRank();
+    testEvictionUnloadPriorityGuarded();
     testInvalidGridCoordSentinel();
     testPickEvictionCandidateGuarded();
     testCollectBudgetEvictionCandidates();
