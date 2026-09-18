@@ -400,4 +400,21 @@ void compute_friction_tangents(ContactManifold& manifold) {
     manifold.buildFrictionBasis();
 }
 
+ContactPairPreflight preflight_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    ContactPairPreflight preflight{};
+    preflight.reason = contact_pair_reject_reason(pair, bodies, shapes);
+    preflight.rejected = preflight.reason != ContactPairRejectReason::None;
+    return preflight;
+}
+
+bool should_skip_contact_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return is_invalid_contact_pair(pair, bodies, shapes);
+}
+
 } // namespace fuse::physics::narrowphase
