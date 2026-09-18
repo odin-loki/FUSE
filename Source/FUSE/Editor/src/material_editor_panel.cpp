@@ -22,11 +22,9 @@ Handle<Object> materialHandle(u32 materialId) {
 } // namespace
 
 void MaterialEditorPanel::bindSelectedMaterial_() {
-    if (!canBindMaterialSlot(m_selectedMatId, m_catalogCount)) {
-        unbindSelectedMaterial_();
-        return;
+    if (!m_binding.tryBind(m_selectedMatId, m_catalogCount, m_editState)) {
+        m_selectedMatId = kInvalidMaterialId;
     }
-    m_binding.bind(m_selectedMatId, m_editState);
 }
 
 void MaterialEditorPanel::unbindSelectedMaterial_() {
@@ -74,12 +72,15 @@ void MaterialEditorPanel::syncFromMaterialSystem(const EditorState& state,
 }
 
 bool MaterialEditorPanel::selectMaterial(u32 materialId) {
-    if (isMaterialCatalogEmpty(m_catalogCount) || isInvalidMaterialSlot(materialId, m_catalogCount)) {
+    if (!canSelectMaterial(materialId)) {
         return false;
     }
 
     m_selectedMatId = materialId;
     bindSelectedMaterial_();
+    if (!hasSelectedMaterial()) {
+        return false;
+    }
     m_previewDirty = true;
     return true;
 }

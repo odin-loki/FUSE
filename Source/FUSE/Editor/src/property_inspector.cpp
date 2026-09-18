@@ -123,6 +123,19 @@ bool PropertyInspector::getMeshMaterialId(const EditorScene& scene, u32& out) co
     return true;
 }
 
+bool PropertyInspector::tryGetMeshMaterialId(const EditorScene& scene, u32 catalogCount,
+                                             u32& out) const {
+    if (!getMeshMaterialId(scene, out)) {
+        return false;
+    }
+
+    if (isMaterialCatalogEmpty(catalogCount) || isInvalidMaterialSlot(out, catalogCount)) {
+        return false;
+    }
+
+    return true;
+}
+
 bool PropertyInspector::setMeshMaterialId(u32 materialId, EditorScene& scene, CommandStack& cmds) {
     return trySetMeshMaterialId(materialId, UINT32_MAX, scene, cmds);
 }
@@ -138,7 +151,8 @@ bool PropertyInspector::trySetMeshMaterialId(u32 materialId, u32 catalogCount, E
         return false;
     }
 
-    if (catalogCount != UINT32_MAX && isInvalidMaterialSlot(materialId, catalogCount)) {
+    if (catalogCount != UINT32_MAX &&
+        (isMaterialCatalogEmpty(catalogCount) || isInvalidMaterialSlot(materialId, catalogCount))) {
         return false;
     }
 
