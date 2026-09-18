@@ -84,7 +84,7 @@ std::vector<u32> uniqueOccupants(const std::vector<u32>& occupants) {
 }
 
 u32 countPairsForCell(const std::vector<u32>& occupants) {
-    if (occupants.size() < 2u) {
+    if (shouldSkipCellPairGeneration(static_cast<u32>(occupants.size()))) {
         return 0u;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -93,7 +93,7 @@ u32 countPairsForCell(const std::vector<u32>& occupants) {
 }
 
 void generatePairsForCell(const std::vector<u32>& occupants, std::vector<CandidatePair>& out) {
-    if (occupants.size() < 2u) {
+    if (shouldSkipCellPairGeneration(static_cast<u32>(occupants.size()))) {
         return;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -108,7 +108,7 @@ void writePairsForCellSlots(
     const std::vector<u32>& occupants,
     u32 slotStart,
     PairBufferSoA& buffer) {
-    if (occupants.size() < 2u) {
+    if (shouldSkipCellPairGeneration(static_cast<u32>(occupants.size()))) {
         return;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -134,7 +134,7 @@ void populateShapeCells(
 
     const vec3 position = bodies.positions[bodyIndex];
     const f32 radius = shapeRadius(shapes, shapeIndex);
-    const f32 cellSize = params.cellSize > 0.f ? params.cellSize : 1.f;
+    const f32 cellSize = clampCellSize(params.cellSize);
     const u32 tableSize = clampTableSize(params.tableSize);
     const u32 maxSpan = params.maxCellSpanPerAxis;
 
@@ -212,7 +212,7 @@ void runBroadphaseIntoBufferInternal(
     bool use2D,
     PairBufferSoA& buffer) {
     buffer.clear();
-    if (bodies.count() == 0 || shapes.count() == 0) {
+    if (shouldSkipBroadphaseInput(bodies.count(), shapes.count())) {
         return;
     }
 
@@ -298,7 +298,7 @@ void refineBroadphasePairsParallelImpl(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     PairBufferSoA& buffer) {
-    if (buffer.canSkipSoAIteration() || bodies.count() == 0 || shapes.count() == 0) {
+    if (shouldSkipBroadphaseRefine(buffer.activeCount, buffer.pairSlotCount, bodies.count(), shapes.count())) {
         return;
     }
 

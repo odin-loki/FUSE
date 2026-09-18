@@ -10,6 +10,13 @@
 
 namespace fuse::physics::broadphase {
 
+/// Diagnostic reason a candidate pair is rejected before broadphase output (B4.2 deepen).
+enum class CandidatePairRejectReason : u8 {
+    None = 0,
+    SelfPair,
+    OutOfRangeBody,
+};
+
 struct SpatialHashParams {
     f32 cellSize = 2.f;
     u32 tableSize = 1024;
@@ -47,6 +54,26 @@ FUSE_PHYSICS_INLINE bool isValidCandidatePair(const CandidatePair& pair, u32 bod
     return isValidCandidatePair(pair.bodyA, pair.bodyB, bodyCount);
 }
 
+/// Returns the first reject reason for a pair, or `None` when the pair may be emitted.
+FUSE_PHYSICS_INLINE CandidatePairRejectReason candidatePairRejectReason(u32 bodyA, u32 bodyB, u32 bodyCount = 0u) {
+    if (isEmptyCandidatePair(bodyA, bodyB)) {
+        return CandidatePairRejectReason::SelfPair;
+    }
+    if (bodyCount > 0u && (bodyA >= bodyCount || bodyB >= bodyCount)) {
+        return CandidatePairRejectReason::OutOfRangeBody;
+    }
+    return CandidatePairRejectReason::None;
+}
+
+FUSE_PHYSICS_INLINE CandidatePairRejectReason candidatePairRejectReason(const CandidatePair& pair, u32 bodyCount = 0u) {
+    return candidatePairRejectReason(pair.bodyA, pair.bodyB, bodyCount);
+}
+
+/// Clamp non-positive cell sizes to the broadphase stub default.
+FUSE_PHYSICS_INLINE f32 clampCellSize(f32 cellSize) {
+    return cellSize > 0.f ? cellSize : 1.f;
+}
+
 /// Clamp hash table size to at least one bucket (broadphase stub guard).
 FUSE_PHYSICS_INLINE u32 clampTableSize(u32 tableSize) {
     return tableSize > 0u ? tableSize : 1u;
@@ -77,6 +104,41 @@ struct CellRange2 {
     ivec2 minCell{};
     ivec2 maxCell{};
 };
+
+FUSE_PHYSICS_INLINE s32 cellAxisSpan(s32 minCell, s32 maxCell) {
+    return maxCell >= minCell ? (maxCell - minCell + 1) : 0;
+}
+
+FUSE_PHYSICS_INLINE bool cellRangeIsEmpty(const CellRange3& range) {
+    return range.minCell.x > range.maxCell.x || range.minCell.y > range.maxCell.y ||
+           range.minCell.z > range.maxCell.z;
+}
+
+FUSE_PHYSICS_INLINE bool cellRangeIsEmpty(const CellRange2& range) {
+    return range.minCell.x > range.maxCell.x || range.minCell.y > range.maxCell.y;
+}
+
+FUSE_PHYSICS_INLINE u32 cellRangeVolume3(const CellRange3& range) {
+    if (cellRangeIsEmpty(range)) {
+        return 0u;
+    }
+    return static_cast<u32>(cellAxisSpan(range.minCell.x, range.maxCell.x)) *
+           static_cast<u32>(cellAxisSpan(range.minCell.y, range.maxCell.y)) *
+           static_cast<u32>(cellAxisSpan(range.minCell.z, range.maxCell.z));
+}
+
+FUSE_PHYSICS_INLINE u32 cellRangeVolume2(const CellRange2& range) {
+    if (cellRangeIsEmpty(range)) {
+        return 0u;
+    }
+    return static_cast<u32>(cellAxisSpan(range.minCell.x, range.maxCell.x)) *
+           static_cast<u32>(cellAxisSpan(range.minCell.y, range.maxCell.y));
+}
+
+/// True when a hash cell cannot emit candidate pairs (single occupant or empty).
+FUSE_PHYSICS_INLINE bool shouldSkipCellPairGeneration(u32 occupantCount) {
+    return occupantCount < 2u;
+}
 
 /// Limit per-axis cell span from the range center (CUDA occupancy iteration guard stub).
 FUSE_PHYSICS_INLINE CellRange3 clampCellRange3(CellRange3 range, u32 maxSpanPerAxis) {
@@ -149,7 +211,7 @@ FUSE_PHYSICS_INLINE ivec2 worldToCell2D(vec2 position, f32 cellSize) {
 }
 
 FUSE_PHYSICS_INLINE CellRange3 cellRangeFromSphere(vec3 center, f32 radius, f32 cellSize, u32 maxSpanPerAxis = 64u) {
-    const f32 cell = cellSize > 0.f ? cellSize : 1.f;
+    const f32 cell = clampCellSize(cellSize);
     CellRange3 range = {
         worldToCell({center.x - radius, center.y - radius, center.z - radius}, cell),
         worldToCell({center.x + radius, center.y + radius, center.z + radius}, cell),
@@ -158,7 +220,7 @@ FUSE_PHYSICS_INLINE CellRange3 cellRangeFromSphere(vec3 center, f32 radius, f32 
 }
 
 FUSE_PHYSICS_INLINE CellRange2 cellRangeFromSphere2D(vec2 center, f32 radius, f32 cellSize, u32 maxSpanPerAxis = 64u) {
-    const f32 cell = cellSize > 0.f ? cellSize : 1.f;
+    const f32 cell = clampCellSize(cellSize);
     CellRange2 range = {
         worldToCell2D({center.x - radius, center.y - radius}, cell),
         worldToCell2D({center.x + radius, center.y + radius}, cell),
@@ -191,6 +253,20 @@ FUSE_PHYSICS_INLINE bool sphereAabbOverlap(vec3 centerA, f32 radiusA, vec3 cente
 }
 
 struct PairBufferSoA;
+
+/// True when broadphase input has no bodies or shapes to process.
+FUSE_PHYSICS_INLINE bool shouldSkipBroadphaseInput(u32 bodyCount, u32 shapeCount) {
+    return bodyCount == 0u || shapeCount == 0u;
+}
+
+/// True when refine can skip scanning pair slots (empty buffer or missing scene data).
+FUSE_PHYSICS_INLINE bool shouldSkipBroadphaseRefine(
+    u32 activeCount,
+    u32 pairSlotCount,
+    u32 bodyCount,
+    u32 shapeCount) {
+    return (activeCount == 0u && pairSlotCount == 0u) || shouldSkipBroadphaseInput(bodyCount, shapeCount);
+}
 
 /// Job-safe broadphase: parallel shape→cell + per-cell pair generation into reusable SoA slots.
 void runBroadphaseIntoBuffer(
