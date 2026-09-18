@@ -221,7 +221,8 @@ const char* chromeCategory(EventPhase phase) {
 } // namespace
 
 ProfileScope::ProfileScope(const char* name)
-    : m_name(name), m_active(g_enabled.load(std::memory_order_acquire)) {
+    : m_name(name),
+      m_active(g_enabled.load(std::memory_order_acquire) && name != nullptr) {
     if (m_active) {
         m_scopeId = g_nextScopeId.fetch_add(1u, std::memory_order_acq_rel);
         m_nestingDepth = pushNestingDepth();
@@ -268,12 +269,28 @@ u32 maxFlowNestingDepth() {
     return g_maxFlowNestingDepth.load(std::memory_order_acquire);
 }
 
+u32 scopeNestingDepth() {
+    return currentNestingDepth();
+}
+
 u32 flowNestingDepth() {
     return currentFlowNestingDepth();
 }
 
+u32 openAsyncFlowCount() {
+    return g_openAsyncFlowCount.load(std::memory_order_acquire);
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
+}
+
+bool isBufferEmpty() {
+    return eventCount() == 0u;
+}
+
+bool isBufferFull() {
+    return eventCount() >= kRingCapacity;
 }
 
 bool isEventIndexValid(u32 index) {
@@ -295,6 +312,19 @@ const ProfileEvent& eventAt(u32 index) {
     const u32 start = head >= count ? head - count : 0u;
     const u32 ringIndex = (start + index) % kRingCapacity;
     return g_events[ringIndex];
+}
+
+u32 lastEventIndex() {
+    const u32 count = eventCount();
+    return count > 0u ? count - 1u : kInvalidEventIndex;
+}
+
+const ProfileEvent& lastEvent() {
+    const u32 index = lastEventIndex();
+    if (index == kInvalidEventIndex) {
+        return eventAt(0);
+    }
+    return eventAt(index);
 }
 
 void reset() {
