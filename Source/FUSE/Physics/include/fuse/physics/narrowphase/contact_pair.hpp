@@ -117,4 +117,45 @@ bool should_skip_contact_pair_dispatch(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Per-reason flags for pair reject preflight (B4.5 deepen pass).
+struct ContactPairRejectPreflight {
+    ContactPairRejectReason reason = ContactPairRejectReason::None;
+    bool rejected = false;
+    bool selfPair = false;
+    bool outOfRangeBody = false;
+    bool missingShape = false;
+    bool bothTriggers = false;
+    bool unsupportedShapePair = false;
+    bool bothStatic = false;
+    bool degenerateShape = false;
+
+    bool can_dispatch() const { return !rejected; }
+};
+
+/// Populate reject preflight with per-reason flags (B4.5 deepen pass).
+ContactPairRejectPreflight preflight_contact_pair_reject(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when the pair should be rejected before dispatch (B4.5 deepen pass).
+bool should_reject_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Combined dispatch preflight with reject flags and skip guard (B4.5 deepen pass).
+struct ContactPairDispatchPreflight {
+    ContactPairRejectPreflight reject{};
+    bool skipped = false;
+
+    bool can_dispatch() const { return !skipped && reject.can_dispatch(); }
+};
+
+/// Populate combined pair dispatch preflight (B4.5 deepen pass).
+ContactPairDispatchPreflight preflight_contact_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
 } // namespace fuse::physics::narrowphase
