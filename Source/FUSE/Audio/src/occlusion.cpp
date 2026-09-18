@@ -25,6 +25,18 @@ bool is_empty_occlusion_blockers(const AABB* blockers, u32 blocker_count) {
     return !has_occlusion_blockers(blockers, blocker_count);
 }
 
+float clamp_blocker_factor(float factor) {
+    return std::clamp(factor, 0.f, 1.f);
+}
+
+bool is_clear_blocker_factor(float factor) {
+    return clamp_blocker_factor(factor) <= 0.f;
+}
+
+bool is_fully_blocked_blocker_factor(float factor) {
+    return clamp_blocker_factor(factor) >= 1.f;
+}
+
 bool should_skip_blocker_evaluation(const Vec3& listener, const Vec3& source) {
     const Vec3 delta = source - listener;
     return delta.dot(delta) < 1e-12f;
@@ -52,9 +64,21 @@ bool should_skip_occlusion_blocker_raycast(float source_occlusion, const AABB* b
         || is_fully_occluded_occlusion(source_occlusion);
 }
 
+bool should_evaluate_occlusion_blocker_raycast(float source_occlusion, const AABB* blockers,
+                                               u32 blocker_count) {
+    return !should_skip_occlusion_blocker_raycast(source_occlusion, blockers, blocker_count);
+}
+
+bool should_skip_occlusion_blocker_evaluation(const AABB* blockers, u32 blocker_count,
+                                              const Vec3& listener, const Vec3& source,
+                                              float source_occlusion) {
+    return should_skip_occlusion_blocker_raycast(source_occlusion, blockers, blocker_count)
+        || should_skip_blockers_visibility(listener, source, blockers, blocker_count);
+}
+
 bool should_skip_combine_occlusion_visibility(float source_occlusion, float blocker_factor) {
-    const float blocked = std::clamp(blocker_factor, 0.f, 1.f);
-    return blocked <= 0.f || is_fully_occluded_occlusion(source_occlusion);
+    return is_clear_blocker_factor(blocker_factor)
+        || is_fully_occluded_occlusion(source_occlusion);
 }
 
 bool should_skip_occlusion_attenuation(float visibility) {
@@ -182,11 +206,11 @@ float compute_blockers_factor(const Vec3& listener, const Vec3& source, const AA
 
 float combine_occlusion_visibility(float source_occlusion, float blocker_factor) {
     const float visibility = clamp_occlusion_visibility(source_occlusion);
-    const float blocked = std::clamp(blocker_factor, 0.f, 1.f);
+    const float blocked = clamp_blocker_factor(blocker_factor);
     if (should_skip_combine_occlusion_visibility(visibility, blocked)) {
         return visibility;
     }
-    if (blocked >= 1.f) {
+    if (is_fully_blocked_blocker_factor(blocked)) {
         return 0.f;
     }
     return visibility * (1.f - blocked);
@@ -196,11 +220,9 @@ float compute_effective_visibility(const Vec3& listener, const Vec3& source,
                                    float source_occlusion, const AABB* blockers, u32 blocker_count,
                                    const OcclusionParams& params) {
     const float visibility = clamp_occlusion_visibility(source_occlusion);
-    if (should_skip_occlusion_blocker_raycast(source_occlusion, blockers, blocker_count)) {
+    if (should_skip_occlusion_blocker_evaluation(blockers, blocker_count, listener, source,
+                                                 source_occlusion)) {
         return is_fully_occluded_occlusion(visibility) ? 0.f : visibility;
-    }
-    if (should_skip_blockers_visibility(listener, source, blockers, blocker_count)) {
-        return visibility;
     }
     const float blocker_factor =
         compute_blockers_factor(listener, source, blockers, blocker_count, params);

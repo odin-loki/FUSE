@@ -18,6 +18,9 @@ bool has_reverb_zones(const ReverbZoneParams* zones, u32 zone_count);
 /// Readable alias — true when the zone list is null or zero-length.
 bool is_empty_reverb_zones(const ReverbZoneParams* zones, u32 zone_count);
 
+/// Readable alias for \c is_empty_reverb_zones — empty reverb zone list guard.
+bool is_empty_reverb_zone_list(const ReverbZoneParams* zones, u32 zone_count);
+
 /// True when zone blending can be skipped (empty zone list).
 bool should_skip_reverb_zone_blend(const ReverbZoneParams* zones, u32 zone_count);
 
@@ -68,9 +71,20 @@ bool should_apply_reverb_wet_mix(const ReverbZoneBlend& blend);
 /// True when wet convolution and sample blending can be skipped (fully dry path).
 bool should_skip_wet_mix_processing(const ReverbZoneBlend& blend);
 
+/// Readable alias for \c should_skip_wet_mix_processing.
+bool should_skip_reverb_wet_mix(const ReverbZoneBlend& blend);
+
+/// One-shot wet-mix skip from listener position and zone list (empty/outside/dry → skip).
+bool should_skip_reverb_wet_mix(const Vec3& listener, const ReverbZoneParams* zones,
+                                u32 zone_count);
+
 /// True when dry/wet sample blending can be skipped (empty zones, outside listener, or dry blend).
 bool should_skip_reverb_sample_blend(const Vec3& listener, const ReverbZoneParams* zones,
                                      u32 zone_count);
+
+/// True when dry/wet sample blending should run for the listener and zone list.
+bool should_apply_reverb_sample_blend(const Vec3& listener, const ReverbZoneParams* zones,
+                                      u32 zone_count);
 
 /// Effective wet mix scalar [0, 1] from a zone blend result.
 float compute_effective_wet_mix(const ReverbZoneBlend& blend);
@@ -88,5 +102,8 @@ float compute_effective_send_gain(const ReverbZoneBlend& blend);
 /// One-shot dry/wet sample blend from listener position and zone list (dry when empty/outside).
 float blend_reverb_sample(float dry, float wet, const Vec3& listener, const ReverbZoneParams* zones,
                           u32 zone_count);
+
+/// Dry/wet sample blend from a zone blend result — skips wet path when blend is dry.
+float blend_dry_wet_from_reverb_blend(const ReverbZoneBlend& blend, float dry, float wet);
 
 } // namespace fuse::audio

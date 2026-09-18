@@ -180,8 +180,28 @@ void testBlendReverbSampleOneShot() {
                "dry zone inside bounds still returns dry sample");
 }
 
+void testBlockerFactorGuards() {
+    expectNear(fuse::audio::clamp_blocker_factor(1.5f), 1.f, 1e-5f,
+               "blocker factor clamps above unity");
+    expectNear(fuse::audio::clamp_blocker_factor(-0.25f), 0.f, 1e-5f,
+               "blocker factor clamps below zero");
+    expectTrue(fuse::audio::is_clear_blocker_factor(0.f), "zero blocker factor is clear");
+    expectTrue(fuse::audio::is_clear_blocker_factor(-0.5f),
+               "negative blocker factor clamps to clear");
+    expectTrue(!fuse::audio::is_clear_blocker_factor(0.25f),
+               "partial blocker factor is not clear");
+    expectTrue(fuse::audio::is_fully_blocked_blocker_factor(1.f),
+               "unity blocker factor is fully blocked");
+    expectTrue(fuse::audio::is_fully_blocked_blocker_factor(1.5f),
+               "above-unity blocker factor clamps to fully blocked");
+    expectTrue(!fuse::audio::is_fully_blocked_blocker_factor(0.5f),
+               "partial blocker factor is not fully blocked");
+}
+
 void testOcclusionBlockerRaycastGuard() {
     const fuse::audio::AABB blocker{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
+    const fuse::audio::Vec3 listener{0.f, 0.f, 0.f};
+    const fuse::audio::Vec3 source{10.f, 0.f, 0.f};
 
     expectTrue(fuse::audio::should_skip_occlusion_blocker_raycast(1.f, nullptr, 0),
                "empty blocker list skips raycast");
@@ -189,6 +209,24 @@ void testOcclusionBlockerRaycastGuard() {
                "fully occluded source skips raycast");
     expectTrue(!fuse::audio::should_skip_occlusion_blocker_raycast(0.5f, &blocker, 1),
                "partial visibility with blockers runs raycast");
+    expectTrue(fuse::audio::should_evaluate_occlusion_blocker_raycast(0.5f, &blocker, 1),
+               "should_evaluate is inverse of should_skip raycast");
+    expectTrue(fuse::audio::should_evaluate_occlusion_blocker_raycast(0.5f, &blocker, 1)
+                   == !fuse::audio::should_skip_occlusion_blocker_raycast(0.5f, &blocker, 1),
+               "raycast evaluate/skip predicates are complementary");
+
+    expectTrue(fuse::audio::should_skip_occlusion_blocker_evaluation(nullptr, 0, listener, source,
+                                                                     0.5f),
+               "unified evaluation skips empty blocker list");
+    expectTrue(fuse::audio::should_skip_occlusion_blocker_evaluation(&blocker, 1, listener,
+                                                                     listener, 0.5f),
+               "unified evaluation skips co-located positions");
+    expectTrue(fuse::audio::should_skip_occlusion_blocker_evaluation(&blocker, 1, listener, source,
+                                                                     0.f),
+               "unified evaluation skips fully occluded source");
+    expectTrue(!fuse::audio::should_skip_occlusion_blocker_evaluation(&blocker, 1, listener, source,
+                                                                      0.5f),
+               "unified evaluation runs for separated positions with blockers");
 
     expectTrue(fuse::audio::should_skip_combine_occlusion_visibility(0.8f, 0.f),
                "zero blocker factor skips visibility combine");
@@ -211,6 +249,14 @@ void testListenerReverbZoneSkipGuards() {
     const fuse::audio::Vec3 inside{0.f, 0.f, 0.f};
     const fuse::audio::Vec3 outside{100.f, 0.f, 0.f};
 
+    expectTrue(fuse::audio::is_empty_reverb_zone_list(nullptr, 0),
+               "is_empty_reverb_zone_list matches null list");
+    expectTrue(fuse::audio::is_empty_reverb_zone_list(&zone, 0),
+               "is_empty_reverb_zone_list matches zero count");
+    expectTrue(fuse::audio::is_empty_reverb_zone_list(nullptr, 0)
+                   == fuse::audio::is_empty_reverb_zones(nullptr, 0),
+               "is_empty_reverb_zone_list aliases is_empty_reverb_zones");
+
     expectTrue(!fuse::audio::listener_has_active_reverb_zones(inside, nullptr, 0),
                "empty zone list has no active zones");
     expectTrue(fuse::audio::should_skip_listener_reverb_zones(inside, nullptr, 0),
@@ -228,6 +274,15 @@ void testListenerReverbZoneSkipGuards() {
                "outside listener skips sample blend");
     expectTrue(!fuse::audio::should_skip_reverb_sample_blend(inside, &zone, 1),
                "inside listener does not skip sample blend");
+    expectTrue(fuse::audio::should_apply_reverb_sample_blend(inside, &zone, 1),
+               "inside listener applies sample blend");
+    expectTrue(fuse::audio::should_apply_reverb_sample_blend(inside, &zone, 1)
+                   == !fuse::audio::should_skip_reverb_sample_blend(inside, &zone, 1),
+               "apply/skip sample blend predicates are complementary");
+    expectTrue(fuse::audio::should_skip_reverb_wet_mix(outside, &zone, 1),
+               "one-shot wet-mix skip outside all zones");
+    expectTrue(!fuse::audio::should_skip_reverb_wet_mix(inside, &zone, 1),
+               "one-shot wet-mix runs inside active zone");
 }
 
 void testNearZeroWetMixGuard() {
@@ -260,6 +315,14 @@ void testWetMixGuardConsistency() {
                "active zone blend applies wet mix");
     expectTrue(!fuse::audio::should_skip_wet_mix_processing(blend),
                "active zone blend does not skip wet processing");
+    expectTrue(fuse::audio::should_skip_reverb_wet_mix(blend)
+                   == fuse::audio::should_skip_wet_mix_processing(blend),
+               "should_skip_reverb_wet_mix aliases should_skip_wet_mix_processing");
+    expectNear(fuse::audio::blend_dry_wet_from_reverb_blend(blend, 1.f, 0.f), 0.8f, 1e-5f,
+               "blend_dry_wet_from_reverb_blend matches effective wet mix");
+    expectNear(fuse::audio::blend_dry_wet_from_reverb_blend(blend, 1.f, 0.f),
+               fuse::audio::blend_reverb_sample(1.f, 0.f, listener, zones, 1), 1e-5f,
+               "blend_dry_wet_from_reverb_blend matches one-shot sample blend");
     expectNear(wet_mix, 0.2f, 1e-5f, "effective wet mix is wet_dry times send_level");
     expectNear(send_gain, 0.5f, 1e-5f, "effective send gain matches clamped send_level");
     expectNear(fuse::audio::compute_effective_wet_mix(listener, zones, 1), wet_mix, 1e-5f,
@@ -291,6 +354,7 @@ int main() {
     testHasReverbZonesGuard();
     testEffectiveSendGain();
     testBlendReverbSampleOneShot();
+    testBlockerFactorGuards();
     testOcclusionBlockerRaycastGuard();
     testListenerReverbZoneSkipGuards();
     testNearZeroWetMixGuard();
