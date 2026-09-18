@@ -16,6 +16,8 @@ enum class ContactPairRejectReason : u8 {
     BothTriggers,
     UnsupportedShapePair,
     BothStatic,
+    BothSleeping,
+    BothKinematic,
     DegenerateShape,
 };
 
@@ -47,6 +49,16 @@ bool is_trigger_contact_pair(
 
 /// Returns true when both bodies carry `RB_STATIC` (no solver response stub, B4.3 deepen pass).
 bool is_static_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies);
+
+/// Returns true when both bodies carry `RB_SLEEPING` (no narrowphase dispatch stub, B4.3 deepen pass).
+bool is_sleeping_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies);
+
+/// Returns true when both bodies carry `RB_KINEMATIC` (no dynamic response stub, B4.3 deepen pass).
+bool is_kinematic_contact_pair(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies);
 

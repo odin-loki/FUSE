@@ -123,4 +123,38 @@ bool should_skip_tangential_velocity_solve(
     return hasNegligibleTangentialVelocity(projectedVelocity, speedThreshold);
 }
 
+bool isValidFrictionBasisForNormal(vec3 normal, const TangentBasis& basis, f32 epsilon) {
+    return isOrthonormalTangentBasis(normal, basis, epsilon);
+}
+
+bool needs_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon) {
+    if (should_skip_friction_tangents(manifold)) {
+        return false;
+    }
+    return !isValidFrictionBasisForNormal(manifold.contactNormal, manifold.frictionBasis, epsilon);
+}
+
+bool should_rebuild_friction_basis(const ContactManifold& manifold, f32 epsilon) {
+    return needs_friction_basis_rebuild(manifold, epsilon);
+}
+
+bool ensure_friction_basis(ContactManifold& manifold, f32 epsilon) {
+    if (should_skip_friction_tangents(manifold)) {
+        manifold.frictionBasis = {};
+        return false;
+    }
+
+    if (!needs_friction_basis_rebuild(manifold, epsilon)) {
+        return true;
+    }
+
+    if (!manifold.normalizeContactNormal()) {
+        manifold.frictionBasis = {};
+        return false;
+    }
+
+    manifold.buildFrictionBasis();
+    return manifold.hasFrictionBasis();
+}
+
 } // namespace fuse::physics::narrowphase
