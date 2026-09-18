@@ -59,8 +59,11 @@ public:
 
     [[nodiscard]] std::vector<std::string> predecessors(const std::string& node_id) const;
     [[nodiscard]] std::vector<std::string> successors(const std::string& node_id) const;
+    [[nodiscard]] std::size_t in_degree(const std::string& node_id) const;
+    [[nodiscard]] std::size_t out_degree(const std::string& node_id) const;
     [[nodiscard]] std::vector<std::string> roots() const;
     [[nodiscard]] std::vector<std::string> leaves() const;
+    [[nodiscard]] std::vector<std::string> isolated_nodes() const;
 
     [[nodiscard]] const std::vector<std::string>& nodes() const { return m_nodes; }
     [[nodiscard]] const std::vector<CookJobDependencyEdge>& edges() const { return m_edges; }
@@ -78,6 +81,13 @@ public:
 
     /// Union of downstream closures for each seed — guarded on empty graph / empty seed list / unknown seeds.
     [[nodiscard]] CookInvalidationClosureResult merged_invalidation_closure(
+        const std::vector<std::string>& from_job_ids) const;
+
+    /// Seed plus transitive downstream — guarded on empty graph / empty / unknown seed (B7.9 deepen).
+    [[nodiscard]] CookInvalidationClosureResult invalidation_bundle(const std::string& from_job_id) const;
+
+    /// Seeds plus union of downstream closures — guarded like `merged_invalidation_closure` (B7.9 deepen).
+    [[nodiscard]] CookInvalidationClosureResult merged_invalidation_bundle(
         const std::vector<std::string>& from_job_ids) const;
 
     /// True when `to_id` is reachable from `from_id` along directed edges; guarded on empty/unknown ids.
@@ -98,5 +108,9 @@ private:
 
 /// Flatten layer batches into a single topological order — empty when layers are cyclic or absent.
 [[nodiscard]] std::vector<std::string> flatten_topological_layers(const CookDependencyLayerResult& layers);
+
+/// True when `order` lists every node once and respects all edges; guarded on empty graph / cyclic graph.
+[[nodiscard]] bool is_valid_topological_order(const CookDependencyGraph& graph,
+                                              const std::vector<std::string>& order);
 
 } // namespace fuse::project

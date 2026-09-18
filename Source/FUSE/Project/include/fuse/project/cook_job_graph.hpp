@@ -85,6 +85,16 @@ public:
     [[nodiscard]] CookInvalidationClosureResult merged_invalidation_closure(
         const std::vector<std::string>& from_job_ids) const;
 
+    /// Seed plus transitive downstream jobs — guarded on empty graph / unknown seed (B7.9 deepen).
+    [[nodiscard]] CookInvalidationClosureResult invalidation_bundle(const std::string& from_job_id) const;
+
+    /// Seeds plus union of downstream jobs — guarded like `merged_invalidation_closure` (B7.9 deepen).
+    [[nodiscard]] CookInvalidationClosureResult merged_invalidation_bundle(
+        const std::vector<std::string>& from_job_ids) const;
+
+    /// True when `order` is a valid topological ordering of job ids — guarded on empty graph / cycles.
+    [[nodiscard]] bool is_valid_topological_order(const std::vector<std::string>& order) const;
+
     CookJobGraphExecuteResult execute(AssetCooker& cooker, const CookManifest& manifest);
 
 private:
