@@ -37,6 +37,11 @@ struct ContactIslandGraph {
 
     static constexpr u32 invalidIsland = ~0u;
 
+    /// Guarded build: returns false when preflight rejects the inputs; graph is cleared on failure.
+    bool build_guarded(u32 bodyCount,
+                       const std::vector<narrowphase::ContactManifold>& contacts,
+                       const std::vector<DistanceConstraint>& distanceConstraints);
+
 private:
     void unionBodies(u32 a, u32 b);
     u32 findRoot(u32 index) const;
@@ -45,5 +50,44 @@ private:
     std::vector<u32> parent_;
     std::vector<Island> islands_;
 };
+
+/// Preflight diagnostics for island graph construction (B4.4 deepen follow-up).
+struct IslandBuildPreflight {
+    u32 bodyCount = 0;
+    u32 contactCount = 0;
+    u32 distanceConstraintCount = 0;
+    u32 invalidContactCount = 0;
+    u32 invalidDistanceCount = 0;
+    u32 validContactCount = 0;
+    u32 validDistanceCount = 0;
+    bool zeroBodies = false;
+    bool skipped = false;
+
+    bool can_build() const { return !skipped && !zeroBodies; }
+};
+
+/// True when bodyCount is non-zero for island graph construction.
+bool is_valid_island_build_body_count(u32 bodyCount);
+
+/// True when both body indices are in range for the given body count.
+bool contact_references_valid_bodies(const narrowphase::ContactManifold& contact, u32 bodyCount);
+
+/// True when both body indices are in range for the given body count.
+bool distance_constraint_references_valid_bodies(const DistanceConstraint& constraint, u32 bodyCount);
+
+/// Preflight island graph build; sets `skipped` when bodyCount is zero.
+IslandBuildPreflight preflight_island_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Early-out guard for island graph build when bodyCount is zero.
+bool should_skip_island_build(u32 bodyCount);
+
+/// Guarded build entry: clears graph and returns false when preflight rejects inputs.
+bool build_island_graph_guarded(ContactIslandGraph& graph,
+                                u32 bodyCount,
+                                const std::vector<narrowphase::ContactManifold>& contacts,
+                                const std::vector<DistanceConstraint>& distanceConstraints);
 
 } // namespace fuse::physics
