@@ -1890,6 +1890,234 @@ void testWarmStartIslandCombinedGuarded() {
                "combined warm-start retains non-zero contact lambda from impulse seed");
 }
 
+void testPreflightIslandSolveInputsGuards() {
+    ContactIslandGraph graph;
+    std::vector<narrowphase::ContactManifold> contacts;
+    contacts.push_back(narrowphase::ContactManifold{});
+    contacts.back().valid = true;
+    contacts.back().bodyA = 0;
+    contacts.back().bodyB = 1;
+
+    std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+    };
+    graph.build(3, contacts, constraints);
+
+    const u32 constrainedIndex = graph.bodyIsland(0);
+    const IslandSolveInputsPreflight validPreflight =
+        preflight_island_solve_inputs(graph.island(constrainedIndex), 1u, 1u);
+    expectTrue(!validPreflight.skipped, "solve-inputs preflight does not skip constrained island");
+    expectTrue(validPreflight.can_solve(), "solve-inputs preflight can solve with in-range indices");
+    expectTrue(validPreflight.ownedContactCount == 1u, "solve-inputs preflight counts owned contacts");
+    expectTrue(validPreflight.ownedDistanceCount == 1u, "solve-inputs preflight counts owned distances");
+    expectTrue(island_contact_indices_in_range(graph.island(constrainedIndex), 1u),
+               "island_contact_indices_in_range true when contacts in range");
+    expectTrue(island_distance_indices_in_range(graph.island(constrainedIndex), 1u),
+               "island_distance_indices_in_range true when distances in range");
+    expectTrue(!should_skip_island_solve_inputs(graph.island(constrainedIndex), 1u, 1u),
+               "should_skip_island_solve_inputs false for valid inputs");
+
+    const IslandSolveInputsPreflight outOfRangeContacts =
+        preflight_island_solve_inputs(graph.island(constrainedIndex), 0u, 1u);
+    expectTrue(!outOfRangeContacts.contactsInRange, "solve-inputs preflight flags out-of-range contacts");
+    expectTrue(!outOfRangeContacts.can_solve(), "solve-inputs preflight cannot solve with OOB contacts");
+    expectTrue(should_skip_island_solve_inputs(graph.island(constrainedIndex), 0u, 1u),
+               "should_skip_island_solve_inputs true for OOB contacts");
+
+    const IslandSolveInputsPreflight outOfRangeIndex =
+        preflight_island_solve_inputs_by_index(graph, graph.islandCount() + 2u, 1u, 1u);
+    expectTrue(outOfRangeIndex.skipped, "solve-inputs index preflight skips out-of-range island");
+
+    bool foundEmptySkip = false;
+    for (u32 islandIndex = 0; islandIndex < graph.islandCount(); ++islandIndex) {
+        const ContactIslandGraph::Island& island = graph.island(islandIndex);
+        if (!island.isEmpty()) {
+            continue;
+        }
+        foundEmptySkip = true;
+        const IslandSolveInputsPreflight emptyPreflight = preflight_island_solve_inputs(island, 1u, 1u);
+        expectTrue(emptyPreflight.skipped, "solve-inputs preflight skips empty island");
+        expectTrue(!emptyPreflight.can_solve(), "empty island cannot pass solve-inputs preflight");
+    }
+    expectTrue(foundEmptySkip, "graph exposes empty island for solve-inputs preflight");
+}
+
+void testPreflightContactImpulseWarmStartGuards() {
+    SolverWorkBuffers work;
+    work.init(4, 2, 0);
+    work.ensureLambdaCapacity(2, 0);
+
+    std::vector<narrowphase::ContactManifold> contacts;
+    contacts.push_back(narrowphase::ContactManifold{});
+    contacts.back().valid = true;
+    contacts.back().bodyA = 0;
+    contacts.back().bodyB = 1;
+    contacts.back().warmNormalImpulse = 4.f;
+    contacts.push_back(narrowphase::ContactManifold{});
+    contacts.back().valid = true;
+    contacts.back().bodyA = 2;
+    contacts.back().bodyB = 3;
+    contacts.back().warmNormalImpulse = 0.f;
+
+    ContactIslandGraph graph;
+    graph.build(5, contacts, {});
+
+    const f32 dt = 1.f / 60.f;
+    expectTrue(is_valid_contact_impulse_warm_start_dt(dt), "positive dt valid for impulse warm-start");
+    expectTrue(!is_valid_contact_impulse_warm_start_dt(0.f), "zero dt invalid for impulse warm-start");
+
+    const u32 islandA = graph.bodyIsland(0);
+    const IslandContactImpulsePreflight validPreflight =
+        preflight_warm_start_contact_impulses(graph.island(islandA), contacts, dt);
+    expectTrue(!validPreflight.skipped, "impulse preflight does not skip contact island");
+    expectTrue(!validPreflight.invalidDt, "impulse preflight accepts valid dt");
+    expectTrue(validPreflight.ownedContactCount == 1u, "impulse preflight counts owned contacts");
+    expectTrue(validPreflight.inRangeContactCount == 1u, "impulse preflight counts in-range contacts");
+    expectTrue(validPreflight.nonZeroImpulseCount == 1u, "impulse preflight counts non-zero impulses");
+    expectTrue(validPreflight.can_warm_start(), "impulse preflight can warm-start with non-zero impulse");
+    expectTrue(!should_skip_warm_start_contact_impulses(graph.island(islandA), contacts, dt),
+               "should_skip false when impulse data exists");
+
+    const IslandContactImpulsePreflight invalidDt =
+        preflight_warm_start_contact_impulses(graph.island(islandA), contacts, 0.f);
+    expectTrue(invalidDt.invalidDt, "impulse preflight flags invalid dt");
+    expectTrue(!invalidDt.can_warm_start(), "impulse preflight cannot warm-start with invalid dt");
+    expectTrue(should_skip_warm_start_contact_impulses(graph.island(islandA), contacts, 0.f),
+               "should_skip true when dt is invalid");
+
+    const IslandContactImpulsePreflight outOfRangeIndex =
+        preflight_warm_start_contact_impulses_by_index(graph, graph.islandCount() + 1u, contacts, dt);
+    expectTrue(outOfRangeIndex.skipped, "impulse index preflight skips out-of-range island");
+    expectTrue(should_skip_contact_impulse_warm_start_island_index(graph, graph.islandCount() + 1u),
+               "should_skip_contact_impulse_warm_start_island_index on out-of-range index");
+
+    bool foundEmptySkip = false;
+    for (u32 islandIndex = 0; islandIndex < graph.islandCount(); ++islandIndex) {
+        const ContactIslandGraph::Island& island = graph.island(islandIndex);
+        if (!island.isEmpty()) {
+            continue;
+        }
+        foundEmptySkip = true;
+        const IslandContactImpulsePreflight emptyPreflight =
+            preflight_warm_start_contact_impulses(island, contacts, dt);
+        expectTrue(emptyPreflight.skipped, "impulse preflight skips empty island");
+        expectTrue(should_skip_contact_impulse_warm_start_island_index(graph, islandIndex),
+                   "should_skip_contact_impulse_warm_start_island_index on empty island");
+    }
+    expectTrue(foundEmptySkip, "graph exposes empty island for impulse preflight");
+}
+
+void testPreflightCombinedWarmStartGuards() {
+    SolverWorkBuffers work;
+    work.init(4, 2, 1);
+    work.ensureLambdaCapacity(2, 1);
+
+    std::vector<narrowphase::ContactManifold> contacts;
+    contacts.push_back(narrowphase::ContactManifold{});
+    contacts.back().valid = true;
+    contacts.back().bodyA = 0;
+    contacts.back().bodyB = 1;
+    contacts.back().warmNormalImpulse = 3.5f;
+
+    ContactIslandGraph graph;
+    graph.build(3, contacts, {});
+
+    const std::vector<f32> priorDistance = {0.12f};
+    const std::vector<f32> priorContact = {0.24f};
+    const f32 dt = 1.f / 60.f;
+
+    const u32 islandA = graph.bodyIsland(0);
+    const IslandCombinedWarmStartPreflight combinedPreflight =
+        preflight_warm_start_island_combined(graph.island(islandA), contacts, dt, priorDistance, priorContact);
+    expectTrue(!combinedPreflight.skipped, "combined preflight does not skip contact island");
+    expectTrue(combinedPreflight.lambda.can_warm_start(), "combined preflight lambda path can warm-start");
+    expectTrue(combinedPreflight.impulse.can_warm_start(), "combined preflight impulse path can warm-start");
+    expectTrue(combinedPreflight.can_warm_start(), "combined preflight can warm-start with both paths");
+    expectTrue(!should_skip_warm_start_island_combined(graph.island(islandA),
+                                                       contacts,
+                                                       dt,
+                                                       priorDistance,
+                                                       priorContact),
+               "should_skip false when combined paths can seed");
+
+    const IslandCombinedWarmStartPreflight noDataPreflight =
+        preflight_warm_start_island_combined(graph.island(islandA), contacts, 0.f, {}, {});
+    expectTrue(!noDataPreflight.can_warm_start(), "combined preflight cannot warm-start without data and invalid dt");
+    expectTrue(should_skip_warm_start_island_combined(graph.island(islandA), contacts, 0.f, {}, {}),
+               "should_skip true when combined paths cannot seed");
+}
+
+void testContactImpulseWarmStartGraphBatchGuards() {
+    SolverWorkBuffers work;
+    work.init(5, 2, 0);
+    work.ensureLambdaCapacity(2, 0);
+
+    std::vector<narrowphase::ContactManifold> contacts;
+    contacts.push_back(narrowphase::ContactManifold{});
+    contacts.back().valid = true;
+    contacts.back().bodyA = 0;
+    contacts.back().bodyB = 1;
+    contacts.back().warmNormalImpulse = 2.5f;
+    contacts.push_back(narrowphase::ContactManifold{});
+    contacts.back().valid = true;
+    contacts.back().bodyA = 2;
+    contacts.back().bodyB = 3;
+    contacts.back().warmNormalImpulse = 1.5f;
+
+    ContactIslandGraph graph;
+    graph.build(5, contacts, {});
+
+    const f32 dt = 1.f / 60.f;
+    const IslandContactImpulseWarmStartGraphPreflight graphPreflight =
+        preflight_warm_start_contact_impulses_graph(graph, contacts, dt);
+    expectTrue(!graphPreflight.skipped, "graph impulse preflight does not skip when seedable islands exist");
+    expectTrue(graphPreflight.can_warm_start(), "graph impulse preflight can warm-start");
+    expectTrue(graphPreflight.stats.impulseSeedableCount == graph.constrainedIslandCount(),
+               "graph impulse preflight counts seedable islands");
+    expectTrue(graphPreflight.stats.emptyCount + graphPreflight.stats.impulseSeedableCount +
+                       graphPreflight.stats.noImpulseDataCount + graphPreflight.stats.invalidDtCount ==
+                   graphPreflight.stats.totalIslands,
+               "impulse warm-start stats partition total islands");
+    expectTrue(count_impulse_warm_startable_islands(graph, contacts, dt) ==
+                   graphPreflight.stats.impulseSeedableCount,
+               "count_impulse_warm_startable_islands matches stats");
+    expectTrue(has_impulse_warm_startable_islands(graph, contacts, dt),
+               "has_impulse_warm_startable_islands true when impulses exist");
+    expectTrue(!should_skip_warm_start_contact_impulses_graph(graph, contacts, dt),
+               "should_skip_warm_start_contact_impulses_graph false when seedable");
+
+    const std::vector<u32> indices = collect_impulse_warm_startable_island_indices(graph, contacts, dt);
+    expectTrue(indices.size() == graph.constrainedIslandCount(),
+               "collect_impulse_warm_startable_island_indices returns constrained count");
+
+    work.clearLambdas();
+    const u32 warmedCount = warm_start_all_islands_contact_impulses_guarded(work, graph, contacts, dt);
+    expectTrue(warmedCount == graph.constrainedIslandCount(),
+               "batch impulse warm-start seeds all constrained islands");
+    expectTrue(std::fabs(work.contactLambdas()[0]) > 1e-6f,
+               "batch impulse warm-start seeds first contact lambda");
+    expectTrue(std::fabs(work.contactLambdas()[1]) > 1e-6f,
+               "batch impulse warm-start seeds second contact lambda");
+
+    const IslandContactImpulseWarmStartResult outOfRange =
+        warm_start_island_contact_impulses_result(work, graph, graph.islandCount() + 5u, contacts, dt);
+    expectTrue(outOfRange.skipped, "impulse warm-start result skips out-of-range island");
+    expectTrue(!outOfRange.warmed, "out-of-range impulse warm-start result is not warmed");
+
+    work.clearLambdas();
+    const u32 constrainedIndex = graph.bodyIsland(0);
+    const IslandContactImpulseWarmStartResult seeded =
+        warm_start_island_contact_impulses_result(work, graph, constrainedIndex, contacts, dt);
+    expectTrue(seeded.warmed, "impulse warm-start result seeds constrained island");
+    expectTrue(std::fabs(work.contactLambdas()[0]) > 1e-6f,
+               "impulse warm-start result seeds contact lambda");
+
+    expectTrue(should_skip_warm_start_contact_impulses_graph(graph, contacts, 0.f),
+               "graph impulse warm-start skipped with invalid dt");
+    expectTrue(preflight_warm_start_contact_impulses_graph(graph, contacts, 0.f).skipped,
+               "graph impulse preflight skipped with invalid dt");
+}
+
 void testEarlyExitWhenResidualBelowTolerance() {
     CollisionShapeSoA shapes;
     RigidBodySoA bodies;
@@ -1980,6 +2208,10 @@ int main() {
     testPreflightWarmStartIslandByIndex();
     testWarmStartIslandLambdasResultAndBatch();
     testWarmStartIslandCombinedGuarded();
+    testPreflightIslandSolveInputsGuards();
+    testPreflightContactImpulseWarmStartGuards();
+    testPreflightCombinedWarmStartGuards();
+    testContactImpulseWarmStartGraphBatchGuards();
     testEarlyExitWhenResidualBelowTolerance();
     fuse::core::shutdown();
 
