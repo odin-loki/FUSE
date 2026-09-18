@@ -41,9 +41,9 @@ void ToiBufferSoA::preparePairSlots(u32 pairCount) {
     validFlags.assign(pairCount, 0u);
 }
 
-void ToiBufferSoA::writeSlot(u32 slot, const TOIResult& result) {
+bool ToiBufferSoA::writeSlot(u32 slot, const TOIResult& result) {
     if (slot >= pairSlotCount || !result.valid) {
-        return;
+        return false;
     }
 
     toiValues[slot] = result.toi;
@@ -52,6 +52,18 @@ void ToiBufferSoA::writeSlot(u32 slot, const TOIResult& result) {
     bodyA[slot] = result.bodyA;
     bodyB[slot] = result.bodyB;
     validFlags[slot] = 1u;
+    return true;
+}
+
+void ToiBufferSoA::invalidateSlot(u32 slot) {
+    if (slot >= validFlags.size()) {
+        return;
+    }
+    validFlags[slot] = 0u;
+}
+
+bool ToiBufferSoA::slotIsValid(u32 slot) const {
+    return slot < validFlags.size() && validFlags[slot] != 0u;
 }
 
 bool ToiBufferSoA::push(const TOIResult& result) {
@@ -72,6 +84,12 @@ bool ToiBufferSoA::push(const TOIResult& result) {
     validFlags.push_back(1u);
     ++activeCount;
     return true;
+}
+
+void ToiBufferSoA::sortIfNeeded() {
+    if (!isSortedByToi()) {
+        sortByToi();
+    }
 }
 
 void ToiBufferSoA::sortByToi() {
@@ -111,6 +129,53 @@ void ToiBufferSoA::sortByToi() {
     reorder(bodyA);
     reorder(bodyB);
     reorder(validFlags);
+}
+
+bool ToiBufferSoA::needsCompact() const {
+    if (canSkipSoAIteration() || pairSlotCount == 0u) {
+        return false;
+    }
+
+    u32 validCount = 0u;
+    for (u32 i = 0u; i < pairSlotCount; ++i) {
+        if (validFlags[i] != 0u) {
+            ++validCount;
+        }
+    }
+
+    if (validCount == 0u) {
+        return activeCount != 0u;
+    }
+
+    for (u32 i = 0u; i < validCount; ++i) {
+        if (validFlags[i] == 0u) {
+            return true;
+        }
+    }
+
+    for (u32 i = validCount; i < pairSlotCount; ++i) {
+        if (validFlags[i] != 0u) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+u32 ToiBufferSoA::compactIfNeeded() {
+    if (!needsCompact()) {
+        if (pairSlotCount > 0u) {
+            u32 validCount = 0u;
+            for (u32 i = 0u; i < pairSlotCount; ++i) {
+                if (validFlags[i] != 0u) {
+                    ++validCount;
+                }
+            }
+            activeCount = validCount;
+        }
+        return activeCount;
+    }
+    return compact();
 }
 
 u32 ToiBufferSoA::compact() {
@@ -256,7 +321,7 @@ bool ToiBufferSoA::isSortedByToi() const {
 }
 
 TOIResult ToiBufferSoA::earliestToi() const {
-    if (isEmpty()) {
+    if (canSkipSoAIteration() || isEmpty()) {
         return {};
     }
     return resultAt(0u);
@@ -264,7 +329,7 @@ TOIResult ToiBufferSoA::earliestToi() const {
 
 TOIResult ToiBufferSoA::resultAt(u32 index) const {
     TOIResult result{};
-    if (index >= activeCount || validFlags[index] == 0u) {
+    if (canSkipSoAIteration() || index >= activeCount || validFlags[index] == 0u) {
         return result;
     }
 
@@ -277,8 +342,23 @@ TOIResult ToiBufferSoA::resultAt(u32 index) const {
     return result;
 }
 
+TOIResult ToiBufferSoA::resultAtSlot(u32 slot) const {
+    TOIResult result{};
+    if (!slotIsValid(slot)) {
+        return result;
+    }
+
+    result.toi = toiValues[slot];
+    result.contactPoint = contactPoints[slot];
+    result.contactNormal = contactNormals[slot];
+    result.bodyA = bodyA[slot];
+    result.bodyB = bodyB[slot];
+    result.valid = true;
+    return result;
+}
+
 std::vector<TOIResult> ToiBufferSoA::toVector() const {
-    if (isEmpty()) {
+    if (canSkipSoAIteration()) {
         return {};
     }
 
