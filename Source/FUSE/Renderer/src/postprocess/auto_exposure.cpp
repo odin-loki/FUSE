@@ -52,6 +52,29 @@ f32 clamp_ev(f32 ev, const AutoExposureParams& params) {
     return std::clamp(ev, params.min_ev, params.max_ev);
 }
 
+bool auto_exposure_params_valid(const AutoExposureParams& params) {
+    if (params.min_ev > params.max_ev) {
+        return false;
+    }
+    if (params.target_luminance <= 0.f) {
+        return false;
+    }
+    if (params.adaptation_speed_up < 0.f || params.adaptation_speed_down < 0.f) {
+        return false;
+    }
+    if (params.ema_alpha_up < 0.f || params.ema_alpha_up > 1.f) {
+        return false;
+    }
+    if (params.ema_alpha_down < 0.f || params.ema_alpha_down > 1.f) {
+        return false;
+    }
+    return true;
+}
+
+bool auto_exposure_can_adapt(const AutoExposureParams& params, f32 delta_seconds) {
+    return auto_exposure_params_valid(params) && params.enabled && delta_seconds > 0.f;
+}
+
 bool auto_exposure_ev_anchor_valid(f32 ev, const AutoExposureParams& params) {
     return ev >= params.min_ev && ev <= params.max_ev;
 }
@@ -92,7 +115,7 @@ f32 update_auto_exposure(AutoExposureState& state, f32 measured_luminance, const
                          f32 delta_seconds) {
     state.measured_luminance = measured_luminance;
 
-    if (!params.enabled) {
+    if (!auto_exposure_can_adapt(params, delta_seconds)) {
         return state.current_ev;
     }
 
@@ -129,6 +152,10 @@ void reset_auto_exposure_state_to_clamped(AutoExposureState& state, f32 ev, cons
     reset_auto_exposure_state_to(state, clamp_ev(ev, params));
 }
 
+bool metering_percentile_valid(f32 percentile) {
+    return percentile >= 0.f && percentile <= 1.f;
+}
+
 bool luminance_histogram_params_valid(const LuminanceHistogramParams& params) {
     if (params.bin_count == 0) {
         return false;
@@ -136,7 +163,7 @@ bool luminance_histogram_params_valid(const LuminanceHistogramParams& params) {
     if (params.max_log_luminance <= params.min_log_luminance) {
         return false;
     }
-    return params.metering_percentile >= 0.f && params.metering_percentile <= 1.f;
+    return metering_percentile_valid(params.metering_percentile);
 }
 
 void reset_luminance_histogram(LuminanceHistogram& histogram) {
@@ -161,6 +188,15 @@ bool canMeterFromHistogram(const LuminanceHistogram& histogram) {
     return hasMeteringHistogram(histogram) && luminance_histogram_params_valid(histogram.params());
 }
 
+bool canMeterPercentile(const LuminanceHistogram& histogram, f32 percentile) {
+    return metering_percentile_valid(percentile) && canMeterFromHistogram(histogram);
+}
+
+bool canMeterPercentileFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
+                                   f32 percentile) {
+    return metering_percentile_valid(percentile) && canMeterFromSamples(samples, count, params);
+}
+
 void accumulateSamples(LuminanceHistogram& histogram, const fuse::math::Vec3* samples, u32 count) {
     if (!hasMeteringSamples(samples, count)) {
         return;
@@ -172,7 +208,7 @@ void accumulateSamples(LuminanceHistogram& histogram, const fuse::math::Vec3* sa
 
 f32 measurePercentile(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
                       f32 percentile) {
-    if (!canMeterFromSamples(samples, count, params)) {
+    if (!canMeterPercentileFromSamples(samples, count, params, percentile)) {
         return 0.f;
     }
     LuminanceHistogram histogram;
@@ -183,14 +219,14 @@ f32 measurePercentile(const fuse::math::Vec3* samples, u32 count, const Luminanc
 
 f32 meterFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
                      f32 percentile) {
-    if (!canMeterFromSamples(samples, count, params)) {
+    if (!canMeterPercentileFromSamples(samples, count, params, percentile)) {
         return 0.f;
     }
     return measurePercentile(samples, count, params, percentile);
 }
 
 f32 meterFromHistogram(const LuminanceHistogram& histogram, f32 percentile) {
-    if (!canMeterFromHistogram(histogram)) {
+    if (!canMeterPercentile(histogram, percentile)) {
         return 0.f;
     }
     return histogram.percentileLuminance(percentile);
