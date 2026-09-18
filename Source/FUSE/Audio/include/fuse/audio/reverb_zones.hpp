@@ -48,6 +48,16 @@ bool is_dry_reverb_blend(const ReverbZoneBlend& blend);
 /// True when wet convolution should run for the blend result.
 bool should_apply_reverb_wet_mix(const ReverbZoneBlend& blend);
 
+/// True when reverb wet convolution should be skipped for this blend.
+bool should_skip_reverb_wet_mix(const ReverbZoneBlend& blend);
+
+/// True when wet mix is at or below the dry-path epsilon.
+bool is_near_zero_wet_mix(float wet_mix);
+
+/// True when zone blending yields no active zones (empty list or listener outside all zones).
+bool should_skip_reverb_zone_blend(const Vec3& listener, const ReverbZoneParams* zones,
+                                   u32 zone_count);
+
 /// Effective wet mix scalar [0, 1] from a zone blend result.
 float compute_effective_wet_mix(const ReverbZoneBlend& blend);
 

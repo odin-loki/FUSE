@@ -24,6 +24,22 @@ void expectNear(float value, float expected, float epsilon, const char* message)
     }
 }
 
+void testShouldSkipOcclusionBlockers() {
+    const fuse::audio::AABB blocker{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
+
+    expectTrue(fuse::audio::should_skip_occlusion_blockers(nullptr, 0),
+               "null blocker list skips evaluation");
+    expectTrue(fuse::audio::should_skip_occlusion_blockers(nullptr, 2),
+               "null pointer with count skips evaluation");
+    expectTrue(fuse::audio::should_skip_occlusion_blockers(&blocker, 0),
+               "zero blocker count skips evaluation");
+    expectTrue(!fuse::audio::should_skip_occlusion_blockers(&blocker, 1),
+               "valid blocker list does not skip evaluation");
+    expectTrue(fuse::audio::should_skip_occlusion_blockers(nullptr, 0)
+                   == !fuse::audio::has_occlusion_blockers(nullptr, 0),
+               "should_skip is inverse of has_occlusion_blockers");
+}
+
 void testShouldEvaluateOcclusionBlockers() {
     const fuse::audio::AABB blocker{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
     const fuse::audio::Vec3 listener{0.f, 0.f, 0.f};
@@ -69,6 +85,26 @@ void testOcclusionCombinedGainHelpers() {
                "fully visible early-out yields unity attenuation");
     expectTrue(fuse::audio::should_skip_occlusion_attenuation(1.2f),
                "should_skip matches evaluate early-out path");
+}
+
+void testEvaluateOcclusionFromBlockersEmptyEarlyOut() {
+    const fuse::audio::AABB blocker{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
+    const fuse::audio::Vec3 listener{0.f, 0.f, 0.f};
+    const fuse::audio::Vec3 source{10.f, 0.f, 0.f};
+
+    const fuse::audio::OcclusionAttenuation from_blockers =
+        fuse::audio::evaluate_occlusion_from_blockers(listener, source, 0.5f, nullptr, 0);
+    const fuse::audio::OcclusionAttenuation direct =
+        fuse::audio::evaluate_occlusion_attenuation(0.5f);
+    expectNear(from_blockers.gain, direct.gain, 1e-5f,
+               "empty blocker list early-outs to source occlusion attenuation");
+    expectNear(from_blockers.hf_gain, direct.hf_gain, 1e-5f,
+               "empty blocker list early-outs HF to source occlusion attenuation");
+
+    const fuse::audio::OcclusionAttenuation blocked =
+        fuse::audio::evaluate_occlusion_from_blockers(listener, source, 0.5f, &blocker, 1);
+    expectTrue(blocked.gain < from_blockers.gain,
+               "non-empty blocker list applies geometry attenuation");
 }
 
 void testFullyOccludedVisibilityEarlyOut() {
@@ -128,6 +164,54 @@ void testBlendReverbSampleOneShot() {
                "dry zone inside bounds still returns dry sample");
 }
 
+void testNearZeroWetMix() {
+    expectTrue(fuse::audio::is_near_zero_wet_mix(0.f), "zero wet mix is near-zero");
+    expectTrue(fuse::audio::is_near_zero_wet_mix(-0.5f), "negative wet mix clamps to near-zero");
+    expectTrue(fuse::audio::is_near_zero_wet_mix(1e-7f), "sub-epsilon wet mix is near-zero");
+    expectTrue(!fuse::audio::is_near_zero_wet_mix(0.01f), "audible wet mix is not near-zero");
+    expectTrue(!fuse::audio::is_near_zero_wet_mix(1.f), "unity wet mix is not near-zero");
+}
+
+void testShouldSkipReverbWetMix() {
+    fuse::audio::ReverbZoneBlend dry;
+    expectTrue(fuse::audio::should_skip_reverb_wet_mix(dry),
+               "inactive blend skips wet mix");
+    expectTrue(!fuse::audio::should_apply_reverb_wet_mix(dry),
+               "should_skip is inverse of should_apply for dry blend");
+
+    fuse::audio::ReverbZoneBlend wet;
+    wet.wet_dry = 0.4f;
+    wet.send_level = 0.5f;
+    wet.active_zone_count = 1;
+    expectTrue(!fuse::audio::should_skip_reverb_wet_mix(wet),
+               "active non-zero blend does not skip wet mix");
+    expectTrue(fuse::audio::should_apply_reverb_wet_mix(wet),
+               "should_apply matches non-skipping wet blend");
+
+    fuse::audio::ReverbZoneBlend zero_send = wet;
+    zero_send.send_level = 0.f;
+    expectTrue(fuse::audio::should_skip_reverb_wet_mix(zero_send),
+               "zero send level skips wet mix");
+    expectTrue(fuse::audio::is_dry_reverb_blend(zero_send),
+               "zero send level yields dry blend");
+}
+
+void testShouldSkipReverbZoneBlend() {
+    const fuse::audio::ReverbZoneParams zone{
+        {{-5.f, -5.f, -5.f}, {5.f, 5.f, 5.f}}, 0.5f, 1.f};
+    const fuse::audio::Vec3 inside{0.f, 0.f, 0.f};
+    const fuse::audio::Vec3 outside{100.f, 0.f, 0.f};
+
+    expectTrue(fuse::audio::should_skip_reverb_zone_blend(inside, nullptr, 0),
+               "null zone list skips zone blend");
+    expectTrue(fuse::audio::should_skip_reverb_zone_blend(inside, &zone, 0),
+               "zero zone count skips zone blend");
+    expectTrue(fuse::audio::should_skip_reverb_zone_blend(outside, &zone, 1),
+               "listener outside all zones skips zone blend");
+    expectTrue(!fuse::audio::should_skip_reverb_zone_blend(inside, &zone, 1),
+               "listener inside zone does not skip zone blend");
+}
+
 void testWetMixGuardConsistency() {
     const fuse::audio::ReverbZoneParams zones[] = {
         {{{-10.f, -10.f, -10.f}, {10.f, 10.f, 10.f}}, 0.4f, 0.5f},
@@ -153,13 +237,18 @@ void testWetMixGuardConsistency() {
 
 int main() {
     fuse::core::initialize();
+    testShouldSkipOcclusionBlockers();
     testShouldEvaluateOcclusionBlockers();
     testShouldSkipOcclusionAttenuation();
     testOcclusionCombinedGainHelpers();
+    testEvaluateOcclusionFromBlockersEmptyEarlyOut();
     testFullyOccludedVisibilityEarlyOut();
     testHasReverbZonesGuard();
     testEffectiveSendGain();
     testBlendReverbSampleOneShot();
+    testNearZeroWetMix();
+    testShouldSkipReverbWetMix();
+    testShouldSkipReverbZoneBlend();
     testWetMixGuardConsistency();
     fuse::core::shutdown();
 

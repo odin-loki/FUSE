@@ -24,6 +24,9 @@ bool is_fully_occluded_occlusion(float visibility);
 /// True when a blocker list pointer is non-null and carries at least one AABB.
 bool has_occlusion_blockers(const AABB* blockers, u32 blocker_count);
 
+/// True when blocker list is null or empty — skips segment-vs-AABB evaluation.
+bool should_skip_occlusion_blockers(const AABB* blockers, u32 blocker_count);
+
 /// Co-located listener/source positions skip segment-vs-AABB blocker evaluation.
 bool should_skip_blocker_evaluation(const Vec3& listener, const Vec3& source);
 
