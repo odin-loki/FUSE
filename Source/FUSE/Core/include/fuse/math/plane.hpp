@@ -232,4 +232,31 @@ inline u32 clipPolygonAgainstPlane(const Vec4& plane, const Vec3* input, u32 inp
     return outCount;
 }
 
+/// Classifies an AABB when the plane is usable; returns false on degenerate early-out.
+inline bool tryClassifyAabb(const Vec4& plane, const AABB& box, PlaneSide& side, f32 epsilon = 1e-8f) {
+    if (isDegeneratePlane(plane, epsilon)) {
+        return false;
+    }
+    side = classifyAabb(plane, box);
+    return true;
+}
+
+/// Clips a segment when the plane is usable; returns false on degenerate early-out.
+inline bool tryClipSegmentAgainstPlane(const Vec4& plane, Vec3& a, Vec3& b, f32 epsilon = 1e-5f) {
+    if (isDegeneratePlane(plane, epsilon)) {
+        return false;
+    }
+    return clipSegmentAgainstPlane(plane, a, b, epsilon);
+}
+
+/// Clips a convex polygon when the plane is usable; returns false on degenerate early-out.
+inline bool tryClipPolygonAgainstPlane(const Vec4& plane, const Vec3* input, u32 inputCount, Vec3* output,
+                                       u32 maxOutput, u32& outCount, f32 epsilon = 1e-5f) {
+    if (isDegeneratePlane(plane, epsilon)) {
+        return false;
+    }
+    outCount = clipPolygonAgainstPlane(plane, input, inputCount, output, maxOutput, epsilon);
+    return true;
+}
+
 } // namespace fuse::math

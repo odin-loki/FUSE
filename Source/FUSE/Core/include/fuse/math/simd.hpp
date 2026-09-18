@@ -347,6 +347,48 @@ inline Vec3 extractTranslation(const fuse::math::Mat4& matrix, f32 epsilon = 1e-
     return fuse::math::extractTranslation(matrix, epsilon);
 }
 
+inline bool tryExtractTranslation(const fuse::math::Mat4& matrix, Vec3& out, f32 epsilon = 1e-5f) {
+    return fuse::math::tryExtractTranslation(matrix, out, epsilon);
+}
+
+inline bool tryTransformAabb(const fuse::math::Mat4& matrix, const AABB& box, AABB& out,
+                             f32 epsilon = 1e-4f) {
+    return fuse::math::tryTransformAabb(matrix, box, out, epsilon);
+}
+
+inline bool tryRayIntervalAabb(const AABB& box, const Vec3& origin, const Vec3& direction, f32& tEnter,
+                             f32& tExit) {
+    return box.tryRayInterval(origin, direction, tEnter, tExit);
+}
+
+inline bool tryRayIntervalClampedAabb(const AABB& box, const Vec3& origin, const Vec3& direction, f32 tMin,
+                                      f32 tMax, f32& tEnter, f32& tExit) {
+    return box.tryRayIntervalClamped(origin, direction, tMin, tMax, tEnter, tExit);
+}
+
+inline bool tryRayHitsAabb(const AABB& box, const Vec3& origin, const Vec3& direction, f32 tMin = 0.f,
+                           f32 tMax = std::numeric_limits<f32>::max()) {
+    return box.tryRayHits(origin, direction, tMin, tMax);
+}
+
+inline bool tryRayIntersectAabb(const AABB& box, const Vec3& origin, const Vec3& direction, f32& t) {
+    return box.tryRayIntersect(origin, direction, t);
+}
+
+inline bool tryClassifyAabb(const Vec4& plane, const AABB& box, PlaneSide& side, f32 epsilon = 1e-8f) {
+    return fuse::math::tryClassifyAabb(plane, box, side, epsilon);
+}
+
+inline bool tryClipSegmentAgainstPlane(const Vec4& plane, Vec3& a, Vec3& b, f32 epsilon = 1e-5f) {
+    return fuse::math::tryClipSegmentAgainstPlane(plane, a, b, epsilon);
+}
+
+inline bool tryClipPolygonAgainstPlane(const Vec4& plane, const Vec3* input, u32 inputCount, Vec3* output,
+                                       u32 maxOutput, u32& outCount, f32 epsilon = 1e-5f) {
+    return fuse::math::tryClipPolygonAgainstPlane(plane, input, inputCount, output, maxOutput, outCount,
+                                                 epsilon);
+}
+
 inline Vec3 transformDirection(const Mat4& matrix, const Vec3& direction) {
     return fuse::math::transformDirection(matrix.toScalar(), direction);
 }
