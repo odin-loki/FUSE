@@ -34,6 +34,8 @@ struct PairBufferSoA {
     bool canSkipSoAIteration() const { return activeCount == 0u && pairSlotCount == 0u; }
     /// True when at most one canonical pair is present (dedupe is a no-op).
     bool canSkipDedupe() const { return canSkipSoAIteration() || activeCount <= 1u; }
+    /// True when refine would be a no-op (empty buffer or no valid pairs).
+    bool canSkipRefine() const { return canSkipSoAIteration() || !hasValidPairs(); }
     /// True when slot storage has no invalid flags (compact is a no-op).
     bool canSkipCompaction() const;
     /// Count valid flags in prepared slot storage before compaction.
@@ -56,5 +58,19 @@ struct PairBufferSoA {
     CandidatePair pairAt(u32 index) const;
     std::vector<CandidatePair> toVector() const;
 };
+
+/// Const preflight for pair-buffer dedupe (B4.2 deepen pass).
+struct PairBufferDedupePreflight {
+    u32 activeCount = 0;
+    bool skipped = false;
+
+    bool can_dedupe() const { return !skipped && activeCount > 1u; }
+};
+
+/// Populate dedupe preflight without sorting or compacting pairs (B4.2 deepen pass).
+PairBufferDedupePreflight preflight_pair_buffer_dedupe(const PairBufferSoA& buffer);
+
+/// Early-out guard for pair-buffer dedupe (B4.2 deepen pass).
+bool should_skip_pair_buffer_dedupe(const PairBufferSoA& buffer);
 
 } // namespace fuse::physics::broadphase
