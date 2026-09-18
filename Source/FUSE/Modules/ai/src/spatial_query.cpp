@@ -35,6 +35,18 @@ bool is_valid_ally_radius(float radius) {
     return radius > 0.f;
 }
 
+bool is_finite_ally_radius(float radius) {
+    return radius > 0.f;
+}
+
+bool is_unlimited_radius(float radius) {
+    return radius <= 0.f;
+}
+
+bool radius_filter_policy_is_valid(const RadiusFilterPolicy& policy) {
+    return is_finite_ally_radius(policy.radius);
+}
+
 float effective_radius(const RadiusFilterPolicy& policy) {
     return clamp_radius_(policy.radius);
 }

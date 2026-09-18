@@ -30,6 +30,11 @@ struct RadiusFilterPolicy {
 [[nodiscard]] float distance_sq_2d(float ax, float ay, float bx, float by);
 [[nodiscard]] bool within_radius(float distanceSq, float radius);
 [[nodiscard]] bool is_valid_ally_radius(float radius);
+/// True when `radius` is positive and finite — required for count/filter leaves.
+[[nodiscard]] bool is_finite_ally_radius(float radius);
+/// True when `radius` is zero or negative — nearest-ally max-radius unlimited sentinel.
+[[nodiscard]] bool is_unlimited_radius(float radius);
+[[nodiscard]] bool radius_filter_policy_is_valid(const RadiusFilterPolicy& policy);
 [[nodiscard]] float effective_radius(const RadiusFilterPolicy& policy);
 [[nodiscard]] u32 effective_min_count(const RadiusFilterPolicy& policy);
 [[nodiscard]] float radius_sq_from_policy(const RadiusFilterPolicy& policy);

@@ -152,6 +152,8 @@ bool parseNodeLine(const std::string& line, NodeLoadSpec& outSpec, std::string* 
             outSpec.requireValidAgent = value == "1" || value == "true" || value == "yes";
         } else if (key == "require_nonempty_board") {
             outSpec.requireNonEmptyBoard = value == "1" || value == "true" || value == "yes";
+        } else if (key == "require_radius") {
+            outSpec.requireValidRadius = value == "1" || value == "true" || value == "yes";
         } else if (key == "scalar") {
             if (!parseU32(value, outSpec.scalarSlot)) {
                 if (errorOut) {
