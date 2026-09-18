@@ -261,6 +261,10 @@ u32 eventCount() {
     return g_eventCount.load(std::memory_order_acquire);
 }
 
+u32 ringCapacity() {
+    return kRingCapacity;
+}
+
 u32 maxNestingDepth() {
     return g_maxNestingDepth.load(std::memory_order_acquire);
 }
@@ -289,6 +293,10 @@ bool hasEvents() {
     return eventCount() > 0u;
 }
 
+bool hasOpenAsyncFlows() {
+    return openAsyncFlowCount() > 0u;
+}
+
 bool isBufferEmpty() {
     return eventCount() == 0u;
 }
@@ -305,13 +313,17 @@ bool isValidProfileEvent(const ProfileEvent& event) {
     return event.name != nullptr;
 }
 
-const ProfileEvent& eventAt(u32 index) {
+const ProfileEvent& emptyProfileEvent() {
     static const ProfileEvent kEmpty{};
-    const u32 count = eventCount();
-    if (count == 0u || index >= count) {
-        return kEmpty;
+    return kEmpty;
+}
+
+const ProfileEvent& eventAt(u32 index) {
+    if (!isEventIndexValid(index)) {
+        return emptyProfileEvent();
     }
 
+    const u32 count = eventCount();
     const u32 head = g_writeHead.load(std::memory_order_acquire);
     const u32 start = head >= count ? head - count : 0u;
     const u32 ringIndex = (start + index) % kRingCapacity;
@@ -326,7 +338,7 @@ u32 lastEventIndex() {
 const ProfileEvent& lastEvent() {
     const u32 index = lastEventIndex();
     if (index == kInvalidEventIndex) {
-        return eventAt(0);
+        return emptyProfileEvent();
     }
     return eventAt(index);
 }
@@ -364,7 +376,11 @@ void beginAsyncFlow(const char* name, u32 flowId) {
 }
 
 void endAsyncFlow(const char* name, u32 flowId) {
-    if (!g_enabled.load(std::memory_order_acquire) || name == nullptr) {
+    if (name == nullptr) {
+        return;
+    }
+
+    if (!g_enabled.load(std::memory_order_acquire)) {
         return;
     }
 
@@ -380,7 +396,10 @@ void endAsyncFlow(const char* name, u32 flowId) {
                 flowId,
                 currentNestingDepth(),
                 flowDepth);
-    popFlowNestingDepth();
+
+    if (flowDepth > 0u) {
+        popFlowNestingDepth();
+    }
 }
 
 void sampleCounter(const char* track, s64 value) {
