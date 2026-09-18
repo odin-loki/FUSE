@@ -60,6 +60,19 @@ inline Vec4 makePlaneFromNormalAndPoint(const Vec3& normal, const Vec3& point) {
     return {unitNormal.x, unitNormal.y, unitNormal.z, -unitNormal.dot(point)};
 }
 
+/// Writes a normalized plane equation; returns false when the normal is degenerate.
+inline bool tryMakePlaneFromNormalAndPoint(const Vec3& normal, const Vec3& point, Vec4& out,
+                                           f32 epsilon = 1e-8f) {
+    const f32 lenSq = normal.dot(normal);
+    if (lenSq < epsilon * epsilon) {
+        return false;
+    }
+    const f32 invLen = 1.f / std::sqrt(lenSq);
+    const Vec3 unitNormal = normal * invLen;
+    out = {unitNormal.x, unitNormal.y, unitNormal.z, -unitNormal.dot(point)};
+    return true;
+}
+
 inline PlaneSide classifyPoint(const Vec4& plane, const Vec3& point, f32 epsilon = 1e-5f) {
     if (isDegeneratePlane(plane, epsilon)) {
         return PlaneSide::On;
