@@ -692,6 +692,110 @@ void run_interest_management_tests() {
                "has_any_registered_in_radius false when all entities out of scope");
     expectTrue(registration_manager.count_registered_in_radius() == 0u,
                "count_registered_in_radius zero when has_any is false");
+
+    // --- diff-apply preflight guards (B7.4 deepen follow-up) ---
+    fuse::net::InterestSetDiff skip_diff{};
+    expectTrue(fuse::net::should_skip_interest_diff_apply(skip_diff),
+               "should_skip_interest_diff_apply true for empty diff");
+    expectTrue(fuse::net::is_empty_interest_diff(skip_diff),
+               "should_skip matches is_empty_interest_diff");
+
+    fuse::net::InterestSetDiff actionable_diff{};
+    actionable_diff.entered = {make_entity(200)};
+    expectTrue(!fuse::net::should_skip_interest_diff_apply(actionable_diff),
+               "should_skip_interest_diff_apply false for non-empty diff");
+
+    fuse::net::InterestScopeSet verified_scope;
+    verified_scope.entities = {make_entity(1), make_entity(2)};
+    const fuse::net::InterestDiffPreflight empty_preflight =
+        fuse::net::preflight_interest_diff(skip_diff, verified_scope);
+    expectTrue(empty_preflight.empty_diff, "preflight marks empty diff");
+    expectTrue(!empty_preflight.has_enters, "empty preflight has no enters");
+    expectTrue(!empty_preflight.has_leaves, "empty preflight has no leaves");
+    expectTrue(!empty_preflight.would_change_scope, "empty preflight would not change scope");
+    expectTrue(!empty_preflight.can_apply(), "empty preflight cannot apply");
+
+    const fuse::net::InterestDiffPreflight enter_preflight =
+        fuse::net::preflight_interest_diff(actionable_diff, verified_scope);
+    expectTrue(!enter_preflight.empty_diff, "enter preflight is non-empty");
+    expectTrue(enter_preflight.has_enters, "enter preflight reports enters");
+    expectTrue(!enter_preflight.has_leaves, "enter preflight has no leaves");
+    expectTrue(enter_preflight.would_change_scope, "enter preflight would change scope");
+    expectTrue(enter_preflight.can_apply(), "enter preflight can apply");
+
+    fuse::net::InterestSetDiff redundant_verified_diff{};
+    redundant_verified_diff.entered = {make_entity(1)};
+    redundant_verified_diff.left = {make_entity(99)};
+    const fuse::net::InterestDiffPreflight redundant_preflight =
+        fuse::net::preflight_interest_diff(redundant_verified_diff, verified_scope);
+    expectTrue(!redundant_preflight.empty_diff, "redundant preflight is non-empty");
+    expectTrue(!redundant_preflight.would_change_scope, "redundant preflight would not change scope");
+    expectTrue(!redundant_preflight.can_apply(), "redundant preflight cannot apply");
+
+    const fuse::net::InterestScopeSet verified_before = verified_scope;
+    expectTrue(fuse::net::apply_interest_diff_verified(verified_scope, actionable_diff),
+               "apply_interest_diff_verified returns true when scope changes");
+    expectTrue(verified_scope.contains(make_entity(200)), "verified apply inserts entered entity");
+    expectTrue(verified_scope.size() == 3u, "verified apply grows scope");
+
+    fuse::net::InterestScopeSet verified_after_apply = verified_scope;
+    expectTrue(!fuse::net::apply_interest_diff_verified(verified_after_apply, redundant_verified_diff),
+               "apply_interest_diff_verified rejects redundant diff");
+    expectTrue(verified_after_apply.equal_to(verified_scope),
+               "verified apply leaves scope unchanged on redundant diff");
+
+    expectTrue(!fuse::net::apply_interest_diff_verified(verified_after_apply, skip_diff),
+               "apply_interest_diff_verified rejects empty diff");
+    expectTrue(verified_after_apply.equal_to(verified_scope),
+               "verified apply no-op on empty diff");
+
+    // --- empty-candidate and radius-filter guards (B7.4 deepen follow-up) ---
+    std::vector<fuse::net::InterestCandidate> guard_candidates;
+    expectTrue(fuse::net::is_empty_interest_candidates(guard_candidates),
+               "is_empty_interest_candidates true for empty list");
+    expectTrue(fuse::net::should_skip_radius_filter(guard_candidates),
+               "should_skip_radius_filter true for empty list");
+
+    guard_candidates.push_back({make_entity(210), {10.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(!fuse::net::is_empty_interest_candidates(guard_candidates),
+               "is_empty_interest_candidates false when candidates present");
+    expectTrue(!fuse::net::should_skip_radius_filter(guard_candidates),
+               "should_skip_radius_filter false when candidates present");
+
+    fuse::net::InterestPolicy zero_radius_policy{};
+    zero_radius_policy.relevance_radius = 0.f;
+    const fuse::net::InterestRadiusPreflight zero_radius_preflight =
+        fuse::net::preflight_radius_filter(zero_radius_policy, guard_candidates);
+    expectTrue(!zero_radius_preflight.empty_candidates, "zero-radius preflight sees candidates");
+    expectTrue(zero_radius_preflight.zero_relevance_radius, "zero-radius preflight marks zero radius");
+    expectTrue(zero_radius_preflight.should_skip(), "zero-radius preflight should skip");
+
+    const fuse::net::InterestRadiusPreflight empty_radius_preflight =
+        fuse::net::preflight_radius_filter(policy, empty_candidates);
+    expectTrue(empty_radius_preflight.empty_candidates, "empty-radius preflight marks empty candidates");
+    expectTrue(!empty_radius_preflight.zero_relevance_radius,
+               "empty-radius preflight keeps non-zero radius flag");
+    expectTrue(empty_radius_preflight.should_skip(), "empty-radius preflight should skip");
+
+    std::vector<fuse::net::InterestEntry> zero_radius_filtered;
+    expectTrue(fuse::net::filter_candidates_in_radius(origin, zero_radius_policy, guard_candidates,
+                                                       zero_radius_filtered) == 0u,
+               "zero relevance radius filter returns zero");
+    expectTrue(zero_radius_filtered.empty(), "zero relevance radius filter clears output");
+    expectTrue(fuse::net::count_candidates_in_radius(origin, zero_radius_policy, guard_candidates) == 0u,
+               "zero relevance radius count returns zero");
+
+    fuse::net::InterestManager empty_registered_manager;
+    empty_registered_manager.set_policy(policy);
+    empty_registered_manager.set_observer_position(origin);
+    expectTrue(empty_registered_manager.has_no_registered_entities(),
+               "has_no_registered_entities true before registration");
+    empty_registered_manager.register_entity({make_entity(220), {10.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(!empty_registered_manager.has_no_registered_entities(),
+               "has_no_registered_entities false after registration");
+    empty_registered_manager.clear_entities();
+    expectTrue(empty_registered_manager.has_no_registered_entities(),
+               "has_no_registered_entities true after clear_entities");
 }
 
 } // namespace fuse::net::tests
