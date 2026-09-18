@@ -174,6 +174,14 @@ struct CascadedShadowMapLayout {
     static bool cascadeSplitsNeedSanitize(const CascadedShadowMapDesc& desc);
     /// Clamp each split to [0, 1], enforce monotonicity, and pin the last slot to 1.0.
     static void sanitizeCascadeSplits(CascadedShadowMapDesc& desc);
+    /// Sanitize cascade split fractions in `desc` (alias for `sanitizeCascadeSplits`).
+    static void sanitizeCascadedShadowMapDesc(CascadedShadowMapDesc& desc);
+    /// Populate split fractions from params then sanitize in-place.
+    static void populateCascadeSplitsSanitized(const CascadeSplitParams& params,
+                                               const ShadowCameraParams& camera,
+                                               CascadedShadowMapDesc& desc);
+    /// Preflight split fractions without mutation — true when sanitize is not required.
+    static bool preflightCascadeSplits(const CascadedShadowMapDesc& desc);
     static bool validateCascadeRanges(const CascadedShadowMapDesc& desc, const ShadowCameraParams& camera);
     static CascadeFrustumCorners buildCascadeFrustumCorners(u32 cascadeIndex,
                                                             const CascadedShadowMapDesc& desc,
@@ -202,6 +210,12 @@ struct CascadeShadowDataLayout {
                                          const fuse::math::Vec3& lightDirection,
                                          u32 cascadeCount,
                                          CascadedShadowMapData& outData);
+    /// Preflight populate without mutation — true when at least one cascade would be filled.
+    static bool preflightPopulateCascadeShadowData(const CascadedShadowMapDesc& desc,
+                                                   const ShadowCameraParams& camera,
+                                                   const fuse::math::Vec3& lightDirection,
+                                                   u32 cascadeCount,
+                                                   CascadeShadowSkipReason* reason = nullptr);
 };
 
 /// Per-cascade light-space matrix bookkeeping (CPU stub).
@@ -289,6 +303,16 @@ struct CascadeLightSpaceLayout {
                                                  CascadeLightSpaceMatrices outMatrices[kCascadeCount]);
 };
 
+/// Predict per-cascade skip — same ordering as `classifyCascadeShadowSkip` (B5.5 deepen).
+bool wouldSkipCascadeShadowBuild(u32 cascadeIndex,
+                                 const CascadedShadowMapDesc& desc,
+                                 const ShadowCameraParams& camera,
+                                 const fuse::math::Vec3& lightDirection,
+                                 CascadeShadowSkipReason* reason = nullptr);
+/// Preflight global cascade shadow build — true when bypass guards would not fire (B5.5 deepen).
+bool preflightCascadeShadowBuild(const ShadowCameraParams& camera,
+                                 const fuse::math::Vec3& lightDirection,
+                                 CascadeShadowSkipReason* reason = nullptr);
 /// True when a cascade shadow skip reason blocks matrix population.
 bool cascadeShadowSkipReasonIsBlocking(CascadeShadowSkipReason reason);
 /// True when a skip reason applies to every cascade slot (global bypass guards).
