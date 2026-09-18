@@ -36,6 +36,44 @@ const char* cellOccupancyRejectReasonName(CellOccupancyRejectReason reason) {
     return "Unknown";
 }
 
+const char* broadphaseRejectReasonName(BroadphaseRejectReason reason) {
+    switch (reason) {
+    case BroadphaseRejectReason::None:
+        return "None";
+    case BroadphaseRejectReason::EmptyInput:
+        return "EmptyInput";
+    case BroadphaseRejectReason::SingletonInput:
+        return "SingletonInput";
+    }
+    return "Unknown";
+}
+
+const char* refineBroadphaseRejectReasonName(RefineBroadphaseRejectReason reason) {
+    switch (reason) {
+    case RefineBroadphaseRejectReason::None:
+        return "None";
+    case RefineBroadphaseRejectReason::EmptyBuffer:
+        return "EmptyBuffer";
+    case RefineBroadphaseRejectReason::EmptyInput:
+        return "EmptyInput";
+    case RefineBroadphaseRejectReason::NoValidPairs:
+        return "NoValidPairs";
+    }
+    return "Unknown";
+}
+
+const char* dedupeBroadphaseRejectReasonName(DedupeBroadphaseRejectReason reason) {
+    switch (reason) {
+    case DedupeBroadphaseRejectReason::None:
+        return "None";
+    case DedupeBroadphaseRejectReason::EmptyBuffer:
+        return "EmptyBuffer";
+    case DedupeBroadphaseRejectReason::SinglePair:
+        return "SinglePair";
+    }
+    return "Unknown";
+}
+
 namespace {
 
 constexpr u32 kBuildGrainSize = 8u;
@@ -220,7 +258,7 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
 }
 
 void dedupeBuffer(PairBufferSoA& buffer) {
-    if (!shouldRunDedupeBroadphase(buffer)) {
+    if (canSkipDedupeBroadphase(buffer)) {
         return;
     }
 
@@ -313,7 +351,8 @@ void runBroadphaseIntoBufferInternal(
         }
     }
 
-    if (!planeBodies.empty() && !dynamicBodies.empty()) {
+    const BroadphaseMergePreflight mergePreflight = preflightBroadphaseMerge(bodies, shapes);
+    if (mergePreflight.canMerge()) {
         std::unordered_set<u64> existing;
         existing.reserve(buffer.activeCount * 2 + 1);
         for (u32 i = 0; i < buffer.activeCount; ++i) {
@@ -378,6 +417,30 @@ void refineBroadphasePairsParallelImpl(
 
 } // namespace
 
+RefineBroadphaseRejectReason refineBroadphaseRejectReason(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer) {
+    if (buffer.canSkipSoAIteration()) {
+        return RefineBroadphaseRejectReason::EmptyBuffer;
+    }
+    if (canSkipBroadphase(bodies, shapes)) {
+        return RefineBroadphaseRejectReason::EmptyInput;
+    }
+    if (!buffer.hasValidPairs()) {
+        return RefineBroadphaseRejectReason::NoValidPairs;
+    }
+    return RefineBroadphaseRejectReason::None;
+}
+
+bool refineBroadphaseRejectsForReason(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer,
+    RefineBroadphaseRejectReason expected) {
+    return refineBroadphaseRejectReason(bodies, shapes, buffer) == expected;
+}
+
 RefineBroadphasePreflight preflightRefineBroadphase(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
@@ -386,6 +449,7 @@ RefineBroadphasePreflight preflightRefineBroadphase(
     preflight.emptyBuffer = buffer.canSkipSoAIteration();
     preflight.noValidPairs = !buffer.hasValidPairs();
     preflight.emptyInput = canSkipBroadphase(bodies, shapes);
+    preflight.reason = refineBroadphaseRejectReason(bodies, shapes, buffer);
     return preflight;
 }
 
@@ -396,15 +460,62 @@ bool canSkipRefineBroadphase(
     return !preflightRefineBroadphase(bodies, shapes, buffer).canRefine();
 }
 
+DedupeBroadphaseRejectReason dedupeBroadphaseRejectReason(const PairBufferSoA& buffer) {
+    if (buffer.canSkipSoAIteration()) {
+        return DedupeBroadphaseRejectReason::EmptyBuffer;
+    }
+    if (buffer.activeCount <= 1u) {
+        return DedupeBroadphaseRejectReason::SinglePair;
+    }
+    return DedupeBroadphaseRejectReason::None;
+}
+
+bool dedupeBroadphaseRejectsForReason(const PairBufferSoA& buffer, DedupeBroadphaseRejectReason expected) {
+    return dedupeBroadphaseRejectReason(buffer) == expected;
+}
+
 DedupeBroadphasePreflight preflightDedupeBroadphase(const PairBufferSoA& buffer) {
     DedupeBroadphasePreflight preflight{};
     preflight.emptyBuffer = buffer.canSkipSoAIteration();
     preflight.singlePair = !preflight.emptyBuffer && buffer.activeCount <= 1u;
+    preflight.reason = dedupeBroadphaseRejectReason(buffer);
     return preflight;
 }
 
 bool shouldRunDedupeBroadphase(const PairBufferSoA& buffer) {
     return preflightDedupeBroadphase(buffer).canDedupe();
+}
+
+bool canSkipDedupeBroadphase(const PairBufferSoA& buffer) {
+    return !shouldRunDedupeBroadphase(buffer);
+}
+
+BroadphaseMergePreflight preflightBroadphaseMerge(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    BroadphaseMergePreflight preflight{};
+    bool hasPlaneBodies = false;
+    bool hasDynamicBodies = false;
+
+    for (u32 shapeIndex = 0; shapeIndex < shapes.count(); ++shapeIndex) {
+        const u32 bodyIndex = shapes.bodyIndices[shapeIndex];
+        if (bodyIndex >= bodies.count()) {
+            continue;
+        }
+        const CollisionShapeType type = static_cast<CollisionShapeType>(shapes.types[shapeIndex]);
+        if (type == CollisionShapeType::Plane) {
+            hasPlaneBodies = true;
+        } else if ((bodies.flags[bodyIndex] & RB_STATIC) == 0) {
+            hasDynamicBodies = true;
+        }
+        if (hasPlaneBodies && hasDynamicBodies) {
+            break;
+        }
+    }
+
+    preflight.emptyPlaneBodies = !hasPlaneBodies;
+    preflight.emptyDynamicBodies = !hasDynamicBodies;
+    return preflight;
 }
 
 void refineBroadphasePairsParallel(
