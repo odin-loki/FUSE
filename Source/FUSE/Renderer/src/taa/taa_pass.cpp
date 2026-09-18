@@ -94,6 +94,10 @@ bool TaaPass::matchesDimensions(u32 width, u32 height) const {
     return m_desc.width == width && m_desc.height == height && m_history.matchesDimensions(width, height);
 }
 
+f32 TaaPass::effectiveBlendForNextResolve() const {
+    return computeEffectiveBlend(!m_history.hasValidHistory(), m_desc.params);
+}
+
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
     return m_resolve.wouldSkip(desc, m_history, reason);
 }

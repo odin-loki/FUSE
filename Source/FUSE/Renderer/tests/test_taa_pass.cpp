@@ -272,6 +272,228 @@ void testClampTaaParams() {
                "subsequent effective blend uses clamped blend_factor");
 }
 
+void testHistoryBlendHelpers() {
+    fuse::renderer::TAAParams params{};
+    params.blend_factor = 0.2f;
+
+    expectTrue(fuse::renderer::isTaaBlendFactorInRange(0.2f), "in-range blend factor accepted");
+    expectTrue(!fuse::renderer::isTaaBlendFactorInRange(1.5f), "out-of-range blend factor rejected");
+
+    expectNear(fuse::renderer::clampEffectiveBlend(1.5f), 1.f, 1e-5f, "clampEffectiveBlend caps high values");
+    expectNear(fuse::renderer::clampEffectiveBlend(-0.25f), 0.f, 1e-5f, "clampEffectiveBlend floors low values");
+
+    expectTrue(!fuse::renderer::taaBlendWeightReusesHistory(1.f), "full current weight does not reuse history");
+    expectTrue(fuse::renderer::taaBlendWeightReusesHistory(0.2f), "partial blend reuses history");
+
+    expectTrue(fuse::renderer::taaUsesWarmupBlend(true), "warmup blend on first frame");
+    expectTrue(!fuse::renderer::taaUsesWarmupBlend(false), "no warmup blend after first frame");
+
+    expectNear(fuse::renderer::computeHistoryBlendWeight(0.2f), 0.8f, 1e-5f,
+               "history blend weight complements effective blend");
+    expectNear(fuse::renderer::computeHistoryBlendWeight(true, params), 0.f, 1e-5f,
+               "first frame history blend weight is zero");
+    expectNear(fuse::renderer::computeHistoryBlendWeight(false, params), 0.8f, 1e-5f,
+               "subsequent history blend weight uses clamped blend_factor");
+
+    const fuse::f32 effective = fuse::renderer::computeEffectiveBlend(false, params);
+    expectNear(fuse::renderer::computeHistoryBlendWeight(effective) + effective, 1.f, 1e-5f,
+               "history and current blend weights sum to one");
+}
+
+void testHistoryReadGuards() {
+    fuse::renderer::TaaHistoryBuffer emptyHistory;
+    expectTrue(!fuse::renderer::canReadHistoryForResolve(emptyHistory),
+               "empty history cannot be read for resolve");
+    expectTrue(!fuse::renderer::historyAwaitingWarmup(emptyHistory),
+               "unallocated history is not awaiting warmup");
+    expectTrue(!emptyHistory.canReadForResolve(), "canReadForResolve false before init");
+
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for history read guard test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaHistoryBuffer history;
+    fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
+    expectTrue(history.init(resources, historyDesc), "history ready for read guard test");
+    expectTrue(fuse::renderer::historyAwaitingWarmup(history), "allocated history awaits warmup");
+    expectTrue(!fuse::renderer::canReadHistoryForResolve(history), "cold history cannot be read");
+
+    history.markResolved();
+    expectTrue(fuse::renderer::canReadHistoryForResolve(history), "warm history can be read");
+    expectTrue(!fuse::renderer::historyAwaitingWarmup(history), "warm history no longer awaits warmup");
+    expectTrue(history.canReadForResolve(), "canReadForResolve true after first resolve");
+
+    history.invalidateHistory();
+    expectTrue(!fuse::renderer::canReadHistoryForResolve(history), "invalidated history cannot be read");
+    expectTrue(fuse::renderer::historyAwaitingWarmup(history), "invalidated history awaits warmup again");
+
+    history.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
+void testResolveSurfaceGuards() {
+    fuse::renderer::TaaResolveDesc desc{};
+    desc.width = 64;
+    desc.height = 64;
+    desc.surfaces.current_frame = reinterpret_cast<void*>(0x1);
+    desc.surfaces.output = reinterpret_cast<void*>(0x2);
+    expectTrue(fuse::renderer::taaResolveSurfacesComplete(desc), "complete surfaces pass guard");
+    expectTrue(fuse::renderer::taaResolveRejectionSurfacesComplete(desc),
+               "rejection guard passes when enforcement disabled");
+
+    desc.surfaces.output = nullptr;
+    expectTrue(!fuse::renderer::taaResolveSurfacesComplete(desc), "missing output fails surface guard");
+
+    desc.surfaces.output = reinterpret_cast<void*>(0x2);
+    desc.enforce_rejection_surfaces = true;
+    desc.params.velocity_rejection = 0.5f;
+    expectTrue(!fuse::renderer::taaResolveRejectionSurfacesComplete(desc),
+               "missing velocity fails rejection guard when enforced");
+
+    desc.surfaces.velocity_buffer = reinterpret_cast<void*>(0x3);
+    desc.params.velocity_rejection = 0.f;
+    desc.params.depth_rejection = 0.25f;
+    expectTrue(!fuse::renderer::taaResolveRejectionSurfacesComplete(desc),
+               "missing depth fails rejection guard when enforced");
+
+    desc.surfaces.depth_buffer = reinterpret_cast<void*>(0x4);
+    expectTrue(fuse::renderer::taaResolveRejectionSurfacesComplete(desc),
+               "complete rejection surfaces pass guard");
+}
+
+void testShouldSkipTaaResolve() {
+    fuse::renderer::TaaHistoryBuffer emptyHistory;
+    fuse::renderer::TaaResolveDesc desc{};
+    desc.width = 64;
+    desc.height = 64;
+    desc.surfaces.current_frame = reinterpret_cast<void*>(0x1);
+    desc.surfaces.output = reinterpret_cast<void*>(0x2);
+
+    fuse::renderer::TaaResolveSkipReason skipReason = fuse::renderer::TaaResolveSkipReason::None;
+    expectTrue(fuse::renderer::shouldSkipTaaResolve(desc, emptyHistory, &skipReason),
+               "shouldSkipTaaResolve detects empty history");
+    expectTrue(skipReason == fuse::renderer::TaaResolveSkipReason::HistoryNotReady,
+               "shouldSkipTaaResolve reports HistoryNotReady");
+
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for shouldSkipTaaResolve test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaHistoryBuffer history;
+    fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
+    expectTrue(history.init(resources, historyDesc), "history ready for shouldSkipTaaResolve test");
+
+    desc.width = 128;
+    skipReason = fuse::renderer::TaaResolveSkipReason::None;
+    expectTrue(fuse::renderer::shouldSkipTaaResolve(desc, history, &skipReason),
+               "shouldSkipTaaResolve detects dimension mismatch");
+    expectTrue(skipReason == fuse::renderer::TaaResolveSkipReason::DimensionMismatch,
+               "shouldSkipTaaResolve reports DimensionMismatch");
+
+    desc.width = 64;
+    desc.surfaces.current_frame = nullptr;
+    skipReason = fuse::renderer::TaaResolveSkipReason::None;
+    expectTrue(fuse::renderer::shouldSkipTaaResolve(desc, history, &skipReason),
+               "shouldSkipTaaResolve detects missing surfaces");
+    expectTrue(skipReason == fuse::renderer::TaaResolveSkipReason::MissingSurfaces,
+               "shouldSkipTaaResolve reports MissingSurfaces");
+
+    desc.surfaces.current_frame = reinterpret_cast<void*>(0x1);
+    expectTrue(!fuse::renderer::shouldSkipTaaResolve(desc, history), "shouldSkipTaaResolve passes valid desc");
+
+    fuse::renderer::TaaResolve resolve;
+    expectTrue(resolve.wouldSkip(desc, history, &skipReason) ==
+                   fuse::renderer::shouldSkipTaaResolve(desc, history, &skipReason),
+               "shouldSkipTaaResolve matches TaaResolve::wouldSkip");
+
+    history.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
+void testTaaResolveSkipCounts() {
+    fuse::renderer::TaaResolveSkipCounts noneCounts =
+        fuse::renderer::taaResolveSkipCountsFromReason(fuse::renderer::TaaResolveSkipReason::None);
+    expectTrue(noneCounts.total == 0u, "None reason produces zero skip counts");
+
+    const fuse::renderer::TaaResolveSkipCounts staleCounts =
+        fuse::renderer::taaResolveSkipCountsFromReason(
+            fuse::renderer::TaaResolveSkipReason::StaleHistoryGeneration);
+    expectTrue(staleCounts.total == 1u, "stale generation counted once");
+    expectTrue(staleCounts.staleHistoryGeneration == 1u, "stale generation bucket incremented");
+
+    fuse::renderer::TaaResolveSkipCounts accumulated{};
+    fuse::renderer::accumulateTaaResolveSkipReason(accumulated,
+                                                     fuse::renderer::TaaResolveSkipReason::MissingSurfaces);
+    fuse::renderer::accumulateTaaResolveSkipReason(accumulated,
+                                                     fuse::renderer::TaaResolveSkipReason::DimensionMismatch);
+    fuse::renderer::accumulateTaaResolveSkipReason(accumulated, fuse::renderer::TaaResolveSkipReason::None);
+    expectTrue(accumulated.total == 2u, "accumulate counts blocking reasons only");
+    expectTrue(accumulated.missingSurfaces == 1u, "missing surfaces bucket incremented");
+    expectTrue(accumulated.dimensionMismatch == 1u, "dimension mismatch bucket incremented");
+}
+
+void testTaaPassEffectiveBlend() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for pass effective blend test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaPassDesc passDesc{};
+    passDesc.width = 64;
+    passDesc.height = 64;
+    passDesc.params.blend_factor = 0.25f;
+
+    auto pass = fuse::renderer::TaaPass::create(passDesc);
+    expectTrue(pass->init(resources), "TaaPass initialized for effective blend test");
+    expectTrue(!pass->canReadHistory(), "pass cannot read history before first resolve");
+    expectNear(pass->effectiveBlendForNextResolve(), 1.f, 1e-5f,
+               "pass uses full current weight before warmup");
+
+    fuse::renderer::TaaResolveDesc resolveDesc{};
+    resolveDesc.width = 64;
+    resolveDesc.height = 64;
+    resolveDesc.surfaces.current_frame = reinterpret_cast<void*>(0x1);
+    resolveDesc.surfaces.output = reinterpret_cast<void*>(0x2);
+    expectTrue(pass->resolveFrame(resolveDesc), "initial resolve succeeds");
+    expectTrue(pass->canReadHistory(), "pass can read history after first resolve");
+    expectNear(pass->effectiveBlendForNextResolve(), 0.25f, 1e-5f,
+               "pass uses configured blend after warmup");
+
+    pass->invalidateHistory();
+    expectTrue(!pass->canReadHistory(), "pass cannot read history after invalidate");
+    expectNear(pass->effectiveBlendForNextResolve(), 1.f, 1e-5f,
+               "pass returns to full current weight after invalidate");
+
+    pass->destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
 void testResolveSkipReasonLabels() {
     expectTrue(!fuse::renderer::taaResolveSkipReasonIsBlocking(fuse::renderer::TaaResolveSkipReason::None),
                "None skip reason is not blocking");
@@ -1219,6 +1441,12 @@ int main() {
     testHistoryBufferPingPong();
     testHistoryValidityFlags();
     testClampTaaParams();
+    testHistoryBlendHelpers();
+    testHistoryReadGuards();
+    testResolveSurfaceGuards();
+    testShouldSkipTaaResolve();
+    testTaaResolveSkipCounts();
+    testTaaPassEffectiveBlend();
     testResolveSkipReasonLabels();
     testHistoryBufferDescValid();
     testResolveDimensionMismatchHelper();

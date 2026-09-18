@@ -70,6 +70,18 @@ enum class TaaResolveSkipReason : u8 {
     StaleHistoryGeneration,
 };
 
+/// Per-reason resolve skip breakdown for preflight bookkeeping (B5.9 deepen).
+struct TaaResolveSkipCounts {
+    u32 total = 0;
+    u32 historyNotReady = 0;
+    u32 invalidDimensions = 0;
+    u32 dimensionMismatch = 0;
+    u32 missingSurfaces = 0;
+    u32 missingVelocityBuffer = 0;
+    u32 missingDepthBuffer = 0;
+    u32 staleHistoryGeneration = 0;
+};
+
 /// Clamp TAA tuning knobs to safe ranges for the CPU resolve stub.
 TAAParams clampTaaParams(const TAAParams& raw);
 /// True when `velocity_rejection` is active and resolve must receive a velocity surface.
@@ -78,6 +90,18 @@ bool taaResolveRequiresVelocity(const TAAParams& params);
 bool taaResolveRequiresDepth(const TAAParams& params);
 /// Blend weight applied this frame — 1.0 on first warm-up frame, else clamped `blend_factor`.
 f32 computeEffectiveBlend(bool firstFrame, const TAAParams& params);
+/// Clamp an effective blend weight to [0, 1] (B5.9 deepen).
+f32 clampEffectiveBlend(f32 effectiveBlend);
+/// True when `blend_factor` is within [0, 1] before clamping (B5.9 deepen).
+bool isTaaBlendFactorInRange(f32 blend_factor);
+/// True when effective blend reuses prior history (weight strictly below 1.0) (B5.9 deepen).
+bool taaBlendWeightReusesHistory(f32 effective_blend);
+/// History accumulation weight — complement of the current-frame effective blend (B5.9 deepen).
+f32 computeHistoryBlendWeight(f32 effectiveBlend);
+/// History accumulation weight from frame state and params (B5.9 deepen).
+f32 computeHistoryBlendWeight(bool firstFrame, const TAAParams& params);
+/// True when warm-up path forces full current-frame weight (no history reuse) (B5.9 deepen).
+bool taaUsesWarmupBlend(bool first_frame);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {
@@ -113,5 +137,9 @@ bool taaResolveHasDimensionMismatch(const TaaResolveDesc& desc, const TaaHistory
 bool taaResolveHistoryGenerationIsStale(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// True when resolve would bail before history update (`skip_reason != None`).
 bool taaResolveSkipReasonIsBlocking(TaaResolveSkipReason reason);
+/// Increment `counts` for one classified skip reason (no-op when `None`) (B5.9 deepen).
+void accumulateTaaResolveSkipReason(TaaResolveSkipCounts& counts, TaaResolveSkipReason reason);
+/// Build a single-reason skip breakdown from one classified reason (B5.9 deepen).
+TaaResolveSkipCounts taaResolveSkipCountsFromReason(TaaResolveSkipReason reason);
 
 } // namespace fuse::renderer
