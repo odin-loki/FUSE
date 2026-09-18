@@ -152,7 +152,7 @@ void InterestSetDiff::clear() {
 }
 
 bool InterestSetDiff::apply_diff(InterestScopeSet& scope) const {
-    if (empty()) {
+    if (!can_apply_interest_diff(*this, scope)) {
         return false;
     }
 
@@ -212,6 +212,52 @@ bool can_apply_interest_diff(const InterestSetDiff& diff, const InterestScopeSet
     return false;
 }
 
+InterestDiffPreflight preflight_interest_diff_apply(const InterestSetDiff& diff,
+                                                    const InterestScopeSet& scope) {
+    InterestDiffPreflight preflight{};
+    preflight.empty_diff = diff.empty();
+    if (preflight.empty_diff) {
+        return preflight;
+    }
+
+    preflight.redundant_apply = !can_apply_interest_diff(diff, scope);
+    return preflight;
+}
+
+bool should_skip_interest_diff_apply(const InterestSetDiff& diff) {
+    return diff.empty();
+}
+
+bool should_skip_interest_diff_apply(const InterestSetDiff& diff, const InterestScopeSet& scope) {
+    return preflight_interest_diff_apply(diff, scope).should_skip();
+}
+
+bool is_empty_candidate_list(const std::vector<InterestCandidate>& candidates) {
+    return candidates.empty();
+}
+
+bool should_skip_radius_filter(const std::vector<InterestCandidate>& candidates,
+                               const InterestPolicy& policy) {
+    if (candidates.empty()) {
+        return true;
+    }
+
+    const f32 relevance = effective_relevance_radius(policy);
+    const f32 always = effective_always_relevant_radius(policy);
+    return relevance <= 0.f && always <= 0.f;
+}
+
+bool has_any_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
+                                  const std::vector<InterestCandidate>& candidates) {
+    return count_candidates_in_radius(observer, policy, candidates) > 0;
+}
+
+bool has_any_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
+                                  const std::vector<InterestCandidate>& candidates,
+                                  const InterestScopeSet& prior_scope) {
+    return count_candidates_in_radius(observer, policy, candidates, prior_scope) > 0;
+}
+
 bool diff_interest_scope_sets(const InterestScopeSet& previous, const InterestScopeSet& current,
                               InterestSetDiff& out) {
     out.clear();
@@ -243,7 +289,7 @@ bool diff_interest_scope_sets(const InterestScopeSet& previous, const InterestSc
 
 u32 count_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
                                const std::vector<InterestCandidate>& candidates) {
-    if (candidates.empty()) {
+    if (should_skip_radius_filter(candidates, policy)) {
         return 0;
     }
 
@@ -260,7 +306,7 @@ u32 count_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& 
 u32 count_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
                                const std::vector<InterestCandidate>& candidates,
                                const InterestScopeSet& prior_scope) {
-    if (candidates.empty()) {
+    if (should_skip_radius_filter(candidates, policy)) {
         return 0;
     }
 
@@ -279,7 +325,7 @@ u32 filter_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy&
                                 const std::vector<InterestCandidate>& candidates,
                                 std::vector<InterestEntry>& out_entries) {
     out_entries.clear();
-    if (candidates.empty()) {
+    if (should_skip_radius_filter(candidates, policy)) {
         return 0;
     }
 
@@ -306,7 +352,7 @@ u32 filter_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy&
                                 const InterestScopeSet& prior_scope,
                                 std::vector<InterestEntry>& out_entries) {
     out_entries.clear();
-    if (candidates.empty()) {
+    if (should_skip_radius_filter(candidates, policy)) {
         return 0;
     }
 
