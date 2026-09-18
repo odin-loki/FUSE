@@ -72,6 +72,10 @@ public:
     /// Inspect only the front event type without removing it. Returns false when empty.
     bool peekEventType(PlatformEventType& outType) const;
 
+    /// Peek the front event only when its type matches `type`. Returns false when empty or
+    /// the front event is a different type (outEvent is reset to None).
+    bool tryPeekEventOfType(PlatformEventType type, PlatformEvent& outEvent) const;
+
     /// True when the front queued event matches `type` (false when empty).
     bool frontEventTypeIs(PlatformEventType type) const;
 
@@ -86,6 +90,9 @@ public:
 
     /// True when at least one queued event matches `type`.
     bool hasPendingEventOfType(PlatformEventType type) const;
+
+    /// True when a queued event matches both `window` and `type`.
+    bool hasPendingEventOfTypeFor(const Window& window, PlatformEventType type) const;
 
     /// Number of queued events whose `window` pointer matches `window`.
     u32 countPendingEventsFor(const Window& window) const;
@@ -103,6 +110,9 @@ public:
 
     /// Most recent in-place resize coalesce (invalid when none have occurred).
     const ResizeCoalesceRecord& lastCoalescedResize() const;
+
+    /// True when the most recent in-place resize coalesce targeted `window`.
+    bool hasCoalescedResizeFor(const Window& window) const;
 
     /// Aggregate queue + overflow/coalesce counters.
     EventPumpStats stats() const;
