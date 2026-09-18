@@ -1245,10 +1245,15 @@ void testCookCacheContainsHelper() {
 }
 
 void testCookCachePruneInvalidEntries() {
+    const std::string validSource = writeTempFile("/tmp/fuse_b79_valid_entry.obj", "# valid entry\n");
+
     fuse::project::CookCacheEntry valid;
-    valid.content_hash = 42;
-    valid.source_path = "/tmp/fuse_b79_valid_entry.obj";
+    valid.source_path = validSource;
     valid.output_path = "/tmp/fuse_b79_valid_entry.fusemesh";
+    valid.content_hash = fuse::project::combine_cook_cache_key(
+        fuse::project::hash_mesh_import(
+            fuse::project::MeshImportDesc{validSource, "/tmp/fuse_b79_valid_entry.fusemesh"}),
+        0);
     expectTrue(fuse::project::is_valid_cook_cache_entry(valid), "valid entry passes validation");
 
     fuse::project::CookCacheEntry invalid = valid;
@@ -1271,14 +1276,19 @@ void testCookCachePruneInvalidEntries() {
     expectTrue(cache.prune_invalid_entries() == 0u, "prune_invalid on valid-only cache is a no-op");
     expectTrue(cache.contains(valid.content_hash), "valid entry remains after invalid prune");
 
+    const std::string loadedSource = writeTempFile("/tmp/fuse_b79_valid.obj", "# loaded valid\n");
+    fuse::project::MeshImportDesc loadedDesc;
+    loadedDesc.input_path = loadedSource;
+    loadedDesc.output_path = "/tmp/fuse_b79_valid.fusemesh";
+    const fuse::u64 loadedHash = fuse::project::combine_cook_cache_key(
+        fuse::project::hash_mesh_import(loadedDesc), 0);
+
     const std::string cachePath = "/tmp/fuse_b79_invalid_cache.json";
     {
         std::ofstream out(cachePath, std::ios::binary);
-        out << R"({
-  "schemaVersion": 1,
-  "entries": [
-    {
-      "contentHash": 101,
+        out << "{\n  \"schemaVersion\": 1,\n  \"entries\": [\n    {\n";
+        out << "      \"contentHash\": " << loadedHash << ",\n";
+        out << R"(
       "upstreamHash": 0,
       "outputPath": "/tmp/fuse_b79_valid.fusemesh",
       "sourcePath": "/tmp/fuse_b79_valid.obj",
@@ -1306,7 +1316,7 @@ void testCookCachePruneInvalidEntries() {
     fuse::project::CookCache loaded;
     expectTrue(loaded.load(cachePath), "mixed cache JSON loads");
     expectTrue(loaded.entry_count() == 1u, "load keeps first valid entry and rejects invalid trailing records");
-    expectTrue(loaded.contains(101u), "valid loaded entry remains addressable");
+    expectTrue(loaded.contains(loadedHash), "valid loaded entry remains addressable");
 
     const std::string invalidOnlyPath = "/tmp/fuse_b79_invalid_only_cache.json";
     {
@@ -1330,6 +1340,95 @@ void testCookCachePruneInvalidEntries() {
     expectTrue(invalidOnly.load(invalidOnlyPath), "invalid-only cache JSON loads");
     expectTrue(invalidOnly.empty(), "invalid-only cache rejects zero-hash entry on load");
     expectTrue(invalidOnly.prune_invalid_entries() == 0u, "prune on empty cache after rejected load");
+}
+
+void testCombineCookCacheKeyZeroSourceGuard() {
+    expectTrue(fuse::project::combine_cook_cache_key(0, 0) == 0, "all-zero cache key stays zero");
+    expectTrue(fuse::project::combine_cook_cache_key(0, 42u) == 0,
+               "zero source with non-zero upstream stays zero");
+    expectTrue(!fuse::project::is_valid_combined_cook_cache_key(0, 42u),
+               "combined key invalid when source hash is zero");
+    expectTrue(fuse::project::is_valid_combined_cook_cache_key(99u, 0u),
+               "combined key valid when only upstream is zero");
+    expectTrue(fuse::project::is_valid_combined_cook_cache_key(99u, 42u),
+               "combined key valid when both hashes are non-zero");
+}
+
+void testCookCachePruneAll() {
+    fuse::project::CookCache cache;
+    expectTrue(cache.prune_all() == 0u, "prune_all on empty cache is a no-op");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_prune_all_live.obj", "# prune all v1\n");
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_prune_all_live.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord first = cooker.cook_mesh(desc);
+    expectTrue(first.ok, "seed cook for prune_all ok");
+    expectTrue(cooker.cache().entry_count() == 1u, "one live entry before prune_all");
+    expectTrue(cooker.cache().prune_all() == 0u, "prune_all on fresh valid entry is a no-op");
+    expectTrue(cooker.cache().contains(first.content_hash), "valid entry survives prune_all");
+
+    writeTempFile(source, "# prune all v2\n");
+    const fuse::u32 removed = cooker.cache().prune_all();
+    expectTrue(removed == 1u, "prune_all removes stale live entry");
+    expectTrue(cooker.cache().empty(), "cache empty after prune_all");
+}
+
+void testCookCacheLoadPrunesStale() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_load_prune.obj", "# load prune v1\n");
+
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_load_prune.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
+    expectTrue(seeded.ok, "seed cook for load prune ok");
+
+    const std::string cachePath = "/tmp/fuse_b79_load_prune_cache.json";
+    expectTrue(cooker.cache().save(cachePath), "cache saves before source change");
+
+    writeTempFile(source, "# load prune v2\n");
+
+    fuse::project::CookCache loaded;
+    expectTrue(loaded.load(cachePath), "stale cache JSON loads");
+    expectTrue(loaded.empty(), "load auto-prunes stale entries");
+    expectTrue(loaded.entry_count() == 0u, "no entries remain after load prune");
+}
+
+void testAssetCookerInvalidateEarlyOuts() {
+    fuse::project::CookManifest manifest;
+    fuse::project::AssetCooker cooker;
+
+    expectTrue(cooker.invalidate_upstream_dependency(manifest, "") == 0u,
+               "upstream invalidation rejects empty source path");
+    expectTrue(cooker.invalidate_stale_dependency_hashes(manifest) == 0u,
+               "stale dependency invalidation on empty manifest is a no-op");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_early_out_mesh.obj", "# early out\n");
+    fuse::project::CookManifestEntry entry;
+    entry.kind = fuse::project::CookAssetKind::Mesh;
+    entry.source_path = source;
+    entry.output_path = "/tmp/fuse_b79_early_out_mesh.fusemesh";
+    manifest.assets.push_back(entry);
+
+    expectTrue(cooker.invalidate_upstream_dependency(manifest, source) == 0u,
+               "upstream invalidation on empty cache is a no-op");
+    expectTrue(cooker.invalidate_stale_dependency_hashes(manifest) == 0u,
+               "stale dependency invalidation on empty cache is a no-op");
+
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = entry.output_path;
+    const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
+    expectTrue(seeded.ok, "seed cook for early-out invalidation ok");
+    expectTrue(cooker.cache().entry_count() == 1u, "cache seeded for early-out tests");
+
+    expectTrue(cooker.invalidate_upstream_dependency(manifest, "") == 0u,
+               "upstream invalidation still rejects empty path with populated cache");
+    expectTrue(cooker.cache().entry_count() == 1u, "empty-path upstream invalidation leaves cache intact");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
@@ -1398,6 +1497,10 @@ int main() {
     testCookCacheEmptyGuards();
     testCookCacheContainsHelper();
     testCookCachePruneInvalidEntries();
+    testCombineCookCacheKeyZeroSourceGuard();
+    testCookCachePruneAll();
+    testCookCacheLoadPrunesStale();
+    testAssetCookerInvalidateEarlyOuts();
     testCookManifestCacheHitsOnSecondRun();
     testCookCacheInvalidateChain();
     testCookCacheStaleDependencyHashInvalidation();
