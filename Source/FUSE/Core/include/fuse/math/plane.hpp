@@ -133,6 +133,15 @@ inline PlaneSide classifyAabb(const Vec4& plane, const AABB& box) {
     return PlaneSide::Straddling;
 }
 
+/// Classifies an AABB when the plane and box are usable; returns false on empty box or degenerate plane.
+inline bool tryClassifyAabb(const Vec4& plane, const AABB& box, PlaneSide& side, f32 epsilon = 1e-8f) {
+    if (box.isEmpty() || isDegeneratePlane(plane, epsilon)) {
+        return false;
+    }
+    side = classifyAabb(plane, box);
+    return true;
+}
+
 /// Clips a segment `[a, b]` against the positive half-space of `plane`.
 /// Returns false when the segment is fully behind the plane.
 inline bool clipSegmentAgainstPlane(const Vec4& plane, Vec3& a, Vec3& b, f32 epsilon = 1e-5f) {
