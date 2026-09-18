@@ -192,6 +192,56 @@ void testPresentEmptyImageIndex() {
 #endif
 }
 
+void testShouldEarlyOutEmptySwapchainAcquire() {
+    fuse::renderer::VulkanInstanceDesc instanceDesc{};
+    instanceDesc.enableValidation = false;
+
+    auto instance = fuse::renderer::VulkanInstance::create(instanceDesc);
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!instance->isValid()) {
+        return;
+    }
+
+    auto device = fuse::renderer::VulkanDevice::create(*instance);
+    if (!device->isValid()) {
+        return;
+    }
+
+    fuse::renderer::SwapchainDesc swapDesc{};
+    swapDesc.surface.kind = fuse::renderer::SurfaceKind::Headless;
+    swapDesc.width = 800;
+    swapDesc.height = 600;
+
+    auto swapchain = fuse::renderer::VulkanSwapchain::create(*device, swapDesc);
+    expectTrue(swapchain != nullptr, "headless swapchain allocated");
+    expectTrue(fuse::renderer::shouldEarlyOutEmptySwapchainAcquire(swapchain.get(), nullptr),
+               "null frame manager triggers acquire early-out");
+    expectTrue(fuse::renderer::shouldEarlyOutEmptySwapchainAcquire(nullptr, nullptr),
+               "null swapchain triggers acquire early-out");
+
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    if (!bootstrap->status().deviceReady) {
+        return;
+    }
+
+    fuse::renderer::FrameManager* frameManager = bootstrap->frameManager();
+    expectTrue(frameManager != nullptr && frameManager->isReady(), "frame manager ready");
+    expectTrue(fuse::renderer::shouldEarlyOutEmptySwapchainAcquire(swapchain.get(), frameManager),
+               "empty swapchain triggers acquire early-out");
+#else
+    (void)instance;
+#endif
+}
+
+void testResizeExtentMatchesHelper() {
+    expectTrue(fuse::renderer::resizeExtentMatches(1920, 1080, 1920, 1080),
+               "matching extents compare equal");
+    expectTrue(!fuse::renderer::resizeExtentMatches(1920, 1080, 1280, 720),
+               "different extents compare unequal");
+}
+
 void testZeroExtentRebuildRejected() {
     fuse::renderer::VulkanInstanceDesc instanceDesc{};
     instanceDesc.enableValidation = false;
@@ -233,6 +283,8 @@ int main() {
     testExternalSurfaceWithoutHandleFailsGracefully();
     testAcquireOnEmptySwapchain();
     testPresentEmptyImageIndex();
+    testShouldEarlyOutEmptySwapchainAcquire();
+    testResizeExtentMatchesHelper();
     testZeroExtentRebuildRejected();
 
     fuse::core::shutdown();

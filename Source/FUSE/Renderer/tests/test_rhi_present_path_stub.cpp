@@ -507,6 +507,102 @@ void testCanAcquireCanPresent() {
     expectTrue(presentPath->canPresent(), "can present after headless acquire");
 }
 
+void testEmptyAcquireEarlyOutCounter() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        return;
+    }
+#else
+    return;
+#endif
+
+    auto presentPath = fuse::renderer::PresentPath::create(*bootstrap);
+    expectTrue(presentPath->waitInFlightFence(), "fence wait before early-out acquire");
+    (void)presentPath->acquireImage();
+    expectEq(presentPath->status().emptyAcquireEarlyOutCount, 1u,
+             "headless acquire increments early-out counter");
+    expectEq(presentPath->status().emptyAcquireCount, 1u,
+             "early-out acquire still counts as empty acquire");
+}
+
+void testResizeNoOpWhenExtentMatchesCurrent() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        return;
+    }
+#else
+    return;
+#endif
+
+    auto presentPath = fuse::renderer::PresentPath::create(*bootstrap);
+    presentPath->requestResize(1024, 768);
+    expectTrue(presentPath->recreateSwapchain(), "apply initial resize");
+    presentPath->requestResize(1024, 768);
+    expectTrue(!presentPath->hasPendingResize(), "matching extent resize not queued");
+    expectEq(presentPath->status().resizeNoOpCount, 1u, "matching extent increments no-op counter");
+}
+
+void testPendingResizeExtentHelper() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        return;
+    }
+#else
+    return;
+#endif
+
+    auto presentPath = fuse::renderer::PresentPath::create(*bootstrap);
+    const auto initialExtent = presentPath->pendingResizeExtent();
+    expectTrue(!initialExtent.pending, "no pending resize initially");
+
+    presentPath->requestResize(1024, 768);
+    const auto pendingExtent = presentPath->pendingResizeExtent();
+    expectTrue(pendingExtent.pending, "pending resize exposed");
+    expectEq(pendingExtent.width, 1024u, "pending resize width");
+    expectEq(pendingExtent.height, 768u, "pending resize height");
+}
+
+void testRecreateSkipsMatchingPendingExtent() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        return;
+    }
+#else
+    return;
+#endif
+
+    auto presentPath = fuse::renderer::PresentPath::create(*bootstrap);
+    presentPath->requestResize(1024, 768);
+    expectTrue(presentPath->recreateSwapchain(), "apply initial resize");
+    expectEq(presentPath->status().swapchainRecreateCount, 1u, "initial resize recreated swapchain");
+
+    presentPath->requestResize(800, 600);
+    presentPath->requestResize(1024, 768);
+    expectTrue(presentPath->hasPendingResize(), "coalesced resize still pending");
+
+    expectTrue(presentPath->recreateSwapchain(), "recreate applies coalesced extent");
+    expectTrue(!presentPath->hasPendingResize(), "pending resize cleared");
+    expectEq(presentPath->status().swapchainRecreateCount, 1u,
+             "matching current extent skips recreate");
+    expectEq(presentPath->status().resizeNoOpCount, 1u, "matching recreate increments no-op counter");
+}
+
 void testEmptyAcquirePresentCounters() {
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
@@ -525,6 +621,43 @@ void testEmptyAcquirePresentCounters() {
     expectEq(presentPath->status().emptyAcquireCount, 1u, "headless acquire counted as empty");
     expectTrue(presentPath->endFrame(), "endFrame on headless path");
     expectEq(presentPath->status().emptyPresentCount, 1u, "headless present counted as empty stub");
+}
+
+void testWaitCurrentFenceIfSignaledHelper() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        return;
+    }
+#else
+    return;
+#endif
+
+    fuse::renderer::FrameManager* frameManager = bootstrap->frameManager();
+    expectTrue(frameManager != nullptr && frameManager->isReady(), "frame manager ready");
+
+    expectTrue(fuse::renderer::waitAllInFlightFences(*frameManager),
+               "clear initial signaled fences on fresh ring");
+    expectTrue(fuse::renderer::allInFlightFencesClear(*frameManager),
+               "all fences clear after wait-all");
+    expectTrue(fuse::renderer::waitCurrentInFlightFenceIfSignaled(*frameManager),
+               "current-slot if-signaled wait is no-op on clear ring");
+
+    frameManager->signalTickComplete();
+    frameManager->beginFrame(0u);
+    expectTrue(fuse::renderer::waitCurrentInFlightFenceIfSignaled(*frameManager),
+               "current-slot if-signaled wait succeeds before first endFrame");
+    frameManager->endFrame();
+    expectEq(fuse::renderer::countPendingInFlightFences(*frameManager), 1u,
+             "endFrame leaves prior slot in-flight");
+
+    frameManager->signalTickComplete();
+    frameManager->beginFrame(1u);
+    expectTrue(fuse::renderer::waitCurrentInFlightFenceIfSignaled(*frameManager),
+               "current-slot if-signaled wait succeeds on next beginFrame slot");
 }
 
 void testFenceWaitIfSignaledHelper() {
@@ -609,7 +742,12 @@ int main() {
     testZeroExtentResizeRejected();
     testResizeCoalesceCounter();
     testCanAcquireCanPresent();
+    testEmptyAcquireEarlyOutCounter();
     testEmptyAcquirePresentCounters();
+    testResizeNoOpWhenExtentMatchesCurrent();
+    testPendingResizeExtentHelper();
+    testRecreateSkipsMatchingPendingExtent();
+    testWaitCurrentFenceIfSignaledHelper();
     testFenceWaitIfSignaledHelper();
     testMarkReadyWithoutAcquire();
     testPresentFromIdle();
