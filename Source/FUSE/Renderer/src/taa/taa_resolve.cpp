@@ -157,6 +157,42 @@ bool taaHistoryBlendAllowed(bool firstFrame, const TaaHistoryBuffer& history) {
     return !firstFrame && taaHistoryCanReuse(history);
 }
 
+bool computeTaaResolveFirstFrame(const TaaHistoryBuffer& history) {
+    return history.isReady() && !history.hasValidHistory();
+}
+
+TaaBlendPreflightRejectReason classifyTaaBlendPreflightReject(const TaaResolveDesc& desc,
+                                                                const TaaHistoryBuffer& history) {
+    if (!history.isReady()) {
+        return TaaBlendPreflightRejectReason::HistoryNotReady;
+    }
+    if (computeTaaResolveFirstFrame(history)) {
+        return TaaBlendPreflightRejectReason::WarmupRequired;
+    }
+    if (!taaResolveBypassesHistoryGenerationGuard(desc) &&
+        history.isHistoryStale(desc.observed_history_generation)) {
+        return TaaBlendPreflightRejectReason::StaleGeneration;
+    }
+    return TaaBlendPreflightRejectReason::None;
+}
+
+bool taaResolveBlendPreflight(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                               TaaBlendPreflightRejectReason* reason) {
+    const TaaBlendPreflightRejectReason reject = classifyTaaBlendPreflightReject(desc, history);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == TaaBlendPreflightRejectReason::None;
+}
+
+bool taaResolveWouldUseHistoryBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    if (!taaResolveBlendPreflight(desc, history)) {
+        return false;
+    }
+    const bool firstFrame = computeTaaResolveFirstFrame(history);
+    return taaHistoryBlendAllowed(firstFrame, history);
+}
+
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaHistoryCanReuse(history)) {
         return false;
@@ -180,6 +216,50 @@ f32 computeEffectiveBlend(bool firstFrame, const TAAParams& params) {
         return 1.f;
     }
     return clampTaaParams(params).blend_factor;
+}
+
+const char* taaHistoryReuseRejectReasonLabel(TaaHistoryReuseRejectReason reason) {
+    switch (reason) {
+    case TaaHistoryReuseRejectReason::None:
+        return "none";
+    case TaaHistoryReuseRejectReason::HistoryNotReady:
+        return "history_not_ready";
+    case TaaHistoryReuseRejectReason::HistoryNotWarmed:
+        return "history_not_warmed";
+    case TaaHistoryReuseRejectReason::StaleGeneration:
+        return "stale_generation";
+    }
+    return "unknown";
+}
+
+const char* taaJitterSyncRejectReasonLabel(TaaJitterSyncRejectReason reason) {
+    switch (reason) {
+    case TaaJitterSyncRejectReason::None:
+        return "none";
+    case TaaJitterSyncRejectReason::InvalidSequenceLength:
+        return "invalid_sequence_length";
+    case TaaJitterSyncRejectReason::InvalidViewport:
+        return "invalid_viewport";
+    case TaaJitterSyncRejectReason::FrameIndexMismatch:
+        return "frame_index_mismatch";
+    case TaaJitterSyncRejectReason::SlotIndexMismatch:
+        return "slot_index_mismatch";
+    }
+    return "unknown";
+}
+
+const char* taaBlendPreflightRejectReasonLabel(TaaBlendPreflightRejectReason reason) {
+    switch (reason) {
+    case TaaBlendPreflightRejectReason::None:
+        return "none";
+    case TaaBlendPreflightRejectReason::HistoryNotReady:
+        return "history_not_ready";
+    case TaaBlendPreflightRejectReason::WarmupRequired:
+        return "warmup_required";
+    case TaaBlendPreflightRejectReason::StaleGeneration:
+        return "stale_generation";
+    }
+    return "unknown";
 }
 
 const char* taaResolveSkipReasonLabel(TaaResolveSkipReason reason) {

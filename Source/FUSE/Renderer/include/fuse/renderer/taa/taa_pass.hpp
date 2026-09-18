@@ -67,6 +67,14 @@ public:
     void sanitizeResolveDesc(TaaResolveDesc& desc) const;
     /// True when `observedGeneration` matches the current history invalidate epoch.
     bool isObservedHistoryGenerationCurrent(u32 observedGeneration) const;
+    /// True when pass jitter matches a monotonic frame counter (B5.9 deepen).
+    bool isJitterSyncedToFrameIndex(u32 frameIndex) const;
+    /// Preflight history reuse for the pass history epoch (B5.9 deepen).
+    bool preflightHistoryReuse(u32 observedGeneration,
+                                TaaHistoryReuseRejectReason* reason = nullptr) const;
+    /// Preflight resolve history-blend for the pass history state (B5.9 deepen).
+    bool preflightResolveBlend(const TaaResolveDesc& desc,
+                                TaaBlendPreflightRejectReason* reason = nullptr) const;
 
     bool resolveFrame(const TaaResolveDesc& desc, void* cudaStream = nullptr);
 

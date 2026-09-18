@@ -1,5 +1,7 @@
 #include <fuse/renderer/taa/taa_jitter.hpp>
 
+#include <cmath>
+
 namespace fuse::renderer {
 
 f32 TaaJitterLayout::halton(u32 index, u32 base) {
@@ -32,6 +34,10 @@ bool TaaJitterLayout::jitterIndexInRange(u32 index, u32 sequenceLength) {
 
 bool TaaJitterLayout::canProduceNdcOffset(u32 width, u32 height, u32 sequenceLength) {
     return validateViewportDimensions(width, height) && validateSequenceLength(sequenceLength);
+}
+
+bool TaaJitterLayout::ndcOffsetsMatch(const fuse::math::Vec2& a, const fuse::math::Vec2& b, f32 epsilon) {
+    return std::fabs(a.x - b.x) <= epsilon && std::fabs(a.y - b.y) <= epsilon;
 }
 
 u32 TaaJitterLayout::sequencePeriod(u32 sequenceLength) {
@@ -125,6 +131,39 @@ void TaaJitter::reset() {
 void TaaJitter::syncToFrameIndex(u32 frameIndex) {
     m_monotonicFrame = frameIndex;
     m_index = TaaJitterLayout::frameIndexInSequence(frameIndex, m_sequenceLength);
+}
+
+bool TaaJitter::isSyncedToFrameIndex(u32 frameIndex) const {
+    if (m_monotonicFrame != frameIndex) {
+        return false;
+    }
+    return m_index == TaaJitterLayout::frameIndexInSequence(frameIndex, m_sequenceLength);
+}
+
+TaaJitterSyncRejectReason classifyTaaJitterSyncReject(const TaaJitter& jitter, u32 frameIndex, u32 width,
+                                                        u32 height) {
+    if (!TaaJitterLayout::validateSequenceLength(jitter.sequenceLength())) {
+        return TaaJitterSyncRejectReason::InvalidSequenceLength;
+    }
+    if (!TaaJitterLayout::validateViewportDimensions(width, height)) {
+        return TaaJitterSyncRejectReason::InvalidViewport;
+    }
+    if (jitter.monotonicFrameIndex() != frameIndex) {
+        return TaaJitterSyncRejectReason::FrameIndexMismatch;
+    }
+    if (!jitter.isSyncedToFrameIndex(frameIndex)) {
+        return TaaJitterSyncRejectReason::SlotIndexMismatch;
+    }
+    return TaaJitterSyncRejectReason::None;
+}
+
+bool taaJitterSyncPreflight(const TaaJitter& jitter, u32 frameIndex, u32 width, u32 height,
+                             TaaJitterSyncRejectReason* reason) {
+    const TaaJitterSyncRejectReason reject = classifyTaaJitterSyncReject(jitter, frameIndex, width, height);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == TaaJitterSyncRejectReason::None;
 }
 
 } // namespace fuse::renderer
