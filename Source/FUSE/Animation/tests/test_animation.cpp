@@ -1063,6 +1063,53 @@ void testTwoBoneIKDegenerateSegments() {
     expectTrue(!ik.solve(pose, skel), "two bone ik rejects degenerate limb segments");
 }
 
+void testTwoBoneIKTargetReachable() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+    fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
+
+    fuse::animation::TwoBoneIK ik;
+    ik.root_bone = 0;
+    ik.mid_bone = 1;
+    ik.end_bone = 2;
+    ik.reach_epsilon = 0.001f;
+    ik.target = {1.f, 1.f, 0.f, 0.f};
+    expectTrue(ik.is_target_reachable(pose), "two bone ik is_target_reachable accepts in-range target");
+
+    ik.target = {10.f, 0.f, 0.f, 0.f};
+    expectTrue(!ik.is_target_reachable(pose), "two bone ik is_target_reachable rejects out-of-range target");
+
+    ik.target = {0.f, 0.f, 0.f, 0.f};
+    expectTrue(!ik.is_target_reachable(pose), "two bone ik is_target_reachable rejects target at root");
+}
+
+void testPoseBindFallbackIk() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+    fuse::animation::Pose empty{};
+    expectTrue(fuse::animation::needs_pose_bind_fallback(empty, skel),
+               "needs_pose_bind_fallback true for empty pose");
+
+    fuse::animation::Pose mismatched = fuse::animation::Pose::make_bind_pose(skel);
+    mismatched.bone_count = 1;
+    expectTrue(fuse::animation::needs_pose_bind_fallback(mismatched, skel),
+               "needs_pose_bind_fallback true for mismatched bone count");
+
+    fuse::animation::Pose valid = fuse::animation::Pose::make_bind_pose(skel);
+    expectTrue(!fuse::animation::needs_pose_bind_fallback(valid, skel),
+               "needs_pose_bind_fallback false for valid pose");
+
+    fuse::animation::ensure_pose_bind_fallback(empty, skel);
+    expectTrue(empty.bone_count == skel.bone_count, "ensure_pose_bind_fallback seeds bind pose");
+}
+
+void testFabrikChainUniqueIndices() {
+    const std::vector<fuse::u32> unique = {0, 1, 2};
+    const std::vector<fuse::u32> duplicate = {0, 1, 1};
+    expectTrue(fuse::animation::fabrik_chain_has_unique_indices(unique),
+               "fabrik_chain_has_unique_indices accepts unique indices");
+    expectTrue(!fuse::animation::fabrik_chain_has_unique_indices(duplicate),
+               "fabrik_chain_has_unique_indices rejects duplicate indices");
+}
+
 void testFabrikChainGuards() {
     const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
     fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
@@ -1075,6 +1122,11 @@ void testFabrikChainGuards() {
     singleBone.bone_indices = {0};
     expectTrue(!singleBone.has_valid_chain(skel), "fabrik rejects single-bone chain");
     expectTrue(!singleBone.solve(pose, skel), "fabrik solve returns false for single-bone chain");
+
+    fuse::animation::FABRIKChain duplicateIndices;
+    duplicateIndices.bone_indices = {0, 0};
+    expectTrue(!duplicateIndices.has_valid_chain(skel), "fabrik rejects duplicate bone indices");
+    expectTrue(!duplicateIndices.solve(pose, skel), "fabrik solve returns false for duplicate indices");
 
     fuse::animation::FABRIKChain outOfRange;
     outOfRange.bone_indices = {0, 99};
@@ -1115,14 +1167,43 @@ void testRetargetApplyEmptySourcePose() {
     const fuse::animation::RetargetMap map = fuse::animation::RetargetMap::build_identity(skel);
 
     fuse::animation::PoseSoA emptySource = fuse::animation::PoseSoA::allocate(0);
+    expectTrue(!map.can_apply_pose_soa(emptySource, skel), "retarget can_apply_pose_soa false for empty source");
     fuse::animation::PoseSoA targetPose = fuse::animation::PoseSoA::from_bind_pose(skel);
     map.apply_pose_soa(emptySource, skel, targetPose);
     expectTrue(targetPose.bone_count == 0u, "retarget apply_pose_soa clears output when source pose is empty");
 
     fuse::animation::Pose emptyAoS{};
+    expectTrue(!map.can_apply_pose(emptyAoS, skel), "retarget can_apply_pose false for empty source");
     fuse::animation::Pose targetAoS = fuse::animation::Pose::make_bind_pose(skel);
     map.apply_pose(emptyAoS, skel, targetAoS);
     expectTrue(targetAoS.bone_count == 0u, "retarget apply_pose clears output when source pose is empty");
+}
+
+void testRetargetCanApplyBoneCountMismatch() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    const fuse::animation::RetargetMap map = fuse::animation::RetargetMap::build_identity(skel);
+
+    fuse::animation::PoseSoA partialSoa = fuse::animation::PoseSoA::allocate(1);
+    partialSoa.resize(1);
+    expectTrue(!map.can_apply_pose_soa(partialSoa, skel),
+               "retarget can_apply_pose_soa false when source bone count mismatches map");
+
+    fuse::animation::PoseSoA targetSoa = fuse::animation::PoseSoA::from_bind_pose(skel);
+    map.apply_pose_soa(partialSoa, skel, targetSoa);
+    expectTrue(targetSoa.bone_count == 0u, "retarget apply_pose_soa clears output on bone count mismatch");
+
+    fuse::animation::Pose partialAoS = fuse::animation::Pose::make_bind_pose(skel);
+    partialAoS.bone_count = 1;
+    partialAoS.bone_world_transforms.resize(1);
+    expectTrue(!map.can_apply_pose(partialAoS, skel),
+               "retarget can_apply_pose false when source bone count mismatches map");
+
+    fuse::animation::Pose targetAoS = fuse::animation::Pose::make_bind_pose(skel);
+    map.apply_pose(partialAoS, skel, targetAoS);
+    expectTrue(targetAoS.bone_count == 0u, "retarget apply_pose clears output on bone count mismatch");
+
+    fuse::animation::PoseSoA validSource = fuse::animation::PoseSoA::from_bind_pose(skel);
+    expectTrue(map.can_apply_pose_soa(validSource, skel), "retarget can_apply_pose_soa true for matching pose");
 }
 
 void testRetargetApplyInvalidMap() {
@@ -1871,9 +1952,13 @@ int main() {
     testTwoBoneIKSolveHelpers();
     testTwoBoneIKZeroPoleVector();
     testTwoBoneIKDegenerateSegments();
+    testTwoBoneIKTargetReachable();
+    testPoseBindFallbackIk();
+    testFabrikChainUniqueIndices();
     testFabrikChainGuards();
     testRetargetAddBoneMapping();
     testRetargetApplyEmptySourcePose();
+    testRetargetCanApplyBoneCountMismatch();
     testRetargetApplyInvalidMap();
     testRetargetClear();
     testEmptyBlendSpace1D();

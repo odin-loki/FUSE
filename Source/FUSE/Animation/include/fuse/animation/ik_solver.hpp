@@ -7,6 +7,15 @@
 
 namespace fuse::animation {
 
+/// True when `pose` has no bones or its bone count does not match the skeleton.
+[[nodiscard]] bool needs_pose_bind_fallback(const Pose& pose, const Skeleton& skel);
+
+/// Seed `pose` from skeleton bind pose when it is empty or mismatched.
+void ensure_pose_bind_fallback(Pose& pose, const Skeleton& skel);
+
+/// True when every entry in `bone_indices` is unique.
+[[nodiscard]] bool fabrik_chain_has_unique_indices(const std::vector<u32>& bone_indices);
+
 /// Normalize a pole hint; when zero or parallel to `root_to_target`, pick a stable bend axis.
 [[nodiscard]] vec3 normalize_ik_pole_vector(const vec3& pole, const vec3& root_to_target);
 
@@ -52,7 +61,7 @@ struct FABRIKChain {
     f32 min_angle_deg = 0.f;
     f32 max_angle_deg = 160.f;
 
-    /// Returns false when the skeleton is empty, the index list has fewer than two bones, or any index is out of range.
+    /// Returns false when the skeleton is empty, the index list has fewer than two bones, any index is out of range, or indices repeat.
     [[nodiscard]] bool has_valid_chain(const Skeleton& skel) const;
 
     /// Returns false when `has_valid_chain` is false.
@@ -78,6 +87,9 @@ struct TwoBoneIK {
 
     /// Pole vector after zero/parallel fallback relative to the current root→target direction.
     [[nodiscard]] vec3 effective_pole_vector(const Pose& pose) const;
+
+    /// True when `target` lies within the reachable sphere for the current pose segment lengths.
+    [[nodiscard]] bool is_target_reachable(const Pose& pose) const;
 
     /// Closed-form two-bone IK (O(1)). Solves in-place on the current pose; returns false when invalid.
     bool solve(Pose& pose, const Skeleton& skel);
