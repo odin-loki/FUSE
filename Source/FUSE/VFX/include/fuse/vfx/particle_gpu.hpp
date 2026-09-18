@@ -162,6 +162,39 @@ struct ParticleGpuDispatch {
     [[nodiscard]] ParticleGpuDispatchPreflight preflightFrame(u32 slot_count, u32 emit_count) const;
 };
 
+/// Empty-buffer preflight for device SSBO stub wiring (B7.7 GPU deepen follow-up).
+struct ParticleGpuBufferPreflight {
+    u32 capacity = 0u;
+    usize device_bytes = 0u;
+    bool bound = false;
+    bool layout_bytes_ok = false;
+
+    [[nodiscard]] bool is_empty() const { return capacity == 0u || device_bytes == 0u; }
+    [[nodiscard]] bool can_upload() const { return layout_bytes_ok && !is_empty(); }
+    [[nodiscard]] bool can_bind_device() const { return can_upload() && bound; }
+};
+
+/// Emit preflight for GPU frame stub wiring (B7.7 GPU deepen follow-up).
+struct ParticleGpuEmitPreflight {
+    u32 requested = 0u;
+    u32 allowed = 0u;
+    u32 remaining_free = 0u;
+    bool would_clamp = false;
+    bool skipped = true;
+
+    [[nodiscard]] bool can_emit() const { return !skipped && allowed > 0u; }
+};
+
+/// Sim preflight for GPU frame stub wiring (B7.7 GPU deepen follow-up).
+struct ParticleGpuSimPreflight {
+    u32 capacity = 0u;
+    u32 alive_count = 0u;
+    bool skipped = true;
+    bool has_live_particles = false;
+
+    [[nodiscard]] bool can_simulate() const { return !skipped; }
+};
+
 /// Logical GPU buffer handles — production wiring maps these to `renderer::BufferHandle`.
 struct ParticleGpuBuffers {
     u64 packedSoa = 0;
@@ -170,6 +203,10 @@ struct ParticleGpuBuffers {
     usize deviceBytes = 0;
 
     [[nodiscard]] static ParticleGpuBuffers forCapacity(u32 particle_capacity);
+    [[nodiscard]] bool isEmpty() const { return capacity == 0u || deviceBytes == 0u; }
+    [[nodiscard]] bool isBound() const { return packedSoa != 0u; }
+    [[nodiscard]] bool bytesMatchLayout() const;
+    [[nodiscard]] ParticleGpuBufferPreflight preflight() const;
 };
 
 /// CPU-side column mirror for layout/dispatch stub tests — no device readback in production.
@@ -221,8 +258,15 @@ struct ParticleGpuFramePreflight {
     bool emit_dispatch_ok = false;
     bool sim_padding_ok = false;
     bool emit_padding_ok = false;
+    bool skip_sim = false;
+    bool skip_emit = false;
+    bool emit_within_capacity = false;
+    bool sim_has_work = false;
+    bool buffers_empty = false;
 
     [[nodiscard]] bool ready_for_stub() const;
+    [[nodiscard]] bool can_emit() const;
+    [[nodiscard]] bool can_simulate() const;
 };
 
 /// Per-frame GPU stub plan: buffer sizing, dispatch counts, and empty-launch guards.
@@ -238,14 +282,23 @@ struct ParticleGpuFramePlan {
     [[nodiscard]] bool skipEmitLaunch() const;
     [[nodiscard]] bool isIdle() const { return skipSimLaunch() && skipEmitLaunch(); }
     [[nodiscard]] bool buffersSizedForCapacity() const;
+    [[nodiscard]] u32 remainingEmitSlots() const;
+    [[nodiscard]] u32 clampedEmitCount() const;
+    [[nodiscard]] bool shouldSkipGpuEmit() const;
+    [[nodiscard]] bool shouldSkipGpuSimulate() const;
     [[nodiscard]] u32 simPaddingThreadCount() const;
     [[nodiscard]] u32 emitPaddingThreadCount() const;
+    [[nodiscard]] ParticleGpuEmitPreflight preflightEmit() const;
+    [[nodiscard]] ParticleGpuSimPreflight preflightSimulate() const;
     [[nodiscard]] ParticleGpuFramePreflight preflight() const;
     [[nodiscard]] ParticleSoAGPU gpuPointers(u64 packed_device_address) const;
 };
 
 [[nodiscard]] bool should_skip_sim_dispatch(u32 capacity);
 [[nodiscard]] bool should_skip_emit_dispatch(u32 emit_count);
+[[nodiscard]] bool should_skip_empty_buffer(const ParticleGpuBuffers& buffers);
+[[nodiscard]] bool should_skip_gpu_emit(u32 emit_count, u32 capacity, u32 alive_count);
+[[nodiscard]] bool should_skip_gpu_simulate(u32 capacity, u32 alive_count, u32 emit_count);
 [[nodiscard]] bool should_skip_mirror_sync(const ParticleGpuMirror& mirror, const ParticleSoA& cpu);
 [[nodiscard]] bool should_skip_mirror_write(const ParticleGpuMirror& mirror, const ParticleSoA& cpu);
 
