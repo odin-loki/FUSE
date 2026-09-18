@@ -121,8 +121,20 @@ enum class EvictionPolicy : u8 {
     return unload_distance_priority;
 }
 
+/// Guard: eviction score; returns -1 when unload distance priority is negative under distance policy.
+[[nodiscard]] inline f32 eviction_score_for_guarded(f32 unload_distance_priority, u32 last_touch_tick,
+                                                    u32 current_tick, EvictionPolicy policy) {
+    if (policy == EvictionPolicy::DistanceFromFocus && unload_distance_priority < 0.f) {
+        return -1.f;
+    }
+    return eviction_score_for(unload_distance_priority, last_touch_tick, current_tick, policy);
+}
+
+/// True when a computed eviction score qualifies a resident for budget-driven eviction.
+[[nodiscard]] inline bool is_valid_eviction_score(f32 score) { return score > 0.f; }
+
 /// Guard: true when a budget eviction score is eligible for eviction (positive).
-[[nodiscard]] inline bool is_positive_eviction_score(f32 score) { return score > 0.f; }
+[[nodiscard]] inline bool is_positive_eviction_score(f32 score) { return is_valid_eviction_score(score); }
 
 /// Budget-pressure eviction score — prefers residency focus distance over stream-out unload priority.
 [[nodiscard]] inline f32 budget_eviction_score(f32 focus_distance, f32 unload_distance_priority, u32 last_touch_tick,
@@ -148,6 +160,23 @@ enum class EvictionPolicy : u8 {
     }
     return budget_eviction_score(focus_distance, unload_distance_priority, last_touch_tick, current_tick,
                                  policy);
+}
+
+/// Resident bytes that must be freed before `incoming_bytes` can fit under the byte cap (0 when unlimited or fits).
+[[nodiscard]] inline u64 eviction_byte_deficit(u64 max_resident_bytes, u64 resident_bytes, u64 incoming_bytes) {
+    if (byte_budget_unlimited(max_resident_bytes) || incoming_bytes == 0u) {
+        return 0u;
+    }
+    const u64 projected = resident_bytes + incoming_bytes;
+    return projected > max_resident_bytes ? projected - max_resident_bytes : 0u;
+}
+
+/// Resident cells that must be evicted before `incoming_count` can fit under the cell cap.
+[[nodiscard]] inline u32 resident_cell_deficit(u32 max_loaded_cells, u32 resident_count, u32 incoming_count = 1u) {
+    if (incoming_count == 0u || can_accept_resident_cell(max_loaded_cells, resident_count + incoming_count - 1u)) {
+        return 0u;
+    }
+    return (resident_count + incoming_count) - max_loaded_cells;
 }
 
 /// True when an incoming load (higher `priority` = closer) should evict a resident at `resident_focus_distance`.
