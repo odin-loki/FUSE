@@ -12,6 +12,7 @@
 namespace fuse::cinematics {
 
 class LookAtResolver;
+class CameraTrack;
 
 /// How a camera keyframe resolves its look-at point.
 enum class CameraLookAtMode {
@@ -33,6 +34,9 @@ struct CameraKeyframe {
 
 /// Default vertical FOV (degrees) for empty tracks and unset keyframes.
 constexpr float kDefaultCameraFovDeg = 60.f;
+
+/// Explicit default FOV accessor for editor / import wiring.
+constexpr float default_camera_fov_deg() { return kDefaultCameraFovDeg; }
 
 struct CameraSample {
     Vec3 position{};
@@ -56,11 +60,23 @@ float camera_look_distance(const Vec3& position, const Vec3& look_at);
 /// Canonical pose when a track or keyframe list has no entries.
 CameraSample default_camera_sample();
 
+/// Default pose preview anchored at `position` (empty-track / editor placement stub).
+CameraSample default_camera_sample_at(const Vec3& position, float look_distance = 10.f);
+
+/// Clamp FOV on a sampled pose; leaves other fields untouched (export / gameplay guard).
+void normalize_camera_sample(CameraSample& sample);
+
 /// True when `keyframes` has no entries (editor / rail guard).
 bool camera_keyframes_empty(const std::vector<CameraKeyframe>& keyframes);
 
+/// Readability alias for `CameraTrack::empty()`.
+bool camera_track_is_empty(const CameraTrack& track);
+
 /// True when `keyframe` binds look-at to an entity id (requires `LookAtResolver` stub).
 bool camera_keyframe_uses_entity_look_at(const CameraKeyframe& keyframe);
+
+/// True when entity look-at mode is active but `look_at_target_id` is empty (import guard).
+bool camera_keyframe_entity_target_missing(const CameraKeyframe& keyframe);
 
 /// True when any keyframe in `keyframes` requires a `LookAtResolver` at sample time.
 bool camera_track_needs_look_at_resolver(const std::vector<CameraKeyframe>& keyframes);

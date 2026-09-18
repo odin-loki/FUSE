@@ -132,12 +132,24 @@ CameraSample default_camera_sample() {
     return {};
 }
 
+void normalize_camera_sample(CameraSample& sample) {
+    sample.field_of_view = clamp_fov(sample.field_of_view);
+}
+
 bool camera_keyframes_empty(const std::vector<CameraKeyframe>& keyframes) {
     return keyframes.empty();
 }
 
+bool camera_track_is_empty(const CameraTrack& track) {
+    return track.empty();
+}
+
 bool camera_keyframe_uses_entity_look_at(const CameraKeyframe& keyframe) {
     return keyframe.look_at_mode == CameraLookAtMode::TargetEntity && !keyframe.look_at_target_id.empty();
+}
+
+bool camera_keyframe_entity_target_missing(const CameraKeyframe& keyframe) {
+    return keyframe.look_at_mode == CameraLookAtMode::TargetEntity && keyframe.look_at_target_id.empty();
 }
 
 bool camera_track_needs_look_at_resolver(const std::vector<CameraKeyframe>& keyframes) {
@@ -168,6 +180,15 @@ CameraSample sample_camera_keyframe(const CameraKeyframe& keyframe,
 
 Vec3 default_camera_look_at_for_position(const Vec3& position, float distance) {
     return {position.x, position.y, position.z - distance};
+}
+
+CameraSample default_camera_sample_at(const Vec3& position, float look_distance) {
+    CameraSample sample;
+    sample.position = position;
+    sample.look_at = default_camera_look_at_for_position(position, look_distance);
+    sample.field_of_view = kDefaultCameraFovDeg;
+    sample.roll_deg = 0.f;
+    return sample;
 }
 
 CameraKeyframeBracket find_camera_keyframe_bracket(const std::vector<CameraKeyframe>& keyframes,
