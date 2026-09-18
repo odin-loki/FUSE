@@ -27,6 +27,12 @@ bool is_audible_bus_gain(float gain);
 /// True when \p bus is a registered category bus (not \c Count or out of range).
 bool is_valid_audio_bus(AudioBus bus);
 
+/// True when \p bus is the Count sentinel or out of range (empty-bus mix guard).
+bool is_empty_audio_bus(AudioBus bus);
+
+/// True when a clamped gain is at or below the mute epsilon.
+bool is_near_zero_bus_gain(float gain);
+
 /// Per-bus gain stub — effective output walks the parent chain to Master.
 class AudioBusMixer {
 public:
@@ -60,11 +66,17 @@ public:
     bool bus_soloed(AudioBus bus) const;
     bool any_bus_soloed() const;
 
+    /// Clear all category solo flags (solo mode off).
+    void clear_bus_solo();
+
     /// True when \p bus is valid and effective gain is above the mute epsilon.
     bool should_apply_bus_gain(AudioBus bus) const;
 
     /// Early-out: false for invalid, muted, near-zero gain, or non-solo buses while solo is active.
     bool should_mix_bus(AudioBus bus) const;
+
+    /// True when solo mode silences \p bus (non-solo category while another bus is soloed).
+    bool is_bus_solo_silenced(AudioBus bus) const;
 
 private:
     float m_gains[static_cast<u32>(AudioBus::Count)] = {1.f, 1.f, 1.f, 1.f};
@@ -81,6 +93,9 @@ float compute_effective_output_gain(const AudioBusMixer& mixer, AudioBus bus,
 /// Effective output gain with mute/solo/empty-bus early-outs (returns 0 when \c should_mix_bus is false).
 float compute_mix_output_gain(const AudioBusMixer& mixer, AudioBus bus,
                               float listener_master_volume);
+
+/// True when bus mix should be skipped (invalid, muted, near-zero, or solo-silenced).
+bool should_skip_bus_mix(const AudioBusMixer& mixer, AudioBus bus);
 
 /// True when \p bus is valid and its effective gain is zero (muted stub).
 bool is_bus_muted(const AudioBusMixer& mixer, AudioBus bus);
