@@ -10,6 +10,9 @@ namespace fuse::profiler {
 /// Sentinel returned by `lastEventIndex()` when the ring buffer has no recorded events.
 constexpr u32 kInvalidEventIndex = static_cast<u32>(-1);
 
+/// Ring buffer capacity for CPU profile events (diagnostic only).
+constexpr u32 kRingCapacity = 4096u;
+
 enum class EventPhase : u8 {
     Begin,
     End,
@@ -38,6 +41,39 @@ struct ProfileEvent {
     u32 counterSnapshotFrame = 0;
 };
 
+/// Record-path preflight for scope/flow/counter stubs (B1.6 deepen follow-up).
+struct ProfilerRecordPreflight {
+    bool profiler_enabled = false;
+    bool name_valid = false;
+
+    [[nodiscard]] bool can_record_scope() const {
+        return profiler_enabled && name_valid;
+    }
+    [[nodiscard]] bool can_record_async_flow() const {
+        return profiler_enabled && name_valid;
+    }
+    [[nodiscard]] bool can_record_counter() const {
+        return profiler_enabled && name_valid;
+    }
+};
+
+/// Chrome export preflight for offline trace dumps (B1.6 deepen follow-up).
+struct ProfilerExportPreflight {
+    bool has_events = false;
+    u32 event_count = 0;
+    u32 dropped_event_count = 0;
+    bool buffer_full = false;
+
+    [[nodiscard]] bool can_export() const {
+        return has_events;
+    }
+};
+
+/// True when `name` is non-null and not the empty string.
+inline bool isNonEmptyProfileName(const char* name) {
+    return name != nullptr && name[0] != '\0';
+}
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:
@@ -62,6 +98,8 @@ void endFrame();
 
 u32 frameIndex();
 u32 eventCount();
+u32 ringCapacity();
+u32 droppedEventCount();
 u32 maxNestingDepth();
 u32 nestingDepth();
 u32 maxFlowNestingDepth();
@@ -70,6 +108,8 @@ u32 flowNestingDepth();
 u32 openAsyncFlowCount();
 
 bool hasEvents();
+bool hasExportableEvents();
+bool hasOpenAsyncFlows();
 bool isBufferEmpty();
 bool isBufferFull();
 bool isEventIndexValid(u32 index);
@@ -77,6 +117,10 @@ bool isValidProfileEvent(const ProfileEvent& event);
 u32 lastEventIndex();
 const ProfileEvent& eventAt(u32 index);
 const ProfileEvent& lastEvent();
+bool tryEventAt(u32 index, ProfileEvent& outEvent);
+bool tryLastEvent(ProfileEvent& outEvent);
+ProfilerRecordPreflight preflightRecord(const char* name);
+ProfilerExportPreflight preflightChromeTraceExport();
 void reset();
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
