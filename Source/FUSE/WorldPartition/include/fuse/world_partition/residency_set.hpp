@@ -189,6 +189,22 @@ inline u32 ResidencySet::find_index_(GridCoord coord) const {
     return set.has_eviction_candidate() ? set.pick_eviction_candidate() : kInvalidGridCoord;
 }
 
+/// Guard: returns -1 when coord is invalid or not resident.
+[[nodiscard]] inline f32 focus_distance_for_guarded(const ResidencySet& set, GridCoord coord) {
+    if (!is_valid_grid_coord(coord)) {
+        return -1.f;
+    }
+    return set.focus_distance_for(coord);
+}
+
+/// Stub: refresh focus distance for a resident cell; rejects invalid coords and negative distance.
+[[nodiscard]] inline bool try_update_resident_focus(ResidencySet& set, GridCoord coord, f32 focus_distance) {
+    if (!is_valid_grid_coord(coord)) {
+        return false;
+    }
+    return set.update_focus_distance(coord, focus_distance);
+}
+
 /// Guard: returns false when coord is invalid or not resident.
 [[nodiscard]] inline bool contains_resident_guarded(const ResidencySet& set, GridCoord coord) {
     return is_valid_grid_coord(coord) && set.contains(coord);
@@ -241,6 +257,17 @@ template <typename ScoreFn>
         }
     }
     return eligible;
+}
+
+/// Empty-set guard: return eligible budget eviction coords from a residency set (farthest-first).
+template <typename ScoreFn>
+[[nodiscard]] inline std::vector<GridCoord> collect_budget_eviction_candidates_from_set(
+    const ResidencySet& set, ScoreFn&& score_fn, f32 incoming_priority, EvictionPolicy policy) {
+    if (!set.has_eviction_candidate()) {
+        return {};
+    }
+    return collect_budget_eviction_candidates(set.collect_eviction_candidates(), score_fn, incoming_priority,
+                                              policy);
 }
 
 /// Empty-set guard: pick budget eviction candidate from a residency set.
