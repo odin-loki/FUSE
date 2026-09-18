@@ -550,6 +550,127 @@ void testSweptSphereAabbRejectsBeyondWindow() {
     expectTrue(!result.valid, "AABB entry beyond t=1 is invalid");
 }
 
+void testToiBufferCanSkipSoAIteration() {
+    ToiBufferSoA buffer;
+    expectTrue(buffer.canSkipSoAIteration(), "empty buffer skips SoA iteration");
+    expectTrue(!buffer.hasValidTois(), "empty buffer has no valid TOIs");
+
+    buffer.preparePairSlots(2u);
+    expectTrue(!buffer.canSkipSoAIteration(), "prepared slots disable SoA skip");
+    expectTrue(!buffer.hasValidTois(), "prepared slots without writes have no valid TOIs");
+
+    TOIResult result{};
+    result.valid = true;
+    result.toi = 0.3f;
+    buffer.writeSlot(0u, result);
+    expectTrue(buffer.slotIsValid(0u), "written slot reports valid");
+    expectTrue(!buffer.slotIsValid(1u), "unwritten slot reports invalid");
+}
+
+void testToiBufferWriteSlotGuards() {
+    ToiBufferSoA buffer;
+    buffer.preparePairSlots(2u);
+
+    TOIResult valid{};
+    valid.valid = true;
+    valid.toi = 0.4f;
+    valid.bodyA = 1u;
+    valid.bodyB = 2u;
+
+    TOIResult invalid{};
+    expectTrue(buffer.writeSlot(0u, valid), "writeSlot accepts valid result in range");
+    expectTrue(!buffer.writeSlot(0u, invalid), "writeSlot rejects invalid TOI");
+    expectTrue(!buffer.writeSlot(5u, valid), "writeSlot rejects out-of-range slot");
+    expectTrue(buffer.resultAtSlot(0u).valid, "resultAtSlot reads written slot");
+    expectTrue(!buffer.resultAtSlot(1u).valid, "resultAtSlot on empty slot is invalid");
+    expectTrue(!buffer.resultAtSlot(99u).valid, "resultAtSlot on out-of-range slot is invalid");
+}
+
+void testToiBufferInvalidateSlot() {
+    ToiBufferSoA buffer;
+    buffer.preparePairSlots(3u);
+
+    TOIResult result{};
+    result.valid = true;
+    result.toi = 0.5f;
+    buffer.writeSlot(1u, result);
+    expectTrue(buffer.slotIsValid(1u), "slot valid before invalidate");
+
+    buffer.invalidateSlot(1u);
+    expectTrue(!buffer.slotIsValid(1u), "slot invalid after invalidate");
+    expectTrue(!buffer.resultAtSlot(1u).valid, "resultAtSlot returns invalid after invalidate");
+
+    buffer.invalidateSlot(99u);
+    expectTrue(buffer.compact() == 0u, "invalidate leaves no valid slots to compact");
+}
+
+void testToiBufferNeedsCompact() {
+    ToiBufferSoA buffer;
+    expectTrue(!buffer.needsCompact(), "empty buffer does not need compact");
+
+    buffer.preparePairSlots(3u);
+    expectTrue(!buffer.needsCompact(), "all-invalid slots do not need compact");
+
+    TOIResult result{};
+    result.valid = true;
+    result.toi = 0.2f;
+    buffer.writeSlot(0u, result);
+    buffer.writeSlot(2u, result);
+    expectTrue(buffer.needsCompact(), "sparse valid slots need compact");
+
+    buffer.compact();
+    expectTrue(!buffer.needsCompact(), "packed buffer does not need compact");
+}
+
+void testToiBufferCompactIfNeeded() {
+    ToiBufferSoA buffer;
+    expectTrue(buffer.compactIfNeeded() == 0u, "compactIfNeeded on empty buffer is no-op");
+
+    buffer.preparePairSlots(3u);
+    TOIResult first{};
+    first.valid = true;
+    first.toi = 0.6f;
+    first.bodyA = 1u;
+
+    TOIResult second = first;
+    second.toi = 0.2f;
+    second.bodyA = 2u;
+
+    buffer.writeSlot(0u, first);
+    buffer.writeSlot(2u, second);
+    expectTrue(buffer.compactIfNeeded() == 2u, "compactIfNeeded gathers sparse slots");
+    expectTrue(buffer.activeCount == 2u, "compactIfNeeded updates active count");
+    expectNear(buffer.resultAt(0u).toi, 0.6f, 1e-5f, "compactIfNeeded preserves first packed TOI");
+    expectNear(buffer.resultAt(1u).toi, 0.2f, 1e-5f, "compactIfNeeded preserves second packed TOI");
+
+    expectTrue(buffer.compactIfNeeded() == 2u, "second compactIfNeeded is no-op on packed buffer");
+}
+
+void testToiBufferSortIfNeeded() {
+    ToiBufferSoA buffer;
+
+    TOIResult late{};
+    late.valid = true;
+    late.toi = 0.8f;
+    late.bodyA = 1u;
+
+    TOIResult early = late;
+    early.toi = 0.1f;
+    early.bodyA = 2u;
+
+    buffer.push(late);
+    buffer.push(early);
+    expectTrue(!buffer.isSortedByToi(), "unsorted push buffer reports unsorted");
+
+    buffer.sortIfNeeded();
+    expectTrue(buffer.isSortedByToi(), "sortIfNeeded leaves buffer sorted");
+    expectNear(buffer.resultAt(0u).toi, 0.1f, 1e-5f, "sortIfNeeded places earliest TOI first");
+
+    buffer.sortIfNeeded();
+    expectTrue(buffer.isSortedByToi(), "second sortIfNeeded is no-op on sorted buffer");
+    expectNear(buffer.resultAt(0u).toi, 0.1f, 1e-5f, "sortIfNeeded early-out preserves order");
+}
+
 void testToiBufferClearReuse() {
     ToiBufferSoA buffer;
     buffer.reserve(8u);
@@ -786,6 +907,12 @@ int main() {
     testSweptSphereAabbRejectsMiss();
     testSweptSphereAabbStartsInsideBox();
     testSweptSphereAabbRejectsBeyondWindow();
+    testToiBufferCanSkipSoAIteration();
+    testToiBufferWriteSlotGuards();
+    testToiBufferInvalidateSlot();
+    testToiBufferNeedsCompact();
+    testToiBufferCompactIfNeeded();
+    testToiBufferSortIfNeeded();
     testToiBufferClearReuse();
     testRunCcdIntoBufferMaxCapacityKeepsEarliest();
     testRunCcdIntoBufferSortsEarliestFirst();
