@@ -67,6 +67,13 @@ bool ProbeGridLayout::isBorderProbeCoord(const DDGIDesc& desc, const ProbeGridCo
            coord.z == max_z;
 }
 
+bool ProbeGridLayout::isBorderProbeIndex(const DDGIDesc& desc, u32 probe_index) {
+    if (!isValidProbeIndex(desc, probe_index)) {
+        return false;
+    }
+    return isBorderProbeCoord(desc, probeCoordFromIndex(desc, probe_index));
+}
+
 ProbeBorderKind ProbeGridLayout::probeBorderKind(const DDGIDesc& desc, const ProbeGridCoord& coord) {
     if (isEmptyGrid(desc) || !isValidProbeCoord(desc, coord)) {
         return ProbeBorderKind::Invalid;
@@ -102,6 +109,13 @@ ProbeBorderKind ProbeGridLayout::probeBorderKind(const DDGIDesc& desc, const Pro
         return ProbeBorderKind::Edge;
     }
     return ProbeBorderKind::Corner;
+}
+
+ProbeBorderKind ProbeGridLayout::probeBorderKindFromIndex(const DDGIDesc& desc, u32 probe_index) {
+    if (!isValidProbeIndex(desc, probe_index)) {
+        return ProbeBorderKind::Invalid;
+    }
+    return probeBorderKind(desc, probeCoordFromIndex(desc, probe_index));
 }
 
 ProbeValidityFlags ProbeGridLayout::probeValidity(const DDGIDesc& desc, const ProbeGridCoord& coord) {
@@ -226,6 +240,59 @@ bool ProbeGridLayout::buildProbeSampleCoords(const DDGIDesc& desc,
     out_coords.ty = clamped.y - static_cast<f32>(out_coords.y0);
     out_coords.tz = clamped.z - static_cast<f32>(out_coords.z0);
     return true;
+}
+
+bool ProbeGridLayout::isValidProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
+    if (isEmptyGrid(desc)) {
+        return false;
+    }
+
+    const u32 max_x = desc.grid_dims.x - 1u;
+    const u32 max_y = desc.grid_dims.y - 1u;
+    const u32 max_z = desc.grid_dims.z - 1u;
+
+    if (coords.x0 > coords.x1 || coords.y0 > coords.y1 || coords.z0 > coords.z1) {
+        return false;
+    }
+    if (coords.x0 > max_x || coords.x1 > max_x || coords.y0 > max_y || coords.y1 > max_y ||
+        coords.z0 > max_z || coords.z1 > max_z) {
+        return false;
+    }
+    if (coords.tx < 0.f || coords.tx > 1.f || coords.ty < 0.f || coords.ty > 1.f || coords.tz < 0.f ||
+        coords.tz > 1.f) {
+        return false;
+    }
+    return true;
+}
+
+bool ProbeGridLayout::tryBuildProbeSampleCoords(const DDGIDesc& desc,
+                                                const fuse::math::Vec3& world_position,
+                                                ProbeSampleCoords& out_coords) {
+    if (!buildProbeSampleCoords(desc, world_position, out_coords)) {
+        return false;
+    }
+    return isValidProbeSampleCoords(desc, out_coords);
+}
+
+bool ProbeGridLayout::sampleCoordsTouchBorder(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
+    if (isEmptyGrid(desc) || !isValidProbeSampleCoords(desc, coords)) {
+        return false;
+    }
+
+    const ProbeGridCoord corners[8] = {{coords.x0, coords.y0, coords.z0},
+                                       {coords.x1, coords.y0, coords.z0},
+                                       {coords.x0, coords.y1, coords.z0},
+                                       {coords.x1, coords.y1, coords.z0},
+                                       {coords.x0, coords.y0, coords.z1},
+                                       {coords.x1, coords.y0, coords.z1},
+                                       {coords.x0, coords.y1, coords.z1},
+                                       {coords.x1, coords.y1, coords.z1}};
+    for (const ProbeGridCoord& corner : corners) {
+        if (isBorderProbeCoord(desc, corner)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 fuse::math::Vec2 DdgiIrradianceEncoding::clampEncodedUV(const fuse::math::Vec2& encoded) {
@@ -489,24 +556,67 @@ bool validateProbeBorderCounts(const ProbeBorderCounts& counts) {
     return counts.face + counts.edge + counts.corner == counts.border;
 }
 
-bool canSampleProbeGrid(const DDGIDesc& desc) {
+u32 requiredCacheCount(const DDGIDesc& desc) {
+    return probeCount(desc);
+}
+
+u32 cacheDeficitForGrid(const DDGIDesc& desc, u32 cache_count) {
+    const u32 required = requiredCacheCount(desc);
+    if (required == 0u || cache_count >= required) {
+        return 0u;
+    }
+    return required - cache_count;
+}
+
+ProbeSampleSkipReason classifyProbeGridSkip(const DDGIDesc& desc) {
     if (ProbeGridLayout::isEmptyGrid(desc)) {
-        return false;
+        return ProbeSampleSkipReason::EmptyGrid;
     }
     if (desc.irradiance_res == 0u) {
-        return false;
+        return ProbeSampleSkipReason::ZeroIrradianceResolution;
     }
-    return desc.probe_spacing.x > 0.f && desc.probe_spacing.y > 0.f && desc.probe_spacing.z > 0.f;
+    if (desc.probe_spacing.x <= 0.f || desc.probe_spacing.y <= 0.f || desc.probe_spacing.z <= 0.f) {
+        return ProbeSampleSkipReason::InvalidProbeSpacing;
+    }
+    return ProbeSampleSkipReason::None;
 }
 
 bool isCacheSizedForGrid(const DDGIDesc& desc, u32 cache_count) {
-    return cache_count >= probeCount(desc);
+    return cacheDeficitForGrid(desc, cache_count) == 0u;
+}
+
+ProbeSampleSkipReason classifyProbeSampleSkip(const DDGIDesc& desc, u32 cache_count) {
+    const ProbeSampleSkipReason grid_reason = classifyProbeGridSkip(desc);
+    if (grid_reason != ProbeSampleSkipReason::None) {
+        return grid_reason;
+    }
+    if (!isCacheSizedForGrid(desc, cache_count)) {
+        return ProbeSampleSkipReason::UndersizedCache;
+    }
+    return ProbeSampleSkipReason::None;
+}
+
+ProbeSampleSkipReason classifyProbeSampleLookup(const DDGIDesc& desc,
+                                                const IrradianceCacheEntry* cache,
+                                                u32 cache_count) {
+    if (cache == nullptr) {
+        const ProbeSampleSkipReason grid_reason = classifyProbeGridSkip(desc);
+        if (grid_reason != ProbeSampleSkipReason::None) {
+            return grid_reason;
+        }
+        return ProbeSampleSkipReason::NullCache;
+    }
+    return classifyProbeSampleSkip(desc, cache_count);
+}
+
+bool canSampleProbeGrid(const DDGIDesc& desc) {
+    return classifyProbeGridSkip(desc) == ProbeSampleSkipReason::None;
 }
 
 bool isValidSampleRequest(const DDGIDesc& desc,
                           const DDGISampleRequest& /*request*/,
                           u32 cache_count) {
-    return canSampleProbeGrid(desc) && isCacheSizedForGrid(desc, cache_count);
+    return classifyProbeSampleSkip(desc, cache_count) == ProbeSampleSkipReason::None;
 }
 
 fuse::math::Vec3 probeWorldPosition(const DDGIDesc& desc, u32 probe_index) {
@@ -631,12 +741,12 @@ fuse::math::Vec3 trilinearProbeIrradiance(const DDGIDesc& desc,
                                           const fuse::math::Vec3& world_position,
                                           const IrradianceCacheEntry* cache,
                                           u32 cache_count) {
-    if (cache == nullptr || !canSampleProbeGrid(desc) || !isCacheSizedForGrid(desc, cache_count)) {
+    if (classifyProbeSampleLookup(desc, cache, cache_count) != ProbeSampleSkipReason::None) {
         return {};
     }
 
     ProbeSampleCoords coords{};
-    if (!ProbeGridLayout::buildProbeSampleCoords(desc, world_position, coords)) {
+    if (!ProbeGridLayout::tryBuildProbeSampleCoords(desc, world_position, coords)) {
         return {};
     }
 
@@ -673,14 +783,14 @@ fuse::math::Vec3 trilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
                                                      const fuse::math::Vec3& direction,
                                                      const IrradianceCacheEntry* cache,
                                                      u32 cache_count) {
-    if (cache == nullptr || !canSampleProbeGrid(desc) || !isCacheSizedForGrid(desc, cache_count)) {
+    if (classifyProbeSampleLookup(desc, cache, cache_count) != ProbeSampleSkipReason::None) {
         return {};
     }
 
     const fuse::math::Vec3 sample_direction = DdgiIrradianceEncoding::resolveSampleDirection(direction);
 
     ProbeSampleCoords coords{};
-    if (!ProbeGridLayout::buildProbeSampleCoords(desc, world_position, coords)) {
+    if (!ProbeGridLayout::tryBuildProbeSampleCoords(desc, world_position, coords)) {
         return {};
     }
 
@@ -733,6 +843,28 @@ u32 nearestProbeIndex(const DDGIDesc& desc, const fuse::math::Vec3& world_positi
 }
 
 } // namespace ddgi_util
+
+const char* probeSampleSkipReasonLabel(ProbeSampleSkipReason reason) {
+    switch (reason) {
+    case ProbeSampleSkipReason::None:
+        return "none";
+    case ProbeSampleSkipReason::EmptyGrid:
+        return "empty_grid";
+    case ProbeSampleSkipReason::ZeroIrradianceResolution:
+        return "zero_irradiance_resolution";
+    case ProbeSampleSkipReason::InvalidProbeSpacing:
+        return "invalid_probe_spacing";
+    case ProbeSampleSkipReason::UndersizedCache:
+        return "undersized_cache";
+    case ProbeSampleSkipReason::NullCache:
+        return "null_cache";
+    }
+    return "unknown";
+}
+
+bool probeSampleSkipReasonIsBlocking(ProbeSampleSkipReason reason) {
+    return reason != ProbeSampleSkipReason::None;
+}
 
 DdgiInfo ddgi_info() {
     DdgiInfo info{};
@@ -885,6 +1017,11 @@ bool DDGI::update(u32 frame_index, void* cuda_stream) {
 DDGISampleResult DDGI::sampleIrradiance(const DDGISampleRequest& request) const {
     DDGISampleResult result{};
     if (!m_ready) {
+        return result;
+    }
+
+    const u32 cache_count = static_cast<u32>(m_cache.size());
+    if (!ddgi_util::isValidSampleRequest(m_desc, request, cache_count)) {
         return result;
     }
 

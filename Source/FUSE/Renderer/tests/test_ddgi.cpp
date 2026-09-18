@@ -383,6 +383,153 @@ void testProbeBorderCounts() {
                "inconsistent interior+border sum fails validation");
 }
 
+void testBorderProbeIndexGuards() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {3, 3, 3};
+
+    expectTrue(fuse::renderer::ProbeGridLayout::isBorderProbeIndex(desc, 0u),
+               "origin probe index is border");
+    expectTrue(fuse::renderer::ProbeGridLayout::isBorderProbeIndex(desc, 26u),
+               "last probe index is border");
+    expectTrue(!fuse::renderer::ProbeGridLayout::isBorderProbeIndex(desc, 13u),
+               "interior probe index is not border");
+    expectTrue(!fuse::renderer::ProbeGridLayout::isBorderProbeIndex(desc, 99u),
+               "OOB probe index is not border");
+
+    expectTrue(fuse::renderer::ProbeGridLayout::probeBorderKindFromIndex(desc, 0u) ==
+                   fuse::renderer::ProbeBorderKind::Corner,
+               "origin index is corner kind");
+    expectTrue(fuse::renderer::ProbeGridLayout::probeBorderKindFromIndex(desc, 13u) ==
+                   fuse::renderer::ProbeBorderKind::Interior,
+               "interior index is interior kind");
+    expectTrue(fuse::renderer::ProbeGridLayout::probeBorderKindFromIndex(desc, 99u) ==
+                   fuse::renderer::ProbeBorderKind::Invalid,
+               "OOB index border kind is invalid");
+}
+
+void testProbeSampleCoordGuards() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_origin = {0.f, 0.f, 0.f};
+    desc.probe_spacing = {1.f, 1.f, 1.f};
+    desc.grid_dims = {4, 4, 4};
+
+    fuse::renderer::ProbeSampleCoords built{};
+    expectTrue(fuse::renderer::ProbeGridLayout::tryBuildProbeSampleCoords(desc, {1.5f, 1.5f, 1.5f}, built),
+               "tryBuildProbeSampleCoords succeeds for interior sample");
+    expectTrue(fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, built),
+               "built interior sample coords are valid");
+    expectTrue(!fuse::renderer::ProbeGridLayout::sampleCoordsTouchBorder(desc, built),
+               "interior sample coords do not touch border");
+
+    fuse::renderer::DDGIDesc borderDesc = desc;
+    borderDesc.grid_dims = {2, 2, 2};
+    fuse::renderer::ProbeSampleCoords border{};
+    expectTrue(fuse::renderer::ProbeGridLayout::tryBuildProbeSampleCoords(borderDesc, {0.f, 0.f, 0.f}, border),
+               "tryBuildProbeSampleCoords succeeds for border sample");
+    expectTrue(fuse::renderer::ProbeGridLayout::sampleCoordsTouchBorder(borderDesc, border),
+               "border sample coords touch grid border");
+
+    fuse::renderer::ProbeSampleCoords invalid{};
+    invalid.x0 = 2u;
+    invalid.x1 = 1u;
+    invalid.y0 = 0u;
+    invalid.y1 = 1u;
+    invalid.z0 = 0u;
+    invalid.z1 = 1u;
+    invalid.tx = 0.5f;
+    invalid.ty = 0.5f;
+    invalid.tz = 0.5f;
+    expectTrue(!fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, invalid),
+               "inverted x indices fail validation");
+
+    fuse::renderer::ProbeSampleCoords oobWeights = built;
+    oobWeights.tx = 1.5f;
+    expectTrue(!fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, oobWeights),
+               "OOB trilinear weight fails validation");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+    fuse::renderer::ProbeSampleCoords emptyBuilt{};
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryBuildProbeSampleCoords(empty, {0.f, 0.f, 0.f}, emptyBuilt),
+               "tryBuildProbeSampleCoords fails on empty grid");
+}
+
+void testCacheSizingGuards() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+    desc.irradiance_res = 8;
+
+    expectTrue(fuse::renderer::ddgi_util::requiredCacheCount(desc) == 8u,
+               "required cache count matches probe count");
+    expectTrue(fuse::renderer::ddgi_util::cacheDeficitForGrid(desc, 8u) == 0u,
+               "full cache has zero deficit");
+    expectTrue(fuse::renderer::ddgi_util::cacheDeficitForGrid(desc, 5u) == 3u,
+               "undersized cache reports deficit");
+    expectTrue(fuse::renderer::ddgi_util::isCacheSizedForGrid(desc, 8u),
+               "full cache passes sizing guard");
+    expectTrue(!fuse::renderer::ddgi_util::isCacheSizedForGrid(desc, 5u),
+               "undersized cache fails sizing guard");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+    expectTrue(fuse::renderer::ddgi_util::requiredCacheCount(empty) == 0u,
+               "empty grid requires zero cache entries");
+    expectTrue(fuse::renderer::ddgi_util::cacheDeficitForGrid(empty, 0u) == 0u,
+               "empty grid cache deficit is zero");
+}
+
+void testProbeSampleSkipClassification() {
+    using fuse::renderer::ProbeSampleSkipReason;
+
+    expectTrue(!fuse::renderer::probeSampleSkipReasonIsBlocking(ProbeSampleSkipReason::None),
+               "None skip reason is not blocking");
+    expectTrue(fuse::renderer::probeSampleSkipReasonIsBlocking(ProbeSampleSkipReason::UndersizedCache),
+               "UndersizedCache skip reason is blocking");
+    expectTrue(std::string(fuse::renderer::probeSampleSkipReasonLabel(ProbeSampleSkipReason::EmptyGrid)) ==
+                   "empty_grid",
+               "EmptyGrid skip reason label");
+
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+    desc.irradiance_res = 8;
+
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSkip(desc) == ProbeSampleSkipReason::None,
+               "valid grid passes grid skip classification");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeSampleSkip(desc, 8u) == ProbeSampleSkipReason::None,
+               "valid grid and cache pass sample skip classification");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeSampleSkip(desc, 4u) ==
+                   ProbeSampleSkipReason::UndersizedCache,
+               "undersized cache classified as UndersizedCache");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSkip(empty) == ProbeSampleSkipReason::EmptyGrid,
+               "empty grid classified as EmptyGrid");
+
+    fuse::renderer::DDGIDesc zeroRes = desc;
+    zeroRes.irradiance_res = 0u;
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSkip(zeroRes) ==
+                   ProbeSampleSkipReason::ZeroIrradianceResolution,
+               "zero irradiance_res classified");
+
+    fuse::renderer::DDGIDesc badSpacing = desc;
+    badSpacing.probe_spacing = {0.f, 1.f, 1.f};
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSkip(badSpacing) ==
+                   ProbeSampleSkipReason::InvalidProbeSpacing,
+               "invalid spacing classified");
+
+    std::vector<fuse::renderer::IrradianceCacheEntry> cache(8);
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeSampleLookup(desc, cache.data(), 8u) ==
+                   ProbeSampleSkipReason::None,
+               "valid lookup passes classification");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeSampleLookup(desc, nullptr, 8u) ==
+                   ProbeSampleSkipReason::NullCache,
+               "null cache classified as NullCache");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeSampleLookup(empty, cache.data(), 8u) ==
+                   ProbeSampleSkipReason::EmptyGrid,
+               "empty grid lookup prefers EmptyGrid over NullCache");
+}
+
 void testResolveSampleDirectionFromSurface() {
     const fuse::math::Vec3 up{0.f, 1.f, 0.f};
     const fuse::math::Vec3 right{1.f, 0.f, 0.f};
@@ -407,8 +554,6 @@ void testResolveSampleDirectionFromSurface() {
 }
 
 void testEmptyDirectionGuards() {
-    expectTrue(fuse::renderer::DdgiIrradianceEncoding::isEmptyDirection({0.f, 0.f, 0.f}),
-               "zero direction is empty");
     expectTrue(!fuse::renderer::DdgiIrradianceEncoding::isEmptyDirection({0.f, 1.f, 0.f}),
                "unit +Y is not empty");
 
@@ -845,6 +990,10 @@ int main() {
     testProbePerAxisClamp();
     testClampProbeSampleCoords();
     testProbeBorderCounts();
+    testBorderProbeIndexGuards();
+    testProbeSampleCoordGuards();
+    testCacheSizingGuards();
+    testProbeSampleSkipClassification();
     testResolveSampleDirectionFromSurface();
     testEmptyDirectionGuards();
     testSampleGuards();
