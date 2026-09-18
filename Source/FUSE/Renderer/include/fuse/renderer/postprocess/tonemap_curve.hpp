@@ -59,6 +59,8 @@ bool tonemap_curve_preserves_black(const TonemapCurveParams& params, f32 epsilon
 bool tonemap_curve_params_valid(const TonemapCurveParams& params);
 /// True when a tonemap curve can be applied without invalid knobs (B5.10 deepen).
 bool tonemap_curve_can_apply(const TonemapCurveParams& params);
+/// True when a per-channel curve output stays in display range (B5.10 deepen).
+bool tonemap_curve_channel_in_display_range(f32 channel, f32 epsilon = 1e-4f);
 /// True when black/white anchors stay in display range with positive span (B5.10 deepen).
 bool tonemap_curve_endpoints_valid(const TonemapCurveEndpoints& endpoints, f32 epsilon = 1e-4f);
 /// True when endpoint input anchors are ordered and non-negative (B5.10 deepen).
