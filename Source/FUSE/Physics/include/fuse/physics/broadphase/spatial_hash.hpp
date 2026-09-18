@@ -16,6 +16,8 @@ struct SpatialHashParams {
     u32 bodyCount = 0;
     /// Per-axis cell span clamp for shape occupancy iteration (0 = unlimited stub).
     u32 maxCellSpanPerAxis = 64u;
+    /// Per-shape total cell occupancy budget (0 = unlimited stub).
+    u32 maxCellOccupancyCount = 0u;
 };
 
 struct CandidatePair {
@@ -162,6 +164,73 @@ FUSE_PHYSICS_INLINE SpatialHashParams normalizeSpatialHashParams(SpatialHashPara
     params.tableSize = clampTableSize(params.tableSize);
     return params;
 }
+
+/// True when both body and shape SoA inputs are empty (broadphase early-out guard).
+FUSE_PHYSICS_INLINE bool isEmptyBroadphaseInput(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return bodies.count() == 0u || shapes.count() == 0u;
+}
+
+/// True when a hash cell has fewer than two occupants (no pairs possible).
+FUSE_PHYSICS_INLINE bool isEmptyCellBucket(usize occupantCount) {
+    return occupantCount < 2u;
+}
+
+/// True when a candidate pair vector has no entries.
+FUSE_PHYSICS_INLINE bool isEmptyPairList(const std::vector<CandidatePair>& pairs) {
+    return pairs.empty();
+}
+
+/// True when occupancy count exceeds the per-shape budget (0 budget = never exceeds).
+FUSE_PHYSICS_INLINE bool exceedsCellOccupancyBudget(u32 occupancyCount, u32 maxOccupancy) {
+    return maxOccupancy > 0u && occupancyCount > maxOccupancy;
+}
+
+FUSE_PHYSICS_INLINE bool exceedsCellOccupancyBudget(const CellRange3& range, u32 maxOccupancy) {
+    return exceedsCellOccupancyBudget(estimateCellOccupancyCount(range), maxOccupancy);
+}
+
+FUSE_PHYSICS_INLINE bool exceedsCellOccupancyBudget(const CellRange2& range, u32 maxOccupancy) {
+    return exceedsCellOccupancyBudget(estimateCellOccupancyCount(range), maxOccupancy);
+}
+
+/// Skip shape→cell insertion when range is empty or over occupancy budget.
+FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(const CellRange3& range, u32 maxOccupancy) {
+    return isEmptyCellRange(range) || exceedsCellOccupancyBudget(range, maxOccupancy);
+}
+
+FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(const CellRange2& range, u32 maxOccupancy) {
+    return isEmptyCellRange(range) || exceedsCellOccupancyBudget(range, maxOccupancy);
+}
+
+/// Count pairs in a list that pass the validity guard.
+FUSE_PHYSICS_INLINE u32 countValidCandidatePairs(
+    const std::vector<CandidatePair>& pairs,
+    u32 bodyCount = 0u) {
+    u32 validCount = 0u;
+    for (const CandidatePair& pair : pairs) {
+        if (isValidCandidatePair(pair, bodyCount)) {
+            ++validCount;
+        }
+    }
+    return validCount;
+}
+
+/// True when every pair in the list is valid and canonical (bodyA <= bodyB).
+FUSE_PHYSICS_INLINE bool pairListIsCanonical(
+    const std::vector<CandidatePair>& pairs,
+    u32 bodyCount = 0u) {
+    for (const CandidatePair& pair : pairs) {
+        if (!isValidCandidatePair(pair, bodyCount) || pair.bodyA > pair.bodyB) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// Remove invalid/self pairs from a candidate list in place; returns remaining count.
+u32 pruneInvalidCandidatePairs(std::vector<CandidatePair>& pairs, u32 bodyCount = 0u);
 
 /// Limit per-axis cell span from the range center (CUDA occupancy iteration guard stub).
 FUSE_PHYSICS_INLINE CellRange3 clampCellRange3(CellRange3 range, u32 maxSpanPerAxis) {
