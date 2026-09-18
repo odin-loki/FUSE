@@ -30,8 +30,11 @@ public:
     [[nodiscard]] u32 oldest_stored_frame() const { return m_oldest_frame; }
     [[nodiscard]] u32 newest_stored_frame() const { return m_newest_frame; }
     [[nodiscard]] u32 stored_frame_count() const;
+    [[nodiscard]] u32 remaining_capacity() const;
     [[nodiscard]] bool empty() const { return stored_frame_count() == 0; }
     [[nodiscard]] bool has_frame(u32 frame) const;
+    /// True when pushing `frame` would evict the oldest retained frame (B7.4 deepen follow-up).
+    [[nodiscard]] bool will_evict_oldest_on_push(u32 frame) const;
 
     /// Push a predicted local input for `frame` (ring may evict the oldest retained frame).
     void push_frame(u32 frame, const PlayerInput& predicted);
@@ -71,8 +74,15 @@ private:
 
     [[nodiscard]] const InputSlot* slot_(u32 frame) const;
     [[nodiscard]] InputSlot* slot_mut_(u32 frame);
+    void evict_before_write_(u32 frame);
     void touch_frame_(u32 frame);
 };
+
+/// True when the input history ring has no retained frames (B7.4 deepen follow-up).
+[[nodiscard]] bool is_empty_input_history(const InputHistoryBuffer& history);
+
+/// Free slots before the ring must evict the oldest retained frame on the next push.
+[[nodiscard]] u32 input_history_remaining_capacity(const InputHistoryBuffer& history);
 
 /// Bitwise equality over all `PlayerInput` payload fields (frame id excluded).
 [[nodiscard]] bool inputs_equal(const PlayerInput& a, const PlayerInput& b);
