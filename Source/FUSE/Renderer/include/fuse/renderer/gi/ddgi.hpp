@@ -195,6 +195,10 @@ struct ProbeGridLayout {
     static u32 probeIndexFromClampedCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
     /// Clamp trilinear corner indices/weights to grid bounds (no-op on empty grid).
     static void clampProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCoords& coords);
+    /// Ensure corner indices are ordered (x0≤x1, …) and weights stay in [0, 1].
+    static void normalizeProbeSampleCoords(ProbeSampleCoords& coords);
+    /// True when corner indices lie within the grid and weights are in [0, 1].
+    static bool isValidProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
@@ -233,6 +237,10 @@ bool validateProbeBorderCounts(const ProbeBorderCounts& counts);
 bool canSampleProbeGrid(const DDGIDesc& desc);
 /// True when `cache_count` covers every probe in `desc`.
 bool isCacheSizedForGrid(const DDGIDesc& desc, u32 cache_count);
+/// Minimum irradiance-cache length required for full-grid trilinear sampling.
+u32 requiredCacheCount(const DDGIDesc& desc);
+/// Combined probe-index + cache-length guard for cache lookups.
+bool isCacheIndexValid(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
 bool isValidSampleRequest(const DDGIDesc& desc,
                           const DDGISampleRequest& request,
