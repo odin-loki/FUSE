@@ -256,22 +256,26 @@ u32 PairBufferSoA::countValidSlots() const {
     return validCount;
 }
 
+bool PairBufferSoA::hasInvalidSlots() const {
+    if (canSkipSoAIteration()) {
+        return false;
+    }
+
+    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+    for (u32 slot = 0; slot < scanCount; ++slot) {
+        if (validFlags[slot] == 0u) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool PairBufferSoA::canSkipCompaction() const {
     if (canSkipSoAIteration()) {
         return true;
     }
 
-    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
-    if (scanCount == 0u) {
-        return true;
-    }
-
-    for (u32 slot = 0; slot < scanCount; ++slot) {
-        if (validFlags[slot] == 0u) {
-            return false;
-        }
-    }
-    return true;
+    return !hasInvalidSlots();
 }
 
 bool PairBufferSoA::slotIsValid(u32 slot) const {

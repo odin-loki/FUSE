@@ -34,8 +34,12 @@ struct PairBufferSoA {
     bool canSkipSoAIteration() const { return activeCount == 0u && pairSlotCount == 0u; }
     /// True when at most one canonical pair is present (dedupe is a no-op).
     bool canSkipDedupe() const { return canSkipSoAIteration() || activeCount <= 1u; }
+    /// True when AABB refine can be skipped (no pairs to test).
+    bool canSkipRefine() const { return canSkipSoAIteration() || !hasValidPairs(); }
     /// True when slot storage has no invalid flags (compact is a no-op).
     bool canSkipCompaction() const;
+    /// True when compact has invalidated slots to gather.
+    bool hasInvalidSlots() const;
     /// Count valid flags in prepared slot storage before compaction.
     u32 countValidSlots() const;
     bool slotIsValid(u32 slot) const;

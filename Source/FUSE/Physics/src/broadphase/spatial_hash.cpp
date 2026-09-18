@@ -12,6 +12,56 @@
 
 namespace fuse::physics::broadphase {
 
+bool PairBufferPreflight::can_push(u32 additionalCount) const {
+    if (additionalCount == 0u) {
+        return true;
+    }
+    if (full) {
+        return false;
+    }
+    return remaining >= additionalCount;
+}
+
+BroadphaseInputPreflight preflight_broadphase_input(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    BroadphaseInputPreflight preflight{};
+    preflight.emptyBodies = bodies.count() == 0u;
+    preflight.emptyShapes = shapes.count() == 0u;
+    preflight.skipped = isEmptyBroadphaseInput(bodies, shapes);
+    return preflight;
+}
+
+PairBufferPreflight preflight_pair_buffer(const PairBufferSoA& buffer) {
+    PairBufferPreflight preflight{};
+    preflight.activeCount = buffer.activeCount;
+    preflight.remaining = buffer.remainingCapacity();
+    preflight.empty = buffer.isEmpty();
+    preflight.full = buffer.isFull();
+    preflight.hasDropped = buffer.hasDroppedPairs();
+    return preflight;
+}
+
+BroadphaseRefinePreflight preflight_broadphase_refine(
+    const PairBufferSoA& buffer,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    BroadphaseRefinePreflight preflight{};
+    preflight.emptyBuffer = buffer.canSkipRefine();
+    preflight.emptyInput = isEmptyBroadphaseInput(bodies, shapes);
+    preflight.pairCount = buffer.activeCount;
+    preflight.skipped = preflight.emptyBuffer || preflight.emptyInput;
+    return preflight;
+}
+
+BroadphaseDedupePreflight preflight_broadphase_dedupe(const PairBufferSoA& buffer) {
+    BroadphaseDedupePreflight preflight{};
+    preflight.activeCount = buffer.activeCount;
+    preflight.skipped = buffer.canSkipSoAIteration();
+    preflight.noOp = buffer.canSkipDedupe();
+    return preflight;
+}
+
 const char* candidatePairRejectReasonName(CandidatePairRejectReason reason) {
     switch (reason) {
     case CandidatePairRejectReason::None:
@@ -96,7 +146,7 @@ std::vector<u32> uniqueOccupants(const std::vector<u32>& occupants) {
 }
 
 u32 countPairsForCell(const std::vector<u32>& occupants) {
-    if (occupants.size() < 2u) {
+    if (isEmptyCellBucket(occupants.size())) {
         return 0u;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -105,7 +155,7 @@ u32 countPairsForCell(const std::vector<u32>& occupants) {
 }
 
 void generatePairsForCell(const std::vector<u32>& occupants, std::vector<CandidatePair>& out) {
-    if (occupants.size() < 2u) {
+    if (isEmptyCellBucket(occupants.size())) {
         return;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -120,7 +170,7 @@ void writePairsForCellSlots(
     const std::vector<u32>& occupants,
     u32 slotStart,
     PairBufferSoA& buffer) {
-    if (occupants.size() < 2u) {
+    if (isEmptyCellBucket(occupants.size())) {
         return;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -200,7 +250,8 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
 }
 
 void dedupeBuffer(PairBufferSoA& buffer) {
-    if (buffer.canSkipDedupe()) {
+    const BroadphaseDedupePreflight preflight = preflight_broadphase_dedupe(buffer);
+    if (!preflight.needs_dedupe()) {
         return;
     }
 
@@ -245,7 +296,8 @@ void runBroadphaseIntoBufferInternal(
     bool use2D,
     PairBufferSoA& buffer) {
     buffer.clear();
-    if (canSkipBroadphase(bodies, shapes)) {
+    const BroadphaseInputPreflight inputPreflight = preflight_broadphase_input(bodies, shapes);
+    if (!inputPreflight.can_run()) {
         return;
     }
 
@@ -332,7 +384,8 @@ void refineBroadphasePairsParallelImpl(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     PairBufferSoA& buffer) {
-    if (buffer.canSkipSoAIteration() || !buffer.hasValidPairs() || canSkipBroadphase(bodies, shapes)) {
+    const BroadphaseRefinePreflight refinePreflight = preflight_broadphase_refine(buffer, bodies, shapes);
+    if (!refinePreflight.can_refine()) {
         return;
     }
 
