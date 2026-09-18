@@ -118,6 +118,9 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
         if (policy.requireAllyContext && !ally_context_available(ctx.allies)) {
             return {};
         }
+        if (policy.requireValidAgent && !board.isAgentValid(agentIndex)) {
+            return {};
+        }
 
         const u32 failLimit = policy.failThreshold > 0 ? policy.failThreshold : 1u;
         const u32 successNeeded =
@@ -367,6 +370,36 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
     case NodeKind::GuardBlackboardEmpty: {
         BehaviorTickResult result;
         result.status = board.agentCount() == 0u ? BehaviorStatus::Success : BehaviorStatus::Failure;
+        return result;
+    }
+    case NodeKind::GuardBlackboardAgentValid: {
+        BehaviorTickResult result;
+        result.status = board.isAgentValid(agentIndex) ? BehaviorStatus::Success : BehaviorStatus::Failure;
+        return result;
+    }
+    case NodeKind::GuardBlackboardFlagSet: {
+        BehaviorTickResult result;
+        if (!board.isBound()) {
+            result.status = BehaviorStatus::Failure;
+            return result;
+        }
+        const u32 flag = node.flagIndex < Blackboard::kMaxFlags ? node.flagIndex : 0u;
+        result.status = board.isFlagSet(agentIndex, flag) ? BehaviorStatus::Success : BehaviorStatus::Failure;
+        return result;
+    }
+    case NodeKind::GuardBlackboardScalarSet: {
+        BehaviorTickResult result;
+        if (!board.isBound()) {
+            result.status = BehaviorStatus::Failure;
+            return result;
+        }
+        const u32 slot = node.scalarSlot < Blackboard::kMaxScalars ? node.scalarSlot : 0u;
+        result.status = board.isScalarSet(agentIndex, slot) ? BehaviorStatus::Success : BehaviorStatus::Failure;
+        return result;
+    }
+    case NodeKind::GuardSpatialRadiusValid: {
+        BehaviorTickResult result;
+        result.status = is_valid_ally_radius(node.threshold) ? BehaviorStatus::Success : BehaviorStatus::Failure;
         return result;
     }
     case NodeKind::GuardAllyContext: {

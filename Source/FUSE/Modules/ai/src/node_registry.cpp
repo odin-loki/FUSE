@@ -39,6 +39,7 @@ BehaviorNode makeParallel(const NodeLoadSpec& spec) {
     node.parallelPolicy.abortOnSuccess = spec.abortOnSuccess;
     node.parallelPolicy.requireBoundBlackboard = spec.requireBoundBlackboard;
     node.parallelPolicy.requireAllyContext = spec.requireAllyContext;
+    node.parallelPolicy.requireValidAgent = spec.requireValidAgent;
     return node;
 }
 
@@ -197,6 +198,34 @@ BehaviorNode makeGuardBlackboardEmpty(const NodeLoadSpec& spec) {
     return node;
 }
 
+BehaviorNode makeGuardBlackboardAgentValid(const NodeLoadSpec& spec) {
+    (void)spec;
+    BehaviorNode node;
+    node.kind = NodeKind::GuardBlackboardAgentValid;
+    return node;
+}
+
+BehaviorNode makeGuardBlackboardFlagSet(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::GuardBlackboardFlagSet;
+    node.flagIndex = spec.flagIndex;
+    return node;
+}
+
+BehaviorNode makeGuardBlackboardScalarSet(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::GuardBlackboardScalarSet;
+    node.scalarSlot = spec.scalarSlot;
+    return node;
+}
+
+BehaviorNode makeGuardSpatialRadiusValid(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::GuardSpatialRadiusValid;
+    node.threshold = spec.threshold;
+    return node;
+}
+
 BehaviorNode makeGuardAllyContext(const NodeLoadSpec& spec) {
     (void)spec;
     BehaviorNode node;
@@ -268,6 +297,10 @@ void NodeRegistry::registerBuiltins() {
     registerFactory("bb.guard.blackboard_scalar_empty", makeGuardBlackboardScalarEmpty);
     registerFactory("bb.guard.blackboard_flag_empty", makeGuardBlackboardFlagEmpty);
     registerFactory("bb.guard.blackboard_empty", makeGuardBlackboardEmpty);
+    registerFactory("bb.guard.blackboard_agent_valid", makeGuardBlackboardAgentValid);
+    registerFactory("bb.guard.blackboard_flag_set", makeGuardBlackboardFlagSet);
+    registerFactory("bb.guard.blackboard_scalar_set", makeGuardBlackboardScalarSet);
+    registerFactory("bb.guard.spatial_radius_valid", makeGuardSpatialRadiusValid);
     registerFactory("bb.guard.ally_context", makeGuardAllyContext);
 }
 

@@ -26,6 +26,7 @@ struct NodeLoadSpec {
     bool abortOnSuccess = false;
     bool requireBoundBlackboard = false;
     bool requireAllyContext = false;
+    bool requireValidAgent = false;
 };
 
 /// Factory signature — builds a flat BehaviorNode from a load spec.

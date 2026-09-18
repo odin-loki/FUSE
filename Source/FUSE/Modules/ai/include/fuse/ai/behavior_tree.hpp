@@ -50,6 +50,10 @@ enum class NodeKind {
     GuardBlackboardScalarEmpty,
     GuardBlackboardFlagEmpty,
     GuardBlackboardEmpty,
+    GuardBlackboardAgentValid,
+    GuardBlackboardFlagSet,
+    GuardBlackboardScalarSet,
+    GuardSpatialRadiusValid,
     GuardAllyContext,
 };
 
@@ -76,6 +80,8 @@ struct ParallelPolicy {
     bool requireBoundBlackboard = false;
     /// When true, fail immediately when ally context is null or empty.
     bool requireAllyContext = false;
+    /// When true, fail immediately when the agent index is out of blackboard range.
+    bool requireValidAgent = false;
 };
 
 /// Flat behavior-tree node — ore analogue: BadBehaviour composite/decorator/leaf nodes.
