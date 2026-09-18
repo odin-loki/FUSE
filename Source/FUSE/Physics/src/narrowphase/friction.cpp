@@ -198,6 +198,19 @@ bool rebuild_friction_basis_if_needed(ContactManifold& manifold, f32 epsilon) {
     return ensure_friction_basis(manifold);
 }
 
+bool contact_normal_needs_normalize(const ContactManifold& manifold, f32 lengthEpsilon) {
+    return manifold.needsNormalNormalization(lengthEpsilon);
+}
+
+bool should_normalize_contact_normal_before_friction(
+    const ContactManifold& manifold,
+    f32 lengthEpsilon) {
+    if (should_skip_friction_tangents(manifold)) {
+        return false;
+    }
+    return contact_normal_needs_normalize(manifold, lengthEpsilon);
+}
+
 void compute_friction_tangents_if_needed(ContactManifold& manifold, f32 epsilon) {
     if (should_skip_friction_tangents(manifold)) {
         invalidate_friction_basis(manifold);
@@ -226,6 +239,7 @@ FrictionBasisPreflight preflight_friction_basis_rebuild(
     }
 
     preflight.stale = friction_basis_is_stale(manifold, epsilon);
+    preflight.needsNormalNormalize = contact_normal_needs_normalize(manifold, epsilon);
     preflight.canReuse = can_skip_friction_basis_rebuild(manifold, epsilon);
     preflight.needsRebuild = needs_friction_basis_refresh(manifold, epsilon);
     return preflight;

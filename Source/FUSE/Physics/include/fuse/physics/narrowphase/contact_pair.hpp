@@ -21,6 +21,8 @@ enum class ContactPairRejectReason : u8 {
     DegenerateShape,
     BothSleeping,
     BothKinematic,
+    AnyTrigger,
+    BothMassless,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
@@ -83,6 +85,17 @@ bool is_sleeping_contact_pair(
 bool is_kinematic_contact_pair(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies);
+
+/// Returns true when either body carries `RB_TRIGGER` (B4.4 deepen pass).
+bool is_any_trigger_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies);
+
+/// Returns true when both bodies have non-positive inverse mass (B4.4 deepen pass).
+bool is_massless_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    f32 invMassEpsilon = 1e-8f);
 
 /// Returns true when either shape has zero or negative extent (B4.3 deepen pass).
 bool is_degenerate_shape_pair(
@@ -163,6 +176,18 @@ bool should_skip_contact_pair_deepen_dispatch(
 
 /// True when all pairs are rejected by extended preflight or the pair list is empty (B4.4 deepen follow-up).
 bool can_skip_narrowphase(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Count pairs that pass extended deepen preflight (B4.4 deepen pass).
+u32 count_dispatchable_contact_pairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// True when at least one pair passes extended deepen preflight (B4.4 deepen pass).
+bool has_dispatchable_contact_pair(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
