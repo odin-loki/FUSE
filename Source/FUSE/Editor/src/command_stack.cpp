@@ -11,6 +11,15 @@ bool CommandStack::canCoalesce_(const EditorCommand& previous, const EditorComma
         return false;
     }
 
+    if (!previous.target.isValid() || !incoming.target.isValid()) {
+        return false;
+    }
+
+    if (!incoming.propertyValueBefore.empty() && !previous.propertyValueBefore.empty() &&
+        incoming.propertyValueBefore != previous.propertyValueBefore) {
+        return false;
+    }
+
     return previous.target == incoming.target && previous.propertyName == incoming.propertyName;
 }
 
@@ -61,6 +70,11 @@ u32 CommandStack::coalescedCountSinceBaseline() const {
 }
 
 void CommandStack::set_baseline_state() {
+    if (m_baselineConfigured && isAtBaseline() && m_redoDepth == m_baselineRedoDepth &&
+        m_coalescedCountAtBaseline == m_coalescedCount && !m_dirty) {
+        return;
+    }
+
     m_baselineUndoDepth = m_undoDepth;
     m_baselineRedoDepth = m_redoDepth;
     m_coalescedCountAtBaseline = m_coalescedCount;
