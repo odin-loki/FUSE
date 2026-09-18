@@ -98,6 +98,48 @@ struct LodResidencyBudgetCounters {
     return in_flight < max_async_in_flight ? max_async_in_flight - in_flight : 0u;
 }
 
+[[nodiscard]] inline bool pending_submit_cap_unlimited(u32 max_pending_submits) {
+    return max_pending_submits == 0u;
+}
+
+[[nodiscard]] inline u32 pending_submit_headroom(u32 max_pending_submits, u32 pending_submits) {
+    if (pending_submit_cap_unlimited(max_pending_submits)) {
+        return ~0u;
+    }
+    return pending_submits < max_pending_submits ? max_pending_submits - pending_submits : 0u;
+}
+
+[[nodiscard]] inline bool would_exceed_pending_submit_cap(u32 max_pending_submits, u32 pending_submits) {
+    if (pending_submit_cap_unlimited(max_pending_submits)) {
+        return false;
+    }
+    return pending_submits >= max_pending_submits;
+}
+
+/// Guard async submit when in-flight or buffered completions would exceed the pending cap.
+[[nodiscard]] inline bool can_submit_async_load_guarded(u32 in_flight, u32 pending_submits,
+                                                          u32 max_async_in_flight) {
+    return can_submit_async_load(in_flight, max_async_in_flight) &&
+           !would_exceed_pending_submit_cap(max_async_in_flight, pending_submits);
+}
+
+/// Combine streaming-volume unload priority with any stored chunk priority (B7.5 deepen).
+[[nodiscard]] inline f32 effective_chunk_unload_priority(f32 stream_priority, f32 stored_priority) {
+    return std::max(stream_priority, stored_priority);
+}
+
+/// Rank unload pressure for eviction queue ordering (B7.5 deepen — mirrors B7.6).
+[[nodiscard]] inline f32 rank_chunk_unload_priority(f32 stream_priority, f32 stored_priority,
+                                                      f32 focus_distance) {
+    return std::max({stream_priority, stored_priority, focus_distance});
+}
+
+/// Merge unload rank with a budget eviction score for queue ordering (B7.5 deepen).
+[[nodiscard]] inline f32 rank_budget_chunk_unload_priority(f32 stream_priority, f32 stored_priority,
+                                                             f32 focus_distance, f32 budget_score) {
+    return std::max(rank_chunk_unload_priority(stream_priority, stored_priority, focus_distance), budget_score);
+}
+
 [[nodiscard]] inline u32 clamp_eviction_batch(u32 requested, u32 headroom) {
     return requested < headroom ? requested : headroom;
 }
