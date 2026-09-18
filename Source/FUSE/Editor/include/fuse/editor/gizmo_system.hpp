@@ -100,9 +100,39 @@ bool isSnapEnabled(GizmoMode mode, const GizmoSnapSettings& settings);
 /// Mode-aware snap for accumulated screen-space drag deltas (B6.4 deepen follow-up).
 f32 snapDragDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings);
 
+/// Component-wise translate snap (B6.4 deepen — snap helpers).
+math::Vec3 snapPosition(const math::Vec3& position, const GizmoSnapSettings& settings);
+
+/// Euler rotation snap in radians (B6.4 deepen — snap helpers).
+math::Vec3 snapEulerRadians(const math::Vec3& eulerRadians, const GizmoSnapSettings& settings);
+
+/// Component-wise scale snap (B6.4 deepen — snap helpers).
+math::Vec3 snapScaleVec(const math::Vec3& scale, const GizmoSnapSettings& settings);
+
 /// Empty-hit guards — reject degenerate pick inputs before axis tests (B6.4 deepen follow-up).
 bool isRayEmpty(const GizmoRay& ray);
 bool isHitTestEmpty(const GizmoHitTest& hit);
+
+/// Convenience inverse of `isRayEmpty` / `isHitTestEmpty` (B6.4 deepen — begin-drag guards).
+bool isRayValid(const GizmoRay& ray);
+bool isHitTestValid(const GizmoHitTest& hit);
+
+/// Normalize ray direction; returns false when the ray is empty (B6.4 deepen — empty-ray guard).
+bool normalizeRay(GizmoRay& ray);
+
+/// Read-only begin-drag preflight — no drag state mutation (B6.4 deepen — begin-drag guards).
+struct BeginDragPreflight {
+    bool canBegin = false;
+    bool emptyInput = false;
+    bool pickMiss = false;
+    GizmoAxis axis = GizmoAxis::None;
+};
+
+BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, const GizmoTransform& transform,
+                                      GizmoMode mode);
+BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
+                                      GizmoMode mode, GizmoSpace space, f32 axisLength,
+                                      f32 pickRadius);
 
 /// Pick axis with empty-hit guards — returns false when pick misses (B6.4 deepen follow-up).
 bool tryPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
@@ -166,8 +196,17 @@ public:
     /// Guarded begin-drag — returns false on empty viewport / miss picks (B6.4 deepen follow-up).
     bool tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& current, GizmoResult& out);
     bool tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current, GizmoResult& out);
+    /// Read-only begin-drag preflight using current mode/space (B6.4 deepen — begin-drag guards).
+    BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit,
+                                          const GizmoTransform& current) const;
+    BeginDragPreflight preflightBeginDrag(const GizmoRay& ray,
+                                          const GizmoTransform& current) const;
+    /// Guarded drag update — returns false on empty viewport (B6.4 deepen — begin-drag guards).
+    bool tryUpdateDrag(const GizmoHitTest& hit, GizmoResult& out);
     GizmoResult updateDrag(const GizmoHitTest& hit);
     GizmoResult endDrag();
+    /// Cancel an active drag without dirty marking (B6.4 deepen — begin-drag guards).
+    void cancelDrag();
 
     bool isDragging() const { return m_dragging; }
 
