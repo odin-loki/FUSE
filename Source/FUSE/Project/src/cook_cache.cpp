@@ -3,6 +3,7 @@
 #include <fuse/project/cook_content_hash.hpp>
 #include <fuse/project/import_desc.hpp>
 
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 
@@ -40,13 +41,30 @@ u64 recompute_cache_key_for_entry_(const CookCacheEntry& entry) {
     return combine_cook_cache_key(source_hash, entry.upstream_hash);
 }
 
-bool is_prunable_cache_entry_(const CookCacheEntry& entry) {
+bool source_exists_for_entry_(const CookCacheEntry& entry) {
+    std::error_code ec;
+    return std::filesystem::exists(std::filesystem::path(entry.source_path), ec);
+}
+
+bool is_stale_cache_entry_(const CookCacheEntry& entry) {
     if (!is_valid_cook_cache_entry(entry)) {
+        return false;
+    }
+
+    if (entry.kind == CookAssetKind::Shader) {
         return true;
+    }
+
+    if (!source_exists_for_entry_(entry)) {
+        return false;
     }
 
     const u64 current_key = recompute_cache_key_for_entry_(entry);
     return !is_valid_cook_cache_key(current_key) || entry.content_hash != current_key;
+}
+
+bool is_prunable_cache_entry_(const CookCacheEntry& entry) {
+    return !is_valid_cook_cache_entry(entry) || is_stale_cache_entry_(entry);
 }
 
 std::string escapeJson(const std::string& text) {
@@ -274,8 +292,7 @@ u32 CookCache::prune_stale_entries() {
 
     u32 removed = 0;
     for (auto it = m_entries.begin(); it != m_entries.end();) {
-        const u64 current_key = recompute_cache_key_for_entry_(*it);
-        if (!is_valid_cook_cache_key(current_key) || it->content_hash != current_key) {
+        if (is_stale_cache_entry_(*it)) {
             it = m_entries.erase(it);
             ++removed;
             ++m_stats.invalidations;
@@ -492,6 +509,7 @@ bool CookCache::load(const std::string& path) {
         cursor = objectEnd + 1;
     }
 
+    prune_stale_entries();
     return true;
 }
 
