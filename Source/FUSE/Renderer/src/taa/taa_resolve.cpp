@@ -69,6 +69,13 @@ void stampObservedHistoryGeneration(TaaResolveDesc& desc, const TaaHistoryBuffer
     }
 }
 
+bool taaHistoryIsReusable(const TaaHistoryBuffer& history, const TaaResolveDesc& desc) {
+    if (!history.isReady() || !history.hasValidHistory()) {
+        return false;
+    }
+    return !taaResolveHistoryGenerationIsStale(desc, history);
+}
+
 void sanitizeTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     normalizeTaaParams(desc.params);
     stampObservedHistoryGeneration(desc, history);
@@ -142,11 +149,23 @@ bool taaResolveRequiresDepth(const TAAParams& params) {
     return params.depth_rejection > 0.f;
 }
 
-f32 computeEffectiveBlend(bool firstFrame, const TAAParams& params) {
-    if (firstFrame) {
+f32 computeEffectiveBlend(bool firstFrame, bool historyReusable, const TAAParams& params) {
+    if (firstFrame || !historyReusable) {
         return 1.f;
     }
     return clampTaaParams(params).blend_factor;
+}
+
+f32 computeEffectiveBlend(bool firstFrame, const TAAParams& params) {
+    return computeEffectiveBlend(firstFrame, !firstFrame, params);
+}
+
+bool taaBlendUsesHistory(f32 effectiveBlend) {
+    return effectiveBlend < 1.f;
+}
+
+bool taaBlendSkipsHistoryReuse(f32 effectiveBlend) {
+    return effectiveBlend >= 1.f;
 }
 
 const char* taaResolveSkipReasonLabel(TaaResolveSkipReason reason) {
@@ -222,8 +241,9 @@ bool TaaResolve::resolve(const TaaResolveDesc& desc, TaaHistoryBuffer& history, 
     }
 
     const TAAParams params = clampTaaParams(desc.params);
+    const bool historyReusable = taaHistoryIsReusable(history, desc);
     m_stats.first_frame = !history.hasValidHistory();
-    const f32 effectiveBlend = computeEffectiveBlend(m_stats.first_frame, params);
+    const f32 effectiveBlend = computeEffectiveBlend(m_stats.first_frame, historyReusable, params);
     history.markResolved();
     history.swap();
 
@@ -232,6 +252,7 @@ bool TaaResolve::resolve(const TaaResolveDesc& desc, TaaHistoryBuffer& history, 
     m_stats.height = desc.height;
     m_stats.last_blend = params.blend_factor;
     m_stats.effective_blend = effectiveBlend;
+    m_stats.history_reused = historyReusable && taaBlendUsesHistory(effectiveBlend);
     m_stats.history_swapped = true;
     m_stats.has_valid_history = history.hasValidHistory();
     m_stats.accumulated_frames = history.accumulatedFrames();

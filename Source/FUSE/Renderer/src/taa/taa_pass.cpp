@@ -110,6 +110,16 @@ bool TaaPass::isObservedHistoryGenerationCurrent(u32 observedGeneration) const {
     return !m_history.isHistoryStale(observedGeneration);
 }
 
+bool TaaPass::canReuseHistory(const TaaResolveDesc& desc) const {
+    return taaHistoryIsReusable(m_history, desc);
+}
+
+f32 TaaPass::effectiveBlendForNextResolve(const TaaResolveDesc& desc) const {
+    const bool firstFrame = m_history.needsWarmup();
+    const bool historyReusable = taaHistoryIsReusable(m_history, desc);
+    return computeEffectiveBlend(firstFrame, historyReusable, desc.params);
+}
+
 bool TaaPass::resolveFrame(const TaaResolveDesc& desc, void* cudaStream) {
     if (!m_stats.ready) {
         m_stats.message = "TAA pass not ready";
