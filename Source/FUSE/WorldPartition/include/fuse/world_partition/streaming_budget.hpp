@@ -173,6 +173,14 @@ enum class EvictionPolicy : u8 {
                                  policy);
 }
 
+/// Guard: budget eviction score with negative unload priority clamped before scoring.
+[[nodiscard]] inline f32 budget_eviction_score_for_guarded(f32 focus_distance, f32 unload_distance_priority,
+                                                            u32 last_touch_tick, u32 current_tick,
+                                                            EvictionPolicy policy) {
+    return budget_eviction_score_guarded(focus_distance, std::max(0.f, unload_distance_priority),
+                                         last_touch_tick, current_tick, policy);
+}
+
 /// True when an incoming load (higher `priority` = closer) should evict a resident at `resident_focus_distance`.
 [[nodiscard]] inline bool incoming_outranks_resident(f32 incoming_priority, f32 stream_in_radius,
                                                      f32 resident_focus_distance) {
@@ -192,6 +200,12 @@ enum class EvictionPolicy : u8 {
         return true;
     }
     return incoming_priority >= eviction_score;
+}
+
+/// Guard: incoming outrank check requires a positive eviction score.
+[[nodiscard]] inline bool incoming_outranks_eviction_guarded(f32 incoming_priority, f32 eviction_score) {
+    return is_positive_eviction_score(eviction_score) &&
+           incoming_outranks_eviction(incoming_priority, eviction_score);
 }
 
 /// True when a budget eviction candidate is eligible under distance policy pressure checks.
@@ -220,6 +234,14 @@ enum class EvictionPolicy : u8 {
     return needs_budget_eviction_for_incoming(max_loaded_cells, resident_count, max_resident_bytes,
                                               resident_bytes, incoming_bytes) &&
            has_eviction_candidate;
+}
+
+/// True when incoming load would exceed cell or byte caps (deficit helpers).
+[[nodiscard]] inline bool needs_eviction_for_deficit(u32 max_loaded_cells, u32 resident_count,
+                                                     u64 max_resident_bytes, u64 resident_bytes,
+                                                     u64 incoming_bytes, u32 incoming_count = 1u) {
+    return resident_cell_deficit(max_loaded_cells, resident_count, incoming_count) > 0u ||
+           eviction_byte_deficit(max_resident_bytes, resident_bytes, incoming_bytes) > 0u;
 }
 
 } // namespace fuse::world_partition
