@@ -358,6 +358,15 @@ inline Mat3 transposeUpper3x3(const Mat4& matrix) {
     return result;
 }
 
+/// Writes the transposed upper 3×3 block when it is orthogonal (pure rotation).
+inline bool tryTransposeUpper3x3(const Mat4& matrix, Mat3& out, f32 epsilon = 1e-4f) {
+    if (!isOrthogonalUpper3x3(matrix, epsilon)) {
+        return false;
+    }
+    out = transposeUpper3x3(matrix);
+    return true;
+}
+
 /// Writes `a * b` to `out` when both operands are rigid affine transforms.
 inline bool tryMultiplyRigid(const Mat4& a, const Mat4& b, Mat4& out, f32 epsilon = 1e-4f) {
     if (!isRigid(a, epsilon) || !isRigid(b, epsilon)) {

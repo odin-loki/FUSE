@@ -239,4 +239,23 @@ inline bool tryRayHits(const AABB& box, const Vec3& origin, const Vec3& directio
     return box.rayHits(origin, direction, tMin, tMax);
 }
 
+/// Slab ray intersection with empty-box early-out; writes parametric entry distance into `t`.
+inline bool tryRayIntersect(const AABB& box, const Vec3& origin, const Vec3& direction, f32& t) {
+    if (box.isEmpty()) {
+        return false;
+    }
+    t = box.rayIntersect(origin, direction);
+    return t >= 0.f;
+}
+
+/// Transforms an AABB when the source bounds are valid; returns false on empty input.
+inline bool tryTransformAabb(const Mat4& matrix, const AABB& box, AABB& out) {
+    if (box.isEmpty()) {
+        out = box;
+        return false;
+    }
+    out = transformAabb(matrix, box);
+    return true;
+}
+
 } // namespace fuse::math

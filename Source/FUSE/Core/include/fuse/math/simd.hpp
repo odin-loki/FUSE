@@ -393,4 +393,26 @@ inline bool tryClipPolygonAgainstPlane(const Vec4& plane, const Vec3* input, u32
                                                   epsilon);
 }
 
+inline bool tryRayIntersect(const AABB& box, const Vec3& origin, const Vec3& direction, f32& t) {
+    return fuse::math::tryRayIntersect(box, origin, direction, t);
+}
+
+inline bool tryTransformAabb(const Mat4& matrix, const AABB& box, AABB& out) {
+    return fuse::math::tryTransformAabb(matrix.toScalar(), box, out);
+}
+
+inline bool tryTransposeUpper3x3(const fuse::math::Mat4& matrix, Mat3& out, f32 epsilon = 1e-4f) {
+    return fuse::math::tryTransposeUpper3x3(matrix, out, epsilon);
+}
+
+inline bool tryMakePlaneFromNormalAndPoint(const Vec3& normal, const Vec3& point, Vec4& out,
+                                           f32 epsilon = 1e-8f) {
+    return fuse::math::tryMakePlaneFromNormalAndPoint(normal, point, out, epsilon);
+}
+
+inline bool tryRayIntersectPlaneClamped(const Vec4& plane, const Vec3& origin, const Vec3& direction, f32 tMin,
+                                        f32 tMax, f32& t, f32 epsilon = 1e-8f) {
+    return fuse::math::tryRayIntersectPlaneClamped(plane, origin, direction, tMin, tMax, t, epsilon);
+}
+
 } // namespace fuse::math::simd
