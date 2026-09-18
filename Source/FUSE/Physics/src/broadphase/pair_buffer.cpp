@@ -301,4 +301,37 @@ std::vector<CandidatePair> PairBufferSoA::toVector() const {
     return pairs;
 }
 
+bool PairBufferPreflight::can_push(u32 additionalCount) const {
+    if (skipped || additionalCount == 0u) {
+        return !skipped;
+    }
+    if (maxCapacity == 0u) {
+        return true;
+    }
+    return activeCount + additionalCount <= maxCapacity;
+}
+
+PairBufferPreflight preflight_pair_buffer(const PairBufferSoA& buffer) {
+    PairBufferPreflight preflight{};
+    preflight.activeCount = buffer.activeCount;
+    preflight.maxCapacity = buffer.maxCapacity;
+    preflight.droppedCount = buffer.droppedCount;
+    preflight.remainingCapacity = buffer.remainingCapacity();
+    preflight.empty = buffer.canSkipSoAIteration();
+    preflight.full = buffer.isFull();
+    preflight.skipDedupe = buffer.canSkipDedupe();
+    preflight.skipCompaction = buffer.canSkipCompaction();
+    preflight.needsClamp = buffer.needsMaxCapacityClamp();
+    preflight.skipped = preflight.empty;
+    return preflight;
+}
+
+bool should_skip_pair_buffer_dedupe(const PairBufferSoA& buffer) {
+    return preflight_pair_buffer(buffer).skipDedupe;
+}
+
+bool should_skip_pair_buffer_compaction(const PairBufferSoA& buffer) {
+    return preflight_pair_buffer(buffer).skipCompaction;
+}
+
 } // namespace fuse::physics::broadphase

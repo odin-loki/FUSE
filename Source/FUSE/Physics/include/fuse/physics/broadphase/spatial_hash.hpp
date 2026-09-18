@@ -101,6 +101,26 @@ FUSE_PHYSICS_INLINE bool canSkipBroadphase(
     return isEmptyBroadphaseInput(bodies, shapes);
 }
 
+/// Const preflight for broadphase input empty-set guard (B4.2 deepen pass).
+struct BroadphaseInputPreflight {
+    u32 bodyCount = 0;
+    u32 shapeCount = 0;
+    bool emptyBodies = false;
+    bool emptyShapes = false;
+    bool skipped = false;
+
+    bool can_build() const { return !skipped; }
+};
+
+BroadphaseInputPreflight preflight_broadphase_input(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// True when broadphase should skip before hash build (B4.2 deepen pass).
+bool should_skip_broadphase_build(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
 /// Clamp cell size to a positive stub default (broadphase occupancy guard).
 FUSE_PHYSICS_INLINE f32 clampCellSize(f32 cellSize) {
     return cellSize > 0.f ? cellSize : 1.f;
@@ -214,6 +234,25 @@ FUSE_PHYSICS_INLINE bool cellOccupancyWithinBudget(const CellRange2& range, u32 
 FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {
     return uniqueBodyCount > 1u ? uniqueBodyCount * (uniqueBodyCount - 1u) / 2u : 0u;
 }
+
+/// Const preflight for cell occupancy budgeting (B4.2 deepen pass).
+struct CellOccupancyPreflight {
+    u32 occupancyCount = 0;
+    u32 maxCells = 0;
+    bool emptyRange = false;
+    bool exceedsBudget = false;
+    bool skipped = false;
+
+    bool within_budget() const { return !exceedsBudget; }
+    bool can_insert() const { return !skipped && within_budget(); }
+};
+
+CellOccupancyPreflight preflight_cell_occupancy(const CellRange3& range, u32 maxCells);
+CellOccupancyPreflight preflight_cell_occupancy(const CellRange2& range, u32 maxCells);
+
+/// True when shape cell iteration should skip due to an empty range (B4.2 deepen pass).
+bool should_skip_shape_cell_insert(const CellRange3& range, u32 maxCells = 0u);
+bool should_skip_shape_cell_insert(const CellRange2& range, u32 maxCells = 0u);
 
 /// Clamp broadphase params to safe stub defaults (positive cell size, at least one bucket).
 FUSE_PHYSICS_INLINE SpatialHashParams normalizeSpatialHashParams(SpatialHashParams params) {
@@ -366,6 +405,28 @@ void runBroadphase2DIntoBuffer(
     const CollisionShapeSoA& shapes,
     const SpatialHashParams& params,
     PairBufferSoA& buffer);
+
+/// Const preflight for parallel pair refine dispatch (B4.2 deepen pass).
+struct RefineBroadphasePreflight {
+    u32 pairCount = 0;
+    u32 validPairCount = 0;
+    bool emptyInput = false;
+    bool emptyBuffer = false;
+    bool skipped = false;
+
+    bool can_refine() const { return !skipped && validPairCount > 0u; }
+};
+
+RefineBroadphasePreflight preflight_refine_broadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
+
+/// True when refineBroadphasePairsParallel may early-out (B4.2 deepen pass).
+bool should_skip_refine_broadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(
