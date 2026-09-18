@@ -64,6 +64,8 @@ struct LuminanceHistogramParams {
 bool metering_percentile_valid(f32 percentile);
 /// True when histogram binning and percentile knobs are usable (B5.10 deepen).
 bool luminance_histogram_params_valid(const LuminanceHistogramParams& params);
+/// True when histogram params are ready for sample accumulation (B5.10 deepen).
+bool luminance_histogram_can_accumulate(const LuminanceHistogramParams& params);
 
 class LuminanceHistogram {
 public:
@@ -97,6 +99,8 @@ void reset_luminance_histogram(LuminanceHistogram& histogram);
 namespace histogram_util {
 /// True when a sample buffer can contribute metering (non-null and non-empty).
 bool hasMeteringSamples(const fuse::math::Vec3* samples, u32 count);
+/// True when histogram params and sample buffer are ready for accumulation (B5.10 deepen).
+bool canAccumulateSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params);
 /// True when histogram params and sample buffer are ready for percentile metering (B5.10 deepen).
 bool canMeterFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params);
 /// True when a histogram has accumulated samples (B5.10 deepen).
@@ -135,6 +139,8 @@ private:
 };
 
 void reset_exposure_meter(ExposureMeter& meter);
+/// True when a sample buffer can drive exposure-meter averaging (B5.10 deepen).
+bool exposure_meter_can_measure(const fuse::math::Vec3* samples, u32 count);
 /// True when an exposure meter has accumulated samples (B5.10 deepen).
 bool exposure_meter_has_samples(const ExposureMeter& meter);
 
@@ -161,10 +167,14 @@ private:
     bool m_ready = false;
 };
 
+/// True when measured luminance is finite and non-negative (B5.10 deepen).
+bool auto_exposure_measured_luminance_valid(f32 measured_luminance);
 /// True when a sample buffer can drive auto-exposure adaptation (B5.10 deepen).
 bool auto_exposure_can_update_from_samples(const fuse::math::Vec3* samples, u32 count);
 /// True when a histogram can drive auto-exposure adaptation (B5.10 deepen).
 bool auto_exposure_can_update_from_histogram(const LuminanceHistogram& histogram);
+/// True when measured luminance can drive auto-exposure adaptation (B5.10 deepen).
+bool auto_exposure_can_update_from_luminance(f32 measured_luminance);
 /// Reset temporal auto-exposure state via facade (B5.10 deepen).
 void reset_auto_exposure(AutoExposure& exposure);
 /// Reset temporal auto-exposure state with clamped EV anchor via facade (B5.10 deepen).
