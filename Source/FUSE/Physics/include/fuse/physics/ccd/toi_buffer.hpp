@@ -33,6 +33,8 @@ struct ToiBufferSoA {
     u32 compactAndSort();
     bool isEmpty() const { return activeCount == 0u; }
     bool isFull() const { return maxCapacity > 0u && activeCount >= maxCapacity; }
+    bool isValidSlot(u32 slot) const { return slot < pairSlotCount; }
+    u32 countValidSlots() const;
     bool isSortedByToi() const;
     TOIResult earliestToi() const;
     TOIResult resultAt(u32 index) const;
