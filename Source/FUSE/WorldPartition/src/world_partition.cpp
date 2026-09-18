@@ -136,15 +136,15 @@ void WorldPartition::touch_cell_(WorldCell& cell) {
 f32 WorldPartition::eviction_score_for_(const WorldCell& cell) const {
     const f32 distance_priority =
         m_streaming.unload_priority_for(cell.coord, m_desc.cell_size);
-    return eviction_score_for(distance_priority, cell.last_touch_tick, m_tick, m_desc.eviction_policy);
+    return eviction_score_for_guarded(distance_priority, cell.last_touch_tick, m_tick, m_desc.eviction_policy);
 }
 
 f32 WorldPartition::budget_eviction_score_for_(const WorldCell& cell) const {
     const f32 focus_distance = m_residency_set.focus_distance_for(cell.coord);
     const f32 distance_priority =
         m_streaming.unload_priority_for(cell.coord, m_desc.cell_size);
-    return budget_eviction_score(focus_distance, distance_priority, cell.last_touch_tick, m_tick,
-                                 m_desc.eviction_policy);
+    return budget_eviction_score_guarded(focus_distance, distance_priority, cell.last_touch_tick, m_tick,
+                                         m_desc.eviction_policy);
 }
 
 WorldCell* WorldPartition::find_budget_eviction_candidate_(f32 incoming_priority, f32& out_score) {
@@ -211,7 +211,7 @@ void WorldPartition::evict_for_budget_(f32 incoming_priority, u64 incoming_bytes
         const f32 focus_distance = m_residency_set.focus_distance_for(best_candidate->coord);
         const f32 streaming_priority =
             m_streaming.unload_priority_for(best_candidate->coord, m_desc.cell_size);
-        const f32 unload_priority = eviction_unload_priority(
+        const f32 unload_priority = eviction_unload_priority_guarded(
             streaming_priority, best_candidate->unload_priority, focus_distance, streaming_priority,
             best_candidate->last_touch_tick, m_tick, m_desc.eviction_policy);
 
