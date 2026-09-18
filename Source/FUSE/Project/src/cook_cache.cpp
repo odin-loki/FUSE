@@ -41,12 +41,7 @@ u64 recompute_cache_key_for_entry_(const CookCacheEntry& entry) {
 }
 
 bool is_prunable_cache_entry_(const CookCacheEntry& entry) {
-    if (!is_valid_cook_cache_entry(entry)) {
-        return true;
-    }
-
-    const u64 current_key = recompute_cache_key_for_entry_(entry);
-    return !is_valid_cook_cache_key(current_key) || entry.content_hash != current_key;
+    return is_invalid_cook_cache_entry(entry) || is_stale_cook_cache_entry(entry);
 }
 
 std::string escapeJson(const std::string& text) {
@@ -62,6 +57,15 @@ std::string escapeJson(const std::string& text) {
 }
 
 } // namespace
+
+bool is_stale_cook_cache_entry(const CookCacheEntry& entry) {
+    if (!is_valid_cook_cache_entry(entry)) {
+        return false;
+    }
+
+    const u64 current_key = recompute_cache_key_for_entry_(entry);
+    return !is_valid_cook_cache_key(current_key) || entry.content_hash != current_key;
+}
 
 CookCacheEntry* CookCache::find_entry_(u64 content_hash) {
     for (CookCacheEntry& entry : m_entries) {
@@ -268,14 +272,13 @@ void CookCache::invalidate_all() {
 }
 
 u32 CookCache::prune_stale_entries() {
-    if (m_entries.empty()) {
+    if (m_entries.empty() || !has_stale_entries()) {
         return 0;
     }
 
     u32 removed = 0;
     for (auto it = m_entries.begin(); it != m_entries.end();) {
-        const u64 current_key = recompute_cache_key_for_entry_(*it);
-        if (!is_valid_cook_cache_key(current_key) || it->content_hash != current_key) {
+        if (is_stale_cook_cache_entry(*it)) {
             it = m_entries.erase(it);
             ++removed;
             ++m_stats.invalidations;
@@ -287,13 +290,13 @@ u32 CookCache::prune_stale_entries() {
 }
 
 u32 CookCache::prune_invalid_entries() {
-    if (m_entries.empty()) {
+    if (m_entries.empty() || !has_invalid_entries()) {
         return 0;
     }
 
     u32 removed = 0;
     for (auto it = m_entries.begin(); it != m_entries.end();) {
-        if (!is_valid_cook_cache_entry(*it)) {
+        if (is_invalid_cook_cache_entry(*it)) {
             it = m_entries.erase(it);
             ++removed;
             ++m_stats.invalidations;
@@ -311,17 +314,34 @@ u32 CookCache::prune_all() {
     return prune_invalid_entries() + prune_stale_entries();
 }
 
-bool CookCache::has_prunable_entries() const {
+bool CookCache::has_invalid_entries() const {
     if (m_entries.empty()) {
         return false;
     }
 
     for (const CookCacheEntry& entry : m_entries) {
-        if (is_prunable_cache_entry_(entry)) {
+        if (is_invalid_cook_cache_entry(entry)) {
             return true;
         }
     }
     return false;
+}
+
+bool CookCache::has_stale_entries() const {
+    if (m_entries.empty()) {
+        return false;
+    }
+
+    for (const CookCacheEntry& entry : m_entries) {
+        if (is_stale_cook_cache_entry(entry)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool CookCache::has_prunable_entries() const {
+    return has_invalid_entries() || has_stale_entries();
 }
 
 bool CookCache::contains(u64 content_hash) const {
