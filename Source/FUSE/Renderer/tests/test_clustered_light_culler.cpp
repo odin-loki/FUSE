@@ -1217,6 +1217,232 @@ void testLightCullCapacityClamp() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testClusterScreenMappingRejectGuards() {
+    fuse::renderer::ClusterDesc desc{};
+    desc.tilesX = 4;
+    desc.tilesY = 2;
+    desc.slicesZ = 3;
+
+    fuse::renderer::ClusterCameraDesc camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+
+    fuse::u32 clusterIndex = 0u;
+    fuse::renderer::ClusterScreenMappingRejectReason mapReason =
+        fuse::renderer::ClusterScreenMappingRejectReason::None;
+    expectTrue(fuse::renderer::ClusterGridLayout::tryMapScreenDepthToClusterIndex(
+                   0.5f, 0.5f, 10.f, desc, camera, clusterIndex, mapReason),
+               "tryMapScreenDepth accepts in-range depth");
+    expectTrue(mapReason == fuse::renderer::ClusterScreenMappingRejectReason::None,
+               "in-range depth reports no reject reason");
+    expectTrue(clusterIndex < desc.clusterCount(), "mapped cluster index in bounds");
+
+    fuse::renderer::ClusterDesc zeroDesc{};
+    zeroDesc.tilesX = 0u;
+    fuse::u32 emptyIndex = 99u;
+    expectTrue(!fuse::renderer::ClusterGridLayout::tryMapScreenDepthToClusterIndex(
+                   0.5f, 0.5f, 10.f, zeroDesc, camera, emptyIndex, mapReason),
+               "tryMapScreenDepth rejects empty grid");
+    expectTrue(mapReason == fuse::renderer::ClusterScreenMappingRejectReason::EmptyGrid,
+               "empty grid reports empty_grid reason");
+    expectTrue(std::strcmp(fuse::renderer::clusterScreenMappingRejectReasonLabel(mapReason), "empty_grid") == 0,
+               "screen mapping reject label for empty grid");
+
+    fuse::u32 depthIndex = 0u;
+    expectTrue(!fuse::renderer::ClusterGridLayout::tryMapScreenDepthToClusterIndex(
+                   0.5f, 0.5f, 200.f, desc, camera, depthIndex, mapReason),
+               "tryMapScreenDepth rejects depth above far plane");
+    expectTrue(mapReason == fuse::renderer::ClusterScreenMappingRejectReason::DepthOutOfRange,
+               "depth above far reports depth_out_of_range reason");
+
+    fuse::renderer::ClusterCameraDesc invalidCamera{};
+    invalidCamera.nearPlane = 0.f;
+    invalidCamera.farPlane = 100.f;
+    fuse::u32 invalidIndex = 0u;
+    expectTrue(!fuse::renderer::ClusterGridLayout::tryMapScreenDepthToClusterIndex(
+                   0.5f, 0.5f, 10.f, desc, invalidCamera, invalidIndex, mapReason),
+               "tryMapScreenDepth rejects invalid camera");
+    expectTrue(mapReason == fuse::renderer::ClusterScreenMappingRejectReason::InvalidCamera,
+               "invalid camera reports invalid_camera reason");
+    expectTrue(std::strcmp(fuse::renderer::clusterScreenMappingRejectReasonLabel(mapReason), "invalid_camera") == 0,
+               "screen mapping reject label for invalid camera");
+}
+
+void testClusterRebuildPreflightGuards() {
+    fuse::renderer::ClusterDesc desc{};
+    desc.tilesX = 2;
+    desc.tilesY = 2;
+    desc.slicesZ = 1;
+
+    const fuse::u32 clusterCount = desc.clusterCount();
+    const std::vector<std::vector<fuse::u32>> perClusterLights = {
+        {0u, 1u},
+        {},
+        {2u},
+        {3u, 4u},
+    };
+
+    fuse::renderer::GridRebuildRejectReason rebuildReason = fuse::renderer::GridRebuildRejectReason::None;
+    expectTrue(fuse::renderer::ClusterLightGridLayout::tryCanRebuildLightGrid(desc, clusterCount, rebuildReason),
+               "tryCanRebuild accepts matching cluster count");
+    expectTrue(rebuildReason == fuse::renderer::GridRebuildRejectReason::None,
+               "matching cluster count reports no reject reason");
+
+    expectTrue(!fuse::renderer::ClusterLightGridLayout::tryCanRebuildLightGrid(desc, clusterCount + 1u, rebuildReason),
+               "tryCanRebuild rejects oversized cluster count");
+    expectTrue(rebuildReason == fuse::renderer::GridRebuildRejectReason::ClusterCountMismatch,
+               "oversized cluster count reports cluster_count_mismatch reason");
+    expectTrue(std::strcmp(fuse::renderer::gridRebuildRejectReasonLabel(rebuildReason), "cluster_count_mismatch") ==
+                   0,
+               "rebuild reject label for cluster count mismatch");
+
+    fuse::renderer::ClusterDesc zeroDesc{};
+    zeroDesc.tilesX = 0u;
+    expectTrue(!fuse::renderer::ClusterLightGridLayout::tryCanRebuildLightGrid(zeroDesc, 4u, rebuildReason),
+               "tryCanRebuild rejects non-zero count on empty desc");
+    expectTrue(rebuildReason == fuse::renderer::GridRebuildRejectReason::EmptyGrid,
+               "empty desc reports empty_grid rebuild reason");
+
+    expectTrue(fuse::renderer::ClusterLightGridLayout::tryCanRebuildLightGrid(desc, 0u, rebuildReason),
+               "tryCanRebuild vacuously succeeds for zero cluster count");
+    expectTrue(rebuildReason == fuse::renderer::GridRebuildRejectReason::None,
+               "zero cluster count reports no rebuild reject reason");
+
+    expectTrue(fuse::renderer::ClusterLightGridLayout::shouldSkipLightGridRebuild(desc, clusterCount + 1u),
+               "shouldSkip rebuild on cluster count mismatch");
+    expectTrue(!fuse::renderer::ClusterLightGridLayout::shouldSkipLightGridRebuild(desc, 0u),
+               "shouldSkip rebuild does not block zero cluster count clear");
+    expectTrue(fuse::renderer::ClusterLightGridLayout::shouldSkipLightGridRebuild(zeroDesc, 4u),
+               "shouldSkip rebuild on empty desc with non-zero count");
+
+    fuse::renderer::ClusterGridSoA grid{};
+    fuse::u32 dropped = 0u;
+    expectTrue(fuse::renderer::ClusterLightGridLayout::tryRebuildLightGrid(
+                   grid, desc, clusterCount, perClusterLights, 2u, dropped, rebuildReason),
+               "tryRebuild succeeds on valid preflight");
+    expectTrue(dropped == 0u, "tryRebuild drops nothing when within capacity");
+    expectTrue(rebuildReason == fuse::renderer::GridRebuildRejectReason::None,
+               "successful rebuild clears reject reason");
+    expectTrue(fuse::renderer::cluster_util::validateGridPopulation(grid, clusterCount),
+               "tryRebuild grid passes population validation");
+
+    fuse::u32 rejectedDropped = 99u;
+    expectTrue(!fuse::renderer::ClusterLightGridLayout::tryRebuildLightGrid(
+                   grid, desc, clusterCount + 1u, perClusterLights, 2u, rejectedDropped, rebuildReason),
+               "tryRebuild rejects invalid preflight");
+    expectTrue(rejectedDropped == 0u, "tryRebuild zeroes dropped count on failure");
+    expectTrue(rebuildReason == fuse::renderer::GridRebuildRejectReason::ClusterCountMismatch,
+               "failed rebuild preserves reject reason");
+
+    fuse::renderer::ClusterGridSoA descGrid{};
+    fuse::u32 descDropped = 0u;
+    expectTrue(fuse::renderer::ClusterLightGridLayout::tryRebuildLightGridForDesc(
+                   descGrid, desc, perClusterLights, 2u, descDropped, rebuildReason),
+               "tryRebuildForDesc succeeds on valid preflight");
+    expectTrue(descDropped == 0u, "tryRebuildForDesc drops nothing when within capacity");
+    expectTrue(fuse::renderer::cluster_util::validateGridPopulationForDesc(descGrid, desc),
+               "tryRebuildForDesc grid passes population validation");
+}
+
+void testClusterCoordLookupPreflightGuards() {
+    fuse::renderer::ClusterDesc desc{};
+    desc.tilesX = 2;
+    desc.tilesY = 2;
+    desc.slicesZ = 1;
+
+    fuse::renderer::ClusterGridSoA grid{};
+    const fuse::u32 clusterCount = desc.clusterCount();
+    const std::vector<std::vector<fuse::u32>> perClusterLights = {
+        {0u, 1u},
+        {},
+        {2u},
+        {3u, 4u},
+    };
+    fuse::renderer::ClusterLightGridLayout::rebuildLightGrid(grid, clusterCount, perClusterLights, 2u);
+
+    expectTrue(fuse::renderer::cluster_util::canLookupAtCoord(grid, desc),
+               "canLookupAtCoord accepts accessible grid");
+    expectTrue(fuse::renderer::cluster_util::canLookupAtCoord(grid, desc),
+               "canLookupAtCoord ignores tile/slice when storage matches desc");
+
+    fuse::renderer::ClusterLookupRejectReason coordReason = fuse::renderer::ClusterLookupRejectReason::None;
+    expectTrue(fuse::renderer::cluster_util::tryCanLookupAtCoord(grid, desc, coordReason),
+               "tryCanLookupAtCoord accepts accessible grid");
+    expectTrue(coordReason == fuse::renderer::ClusterLookupRejectReason::None,
+               "accessible grid reports no coord lookup reject reason");
+
+    fuse::renderer::ClusterGridSoA emptyGrid{};
+    expectTrue(!fuse::renderer::cluster_util::tryCanLookupAtCoord(emptyGrid, desc, coordReason),
+               "tryCanLookupAtCoord rejects empty storage");
+    expectTrue(coordReason == fuse::renderer::ClusterLookupRejectReason::EmptyStorage,
+               "empty storage reports empty_storage coord reason");
+
+    fuse::u32 tryCoordCount = 0u;
+    std::vector<fuse::u32> tryCoordLights;
+    expectTrue(fuse::renderer::cluster_util::tryLookupClusterLightsAtCoord(grid, desc, 0u, 0u, 0u, tryCoordLights,
+                                                                           tryCoordCount, coordReason),
+               "tryCoordLookup with reason succeeds on accessible grid");
+    expectTrue(tryCoordCount == 2u, "tryCoordLookup with reason reports cluster light count");
+    expectTrue(coordReason == fuse::renderer::ClusterLookupRejectReason::None,
+               "successful coord lookup clears reject reason");
+
+    fuse::u32 rejectedCoordCount = 0u;
+    std::vector<fuse::u32> rejectedCoordLights;
+    expectTrue(!fuse::renderer::cluster_util::tryLookupClusterLightsAtCoord(emptyGrid, desc, 0u, 0u, 0u,
+                                                                            rejectedCoordLights, rejectedCoordCount,
+                                                                            coordReason),
+               "tryCoordLookup with reason rejects empty storage");
+    expectTrue(rejectedCoordCount == 0u, "tryCoordLookup with reason zeroes count on failure");
+    expectTrue(rejectedCoordLights.empty(), "tryCoordLookup with reason clears output on failure");
+    expectTrue(coordReason == fuse::renderer::ClusterLookupRejectReason::EmptyStorage,
+               "failed coord lookup preserves reject reason");
+}
+
+void testClusterPopulationForDescGuards() {
+    fuse::renderer::ClusterDesc desc{};
+    desc.tilesX = 2;
+    desc.tilesY = 2;
+    desc.slicesZ = 1;
+
+    fuse::renderer::ClusterGridSoA grid{};
+    const fuse::u32 clusterCount = desc.clusterCount();
+    const std::vector<std::vector<fuse::u32>> perClusterLights = {
+        {0u, 1u},
+        {},
+        {2u},
+        {3u, 4u},
+    };
+    fuse::renderer::ClusterLightGridLayout::rebuildLightGrid(grid, clusterCount, perClusterLights, 2u);
+
+    expectTrue(fuse::renderer::cluster_util::hasAssignedLightsForDesc(grid, desc),
+               "hasAssignedLightsForDesc true on populated grid");
+    expectTrue(fuse::renderer::cluster_util::countNonEmptyClustersForDesc(grid, desc) == 3u,
+               "countNonEmptyClustersForDesc matches non-empty clusters");
+    expectTrue(fuse::renderer::cluster_util::countEmptyClustersForDesc(grid, desc) == 1u,
+               "countEmptyClustersForDesc matches empty clusters");
+
+    fuse::renderer::ClusterDesc mismatched{};
+    mismatched.tilesX = 1;
+    mismatched.tilesY = 1;
+    mismatched.slicesZ = 1;
+    expectTrue(!fuse::renderer::cluster_util::hasAssignedLightsForDesc(grid, mismatched),
+               "hasAssignedLightsForDesc rejects desc mismatch");
+    expectTrue(fuse::renderer::cluster_util::countNonEmptyClustersForDesc(grid, mismatched) == 0u,
+               "countNonEmptyClustersForDesc zero on desc mismatch");
+    expectTrue(fuse::renderer::cluster_util::countEmptyClustersForDesc(grid, mismatched) == 0u,
+               "countEmptyClustersForDesc zero on desc mismatch");
+
+    fuse::renderer::ClusterGridSoA emptyGrid{};
+    fuse::renderer::ClusterDesc zeroDesc{};
+    zeroDesc.tilesX = 0u;
+    expectTrue(!fuse::renderer::cluster_util::hasAssignedLightsForDesc(emptyGrid, zeroDesc),
+               "hasAssignedLightsForDesc false on empty desc");
+    expectTrue(fuse::renderer::cluster_util::countNonEmptyClustersForDesc(emptyGrid, zeroDesc) == 0u,
+               "countNonEmptyClustersForDesc zero on empty desc");
+    expectTrue(fuse::renderer::cluster_util::countEmptyClustersForDesc(emptyGrid, zeroDesc) == 0u,
+               "countEmptyClustersForDesc zero on empty desc");
+}
+
 void testDeferredPipelineWiresClusterPass() {
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
@@ -1272,6 +1498,10 @@ int main() {
     testClusterDescScopedGridHelpers();
     testClusterCoordLookupAndRebuildGuards();
     testValidateGridPopulationDeepen();
+    testClusterScreenMappingRejectGuards();
+    testClusterRebuildPreflightGuards();
+    testClusterCoordLookupPreflightGuards();
+    testClusterPopulationForDescGuards();
     testZeroDimensionClusterGrid();
     testCullerInitClampsOversizedDesc();
     testEmptyGridRecordCullPassSkips();
