@@ -883,6 +883,83 @@ void testCanEvictForIncomingGuarded() {
                "guarded can evict ignores incoming under LRU policy");
 }
 
+void testEvictionScoreForGuarded() {
+    expectNear(fuse::world_partition::eviction_score_for_guarded(-25.f, 0u, 10u,
+                                                                 fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               0.f, 1e-4f, "guarded eviction score clamps negative unload distance priority");
+    expectNear(fuse::world_partition::eviction_score_for_guarded(50.f, 0u, 10u,
+                                                                 fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               50.f, 1e-4f, "guarded eviction score matches unguarded for non-negative distance priority");
+    expectNear(fuse::world_partition::eviction_score_for_guarded(0.f, 2u, 10u,
+                                                                 fuse::world_partition::EvictionPolicy::Lru),
+               8.f, 1e-4f, "guarded eviction score preserves LRU age scoring");
+}
+
+void testIncomingOutranksEvictionGuarded() {
+    expectTrue(!fuse::world_partition::incoming_outranks_eviction_guarded(150.f, 0.f),
+               "guarded outrank rejects zero eviction score");
+    expectTrue(!fuse::world_partition::incoming_outranks_eviction_guarded(150.f, -5.f),
+               "guarded outrank rejects negative eviction score");
+    expectTrue(fuse::world_partition::incoming_outranks_eviction_guarded(150.f, 100.f),
+               "guarded outrank accepts positive score that incoming beats");
+    expectTrue(!fuse::world_partition::incoming_outranks_eviction_guarded(50.f, 100.f),
+               "guarded outrank rejects weak incoming priority");
+}
+
+void testEvictionUnloadPriorityGuarded() {
+    expectNear(fuse::world_partition::eviction_unload_priority_guarded(-2.f, -3.f, -900.f, -1.f, 0u, 10u,
+                                                                     fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               0.f, 1e-4f, "guarded unload priority clamps negative inputs with invalid focus distance");
+    expectNear(fuse::world_partition::eviction_unload_priority_guarded(2.f, 3.f, 900.f, 0.f, 0u, 10u,
+                                                                     fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               fuse::world_partition::eviction_unload_priority(2.f, 3.f, 900.f, 0.f, 0u, 10u,
+                                                               fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               1e-4f, "guarded unload priority matches unguarded for valid inputs");
+    expectNear(fuse::world_partition::eviction_unload_priority_guarded(2.f, 3.f, 0.f, 50.f, 2u, 10u,
+                                                                     fuse::world_partition::EvictionPolicy::Lru),
+               fuse::world_partition::eviction_unload_priority(2.f, 3.f, 0.f, 50.f, 2u, 10u,
+                                                               fuse::world_partition::EvictionPolicy::Lru),
+               1e-4f, "guarded unload priority preserves LRU budget merge");
+}
+
+void testTryAddResidentGuarded() {
+    fuse::world_partition::ResidencySet residency;
+    const fuse::world_partition::GridCoord coord{4, 2};
+    const fuse::world_partition::GridCoord invalid = fuse::world_partition::kInvalidGridCoord;
+
+    expectTrue(!fuse::world_partition::try_add_resident_guarded(residency, invalid, 100.f),
+               "guarded add rejects invalid coord");
+    expectTrue(!fuse::world_partition::try_add_resident_guarded(residency, coord, -1.f),
+               "guarded add rejects negative focus distance");
+    expectTrue(fuse::world_partition::try_add_resident_guarded(residency, coord, 0.f),
+               "guarded add accepts zero focus distance");
+    expectTrue(residency.contains(coord), "guarded add registers resident cell");
+    expectTrue(!fuse::world_partition::apply_residency_on_load_complete(residency, coord, -5.f, true),
+               "load completion stub rejects negative focus distance via guarded add");
+}
+
+void testPickBudgetEvictionCandidateGuardedEmpty() {
+    const std::vector<fuse::world_partition::GridCoord> empty_candidates;
+    fuse::f32 score = -1.f;
+    const fuse::world_partition::GridCoord picked =
+        fuse::world_partition::pick_budget_eviction_candidate_guarded(
+            empty_candidates,
+            [](fuse::world_partition::GridCoord) { return 0.f; }, 100.f,
+            fuse::world_partition::EvictionPolicy::DistanceFromFocus, score);
+    expectTrue(picked == fuse::world_partition::kInvalidGridCoord,
+               "guarded pick returns invalid coord for empty candidate list");
+    expectNear(score, -1.f, 1e-4f, "guarded pick leaves score unset for empty candidate list");
+}
+
+void testCollectBudgetEvictionCandidatesGuardedEmpty() {
+    const std::vector<fuse::world_partition::GridCoord> empty_candidates;
+    const auto eligible = fuse::world_partition::collect_budget_eviction_candidates_guarded(
+        empty_candidates,
+        [](fuse::world_partition::GridCoord) { return 100.f; }, 50.f,
+        fuse::world_partition::EvictionPolicy::DistanceFromFocus);
+    expectTrue(eligible.empty(), "guarded collect returns empty for empty candidate list");
+}
+
 void testCollectEvictionCandidatesOrdering() {
     fuse::world_partition::ResidencySet residency;
     const fuse::world_partition::GridCoord near_cell{0, 0};
@@ -1815,6 +1892,12 @@ int main() {
     testBudgetEvictionScoreStub();
     testBudgetEvictionScoreGuarded();
     testCanEvictForIncomingGuarded();
+    testEvictionScoreForGuarded();
+    testIncomingOutranksEvictionGuarded();
+    testEvictionUnloadPriorityGuarded();
+    testTryAddResidentGuarded();
+    testPickBudgetEvictionCandidateGuardedEmpty();
+    testCollectBudgetEvictionCandidatesGuardedEmpty();
     testCollectEvictionCandidatesOrdering();
     testBudgetEvictionCounters();
     testDistancePolicyEvictionBlocked();

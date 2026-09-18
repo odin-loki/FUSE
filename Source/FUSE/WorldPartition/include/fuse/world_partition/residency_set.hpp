@@ -150,9 +150,22 @@ inline u32 ResidencySet::find_index_(GridCoord coord) const {
     return it != m_index.end() ? it->second : static_cast<u32>(-1);
 }
 
+/// True when focus distance is non-negative (stub validation).
+[[nodiscard]] inline bool is_valid_focus_distance(f32 focus_distance) {
+    return focus_distance >= 0.f;
+}
+
 /// Stub: register a resident cell; rejects invalid coords and focus distance.
 [[nodiscard]] inline bool try_add_resident(ResidencySet& set, GridCoord coord, f32 focus_distance) {
     if (!is_valid_grid_coord(coord)) {
+        return false;
+    }
+    return set.add(coord, focus_distance);
+}
+
+/// Guard: register a resident cell; rejects invalid coords and negative focus distance.
+[[nodiscard]] inline bool try_add_resident_guarded(ResidencySet& set, GridCoord coord, f32 focus_distance) {
+    if (!is_valid_grid_coord(coord) || !is_valid_focus_distance(focus_distance)) {
         return false;
     }
     return set.add(coord, focus_distance);
@@ -172,7 +185,7 @@ inline u32 ResidencySet::find_index_(GridCoord coord) const {
     if (!is_valid_grid_coord(coord)) {
         return false;
     }
-    return success ? try_add_resident(set, coord, focus_distance) : false;
+    return success ? try_add_resident_guarded(set, coord, focus_distance) : false;
 }
 
 /// Stub: clear residency after a successful async unload completes on the game thread.
@@ -219,11 +232,6 @@ inline u32 ResidencySet::find_index_(GridCoord coord) const {
 /// Guard: removes a resident cell; returns false when coord is invalid or not resident.
 [[nodiscard]] inline bool remove_resident_guarded(ResidencySet& set, GridCoord coord) {
     return try_remove_resident(set, coord);
-}
-
-/// True when focus distance is non-negative (stub validation).
-[[nodiscard]] inline bool is_valid_focus_distance(f32 focus_distance) {
-    return focus_distance >= 0.f;
 }
 
 /// Guard: returns stored focus distance, or -1 when coord is invalid or not resident.
@@ -273,6 +281,19 @@ template <typename ScoreFn>
     return kInvalidGridCoord;
 }
 
+/// Empty-candidate guard: pick budget eviction candidate from a coord list.
+/// Returns `kInvalidGridCoord` and leaves `out_score` at -1 when `candidates` is empty.
+template <typename ScoreFn>
+[[nodiscard]] inline GridCoord pick_budget_eviction_candidate_guarded(const std::vector<GridCoord>& candidates,
+                                                                    ScoreFn&& score_fn, f32 incoming_priority,
+                                                                    EvictionPolicy policy, f32& out_score) {
+    if (candidates.empty()) {
+        out_score = -1.f;
+        return kInvalidGridCoord;
+    }
+    return pick_budget_eviction_candidate(candidates, score_fn, incoming_priority, policy, out_score);
+}
+
 /// Return coords from `candidates` eligible for budget eviction, preserving farthest-first order.
 template <typename ScoreFn>
 [[nodiscard]] inline std::vector<GridCoord> collect_budget_eviction_candidates(
@@ -290,6 +311,17 @@ template <typename ScoreFn>
         }
     }
     return eligible;
+}
+
+/// Empty-candidate guard: collect eligible budget eviction coords from a coord list.
+template <typename ScoreFn>
+[[nodiscard]] inline std::vector<GridCoord> collect_budget_eviction_candidates_guarded(
+    const std::vector<GridCoord>& candidates, ScoreFn&& score_fn, f32 incoming_priority,
+    EvictionPolicy policy) {
+    if (candidates.empty()) {
+        return {};
+    }
+    return collect_budget_eviction_candidates(candidates, score_fn, incoming_priority, policy);
 }
 
 /// Empty-set guard: return eligible budget eviction coords from a residency set (farthest-first).
@@ -355,6 +387,16 @@ template <typename ScoreFn>
     const f32 budget_score = budget_eviction_score(focus_distance, unload_distance_priority,
                                                     last_touch_tick, current_tick, policy);
     return rank_budget_unload_priority(streaming_priority, stored_priority, focus_distance, budget_score);
+}
+
+/// Guard: combined unload rank with negative inputs clamped and invalid focus distance rejected.
+[[nodiscard]] inline f32 eviction_unload_priority_guarded(f32 streaming_priority, f32 stored_priority,
+                                                          f32 focus_distance, f32 unload_distance_priority,
+                                                          u32 last_touch_tick, u32 current_tick,
+                                                          EvictionPolicy policy) {
+    const f32 budget_score = budget_eviction_score_guarded(focus_distance, unload_distance_priority,
+                                                           last_touch_tick, current_tick, policy);
+    return rank_budget_unload_priority_guarded(streaming_priority, stored_priority, focus_distance, budget_score);
 }
 
 } // namespace fuse::world_partition
