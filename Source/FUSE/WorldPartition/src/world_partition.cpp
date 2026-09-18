@@ -211,7 +211,7 @@ void WorldPartition::evict_for_budget_(f32 incoming_priority, u64 incoming_bytes
         const f32 focus_distance = m_residency_set.focus_distance_for(best_candidate->coord);
         const f32 streaming_priority =
             m_streaming.unload_priority_for(best_candidate->coord, m_desc.cell_size);
-        const f32 unload_priority = eviction_unload_priority(
+        const f32 unload_priority = eviction_unload_priority_guarded(
             streaming_priority, best_candidate->unload_priority, focus_distance, streaming_priority,
             best_candidate->last_touch_tick, m_tick, m_desc.eviction_policy);
 
