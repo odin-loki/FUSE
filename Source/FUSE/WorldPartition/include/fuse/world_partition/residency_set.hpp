@@ -189,6 +189,22 @@ inline u32 ResidencySet::find_index_(GridCoord coord) const {
     return set.has_eviction_candidate() ? set.pick_eviction_candidate() : kInvalidGridCoord;
 }
 
+/// Guard: returns -1 when coord is invalid or not resident.
+[[nodiscard]] inline f32 focus_distance_for_guarded(const ResidencySet& set, GridCoord coord) {
+    if (!is_valid_grid_coord(coord)) {
+        return -1.f;
+    }
+    return set.focus_distance_for(coord);
+}
+
+/// Stub: refresh focus distance for a resident cell; rejects invalid coords and negative distance.
+[[nodiscard]] inline bool try_update_resident_focus(ResidencySet& set, GridCoord coord, f32 focus_distance) {
+    if (!is_valid_grid_coord(coord)) {
+        return false;
+    }
+    return set.update_focus_distance(coord, focus_distance);
+}
+
 /// Guard: returns false when coord is invalid or not resident.
 [[nodiscard]] inline bool contains_resident_guarded(const ResidencySet& set, GridCoord coord) {
     return is_valid_grid_coord(coord) && set.contains(coord);
@@ -243,6 +259,37 @@ template <typename ScoreFn>
     return eligible;
 }
 
+/// Empty-set guard: return eligible budget eviction coords from a residency set (farthest-first).
+template <typename ScoreFn>
+[[nodiscard]] inline std::vector<GridCoord> collect_budget_eviction_candidates_from_set(
+    const ResidencySet& set, ScoreFn&& score_fn, f32 incoming_priority, EvictionPolicy policy) {
+    if (!set.has_eviction_candidate()) {
+        return {};
+    }
+    return collect_budget_eviction_candidates(set.collect_eviction_candidates(), score_fn, incoming_priority,
+                                              policy);
+}
+
+/// Count coords from `candidates` eligible for budget eviction (skips invalid coords).
+template <typename ScoreFn>
+[[nodiscard]] inline u32 count_budget_eviction_candidates(const std::vector<GridCoord>& candidates,
+                                                          ScoreFn&& score_fn, f32 incoming_priority,
+                                                          EvictionPolicy policy) {
+    return static_cast<u32>(
+        collect_budget_eviction_candidates(candidates, score_fn, incoming_priority, policy).size());
+}
+
+/// Empty-set guard: count eligible budget eviction candidates in a residency set.
+template <typename ScoreFn>
+[[nodiscard]] inline u32 count_budget_eviction_candidates_from_set(const ResidencySet& set, ScoreFn&& score_fn,
+                                                                   f32 incoming_priority, EvictionPolicy policy) {
+    if (!set.has_eviction_candidate()) {
+        return 0u;
+    }
+    return count_budget_eviction_candidates(set.collect_eviction_candidates(), score_fn, incoming_priority,
+                                            policy);
+}
+
 /// Empty-set guard: pick budget eviction candidate from a residency set.
 template <typename ScoreFn>
 [[nodiscard]] inline GridCoord pick_budget_eviction_candidate_from_set(const ResidencySet& set,
@@ -265,7 +312,7 @@ template <typename ScoreFn>
     f32 score = -1.f;
     const GridCoord picked =
         pick_budget_eviction_candidate_from_set(set, score_fn, incoming_priority, policy, score);
-    return is_valid_grid_coord(picked) && score > 0.f;
+    return is_valid_grid_coord(picked) && is_valid_eviction_score(score);
 }
 
 /// Combined unload rank for budget-driven eviction (B7.6 deepen).

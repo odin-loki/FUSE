@@ -136,6 +136,36 @@ enum class EvictionPolicy : u8 {
     return unload_distance_priority;
 }
 
+/// True when an incoming load (higher `priority` = closer) should evict a resident at `resident_focus_distance`.
+[[nodiscard]] inline bool incoming_outranks_resident(f32 incoming_priority, f32 stream_in_radius,
+                                                     f32 resident_focus_distance) {
+    if (incoming_priority <= 0.f || stream_in_radius <= 0.f) {
+        return false;
+    }
+    const f32 incoming_distance = stream_in_radius - incoming_priority;
+    return incoming_distance < resident_focus_distance;
+}
+
+/// True when a computed eviction score qualifies a resident for budget-driven eviction.
+[[nodiscard]] inline bool is_valid_eviction_score(f32 score) { return score > 0.f; }
+
+/// Resident bytes that must be freed before `incoming_bytes` can fit under the byte cap (0 when unlimited or fits).
+[[nodiscard]] inline u64 eviction_byte_deficit(u64 max_resident_bytes, u64 resident_bytes, u64 incoming_bytes) {
+    if (byte_budget_unlimited(max_resident_bytes) || incoming_bytes == 0u) {
+        return 0u;
+    }
+    const u64 projected = resident_bytes + incoming_bytes;
+    return projected > max_resident_bytes ? projected - max_resident_bytes : 0u;
+}
+
+/// Resident cells that must be evicted before `incoming_count` can fit under the cell cap.
+[[nodiscard]] inline u32 resident_cell_deficit(u32 max_loaded_cells, u32 resident_count, u32 incoming_count = 1u) {
+    if (incoming_count == 0u || can_accept_resident_cell(max_loaded_cells, resident_count + incoming_count - 1u)) {
+        return 0u;
+    }
+    return (resident_count + incoming_count) - max_loaded_cells;
+}
+
 /// True when an incoming load outranks a resident cell for budget eviction (closer wins).
 [[nodiscard]] inline bool incoming_outranks_eviction(f32 incoming_priority, f32 eviction_score) {
     if (incoming_priority <= 0.f) {
