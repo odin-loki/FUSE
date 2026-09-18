@@ -205,13 +205,36 @@ bool EventPump::hasPendingResizeFor(const Window& window) const {
 }
 
 bool EventPump::hasPendingEventOfType(PlatformEventType type) const {
+    return countPendingEventsOfType(type) > 0u;
+}
+
+u32 EventPump::countPendingEventsOfType(PlatformEventType type) const {
+    if (m_syntheticHead == m_syntheticTail) {
+        return 0;
+    }
+
+    u32 count = 0;
+    u32 index = m_syntheticHead;
+    while (index != m_syntheticTail) {
+        if (m_syntheticEvents[index].type == type) {
+            ++count;
+        }
+
+        index = (index + 1u) % kMaxSyntheticEvents;
+    }
+
+    return count;
+}
+
+bool EventPump::hasPendingEventOfTypeFor(const Window& window, PlatformEventType type) const {
     if (m_syntheticHead == m_syntheticTail) {
         return false;
     }
 
     u32 index = m_syntheticHead;
     while (index != m_syntheticTail) {
-        if (m_syntheticEvents[index].type == type) {
+        const PlatformEvent& pending = m_syntheticEvents[index];
+        if (pending.type == type && pending.window == &window) {
             return true;
         }
 
@@ -263,6 +286,10 @@ PendingResizeExtent EventPump::pendingResizeExtentFor(const Window& window) cons
 
 const ResizeCoalesceRecord& EventPump::lastCoalescedResize() const {
     return m_lastCoalescedResize;
+}
+
+bool EventPump::hasCoalescedResizeFor(const Window& window) const {
+    return m_lastCoalescedResize.valid && m_lastCoalescedResize.window == &window;
 }
 
 EventPumpStats EventPump::stats() const {
@@ -328,7 +355,7 @@ u32 EventPump::drainEvents(std::vector<PlatformEvent>& out) {
 
 bool EventPump::tryCoalescePendingResize_(const PlatformEvent& event) {
     if (event.type != PlatformEventType::WindowResized || event.window == nullptr ||
-        m_syntheticHead == m_syntheticTail) {
+        event.width == 0u || event.height == 0u || m_syntheticHead == m_syntheticTail) {
         return false;
     }
 
@@ -368,6 +395,10 @@ void EventPump::enqueueSyntheticEvent_(const PlatformEvent& event) {
 }
 
 void EventPump::pushSyntheticEvent(const PlatformEvent& event) {
+    if (event.type == PlatformEventType::None) {
+        return;
+    }
+
     if (tryCoalescePendingResize_(event)) {
         return;
     }
