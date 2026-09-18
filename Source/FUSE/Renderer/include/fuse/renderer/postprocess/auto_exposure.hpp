@@ -33,6 +33,10 @@ f32 luminance_to_ev(f32 luminance, f32 target_luminance);
 f32 ev_to_luminance(f32 ev, f32 target_luminance);
 f32 compute_target_ev(f32 measured_luminance, const AutoExposureParams& params);
 f32 clamp_ev(f32 ev, const AutoExposureParams& params);
+/// True when auto-exposure tuning knobs are usable (B5.10 deepen).
+bool auto_exposure_params_valid(const AutoExposureParams& params);
+/// True when auto-exposure can adapt over a non-zero frame interval (B5.10 deepen).
+bool auto_exposure_can_adapt(const AutoExposureParams& params, f32 delta_seconds);
 bool auto_exposure_ev_anchor_valid(f32 ev, const AutoExposureParams& params);
 void reset_auto_exposure_state(AutoExposureState& state);
 /// Reset temporal state while preserving a scene-load EV anchor (B5.10 deepen).
@@ -56,6 +60,8 @@ struct LuminanceHistogramParams {
     f32 metering_percentile = 0.5f;
 };
 
+/// True when a metering percentile is within [0, 1] (B5.10 deepen).
+bool metering_percentile_valid(f32 percentile);
 /// True when histogram binning and percentile knobs are usable (B5.10 deepen).
 bool luminance_histogram_params_valid(const LuminanceHistogramParams& params);
 
@@ -97,6 +103,11 @@ bool canMeterFromSamples(const fuse::math::Vec3* samples, u32 count, const Lumin
 bool hasMeteringHistogram(const LuminanceHistogram& histogram);
 /// True when histogram params and accumulated samples are ready for metering (B5.10 deepen).
 bool canMeterFromHistogram(const LuminanceHistogram& histogram);
+/// True when percentile and histogram are ready for percentile metering (B5.10 deepen).
+bool canMeterPercentile(const LuminanceHistogram& histogram, f32 percentile);
+/// True when percentile, params, and sample buffer are ready for percentile metering (B5.10 deepen).
+bool canMeterPercentileFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
+                                   f32 percentile);
 void accumulateSamples(LuminanceHistogram& histogram, const fuse::math::Vec3* samples, u32 count);
 f32 measurePercentile(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
                       f32 percentile);
