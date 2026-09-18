@@ -14,20 +14,73 @@ void TransformSystem::recompute_world_matrix(Transform& transform, const mat4& p
     transform.dirty = false;
 }
 
+bool TransformSystem::should_recompute_in_hierarchy(const Transform& transform) {
+    return transform.dirty || transform.parent.valid();
+}
+
+bool TransformSystem::subtree_has_dirty(Registry& reg, EntityID id) {
+    const Transform* transform = reg.get<Transform>(id);
+    if (transform == nullptr) {
+        return false;
+    }
+
+    if (transform->dirty) {
+        return true;
+    }
+
+    bool found = false;
+    reg.each<Transform>([&](EntityID child_id, Transform& child) {
+        if (found || child.parent != id) {
+            return;
+        }
+
+        found = subtree_has_dirty(reg, child_id);
+    });
+    return found;
+}
+
+bool TransformSystem::has_dirty_transforms(Registry& reg) {
+    return count_dirty_transforms(reg) > 0;
+}
+
+u32 TransformSystem::count_dirty_transforms(Registry& reg) {
+    if (!has_any_transforms(reg)) {
+        return 0;
+    }
+
+    u32 count = 0;
+    reg.each<Transform>([&](EntityID, Transform& transform) {
+        if (transform.dirty) {
+            ++count;
+        }
+    });
+    return count;
+}
+
+bool TransformSystem::should_skip_hierarchy_update(Registry& reg) {
+    if (!has_any_transforms(reg)) {
+        return true;
+    }
+
+    return !has_dirty_transforms(reg);
+}
+
 void TransformSystem::update_hierarchy(Registry& reg, EntityID id, const mat4& parent_matrix) {
     Transform* transform = reg.get<Transform>(id);
     if (transform == nullptr) {
         return;
     }
 
-    if (transform->dirty || transform->parent.valid()) {
+    if (should_recompute_in_hierarchy(*transform)) {
         recompute_world_matrix(*transform, parent_matrix);
     }
 
     reg.each<Transform>([&](EntityID child_id, Transform& child) {
-        if (child.parent == id) {
-            update_hierarchy(reg, child_id, transform->local_to_world);
+        if (child.parent != id) {
+            return;
         }
+
+        update_hierarchy(reg, child_id, transform->local_to_world);
     });
 }
 
@@ -109,6 +162,8 @@ void TransformSystem::update(Registry& reg, const TransformSystemOptions& option
         return;
     }
 
+    const bool skip_hierarchy = should_skip_hierarchy_update(reg);
+
     std::vector<EntityID> roots;
     reg.each<Transform>([&](EntityID id, Transform& transform) {
         if (!transform.parent.valid()) {
@@ -122,6 +177,10 @@ void TransformSystem::update(Registry& reg, const TransformSystemOptions& option
         } else {
             update_dirty_roots_serial(reg);
         }
+    }
+
+    if (skip_hierarchy) {
+        return;
     }
 
     for (EntityID root : roots) {
