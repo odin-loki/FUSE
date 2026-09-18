@@ -738,6 +738,107 @@ void testPairBufferCompactionEarlyOuts() {
     expectEq(buffer.activeCount, 2u, "compact early-out leaves pairs intact");
 }
 
+void testCanSkipBroadphaseGuards() {
+    expectTrue(fuse::physics::broadphase::canSkipBroadphase(0u, 1u),
+               "canSkipBroadphase when no bodies");
+    expectTrue(fuse::physics::broadphase::canSkipBroadphase(1u, 0u),
+               "canSkipBroadphase when no shapes");
+    expectTrue(!fuse::physics::broadphase::canSkipBroadphase(2u, 3u),
+               "canSkipBroadphase false when both sets populated");
+
+    const std::vector<fuse::physics::broadphase::CandidatePair> emptyPairs;
+    expectTrue(fuse::physics::broadphase::isEmptyCandidatePairList(emptyPairs),
+               "isEmptyCandidatePairList on empty vector");
+    expectTrue(fuse::physics::broadphase::canSkipPairListDedupe(0u),
+               "canSkipPairListDedupe on empty list");
+    expectTrue(fuse::physics::broadphase::canSkipPairListDedupe(1u),
+               "canSkipPairListDedupe on single pair");
+    expectTrue(!fuse::physics::broadphase::canSkipPairListDedupe(2u),
+               "canSkipPairListDedupe false for multiple pairs");
+    expectTrue(fuse::physics::broadphase::canSkipCellPairGeneration(0u),
+               "canSkipCellPairGeneration on empty cell");
+    expectTrue(fuse::physics::broadphase::canSkipCellPairGeneration(1u),
+               "canSkipCellPairGeneration on single occupant");
+    expectTrue(!fuse::physics::broadphase::canSkipCellPairGeneration(2u),
+               "canSkipCellPairGeneration false for pair-capable cell");
+}
+
+void testCellOccupancyBudgetGuards() {
+    const fuse::physics::broadphase::CellRange3 unitCube = {{0, 0, 0}, {1, 1, 1}};
+    expectEq(fuse::physics::broadphase::estimateCellOccupancyCount(unitCube), 8u,
+             "unit cube occupies eight cells");
+    expectTrue(!fuse::physics::broadphase::exceedsCellOccupancyBudget(unitCube, 8u),
+               "unit cube within budget of eight");
+    expectTrue(fuse::physics::broadphase::exceedsCellOccupancyBudget(unitCube, 4u),
+               "unit cube exceeds budget of four");
+    expectTrue(!fuse::physics::broadphase::exceedsCellOccupancyBudget(unitCube, 0u),
+               "zero budget is unlimited");
+
+    const fuse::physics::broadphase::CellRange3 wideRange = {{0, 0, 0}, {9, 0, 0}};
+    expectTrue(fuse::physics::broadphase::exceedsMaxCellSpanPerAxis(wideRange, 4u),
+               "wide range exceeds per-axis span budget");
+    expectTrue(!fuse::physics::broadphase::exceedsMaxCellSpanPerAxis(wideRange, 0u),
+               "zero per-axis budget is unlimited");
+
+    const fuse::physics::broadphase::CellRange3 shrunk =
+        fuse::physics::broadphase::shrinkCellRangeToOccupancyBudget(unitCube, 4u);
+    expectEq(fuse::physics::broadphase::estimateCellOccupancyCount(shrunk), 4u,
+             "shrinkCellRangeToOccupancyBudget fits budget");
+    expectTrue(!fuse::physics::broadphase::exceedsCellOccupancyBudget(shrunk, 4u),
+               "shrunk range respects occupancy budget");
+}
+
+void testPruneInvalidCandidatePairs() {
+    std::vector<fuse::physics::broadphase::CandidatePair> pairs = {
+        {0u, 1u},
+        {1u, 1u},
+        {0u, 2u},
+        {3u, 4u},
+    };
+    expectEq(fuse::physics::broadphase::countValidCandidatePairs(pairs, 3u), 2u,
+             "countValidCandidatePairs filters self and OOB pairs");
+    expectEq(fuse::physics::broadphase::pruneInvalidCandidatePairs(pairs, 3u), 2u,
+             "pruneInvalidCandidatePairs removes invalid entries");
+    expectEq(pairs.size(), 2u, "prune leaves valid pairs only");
+    expectTrue(fuse::physics::broadphase::isValidCandidatePair(pairs[0], 3u),
+               "first pruned pair is valid");
+    expectTrue(fuse::physics::broadphase::isValidCandidatePair(pairs[1], 3u),
+               "second pruned pair is valid");
+}
+
+void testPairBufferWouldRejectPush() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    expectTrue(buffer.wouldRejectPush(1u, 1u), "wouldRejectPush on self-pair");
+    expectTrue(!buffer.wouldRejectPush(0u, 1u), "wouldRejectPush accepts valid pair");
+
+    buffer.setMaxCapacity(1u);
+    buffer.push(0u, 1u);
+    expectTrue(buffer.wouldRejectPush(2u, 3u), "wouldRejectPush when buffer is full");
+    expectTrue(buffer.canSkipMaxCapacityClamp(), "at-capacity buffer skips post clamp");
+    expectTrue(!buffer.canApplyMaxCapacityClamp(), "canSkipMaxCapacityClamp inverse of canApply");
+}
+
+void testBroadphaseCellOccupancyBudgetIntegration() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    bodies.addBody({500.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {256.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 1, {1.f, 0.f, 0.f});
+
+    fuse::physics::broadphase::SpatialHashParams params;
+    params.cellSize = 1.f;
+    params.tableSize = 256;
+    params.maxCellSpanPerAxis = 0u;
+    params.maxCellOccupancyPerShape = 8u;
+    params.bodyCount = bodies.count();
+
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    fuse::physics::broadphase::runBroadphaseIntoBuffer(bodies, shapes, params, buffer);
+    expectTrue(buffer.isEmpty(), "occupancy budget prevents huge sphere from flooding pairs");
+}
+
 void testBroadphaseBoxShapeCellRange() {
     fuse::physics::RigidBodySoA bodies;
     fuse::physics::CollisionShapeSoA shapes;
@@ -791,6 +892,11 @@ int main() {
     testNormalizeSpatialHashParamsAndOccupancy();
     testBroadphaseNormalizedParamsGuard();
     testPairBufferCompactionEarlyOuts();
+    testCanSkipBroadphaseGuards();
+    testCellOccupancyBudgetGuards();
+    testPruneInvalidCandidatePairs();
+    testPairBufferWouldRejectPush();
+    testBroadphaseCellOccupancyBudgetIntegration();
     testBroadphaseBoxShapeCellRange();
 
     if (g_failures == 0) {

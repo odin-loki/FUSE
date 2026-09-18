@@ -12,6 +12,15 @@
 
 namespace fuse::physics::broadphase {
 
+u32 pruneInvalidCandidatePairs(std::vector<CandidatePair>& pairs, u32 bodyCount) {
+    const auto isInvalid = [&](const CandidatePair& pair) {
+        return !isValidCandidatePair(pair, bodyCount);
+    };
+    const u32 before = static_cast<u32>(pairs.size());
+    pairs.erase(std::remove_if(pairs.begin(), pairs.end(), isInvalid), pairs.end());
+    return before - static_cast<u32>(pairs.size());
+}
+
 const char* candidatePairRejectReasonName(CandidatePairRejectReason reason) {
     switch (reason) {
     case CandidatePairRejectReason::None:
@@ -66,6 +75,10 @@ void appendPair(std::vector<CandidatePair>& pairs, u32 bodyA, u32 bodyB) {
 }
 
 void dedupePairs(std::vector<CandidatePair>& pairs) {
+    pruneInvalidCandidatePairs(pairs);
+    if (canSkipPairListDedupe(static_cast<u32>(pairs.size()))) {
+        return;
+    }
     std::sort(pairs.begin(), pairs.end(), [](const CandidatePair& left, const CandidatePair& right) {
         return left.bodyA < right.bodyA || (left.bodyA == right.bodyA && left.bodyB < right.bodyB);
     });
@@ -96,7 +109,7 @@ std::vector<u32> uniqueOccupants(const std::vector<u32>& occupants) {
 }
 
 u32 countPairsForCell(const std::vector<u32>& occupants) {
-    if (occupants.size() < 2u) {
+    if (canSkipCellPairGeneration(static_cast<u32>(occupants.size()))) {
         return 0u;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -105,7 +118,7 @@ u32 countPairsForCell(const std::vector<u32>& occupants) {
 }
 
 void generatePairsForCell(const std::vector<u32>& occupants, std::vector<CandidatePair>& out) {
-    if (occupants.size() < 2u) {
+    if (canSkipCellPairGeneration(static_cast<u32>(occupants.size()))) {
         return;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -120,7 +133,7 @@ void writePairsForCellSlots(
     const std::vector<u32>& occupants,
     u32 slotStart,
     PairBufferSoA& buffer) {
-    if (occupants.size() < 2u) {
+    if (canSkipCellPairGeneration(static_cast<u32>(occupants.size()))) {
         return;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -163,6 +176,12 @@ void populateShapeCells(
         if (isEmptyCellRange(range)) {
             return;
         }
+        if (params.maxCellOccupancyPerShape > 0u) {
+            range = shrinkCellRangeToOccupancyBudget(range, params.maxCellOccupancyPerShape);
+            if (isEmptyCellRange(range)) {
+                return;
+            }
+        }
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
             for (s32 cx = range.minCell.x; cx <= range.maxCell.x; ++cx) {
                 const u32 key = spatialHash2D(cx, cy, tableSize);
@@ -182,6 +201,12 @@ void populateShapeCells(
     }
     if (isEmptyCellRange(range)) {
         return;
+    }
+    if (params.maxCellOccupancyPerShape > 0u) {
+        range = shrinkCellRangeToOccupancyBudget(range, params.maxCellOccupancyPerShape);
+        if (isEmptyCellRange(range)) {
+            return;
+        }
     }
     for (s32 cz = range.minCell.z; cz <= range.maxCell.z; ++cz) {
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
@@ -245,7 +270,7 @@ void runBroadphaseIntoBufferInternal(
     bool use2D,
     PairBufferSoA& buffer) {
     buffer.clear();
-    if (bodies.count() == 0 || shapes.count() == 0) {
+    if (canSkipBroadphase(bodies.count(), shapes.count())) {
         return;
     }
 
