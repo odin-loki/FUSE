@@ -180,6 +180,47 @@ u32 ProbeGridLayout::probeIndexFromClampedCoord(const DDGIDesc& desc, const Prob
     return probeIndexFromCoord(desc, clamped);
 }
 
+void ProbeGridLayout::normalizeProbeSampleCoords(ProbeSampleCoords& coords) {
+    if (coords.x0 > coords.x1) {
+        std::swap(coords.x0, coords.x1);
+        coords.tx = 1.f - coords.tx;
+    }
+    if (coords.y0 > coords.y1) {
+        std::swap(coords.y0, coords.y1);
+        coords.ty = 1.f - coords.ty;
+    }
+    if (coords.z0 > coords.z1) {
+        std::swap(coords.z0, coords.z1);
+        coords.tz = 1.f - coords.tz;
+    }
+
+    coords.tx = std::clamp(coords.tx, 0.f, 1.f);
+    coords.ty = std::clamp(coords.ty, 0.f, 1.f);
+    coords.tz = std::clamp(coords.tz, 0.f, 1.f);
+}
+
+bool ProbeGridLayout::isValidProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
+    if (isEmptyGrid(desc)) {
+        return false;
+    }
+
+    const u32 max_x = desc.grid_dims.x - 1u;
+    const u32 max_y = desc.grid_dims.y - 1u;
+    const u32 max_z = desc.grid_dims.z - 1u;
+
+    const auto inRange = [](u32 value, u32 max_value) { return value <= max_value; };
+    if (!inRange(coords.x0, max_x) || !inRange(coords.x1, max_x) || !inRange(coords.y0, max_y) ||
+        !inRange(coords.y1, max_y) || !inRange(coords.z0, max_z) || !inRange(coords.z1, max_z)) {
+        return false;
+    }
+    if (coords.x0 > coords.x1 || coords.y0 > coords.y1 || coords.z0 > coords.z1) {
+        return false;
+    }
+
+    return coords.tx >= 0.f && coords.tx <= 1.f && coords.ty >= 0.f && coords.ty <= 1.f && coords.tz >= 0.f &&
+           coords.tz <= 1.f;
+}
+
 void ProbeGridLayout::clampProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCoords& coords) {
     if (isEmptyGrid(desc)) {
         coords = {};
@@ -197,9 +238,7 @@ void ProbeGridLayout::clampProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCo
     coords.y1 = std::min(coords.y1, max_y);
     coords.z1 = std::min(coords.z1, max_z);
 
-    coords.tx = std::clamp(coords.tx, 0.f, 1.f);
-    coords.ty = std::clamp(coords.ty, 0.f, 1.f);
-    coords.tz = std::clamp(coords.tz, 0.f, 1.f);
+    normalizeProbeSampleCoords(coords);
 }
 
 bool ProbeGridLayout::buildProbeSampleCoords(const DDGIDesc& desc,
@@ -522,6 +561,10 @@ bool isCacheSizedForGrid(const DDGIDesc& desc, u32 cache_count) {
     return cache_count >= required;
 }
 
+bool isCacheIndexValid(const DDGIDesc& desc, u32 probe_index, u32 cache_count) {
+    return ProbeGridLayout::isValidProbeIndex(desc, probe_index) && probe_index < cache_count;
+}
+
 u32 cacheEntriesMissing(const DDGIDesc& desc, u32 cache_count) {
     const u32 required = requiredCacheCount(desc);
     if (required == 0u || cache_count >= required) {
@@ -666,11 +709,14 @@ fuse::math::Vec3 trilinearProbeIrradiance(const DDGIDesc& desc,
     if (!ProbeGridLayout::buildProbeSampleCoords(desc, world_position, coords)) {
         return {};
     }
+    if (!ProbeGridLayout::isValidProbeSampleCoords(desc, coords)) {
+        return {};
+    }
 
     const auto sample_probe = [&](u32 x, u32 y, u32 z) -> fuse::math::Vec3 {
         const ProbeGridCoord probe_coord{x, y, z};
         const u32 index = ProbeGridLayout::probeIndexFromCoord(desc, probe_coord);
-        if (index == UINT32_MAX || index >= cache_count) {
+        if (!isCacheIndexValid(desc, index, cache_count)) {
             return {};
         }
         return cache[index].irradiance;
@@ -710,11 +756,14 @@ fuse::math::Vec3 trilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
     if (!ProbeGridLayout::buildProbeSampleCoords(desc, world_position, coords)) {
         return {};
     }
+    if (!ProbeGridLayout::isValidProbeSampleCoords(desc, coords)) {
+        return {};
+    }
 
     const auto sample_probe = [&](u32 x, u32 y, u32 z) -> fuse::math::Vec3 {
         const ProbeGridCoord probe_coord{x, y, z};
         const u32 index = ProbeGridLayout::probeIndexFromCoord(desc, probe_coord);
-        if (index == UINT32_MAX || index >= cache_count) {
+        if (!isCacheIndexValid(desc, index, cache_count)) {
             return {};
         }
         return sampleDirectionalIrradianceAtProbe(cache[index], sample_direction, desc.irradiance_res);
@@ -774,11 +823,24 @@ DdgiInfo ddgi_info() {
     return info;
 }
 
+bool canLaunchProbeUpdate(const DDGIDesc& desc, const u32* probe_indices, u32 probe_count) {
+    if (probe_count == 0u || probe_indices == nullptr || ProbeGridLayout::isEmptyGrid(desc)) {
+        return false;
+    }
+
+    for (u32 i = 0u; i < probe_count; ++i) {
+        if (ProbeGridLayout::isProbeIndexOutOfRange(probe_indices[i], desc)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool launch_ddgi_probe_update(const DDGIDesc& desc,
                               const u32* probe_indices,
                               u32 probe_count,
                               void* cuda_stream) {
-    if (probe_count == 0u || probe_indices == nullptr || ProbeGridLayout::isEmptyGrid(desc)) {
+    if (!canLaunchProbeUpdate(desc, probe_indices, probe_count)) {
         return false;
     }
 
@@ -796,8 +858,23 @@ bool launch_ddgi_probe_update(const DDGIDesc& desc,
 
 namespace gi {
 
+bool isValidKernelLaunchParams(const DDGIKernelParams& params) {
+    if (params.probe_update_count == 0u) {
+        return false;
+    }
+    if (params.probe_indices_to_update == nullptr) {
+        return false;
+    }
+    if (params.rays_per_probe == 0u) {
+        return false;
+    }
+    return true;
+}
+
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream) {
-    (void)params;
+    if (!isValidKernelLaunchParams(params)) {
+        return false;
+    }
     (void)cuda_stream;
 #if defined(FUSE_HAS_CUDA)
     // Full probe_trace_kernel lands in ddgi_kernels.cu — stub succeeds on CI.
@@ -808,7 +885,9 @@ bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream
 }
 
 bool launch_probe_blend_kernel(const DDGIKernelParams& params, void* cuda_stream) {
-    (void)params;
+    if (!isValidKernelLaunchParams(params)) {
+        return false;
+    }
     (void)cuda_stream;
 #if defined(FUSE_HAS_CUDA)
     return true;
