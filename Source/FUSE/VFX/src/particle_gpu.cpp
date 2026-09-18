@@ -126,6 +126,24 @@ std::array<ParticleGpuColumnSpan, 8> ParticleGpuBufferLayout::collectColumnSpans
     return spans;
 }
 
+const char* ParticleGpuBufferLayout::bufferGuardName(ParticleGpuBufferGuard guard) {
+    switch (guard) {
+    case ParticleGpuBufferGuard::Ok:
+        return "ok";
+    case ParticleGpuBufferGuard::ZeroCapacity:
+        return "zero_capacity";
+    case ParticleGpuBufferGuard::EmptyPackedBytes:
+        return "empty_packed_bytes";
+    case ParticleGpuBufferGuard::UnboundDevice:
+        return "unbound_device";
+    }
+    return "unknown";
+}
+
+bool ParticleGpuBufferLayout::isValidCapacity(u32 capacity) {
+    return capacity > 0u && validatePackedLayout(capacity);
+}
+
 const char* ParticleGpuBufferLayout::syncGuardName(ParticleGpuSyncGuard guard) {
     switch (guard) {
     case ParticleGpuSyncGuard::Ok:
@@ -381,6 +399,27 @@ ParticleGpuBuffers ParticleGpuBuffers::forCapacity(u32 particle_capacity) {
     return buffers;
 }
 
+ParticleGpuBufferPreflight ParticleGpuBuffers::preflight() const {
+    ParticleGpuBufferPreflight result{};
+    result.packed_bytes = deviceBytes;
+
+    if (capacity == 0u || deviceBytes == 0u) {
+        result.guard = ParticleGpuBufferGuard::ZeroCapacity;
+        return result;
+    }
+
+    if (packedSoa == 0u) {
+        result.guard = ParticleGpuBufferGuard::UnboundDevice;
+        result.layout_valid = ParticleGpuBufferLayout::isValidCapacity(capacity);
+        return result;
+    }
+
+    result.guard = ParticleGpuBufferGuard::Ok;
+    result.layout_valid = ParticleGpuBufferLayout::validatePackedLayout(capacity) &&
+                          deviceBytes == ParticleGpuBufferLayout::packedDeviceBytes(capacity);
+    return result;
+}
+
 void ParticleGpuMirror::reserve(u32 particle_capacity) {
     capacity = particle_capacity;
     positions.assign(particle_capacity, {});
@@ -428,6 +467,32 @@ bool ParticleGpuMirrorPreflight::can_bind_device() const {
 
 bool ParticleGpuMirrorUploadPreflight::can_upload() const {
     return mirror.can_bind_device() && layout_bytes_ok;
+}
+
+bool ParticleGpuPackPreflight::can_pack() const {
+    return !skip_pack && mirror_initialized && layout_valid &&
+           buffer_guard != ParticleGpuBufferGuard::ZeroCapacity;
+}
+
+bool ParticleGpuPackPreflight::can_unpack() const {
+    return layout_valid && buffer_guard == ParticleGpuBufferGuard::Ok &&
+           !skip_pack;
+}
+
+bool ParticleGpuEmitPreflight::can_emit() const {
+    return !skip_emit && allowed_emit > 0u;
+}
+
+bool ParticleGpuSimPreflight::can_simulate() const {
+    return !skip_sim && has_live_particles;
+}
+
+bool ParticleGpuBufferPreflight::can_allocate() const {
+    return guard == ParticleGpuBufferGuard::Ok && layout_valid && packed_bytes > 0u;
+}
+
+bool ParticleGpuBufferPreflight::can_bind() const {
+    return can_allocate();
 }
 
 ParticleGpuSyncGuard ParticleGpuMirror::syncGuardForCpu(const ParticleSoA& cpu) const {
@@ -494,6 +559,48 @@ ParticleGpuMirrorUploadPreflight ParticleGpuMirror::preflightDeviceUpload(const 
 
 bool ParticleGpuMirror::shouldSkipSyncFromCpu(const ParticleSoA& cpu) const {
     return syncGuardForCpu(cpu) == ParticleGpuSyncGuard::Ok && matchesCpuSoA(cpu);
+}
+
+ParticleGpuPackPreflight ParticleGpuMirror::preflightPack() const {
+    ParticleGpuPackPreflight preflight{};
+    preflight.mirror_initialized = capacity > 0u;
+    preflight.layout_valid =
+        capacity > 0u && ParticleGpuBufferLayout::validatePackedLayout(capacity);
+    preflight.skip_pack = shouldSkipPack();
+    preflight.buffer_guard = capacity == 0u ? ParticleGpuBufferGuard::ZeroCapacity
+                                            : ParticleGpuBufferGuard::Ok;
+    return preflight;
+}
+
+bool ParticleGpuMirror::shouldSkipPack() const {
+    return capacity == 0u || !ParticleGpuBufferLayout::isValidCapacity(capacity);
+}
+
+bool ParticleGpuMirror::tryPackToDeviceLayout(std::vector<u8>& out) const {
+    const ParticleGpuPackPreflight preflight = preflightPack();
+    if (!preflight.can_pack()) {
+        out.clear();
+        return false;
+    }
+
+    out = packToDeviceLayout();
+    return !out.empty();
+}
+
+ParticleGpuPackPreflight ParticleGpuMirror::preflightUnpack(const std::vector<u8>& bytes, u32 particle_capacity) {
+    ParticleGpuPackPreflight preflight{};
+    preflight.mirror_initialized = particle_capacity > 0u;
+    preflight.layout_valid =
+        particle_capacity > 0u && ParticleGpuBufferLayout::validatePackedLayout(particle_capacity);
+    preflight.skip_pack = should_skip_unpack(bytes, particle_capacity);
+    if (particle_capacity == 0u) {
+        preflight.buffer_guard = ParticleGpuBufferGuard::ZeroCapacity;
+    } else if (bytes.empty()) {
+        preflight.buffer_guard = ParticleGpuBufferGuard::EmptyPackedBytes;
+    } else {
+        preflight.buffer_guard = ParticleGpuBufferGuard::Ok;
+    }
+    return preflight;
 }
 
 bool ParticleGpuMirror::aliveCountMatchesFlags() const {
@@ -784,6 +891,22 @@ bool ParticleGpuFramePlan::skipEmitLaunch() const {
     return dispatch.shouldSkipEmitLaunch(emit_count);
 }
 
+bool ParticleGpuFramePlan::skipSimLaunchForAlive() const {
+    return should_skip_sim_when_empty(alive_count) || skipSimLaunch();
+}
+
+bool ParticleGpuFramePlan::skipEmitLaunchForSlots(u32 free_slots) const {
+    return should_skip_emit_when_full(emit_count, free_slots) || skipEmitLaunch();
+}
+
+ParticleGpuEmitPreflight ParticleGpuFramePlan::preflightEmit(u32 free_slots) const {
+    return preflight_emit_dispatch(emit_count, free_slots);
+}
+
+ParticleGpuSimPreflight ParticleGpuFramePlan::preflightSim() const {
+    return preflight_sim_dispatch(alive_count, capacity);
+}
+
 bool ParticleGpuFramePlan::buffersSizedForCapacity() const {
     return buffers.capacity == capacity &&
            buffers.deviceBytes == ParticleGpuBufferLayout::packedDeviceBytes(capacity);
@@ -804,11 +927,18 @@ ParticleGpuFramePreflight ParticleGpuFramePlan::preflight() const {
     result.emit_dispatch_ok = dispatch.emitCovers(emit_count);
     result.sim_padding_ok = dispatch.simPaddingAccountsFor(capacity);
     result.emit_padding_ok = dispatch.emitPaddingAccountsFor(emit_count);
+
+    const u32 free_slots = capacity >= alive_count ? capacity - alive_count : 0u;
+    const ParticleGpuSimPreflight sim_preflight = preflightSim();
+    const ParticleGpuEmitPreflight emit_preflight = preflightEmit(free_slots);
+    result.sim_alive_ok = skipSimLaunchForAlive() || sim_preflight.can_simulate();
+    result.emit_slots_ok = skipEmitLaunchForSlots(free_slots) || emit_preflight.allowed_emit > 0u;
     return result;
 }
 
 bool ParticleGpuFramePreflight::ready_for_stub() const {
-    return buffers_ok && sim_dispatch_ok && emit_dispatch_ok && sim_padding_ok && emit_padding_ok;
+    return buffers_ok && sim_dispatch_ok && emit_dispatch_ok && sim_padding_ok && emit_padding_ok &&
+           sim_alive_ok && emit_slots_ok;
 }
 
 ParticleSoAGPU ParticleGpuFramePlan::gpuPointers(u64 packed_device_address) const {
@@ -886,6 +1016,44 @@ bool should_skip_sim_dispatch(u32 capacity) {
 
 bool should_skip_emit_dispatch(u32 emit_count) {
     return emit_count == 0u;
+}
+
+bool should_skip_sim_when_empty(u32 alive_count) {
+    return alive_count == 0u;
+}
+
+bool should_skip_emit_when_full(u32 emit_count, u32 free_slots) {
+    return emit_count > 0u && free_slots == 0u;
+}
+
+bool should_skip_pack(const ParticleGpuMirror& mirror) {
+    return mirror.shouldSkipPack();
+}
+
+bool should_skip_unpack(const std::vector<u8>& bytes, u32 capacity) {
+    if (capacity == 0u) {
+        return true;
+    }
+    return bytes.empty() || bytes.size() < ParticleGpuBufferLayout::packedDeviceBytes(capacity);
+}
+
+ParticleGpuEmitPreflight preflight_emit_dispatch(u32 emit_count, u32 free_slots) {
+    ParticleGpuEmitPreflight preflight{};
+    preflight.emit_count = emit_count;
+    preflight.free_slots = free_slots;
+    preflight.skip_emit = should_skip_emit_dispatch(emit_count) || should_skip_emit_when_full(emit_count, free_slots);
+    preflight.allowed_emit = emit_count <= free_slots ? emit_count : free_slots;
+    preflight.would_clamp = emit_count > free_slots;
+    return preflight;
+}
+
+ParticleGpuSimPreflight preflight_sim_dispatch(u32 alive_count, u32 capacity) {
+    ParticleGpuSimPreflight preflight{};
+    preflight.alive_count = alive_count;
+    preflight.capacity = capacity;
+    preflight.has_live_particles = alive_count > 0u;
+    preflight.skip_sim = should_skip_sim_dispatch(capacity) || should_skip_sim_when_empty(alive_count);
+    return preflight;
 }
 
 bool should_skip_mirror_sync(const ParticleGpuMirror& mirror, const ParticleSoA& cpu) {
