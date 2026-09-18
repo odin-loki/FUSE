@@ -123,6 +123,28 @@ enum class TaaHistoryReuseBlockReason : u8 {
 const char* taaHistoryReuseBlockReasonLabel(TaaHistoryReuseBlockReason reason);
 /// Classify why history reuse is blocked for an observed invalidate epoch (B5.9 deepen).
 TaaHistoryReuseBlockReason classifyTaaHistoryReuseBlock(const TaaHistoryBuffer& history, u32 observedGeneration);
+/// True when history temporal reuse is allowed for the observed invalidate epoch (B5.9 deepen).
+bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
+                              TaaHistoryReuseBlockReason* reason = nullptr);
+/// True when history buffers are allocated and ready for resolve (B5.9 deepen).
+bool taaHistoryReadyForResolve(const TaaHistoryBuffer& history);
+/// Frames remaining before temporal reuse is allowed — 0 when warmed (B5.9 deepen).
+u32 taaHistoryWarmupFramesRemaining(const TaaHistoryBuffer& history);
+
+/// Why resolve blend-weight preflight rejected the request (B5.9 deepen).
+enum class TaaResolveBlendRejectReason : u8 {
+    None = 0,
+    InvalidWeights,
+    InconsistentWithReuse,
+};
+/// Human-readable label for resolve blend reject reasons (B5.9 deepen).
+const char* taaResolveBlendRejectReasonLabel(TaaResolveBlendRejectReason reason);
+/// Classify why resolve blend weights would be rejected (B5.9 deepen).
+TaaResolveBlendRejectReason classifyTaaResolveBlendReject(const TaaResolveDesc& desc,
+                                                          const TaaHistoryBuffer& history);
+/// True when computed resolve blend weights pass validation and reuse policy (B5.9 deepen).
+bool preflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                     TaaResolveBlendRejectReason* reason = nullptr);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {

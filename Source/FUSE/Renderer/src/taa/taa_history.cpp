@@ -22,6 +22,23 @@ bool taaHistoryNeedsWarmup(const TaaHistoryBuffer& history) {
     return !history.hasValidHistory();
 }
 
+bool taaHistoryReadyForResolve(const TaaHistoryBuffer& history) {
+    return history.isReady();
+}
+
+u32 taaHistoryWarmupFramesRemaining(const TaaHistoryBuffer& history) {
+    return taaHistoryNeedsWarmup(history) ? 1u : 0u;
+}
+
+bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
+                              TaaHistoryReuseBlockReason* reason) {
+    const TaaHistoryReuseBlockReason block = classifyTaaHistoryReuseBlock(history, observedGeneration);
+    if (reason != nullptr) {
+        *reason = block;
+    }
+    return block == TaaHistoryReuseBlockReason::None;
+}
+
 bool TaaHistoryBuffer::canReuseHistory() const {
     return taaHistoryCanReuse(*this);
 }
