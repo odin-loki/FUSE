@@ -89,6 +89,11 @@ enum class CellResidencyState : u8 {
     return std::max(streaming_priority, stored_priority);
 }
 
+/// Guard: effective unload priority, clamping negative component inputs to zero.
+[[nodiscard]] inline f32 effective_unload_priority_guarded(f32 streaming_priority, f32 stored_priority) {
+    return effective_unload_priority(std::max(0.f, streaming_priority), std::max(0.f, stored_priority));
+}
+
 /// Rank unload pressure for eviction queue ordering (B7.6 deepen).
 [[nodiscard]] inline f32 rank_unload_priority(f32 streaming_priority, f32 stored_priority,
                                               f32 focus_distance) {
