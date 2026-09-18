@@ -76,4 +76,29 @@ inline constexpr u32 kInvalidMaterialSlot = UINT32_MAX;
 /// Clamp all fields in an authoring-side material edit state (B6.7 deepen follow-up).
 void clampMaterialEditState(MaterialEditState& state);
 
+/// Captured dirty/refresh metadata for material inspector redraw (B6.7 deepen follow-up).
+struct MaterialInspectorRefreshInfo {
+    bool pending = false;
+    u32 dirtyMask = 0u;
+    u32 coalescedDirtyCount = 0u;
+};
+
+/// Empty-catalog or invalid-slot early-out for material edits (B6.7 deepen follow-up).
+[[nodiscard]] bool shouldEarlyOutMaterialEdit(u32 catalogCount, u32 materialId);
+
+/// Binding guard — slot and property id must both be valid (B6.7 deepen follow-up).
+[[nodiscard]] bool canBindMaterialProperty(MaterialPropertyId id, u32 materialId, u32 catalogCount);
+
+/// Scalar try-get/set guard — rejects vec3 property ids (B6.7 deepen follow-up).
+[[nodiscard]] bool canTryMaterialPropertyScalar(MaterialPropertyId id);
+
+/// Vec3 try-get/set guard — accepts only base color (B6.7 deepen follow-up).
+[[nodiscard]] bool canTryMaterialPropertyVec3(MaterialPropertyId id);
+
+/// True when the inspector should schedule a panel redraw (B6.7 deepen follow-up).
+[[nodiscard]] bool shouldRefreshMaterialInspector(const MaterialInspectorRefreshInfo& info);
+
+/// Early-out when the binding is not live — refresh is a no-op (B6.7 deepen follow-up).
+[[nodiscard]] bool shouldSkipMaterialInspectorRefresh(bool isBound);
+
 } // namespace fuse::editor

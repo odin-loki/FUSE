@@ -723,6 +723,117 @@ void testMaterialPropertyBindingUnbound() {
     expectTrue(!panel.setShadingModel(2u, cmds), "panel shading model set without selection fails");
 }
 
+void testMaterialEditEarlyOutHelpers() {
+    expectTrue(fuse::editor::shouldEarlyOutMaterialEdit(0u, 0u),
+               "empty catalog early-outs any slot");
+    expectTrue(fuse::editor::shouldEarlyOutMaterialEdit(2u, 2u),
+               "out-of-range slot early-outs");
+    expectTrue(!fuse::editor::shouldEarlyOutMaterialEdit(3u, 1u),
+               "in-range slot does not early-out");
+
+    expectTrue(fuse::editor::canBindMaterialProperty(fuse::editor::MaterialPropertyId::Roughness, 0u, 2u),
+               "roughness binds on valid slot");
+    expectTrue(!fuse::editor::canBindMaterialProperty(fuse::editor::MaterialPropertyId::Roughness, 2u, 2u),
+               "roughness rejects invalid slot");
+    expectTrue(fuse::editor::canTryMaterialPropertyScalar(fuse::editor::MaterialPropertyId::Metallic),
+               "metallic is scalar try property");
+    expectTrue(!fuse::editor::canTryMaterialPropertyScalar(fuse::editor::MaterialPropertyId::BaseColor),
+               "base color is not scalar try property");
+    expectTrue(fuse::editor::canTryMaterialPropertyVec3(fuse::editor::MaterialPropertyId::BaseColor),
+               "base color is vec3 try property");
+    expectTrue(!fuse::editor::canTryMaterialPropertyVec3(fuse::editor::MaterialPropertyId::Roughness),
+               "roughness is not vec3 try property");
+}
+
+void testMaterialInspectorRefreshHelpers() {
+    fuse::editor::MaterialInspectorRefreshInfo idle{};
+    expectTrue(!fuse::editor::shouldRefreshMaterialInspector(idle),
+               "idle refresh info does not request redraw");
+
+    fuse::editor::MaterialInspectorRefreshInfo pending{.pending = true};
+    expectTrue(fuse::editor::shouldRefreshMaterialInspector(pending),
+               "pending flag requests redraw");
+
+    fuse::editor::MaterialInspectorRefreshInfo dirty{.dirtyMask = 1u};
+    expectTrue(fuse::editor::shouldRefreshMaterialInspector(dirty),
+               "dirty mask requests redraw");
+
+    expectTrue(fuse::editor::shouldSkipMaterialInspectorRefresh(false),
+               "unbound binding skips refresh");
+    expectTrue(!fuse::editor::shouldSkipMaterialInspectorRefresh(true),
+               "bound binding does not skip refresh");
+
+    fuse::editor::EditorState state;
+    fuse::editor::MaterialEditorPanel panel;
+    panel.sync(state, 1u);
+    expectTrue(panel.shouldRefreshPanel(), "sync marks preview dirty");
+
+    panel.selectMaterial(0u);
+    expectTrue(panel.canApplyPanelRefresh(), "selected panel can apply refresh");
+    expectTrue(!panel.shouldSkipPropertyEdit(), "selected panel does not skip edits");
+
+    fuse::editor::CommandStack cmds;
+    expectTrue(panel.setRoughness(0.25f, cmds), "edit accepted on selected panel");
+    expectTrue(panel.shouldRefreshPanel(), "property edit requests panel refresh");
+
+    const fuse::editor::MaterialInspectorRefreshInfo info = panel.propertyBinding().refreshInfo();
+    expectTrue(fuse::editor::shouldRefreshMaterialInspector(info),
+               "binding refresh info reports pending redraw");
+    expectTrue(info.coalescedDirtyCount == 0u, "first dirty edit has zero coalesced count");
+
+    panel.refreshPanel();
+    expectTrue(!panel.shouldRefreshPanel(), "refreshPanel clears refresh request");
+    expectTrue(!panel.propertyBinding().hasAnyPropertyDirty(),
+               "refreshPanel clears dirty property mask");
+}
+
+void testMaterialPropertyBindingScalarVec3Guards() {
+    fuse::editor::MaterialPropertyBinding binding;
+    expectTrue(!binding.canTryGetPropertyScalar(fuse::editor::MaterialPropertyId::Roughness),
+               "unbound scalar get guard fails");
+    expectTrue(!binding.canTrySetPropertyScalar(fuse::editor::MaterialPropertyId::Roughness),
+               "unbound scalar set guard fails");
+    expectTrue(!binding.canTryGetPropertyVec3(fuse::editor::MaterialPropertyId::BaseColor),
+               "unbound vec3 get guard fails");
+    expectTrue(!binding.canTrySetPropertyVec3(fuse::editor::MaterialPropertyId::BaseColor),
+               "unbound vec3 set guard fails");
+    expectTrue(!binding.canRefreshFromEditState(), "unbound refresh guard fails");
+
+    fuse::editor::MaterialEditState state{};
+    expectTrue(binding.tryBind(0u, 1u, state), "binding attaches to valid slot");
+    expectTrue(binding.canTryGetPropertyScalar(fuse::editor::MaterialPropertyId::Roughness),
+               "bound scalar get guard passes");
+    expectTrue(binding.canTrySetPropertyScalar(fuse::editor::MaterialPropertyId::Metallic),
+               "bound scalar set guard passes");
+    expectTrue(!binding.canTryGetPropertyScalar(fuse::editor::MaterialPropertyId::BaseColor),
+               "base color rejected by scalar get guard");
+    expectTrue(!binding.canTrySetPropertyScalar(fuse::editor::MaterialPropertyId::BaseColor),
+               "base color rejected by scalar set guard");
+    expectTrue(binding.canTryGetPropertyVec3(fuse::editor::MaterialPropertyId::BaseColor),
+               "bound vec3 get guard passes");
+    expectTrue(binding.canTrySetPropertyVec3(fuse::editor::MaterialPropertyId::BaseColor),
+               "bound vec3 set guard passes");
+    expectTrue(!binding.canTryGetPropertyVec3(fuse::editor::MaterialPropertyId::Roughness),
+               "roughness rejected by vec3 get guard");
+    expectTrue(binding.canRefreshFromEditState(), "bound refresh guard passes");
+}
+
+void testMaterialEditorPanelSkipPropertyEdit() {
+    fuse::editor::EditorState state;
+    fuse::editor::MaterialEditorPanel panel;
+    panel.sync(state, 0u);
+
+    expectTrue(panel.shouldSkipPropertyEdit(), "empty catalog skips property edits");
+    expectTrue(!panel.canApplyPanelRefresh(), "empty catalog cannot apply refresh");
+
+    panel.sync(state, 2u);
+    expectTrue(panel.shouldSkipPropertyEdit(), "unselected panel skips property edits");
+
+    fuse::editor::CommandStack cmds;
+    expectTrue(!panel.setRoughness(0.5f, cmds), "edit blocked when shouldSkipPropertyEdit");
+    expectTrue(cmds.appliedCount() == 0u, "skipped edit posts no commands");
+}
+
 #ifdef FUSE_VULKAN_BACKEND
 void testMaterialEditorPanelMaterialSystemBridge() {
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
@@ -836,6 +947,10 @@ int main() {
     testMaterialPropertyBindingClamp();
     testMaterialPropertyBindingDirtyCoalesce();
     testMaterialPropertyBindingUnbound();
+    testMaterialEditEarlyOutHelpers();
+    testMaterialInspectorRefreshHelpers();
+    testMaterialPropertyBindingScalarVec3Guards();
+    testMaterialEditorPanelSkipPropertyEdit();
     testPropertyInspectorMeshMaterialId();
     testPropertyInspectorMeshMaterialEmptyCatalog();
     testPropertyInspectorMeshMaterialTryGet();

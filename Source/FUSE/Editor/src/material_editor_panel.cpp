@@ -85,13 +85,25 @@ bool MaterialEditorPanel::selectMaterial(u32 materialId) {
     return true;
 }
 
+bool MaterialEditorPanel::shouldSkipPropertyEdit() const {
+    return isCatalogEmpty() || !hasSelectedMaterial() || !m_binding.canPostProperty();
+}
+
+bool MaterialEditorPanel::shouldRefreshPanel() const {
+    return previewDirty() || needsPanelRefresh();
+}
+
+bool MaterialEditorPanel::canApplyPanelRefresh() const {
+    return hasSelectedMaterial() && m_binding.isBound();
+}
+
 void MaterialEditorPanel::refreshPanel() {
     m_binding.markPanelRefreshed();
     m_previewDirty = false;
 }
 
 bool MaterialEditorPanel::setRoughness(f32 roughness, CommandStack& cmds) {
-    if (!hasSelectedMaterial() || !m_binding.canPostProperty()) {
+    if (shouldSkipPropertyEdit()) {
         return false;
     }
 
@@ -100,7 +112,7 @@ bool MaterialEditorPanel::setRoughness(f32 roughness, CommandStack& cmds) {
 }
 
 bool MaterialEditorPanel::setMetallic(f32 metallic, CommandStack& cmds) {
-    if (!hasSelectedMaterial() || !m_binding.canPostProperty()) {
+    if (shouldSkipPropertyEdit()) {
         return false;
     }
 
@@ -109,7 +121,7 @@ bool MaterialEditorPanel::setMetallic(f32 metallic, CommandStack& cmds) {
 }
 
 bool MaterialEditorPanel::setBaseColor(f32 r, f32 g, f32 b, CommandStack& cmds) {
-    if (!hasSelectedMaterial() || !m_binding.canPostProperty()) {
+    if (shouldSkipPropertyEdit()) {
         return false;
     }
 
@@ -118,7 +130,7 @@ bool MaterialEditorPanel::setBaseColor(f32 r, f32 g, f32 b, CommandStack& cmds) 
 }
 
 bool MaterialEditorPanel::setShadingModel(u8 shadingModel, CommandStack& cmds) {
-    if (!hasSelectedMaterial() || !m_binding.canPostProperty()) {
+    if (shouldSkipPropertyEdit()) {
         return false;
     }
 

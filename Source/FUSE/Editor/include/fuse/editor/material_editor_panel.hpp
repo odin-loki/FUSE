@@ -47,6 +47,15 @@ public:
     [[nodiscard]] bool needsPanelRefresh() const { return m_binding.needsPanelRefresh(); }
     [[nodiscard]] u32 coalescedPropertyDirtyCount() const { return m_binding.coalescedDirtyCount(); }
 
+    /// Early-out when catalog empty, unselected, or binding cannot post (B6.7 deepen follow-up).
+    [[nodiscard]] bool shouldSkipPropertyEdit() const;
+
+    /// True when preview or binding dirty flags request a redraw (B6.7 deepen follow-up).
+    [[nodiscard]] bool shouldRefreshPanel() const;
+
+    /// Refresh guard — panel has a live material selection (B6.7 deepen follow-up).
+    [[nodiscard]] bool canApplyPanelRefresh() const;
+
     bool selectMaterial(u32 materialId);
     bool setRoughness(f32 roughness, CommandStack& cmds);
     bool setMetallic(f32 metallic, CommandStack& cmds);
