@@ -63,4 +63,11 @@ bool waitInFlightFencesBeforeRecreate(FrameManager& manager, bool waitAllSlots) 
     return waitCurrentInFlightFence(manager);
 }
 
+bool waitInFlightFencesBeforeAcquire(FrameManager& manager) {
+    if (!manager.isReady()) {
+        return false;
+    }
+    return waitInFlightFenceIfSignaled(manager, manager.currentIndex());
+}
+
 } // namespace fuse::renderer
