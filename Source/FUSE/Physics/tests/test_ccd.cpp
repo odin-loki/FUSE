@@ -433,9 +433,101 @@ void testToiBufferApplyMaxCapacityClampEmpty() {
     ToiBufferSoA buffer;
     buffer.setMaxCapacity(2u);
 
+    expectTrue(buffer.canSkipSoAIteration(), "empty buffer skips SoA iteration");
+    expectTrue(!buffer.hasValidTois(), "empty buffer has no valid TOIs");
+    expectTrue(!buffer.slotIsValid(0u), "slotIsValid rejects empty buffer slot");
+    expectTrue(buffer.toVector().empty(), "toVector early-outs on empty buffer");
+
     expectTrue(buffer.applyMaxCapacityClamp() == 0u, "clamp on empty buffer returns zero");
     expectTrue(buffer.isEmpty(), "clamp on empty buffer stays empty");
     expectTrue(buffer.droppedCount == 0u, "clamp on empty buffer does not increment dropped count");
+    expectTrue(buffer.isSortedByToi(), "empty buffer reports sorted");
+    expectTrue(buffer.compactAndSort() == 0u, "compactAndSort early-outs when empty");
+}
+
+void testToiBufferSlotIsValidAndInvalidate() {
+    ToiBufferSoA buffer;
+    buffer.preparePairSlots(3u);
+
+    TOIResult first{};
+    first.valid = true;
+    first.toi = 0.25f;
+    first.bodyA = 1u;
+    first.bodyB = 2u;
+
+    TOIResult second = first;
+    second.toi = 0.75f;
+    second.bodyA = 3u;
+
+    buffer.writeSlot(0u, first);
+    buffer.writeSlot(2u, second);
+
+    expectTrue(buffer.slotIsValid(0u), "written slot reports valid");
+    expectTrue(!buffer.slotIsValid(1u), "untouched slot reports invalid");
+    expectTrue(buffer.slotIsValid(2u), "second written slot reports valid");
+
+    buffer.invalidateSlot(0u);
+    expectTrue(!buffer.slotIsValid(0u), "invalidateSlot clears slot validity");
+
+    expectTrue(buffer.compact() == 1u, "compact after invalidate keeps remaining valid slot");
+    expectTrue(buffer.activeCount == 1u, "compact after invalidate updates active count");
+    expectNear(buffer.resultAt(0u).toi, 0.75f, 1e-5f, "compact after invalidate keeps surviving TOI");
+}
+
+void testToiBufferApplyMaxCapacityClampSortsBeforeTruncate() {
+    ToiBufferSoA buffer;
+    buffer.setMaxCapacity(1u);
+    buffer.preparePairSlots(3u);
+
+    TOIResult late{};
+    late.valid = true;
+    late.toi = 0.9f;
+    late.bodyA = 1u;
+
+    TOIResult early = late;
+    early.toi = 0.1f;
+    early.bodyA = 2u;
+
+    buffer.writeSlot(0u, late);
+    buffer.writeSlot(2u, early);
+    expectTrue(buffer.compact() == 2u, "compact gathers unsorted valid slots");
+
+    expectTrue(buffer.applyMaxCapacityClamp() == 1u,
+               "applyMaxCapacityClamp truncates unsorted buffer after sorting");
+    expectTrue(buffer.activeCount == 1u, "clamp keeps one impact");
+    expectTrue(buffer.droppedCount == 1u, "clamp tracks dropped later TOI");
+    expectNear(buffer.resultAt(0u).toi, 0.1f, 1e-5f, "clamp keeps earliest TOI after internal sort");
+    expectTrue(buffer.isSortedByToi(), "clamped buffer remains sorted");
+}
+
+void testToiBufferPreparePairSlotsZeroClears() {
+    ToiBufferSoA buffer;
+    buffer.preparePairSlots(2u);
+
+    TOIResult result{};
+    result.valid = true;
+    result.toi = 0.4f;
+    buffer.writeSlot(0u, result);
+    expectTrue(buffer.compact() == 1u, "compact keeps valid slot before zero prepare");
+
+    buffer.preparePairSlots(0u);
+    expectTrue(buffer.canSkipSoAIteration(), "preparePairSlots(0) clears slot storage");
+    expectTrue(buffer.isEmpty(), "preparePairSlots(0) leaves empty buffer");
+    expectTrue(buffer.compactAndSort() == 0u, "compactAndSort on zero-prepared buffer is no-op");
+}
+
+void testToiBufferHasValidToisAfterPush() {
+    ToiBufferSoA buffer;
+    expectTrue(!buffer.hasValidTois(), "default buffer has no valid TOIs");
+
+    TOIResult result{};
+    result.valid = true;
+    result.toi = 0.5f;
+    buffer.push(result);
+
+    expectTrue(buffer.hasValidTois(), "push-mode buffer reports valid TOIs");
+    expectTrue(!buffer.canSkipSoAIteration(), "push-mode buffer does not skip iteration");
+    expectTrue(buffer.toVector().size() == 1u, "toVector gathers valid TOI after push");
 }
 
 void testToiBufferApplyMaxCapacityClampPushMode() {
@@ -779,6 +871,10 @@ int main() {
     testToiBufferCompactAllInvalidSlots();
     testToiBufferSortAlreadySortedEarlyOut();
     testToiBufferApplyMaxCapacityClampEmpty();
+    testToiBufferSlotIsValidAndInvalidate();
+    testToiBufferApplyMaxCapacityClampSortsBeforeTruncate();
+    testToiBufferPreparePairSlotsZeroClears();
+    testToiBufferHasValidToisAfterPush();
     testToiBufferApplyMaxCapacityClampPushMode();
     testToiBufferIsFull();
     testToiBufferApplyMaxCapacityClamp();
