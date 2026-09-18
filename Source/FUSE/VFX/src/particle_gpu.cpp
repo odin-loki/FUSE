@@ -126,6 +126,46 @@ std::array<ParticleGpuColumnSpan, 8> ParticleGpuBufferLayout::collectColumnSpans
     return spans;
 }
 
+const char* ParticleGpuBufferLayout::slotGuardName(ParticleGpuSlotGuard guard) {
+    switch (guard) {
+    case ParticleGpuSlotGuard::Ok:
+        return "ok";
+    case ParticleGpuSlotGuard::OutOfRange:
+        return "out_of_range";
+    case ParticleGpuSlotGuard::InvalidCapacity:
+        return "invalid_capacity";
+    }
+    return "unknown";
+}
+
+bool ParticleGpuBufferLayout::isSlotInRange(u32 slot_index, u32 capacity) {
+    return capacity > 0u && slot_index < capacity;
+}
+
+ParticleGpuSlotGuard ParticleGpuBufferLayout::slotGuard(u32 slot_index, u32 capacity) {
+    if (capacity == 0u) {
+        return ParticleGpuSlotGuard::InvalidCapacity;
+    }
+    if (slot_index >= capacity) {
+        return ParticleGpuSlotGuard::OutOfRange;
+    }
+    return ParticleGpuSlotGuard::Ok;
+}
+
+usize ParticleGpuBufferLayout::slotElementByteOffset(ParticleGpuColumn column, u32 slot_index, u32 capacity) {
+    if (slotGuard(slot_index, capacity) != ParticleGpuSlotGuard::Ok) {
+        return 0u;
+    }
+    return static_cast<usize>(slot_index) * elementSize(column);
+}
+
+usize ParticleGpuBufferLayout::slotColumnByteOffset(ParticleGpuColumn column, u32 slot_index, u32 capacity) {
+    if (slotGuard(slot_index, capacity) != ParticleGpuSlotGuard::Ok) {
+        return 0u;
+    }
+    return columnDeviceOffset(column, capacity) + slotElementByteOffset(column, slot_index, capacity);
+}
+
 const char* ParticleGpuBufferLayout::syncGuardName(ParticleGpuSyncGuard guard) {
     switch (guard) {
     case ParticleGpuSyncGuard::Ok:
@@ -234,6 +274,64 @@ ParticleGpuDispatch ParticleGpuDispatch::forFrame(u32 capacity, u32 emit_count) 
     return dispatch;
 }
 
+ParticleGpuDispatchPreflight ParticleGpuDispatch::preflightSimulate(u32 capacity) {
+    ParticleGpuDispatchPreflight preflight{};
+    preflight.element_count = capacity;
+    preflight.block_size = ParticleGpuBufferLayout::kSimBlockSize;
+
+    if (capacity == 0u) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    const ParticleGpuDispatch dispatch = forSimulate(capacity);
+    preflight.block_count = dispatch.simBlockCount;
+    preflight.covered_threads = dispatch.totalSimThreads();
+    preflight.padding_threads = dispatch.simPaddingThreads(capacity);
+    preflight.skipped = dispatch.shouldSkipSimLaunch(capacity);
+    return preflight;
+}
+
+ParticleGpuDispatchPreflight ParticleGpuDispatch::preflightEmit(u32 emit_count) {
+    ParticleGpuDispatchPreflight preflight{};
+    preflight.element_count = emit_count;
+    preflight.block_size = ParticleGpuBufferLayout::kEmitBlockSize;
+
+    if (emit_count == 0u) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    const ParticleGpuDispatch dispatch = forEmit(emit_count);
+    preflight.block_count = dispatch.emitBlockCount;
+    preflight.covered_threads = dispatch.totalEmitThreads();
+    preflight.padding_threads = dispatch.emitPaddingThreads(emit_count);
+    preflight.skipped = dispatch.shouldSkipEmitLaunch(emit_count);
+    return preflight;
+}
+
+ParticleGpuDispatchPreflight ParticleGpuDispatch::simPreflight(u32 slot_count) const {
+    ParticleGpuDispatchPreflight preflight{};
+    preflight.element_count = slot_count;
+    preflight.block_size = simThreadCount;
+    preflight.block_count = simBlockCount;
+    preflight.covered_threads = totalSimThreads();
+    preflight.padding_threads = simPaddingThreads(slot_count);
+    preflight.skipped = shouldSkipSimLaunch(slot_count);
+    return preflight;
+}
+
+ParticleGpuDispatchPreflight ParticleGpuDispatch::emitPreflight(u32 emit_count) const {
+    ParticleGpuDispatchPreflight preflight{};
+    preflight.element_count = emit_count;
+    preflight.block_size = emitThreadCount;
+    preflight.block_count = emitBlockCount;
+    preflight.covered_threads = totalEmitThreads();
+    preflight.padding_threads = emitPaddingThreads(emit_count);
+    preflight.skipped = shouldSkipEmitLaunch(emit_count);
+    return preflight;
+}
+
 u32 ParticleGpuDispatch::simPaddingThreads(u32 capacity) const {
     return particle_gpu_util::paddingThreads(capacity, simBlockCount, simThreadCount);
 }
@@ -339,6 +437,32 @@ bool ParticleGpuMirror::canSyncFromCpuSoA(const ParticleSoA& cpu) const {
 
 bool ParticleGpuMirror::canWriteToCpuSoA(const ParticleSoA& cpu) const {
     return writeGuardForCpu(cpu) == ParticleGpuSyncGuard::Ok;
+}
+
+ParticleGpuMirrorSyncPreflight ParticleGpuMirror::preflightSyncFromCpu(const ParticleSoA& cpu) const {
+    ParticleGpuMirrorSyncPreflight preflight{};
+    preflight.guard = syncGuardForCpu(cpu);
+    preflight.needs_resize = capacity == 0u && cpu.capacity > 0u;
+    preflight.can_sync = canSyncFromCpuSoA(cpu);
+    preflight.can_write = false;
+    return preflight;
+}
+
+ParticleGpuMirrorSyncPreflight ParticleGpuMirror::preflightWriteToCpu(const ParticleSoA& cpu) const {
+    ParticleGpuMirrorSyncPreflight preflight{};
+    preflight.guard = writeGuardForCpu(cpu);
+    preflight.needs_resize = false;
+    preflight.can_sync = false;
+    preflight.can_write = canWriteToCpuSoA(cpu);
+    return preflight;
+}
+
+ParticleGpuSlotGuard ParticleGpuMirror::slotGuard(u32 slot_index) const {
+    return ParticleGpuBufferLayout::slotGuard(slot_index, capacity);
+}
+
+bool ParticleGpuMirror::isSlotInRange(u32 slot_index) const {
+    return ParticleGpuBufferLayout::isSlotInRange(slot_index, capacity);
 }
 
 bool ParticleGpuMirror::trySyncFromCpuSoA(const ParticleSoA& cpu) {
@@ -588,6 +712,26 @@ ParticleSoAGPU ParticleGpuMirror::toGpuPointers(u64 packed_device_address) const
     gpu.alphas = ParticleGpuBufferLayout::columnDeviceAddress(ParticleGpuColumn::Alphas, packed_device_address, capacity);
     gpu.alive_flags = ParticleGpuBufferLayout::columnDeviceAddress(ParticleGpuColumn::AliveFlags, packed_device_address, capacity);
     return gpu;
+}
+
+ParticleGpuFramePlanPreflight ParticleGpuFramePlan::preflightStub(u32 particle_capacity, u32 frame_emit_count,
+                                                                   u32 frame_alive_count) {
+    return forStub(particle_capacity, frame_emit_count, frame_alive_count).preflight();
+}
+
+ParticleGpuFramePlanPreflight ParticleGpuFramePlan::preflight() const {
+    ParticleGpuFramePlanPreflight preflight{};
+    preflight.capacity = capacity;
+    preflight.emit_count = emit_count;
+    preflight.alive_count = alive_count;
+    preflight.buffers_ok = buffersSizedForCapacity();
+    preflight.skip_sim = skipSimLaunch();
+    preflight.skip_emit = skipEmitLaunch();
+    preflight.sim_covers_capacity = dispatch.simCovers(capacity);
+    preflight.emit_covers_count = dispatch.emitCovers(emit_count);
+    preflight.sim_padding_threads = simPaddingThreadCount();
+    preflight.emit_padding_threads = emitPaddingThreadCount();
+    return preflight;
 }
 
 ParticleGpuFramePlan ParticleGpuFramePlan::forStub(u32 particle_capacity, u32 frame_emit_count, u32 frame_alive_count) {
