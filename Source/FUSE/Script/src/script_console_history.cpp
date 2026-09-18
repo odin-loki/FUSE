@@ -92,10 +92,6 @@ bool ScriptConsoleHistoryBuffer::contains(const char* line) const {
     return false;
 }
 
-bool ScriptConsoleHistoryBuffer::is_navigation_at_end() const {
-    return m_size == 0 || m_navigationCursor >= static_cast<s32>(m_size);
-}
-
 void ScriptConsoleHistoryBuffer::push(const char* line) {
     if (line == nullptr) {
         return;
@@ -153,6 +149,14 @@ const std::string& ScriptConsoleHistoryBuffer::recall(bool previous) {
 
 void ScriptConsoleHistoryBuffer::resetNavigation() {
     m_navigationCursor = static_cast<s32>(m_size);
+}
+
+const std::string& ScriptConsoleHistoryBuffer::navigation_entry() const {
+    static const std::string kEmpty;
+    if (!is_navigating()) {
+        return kEmpty;
+    }
+    return at(static_cast<u32>(m_navigationCursor));
 }
 
 bool ScriptConsoleHistoryBuffer::can_recall_previous() const {

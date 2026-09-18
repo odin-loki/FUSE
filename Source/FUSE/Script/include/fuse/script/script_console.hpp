@@ -31,6 +31,8 @@ public:
     [[nodiscard]] bool can_repeat() const { return !m_lastExecutedLine.empty(); }
     /// True for lookup/meta built-ins that skip history and repeat-state updates.
     [[nodiscard]] static bool is_meta_command(const char* name);
+    /// True when a successful `execute` of `line` would append to history (pre-dispatch guard).
+    [[nodiscard]] bool would_record_history(const char* line) const;
 
     void setHistoryCapacity(u32 capacity);
     [[nodiscard]] u32 historyCapacity() const { return m_history.capacity(); }
@@ -50,7 +52,8 @@ public:
     [[nodiscard]] bool can_recall_history(bool previous) const {
         return previous ? m_history.can_recall_previous() : m_history.can_recall_next();
     }
-    [[nodiscard]] bool is_history_navigation_at_end() const { return m_history.is_navigation_at_end(); }
+    [[nodiscard]] const std::string& history_navigation_entry() const { return m_history.navigation_entry(); }
+    [[nodiscard]] bool is_history_navigating() const { return m_history.is_navigating(); }
 
     [[nodiscard]] const std::vector<std::string>& outputLines() const { return m_output; }
     void clearOutput();
