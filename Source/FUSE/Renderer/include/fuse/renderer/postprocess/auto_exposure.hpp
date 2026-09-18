@@ -58,6 +58,10 @@ struct LuminanceHistogramParams {
 
 /// True when histogram binning and percentile knobs are usable (B5.10 deepen).
 bool luminance_histogram_params_valid(const LuminanceHistogramParams& params);
+/// True when an explicit percentile knob is in [0, 1] (B5.10 deepen).
+bool luminance_histogram_percentile_valid(f32 percentile);
+/// True when a histogram bin index is within the configured bin count (B5.10 deepen).
+bool luminance_histogram_bin_in_range(u32 bin, const LuminanceHistogramParams& params);
 
 class LuminanceHistogram {
 public:
@@ -87,10 +91,22 @@ private:
 
 void reset_luminance_histogram(LuminanceHistogram& histogram);
 
+/// True when auto-exposure tuning knobs are usable (B5.10 deepen).
+bool auto_exposure_params_valid(const AutoExposureParams& params);
+/// True when auto-exposure adaptation is enabled and params are valid (B5.10 deepen).
+bool auto_exposure_can_adapt(const AutoExposureParams& params);
+/// True when a measured luminance can drive adaptation (B5.10 deepen).
+bool auto_exposure_can_update_from_luminance(f32 measured_luminance, const AutoExposureParams& params);
+
 /// Batch histogram accumulation helpers (B5.10 deepen).
 namespace histogram_util {
 /// True when a sample buffer can contribute metering (non-null and non-empty).
 bool hasMeteringSamples(const fuse::math::Vec3* samples, u32 count);
+/// True when an explicit percentile and histogram params are ready for metering (B5.10 deepen).
+bool canMeterPercentile(f32 percentile, const LuminanceHistogramParams& params);
+/// True when percentile, params, and sample buffer are ready for percentile metering (B5.10 deepen).
+bool canMeterPercentileFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
+                                   f32 percentile);
 /// True when histogram params and sample buffer are ready for percentile metering (B5.10 deepen).
 bool canMeterFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params);
 /// True when a histogram has accumulated samples (B5.10 deepen).
