@@ -62,7 +62,26 @@ struct ContactManifold {
     void pruneContactPoints(
         f32 separationEpsilon = 1e-6f,
         f32 duplicateEpsilon = 1e-4f);
+
+    /// Drop contact points with penetration below `minPenetration` (B4.3 deepen).
+    void pruneShallowPenetrationPoints(f32 minPenetration = 1e-6f);
+
+    /// Run `pruneContactPoints` and return false when no penetrating points remain (B4.3 deepen).
+    bool pruneAndRetainPenetrating(
+        f32 separationEpsilon = 1e-6f,
+        f32 duplicateEpsilon = 1e-4f);
+
+    /// Clear warm-start impulses when pruning emptied the manifold (B4.3 deepen).
+    void clearWarmStartIfEmpty();
 };
+
+/// Returns true when chained prune helpers would change `pointCount` (B4.3 deepen).
+bool manifold_needs_prune(
+    const ContactManifold& manifold,
+    u32 maxPoints = kMaxContactPointsPerManifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowPenetration = 1e-6f);
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
+#include <cstring>
 
 namespace {
 
@@ -658,6 +659,144 @@ void testGjkSupportAndEpaStub() {
     expectTrue(manifold.valid, "epa stub reports overlap for identical hulls");
 }
 
+void testManifoldNeedsPruneGuard() {
+    fuse::physics::narrowphase::ContactManifold clean{};
+    clean.contactNormal = {0.f, 1.f, 0.f};
+    clean.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    clean.addPoint({1.f, 0.f, 0.f}, 0.15f);
+    expectTrue(
+        !fuse::physics::narrowphase::manifold_needs_prune(clean),
+        "clean manifold does not need prune");
+
+    fuse::physics::narrowphase::ContactManifold separated{};
+    separated.contactNormal = {0.f, 1.f, 0.f};
+    separated.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    separated.addPoint({1.f, 0.f, 0.f}, -0.05f);
+    expectTrue(
+        fuse::physics::narrowphase::manifold_needs_prune(separated),
+        "manifold_needs_prune flags separated points");
+
+    fuse::physics::narrowphase::ContactManifold duplicates{};
+    duplicates.contactNormal = {0.f, 1.f, 0.f};
+    duplicates.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    duplicates.addPoint({0.00001f, 0.f, 0.f}, 0.35f);
+    expectTrue(
+        fuse::physics::narrowphase::manifold_needs_prune(duplicates),
+        "manifold_needs_prune flags duplicate points");
+}
+
+void testManifoldShallowPenetrationAndWarmStartClear() {
+    fuse::physics::narrowphase::ContactManifold manifold{};
+    manifold.valid = true;
+    manifold.contactNormal = {0.f, 1.f, 0.f};
+    manifold.warmNormalImpulse = 2.f;
+    manifold.warmTangentImpulse = {0.5f, -0.25f};
+    manifold.addPoint({0.f, 0.f, 0.f}, 0.4f);
+    manifold.addPoint({1.f, 0.f, 0.f}, 1e-7f);
+    manifold.addPoint({2.f, 0.f, 0.f}, 0.1f);
+
+    manifold.pruneShallowPenetrationPoints(1e-6f);
+    expectTrue(manifold.pointCount == 2u, "shallow prune drops near-zero penetration points");
+    expectNear(manifold.maxPenetration(), 0.4f, 1e-4f, "shallow prune keeps deep points");
+
+    fuse::physics::narrowphase::ContactManifold emptyAfterPrune{};
+    emptyAfterPrune.valid = true;
+    emptyAfterPrune.contactNormal = {0.f, 1.f, 0.f};
+    emptyAfterPrune.warmNormalImpulse = 1.5f;
+    emptyAfterPrune.addPoint({0.f, 0.f, 0.f}, -0.2f);
+    expectTrue(
+        !emptyAfterPrune.pruneAndRetainPenetrating(),
+        "pruneAndRetainPenetrating returns false when all points separate");
+    expectTrue(emptyAfterPrune.empty(), "pruneAndRetainPenetrating empties separated manifold");
+    expectNear(emptyAfterPrune.warmNormalImpulse, 0.f, 1e-4f, "prune clears warm normal impulse");
+    expectNear(emptyAfterPrune.warmTangentImpulse.x, 0.f, 1e-4f, "prune clears warm tangent impulse");
+}
+
+void testFrictionForManifoldCompositeGuard() {
+    fuse::physics::narrowphase::ContactManifold empty{};
+    expectTrue(
+        fuse::physics::narrowphase::should_skip_friction_for_manifold(empty, 0.5f, 0.3f, 1.f),
+        "composite friction guard skips empty manifold");
+
+    fuse::physics::narrowphase::ContactManifold manifold{};
+    manifold.contactNormal = {0.f, 1.f, 0.f};
+    manifold.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    expectTrue(
+        fuse::physics::narrowphase::should_skip_friction_for_manifold(manifold, 0.f, 0.f, 1.f),
+        "composite friction guard skips zero coefficients");
+    expectTrue(
+        !fuse::physics::narrowphase::should_skip_friction_for_manifold(manifold, 0.5f, 0.3f, 0.25f),
+        "composite friction guard allows valid manifold and coefficients");
+
+    fuse::physics::RigidBodySoA bodies;
+    const fuse::u32 bodyA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 bodyB = bodies.addBody({1.f, 0.f, 0.f}, 1.f);
+    bodies.frictionStatic[bodyA] = 0.36f;
+    bodies.frictionStatic[bodyB] = 0.64f;
+    bodies.frictionDynamic[bodyA] = 0.16f;
+    bodies.frictionDynamic[bodyB] = 0.25f;
+    const fuse::physics::vec2 combined =
+        fuse::physics::narrowphase::combine_body_friction_coefficients(bodies, bodyA, bodyB);
+    expectNear(combined.x, 0.48f, 1e-4f, "combine_body_friction_coefficients geometric mean static");
+    expectNear(combined.y, 0.2f, 1e-4f, "combine_body_friction_coefficients geometric mean dynamic");
+
+    expectTrue(
+        !fuse::physics::narrowphase::should_rebuild_friction_basis({0.f, 1.f, 0.f}, {0.f, 1.f, 0.f}),
+        "rebuild guard skips unchanged normal");
+    expectTrue(
+        fuse::physics::narrowphase::should_rebuild_friction_basis({0.f, 1.f, 0.f}, {1.f, 0.f, 0.f}),
+        "rebuild guard flags orthogonal normal change");
+}
+
+void testContactPairStaticSleepingRejectGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 staticA = bodies.addBody({0.f, 0.f, 0.f}, 0.f, fuse::physics::RB_STATIC);
+    const fuse::u32 staticB = bodies.addBody({1.f, 0.f, 0.f}, 0.f, fuse::physics::RB_STATIC);
+    const fuse::u32 sleepingA = bodies.addBody({2.f, 0.f, 0.f}, 1.f, fuse::physics::RB_SLEEPING);
+    const fuse::u32 sleepingB = bodies.addBody({3.f, 0.f, 0.f}, 1.f, fuse::physics::RB_SLEEPING);
+    const fuse::u32 dynamicA = bodies.addBody({4.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 dynamicB = bodies.addBody({5.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, staticA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, staticB, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, sleepingA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, sleepingB, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, dynamicA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, dynamicB, {1.f, 0.f, 0.f});
+
+    expectTrue(
+        fuse::physics::narrowphase::is_static_static_pair({staticA, staticB}, bodies),
+        "static guard detects both-static pair");
+    expectTrue(
+        fuse::physics::narrowphase::is_both_sleeping_pair({sleepingA, sleepingB}, bodies),
+        "sleeping guard detects both-sleeping pair");
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_reject_reason({staticA, staticB}, bodies, shapes) ==
+            fuse::physics::narrowphase::ContactPairRejectReason::BothStatic,
+        "reject reason flags both-static pair");
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_reject_reason({sleepingA, sleepingB}, bodies, shapes) ==
+            fuse::physics::narrowphase::ContactPairRejectReason::BothSleeping,
+        "reject reason flags both-sleeping pair");
+    expectTrue(
+        std::strcmp(
+            fuse::physics::narrowphase::contact_pair_reject_reason_label(
+                fuse::physics::narrowphase::ContactPairRejectReason::BothStatic),
+            "both_static") == 0,
+        "reject reason label for both-static pair");
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_should_dispatch({dynamicA, dynamicB}, bodies, shapes),
+        "dispatch guard allows dynamic pair");
+    expectTrue(
+        !fuse::physics::narrowphase::contact_pair_should_dispatch({staticA, staticB}, bodies, shapes),
+        "dispatch guard rejects both-static pair");
+
+    const auto staticPair =
+        fuse::physics::narrowphase::detect_contacts_pair({staticA, staticB}, bodies, shapes);
+    expectTrue(!staticPair.valid, "both-static pair returns invalid manifold");
+    expectTrue(staticPair.empty(), "both-static pair has no contact points");
+}
+
 } // namespace
 
 int main() {
@@ -686,6 +825,10 @@ int main() {
     testContactPointTangentBasisAndManifoldClear();
     testContactBufferCapacityClamp();
     testGjkSupportAndEpaStub();
+    testManifoldNeedsPruneGuard();
+    testManifoldShallowPenetrationAndWarmStartClear();
+    testFrictionForManifoldCompositeGuard();
+    testContactPairStaticSleepingRejectGuards();
 
     if (g_failures == 0) {
         std::printf("fuse_physics_narrowphase_tests: all checks passed\n");
