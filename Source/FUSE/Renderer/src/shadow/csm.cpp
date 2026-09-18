@@ -451,6 +451,21 @@ void CascadedShadowMapLayout::sanitizeCascadeSplits(CascadedShadowMapDesc& desc)
     pinLastCascadeSplit(desc);
 }
 
+void CascadedShadowMapLayout::sanitizeCascadedShadowMapDesc(CascadedShadowMapDesc& desc) {
+    sanitizeCascadeSplits(desc);
+}
+
+void CascadedShadowMapLayout::populateCascadeSplitsSanitized(const CascadeSplitParams& params,
+                                                             const ShadowCameraParams& camera,
+                                                             CascadedShadowMapDesc& desc) {
+    populateCascadeSplits(params, camera, desc);
+    sanitizeCascadeSplits(desc);
+}
+
+bool CascadedShadowMapLayout::preflightCascadeSplits(const CascadedShadowMapDesc& desc) {
+    return !cascadeSplitsNeedSanitize(desc) && validateClampedCascadeSplits(desc);
+}
+
 bool CascadedShadowMapLayout::validateCascadeRanges(const CascadedShadowMapDesc& desc,
                                                     const ShadowCameraParams& camera) {
     if (!validateCascadeSplits(desc)) {
@@ -658,6 +673,55 @@ CascadeShadowSkipCounts CascadeLightSpaceLayout::countCascadeShadowSkipsByKind(
             counts, classifyCascadeShadowSkip(cascade, desc, camera, lightDirection));
     }
     return counts;
+}
+
+bool wouldSkipCascadeShadowBuild(u32 cascadeIndex,
+                                 const CascadedShadowMapDesc& desc,
+                                 const ShadowCameraParams& camera,
+                                 const fuse::math::Vec3& lightDirection,
+                                 CascadeShadowSkipReason* reason) {
+    const CascadeShadowSkipReason skip =
+        CascadeLightSpaceLayout::classifyCascadeShadowSkip(cascadeIndex, desc, camera, lightDirection);
+    if (reason != nullptr) {
+        *reason = skip;
+    }
+    return cascadeShadowSkipReasonIsBlocking(skip);
+}
+
+bool preflightCascadeShadowBuild(const ShadowCameraParams& camera,
+                                 const fuse::math::Vec3& lightDirection,
+                                 CascadeShadowSkipReason* reason) {
+    if (CascadeLightSpaceLayout::shouldBypassAllCascadeShadowBuilds(camera, lightDirection)) {
+        if (reason != nullptr) {
+            CascadedShadowMapDesc desc{};
+            *reason = CascadeLightSpaceLayout::classifyCascadeShadowSkip(0u, desc, camera, lightDirection);
+        }
+        return false;
+    }
+
+    if (reason != nullptr) {
+        *reason = CascadeShadowSkipReason::None;
+    }
+    return true;
+}
+
+bool CascadeShadowDataLayout::preflightPopulateCascadeShadowData(const CascadedShadowMapDesc& desc,
+                                                                 const ShadowCameraParams& camera,
+                                                                 const fuse::math::Vec3& lightDirection,
+                                                                 u32 cascadeCount,
+                                                                 CascadeShadowSkipReason* reason) {
+    if (!preflightCascadeShadowBuild(camera, lightDirection, reason)) {
+        return false;
+    }
+
+    if (!CascadedShadowMapLayout::preflightCascadeSplits(desc)) {
+        if (reason != nullptr) {
+            *reason = CascadeShadowSkipReason::DegenerateCascadeRange;
+        }
+        return false;
+    }
+
+    return CascadeLightSpaceLayout::countValidCascadeMatrixSlots(desc, camera, lightDirection, cascadeCount) > 0u;
 }
 
 bool cascadeShadowSkipReasonIsBlocking(CascadeShadowSkipReason reason) {
@@ -936,6 +1000,11 @@ u32 CascadeLightSpaceLayout::buildAllCascadeLightSpaceMatrices(
     const u32 activeCount = CascadedShadowMapLayout::clampCascadeCount(cascadeCount);
     u32 validCount = 0u;
     for (u32 cascade = 0; cascade < activeCount; ++cascade) {
+        if (shouldSkipCascadeShadowBuild(cascade, desc, camera, lightDirection)) {
+            outMatrices[cascade] = {};
+            continue;
+        }
+
         outMatrices[cascade] = buildCascadeLightSpaceMatrices(cascade, desc, camera, lightDirection);
         if (outMatrices[cascade].valid) {
             ++validCount;
