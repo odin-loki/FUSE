@@ -12,8 +12,14 @@ struct HrtfIrStub {
     u32 length = 0;
 };
 
+/// Canonical empty IR stub for guard fallbacks.
+HrtfIrStub make_empty_hrtf_ir();
+
 /// True when an HRTF IR stub has non-null, non-empty sample data.
 bool has_hrtf_ir(const HrtfIrStub& ir);
+
+/// Readable alias — true when IR samples are null or zero-length.
+bool is_empty_hrtf_ir(const HrtfIrStub& ir);
 
 /// Alias for `has_hrtf_ir` — convolution path is available when true.
 bool should_use_hrtf_ir(const HrtfIrStub& ir);
@@ -27,6 +33,15 @@ enum class HrtfPanPath {
 
 /// Select pan path from HRTF enable flag, IR stub, and listener-local offset.
 HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener);
+
+/// Select pan path when no IR is wired (ILD/ITD stub or bypass).
+HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener);
+
+/// True when the resolved path produces a lateral spatial image (not centre bypass).
+bool is_spatial_hrtf_pan_path(HrtfPanPath path);
+
+/// True when the pan path selects convolution (non-empty IR stub).
+bool hrtf_pan_path_uses_convolution(HrtfPanPath path);
 
 /// True when HRTF pan should run (enabled and source is not co-located).
 bool should_apply_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener);
@@ -145,6 +160,12 @@ struct HrtfAttenuationCoupling {
     float occlusion_weight = 0.5f;
 };
 
+/// Clamp distance or occlusion attenuation scalars into [0, 1].
+float clamp_hrtf_attenuation(float attenuation);
+
+/// True when distance/occlusion coupling should narrow the binaural image.
+bool should_apply_hrtf_attenuation_coupling(HrtfPanPath path);
+
 /// Combined spatial blend from distance attenuation and occlusion LF gain.
 float compute_hrtf_spatial_blend(float distance_attenuation, float occlusion_gain,
                                  const HrtfAttenuationCoupling& coupling = {},
@@ -155,6 +176,12 @@ void apply_hrtf_attenuation_coupling(BinauralPanGains& gains, float distance_att
                                      float occlusion_gain,
                                      const HrtfAttenuationCoupling& coupling = {},
                                      const BinauralPanParams& params = {});
+
+/// Apply coupling only when the pan path is spatial (skips bypass centre mono).
+void apply_hrtf_attenuation_coupling_for_path(BinauralPanGains& gains, HrtfPanPath path,
+                                              float distance_attenuation, float occlusion_gain,
+                                              const HrtfAttenuationCoupling& coupling = {},
+                                              const BinauralPanParams& params = {});
 
 /// Narrow binaural image at distance — full separation when attenuation is unity.
 float compute_hrtf_distance_factor(float distance_attenuation,
@@ -176,5 +203,13 @@ BinauralPanGains compute_binaural_pan_gains_coupled(bool hrtf_enabled, const Hrt
                                                     float distance_attenuation, float occlusion_gain,
                                                     const HrtfAttenuationCoupling& coupling = {},
                                                     const BinauralPanParams& params = {});
+
+/// One-shot spatial pan with path-aware attenuation coupling.
+BinauralPanGains compute_binaural_pan_gains_coupled_for_path(HrtfPanPath path,
+                                                              const Vec3& rel_listener,
+                                                              float distance_attenuation,
+                                                              float occlusion_gain,
+                                                              const HrtfAttenuationCoupling& coupling = {},
+                                                              const BinauralPanParams& params = {});
 
 } // namespace fuse::audio
