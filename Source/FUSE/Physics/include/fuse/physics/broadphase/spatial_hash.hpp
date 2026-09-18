@@ -71,6 +71,36 @@ FUSE_PHYSICS_INLINE bool isValidCandidatePair(const CandidatePair& pair, u32 bod
     return isValidCandidatePair(pair.bodyA, pair.bodyB, bodyCount);
 }
 
+/// Returns true when `candidatePairRejectReason` matches `expected` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool candidatePairRejectsForReason(
+    u32 bodyA,
+    u32 bodyB,
+    u32 bodyCount,
+    CandidatePairRejectReason expected) {
+    return candidatePairRejectReason(bodyA, bodyB, bodyCount) == expected;
+}
+
+FUSE_PHYSICS_INLINE bool candidatePairRejectsForReason(
+    const CandidatePair& pair,
+    u32 bodyCount,
+    CandidatePairRejectReason expected) {
+    return candidatePairRejectsForReason(pair.bodyA, pair.bodyB, bodyCount, expected);
+}
+
+/// Empty-set guard: true when broadphase has no bodies or no collision shapes.
+FUSE_PHYSICS_INLINE bool isEmptyBroadphaseInput(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return bodies.count() == 0u || shapes.count() == 0u;
+}
+
+/// True when the broadphase pipeline may early-out before hash build (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool canSkipBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return isEmptyBroadphaseInput(bodies, shapes);
+}
+
 /// Clamp cell size to a positive stub default (broadphase occupancy guard).
 FUSE_PHYSICS_INLINE f32 clampCellSize(f32 cellSize) {
     return cellSize > 0.f ? cellSize : 1.f;
@@ -154,6 +184,35 @@ FUSE_PHYSICS_INLINE u32 estimateCellOccupancyCount(const CellRange2& range) {
     }
     const ivec2 span = cellSpanPerAxis(range);
     return static_cast<u32>(span.x) * static_cast<u32>(span.y);
+}
+
+/// Cell-capacity guard: true when occupancy exceeds `maxCells` (0 = unlimited budget).
+FUSE_PHYSICS_INLINE bool exceedsCellOccupancyBudget(const CellRange3& range, u32 maxCells) {
+    if (maxCells == 0u) {
+        return false;
+    }
+    return estimateCellOccupancyCount(range) > maxCells;
+}
+
+FUSE_PHYSICS_INLINE bool exceedsCellOccupancyBudget(const CellRange2& range, u32 maxCells) {
+    if (maxCells == 0u) {
+        return false;
+    }
+    return estimateCellOccupancyCount(range) > maxCells;
+}
+
+/// Inverse of `exceedsCellOccupancyBudget` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool cellOccupancyWithinBudget(const CellRange3& range, u32 maxCells) {
+    return !exceedsCellOccupancyBudget(range, maxCells);
+}
+
+FUSE_PHYSICS_INLINE bool cellOccupancyWithinBudget(const CellRange2& range, u32 maxCells) {
+    return !exceedsCellOccupancyBudget(range, maxCells);
+}
+
+/// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).
+FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {
+    return uniqueBodyCount > 1u ? uniqueBodyCount * (uniqueBodyCount - 1u) / 2u : 0u;
 }
 
 /// Clamp broadphase params to safe stub defaults (positive cell size, at least one bucket).

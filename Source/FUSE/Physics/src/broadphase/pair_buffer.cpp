@@ -68,6 +68,16 @@ u32 PairBufferSoA::remainingCapacity() const {
     return activeCount < maxCapacity ? maxCapacity - activeCount : 0u;
 }
 
+bool PairBufferSoA::canAcceptPairs(u32 additionalCount) const {
+    if (additionalCount == 0u) {
+        return true;
+    }
+    if (maxCapacity == 0u) {
+        return true;
+    }
+    return activeCount + additionalCount <= maxCapacity;
+}
+
 bool PairBufferSoA::canApplyMaxCapacityClamp() const {
     return !canSkipSoAIteration() && maxCapacity > 0u && activeCount > maxCapacity;
 }

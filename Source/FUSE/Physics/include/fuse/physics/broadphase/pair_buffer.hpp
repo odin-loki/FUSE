@@ -20,8 +20,12 @@ struct PairBufferSoA {
 
     bool isEmpty() const { return activeCount == 0u; }
     bool hasValidPairs() const { return activeCount > 0u; }
+    /// True when clamping dropped one or more candidate pairs.
+    bool hasDroppedPairs() const { return droppedCount > 0u; }
     /// True when `maxCapacity` is set and no additional pairs may be pushed.
     bool isFull() const { return maxCapacity > 0u && activeCount >= maxCapacity; }
+    /// Pair-list guard: true when `additionalCount` pairs fit before `maxCapacity` clamp.
+    bool canAcceptPairs(u32 additionalCount = 1u) const;
     /// Remaining push slots before `maxCapacity` clamp (unlimited when `maxCapacity == 0`).
     u32 remainingCapacity() const;
     /// True when post-pass truncation would drop pairs.
