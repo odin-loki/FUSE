@@ -627,6 +627,7 @@ void testToiBufferIsFull() {
     ToiBufferSoA buffer;
     buffer.setMaxCapacity(2u);
     expectTrue(!buffer.isFull(), "empty buffer is not full");
+    expectTrue(buffer.remainingCapacity() == 2u, "empty buffer reports full remaining capacity");
 
     TOIResult result{};
     result.valid = true;
@@ -634,11 +635,114 @@ void testToiBufferIsFull() {
 
     buffer.push(result);
     expectTrue(!buffer.isFull(), "partial buffer is not full");
+    expectTrue(buffer.remainingCapacity() == 1u, "partial buffer reports one remaining slot");
 
     buffer.push(result);
     expectTrue(buffer.isFull(), "buffer at max capacity reports full");
+    expectTrue(buffer.remainingCapacity() == 0u, "full buffer reports zero remaining capacity");
     expectTrue(!buffer.push(result), "push on full buffer is rejected");
     expectTrue(buffer.droppedCount == 1u, "push on full buffer increments dropped count");
+    expectTrue(!buffer.canApplyMaxCapacityClamp(), "at-capacity buffer does not need post clamp");
+}
+
+void testToiBufferCanApplyMaxCapacityClamp() {
+    ToiBufferSoA buffer;
+    buffer.setMaxCapacity(2u);
+    buffer.preparePairSlots(3u);
+
+    TOIResult late{};
+    late.valid = true;
+    late.toi = 0.9f;
+    late.bodyA = 1u;
+
+    TOIResult mid = late;
+    mid.toi = 0.5f;
+    mid.bodyA = 2u;
+
+    TOIResult early = late;
+    early.toi = 0.1f;
+    early.bodyA = 3u;
+
+    buffer.writeSlot(0u, late);
+    buffer.writeSlot(1u, mid);
+    buffer.writeSlot(2u, early);
+    expectTrue(buffer.compact() == 3u, "compact gathers overflow pair slots");
+
+    expectTrue(buffer.canApplyMaxCapacityClamp(), "overflow buffer requests post clamp");
+    expectTrue(buffer.applyMaxCapacityClamp() == 2u, "canApplyMaxCapacityClamp gate truncates overflow");
+    expectTrue(buffer.activeCount == 2u, "clamp keeps max capacity impacts");
+    expectTrue(buffer.droppedCount == 1u, "clamp tracks dropped overflow TOIs");
+    expectNear(buffer.resultAt(0u).toi, 0.1f, 1e-5f, "clamp keeps earliest TOI after internal sort");
+    expectTrue(!buffer.canApplyMaxCapacityClamp(), "clamped buffer no longer requests post clamp");
+}
+
+void testToiBufferSlotOutOfRangeGuards() {
+    ToiBufferSoA buffer;
+    buffer.preparePairSlots(2u);
+
+    TOIResult result{};
+    result.valid = true;
+    result.toi = 0.4f;
+    result.bodyA = 1u;
+    result.bodyB = 2u;
+
+    buffer.writeSlot(2u, result);
+    expectTrue(!buffer.slotIsValid(2u), "slotIsValid rejects out-of-range slot");
+    expectTrue(buffer.countValidSlots() == 0u, "out-of-range writeSlot leaves slot storage empty");
+
+    buffer.writeSlot(0u, result);
+    expectTrue(buffer.slotIsValid(0u), "in-range writeSlot marks slot valid");
+
+    buffer.invalidateSlot(3u);
+    expectTrue(buffer.slotIsValid(0u), "out-of-range invalidateSlot is a no-op on valid slot");
+
+    buffer.invalidateSlot(0u);
+    expectTrue(!buffer.slotIsValid(0u), "in-range invalidateSlot clears slot validity");
+}
+
+void testToiBufferClearSlotValidityGuards() {
+    ToiBufferSoA buffer;
+    buffer.preparePairSlots(2u);
+
+    TOIResult result{};
+    result.valid = true;
+    result.toi = 0.35f;
+    buffer.writeSlot(0u, result);
+    expectTrue(buffer.slotIsValid(0u), "written slot is valid before clear");
+
+    buffer.clear();
+    expectTrue(buffer.canSkipSoAIteration(), "clear leaves buffer safe for SoA skip");
+    expectTrue(!buffer.slotIsValid(0u), "slotIsValid rejects slot after clear");
+
+    buffer.invalidateSlot(0u);
+    expectTrue(!buffer.slotIsValid(0u), "invalidateSlot on cleared buffer is a no-op");
+}
+
+void testToiBufferCompactAndSortSkipGuards() {
+    ToiBufferSoA buffer;
+    buffer.preparePairSlots(2u);
+
+    TOIResult first{};
+    first.valid = true;
+    first.toi = 0.2f;
+    first.bodyA = 1u;
+
+    TOIResult second = first;
+    second.toi = 0.6f;
+    second.bodyA = 2u;
+
+    buffer.writeSlot(0u, first);
+    buffer.writeSlot(1u, second);
+    expectTrue(buffer.canSkipCompaction(), "all-valid pair slots skip compaction");
+
+    expectTrue(buffer.compactAndSort() == 2u, "compactAndSort gathers all-valid slots");
+    expectTrue(buffer.canSkipSort(), "sorted two-TOI buffer skips re-sort");
+    expectTrue(buffer.isSortedByToi(), "compactAndSort leaves ascending TOI order");
+
+    buffer.compactAndSort();
+    expectTrue(buffer.canSkipSort(), "second compactAndSort skips sort work");
+    expectNear(buffer.resultAt(0u).toi, 0.2f, 1e-5f, "sort skip preserves earliest TOI");
+    expectNear(buffer.resultAt(1u).toi, 0.6f, 1e-5f, "sort skip preserves later TOI");
 }
 
 void testToiBufferApplyMaxCapacityClamp() {
@@ -943,6 +1047,10 @@ int main() {
     testToiBufferHasValidToisAfterPush();
     testToiBufferApplyMaxCapacityClampPushMode();
     testToiBufferIsFull();
+    testToiBufferCanApplyMaxCapacityClamp();
+    testToiBufferSlotOutOfRangeGuards();
+    testToiBufferClearSlotValidityGuards();
+    testToiBufferCompactAndSortSkipGuards();
     testToiBufferApplyMaxCapacityClamp();
     testSweptSphereAabbFindsImpact();
     testSweptSphereAabbRejectsMiss();
