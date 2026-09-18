@@ -2170,6 +2170,111 @@ void testAnimatorTick() {
     expectTrue(animator.current_pose.bone_count == 2u, "animator stores pose");
 }
 
+void testTransitionIndexHelpers() {
+    fuse::animation::AnimStateMachine machine;
+    machine.add_state("idle", nullptr);
+    machine.add_state("run", nullptr);
+    machine.add_state("jump", nullptr);
+
+    bool shouldRun = true;
+    bool shouldJump = false;
+    machine.add_transition("idle", "run", 0.2f, [&]() { return shouldRun; });
+    machine.add_transition("idle", "jump", 0.35f, [&]() { return shouldJump; });
+    machine.add_transition("run", "idle", 0.15f, []() { return true; });
+
+    expectTrue(machine.first_outgoing_transition_index(0u) == 0,
+               "first outgoing transition index locates idle to run edge");
+    expectTrue(machine.first_outgoing_transition_index(1u) == 2,
+               "first outgoing transition index locates run to idle edge");
+    expectTrue(machine.first_outgoing_transition_index(2u) < 0,
+               "first outgoing transition index rejects state with no outgoing edges");
+
+    expectNear(machine.transition_blend_duration_at(0u), 0.2f, 1e-4f,
+               "transition blend duration at index zero");
+    expectNear(machine.transition_blend_duration_at(1u), 0.35f, 1e-4f,
+               "transition blend duration at index one");
+    expectTrue(machine.transition_blend_duration_at(99u) < 0.f,
+               "transition blend duration at rejects invalid index");
+
+    expectTrue(machine.transition_condition_passes_at(0u),
+               "transition condition passes at index zero");
+    expectTrue(!machine.transition_condition_passes_at(1u),
+               "transition condition fails at index one");
+    expectTrue(!machine.transition_condition_passes_at(99u),
+               "transition condition fails at invalid index");
+}
+
+void testStateMachineCrossfadeBindFallback() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::AnimationClip idle = makePositionClip(1, 1.f);
+    fuse::animation::AnimationClip run = makePositionClip(1, 6.f);
+
+    fuse::animation::AnimStateMachine machine;
+    auto idleNode = std::make_unique<fuse::animation::ClipNode>();
+    idleNode->clip = &idle;
+    auto runNode = std::make_unique<fuse::animation::ClipNode>();
+    runNode->clip = &run;
+    machine.add_state("idle", std::move(idleNode));
+    machine.add_state("run", std::move(runNode));
+
+    bool shouldRun = true;
+    machine.add_transition("idle", "run", 0.2f, [&]() { return shouldRun; });
+
+    fuse::animation::PoseSoA poseSoa = fuse::animation::PoseSoA::allocate(2);
+    machine.evaluate_soa(0.05f, skel, poseSoa);
+    expectTrue(machine.is_transitioning, "crossfade begins before bind fallback corruption");
+
+    machine.blend_from_pose_soa = fuse::animation::PoseSoA::allocate(1);
+    machine.blend_from_pose_soa.bone_count = 1;
+    machine.evaluate_soa(0.05f, skel, poseSoa);
+    expectTrue(poseSoa.bone_count == skel.bone_count,
+               "crossfade bind fallback restores output bone count");
+    expectTrue(fuse::animation::pose_soa_columns_valid(poseSoa),
+               "crossfade repairs corrupted blend_from_pose_soa during transition");
+    expectTrue(!fuse::animation::needs_pose_soa_bind_fallback(poseSoa, skel),
+               "crossfade output does not need bind fallback after repair");
+}
+
+void testStateMachineResetClearsBlendBuffers() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::AnimationClip idle = makePositionClip(1, 1.f);
+    fuse::animation::AnimationClip run = makePositionClip(1, 6.f);
+
+    fuse::animation::AnimStateMachine machine;
+    auto idleNode = std::make_unique<fuse::animation::ClipNode>();
+    idleNode->clip = &idle;
+    auto runNode = std::make_unique<fuse::animation::ClipNode>();
+    runNode->clip = &run;
+    machine.add_state("idle", std::move(idleNode));
+    machine.add_state("run", std::move(runNode));
+
+    bool shouldRun = true;
+    machine.add_transition("idle", "run", 0.2f, [&]() { return shouldRun; });
+
+    fuse::animation::PoseSoA poseSoa = fuse::animation::PoseSoA::allocate(2);
+    machine.evaluate_soa(0.05f, skel, poseSoa);
+    expectTrue(machine.is_transitioning, "crossfade active before reset");
+
+    machine.reset();
+    expectTrue(!machine.is_transitioning, "reset clears crossfade flag");
+    expectTrue(machine.blend_from_pose_soa.bone_count == 0u,
+               "reset clears blend_from_pose_soa buffer");
+    expectTrue(machine.blend_from_pose.bone_count == 0u,
+               "reset clears blend_from_pose buffer");
+}
+
+void testLayeredBlendOutBindFallback() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::LayeredBlendNode layered;
+    layered.masked_bones = {1u};
+
+    fuse::animation::PoseSoA out = fuse::animation::PoseSoA::allocate(1);
+    out.bone_count = 1;
+    layered.evaluate_soa(0.f, skel, out);
+    expectTrue(fuse::animation::pose_soa_matches_bind(out, skel),
+               "layered blend evaluate soa repairs undersized output pose");
+}
+
 } // namespace
 
 int main() {
@@ -2256,6 +2361,10 @@ int main() {
     testBlendNodeIsEmpty();
     testBlendNodeEmptyEarlyOut();
     testStateMachineTransitionHelpers();
+    testTransitionIndexHelpers();
+    testStateMachineCrossfadeBindFallback();
+    testStateMachineResetClearsBlendBuffers();
+    testLayeredBlendOutBindFallback();
     testStateMachineElapsedCrossfadeTime();
     testStateMachineRemainingCrossfadeTime();
     testLayeredBlendEvaluateEarlyOut();
