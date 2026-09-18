@@ -104,6 +104,48 @@ bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffe
 /// True when history contribution is allowed this frame (B5.9 deepen).
 bool taaHistoryBlendAllowed(bool firstFrame, const TaaHistoryBuffer& history);
 
+/// Why history temporal reuse is blocked (B5.9 deepen).
+enum class TaaHistoryReuseRejectReason : u8 {
+    None = 0,
+    NotReady,
+    NeedsWarmup,
+    StaleGeneration,
+};
+
+/// Human-readable label for history reuse reject reasons (logging / tests).
+const char* taaHistoryReuseRejectReasonLabel(TaaHistoryReuseRejectReason reason);
+/// Classify why history reuse would be rejected for an observed invalidate epoch.
+TaaHistoryReuseRejectReason classifyTaaHistoryReuseReject(const TaaHistoryBuffer& history, u32 observedGeneration);
+/// True when history reuse is allowed; optionally reports the reject reason.
+bool tryTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
+                        TaaHistoryReuseRejectReason* reason = nullptr);
+
+/// Why jitter sync preflight rejected the request (B5.9 deepen).
+enum class TaaJitterSyncRejectReason : u8 {
+    None = 0,
+    InvalidSequence,
+    InvalidViewport,
+    FrameIndexMismatch,
+};
+
+/// Human-readable label for jitter sync reject reasons (logging / tests).
+const char* taaJitterSyncRejectReasonLabel(TaaJitterSyncRejectReason reason);
+
+/// Resolve + blend preflight snapshot — non-mutating (B5.9 deepen).
+struct TaaResolveBlendPreflight {
+    bool resolve_would_pass = false;
+    bool blend_weights_valid = false;
+    bool history_blend_allowed = false;
+    TaaResolveSkipReason resolve_skip_reason = TaaResolveSkipReason::None;
+    TaaBlendWeights weights{};
+    /// True when resolve preflight passes and blend weights are valid.
+    bool passes() const { return resolve_would_pass && blend_weights_valid; }
+};
+
+/// Preflight resolve eligibility and blend weights without mutating history.
+bool preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                              TaaResolveBlendPreflight* out = nullptr);
+
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {
     bool resolved = false;

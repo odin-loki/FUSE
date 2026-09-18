@@ -34,6 +34,10 @@ bool TaaJitterLayout::canProduceNdcOffset(u32 width, u32 height, u32 sequenceLen
     return validateViewportDimensions(width, height) && validateSequenceLength(sequenceLength);
 }
 
+bool TaaJitterLayout::canSyncToFrameIndex(u32 sequenceLength) {
+    return validateSequenceLength(sequenceLength);
+}
+
 u32 TaaJitterLayout::sequencePeriod(u32 sequenceLength) {
     return validateSequenceLength(sequenceLength) ? sequenceLength : 0u;
 }
@@ -112,6 +116,11 @@ bool TaaJitter::canProduceNdcOffset(u32 width, u32 height) const {
     return TaaJitterLayout::canProduceNdcOffset(width, height, m_sequenceLength);
 }
 
+bool TaaJitter::isSyncedToFrameIndex(u32 frameIndex) const {
+    return m_monotonicFrame == frameIndex &&
+           m_index == TaaJitterLayout::frameIndexInSequence(frameIndex, m_sequenceLength);
+}
+
 void TaaJitter::advance() {
     ++m_monotonicFrame;
     m_index = TaaJitterLayout::frameIndexInSequence(m_monotonicFrame, m_sequenceLength);
@@ -125,6 +134,50 @@ void TaaJitter::reset() {
 void TaaJitter::syncToFrameIndex(u32 frameIndex) {
     m_monotonicFrame = frameIndex;
     m_index = TaaJitterLayout::frameIndexInSequence(frameIndex, m_sequenceLength);
+}
+
+const char* taaJitterSyncRejectReasonLabel(TaaJitterSyncRejectReason reason) {
+    switch (reason) {
+    case TaaJitterSyncRejectReason::None:
+        return "none";
+    case TaaJitterSyncRejectReason::InvalidSequence:
+        return "invalid_sequence";
+    case TaaJitterSyncRejectReason::InvalidViewport:
+        return "invalid_viewport";
+    case TaaJitterSyncRejectReason::FrameIndexMismatch:
+        return "frame_index_mismatch";
+    }
+    return "unknown";
+}
+
+bool taaJitterSlotMatchesFrame(u32 frameIndex, u32 slot, u32 sequenceLength) {
+    return TaaJitterLayout::frameIndexInSequence(frameIndex, sequenceLength) == slot;
+}
+
+bool preflightTaaJitterSync(const TaaJitter& jitter, u32 frameIndex, u32 width, u32 height,
+                            TaaJitterSyncRejectReason* reason) {
+    if (!jitter.canAdvance()) {
+        if (reason != nullptr) {
+            *reason = TaaJitterSyncRejectReason::InvalidSequence;
+        }
+        return false;
+    }
+    if (!jitter.canProduceNdcOffset(width, height)) {
+        if (reason != nullptr) {
+            *reason = TaaJitterSyncRejectReason::InvalidViewport;
+        }
+        return false;
+    }
+    if (!jitter.isSyncedToFrameIndex(frameIndex)) {
+        if (reason != nullptr) {
+            *reason = TaaJitterSyncRejectReason::FrameIndexMismatch;
+        }
+        return false;
+    }
+    if (reason != nullptr) {
+        *reason = TaaJitterSyncRejectReason::None;
+    }
+    return true;
 }
 
 } // namespace fuse::renderer

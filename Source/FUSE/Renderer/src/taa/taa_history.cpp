@@ -22,6 +22,45 @@ bool TaaHistoryBuffer::canReuseHistory() const {
     return taaHistoryCanReuse(*this);
 }
 
+bool TaaHistoryBuffer::hasReadableHistory() const {
+    return m_ready && m_validity.hasValidHistory && read().isValid();
+}
+
+const char* taaHistoryReuseRejectReasonLabel(TaaHistoryReuseRejectReason reason) {
+    switch (reason) {
+    case TaaHistoryReuseRejectReason::None:
+        return "none";
+    case TaaHistoryReuseRejectReason::NotReady:
+        return "not_ready";
+    case TaaHistoryReuseRejectReason::NeedsWarmup:
+        return "needs_warmup";
+    case TaaHistoryReuseRejectReason::StaleGeneration:
+        return "stale_generation";
+    }
+    return "unknown";
+}
+
+TaaHistoryReuseRejectReason classifyTaaHistoryReuseReject(const TaaHistoryBuffer& history, u32 observedGeneration) {
+    if (!history.isReady()) {
+        return TaaHistoryReuseRejectReason::NotReady;
+    }
+    if (!history.hasValidHistory()) {
+        return TaaHistoryReuseRejectReason::NeedsWarmup;
+    }
+    if (observedGeneration != kTaaResolveNoHistoryGeneration && history.isHistoryStale(observedGeneration)) {
+        return TaaHistoryReuseRejectReason::StaleGeneration;
+    }
+    return TaaHistoryReuseRejectReason::None;
+}
+
+bool tryTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration, TaaHistoryReuseRejectReason* reason) {
+    const TaaHistoryReuseRejectReason reject = classifyTaaHistoryReuseReject(history, observedGeneration);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == TaaHistoryReuseRejectReason::None;
+}
+
 bool TaaHistoryBuffer::init(ResourceManager& resources, const TaaHistoryBufferDesc& desc) {
     const u32 preservedGeneration = m_validity.invalidateGeneration;
     destroy();
