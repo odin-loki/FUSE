@@ -290,6 +290,16 @@ u32 CookCache::prune_invalid_entries() {
     return removed;
 }
 
+u32 CookCache::prune_all() {
+    if (m_entries.empty()) {
+        return 0;
+    }
+
+    u32 removed = prune_invalid_entries();
+    removed += prune_stale_entries();
+    return removed;
+}
+
 bool CookCache::contains(u64 content_hash) const {
     if (!is_valid_cook_cache_key(content_hash)) {
         return false;
@@ -454,6 +464,7 @@ bool CookCache::load(const std::string& path) {
         cursor = objectEnd + 1;
     }
 
+    prune_stale_entries();
     return true;
 }
 

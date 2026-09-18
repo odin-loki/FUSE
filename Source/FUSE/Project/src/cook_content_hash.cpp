@@ -82,6 +82,9 @@ u64 hash_upstream_dependencies(const std::vector<std::string>& dependency_output
 }
 
 u64 combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    if (source_hash == 0) {
+        return 0;
+    }
     if (upstream_hash == 0) {
         return source_hash;
     }
