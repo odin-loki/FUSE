@@ -34,11 +34,27 @@ struct PairBufferSoA {
     bool canSkipSoAIteration() const { return activeCount == 0u && pairSlotCount == 0u; }
     /// True when at most one canonical pair is present (dedupe is a no-op).
     bool canSkipDedupe() const { return canSkipSoAIteration() || activeCount <= 1u; }
+    /// True when two or more valid slots share the same canonical pair (B4.2 deepen pass).
+    bool hasDuplicateCanonicalPairs() const;
+    /// True when dedupe would remove at least one duplicate pair (B4.2 deepen pass).
+    bool needsDedupe() const;
+    /// True when refine dispatch may early-out for this buffer alone (B4.2 deepen pass).
+    bool canSkipRefine() const { return canSkipSoAIteration() || !hasValidPairs(); }
     /// True when slot storage has no invalid flags (compact is a no-op).
     bool canSkipCompaction() const;
     /// Count valid flags in prepared slot storage before compaction.
     u32 countValidSlots() const;
     bool slotIsValid(u32 slot) const;
+
+    /// Const preflight for canonical pair dedupe dispatch (B4.2 deepen pass).
+    struct DedupePreflight {
+        u32 duplicateCount = 0;
+        bool skipped = false;
+
+        bool needs_dedupe() const { return !skipped && duplicateCount > 0u; }
+    };
+
+    DedupePreflight preflight_dedupe() const;
 
     void reserve(u32 capacity);
     void setMaxCapacity(u32 capacity);
