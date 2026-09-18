@@ -24,12 +24,23 @@ bool is_fully_occluded_occlusion(float visibility);
 /// True when a blocker list pointer is non-null and carries at least one AABB.
 bool has_occlusion_blockers(const AABB* blockers, u32 blocker_count);
 
+/// Readable alias — true when the blocker list is null or zero-length.
+bool is_empty_occlusion_blockers(const AABB* blockers, u32 blocker_count);
+
 /// Co-located listener/source positions skip segment-vs-AABB blocker evaluation.
 bool should_skip_blocker_evaluation(const Vec3& listener, const Vec3& source);
 
 /// True when blocker ray evaluation may change visibility (non-empty list, separated positions).
 bool should_evaluate_occlusion_blockers(const Vec3& listener, const Vec3& source,
                                         const AABB* blockers, u32 blocker_count);
+
+/// True when blocker visibility/factor evaluation can be skipped (empty list or co-located).
+bool should_skip_blockers_visibility(const Vec3& listener, const Vec3& source,
+                                     const AABB* blockers, u32 blocker_count);
+
+/// True when the blocker attenuation pipeline can be bypassed (no geometry to evaluate).
+bool should_skip_occlusion_blocker_attenuation(const Vec3& listener, const Vec3& source,
+                                               const AABB* blockers, u32 blocker_count);
 
 /// True when visibility is fully clear — attenuation mapping can be skipped.
 bool should_skip_occlusion_attenuation(float visibility);

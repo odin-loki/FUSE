@@ -8,6 +8,14 @@ bool has_reverb_zones(const ReverbZoneParams* zones, u32 zone_count) {
     return zones != nullptr && zone_count > 0;
 }
 
+bool is_empty_reverb_zones(const ReverbZoneParams* zones, u32 zone_count) {
+    return !has_reverb_zones(zones, zone_count);
+}
+
+bool should_skip_reverb_zone_blend(const ReverbZoneParams* zones, u32 zone_count) {
+    return is_empty_reverb_zones(zones, zone_count);
+}
+
 bool listener_in_reverb_zone(const Vec3& listener, const ReverbZoneParams& zone) {
     return zone.bounds.contains(listener);
 }
@@ -15,7 +23,7 @@ bool listener_in_reverb_zone(const Vec3& listener, const ReverbZoneParams& zone)
 ReverbZoneBlend blend_reverb_zones(const Vec3& listener, const ReverbZoneParams* zones,
                                    u32 zone_count) {
     ReverbZoneBlend blend;
-    if (!has_reverb_zones(zones, zone_count)) {
+    if (should_skip_reverb_zone_blend(zones, zone_count)) {
         return blend;
     }
 
@@ -42,7 +50,7 @@ ReverbZoneBlend blend_reverb_zones(const Vec3& listener, const ReverbZoneParams*
 
 u32 count_listener_reverb_zones(const Vec3& listener, const ReverbZoneParams* zones,
                                 u32 zone_count) {
-    if (!has_reverb_zones(zones, zone_count)) {
+    if (should_skip_reverb_zone_blend(zones, zone_count)) {
         return 0;
     }
 
@@ -82,9 +90,13 @@ bool should_apply_reverb_wet_mix(const ReverbZoneBlend& blend) {
     return has_active_reverb_blend(blend) && compute_effective_wet_mix(blend) > 0.f;
 }
 
+bool should_skip_wet_mix_processing(const ReverbZoneBlend& blend) {
+    return !should_apply_reverb_wet_mix(blend);
+}
+
 float compute_effective_wet_mix(const Vec3& listener, const ReverbZoneParams* zones,
                                 u32 zone_count) {
-    if (!has_reverb_zones(zones, zone_count)) {
+    if (should_skip_reverb_zone_blend(zones, zone_count)) {
         return 0.f;
     }
     return compute_effective_wet_mix(blend_reverb_zones(listener, zones, zone_count));
@@ -110,11 +122,11 @@ float compute_effective_send_gain(const ReverbZoneBlend& blend) {
 
 float blend_reverb_sample(float dry, float wet, const Vec3& listener, const ReverbZoneParams* zones,
                           u32 zone_count) {
-    if (!has_reverb_zones(zones, zone_count)) {
+    if (should_skip_reverb_zone_blend(zones, zone_count)) {
         return dry;
     }
     const ReverbZoneBlend blend = blend_reverb_zones(listener, zones, zone_count);
-    if (!should_apply_reverb_wet_mix(blend)) {
+    if (should_skip_wet_mix_processing(blend)) {
         return dry;
     }
     return blend_dry_wet_sample(dry, wet, compute_effective_wet_mix(blend));

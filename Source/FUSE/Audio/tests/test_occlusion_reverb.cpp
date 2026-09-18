@@ -29,6 +29,13 @@ void testShouldEvaluateOcclusionBlockers() {
     const fuse::audio::Vec3 listener{0.f, 0.f, 0.f};
     const fuse::audio::Vec3 source{10.f, 0.f, 0.f};
 
+    expectTrue(fuse::audio::is_empty_occlusion_blockers(nullptr, 0),
+               "null blocker list is empty");
+    expectTrue(fuse::audio::is_empty_occlusion_blockers(&blocker, 0),
+               "zero blocker count is empty");
+    expectTrue(!fuse::audio::is_empty_occlusion_blockers(&blocker, 1),
+               "valid blocker list is non-empty");
+
     expectTrue(!fuse::audio::should_evaluate_occlusion_blockers(listener, source, nullptr, 0),
                "null blocker list skips evaluation");
     expectTrue(!fuse::audio::should_evaluate_occlusion_blockers(listener, source, &blocker, 0),
@@ -37,6 +44,13 @@ void testShouldEvaluateOcclusionBlockers() {
                "co-located positions skip evaluation");
     expectTrue(fuse::audio::should_evaluate_occlusion_blockers(listener, source, &blocker, 1),
                "separated positions with blockers evaluate");
+
+    expectTrue(fuse::audio::should_skip_blockers_visibility(listener, source, nullptr, 0),
+               "empty blocker list skips visibility evaluation");
+    expectTrue(fuse::audio::should_skip_blockers_visibility(listener, listener, &blocker, 1),
+               "co-located positions skip visibility evaluation");
+    expectTrue(!fuse::audio::should_skip_blockers_visibility(listener, source, &blocker, 1),
+               "separated positions with blockers evaluate visibility");
 }
 
 void testShouldSkipOcclusionAttenuation() {
@@ -82,6 +96,34 @@ void testFullyOccludedVisibilityEarlyOut() {
                0.f, 1e-5f, "co-located source yields zero blocker factor via guard");
 }
 
+void testSkipOcclusionBlockerAttenuation() {
+    const fuse::audio::AABB blocker{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
+    const fuse::audio::Vec3 listener{0.f, 0.f, 0.f};
+    const fuse::audio::Vec3 source{10.f, 0.f, 0.f};
+
+    expectTrue(
+        fuse::audio::should_skip_occlusion_blocker_attenuation(listener, source, nullptr, 0),
+        "empty blocker list skips blocker attenuation pipeline");
+    expectTrue(
+        fuse::audio::should_skip_occlusion_blocker_attenuation(listener, listener, &blocker, 1),
+        "co-located positions skip blocker attenuation pipeline");
+    expectTrue(
+        !fuse::audio::should_skip_occlusion_blocker_attenuation(listener, source, &blocker, 1),
+        "separated positions with blockers run blocker attenuation pipeline");
+
+    const fuse::audio::OcclusionAttenuation empty_blockers =
+        fuse::audio::evaluate_occlusion_from_blockers(listener, source, 1.f, nullptr, 0);
+    expectNear(empty_blockers.gain, 1.f, 1e-5f,
+               "empty blocker list preserves unity LF via attenuation bypass");
+    expectNear(empty_blockers.hf_gain, 1.f, 1e-5f,
+               "empty blocker list preserves unity HF via attenuation bypass");
+
+    const fuse::audio::OcclusionAttenuation colocated =
+        fuse::audio::evaluate_occlusion_from_blockers(listener, listener, 0.5f, &blocker, 1);
+    expectNear(colocated.gain, fuse::audio::evaluate_occlusion_gain(0.5f), 1e-5f,
+               "co-located bypass maps source occlusion without blocker factor");
+}
+
 void testHasReverbZonesGuard() {
     const fuse::audio::ReverbZoneParams zone{
         {{-5.f, -5.f, -5.f}, {5.f, 5.f, 5.f}}, 0.5f, 0.8f};
@@ -90,6 +132,16 @@ void testHasReverbZonesGuard() {
     expectTrue(!fuse::audio::has_reverb_zones(nullptr, 2), "null pointer with count is empty");
     expectTrue(!fuse::audio::has_reverb_zones(&zone, 0), "zero zone count is empty");
     expectTrue(fuse::audio::has_reverb_zones(&zone, 1), "valid zone list is non-empty");
+
+    expectTrue(fuse::audio::is_empty_reverb_zones(nullptr, 0), "is_empty matches null list");
+    expectTrue(fuse::audio::is_empty_reverb_zones(&zone, 0), "is_empty matches zero count");
+    expectTrue(!fuse::audio::is_empty_reverb_zones(&zone, 1), "is_empty false for valid list");
+    expectTrue(fuse::audio::should_skip_reverb_zone_blend(nullptr, 0),
+               "should_skip_reverb_zone_blend on empty list");
+    expectTrue(fuse::audio::should_skip_reverb_zone_blend(&zone, 0),
+               "should_skip_reverb_zone_blend on zero count");
+    expectTrue(!fuse::audio::should_skip_reverb_zone_blend(&zone, 1),
+               "should_skip_reverb_zone_blend false for valid list");
 }
 
 void testEffectiveSendGain() {
@@ -141,12 +193,25 @@ void testWetMixGuardConsistency() {
 
     expectTrue(fuse::audio::should_apply_reverb_wet_mix(blend),
                "active zone blend applies wet mix");
+    expectTrue(!fuse::audio::should_skip_wet_mix_processing(blend),
+               "active zone blend does not skip wet processing");
     expectNear(wet_mix, 0.2f, 1e-5f, "effective wet mix is wet_dry times send_level");
     expectNear(send_gain, 0.5f, 1e-5f, "effective send gain matches clamped send_level");
     expectNear(fuse::audio::compute_effective_wet_mix(listener, zones, 1), wet_mix, 1e-5f,
                "one-shot wet mix matches blend path");
     expectNear(fuse::audio::compute_effective_wet_mix(listener, nullptr, 0), 0.f, 1e-5f,
                "one-shot wet mix on empty list is zero");
+
+    fuse::audio::ReverbZoneBlend dry;
+    expectTrue(fuse::audio::should_skip_wet_mix_processing(dry),
+               "default blend skips wet processing");
+    expectTrue(fuse::audio::is_dry_reverb_blend(dry),
+               "should_skip_wet_mix matches is_dry_reverb_blend for inactive blend");
+
+    fuse::audio::ReverbZoneBlend zero_wet = blend;
+    zero_wet.wet_dry = 0.f;
+    expectTrue(fuse::audio::should_skip_wet_mix_processing(zero_wet),
+               "zero wet_dry skips wet processing");
 }
 
 } // namespace
@@ -157,6 +222,7 @@ int main() {
     testShouldSkipOcclusionAttenuation();
     testOcclusionCombinedGainHelpers();
     testFullyOccludedVisibilityEarlyOut();
+    testSkipOcclusionBlockerAttenuation();
     testHasReverbZonesGuard();
     testEffectiveSendGain();
     testBlendReverbSampleOneShot();
