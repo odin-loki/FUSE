@@ -21,6 +21,15 @@ HrtfIrStub make_empty_hrtf_ir();
 /// Validated IR stub factory — returns empty when samples are null or length is zero.
 HrtfIrStub make_hrtf_ir_stub(const float* samples, u32 length);
 
+/// Normalize an IR stub — null/zero-length samples collapse to the canonical empty IR.
+HrtfIrStub preflight_hrtf_ir(const HrtfIrStub& ir);
+
+/// True when convolution should be skipped (empty or invalid IR stub).
+bool should_skip_hrtf_ir_convolution(const HrtfIrStub& ir);
+
+/// True when pan routing should fall back to the ILD/ITD stub (empty IR).
+bool should_fallback_to_ild_itd_stub(const HrtfIrStub& ir);
+
 /// True when an HRTF IR stub has non-null, non-empty sample data.
 bool has_hrtf_ir(const HrtfIrStub& ir);
 
@@ -42,6 +51,18 @@ HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const
 
 /// Select pan path when no IR is wired (ILD/ITD stub or bypass).
 HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener);
+
+/// Preflight pan-path resolution with empty-IR and co-located guards applied.
+HrtfPanPath preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener);
+
+/// Preflight pan-path resolution when no IR is wired.
+HrtfPanPath preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener);
+
+/// True when the resolved path selects convolution (enabled, non-empty IR, not co-located).
+bool should_use_hrtf_convolution_path(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener);
+
+/// Inverse of \c should_skip_hrtf_spatial_pan — path produces a lateral spatial image.
+bool should_apply_hrtf_spatial_pan(HrtfPanPath path);
 
 /// True when the resolved path produces a lateral spatial image (not centre bypass).
 bool is_spatial_hrtf_pan_path(HrtfPanPath path);
@@ -206,11 +227,22 @@ struct HrtfAttenuationCoupling {
 /// Clamp distance or occlusion attenuation scalars into [0, 1].
 float clamp_hrtf_attenuation(float attenuation);
 
+/// Epsilon below which distance/occlusion attenuation is treated as fully audible.
+float hrtf_unity_attenuation_epsilon();
+
 /// Clamp occlusion blend weight into [0, 1].
 float clamp_hrtf_attenuation_coupling_weight(float weight);
 
 /// True when distance and occlusion are both fully audible (no narrowing).
 bool is_unity_hrtf_attenuation(float distance_attenuation, float occlusion_gain);
+
+/// Preflight attenuation coupling — true when spatial narrowing should run.
+bool preflight_hrtf_attenuation_coupling(HrtfPanPath path, float distance_attenuation,
+                                         float occlusion_gain);
+
+/// Combined early-out — bypass path or unity attenuation skips coupling.
+bool should_skip_hrtf_attenuation_coupling_for_inputs(HrtfPanPath path, float distance_attenuation,
+                                                     float occlusion_gain);
 
 /// True when distance/occlusion coupling should narrow the binaural image.
 bool should_apply_hrtf_attenuation_coupling(HrtfPanPath path);
