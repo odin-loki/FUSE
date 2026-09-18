@@ -247,6 +247,35 @@ bool is_degenerate_shape_pair(
            isShapeDegenerate(typeB, shapes.params[shapeB]);
 }
 
+bool is_plane_plane_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes) {
+    const u32 shapeA = findShapeForBody(shapes, pair.bodyA, CollisionShapeType::Sphere);
+    const u32 shapeB = findShapeForBody(shapes, pair.bodyB, CollisionShapeType::Sphere);
+    if (shapeA >= shapes.count() || shapeB >= shapes.count()) {
+        return false;
+    }
+
+    const CollisionShapeType typeA = shapeType(shapes, shapeA);
+    const CollisionShapeType typeB = shapeType(shapes, shapeB);
+    return typeA == CollisionShapeType::Plane && typeB == CollisionShapeType::Plane;
+}
+
+bool has_contact_pair_dispatch_path(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes) {
+    if (is_missing_shape_contact_pair(pair, shapes)) {
+        return false;
+    }
+    if (is_unsupported_shape_pair(pair, shapes)) {
+        return false;
+    }
+    if (is_degenerate_shape_pair(pair, shapes)) {
+        return false;
+    }
+    return true;
+}
+
 bool is_unsupported_shape_pair(
     const broadphase::CandidatePair& pair,
     const CollisionShapeSoA& shapes) {
@@ -332,6 +361,13 @@ bool is_valid_contact_pair(
     return !is_invalid_contact_pair(pair, bodies, shapes);
 }
 
+bool should_skip_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return is_invalid_contact_pair(pair, bodies, shapes);
+}
+
 ContactManifold detect_contacts_pair(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
@@ -389,7 +425,7 @@ void compute_friction_tangents(ContactManifold& manifold) {
         return;
     }
 
-    if (has_cached_friction_basis(manifold)) {
+    if (has_cached_friction_basis(manifold) && !friction_basis_is_stale(manifold)) {
         return;
     }
 
@@ -397,6 +433,7 @@ void compute_friction_tangents(ContactManifold& manifold) {
     if (std::fabs(normalLength - 1.f) > 1e-4f) {
         manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
     }
+    invalidate_friction_basis(manifold);
     manifold.buildFrictionBasis();
 }
 

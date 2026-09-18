@@ -112,10 +112,39 @@ bool ensure_friction_basis(ContactManifold& manifold) {
         return false;
     }
 
-    if (has_cached_friction_basis(manifold)) {
+    if (has_cached_friction_basis(manifold) && !friction_basis_is_stale(manifold)) {
         return true;
     }
 
+    manifold.buildFrictionBasis();
+    return manifold.hasFrictionBasis();
+}
+
+bool friction_basis_is_stale(const ContactManifold& manifold, f32 epsilon) {
+    if (!manifold.hasValidNormal()) {
+        return false;
+    }
+
+    const f32 tangent1Length = manifold.frictionBasis.tangent1.length();
+    const f32 tangent2Length = manifold.frictionBasis.tangent2.length();
+    if (tangent1Length <= epsilon && tangent2Length <= epsilon) {
+        return false;
+    }
+
+    return !friction_basis_matches_normal(manifold, epsilon);
+}
+
+bool rebuild_friction_basis_if_needed(ContactManifold& manifold) {
+    if (should_skip_friction_tangents(manifold)) {
+        invalidate_friction_basis(manifold);
+        return false;
+    }
+
+    if (has_cached_friction_basis(manifold) && !friction_basis_is_stale(manifold)) {
+        return true;
+    }
+
+    invalidate_friction_basis(manifold);
     manifold.buildFrictionBasis();
     return manifold.hasFrictionBasis();
 }
