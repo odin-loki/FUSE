@@ -82,6 +82,12 @@ bool taaResolveRequiresVelocity(const TAAParams& params);
 bool taaResolveRequiresDepth(const TAAParams& params);
 /// Blend weight applied this frame — 1.0 on first warm-up frame, else clamped `blend_factor`.
 f32 computeEffectiveBlend(bool firstFrame, const TAAParams& params);
+/// Blend weight with explicit history-reuse guard — forces 1.0 when history cannot be sampled.
+f32 computeEffectiveBlend(bool firstFrame, bool historyReusable, const TAAParams& params);
+/// True when effective blend samples history (strictly below full-current weight).
+bool taaBlendUsesHistory(f32 effectiveBlend);
+/// True when effective blend ignores history (warm-up / stale / full-current weight).
+bool taaBlendSkipsHistoryReuse(f32 effectiveBlend);
 /// History contribution weight — complement of `effectiveBlend`, clamped to [0, 1].
 f32 computeHistoryBlend(f32 effectiveBlend);
 
@@ -96,6 +102,10 @@ struct TaaResolveStats {
     f32 last_blend = 0.f;
     /// Blend weight applied this frame — 1.0 on first warm-up frame (no history reuse).
     f32 effective_blend = 0.f;
+    /// History accumulation weight — complement of `effective_blend` when history is sampled.
+    f32 history_blend = 0.f;
+    /// Set when resolve samples ping-pong history (reusable + blend below full-current weight).
+    bool history_reused = false;
     bool history_swapped = false;
     bool first_frame = false;
     bool has_valid_history = false;

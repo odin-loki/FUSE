@@ -102,6 +102,19 @@ void TaaPass::stampObservedHistoryGeneration(TaaResolveDesc& desc) const {
     fuse::renderer::stampObservedHistoryGeneration(desc, m_history);
 }
 
+f32 TaaPass::effectiveBlendForNextResolve() const {
+    TaaResolveDesc preview{};
+    preview.params = m_desc.params;
+    preview.observed_history_generation = m_history.invalidateGeneration();
+    const bool firstFrame = m_history.needsWarmup();
+    const bool historyReusable = taaHistoryIsReusable(m_history, preview);
+    return computeEffectiveBlend(firstFrame, historyReusable, m_desc.params);
+}
+
+bool TaaPass::historyReuseReady(const TaaResolveDesc& desc) const {
+    return taaHistoryIsReusable(m_history, desc);
+}
+
 void TaaPass::sanitizeResolveDesc(TaaResolveDesc& desc) const {
     fuse::renderer::sanitizeTaaResolveDesc(desc, m_history);
 }
