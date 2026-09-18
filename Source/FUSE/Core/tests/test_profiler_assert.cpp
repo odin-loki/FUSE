@@ -1113,6 +1113,194 @@ void testDisabledBeginAsyncFlowDoesNotIncrementOpenCount() {
     expectTrue(fuse::profiler::openAsyncFlowCount() == 0u, "enabled flow pair clears open count");
 }
 
+void testProfileNamePreflight() {
+    resetState();
+
+    const fuse::profiler::ProfileNamePreflight nullPreflight = fuse::profiler::preflightProfileName(nullptr);
+    expectTrue(nullPreflight.null_name, "null name preflight marks null_name");
+    expectTrue(!nullPreflight.empty_name, "null name preflight clears empty_name");
+    expectTrue(!nullPreflight.can_record(), "null name preflight cannot record");
+    expectTrue(nullPreflight.should_skip(), "null name preflight should skip");
+
+    const fuse::profiler::ProfileNamePreflight emptyPreflight = fuse::profiler::preflightProfileName("");
+    expectTrue(!emptyPreflight.null_name, "empty string preflight clears null_name");
+    expectTrue(emptyPreflight.empty_name, "empty string preflight marks empty_name");
+    expectTrue(!emptyPreflight.can_record(), "empty string preflight cannot record");
+
+    const fuse::profiler::ProfileNamePreflight validPreflight = fuse::profiler::preflightProfileName("valid");
+    expectTrue(!validPreflight.null_name, "valid name preflight clears null_name");
+    expectTrue(!validPreflight.empty_name, "valid name preflight clears empty_name");
+    expectTrue(validPreflight.can_record(), "valid name preflight can record");
+    expectTrue(!validPreflight.should_skip(), "valid name preflight should not skip");
+    expectTrue(fuse::profiler::isUsableProfileName("scope"), "isUsableProfileName accepts non-empty");
+    expectTrue(!fuse::profiler::isUsableProfileName(nullptr), "isUsableProfileName rejects null");
+    expectTrue(!fuse::profiler::isUsableProfileName(""), "isUsableProfileName rejects empty string");
+}
+
+void testScopePreflight() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::profiler::ScopePreflight nullPreflight = fuse::profiler::preflightScope(nullptr);
+    expectTrue(nullPreflight.null_name, "scope preflight marks null name");
+    expectTrue(!nullPreflight.can_enter(), "scope preflight rejects null name");
+
+    const fuse::profiler::ScopePreflight emptyPreflight = fuse::profiler::preflightScope("");
+    expectTrue(emptyPreflight.empty_name, "scope preflight marks empty name");
+    expectTrue(!emptyPreflight.can_enter(), "scope preflight rejects empty name");
+
+    const fuse::profiler::ScopePreflight validPreflight = fuse::profiler::preflightScope("valid_scope");
+    expectTrue(validPreflight.can_enter(), "scope preflight accepts valid name while enabled");
+
+    fuse::profiler::setEnabled(false);
+    const fuse::profiler::ScopePreflight disabledPreflight = fuse::profiler::preflightScope("valid_scope");
+    expectTrue(disabledPreflight.profiler_disabled, "scope preflight marks disabled profiler");
+    expectTrue(!disabledPreflight.can_enter(), "scope preflight rejects while disabled");
+}
+
+void testScopeNestingPreflight() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::profiler::ScopeNestingPreflight rootPreflight = fuse::profiler::preflightScopeNesting();
+    expectTrue(rootPreflight.is_at_root(), "nesting preflight at root after reset");
+    expectTrue(rootPreflight.current_depth == 0u, "nesting preflight reports zero current depth");
+    expectTrue(rootPreflight.max_observed_depth == 0u, "nesting preflight reports zero max depth");
+
+    {
+        FUSE_PROFILE_SCOPE("nesting_outer");
+        const fuse::profiler::ScopeNestingPreflight outerPreflight = fuse::profiler::preflightScopeNesting();
+        expectTrue(!outerPreflight.is_at_root(), "nesting preflight not at root inside scope");
+        expectTrue(outerPreflight.current_depth == 1u, "nesting preflight reports depth 1 in outer scope");
+        {
+            FUSE_PROFILE_SCOPE("nesting_inner");
+            const fuse::profiler::ScopeNestingPreflight innerPreflight = fuse::profiler::preflightScopeNesting();
+            expectTrue(innerPreflight.current_depth == 2u, "nesting preflight reports depth 2 in inner scope");
+            expectTrue(innerPreflight.max_observed_depth == 2u, "nesting preflight tracks max observed depth");
+        }
+    }
+
+    const fuse::profiler::ScopeNestingPreflight afterPreflight = fuse::profiler::preflightScopeNesting();
+    expectTrue(afterPreflight.is_at_root(), "nesting preflight returns to root after scopes end");
+}
+
+void testAsyncFlowPreflights() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::profiler::AsyncFlowBeginPreflight nullBegin = fuse::profiler::preflightBeginAsyncFlow(nullptr);
+    expectTrue(nullBegin.null_name, "flow begin preflight marks null name");
+    expectTrue(!nullBegin.can_begin(), "flow begin preflight rejects null name");
+
+    const fuse::profiler::AsyncFlowBeginPreflight emptyBegin = fuse::profiler::preflightBeginAsyncFlow("");
+    expectTrue(emptyBegin.empty_name, "flow begin preflight marks empty name");
+    expectTrue(!emptyBegin.can_begin(), "flow begin preflight rejects empty name");
+
+    const fuse::profiler::AsyncFlowEndPreflight orphanEnd = fuse::profiler::preflightEndAsyncFlow("orphan");
+    expectTrue(orphanEnd.no_open_flows, "flow end preflight marks no open flows");
+    expectTrue(orphanEnd.would_orphan(), "flow end preflight would orphan without begin");
+    expectTrue(!orphanEnd.can_end(), "flow end preflight rejects orphan finish");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("paired_flow", flowId);
+    const fuse::profiler::AsyncFlowEndPreflight pairedEnd = fuse::profiler::preflightEndAsyncFlow("paired_flow");
+    expectTrue(!pairedEnd.no_open_flows, "flow end preflight clears no_open_flows after begin");
+    expectTrue(pairedEnd.open_flow_count == 1u, "flow end preflight reports open flow count");
+    expectTrue(pairedEnd.can_end(), "flow end preflight accepts paired finish");
+    FUSE_PROFILE_ASYNC_FLOW_END("paired_flow", flowId);
+
+    fuse::profiler::setEnabled(false);
+    const fuse::profiler::AsyncFlowBeginPreflight disabledBegin = fuse::profiler::preflightBeginAsyncFlow("flow");
+    expectTrue(disabledBegin.profiler_disabled, "flow begin preflight marks disabled profiler");
+    expectTrue(!disabledBegin.can_begin(), "flow begin preflight rejects while disabled");
+}
+
+void testCounterSamplePreflight() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::profiler::CounterSamplePreflight nullPreflight = fuse::profiler::preflightCounterSample(nullptr);
+    expectTrue(nullPreflight.null_name, "counter preflight marks null track");
+    expectTrue(!nullPreflight.can_sample(), "counter preflight rejects null track");
+
+    const fuse::profiler::CounterSamplePreflight emptyPreflight = fuse::profiler::preflightCounterSample("");
+    expectTrue(emptyPreflight.empty_name, "counter preflight marks empty track");
+    expectTrue(!emptyPreflight.can_sample(), "counter preflight rejects empty track");
+
+    const fuse::profiler::CounterSamplePreflight validPreflight = fuse::profiler::preflightCounterSample("budget");
+    expectTrue(validPreflight.can_sample(), "counter preflight accepts valid track while enabled");
+
+    fuse::profiler::setEnabled(false);
+    const fuse::profiler::CounterSamplePreflight disabledPreflight = fuse::profiler::preflightCounterSample("budget");
+    expectTrue(disabledPreflight.profiler_disabled, "counter preflight marks disabled profiler");
+    expectTrue(!disabledPreflight.can_sample(), "counter preflight rejects while disabled");
+}
+
+void testChromeTraceExportPreflight() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::profiler::ChromeTraceExportPreflight emptyPreflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(emptyPreflight.exportable(), "export preflight always exportable");
+    expectTrue(emptyPreflight.buffer_empty, "export preflight marks empty buffer");
+    expectTrue(!emptyPreflight.will_emit_events(), "export preflight will not emit on empty buffer");
+    expectTrue(emptyPreflight.frame_index == 0u, "export preflight reports frame index");
+
+    fuse::profiler::beginFrame();
+    {
+        FUSE_PROFILE_SCOPE("export_scope");
+        FUSE_PROFILE_COUNTER("export_counter", 5);
+    }
+
+    const fuse::profiler::ChromeTraceExportPreflight populatedPreflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(!populatedPreflight.buffer_empty, "export preflight clears buffer_empty after recording");
+    expectTrue(populatedPreflight.event_count == 3u, "export preflight reports event count");
+    expectTrue(populatedPreflight.will_emit_events(), "export preflight will emit events");
+    expectTrue(populatedPreflight.null_name_skip_count == 0u, "export preflight reports zero null-name skips");
+    expectTrue(populatedPreflight.frame_index == 1u, "export preflight reflects beginFrame count");
+    expectTrue(fuse::profiler::exportChromeTraceJson().find("\"traceEvents\":[") != std::string::npos,
+               "export preflight aligns with callable export");
+}
+
+void testEventLookupPreflightAndTryEventAt() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::profiler::EventLookupPreflight emptyPreflight = fuse::profiler::preflightEventLookup(0u);
+    expectTrue(emptyPreflight.buffer_empty, "lookup preflight marks empty buffer");
+    expectTrue(emptyPreflight.out_of_range, "lookup preflight marks out of range on empty buffer");
+    expectTrue(emptyPreflight.should_use_sentinel(), "lookup preflight should use sentinel on empty buffer");
+    expectTrue(!fuse::profiler::canLookupEventAt(0u), "canLookupEventAt false on empty buffer");
+
+    const fuse::profiler::ProfileEvent* lookupOut = nullptr;
+    expectTrue(!fuse::profiler::tryEventAt(0u, lookupOut), "tryEventAt false on empty buffer");
+    expectTrue(lookupOut != nullptr && lookupOut->name == nullptr, "tryEventAt returns sentinel on empty buffer");
+
+    {
+        FUSE_PROFILE_SCOPE("lookup_scope");
+    }
+
+    const fuse::profiler::EventLookupPreflight validPreflight = fuse::profiler::preflightEventLookup(0u);
+    expectTrue(!validPreflight.buffer_empty, "lookup preflight clears buffer_empty after recording");
+    expectTrue(!validPreflight.out_of_range, "lookup preflight accepts in-range index");
+    expectTrue(validPreflight.can_lookup(), "lookup preflight can lookup first event");
+    expectTrue(fuse::profiler::canLookupEventAt(0u), "canLookupEventAt true for first event");
+    expectTrue(fuse::profiler::canLookupEventAt(1u), "canLookupEventAt true for last event");
+    expectTrue(!fuse::profiler::canLookupEventAt(2u), "canLookupEventAt false past event count");
+
+    const fuse::profiler::EventLookupPreflight oobPreflight = fuse::profiler::preflightEventLookup(99u);
+    expectTrue(oobPreflight.out_of_range, "lookup preflight marks out-of-range index");
+    expectTrue(!oobPreflight.can_lookup(), "lookup preflight rejects out-of-range index");
+
+    expectTrue(fuse::profiler::tryEventAt(0u, lookupOut), "tryEventAt succeeds for valid index");
+    expectTrue(lookupOut != nullptr && lookupOut->name != nullptr, "tryEventAt returns valid event pointer");
+    expectTrue(std::string(lookupOut->name) == "lookup_scope", "tryEventAt preserves event name");
+    expectTrue(lookupOut->phase == fuse::profiler::EventPhase::Begin, "tryEventAt returns begin event");
+
+    expectTrue(!fuse::profiler::tryEventAt(99u, lookupOut), "tryEventAt false for out-of-range index");
+    expectTrue(lookupOut != nullptr && lookupOut->name == nullptr, "tryEventAt returns sentinel for out-of-range");
+}
+
 void testVerifyMacro() {
     resetState();
     fuse::assertion::setSuppressAbortForTests(true);
@@ -1183,6 +1371,13 @@ int main() {
     testDisabledScopeDoesNotMutateNestingDepth();
     testMultipleOrphanAsyncFlowEndsAreIgnored();
     testDisabledBeginAsyncFlowDoesNotIncrementOpenCount();
+    testProfileNamePreflight();
+    testScopePreflight();
+    testScopeNestingPreflight();
+    testAsyncFlowPreflights();
+    testCounterSamplePreflight();
+    testChromeTraceExportPreflight();
+    testEventLookupPreflightAndTryEventAt();
     testFatalHandlerHook();
     testVerifyMacro();
 
