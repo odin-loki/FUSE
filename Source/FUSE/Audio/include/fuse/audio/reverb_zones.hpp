@@ -12,6 +12,9 @@ struct ReverbZoneParams {
     float send_level = 1.f;
 };
 
+/// True when a zone list pointer is non-null and carries at least one zone.
+bool has_reverb_zones(const ReverbZoneParams* zones, u32 zone_count);
+
 /// Returns true when the listener position lies inside the zone AABB.
 bool listener_in_reverb_zone(const Vec3& listener, const ReverbZoneParams& zone);
 
@@ -54,5 +57,12 @@ float compute_effective_wet_mix(const Vec3& listener, const ReverbZoneParams* zo
 
 /// Linear dry/wet sample blend stub — wet_mix in [0, 1].
 float blend_dry_wet_sample(float dry, float wet, float wet_mix);
+
+/// Effective send gain [0, 1] from a zone blend result (zero when inactive).
+float compute_effective_send_gain(const ReverbZoneBlend& blend);
+
+/// One-shot dry/wet sample blend from listener position and zone list (dry when empty/outside).
+float blend_reverb_sample(float dry, float wet, const Vec3& listener, const ReverbZoneParams* zones,
+                          u32 zone_count);
 
 } // namespace fuse::audio
