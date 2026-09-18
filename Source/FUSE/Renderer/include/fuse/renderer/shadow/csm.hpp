@@ -78,6 +78,13 @@ struct CascadeFrustumCorners {
     fuse::math::Vec3 corners[8]{};
 };
 
+/// Why every cascade shadow build would be bypassed before per-cascade fitting (B5.5 deepen).
+enum class CascadeShadowBypassReason : u8 {
+    None = 0,
+    EmptyLightDirection = 1,
+    EmptyCameraDepthRange = 2,
+};
+
 /// Why a cascade shadow build would be skipped (B5.5 deepen).
 enum class CascadeShadowSkipReason : u8 {
     None = 0,
@@ -164,6 +171,14 @@ struct CascadedShadowMapLayout {
     static void enforceCascadeSplitMonotonicity(CascadedShadowMapDesc& desc);
     /// Pin the last cascade split to the far-plane fraction (1.0).
     static void pinLastCascadeSplit(CascadedShadowMapDesc& desc);
+    /// True when any split lies outside [0, 1].
+    static bool needsCascadeSplitClamp(const CascadedShadowMapDesc& desc);
+    /// True when any split is smaller than its predecessor.
+    static bool needsCascadeSplitMonotonicityRepair(const CascadedShadowMapDesc& desc);
+    /// True when the last cascade split is not pinned to the far-plane fraction (1.0).
+    static bool needsLastCascadeSplitPin(const CascadedShadowMapDesc& desc);
+    /// True when any sanitize stage would mutate `desc.cascadeSplits`.
+    static bool needsCascadeSplitSanitize(const CascadedShadowMapDesc& desc);
     /// Clamp each split to [0, 1], enforce monotonicity, and pin the last slot to 1.0.
     static void sanitizeCascadeSplits(CascadedShadowMapDesc& desc);
     static bool validateCascadeRanges(const CascadedShadowMapDesc& desc, const ShadowCameraParams& camera);
@@ -214,14 +229,36 @@ struct CascadeLightSpaceLayout {
     static bool isDegenerateCascadeRange(const CascadeRange& range, const ShadowCameraParams& camera);
     static bool isDegenerateLightDirection(const fuse::math::Vec3& lightDirection);
     static bool isEmptyLightDirection(const fuse::math::Vec3& lightDirection);
+    /// Empty-light global bypass guard — checked before camera depth range.
+    static bool shouldBypassForEmptyLightDirection(const fuse::math::Vec3& lightDirection);
+    /// Empty-camera global bypass guard — checked after empty-light.
+    static bool shouldBypassForEmptyCameraDepthRange(const ShadowCameraParams& camera);
+    /// Classify why every cascade should be bypassed — same ordering as `shouldBypassAllCascadeShadowBuilds`.
+    static CascadeShadowBypassReason classifyCascadeShadowBypass(const ShadowCameraParams& camera,
+                                                                 const fuse::math::Vec3& lightDirection);
     /// True when every cascade should be bypassed before per-cascade fitting.
     static bool shouldBypassAllCascadeShadowBuilds(const ShadowCameraParams& camera,
                                                  const fuse::math::Vec3& lightDirection);
+    /// Per-cascade skip guards — same ordering as `classifyCascadeShadowSkip`.
+    static bool isEmptyLightCascadeShadowGuard(const fuse::math::Vec3& lightDirection);
+    static bool isEmptyCameraCascadeShadowGuard(const ShadowCameraParams& camera);
+    static bool isEmptyFrustumCascadeShadowGuard(u32 cascadeIndex,
+                                                 const CascadedShadowMapDesc& desc,
+                                                 const ShadowCameraParams& camera);
+    static bool isDegenerateRangeCascadeShadowGuard(u32 cascadeIndex,
+                                                    const CascadedShadowMapDesc& desc,
+                                                    const ShadowCameraParams& camera);
     /// Classify why a cascade build would be skipped — same ordering as `shouldSkipCascadeShadowBuild`.
     static CascadeShadowSkipReason classifyCascadeShadowSkip(u32 cascadeIndex,
                                                              const CascadedShadowMapDesc& desc,
                                                              const ShadowCameraParams& camera,
                                                              const fuse::math::Vec3& lightDirection);
+    /// Preflight per-cascade skip without mutating shadow data.
+    static bool wouldSkipCascadeShadowBuild(u32 cascadeIndex,
+                                            const CascadedShadowMapDesc& desc,
+                                            const ShadowCameraParams& camera,
+                                            const fuse::math::Vec3& lightDirection,
+                                            CascadeShadowSkipReason* reason = nullptr);
     static bool shouldSkipCascadeShadowBuild(u32 cascadeIndex,
                                              const CascadedShadowMapDesc& desc,
                                              const ShadowCameraParams& camera,
@@ -281,6 +318,12 @@ struct CascadeLightSpaceLayout {
                                                  CascadeLightSpaceMatrices outMatrices[kCascadeCount]);
 };
 
+/// Human-readable label for global bypass reasons (logging / tests).
+const char* cascadeShadowBypassReasonLabel(CascadeShadowBypassReason reason);
+/// True when a global bypass reason blocks all cascade matrix population.
+bool cascadeShadowBypassReasonIsBlocking(CascadeShadowBypassReason reason);
+/// Human-readable label for per-cascade skip reasons (logging / tests).
+const char* cascadeShadowSkipReasonLabel(CascadeShadowSkipReason reason);
 /// True when a cascade shadow skip reason blocks matrix population.
 bool cascadeShadowSkipReasonIsBlocking(CascadeShadowSkipReason reason);
 
