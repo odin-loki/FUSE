@@ -239,4 +239,26 @@ inline bool tryRayHits(const AABB& box, const Vec3& origin, const Vec3& directio
     return box.rayHits(origin, direction, tMin, tMax);
 }
 
+/// Writes parametric hit distance to `t` when the box is non-empty and the ray hits; returns false on early-out.
+inline bool tryRayIntersect(const AABB& box, const Vec3& origin, const Vec3& direction, f32& t) {
+    if (box.isEmpty()) {
+        return false;
+    }
+    const f32 hit = box.rayIntersect(origin, direction);
+    if (hit < 0.f) {
+        return false;
+    }
+    t = hit;
+    return true;
+}
+
+/// Writes transformed bounds when `box` is non-empty; returns false on empty early-out.
+inline bool tryTransformAabb(const Mat4& matrix, const AABB& box, AABB& out) {
+    if (box.isEmpty()) {
+        return false;
+    }
+    out = transformAabb(matrix, box);
+    return true;
+}
+
 } // namespace fuse::math

@@ -414,6 +414,43 @@ inline bool tryToRotationQuat(const Mat4& matrix, Quat& out, f32 epsilon = 1e-4f
     return true;
 }
 
+/// Writes `transformPoint(matrix, point)` when the matrix is a rigid affine transform.
+inline bool tryTransformPointRigid(const Mat4& matrix, const Vec3& point, Vec3& out, f32 epsilon = 1e-4f) {
+    if (!isRigid(matrix, epsilon)) {
+        return false;
+    }
+    out = transformPoint(matrix, point);
+    return true;
+}
+
+/// Decomposes a rigid affine matrix into translation, unit rotation, and uniform column scale.
+inline bool tryExtractRigid(const Mat4& matrix, Vec3& translation, Quat& rotation, f32& uniformScale,
+                            f32 epsilon = 1e-4f) {
+    if (!isAffine(matrix, epsilon) || !isRigidUpper3x3(matrix, epsilon)) {
+        return false;
+    }
+
+    uniformScale = uniformScaleUpper3x3(matrix, epsilon);
+    if (uniformScale < epsilon) {
+        return false;
+    }
+
+    translation = extractTranslation(matrix, epsilon);
+
+    Mat4 normalized = matrix;
+    const f32 invScale = 1.f / uniformScale;
+    normalized.data[0] *= invScale;
+    normalized.data[1] *= invScale;
+    normalized.data[2] *= invScale;
+    normalized.data[4] *= invScale;
+    normalized.data[5] *= invScale;
+    normalized.data[6] *= invScale;
+    normalized.data[8] *= invScale;
+    normalized.data[9] *= invScale;
+    normalized.data[10] *= invScale;
+    return tryToRotationQuat(normalized, rotation, epsilon);
+}
+
 inline Mat4 operator*(const Mat4& a, const Mat4& b) { return multiply(a, b); }
 inline Mat3 operator*(const Mat3& a, const Mat3& b) { return multiply(a, b); }
 
