@@ -62,6 +62,7 @@ void endFrame();
 
 u32 frameIndex();
 u32 eventCount();
+u32 ringCapacity();
 u32 maxNestingDepth();
 u32 nestingDepth();
 u32 maxFlowNestingDepth();
@@ -69,15 +70,38 @@ u32 scopeNestingDepth();
 u32 flowNestingDepth();
 u32 openAsyncFlowCount();
 
+bool isValidProfileName(const char* name);
 bool hasEvents();
+bool hasOpenAsyncFlows();
+bool isScopeNestingBalanced();
+bool isFlowNestingBalanced();
 bool isBufferEmpty();
 bool isBufferFull();
 bool isEventIndexValid(u32 index);
 bool isValidProfileEvent(const ProfileEvent& event);
 u32 lastEventIndex();
+const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
+bool tryEventAt(u32 index, ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 void reset();
+
+/// Read-only chrome export diagnostics — inspect buffer and nesting guard state before export.
+struct ChromeTraceExportPreflight {
+    bool profilerEnabled = false;
+    bool hasExportableEvents = false;
+    bool bufferEmpty = true;
+    bool hasOpenAsyncFlows = false;
+    bool scopeNestingBalanced = true;
+    bool flowNestingBalanced = true;
+    u32 eventCount = 0;
+    u32 exportableEventCount = 0;
+    u32 frameIndex = 0;
+
+    [[nodiscard]] bool canExport() const { return profilerEnabled; }
+};
+
+ChromeTraceExportPreflight preflightChromeTraceExport();
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();
