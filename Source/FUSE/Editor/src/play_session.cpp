@@ -152,11 +152,36 @@ FixedStepPreflight PlaySession::preflightFixedSteps(f32 fixedDt, const PlayModeP
     preflight.pending = pendingFixedStepCount(fixedDt);
     if (maxSteps == 0) {
         preflight.allowed = preflight.pending;
+        preflight.deferred = 0;
         return preflight;
     }
 
     preflight.allowed = preflight.pending < maxSteps ? preflight.pending : maxSteps;
-    preflight.wouldCap = preflight.pending > maxSteps;
+    preflight.deferred = preflight.pending > preflight.allowed ? preflight.pending - preflight.allowed : 0;
+    preflight.wouldCap = preflight.deferred > 0;
+    return preflight;
+}
+
+TickFixedStepPreflight PlaySession::preflightTickFixedStep(f32 dt, f32 fixedDt,
+                                                           const PlayModePhysicsState& physics,
+                                                           u32 maxSteps) const {
+    TickFixedStepPreflight preflight{};
+    preflight.variableTickSkipped = shouldSkipVariableTick(dt, physics);
+    preflight.fixedStep = preflightFixedSteps(fixedDt, physics, maxSteps);
+    return preflight;
+}
+
+DirtySnapshotPreflight PlaySession::preflightDirtySnapshot() const {
+    DirtySnapshotPreflight preflight{};
+
+    if (shouldSkipDirtySnapshotRestore()) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    preflight.captured = true;
+    preflight.sceneModified = m_dirtySnapshot.sceneModified;
+    preflight.entityCount = static_cast<u32>(m_dirtySnapshot.transformDirty.size());
     return preflight;
 }
 
