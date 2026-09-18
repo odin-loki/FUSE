@@ -11,6 +11,13 @@ const char* sanitizeTitle(const char* title) {
     return (title != nullptr && title[0] != '\0') ? title : "FUSE";
 }
 
+bool isWindowScopedEventType(PlatformEventType type) {
+    return type == PlatformEventType::WindowCloseRequested ||
+           type == PlatformEventType::WindowResized ||
+           type == PlatformEventType::WindowFocusGained ||
+           type == PlatformEventType::WindowFocusLost;
+}
+
 } // namespace
 
 Window::Window() {
@@ -200,6 +207,39 @@ bool EventPump::tryPeekEventOfType(PlatformEventType type, PlatformEvent& outEve
     return true;
 }
 
+bool EventPump::tryPeekEventFor(const Window& window, PlatformEvent& outEvent) const {
+    if (m_syntheticHead == m_syntheticTail) {
+        outEvent = {};
+        return false;
+    }
+
+    const PlatformEvent& front = m_syntheticEvents[m_syntheticHead];
+    if (front.window != &window) {
+        outEvent = {};
+        return false;
+    }
+
+    outEvent = front;
+    return true;
+}
+
+bool EventPump::tryPeekEventOfTypeFor(const Window& window, PlatformEventType type,
+                                      PlatformEvent& outEvent) const {
+    if (m_syntheticHead == m_syntheticTail) {
+        outEvent = {};
+        return false;
+    }
+
+    const PlatformEvent& front = m_syntheticEvents[m_syntheticHead];
+    if (front.type != type || front.window != &window) {
+        outEvent = {};
+        return false;
+    }
+
+    outEvent = front;
+    return true;
+}
+
 bool EventPump::frontEventTypeIs(PlatformEventType type) const {
     PlatformEventType front = PlatformEventType::None;
     if (!peekEventType(front)) {
@@ -252,21 +292,11 @@ u32 EventPump::countPendingEventsOfType(PlatformEventType type) const {
 }
 
 bool EventPump::hasPendingEventOfTypeFor(const Window& window, PlatformEventType type) const {
-    if (m_syntheticHead == m_syntheticTail) {
-        return false;
-    }
+    return countPendingEventsOfTypeFor(window, type) > 0u;
+}
 
-    u32 index = m_syntheticHead;
-    while (index != m_syntheticTail) {
-        const PlatformEvent& pending = m_syntheticEvents[index];
-        if (pending.type == type && pending.window == &window) {
-            return true;
-        }
-
-        index = (index + 1u) % kMaxSyntheticEvents;
-    }
-
-    return false;
+bool EventPump::hasPendingEventsFor(const Window& window) const {
+    return countPendingEventsFor(window) > 0u;
 }
 
 u32 EventPump::countPendingEventsFor(const Window& window) const {
@@ -287,6 +317,25 @@ u32 EventPump::countPendingEventsFor(const Window& window) const {
     return count;
 }
 
+u32 EventPump::countPendingEventsOfTypeFor(const Window& window, PlatformEventType type) const {
+    if (m_syntheticHead == m_syntheticTail) {
+        return 0;
+    }
+
+    u32 count = 0;
+    u32 index = m_syntheticHead;
+    while (index != m_syntheticTail) {
+        const PlatformEvent& pending = m_syntheticEvents[index];
+        if (pending.type == type && pending.window == &window) {
+            ++count;
+        }
+
+        index = (index + 1u) % kMaxSyntheticEvents;
+    }
+
+    return count;
+}
+
 bool EventPump::wouldCoalesceResize(const PlatformEvent& event) const {
     if (event.type != PlatformEventType::WindowResized || event.window == nullptr ||
         event.width == 0u || event.height == 0u || m_syntheticHead == m_syntheticTail) {
@@ -297,6 +346,28 @@ bool EventPump::wouldCoalesceResize(const PlatformEvent& event) const {
     while (true) {
         const PlatformEvent& pending = m_syntheticEvents[index];
         if (pending.type == PlatformEventType::WindowResized && pending.window == event.window) {
+            return true;
+        }
+
+        if (index == m_syntheticHead) {
+            break;
+        }
+
+        index = (index + kMaxSyntheticEvents - 1u) % kMaxSyntheticEvents;
+    }
+
+    return false;
+}
+
+bool EventPump::wouldCoalesceResizeFor(const Window& window) const {
+    if (window.width() == 0u || window.height() == 0u || m_syntheticHead == m_syntheticTail) {
+        return false;
+    }
+
+    u32 index = (m_syntheticTail + kMaxSyntheticEvents - 1u) % kMaxSyntheticEvents;
+    while (true) {
+        const PlatformEvent& pending = m_syntheticEvents[index];
+        if (pending.type == PlatformEventType::WindowResized && pending.window == &window) {
             return true;
         }
 
@@ -447,6 +518,10 @@ void EventPump::enqueueSyntheticEvent_(const PlatformEvent& event) {
 
 void EventPump::pushSyntheticEvent(const PlatformEvent& event) {
     if (event.type == PlatformEventType::None) {
+        return;
+    }
+
+    if (isWindowScopedEventType(event.type) && event.window == nullptr) {
         return;
     }
 

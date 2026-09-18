@@ -76,6 +76,15 @@ public:
     /// the front event is a different type (outEvent is reset to None).
     bool tryPeekEventOfType(PlatformEventType type, PlatformEvent& outEvent) const;
 
+    /// Peek the front event only when its `window` matches. Returns false when empty or the
+    /// front event targets a different window (outEvent is reset to None).
+    bool tryPeekEventFor(const Window& window, PlatformEvent& outEvent) const;
+
+    /// Peek the front event only when its type and `window` match. Returns false when empty or
+    /// the front event does not match (outEvent is reset to None).
+    bool tryPeekEventOfTypeFor(const Window& window, PlatformEventType type,
+                               PlatformEvent& outEvent) const;
+
     /// True when the front queued event matches `type` (false when empty).
     bool frontEventTypeIs(PlatformEventType type) const;
 
@@ -94,14 +103,23 @@ public:
     /// True when a queued event matches both `window` and `type`.
     bool hasPendingEventOfTypeFor(const Window& window, PlatformEventType type) const;
 
+    /// True when at least one queued event targets `window`.
+    bool hasPendingEventsFor(const Window& window) const;
+
     /// Number of queued events whose `window` pointer matches `window`.
     u32 countPendingEventsFor(const Window& window) const;
 
     /// Number of queued events whose `type` matches `type`.
     u32 countPendingEventsOfType(PlatformEventType type) const;
 
+    /// Number of queued events matching both `window` and `type`.
+    u32 countPendingEventsOfTypeFor(const Window& window, PlatformEventType type) const;
+
     /// True when `pushSyntheticEvent(event)` would coalesce an existing resize instead of enqueueing.
     bool wouldCoalesceResize(const PlatformEvent& event) const;
+
+    /// True when `pushWindowResized(window)` would coalesce instead of enqueueing.
+    bool wouldCoalesceResizeFor(const Window& window) const;
 
     /// Pending resize dimensions for `window`, or `pending == false` when none queued.
     ///
