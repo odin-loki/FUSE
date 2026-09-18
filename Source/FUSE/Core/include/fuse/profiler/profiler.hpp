@@ -68,6 +68,9 @@ u32 maxFlowNestingDepth();
 u32 scopeNestingDepth();
 u32 flowNestingDepth();
 u32 openAsyncFlowCount();
+bool hasOpenAsyncFlows();
+bool isScopeNestingBalanced();
+bool isFlowNestingBalanced();
 
 bool hasEvents();
 bool isBufferEmpty();
@@ -76,6 +79,7 @@ bool isEventIndexValid(u32 index);
 bool isValidProfileEvent(const ProfileEvent& event);
 u32 lastEventIndex();
 const ProfileEvent& eventAt(u32 index);
+bool tryEventAt(u32 index, ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 void reset();
 
