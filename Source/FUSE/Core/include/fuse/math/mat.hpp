@@ -228,6 +228,15 @@ inline Vec3 extractTranslation(const Mat4& matrix, f32 epsilon = 1e-5f) {
     return {matrix.data[12], matrix.data[13], matrix.data[14]};
 }
 
+/// Writes the translation column when the matrix is affine; returns false on early-out.
+inline bool tryExtractTranslation(const Mat4& matrix, Vec3& out, f32 epsilon = 1e-5f) {
+    if (!isAffine(matrix, epsilon)) {
+        return false;
+    }
+    out = {matrix.data[12], matrix.data[13], matrix.data[14]};
+    return true;
+}
+
 /// Uniform column length of a rigid upper 3×3 block; returns `0` when the block is not rigid.
 inline f32 uniformScaleUpper3x3(const Mat4& matrix, f32 epsilon = 1e-4f) {
     if (!isRigidUpper3x3(matrix, epsilon)) {

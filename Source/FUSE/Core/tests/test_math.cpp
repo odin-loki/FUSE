@@ -169,6 +169,19 @@ void testMat4ExtractTranslation() {
                    "Mat4 extractTranslation returns zero for non-affine matrix");
 }
 
+void testMat4TryExtractTranslation() {
+    const fuse::math::Mat4 matrix =
+        fuse::math::fromTRS({-2.f, 4.f, 1.f}, fuse::math::Quat::identity(), {1.f, 1.f, 1.f});
+    fuse::math::Vec3 translation{};
+    expectTrue(fuse::math::tryExtractTranslation(matrix, translation),
+               "tryExtractTranslation succeeds for affine matrix");
+    expectVec3Near(translation, {-2.f, 4.f, 1.f}, 1e-5f, "tryExtractTranslation reads affine column");
+
+    const fuse::math::Mat4 perspective = fuse::math::perspective(60.f, 1.f, 0.1f, 100.f);
+    expectTrue(!fuse::math::tryExtractTranslation(perspective, translation),
+               "tryExtractTranslation early-outs on non-affine matrix");
+}
+
 void testMat4IsRigidComposite() {
     const fuse::math::Mat4 rigid =
         fuse::math::fromTRS({1.f, 2.f, 3.f}, fuse::math::fromAxisAngle({0.f, 0.f, 1.f}, 0.3f), {2.f, 2.f, 2.f});
@@ -308,6 +321,50 @@ void testAabbOverlap() {
     expectVec3Near(merged.max, {4.f, 4.f, 4.f}, 1e-5f, "AABB merge max");
 }
 
+void testAabbTryRayGuards() {
+    const fuse::math::AABB box{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
+    f32 tEnter = 0.f;
+    f32 tExit = 0.f;
+
+    expectTrue(box.tryRayInterval({-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, tEnter, tExit),
+               "tryRayInterval hits valid box");
+    expectNear(tEnter, 2.f, 1e-4f, "tryRayInterval entry");
+    expectNear(tExit, 4.f, 1e-4f, "tryRayInterval exit");
+
+    expectTrue(!box.tryRayInterval({-3.f, 2.f, 0.f}, {1.f, 0.f, 0.f}, tEnter, tExit),
+               "tryRayInterval rejects separated ray");
+
+    expectTrue(box.tryRayIntervalClamped({-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, 2.5f, 3.5f, tEnter, tExit),
+               "tryRayIntervalClamped hits within clamp range");
+    expectNear(tEnter, 2.5f, 1e-4f, "tryRayIntervalClamped entry");
+    expectNear(tExit, 3.5f, 1e-4f, "tryRayIntervalClamped exit");
+    expectTrue(!box.tryRayIntervalClamped({-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, 5.f, 4.f, tEnter, tExit),
+               "tryRayIntervalClamped early-outs on inverted clamp range");
+
+    expectTrue(box.tryRayHits({-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, 0.f, 10.f),
+               "tryRayHits reports segment hit");
+    expectTrue(!box.tryRayHits({-3.f, 2.f, 0.f}, {1.f, 0.f, 0.f}, 0.f, 10.f),
+               "tryRayHits rejects separated segment");
+    expectTrue(!box.tryRayHits({-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, 5.f, 4.f),
+               "tryRayHits early-outs on inverted clamp range");
+
+    f32 hit = 0.f;
+    expectTrue(box.tryRayIntersect({-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, hit),
+               "tryRayIntersect hits valid box");
+    expectNear(hit, 2.f, 1e-4f, "tryRayIntersect parametric distance");
+    expectTrue(!box.tryRayIntersect({-3.f, 2.f, 0.f}, {1.f, 0.f, 0.f}, hit),
+               "tryRayIntersect rejects separated ray");
+
+    const fuse::math::AABB empty{{2.f, 2.f, 2.f}, {1.f, 1.f, 1.f}};
+    expectTrue(!empty.tryRayInterval({0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, tEnter, tExit),
+               "tryRayInterval early-outs on empty box");
+    expectTrue(!empty.tryRayIntervalClamped({0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, 0.f, 10.f, tEnter, tExit),
+               "tryRayIntervalClamped early-outs on empty box");
+    expectTrue(!empty.tryRayHits({0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}), "tryRayHits early-outs on empty box");
+    expectTrue(!empty.tryRayIntersect({0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, hit),
+               "tryRayIntersect early-outs on empty box");
+}
+
 void testAabbRayIntervalClamped() {
     const fuse::math::AABB box{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
     f32 tEnter = 0.f;
@@ -415,6 +472,27 @@ void testAabbEmptyEdgeCases() {
                "AABB transformAabb preserves empty");
     expectTrue(fuse::math::transformAabbCorners(translate, inverted).isEmpty(),
                "AABB transformAabbCorners preserves empty");
+}
+
+void testAabbTryTransformRigid() {
+    const fuse::math::AABB local{{-1.f, -2.f, -3.f}, {1.f, 2.f, 3.f}};
+    const fuse::math::Mat4 rigid =
+        fuse::math::fromTRS({2.f, 1.f, -1.f}, fuse::math::fromAxisAngle({0.f, 0.f, 1.f}, 0.5f),
+                            {1.5f, 1.5f, 1.5f});
+    fuse::math::AABB out{};
+    expectTrue(fuse::math::tryTransformAabb(rigid, local, out), "tryTransformAabb accepts rigid matrix");
+    expectAabbNear(out, fuse::math::transformAabb(rigid, local), 1e-4f,
+                   "tryTransformAabb matches transformAabb for rigid matrix");
+
+    const fuse::math::Mat4 nonUniform =
+        fuse::math::fromTRS({0.f, 0.f, 0.f}, fuse::math::Quat::identity(), {2.f, 3.f, 4.f});
+    expectTrue(!fuse::math::tryTransformAabb(nonUniform, local, out),
+               "tryTransformAabb early-outs on non-rigid matrix");
+
+    const fuse::math::AABB empty{{2.f, 2.f, 2.f}, {1.f, 1.f, 1.f}};
+    expectTrue(fuse::math::tryTransformAabb(rigid, empty, out),
+               "tryTransformAabb succeeds for empty box");
+    expectTrue(out.isEmpty(), "tryTransformAabb preserves empty bounds");
 }
 
 void testAabbTransformHelpers() {
@@ -567,6 +645,47 @@ void testPlaneNormalize() {
         fuse::math::makePlaneFromNormalAndPoint({0.f, 0.f, 0.f}, {1.f, 2.f, 3.f});
     expectTrue(fuse::math::isDegeneratePlane(zeroNormal),
                "makePlaneFromNormalAndPoint returns degenerate plane for zero normal");
+}
+
+void testPlaneTryClassifyAndClip() {
+    const fuse::math::Vec4 plane{0.f, 1.f, 0.f, -2.f};
+    const fuse::math::AABB above{{0.f, 3.f, 0.f}, {1.f, 4.f, 1.f}};
+
+    fuse::math::PlaneSide side = fuse::math::PlaneSide::On;
+    expectTrue(fuse::math::tryClassifyAabb(plane, above, side), "tryClassifyAabb succeeds for valid plane");
+    expectTrue(side == fuse::math::PlaneSide::InFront, "tryClassifyAabb reports in front");
+
+    const fuse::math::Vec4 degenerate{0.f, 0.f, 0.f, 1.f};
+    expectTrue(!fuse::math::tryClassifyAabb(degenerate, above, side),
+               "tryClassifyAabb early-outs on degenerate plane");
+
+    const fuse::math::Vec4 clipPlane{1.f, 0.f, 0.f, 0.f};
+    fuse::math::Vec3 a{-2.f, 0.f, 0.f};
+    fuse::math::Vec3 b{2.f, 0.f, 0.f};
+    expectTrue(fuse::math::tryClipSegmentAgainstPlane(clipPlane, a, b),
+               "tryClipSegmentAgainstPlane clips crossing segment");
+    expectNear(a.x, 0.f, 1e-5f, "tryClipSegmentAgainstPlane moves start to plane");
+
+    fuse::math::Vec3 degenerateA = a;
+    fuse::math::Vec3 degenerateB = b;
+    expectTrue(!fuse::math::tryClipSegmentAgainstPlane(degenerate, degenerateA, degenerateB),
+               "tryClipSegmentAgainstPlane early-outs on degenerate plane");
+
+    const fuse::math::Vec3 square[4] = {
+        {1.f, -1.f, 0.f},
+        {2.f, -1.f, 0.f},
+        {2.f, 1.f, 0.f},
+        {1.f, 1.f, 0.f},
+    };
+    fuse::math::Vec3 clipped[8]{};
+    u32 clippedCount = 0;
+    expectTrue(fuse::math::tryClipPolygonAgainstPlane(clipPlane, square, 4, clipped, 8, clippedCount),
+               "tryClipPolygonAgainstPlane succeeds for valid plane");
+    expectTrue(clippedCount == 4, "tryClipPolygonAgainstPlane keeps in-front square");
+
+    u32 degenerateCount = 0;
+    expectTrue(!fuse::math::tryClipPolygonAgainstPlane(degenerate, square, 4, clipped, 8, degenerateCount),
+               "tryClipPolygonAgainstPlane early-outs on degenerate plane");
 }
 
 void testPlaneTryHelpers() {
@@ -870,6 +989,52 @@ void testSimdPlaneTryHelperParity() {
                "simd tryPlaneSignedDistance early-outs on degenerate plane");
 }
 
+void testSimdTryGuardParity() {
+    const fuse::math::AABB box{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
+    f32 scalarEnter = 0.f;
+    f32 scalarExit = 0.f;
+    f32 simdEnter = 0.f;
+    f32 simdExit = 0.f;
+
+    expectTrue(box.tryRayInterval({-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, scalarEnter, scalarExit),
+               "scalar tryRayInterval hits");
+    expectTrue(fuse::math::simd::tryRayIntervalAabb(box, {-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, simdEnter, simdExit),
+               "simd tryRayIntervalAabb hits");
+    expectNear(simdEnter, scalarEnter, 1e-4f, "simd tryRayIntervalAabb entry matches scalar");
+    expectNear(simdExit, scalarExit, 1e-4f, "simd tryRayIntervalAabb exit matches scalar");
+
+    f32 scalarHit = 0.f;
+    f32 simdHit = 0.f;
+    expectTrue(box.tryRayIntersect({-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, scalarHit),
+               "scalar tryRayIntersect hits");
+    expectTrue(fuse::math::simd::tryRayIntersectAabb(box, {-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, simdHit),
+               "simd tryRayIntersectAabb hits");
+    expectNear(simdHit, scalarHit, 1e-4f, "simd tryRayIntersectAabb matches scalar");
+
+    const fuse::math::Vec4 plane{0.f, 1.f, 0.f, -2.f};
+    fuse::math::PlaneSide scalarSide = fuse::math::PlaneSide::On;
+    fuse::math::PlaneSide simdSide = fuse::math::PlaneSide::On;
+    expectTrue(fuse::math::tryClassifyAabb(plane, box, scalarSide), "scalar tryClassifyAabb succeeds");
+    expectTrue(fuse::math::simd::tryClassifyAabb(plane, box, simdSide), "simd tryClassifyAabb succeeds");
+    expectTrue(scalarSide == simdSide, "simd tryClassifyAabb side matches scalar");
+
+    const fuse::math::Mat4 rigid =
+        fuse::math::fromTRS({1.f, 0.f, 0.f}, fuse::math::fromAxisAngle({0.f, 1.f, 0.f}, 0.2f), {2.f, 2.f, 2.f});
+    fuse::math::Vec3 scalarTranslation{};
+    fuse::math::Vec3 simdTranslation{};
+    expectTrue(fuse::math::tryExtractTranslation(rigid, scalarTranslation),
+               "scalar tryExtractTranslation succeeds");
+    expectTrue(fuse::math::simd::tryExtractTranslation(rigid, simdTranslation),
+               "simd tryExtractTranslation succeeds");
+    expectVec3Near(simdTranslation, scalarTranslation, 1e-5f, "simd tryExtractTranslation matches scalar");
+
+    fuse::math::AABB scalarOut{};
+    fuse::math::AABB simdOut{};
+    expectTrue(fuse::math::tryTransformAabb(rigid, box, scalarOut), "scalar tryTransformAabb succeeds");
+    expectTrue(fuse::math::simd::tryTransformAabb(rigid, box, simdOut), "simd tryTransformAabb succeeds");
+    expectAabbNear(simdOut, scalarOut, 1e-4f, "simd tryTransformAabb matches scalar");
+}
+
 void testSimdMat4RigidInverseParity() {
     const fuse::math::Mat4 scalarUniform =
         fuse::math::fromTRS({3.f, -1.f, 2.f}, fuse::math::fromAxisAngle({0.f, 1.f, 0.f}, 0.25f), {1.5f, 1.5f, 1.5f});
@@ -934,6 +1099,7 @@ int main() {
     testMat4FromRotationTranslation();
     testMat4TransformDirection();
     testMat4ExtractTranslation();
+    testMat4TryExtractTranslation();
     testMat4IsRigidComposite();
     testMat4RigidGuards();
     testMat4TryInverseRigid();
@@ -943,9 +1109,11 @@ int main() {
     testQuatSlerp();
     testAabbOverlap();
     testAabbRayIntersect();
+    testAabbTryRayGuards();
     testAabbRayIntervalClamped();
     testAabbRayIntervalEdgeCases();
     testAabbEmptyEdgeCases();
+    testAabbTryTransformRigid();
     testAabbTransformHelpers();
     testAabbMergeFreeFunction();
     testFrustumCulling();
@@ -955,6 +1123,7 @@ int main() {
     testSimdMat4InverseEdgeCases();
     testSimdMat4Associativity();
     testSimdMat4RigidHelperParity();
+    testSimdTryGuardParity();
     testSimdAabbRayClampedParity();
     testSimdPlaneTryHelperParity();
     testSimdMat4RigidInverseParity();
@@ -964,6 +1133,7 @@ int main() {
     testSimdPlaneParity();
     testSimdPlanePolygonParity();
     testPlaneNormalize();
+    testPlaneTryClassifyAndClip();
     testPlaneTryHelpers();
     testPlaneDegenerate();
     testPlaneClassify();

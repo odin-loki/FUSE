@@ -153,6 +153,45 @@ struct AABB {
         f32 tExit = 0.f;
         return rayIntervalClamped(origin, direction, tMin, tMax, tEnter, tExit);
     }
+
+    /// Slab ray interval with early-out on empty bounds; returns false on miss.
+    bool tryRayInterval(const Vec3& origin, const Vec3& direction, f32& tEnter, f32& tExit) const {
+        if (isEmpty()) {
+            return false;
+        }
+        return rayInterval(origin, direction, tEnter, tExit);
+    }
+
+    /// Ray interval clamped with early-out on empty bounds or inverted `[tMin, tMax]`.
+    bool tryRayIntervalClamped(const Vec3& origin, const Vec3& direction, f32 tMin, f32 tMax, f32& tEnter,
+                               f32& tExit) const {
+        if (isEmpty() || tMin > tMax) {
+            return false;
+        }
+        return rayIntervalClamped(origin, direction, tMin, tMax, tEnter, tExit);
+    }
+
+    /// Ray hit test with early-out on empty bounds or inverted `[tMin, tMax]`.
+    bool tryRayHits(const Vec3& origin, const Vec3& direction, f32 tMin = 0.f,
+                    f32 tMax = std::numeric_limits<f32>::max()) const {
+        if (isEmpty() || tMin > tMax) {
+            return false;
+        }
+        return rayHits(origin, direction, tMin, tMax);
+    }
+
+    /// Ray intersection with early-out on empty bounds; writes parametric hit into `t` on success.
+    bool tryRayIntersect(const Vec3& origin, const Vec3& direction, f32& t) const {
+        if (isEmpty()) {
+            return false;
+        }
+        const f32 hit = rayIntersect(origin, direction);
+        if (hit < 0.f) {
+            return false;
+        }
+        t = hit;
+        return true;
+    }
 };
 
 /// Transforms an AABB through an affine matrix using the absolute linear-part envelope.
@@ -210,6 +249,19 @@ inline AABB transformAabbCorners(const Mat4& matrix, const AABB& box) {
 
 inline AABB mergeAabb(const AABB& a, const AABB& b) {
     return a.merge(b);
+}
+
+/// Fast AABB transform when the matrix is rigid; returns false for non-rigid linear parts.
+inline bool tryTransformAabb(const Mat4& matrix, const AABB& box, AABB& out, f32 epsilon = 1e-4f) {
+    if (box.isEmpty()) {
+        out = box;
+        return true;
+    }
+    if (!isRigid(matrix, epsilon)) {
+        return false;
+    }
+    out = transformAabb(matrix, box);
+    return true;
 }
 
 } // namespace fuse::math
