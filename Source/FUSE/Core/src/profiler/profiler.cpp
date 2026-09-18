@@ -221,7 +221,8 @@ const char* chromeCategory(EventPhase phase) {
 } // namespace
 
 ProfileScope::ProfileScope(const char* name)
-    : m_name(name), m_active(g_enabled.load(std::memory_order_acquire)) {
+    : m_name(name),
+      m_active(g_enabled.load(std::memory_order_acquire) && name != nullptr) {
     if (m_active) {
         m_scopeId = g_nextScopeId.fetch_add(1u, std::memory_order_acq_rel);
         m_nestingDepth = pushNestingDepth();
@@ -264,12 +265,20 @@ u32 maxNestingDepth() {
     return g_maxNestingDepth.load(std::memory_order_acquire);
 }
 
+u32 nestingDepth() {
+    return currentNestingDepth();
+}
+
 u32 maxFlowNestingDepth() {
     return g_maxFlowNestingDepth.load(std::memory_order_acquire);
 }
 
 u32 flowNestingDepth() {
     return currentFlowNestingDepth();
+}
+
+u32 openAsyncFlowCount() {
+    return g_openAsyncFlowCount.load(std::memory_order_acquire);
 }
 
 bool hasEvents() {
