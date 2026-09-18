@@ -61,7 +61,11 @@ u32 frameIndex();
 u32 eventCount();
 u32 maxNestingDepth();
 u32 maxFlowNestingDepth();
+u32 flowNestingDepth();
+
 bool hasEvents();
+bool isEventIndexValid(u32 index);
+bool isValidProfileEvent(const ProfileEvent& event);
 const ProfileEvent& eventAt(u32 index);
 void reset();
 
