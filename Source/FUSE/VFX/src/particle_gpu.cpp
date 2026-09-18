@@ -381,6 +381,24 @@ ParticleGpuBuffers ParticleGpuBuffers::forCapacity(u32 particle_capacity) {
     return buffers;
 }
 
+bool ParticleGpuBufferPreflight::can_allocate() const {
+    return capacity_ok && device_bytes_ok && !is_empty;
+}
+
+bool ParticleGpuBufferPreflight::ready_for_stub() const {
+    return can_allocate();
+}
+
+ParticleGpuBufferPreflight ParticleGpuBuffers::preflight() const {
+    ParticleGpuBufferPreflight result{};
+    result.capacity_ok = capacity > 0u;
+    result.device_bytes_ok = deviceBytes > 0u &&
+                             deviceBytes == ParticleGpuBufferLayout::packedDeviceBytes(capacity);
+    result.is_empty = isEmpty();
+    result.has_binding = hasDeviceBinding();
+    return result;
+}
+
 void ParticleGpuMirror::reserve(u32 particle_capacity) {
     capacity = particle_capacity;
     positions.assign(particle_capacity, {});
@@ -789,6 +807,25 @@ bool ParticleGpuFramePlan::buffersSizedForCapacity() const {
            buffers.deviceBytes == ParticleGpuBufferLayout::packedDeviceBytes(capacity);
 }
 
+u32 ParticleGpuFramePlan::remainingEmitSlots() const {
+    if (capacity == 0u || alive_count >= capacity) {
+        return 0u;
+    }
+    return capacity - alive_count;
+}
+
+u32 ParticleGpuFramePlan::clampedEmitCount() const {
+    const u32 remaining = remainingEmitSlots();
+    return emit_count > remaining ? remaining : emit_count;
+}
+
+bool ParticleGpuFramePlan::shouldSkipEmitOverflow() const {
+    if (emit_count == 0u) {
+        return false;
+    }
+    return alive_count + emit_count > capacity;
+}
+
 u32 ParticleGpuFramePlan::simPaddingThreadCount() const {
     return dispatch.simPaddingThreads(capacity);
 }
@@ -804,11 +841,24 @@ ParticleGpuFramePreflight ParticleGpuFramePlan::preflight() const {
     result.emit_dispatch_ok = dispatch.emitCovers(emit_count);
     result.sim_padding_ok = dispatch.simPaddingAccountsFor(capacity);
     result.emit_padding_ok = dispatch.emitPaddingAccountsFor(emit_count);
+    result.empty_buffer = buffers.isEmpty();
+    result.sim_alive_ok = alive_count <= capacity;
+    result.emit_slots_ok = emit_count <= remainingEmitSlots() || emit_count == 0u;
+    result.skip_sim_zero_alive = shouldSkipSimWithZeroAlive();
+    result.skip_emit_at_capacity = shouldSkipEmitAtCapacity();
     return result;
 }
 
 bool ParticleGpuFramePreflight::ready_for_stub() const {
     return buffers_ok && sim_dispatch_ok && emit_dispatch_ok && sim_padding_ok && emit_padding_ok;
+}
+
+bool ParticleGpuFramePreflight::can_simulate() const {
+    return sim_dispatch_ok && sim_padding_ok && sim_alive_ok && !skip_sim_zero_alive;
+}
+
+bool ParticleGpuFramePreflight::can_emit() const {
+    return emit_dispatch_ok && emit_padding_ok && emit_slots_ok && !skip_emit_at_capacity;
 }
 
 ParticleSoAGPU ParticleGpuFramePlan::gpuPointers(u64 packed_device_address) const {
@@ -895,6 +945,18 @@ bool should_skip_mirror_sync(const ParticleGpuMirror& mirror, const ParticleSoA&
 bool should_skip_mirror_write(const ParticleGpuMirror& mirror, const ParticleSoA& cpu) {
     const ParticleGpuMirrorPreflight preflight = mirror.preflightFromCpu(cpu);
     return preflight.can_write_to_cpu() && mirror.matchesCpuSoA(cpu);
+}
+
+bool should_skip_frame_sim(const ParticleGpuFramePlan& plan) {
+    return plan.skipSimLaunch() || plan.shouldSkipSimWithZeroAlive();
+}
+
+bool should_skip_frame_emit(const ParticleGpuFramePlan& plan) {
+    return plan.skipEmitLaunch() || plan.shouldSkipEmitAtCapacity() || plan.emit_count == 0u;
+}
+
+bool should_skip_empty_buffer(const ParticleGpuBuffers& buffers) {
+    return buffers.isEmpty();
 }
 
 } // namespace fuse::vfx
