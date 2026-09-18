@@ -51,6 +51,10 @@ public:
     bool matchesDimensions(u32 width, u32 height) const;
     bool needsHistoryWarmup() const { return m_history.needsWarmup(); }
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
+    /// True when history is ready, valid, and passes generation guard for `desc`.
+    bool canReuseHistory(const TaaResolveDesc& desc) const;
+    /// Effective current-frame blend for the next resolve (1.0 while history is not reusable).
+    f32 effectiveBlendForNextResolve(const TaaResolveDesc& desc) const;
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
     /// Preflight resolve without mutating history (delegates to `TaaResolve::wouldSkip`).

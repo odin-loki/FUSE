@@ -94,6 +94,14 @@ bool TaaPass::matchesDimensions(u32 width, u32 height) const {
     return m_desc.width == width && m_desc.height == height && m_history.matchesDimensions(width, height);
 }
 
+bool TaaPass::canReuseHistory(const TaaResolveDesc& desc) const {
+    return taaHistoryIsReusable(m_history, desc);
+}
+
+f32 TaaPass::effectiveBlendForNextResolve(const TaaResolveDesc& desc) const {
+    return computeEffectiveBlend(!m_history.hasValidHistory(), canReuseHistory(desc), m_desc.params);
+}
+
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
     return m_resolve.wouldSkip(desc, m_history, reason);
 }
