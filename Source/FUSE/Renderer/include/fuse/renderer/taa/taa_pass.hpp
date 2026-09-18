@@ -46,10 +46,16 @@ public:
     void advanceJitter();
     /// Align jitter to a monotonic frame counter (wraps with sequence period).
     void syncJitterToFrameIndex(u32 frameIndex);
+    /// True when pass jitter monotonic counter matches `frameIndex` (B5.9 deepen).
+    bool isJitterSyncedToFrameIndex(u32 frameIndex) const;
     void invalidateHistory();
     void resize(u32 width, u32 height);
     bool matchesDimensions(u32 width, u32 height) const;
     bool needsHistoryWarmup() const { return m_history.needsWarmup(); }
+    /// True when pass history is allocated but still awaiting first resolve (B5.9 deepen).
+    bool historyWarmupRequired() const;
+    /// True when pass history is warmed after init (B5.9 deepen).
+    bool historyWarmupComplete() const;
     /// True when pass history is warmed and may be sampled (B5.9 deepen).
     bool canReuseHistory() const;
     /// True when history blend is allowed on the next resolve (B5.9 deepen).
@@ -61,6 +67,8 @@ public:
     bool isHistoryStale(u32 observedGeneration) const;
     /// Preflight resolve without mutating history (delegates to `TaaResolve::wouldSkip`).
     bool wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason = nullptr) const;
+    /// Resolve + blend preflight using pass history — optionally fills projected blend weights (B5.9 deepen).
+    bool preflightResolveBlend(const TaaResolveDesc& desc, TaaBlendWeights* weights = nullptr) const;
     /// Stamp `observed_history_generation` from pass history when still at the no-guard sentinel.
     void stampObservedHistoryGeneration(TaaResolveDesc& desc) const;
     /// Clamp params and stamp observed generation from pass history.

@@ -17,6 +17,8 @@ struct TaaJitterLayout {
     static bool validateViewportDimensions(u32 width, u32 height);
     /// True when jitter slot index is within the active sequence (B5.9 deepen).
     static bool jitterIndexInRange(u32 index, u32 sequenceLength);
+    /// True when `index` is the slot `frameIndex` maps to for the active sequence (B5.9 deepen).
+    static bool jitterIndexMatchesFrame(u32 index, u32 frameIndex, u32 sequenceLength);
     /// True when NDC jitter can be produced for viewport and sequence (B5.9 deepen).
     static bool canProduceNdcOffset(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Returns the jitter cycle length after validation (0 when invalid).
@@ -49,6 +51,12 @@ public:
     void syncToFrameIndex(u32 frameIndex);
 
     u32 index() const { return m_index; }
+    /// True when monotonic frame counter matches `frameIndex` (B5.9 deepen).
+    bool isSyncedToFrameIndex(u32 frameIndex) const;
+    /// True when jitter must be resynced to `frameIndex` (B5.9 deepen).
+    bool needsSyncToFrameIndex(u32 frameIndex) const;
+    /// True when the active slot matches the slot for `frameIndex` (B5.9 deepen).
+    bool slotMatchesFrame(u32 frameIndex) const;
     /// True when the jitter sequence can advance (B5.9 deepen).
     bool canAdvance() const;
     /// True when NDC jitter can be produced for the given viewport (B5.9 deepen).
