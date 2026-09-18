@@ -1169,6 +1169,114 @@ void testCascadeShadowBypassGuards() {
                "empty camera depth range bypasses all cascades");
 }
 
+void testSplitEmptyLightBypassGuards() {
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadeShadowBypassReason;
+    using fuse::renderer::ShadowCameraParams;
+    using fuse::renderer::cascadeShadowBypassReasonLabel;
+
+    ShadowCameraParams camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+
+    expectTrue(!CascadeLightSpaceLayout::shouldBypassEmptyLightCascadeShadowBuilds({0.f, -1.f, 0.f}),
+               "valid light direction does not trigger empty-light bypass");
+    expectTrue(CascadeLightSpaceLayout::shouldBypassEmptyLightCascadeShadowBuilds({0.f, 0.f, 0.f}),
+               "zero light direction triggers empty-light bypass");
+    expectTrue(!CascadeLightSpaceLayout::shouldBypassEmptyCameraCascadeShadowBuilds(camera),
+               "valid camera does not trigger empty-camera bypass");
+
+    expectTrue(CascadeLightSpaceLayout::classifyCascadeShadowBypassReason(camera, {0.f, 0.f, 0.f}) ==
+                   CascadeShadowBypassReason::EmptyLightDirection,
+               "empty light classified before camera bypass");
+    expectTrue(std::strcmp(cascadeShadowBypassReasonLabel(CascadeShadowBypassReason::EmptyLightDirection),
+                           "empty_light_direction") == 0,
+               "empty-light bypass reason label");
+
+    ShadowCameraParams invertedCamera = camera;
+    invertedCamera.nearPlane = 80.f;
+    invertedCamera.farPlane = 10.f;
+    expectTrue(CascadeLightSpaceLayout::shouldBypassEmptyCameraCascadeShadowBuilds(invertedCamera),
+               "inverted camera triggers empty-camera bypass");
+    expectTrue(CascadeLightSpaceLayout::classifyCascadeShadowBypassReason(invertedCamera, {0.f, -1.f, 0.f}) ==
+                   CascadeShadowBypassReason::EmptyCameraDepthRange,
+               "empty camera classified when light is valid");
+    expectTrue(std::strcmp(cascadeShadowBypassReasonLabel(CascadeShadowBypassReason::EmptyCameraDepthRange),
+                           "empty_camera_depth_range") == 0,
+               "empty-camera bypass reason label");
+}
+
+void testSplitPerCascadeSkipGuards() {
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadeShadowSkipReason;
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::ShadowCameraParams;
+    using fuse::renderer::cascadeShadowSkipReasonIsPerCascade;
+
+    CascadedShadowMapDesc desc{};
+    ShadowCameraParams camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+
+    const fuse::math::Vec3 sunDirection{0.f, -1.f, 0.f};
+    expectTrue(!CascadeLightSpaceLayout::shouldSkipPerCascadeShadowBuild(0u, desc, camera),
+               "default cascade is not skipped by per-cascade guard");
+    expectTrue(CascadeLightSpaceLayout::classifyPerCascadeShadowSkip(0u, desc, camera) ==
+                   CascadeShadowSkipReason::None,
+               "valid cascade has no per-cascade skip reason");
+
+    expectTrue(!CascadeLightSpaceLayout::shouldSkipPerCascadeShadowBuild(0u, desc, camera),
+               "empty light does not trigger per-cascade skip guard");
+    expectTrue(CascadeLightSpaceLayout::classifyPerCascadeShadowSkip(0u, desc, camera) ==
+                   CascadeShadowSkipReason::None,
+               "empty light excluded from per-cascade classifier");
+
+    CascadedShadowMapDesc flatDesc{};
+    flatDesc.cascadeSplits[0] = 0.5f;
+    flatDesc.cascadeSplits[1] = 0.5f;
+    flatDesc.cascadeSplits[2] = 1.f;
+    flatDesc.cascadeSplits[3] = 1.f;
+    expectTrue(CascadeLightSpaceLayout::shouldSkipPerCascadeShadowBuild(1u, flatDesc, camera),
+               "zero-thickness cascade skipped by per-cascade guard");
+    expectTrue(CascadeLightSpaceLayout::classifyPerCascadeShadowSkip(1u, flatDesc, camera) ==
+                   CascadeShadowSkipReason::EmptyCascadeFrustum,
+               "flat cascade classified as empty frustum");
+    expectTrue(cascadeShadowSkipReasonIsPerCascade(CascadeShadowSkipReason::EmptyCascadeFrustum),
+               "empty frustum is per-cascade skip reason");
+    expectTrue(cascadeShadowSkipReasonIsPerCascade(CascadeShadowSkipReason::DegenerateCascadeRange),
+               "degenerate range is per-cascade skip reason");
+    expectTrue(!cascadeShadowSkipReasonIsPerCascade(CascadeShadowSkipReason::EmptyLightDirection),
+               "empty light is not per-cascade skip reason");
+
+    expectTrue(CascadeLightSpaceLayout::shouldSkipCascadeShadowBuild(1u, flatDesc, camera, sunDirection),
+               "combined skip guard still skips flat cascade");
+    expectTrue(CascadeLightSpaceLayout::shouldSkipCascadeShadowBuild(0u, desc, camera, {0.f, 0.f, 0.f}),
+               "combined skip guard still skips on empty light");
+}
+
+void testSanitizeCascadeSplitsIfNeeded() {
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+
+    CascadedShadowMapDesc validDesc{};
+    CascadedShadowMapDesc validCopy = validDesc;
+    CascadedShadowMapLayout::sanitizeCascadeSplitsIfNeeded(validCopy);
+    expectTrue(CascadedShadowMapLayout::validateClampedCascadeSplits(validCopy),
+               "if-needed sanitize leaves valid splits unchanged");
+
+    CascadedShadowMapDesc dirtyDesc{};
+    dirtyDesc.cascadeSplits[0] = -0.3f;
+    dirtyDesc.cascadeSplits[1] = 0.2f;
+    dirtyDesc.cascadeSplits[2] = 0.1f;
+    dirtyDesc.cascadeSplits[3] = 0.7f;
+    expectTrue(CascadedShadowMapLayout::cascadeSplitsNeedSanitize(dirtyDesc),
+               "dirty splits need sanitize before if-needed repair");
+    CascadedShadowMapLayout::sanitizeCascadeSplitsIfNeeded(dirtyDesc);
+    expectTrue(CascadedShadowMapLayout::validateClampedCascadeSplits(dirtyDesc),
+               "if-needed sanitize repairs dirty splits");
+    expectNear(dirtyDesc.cascadeSplits[3], 1.f, 0.001f, "if-needed sanitize pins last split");
+}
+
 void testCountSkippedCascadeShadowBuilds() {
     using fuse::renderer::CascadeLightSpaceLayout;
     using fuse::renderer::CascadedShadowMapDesc;
@@ -1428,6 +1536,9 @@ int main() {
     testCascadeShadowSkipReasonBlocking();
     testClassifyCascadeShadowSkipPriority();
     testCascadeShadowBypassGuards();
+    testSplitEmptyLightBypassGuards();
+    testSplitPerCascadeSkipGuards();
+    testSanitizeCascadeSplitsIfNeeded();
     testCountSkippedCascadeShadowBuilds();
     testCascadeShadowSkipCountsByKind();
     testIsCascadeSlotPopulated();

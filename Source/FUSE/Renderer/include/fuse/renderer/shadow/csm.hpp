@@ -78,7 +78,14 @@ struct CascadeFrustumCorners {
     fuse::math::Vec3 corners[8]{};
 };
 
-/// Why a cascade shadow build would be skipped (B5.5 deepen).
+/// Why all cascade shadow builds are bypassed before per-cascade fitting (B5.5 deepen).
+enum class CascadeShadowBypassReason : u8 {
+    None = 0,
+    EmptyLightDirection = 1,
+    EmptyCameraDepthRange = 2,
+};
+
+/// Why a single cascade shadow build would be skipped (B5.5 deepen).
 enum class CascadeShadowSkipReason : u8 {
     None = 0,
     EmptyLightDirection = 1,
@@ -174,6 +181,8 @@ struct CascadedShadowMapLayout {
     static bool cascadeSplitsNeedSanitize(const CascadedShadowMapDesc& desc);
     /// Clamp each split to [0, 1], enforce monotonicity, and pin the last slot to 1.0.
     static void sanitizeCascadeSplits(CascadedShadowMapDesc& desc);
+    /// Repair splits only when `cascadeSplitsNeedSanitize` reports they are needed.
+    static void sanitizeCascadeSplitsIfNeeded(CascadedShadowMapDesc& desc);
     static bool validateCascadeRanges(const CascadedShadowMapDesc& desc, const ShadowCameraParams& camera);
     static CascadeFrustumCorners buildCascadeFrustumCorners(u32 cascadeIndex,
                                                             const CascadedShadowMapDesc& desc,
@@ -222,9 +231,24 @@ struct CascadeLightSpaceLayout {
     static bool isDegenerateCascadeRange(const CascadeRange& range, const ShadowCameraParams& camera);
     static bool isDegenerateLightDirection(const fuse::math::Vec3& lightDirection);
     static bool isEmptyLightDirection(const fuse::math::Vec3& lightDirection);
+    /// True when an empty light direction bypasses every cascade before fitting.
+    static bool shouldBypassEmptyLightCascadeShadowBuilds(const fuse::math::Vec3& lightDirection);
+    /// True when an empty camera depth range bypasses every cascade before fitting.
+    static bool shouldBypassEmptyCameraCascadeShadowBuilds(const ShadowCameraParams& camera);
+    /// Classify the global bypass reason before per-cascade fitting.
+    static CascadeShadowBypassReason classifyCascadeShadowBypassReason(const ShadowCameraParams& camera,
+                                                                       const fuse::math::Vec3& lightDirection);
     /// True when every cascade should be bypassed before per-cascade fitting.
     static bool shouldBypassAllCascadeShadowBuilds(const ShadowCameraParams& camera,
                                                  const fuse::math::Vec3& lightDirection);
+    /// Classify per-cascade skip reasons (excludes global bypass guards).
+    static CascadeShadowSkipReason classifyPerCascadeShadowSkip(u32 cascadeIndex,
+                                                                const CascadedShadowMapDesc& desc,
+                                                                const ShadowCameraParams& camera);
+    /// True when a single cascade should be skipped for per-cascade reasons only.
+    static bool shouldSkipPerCascadeShadowBuild(u32 cascadeIndex,
+                                                const CascadedShadowMapDesc& desc,
+                                                const ShadowCameraParams& camera);
     /// Classify why a cascade build would be skipped — same ordering as `shouldSkipCascadeShadowBuild`.
     static CascadeShadowSkipReason classifyCascadeShadowSkip(u32 cascadeIndex,
                                                              const CascadedShadowMapDesc& desc,
@@ -293,6 +317,10 @@ struct CascadeLightSpaceLayout {
 bool cascadeShadowSkipReasonIsBlocking(CascadeShadowSkipReason reason);
 /// True when a skip reason applies to every cascade slot (global bypass guards).
 bool cascadeShadowSkipReasonIsGlobal(CascadeShadowSkipReason reason);
+/// True when a skip reason applies to a single cascade slot (per-cascade guards).
+bool cascadeShadowSkipReasonIsPerCascade(CascadeShadowSkipReason reason);
+/// Human-readable label for bypass reasons (logging / tests).
+const char* cascadeShadowBypassReasonLabel(CascadeShadowBypassReason reason);
 /// Human-readable label for skip reasons (logging / tests).
 const char* cascadeShadowSkipReasonLabel(CascadeShadowSkipReason reason);
 /// Increment per-reason skip counters for one classified cascade.
