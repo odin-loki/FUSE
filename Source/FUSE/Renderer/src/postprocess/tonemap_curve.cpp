@@ -98,8 +98,15 @@ bool tonemap_curve_params_valid(const TonemapCurveParams& params) {
     if (params.kind == TonemapCurveKind::Reinhard && params.reinhard.white_point <= 0.f) {
         return false;
     }
-    if (params.kind == TonemapCurveKind::ACES && params.aces.contrast < 0.f) {
-        return false;
+    if (params.kind == TonemapCurveKind::ACES) {
+        if (params.aces.contrast < 0.f || params.aces.shoulder < 0.f) {
+            return false;
+        }
+    }
+    if (params.kind == TonemapCurveKind::Filmic) {
+        if (params.toe_length < 0.f || params.shoulder_length < 0.f || params.shoulder_angle <= 0.f) {
+            return false;
+        }
     }
     return true;
 }
@@ -164,6 +171,9 @@ f32 evaluate_tonemap_curve_channel(f32 channel, const TonemapCurveParams& params
 
 fuse::math::Vec3 apply_tonemap_curve(const fuse::math::Vec3& hdr, const TonemapCurveParams& params) {
     if (!params.enabled) {
+        return hdr;
+    }
+    if (!tonemap_curve_params_valid(params)) {
         return hdr;
     }
     return {evaluate_tonemap_curve_channel(hdr.x, params), evaluate_tonemap_curve_channel(hdr.y, params),

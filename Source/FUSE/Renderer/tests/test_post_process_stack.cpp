@@ -530,10 +530,100 @@ void testTonemapCurveParamsAndDisabledEndpoints() {
     expectTrue(!fuse::renderer::tonemap_curve_has_valid_endpoints(invalidGamma),
                "invalid params fail endpoint validation");
 
+    fuse::renderer::TonemapCurveParams invalidFilmic = filmic;
+    invalidFilmic.shoulder_angle = 0.f;
+    expectTrue(!fuse::renderer::tonemap_curve_params_valid(invalidFilmic), "non-positive shoulder angle rejected");
+
+    fuse::renderer::TonemapCurveParams invalidAces = fuse::renderer::make_aces_curve_params();
+    invalidAces.aces.shoulder = -0.5f;
+    expectTrue(!fuse::renderer::tonemap_curve_params_valid(invalidAces), "negative ACES shoulder rejected");
+
+    const fuse::math::Vec3 input{0.4f, 0.2f, 0.1f};
+    const fuse::math::Vec3 passthrough = fuse::renderer::apply_tonemap_curve(input, invalidGamma);
+    expectNear(passthrough.x, input.x, 1e-6f, "invalid curve params pass through red");
+    expectNear(passthrough.y, input.y, 1e-6f, "invalid curve params pass through green");
+    expectNear(passthrough.z, input.z, 1e-6f, "invalid curve params pass through blue");
+
     fuse::renderer::TonemapCurveParams disabled{};
     disabled.enabled = false;
     expectTrue(fuse::renderer::tonemap_curve_params_valid(disabled), "disabled curve params are valid");
     expectTrue(fuse::renderer::tonemap_curve_has_valid_endpoints(disabled), "disabled curve skips endpoint validation");
+}
+
+void testAutoExposureParamsValidAndMeasurementReset() {
+    fuse::renderer::AutoExposureParams valid{};
+    expectTrue(fuse::renderer::auto_exposure_params_valid(valid), "default auto exposure params are valid");
+
+    fuse::renderer::AutoExposureParams invertedRange{};
+    invertedRange.min_ev = 2.f;
+    invertedRange.max_ev = -2.f;
+    expectTrue(!fuse::renderer::auto_exposure_params_valid(invertedRange), "inverted EV range rejected");
+
+    fuse::renderer::AutoExposureParams invalidTarget{};
+    invalidTarget.target_luminance = 0.f;
+    expectTrue(!fuse::renderer::auto_exposure_params_valid(invalidTarget), "non-positive target luminance rejected");
+
+    fuse::renderer::AutoExposureParams invalidAlpha{};
+    invalidAlpha.ema_alpha_up = 1.5f;
+    expectTrue(!fuse::renderer::auto_exposure_params_valid(invalidAlpha), "out-of-range EMA alpha rejected");
+
+    fuse::renderer::AutoExposureState state{};
+    state.current_ev = 1.25f;
+    state.measured_luminance = 0.72f;
+    state.smoothed_luminance = 0.65f;
+    fuse::renderer::reset_auto_exposure_measurements(state);
+    expectNear(state.current_ev, 1.25f, 1e-6f, "measurement reset preserves EV anchor");
+    expectNear(state.measured_luminance, 0.f, 1e-6f, "measurement reset clears measured luminance");
+    expectNear(state.smoothed_luminance, 0.f, 1e-6f, "measurement reset clears smoothed luminance");
+
+    fuse::renderer::AutoExposureState invalidUpdateState{};
+    invalidUpdateState.current_ev = 0.5f;
+    const fuse::f32 unchangedEv =
+        fuse::renderer::update_auto_exposure(invalidUpdateState, 0.72f, invertedRange, 0.25f);
+    expectNear(unchangedEv, 0.5f, 1e-6f, "invalid params preserve current EV");
+    expectNear(invalidUpdateState.measured_luminance, 0.72f, 1e-6f,
+               "invalid params still record measured luminance");
+}
+
+void testMeterUtilEmptyGuards() {
+    fuse::renderer::ExposureMeter meter{};
+    expectTrue(!fuse::renderer::meter_util::hasMeteringMeter(meter), "empty meter rejected");
+    expectNear(fuse::renderer::meter_util::meterFromMeter(meter), 0.f, 1e-6f, "empty meter returns zero");
+    expectNear(fuse::renderer::meter_util::meterFromSamples(nullptr, 0u), 0.f, 1e-6f,
+               "empty sample buffer returns zero");
+
+    const fuse::math::Vec3 samples[] = {{0.18f, 0.18f, 0.18f}, {0.36f, 0.36f, 0.36f}};
+    meter.accumulate(samples[0]);
+    meter.accumulate(samples[1]);
+    expectTrue(fuse::renderer::meter_util::hasMeteringMeter(meter), "populated meter accepted");
+    expectNear(fuse::renderer::meter_util::meterFromMeter(meter), 0.27f, 1e-4f, "meter utility averages luminance");
+    expectNear(fuse::renderer::meter_util::meterFromSamples(samples, 2u), 0.27f, 1e-4f,
+               "meter utility matches sample average");
+}
+
+void testHistogramCanMeterInvalidParams() {
+    fuse::renderer::LuminanceHistogram histogram{};
+    fuse::renderer::LuminanceHistogramParams invalidParams{};
+    invalidParams.max_log_luminance = invalidParams.min_log_luminance;
+    histogram.init(invalidParams);
+
+    histogram.accumulate({0.18f, 0.18f, 0.18f});
+    expectTrue(!fuse::renderer::histogram_util::canMeterHistogram(histogram),
+               "invalid histogram params reject metering");
+    expectNear(fuse::renderer::histogram_util::meterFromHistogram(histogram, 0.5f), 0.f, 1e-6f,
+               "invalid histogram params return zero metering");
+
+    const fuse::math::Vec3 samples[] = {{0.18f, 0.18f, 0.18f}};
+    expectNear(fuse::renderer::histogram_util::meterFromSamples(samples, 1u, invalidParams, 0.5f), 0.f, 1e-6f,
+               "invalid params reject sample metering");
+    expectNear(fuse::renderer::LuminanceHistogram::measureFromSamples(samples, 1u, invalidParams), 0.f, 1e-6f,
+               "measureFromSamples rejects invalid params");
+
+    fuse::renderer::LuminanceHistogram validHistogram{};
+    validHistogram.init({});
+    fuse::renderer::histogram_util::accumulateSamples(validHistogram, samples, 1u);
+    expectTrue(fuse::renderer::histogram_util::canMeterHistogram(validHistogram),
+               "valid histogram accepts metering");
 }
 
 void testPostStackAutoExposureIntegration() {
@@ -586,6 +676,9 @@ int main() {
     testAutoExposureReset();
     testAutoExposureEvAnchorValidationAndClampedReset();
     testTonemapCurveParamsAndDisabledEndpoints();
+    testAutoExposureParamsValidAndMeasurementReset();
+    testMeterUtilEmptyGuards();
+    testHistogramCanMeterInvalidParams();
     testPostStackHistogramAutoExposure();
     testPostStackResetAutoExposure();
     testAutoExposureClampsAndAdapts();

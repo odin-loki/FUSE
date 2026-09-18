@@ -33,12 +33,16 @@ f32 luminance_to_ev(f32 luminance, f32 target_luminance);
 f32 ev_to_luminance(f32 ev, f32 target_luminance);
 f32 compute_target_ev(f32 measured_luminance, const AutoExposureParams& params);
 f32 clamp_ev(f32 ev, const AutoExposureParams& params);
+/// True when auto-exposure tuning knobs are usable (B5.10 deepen).
+bool auto_exposure_params_valid(const AutoExposureParams& params);
 bool auto_exposure_ev_anchor_valid(f32 ev, const AutoExposureParams& params);
 void reset_auto_exposure_state(AutoExposureState& state);
 /// Reset temporal state while preserving a scene-load EV anchor (B5.10 deepen).
 void reset_auto_exposure_state_to(AutoExposureState& state, f32 ev = 0.f);
 /// Reset temporal state with EV anchor clamped to `AutoExposureParams` range (B5.10 deepen).
 void reset_auto_exposure_state_to_clamped(AutoExposureState& state, f32 ev, const AutoExposureParams& params);
+/// Clear measured/smoothed luminance while preserving the current EV anchor (B5.10 deepen).
+void reset_auto_exposure_measurements(AutoExposureState& state);
 f32 ema_alpha_for_direction(bool brightening, const AutoExposureParams& params);
 bool is_brightening_luminance(f32 measured_luminance, f32 reference_luminance);
 f32 ema_blend(f32 previous, f32 measured, f32 alpha);
@@ -101,6 +105,8 @@ f32 meterFromSamples(const fuse::math::Vec3* samples, u32 count, const Luminance
                      f32 percentile);
 /// Percentile metering from histogram; returns 0 when empty (B5.10 deepen).
 f32 meterFromHistogram(const LuminanceHistogram& histogram, f32 percentile);
+/// True when histogram params and accumulated samples can contribute metering (B5.10 deepen).
+bool canMeterHistogram(const LuminanceHistogram& histogram);
 } // namespace histogram_util
 
 /// CPU histogram-free exposure meter stub (CUDA reduction deferred).
@@ -120,6 +126,16 @@ private:
 };
 
 void reset_exposure_meter(ExposureMeter& meter);
+
+/// Batch exposure-meter helpers mirroring histogram_util (B5.10 deepen).
+namespace meter_util {
+/// True when an exposure meter has accumulated samples (B5.10 deepen).
+bool hasMeteringMeter(const ExposureMeter& meter);
+/// Average luminance from meter; returns 0 when empty (B5.10 deepen).
+f32 meterFromMeter(const ExposureMeter& meter);
+/// Average luminance from samples; returns 0 when empty (B5.10 deepen).
+f32 meterFromSamples(const fuse::math::Vec3* samples, u32 count);
+} // namespace meter_util
 
 /// Host-side auto-exposure pass stub (CUDA histogram deferred).
 class AutoExposure {
