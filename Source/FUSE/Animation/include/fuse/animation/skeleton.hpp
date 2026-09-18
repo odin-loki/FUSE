@@ -85,7 +85,13 @@ bool pose_soa_matches_bind(const PoseSoA& pose, const Skeleton& skel, f32 epsilo
 /// True when `pose` has no bones, mismatched bone count, or undersized TRS/world columns.
 [[nodiscard]] bool needs_pose_soa_bind_fallback(const PoseSoA& pose, const Skeleton& skel);
 
+/// True when `pose` bone count matches the skeleton and local/world columns are sized correctly.
+[[nodiscard]] bool pose_soa_has_valid_layout(const PoseSoA& pose, const Skeleton& skel);
+
 /// Seed `pose` from skeleton bind pose when it is empty or mismatched.
 void ensure_pose_soa_bind_fallback(PoseSoA& pose, const Skeleton& skel);
+
+/// Unconditionally replace `pose` with the skeleton bind pose (no-op when skeleton is empty).
+void reset_pose_soa_to_bind(PoseSoA& pose, const Skeleton& skel);
 
 } // namespace fuse::animation

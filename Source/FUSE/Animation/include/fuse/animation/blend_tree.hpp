@@ -14,6 +14,9 @@ struct BlendNode {
     virtual ~BlendNode() = default;
     virtual void evaluate(f32 dt, const Skeleton& skel, Pose& out) = 0;
     virtual void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out);
+
+    /// True when the node has no evaluable content (no clip, no children, or no states).
+    [[nodiscard]] virtual bool is_empty() const { return false; }
 };
 
 struct ClipNode : BlendNode {
@@ -22,7 +25,7 @@ struct ClipNode : BlendNode {
     f32 play_rate = 1.f;
     bool looping = true;
 
-    [[nodiscard]] bool is_empty() const;
+    [[nodiscard]] bool is_empty() const override;
 
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
     void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
@@ -33,7 +36,7 @@ struct BlendNode2 : BlendNode {
     std::unique_ptr<BlendNode> b;
     f32* blend_param = nullptr;
 
-    [[nodiscard]] bool is_empty() const;
+    [[nodiscard]] bool is_empty() const override;
 
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
     void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
@@ -49,7 +52,7 @@ struct BlendSpace1D : BlendNode {
     std::vector<Entry> entries;
     f32* param = nullptr;
 
-    [[nodiscard]] bool is_empty() const;
+    [[nodiscard]] bool is_empty() const override;
 
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
     void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
@@ -65,7 +68,7 @@ struct BlendSpace2D : BlendNode {
     std::vector<Entry> entries;
     vec2* param = nullptr;
 
-    [[nodiscard]] bool is_empty() const;
+    [[nodiscard]] bool is_empty() const override;
 
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
     void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
@@ -93,7 +96,7 @@ struct LayeredBlendNode : BlendNode {
     std::vector<u32> masked_bones;
     f32 layer_weight = 1.f;
 
-    [[nodiscard]] bool is_empty() const;
+    [[nodiscard]] bool is_empty() const override;
 
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
     void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
@@ -106,7 +109,7 @@ struct AdditiveBlendNode : BlendNode {
     std::vector<u32> masked_bones;
     f32 layer_weight = 1.f;
 
-    [[nodiscard]] bool is_empty() const;
+    [[nodiscard]] bool is_empty() const override;
 
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
     void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
@@ -143,7 +146,7 @@ struct AnimStateMachine : BlendNode {
     void add_state(std::string name, std::unique_ptr<BlendNode> node);
     void add_transition(const char* from, const char* to, f32 duration, std::function<bool()> condition);
 
-    [[nodiscard]] bool is_empty() const;
+    [[nodiscard]] bool is_empty() const override;
 
     /// Crossfade blend weight in [0, 1] while transitioning; 0 when idle.
     f32 crossfade_alpha() const;
@@ -208,6 +211,15 @@ struct AnimStateMachine : BlendNode {
     /// True when a named transition edge exists and its condition passes.
     bool can_transition(const char* from, const char* to) const;
 
+    /// Index of the named transition edge, or -1 when missing.
+    s32 find_named_transition_index(const char* from, const char* to) const;
+
+    /// True when both states are registered, distinct, and an edge exists between them.
+    bool is_valid_transition(u32 from_state, u32 to_state) const;
+
+    /// True when `is_valid_transition` passes and the edge condition passes (or is unset).
+    bool can_take_transition(u32 from_state, u32 to_state) const;
+
     /// Remaining crossfade time in seconds; 0 when idle or already complete.
     f32 remaining_crossfade_time() const;
 
@@ -237,6 +249,9 @@ struct AnimStateMachine : BlendNode {
 
     /// Destination state for the `transition_index`-th registered edge, or -1 when invalid.
     s32 transition_to_at(u32 transition_index) const;
+
+    /// Blend duration for the `transition_index`-th registered edge, or -1 when out of range.
+    f32 transition_blend_duration_at(u32 transition_index) const;
 };
 
 } // namespace fuse::animation
