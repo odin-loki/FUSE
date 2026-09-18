@@ -171,6 +171,36 @@ TickFixedStepPreflight PlaySession::preflightTickFixedStep(f32 dt, f32 fixedDt,
     return preflight;
 }
 
+VariableTickPreflight PlaySession::preflightVariableTick(f32 dt,
+                                                         const PlayModePhysicsState& physics) const {
+    VariableTickPreflight preflight{};
+    preflight.skipped = shouldSkipVariableTick(dt, physics);
+    preflight.wouldSimulate = !preflight.skipped;
+    return preflight;
+}
+
+bool PlaySession::hasPendingFixedSteps(f32 fixedDt, const PlayModePhysicsState& physics) const {
+    if (shouldSkipFixedStepDrain(fixedDt, physics)) {
+        return false;
+    }
+
+    return pendingFixedStepCount(fixedDt) > 0;
+}
+
+bool PlaySession::canConsumeFixedSteps(f32 fixedDt, const PlayModePhysicsState& physics,
+                                       u32 maxSteps) const {
+    const FixedStepPreflight preflight = preflightFixedSteps(fixedDt, physics, maxSteps);
+    return !preflight.skipped && preflight.allowed > 0;
+}
+
+f32 PlaySession::fixedAccumulatorRemainder(f32 fixedDt) const {
+    if (fixedDt <= 0.f) {
+        return 0.f;
+    }
+
+    return m_tickAccumulator - static_cast<f32>(pendingFixedStepCount(fixedDt)) * fixedDt;
+}
+
 DirtySnapshotPreflight PlaySession::preflightDirtySnapshot() const {
     DirtySnapshotPreflight preflight{};
 
@@ -202,6 +232,7 @@ DirtySnapshotInfo PlaySession::dirtySnapshotInfo() const {
 
     info.sceneModified = m_dirtySnapshot.sceneModified;
     info.entityCount = static_cast<u32>(m_dirtySnapshot.transformDirty.size());
+    info.dirtyEntityCount = dirtySnapshotDirtyEntityCount();
     return info;
 }
 
@@ -221,6 +252,62 @@ bool PlaySession::transformDirtyAt(usize index) const {
     return m_dirtySnapshot.transformDirty[index].second;
 }
 
+bool PlaySession::transformDirtyForEntity(ecs::EntityID entityId) const {
+    if (!m_hasDirtySnapshot || !entityId.valid()) {
+        return false;
+    }
+
+    for (const std::pair<ecs::EntityID, bool>& entry : m_dirtySnapshot.transformDirty) {
+        if (entry.first == entityId) {
+            return entry.second;
+        }
+    }
+
+    return false;
+}
+
+u32 PlaySession::dirtySnapshotDirtyEntityCount() const {
+    if (!m_hasDirtySnapshot) {
+        return 0;
+    }
+
+    u32 dirtyCount = 0;
+    for (const std::pair<ecs::EntityID, bool>& entry : m_dirtySnapshot.transformDirty) {
+        if (entry.second) {
+            ++dirtyCount;
+        }
+    }
+
+    return dirtyCount;
+}
+
+WorldSnapshotInfo PlaySession::worldSnapshotInfo() const {
+    WorldSnapshotInfo info{};
+    info.captured = m_hasWorldSnapshot;
+    if (!m_hasWorldSnapshot) {
+        return info;
+    }
+
+    info.entityCount = static_cast<u32>(m_worldSnapshot.entities.size());
+    return info;
+}
+
+ecs::EntityID PlaySession::worldSnapshotEntityAt(usize index) const {
+    if (!m_hasWorldSnapshot || index >= m_worldSnapshot.entities.size()) {
+        return ecs::EntityID{};
+    }
+
+    return m_worldSnapshot.entities[index].first;
+}
+
+bool PlaySession::shouldSkipWorldSnapshotDrain() const {
+    return !m_hasWorldSnapshot;
+}
+
+bool PlaySession::shouldSkipDirtySnapshotDrain() const {
+    return !m_hasDirtySnapshot;
+}
+
 PlayWorldSnapshot PlaySession::captureWorldSnapshot(EditorScene& editorScene) const {
     return PlayWorldSnapshot::capture(editorScene);
 }
@@ -235,7 +322,7 @@ void PlaySession::restoreWorldSnapshot(EditorScene& editorScene,
 }
 
 bool PlaySession::drainWorldSnapshot(EditorScene& editorScene) {
-    if (!m_hasWorldSnapshot) {
+    if (shouldSkipWorldSnapshotDrain()) {
         return false;
     }
 
@@ -253,7 +340,7 @@ void PlaySession::restoreDirtyFlags(EditorScene& editorScene, EditorState& state
 }
 
 bool PlaySession::drainDirtySnapshot(EditorScene& editorScene, EditorState& state) {
-    if (!m_hasDirtySnapshot) {
+    if (shouldSkipDirtySnapshotDrain()) {
         return false;
     }
 
