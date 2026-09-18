@@ -23,11 +23,11 @@ CPU-first skeletal animation scaffolding for Track B7.1. Implements the P7 pipel
 ## IK (stub)
 
 - **FABRIKChain** — iterative reach toward a world-space target; `has_valid_chain` rejects empty/out-of-range index lists.
-- **TwoBoneIK** — O(1) law-of-cosines limb solver with pole-vector bend plane; public `solve_two_bone_positions` / `clamp_two_bone_target` / `normalize_ik_pole_vector` helpers; zero/parallel pole fallback via `effective_pole_vector`; degenerate-segment guard; clamps unreachable targets via `max_reach`; parent-chain `has_valid_chain` validation; solves in-place.
+- **TwoBoneIK** — O(1) law-of-cosines limb solver with pole-vector bend plane; public `solve_two_bone_positions` / `clamp_two_bone_target` / `normalize_ik_pole_vector` helpers; zero/parallel pole fallback via `effective_pole_vector`; degenerate-segment guard; `has_valid_pose` bind-fallback validation; clamps unreachable targets via `max_reach`; parent-chain `has_valid_chain` validation; solves in-place.
 
 ## Retarget (stub)
 
-`RetargetMap::build_by_name` pairs source/target bones by name; `build_identity` maps a skeleton onto itself. `add_bone_mapping` / `clear` / `is_source_mapped` / `is_target_mapped` support manual map editing. `find_source_bone` / `find_target_bone` / `mapped_bone_count` support lookup. `apply_pose_soa` copies mapped local TRS (with optional `translation_scale`) into a target skeleton bind pose and recomputes world transforms.
+`RetargetMap::build_by_name` pairs source/target bones by name; `build_identity` maps a skeleton onto itself. `add_bone_mapping` / `clear` / `is_source_mapped` / `is_target_mapped` support manual map editing. `find_source_bone` / `find_target_bone` / `mapped_bone_count` support lookup. `is_valid` rejects empty maps, out-of-range indices, and duplicate source/target pairings. `apply_pose_soa` copies mapped local TRS (with optional `translation_scale`) into a target skeleton bind pose and recomputes world transforms.
 
 ## Blend tree (stub)
 

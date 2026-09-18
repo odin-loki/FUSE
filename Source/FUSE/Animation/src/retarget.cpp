@@ -12,6 +12,16 @@ bool RetargetMap::is_valid() const {
             return false;
         }
     }
+
+    for (u32 i = 0; i < bone_map.size(); ++i) {
+        for (u32 j = i + 1; j < bone_map.size(); ++j) {
+            if (bone_map[i].source_bone == bone_map[j].source_bone ||
+                bone_map[i].target_bone == bone_map[j].target_bone) {
+                return false;
+            }
+        }
+    }
+
     return !bone_map.empty();
 }
 

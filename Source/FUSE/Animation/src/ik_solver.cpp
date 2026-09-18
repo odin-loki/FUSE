@@ -224,9 +224,11 @@ bool FABRIKChain::solve(Pose& pose, const Skeleton& skel) {
         return false;
     }
 
-    if (pose.bone_count != static_cast<u32>(skel.bones.size()) || pose.bone_world_transforms.empty()) {
+    const u32 expectedBoneCount = static_cast<u32>(skel.bones.size());
+    if (pose.bone_count != expectedBoneCount || pose.bone_world_transforms.empty()) {
         pose = Pose::make_bind_pose(skel);
     }
+
     const u32 endBone = bone_indices.back();
 
     for (u32 iteration = 0; iteration < max_iterations; ++iteration) {
@@ -290,6 +292,18 @@ bool TwoBoneIK::has_degenerate_segments(const Pose& pose) const {
     return vec3_distance(root, mid) < 1e-6f || vec3_distance(mid, end) < 1e-6f;
 }
 
+bool TwoBoneIK::has_valid_pose(const Skeleton& skel, const Pose& pose) const {
+    if (!has_valid_chain(skel)) {
+        return false;
+    }
+
+    if (pose.bone_count != static_cast<u32>(skel.bones.size()) || pose.bone_world_transforms.empty()) {
+        return true;
+    }
+
+    return !has_degenerate_segments(pose);
+}
+
 f32 TwoBoneIK::max_reach(const Pose& pose) const {
     if (root_bone >= pose.bone_count || mid_bone >= pose.bone_count || end_bone >= pose.bone_count) {
         return 0.f;
@@ -317,12 +331,16 @@ vec3 TwoBoneIK::effective_pole_vector(const Pose& pose) const {
 }
 
 bool TwoBoneIK::solve(Pose& pose, const Skeleton& skel) {
-    if (!has_valid_chain(skel) || has_degenerate_segments(pose)) {
+    if (!has_valid_chain(skel)) {
         return false;
     }
 
     if (pose.bone_count != static_cast<u32>(skel.bones.size()) || pose.bone_world_transforms.empty()) {
         pose = Pose::make_bind_pose(skel);
+    }
+
+    if (has_degenerate_segments(pose)) {
+        return false;
     }
 
     const vec3 root = bone_translation(pose, root_bone);
