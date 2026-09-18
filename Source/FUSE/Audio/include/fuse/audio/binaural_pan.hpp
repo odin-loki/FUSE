@@ -12,8 +12,14 @@ struct HrtfIrStub {
     u32 length = 0;
 };
 
+/// Listener-local distance below which a source is treated as co-located.
+float hrtf_co_located_epsilon();
+
 /// Canonical empty IR stub for guard fallbacks.
 HrtfIrStub make_empty_hrtf_ir();
+
+/// Build an IR stub from external sample data (may still be empty).
+HrtfIrStub make_hrtf_ir_stub(const float* samples, u32 length);
 
 /// True when an HRTF IR stub has non-null, non-empty sample data.
 bool has_hrtf_ir(const HrtfIrStub& ir);
@@ -42,6 +48,15 @@ bool is_spatial_hrtf_pan_path(HrtfPanPath path);
 
 /// True when the pan path selects convolution (non-empty IR stub).
 bool hrtf_pan_path_uses_convolution(HrtfPanPath path);
+
+/// True when the pan path is centre-mono bypass.
+bool is_bypass_hrtf_pan_path(HrtfPanPath path);
+
+/// True when listener and source share the same listener-local position.
+bool is_co_located_hrtf_source(const Vec3& rel_listener);
+
+/// Early-out inverse of \c should_apply_hrtf_pan.
+bool should_skip_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener);
 
 /// True when HRTF pan should run (enabled and source is not co-located).
 bool should_apply_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener);
@@ -163,8 +178,21 @@ struct HrtfAttenuationCoupling {
 /// Clamp distance or occlusion attenuation scalars into [0, 1].
 float clamp_hrtf_attenuation(float attenuation);
 
+/// Clamp occlusion blend weight into [0, 1].
+float clamp_hrtf_attenuation_coupling_weight(float weight);
+
+/// True when distance and occlusion are both fully audible (no narrowing).
+bool is_unity_hrtf_attenuation(float distance_attenuation, float occlusion_gain);
+
 /// True when distance/occlusion coupling should narrow the binaural image.
 bool should_apply_hrtf_attenuation_coupling(HrtfPanPath path);
+
+/// Early-out inverse of \c should_apply_hrtf_attenuation_coupling.
+bool should_skip_hrtf_attenuation_coupling(HrtfPanPath path);
+
+/// Combined guard — spatial path and non-unity attenuation warrant narrowing.
+bool should_narrow_hrtf_spatial_image(HrtfPanPath path, float distance_attenuation,
+                                      float occlusion_gain);
 
 /// Combined spatial blend from distance attenuation and occlusion LF gain.
 float compute_hrtf_spatial_blend(float distance_attenuation, float occlusion_gain,
