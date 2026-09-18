@@ -692,6 +692,97 @@ void run_interest_management_tests() {
                "has_any_registered_in_radius false when all entities out of scope");
     expectTrue(registration_manager.count_registered_in_radius() == 0u,
                "count_registered_in_radius zero when has_any is false");
+
+    // --- preflight_interest_diff + should_skip_interest_diff_apply ---
+    fuse::net::InterestScopeSet diff_preflight_scope;
+    diff_preflight_scope.entities = {make_entity(1), make_entity(2)};
+    fuse::net::InterestSetDiff diff_preflight_diff{};
+
+    const fuse::net::InterestDiffPreflight empty_preflight =
+        fuse::net::preflight_interest_diff(diff_preflight_diff, diff_preflight_scope);
+    expectTrue(empty_preflight.empty_diff, "preflight marks empty diff");
+    expectTrue(!empty_preflight.redundant, "empty diff is not redundant");
+    expectTrue(!empty_preflight.can_apply(), "preflight can_apply false for empty diff");
+    expectTrue(empty_preflight.should_skip(), "preflight should_skip for empty diff");
+    expectTrue(fuse::net::should_skip_interest_diff_apply(diff_preflight_diff, diff_preflight_scope),
+               "should_skip_interest_diff_apply true for empty diff");
+
+    diff_preflight_diff.entered = {make_entity(3)};
+    const fuse::net::InterestDiffPreflight enter_preflight =
+        fuse::net::preflight_interest_diff(diff_preflight_diff, diff_preflight_scope);
+    expectTrue(!enter_preflight.empty_diff, "preflight sees non-empty enter diff");
+    expectTrue(!enter_preflight.redundant, "enter diff is not redundant");
+    expectTrue(enter_preflight.can_apply(), "preflight can_apply for valid enter");
+    expectTrue(!enter_preflight.should_skip(), "preflight should not skip valid enter");
+    expectTrue(fuse::net::can_apply_interest_diff(diff_preflight_diff, diff_preflight_scope),
+               "can_apply_interest_diff matches preflight can_apply");
+
+    fuse::net::InterestSetDiff redundant_preflight_diff{};
+    redundant_preflight_diff.entered = {make_entity(1)};
+    redundant_preflight_diff.left = {make_entity(99)};
+    const fuse::net::InterestDiffPreflight redundant_preflight =
+        fuse::net::preflight_interest_diff(redundant_preflight_diff, diff_preflight_scope);
+    expectTrue(!redundant_preflight.empty_diff, "preflight sees non-empty redundant diff");
+    expectTrue(redundant_preflight.redundant, "preflight marks redundant diff");
+    expectTrue(!redundant_preflight.can_apply(), "preflight can_apply false for redundant diff");
+    expectTrue(redundant_preflight.should_skip(), "preflight should_skip redundant diff");
+    expectTrue(fuse::net::should_skip_interest_diff_apply(redundant_preflight_diff, diff_preflight_scope),
+               "should_skip_interest_diff_apply true for redundant diff");
+
+    // --- preflight_radius_filter + should_skip_radius_filter ---
+    fuse::net::InterestPolicy radius_preflight_policy{};
+    radius_preflight_policy.relevance_radius = 50.f;
+    radius_preflight_policy.always_relevant_radius = 5.f;
+
+    const fuse::net::RadiusFilterPreflight empty_radius_preflight =
+        fuse::net::preflight_radius_filter(radius_preflight_policy, empty_candidates);
+    expectTrue(empty_radius_preflight.empty_candidates, "radius preflight marks empty candidates");
+    expectTrue(!empty_radius_preflight.zero_relevance_radius, "radius preflight relevance radius is valid");
+    expectTrue(!empty_radius_preflight.can_filter(), "radius preflight cannot filter empty list");
+    expectTrue(empty_radius_preflight.should_skip(), "radius preflight should_skip empty candidates");
+    expectTrue(fuse::net::should_skip_radius_filter(radius_preflight_policy, empty_candidates),
+               "should_skip_radius_filter true for empty candidates");
+
+    fuse::net::InterestPolicy zero_radius_policy{};
+    zero_radius_policy.relevance_radius = 0.f;
+    const fuse::net::RadiusFilterPreflight zero_radius_preflight =
+        fuse::net::preflight_radius_filter(zero_radius_policy, candidates);
+    expectTrue(!zero_radius_preflight.empty_candidates, "zero-radius preflight sees candidates");
+    expectTrue(zero_radius_preflight.zero_relevance_radius, "radius preflight marks zero relevance radius");
+    expectTrue(!zero_radius_preflight.can_filter(), "radius preflight cannot filter with zero radius");
+    expectTrue(zero_radius_preflight.should_skip(), "radius preflight should_skip zero radius");
+    expectTrue(fuse::net::should_skip_radius_filter(zero_radius_policy, candidates),
+               "should_skip_radius_filter true for zero relevance radius");
+
+    expectTrue(fuse::net::count_candidates_in_radius(origin, zero_radius_policy, candidates) == 0u,
+               "count_candidates_in_radius returns zero for zero relevance radius");
+    std::vector<fuse::net::InterestEntry> zero_radius_filtered;
+    expectTrue(fuse::net::filter_candidates_in_radius(origin, zero_radius_policy, candidates,
+                                                      zero_radius_filtered) == 0u,
+               "filter_candidates_in_radius returns zero for zero relevance radius");
+    expectTrue(zero_radius_filtered.empty(), "zero-radius filter clears output");
+
+    fuse::net::InterestScopeSet zero_radius_prior;
+    zero_radius_prior.entities = {make_entity(31)};
+    expectTrue(fuse::net::count_candidates_in_radius(origin, zero_radius_policy, candidates,
+                                                     zero_radius_prior) == 0u,
+               "hysteresis count returns zero for zero relevance radius");
+    std::vector<fuse::net::InterestEntry> zero_radius_hysteresis_filtered;
+    expectTrue(fuse::net::filter_candidates_in_radius(origin, zero_radius_policy, candidates,
+                                                      zero_radius_prior,
+                                                      zero_radius_hysteresis_filtered) == 0u,
+               "hysteresis filter returns zero for zero relevance radius");
+    expectTrue(zero_radius_hysteresis_filtered.empty(),
+               "hysteresis zero-radius filter clears output");
+
+    const fuse::net::RadiusFilterPreflight valid_radius_preflight =
+        fuse::net::preflight_radius_filter(radius_preflight_policy, candidates);
+    expectTrue(!valid_radius_preflight.empty_candidates, "valid radius preflight sees candidates");
+    expectTrue(!valid_radius_preflight.zero_relevance_radius, "valid radius preflight has relevance radius");
+    expectTrue(valid_radius_preflight.can_filter(), "valid radius preflight can filter");
+    expectTrue(!valid_radius_preflight.should_skip(), "valid radius preflight should not skip");
+    expectTrue(!fuse::net::should_skip_radius_filter(radius_preflight_policy, candidates),
+               "should_skip_radius_filter false for valid policy and candidates");
 }
 
 } // namespace fuse::net::tests
