@@ -61,6 +61,10 @@ public:
     void sanitizeResolveDesc(TaaResolveDesc& desc) const;
     /// True when `observedGeneration` matches the current history invalidate epoch.
     bool isObservedHistoryGenerationCurrent(u32 observedGeneration) const;
+    /// True when resolve request passes all preflight guards (B5.9 deepen).
+    bool canResolveFrame(const TaaResolveDesc& desc) const;
+    /// Stamp generation and return whether resolve can proceed (B5.9 deepen).
+    bool prepareAndCanResolve(TaaResolveDesc& desc) const;
 
     bool resolveFrame(const TaaResolveDesc& desc, void* cudaStream = nullptr);
 

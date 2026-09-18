@@ -11,6 +11,26 @@ f32 clampF32(f32 value, f32 minValue, f32 maxValue) {
 
 } // namespace
 
+bool taaHistoryCanAccumulate(const TaaHistoryBuffer& history) {
+    return history.isReady();
+}
+
+bool taaHistoryCanReuse(const TaaHistoryBuffer& history) {
+    return history.canReuseHistory();
+}
+
+bool taaHistoryReuseReady(const TaaHistoryBuffer& history, u32 observed_generation) {
+    return history.canReuseHistory() && history.generationMatches(observed_generation);
+}
+
+bool taaHistoryIsGenerationCurrent(const TaaHistoryBuffer& history, u32 observed_generation) {
+    return history.generationMatches(observed_generation);
+}
+
+bool taaResolveSurfacesSatisfied(const TaaResolveDesc& desc) {
+    return desc.surfaces.current_frame != nullptr && desc.surfaces.output != nullptr;
+}
+
 bool taaResolveDimensionsValid(u32 width, u32 height) {
     return width > 0u && height > 0u;
 }
@@ -84,7 +104,7 @@ bool preflightTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& his
 }
 
 TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
-    if (!history.isReady()) {
+    if (!taaHistoryCanAccumulate(history)) {
         return TaaResolveSkipReason::HistoryNotReady;
     }
     if (!taaResolveDimensionsValid(desc.width, desc.height)) {
@@ -93,11 +113,11 @@ TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const Ta
     if (taaResolveHasDimensionMismatch(desc, history)) {
         return TaaResolveSkipReason::DimensionMismatch;
     }
-    if (desc.surfaces.current_frame == nullptr || desc.surfaces.output == nullptr) {
+    if (!taaResolveSurfacesSatisfied(desc)) {
         return TaaResolveSkipReason::MissingSurfaces;
     }
 
-    if (desc.enforce_rejection_surfaces) {
+    if (!taaResolveRejectionSurfacesSatisfied(desc)) {
         const TAAParams params = clampTaaParams(desc.params);
         if (taaResolveRequiresVelocity(params) && desc.surfaces.velocity_buffer == nullptr) {
             return TaaResolveSkipReason::MissingVelocityBuffer;
@@ -110,6 +130,15 @@ TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const Ta
         return TaaResolveSkipReason::StaleHistoryGeneration;
     }
     return TaaResolveSkipReason::None;
+}
+
+bool canAttemptTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return !taaResolveSkipReasonIsBlocking(classifyTaaResolveSkip(desc, history));
+}
+
+bool prepareTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    stampObservedHistoryGeneration(desc, history);
+    return canAttemptTaaResolve(desc, history);
 }
 
 TAAParams clampTaaParams(const TAAParams& raw) {
@@ -142,8 +171,24 @@ bool taaResolveRequiresDepth(const TAAParams& params) {
     return params.depth_rejection > 0.f;
 }
 
+bool isTaaBlendFactorInRange(f32 blend_factor) {
+    return blend_factor >= 0.f && blend_factor <= 1.f;
+}
+
+bool taaBlendWeightReusesHistory(f32 effective_blend) {
+    return effective_blend < 1.f;
+}
+
+f32 computeHistoryContributionWeight(f32 effective_blend) {
+    return computeHistoryBlend(effective_blend);
+}
+
+bool taaUsesWarmupBlend(bool first_frame) {
+    return first_frame;
+}
+
 f32 computeEffectiveBlend(bool firstFrame, const TAAParams& params) {
-    if (firstFrame) {
+    if (taaUsesWarmupBlend(firstFrame)) {
         return 1.f;
     }
     return clampTaaParams(params).blend_factor;
