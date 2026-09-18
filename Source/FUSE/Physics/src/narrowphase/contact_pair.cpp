@@ -204,6 +204,10 @@ const char* contact_pair_reject_reason_name(ContactPairRejectReason reason) {
         return "UnsupportedShapePair";
     case ContactPairRejectReason::BothStatic:
         return "BothStatic";
+    case ContactPairRejectReason::BothKinematic:
+        return "BothKinematic";
+    case ContactPairRejectReason::BothSleeping:
+        return "BothSleeping";
     case ContactPairRejectReason::DegenerateShape:
         return "DegenerateShape";
     }
@@ -230,6 +234,28 @@ bool is_static_contact_pair(
     const bool staticA = (bodies.flags[pair.bodyA] & RB_STATIC) != 0u;
     const bool staticB = (bodies.flags[pair.bodyB] & RB_STATIC) != 0u;
     return staticA && staticB;
+}
+
+bool is_kinematic_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies) {
+    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
+        return false;
+    }
+    const bool kinematicA = (bodies.flags[pair.bodyA] & RB_KINEMATIC) != 0u;
+    const bool kinematicB = (bodies.flags[pair.bodyB] & RB_KINEMATIC) != 0u;
+    return kinematicA && kinematicB;
+}
+
+bool is_sleeping_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies) {
+    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
+        return false;
+    }
+    const bool sleepingA = (bodies.flags[pair.bodyA] & RB_SLEEPING) != 0u;
+    const bool sleepingB = (bodies.flags[pair.bodyB] & RB_SLEEPING) != 0u;
+    return sleepingA && sleepingB;
 }
 
 bool is_degenerate_shape_pair(
@@ -303,6 +329,12 @@ ContactPairRejectReason contact_pair_reject_reason(
     }
     if (is_static_contact_pair(pair, bodies)) {
         return ContactPairRejectReason::BothStatic;
+    }
+    if (is_kinematic_contact_pair(pair, bodies)) {
+        return ContactPairRejectReason::BothKinematic;
+    }
+    if (is_sleeping_contact_pair(pair, bodies)) {
+        return ContactPairRejectReason::BothSleeping;
     }
     if (is_degenerate_shape_pair(pair, shapes)) {
         return ContactPairRejectReason::DegenerateShape;
@@ -415,6 +447,49 @@ bool should_skip_contact_pair_dispatch(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return is_invalid_contact_pair(pair, bodies, shapes);
+}
+
+bool contact_pair_has_reject_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return contact_pair_reject_reason(pair, bodies, shapes) != ContactPairRejectReason::None;
+}
+
+bool should_reject_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return is_invalid_contact_pair(pair, bodies, shapes);
+}
+
+ContactPairDispatchPreflight preflight_contact_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    ContactPairDispatchPreflight preflight{};
+    preflight.reason = contact_pair_reject_reason(pair, bodies, shapes);
+    preflight.rejected = preflight.reason != ContactPairRejectReason::None;
+    preflight.has_valid_bodies =
+        !is_self_contact_pair(pair) && !is_out_of_range_contact_pair(pair, bodies);
+    preflight.has_valid_shapes =
+        preflight.has_valid_bodies && !is_missing_shape_contact_pair(pair, shapes);
+    return preflight;
+}
+
+ContactPairDispatchResult dispatch_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    ContactPairDispatchResult result{};
+    result.preflight = preflight_contact_pair_dispatch(pair, bodies, shapes);
+    if (!result.preflight.can_dispatch()) {
+        return result;
+    }
+
+    result.manifold = dispatchShapePair(pair, bodies, shapes);
+    result.dispatched = true;
+    return result;
 }
 
 } // namespace fuse::physics::narrowphase

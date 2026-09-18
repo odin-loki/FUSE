@@ -117,6 +117,12 @@ struct ContactManifold {
     bool pruneContactPointsIfNeeded(
         f32 separationEpsilon = 1e-6f,
         f32 duplicateEpsilon = 1e-4f);
+
+    /// True when no shallow penetrating slots would be removed (B4.5 deepen pass).
+    bool canSkipPruneShallowPenetrations(f32 minDepth) const;
+
+    /// Prune shallow slots only when `hasShallowPenetrations`; returns true when points remain (B4.5 deepen pass).
+    bool pruneShallowPenetrationsIfNeeded(f32 minDepth);
 };
 
 /// Const preflight for manifold prune dispatch (B4.4 deepen pass).
@@ -139,6 +145,32 @@ ManifoldPrunePreflight preflight_manifold_prune(
     const ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f);
+
+/// Const preflight for manifold finalize dispatch (B4.5 deepen pass).
+struct ManifoldFinalizePreflight {
+    bool empty = true;
+    bool invalidNormal = false;
+    bool noPenetrating = false;
+    bool needsPruning = false;
+    bool needsNormalization = false;
+    bool skipped = false;
+
+    bool can_finalize() const {
+        return !skipped && !empty && !invalidNormal && !noPenetrating;
+    }
+};
+
+/// Populate finalize preflight without mutating the manifold (B4.5 deepen pass).
+ManifoldFinalizePreflight preflight_manifold_finalize(const ContactManifold& manifold);
+
+/// Returns true when the contact normal length deviates from unit length (B4.5 deepen pass).
+bool needs_normal_normalization(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Returns true when `generate_contact_manifold` may proceed (B4.5 deepen pass).
+bool can_skip_manifold_finalize(const ContactManifold& manifold);
+
+/// Finalize only when preflight allows; returns false without clearing on preflight failure (B4.5 deepen pass).
+bool generate_contact_manifold_guarded(ContactManifold& manifold);
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

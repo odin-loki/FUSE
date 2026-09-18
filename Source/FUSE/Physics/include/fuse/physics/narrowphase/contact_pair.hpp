@@ -16,6 +16,8 @@ enum class ContactPairRejectReason : u8 {
     BothTriggers,
     UnsupportedShapePair,
     BothStatic,
+    BothKinematic,
+    BothSleeping,
     DegenerateShape,
 };
 
@@ -70,6 +72,16 @@ bool is_static_contact_pair(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies);
 
+/// Returns true when both bodies carry `RB_KINEMATIC` (no solver response stub, B4.5 deepen pass).
+bool is_kinematic_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies);
+
+/// Returns true when both bodies carry `RB_SLEEPING` (narrowphase skip stub, B4.5 deepen pass).
+bool is_sleeping_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies);
+
 /// Returns true when either shape has zero or negative extent (B4.3 deepen pass).
 bool is_degenerate_shape_pair(
     const broadphase::CandidatePair& pair,
@@ -113,6 +125,47 @@ ContactPairPreflight preflight_contact_pair(
 
 /// Returns true when narrowphase should skip this pair before dispatch (B4.4 deepen pass).
 bool should_skip_contact_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when `contact_pair_reject_reason` is not `None` (B4.5 deepen pass).
+bool contact_pair_has_reject_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Alias for `is_invalid_contact_pair` (B4.5 deepen pass).
+bool should_reject_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Richer dispatch preflight with body/shape validity flags (B4.5 deepen pass).
+struct ContactPairDispatchPreflight {
+    ContactPairRejectReason reason = ContactPairRejectReason::None;
+    bool rejected = false;
+    bool has_valid_bodies = false;
+    bool has_valid_shapes = false;
+
+    bool can_dispatch() const { return !rejected && has_valid_bodies && has_valid_shapes; }
+};
+
+/// Populate dispatch preflight without running shape dispatch (B4.5 deepen pass).
+ContactPairDispatchPreflight preflight_contact_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Dispatch outcome for guarded pair entry points (B4.5 deepen pass).
+struct ContactPairDispatchResult {
+    ContactManifold manifold{};
+    ContactPairDispatchPreflight preflight{};
+    bool dispatched = false;
+};
+
+/// Run preflight then shape dispatch when allowed (B4.5 deepen pass).
+ContactPairDispatchResult dispatch_contact_pair(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);

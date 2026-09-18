@@ -1011,6 +1011,188 @@ void testFrictionBasisRefreshGuards() {
         "compute_if_needed preserves valid cached basis");
 }
 
+void testContactPairKinematicSleepingRejectGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 kinA = bodies.addBody({0.f, 0.f, 0.f}, 0.f, fuse::physics::RB_KINEMATIC);
+    const fuse::u32 kinB = bodies.addBody({1.5f, 0.f, 0.f}, 0.f, fuse::physics::RB_KINEMATIC);
+    const fuse::u32 sleepA = bodies.addBody({0.f, 2.f, 0.f}, 1.f, fuse::physics::RB_SLEEPING);
+    const fuse::u32 sleepB = bodies.addBody({1.5f, 2.f, 0.f}, 1.f, fuse::physics::RB_SLEEPING);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, kinA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, kinB, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, sleepA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, sleepB, {1.f, 0.f, 0.f});
+
+    expectTrue(
+        fuse::physics::narrowphase::is_kinematic_contact_pair({kinA, kinB}, bodies),
+        "kinematic guard detects both-kinematic pair");
+    expectTrue(
+        fuse::physics::narrowphase::is_sleeping_contact_pair({sleepA, sleepB}, bodies),
+        "sleeping guard detects both-sleeping pair");
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_reject_reason({kinA, kinB}, bodies, shapes) ==
+            fuse::physics::narrowphase::ContactPairRejectReason::BothKinematic,
+        "reject reason flags both-kinematic pair");
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_reject_reason({sleepA, sleepB}, bodies, shapes) ==
+            fuse::physics::narrowphase::ContactPairRejectReason::BothSleeping,
+        "reject reason flags both-sleeping pair");
+    expectTrue(
+        std::strcmp(
+            fuse::physics::narrowphase::contact_pair_reject_reason_name(
+                fuse::physics::narrowphase::ContactPairRejectReason::BothKinematic),
+            "BothKinematic") == 0,
+        "reject reason name resolves BothKinematic");
+
+    const auto kinPair =
+        fuse::physics::narrowphase::detect_contacts_pair({kinA, kinB}, bodies, shapes);
+    expectTrue(!kinPair.valid, "both-kinematic pair returns invalid manifold");
+}
+
+void testContactPairDispatchPreflightGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 bodyA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 bodyB = bodies.addBody({1.5f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodyA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodyB, {1.f, 0.f, 0.f});
+
+    const auto validPreflight =
+        fuse::physics::narrowphase::preflight_contact_pair_dispatch({bodyA, bodyB}, bodies, shapes);
+    expectTrue(validPreflight.can_dispatch(), "dispatch preflight allows valid pair");
+    expectTrue(validPreflight.has_valid_bodies, "dispatch preflight marks valid bodies");
+    expectTrue(validPreflight.has_valid_shapes, "dispatch preflight marks valid shapes");
+    expectTrue(
+        !fuse::physics::narrowphase::contact_pair_has_reject_reason({bodyA, bodyB}, bodies, shapes),
+        "valid pair has no reject reason");
+    expectTrue(
+        !fuse::physics::narrowphase::should_reject_contact_pair({bodyA, bodyB}, bodies, shapes),
+        "should_reject false for valid pair");
+
+    const auto selfPreflight =
+        fuse::physics::narrowphase::preflight_contact_pair_dispatch({bodyA, bodyA}, bodies, shapes);
+    expectTrue(!selfPreflight.can_dispatch(), "dispatch preflight rejects self pair");
+    expectTrue(!selfPreflight.has_valid_bodies, "self pair fails body validity");
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_has_reject_reason({bodyA, bodyA}, bodies, shapes),
+        "self pair has reject reason");
+
+    const auto dispatch =
+        fuse::physics::narrowphase::dispatch_contact_pair({bodyA, bodyB}, bodies, shapes);
+    expectTrue(dispatch.dispatched, "dispatch_contact_pair runs shape dispatch");
+    expectTrue(dispatch.manifold.valid, "dispatch_contact_pair returns valid manifold");
+    expectTrue(dispatch.preflight.can_dispatch(), "dispatch result preserves valid preflight");
+
+    const auto rejected =
+        fuse::physics::narrowphase::dispatch_contact_pair({bodyA, bodyA}, bodies, shapes);
+    expectTrue(!rejected.dispatched, "dispatch_contact_pair skips rejected pair");
+    expectTrue(!rejected.manifold.valid, "rejected dispatch leaves invalid manifold");
+}
+
+void testManifoldFinalizePreflightGuards() {
+    fuse::physics::narrowphase::ContactManifold empty{};
+    const auto emptyPreflight = fuse::physics::narrowphase::preflight_manifold_finalize(empty);
+    expectTrue(emptyPreflight.skipped, "finalize preflight skips empty manifold");
+    expectTrue(!emptyPreflight.can_finalize(), "empty manifold cannot finalize");
+    expectTrue(
+        fuse::physics::narrowphase::can_skip_manifold_finalize(empty),
+        "can_skip_manifold_finalize true for empty manifold");
+    expectTrue(
+        !fuse::physics::narrowphase::generate_contact_manifold_guarded(empty),
+        "guarded finalize returns false without clearing empty manifold");
+    expectTrue(empty.empty(), "guarded finalize leaves empty manifold untouched");
+
+    fuse::physics::narrowphase::ContactManifold unnormalized{};
+    unnormalized.contactNormal = {0.f, 2.f, 0.f};
+    unnormalized.addPoint({0.f, 0.f, 0.f}, 0.3f);
+    const auto unnormalizedPreflight = fuse::physics::narrowphase::preflight_manifold_finalize(unnormalized);
+    expectTrue(unnormalizedPreflight.needsNormalization, "finalize preflight flags non-unit normal");
+    expectTrue(
+        fuse::physics::narrowphase::needs_normal_normalization(unnormalized),
+        "needs_normal_normalization flags scaled normal");
+    expectTrue(
+        fuse::physics::narrowphase::generate_contact_manifold_guarded(unnormalized),
+        "guarded finalize succeeds for penetrating manifold");
+    expectTrue(unnormalized.hasFrictionBasis(), "guarded finalize builds friction basis");
+    expectNear(unnormalized.contactNormal.length(), 1.f, 1e-4f, "guarded finalize normalizes contact normal");
+
+    fuse::physics::narrowphase::ContactManifold separated{};
+    separated.contactNormal = {0.f, 1.f, 0.f};
+    separated.addPoint({0.f, 0.f, 0.f}, -0.2f);
+    const auto separatedPreflight = fuse::physics::narrowphase::preflight_manifold_finalize(separated);
+    expectTrue(separatedPreflight.noPenetrating, "finalize preflight flags all-separated points");
+    expectTrue(
+        !fuse::physics::narrowphase::generate_contact_manifold_guarded(separated),
+        "guarded finalize rejects separated manifold");
+    expectTrue(separated.pointCount == 1u, "guarded finalize leaves separated slots untouched");
+}
+
+void testManifoldShallowPruneSkipGuards() {
+    fuse::physics::narrowphase::ContactManifold shallow{};
+    shallow.contactNormal = {0.f, 1.f, 0.f};
+    shallow.addPoint({0.f, 0.f, 0.f}, 0.5f);
+    shallow.addPoint({1.f, 0.f, 0.f}, 0.01f);
+    expectTrue(!shallow.canSkipPruneShallowPenetrations(0.05f), "shallow skip false when shallow slot exists");
+    expectTrue(shallow.pruneShallowPenetrationsIfNeeded(0.05f), "conditional shallow prune keeps deep slot");
+    expectTrue(shallow.pointCount == 1u, "conditional shallow prune removes shallow slot");
+
+    fuse::physics::narrowphase::ContactManifold deepOnly{};
+    deepOnly.contactNormal = {0.f, 1.f, 0.f};
+    deepOnly.addPoint({0.f, 0.f, 0.f}, 0.4f);
+    expectTrue(deepOnly.canSkipPruneShallowPenetrations(0.05f), "shallow skip true without shallow slots");
+    expectTrue(deepOnly.pruneShallowPenetrationsIfNeeded(0.05f), "conditional shallow prune preserves deep-only manifold");
+    expectTrue(deepOnly.pointCount == 1u, "conditional shallow prune leaves deep-only slots untouched");
+}
+
+void testFrictionBasisRebuildPreflightGuards() {
+    fuse::physics::narrowphase::ContactManifold empty{};
+    const auto emptyPreflight = fuse::physics::narrowphase::preflight_friction_basis_rebuild(empty);
+    expectTrue(emptyPreflight.skipped, "friction rebuild preflight skips empty manifold");
+    expectTrue(emptyPreflight.skipTangents, "friction rebuild preflight marks skip tangents");
+    expectTrue(
+        !fuse::physics::narrowphase::compute_friction_tangents_guarded(empty),
+        "guarded friction compute returns false for empty manifold");
+
+    fuse::physics::narrowphase::ContactManifold needsBuild{};
+    needsBuild.contactNormal = {0.f, 1.f, 0.f};
+    needsBuild.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    const auto needsPreflight = fuse::physics::narrowphase::preflight_friction_basis_rebuild(needsBuild);
+    expectTrue(needsPreflight.needs_rebuild(), "rebuild preflight true without cached basis");
+    expectTrue(
+        fuse::physics::narrowphase::ensure_friction_basis_guarded(needsBuild),
+        "guarded ensure builds orthonormal basis");
+    expectTrue(
+        fuse::physics::narrowphase::friction_basis_matches_normal(needsBuild),
+        "guarded ensure produces matching basis");
+
+    const auto cachedPreflight = fuse::physics::narrowphase::preflight_friction_basis_rebuild(needsBuild);
+    expectTrue(cachedPreflight.can_skip_rebuild(), "rebuild preflight skips valid cached basis");
+    const auto cachedTangent1 = needsBuild.frictionBasis.tangent1;
+    expectTrue(
+        fuse::physics::narrowphase::compute_friction_tangents_guarded(needsBuild),
+        "guarded compute reuses cached basis");
+    expectNear(
+        needsBuild.frictionBasis.tangent1.x,
+        cachedTangent1.x,
+        1e-4f,
+        "guarded compute preserves cached tangent1");
+
+    fuse::physics::narrowphase::ContactManifold stale{};
+    stale.contactNormal = {0.f, 1.f, 0.f};
+    stale.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    stale.buildFrictionBasis();
+    stale.contactNormal = {1.f, 0.f, 0.f};
+    const auto stalePreflight = fuse::physics::narrowphase::preflight_friction_basis_rebuild(stale);
+    expectTrue(stalePreflight.isStale, "rebuild preflight flags stale cached basis");
+    expectTrue(stalePreflight.needs_rebuild(), "rebuild preflight requires refresh for stale basis");
+    expectTrue(
+        fuse::physics::narrowphase::ensure_friction_basis_guarded(stale),
+        "guarded ensure refreshes stale basis");
+    expectTrue(
+        fuse::physics::narrowphase::friction_basis_matches_normal(stale),
+        "guarded ensure refreshes basis to current normal");
+}
+
 void testGjkSupportAndEpaStub() {
     const fuse::physics::vec3 hull[] = {
         {-1.f, 0.f, 0.f},
@@ -1061,6 +1243,11 @@ int main() {
     testContactPairPreflightGuards();
     testFrictionBasisGuardHelpers();
     testFrictionBasisRefreshGuards();
+    testContactPairKinematicSleepingRejectGuards();
+    testContactPairDispatchPreflightGuards();
+    testManifoldFinalizePreflightGuards();
+    testManifoldShallowPruneSkipGuards();
+    testFrictionBasisRebuildPreflightGuards();
     testGjkSupportAndEpaStub();
 
     if (g_failures == 0) {
