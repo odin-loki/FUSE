@@ -1,6 +1,7 @@
 #include <fuse/physics/broadphase/pair_buffer.hpp>
 
 #include <algorithm>
+#include <unordered_set>
 
 namespace fuse::physics::broadphase {
 
@@ -138,6 +139,50 @@ u32 PairBufferSoA::compact() {
     bodyB.resize(activeCount);
     validFlags.resize(activeCount);
     return activeCount;
+}
+
+bool PairBufferSoA::hasDuplicateCanonicalPairs() const {
+    if (canSkipDedupe()) {
+        return false;
+    }
+
+    std::unordered_set<u64> seen;
+    seen.reserve(activeCount * 2 + 1);
+    for (u32 slot = 0; slot < activeCount; ++slot) {
+        if (!slotIsValid(slot)) {
+            continue;
+        }
+        const u64 key = (static_cast<u64>(bodyA[slot]) << 32) | bodyB[slot];
+        if (!seen.insert(key).second) {
+            return true;
+        }
+    }
+    return false;
+}
+
+PairBufferSoA::DedupePreflight PairBufferSoA::preflight_dedupe() const {
+    DedupePreflight preflight{};
+    if (canSkipDedupe()) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    std::unordered_set<u64> seen;
+    seen.reserve(activeCount * 2 + 1);
+    for (u32 slot = 0; slot < activeCount; ++slot) {
+        if (!slotIsValid(slot)) {
+            continue;
+        }
+        const u64 key = (static_cast<u64>(bodyA[slot]) << 32) | bodyB[slot];
+        if (!seen.insert(key).second) {
+            ++preflight.duplicateCount;
+        }
+    }
+    return preflight;
+}
+
+bool PairBufferSoA::needsDedupe() const {
+    return preflight_dedupe().needs_dedupe();
 }
 
 void PairBufferSoA::sortCanonical() {
