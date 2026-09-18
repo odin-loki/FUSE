@@ -66,8 +66,10 @@ public:
     void set_baseline_state();
     [[nodiscard]] bool isAtBaseline() const;
 
-    /// True when undo/redo depth differs from the last `set_baseline_state` call.
-    [[nodiscard]] bool hasUnsavedChanges() const { return !isAtBaseline(); }
+    /// True when undo/redo depth or post-baseline coalesce differs from the last save point.
+    [[nodiscard]] bool hasUnsavedChanges() const {
+        return !isAtBaseline() || coalescedOpsSinceBaseline() > 0u;
+    }
 
     std::string peekUndoDescription() const;
     std::string peekRedoDescription() const;
