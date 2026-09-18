@@ -73,11 +73,30 @@ public:
     /// All nodes reachable along outgoing edges from `from_job_id` (invalidation guard on empty/unknown seeds).
     [[nodiscard]] CookInvalidationClosureResult transitive_successors(const std::string& from_job_id) const;
 
+    /// All nodes reachable along incoming edges to `to_job_id` — upstream invalidation guard on empty/unknown seeds.
+    [[nodiscard]] CookInvalidationClosureResult transitive_predecessors(const std::string& to_job_id) const;
+
+    /// Union of downstream closures for each seed — guarded on empty graph / empty seed list / unknown seeds.
+    [[nodiscard]] CookInvalidationClosureResult merged_invalidation_closure(
+        const std::vector<std::string>& from_job_ids) const;
+
+    /// True when `to_id` is reachable from `from_id` along directed edges; guarded on empty/unknown ids.
+    [[nodiscard]] bool is_reachable(const std::string& from_id, const std::string& to_id) const;
+
+    /// Zero-based layer index for `node_id`; -1 when unknown, graph empty, or cyclic.
+    [[nodiscard]] s32 topological_layer_index(const std::string& node_id) const;
+
+    /// Maximum parallel batch size across topological layers; 0 when graph is empty or cyclic.
+    [[nodiscard]] std::size_t parallel_layer_width() const;
+
 private:
     [[nodiscard]] bool has_node_(const std::string& node_id) const;
 
     std::vector<std::string> m_nodes;
     std::vector<CookJobDependencyEdge> m_edges;
 };
+
+/// Flatten layer batches into a single topological order — empty when layers are cyclic or absent.
+[[nodiscard]] std::vector<std::string> flatten_topological_layers(const CookDependencyLayerResult& layers);
 
 } // namespace fuse::project

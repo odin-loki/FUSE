@@ -341,6 +341,180 @@ void testCookDependencyGraphEmptyHelperGuards() {
 
     const fuse::project::CookInvalidationClosureResult closure = graph.transitive_successors("a");
     expectTrue(!closure.ok, "empty graph invalidation closure guarded");
+
+    const fuse::project::CookInvalidationClosureResult upstream = graph.transitive_predecessors("a");
+    expectTrue(!upstream.ok, "empty graph upstream closure guarded");
+
+    const fuse::project::CookInvalidationClosureResult merged = graph.merged_invalidation_closure({"a"});
+    expectTrue(!merged.ok, "empty graph merged closure guarded");
+
+    expectTrue(!graph.is_reachable("a", "b"), "empty graph reachability guarded");
+    expectTrue(graph.topological_layer_index("a") == -1, "empty graph layer index guarded");
+    expectTrue(graph.parallel_layer_width() == 0u, "empty graph parallel width guarded");
+    expectTrue(fuse::project::flatten_topological_layers(layers).empty(), "empty layers flatten guarded");
+}
+
+void testCookDependencyGraphFlattenLayers() {
+    fuse::project::CookDependencyGraph graph;
+    graph.add_node("a");
+    graph.add_node("b");
+    graph.add_node("c");
+    graph.add_node("d");
+    expectTrue(graph.add_edge("a", "b"), "flatten test a->b");
+    expectTrue(graph.add_edge("a", "c"), "flatten test a->c");
+    expectTrue(graph.add_edge("b", "d"), "flatten test b->d");
+    expectTrue(graph.add_edge("c", "d"), "flatten test c->d");
+
+    const fuse::project::CookDependencyLayerResult layers = graph.topological_layers();
+    const std::vector<std::string> flattened = fuse::project::flatten_topological_layers(layers);
+    expectTrue(flattened.size() == 4u, "flattened diamond has four nodes");
+
+    const fuse::project::CookJobGraphOrderResult order = graph.topological_order();
+    expectTrue(flattened == order.order, "flattened layers match topological order");
+
+    const fuse::project::CookDependencyLayerResult cyclic_layers =
+        fuse::project::CookDependencyGraph{}.topological_layers();
+    expectTrue(fuse::project::flatten_topological_layers(cyclic_layers).empty(),
+               "default empty layers flatten to empty order");
+}
+
+void testCookDependencyGraphUpstreamClosure() {
+    fuse::project::CookDependencyGraph graph;
+    graph.add_node("a");
+    graph.add_node("b");
+    graph.add_node("c");
+    expectTrue(graph.add_edge("a", "b"), "upstream a->b");
+    expectTrue(graph.add_edge("b", "c"), "upstream b->c");
+
+    const fuse::project::CookInvalidationClosureResult upstream = graph.transitive_predecessors("c");
+    expectTrue(upstream.ok, "leaf upstream closure ok");
+    expectTrue(upstream.job_ids.size() == 2u, "leaf has two upstream nodes");
+    expectTrue(upstream.job_ids[0] == "a", "root is first upstream");
+    expectTrue(upstream.job_ids[1] == "b", "middle is second upstream");
+
+    const fuse::project::CookInvalidationClosureResult root_upstream = graph.transitive_predecessors("a");
+    expectTrue(root_upstream.ok, "root upstream closure ok");
+    expectTrue(root_upstream.job_ids.empty(), "root has no upstream nodes");
+
+    expectTrue(!graph.transitive_predecessors("missing").ok, "unknown upstream seed guarded");
+    expectTrue(!graph.transitive_predecessors("").ok, "empty upstream seed guarded");
+}
+
+void testCookDependencyGraphMergedInvalidationClosure() {
+    fuse::project::CookDependencyGraph graph;
+    graph.add_node("a");
+    graph.add_node("b");
+    graph.add_node("c");
+    graph.add_node("d");
+    expectTrue(graph.add_edge("a", "b"), "merged a->b");
+    expectTrue(graph.add_edge("a", "c"), "merged a->c");
+    expectTrue(graph.add_edge("b", "d"), "merged b->d");
+
+    const fuse::project::CookInvalidationClosureResult merged = graph.merged_invalidation_closure({"a"});
+    expectTrue(merged.ok, "single-seed merged closure ok");
+    expectTrue(merged.job_ids.size() == 3u, "single seed reaches three downstream nodes");
+
+    const fuse::project::CookInvalidationClosureResult partial =
+        graph.merged_invalidation_closure({"b", "c"});
+    expectTrue(partial.ok, "multi-seed merged closure ok");
+    expectTrue(partial.job_ids.size() == 1u, "overlapping seeds dedupe downstream");
+    expectTrue(partial.job_ids[0] == "d", "shared downstream is node d");
+
+    expectTrue(!graph.merged_invalidation_closure({}).ok, "empty seed list guarded");
+    expectTrue(!graph.merged_invalidation_closure({"missing"}).ok, "unknown seed guarded");
+}
+
+void testCookDependencyGraphReachabilityAndLayerIndex() {
+    fuse::project::CookDependencyGraph graph;
+    graph.add_node("a");
+    graph.add_node("b");
+    graph.add_node("c");
+    expectTrue(graph.add_edge("a", "b"), "reachability a->b");
+    expectTrue(graph.add_edge("b", "c"), "reachability b->c");
+
+    expectTrue(graph.is_reachable("a", "c"), "transitive reachability detected");
+    expectTrue(graph.is_reachable("a", "a"), "self reachability is true");
+    expectTrue(!graph.is_reachable("c", "a"), "reverse reachability rejected");
+    expectTrue(!graph.is_reachable("", "b"), "empty from id guarded");
+    expectTrue(!graph.is_reachable("a", "missing"), "unknown to id guarded");
+
+    expectTrue(graph.topological_layer_index("a") == 0, "root is layer zero");
+    expectTrue(graph.topological_layer_index("b") == 1, "middle is layer one");
+    expectTrue(graph.topological_layer_index("c") == 2, "leaf is layer two");
+    expectTrue(graph.topological_layer_index("missing") == -1, "unknown layer index guarded");
+
+    fuse::project::CookDependencyGraph cyclic;
+    cyclic.add_node("x");
+    cyclic.add_node("y");
+    expectTrue(cyclic.add_edge("x", "y"), "cycle index x->y");
+    expectTrue(cyclic.add_edge("y", "x"), "cycle index y->x");
+    expectTrue(cyclic.topological_layer_index("x") == -1, "cyclic graph layer index guarded");
+    expectTrue(cyclic.parallel_layer_width() == 0u, "cyclic graph parallel width guarded");
+}
+
+void testCookDependencyGraphParallelLayerWidth() {
+    fuse::project::CookDependencyGraph graph;
+    graph.add_node("a");
+    graph.add_node("b");
+    graph.add_node("c");
+    graph.add_node("d");
+    expectTrue(graph.add_edge("a", "b"), "width test a->b");
+    expectTrue(graph.add_edge("a", "c"), "width test a->c");
+    expectTrue(graph.add_edge("b", "d"), "width test b->d");
+    expectTrue(graph.add_edge("c", "d"), "width test c->d");
+
+    expectTrue(graph.parallel_layer_width() == 2u, "diamond parallel width is two");
+}
+
+void testCookJobGraphUpstreamAndMergedClosure() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_up_a.obj", "# up a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_up_b.obj", "# up b\n");
+    const std::string sourceC = writeTempFile("/tmp/fuse_b79_up_c.obj", "# up c\n");
+
+    fuse::project::CookManifest manifest;
+
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_up_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_up_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::CookManifestEntry entryC;
+    entryC.kind = fuse::project::CookAssetKind::Mesh;
+    entryC.source_path = sourceC;
+    entryC.output_path = "/tmp/fuse_b79_up_c.fusemesh";
+    entryC.dependencies.push_back(entryB.output_path);
+    manifest.assets.push_back(entryC);
+
+    fuse::project::CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    const fuse::project::CookInvalidationClosureResult upstream =
+        graph.upstream_invalidation_closure(entryC.output_path);
+    expectTrue(upstream.ok, "job graph upstream closure ok");
+    expectTrue(upstream.job_ids.size() == 2u, "leaf job has two upstream jobs");
+    expectTrue(upstream.job_ids[0] == entryA.output_path, "root job in upstream closure");
+    expectTrue(upstream.job_ids[1] == entryB.output_path, "middle job in upstream closure");
+
+    const fuse::project::CookInvalidationClosureResult merged =
+        graph.merged_invalidation_closure({entryA.output_path, entryB.output_path});
+    expectTrue(merged.ok, "job graph merged closure ok");
+    expectTrue(merged.job_ids.size() == 2u, "merged seeds cover both downstream jobs");
+    expectTrue(merged.job_ids[0] == entryB.output_path, "first merged downstream job");
+    expectTrue(merged.job_ids[1] == entryC.output_path, "second merged downstream job");
+
+    fuse::project::CookJobGraph empty_graph;
+    expectTrue(!empty_graph.upstream_invalidation_closure(entryA.output_path).ok,
+               "empty job graph upstream closure guarded");
+    expectTrue(!empty_graph.merged_invalidation_closure({entryA.output_path}).ok,
+               "empty job graph merged closure guarded");
 }
 
 void testCookDependencyGraphCycleEdges() {
@@ -1365,10 +1539,16 @@ int main() {
     testCookJobGraphEmpty();
     testCookDependencyGraphEmptyGuards();
     testCookDependencyGraphEmptyHelperGuards();
+    testCookDependencyGraphFlattenLayers();
+    testCookDependencyGraphUpstreamClosure();
+    testCookDependencyGraphMergedInvalidationClosure();
+    testCookDependencyGraphReachabilityAndLayerIndex();
+    testCookDependencyGraphParallelLayerWidth();
     testCookDependencyGraphQueryHelpers();
     testCookDependencyGraphTopologicalLayers();
     testCookDependencyGraphInvalidationClosure();
     testCookDependencyGraphTopologicalOrder();
+    testCookJobGraphUpstreamAndMergedClosure();
     testCookDependencyGraphCycleEdges();
     testCookJobGraphStageHelpers();
     testCookJobGraphReadyJobsAndInvalidationClosure();
