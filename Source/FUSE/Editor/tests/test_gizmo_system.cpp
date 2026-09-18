@@ -688,6 +688,141 @@ void testPickConfigValid() {
                "isPickConfigValid accepts default gizmo constants");
 }
 
+void testPickPreflight() {
+    fuse::editor::GizmoTransform transform{};
+
+    fuse::editor::GizmoRay emptyRay{};
+    const fuse::editor::PickPreflight emptyRayPreflight = fuse::editor::preflightPick(
+        emptyRay, transform, fuse::editor::GizmoMode::Translate, fuse::editor::GizmoSpace::World,
+        fuse::editor::GizmoSystem::kAxisLength, fuse::editor::GizmoSystem::kPickRadius);
+    expectTrue(emptyRayPreflight.emptyRay, "pick preflight marks empty ray");
+    expectTrue(!emptyRayPreflight.canPick, "pick preflight rejects empty ray");
+
+    fuse::editor::GizmoRay missRay;
+    missRay.origin = {0.f, 5.f, 0.f};
+    missRay.direction = {1.f, 0.f, 0.f};
+    const fuse::editor::PickPreflight missPreflight = fuse::editor::preflightPick(
+        missRay, transform, fuse::editor::GizmoMode::Translate, fuse::editor::GizmoSpace::World,
+        fuse::editor::GizmoSystem::kAxisLength, fuse::editor::GizmoSystem::kPickRadius);
+    expectTrue(missPreflight.pickMiss, "pick preflight marks ray pick miss");
+    expectTrue(!missPreflight.canPick, "pick preflight rejects ray pick miss");
+
+    const fuse::editor::GizmoRay xRay = rayAlongX();
+    const fuse::editor::PickPreflight validRayPreflight = fuse::editor::preflightPick(
+        xRay, transform, fuse::editor::GizmoMode::Translate, fuse::editor::GizmoSpace::World,
+        fuse::editor::GizmoSystem::kAxisLength, fuse::editor::GizmoSystem::kPickRadius);
+    expectTrue(validRayPreflight.canPick, "pick preflight accepts valid ray pick");
+    expectTrue(!validRayPreflight.emptyRay, "valid ray pick preflight clears emptyRay");
+    expectTrue(!validRayPreflight.pickMiss, "valid ray pick preflight clears pickMiss");
+
+    const fuse::editor::PickPreflight invalidConfigPreflight = fuse::editor::preflightPick(
+        xRay, transform, fuse::editor::GizmoMode::Translate, fuse::editor::GizmoSpace::World, 0.f,
+        fuse::editor::GizmoSystem::kPickRadius);
+    expectTrue(invalidConfigPreflight.invalidPickConfig,
+               "pick preflight marks invalid axis length / pick radius");
+    expectTrue(!invalidConfigPreflight.canPick, "pick preflight rejects invalid pick config");
+
+    fuse::editor::GizmoHitTest emptyHit{};
+    emptyHit.viewportWidth = 0.f;
+    const fuse::editor::PickPreflight emptyHitPreflight =
+        fuse::editor::preflightPick(emptyHit, fuse::editor::GizmoMode::Translate);
+    expectTrue(emptyHitPreflight.emptyHit, "pick preflight marks empty viewport");
+    expectTrue(!emptyHitPreflight.canPick, "pick preflight rejects empty viewport");
+
+    fuse::editor::GizmoHitTest deadZone{};
+    deadZone.viewportWidth = 100.f;
+    deadZone.viewportHeight = 100.f;
+    deadZone.screenX = 50.f;
+    deadZone.screenY = 50.f;
+    const fuse::editor::PickPreflight screenMissPreflight =
+        fuse::editor::preflightPick(deadZone, fuse::editor::GizmoMode::Translate);
+    expectTrue(screenMissPreflight.screenMiss, "pick preflight marks translate dead zone");
+    expectTrue(!screenMissPreflight.canPick, "pick preflight rejects translate dead zone");
+
+    deadZone.screenX = 10.f;
+    deadZone.screenY = 50.f;
+    const fuse::editor::PickPreflight validHitPreflight =
+        fuse::editor::preflightPick(deadZone, fuse::editor::GizmoMode::Translate);
+    expectTrue(validHitPreflight.canPick, "pick preflight accepts valid screen hit");
+
+    fuse::editor::GizmoSystem gizmo;
+    expectTrue(gizmo.preflightPick(xRay, transform).canPick, "gizmo pick preflight accepts valid ray");
+    expectTrue(gizmo.preflightPick(deadZone).canPick, "gizmo pick preflight accepts valid screen hit");
+    deadZone.screenX = 50.f;
+    deadZone.screenY = 50.f;
+    expectTrue(gizmo.preflightPick(deadZone).screenMiss,
+               "gizmo pick preflight marks translate dead zone");
+}
+
+void testSnapPreflight() {
+    fuse::editor::GizmoSnapSettings snap{};
+
+    const fuse::editor::SnapPreflight disabledPreflight =
+        fuse::editor::preflightSnap(fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(disabledPreflight.snapDisabled, "snap preflight marks disabled snap");
+    expectTrue(!disabledPreflight.canApply, "snap preflight rejects when snap disabled");
+
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+    const fuse::editor::SnapPreflight invalidStepPreflight =
+        fuse::editor::preflightSnap(fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(invalidStepPreflight.invalidStep, "snap preflight marks zero grid step");
+    expectTrue(!invalidStepPreflight.canApply, "snap preflight rejects invalid step");
+
+    snap.gridSize = 0.5f;
+    const fuse::editor::SnapPreflight validPreflight =
+        fuse::editor::preflightSnap(fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(validPreflight.canApply, "snap preflight accepts enabled snap with valid step");
+    expectTrue(!validPreflight.snapDisabled, "valid snap preflight clears snapDisabled");
+    expectTrue(!validPreflight.invalidStep, "valid snap preflight clears invalidStep");
+
+    snap.rotateSnap = true;
+    snap.angleStepDegrees = 0.f;
+    expectTrue(fuse::editor::preflightSnap(fuse::editor::GizmoMode::Rotate, snap).invalidStep,
+               "snap preflight marks zero angle step for rotate");
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    gizmo.setMode(fuse::editor::GizmoMode::Rotate);
+    expectTrue(gizmo.preflightSnap().invalidStep, "gizmo snap preflight uses active mode");
+    gizmo.setMode(fuse::editor::GizmoMode::Translate);
+    expectTrue(gizmo.preflightSnap().canApply, "gizmo snap preflight accepts translate snap");
+}
+
+void testUpdateDragPreflight() {
+    fuse::editor::GizmoSystem gizmo;
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::UpdateDragPreflight inactivePreflight =
+        fuse::editor::preflightUpdateDrag(hit, false);
+    expectTrue(inactivePreflight.notDragging, "update-drag preflight marks inactive drag");
+    expectTrue(!inactivePreflight.canUpdate, "update-drag preflight rejects when not dragging");
+    expectTrue(!gizmo.canUpdateDrag(hit), "gizmo canUpdateDrag rejects when not dragging");
+
+    fuse::editor::GizmoTransform transform{};
+    gizmo.beginDrag(hit, transform);
+    expectTrue(gizmo.preflightUpdateDrag(hit).notDragging == false,
+               "update-drag preflight clears notDragging while active");
+
+    hit.viewportWidth = 0.f;
+    const fuse::editor::UpdateDragPreflight emptyPreflight = gizmo.preflightUpdateDrag(hit);
+    expectTrue(emptyPreflight.emptyHit, "update-drag preflight marks empty viewport");
+    expectTrue(!emptyPreflight.canUpdate, "update-drag preflight rejects empty viewport");
+    expectTrue(!gizmo.canUpdateDrag(hit), "gizmo canUpdateDrag rejects empty viewport");
+    expectTrue(gizmo.isDragging(), "empty viewport update keeps drag active");
+
+    hit.viewportWidth = 100.f;
+    hit.screenX = 30.f;
+    const fuse::editor::UpdateDragPreflight validPreflight = gizmo.preflightUpdateDrag(hit);
+    expectTrue(validPreflight.canUpdate, "update-drag preflight accepts valid hit while dragging");
+    expectTrue(gizmo.canUpdateDrag(hit), "gizmo canUpdateDrag accepts valid hit while dragging");
+    gizmo.endDrag();
+}
+
 void testDirtyFlagOnEndDrag() {
     fuse::editor::GizmoSystem gizmo;
     fuse::editor::CommandStack commandStack;
@@ -741,6 +876,9 @@ int main() {
     testBeginDragPreflight();
     testSnapStepGuards();
     testPickConfigValid();
+    testPickPreflight();
+    testSnapPreflight();
+    testUpdateDragPreflight();
     testDirtyFlagOnEndDrag();
 
     if (g_failures != 0) {
