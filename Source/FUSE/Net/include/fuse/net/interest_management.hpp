@@ -63,6 +63,44 @@ struct InterestScopeSet {
     [[nodiscard]] u32 size() const { return static_cast<u32>(entities.size()); }
 };
 
+/// Preflight for applying an interest scope diff without mutating state (B7.4 deepen follow-up).
+struct InterestDiffApplyPreflight {
+    bool empty_diff = true;
+    bool has_enters = false;
+    bool has_leaves = false;
+    /// True when at least one enter/leave would modify `scope`.
+    bool would_change_scope = false;
+    /// True when apply can be skipped because the diff is empty (B7.4 deepen follow-up).
+    bool skipped = false;
+
+    [[nodiscard]] bool can_apply() const { return would_change_scope; }
+
+    /// True when apply can proceed normally or via the empty-diff fast path (B7.4 deepen follow-up).
+    [[nodiscard]] bool can_apply_or_skip() const { return can_apply() || skipped; }
+
+    [[nodiscard]] bool should_skip() const { return skipped; }
+};
+
+/// Preflight for radius filter/count early-outs without scanning candidates (B7.4 deepen follow-up).
+struct InterestRadiusFilterPreflight {
+    bool candidates_empty = true;
+    bool radii_disabled = false;
+    bool prior_scope_empty = true;
+    bool hysteresis_path = false;
+
+    [[nodiscard]] bool should_skip() const {
+        if (candidates_empty) {
+            return true;
+        }
+        if (radii_disabled && (!hysteresis_path || prior_scope_empty)) {
+            return true;
+        }
+        return false;
+    }
+
+    [[nodiscard]] bool can_filter() const { return !should_skip(); }
+};
+
 /// Entities that entered or left scope between two snapshots.
 struct InterestSetDiff {
     std::vector<ecs::EntityID> entered;
@@ -97,6 +135,34 @@ void clear_interest_diff(InterestSetDiff& diff);
 [[nodiscard]] bool can_apply_interest_diff(const InterestSetDiff& diff, const InterestScopeSet& scope);
 /// True when relevance and always-relevant radii are both zero (radius filter early-out).
 [[nodiscard]] bool relevance_radii_disabled(const InterestPolicy& policy);
+
+/// Preflight diff apply against a scope snapshot without mutating state (B7.4 deepen follow-up).
+[[nodiscard]] InterestDiffApplyPreflight preflight_interest_diff(const InterestSetDiff& diff,
+                                                                   const InterestScopeSet& scope);
+
+/// True when apply can be skipped because the diff carries no enter/leave payload (B7.4 deepen follow-up).
+[[nodiscard]] bool should_skip_interest_diff_apply(const InterestSetDiff& diff);
+
+/// True when apply can proceed normally or via the empty-diff fast path (B7.4 deepen follow-up).
+[[nodiscard]] bool can_apply_or_skip_interest_diff(const InterestSetDiff& diff, const InterestScopeSet& scope);
+
+/// Preflight radius filter/count early-outs without scanning candidates (B7.4 deepen follow-up).
+[[nodiscard]] InterestRadiusFilterPreflight preflight_radius_filter(const InterestPolicy& policy,
+                                                                      const std::vector<InterestCandidate>& candidates);
+
+/// Hysteresis-aware radius filter preflight (B7.4 deepen follow-up).
+[[nodiscard]] InterestRadiusFilterPreflight preflight_radius_filter(const InterestPolicy& policy,
+                                                                      const std::vector<InterestCandidate>& candidates,
+                                                                      const InterestScopeSet& prior_scope);
+
+/// True when radius filter/count can early-out without scanning candidates (B7.4 deepen follow-up).
+[[nodiscard]] bool should_skip_radius_filter(const InterestPolicy& policy,
+                                             const std::vector<InterestCandidate>& candidates);
+
+/// Hysteresis-aware radius filter skip guard (B7.4 deepen follow-up).
+[[nodiscard]] bool should_skip_radius_filter(const InterestPolicy& policy,
+                                             const std::vector<InterestCandidate>& candidates,
+                                             const InterestScopeSet& prior_scope);
 
 /// Returns true when `out` is non-empty.
 [[nodiscard]] bool diff_interest_scope_sets(const InterestScopeSet& previous, const InterestScopeSet& current,
@@ -168,6 +234,12 @@ public:
     /// Diff current scope against the previous evaluation's scope set.
     /// Returns true when `out` is non-empty.
     [[nodiscard]] bool compute_scope_diff(InterestSetDiff& out) const;
+    /// Preflight diff apply against the current scope set without mutating state (B7.4 deepen follow-up).
+    [[nodiscard]] InterestDiffApplyPreflight preflight_apply_diff(const InterestSetDiff& diff) const;
+    /// True when diff apply can be skipped because the diff is empty (B7.4 deepen follow-up).
+    [[nodiscard]] bool should_skip_apply_diff(const InterestSetDiff& diff) const;
+    /// True when diff apply can proceed normally or via the empty-diff fast path (B7.4 deepen follow-up).
+    [[nodiscard]] bool can_apply_or_skip_diff(const InterestSetDiff& diff) const;
     /// True when the last two `evaluate()` calls produced different in-scope sets.
     [[nodiscard]] bool scope_changed_since_last_evaluate() const;
 
