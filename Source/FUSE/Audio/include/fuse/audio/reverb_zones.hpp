@@ -15,6 +15,12 @@ struct ReverbZoneParams {
 /// True when a zone list pointer is non-null and carries at least one zone.
 bool has_reverb_zones(const ReverbZoneParams* zones, u32 zone_count);
 
+/// Readable alias — true when the zone list is null or zero-length.
+bool is_empty_reverb_zones(const ReverbZoneParams* zones, u32 zone_count);
+
+/// True when zone blending can be skipped (empty zone list).
+bool should_skip_reverb_zone_blend(const ReverbZoneParams* zones, u32 zone_count);
+
 /// Returns true when the listener position lies inside the zone AABB.
 bool listener_in_reverb_zone(const Vec3& listener, const ReverbZoneParams& zone);
 
@@ -47,6 +53,9 @@ bool is_dry_reverb_blend(const ReverbZoneBlend& blend);
 
 /// True when wet convolution should run for the blend result.
 bool should_apply_reverb_wet_mix(const ReverbZoneBlend& blend);
+
+/// True when wet convolution and sample blending can be skipped (fully dry path).
+bool should_skip_wet_mix_processing(const ReverbZoneBlend& blend);
 
 /// Effective wet mix scalar [0, 1] from a zone blend result.
 float compute_effective_wet_mix(const ReverbZoneBlend& blend);

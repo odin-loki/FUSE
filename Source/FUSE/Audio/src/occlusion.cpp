@@ -21,6 +21,10 @@ bool has_occlusion_blockers(const AABB* blockers, u32 blocker_count) {
     return blockers != nullptr && blocker_count > 0;
 }
 
+bool is_empty_occlusion_blockers(const AABB* blockers, u32 blocker_count) {
+    return !has_occlusion_blockers(blockers, blocker_count);
+}
+
 bool should_skip_blocker_evaluation(const Vec3& listener, const Vec3& source) {
     const Vec3 delta = source - listener;
     return delta.dot(delta) < 1e-12f;
@@ -30,6 +34,16 @@ bool should_evaluate_occlusion_blockers(const Vec3& listener, const Vec3& source
                                         const AABB* blockers, u32 blocker_count) {
     return has_occlusion_blockers(blockers, blocker_count)
         && !should_skip_blocker_evaluation(listener, source);
+}
+
+bool should_skip_blockers_visibility(const Vec3& listener, const Vec3& source,
+                                       const AABB* blockers, u32 blocker_count) {
+    return !should_evaluate_occlusion_blockers(listener, source, blockers, blocker_count);
+}
+
+bool should_skip_occlusion_blocker_attenuation(const Vec3& listener, const Vec3& source,
+                                                const AABB* blockers, u32 blocker_count) {
+    return should_skip_blockers_visibility(listener, source, blockers, blocker_count);
 }
 
 bool should_skip_occlusion_attenuation(float visibility) {
@@ -123,7 +137,7 @@ float compute_blocker_visibility(const Vec3& listener, const Vec3& source, const
 
 float compute_blockers_visibility(const Vec3& listener, const Vec3& source, const AABB* blockers,
                                   u32 blocker_count, const OcclusionParams& params) {
-    if (!should_evaluate_occlusion_blockers(listener, source, blockers, blocker_count)) {
+    if (should_skip_blockers_visibility(listener, source, blockers, blocker_count)) {
         return 1.f;
     }
     float visibility = 1.f;
@@ -141,7 +155,7 @@ float compute_blocker_factor(const Vec3& listener, const Vec3& source, const AAB
 
 float compute_blockers_factor(const Vec3& listener, const Vec3& source, const AABB* blockers,
                               u32 blocker_count, const OcclusionParams& params) {
-    if (!should_evaluate_occlusion_blockers(listener, source, blockers, blocker_count)) {
+    if (should_skip_blockers_visibility(listener, source, blockers, blocker_count)) {
         return 0.f;
     }
     float factor = 0.f;
@@ -170,10 +184,11 @@ float compute_effective_visibility(const Vec3& listener, const Vec3& source,
                                    float source_occlusion, const AABB* blockers, u32 blocker_count,
                                    const OcclusionParams& params) {
     const float visibility = clamp_occlusion_visibility(source_occlusion);
-    if (!has_occlusion_blockers(blockers, blocker_count) || is_fully_occluded_occlusion(visibility)) {
+    if (is_empty_occlusion_blockers(blockers, blocker_count)
+        || is_fully_occluded_occlusion(visibility)) {
         return is_fully_occluded_occlusion(visibility) ? 0.f : visibility;
     }
-    if (!should_evaluate_occlusion_blockers(listener, source, blockers, blocker_count)) {
+    if (should_skip_blockers_visibility(listener, source, blockers, blocker_count)) {
         return visibility;
     }
     const float blocker_factor =
@@ -185,6 +200,9 @@ OcclusionAttenuation evaluate_occlusion_from_blockers(const Vec3& listener, cons
                                                       float source_occlusion, const AABB* blockers,
                                                       u32 blocker_count,
                                                       const OcclusionParams& params) {
+    if (should_skip_occlusion_blocker_attenuation(listener, source, blockers, blocker_count)) {
+        return evaluate_occlusion_attenuation(source_occlusion, params);
+    }
     const float visibility =
         compute_effective_visibility(listener, source, source_occlusion, blockers, blocker_count,
                                      params);
