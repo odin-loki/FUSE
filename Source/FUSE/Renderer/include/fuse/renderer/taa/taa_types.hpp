@@ -103,6 +103,26 @@ bool taaHistoryReuseAllowed(const TaaHistoryBuffer& history, u32 observedGenerat
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// True when history contribution is allowed this frame (B5.9 deepen).
 bool taaHistoryBlendAllowed(bool firstFrame, const TaaHistoryBuffer& history);
+/// True when history still needs warm-up before temporal reuse (B5.9 deepen).
+bool taaHistoryNeedsWarmup(const TaaHistoryBuffer& history);
+/// Blend weights for a resolve frame considering warm-up and reuse guards (B5.9 deepen).
+TaaBlendWeights computeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// True when resolve would apply a non-zero history blend weight (B5.9 deepen).
+bool taaResolveAppliesHistoryBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// True when blend weights align with the history reuse policy (B5.9 deepen).
+bool taaBlendWeightsConsistentWithReuse(const TaaBlendWeights& weights, bool historyBlendAllowed);
+
+/// Why history temporal reuse is blocked (B5.9 deepen).
+enum class TaaHistoryReuseBlockReason : u8 {
+    None = 0,
+    NotReady,
+    NotWarm,
+    StaleGeneration,
+};
+/// Human-readable label for history reuse block reasons (B5.9 deepen).
+const char* taaHistoryReuseBlockReasonLabel(TaaHistoryReuseBlockReason reason);
+/// Classify why history reuse is blocked for an observed invalidate epoch (B5.9 deepen).
+TaaHistoryReuseBlockReason classifyTaaHistoryReuseBlock(const TaaHistoryBuffer& history, u32 observedGeneration);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {
