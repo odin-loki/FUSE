@@ -70,13 +70,14 @@ public:
     void markClean();
     /// Records the current undo/redo depth as the saved-document baseline (B6.2 deepen).
     void set_baseline_state();
-    [[nodiscard]] bool isBaselineConfigured() const { return m_baselineConfigured; }
     u32 baselineUndoCount() const { return m_baselineUndoCount; }
     u32 baselineRedoCount() const { return m_baselineRedoCount; }
     [[nodiscard]] bool isAtBaseline() const;
 
-    /// True when undo/redo depth differs from the last `set_baseline_state` call.
-    [[nodiscard]] bool hasUnsavedChanges() const { return !isAtBaseline(); }
+    /// True when undo/redo depth or post-baseline coalesce differs from the last save point.
+    [[nodiscard]] bool hasUnsavedChanges() const {
+        return !isAtBaseline() || coalescedOpsSinceBaseline() > 0u;
+    }
 
     std::string peekUndoDescription() const;
     std::string peekRedoDescription() const;

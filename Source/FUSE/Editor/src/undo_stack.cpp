@@ -15,6 +15,9 @@ void UndoStack::evictOldestIfNeeded_() {
 
     m_undo.erase(m_undo.begin());
     ++m_evictedCount;
+    if (m_baselineConfigured && m_baselineUndoCount > 0u) {
+        --m_baselineUndoCount;
+    }
 }
 
 void UndoStack::markDirty_() {
@@ -35,7 +38,7 @@ void UndoStack::syncBaselineDirty_() {
         return;
     }
 
-    if (isAtBaseline()) {
+    if (isAtBaseline() && coalescedOpsSinceBaseline() == 0u) {
         markClean();
         return;
     }
@@ -56,7 +59,7 @@ void UndoStack::execute(std::unique_ptr<UndoCommand> command) {
         return;
     }
 
-    if (!m_undo.empty() && m_undo.back()->merge(*command)) {
+    if (!m_undo.empty() && canUndo() && m_undo.back()->merge(*command)) {
         m_undo.back()->execute();
         ++m_coalescedOps;
         markDirty_();
@@ -71,6 +74,12 @@ void UndoStack::execute(std::unique_ptr<UndoCommand> command) {
 }
 
 void UndoStack::set_baseline_state() {
+    if (m_baselineConfigured && isAtBaseline() && m_coalescedOpsAtBaseline == m_coalescedOps &&
+        m_baselineRedoCount == redoCount()) {
+        markClean();
+        return;
+    }
+
     m_baselineUndoCount = undoCount();
     m_baselineRedoCount = redoCount();
     m_coalescedOpsAtBaseline = m_coalescedOps;
