@@ -59,12 +59,25 @@ struct QueryFilterPreflight {
     u32 matching_archetypes = 0;
     u32 matching_entities = 0;
 
+    /// True when the filter is runnable and at least one archetype signature satisfies it.
+    [[nodiscard]] bool can_match() const { return runnable && !empty_table && matching_archetypes > 0; }
+
+    /// True when entity iteration would visit at least one row.
     [[nodiscard]] bool can_iterate() const { return runnable && matching_entities > 0; }
+
+    /// True when iteration should be skipped (conflict, empty table, or zero matching entities).
+    [[nodiscard]] bool should_skip() const { return !can_iterate(); }
 };
+
+/// Evaluate runnable/conflict guards without an archetype table (counts remain zero).
+[[nodiscard]] QueryFilterPreflight preflight_query_filter(const QueryFilter& filter);
 
 /// Evaluate runnable/conflict and empty-table guards plus matching archetype/entity counts.
 [[nodiscard]] QueryFilterPreflight preflight_query_filter(const std::vector<Archetype>& archetypes,
                                                           const QueryFilter& filter);
+
+/// True when `each_query` / `each_query_parallel` would visit zero entities for this table + filter.
+[[nodiscard]] bool should_skip_query_iteration(const std::vector<Archetype>& archetypes, const QueryFilter& filter);
 
 /// True when `archetype` contains every `with` type and none of the `without` types.
 [[nodiscard]] bool archetype_matches(const Archetype& archetype, const QueryFilter& filter);
