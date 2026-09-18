@@ -690,6 +690,78 @@ void testSampleGuards() {
                "empty normal still valid — resolved at sample time");
 }
 
+void testProbeSampleAndCacheGuards() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_origin = {0.f, 0.f, 0.f};
+    desc.probe_spacing = {1.f, 1.f, 1.f};
+    desc.grid_dims = {4, 4, 4};
+    desc.irradiance_res = 8;
+
+    expectTrue(fuse::renderer::ProbeGridLayout::maxProbeIndex(desc) == 63u, "max probe index for 4x4x4");
+    expectTrue(fuse::renderer::ddgi_util::expectedCacheCount(desc) == 64u, "expected cache count matches probes");
+    expectTrue(fuse::renderer::ddgi_util::cacheMatchesGrid(desc, 64u), "exact cache size matches grid");
+    expectTrue(!fuse::renderer::ddgi_util::cacheMatchesGrid(desc, 63u), "undersized cache does not match");
+    expectTrue(fuse::renderer::ddgi_util::isCacheSizedForGrid(desc, 64u), "full cache sized for grid");
+    expectTrue(fuse::renderer::ddgi_util::isCacheIndexInRange(0u, 64u), "cache index 0 in range");
+    expectTrue(!fuse::renderer::ddgi_util::isCacheIndexInRange(64u, 64u), "cache index at count is OOB");
+    expectTrue(fuse::renderer::ddgi_util::clampCacheIndex(99u, desc, 64u) == 63u,
+               "clamp cache index to last probe");
+    expectTrue(fuse::renderer::ddgi_util::clampCacheIndex(5u, desc, 4u) == 3u,
+               "clamp cache index to undersized buffer");
+
+    fuse::renderer::ProbeSampleCoords interior{};
+    expectTrue(fuse::renderer::ProbeGridLayout::buildProbeSampleCoords(desc, {1.5f, 1.5f, 1.5f}, interior),
+               "build interior sample coords");
+    expectTrue(fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, interior),
+               "interior sample coords valid");
+    expectTrue(!fuse::renderer::ProbeGridLayout::isProbeSampleAtGridBorder(desc, interior),
+               "interior sample not at grid border");
+    expectTrue(fuse::renderer::ProbeGridLayout::hasFullTrilinearNeighbourhood(desc, interior),
+               "interior sample has full trilinear neighbourhood");
+
+    fuse::renderer::DDGIDesc borderDesc = desc;
+    borderDesc.grid_dims = {3, 3, 3};
+    fuse::renderer::ProbeSampleCoords border{};
+    expectTrue(fuse::renderer::ProbeGridLayout::buildProbeSampleCoords(borderDesc, {0.f, 0.f, 0.f}, border),
+               "build border sample coords");
+    expectTrue(fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(borderDesc, border),
+               "border sample coords valid");
+    expectTrue(fuse::renderer::ProbeGridLayout::isProbeSampleAtGridBorder(borderDesc, border),
+               "origin sample is at grid border");
+    expectTrue(!fuse::renderer::ProbeGridLayout::hasFullTrilinearNeighbourhood(borderDesc, border),
+               "border sample lacks full trilinear neighbourhood");
+
+    fuse::renderer::ProbeSampleCoords invalid{};
+    invalid.x0 = 5u;
+    invalid.x1 = 4u;
+    expectTrue(!fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, invalid),
+               "inverted x indices invalid");
+    invalid = interior;
+    invalid.tx = 1.5f;
+    expectTrue(!fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, invalid),
+               "OOB interpolation weight invalid");
+
+    std::vector<fuse::renderer::IrradianceCacheEntry> cache(64);
+    cache[21].irradiance = {2.f, 0.f, 0.f};
+    const fuse::math::Vec3 sampled =
+        fuse::renderer::ddgi_util::sampleIrradianceAtCacheIndex(cache.data(), 64u, 21u);
+    expectNear(sampled.x, 2.f, 1e-5f, "guarded cache read returns stored irradiance");
+    const fuse::math::Vec3 oobSample =
+        fuse::renderer::ddgi_util::sampleIrradianceAtCacheIndex(cache.data(), 64u, 99u);
+    expectNear(oobSample.x, 0.f, 1e-5f, "OOB cache read returns zero");
+    const fuse::math::Vec3 nullSample =
+        fuse::renderer::ddgi_util::sampleIrradianceAtCacheIndex(nullptr, 64u, 0u);
+    expectNear(nullSample.x, 0.f, 1e-5f, "null cache read returns zero");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 3, 3};
+    expectTrue(fuse::renderer::ProbeGridLayout::maxProbeIndex(empty) == 0u, "empty grid max probe index is 0");
+    expectTrue(fuse::renderer::ddgi_util::expectedCacheCount(empty) == 0u, "empty grid expected cache is 0");
+    expectTrue(fuse::renderer::ddgi_util::cacheMatchesGrid(empty, 0u), "empty cache matches empty grid");
+    expectTrue(fuse::renderer::ddgi_util::clampCacheIndex(5u, empty, 0u) == 0u,
+               "clamp cache index on empty grid returns 0");
+}
+
 void testPartialCacheTrilinear() {
     fuse::renderer::DDGIDesc desc{};
     desc.grid_origin = {0.f, 0.f, 0.f};
@@ -848,6 +920,7 @@ int main() {
     testResolveSampleDirectionFromSurface();
     testEmptyDirectionGuards();
     testSampleGuards();
+    testProbeSampleAndCacheGuards();
     testProbeWorldPositionClamped();
     testProbeAtlasLayout();
     testIrradianceOctahedralEncoding();

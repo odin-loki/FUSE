@@ -195,6 +195,14 @@ struct ProbeGridLayout {
     static u32 probeIndexFromClampedCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
     /// Clamp trilinear corner indices/weights to grid bounds (no-op on empty grid).
     static void clampProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCoords& coords);
+    /// Last valid flat probe index; returns 0 when the grid has no probes.
+    static u32 maxProbeIndex(const DDGIDesc& desc);
+    /// True when corner indices and interpolation weights are within grid bounds.
+    static bool isValidProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// True when any trilinear corner lies on the probe-grid border shell.
+    static bool isProbeSampleAtGridBorder(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// True when all eight trilinear corners are interior probes (full 2×2×2 neighbourhood).
+    static bool hasFullTrilinearNeighbourhood(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
@@ -233,6 +241,18 @@ bool validateProbeBorderCounts(const ProbeBorderCounts& counts);
 bool canSampleProbeGrid(const DDGIDesc& desc);
 /// True when `cache_count` covers every probe in `desc`.
 bool isCacheSizedForGrid(const DDGIDesc& desc, u32 cache_count);
+/// Required CPU cache entry count for the probe volume; 0 on empty grid.
+u32 expectedCacheCount(const DDGIDesc& desc);
+/// True when `cache_count` exactly matches `expectedCacheCount`.
+bool cacheMatchesGrid(const DDGIDesc& desc, u32 cache_count);
+/// True when `cache_index` is a valid offset into a cache buffer of `cache_count` entries.
+bool isCacheIndexInRange(u32 cache_index, u32 cache_count);
+/// Clamp a flat cache index to [0, min(cache_count, probeCount) - 1]; returns 0 when empty.
+u32 clampCacheIndex(u32 cache_index, const DDGIDesc& desc, u32 cache_count);
+/// Guarded irradiance read; returns zero when the index is out of range or `cache` is null.
+fuse::math::Vec3 sampleIrradianceAtCacheIndex(const IrradianceCacheEntry* cache,
+                                              u32 cache_count,
+                                              u32 cache_index);
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
 bool isValidSampleRequest(const DDGIDesc& desc,
                           const DDGISampleRequest& request,
