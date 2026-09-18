@@ -7,6 +7,32 @@ namespace fuse::renderer {
 
 class VulkanSwapchain;
 
+/// Why present early-outs without calling vkQueuePresentKHR (B2.2 deepen).
+enum class EmptyPresentSkipReason : u8 {
+    None = 0,
+    NullSwapchain,
+    EmptySwapchain,
+    EmptyImageIndex,
+    FrameManagerNotReady,
+};
+
+/// Why acquire short-circuits without calling vkAcquireNextImageKHR (B2.2 deepen).
+enum class EmptyAcquireSkipReason : u8 {
+    None = 0,
+    NullSwapchain,
+    EmptySwapchain,
+};
+
+/// Resize request disposition at queue or apply time (B2.2 deepen).
+enum class ResizeRequestOutcome : u8 {
+    Queued = 0,
+    RejectedInvalidExtent,
+    DeferredDuringPresent,
+    DuplicateIgnored,
+    Coalesced,
+    NoOpMatchesCurrent,
+};
+
 /// Returns true when width and height are both non-zero.
 inline bool isValidSwapchainExtent(u32 width, u32 height) {
     return width > 0 && height > 0;
@@ -28,12 +54,23 @@ inline bool shouldSkipAcquireForEmptySwapchain(const VulkanSwapchain* swapchain)
     return swapchain == nullptr || isSwapchainEmpty(*swapchain);
 }
 
+/// Classify why present would early-out without calling vkQueuePresentKHR.
+EmptyPresentSkipReason classifyEmptyPresentSkip(const VulkanSwapchain* swapchain,
+                                                u32 imageIndex,
+                                                const FrameManager* frameManager);
+
+/// Classify why acquire would short-circuit without calling vkAcquireNextImageKHR.
+EmptyAcquireSkipReason classifyEmptyAcquireSkip(const VulkanSwapchain* swapchain);
+
+const char* emptyPresentSkipReasonLabel(EmptyPresentSkipReason reason);
+const char* emptyAcquireSkipReasonLabel(EmptyAcquireSkipReason reason);
+const char* resizeRequestOutcomeLabel(ResizeRequestOutcome outcome);
+
 /// True when present should succeed without calling vkQueuePresentKHR.
 inline bool shouldEarlyOutEmptyPresent(const VulkanSwapchain* swapchain,
                                        u32 imageIndex,
                                        const FrameManager* frameManager) {
-    return swapchain == nullptr || isSwapchainEmpty(*swapchain) || isEmptyAcquireResult(imageIndex) ||
-           frameManager == nullptr || !frameManager->isReady();
+    return classifyEmptyPresentSkip(swapchain, imageIndex, frameManager) != EmptyPresentSkipReason::None;
 }
 
 /// Returns true when a resize request matches already-queued pending dimensions.
@@ -61,6 +98,17 @@ inline bool isResizeCoalesceRequest(bool resizePending,
                                     u32 requestedHeight) {
     return resizePending &&
            !isDuplicatePendingResizeExtent(pendingWidth, pendingHeight, requestedWidth, requestedHeight);
+}
+
+/// Classify whether a pending resize would be a no-op against the current extent.
+inline ResizeRequestOutcome classifyResizeApplyOutcome(u32 currentWidth,
+                                                       u32 currentHeight,
+                                                       u32 pendingWidth,
+                                                       u32 pendingHeight) {
+    if (pendingResizeMatchesCurrentExtent(currentWidth, currentHeight, pendingWidth, pendingHeight)) {
+        return ResizeRequestOutcome::NoOpMatchesCurrent;
+    }
+    return ResizeRequestOutcome::Queued;
 }
 
 } // namespace fuse::renderer

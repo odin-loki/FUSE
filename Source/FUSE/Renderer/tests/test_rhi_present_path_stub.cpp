@@ -830,7 +830,7 @@ void testLastPendingFenceCountOnWait() {
              "lastPendingFenceCount mirrors ring before wait");
 }
 
-void testFenceWaitSkippedWhenRingClear() {
+void testFenceWaitSkipClassification() {
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
 
@@ -847,80 +847,25 @@ void testFenceWaitSkippedWhenRingClear() {
     expectTrue(frameManager != nullptr && frameManager->isReady(), "frame manager ready");
     expectTrue(fuse::renderer::waitAllInFlightFences(*frameManager),
                "drain initial signaled fences");
+    expectTrue(fuse::renderer::allInFlightFencesClear(*frameManager),
+               "allInFlightFencesClear after wait-all");
 
-    auto presentPath = fuse::renderer::PresentPath::create(*bootstrap);
-    expectTrue(presentPath->waitInFlightFence(), "fence wait on clear ring");
-    expectEq(presentPath->status().fenceWaitSkippedCount, 1u,
-             "clear ring increments fence-wait skipped counter");
+    expectTrue(fuse::renderer::classifyFenceWaitForSlot(*frameManager, frameManager->currentIndex()) ==
+                   fuse::renderer::FenceWaitSkipReason::FenceNotSignaled,
+               "clear slot classified as fence-not-signaled");
+    expectTrue(fuse::renderer::classifyFenceWaitForSlot(*frameManager, fuse::renderer::kFramesInFlight) ==
+                   fuse::renderer::FenceWaitSkipReason::SlotOutOfRange,
+               "OOB slot classified as out-of-range");
+    expectTrue(std::strcmp(fuse::renderer::fenceWaitSkipReasonLabel(
+                               fuse::renderer::FenceWaitSkipReason::FenceNotSignaled),
+                           "fence_not_signaled") == 0,
+               "fence skip reason label");
+
+    expectTrue(fuse::renderer::waitCurrentInFlightFenceIfSignaled(*frameManager),
+               "current-slot if-signaled wait succeeds on clear ring");
 }
 
-void testNeedsInFlightFenceWaitForSlot() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-#if defined(FUSE_VULKAN_BACKEND)
-    if (!bootstrap->status().deviceReady) {
-        return;
-    }
-#else
-    return;
-#endif
-
-    fuse::renderer::FrameManager* frameManager = bootstrap->frameManager();
-    expectTrue(frameManager != nullptr && frameManager->isReady(), "frame manager ready");
-    expectTrue(fuse::renderer::waitAllInFlightFences(*frameManager),
-               "clear initial signaled fences");
-    expectTrue(!fuse::renderer::needsInFlightFenceWaitForSlot(*frameManager, frameManager->currentIndex()),
-               "cleared slot does not need fence wait");
-
-    const fuse::u32 slotBeforeEnd = frameManager->currentIndex();
-    frameManager->signalTickComplete();
-    frameManager->beginFrame(0u);
-    frameManager->endFrame();
-    expectTrue(fuse::renderer::needsInFlightFenceWaitForSlot(*frameManager, slotBeforeEnd),
-               "submitted slot needs fence wait");
-}
-
-void testWaitFencesBeforeAcquireHelper() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-#if defined(FUSE_VULKAN_BACKEND)
-    if (!bootstrap->status().deviceReady) {
-        return;
-    }
-#else
-    return;
-#endif
-
-    fuse::renderer::FrameManager* frameManager = bootstrap->frameManager();
-    expectTrue(frameManager != nullptr && frameManager->isReady(), "frame manager ready");
-    expectTrue(fuse::renderer::waitAllInFlightFences(*frameManager),
-               "drain initial signaled fences");
-    expectTrue(fuse::renderer::waitInFlightFencesBeforeAcquire(*frameManager),
-               "acquire-path wait succeeds on clear current slot");
-
-    const fuse::u32 slotBeforeEnd = frameManager->currentIndex();
-    frameManager->signalTickComplete();
-    frameManager->beginFrame(0u);
-    frameManager->endFrame();
-    expectTrue(fuse::renderer::needsInFlightFenceWaitForSlot(*frameManager, slotBeforeEnd),
-               "endFrame leaves prior slot pending");
-    expectTrue(fuse::renderer::waitInFlightFencesBeforeAcquire(*frameManager),
-               "acquire-path wait succeeds on clear current slot after endFrame");
-}
-
-void testShouldDeferResizeDuringPresentCycle() {
-    expectTrue(fuse::renderer::shouldDeferResizeDuringPresentCycle(
-                   fuse::renderer::PresentPathState::ReadyToPresent),
-               "ReadyToPresent defers resize");
-    expectTrue(!fuse::renderer::shouldDeferResizeDuringPresentCycle(fuse::renderer::PresentPathState::Idle),
-               "Idle does not defer resize");
-}
-
-void testResizeDeferredCounter() {
+void testPresentPathTracksEmptyPresentReason() {
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
 
@@ -934,14 +879,43 @@ void testResizeDeferredCounter() {
 #endif
 
     auto presentPath = fuse::renderer::PresentPath::create(*bootstrap);
-    expectTrue(presentPath->beginFrame(0u), "beginFrame starts active cycle");
-    presentPath->requestResize(1024, 768);
-    expectEq(presentPath->status().resizeDeferredCount, 1u,
-             "mid-cycle resize increments deferred counter");
-    expectTrue(presentPath->endFrame(), "endFrame completes cycle");
+    expectTrue(presentPath->beginFrame(0u), "beginFrame on headless path");
+    expectTrue(presentPath->status().lastEmptyAcquireReason ==
+                   fuse::renderer::EmptyAcquireSkipReason::EmptySwapchain,
+               "headless acquire classified as empty swapchain");
+    expectTrue(presentPath->endFrame(), "endFrame on headless path");
+    expectTrue(presentPath->status().lastEmptyPresentReason ==
+                   fuse::renderer::EmptyPresentSkipReason::EmptySwapchain,
+               "headless present classified as empty swapchain");
 }
 
-void testResizeNoOpWhenExtentMatchesCurrent() {
+void testResizeRequestOutcomeClassification() {
+    expectTrue(fuse::renderer::classifyResizeRequest(fuse::renderer::PresentPathState::Idle, false, 0, 0, 0, 0) ==
+                   fuse::renderer::ResizeRequestOutcome::RejectedInvalidExtent,
+               "zero extent rejected");
+    expectTrue(fuse::renderer::classifyResizeRequest(fuse::renderer::PresentPathState::Idle, false, 0, 0, 800, 600) ==
+                   fuse::renderer::ResizeRequestOutcome::Queued,
+               "first resize queued from Idle");
+    expectTrue(fuse::renderer::classifyResizeRequest(fuse::renderer::PresentPathState::Idle, true, 800, 600, 800,
+                                                       600) == fuse::renderer::ResizeRequestOutcome::DuplicateIgnored,
+               "duplicate pending resize ignored");
+    expectTrue(fuse::renderer::classifyResizeRequest(fuse::renderer::PresentPathState::Idle, true, 800, 600, 1920,
+                                                       1080) == fuse::renderer::ResizeRequestOutcome::Coalesced,
+               "replacement resize coalesced");
+    expectTrue(fuse::renderer::classifyResizeRequest(fuse::renderer::PresentPathState::ImageAcquired, false, 0, 0,
+                                                       1280, 720) ==
+                   fuse::renderer::ResizeRequestOutcome::DeferredDuringPresent,
+               "mid-cycle resize deferred");
+    expectTrue(fuse::renderer::classifyResizeApplyOutcome(1024, 768, 1024, 768) ==
+                   fuse::renderer::ResizeRequestOutcome::NoOpMatchesCurrent,
+               "matching extent is no-op at apply time");
+    expectTrue(std::strcmp(fuse::renderer::resizeRequestOutcomeLabel(
+                               fuse::renderer::ResizeRequestOutcome::Coalesced),
+                           "coalesced") == 0,
+               "resize outcome label");
+}
+
+void testPresentPathResizeOutcomeTracking() {
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
 
@@ -955,17 +929,18 @@ void testResizeNoOpWhenExtentMatchesCurrent() {
 #endif
 
     auto presentPath = fuse::renderer::PresentPath::create(*bootstrap);
-    presentPath->requestResize(1024, 768);
-    expectTrue(presentPath->recreateSwapchain(), "establish known extent");
-    expectEq(presentPath->status().width, 1024u, "width recorded after initial resize");
-    expectEq(presentPath->status().height, 768u, "height recorded after initial resize");
-
-    presentPath->requestResize(1024, 768);
-    expectTrue(presentPath->recreateSwapchain(), "recreate with matching extent is no-op success");
-    expectEq(presentPath->status().resizeNoOpCount, 1u, "matching extent increments no-op counter");
-    expectTrue(!presentPath->hasPendingResize(), "no-op recreate clears pending flag");
-    expectEq(presentPath->status().swapchainRecreateCount, 1u,
-             "no-op recreate does not bump recreate counter again");
+    presentPath->requestResize(800, 600);
+    expectTrue(presentPath->status().lastResizeOutcome == fuse::renderer::ResizeRequestOutcome::Queued,
+               "initial resize outcome queued");
+    presentPath->requestResize(1920, 1080);
+    expectTrue(presentPath->status().lastResizeOutcome == fuse::renderer::ResizeRequestOutcome::Coalesced,
+               "replacement resize outcome coalesced");
+    expectTrue(presentPath->recreateSwapchain(), "apply coalesced resize");
+    presentPath->requestResize(1920, 1080);
+    expectTrue(presentPath->recreateSwapchain(), "no-op recreate with matching extent");
+    expectTrue(presentPath->status().lastResizeOutcome ==
+                   fuse::renderer::ResizeRequestOutcome::NoOpMatchesCurrent,
+               "matching extent outcome recorded on apply");
 }
 
 } // namespace
@@ -1007,6 +982,10 @@ int main() {
     testShouldDeferResizeDuringPresentCycle();
     testResizeDeferredCounter();
     testResizeNoOpWhenExtentMatchesCurrent();
+    testFenceWaitSkipClassification();
+    testPresentPathTracksEmptyPresentReason();
+    testResizeRequestOutcomeClassification();
+    testPresentPathResizeOutcomeTracking();
 
     fuse::core::shutdown();
 

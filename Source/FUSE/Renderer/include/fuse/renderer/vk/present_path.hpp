@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/renderer/vk/swapchain.hpp>
+#include <fuse/renderer/vk/swapchain_util.hpp>
 #include <fuse/types.hpp>
 
 #include <memory>
@@ -49,8 +50,19 @@ struct PresentPathStatus {
     u32 emptyPresentCount = 0;
     u32 fenceWaitSkippedCount = 0;
     u32 lastPendingFenceCount = 0;
+    EmptyPresentSkipReason lastEmptyPresentReason = EmptyPresentSkipReason::None;
+    EmptyAcquireSkipReason lastEmptyAcquireReason = EmptyAcquireSkipReason::None;
+    ResizeRequestOutcome lastResizeOutcome = ResizeRequestOutcome::Queued;
     std::string message;
 };
+
+/// Classify a resize request before it is queued on PresentPath.
+ResizeRequestOutcome classifyResizeRequest(PresentPathState state,
+                                           bool resizePending,
+                                           u32 pendingWidth,
+                                           u32 pendingHeight,
+                                           u32 requestedWidth,
+                                           u32 requestedHeight);
 
 /// True when acquire/present is in progress and resize must be deferred.
 inline bool isPresentCycleActive(PresentPathState state) {

@@ -7,6 +7,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace {
 
@@ -226,8 +227,18 @@ void testZeroExtentRebuildRejected() {
 void testEmptySwapchainSkipGuards() {
     expectTrue(fuse::renderer::shouldSkipAcquireForEmptySwapchain(nullptr),
                "null swapchain skips acquire");
+    expectTrue(fuse::renderer::classifyEmptyPresentSkip(nullptr, UINT32_MAX, nullptr) ==
+                   fuse::renderer::EmptyPresentSkipReason::NullSwapchain,
+               "null swapchain classified for empty present");
     expectTrue(fuse::renderer::shouldEarlyOutEmptyPresent(nullptr, UINT32_MAX, nullptr),
                "null swapchain early-outs present");
+    expectTrue(std::strcmp(fuse::renderer::emptyPresentSkipReasonLabel(
+                               fuse::renderer::EmptyPresentSkipReason::EmptyImageIndex),
+                           "empty_image_index") == 0,
+               "empty present skip reason label");
+    expectTrue(fuse::renderer::classifyEmptyAcquireSkip(nullptr) ==
+                   fuse::renderer::EmptyAcquireSkipReason::NullSwapchain,
+               "null swapchain classified for empty acquire");
 
     fuse::renderer::VulkanInstanceDesc instanceDesc{};
     instanceDesc.enableValidation = false;
@@ -250,8 +261,14 @@ void testEmptySwapchainSkipGuards() {
 
     auto swapchain = fuse::renderer::VulkanSwapchain::create(*device, swapDesc);
     expectTrue(swapchain != nullptr, "headless swapchain allocated");
+    expectTrue(fuse::renderer::classifyEmptyAcquireSkip(swapchain.get()) ==
+                   fuse::renderer::EmptyAcquireSkipReason::EmptySwapchain,
+               "headless swapchain classified for empty acquire");
     expectTrue(fuse::renderer::shouldSkipAcquireForEmptySwapchain(swapchain.get()),
                "empty swapchain skips acquire helper");
+    expectTrue(fuse::renderer::classifyEmptyPresentSkip(swapchain.get(), UINT32_MAX, nullptr) ==
+                   fuse::renderer::EmptyPresentSkipReason::EmptySwapchain,
+               "empty swapchain classified for empty present");
     expectTrue(fuse::renderer::shouldEarlyOutEmptyPresent(swapchain.get(), UINT32_MAX, nullptr),
                "empty acquire index early-outs present");
     expectTrue(fuse::renderer::isDuplicatePendingResizeExtent(1920, 1080, 1920, 1080),

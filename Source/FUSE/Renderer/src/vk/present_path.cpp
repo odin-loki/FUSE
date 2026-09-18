@@ -6,6 +6,28 @@
 
 namespace fuse::renderer {
 
+ResizeRequestOutcome classifyResizeRequest(PresentPathState state,
+                                           bool resizePending,
+                                           u32 pendingWidth,
+                                           u32 pendingHeight,
+                                           u32 requestedWidth,
+                                           u32 requestedHeight) {
+    if (!isValidSwapchainExtent(requestedWidth, requestedHeight)) {
+        return ResizeRequestOutcome::RejectedInvalidExtent;
+    }
+    if (resizePending &&
+        isDuplicatePendingResizeExtent(pendingWidth, pendingHeight, requestedWidth, requestedHeight)) {
+        return ResizeRequestOutcome::DuplicateIgnored;
+    }
+    if (isResizeCoalesceRequest(resizePending, pendingWidth, pendingHeight, requestedWidth, requestedHeight)) {
+        return ResizeRequestOutcome::Coalesced;
+    }
+    if (shouldDeferResizeDuringPresentCycle(state)) {
+        return ResizeRequestOutcome::DeferredDuringPresent;
+    }
+    return ResizeRequestOutcome::Queued;
+}
+
 PresentPath::PresentPath(VulkanBootstrap& bootstrap, PresentPathDesc desc)
     : m_bootstrap(bootstrap), m_desc(desc) {
     m_status.vsyncMode = desc.vsyncMode;
@@ -63,8 +85,10 @@ bool PresentPath::processPendingResize() {
         return true;
     }
 
-    if (pendingResizeMatchesCurrentExtent(m_status.width, m_status.height, m_status.pendingResizeWidth,
-                                          m_status.pendingResizeHeight)) {
+    m_status.lastResizeOutcome =
+        classifyResizeApplyOutcome(m_status.width, m_status.height, m_status.pendingResizeWidth,
+                                   m_status.pendingResizeHeight);
+    if (m_status.lastResizeOutcome == ResizeRequestOutcome::NoOpMatchesCurrent) {
         m_status.resizePending = false;
         ++m_status.resizeNoOpCount;
         m_status.message = "Resize no-op — pending extent matches current swapchain";
@@ -149,8 +173,11 @@ u32 PresentPath::acquireImage() {
     FrameManager* frameManager = m_bootstrap.frameManager();
     VulkanSwapchain* swapchain = m_bootstrap.swapchain();
 
+    m_status.lastEmptyAcquireReason = classifyEmptyAcquireSkip(swapchain);
+
     u32 imageIndex = UINT32_MAX;
-    if (!shouldSkipAcquireForEmptySwapchain(swapchain) && frameManager != nullptr && frameManager->isReady()) {
+    if (m_status.lastEmptyAcquireReason == EmptyAcquireSkipReason::None && frameManager != nullptr &&
+        frameManager->isReady()) {
         const FrameSyncData& slot = frameManager->current();
         imageIndex = swapchain->acquireNextImage(slot.imageAvailable);
     }
@@ -189,8 +216,11 @@ bool PresentPath::presentImage() {
     FrameManager* frameManager = m_bootstrap.frameManager();
     VulkanSwapchain* swapchain = m_bootstrap.swapchain();
 
+    m_status.lastEmptyPresentReason =
+        classifyEmptyPresentSkip(swapchain, m_status.acquiredImageIndex, frameManager);
+
     bool presented = false;
-    if (shouldEarlyOutEmptyPresent(swapchain, m_status.acquiredImageIndex, frameManager)) {
+    if (m_status.lastEmptyPresentReason != EmptyPresentSkipReason::None) {
         presented = true;
         ++m_status.emptyPresentCount;
     } else {
@@ -263,25 +293,27 @@ void PresentPath::setVsyncMode(VsyncMode mode) {
 }
 
 void PresentPath::requestResize(u32 width, u32 height) {
-    if (!isValidSwapchainExtent(width, height)) {
+    m_status.lastResizeOutcome =
+        classifyResizeRequest(m_status.state, m_status.resizePending, m_status.pendingResizeWidth,
+                              m_status.pendingResizeHeight, width, height);
+
+    if (m_status.lastResizeOutcome == ResizeRequestOutcome::RejectedInvalidExtent) {
         ++m_status.resizeRejectedCount;
         m_status.message = "Resize rejected — extent must be non-zero";
         return;
     }
 
-    if (m_status.resizePending &&
-        isDuplicatePendingResizeExtent(m_status.pendingResizeWidth, m_status.pendingResizeHeight, width, height)) {
+    if (m_status.lastResizeOutcome == ResizeRequestOutcome::DuplicateIgnored) {
         ++m_status.resizeDuplicateCount;
         m_status.message = "Resize duplicate ignored — extent already pending";
         return;
     }
 
-    if (isResizeCoalesceRequest(m_status.resizePending, m_status.pendingResizeWidth, m_status.pendingResizeHeight,
-                                width, height)) {
+    if (m_status.lastResizeOutcome == ResizeRequestOutcome::Coalesced) {
         ++m_status.resizeCoalesceCount;
     }
 
-    const bool midPresentCycle = shouldDeferResizeDuringPresentCycle(m_status.state);
+    const bool midPresentCycle = m_status.lastResizeOutcome == ResizeRequestOutcome::DeferredDuringPresent;
     if (midPresentCycle) {
         ++m_status.resizeDeferredCount;
     }
