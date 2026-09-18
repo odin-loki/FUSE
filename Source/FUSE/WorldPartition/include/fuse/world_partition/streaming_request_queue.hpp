@@ -43,6 +43,31 @@ using StreamingWorkFn = std::function<bool(GridCoord coord, StreamingRequestKind
 [[nodiscard]] int compare_streaming_request_order(f32 priority_a, StreamingRequestKind kind_a, u64 sequence_a,
                                                   f32 priority_b, StreamingRequestKind kind_b, u64 sequence_b);
 
+/// Compare two pending requests using enqueue-sequence tie-break.
+[[nodiscard]] inline int compare_streaming_requests(const StreamingRequest& a, u64 sequence_a,
+                                                    const StreamingRequest& b, u64 sequence_b) {
+    return compare_streaming_request_order(a.priority, a.kind, sequence_a, b.priority, b.kind, sequence_b);
+}
+
+/// True when `a` should be ordered before `b` in a priority drain.
+[[nodiscard]] inline bool is_streaming_request_before(const StreamingRequest& a, u64 sequence_a,
+                                                      const StreamingRequest& b, u64 sequence_b) {
+    return compare_streaming_requests(a, sequence_a, b, sequence_b) > 0;
+}
+
+/// Compare two completed requests using submit-sequence tie-break.
+[[nodiscard]] inline int compare_completed_streaming_requests(const CompletedStreamingRequest& a,
+                                                              const CompletedStreamingRequest& b) {
+    return compare_streaming_request_order(a.priority, a.kind, a.submit_sequence, b.priority, b.kind,
+                                           b.submit_sequence);
+}
+
+/// True when completed request `a` should be ordered before `b`.
+[[nodiscard]] inline bool is_completed_streaming_request_before(const CompletedStreamingRequest& a,
+                                                                const CompletedStreamingRequest& b) {
+    return compare_completed_streaming_requests(a, b) > 0;
+}
+
 /// Sort pending requests by priority (highest first) without removing them. Returns count copied.
 [[nodiscard]] u32 order_by_priority(std::vector<StreamingRequest>& out,
                                     const std::vector<StreamingRequest>& pending,
@@ -105,6 +130,30 @@ private:
     std::vector<CompletedStreamingRequest> m_completed;
 };
 
+/// True when the pending enqueue buffer has at least one request.
+[[nodiscard]] inline bool has_pending_enqueue(const StreamingRequestQueue& queue) {
+    return queue.pending_enqueue_count() > 0u;
+}
+
+/// True when at least one pending request matches `kind`.
+[[nodiscard]] inline bool has_pending_request_of_kind(const StreamingRequestQueue& queue,
+                                                      StreamingRequestKind kind) {
+    if (!has_pending_enqueue(queue)) {
+        return false;
+    }
+
+    std::vector<StreamingRequest> ordered;
+    if (queue.order_by_priority(ordered) == 0u) {
+        return false;
+    }
+    for (const StreamingRequest& request : ordered) {
+        if (request.kind == kind) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /// Dequeue helper: removes highest-priority pending request when non-empty.
 [[nodiscard]] inline bool try_dequeue_pending(StreamingRequestQueue& queue, StreamingRequest& out) {
     return queue.dequeue(out);
@@ -118,6 +167,22 @@ private:
     }
     out = ordered.front();
     return true;
+}
+
+/// Empty-queue guard: peek only when pending enqueue is non-empty.
+[[nodiscard]] inline bool peek_highest_pending_guarded(const StreamingRequestQueue& queue, StreamingRequest& out) {
+    if (!has_pending_enqueue(queue)) {
+        return false;
+    }
+    return peek_highest_pending(queue, out);
+}
+
+/// Empty-queue guard: dequeue only when pending enqueue is non-empty.
+[[nodiscard]] inline bool try_dequeue_pending_guarded(StreamingRequestQueue& queue, StreamingRequest& out) {
+    if (!has_pending_enqueue(queue)) {
+        return false;
+    }
+    return try_dequeue_pending(queue, out);
 }
 
 } // namespace fuse::world_partition
