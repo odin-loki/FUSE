@@ -145,7 +145,7 @@ u32 PairBufferSoA::compact() {
 }
 
 void PairBufferSoA::sortCanonical() {
-    if (canSkipDedupe()) {
+    if (!preflightPairBufferSort(*this).needsSort()) {
         return;
     }
 
@@ -323,6 +323,24 @@ PairBufferClampPreflight preflightPairBufferClamp(const PairBufferSoA& buffer) {
     PairBufferClampPreflight preflight{};
     preflight.emptyBuffer = buffer.canSkipSoAIteration();
     preflight.withinCapacity = preflight.emptyBuffer || !buffer.canApplyMaxCapacityClamp();
+    return preflight;
+}
+
+PairBufferDedupePreflight preflightPairBufferDedupe(const PairBufferSoA& buffer) {
+    PairBufferDedupePreflight preflight{};
+    preflight.emptyBuffer = buffer.canSkipSoAIteration();
+    preflight.singlePair = !preflight.emptyBuffer && buffer.activeCount <= 1u;
+    return preflight;
+}
+
+bool canSkipPairBufferDedupe(const PairBufferSoA& buffer) {
+    return !preflightPairBufferDedupe(buffer).canDedupe();
+}
+
+PairBufferSortPreflight preflightPairBufferSort(const PairBufferSoA& buffer) {
+    PairBufferSortPreflight preflight{};
+    preflight.emptyBuffer = buffer.canSkipSoAIteration();
+    preflight.singlePair = !preflight.emptyBuffer && buffer.activeCount <= 1u;
     return preflight;
 }
 

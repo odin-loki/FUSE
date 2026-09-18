@@ -91,4 +91,27 @@ struct PairBufferClampPreflight {
 
 PairBufferClampPreflight preflightPairBufferClamp(const PairBufferSoA& buffer);
 
+/// Read-only dedupe diagnostics at the SoA layer — no mutation (B4.2 deepen follow-up pass).
+struct PairBufferDedupePreflight {
+    bool emptyBuffer = false;
+    bool singlePair = false;
+
+    bool canDedupe() const { return !emptyBuffer && !singlePair; }
+};
+
+PairBufferDedupePreflight preflightPairBufferDedupe(const PairBufferSoA& buffer);
+
+/// Non-mutating dedupe skip predicate — mirrors `PairBufferSoA::canSkipDedupe` (B4.2 deepen follow-up pass).
+bool canSkipPairBufferDedupe(const PairBufferSoA& buffer);
+
+/// Read-only canonical-sort diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct PairBufferSortPreflight {
+    bool emptyBuffer = false;
+    bool singlePair = false;
+
+    bool needsSort() const { return !emptyBuffer && !singlePair; }
+};
+
+PairBufferSortPreflight preflightPairBufferSort(const PairBufferSoA& buffer);
+
 } // namespace fuse::physics::broadphase

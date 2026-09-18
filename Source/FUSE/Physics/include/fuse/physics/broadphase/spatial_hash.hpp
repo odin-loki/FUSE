@@ -117,20 +117,53 @@ FUSE_PHYSICS_INLINE bool canSkipBroadphase(
     return canSkipBroadphasePairGeneration(bodies, shapes);
 }
 
+/// Why broadphase pair generation would early-out (B4.2 deepen follow-up pass).
+enum class BroadphaseRejectReason : u8 {
+    None = 0,
+    EmptyInput,
+    SingletonInput,
+};
+
+/// Human-readable label for broadphase reject reasons (logging / tests).
+const char* broadphaseRejectReasonName(BroadphaseRejectReason reason);
+
+/// Diagnose why broadphase would skip; vacuously succeeds on populated scenes.
+FUSE_PHYSICS_INLINE BroadphaseRejectReason broadphaseRejectReason(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (isEmptyBroadphaseInput(bodies, shapes)) {
+        return BroadphaseRejectReason::EmptyInput;
+    }
+    if (isSingletonBroadphaseInput(bodies, shapes)) {
+        return BroadphaseRejectReason::SingletonInput;
+    }
+    return BroadphaseRejectReason::None;
+}
+
+/// Returns true when `broadphaseRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool broadphaseRejectsForReason(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    BroadphaseRejectReason expected) {
+    return broadphaseRejectReason(bodies, shapes) == expected;
+}
+
 /// Read-only broadphase launch diagnostics — no mutation (B4.2 deepen follow-up).
 struct BroadphasePreflight {
+    BroadphaseRejectReason reason = BroadphaseRejectReason::None;
     bool emptyInput = false;
     bool singletonInput = false;
 
-    bool canRun() const { return !emptyInput && !singletonInput; }
+    bool canRun() const { return reason == BroadphaseRejectReason::None; }
 };
 
 FUSE_PHYSICS_INLINE BroadphasePreflight preflightBroadphase(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     BroadphasePreflight preflight{};
-    preflight.emptyInput = isEmptyBroadphaseInput(bodies, shapes);
-    preflight.singletonInput = !preflight.emptyInput && isSingletonBroadphaseInput(bodies, shapes);
+    preflight.reason = broadphaseRejectReason(bodies, shapes);
+    preflight.emptyInput = preflight.reason == BroadphaseRejectReason::EmptyInput;
+    preflight.singletonInput = preflight.reason == BroadphaseRejectReason::SingletonInput;
     return preflight;
 }
 
@@ -323,6 +356,21 @@ FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancy(const CellRang
     return preflight;
 }
 
+/// Returns true when `cellOccupancyRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool cellOccupancyRejectsForReason(
+    const CellRange3& range,
+    u32 maxCells,
+    CellOccupancyRejectReason expected) {
+    return cellOccupancyRejectReason(range, maxCells) == expected;
+}
+
+FUSE_PHYSICS_INLINE bool cellOccupancyRejectsForReason(
+    const CellRange2& range,
+    u32 maxCells,
+    CellOccupancyRejectReason expected) {
+    return cellOccupancyRejectReason(range, maxCells) == expected;
+}
+
 /// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).
 FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {
     return uniqueBodyCount > 1u ? uniqueBodyCount * (uniqueBodyCount - 1u) / 2u : 0u;
@@ -480,13 +528,38 @@ void runBroadphase2DIntoBuffer(
     const SpatialHashParams& params,
     PairBufferSoA& buffer);
 
+/// Why broadphase pair refine would early-out (B4.2 deepen follow-up pass).
+enum class RefineBroadphaseRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    EmptyInput,
+    NoValidPairs,
+};
+
+/// Human-readable label for refine reject reasons (logging / tests).
+const char* refineBroadphaseRejectReasonName(RefineBroadphaseRejectReason reason);
+
+/// Diagnose why refine would skip; vacuously succeeds when refine may proceed.
+RefineBroadphaseRejectReason refineBroadphaseRejectReason(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
+
+/// Returns true when `refineBroadphaseRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+bool refineBroadphaseRejectsForReason(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer,
+    RefineBroadphaseRejectReason expected);
+
 /// Read-only refine diagnostics — no mutation (B4.2 deepen follow-up).
 struct RefineBroadphasePreflight {
+    RefineBroadphaseRejectReason reason = RefineBroadphaseRejectReason::None;
     bool emptyBuffer = false;
     bool emptyInput = false;
     bool noValidPairs = false;
 
-    bool canRefine() const { return !emptyBuffer && !emptyInput && !noValidPairs; }
+    bool canRefine() const { return reason == RefineBroadphaseRejectReason::None; }
 };
 
 RefineBroadphasePreflight preflightRefineBroadphase(
@@ -500,18 +573,50 @@ bool canSkipRefineBroadphase(
     const CollisionShapeSoA& shapes,
     const PairBufferSoA& buffer);
 
+/// Why broadphase pair dedupe would early-out (B4.2 deepen follow-up pass).
+enum class DedupeBroadphaseRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    SinglePair,
+};
+
+/// Human-readable label for dedupe reject reasons (logging / tests).
+const char* dedupeBroadphaseRejectReasonName(DedupeBroadphaseRejectReason reason);
+
+/// Diagnose why dedupe would skip; vacuously succeeds when dedupe may proceed.
+DedupeBroadphaseRejectReason dedupeBroadphaseRejectReason(const PairBufferSoA& buffer);
+
+/// Returns true when `dedupeBroadphaseRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+bool dedupeBroadphaseRejectsForReason(const PairBufferSoA& buffer, DedupeBroadphaseRejectReason expected);
+
 /// Read-only dedupe diagnostics — no mutation (B4.2 deepen follow-up).
 struct DedupeBroadphasePreflight {
+    DedupeBroadphaseRejectReason reason = DedupeBroadphaseRejectReason::None;
     bool emptyBuffer = false;
     bool singlePair = false;
 
-    bool canDedupe() const { return !emptyBuffer && !singlePair; }
+    bool canDedupe() const { return reason == DedupeBroadphaseRejectReason::None; }
 };
 
 DedupeBroadphasePreflight preflightDedupeBroadphase(const PairBufferSoA& buffer);
 
 /// Non-mutating dedupe predicate — mirrors `PairBufferSoA::canSkipDedupe` inversion.
 bool shouldRunDedupeBroadphase(const PairBufferSoA& buffer);
+
+/// Non-mutating dedupe skip predicate — inverse of `shouldRunDedupeBroadphase` (B4.2 deepen follow-up pass).
+bool canSkipDedupeBroadphase(const PairBufferSoA& buffer);
+
+/// Read-only plane/dynamic merge diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct BroadphaseMergePreflight {
+    bool emptyPlaneBodies = false;
+    bool emptyDynamicBodies = false;
+
+    bool canMerge() const { return !emptyPlaneBodies && !emptyDynamicBodies; }
+};
+
+BroadphaseMergePreflight preflightBroadphaseMerge(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(
