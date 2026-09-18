@@ -603,6 +603,120 @@ void testClampHeapCapacityBounds() {
                "small sampler request unchanged below cap");
 }
 
+void testBindlessSlotPreflight() {
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    const fuse::renderer::BindlessSlotHandle live = bindless.allocateTextureSlot(false);
+    const fuse::renderer::BindlessSlotPreflight livePreflight = bindless.preflightSlot(live);
+    expectTrue(livePreflight.initialized, "preflight sees initialized heap");
+    expectTrue(livePreflight.handle_valid, "preflight sees valid handle");
+    expectTrue(!livePreflight.heap_empty, "preflight sees non-empty heap");
+    expectTrue(livePreflight.index_in_range, "preflight index in range");
+    expectTrue(livePreflight.generation_match, "preflight generation matches");
+    expectTrue(livePreflight.slot_occupied, "preflight slot occupied");
+    expectTrue(livePreflight.can_validate(), "live handle passes preflight validate");
+
+    const fuse::renderer::BindlessSlotHandle stale{
+        fuse::renderer::BindlessHeapKind::Texture, live.index, live.generation + 1u};
+    const fuse::renderer::BindlessSlotPreflight stalePreflight = bindless.preflightSlot(stale);
+    expectTrue(stalePreflight.is_generation_mismatch(), "wrong generation flagged in preflight");
+    expectTrue(stalePreflight.is_stale(), "stale handle fails preflight validate");
+
+    bindless.freeTextureSlot(live);
+    const fuse::renderer::BindlessSlotPreflight freedPreflight = bindless.preflightSlot(live);
+    expectTrue(freedPreflight.is_generation_mismatch(), "freed handle is generation mismatch in preflight");
+    expectTrue(!freedPreflight.can_validate(), "freed handle fails preflight validate");
+
+    bindless.destroy(*bootstrap->device());
+}
+
+void testShouldSkipBindlessSlotLookup() {
+    fuse::renderer::BindlessDescriptors bindless;
+    const fuse::renderer::BindlessSlotHandle handle{fuse::renderer::BindlessHeapKind::Texture, 0u, 1u};
+    expectTrue(fuse::renderer::shouldSkipBindlessSlotLookup(handle, 0u, false),
+               "uninitialized lookup skipped");
+    expectTrue(fuse::renderer::shouldSkipBindlessSlotLookup(fuse::renderer::BindlessSlotHandle::invalid(), 4u, true),
+               "invalid handle lookup skipped");
+    expectTrue(fuse::renderer::shouldSkipBindlessSlotLookup(handle, 0u, true),
+               "empty heap lookup skipped");
+
+    auto bootstrap = makeBootstrap();
+    bindless.init(*bootstrap->device());
+    expectTrue(bindless.shouldSkipSlotLookup(fuse::renderer::BindlessSlotHandle::invalid()),
+               "instance skip guard rejects invalid handle");
+    const fuse::renderer::BindlessSlotHandle live = bindless.allocateTextureSlot(false);
+    expectTrue(!bindless.shouldSkipSlotLookup(live), "live handle not skipped");
+
+    bindless.destroy(*bootstrap->device());
+}
+
+void testHeapAtCapacityGuard() {
+    expectTrue(!fuse::renderer::bindlessHeapAtCapacity(0u, 0u, fuse::renderer::kMaxTextures),
+               "empty heap not at capacity");
+    expectTrue(!fuse::renderer::bindlessHeapAtCapacity(4u, 2u, fuse::renderer::kMaxTextures),
+               "heap with free-list headroom not at capacity");
+    expectTrue(fuse::renderer::bindlessHeapAtCapacity(fuse::renderer::kMaxSamplers, 0u,
+                                                      fuse::renderer::kMaxSamplers),
+               "full table with no free slots is at capacity");
+
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+    expectTrue(!bindless.heapAtCapacity(fuse::renderer::BindlessHeapKind::Texture),
+               "fresh texture heap not at capacity");
+
+    for (u32 i = 0; i < fuse::renderer::kMaxSamplers; ++i) {
+        bindless.allocateSamplerSlot();
+    }
+    expectTrue(bindless.heapAtCapacity(fuse::renderer::BindlessHeapKind::Sampler),
+               "sampler heap at capacity after exhausting table");
+    expectTrue(!bindless.allocateSamplerSlot().isValid(), "alloc rejected once at capacity");
+
+    bindless.destroy(*bootstrap->device());
+}
+
+void testCanFreeSlotGuard() {
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    const fuse::renderer::BindlessSlotHandle live = bindless.allocateBufferSlot(false);
+    expectTrue(bindless.canFreeSlot(live), "live handle can be freed");
+    expectTrue(fuse::renderer::bindlessSlotGenerationMatches(
+                   live, bindless.slotGeneration(fuse::renderer::BindlessHeapKind::Buffer, live.index),
+                   bindless.isSlotOccupied(fuse::renderer::BindlessHeapKind::Buffer, live.index)),
+               "generation match helper agrees with live slot");
+
+    const fuse::renderer::BindlessSlotHandle stale{
+        fuse::renderer::BindlessHeapKind::Buffer, live.index, live.generation + 1u};
+    expectTrue(!bindless.canFreeSlot(stale), "stale handle cannot be freed");
+    bindless.freeBufferSlot(stale);
+    expectTrue(bindless.canFreeSlot(live), "wrong-generation free is no-op");
+
+    bindless.freeBufferSlot(live);
+    expectTrue(!bindless.canFreeSlot(live), "already-freed handle cannot be freed again");
+
+    bindless.destroy(*bootstrap->device());
+}
+
+void testPreflightFreeFunction() {
+    const fuse::renderer::BindlessSlotHandle handle{fuse::renderer::BindlessHeapKind::Buffer, 2u, 5u};
+    const fuse::renderer::BindlessSlotPreflight match =
+        fuse::renderer::preflightBindlessSlotHandle(handle, 8u, 5u, true, true);
+    expectTrue(match.can_validate(), "free-function preflight validates matching row");
+
+    const fuse::renderer::BindlessSlotPreflight emptyHeap =
+        fuse::renderer::preflightBindlessSlotHandle(handle, 0u, 0u, false, true);
+    expectTrue(emptyHeap.heap_empty, "free-function preflight marks empty heap");
+    expectTrue(emptyHeap.is_stale(), "empty-heap handle is stale in preflight");
+
+    const fuse::renderer::BindlessSlotPreflight oob =
+        fuse::renderer::preflightBindlessSlotHandle(handle, 2u, 1u, true, true);
+    expectTrue(oob.index_in_range == false, "free-function preflight rejects OOB index");
+}
+
 } // namespace
 
 int main() {
@@ -634,6 +748,11 @@ int main() {
     testRejectStaleSlotHandleGuard();
     testBindlessRangeHelpers();
     testClampHeapCapacityBounds();
+    testBindlessSlotPreflight();
+    testShouldSkipBindlessSlotLookup();
+    testHeapAtCapacityGuard();
+    testCanFreeSlotGuard();
+    testPreflightFreeFunction();
 
     fuse::core::shutdown();
 

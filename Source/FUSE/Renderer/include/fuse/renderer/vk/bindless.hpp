@@ -64,6 +64,41 @@ bool bindlessHeapIsEmpty(BindlessHeapKind kind, u32 heapCapacity);
 /// True when a slot index is outside the current heap table.
 bool bindlessSlotIndexOutOfRange(BindlessHeapKind kind, u32 index, u32 heapCapacity);
 
+/// True when slot table is full and the free list has no recyclable indices.
+bool bindlessHeapAtCapacity(u32 slotCount, u32 freeCount, u32 maxCapacity);
+
+/// True when handle generation matches the live slot row (occupied required).
+bool bindlessSlotGenerationMatches(BindlessSlotHandle handle, u32 liveGeneration, bool occupied);
+
+/// Preflight for bindless slot lookup / free without touching heap tables (B2.3 deepen follow-up).
+struct BindlessSlotPreflight {
+    bool initialized = false;
+    bool handle_valid = false;
+    bool heap_empty = true;
+    bool index_in_range = false;
+    bool generation_match = false;
+    bool slot_occupied = false;
+
+    [[nodiscard]] bool can_validate() const {
+        return initialized && handle_valid && !heap_empty && index_in_range && generation_match &&
+               slot_occupied;
+    }
+
+    [[nodiscard]] bool is_stale() const { return !can_validate(); }
+
+    /// True only for in-range handles whose generation or occupancy no longer matches.
+    [[nodiscard]] bool is_generation_mismatch() const {
+        return initialized && handle_valid && !heap_empty && index_in_range &&
+               (!generation_match || !slot_occupied);
+    }
+};
+
+BindlessSlotPreflight preflightBindlessSlotHandle(BindlessSlotHandle handle, u32 heapCapacity, u32 slotGeneration,
+                                                  bool occupied, bool initialized);
+
+/// Fast early-out before heap table lookup — uninitialized, invalid handle, or empty heap.
+bool shouldSkipBindlessSlotLookup(BindlessSlotHandle handle, u32 heapCapacity, bool initialized);
+
 /// Packs binding + array index into a single u32 for material tables / push data.
 u32 packBindlessBindingIndex(u32 binding, u32 arrayIndex);
 bool unpackBindlessBindingIndex(u32 packed, u32& binding, u32& arrayIndex);
@@ -87,10 +122,16 @@ public:
     void freeSlot(BindlessSlotHandle handle);
 
     bool validateSlot(BindlessSlotHandle handle) const;
+    /// Non-mutating preflight for slot lookup / free guards (B2.3 deepen follow-up).
+    BindlessSlotPreflight preflightSlot(BindlessSlotHandle handle) const;
     /// True when index is in range but generation does not match or slot is unoccupied.
     bool slotGenerationMismatch(BindlessSlotHandle handle) const;
     /// Preferred guard for stale handles — true when handle fails validateSlot.
     bool rejectStaleSlotHandle(BindlessSlotHandle handle) const;
+    /// Fast early-out before heap table lookup — uninitialized, invalid handle, or empty heap.
+    bool shouldSkipSlotLookup(BindlessSlotHandle handle) const;
+    /// True when freeSlot would release a live, generation-matched handle.
+    bool canFreeSlot(BindlessSlotHandle handle) const;
     bool slotIndexOutOfRange(BindlessHeapKind kind, u32 index) const;
     bool isSlotOccupied(BindlessHeapKind kind, u32 index) const;
     u32 slotGeneration(BindlessHeapKind kind, u32 index) const;
@@ -113,6 +154,8 @@ public:
     u32 heapFreeCount(BindlessHeapKind kind) const;
     /// True when the heap table has no reserved slots (capacity == 0).
     bool heapIsEmpty(BindlessHeapKind kind) const;
+    /// True when slot table is at the per-kind ceiling with no free-list entries.
+    bool heapAtCapacity(BindlessHeapKind kind) const;
 
     u32 registerTexture(const Texture& texture, bool storage = false);
     u32 registerBuffer(const Buffer& buffer, bool uniform = false);

@@ -62,6 +62,36 @@ bool bindlessSlotIndexOutOfRange(BindlessHeapKind kind, u32 index, u32 heapCapac
     return index >= heapCapacity;
 }
 
+bool bindlessHeapAtCapacity(u32 slotCount, u32 freeCount, u32 maxCapacity) {
+    return slotCount >= maxCapacity && freeCount == 0u;
+}
+
+bool bindlessSlotGenerationMatches(BindlessSlotHandle handle, u32 liveGeneration, bool occupied) {
+    return handle.isValid() && occupied && handle.generation == liveGeneration;
+}
+
+BindlessSlotPreflight preflightBindlessSlotHandle(BindlessSlotHandle handle, u32 heapCapacity, u32 slotGeneration,
+                                                  bool occupied, bool initialized) {
+    BindlessSlotPreflight result{};
+    result.initialized = initialized;
+    result.handle_valid = handle.isValid();
+    result.heap_empty = bindlessHeapIsEmpty(handle.kind, heapCapacity);
+    result.index_in_range =
+        !result.heap_empty && !bindlessSlotIndexOutOfRange(handle.kind, handle.index, heapCapacity);
+    if (result.index_in_range) {
+        result.generation_match = handle.generation == slotGeneration;
+        result.slot_occupied = occupied;
+    }
+    return result;
+}
+
+bool shouldSkipBindlessSlotLookup(BindlessSlotHandle handle, u32 heapCapacity, bool initialized) {
+    if (!initialized || !handle.isValid()) {
+        return true;
+    }
+    return bindlessHeapIsEmpty(handle.kind, heapCapacity);
+}
+
 u32 packBindlessBindingIndex(u32 binding, u32 arrayIndex) {
     return (binding << 24u) | (arrayIndex & 0xFFFFFFu);
 }
@@ -181,10 +211,7 @@ BindlessSlotHandle BindlessDescriptors::allocateSlot(std::vector<Slot>& slots, s
 
 void BindlessDescriptors::freeSlot(std::vector<Slot>& slots, std::vector<u32>& freeList,
                                  BindlessSlotHandle handle) {
-    if (!m_initialized || !handle.isValid()) {
-        return;
-    }
-    if (bindlessHeapIsEmpty(handle.kind, static_cast<u32>(slots.size()))) {
+    if (!canFreeSlot(handle)) {
         return;
     }
     if (bindlessSlotIndexOutOfRange(handle.kind, handle.index, static_cast<u32>(slots.size()))) {
@@ -192,10 +219,6 @@ void BindlessDescriptors::freeSlot(std::vector<Slot>& slots, std::vector<u32>& f
     }
 
     Slot& slot = slots[handle.index];
-    if (!slot.occupied || slot.generation != handle.generation) {
-        return;
-    }
-
     slot.occupied = false;
     slot.storage = false;
     ++slot.generation;
@@ -253,41 +276,36 @@ void BindlessDescriptors::freeSlot(BindlessSlotHandle handle) {
 }
 
 bool BindlessDescriptors::validateSlot(BindlessSlotHandle handle) const {
-    if (!m_initialized || !handle.isValid()) {
-        return false;
-    }
+    return preflightSlot(handle).can_validate();
+}
 
-    const std::vector<Slot>& slots = slotsFor(handle.kind);
-    if (bindlessHeapIsEmpty(handle.kind, static_cast<u32>(slots.size()))) {
-        return false;
+BindlessSlotPreflight BindlessDescriptors::preflightSlot(BindlessSlotHandle handle) const {
+    const u32 capacity = heapCapacity(handle.kind);
+    u32 generation = 0;
+    bool occupied = false;
+    if (!bindlessHeapIsEmpty(handle.kind, capacity) &&
+        !bindlessSlotIndexOutOfRange(handle.kind, handle.index, capacity)) {
+        const Slot& slot = slotsFor(handle.kind)[handle.index];
+        generation = slot.generation;
+        occupied = slot.occupied;
     }
-    if (bindlessSlotIndexOutOfRange(handle.kind, handle.index, static_cast<u32>(slots.size()))) {
-        return false;
-    }
-
-    const Slot& slot = slots[handle.index];
-    return slot.occupied && slot.generation == handle.generation;
+    return preflightBindlessSlotHandle(handle, capacity, generation, occupied, m_initialized);
 }
 
 bool BindlessDescriptors::slotGenerationMismatch(BindlessSlotHandle handle) const {
-    if (!m_initialized || !handle.isValid()) {
-        return false;
-    }
-
-    const std::vector<Slot>& slots = slotsFor(handle.kind);
-    if (bindlessHeapIsEmpty(handle.kind, static_cast<u32>(slots.size()))) {
-        return false;
-    }
-    if (bindlessSlotIndexOutOfRange(handle.kind, handle.index, static_cast<u32>(slots.size()))) {
-        return false;
-    }
-
-    const Slot& slot = slots[handle.index];
-    return !slot.occupied || slot.generation != handle.generation;
+    return preflightSlot(handle).is_generation_mismatch();
 }
 
 bool BindlessDescriptors::rejectStaleSlotHandle(BindlessSlotHandle handle) const {
     return !validateSlot(handle);
+}
+
+bool BindlessDescriptors::shouldSkipSlotLookup(BindlessSlotHandle handle) const {
+    return shouldSkipBindlessSlotLookup(handle, heapCapacity(handle.kind), m_initialized);
+}
+
+bool BindlessDescriptors::canFreeSlot(BindlessSlotHandle handle) const {
+    return validateSlot(handle);
 }
 
 bool BindlessDescriptors::slotIndexOutOfRange(BindlessHeapKind kind, u32 index) const {
@@ -360,7 +378,7 @@ BindlessSlotHandle BindlessDescriptors::slotHandleAt(BindlessHeapKind kind, u32 
 }
 
 BindlessBindingIndex BindlessDescriptors::bindingIndexForHandle(BindlessSlotHandle handle) const {
-    if (rejectStaleSlotHandle(handle)) {
+    if (shouldSkipSlotLookup(handle) || rejectStaleSlotHandle(handle)) {
         return {};
     }
 
@@ -407,6 +425,10 @@ u32 BindlessDescriptors::heapFreeCount(BindlessHeapKind kind) const {
 
 bool BindlessDescriptors::heapIsEmpty(BindlessHeapKind kind) const {
     return bindlessHeapIsEmpty(kind, heapCapacity(kind));
+}
+
+bool BindlessDescriptors::heapAtCapacity(BindlessHeapKind kind) const {
+    return bindlessHeapAtCapacity(heapCapacity(kind), heapFreeCount(kind), maxCountFor(kind));
 }
 
 bool BindlessDescriptors::resizeHeap(BindlessHeapKind kind, u32 newCapacity) {
