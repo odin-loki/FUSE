@@ -74,10 +74,51 @@ bool isBufferEmpty();
 bool isBufferFull();
 bool isEventIndexValid(u32 index);
 bool isValidProfileEvent(const ProfileEvent& event);
+/// True when `name` is non-null and not an empty C string — shared guard for scopes, flows, and counters.
+[[nodiscard]] inline bool isValidProfileName(const char* name) {
+    return name != nullptr && name[0] != '\0';
+}
 u32 lastEventIndex();
 const ProfileEvent& eventAt(u32 index);
 const ProfileEvent& lastEvent();
+/// Safe lookup stub — returns false when `index` is out of range; `outEvent` points at the empty sentinel on failure.
+bool tryEventAt(u32 index, const ProfileEvent*& outEvent);
 void reset();
+
+/// Nesting and async-flow guard snapshot for editor panels and export preflight.
+struct ProfilerGuardPreflight {
+    u32 scopeDepth = 0;
+    u32 flowDepth = 0;
+    u32 openAsyncFlows = 0;
+    u32 maxScopeDepth = 0;
+    u32 maxFlowDepth = 0;
+    bool hasOpenScopes = false;
+    bool hasOpenAsyncFlows = false;
+    /// True when at least one async flow begin is unmatched by a finish on this thread.
+    bool canEndAsyncFlow = false;
+
+    [[nodiscard]] bool hasUnmatchedAsyncFlows() const { return openAsyncFlows > 0u; }
+};
+
+[[nodiscard]] ProfilerGuardPreflight preflightGuardState();
+[[nodiscard]] bool hasOpenScopes();
+[[nodiscard]] bool hasOpenAsyncFlows();
+
+/// Chrome export preflight — introspection only; export remains valid even when the buffer is empty.
+struct ChromeTraceExportPreflight {
+    bool bufferEmpty = true;
+    bool canExport = true;
+    u32 eventCount = 0;
+    u32 frameIndex = 0;
+    bool hasOpenScopes = false;
+    bool hasOpenAsyncFlows = false;
+    /// True when async flow begins were not paired before export (diagnostic only).
+    bool hasUnmatchedAsyncFlows = false;
+
+    [[nodiscard]] bool hasEventsToExport() const { return eventCount > 0u; }
+};
+
+[[nodiscard]] ChromeTraceExportPreflight preflightChromeTraceExport();
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();
