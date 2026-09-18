@@ -26,11 +26,19 @@ struct TaaJitterLayout {
     static fuse::math::Vec2 haltonPixelOffset(u32 index, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     static fuse::math::Vec2 haltonNdcOffset(u32 index, u32 width, u32 height,
                                             u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// Returns zero when viewport dimensions are invalid (B5.9 deepen guard).
+    static fuse::math::Vec2 safeHaltonNdcOffset(u32 index, u32 width, u32 height,
+                                                u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Halton offset for a monotonic frame counter (wraps via `frameIndexInSequence`).
     static fuse::math::Vec2 offsetForFrameIndex(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// NDC jitter for a monotonic frame counter (wraps via `frameIndexInSequence`).
     static fuse::math::Vec2 ndcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height,
                                                    u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// Returns zero when viewport dimensions are invalid (B5.9 deepen guard).
+    static fuse::math::Vec2 safeNdcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height,
+                                                       u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// True when `slot` is the Halton slot for a monotonic frame counter (B5.9 deepen).
+    static bool monotonicFrameMatchesSlot(u32 frameIndex, u32 slot, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Fills a Halton (2,3) table; returns false when `out` is null or length is invalid.
     static bool fillHaltonSequence(u32 length, fuse::math::Vec2* out);
 };
@@ -44,9 +52,15 @@ public:
     fuse::math::Vec2 currentNdcOffset(u32 width, u32 height) const;
 
     void advance();
+    /// Advance only when the jitter sequence is valid; returns false when blocked (B5.9 deepen).
+    bool advanceIfPossible();
     void reset();
     /// Align jitter state to a monotonic frame counter (wraps with sequence period).
     void syncToFrameIndex(u32 frameIndex);
+    /// True when monotonic frame counter matches the requested frame (B5.9 deepen).
+    bool isSyncedToFrameIndex(u32 frameIndex) const;
+    /// True when the active slot matches the monotonic frame counter (B5.9 deepen).
+    bool slotMatchesMonotonicFrame() const;
 
     u32 index() const { return m_index; }
     /// True when the jitter sequence can advance (B5.9 deepen).

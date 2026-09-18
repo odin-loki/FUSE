@@ -106,6 +106,22 @@ bool TaaPass::canProduceJitterNdc() const {
     return m_jitter.canProduceNdcOffset(m_desc.width, m_desc.height);
 }
 
+bool TaaPass::canResolveFrame(const TaaResolveDesc& desc) const {
+    return canAttemptTaaResolve(desc, m_history);
+}
+
+bool TaaPass::prepareAndCanResolve(TaaResolveDesc& desc) const {
+    return prepareTaaResolveDesc(desc, m_history);
+}
+
+bool TaaPass::resolveWillReuseHistory(const TaaResolveDesc& desc) const {
+    return taaResolveWillReuseHistory(desc, m_history);
+}
+
+bool TaaPass::isJitterSyncedToFrameIndex(u32 frameIndex) const {
+    return m_jitter.isSyncedToFrameIndex(frameIndex) && m_jitter.slotMatchesMonotonicFrame();
+}
+
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
     return m_resolve.wouldSkip(desc, m_history, reason);
 }
