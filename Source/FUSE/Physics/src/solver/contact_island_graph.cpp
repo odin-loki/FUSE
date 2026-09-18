@@ -4,6 +4,93 @@
 
 namespace fuse::physics {
 
+const char* islandBuildRejectReasonName(IslandBuildRejectReason reason) {
+    switch (reason) {
+    case IslandBuildRejectReason::None:
+        return "None";
+    case IslandBuildRejectReason::SelfPair:
+        return "SelfPair";
+    case IslandBuildRejectReason::OutOfRangeBody:
+        return "OutOfRangeBody";
+    case IslandBuildRejectReason::InvalidContact:
+        return "InvalidContact";
+    }
+    return "Unknown";
+}
+
+IslandBuildPreflight preflight_island_build(u32 bodyCount,
+                                            const std::vector<narrowphase::ContactManifold>& contacts,
+                                            const std::vector<DistanceConstraint>& distanceConstraints) {
+    IslandBuildPreflight preflight{};
+    preflight.bodyCount = bodyCount;
+
+    for (const narrowphase::ContactManifold& contact : contacts) {
+        const IslandBuildRejectReason reason = contactBuildRejectReason(contact, bodyCount);
+        switch (reason) {
+        case IslandBuildRejectReason::None:
+            ++preflight.validContactCount;
+            break;
+        case IslandBuildRejectReason::InvalidContact:
+            ++preflight.invalidContactCount;
+            break;
+        case IslandBuildRejectReason::SelfPair:
+            ++preflight.selfPairContactCount;
+            break;
+        case IslandBuildRejectReason::OutOfRangeBody:
+            ++preflight.oobContactCount;
+            break;
+        }
+    }
+
+    for (const DistanceConstraint& constraint : distanceConstraints) {
+        const IslandBuildRejectReason reason = distanceBuildRejectReason(constraint, bodyCount);
+        switch (reason) {
+        case IslandBuildRejectReason::None:
+            ++preflight.validDistanceCount;
+            break;
+        case IslandBuildRejectReason::SelfPair:
+            ++preflight.selfPairDistanceCount;
+            break;
+        case IslandBuildRejectReason::OutOfRangeBody:
+            ++preflight.oobDistanceCount;
+            break;
+        case IslandBuildRejectReason::InvalidContact:
+            break;
+        }
+    }
+
+    preflight.skipped = bodyCount == 0u && contacts.empty() && distanceConstraints.empty();
+    return preflight;
+}
+
+bool should_skip_island_build(u32 bodyCount,
+                              const std::vector<narrowphase::ContactManifold>& contacts,
+                              const std::vector<DistanceConstraint>& distanceConstraints) {
+    return preflight_island_build(bodyCount, contacts, distanceConstraints).skipped;
+}
+
+IslandBuildValidation validate_island_indices(const ContactIslandGraph& graph,
+                                              u32 contactCount,
+                                              u32 distanceCount) {
+    IslandBuildValidation validation{};
+    for (u32 islandIndex = 0; islandIndex < graph.islandCount(); ++islandIndex) {
+        const ContactIslandGraph::Island& island = graph.island(islandIndex);
+        for (u32 contactIndex : island.contactIndices) {
+            if (contactIndex >= contactCount) {
+                ++validation.oobContactIndexCount;
+                validation.valid = false;
+            }
+        }
+        for (u32 distanceIndex : island.distanceIndices) {
+            if (distanceIndex >= distanceCount) {
+                ++validation.oobDistanceIndexCount;
+                validation.valid = false;
+            }
+        }
+    }
+    return validation;
+}
+
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();

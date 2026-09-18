@@ -132,6 +132,62 @@ struct IslandContactImpulseWarmStartPreflight {
     }
 };
 
+/// Sleep-pass diagnostics for one frame/substep (B4.4 deepen).
+struct SleepPassStats {
+    u32 totalBodies = 0;
+    u32 staticCount = 0;
+    u32 sleepingCount = 0;
+    u32 activeCount = 0;
+    u32 sleepCandidateCount = 0;
+};
+
+/// Preflight for the sleep detection pass; sets `skipped` when no dynamic bodies remain.
+struct SleepPassPreflight {
+    SleepPassStats stats{};
+    bool skipped = false;
+
+    bool can_sleep_pass() const { return !skipped && stats.activeCount > 0u; }
+};
+
+/// Wake-candidate diagnostics for sleeping bodies above velocity thresholds (B4.4 deepen).
+struct WakeCandidateStats {
+    u32 sleepingCount = 0;
+    u32 wakeCandidateCount = 0;
+    u32 restingSleepingCount = 0;
+};
+
+/// Preflight for bodies that would wake on the next sleep pass evaluation.
+struct WakePreflight {
+    WakeCandidateStats stats{};
+    bool skipped = false;
+
+    bool has_wake_candidates() const { return !skipped && stats.wakeCandidateCount > 0u; }
+};
+
+/// Work-buffer capacity preflight before island constraint solve (B4.4 deepen).
+struct IslandSolveWorkPreflight {
+    u32 bodyCount = 0;
+    u32 bufferCapacity = 0;
+    bool insufficientBufferCapacity = false;
+    bool skipped = false;
+
+    bool can_solve() const { return !skipped && !insufficientBufferCapacity; }
+};
+
+/// Per-island constraint index and body-reference preflight (B4.4 deepen).
+struct IslandConstraintIndexPreflight {
+    u32 ownedContactCount = 0;
+    u32 ownedDistanceCount = 0;
+    u32 oobContactIndexCount = 0;
+    u32 oobDistanceIndexCount = 0;
+    u32 oobBodyRefCount = 0;
+    bool skipped = false;
+
+    bool indices_valid() const {
+        return oobContactIndexCount == 0u && oobDistanceIndexCount == 0u && oobBodyRefCount == 0u;
+    }
+};
+
 /// Combined lambda + contact-impulse warm-start preflight for one island.
 struct IslandCombinedWarmStartPreflight {
     IslandWarmStartPreflight lambdas{};
@@ -178,6 +234,74 @@ bool has_dispatchable_islands(const ContactIslandGraph& graph);
 
 /// True when every island is constraint-free (all empty).
 bool all_islands_empty(const ContactIslandGraph& graph);
+
+/// True when `flags` include `RB_SLEEPING`.
+bool is_body_sleeping(u32 flags);
+
+/// True when `flags` include static or kinematic bits.
+bool is_body_static_or_kinematic(u32 flags);
+
+/// True when a dynamic body is below sleep velocity thresholds.
+bool is_sleep_candidate_body(const RigidBodySoA& bodies,
+                             u32 index,
+                             f32 sleepLinearThreshold,
+                             f32 sleepAngularThreshold);
+
+/// True when a sleeping body exceeds wake velocity thresholds.
+bool is_wake_candidate_body(const RigidBodySoA& bodies,
+                            u32 index,
+                            f32 sleepLinearThreshold,
+                            f32 sleepAngularThreshold);
+
+/// Count bodies currently marked `RB_SLEEPING`.
+u32 count_sleeping_bodies(const RigidBodySoA& bodies);
+
+/// Preflight sleep detection pass; sets `skipped` when no active dynamic bodies exist.
+SleepPassPreflight preflight_sleep_pass(const RigidBodySoA& bodies,
+                                        f32 sleepLinearThreshold,
+                                        f32 sleepAngularThreshold);
+
+/// Early-out guard for sleep detection when all dynamic bodies are static or sleeping.
+bool should_skip_sleep_pass(const RigidBodySoA& bodies,
+                            f32 sleepLinearThreshold,
+                            f32 sleepAngularThreshold);
+
+/// Preflight wake candidates among sleeping bodies above velocity thresholds.
+WakePreflight preflight_wake_candidates(const RigidBodySoA& bodies,
+                                        f32 sleepLinearThreshold,
+                                        f32 sleepAngularThreshold);
+
+/// True when both body indices are in range for constraint accumulation.
+bool is_valid_constraint_body_pair(const RigidBodySoA& bodies, u32 bodyA, u32 bodyB);
+
+/// True when every body in the island is sleeping or static/kinematic.
+bool island_all_bodies_inactive(const RigidBodySoA& bodies, const ContactIslandGraph::Island& island);
+
+/// True when the island has at least one awake dynamic body.
+bool island_has_active_bodies(const RigidBodySoA& bodies, const ContactIslandGraph::Island& island);
+
+/// Optional early-out guard when all island members are inactive (sleeping/static).
+bool should_skip_island_solve_all_inactive(const RigidBodySoA& bodies,
+                                           const ContactIslandGraph::Island& island);
+
+/// Preflight work-buffer capacity for island constraint solve.
+IslandSolveWorkPreflight preflight_island_solve_work(const RigidBodySoA& bodies,
+                                                     const SolverWorkBuffers& workBuffers);
+
+/// Preflight island constraint indices and body references before solve.
+IslandConstraintIndexPreflight preflight_island_constraint_indices(
+    const ContactIslandGraph::Island& island,
+    const RigidBodySoA& bodies,
+    u32 contactCount,
+    u32 distanceCount);
+
+/// Preflight island constraint indices by island index; out-of-range indices are marked skipped.
+IslandConstraintIndexPreflight preflight_island_constraint_indices_by_index(
+    const ContactIslandGraph& graph,
+    u32 islandIndex,
+    const RigidBodySoA& bodies,
+    u32 contactCount,
+    u32 distanceCount);
 
 /// True when dt is positive for island constraint solve passes.
 bool is_valid_island_solve_dt(f32 dt);
