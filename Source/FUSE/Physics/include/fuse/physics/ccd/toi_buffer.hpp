@@ -23,6 +23,8 @@ struct ToiBufferSoA {
 
     bool isEmpty() const { return activeCount == 0u; }
     bool hasValidTois() const { return activeCount > 0u; }
+    /// True when clamping dropped one or more TOI impacts.
+    bool hasDroppedTois() const { return droppedCount > 0u; }
     /// True when both dense and slot storage are empty (safe to skip SoA scans).
     bool canSkipSoAIteration() const { return activeCount == 0u && pairSlotCount == 0u; }
     /// True when at most one valid TOI is present (sort is a no-op).
@@ -31,7 +33,16 @@ struct ToiBufferSoA {
     bool canSkipCompaction() const;
     /// Count valid flags in prepared slot storage before compaction.
     u32 countValidSlots() const;
+    /// True when `maxCapacity` is set and no additional TOIs may be pushed.
     bool isFull() const { return maxCapacity > 0u && activeCount >= maxCapacity; }
+    /// TOI-list guard: true when `additionalCount` impacts fit before `maxCapacity` clamp.
+    bool canAcceptTois(u32 additionalCount = 1u) const;
+    /// Remaining push slots before `maxCapacity` clamp (unlimited when `maxCapacity == 0`).
+    u32 remainingCapacity() const;
+    /// True when post-pass truncation would drop TOIs.
+    bool canApplyMaxCapacityClamp() const;
+    /// Pair-slot range guard: true when `slot` refers to a prepared pair slot.
+    bool isValidSlot(u32 slot) const { return slot < pairSlotCount; }
     bool slotIsValid(u32 slot) const;
 
     void reserve(u32 capacity);
@@ -48,6 +59,8 @@ struct ToiBufferSoA {
     bool isSortedByToi() const;
     TOIResult earliestToi() const;
     TOIResult resultAt(u32 index) const;
+    /// Read a TOI directly from prepared pair-slot storage (pre-compact job path).
+    TOIResult resultAtSlot(u32 slot) const;
     std::vector<TOIResult> toVector() const;
 };
 
