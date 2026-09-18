@@ -417,4 +417,48 @@ bool should_skip_contact_pair_dispatch(
     return is_invalid_contact_pair(pair, bodies, shapes);
 }
 
+bool can_dispatch_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !should_skip_contact_pair_dispatch(pair, bodies, shapes);
+}
+
+ContactManifold detect_contacts_pair_if_valid(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (should_skip_contact_pair_dispatch(pair, bodies, shapes)) {
+        return invalidContactManifold();
+    }
+    return dispatchShapePair(pair, bodies, shapes);
+}
+
+ContactPairDispatchResult dispatch_contact_pair_if_valid(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    ContactPairDispatchResult result{};
+    result.preflight = preflight_contact_pair(pair, bodies, shapes);
+    if (result.preflight.rejected) {
+        return result;
+    }
+
+    result.manifold = dispatchShapePair(pair, bodies, shapes);
+    result.detected = result.manifold.valid;
+    return result;
+}
+
+const char* contact_pair_preflight_reason_name(const ContactPairPreflight& preflight) {
+    return contact_pair_reject_reason_name(preflight.reason);
+}
+
+bool generate_contact_manifold_if_valid(ContactManifold& manifold) {
+    if (!can_finalize_contact_manifold(manifold)) {
+        manifold.clear();
+        return false;
+    }
+    return generate_contact_manifold(manifold);
+}
+
 } // namespace fuse::physics::narrowphase
