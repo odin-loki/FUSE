@@ -58,6 +58,17 @@ struct ParticleGpuColumnSpan {
     [[nodiscard]] bool isEmpty() const { return byte_size == 0u || slot_count == 0u; }
 };
 
+/// CPU mirror sync preflight for stub upload paths (B7.7 GPU deepen follow-up).
+struct ParticleGpuMirrorPreflight {
+    ParticleGpuSyncGuard sync_guard = ParticleGpuSyncGuard::MirrorUninitialized;
+    ParticleGpuSyncGuard write_guard = ParticleGpuSyncGuard::MirrorUninitialized;
+    bool alive_count_matches_flags = true;
+
+    [[nodiscard]] bool can_sync_from_cpu() const;
+    [[nodiscard]] bool can_write_to_cpu() const;
+    [[nodiscard]] bool can_pack() const;
+};
+
 /// Per-column byte sizing and packed SSBO layout helpers.
 struct ParticleGpuBufferLayout {
     static constexpr u32 kSimBlockSize = 256u;
@@ -76,6 +87,10 @@ struct ParticleGpuBufferLayout {
     static usize dataColumnBytes(u32 capacity);
     static usize packingOverheadBytes(u32 capacity);
     static u64 columnDeviceAddress(ParticleGpuColumn column, u64 base, u32 capacity);
+    static bool validateSlotIndex(u32 slot_index, u32 capacity);
+    static usize slotDeviceOffset(ParticleGpuColumn column, u32 slot_index, u32 capacity);
+    static bool containsByteOffset(usize byte_offset, u32 capacity);
+    static bool locateColumnAtOffset(usize byte_offset, u32 capacity, ParticleGpuColumnSpan* out_span);
     static bool validatePackedLayout(u32 capacity);
     static bool isColumnOffsetAligned(ParticleGpuColumn column, u32 capacity);
     static bool validateColumnSpanChain(u32 capacity);
@@ -113,6 +128,8 @@ struct ParticleGpuDispatch {
     [[nodiscard]] u32 firstEmitPaddingThread(u32 emit_count) const;
     [[nodiscard]] bool isSimPaddingThread(u32 global_thread_index, u32 slot_count) const;
     [[nodiscard]] bool isEmitPaddingThread(u32 global_thread_index, u32 emit_count) const;
+    [[nodiscard]] bool simPaddingAccountsFor(u32 slot_count) const;
+    [[nodiscard]] bool emitPaddingAccountsFor(u32 emit_count) const;
 };
 
 /// Logical GPU buffer handles — production wiring maps these to `renderer::BufferHandle`.
@@ -147,9 +164,12 @@ struct ParticleGpuMirror {
     [[nodiscard]] ParticleGpuSyncGuard writeGuardForCpu(const ParticleSoA& cpu) const;
     [[nodiscard]] bool canSyncFromCpuSoA(const ParticleSoA& cpu) const;
     [[nodiscard]] bool canWriteToCpuSoA(const ParticleSoA& cpu) const;
+    [[nodiscard]] ParticleGpuMirrorPreflight preflightFromCpu(const ParticleSoA& cpu) const;
+    [[nodiscard]] bool aliveCountMatchesFlags() const;
 
     [[nodiscard]] static ParticleGpuMirror fromCpuSoA(const ParticleSoA& cpu);
     [[nodiscard]] bool writeToCpuSoA(ParticleSoA& cpu) const;
+    [[nodiscard]] bool tryWriteToCpuSoA(ParticleSoA& cpu) const;
     [[nodiscard]] bool isEmpty() const { return alive_count == 0u; }
     [[nodiscard]] bool packedBytesFit(const std::vector<u8>& bytes) const;
 
@@ -160,6 +180,17 @@ struct ParticleGpuMirror {
     [[nodiscard]] bool matchesPackedLayout(const std::vector<u8>& bytes) const;
     void syncAliveCountFromFlags();
     [[nodiscard]] ParticleSoAGPU toGpuPointers(u64 packed_device_address) const;
+};
+
+/// Frame-plan preflight for stub launch wiring (B7.7 GPU deepen follow-up).
+struct ParticleGpuFramePreflight {
+    bool buffers_ok = false;
+    bool sim_dispatch_ok = false;
+    bool emit_dispatch_ok = false;
+    bool sim_padding_ok = false;
+    bool emit_padding_ok = false;
+
+    [[nodiscard]] bool ready_for_stub() const;
 };
 
 /// Per-frame GPU stub plan: buffer sizing, dispatch counts, and empty-launch guards.
@@ -177,6 +208,7 @@ struct ParticleGpuFramePlan {
     [[nodiscard]] bool buffersSizedForCapacity() const;
     [[nodiscard]] u32 simPaddingThreadCount() const;
     [[nodiscard]] u32 emitPaddingThreadCount() const;
+    [[nodiscard]] ParticleGpuFramePreflight preflight() const;
     [[nodiscard]] ParticleSoAGPU gpuPointers(u64 packed_device_address) const;
 };
 
@@ -186,6 +218,9 @@ namespace particle_gpu_util {
 [[nodiscard]] u32 paddingThreads(u32 element_count, u32 block_count, u32 block_size);
 [[nodiscard]] bool threadCoversElement(u32 thread_index, u32 element_count);
 [[nodiscard]] bool isPaddingThread(u32 thread_index, u32 element_count);
+[[nodiscard]] u32 blockIndexOf(u32 global_thread_index, u32 block_size);
+[[nodiscard]] u32 localThreadIndex(u32 global_thread_index, u32 block_size);
+[[nodiscard]] u32 globalThreadIndex(u32 block_index, u32 local_thread_index, u32 block_size);
 } // namespace particle_gpu_util
 
 } // namespace fuse::vfx
