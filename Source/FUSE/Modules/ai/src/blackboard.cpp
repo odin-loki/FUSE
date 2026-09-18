@@ -97,6 +97,10 @@ float BlackboardView::scalar(u32 agentIndex, u32 slotIndex) const {
     return m_board ? m_board->scalar(agentIndex, slotIndex) : 0.f;
 }
 
+bool BlackboardView::isEmpty() const {
+    return !m_board || m_board->isEmpty();
+}
+
 u32 BlackboardView::agentCount() const {
     return m_board ? m_board->agentCount() : 0u;
 }
