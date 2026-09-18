@@ -144,6 +144,107 @@ void run_reconcile_tests() {
     expectTrue(future_history_result.action == fuse::net::ReconcileAction::NoOp,
                "input history reconcile rejects future frame beyond newest");
     expectTrue(!future_history.has_confirmed(8u), "future frame is not stored by reconcile guard");
+
+    // --- preflight / empty-buffer / capacity guards (B7.4 deepen follow-up) ---
+    fuse::net::InputHistoryBuffer preflight_history;
+    preflight_history.init(4);
+    for (fuse::u32 frame = 0; frame < 5; ++frame) {
+        fuse::net::PlayerInput predicted{};
+        predicted.frame = frame;
+        predicted.axis_lx = static_cast<std::int16_t>(frame);
+        preflight_history.push_frame(frame, predicted);
+    }
+
+    const fuse::net::ReconcileInputPreflight retained_preflight =
+        fuse::net::preflight_reconcile_input(preflight_history, 4u);
+    expectTrue(retained_preflight.capacity_ok, "input preflight sees non-zero capacity");
+    expectTrue(!retained_preflight.buffer_empty, "input preflight sees populated ring");
+    expectTrue(retained_preflight.frame_in_window, "input preflight accepts retained frame");
+    expectTrue(retained_preflight.has_retained_frame, "input preflight finds retained frame");
+    expectTrue(retained_preflight.has_prediction, "input preflight sees local prediction");
+    expectTrue(retained_preflight.can_reconcile(), "input preflight can_reconcile for retained frame");
+    expectTrue(!fuse::net::should_skip_reconcile_input(preflight_history, 4u),
+               "should_skip false for retained input frame");
+
+    const fuse::net::ReconcileInputPreflight evicted_preflight =
+        fuse::net::preflight_reconcile_input(preflight_history, 0u);
+    expectTrue(!evicted_preflight.frame_in_window, "input preflight rejects evicted frame");
+    expectTrue(!evicted_preflight.has_retained_frame, "input preflight has no retained evicted frame");
+    expectTrue(!evicted_preflight.can_reconcile(), "input preflight cannot reconcile evicted frame");
+    expectTrue(fuse::net::should_skip_reconcile_input(preflight_history, 0u),
+               "should_skip true for evicted input frame");
+
+    fuse::net::InputHistoryBuffer empty_preflight_history;
+    empty_preflight_history.init(8);
+    const fuse::net::ReconcileInputPreflight empty_preflight =
+        fuse::net::preflight_reconcile_input(empty_preflight_history, 2u);
+    expectTrue(empty_preflight.capacity_ok, "empty input history preflight has capacity");
+    expectTrue(empty_preflight.buffer_empty, "empty input history preflight reports empty");
+    expectTrue(empty_preflight.frame_in_window, "empty input history accepts in-window frame");
+    expectTrue(!empty_preflight.has_retained_frame, "empty input history has no retained frame yet");
+    expectTrue(!empty_preflight.has_prediction, "empty input history has no prediction");
+    expectTrue(empty_preflight.can_reconcile(), "empty input history can reconcile new frame");
+    expectTrue(!empty_preflight_history.should_skip_reconcile(2u),
+               "buffer should_skip false for empty history with capacity");
+
+    fuse::net::InputHistoryBuffer zero_capacity_history;
+    zero_capacity_history.clear();
+    const fuse::net::ReconcileInputPreflight zero_preflight =
+        fuse::net::preflight_reconcile_input(zero_capacity_history, 0u);
+    expectTrue(!zero_preflight.capacity_ok, "cleared input history preflight has zero capacity");
+    expectTrue(!zero_preflight.can_reconcile(), "zero-capacity input history cannot reconcile");
+    expectTrue(zero_capacity_history.should_skip_reconcile(0u),
+               "buffer should_skip true for zero-capacity history");
+
+    fuse::net::RollbackBuffer preflight_buffer;
+    preflight_buffer.init(4);
+    for (fuse::u32 frame = 0; frame < 4; ++frame) {
+        fuse::net::GameSnapshot snap{};
+        snap.frame = frame;
+        preflight_buffer.store_snapshot(frame, snap);
+    }
+
+    fuse::net::PlayerInput preflight_local{};
+    preflight_local.frame = 2;
+    preflight_local.axis_lx = 100;
+    preflight_buffer.store_local_input(2, preflight_local);
+
+    const fuse::net::ReconcileRollbackPreflight rollback_preflight =
+        fuse::net::preflight_reconcile_rollback(preflight_buffer, 2u);
+    expectTrue(rollback_preflight.capacity_ok, "rollback preflight sees non-zero capacity");
+    expectTrue(!rollback_preflight.buffer_empty, "rollback preflight sees populated buffer");
+    expectTrue(rollback_preflight.frame_in_window, "rollback preflight accepts retained frame");
+    expectTrue(rollback_preflight.has_snapshot, "rollback preflight finds snapshot");
+    expectTrue(rollback_preflight.has_local_prediction, "rollback preflight sees local prediction");
+    expectTrue(rollback_preflight.can_reconcile(), "rollback preflight can_reconcile for retained frame");
+    expectTrue(!preflight_buffer.should_skip_reconcile(2u), "buffer should_skip false for retained rollback frame");
+
+    const fuse::net::ReconcileRollbackPreflight rollback_future_preflight =
+        fuse::net::preflight_reconcile_rollback(preflight_buffer, 9u);
+    expectTrue(!rollback_future_preflight.frame_in_window, "rollback preflight rejects future frame");
+    expectTrue(!rollback_future_preflight.has_snapshot, "rollback preflight has no future snapshot");
+    expectTrue(!rollback_future_preflight.can_reconcile(), "rollback preflight cannot reconcile future frame");
+    expectTrue(preflight_buffer.should_skip_reconcile(9u), "buffer should_skip true for future rollback frame");
+
+    fuse::net::RollbackBuffer empty_preflight_buffer;
+    empty_preflight_buffer.init(4);
+    const fuse::net::ReconcileRollbackPreflight empty_rollback_preflight =
+        fuse::net::preflight_reconcile_rollback(empty_preflight_buffer, 0u);
+    expectTrue(empty_rollback_preflight.capacity_ok, "empty rollback buffer preflight has capacity");
+    expectTrue(empty_rollback_preflight.buffer_empty, "empty rollback buffer preflight reports empty");
+    expectTrue(!empty_rollback_preflight.frame_in_window, "empty rollback buffer rejects reconcile frame");
+    expectTrue(!empty_rollback_preflight.can_reconcile(), "empty rollback buffer cannot reconcile");
+    expectTrue(empty_preflight_buffer.should_skip_reconcile(0u),
+               "buffer should_skip true for empty rollback buffer");
+
+    fuse::net::RollbackBuffer zero_capacity_buffer;
+    zero_capacity_buffer.clear();
+    const fuse::net::ReconcileRollbackPreflight zero_rollback_preflight =
+        fuse::net::preflight_reconcile_rollback(zero_capacity_buffer, 0u);
+    expectTrue(!zero_rollback_preflight.capacity_ok, "cleared rollback buffer preflight has zero capacity");
+    expectTrue(!zero_rollback_preflight.can_reconcile(), "zero-capacity rollback buffer cannot reconcile");
+    expectTrue(fuse::net::should_skip_reconcile_rollback(zero_capacity_buffer, 0u),
+               "should_skip true for zero-capacity rollback buffer");
 }
 
 } // namespace fuse::net::tests
