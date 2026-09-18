@@ -167,6 +167,145 @@ u64 hash_audio_import(const AudioImportDesc& desc) {
     return hash;
 }
 
+const char* cookHashRejectReasonLabel(CookHashRejectReason reason) {
+    switch (reason) {
+    case CookHashRejectReason::None:
+        return "none";
+    case CookHashRejectReason::NullData:
+        return "null_data";
+    case CookHashRejectReason::EmptyPath:
+        return "empty_path";
+    case CookHashRejectReason::EmptyInputPath:
+        return "empty_input_path";
+    case CookHashRejectReason::EmptyOutputPath:
+        return "empty_output_path";
+    case CookHashRejectReason::SourceUnreadable:
+        return "source_unreadable";
+    case CookHashRejectReason::EmptyDependencyList:
+        return "empty_dependency_list";
+    case CookHashRejectReason::ZeroSourceHash:
+        return "zero_source_hash";
+    }
+    return "unknown";
+}
+
+CookHashPreflight preflight_file_content_hash(const std::string& path) {
+    CookHashPreflight preflight;
+    if (path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyPath;
+        return preflight;
+    }
+
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        preflight.reason = CookHashRejectReason::SourceUnreadable;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
+}
+
+CookHashPreflight preflight_mesh_import_hash(const MeshImportDesc& desc) {
+    CookHashPreflight preflight;
+    if (desc.input_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+        return preflight;
+    }
+    if (desc.output_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
+        return preflight;
+    }
+    return preflight_file_content_hash(desc.input_path);
+}
+
+CookHashPreflight preflight_texture_import_hash(const TextureImportDesc& desc) {
+    CookHashPreflight preflight;
+    if (desc.input_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+        return preflight;
+    }
+    if (desc.output_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
+        return preflight;
+    }
+    return preflight_file_content_hash(desc.input_path);
+}
+
+CookHashPreflight preflight_audio_import_hash(const AudioImportDesc& desc) {
+    CookHashPreflight preflight;
+    if (desc.input_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+        return preflight;
+    }
+    if (desc.output_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
+        return preflight;
+    }
+    return preflight_file_content_hash(desc.input_path);
+}
+
+CookHashPreflight preflight_manifest_entry_hash(const CookManifestEntry& entry) {
+    CookHashPreflight preflight;
+    if (entry.source_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+        return preflight;
+    }
+    if (entry.output_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
+        return preflight;
+    }
+    return preflight_file_content_hash(entry.source_path);
+}
+
+CookHashPreflight preflight_upstream_dependencies_hash(const std::vector<std::string>& dependency_output_paths,
+                                                     const CookManifest& manifest) {
+    CookHashPreflight preflight;
+    bool has_non_empty = false;
+    for (const std::string& dependency_output : dependency_output_paths) {
+        if (!dependency_output.empty()) {
+            has_non_empty = true;
+            break;
+        }
+    }
+    if (!has_non_empty) {
+        preflight.reason = CookHashRejectReason::EmptyDependencyList;
+        return preflight;
+    }
+
+    for (const std::string& dependency_output : dependency_output_paths) {
+        if (dependency_output.empty()) {
+            continue;
+        }
+        for (const CookManifestEntry& asset : manifest.assets) {
+            if (asset.output_path == dependency_output) {
+                const CookHashPreflight source_preflight = preflight_file_content_hash(asset.source_path);
+                if (!source_preflight.can_hash) {
+                    return source_preflight;
+                }
+                break;
+            }
+        }
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
+}
+
+CookHashPreflight preflight_cook_cache_key(u64 source_hash, u64 /*upstream_hash*/) {
+    CookHashPreflight preflight;
+    if (source_hash == 0) {
+        preflight.reason = CookHashRejectReason::ZeroSourceHash;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
+}
+
 u64 hash_manifest_entry(const CookManifestEntry& entry) {
     if (entry.source_path.empty() || entry.output_path.empty()) {
         return 0;

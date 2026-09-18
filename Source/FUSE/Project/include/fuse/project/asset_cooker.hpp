@@ -26,6 +26,12 @@ public:
     /// Reconcile cache with current upstream dependency hashes via the cook job graph (B7.9 deepen).
     u32 invalidate_stale_dependency_hashes(const CookManifest& manifest);
 
+    /// Read-only upstream invalidation probe — guarded on empty `changed_source` (B7.9 deepen).
+    [[nodiscard]] u32 count_upstream_invalidation(const CookManifest& manifest,
+                                                  const std::string& changed_source) const;
+    /// Read-only stale dependency-hash reconcile probe (B7.9 deepen).
+    [[nodiscard]] u32 count_stale_dependency_invalidation(const CookManifest& manifest) const;
+
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
 
