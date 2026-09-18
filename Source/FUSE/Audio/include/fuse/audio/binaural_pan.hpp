@@ -15,6 +15,9 @@ struct HrtfIrStub {
 /// Canonical empty IR stub for guard fallbacks.
 HrtfIrStub make_empty_hrtf_ir();
 
+/// Validated IR stub factory — returns empty when samples are null or length is zero.
+HrtfIrStub make_hrtf_ir_stub(const float* samples, u32 length);
+
 /// True when an HRTF IR stub has non-null, non-empty sample data.
 bool has_hrtf_ir(const HrtfIrStub& ir);
 
@@ -43,8 +46,20 @@ bool is_spatial_hrtf_pan_path(HrtfPanPath path);
 /// True when the pan path selects convolution (non-empty IR stub).
 bool hrtf_pan_path_uses_convolution(HrtfPanPath path);
 
+/// True when the pan path selects ILD/ITD stub (empty IR fallback).
+bool hrtf_pan_path_uses_ild_itd_stub(HrtfPanPath path);
+
+/// True when the pan path is centre bypass (disabled or co-located).
+bool is_hrtf_pan_path_bypass(HrtfPanPath path);
+
+/// Early-out: true when spatial panning should be skipped (bypass path).
+bool should_skip_hrtf_spatial_pan(HrtfPanPath path);
+
 /// True when HRTF pan should run (enabled and source is not co-located).
 bool should_apply_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener);
+
+/// Inverse of `should_apply_hrtf_pan` — disabled or co-located sources.
+bool should_bypass_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener);
 
 /// Stereo pan law used for ILD stub gains.
 enum class PanLaw {
@@ -131,6 +146,22 @@ float compute_pan_spread(const BinauralPanGains& gains);
 
 /// True when left and right gains are within \p epsilon of centre pan.
 bool is_centre_panned(const BinauralPanGains& gains, float epsilon = 1e-3f);
+
+/// Equal-power energy metric for L/R gains (left² + right²).
+float compute_binaural_pan_energy(const BinauralPanGains& gains);
+
+/// True when ITD stub is non-zero within \p epsilon.
+bool has_nonzero_itd(const BinauralPanGains& gains, float epsilon = 1e-6f);
+
+/// Scale per-ear gains, then clamp to [0, 1].
+void scale_binaural_pan_gains(BinauralPanGains& gains, float scale);
+
+/// Apply mono sample through binaural L/R gains and attenuation.
+void apply_binaural_pan_to_sample(float mono, const BinauralPanGains& pan, float attenuation,
+                                  float& left, float& right);
+
+/// Centre mono fallback — equal L/R contribution with attenuation.
+void apply_centre_binaural_pan_to_sample(float mono, float attenuation, float& left, float& right);
 
 /// One-shot binaural gains with empty-HRTF guards (disabled / co-located → centre).
 BinauralPanGains compute_binaural_pan_gains_guarded(bool hrtf_enabled, const Vec3& rel_listener,

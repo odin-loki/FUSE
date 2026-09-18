@@ -9,6 +9,13 @@ HrtfIrStub make_empty_hrtf_ir() {
     return HrtfIrStub{};
 }
 
+HrtfIrStub make_hrtf_ir_stub(const float* samples, u32 length) {
+    if (samples == nullptr || length == 0) {
+        return make_empty_hrtf_ir();
+    }
+    return HrtfIrStub{samples, length};
+}
+
 bool has_hrtf_ir(const HrtfIrStub& ir) {
     return ir.samples != nullptr && ir.length > 0;
 }
@@ -44,8 +51,24 @@ bool hrtf_pan_path_uses_convolution(HrtfPanPath path) {
     return path == HrtfPanPath::Convolution;
 }
 
+bool hrtf_pan_path_uses_ild_itd_stub(HrtfPanPath path) {
+    return path == HrtfPanPath::IldItdStub;
+}
+
+bool is_hrtf_pan_path_bypass(HrtfPanPath path) {
+    return path == HrtfPanPath::Bypass;
+}
+
+bool should_skip_hrtf_spatial_pan(HrtfPanPath path) {
+    return is_hrtf_pan_path_bypass(path);
+}
+
 bool should_apply_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener) {
     return hrtf_enabled && rel_listener.length() >= 1e-5f;
+}
+
+bool should_bypass_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener) {
+    return !should_apply_hrtf_pan(hrtf_enabled, rel_listener);
 }
 
 namespace {
@@ -169,6 +192,33 @@ float compute_pan_spread(const BinauralPanGains& gains) {
 
 bool is_centre_panned(const BinauralPanGains& gains, float epsilon) {
     return compute_pan_spread(gains) <= epsilon;
+}
+
+float compute_binaural_pan_energy(const BinauralPanGains& gains) {
+    return gains.left * gains.left + gains.right * gains.right;
+}
+
+bool has_nonzero_itd(const BinauralPanGains& gains, float epsilon) {
+    return std::fabs(gains.itd_seconds) > epsilon;
+}
+
+void scale_binaural_pan_gains(BinauralPanGains& gains, float scale) {
+    gains.left *= scale;
+    gains.right *= scale;
+    clamp_binaural_pan_gains(gains);
+}
+
+void apply_binaural_pan_to_sample(float mono, const BinauralPanGains& pan, float attenuation,
+                                  float& left, float& right) {
+    const float scaled = mono * attenuation;
+    left += scaled * pan.left;
+    right += scaled * pan.right;
+}
+
+void apply_centre_binaural_pan_to_sample(float mono, float attenuation, float& left, float& right) {
+    const float scaled = mono * attenuation;
+    left += scaled;
+    right += scaled;
 }
 
 BinauralPanGains compute_binaural_pan_gains_guarded(bool hrtf_enabled, const Vec3& rel_listener,
