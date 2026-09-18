@@ -259,6 +259,14 @@ u32 StreamingRequestQueue::pending_submit_count() const {
     return m_inFlight + static_cast<u32>(m_completed.size());
 }
 
+bool StreamingRequestQueue::has_pending_for(GridCoord coord, StreamingRequestKind kind) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return std::find_if(m_pending.begin(), m_pending.end(),
+                        [&](const PendingStreamingRequest& pending) {
+                            return pending.request.coord == coord && pending.request.kind == kind;
+                        }) != m_pending.end();
+}
+
 f32 StreamingRequestQueue::pending_priority_for(GridCoord coord, StreamingRequestKind kind) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     const auto existing = std::find_if(m_pending.begin(), m_pending.end(),

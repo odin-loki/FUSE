@@ -1158,6 +1158,59 @@ void testResidencyGuardedRemoveAndPresence() {
                "contains guard false after guarded remove");
 }
 
+void testFocusDistanceGuards() {
+    fuse::world_partition::ResidencySet residency;
+    const fuse::world_partition::GridCoord resident{2, 2};
+    const fuse::world_partition::GridCoord missing{9, 9};
+    const fuse::world_partition::GridCoord invalid = fuse::world_partition::kInvalidGridCoord;
+
+    expectTrue(fuse::world_partition::is_valid_focus_distance(0.f), "zero focus distance is valid");
+    expectTrue(fuse::world_partition::is_valid_focus_distance(100.f), "positive focus distance is valid");
+    expectTrue(!fuse::world_partition::is_valid_focus_distance(-1.f), "negative focus distance is invalid");
+
+    expectNear(fuse::world_partition::focus_distance_for_guarded(residency, resident), -1.f, 1e-4f,
+               "focus distance guard returns -1 on empty set");
+    expectNear(fuse::world_partition::focus_distance_for_guarded(residency, invalid), -1.f, 1e-4f,
+               "focus distance guard rejects invalid coord");
+
+    expectTrue(residency.add(resident, 250.f), "add resident for focus distance guards");
+    expectNear(fuse::world_partition::focus_distance_for_guarded(residency, resident), 250.f, 1e-4f,
+               "focus distance guard returns stored distance");
+    expectNear(fuse::world_partition::focus_distance_for_guarded(residency, missing), -1.f, 1e-4f,
+               "focus distance guard returns -1 for absent coord");
+
+    expectTrue(!fuse::world_partition::update_focus_distance_guarded(residency, missing, 50.f),
+               "update guard false for absent coord");
+    expectTrue(!fuse::world_partition::update_focus_distance_guarded(residency, invalid, 50.f),
+               "update guard rejects invalid coord");
+    expectTrue(!fuse::world_partition::update_focus_distance_guarded(residency, resident, -5.f),
+               "update guard rejects negative focus distance");
+    expectTrue(fuse::world_partition::update_focus_distance_guarded(residency, resident, 75.f),
+               "update guard succeeds for resident coord");
+    expectNear(fuse::world_partition::focus_distance_for_guarded(residency, resident), 75.f, 1e-4f,
+               "update guard refreshes stored focus distance");
+}
+
+void testResidencyCollectEvictionCandidatesGuarded() {
+    fuse::world_partition::ResidencySet residency;
+    const fuse::world_partition::GridCoord near_cell{0, 0};
+    const fuse::world_partition::GridCoord far_cell{4, 0};
+
+    expectTrue(fuse::world_partition::collect_eviction_candidates_guarded(residency).empty(),
+               "collect guard returns empty on empty set");
+
+    residency.add(near_cell, 100.f);
+    residency.add(far_cell, 900.f);
+
+    const auto candidates = fuse::world_partition::collect_eviction_candidates_guarded(residency);
+    expectEq(static_cast<fuse::u32>(candidates.size()), 2u, "collect guard returns all candidates");
+    expectTrue(candidates.front() == far_cell, "collect guard preserves farthest-first order");
+
+    const auto top_one = fuse::world_partition::collect_eviction_candidates_guarded(residency, 1u);
+    expectEq(static_cast<fuse::u32>(top_one.size()), 1u, "collect guard respects max_count");
+    expectTrue(top_one.front() == far_cell, "collect guard max_count keeps farthest cell");
+}
+
 void testResidencyContainsClearGuards() {
     fuse::world_partition::ResidencySet residency;
     const fuse::world_partition::GridCoord resident{2, 2};
@@ -1242,6 +1295,87 @@ void testStreamingRequestQueueDequeueIfGuard() {
     expectEq(queue.pending_enqueue_count(), 0u, "dequeue_if drains pending queue");
     expectTrue(!fuse::world_partition::has_pending_enqueue(queue),
                "has_pending_enqueue false after drain");
+}
+
+void testStreamingRequestQueuePendingLookupGuards() {
+    fuse::world_partition::StreamingRequestQueue queue;
+    const fuse::world_partition::GridCoord coord{3, 1};
+    const fuse::world_partition::GridCoord invalid = fuse::world_partition::kInvalidGridCoord;
+
+    expectTrue(!fuse::world_partition::has_pending_for(queue, coord,
+                                                       fuse::world_partition::StreamingRequestKind::Load),
+               "has_pending_for false on empty queue");
+    expectNear(fuse::world_partition::pending_priority_for_guarded(queue, coord,
+                                                                  fuse::world_partition::StreamingRequestKind::Load),
+               -1.f, 1e-4f, "pending priority guard returns -1 on empty queue");
+    expectNear(fuse::world_partition::pending_priority_for_guarded(queue, invalid,
+                                                                  fuse::world_partition::StreamingRequestKind::Load),
+               -1.f, 1e-4f, "pending priority guard rejects invalid coord");
+
+    fuse::world_partition::StreamingRequest request{};
+    request.coord = coord;
+    request.kind = fuse::world_partition::StreamingRequestKind::Load;
+    request.priority = 4.5f;
+    expectTrue(queue.enqueue(request), "enqueue for pending lookup guards");
+
+    expectTrue(fuse::world_partition::has_pending_for(queue, coord,
+                                                       fuse::world_partition::StreamingRequestKind::Load),
+               "has_pending_for true for enqueued coord+kind");
+    expectTrue(!fuse::world_partition::has_pending_for(queue, coord,
+                                                        fuse::world_partition::StreamingRequestKind::Unload),
+               "has_pending_for false for different kind");
+    expectNear(fuse::world_partition::pending_priority_for_guarded(queue, coord,
+                                                                  fuse::world_partition::StreamingRequestKind::Load),
+               4.5f, 1e-4f, "pending priority guard returns stored priority");
+}
+
+void testStreamingRequestQueueTryFlushPendingIfGuard() {
+    withScheduler(1, [] {
+        fuse::world_partition::StreamingRequestQueue queue;
+
+        fuse::world_partition::StreamingRequest low{};
+        low.coord = {0, 0};
+        low.kind = fuse::world_partition::StreamingRequestKind::Load;
+        low.priority = 2.f;
+
+        fuse::world_partition::StreamingRequest high{};
+        high.coord = {1, 0};
+        high.kind = fuse::world_partition::StreamingRequestKind::Unload;
+        high.priority = 8.f;
+
+        expectEq(fuse::world_partition::try_flush_pending_if(
+                     queue, 2u, 5.f,
+                     [](fuse::world_partition::GridCoord,
+                        fuse::world_partition::StreamingRequestKind) { return true; }),
+                 0u, "flush_if false on empty queue");
+
+        expectTrue(queue.enqueue(low), "enqueue low-priority load");
+        expectTrue(queue.enqueue(high), "enqueue high-priority unload");
+
+        expectEq(fuse::world_partition::try_flush_pending_if(
+                     queue, 2u, 10.f,
+                     [](fuse::world_partition::GridCoord,
+                        fuse::world_partition::StreamingRequestKind) { return true; }),
+                 0u, "flush_if false when highest priority below threshold");
+        expectEq(queue.pending_enqueue_count(), 2u, "failed flush_if leaves pending queue unchanged");
+
+        expectEq(fuse::world_partition::try_flush_pending_if(
+                     queue, 1u, 8.f,
+                     [](fuse::world_partition::GridCoord,
+                        fuse::world_partition::StreamingRequestKind) { return true; }),
+                 1u, "flush_if submits when highest priority meets threshold");
+        expectEq(queue.pending_enqueue_count(), 1u, "flush_if removes submitted pending request");
+
+        for (int attempt = 0; attempt < 100 && queue.completed_count() < 1u; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        std::vector<fuse::world_partition::CompletedStreamingRequest> completed;
+        queue.drain_completed(completed);
+        expectEq(completed.size(), 1u, "flush_if completion drains");
+        expectTrue(completed[0].kind == fuse::world_partition::StreamingRequestKind::Unload,
+                   "flush_if submits highest-priority unload");
+    });
 }
 
 void testStreamingRequestQueueDequeueHelpers() {
@@ -1624,9 +1758,13 @@ int main() {
     testStreamingRequestQueueOrderByPriority();
     testStreamingRequestQueuePendingEnqueueGuards();
     testStreamingRequestQueueDequeueIfGuard();
+    testStreamingRequestQueuePendingLookupGuards();
+    testStreamingRequestQueueTryFlushPendingIfGuard();
     testStreamingRequestQueueDequeueHelpers();
     testResidencySetContainsClear();
     testResidencyGuardedRemoveAndPresence();
+    testFocusDistanceGuards();
+    testResidencyCollectEvictionCandidatesGuarded();
     testResidencyContainsClearGuards();
     testStreamingRequestQueueEnqueuePromoteDemote();
     testStreamingRequestQueueFlushBudget();
