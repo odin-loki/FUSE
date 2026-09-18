@@ -20,6 +20,10 @@ struct PairBufferSoA {
 
     bool isEmpty() const { return activeCount == 0u; }
     bool hasValidPairs() const { return activeCount > 0u; }
+    bool isFull() const { return maxCapacity > 0u && activeCount >= maxCapacity; }
+    u32 remainingCapacity() const {
+        return maxCapacity > 0u && activeCount < maxCapacity ? maxCapacity - activeCount : 0u;
+    }
     /// True when both dense and slot storage are empty (safe to skip SoA scans).
     bool canSkipSoAIteration() const { return activeCount == 0u && pairSlotCount == 0u; }
     /// True when at most one canonical pair is present (dedupe is a no-op).
@@ -34,9 +38,11 @@ struct PairBufferSoA {
     void setMaxCapacity(u32 capacity);
     void clear();
     void preparePairSlots(u32 slotCount);
-    void writeSlot(u32 slot, u32 idxA, u32 idxB);
+    void writeSlot(u32 slot, u32 idxA, u32 idxB, u32 bodyCount = 0u);
     void invalidateSlot(u32 slot);
-    bool push(u32 idxA, u32 idxB);
+    bool wouldRejectPush(u32 idxA, u32 idxB, u32 bodyCount = 0u) const;
+    bool push(u32 idxA, u32 idxB, u32 bodyCount = 0u);
+    u32 invalidateInvalidPairs(u32 bodyCount);
     u32 compact();
     void sortCanonical();
     u32 applyMaxCapacityClamp();
