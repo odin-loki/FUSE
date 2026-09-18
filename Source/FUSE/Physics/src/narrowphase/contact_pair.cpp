@@ -156,7 +156,43 @@ ContactManifold dispatchShapePair(
     return invalidContactManifold();
 }
 
+bool isShapeDegenerate(CollisionShapeType type, const vec3& params) {
+    switch (type) {
+    case CollisionShapeType::Sphere:
+    case CollisionShapeType::Capsule:
+        return params.x <= 0.f;
+    case CollisionShapeType::Box:
+        return params.x <= 0.f || params.y <= 0.f || params.z <= 0.f;
+    case CollisionShapeType::Plane:
+        return params.length() < 1e-8f;
+    default:
+        return false;
+    }
+}
+
 } // namespace
+
+const char* contact_pair_reject_reason_name(ContactPairRejectReason reason) {
+    switch (reason) {
+    case ContactPairRejectReason::None:
+        return "None";
+    case ContactPairRejectReason::SelfPair:
+        return "SelfPair";
+    case ContactPairRejectReason::OutOfRangeBody:
+        return "OutOfRangeBody";
+    case ContactPairRejectReason::MissingShape:
+        return "MissingShape";
+    case ContactPairRejectReason::BothTriggers:
+        return "BothTriggers";
+    case ContactPairRejectReason::UnsupportedShapePair:
+        return "UnsupportedShapePair";
+    case ContactPairRejectReason::BothStatic:
+        return "BothStatic";
+    case ContactPairRejectReason::DegenerateShape:
+        return "DegenerateShape";
+    }
+    return "Unknown";
+}
 
 bool is_trigger_contact_pair(
     const broadphase::CandidatePair& pair,
@@ -167,6 +203,32 @@ bool is_trigger_contact_pair(
     const bool triggerA = (bodies.flags[pair.bodyA] & RB_TRIGGER) != 0u;
     const bool triggerB = (bodies.flags[pair.bodyB] & RB_TRIGGER) != 0u;
     return triggerA && triggerB;
+}
+
+bool is_static_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies) {
+    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
+        return false;
+    }
+    const bool staticA = (bodies.flags[pair.bodyA] & RB_STATIC) != 0u;
+    const bool staticB = (bodies.flags[pair.bodyB] & RB_STATIC) != 0u;
+    return staticA && staticB;
+}
+
+bool is_degenerate_shape_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes) {
+    const u32 shapeA = findShapeForBody(shapes, pair.bodyA, CollisionShapeType::Sphere);
+    const u32 shapeB = findShapeForBody(shapes, pair.bodyB, CollisionShapeType::Sphere);
+    if (shapeA >= shapes.count() || shapeB >= shapes.count()) {
+        return false;
+    }
+
+    const CollisionShapeType typeA = shapeType(shapes, shapeA);
+    const CollisionShapeType typeB = shapeType(shapes, shapeB);
+    return isShapeDegenerate(typeA, shapes.params[shapeA]) ||
+           isShapeDegenerate(typeB, shapes.params[shapeB]);
 }
 
 bool is_unsupported_shape_pair(
@@ -223,6 +285,12 @@ ContactPairRejectReason contact_pair_reject_reason(
     if (is_unsupported_shape_pair(pair, shapes)) {
         return ContactPairRejectReason::UnsupportedShapePair;
     }
+    if (is_static_contact_pair(pair, bodies)) {
+        return ContactPairRejectReason::BothStatic;
+    }
+    if (is_degenerate_shape_pair(pair, shapes)) {
+        return ContactPairRejectReason::DegenerateShape;
+    }
     return ContactPairRejectReason::None;
 }
 
@@ -231,6 +299,13 @@ bool is_invalid_contact_pair(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return contact_pair_reject_reason(pair, bodies, shapes) != ContactPairRejectReason::None;
+}
+
+bool is_valid_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !is_invalid_contact_pair(pair, bodies, shapes);
 }
 
 ContactManifold detect_contacts_pair(
@@ -280,7 +355,7 @@ void compute_friction_tangents(ContactManifold& manifold) {
         return;
     }
 
-    if (manifold.hasFrictionBasis()) {
+    if (has_cached_friction_basis(manifold)) {
         return;
     }
 

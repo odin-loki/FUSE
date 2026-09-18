@@ -41,6 +41,9 @@ vec2 projectTangentialVelocity(vec3 relativeVelocity, const TangentBasis& basis)
 /// Returns true when friction tangent frames should not be built for this manifold (B4.3 deepen).
 bool should_skip_friction_tangents(const ContactManifold& manifold);
 
+/// Returns true when an existing orthonormal basis can be reused (B4.3 deepen pass).
+bool has_cached_friction_basis(const ContactManifold& manifold);
+
 /// Returns true when both friction coefficients are zero or normal impulse is negligible (B4.3 deepen).
 bool should_skip_friction_solve(
     f32 staticFriction,
@@ -50,5 +53,17 @@ bool should_skip_friction_solve(
 
 /// Returns true when tangential speed is below the solver stub threshold (B4.3 deepen).
 bool hasNegligibleTangentialVelocity(vec2 projected, f32 speedThreshold = 1e-6f);
+
+/// Scalar tangential speed from a projected velocity (B4.3 deepen pass).
+f32 tangentialSpeed(vec2 projected);
+
+/// Combined early-out for tangential velocity solve (B4.3 deepen pass).
+bool should_skip_tangential_velocity_solve(
+    vec2 projectedVelocity,
+    f32 staticFriction,
+    f32 dynamicFriction,
+    f32 normalImpulse = 0.f,
+    f32 speedThreshold = 1e-6f,
+    f32 impulseEpsilon = 1e-8f);
 
 } // namespace fuse::physics::narrowphase
