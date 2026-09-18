@@ -531,6 +531,63 @@ void run_snapshot_delta_tests() {
     const fuse::net::SnapshotHistoryPreflight apply_or_skip_preflight =
         helper_history.preflight_apply_delta(base.frame, empty_delta);
     expectTrue(apply_or_skip_preflight.can_apply_or_skip(), "history preflight can_apply_or_skip for empty delta");
+
+    // --- target-frame, trackable-index, and sanitize guards (B7.4 deepen follow-up) ---
+    expectTrue(fuse::net::validate_delta_target_frame(patch_delta), "forward target frame validates");
+    expectTrue(fuse::net::validate_entity_index_trackable(1u), "trackable entity index validates");
+    expectTrue(!fuse::net::validate_entity_index_trackable(64u), "entity index 64 is not trackable");
+    expectTrue(fuse::net::validate_delta_trackable_indices(patch_delta),
+               "patch delta trackable indices validate");
+    expectTrue(fuse::net::validate_delta_patch_field_bits(patch_delta),
+               "patch delta aggregate field-bit validation passes");
+
+    fuse::net::SnapshotDelta reverse_frame_delta = patch_delta;
+    reverse_frame_delta.base_frame = 10u;
+    reverse_frame_delta.target_frame = 5u;
+    expectTrue(!fuse::net::validate_delta_target_frame(reverse_frame_delta),
+               "reverse target frame fails validation");
+    fuse::net::GameSnapshot frame_base =
+        make_entity_snapshot(10, 1, 1, {0.f, 0.f, 0.f, 1.f}, {0.f, 0.f, 0.f, 0.f}, 1.f);
+    expectTrue(!fuse::net::preflight_snapshot_delta(frame_base, reverse_frame_delta).target_frame_ok,
+               "preflight rejects reverse target frame");
+
+    fuse::net::SnapshotDelta untrackable_patch_delta = patch_delta;
+    untrackable_patch_delta.entity_patches[0].entity_index = 64u;
+    untrackable_patch_delta.changed_entity_mask = (1ull << 0);
+    expectTrue(!fuse::net::validate_delta_trackable_indices(untrackable_patch_delta),
+               "untrackable patch index fails validation");
+    expectTrue(!fuse::net::preflight_snapshot_delta(base, untrackable_patch_delta).trackable_indices_ok,
+               "preflight rejects untrackable patch index");
+
+    expectTrue(fuse::net::is_entity_patch_snapshot_delta(patch_delta), "patch delta kind helper");
+    expectTrue(!fuse::net::is_full_snapshot_delta(patch_delta), "patch delta is not full kind");
+    expectTrue(fuse::net::is_full_snapshot_delta(high_index_delta), "high-index fallback is full kind");
+    expectTrue(!fuse::net::is_entity_patch_snapshot_delta(empty_delta), "empty delta is not patch kind");
+
+    expectTrue(fuse::net::snapshot_delta_kind_valid(fuse::net::SnapshotDeltaKind::EntityPatch),
+               "known delta kind validates");
+    expectTrue(!fuse::net::snapshot_delta_kind_valid(static_cast<fuse::net::SnapshotDeltaKind>(99)),
+               "unknown delta kind fails validation");
+
+    const fuse::u8 sanitized_ecs =
+        fuse::net::ecs_field_mask_sanitize(static_cast<fuse::u8>(fuse::net::SnapshotEcsField::Position) | 0xF0);
+    expectTrue(sanitized_ecs == static_cast<fuse::u8>(fuse::net::SnapshotEcsField::Position),
+               "ecs mask sanitize strips reserved bits");
+    const fuse::u8 sanitized_physics =
+        fuse::net::physics_field_mask_sanitize(static_cast<fuse::u8>(fuse::net::SnapshotPhysicsField::Mass) | 0x80);
+    expectTrue(sanitized_physics == static_cast<fuse::u8>(fuse::net::SnapshotPhysicsField::Mass),
+               "physics mask sanitize strips reserved bits");
+
+    const fuse::net::DeltaApplyResult target_frame_verified =
+        fuse::net::apply_snapshot_delta_verified(frame_base, reverse_frame_delta);
+    expectTrue(!target_frame_verified.target_frame_ok, "verified apply surfaces target frame failure");
+    expectTrue(target_frame_verified.full_payload_ok, "valid patch delta passes full payload check in verified apply");
+
+    fuse::net::SnapshotHistoryRing frame_history;
+    frame_history.init(4);
+    frame_history.push(frame_base);
+    expectTrue(!frame_history.apply_delta_and_store(frame_base.frame, reverse_frame_delta, nullptr),
+               "history ring rejects delta with reverse target frame");
 }
 
 } // namespace fuse::net::tests

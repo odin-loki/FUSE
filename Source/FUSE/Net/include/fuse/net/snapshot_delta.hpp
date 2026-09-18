@@ -73,6 +73,12 @@ struct DeltaApplyResult {
     bool field_bits_ok = true;
     /// True when no duplicate `(entity_index, generation)` rows appear in `entity_patches`.
     bool duplicate_index_ok = true;
+    /// True when `SnapshotDeltaKind::Full` carries non-empty ecs or physics bytes.
+    bool full_payload_ok = true;
+    /// True when `delta.target_frame` is not before `delta.base_frame`.
+    bool target_frame_ok = true;
+    /// True when every entity patch index is within the 64-bit mask stub range.
+    bool trackable_indices_ok = true;
 };
 
 /// Preflight checks before applying a delta (baseline checksum + entity mask consistency).
@@ -93,10 +99,14 @@ struct SnapshotDeltaPreflight {
     bool duplicate_index_ok = true;
     /// True when `SnapshotDeltaKind::Full` carries non-empty ecs or physics bytes.
     bool full_payload_ok = true;
+    /// True when `delta.target_frame` is not before `delta.base_frame`.
+    bool target_frame_ok = true;
+    /// True when every entity patch index is within the 64-bit mask stub range.
+    bool trackable_indices_ok = true;
 
     [[nodiscard]] bool can_apply() const {
         return base_checksum_ok && entity_mask_ok && base_frame_ok && payload_ok && mask_popcount_ok &&
-               field_bits_ok && duplicate_index_ok && full_payload_ok;
+               field_bits_ok && duplicate_index_ok && full_payload_ok && target_frame_ok && trackable_indices_ok;
     }
 };
 
@@ -131,6 +141,15 @@ struct SnapshotHistoryPreflight {
 
 /// True when `mask` only sets declared physics field bits.
 [[nodiscard]] bool physics_field_mask_valid(u8 mask);
+
+/// Strips reserved ECS field bits from `mask`.
+[[nodiscard]] u8 ecs_field_mask_sanitize(u8 mask);
+
+/// Strips reserved physics field bits from `mask`.
+[[nodiscard]] u8 physics_field_mask_sanitize(u8 mask);
+
+/// True when `kind` is a known `SnapshotDeltaKind` value.
+[[nodiscard]] bool snapshot_delta_kind_valid(SnapshotDeltaKind kind);
 
 /// Bitwise union of two ECS field masks.
 [[nodiscard]] u8 ecs_field_mask_union(u8 a, u8 b);
@@ -180,6 +199,18 @@ struct SnapshotHistoryPreflight {
 /// True when `SnapshotDeltaKind::Full` carries non-empty ecs or physics bytes.
 [[nodiscard]] bool validate_full_delta_payload(const SnapshotDelta& delta);
 
+/// True when every entity patch row uses only declared ECS/physics field bits.
+[[nodiscard]] bool validate_delta_patch_field_bits(const SnapshotDelta& delta);
+
+/// True when `delta.target_frame` is not before `delta.base_frame`.
+[[nodiscard]] bool validate_delta_target_frame(const SnapshotDelta& delta);
+
+/// True when `entity_index` fits the 64-bit changed-entity mask stub.
+[[nodiscard]] bool validate_entity_index_trackable(u32 entity_index);
+
+/// True when every entity patch index fits the 64-bit changed-entity mask stub.
+[[nodiscard]] bool validate_delta_trackable_indices(const SnapshotDelta& delta);
+
 /// True when `subset` field bits are covered by `superset`.
 [[nodiscard]] bool ecs_field_mask_subset(u8 subset, u8 superset);
 
@@ -197,6 +228,12 @@ struct SnapshotHistoryPreflight {
 
 /// True for `SnapshotDeltaKind::None` deltas (no-op bandwidth payload).
 [[nodiscard]] bool is_empty_snapshot_delta(const SnapshotDelta& delta);
+
+/// True for `SnapshotDeltaKind::Full` deltas.
+[[nodiscard]] bool is_full_snapshot_delta(const SnapshotDelta& delta);
+
+/// True for `SnapshotDeltaKind::EntityPatch` deltas.
+[[nodiscard]] bool is_entity_patch_snapshot_delta(const SnapshotDelta& delta);
 
 /// True when apply can be skipped because the delta carries no state changes (B7.4 deepen follow-up).
 [[nodiscard]] bool should_skip_delta_apply(const SnapshotDelta& delta);
