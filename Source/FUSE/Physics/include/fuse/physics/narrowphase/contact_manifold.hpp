@@ -49,6 +49,18 @@ struct ContactManifold {
     const ContactPoint& pointAt(u32 index) const;
     f32 maxPenetration() const;
 
+    /// Count contact points with penetration >= `-epsilon` (touching or penetrating) (B4.3 deepen).
+    u32 penetratingPointCount(f32 epsilon = 1e-6f) const;
+
+    /// Count contact points with penetration < `-epsilon` (separated) (B4.3 deepen).
+    u32 separatedPointCount(f32 epsilon = 1e-6f) const;
+
+    /// True when any point has penetration strictly above `epsilon` (B4.3 deepen).
+    bool hasPenetratingPoints(f32 epsilon = 1e-6f) const;
+
+    /// Clear cached friction basis so the next tangent build recomputes (B4.3 deepen).
+    void invalidateFrictionBasis();
+
     /// Drop separated contact points with penetration below `-epsilon` (B4.3 deepen).
     void pruneNonPenetratingPoints(f32 epsilon = 1e-6f);
 
@@ -60,6 +72,11 @@ struct ContactManifold {
 
     /// Run non-penetrating, duplicate, and max-point pruning in order (B4.3 deepen).
     void pruneContactPoints(
+        f32 separationEpsilon = 1e-6f,
+        f32 duplicateEpsilon = 1e-4f);
+
+    /// Prune contact points; returns false when the manifold is empty afterward (B4.3 deepen).
+    bool pruneIfEmpty(
         f32 separationEpsilon = 1e-6f,
         f32 duplicateEpsilon = 1e-4f);
 };

@@ -23,6 +23,15 @@ ContactPairRejectReason contact_pair_reject_reason(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Diagnostic label for logging and test assertions (B4.3 deepen).
+const char* contact_pair_reject_reason_name(ContactPairRejectReason reason);
+
+/// Returns true when the manifold has no contact points (B4.3 deepen).
+bool is_empty_contact_manifold(const ContactManifold& manifold);
+
+/// Returns true when the manifold is marked valid with points and a non-zero normal (B4.3 deepen).
+bool is_valid_contact_manifold(const ContactManifold& manifold);
+
 /// Returns true when narrowphase should skip this pair (self, OOB bodies, or missing shapes).
 bool is_invalid_contact_pair(
     const broadphase::CandidatePair& pair,

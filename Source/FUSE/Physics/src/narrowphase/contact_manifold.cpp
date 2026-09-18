@@ -136,6 +136,11 @@ void ContactManifold::pruneContactPoints(f32 separationEpsilon, f32 duplicateEps
     pruneToMaxPoints(kMaxContactPointsPerManifold);
 }
 
+bool ContactManifold::pruneIfEmpty(f32 separationEpsilon, f32 duplicateEpsilon) {
+    pruneContactPoints(separationEpsilon, duplicateEpsilon);
+    return !empty();
+}
+
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};
     if (index >= pointCount) {
@@ -154,6 +159,39 @@ f32 ContactManifold::maxPenetration() const {
         maxPenetration = std::max(maxPenetration, points[i].penetration);
     }
     return maxPenetration;
+}
+
+u32 ContactManifold::penetratingPointCount(f32 epsilon) const {
+    u32 count = 0u;
+    for (u32 i = 0u; i < pointCount; ++i) {
+        if (points[i].penetration >= -epsilon) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 ContactManifold::separatedPointCount(f32 epsilon) const {
+    u32 count = 0u;
+    for (u32 i = 0u; i < pointCount; ++i) {
+        if (points[i].penetration < -epsilon) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+bool ContactManifold::hasPenetratingPoints(f32 epsilon) const {
+    for (u32 i = 0u; i < pointCount; ++i) {
+        if (points[i].penetration > epsilon) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void ContactManifold::invalidateFrictionBasis() {
+    frictionBasis = {};
 }
 
 void ContactManifold::addPoint(vec3 point, f32 penetration) {

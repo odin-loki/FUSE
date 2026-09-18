@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
+#include <cstring>
 
 namespace {
 
@@ -645,6 +646,140 @@ void testContactBufferCapacityClamp() {
     expectNear(buffer.manifoldAt(1u).penetrationDepth, 0.5f, 1e-4f, "clamp keeps next deepest penetration");
 }
 
+void testContactPairRejectReasonNames() {
+    expectTrue(
+        std::strcmp(
+            fuse::physics::narrowphase::contact_pair_reject_reason_name(
+                fuse::physics::narrowphase::ContactPairRejectReason::SelfPair),
+            "SelfPair") == 0,
+        "reject reason name maps SelfPair");
+    expectTrue(
+        std::strcmp(
+            fuse::physics::narrowphase::contact_pair_reject_reason_name(
+                fuse::physics::narrowphase::ContactPairRejectReason::UnsupportedShapePair),
+            "UnsupportedShapePair") == 0,
+        "reject reason name maps UnsupportedShapePair");
+    expectTrue(
+        std::strcmp(
+            fuse::physics::narrowphase::contact_pair_reject_reason_name(
+                fuse::physics::narrowphase::ContactPairRejectReason::None),
+            "None") == 0,
+        "reject reason name maps None");
+}
+
+void testPenetratingPointCounts() {
+    fuse::physics::narrowphase::ContactManifold manifold{};
+    manifold.contactNormal = {0.f, 1.f, 0.f};
+    manifold.addPoint({0.f, 0.f, 0.f}, 0.3f);
+    manifold.addPoint({1.f, 0.f, 0.f}, 0.f);
+    manifold.addPoint({2.f, 0.f, 0.f}, 0.15f);
+    manifold.addPoint({3.f, 0.f, 0.f}, -0.05f);
+
+    expectTrue(manifold.penetratingPointCount() == 3u, "penetratingPointCount keeps touching points");
+    expectTrue(manifold.separatedPointCount() == 1u, "separatedPointCount tracks separated slots");
+    expectTrue(manifold.hasPenetratingPoints(), "hasPenetratingPoints flags positive penetration");
+
+    fuse::physics::narrowphase::ContactManifold resting{};
+    resting.contactNormal = {0.f, 1.f, 0.f};
+    resting.addPoint({0.f, 0.f, 0.f}, 0.f);
+    resting.addPoint({1.f, 0.f, 0.f}, -0.01f);
+    expectTrue(!resting.hasPenetratingPoints(), "hasPenetratingPoints false for resting contacts only");
+    expectTrue(resting.penetratingPointCount() == 1u, "penetratingPointCount counts zero-penetration touch");
+}
+
+void testManifoldPruneIfEmpty() {
+    fuse::physics::narrowphase::ContactManifold allSeparated{};
+    allSeparated.contactNormal = {0.f, 1.f, 0.f};
+    allSeparated.addPoint({0.f, 0.f, 0.f}, -0.1f);
+    allSeparated.addPoint({1.f, 0.f, 0.f}, -0.2f);
+    expectTrue(!allSeparated.pruneIfEmpty(), "pruneIfEmpty returns false when all points separate");
+    expectTrue(allSeparated.empty(), "pruneIfEmpty clears separated-only manifold");
+
+    fuse::physics::narrowphase::ContactManifold mixed{};
+    mixed.contactNormal = {0.f, 1.f, 0.f};
+    mixed.addPoint({0.f, 0.f, 0.f}, 0.4f);
+    mixed.addPoint({1.f, 0.f, 0.f}, -0.2f);
+    mixed.addPoint({2.f, 0.f, 0.f}, 0.00001f);
+    mixed.addPoint({2.00001f, 0.f, 0.f}, 0.5f);
+    expectTrue(mixed.pruneIfEmpty(), "pruneIfEmpty returns true when penetrating points remain");
+    expectTrue(mixed.pointCount == 2u, "pruneIfEmpty chains separation and duplicate pruning");
+    expectNear(mixed.maxPenetration(), 0.5f, 1e-4f, "pruneIfEmpty keeps deepest penetrating point");
+}
+
+void testCachedFrictionBasisHelpers() {
+    fuse::physics::narrowphase::ContactManifold manifold{};
+    manifold.contactNormal = {0.f, 1.f, 0.f};
+    manifold.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    expectTrue(
+        !fuse::physics::narrowphase::hasCachedFrictionBasis(manifold),
+        "hasCachedFrictionBasis false before build");
+    expectTrue(
+        fuse::physics::narrowphase::should_rebuild_friction_tangents(manifold),
+        "should_rebuild true when basis is missing");
+
+    fuse::physics::narrowphase::ensureFrictionBasis(manifold);
+    expectTrue(
+        fuse::physics::narrowphase::hasCachedFrictionBasis(manifold),
+        "ensureFrictionBasis builds orthonormal cache");
+    expectTrue(
+        !fuse::physics::narrowphase::should_rebuild_friction_tangents(manifold),
+        "should_rebuild false after valid cache");
+
+    const auto cachedBasis = manifold.frictionBasis;
+    fuse::physics::narrowphase::ensureFrictionBasis(manifold);
+    expectNear(
+        manifold.frictionBasis.tangent1.x,
+        cachedBasis.tangent1.x,
+        1e-4f,
+        "ensureFrictionBasis early-outs with cached basis");
+
+    manifold.invalidateFrictionBasis();
+    expectTrue(
+        !fuse::physics::narrowphase::hasCachedFrictionBasis(manifold),
+        "invalidateFrictionBasis clears cached frame");
+    expectTrue(
+        fuse::physics::narrowphase::should_rebuild_friction_tangents(manifold),
+        "should_rebuild true after invalidate");
+
+    manifold.contactNormal = {1.f, 0.f, 0.f};
+    manifold.buildFrictionBasis();
+    expectTrue(
+        fuse::physics::narrowphase::hasCachedFrictionBasis(manifold),
+        "rebuilt basis matches new normal");
+    expectTrue(
+        fuse::physics::narrowphase::buildTangentBasisForManifold(manifold).tangent1.x ==
+            manifold.frictionBasis.tangent1.x,
+        "buildTangentBasisForManifold reuses cached basis");
+}
+
+void testIsValidContactManifoldGuards() {
+    fuse::physics::narrowphase::ContactManifold empty{};
+    expectTrue(
+        fuse::physics::narrowphase::is_empty_contact_manifold(empty),
+        "is_empty_contact_manifold flags zero points");
+    expectTrue(
+        !fuse::physics::narrowphase::is_valid_contact_manifold(empty),
+        "is_valid_contact_manifold rejects empty manifold");
+
+    fuse::physics::narrowphase::ContactManifold invalid{};
+    invalid.valid = true;
+    invalid.contactNormal = {};
+    invalid.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    expectTrue(
+        !fuse::physics::narrowphase::is_valid_contact_manifold(invalid),
+        "is_valid_contact_manifold rejects zero-length normal");
+
+    fuse::physics::narrowphase::ContactManifold valid =
+        fuse::physics::narrowphase::collideSphereSphere({0.f, 0.f, 0.f}, 1.f, {1.5f, 0.f, 0.f}, 1.f, 0u, 1u);
+    expectTrue(fuse::physics::narrowphase::generate_contact_manifold(valid), "finalize produces valid manifold");
+    expectTrue(
+        fuse::physics::narrowphase::is_valid_contact_manifold(valid),
+        "is_valid_contact_manifold accepts finalized contact");
+    expectTrue(
+        !fuse::physics::narrowphase::is_empty_contact_manifold(valid),
+        "is_empty_contact_manifold false for finalized contact");
+}
+
 void testGjkSupportAndEpaStub() {
     const fuse::physics::vec3 hull[] = {
         {-1.f, 0.f, 0.f},
@@ -685,6 +820,11 @@ int main() {
     testRunNarrowphaseFinalizesFrictionTangents();
     testContactPointTangentBasisAndManifoldClear();
     testContactBufferCapacityClamp();
+    testContactPairRejectReasonNames();
+    testPenetratingPointCounts();
+    testManifoldPruneIfEmpty();
+    testCachedFrictionBasisHelpers();
+    testIsValidContactManifoldGuards();
     testGjkSupportAndEpaStub();
 
     if (g_failures == 0) {
