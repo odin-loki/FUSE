@@ -417,4 +417,65 @@ bool should_skip_contact_pair_dispatch(
     return is_invalid_contact_pair(pair, bodies, shapes);
 }
 
+bool is_plane_plane_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes) {
+    const u32 shapeA = findShapeForBody(shapes, pair.bodyA, CollisionShapeType::Sphere);
+    const u32 shapeB = findShapeForBody(shapes, pair.bodyB, CollisionShapeType::Sphere);
+    if (shapeA >= shapes.count() || shapeB >= shapes.count()) {
+        return false;
+    }
+
+    const CollisionShapeType typeA = shapeType(shapes, shapeA);
+    const CollisionShapeType typeB = shapeType(shapes, shapeB);
+    return typeA == CollisionShapeType::Plane && typeB == CollisionShapeType::Plane;
+}
+
+bool can_dispatch_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !should_skip_contact_pair_dispatch(pair, bodies, shapes);
+}
+
+bool contact_pair_preflight_matches(
+    const ContactPairPreflight& preflight,
+    ContactPairRejectReason expected) {
+    return preflight.reason == expected;
+}
+
+ManifoldFinalizePreflight preflight_finalize_contact_manifold(const ContactManifold& manifold) {
+    ManifoldFinalizePreflight preflight{};
+    if (manifold.empty()) {
+        preflight.skipped = true;
+        preflight.empty = true;
+        preflight.wouldBeEmptyAfterPrune = true;
+        return preflight;
+    }
+
+    preflight.invalidNormal = !manifold.hasValidNormal();
+    preflight.noPenetratingPoints = !manifold.hasPenetratingPoints();
+    preflight.wouldBeEmptyAfterPrune = manifold.wouldBeEmptyAfterPrune();
+    return preflight;
+}
+
+bool can_skip_finalize_contact_manifold(const ContactManifold& manifold) {
+    return manifold.valid && manifold.hasFrictionBasis() &&
+           std::fabs(manifold.contactNormal.length() - 1.f) <= 1e-4f;
+}
+
+bool generate_contact_manifold_if_needed(ContactManifold& manifold) {
+    if (can_skip_finalize_contact_manifold(manifold)) {
+        return true;
+    }
+
+    const ManifoldFinalizePreflight preflight = preflight_finalize_contact_manifold(manifold);
+    if (!preflight.can_finalize()) {
+        manifold.clear();
+        return false;
+    }
+
+    return generate_contact_manifold(manifold);
+}
+
 } // namespace fuse::physics::narrowphase
