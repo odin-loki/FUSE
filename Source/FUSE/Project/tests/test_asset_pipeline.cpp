@@ -1430,9 +1430,11 @@ void testCookCacheInvalidatePruneGuards() {
     expectTrue(!cooker.cache().invalidate(0), "zero-hash invalidation on populated cache is a no-op");
     expectTrue(cooker.cache().contains(seeded.content_hash), "seeded entry remains after zero-hash invalidation");
 
-    expectTrue(cooker.cache().invalidate_stale_content_for_source(source, 0u) == 1u,
-               "zero current hash invalidates all entries for source");
-    expectTrue(cooker.cache().empty(), "cache empty after zero-hash stale-content invalidation");
+    expectTrue(cooker.cache().invalidate_stale_content_for_source(source, 0u) == 0u,
+               "zero current hash stale-content invalidation is a no-op");
+    expectTrue(cooker.cache().entry_count() == 1u, "seeded entry survives zero-hash stale guard");
+    expectTrue(!cooker.cache().has_invalid_entries(), "valid cache has no invalid entries");
+    expectTrue(!cooker.cache().has_stale_entries(), "fresh cache has no stale entries");
 
     const fuse::project::CookRecord reseeded = cooker.cook_mesh(desc);
     expectTrue(reseeded.ok, "reseed cook ok");

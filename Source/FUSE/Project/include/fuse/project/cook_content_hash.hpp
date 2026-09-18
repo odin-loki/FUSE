@@ -9,6 +9,11 @@
 
 namespace fuse::project {
 
+/// Non-null buffer with at least one byte — required before hashing raw spans (B7.9 deepen).
+[[nodiscard]] inline bool is_hashable_byte_span(const u8* data, usize size) {
+    return data != nullptr && size > 0;
+}
+
 /// FNV-1a 64-bit hash over raw bytes — shared by cook cache keys (B7.9 deepen stub).
 [[nodiscard]] u64 fnv1a64_bytes(const u8* data, usize size);
 [[nodiscard]] u64 fnv1a64_combine(u64 left, u64 right);

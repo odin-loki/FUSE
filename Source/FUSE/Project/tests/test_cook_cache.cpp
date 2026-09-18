@@ -253,6 +253,64 @@ void testCookCachePruneAllMixedInvalidAndStale() {
     expectTrue(!cooker.cache().has_prunable_entries(), "mixed cache is clean after prune_all");
 }
 
+void testCookContentHashByteSpanGuards() {
+    expectTrue(!fuse::project::is_hashable_byte_span(nullptr, 0), "null zero-length span is not hashable");
+    expectTrue(!fuse::project::is_hashable_byte_span(nullptr, 4u), "null non-zero span is not hashable");
+
+    const fuse::u8 byte = 7;
+    expectTrue(fuse::project::is_hashable_byte_span(&byte, 1u), "non-null span is hashable");
+    expectTrue(fuse::project::fnv1a64_bytes(nullptr, 4u) == 0, "null non-zero span hashes to zero");
+    expectTrue(fuse::project::fnv1a64_bytes(&byte, 1u) != 0, "valid span yields non-zero hash");
+}
+
+void testCookCacheInvalidVsStalePruneGuards() {
+    fuse::project::CookCache cache;
+
+    fuse::project::CookCacheEntry invalid;
+    invalid.content_hash = 0;
+    invalid.source_path = "/tmp/fuse_b79_split_invalid.obj";
+    invalid.output_path = "/tmp/fuse_b79_split_invalid.fusemesh";
+    cache.store(invalid);
+    expectTrue(cache.entry_count() == 0u, "store rejects invalid entry for split prune guard");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_split_stale.obj", "# split stale v1\n");
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_split_stale.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord first = cooker.cook_mesh(desc);
+    expectTrue(first.ok, "seed cook for split prune guard ok");
+    expectTrue(!cooker.cache().has_invalid_entries(), "fresh cook cache has no invalid entries");
+    expectTrue(!cooker.cache().has_stale_entries(), "fresh cook cache has no stale entries");
+    expectTrue(!cooker.cache().has_prunable_entries(), "fresh cook cache is not prunable");
+
+    writeTempFile(source, "# split stale v2\n");
+    expectTrue(!cooker.cache().has_invalid_entries(), "stale content does not mark invalid entries");
+    expectTrue(cooker.cache().has_stale_entries(), "stale content marks stale entries");
+    expectTrue(cooker.cache().has_prunable_entries(), "stale cache is prunable");
+    expectTrue(cooker.cache().prune_invalid_entries() == 0u, "invalid prune no-op on stale-only cache");
+    expectTrue(cooker.cache().prune_stale_entries() == 1u, "stale prune removes stale entry");
+    expectTrue(!cooker.cache().has_stale_entries(), "cache is clean after stale prune");
+}
+
+void testCookCacheLoadCorruptPreservesEntries() {
+    fuse::project::CookCache cache;
+
+    fuse::project::CookCacheEntry valid;
+    valid.content_hash = 601;
+    valid.source_path = "/tmp/fuse_b79_corrupt_load.obj";
+    valid.output_path = "/tmp/fuse_b79_corrupt_load.fusemesh";
+    cache.store(valid);
+    expectTrue(cache.entry_count() == 1u, "entry seeded before corrupt load");
+
+    const std::string corruptPath = "/tmp/fuse_b79_corrupt_cache.json";
+    writeTempFile(corruptPath, "{ not a cook cache document }\n");
+    expectTrue(!cache.load(corruptPath), "corrupt cache JSON load fails");
+    expectTrue(cache.entry_count() == 1u, "corrupt load preserves existing entries");
+    expectTrue(cache.contains(601u), "seeded entry remains after corrupt load");
+}
+
 void testCookCachePruneInvalidEntriesOnLoad() {
     const std::string cachePath = "/tmp/fuse_b79_prune_invalid_load.json";
     {
@@ -297,9 +355,12 @@ int main() {
     testCookCacheZeroKeyGuards();
     testCookCachePruneAll();
     testCookCacheStaleContentInvalidationGuards();
+    testCookContentHashByteSpanGuards();
     testCookCacheHasPrunableEntriesAndCleanPruneGuards();
+    testCookCacheInvalidVsStalePruneGuards();
     testCookCacheInvalidateUnknownHashGuards();
     testCookCacheLoadMissingFilePreservesEntries();
+    testCookCacheLoadCorruptPreservesEntries();
     testCookCachePruneAllMixedInvalidAndStale();
     testCookCachePruneInvalidEntriesOnLoad();
 
