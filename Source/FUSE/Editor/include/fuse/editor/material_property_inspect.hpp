@@ -76,4 +76,13 @@ inline constexpr u32 kInvalidMaterialSlot = UINT32_MAX;
 /// Clamp all fields in an authoring-side material edit state (B6.7 deepen follow-up).
 void clampMaterialEditState(MaterialEditState& state);
 
+/// Dirty-mask bit for one inspector property (B6.7 deepen follow-up).
+[[nodiscard]] u32 materialPropertyDirtyBit(MaterialPropertyId id);
+
+/// True when the dirty mask has no property bits set (B6.7 deepen follow-up).
+[[nodiscard]] bool isPropertyDirtyMaskEmpty(u32 dirtyMask);
+
+/// Count set property bits in a dirty mask (B6.7 deepen follow-up).
+[[nodiscard]] u32 countMaterialPropertyDirtyBits(u32 dirtyMask);
+
 } // namespace fuse::editor
