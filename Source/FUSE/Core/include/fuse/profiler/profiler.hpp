@@ -61,7 +61,9 @@ u32 frameIndex();
 u32 eventCount();
 u32 maxNestingDepth();
 u32 maxFlowNestingDepth();
+u32 scopeNestingDepth();
 u32 flowNestingDepth();
+u32 openAsyncFlowCount();
 
 bool hasEvents();
 bool isEventIndexValid(u32 index);
