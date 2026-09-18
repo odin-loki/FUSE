@@ -114,6 +114,15 @@ inline bool rayIntersectPlane(const Vec4& plane, const Vec3& origin, const Vec3&
     return true;
 }
 
+/// Ray-plane intersection when the plane is usable; returns false on degenerate early-out.
+inline bool tryRayIntersectPlane(const Vec4& plane, const Vec3& origin, const Vec3& direction, f32& t,
+                                 f32 epsilon = 1e-8f) {
+    if (isDegeneratePlane(plane, epsilon)) {
+        return false;
+    }
+    return rayIntersectPlane(plane, origin, direction, t, epsilon);
+}
+
 /// Positive-vertex test for an AABB against a plane (frustum culling convention).
 inline PlaneSide classifyAabb(const Vec4& plane, const AABB& box) {
     if (box.isEmpty()) {
@@ -245,9 +254,9 @@ inline u32 clipPolygonAgainstPlane(const Vec4& plane, const Vec3* input, u32 inp
     return outCount;
 }
 
-/// Classifies an AABB when the plane is usable; returns false on degenerate early-out.
+/// Classifies an AABB when the plane and box are usable; returns false on degenerate or empty early-out.
 inline bool tryClassifyAabb(const Vec4& plane, const AABB& box, PlaneSide& side, f32 epsilon = 1e-8f) {
-    if (isDegeneratePlane(plane, epsilon)) {
+    if (isDegeneratePlane(plane, epsilon) || box.isEmpty()) {
         return false;
     }
     side = classifyAabb(plane, box);

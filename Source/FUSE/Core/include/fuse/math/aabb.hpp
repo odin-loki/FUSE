@@ -261,4 +261,40 @@ inline bool tryTransformAabb(const Mat4& matrix, const AABB& box, AABB& out) {
     return true;
 }
 
+/// Exact corner-transformed bounds when `box` is non-empty; returns false on empty early-out.
+inline bool tryTransformAabbCorners(const Mat4& matrix, const AABB& box, AABB& out) {
+    if (box.isEmpty()) {
+        return false;
+    }
+    out = transformAabbCorners(matrix, box);
+    return true;
+}
+
+/// Writes merge result when at least one operand is non-empty; returns false when both are empty.
+inline bool tryMergeAabb(const AABB& a, const AABB& b, AABB& out) {
+    if (a.isEmpty() && b.isEmpty()) {
+        return false;
+    }
+    out = mergeAabb(a, b);
+    return true;
+}
+
+/// Writes containment result when `box` is non-empty; returns false on empty early-out.
+inline bool tryContains(const AABB& box, const Vec3& point, bool& contained) {
+    if (box.isEmpty()) {
+        return false;
+    }
+    contained = box.contains(point);
+    return true;
+}
+
+/// Writes overlap result when both operands are non-empty; returns false on empty early-out.
+inline bool tryOverlaps(const AABB& a, const AABB& b, bool& overlapping) {
+    if (a.isEmpty() || b.isEmpty()) {
+        return false;
+    }
+    overlapping = a.overlaps(b);
+    return true;
+}
+
 } // namespace fuse::math

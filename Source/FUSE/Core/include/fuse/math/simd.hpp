@@ -420,4 +420,35 @@ inline bool tryMakePlaneFromNormalAndPoint(const Vec3& normal, const Vec3& point
     return fuse::math::tryMakePlaneFromNormalAndPoint(normal, point, out, epsilon);
 }
 
+inline bool tryTransformDirectionRigid(const fuse::math::Mat4& matrix, const Vec3& direction, Vec3& out,
+                                       f32 epsilon = 1e-4f) {
+    return fuse::math::tryTransformDirectionRigid(matrix, direction, out, epsilon);
+}
+
+inline bool tryFromRigid(const Vec3& translation, const Quat& rotation, f32 uniformScale,
+                         fuse::math::Mat4& out, f32 epsilon = 1e-4f) {
+    return fuse::math::tryFromRigid(translation, rotation, uniformScale, out, epsilon);
+}
+
+inline bool tryTransformAabbCorners(const Mat4& matrix, const AABB& box, AABB& out) {
+    return fuse::math::tryTransformAabbCorners(matrix.toScalar(), box, out);
+}
+
+inline bool tryMergeAabb(const AABB& a, const AABB& b, AABB& out) {
+    return fuse::math::tryMergeAabb(a, b, out);
+}
+
+inline bool tryContains(const AABB& box, const Vec3& point, bool& contained) {
+    return fuse::math::tryContains(box, point, contained);
+}
+
+inline bool tryOverlaps(const AABB& a, const AABB& b, bool& overlapping) {
+    return fuse::math::tryOverlaps(a, b, overlapping);
+}
+
+inline bool tryRayIntersectPlane(const Vec4& plane, const Vec3& origin, const Vec3& direction, f32& t,
+                                 f32 epsilon = 1e-8f) {
+    return fuse::math::tryRayIntersectPlane(plane, origin, direction, t, epsilon);
+}
+
 } // namespace fuse::math::simd
