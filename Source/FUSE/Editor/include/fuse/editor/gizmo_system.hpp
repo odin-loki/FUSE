@@ -107,9 +107,15 @@ f32 snapDragDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings);
 bool isRayEmpty(const GizmoRay& ray);
 bool isHitTestEmpty(const GizmoHitTest& hit);
 
+/// True when screen coordinates fall outside the viewport rectangle (B6.4 deepen pass).
+bool isHitTestOutOfBounds(const GizmoHitTest& hit);
+
 /// Convenience inverse of `isRayEmpty` / `isHitTestEmpty` (B6.4 deepen follow-up).
 bool isRayValid(const GizmoRay& ray);
 bool isHitTestValid(const GizmoHitTest& hit);
+
+/// Convenience inverse of `isHitTestOutOfBounds` when the viewport is non-empty (B6.4 deepen pass).
+bool isHitTestInBounds(const GizmoHitTest& hit);
 
 /// Normalize ray direction; returns false when the ray is empty (B6.4 deepen follow-up).
 bool normalizeRay(GizmoRay& ray);
@@ -127,13 +133,15 @@ bool canApplySnap(GizmoMode mode, const GizmoSnapSettings& settings);
 struct PickPreflight {
     bool emptyRay = false;
     bool emptyHit = false;
+    bool outOfBounds = false;
     bool invalidPickConfig = false;
     bool screenMiss = false;
     bool pickMiss = false;
     GizmoAxis axis = GizmoAxis::None;
 
     bool canPick() const {
-        return !emptyRay && !emptyHit && !invalidPickConfig && !screenMiss && !pickMiss;
+        return !emptyRay && !emptyHit && !outOfBounds && !invalidPickConfig && !screenMiss &&
+               !pickMiss;
     }
 };
 
@@ -171,22 +179,26 @@ struct BeginDragPreflight {
     bool canBegin = false;
     bool emptyHit = false;
     bool emptyRay = false;
+    bool outOfBounds = false;
     bool invalidPickConfig = false;
     bool screenMiss = false;
     bool pickMiss = false;
     bool alreadyDragging = false;
+    /// Snap is enabled but the mode step is unusable — begin still applies (B6.4 deepen pass).
+    bool snapDegraded = false;
 };
 
 /// Read-only update-drag diagnostics — no mutation (B6.4 deepen follow-up).
 struct UpdateDragPreflight {
     bool notDragging = false;
     bool emptyHit = false;
+    bool outOfBounds = false;
     bool invalidActiveAxis = false;
     /// Snap is enabled but the mode step is unusable — update still applies (B6.4 deepen pass).
     bool snapDegraded = false;
 
     bool canUpdate() const {
-        return !notDragging && !emptyHit && !invalidActiveAxis;
+        return !notDragging && !emptyHit && !outOfBounds && !invalidActiveAxis;
     }
 };
 
@@ -206,12 +218,18 @@ struct EndDragPreflight {
     bool invalidActiveAxis = false;
     /// Snap is enabled but the mode step is unusable — end still applies (B6.4 deepen pass).
     bool snapDegraded = false;
+    /// Transform matches drag start — end still applies (B6.4 deepen pass).
+    bool unchangedTransform = false;
 
     bool canEnd() const { return !notDragging; }
 };
 
 EndDragPreflight preflightEndDrag(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
                                   const GizmoSnapSettings& settings);
+EndDragPreflight preflightEndDrag(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+                                  const GizmoSnapSettings& settings,
+                                  const GizmoTransform& startTransform,
+                                  const GizmoTransform& currentTransform);
 
 /// Non-mutating end-drag predicate — same guards as `preflightEndDrag` (B6.4 deepen pass).
 bool canEndDrag(bool dragging, GizmoAxis activeAxis = GizmoAxis::None);
@@ -221,8 +239,18 @@ bool canEndDrag(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
                                       GizmoMode mode, GizmoSpace space, f32 axisLength,
                                       f32 pickRadius, bool alreadyDragging = false);
+BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
+                                      GizmoMode mode, GizmoSpace space, f32 axisLength,
+                                      f32 pickRadius, const GizmoSnapSettings& settings,
+                                      bool alreadyDragging = false);
 BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode,
                                       bool alreadyDragging = false);
+BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode,
+                                      const GizmoSnapSettings& settings,
+                                      bool alreadyDragging = false);
+
+/// Component-wise transform equality for end-drag diagnostics (B6.4 deepen pass).
+bool gizmoTransformEquals(const GizmoTransform& a, const GizmoTransform& b);
 
 /// Pick axis with empty-hit guards — returns false when pick misses (B6.4 deepen follow-up).
 bool tryPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
