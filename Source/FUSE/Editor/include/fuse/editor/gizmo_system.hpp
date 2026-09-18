@@ -165,11 +165,32 @@ struct BeginDragPreflight {
 struct UpdateDragPreflight {
     bool notDragging = false;
     bool emptyHit = false;
+    bool noActiveAxis = false;
 
-    bool canUpdate() const { return !notDragging && !emptyHit; }
+    bool canUpdate() const { return !notDragging && !emptyHit && !noActiveAxis; }
 };
 
 UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging);
+UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis);
+
+/// Early-out when pick preflight would reject (B6.4 deepen follow-up — pick guard).
+bool shouldSkipPick(const PickPreflight& preflight);
+bool shouldSkipPick(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+                    GizmoSpace space, f32 axisLength, f32 pickRadius);
+bool shouldSkipPick(const GizmoHitTest& hit, GizmoMode mode);
+
+/// Early-out when snap preflight would reject (B6.4 deepen follow-up — snap guard).
+bool shouldSkipSnap(const SnapPreflight& preflight);
+bool shouldSkipSnap(GizmoMode mode, const GizmoSnapSettings& settings);
+
+/// Early-out when update-drag preflight would reject (B6.4 deepen follow-up).
+bool shouldSkipUpdateDrag(const UpdateDragPreflight& preflight);
+bool shouldSkipUpdateDrag(const GizmoHitTest& hit, bool dragging);
+bool shouldSkipUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis);
+
+/// Non-mutating update-drag predicate — same guards as `preflightUpdateDrag` (B6.4 deepen follow-up).
+bool canUpdateDrag(const GizmoHitTest& hit, bool dragging);
+bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis);
 
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
                                       GizmoMode mode, GizmoSpace space, f32 axisLength,
@@ -263,9 +284,17 @@ public:
     [[nodiscard]] bool trySnapTransform(const GizmoTransform& transform,
                                         GizmoTransform& out) const;
     [[nodiscard]] UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit) const;
+    /// Non-mutating update-drag predicate — rejects inactive drags and empty hits (B6.4 deepen follow-up).
+    [[nodiscard]] bool canUpdateDrag(const GizmoHitTest& hit) const;
+    [[nodiscard]] bool shouldSkipPick(const GizmoRay& ray, const GizmoTransform& transform) const;
+    [[nodiscard]] bool shouldSkipPick(const GizmoHitTest& hit) const;
+    [[nodiscard]] bool shouldSkipSnap() const;
+    [[nodiscard]] bool shouldSkipUpdateDrag(const GizmoHitTest& hit) const;
     /// Guarded begin-drag — returns false on empty viewport / miss picks (B6.4 deepen follow-up).
     bool tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& current, GizmoResult& out);
     bool tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current, GizmoResult& out);
+    /// Guarded update-drag — returns false when preflight rejects (B6.4 deepen follow-up).
+    bool tryUpdateDrag(const GizmoHitTest& hit, GizmoResult& out);
     GizmoResult updateDrag(const GizmoHitTest& hit);
     GizmoResult endDrag();
 
