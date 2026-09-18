@@ -33,7 +33,19 @@ struct TaaJitterLayout {
                                                    u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Fills a Halton (2,3) table; returns false when `out` is null or length is invalid.
     static bool fillHaltonSequence(u32 length, fuse::math::Vec2* out);
+    /// True when `slot` is the expected Halton slot for a monotonic frame counter (B5.9 deepen).
+    static bool monotonicFrameMatchesSlot(u32 monotonicFrame, u32 slot, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 };
+
+/// Jitter sync classification for monotonic frame alignment (B5.9 deepen).
+enum class TaaJitterSyncStatus : u8 {
+    Synced = 0,
+    SlotMismatch,
+    MonotonicMismatch,
+};
+/// Classify jitter sync against an expected monotonic frame counter (B5.9 deepen).
+TaaJitterSyncStatus classifyTaaJitterSync(u32 monotonicFrame, u32 slot, u32 expectedFrameIndex,
+                                          u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 
 /// Sub-pixel jitter state — advances through a Halton sequence each frame (B5.9).
 class TaaJitter {
@@ -55,6 +67,10 @@ public:
     bool canProduceNdcOffset(u32 width, u32 height) const;
     /// Monotonic frame counter — incremented by `advance`, set by `syncToFrameIndex`, cleared by `reset`.
     u32 monotonicFrameIndex() const { return m_monotonicFrame; }
+    /// True when jitter state matches the expected monotonic frame counter (B5.9 deepen).
+    bool isSyncedToFrameIndex(u32 frameIndex) const;
+    /// Classify sync status against an expected monotonic frame counter (B5.9 deepen).
+    TaaJitterSyncStatus syncStatusForFrameIndex(u32 frameIndex) const;
     u32 sequenceLength() const { return m_sequenceLength; }
 
     static fuse::math::Vec2 haltonPixelOffset(u32 index);

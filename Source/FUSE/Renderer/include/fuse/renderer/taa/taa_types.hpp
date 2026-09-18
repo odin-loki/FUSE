@@ -103,6 +103,40 @@ bool taaHistoryReuseAllowed(const TaaHistoryBuffer& history, u32 observedGenerat
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// True when history contribution is allowed this frame (B5.9 deepen).
 bool taaHistoryBlendAllowed(bool firstFrame, const TaaHistoryBuffer& history);
+/// True when history still needs warm-up before temporal reuse (B5.9 deepen).
+bool taaHistoryNeedsWarmup(const TaaHistoryBuffer& history);
+/// True when history targets are ready and warmed for reuse (B5.9 deepen).
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history);
+
+/// Why history temporal reuse is blocked (B5.9 deepen).
+enum class TaaHistoryReuseBlockReason : u8 {
+    None = 0,
+    NotReady,
+    NeedsWarmup,
+    StaleGeneration,
+};
+/// Classify why history reuse is blocked for an observed invalidate epoch (B5.9 deepen).
+TaaHistoryReuseBlockReason classifyTaaHistoryReuseBlock(const TaaHistoryBuffer& history, u32 observedGeneration);
+/// True when `classifyTaaHistoryReuseBlock` would not return `None` (B5.9 deepen).
+bool taaHistoryReuseBlocked(const TaaHistoryBuffer& history, u32 observedGeneration);
+/// Human-readable label for history reuse block reasons (B5.9 deepen).
+const char* taaHistoryReuseBlockReasonLabel(TaaHistoryReuseBlockReason reason);
+
+/// Resolve blend plan computed without mutating history (B5.9 deepen).
+struct TaaResolveBlendPreflight {
+    bool valid = false;
+    bool first_frame = false;
+    bool history_reuse = false;
+    TaaBlendWeights weights{};
+};
+/// Compute expected blend weights for a resolve request (B5.9 deepen).
+TaaResolveBlendPreflight preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// True when a blend preflight produced valid weights (B5.9 deepen).
+bool taaResolveBlendPreflightValid(const TaaResolveBlendPreflight& preflight);
+/// True when resolve would contribute history weight this frame (B5.9 deepen).
+bool taaResolveWouldBlendHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// True when blend preflight matches history warm-up state (B5.9 deepen).
+bool taaResolveBlendConsistentWithHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {
