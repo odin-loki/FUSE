@@ -195,21 +195,59 @@ void clear_interest_diff(InterestSetDiff& diff) {
 }
 
 bool can_apply_interest_diff(const InterestSetDiff& diff, const InterestScopeSet& scope) {
-    if (diff.empty()) {
-        return false;
+    return preflight_interest_diff(diff, scope).can_apply();
+}
+
+bool should_skip_interest_diff_apply(const InterestSetDiff& diff) {
+    return is_empty_interest_diff(diff);
+}
+
+InterestDiffPreflight preflight_interest_diff(const InterestSetDiff& diff, const InterestScopeSet& scope) {
+    InterestDiffPreflight result;
+    result.empty_diff = diff.empty();
+    result.has_enters = diff.has_enters();
+    result.has_leaves = diff.has_leaves();
+    if (result.empty_diff) {
+        return result;
     }
 
     for (const ecs::EntityID& entity : diff.left) {
         if (scope.contains(entity)) {
-            return true;
+            result.would_change_scope = true;
+            return result;
         }
     }
     for (const ecs::EntityID& entity : diff.entered) {
         if (!scope.contains(entity)) {
-            return true;
+            result.would_change_scope = true;
+            return result;
         }
     }
-    return false;
+    return result;
+}
+
+bool apply_interest_diff_verified(InterestScopeSet& scope, const InterestSetDiff& diff) {
+    const InterestDiffPreflight preflight = preflight_interest_diff(diff, scope);
+    if (!preflight.can_apply()) {
+        return false;
+    }
+    return diff.apply_diff(scope);
+}
+
+bool is_empty_interest_candidates(const std::vector<InterestCandidate>& candidates) {
+    return candidates.empty();
+}
+
+bool should_skip_radius_filter(const std::vector<InterestCandidate>& candidates) {
+    return is_empty_interest_candidates(candidates);
+}
+
+InterestRadiusPreflight preflight_radius_filter(const InterestPolicy& policy,
+                                                const std::vector<InterestCandidate>& candidates) {
+    InterestRadiusPreflight result;
+    result.empty_candidates = candidates.empty();
+    result.zero_relevance_radius = effective_relevance_radius(policy) <= 0.f;
+    return result;
 }
 
 bool diff_interest_scope_sets(const InterestScopeSet& previous, const InterestScopeSet& current,
@@ -243,7 +281,10 @@ bool diff_interest_scope_sets(const InterestScopeSet& previous, const InterestSc
 
 u32 count_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
                                const std::vector<InterestCandidate>& candidates) {
-    if (candidates.empty()) {
+    if (should_skip_radius_filter(candidates)) {
+        return 0;
+    }
+    if (preflight_radius_filter(policy, candidates).zero_relevance_radius) {
         return 0;
     }
 
@@ -260,7 +301,10 @@ u32 count_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& 
 u32 count_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
                                const std::vector<InterestCandidate>& candidates,
                                const InterestScopeSet& prior_scope) {
-    if (candidates.empty()) {
+    if (should_skip_radius_filter(candidates)) {
+        return 0;
+    }
+    if (preflight_radius_filter(policy, candidates).zero_relevance_radius) {
         return 0;
     }
 
@@ -279,7 +323,10 @@ u32 filter_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy&
                                 const std::vector<InterestCandidate>& candidates,
                                 std::vector<InterestEntry>& out_entries) {
     out_entries.clear();
-    if (candidates.empty()) {
+    if (should_skip_radius_filter(candidates)) {
+        return 0;
+    }
+    if (preflight_radius_filter(policy, candidates).zero_relevance_radius) {
         return 0;
     }
 
@@ -306,7 +353,10 @@ u32 filter_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy&
                                 const InterestScopeSet& prior_scope,
                                 std::vector<InterestEntry>& out_entries) {
     out_entries.clear();
-    if (candidates.empty()) {
+    if (should_skip_radius_filter(candidates)) {
+        return 0;
+    }
+    if (preflight_radius_filter(policy, candidates).zero_relevance_radius) {
         return 0;
     }
 
