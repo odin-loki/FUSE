@@ -613,6 +613,85 @@ void run_interest_management_tests() {
     expectTrue(clearable_diff.empty(), "InterestSetDiff::clear empties entered and left");
     expectTrue(!fuse::net::has_scope_enters(clearable_diff),
                "cleared diff has no enters via helper");
+
+    // --- clear_interest_diff free helper ---
+    fuse::net::InterestSetDiff helper_clear_diff{};
+    helper_clear_diff.entered = {make_entity(7)};
+    helper_clear_diff.left = {make_entity(8)};
+    fuse::net::clear_interest_diff(helper_clear_diff);
+    expectTrue(helper_clear_diff.empty(), "clear_interest_diff empties diff");
+    expectTrue(fuse::net::is_empty_interest_diff(helper_clear_diff),
+               "clear_interest_diff leaves is_empty_interest_diff true");
+
+    // --- can_apply_interest_diff preflight guard ---
+    fuse::net::InterestScopeSet preflight_scope;
+    preflight_scope.entities = {make_entity(1), make_entity(2)};
+    fuse::net::InterestSetDiff preflight_diff{};
+    expectTrue(!fuse::net::can_apply_interest_diff(preflight_diff, preflight_scope),
+               "can_apply_interest_diff rejects empty diff");
+
+    preflight_diff.entered = {make_entity(3)};
+    expectTrue(fuse::net::can_apply_interest_diff(preflight_diff, preflight_scope),
+               "can_apply_interest_diff accepts enter for absent entity");
+    preflight_diff.left = {make_entity(1)};
+    expectTrue(fuse::net::can_apply_interest_diff(preflight_diff, preflight_scope),
+               "can_apply_interest_diff accepts leave for present entity");
+
+    fuse::net::InterestSetDiff redundant_diff{};
+    redundant_diff.entered = {make_entity(1)};
+    redundant_diff.left = {make_entity(99)};
+    expectTrue(!fuse::net::can_apply_interest_diff(redundant_diff, preflight_scope),
+               "can_apply_interest_diff rejects redundant non-empty diff");
+    expectTrue(!redundant_diff.apply_diff(preflight_scope),
+               "apply_diff returns false when diff is redundant");
+    fuse::net::InterestScopeSet unchanged_scope;
+    unchanged_scope.entities = {make_entity(1), make_entity(2)};
+    expectTrue(preflight_scope.equal_to(unchanged_scope),
+               "redundant apply_diff leaves scope unchanged");
+
+    // --- apply_to bool return ---
+    fuse::net::InterestScopeSet apply_to_scope;
+    apply_to_scope.entities = {make_entity(1)};
+    fuse::net::InterestSetDiff apply_to_diff{};
+    apply_to_diff.entered = {make_entity(2)};
+    expectTrue(apply_to_diff.apply_to(apply_to_scope), "apply_to returns true when scope changes");
+    expectTrue(apply_to_scope.contains(make_entity(2)), "apply_to inserts entered entity");
+
+    fuse::net::InterestSetDiff apply_to_empty{};
+    expectTrue(!apply_to_empty.apply_to(apply_to_scope), "apply_to returns false on empty diff");
+
+    // --- InterestScopeSet insert/remove bool guards ---
+    fuse::net::InterestScopeSet insert_scope;
+    expectTrue(insert_scope.insert_entity(make_entity(5)), "insert_entity returns true on first insert");
+    expectTrue(!insert_scope.insert_entity(make_entity(5)),
+               "insert_entity returns false on duplicate insert");
+    expectTrue(insert_scope.remove_entity(make_entity(5)), "remove_entity returns true when present");
+    expectTrue(!insert_scope.remove_entity(make_entity(5)),
+               "remove_entity returns false when absent");
+
+    // --- is_entity_registered + has_any_registered_in_radius ---
+    fuse::net::InterestManager registration_manager;
+    registration_manager.set_policy(policy);
+    registration_manager.set_observer_position(origin);
+    const fuse::ecs::EntityID registered_entity = make_entity(170);
+    registration_manager.register_entity({registered_entity, {10.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(registration_manager.is_entity_registered(registered_entity),
+               "is_entity_registered reports registered entity");
+    expectTrue(!registration_manager.is_entity_registered(make_entity(999)),
+               "is_entity_registered rejects unknown entity");
+
+    registration_manager.evaluate();
+    expectTrue(registration_manager.has_any_registered_in_radius(),
+               "has_any_registered_in_radius true when entity in scope");
+    expectTrue(registration_manager.count_registered_in_radius() > 0u,
+               "count_registered_in_radius positive when has_any is true");
+
+    registration_manager.set_observer_position({500.f, 0.f, 0.f, 0.f});
+    registration_manager.evaluate();
+    expectTrue(!registration_manager.has_any_registered_in_radius(),
+               "has_any_registered_in_radius false when all entities out of scope");
+    expectTrue(registration_manager.count_registered_in_radius() == 0u,
+               "count_registered_in_radius zero when has_any is false");
 }
 
 } // namespace fuse::net::tests
