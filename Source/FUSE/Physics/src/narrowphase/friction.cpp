@@ -216,4 +216,56 @@ void compute_friction_tangents_if_needed(ContactManifold& manifold, f32 epsilon)
     manifold.buildFrictionBasis();
 }
 
+FrictionBasisPreflight preflight_friction_basis_rebuild(
+    const ContactManifold& manifold,
+    f32 epsilon) {
+    FrictionBasisPreflight preflight{};
+    if (should_skip_friction_tangents(manifold)) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    preflight.stale = friction_basis_is_stale(manifold, epsilon);
+    preflight.missing = !has_cached_friction_basis(manifold);
+    preflight.needsNormalization = contact_normal_needs_normalization(manifold, epsilon);
+    return preflight;
+}
+
+bool should_skip_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon) {
+    return !preflight_friction_basis_rebuild(manifold, epsilon).needs_rebuild();
+}
+
+bool contact_normal_needs_normalization(const ContactManifold& manifold, f32 epsilon) {
+    if (!manifold.hasValidNormal()) {
+        return false;
+    }
+    const f32 normalLength = manifold.contactNormal.length();
+    return std::fabs(normalLength - 1.f) > epsilon;
+}
+
+FrictionBasisRebuildResult rebuild_friction_basis_guarded(ContactManifold& manifold, f32 epsilon) {
+    FrictionBasisRebuildResult result{};
+    const FrictionBasisPreflight preflight = preflight_friction_basis_rebuild(manifold, epsilon);
+    if (preflight.skipped) {
+        invalidate_friction_basis(manifold);
+        result.skipped = true;
+        return result;
+    }
+
+    if (preflight.needsNormalization) {
+        const f32 normalLength = manifold.contactNormal.length();
+        if (normalLength > epsilon) {
+            manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+        }
+    }
+
+    if (!preflight.needs_rebuild()) {
+        result.skipped = true;
+        return result;
+    }
+
+    result.rebuilt = rebuild_friction_basis_if_needed(manifold, epsilon);
+    return result;
+}
+
 } // namespace fuse::physics::narrowphase

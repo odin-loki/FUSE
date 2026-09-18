@@ -5,6 +5,8 @@
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/types.hpp>
 
+#include <vector>
+
 namespace fuse::physics::narrowphase {
 
 /// Diagnostic reason a broadphase pair is rejected before narrowphase dispatch (B4.3 deepen).
@@ -114,6 +116,42 @@ ContactPairPreflight preflight_contact_pair(
 /// Returns true when narrowphase should skip this pair before dispatch (B4.4 deepen pass).
 bool should_skip_contact_pair_dispatch(
     const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Body-index overload mirroring broadphase reject diagnostics (B4.5 deepen pass).
+ContactPairRejectReason contact_pair_reject_reason(
+    u32 bodyA,
+    u32 bodyB,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when narrowphase may dispatch this pair (B4.5 deepen pass).
+bool is_contact_pair_dispatchable(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Explicit reject guard; inverse of `is_contact_pair_dispatchable` (B4.5 deepen pass).
+bool should_reject_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when `preflight.reason` matches `expected` (B4.5 deepen pass).
+bool contact_pair_preflight_matches_reason(
+    const ContactPairPreflight& preflight,
+    ContactPairRejectReason expected);
+
+/// Count pairs rejected before narrowphase dispatch (B4.5 deepen pass).
+u32 count_rejected_contact_pairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Count pairs that pass contact-pair preflight (B4.5 deepen pass).
+u32 count_dispatchable_contact_pairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
