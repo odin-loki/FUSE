@@ -241,6 +241,41 @@ void ProbeGridLayout::clampProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCo
     normalizeProbeSampleCoords(coords);
 }
 
+bool ProbeGridLayout::tryClampProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCoords& coords) {
+    if (isEmptyGrid(desc)) {
+        return false;
+    }
+
+    clampProbeSampleCoords(desc, coords);
+    return true;
+}
+
+bool ProbeGridLayout::areProbeSampleCoordsInBounds(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
+    if (isEmptyGrid(desc)) {
+        return false;
+    }
+
+    const u32 max_x = desc.grid_dims.x - 1u;
+    const u32 max_y = desc.grid_dims.y - 1u;
+    const u32 max_z = desc.grid_dims.z - 1u;
+
+    const auto inRange = [](u32 value, u32 max_value) { return value <= max_value; };
+    if (!inRange(coords.x0, max_x) || !inRange(coords.x1, max_x) || !inRange(coords.y0, max_y) ||
+        !inRange(coords.y1, max_y) || !inRange(coords.z0, max_z) || !inRange(coords.z1, max_z)) {
+        return false;
+    }
+
+    return coords.tx >= 0.f && coords.tx <= 1.f && coords.ty >= 0.f && coords.ty <= 1.f && coords.tz >= 0.f &&
+           coords.tz <= 1.f;
+}
+
+bool ProbeGridLayout::isProbeSampleCoordsOutOfRange(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
+    if (isEmptyGrid(desc)) {
+        return true;
+    }
+    return !areProbeSampleCoordsInBounds(desc, coords);
+}
+
 bool ProbeGridLayout::buildProbeSampleCoords(const DDGIDesc& desc,
                                              const fuse::math::Vec3& world_position,
                                              ProbeSampleCoords& out_coords) {
@@ -573,6 +608,27 @@ bool isCacheIndexValid(const DDGIDesc& desc, u32 probe_index, u32 cache_count) {
     return ProbeGridLayout::isValidProbeIndex(desc, probe_index) && probe_index < cache_count;
 }
 
+bool tryIsCacheIndexValid(const DDGIDesc& desc,
+                          u32 probe_index,
+                          u32 cache_count,
+                          CacheIndexRejectReason& outReason) {
+    if (ProbeGridLayout::isEmptyGrid(desc)) {
+        outReason = CacheIndexRejectReason::EmptyGrid;
+        return false;
+    }
+    if (!ProbeGridLayout::isValidProbeIndex(desc, probe_index)) {
+        outReason = CacheIndexRejectReason::InvalidProbeIndex;
+        return false;
+    }
+    if (probe_index >= cache_count) {
+        outReason = CacheIndexRejectReason::UndersizedCache;
+        return false;
+    }
+
+    outReason = CacheIndexRejectReason::None;
+    return true;
+}
+
 bool isValidSampleRequest(const DDGIDesc& desc,
                           const DDGISampleRequest& /*request*/,
                           u32 cache_count) {
@@ -810,6 +866,36 @@ u32 nearestProbeIndex(const DDGIDesc& desc, const fuse::math::Vec3& world_positi
 
 } // namespace ddgi_util
 
+const char* cacheIndexRejectReasonLabel(CacheIndexRejectReason reason) {
+    switch (reason) {
+    case CacheIndexRejectReason::None:
+        return "none";
+    case CacheIndexRejectReason::EmptyGrid:
+        return "empty_grid";
+    case CacheIndexRejectReason::InvalidProbeIndex:
+        return "invalid_probe_index";
+    case CacheIndexRejectReason::UndersizedCache:
+        return "undersized_cache";
+    }
+    return "unknown";
+}
+
+const char* probeUpdateLaunchRejectReasonLabel(ProbeUpdateLaunchRejectReason reason) {
+    switch (reason) {
+    case ProbeUpdateLaunchRejectReason::None:
+        return "none";
+    case ProbeUpdateLaunchRejectReason::EmptyGrid:
+        return "empty_grid";
+    case ProbeUpdateLaunchRejectReason::NullIndices:
+        return "null_indices";
+    case ProbeUpdateLaunchRejectReason::ZeroCount:
+        return "zero_count";
+    case ProbeUpdateLaunchRejectReason::OutOfRangeIndex:
+        return "out_of_range_index";
+    }
+    return "unknown";
+}
+
 DdgiInfo ddgi_info() {
     DdgiInfo info{};
 #if defined(FUSE_HAS_CUDA)
@@ -824,15 +910,35 @@ DdgiInfo ddgi_info() {
 }
 
 bool canLaunchDdgiProbeUpdate(const DDGIDesc& desc, const u32* probe_indices, u32 probe_count) {
-    if (probe_count == 0u || probe_indices == nullptr || ProbeGridLayout::isEmptyGrid(desc)) {
+    ProbeUpdateLaunchRejectReason reason = ProbeUpdateLaunchRejectReason::None;
+    return tryCanLaunchDdgiProbeUpdate(desc, probe_indices, probe_count, reason);
+}
+
+bool tryCanLaunchDdgiProbeUpdate(const DDGIDesc& desc,
+                                 const u32* probe_indices,
+                                 u32 probe_count,
+                                 ProbeUpdateLaunchRejectReason& outReason) {
+    if (ProbeGridLayout::isEmptyGrid(desc)) {
+        outReason = ProbeUpdateLaunchRejectReason::EmptyGrid;
+        return false;
+    }
+    if (probe_count == 0u) {
+        outReason = ProbeUpdateLaunchRejectReason::ZeroCount;
+        return false;
+    }
+    if (probe_indices == nullptr) {
+        outReason = ProbeUpdateLaunchRejectReason::NullIndices;
         return false;
     }
 
     for (u32 i = 0u; i < probe_count; ++i) {
         if (ProbeGridLayout::isProbeIndexOutOfRange(probe_indices[i], desc)) {
+            outReason = ProbeUpdateLaunchRejectReason::OutOfRangeIndex;
             return false;
         }
     }
+
+    outReason = ProbeUpdateLaunchRejectReason::None;
     return true;
 }
 
@@ -858,8 +964,47 @@ bool launch_ddgi_probe_update(const DDGIDesc& desc,
 
 namespace gi {
 
+const char* ddgiKernelLaunchRejectReasonLabel(DdgiKernelLaunchRejectReason reason) {
+    switch (reason) {
+    case DdgiKernelLaunchRejectReason::None:
+        return "none";
+    case DdgiKernelLaunchRejectReason::ZeroUpdateCount:
+        return "zero_update_count";
+    case DdgiKernelLaunchRejectReason::NullProbeIndices:
+        return "null_probe_indices";
+    case DdgiKernelLaunchRejectReason::ZeroRaysPerProbe:
+        return "zero_rays_per_probe";
+    }
+    return "unknown";
+}
+
+bool canLaunchDdgiKernelParams(const DDGIKernelParams& params) {
+    DdgiKernelLaunchRejectReason reason = DdgiKernelLaunchRejectReason::None;
+    return tryCanLaunchDdgiKernelParams(params, reason);
+}
+
+bool tryCanLaunchDdgiKernelParams(const DDGIKernelParams& params, DdgiKernelLaunchRejectReason& outReason) {
+    if (params.probe_update_count == 0u) {
+        outReason = DdgiKernelLaunchRejectReason::ZeroUpdateCount;
+        return false;
+    }
+    if (params.probe_indices_to_update == nullptr) {
+        outReason = DdgiKernelLaunchRejectReason::NullProbeIndices;
+        return false;
+    }
+    if (params.rays_per_probe == 0u) {
+        outReason = DdgiKernelLaunchRejectReason::ZeroRaysPerProbe;
+        return false;
+    }
+
+    outReason = DdgiKernelLaunchRejectReason::None;
+    return true;
+}
+
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream) {
-    (void)params;
+    if (!canLaunchDdgiKernelParams(params)) {
+        return false;
+    }
     (void)cuda_stream;
 #if defined(FUSE_HAS_CUDA)
     // Full probe_trace_kernel lands in ddgi_kernels.cu — stub succeeds on CI.
@@ -870,7 +1015,9 @@ bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream
 }
 
 bool launch_probe_blend_kernel(const DDGIKernelParams& params, void* cuda_stream) {
-    (void)params;
+    if (!canLaunchDdgiKernelParams(params)) {
+        return false;
+    }
     (void)cuda_stream;
 #if defined(FUSE_HAS_CUDA)
     return true;
