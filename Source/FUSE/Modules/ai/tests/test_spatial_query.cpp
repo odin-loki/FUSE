@@ -197,6 +197,41 @@ void testRadiusSqFromPolicy() {
                "radius_sq_from_policy clamps negative radius to zero");
 }
 
+void testRadiusFilterPolicyValidation() {
+    fuse::ai::RadiusFilterPolicy policy;
+    policy.radius = 5.f;
+    policy.minCount = 2;
+    expectTrue(fuse::ai::is_radius_filter_policy_valid(policy),
+               "positive radius and minCount is valid");
+
+    policy.radius = 0.f;
+    expectTrue(!fuse::ai::is_radius_filter_policy_valid(policy),
+               "zero radius policy is invalid");
+
+    policy.radius = 5.f;
+    policy.minCount = 0;
+    const fuse::ai::RadiusFilterPolicy normalized =
+        fuse::ai::normalize_radius_filter_policy(policy);
+    expectTrue(normalized.minCount == 1u, "normalize enforces minCount >= 1");
+    expectTrue(fuse::ai::is_radius_filter_policy_valid(normalized),
+               "normalized policy is valid");
+}
+
+void testCountAlliesOutsideRadius() {
+    const std::vector<fuse::ai::AllyCandidate> allies = makeSquad();
+
+    const fuse::u32 outside =
+        fuse::ai::count_allies_outside_radius(0, 1, 0.f, 0.f, 6.f, allies);
+    expectTrue(outside == 2u, "two allies lie outside six-unit radius");
+
+    expectTrue(fuse::ai::has_ally_outside_radius(0, 1, 0.f, 0.f, 6.f, allies),
+               "has_ally_outside_radius true when allies are distant");
+    expectTrue(!fuse::ai::has_ally_outside_radius(0, 1, 0.f, 0.f, 100.f, allies),
+               "has_ally_outside_radius false when radius covers squad");
+    expectTrue(fuse::ai::count_allies_outside_radius(0, 1, 0.f, 0.f, 10.f, {}) == 0u,
+               "outside count is zero for empty ally list");
+}
+
 void testNearestAllyDistanceSq() {
     const std::vector<fuse::ai::AllyCandidate> allies = makeSquad();
 
@@ -228,6 +263,8 @@ int run_spatial_query_tests() {
     testAllyContextAvailable();
     testIsValidAllyRadius();
     testRadiusSqFromPolicy();
+    testRadiusFilterPolicyValidation();
+    testCountAlliesOutsideRadius();
     testNearestAllyDistanceSq();
     return g_failures;
 }

@@ -92,4 +92,26 @@ struct RadiusFilterPolicy {
 /// True when `allies` is non-null and contains at least one entry.
 [[nodiscard]] bool ally_context_available(const std::vector<AllyCandidate>* allies);
 
+/// True when `policy.radius` is positive and `policy.minCount` is at least 1.
+[[nodiscard]] bool is_radius_filter_policy_valid(const RadiusFilterPolicy& policy);
+
+/// Clamp negative radius to zero and enforce `minCount >= 1`.
+[[nodiscard]] RadiusFilterPolicy normalize_radius_filter_policy(const RadiusFilterPolicy& policy);
+
+/// Count same-team allies strictly outside `radius` of (`x`, `y`), excluding `selfIndex`.
+[[nodiscard]] u32 count_allies_outside_radius(u32 selfIndex,
+                                              u32 teamId,
+                                              float x,
+                                              float y,
+                                              float radius,
+                                              const std::vector<AllyCandidate>& allies);
+
+/// True when at least one same-team ally lies outside `radius` (excludes self).
+[[nodiscard]] bool has_ally_outside_radius(u32 selfIndex,
+                                           u32 teamId,
+                                           float x,
+                                           float y,
+                                           float radius,
+                                           const std::vector<AllyCandidate>& allies);
+
 } // namespace fuse::ai

@@ -47,6 +47,7 @@ public:
     explicit BlackboardView(const Blackboard& board);
 
     bool isBound() const { return m_board != nullptr; }
+    bool isEmpty() const;
     u32 agentCount() const;
     bool isAgentValid(u32 agentIndex) const;
     bool isScalarEmpty(u32 agentIndex, u32 slotIndex) const;
