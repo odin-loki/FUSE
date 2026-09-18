@@ -75,11 +75,21 @@ public:
     /// True when the front queued event matches `type` (false when empty).
     bool frontEventTypeIs(PlatformEventType type) const;
 
+    /// Peek the front event only when its type matches `type`. Returns false when empty or
+    /// the front event is a different type (outEvent is reset to None).
+    bool tryPeekEventOfType(PlatformEventType type, PlatformEvent& outEvent) const;
+
     /// True when the synthetic queue holds at least one event.
     bool hasPendingEvents() const;
 
     /// Number of events waiting in the synthetic queue (0 when empty).
     u32 pendingEventCount() const;
+
+    /// True when the ring buffer cannot accept another event without dropping the tail.
+    bool isQueueFull() const;
+
+    /// Number of additional events that can be enqueued before overflow drops begin.
+    u32 remainingQueueCapacity() const;
 
     /// True when a `WindowResized` event for `window` is still queued.
     bool hasPendingResizeFor(const Window& window) const;

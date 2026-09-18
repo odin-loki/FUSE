@@ -193,6 +193,22 @@ bool EventPump::frontEventTypeIs(PlatformEventType type) const {
     return front == type;
 }
 
+bool EventPump::tryPeekEventOfType(PlatformEventType type, PlatformEvent& outEvent) const {
+    if (m_syntheticHead == m_syntheticTail) {
+        outEvent = {};
+        return false;
+    }
+
+    const PlatformEvent& front = m_syntheticEvents[m_syntheticHead];
+    if (front.type != type) {
+        outEvent = {};
+        return false;
+    }
+
+    outEvent = front;
+    return true;
+}
+
 bool EventPump::hasPendingEvents() const {
     return m_syntheticHead != m_syntheticTail;
 }
@@ -209,25 +225,23 @@ u32 EventPump::pendingEventCount() const {
     return kMaxSyntheticEvents - m_syntheticHead + m_syntheticTail;
 }
 
+bool EventPump::isQueueFull() const {
+    const u32 nextTail = (m_syntheticTail + 1u) % kMaxSyntheticEvents;
+    return nextTail == m_syntheticHead;
+}
+
+u32 EventPump::remainingQueueCapacity() const {
+    const u32 pending = pendingEventCount();
+    const u32 maxPending = kMaxSyntheticEvents - 1u;
+    return pending >= maxPending ? 0u : maxPending - pending;
+}
+
 bool EventPump::hasPendingResizeFor(const Window& window) const {
     return pendingResizeExtentFor(window).pending;
 }
 
 bool EventPump::hasPendingEventOfType(PlatformEventType type) const {
-    if (m_syntheticHead == m_syntheticTail) {
-        return false;
-    }
-
-    u32 index = m_syntheticHead;
-    while (index != m_syntheticTail) {
-        if (m_syntheticEvents[index].type == type) {
-            return true;
-        }
-
-        index = (index + 1u) % kMaxSyntheticEvents;
-    }
-
-    return false;
+    return countPendingEventsOfType(type) > 0u;
 }
 
 u32 EventPump::countPendingEventsFor(const Window& window) const {
@@ -421,6 +435,10 @@ void EventPump::enqueueSyntheticEvent_(const PlatformEvent& event) {
 }
 
 void EventPump::pushSyntheticEvent(const PlatformEvent& event) {
+    if (event.type == PlatformEventType::None) {
+        return;
+    }
+
     if (tryCoalescePendingResize_(event)) {
         return;
     }
