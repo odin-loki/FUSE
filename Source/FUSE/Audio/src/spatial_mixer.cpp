@@ -50,11 +50,8 @@ OcclusionAttenuation SpatialMixer::compute_source_occlusion_attenuation(
 BinauralPanGains SpatialMixer::compute_source_binaural_pan_gains(const Vec3& rel_listener,
                                                                  float distance_attenuation,
                                                                  float occlusion_gain) const {
-    BinauralPanGains pan = compute_binaural_pan_gains_guarded(m_hrtfEnabled, rel_listener);
-    if (should_apply_hrtf_pan(m_hrtfEnabled, rel_listener)) {
-        apply_hrtf_attenuation_coupling(pan, distance_attenuation, occlusion_gain);
-    }
-    return pan;
+    return compute_binaural_pan_gains_coupled(m_hrtfEnabled, rel_listener, distance_attenuation,
+                                              occlusion_gain);
 }
 
 float SpatialMixer::sample_clip(const AudioClip& clip, float play_head, u32 channel) const {
