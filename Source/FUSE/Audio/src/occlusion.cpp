@@ -21,6 +21,10 @@ bool has_occlusion_blockers(const AABB* blockers, u32 blocker_count) {
     return blockers != nullptr && blocker_count > 0;
 }
 
+bool has_empty_occlusion_blockers(const AABB* blockers, u32 blocker_count) {
+    return !has_occlusion_blockers(blockers, blocker_count);
+}
+
 bool should_skip_blocker_evaluation(const Vec3& listener, const Vec3& source) {
     const Vec3 delta = source - listener;
     return delta.dot(delta) < 1e-12f;
@@ -34,6 +38,25 @@ bool should_evaluate_occlusion_blockers(const Vec3& listener, const Vec3& source
 
 bool should_skip_occlusion_attenuation(float visibility) {
     return is_fully_visible_occlusion(visibility);
+}
+
+bool should_skip_combine_occlusion_visibility(float source_occlusion, float blocker_factor) {
+    if (std::clamp(blocker_factor, 0.f, 1.f) <= 0.f) {
+        return true;
+    }
+    return is_fully_occluded_occlusion(source_occlusion);
+}
+
+bool should_skip_occlusion_from_blockers(const Vec3& listener, const Vec3& source,
+                                         float source_occlusion, const AABB* blockers,
+                                         u32 blocker_count) {
+    if (has_empty_occlusion_blockers(blockers, blocker_count)) {
+        return true;
+    }
+    if (is_fully_occluded_occlusion(source_occlusion)) {
+        return true;
+    }
+    return !should_evaluate_occlusion_blockers(listener, source, blockers, blocker_count);
 }
 
 bool segment_intersects_aabb(const Vec3& start, const Vec3& end, const AABB& box) {
@@ -154,13 +177,10 @@ float compute_blockers_factor(const Vec3& listener, const Vec3& source, const AA
 float combine_occlusion_visibility(float source_occlusion, float blocker_factor) {
     const float visibility = clamp_occlusion_visibility(source_occlusion);
     const float blocked = std::clamp(blocker_factor, 0.f, 1.f);
-    if (blocked <= 0.f) {
-        return visibility;
+    if (should_skip_combine_occlusion_visibility(source_occlusion, blocker_factor)) {
+        return is_fully_occluded_occlusion(visibility) ? 0.f : visibility;
     }
     if (blocked >= 1.f) {
-        return 0.f;
-    }
-    if (is_fully_occluded_occlusion(visibility)) {
         return 0.f;
     }
     return visibility * (1.f - blocked);
@@ -170,7 +190,8 @@ float compute_effective_visibility(const Vec3& listener, const Vec3& source,
                                    float source_occlusion, const AABB* blockers, u32 blocker_count,
                                    const OcclusionParams& params) {
     const float visibility = clamp_occlusion_visibility(source_occlusion);
-    if (!has_occlusion_blockers(blockers, blocker_count) || is_fully_occluded_occlusion(visibility)) {
+    if (has_empty_occlusion_blockers(blockers, blocker_count)
+        || is_fully_occluded_occlusion(visibility)) {
         return is_fully_occluded_occlusion(visibility) ? 0.f : visibility;
     }
     if (!should_evaluate_occlusion_blockers(listener, source, blockers, blocker_count)) {
@@ -185,17 +206,26 @@ OcclusionAttenuation evaluate_occlusion_from_blockers(const Vec3& listener, cons
                                                       float source_occlusion, const AABB* blockers,
                                                       u32 blocker_count,
                                                       const OcclusionParams& params) {
-    const float visibility =
+    const float visibility = clamp_occlusion_visibility(source_occlusion);
+    if (should_skip_occlusion_from_blockers(listener, source, source_occlusion, blockers,
+                                            blocker_count)) {
+        if (is_fully_occluded_occlusion(visibility)) {
+            return {std::clamp(params.min_gain, 0.f, 1.f),
+                    std::clamp(params.hf_attenuation, 0.f, 1.f)};
+        }
+        return evaluate_occlusion_attenuation(visibility, params);
+    }
+    const float effective_visibility =
         compute_effective_visibility(listener, source, source_occlusion, blockers, blocker_count,
                                      params);
-    if (is_fully_visible_occlusion(visibility)) {
+    if (is_fully_visible_occlusion(effective_visibility)) {
         return {1.f, 1.f};
     }
-    if (is_fully_occluded_occlusion(visibility)) {
+    if (is_fully_occluded_occlusion(effective_visibility)) {
         return {std::clamp(params.min_gain, 0.f, 1.f),
                 std::clamp(params.hf_attenuation, 0.f, 1.f)};
     }
-    return evaluate_occlusion_attenuation(visibility, params);
+    return evaluate_occlusion_attenuation(effective_visibility, params);
 }
 
 } // namespace fuse::audio
