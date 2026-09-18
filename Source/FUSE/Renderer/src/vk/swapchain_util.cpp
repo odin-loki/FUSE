@@ -11,4 +11,11 @@ bool isSwapchainEmpty(const VulkanSwapchain& swapchain) {
     return !swapchain.isReady() || swapchain.nativeHandle() == nullptr || !swapchain.hasImages();
 }
 
+bool shouldEarlyOutEmptySwapchainAcquire(const VulkanSwapchain* swapchain, const FrameManager* frameManager) {
+    if (shouldSkipAcquireForEmptySwapchain(swapchain)) {
+        return true;
+    }
+    return frameManager == nullptr || !frameManager->isReady();
+}
+
 } // namespace fuse::renderer

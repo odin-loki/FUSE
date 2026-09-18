@@ -24,6 +24,13 @@ struct PresentPathDesc {
     VsyncMode vsyncMode = VsyncMode::Fifo;
 };
 
+/// Pending resize dimensions for diagnostics and tests.
+struct PendingResizeExtent {
+    bool pending = false;
+    u32 width = 0;
+    u32 height = 0;
+};
+
 struct PresentPathStatus {
     PresentPathState state = PresentPathState::Idle;
     VsyncMode vsyncMode = VsyncMode::Fifo;
@@ -46,6 +53,7 @@ struct PresentPathStatus {
     u32 resizeDeferredCount = 0;
     u32 resizeNoOpCount = 0;
     u32 emptyAcquireCount = 0;
+    u32 emptyAcquireEarlyOutCount = 0;
     u32 emptyPresentCount = 0;
     u32 fenceWaitSkippedCount = 0;
     u32 lastPendingFenceCount = 0;
@@ -100,6 +108,9 @@ public:
     bool hasPendingResize() const { return m_status.resizePending; }
     u32 pendingResizeWidth() const { return m_status.pendingResizeWidth; }
     u32 pendingResizeHeight() const { return m_status.pendingResizeHeight; }
+
+    /// Pending resize dimensions, or `pending == false` when none queued.
+    PendingResizeExtent pendingResizeExtent() const;
 
     /// Apply a queued resize immediately (fence-waits first). No-op when nothing is pending.
     bool recreateSwapchain();
