@@ -117,6 +117,24 @@ f32 two_bone_max_reach(f32 upper_len, f32 lower_len, f32 reach_epsilon) {
     return upper_len + lower_len - reach_epsilon;
 }
 
+f32 two_bone_root_to_target_distance(const vec3& root, const vec3& target) {
+    return vec3_distance(root, target);
+}
+
+bool needs_two_bone_target_clamp(const vec3& root,
+                                  const vec3& target,
+                                  f32 upper_len,
+                                  f32 lower_len,
+                                  f32 reach_epsilon) {
+    if (upper_len < 1e-6f || lower_len < 1e-6f) {
+        return true;
+    }
+
+    const f32 dist = two_bone_root_to_target_distance(root, target);
+    const f32 maxReach = two_bone_max_reach(upper_len, lower_len, reach_epsilon);
+    return dist > maxReach || dist < reach_epsilon;
+}
+
 bool is_two_bone_target_reachable(const vec3& root,
                                    const vec3& target,
                                    f32 upper_len,
@@ -126,9 +144,32 @@ bool is_two_bone_target_reachable(const vec3& root,
         return false;
     }
 
-    const f32 dist = vec3_distance(root, target);
-    const f32 maxReach = two_bone_max_reach(upper_len, lower_len, reach_epsilon);
-    return dist <= maxReach && dist >= reach_epsilon;
+    return !needs_two_bone_target_clamp(root, target, upper_len, lower_len, reach_epsilon);
+}
+
+bool is_valid_two_bone_chain(u32 root_bone, u32 mid_bone, u32 end_bone, const Skeleton& skel) {
+    if (skel.bones.empty()) {
+        return false;
+    }
+
+    const u32 boneCount = static_cast<u32>(skel.bones.size());
+    if (root_bone >= boneCount || mid_bone >= boneCount || end_bone >= boneCount) {
+        return false;
+    }
+
+    if (root_bone == mid_bone || mid_bone == end_bone || root_bone == end_bone) {
+        return false;
+    }
+
+    if (skel.bones[mid_bone].parent_index != static_cast<s32>(root_bone)) {
+        return false;
+    }
+
+    if (skel.bones[end_bone].parent_index != static_cast<s32>(mid_bone)) {
+        return false;
+    }
+
+    return true;
 }
 
 vec3 clamp_two_bone_target(const vec3& root,
@@ -206,7 +247,7 @@ bool solve_two_bone_positions(const vec3& root,
 }
 
 bool FABRIKChain::has_valid_chain(const Skeleton& skel) const {
-    if (bone_indices.size() < 2 || skel.bones.empty()) {
+    if (skel.bones.empty() || bone_indices.empty() || bone_indices.size() < 2) {
         return false;
     }
 
@@ -255,28 +296,7 @@ bool FABRIKChain::solve(Pose& pose, const Skeleton& skel) {
 }
 
 bool TwoBoneIK::has_valid_chain(const Skeleton& skel) const {
-    if (skel.bones.empty()) {
-        return false;
-    }
-
-    const u32 boneCount = static_cast<u32>(skel.bones.size());
-    if (root_bone >= boneCount || mid_bone >= boneCount || end_bone >= boneCount) {
-        return false;
-    }
-
-    if (root_bone == mid_bone || mid_bone == end_bone || root_bone == end_bone) {
-        return false;
-    }
-
-    if (skel.bones[mid_bone].parent_index != static_cast<s32>(root_bone)) {
-        return false;
-    }
-
-    if (skel.bones[end_bone].parent_index != static_cast<s32>(mid_bone)) {
-        return false;
-    }
-
-    return true;
+    return is_valid_two_bone_chain(root_bone, mid_bone, end_bone, skel);
 }
 
 bool TwoBoneIK::has_degenerate_segments(const Pose& pose) const {

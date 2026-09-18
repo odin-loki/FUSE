@@ -32,6 +32,12 @@ struct RetargetMap {
     [[nodiscard]] bool is_source_mapped(u32 source_bone) const;
     [[nodiscard]] bool is_target_mapped(u32 target_bone) const;
 
+    /// True when the map is valid, the target skeleton is non-empty, and the source pose has bones.
+    [[nodiscard]] bool can_apply_pose_soa(const PoseSoA& source_pose, const Skeleton& target_skel) const;
+
+    /// True when the map is valid, the target skeleton is non-empty, and the source pose has bones.
+    [[nodiscard]] bool can_apply_pose(const Pose& source_pose, const Skeleton& target_skel) const;
+
     /// Source bone index for a target bone, or -1 when unmapped.
     [[nodiscard]] s32 find_source_bone(u32 target_bone) const;
 
