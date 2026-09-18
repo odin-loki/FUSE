@@ -10,6 +10,18 @@ bool taaHistoryResizeNeeded(u32 currentWidth, u32 currentHeight, u32 newWidth, u
     return currentWidth != newWidth || currentHeight != newHeight;
 }
 
+bool taaHistoryCanReuse(const TaaHistoryBuffer& history) {
+    return history.isReady() && history.hasValidHistory();
+}
+
+bool taaHistoryReuseAllowed(const TaaHistoryBuffer& history, u32 observedGeneration) {
+    return taaHistoryCanReuse(history) && !history.isHistoryStale(observedGeneration);
+}
+
+bool TaaHistoryBuffer::canReuseHistory() const {
+    return taaHistoryCanReuse(*this);
+}
+
 bool TaaHistoryBuffer::init(ResourceManager& resources, const TaaHistoryBufferDesc& desc) {
     const u32 preservedGeneration = m_validity.invalidateGeneration;
     destroy();

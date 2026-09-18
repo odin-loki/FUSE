@@ -1,6 +1,7 @@
 #include <fuse/renderer/taa/taa_resolve.hpp>
 
 #include <algorithm>
+#include <cmath>
 
 namespace fuse::renderer {
 namespace {
@@ -134,6 +135,38 @@ f32 computeHistoryBlend(f32 effectiveBlend) {
     return clampF32(1.f - effectiveBlend, 0.f, 1.f);
 }
 
+TaaBlendWeights computeTaaBlendWeights(bool firstFrame, const TAAParams& params) {
+    const f32 effectiveBlend = computeEffectiveBlend(firstFrame, params);
+    TaaBlendWeights weights{};
+    weights.current = effectiveBlend;
+    weights.history = computeHistoryBlend(effectiveBlend);
+    return weights;
+}
+
+bool taaBlendWeightsValid(const TaaBlendWeights& weights) {
+    if (weights.current < 0.f || weights.current > 1.f) {
+        return false;
+    }
+    if (weights.history < 0.f || weights.history > 1.f) {
+        return false;
+    }
+    return std::fabs(weights.current + weights.history - 1.f) <= 1e-5f;
+}
+
+bool taaHistoryBlendAllowed(bool firstFrame, const TaaHistoryBuffer& history) {
+    return !firstFrame && taaHistoryCanReuse(history);
+}
+
+bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    if (!taaHistoryCanReuse(history)) {
+        return false;
+    }
+    if (taaResolveBypassesHistoryGenerationGuard(desc)) {
+        return true;
+    }
+    return !history.isHistoryStale(desc.observed_history_generation);
+}
+
 bool taaResolveRequiresVelocity(const TAAParams& params) {
     return params.velocity_rejection > 0.f;
 }
@@ -223,7 +256,7 @@ bool TaaResolve::resolve(const TaaResolveDesc& desc, TaaHistoryBuffer& history, 
 
     const TAAParams params = clampTaaParams(desc.params);
     m_stats.first_frame = !history.hasValidHistory();
-    const f32 effectiveBlend = computeEffectiveBlend(m_stats.first_frame, params);
+    const TaaBlendWeights blendWeights = computeTaaBlendWeights(m_stats.first_frame, params);
     history.markResolved();
     history.swap();
 
@@ -231,7 +264,8 @@ bool TaaResolve::resolve(const TaaResolveDesc& desc, TaaHistoryBuffer& history, 
     m_stats.width = desc.width;
     m_stats.height = desc.height;
     m_stats.last_blend = params.blend_factor;
-    m_stats.effective_blend = effectiveBlend;
+    m_stats.effective_blend = blendWeights.current;
+    m_stats.history_blend = blendWeights.history;
     m_stats.history_swapped = true;
     m_stats.has_valid_history = history.hasValidHistory();
     m_stats.accumulated_frames = history.accumulatedFrames();

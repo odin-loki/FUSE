@@ -94,6 +94,18 @@ bool TaaPass::matchesDimensions(u32 width, u32 height) const {
     return m_desc.width == width && m_desc.height == height && m_history.matchesDimensions(width, height);
 }
 
+bool TaaPass::canReuseHistory() const {
+    return m_history.canReuseHistory();
+}
+
+bool TaaPass::historyBlendAllowed() const {
+    return taaHistoryBlendAllowed(!m_history.hasValidHistory(), m_history);
+}
+
+bool TaaPass::canProduceJitterNdc() const {
+    return m_jitter.canProduceNdcOffset(m_desc.width, m_desc.height);
+}
+
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
     return m_resolve.wouldSkip(desc, m_history, reason);
 }

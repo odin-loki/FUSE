@@ -85,6 +85,25 @@ f32 computeEffectiveBlend(bool firstFrame, const TAAParams& params);
 /// History contribution weight — complement of `effectiveBlend`, clamped to [0, 1].
 f32 computeHistoryBlend(f32 effectiveBlend);
 
+/// Current/history blend weights for one resolve frame (B5.9 deepen).
+struct TaaBlendWeights {
+    f32 current = 0.f;
+    f32 history = 0.f;
+};
+
+/// Compute current/history blend weights for a resolve frame (B5.9 deepen).
+TaaBlendWeights computeTaaBlendWeights(bool firstFrame, const TAAParams& params);
+/// True when blend weights are within [0, 1] and sum to ~1 (B5.9 deepen).
+bool taaBlendWeightsValid(const TaaBlendWeights& weights);
+/// True when history is warm and ready for temporal reuse (B5.9 deepen).
+bool taaHistoryCanReuse(const TaaHistoryBuffer& history);
+/// True when history reuse is allowed for the observed invalidate epoch (B5.9 deepen).
+bool taaHistoryReuseAllowed(const TaaHistoryBuffer& history, u32 observedGeneration);
+/// True when resolve may sample prior history this frame (B5.9 deepen).
+bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// True when history contribution is allowed this frame (B5.9 deepen).
+bool taaHistoryBlendAllowed(bool firstFrame, const TaaHistoryBuffer& history);
+
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {
     bool resolved = false;
@@ -96,6 +115,8 @@ struct TaaResolveStats {
     f32 last_blend = 0.f;
     /// Blend weight applied this frame — 1.0 on first warm-up frame (no history reuse).
     f32 effective_blend = 0.f;
+    /// History contribution weight — complement of `effective_blend`.
+    f32 history_blend = 0.f;
     bool history_swapped = false;
     bool first_frame = false;
     bool has_valid_history = false;

@@ -25,6 +25,15 @@ bool TaaJitterLayout::validateViewportDimensions(u32 width, u32 height) {
     return width > 0u && height > 0u;
 }
 
+bool TaaJitterLayout::jitterIndexInRange(u32 index, u32 sequenceLength) {
+    const u32 period = sequencePeriod(sequenceLength);
+    return period > 0u && index < period;
+}
+
+bool TaaJitterLayout::canProduceNdcOffset(u32 width, u32 height, u32 sequenceLength) {
+    return validateViewportDimensions(width, height) && validateSequenceLength(sequenceLength);
+}
+
 u32 TaaJitterLayout::sequencePeriod(u32 sequenceLength) {
     return validateSequenceLength(sequenceLength) ? sequenceLength : 0u;
 }
@@ -89,7 +98,18 @@ fuse::math::Vec2 TaaJitter::currentPixelOffset() const {
 }
 
 fuse::math::Vec2 TaaJitter::currentNdcOffset(u32 width, u32 height) const {
+    if (!canProduceNdcOffset(width, height)) {
+        return {};
+    }
     return TaaJitterLayout::haltonNdcOffset(m_index, width, height, m_sequenceLength);
+}
+
+bool TaaJitter::canAdvance() const {
+    return TaaJitterLayout::validateSequenceLength(m_sequenceLength);
+}
+
+bool TaaJitter::canProduceNdcOffset(u32 width, u32 height) const {
+    return TaaJitterLayout::canProduceNdcOffset(width, height, m_sequenceLength);
 }
 
 void TaaJitter::advance() {
