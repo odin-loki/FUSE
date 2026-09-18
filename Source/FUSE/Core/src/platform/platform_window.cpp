@@ -204,6 +204,41 @@ bool EventPump::hasPendingResizeFor(const Window& window) const {
     return pendingResizeExtentFor(window).pending;
 }
 
+bool EventPump::hasPendingEventOfType(PlatformEventType type) const {
+    if (m_syntheticHead == m_syntheticTail) {
+        return false;
+    }
+
+    u32 index = m_syntheticHead;
+    while (index != m_syntheticTail) {
+        if (m_syntheticEvents[index].type == type) {
+            return true;
+        }
+
+        index = (index + 1u) % kMaxSyntheticEvents;
+    }
+
+    return false;
+}
+
+u32 EventPump::countPendingEventsFor(const Window& window) const {
+    if (m_syntheticHead == m_syntheticTail) {
+        return 0;
+    }
+
+    u32 count = 0;
+    u32 index = m_syntheticHead;
+    while (index != m_syntheticTail) {
+        if (m_syntheticEvents[index].window == &window) {
+            ++count;
+        }
+
+        index = (index + 1u) % kMaxSyntheticEvents;
+    }
+
+    return count;
+}
+
 PendingResizeExtent EventPump::pendingResizeExtentFor(const Window& window) const {
     PendingResizeExtent extent;
     if (m_syntheticHead == m_syntheticTail) {
@@ -213,7 +248,8 @@ PendingResizeExtent EventPump::pendingResizeExtentFor(const Window& window) cons
     u32 index = m_syntheticHead;
     while (index != m_syntheticTail) {
         const PlatformEvent& pending = m_syntheticEvents[index];
-        if (pending.type == PlatformEventType::WindowResized && pending.window == &window) {
+        if (pending.type == PlatformEventType::WindowResized && pending.window == &window &&
+            pending.width > 0u && pending.height > 0u) {
             extent.width = pending.width;
             extent.height = pending.height;
             extent.pending = true;
@@ -235,6 +271,7 @@ EventPumpStats EventPump::stats() const {
     snapshot.droppedEventCount = m_droppedEventCount;
     snapshot.coalescedResizeCount = m_coalescedResizeCount;
     snapshot.quitRequested = m_quitRequested;
+    snapshot.hasPendingQuitEvent = hasPendingEventOfType(PlatformEventType::Quit);
     return snapshot;
 }
 
@@ -251,6 +288,11 @@ void EventPump::processOsEvents() {
 }
 
 bool EventPump::pumpOnce() {
+    if (!hasPendingEvents() && !m_quitRequested) {
+        processOsEvents();
+        return true;
+    }
+
     processOsEvents();
 
     if (!hasPendingEvents()) {

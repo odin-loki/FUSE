@@ -512,6 +512,7 @@ void testEventPumpStatsSnapshot() {
     expectEq(fresh.droppedEventCount, 0u, "fresh stats dropped count is zero");
     expectEq(fresh.coalescedResizeCount, 0u, "fresh stats coalesce count is zero");
     expectTrue(!fresh.quitRequested, "fresh stats quit flag is false");
+    expectTrue(!fresh.hasPendingQuitEvent, "fresh stats quit-event flag is false");
 
     window.resize(800, 600, &pump);
     window.resize(1024, 768, &pump);
@@ -521,6 +522,7 @@ void testEventPumpStatsSnapshot() {
     expectEq(active.pendingEventCount, 2u, "stats pending count tracks queued events");
     expectEq(active.coalescedResizeCount, 1u, "stats coalesce count tracks merges");
     expectTrue(active.quitRequested, "stats quit flag tracks requestQuit");
+    expectTrue(active.hasPendingQuitEvent, "stats quit-event flag tracks queued Quit");
 }
 
 void testEventPumpPumpOnceEmptyQueueEarlyOut() {
@@ -553,6 +555,141 @@ void testEventPumpHasPendingResizeFor() {
     expectTrue(pump.pollEvent(event), "drain resize event");
     expectTrue(!pump.hasPendingResizeFor(left), "resize no longer pending after poll");
     expectTrue(pump.hasPendingEvents(), "focus event still pending");
+}
+
+void testEventPumpHasPendingEventOfType() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    expectTrue(!pump.hasPendingEventOfType(fuse::platform::PlatformEventType::Quit),
+               "empty queue has no pending quit event");
+    expectTrue(!pump.hasPendingEventOfType(fuse::platform::PlatformEventType::WindowResized),
+               "empty queue has no pending resize event");
+
+    pump.pushWindowResized(window);
+    expectTrue(pump.hasPendingEventOfType(fuse::platform::PlatformEventType::WindowResized),
+               "resize type detected in queue");
+    expectTrue(!pump.hasPendingEventOfType(fuse::platform::PlatformEventType::Quit),
+               "quit not present before requestQuit");
+
+    pump.requestQuit();
+    expectTrue(pump.hasPendingEventOfType(fuse::platform::PlatformEventType::Quit),
+               "quit type detected after requestQuit");
+    expectTrue(pump.hasPendingEventOfType(fuse::platform::PlatformEventType::WindowResized),
+               "resize type still present alongside quit");
+}
+
+void testEventPumpCountPendingEventsFor() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window left;
+    fuse::platform::Window right;
+
+    expectEq(pump.countPendingEventsFor(left), 0u, "empty queue has zero events for left");
+    expectEq(pump.countPendingEventsFor(right), 0u, "empty queue has zero events for right");
+
+    left.resize(800, 600, &pump);
+    pump.pushWindowFocusLost(left);
+    right.resize(1024, 768, &pump);
+    expectEq(pump.countPendingEventsFor(left), 2u, "left has resize and focus events");
+    expectEq(pump.countPendingEventsFor(right), 1u, "right has one resize event");
+
+    left.resize(1280, 720, &pump);
+    expectEq(pump.countPendingEventsFor(left), 2u, "coalesced resize does not add left count");
+    expectEq(pump.pendingEventCount(), 3u, "three distinct queued events remain");
+}
+
+void testEventPumpPendingResizeExtentZeroDimensionGuard() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    fuse::platform::PlatformEvent invalid;
+    invalid.type = fuse::platform::PlatformEventType::WindowResized;
+    invalid.window = &window;
+    invalid.width = 0;
+    invalid.height = 768;
+    pump.pushSyntheticEvent(invalid);
+
+    const fuse::platform::PendingResizeExtent partialWidth = pump.pendingResizeExtentFor(window);
+    expectTrue(!partialWidth.pending, "zero width resize extent is not pending");
+    expectTrue(!pump.hasPendingResizeFor(window), "zero width resize does not count as pending");
+
+    fuse::platform::PlatformEvent invalidHeight;
+    invalidHeight.type = fuse::platform::PlatformEventType::WindowResized;
+    invalidHeight.window = &window;
+    invalidHeight.width = 640;
+    invalidHeight.height = 0;
+    pump.pushSyntheticEvent(invalidHeight);
+
+    const fuse::platform::PendingResizeExtent partialHeight = pump.pendingResizeExtentFor(window);
+    expectTrue(!partialHeight.pending, "zero height resize extent is not pending");
+
+    window.resize(800, 600, &pump);
+    const fuse::platform::PendingResizeExtent valid = pump.pendingResizeExtentFor(window);
+    expectTrue(valid.pending, "valid resize extent remains pending after invalid entries");
+    expectEq(valid.width, 800u, "valid resize extent keeps latest width");
+    expectEq(valid.height, 600u, "valid resize extent keeps latest height");
+}
+
+void testEventPumpStatsDroppedCountAndQuitEvent() {
+    fuse::platform::EventPump overflowPump;
+    fuse::platform::Window window;
+
+    overflowPump.pushWindowResized(window);
+    fuse::platform::PlatformEvent marker;
+    marker.type = fuse::platform::PlatformEventType::WindowFocusLost;
+    marker.window = &window;
+    overflowPump.pushSyntheticEvent(marker);
+
+    for (fuse::u32 index = 0; index < 32u; ++index) {
+        fuse::platform::PlatformEvent event;
+        event.type = fuse::platform::PlatformEventType::WindowFocusGained;
+        event.window = &window;
+        overflowPump.pushSyntheticEvent(event);
+    }
+
+    const fuse::platform::EventPumpStats overflow = overflowPump.stats();
+    expectEq(overflow.droppedEventCount, 3u, "stats dropped count tracks overflow");
+    expectEq(overflow.pendingEventCount, 31u, "stats pending count tracks capped queue");
+    expectTrue(!overflow.hasPendingQuitEvent, "stats quit-event flag false before requestQuit");
+
+    fuse::platform::EventPump quitPump;
+    quitPump.requestQuit();
+    const fuse::platform::EventPumpStats withQuit = quitPump.stats();
+    expectTrue(withQuit.hasPendingQuitEvent, "stats quit-event flag true when Quit queued");
+    expectTrue(withQuit.quitRequested, "stats quit flag true after requestQuit");
+}
+
+void testEventPumpPumpOnceQuitFlagWithoutQueuedEvents() {
+    fuse::platform::EventPump pump;
+
+    pump.requestQuit();
+    fuse::platform::PlatformEvent quit;
+    expectTrue(pump.pollEvent(quit), "quit event polled");
+    expectTrue(quit.type == fuse::platform::PlatformEventType::Quit, "quit event type");
+    expectTrue(pump.quitRequested(), "quit flag remains set after poll");
+    expectTrue(!pump.hasPendingEvents(), "queue empty after quit poll");
+
+    expectTrue(!pump.pumpOnce(), "pumpOnce returns false when quit flagged with empty queue");
+    expectEq(pump.pendingEventCount(), 0u, "empty quit pumpOnce leaves queue empty");
+}
+
+void testEventPumpClearSyntheticEventsPreservesQuitFlag() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    pump.pushWindowResized(window);
+    pump.requestQuit();
+    pump.clearSyntheticEvents();
+
+    expectTrue(pump.quitRequested(), "clearSyntheticEvents preserves quit flag");
+    expectEq(pump.pendingEventCount(), 0u, "clearSyntheticEvents empties queue");
+    expectTrue(!pump.hasPendingEventOfType(fuse::platform::PlatformEventType::Quit),
+               "cleared queue has no pending quit event");
+
+    const fuse::platform::EventPumpStats cleared = pump.stats();
+    expectTrue(cleared.quitRequested, "stats quit flag preserved after clear");
+    expectTrue(!cleared.hasPendingQuitEvent, "stats quit-event flag false after clear");
+    expectEq(cleared.pendingEventCount, 0u, "stats pending count zero after clear");
 }
 
 void testMobileProfileStillUsesWindowStub() {
@@ -602,6 +739,12 @@ int main() {
     testEventPumpStatsSnapshot();
     testEventPumpPumpOnceEmptyQueueEarlyOut();
     testEventPumpHasPendingResizeFor();
+    testEventPumpHasPendingEventOfType();
+    testEventPumpCountPendingEventsFor();
+    testEventPumpPendingResizeExtentZeroDimensionGuard();
+    testEventPumpStatsDroppedCountAndQuitEvent();
+    testEventPumpPumpOnceQuitFlagWithoutQueuedEvents();
+    testEventPumpClearSyntheticEventsPreservesQuitFlag();
     testMobileProfileStillUsesWindowStub();
 
     if (g_failures == 0) {
