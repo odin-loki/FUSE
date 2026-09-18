@@ -1,5 +1,7 @@
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
 
+#include <fuse/physics/narrowphase/contact_pair.hpp>
+
 #include <algorithm>
 #include <cmath>
 
@@ -314,6 +316,18 @@ bool ContactManifold::pruneContactPointsIfNeeded(f32 separationEpsilon, f32 dupl
     return pruneIfEmpty(separationEpsilon, duplicateEpsilon);
 }
 
+bool ContactManifold::canSkipPruneShallowPenetrations(f32 minDepth) const {
+    return !hasShallowPenetrations(minDepth);
+}
+
+bool ContactManifold::pruneShallowPenetrationsIfNeeded(f32 minDepth) {
+    if (canSkipPruneShallowPenetrations(minDepth)) {
+        return !empty();
+    }
+    pruneShallowPenetrations(minDepth);
+    return !empty();
+}
+
 ManifoldPrunePreflight preflight_manifold_prune(
     const ContactManifold& manifold,
     f32 separationEpsilon,
@@ -330,6 +344,40 @@ ManifoldPrunePreflight preflight_manifold_prune(
     preflight.exceedsMaxPoints = manifold.pointCount > kMaxContactPointsPerManifold;
     preflight.wouldBeEmpty = manifold.wouldBeEmptyAfterPrune(separationEpsilon, duplicateEpsilon);
     return preflight;
+}
+
+ManifoldFinalizePreflight preflight_manifold_finalize(const ContactManifold& manifold) {
+    ManifoldFinalizePreflight preflight{};
+    if (manifold.empty()) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    preflight.empty = false;
+    preflight.invalidNormal = !manifold.hasValidNormal();
+    preflight.noPenetrating = !manifold.hasPenetratingPoints();
+    preflight.needsPruning = manifold.needsPruning();
+    preflight.needsNormalization = needs_normal_normalization(manifold);
+    return preflight;
+}
+
+bool needs_normal_normalization(const ContactManifold& manifold, f32 epsilon) {
+    if (!manifold.hasValidNormal()) {
+        return false;
+    }
+    return std::fabs(manifold.contactNormal.length() - 1.f) > epsilon;
+}
+
+bool can_skip_manifold_finalize(const ContactManifold& manifold) {
+    return !can_finalize_contact_manifold(manifold);
+}
+
+bool generate_contact_manifold_guarded(ContactManifold& manifold) {
+    const ManifoldFinalizePreflight preflight = preflight_manifold_finalize(manifold);
+    if (!preflight.can_finalize()) {
+        return false;
+    }
+    return generate_contact_manifold(manifold);
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
