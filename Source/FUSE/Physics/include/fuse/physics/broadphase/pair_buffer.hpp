@@ -33,9 +33,11 @@ struct PairBufferSoA {
     /// True when both dense and slot storage are empty (safe to skip SoA scans).
     bool canSkipSoAIteration() const { return activeCount == 0u && pairSlotCount == 0u; }
     /// True when at most one canonical pair is present (dedupe is a no-op).
-    bool canSkipDedupe() const { return canSkipSoAIteration() || activeCount <= 1u; }
+    bool canSkipDedupe() const;
     /// True when slot storage has no invalid flags (compact is a no-op).
     bool canSkipCompaction() const;
+    /// True when compact+clamp would leave the buffer unchanged.
+    bool canSkipCompactAndClamp() const;
     /// Count valid flags in prepared slot storage before compaction.
     u32 countValidSlots() const;
     bool slotIsValid(u32 slot) const;

@@ -12,6 +12,24 @@
 
 namespace fuse::physics::broadphase {
 
+BroadphaseRefinePreflight preflight_broadphase_refine(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer) {
+    BroadphaseRefinePreflight preflight{};
+    preflight.emptyScene = canSkipBroadphase(bodies, shapes);
+    preflight.emptyBuffer = buffer.canSkipSoAIteration() || !buffer.hasValidPairs();
+    preflight.skipped = preflight.emptyScene || preflight.emptyBuffer;
+    return preflight;
+}
+
+bool should_skip_broadphase_refine(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer) {
+    return preflight_broadphase_refine(bodies, shapes, buffer).skipped;
+}
+
 const char* candidatePairRejectReasonName(CandidatePairRejectReason reason) {
     switch (reason) {
     case CandidatePairRejectReason::None:
@@ -160,7 +178,7 @@ void populateShapeCells(
             const f32 radius = shapeRadius(shapes, shapeIndex);
             range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
         }
-        if (isEmptyCellRange(range)) {
+        if (should_skip_shape_cell_insertion(range, maxSpan)) {
             return;
         }
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
@@ -180,7 +198,7 @@ void populateShapeCells(
         const f32 radius = shapeRadius(shapes, shapeIndex);
         range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
     }
-    if (isEmptyCellRange(range)) {
+    if (should_skip_shape_cell_insertion(range, maxSpan)) {
         return;
     }
     for (s32 cz = range.minCell.z; cz <= range.maxCell.z; ++cz) {
@@ -332,7 +350,7 @@ void refineBroadphasePairsParallelImpl(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     PairBufferSoA& buffer) {
-    if (buffer.canSkipSoAIteration() || !buffer.hasValidPairs() || canSkipBroadphase(bodies, shapes)) {
+    if (should_skip_broadphase_refine(bodies, shapes, buffer)) {
         return;
     }
 
