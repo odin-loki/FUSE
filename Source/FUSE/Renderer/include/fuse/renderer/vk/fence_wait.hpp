@@ -36,4 +36,12 @@ bool waitAllInFlightFences(FrameManager& manager);
 /// Wait only when the slot fence is signaled; no-op success when already clear.
 bool waitInFlightFenceIfSignaled(FrameManager& manager, u32 slotIndex);
 
+/// Wait the current ring slot only when its fence is signaled.
+bool waitCurrentInFlightFenceIfSignaled(FrameManager& manager);
+
+/// True when every slot fence is clear (no pending in-flight work).
+inline bool allInFlightFencesClear(const FrameManager& manager) {
+    return !hasPendingInFlightFences(manager);
+}
+
 } // namespace fuse::renderer
