@@ -836,6 +836,101 @@ void testCcdPipelineSpherePlanePair() {
     expectNear(results[0].toi, 0.4f, 0.03f, "sphere-plane TOI matches analytic sweep");
 }
 
+void testToiBufferSoAIterationEarlyOuts() {
+    ToiBufferSoA buffer;
+    expectTrue(buffer.isSortedByToi(), "empty buffer is sorted by TOI");
+    expectTrue(buffer.canSkipSort(), "empty buffer skips sort");
+    expectTrue(buffer.canSkipCompaction(), "empty buffer skips compaction");
+    expectTrue(buffer.countValidSlots() == 0u, "countValidSlots early-outs when empty");
+    expectTrue(buffer.applyMaxCapacityClamp() == 0u, "applyMaxCapacityClamp early-outs when empty");
+    expectTrue(buffer.compactAndSort() == 0u, "compactAndSort early-outs when empty");
+
+    TOIResult result{};
+    result.valid = true;
+    result.toi = 0.4f;
+    buffer.push(result);
+    expectTrue(buffer.hasValidTois(), "non-empty buffer reports valid TOIs");
+    expectTrue(!buffer.canSkipSoAIteration(), "non-empty buffer does not skip iteration");
+    expectTrue(buffer.canSkipSort(), "single-TOI buffer skips sort");
+    expectTrue(buffer.toVector().size() == 1u, "toVector gathers valid TOI after push");
+}
+
+void testToiBufferCompactionEarlyOuts() {
+    ToiBufferSoA buffer;
+    buffer.preparePairSlots(2u);
+
+    TOIResult first{};
+    first.valid = true;
+    first.toi = 0.2f;
+    first.bodyA = 1u;
+
+    TOIResult second = first;
+    second.toi = 0.5f;
+    second.bodyA = 2u;
+
+    buffer.writeSlot(0u, first);
+    buffer.writeSlot(1u, second);
+
+    expectTrue(buffer.countValidSlots() == 2u, "countValidSlots counts prepared valid slots");
+    expectTrue(buffer.canSkipCompaction(), "all-valid slots skip compaction work");
+    expectTrue(buffer.compact() == 2u, "compact early-out preserves active count");
+    expectTrue(buffer.activeCount == 2u, "compact early-out leaves TOIs intact");
+}
+
+void testToiBufferWriteSlotRejectsOutOfWindow() {
+    ToiBufferSoA buffer;
+    buffer.preparePairSlots(2u);
+
+    TOIResult outOfWindow{};
+    outOfWindow.valid = true;
+    outOfWindow.toi = 1.5f;
+    outOfWindow.bodyA = 1u;
+
+    buffer.writeSlot(0u, outOfWindow);
+    expectTrue(!buffer.slotIsValid(0u), "writeSlot rejects out-of-window TOI");
+    expectTrue(buffer.countValidSlots() == 0u, "out-of-window write leaves slot invalid");
+
+    TOIResult inWindow = outOfWindow;
+    inWindow.toi = 1.f;
+    buffer.writeSlot(0u, inWindow);
+    expectTrue(buffer.slotIsValid(0u), "writeSlot accepts in-window TOI at t=1");
+}
+
+void testToiBufferPushRejectsOutOfWindow() {
+    ToiBufferSoA buffer;
+
+    TOIResult outOfWindow{};
+    outOfWindow.valid = true;
+    outOfWindow.toi = -0.01f;
+
+    expectTrue(!buffer.push(outOfWindow), "push rejects negative out-of-window TOI");
+    expectTrue(buffer.isEmpty(), "rejected push leaves buffer empty");
+    expectTrue(buffer.canSkipSoAIteration(), "rejected push buffer skips SoA iteration");
+}
+
+void testToiBufferResultAtSlot() {
+    ToiBufferSoA buffer;
+    buffer.preparePairSlots(3u);
+
+    TOIResult first{};
+    first.valid = true;
+    first.toi = 0.25f;
+    first.bodyA = 1u;
+    first.bodyB = 2u;
+
+    TOIResult second = first;
+    second.toi = 0.75f;
+    second.bodyA = 3u;
+
+    buffer.writeSlot(0u, first);
+    buffer.writeSlot(2u, second);
+
+    expectTrue(!buffer.resultAtSlot(1u).valid, "resultAtSlot rejects untouched slot");
+    expectNear(buffer.resultAtSlot(0u).toi, 0.25f, 1e-5f, "resultAtSlot reads slot 0 directly");
+    expectNear(buffer.resultAtSlot(2u).toi, 0.75f, 1e-5f, "resultAtSlot reads slot 2 directly");
+    expectTrue(buffer.resultAtSlot(2u).bodyA == 3u, "resultAtSlot preserves slot metadata");
+}
+
 } // namespace
 
 int main() {
@@ -890,6 +985,11 @@ int main() {
     testCcdPipelineFiltersRbCcdFlag();
     testCcdPipelineSkipsUnflaggedBodies();
     testCcdPipelineSpherePlanePair();
+    testToiBufferSoAIterationEarlyOuts();
+    testToiBufferCompactionEarlyOuts();
+    testToiBufferWriteSlotRejectsOutOfWindow();
+    testToiBufferPushRejectsOutOfWindow();
+    testToiBufferResultAtSlot();
     fuse::core::shutdown();
 
     if (g_failures == 0) {
