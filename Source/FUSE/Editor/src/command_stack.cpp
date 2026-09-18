@@ -2,8 +2,14 @@
 
 namespace fuse::editor {
 
-bool CommandStack::canCoalesce_(const EditorCommand& previous, const EditorCommand& incoming) {
-    if (previous.kind != incoming.kind || previous.kind != CommandKind::SetProperty) {
+namespace {
+
+bool isDuplicatePropertyEdit_(const EditorCommand& previous, const EditorCommand& incoming) {
+    if (previous.kind != CommandKind::SetProperty || incoming.kind != CommandKind::SetProperty) {
+        return false;
+    }
+
+    if (!previous.target.isValid() || !incoming.target.isValid()) {
         return false;
     }
 
@@ -12,6 +18,33 @@ bool CommandStack::canCoalesce_(const EditorCommand& previous, const EditorComma
     }
 
     if (previous.propertyValue.empty() || incoming.propertyValue.empty()) {
+        return false;
+    }
+
+    return previous.target == incoming.target && previous.propertyName == incoming.propertyName &&
+           previous.propertyValue == incoming.propertyValue;
+}
+
+} // namespace
+
+bool CommandStack::canCoalesce_(const EditorCommand& previous, const EditorCommand& incoming) {
+    if (previous.kind != incoming.kind || previous.kind != CommandKind::SetProperty) {
+        return false;
+    }
+
+    if (!previous.target.isValid() || !incoming.target.isValid()) {
+        return false;
+    }
+
+    if (previous.propertyName.empty() || incoming.propertyName.empty()) {
+        return false;
+    }
+
+    if (previous.propertyValue.empty() || incoming.propertyValue.empty()) {
+        return false;
+    }
+
+    if (previous.propertyValue == incoming.propertyValue) {
         return false;
     }
 
@@ -65,7 +98,7 @@ u32 CommandStack::coalescedCountSinceBaseline() const {
 }
 
 void CommandStack::set_baseline_state() {
-    if (m_baselineConfigured && m_baselineUndoDepth == m_undoDepth && m_baselineRedoDepth == m_redoDepth &&
+    if (m_baselineConfigured && isAtBaseline() && m_baselineRedoDepth == m_redoDepth &&
         m_coalescedCountAtBaseline == m_coalescedCount && !m_dirty) {
         return;
     }
@@ -82,6 +115,10 @@ bool CommandStack::isAtBaseline() const {
 }
 
 void CommandStack::execute(EditorCommand command) {
+    if (!m_undoStack.empty() && isDuplicatePropertyEdit_(m_undoStack.back(), command)) {
+        return;
+    }
+
     if (!m_undoStack.empty() && canCoalesce_(m_undoStack.back(), command)) {
         m_undoStack.back().propertyValue = command.propertyValue;
         ++m_coalescedCount;
