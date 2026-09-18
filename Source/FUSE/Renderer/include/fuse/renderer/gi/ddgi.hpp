@@ -141,6 +141,22 @@ struct ProbeBorderCounts {
     u32 corner = 0;
 };
 
+/// Why a probe irradiance lookup would bail before trilinear sampling (B5.6 deepen).
+enum class ProbeSampleSkipReason : u8 {
+    None = 0,
+    EmptyGrid,
+    ZeroIrradianceResolution,
+    InvalidProbeSpacing,
+    UndersizedCache,
+    NullCache,
+};
+
+/// Human-readable label for probe sample skip reasons (logging / tests).
+const char* probeSampleSkipReasonLabel(ProbeSampleSkipReason reason);
+
+/// True when a skip reason prevents probe irradiance lookup.
+bool probeSampleSkipReasonIsBlocking(ProbeSampleSkipReason reason);
+
 /// CPU-side octahedral direction encoding for probe irradiance atlas tiles (B5.6 deepen).
 /// Mirrors `GBufferEncoding` and the deferred-shade probe sampling path.
 struct DdgiIrradianceEncoding {
@@ -178,8 +194,12 @@ struct ProbeGridLayout {
     static bool isValidProbeCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
     static bool isValidProbeIndex(const DDGIDesc& desc, u32 probe_index);
     static bool isBorderProbeCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
+    /// Border probe check via flat index; false when index is out of range or grid is empty.
+    static bool isBorderProbeIndex(const DDGIDesc& desc, u32 probe_index);
     /// Face/edge/corner shell classification; `Invalid` when coord or grid is empty.
     static ProbeBorderKind probeBorderKind(const DDGIDesc& desc, const ProbeGridCoord& coord);
+    /// Border kind via flat index; `Invalid` when index is out of range or grid is empty.
+    static ProbeBorderKind probeBorderKindFromIndex(const DDGIDesc& desc, u32 probe_index);
     static ProbeValidityFlags probeValidity(const DDGIDesc& desc, const ProbeGridCoord& coord);
     static ProbeValidityFlags probeValidityFromIndex(const DDGIDesc& desc, u32 probe_index);
     /// Validity for a flat probe index after `clampProbeIndex` (safe for OOB scheduling).
@@ -199,6 +219,14 @@ struct ProbeGridLayout {
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
                                        ProbeSampleCoords& out_coords);
+    /// Build sample coords and validate indices/weights; false when build or validation fails.
+    static bool tryBuildProbeSampleCoords(const DDGIDesc& desc,
+                                          const fuse::math::Vec3& world_position,
+                                          ProbeSampleCoords& out_coords);
+    /// True when corner indices and trilinear weights are within grid bounds and [0, 1].
+    static bool isValidProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// True when any trilinear corner lies on the probe grid border shell.
+    static bool sampleCoordsTouchBorder(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// Fractional grid coordinates — origin cell centre is (0,0,0).
     static fuse::math::Vec3 worldToProbeGridCoord(const DDGIDesc& desc,
                                                   const fuse::math::Vec3& world_position);
@@ -231,8 +259,20 @@ u32 countProbesOfBorderKind(const DDGIDesc& desc, ProbeBorderKind kind);
 bool validateProbeBorderCounts(const ProbeBorderCounts& counts);
 /// True when the probe grid can participate in spatial irradiance sampling.
 bool canSampleProbeGrid(const DDGIDesc& desc);
+/// Minimum irradiance cache entries required for full-grid sampling; 0 on empty grid.
+u32 requiredCacheCount(const DDGIDesc& desc);
+/// Shortfall below `requiredCacheCount`; 0 when cache is sized or grid is empty.
+u32 cacheDeficitForGrid(const DDGIDesc& desc, u32 cache_count);
 /// True when `cache_count` covers every probe in `desc`.
 bool isCacheSizedForGrid(const DDGIDesc& desc, u32 cache_count);
+/// Diagnose grid-level guards that would block sampling (ignores cache sizing).
+ProbeSampleSkipReason classifyProbeGridSkip(const DDGIDesc& desc);
+/// Diagnose the first grid/cache guard that would block sampling.
+ProbeSampleSkipReason classifyProbeSampleSkip(const DDGIDesc& desc, u32 cache_count);
+/// Diagnose lookup guards including null cache pointer checks.
+ProbeSampleSkipReason classifyProbeSampleLookup(const DDGIDesc& desc,
+                                                const IrradianceCacheEntry* cache,
+                                                u32 cache_count);
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
 bool isValidSampleRequest(const DDGIDesc& desc,
                           const DDGISampleRequest& request,
