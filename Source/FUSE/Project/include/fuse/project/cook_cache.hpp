@@ -90,6 +90,7 @@ public:
     [[nodiscard]] usize entry_count() const { return m_entries.size(); }
 
     bool save(const std::string& path) const;
+    /// Load cache JSON — rejects empty paths and missing files; prunes invalid/stale records (B7.9 deepen).
     bool load(const std::string& path);
 
 private:
