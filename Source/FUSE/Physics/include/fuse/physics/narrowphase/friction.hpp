@@ -95,4 +95,27 @@ bool rebuild_friction_basis_if_needed(ContactManifold& manifold, f32 epsilon = 1
 /// Rebuild friction tangents only when the cached basis is missing or stale (B4.4 deepen pass).
 void compute_friction_tangents_if_needed(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
+/// Const preflight for friction-basis rebuild dispatch (B4.4 deepen pass).
+struct FrictionBasisPreflight {
+    bool skipped = false;
+    bool stale = false;
+    bool hasCachedBasis = false;
+    bool wouldRebuild = false;
+
+    bool can_reuse() const { return !skipped && hasCachedBasis && !stale; }
+
+    bool needs_rebuild() const { return !skipped && wouldRebuild; }
+};
+
+/// Populate friction-basis rebuild preflight without mutating the manifold (B4.4 deepen pass).
+FrictionBasisPreflight preflight_friction_basis_rebuild(
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f);
+
+/// Returns true when friction-basis rebuild may be skipped per preflight (B4.4 deepen pass).
+bool should_skip_friction_basis_rebuild_preflight(const FrictionBasisPreflight& preflight);
+
+/// Returns true when preflight indicates an existing basis can be reused (B4.4 deepen pass).
+bool can_reuse_friction_basis(const FrictionBasisPreflight& preflight);
+
 } // namespace fuse::physics::narrowphase
