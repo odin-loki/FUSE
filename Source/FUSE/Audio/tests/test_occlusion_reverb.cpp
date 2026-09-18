@@ -180,6 +180,71 @@ void testBlendReverbSampleOneShot() {
                "dry zone inside bounds still returns dry sample");
 }
 
+void testOcclusionBlockerRaycastGuard() {
+    const fuse::audio::AABB blocker{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
+
+    expectTrue(fuse::audio::should_skip_occlusion_blocker_raycast(1.f, nullptr, 0),
+               "empty blocker list skips raycast");
+    expectTrue(fuse::audio::should_skip_occlusion_blocker_raycast(0.f, &blocker, 1),
+               "fully occluded source skips raycast");
+    expectTrue(!fuse::audio::should_skip_occlusion_blocker_raycast(0.5f, &blocker, 1),
+               "partial visibility with blockers runs raycast");
+
+    expectTrue(fuse::audio::should_skip_combine_occlusion_visibility(0.8f, 0.f),
+               "zero blocker factor skips visibility combine");
+    expectTrue(fuse::audio::should_skip_combine_occlusion_visibility(0.f, 0.5f),
+               "fully occluded source skips visibility combine");
+    expectTrue(!fuse::audio::should_skip_combine_occlusion_visibility(0.8f, 0.5f),
+               "partial visibility and blocker factor combine");
+
+    const fuse::audio::OcclusionAttenuation unity{1.f, 1.f};
+    expectTrue(fuse::audio::should_skip_occlusion_attenuation_mapping(unity),
+               "unity attenuation skips mapping");
+    expectTrue(fuse::audio::should_skip_occlusion_attenuation_mapping(unity)
+                   == fuse::audio::is_unity_occlusion_attenuation(unity),
+               "should_skip_occlusion_attenuation_mapping matches is_unity");
+}
+
+void testListenerReverbZoneSkipGuards() {
+    const fuse::audio::ReverbZoneParams zone{
+        {{-5.f, -5.f, -5.f}, {5.f, 5.f, 5.f}}, 0.4f, 0.5f};
+    const fuse::audio::Vec3 inside{0.f, 0.f, 0.f};
+    const fuse::audio::Vec3 outside{100.f, 0.f, 0.f};
+
+    expectTrue(!fuse::audio::listener_has_active_reverb_zones(inside, nullptr, 0),
+               "empty zone list has no active zones");
+    expectTrue(fuse::audio::should_skip_listener_reverb_zones(inside, nullptr, 0),
+               "empty zone list skips listener reverb");
+    expectTrue(fuse::audio::listener_has_active_reverb_zones(inside, &zone, 1),
+               "listener inside zone has active zones");
+    expectTrue(!fuse::audio::should_skip_listener_reverb_zones(inside, &zone, 1),
+               "listener inside zone does not skip reverb");
+    expectTrue(!fuse::audio::listener_has_active_reverb_zones(outside, &zone, 1),
+               "listener outside zone has no active zones");
+    expectTrue(fuse::audio::should_skip_listener_reverb_zones(outside, &zone, 1),
+               "listener outside all zones skips reverb");
+
+    expectTrue(fuse::audio::should_skip_reverb_sample_blend(outside, &zone, 1),
+               "outside listener skips sample blend");
+    expectTrue(!fuse::audio::should_skip_reverb_sample_blend(inside, &zone, 1),
+               "inside listener does not skip sample blend");
+}
+
+void testNearZeroWetMixGuard() {
+    expectTrue(fuse::audio::is_near_zero_wet_mix(0.f), "zero wet mix is near-zero");
+    expectTrue(fuse::audio::is_near_zero_wet_mix(1e-7f), "sub-epsilon wet mix is near-zero");
+    expectTrue(!fuse::audio::is_near_zero_wet_mix(0.2f), "audible wet mix is not near-zero");
+
+    fuse::audio::ReverbZoneBlend epsilon_wet;
+    epsilon_wet.wet_dry = 1e-7f;
+    epsilon_wet.send_level = 1.f;
+    epsilon_wet.active_zone_count = 1;
+    expectTrue(fuse::audio::should_skip_wet_mix_processing(epsilon_wet),
+               "sub-epsilon effective wet mix skips processing");
+    expectTrue(fuse::audio::is_dry_reverb_blend(epsilon_wet),
+               "sub-epsilon effective wet mix is dry blend");
+}
+
 void testWetMixGuardConsistency() {
     const fuse::audio::ReverbZoneParams zones[] = {
         {{{-10.f, -10.f, -10.f}, {10.f, 10.f, 10.f}}, 0.4f, 0.5f},
@@ -226,6 +291,9 @@ int main() {
     testHasReverbZonesGuard();
     testEffectiveSendGain();
     testBlendReverbSampleOneShot();
+    testOcclusionBlockerRaycastGuard();
+    testListenerReverbZoneSkipGuards();
+    testNearZeroWetMixGuard();
     testWetMixGuardConsistency();
     fuse::core::shutdown();
 

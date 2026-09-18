@@ -42,6 +42,13 @@ bool should_skip_blockers_visibility(const Vec3& listener, const Vec3& source,
 bool should_skip_occlusion_blocker_attenuation(const Vec3& listener, const Vec3& source,
                                                const AABB* blockers, u32 blocker_count);
 
+/// True when segment-vs-AABB blocker ray evaluation can be skipped (empty list or fully occluded source).
+bool should_skip_occlusion_blocker_raycast(float source_occlusion, const AABB* blockers,
+                                         u32 blocker_count);
+
+/// True when visibility combine can be bypassed (zero blocker factor or fully occluded source).
+bool should_skip_combine_occlusion_visibility(float source_occlusion, float blocker_factor);
+
 /// True when visibility is fully clear — attenuation mapping can be skipped.
 bool should_skip_occlusion_attenuation(float visibility);
 
@@ -65,6 +72,9 @@ float compute_occlusion_combined_gain(const OcclusionAttenuation& attenuation);
 
 /// True when both LF and HF gains are unity (no occlusion attenuation applied).
 bool is_unity_occlusion_attenuation(const OcclusionAttenuation& attenuation);
+
+/// True when LF/HF attenuation mapping can be bypassed (unity gains after evaluation).
+bool should_skip_occlusion_attenuation_mapping(const OcclusionAttenuation& attenuation);
 
 /// Segment-vs-AABB ray stub — true when the listener→source segment intersects the box.
 bool segment_intersects_aabb(const Vec3& listener, const Vec3& source, const AABB& blocker);
