@@ -38,6 +38,18 @@ struct ProfileEvent {
     u32 counterSnapshotFrame = 0;
 };
 
+/// Read-only snapshot of profiler state before chrome JSON export (introspection only).
+struct ChromeExportPreflight {
+    u32 eventCount = 0;
+    u32 frameIndex = 0;
+    bool bufferEmpty = true;
+    bool hasEvents = false;
+    bool scopeNestingBalanced = true;
+    bool flowNestingBalanced = true;
+    bool hasOpenAsyncFlows = false;
+    bool canExport = true;
+};
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:
@@ -62,12 +74,16 @@ void endFrame();
 
 u32 frameIndex();
 u32 eventCount();
+u32 ringCapacity();
 u32 maxNestingDepth();
 u32 nestingDepth();
 u32 maxFlowNestingDepth();
 u32 scopeNestingDepth();
 u32 flowNestingDepth();
 u32 openAsyncFlowCount();
+bool hasOpenAsyncFlows();
+bool isScopeNestingBalanced();
+bool isFlowNestingBalanced();
 
 bool hasEvents();
 bool isBufferEmpty();
@@ -75,9 +91,14 @@ bool isBufferFull();
 bool isEventIndexValid(u32 index);
 bool isValidProfileEvent(const ProfileEvent& event);
 u32 lastEventIndex();
+const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
+bool tryEventAt(u32 index, ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 void reset();
+
+/// Non-mutating export preflight — always reports `canExport=true` for the stub exporter.
+ChromeExportPreflight preflightChromeExport();
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();
