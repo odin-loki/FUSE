@@ -197,10 +197,18 @@ struct ProbeGridLayout {
     static u32 probeIndexFromClampedCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
     /// Clamp trilinear corner indices/weights to grid bounds (no-op on empty grid).
     static void clampProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCoords& coords);
+    /// Ensure corner indices are ordered (x0≤x1, …) and weights stay in [0, 1].
+    static void normalizeProbeSampleCoords(ProbeSampleCoords& coords);
+    /// True when corner indices lie within the grid and weights are in [0, 1].
+    static bool isValidProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
                                        ProbeSampleCoords& out_coords);
+    /// Build sample coords and validate indices/weights; false when build or validation fails.
+    static bool tryBuildProbeSampleCoords(const DDGIDesc& desc,
+                                          const fuse::math::Vec3& world_position,
+                                          ProbeSampleCoords& out_coords);
     /// Fractional grid coordinates — origin cell centre is (0,0,0).
     static fuse::math::Vec3 worldToProbeGridCoord(const DDGIDesc& desc,
                                                   const fuse::math::Vec3& world_position);
@@ -241,6 +249,8 @@ u32 requiredCacheCount(const DDGIDesc& desc);
 bool isCacheSizedForGrid(const DDGIDesc& desc, u32 cache_count);
 /// Probe-cache shortfall vs `requiredCacheCount`; 0 when sized or the grid is not sampleable.
 u32 cacheEntriesMissing(const DDGIDesc& desc, u32 cache_count);
+/// Combined probe-index + cache-length guard for cache lookups.
+bool isCacheIndexValid(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
 bool isValidSampleRequest(const DDGIDesc& desc,
                           const DDGISampleRequest& request,
@@ -319,6 +329,9 @@ private:
     ResourceManager* m_resources = nullptr;
     bool m_ready = false;
 };
+
+/// Preflight guard for probe update launch — non-empty grid, non-null indices, in-range probe indices.
+bool canLaunchDdgiProbeUpdate(const DDGIDesc& desc, const u32* probe_indices, u32 probe_count);
 
 /// Host launcher for probe trace + blend kernels — stub until CUDA kernels land.
 bool launch_ddgi_probe_update(const DDGIDesc& desc,
