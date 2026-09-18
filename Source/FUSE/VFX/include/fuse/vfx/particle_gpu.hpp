@@ -64,11 +64,13 @@ struct ParticleGpuMirrorPreflight {
     ParticleGpuSyncGuard write_guard = ParticleGpuSyncGuard::MirrorUninitialized;
     bool alive_count_matches_flags = true;
     bool already_synced = false;
+    bool needs_content_sync = false;
 
     [[nodiscard]] bool can_sync_from_cpu() const;
     [[nodiscard]] bool can_write_to_cpu() const;
     [[nodiscard]] bool can_pack() const;
     [[nodiscard]] bool needs_resize_sync() const;
+    [[nodiscard]] bool needs_any_sync() const;
     [[nodiscard]] bool can_bind_device() const;
 };
 
@@ -99,7 +101,10 @@ struct ParticleGpuBufferLayout {
     static usize packingOverheadBytes(u32 capacity);
     static u64 columnDeviceAddress(ParticleGpuColumn column, u64 base, u32 capacity);
     static bool validateSlotIndex(u32 slot_index, u32 capacity);
+    static usize slotLocalByteOffset(ParticleGpuColumn column, u32 slot_index);
     static usize slotDeviceOffset(ParticleGpuColumn column, u32 slot_index, u32 capacity);
+    static bool validateSlotDeviceOffset(ParticleGpuColumn column, u32 slot_index, u32 capacity);
+    static bool locateSlotAtOffset(usize byte_offset, u32 capacity, ParticleGpuColumn* out_column, u32* out_slot_index);
     static bool containsByteOffset(usize byte_offset, u32 capacity);
     static bool locateColumnAtOffset(usize byte_offset, u32 capacity, ParticleGpuColumnSpan* out_span);
     static bool validatePackedLayout(u32 capacity);
@@ -197,6 +202,7 @@ struct ParticleGpuMirror {
     [[nodiscard]] ParticleGpuMirrorPreflight preflightFromCpu(const ParticleSoA& cpu) const;
     [[nodiscard]] ParticleGpuMirrorUploadPreflight preflightDeviceUpload(const ParticleSoA& cpu) const;
     [[nodiscard]] bool shouldSkipSyncFromCpu(const ParticleSoA& cpu) const;
+    [[nodiscard]] bool needsContentSyncFromCpu(const ParticleSoA& cpu) const;
     [[nodiscard]] bool aliveCountMatchesFlags() const;
 
     [[nodiscard]] static ParticleGpuMirror fromCpuSoA(const ParticleSoA& cpu);
@@ -221,6 +227,7 @@ struct ParticleGpuFramePreflight {
     bool emit_dispatch_ok = false;
     bool sim_padding_ok = false;
     bool emit_padding_ok = false;
+    bool dispatch_stub_ready = false;
 
     [[nodiscard]] bool ready_for_stub() const;
 };
@@ -240,14 +247,18 @@ struct ParticleGpuFramePlan {
     [[nodiscard]] bool buffersSizedForCapacity() const;
     [[nodiscard]] u32 simPaddingThreadCount() const;
     [[nodiscard]] u32 emitPaddingThreadCount() const;
+    [[nodiscard]] ParticleGpuDispatchPreflight dispatchPreflight() const;
     [[nodiscard]] ParticleGpuFramePreflight preflight() const;
     [[nodiscard]] ParticleSoAGPU gpuPointers(u64 packed_device_address) const;
 };
 
 [[nodiscard]] bool should_skip_sim_dispatch(u32 capacity);
 [[nodiscard]] bool should_skip_emit_dispatch(u32 emit_count);
+[[nodiscard]] bool should_skip_frame_dispatch(const ParticleGpuFramePlan& plan);
 [[nodiscard]] bool should_skip_mirror_sync(const ParticleGpuMirror& mirror, const ParticleSoA& cpu);
 [[nodiscard]] bool should_skip_mirror_write(const ParticleGpuMirror& mirror, const ParticleSoA& cpu);
+[[nodiscard]] bool should_skip_mirror_pack(const ParticleGpuMirror& mirror, const ParticleSoA& cpu);
+[[nodiscard]] bool should_attempt_mirror_sync(const ParticleGpuMirror& mirror, const ParticleSoA& cpu);
 
 namespace particle_gpu_util {
 [[nodiscard]] u32 gridDimX(u32 element_count, u32 block_size);

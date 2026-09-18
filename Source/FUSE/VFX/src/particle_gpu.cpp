@@ -192,6 +192,54 @@ u64 ParticleGpuBufferLayout::columnDeviceAddress(ParticleGpuColumn column, u64 b
     return base + columnDeviceOffset(column, capacity);
 }
 
+usize ParticleGpuBufferLayout::slotLocalByteOffset(ParticleGpuColumn column, u32 slot_index) {
+    return elementSize(column) * static_cast<usize>(slot_index);
+}
+
+bool ParticleGpuBufferLayout::validateSlotDeviceOffset(ParticleGpuColumn column, u32 slot_index, u32 capacity) {
+    if (!validateSlotIndex(slot_index, capacity)) {
+        return false;
+    }
+
+    const usize expected = slotDeviceOffset(column, slot_index, capacity);
+    const usize computed =
+        columnDeviceOffset(column, capacity) + slotLocalByteOffset(column, slot_index);
+    return expected == computed && containsByteOffset(expected, capacity);
+}
+
+bool ParticleGpuBufferLayout::locateSlotAtOffset(usize byte_offset, u32 capacity, ParticleGpuColumn* out_column,
+                                                 u32* out_slot_index) {
+    if (out_column == nullptr || out_slot_index == nullptr) {
+        return false;
+    }
+
+    ParticleGpuColumnSpan span{};
+    if (!locateColumnAtOffset(byte_offset, capacity, &span) || span.element_size == 0u) {
+        return false;
+    }
+
+    if ((byte_offset - span.offset) % span.element_size != 0u) {
+        return false;
+    }
+
+    const usize local_offset = byte_offset - span.offset;
+    const u32 slot_index = static_cast<u32>(local_offset / span.element_size);
+    if (slot_index >= span.slot_count) {
+        return false;
+    }
+
+    for (u32 index = 0; index < columnCount(); ++index) {
+        const ParticleGpuColumn column = static_cast<ParticleGpuColumn>(index);
+        if (columnSpan(column, capacity).offset == span.offset) {
+            *out_column = column;
+            *out_slot_index = slot_index;
+            return validateSlotDeviceOffset(column, slot_index, capacity);
+        }
+    }
+
+    return false;
+}
+
 bool ParticleGpuBufferLayout::validateSlotIndex(u32 slot_index, u32 capacity) {
     return capacity > 0u && slot_index < capacity;
 }
@@ -422,6 +470,10 @@ bool ParticleGpuMirrorPreflight::needs_resize_sync() const {
     return sync_guard == ParticleGpuSyncGuard::MirrorUninitialized;
 }
 
+bool ParticleGpuMirrorPreflight::needs_any_sync() const {
+    return needs_resize_sync() || needs_content_sync;
+}
+
 bool ParticleGpuMirrorPreflight::can_bind_device() const {
     return can_pack() && alive_count_matches_flags;
 }
@@ -476,6 +528,7 @@ ParticleGpuMirrorPreflight ParticleGpuMirror::preflightFromCpu(const ParticleSoA
     preflight.write_guard = writeGuardForCpu(cpu);
     preflight.alive_count_matches_flags = aliveCountMatchesFlags();
     preflight.already_synced = shouldSkipSyncFromCpu(cpu);
+    preflight.needs_content_sync = needsContentSyncFromCpu(cpu);
     return preflight;
 }
 
@@ -494,6 +547,13 @@ ParticleGpuMirrorUploadPreflight ParticleGpuMirror::preflightDeviceUpload(const 
 
 bool ParticleGpuMirror::shouldSkipSyncFromCpu(const ParticleSoA& cpu) const {
     return syncGuardForCpu(cpu) == ParticleGpuSyncGuard::Ok && matchesCpuSoA(cpu);
+}
+
+bool ParticleGpuMirror::needsContentSyncFromCpu(const ParticleSoA& cpu) const {
+    if (syncGuardForCpu(cpu) != ParticleGpuSyncGuard::Ok) {
+        return false;
+    }
+    return !matchesCpuSoA(cpu);
 }
 
 bool ParticleGpuMirror::aliveCountMatchesFlags() const {
@@ -797,6 +857,10 @@ u32 ParticleGpuFramePlan::emitPaddingThreadCount() const {
     return dispatch.emitPaddingThreads(emit_count);
 }
 
+ParticleGpuDispatchPreflight ParticleGpuFramePlan::dispatchPreflight() const {
+    return dispatch.preflightFrame(capacity, emit_count);
+}
+
 ParticleGpuFramePreflight ParticleGpuFramePlan::preflight() const {
     ParticleGpuFramePreflight result{};
     result.buffers_ok = buffersSizedForCapacity();
@@ -804,11 +868,13 @@ ParticleGpuFramePreflight ParticleGpuFramePlan::preflight() const {
     result.emit_dispatch_ok = dispatch.emitCovers(emit_count);
     result.sim_padding_ok = dispatch.simPaddingAccountsFor(capacity);
     result.emit_padding_ok = dispatch.emitPaddingAccountsFor(emit_count);
+    result.dispatch_stub_ready = dispatchPreflight().ready_for_stub();
     return result;
 }
 
 bool ParticleGpuFramePreflight::ready_for_stub() const {
-    return buffers_ok && sim_dispatch_ok && emit_dispatch_ok && sim_padding_ok && emit_padding_ok;
+    return buffers_ok && sim_dispatch_ok && emit_dispatch_ok && sim_padding_ok && emit_padding_ok &&
+           dispatch_stub_ready;
 }
 
 ParticleSoAGPU ParticleGpuFramePlan::gpuPointers(u64 packed_device_address) const {
@@ -888,6 +954,10 @@ bool should_skip_emit_dispatch(u32 emit_count) {
     return emit_count == 0u;
 }
 
+bool should_skip_frame_dispatch(const ParticleGpuFramePlan& plan) {
+    return plan.isIdle() || (should_skip_sim_dispatch(plan.capacity) && should_skip_emit_dispatch(plan.emit_count));
+}
+
 bool should_skip_mirror_sync(const ParticleGpuMirror& mirror, const ParticleSoA& cpu) {
     return mirror.shouldSkipSyncFromCpu(cpu);
 }
@@ -895,6 +965,19 @@ bool should_skip_mirror_sync(const ParticleGpuMirror& mirror, const ParticleSoA&
 bool should_skip_mirror_write(const ParticleGpuMirror& mirror, const ParticleSoA& cpu) {
     const ParticleGpuMirrorPreflight preflight = mirror.preflightFromCpu(cpu);
     return preflight.can_write_to_cpu() && mirror.matchesCpuSoA(cpu);
+}
+
+bool should_skip_mirror_pack(const ParticleGpuMirror& mirror, const ParticleSoA& cpu) {
+    const ParticleGpuMirrorPreflight preflight = mirror.preflightFromCpu(cpu);
+    return preflight.can_pack() && preflight.already_synced && preflight.alive_count_matches_flags;
+}
+
+bool should_attempt_mirror_sync(const ParticleGpuMirror& mirror, const ParticleSoA& cpu) {
+    if (should_skip_mirror_sync(mirror, cpu)) {
+        return false;
+    }
+    const ParticleGpuMirrorPreflight preflight = mirror.preflightFromCpu(cpu);
+    return preflight.needs_any_sync() && mirror.canSyncFromCpuSoA(cpu);
 }
 
 } // namespace fuse::vfx
