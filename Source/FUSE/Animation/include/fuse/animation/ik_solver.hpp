@@ -68,8 +68,12 @@ struct FABRIKChain {
     f32 min_angle_deg = 0.f;
     f32 max_angle_deg = 160.f;
 
-    /// Returns false when the skeleton is empty, the index list has fewer than two bones, or any index is out of range.
+    /// Returns false when the skeleton is empty, the index list has fewer than two bones, any index is out of range,
+    /// indices repeat, or consecutive bones are not parent→child in the skeleton hierarchy.
     [[nodiscard]] bool has_valid_chain(const Skeleton& skel) const;
+
+    /// Returns false when the pose is empty or any chain bone index is out of range for the pose buffer.
+    [[nodiscard]] bool has_valid_pose(const Pose& pose) const;
 
     /// Returns false when `has_valid_chain` is false.
     [[nodiscard]] bool solve(Pose& pose, const Skeleton& skel);
@@ -86,8 +90,17 @@ struct TwoBoneIK {
     /// Returns false when the skeleton is empty, indices are out of range, duplicated, or not a root→mid→end chain.
     [[nodiscard]] bool has_valid_chain(const Skeleton& skel) const;
 
+    /// Returns false when the pose is empty or any chain bone index is out of range for the pose buffer.
+    [[nodiscard]] bool has_valid_pose(const Pose& pose) const;
+
+    /// SoA variant of `has_valid_pose`.
+    [[nodiscard]] bool has_valid_pose(const PoseSoA& pose) const;
+
     /// True when either limb segment has near-zero length in the current pose.
     [[nodiscard]] bool has_degenerate_segments(const Pose& pose) const;
+
+    /// SoA variant of `has_degenerate_segments`.
+    [[nodiscard]] bool has_degenerate_segments(const PoseSoA& pose) const;
 
     /// Upper + lower segment length from the current pose, minus `reach_epsilon` (matches clamp behaviour).
     [[nodiscard]] f32 max_reach(const Pose& pose) const;
