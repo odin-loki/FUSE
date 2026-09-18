@@ -97,6 +97,9 @@ f32 snapValue(f32 value, GizmoMode mode, const GizmoSnapSettings& settings);
 /// True when the active gizmo mode has snap enabled (B6.4 deepen follow-up).
 bool isSnapEnabled(GizmoMode mode, const GizmoSnapSettings& settings);
 
+/// Grid / angle / scale step for the active gizmo mode (B6.4 deepen pass).
+f32 snapStepForMode(GizmoMode mode, const GizmoSnapSettings& settings);
+
 /// Mode-aware snap for accumulated screen-space drag deltas (B6.4 deepen follow-up).
 f32 snapDragDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings);
 
@@ -108,6 +111,16 @@ bool isHitTestEmpty(const GizmoHitTest& hit);
 bool tryPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
                  GizmoSpace space, f32 axisLength, f32 pickRadius, GizmoAxis& outAxis);
 bool tryPickAxis(const GizmoHitTest& hit, GizmoMode mode, GizmoAxis& outAxis);
+
+/// Non-mutating pick predicate — same guards as `tryPickAxis` (B6.4 deepen pass).
+bool canPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+                 GizmoSpace space, f32 axisLength, f32 pickRadius);
+bool canPickAxis(const GizmoHitTest& hit, GizmoMode mode);
+
+/// Non-mutating begin-drag predicate — empty-hit / miss early-outs (B6.4 deepen pass).
+bool canBeginDrag(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+                  GizmoSpace space, f32 axisLength, f32 pickRadius);
+bool canBeginDrag(const GizmoHitTest& hit, GizmoMode mode);
 
 /// Screen-space dead-zone check before axis pick (B6.4 deepen).
 bool isScreenHitMiss(const GizmoHitTest& hit, GizmoMode mode);
@@ -160,9 +173,14 @@ public:
     GizmoAxis pickAxis(const GizmoHitTest& hit) const;
     bool tryPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoAxis& outAxis) const;
     bool tryPickAxis(const GizmoHitTest& hit, GizmoAxis& outAxis) const;
+    [[nodiscard]] bool canPickAxis(const GizmoRay& ray, const GizmoTransform& transform) const;
+    [[nodiscard]] bool canPickAxis(const GizmoHitTest& hit) const;
 
     GizmoResult beginDrag(const GizmoHitTest& hit, const GizmoTransform& current);
     GizmoResult beginDrag(const GizmoRay& ray, const GizmoTransform& current);
+    /// Non-mutating begin-drag predicate — rejects empty hits and active drags (B6.4 deepen pass).
+    [[nodiscard]] bool canBeginDrag(const GizmoHitTest& hit) const;
+    [[nodiscard]] bool canBeginDrag(const GizmoRay& ray, const GizmoTransform& transform) const;
     /// Guarded begin-drag — returns false on empty viewport / miss picks (B6.4 deepen follow-up).
     bool tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& current, GizmoResult& out);
     bool tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current, GizmoResult& out);

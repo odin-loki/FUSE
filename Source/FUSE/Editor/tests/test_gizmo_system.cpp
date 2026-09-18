@@ -445,6 +445,122 @@ void testPickAxisFromRayEmptyGuard() {
                "pickAxisFromRay rejects zero pick radius");
 }
 
+void testCanBeginDragGuards() {
+    fuse::editor::GizmoSystem gizmo;
+    fuse::editor::GizmoTransform transform{};
+
+    fuse::editor::GizmoHitTest emptyHit{};
+    emptyHit.viewportWidth = 0.f;
+    expectTrue(!fuse::editor::canBeginDrag(emptyHit, fuse::editor::GizmoMode::Translate),
+               "canBeginDrag rejects empty viewport");
+    expectTrue(!gizmo.canBeginDrag(emptyHit), "gizmo canBeginDrag rejects empty viewport");
+
+    fuse::editor::GizmoHitTest deadZone{};
+    deadZone.viewportWidth = 100.f;
+    deadZone.viewportHeight = 100.f;
+    deadZone.screenX = 50.f;
+    deadZone.screenY = 50.f;
+    expectTrue(!fuse::editor::canBeginDrag(deadZone, fuse::editor::GizmoMode::Translate),
+               "canBeginDrag rejects translate dead zone");
+    expectTrue(!gizmo.canBeginDrag(deadZone), "gizmo canBeginDrag rejects translate dead zone");
+
+    deadZone.screenX = 10.f;
+    deadZone.screenY = 50.f;
+    expectTrue(fuse::editor::canBeginDrag(deadZone, fuse::editor::GizmoMode::Translate),
+               "canBeginDrag accepts valid screen hit");
+    expectTrue(gizmo.canBeginDrag(deadZone), "gizmo canBeginDrag accepts valid screen hit");
+
+    gizmo.beginDrag(deadZone, transform);
+    expectTrue(!gizmo.canBeginDrag(deadZone), "canBeginDrag rejects while drag is active");
+    gizmo.endDrag();
+
+    fuse::editor::GizmoRay emptyRay{};
+    expectTrue(!fuse::editor::canBeginDrag(emptyRay, transform, fuse::editor::GizmoMode::Translate,
+                                           fuse::editor::GizmoSpace::World,
+                                           fuse::editor::GizmoSystem::kAxisLength,
+                                           fuse::editor::GizmoSystem::kPickRadius),
+               "canBeginDrag rejects empty ray");
+
+    const fuse::editor::GizmoRay xRay = rayAlongX();
+    expectTrue(fuse::editor::canBeginDrag(xRay, transform, fuse::editor::GizmoMode::Translate,
+                                          fuse::editor::GizmoSpace::World,
+                                          fuse::editor::GizmoSystem::kAxisLength,
+                                          fuse::editor::GizmoSystem::kPickRadius),
+               "canBeginDrag accepts valid ray pick");
+    expectTrue(gizmo.canBeginDrag(xRay, transform), "gizmo canBeginDrag accepts valid ray pick");
+
+    fuse::editor::GizmoRay missRay;
+    missRay.origin = {0.f, 5.f, 0.f};
+    missRay.direction = {1.f, 0.f, 0.f};
+    expectTrue(!gizmo.canBeginDrag(missRay, transform), "gizmo canBeginDrag rejects ray miss");
+}
+
+void testCanPickAxisGuards() {
+    fuse::editor::GizmoSystem gizmo;
+    fuse::editor::GizmoTransform transform{};
+
+    fuse::editor::GizmoRay emptyRay{};
+    expectTrue(!fuse::editor::canPickAxis(emptyRay, transform, fuse::editor::GizmoMode::Translate,
+                                          fuse::editor::GizmoSpace::World,
+                                          fuse::editor::GizmoSystem::kAxisLength,
+                                          fuse::editor::GizmoSystem::kPickRadius),
+               "canPickAxis rejects empty ray");
+    expectTrue(!gizmo.canPickAxis(emptyRay, transform), "gizmo canPickAxis rejects empty ray");
+
+    const fuse::editor::GizmoRay xRay = rayAlongX();
+    expectTrue(gizmo.canPickAxis(xRay, transform), "gizmo canPickAxis accepts valid ray");
+
+    fuse::editor::GizmoHitTest deadZone{};
+    deadZone.viewportWidth = 100.f;
+    deadZone.viewportHeight = 100.f;
+    deadZone.screenX = 50.f;
+    deadZone.screenY = 50.f;
+    expectTrue(!fuse::editor::canPickAxis(deadZone, fuse::editor::GizmoMode::Translate),
+               "canPickAxis rejects translate dead zone");
+    expectTrue(!gizmo.canPickAxis(deadZone), "gizmo canPickAxis rejects translate dead zone");
+
+    deadZone.screenX = 10.f;
+    expectTrue(gizmo.canPickAxis(deadZone), "gizmo canPickAxis accepts valid screen hit");
+}
+
+void testSnapStepForMode() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.gridSize = 0.5f;
+    snap.angleStepDegrees = 15.f;
+    snap.scaleGridStep = 0.25f;
+
+    expectNear(fuse::editor::snapStepForMode(fuse::editor::GizmoMode::Translate, snap), 0.5f, 0.001f,
+               "snapStepForMode returns translate grid size");
+    expectNear(fuse::editor::snapStepForMode(fuse::editor::GizmoMode::Rotate, snap), 15.f, 0.001f,
+               "snapStepForMode returns rotate angle step");
+    expectNear(fuse::editor::snapStepForMode(fuse::editor::GizmoMode::Scale, snap), 0.25f, 0.001f,
+               "snapStepForMode returns scale grid step");
+
+    snap.translateSnap = true;
+    expectNear(fuse::editor::snapValue(1.37f, fuse::editor::GizmoMode::Translate, snap),
+               fuse::editor::snapToGrid(1.37f, fuse::editor::snapStepForMode(
+                                                fuse::editor::GizmoMode::Translate, snap)),
+               0.001f, "snapValue uses snapStepForMode grid for translate");
+}
+
+void testBeginDragRayUsesTryBeginDrag() {
+    fuse::editor::GizmoSystem gizmo;
+    fuse::editor::GizmoTransform transform{};
+
+    fuse::editor::GizmoRay missRay;
+    missRay.origin = {0.f, 5.f, 0.f};
+    missRay.direction = {1.f, 0.f, 0.f};
+    const fuse::editor::GizmoResult miss = gizmo.beginDrag(missRay, transform);
+    expectTrue(!miss.active, "beginDrag ray rejects miss via tryBeginDrag guards");
+    expectTrue(!gizmo.isDragging(), "beginDrag ray miss does not start drag");
+
+    const fuse::editor::GizmoRay xRay = rayAlongX();
+    const fuse::editor::GizmoResult started = gizmo.beginDrag(xRay, transform);
+    expectTrue(started.active, "beginDrag ray accepts valid pick");
+    expectTrue(started.axis == fuse::editor::GizmoAxis::X, "beginDrag ray records axis");
+    gizmo.endDrag();
+}
+
 void testDirtyFlagOnEndDrag() {
     fuse::editor::GizmoSystem gizmo;
     fuse::editor::CommandStack commandStack;
@@ -491,6 +607,10 @@ int main() {
     testCycleModeCancelsDrag();
     testSnapDragDeltaModeAware();
     testPickAxisFromRayEmptyGuard();
+    testCanBeginDragGuards();
+    testCanPickAxisGuards();
+    testSnapStepForMode();
+    testBeginDragRayUsesTryBeginDrag();
     testDirtyFlagOnEndDrag();
 
     if (g_failures != 0) {

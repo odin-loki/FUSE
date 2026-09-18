@@ -258,6 +258,18 @@ f32 snapValue(f32 value, GizmoMode mode, const GizmoSnapSettings& settings) {
     return value;
 }
 
+f32 snapStepForMode(GizmoMode mode, const GizmoSnapSettings& settings) {
+    switch (mode) {
+    case GizmoMode::Translate:
+        return settings.gridSize;
+    case GizmoMode::Rotate:
+        return settings.angleStepDegrees;
+    case GizmoMode::Scale:
+        return settings.scaleGridStep;
+    }
+    return 0.f;
+}
+
 f32 snapDragDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings) {
     if (!isSnapEnabled(mode, settings)) {
         return delta;
@@ -286,7 +298,7 @@ bool tryPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode
 
 bool tryPickAxis(const GizmoHitTest& hit, GizmoMode mode, GizmoAxis& outAxis) {
     outAxis = GizmoAxis::None;
-    if (isHitTestEmpty(hit) || isScreenHitMiss(hit, mode)) {
+    if (!canPickAxis(hit, mode)) {
         return false;
     }
 
@@ -307,6 +319,31 @@ bool tryPickAxis(const GizmoHitTest& hit, GizmoMode mode, GizmoAxis& outAxis) {
     }
     outAxis = GizmoAxis::Z;
     return true;
+}
+
+bool canPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+                 GizmoSpace space, f32 axisLength, f32 pickRadius) {
+    if (isRayEmpty(ray) || axisLength <= kEpsilon || pickRadius <= kEpsilon) {
+        return false;
+    }
+
+    return pickAxisFromRay(ray, transform, mode, space, axisLength, pickRadius) != GizmoAxis::None;
+}
+
+bool canPickAxis(const GizmoHitTest& hit, GizmoMode mode) {
+    if (isHitTestEmpty(hit) || isScreenHitMiss(hit, mode)) {
+        return false;
+    }
+    return true;
+}
+
+bool canBeginDrag(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+                  GizmoSpace space, f32 axisLength, f32 pickRadius) {
+    return canPickAxis(ray, transform, mode, space, axisLength, pickRadius);
+}
+
+bool canBeginDrag(const GizmoHitTest& hit, GizmoMode mode) {
+    return canPickAxis(hit, mode);
 }
 
 bool isScreenHitMiss(const GizmoHitTest& hit, GizmoMode mode) {
@@ -512,6 +549,28 @@ bool GizmoSystem::tryPickAxis(const GizmoHitTest& hit, GizmoAxis& outAxis) const
     return fuse::editor::tryPickAxis(hit, m_mode, outAxis);
 }
 
+bool GizmoSystem::canPickAxis(const GizmoRay& ray, const GizmoTransform& transform) const {
+    return fuse::editor::canPickAxis(ray, transform, m_mode, m_space, kAxisLength, kPickRadius);
+}
+
+bool GizmoSystem::canPickAxis(const GizmoHitTest& hit) const {
+    return fuse::editor::canPickAxis(hit, m_mode);
+}
+
+bool GizmoSystem::canBeginDrag(const GizmoHitTest& hit) const {
+    if (m_dragging) {
+        return false;
+    }
+    return fuse::editor::canBeginDrag(hit, m_mode);
+}
+
+bool GizmoSystem::canBeginDrag(const GizmoRay& ray, const GizmoTransform& transform) const {
+    if (m_dragging) {
+        return false;
+    }
+    return fuse::editor::canBeginDrag(ray, transform, m_mode, m_space, kAxisLength, kPickRadius);
+}
+
 GizmoResult GizmoSystem::beginDrag(const GizmoHitTest& hit, const GizmoTransform& current) {
     GizmoResult result;
     if (!tryBeginDrag(hit, current, result)) {
@@ -523,7 +582,7 @@ GizmoResult GizmoSystem::beginDrag(const GizmoHitTest& hit, const GizmoTransform
 bool GizmoSystem::tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& current,
                                GizmoResult& out) {
     out = {};
-    if (isHitTestEmpty(hit)) {
+    if (!canBeginDrag(hit)) {
         return false;
     }
 
@@ -546,6 +605,9 @@ bool GizmoSystem::tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& cu
 bool GizmoSystem::tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current,
                                GizmoResult& out) {
     out = {};
+    if (m_dragging) {
+        return false;
+    }
     if (!tryPickAxis(ray, current, m_activeAxis)) {
         return false;
     }
@@ -563,18 +625,9 @@ bool GizmoSystem::tryBeginDrag(const GizmoRay& ray, const GizmoTransform& curren
 
 GizmoResult GizmoSystem::beginDrag(const GizmoRay& ray, const GizmoTransform& current) {
     GizmoResult result;
-    if (!tryPickAxis(ray, current, m_activeAxis)) {
+    if (!tryBeginDrag(ray, current, result)) {
         return result;
     }
-
-    m_dragging = true;
-    m_startTransform = current;
-    m_currentTransform = current;
-    m_lastHit = {};
-
-    result.active = true;
-    result.axis = m_activeAxis;
-    result.transform = m_currentTransform;
     return result;
 }
 
