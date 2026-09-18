@@ -18,6 +18,10 @@ bool taaHistoryReuseAllowed(const TaaHistoryBuffer& history, u32 observedGenerat
     return taaHistoryCanReuse(history) && !history.isHistoryStale(observedGeneration);
 }
 
+bool taaHistoryNeedsWarmup(const TaaHistoryBuffer& history) {
+    return !history.hasValidHistory();
+}
+
 bool TaaHistoryBuffer::canReuseHistory() const {
     return taaHistoryCanReuse(*this);
 }

@@ -56,6 +56,14 @@ public:
     bool historyBlendAllowed() const;
     /// True when pass jitter can produce NDC offsets for the configured viewport (B5.9 deepen).
     bool canProduceJitterNdc() const;
+    /// Advance jitter only when the sequence is valid; returns false when blocked (B5.9 deepen).
+    bool advanceJitterIfReady();
+    /// Expected blend weights for the next resolve (B5.9 deepen).
+    TaaBlendWeights expectedResolveBlendWeights(const TaaResolveDesc& desc) const;
+    /// True when resolve would sample warmed history this frame (B5.9 deepen).
+    bool resolveWouldReuseHistory(const TaaResolveDesc& desc) const;
+    /// Classify why pass history reuse is blocked (B5.9 deepen).
+    TaaHistoryReuseBlockReason classifyHistoryReuseBlock(u32 observedGeneration) const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
