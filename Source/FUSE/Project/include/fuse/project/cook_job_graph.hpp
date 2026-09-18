@@ -78,6 +78,13 @@ public:
     /// Transitive downstream jobs for cache invalidation — guarded on empty graph / unknown seed (B7.9 deepen).
     [[nodiscard]] CookInvalidationClosureResult invalidation_closure(const std::string& from_job_id) const;
 
+    /// Transitive upstream jobs for dependency reconciliation — guarded on empty graph / unknown seed (B7.9 deepen).
+    [[nodiscard]] CookInvalidationClosureResult upstream_invalidation_closure(const std::string& to_job_id) const;
+
+    /// Union of downstream closures for multiple seeds — guarded on empty graph / empty seeds / unknown seeds.
+    [[nodiscard]] CookInvalidationClosureResult merged_invalidation_closure(
+        const std::vector<std::string>& from_job_ids) const;
+
     CookJobGraphExecuteResult execute(AssetCooker& cooker, const CookManifest& manifest);
 
 private:
