@@ -142,6 +142,18 @@ void testListenerMasterMutedPredicate() {
                "audible listener master is not muted");
 }
 
+void testShouldSkipListenerMasterMixGuard() {
+    expectTrue(fuse::audio::should_skip_listener_master_mix(0.f),
+               "zero listener master skips mix");
+    expectTrue(fuse::audio::should_skip_listener_master_mix(1e-7f),
+               "near-zero listener master skips mix");
+    expectTrue(!fuse::audio::should_skip_listener_master_mix(0.5f),
+               "audible listener master does not skip mix");
+    expectTrue(fuse::audio::should_skip_listener_master_mix(0.f)
+                   == fuse::audio::is_listener_master_muted(0.f),
+               "skip guard matches listener master muted predicate");
+}
+
 void testClearBusMuteRestoresMix() {
     fuse::audio::AudioBusMixer mixer;
     mixer.set_bus_gain(fuse::audio::AudioBus::Master, 1.f);
@@ -160,6 +172,26 @@ void testClearBusMuteRestoresMix() {
                "sfx mixes again after mute cleared");
     expectNear(fuse::audio::compute_mix_output_gain(mixer, fuse::audio::AudioBus::Sfx, 1.f), 0.8f,
                1e-5f, "sfx output gain restored after mute cleared");
+}
+
+void testClearBusMuteSingleBus() {
+    fuse::audio::AudioBusMixer mixer;
+    mixer.set_bus_gain(fuse::audio::AudioBus::Master, 1.f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Sfx, 0.8f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Music, 0.6f);
+
+    mixer.set_bus_muted(fuse::audio::AudioBus::Sfx, true);
+    mixer.set_bus_muted(fuse::audio::AudioBus::Music, true);
+
+    mixer.clear_bus_mute(fuse::audio::AudioBus::Sfx);
+    expectTrue(!mixer.bus_muted(fuse::audio::AudioBus::Sfx),
+               "per-bus clear_bus_mute clears only the target bus");
+    expectTrue(mixer.bus_muted(fuse::audio::AudioBus::Music),
+               "per-bus clear_bus_mute leaves other muted buses alone");
+    expectTrue(mixer.should_mix_bus(fuse::audio::AudioBus::Sfx),
+               "cleared bus mixes again");
+    expectTrue(!mixer.should_mix_bus(fuse::audio::AudioBus::Music),
+               "still-muted bus remains silenced");
 }
 
 void testSoloedBusCount() {
@@ -189,6 +221,8 @@ void testParentChainMutePropagation() {
     mixer.set_bus_muted(fuse::audio::AudioBus::Sfx, true);
     expectTrue(mixer.is_parent_chain_muted(fuse::audio::AudioBus::Voice),
                "muted parent silences child via parent-chain guard");
+    expectTrue(fuse::audio::is_bus_parent_chain_muted(mixer, fuse::audio::AudioBus::Voice),
+               "free-function parent-chain mute matches ancestor mute");
     expectTrue(!mixer.should_mix_bus(fuse::audio::AudioBus::Voice),
                "child bus does not mix when parent is muted");
     expectTrue(fuse::audio::is_bus_mix_silenced(mixer, fuse::audio::AudioBus::Voice),
@@ -199,6 +233,34 @@ void testParentChainMutePropagation() {
                "unrelated bus still mixes when only sfx parent is muted");
     expectTrue(fuse::audio::is_bus_muted(mixer, fuse::audio::AudioBus::Voice),
                "parent-muted child is reported as muted");
+
+    mixer.clear_bus_mute(fuse::audio::AudioBus::Voice);
+    expectTrue(fuse::audio::is_bus_parent_chain_muted(mixer, fuse::audio::AudioBus::Voice),
+               "ancestor mute still blocks child after child mute cleared");
+}
+
+void testParentChainSoloAudibleChild() {
+    fuse::audio::AudioBusMixer mixer;
+    mixer.set_bus_gain(fuse::audio::AudioBus::Master, 1.f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Sfx, 0.9f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Voice, 0.5f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Music, 0.7f);
+    mixer.set_bus_parent(fuse::audio::AudioBus::Voice, fuse::audio::AudioBus::Sfx);
+
+    mixer.set_bus_solo(fuse::audio::AudioBus::Sfx, true);
+
+    expectTrue(mixer.is_any_ancestor_bus_soloed(fuse::audio::AudioBus::Voice),
+               "soloed sfx is ancestor of voice");
+    expectTrue(mixer.is_bus_solo_audible(fuse::audio::AudioBus::Voice),
+               "voice is audible through soloed ancestor");
+    expectTrue(!mixer.is_bus_solo_silenced(fuse::audio::AudioBus::Voice),
+               "voice is not solo-silenced when ancestor is soloed");
+    expectTrue(mixer.should_mix_bus(fuse::audio::AudioBus::Voice),
+               "child bus mixes when ancestor is soloed");
+    expectTrue(!mixer.should_mix_bus(fuse::audio::AudioBus::Music),
+               "unrelated bus remains solo-silenced");
+    expectNear(fuse::audio::compute_mix_output_gain(mixer, fuse::audio::AudioBus::Voice, 1.f),
+               0.45f, 1e-5f, "soloed ancestor child keeps routed output gain");
 }
 
 void testListenerMasterMixEarlyOut() {
@@ -368,9 +430,12 @@ int main() {
     testShouldSkipBusMixAlias();
     testMutedSoloBusDoesNotMix();
     testListenerMasterMutedPredicate();
+    testShouldSkipListenerMasterMixGuard();
     testClearBusMuteRestoresMix();
+    testClearBusMuteSingleBus();
     testSoloedBusCount();
     testParentChainMutePropagation();
+    testParentChainSoloAudibleChild();
     testListenerMasterMixEarlyOut();
     testIsBusMixSilencedAlias();
     testCategoryAudioBusPredicate();
