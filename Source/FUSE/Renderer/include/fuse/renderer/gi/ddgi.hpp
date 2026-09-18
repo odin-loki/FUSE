@@ -145,9 +145,12 @@ struct ProbeBorderCounts {
 enum class ProbeSampleCoordsRejectReason : u8 {
     None = 0,
     EmptyGrid,
+    InvalidSpacing,
+    NotSampleable,
     OutOfRangeIndices,
     OutOfRangeWeights,
     UnorderedCorners,
+    UndersizedCache,
 };
 
 /// Human-readable label for sample-coord reject reasons (logging / tests).
@@ -157,7 +160,9 @@ const char* probeSampleCoordsRejectReasonLabel(ProbeSampleCoordsRejectReason rea
 enum class CacheIndexRejectReason : u8 {
     None = 0,
     EmptyGrid,
+    NotSampleable,
     OutOfRangeProbeIndex,
+    ZeroCache,
     UndersizedCache,
 };
 
@@ -175,6 +180,16 @@ enum class ProbeUpdateLaunchRejectReason : u8 {
 
 /// Human-readable label for probe-update launch reject reasons (logging / tests).
 const char* probeUpdateLaunchRejectReasonLabel(ProbeUpdateLaunchRejectReason reason);
+
+/// Why a DDGI irradiance sample request preflight rejected the request (B5.6 deepen).
+enum class SampleRequestRejectReason : u8 {
+    None = 0,
+    NotSampleable,
+    UndersizedCache,
+};
+
+/// Human-readable label for sample-request reject reasons (logging / tests).
+const char* sampleRequestRejectReasonLabel(SampleRequestRejectReason reason);
 
 /// CPU-side octahedral direction encoding for probe irradiance atlas tiles (B5.6 deepen).
 /// Mirrors `GBufferEncoding` and the deferred-shade probe sampling path.
@@ -223,8 +238,14 @@ struct ProbeGridLayout {
     static ProbeValidityFlags probeValidityFromClampedIndex(const DDGIDesc& desc, u32 probe_index);
     /// True when `probe_index` exceeds the valid probe range (would be clamped).
     static bool isProbeIndexOutOfRange(u32 probe_index, const DDGIDesc& desc);
+    /// Last valid flat probe index; returns 0 when the grid has no probes.
+    static u32 maxProbeIndex(const DDGIDesc& desc);
+    /// True when `probe_index` equals the last valid probe index for a non-empty grid.
+    static bool isAtMaxProbeIndex(u32 probe_index, const DDGIDesc& desc);
     /// Clamp a flat probe index to [0, probeCount - 1]; returns 0 when the grid is empty.
     static u32 clampProbeIndex(u32 probe_index, const DDGIDesc& desc);
+    /// Clamp `probe_index` into range; returns false and zeroes `out_index` on an empty grid.
+    static bool tryClampProbeIndex(u32 probe_index, const DDGIDesc& desc, u32& out_index);
     static u32 clampProbeCoordX(u32 x, const DDGIDesc& desc);
     static u32 clampProbeCoordY(u32 y, const DDGIDesc& desc);
     static u32 clampProbeCoordZ(u32 z, const DDGIDesc& desc);
@@ -244,10 +265,17 @@ struct ProbeGridLayout {
     static bool tryValidateProbeSampleCoords(const DDGIDesc& desc,
                                              const ProbeSampleCoords& coords,
                                              ProbeSampleCoordsRejectReason& outReason);
+    /// Preflight guard before `buildProbeSampleCoords`; false on empty grid or invalid spacing.
+    static bool canBuildProbeSampleCoords(const DDGIDesc& desc);
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
                                        ProbeSampleCoords& out_coords);
+    /// Build sample coords with guard preflight and reject-reason diagnostics.
+    static bool tryBuildProbeSampleCoords(const DDGIDesc& desc,
+                                          const fuse::math::Vec3& world_position,
+                                          ProbeSampleCoords& out_coords,
+                                          ProbeSampleCoordsRejectReason& outReason);
     /// Fractional grid coordinates — origin cell centre is (0,0,0).
     static fuse::math::Vec3 worldToProbeGridCoord(const DDGIDesc& desc,
                                                   const fuse::math::Vec3& world_position);
@@ -290,15 +318,38 @@ bool isCacheSizedForGrid(const DDGIDesc& desc, u32 cache_count);
 u32 cacheEntriesMissing(const DDGIDesc& desc, u32 cache_count);
 /// Combined probe-index + cache-length guard for cache lookups.
 bool isCacheIndexValid(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
+/// True when cache lookup would be rejected by `isCacheIndexValid`.
+bool isCacheIndexOutOfRange(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
 /// Diagnose why cache-index preflight would reject; vacuously succeeds on valid indices.
 bool tryValidateCacheIndex(const DDGIDesc& desc,
                            u32 probe_index,
                            u32 cache_count,
                            CacheIndexRejectReason& outReason);
+/// Preflight guard before index-based cache lookup; false when grid or cache is inaccessible.
+bool canLookupCacheAtIndex(const DDGIDesc& desc, u32 cache_count);
+/// Diagnose extended cache lookup preflight (sampleable grid, non-zero cache, valid index).
+bool tryCanLookupCacheAtProbeIndex(const DDGIDesc& desc,
+                                   u32 probe_index,
+                                   u32 cache_count,
+                                   CacheIndexRejectReason& outReason);
+/// Preflight guard before coord-based probe irradiance sampling; false on inaccessible grid or invalid coords.
+bool canSampleAtProbeCoords(const DDGIDesc& desc,
+                            const ProbeSampleCoords& coords,
+                            u32 cache_count);
+/// Diagnose why coord-based sample preflight would reject.
+bool tryCanSampleAtProbeCoords(const DDGIDesc& desc,
+                               const ProbeSampleCoords& coords,
+                               u32 cache_count,
+                               ProbeSampleCoordsRejectReason& outReason);
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
 bool isValidSampleRequest(const DDGIDesc& desc,
                           const DDGISampleRequest& request,
                           u32 cache_count);
+/// Diagnose why sample-request preflight would reject; vacuously succeeds on valid requests.
+bool tryValidateSampleRequest(const DDGIDesc& desc,
+                              const DDGISampleRequest& request,
+                              u32 cache_count,
+                              SampleRequestRejectReason& outReason);
 fuse::math::Vec3 probeWorldPosition(const DDGIDesc& desc, u32 probe_index);
 /// World position after `clampProbeIndex` — safe for OOB scheduling indices.
 fuse::math::Vec3 probeWorldPositionClamped(const DDGIDesc& desc, u32 probe_index);
