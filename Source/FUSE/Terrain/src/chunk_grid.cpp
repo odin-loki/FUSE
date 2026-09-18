@@ -311,7 +311,9 @@ void ChunkGrid::process_queues_(vec3 camera_pos) {
 
     while (!m_load_queue.empty() && can_accept_resident_chunk(m_desc.max_resident_chunks, resident_chunk_count()) &&
            processed < max_per_tick) {
-        if (async_jobs && !can_submit_async_load(m_async_queue.in_flight_count(), m_desc.max_async_in_flight)) {
+        if (async_jobs &&
+            !can_submit_async_load_guarded(m_async_queue.in_flight_count(), m_async_queue.pending_submit_count(),
+                                           m_desc.max_async_in_flight)) {
             break;
         }
 
@@ -344,7 +346,9 @@ void ChunkGrid::process_queues_(vec3 camera_pos) {
 
     const u32 unload_budget = async_jobs ? m_desc.max_async_in_flight : static_cast<u32>(m_unload_queue.size());
     for (u32 i = 0; i < unload_budget && !m_unload_queue.empty(); ++i) {
-        if (async_jobs && !can_submit_async_load(m_async_queue.in_flight_count(), m_desc.max_async_in_flight)) {
+        if (async_jobs &&
+            !can_submit_async_load_guarded(m_async_queue.in_flight_count(), m_async_queue.pending_submit_count(),
+                                           m_desc.max_async_in_flight)) {
             break;
         }
 

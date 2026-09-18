@@ -12,6 +12,8 @@ namespace fuse::terrain {
 /// Sentinel returned by `pick_eviction_candidate` when the set is empty.
 inline constexpr u32 kInvalidChunkIndex = ~0u;
 
+[[nodiscard]] inline bool is_valid_chunk_index(u32 chunk_index) { return chunk_index != kInvalidChunkIndex; }
+
 /// One resident terrain chunk tracked by planar focus distance from the camera.
 struct LodResidencyEntry {
     u32 chunk_index = kInvalidChunkIndex;
@@ -52,7 +54,7 @@ private:
 };
 
 inline bool LodResidencySet::add(u32 chunk_index, f32 focus_distance) {
-    if (focus_distance < 0.f) {
+    if (!is_valid_chunk_index(chunk_index) || focus_distance < 0.f) {
         return false;
     }
 
@@ -69,6 +71,10 @@ inline bool LodResidencySet::add(u32 chunk_index, f32 focus_distance) {
 }
 
 inline bool LodResidencySet::remove(u32 chunk_index) {
+    if (!is_valid_chunk_index(chunk_index)) {
+        return false;
+    }
+
     const auto it = m_index.find(chunk_index);
     if (it == m_index.end()) {
         return false;
@@ -87,7 +93,7 @@ inline bool LodResidencySet::remove(u32 chunk_index) {
 }
 
 inline bool LodResidencySet::update_focus_distance(u32 chunk_index, f32 focus_distance) {
-    if (focus_distance < 0.f) {
+    if (!is_valid_chunk_index(chunk_index) || focus_distance < 0.f) {
         return false;
     }
 
@@ -148,31 +154,57 @@ inline u32 LodResidencySet::find_index_(u32 chunk_index) const {
     return it != m_index.end() ? it->second : kInvalidChunkIndex;
 }
 
-/// Stub: register a resident chunk; rejects invalid focus distance.
+/// Stub: register a resident chunk; rejects invalid chunk index and focus distance.
 [[nodiscard]] inline bool try_add_resident(LodResidencySet& set, u32 chunk_index, f32 focus_distance) {
+    if (!is_valid_chunk_index(chunk_index)) {
+        return false;
+    }
     return set.add(chunk_index, focus_distance);
 }
 
-/// Stub: evict a chunk from the resident set.
+/// Stub: evict a chunk from the resident set; rejects invalid chunk index.
 [[nodiscard]] inline bool try_remove_resident(LodResidencySet& set, u32 chunk_index) {
+    if (!is_valid_chunk_index(chunk_index)) {
+        return false;
+    }
     return set.remove(chunk_index);
 }
 
 /// Stub: register residency after a successful async load completes on the game thread.
 [[nodiscard]] inline bool apply_residency_on_load_complete(LodResidencySet& set, u32 chunk_index,
                                                               f32 focus_distance, bool success) {
+    if (!is_valid_chunk_index(chunk_index)) {
+        return false;
+    }
     return success ? try_add_resident(set, chunk_index, focus_distance) : false;
 }
 
 /// Stub: clear residency after a successful async unload completes on the game thread.
 [[nodiscard]] inline bool apply_residency_on_unload_complete(LodResidencySet& set, u32 chunk_index,
                                                               bool success) {
+    if (!is_valid_chunk_index(chunk_index)) {
+        return false;
+    }
     return success ? try_remove_resident(set, chunk_index) : false;
 }
 
 /// Empty-set guard: returns `kInvalidChunkIndex` when no eviction candidate exists.
 [[nodiscard]] inline u32 pick_eviction_candidate_guarded(const LodResidencySet& set) {
     return set.has_eviction_candidate() ? set.pick_eviction_candidate() : kInvalidChunkIndex;
+}
+
+/// Guard: returns false when chunk index is invalid or not resident.
+[[nodiscard]] inline bool contains_resident_guarded(const LodResidencySet& set, u32 chunk_index) {
+    return is_valid_chunk_index(chunk_index) && set.contains(chunk_index);
+}
+
+/// Guard: clears residency set; returns false when already empty.
+[[nodiscard]] inline bool clear_residency_guarded(LodResidencySet& set) {
+    if (set.empty()) {
+        return false;
+    }
+    set.clear();
+    return true;
 }
 
 /// Pick the farthest chunk from `candidates` eligible for budget eviction under `policy`.
@@ -238,6 +270,16 @@ template <typename ScoreFn>
     const u32 picked =
         pick_budget_eviction_candidate_from_set(set, score_fn, incoming_priority, load_radius, policy, score);
     return picked != kInvalidChunkIndex && score > 0.f;
+}
+
+/// Combined unload rank for budget-driven eviction (B7.5 deepen).
+[[nodiscard]] inline f32 eviction_chunk_unload_priority(f32 stream_priority, f32 stored_priority,
+                                                         f32 focus_distance, f32 unload_distance_priority,
+                                                         u32 last_touch_tick, u32 current_tick,
+                                                         LodEvictionPolicy policy) {
+    const f32 budget_score = budget_eviction_score(focus_distance, unload_distance_priority, last_touch_tick,
+                                                    current_tick, policy);
+    return rank_budget_chunk_unload_priority(stream_priority, stored_priority, focus_distance, budget_score);
 }
 
 } // namespace fuse::terrain

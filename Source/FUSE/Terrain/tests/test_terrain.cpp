@@ -187,6 +187,46 @@ void testEvictionCandidateTieBreak() {
     expectEq(candidates[1], 2u, "tie-break orders lower chunk index second");
 }
 
+void testInvalidChunkIndexResidencyGuards() {
+    fuse::terrain::LodResidencySet residency;
+    expectTrue(!residency.add(fuse::terrain::kInvalidChunkIndex, 10.f),
+               "add rejects invalid chunk index");
+    expectTrue(!residency.remove(fuse::terrain::kInvalidChunkIndex), "remove rejects invalid chunk index");
+    expectTrue(!residency.update_focus_distance(fuse::terrain::kInvalidChunkIndex, 10.f),
+               "update_focus_distance rejects invalid chunk index");
+    expectTrue(!fuse::terrain::try_add_resident(residency, fuse::terrain::kInvalidChunkIndex, 10.f),
+               "try_add_resident rejects invalid chunk index");
+    expectTrue(!fuse::terrain::try_remove_resident(residency, fuse::terrain::kInvalidChunkIndex),
+               "try_remove_resident rejects invalid chunk index");
+    expectTrue(!fuse::terrain::apply_residency_on_load_complete(residency, fuse::terrain::kInvalidChunkIndex, 10.f,
+                                                                true),
+               "load-complete stub rejects invalid chunk index");
+    expectTrue(!fuse::terrain::apply_residency_on_unload_complete(residency, fuse::terrain::kInvalidChunkIndex, true),
+               "unload-complete stub rejects invalid chunk index");
+}
+
+void testResidencyGuardedContainsAndClear() {
+    fuse::terrain::LodResidencySet residency;
+    expectTrue(!fuse::terrain::contains_resident_guarded(residency, 2u),
+               "empty set guarded contains returns false");
+    expectTrue(!fuse::terrain::contains_resident_guarded(residency, fuse::terrain::kInvalidChunkIndex),
+               "invalid index guarded contains returns false");
+    expectTrue(!fuse::terrain::clear_residency_guarded(residency), "clear guarded on empty set returns false");
+
+    expectTrue(residency.add(2u, 50.f), "add resident chunk");
+    expectTrue(fuse::terrain::contains_resident_guarded(residency, 2u),
+               "guarded contains returns true for resident chunk");
+    expectTrue(!fuse::terrain::contains_resident_guarded(residency, 9u),
+               "guarded contains returns false for missing chunk");
+    expectTrue(!fuse::terrain::contains_resident_guarded(residency, fuse::terrain::kInvalidChunkIndex),
+               "guarded contains rejects invalid chunk index");
+
+    expectTrue(fuse::terrain::clear_residency_guarded(residency), "clear guarded on non-empty set succeeds");
+    expectTrue(residency.empty(), "clear guarded empties residency set");
+    expectTrue(!fuse::terrain::clear_residency_guarded(residency),
+               "second clear guarded on empty set returns false");
+}
+
 void testResidencyHelperStubs() {
     fuse::terrain::LodResidencySet residency;
     expectTrue(fuse::terrain::try_add_resident(residency, 2u, 50.f), "try_add_resident accepts valid focus");
@@ -385,6 +425,36 @@ void testAsyncInFlightBudgetGuards() {
     expectEq(fuse::terrain::async_in_flight_headroom(0u, 100u), ~0u, "zero async cap has unlimited headroom");
     expectEq(fuse::terrain::async_in_flight_headroom(4u, 2u), 2u, "async headroom subtracts in-flight count");
     expectEq(fuse::terrain::async_in_flight_headroom(4u, 6u), 0u, "over-cap async headroom is zero");
+
+    expectTrue(fuse::terrain::pending_submit_cap_unlimited(0u), "zero pending cap is unlimited");
+    expectEq(fuse::terrain::pending_submit_headroom(4u, 2u), 2u, "pending headroom subtracts buffered count");
+    expectEq(fuse::terrain::pending_submit_headroom(4u, 6u), 0u, "over-cap pending headroom is zero");
+    expectTrue(!fuse::terrain::would_exceed_pending_submit_cap(0u, 100u),
+               "unlimited pending cap never exceeds");
+    expectTrue(fuse::terrain::would_exceed_pending_submit_cap(4u, 4u), "at pending cap reports exceeded");
+    expectTrue(fuse::terrain::can_submit_async_load_guarded(1u, 2u, 4u),
+               "guarded submit allows under both caps");
+    expectTrue(!fuse::terrain::can_submit_async_load_guarded(4u, 0u, 4u),
+               "guarded submit blocks when in-flight cap reached");
+    expectTrue(!fuse::terrain::can_submit_async_load_guarded(1u, 4u, 4u),
+               "guarded submit blocks when pending buffer cap reached");
+}
+
+void testRankBudgetChunkUnloadPriority() {
+    expectNear(fuse::terrain::effective_chunk_unload_priority(2.f, 8.f), 8.f, 1e-4f,
+               "effective unload priority prefers stored value");
+    expectNear(fuse::terrain::rank_chunk_unload_priority(2.f, 3.f, 5.f), 5.f, 1e-4f,
+               "chunk unload rank uses max of stream, stored, and focus");
+    expectNear(fuse::terrain::rank_budget_chunk_unload_priority(2.f, 8.f, 5.f, 3.f), 8.f, 1e-4f,
+               "budget unload rank prefers stored priority over budget score");
+    expectNear(fuse::terrain::rank_budget_chunk_unload_priority(2.f, 3.f, 5.f, 9.f), 9.f, 1e-4f,
+               "budget unload rank prefers budget score when highest");
+    expectNear(fuse::terrain::eviction_chunk_unload_priority(2.f, 3.f, 900.f, 0.f, 0u, 10u,
+                                                             fuse::terrain::LodEvictionPolicy::DistanceFromFocus),
+               900.f, 1e-4f, "eviction unload priority combines budget score with unload rank");
+    expectNear(fuse::terrain::eviction_chunk_unload_priority(2.f, 3.f, 0.f, 50.f, 2u, 10u,
+                                                             fuse::terrain::LodEvictionPolicy::Lru),
+               8.f, 1e-4f, "eviction unload priority uses LRU budget score");
 }
 
 void testBudgetEvictionScore() {
@@ -1023,6 +1093,8 @@ int main() {
     testAdjacentLodMorphBlend();
     testCollectEvictionCandidatesOrdering();
     testEvictionCandidateTieBreak();
+    testInvalidChunkIndexResidencyGuards();
+    testResidencyGuardedContainsAndClear();
     testResidencyHelperStubs();
     testIncomingOutranksResident();
     testIncomingOutranksEviction();
@@ -1034,6 +1106,7 @@ int main() {
     testPickEvictionCandidateGuarded();
     testCollectBudgetEvictionCandidates();
     testAsyncInFlightBudgetGuards();
+    testRankBudgetChunkUnloadPriority();
     testBudgetEvictionScore();
     testResidentCapIncomingGuards();
     testLodResidencySetAddRemove();
