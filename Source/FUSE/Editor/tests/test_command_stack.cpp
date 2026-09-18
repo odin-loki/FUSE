@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
+#include <string>
 
 namespace {
 
@@ -1098,6 +1099,114 @@ void testUndoStackSetBaselineOnEmptyStackExtended() {
     expectTrue(!stack.hasUnsavedChanges(), "empty saved document has no unsaved changes");
 }
 
+void testCommandStackEvictionAdjustsBaseline() {
+    fuse::editor::CommandStack stack;
+
+    for (fuse::u32 step = 0; step < fuse::editor::CommandStack::kMaxHistory; ++step) {
+        stack.execute(makeSetPropertyCommand(step + 1u, "transform.position",
+                                             std::to_string(step).c_str()));
+    }
+
+    stack.set_baseline_state();
+    expectTrue(stack.isAtBaseline(), "baseline captured at max history depth");
+
+    stack.execute(makeSetPropertyCommand(999u, "transform.position", "overflow"));
+    expectTrue(!stack.isAtBaseline(), "eviction at max depth invalidates baseline alignment");
+    expectTrue(stack.hasUnsavedChanges(), "eviction past saved depth marks unsaved changes");
+    expectTrue(stack.evictedCount() == 1u, "overflow edit evicts oldest command");
+}
+
+void testUndoStackEvictionAdjustsBaseline() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    for (int step = 0; step < fuse::editor::UndoStack::kMaxHistory; ++step) {
+        stack.execute(std::make_unique<CounterCommand>(counter, counter, counter + 1,
+                                                       "step " + std::to_string(step)));
+    }
+
+    stack.set_baseline_state();
+    expectTrue(stack.isAtBaseline(), "baseline captured at max history depth");
+
+    stack.execute(std::make_unique<CounterCommand>(counter, counter, counter + 1, "overflow"));
+    expectTrue(!stack.isAtBaseline(), "eviction at max depth invalidates baseline alignment");
+    expectTrue(stack.hasUnsavedChanges(), "eviction past saved depth marks unsaved changes");
+    expectTrue(stack.evictedCount() == 1u, "overflow edit evicts oldest command");
+}
+
+void testCommandStackCoalesceGuardAfterUndo() {
+    fuse::editor::CommandStack stack;
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "4,5,6"));
+    expectTrue(stack.undoDepth() == 1u, "coalesced edits stay one undo step");
+
+    stack.undo();
+    expectTrue(stack.undoDepth() == 0u, "undo drains coalesced step");
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "7,8,9"));
+    expectTrue(stack.undoDepth() == 1u, "post-undo edit starts a new undo step");
+    expectTrue(stack.coalescedCount() == 1u, "prior coalesce count preserved across undo boundary");
+    expectTrue(stack.lastApplied()->propertyValue == "7,8,9",
+               "post-undo edit applies latest value without merging into redo branch");
+    expectTrue(stack.redoDepth() == 0u, "post-undo execute clears redo branch");
+}
+
+void testUndoStackCoalesceGuardAfterUndo() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "drag"));
+    stack.execute(std::make_unique<CounterCommand>(counter, 1, 3, "drag"));
+    expectTrue(stack.undoCount() == 1u, "coalesced edits stay one undo step");
+
+    stack.undo();
+    expectTrue(stack.undoCount() == 0u, "undo drains coalesced step");
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 0, 7, "drag"));
+    expectTrue(stack.undoCount() == 1u, "post-undo edit starts a new undo step");
+    expectTrue(stack.coalescedOps() == 1u, "prior coalesce count preserved across undo boundary");
+    expectTrue(counter == 7, "post-undo edit applies latest value without merging into redo branch");
+    expectTrue(stack.redoCount() == 0u, "post-undo execute clears redo branch");
+}
+
+void testCommandStackSetBaselineClearsDirtyAtBaselineDepth() {
+    fuse::editor::CommandStack stack;
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
+    stack.set_baseline_state();
+
+    fuse::editor::CommandStackSnapshot snapshot = stack.captureSnapshot();
+    snapshot.dirty = true;
+    stack.restoreSnapshot(snapshot);
+
+    expectTrue(stack.isAtBaseline(), "snapshot restore keeps baseline depth");
+    expectTrue(stack.isDirty(), "snapshot restore can leave dirty flag set at baseline depth");
+
+    stack.set_baseline_state();
+    expectTrue(!stack.isDirty(), "repeat baseline save clears dirty at baseline depth");
+    expectTrue(stack.isAtBaseline(), "repeat baseline save stays at baseline");
+}
+
+void testUndoStackSetBaselineClearsDirtyAtBaselineDepth() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "step"));
+    stack.set_baseline_state();
+
+    fuse::editor::UndoStackSnapshot snapshot = stack.captureSnapshot();
+    snapshot.dirty = true;
+    stack.restoreSnapshot(snapshot);
+
+    expectTrue(stack.isAtBaseline(), "snapshot restore keeps baseline depth");
+    expectTrue(stack.isDirty(), "snapshot restore can leave dirty flag set at baseline depth");
+
+    stack.set_baseline_state();
+    expectTrue(!stack.isDirty(), "repeat baseline save clears dirty at baseline depth");
+    expectTrue(stack.isAtBaseline(), "repeat baseline save stays at baseline");
+}
+
 } // namespace
 
 int main() {
@@ -1167,6 +1276,12 @@ int main() {
     testUndoStackSetBaselineStateIdempotent();
     testCommandStackSetBaselineOnEmptyStackExtended();
     testUndoStackSetBaselineOnEmptyStackExtended();
+    testCommandStackEvictionAdjustsBaseline();
+    testUndoStackEvictionAdjustsBaseline();
+    testCommandStackCoalesceGuardAfterUndo();
+    testUndoStackCoalesceGuardAfterUndo();
+    testCommandStackSetBaselineClearsDirtyAtBaselineDepth();
+    testUndoStackSetBaselineClearsDirtyAtBaselineDepth();
     fuse::core::shutdown();
 
     if (g_failures == 0) {
