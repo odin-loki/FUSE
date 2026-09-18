@@ -2150,6 +2150,149 @@ void testAdditiveBlendEvaluateEarlyOut() {
                "empty additive blend evaluate early-out returns bind pose");
 }
 
+void testStateMachineTransitionIndexGuards() {
+    fuse::animation::AnimStateMachine machine;
+    machine.add_state("idle", nullptr);
+    machine.add_state("run", nullptr);
+    machine.add_state("jump", nullptr);
+
+    bool shouldRun = true;
+    bool shouldJump = false;
+    machine.add_transition("idle", "run", 0.2f, [&]() { return shouldRun; });
+    machine.add_transition("idle", "jump", 0.35f, [&]() { return shouldJump; });
+    machine.add_transition("run", "idle", 0.15f, []() { return true; });
+
+    expectNear(machine.transition_blend_duration_at(0u), 0.2f, 1e-4f,
+               "transition blend duration at first edge");
+    expectNear(machine.transition_blend_duration_at(1u), 0.35f, 1e-4f,
+               "transition blend duration at second edge");
+    expectNear(machine.transition_blend_duration_at(2u), 0.15f, 1e-4f,
+               "transition blend duration at third edge");
+    expectTrue(machine.transition_blend_duration_at(99u) < 0.f,
+               "transition blend duration at rejects invalid index");
+
+    expectTrue(machine.transition_condition_passes_at(0u),
+               "transition condition passes at first edge");
+    expectTrue(!machine.transition_condition_passes_at(1u),
+               "transition condition fails at second edge");
+    expectTrue(machine.transition_condition_passes_at(2u),
+               "transition condition passes at unconditional edge");
+    expectTrue(!machine.transition_condition_passes_at(99u),
+               "transition condition fails at invalid index");
+}
+
+void testStateMachineTransitionEdgeGuards() {
+    fuse::animation::AnimStateMachine machine;
+    machine.add_state("idle", nullptr);
+    machine.add_state("run", nullptr);
+    machine.add_state("jump", nullptr);
+
+    machine.add_transition("idle", "run", 0.2f, []() { return true; });
+    machine.add_transition("idle", "jump", 0.35f, []() { return true; });
+    machine.add_transition("run", "idle", 0.15f, []() { return true; });
+
+    expectTrue(machine.is_valid_outgoing_transition_edge(0u, 0u),
+               "first outgoing edge from idle is valid");
+    expectTrue(machine.is_valid_outgoing_transition_edge(0u, 1u),
+               "second outgoing edge from idle is valid");
+    expectTrue(!machine.is_valid_outgoing_transition_edge(0u, 2u),
+               "third outgoing edge from idle is invalid");
+    expectTrue(!machine.is_valid_outgoing_transition_edge(2u, 0u),
+               "outgoing edge from jump is invalid");
+
+    expectTrue(machine.is_valid_incoming_transition_edge(0u, 0u),
+               "first incoming edge to idle is valid");
+    expectTrue(!machine.is_valid_incoming_transition_edge(0u, 1u),
+               "second incoming edge to idle is invalid");
+    expectTrue(machine.is_valid_incoming_transition_edge(1u, 0u),
+               "first incoming edge to run is valid");
+}
+
+void testStateMachineCrossfadeBindFallbackGuard() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::AnimationClip idle = makePositionClip(1, 1.f);
+    fuse::animation::AnimationClip run = makePositionClip(1, 6.f);
+
+    fuse::animation::AnimStateMachine machine;
+    auto idleNode = std::make_unique<fuse::animation::ClipNode>();
+    idleNode->clip = &idle;
+    auto runNode = std::make_unique<fuse::animation::ClipNode>();
+    runNode->clip = &run;
+    machine.add_state("idle", std::move(idleNode));
+    machine.add_state("run", std::move(runNode));
+
+    bool shouldRun = true;
+    machine.add_transition("idle", "run", 0.2f, [&]() { return shouldRun; });
+
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    machine.evaluate_soa(0.05f, skel, pose);
+    expectTrue(machine.is_transitioning, "crossfade started before bind fallback guard test");
+
+    machine.blend_from_pose_soa = fuse::animation::PoseSoA::allocate(2);
+    machine.evaluate_soa(0.05f, skel, pose);
+    expectTrue(fuse::animation::pose_soa_columns_valid(pose),
+               "crossfade repairs invalid blend-from pose during evaluate_soa");
+    expectTrue(machine.is_transitioning, "crossfade continues after bind-from fallback repair");
+}
+
+void testStateMachineInvalidPendingStateGuard() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+
+    fuse::animation::AnimStateMachine machine;
+    machine.add_state("idle", nullptr);
+
+    machine.is_transitioning = true;
+    machine.pending_state = 99u;
+    machine.active_state = 0u;
+    machine.has_entered_initial = true;
+
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::allocate(2);
+    machine.evaluate_soa(0.1f, skel, pose);
+    expectTrue(!machine.is_transitioning, "invalid pending state aborts crossfade");
+    expectTrue(fuse::animation::pose_soa_matches_bind(pose, skel),
+               "invalid pending state returns bind pose");
+}
+
+void testStateMachineResetClearsBlendFromPoseSoA() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+
+    fuse::animation::AnimStateMachine machine;
+    machine.add_state("idle", nullptr);
+    machine.blend_from_pose_soa = fuse::animation::PoseSoA::from_bind_pose(skel);
+    machine.blend_from_pose_soa.local_positions[1].y = 99.f;
+
+    machine.reset();
+    expectTrue(machine.blend_from_pose_soa.bone_count == 0u,
+               "reset clears blend-from soa pose buffer");
+}
+
+void testLayeredBlendSoABindFallbackGuard() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::AnimationClip baseClip = makePositionClip(1, 2.f);
+    fuse::animation::AnimationClip layerClip = makePositionClip(1, 5.f);
+
+    fuse::animation::LayeredBlendNode layered;
+    auto baseNode = std::make_unique<fuse::animation::ClipNode>();
+    baseNode->clip = &baseClip;
+    auto layerNode = std::make_unique<fuse::animation::ClipNode>();
+    layerNode->clip = &layerClip;
+    layered.base = std::move(baseNode);
+    layered.layer = std::move(layerNode);
+    layered.masked_bones = {1};
+    layered.layer_weight = 1.f;
+
+    fuse::animation::PoseSoA reference = fuse::animation::PoseSoA::from_bind_pose(skel);
+    layered.evaluate_soa(0.f, skel, reference);
+
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::allocate(2);
+    pose.bone_count = skel.bone_count;
+    layered.evaluate_soa(0.f, skel, pose);
+    expectTrue(fuse::animation::pose_soa_columns_valid(pose),
+               "layered blend soa output has valid columns after bind fallback guard");
+    expectNear(pose.local_positions[1].y, reference.local_positions[1].y, 1e-4f,
+               "layered blend soa still applies masked layer after bind fallback guard");
+}
+
 void testAnimatorTick() {
     const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
     fuse::animation::Animator animator;
@@ -2258,6 +2401,12 @@ int main() {
     testStateMachineTransitionHelpers();
     testStateMachineElapsedCrossfadeTime();
     testStateMachineRemainingCrossfadeTime();
+    testStateMachineTransitionIndexGuards();
+    testStateMachineTransitionEdgeGuards();
+    testStateMachineCrossfadeBindFallbackGuard();
+    testStateMachineInvalidPendingStateGuard();
+    testStateMachineResetClearsBlendFromPoseSoA();
+    testLayeredBlendSoABindFallbackGuard();
     testLayeredBlendEvaluateEarlyOut();
     testAdditiveBlendEvaluateEarlyOut();
     testStateMachineConditionFalse();
