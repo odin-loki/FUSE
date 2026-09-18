@@ -36,6 +36,14 @@ struct PairBufferSoA {
     bool canSkipSoAIteration() const { return activeCount == 0u && pairSlotCount == 0u; }
     /// True when at most one canonical pair is present (dedupe is a no-op).
     bool canSkipDedupe() const { return canSkipSoAIteration() || activeCount <= 1u; }
+    /// Buffer-only refine guard: empty buffer or no valid pairs (B4.2 deepen follow-up).
+    bool canSkipRefine() const { return canSkipSoAIteration() || !hasValidPairs(); }
+    /// True when canonical sort would leave pair order unchanged (B4.2 deepen follow-up).
+    bool canSkipSortCanonical() const;
+    /// True when no duplicate canonical pairs are present (B4.2 deepen follow-up).
+    bool isDuplicateFree() const;
+    /// True when sort+unique dedupe pass would be a no-op (B4.2 deepen follow-up).
+    bool canSkipDedupePass() const;
     /// True when slot storage has no invalid flags (compact is a no-op).
     bool canSkipCompaction() const;
     /// Count valid flags in prepared slot storage before compaction.
@@ -53,6 +61,8 @@ struct PairBufferSoA {
     bool push(u32 idxA, u32 idxB);
     u32 compact();
     void sortCanonical();
+    /// Sort only when `canSkipSortCanonical` is false (B4.2 deepen follow-up).
+    void sortCanonicalIfNeeded();
     u32 applyMaxCapacityClamp();
     u32 compactAndClamp();
     bool isSortedCanonical() const;

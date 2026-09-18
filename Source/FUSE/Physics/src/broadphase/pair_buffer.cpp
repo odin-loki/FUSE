@@ -144,6 +144,35 @@ u32 PairBufferSoA::compact() {
     return activeCount;
 }
 
+bool PairBufferSoA::canSkipSortCanonical() const {
+    return canSkipDedupe() || isSortedCanonical();
+}
+
+bool PairBufferSoA::isDuplicateFree() const {
+    if (canSkipSoAIteration()) {
+        return true;
+    }
+
+    for (u32 i = 0; i < activeCount; ++i) {
+        if (!slotIsValid(i)) {
+            continue;
+        }
+        for (u32 j = i + 1u; j < activeCount; ++j) {
+            if (!slotIsValid(j)) {
+                continue;
+            }
+            if (bodyA[i] == bodyA[j] && bodyB[i] == bodyB[j]) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool PairBufferSoA::canSkipDedupePass() const {
+    return canSkipDedupe() || (isSortedCanonical() && isDuplicateFree());
+}
+
 void PairBufferSoA::sortCanonical() {
     if (canSkipDedupe()) {
         return;
@@ -176,12 +205,18 @@ void PairBufferSoA::sortCanonical() {
     validFlags.swap(sortedValidFlags);
 }
 
+void PairBufferSoA::sortCanonicalIfNeeded() {
+    if (!canSkipSortCanonical()) {
+        sortCanonical();
+    }
+}
+
 u32 PairBufferSoA::applyMaxCapacityClamp() {
     if (!canApplyMaxCapacityClamp()) {
         return activeCount;
     }
 
-    sortCanonical();
+    sortCanonicalIfNeeded();
 
     const u32 excess = activeCount - maxCapacity;
     droppedCount += excess;
