@@ -133,8 +133,25 @@ CameraSample default_camera_sample() {
     return {};
 }
 
+CameraSample default_camera_sample_at(const Vec3& position, float look_distance) {
+    CameraSample sample;
+    sample.position = position;
+    sample.look_at = default_camera_look_at_for_position(position, look_distance);
+    sample.field_of_view = kDefaultCameraFovDeg;
+    sample.roll_deg = 0.f;
+    return sample;
+}
+
+void normalize_camera_sample(CameraSample& sample) {
+    sample.field_of_view = clamp_fov(sample.field_of_view);
+}
+
 bool camera_keyframes_empty(const std::vector<CameraKeyframe>& keyframes) {
     return keyframes.empty();
+}
+
+bool camera_track_is_empty(const CameraTrack& track) {
+    return track.empty();
 }
 
 size_t camera_keyframe_count(const std::vector<CameraKeyframe>& keyframes) {
@@ -160,8 +177,28 @@ bool camera_keyframe_fov_unset(float field_of_view) {
     return field_of_view <= 0.f;
 }
 
+bool camera_fov_in_valid_range(float fov_deg) {
+    return fov_deg >= kMinFovDeg && fov_deg <= kMaxFovDeg;
+}
+
+bool camera_fov_needs_clamp(float fov_deg) {
+    return !camera_fov_in_valid_range(fov_deg);
+}
+
+bool camera_fov_uses_default(float field_of_view_deg) {
+    return std::fabs(field_of_view_deg - kDefaultCameraFovDeg) <= 1e-4f;
+}
+
+bool camera_sample_is_default(const CameraSample& sample) {
+    const CameraSample defaults = default_camera_sample();
+    return sample.position.x == defaults.position.x && sample.position.y == defaults.position.y
+           && sample.position.z == defaults.position.z && sample.look_at.x == defaults.look_at.x
+           && sample.look_at.y == defaults.look_at.y && sample.look_at.z == defaults.look_at.z
+           && camera_fov_uses_default(sample.field_of_view) && sample.roll_deg == defaults.roll_deg;
+}
+
 float effective_camera_fov(float field_of_view) {
-    if (camera_keyframe_fov_unset(field_of_view)) {
+    if (!std::isfinite(field_of_view) || camera_keyframe_fov_unset(field_of_view)) {
         return kDefaultCameraFovDeg;
     }
     return clamp_fov(field_of_view);
@@ -199,6 +236,10 @@ bool camera_keyframe_uses_entity_look_at(const CameraKeyframe& keyframe) {
     return keyframe.look_at_mode == CameraLookAtMode::TargetEntity && !keyframe.look_at_target_id.empty();
 }
 
+bool camera_keyframe_entity_target_missing(const CameraKeyframe& keyframe) {
+    return keyframe.look_at_mode == CameraLookAtMode::TargetEntity && keyframe.look_at_target_id.empty();
+}
+
 bool camera_track_needs_look_at_resolver(const std::vector<CameraKeyframe>& keyframes) {
     for (const CameraKeyframe& keyframe : keyframes) {
         if (camera_keyframe_uses_entity_look_at(keyframe)) {
@@ -210,6 +251,17 @@ bool camera_track_needs_look_at_resolver(const std::vector<CameraKeyframe>& keyf
 
 void normalize_camera_keyframe(CameraKeyframe& keyframe) {
     keyframe.field_of_view = clamp_fov(keyframe.field_of_view);
+}
+
+void normalize_camera_keyframes(std::vector<CameraKeyframe>& keyframes) {
+    for (CameraKeyframe& keyframe : keyframes) {
+        normalize_camera_keyframe(keyframe);
+    }
+}
+
+void reset_camera_keyframe_to_defaults(CameraKeyframe& keyframe) {
+    keyframe = {};
+    keyframe.field_of_view = kDefaultCameraFovDeg;
 }
 
 CameraSample sample_camera_keyframe(const CameraKeyframe& keyframe,
@@ -298,6 +350,23 @@ Vec3 sample_camera_look_at(const std::vector<CameraKeyframe>& keyframes,
     return sample_look_at_rail(keyframes, time_ms, ease, look_at_resolver);
 }
 
+CameraSample sample_camera_pose(const std::vector<CameraKeyframe>& keyframes,
+                                TimelineMs time_ms,
+                                EaseMode ease,
+                                const LookAtResolver* look_at_resolver) {
+    if (keyframes.empty()) {
+        return default_camera_sample();
+    }
+
+    CameraSample sample;
+    sample.position = sample_camera_position(keyframes, time_ms, ease);
+    sample.look_at = sample_camera_look_at(keyframes, time_ms, ease, look_at_resolver);
+    sample.field_of_view = sample_camera_field_of_view(keyframes, time_ms, ease);
+    sample.roll_deg = sample_camera_roll(keyframes, time_ms, ease);
+    normalize_camera_sample(sample);
+    return sample;
+}
+
 Vec3 camera_look_direction(const Vec3& position, const Vec3& look_at) {
     const Vec3 delta{look_at.x - position.x, look_at.y - position.y, look_at.z - position.z};
     const float length_sq = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
@@ -351,6 +420,10 @@ void CameraTrack::sort_keyframes() {
                      });
 }
 
+void CameraTrack::normalize_keyframes() {
+    normalize_camera_keyframes(keyframes_);
+}
+
 TrackSpan CameraTrack::keyframe_span() const {
     if (keyframes_.empty()) {
         return {};
@@ -378,6 +451,7 @@ CameraSample CameraTrack::sample_at(TimelineMs time_ms,
     sample.look_at = sample_camera_look_at(keyframes_, time_ms, ease, look_at_resolver);
     sample.field_of_view = sample_camera_field_of_view(keyframes_, time_ms, ease);
     sample.roll_deg = sample_camera_roll(keyframes_, time_ms, ease);
+    normalize_camera_sample(sample);
     return sample;
 }
 
