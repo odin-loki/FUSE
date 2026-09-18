@@ -962,6 +962,77 @@ void testTryUpdateDragGuards() {
     gizmo.endDrag();
 }
 
+void testEndDragPreflightGuards() {
+    const fuse::editor::EndDragPreflight inactivePreflight =
+        fuse::editor::preflightEndDrag(false);
+    expectTrue(inactivePreflight.notDragging, "end preflight marks inactive drag");
+    expectTrue(!inactivePreflight.canEnd(), "end preflight rejects inactive drag");
+    expectTrue(!fuse::editor::canEndDrag(false), "canEndDrag rejects inactive drag");
+
+    const fuse::editor::EndDragPreflight noAxisPreflight =
+        fuse::editor::preflightEndDrag(true);
+    expectTrue(noAxisPreflight.invalidActiveAxis, "end preflight marks missing active axis");
+    expectTrue(!noAxisPreflight.canEnd(), "end preflight rejects drag without axis");
+    expectTrue(!fuse::editor::canEndDrag(true), "canEndDrag rejects drag without axis");
+
+    const fuse::editor::EndDragPreflight validPreflight =
+        fuse::editor::preflightEndDrag(true, fuse::editor::GizmoAxis::X);
+    expectTrue(validPreflight.canEnd(), "end preflight accepts active drag with axis");
+    expectTrue(!validPreflight.notDragging, "valid end preflight clears notDragging");
+    expectTrue(!validPreflight.invalidActiveAxis, "valid end preflight clears invalidActiveAxis");
+    expectTrue(fuse::editor::canEndDrag(true, fuse::editor::GizmoAxis::X),
+               "canEndDrag accepts active drag with axis");
+
+    fuse::editor::GizmoSystem gizmo;
+    expectTrue(!gizmo.canEndDrag(), "gizmo canEndDrag rejects inactive drag");
+    expectTrue(!gizmo.preflightEndDrag().canEnd(),
+               "gizmo end preflight rejects inactive drag");
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    fuse::editor::GizmoTransform transform{};
+    gizmo.beginDrag(hit, transform);
+    expectTrue(gizmo.canEndDrag(), "gizmo canEndDrag accepts active drag");
+    expectTrue(gizmo.preflightEndDrag().canEnd(), "gizmo end preflight accepts active drag");
+
+    fuse::editor::GizmoResult result{};
+    expectTrue(gizmo.tryEndDrag(result), "tryEndDrag succeeds on active drag");
+    expectTrue(result.changed, "tryEndDrag marks result changed");
+    expectTrue(result.axis == fuse::editor::GizmoAxis::X, "tryEndDrag records active axis");
+    expectTrue(!gizmo.isDragging(), "tryEndDrag clears drag state");
+
+    expectTrue(!gizmo.tryEndDrag(result), "tryEndDrag rejects inactive drag");
+    expectTrue(!result.changed, "inactive tryEndDrag leaves result unchanged");
+}
+
+void testEndDragUsesTryEndDrag() {
+    fuse::editor::GizmoSystem gizmo;
+    const fuse::editor::GizmoResult inactive = gizmo.endDrag();
+    expectTrue(!inactive.changed, "endDrag no-op when inactive via tryEndDrag guard");
+    expectTrue(!gizmo.isDragging(), "inactive endDrag leaves drag inactive");
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    fuse::editor::GizmoTransform transform{};
+    transform.posX = 1.f;
+    gizmo.beginDrag(hit, transform);
+    hit.screenX = 30.f;
+    gizmo.updateDrag(hit);
+
+    const fuse::editor::GizmoResult ended = gizmo.endDrag();
+    expectTrue(ended.changed, "endDrag commits transform on active drag");
+    expectTrue(!gizmo.isDragging(), "endDrag clears drag state");
+    expectTrue(ended.axis == fuse::editor::GizmoAxis::X, "endDrag records ended axis");
+}
+
 void testDirtyFlagOnEndDrag() {
     fuse::editor::GizmoSystem gizmo;
     fuse::editor::CommandStack commandStack;
@@ -1024,6 +1095,8 @@ int main() {
     testSnapComponentHelpers();
     testCanUpdateDragGuards();
     testTryUpdateDragGuards();
+    testEndDragPreflightGuards();
+    testEndDragUsesTryEndDrag();
     testDirtyFlagOnEndDrag();
 
     if (g_failures != 0) {
