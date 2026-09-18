@@ -28,6 +28,7 @@ enum class ProbeKernelRejectReason : u8 {
     None = 0,
     ZeroUpdateCount,
     NullProbeIndices,
+    ZeroRaysPerProbe,
 };
 
 /// Human-readable label for probe-kernel reject reasons (logging / tests).
@@ -42,6 +43,9 @@ bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRej
 bool canLaunchProbeBlendKernel(const DDGIKernelParams& params);
 /// Diagnose why probe blend launch preflight would reject.
 bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
+
+/// Diagnose extended kernel-parameter invariants (rays-per-probe, etc.) beyond launch guards.
+bool preflightProbeKernelParams(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
 
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);
