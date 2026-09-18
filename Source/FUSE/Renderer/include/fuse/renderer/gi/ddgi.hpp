@@ -195,6 +195,10 @@ struct ProbeGridLayout {
     static u32 probeIndexFromClampedCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
     /// Clamp trilinear corner indices/weights to grid bounds (no-op on empty grid).
     static void clampProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCoords& coords);
+    /// Clamp sample coords to grid bounds and restore trilinear neighbour ordering.
+    static void sanitizeProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCoords& coords);
+    /// True when corner indices and blend weights are usable for trilinear lookup.
+    static bool isValidProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
@@ -237,6 +241,8 @@ bool isCacheSizedForGrid(const DDGIDesc& desc, u32 cache_count);
 bool isValidSampleRequest(const DDGIDesc& desc,
                           const DDGISampleRequest& request,
                           u32 cache_count);
+/// True when `probe_index` maps to a valid grid cell and lies within `cache_count`.
+bool canAccessCacheIndex(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
 fuse::math::Vec3 probeWorldPosition(const DDGIDesc& desc, u32 probe_index);
 /// World position after `clampProbeIndex` — safe for OOB scheduling indices.
 fuse::math::Vec3 probeWorldPositionClamped(const DDGIDesc& desc, u32 probe_index);
@@ -261,6 +267,12 @@ fuse::math::Vec3 trilinearProbeIrradiance(const DDGIDesc& desc,
                                           const fuse::math::Vec3& world_position,
                                           const IrradianceCacheEntry* cache,
                                           u32 cache_count);
+/// Guarded trilinear sample — returns false when grid/cache/sample preflight fails.
+bool tryTrilinearProbeIrradiance(const DDGIDesc& desc,
+                                 const fuse::math::Vec3& world_position,
+                                 const IrradianceCacheEntry* cache,
+                                 u32 cache_count,
+                                 fuse::math::Vec3& out_irradiance);
 /// Directional octahedral bilinear sample within one probe cache entry (CPU stub).
 fuse::math::Vec3 sampleDirectionalIrradianceAtProbe(const IrradianceCacheEntry& entry,
                                                   const fuse::math::Vec3& direction,
@@ -271,6 +283,13 @@ fuse::math::Vec3 trilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
                                                      const fuse::math::Vec3& direction,
                                                      const IrradianceCacheEntry* cache,
                                                      u32 cache_count);
+/// Guarded directional trilinear sample — returns false when grid/cache/sample preflight fails.
+bool tryTrilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
+                                            const fuse::math::Vec3& world_position,
+                                            const fuse::math::Vec3& direction,
+                                            const IrradianceCacheEntry* cache,
+                                            u32 cache_count,
+                                            fuse::math::Vec3& out_irradiance);
 u32 nearestProbeIndex(const DDGIDesc& desc, const fuse::math::Vec3& world_position);
 } // namespace ddgi_util
 
