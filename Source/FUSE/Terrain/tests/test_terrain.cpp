@@ -386,6 +386,27 @@ void testPickEvictionCandidateGuarded() {
              "guarded pick returns eviction candidate when set non-empty");
 }
 
+void testResidencyGuardedRemoveAndPresence() {
+    fuse::terrain::LodResidencySet residency;
+    const fuse::u32 resident = 2u;
+
+    expectTrue(!fuse::terrain::has_residency_guarded(residency), "has_residency_guarded false on empty set");
+    expectTrue(!fuse::terrain::remove_resident_guarded(residency, resident),
+               "remove guard false when chunk absent");
+    expectTrue(!fuse::terrain::remove_resident_guarded(residency, fuse::terrain::kInvalidChunkIndex),
+               "remove guard rejects invalid chunk index");
+
+    expectTrue(residency.add(resident, 100.f), "add resident for guarded remove");
+    expectTrue(fuse::terrain::has_residency_guarded(residency),
+               "has_residency_guarded true when set non-empty");
+    expectTrue(fuse::terrain::remove_resident_guarded(residency, resident),
+               "remove guard evicts resident chunk");
+    expectTrue(!fuse::terrain::has_residency_guarded(residency),
+               "has_residency_guarded false after guarded remove");
+    expectTrue(!fuse::terrain::contains_resident_guarded(residency, resident),
+               "contains guard false after guarded remove");
+}
+
 void testCollectBudgetEvictionCandidates() {
     fuse::terrain::LodResidencySet residency;
     expectTrue(residency.collect_eviction_candidates().empty(), "empty residency has no candidates");
@@ -422,6 +443,8 @@ void testAsyncInFlightBudgetGuards() {
     expectTrue(fuse::terrain::can_submit_async_load(0u, 0u), "zero async cap allows submit");
     expectTrue(fuse::terrain::can_submit_async_load(3u, 4u), "under async cap allows submit");
     expectTrue(!fuse::terrain::can_submit_async_load(4u, 4u), "at async cap blocks submit");
+    expectTrue(fuse::terrain::is_at_async_in_flight_cap(4u, 4u), "at async cap reports cap reached");
+    expectTrue(!fuse::terrain::is_at_async_in_flight_cap(3u, 4u), "under async cap is not at cap");
     expectEq(fuse::terrain::async_in_flight_headroom(0u, 100u), ~0u, "zero async cap has unlimited headroom");
     expectEq(fuse::terrain::async_in_flight_headroom(4u, 2u), 2u, "async headroom subtracts in-flight count");
     expectEq(fuse::terrain::async_in_flight_headroom(4u, 6u), 0u, "over-cap async headroom is zero");
@@ -470,6 +493,59 @@ void testBudgetEvictionScore() {
     expectNear(fuse::terrain::eviction_score_for(250.f, 3u, 10u,
                                                fuse::terrain::LodEvictionPolicy::DistanceFromFocus),
                250.f, 1e-4f, "eviction score uses focus distance");
+}
+
+void testBudgetEvictionScoreGuarded() {
+    expectNear(fuse::terrain::budget_eviction_score_guarded(-5.f, 50.f, 0u, 10u,
+                                                          fuse::terrain::LodEvictionPolicy::DistanceFromFocus),
+               -1.f, 1e-4f, "guarded score rejects invalid focus distance");
+    expectNear(fuse::terrain::budget_eviction_score_guarded(900.f, 0.f, 0u, 10u,
+                                                          fuse::terrain::LodEvictionPolicy::DistanceFromFocus),
+               900.f, 1e-4f, "guarded score forwards valid focus distance");
+    expectNear(fuse::terrain::budget_eviction_score_guarded(100.f, 0.f, 2u, 10u,
+                                                          fuse::terrain::LodEvictionPolicy::Lru),
+               8.f, 1e-4f, "guarded score forwards LRU age");
+}
+
+void testBudgetEvictionFromSetGuards() {
+    fuse::terrain::LodResidencySet residency;
+    const fuse::f32 load_radius = 24.f;
+
+    expectTrue(!fuse::terrain::can_attempt_budget_eviction_from_set(residency, 2u, 2u),
+               "empty residency cannot attempt budget eviction at cap");
+    expectTrue(!fuse::terrain::has_budget_eviction_candidate_guarded(
+                   residency,
+                   [&](fuse::u32) { return 0.f; }, 100.f, load_radius,
+                   fuse::terrain::LodEvictionPolicy::DistanceFromFocus),
+               "empty residency guarded candidate check returns false");
+    expectTrue(fuse::terrain::collect_budget_eviction_candidates_from_set(
+                   residency,
+                   [&](fuse::u32) { return 0.f; }, 100.f, load_radius,
+                   fuse::terrain::LodEvictionPolicy::DistanceFromFocus)
+                   .empty(),
+               "empty residency guarded collect returns empty");
+
+    expectTrue(residency.add(1u, 10.f), "add near chunk");
+    expectTrue(residency.add(5u, 20.f), "add far chunk");
+    expectTrue(fuse::terrain::can_attempt_budget_eviction_from_set(residency, 2u, 2u),
+               "non-empty residency can attempt budget eviction at cap");
+    expectTrue(!fuse::terrain::has_budget_eviction_candidate_guarded(
+                   residency,
+                   [&](fuse::u32 chunk_index) { return residency.focus_distance_for(chunk_index); }, 1.f,
+                   load_radius, fuse::terrain::LodEvictionPolicy::DistanceFromFocus),
+               "weak incoming guarded candidate check returns false");
+    expectTrue(fuse::terrain::has_budget_eviction_candidate_guarded(
+                   residency,
+                   [&](fuse::u32 chunk_index) { return residency.focus_distance_for(chunk_index); }, 20.f,
+                   load_radius, fuse::terrain::LodEvictionPolicy::DistanceFromFocus),
+               "strong incoming guarded candidate check returns true");
+
+    const auto eligible = fuse::terrain::collect_budget_eviction_candidates_from_set(
+        residency,
+        [&](fuse::u32 chunk_index) { return residency.focus_distance_for(chunk_index); }, 20.f, load_radius,
+        fuse::terrain::LodEvictionPolicy::DistanceFromFocus);
+    expectEq(static_cast<fuse::u32>(eligible.size()), 2u, "guarded collect returns eligible residents");
+    expectEq(eligible[0], 5u, "guarded collect preserves farthest-first order");
 }
 
 void testResidentCapIncomingGuards() {
@@ -810,6 +886,186 @@ void testLodResidencyQueueEnqueuePromoteDemote() {
                "demote finds pending request");
     expectTrue(!queue.demote(99, fuse::terrain::LodResidencyRequestKind::Load, 0.5f),
                "demote misses unknown chunk");
+    expectNear(queue.pending_priority_for(3, fuse::terrain::LodResidencyRequestKind::Load), 4.5f, 1e-4f,
+               "pending priority query returns demoted value");
+    expectNear(queue.pending_priority_for(99, fuse::terrain::LodResidencyRequestKind::Load), -1.f, 1e-4f,
+               "missing pending priority returns -1");
+    expectNear(fuse::terrain::pending_priority_for_guarded(queue, fuse::terrain::kInvalidChunkIndex,
+                                                         fuse::terrain::LodResidencyRequestKind::Load),
+               -1.f, 1e-4f, "guarded pending priority rejects invalid chunk index");
+}
+
+void testLodResidencyQueuePendingEnqueueGuards() {
+    fuse::terrain::LodResidencyQueue queue;
+    expectTrue(!fuse::terrain::has_pending_enqueue(queue), "has_pending_enqueue false on empty queue");
+    expectTrue(!queue.has_pending_enqueue(), "member has_pending_enqueue false on empty queue");
+    expectNear(fuse::terrain::peek_highest_pending_priority(queue), -1.f, 1e-4f,
+               "peek priority returns -1 on empty queue");
+    expectTrue(queue.empty(), "empty queue reports empty");
+
+    fuse::terrain::LodResidencyRequest request{};
+    request.chunk_index = 4;
+    request.kind = fuse::terrain::LodResidencyRequestKind::Load;
+    request.priority = 6.f;
+    expectTrue(queue.enqueue(request), "enqueue for pending guard tests");
+    expectTrue(fuse::terrain::has_pending_enqueue(queue), "has_pending_enqueue true when pending non-empty");
+    expectTrue(fuse::terrain::has_pending_for(queue, 4u, fuse::terrain::LodResidencyRequestKind::Load),
+               "has_pending_for true for enqueued chunk");
+    expectTrue(!fuse::terrain::has_pending_for(queue, 99u, fuse::terrain::LodResidencyRequestKind::Load),
+               "has_pending_for false for missing chunk");
+    expectNear(fuse::terrain::peek_highest_pending_priority(queue), 6.f, 1e-4f,
+               "peek priority returns highest pending priority");
+
+    fuse::terrain::LodResidencyRequest peeked{};
+    expectTrue(queue.peek_pending(peeked), "peek_pending succeeds when pending non-empty");
+    expectTrue(peeked.chunk_index == 4u && peeked.priority == 6.f, "peek_pending copies highest-priority request");
+    expectEq(queue.pending_enqueue_count(), 1u, "peek_pending leaves pending queue unchanged");
+}
+
+void testLodResidencyQueueDequeueIfGuard() {
+    fuse::terrain::LodResidencyQueue queue;
+
+    fuse::terrain::LodResidencyRequest low{};
+    low.chunk_index = 0;
+    low.kind = fuse::terrain::LodResidencyRequestKind::Load;
+    low.priority = 2.f;
+
+    fuse::terrain::LodResidencyRequest high{};
+    high.chunk_index = 1;
+    high.kind = fuse::terrain::LodResidencyRequestKind::Unload;
+    high.priority = 7.f;
+
+    expectTrue(queue.enqueue(low), "enqueue low-priority load");
+    expectTrue(queue.enqueue(high), "enqueue high-priority unload");
+
+    fuse::terrain::LodResidencyRequest out{};
+    expectTrue(!fuse::terrain::try_dequeue_pending_if(queue, 10.f, out),
+               "dequeue_if false when highest priority below threshold");
+    expectEq(queue.pending_enqueue_count(), 2u, "failed dequeue_if leaves pending queue unchanged");
+
+    expectTrue(fuse::terrain::try_dequeue_pending_if(queue, 7.f, out),
+               "dequeue_if succeeds at exact priority threshold");
+    expectTrue(out.chunk_index == 1u && out.kind == fuse::terrain::LodResidencyRequestKind::Unload,
+               "dequeue_if removes highest-priority unload");
+    expectEq(queue.pending_enqueue_count(), 1u, "dequeue_if shrinks pending queue");
+
+    expectTrue(fuse::terrain::try_dequeue_pending_if(queue, 1.f, out),
+               "dequeue_if drains remaining pending request");
+    expectEq(queue.pending_enqueue_count(), 0u, "dequeue_if drains pending queue");
+    expectTrue(!fuse::terrain::has_pending_enqueue(queue), "has_pending_enqueue false after drain");
+}
+
+void testLodResidencyQueueDequeueHelpers() {
+    fuse::terrain::LodResidencyQueue queue;
+
+    fuse::terrain::LodResidencyRequest out{};
+    expectTrue(!fuse::terrain::try_dequeue_pending(queue, out), "try_dequeue_pending false on empty queue");
+    expectTrue(!fuse::terrain::peek_highest_pending(queue, out), "peek_highest_pending false on empty queue");
+
+    fuse::terrain::LodResidencyRequest low{};
+    low.chunk_index = 0;
+    low.kind = fuse::terrain::LodResidencyRequestKind::Load;
+    low.priority = 1.f;
+
+    fuse::terrain::LodResidencyRequest high{};
+    high.chunk_index = 1;
+    high.kind = fuse::terrain::LodResidencyRequestKind::Unload;
+    high.priority = 8.f;
+
+    expectTrue(queue.enqueue(low), "enqueue low-priority load");
+    expectTrue(queue.enqueue(high), "enqueue high-priority unload");
+    expectEq(queue.pending_enqueue_count(), 2u, "two requests pending for helper tests");
+
+    fuse::terrain::LodResidencyRequest peeked{};
+    expectTrue(fuse::terrain::peek_highest_pending(queue, peeked),
+               "peek_highest_pending succeeds when pending non-empty");
+    expectTrue(peeked.kind == fuse::terrain::LodResidencyRequestKind::Unload && peeked.chunk_index == 1u,
+               "peek returns highest-priority unload without removing");
+    expectEq(queue.pending_enqueue_count(), 2u, "peek leaves pending queue unchanged");
+
+    fuse::terrain::LodResidencyRequest dequeued{};
+    expectTrue(fuse::terrain::try_dequeue_pending(queue, dequeued),
+               "try_dequeue_pending removes highest-priority request");
+    expectTrue(dequeued.chunk_index == 1u && dequeued.kind == fuse::terrain::LodResidencyRequestKind::Unload,
+               "dequeue helper removes highest-priority unload");
+    expectEq(queue.pending_enqueue_count(), 1u, "dequeue helper shrinks pending queue");
+
+    expectTrue(fuse::terrain::peek_highest_pending(queue, peeked), "peek remaining pending request");
+    expectTrue(peeked.chunk_index == 0u && peeked.priority == 1.f, "peek sees surviving low-priority load");
+
+    expectTrue(fuse::terrain::try_dequeue_pending(queue, dequeued),
+               "try_dequeue_pending drains final pending request");
+    expectEq(queue.pending_enqueue_count(), 0u, "dequeue helpers drain pending queue");
+    expectTrue(!fuse::terrain::peek_highest_pending(queue, peeked), "peek false after pending queue drained");
+}
+
+void testLodResidencyQueueSubmitGuard() {
+    withScheduler(1, [] {
+        fuse::terrain::LodResidencyQueue queue;
+        queue.set_max_pending_submits(1);
+        expectTrue(fuse::terrain::can_submit_residency_request(queue),
+                   "submit guard allows first pending slot");
+
+        fuse::terrain::LodResidencyRequest blocking{};
+        blocking.chunk_index = 0;
+        blocking.kind = fuse::terrain::LodResidencyRequestKind::Load;
+        blocking.priority = 1.f;
+        std::atomic<bool> gate_open{false};
+        expectTrue(queue.submit(blocking, [&](fuse::u32, fuse::terrain::LodResidencyRequestKind) {
+            while (!gate_open.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            return true;
+        }), "first submit accepted");
+        expectTrue(!fuse::terrain::can_submit_residency_request(queue),
+                   "submit guard blocks when pending cap reached");
+
+        gate_open.store(true);
+        for (int attempt = 0; attempt < 100 && queue.completed_count() == 0u; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        std::vector<fuse::terrain::CompletedLodResidencyRequest> completed;
+        queue.drain_completed(completed);
+        expectEq(completed.size(), 1u, "blocked request completes after gate opens");
+        expectTrue(fuse::terrain::can_submit_residency_request(queue),
+                   "submit guard reopens after drain");
+    });
+}
+
+void testLodResidencyQueueTryFlushPendingIf() {
+    withScheduler(1, [] {
+        fuse::terrain::LodResidencyQueue queue;
+        queue.set_max_pending_submits(4);
+
+        fuse::terrain::LodResidencyRequest low{};
+        low.chunk_index = 0;
+        low.kind = fuse::terrain::LodResidencyRequestKind::Load;
+        low.priority = 2.f;
+        expectTrue(queue.enqueue(low), "enqueue low-priority pending request");
+
+        expectEq(fuse::terrain::try_flush_pending_if(queue, 1u, 5.f,
+                                                     [](fuse::u32, fuse::terrain::LodResidencyRequestKind) {
+                                                         return true;
+                                                     }),
+                 0u, "try_flush_pending_if skips when highest priority below threshold");
+        expectEq(queue.pending_enqueue_count(), 1u, "failed try_flush leaves pending queue unchanged");
+
+        expectEq(fuse::terrain::try_flush_pending_if(queue, 1u, 2.f,
+                                                     [](fuse::u32, fuse::terrain::LodResidencyRequestKind) {
+                                                         return true;
+                                                     }),
+                 1u, "try_flush_pending_if submits when threshold met");
+
+        for (int attempt = 0; attempt < 100 && queue.completed_count() == 0u; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        std::vector<fuse::terrain::CompletedLodResidencyRequest> completed;
+        queue.drain_completed(completed);
+        expectEq(completed.size(), 1u, "try_flush_pending_if completion drains");
+        expectEq(completed[0].chunk_index, 0u, "try_flush_pending_if submits expected chunk");
+    });
 }
 
 void testLodResidencyQueueDrainOrdering() {
@@ -1104,10 +1360,13 @@ int main() {
     testCanAttemptBudgetEviction();
     testInvalidChunkIndexBudgetCandidateFilter();
     testPickEvictionCandidateGuarded();
+    testResidencyGuardedRemoveAndPresence();
     testCollectBudgetEvictionCandidates();
     testAsyncInFlightBudgetGuards();
     testRankBudgetChunkUnloadPriority();
     testBudgetEvictionScore();
+    testBudgetEvictionScoreGuarded();
+    testBudgetEvictionFromSetGuards();
     testResidentCapIncomingGuards();
     testLodResidencySetAddRemove();
     testLodClampHelpers();
@@ -1119,6 +1378,11 @@ int main() {
     testVertexMorphSnapsToGrid();
     testChunkResidencyStateHelpers();
     testLodResidencyQueueEnqueuePromoteDemote();
+    testLodResidencyQueuePendingEnqueueGuards();
+    testLodResidencyQueueDequeueIfGuard();
+    testLodResidencyQueueDequeueHelpers();
+    testLodResidencyQueueSubmitGuard();
+    testLodResidencyQueueTryFlushPendingIf();
     testLodResidencyQueueStub();
     testLodResidencyQueueDrainOrdering();
     testLodResidencyQueueBudgetReject();

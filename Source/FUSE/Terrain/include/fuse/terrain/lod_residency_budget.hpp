@@ -91,6 +91,10 @@ struct LodResidencyBudgetCounters {
     return max_async_in_flight == 0u || in_flight < max_async_in_flight;
 }
 
+[[nodiscard]] inline bool is_at_async_in_flight_cap(u32 in_flight, u32 max_async_in_flight) {
+    return !can_submit_async_load(in_flight, max_async_in_flight);
+}
+
 [[nodiscard]] inline u32 async_in_flight_headroom(u32 max_async_in_flight, u32 in_flight) {
     if (max_async_in_flight == 0u) {
         return ~0u;
@@ -171,6 +175,15 @@ struct LodResidencyBudgetCounters {
     return unload_priority;
 }
 
+/// Guard: budget eviction score; returns -1 when focus distance is invalid for distance policy.
+[[nodiscard]] inline f32 budget_eviction_score_guarded(f32 focus_distance, f32 unload_priority, u32 last_touch_tick,
+                                                       u32 current_tick, LodEvictionPolicy policy) {
+    if (policy == LodEvictionPolicy::DistanceFromFocus && focus_distance < 0.f) {
+        return -1.f;
+    }
+    return budget_eviction_score(focus_distance, unload_priority, last_touch_tick, current_tick, policy);
+}
+
 /// True when an incoming load (higher `priority` = closer) should evict a resident at `resident_focus_distance`.
 [[nodiscard]] inline bool incoming_outranks_resident(f32 incoming_priority, f32 load_radius,
                                                      f32 resident_focus_distance) {
@@ -211,5 +224,8 @@ struct LodResidencyBudgetCounters {
     return needs_budget_eviction_for_incoming(max_resident_chunks, resident_count, incoming_count) &&
            has_eviction_candidate;
 }
+
+/// True when an eviction score is positive (eligible for budget eviction ordering).
+[[nodiscard]] inline bool is_positive_eviction_score(f32 score) { return score > 0.f; }
 
 } // namespace fuse::terrain
