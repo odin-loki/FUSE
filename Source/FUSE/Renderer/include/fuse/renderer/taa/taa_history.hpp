@@ -18,6 +18,10 @@ public:
     bool hasValidHistory() const { return m_validity.hasValidHistory; }
     /// True when history targets are ready and warmed for temporal reuse (B5.9 deepen).
     bool canReuseHistory() const;
+    /// True when the next resolve would be the warm-up frame (B5.9 deepen).
+    bool isWarmupFrame() const;
+    /// True when temporal history reuse is allowed for the observed invalidate epoch (B5.9 deepen).
+    bool preflightReuse(u32 observedGeneration) const;
     /// True until the first successful resolve warms the ping-pong targets.
     bool needsWarmup() const { return !m_validity.hasValidHistory; }
     u32 accumulatedFrames() const { return m_validity.accumulatedFrames; }
