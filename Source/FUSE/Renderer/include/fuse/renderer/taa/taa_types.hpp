@@ -123,6 +123,12 @@ enum class TaaHistoryReuseBlockReason : u8 {
 const char* taaHistoryReuseBlockReasonLabel(TaaHistoryReuseBlockReason reason);
 /// Classify why history reuse is blocked for an observed invalidate epoch (B5.9 deepen).
 TaaHistoryReuseBlockReason classifyTaaHistoryReuseBlock(const TaaHistoryBuffer& history, u32 observedGeneration);
+/// Preflight history reuse for an observed invalidate epoch (B5.9 deepen).
+bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
+                              TaaHistoryReuseBlockReason* reason = nullptr);
+/// Preflight resolve blend weights for consistency with reuse policy (B5.9 deepen).
+bool preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                              TaaBlendWeights* weights = nullptr);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {

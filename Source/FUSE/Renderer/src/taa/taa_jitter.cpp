@@ -50,6 +50,13 @@ u32 TaaJitterLayout::frameIndexInSequence(u32 frameIndex, u32 sequenceLength) {
     return frameIndex % period;
 }
 
+bool TaaJitterLayout::jitterIndexMatchesFrameIndex(u32 frameIndex, u32 index, u32 sequenceLength) {
+    if (!validateSequenceLength(sequenceLength)) {
+        return false;
+    }
+    return frameIndexInSequence(frameIndex, sequenceLength) == index;
+}
+
 fuse::math::Vec2 TaaJitterLayout::haltonPixelOffset(u32 index, u32 sequenceLength) {
     const u32 safeLength = validateSequenceLength(sequenceLength) ? sequenceLength : kTaaDefaultJitterSequenceLength;
     const u32 slot = index % safeLength;
@@ -141,6 +148,19 @@ void TaaJitter::reset() {
 void TaaJitter::syncToFrameIndex(u32 frameIndex) {
     m_monotonicFrame = frameIndex;
     m_index = TaaJitterLayout::frameIndexInSequence(frameIndex, m_sequenceLength);
+}
+
+bool TaaJitter::syncToFrameIndexIfReady(u32 frameIndex) {
+    if (!canSyncToFrameIndex(frameIndex)) {
+        return false;
+    }
+    syncToFrameIndex(frameIndex);
+    return true;
+}
+
+bool TaaJitter::isSyncedToFrameIndex(u32 frameIndex) const {
+    return m_monotonicFrame == frameIndex &&
+           TaaJitterLayout::jitterIndexMatchesFrameIndex(frameIndex, m_index, m_sequenceLength);
 }
 
 } // namespace fuse::renderer

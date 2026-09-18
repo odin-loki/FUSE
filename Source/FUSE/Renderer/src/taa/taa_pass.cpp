@@ -69,9 +69,29 @@ void TaaPass::syncJitterToFrameIndex(u32 frameIndex) {
     m_stats.lastJitterNdc = currentJitterNdc();
 }
 
+bool TaaPass::syncJitterToFrameIndexIfReady(u32 frameIndex) {
+    if (!m_jitter.syncToFrameIndexIfReady(frameIndex)) {
+        return false;
+    }
+    m_stats.lastJitterNdc = currentJitterNdc();
+    return true;
+}
+
+bool TaaPass::isJitterSyncedToFrameIndex(u32 frameIndex) const {
+    return m_jitter.isSyncedToFrameIndex(frameIndex);
+}
+
 void TaaPass::invalidateHistory() {
     m_history.invalidateHistory();
     m_resolve.resetBookkeeping();
+}
+
+bool TaaPass::invalidateHistoryIfStale(u32 observedGeneration) {
+    if (!m_history.invalidateHistoryIfStale(observedGeneration)) {
+        return false;
+    }
+    m_resolve.resetBookkeeping();
+    return true;
 }
 
 bool TaaPass::isHistoryStale(u32 observedGeneration) const {
@@ -128,6 +148,14 @@ TaaHistoryReuseBlockReason TaaPass::classifyHistoryReuseBlock(u32 observedGenera
 
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
     return m_resolve.wouldSkip(desc, m_history, reason);
+}
+
+bool TaaPass::preflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBlockReason* reason) const {
+    return preflightTaaHistoryReuse(m_history, observedGeneration, reason);
+}
+
+bool TaaPass::preflightResolveBlend(const TaaResolveDesc& desc) const {
+    return preflightTaaResolveBlend(desc, m_history);
 }
 
 void TaaPass::stampObservedHistoryGeneration(TaaResolveDesc& desc) const {

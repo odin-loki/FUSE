@@ -25,6 +25,9 @@ struct TaaJitterLayout {
     static u32 sequencePeriod(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Maps a monotonic frame counter into the active Halton slot.
     static u32 frameIndexInSequence(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// True when `index` matches the slot for `frameIndex` (B5.9 deepen).
+    static bool jitterIndexMatchesFrameIndex(u32 frameIndex, u32 index,
+                                             u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     static fuse::math::Vec2 haltonPixelOffset(u32 index, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     static fuse::math::Vec2 haltonNdcOffset(u32 index, u32 width, u32 height,
                                             u32 sequenceLength = kTaaDefaultJitterSequenceLength);
@@ -51,6 +54,10 @@ public:
     void reset();
     /// Align jitter state to a monotonic frame counter (wraps with sequence period).
     void syncToFrameIndex(u32 frameIndex);
+    /// Align jitter only when the sequence is valid; returns false when blocked (B5.9 deepen).
+    bool syncToFrameIndexIfReady(u32 frameIndex);
+    /// True when jitter index and monotonic counter match `frameIndex` (B5.9 deepen).
+    bool isSyncedToFrameIndex(u32 frameIndex) const;
 
     u32 index() const { return m_index; }
     /// True when the jitter sequence can advance (B5.9 deepen).

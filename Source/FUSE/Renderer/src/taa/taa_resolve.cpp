@@ -210,6 +210,26 @@ TaaHistoryReuseBlockReason classifyTaaHistoryReuseBlock(const TaaHistoryBuffer& 
     return TaaHistoryReuseBlockReason::None;
 }
 
+bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
+                            TaaHistoryReuseBlockReason* reason) {
+    const TaaHistoryReuseBlockReason block = classifyTaaHistoryReuseBlock(history, observedGeneration);
+    if (reason != nullptr) {
+        *reason = block;
+    }
+    return block == TaaHistoryReuseBlockReason::None;
+}
+
+bool preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                            TaaBlendWeights* weights) {
+    const TaaBlendWeights computed = computeTaaResolveBlendWeights(desc, history);
+    if (weights != nullptr) {
+        *weights = computed;
+    }
+    const bool historyBlendAllowed =
+        taaHistoryBlendAllowed(!history.hasValidHistory(), history) && taaResolveCanReuseHistory(desc, history);
+    return taaBlendWeightsValid(computed) && taaBlendWeightsConsistentWithReuse(computed, historyBlendAllowed);
+}
+
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaHistoryCanReuse(history)) {
         return false;
