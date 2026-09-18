@@ -30,6 +30,20 @@ bool is_empty_hrtf_ir(const HrtfIrStub& ir);
 /// Alias for `has_hrtf_ir` — convolution path is available when true.
 bool should_use_hrtf_ir(const HrtfIrStub& ir);
 
+/// Read-only empty-IR diagnostics — no mutation (B7.2 deepen — empty-IR guard).
+struct HrtfIrPreflight {
+    bool null_samples = false;
+    bool zero_length = false;
+
+    bool isEmpty() const { return null_samples || zero_length; }
+    bool canUseConvolution() const { return !isEmpty(); }
+};
+
+HrtfIrPreflight preflight_hrtf_ir(const HrtfIrStub& ir);
+
+/// Non-mutating empty-IR predicate — same guards as \c preflight_hrtf_ir (B7.2 deepen).
+bool can_use_hrtf_ir_for_convolution(const HrtfIrStub& ir);
+
 /// HRTF pan routing — empty IR uses ILD/ITD stub; convolution deferred until IR wired.
 enum class HrtfPanPath {
     Bypass,
@@ -72,6 +86,23 @@ bool should_apply_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener);
 
 /// Inverse of `should_apply_hrtf_pan` — disabled or co-located sources.
 bool should_bypass_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener);
+
+/// Read-only pan-path diagnostics — no mutation (B7.2 deepen — pan-path guard).
+struct HrtfPanPathPreflight {
+    bool hrtf_disabled = false;
+    bool co_located = false;
+    bool empty_ir = false;
+    HrtfPanPath path = HrtfPanPath::Bypass;
+
+    bool canApplyPan() const { return path != HrtfPanPath::Bypass; }
+};
+
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
+                                             const Vec3& rel_listener);
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener);
+
+/// Non-mutating pan-path predicate — same guards as \c preflight_hrtf_pan_path (B7.2 deepen).
+bool can_apply_hrtf_spatial_pan(HrtfPanPath path);
 
 /// Stereo pan law used for ILD stub gains.
 enum class PanLaw {
@@ -221,6 +252,21 @@ bool should_skip_hrtf_attenuation_coupling(HrtfPanPath path);
 /// Combined guard — spatial path and non-unity attenuation warrant narrowing.
 bool should_narrow_hrtf_spatial_image(HrtfPanPath path, float distance_attenuation,
                                       float occlusion_gain);
+
+/// Read-only attenuation-coupling diagnostics — no mutation (B7.2 deepen).
+struct HrtfAttenuationCouplingPreflight {
+    bool bypass_path = false;
+    bool unity_attenuation = false;
+
+    bool canApplyCoupling() const { return !bypass_path && !unity_attenuation; }
+};
+
+HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling(
+    HrtfPanPath path, float distance_attenuation, float occlusion_gain);
+
+/// Non-mutating coupling predicate — same guards as \c preflight_hrtf_attenuation_coupling.
+bool can_narrow_hrtf_spatial_image(HrtfPanPath path, float distance_attenuation,
+                                   float occlusion_gain);
 
 /// Combined spatial blend from distance attenuation and occlusion LF gain.
 float compute_hrtf_spatial_blend(float distance_attenuation, float occlusion_gain,
