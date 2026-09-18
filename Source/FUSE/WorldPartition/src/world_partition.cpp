@@ -159,7 +159,7 @@ WorldCell* WorldPartition::find_budget_eviction_candidate_(f32 incoming_priority
             },
             incoming_priority, m_desc.eviction_policy, out_score);
 
-        if (!is_valid_grid_coord(picked) || out_score <= 0.f) {
+        if (!is_valid_grid_coord(picked) || !is_valid_eviction_score(out_score)) {
             return nullptr;
         }
         return const_cast<WorldCell*>(find_cell_(picked));
@@ -204,7 +204,7 @@ void WorldPartition::evict_for_budget_(f32 incoming_priority, u64 incoming_bytes
         f32 best_score = -1.f;
         WorldCell* best_candidate = find_budget_eviction_candidate_(incoming_priority, best_score);
 
-        if (best_candidate == nullptr || best_score <= 0.f) {
+        if (best_candidate == nullptr || !is_valid_eviction_score(best_score)) {
             ++m_budget_counters.eviction_skipped;
             break;
         }
