@@ -188,8 +188,14 @@ struct ProbeGridLayout {
     static ProbeValidityFlags probeValidityFromClampedIndex(const DDGIDesc& desc, u32 probe_index);
     /// True when `probe_index` exceeds the valid probe range (would be clamped).
     static bool isProbeIndexOutOfRange(u32 probe_index, const DDGIDesc& desc);
+    /// Last valid flat probe index; returns 0 when the grid has no probes.
+    static u32 maxProbeIndex(const DDGIDesc& desc);
+    /// True when `probe_index` equals the last valid probe index for a non-empty grid.
+    static bool isAtMaxProbeIndex(u32 probe_index, const DDGIDesc& desc);
     /// Clamp a flat probe index to [0, probeCount - 1]; returns 0 when the grid is empty.
     static u32 clampProbeIndex(u32 probe_index, const DDGIDesc& desc);
+    /// Clamp `probe_index` into range; returns false and zeroes `out_index` on an empty grid.
+    static bool tryClampProbeIndex(u32 probe_index, const DDGIDesc& desc, u32& out_index);
     static u32 clampProbeCoordX(u32 x, const DDGIDesc& desc);
     static u32 clampProbeCoordY(u32 y, const DDGIDesc& desc);
     static u32 clampProbeCoordZ(u32 z, const DDGIDesc& desc);
@@ -201,6 +207,12 @@ struct ProbeGridLayout {
     static void normalizeProbeSampleCoords(ProbeSampleCoords& coords);
     /// True when corner indices lie within the grid and weights are in [0, 1].
     static bool isValidProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// True when corner indices and interpolation weights are within grid bounds.
+    static bool areProbeSampleCoordsInBounds(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// True when sample coords exceed grid bounds or interpolation weights are outside [0, 1].
+    static bool isProbeSampleCoordsOutOfRange(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// Clamp sample coords in place; returns false without modifying `coords` on an empty grid.
+    static bool tryClampProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCoords& coords);
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
@@ -245,9 +257,13 @@ u32 requiredCacheCount(const DDGIDesc& desc);
 bool isCacheSizedForGrid(const DDGIDesc& desc, u32 cache_count);
 /// Probe-cache shortfall vs `requiredCacheCount`; 0 when sized or the grid is not sampleable.
 u32 cacheEntriesMissing(const DDGIDesc& desc, u32 cache_count);
-/// Combined probe-index + cache-length guard for cache lookups.
-bool isCacheIndexValid(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
-/// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
+    /// Combined probe-index + cache-length guard for cache lookups.
+    bool isCacheIndexValid(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
+    /// True when `probe_index` is out of range for the grid or exceeds `cache_count`.
+    bool isCacheIndexOutOfRange(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
+    /// Clamp `probe_index` for cache access; returns false and zeroes `out_index` on an empty grid.
+    bool tryClampCacheIndex(const DDGIDesc& desc, u32 probe_index, u32 cache_count, u32& out_index);
+    /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
 bool isValidSampleRequest(const DDGIDesc& desc,
                           const DDGISampleRequest& request,
                           u32 cache_count);
@@ -326,8 +342,27 @@ private:
     bool m_ready = false;
 };
 
+/// Why probe-update launch preflight rejected the request (B5.6 deepen).
+enum class DdgiLaunchRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    NullIndices,
+    ZeroCount,
+    OutOfRangeIndex,
+};
+
+/// Human-readable label for launch reject reasons (logging / tests).
+const char* ddgiLaunchRejectReasonLabel(DdgiLaunchRejectReason reason);
+
 /// Preflight guard before host probe-update launch; false on empty grid or OOB indices.
 bool canLaunchDdgiProbeUpdate(const DDGIDesc& desc, const u32* probe_indices, u32 probe_count);
+/// Diagnose why launch preflight would reject; vacuously succeeds on valid requests.
+bool tryCanLaunchDdgiProbeUpdate(const DDGIDesc& desc,
+                                 const u32* probe_indices,
+                                 u32 probe_count,
+                                 DdgiLaunchRejectReason& out_reason);
+/// Count probe indices that exceed the valid probe range; returns 0 on empty grid or null buffer.
+u32 countInvalidLaunchProbeIndices(const DDGIDesc& desc, const u32* probe_indices, u32 probe_count);
 
 /// Host launcher for probe trace + blend kernels — stub until CUDA kernels land.
 bool launch_ddgi_probe_update(const DDGIDesc& desc,
