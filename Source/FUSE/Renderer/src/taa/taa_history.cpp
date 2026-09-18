@@ -81,6 +81,14 @@ bool TaaHistoryBuffer::matchesDimensions(u32 width, u32 height) const {
     return m_desc.width == width && m_desc.height == height;
 }
 
+bool canReadHistoryForResolve(const TaaHistoryBuffer& history) {
+    return history.canReadForResolve();
+}
+
+bool historyAwaitingWarmup(const TaaHistoryBuffer& history) {
+    return history.isReady() && history.needsWarmup();
+}
+
 void TaaHistoryBuffer::invalidateHistory() {
     m_validity.hasValidHistory = false;
     m_validity.accumulatedFrames = 0u;
