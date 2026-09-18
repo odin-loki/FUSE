@@ -46,6 +46,9 @@ struct EventPumpStats {
     u32 coalescedResizeCount = 0;
     bool quitRequested = false;
     bool hasPendingQuitEvent = false;
+    bool hasPendingResizeEvent = false;
+    bool lastCoalescedResizeValid = false;
+    PlatformEventType frontEventType = PlatformEventType::None;
 };
 
 /// OS event pump — B1.7 stub drains a synthetic queue only (desktop + mobile no-op).
@@ -69,6 +72,9 @@ public:
     /// Inspect only the front event type without removing it. Returns false when empty.
     bool peekEventType(PlatformEventType& outType) const;
 
+    /// True when the front queued event matches `type` (false when empty).
+    bool frontEventTypeIs(PlatformEventType type) const;
+
     /// True when the synthetic queue holds at least one event.
     bool hasPendingEvents() const;
 
@@ -83,6 +89,12 @@ public:
 
     /// Number of queued events whose `window` pointer matches `window`.
     u32 countPendingEventsFor(const Window& window) const;
+
+    /// Number of queued events whose `type` matches `type`.
+    u32 countPendingEventsOfType(PlatformEventType type) const;
+
+    /// True when `pushSyntheticEvent(event)` would coalesce an existing resize instead of enqueueing.
+    bool wouldCoalesceResize(const PlatformEvent& event) const;
 
     /// Pending resize dimensions for `window`, or `pending == false` when none queued.
     ///
