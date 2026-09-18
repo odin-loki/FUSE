@@ -8,6 +8,7 @@
 
 #include <string>
 #include <vector>
+#include <cstddef>
 
 namespace fuse::cinematics {
 
@@ -34,6 +35,9 @@ struct CameraKeyframe {
 /// Default vertical FOV (degrees) for empty tracks and unset keyframes.
 constexpr float kDefaultCameraFovDeg = 60.f;
 
+/// Default look-at distance (world units along -Z) when a fixed keyframe omits aim.
+constexpr float kDefaultCameraLookAtDistance = 10.f;
+
 struct CameraSample {
     Vec3 position{};
     Vec3 look_at{};
@@ -58,6 +62,27 @@ CameraSample default_camera_sample();
 
 /// True when `keyframes` has no entries (editor / rail guard).
 bool camera_keyframes_empty(const std::vector<CameraKeyframe>& keyframes);
+
+/// Number of keyframes in `keyframes` (empty-vector guard for editor wiring).
+size_t camera_keyframe_count(const std::vector<CameraKeyframe>& keyframes);
+
+/// True when `time_ms` lies within the earliest..latest keyframe times (inclusive).
+bool camera_track_covers_time(const std::vector<CameraKeyframe>& keyframes, TimelineMs time_ms);
+
+/// True when `field_of_view` is unset (editor sentinel `<= 0` before normalization).
+bool camera_keyframe_fov_unset(float field_of_view);
+
+/// Resolve authored FOV: unset values use `kDefaultCameraFovDeg`, otherwise clamp.
+float effective_camera_fov(float field_of_view);
+
+/// True when a fixed-point keyframe omits an explicit look-at point.
+bool camera_keyframe_look_at_unset(const CameraKeyframe& keyframe);
+
+/// Apply unset FOV / fixed look-at defaults, then clamp FOV (import / editor guard).
+void apply_camera_keyframe_defaults(CameraKeyframe& keyframe);
+
+/// Canonical keyframe with default FOV, roll, and look-at offset from `position`.
+CameraKeyframe make_default_camera_keyframe(TimelineMs time_ms = 0);
 
 /// True when `keyframe` binds look-at to an entity id (requires `LookAtResolver` stub).
 bool camera_keyframe_uses_entity_look_at(const CameraKeyframe& keyframe);
@@ -120,6 +145,11 @@ public:
     void sort_keyframes();
 
     bool empty() const { return keyframes_.empty(); }
+
+    size_t keyframe_count() const { return keyframes_.size(); }
+
+    /// True when `time_ms` lies within `keyframe_span()` (false when empty).
+    bool covers_time(TimelineMs time_ms) const;
 
     /// True when any keyframe binds look-at to an entity id.
     bool needs_look_at_resolver() const;
