@@ -322,6 +322,10 @@ bool DdgiIrradianceEncoding::buildTileBilinearCoords(const fuse::math::Vec3& dir
     return true;
 }
 
+bool DdgiIrradianceEncoding::canDirectionallySample(u32 irradiance_res) {
+    return irradiance_res > 0u;
+}
+
 f32 DdgiIrradianceEncoding::angularErrorRadians(const fuse::math::Vec3& a, const fuse::math::Vec3& b) {
     const fuse::math::Vec3 na = a.normalized();
     const fuse::math::Vec3 nb = b.normalized();
@@ -489,6 +493,10 @@ bool validateProbeBorderCounts(const ProbeBorderCounts& counts) {
     return counts.face + counts.edge + counts.corner == counts.border;
 }
 
+bool validateProbeBorderCountsForGrid(const DDGIDesc& desc) {
+    return validateProbeBorderCounts(countProbesByBorderKind(desc));
+}
+
 bool canSampleProbeGrid(const DDGIDesc& desc) {
     if (ProbeGridLayout::isEmptyGrid(desc)) {
         return false;
@@ -499,8 +507,27 @@ bool canSampleProbeGrid(const DDGIDesc& desc) {
     return desc.probe_spacing.x > 0.f && desc.probe_spacing.y > 0.f && desc.probe_spacing.z > 0.f;
 }
 
+u32 requiredCacheCount(const DDGIDesc& desc) {
+    if (!canSampleProbeGrid(desc)) {
+        return 0u;
+    }
+    return probeCount(desc);
+}
+
 bool isCacheSizedForGrid(const DDGIDesc& desc, u32 cache_count) {
-    return cache_count >= probeCount(desc);
+    const u32 required = requiredCacheCount(desc);
+    if (required == 0u) {
+        return true;
+    }
+    return cache_count >= required;
+}
+
+u32 cacheEntriesMissing(const DDGIDesc& desc, u32 cache_count) {
+    const u32 required = requiredCacheCount(desc);
+    if (required == 0u || cache_count >= required) {
+        return 0u;
+    }
+    return required - cache_count;
 }
 
 bool isValidSampleRequest(const DDGIDesc& desc,
@@ -593,7 +620,7 @@ fuse::math::Vec3 bilinearTileIrradiance(const fuse::math::Vec3* samples, f32 u, 
 fuse::math::Vec3 sampleDirectionalIrradianceAtProbe(const IrradianceCacheEntry& entry,
                                                     const fuse::math::Vec3& direction,
                                                     u32 irradiance_res) {
-    if (irradiance_res == 0u) {
+    if (!DdgiIrradianceEncoding::canDirectionallySample(irradiance_res)) {
         return {};
     }
 
@@ -885,6 +912,10 @@ bool DDGI::update(u32 frame_index, void* cuda_stream) {
 DDGISampleResult DDGI::sampleIrradiance(const DDGISampleRequest& request) const {
     DDGISampleResult result{};
     if (!m_ready) {
+        return result;
+    }
+
+    if (!ddgi_util::isValidSampleRequest(m_desc, request, static_cast<u32>(m_cache.size()))) {
         return result;
     }
 

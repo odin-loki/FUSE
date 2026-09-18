@@ -165,6 +165,8 @@ struct DdgiIrradianceEncoding {
     static bool buildTileBilinearCoords(const fuse::math::Vec3& direction,
                                         u32 irradiance_res,
                                         DdgiTileBilinearCoords& out_coords);
+    /// True when octahedral tile bilinear sampling is allowed for `irradiance_res`.
+    static bool canDirectionallySample(u32 irradiance_res);
     static f32 angularErrorRadians(const fuse::math::Vec3& a, const fuse::math::Vec3& b);
 };
 
@@ -229,10 +231,16 @@ ProbeBorderCounts countProbesByBorderKind(const DDGIDesc& desc);
 u32 countProbesOfBorderKind(const DDGIDesc& desc, ProbeBorderKind kind);
 /// True when interior+border and face+edge+corner sums match `total`.
 bool validateProbeBorderCounts(const ProbeBorderCounts& counts);
+/// Recompute border-kind counts for `desc` and verify invariants.
+bool validateProbeBorderCountsForGrid(const DDGIDesc& desc);
 /// True when the probe grid can participate in spatial irradiance sampling.
 bool canSampleProbeGrid(const DDGIDesc& desc);
+/// Minimum irradiance-cache entries for trilinear sampling; 0 when the grid is not sampleable.
+u32 requiredCacheCount(const DDGIDesc& desc);
 /// True when `cache_count` covers every probe in `desc`.
 bool isCacheSizedForGrid(const DDGIDesc& desc, u32 cache_count);
+/// Probe-cache shortfall vs `requiredCacheCount`; 0 when sized or the grid is not sampleable.
+u32 cacheEntriesMissing(const DDGIDesc& desc, u32 cache_count);
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
 bool isValidSampleRequest(const DDGIDesc& desc,
                           const DDGISampleRequest& request,
