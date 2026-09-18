@@ -132,6 +132,14 @@ void ScriptConsoleHistoryBuffer::resetNavigation() {
     m_navigationCursor = static_cast<s32>(m_size);
 }
 
+const std::string& ScriptConsoleHistoryBuffer::navigation_entry() const {
+    static const std::string kEmpty;
+    if (!is_navigating()) {
+        return kEmpty;
+    }
+    return at(static_cast<u32>(m_navigationCursor));
+}
+
 u32 ScriptConsoleHistoryBuffer::ringIndex_(u32 offset) const {
     return (m_start + offset) % m_capacity;
 }

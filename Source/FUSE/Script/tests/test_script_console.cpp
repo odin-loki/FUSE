@@ -608,6 +608,107 @@ void testCanRepeatAccessor() {
     expectTrue(console.lastExecutedLine() == "echo ready", "unknown command preserves last executed line");
 }
 
+void testRepeatArgsGuard() {
+    fuse::script::ScriptConsole console;
+
+    console.execute("echo payload");
+    const auto with_args = console.execute("repeat extra");
+    expectTrue(with_args.status == fuse::script::ScriptConsoleCommandStatus::InvalidArgument,
+               "repeat with args fails");
+    expectTrue(with_args.output == "repeat does not accept arguments",
+               "repeat with args guard message");
+
+    const auto whitespace_args = console.execute("repeat   ");
+    expectTrue(whitespace_args.ok(), "repeat with whitespace-only args succeeds");
+    expectTrue(whitespace_args.output == "payload", "repeat ignores whitespace-only args");
+
+    expectTrue(console.historyCount() == 1u, "repeat args guard does not push history");
+    expectTrue(console.can_repeat(), "repeat args guard preserves repeat state");
+}
+
+void testResolveWhitespaceGuard() {
+    fuse::script::ScriptConsole console;
+
+    const auto whitespace = console.execute("resolve    ");
+    expectTrue(whitespace.status == fuse::script::ScriptConsoleCommandStatus::InvalidArgument,
+               "resolve with whitespace-only args fails");
+    expectTrue(whitespace.output == "resolve requires a partial command name",
+               "resolve whitespace guard message");
+
+    const auto padded = console.execute("resolve   help   ");
+    expectTrue(padded.ok(), "resolve trims padded exact command");
+    expectTrue(padded.output == "help", "resolve trimmed exact command returns name");
+
+    const auto padded_prefix = console.execute("  resolve histor  ");
+    expectTrue(padded_prefix.ok(), "resolve trims padded unique prefix");
+    expectTrue(padded_prefix.output == "history", "resolve trimmed prefix returns full command name");
+}
+
+void testHistoryLastCountAndNavigationStubs() {
+    fuse::script::ScriptConsole console;
+
+    const auto empty_last = console.execute("history last");
+    expectTrue(empty_last.ok(), "history last on empty buffer succeeds");
+    expectTrue(empty_last.output == "history empty", "history last empty early-out");
+
+    const auto empty_newest = console.execute("history newest");
+    expectTrue(empty_newest.ok(), "history newest alias succeeds");
+    expectTrue(empty_newest.output == "history empty", "history newest empty early-out");
+
+    const auto zero_count = console.execute("history count");
+    expectTrue(zero_count.ok(), "history count on empty buffer succeeds");
+    expectTrue(zero_count.output == "0", "history count reports zero");
+
+    console.execute("echo alpha");
+    console.execute("echo beta");
+
+    const auto last = console.execute("history last");
+    expectTrue(last.ok(), "history last succeeds with entries");
+    expectTrue(last.output == "echo beta", "history last returns newest entry");
+    expectTrue(console.historyNewest() == "echo beta", "historyNewest accessor matches last");
+
+    const auto count = console.execute("history count");
+    expectTrue(count.ok(), "history count succeeds with entries");
+    expectTrue(count.output == "2", "history count reports entry total");
+
+    const auto unknown = console.execute("history bogus");
+    expectTrue(unknown.status == fuse::script::ScriptConsoleCommandStatus::InvalidArgument,
+               "unknown history subcommand fails");
+    expectTrue(unknown.output.find("unknown history subcommand:") != std::string::npos,
+               "unknown history subcommand error message");
+
+    expectTrue(!console.is_history_navigating(), "fresh navigation is at end");
+    expectTrue(console.historyNavigationEntry().empty(), "navigation entry empty at end");
+
+    expectTrue(console.recallHistory(true) == "echo beta", "recall positions on newest");
+    expectTrue(console.is_history_navigating(), "recall up enters navigation mode");
+    expectTrue(console.historyNavigationEntry() == "echo beta", "navigation entry tracks cursor");
+
+    console.resetHistoryNavigation();
+    expectTrue(!console.is_history_navigating(), "reset leaves navigation mode");
+}
+
+void testHistoryClearPreservesRepeat() {
+    fuse::script::ScriptConsole console;
+
+    console.execute("echo survive-clear");
+    expectTrue(console.can_repeat(), "repeat available before history clear");
+
+    const auto cleared = console.execute("history clear");
+    expectTrue(cleared.ok(), "history clear succeeds");
+    expectTrue(console.is_history_empty(), "history clear empties buffer");
+    expectTrue(console.can_repeat(), "history clear preserves repeat state");
+    expectTrue(console.lastExecutedLine() == "echo survive-clear",
+               "history clear preserves last executed line");
+
+    const auto repeated = console.execute("repeat");
+    expectTrue(repeated.ok(), "repeat after history clear re-dispatches last action");
+    expectTrue(repeated.output == "survive-clear", "repeat after history clear returns prior output");
+    expectTrue(console.historyCount() == 1u, "repeat after clear records only re-dispatched command");
+    expectTrue(console.historyAt(0) == "echo survive-clear",
+               "repeat after clear does not restore prior history entries");
+}
+
 void testCustomCommandDispatch() {
     fuse::script::ScriptConsole console;
     int invoke_count = 0;
@@ -654,6 +755,10 @@ void run_script_console_tests() {
     testHistoryEmptyEarlyOut();
     testMetaCommandsSkipHistoryAndRepeat();
     testCanRepeatAccessor();
+    testRepeatArgsGuard();
+    testResolveWhitespaceGuard();
+    testHistoryLastCountAndNavigationStubs();
+    testHistoryClearPreservesRepeat();
     testRepeatDispatchStub();
     testHostDispatchLoadAndRun();
     testCustomCommandShadowsBuiltIn();
