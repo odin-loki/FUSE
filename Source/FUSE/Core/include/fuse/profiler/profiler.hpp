@@ -10,6 +10,21 @@ namespace fuse::profiler {
 /// Sentinel returned by `lastEventIndex()` when the ring buffer has no recorded events.
 constexpr u32 kInvalidEventIndex = static_cast<u32>(-1);
 
+/// Ring buffer capacity exposed for editor consumers and export preflight.
+constexpr u32 kRingEventCapacity = 4096u;
+
+/// Non-hot-path snapshot of chrome export readiness (does not mutate profiler state).
+struct ChromeTraceExportPreflight {
+    bool can_export = true;
+    bool has_events = false;
+    bool buffer_empty = true;
+    bool scope_nesting_balanced = true;
+    bool flow_nesting_balanced = true;
+    bool has_open_async_flows = false;
+    u32 event_count = 0;
+    u32 frame_index = 0;
+};
+
 enum class EventPhase : u8 {
     Begin,
     End,
@@ -74,8 +89,16 @@ bool isBufferEmpty();
 bool isBufferFull();
 bool isEventIndexValid(u32 index);
 bool isValidProfileEvent(const ProfileEvent& event);
+bool isValidProfileName(const char* name);
+bool isScopeNestingBalanced();
+bool isFlowNestingBalanced();
+bool hasOpenAsyncFlows();
+u32 ringCapacity();
+ChromeTraceExportPreflight preflightChromeTraceExport();
 u32 lastEventIndex();
 const ProfileEvent& eventAt(u32 index);
+const ProfileEvent& emptyProfileEvent();
+bool tryEventAt(u32 index, ProfileEvent& out);
 const ProfileEvent& lastEvent();
 void reset();
 
