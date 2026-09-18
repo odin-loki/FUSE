@@ -128,6 +128,96 @@ void testBlendReverbSampleOneShot() {
                "dry zone inside bounds still returns dry sample");
 }
 
+void testEmptyOcclusionBlockerGuards() {
+    const fuse::audio::AABB blocker{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
+    const fuse::audio::Vec3 listener{0.f, 0.f, 0.f};
+    const fuse::audio::Vec3 source{10.f, 0.f, 0.f};
+
+    expectTrue(fuse::audio::has_empty_occlusion_blockers(nullptr, 0),
+               "null blocker list is empty");
+    expectTrue(fuse::audio::has_empty_occlusion_blockers(nullptr, 2),
+               "null pointer with count is empty");
+    expectTrue(fuse::audio::has_empty_occlusion_blockers(&blocker, 0),
+               "zero blocker count is empty");
+    expectTrue(!fuse::audio::has_empty_occlusion_blockers(&blocker, 1),
+               "valid blocker list is non-empty");
+
+    expectTrue(fuse::audio::should_skip_occlusion_from_blockers(listener, source, 1.f, nullptr, 0),
+               "empty blocker list skips blocker attenuation pipeline");
+    expectTrue(fuse::audio::should_skip_occlusion_from_blockers(listener, source, 0.f, &blocker, 1),
+               "fully occluded source skips blocker attenuation pipeline");
+    expectTrue(fuse::audio::should_skip_occlusion_from_blockers(listener, listener, 0.5f, &blocker, 1),
+               "co-located positions skip blocker attenuation pipeline");
+    expectTrue(!fuse::audio::should_skip_occlusion_from_blockers(listener, source, 1.f, &blocker, 1),
+               "fully visible source with blockers still evaluates geometry");
+
+    const fuse::audio::OcclusionAttenuation empty_blockers =
+        fuse::audio::evaluate_occlusion_from_blockers(listener, source, 1.f, nullptr, 0);
+    expectTrue(fuse::audio::is_unity_occlusion_attenuation(empty_blockers),
+               "empty blocker early-out yields unity attenuation");
+}
+
+void testCombineOcclusionVisibilityGuards() {
+    expectTrue(fuse::audio::should_skip_combine_occlusion_visibility(0.8f, 0.f),
+               "zero blocker factor skips combine");
+    expectTrue(fuse::audio::should_skip_combine_occlusion_visibility(0.f, 0.5f),
+               "fully occluded source skips combine");
+    expectTrue(!fuse::audio::should_skip_combine_occlusion_visibility(0.8f, 0.5f),
+               "partial visibility and blocker factor combine");
+
+    expectNear(fuse::audio::combine_occlusion_visibility(0.8f, 0.f), 0.8f, 1e-5f,
+               "skip guard preserves source visibility");
+    expectNear(fuse::audio::combine_occlusion_visibility(0.f, 0.75f), 0.f, 1e-5f,
+               "skip guard silences fully occluded source");
+}
+
+void testDryWetBlendGuards() {
+    expectTrue(fuse::audio::is_zero_wet_mix(0.f), "zero wet mix is zero");
+    expectTrue(fuse::audio::is_zero_wet_mix(-0.5f), "negative wet mix clamps to zero");
+    expectTrue(fuse::audio::is_full_wet_mix(1.f), "unity wet mix is full");
+    expectTrue(fuse::audio::is_full_wet_mix(1.5f), "above-unity wet mix clamps to full");
+    expectTrue(fuse::audio::should_skip_dry_wet_blend(0.f), "zero wet mix skips blend");
+    expectTrue(fuse::audio::should_skip_dry_wet_blend(1.f), "unity wet mix skips blend");
+    expectTrue(!fuse::audio::should_skip_dry_wet_blend(0.5f), "partial wet mix blends");
+
+    expectNear(fuse::audio::blend_dry_wet_sample(1.f, 0.f, 0.f), 1.f, 1e-5f,
+               "zero wet mix guard returns dry");
+    expectNear(fuse::audio::blend_dry_wet_sample(1.f, 0.f, 1.f), 0.f, 1e-5f,
+               "unity wet mix guard returns wet");
+}
+
+void testReverbZoneBlendEarlyOuts() {
+    const fuse::audio::ReverbZoneParams zone{
+        {{-5.f, -5.f, -5.f}, {5.f, 5.f, 5.f}}, 0.5f, 1.f};
+    const fuse::audio::Vec3 inside{0.f, 0.f, 0.f};
+
+    expectTrue(fuse::audio::should_skip_reverb_zone_blend(nullptr, 0),
+               "null zone list skips blend");
+    expectTrue(fuse::audio::should_skip_reverb_zone_blend(&zone, 0),
+               "zero zone count skips blend");
+    expectTrue(!fuse::audio::should_skip_reverb_zone_blend(&zone, 1),
+               "valid zone list does not skip blend");
+
+    fuse::audio::ReverbZoneBlend dry;
+    expectTrue(fuse::audio::should_skip_reverb_wet_convolution(dry),
+               "inactive blend skips wet convolution");
+    expectTrue(!fuse::audio::should_apply_reverb_wet_mix(dry),
+               "skip guard is inverse of apply guard");
+
+    fuse::audio::ReverbZoneBlend wet;
+    wet.wet_dry = 0.4f;
+    wet.send_level = 0.5f;
+    wet.active_zone_count = 1;
+    expectTrue(!fuse::audio::should_skip_reverb_wet_convolution(wet),
+               "active wet blend does not skip convolution");
+    expectNear(fuse::audio::blend_reverb_from_blend(1.f, 0.f, wet), 0.8f, 1e-5f,
+               "blend helper matches wet mix path");
+    expectNear(fuse::audio::blend_reverb_from_blend(1.f, 0.f, dry), 1.f, 1e-5f,
+               "inactive blend helper returns dry sample");
+    expectNear(fuse::audio::blend_reverb_sample(1.f, 0.f, inside, &zone, 1), 0.5f, 1e-5f,
+               "one-shot sample matches zone blend path");
+}
+
 void testWetMixGuardConsistency() {
     const fuse::audio::ReverbZoneParams zones[] = {
         {{{-10.f, -10.f, -10.f}, {10.f, 10.f, 10.f}}, 0.4f, 0.5f},
@@ -157,8 +247,12 @@ int main() {
     testShouldSkipOcclusionAttenuation();
     testOcclusionCombinedGainHelpers();
     testFullyOccludedVisibilityEarlyOut();
+    testEmptyOcclusionBlockerGuards();
+    testCombineOcclusionVisibilityGuards();
     testHasReverbZonesGuard();
     testEffectiveSendGain();
+    testDryWetBlendGuards();
+    testReverbZoneBlendEarlyOuts();
     testBlendReverbSampleOneShot();
     testWetMixGuardConsistency();
     fuse::core::shutdown();

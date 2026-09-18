@@ -24,6 +24,9 @@ bool is_fully_occluded_occlusion(float visibility);
 /// True when a blocker list pointer is non-null and carries at least one AABB.
 bool has_occlusion_blockers(const AABB* blockers, u32 blocker_count);
 
+/// True when the blocker list is null or empty — skips segment-vs-AABB evaluation.
+bool has_empty_occlusion_blockers(const AABB* blockers, u32 blocker_count);
+
 /// Co-located listener/source positions skip segment-vs-AABB blocker evaluation.
 bool should_skip_blocker_evaluation(const Vec3& listener, const Vec3& source);
 
@@ -33,6 +36,14 @@ bool should_evaluate_occlusion_blockers(const Vec3& listener, const Vec3& source
 
 /// True when visibility is fully clear — attenuation mapping can be skipped.
 bool should_skip_occlusion_attenuation(float visibility);
+
+/// True when blocker-factor combination cannot change clamped source visibility.
+bool should_skip_combine_occlusion_visibility(float source_occlusion, float blocker_factor);
+
+/// True when blocker geometry cannot affect attenuation (empty list, fully occluded source, co-located).
+bool should_skip_occlusion_from_blockers(const Vec3& listener, const Vec3& source,
+                                         float source_occlusion, const AABB* blockers,
+                                         u32 blocker_count);
 
 /// Map visibility [0, 1] to a gain multiplier. Fully occluded sources retain `min_gain`.
 float evaluate_occlusion_gain(float visibility, const OcclusionParams& params = {});
