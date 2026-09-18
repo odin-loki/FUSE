@@ -11,6 +11,10 @@ bool CommandStack::canCoalesce_(const EditorCommand& previous, const EditorComma
         return false;
     }
 
+    if (!previous.target.isValid() || !incoming.target.isValid()) {
+        return false;
+    }
+
     return previous.target == incoming.target && previous.propertyName == incoming.propertyName;
 }
 
@@ -23,6 +27,9 @@ void CommandStack::evictOldestIfNeeded_() {
     ++m_evictedCount;
     if (m_undoDepth > 0u) {
         --m_undoDepth;
+    }
+    if (m_baselineConfigured && m_baselineUndoDepth > 0u) {
+        --m_baselineUndoDepth;
     }
 }
 
@@ -61,6 +68,12 @@ u32 CommandStack::coalescedCountSinceBaseline() const {
 }
 
 void CommandStack::set_baseline_state() {
+    if (m_baselineConfigured && isAtBaseline() && m_coalescedCountAtBaseline == m_coalescedCount &&
+        m_baselineRedoDepth == m_redoDepth) {
+        markClean();
+        return;
+    }
+
     m_baselineUndoDepth = m_undoDepth;
     m_baselineRedoDepth = m_redoDepth;
     m_coalescedCountAtBaseline = m_coalescedCount;
@@ -73,7 +86,7 @@ bool CommandStack::isAtBaseline() const {
 }
 
 void CommandStack::execute(EditorCommand command) {
-    if (!m_undoStack.empty() && canCoalesce_(m_undoStack.back(), command)) {
+    if (m_undoDepth > 0u && !m_undoStack.empty() && canCoalesce_(m_undoStack.back(), command)) {
         m_undoStack.back().propertyValue = command.propertyValue;
         ++m_coalescedCount;
         markDirty_();
