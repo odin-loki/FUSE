@@ -90,6 +90,10 @@ u32 currentFlowNestingDepth() {
     return threadLocalFlowNestingDepth();
 }
 
+bool isValidEventName(const char* name) {
+    return name != nullptr && name[0] != '\0';
+}
+
 std::string formatCounterArgsJson(const ProfileEvent& event) {
     std::string args = "\"args\":{\"value\":";
     if (event.counterKind == CounterValueKind::Float) {
@@ -222,7 +226,7 @@ const char* chromeCategory(EventPhase phase) {
 
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
-      m_active(g_enabled.load(std::memory_order_acquire) && name != nullptr) {
+      m_active(g_enabled.load(std::memory_order_acquire) && isValidEventName(name)) {
     if (m_active) {
         m_scopeId = g_nextScopeId.fetch_add(1u, std::memory_order_acq_rel);
         m_nestingDepth = pushNestingDepth();
@@ -345,12 +349,111 @@ void reset() {
     threadLocalFlowNestingDepth() = 0u;
 }
 
+bool isUsableProfileName(const char* name) {
+    return isValidEventName(name);
+}
+
+ProfileNamePreflight preflightProfileName(const char* name) {
+    ProfileNamePreflight preflight{};
+    if (name == nullptr) {
+        return preflight;
+    }
+
+    preflight.null_name = false;
+    if (name[0] == '\0') {
+        preflight.empty_name = true;
+    }
+    return preflight;
+}
+
+ScopePreflight preflightScope(const char* name) {
+    ScopePreflight preflight{};
+    preflight.profiler_disabled = !enabled();
+    const ProfileNamePreflight namePreflight = preflightProfileName(name);
+    preflight.null_name = namePreflight.null_name;
+    preflight.empty_name = namePreflight.empty_name;
+    return preflight;
+}
+
+ScopeNestingPreflight preflightScopeNesting() {
+    ScopeNestingPreflight preflight{};
+    preflight.current_depth = currentNestingDepth();
+    preflight.max_observed_depth = g_maxNestingDepth.load(std::memory_order_acquire);
+    return preflight;
+}
+
+AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name) {
+    AsyncFlowBeginPreflight preflight{};
+    preflight.profiler_disabled = !enabled();
+    const ProfileNamePreflight namePreflight = preflightProfileName(name);
+    preflight.null_name = namePreflight.null_name;
+    preflight.empty_name = namePreflight.empty_name;
+    return preflight;
+}
+
+AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name) {
+    AsyncFlowEndPreflight preflight{};
+    preflight.profiler_disabled = !enabled();
+    const ProfileNamePreflight namePreflight = preflightProfileName(name);
+    preflight.null_name = namePreflight.null_name;
+    preflight.empty_name = namePreflight.empty_name;
+    preflight.open_flow_count = g_openAsyncFlowCount.load(std::memory_order_acquire);
+    preflight.no_open_flows = preflight.open_flow_count == 0u;
+    return preflight;
+}
+
+CounterSamplePreflight preflightCounterSample(const char* track) {
+    CounterSamplePreflight preflight{};
+    preflight.profiler_disabled = !enabled();
+    const ProfileNamePreflight namePreflight = preflightProfileName(track);
+    preflight.null_name = namePreflight.null_name;
+    preflight.empty_name = namePreflight.empty_name;
+    return preflight;
+}
+
+ChromeTraceExportPreflight preflightChromeTraceExport() {
+    ChromeTraceExportPreflight preflight{};
+    preflight.profiler_disabled = !enabled();
+    preflight.event_count = eventCount();
+    preflight.buffer_empty = preflight.event_count == 0u;
+    preflight.frame_index = frameIndex();
+
+    if (!preflight.buffer_empty) {
+        for (u32 i = 0; i < preflight.event_count; ++i) {
+            const ProfileEvent& event = eventAt(i);
+            if (event.name == nullptr) {
+                ++preflight.null_name_skip_count;
+            }
+        }
+    }
+    return preflight;
+}
+
+EventLookupPreflight preflightEventLookup(u32 index) {
+    EventLookupPreflight preflight{};
+    preflight.requested_index = index;
+    preflight.event_count = eventCount();
+    preflight.buffer_empty = preflight.event_count == 0u;
+    preflight.out_of_range = preflight.buffer_empty || index >= preflight.event_count;
+    return preflight;
+}
+
+bool canLookupEventAt(u32 index) {
+    return preflightEventLookup(index).can_lookup();
+}
+
+bool tryEventAt(u32 index, const ProfileEvent*& event_out) {
+    const EventLookupPreflight preflight = preflightEventLookup(index);
+    event_out = &eventAt(index);
+    return preflight.can_lookup() && isValidProfileEvent(*event_out);
+}
+
 u32 nextFlowId() {
     return g_nextFlowId.fetch_add(1u, std::memory_order_acq_rel);
 }
 
 void beginAsyncFlow(const char* name, u32 flowId) {
-    if (!g_enabled.load(std::memory_order_acquire) || name == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)) {
         return;
     }
 
@@ -364,7 +467,7 @@ void beginAsyncFlow(const char* name, u32 flowId) {
 }
 
 void endAsyncFlow(const char* name, u32 flowId) {
-    if (!g_enabled.load(std::memory_order_acquire) || name == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)) {
         return;
     }
 
@@ -384,7 +487,7 @@ void endAsyncFlow(const char* name, u32 flowId) {
 }
 
 void sampleCounter(const char* track, s64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || track == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
         return;
     }
 
@@ -400,7 +503,7 @@ void sampleCounter(const char* track, s64 value) {
 }
 
 void sampleCounterFloat(const char* track, f64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || track == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
         return;
     }
 
@@ -416,7 +519,7 @@ void sampleCounterFloat(const char* track, f64 value) {
 }
 
 void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || track == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
         return;
     }
 
@@ -432,7 +535,7 @@ void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
 }
 
 void sampleCounterFloatSnapshotAtFrame(const char* track, f64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || track == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
         return;
     }
 

@@ -38,6 +38,93 @@ struct ProfileEvent {
     u32 counterSnapshotFrame = 0;
 };
 
+/// Preflight for profile scope/flow/counter name guards (B1.6 deepen).
+struct ProfileNamePreflight {
+    bool null_name = true;
+    bool empty_name = false;
+
+    [[nodiscard]] bool can_record() const { return !null_name && !empty_name; }
+    [[nodiscard]] bool should_skip() const { return !can_record(); }
+};
+
+/// Preflight for entering a CPU profile scope (B1.6 deepen).
+struct ScopePreflight {
+    bool profiler_disabled = false;
+    bool null_name = true;
+    bool empty_name = false;
+
+    [[nodiscard]] bool can_enter() const { return !profiler_disabled && !null_name && !empty_name; }
+    [[nodiscard]] bool should_skip() const { return !can_enter(); }
+};
+
+/// Preflight for active scope nesting depth introspection (B1.6 deepen).
+struct ScopeNestingPreflight {
+    u32 current_depth = 0;
+    u32 max_observed_depth = 0;
+
+    [[nodiscard]] bool is_at_root() const { return current_depth == 0u; }
+};
+
+/// Preflight for async flow begin guards (B1.6 deepen).
+struct AsyncFlowBeginPreflight {
+    bool profiler_disabled = false;
+    bool null_name = true;
+    bool empty_name = false;
+
+    [[nodiscard]] bool can_begin() const { return !profiler_disabled && !null_name && !empty_name; }
+    [[nodiscard]] bool should_skip() const { return !can_begin(); }
+};
+
+/// Preflight for async flow end guards — surfaces orphan finish risk (B1.6 deepen).
+struct AsyncFlowEndPreflight {
+    bool profiler_disabled = false;
+    bool null_name = true;
+    bool empty_name = false;
+    bool no_open_flows = true;
+    u32 open_flow_count = 0;
+
+    [[nodiscard]] bool would_orphan() const { return no_open_flows; }
+    [[nodiscard]] bool can_end() const { return !profiler_disabled && !null_name && !empty_name && !no_open_flows; }
+    [[nodiscard]] bool should_skip() const { return !can_end(); }
+};
+
+/// Preflight for counter sample guards (B1.6 deepen).
+struct CounterSamplePreflight {
+    bool profiler_disabled = false;
+    bool null_name = true;
+    bool empty_name = false;
+
+    [[nodiscard]] bool can_sample() const { return !profiler_disabled && !null_name && !empty_name; }
+    [[nodiscard]] bool should_skip() const { return !can_sample(); }
+};
+
+/// Preflight for chrome://tracing export — buffer state and skipped null-name events (B1.6 deepen).
+struct ChromeTraceExportPreflight {
+    bool profiler_disabled = false;
+    bool buffer_empty = true;
+    u32 event_count = 0;
+    u32 null_name_skip_count = 0;
+    u32 frame_index = 0;
+
+    [[nodiscard]] bool will_emit_events() const {
+        return event_count > 0u && null_name_skip_count < event_count;
+    }
+
+    /// Export is always callable — even when the buffer is empty.
+    [[nodiscard]] bool exportable() const { return true; }
+};
+
+/// Preflight for ring-buffer event lookup — safe sentinel fallback (B1.6 deepen).
+struct EventLookupPreflight {
+    bool buffer_empty = true;
+    bool out_of_range = true;
+    u32 requested_index = 0;
+    u32 event_count = 0;
+
+    [[nodiscard]] bool can_lookup() const { return !buffer_empty && !out_of_range; }
+    [[nodiscard]] bool should_use_sentinel() const { return !can_lookup(); }
+};
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:
@@ -78,6 +165,19 @@ u32 lastEventIndex();
 const ProfileEvent& eventAt(u32 index);
 const ProfileEvent& lastEvent();
 void reset();
+
+/// True when `name` is non-null and non-empty (B1.6 deepen).
+[[nodiscard]] bool isUsableProfileName(const char* name);
+[[nodiscard]] ProfileNamePreflight preflightProfileName(const char* name);
+[[nodiscard]] ScopePreflight preflightScope(const char* name);
+[[nodiscard]] ScopeNestingPreflight preflightScopeNesting();
+[[nodiscard]] AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name);
+[[nodiscard]] AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name);
+[[nodiscard]] CounterSamplePreflight preflightCounterSample(const char* track);
+[[nodiscard]] ChromeTraceExportPreflight preflightChromeTraceExport();
+[[nodiscard]] EventLookupPreflight preflightEventLookup(u32 index);
+[[nodiscard]] bool canLookupEventAt(u32 index);
+[[nodiscard]] bool tryEventAt(u32 index, const ProfileEvent*& event_out);
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();
