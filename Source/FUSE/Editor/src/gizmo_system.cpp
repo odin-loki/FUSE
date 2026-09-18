@@ -285,6 +285,23 @@ bool isHitTestEmpty(const GizmoHitTest& hit) {
     return hit.viewportWidth <= kEpsilon || hit.viewportHeight <= kEpsilon;
 }
 
+bool isRayValid(const GizmoRay& ray) {
+    return !isRayEmpty(ray);
+}
+
+bool isHitTestValid(const GizmoHitTest& hit) {
+    return !isHitTestEmpty(hit);
+}
+
+bool normalizeRay(GizmoRay& ray) {
+    const f32 len = ray.direction.length();
+    if (len < kEpsilon) {
+        return false;
+    }
+    ray.direction = ray.direction * (1.f / len);
+    return true;
+}
+
 bool isPickConfigValid(f32 axisLength, f32 pickRadius) {
     return axisLength > kEpsilon && pickRadius > kEpsilon;
 }
@@ -367,10 +384,45 @@ f32 trySnapDragDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& setting
     return snapValue(delta, mode, settings);
 }
 
-UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging) {
+math::Vec3 snapPosition(const math::Vec3& position, const GizmoSnapSettings& settings) {
+    if (!settings.translateSnap) {
+        return position;
+    }
+    return {snapToGrid(position.x, settings.gridSize), snapToGrid(position.y, settings.gridSize),
+            snapToGrid(position.z, settings.gridSize)};
+}
+
+math::Vec3 snapEulerRadians(const math::Vec3& eulerRadians, const GizmoSnapSettings& settings) {
+    if (!settings.rotateSnap) {
+        return eulerRadians;
+    }
+    return {snapAngleRadians(eulerRadians.x, settings.angleStepDegrees),
+            snapAngleRadians(eulerRadians.y, settings.angleStepDegrees),
+            snapAngleRadians(eulerRadians.z, settings.angleStepDegrees)};
+}
+
+math::Vec3 snapScaleVec(const math::Vec3& scale, const GizmoSnapSettings& settings) {
+    if (!settings.scaleSnap) {
+        return scale;
+    }
+    return {snapScale(scale.x, settings.scaleGridStep), snapScale(scale.y, settings.scaleGridStep),
+            snapScale(scale.z, settings.scaleGridStep)};
+}
+
+bool canSnapDragDelta(GizmoMode mode, const GizmoSnapSettings& settings) {
+    return canApplySnap(mode, settings);
+}
+
+UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging,
+                                        GizmoAxis activeAxis) {
     UpdateDragPreflight preflight{};
     if (!dragging) {
         preflight.notDragging = true;
+        return preflight;
+    }
+
+    if (activeAxis == GizmoAxis::None) {
+        preflight.invalidActiveAxis = true;
         return preflight;
     }
 
@@ -379,6 +431,10 @@ UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging) 
     }
 
     return preflight;
+}
+
+bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis) {
+    return preflightUpdateDrag(hit, dragging, activeAxis).canUpdate();
 }
 
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
@@ -500,27 +556,30 @@ GizmoTransform snapTransform(const GizmoTransform& transform, GizmoMode mode,
                              const GizmoSnapSettings& settings) {
     GizmoTransform out = transform;
     switch (mode) {
-    case GizmoMode::Translate:
-        if (settings.translateSnap) {
-            out.posX = snapToGrid(out.posX, settings.gridSize);
-            out.posY = snapToGrid(out.posY, settings.gridSize);
-            out.posZ = snapToGrid(out.posZ, settings.gridSize);
-        }
+    case GizmoMode::Translate: {
+        const math::Vec3 snapped =
+            snapPosition({out.posX, out.posY, out.posZ}, settings);
+        out.posX = snapped.x;
+        out.posY = snapped.y;
+        out.posZ = snapped.z;
         break;
-    case GizmoMode::Rotate:
-        if (settings.rotateSnap) {
-            out.rotX = snapAngleRadians(out.rotX, settings.angleStepDegrees);
-            out.rotY = snapAngleRadians(out.rotY, settings.angleStepDegrees);
-            out.rotZ = snapAngleRadians(out.rotZ, settings.angleStepDegrees);
-        }
+    }
+    case GizmoMode::Rotate: {
+        const math::Vec3 snapped =
+            snapEulerRadians({out.rotX, out.rotY, out.rotZ}, settings);
+        out.rotX = snapped.x;
+        out.rotY = snapped.y;
+        out.rotZ = snapped.z;
         break;
-    case GizmoMode::Scale:
-        if (settings.scaleSnap) {
-            out.scaleX = snapScale(out.scaleX, settings.scaleGridStep);
-            out.scaleY = snapScale(out.scaleY, settings.scaleGridStep);
-            out.scaleZ = snapScale(out.scaleZ, settings.scaleGridStep);
-        }
+    }
+    case GizmoMode::Scale: {
+        const math::Vec3 snapped =
+            snapScaleVec({out.scaleX, out.scaleY, out.scaleZ}, settings);
+        out.scaleX = snapped.x;
+        out.scaleY = snapped.y;
+        out.scaleZ = snapped.z;
         break;
+    }
     }
     return out;
 }
@@ -729,7 +788,11 @@ bool GizmoSystem::trySnapTransform(const GizmoTransform& transform, GizmoTransfo
 }
 
 UpdateDragPreflight GizmoSystem::preflightUpdateDrag(const GizmoHitTest& hit) const {
-    return fuse::editor::preflightUpdateDrag(hit, m_dragging);
+    return fuse::editor::preflightUpdateDrag(hit, m_dragging, m_activeAxis);
+}
+
+bool GizmoSystem::canUpdateDrag(const GizmoHitTest& hit) const {
+    return preflightUpdateDrag(hit).canUpdate();
 }
 
 GizmoResult GizmoSystem::beginDrag(const GizmoHitTest& hit, const GizmoTransform& current) {
@@ -794,19 +857,27 @@ GizmoResult GizmoSystem::beginDrag(const GizmoRay& ray, const GizmoTransform& cu
     return result;
 }
 
-GizmoResult GizmoSystem::updateDrag(const GizmoHitTest& hit) {
-    GizmoResult result;
+bool GizmoSystem::tryUpdateDrag(const GizmoHitTest& hit, GizmoResult& out) {
+    out = {};
     if (!preflightUpdateDrag(hit).canUpdate()) {
-        return result;
+        return false;
     }
 
     m_lastHit = hit;
     m_currentTransform = applySnapping_(applyAxisDelta_(hit, m_startTransform));
 
-    result.active = true;
-    result.changed = true;
-    result.axis = m_activeAxis;
-    result.transform = m_currentTransform;
+    out.active = true;
+    out.changed = true;
+    out.axis = m_activeAxis;
+    out.transform = m_currentTransform;
+    return true;
+}
+
+GizmoResult GizmoSystem::updateDrag(const GizmoHitTest& hit) {
+    GizmoResult result;
+    if (!tryUpdateDrag(hit, result)) {
+        return result;
+    }
     return result;
 }
 
