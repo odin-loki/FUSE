@@ -4,6 +4,17 @@
 
 namespace fuse::renderer::gi {
 
+/// Why a DDGI kernel launch preflight rejected the request (B5.6 deepen).
+enum class DdgiKernelLaunchRejectReason : u8 {
+    None = 0,
+    ZeroUpdateCount,
+    NullProbeIndices,
+    ZeroRaysPerProbe,
+};
+
+/// Human-readable label for kernel launch reject reasons (logging / tests).
+const char* ddgiKernelLaunchRejectReasonLabel(DdgiKernelLaunchRejectReason reason);
+
 /// CUDA kernel parameter bundle for DDGI probe update (B5.6 — P5 §5.6).
 ///
 /// Full kernels (`probe_trace_kernel`, `probe_blend_kernel`) cast rays from each
@@ -22,6 +33,11 @@ struct DDGIKernelParams {
     f32 hysteresis = 0.97f;
     f32 max_ray_distance = 20.f;
 };
+
+/// Preflight guard before probe trace/blend kernel launch; false on invalid params.
+bool canLaunchDdgiKernelParams(const DDGIKernelParams& params);
+/// Diagnose why kernel launch preflight would reject; vacuously succeeds when launchable.
+bool tryCanLaunchDdgiKernelParams(const DDGIKernelParams& params, DdgiKernelLaunchRejectReason& outReason);
 
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);

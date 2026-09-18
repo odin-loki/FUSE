@@ -2,6 +2,7 @@
 #include <fuse/math/vec.hpp>
 #include <fuse/renderer/deferred/frame_pipeline.hpp>
 #include <fuse/renderer/gi/ddgi.hpp>
+#include <fuse/renderer/gi/ddgi_kernels.hpp>
 #include <fuse/renderer/resource_manager.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
@@ -9,6 +10,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -706,6 +708,52 @@ void testProbeSampleCoordGuards() {
                "empty grid sample coords invalid");
 }
 
+void testProbeSampleCoordBoundsGuards() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+
+    fuse::renderer::ProbeSampleCoords built{};
+    expectTrue(fuse::renderer::ProbeGridLayout::buildProbeSampleCoords(desc, {0.5f, 0.5f, 0.5f}, built),
+               "buildProbeSampleCoords produces coords for bounds guard test");
+    expectTrue(fuse::renderer::ProbeGridLayout::areProbeSampleCoordsInBounds(desc, built),
+               "built sample coords pass in-bounds guard");
+    expectTrue(!fuse::renderer::ProbeGridLayout::isProbeSampleCoordsOutOfRange(desc, built),
+               "built sample coords are not out of range");
+
+    fuse::renderer::ProbeSampleCoords reversed = built;
+    reversed.x0 = 1u;
+    reversed.x1 = 0u;
+    expectTrue(fuse::renderer::ProbeGridLayout::areProbeSampleCoordsInBounds(desc, reversed),
+               "reversed corners still pass in-bounds guard");
+    expectTrue(!fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, reversed),
+               "reversed corners fail strict validity guard");
+
+    fuse::renderer::ProbeSampleCoords oobWeights = built;
+    oobWeights.tx = 2.f;
+    expectTrue(!fuse::renderer::ProbeGridLayout::areProbeSampleCoordsInBounds(desc, oobWeights),
+               "OOB trilinear weight fails in-bounds guard");
+    expectTrue(fuse::renderer::ProbeGridLayout::isProbeSampleCoordsOutOfRange(desc, oobWeights),
+               "OOB trilinear weight flagged out of range");
+
+    fuse::renderer::ProbeSampleCoords oobIndices = built;
+    oobIndices.x0 = 9u;
+    oobIndices.x1 = 9u;
+    expectTrue(fuse::renderer::ProbeGridLayout::isProbeSampleCoordsOutOfRange(desc, oobIndices),
+               "OOB corner indices flagged out of range");
+
+    fuse::renderer::ProbeSampleCoords unclamped = oobIndices;
+    const fuse::u32 originalX0 = unclamped.x0;
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryClampProbeSampleCoords(empty, unclamped),
+               "tryClampProbeSampleCoords rejects empty grid");
+    expectTrue(unclamped.x0 == originalX0, "tryClampProbeSampleCoords leaves coords unchanged on empty grid");
+    expectTrue(fuse::renderer::ProbeGridLayout::tryClampProbeSampleCoords(desc, unclamped),
+               "tryClampProbeSampleCoords succeeds on non-empty grid");
+    expectTrue(fuse::renderer::ProbeGridLayout::areProbeSampleCoordsInBounds(desc, unclamped),
+               "tryClampProbeSampleCoords produces in-bounds coords");
+}
+
 void testCacheIndexGuards() {
     fuse::renderer::DDGIDesc desc{};
     desc.grid_dims = {2, 2, 2};
@@ -734,6 +782,27 @@ void testCacheIndexGuards() {
                "requiredCacheCount zero on empty grid");
     expectTrue(!fuse::renderer::ddgi_util::isCacheIndexValid(empty, 0u, 8u),
                "cache index invalid on empty grid");
+
+    fuse::renderer::CacheIndexRejectReason reason = fuse::renderer::CacheIndexRejectReason::None;
+    expectTrue(fuse::renderer::ddgi_util::tryIsCacheIndexValid(desc, 3u, 8u, reason),
+               "tryIsCacheIndexValid succeeds for valid cache lookup");
+    expectTrue(std::strcmp(fuse::renderer::cacheIndexRejectReasonLabel(reason), "none") == 0,
+               "valid cache lookup reports none reject reason");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryIsCacheIndexValid(empty, 0u, 8u, reason),
+               "tryIsCacheIndexValid rejects empty grid");
+    expectTrue(std::strcmp(fuse::renderer::cacheIndexRejectReasonLabel(reason), "empty_grid") == 0,
+               "empty grid cache lookup reports empty_grid");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryIsCacheIndexValid(desc, 99u, 8u, reason),
+               "tryIsCacheIndexValid rejects invalid probe index");
+    expectTrue(std::strcmp(fuse::renderer::cacheIndexRejectReasonLabel(reason), "invalid_probe_index") == 0,
+               "invalid probe index reports invalid_probe_index");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryIsCacheIndexValid(desc, 3u, 2u, reason),
+               "tryIsCacheIndexValid rejects undersized cache");
+    expectTrue(std::strcmp(fuse::renderer::cacheIndexRejectReasonLabel(reason), "undersized_cache") == 0,
+               "undersized cache reports undersized_cache");
 }
 
 void testLaunchProbeUpdateGuards() {
@@ -761,6 +830,82 @@ void testLaunchProbeUpdateGuards() {
     empty.grid_dims = {0, 2, 2};
     expectTrue(!fuse::renderer::canLaunchDdgiProbeUpdate(empty, validIndices, 2u),
                "preflight rejects empty grid");
+
+    fuse::renderer::ProbeUpdateLaunchRejectReason reason =
+        fuse::renderer::ProbeUpdateLaunchRejectReason::None;
+    expectTrue(fuse::renderer::tryCanLaunchDdgiProbeUpdate(desc, validIndices, 2u, reason),
+               "tryCanLaunchDdgiProbeUpdate succeeds for valid indices");
+    expectTrue(std::strcmp(fuse::renderer::probeUpdateLaunchRejectReasonLabel(reason), "none") == 0,
+               "valid launch preflight reports none reject reason");
+
+    expectTrue(!fuse::renderer::tryCanLaunchDdgiProbeUpdate(desc, oobIndices, 2u, reason),
+               "tryCanLaunchDdgiProbeUpdate rejects OOB indices");
+    expectTrue(std::strcmp(fuse::renderer::probeUpdateLaunchRejectReasonLabel(reason), "out_of_range_index") == 0,
+               "OOB indices report out_of_range_index");
+
+    expectTrue(!fuse::renderer::tryCanLaunchDdgiProbeUpdate(desc, nullptr, 1u, reason),
+               "tryCanLaunchDdgiProbeUpdate rejects null index buffer");
+    expectTrue(std::strcmp(fuse::renderer::probeUpdateLaunchRejectReasonLabel(reason), "null_indices") == 0,
+               "null indices report null_indices");
+
+    expectTrue(!fuse::renderer::tryCanLaunchDdgiProbeUpdate(desc, validIndices, 0u, reason),
+               "tryCanLaunchDdgiProbeUpdate rejects zero probe count");
+    expectTrue(std::strcmp(fuse::renderer::probeUpdateLaunchRejectReasonLabel(reason), "zero_count") == 0,
+               "zero probe count reports zero_count");
+
+    expectTrue(!fuse::renderer::tryCanLaunchDdgiProbeUpdate(empty, validIndices, 2u, reason),
+               "tryCanLaunchDdgiProbeUpdate rejects empty grid");
+    expectTrue(std::strcmp(fuse::renderer::probeUpdateLaunchRejectReasonLabel(reason), "empty_grid") == 0,
+               "empty grid launch reports empty_grid");
+}
+
+void testKernelLaunchPreflights() {
+    fuse::renderer::gi::DDGIKernelParams valid{};
+    fuse::u32 indices[2] = {0u, 1u};
+    valid.probe_indices_to_update = indices;
+    valid.probe_update_count = 2u;
+    valid.rays_per_probe = 256u;
+    expectTrue(fuse::renderer::gi::canLaunchDdgiKernelParams(valid),
+               "valid kernel params pass preflight");
+
+    fuse::renderer::gi::DdgiKernelLaunchRejectReason reason =
+        fuse::renderer::gi::DdgiKernelLaunchRejectReason::None;
+    expectTrue(fuse::renderer::gi::tryCanLaunchDdgiKernelParams(valid, reason),
+               "tryCanLaunchDdgiKernelParams succeeds for valid params");
+    expectTrue(std::strcmp(fuse::renderer::gi::ddgiKernelLaunchRejectReasonLabel(reason), "none") == 0,
+               "valid kernel params report none reject reason");
+
+    fuse::renderer::gi::DDGIKernelParams zeroCount = valid;
+    zeroCount.probe_update_count = 0u;
+    expectTrue(!fuse::renderer::gi::canLaunchDdgiKernelParams(zeroCount),
+               "zero update count fails kernel preflight");
+    expectTrue(!fuse::renderer::gi::tryCanLaunchDdgiKernelParams(zeroCount, reason),
+               "tryCanLaunchDdgiKernelParams rejects zero update count");
+    expectTrue(std::strcmp(fuse::renderer::gi::ddgiKernelLaunchRejectReasonLabel(reason), "zero_update_count") == 0,
+               "zero update count reports zero_update_count");
+
+    fuse::renderer::gi::DDGIKernelParams nullIndices = valid;
+    nullIndices.probe_indices_to_update = nullptr;
+    expectTrue(!fuse::renderer::gi::tryCanLaunchDdgiKernelParams(nullIndices, reason),
+               "tryCanLaunchDdgiKernelParams rejects null probe indices");
+    expectTrue(std::strcmp(fuse::renderer::gi::ddgiKernelLaunchRejectReasonLabel(reason), "null_probe_indices") == 0,
+               "null probe indices report null_probe_indices");
+
+    fuse::renderer::gi::DDGIKernelParams zeroRays = valid;
+    zeroRays.rays_per_probe = 0u;
+    expectTrue(!fuse::renderer::gi::tryCanLaunchDdgiKernelParams(zeroRays, reason),
+               "tryCanLaunchDdgiKernelParams rejects zero rays per probe");
+    expectTrue(std::strcmp(fuse::renderer::gi::ddgiKernelLaunchRejectReasonLabel(reason), "zero_rays_per_probe") == 0,
+               "zero rays per probe reports zero_rays_per_probe");
+
+    expectTrue(!fuse::renderer::gi::launch_probe_trace_kernel(zeroCount, nullptr),
+               "probe trace kernel launch rejects invalid params");
+    expectTrue(!fuse::renderer::gi::launch_probe_blend_kernel(zeroCount, nullptr),
+               "probe blend kernel launch rejects invalid params");
+    expectTrue(fuse::renderer::gi::launch_probe_trace_kernel(valid, nullptr),
+               "probe trace kernel launch accepts valid params");
+    expectTrue(fuse::renderer::gi::launch_probe_blend_kernel(valid, nullptr),
+               "probe blend kernel launch accepts valid params");
 }
 
 void testSampleGuards() {
@@ -975,8 +1120,10 @@ int main() {
     testResolveSampleDirectionFromSurface();
     testEmptyDirectionGuards();
     testProbeSampleCoordGuards();
+    testProbeSampleCoordBoundsGuards();
     testCacheIndexGuards();
     testLaunchProbeUpdateGuards();
+    testKernelLaunchPreflights();
     testSampleGuards();
     testProbeWorldPositionClamped();
     testProbeAtlasLayout();
