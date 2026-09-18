@@ -187,6 +187,57 @@ bool FroxelGridLayout::tryClampSampleCoords(FroxelSampleCoords& coords, const Fr
     return true;
 }
 
+void FroxelGridLayout::normalizeFroxelSampleCoords(FroxelSampleCoords& coords) {
+    if (coords.tileX0 > coords.tileX1) {
+        std::swap(coords.tileX0, coords.tileX1);
+        coords.tx = 1.f - coords.tx;
+    }
+    if (coords.tileY0 > coords.tileY1) {
+        std::swap(coords.tileY0, coords.tileY1);
+        coords.ty = 1.f - coords.ty;
+    }
+    if (coords.sliceZ0 > coords.sliceZ1) {
+        std::swap(coords.sliceZ0, coords.sliceZ1);
+        coords.tz = 1.f - coords.tz;
+    }
+
+    coords.tx = clamp01(coords.tx);
+    coords.ty = clamp01(coords.ty);
+    coords.tz = clamp01(coords.tz);
+}
+
+bool FroxelGridLayout::isValidFroxelSampleCoords(const FroxelSampleCoords& coords, const FroxelGridDesc& desc) {
+    if (isEmptyGrid(desc)) {
+        return false;
+    }
+
+    const u32 maxTileX = desc.tilesX - 1u;
+    const u32 maxTileY = desc.tilesY - 1u;
+    const u32 maxSliceZ = desc.slicesZ - 1u;
+
+    const auto inRange = [](u32 value, u32 max_value) { return value <= max_value; };
+    if (!inRange(coords.tileX0, maxTileX) || !inRange(coords.tileX1, maxTileX) ||
+        !inRange(coords.tileY0, maxTileY) || !inRange(coords.tileY1, maxTileY) ||
+        !inRange(coords.sliceZ0, maxSliceZ) || !inRange(coords.sliceZ1, maxSliceZ)) {
+        return false;
+    }
+    if (coords.tileX0 > coords.tileX1 || coords.tileY0 > coords.tileY1 || coords.sliceZ0 > coords.sliceZ1) {
+        return false;
+    }
+
+    return coords.tx >= 0.f && coords.tx <= 1.f && coords.ty >= 0.f && coords.ty <= 1.f && coords.tz >= 0.f &&
+           coords.tz <= 1.f;
+}
+
+bool FroxelGridLayout::buildFroxelSampleCoords(f32 screenX,
+                                               f32 screenY,
+                                               f32 viewDepth,
+                                               const FroxelGridDesc& desc,
+                                               const FroxelCameraDesc& camera,
+                                               FroxelSampleCoords& outCoords) {
+    return mapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, outCoords);
+}
+
 u32 FroxelGridLayout::clampTileX(u32 tileX, const FroxelGridDesc& desc) {
     if (desc.tilesX == 0u) {
         return 0u;
@@ -300,6 +351,10 @@ const char* densityLookupRejectReasonLabel(DensityLookupRejectReason reason) {
         return "desc_mismatch";
     case DensityLookupRejectReason::EmptyStorage:
         return "empty_storage";
+    case DensityLookupRejectReason::IndexOutOfRange:
+        return "index_out_of_range";
+    case DensityLookupRejectReason::SampleCoordsOutOfRange:
+        return "sample_coords_out_of_range";
     }
     return "unknown";
 }
@@ -352,6 +407,57 @@ bool tryCanLookupAtIndex(const FroxelDensityGrid& grid,
 
     outReason = DensityLookupRejectReason::None;
     return true;
+}
+
+bool tryCanLookupAtIndexBounds(const FroxelDensityGrid& grid,
+                               const FroxelGridDesc& desc,
+                               u32 index,
+                               DensityLookupRejectReason& outReason) {
+    if (!tryCanLookupAtIndex(grid, desc, index, outReason)) {
+        return false;
+    }
+    if (FroxelGridLayout::isFroxelIndexOutOfRange(index, desc)) {
+        outReason = DensityLookupRejectReason::IndexOutOfRange;
+        return false;
+    }
+
+    outReason = DensityLookupRejectReason::None;
+    return true;
+}
+
+bool tryCanLookupAtSampleCoords(const FroxelDensityGrid& grid,
+                                const FroxelGridDesc& desc,
+                                const FroxelSampleCoords& coords,
+                                DensityLookupRejectReason& outReason) {
+    if (!tryCanLookupAtIndex(grid, desc, 0u, outReason)) {
+        return false;
+    }
+    if (FroxelGridLayout::isSampleCoordsOutOfRange(coords, desc)) {
+        outReason = DensityLookupRejectReason::SampleCoordsOutOfRange;
+        return false;
+    }
+
+    outReason = DensityLookupRejectReason::None;
+    return true;
+}
+
+FroxelGridPreflight preflightFroxelDensityGrid(const FroxelDensityGrid& grid,
+                                               const FroxelGridDesc& desc,
+                                               f32 epsilon) {
+    FroxelGridPreflight result{};
+    result.desc_non_empty = !FroxelGridLayout::isEmptyGrid(desc);
+    result.storage_allocated = !grid.isEmpty();
+    result.storage_matches_desc = gridMatchesDesc(grid, desc);
+    result.density_counts_valid = validateDensityCounts(grid, epsilon);
+    return result;
+}
+
+FroxelPopulatePreflight preflightPopulateFroxelGrid(const FroxelGridDesc& desc, const VolumetricFogParams& params) {
+    FroxelPopulatePreflight result{};
+    const FroxelGridDesc clampedDesc = FroxelGridDesc::clampCounts(desc);
+    result.desc_non_empty = clampedDesc.froxelCount() > 0u;
+    result.params_enabled = params.density > 0.f && params.march_steps > 0u;
+    return result;
 }
 
 u32 countNonZeroFroxels(const FroxelDensityGrid& grid, f32 epsilon) {
@@ -483,6 +589,17 @@ bool tryValidateGridDensity(const FroxelDensityGrid& grid,
     return true;
 }
 
+bool tryValidateGridDensityStrict(const FroxelDensityGrid& grid,
+                                  const FroxelGridDesc& desc,
+                                  GridDensityRejectReason& outReason,
+                                  f32 epsilon) {
+    if (FroxelGridLayout::isEmptyGrid(desc)) {
+        outReason = GridDensityRejectReason::EmptyDesc;
+        return false;
+    }
+    return tryValidateGridDensity(grid, desc, outReason, epsilon);
+}
+
 bool trySampleDensityAtIndex(const FroxelDensityGrid& grid,
                              const FroxelGridDesc& desc,
                              u32 index,
@@ -493,6 +610,21 @@ bool trySampleDensityAtIndex(const FroxelDensityGrid& grid,
     }
 
     outDensity = sampleDensityAtIndex(grid, desc, index);
+    return true;
+}
+
+bool trySampleDensityAtIndexBounds(const FroxelDensityGrid& grid,
+                                   const FroxelGridDesc& desc,
+                                   u32 index,
+                                   f32& outDensity,
+                                   DensityLookupRejectReason& outReason) {
+    if (!tryCanLookupAtIndexBounds(grid, desc, index, outReason)) {
+        outDensity = 0.f;
+        return false;
+    }
+
+    outDensity = grid.density[index];
+    outReason = DensityLookupRejectReason::None;
     return true;
 }
 
@@ -598,6 +730,36 @@ bool trySampleDensityTrilinear(const FroxelDensityGrid& grid,
     }
 
     outDensity = sampleDensityTrilinear(grid, desc, coords);
+    return true;
+}
+
+bool trySampleDensityBilinearAtCoords(const FroxelDensityGrid& grid,
+                                      const FroxelGridDesc& desc,
+                                      const FroxelSampleCoords& coords,
+                                      f32& outDensity,
+                                      DensityLookupRejectReason& outReason) {
+    if (!tryCanLookupAtSampleCoords(grid, desc, coords, outReason)) {
+        outDensity = 0.f;
+        return false;
+    }
+
+    outDensity = sampleDensityBilinear(grid, desc, coords);
+    outReason = DensityLookupRejectReason::None;
+    return true;
+}
+
+bool trySampleDensityTrilinearAtCoords(const FroxelDensityGrid& grid,
+                                       const FroxelGridDesc& desc,
+                                       const FroxelSampleCoords& coords,
+                                       f32& outDensity,
+                                       DensityLookupRejectReason& outReason) {
+    if (!tryCanLookupAtSampleCoords(grid, desc, coords, outReason)) {
+        outDensity = 0.f;
+        return false;
+    }
+
+    outDensity = sampleDensityTrilinear(grid, desc, coords);
+    outReason = DensityLookupRejectReason::None;
     return true;
 }
 
