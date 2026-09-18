@@ -285,6 +285,10 @@ u32 openAsyncFlowCount() {
     return g_openAsyncFlowCount.load(std::memory_order_acquire);
 }
 
+bool hasOpenAsyncFlows() {
+    return openAsyncFlowCount() > 0u;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -380,7 +384,9 @@ void endAsyncFlow(const char* name, u32 flowId) {
                 flowId,
                 currentNestingDepth(),
                 flowDepth);
-    popFlowNestingDepth();
+    if (currentFlowNestingDepth() > 0u) {
+        popFlowNestingDepth();
+    }
 }
 
 void sampleCounter(const char* track, s64 value) {
