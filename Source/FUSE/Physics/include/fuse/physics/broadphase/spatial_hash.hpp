@@ -28,6 +28,8 @@ enum class CandidatePairRejectReason : u8 {
     None = 0,
     SelfPair,
     OutOfRangeBody,
+    AabbSeparated,
+    BufferFull,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.2 deepen).
@@ -70,6 +72,27 @@ FUSE_PHYSICS_INLINE bool isEmptyCandidatePair(const CandidatePair& pair) {
 FUSE_PHYSICS_INLINE bool isValidCandidatePair(const CandidatePair& pair, u32 bodyCount = 0u) {
     return isValidCandidatePair(pair.bodyA, pair.bodyB, bodyCount);
 }
+
+/// Out-of-range guard: true when either index is at or beyond `bodyCount`.
+FUSE_PHYSICS_INLINE bool isOutOfRangeCandidatePair(u32 bodyA, u32 bodyB, u32 bodyCount) {
+    return bodyCount > 0u &&
+           candidatePairRejectReason(bodyA, bodyB, bodyCount) == CandidatePairRejectReason::OutOfRangeBody;
+}
+
+/// Convenience inverse of `candidatePairRejectReason` — true when the pair must be skipped.
+FUSE_PHYSICS_INLINE bool isRejectedCandidatePair(u32 bodyA, u32 bodyB, u32 bodyCount = 0u) {
+    return candidatePairRejectReason(bodyA, bodyB, bodyCount) != CandidatePairRejectReason::None;
+}
+
+FUSE_PHYSICS_INLINE bool isRejectedCandidatePair(const CandidatePair& pair, u32 bodyCount = 0u) {
+    return isRejectedCandidatePair(pair.bodyA, pair.bodyB, bodyCount);
+}
+
+/// Returns the first reject reason including AABB refine (sphere-expanded AABB overlap stub).
+CandidatePairRejectReason candidatePairRejectReason(
+    const CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
 
 /// Clamp cell size to a positive stub default (broadphase occupancy guard).
 FUSE_PHYSICS_INLINE f32 clampCellSize(f32 cellSize) {
@@ -156,11 +179,72 @@ FUSE_PHYSICS_INLINE u32 estimateCellOccupancyCount(const CellRange2& range) {
     return static_cast<u32>(span.x) * static_cast<u32>(span.y);
 }
 
+/// Clamp per-axis cell span budget (0 = unlimited stub).
+FUSE_PHYSICS_INLINE u32 clampMaxCellSpanPerAxis(u32 maxSpanPerAxis) {
+    return maxSpanPerAxis;
+}
+
 /// Clamp broadphase params to safe stub defaults (positive cell size, at least one bucket).
 FUSE_PHYSICS_INLINE SpatialHashParams normalizeSpatialHashParams(SpatialHashParams params) {
     params.cellSize = clampCellSize(params.cellSize);
     params.tableSize = clampTableSize(params.tableSize);
     return params;
+}
+
+/// Sanitize broadphase params before occupancy iteration (extends normalize with span budget).
+FUSE_PHYSICS_INLINE SpatialHashParams sanitizeSpatialHashParams(SpatialHashParams params) {
+    params = normalizeSpatialHashParams(params);
+    params.maxCellSpanPerAxis = clampMaxCellSpanPerAxis(params.maxCellSpanPerAxis);
+    return params;
+}
+
+/// True when any axis coordinate span exceeds `maxSpanPerAxis` before clamp (0 = unlimited).
+FUSE_PHYSICS_INLINE bool cellSpanExceedsClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+    if (maxSpanPerAxis == 0u || isEmptyCellRange(range)) {
+        return false;
+    }
+    const s32 spanX = range.maxCell.x - range.minCell.x;
+    const s32 spanY = range.maxCell.y - range.minCell.y;
+    const s32 spanZ = range.maxCell.z - range.minCell.z;
+    return spanX > static_cast<s32>(maxSpanPerAxis) || spanY > static_cast<s32>(maxSpanPerAxis) ||
+           spanZ > static_cast<s32>(maxSpanPerAxis);
+}
+
+FUSE_PHYSICS_INLINE bool cellSpanExceedsClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+    if (maxSpanPerAxis == 0u || isEmptyCellRange(range)) {
+        return false;
+    }
+    const s32 spanX = range.maxCell.x - range.minCell.x;
+    const s32 spanY = range.maxCell.y - range.minCell.y;
+    return spanX > static_cast<s32>(maxSpanPerAxis) || spanY > static_cast<s32>(maxSpanPerAxis);
+}
+
+/// True when occupancy exceeds a stub budget (0 = unlimited).
+FUSE_PHYSICS_INLINE bool exceedsCellOccupancyBudget(const CellRange3& range, u32 maxCells) {
+    return maxCells > 0u && estimateCellOccupancyCount(range) > maxCells;
+}
+
+FUSE_PHYSICS_INLINE bool exceedsCellOccupancyBudget(const CellRange2& range, u32 maxCells) {
+    return maxCells > 0u && estimateCellOccupancyCount(range) > maxCells;
+}
+
+/// Derive a per-shape occupancy budget from span clamp (0 = unlimited).
+FUSE_PHYSICS_INLINE u32 cellOccupancyBudgetFromSpan(u32 maxSpanPerAxis) {
+    if (maxSpanPerAxis == 0u) {
+        return 0u;
+    }
+    const u32 halfSpan = maxSpanPerAxis / 2u;
+    const u32 effectiveSpan = halfSpan * 2u + 1u;
+    return effectiveSpan * effectiveSpan * effectiveSpan;
+}
+
+FUSE_PHYSICS_INLINE u32 cellOccupancyBudgetFromSpan2D(u32 maxSpanPerAxis) {
+    if (maxSpanPerAxis == 0u) {
+        return 0u;
+    }
+    const u32 halfSpan = maxSpanPerAxis / 2u;
+    const u32 effectiveSpan = halfSpan * 2u + 1u;
+    return effectiveSpan * effectiveSpan;
 }
 
 /// Limit per-axis cell span from the range center (CUDA occupancy iteration guard stub).
@@ -293,6 +377,25 @@ FUSE_PHYSICS_INLINE bool sphereAabbOverlap(vec3 centerA, f32 radiusA, vec3 cente
 }
 
 struct PairBufferSoA;
+
+/// True when broadphase input has no bodies or shapes to process.
+FUSE_PHYSICS_INLINE bool shouldSkipBroadphaseInput(u32 bodyCount, u32 shapeCount) {
+    return bodyCount == 0u || shapeCount == 0u;
+}
+
+/// True when a hash cell cannot emit candidate pairs (single occupant or empty).
+FUSE_PHYSICS_INLINE bool shouldSkipCellPairGeneration(u32 occupantCount) {
+    return occupantCount < 2u;
+}
+
+/// True when refine can skip scanning pair slots (empty buffer or missing scene data).
+FUSE_PHYSICS_INLINE bool shouldSkipBroadphaseRefine(
+    u32 activeCount,
+    u32 pairSlotCount,
+    u32 bodyCount,
+    u32 shapeCount) {
+    return (activeCount == 0u && pairSlotCount == 0u) || shouldSkipBroadphaseInput(bodyCount, shapeCount);
+}
 
 /// Job-safe broadphase: parallel shape→cell + per-cell pair generation into reusable SoA slots.
 void runBroadphaseIntoBuffer(

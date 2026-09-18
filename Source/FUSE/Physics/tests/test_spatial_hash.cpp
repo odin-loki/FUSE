@@ -588,6 +588,7 @@ void testPairBufferSoAIterationEarlyOuts() {
     expectTrue(buffer.isSortedCanonical(), "empty buffer is canonically sorted");
     expectTrue(buffer.canSkipDedupe(), "empty buffer skips dedupe");
     expectTrue(buffer.canSkipCompaction(), "empty buffer skips compaction");
+    expectTrue(buffer.canSkipRefine(), "empty buffer skips AABB refine");
     expectEq(buffer.countValidSlots(), 0u, "countValidSlots early-outs when empty");
     expectEq(buffer.applyMaxCapacityClamp(), 0u, "applyMaxCapacityClamp early-outs when empty");
     expectEq(buffer.compactAndClamp(), 0u, "compactAndClamp early-outs when empty");
@@ -656,6 +657,7 @@ void testPairBufferCapacityGuards() {
     buffer.setMaxCapacity(2u);
     expectTrue(!buffer.isFull(), "empty buffer is not full");
     expectEq(buffer.remainingCapacity(), 2u, "empty buffer reports full remaining capacity");
+    expectTrue(!buffer.wouldRejectPush(0u, 1u), "wouldRejectPush accepts valid pair under capacity");
 
     expectTrue(buffer.push(0u, 1u), "push accepts pair under capacity");
     expectTrue(!buffer.isFull(), "partial buffer is not full");
@@ -664,6 +666,7 @@ void testPairBufferCapacityGuards() {
     expectTrue(buffer.push(2u, 3u), "push accepts second pair at capacity");
     expectTrue(buffer.isFull(), "buffer at max capacity reports full");
     expectEq(buffer.remainingCapacity(), 0u, "full buffer reports zero remaining capacity");
+    expectTrue(buffer.wouldRejectPush(4u, 5u), "wouldRejectPush rejects when full");
     expectTrue(!buffer.push(4u, 5u), "push on full buffer is rejected");
     expectEq(buffer.droppedCount, 1u, "push on full buffer increments dropped count");
 
@@ -674,8 +677,8 @@ void testPairBufferCapacityGuards() {
     overflowBuffer.push(0u, 1u);
     overflowBuffer.push(4u, 5u);
     overflowBuffer.setMaxCapacity(2u);
-    expectTrue(overflowBuffer.canApplyMaxCapacityClamp(), "overflow buffer requests post clamp");
-    expectEq(overflowBuffer.applyMaxCapacityClamp(), 2u, "canApplyMaxCapacityClamp gate truncates overflow");
+    expectEq(overflowBuffer.activeCount, 2u, "setMaxCapacity trims overflow in place");
+    expectTrue(!overflowBuffer.canApplyMaxCapacityClamp(), "trimmed buffer does not need post clamp");
 }
 
 void testPairBufferPreparePairSlotsZeroGuard() {
@@ -756,6 +759,152 @@ void testBroadphaseBoxShapeCellRange() {
     expectTrue(!pairs.empty(), "box shapes emit candidate pairs via AABB cell range");
 }
 
+void testBroadphaseSkipInputGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    expectTrue(fuse::physics::broadphase::shouldSkipBroadphaseInput(0u, 0u),
+               "empty bodies and shapes skip broadphase input");
+    expectTrue(fuse::physics::broadphase::shouldSkipCellPairGeneration(1u),
+               "single occupant skips cell pair generation");
+    expectTrue(!fuse::physics::broadphase::shouldSkipCellPairGeneration(2u),
+               "two occupants may generate cell pairs");
+    expectTrue(fuse::physics::broadphase::shouldSkipBroadphaseRefine(0u, 0u, 1u, 1u),
+               "empty buffer skips refine even with scene data");
+
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    fuse::physics::broadphase::SpatialHashParams params;
+    fuse::physics::broadphase::runBroadphaseIntoBuffer(bodies, shapes, params, buffer);
+    expectTrue(buffer.isEmpty(), "skip-input guard leaves empty pair buffer");
+}
+
+void testCellOccupancyBudgetGuards() {
+    fuse::physics::broadphase::CellRange3 wideRange = {
+        {-10, -10, -10},
+        {10, 10, 10},
+    };
+    expectTrue(fuse::physics::broadphase::cellSpanExceedsClamp(wideRange, 8u),
+               "wide range exceeds per-axis clamp threshold");
+    expectTrue(!fuse::physics::broadphase::cellSpanExceedsClamp(wideRange, 0u),
+               "zero clamp disables span-exceeds check");
+
+    const fuse::physics::broadphase::CellRange3 clamped =
+        fuse::physics::broadphase::clampCellRange3(wideRange, 8u);
+    expectTrue(!fuse::physics::broadphase::cellSpanExceedsClamp(clamped, 8u),
+               "clampCellRange3 brings span within threshold");
+
+    fuse::physics::broadphase::SpatialHashParams rawParams;
+    rawParams.cellSize = 0.f;
+    rawParams.tableSize = 0u;
+    const fuse::physics::broadphase::SpatialHashParams safeParams =
+        fuse::physics::broadphase::sanitizeSpatialHashParams(rawParams);
+    expectEq(safeParams.cellSize, 1.f, "sanitizeSpatialHashParams clamps cell size");
+    expectEq(safeParams.tableSize, 1u, "sanitizeSpatialHashParams clamps table size");
+
+    const fuse::physics::broadphase::CellRange3 sphereRange =
+        fuse::physics::broadphase::cellRangeFromSphere({0.f, 0.f, 0.f}, 512.f, 1.f, 4u);
+    expectTrue(!fuse::physics::broadphase::exceedsCellOccupancyBudget(
+                   sphereRange, fuse::physics::broadphase::cellOccupancyBudgetFromSpan(4u)),
+               "clamped range fits occupancy budget derived from span");
+    expectTrue(fuse::physics::broadphase::exceedsCellOccupancyBudget(wideRange, 64u),
+               "unclamped wide range exceeds occupancy budget");
+}
+
+void testPairBufferRejectReasonTracking() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.setMaxCapacity(1u);
+
+    expectTrue(!buffer.push(0u, 0u), "push rejects self-pair");
+    expectTrue(buffer.lastRejectReason == fuse::physics::broadphase::CandidatePairRejectReason::SelfPair,
+               "push records self-pair reject reason");
+
+    expectTrue(buffer.push(0u, 1u), "push accepts first pair");
+    expectTrue(!buffer.push(1u, 2u), "push rejects pair when buffer is full");
+    expectTrue(buffer.lastRejectReason == fuse::physics::broadphase::CandidatePairRejectReason::BufferFull,
+               "push records buffer-full reject reason");
+    expectTrue(buffer.wouldRejectPush(2u, 3u), "wouldRejectPush reports full buffer");
+
+    buffer.preparePairSlots(2u);
+    buffer.writeSlot(0u, 2u, 2u);
+    buffer.writeSlot(1u, 0u, 1u, 2u);
+    expectEq(buffer.compact(), 1u, "writeSlot rejects self-pair and keeps in-range pair");
+    expectTrue(!buffer.hasInvalidSlots(), "compacted buffer has no invalid slots");
+    expectTrue(buffer.canSkipCompaction(), "compacted buffer skips subsequent compact");
+}
+
+void testPairBufferInvalidateInvalidPairs() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.preparePairSlots(3u);
+    buffer.bodyA[0u] = 0u;
+    buffer.bodyB[0u] = 1u;
+    buffer.validFlags[0u] = 1u;
+    buffer.bodyA[1u] = 0u;
+    buffer.bodyB[1u] = 0u;
+    buffer.validFlags[1u] = 1u;
+    buffer.bodyA[2u] = 0u;
+    buffer.bodyB[2u] = 2u;
+    buffer.validFlags[2u] = 1u;
+    expectEq(buffer.invalidateInvalidPairs(2u), 2u, "invalidateInvalidPairs removes self and OOB slots");
+    expectEq(buffer.compact(), 1u, "compact after invalidation keeps valid pair");
+    expectTrue(buffer.containsCanonicalPair(0u, 1u), "valid pair survives invalidation sweep");
+}
+
+void testCandidatePairRejectReasonWithRefine() {
+    expectTrue(fuse::physics::broadphase::isOutOfRangeCandidatePair(0u, 2u, 2u),
+               "isOutOfRangeCandidatePair detects OOB indices");
+    expectTrue(!fuse::physics::broadphase::isOutOfRangeCandidatePair(0u, 1u, 2u),
+               "isOutOfRangeCandidatePair accepts in-range pair");
+    expectTrue(fuse::physics::broadphase::isRejectedCandidatePair(1u, 1u),
+               "isRejectedCandidatePair flags self-pair");
+
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    bodies.addBody({20.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 1, {1.f, 0.f, 0.f});
+
+    expectTrue(
+        fuse::physics::broadphase::candidatePairRejectReason({0u, 1u}, bodies, shapes) ==
+            fuse::physics::broadphase::CandidatePairRejectReason::AabbSeparated,
+        "reject reason flags AABB-separated pair");
+    expectTrue(std::strcmp(fuse::physics::broadphase::candidatePairRejectReasonName(
+                               fuse::physics::broadphase::CandidatePairRejectReason::BufferFull),
+                           "BufferFull") == 0,
+               "BufferFull reject reason has stable label");
+}
+
+void testBroadphase2DCellSpanClampIntegration() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    bodies.addBody({500.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {256.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 1, {1.f, 0.f, 0.f});
+
+    fuse::physics::broadphase::SpatialHashParams params;
+    params.cellSize = 1.f;
+    params.tableSize = 256;
+    params.maxCellSpanPerAxis = 4u;
+    params.bodyCount = bodies.count();
+
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    fuse::physics::broadphase::runBroadphase2DIntoBuffer(bodies, shapes, params, buffer);
+    expectTrue(buffer.isEmpty(), "2D clamp prevents huge sphere from pairing with distant body");
+}
+
+void testPairBufferSetMaxCapacityTrim() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.push(0u, 1u);
+    buffer.push(2u, 3u);
+    expectEq(buffer.activeCount, 2u, "buffer holds two pairs before trim");
+
+    buffer.setMaxCapacity(1u);
+    expectTrue(buffer.isFull(), "buffer reports full at max capacity");
+    expectEq(buffer.activeCount, 1u, "setMaxCapacity trims excess pairs");
+    expectEq(buffer.droppedCount, 1u, "setMaxCapacity records dropped pairs");
+}
+
 } // namespace
 
 int main() {
@@ -792,6 +941,13 @@ int main() {
     testBroadphaseNormalizedParamsGuard();
     testPairBufferCompactionEarlyOuts();
     testBroadphaseBoxShapeCellRange();
+    testBroadphaseSkipInputGuards();
+    testCellOccupancyBudgetGuards();
+    testPairBufferRejectReasonTracking();
+    testPairBufferInvalidateInvalidPairs();
+    testCandidatePairRejectReasonWithRefine();
+    testBroadphase2DCellSpanClampIntegration();
+    testPairBufferSetMaxCapacityTrim();
 
     if (g_failures == 0) {
         std::printf("fuse_physics_broadphase_tests: all checks passed\n");

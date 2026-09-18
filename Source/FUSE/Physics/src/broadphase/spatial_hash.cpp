@@ -20,6 +20,10 @@ const char* candidatePairRejectReasonName(CandidatePairRejectReason reason) {
         return "SelfPair";
     case CandidatePairRejectReason::OutOfRangeBody:
         return "OutOfRangeBody";
+    case CandidatePairRejectReason::AabbSeparated:
+        return "AabbSeparated";
+    case CandidatePairRejectReason::BufferFull:
+        return "BufferFull";
     }
     return "Unknown";
 }
@@ -96,7 +100,7 @@ std::vector<u32> uniqueOccupants(const std::vector<u32>& occupants) {
 }
 
 u32 countPairsForCell(const std::vector<u32>& occupants) {
-    if (occupants.size() < 2u) {
+    if (shouldSkipCellPairGeneration(static_cast<u32>(occupants.size()))) {
         return 0u;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -105,7 +109,7 @@ u32 countPairsForCell(const std::vector<u32>& occupants) {
 }
 
 void generatePairsForCell(const std::vector<u32>& occupants, std::vector<CandidatePair>& out) {
-    if (occupants.size() < 2u) {
+    if (shouldSkipCellPairGeneration(static_cast<u32>(occupants.size()))) {
         return;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -119,15 +123,16 @@ void generatePairsForCell(const std::vector<u32>& occupants, std::vector<Candida
 void writePairsForCellSlots(
     const std::vector<u32>& occupants,
     u32 slotStart,
+    u32 bodyCount,
     PairBufferSoA& buffer) {
-    if (occupants.size() < 2u) {
+    if (shouldSkipCellPairGeneration(static_cast<u32>(occupants.size()))) {
         return;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
     u32 slot = slotStart;
     for (usize i = 0; i < uniqueBodies.size(); ++i) {
         for (usize j = i + 1; j < uniqueBodies.size(); ++j) {
-            buffer.writeSlot(slot++, uniqueBodies[i], uniqueBodies[j]);
+            buffer.writeSlot(slot++, uniqueBodies[i], uniqueBodies[j], bodyCount);
         }
     }
 }
@@ -148,6 +153,7 @@ void populateShapeCells(
     const f32 cellSize = clampCellSize(params.cellSize);
     const u32 tableSize = clampTableSize(params.tableSize);
     const u32 maxSpan = params.maxCellSpanPerAxis;
+    const u32 occupancyBudget = use2D ? cellOccupancyBudgetFromSpan2D(maxSpan) : cellOccupancyBudgetFromSpan(maxSpan);
     const CollisionShapeType type = shapeType(shapes, shapeIndex);
 
     if (use2D) {
@@ -160,7 +166,7 @@ void populateShapeCells(
             const f32 radius = shapeRadius(shapes, shapeIndex);
             range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
         }
-        if (isEmptyCellRange(range)) {
+        if (isEmptyCellRange(range) || exceedsCellOccupancyBudget(range, occupancyBudget)) {
             return;
         }
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
@@ -180,7 +186,7 @@ void populateShapeCells(
         const f32 radius = shapeRadius(shapes, shapeIndex);
         range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
     }
-    if (isEmptyCellRange(range)) {
+    if (isEmptyCellRange(range) || exceedsCellOccupancyBudget(range, occupancyBudget)) {
         return;
     }
     for (s32 cz = range.minCell.z; cz <= range.maxCell.z; ++cz) {
@@ -227,7 +233,8 @@ bool pairPassesAabbRefine(
     u32 bodyB,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
-    if (!isValidCandidatePair(bodyA, bodyB, bodies.count())) {
+    const CandidatePairRejectReason indexReason = candidatePairRejectReason(bodyA, bodyB, bodies.count());
+    if (indexReason != CandidatePairRejectReason::None) {
         return false;
     }
 
@@ -245,17 +252,18 @@ void runBroadphaseIntoBufferInternal(
     bool use2D,
     PairBufferSoA& buffer) {
     buffer.clear();
-    if (bodies.count() == 0 || shapes.count() == 0) {
+    if (shouldSkipBroadphaseInput(bodies.count(), shapes.count())) {
         return;
     }
 
-    const SpatialHashParams normalizedParams = normalizeSpatialHashParams(params);
-    const u32 tableSize = normalizedParams.tableSize;
+    const SpatialHashParams safeParams = sanitizeSpatialHashParams(params);
+    const u32 tableSize = safeParams.tableSize;
+    const u32 bodyCount = bodies.count();
     CellBuckets cells(tableSize);
 
     const u32 shapeCount = shapes.count();
     fuse::jobs::parallel_for(0u, shapeCount, kBuildGrainSize, [&](u32 shapeIndex) {
-        populateShapeCells(shapeIndex, bodies, shapes, normalizedParams, use2D, cells);
+        populateShapeCells(shapeIndex, bodies, shapes, safeParams, use2D, cells);
     });
 
     std::vector<u32> cellSlotOffsets(tableSize, 0u);
@@ -274,7 +282,7 @@ void runBroadphaseIntoBufferInternal(
         if (cells.buckets[cellIndex].empty()) {
             return;
         }
-        writePairsForCellSlots(cells.buckets[cellIndex], cellSlotOffsets[cellIndex], buffer);
+        writePairsForCellSlots(cells.buckets[cellIndex], cellSlotOffsets[cellIndex], bodyCount, buffer);
     });
     buffer.compact();
     dedupeBuffer(buffer);
@@ -332,7 +340,7 @@ void refineBroadphasePairsParallelImpl(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     PairBufferSoA& buffer) {
-    if (buffer.canSkipSoAIteration() || !buffer.hasValidPairs() || bodies.count() == 0 || shapes.count() == 0) {
+    if (shouldSkipBroadphaseRefine(buffer.activeCount, buffer.pairSlotCount, bodies.count(), shapes.count())) {
         return;
     }
 
@@ -344,11 +352,19 @@ void refineBroadphasePairsParallelImpl(
 
         const u32 bodyA = buffer.bodyA[pairIndex];
         const u32 bodyB = buffer.bodyB[pairIndex];
-        if (!isValidCandidatePair(bodyA, bodyB, bodies.count())) {
-            buffer.invalidateSlot(pairIndex);
-            return;
-        }
-        if (!pairPassesAabbRefine(bodyA, bodyB, bodies, shapes)) {
+        const CandidatePairRejectReason rejectReason = [&]() {
+            const CandidatePairRejectReason indexReason =
+                candidatePairRejectReason(bodyA, bodyB, bodies.count());
+            if (indexReason != CandidatePairRejectReason::None) {
+                return indexReason;
+            }
+            if (!pairPassesAabbRefine(bodyA, bodyB, bodies, shapes)) {
+                return CandidatePairRejectReason::AabbSeparated;
+            }
+            return CandidatePairRejectReason::None;
+        }();
+        if (rejectReason != CandidatePairRejectReason::None) {
+            buffer.lastRejectReason = rejectReason;
             buffer.invalidateSlot(pairIndex);
         }
     });
@@ -357,6 +373,33 @@ void refineBroadphasePairsParallelImpl(
 }
 
 } // namespace
+
+CandidatePairRejectReason candidatePairRejectReason(
+    const CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    const CandidatePairRejectReason indexReason = candidatePairRejectReason(pair, bodies.count());
+    if (indexReason != CandidatePairRejectReason::None) {
+        return indexReason;
+    }
+
+    const vec3 posA = bodies.positions[pair.bodyA];
+    const vec3 posB = bodies.positions[pair.bodyB];
+    f32 radiusA = 0.5f;
+    f32 radiusB = 0.5f;
+    for (u32 shapeIndex = 0; shapeIndex < shapes.count(); ++shapeIndex) {
+        if (shapes.bodyIndices[shapeIndex] == pair.bodyA) {
+            radiusA = shapes.params[shapeIndex].x;
+        }
+        if (shapes.bodyIndices[shapeIndex] == pair.bodyB) {
+            radiusB = shapes.params[shapeIndex].x;
+        }
+    }
+    if (!sphereAabbOverlap(posA, radiusA, posB, radiusB)) {
+        return CandidatePairRejectReason::AabbSeparated;
+    }
+    return CandidatePairRejectReason::None;
+}
 
 void refineBroadphasePairsParallel(
     const RigidBodySoA& bodies,

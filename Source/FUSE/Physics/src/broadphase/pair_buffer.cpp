@@ -23,12 +23,19 @@ void PairBufferSoA::reserve(u32 capacity) {
 
 void PairBufferSoA::setMaxCapacity(u32 capacity) {
     maxCapacity = capacity;
+    if (maxCapacity > 0u && activeCount > maxCapacity) {
+        if (!isSortedCanonical()) {
+            sortCanonical();
+        }
+        applyMaxCapacityClamp();
+    }
 }
 
 void PairBufferSoA::clear() {
     activeCount = 0;
     pairSlotCount = 0;
     droppedCount = 0;
+    lastRejectReason = CandidatePairRejectReason::None;
     bodyA.resize(0);
     bodyB.resize(0);
     validFlags.resize(0);
@@ -43,8 +50,14 @@ void PairBufferSoA::preparePairSlots(u32 slotCount) {
     validFlags.assign(slotCount, 0u);
 }
 
-void PairBufferSoA::writeSlot(u32 slot, u32 idxA, u32 idxB) {
-    if (slot >= pairSlotCount || !isValidCandidatePair(idxA, idxB)) {
+void PairBufferSoA::writeSlot(u32 slot, u32 idxA, u32 idxB, u32 bodyCount) {
+    if (slot >= pairSlotCount) {
+        return;
+    }
+
+    const CandidatePairRejectReason rejectReason = candidatePairRejectReason(idxA, idxB, bodyCount);
+    if (rejectReason != CandidatePairRejectReason::None) {
+        lastRejectReason = rejectReason;
         return;
     }
 
@@ -52,6 +65,7 @@ void PairBufferSoA::writeSlot(u32 slot, u32 idxA, u32 idxB) {
     bodyA[slot] = pair.bodyA;
     bodyB[slot] = pair.bodyB;
     validFlags[slot] = 1u;
+    lastRejectReason = CandidatePairRejectReason::None;
 }
 
 void PairBufferSoA::invalidateSlot(u32 slot) {
@@ -72,13 +86,23 @@ bool PairBufferSoA::canApplyMaxCapacityClamp() const {
     return !canSkipSoAIteration() && maxCapacity > 0u && activeCount > maxCapacity;
 }
 
-bool PairBufferSoA::push(u32 idxA, u32 idxB) {
-    if (!isValidCandidatePair(idxA, idxB)) {
+bool PairBufferSoA::wouldRejectPush(u32 idxA, u32 idxB, u32 bodyCount) const {
+    if (!isValidCandidatePair(idxA, idxB, bodyCount)) {
+        return true;
+    }
+    return isFull();
+}
+
+bool PairBufferSoA::push(u32 idxA, u32 idxB, u32 bodyCount) {
+    const CandidatePairRejectReason rejectReason = candidatePairRejectReason(idxA, idxB, bodyCount);
+    if (rejectReason != CandidatePairRejectReason::None) {
+        lastRejectReason = rejectReason;
         return false;
     }
 
     if (isFull()) {
         ++droppedCount;
+        lastRejectReason = CandidatePairRejectReason::BufferFull;
         return false;
     }
 
@@ -88,7 +112,27 @@ bool PairBufferSoA::push(u32 idxA, u32 idxB) {
     validFlags.push_back(1u);
     ++activeCount;
     pairSlotCount = activeCount;
+    lastRejectReason = CandidatePairRejectReason::None;
     return true;
+}
+
+u32 PairBufferSoA::invalidateInvalidPairs(u32 bodyCount) {
+    if (canSkipSoAIteration() || bodyCount == 0u) {
+        return 0u;
+    }
+
+    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+    u32 invalidated = 0u;
+    for (u32 slot = 0; slot < scanCount; ++slot) {
+        if (validFlags[slot] == 0u) {
+            continue;
+        }
+        if (!isValidCandidatePair(bodyA[slot], bodyB[slot], bodyCount)) {
+            validFlags[slot] = 0u;
+            ++invalidated;
+        }
+    }
+    return invalidated;
 }
 
 u32 PairBufferSoA::compact() {
@@ -246,22 +290,26 @@ u32 PairBufferSoA::countValidSlots() const {
     return validCount;
 }
 
+bool PairBufferSoA::hasInvalidSlots() const {
+    if (canSkipSoAIteration()) {
+        return false;
+    }
+
+    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+    for (u32 slot = 0; slot < scanCount; ++slot) {
+        if (validFlags[slot] == 0u) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool PairBufferSoA::canSkipCompaction() const {
     if (canSkipSoAIteration()) {
         return true;
     }
 
-    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
-    if (scanCount == 0u) {
-        return true;
-    }
-
-    for (u32 slot = 0; slot < scanCount; ++slot) {
-        if (validFlags[slot] == 0u) {
-            return false;
-        }
-    }
-    return true;
+    return !hasInvalidSlots();
 }
 
 bool PairBufferSoA::slotIsValid(u32 slot) const {
