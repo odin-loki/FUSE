@@ -44,10 +44,23 @@ bool canLaunchProbeBlendKernel(const DDGIKernelParams& params);
 /// Diagnose why probe blend launch preflight would reject.
 bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
 
+/// Early-out when probe trace kernel launch would be rejected.
+bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
+/// Early-out when probe blend kernel launch would be rejected.
+bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
+
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);
+/// Launch probe trace kernel with reject-reason diagnostics; false when preflight rejects.
+bool tryLaunch_probe_trace_kernel(const DDGIKernelParams& params,
+                                  void* cuda_stream,
+                                  ProbeKernelRejectReason& outReason);
 
 /// Launch probe blend kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_blend_kernel(const DDGIKernelParams& params, void* cuda_stream);
+/// Launch probe blend kernel with reject-reason diagnostics; false when preflight rejects.
+bool tryLaunch_probe_blend_kernel(const DDGIKernelParams& params,
+                                  void* cuda_stream,
+                                  ProbeKernelRejectReason& outReason);
 
 } // namespace fuse::renderer::gi
