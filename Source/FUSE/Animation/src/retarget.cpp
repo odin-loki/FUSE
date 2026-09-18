@@ -15,6 +15,14 @@ bool RetargetMap::is_valid() const {
     return !bone_map.empty();
 }
 
+bool RetargetMap::is_source_pose_compatible(const PoseSoA& source_pose) const {
+    return source_pose.bone_count > 0 && source_pose.bone_count >= source_bone_count;
+}
+
+bool RetargetMap::is_source_pose_compatible(const Pose& source_pose) const {
+    return source_pose.bone_count > 0 && source_pose.bone_count >= source_bone_count;
+}
+
 void RetargetMap::clear() {
     bone_map.clear();
     source_bone_count = 0;
@@ -106,7 +114,7 @@ RetargetMap RetargetMap::build_by_name(const Skeleton& source, const Skeleton& t
 void RetargetMap::apply_pose_soa(const PoseSoA& source_pose,
                                  const Skeleton& target_skel,
                                  PoseSoA& out_pose) const {
-    if (target_skel.bones.empty() || source_pose.bone_count == 0 || !is_valid()) {
+    if (target_skel.bones.empty() || !is_source_pose_compatible(source_pose) || !is_valid()) {
         out_pose.clear();
         return;
     }
@@ -135,7 +143,7 @@ void RetargetMap::apply_pose_soa(const PoseSoA& source_pose,
 void RetargetMap::apply_pose(const Pose& source_pose,
                              const Skeleton& target_skel,
                              Pose& out_pose) const {
-    if (target_skel.bones.empty() || source_pose.bone_count == 0 || !is_valid()) {
+    if (target_skel.bones.empty() || !is_source_pose_compatible(source_pose) || !is_valid()) {
         out_pose.bone_count = 0;
         out_pose.bone_world_transforms.clear();
         return;

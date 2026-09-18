@@ -211,8 +211,35 @@ bool FABRIKChain::has_valid_chain(const Skeleton& skel) const {
     }
 
     const u32 boneCount = static_cast<u32>(skel.bones.size());
-    for (u32 boneIdx : bone_indices) {
+    for (size_t i = 0; i < bone_indices.size(); ++i) {
+        const u32 boneIdx = bone_indices[i];
         if (boneIdx >= boneCount) {
+            return false;
+        }
+
+        for (size_t j = 0; j < i; ++j) {
+            if (bone_indices[j] == boneIdx) {
+                return false;
+            }
+        }
+
+        if (i > 0) {
+            const u32 parentIdx = bone_indices[i - 1];
+            if (skel.bones[boneIdx].parent_index != static_cast<s32>(parentIdx)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool FABRIKChain::has_valid_pose(const Pose& pose) const {
+    if (bone_indices.empty() || pose.bone_count == 0 || pose.bone_world_transforms.empty()) {
+        return false;
+    }
+
+    for (u32 boneIdx : bone_indices) {
+        if (boneIdx >= pose.bone_count) {
             return false;
         }
     }
@@ -279,14 +306,41 @@ bool TwoBoneIK::has_valid_chain(const Skeleton& skel) const {
     return true;
 }
 
+bool TwoBoneIK::has_valid_pose(const Pose& pose) const {
+    if (pose.bone_count == 0 || pose.bone_world_transforms.empty()) {
+        return false;
+    }
+
+    return root_bone < pose.bone_count && mid_bone < pose.bone_count && end_bone < pose.bone_count;
+}
+
+bool TwoBoneIK::has_valid_pose(const PoseSoA& pose) const {
+    if (pose.bone_count == 0 || pose.local_positions.empty()) {
+        return false;
+    }
+
+    return root_bone < pose.bone_count && mid_bone < pose.bone_count && end_bone < pose.bone_count;
+}
+
 bool TwoBoneIK::has_degenerate_segments(const Pose& pose) const {
-    if (root_bone >= pose.bone_count || mid_bone >= pose.bone_count || end_bone >= pose.bone_count) {
+    if (!has_valid_pose(pose)) {
         return true;
     }
 
     const vec3 root = bone_translation(pose, root_bone);
     const vec3 mid = bone_translation(pose, mid_bone);
     const vec3 end = bone_translation(pose, end_bone);
+    return vec3_distance(root, mid) < 1e-6f || vec3_distance(mid, end) < 1e-6f;
+}
+
+bool TwoBoneIK::has_degenerate_segments(const PoseSoA& pose) const {
+    if (!has_valid_pose(pose)) {
+        return true;
+    }
+
+    const vec3 root = bone_translation_soa(pose, root_bone);
+    const vec3 mid = bone_translation_soa(pose, mid_bone);
+    const vec3 end = bone_translation_soa(pose, end_bone);
     return vec3_distance(root, mid) < 1e-6f || vec3_distance(mid, end) < 1e-6f;
 }
 
@@ -349,8 +403,7 @@ bool TwoBoneIK::solve(PoseSoA& pose, const Skeleton& skel) {
         pose = PoseSoA::from_bind_pose(skel);
     }
 
-    Pose aosPose = pose.to_pose();
-    if (has_degenerate_segments(aosPose)) {
+    if (has_degenerate_segments(pose)) {
         return false;
     }
 
