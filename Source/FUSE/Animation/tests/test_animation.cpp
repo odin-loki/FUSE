@@ -1295,6 +1295,132 @@ void testRetargetCanApplyPose() {
     expectTrue(!invalid.can_apply_pose(sourceAoS, skel), "can_apply_pose false when map is invalid");
 }
 
+void testIsContiguousBoneChain() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+    fuse::animation::Skeleton empty{};
+
+    expectTrue(fuse::animation::is_contiguous_bone_chain({0, 1, 2}, skel),
+               "is_contiguous_bone_chain accepts parent-child chain");
+    expectTrue(!fuse::animation::is_contiguous_bone_chain({0, 1}, empty),
+               "is_contiguous_bone_chain rejects empty skeleton");
+    expectTrue(!fuse::animation::is_contiguous_bone_chain({0}, skel),
+               "is_contiguous_bone_chain rejects single-bone list");
+    expectTrue(!fuse::animation::is_contiguous_bone_chain({0, 1, 1}, skel),
+               "is_contiguous_bone_chain rejects duplicate indices");
+    expectTrue(!fuse::animation::is_contiguous_bone_chain({0, 2}, skel),
+               "is_contiguous_bone_chain rejects broken hierarchy");
+}
+
+void testPoseBindFallbackGuards() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+
+    fuse::animation::Pose empty{};
+    expectTrue(fuse::animation::needs_pose_bind_fallback(empty, skel),
+               "needs_pose_bind_fallback true for empty aos pose");
+
+    fuse::animation::Pose mismatched = fuse::animation::Pose::make_bind_pose(makeTwoBoneSkeleton());
+    expectTrue(fuse::animation::needs_pose_bind_fallback(mismatched, skel),
+               "needs_pose_bind_fallback true for mismatched bone count");
+
+    fuse::animation::Pose undersized = fuse::animation::Pose::make_bind_pose(skel);
+    undersized.bone_world_transforms.resize(1);
+    expectTrue(fuse::animation::needs_pose_bind_fallback(undersized, skel),
+               "needs_pose_bind_fallback true for undersized transform buffer");
+
+    fuse::animation::Pose valid = fuse::animation::Pose::make_bind_pose(skel);
+    expectTrue(!fuse::animation::needs_pose_bind_fallback(valid, skel),
+               "needs_pose_bind_fallback false for valid bind pose");
+
+    fuse::animation::ensure_pose_bind_fallback(empty, skel);
+    expectTrue(empty.bone_count == skel.bone_count, "ensure_pose_bind_fallback seeds bind pose");
+}
+
+void testTwoBoneIKCanSolve() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+    fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
+    fuse::animation::PoseSoA poseSoa = fuse::animation::PoseSoA::from_bind_pose(skel);
+
+    fuse::animation::TwoBoneIK ik;
+    ik.root_bone = 0;
+    ik.mid_bone = 1;
+    ik.end_bone = 2;
+    ik.target = {1.f, 1.f, 0.f, 0.f};
+
+    expectTrue(ik.can_solve(pose, skel), "two bone ik can_solve true for valid bind pose");
+    expectTrue(ik.can_solve(poseSoa, skel), "two bone ik can_solve true for valid soa bind pose");
+
+    fuse::animation::Pose truncated = fuse::animation::Pose::make_bind_pose(makeTwoBoneSkeleton());
+    expectTrue(!ik.can_solve(truncated, skel), "two bone ik can_solve false for truncated pose");
+
+    pose.bone_world_transforms[1].data[12] = pose.bone_world_transforms[0].data[12];
+    pose.bone_world_transforms[1].data[13] = pose.bone_world_transforms[0].data[13];
+    pose.bone_world_transforms[1].data[14] = pose.bone_world_transforms[0].data[14];
+    expectTrue(!ik.can_solve(pose, skel), "two bone ik can_solve false for degenerate segments");
+}
+
+void testFabrikCanSolveAndDegenerateSegments() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+    fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
+    fuse::animation::PoseSoA poseSoa = fuse::animation::PoseSoA::from_bind_pose(skel);
+
+    fuse::animation::FABRIKChain chain;
+    chain.bone_indices = {0, 1, 2};
+    chain.target = {1.f, 1.f, 0.f, 0.f};
+
+    expectTrue(chain.can_solve(pose, skel), "fabrik can_solve true for valid bind pose");
+    expectTrue(chain.has_valid_pose(poseSoa), "fabrik has_valid_pose accepts valid soa pose");
+
+    fuse::animation::Pose truncated = fuse::animation::Pose::make_bind_pose(makeTwoBoneSkeleton());
+    expectTrue(!chain.can_solve(truncated, skel), "fabrik can_solve false for truncated pose");
+
+    pose.bone_world_transforms[1].data[12] = pose.bone_world_transforms[0].data[12];
+    pose.bone_world_transforms[1].data[13] = pose.bone_world_transforms[0].data[13];
+    pose.bone_world_transforms[1].data[14] = pose.bone_world_transforms[0].data[14];
+    expectTrue(chain.has_degenerate_segments(pose), "fabrik detects collapsed chain segment");
+    expectTrue(!chain.can_solve(pose, skel), "fabrik can_solve false for degenerate segments");
+    expectTrue(!chain.solve(pose, skel), "fabrik solve rejects degenerate chain segments");
+}
+
+void testRetargetTargetPoseCompatibility() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    const fuse::animation::RetargetMap map = fuse::animation::RetargetMap::build_identity(skel);
+
+    fuse::animation::PoseSoA validTarget = fuse::animation::PoseSoA::from_bind_pose(skel);
+    fuse::animation::Pose validTargetAoS = fuse::animation::Pose::make_bind_pose(skel);
+    expectTrue(map.is_target_pose_compatible(validTarget), "retarget accepts valid soa target pose");
+    expectTrue(map.is_target_pose_compatible(validTargetAoS), "retarget accepts valid aos target pose");
+
+    fuse::animation::PoseSoA truncatedTarget = fuse::animation::PoseSoA::allocate(1);
+    truncatedTarget.resize(1);
+    expectTrue(!map.is_target_pose_compatible(truncatedTarget),
+               "retarget rejects truncated soa target pose");
+
+    fuse::animation::Pose truncatedAoS = fuse::animation::Pose::make_bind_pose(skel);
+    truncatedAoS.bone_count = 1;
+    truncatedAoS.bone_world_transforms.resize(1);
+    expectTrue(!map.is_target_pose_compatible(truncatedAoS),
+               "retarget rejects truncated aos target pose");
+}
+
+void testRetargetSkeletonCompatibility() {
+    const fuse::animation::Skeleton source = makeTwoBoneSkeleton();
+    const fuse::animation::Skeleton target = makeRetargetTargetSkeleton();
+    const fuse::animation::RetargetMap map = fuse::animation::RetargetMap::build_by_name(source, target);
+
+    expectTrue(map.is_source_skeleton_compatible(source), "retarget source skeleton matches map");
+    expectTrue(map.is_target_skeleton_compatible(target), "retarget target skeleton matches map");
+    expectTrue(map.are_skeletons_compatible(source, target), "retarget skeleton pair matches map");
+
+    fuse::animation::Skeleton mismatchedTarget = makeTwoBoneSkeleton();
+    expectTrue(!map.is_target_skeleton_compatible(mismatchedTarget),
+               "retarget rejects target skeleton with mismatched bone count");
+    expectTrue(!map.are_skeletons_compatible(source, mismatchedTarget),
+               "retarget rejects mismatched skeleton pair");
+
+    fuse::animation::Skeleton empty{};
+    expectTrue(!map.are_skeletons_compatible(empty, target), "retarget rejects empty source skeleton");
+}
+
 void testRetargetBuildByNameEarlyOut() {
     const fuse::animation::Skeleton source = makeTwoBoneSkeleton();
     fuse::animation::Skeleton empty{};
@@ -2226,6 +2352,12 @@ int main() {
     testIsValidTwoBoneChain();
     testFabrikEmptySkeleton();
     testRetargetCanApplyPose();
+    testIsContiguousBoneChain();
+    testPoseBindFallbackGuards();
+    testTwoBoneIKCanSolve();
+    testFabrikCanSolveAndDegenerateSegments();
+    testRetargetTargetPoseCompatibility();
+    testRetargetSkeletonCompatibility();
     testRetargetBuildByNameEarlyOut();
     testRetargetFindInvalidMapEarlyOut();
     testEmptyBlendSpace1D();
