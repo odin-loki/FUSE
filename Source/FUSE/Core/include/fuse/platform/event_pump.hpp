@@ -81,8 +81,17 @@ public:
     /// True when at least one queued event matches `type`.
     bool hasPendingEventOfType(PlatformEventType type) const;
 
+    /// Number of queued events whose type matches `type` (0 when empty).
+    u32 countPendingEventsOfType(PlatformEventType type) const;
+
+    /// True when a queued event matches both `window` and `type`.
+    bool hasPendingEventOfTypeFor(const Window& window, PlatformEventType type) const;
+
     /// Number of queued events whose `window` pointer matches `window`.
     u32 countPendingEventsFor(const Window& window) const;
+
+    /// True when the most recent in-place resize coalesce targeted `window`.
+    bool hasCoalescedResizeFor(const Window& window) const;
 
     /// Pending resize dimensions for `window`, or `pending == false` when none queued.
     ///
