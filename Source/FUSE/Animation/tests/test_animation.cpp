@@ -1070,6 +1070,7 @@ void testFabrikChainGuards() {
     fuse::animation::FABRIKChain emptyChain;
     expectTrue(!emptyChain.has_valid_chain(skel), "fabrik rejects empty bone index list");
     expectTrue(!emptyChain.solve(pose, skel), "fabrik solve returns false for empty chain");
+    expectTrue(!emptyChain.has_valid_pose(pose), "fabrik has_valid_pose rejects empty chain indices");
 
     fuse::animation::FABRIKChain singleBone;
     singleBone.bone_indices = {0};
@@ -1090,7 +1091,60 @@ void testFabrikChainGuards() {
     validChain.bone_indices = {0, 1};
     validChain.target = {0.5f, 2.f, 0.f, 0.f};
     validChain.max_iterations = 8;
+    expectTrue(validChain.has_valid_pose(pose), "fabrik has_valid_pose accepts populated pose");
     expectTrue(validChain.solve(pose, skel), "fabrik solve returns true for valid chain");
+}
+
+void testFabrikChainHierarchyGuards() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+    fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
+
+    fuse::animation::FABRIKChain duplicateIndices;
+    duplicateIndices.bone_indices = {0, 1, 1};
+    expectTrue(!duplicateIndices.has_valid_chain(skel), "fabrik rejects duplicate bone indices");
+    expectTrue(!duplicateIndices.solve(pose, skel), "fabrik solve returns false for duplicate indices");
+
+    fuse::animation::FABRIKChain brokenHierarchy;
+    brokenHierarchy.bone_indices = {0, 2};
+    expectTrue(!brokenHierarchy.has_valid_chain(skel), "fabrik rejects non-parent-child chain order");
+    expectTrue(!brokenHierarchy.solve(pose, skel), "fabrik solve returns false for broken hierarchy");
+
+    fuse::animation::FABRIKChain validChain;
+    validChain.bone_indices = {0, 1, 2};
+    expectTrue(validChain.has_valid_chain(skel), "fabrik accepts contiguous parent-child chain");
+}
+
+void testTwoBoneIKValidPose() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+    fuse::animation::Pose emptyPose{};
+    fuse::animation::PoseSoA emptyPoseSoa = fuse::animation::PoseSoA::allocate(0);
+    fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
+
+    fuse::animation::TwoBoneIK ik;
+    ik.root_bone = 0;
+    ik.mid_bone = 1;
+    ik.end_bone = 2;
+    expectTrue(!ik.has_valid_pose(emptyPose), "two bone ik has_valid_pose rejects empty aos pose");
+    expectTrue(!ik.has_valid_pose(emptyPoseSoa), "two bone ik has_valid_pose rejects empty soa pose");
+    expectTrue(ik.has_valid_pose(pose), "two bone ik has_valid_pose accepts bind pose");
+
+    fuse::animation::Pose truncated = fuse::animation::Pose::make_bind_pose(makeTwoBoneSkeleton());
+    expectTrue(!ik.has_valid_pose(truncated), "two bone ik has_valid_pose rejects truncated pose");
+}
+
+void testTwoBoneIKSoADegenerateSegments() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    pose.local_positions[1] = pose.local_positions[0];
+    pose.compute_world_transforms(skel);
+
+    fuse::animation::TwoBoneIK ik;
+    ik.root_bone = 0;
+    ik.mid_bone = 1;
+    ik.end_bone = 2;
+    ik.target = {1.f, 1.f, 0.f, 0.f};
+    expectTrue(ik.has_degenerate_segments(pose), "two bone ik soa detects collapsed upper segment");
+    expectTrue(!ik.solve(pose, skel), "two bone ik soa rejects degenerate limb segments");
 }
 
 void testRetargetAddBoneMapping() {
@@ -1115,14 +1169,40 @@ void testRetargetApplyEmptySourcePose() {
     const fuse::animation::RetargetMap map = fuse::animation::RetargetMap::build_identity(skel);
 
     fuse::animation::PoseSoA emptySource = fuse::animation::PoseSoA::allocate(0);
+    expectTrue(!map.is_source_pose_compatible(emptySource), "retarget rejects empty soa source pose");
     fuse::animation::PoseSoA targetPose = fuse::animation::PoseSoA::from_bind_pose(skel);
     map.apply_pose_soa(emptySource, skel, targetPose);
     expectTrue(targetPose.bone_count == 0u, "retarget apply_pose_soa clears output when source pose is empty");
 
     fuse::animation::Pose emptyAoS{};
+    expectTrue(!map.is_source_pose_compatible(emptyAoS), "retarget rejects empty aos source pose");
     fuse::animation::Pose targetAoS = fuse::animation::Pose::make_bind_pose(skel);
     map.apply_pose(emptyAoS, skel, targetAoS);
     expectTrue(targetAoS.bone_count == 0u, "retarget apply_pose clears output when source pose is empty");
+}
+
+void testRetargetApplyIncompleteSourcePose() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    const fuse::animation::RetargetMap map = fuse::animation::RetargetMap::build_identity(skel);
+
+    fuse::animation::PoseSoA truncatedSource = fuse::animation::PoseSoA::allocate(1);
+    truncatedSource.resize(1);
+    truncatedSource.local_positions[0] = {0.f, 3.f, 0.f, 0.f};
+    expectTrue(!map.is_source_pose_compatible(truncatedSource),
+               "retarget rejects source pose with fewer bones than map source count");
+
+    fuse::animation::PoseSoA targetPose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    map.apply_pose_soa(truncatedSource, skel, targetPose);
+    expectTrue(targetPose.bone_count == 0u, "retarget apply_pose_soa clears output for incomplete source pose");
+
+    fuse::animation::Pose truncatedAoS = fuse::animation::Pose::make_bind_pose(skel);
+    truncatedAoS.bone_count = 1;
+    truncatedAoS.bone_world_transforms.resize(1);
+    expectTrue(!map.is_source_pose_compatible(truncatedAoS),
+               "retarget rejects truncated aos source pose");
+    fuse::animation::Pose targetAoS = fuse::animation::Pose::make_bind_pose(skel);
+    map.apply_pose(truncatedAoS, skel, targetAoS);
+    expectTrue(targetAoS.bone_count == 0u, "retarget apply_pose clears output for incomplete source pose");
 }
 
 void testRetargetApplyInvalidMap() {
@@ -2052,8 +2132,12 @@ int main() {
     testTwoBoneIKZeroPoleVector();
     testTwoBoneIKDegenerateSegments();
     testFabrikChainGuards();
+    testFabrikChainHierarchyGuards();
+    testTwoBoneIKValidPose();
+    testTwoBoneIKSoADegenerateSegments();
     testRetargetAddBoneMapping();
     testRetargetApplyEmptySourcePose();
+    testRetargetApplyIncompleteSourcePose();
     testRetargetApplyInvalidMap();
     testRetargetClear();
     testTwoBoneClampHelpers();
