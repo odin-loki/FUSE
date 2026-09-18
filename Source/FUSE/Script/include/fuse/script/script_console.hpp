@@ -29,6 +29,10 @@ public:
     [[nodiscard]] const std::string& lastExecutedLine() const { return m_lastExecutedLine; }
     /// True when a prior non-meta command succeeded and `repeat` can re-dispatch it.
     [[nodiscard]] bool can_repeat() const { return !m_lastExecutedLine.empty(); }
+    /// Returns the line `repeat` would re-dispatch, or empty when `can_repeat()` is false.
+    [[nodiscard]] const std::string& peek_repeat_line() const;
+    /// True for lookup/meta commands that skip history and repeat-state updates.
+    [[nodiscard]] static bool is_meta_command(const char* name);
 
     void setHistoryCapacity(u32 capacity);
     [[nodiscard]] u32 historyCapacity() const { return m_history.capacity(); }
@@ -40,6 +44,8 @@ public:
     [[nodiscard]] const std::string& recallHistory(bool previous) { return m_history.recall(previous); }
     void resetHistoryNavigation() { m_history.resetNavigation(); }
     [[nodiscard]] s32 historyNavigationCursor() const { return m_history.navigationCursor(); }
+    [[nodiscard]] bool is_history_at_end() const { return m_history.is_at_navigation_end(); }
+    [[nodiscard]] bool is_history_navigating() const { return m_history.is_navigating(); }
 
     [[nodiscard]] const std::vector<std::string>& outputLines() const { return m_output; }
     void clearOutput();
@@ -68,6 +74,12 @@ public:
     [[nodiscard]] std::string unique_prefix_match(const char* partial) const {
         return m_commands.unique_prefix_match(partial);
     }
+    /// True when `partial` resolves to exactly one command name.
+    [[nodiscard]] bool can_resolve(const char* partial) const;
+    /// Returns the sole resolved command name, or empty when ambiguous/missing.
+    [[nodiscard]] std::string try_resolve_command(const char* partial) const;
+    /// True when `partial` matches multiple commands and cannot be resolved uniquely.
+    [[nodiscard]] bool is_resolve_ambiguous(const char* partial) const;
 
 private:
     ScriptConsoleCommandResult executeLine_(const char* line, bool record_history);
