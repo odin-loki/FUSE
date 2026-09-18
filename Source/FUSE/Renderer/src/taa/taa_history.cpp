@@ -18,6 +18,22 @@ bool taaHistoryReuseAllowed(const TaaHistoryBuffer& history, u32 observedGenerat
     return taaHistoryCanReuse(history) && !history.isHistoryStale(observedGeneration);
 }
 
+bool taaHistoryNeedsWarmup(const TaaHistoryBuffer& history) {
+    return !history.isReady() || history.needsWarmup();
+}
+
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
+    return history.warmupComplete();
+}
+
+bool taaResolveWouldBeFirstFrame(const TaaHistoryBuffer& history) {
+    return !history.hasValidHistory();
+}
+
+bool TaaHistoryBuffer::warmupComplete() const {
+    return m_ready && m_validity.hasValidHistory;
+}
+
 bool TaaHistoryBuffer::canReuseHistory() const {
     return taaHistoryCanReuse(*this);
 }
