@@ -167,4 +167,12 @@ bool ally_context_available(const std::vector<AllyCandidate>* allies) {
     return allies != nullptr && !allies->empty();
 }
 
+bool is_radius_policy_valid(const RadiusFilterPolicy& policy) {
+    return is_valid_ally_radius(policy.radius) && policy.minCount >= 1u;
+}
+
+bool ally_radius_query_valid(float radius, const std::vector<AllyCandidate>* allies) {
+    return is_valid_ally_radius(radius) && ally_context_available(allies);
+}
+
 } // namespace fuse::ai

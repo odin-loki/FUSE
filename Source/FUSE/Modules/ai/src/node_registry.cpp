@@ -39,6 +39,9 @@ BehaviorNode makeParallel(const NodeLoadSpec& spec) {
     node.parallelPolicy.abortOnSuccess = spec.abortOnSuccess;
     node.parallelPolicy.requireBoundBlackboard = spec.requireBoundBlackboard;
     node.parallelPolicy.requireAllyContext = spec.requireAllyContext;
+    node.parallelPolicy.requireValidAgent = spec.requireValidAgent;
+    node.parallelPolicy.requireValidAllyRadius = spec.requireValidAllyRadius;
+    node.threshold = spec.threshold;
     return node;
 }
 
@@ -204,6 +207,34 @@ BehaviorNode makeGuardAllyContext(const NodeLoadSpec& spec) {
     return node;
 }
 
+BehaviorNode makeGuardBlackboardAgentValid(const NodeLoadSpec& spec) {
+    (void)spec;
+    BehaviorNode node;
+    node.kind = NodeKind::GuardBlackboardAgentValid;
+    return node;
+}
+
+BehaviorNode makeGuardBlackboardScalarSet(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::GuardBlackboardScalarSet;
+    node.scalarSlot = spec.scalarSlot;
+    return node;
+}
+
+BehaviorNode makeGuardBlackboardFlagSet(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::GuardBlackboardFlagSet;
+    node.flagIndex = spec.flagIndex;
+    return node;
+}
+
+BehaviorNode makeGuardAllyRadiusValid(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::GuardAllyRadiusValid;
+    node.threshold = spec.threshold;
+    return node;
+}
+
 } // namespace
 
 NodeRegistry& NodeRegistry::instance() {
@@ -269,6 +300,10 @@ void NodeRegistry::registerBuiltins() {
     registerFactory("bb.guard.blackboard_flag_empty", makeGuardBlackboardFlagEmpty);
     registerFactory("bb.guard.blackboard_empty", makeGuardBlackboardEmpty);
     registerFactory("bb.guard.ally_context", makeGuardAllyContext);
+    registerFactory("bb.guard.blackboard_agent_valid", makeGuardBlackboardAgentValid);
+    registerFactory("bb.guard.blackboard_scalar_set", makeGuardBlackboardScalarSet);
+    registerFactory("bb.guard.blackboard_flag_set", makeGuardBlackboardFlagSet);
+    registerFactory("bb.guard.ally_radius_valid", makeGuardAllyRadiusValid);
 }
 
 std::vector<std::string> NodeRegistry::registeredTypeIds() const {
