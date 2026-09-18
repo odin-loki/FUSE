@@ -95,6 +95,25 @@ struct ContactManifold {
     bool pruneIfEmpty(
         f32 separationEpsilon = 1e-6f,
         f32 duplicateEpsilon = 1e-4f);
+
+    /// Count contact points with penetration below `-epsilon` (B4.3 deepen pass).
+    u32 countSeparatedPoints(f32 epsilon = 1e-6f) const;
+
+    /// Returns true when the contact normal is unit length within `epsilon` (B4.3 deepen pass).
+    bool hasUnitNormal(f32 epsilon = 1e-4f) const;
+
+    /// Normalize `contactNormal`; returns false when length is below `epsilon`.
+    bool normalizeContactNormal(f32 epsilon = 1e-6f);
+
+    /// Returns true when finalize/generate may proceed after conceptual pruning (B4.3 deepen pass).
+    bool canFinalize(
+        f32 separationEpsilon = 1e-6f,
+        f32 duplicateEpsilon = 1e-4f) const;
+
+    /// Run `pruneContactPoints` and return true when penetrating points remain (B4.3 deepen pass).
+    bool pruneForFinalization(
+        f32 separationEpsilon = 1e-6f,
+        f32 duplicateEpsilon = 1e-4f);
 };
 
 inline ContactManifold invalidContactManifold() {
