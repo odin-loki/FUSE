@@ -272,6 +272,140 @@ void testClampTaaParams() {
                "subsequent effective blend uses clamped blend_factor");
 }
 
+void testBlendWeightGuards() {
+    fuse::renderer::TAAParams params{};
+    params.blend_factor = 0.15f;
+
+    expectNear(fuse::renderer::computeEffectiveBlend(false, true, params), 0.15f, 1e-5f,
+               "reusable history uses configured blend");
+    expectNear(fuse::renderer::computeEffectiveBlend(false, false, params), 1.f, 1e-5f,
+               "non-reusable history forces full current weight");
+    expectNear(fuse::renderer::computeEffectiveBlend(true, true, params), 1.f, 1e-5f,
+               "first frame forces full current weight even when reusable");
+
+    expectTrue(fuse::renderer::taaBlendUsesHistory(0.15f), "partial blend uses history");
+    expectTrue(!fuse::renderer::taaBlendUsesHistory(1.f), "full current blend does not use history");
+    expectTrue(fuse::renderer::taaBlendSkipsHistoryReuse(1.f), "full current blend skips history reuse");
+    expectTrue(!fuse::renderer::taaBlendSkipsHistoryReuse(0.15f),
+               "partial blend does not skip history reuse");
+
+    params.blend_factor = 1.f;
+    expectNear(fuse::renderer::computeEffectiveBlend(false, true, params), 1.f, 1e-5f,
+               "clamped full blend skips history reuse");
+    expectTrue(!fuse::renderer::taaBlendUsesHistory(1.f), "clamped full blend does not use history");
+}
+
+void testJitterSafeNdcOffset() {
+    using fuse::renderer::TaaJitterLayout;
+
+    const fuse::math::Vec2 safeZero = TaaJitterLayout::safeHaltonNdcOffset(0u, 0u, 1080u, 8u);
+    expectNear(safeZero.x, 0.f, 1e-6f, "safeHaltonNdcOffset returns zero for invalid width");
+    expectNear(safeZero.y, 0.f, 1e-6f, "safeHaltonNdcOffset Y returns zero for invalid width");
+
+    const fuse::math::Vec2 safeFrameZero = TaaJitterLayout::safeNdcOffsetForFrameIndex(3u, 1920u, 0u, 8u);
+    expectNear(safeFrameZero.x, 0.f, 1e-6f, "safeNdcOffsetForFrameIndex returns zero for invalid height");
+    expectNear(safeFrameZero.y, 0.f, 1e-6f, "safeNdcOffsetForFrameIndex Y returns zero for invalid height");
+
+    const fuse::math::Vec2 safe = TaaJitterLayout::safeNdcOffsetForFrameIndex(3u, 1920u, 1080u, 8u);
+    const fuse::math::Vec2 direct = TaaJitterLayout::ndcOffsetForFrameIndex(3u, 1920u, 1080u, 8u);
+    expectNear(safe.x, direct.x, 1e-6f, "safeNdcOffsetForFrameIndex matches direct offset for valid viewport");
+    expectNear(safe.y, direct.y, 1e-6f, "safeNdcOffsetForFrameIndex Y matches direct offset for valid viewport");
+}
+
+void testHistoryReusableGuard() {
+    fuse::renderer::TaaHistoryBuffer emptyHistory;
+    fuse::renderer::TaaResolveDesc desc{};
+    expectTrue(!fuse::renderer::taaHistoryIsReusable(emptyHistory, desc),
+               "empty history is not reusable");
+
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for history reusable guard test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaHistoryBuffer history;
+    fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
+    expectTrue(history.init(resources, historyDesc), "history ready for reusable guard test");
+    expectTrue(!fuse::renderer::taaHistoryIsReusable(history, desc),
+               "unwarmed history is not reusable");
+
+    desc.width = 64;
+    desc.height = 64;
+    desc.surfaces.current_frame = reinterpret_cast<void*>(0x1);
+    desc.surfaces.output = reinterpret_cast<void*>(0x2);
+
+    fuse::renderer::TaaResolve resolve;
+    expectTrue(resolve.resolve(desc, history), "initial resolve warms history");
+    expectTrue(fuse::renderer::taaHistoryIsReusable(history, desc),
+               "warmed history is reusable with current generation");
+
+    history.invalidateHistory();
+    desc.observed_history_generation = 0u;
+    expectTrue(!fuse::renderer::taaHistoryIsReusable(history, desc),
+               "invalidated history is not reusable");
+    expectTrue(fuse::renderer::classifyTaaResolveSkip(desc, history) ==
+                   fuse::renderer::TaaResolveSkipReason::StaleHistoryGeneration,
+               "stale generation still blocks resolve before reuse");
+
+    desc.observed_history_generation = history.invalidateGeneration();
+    expectTrue(!fuse::renderer::taaHistoryIsReusable(history, desc),
+               "invalidated history remains non-reusable until next resolve");
+
+    history.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
+void testResolveHistoryReusedStat() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for history reused stat test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaHistoryBuffer history;
+    fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
+    expectTrue(history.init(resources, historyDesc), "history ready for history reused stat test");
+
+    fuse::renderer::TaaResolve resolve;
+    fuse::renderer::TaaResolveDesc desc{};
+    desc.width = 64;
+    desc.height = 64;
+    desc.surfaces.current_frame = reinterpret_cast<void*>(0x1);
+    desc.surfaces.output = reinterpret_cast<void*>(0x2);
+    desc.params.blend_factor = 0.2f;
+    desc.observed_history_generation = 0u;
+
+    expectTrue(resolve.resolve(desc, history), "first resolve succeeds");
+    expectTrue(!resolve.lastStats().history_reused, "first resolve does not reuse history");
+    expectTrue(resolve.lastStats().first_frame, "first resolve marks first frame");
+
+    expectTrue(resolve.resolve(desc, history), "second resolve succeeds");
+    expectTrue(resolve.lastStats().history_reused, "second resolve reuses history with partial blend");
+    expectTrue(!resolve.lastStats().first_frame, "second resolve is not first frame");
+
+    desc.params.blend_factor = 1.f;
+    expectTrue(resolve.resolve(desc, history), "full blend resolve succeeds");
+    expectTrue(!resolve.lastStats().history_reused, "full blend resolve does not reuse history");
+
+    history.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
 void testResolveSkipReasonLabels() {
     expectTrue(!fuse::renderer::taaResolveSkipReasonIsBlocking(fuse::renderer::TaaResolveSkipReason::None),
                "None skip reason is not blocking");
@@ -1219,6 +1353,10 @@ int main() {
     testHistoryBufferPingPong();
     testHistoryValidityFlags();
     testClampTaaParams();
+    testBlendWeightGuards();
+    testJitterSafeNdcOffset();
+    testHistoryReusableGuard();
+    testResolveHistoryReusedStat();
     testResolveSkipReasonLabels();
     testHistoryBufferDescValid();
     testResolveDimensionMismatchHelper();
