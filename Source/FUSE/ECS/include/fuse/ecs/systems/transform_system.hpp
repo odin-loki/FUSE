@@ -36,6 +36,21 @@ public:
     /// Count root transforms (`parent` invalid), regardless of `dirty`.
     [[nodiscard]] static u32 count_roots(Registry& reg);
 
+    /// Count transforms with `dirty == true` (roots and children).
+    [[nodiscard]] static u32 count_dirty_transforms(Registry& reg);
+
+    /// Returns true when at least one transform has `dirty == true`.
+    [[nodiscard]] static bool has_dirty_transforms(Registry& reg);
+
+    /// Returns true when the hierarchy walk can be skipped (empty registry or all transforms clean).
+    [[nodiscard]] static bool should_skip_hierarchy_update(Registry& reg);
+
+    /// Returns true when `id` or any descendant transform has `dirty == true`.
+    [[nodiscard]] static bool subtree_has_dirty(Registry& reg, EntityID id);
+
+    /// Returns true when a hierarchy visit should recompute world matrices for `transform`.
+    [[nodiscard]] static bool should_recompute_in_hierarchy(const Transform& transform);
+
     /// Returns false when the registry has no `Transform` components (empty-transform guard).
     [[nodiscard]] static bool has_any_transforms(Registry& reg);
 
