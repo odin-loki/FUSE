@@ -185,8 +185,10 @@ void finalize_weighted_pose_soa(PoseSoA& pose,
         return;
     }
 
+    ensure_pose_soa_bind_fallback(pose, skel);
     pose.compute_world_transforms(skel);
     out = pose;
+    ensure_pose_soa_bind_fallback(out, skel);
 }
 
 bool pose_soa_matches_bind(const PoseSoA& pose, const Skeleton& skel, f32 epsilon) {
@@ -221,8 +223,23 @@ bool pose_soa_matches_bind(const PoseSoA& pose, const Skeleton& skel, f32 epsilo
     return true;
 }
 
+bool pose_soa_columns_valid(const PoseSoA& pose) {
+    if (pose.bone_count == 0) {
+        return false;
+    }
+
+    return pose.local_positions.size() >= pose.bone_count &&
+           pose.local_rotations.size() >= pose.bone_count &&
+           pose.local_scales.size() >= pose.bone_count &&
+           pose.bone_world_transforms.size() >= pose.bone_count;
+}
+
 bool needs_pose_soa_bind_fallback(const PoseSoA& pose, const Skeleton& skel) {
-    return pose.bone_count == 0 || pose.bone_count != skel.bone_count;
+    if (pose.bone_count == 0 || pose.bone_count != skel.bone_count) {
+        return true;
+    }
+
+    return !pose_soa_columns_valid(pose);
 }
 
 void ensure_pose_soa_bind_fallback(PoseSoA& pose, const Skeleton& skel) {

@@ -22,6 +22,8 @@ struct ClipNode : BlendNode {
     f32 play_rate = 1.f;
     bool looping = true;
 
+    [[nodiscard]] bool is_empty() const;
+
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
     void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
 };
@@ -205,6 +207,18 @@ struct AnimStateMachine : BlendNode {
 
     /// True when a named transition edge exists and its condition passes.
     bool can_transition(const char* from, const char* to) const;
+
+    /// Remaining crossfade time in seconds; 0 when idle or already complete.
+    f32 remaining_crossfade_time() const;
+
+    /// Global transition index of the first outgoing edge from `from_state` whose condition passes, or -1.
+    s32 find_first_passing_outgoing_transition(u32 from_state) const;
+
+    /// True when the `edge_index`-th outgoing transition from `from_state` has a passing condition.
+    bool outgoing_transition_condition_passes(u32 from_state, u32 edge_index) const;
+
+    /// Blend duration for the `edge_index`-th incoming transition to `to_state`, or -1.
+    f32 incoming_transition_blend_duration_at(u32 to_state, u32 edge_index) const;
 };
 
 } // namespace fuse::animation
