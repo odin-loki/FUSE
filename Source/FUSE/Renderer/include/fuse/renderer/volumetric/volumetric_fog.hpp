@@ -109,8 +109,14 @@ struct FroxelGridLayout {
     static bool isAtMaxFroxelIndex(u32 index, const FroxelGridDesc& desc);
     /// Clamp `index` into range; returns false and zeroes `outIndex` on an empty grid.
     static bool tryClampFroxelIndex(u32 index, const FroxelGridDesc& desc, u32& outIndex);
+    /// True when tile/slice corners and interpolation weights are within grid bounds.
+    static bool areSampleCoordsInBounds(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
+    /// True when sample coords exceed grid bounds or interpolation weights are outside [0, 1].
+    static bool isSampleCoordsOutOfRange(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
     /// Clamp interpolation weights and corner indices to grid bounds.
     static void clampSampleCoords(FroxelSampleCoords& coords, const FroxelGridDesc& desc);
+    /// Clamp sample coords in place; returns false without modifying `coords` on an empty grid.
+    static bool tryClampSampleCoords(FroxelSampleCoords& coords, const FroxelGridDesc& desc);
     static bool mapScreenDepthToSampleCoords(f32 screenX,
                                              f32 screenY,
                                              f32 viewDepth,
@@ -137,6 +143,17 @@ enum class GridDensityRejectReason : u8 {
 /// Human-readable label for density reject reasons (logging / tests).
 const char* gridDensityRejectReasonLabel(GridDensityRejectReason reason);
 
+/// Why a froxel density lookup preflight rejected the request (B5.11 deepen).
+enum class DensityLookupRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    DescMismatch,
+    EmptyStorage,
+};
+
+/// Human-readable label for density lookup reject reasons (logging / tests).
+const char* densityLookupRejectReasonLabel(DensityLookupRejectReason reason);
+
 /// CPU froxel density interpolation helpers — mirrors CUDA trilinear sample stub.
 namespace froxel_util {
 f32 lerpDensity(f32 a, f32 b, f32 t);
@@ -144,8 +161,17 @@ f32 lerpDensity(f32 a, f32 b, f32 t);
 bool gridMatchesDesc(const FroxelDensityGrid& grid, const FroxelGridDesc& desc);
 /// True when `desc` is non-empty, storage is allocated, and sizes match.
 bool isDensityGridAccessible(const FroxelDensityGrid& grid, const FroxelGridDesc& desc);
+/// Early-out when the grid is inaccessible for index-based density lookup.
+bool shouldSkipFroxelLookup(const FroxelDensityGrid& grid, const FroxelGridDesc& desc);
+/// Early-out when froxel density populate/sample should be skipped for an empty desc.
+bool shouldSkipFroxelGrid(const FroxelGridDesc& desc);
 /// Preflight guard before index-based density lookup; false on empty grid or desc mismatch.
 bool canLookupAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index);
+/// Diagnose why lookup preflight would reject; vacuously succeeds on accessible grids.
+bool tryCanLookupAtIndex(const FroxelDensityGrid& grid,
+                         const FroxelGridDesc& desc,
+                         u32 index,
+                         DensityLookupRejectReason& outReason);
 /// True when at least one froxel exceeds `epsilon`; false when storage is empty.
 bool hasNonZeroDensity(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
 /// Early-out when the grid is inaccessible or uniformly below `epsilon`.
@@ -175,6 +201,8 @@ bool writeDensityAtCoord(FroxelDensityGrid& grid,
 bool validateDensityCounts(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
 /// Count partition plus desc/storage agreement; vacuously true when `desc` is empty.
 bool validateGridDensity(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, f32 epsilon = 1e-6f);
+/// Validate density against the clamped froxel count derived from `desc`.
+bool validateGridDensityForDesc(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, f32 epsilon = 1e-6f);
 /// Diagnose the first density invariant that fails; vacuously succeeds when `desc` is empty.
 bool tryValidateGridDensity(const FroxelDensityGrid& grid,
                             const FroxelGridDesc& desc,
@@ -207,9 +235,19 @@ bool tryWriteDensityAtCoord(FroxelDensityGrid& grid,
 f32 sampleDensityBilinear(const FroxelDensityGrid& grid,
                           const FroxelGridDesc& desc,
                           const FroxelSampleCoords& coords);
+/// Bilinear sample with guard preflight; returns false when lookup would be rejected.
+bool trySampleDensityBilinear(const FroxelDensityGrid& grid,
+                              const FroxelGridDesc& desc,
+                              const FroxelSampleCoords& coords,
+                              f32& outDensity);
 f32 sampleDensityTrilinear(const FroxelDensityGrid& grid,
                            const FroxelGridDesc& desc,
                            const FroxelSampleCoords& coords);
+/// Trilinear sample with guard preflight; returns false when lookup would be rejected.
+bool trySampleDensityTrilinear(const FroxelDensityGrid& grid,
+                               const FroxelGridDesc& desc,
+                               const FroxelSampleCoords& coords,
+                               f32& outDensity);
 /// Screen-space trilinear density sample; returns 0 when mapping fails or grid is empty.
 f32 sampleDensityAtScreen(const FroxelDensityGrid& grid,
                           const FroxelGridDesc& desc,
@@ -217,6 +255,14 @@ f32 sampleDensityAtScreen(const FroxelDensityGrid& grid,
                           f32 screenX,
                           f32 screenY,
                           f32 viewDepth);
+/// Screen-space sample with guard preflight; returns false when mapping or lookup fails.
+bool trySampleDensityAtScreen(const FroxelDensityGrid& grid,
+                              const FroxelGridDesc& desc,
+                              const FroxelCameraDesc& camera,
+                              f32 screenX,
+                              f32 screenY,
+                              f32 viewDepth,
+                              f32& outDensity);
 void populateFromAnalyticFog(FroxelDensityGrid& grid,
                              const FroxelGridDesc& desc,
                              const FroxelCameraDesc& camera,
