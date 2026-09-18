@@ -30,6 +30,9 @@ enum class CandidatePairRejectReason : u8 {
     OutOfRangeBody,
 };
 
+/// Human-readable label for diagnostics and test assertions (B4.2 deepen).
+const char* candidatePairRejectReasonName(CandidatePairRejectReason reason);
+
 /// Returns the first reject reason for a candidate pair, or `None` when valid.
 FUSE_PHYSICS_INLINE CandidatePairRejectReason candidatePairRejectReason(
     u32 bodyA,
@@ -136,6 +139,30 @@ FUSE_PHYSICS_INLINE ivec2 cellSpanPerAxis(const CellRange2& range) {
     };
 }
 
+/// Occupancy cell count stub for budgeting (0 when the range is empty).
+FUSE_PHYSICS_INLINE u32 estimateCellOccupancyCount(const CellRange3& range) {
+    if (isEmptyCellRange(range)) {
+        return 0u;
+    }
+    const ivec3 span = cellSpanPerAxis(range);
+    return static_cast<u32>(span.x) * static_cast<u32>(span.y) * static_cast<u32>(span.z);
+}
+
+FUSE_PHYSICS_INLINE u32 estimateCellOccupancyCount(const CellRange2& range) {
+    if (isEmptyCellRange(range)) {
+        return 0u;
+    }
+    const ivec2 span = cellSpanPerAxis(range);
+    return static_cast<u32>(span.x) * static_cast<u32>(span.y);
+}
+
+/// Clamp broadphase params to safe stub defaults (positive cell size, at least one bucket).
+FUSE_PHYSICS_INLINE SpatialHashParams normalizeSpatialHashParams(SpatialHashParams params) {
+    params.cellSize = clampCellSize(params.cellSize);
+    params.tableSize = clampTableSize(params.tableSize);
+    return params;
+}
+
 /// Limit per-axis cell span from the range center (CUDA occupancy iteration guard stub).
 FUSE_PHYSICS_INLINE CellRange3 clampCellRange3(CellRange3 range, u32 maxSpanPerAxis) {
     if (maxSpanPerAxis == 0u) {
@@ -183,7 +210,7 @@ FUSE_PHYSICS_INLINE u32 spatialHash(s32 cx, s32 cy, s32 cz, u32 tableSize) {
 }
 
 FUSE_PHYSICS_INLINE ivec3 worldToCell(vec3 position, f32 cellSize) {
-    const f32 invCell = cellSize > 0.f ? 1.f / cellSize : 1.f;
+    const f32 invCell = 1.f / clampCellSize(cellSize);
     return {
         static_cast<s32>(std::floor(position.x * invCell)),
         static_cast<s32>(std::floor(position.y * invCell)),
@@ -199,7 +226,7 @@ FUSE_PHYSICS_INLINE u32 spatialHash2D(s32 cx, s32 cy, u32 tableSize) {
 }
 
 FUSE_PHYSICS_INLINE ivec2 worldToCell2D(vec2 position, f32 cellSize) {
-    const f32 invCell = cellSize > 0.f ? 1.f / cellSize : 1.f;
+    const f32 invCell = 1.f / clampCellSize(cellSize);
     return {
         static_cast<s32>(std::floor(position.x * invCell)),
         static_cast<s32>(std::floor(position.y * invCell)),

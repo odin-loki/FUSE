@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <vector>
 
 namespace {
@@ -613,6 +614,21 @@ void testCandidatePairRejectReasonGuards() {
              "in-range pair reports None reject reason");
 }
 
+void testCandidatePairRejectReasonName() {
+    expectTrue(std::strcmp(fuse::physics::broadphase::candidatePairRejectReasonName(
+                               fuse::physics::broadphase::CandidatePairRejectReason::None),
+                           "None") == 0,
+               "None reject reason has stable label");
+    expectTrue(std::strcmp(fuse::physics::broadphase::candidatePairRejectReasonName(
+                               fuse::physics::broadphase::CandidatePairRejectReason::SelfPair),
+                           "SelfPair") == 0,
+               "SelfPair reject reason has stable label");
+    expectTrue(std::strcmp(fuse::physics::broadphase::candidatePairRejectReasonName(
+                               fuse::physics::broadphase::CandidatePairRejectReason::OutOfRangeBody),
+                           "OutOfRangeBody") == 0,
+               "OutOfRangeBody reject reason has stable label");
+}
+
 void testCellRangeFromAabbHelpers() {
     expectEq(fuse::physics::broadphase::clampCellSize(0.f), 1.f, "clampCellSize falls back to one");
     expectEq(fuse::physics::broadphase::clampCellSize(-2.f), 1.f, "clampCellSize rejects negative size");
@@ -633,6 +649,82 @@ void testCellRangeFromAabbHelpers() {
     fuse::physics::broadphase::CellRange3 inverted = {{2, 2, 2}, {1, 1, 1}};
     expectTrue(fuse::physics::broadphase::isEmptyCellRange(inverted), "inverted range is empty");
     expectEq(fuse::physics::broadphase::cellSpanPerAxis(inverted).x, 0, "empty range reports zero span");
+}
+
+void testPairBufferCapacityGuards() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.setMaxCapacity(2u);
+    expectTrue(!buffer.isFull(), "empty buffer is not full");
+    expectEq(buffer.remainingCapacity(), 2u, "empty buffer reports full remaining capacity");
+
+    expectTrue(buffer.push(0u, 1u), "push accepts pair under capacity");
+    expectTrue(!buffer.isFull(), "partial buffer is not full");
+    expectEq(buffer.remainingCapacity(), 1u, "partial buffer reports one remaining slot");
+
+    expectTrue(buffer.push(2u, 3u), "push accepts second pair at capacity");
+    expectTrue(buffer.isFull(), "buffer at max capacity reports full");
+    expectEq(buffer.remainingCapacity(), 0u, "full buffer reports zero remaining capacity");
+    expectTrue(!buffer.push(4u, 5u), "push on full buffer is rejected");
+    expectEq(buffer.droppedCount, 1u, "push on full buffer increments dropped count");
+
+    expectTrue(!buffer.canApplyMaxCapacityClamp(), "at-capacity buffer does not need post clamp");
+
+    fuse::physics::broadphase::PairBufferSoA overflowBuffer;
+    overflowBuffer.push(2u, 3u);
+    overflowBuffer.push(0u, 1u);
+    overflowBuffer.push(4u, 5u);
+    overflowBuffer.setMaxCapacity(2u);
+    expectTrue(overflowBuffer.canApplyMaxCapacityClamp(), "overflow buffer requests post clamp");
+    expectEq(overflowBuffer.applyMaxCapacityClamp(), 2u, "canApplyMaxCapacityClamp gate truncates overflow");
+}
+
+void testPairBufferPreparePairSlotsZeroGuard() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.preparePairSlots(0u);
+    expectTrue(buffer.canSkipSoAIteration(), "preparePairSlots(0) clears slot storage");
+    expectTrue(buffer.isEmpty(), "preparePairSlots(0) leaves empty buffer");
+    expectEq(buffer.compact(), 0u, "compact on zero slots returns zero");
+    expectEq(buffer.countValidSlots(), 0u, "countValidSlots on zero slots returns zero");
+}
+
+void testNormalizeSpatialHashParamsAndOccupancy() {
+    fuse::physics::broadphase::SpatialHashParams params;
+    params.cellSize = 0.f;
+    params.tableSize = 0u;
+    const fuse::physics::broadphase::SpatialHashParams normalized =
+        fuse::physics::broadphase::normalizeSpatialHashParams(params);
+    expectEq(normalized.cellSize, 1.f, "normalizeSpatialHashParams clamps cell size");
+    expectEq(normalized.tableSize, 1u, "normalizeSpatialHashParams clamps table size");
+
+    const fuse::physics::broadphase::CellRange3 unitRange = {{0, 0, 0}, {1, 1, 1}};
+    expectEq(fuse::physics::broadphase::estimateCellOccupancyCount(unitRange), 8u,
+             "estimateCellOccupancyCount multiplies 3D span");
+
+    const fuse::physics::broadphase::CellRange2 planeRange = {{0, 0}, {2, 1}};
+    expectEq(fuse::physics::broadphase::estimateCellOccupancyCount(planeRange), 6u,
+             "estimateCellOccupancyCount multiplies 2D span");
+
+    fuse::physics::broadphase::CellRange3 inverted = {{3, 3, 3}, {1, 1, 1}};
+    expectEq(fuse::physics::broadphase::estimateCellOccupancyCount(inverted), 0u,
+             "estimateCellOccupancyCount returns zero for empty range");
+}
+
+void testBroadphaseNormalizedParamsGuard() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    bodies.addBody({0.5f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 1, {1.f, 0.f, 0.f});
+
+    fuse::physics::broadphase::SpatialHashParams params;
+    params.cellSize = 0.f;
+    params.tableSize = 0u;
+    params.bodyCount = bodies.count();
+
+    const auto pairs = fuse::physics::broadphase::runBroadphase(bodies, shapes, params);
+    expectTrue(!pairs.empty(), "normalized zero params still find overlapping pair");
 }
 
 void testPairBufferCompactionEarlyOuts() {
@@ -692,7 +784,12 @@ int main() {
     testBroadphaseCellSpanClampIntegration();
     testPairBufferSoAIterationEarlyOuts();
     testCandidatePairRejectReasonGuards();
+    testCandidatePairRejectReasonName();
     testCellRangeFromAabbHelpers();
+    testPairBufferCapacityGuards();
+    testPairBufferPreparePairSlotsZeroGuard();
+    testNormalizeSpatialHashParamsAndOccupancy();
+    testBroadphaseNormalizedParamsGuard();
     testPairBufferCompactionEarlyOuts();
     testBroadphaseBoxShapeCellRange();
 
