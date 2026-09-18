@@ -424,6 +424,80 @@ void testFroxelIndexClampAndLerpGuards() {
                "bilinear sample on empty grid returns zero");
 }
 
+void testFroxelGridDensityValidationAndCoordGuards() {
+    fuse::renderer::FroxelGridDesc desc{};
+    desc.tilesX = 4;
+    desc.tilesY = 2;
+    desc.slicesZ = 3;
+
+    fuse::renderer::FroxelDensityGrid grid{};
+    grid.allocate(desc);
+
+    expectTrue(fuse::renderer::froxel_util::isDensityGridAccessible(grid, desc),
+               "allocated grid is accessible");
+    expectTrue(!fuse::renderer::froxel_util::hasNonZeroDensity(grid),
+               "fresh allocate has no non-zero density");
+    expectTrue(fuse::renderer::froxel_util::shouldSkipFroxelMarch(grid, desc),
+               "uniformly zero grid skips froxel march");
+    expectTrue(fuse::renderer::froxel_util::validateGridDensity(grid, desc),
+               "fresh allocate validates grid density");
+
+    expectTrue(fuse::renderer::froxel_util::writeDensityAtCoord(grid, desc, 1u, 1u, 2u, 3.5f),
+               "write at clamped tile coords succeeds");
+    expectNear(fuse::renderer::froxel_util::sampleDensityAtCoord(grid, desc, 1u, 1u, 2u), 3.5f, 1e-5f,
+               "read at tile coords matches write");
+
+    expectTrue(fuse::renderer::froxel_util::writeDensityAtCoord(grid, desc, 3u, 1u, 2u, 4.5f),
+               "write at last tile coords succeeds");
+    expectNear(fuse::renderer::froxel_util::sampleDensityAtCoord(grid, desc, 99u, 99u, 99u), 4.5f, 1e-5f,
+               "read clamps OOB tile coords to last cell");
+    expectTrue(fuse::renderer::froxel_util::hasNonZeroDensity(grid),
+               "partial fill reports non-zero density");
+    expectTrue(!fuse::renderer::froxel_util::shouldSkipFroxelMarch(grid, desc),
+               "partially filled grid does not skip march");
+    expectTrue(fuse::renderer::froxel_util::validateGridDensity(grid, desc),
+               "partially filled grid validates grid density");
+
+    fuse::renderer::FroxelGridDesc mismatched{};
+    mismatched.tilesX = 2;
+    mismatched.tilesY = 2;
+    mismatched.slicesZ = 2;
+    expectTrue(!fuse::renderer::froxel_util::isDensityGridAccessible(grid, mismatched),
+               "inaccessible when desc mismatches storage");
+    expectTrue(!fuse::renderer::froxel_util::validateGridDensity(grid, mismatched),
+               "grid density validation rejects desc mismatch");
+    expectNear(fuse::renderer::froxel_util::sampleDensityAtCoord(grid, mismatched, 0u, 0u, 0u), 0.f, 1e-6f,
+               "coord sample rejects desc mismatch");
+    expectTrue(!fuse::renderer::froxel_util::writeDensityAtCoord(grid, mismatched, 0u, 0u, 0u, 9.f),
+               "coord write rejects desc mismatch");
+
+    fuse::renderer::FroxelGridDesc zeroDesc{};
+    zeroDesc.tilesX = 0u;
+    expectTrue(!fuse::renderer::froxel_util::isDensityGridAccessible(grid, zeroDesc),
+               "zero-dimension desc is not accessible");
+    expectTrue(fuse::renderer::froxel_util::validateGridDensity(grid, zeroDesc),
+               "empty desc vacuously validates grid density");
+    expectTrue(fuse::renderer::froxel_util::shouldSkipFroxelMarch(grid, zeroDesc),
+               "inaccessible desc skips froxel march");
+
+    fuse::renderer::FroxelDensityGrid emptyGrid{};
+    expectTrue(!fuse::renderer::froxel_util::isDensityGridAccessible(emptyGrid, desc),
+               "empty storage is not accessible");
+    expectTrue(!fuse::renderer::froxel_util::validateGridDensity(emptyGrid, desc),
+               "empty storage fails grid density validation");
+    expectTrue(fuse::renderer::froxel_util::shouldSkipFroxelMarch(emptyGrid, desc),
+               "empty storage skips froxel march");
+    expectNear(fuse::renderer::froxel_util::sampleDensityAtCoord(emptyGrid, desc, 0u, 0u, 0u), 0.f, 1e-6f,
+               "coord sample on empty storage returns zero");
+    expectTrue(!fuse::renderer::froxel_util::writeDensityAtCoord(emptyGrid, desc, 0u, 0u, 0u, 1.f),
+               "coord write on empty storage rejected");
+
+    fuse::renderer::FroxelDensityGrid undersized{};
+    undersized.density.resize(desc.froxelCount() - 1u, 0.f);
+    expectTrue(!fuse::renderer::froxel_util::validateGridDensity(undersized, desc),
+               "undersized storage fails grid density validation");
+}
+
 void testFroxelDensityCountValidationAndWriteGuards() {
     fuse::renderer::FroxelGridDesc desc{};
     desc.tilesX = 4;
@@ -651,6 +725,7 @@ int main() {
     testFroxelSliceDepthDistribution();
     testFroxelDensityLerpHelpers();
     testFroxelIndexClampAndLerpGuards();
+    testFroxelGridDensityValidationAndCoordGuards();
     testFroxelDensityCountValidationAndWriteGuards();
     testEmptySceneVolumetricFog();
     testZeroDimensionFroxelGrid();

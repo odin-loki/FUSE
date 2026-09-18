@@ -239,6 +239,10 @@ bool gridMatchesDesc(const FroxelDensityGrid& grid, const FroxelGridDesc& desc) 
     return grid.matchesDesc(desc);
 }
 
+bool isDensityGridAccessible(const FroxelDensityGrid& grid, const FroxelGridDesc& desc) {
+    return !grid.isEmpty() && !FroxelGridLayout::isEmptyGrid(desc) && grid.matchesDesc(desc);
+}
+
 u32 countNonZeroFroxels(const FroxelDensityGrid& grid, f32 epsilon) {
     if (grid.isEmpty()) {
         return 0u;
@@ -267,8 +271,19 @@ u32 countEmptyFroxels(const FroxelDensityGrid& grid, f32 epsilon) {
     return count;
 }
 
+bool hasNonZeroDensity(const FroxelDensityGrid& grid, f32 epsilon) {
+    return countNonZeroFroxels(grid, epsilon) > 0u;
+}
+
+bool shouldSkipFroxelMarch(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, f32 epsilon) {
+    if (!isDensityGridAccessible(grid, desc)) {
+        return true;
+    }
+    return !hasNonZeroDensity(grid, epsilon);
+}
+
 f32 sampleDensityAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index) {
-    if (grid.isEmpty() || FroxelGridLayout::isEmptyGrid(desc) || !grid.matchesDesc(desc)) {
+    if (!isDensityGridAccessible(grid, desc)) {
         return 0.f;
     }
 
@@ -276,13 +291,41 @@ f32 sampleDensityAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& de
     return grid.density[clampedIndex];
 }
 
+f32 sampleDensityAtCoord(const FroxelDensityGrid& grid,
+                         const FroxelGridDesc& desc,
+                         u32 tileX,
+                         u32 tileY,
+                         u32 sliceZ) {
+    if (!isDensityGridAccessible(grid, desc)) {
+        return 0.f;
+    }
+
+    const u32 index = FroxelGridLayout::froxelIndexClamped(tileX, tileY, sliceZ, desc);
+    return grid.density[index];
+}
+
 bool writeDensityAtIndex(FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index, f32 value) {
-    if (grid.isEmpty() || FroxelGridLayout::isEmptyGrid(desc) || !grid.matchesDesc(desc)) {
+    if (!isDensityGridAccessible(grid, desc)) {
         return false;
     }
 
     const u32 clampedIndex = FroxelGridLayout::clampFroxelIndex(index, desc);
     grid.density[clampedIndex] = value;
+    return true;
+}
+
+bool writeDensityAtCoord(FroxelDensityGrid& grid,
+                         const FroxelGridDesc& desc,
+                         u32 tileX,
+                         u32 tileY,
+                         u32 sliceZ,
+                         f32 value) {
+    if (!isDensityGridAccessible(grid, desc)) {
+        return false;
+    }
+
+    const u32 index = FroxelGridLayout::froxelIndexClamped(tileX, tileY, sliceZ, desc);
+    grid.density[index] = value;
     return true;
 }
 
@@ -294,10 +337,20 @@ bool validateDensityCounts(const FroxelDensityGrid& grid, f32 epsilon) {
     return countNonZeroFroxels(grid, epsilon) + countEmptyFroxels(grid, epsilon) == grid.density.size();
 }
 
+bool validateGridDensity(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, f32 epsilon) {
+    if (FroxelGridLayout::isEmptyGrid(desc)) {
+        return true;
+    }
+    if (!gridMatchesDesc(grid, desc)) {
+        return false;
+    }
+    return validateDensityCounts(grid, epsilon);
+}
+
 f32 sampleDensityBilinear(const FroxelDensityGrid& grid,
                           const FroxelGridDesc& desc,
                           const FroxelSampleCoords& coords) {
-    if (grid.isEmpty() || FroxelGridLayout::isEmptyGrid(desc) || !grid.matchesDesc(desc)) {
+    if (!isDensityGridAccessible(grid, desc)) {
         return 0.f;
     }
 
@@ -317,7 +370,7 @@ f32 sampleDensityBilinear(const FroxelDensityGrid& grid,
 f32 sampleDensityTrilinear(const FroxelDensityGrid& grid,
                            const FroxelGridDesc& desc,
                            const FroxelSampleCoords& coords) {
-    if (grid.isEmpty() || FroxelGridLayout::isEmptyGrid(desc) || !grid.matchesDesc(desc)) {
+    if (!isDensityGridAccessible(grid, desc)) {
         return 0.f;
     }
 
@@ -340,7 +393,7 @@ f32 sampleDensityAtScreen(const FroxelDensityGrid& grid,
                           f32 screenX,
                           f32 screenY,
                           f32 viewDepth) {
-    if (grid.isEmpty() || FroxelGridLayout::isEmptyGrid(desc) || !grid.matchesDesc(desc)) {
+    if (!isDensityGridAccessible(grid, desc)) {
         return 0.f;
     }
 
