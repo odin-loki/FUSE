@@ -962,6 +962,136 @@ void testTryUpdateDragGuards() {
     gizmo.endDrag();
 }
 
+void testPickPreflightAxisResolution() {
+    fuse::editor::GizmoTransform transform{};
+
+    const fuse::editor::GizmoRay xRay = rayAlongX();
+    const fuse::editor::PickPreflight rayPick = fuse::editor::preflightPick(
+        xRay, transform, fuse::editor::GizmoMode::Translate, fuse::editor::GizmoSpace::World,
+        fuse::editor::GizmoSystem::kAxisLength, fuse::editor::GizmoSystem::kPickRadius);
+    expectTrue(rayPick.canPick(), "pick preflight accepts valid ray");
+    expectTrue(rayPick.axis == fuse::editor::GizmoAxis::X, "pick preflight resolves ray axis");
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+    const fuse::editor::PickPreflight screenPick =
+        fuse::editor::preflightPick(hit, fuse::editor::GizmoMode::Translate);
+    expectTrue(screenPick.canPick(), "pick preflight accepts valid screen hit");
+    expectTrue(screenPick.axis == fuse::editor::GizmoAxis::X,
+               "pick preflight resolves screen axis");
+}
+
+void testUpdateDragSnapDegradedPreflight() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::UpdateDragPreflight degradedPreflight = fuse::editor::preflightUpdateDrag(
+        hit, true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(degradedPreflight.canUpdate(),
+               "update preflight still allows drag when snap step invalid");
+    expectTrue(degradedPreflight.snapDegraded, "update preflight marks snap degraded");
+
+    snap.gridSize = 1.f;
+    const fuse::editor::UpdateDragPreflight validPreflight = fuse::editor::preflightUpdateDrag(
+        hit, true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(validPreflight.canUpdate(), "update preflight accepts valid snap settings");
+    expectTrue(!validPreflight.snapDegraded, "valid snap clears snapDegraded");
+}
+
+void testEndDragPreflightGuards() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+
+    const fuse::editor::EndDragPreflight inactivePreflight =
+        fuse::editor::preflightEndDrag(false, fuse::editor::GizmoAxis::None,
+                                       fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(inactivePreflight.notDragging, "end preflight marks inactive drag");
+    expectTrue(!inactivePreflight.canEnd(), "end preflight rejects inactive drag");
+
+    const fuse::editor::EndDragPreflight activePreflight = fuse::editor::preflightEndDrag(
+        true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(activePreflight.canEnd(), "end preflight accepts active drag");
+    expectTrue(activePreflight.snapDegraded, "end preflight marks snap degraded");
+    expectTrue(!activePreflight.invalidActiveAxis, "valid axis clears invalidActiveAxis");
+
+    const fuse::editor::EndDragPreflight noAxisPreflight = fuse::editor::preflightEndDrag(
+        true, fuse::editor::GizmoAxis::None, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(noAxisPreflight.invalidActiveAxis, "end preflight marks missing active axis");
+    expectTrue(noAxisPreflight.canEnd(), "end preflight still allows end without active axis");
+
+    snap.gridSize = 1.f;
+    const fuse::editor::EndDragPreflight validSnapPreflight = fuse::editor::preflightEndDrag(
+        true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(!validSnapPreflight.snapDegraded, "valid snap clears snapDegraded on end");
+
+    fuse::editor::GizmoSystem gizmo;
+    expectTrue(!gizmo.preflightEndDrag().canEnd(), "gizmo end preflight rejects inactive drag");
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+    fuse::editor::GizmoTransform transform{};
+    gizmo.beginDrag(hit, transform);
+    expectTrue(gizmo.preflightEndDrag().canEnd(), "gizmo end preflight accepts active drag");
+    gizmo.endDrag();
+}
+
+void testCanEndDragGuards() {
+    expectTrue(!fuse::editor::canEndDrag(false), "canEndDrag rejects inactive drag");
+    expectTrue(fuse::editor::canEndDrag(true, fuse::editor::GizmoAxis::X),
+               "canEndDrag accepts active drag with axis");
+
+    fuse::editor::GizmoSystem gizmo;
+    expectTrue(!gizmo.canEndDrag(), "gizmo canEndDrag rejects inactive drag");
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+    fuse::editor::GizmoTransform transform{};
+    gizmo.beginDrag(hit, transform);
+    expectTrue(gizmo.canEndDrag(), "gizmo canEndDrag accepts active drag");
+    gizmo.endDrag();
+}
+
+void testTryEndDragGuards() {
+    fuse::editor::GizmoSystem gizmo;
+    fuse::editor::GizmoResult result{};
+
+    expectTrue(!gizmo.tryEndDrag(result), "tryEndDrag rejects inactive drag");
+    expectTrue(!result.changed, "inactive tryEndDrag leaves result unchanged");
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+    fuse::editor::GizmoTransform transform{};
+    gizmo.beginDrag(hit, transform);
+
+    hit.screenX = 30.f;
+    gizmo.updateDrag(hit);
+    expectTrue(gizmo.tryEndDrag(result), "tryEndDrag accepts active drag");
+    expectTrue(result.changed, "tryEndDrag marks result changed");
+    expectTrue(!result.active, "tryEndDrag deactivates drag");
+    expectTrue(!gizmo.isDragging(), "tryEndDrag clears dragging state");
+    expectTrue(result.axis == fuse::editor::GizmoAxis::X, "tryEndDrag records active axis");
+}
+
 void testDirtyFlagOnEndDrag() {
     fuse::editor::GizmoSystem gizmo;
     fuse::editor::CommandStack commandStack;
@@ -1024,6 +1154,11 @@ int main() {
     testSnapComponentHelpers();
     testCanUpdateDragGuards();
     testTryUpdateDragGuards();
+    testPickPreflightAxisResolution();
+    testUpdateDragSnapDegradedPreflight();
+    testEndDragPreflightGuards();
+    testCanEndDragGuards();
+    testTryEndDragGuards();
     testDirtyFlagOnEndDrag();
 
     if (g_failures != 0) {
