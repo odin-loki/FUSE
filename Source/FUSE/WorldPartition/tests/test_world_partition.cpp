@@ -560,6 +560,100 @@ void testRankUnloadPriorityGuarded() {
                "guarded rank matches unguarded for non-negative inputs");
 }
 
+void testEvictionScoreForGuarded() {
+    expectNear(fuse::world_partition::eviction_score_for(-50.f, 0u, 10u,
+                                                         fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               -50.f, 1e-4f, "unguarded distance score preserves negative unload priority");
+    expectNear(fuse::world_partition::eviction_score_for_guarded(-50.f, 0u, 10u,
+                                                                 fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               0.f, 1e-4f, "guarded distance score clamps negative unload priority");
+    expectNear(fuse::world_partition::eviction_score_for_guarded(75.f, 2u, 10u,
+                                                                 fuse::world_partition::EvictionPolicy::Lru),
+               8.f, 1e-4f, "guarded LRU score matches unguarded for valid inputs");
+    expectTrue(!fuse::world_partition::is_positive_eviction_score(
+                   fuse::world_partition::eviction_score_for_guarded(-10.f, 0u, 10u,
+                                                                     fuse::world_partition::EvictionPolicy::DistanceFromFocus)),
+               "guarded zero score is not positive");
+}
+
+void testEvictionDeficitGuards() {
+    expectEq(fuse::world_partition::eviction_byte_deficit(2048u, 1024u, 512u), 0u,
+             "no byte deficit when incoming fits");
+    expectEq(fuse::world_partition::eviction_byte_deficit(2048u, 1536u, 1024u), 512u,
+             "byte deficit reports bytes over cap");
+    expectEq(fuse::world_partition::eviction_byte_deficit(0u, 1024u, 1024u), 0u,
+             "unlimited byte budget yields zero deficit");
+    expectEq(fuse::world_partition::resident_cell_deficit(4u, 3u, 1u), 0u,
+             "no cell deficit when incoming fits");
+    expectEq(fuse::world_partition::resident_cell_deficit(2u, 2u, 1u), 1u,
+             "cell deficit reports slots needed at cap");
+    expectEq(fuse::world_partition::resident_cell_deficit(2u, 2u, 0u), 0u,
+             "zero incoming yields zero cell deficit");
+}
+
+void testEvictionUnloadPriorityGuarded() {
+    expectNear(fuse::world_partition::eviction_unload_priority(2.f, 3.f, 900.f, 0.f, 0u, 10u,
+                                                              fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               900.f, 1e-4f, "unguarded eviction unload priority merges budget focus distance");
+    expectNear(fuse::world_partition::eviction_unload_priority_guarded(2.f, 3.f, 900.f, 0.f, 0u, 10u,
+                                                                       fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               900.f, 1e-4f, "guarded eviction unload priority matches for valid focus distance");
+    expectNear(fuse::world_partition::eviction_unload_priority_guarded(-1.f, 3.f, -5.f, 50.f, 0u, 10u,
+                                                                       fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               3.f, 1e-4f, "guarded eviction unload priority clamps negative rank inputs when budget score invalid");
+    expectNear(fuse::world_partition::eviction_unload_priority_guarded(2.f, 3.f, -5.f, 50.f, 0u, 10u,
+                                                                       fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               3.f, 1e-4f, "guarded eviction unload priority falls back to unload rank when focus invalid");
+    expectNear(fuse::world_partition::eviction_unload_priority_guarded(2.f, 3.f, 0.f, 50.f, 2u, 10u,
+                                                                       fuse::world_partition::EvictionPolicy::Lru),
+               8.f, 1e-4f, "guarded eviction unload priority preserves LRU budget score");
+}
+
+void testCountBudgetEvictionCandidatesFromSet() {
+    fuse::world_partition::ResidencySet residency;
+    expectEq(fuse::world_partition::count_budget_eviction_candidates_from_set(
+                 residency,
+                 [&](fuse::world_partition::GridCoord) { return 0.f; }, 100.f,
+                 fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+             0u, "empty residency guarded count returns zero");
+
+    const fuse::world_partition::GridCoord near_cell{1, 0};
+    const fuse::world_partition::GridCoord mid_cell{3, 0};
+    const fuse::world_partition::GridCoord far_cell{5, 0};
+    residency.add(near_cell, 100.f);
+    residency.add(mid_cell, 500.f);
+    residency.add(far_cell, 900.f);
+
+    const auto candidates = residency.collect_eviction_candidates();
+    expectEq(fuse::world_partition::count_budget_eviction_candidates(
+                 candidates,
+                 [&](fuse::world_partition::GridCoord coord) {
+                     return residency.focus_distance_for(coord);
+                 },
+                 50.f, fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+             0u, "weak incoming yields zero eligible count");
+    expectEq(fuse::world_partition::count_budget_eviction_candidates_from_set(
+                 residency,
+                 [&](fuse::world_partition::GridCoord coord) {
+                     return residency.focus_distance_for(coord);
+                 },
+                 600.f, fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+             2u, "guarded count skips blocked farthest resident");
+}
+
+void testHasEvictionCandidateGuarded() {
+    fuse::world_partition::ResidencySet residency;
+    expectTrue(!residency.has_eviction_candidate_guarded(), "empty set guarded candidate check is false");
+    expectTrue(!fuse::world_partition::has_residency_guarded(residency),
+               "empty residency has_residency_guarded is false");
+
+    const fuse::world_partition::GridCoord cell{2, 2};
+    expectTrue(residency.add(cell, 100.f), "add resident for candidate guard");
+    expectTrue(residency.has_eviction_candidate_guarded(), "non-empty set guarded candidate check is true");
+    expectTrue(fuse::world_partition::has_residency_guarded(residency),
+               "non-empty residency has_residency_guarded is true");
+}
+
 void testCanAttemptBudgetEviction() {
     expectTrue(!fuse::world_partition::can_attempt_budget_eviction(2u, 2u, 2048u, 1024u, 1024u, false),
                "cannot attempt eviction without residency candidate");
@@ -1799,6 +1893,11 @@ int main() {
     testRankUnloadPriority();
     testRankBudgetUnloadPriority();
     testRankUnloadPriorityGuarded();
+    testEvictionScoreForGuarded();
+    testEvictionDeficitGuards();
+    testEvictionUnloadPriorityGuarded();
+    testCountBudgetEvictionCandidatesFromSet();
+    testHasEvictionCandidateGuarded();
     testCanAttemptBudgetEviction();
     testCanAttemptBudgetEvictionFromSet();
     testInvalidGridCoordSentinel();

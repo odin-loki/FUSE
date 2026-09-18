@@ -34,6 +34,9 @@ public:
     [[nodiscard]] bool empty() const { return m_entries.empty(); }
     [[nodiscard]] bool has_eviction_candidate() const { return !m_entries.empty(); }
 
+    /// Empty-set guard: true when the set tracks at least one eviction candidate.
+    [[nodiscard]] bool has_eviction_candidate_guarded() const { return has_eviction_candidate(); }
+
     /// Coord with the largest focus distance (evict first). Returns {0,0} when empty.
     [[nodiscard]] GridCoord pick_eviction_candidate() const;
 
@@ -303,6 +306,25 @@ template <typename ScoreFn>
                                               policy);
 }
 
+/// Count coords from `candidates` eligible for budget eviction (skips invalid coords).
+template <typename ScoreFn>
+[[nodiscard]] inline u32 count_budget_eviction_candidates(const std::vector<GridCoord>& candidates,
+                                                          ScoreFn&& score_fn, f32 incoming_priority,
+                                                          EvictionPolicy policy) {
+    return static_cast<u32>(
+        collect_budget_eviction_candidates(candidates, score_fn, incoming_priority, policy).size());
+}
+
+/// Empty-set guard: count eligible budget eviction candidates in a residency set.
+template <typename ScoreFn>
+[[nodiscard]] inline u32 count_budget_eviction_candidates_from_set(const ResidencySet& set, ScoreFn&& score_fn,
+                                                                   f32 incoming_priority, EvictionPolicy policy) {
+    if (!set.has_eviction_candidate()) {
+        return 0u;
+    }
+    return count_budget_eviction_candidates(set.collect_eviction_candidates(), score_fn, incoming_priority, policy);
+}
+
 /// Empty-set guard: pick budget eviction candidate from a residency set.
 template <typename ScoreFn>
 [[nodiscard]] inline GridCoord pick_budget_eviction_candidate_from_set(const ResidencySet& set,
@@ -355,6 +377,19 @@ template <typename ScoreFn>
     const f32 budget_score = budget_eviction_score(focus_distance, unload_distance_priority,
                                                     last_touch_tick, current_tick, policy);
     return rank_budget_unload_priority(streaming_priority, stored_priority, focus_distance, budget_score);
+}
+
+/// Guard: combined unload rank with negative inputs clamped and invalid focus distance rejected.
+[[nodiscard]] inline f32 eviction_unload_priority_guarded(f32 streaming_priority, f32 stored_priority,
+                                                          f32 focus_distance, f32 unload_distance_priority,
+                                                          u32 last_touch_tick, u32 current_tick,
+                                                          EvictionPolicy policy) {
+    const f32 budget_score = budget_eviction_score_guarded(focus_distance, unload_distance_priority,
+                                                           last_touch_tick, current_tick, policy);
+    if (!is_positive_eviction_score(budget_score)) {
+        return rank_unload_priority_guarded(streaming_priority, stored_priority, focus_distance);
+    }
+    return rank_budget_unload_priority_guarded(streaming_priority, stored_priority, focus_distance, budget_score);
 }
 
 } // namespace fuse::world_partition
