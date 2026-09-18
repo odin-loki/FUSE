@@ -196,11 +196,39 @@ bool ParticleGpuBufferLayout::validateSlotIndex(u32 slot_index, u32 capacity) {
     return capacity > 0u && slot_index < capacity;
 }
 
+bool ParticleGpuBufferLayout::validateSlotDeviceOffset(ParticleGpuColumn column, u32 slot_index, u32 capacity) {
+    if (!validateSlotIndex(slot_index, capacity)) {
+        return false;
+    }
+    const usize offset = slotDeviceOffset(column, slot_index, capacity);
+    return containsByteOffset(offset, capacity);
+}
+
 usize ParticleGpuBufferLayout::slotDeviceOffset(ParticleGpuColumn column, u32 slot_index, u32 capacity) {
     if (!validateSlotIndex(slot_index, capacity)) {
         return 0u;
     }
     return columnDeviceOffset(column, capacity) + elementSize(column) * static_cast<usize>(slot_index);
+}
+
+u32 ParticleGpuBufferLayout::slotIndexFromColumnOffset(ParticleGpuColumn column, usize column_byte_offset,
+                                                       u32 capacity) {
+    if (capacity == 0u) {
+        return capacity;
+    }
+    const usize element_bytes = elementSize(column);
+    if (element_bytes == 0u || column_byte_offset % element_bytes != 0u) {
+        return capacity;
+    }
+    const u32 slot_index = static_cast<u32>(column_byte_offset / element_bytes);
+    return validateSlotIndex(slot_index, capacity) ? slot_index : capacity;
+}
+
+bool ParticleGpuBufferLayout::packedBytesFitCapacity(const std::vector<u8>& bytes, u32 capacity) {
+    if (capacity == 0u) {
+        return false;
+    }
+    return bytes.size() >= packedDeviceBytes(capacity);
 }
 
 bool ParticleGpuBufferLayout::containsByteOffset(usize byte_offset, u32 capacity) {
@@ -220,6 +248,38 @@ bool ParticleGpuBufferLayout::locateColumnAtOffset(usize byte_offset, u32 capaci
         const ParticleGpuColumnSpan span = columnSpan(column, capacity);
         if (byte_offset >= span.offset && byte_offset < span.endOffset()) {
             *out_span = span;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ParticleGpuBufferLayout::locateSlotAtOffset(usize byte_offset, u32 capacity, ParticleGpuColumn* out_column,
+                                                 u32* out_slot) {
+    if (out_column == nullptr || out_slot == nullptr) {
+        return false;
+    }
+
+    ParticleGpuColumnSpan span{};
+    if (!locateColumnAtOffset(byte_offset, capacity, &span)) {
+        return false;
+    }
+
+    const usize column_byte_offset = byte_offset - span.offset;
+    if (column_byte_offset % span.element_size != 0u) {
+        return false;
+    }
+
+    const u32 slot_index = static_cast<u32>(column_byte_offset / span.element_size);
+    if (!validateSlotIndex(slot_index, capacity)) {
+        return false;
+    }
+
+    for (u32 index = 0; index < columnCount(); ++index) {
+        const ParticleGpuColumn column = static_cast<ParticleGpuColumn>(index);
+        if (columnSpan(column, capacity).offset == span.offset) {
+            *out_column = column;
+            *out_slot = slot_index;
             return true;
         }
     }
@@ -324,6 +384,43 @@ bool ParticleGpuDispatch::emitPaddingAccountsFor(u32 emit_count) const {
     return totalEmitThreads() == emit_count + emitPaddingThreads(emit_count);
 }
 
+u32 ParticleGpuDispatch::simSlotForThread(u32 global_thread_index, u32 slot_count) const {
+    return particle_gpu_util::elementIndexForThread(global_thread_index, slot_count);
+}
+
+u32 ParticleGpuDispatch::emitIndexForThread(u32 global_thread_index, u32 emit_count) const {
+    return particle_gpu_util::elementIndexForThread(global_thread_index, emit_count);
+}
+
+bool ParticleGpuDispatch::simThreadHasValidSlot(u32 global_thread_index, u32 slot_count) const {
+    if (shouldSkipSimLaunch(slot_count)) {
+        return false;
+    }
+    return particle_gpu_util::threadHasValidElement(global_thread_index, slot_count);
+}
+
+bool ParticleGpuDispatch::emitThreadHasValidIndex(u32 global_thread_index, u32 emit_count) const {
+    if (shouldSkipEmitLaunch(emit_count)) {
+        return false;
+    }
+    return particle_gpu_util::threadHasValidElement(global_thread_index, emit_count);
+}
+
+ParticleGpuDispatchPreflight ParticleGpuDispatch::preflight(u32 capacity, u32 emit_count) const {
+    ParticleGpuDispatchPreflight result{};
+    result.sim_covers_capacity = simCovers(capacity);
+    result.emit_covers_count = emitCovers(emit_count);
+    result.sim_will_skip_launch = shouldSkipSimLaunch(capacity);
+    result.emit_will_skip_launch = shouldSkipEmitLaunch(emit_count);
+    result.sim_padding_ok = simPaddingAccountsFor(capacity);
+    result.emit_padding_ok = emitPaddingAccountsFor(emit_count);
+    return result;
+}
+
+bool ParticleGpuDispatchPreflight::ready_for_stub() const {
+    return sim_covers_capacity && emit_covers_count && sim_padding_ok && emit_padding_ok;
+}
+
 ParticleGpuBuffers ParticleGpuBuffers::forCapacity(u32 particle_capacity) {
     ParticleGpuBuffers buffers{};
     buffers.capacity = particle_capacity;
@@ -365,7 +462,11 @@ bool ParticleGpuMirrorPreflight::can_write_to_cpu() const {
 
 bool ParticleGpuMirrorPreflight::can_pack() const {
     return sync_guard != ParticleGpuSyncGuard::MirrorUninitialized &&
-           sync_guard != ParticleGpuSyncGuard::CpuUninitialized;
+           sync_guard != ParticleGpuSyncGuard::CpuUninitialized && alive_count_matches_flags;
+}
+
+bool ParticleGpuMirrorPreflight::can_unpack(const std::vector<u8>& bytes, u32 particle_capacity) const {
+    return can_pack() && packed_layout_ok && ParticleGpuBufferLayout::packedBytesFitCapacity(bytes, particle_capacity);
 }
 
 ParticleGpuSyncGuard ParticleGpuMirror::syncGuardForCpu(const ParticleSoA& cpu) const {
@@ -413,6 +514,7 @@ ParticleGpuMirrorPreflight ParticleGpuMirror::preflightFromCpu(const ParticleSoA
     preflight.sync_guard = syncGuardForCpu(cpu);
     preflight.write_guard = writeGuardForCpu(cpu);
     preflight.alive_count_matches_flags = aliveCountMatchesFlags();
+    preflight.packed_layout_ok = capacity > 0u && ParticleGpuBufferLayout::validatePackedLayout(capacity);
     return preflight;
 }
 
@@ -496,6 +598,26 @@ bool ParticleGpuMirror::tryWriteToCpuSoA(ParticleSoA& cpu) const {
         return false;
     }
     return writeToCpuSoA(cpu);
+}
+
+std::vector<u8> ParticleGpuMirror::tryPackToDeviceLayout() const {
+    if (capacity == 0u || !aliveCountMatchesFlags()) {
+        return {};
+    }
+    return packToDeviceLayout();
+}
+
+ParticleGpuSyncGuard ParticleGpuMirror::unpackGuardForLayout(const std::vector<u8>& bytes, u32 particle_capacity) {
+    if (particle_capacity == 0u) {
+        return ParticleGpuSyncGuard::CpuUninitialized;
+    }
+    if (!ParticleGpuBufferLayout::validatePackedLayout(particle_capacity)) {
+        return ParticleGpuSyncGuard::CapacityMismatch;
+    }
+    if (!ParticleGpuBufferLayout::packedBytesFitCapacity(bytes, particle_capacity)) {
+        return ParticleGpuSyncGuard::MirrorUninitialized;
+    }
+    return ParticleGpuSyncGuard::Ok;
 }
 
 std::vector<u8> ParticleGpuMirror::packToDeviceLayout() const {
@@ -796,6 +918,14 @@ u32 localThreadIndex(u32 global_thread_index, u32 block_size) {
 
 u32 globalThreadIndex(u32 block_index, u32 local_thread_index, u32 block_size) {
     return block_index * block_size + local_thread_index;
+}
+
+u32 elementIndexForThread(u32 global_thread_index, u32 element_count) {
+    return threadCoversElement(global_thread_index, element_count) ? global_thread_index : element_count;
+}
+
+bool threadHasValidElement(u32 global_thread_index, u32 element_count) {
+    return threadCoversElement(global_thread_index, element_count);
 }
 
 } // namespace particle_gpu_util
