@@ -69,6 +69,10 @@ public:
     /// Inspect only the front event type without removing it. Returns false when empty.
     bool peekEventType(PlatformEventType& outType) const;
 
+    /// Peek the front event only when its type matches `type`. Returns false when empty or
+    /// the front event is a different type (outEvent is reset to None).
+    bool tryPeekEventOfType(PlatformEventType type, PlatformEvent& outEvent) const;
+
     /// True when the synthetic queue holds at least one event.
     bool hasPendingEvents() const;
 
@@ -80,6 +84,9 @@ public:
 
     /// True when at least one queued event matches `type`.
     bool hasPendingEventOfType(PlatformEventType type) const;
+
+    /// Number of queued events whose `type` matches `type` (0 when empty).
+    u32 countPendingEventsOfType(PlatformEventType type) const;
 
     /// Number of queued events whose `window` pointer matches `window`.
     u32 countPendingEventsFor(const Window& window) const;
