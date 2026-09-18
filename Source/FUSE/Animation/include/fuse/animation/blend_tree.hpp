@@ -237,6 +237,12 @@ struct AnimStateMachine : BlendNode {
 
     /// Destination state for the `transition_index`-th registered edge, or -1 when invalid.
     s32 transition_to_at(u32 transition_index) const;
+
+    /// Blend duration for the `transition_index`-th registered edge, or -1 when invalid.
+    f32 transition_blend_duration_at(u32 transition_index) const;
+
+    /// True when the `transition_index`-th registered edge condition passes (or has none).
+    bool transition_condition_passes_at(u32 transition_index) const;
 };
 
 } // namespace fuse::animation
