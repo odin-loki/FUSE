@@ -174,4 +174,25 @@ bool shouldSkipMaterialInspectorRefresh(bool isBound) {
     return !isBound;
 }
 
+u32 materialPropertyDirtyBit(MaterialPropertyId id) {
+    if (!isMaterialPropertyIdValid(id)) {
+        return 0u;
+    }
+    return 1u << static_cast<u32>(id);
+}
+
+bool isPropertyDirtyMaskEmpty(u32 dirtyMask) {
+    return dirtyMask == 0u;
+}
+
+u32 materialPropertyDirtyCount(u32 dirtyMask) {
+    u32 count = 0u;
+    for (u32 i = 0u; i < materialPropertyCount(); ++i) {
+        if ((dirtyMask & materialPropertyDirtyBit(materialPropertyIdAt(i))) != 0u) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 } // namespace fuse::editor

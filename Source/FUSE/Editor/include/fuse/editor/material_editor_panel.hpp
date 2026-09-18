@@ -45,6 +45,8 @@ public:
     [[nodiscard]] bool previewDirty() const { return m_previewDirty; }
     [[nodiscard]] bool editDirty() const { return m_editDirty; }
     [[nodiscard]] bool needsPanelRefresh() const { return m_binding.needsPanelRefresh(); }
+    [[nodiscard]] bool hasAnyPropertyDirty() const { return m_binding.hasAnyPropertyDirty(); }
+    [[nodiscard]] u32 propertyDirtyMask() const { return m_binding.dirtyPropertyMask(); }
     [[nodiscard]] u32 coalescedPropertyDirtyCount() const { return m_binding.coalescedDirtyCount(); }
 
     /// Early-out when catalog empty, unselected, or binding cannot post (B6.7 deepen follow-up).
@@ -56,6 +58,9 @@ public:
     /// Refresh guard — panel has a live material selection (B6.7 deepen follow-up).
     [[nodiscard]] bool canApplyPanelRefresh() const;
 
+    /// Panel refresh guard — selection active and refresh pending (B6.7 deepen).
+    [[nodiscard]] bool canRefreshPanel() const;
+
     bool selectMaterial(u32 materialId);
     bool setRoughness(f32 roughness, CommandStack& cmds);
     bool setMetallic(f32 metallic, CommandStack& cmds);
@@ -64,6 +69,8 @@ public:
     bool pushToMaterialSystem(renderer::MaterialSystem& materials, CommandStack& cmds);
 
     void refreshPanel();
+    /// Guarded panel refresh — no-op when refresh not needed (B6.7 deepen).
+    bool tryRefreshPanel();
     void clearPreviewDirty() { m_previewDirty = false; }
     void clearEditDirty() { m_editDirty = false; }
 
