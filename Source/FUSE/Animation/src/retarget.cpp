@@ -23,6 +23,22 @@ bool RetargetMap::is_source_pose_compatible(const Pose& source_pose) const {
     return source_pose.bone_count > 0 && source_pose.bone_count >= source_bone_count;
 }
 
+bool RetargetMap::is_target_skeleton_compatible(const Skeleton& target_skel) const {
+    if (target_skel.bones.empty() || target_bone_count == 0) {
+        return false;
+    }
+
+    return static_cast<u32>(target_skel.bones.size()) >= target_bone_count;
+}
+
+bool RetargetMap::is_retarget_pair_compatible(const PoseSoA& source_pose, const Skeleton& target_skel) const {
+    return is_source_pose_compatible(source_pose) && is_target_skeleton_compatible(target_skel);
+}
+
+bool RetargetMap::is_retarget_pair_compatible(const Pose& source_pose, const Skeleton& target_skel) const {
+    return is_source_pose_compatible(source_pose) && is_target_skeleton_compatible(target_skel);
+}
+
 void RetargetMap::clear() {
     bone_map.clear();
     source_bone_count = 0;
@@ -57,11 +73,11 @@ bool RetargetMap::is_target_mapped(u32 target_bone) const {
 }
 
 bool RetargetMap::can_apply_pose_soa(const PoseSoA& source_pose, const Skeleton& target_skel) const {
-    return is_valid() && !target_skel.bones.empty() && is_source_pose_compatible(source_pose);
+    return is_valid() && is_retarget_pair_compatible(source_pose, target_skel);
 }
 
 bool RetargetMap::can_apply_pose(const Pose& source_pose, const Skeleton& target_skel) const {
-    return is_valid() && !target_skel.bones.empty() && is_source_pose_compatible(source_pose);
+    return is_valid() && is_retarget_pair_compatible(source_pose, target_skel);
 }
 
 s32 RetargetMap::find_source_bone(u32 target_bone) const {

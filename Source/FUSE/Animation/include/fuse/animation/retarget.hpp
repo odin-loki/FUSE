@@ -28,6 +28,15 @@ struct RetargetMap {
     /// AoS variant of `is_source_pose_compatible`.
     [[nodiscard]] bool is_source_pose_compatible(const Pose& source_pose) const;
 
+    /// True when `target_skel` is non-empty and has at least `target_bone_count` bones.
+    [[nodiscard]] bool is_target_skeleton_compatible(const Skeleton& target_skel) const;
+
+    /// True when source pose and target skeleton both pass compatibility checks (map may still be invalid).
+    [[nodiscard]] bool is_retarget_pair_compatible(const PoseSoA& source_pose, const Skeleton& target_skel) const;
+
+    /// AoS variant of `is_retarget_pair_compatible`.
+    [[nodiscard]] bool is_retarget_pair_compatible(const Pose& source_pose, const Skeleton& target_skel) const;
+
     [[nodiscard]] u32 mapped_bone_count() const { return static_cast<u32>(bone_map.size()); }
 
     /// Drop all mappings and reset bone counts to zero.
