@@ -1098,6 +1098,123 @@ void testUndoStackSetBaselineOnEmptyStackExtended() {
     expectTrue(!stack.hasUnsavedChanges(), "empty saved document has no unsaved changes");
 }
 
+void testCommandStackDuplicatePropertyEditIsNoOp() {
+    fuse::editor::CommandStack stack;
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
+    expectTrue(stack.undoDepth() == 1u, "first edit records one undo step");
+    expectTrue(stack.dirtyRevision() == 1u, "first edit bumps dirty revision");
+    expectTrue(stack.appliedCount() == 1u, "first edit posts once");
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
+    expectTrue(stack.undoDepth() == 1u, "duplicate property edit is a no-op");
+    expectTrue(stack.coalescedCount() == 0u, "duplicate edit does not count as coalesce");
+    expectTrue(stack.dirtyRevision() == 1u, "duplicate edit does not bump dirty revision");
+    expectTrue(stack.appliedCount() == 1u, "duplicate edit does not post again");
+}
+
+void testCommandStackDoesNotCoalesceIdenticalPropertyValue() {
+    fuse::editor::CommandStack stack;
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
+    stack.push(makeSetPropertyCommand(1u, "transform.position", "1,2,3"), "0,0,0");
+
+    expectTrue(stack.undoDepth() == 1u, "identical property value does not create a new undo step");
+    expectTrue(stack.coalescedCount() == 0u, "identical property value guard skips coalesce");
+}
+
+void testCommandStackDoesNotCoalesceInvalidTarget() {
+    fuse::editor::CommandStack stack;
+
+    fuse::editor::EditorCommand invalidTarget;
+    invalidTarget.kind = fuse::editor::CommandKind::SetProperty;
+    invalidTarget.propertyName = "transform.position";
+    invalidTarget.propertyValue = "1,2,3";
+    stack.execute(std::move(invalidTarget));
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "4,5,6"));
+    expectTrue(stack.undoDepth() == 2u, "invalid target does not coalesce with valid edit");
+    expectTrue(stack.coalescedCount() == 0u, "invalid target guard skips coalesce");
+}
+
+void testCommandStackDoesNotCoalesceDifferentPropertyName() {
+    fuse::editor::CommandStack stack;
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
+    stack.execute(makeSetPropertyCommand(1u, "transform.rotation", "0,90,0"));
+
+    expectTrue(stack.undoDepth() == 2u, "different property names do not coalesce");
+    expectTrue(stack.coalescedCount() == 0u, "different property name guard skips coalesce");
+}
+
+void testCommandStackDoesNotCoalesceNonSetPropertyKind() {
+    fuse::editor::CommandStack stack;
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
+
+    fuse::editor::EditorCommand deleteObject;
+    deleteObject.kind = fuse::editor::CommandKind::DeleteObject;
+    deleteObject.target = fuse::Handle<fuse::Object>(1u, 1u);
+    stack.execute(std::move(deleteObject));
+
+    expectTrue(stack.undoDepth() == 2u, "non-SetProperty commands do not coalesce");
+    expectTrue(stack.coalescedCount() == 0u, "non-SetProperty kind guard skips coalesce");
+}
+
+void testCommandStackSetBaselineStateClearsDirtyWhenAtBaselineDepth() {
+    fuse::editor::CommandStack stack;
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
+    stack.set_baseline_state();
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "4,5,6"));
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "7,8,9"));
+    expectTrue(stack.isDirty(), "coalesce after baseline marks dirty");
+    expectTrue(stack.isAtBaseline(), "coalesce keeps baseline undo depth");
+
+    stack.set_baseline_state();
+    expectTrue(!stack.isDirty(), "baseline save clears dirty when at baseline depth");
+}
+
+void testUndoStackDoesNotCoalesceDifferentLabels() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "drag-a"));
+    stack.execute(std::make_unique<CounterCommand>(counter, 1, 3, "drag-b"));
+
+    expectTrue(stack.undoCount() == 2u, "different merge labels do not coalesce");
+    expectTrue(stack.coalescedOps() == 0u, "different labels skip coalesce counter");
+}
+
+void testUndoStackSetBaselineStateClearsDirtyWhenAtBaselineDepth() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "drag"));
+    stack.set_baseline_state();
+    stack.execute(std::make_unique<CounterCommand>(counter, 1, 3, "drag"));
+    stack.execute(std::make_unique<CounterCommand>(counter, 3, 6, "drag"));
+    expectTrue(stack.isDirty(), "coalesce after baseline marks dirty");
+    expectTrue(stack.isAtBaseline(), "coalesce keeps baseline undo depth");
+
+    stack.set_baseline_state();
+    expectTrue(!stack.isDirty(), "baseline save clears dirty when at baseline depth");
+}
+
+void testUndoStackClearAfterBaselineResetsConfiguredFlag() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "step"));
+    stack.set_baseline_state();
+    expectTrue(stack.isBaselineConfigured(), "baseline configured after save");
+
+    stack.clear();
+    expectTrue(!stack.isBaselineConfigured(), "clear after baseline resets configured flag");
+    expectTrue(stack.isEmpty(), "clear after baseline empties undo branch");
+    expectTrue(stack.isRedoEmpty(), "clear after baseline empties redo branch");
+}
+
 } // namespace
 
 int main() {
@@ -1167,6 +1284,15 @@ int main() {
     testUndoStackSetBaselineStateIdempotent();
     testCommandStackSetBaselineOnEmptyStackExtended();
     testUndoStackSetBaselineOnEmptyStackExtended();
+    testCommandStackDuplicatePropertyEditIsNoOp();
+    testCommandStackDoesNotCoalesceIdenticalPropertyValue();
+    testCommandStackDoesNotCoalesceInvalidTarget();
+    testCommandStackDoesNotCoalesceDifferentPropertyName();
+    testCommandStackDoesNotCoalesceNonSetPropertyKind();
+    testCommandStackSetBaselineStateClearsDirtyWhenAtBaselineDepth();
+    testUndoStackDoesNotCoalesceDifferentLabels();
+    testUndoStackSetBaselineStateClearsDirtyWhenAtBaselineDepth();
+    testUndoStackClearAfterBaselineResetsConfiguredFlag();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

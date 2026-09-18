@@ -71,7 +71,7 @@ void UndoStack::execute(std::unique_ptr<UndoCommand> command) {
 }
 
 void UndoStack::set_baseline_state() {
-    if (m_baselineConfigured && m_baselineUndoCount == undoCount() && m_baselineRedoCount == redoCount() &&
+    if (m_baselineConfigured && isAtBaseline() && m_baselineRedoCount == redoCount() &&
         m_coalescedOpsAtBaseline == m_coalescedOps && !m_dirty) {
         return;
     }
@@ -88,7 +88,7 @@ bool UndoStack::isAtBaseline() const {
 }
 
 void UndoStack::undo() {
-    if (m_undo.empty()) {
+    if (isEmpty()) {
         return;
     }
 
@@ -100,7 +100,7 @@ void UndoStack::undo() {
 }
 
 void UndoStack::redo() {
-    if (m_redo.empty()) {
+    if (isRedoEmpty()) {
         return;
     }
 
