@@ -1,5 +1,7 @@
 #include <fuse/animation/retarget.hpp>
 
+#include <fuse/animation/ik_solver.hpp>
+
 namespace fuse::animation {
 
 bool RetargetMap::is_valid() const {
@@ -66,6 +68,14 @@ s32 RetargetMap::find_target_bone(u32 source_bone) const {
     return -1;
 }
 
+bool RetargetMap::can_apply_pose_soa(const PoseSoA& source_pose, const Skeleton& target_skel) const {
+    return !target_skel.bones.empty() && source_pose.bone_count > 0 && is_valid();
+}
+
+bool RetargetMap::can_apply_pose(const Pose& source_pose, const Skeleton& target_skel) const {
+    return !target_skel.bones.empty() && !is_pose_empty(source_pose) && is_valid();
+}
+
 RetargetMap RetargetMap::build_identity(const Skeleton& skel) {
     RetargetMap map{};
     map.source_bone_count = static_cast<u32>(skel.bones.size());
@@ -106,7 +116,7 @@ RetargetMap RetargetMap::build_by_name(const Skeleton& source, const Skeleton& t
 void RetargetMap::apply_pose_soa(const PoseSoA& source_pose,
                                  const Skeleton& target_skel,
                                  PoseSoA& out_pose) const {
-    if (target_skel.bones.empty() || source_pose.bone_count == 0 || !is_valid()) {
+    if (!can_apply_pose_soa(source_pose, target_skel)) {
         out_pose.clear();
         return;
     }
@@ -135,7 +145,7 @@ void RetargetMap::apply_pose_soa(const PoseSoA& source_pose,
 void RetargetMap::apply_pose(const Pose& source_pose,
                              const Skeleton& target_skel,
                              Pose& out_pose) const {
-    if (target_skel.bones.empty() || source_pose.bone_count == 0 || !is_valid()) {
+    if (!can_apply_pose(source_pose, target_skel)) {
         out_pose.bone_count = 0;
         out_pose.bone_world_transforms.clear();
         return;
