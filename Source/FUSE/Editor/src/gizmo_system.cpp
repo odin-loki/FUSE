@@ -381,6 +381,25 @@ UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging) 
     return preflight;
 }
 
+bool canUpdateDrag(const GizmoHitTest& hit, bool dragging) {
+    return preflightUpdateDrag(hit, dragging).canUpdate();
+}
+
+EndDragPreflight preflightEndDrag(bool dragging) {
+    EndDragPreflight preflight{};
+    if (!dragging) {
+        preflight.notDragging = true;
+        return preflight;
+    }
+
+    preflight.canEnd = true;
+    return preflight;
+}
+
+bool canEndDrag(bool dragging) {
+    return preflightEndDrag(dragging).canEnd;
+}
+
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
                                       GizmoMode mode, GizmoSpace space, f32 axisLength,
                                       f32 pickRadius, bool alreadyDragging) {
@@ -732,6 +751,18 @@ UpdateDragPreflight GizmoSystem::preflightUpdateDrag(const GizmoHitTest& hit) co
     return fuse::editor::preflightUpdateDrag(hit, m_dragging);
 }
 
+bool GizmoSystem::canUpdateDrag(const GizmoHitTest& hit) const {
+    return fuse::editor::canUpdateDrag(hit, m_dragging);
+}
+
+EndDragPreflight GizmoSystem::preflightEndDrag() const {
+    return fuse::editor::preflightEndDrag(m_dragging);
+}
+
+bool GizmoSystem::canEndDrag() const {
+    return fuse::editor::canEndDrag(m_dragging);
+}
+
 GizmoResult GizmoSystem::beginDrag(const GizmoHitTest& hit, const GizmoTransform& current) {
     GizmoResult result;
     if (!tryBeginDrag(hit, current, result)) {
@@ -794,38 +825,54 @@ GizmoResult GizmoSystem::beginDrag(const GizmoRay& ray, const GizmoTransform& cu
     return result;
 }
 
-GizmoResult GizmoSystem::updateDrag(const GizmoHitTest& hit) {
-    GizmoResult result;
+bool GizmoSystem::tryUpdateDrag(const GizmoHitTest& hit, GizmoResult& out) {
+    out = {};
     if (!preflightUpdateDrag(hit).canUpdate()) {
-        return result;
+        return false;
     }
 
     m_lastHit = hit;
     m_currentTransform = applySnapping_(applyAxisDelta_(hit, m_startTransform));
 
-    result.active = true;
-    result.changed = true;
-    result.axis = m_activeAxis;
-    result.transform = m_currentTransform;
+    out.active = true;
+    out.changed = true;
+    out.axis = m_activeAxis;
+    out.transform = m_currentTransform;
+    return true;
+}
+
+GizmoResult GizmoSystem::updateDrag(const GizmoHitTest& hit) {
+    GizmoResult result;
+    if (!tryUpdateDrag(hit, result)) {
+        return result;
+    }
     return result;
 }
 
-GizmoResult GizmoSystem::endDrag() {
-    GizmoResult result;
-    if (!m_dragging) {
-        return result;
+bool GizmoSystem::tryEndDrag(GizmoResult& out) {
+    out = {};
+    if (!preflightEndDrag().canEnd) {
+        return false;
     }
 
     m_currentTransform = applySnapping_(m_currentTransform);
     markDirty_();
 
-    result.active = false;
-    result.changed = true;
-    result.axis = m_activeAxis;
-    result.transform = m_currentTransform;
+    out.active = false;
+    out.changed = true;
+    out.axis = m_activeAxis;
+    out.transform = m_currentTransform;
 
     m_dragging = false;
     m_activeAxis = GizmoAxis::None;
+    return true;
+}
+
+GizmoResult GizmoSystem::endDrag() {
+    GizmoResult result;
+    if (!tryEndDrag(result)) {
+        return result;
+    }
     return result;
 }
 
