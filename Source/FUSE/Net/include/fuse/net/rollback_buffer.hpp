@@ -8,6 +8,7 @@
 
 namespace fuse::net {
 
+struct ReconcileRollbackPreflight;
 struct ReconcileResult;
 
 /// Ring buffer of per-frame rollback data — snapshots plus confirmed inputs (B7.4).
@@ -20,6 +21,7 @@ public:
     [[nodiscard]] u32 oldest_stored_frame() const { return m_oldest_frame; }
     [[nodiscard]] u32 newest_stored_frame() const { return m_newest_frame; }
     [[nodiscard]] u32 stored_frame_count() const;
+    [[nodiscard]] u32 remaining_capacity() const;
     [[nodiscard]] bool empty() const { return stored_frame_count() == 0; }
     [[nodiscard]] bool has_frame(u32 frame) const;
     [[nodiscard]] bool has_local_input(u32 frame) const;
@@ -42,6 +44,12 @@ public:
 
     /// Record confirmed remote input and compare against the stored local prediction.
     [[nodiscard]] ReconcileResult reconcile_remote_input(u32 frame, const PlayerInput& remote);
+
+    /// Preflight remote reconcile without mutating the buffer (B7.4 deepen follow-up).
+    [[nodiscard]] ReconcileRollbackPreflight preflight_remote_reconcile(u32 frame) const;
+
+    /// True when reconcile would return early without recording remote input (B7.4 deepen follow-up).
+    [[nodiscard]] bool should_skip_reconcile(u32 frame) const;
 
 private:
     struct FrameSlot {
