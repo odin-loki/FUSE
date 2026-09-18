@@ -25,6 +25,10 @@ u64 hash_bool(bool value) {
 } // namespace
 
 u64 fnv1a64_bytes(const u8* data, usize size) {
+    if (size == 0) {
+        return kFnvOffset;
+    }
+
     u64 hash = kFnvOffset;
     for (usize i = 0; i < size; ++i) {
         hash ^= static_cast<u64>(data[i]);
@@ -74,6 +78,9 @@ u64 hash_upstream_dependencies(const std::vector<std::string>& dependency_output
 
     u64 hash = 0;
     for (const std::string& dependency_output : dependency_output_paths) {
+        if (dependency_output.empty()) {
+            continue;
+        }
         hash = fnv1a64_combine(hash, hash_string(dependency_output));
         for (const CookManifestEntry& asset : manifest.assets) {
             if (asset.output_path == dependency_output) {
@@ -175,6 +182,9 @@ u64 hash_manifest_entry(const CookManifestEntry& entry) {
     hash = fnv1a64_combine(hash, hash_string(entry.output_path));
     hash = fnv1a64_combine(hash, file_hash);
     for (const std::string& dependency : entry.dependencies) {
+        if (dependency.empty()) {
+            continue;
+        }
         hash = fnv1a64_combine(hash, hash_string(dependency));
         hash = fnv1a64_combine(hash, hash_file_content(dependency));
     }
