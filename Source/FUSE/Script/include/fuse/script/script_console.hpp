@@ -31,6 +31,10 @@ public:
     [[nodiscard]] bool can_repeat() const { return !m_lastExecutedLine.empty(); }
     /// True for lookup/meta built-ins that skip history and repeat-state updates.
     [[nodiscard]] static bool is_meta_command(const char* name);
+    /// True when `line` parses to a lookup/meta built-in (pre-dispatch guard).
+    [[nodiscard]] static bool is_meta_line(const char* line);
+    /// True when a successful `execute` of `line` would append to history (pre-dispatch guard).
+    [[nodiscard]] bool would_record_history(const char* line) const;
 
     void setHistoryCapacity(u32 capacity);
     [[nodiscard]] u32 historyCapacity() const { return m_history.capacity(); }
@@ -41,7 +45,6 @@ public:
     [[nodiscard]] const std::string& history_newest() const { return m_history.newest(); }
     [[nodiscard]] const std::string& history_oldest() const { return m_history.oldest(); }
     [[nodiscard]] bool history_contains(const char* line) const { return m_history.contains(line); }
-    [[nodiscard]] bool is_history_navigation_at_end() const { return m_history.is_navigation_at_end(); }
 
     /// Navigate command history (`previous=true` recalls older entries).
     [[nodiscard]] const std::string& recallHistory(bool previous) { return m_history.recall(previous); }
@@ -85,10 +88,8 @@ public:
     [[nodiscard]] std::string unique_prefix_match(const char* partial) const {
         return m_commands.unique_prefix_match(partial);
     }
-    /// Resolve `partial` to a command name, or empty when missing/ambiguous.
-    [[nodiscard]] std::string resolve_command_name(const char* partial) const {
-        return m_commands.unique_prefix_match(partial);
-    }
+    /// Resolve `partial` to a command name, or empty when missing/ambiguous (whitespace trimmed).
+    [[nodiscard]] std::string resolve_command_name(const char* partial) const;
 
 private:
     ScriptConsoleCommandResult executeLine_(const char* line, bool record_history);

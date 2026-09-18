@@ -732,6 +732,65 @@ void testIsMetaCommandAccessor() {
     expectTrue(!fuse::script::ScriptConsole::is_meta_command(""), "empty is not meta");
 }
 
+void testIsMetaLineAndWouldRecordHistoryGuards() {
+    expectTrue(fuse::script::ScriptConsole::is_meta_line("help"), "help line is meta");
+    expectTrue(fuse::script::ScriptConsole::is_meta_line("  resolve help  "), "resolve line is meta");
+    expectTrue(fuse::script::ScriptConsole::is_meta_line("repeat"), "repeat line is meta");
+    expectTrue(!fuse::script::ScriptConsole::is_meta_line("echo fuse"), "echo line is not meta");
+    expectTrue(!fuse::script::ScriptConsole::is_meta_line("clear"), "clear line is not meta");
+    expectTrue(!fuse::script::ScriptConsole::is_meta_line(nullptr), "null line is not meta");
+    expectTrue(!fuse::script::ScriptConsole::is_meta_line("   "), "whitespace line is not meta");
+
+    fuse::script::ScriptConsole console;
+    expectTrue(!console.would_record_history(nullptr), "null line would not record");
+    expectTrue(!console.would_record_history("   "), "whitespace line would not record");
+    expectTrue(!console.would_record_history("help"), "help would not record");
+    expectTrue(!console.would_record_history("resolve help"), "resolve would not record");
+    expectTrue(!console.would_record_history("repeat"), "repeat would not record");
+    expectTrue(console.would_record_history("echo fuse"), "echo would record");
+    expectTrue(console.would_record_history("clear"), "clear would record");
+}
+
+void testHistoryInvalidSubcommandGuard() {
+    fuse::script::ScriptConsole console;
+    console.execute("echo one");
+
+    const auto invalid = console.execute("history prune");
+    expectTrue(invalid.status == fuse::script::ScriptConsoleCommandStatus::InvalidArgument,
+               "history rejects unknown subcommand");
+    expectTrue(invalid.output == "history subcommand must be clear",
+               "history unknown subcommand guard message");
+    expectTrue(console.historyCount() == 1u, "history invalid subcommand does not push history");
+
+    const auto cleared = console.execute("history   clear   ");
+    expectTrue(cleared.ok(), "history clear trims surrounding whitespace");
+    expectTrue(cleared.output == "history cleared", "trimmed history clear succeeds");
+    expectTrue(console.historyCount() == 0u, "trimmed history clear empties buffer");
+}
+
+void testDescribeTrimGuard() {
+    fuse::script::ScriptConsole console;
+
+    const auto trimmed = console.execute("describe   echo   ");
+    expectTrue(trimmed.ok(), "describe trims surrounding whitespace");
+    expectTrue(trimmed.output == "echo: built-in", "describe trimmed name resolves built-in");
+
+    const auto whitespace = console.execute("describe    ");
+    expectTrue(whitespace.status == fuse::script::ScriptConsoleCommandStatus::InvalidArgument,
+               "describe rejects whitespace-only args");
+}
+
+void testResolveCommandNameTrimGuard() {
+    fuse::script::ScriptConsole console;
+
+    expectTrue(console.resolve_command_name("   help   ") == "help",
+               "resolve_command_name trims surrounding whitespace");
+    expectTrue(console.resolve_command_name("   ").empty(),
+               "resolve_command_name empty for whitespace-only partial");
+    expectTrue(console.resolve_command_name("   histor   ") == "history",
+               "resolve_command_name trims before unique prefix match");
+}
+
 void testResolveWhitespaceGuards() {
     fuse::script::ScriptConsole console;
 
@@ -876,6 +935,10 @@ void run_script_console_tests() {
     testMetaCommandsSkipHistoryAndRepeat();
     testCanRepeatAccessor();
     testIsMetaCommandAccessor();
+    testIsMetaLineAndWouldRecordHistoryGuards();
+    testHistoryInvalidSubcommandGuard();
+    testDescribeTrimGuard();
+    testResolveCommandNameTrimGuard();
     testResolveWhitespaceGuards();
     testSuggestWhitespaceGuards();
     testHistoryNewestOldestAndContainsAccessors();

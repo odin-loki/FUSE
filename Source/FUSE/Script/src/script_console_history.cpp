@@ -163,10 +163,6 @@ bool ScriptConsoleHistoryBuffer::can_recall_next() const {
     return m_size > 0 && m_navigationCursor < static_cast<s32>(m_size);
 }
 
-bool ScriptConsoleHistoryBuffer::is_navigation_at_end() const {
-    return m_size == 0 || m_navigationCursor >= static_cast<s32>(m_size);
-}
-
 u32 ScriptConsoleHistoryBuffer::ringIndex_(u32 offset) const {
     return (m_start + offset) % m_capacity;
 }
