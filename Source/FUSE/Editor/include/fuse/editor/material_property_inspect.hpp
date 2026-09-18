@@ -76,4 +76,14 @@ inline constexpr u32 kInvalidMaterialSlot = UINT32_MAX;
 /// Clamp all fields in an authoring-side material edit state (B6.7 deepen follow-up).
 void clampMaterialEditState(MaterialEditState& state);
 
+/// Refresh guard — binding must be live before external edit-state pull (B6.7 deepen follow-up).
+[[nodiscard]] bool canRefreshMaterialBinding(const MaterialPropertyBinding& binding);
+
+/// True when panel refresh can be skipped for this binding (B6.7 deepen follow-up).
+[[nodiscard]] bool shouldSkipMaterialPanelRefresh(const MaterialPropertyBinding& binding);
+
+/// True when a property row still needs inspector repaint (B6.7 deepen follow-up).
+[[nodiscard]] bool isMaterialPropertyRefreshPending(const MaterialPropertyBinding& binding,
+                                                    MaterialPropertyId id);
+
 } // namespace fuse::editor

@@ -483,6 +483,67 @@ void testMaterialEditStateBulkClamp() {
     expectTrue(state.shadingModel == 5u, "bulk clamp pins shading model");
 }
 
+void testMaterialPropertyBindingRefreshGuards() {
+    fuse::editor::MaterialPropertyBinding binding;
+    fuse::editor::MaterialEditState state{};
+
+    expectTrue(!binding.canRefreshFromEditState(), "unbound binding cannot refresh");
+    expectTrue(binding.shouldSkipPanelRefresh(), "unbound binding skips panel refresh");
+    expectTrue(!binding.hasAnyPropertyDirty(), "unbound binding has no dirty properties");
+    expectTrue(!binding.tryMarkPanelRefreshed(), "tryMarkPanelRefreshed fails when unbound");
+    expectTrue(!binding.tryRefreshFromEditState(state), "tryRefreshFromEditState fails when unbound");
+    expectTrue(!fuse::editor::canRefreshMaterialBinding(binding),
+               "inspect refresh guard rejects unbound binding");
+    expectTrue(fuse::editor::shouldSkipMaterialPanelRefresh(binding),
+               "inspect skip guard true when unbound");
+
+    expectTrue(binding.tryBind(0u, 1u, state), "tryBind succeeds for valid slot");
+    expectTrue(binding.canRefreshFromEditState(), "bound binding can refresh");
+    expectTrue(fuse::editor::canRefreshMaterialBinding(binding),
+               "inspect refresh guard accepts bound binding");
+    expectTrue(binding.shouldSkipPanelRefresh(), "clean bound binding skips panel refresh");
+    expectTrue(fuse::editor::shouldSkipMaterialPanelRefresh(binding),
+               "inspect skip guard true when refresh not pending");
+
+    fuse::editor::CommandStack cmds;
+    expectTrue(binding.setRoughness(0.4f, cmds), "roughness edit marks dirty");
+    expectTrue(binding.hasAnyPropertyDirty(), "dirty mask set after edit");
+    expectTrue(binding.needsPanelRefresh(), "panel refresh pending after edit");
+    expectTrue(!binding.shouldSkipPanelRefresh(), "dirty bound binding needs refresh");
+    expectTrue(fuse::editor::isMaterialPropertyRefreshPending(
+                   binding, fuse::editor::MaterialPropertyId::Roughness),
+               "roughness row refresh pending");
+    expectTrue(!fuse::editor::isMaterialPropertyRefreshPending(
+                   binding, fuse::editor::MaterialPropertyId::Metallic),
+               "metallic row refresh not pending");
+
+    expectTrue(binding.tryMarkPanelRefreshed(), "tryMarkPanelRefreshed clears pending refresh");
+    expectTrue(!binding.hasAnyPropertyDirty(), "mark refreshed clears dirty mask");
+    expectTrue(binding.shouldSkipPanelRefresh(), "refreshed binding skips panel refresh");
+
+    fuse::editor::MaterialEditState external{};
+    external.roughness = 0.75f;
+    expectTrue(binding.tryRefreshFromEditState(external), "tryRefreshFromEditState succeeds when bound");
+    expectTrue(state.roughness == 0.75f, "tryRefreshFromEditState copies edit state");
+
+    fuse::editor::EditorState editorState;
+    fuse::editor::MaterialEditorPanel panel;
+    panel.sync(editorState, 1u);
+    panel.selectMaterial(0u);
+    panel.clearPreviewDirty();
+
+    expectTrue(panel.canRefreshPanel(), "selected panel can refresh");
+    expectTrue(panel.shouldSkipPanelRefresh(), "clean panel skips refresh");
+    expectTrue(!panel.tryRefreshPanel(), "tryRefreshPanel no-op when clean");
+
+    expectTrue(panel.setMetallic(0.5f, cmds), "panel edit marks refresh pending");
+    expectTrue(panel.hasAnyPropertyDirty(), "panel tracks dirty properties");
+    expectTrue(!panel.shouldSkipPanelRefresh(), "dirty panel needs refresh");
+    expectTrue(panel.tryRefreshPanel(), "tryRefreshPanel clears pending refresh");
+    expectTrue(!panel.needsPanelRefresh(), "tryRefreshPanel clears panel refresh flag");
+    expectTrue(!panel.previewDirty(), "tryRefreshPanel clears preview dirty");
+}
+
 void testMaterialPropertyBindingRefreshClamp() {
     fuse::editor::EditorState state;
     fuse::editor::MaterialEditorPanel panel;
@@ -822,6 +883,7 @@ int main() {
     testMaterialPropertyInspectEnumeration();
     testMaterialPropertyInspectScalarClamp();
     testMaterialEditStateBulkClamp();
+    testMaterialPropertyBindingRefreshGuards();
     testMaterialPropertyBindingRefreshClamp();
     testMaterialEditorPanelEmptyCatalog();
     testMaterialSlotValidationHelpers();

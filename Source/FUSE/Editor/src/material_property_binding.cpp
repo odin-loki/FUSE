@@ -108,7 +108,7 @@ void MaterialPropertyBinding::markPropertyDirty_(MaterialPropertyId id) {
 bool MaterialPropertyBinding::postProperty_(MaterialPropertyId id,
                                             const std::string& propertyValue,
                                             CommandStack& cmds) {
-    if (!isBound()) {
+    if (!canPostProperty()) {
         return false;
     }
 
@@ -265,14 +265,30 @@ void MaterialPropertyBinding::markPanelRefreshed() {
     m_coalescedDirtyCount = 0u;
 }
 
+bool MaterialPropertyBinding::tryMarkPanelRefreshed() {
+    if (shouldSkipPanelRefresh()) {
+        return false;
+    }
+    markPanelRefreshed();
+    return true;
+}
+
 void MaterialPropertyBinding::refreshFromEditState(const MaterialEditState& state) {
-    if (!isBound() || m_editState == nullptr) {
+    if (!canRefreshFromEditState()) {
         return;
     }
 
     *m_editState = state;
     clampMaterialEditState(*m_editState);
     markPanelRefreshed();
+}
+
+bool MaterialPropertyBinding::tryRefreshFromEditState(const MaterialEditState& state) {
+    if (!canRefreshFromEditState()) {
+        return false;
+    }
+    refreshFromEditState(state);
+    return true;
 }
 
 } // namespace fuse::editor

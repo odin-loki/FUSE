@@ -90,6 +90,14 @@ void MaterialEditorPanel::refreshPanel() {
     m_previewDirty = false;
 }
 
+bool MaterialEditorPanel::tryRefreshPanel() {
+    if (!canRefreshPanel() || shouldSkipPanelRefresh()) {
+        return false;
+    }
+    refreshPanel();
+    return true;
+}
+
 bool MaterialEditorPanel::setRoughness(f32 roughness, CommandStack& cmds) {
     if (!hasSelectedMaterial() || !m_binding.canPostProperty()) {
         return false;
