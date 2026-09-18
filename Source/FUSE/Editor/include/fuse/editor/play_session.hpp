@@ -28,6 +28,7 @@ struct FixedStepPreflight {
 struct VariableTickPreflight {
     bool skipped = false;
     bool wouldSimulate = false;
+    bool wouldAdvanceAccumulator = false;
 };
 
 /// Captured dirty-flag metadata for PIE restore (B6.12 deepen follow-up).
@@ -44,11 +45,21 @@ struct WorldSnapshotInfo {
     u32 entityCount = 0;
 };
 
+/// Read-only world-snapshot drain diagnostics (B6.12 deepen follow-up — drain guard).
+struct WorldSnapshotPreflight {
+    bool captured = false;
+    u32 entityCount = 0;
+    bool skipped = false;
+
+    bool canDrain() const { return captured; }
+};
+
 /// Read-only dirty-snapshot restore diagnostics (B6.12 deepen follow-up — restore guard).
 struct DirtySnapshotPreflight {
     bool captured = false;
     bool sceneModified = false;
     u32 entityCount = 0;
+    u32 dirtyEntityCount = 0;
     bool skipped = false;
 
     bool canRestore() const { return captured; }
@@ -58,6 +69,10 @@ struct DirtySnapshotPreflight {
 struct TickFixedStepPreflight {
     bool variableTickSkipped = false;
     FixedStepPreflight fixedStep{};
+
+    bool canSimulateVariableTick() const { return !variableTickSkipped; }
+    bool canDrainFixedStep() const { return fixedStep.canDrain(); }
+    bool canSimulateFrame() const { return canSimulateVariableTick() || canDrainFixedStep(); }
 };
 
 /// ECS world snapshot for PIE restore (B6.12 deepen — transform payloads per entity).
@@ -126,6 +141,10 @@ public:
     /// Preflight dirty-flag restore without mutating editor state.
     DirtySnapshotPreflight preflightDirtySnapshot() const;
     bool canRestoreDirtySnapshot() const { return preflightDirtySnapshot().canRestore(); }
+    bool shouldSkipWorldSnapshotRestore() const { return !m_hasWorldSnapshot; }
+    /// Preflight world snapshot drain without mutating editor state.
+    WorldSnapshotPreflight preflightWorldSnapshot() const;
+    bool canDrainWorldSnapshot() const { return preflightWorldSnapshot().canDrain(); }
     u32 dirtySnapshotEntityCount() const {
         return m_hasDirtySnapshot ? static_cast<u32>(m_dirtySnapshot.transformDirty.size()) : 0u;
     }
@@ -139,6 +158,7 @@ public:
     u32 dirtySnapshotDirtyEntityCount() const;
     WorldSnapshotInfo worldSnapshotInfo() const;
     ecs::EntityID worldSnapshotEntityAt(usize index) const;
+    bool worldSnapshotContainsEntity(ecs::EntityID entityId) const;
     bool shouldSkipWorldSnapshotDrain() const;
     bool shouldSkipDirtySnapshotDrain() const;
     bool hasWorldSnapshot() const { return m_hasWorldSnapshot; }

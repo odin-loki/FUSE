@@ -175,7 +175,12 @@ VariableTickPreflight PlaySession::preflightVariableTick(f32 dt,
                                                          const PlayModePhysicsState& physics) const {
     VariableTickPreflight preflight{};
     preflight.skipped = shouldSkipVariableTick(dt, physics);
-    preflight.wouldSimulate = !preflight.skipped;
+    if (preflight.skipped) {
+        return preflight;
+    }
+
+    preflight.wouldSimulate = true;
+    preflight.wouldAdvanceAccumulator = dt > 0.f;
     return preflight;
 }
 
@@ -212,11 +217,25 @@ DirtySnapshotPreflight PlaySession::preflightDirtySnapshot() const {
     preflight.captured = true;
     preflight.sceneModified = m_dirtySnapshot.sceneModified;
     preflight.entityCount = static_cast<u32>(m_dirtySnapshot.transformDirty.size());
+    preflight.dirtyEntityCount = dirtySnapshotDirtyEntityCount();
+    return preflight;
+}
+
+WorldSnapshotPreflight PlaySession::preflightWorldSnapshot() const {
+    WorldSnapshotPreflight preflight{};
+
+    if (shouldSkipWorldSnapshotRestore()) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    preflight.captured = true;
+    preflight.entityCount = static_cast<u32>(m_worldSnapshot.entities.size());
     return preflight;
 }
 
 bool PlaySession::shouldSkipVariableTick(f32 dt, const PlayModePhysicsState& physics) const {
-    return !m_controller.isPlaying() || !physics.simulationActive || dt < 0.f;
+    return !m_controller.isPlaying() || !physics.simulationActive || dt <= 0.f;
 }
 
 bool PlaySession::shouldSkipFixedStepDrain(f32 fixedDt, const PlayModePhysicsState& physics) const {
@@ -300,6 +319,20 @@ ecs::EntityID PlaySession::worldSnapshotEntityAt(usize index) const {
     return m_worldSnapshot.entities[index].first;
 }
 
+bool PlaySession::worldSnapshotContainsEntity(ecs::EntityID entityId) const {
+    if (!m_hasWorldSnapshot || !entityId.valid()) {
+        return false;
+    }
+
+    for (const std::pair<ecs::EntityID, ecs::Transform>& entry : m_worldSnapshot.entities) {
+        if (entry.first == entityId) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 bool PlaySession::shouldSkipWorldSnapshotDrain() const {
     return !m_hasWorldSnapshot;
 }
@@ -332,7 +365,7 @@ bool PlaySession::drainWorldSnapshot(EditorScene& editorScene) {
 }
 
 void PlaySession::restoreDirtyFlags(EditorScene& editorScene, EditorState& state) const {
-    if (!m_hasDirtySnapshot) {
+    if (shouldSkipDirtySnapshotRestore()) {
         return;
     }
 
