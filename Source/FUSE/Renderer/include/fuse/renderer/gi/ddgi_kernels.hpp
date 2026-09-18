@@ -23,6 +23,9 @@ struct DDGIKernelParams {
     f32 max_ray_distance = 20.f;
 };
 
+/// Preflight guard before probe update launch — false when params or indices are unusable.
+bool canLaunchProbeUpdate(const DDGIKernelParams& params);
+
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);
 
