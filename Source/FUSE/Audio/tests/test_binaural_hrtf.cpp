@@ -421,6 +421,133 @@ void testCoupledPanVec3UsesCoupledForPath() {
                "Vec3 coupled helper matches coupled_for_path");
 }
 
+void testShouldSkipHrtfIrConvolution() {
+    const fuse::audio::HrtfIrStub empty = fuse::audio::make_empty_hrtf_ir();
+    expectTrue(fuse::audio::should_skip_hrtf_ir_convolution(empty),
+               "empty IR skips convolution");
+    expectTrue(fuse::audio::should_skip_hrtf_ir_convolution(empty)
+                   == fuse::audio::is_empty_hrtf_ir(empty),
+               "should_skip_hrtf_ir_convolution matches is_empty_hrtf_ir");
+
+    const float samples[] = {0.5f};
+    const fuse::audio::HrtfIrStub valid{samples, 1};
+    expectTrue(!fuse::audio::should_skip_hrtf_ir_convolution(valid),
+               "valid IR does not skip convolution");
+    expectTrue(fuse::audio::should_skip_hrtf_ir_convolution(valid)
+                   == !fuse::audio::should_use_hrtf_ir(valid),
+               "should_skip_hrtf_ir_convolution inverts should_use_hrtf_ir");
+}
+
+void testShouldFallbackHrtfToIldItdStub() {
+    const fuse::audio::HrtfIrStub empty = fuse::audio::make_empty_hrtf_ir();
+    const fuse::audio::Vec3 offset{5.f, 0.f, 0.f};
+
+    expectTrue(fuse::audio::should_fallback_hrtf_to_ild_itd_stub(empty),
+               "empty IR falls back to ILD/ITD stub");
+    expectTrue(fuse::audio::should_fallback_hrtf_to_ild_itd_stub(empty)
+                   == fuse::audio::should_skip_hrtf_ir_convolution(empty),
+               "fallback alias matches skip convolution on empty IR");
+
+    const float samples[] = {1.f};
+    const fuse::audio::HrtfIrStub valid{samples, 1};
+    expectTrue(!fuse::audio::should_fallback_hrtf_to_ild_itd_stub(valid),
+               "valid IR does not fall back to ILD/ITD stub");
+
+    expectTrue(fuse::audio::should_fallback_hrtf_to_ild_itd_stub(true, empty, offset),
+               "enabled separated source with empty IR falls back");
+    expectTrue(!fuse::audio::should_fallback_hrtf_to_ild_itd_stub(true, valid, offset),
+               "enabled separated source with valid IR does not fall back");
+    expectTrue(!fuse::audio::should_fallback_hrtf_to_ild_itd_stub(false, empty, offset),
+               "disabled HRTF does not fall back to ILD/ITD stub");
+    expectTrue(!fuse::audio::should_fallback_hrtf_to_ild_itd_stub(true, empty, fuse::audio::Vec3{}),
+               "co-located source does not fall back to ILD/ITD stub");
+}
+
+void testShouldUseHrtfConvolutionPath() {
+    const fuse::audio::Vec3 offset{5.f, 0.f, 0.f};
+    const fuse::audio::HrtfIrStub empty = fuse::audio::make_empty_hrtf_ir();
+    const float samples[] = {1.f};
+    const fuse::audio::HrtfIrStub valid{samples, 1};
+
+    expectTrue(!fuse::audio::should_use_hrtf_convolution_path(true, empty, offset),
+               "empty IR does not select convolution path");
+    expectTrue(fuse::audio::should_use_hrtf_convolution_path(true, valid, offset),
+               "valid IR selects convolution path");
+    expectTrue(!fuse::audio::should_use_hrtf_convolution_path(false, valid, offset),
+               "disabled HRTF skips convolution path");
+    expectTrue(fuse::audio::should_use_hrtf_convolution_path(true, valid, offset)
+                   == (fuse::audio::resolve_hrtf_pan_path(true, valid, offset)
+                       == fuse::audio::HrtfPanPath::Convolution),
+               "convolution path guard matches resolve_hrtf_pan_path");
+}
+
+void testShouldApplyHrtfSpatialPan() {
+    expectTrue(fuse::audio::should_apply_hrtf_spatial_pan(fuse::audio::HrtfPanPath::IldItdStub),
+               "ILD/ITD stub applies spatial pan");
+    expectTrue(fuse::audio::should_apply_hrtf_spatial_pan(fuse::audio::HrtfPanPath::Convolution),
+               "convolution path applies spatial pan");
+    expectTrue(!fuse::audio::should_apply_hrtf_spatial_pan(fuse::audio::HrtfPanPath::Bypass),
+               "bypass path does not apply spatial pan");
+    expectTrue(fuse::audio::should_apply_hrtf_spatial_pan(fuse::audio::HrtfPanPath::Bypass)
+                   == !fuse::audio::should_skip_hrtf_spatial_pan(fuse::audio::HrtfPanPath::Bypass),
+               "should_apply_hrtf_spatial_pan inverts should_skip_hrtf_spatial_pan");
+}
+
+void testIsConvolutionHrtfPanPathAlias() {
+    expectTrue(fuse::audio::is_convolution_hrtf_pan_path(fuse::audio::HrtfPanPath::Convolution),
+               "convolution path alias");
+    expectTrue(!fuse::audio::is_convolution_hrtf_pan_path(fuse::audio::HrtfPanPath::IldItdStub),
+               "ILD/ITD stub is not convolution alias");
+    expectTrue(fuse::audio::is_convolution_hrtf_pan_path(fuse::audio::HrtfPanPath::Convolution)
+                   == fuse::audio::hrtf_pan_path_uses_convolution(
+                          fuse::audio::HrtfPanPath::Convolution),
+               "is_convolution_hrtf_pan_path matches hrtf_pan_path_uses_convolution");
+}
+
+void testPerScalarUnityHrtfAttenuationGuards() {
+    expectTrue(fuse::audio::is_unity_hrtf_distance_attenuation(1.f),
+               "unity distance attenuation");
+    expectTrue(fuse::audio::is_unity_hrtf_distance_attenuation(1.5f),
+               "above-unity distance clamps to unity");
+    expectTrue(!fuse::audio::is_unity_hrtf_distance_attenuation(0.5f),
+               "reduced distance is non-unity");
+
+    expectTrue(fuse::audio::is_unity_hrtf_occlusion_gain(1.f), "unity occlusion gain");
+    expectTrue(!fuse::audio::is_unity_hrtf_occlusion_gain(0.3f),
+               "reduced occlusion is non-unity");
+
+    expectTrue(fuse::audio::is_unity_hrtf_attenuation(1.f, 1.f),
+               "combined unity matches per-scalar unity");
+    expectTrue(fuse::audio::should_skip_hrtf_attenuation_coupling(1.f, 1.f),
+               "should_skip matches combined unity");
+    expectTrue(!fuse::audio::should_skip_hrtf_attenuation_coupling(0.5f, 1.f),
+               "reduced distance skips unity coupling guard");
+    expectTrue(!fuse::audio::should_skip_hrtf_attenuation_coupling(1.f, 0.4f),
+               "reduced occlusion skips unity coupling guard");
+}
+
+void testApplyHrtfAttenuationCouplingUnityEarlyOut() {
+    const fuse::audio::Vec3 offset{5.f, 0.f, 0.f};
+    const fuse::audio::BinauralPanGains wide =
+        fuse::audio::compute_binaural_pan_gains(offset);
+
+    fuse::audio::BinauralPanGains unchanged = wide;
+    fuse::audio::apply_hrtf_attenuation_coupling(unchanged, 1.f, 1.f);
+    expectNear(unchanged.left, wide.left, 1e-5f,
+               "apply_hrtf_attenuation_coupling early-outs at unity");
+    expectNear(unchanged.right, wide.right, 1e-5f,
+               "apply_hrtf_attenuation_coupling early-outs at unity");
+
+    expectTrue(fuse::audio::should_apply_hrtf_distance_coupling(0.2f),
+               "reduced distance warrants distance coupling");
+    expectTrue(!fuse::audio::should_apply_hrtf_distance_coupling(1.f),
+               "unity distance skips distance coupling");
+    expectTrue(fuse::audio::should_apply_hrtf_occlusion_coupling(0.1f),
+               "reduced occlusion warrants occlusion coupling");
+    expectTrue(!fuse::audio::should_apply_hrtf_occlusion_coupling(1.f),
+               "unity occlusion skips occlusion coupling");
+}
+
 void testBinauralPanGainSampleHelpers() {
     const fuse::audio::BinauralPanGains centre = fuse::audio::make_centre_binaural_pan_gains();
     expectNear(fuse::audio::compute_binaural_pan_energy(centre), 0.5f, 1e-5f,
@@ -473,6 +600,13 @@ int main() {
     testUnityHrtfAttenuationGuards();
     testClampHrtfAttenuationCouplingWeight();
     testCoupledPanVec3UsesCoupledForPath();
+    testShouldSkipHrtfIrConvolution();
+    testShouldFallbackHrtfToIldItdStub();
+    testShouldUseHrtfConvolutionPath();
+    testShouldApplyHrtfSpatialPan();
+    testIsConvolutionHrtfPanPathAlias();
+    testPerScalarUnityHrtfAttenuationGuards();
+    testApplyHrtfAttenuationCouplingUnityEarlyOut();
     testBinauralPanGainSampleHelpers();
     fuse::core::shutdown();
 
