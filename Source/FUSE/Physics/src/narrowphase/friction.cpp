@@ -155,4 +155,65 @@ bool should_skip_tangential_velocity_solve(
     return hasNegligibleTangentialVelocity(projectedVelocity, speedThreshold);
 }
 
+bool friction_basis_is_stale(const ContactManifold& manifold, f32 epsilon) {
+    if (should_skip_friction_tangents(manifold)) {
+        return false;
+    }
+
+    const bool hasPartialBasis =
+        manifold.frictionBasis.tangent1.length() > epsilon ||
+        manifold.frictionBasis.tangent2.length() > epsilon;
+    if (!hasPartialBasis) {
+        return false;
+    }
+
+    return !friction_basis_matches_normal(manifold, epsilon);
+}
+
+bool needs_friction_basis_refresh(const ContactManifold& manifold, f32 epsilon) {
+    if (should_skip_friction_tangents(manifold)) {
+        return false;
+    }
+    return !has_cached_friction_basis(manifold) || friction_basis_is_stale(manifold, epsilon);
+}
+
+bool can_skip_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon) {
+    if (should_skip_friction_tangents(manifold)) {
+        return true;
+    }
+    return has_cached_friction_basis(manifold) && !friction_basis_is_stale(manifold, epsilon);
+}
+
+bool rebuild_friction_basis_if_needed(ContactManifold& manifold, f32 epsilon) {
+    if (should_skip_friction_tangents(manifold)) {
+        invalidate_friction_basis(manifold);
+        return false;
+    }
+
+    if (can_skip_friction_basis_rebuild(manifold, epsilon)) {
+        return true;
+    }
+
+    invalidate_friction_basis(manifold);
+    return ensure_friction_basis(manifold);
+}
+
+void compute_friction_tangents_if_needed(ContactManifold& manifold, f32 epsilon) {
+    if (should_skip_friction_tangents(manifold)) {
+        invalidate_friction_basis(manifold);
+        return;
+    }
+
+    if (can_skip_friction_basis_rebuild(manifold, epsilon)) {
+        return;
+    }
+
+    invalidate_friction_basis(manifold);
+    const f32 normalLength = manifold.contactNormal.length();
+    if (std::fabs(normalLength - 1.f) > 1e-4f) {
+        manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+    }
+    manifold.buildFrictionBasis();
+}
+
 } // namespace fuse::physics::narrowphase

@@ -80,4 +80,19 @@ bool should_skip_tangential_velocity_solve(
     f32 speedThreshold = 1e-6f,
     f32 impulseEpsilon = 1e-8f);
 
+/// Returns true when a non-empty basis no longer matches the contact normal (B4.4 deepen pass).
+bool friction_basis_is_stale(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Returns true when the basis is missing or stale and should be rebuilt (B4.4 deepen pass).
+bool needs_friction_basis_refresh(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Returns true when an existing orthonormal basis can be reused without rebuild (B4.4 deepen pass).
+bool can_skip_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Invalidate stale frames and build or reuse an orthonormal basis (B4.4 deepen pass).
+bool rebuild_friction_basis_if_needed(ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Rebuild friction tangents only when the cached basis is missing or stale (B4.4 deepen pass).
+void compute_friction_tangents_if_needed(ContactManifold& manifold, f32 epsilon = 1e-4f);
+
 } // namespace fuse::physics::narrowphase

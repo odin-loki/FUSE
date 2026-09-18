@@ -97,4 +97,24 @@ bool generate_contact_manifold(ContactManifold& manifold);
 /// Build and store an orthonormal tangent frame on `manifold` (B4.3 deepen).
 void compute_friction_tangents(ContactManifold& manifold);
 
+/// Const preflight for narrowphase pair dispatch (B4.4 deepen pass).
+struct ContactPairPreflight {
+    ContactPairRejectReason reason = ContactPairRejectReason::None;
+    bool rejected = false;
+
+    bool can_dispatch() const { return !rejected; }
+};
+
+/// Populate pair preflight without running shape dispatch (B4.4 deepen pass).
+ContactPairPreflight preflight_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when narrowphase should skip this pair before dispatch (B4.4 deepen pass).
+bool should_skip_contact_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
 } // namespace fuse::physics::narrowphase

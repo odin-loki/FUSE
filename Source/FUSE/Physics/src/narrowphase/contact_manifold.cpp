@@ -282,6 +282,56 @@ bool ContactManifold::pruneIfEmpty(f32 separationEpsilon, f32 duplicateEpsilon) 
     return !empty();
 }
 
+bool ContactManifold::canSkipPruneNonPenetrating(f32 epsilon) const {
+    return !hasSeparatedPoints(epsilon);
+}
+
+bool ContactManifold::canSkipPruneDuplicates(f32 positionEpsilon) const {
+    return !hasDuplicatePoints(positionEpsilon);
+}
+
+bool ContactManifold::canSkipPruneToMaxPoints(u32 maxPoints) const {
+    return pointCount <= maxPoints;
+}
+
+bool ContactManifold::canSkipPruneContactPoints(f32 separationEpsilon, f32 duplicateEpsilon) const {
+    return !needsPruning(separationEpsilon, duplicateEpsilon);
+}
+
+bool ContactManifold::hasShallowPenetrations(f32 minDepth) const {
+    for (u32 i = 0u; i < pointCount; ++i) {
+        if (points[i].penetration >= -1e-6f && points[i].penetration < minDepth) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ContactManifold::pruneContactPointsIfNeeded(f32 separationEpsilon, f32 duplicateEpsilon) {
+    if (canSkipPruneContactPoints(separationEpsilon, duplicateEpsilon)) {
+        return !empty();
+    }
+    return pruneIfEmpty(separationEpsilon, duplicateEpsilon);
+}
+
+ManifoldPrunePreflight preflight_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) {
+    ManifoldPrunePreflight preflight{};
+    if (manifold.empty()) {
+        preflight.skipped = true;
+        preflight.wouldBeEmpty = true;
+        return preflight;
+    }
+
+    preflight.hasSeparated = manifold.hasSeparatedPoints(separationEpsilon);
+    preflight.hasDuplicates = manifold.hasDuplicatePoints(duplicateEpsilon);
+    preflight.exceedsMaxPoints = manifold.pointCount > kMaxContactPointsPerManifold;
+    preflight.wouldBeEmpty = manifold.wouldBeEmptyAfterPrune(separationEpsilon, duplicateEpsilon);
+    return preflight;
+}
+
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};
     if (index >= pointCount) {

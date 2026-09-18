@@ -95,7 +95,50 @@ struct ContactManifold {
     bool pruneIfEmpty(
         f32 separationEpsilon = 1e-6f,
         f32 duplicateEpsilon = 1e-4f);
+
+    /// True when no separated slots would be removed by `pruneNonPenetratingPoints` (B4.4 deepen pass).
+    bool canSkipPruneNonPenetrating(f32 epsilon = 1e-6f) const;
+
+    /// True when no duplicate slots would be merged by `pruneDuplicatePoints` (B4.4 deepen pass).
+    bool canSkipPruneDuplicates(f32 positionEpsilon = 1e-4f) const;
+
+    /// True when point count is already within `maxPoints` (B4.4 deepen pass).
+    bool canSkipPruneToMaxPoints(u32 maxPoints = kMaxContactPointsPerManifold) const;
+
+    /// True when `pruneContactPoints` would be a no-op (B4.4 deepen pass).
+    bool canSkipPruneContactPoints(
+        f32 separationEpsilon = 1e-6f,
+        f32 duplicateEpsilon = 1e-4f) const;
+
+    /// Returns true when at least one penetrating point is shallower than `minDepth` (B4.4 deepen pass).
+    bool hasShallowPenetrations(f32 minDepth) const;
+
+    /// Prune only when `needsPruning`; returns true when points remain (B4.4 deepen pass).
+    bool pruneContactPointsIfNeeded(
+        f32 separationEpsilon = 1e-6f,
+        f32 duplicateEpsilon = 1e-4f);
 };
+
+/// Const preflight for manifold prune dispatch (B4.4 deepen pass).
+struct ManifoldPrunePreflight {
+    bool hasSeparated = false;
+    bool hasDuplicates = false;
+    bool exceedsMaxPoints = false;
+    bool wouldBeEmpty = false;
+    bool skipped = false;
+
+    bool needs_pruning() const {
+        return !skipped && (hasSeparated || hasDuplicates || exceedsMaxPoints);
+    }
+
+    bool can_prune_in_place() const { return needs_pruning() && !wouldBeEmpty; }
+};
+
+/// Populate prune preflight from a manifold without mutating slots (B4.4 deepen pass).
+ManifoldPrunePreflight preflight_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f);
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
