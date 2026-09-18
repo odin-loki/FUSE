@@ -53,4 +53,14 @@ inline bool needsInFlightFenceWaitForSlot(const FrameManager& manager, u32 slotI
 /// Acquire-path fence wait — current slot only; no-op success when already clear.
 bool waitInFlightFencesBeforeAcquire(FrameManager& manager);
 
+/// Wait the current ring slot only when its fence is signaled (alias for acquire-path wait).
+inline bool waitCurrentInFlightFenceIfSignaled(FrameManager& manager) {
+    return waitInFlightFencesBeforeAcquire(manager);
+}
+
+/// True when every slot fence is clear (no pending in-flight work).
+inline bool allInFlightFencesClear(const FrameManager& manager) {
+    return !hasPendingInFlightFences(manager);
+}
+
 } // namespace fuse::renderer

@@ -12,6 +12,11 @@ inline bool isValidSwapchainExtent(u32 width, u32 height) {
     return width > 0 && height > 0;
 }
 
+/// True when two extents share the same width and height.
+inline bool resizeExtentMatches(u32 widthA, u32 heightA, u32 widthB, u32 heightB) {
+    return widthA == widthB && heightA == heightB;
+}
+
 /// UINT32_MAX is the sentinel for headless, OUT_OF_DATE, or failed acquire.
 inline bool isEmptyAcquireResult(u32 imageIndex) {
     return imageIndex == UINT32_MAX;
@@ -27,6 +32,9 @@ bool isSwapchainEmpty(const VulkanSwapchain& swapchain);
 inline bool shouldSkipAcquireForEmptySwapchain(const VulkanSwapchain* swapchain) {
     return swapchain == nullptr || isSwapchainEmpty(*swapchain);
 }
+
+/// True when acquire should return UINT32_MAX without calling vkAcquireNextImageKHR.
+bool shouldEarlyOutEmptySwapchainAcquire(const VulkanSwapchain* swapchain, const FrameManager* frameManager);
 
 /// True when present should succeed without calling vkQueuePresentKHR.
 inline bool shouldEarlyOutEmptyPresent(const VulkanSwapchain* swapchain,
@@ -49,8 +57,8 @@ inline bool pendingResizeMatchesCurrentExtent(u32 currentWidth,
                                               u32 currentHeight,
                                               u32 pendingWidth,
                                               u32 pendingHeight) {
-    return isValidSwapchainExtent(pendingWidth, pendingHeight) && currentWidth == pendingWidth &&
-           currentHeight == pendingHeight;
+    return isValidSwapchainExtent(pendingWidth, pendingHeight) &&
+           resizeExtentMatches(pendingWidth, pendingHeight, currentWidth, currentHeight);
 }
 
 /// Returns true when a new resize replaces an already-pending extent (coalesce candidate).

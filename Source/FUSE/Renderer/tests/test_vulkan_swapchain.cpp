@@ -254,6 +254,10 @@ void testEmptySwapchainSkipGuards() {
                "empty swapchain skips acquire helper");
     expectTrue(fuse::renderer::shouldEarlyOutEmptyPresent(swapchain.get(), UINT32_MAX, nullptr),
                "empty acquire index early-outs present");
+    expectTrue(fuse::renderer::shouldEarlyOutEmptySwapchainAcquire(swapchain.get(), nullptr),
+               "empty swapchain early-outs acquire");
+    expectTrue(fuse::renderer::resizeExtentMatches(800, 600, 800, 600),
+               "resizeExtentMatches agrees on identical extents");
     expectTrue(fuse::renderer::isDuplicatePendingResizeExtent(1920, 1080, 1920, 1080),
                "matching pending extent is duplicate");
     expectTrue(!fuse::renderer::isDuplicatePendingResizeExtent(1920, 1080, 1280, 720),
