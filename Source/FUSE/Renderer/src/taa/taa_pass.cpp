@@ -90,6 +90,10 @@ bool TaaPass::matchesDimensions(u32 width, u32 height) const {
     return m_desc.width == width && m_desc.height == height && m_history.matchesDimensions(width, height);
 }
 
+bool TaaPass::viewportMatchesResolve(const TaaResolveDesc& desc) const {
+    return taaViewportDimensionsMatchPass(m_desc.width, m_desc.height, desc);
+}
+
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
     return m_resolve.wouldSkip(desc, m_history, reason);
 }
@@ -104,7 +108,16 @@ bool TaaPass::resolveFrame(const TaaResolveDesc& desc, void* cudaStream) {
         return false;
     }
 
-    if (!m_resolve.resolve(desc, m_history, cudaStream)) {
+    TaaResolveDesc working = desc;
+    stampObservedHistoryGeneration(working);
+
+    TaaResolveSkipReason skipReason = TaaResolveSkipReason::None;
+    if (m_resolve.wouldSkip(working, m_history, &skipReason)) {
+        m_stats.message = std::string("TAA pass resolve skipped — ") + taaResolveSkipReasonLabel(skipReason);
+        return false;
+    }
+
+    if (!m_resolve.resolve(working, m_history, cudaStream)) {
         m_stats.message = m_resolve.lastMessage();
         return false;
     }
