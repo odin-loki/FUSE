@@ -23,6 +23,10 @@ bool taaResolveDimensionsMatch(const TaaResolveDesc& desc, const TaaHistoryBuffe
     return history.matchesDimensions(desc.width, desc.height);
 }
 
+bool taaViewportDimensionsMatchPass(u32 passWidth, u32 passHeight, const TaaResolveDesc& desc) {
+    return taaResolveDimensionsValid(passWidth, passHeight) && passWidth == desc.width && passHeight == desc.height;
+}
+
 bool taaResolveBypassesHistoryGenerationGuard(const TaaResolveDesc& desc) {
     return desc.observed_history_generation == kTaaResolveNoHistoryGeneration;
 }
@@ -31,6 +35,25 @@ void stampObservedHistoryGeneration(TaaResolveDesc& desc, const TaaHistoryBuffer
     if (taaResolveBypassesHistoryGenerationGuard(desc)) {
         desc.observed_history_generation = history.invalidateGeneration();
     }
+}
+
+bool isObservedHistoryGenerationCurrent(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return taaResolveBypassesHistoryGenerationGuard(desc) ||
+           history.generationMatches(desc.observed_history_generation);
+}
+
+TaaResolveSkipReason preflightTaaResolve(TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    stampObservedHistoryGeneration(desc, history);
+    return classifyTaaResolveSkip(desc, history);
+}
+
+bool taaResolveCanProceed(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                          TaaResolveSkipReason* reason) {
+    const TaaResolveSkipReason skip = classifyTaaResolveSkip(desc, history);
+    if (reason != nullptr) {
+        *reason = skip;
+    }
+    return !taaResolveSkipReasonIsBlocking(skip);
 }
 
 TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
@@ -72,6 +95,12 @@ TAAParams clampTaaParams(const TAAParams& raw) {
     return clamped;
 }
 
+bool taaParamsRequireClamping(const TAAParams& raw) {
+    const TAAParams clamped = clampTaaParams(raw);
+    return raw.blend_factor != clamped.blend_factor || raw.velocity_rejection != clamped.velocity_rejection ||
+           raw.depth_rejection != clamped.depth_rejection || raw.clamp_gamma != clamped.clamp_gamma;
+}
+
 bool taaResolveRequiresVelocity(const TAAParams& params) {
     return params.velocity_rejection > 0.f;
 }
@@ -80,11 +109,19 @@ bool taaResolveRequiresDepth(const TAAParams& params) {
     return params.depth_rejection > 0.f;
 }
 
+bool taaResolveRequiresRejectionSurfaces(const TAAParams& params) {
+    return taaResolveRequiresVelocity(params) || taaResolveRequiresDepth(params);
+}
+
 f32 computeEffectiveBlend(bool firstFrame, const TAAParams& params) {
     if (firstFrame) {
         return 1.f;
     }
     return clampTaaParams(params).blend_factor;
+}
+
+f32 computeEffectiveBlendForHistory(const TaaHistoryBuffer& history, const TAAParams& params) {
+    return computeEffectiveBlend(!history.hasValidHistory(), params);
 }
 
 const char* taaResolveSkipReasonLabel(TaaResolveSkipReason reason) {

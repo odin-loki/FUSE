@@ -49,6 +49,8 @@ public:
     void invalidateHistory();
     void resize(u32 width, u32 height);
     bool matchesDimensions(u32 width, u32 height) const;
+    /// True when the resolve request matches this pass viewport dimensions.
+    bool viewportMatchesResolve(const TaaResolveDesc& desc) const;
     bool needsHistoryWarmup() const { return m_history.needsWarmup(); }
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// Preflight resolve without mutating history (delegates to `TaaResolve::wouldSkip`).
