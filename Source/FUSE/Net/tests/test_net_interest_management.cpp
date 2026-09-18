@@ -794,6 +794,92 @@ void run_interest_management_tests() {
     expectTrue(fuse::net::count_candidates_in_radius(origin, tight_disabled_policy,
                                                      disabled_candidates) == 0u,
                "negative radii count path early-outs");
+
+    // --- preflight_interest_diff_apply + should_skip guards (B7.4 deepen follow-up) ---
+    fuse::net::InterestScopeSet preflight_apply_scope;
+    preflight_apply_scope.entities = {make_entity(1), make_entity(2)};
+    fuse::net::InterestSetDiff preflight_apply_diff{};
+    const fuse::net::InterestDiffPreflight empty_preflight =
+        fuse::net::preflight_interest_diff_apply(preflight_apply_diff, preflight_apply_scope);
+    expectTrue(empty_preflight.empty_diff, "preflight marks empty diff");
+    expectTrue(!empty_preflight.redundant_apply, "empty diff is not redundant");
+    expectTrue(empty_preflight.should_skip(), "preflight should_skip on empty diff");
+    expectTrue(!empty_preflight.can_apply(), "preflight can_apply rejects empty diff");
+    expectTrue(fuse::net::should_skip_interest_diff_apply(preflight_apply_diff),
+               "should_skip accepts empty diff without scope");
+    expectTrue(fuse::net::should_skip_interest_diff_apply(preflight_apply_diff, preflight_apply_scope),
+               "should_skip accepts empty diff with scope");
+
+    preflight_apply_diff.entered = {make_entity(3)};
+    preflight_apply_diff.left = {make_entity(1)};
+    const fuse::net::InterestDiffPreflight valid_preflight =
+        fuse::net::preflight_interest_diff_apply(preflight_apply_diff, preflight_apply_scope);
+    expectTrue(!valid_preflight.empty_diff, "preflight accepts non-empty diff");
+    expectTrue(!valid_preflight.redundant_apply, "valid diff is not redundant");
+    expectTrue(valid_preflight.can_apply(), "preflight can_apply accepts valid diff");
+    expectTrue(!fuse::net::should_skip_interest_diff_apply(preflight_apply_diff, preflight_apply_scope),
+               "should_skip rejects applicable diff");
+
+    fuse::net::InterestSetDiff redundant_preflight_diff{};
+    redundant_preflight_diff.entered = {make_entity(1)};
+    redundant_preflight_diff.left = {make_entity(99)};
+    const fuse::net::InterestDiffPreflight redundant_preflight =
+        fuse::net::preflight_interest_diff_apply(redundant_preflight_diff, preflight_apply_scope);
+    expectTrue(!redundant_preflight.empty_diff, "redundant diff is non-empty");
+    expectTrue(redundant_preflight.redundant_apply, "preflight marks redundant diff");
+    expectTrue(redundant_preflight.should_skip(), "preflight should_skip redundant diff");
+    expectTrue(!redundant_preflight.can_apply(), "preflight can_apply rejects redundant diff");
+
+    // --- radius-filter skip guards + has_any_candidates_in_radius ---
+    fuse::net::InterestPolicy zero_radius_policy{};
+    zero_radius_policy.relevance_radius = 0.f;
+    zero_radius_policy.always_relevant_radius = 0.f;
+    expectTrue(fuse::net::is_empty_candidate_list(empty_candidates),
+               "is_empty_candidate_list reports empty vector");
+    expectTrue(!fuse::net::is_empty_candidate_list(candidates),
+               "is_empty_candidate_list rejects non-empty vector");
+    expectTrue(fuse::net::should_skip_radius_filter(empty_candidates, policy),
+               "should_skip_radius_filter on empty candidates");
+    expectTrue(fuse::net::should_skip_radius_filter(candidates, zero_radius_policy),
+               "should_skip_radius_filter on zero relevance radii");
+    expectTrue(!fuse::net::should_skip_radius_filter(candidates, policy),
+               "should_skip_radius_filter allows non-empty in-range candidates");
+
+    std::vector<fuse::net::InterestEntry> skip_filtered;
+    expectTrue(fuse::net::filter_candidates_in_radius(origin, zero_radius_policy, candidates,
+                                                     skip_filtered) == 0u,
+               "radius filter returns zero when skip guard triggers");
+    expectTrue(skip_filtered.empty(), "radius filter clears output when skip guard triggers");
+    expectTrue(fuse::net::count_candidates_in_radius(origin, zero_radius_policy, candidates) == 0u,
+               "radius count returns zero when skip guard triggers");
+    expectTrue(!fuse::net::has_any_candidates_in_radius(origin, zero_radius_policy, candidates),
+               "has_any_candidates_in_radius false when skip guard triggers");
+
+    expectTrue(fuse::net::has_any_candidates_in_radius(origin, policy, candidates),
+               "has_any_candidates_in_radius true for in-scope candidates");
+    expectTrue(fuse::net::has_any_candidates_in_radius(origin, policy, candidates) ==
+                   (fuse::net::count_candidates_in_radius(origin, policy, candidates) > 0u),
+               "has_any_candidates_in_radius matches count helper");
+    expectTrue(fuse::net::has_any_candidates_in_radius(origin, hysteresis_policy, hysteresis_candidates,
+                                                     prior_scope),
+               "has_any_candidates_in_radius with hysteresis keeps retained entity");
+
+    fuse::net::InterestScopeSet hysteresis_skip_prior;
+    hysteresis_skip_prior.entities = {make_entity(141)};
+    expectTrue(!fuse::net::should_skip_radius_filter(disabled_candidates, disabled_policy,
+                                                     hysteresis_skip_prior),
+               "hysteresis skip guard keeps prior-scope path when radii disabled");
+
+    // --- has_registered_candidates ---
+    fuse::net::InterestManager candidate_manager;
+    expectTrue(!candidate_manager.has_registered_candidates(),
+               "has_registered_candidates false on empty manager");
+    candidate_manager.register_entity({make_entity(200), {10.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(candidate_manager.has_registered_candidates(),
+               "has_registered_candidates true after register_entity");
+    candidate_manager.clear_entities();
+    expectTrue(!candidate_manager.has_registered_candidates(),
+               "has_registered_candidates false after clear_entities");
 }
 
 } // namespace fuse::net::tests

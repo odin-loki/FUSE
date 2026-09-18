@@ -86,6 +86,16 @@ struct InterestSetDiff {
     [[nodiscard]] bool has_leaves() const { return !left.empty(); }
 };
 
+/// Preflight for applying an enter/leave diff to a scope snapshot (B7.4 deepen follow-up).
+struct InterestDiffPreflight {
+    bool empty_diff = true;
+    /// True when `diff` is non-empty but every enter/leave is already satisfied by `scope`.
+    bool redundant_apply = false;
+
+    [[nodiscard]] bool can_apply() const { return !empty_diff && !redundant_apply; }
+    [[nodiscard]] bool should_skip() const { return !can_apply(); }
+};
+
 [[nodiscard]] bool is_empty_interest_diff(const InterestSetDiff& diff);
 [[nodiscard]] bool has_scope_enters(const InterestSetDiff& diff);
 [[nodiscard]] bool has_scope_leaves(const InterestSetDiff& diff);
@@ -95,6 +105,13 @@ void clear_interest_diff(InterestSetDiff& diff);
 [[nodiscard]] bool apply_interest_diff(InterestSetDiff& diff, InterestScopeSet& scope);
 /// True when `diff` is non-empty and at least one enter/leave would modify `scope`.
 [[nodiscard]] bool can_apply_interest_diff(const InterestSetDiff& diff, const InterestScopeSet& scope);
+/// Preflight diff-apply without mutating `scope` (B7.4 deepen follow-up).
+[[nodiscard]] InterestDiffPreflight preflight_interest_diff_apply(const InterestSetDiff& diff,
+                                                                    const InterestScopeSet& scope);
+/// True when diff-apply can be skipped because the diff is empty (B7.4 deepen follow-up).
+[[nodiscard]] bool should_skip_interest_diff_apply(const InterestSetDiff& diff);
+/// True when diff-apply can be skipped for `scope` (empty or redundant diff).
+[[nodiscard]] bool should_skip_interest_diff_apply(const InterestSetDiff& diff, const InterestScopeSet& scope);
 /// True when relevance and always-relevant radii are both zero (radius filter early-out).
 [[nodiscard]] bool relevance_radii_disabled(const InterestPolicy& policy);
 
@@ -122,6 +139,23 @@ void clear_interest_diff(InterestSetDiff& diff);
                                                 const InterestScopeSet& prior_scope,
                                                 std::vector<InterestEntry>& out_entries);
 
+/// True when the candidate list carries no entities (B7.4 deepen follow-up).
+[[nodiscard]] bool is_empty_candidate_list(const std::vector<InterestCandidate>& candidates);
+/// True when radius count/filter can be skipped (empty candidates or zero relevance radii).
+[[nodiscard]] bool should_skip_radius_filter(const std::vector<InterestCandidate>& candidates,
+                                             const InterestPolicy& policy);
+/// True when hysteresis-aware radius count/filter can be skipped.
+[[nodiscard]] bool should_skip_radius_filter(const std::vector<InterestCandidate>& candidates,
+                                             const InterestPolicy& policy,
+                                             const InterestScopeSet& prior_scope);
+/// True when at least one candidate is in scope for `observer` (no hysteresis).
+[[nodiscard]] bool has_any_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
+                                                const std::vector<InterestCandidate>& candidates);
+/// True when at least one candidate is in scope using prior scope hysteresis.
+[[nodiscard]] bool has_any_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
+                                                const std::vector<InterestCandidate>& candidates,
+                                                const InterestScopeSet& prior_scope);
+
 /// Server-side interest manager — evaluates AOI for an observer against registered entities.
 class InterestManager {
 public:
@@ -148,6 +182,8 @@ public:
     [[nodiscard]] bool evaluate_and_diff(InterestSetDiff& out);
 
     [[nodiscard]] const std::vector<InterestCandidate>& candidates() const { return m_candidates; }
+    /// True when no entities are registered for AOI evaluation.
+    [[nodiscard]] bool has_registered_candidates() const { return !m_candidates.empty(); }
     [[nodiscard]] const std::vector<InterestEntry>& entries() const { return m_entries; }
     [[nodiscard]] u32 in_scope_count() const;
     /// Query scope for one entity after the latest `evaluate()` call.
