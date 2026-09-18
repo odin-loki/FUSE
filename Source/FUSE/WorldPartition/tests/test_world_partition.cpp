@@ -1708,6 +1708,168 @@ void testInvalidCoordResidencyEarlyOuts() {
     expectTrue(eligible[0].x == 1, "eligible list ignores invalid coord entries");
 }
 
+void testAsyncSubmitBudgetGuards() {
+    expectTrue(fuse::world_partition::can_submit_async_request(0u, 0u), "zero async cap allows submit");
+    expectTrue(fuse::world_partition::can_submit_async_request(3u, 4u), "under async cap allows submit");
+    expectTrue(!fuse::world_partition::can_submit_async_request(4u, 4u), "at async cap blocks submit");
+    expectEq(fuse::world_partition::async_in_flight_headroom(4u, 2u), 2u, "async headroom subtracts in-flight");
+    expectEq(fuse::world_partition::async_in_flight_headroom(4u, 4u), 0u, "async headroom zero at cap");
+    expectTrue(fuse::world_partition::pending_submit_cap_unlimited(0u), "zero pending cap is unlimited");
+    expectEq(fuse::world_partition::pending_submit_headroom(4u, 2u), 2u, "pending headroom subtracts buffered");
+    expectTrue(!fuse::world_partition::would_exceed_pending_submit_cap(4u, 3u),
+               "under pending cap does not exceed");
+    expectTrue(fuse::world_partition::would_exceed_pending_submit_cap(4u, 4u),
+               "at pending cap exceeds");
+    expectTrue(fuse::world_partition::would_exceed_async_budget(2u, 2u, 4u),
+               "async budget includes in-flight and undrained completions");
+    expectTrue(fuse::world_partition::can_submit_async_request_guarded(1u, 2u, 4u),
+               "guarded submit allowed with headroom");
+    expectTrue(!fuse::world_partition::can_submit_async_request_guarded(4u, 0u, 4u),
+               "guarded submit blocked at in-flight cap");
+    expectTrue(!fuse::world_partition::can_submit_async_request_guarded(1u, 4u, 4u),
+               "guarded submit blocked at pending cap");
+}
+
+void testStreamingPriorityOrderingHelpers() {
+    fuse::world_partition::StreamingRequest low_load{};
+    low_load.coord = {0, 0};
+    low_load.kind = fuse::world_partition::StreamingRequestKind::Load;
+    low_load.priority = 1.f;
+
+    fuse::world_partition::StreamingRequest high_unload{};
+    high_unload.coord = {1, 0};
+    high_unload.kind = fuse::world_partition::StreamingRequestKind::Unload;
+    high_unload.priority = 5.f;
+
+    fuse::world_partition::StreamingRequest equal_unload{};
+    equal_unload.coord = {2, 0};
+    equal_unload.kind = fuse::world_partition::StreamingRequestKind::Unload;
+    equal_unload.priority = 5.f;
+
+    expectTrue(fuse::world_partition::is_streaming_request_before(high_unload, 2u, low_load, 1u),
+               "unload with higher priority orders before load");
+    expectTrue(fuse::world_partition::is_streaming_request_before(equal_unload, 1u, low_load, 3u),
+               "equal-priority unload orders before load");
+    expectTrue(fuse::world_partition::is_streaming_request_before(equal_unload, 1u, high_unload, 3u),
+               "FIFO tie-break prefers earlier enqueue sequence");
+
+    fuse::world_partition::CompletedStreamingRequest completed_high{};
+    completed_high.coord = {1, 0};
+    completed_high.kind = fuse::world_partition::StreamingRequestKind::Unload;
+    completed_high.priority = 10.f;
+    completed_high.submit_sequence = 2u;
+
+    fuse::world_partition::CompletedStreamingRequest completed_low{};
+    completed_low.coord = {0, 0};
+    completed_low.kind = fuse::world_partition::StreamingRequestKind::Load;
+    completed_low.priority = 1.f;
+    completed_low.submit_sequence = 1u;
+
+    expectTrue(fuse::world_partition::is_completed_streaming_request_before(completed_high, completed_low),
+               "completed unload orders before lower-priority load");
+    expectTrue(fuse::world_partition::compare_completed_streaming_requests(completed_high, completed_low) > 0,
+               "completed compare returns positive when first request wins ordering");
+}
+
+void testStreamingRequestQueuePendingGuards() {
+    fuse::world_partition::StreamingRequestQueue queue;
+    expectTrue(!fuse::world_partition::has_pending_enqueue(queue), "empty queue has no pending enqueue");
+    expectTrue(!fuse::world_partition::has_pending_request_of_kind(
+                   queue, fuse::world_partition::StreamingRequestKind::Load),
+               "empty queue has no pending load requests");
+
+    fuse::world_partition::StreamingRequest load{};
+    load.coord = {0, 0};
+    load.kind = fuse::world_partition::StreamingRequestKind::Load;
+    load.priority = 2.f;
+
+    fuse::world_partition::StreamingRequest unload{};
+    unload.coord = {1, 0};
+    unload.kind = fuse::world_partition::StreamingRequestKind::Unload;
+    unload.priority = 4.f;
+
+    expectTrue(queue.enqueue(load), "enqueue load for pending guard tests");
+    expectTrue(fuse::world_partition::has_pending_enqueue(queue), "pending enqueue guard true after enqueue");
+    expectTrue(fuse::world_partition::has_pending_request_of_kind(
+                   queue, fuse::world_partition::StreamingRequestKind::Load),
+               "pending kind guard finds load request");
+    expectTrue(!fuse::world_partition::has_pending_request_of_kind(
+                   queue, fuse::world_partition::StreamingRequestKind::Unload),
+               "pending kind guard false for absent kind");
+
+    expectTrue(queue.enqueue(unload), "enqueue unload for pending kind guard");
+    expectTrue(fuse::world_partition::has_pending_request_of_kind(
+                   queue, fuse::world_partition::StreamingRequestKind::Unload),
+               "pending kind guard finds unload after enqueue");
+
+    fuse::world_partition::StreamingRequest peeked{};
+    expectTrue(fuse::world_partition::peek_highest_pending_guarded(queue, peeked),
+               "guarded peek succeeds when pending non-empty");
+    expectTrue(peeked.kind == fuse::world_partition::StreamingRequestKind::Unload,
+               "guarded peek returns highest-priority request");
+
+    fuse::world_partition::StreamingRequest dequeued{};
+    expectTrue(fuse::world_partition::try_dequeue_pending_guarded(queue, dequeued),
+               "guarded dequeue removes highest-priority request");
+    expectTrue(dequeued.coord.x == 1, "guarded dequeue removes unload first");
+    expectTrue(fuse::world_partition::has_pending_enqueue(queue), "one pending request remains after guarded dequeue");
+
+    expectTrue(fuse::world_partition::try_dequeue_pending_guarded(queue, dequeued),
+               "guarded dequeue drains remaining pending request");
+    expectTrue(!fuse::world_partition::has_pending_enqueue(queue), "pending enqueue guard false after drain");
+    expectTrue(!fuse::world_partition::peek_highest_pending_guarded(queue, peeked),
+               "guarded peek false after pending queue drained");
+    expectTrue(!fuse::world_partition::try_dequeue_pending_guarded(queue, dequeued),
+               "guarded dequeue false on empty pending queue");
+}
+
+void testStreamingRequestQueueTrySubmitGuarded() {
+    withScheduler(1, [] {
+        fuse::world_partition::StreamingRequestQueue queue;
+        queue.set_max_pending_submits(1);
+
+        fuse::world_partition::StreamingRequest request{};
+        request.coord = {2, 2};
+        request.kind = fuse::world_partition::StreamingRequestKind::Load;
+        request.priority = 5.f;
+
+        expectTrue(!fuse::world_partition::try_submit_guarded(
+                       queue, request, nullptr, 1u),
+                   "guarded submit rejects null work");
+        expectTrue(fuse::world_partition::can_submit_to_queue(queue, 0u),
+                   "can_submit_to_queue true when async cap is unlimited");
+
+        expectTrue(fuse::world_partition::try_submit_guarded(
+                       queue, request,
+                       [](fuse::world_partition::GridCoord,
+                          fuse::world_partition::StreamingRequestKind) { return true; },
+                       1u),
+                   "guarded submit accepts first request under cap");
+        expectTrue(!fuse::world_partition::can_submit_to_queue(queue, 1u),
+                   "can_submit_to_queue false when pending cap reached");
+        expectTrue(!fuse::world_partition::try_submit_guarded(
+                       queue, request,
+                       [](fuse::world_partition::GridCoord,
+                          fuse::world_partition::StreamingRequestKind) { return true; },
+                       1u),
+                   "guarded submit rejects when pending cap reached");
+    });
+}
+
+void testEvictionUnloadPriorityGuarded() {
+    expectNear(fuse::world_partition::eviction_unload_priority_guarded(-2.f, 8.f, -5.f, -1.f, 0u, 10u,
+                                                                       fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               8.f, 1e-4f, "guarded eviction unload clamps negative inputs");
+    expectNear(fuse::world_partition::eviction_unload_priority_guarded(2.f, 3.f, 900.f, 0.f, 0u, 10u,
+                                                                       fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               fuse::world_partition::eviction_unload_priority(2.f, 3.f, 900.f, 0.f, 0u, 10u,
+                                                               fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               1e-4f, "guarded eviction unload matches unguarded for valid focus distance");
+    expectNear(fuse::world_partition::eviction_unload_priority_guarded(2.f, 3.f, -5.f, 50.f, 0u, 10u,
+                                                                       fuse::world_partition::EvictionPolicy::DistanceFromFocus),
+               50.f, 1e-4f, "guarded eviction unload falls back when focus distance invalid");
+}
+
 void testWorldPartitionAsyncEnqueueFlushCarryover() {
     withScheduler(1, [] {
         fuse::world_partition::WorldPartition partition;
@@ -1840,6 +2002,11 @@ int main() {
     testStreamingRequestQueuePendingLookupGuards();
     testStreamingRequestQueueTryFlushPendingIfGuard();
     testStreamingRequestQueueDequeueHelpers();
+    testAsyncSubmitBudgetGuards();
+    testStreamingPriorityOrderingHelpers();
+    testStreamingRequestQueuePendingGuards();
+    testStreamingRequestQueueTrySubmitGuarded();
+    testEvictionUnloadPriorityGuarded();
     testResidencySetContainsClear();
     testResidencyGuardedRemoveAndPresence();
     testFocusDistanceGuards();
