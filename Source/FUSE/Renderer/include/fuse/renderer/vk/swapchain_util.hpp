@@ -44,4 +44,23 @@ inline bool isDuplicatePendingResizeExtent(u32 pendingWidth,
     return pendingWidth == requestedWidth && pendingHeight == requestedHeight;
 }
 
+/// Returns true when pending resize matches current swapchain extent (recreate would be a no-op).
+inline bool pendingResizeMatchesCurrentExtent(u32 currentWidth,
+                                              u32 currentHeight,
+                                              u32 pendingWidth,
+                                              u32 pendingHeight) {
+    return isValidSwapchainExtent(pendingWidth, pendingHeight) && currentWidth == pendingWidth &&
+           currentHeight == pendingHeight;
+}
+
+/// Returns true when a new resize replaces an already-pending extent (coalesce candidate).
+inline bool isResizeCoalesceRequest(bool resizePending,
+                                    u32 pendingWidth,
+                                    u32 pendingHeight,
+                                    u32 requestedWidth,
+                                    u32 requestedHeight) {
+    return resizePending &&
+           !isDuplicatePendingResizeExtent(pendingWidth, pendingHeight, requestedWidth, requestedHeight);
+}
+
 } // namespace fuse::renderer

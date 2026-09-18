@@ -44,4 +44,13 @@ inline bool canWaitInFlightFenceForSlot(const FrameManager& manager, u32 slotInd
 /// Wait fences required before swapchain recreate — all slots when GPU path, current when headless.
 bool waitInFlightFencesBeforeRecreate(FrameManager& manager, bool waitAllSlots);
 
+/// Returns true when the slot has submitted work that must be waited before acquire.
+inline bool needsInFlightFenceWaitForSlot(const FrameManager& manager, u32 slotIndex) {
+    return manager.isReady() && isValidFrameSlotIndex(slotIndex) &&
+           isInFlightFenceSignaled(manager.slot(slotIndex));
+}
+
+/// Acquire-path fence wait — current slot only; no-op success when already clear.
+bool waitInFlightFencesBeforeAcquire(FrameManager& manager);
+
 } // namespace fuse::renderer
