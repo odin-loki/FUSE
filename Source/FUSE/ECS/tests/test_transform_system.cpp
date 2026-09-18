@@ -485,6 +485,146 @@ void testAllCleanUpdateLeavesMatricesUntouched() {
                "all-clean update leaves dirty flags clear");
 }
 
+void testIsRootTransformPredicates() {
+    fuse::ecs::Transform root{};
+    root.dirty = true;
+    expectTrue(fuse::ecs::TransformSystem::is_root_transform(root),
+               "root without parent is a root transform");
+    expectTrue(fuse::ecs::TransformSystem::is_dirty_root_transform(root),
+               "dirty root matches dirty-root predicate");
+
+    fuse::ecs::Transform cleanRoot{};
+    cleanRoot.dirty = false;
+    expectTrue(fuse::ecs::TransformSystem::is_root_transform(cleanRoot),
+               "clean root is still a root transform");
+    expectTrue(!fuse::ecs::TransformSystem::is_dirty_root_transform(cleanRoot),
+               "clean root is not a dirty root");
+
+    fuse::ecs::Transform child{};
+    child.parent = fuse::ecs::EntityID{2, 1};
+    child.dirty = true;
+    expectTrue(!fuse::ecs::TransformSystem::is_root_transform(child),
+               "child with parent is not a root transform");
+    expectTrue(!fuse::ecs::TransformSystem::is_dirty_root_transform(child),
+               "dirty child is not a dirty root");
+}
+
+void testShouldRecomputeDirtyRootGuards() {
+    fuse::ecs::Transform dirtyRoot{};
+    dirtyRoot.dirty = true;
+    expectTrue(fuse::ecs::TransformSystem::should_recompute_dirty_root(dirtyRoot),
+               "dirty root should recompute in dirty-root pass");
+
+    fuse::ecs::Transform cleanRoot{};
+    cleanRoot.dirty = false;
+    expectTrue(!fuse::ecs::TransformSystem::should_recompute_dirty_root(cleanRoot),
+               "clean root should not recompute in dirty-root pass");
+
+    fuse::ecs::Transform dirtyChild{};
+    dirtyChild.parent = fuse::ecs::EntityID{3, 1};
+    dirtyChild.dirty = true;
+    expectTrue(!fuse::ecs::TransformSystem::should_recompute_dirty_root(dirtyChild),
+               "dirty child should not recompute in dirty-root pass");
+}
+
+void testShouldSkipDirtyRootsUpdateGuards() {
+    fuse::ecs::Registry emptyReg;
+    emptyReg.init(8);
+    expectTrue(fuse::ecs::TransformSystem::should_skip_dirty_roots_update(emptyReg),
+               "empty registry skips dirty-root update");
+
+    fuse::ecs::Registry cleanReg;
+    cleanReg.init(16);
+    const fuse::ecs::EntityID root = cleanReg.create();
+    fuse::ecs::Transform rootTransform{};
+    rootTransform.dirty = false;
+    cleanReg.add(root, rootTransform);
+    expectTrue(fuse::ecs::TransformSystem::should_skip_dirty_roots_update(cleanReg),
+               "all-clean registry skips dirty-root update");
+
+    fuse::ecs::Registry dirtyReg;
+    dirtyReg.init(16);
+    const fuse::ecs::EntityID dirtyRoot = dirtyReg.create();
+    fuse::ecs::Transform dirtyRootTransform{};
+    dirtyRootTransform.dirty = true;
+    dirtyReg.add(dirtyRoot, dirtyRootTransform);
+    expectTrue(!fuse::ecs::TransformSystem::should_skip_dirty_roots_update(dirtyReg),
+               "dirty root registry runs dirty-root update");
+}
+
+void testShouldSkipHierarchySubtreeGuards() {
+    fuse::ecs::Registry reg;
+    reg.init(32);
+
+    const fuse::ecs::EntityID root = reg.create();
+    const fuse::ecs::EntityID mid = reg.create();
+    const fuse::ecs::EntityID leaf = reg.create();
+
+    fuse::ecs::Transform rootTransform{};
+    rootTransform.dirty = false;
+    reg.add(root, rootTransform);
+
+    fuse::ecs::Transform midTransform{};
+    midTransform.parent = root;
+    midTransform.dirty = false;
+    reg.add(mid, midTransform);
+
+    fuse::ecs::Transform leafTransform{};
+    leafTransform.parent = mid;
+    leafTransform.dirty = false;
+    reg.add(leaf, leafTransform);
+
+    expectTrue(fuse::ecs::TransformSystem::should_skip_hierarchy_subtree(reg, root),
+               "all-clean subtree can be skipped");
+    expectTrue(fuse::ecs::TransformSystem::should_skip_hierarchy_subtree(reg, mid),
+               "clean mid subtree can be skipped");
+    expectTrue(fuse::ecs::TransformSystem::should_skip_hierarchy_subtree(reg, leaf),
+               "clean leaf subtree can be skipped");
+
+    leafTransform.dirty = true;
+    reg.add(leaf, leafTransform);
+
+    expectTrue(!fuse::ecs::TransformSystem::should_skip_hierarchy_subtree(reg, leaf),
+               "dirty leaf subtree cannot be skipped");
+    expectTrue(!fuse::ecs::TransformSystem::should_skip_hierarchy_subtree(reg, mid),
+               "ancestor of dirty leaf cannot skip subtree");
+    expectTrue(!fuse::ecs::TransformSystem::should_skip_hierarchy_subtree(reg, root),
+               "root ancestor of dirty leaf cannot skip subtree");
+}
+
+void testDirtyRootSkipGuardLeavesDirtyChildUntouched() {
+    fuse::ecs::Registry reg;
+    reg.init(16);
+
+    const fuse::ecs::EntityID root = reg.create();
+    const fuse::ecs::EntityID child = reg.create();
+
+    fuse::ecs::Transform rootTransform{};
+    rootTransform.dirty = false;
+    rootTransform.local_to_world = fuse::ecs::mat4::identity();
+    reg.add(root, rootTransform);
+
+    fuse::ecs::Transform childTransform{};
+    childTransform.position = {0.f, 5.f, 0.f, 1.f};
+    childTransform.parent = root;
+    childTransform.dirty = true;
+    reg.add(child, childTransform);
+
+    expectTrue(fuse::ecs::TransformSystem::should_skip_dirty_roots_update(reg),
+               "clean-root scene skips dirty-root pass");
+
+    fuse::ecs::TransformSystem::update_dirty_roots_serial(reg);
+    withScheduler(2, [&] {
+        fuse::ecs::TransformSystem::update_dirty_roots_parallel(reg, 4);
+    });
+
+    const fuse::ecs::Transform* updatedChild = reg.get<fuse::ecs::Transform>(child);
+    expectTrue(updatedChild != nullptr, "child survives dirty-root skip guard");
+    expectTrue(updatedChild->dirty, "dirty-root skip guard leaves dirty child untouched");
+    expectTrue(updatedChild->local_to_world.data[13] == 0.f,
+               "dirty-root skip guard leaves child matrix untouched");
+}
+
 void testSecondUpdateSkipsWhenSceneStaysClean() {
     fuse::ecs::Registry reg;
     reg.init(16);
@@ -537,6 +677,11 @@ int main() {
     testShouldSkipHierarchyUpdateAllClean();
     testSubtreeHasDirtyDetectsNestedDirtyChild();
     testShouldRecomputeInHierarchyGuards();
+    testIsRootTransformPredicates();
+    testShouldRecomputeDirtyRootGuards();
+    testShouldSkipDirtyRootsUpdateGuards();
+    testShouldSkipHierarchySubtreeGuards();
+    testDirtyRootSkipGuardLeavesDirtyChildUntouched();
     testAllCleanUpdateLeavesMatricesUntouched();
     testSecondUpdateSkipsWhenSceneStaysClean();
 
