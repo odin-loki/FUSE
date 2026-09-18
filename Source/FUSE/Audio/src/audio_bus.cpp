@@ -27,13 +27,21 @@ float clamp_listener_master_volume(float volume) {
     return clamp_bus_gain(volume);
 }
 
+bool is_near_zero_bus_gain(float gain) {
+    return clamp_bus_gain(gain) <= kBusMuteEpsilon;
+}
+
 bool is_audible_bus_gain(float gain) {
-    return clamp_bus_gain(gain) > kBusMuteEpsilon;
+    return !is_near_zero_bus_gain(gain);
 }
 
 bool is_valid_audio_bus(AudioBus bus) {
     u32 index = 0;
     return try_bus_index(bus, index);
+}
+
+bool is_empty_audio_bus(AudioBus bus) {
+    return !is_valid_audio_bus(bus);
 }
 
 AudioBusMixer::AudioBusMixer() {
@@ -163,6 +171,25 @@ bool AudioBusMixer::any_bus_soloed() const {
     return false;
 }
 
+void AudioBusMixer::clear_bus_solo() {
+    for (u32 i = 0; i < static_cast<u32>(AudioBus::Count); ++i) {
+        m_solo[i] = false;
+    }
+}
+
+bool AudioBusMixer::is_bus_solo_silenced(AudioBus bus) const {
+    if (!any_bus_soloed()) {
+        return false;
+    }
+    if (bus == AudioBus::Master) {
+        return false;
+    }
+    if (!is_valid_audio_bus(bus)) {
+        return false;
+    }
+    return !bus_soloed(bus);
+}
+
 bool AudioBusMixer::should_apply_bus_gain(AudioBus bus) const {
     if (!is_valid_audio_bus(bus)) {
         return false;
@@ -174,16 +201,16 @@ bool AudioBusMixer::should_apply_bus_gain(AudioBus bus) const {
 }
 
 bool AudioBusMixer::should_mix_bus(AudioBus bus) const {
+    if (is_empty_audio_bus(bus)) {
+        return false;
+    }
     if (!should_apply_bus_gain(bus)) {
         return false;
     }
-    if (!any_bus_soloed()) {
-        return true;
+    if (is_bus_solo_silenced(bus)) {
+        return false;
     }
-    if (bus == AudioBus::Master) {
-        return true;
-    }
-    return bus_soloed(bus);
+    return true;
 }
 
 void AudioBusMixer::reset_gains() {
@@ -200,15 +227,26 @@ void AudioBusMixer::reset_gains() {
 
 float compute_effective_output_gain(const AudioBusMixer& mixer, AudioBus bus,
                                     float listener_master_volume) {
+    const float listener_gain = clamp_listener_master_volume(listener_master_volume);
+    if (is_empty_audio_bus(bus)) {
+        return listener_gain;
+    }
     return mixer.effective_output_gain(bus, listener_master_volume);
 }
 
 float compute_mix_output_gain(const AudioBusMixer& mixer, AudioBus bus,
                               float listener_master_volume) {
-    if (!mixer.should_mix_bus(bus)) {
+    if (is_empty_audio_bus(bus)) {
+        return 0.f;
+    }
+    if (should_skip_bus_mix(mixer, bus)) {
         return 0.f;
     }
     return compute_effective_output_gain(mixer, bus, listener_master_volume);
+}
+
+bool should_skip_bus_mix(const AudioBusMixer& mixer, AudioBus bus) {
+    return !mixer.should_mix_bus(bus);
 }
 
 bool is_bus_muted(const AudioBusMixer& mixer, AudioBus bus) {
