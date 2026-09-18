@@ -103,6 +103,12 @@ bool taaHistoryReuseAllowed(const TaaHistoryBuffer& history, u32 observedGenerat
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// True when history contribution is allowed this frame (B5.9 deepen).
 bool taaHistoryBlendAllowed(bool firstFrame, const TaaHistoryBuffer& history);
+/// True when history is not ready or still needs warm-up (B5.9 deepen).
+bool taaHistoryNeedsWarmup(const TaaHistoryBuffer& history);
+/// True when history targets are ready and warmed for temporal reuse (B5.9 deepen).
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history);
+/// True when the next resolve would run before history is warm (B5.9 deepen).
+bool taaResolveWouldBeFirstFrame(const TaaHistoryBuffer& history);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {

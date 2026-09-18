@@ -84,6 +84,26 @@ bool preflightTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& his
     return !taaResolveSkipReasonIsBlocking(skip);
 }
 
+TaaBlendWeights computeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return computeTaaBlendWeights(taaResolveWouldBeFirstFrame(history), desc.params);
+}
+
+bool preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                              TaaBlendWeights* weights) {
+    if (!preflightTaaResolve(desc, history)) {
+        return false;
+    }
+    const TaaBlendWeights computed = computeTaaResolveBlendWeights(desc, history);
+    if (weights != nullptr) {
+        *weights = computed;
+    }
+    return taaBlendWeightsValid(computed);
+}
+
+bool taaResolveBlendPreflightPasses(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return preflightTaaResolveBlend(desc, history);
+}
+
 TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!history.isReady()) {
         return TaaResolveSkipReason::HistoryNotReady;
