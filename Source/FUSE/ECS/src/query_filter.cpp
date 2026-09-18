@@ -100,8 +100,16 @@ bool should_skip_query_iteration(const std::vector<Archetype>& archetypes, const
     return preflight_query_filter(archetypes, filter).should_skip();
 }
 
+bool should_skip_query_match(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
+    return preflight_query_filter(archetypes, filter).should_skip_match();
+}
+
 bool can_iterate_query_filter(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
     return preflight_query_filter(archetypes, filter).can_iterate();
+}
+
+bool can_match_query_filter(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
+    return preflight_query_filter(archetypes, filter).can_match();
 }
 
 bool archetype_matches(const Archetype& archetype, const QueryFilter& filter) {
