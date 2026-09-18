@@ -36,6 +36,12 @@ bool is_near_zero_bus_gain(float gain);
 /// True when listener master volume is at or below the mute epsilon.
 bool is_listener_master_muted(float listener_master_volume);
 
+/// True when listener master volume is audible (above mute epsilon).
+bool is_listener_master_audible(float listener_master_volume);
+
+/// Early-out: true when listener master would silence all bus mix output.
+bool should_skip_listener_master_mix(float listener_master_volume);
+
 /// True when \p bus is a category bus (Sfx, Music, or Voice — not Master or empty).
 bool is_category_audio_bus(AudioBus bus);
 
@@ -72,6 +78,9 @@ public:
     /// Clear all category mute flags.
     void clear_bus_mute();
 
+    /// Clear explicit mute flag for one category bus (no-op for Master).
+    void clear_bus_mute(AudioBus bus);
+
     /// Clear mute and solo flags without resetting gains or parent routing.
     void reset_mute_and_solo();
 
@@ -95,6 +104,12 @@ public:
 
     /// True when solo mode silences \p bus (non-solo category while another bus is soloed).
     bool is_bus_solo_silenced(AudioBus bus) const;
+
+    /// True when any ancestor category bus is soloed.
+    bool is_any_ancestor_bus_soloed(AudioBus bus) const;
+
+    /// True when \p bus is audible under solo mode (soloed self or ancestor).
+    bool is_bus_solo_audible(AudioBus bus) const;
 
     /// True when any ancestor category bus carries an explicit mute flag.
     bool is_parent_chain_muted(AudioBus bus) const;
@@ -132,8 +147,26 @@ bool is_bus_mix_silenced(const AudioBusMixer& mixer, AudioBus bus,
 /// True when at least one category bus would mix with the given listener master volume.
 bool has_any_mixable_bus(const AudioBusMixer& mixer, float listener_master_volume = 1.f);
 
+/// Count category buses that would mix with the given listener master volume.
+u32 count_mixable_buses(const AudioBusMixer& mixer, float listener_master_volume = 1.f);
+
+/// True when no category bus would mix (master muted, listener muted, or all silenced).
+bool should_skip_all_bus_mix(const AudioBusMixer& mixer, float listener_master_volume = 1.f);
+
+/// Product of ancestor gains from \p bus parent up to (but excluding) Master.
+float parent_chain_gain(const AudioBusMixer& mixer, AudioBus bus);
+
+/// True when ancestor gains are audible and no parent is explicitly muted.
+bool is_parent_chain_audible(const AudioBusMixer& mixer, AudioBus bus);
+
+/// True when a muted or near-zero parent chain blocks mixing \p bus.
+bool should_skip_parent_chain_mix(const AudioBusMixer& mixer, AudioBus bus);
+
 /// True when master bus gain is at or below the mute epsilon.
 bool is_master_bus_muted(const AudioBusMixer& mixer);
+
+/// Early-out: true when master bus gain would silence all category output.
+bool should_skip_master_bus_mix(const AudioBusMixer& mixer);
 
 /// True when \p bus is valid and its effective gain is zero (muted stub).
 bool is_bus_muted(const AudioBusMixer& mixer, AudioBus bus);
