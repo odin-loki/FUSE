@@ -87,8 +87,38 @@ struct InterestSetDiff {
 [[nodiscard]] bool has_scope_leaves(const InterestSetDiff& diff);
 [[nodiscard]] u32 count_scope_diff_entities(const InterestSetDiff& diff);
 void clear_interest_diff(InterestSetDiff& diff);
+
+/// Preflight for applying an interest diff against a scope snapshot (B7.4 deepen follow-up).
+struct InterestDiffPreflight {
+    bool empty_diff = true;
+    bool redundant = false;
+
+    [[nodiscard]] bool can_apply() const { return !empty_diff && !redundant; }
+    [[nodiscard]] bool should_skip() const { return !can_apply(); }
+};
+
+[[nodiscard]] InterestDiffPreflight preflight_interest_diff(const InterestSetDiff& diff,
+                                                              const InterestScopeSet& scope);
+/// True when apply can be skipped because the diff is empty or redundant against `scope`.
+[[nodiscard]] bool should_skip_interest_diff_apply(const InterestSetDiff& diff,
+                                                     const InterestScopeSet& scope);
 /// True when `diff` is non-empty and at least one enter/leave would modify `scope`.
 [[nodiscard]] bool can_apply_interest_diff(const InterestSetDiff& diff, const InterestScopeSet& scope);
+
+/// Preflight for radius filter/count over a candidate list (B7.4 deepen follow-up).
+struct RadiusFilterPreflight {
+    bool empty_candidates = true;
+    bool zero_relevance_radius = false;
+
+    [[nodiscard]] bool can_filter() const { return !empty_candidates && !zero_relevance_radius; }
+    [[nodiscard]] bool should_skip() const { return !can_filter(); }
+};
+
+[[nodiscard]] RadiusFilterPreflight preflight_radius_filter(const InterestPolicy& policy,
+                                                              const std::vector<InterestCandidate>& candidates);
+/// True when radius filter/count can be skipped (empty candidates or zero relevance radius).
+[[nodiscard]] bool should_skip_radius_filter(const InterestPolicy& policy,
+                                               const std::vector<InterestCandidate>& candidates);
 
 /// Returns true when `out` is non-empty.
 [[nodiscard]] bool diff_interest_scope_sets(const InterestScopeSet& previous, const InterestScopeSet& current,
