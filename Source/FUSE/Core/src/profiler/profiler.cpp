@@ -90,9 +90,6 @@ u32 currentFlowNestingDepth() {
     return threadLocalFlowNestingDepth();
 }
 
-bool isValidEventName(const char* name) {
-    return name != nullptr && name[0] != '\0';
-}
 
 std::string formatCounterArgsJson(const ProfileEvent& event) {
     std::string args = "\"args\":{\"value\":";
@@ -265,6 +262,10 @@ u32 eventCount() {
     return g_eventCount.load(std::memory_order_acquire);
 }
 
+u32 ringCapacity() {
+    return kRingCapacity;
+}
+
 u32 maxNestingDepth() {
     return g_maxNestingDepth.load(std::memory_order_acquire);
 }
@@ -314,20 +315,29 @@ bool isBufferFull() {
 }
 
 bool isEventIndexValid(u32 index) {
-    return index < eventCount();
+    const u32 count = eventCount();
+    return count > 0u && index < count;
+}
+
+bool isValidEventName(const char* name) {
+    return name != nullptr && name[0] != '\0';
 }
 
 bool isValidProfileEvent(const ProfileEvent& event) {
-    return event.name != nullptr;
+    return isValidEventName(event.name);
+}
+
+const ProfileEvent& emptyProfileEvent() {
+    static const ProfileEvent kEmpty{};
+    return kEmpty;
 }
 
 const ProfileEvent& eventAt(u32 index) {
-    static const ProfileEvent kEmpty{};
-    const u32 count = eventCount();
-    if (count == 0u || index >= count) {
-        return kEmpty;
+    if (!isEventIndexValid(index)) {
+        return emptyProfileEvent();
     }
 
+    const u32 count = eventCount();
     const u32 head = g_writeHead.load(std::memory_order_acquire);
     const u32 start = head >= count ? head - count : 0u;
     const u32 ringIndex = (start + index) % kRingCapacity;
@@ -342,6 +352,16 @@ bool tryEventAt(u32 index, ProfileEvent& outEvent) {
 
     outEvent = eventAt(index);
     return isValidProfileEvent(outEvent);
+}
+
+bool tryLastEvent(ProfileEvent& outEvent) {
+    const u32 index = lastEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
 }
 
 u32 lastEventIndex() {
@@ -471,6 +491,19 @@ void sampleCounterFloatSnapshotAtFrame(const char* track, f64 value) {
                 0,
                 value,
                 frameIndex());
+}
+
+bool canExportChromeTrace() {
+    return hasEvents();
+}
+
+ChromeExportPreflight preflightChromeTraceExport() {
+    ChromeExportPreflight preflight{};
+    preflight.bufferEmpty = isBufferEmpty();
+    preflight.profilerDisabled = !enabled();
+    preflight.unbalancedScopeNesting = !isScopeNestingBalanced();
+    preflight.openAsyncFlows = hasOpenAsyncFlows();
+    return preflight;
 }
 
 std::string exportChromeTraceJson() {
