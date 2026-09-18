@@ -80,6 +80,22 @@ bool is_unsupported_shape_pair(
     const broadphase::CandidatePair& pair,
     const CollisionShapeSoA& shapes);
 
+/// Semantic alias for `is_invalid_contact_pair` in dispatch loops (B4.3 deepen pass 2).
+bool should_skip_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when both bodies resolve to plane shapes (unsupported narrowphase stub, B4.3 deepen pass 2).
+bool is_plane_plane_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when shapes exist and have a non-degenerate dispatch path (B4.3 deepen pass 2).
+bool has_contact_pair_dispatch_path(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
+
 /// Run shape dispatch for one broadphase candidate pair (B4.3 deepen).
 /// Returns an invalid manifold for empty/self pairs or missing shapes.
 ContactManifold detect_contacts_pair(

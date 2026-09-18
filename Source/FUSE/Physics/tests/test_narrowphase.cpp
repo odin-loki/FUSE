@@ -903,6 +903,139 @@ void testFrictionBasisGuardHelpers() {
         "ensure_friction_basis returns false when tangents should be skipped");
 }
 
+void testContactPairDispatchPathGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 bodyA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 bodyB = bodies.addBody({1.5f, 0.f, 0.f}, 1.f);
+    const fuse::u32 planeA = bodies.addBody({0.f, 2.f, 0.f}, 0.f, fuse::physics::RB_STATIC);
+    const fuse::u32 planeB = bodies.addBody({0.f, 3.f, 0.f}, 0.f, fuse::physics::RB_STATIC);
+    const fuse::u32 hullBody = bodies.addBody({5.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodyA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodyB, {1.f, 0.f, 0.f});
+    shapes.addShape(
+        fuse::physics::CollisionShapeType::Plane,
+        planeA,
+        {0.f, 1.f, 0.f},
+        0.f);
+    shapes.addShape(
+        fuse::physics::CollisionShapeType::Plane,
+        planeB,
+        {0.f, 1.f, 0.f},
+        0.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::ConvexHull, hullBody, {1.f, 0.f, 0.f});
+
+    expectTrue(
+        fuse::physics::narrowphase::should_skip_contact_pair({bodyA, bodyA}, bodies, shapes),
+        "should_skip_contact_pair flags self pair");
+    expectTrue(
+        !fuse::physics::narrowphase::should_skip_contact_pair({bodyA, bodyB}, bodies, shapes),
+        "should_skip_contact_pair allows valid pair");
+    expectTrue(
+        fuse::physics::narrowphase::is_plane_plane_contact_pair({planeA, planeB}, shapes),
+        "plane-plane guard flags unsupported plane pair");
+    expectTrue(
+        !fuse::physics::narrowphase::is_plane_plane_contact_pair({bodyA, planeA}, shapes),
+        "plane-plane guard ignores mixed shape pair");
+    expectTrue(
+        fuse::physics::narrowphase::has_contact_pair_dispatch_path({bodyA, bodyB}, shapes),
+        "dispatch path guard accepts sphere pair");
+    expectTrue(
+        !fuse::physics::narrowphase::has_contact_pair_dispatch_path({bodyA, hullBody}, shapes),
+        "dispatch path guard rejects unsupported convex hull pair");
+}
+
+void testManifoldPrunePassTwoGuards() {
+    fuse::physics::narrowphase::ContactManifold shallow{};
+    shallow.contactNormal = {0.f, 1.f, 0.f};
+    shallow.addPoint({0.f, 0.f, 0.f}, 0.5f);
+    shallow.addPoint({1.f, 0.f, 0.f}, 0.02f);
+    shallow.addPoint({2.f, 0.f, 0.f}, -0.1f);
+    expectTrue(shallow.hasShallowPenetrations(0.05f), "hasShallowPenetrations flags shallow slot");
+    expectTrue(shallow.countSeparatedPoints() == 1u, "countSeparatedPoints tracks separated slots");
+
+    fuse::physics::narrowphase::ContactManifold clean{};
+    clean.contactNormal = {0.f, 1.f, 0.f};
+    clean.addPoint({0.f, 0.f, 0.f}, 0.5f);
+    clean.addPoint({1.f, 0.f, 0.f}, 0.3f);
+    const fuse::u32 beforePrune = clean.pointCount;
+    clean.pruneContactPointsIfNeeded();
+    expectTrue(clean.pointCount == beforePrune, "pruneContactPointsIfNeeded skips clean manifold");
+
+    fuse::physics::narrowphase::ContactManifold needsPrune = shallow;
+    expectTrue(needsPrune.needsPruning(), "separated point triggers needsPruning");
+    needsPrune.pruneContactPointsIfNeeded();
+    expectTrue(needsPrune.pointCount == 2u, "pruneContactPointsIfNeeded prunes when needed");
+
+    fuse::physics::narrowphase::ContactManifold staleValid{};
+    staleValid.valid = true;
+    staleValid.contactNormal = {0.f, 1.f, 0.f};
+    staleValid.addPoint({0.f, 0.f, 0.f}, -0.2f);
+    staleValid.addPoint({1.f, 0.f, 0.f}, -0.1f);
+    expectTrue(
+        !staleValid.pruneAndInvalidateIfEmpty(),
+        "pruneAndInvalidateIfEmpty returns false when all points separated");
+    expectTrue(!staleValid.valid, "pruneAndInvalidateIfEmpty invalidates empty manifold");
+
+    fuse::physics::narrowphase::ContactManifold survives{};
+    survives.valid = true;
+    survives.contactNormal = {0.f, 1.f, 0.f};
+    survives.addPoint({0.f, 0.f, 0.f}, 0.3f);
+    survives.addPoint({1.f, 0.f, 0.f}, -0.05f);
+    expectTrue(survives.pruneAndInvalidateIfEmpty(), "pruneAndInvalidateIfEmpty keeps penetrating manifold");
+    expectTrue(survives.valid, "pruneAndInvalidateIfEmpty preserves validity when points remain");
+}
+
+void testFrictionBasisRebuildPassTwoGuards() {
+    fuse::physics::narrowphase::ContactManifold manifold{};
+    manifold.contactNormal = {0.f, 1.f, 0.f};
+    manifold.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    manifold.buildFrictionBasis();
+
+    expectTrue(
+        !fuse::physics::narrowphase::friction_basis_is_stale(manifold),
+        "fresh basis is not stale");
+
+    const auto originalTangent1 = manifold.frictionBasis.tangent1;
+    manifold.contactNormal = {1.f, 0.f, 0.f};
+    expectTrue(
+        fuse::physics::narrowphase::friction_basis_is_stale(manifold),
+        "normal change marks cached basis stale");
+
+    expectTrue(
+        fuse::physics::narrowphase::rebuild_friction_basis_if_needed(manifold),
+        "rebuild_friction_basis_if_needed rebuilds stale basis");
+    expectTrue(
+        fuse::physics::narrowphase::friction_basis_matches_normal(manifold),
+        "rebuilt basis matches updated normal");
+    expectTrue(
+        manifold.frictionBasis.tangent1.x != originalTangent1.x ||
+            manifold.frictionBasis.tangent1.y != originalTangent1.y ||
+            manifold.frictionBasis.tangent1.z != originalTangent1.z,
+        "rebuild updates tangent frame after normal change");
+
+    const auto rebuiltTangent1 = manifold.frictionBasis.tangent1;
+    expectTrue(
+        fuse::physics::narrowphase::rebuild_friction_basis_if_needed(manifold),
+        "rebuild_friction_basis_if_needed reuses valid basis");
+    expectNear(
+        manifold.frictionBasis.tangent1.x,
+        rebuiltTangent1.x,
+        1e-4f,
+        "rebuild early-out preserves tangent1");
+
+    fuse::physics::narrowphase::compute_friction_tangents(manifold);
+    expectTrue(
+        fuse::physics::narrowphase::friction_basis_matches_normal(manifold),
+        "compute_friction_tangents keeps orthonormal basis after rebuild");
+
+    fuse::physics::narrowphase::ContactManifold skip{};
+    skip.addPoint({0.f, 0.f, 0.f}, 0.1f);
+    expectTrue(
+        !fuse::physics::narrowphase::rebuild_friction_basis_if_needed(skip),
+        "rebuild_friction_basis_if_needed returns false when tangents should be skipped");
+}
+
 void testGjkSupportAndEpaStub() {
     const fuse::physics::vec3 hull[] = {
         {-1.f, 0.f, 0.f},
@@ -950,6 +1083,9 @@ int main() {
     testCanFinalizeContactManifoldGuard();
     testManifoldPrunePreflightGuards();
     testFrictionBasisGuardHelpers();
+    testContactPairDispatchPathGuards();
+    testManifoldPrunePassTwoGuards();
+    testFrictionBasisRebuildPassTwoGuards();
     testGjkSupportAndEpaStub();
 
     if (g_failures == 0) {

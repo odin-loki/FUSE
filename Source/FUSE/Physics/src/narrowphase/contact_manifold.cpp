@@ -139,6 +139,38 @@ void ContactManifold::invalidateIfEmpty() {
     }
 }
 
+bool ContactManifold::hasShallowPenetrations(f32 minDepth) const {
+    for (u32 i = 0u; i < pointCount; ++i) {
+        const f32 penetration = points[i].penetration;
+        if (penetration >= 0.f && penetration < minDepth) {
+            return true;
+        }
+    }
+    return false;
+}
+
+u32 ContactManifold::countSeparatedPoints(f32 epsilon) const {
+    u32 separated = 0u;
+    for (u32 i = 0u; i < pointCount; ++i) {
+        if (points[i].penetration < -epsilon) {
+            ++separated;
+        }
+    }
+    return separated;
+}
+
+void ContactManifold::pruneContactPointsIfNeeded(f32 separationEpsilon, f32 duplicateEpsilon) {
+    if (needsPruning(separationEpsilon, duplicateEpsilon)) {
+        pruneContactPoints(separationEpsilon, duplicateEpsilon);
+    }
+}
+
+bool ContactManifold::pruneAndInvalidateIfEmpty(f32 separationEpsilon, f32 duplicateEpsilon) {
+    const bool hasPoints = pruneIfEmpty(separationEpsilon, duplicateEpsilon);
+    invalidateIfEmpty();
+    return hasPoints;
+}
+
 bool ContactManifold::needsPruning(f32 separationEpsilon, f32 duplicateEpsilon) const {
     if (pointCount == 0u) {
         return false;
