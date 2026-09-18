@@ -164,6 +164,14 @@ struct CascadedShadowMapLayout {
     static void enforceCascadeSplitMonotonicity(CascadedShadowMapDesc& desc);
     /// Pin the last cascade split to the far-plane fraction (1.0).
     static void pinLastCascadeSplit(CascadedShadowMapDesc& desc);
+    /// True when any split fraction lies outside [0, 1].
+    static bool needsCascadeSplitClamp(const CascadedShadowMapDesc& desc);
+    /// True when split fractions are not monotonically non-decreasing.
+    static bool needsCascadeSplitMonotonicityRepair(const CascadedShadowMapDesc& desc);
+    /// True when the last cascade split does not reach the far-plane fraction (1.0).
+    static bool needsLastCascadeSplitPin(const CascadedShadowMapDesc& desc);
+    /// True when any sanitize preflight guard would fire.
+    static bool cascadeSplitsNeedSanitize(const CascadedShadowMapDesc& desc);
     /// Clamp each split to [0, 1], enforce monotonicity, and pin the last slot to 1.0.
     static void sanitizeCascadeSplits(CascadedShadowMapDesc& desc);
     static bool validateCascadeRanges(const CascadedShadowMapDesc& desc, const ShadowCameraParams& camera);
@@ -283,5 +291,11 @@ struct CascadeLightSpaceLayout {
 
 /// True when a cascade shadow skip reason blocks matrix population.
 bool cascadeShadowSkipReasonIsBlocking(CascadeShadowSkipReason reason);
+/// True when a skip reason applies to every cascade slot (global bypass guards).
+bool cascadeShadowSkipReasonIsGlobal(CascadeShadowSkipReason reason);
+/// Human-readable label for skip reasons (logging / tests).
+const char* cascadeShadowSkipReasonLabel(CascadeShadowSkipReason reason);
+/// Increment per-reason skip counters for one classified cascade.
+void accumulateCascadeShadowSkipCount(CascadeShadowSkipCounts& counts, CascadeShadowSkipReason reason);
 
 } // namespace fuse::renderer
