@@ -465,6 +465,64 @@ void run_snapshot_delta_tests() {
     expectTrue(!empty_ring_preflight.can_apply(), "empty ring preflight cannot apply");
     expectTrue(empty_helper_ring.should_skip_apply_delta(0u, empty_delta),
                "empty ring should_skip_apply_delta is true");
+
+    // --- preflight struct methods and mask builders (B7.4 deepen follow-up) ---
+    expectTrue(empty_preflight.should_skip_apply(), "preflight should_skip_apply for empty delta");
+    expectTrue(!empty_preflight.would_mutate_state(), "empty preflight would not mutate state");
+    expectTrue(empty_history_preflight.should_skip_apply(), "history preflight should_skip_apply when skipped");
+    expectTrue(!history_preflight.should_skip_apply(), "patch history preflight should not skip apply");
+
+    expectTrue(fuse::net::is_nontrivial_snapshot_delta(patch_delta), "patch delta is nontrivial");
+    expectTrue(!fuse::net::is_nontrivial_snapshot_delta(empty_delta), "empty delta is not nontrivial");
+    expectTrue(fuse::net::can_skip_verified_delta_apply(base, empty_delta),
+               "can_skip_verified_delta_apply for empty delta");
+    expectTrue(!fuse::net::can_skip_verified_delta_apply(base, patch_delta),
+               "patch delta cannot skip verified apply");
+
+    const fuse::u64 built_mask =
+        fuse::net::build_changed_entity_mask_from_patches(patch_delta.entity_patches);
+    expectTrue(built_mask == patch_delta.changed_entity_mask,
+               "build_changed_entity_mask_from_patches matches computed mask");
+    expectTrue(fuse::net::changed_entity_mask_matches_patches(patch_delta.changed_entity_mask,
+                                                              patch_delta.entity_patches),
+               "changed_entity_mask_matches_patches accepts valid mask");
+    expectTrue(!fuse::net::changed_entity_mask_matches_patches(bad_mask_delta.changed_entity_mask,
+                                                               patch_delta.entity_patches),
+               "changed_entity_mask_matches_patches rejects stray mask bit");
+
+    const fuse::u8 ecs_intersect = fuse::net::ecs_field_mask_intersect(
+        static_cast<fuse::u8>(fuse::net::SnapshotEcsField::Position),
+        ecs_union);
+    expectTrue(ecs_intersect == static_cast<fuse::u8>(fuse::net::SnapshotEcsField::Position),
+               "ecs_field_mask_intersect keeps shared bits");
+    const fuse::u8 physics_intersect = fuse::net::physics_field_mask_intersect(
+        static_cast<fuse::u8>(fuse::net::SnapshotPhysicsField::LinearVelocity),
+        physics_union);
+    expectTrue(physics_intersect == static_cast<fuse::u8>(fuse::net::SnapshotPhysicsField::LinearVelocity),
+               "physics_field_mask_intersect keeps shared bits");
+
+    const fuse::net::SnapshotDeltaPreflight mask_only_preflight =
+        fuse::net::preflight_delta_masks(patch_delta);
+    expectTrue(mask_only_preflight.entity_mask_ok, "mask-only preflight accepts valid patch mask");
+    expectTrue(mask_only_preflight.mask_popcount_ok, "mask-only preflight accepts mask popcount");
+    expectTrue(mask_only_preflight.payload_ok, "mask-only preflight accepts patch payload");
+    expectTrue(!mask_only_preflight.empty_delta, "mask-only preflight marks patch delta as non-empty");
+    expectTrue(mask_only_preflight.can_apply(), "mask-only preflight can_apply without baseline");
+
+    const fuse::net::SnapshotDeltaPreflight bad_mask_only_preflight =
+        fuse::net::preflight_delta_masks(bad_mask_delta);
+    expectTrue(!bad_mask_only_preflight.entity_mask_ok, "mask-only preflight rejects stray mask bit");
+    expectTrue(!bad_mask_only_preflight.can_apply(), "mask-only preflight can_apply fails on bad mask");
+
+    expectTrue(empty_verified.empty_delta, "verified apply result marks empty delta");
+    expectTrue(empty_verified.mask_popcount_ok, "verified apply result accepts empty mask popcount");
+    expectTrue(empty_verified.can_apply(), "verified empty delta result can_apply");
+    expectTrue(empty_verified.should_skip_apply(), "verified empty delta result should_skip_apply");
+    expectTrue(verified.mask_popcount_ok, "verified patch result accepts mask popcount");
+    expectTrue(verified.can_apply(), "verified patch result can_apply");
+    expectTrue(!verified.should_skip_apply(), "verified patch result should not skip apply");
+    expectTrue(!bad_mask_verified.mask_popcount_ok, "verified apply rejects mask popcount mismatch");
+    expectTrue(!bad_mask_verified.can_apply(), "verified apply can_apply fails on mask mismatch");
 }
 
 } // namespace fuse::net::tests

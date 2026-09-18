@@ -67,6 +67,17 @@ struct DeltaApplyResult {
     bool base_frame_ok = true;
     /// True when delta kind, masks, and payload bytes are structurally consistent.
     bool payload_ok = true;
+    /// True when entity-mask popcount matches `entity_patches.size()` (EntityPatch only).
+    bool mask_popcount_ok = true;
+    /// True when the delta is a no-op `SnapshotDeltaKind::None` payload.
+    bool empty_delta = false;
+
+    [[nodiscard]] bool can_apply() const {
+        return base_checksum_ok && entity_mask_ok && base_frame_ok && payload_ok && mask_popcount_ok;
+    }
+
+    /// True when apply can be skipped because the delta carries no state changes.
+    [[nodiscard]] bool should_skip_apply() const { return empty_delta; }
 };
 
 /// Preflight checks before applying a delta (baseline checksum + entity mask consistency).
@@ -85,6 +96,12 @@ struct SnapshotDeltaPreflight {
     [[nodiscard]] bool can_apply() const {
         return base_checksum_ok && entity_mask_ok && base_frame_ok && payload_ok && mask_popcount_ok;
     }
+
+    /// True when apply can be skipped because the delta carries no state changes.
+    [[nodiscard]] bool should_skip_apply() const { return empty_delta; }
+
+    /// True when a successful apply would reconstruct non-baseline state.
+    [[nodiscard]] bool would_mutate_state() const { return !empty_delta && can_apply(); }
 };
 
 /// Preflight for applying a delta against a retained history-ring baseline (B7.4 deepen follow-up).
@@ -98,6 +115,9 @@ struct SnapshotHistoryPreflight {
     [[nodiscard]] bool can_apply() const {
         return !ring_empty && has_baseline && delta_preflight.can_apply();
     }
+
+    /// True when apply should be skipped (empty ring, missing baseline, or no-op delta).
+    [[nodiscard]] bool should_skip_apply() const { return ring_empty || !has_baseline || skipped; }
 };
 
 [[nodiscard]] bool snapshots_equivalent(const GameSnapshot& base, const GameSnapshot& target);
@@ -111,8 +131,14 @@ struct SnapshotHistoryPreflight {
 /// Bitwise union of two ECS field masks.
 [[nodiscard]] u8 ecs_field_mask_union(u8 a, u8 b);
 
+/// Bitwise intersection of two ECS field masks.
+[[nodiscard]] u8 ecs_field_mask_intersect(u8 a, u8 b);
+
 /// Bitwise union of two physics field masks.
 [[nodiscard]] u8 physics_field_mask_union(u8 a, u8 b);
+
+/// Bitwise intersection of two physics field masks.
+[[nodiscard]] u8 physics_field_mask_intersect(u8 a, u8 b);
 
 /// Popcount of set ECS field bits in `mask`.
 [[nodiscard]] u32 ecs_field_mask_count(u8 mask);
@@ -128,6 +154,13 @@ struct SnapshotHistoryPreflight {
 
 /// True when every patch index has a matching mask bit and no stray mask bits are set.
 [[nodiscard]] bool validate_changed_entity_mask(const SnapshotDelta& delta);
+
+/// Build `changed_entity_mask` from patch rows (indices >= 64 are ignored).
+[[nodiscard]] u64 build_changed_entity_mask_from_patches(const std::vector<SnapshotEntityPatch>& entity_patches);
+
+/// True when `mask` exactly covers every patch index and has no stray bits.
+[[nodiscard]] bool changed_entity_mask_matches_patches(u64 changed_entity_mask,
+                                                         const std::vector<SnapshotEntityPatch>& entity_patches);
 
 /// True when entity-mask popcount equals `entity_patches.size()` (EntityPatch only).
 [[nodiscard]] bool entity_mask_popcount_matches_patches(const SnapshotDelta& delta);
@@ -162,11 +195,20 @@ struct SnapshotHistoryPreflight {
 /// True for `SnapshotDeltaKind::None` deltas (no-op bandwidth payload).
 [[nodiscard]] bool is_empty_snapshot_delta(const SnapshotDelta& delta);
 
+/// Inverse of `is_empty_snapshot_delta` — true for Full or EntityPatch deltas.
+[[nodiscard]] bool is_nontrivial_snapshot_delta(const SnapshotDelta& delta);
+
 /// True when apply can be skipped because the delta carries no state changes (B7.4 deepen follow-up).
 [[nodiscard]] bool should_skip_delta_apply(const SnapshotDelta& delta);
 
+/// True when verified apply can be skipped (preflight passes and delta is empty).
+[[nodiscard]] bool can_skip_verified_delta_apply(const GameSnapshot& base, const SnapshotDelta& delta);
+
 /// Convenience guard — `preflight_snapshot_delta(base, delta).can_apply()` (B7.4 deepen follow-up).
 [[nodiscard]] bool can_apply_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta);
+
+/// Mask-only preflight — validates entity mask alignment without a baseline snapshot.
+[[nodiscard]] SnapshotDeltaPreflight preflight_delta_masks(const SnapshotDelta& delta);
 
 [[nodiscard]] SnapshotDelta compute_snapshot_delta(const GameSnapshot& base, const GameSnapshot& target);
 [[nodiscard]] GameSnapshot apply_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta);
