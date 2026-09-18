@@ -362,6 +362,10 @@ void testProbeBorderCounts() {
                "3x3x3 border counts satisfy invariants");
     expectTrue(fuse::renderer::ddgi_util::validateProbeBorderCounts(emptyKind),
                "empty grid border counts satisfy invariants");
+    expectTrue(fuse::renderer::ddgi_util::validateProbeBorderCountsForGrid(desc),
+               "3x3x3 grid border counts validate via helper");
+    expectTrue(fuse::renderer::ddgi_util::validateProbeBorderCountsForGrid(empty),
+               "empty grid border counts validate via helper");
     expectTrue(fuse::renderer::ddgi_util::countProbesOfBorderKind(desc,
                                                                   fuse::renderer::ProbeBorderKind::Interior) == 1u,
                "countProbesOfBorderKind interior");
@@ -404,6 +408,10 @@ void testResolveSampleDirectionFromSurface() {
                "isValidDirection true for unit vector");
     expectTrue(!fuse::renderer::DdgiIrradianceEncoding::isValidDirection({0.f, 0.f, 0.f}),
                "isValidDirection false for zero vector");
+    expectTrue(fuse::renderer::DdgiIrradianceEncoding::canDirectionallySample(8u),
+               "canDirectionallySample true for non-zero tile res");
+    expectTrue(!fuse::renderer::DdgiIrradianceEncoding::canDirectionallySample(0u),
+               "canDirectionallySample false for zero tile res");
 }
 
 void testEmptyDirectionGuards() {
@@ -650,8 +658,11 @@ void testSampleGuards() {
     desc.irradiance_res = 8;
 
     expectTrue(fuse::renderer::ddgi_util::canSampleProbeGrid(desc), "default grid is sampleable");
+    expectTrue(fuse::renderer::ddgi_util::requiredCacheCount(desc) == 8u, "required cache count matches probe count");
     expectTrue(fuse::renderer::ddgi_util::isCacheSizedForGrid(desc, 8u), "full cache sized for grid");
     expectTrue(!fuse::renderer::ddgi_util::isCacheSizedForGrid(desc, 4u), "undersized cache rejected");
+    expectTrue(fuse::renderer::ddgi_util::cacheEntriesMissing(desc, 8u) == 0u, "full cache has zero missing entries");
+    expectTrue(fuse::renderer::ddgi_util::cacheEntriesMissing(desc, 4u) == 4u, "undersized cache reports shortfall");
 
     fuse::renderer::DDGISampleRequest request{};
     request.world_position = {0.5f, 0.5f, 0.5f};
@@ -664,12 +675,17 @@ void testSampleGuards() {
     fuse::renderer::DDGIDesc empty{};
     empty.grid_dims = {0, 2, 2};
     expectTrue(!fuse::renderer::ddgi_util::canSampleProbeGrid(empty), "empty grid not sampleable");
+    expectTrue(fuse::renderer::ddgi_util::requiredCacheCount(empty) == 0u, "empty grid requires zero cache entries");
+    expectTrue(fuse::renderer::ddgi_util::cacheEntriesMissing(empty, 0u) == 0u,
+               "empty grid reports zero missing cache entries");
     expectTrue(!fuse::renderer::ddgi_util::isValidSampleRequest(empty, request, 8u),
                "empty grid sample request invalid");
 
     fuse::renderer::DDGIDesc zeroRes = desc;
     zeroRes.irradiance_res = 0u;
     expectTrue(!fuse::renderer::ddgi_util::canSampleProbeGrid(zeroRes), "zero irradiance_res not sampleable");
+    expectTrue(fuse::renderer::ddgi_util::requiredCacheCount(zeroRes) == 0u,
+               "zero irradiance_res requires zero cache entries");
 
     fuse::renderer::DDGIDesc badSpacing = desc;
     badSpacing.probe_spacing = {0.f, 2.f, 2.f};
