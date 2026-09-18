@@ -621,6 +621,145 @@ void testPlaySessionStartStopCycle() {
     editorScene.destroy();
 }
 
+void testPlaySessionShouldSkipVariableTick() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    const fuse::ecs::EntityID entity = editorScene.registry().create();
+    editorScene.registry().add<fuse::ecs::Transform>(entity);
+
+    fuse::scene::Scene scene("SkipVariableTickTest");
+    fuse::editor::EditorState state;
+    fuse::editor::PlaySession session;
+    fuse::editor::PlayModePhysicsState physics;
+
+    expectTrue(session.shouldSkipVariableTick(0.016f, physics),
+               "inactive session skips variable tick");
+    expectTrue(session.shouldSkipVariableTick(-0.016f, physics),
+               "negative dt skips variable tick while inactive");
+
+    session.start(editorScene, scene, state, physics);
+    expectTrue(!session.shouldSkipVariableTick(0.016f, physics),
+               "playing session accepts positive variable tick");
+
+    session.pause(scene, state, physics);
+    expectTrue(session.shouldSkipVariableTick(0.016f, physics),
+               "paused session skips variable tick");
+
+    session.stop(editorScene, scene, state, physics);
+    editorScene.destroy();
+}
+
+void testPlaySessionShouldSkipFixedStepDrain() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    const fuse::ecs::EntityID entity = editorScene.registry().create();
+    editorScene.registry().add<fuse::ecs::Transform>(entity);
+
+    fuse::scene::Scene scene("SkipFixedStepTest");
+    fuse::editor::EditorState state;
+    fuse::editor::PlaySession session;
+    fuse::editor::PlayModePhysicsState physics;
+
+    constexpr float kFixedDt = 1.f / 60.f;
+
+    expectTrue(session.shouldSkipFixedStepDrain(kFixedDt, physics),
+               "inactive session skips fixed-step drain");
+    expectTrue(session.shouldSkipFixedStepDrain(0.f, physics),
+               "zero fixedDt skips fixed-step drain");
+
+    session.start(editorScene, scene, state, physics);
+    expectTrue(!session.shouldSkipFixedStepDrain(kFixedDt, physics),
+               "playing session accepts fixed-step drain");
+
+    session.pause(scene, state, physics);
+    expectTrue(session.shouldSkipFixedStepDrain(kFixedDt, physics),
+               "paused session skips fixed-step drain");
+
+    session.stop(editorScene, scene, state, physics);
+    editorScene.destroy();
+}
+
+void testPlaySessionFixedStepPreflightMaxSteps() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    const fuse::ecs::EntityID entity = editorScene.registry().create();
+    editorScene.registry().add<fuse::ecs::Transform>(entity);
+
+    fuse::scene::Scene scene("PreflightFixedStepTest");
+    fuse::editor::EditorState state;
+    fuse::editor::PlaySession session;
+    fuse::editor::PlayModePhysicsState physics;
+
+    constexpr float kFixedDt = 1.f / 60.f;
+
+    session.start(editorScene, scene, state, physics);
+    session.tick(kFixedDt * 5.f, editorScene, physics);
+
+    const fuse::editor::FixedStepPreflight uncapped =
+        session.preflightFixedSteps(kFixedDt, physics, 0u);
+    expectTrue(!uncapped.skipped, "preflight reports runnable fixed-step drain");
+    expectTrue(uncapped.pendingSteps == 5u, "preflight pendingSteps matches accumulator");
+    expectTrue(uncapped.stepsAllowed == 5u, "unlimited maxSteps allows all pending slices");
+    expectTrue(uncapped.stepsDeferred == 0u, "unlimited maxSteps defers nothing");
+    expectTrue(!uncapped.cappedByMaxSteps, "unlimited maxSteps is not capped");
+    expectTrue(uncapped.canDrain(), "preflight canDrain when slices are pending");
+
+    const fuse::editor::FixedStepPreflight capped =
+        session.preflightFixedSteps(kFixedDt, physics, 2u);
+    expectTrue(capped.stepsAllowed == 2u, "preflight maxSteps cap limits stepsAllowed");
+    expectTrue(capped.stepsDeferred == 3u, "preflight maxSteps cap reports deferred remainder");
+    expectTrue(capped.cappedByMaxSteps, "preflight marks maxSteps cap when deferring");
+
+    physics.simulationActive = false;
+    const fuse::editor::FixedStepPreflight inactive =
+        session.preflightFixedSteps(kFixedDt, physics, 0u);
+    expectTrue(inactive.skipped, "preflight skips when physics simulation inactive");
+    expectTrue(!inactive.canDrain(), "preflight canDrain false when skipped");
+
+    session.stop(editorScene, scene, state, physics);
+    editorScene.destroy();
+}
+
+void testPlaySessionDirtySnapshotPreflight() {
+    fuse::editor::EditorScene editorScene;
+    editorScene.init();
+
+    const fuse::ecs::EntityID entity = editorScene.registry().create();
+    fuse::ecs::Transform& transform = editorScene.registry().add<fuse::ecs::Transform>(entity);
+    transform.dirty = false;
+
+    fuse::scene::Scene scene("DirtyPreflightTest");
+    fuse::editor::EditorState state;
+    state.sceneModified = true;
+
+    fuse::editor::PlaySession session;
+    fuse::editor::PlayModePhysicsState physics;
+
+    const fuse::editor::DirtySnapshotPreflight empty = session.preflightDirtySnapshotRestore();
+    expectTrue(empty.skipped, "dirty preflight skipped before capture");
+    expectTrue(session.shouldSkipDirtySnapshotDrain(),
+               "shouldSkipDirtySnapshotDrain true before capture");
+    expectTrue(!empty.canRestore(), "dirty preflight canRestore false when skipped");
+
+    session.start(editorScene, scene, state, physics);
+    const fuse::editor::DirtySnapshotPreflight captured = session.preflightDirtySnapshotRestore();
+    expectTrue(!captured.skipped, "dirty preflight runnable after capture");
+    expectTrue(captured.entityCount == 1u, "dirty preflight reports captured entity count");
+    expectTrue(captured.sceneModifiedCaptured, "dirty preflight reports captured sceneModified");
+    expectTrue(captured.canRestore(), "dirty preflight canRestore after capture");
+    expectTrue(!session.shouldSkipDirtySnapshotDrain(),
+               "shouldSkipDirtySnapshotDrain false after capture");
+
+    session.stop(editorScene, scene, state, physics);
+    const fuse::editor::DirtySnapshotPreflight afterStop = session.preflightDirtySnapshotRestore();
+    expectTrue(afterStop.skipped, "dirty preflight skipped after stop clears snapshot");
+
+    editorScene.destroy();
+}
+
 } // namespace
 
 int main() {
@@ -641,6 +780,10 @@ int main() {
     testPlaySessionPausedFixedStepSkipCounter();
     testPlaySessionDirtySnapshotEntityCountAndOrder();
     testPlaySessionStartStopCycle();
+    testPlaySessionShouldSkipVariableTick();
+    testPlaySessionShouldSkipFixedStepDrain();
+    testPlaySessionFixedStepPreflightMaxSteps();
+    testPlaySessionDirtySnapshotPreflight();
     testPlaySessionFullTransformSnapshotRoundtrip();
     fuse::core::shutdown();
 

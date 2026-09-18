@@ -91,7 +91,7 @@ void PlaySession::resume(scene::Scene& scene, EditorState& state, PlayModePhysic
 }
 
 void PlaySession::tick(f32 dt, EditorScene& editorScene, PlayModePhysicsState& physics) {
-    if (!m_controller.isPlaying() || !physics.simulationActive || dt < 0.f) {
+    if (shouldSkipVariableTick(dt, physics)) {
         ++m_skippedInactiveTickCount;
         return;
     }
@@ -102,7 +102,7 @@ void PlaySession::tick(f32 dt, EditorScene& editorScene, PlayModePhysicsState& p
 
 u32 PlaySession::consumeFixedSteps(f32 fixedDt, EditorScene& editorScene,
                                    PlayModePhysicsState& physics, u32 maxSteps) {
-    if (!m_controller.isPlaying() || !physics.simulationActive || fixedDt <= 0.f) {
+    if (shouldSkipFixedStepDrain(fixedDt, physics)) {
         ++m_skippedInactiveFixedStepCount;
         return 0;
     }
@@ -133,6 +133,52 @@ u32 PlaySession::pendingFixedStepCount(f32 fixedDt) const {
     }
 
     return static_cast<u32>(m_tickAccumulator / fixedDt);
+}
+
+FixedStepPreflight PlaySession::preflightFixedSteps(f32 fixedDt, const PlayModePhysicsState& physics,
+                                                    u32 maxSteps) const {
+    FixedStepPreflight preflight;
+    preflight.fixedDt = fixedDt;
+
+    if (shouldSkipFixedStepDrain(fixedDt, physics)) {
+        return preflight;
+    }
+
+    preflight.skipped = false;
+    preflight.pendingSteps = pendingFixedStepCount(fixedDt);
+    if (preflight.pendingSteps == 0) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    if (maxSteps == 0) {
+        preflight.stepsAllowed = preflight.pendingSteps;
+    } else {
+        preflight.stepsAllowed = std::min(preflight.pendingSteps, maxSteps);
+        preflight.cappedByMaxSteps = preflight.stepsAllowed < preflight.pendingSteps;
+    }
+    preflight.stepsDeferred = preflight.pendingSteps - preflight.stepsAllowed;
+    return preflight;
+}
+
+bool PlaySession::shouldSkipVariableTick(f32 dt, const PlayModePhysicsState& physics) const {
+    return !m_controller.isPlaying() || !physics.simulationActive || dt < 0.f;
+}
+
+bool PlaySession::shouldSkipFixedStepDrain(f32 fixedDt, const PlayModePhysicsState& physics) const {
+    return !m_controller.isPlaying() || !physics.simulationActive || fixedDt <= 0.f;
+}
+
+DirtySnapshotPreflight PlaySession::preflightDirtySnapshotRestore() const {
+    DirtySnapshotPreflight preflight;
+    if (!m_hasDirtySnapshot) {
+        return preflight;
+    }
+
+    preflight.skipped = false;
+    preflight.entityCount = static_cast<u32>(m_dirtySnapshot.transformDirty.size());
+    preflight.sceneModifiedCaptured = m_dirtySnapshot.sceneModified;
+    return preflight;
 }
 
 PlayWorldSnapshot PlaySession::captureWorldSnapshot(EditorScene& editorScene) const {

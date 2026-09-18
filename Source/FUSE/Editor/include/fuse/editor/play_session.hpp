@@ -12,6 +12,27 @@
 
 namespace fuse::editor {
 
+/// Preflight result for fixed-step drain without mutating the session (B6.12 deepen follow-up).
+struct FixedStepPreflight {
+    bool skipped = true;
+    f32 fixedDt = 0.f;
+    u32 pendingSteps = 0;
+    u32 stepsAllowed = 0;
+    u32 stepsDeferred = 0;
+    bool cappedByMaxSteps = false;
+
+    bool canDrain() const { return !skipped && stepsAllowed > 0; }
+};
+
+/// Preflight result for dirty-flag restore without mutating editor state (B6.12 deepen follow-up).
+struct DirtySnapshotPreflight {
+    bool skipped = true;
+    u32 entityCount = 0;
+    bool sceneModifiedCaptured = false;
+
+    bool canRestore() const { return !skipped; }
+};
+
 /// ECS world snapshot for PIE restore (B6.12 deepen — transform payloads per entity).
 struct PlayWorldSnapshot {
     std::vector<std::pair<ecs::EntityID, ecs::Transform>> entities;
@@ -56,9 +77,20 @@ public:
     u32 skippedInactiveFixedStepCount() const { return m_skippedInactiveFixedStepCount; }
     /// Remaining fixed slices in `tickAccumulator()` at the last `consumeFixedSteps` call.
     u32 pendingFixedStepCount(f32 fixedDt) const;
+    /// Preflight fixed-step drain: pending slices, maxSteps cap, and deferred remainder.
+    FixedStepPreflight preflightFixedSteps(f32 fixedDt, const PlayModePhysicsState& physics,
+                                           u32 maxSteps = 0) const;
+    /// True when `tick(dt)` would be a no-op for the current session/physics/dt.
+    bool shouldSkipVariableTick(f32 dt, const PlayModePhysicsState& physics) const;
+    /// True when `consumeFixedSteps(fixedDt)` would be a no-op for the current session/physics/fixedDt.
+    bool shouldSkipFixedStepDrain(f32 fixedDt, const PlayModePhysicsState& physics) const;
     u32 dirtySnapshotEntityCount() const {
         return m_hasDirtySnapshot ? static_cast<u32>(m_dirtySnapshot.transformDirty.size()) : 0u;
     }
+    /// Preflight dirty-flag restore without mutating editor state.
+    DirtySnapshotPreflight preflightDirtySnapshotRestore() const;
+    /// True when `drainDirtySnapshot` would be guarded with no captured snapshot.
+    bool shouldSkipDirtySnapshotDrain() const { return !m_hasDirtySnapshot; }
     bool hasWorldSnapshot() const { return m_hasWorldSnapshot; }
     bool hasDirtySnapshot() const { return m_hasDirtySnapshot; }
 
