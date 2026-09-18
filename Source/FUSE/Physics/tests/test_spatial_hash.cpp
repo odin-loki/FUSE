@@ -866,6 +866,191 @@ void testBroadphaseBoxShapeCellRange() {
     expectTrue(!pairs.empty(), "box shapes emit candidate pairs via AABB cell range");
 }
 
+void testBroadphaseInputPreflight() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+
+    const fuse::physics::broadphase::BroadphaseInputPreflight emptyPreflight =
+        fuse::physics::broadphase::preflight_broadphase_input(bodies, shapes);
+    expectTrue(emptyPreflight.skipped, "empty input preflight is skipped");
+    expectTrue(emptyPreflight.emptyBodies, "empty input preflight marks empty bodies");
+    expectTrue(emptyPreflight.emptyShapes, "empty input preflight marks empty shapes");
+    expectTrue(!emptyPreflight.can_run(), "empty input preflight cannot run");
+    expectTrue(fuse::physics::broadphase::should_skip_broadphase(bodies, shapes),
+               "should_skip_broadphase on empty scene");
+
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::physics::broadphase::BroadphaseInputPreflight missingShapes =
+        fuse::physics::broadphase::preflight_broadphase_input(bodies, shapes);
+    expectTrue(missingShapes.skipped, "bodies-only preflight is skipped");
+    expectTrue(!missingShapes.emptyBodies, "bodies-only preflight has bodies");
+    expectTrue(missingShapes.emptyShapes, "bodies-only preflight marks empty shapes");
+
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {1.f, 0.f, 0.f});
+    const fuse::physics::broadphase::BroadphaseInputPreflight validPreflight =
+        fuse::physics::broadphase::preflight_broadphase_input(bodies, shapes);
+    expectTrue(!validPreflight.skipped, "populated input preflight is not skipped");
+    expectTrue(validPreflight.can_run(), "populated input preflight can run");
+    expectTrue(!fuse::physics::broadphase::should_skip_broadphase(bodies, shapes),
+               "should_skip_broadphase on populated scene");
+}
+
+void testCellOccupancyPreflight() {
+    const fuse::physics::broadphase::CellRange3 smallRange = {{0, 0, 0}, {1, 1, 1}};
+    const fuse::physics::broadphase::CellOccupancyPreflight withinBudget =
+        fuse::physics::broadphase::preflight_cell_occupancy(smallRange, 8u);
+    expectTrue(!withinBudget.skipped, "non-empty range preflight is not skipped");
+    expectTrue(!withinBudget.emptyRange, "non-empty range preflight is populated");
+    expectEq(withinBudget.estimatedCells, 8u, "cell occupancy preflight estimates cells");
+    expectTrue(withinBudget.can_insert(), "within-budget preflight can insert");
+    expectTrue(!fuse::physics::broadphase::canSkipCellOccupancyInsert(smallRange, 8u),
+               "within-budget range does not skip insert");
+
+    const fuse::physics::broadphase::CellOccupancyPreflight overBudget =
+        fuse::physics::broadphase::preflight_cell_occupancy(smallRange, 4u);
+    expectTrue(overBudget.exceedsBudget, "over-budget preflight flags exceed");
+    expectTrue(!overBudget.can_insert(), "over-budget preflight cannot insert");
+    expectTrue(fuse::physics::broadphase::canSkipCellOccupancyInsert(smallRange, 4u),
+               "over-budget range skips insert");
+
+    fuse::physics::broadphase::CellRange3 inverted = {{2, 2, 2}, {1, 1, 1}};
+    const fuse::physics::broadphase::CellOccupancyPreflight emptyRange =
+        fuse::physics::broadphase::preflight_cell_occupancy(inverted, 4u);
+    expectTrue(emptyRange.skipped, "empty range preflight is skipped");
+    expectTrue(emptyRange.emptyRange, "empty range preflight marks empty range");
+    expectTrue(fuse::physics::broadphase::canSkipCellOccupancyInsert(inverted, 4u),
+               "empty range skips insert");
+
+    const fuse::physics::broadphase::CellRange2 planeRange = {{0, 0}, {3, 1}};
+    const fuse::physics::broadphase::CellOccupancyPreflight planePreflight =
+        fuse::physics::broadphase::preflight_cell_occupancy(planeRange, 4u);
+    expectTrue(planePreflight.exceedsBudget, "2D occupancy preflight flags exceed");
+}
+
+void testBroadphaseCellOccupancyIntegration() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    bodies.addBody({500.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {256.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 1, {1.f, 0.f, 0.f});
+
+    fuse::physics::broadphase::SpatialHashParams params;
+    params.cellSize = 1.f;
+    params.tableSize = 256;
+    params.maxCellSpanPerAxis = 64u;
+    params.maxCellOccupancy = 8u;
+    params.bodyCount = bodies.count();
+
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    fuse::physics::broadphase::runBroadphaseIntoBuffer(bodies, shapes, params, buffer);
+    expectTrue(buffer.isEmpty(), "occupancy-budgeted huge sphere skips distant body pair");
+}
+
+void testRefineBroadphasePreflight() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    fuse::physics::broadphase::PairBufferSoA buffer;
+
+    const fuse::physics::broadphase::RefineBroadphasePreflight emptyPreflight =
+        fuse::physics::broadphase::preflight_refine_broadphase(bodies, shapes, buffer);
+    expectTrue(emptyPreflight.skipped, "refine preflight skips empty buffer and input");
+    expectTrue(emptyPreflight.emptyBuffer, "refine preflight marks empty buffer");
+    expectTrue(emptyPreflight.emptyInput, "refine preflight marks empty input");
+    expectTrue(!emptyPreflight.can_refine(), "empty refine preflight cannot refine");
+    expectTrue(fuse::physics::broadphase::should_skip_refine_broadphase(bodies, shapes, buffer),
+               "should_skip_refine_broadphase on empty scene");
+
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    bodies.addBody({0.5f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 1, {1.f, 0.f, 0.f});
+    buffer.push(0u, 1u);
+
+    const fuse::physics::broadphase::RefineBroadphasePreflight validPreflight =
+        fuse::physics::broadphase::preflight_refine_broadphase(bodies, shapes, buffer);
+    expectTrue(!validPreflight.skipped, "refine preflight does not skip valid pair buffer");
+    expectTrue(validPreflight.can_refine(), "valid refine preflight can refine");
+    expectTrue(!fuse::physics::broadphase::should_skip_refine_broadphase(bodies, shapes, buffer),
+               "should_skip_refine_broadphase on valid pair buffer");
+}
+
+void testPairBufferDedupePreflight() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+
+    const fuse::physics::broadphase::PairBufferDedupePreflight emptyPreflight =
+        fuse::physics::broadphase::preflight_dedupe_pair_buffer(buffer);
+    expectTrue(emptyPreflight.skipped, "dedupe preflight skips empty buffer");
+    expectTrue(!emptyPreflight.needs_dedupe(), "empty buffer does not need dedupe");
+    expectTrue(fuse::physics::broadphase::should_skip_dedupe_pair_buffer(buffer),
+               "should_skip_dedupe_pair_buffer on empty buffer");
+
+    buffer.push(0u, 1u);
+    const fuse::physics::broadphase::PairBufferDedupePreflight singlePreflight =
+        fuse::physics::broadphase::preflight_dedupe_pair_buffer(buffer);
+    expectTrue(singlePreflight.skipped, "dedupe preflight skips single pair");
+    expectTrue(!singlePreflight.needs_dedupe(), "single pair does not need dedupe");
+
+    buffer.push(2u, 3u);
+    const fuse::physics::broadphase::PairBufferDedupePreflight multiPreflight =
+        fuse::physics::broadphase::preflight_dedupe_pair_buffer(buffer);
+    expectTrue(!multiPreflight.skipped, "multi-pair dedupe preflight is not skipped");
+    expectTrue(multiPreflight.needs_dedupe(), "multi-pair buffer needs dedupe");
+    expectTrue(multiPreflight.can_dedupe(), "multi-pair buffer can dedupe");
+    expectTrue(!fuse::physics::broadphase::should_skip_dedupe_pair_buffer(buffer),
+               "should_skip_dedupe_pair_buffer on multi-pair buffer");
+}
+
+void testPairBufferClampPreflight() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+
+    const fuse::physics::broadphase::PairBufferClampPreflight emptyPreflight =
+        fuse::physics::broadphase::preflight_pair_buffer_clamp(buffer);
+    expectTrue(emptyPreflight.skipped, "clamp preflight skips empty buffer");
+    expectTrue(!emptyPreflight.needs_clamp(), "empty buffer does not need clamp");
+
+    buffer.push(0u, 1u);
+    buffer.push(2u, 3u);
+    buffer.push(4u, 5u);
+    buffer.setMaxCapacity(2u);
+
+    const fuse::physics::broadphase::PairBufferClampPreflight overflowPreflight =
+        fuse::physics::broadphase::preflight_pair_buffer_clamp(buffer);
+    expectTrue(!overflowPreflight.skipped, "overflow clamp preflight is not skipped");
+    expectTrue(overflowPreflight.needs_clamp(), "overflow buffer needs clamp");
+    expectTrue(overflowPreflight.can_clamp(), "overflow buffer can clamp");
+    expectEq(overflowPreflight.excessCount, 1u, "clamp preflight counts excess pairs");
+}
+
+void testPairBufferDedupeAndClampGuards() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    expectTrue(buffer.canSkipDedupeAndClamp(), "empty buffer skips dedupe and clamp");
+
+    buffer.push(0u, 1u);
+    expectTrue(buffer.canSkipDedupeAndClamp(), "single pair skips dedupe and clamp");
+
+    buffer.push(2u, 3u);
+    expectTrue(!buffer.canSkipDedupeAndClamp(), "multi pair does not skip dedupe");
+
+    buffer.setMaxCapacity(1u);
+    expectTrue(!buffer.canSkipDedupeAndClamp(), "overflow buffer does not skip clamp");
+}
+
+void testEmptyBroadphaseOutputGuard() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    expectTrue(fuse::physics::broadphase::isEmptyBroadphaseOutput(buffer),
+               "empty buffer is empty broadphase output");
+
+    buffer.preparePairSlots(0u);
+    expectTrue(fuse::physics::broadphase::isEmptyBroadphaseOutput(buffer),
+               "zero-slot buffer is empty broadphase output");
+
+    buffer.push(0u, 1u);
+    expectTrue(!fuse::physics::broadphase::isEmptyBroadphaseOutput(buffer),
+               "active pair buffer is not empty output");
+}
+
 } // namespace
 
 int main() {
@@ -908,6 +1093,14 @@ int main() {
     testPairBufferCanAcceptPairsGuard();
     testBroadphaseCanSkipIntegration();
     testBroadphaseBoxShapeCellRange();
+    testBroadphaseInputPreflight();
+    testCellOccupancyPreflight();
+    testBroadphaseCellOccupancyIntegration();
+    testRefineBroadphasePreflight();
+    testPairBufferDedupePreflight();
+    testPairBufferClampPreflight();
+    testPairBufferDedupeAndClampGuards();
+    testEmptyBroadphaseOutputGuard();
 
     if (g_failures == 0) {
         std::printf("fuse_physics_broadphase_tests: all checks passed\n");
