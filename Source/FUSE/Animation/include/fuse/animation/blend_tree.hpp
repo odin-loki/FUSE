@@ -10,6 +10,9 @@
 
 namespace fuse::animation {
 
+/// True when `skel` has no bones (blend-tree evaluate early-out guard).
+[[nodiscard]] bool skeleton_is_empty(const Skeleton& skel);
+
 struct BlendNode {
     virtual ~BlendNode() = default;
     virtual void evaluate(f32 dt, const Skeleton& skel, Pose& out) = 0;
@@ -219,6 +222,24 @@ struct AnimStateMachine : BlendNode {
 
     /// Blend duration for the `edge_index`-th incoming transition to `to_state`, or -1.
     f32 incoming_transition_blend_duration_at(u32 to_state, u32 edge_index) const;
+
+    /// True when `index` is a registered transition list index.
+    bool is_valid_transition_index(u32 index) const;
+
+    /// Source state for the `index`-th registered transition, or -1 when invalid.
+    s32 transition_from_at(u32 index) const;
+
+    /// Destination state for the `index`-th registered transition, or -1 when invalid.
+    s32 transition_to_at(u32 index) const;
+
+    /// Blend duration for the `index`-th registered transition, or -1 when invalid.
+    f32 transition_blend_duration_at(u32 index) const;
+
+    /// True when both state indices are valid, distinct, and a transition edge exists.
+    bool is_valid_transition_edge(u32 from_state, u32 to_state) const;
+
+    /// True when the `edge_index`-th incoming transition to `to_state` has a passing condition.
+    bool incoming_transition_condition_passes(u32 to_state, u32 edge_index) const;
 };
 
 } // namespace fuse::animation

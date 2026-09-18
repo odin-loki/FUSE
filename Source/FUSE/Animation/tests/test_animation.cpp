@@ -1988,6 +1988,170 @@ void testLayeredBlendEvaluateEarlyOut() {
                "empty layered blend evaluate early-out returns bind pose");
 }
 
+void testSkeletonIsEmptyGuard() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::Skeleton empty{};
+
+    expectTrue(!fuse::animation::skeleton_is_empty(skel), "skeleton_is_empty false for populated skeleton");
+    expectTrue(fuse::animation::skeleton_is_empty(empty), "skeleton_is_empty true for zero bones");
+}
+
+void testBlendTreeEmptySkeletonEarlyOut() {
+    fuse::animation::Skeleton empty{};
+    fuse::animation::AnimationClip clip = makePositionClip(0, 3.f);
+
+    fuse::animation::ClipNode clipNode;
+    clipNode.clip = &clip;
+    fuse::animation::Pose pose;
+    clipNode.evaluate(0.f, empty, pose);
+    expectTrue(pose.bone_count == 0u, "clip node evaluate clears pose on empty skeleton");
+
+    fuse::animation::PoseSoA poseSoa = fuse::animation::PoseSoA::allocate(2);
+    clipNode.evaluate_soa(0.f, empty, poseSoa);
+    expectTrue(poseSoa.bone_count == 0u, "clip node evaluate_soa clears pose on empty skeleton");
+
+    fuse::animation::BlendNode2 blendNode;
+    auto child = std::make_unique<fuse::animation::ClipNode>();
+    child->clip = &clip;
+    blendNode.a = std::move(child);
+    blendNode.evaluate_soa(0.f, empty, poseSoa);
+    expectTrue(poseSoa.bone_count == 0u, "blend node2 evaluate_soa clears pose on empty skeleton");
+
+    fuse::animation::BlendSpace1D space1d;
+    space1d.entries.push_back({0.f, std::make_unique<fuse::animation::ClipNode>()});
+    space1d.evaluate(0.f, empty, pose);
+    expectTrue(pose.bone_count == 0u, "blend space 1d evaluate clears pose on empty skeleton");
+
+    fuse::animation::BlendSpace2D space2d;
+    space2d.evaluate_soa(0.f, empty, poseSoa);
+    expectTrue(poseSoa.bone_count == 0u, "blend space 2d evaluate_soa clears pose on empty skeleton");
+
+    fuse::animation::LayeredBlendNode layered;
+    layered.evaluate(0.f, empty, pose);
+    expectTrue(pose.bone_count == 0u, "layered blend evaluate clears pose on empty skeleton");
+
+    fuse::animation::AdditiveBlendNode additive;
+    additive.evaluate_soa(0.f, empty, poseSoa);
+    expectTrue(poseSoa.bone_count == 0u, "additive blend evaluate_soa clears pose on empty skeleton");
+}
+
+void testStateMachineEmptySkeletonEvaluate() {
+    fuse::animation::Skeleton empty{};
+    fuse::animation::AnimStateMachine machine;
+    machine.add_state("idle", nullptr);
+
+    fuse::animation::Pose pose;
+    machine.evaluate(0.1f, empty, pose);
+    expectTrue(pose.bone_count == 0u, "state machine evaluate clears pose on empty skeleton");
+
+    fuse::animation::PoseSoA poseSoa = fuse::animation::PoseSoA::allocate(2);
+    machine.evaluate_soa(0.1f, empty, poseSoa);
+    expectTrue(poseSoa.bone_count == 0u, "state machine evaluate_soa clears pose on empty skeleton");
+}
+
+void testStateMachineTransitionIndexGuards() {
+    fuse::animation::AnimStateMachine machine;
+    machine.add_state("idle", nullptr);
+    machine.add_state("run", nullptr);
+    machine.add_state("jump", nullptr);
+
+    machine.add_transition("idle", "run", 0.2f, []() { return true; });
+    machine.add_transition("idle", "jump", 0.35f, []() { return false; });
+    machine.add_transition("run", "idle", 0.15f, []() { return true; });
+
+    expectTrue(machine.is_valid_transition_index(0u), "transition index zero is valid");
+    expectTrue(machine.is_valid_transition_index(2u), "transition index two is valid");
+    expectTrue(!machine.is_valid_transition_index(3u), "transition index three is invalid");
+
+    expectTrue(machine.transition_from_at(0u) == 0, "transition from at first edge");
+    expectTrue(machine.transition_to_at(0u) == 1, "transition to at first edge");
+    expectTrue(machine.transition_from_at(2u) == 1, "transition from at third edge");
+    expectTrue(machine.transition_to_at(2u) == 0, "transition to at third edge");
+    expectTrue(machine.transition_from_at(99u) < 0, "transition from at rejects invalid index");
+    expectTrue(machine.transition_to_at(99u) < 0, "transition to at rejects invalid index");
+
+    expectNear(machine.transition_blend_duration_at(0u), 0.2f, 1e-4f,
+               "transition blend duration at first edge");
+    expectNear(machine.transition_blend_duration_at(1u), 0.35f, 1e-4f,
+               "transition blend duration at second edge");
+    expectTrue(machine.transition_blend_duration_at(99u) < 0.f,
+               "transition blend duration at rejects invalid index");
+}
+
+void testStateMachineTransitionEdgeGuards() {
+    fuse::animation::AnimStateMachine machine;
+    machine.add_state("idle", nullptr);
+    machine.add_state("run", nullptr);
+    machine.add_transition("idle", "run", 0.2f, []() { return true; });
+
+    expectTrue(machine.is_valid_transition_edge(0u, 1u),
+               "is valid transition edge true for registered edge");
+    expectTrue(!machine.is_valid_transition_edge(0u, 0u),
+               "is valid transition edge rejects self edge");
+    expectTrue(!machine.is_valid_transition_edge(0u, 5u),
+               "is valid transition edge rejects invalid target");
+    expectTrue(!machine.is_valid_transition_edge(5u, 1u),
+               "is valid transition edge rejects invalid source");
+    expectTrue(!machine.is_valid_transition_edge(1u, 0u),
+               "is valid transition edge rejects missing reverse edge");
+
+    expectTrue(machine.find_transition_index(99u, 1u) < 0,
+               "find transition index rejects invalid source state");
+    expectTrue(machine.find_transition_index(0u, 99u) < 0,
+               "find transition index rejects invalid target state");
+    expectTrue(machine.find_transition_index(0u, 0u) < 0,
+               "find transition index rejects self transition");
+    expectTrue(!machine.transition_condition_passes(99u, 1u),
+               "transition condition passes rejects invalid source state");
+    expectTrue(!machine.transition_condition_passes(0u, 99u),
+               "transition condition passes rejects invalid target state");
+    expectTrue(machine.find_first_passing_outgoing_transition(99u) < 0,
+               "find first passing outgoing transition rejects invalid source state");
+}
+
+void testStateMachineIncomingTransitionConditionPasses() {
+    fuse::animation::AnimStateMachine machine;
+    machine.add_state("idle", nullptr);
+    machine.add_state("run", nullptr);
+    machine.add_state("jump", nullptr);
+
+    bool shouldRun = true;
+    bool shouldJump = false;
+    machine.add_transition("run", "idle", 0.15f, [&]() { return shouldRun; });
+    machine.add_transition("jump", "idle", 0.25f, [&]() { return shouldJump; });
+
+    expectTrue(machine.incoming_transition_condition_passes(0u, 0u),
+               "incoming transition condition passes at first edge");
+    expectTrue(!machine.incoming_transition_condition_passes(0u, 1u),
+               "incoming transition condition fails at second edge");
+    expectTrue(!machine.incoming_transition_condition_passes(0u, 2u),
+               "incoming transition condition rejects invalid edge index");
+}
+
+void testStateMachineCrossfadeBindFallback() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::AnimationClip idle = makePositionClip(1, 1.f);
+    fuse::animation::AnimationClip run = makePositionClip(1, 6.f);
+
+    fuse::animation::AnimStateMachine machine;
+    auto idleNode = std::make_unique<fuse::animation::ClipNode>();
+    idleNode->clip = &idle;
+    auto runNode = std::make_unique<fuse::animation::ClipNode>();
+    runNode->clip = &run;
+    machine.add_state("idle", std::move(idleNode));
+    machine.add_state("run", std::move(runNode));
+
+    bool shouldRun = true;
+    machine.add_transition("idle", "run", 0.2f, [&]() { return shouldRun; });
+
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::allocate(1);
+    machine.evaluate_soa(0.05f, skel, pose);
+    expectTrue(fuse::animation::pose_soa_columns_valid(machine.blend_from_pose_soa),
+               "crossfade stores valid blend-from pose columns");
+    expectTrue(machine.blend_from_pose_soa.bone_count == skel.bone_count,
+               "crossfade stores blend-from pose bone count");
+}
+
 void testAnimatorTick() {
     const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
     fuse::animation::Animator animator;
@@ -2090,7 +2254,14 @@ int main() {
     testBlendNodeIsEmpty();
     testBlendNodeEmptyEarlyOut();
     testStateMachineTransitionHelpers();
+    testStateMachineTransitionIndexGuards();
+    testStateMachineTransitionEdgeGuards();
+    testStateMachineIncomingTransitionConditionPasses();
     testStateMachineRemainingCrossfadeTime();
+    testSkeletonIsEmptyGuard();
+    testBlendTreeEmptySkeletonEarlyOut();
+    testStateMachineEmptySkeletonEvaluate();
+    testStateMachineCrossfadeBindFallback();
     testLayeredBlendEvaluateEarlyOut();
     testStateMachineConditionFalse();
     testStateMachineFirstTransitionWins();
