@@ -374,6 +374,97 @@ void run_snapshot_delta_tests() {
     bad_target_delta.target_checksum = 0xBADC0DE;
     expectTrue(!history.apply_delta_and_store(base.frame, bad_target_delta, nullptr),
                "history ring rejects delta with bad target checksum");
+
+    // --- empty-delta guards (B7.4 deepen follow-up) ---
+    expectTrue(fuse::net::should_skip_delta_apply(empty_delta), "empty delta triggers skip guard");
+    expectTrue(!fuse::net::should_skip_delta_apply(patch_delta), "patch delta does not trigger skip guard");
+    expectTrue(fuse::net::can_apply_snapshot_delta(base, empty_delta), "can_apply accepts empty delta");
+    expectTrue(fuse::net::can_apply_snapshot_delta(base, patch_delta), "can_apply accepts valid patch delta");
+    expectTrue(!fuse::net::can_apply_snapshot_delta(base, bad_checksum_delta),
+               "can_apply rejects checksum mismatch");
+
+    const fuse::net::SnapshotDeltaPreflight deepen_preflight =
+        fuse::net::preflight_snapshot_delta(base, empty_delta);
+    expectTrue(deepen_preflight.empty_delta, "preflight marks empty delta");
+    expectTrue(deepen_preflight.mask_popcount_ok, "empty delta mask popcount validates");
+    expectTrue(deepen_preflight.can_apply(), "empty delta preflight can_apply");
+
+    expectTrue(fuse::net::entity_mask_popcount_matches_patches(patch_delta),
+               "patch delta mask popcount matches patch rows");
+    expectTrue(fuse::net::entity_mask_popcount_matches_patches(empty_delta),
+               "empty delta mask popcount trivially matches");
+
+    fuse::net::SnapshotDelta bad_popcount_delta = patch_delta;
+    bad_popcount_delta.changed_entity_mask |= (1ull << 2);
+    expectTrue(!fuse::net::entity_mask_popcount_matches_patches(bad_popcount_delta),
+               "stray mask bit fails popcount helper");
+    expectTrue(!fuse::net::preflight_snapshot_delta(base, bad_popcount_delta).mask_popcount_ok,
+               "preflight rejects mask popcount mismatch");
+
+    // --- mask payload size validation (B7.4 deepen follow-up) ---
+    expectTrue(fuse::net::ecs_field_mask_nonempty(patch_delta.entity_patches[0].changed_ecs_fields),
+               "ecs mask nonempty helper");
+    expectTrue(!fuse::net::ecs_field_mask_nonempty(0), "zero ecs mask is empty");
+    expectTrue(fuse::net::physics_field_mask_nonempty(patch_delta.entity_patches[0].changed_physics_fields),
+               "physics mask nonempty helper");
+    expectTrue(fuse::net::ecs_field_mask_subset(
+                   patch_delta.entity_patches[0].changed_ecs_fields,
+                   static_cast<fuse::u8>(fuse::net::SnapshotEcsField::All)),
+               "ecs mask subset helper accepts declared fields");
+    expectTrue(!fuse::net::ecs_field_mask_subset(static_cast<fuse::u8>(fuse::net::SnapshotEcsField::All),
+                                                 patch_delta.entity_patches[0].changed_ecs_fields),
+               "ecs mask subset helper rejects superset claim");
+
+    const fuse::u32 expected_ecs_bytes = fuse::net::expected_ecs_patch_bytes(
+        patch_delta.entity_patches[0].changed_ecs_fields);
+    expectTrue(expected_ecs_bytes == 12u, "position-only ecs patch expects 12 bytes");
+    expectTrue(fuse::net::validate_entity_patch_payload_sizes(patch_delta.entity_patches[0]),
+               "computed patch payload sizes validate");
+
+    fuse::net::SnapshotEntityPatch truncated_patch = patch_delta.entity_patches[0];
+    truncated_patch.ecs_bytes.resize(4);
+    expectTrue(!fuse::net::validate_entity_patch_payload_sizes(truncated_patch),
+               "truncated ecs payload fails size validation");
+    expectTrue(!fuse::net::validate_entity_patch_masks(truncated_patch),
+               "truncated ecs payload fails mask validation");
+
+    fuse::net::SnapshotDelta bad_payload_size_delta = patch_delta;
+    bad_payload_size_delta.entity_patches[0] = truncated_patch;
+    expectTrue(!fuse::net::validate_delta_payload(bad_payload_size_delta),
+               "delta payload rejects truncated patch bytes");
+
+    // --- history-ring helpers (B7.4 deepen follow-up) ---
+    fuse::net::SnapshotHistoryRing helper_history;
+    helper_history.init(4);
+    helper_history.push(base);
+    expectTrue(helper_history.has_baseline(base.frame), "has_baseline reports retained frame");
+    expectTrue(helper_history.remaining_capacity() == 3u, "remaining_capacity after one push");
+    expectTrue(!helper_history.should_skip_apply_delta(base.frame, patch_delta),
+               "patch delta is not skipped on populated ring");
+    expectTrue(helper_history.should_skip_apply_delta(base.frame, empty_delta),
+               "empty delta is skipped on populated ring");
+
+    const fuse::net::SnapshotHistoryPreflight history_preflight =
+        helper_history.preflight_apply_delta(base.frame, patch_delta);
+    expectTrue(!history_preflight.ring_empty, "history preflight sees populated ring");
+    expectTrue(history_preflight.has_baseline, "history preflight finds baseline");
+    expectTrue(!history_preflight.skipped, "patch delta history preflight not skipped");
+    expectTrue(history_preflight.can_apply(), "history preflight can_apply for patch delta");
+
+    const fuse::net::SnapshotHistoryPreflight empty_history_preflight =
+        helper_history.preflight_apply_delta(base.frame, empty_delta);
+    expectTrue(empty_history_preflight.skipped, "empty delta history preflight marked skipped");
+    expectTrue(empty_history_preflight.can_apply(), "skipped empty delta still can_apply with baseline");
+
+    fuse::net::SnapshotHistoryRing empty_helper_ring;
+    empty_helper_ring.init(4);
+    expectTrue(empty_helper_ring.remaining_capacity() == 4u, "empty ring reports full remaining capacity");
+    const fuse::net::SnapshotHistoryPreflight empty_ring_preflight =
+        empty_helper_ring.preflight_apply_delta(0u, empty_delta);
+    expectTrue(empty_ring_preflight.ring_empty, "empty ring preflight reports ring_empty");
+    expectTrue(!empty_ring_preflight.can_apply(), "empty ring preflight cannot apply");
+    expectTrue(empty_helper_ring.should_skip_apply_delta(0u, empty_delta),
+               "empty ring should_skip_apply_delta is true");
 }
 
 } // namespace fuse::net::tests

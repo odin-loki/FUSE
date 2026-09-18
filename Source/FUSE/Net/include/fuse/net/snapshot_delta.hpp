@@ -77,9 +77,26 @@ struct SnapshotDeltaPreflight {
     bool base_frame_ok = true;
     /// True when delta kind, masks, and payload bytes are structurally consistent.
     bool payload_ok = true;
+    /// True when the delta is a no-op `SnapshotDeltaKind::None` payload (B7.4 deepen follow-up).
+    bool empty_delta = false;
+    /// True when entity-mask popcount matches `entity_patches.size()` (EntityPatch only).
+    bool mask_popcount_ok = true;
 
     [[nodiscard]] bool can_apply() const {
-        return base_checksum_ok && entity_mask_ok && base_frame_ok && payload_ok;
+        return base_checksum_ok && entity_mask_ok && base_frame_ok && payload_ok && mask_popcount_ok;
+    }
+};
+
+/// Preflight for applying a delta against a retained history-ring baseline (B7.4 deepen follow-up).
+struct SnapshotHistoryPreflight {
+    bool ring_empty = true;
+    bool has_baseline = false;
+    /// True when the delta is empty and apply would be a no-op (B7.4 deepen follow-up).
+    bool skipped = false;
+    SnapshotDeltaPreflight delta_preflight{};
+
+    [[nodiscard]] bool can_apply() const {
+        return !ring_empty && has_baseline && delta_preflight.can_apply();
     }
 };
 
@@ -112,14 +129,44 @@ struct SnapshotDeltaPreflight {
 /// True when every patch index has a matching mask bit and no stray mask bits are set.
 [[nodiscard]] bool validate_changed_entity_mask(const SnapshotDelta& delta);
 
+/// True when entity-mask popcount equals `entity_patches.size()` (EntityPatch only).
+[[nodiscard]] bool entity_mask_popcount_matches_patches(const SnapshotDelta& delta);
+
 /// True when a patch row carries at least one field mask with matching payload bytes.
 [[nodiscard]] bool validate_entity_patch_masks(const SnapshotEntityPatch& patch);
+
+/// Expected serialized ECS byte count for a masked entity patch row.
+[[nodiscard]] u32 expected_ecs_patch_bytes(u8 changed_ecs_fields);
+
+/// Expected serialized physics byte count for a masked entity patch row.
+[[nodiscard]] u32 expected_physics_patch_bytes(u8 changed_physics_fields);
+
+/// True when patch payload byte lengths match the declared field masks.
+[[nodiscard]] bool validate_entity_patch_payload_sizes(const SnapshotEntityPatch& patch);
+
+/// True when `subset` field bits are covered by `superset`.
+[[nodiscard]] bool ecs_field_mask_subset(u8 subset, u8 superset);
+
+/// True when `subset` field bits are covered by `superset`.
+[[nodiscard]] bool physics_field_mask_subset(u8 subset, u8 superset);
+
+/// True when at least one ECS field bit is set in `mask`.
+[[nodiscard]] bool ecs_field_mask_nonempty(u8 mask);
+
+/// True when at least one physics field bit is set in `mask`.
+[[nodiscard]] bool physics_field_mask_nonempty(u8 mask);
 
 /// True when delta kind, entity mask, and payload bytes are internally consistent.
 [[nodiscard]] bool validate_delta_payload(const SnapshotDelta& delta);
 
 /// True for `SnapshotDeltaKind::None` deltas (no-op bandwidth payload).
 [[nodiscard]] bool is_empty_snapshot_delta(const SnapshotDelta& delta);
+
+/// True when apply can be skipped because the delta carries no state changes (B7.4 deepen follow-up).
+[[nodiscard]] bool should_skip_delta_apply(const SnapshotDelta& delta);
+
+/// Convenience guard — `preflight_snapshot_delta(base, delta).can_apply()` (B7.4 deepen follow-up).
+[[nodiscard]] bool can_apply_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta);
 
 [[nodiscard]] SnapshotDelta compute_snapshot_delta(const GameSnapshot& base, const GameSnapshot& target);
 [[nodiscard]] GameSnapshot apply_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta);
@@ -146,8 +193,11 @@ public:
     [[nodiscard]] u32 oldest_frame() const { return m_buffer.oldest_stored_frame(); }
     [[nodiscard]] u32 newest_frame() const { return m_buffer.newest_stored_frame(); }
     [[nodiscard]] u32 stored_frame_count() const;
+    [[nodiscard]] u32 remaining_capacity() const;
     [[nodiscard]] bool empty() const { return stored_frame_count() == 0; }
     [[nodiscard]] bool has_frame(u32 frame) const { return m_buffer.has_frame(frame); }
+    /// Alias for `has_frame` — retained baseline lookup before delta apply (B7.4 deepen follow-up).
+    [[nodiscard]] bool has_baseline(u32 base_frame) const { return has_frame(base_frame); }
 
     void push(GameSnapshot snapshot);
     /// Evicts the oldest retained snapshot (no-op when empty).
@@ -157,6 +207,12 @@ public:
 
     /// True when `base_frame` is retained and `preflight_snapshot_delta` would succeed.
     [[nodiscard]] bool can_apply_delta(u32 base_frame, const SnapshotDelta& delta) const;
+
+    /// Preflight delta apply against a retained baseline without mutating the ring (B7.4 deepen follow-up).
+    [[nodiscard]] SnapshotHistoryPreflight preflight_apply_delta(u32 base_frame, const SnapshotDelta& delta) const;
+
+    /// True when the ring is empty, baseline is missing, or the delta is a no-op (B7.4 deepen follow-up).
+    [[nodiscard]] bool should_skip_apply_delta(u32 base_frame, const SnapshotDelta& delta) const;
 
     /// Applies `delta` against a stored baseline frame and pushes the reconstructed snapshot.
     [[nodiscard]] bool apply_delta_and_store(u32 base_frame, const SnapshotDelta& delta, GameSnapshot* out = nullptr);
