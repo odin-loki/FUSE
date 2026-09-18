@@ -202,6 +202,80 @@ void ProbeGridLayout::clampProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCo
     coords.tz = std::clamp(coords.tz, 0.f, 1.f);
 }
 
+u32 ProbeGridLayout::maxProbeIndex(const DDGIDesc& desc) {
+    const u32 count = ddgi_util::probeCount(desc);
+    if (count == 0u) {
+        return 0u;
+    }
+    return count - 1u;
+}
+
+bool ProbeGridLayout::isValidProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
+    if (isEmptyGrid(desc)) {
+        return false;
+    }
+
+    const u32 max_x = desc.grid_dims.x - 1u;
+    const u32 max_y = desc.grid_dims.y - 1u;
+    const u32 max_z = desc.grid_dims.z - 1u;
+
+    const auto index_in_range = [](u32 value, u32 max_value) { return value <= max_value; };
+    if (!index_in_range(coords.x0, max_x) || !index_in_range(coords.x1, max_x) ||
+        !index_in_range(coords.y0, max_y) || !index_in_range(coords.y1, max_y) ||
+        !index_in_range(coords.z0, max_z) || !index_in_range(coords.z1, max_z)) {
+        return false;
+    }
+    if (coords.x1 < coords.x0 || coords.y1 < coords.y0 || coords.z1 < coords.z0) {
+        return false;
+    }
+
+    const auto weight_in_range = [](f32 weight) { return weight >= 0.f && weight <= 1.f; };
+    return weight_in_range(coords.tx) && weight_in_range(coords.ty) && weight_in_range(coords.tz);
+}
+
+bool ProbeGridLayout::isProbeSampleAtGridBorder(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
+    if (!isValidProbeSampleCoords(desc, coords)) {
+        return false;
+    }
+
+    const ProbeGridCoord corners[8] = {{coords.x0, coords.y0, coords.z0},
+                                     {coords.x1, coords.y0, coords.z0},
+                                     {coords.x0, coords.y1, coords.z0},
+                                     {coords.x1, coords.y1, coords.z0},
+                                     {coords.x0, coords.y0, coords.z1},
+                                     {coords.x1, coords.y0, coords.z1},
+                                     {coords.x0, coords.y1, coords.z1},
+                                     {coords.x1, coords.y1, coords.z1}};
+    for (const ProbeGridCoord& corner : corners) {
+        if (isBorderProbeCoord(desc, corner)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ProbeGridLayout::hasFullTrilinearNeighbourhood(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
+    if (!isValidProbeSampleCoords(desc, coords)) {
+        return false;
+    }
+
+    const ProbeGridCoord corners[8] = {{coords.x0, coords.y0, coords.z0},
+                                     {coords.x1, coords.y0, coords.z0},
+                                     {coords.x0, coords.y1, coords.z0},
+                                     {coords.x1, coords.y1, coords.z0},
+                                     {coords.x0, coords.y0, coords.z1},
+                                     {coords.x1, coords.y0, coords.z1},
+                                     {coords.x0, coords.y1, coords.z1},
+                                     {coords.x1, coords.y1, coords.z1}};
+    for (const ProbeGridCoord& corner : corners) {
+        const ProbeValidityFlags flags = probeValidity(desc, corner);
+        if (!flags.valid || !flags.has_trilinear_neighbourhood) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool ProbeGridLayout::buildProbeSampleCoords(const DDGIDesc& desc,
                                              const fuse::math::Vec3& world_position,
                                              ProbeSampleCoords& out_coords) {
@@ -503,6 +577,35 @@ bool isCacheSizedForGrid(const DDGIDesc& desc, u32 cache_count) {
     return cache_count >= probeCount(desc);
 }
 
+u32 expectedCacheCount(const DDGIDesc& desc) {
+    return probeCount(desc);
+}
+
+bool cacheMatchesGrid(const DDGIDesc& desc, u32 cache_count) {
+    return cache_count == expectedCacheCount(desc);
+}
+
+bool isCacheIndexInRange(u32 cache_index, u32 cache_count) {
+    return cache_count > 0u && cache_index < cache_count;
+}
+
+u32 clampCacheIndex(u32 cache_index, const DDGIDesc& desc, u32 cache_count) {
+    if (cache_count == 0u || ProbeGridLayout::isEmptyGrid(desc)) {
+        return 0u;
+    }
+    const u32 max_index = std::min(cache_count - 1u, ProbeGridLayout::maxProbeIndex(desc));
+    return std::min(cache_index, max_index);
+}
+
+fuse::math::Vec3 sampleIrradianceAtCacheIndex(const IrradianceCacheEntry* cache,
+                                            u32 cache_count,
+                                            u32 cache_index) {
+    if (cache == nullptr || !isCacheIndexInRange(cache_index, cache_count)) {
+        return {};
+    }
+    return cache[cache_index].irradiance;
+}
+
 bool isValidSampleRequest(const DDGIDesc& desc,
                           const DDGISampleRequest& /*request*/,
                           u32 cache_count) {
@@ -643,10 +746,10 @@ fuse::math::Vec3 trilinearProbeIrradiance(const DDGIDesc& desc,
     const auto sample_probe = [&](u32 x, u32 y, u32 z) -> fuse::math::Vec3 {
         const ProbeGridCoord probe_coord{x, y, z};
         const u32 index = ProbeGridLayout::probeIndexFromCoord(desc, probe_coord);
-        if (index == UINT32_MAX || index >= cache_count) {
+        if (index == UINT32_MAX) {
             return {};
         }
-        return cache[index].irradiance;
+        return sampleIrradianceAtCacheIndex(cache, cache_count, index);
     };
 
     const fuse::math::Vec3 c000 = sample_probe(coords.x0, coords.y0, coords.z0);
@@ -687,7 +790,7 @@ fuse::math::Vec3 trilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
     const auto sample_probe = [&](u32 x, u32 y, u32 z) -> fuse::math::Vec3 {
         const ProbeGridCoord probe_coord{x, y, z};
         const u32 index = ProbeGridLayout::probeIndexFromCoord(desc, probe_coord);
-        if (index == UINT32_MAX || index >= cache_count) {
+        if (index == UINT32_MAX || !isCacheIndexInRange(index, cache_count)) {
             return {};
         }
         return sampleDirectionalIrradianceAtProbe(cache[index], sample_direction, desc.irradiance_res);
@@ -885,6 +988,9 @@ bool DDGI::update(u32 frame_index, void* cuda_stream) {
 DDGISampleResult DDGI::sampleIrradiance(const DDGISampleRequest& request) const {
     DDGISampleResult result{};
     if (!m_ready) {
+        return result;
+    }
+    if (!ddgi_util::isValidSampleRequest(m_desc, request, static_cast<u32>(m_cache.size()))) {
         return result;
     }
 
