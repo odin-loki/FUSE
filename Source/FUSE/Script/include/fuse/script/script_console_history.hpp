@@ -29,6 +29,10 @@ public:
     [[nodiscard]] const std::string& recall(bool previous);
     void resetNavigation();
     [[nodiscard]] s32 navigationCursor() const { return m_navigationCursor; }
+    /// True when recall cursor is at the live-input position (past newest entry).
+    [[nodiscard]] bool is_at_navigation_end() const;
+    /// True when the user has scrolled up into prior history entries.
+    [[nodiscard]] bool is_navigating() const;
 
 private:
     [[nodiscard]] u32 ringIndex_(u32 offset) const;

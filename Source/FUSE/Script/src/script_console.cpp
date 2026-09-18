@@ -94,6 +94,62 @@ void ScriptConsole::clearOutput() {
     m_output.clear();
 }
 
+const std::string& ScriptConsole::peek_repeat_line() const {
+    static const std::string kEmpty;
+    return can_repeat() ? m_lastExecutedLine : kEmpty;
+}
+
+bool ScriptConsole::is_meta_command(const char* name) {
+    if (name == nullptr || name[0] == '\0') {
+        return false;
+    }
+
+    return isMetaCommand(std::string(name));
+}
+
+bool ScriptConsole::can_resolve(const char* partial) const {
+    if (partial == nullptr) {
+        return false;
+    }
+
+    const std::string trimmed = trim(partial);
+    if (trimmed.empty()) {
+        return false;
+    }
+
+    return !m_commands.unique_prefix_match(trimmed.c_str()).empty();
+}
+
+std::string ScriptConsole::try_resolve_command(const char* partial) const {
+    if (partial == nullptr) {
+        return {};
+    }
+
+    const std::string trimmed = trim(partial);
+    if (trimmed.empty()) {
+        return {};
+    }
+
+    return m_commands.unique_prefix_match(trimmed.c_str());
+}
+
+bool ScriptConsole::is_resolve_ambiguous(const char* partial) const {
+    if (partial == nullptr) {
+        return false;
+    }
+
+    const std::string trimmed = trim(partial);
+    if (trimmed.empty()) {
+        return false;
+    }
+
+    if (m_commands.has_command(trimmed.c_str())) {
+        return false;
+    }
+
+    return m_commands.commands_with_prefix(trimmed.c_str()).size() > 1;
+}
+
 void ScriptConsole::appendOutput_(const std::string& text) {
     if (text.empty()) {
         return;
@@ -203,24 +259,25 @@ void ScriptConsole::registerBuiltIns_() {
     });
 
     m_commands.register_built_in("resolve", [](ScriptConsole& console, const char* args) {
-        if (args == nullptr || args[0] == '\0') {
+        const std::string partial = trim(args != nullptr ? args : "");
+        if (partial.empty()) {
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
                                               "resolve requires a partial command name"};
         }
 
-        const std::string resolved = console.m_commands.unique_prefix_match(args);
+        const std::string resolved = console.try_resolve_command(partial.c_str());
         if (!resolved.empty()) {
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, resolved};
         }
 
-        const std::vector<std::string> matches = console.m_commands.commands_with_prefix(args);
+        const std::vector<std::string> matches = console.m_commands.commands_with_prefix(partial.c_str());
         if (matches.empty()) {
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::UnknownCommand,
-                                              std::string("no command matches: ") + args};
+                                              std::string("no command matches: ") + partial};
         }
 
         return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
-                                          std::string("ambiguous prefix: ") + args};
+                                          std::string("ambiguous prefix: ") + partial};
     });
 
     m_commands.register_built_in("suggest", [](ScriptConsole& console, const char* args) {
