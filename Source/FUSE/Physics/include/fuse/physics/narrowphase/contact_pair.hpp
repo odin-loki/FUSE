@@ -117,4 +117,37 @@ bool should_skip_contact_pair_dispatch(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Inverse of `should_skip_contact_pair_dispatch` (B4.5 deepen pass).
+bool can_dispatch_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Guarded detect: shape dispatch only when preflight allows (B4.5 deepen pass).
+ContactManifold detect_contacts_pair_if_valid(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Combined preflight + detect outcome for parallel dispatch stubs (B4.5 deepen pass).
+struct ContactPairDispatchResult {
+    ContactPairPreflight preflight{};
+    ContactManifold manifold{};
+    bool detected = false;
+
+    bool rejected() const { return preflight.rejected; }
+};
+
+/// Preflight then detect; rejected pairs leave `detected` false (B4.5 deepen pass).
+ContactPairDispatchResult dispatch_contact_pair_if_valid(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Human-readable reject reason from a preflight snapshot (B4.5 deepen pass).
+const char* contact_pair_preflight_reason_name(const ContactPairPreflight& preflight);
+
+/// Guarded finalize using `can_finalize_contact_manifold` preflight (B4.5 deepen pass).
+bool generate_contact_manifold_if_valid(ContactManifold& manifold);
+
 } // namespace fuse::physics::narrowphase
