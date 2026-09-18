@@ -41,6 +41,15 @@ struct ShadowMat4 {
     bool isIdentity() const;
 };
 
+/// Why a per-cascade shadow build was skipped (B5.5 deepen).
+enum class CascadeShadowSkipReason : u8 {
+    None = 0,
+    EmptyLightDirection,
+    EmptyCameraDepthRange,
+    EmptyCascadeFrustum,
+    DegenerateCascadeRange,
+};
+
 /// Per-cascade configuration — mirrors P5 CSMDesc.
 struct CascadedShadowMapDesc {
     u32 resolution = 2048;
@@ -66,6 +75,19 @@ struct ShadowCameraParams {
     f32 fovDegrees = 60.f;
     f32 aspect = 16.f / 9.f;
 };
+
+/// Classify why a cascade shadow build would be skipped.
+CascadeShadowSkipReason classifyCascadeShadowSkip(u32 cascadeIndex,
+                                                  const CascadedShadowMapDesc& desc,
+                                                  const ShadowCameraParams& camera,
+                                                  const fuse::math::Vec3& lightDirection);
+/// Human-readable label for cascade skip reasons (logging / tests).
+const char* cascadeShadowSkipReasonLabel(CascadeShadowSkipReason reason);
+/// True when a cascade shadow build would bail before matrix population.
+bool cascadeShadowSkipReasonIsBlocking(CascadeShadowSkipReason reason);
+/// Whole-population early-out when light or camera depth range is invalid.
+CascadeShadowSkipReason classifyCascadePopulationEarlyOut(const ShadowCameraParams& camera,
+                                                        const fuse::math::Vec3& lightDirection);
 
 /// View-space depth range for one cascade slice.
 struct CascadeRange {
@@ -140,6 +162,10 @@ struct CascadedShadowMapLayout {
     static bool validateCascadeSplits(const CascadedShadowMapDesc& desc);
     /// True when every split lies in [0, 1] and `validateCascadeSplits` passes.
     static bool validateClampedCascadeSplits(const CascadedShadowMapDesc& desc);
+    /// Clamp a single split to [0, 1] and repair monotonicity against `previousSplit`.
+    static f32 sanitizeCascadeSplitSlot(f32 rawSplit, f32 previousSplit);
+    /// Pin the final cascade split fraction to the far plane (1.0).
+    static void pinFinalCascadeSplit(CascadedShadowMapDesc& desc);
     /// Clamp each split to [0, 1], enforce monotonicity, and pin the last slot to 1.0.
     static void sanitizeCascadeSplits(CascadedShadowMapDesc& desc);
     static bool validateCascadeRanges(const CascadedShadowMapDesc& desc, const ShadowCameraParams& camera);
@@ -162,6 +188,15 @@ struct CascadeOrthoBounds {
 struct CascadeShadowDataLayout {
     static void clearCascadeSlot(u32 cascadeIndex, CascadedShadowMapData& data);
     static void clearAllCascadeSlots(CascadedShadowMapData& data);
+    static bool isActiveCascadeSlot(u32 cascadeIndex, u32 cascadeCount);
+    static bool shouldEarlyOutCascadePopulation(const ShadowCameraParams& camera,
+                                                const fuse::math::Vec3& lightDirection);
+    static bool shouldPopulateCascadeSlot(u32 cascadeIndex,
+                                          const CascadedShadowMapDesc& desc,
+                                          const ShadowCameraParams& camera,
+                                          const fuse::math::Vec3& lightDirection,
+                                          u32 cascadeCount,
+                                          CascadeShadowSkipReason* skipReason = nullptr);
     static u32 countPopulatedCascadeMatrices(const CascadedShadowMapData& data, u32 cascadeCount);
     static bool isCascadeSlotPopulated(const CascadedShadowMapData& data, u32 cascadeIndex);
     /// Populate far-Z and light view-projection slots; returns count of populated matrices.
@@ -193,7 +228,8 @@ struct CascadeLightSpaceLayout {
     static bool shouldSkipCascadeShadowBuild(u32 cascadeIndex,
                                              const CascadedShadowMapDesc& desc,
                                              const ShadowCameraParams& camera,
-                                             const fuse::math::Vec3& lightDirection);
+                                             const fuse::math::Vec3& lightDirection,
+                                             CascadeShadowSkipReason* skipReason = nullptr);
     static u32 countValidCascadeMatrixSlots(const CascadedShadowMapDesc& desc,
                                             const ShadowCameraParams& camera,
                                             const fuse::math::Vec3& lightDirection,
