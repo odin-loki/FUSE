@@ -237,6 +237,15 @@ struct AnimStateMachine : BlendNode {
 
     /// Destination state for the `transition_index`-th registered edge, or -1 when invalid.
     s32 transition_to_at(u32 transition_index) const;
+
+    /// Blend duration for the `transition_index`-th registered edge, or -1 when invalid.
+    f32 transition_blend_duration_at(u32 transition_index) const;
+
+    /// True when the `transition_index`-th registered edge has a passing condition.
+    bool transition_condition_passes_at(u32 transition_index) const;
+
+    /// True while crossfading and `pending_state` is a registered state index.
+    bool is_valid_pending_state() const;
 };
 
 } // namespace fuse::animation

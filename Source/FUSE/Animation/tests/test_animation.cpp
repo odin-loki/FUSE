@@ -2070,6 +2070,119 @@ void testStateMachineTransitionHelpers() {
     expectTrue(machine.transition_to_at(2u) == 0, "transition to at index two is idle");
     expectTrue(machine.transition_from_at(99u) < 0, "transition from at rejects invalid index");
     expectTrue(machine.transition_to_at(99u) < 0, "transition to at rejects invalid index");
+
+    expectNear(machine.transition_blend_duration_at(0u), 0.2f, 1e-4f,
+               "transition blend duration at index zero");
+    expectNear(machine.transition_blend_duration_at(1u), 0.35f, 1e-4f,
+               "transition blend duration at index one");
+    expectTrue(machine.transition_blend_duration_at(99u) < 0.f,
+               "transition blend duration at rejects invalid index");
+
+    expectTrue(machine.transition_condition_passes_at(0u),
+               "transition condition passes at index zero");
+    expectTrue(!machine.transition_condition_passes_at(1u),
+               "transition condition fails at index one");
+    expectTrue(!machine.transition_condition_passes_at(99u),
+               "transition condition at rejects invalid index");
+}
+
+void testStateMachineIsValidPendingState() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::AnimationClip idle = makePositionClip(1, 1.f);
+    fuse::animation::AnimationClip run = makePositionClip(1, 6.f);
+
+    fuse::animation::AnimStateMachine machine;
+    auto idleNode = std::make_unique<fuse::animation::ClipNode>();
+    idleNode->clip = &idle;
+    auto runNode = std::make_unique<fuse::animation::ClipNode>();
+    runNode->clip = &run;
+    machine.add_state("idle", std::move(idleNode));
+    machine.add_state("run", std::move(runNode));
+
+    expectTrue(!machine.is_valid_pending_state(), "pending state invalid when idle");
+
+    bool shouldRun = true;
+    machine.add_transition("idle", "run", 0.2f, [&]() { return shouldRun; });
+
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    machine.evaluate_soa(0.05f, skel, pose);
+    expectTrue(machine.is_valid_pending_state(), "pending state valid during crossfade");
+
+    machine.pending_state = 99u;
+    expectTrue(!machine.is_valid_pending_state(), "pending state invalid when out of range");
+}
+
+void testStateMachineCrossfadeBlendFromBindFallback() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::AnimationClip idle = makePositionClip(1, 1.f);
+    fuse::animation::AnimationClip run = makePositionClip(1, 6.f);
+
+    fuse::animation::AnimStateMachine machine;
+    auto idleNode = std::make_unique<fuse::animation::ClipNode>();
+    idleNode->clip = &idle;
+    auto runNode = std::make_unique<fuse::animation::ClipNode>();
+    runNode->clip = &run;
+    machine.add_state("idle", std::move(idleNode));
+    machine.add_state("run", std::move(runNode));
+
+    bool shouldRun = true;
+    machine.add_transition("idle", "run", 0.2f, [&]() { return shouldRun; });
+
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    machine.evaluate_soa(0.05f, skel, pose);
+    expectTrue(machine.is_transitioning, "crossfade begins before bind fallback repair");
+
+    machine.blend_from_pose_soa.bone_count = 0u;
+    machine.evaluate_soa(0.05f, skel, pose);
+    expectTrue(fuse::animation::pose_soa_columns_valid(pose),
+               "crossfade repairs corrupted blend-from pose soa columns");
+    expectTrue(pose.bone_count == skel.bone_count, "crossfade output keeps skeleton bone count");
+}
+
+void testEmptySkeletonBlendTreeEarlyOut() {
+    const fuse::animation::Skeleton empty{};
+
+    fuse::animation::BlendNode2 blendNode;
+    fuse::animation::Pose pose;
+    blendNode.evaluate(0.f, empty, pose);
+    expectTrue(pose.bone_count == 0u, "empty skeleton blend node2 evaluate returns empty pose");
+
+    fuse::animation::PoseSoA poseSoa;
+    blendNode.evaluate_soa(0.f, empty, poseSoa);
+    expectTrue(poseSoa.bone_count == 0u, "empty skeleton blend node2 soa returns empty pose");
+
+    fuse::animation::BlendSpace1D space1d;
+    space1d.evaluate(0.f, empty, pose);
+    expectTrue(pose.bone_count == 0u, "empty skeleton blend space 1d evaluate returns empty pose");
+    space1d.evaluate_soa(0.f, empty, poseSoa);
+    expectTrue(poseSoa.bone_count == 0u, "empty skeleton blend space 1d soa returns empty pose");
+
+    fuse::animation::BlendSpace2D space2d;
+    space2d.evaluate_soa(0.f, empty, poseSoa);
+    expectTrue(poseSoa.bone_count == 0u, "empty skeleton blend space 2d soa returns empty pose");
+
+    fuse::animation::LayeredBlendNode layered;
+    layered.evaluate(0.f, empty, pose);
+    expectTrue(pose.bone_count == 0u, "empty skeleton layered blend evaluate returns empty pose");
+    layered.evaluate_soa(0.f, empty, poseSoa);
+    expectTrue(poseSoa.bone_count == 0u, "empty skeleton layered blend soa returns empty pose");
+
+    fuse::animation::AdditiveBlendNode additive;
+    additive.evaluate(0.f, empty, pose);
+    expectTrue(pose.bone_count == 0u, "empty skeleton additive blend evaluate returns empty pose");
+    additive.evaluate_soa(0.f, empty, poseSoa);
+    expectTrue(poseSoa.bone_count == 0u, "empty skeleton additive blend soa returns empty pose");
+
+    fuse::animation::AnimStateMachine machine;
+    machine.add_state("idle", nullptr);
+    machine.evaluate(0.f, empty, pose);
+    expectTrue(pose.bone_count == 0u, "empty skeleton state machine evaluate returns empty pose");
+    machine.evaluate_soa(0.f, empty, poseSoa);
+    expectTrue(poseSoa.bone_count == 0u, "empty skeleton state machine soa returns empty pose");
+
+    fuse::animation::ClipNode clipNode;
+    clipNode.evaluate_soa(0.f, empty, poseSoa);
+    expectTrue(poseSoa.bone_count == 0u, "empty skeleton clip node soa returns empty pose");
 }
 
 void testStateMachineElapsedCrossfadeTime() {
@@ -2256,6 +2369,9 @@ int main() {
     testBlendNodeIsEmpty();
     testBlendNodeEmptyEarlyOut();
     testStateMachineTransitionHelpers();
+    testStateMachineIsValidPendingState();
+    testStateMachineCrossfadeBlendFromBindFallback();
+    testEmptySkeletonBlendTreeEarlyOut();
     testStateMachineElapsedCrossfadeTime();
     testStateMachineRemainingCrossfadeTime();
     testLayeredBlendEvaluateEarlyOut();
