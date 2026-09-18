@@ -28,6 +28,19 @@ bool taaResolveHasDimensionMismatch(const TaaResolveDesc& desc, const TaaHistory
     return !taaResolveDimensionsMatch(desc, history);
 }
 
+bool taaResolveSurfacesSatisfied(const TaaResolveDesc& desc) {
+    return desc.surfaces.current_frame != nullptr && desc.surfaces.output != nullptr;
+}
+
+bool canAttemptTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return preflightTaaResolve(desc, history);
+}
+
+bool prepareTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    sanitizeTaaResolveDesc(desc, history);
+    return canAttemptTaaResolve(desc, history);
+}
+
 bool taaResolveHistoryGenerationIsStale(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     return !taaResolveBypassesHistoryGenerationGuard(desc) &&
            history.isHistoryStale(desc.observed_history_generation);
@@ -94,7 +107,7 @@ TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const Ta
     if (taaResolveHasDimensionMismatch(desc, history)) {
         return TaaResolveSkipReason::DimensionMismatch;
     }
-    if (desc.surfaces.current_frame == nullptr || desc.surfaces.output == nullptr) {
+    if (!taaResolveSurfacesSatisfied(desc)) {
         return TaaResolveSkipReason::MissingSurfaces;
     }
 
@@ -151,6 +164,31 @@ bool taaBlendWeightsValid(const TaaBlendWeights& weights) {
         return false;
     }
     return std::fabs(weights.current + weights.history - 1.f) <= 1e-5f;
+}
+
+bool preflightTaaBlendWeights(bool firstFrame, const TAAParams& params, TaaBlendWeights* out) {
+    const TaaBlendWeights weights = computeTaaBlendWeights(firstFrame, params);
+    if (!taaBlendWeightsValid(weights)) {
+        return false;
+    }
+    if (out != nullptr) {
+        *out = weights;
+    }
+    return true;
+}
+
+bool taaResolveBlendPreflightPasses(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    if (!preflightTaaResolve(desc, history)) {
+        return false;
+    }
+    return preflightTaaBlendWeights(!history.hasValidHistory(), desc.params);
+}
+
+bool preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history, TaaBlendWeights* out) {
+    if (!preflightTaaResolve(desc, history)) {
+        return false;
+    }
+    return preflightTaaBlendWeights(!history.hasValidHistory(), desc.params, out);
 }
 
 bool taaHistoryBlendAllowed(bool firstFrame, const TaaHistoryBuffer& history) {

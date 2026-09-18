@@ -14,6 +14,18 @@ bool taaHistoryCanReuse(const TaaHistoryBuffer& history) {
     return history.isReady() && history.hasValidHistory();
 }
 
+bool taaHistoryNeedsWarmup(const TaaHistoryBuffer& history) {
+    return history.isReady() && history.needsWarmup();
+}
+
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
+    return history.isReady() && !history.needsWarmup();
+}
+
+bool taaHistoryReusePreflightPasses(const TaaHistoryBuffer& history, u32 observedGeneration) {
+    return taaHistoryReuseAllowed(history, observedGeneration);
+}
+
 bool taaHistoryReuseAllowed(const TaaHistoryBuffer& history, u32 observedGeneration) {
     return taaHistoryCanReuse(history) && !history.isHistoryStale(observedGeneration);
 }
