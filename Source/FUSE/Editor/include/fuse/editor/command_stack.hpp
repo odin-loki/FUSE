@@ -55,6 +55,9 @@ public:
     void markClean();
     /// Records the current undo/redo depth as the saved-document baseline (B6.2 deepen).
     void set_baseline_state();
+    [[nodiscard]] bool isBaselineConfigured() const { return m_baselineConfigured; }
+    u32 baselineUndoDepth() const { return m_baselineUndoDepth; }
+    u32 baselineRedoDepth() const { return m_baselineRedoDepth; }
     [[nodiscard]] bool isAtBaseline() const;
     /// True when undo/redo depth differs from the last `set_baseline_state` call.
     [[nodiscard]] bool hasUnsavedChanges() const { return !isAtBaseline(); }

@@ -761,6 +761,167 @@ void testCommandStackSnapshotBaselineRoundTrip() {
     expectTrue(!stack.isDirty(), "restore brings back clean dirty flag");
 }
 
+void testCommandStackDoubleUndoEmptyGuard() {
+    fuse::editor::CommandStack stack;
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
+    stack.undo();
+    expectTrue(stack.undoDepth() == 0u, "first undo drains undo branch");
+    expectTrue(stack.redoDepth() == 1u, "redo branch preserved after undo");
+
+    stack.undo();
+    expectTrue(stack.undoDepth() == 0u, "second undo on empty stack is a no-op");
+    expectTrue(stack.redoDepth() == 1u, "redo branch preserved after empty undo guard");
+
+    stack.redo();
+    expectTrue(stack.undoDepth() == 1u, "first redo restores command");
+    expectTrue(stack.redoDepth() == 0u, "redo branch drained after restore");
+    const fuse::u32 appliedAfterRedo = stack.appliedCount();
+
+    stack.redo();
+    expectTrue(stack.appliedCount() == appliedAfterRedo, "second redo on empty stack is a no-op");
+}
+
+void testCommandStackClearOnEmptyIsNoOp() {
+    fuse::editor::CommandStack stack;
+
+    stack.clear();
+    stack.clear();
+
+    expectTrue(stack.undoDepth() == 0u, "clear on empty stack stays empty");
+    expectTrue(!stack.isDirty(), "clear on empty stack stays clean");
+    expectTrue(!stack.isBaselineConfigured(), "clear on empty clears baseline configured flag");
+    expectTrue(stack.coalescedCountSinceBaseline() == 0u, "clear on empty resets coalesce baseline");
+}
+
+void testCommandStackIsAtBaselineUsesUndoDepthOnly() {
+    fuse::editor::CommandStack stack;
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
+    stack.set_baseline_state();
+
+    stack.execute(makeSetPropertyCommand(1u, "sdf.blend_alpha", "0.5"));
+    stack.undo();
+    expectTrue(stack.redoDepth() == 1u, "undo leaves redo branch after edit");
+    expectTrue(stack.isAtBaseline(), "document state matches baseline despite redo branch");
+
+    stack.redo();
+    expectTrue(!stack.isAtBaseline(), "redo past baseline undo depth marks unsaved");
+}
+
+void testCommandStackSetBaselineOnEmptyStack() {
+    fuse::editor::CommandStack stack;
+
+    expectTrue(!stack.isBaselineConfigured(), "empty stack has no baseline configured");
+
+    stack.set_baseline_state();
+    expectTrue(stack.isBaselineConfigured(), "set_baseline_state on empty stack configures baseline");
+    expectTrue(stack.isAtBaseline(), "empty stack is at baseline after save");
+    expectTrue(stack.baselineUndoDepth() == 0u, "empty baseline records zero undo depth");
+    expectTrue(stack.baselineRedoDepth() == 0u, "empty baseline records zero redo depth");
+    expectTrue(!stack.isDirty(), "set_baseline_state on empty stack clears dirty");
+}
+
+void testCommandStackMarkCleanIdempotent() {
+    fuse::editor::CommandStack stack;
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
+    const fuse::u32 revisionAfterExecute = stack.dirtyRevision();
+
+    stack.markClean();
+    stack.markClean();
+    expectTrue(!stack.isDirty(), "repeated markClean keeps stack clean");
+    expectTrue(stack.dirtyRevision() == revisionAfterExecute,
+               "repeated markClean does not bump dirty revision");
+}
+
+void testCommandStackCoalesceAfterBaselineRevisionGuard() {
+    fuse::editor::CommandStack stack;
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
+    const fuse::u32 revisionAfterExecute = stack.dirtyRevision();
+    stack.set_baseline_state();
+    expectTrue(!stack.isDirty(), "baseline save clears dirty flag");
+    expectTrue(stack.dirtyRevision() == revisionAfterExecute, "baseline save preserves revision");
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "4,5,6"));
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "7,8,9"));
+    expectTrue(stack.dirtyRevision() == revisionAfterExecute + 1u,
+               "first coalesce after baseline bumps revision once");
+    expectTrue(stack.coalescedCountSinceBaseline() == 2u, "post-baseline coalesce tracked separately");
+    expectTrue(stack.isDirty(), "coalesce after baseline marks dirty");
+}
+
+void testCommandStackIsBaselineConfiguredRoundTrip() {
+    fuse::editor::CommandStack stack;
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
+    stack.set_baseline_state();
+    expectTrue(stack.isBaselineConfigured(), "baseline configured after save");
+    expectTrue(stack.baselineUndoDepth() == 1u, "baseline undo depth recorded");
+
+    stack.clear();
+    expectTrue(!stack.isBaselineConfigured(), "clear resets baseline configured flag");
+}
+
+void testUndoStackSetBaselineOnEmptyStack() {
+    fuse::editor::UndoStack stack;
+
+    expectTrue(!stack.isBaselineConfigured(), "empty undo stack has no baseline configured");
+
+    stack.set_baseline_state();
+    expectTrue(stack.isBaselineConfigured(), "set_baseline_state on empty stack configures baseline");
+    expectTrue(stack.isAtBaseline(), "empty undo stack is at baseline after save");
+    expectTrue(stack.baselineUndoCount() == 0u, "empty baseline records zero undo count");
+    expectTrue(stack.baselineRedoCount() == 0u, "empty baseline records zero redo count");
+    expectTrue(!stack.isDirty(), "set_baseline_state on empty stack clears dirty");
+}
+
+void testUndoStackMarkCleanIdempotent() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "step"));
+    const fuse::u32 revisionAfterExecute = stack.dirtyRevision();
+
+    stack.markClean();
+    stack.markClean();
+    expectTrue(!stack.isDirty(), "repeated markClean keeps undo stack clean");
+    expectTrue(stack.dirtyRevision() == revisionAfterExecute,
+               "repeated markClean does not bump dirty revision");
+}
+
+void testUndoStackCoalesceAfterBaselineRevisionGuard() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "drag"));
+    const fuse::u32 revisionAfterExecute = stack.dirtyRevision();
+    stack.set_baseline_state();
+    expectTrue(!stack.isDirty(), "baseline save clears dirty flag");
+    expectTrue(stack.dirtyRevision() == revisionAfterExecute, "baseline save preserves revision");
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 1, 3, "drag"));
+    stack.execute(std::make_unique<CounterCommand>(counter, 3, 6, "drag"));
+    expectTrue(stack.dirtyRevision() == revisionAfterExecute + 1u,
+               "first coalesce after baseline bumps revision once");
+    expectTrue(stack.coalescedOpsSinceBaseline() == 2u, "post-baseline coalesce tracked separately");
+    expectTrue(stack.isDirty(), "coalesce after baseline marks dirty");
+}
+
+void testUndoStackIsBaselineConfiguredRoundTrip() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "step"));
+    stack.set_baseline_state();
+    expectTrue(stack.isBaselineConfigured(), "baseline configured after save");
+    expectTrue(stack.baselineUndoCount() == 1u, "baseline undo count recorded");
+
+    stack.clear();
+    expectTrue(!stack.isBaselineConfigured(), "clear resets baseline configured flag");
+}
+
 void testUndoStackSnapshotCapture() {
     fuse::editor::UndoStack stack;
     int counter = 0;
@@ -832,6 +993,17 @@ int main() {
     testCommandStackCoalesceDoesNotBumpDirtyRevision();
     testCommandStackIsDirtySince();
     testCommandStackSnapshotBaselineRoundTrip();
+    testCommandStackDoubleUndoEmptyGuard();
+    testCommandStackClearOnEmptyIsNoOp();
+    testCommandStackIsAtBaselineUsesUndoDepthOnly();
+    testCommandStackSetBaselineOnEmptyStack();
+    testCommandStackMarkCleanIdempotent();
+    testCommandStackCoalesceAfterBaselineRevisionGuard();
+    testCommandStackIsBaselineConfiguredRoundTrip();
+    testUndoStackSetBaselineOnEmptyStack();
+    testUndoStackMarkCleanIdempotent();
+    testUndoStackCoalesceAfterBaselineRevisionGuard();
+    testUndoStackIsBaselineConfiguredRoundTrip();
     fuse::core::shutdown();
 
     if (g_failures == 0) {
