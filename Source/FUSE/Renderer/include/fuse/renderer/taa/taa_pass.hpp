@@ -50,6 +50,12 @@ public:
     void resize(u32 width, u32 height);
     bool matchesDimensions(u32 width, u32 height) const;
     bool needsHistoryWarmup() const { return m_history.needsWarmup(); }
+    /// True when pass history is warmed and may be sampled (B5.9 deepen).
+    bool canReuseHistory() const;
+    /// True when history blend is allowed on the next resolve (B5.9 deepen).
+    bool historyBlendAllowed() const;
+    /// True when pass jitter can produce NDC offsets for the configured viewport (B5.9 deepen).
+    bool canProduceJitterNdc() const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
