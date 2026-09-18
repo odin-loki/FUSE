@@ -821,6 +821,142 @@ void testFroxelDensityLookupAndSampleCoordGuards() {
     expectNear(rejectedTrilinear, 0.f, 1e-6f, "trySampleDensityTrilinear zeroes output on rejection");
 }
 
+void testFroxelSampleCoordNormalizeAndScreenMappingGuards() {
+    fuse::renderer::FroxelGridDesc desc{};
+    desc.tilesX = 4;
+    desc.tilesY = 2;
+    desc.slicesZ = 3;
+
+    fuse::renderer::FroxelSampleCoords reversed{};
+    reversed.tileX0 = 2u;
+    reversed.tileY0 = 1u;
+    reversed.tileX1 = 1u;
+    reversed.tileY1 = 0u;
+    reversed.sliceZ0 = 2u;
+    reversed.sliceZ1 = 1u;
+    reversed.tx = 0.25f;
+    reversed.ty = 0.75f;
+    reversed.tz = 0.5f;
+    expectTrue(!fuse::renderer::FroxelGridLayout::isValidSampleCoords(reversed, desc),
+               "reversed sample corners fail validity check");
+    fuse::renderer::FroxelGridLayout::normalizeSampleCoords(reversed);
+    expectTrue(fuse::renderer::FroxelGridLayout::isValidSampleCoords(reversed, desc),
+               "normalizeSampleCoords fixes reversed corners");
+
+    fuse::renderer::FroxelSampleCoords extremeWeights{};
+    extremeWeights.tileX0 = 0u;
+    extremeWeights.tileY0 = 0u;
+    extremeWeights.tileX1 = 1u;
+    extremeWeights.tileY1 = 1u;
+    extremeWeights.sliceZ0 = 0u;
+    extremeWeights.sliceZ1 = 1u;
+    extremeWeights.tx = 2.f;
+    extremeWeights.ty = -1.f;
+    extremeWeights.tz = 3.f;
+    expectTrue(!fuse::renderer::FroxelGridLayout::isValidSampleCoords(extremeWeights, desc),
+               "OOB interpolation weights fail validity check");
+    fuse::renderer::FroxelGridLayout::normalizeSampleCoords(extremeWeights);
+    expectTrue(fuse::renderer::FroxelGridLayout::isValidSampleCoords(extremeWeights, desc),
+               "normalizeSampleCoords clamps interpolation weights");
+
+    fuse::renderer::FroxelCameraDesc camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+
+    fuse::renderer::ScreenMappingRejectReason mapReason = fuse::renderer::ScreenMappingRejectReason::None;
+    fuse::renderer::FroxelSampleCoords mapped{};
+    expectTrue(fuse::renderer::FroxelGridLayout::tryMapScreenDepthToSampleCoords(
+                   0.5f, 0.5f, 10.f, desc, camera, mapped, mapReason),
+               "tryMapScreenDepthToSampleCoords succeeds in range");
+    expectTrue(mapReason == fuse::renderer::ScreenMappingRejectReason::None,
+               "successful screen mapping reports no reject reason");
+    expectTrue(std::strcmp(fuse::renderer::screenMappingRejectReasonLabel(mapReason), "none") == 0,
+               "none screen-mapping reject reason label");
+
+    fuse::renderer::FroxelGridDesc zeroDesc{};
+    zeroDesc.tilesX = 0u;
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryMapScreenDepthToSampleCoords(
+                   0.5f, 0.5f, 10.f, zeroDesc, camera, mapped, mapReason),
+               "tryMapScreenDepthToSampleCoords rejects empty grid");
+    expectTrue(mapReason == fuse::renderer::ScreenMappingRejectReason::EmptyGrid,
+               "empty grid reports empty_grid screen-mapping reject reason");
+    expectTrue(std::strcmp(fuse::renderer::screenMappingRejectReasonLabel(mapReason), "empty_grid") == 0,
+               "empty_grid screen-mapping reject reason label");
+
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryMapScreenDepthToSampleCoords(
+                   0.5f, 0.5f, 0.01f, desc, camera, mapped, mapReason),
+               "tryMapScreenDepthToSampleCoords rejects depth below near plane");
+    expectTrue(mapReason == fuse::renderer::ScreenMappingRejectReason::DepthOutOfRange,
+               "below-near depth reports depth_out_of_range reject reason");
+
+    fuse::renderer::FroxelCameraDesc badCamera{};
+    badCamera.nearPlane = 100.f;
+    badCamera.farPlane = 1.f;
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryMapScreenDepthToSampleCoords(
+                   0.5f, 0.5f, 50.f, desc, badCamera, mapped, mapReason),
+               "tryMapScreenDepthToSampleCoords rejects invalid camera");
+    expectTrue(mapReason == fuse::renderer::ScreenMappingRejectReason::InvalidCamera,
+               "invalid camera reports invalid_camera reject reason");
+
+    fuse::u32 froxelIndex = 0u;
+    expectTrue(fuse::renderer::FroxelGridLayout::tryMapScreenDepthToFroxelIndex(
+                   0.5f, 0.5f, 10.f, desc, camera, froxelIndex, mapReason),
+               "tryMapScreenDepthToFroxelIndex succeeds in range");
+    expectTrue(froxelIndex < desc.froxelCount(), "mapped froxel index in bounds");
+
+    fuse::renderer::FroxelDensityGrid grid{};
+    grid.allocate(desc);
+    grid.density[0] = 1.f;
+
+    fuse::renderer::FroxelSampleCoords inBounds{};
+    inBounds.tileX0 = 0u;
+    inBounds.tileY0 = 0u;
+    inBounds.tileX1 = 1u;
+    inBounds.tileY1 = 1u;
+    inBounds.sliceZ0 = 0u;
+    inBounds.sliceZ1 = 1u;
+    inBounds.tx = 0.5f;
+    inBounds.ty = 0.5f;
+    inBounds.tz = 0.5f;
+
+    fuse::renderer::SampleCoordRejectReason sampleReason = fuse::renderer::SampleCoordRejectReason::None;
+    expectTrue(fuse::renderer::froxel_util::tryCanSampleAtCoords(grid, desc, inBounds, sampleReason),
+               "tryCanSampleAtCoords succeeds on accessible grid");
+    expectTrue(sampleReason == fuse::renderer::SampleCoordRejectReason::None,
+               "in-bounds coords report no sample reject reason");
+
+    fuse::renderer::FroxelSampleCoords warnCoords = inBounds;
+    warnCoords.tx = 2.f;
+    expectTrue(fuse::renderer::froxel_util::tryCanSampleAtCoords(grid, desc, warnCoords, sampleReason),
+               "tryCanSampleAtCoords still succeeds when weights will be clamped");
+    expectTrue(sampleReason == fuse::renderer::SampleCoordRejectReason::InvalidWeights,
+               "OOB weights report invalid_weights sample reject reason");
+    expectTrue(std::strcmp(fuse::renderer::sampleCoordRejectReasonLabel(sampleReason), "invalid_weights") == 0,
+               "invalid_weights sample reject reason label");
+
+    fuse::renderer::FroxelDensityGrid emptyGrid{};
+    expectTrue(!fuse::renderer::froxel_util::tryCanSampleAtCoords(emptyGrid, desc, inBounds, sampleReason),
+               "tryCanSampleAtCoords rejects empty storage");
+    expectTrue(sampleReason == fuse::renderer::SampleCoordRejectReason::OutOfBounds,
+               "empty storage maps to out_of_bounds sample reject reason");
+
+    fuse::f32 bilinearSample = 0.f;
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityBilinear(grid, desc, inBounds, bilinearSample, sampleReason),
+               "trySampleDensityBilinear with reason succeeds on accessible grid");
+    expectTrue(sampleReason == fuse::renderer::SampleCoordRejectReason::None,
+               "successful bilinear sample reports no reject reason");
+
+    fuse::renderer::FroxelDensityGrid oversized{};
+    oversized.density.resize(desc.froxelCount() + 1u, 0.f);
+    fuse::renderer::GridDensityRejectReason densityReason = fuse::renderer::GridDensityRejectReason::None;
+    expectTrue(!fuse::renderer::froxel_util::tryValidateGridDensity(oversized, desc, densityReason),
+               "oversized storage fails grid density validation");
+    expectTrue(densityReason == fuse::renderer::GridDensityRejectReason::DescMismatch,
+               "oversized storage reports desc_mismatch reject reason");
+    expectTrue(std::strcmp(fuse::renderer::gridDensityRejectReasonLabel(densityReason), "desc_mismatch") == 0,
+               "desc_mismatch grid density reject reason label");
+}
+
 void testZeroDimensionFroxelGrid() {
     fuse::renderer::FroxelGridDesc zeroDesc{};
     zeroDesc.tilesX = 0u;
@@ -966,6 +1102,7 @@ int main() {
     testFroxelDensityCountValidationAndWriteGuards();
     testFroxelDensityAccessAndClampGuards();
     testFroxelDensityLookupAndSampleCoordGuards();
+    testFroxelSampleCoordNormalizeAndScreenMappingGuards();
     testEmptySceneVolumetricFog();
     testZeroDimensionFroxelGrid();
     testFroxelPopulateFromAnalyticFog();

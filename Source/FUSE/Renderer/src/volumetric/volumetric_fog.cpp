@@ -27,6 +27,31 @@ f32 froxelDensityAt(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u
     return grid.density[index];
 }
 
+bool mapScreenDepthToSampleCoordsImpl(f32 screenX,
+                                      f32 screenY,
+                                      f32 viewDepth,
+                                      const FroxelGridDesc& desc,
+                                      const FroxelCameraDesc& camera,
+                                      FroxelSampleCoords& outCoords) {
+    const f32 continuousTileX = clamp01(screenX) * static_cast<f32>(desc.tilesX);
+    const f32 continuousTileY = clamp01(screenY) * static_cast<f32>(desc.tilesY);
+    outCoords.tileX0 = FroxelGridLayout::clampTileX(static_cast<u32>(continuousTileX), desc);
+    outCoords.tileY0 = FroxelGridLayout::clampTileY(static_cast<u32>(continuousTileY), desc);
+    outCoords.tileX1 = std::min(outCoords.tileX0 + 1u, desc.tilesX - 1u);
+    outCoords.tileY1 = std::min(outCoords.tileY0 + 1u, desc.tilesY - 1u);
+    outCoords.tx = continuousTileX - static_cast<f32>(outCoords.tileX0);
+    outCoords.ty = continuousTileY - static_cast<f32>(outCoords.tileY0);
+
+    outCoords.sliceZ0 = FroxelSliceLayout::computeSliceZFromDepth(viewDepth, desc, camera);
+    outCoords.sliceZ1 = std::min(outCoords.sliceZ0 + 1u, desc.slicesZ - 1u);
+    const f32 depthRatio = camera.farPlane / camera.nearPlane;
+    const f32 logDepth = std::log(std::clamp(viewDepth, camera.nearPlane, camera.farPlane) / camera.nearPlane) /
+                         std::log(depthRatio);
+    const f32 continuousSlice = logDepth * static_cast<f32>(desc.slicesZ);
+    outCoords.tz = continuousSlice - static_cast<f32>(outCoords.sliceZ0);
+    return true;
+}
+
 } // namespace
 
 void FroxelDensityGrid::allocate(const FroxelGridDesc& desc) {
@@ -155,6 +180,33 @@ bool FroxelGridLayout::areSampleCoordsInBounds(const FroxelSampleCoords& coords,
     return true;
 }
 
+bool FroxelGridLayout::isValidSampleCoords(const FroxelSampleCoords& coords, const FroxelGridDesc& desc) {
+    if (!areSampleCoordsInBounds(coords, desc)) {
+        return false;
+    }
+
+    return coords.tileX0 <= coords.tileX1 && coords.tileY0 <= coords.tileY1 && coords.sliceZ0 <= coords.sliceZ1;
+}
+
+void FroxelGridLayout::normalizeSampleCoords(FroxelSampleCoords& coords) {
+    if (coords.tileX0 > coords.tileX1) {
+        std::swap(coords.tileX0, coords.tileX1);
+        coords.tx = 1.f - coords.tx;
+    }
+    if (coords.tileY0 > coords.tileY1) {
+        std::swap(coords.tileY0, coords.tileY1);
+        coords.ty = 1.f - coords.ty;
+    }
+    if (coords.sliceZ0 > coords.sliceZ1) {
+        std::swap(coords.sliceZ0, coords.sliceZ1);
+        coords.tz = 1.f - coords.tz;
+    }
+
+    coords.tx = clamp01(coords.tx);
+    coords.ty = clamp01(coords.ty);
+    coords.tz = clamp01(coords.tz);
+}
+
 bool FroxelGridLayout::isSampleCoordsOutOfRange(const FroxelSampleCoords& coords, const FroxelGridDesc& desc) {
     if (isEmptyGrid(desc)) {
         return true;
@@ -176,6 +228,7 @@ void FroxelGridLayout::clampSampleCoords(FroxelSampleCoords& coords, const Froxe
     coords.tx = clamp01(coords.tx);
     coords.ty = clamp01(coords.ty);
     coords.tz = clamp01(coords.tz);
+    normalizeSampleCoords(coords);
 }
 
 bool FroxelGridLayout::tryClampSampleCoords(FroxelSampleCoords& coords, const FroxelGridDesc& desc) {
@@ -229,35 +282,56 @@ bool FroxelGridLayout::tryClampFroxelIndex(u32 index, const FroxelGridDesc& desc
     return true;
 }
 
+bool FroxelGridLayout::tryMapScreenDepthToSampleCoords(f32 screenX,
+                                                       f32 screenY,
+                                                       f32 viewDepth,
+                                                       const FroxelGridDesc& desc,
+                                                       const FroxelCameraDesc& camera,
+                                                       FroxelSampleCoords& outCoords,
+                                                       ScreenMappingRejectReason& outReason) {
+    if (isEmptyGrid(desc)) {
+        outReason = ScreenMappingRejectReason::EmptyGrid;
+        return false;
+    }
+    if (camera.nearPlane <= 0.f || camera.farPlane <= camera.nearPlane) {
+        outReason = ScreenMappingRejectReason::InvalidCamera;
+        return false;
+    }
+    if (viewDepth < camera.nearPlane || viewDepth > camera.farPlane) {
+        outReason = ScreenMappingRejectReason::DepthOutOfRange;
+        return false;
+    }
+
+    mapScreenDepthToSampleCoordsImpl(screenX, screenY, viewDepth, desc, camera, outCoords);
+    outReason = ScreenMappingRejectReason::None;
+    return true;
+}
+
 bool FroxelGridLayout::mapScreenDepthToSampleCoords(f32 screenX,
                                                     f32 screenY,
                                                     f32 viewDepth,
                                                     const FroxelGridDesc& desc,
                                                     const FroxelCameraDesc& camera,
                                                     FroxelSampleCoords& outCoords) {
-    if (isEmptyGrid(desc)) {
-        return false;
-    }
-    if (viewDepth < camera.nearPlane || viewDepth > camera.farPlane) {
+    ScreenMappingRejectReason reason = ScreenMappingRejectReason::None;
+    return tryMapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, outCoords, reason);
+}
+
+bool FroxelGridLayout::tryMapScreenDepthToFroxelIndex(f32 screenX,
+                                                      f32 screenY,
+                                                      f32 viewDepth,
+                                                      const FroxelGridDesc& desc,
+                                                      const FroxelCameraDesc& camera,
+                                                      u32& outFroxelIndex,
+                                                      ScreenMappingRejectReason& outReason) {
+    FroxelSampleCoords coords{};
+    if (!tryMapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, coords, outReason)) {
+        outFroxelIndex = 0u;
         return false;
     }
 
-    const f32 continuousTileX = clamp01(screenX) * static_cast<f32>(desc.tilesX);
-    const f32 continuousTileY = clamp01(screenY) * static_cast<f32>(desc.tilesY);
-    outCoords.tileX0 = clampTileX(static_cast<u32>(continuousTileX), desc);
-    outCoords.tileY0 = clampTileY(static_cast<u32>(continuousTileY), desc);
-    outCoords.tileX1 = std::min(outCoords.tileX0 + 1u, desc.tilesX - 1u);
-    outCoords.tileY1 = std::min(outCoords.tileY0 + 1u, desc.tilesY - 1u);
-    outCoords.tx = continuousTileX - static_cast<f32>(outCoords.tileX0);
-    outCoords.ty = continuousTileY - static_cast<f32>(outCoords.tileY0);
-
-    outCoords.sliceZ0 = FroxelSliceLayout::computeSliceZFromDepth(viewDepth, desc, camera);
-    outCoords.sliceZ1 = std::min(outCoords.sliceZ0 + 1u, desc.slicesZ - 1u);
-    const f32 depthRatio = camera.farPlane / camera.nearPlane;
-    const f32 logDepth = std::log(std::clamp(viewDepth, camera.nearPlane, camera.farPlane) / camera.nearPlane) /
-                         std::log(depthRatio);
-    const f32 continuousSlice = logDepth * static_cast<f32>(desc.slicesZ);
-    outCoords.tz = continuousSlice - static_cast<f32>(outCoords.sliceZ0);
+    outFroxelIndex = froxelIndex(coords.tileX0, coords.tileY0, coords.sliceZ0, desc);
+    outReason = ScreenMappingRejectReason::None;
     return true;
 }
 
@@ -267,13 +341,36 @@ bool FroxelGridLayout::mapScreenDepthToFroxelIndex(f32 screenX,
                                                    const FroxelGridDesc& desc,
                                                    const FroxelCameraDesc& camera,
                                                    u32& outFroxelIndex) {
-    FroxelSampleCoords coords{};
-    if (!mapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, coords)) {
-        return false;
-    }
+    ScreenMappingRejectReason reason = ScreenMappingRejectReason::None;
+    return tryMapScreenDepthToFroxelIndex(screenX, screenY, viewDepth, desc, camera, outFroxelIndex, reason);
+}
 
-    outFroxelIndex = froxelIndex(coords.tileX0, coords.tileY0, coords.sliceZ0, desc);
-    return true;
+const char* screenMappingRejectReasonLabel(ScreenMappingRejectReason reason) {
+    switch (reason) {
+    case ScreenMappingRejectReason::None:
+        return "none";
+    case ScreenMappingRejectReason::EmptyGrid:
+        return "empty_grid";
+    case ScreenMappingRejectReason::InvalidCamera:
+        return "invalid_camera";
+    case ScreenMappingRejectReason::DepthOutOfRange:
+        return "depth_out_of_range";
+    }
+    return "unknown";
+}
+
+const char* sampleCoordRejectReasonLabel(SampleCoordRejectReason reason) {
+    switch (reason) {
+    case SampleCoordRejectReason::None:
+        return "none";
+    case SampleCoordRejectReason::EmptyGrid:
+        return "empty_grid";
+    case SampleCoordRejectReason::OutOfBounds:
+        return "out_of_bounds";
+    case SampleCoordRejectReason::InvalidWeights:
+        return "invalid_weights";
+    }
+    return "unknown";
 }
 
 const char* gridDensityRejectReasonLabel(GridDensityRejectReason reason) {
@@ -284,6 +381,8 @@ const char* gridDensityRejectReasonLabel(GridDensityRejectReason reason) {
         return "empty_desc";
     case GridDensityRejectReason::UndersizedStorage:
         return "undersized_storage";
+    case GridDensityRejectReason::DescMismatch:
+        return "desc_mismatch";
     case GridDensityRejectReason::DensityCountMismatch:
         return "density_count_mismatch";
     }
@@ -351,6 +450,50 @@ bool tryCanLookupAtIndex(const FroxelDensityGrid& grid,
     }
 
     outReason = DensityLookupRejectReason::None;
+    return true;
+}
+
+bool canSampleAtCoords(const FroxelDensityGrid& grid,
+                       const FroxelGridDesc& desc,
+                       const FroxelSampleCoords& /*coords*/) {
+    return canLookupAtIndex(grid, desc, 0u);
+}
+
+bool tryCanSampleAtCoords(const FroxelDensityGrid& grid,
+                          const FroxelGridDesc& desc,
+                          const FroxelSampleCoords& coords,
+                          SampleCoordRejectReason& outReason) {
+    DensityLookupRejectReason lookupReason = DensityLookupRejectReason::None;
+    if (!tryCanLookupAtIndex(grid, desc, 0u, lookupReason)) {
+        switch (lookupReason) {
+        case DensityLookupRejectReason::EmptyGrid:
+            outReason = SampleCoordRejectReason::EmptyGrid;
+            break;
+        case DensityLookupRejectReason::EmptyStorage:
+        case DensityLookupRejectReason::DescMismatch:
+            outReason = SampleCoordRejectReason::OutOfBounds;
+            break;
+        case DensityLookupRejectReason::None:
+            outReason = SampleCoordRejectReason::None;
+            break;
+        }
+        return false;
+    }
+
+    if (!FroxelGridLayout::isValidSampleCoords(coords, desc)) {
+        if (!FroxelGridLayout::areSampleCoordsInBounds(coords, desc)) {
+            const bool indicesInRange =
+                coords.tileX0 <= desc.tilesX - 1u && coords.tileY0 <= desc.tilesY - 1u &&
+                coords.sliceZ0 <= desc.slicesZ - 1u && coords.tileX1 <= desc.tilesX - 1u &&
+                coords.tileY1 <= desc.tilesY - 1u && coords.sliceZ1 <= desc.slicesZ - 1u;
+            outReason = indicesInRange ? SampleCoordRejectReason::InvalidWeights
+                                       : SampleCoordRejectReason::OutOfBounds;
+        } else {
+            outReason = SampleCoordRejectReason::OutOfBounds;
+        }
+    } else {
+        outReason = SampleCoordRejectReason::None;
+    }
     return true;
 }
 
@@ -470,8 +613,12 @@ bool tryValidateGridDensity(const FroxelDensityGrid& grid,
         outReason = GridDensityRejectReason::UndersizedStorage;
         return false;
     }
+    if (grid.density.size() > clampedDesc.froxelCount()) {
+        outReason = GridDensityRejectReason::DescMismatch;
+        return false;
+    }
     if (!gridMatchesDesc(grid, desc)) {
-        outReason = GridDensityRejectReason::UndersizedStorage;
+        outReason = GridDensityRejectReason::DescMismatch;
         return false;
     }
     if (!validateDensityCounts(grid, epsilon)) {
@@ -559,7 +706,16 @@ bool trySampleDensityBilinear(const FroxelDensityGrid& grid,
                               const FroxelGridDesc& desc,
                               const FroxelSampleCoords& coords,
                               f32& outDensity) {
-    if (!canLookupAtIndex(grid, desc, 0u)) {
+    SampleCoordRejectReason reason = SampleCoordRejectReason::None;
+    return trySampleDensityBilinear(grid, desc, coords, outDensity, reason);
+}
+
+bool trySampleDensityBilinear(const FroxelDensityGrid& grid,
+                              const FroxelGridDesc& desc,
+                              const FroxelSampleCoords& coords,
+                              f32& outDensity,
+                              SampleCoordRejectReason& outReason) {
+    if (!tryCanSampleAtCoords(grid, desc, coords, outReason)) {
         outDensity = 0.f;
         return false;
     }
@@ -592,7 +748,16 @@ bool trySampleDensityTrilinear(const FroxelDensityGrid& grid,
                                const FroxelGridDesc& desc,
                                const FroxelSampleCoords& coords,
                                f32& outDensity) {
-    if (!canLookupAtIndex(grid, desc, 0u)) {
+    SampleCoordRejectReason reason = SampleCoordRejectReason::None;
+    return trySampleDensityTrilinear(grid, desc, coords, outDensity, reason);
+}
+
+bool trySampleDensityTrilinear(const FroxelDensityGrid& grid,
+                               const FroxelGridDesc& desc,
+                               const FroxelSampleCoords& coords,
+                               f32& outDensity,
+                               SampleCoordRejectReason& outReason) {
+    if (!tryCanSampleAtCoords(grid, desc, coords, outReason)) {
         outDensity = 0.f;
         return false;
     }
