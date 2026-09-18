@@ -101,7 +101,21 @@ bool tonemap_curve_params_valid(const TonemapCurveParams& params) {
     if (params.kind == TonemapCurveKind::ACES && params.aces.contrast < 0.f) {
         return false;
     }
+    if (params.kind == TonemapCurveKind::ACES && params.aces.shoulder < 0.f) {
+        return false;
+    }
     return true;
+}
+
+bool tonemap_curve_can_apply(const TonemapCurveParams& params) {
+    if (!params.enabled) {
+        return true;
+    }
+    return tonemap_curve_params_valid(params);
+}
+
+bool tonemap_curve_channel_in_display_range(f32 channel, f32 epsilon) {
+    return channel >= -epsilon && channel <= 1.f + epsilon;
 }
 
 bool tonemap_curve_endpoints_valid(const TonemapCurveEndpoints& endpoints, f32 epsilon) {
@@ -178,7 +192,7 @@ f32 evaluate_tonemap_curve_channel(f32 channel, const TonemapCurveParams& params
 }
 
 fuse::math::Vec3 apply_tonemap_curve(const fuse::math::Vec3& hdr, const TonemapCurveParams& params) {
-    if (!params.enabled) {
+    if (!params.enabled || !tonemap_curve_can_apply(params)) {
         return hdr;
     }
     return {evaluate_tonemap_curve_channel(hdr.x, params), evaluate_tonemap_curve_channel(hdr.y, params),
