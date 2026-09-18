@@ -41,7 +41,6 @@ public:
     [[nodiscard]] const std::string& history_newest() const { return m_history.newest(); }
     [[nodiscard]] const std::string& history_oldest() const { return m_history.oldest(); }
     [[nodiscard]] bool history_contains(const char* line) const { return m_history.contains(line); }
-    [[nodiscard]] bool is_history_navigation_at_end() const { return m_history.is_navigation_at_end(); }
 
     /// Navigate command history (`previous=true` recalls older entries).
     [[nodiscard]] const std::string& recallHistory(bool previous) { return m_history.recall(previous); }

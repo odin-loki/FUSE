@@ -189,23 +189,6 @@ inline u32 ResidencySet::find_index_(GridCoord coord) const {
     return set.has_eviction_candidate() ? set.pick_eviction_candidate() : kInvalidGridCoord;
 }
 
-/// Empty-set guard: return eviction candidates farthest-first; empty set yields no candidates.
-[[nodiscard]] inline std::vector<GridCoord> collect_eviction_candidates_guarded(const ResidencySet& set,
-                                                                                u32 max_count = 0) {
-    if (!set.has_eviction_candidate()) {
-        return {};
-    }
-    return set.collect_eviction_candidates(max_count);
-}
-
-/// Guard: returns -1 when coord is invalid or not resident.
-[[nodiscard]] inline f32 focus_distance_for_guarded(const ResidencySet& set, GridCoord coord) {
-    if (!is_valid_grid_coord(coord)) {
-        return -1.f;
-    }
-    return set.focus_distance_for(coord);
-}
-
 /// Stub: refresh focus distance for a resident cell; rejects invalid coords and negative distance.
 [[nodiscard]] inline bool try_update_resident_focus(ResidencySet& set, GridCoord coord, f32 focus_distance) {
     if (!is_valid_grid_coord(coord)) {

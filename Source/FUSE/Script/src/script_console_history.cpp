@@ -92,10 +92,6 @@ bool ScriptConsoleHistoryBuffer::contains(const char* line) const {
     return false;
 }
 
-bool ScriptConsoleHistoryBuffer::is_navigation_at_end() const {
-    return m_size == 0 || m_navigationCursor >= static_cast<s32>(m_size);
-}
-
 void ScriptConsoleHistoryBuffer::push(const char* line) {
     if (line == nullptr) {
         return;
