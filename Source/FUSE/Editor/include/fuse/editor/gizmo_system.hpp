@@ -171,6 +171,21 @@ struct UpdateDragPreflight {
 
 UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging);
 
+/// Non-mutating update-drag predicate — same guards as `preflightUpdateDrag` (B6.4 deepen pass).
+bool canUpdateDrag(const GizmoHitTest& hit, bool dragging);
+
+/// Read-only end-drag diagnostics — no mutation (B6.4 deepen pass).
+struct EndDragPreflight {
+    bool notDragging = false;
+
+    bool canEnd() const { return !notDragging; }
+};
+
+EndDragPreflight preflightEndDrag(bool dragging);
+
+/// Non-mutating end-drag predicate — rejects inactive drags (B6.4 deepen pass).
+bool canEndDrag(bool dragging);
+
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
                                       GizmoMode mode, GizmoSpace space, f32 axisLength,
                                       f32 pickRadius, bool alreadyDragging = false);
@@ -263,10 +278,17 @@ public:
     [[nodiscard]] bool trySnapTransform(const GizmoTransform& transform,
                                         GizmoTransform& out) const;
     [[nodiscard]] UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit) const;
+    [[nodiscard]] bool canUpdateDrag(const GizmoHitTest& hit) const;
+    /// Guarded update-drag — returns false when drag is inactive or hit is empty (B6.4 deepen pass).
+    bool tryUpdateDrag(const GizmoHitTest& hit, GizmoResult& out);
     /// Guarded begin-drag — returns false on empty viewport / miss picks (B6.4 deepen follow-up).
     bool tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& current, GizmoResult& out);
     bool tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current, GizmoResult& out);
     GizmoResult updateDrag(const GizmoHitTest& hit);
+    [[nodiscard]] EndDragPreflight preflightEndDrag() const;
+    [[nodiscard]] bool canEndDrag() const;
+    /// Guarded end-drag — returns false when drag is inactive (B6.4 deepen pass).
+    bool tryEndDrag(GizmoResult& out);
     GizmoResult endDrag();
 
     bool isDragging() const { return m_dragging; }
