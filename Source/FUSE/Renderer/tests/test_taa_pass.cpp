@@ -312,6 +312,138 @@ void testResolveSkipReasonLabels() {
                "StaleHistoryGeneration skip reason label");
 }
 
+void testHistoryBufferDescValid() {
+    expectTrue(fuse::renderer::taaHistoryBufferDescValid({64u, 64u}), "non-zero history desc is valid");
+    expectTrue(!fuse::renderer::taaHistoryBufferDescValid({0u, 64u}), "zero width history desc is invalid");
+    expectTrue(!fuse::renderer::taaHistoryBufferDescValid({64u, 0u}), "zero height history desc is invalid");
+    expectTrue(!fuse::renderer::taaHistoryBufferDescValid({0u, 0u}), "zero width and height history desc is invalid");
+
+    expectTrue(!fuse::renderer::taaHistoryResizeNeeded(64u, 64u, 64u, 64u), "same dimensions do not need resize");
+    expectTrue(fuse::renderer::taaHistoryResizeNeeded(64u, 64u, 128u, 64u), "width change needs resize");
+    expectTrue(fuse::renderer::taaHistoryResizeNeeded(64u, 64u, 64u, 32u), "height change needs resize");
+}
+
+void testResolveDimensionMismatchHelper() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for dimension mismatch helper test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaHistoryBuffer history;
+    fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
+    expectTrue(history.init(resources, historyDesc), "history ready for dimension mismatch helper test");
+
+    fuse::renderer::TaaResolveDesc desc{};
+    desc.width = 128;
+    desc.height = 64;
+    expectTrue(fuse::renderer::taaResolveHasDimensionMismatch(desc, history),
+               "dimension mismatch helper detects width mismatch");
+    expectTrue(!fuse::renderer::taaResolveHasDimensionMismatch(
+                   fuse::renderer::TaaResolveDesc{.width = 64, .height = 64}, history),
+               "dimension mismatch helper passes matching dimensions");
+
+    history.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
+void testHistoryGenerationMatchHelpers() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for generation match helper test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaHistoryBuffer history;
+    fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
+    expectTrue(history.init(resources, historyDesc), "history ready for generation match helper test");
+    expectTrue(history.generationMatches(0u), "generation zero matches after init");
+    expectTrue(!history.isHistoryStale(0u), "generation zero is not stale after init");
+
+    history.invalidateHistory();
+    expectTrue(!history.generationMatches(0u), "generation zero no longer matches after invalidate");
+    expectTrue(history.isHistoryStale(0u), "generation zero is stale after invalidate");
+    expectTrue(history.generationMatches(history.invalidateGeneration()),
+               "current generation always matches itself");
+
+    fuse::renderer::TaaResolveDesc desc{};
+    desc.observed_history_generation = 0u;
+    expectTrue(fuse::renderer::taaResolveHistoryGenerationIsStale(desc, history),
+               "stale generation helper detects invalidated epoch");
+    desc.observed_history_generation = history.invalidateGeneration();
+    expectTrue(!fuse::renderer::taaResolveHistoryGenerationIsStale(desc, history),
+               "stale generation helper passes current epoch");
+    desc.observed_history_generation = fuse::renderer::kTaaResolveNoHistoryGeneration;
+    expectTrue(!fuse::renderer::taaResolveHistoryGenerationIsStale(desc, history),
+               "stale generation helper bypasses no-guard sentinel");
+
+    history.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
+void testJitterViewportDimensions() {
+    using fuse::renderer::TaaJitterLayout;
+
+    expectTrue(TaaJitterLayout::validateViewportDimensions(1920u, 1080u), "non-zero viewport is valid");
+    expectTrue(!TaaJitterLayout::validateViewportDimensions(0u, 1080u), "zero width viewport is invalid");
+    expectTrue(!TaaJitterLayout::validateViewportDimensions(1920u, 0u), "zero height viewport is invalid");
+}
+
+void testTaaPassAutoStampResolveFrame() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for auto-stamp resolve test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaPassDesc passDesc{};
+    passDesc.width = 64;
+    passDesc.height = 64;
+
+    auto pass = fuse::renderer::TaaPass::create(passDesc);
+    expectTrue(pass->init(resources), "TaaPass initialized for auto-stamp resolve test");
+
+    fuse::renderer::TaaResolveDesc desc{};
+    desc.width = 64;
+    desc.height = 64;
+    desc.surfaces.current_frame = reinterpret_cast<void*>(0x1);
+    desc.surfaces.output = reinterpret_cast<void*>(0x2);
+    expectTrue(desc.observed_history_generation == fuse::renderer::kTaaResolveNoHistoryGeneration,
+               "desc uses no-guard sentinel before resolveFrame");
+
+    expectTrue(pass->resolveFrame(desc), "resolveFrame auto-stamps and succeeds");
+    pass->invalidateHistory();
+    expectTrue(pass->isHistoryStale(0u), "pass reports stale generation after invalidate");
+    expectTrue(pass->historyInvalidateGeneration() == 1u, "invalidate bumps pass generation");
+
+    desc.observed_history_generation = fuse::renderer::kTaaResolveNoHistoryGeneration;
+    expectTrue(pass->resolveFrame(desc), "resolveFrame auto-stamps bumped generation after invalidate");
+
+    pass->destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
 void testResolveDimensionHelpers() {
     expectTrue(fuse::renderer::taaResolveDimensionsValid(64u, 64u), "non-zero dimensions are valid");
     expectTrue(!fuse::renderer::taaResolveDimensionsValid(0u, 64u), "zero width is invalid");
@@ -1088,6 +1220,11 @@ int main() {
     testHistoryValidityFlags();
     testClampTaaParams();
     testResolveSkipReasonLabels();
+    testHistoryBufferDescValid();
+    testResolveDimensionMismatchHelper();
+    testHistoryGenerationMatchHelpers();
+    testJitterViewportDimensions();
+    testTaaPassAutoStampResolveFrame();
     testResolveDimensionHelpers();
     testClassifyTaaResolveSkipPriority();
     testHistoryGenerationGuardBypass();

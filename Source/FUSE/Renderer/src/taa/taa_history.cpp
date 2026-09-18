@@ -2,6 +2,14 @@
 
 namespace fuse::renderer {
 
+bool taaHistoryBufferDescValid(const TaaHistoryBufferDesc& desc) {
+    return desc.width > 0u && desc.height > 0u;
+}
+
+bool taaHistoryResizeNeeded(u32 currentWidth, u32 currentHeight, u32 newWidth, u32 newHeight) {
+    return currentWidth != newWidth || currentHeight != newHeight;
+}
+
 bool TaaHistoryBuffer::init(ResourceManager& resources, const TaaHistoryBufferDesc& desc) {
     const u32 preservedGeneration = m_validity.invalidateGeneration;
     destroy();
@@ -11,7 +19,7 @@ bool TaaHistoryBuffer::init(ResourceManager& resources, const TaaHistoryBufferDe
     m_validity = {};
     m_validity.invalidateGeneration = preservedGeneration;
 
-    if (m_desc.width == 0u || m_desc.height == 0u) {
+    if (!taaHistoryBufferDescValid(m_desc)) {
         return false;
     }
 
@@ -34,7 +42,7 @@ bool TaaHistoryBuffer::init(ResourceManager& resources, const TaaHistoryBufferDe
 }
 
 void TaaHistoryBuffer::resize(u32 width, u32 height) {
-    if (m_desc.width == width && m_desc.height == height) {
+    if (!taaHistoryResizeNeeded(m_desc.width, m_desc.height, width, height)) {
         return;
     }
 
@@ -75,6 +83,10 @@ void TaaHistoryBuffer::swap() {
 
 bool TaaHistoryBuffer::isHistoryStale(u32 observedGeneration) const {
     return observedGeneration != m_validity.invalidateGeneration;
+}
+
+bool TaaHistoryBuffer::generationMatches(u32 observedGeneration) const {
+    return !isHistoryStale(observedGeneration);
 }
 
 bool TaaHistoryBuffer::matchesDimensions(u32 width, u32 height) const {
