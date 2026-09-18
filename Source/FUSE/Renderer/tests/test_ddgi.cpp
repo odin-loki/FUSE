@@ -996,6 +996,177 @@ void testSampleGuards() {
                "empty normal still valid — resolved at sample time");
 }
 
+void testProbeSpatialSampleGuards() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+    desc.irradiance_res = 8;
+
+    fuse::renderer::ProbeSampleCoords built{};
+    fuse::renderer::ProbeSampleCoordsRejectReason buildReason =
+        fuse::renderer::ProbeSampleCoordsRejectReason::None;
+    expectTrue(fuse::renderer::ProbeGridLayout::tryBuildProbeSampleCoords(
+                   desc, {0.5f, 0.5f, 0.5f}, built, buildReason),
+               "tryBuildProbeSampleCoords succeeds on interior sample");
+    expectTrue(buildReason == fuse::renderer::ProbeSampleCoordsRejectReason::None,
+               "build reports no reject reason");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryBuildProbeSampleCoords(
+                   empty, {0.5f, 0.5f, 0.5f}, built, buildReason),
+               "tryBuildProbeSampleCoords rejects empty grid");
+    expectTrue(buildReason == fuse::renderer::ProbeSampleCoordsRejectReason::EmptyGrid,
+               "build reports empty_grid on empty grid");
+
+    expectTrue(fuse::renderer::ProbeGridLayout::areProbeSampleCoordsInBounds(desc, built),
+               "built coords are in bounds");
+    fuse::renderer::ProbeSampleCoords oobWeights = built;
+    oobWeights.tx = 2.f;
+    expectTrue(fuse::renderer::ProbeGridLayout::areProbeSampleCoordsInBounds(desc, oobWeights),
+               "OOB weights still in bounds for index check");
+    expectTrue(!fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, oobWeights),
+               "OOB weights fail validity despite in-bounds indices");
+
+    fuse::renderer::ProbeSpatialSampleRejectReason spatialReason =
+        fuse::renderer::ProbeSpatialSampleRejectReason::None;
+    expectTrue(fuse::renderer::ddgi_util::tryCanSampleAtProbeCoords(desc, built, 8u, spatialReason),
+               "spatial sample preflight succeeds with valid coords and cache");
+    expectTrue(spatialReason == fuse::renderer::ProbeSpatialSampleRejectReason::None,
+               "spatial sample reports no reject reason");
+    expectTrue(std::strcmp(fuse::renderer::probeSpatialSampleRejectReasonLabel(spatialReason), "none") == 0,
+               "none spatial sample reject reason label");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryCanSampleAtProbeCoords(desc, oobWeights, 8u, spatialReason),
+               "spatial sample preflight rejects invalid coords");
+    expectTrue(spatialReason == fuse::renderer::ProbeSpatialSampleRejectReason::InvalidSampleCoords,
+               "invalid coords report invalid_sample_coords reason");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryCanSampleAtProbeCoords(desc, built, 4u, spatialReason),
+               "spatial sample preflight rejects undersized cache");
+    expectTrue(spatialReason == fuse::renderer::ProbeSpatialSampleRejectReason::UndersizedCache,
+               "undersized cache reports undersized_cache spatial reason");
+
+    std::vector<fuse::renderer::IrradianceCacheEntry> cache(8);
+    for (fuse::u32 i = 0; i < 8u; ++i) {
+        cache[i].irradiance = {1.f, 1.f, 1.f};
+    }
+    fuse::math::Vec3 sampled{};
+    expectTrue(fuse::renderer::ddgi_util::tryTrilinearProbeIrradiance(
+                   desc, {0.5f, 0.5f, 0.5f}, cache.data(), 8u, sampled, spatialReason),
+               "tryTrilinearProbeIrradiance succeeds with valid inputs");
+    expectTrue(sampled.x > 0.f, "tryTrilinearProbeIrradiance returns non-zero irradiance");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryTrilinearProbeIrradiance(
+                   desc, {0.5f, 0.5f, 0.5f}, nullptr, 8u, sampled, spatialReason),
+               "tryTrilinearProbeIrradiance rejects null cache");
+    expectTrue(spatialReason == fuse::renderer::ProbeSpatialSampleRejectReason::NullCache,
+               "null cache reports null_cache spatial reason");
+    expectTrue(std::strcmp(fuse::renderer::probeSpatialSampleRejectReasonLabel(spatialReason), "null_cache") == 0,
+               "null_cache spatial reject reason label");
+
+    fuse::math::Vec3 directional{};
+    expectTrue(!fuse::renderer::ddgi_util::tryTrilinearDirectionalProbeIrradiance(
+                   desc, {0.5f, 0.5f, 0.5f}, {0.f, 1.f, 0.f}, cache.data(), 4u, directional, spatialReason),
+               "tryTrilinearDirectionalProbeIrradiance fails closed on undersized cache");
+    expectTrue(spatialReason == fuse::renderer::ProbeSpatialSampleRejectReason::UndersizedCache,
+               "directional try sample reports undersized cache");
+}
+
+void testCacheLookupAtCoordGuards() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+
+    const fuse::renderer::ProbeGridCoord interior{1, 1, 1};
+    fuse::renderer::CacheIndexRejectReason reason = fuse::renderer::CacheIndexRejectReason::None;
+    expectTrue(fuse::renderer::ddgi_util::tryCanLookupCacheAtCoord(desc, interior, 8u, reason),
+               "interior coord passes cache lookup preflight");
+    expectTrue(reason == fuse::renderer::CacheIndexRejectReason::None, "interior coord reports no reject reason");
+
+    const fuse::renderer::ProbeGridCoord invalid{9, 0, 0};
+    expectTrue(!fuse::renderer::ddgi_util::tryCanLookupCacheAtCoord(desc, invalid, 8u, reason),
+               "invalid coord fails cache lookup preflight");
+    expectTrue(reason == fuse::renderer::CacheIndexRejectReason::OutOfRangeProbeIndex,
+               "invalid coord reports out_of_range_probe_index");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryCanLookupCacheAtCoord(desc, interior, 4u, reason),
+               "valid coord fails when cache undersized");
+    expectTrue(reason == fuse::renderer::CacheIndexRejectReason::UndersizedCache,
+               "undersized cache reports undersized_cache at coord");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+    expectTrue(!fuse::renderer::ddgi_util::tryCanLookupCacheAtCoord(empty, interior, 8u, reason),
+               "empty grid fails coord cache lookup");
+    expectTrue(reason == fuse::renderer::CacheIndexRejectReason::EmptyGrid,
+               "empty grid reports empty_grid at coord lookup");
+}
+
+void testProbeSchedulePreflightGuards() {
+    fuse::u32 indices[8]{};
+    fuse::u32 count = 0u;
+
+    fuse::renderer::ProbeScheduleRejectReason reason = fuse::renderer::ProbeScheduleRejectReason::None;
+    expectTrue(fuse::renderer::ddgi_util::tryScheduleProbeUpdates(8u, 8u, indices, &count, reason),
+               "schedule preflight succeeds with valid outputs");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::None, "schedule preflight reports no reject reason");
+    expectTrue(std::strcmp(fuse::renderer::probeScheduleRejectReasonLabel(reason), "none") == 0,
+               "none schedule reject reason label");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(8u, 8u, nullptr, &count, reason),
+               "schedule preflight rejects null index buffer");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::NullOutput,
+               "null index buffer reports null_output reason");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(8u, 8u, indices, nullptr, reason),
+               "schedule preflight rejects null count pointer");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::NullOutput,
+               "null count pointer reports null_output reason");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 8u, indices, &count, reason),
+               "schedule preflight rejects zero probe count");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::ZeroProbeCount,
+               "zero probe count reports zero_probe_count reason");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(8u, 0u, indices, &count, reason),
+               "schedule preflight rejects zero max indices");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::ZeroMaxIndices,
+               "zero max indices reports zero_max_indices reason");
+}
+
+void testZeroRaysPerProbeLaunchGuards() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+    desc.rays_per_probe = 0u;
+
+    fuse::u32 validIndices[2] = {0u, 1u};
+    fuse::renderer::ProbeUpdateLaunchRejectReason launchReason =
+        fuse::renderer::ProbeUpdateLaunchRejectReason::None;
+    expectTrue(!fuse::renderer::tryCanLaunchDdgiProbeUpdate(desc, validIndices, 2u, launchReason),
+               "launch preflight rejects zero rays_per_probe");
+    expectTrue(launchReason == fuse::renderer::ProbeUpdateLaunchRejectReason::ZeroRaysPerProbe,
+               "zero rays_per_probe reports zero_rays_per_probe launch reason");
+    expectTrue(std::strcmp(fuse::renderer::probeUpdateLaunchRejectReasonLabel(launchReason), "zero_rays_per_probe") ==
+                   0,
+               "zero_rays_per_probe launch reject reason label");
+    expectTrue(!fuse::renderer::launch_ddgi_probe_update(desc, validIndices, 2u, nullptr),
+               "launch rejects zero rays_per_probe desc");
+
+    fuse::renderer::gi::DDGIKernelParams params{};
+    params.probe_indices_to_update = validIndices;
+    params.probe_update_count = 2u;
+    params.rays_per_probe = 0u;
+    fuse::renderer::gi::ProbeKernelRejectReason kernelReason = fuse::renderer::gi::ProbeKernelRejectReason::None;
+    expectTrue(!fuse::renderer::gi::tryCanLaunchProbeTraceKernel(params, kernelReason),
+               "kernel preflight rejects zero rays_per_probe");
+    expectTrue(kernelReason == fuse::renderer::gi::ProbeKernelRejectReason::ZeroRaysPerProbe,
+               "kernel reports zero_rays_per_probe reason");
+    expectTrue(std::strcmp(fuse::renderer::gi::probeKernelRejectReasonLabel(kernelReason), "zero_rays_per_probe") ==
+                   0,
+               "zero_rays_per_probe kernel reject reason label");
+    expectTrue(!fuse::renderer::gi::launch_probe_trace_kernel(params, nullptr),
+               "trace kernel launch rejects zero rays_per_probe");
+}
+
 void testPartialCacheTrilinear() {
     fuse::renderer::DDGIDesc desc{};
     desc.grid_origin = {0.f, 0.f, 0.f};
@@ -1161,6 +1332,10 @@ int main() {
     testLaunchProbeUpdateRejectReasons();
     testProbeKernelLaunchGuards();
     testSampleGuards();
+    testProbeSpatialSampleGuards();
+    testCacheLookupAtCoordGuards();
+    testProbeSchedulePreflightGuards();
+    testZeroRaysPerProbeLaunchGuards();
     testProbeWorldPositionClamped();
     testProbeAtlasLayout();
     testIrradianceOctahedralEncoding();
