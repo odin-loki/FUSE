@@ -529,7 +529,83 @@ void testResolveCommandStub() {
     const auto unique = console.execute("resolve histor");
     expectTrue(unique.ok(), "resolve unique prefix succeeds");
     expectTrue(unique.output == "history", "resolve unique prefix returns full command name");
-    expectTrue(console.historyCount() == 2u, "resolve success pushes history");
+    expectTrue(console.historyCount() == 0u, "resolve meta command does not push history");
+    expectTrue(console.lastExecutedLine().empty(), "resolve does not update last executed line");
+
+    expectTrue(console.register_command("custom_probe", [](fuse::script::ScriptConsole& /*repl*/,
+                                                           const char* /*args*/) {
+                   return fuse::script::ScriptConsoleCommandResult{
+                       fuse::script::ScriptConsoleCommandStatus::Ok, "ok"};
+               }),
+               "register custom command for resolve test");
+
+    const auto custom = console.execute("resolve custom_pr");
+    expectTrue(custom.ok(), "resolve unique prefix for custom command succeeds");
+    expectTrue(custom.output == "custom_probe", "resolve returns registered custom command name");
+
+    console.unregister_command("custom_probe");
+}
+
+void testHistoryEmptyEarlyOut() {
+    fuse::script::ScriptConsole console;
+
+    expectTrue(console.is_history_empty(), "new console reports empty history");
+    expectTrue(console.recallHistory(true).empty(), "recall on empty history returns empty");
+    expectTrue(console.recallHistory(false).empty(), "recall down on empty history returns empty");
+
+    const auto empty = console.execute("history");
+    expectTrue(empty.ok(), "history on empty buffer succeeds");
+    expectTrue(empty.output == "history empty", "history empty early-out message");
+    expectTrue(console.historyCount() == 0u, "history view does not push history when empty");
+
+    console.execute("echo one");
+    const auto listed = console.execute("history");
+    expectTrue(listed.ok(), "history with entries succeeds");
+    expectTrue(listed.output.find("echo one") != std::string::npos, "history lists stored command");
+    expectTrue(console.historyCount() == 1u, "history view does not push meta command");
+}
+
+void testMetaCommandsSkipHistoryAndRepeat() {
+    fuse::script::ScriptConsole console;
+
+    console.execute("echo anchor");
+    expectTrue(console.historyCount() == 1u, "action command pushes history");
+    expectTrue(console.can_repeat(), "can_repeat after action command");
+
+    console.execute("help");
+    expectTrue(console.historyCount() == 1u, "help meta command does not push history");
+    expectTrue(console.can_repeat(), "help does not clear repeat state");
+    expectTrue(console.lastExecutedLine() == "echo anchor", "help does not overwrite last executed line");
+
+    const auto repeated = console.execute("repeat");
+    expectTrue(repeated.ok(), "repeat after help still re-dispatches last action");
+    expectTrue(repeated.output == "anchor", "repeat returns prior echo output");
+    expectTrue(console.historyCount() == 1u, "repeat meta command does not push history");
+
+    console.execute("resolve help");
+    console.execute("suggest hel");
+    console.execute("complete he");
+    console.execute("describe echo");
+    console.execute("list");
+    expectTrue(console.historyCount() == 1u, "lookup meta commands do not push history");
+    expectTrue(console.lastExecutedLine() == "echo anchor", "lookup meta commands preserve repeat target");
+}
+
+void testCanRepeatAccessor() {
+    fuse::script::ScriptConsole console;
+
+    expectTrue(!console.can_repeat(), "can_repeat false on fresh console");
+
+    const auto failed = console.execute("repeat");
+    expectTrue(!failed.ok(), "repeat without prior command fails");
+    expectTrue(!console.can_repeat(), "failed repeat leaves can_repeat false");
+
+    console.execute("echo ready");
+    expectTrue(console.can_repeat(), "can_repeat true after successful action");
+
+    console.execute("not_a_command");
+    expectTrue(console.can_repeat(), "unknown command does not clear can_repeat");
+    expectTrue(console.lastExecutedLine() == "echo ready", "unknown command preserves last executed line");
 }
 
 void testCustomCommandDispatch() {
@@ -575,6 +651,9 @@ void run_script_console_tests() {
     testDescribeAndCompleteStubs();
     testPrefixMatchAndCompletionHelpers();
     testResolveCommandStub();
+    testHistoryEmptyEarlyOut();
+    testMetaCommandsSkipHistoryAndRepeat();
+    testCanRepeatAccessor();
     testRepeatDispatchStub();
     testHostDispatchLoadAndRun();
     testCustomCommandShadowsBuiltIn();
