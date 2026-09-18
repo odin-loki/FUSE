@@ -276,7 +276,8 @@ void PresentPath::requestResize(u32 width, u32 height) {
         return;
     }
 
-    if (m_status.resizePending) {
+    if (isResizeCoalesceRequest(m_status.resizePending, m_status.pendingResizeWidth, m_status.pendingResizeHeight,
+                                width, height)) {
         ++m_status.resizeCoalesceCount;
     }
 
