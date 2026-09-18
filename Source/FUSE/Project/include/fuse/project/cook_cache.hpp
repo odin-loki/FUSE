@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/project/cook_content_hash.hpp>
 #include <fuse/project/cook_job_graph.hpp>
 #include <fuse/project/cook_manifest.hpp>
 #include <fuse/types.hpp>
@@ -45,6 +46,11 @@ struct CookCacheStats {
            is_valid_cook_cache_path(entry.output_path);
 }
 
+/// Combined source/upstream fold is cacheable when non-zero (B7.9 deepen).
+[[nodiscard]] inline bool is_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    return is_valid_cook_cache_key(combine_cook_cache_key(source_hash, upstream_hash));
+}
+
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
 public:
@@ -73,6 +79,8 @@ public:
     u32 prune_invalid_entries();
     /// Run invalid-entry then stale-entry pruning — no-op on empty cache (B7.9 deepen).
     u32 prune_all();
+    /// True when invalid or stale records are present — `prune_*` would remove at least one (B7.9 deepen).
+    [[nodiscard]] bool has_prunable_entries() const;
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

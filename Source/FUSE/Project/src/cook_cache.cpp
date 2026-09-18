@@ -40,6 +40,15 @@ u64 recompute_cache_key_for_entry_(const CookCacheEntry& entry) {
     return combine_cook_cache_key(source_hash, entry.upstream_hash);
 }
 
+bool is_prunable_cache_entry_(const CookCacheEntry& entry) {
+    if (!is_valid_cook_cache_entry(entry)) {
+        return true;
+    }
+
+    const u64 current_key = recompute_cache_key_for_entry_(entry);
+    return !is_valid_cook_cache_key(current_key) || entry.content_hash != current_key;
+}
+
 std::string escapeJson(const std::string& text) {
     std::string out;
     out.reserve(text.size() + 8);
@@ -103,7 +112,7 @@ void CookCache::store(const CookCacheEntry& entry) {
 }
 
 bool CookCache::invalidate(u64 content_hash) {
-    if (!is_valid_cook_cache_key(content_hash)) {
+    if (!is_valid_cook_cache_key(content_hash) || m_entries.empty()) {
         return false;
     }
 
@@ -292,20 +301,37 @@ u32 CookCache::prune_invalid_entries() {
 }
 
 u32 CookCache::prune_all() {
-    if (m_entries.empty()) {
+    if (m_entries.empty() || !has_prunable_entries()) {
         return 0;
     }
     return prune_invalid_entries() + prune_stale_entries();
 }
 
+bool CookCache::has_prunable_entries() const {
+    if (m_entries.empty()) {
+        return false;
+    }
+
+    for (const CookCacheEntry& entry : m_entries) {
+        if (is_prunable_cache_entry_(entry)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool CookCache::contains(u64 content_hash) const {
-    if (!is_valid_cook_cache_key(content_hash)) {
+    if (!is_valid_cook_cache_key(content_hash) || m_entries.empty()) {
         return false;
     }
     return find_entry_(content_hash) != nullptr;
 }
 
 void CookCache::clear() {
+    if (m_entries.empty()) {
+        return;
+    }
+
     m_entries.clear();
     m_stats = {};
 }
