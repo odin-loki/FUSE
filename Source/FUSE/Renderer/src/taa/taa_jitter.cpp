@@ -59,6 +59,13 @@ fuse::math::Vec2 TaaJitterLayout::haltonNdcOffset(u32 index, u32 width, u32 heig
     return {(pixel.x - 0.5f) * 2.f / safeWidth, (pixel.y - 0.5f) * 2.f / safeHeight};
 }
 
+fuse::math::Vec2 TaaJitterLayout::safeHaltonNdcOffset(u32 index, u32 width, u32 height, u32 sequenceLength) {
+    if (!validateViewportDimensions(width, height)) {
+        return {};
+    }
+    return haltonNdcOffset(index, width, height, sequenceLength);
+}
+
 fuse::math::Vec2 TaaJitterLayout::offsetForFrameIndex(u32 frameIndex, u32 sequenceLength) {
     const u32 slot = frameIndexInSequence(frameIndex, sequenceLength);
     return haltonPixelOffset(slot, sequenceLength);
@@ -68,6 +75,14 @@ fuse::math::Vec2 TaaJitterLayout::ndcOffsetForFrameIndex(u32 frameIndex, u32 wid
                                                          u32 sequenceLength) {
     const u32 slot = frameIndexInSequence(frameIndex, sequenceLength);
     return haltonNdcOffset(slot, width, height, sequenceLength);
+}
+
+fuse::math::Vec2 TaaJitterLayout::safeNdcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height,
+                                                             u32 sequenceLength) {
+    if (!validateViewportDimensions(width, height)) {
+        return {};
+    }
+    return ndcOffsetForFrameIndex(frameIndex, width, height, sequenceLength);
 }
 
 bool TaaJitterLayout::fillHaltonSequence(u32 length, fuse::math::Vec2* out) {
@@ -115,6 +130,14 @@ bool TaaJitter::canProduceNdcOffset(u32 width, u32 height) const {
 void TaaJitter::advance() {
     ++m_monotonicFrame;
     m_index = TaaJitterLayout::frameIndexInSequence(m_monotonicFrame, m_sequenceLength);
+}
+
+bool TaaJitter::advanceIfPossible() {
+    if (!canAdvance()) {
+        return false;
+    }
+    advance();
+    return true;
 }
 
 void TaaJitter::reset() {
