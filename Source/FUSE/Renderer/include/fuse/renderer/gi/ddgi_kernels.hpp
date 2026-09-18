@@ -2,6 +2,12 @@
 
 #include <fuse/types.hpp>
 
+namespace fuse::renderer {
+
+struct DDGIDesc;
+
+} // namespace fuse::renderer
+
 namespace fuse::renderer::gi {
 
 /// CUDA kernel parameter bundle for DDGI probe update (B5.6 — P5 §5.6).
@@ -22,6 +28,35 @@ struct DDGIKernelParams {
     f32 hysteresis = 0.97f;
     f32 max_ray_distance = 20.f;
 };
+
+/// Why a DDGI kernel launch preflight rejected the request (B5.6 deepen).
+enum class DdgiKernelRejectReason : u8 {
+    None = 0,
+    NullIndices,
+    ZeroCount,
+    InvalidRaysPerProbe,
+    OutOfRangeIndex,
+};
+
+/// Human-readable label for kernel reject reasons (logging / tests).
+const char* ddgiKernelRejectReasonLabel(DdgiKernelRejectReason reason);
+
+/// Preflight guard before probe trace kernel launch; false on null indices or zero count.
+bool canLaunchProbeTraceKernel(const DDGIKernelParams& params);
+/// Diagnose why trace-kernel preflight would reject.
+bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, DdgiKernelRejectReason& outReason);
+
+/// Preflight guard before probe blend kernel launch; false on null indices or zero count.
+bool canLaunchProbeBlendKernel(const DDGIKernelParams& params);
+/// Diagnose why blend-kernel preflight would reject.
+bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, DdgiKernelRejectReason& outReason);
+
+/// Combined host+params preflight — validates indices against `desc` before kernel launch.
+bool canLaunchDdgiKernels(const ::fuse::renderer::DDGIDesc& desc, const DDGIKernelParams& params);
+/// Diagnose why combined kernel preflight would reject.
+bool tryCanLaunchDdgiKernels(const ::fuse::renderer::DDGIDesc& desc,
+                             const DDGIKernelParams& params,
+                             DdgiKernelRejectReason& outReason);
 
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);
