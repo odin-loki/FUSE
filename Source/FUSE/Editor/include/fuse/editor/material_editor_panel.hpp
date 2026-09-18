@@ -45,7 +45,14 @@ public:
     [[nodiscard]] bool previewDirty() const { return m_previewDirty; }
     [[nodiscard]] bool editDirty() const { return m_editDirty; }
     [[nodiscard]] bool needsPanelRefresh() const { return m_binding.needsPanelRefresh(); }
+    [[nodiscard]] bool hasAnyPropertyDirty() const { return m_binding.hasAnyPropertyDirty(); }
     [[nodiscard]] u32 coalescedPropertyDirtyCount() const { return m_binding.coalescedDirtyCount(); }
+    /// Refresh guard — selection bound and property table live (B6.7 deepen follow-up).
+    [[nodiscard]] bool canRefreshPanel() const {
+        return hasSelectedMaterial() && m_binding.canPostProperty();
+    }
+    /// True when `refreshPanel` would be a no-op (B6.7 deepen follow-up).
+    [[nodiscard]] bool shouldSkipPanelRefresh() const { return m_binding.shouldSkipPanelRefresh(); }
 
     bool selectMaterial(u32 materialId);
     bool setRoughness(f32 roughness, CommandStack& cmds);
@@ -55,6 +62,8 @@ public:
     bool pushToMaterialSystem(renderer::MaterialSystem& materials, CommandStack& cmds);
 
     void refreshPanel();
+    /// Guarded refresh — returns false when nothing pending or panel unbound (B6.7 deepen follow-up).
+    bool tryRefreshPanel();
     void clearPreviewDirty() { m_previewDirty = false; }
     void clearEditDirty() { m_editDirty = false; }
 

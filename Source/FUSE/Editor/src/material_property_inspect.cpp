@@ -149,4 +149,19 @@ void clampMaterialEditState(MaterialEditState& state) {
     state.shadingModel = clampShadingModel(state.shadingModel);
 }
 
+bool canRefreshMaterialBinding(const MaterialPropertyBinding& binding) {
+    return binding.canRefreshFromEditState();
+}
+
+bool shouldSkipMaterialPanelRefresh(const MaterialPropertyBinding& binding) {
+    return binding.shouldSkipPanelRefresh();
+}
+
+bool isMaterialPropertyRefreshPending(const MaterialPropertyBinding& binding, MaterialPropertyId id) {
+    if (!isMaterialPropertyIdValid(id) || shouldSkipMaterialPanelRefresh(binding)) {
+        return false;
+    }
+    return binding.isPropertyDirty(id);
+}
+
 } // namespace fuse::editor

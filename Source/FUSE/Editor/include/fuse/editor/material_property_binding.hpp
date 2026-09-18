@@ -56,14 +56,26 @@ public:
     bool trySetPropertyVec3(MaterialPropertyId id, f32 x, f32 y, f32 z, CommandStack& cmds);
 
     [[nodiscard]] bool isPropertyDirty(MaterialPropertyId id) const;
+    [[nodiscard]] bool hasAnyPropertyDirty() const { return m_dirtyMask != 0u; }
     [[nodiscard]] bool needsPanelRefresh() const { return m_panelRefreshPending; }
     [[nodiscard]] u32 coalescedDirtyCount() const { return m_coalescedDirtyCount; }
+
+    /// Refresh guard — bound with a live edit-state pointer (B6.7 deepen follow-up).
+    [[nodiscard]] bool canRefreshFromEditState() const { return canPostProperty(); }
+    /// True when panel refresh can be skipped safely (B6.7 deepen follow-up).
+    [[nodiscard]] bool shouldSkipPanelRefresh() const {
+        return !needsPanelRefresh() || !canPostProperty();
+    }
 
     void clearPropertyDirty(MaterialPropertyId id);
     void clearAllPropertyDirty();
     void markPanelRefreshed();
+    /// Guarded refresh — no-op and returns false when unbound (B6.7 deepen follow-up).
+    bool tryMarkPanelRefreshed();
 
     void refreshFromEditState(const MaterialEditState& state);
+    /// Guarded external refresh — clamps and clears dirty only when bound (B6.7 deepen follow-up).
+    bool tryRefreshFromEditState(const MaterialEditState& state);
 
 private:
     static u32 propertyBit_(MaterialPropertyId id);
