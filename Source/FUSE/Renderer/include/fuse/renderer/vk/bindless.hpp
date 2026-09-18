@@ -67,8 +67,37 @@ bool bindlessSlotIndexOutOfRange(BindlessHeapKind kind, u32 index, u32 heapCapac
 /// True when slot table is full and the free list has no recyclable indices.
 bool bindlessHeapAtCapacity(u32 slotCount, u32 freeCount, u32 maxCapacity);
 
+/// True when the free list has recyclable slot indices.
+bool bindlessFreeListHasEntries(u32 freeCount);
+
+/// True when the heap table can grow before hitting the per-kind cap.
+bool bindlessHeapCanGrow(u32 slotCount, u32 maxCapacity);
+
+/// True when a slot allocation may succeed (free-list recycle or table growth).
+bool bindlessCanAllocateSlot(u32 slotCount, u32 freeCount, u32 maxCapacity, bool initialized);
+
 /// True when handle generation matches the live slot row (occupied required).
 bool bindlessSlotGenerationMatches(BindlessSlotHandle handle, u32 liveGeneration, bool occupied);
+
+/// True when a free-list index is in range for the current heap table.
+bool bindlessFreeListIndexInRange(u32 index, u32 heapCapacity);
+
+/// True when an index already appears on a bindless free list.
+bool bindlessFreeListContainsIndex(const std::vector<u32>& freeList, u32 index);
+
+/// Preflight for bindless heap allocation without mutating tables (B2.3 deepen follow-up).
+struct BindlessHeapPreflight {
+    bool initialized = false;
+    bool at_capacity = false;
+    bool free_list_has_entries = false;
+    bool can_grow = false;
+
+    [[nodiscard]] bool can_allocate() const {
+        return initialized && !at_capacity && (free_list_has_entries || can_grow);
+    }
+};
+
+BindlessHeapPreflight preflightBindlessHeap(u32 slotCount, u32 freeCount, u32 maxCapacity, bool initialized);
 
 /// Preflight for bindless slot lookup / free without touching heap tables (B2.3 deepen follow-up).
 struct BindlessSlotPreflight {
@@ -156,6 +185,12 @@ public:
     bool heapIsEmpty(BindlessHeapKind kind) const;
     /// True when slot table is at the per-kind ceiling with no free-list entries.
     bool heapAtCapacity(BindlessHeapKind kind) const;
+    /// Non-mutating preflight for heap allocation guards (B2.3 deepen follow-up).
+    BindlessHeapPreflight preflightHeap(BindlessHeapKind kind) const;
+    /// True when allocate*Slot may succeed for the given heap kind.
+    bool canAllocateSlot(BindlessHeapKind kind) const;
+    /// True when the slot index is already queued on the per-kind free list.
+    bool isIndexOnFreeList(BindlessHeapKind kind, u32 index) const;
 
     u32 registerTexture(const Texture& texture, bool storage = false);
     u32 registerBuffer(const Buffer& buffer, bool uniform = false);
