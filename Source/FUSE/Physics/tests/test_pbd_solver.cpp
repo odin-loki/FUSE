@@ -2145,6 +2145,192 @@ void testPreflightWarmStartCombinedIsland() {
                "combined graph batch seeds contact island");
 }
 
+void testPreflightIslandDispatchFromJobs() {
+    ContactIslandGraph graph;
+    std::vector<narrowphase::ContactManifold> contacts;
+    std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+        DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f},
+    };
+    graph.build(5, contacts, constraints);
+
+    const std::vector<IslandSolveJob> jobs = extract_island_jobs(graph);
+    const IslandDispatchJobPreflight validPreflight = preflight_island_dispatch_from_jobs(jobs, 1.f / 60.f);
+    expectTrue(!validPreflight.invalidDt, "job preflight accepts valid dt");
+    expectTrue(!validPreflight.skipped, "job preflight does not skip constrained jobs");
+    expectTrue(validPreflight.can_dispatch(), "job preflight can dispatch constrained jobs");
+    expectTrue(validPreflight.stats.dispatchableCount == graph.constrainedIslandCount(),
+               "job preflight dispatchable count matches constrained islands");
+    expectTrue(count_dispatchable_jobs(jobs) == validPreflight.stats.dispatchableCount,
+               "count_dispatchable_jobs matches job preflight stats");
+    expectTrue(has_dispatchable_jobs(jobs), "has_dispatchable_jobs true for constrained jobs");
+    expectTrue(!should_skip_island_dispatch_from_jobs(jobs, 1.f / 60.f),
+               "should_skip false for constrained jobs with valid dt");
+
+    const IslandDispatchJobPreflight invalidDtPreflight = preflight_island_dispatch_from_jobs(jobs, 0.f);
+    expectTrue(invalidDtPreflight.invalidDt, "job preflight rejects zero dt");
+    expectTrue(!invalidDtPreflight.can_dispatch(), "job preflight blocked on invalid dt");
+    expectTrue(should_skip_island_dispatch_from_jobs(jobs, 0.f),
+               "should_skip_island_dispatch_from_jobs on invalid dt");
+
+    ContactIslandGraph emptyGraph;
+    emptyGraph.build(0, {}, {});
+    const std::vector<IslandSolveJob> emptyJobs = extract_island_jobs(emptyGraph);
+    const IslandDispatchJobPreflight emptyPreflight = preflight_island_dispatch_from_jobs(emptyJobs, 1.f / 60.f);
+    expectTrue(emptyPreflight.skipped, "job preflight skips empty job list");
+    expectTrue(!has_dispatchable_jobs(emptyJobs), "has_dispatchable_jobs false for empty jobs");
+}
+
+void testPreflightWarmStartContactImpulsesGraph() {
+    std::vector<narrowphase::ContactManifold> contacts;
+    contacts.push_back(narrowphase::ContactManifold{});
+    contacts.back().valid = true;
+    contacts.back().bodyA = 0;
+    contacts.back().bodyB = 1;
+    contacts.back().warmNormalImpulse = 2.5f;
+    contacts.push_back(narrowphase::ContactManifold{});
+    contacts.back().valid = true;
+    contacts.back().bodyA = 2;
+    contacts.back().bodyB = 3;
+    contacts.back().warmNormalImpulse = 0.f;
+
+    ContactIslandGraph graph;
+    graph.build(5, contacts, {});
+    const f32 dt = 1.f / 60.f;
+
+    const IslandContactImpulseWarmStartGraphPreflight preflight =
+        preflight_warm_start_contact_impulses_graph(graph, contacts, dt);
+    expectTrue(!preflight.skipped, "impulse graph preflight does not skip contact graph");
+    expectTrue(!preflight.invalidDt, "impulse graph preflight accepts valid dt");
+    expectTrue(preflight.can_warm_start(), "impulse graph preflight can warm-start");
+    expectTrue(preflight.stats.warmStartableCount == 1u,
+               "impulse graph preflight counts one warm-startable island");
+    expectTrue(preflight.stats.emptyCount + preflight.stats.warmStartableCount +
+                       preflight.stats.zeroImpulseCount ==
+                   preflight.stats.totalIslands,
+               "impulse warm-start stats partition total islands");
+    expectTrue(count_warm_startable_contact_impulse_islands(graph, contacts, dt) ==
+                   preflight.stats.warmStartableCount,
+               "count_warm_startable_contact_impulse_islands matches stats");
+    expectTrue(has_warm_startable_contact_impulse_islands(graph, contacts, dt),
+               "has_warm_startable_contact_impulse_islands true when impulses exist");
+    expectTrue(!should_skip_warm_start_contact_impulses_graph(graph, contacts, dt),
+               "should_skip_warm_start_contact_impulses_graph false when impulses exist");
+
+    const std::vector<u32> indices = collect_warm_startable_contact_impulse_island_indices(graph, contacts, dt);
+    expectTrue(indices.size() == 1u, "collect impulse indices returns warm-startable count");
+
+    const IslandContactImpulseWarmStartGraphPreflight invalidDtPreflight =
+        preflight_warm_start_contact_impulses_graph(graph, contacts, 0.f);
+    expectTrue(invalidDtPreflight.invalidDt, "impulse graph preflight rejects zero dt");
+    expectTrue(!invalidDtPreflight.can_warm_start(), "impulse graph preflight blocked on invalid dt");
+    expectTrue(should_skip_warm_start_contact_impulses_graph(graph, contacts, 0.f),
+               "should_skip_warm_start_contact_impulses_graph on invalid dt");
+}
+
+void testPreflightWarmStartCombinedGraphAndIndex() {
+    std::vector<narrowphase::ContactManifold> contacts;
+    contacts.push_back(narrowphase::ContactManifold{});
+    contacts.back().valid = true;
+    contacts.back().bodyA = 0;
+    contacts.back().bodyB = 1;
+    contacts.back().warmNormalImpulse = 2.f;
+
+    ContactIslandGraph graph;
+    graph.build(3, contacts, {});
+
+    const std::vector<f32> priorDistance = {0.12f};
+    const std::vector<f32> priorContact = {0.24f};
+    const f32 dt = 1.f / 60.f;
+
+    const IslandCombinedWarmStartGraphPreflight preflight =
+        preflight_warm_start_combined_graph(graph, contacts, dt, priorDistance, priorContact);
+    expectTrue(!preflight.skipped, "combined graph preflight does not skip contact graph");
+    expectTrue(!preflight.invalidDt, "combined graph preflight accepts valid dt");
+    expectTrue(preflight.can_warm_start(), "combined graph preflight can warm-start");
+    expectTrue(preflight.stats.warmStartableCount == 1u,
+               "combined graph preflight counts one warm-startable island");
+    expectTrue(count_warm_startable_combined_islands(graph, contacts, dt, priorDistance, priorContact) ==
+                   preflight.stats.warmStartableCount,
+               "count_warm_startable_combined_islands matches stats");
+    expectTrue(has_warm_startable_combined_islands(graph, contacts, dt, priorDistance, priorContact),
+               "has_warm_startable_combined_islands true when prior data exists");
+    expectTrue(!should_skip_warm_start_combined_graph(graph, contacts, dt, priorDistance, priorContact),
+               "should_skip_warm_start_combined_graph false when islands can seed");
+
+    const std::vector<u32> indices =
+        collect_warm_startable_combined_island_indices(graph, contacts, dt, priorDistance, priorContact);
+    expectTrue(indices.size() == 1u, "collect combined indices returns warm-startable count");
+
+    const IslandCombinedWarmStartPreflight outOfRange =
+        preflight_warm_start_combined_island_by_index(graph,
+                                                      graph.islandCount() + 1u,
+                                                      contacts,
+                                                      dt,
+                                                      priorDistance,
+                                                      priorContact);
+    expectTrue(outOfRange.skipped, "combined index preflight skips out-of-range island");
+    expectTrue(should_skip_warm_start_combined_island_index(graph, graph.islandCount() + 1u, dt),
+               "should_skip_warm_start_combined_island_index on out-of-range index");
+
+    bool foundEmptySkip = false;
+    for (u32 islandIndex = 0; islandIndex < graph.islandCount(); ++islandIndex) {
+        const ContactIslandGraph::Island& island = graph.island(islandIndex);
+        if (!island.isEmpty()) {
+            continue;
+        }
+        foundEmptySkip = true;
+        expectTrue(should_skip_warm_start_combined_island_index(graph, islandIndex, dt),
+                   "should_skip_warm_start_combined_island_index on empty island");
+    }
+    expectTrue(foundEmptySkip, "graph exposes empty island for combined index guard");
+
+    const IslandCombinedWarmStartGraphPreflight invalidDtPreflight =
+        preflight_warm_start_combined_graph(graph, contacts, 0.f, priorDistance, priorContact);
+    expectTrue(invalidDtPreflight.invalidDt, "combined graph preflight rejects zero dt");
+    expectTrue(!invalidDtPreflight.can_warm_start(), "combined graph preflight blocked on invalid dt");
+}
+
+void testWarmStartAllIslandsCombinedResultBatch() {
+    SolverWorkBuffers work;
+    work.init(4, 2, 1);
+    work.ensureLambdaCapacity(2, 1);
+
+    std::vector<narrowphase::ContactManifold> contacts;
+    contacts.push_back(narrowphase::ContactManifold{});
+    contacts.back().valid = true;
+    contacts.back().bodyA = 0;
+    contacts.back().bodyB = 1;
+    contacts.back().warmNormalImpulse = 2.f;
+
+    ContactIslandGraph graph;
+    graph.build(3, contacts, {});
+
+    const std::vector<f32> priorDistance = {0.12f};
+    const std::vector<f32> priorContact = {0.24f};
+    const f32 dt = 1.f / 60.f;
+
+    work.clearLambdas();
+    const IslandBatchWarmStartResult batch =
+        warm_start_all_islands_combined_result(work, graph, contacts, dt, priorDistance, priorContact);
+    expectTrue(!batch.skipped, "combined batch does not skip contact graph");
+    expectTrue(batch.warmStartableCount == 1u, "combined batch records warm-startable count");
+    expectTrue(batch.warmedCount == 1u, "combined batch warms contact island");
+    expectTrue(batch.any_warmed(), "combined batch reports warmed island");
+    expectNear(work.contactLambdas()[0], 0.24f, 1e-6f,
+               "combined batch seeds prior contact lambda");
+
+    work.clearLambdas();
+    expectTrue(warm_start_all_islands_combined_guarded(work, graph, contacts, dt, priorDistance, priorContact) == 1u,
+               "combined guarded count matches batch warmed count");
+
+    work.clearLambdas();
+    const IslandBatchWarmStartResult invalidDtBatch =
+        warm_start_all_islands_combined_result(work, graph, contacts, 0.f, priorDistance, priorContact);
+    expectTrue(invalidDtBatch.skipped, "combined batch skips invalid dt");
+    expectTrue(!invalidDtBatch.any_warmed(), "invalid dt combined batch reports no warmed islands");
+}
+
 void testEarlyExitWhenResidualBelowTolerance() {
     CollisionShapeSoA shapes;
     RigidBodySoA bodies;
@@ -2241,6 +2427,10 @@ int main() {
     testPreflightWarmStartContactImpulsesGuards();
     testWarmStartContactImpulsesResultAndBatch();
     testPreflightWarmStartCombinedIsland();
+    testPreflightIslandDispatchFromJobs();
+    testPreflightWarmStartContactImpulsesGraph();
+    testPreflightWarmStartCombinedGraphAndIndex();
+    testWarmStartAllIslandsCombinedResultBatch();
     testEarlyExitWhenResidualBelowTolerance();
     fuse::core::shutdown();
 
