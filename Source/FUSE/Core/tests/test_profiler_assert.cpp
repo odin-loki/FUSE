@@ -1113,6 +1113,163 @@ void testDisabledBeginAsyncFlowDoesNotIncrementOpenCount() {
     expectTrue(fuse::profiler::openAsyncFlowCount() == 0u, "enabled flow pair clears open count");
 }
 
+void testEmptyStringNameGuards() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    {
+        fuse::profiler::ProfileScope emptyScope("");
+    }
+    fuse::profiler::beginAsyncFlow("", 1u);
+    fuse::profiler::endAsyncFlow("", 1u);
+    fuse::profiler::sampleCounter("", 42);
+    fuse::profiler::sampleCounterFloat("", 1.5);
+    fuse::profiler::sampleCounterSnapshotAtFrame("", 7);
+    fuse::profiler::sampleCounterFloatSnapshotAtFrame("", 0.25);
+
+    expectTrue(fuse::profiler::eventCount() == 0u, "empty-string names record nothing");
+    expectTrue(!fuse::profiler::isValidEventName(nullptr), "null name is invalid");
+    expectTrue(!fuse::profiler::isValidEventName(""), "empty-string name is invalid");
+    expectTrue(fuse::profiler::isValidEventName("valid"), "non-empty name is valid");
+    expectTrue(fuse::profiler::isScopeNestingBalanced(), "empty scope name does not unbalance nesting");
+    expectTrue(fuse::profiler::isFlowNestingBalanced(), "empty flow names do not unbalance flow depth");
+    expectTrue(!fuse::profiler::hasOpenAsyncFlows(), "empty flow names do not leave open async flows");
+    expectTrue(fuse::profiler::exportChromeTraceJson().find("\"traceEvents\":[]") != std::string::npos,
+               "empty-string guard leaves export empty");
+}
+
+void testNestingBalanceIntrospection() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::isScopeNestingBalanced(), "reset leaves scope nesting balanced");
+    expectTrue(fuse::profiler::isFlowNestingBalanced(), "reset leaves flow nesting balanced");
+    expectTrue(!fuse::profiler::hasOpenAsyncFlows(), "reset leaves no open async flows");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    {
+        FUSE_PROFILE_SCOPE("balance_outer");
+        expectTrue(!fuse::profiler::isScopeNestingBalanced(), "active scope reports unbalanced nesting");
+        FUSE_PROFILE_ASYNC_FLOW_BEGIN("balance_flow", flowId);
+        expectTrue(!fuse::profiler::isFlowNestingBalanced(), "open flow reports unbalanced flow nesting");
+        expectTrue(fuse::profiler::hasOpenAsyncFlows(), "open flow reports hasOpenAsyncFlows");
+        FUSE_PROFILE_ASYNC_FLOW_END("balance_flow", flowId);
+        expectTrue(fuse::profiler::isFlowNestingBalanced(), "flow end restores balanced flow nesting");
+        expectTrue(!fuse::profiler::hasOpenAsyncFlows(), "flow end clears hasOpenAsyncFlows");
+    }
+    expectTrue(fuse::profiler::isScopeNestingBalanced(), "scope end restores balanced nesting");
+}
+
+void testTryEventAtGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::ProfileEvent outEvent{};
+    expectTrue(!fuse::profiler::tryEventAt(0u, outEvent), "tryEventAt false on empty buffer");
+    expectTrue(outEvent.name == nullptr, "tryEventAt clears output on empty buffer");
+    expectTrue(!fuse::profiler::isValidProfileEvent(outEvent),
+               "tryEventAt output is invalid on empty buffer");
+
+    {
+        FUSE_PROFILE_SCOPE("try_scope");
+    }
+
+    expectTrue(fuse::profiler::tryEventAt(0u, outEvent), "tryEventAt true for first event");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::Begin, "tryEventAt copies begin phase");
+    expectTrue(outEvent.name != nullptr && std::string(outEvent.name) == "try_scope",
+               "tryEventAt copies event name");
+
+    expectTrue(fuse::profiler::tryEventAt(1u, outEvent), "tryEventAt true for last event");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::End, "tryEventAt copies end phase");
+
+    expectTrue(!fuse::profiler::tryEventAt(2u, outEvent), "tryEventAt false past event count");
+    expectTrue(outEvent.name == nullptr, "tryEventAt clears output when out of range");
+}
+
+void testResetRestoresNestingBalance() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    {
+        FUSE_PROFILE_SCOPE("reset_balance_outer");
+        FUSE_PROFILE_ASYNC_FLOW_BEGIN("reset_balance_flow", flowId);
+    }
+
+    expectTrue(fuse::profiler::isScopeNestingBalanced(),
+               "ended scope restores nesting balance even with open flow");
+    expectTrue(!fuse::profiler::isFlowNestingBalanced(), "unmatched flow leaves flow nesting unbalanced");
+    expectTrue(fuse::profiler::hasOpenAsyncFlows(), "unmatched flow leaves open async flows");
+
+    fuse::profiler::reset();
+
+    expectTrue(fuse::profiler::isScopeNestingBalanced(), "reset restores scope nesting balance");
+    expectTrue(fuse::profiler::isFlowNestingBalanced(), "reset restores flow nesting balance");
+    expectTrue(!fuse::profiler::hasOpenAsyncFlows(), "reset clears open async flows");
+    expectTrue(fuse::profiler::isBufferEmpty(), "reset clears buffer after unmatched nesting");
+}
+
+void testCrossThreadFlowPreservesOpenCountGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 flowId = 55u;
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("cross_thread_guard", flowId);
+    expectTrue(fuse::profiler::hasOpenAsyncFlows(), "begin on main leaves open flow");
+
+    std::atomic<bool> workerDone{false};
+    std::atomic<fuse::u32> workerTid{0};
+    std::thread worker([&]() {
+        workerTid.store(fuse::platform::chromeTraceThreadId(), std::memory_order_release);
+        FUSE_PROFILE_ASYNC_FLOW_END("cross_thread_guard", flowId);
+        workerDone.store(true, std::memory_order_release);
+    });
+    worker.join();
+    expectTrue(workerDone.load(std::memory_order_acquire), "worker thread completed");
+
+    expectTrue(fuse::profiler::eventCount() == 2u, "cross-thread end still records finish event");
+    expectTrue(!fuse::profiler::hasOpenAsyncFlows(), "cross-thread end clears open flow count");
+    expectTrue(fuse::profiler::flowNestingDepth() == 1u,
+               "begin-thread flow depth remains until same-thread end or reset");
+
+    const fuse::profiler::ProfileEvent& flowFinish = fuse::profiler::eventAt(1);
+    expectTrue(flowFinish.threadId == workerTid.load(std::memory_order_acquire),
+               "cross-thread finish records worker tid");
+}
+
+void testChromeExportPreflight() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::profiler::ChromeExportPreflight emptyPreflight = fuse::profiler::preflightChromeExport();
+    expectTrue(emptyPreflight.canExport(), "empty buffer can still export");
+    expectTrue(emptyPreflight.bufferEmpty, "preflight marks empty buffer");
+    expectTrue(!emptyPreflight.hasStateWarnings(), "clean reset has no state warnings");
+    expectTrue(!emptyPreflight.unbalancedScopeNesting, "reset leaves scope nesting balanced");
+    expectTrue(!emptyPreflight.unbalancedFlowNesting, "reset leaves flow nesting balanced");
+    expectTrue(!emptyPreflight.hasOpenAsyncFlows, "reset leaves no open async flows");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    {
+        FUSE_PROFILE_SCOPE("export_outer");
+        FUSE_PROFILE_ASYNC_FLOW_BEGIN("export_flow", flowId);
+    }
+
+    const fuse::profiler::ChromeExportPreflight dirtyPreflight = fuse::profiler::preflightChromeExport();
+    expectTrue(dirtyPreflight.canExport(), "unbalanced state can still export");
+    expectTrue(!dirtyPreflight.bufferEmpty, "preflight sees recorded events");
+    expectTrue(dirtyPreflight.hasStateWarnings(), "unmatched flow triggers state warnings");
+    expectTrue(!dirtyPreflight.unbalancedScopeNesting, "ended scope is balanced");
+    expectTrue(dirtyPreflight.unbalancedFlowNesting, "unmatched flow marks flow nesting unbalanced");
+    expectTrue(dirtyPreflight.hasOpenAsyncFlows, "unmatched flow marks open async flows");
+
+    const std::string json = fuse::profiler::exportChromeTraceJson();
+    expectTrue(json.find("\"traceEvents\":[") != std::string::npos,
+               "preflight does not block chrome export");
+    expectTrue(json.find("\"name\":\"export_outer\"") != std::string::npos,
+               "preflight export includes recorded scope");
+}
+
 void testVerifyMacro() {
     resetState();
     fuse::assertion::setSuppressAbortForTests(true);
@@ -1183,6 +1340,12 @@ int main() {
     testDisabledScopeDoesNotMutateNestingDepth();
     testMultipleOrphanAsyncFlowEndsAreIgnored();
     testDisabledBeginAsyncFlowDoesNotIncrementOpenCount();
+    testEmptyStringNameGuards();
+    testNestingBalanceIntrospection();
+    testTryEventAtGuard();
+    testResetRestoresNestingBalance();
+    testCrossThreadFlowPreservesOpenCountGuard();
+    testChromeExportPreflight();
     testFatalHandlerHook();
     testVerifyMacro();
 
