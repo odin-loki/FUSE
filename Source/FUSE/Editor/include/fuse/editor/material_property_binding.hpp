@@ -33,6 +33,14 @@ public:
     /// Binding guard — bound with a live edit-state pointer (B6.7 deepen).
     [[nodiscard]] bool canPostProperty() const { return isBound() && m_editState != nullptr; }
 
+    /// Refresh guard — bound binding can mirror external edit state (B6.7 deepen follow-up).
+    [[nodiscard]] bool canRefreshFromEditState() const { return canPostProperty(); }
+
+    /// Early-out for panel refresh loops when nothing is dirty or binding is idle (B6.7 deepen follow-up).
+    [[nodiscard]] bool shouldSkipPanelRefresh() const {
+        return !isBound() || !m_panelRefreshPending;
+    }
+
     bool getRoughness(f32& out) const;
     bool getMetallic(f32& out) const;
     bool getBaseColor(f32& r, f32& g, f32& b) const;
@@ -62,6 +70,12 @@ public:
     void clearPropertyDirty(MaterialPropertyId id);
     void clearAllPropertyDirty();
     void markPanelRefreshed();
+
+    /// Guarded refresh/dirty helpers — no-op when unbound or property id invalid (B6.7 deepen follow-up).
+    bool tryRefreshFromEditState(const MaterialEditState& state);
+    bool tryMarkPanelRefreshed();
+    bool tryClearPropertyDirty(MaterialPropertyId id);
+    [[nodiscard]] bool tryIsPropertyDirty(MaterialPropertyId id) const;
 
     void refreshFromEditState(const MaterialEditState& state);
 

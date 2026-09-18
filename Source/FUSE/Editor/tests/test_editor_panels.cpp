@@ -663,6 +663,114 @@ void testPropertyInspectorMeshMaterialInvalidSlot() {
     scene.destroy();
 }
 
+void testMaterialPropertyBindingRefreshGuards() {
+    fuse::editor::MaterialPropertyBinding binding;
+    expectTrue(!binding.canRefreshFromEditState(), "unbound binding cannot refresh");
+    expectTrue(binding.shouldSkipPanelRefresh(), "unbound binding skips panel refresh");
+
+    fuse::editor::MaterialEditState state{};
+    expectTrue(!binding.tryRefreshFromEditState(state), "tryRefresh fails when unbound");
+    expectTrue(!binding.tryMarkPanelRefreshed(), "tryMarkPanelRefreshed fails when unbound");
+    expectTrue(!binding.tryClearPropertyDirty(fuse::editor::MaterialPropertyId::Roughness),
+               "tryClearPropertyDirty fails when unbound");
+    expectTrue(!binding.tryIsPropertyDirty(fuse::editor::MaterialPropertyId::Roughness),
+               "tryIsPropertyDirty fails when unbound");
+
+    fuse::editor::EditorState editorState;
+    fuse::editor::MaterialEditorPanel panel;
+    panel.sync(editorState, 1u);
+    panel.selectMaterial(0u);
+    fuse::editor::MaterialPropertyBinding& bound = panel.propertyBinding();
+
+    expectTrue(bound.canRefreshFromEditState(), "bound binding can refresh");
+    expectTrue(bound.shouldSkipPanelRefresh(), "fresh binding skips panel refresh");
+
+    fuse::editor::CommandStack cmds;
+    expectTrue(bound.setRoughness(0.4f, cmds), "edit marks binding dirty");
+    expectTrue(!bound.shouldSkipPanelRefresh(), "dirty binding needs panel refresh");
+    expectTrue(bound.tryIsPropertyDirty(fuse::editor::MaterialPropertyId::Roughness),
+               "tryIsPropertyDirty reports dirty roughness");
+
+    fuse::editor::MaterialEditState external{};
+    external.roughness = 0.9f;
+    expectTrue(bound.tryRefreshFromEditState(external), "tryRefresh succeeds when bound");
+    expectTrue(panel.editState().roughness == 0.9f, "tryRefresh mirrors external state");
+    expectTrue(bound.shouldSkipPanelRefresh(), "refresh clears panel refresh pending");
+
+    expectTrue(bound.setMetallic(0.5f, cmds), "second edit marks dirty again");
+    expectTrue(bound.tryClearPropertyDirty(fuse::editor::MaterialPropertyId::Metallic),
+               "tryClearPropertyDirty succeeds for valid id");
+    expectTrue(!bound.isPropertyDirty(fuse::editor::MaterialPropertyId::Metallic),
+               "tryClearPropertyDirty clears metallic dirty bit");
+
+    expectTrue(bound.tryMarkPanelRefreshed(), "tryMarkPanelRefreshed succeeds when bound");
+    expectTrue(!bound.needsPanelRefresh(), "tryMarkPanelRefreshed clears refresh pending");
+}
+
+void testMaterialPropertyInspectRefreshGuards() {
+    expectTrue(fuse::editor::shouldSkipMaterialInspectorBind(0u),
+               "empty catalog skips inspector bind");
+    expectTrue(!fuse::editor::shouldSkipMaterialInspectorBind(2u),
+               "non-empty catalog does not skip bind");
+
+    expectTrue(fuse::editor::canRefreshMaterialSlot(1u, 3u),
+               "in-range slot can refresh");
+    expectTrue(!fuse::editor::canRefreshMaterialSlot(3u, 3u),
+               "out-of-range slot cannot refresh");
+    expectTrue(!fuse::editor::canRefreshMaterialSlot(0u, 0u),
+               "empty catalog rejects refresh slot");
+}
+
+void testMaterialEditorPanelShouldSkipMaterialEdit() {
+    fuse::editor::EditorState state;
+    fuse::editor::MaterialEditorPanel panel;
+    panel.sync(state, 0u);
+
+    expectTrue(panel.shouldSkipMaterialEdit(), "empty catalog skips material edit");
+    expectTrue(!panel.canRefreshPanel(), "empty catalog cannot refresh panel");
+
+    panel.sync(state, 2u);
+    expectTrue(panel.shouldSkipMaterialEdit(), "unselected panel skips material edit");
+    expectTrue(!panel.canRefreshPanel(), "unselected panel cannot refresh");
+
+    expectTrue(panel.selectMaterial(0u), "select enables edits");
+    expectTrue(!panel.shouldSkipMaterialEdit(), "selected panel accepts edits");
+    expectTrue(panel.canRefreshPanel(), "selected panel can refresh");
+}
+
+void testMaterialEditorPanelTryRefreshPanel() {
+    fuse::editor::EditorState state;
+    fuse::editor::MaterialEditorPanel panel;
+    panel.sync(state, 1u);
+
+    expectTrue(!panel.tryRefreshPanel(), "tryRefreshPanel fails without selection");
+
+    panel.selectMaterial(0u);
+    expectTrue(panel.tryRefreshPanel(), "tryRefreshPanel succeeds with selection");
+    expectTrue(!panel.needsPanelRefresh(), "tryRefreshPanel clears binding refresh pending");
+    expectTrue(!panel.previewDirty(), "tryRefreshPanel clears preview dirty");
+
+    panel.sync(state, 0u);
+    expectTrue(!panel.tryRefreshPanel(), "tryRefreshPanel fails after empty-catalog sync");
+    expectTrue(panel.shouldSkipMaterialEdit(), "empty-catalog sync skips edits");
+}
+
+void testMaterialEditorPanelEmptyCatalogSyncEarlyOut() {
+    fuse::editor::EditorState state;
+    fuse::editor::MaterialEditorPanel panel;
+    panel.sync(state, 2u);
+    expectTrue(panel.selectMaterial(1u), "select material before empty sync");
+    expectTrue(panel.propertyBinding().isBound(), "binding active before empty sync");
+
+    panel.sync(state, 0u);
+    expectTrue(panel.isCatalogEmpty(), "sync to zero marks catalog empty");
+    expectTrue(panel.selectedMaterialId() == fuse::editor::MaterialEditorPanel::kInvalidMaterialId,
+               "empty sync clears selection id");
+    expectTrue(!panel.propertyBinding().isBound(), "empty sync unbinds property binding");
+    expectTrue(fuse::editor::shouldSkipMaterialInspectorBind(panel.catalogCount()),
+               "empty sync enables inspector bind skip");
+}
+
 void testMaterialPropertyBindingUnbound() {
     fuse::editor::MaterialPropertyBinding binding;
     expectTrue(!binding.isBound(), "default binding is unbound");
@@ -835,6 +943,11 @@ int main() {
     testMaterialEditorPanelCatalogShrink();
     testMaterialPropertyBindingClamp();
     testMaterialPropertyBindingDirtyCoalesce();
+    testMaterialPropertyBindingRefreshGuards();
+    testMaterialPropertyInspectRefreshGuards();
+    testMaterialEditorPanelShouldSkipMaterialEdit();
+    testMaterialEditorPanelTryRefreshPanel();
+    testMaterialEditorPanelEmptyCatalogSyncEarlyOut();
     testMaterialPropertyBindingUnbound();
     testPropertyInspectorMeshMaterialId();
     testPropertyInspectorMeshMaterialEmptyCatalog();
