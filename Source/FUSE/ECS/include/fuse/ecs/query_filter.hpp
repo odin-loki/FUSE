@@ -55,9 +55,16 @@ template <typename... WithTs, typename... WithoutTs>
 /// Preflight result for archetype-table queries — bundles runnable/conflict and empty-table guards.
 struct QueryFilterPreflight {
     bool runnable = false;
+    bool has_conflict = false;
     bool empty_table = true;
     u32 matching_archetypes = 0;
     u32 matching_entities = 0;
+
+    /// True when the filter is runnable and at least one archetype signature matches (zero-row signatures count).
+    [[nodiscard]] bool can_match() const { return runnable && matching_archetypes > 0; }
+
+    /// True when entity iteration would visit zero rows (conflict, empty table, or no matching entities).
+    [[nodiscard]] bool should_skip() const { return !can_iterate(); }
 
     [[nodiscard]] bool can_iterate() const { return runnable && matching_entities > 0; }
 };
@@ -65,6 +72,12 @@ struct QueryFilterPreflight {
 /// Evaluate runnable/conflict and empty-table guards plus matching archetype/entity counts.
 [[nodiscard]] QueryFilterPreflight preflight_query_filter(const std::vector<Archetype>& archetypes,
                                                           const QueryFilter& filter);
+
+/// Convenience guard — `preflight_query_filter(archetypes, filter).can_match()`.
+[[nodiscard]] bool can_match_query_filter(const std::vector<Archetype>& archetypes, const QueryFilter& filter);
+
+/// Convenience guard — `preflight_query_filter(archetypes, filter).should_skip()`.
+[[nodiscard]] bool should_skip_query_filter(const std::vector<Archetype>& archetypes, const QueryFilter& filter);
 
 /// True when `archetype` contains every `with` type and none of the `without` types.
 [[nodiscard]] bool archetype_matches(const Archetype& archetype, const QueryFilter& filter);
