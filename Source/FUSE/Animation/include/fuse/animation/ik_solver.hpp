@@ -73,6 +73,9 @@ struct TwoBoneIK {
     /// True when either limb segment has near-zero length in the current pose.
     [[nodiscard]] bool has_degenerate_segments(const Pose& pose) const;
 
+    /// True when the skeleton chain is valid and the pose is empty/mismatched (bind fallback) or non-degenerate.
+    [[nodiscard]] bool has_valid_pose(const Skeleton& skel, const Pose& pose) const;
+
     /// Upper + lower segment length from the current pose, minus `reach_epsilon` (matches clamp behaviour).
     [[nodiscard]] f32 max_reach(const Pose& pose) const;
 

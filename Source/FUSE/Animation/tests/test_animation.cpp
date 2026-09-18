@@ -1153,6 +1153,115 @@ void testRetargetClear() {
     expectTrue(!map.is_target_mapped(0), "retarget is_target_mapped false after clear");
 }
 
+void testTwoBoneIKEmptyPoseBindFallback() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+    fuse::animation::Pose pose{};
+
+    fuse::animation::TwoBoneIK ik;
+    ik.root_bone = 0;
+    ik.mid_bone = 1;
+    ik.end_bone = 2;
+    ik.target = {1.f, 1.f, 0.f, 0.f};
+    ik.pole_vector = {0.f, 0.f, 1.f, 0.f};
+
+    expectTrue(ik.has_valid_pose(skel, pose), "two bone ik empty pose is valid via bind fallback");
+    expectTrue(ik.solve(pose, skel), "two bone ik seeds bind pose when output buffer is empty");
+    expectTrue(pose.bone_count == skel.bone_count, "two bone ik empty pose bind fallback fills pose buffer");
+
+    const fuse::f32 endError = std::sqrt(
+        (pose.bone_world_transforms[2].data[12] - ik.target.x) * (pose.bone_world_transforms[2].data[12] - ik.target.x) +
+        (pose.bone_world_transforms[2].data[13] - ik.target.y) * (pose.bone_world_transforms[2].data[13] - ik.target.y));
+    expectTrue(endError < 0.05f, "two bone ik empty pose bind fallback reaches target");
+}
+
+void testTwoBoneIKSolveFailurePreservesPose() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+    fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
+    pose.bone_world_transforms[1].data[12] = pose.bone_world_transforms[0].data[12];
+    pose.bone_world_transforms[1].data[13] = pose.bone_world_transforms[0].data[13];
+    pose.bone_world_transforms[1].data[14] = pose.bone_world_transforms[0].data[14];
+
+    const fuse::f32 midYBefore = pose.bone_world_transforms[1].data[13];
+
+    fuse::animation::TwoBoneIK ik;
+    ik.root_bone = 0;
+    ik.mid_bone = 1;
+    ik.end_bone = 2;
+    ik.target = {1.f, 1.f, 0.f, 0.f};
+    expectTrue(!ik.has_valid_pose(skel, pose), "two bone ik has_valid_pose rejects degenerate segments");
+    expectTrue(!ik.solve(pose, skel), "two bone ik degenerate solve returns false");
+    expectNear(pose.bone_world_transforms[1].data[13], midYBefore, 1e-4f,
+               "two bone ik degenerate solve leaves pose unchanged");
+}
+
+void testTwoBoneIKSoADegenerateSegments() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::from_bind_pose(skel);
+    pose.local_positions[1] = {0.f, 0.f, 0.f, 0.f};
+    pose.compute_world_transforms(skel);
+
+    fuse::animation::TwoBoneIK ik;
+    ik.root_bone = 0;
+    ik.mid_bone = 1;
+    ik.end_bone = 2;
+    ik.target = {1.f, 1.f, 0.f, 0.f};
+    expectTrue(!ik.solve(pose, skel), "two bone ik soa rejects degenerate limb segments");
+}
+
+void testFabrikEmptySkeletonGuards() {
+    const fuse::animation::Skeleton empty{};
+    fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(empty);
+
+    fuse::animation::FABRIKChain chain;
+    chain.bone_indices = {0, 1};
+    chain.target = {0.f, 2.f, 0.f, 0.f};
+    expectTrue(!chain.has_valid_chain(empty), "fabrik rejects chain on empty skeleton");
+    expectTrue(!chain.solve(pose, empty), "fabrik solve returns false on empty skeleton");
+    expectTrue(pose.bone_count == 0u, "fabrik empty skeleton solve leaves pose empty");
+}
+
+void testFabrikEmptyPoseBindFallback() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::Pose pose{};
+
+    fuse::animation::FABRIKChain chain;
+    chain.bone_indices = {0, 1};
+    chain.target = {0.5f, 2.f, 0.f, 0.f};
+    chain.max_iterations = 8;
+    expectTrue(chain.solve(pose, skel), "fabrik seeds bind pose when output buffer is empty");
+    expectTrue(pose.bone_count == skel.bone_count, "fabrik empty pose bind fallback fills pose buffer");
+}
+
+void testRetargetApplyEmptyTargetSkeleton() {
+    const fuse::animation::Skeleton sourceSkel = makeTwoBoneSkeleton();
+    const fuse::animation::Skeleton emptyTarget{};
+    const fuse::animation::RetargetMap map = fuse::animation::RetargetMap::build_by_name(sourceSkel, emptyTarget);
+
+    fuse::animation::PoseSoA sourcePose = fuse::animation::PoseSoA::from_bind_pose(sourceSkel);
+    fuse::animation::PoseSoA targetPose = fuse::animation::PoseSoA::from_bind_pose(sourceSkel);
+    map.apply_pose_soa(sourcePose, emptyTarget, targetPose);
+    expectTrue(targetPose.bone_count == 0u, "retarget apply_pose_soa clears output when target skeleton is empty");
+
+    fuse::animation::Pose sourceAoS = sourcePose.to_pose();
+    fuse::animation::Pose targetAoS = fuse::animation::Pose::make_bind_pose(sourceSkel);
+    map.apply_pose(sourceAoS, emptyTarget, targetAoS);
+    expectTrue(targetAoS.bone_count == 0u, "retarget apply_pose clears output when target skeleton is empty");
+}
+
+void testRetargetIsValidRejectsDuplicates() {
+    fuse::animation::RetargetMap map{};
+    map.source_bone_count = 2;
+    map.target_bone_count = 2;
+    map.bone_map.push_back({0, 0, 1.f});
+    map.bone_map.push_back({0, 1, 1.f});
+    expectTrue(!map.is_valid(), "retarget is_valid rejects duplicate source bone mappings");
+
+    map.bone_map.clear();
+    map.bone_map.push_back({0, 0, 1.f});
+    map.bone_map.push_back({1, 0, 1.f});
+    expectTrue(!map.is_valid(), "retarget is_valid rejects duplicate target bone mappings");
+}
+
 void testBlendPoseSoAReuse() {
     const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
     fuse::animation::PoseSoA poseA = fuse::animation::PoseSoA::from_bind_pose(skel);
@@ -1969,6 +2078,13 @@ int main() {
     testRetargetApplyEmptySourcePose();
     testRetargetApplyInvalidMap();
     testRetargetClear();
+    testTwoBoneIKEmptyPoseBindFallback();
+    testTwoBoneIKSolveFailurePreservesPose();
+    testTwoBoneIKSoADegenerateSegments();
+    testFabrikEmptySkeletonGuards();
+    testFabrikEmptyPoseBindFallback();
+    testRetargetApplyEmptyTargetSkeleton();
+    testRetargetIsValidRejectsDuplicates();
     testEmptyBlendSpace1D();
     testEmptyBlendSpace2D();
     testEmptyStateMachine();
