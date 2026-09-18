@@ -20,6 +20,12 @@ struct PairBufferSoA {
 
     bool isEmpty() const { return activeCount == 0u; }
     bool hasValidPairs() const { return activeCount > 0u; }
+    /// True when `maxCapacity` is set and no additional pairs may be pushed.
+    bool isFull() const { return maxCapacity > 0u && activeCount >= maxCapacity; }
+    /// Remaining push slots before `maxCapacity` clamp (unlimited when `maxCapacity == 0`).
+    u32 remainingCapacity() const;
+    /// True when post-pass truncation would drop pairs.
+    bool canApplyMaxCapacityClamp() const;
     /// True when both dense and slot storage are empty (safe to skip SoA scans).
     bool canSkipSoAIteration() const { return activeCount == 0u && pairSlotCount == 0u; }
     /// True when at most one canonical pair is present (dedupe is a no-op).

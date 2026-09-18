@@ -12,6 +12,18 @@
 
 namespace fuse::physics::broadphase {
 
+const char* candidatePairRejectReasonName(CandidatePairRejectReason reason) {
+    switch (reason) {
+    case CandidatePairRejectReason::None:
+        return "None";
+    case CandidatePairRejectReason::SelfPair:
+        return "SelfPair";
+    case CandidatePairRejectReason::OutOfRangeBody:
+        return "OutOfRangeBody";
+    }
+    return "Unknown";
+}
+
 namespace {
 
 constexpr u32 kBuildGrainSize = 8u;
@@ -237,12 +249,13 @@ void runBroadphaseIntoBufferInternal(
         return;
     }
 
-    const u32 tableSize = clampTableSize(params.tableSize);
+    const SpatialHashParams normalizedParams = normalizeSpatialHashParams(params);
+    const u32 tableSize = normalizedParams.tableSize;
     CellBuckets cells(tableSize);
 
     const u32 shapeCount = shapes.count();
     fuse::jobs::parallel_for(0u, shapeCount, kBuildGrainSize, [&](u32 shapeIndex) {
-        populateShapeCells(shapeIndex, bodies, shapes, params, use2D, cells);
+        populateShapeCells(shapeIndex, bodies, shapes, normalizedParams, use2D, cells);
     });
 
     std::vector<u32> cellSlotOffsets(tableSize, 0u);
@@ -293,7 +306,7 @@ void runBroadphaseIntoBufferInternal(
         fuse::jobs::parallel_for(0u, dynamicCount, kPlanePairGrainSize, [&](u32 dynamicIndex) {
             const u32 dynamicBody = dynamicBodies[dynamicIndex];
             for (u32 planeBody : planeBodies) {
-                if (planeBody == dynamicBody) {
+                if (!isValidCandidatePair(dynamicBody, planeBody, bodies.count())) {
                     continue;
                 }
                 const CandidatePair pair = canonicalPair(dynamicBody, planeBody);

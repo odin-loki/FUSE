@@ -61,12 +61,23 @@ void PairBufferSoA::invalidateSlot(u32 slot) {
     validFlags[slot] = 0u;
 }
 
+u32 PairBufferSoA::remainingCapacity() const {
+    if (maxCapacity == 0u) {
+        return UINT32_MAX;
+    }
+    return activeCount < maxCapacity ? maxCapacity - activeCount : 0u;
+}
+
+bool PairBufferSoA::canApplyMaxCapacityClamp() const {
+    return !canSkipSoAIteration() && maxCapacity > 0u && activeCount > maxCapacity;
+}
+
 bool PairBufferSoA::push(u32 idxA, u32 idxB) {
     if (!isValidCandidatePair(idxA, idxB)) {
         return false;
     }
 
-    if (maxCapacity > 0u && activeCount >= maxCapacity) {
+    if (isFull()) {
         ++droppedCount;
         return false;
     }
@@ -152,7 +163,7 @@ void PairBufferSoA::sortCanonical() {
 }
 
 u32 PairBufferSoA::applyMaxCapacityClamp() {
-    if (canSkipSoAIteration() || maxCapacity == 0u || activeCount <= maxCapacity) {
+    if (!canApplyMaxCapacityClamp()) {
         return activeCount;
     }
 
