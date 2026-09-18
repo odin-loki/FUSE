@@ -110,6 +110,14 @@ bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason*
     return m_resolve.wouldSkip(desc, m_history, reason);
 }
 
+TaaResolveBlendPreflight TaaPass::preflightResolveBlend(const TaaResolveDesc& desc) const {
+    return preflightTaaResolveBlend(desc, m_history);
+}
+
+bool TaaPass::isJitterSyncedToFrameIndex(u32 frameIndex) const {
+    return m_jitter.isSyncedToFrameIndex(frameIndex);
+}
+
 void TaaPass::stampObservedHistoryGeneration(TaaResolveDesc& desc) const {
     fuse::renderer::stampObservedHistoryGeneration(desc, m_history);
 }

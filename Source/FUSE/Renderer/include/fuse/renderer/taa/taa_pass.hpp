@@ -46,6 +46,10 @@ public:
     void advanceJitter();
     /// Align jitter to a monotonic frame counter (wraps with sequence period).
     void syncJitterToFrameIndex(u32 frameIndex);
+    /// True when pass jitter matches the expected monotonic frame counter (B5.9 deepen).
+    bool isJitterSyncedToFrameIndex(u32 frameIndex) const;
+    /// Pass jitter monotonic frame counter (B5.9 deepen).
+    u32 jitterMonotonicFrameIndex() const { return m_jitter.monotonicFrameIndex(); }
     void invalidateHistory();
     void resize(u32 width, u32 height);
     bool matchesDimensions(u32 width, u32 height) const;
@@ -61,6 +65,8 @@ public:
     bool isHistoryStale(u32 observedGeneration) const;
     /// Preflight resolve without mutating history (delegates to `TaaResolve::wouldSkip`).
     bool wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason = nullptr) const;
+    /// Compute expected blend weights for a resolve request without mutating history (B5.9 deepen).
+    TaaResolveBlendPreflight preflightResolveBlend(const TaaResolveDesc& desc) const;
     /// Stamp `observed_history_generation` from pass history when still at the no-guard sentinel.
     void stampObservedHistoryGeneration(TaaResolveDesc& desc) const;
     /// Clamp params and stamp observed generation from pass history.
