@@ -107,6 +107,13 @@ f32 snapDragDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings);
 bool isRayEmpty(const GizmoRay& ray);
 bool isHitTestEmpty(const GizmoHitTest& hit);
 
+/// Convenience inverse of `isRayEmpty` / `isHitTestEmpty` (B6.4 deepen follow-up — pick guard).
+bool isRayValid(const GizmoRay& ray);
+bool isHitTestValid(const GizmoHitTest& hit);
+
+/// Normalize ray direction; returns false when the ray is empty (B6.4 deepen follow-up — pick guard).
+bool normalizeRay(GizmoRay& ray);
+
 /// True when axis length and pick radius are positive (B6.4 deepen pass).
 bool isPickConfigValid(f32 axisLength, f32 pickRadius);
 
@@ -147,6 +154,14 @@ SnapPreflight preflightSnap(GizmoMode mode, const GizmoSnapSettings& settings);
 bool trySnapTransform(const GizmoTransform& transform, GizmoMode mode,
                       const GizmoSnapSettings& settings, GizmoTransform& out);
 
+/// Guarded scalar snap — returns false when snap cannot apply (B6.4 deepen follow-up — snap guard).
+bool trySnapValue(f32 value, GizmoMode mode, const GizmoSnapSettings& settings, f32& out);
+
+/// Component-wise snap helpers (B6.4 deepen follow-up — snap guard).
+math::Vec3 snapPosition(const math::Vec3& position, const GizmoSnapSettings& settings);
+math::Vec3 snapEulerRadians(const math::Vec3& eulerRadians, const GizmoSnapSettings& settings);
+math::Vec3 snapScaleVec(const math::Vec3& scale, const GizmoSnapSettings& settings);
+
 /// Mode-aware drag-delta snap with step validation (B6.4 deepen follow-up).
 f32 trySnapDragDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings);
 
@@ -165,11 +180,30 @@ struct BeginDragPreflight {
 struct UpdateDragPreflight {
     bool notDragging = false;
     bool emptyHit = false;
+    bool screenMiss = false;
+    bool noActiveAxis = false;
 
-    bool canUpdate() const { return !notDragging && !emptyHit; }
+    bool canUpdate() const {
+        return !notDragging && !emptyHit && !screenMiss && !noActiveAxis;
+    }
 };
 
-UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging);
+UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging,
+                                        GizmoMode mode = GizmoMode::Translate,
+                                        GizmoAxis activeAxis = GizmoAxis::None);
+
+/// Non-mutating update-drag predicate — same guards as `preflightUpdateDrag` (B6.4 deepen follow-up).
+bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoMode mode,
+                   GizmoAxis activeAxis);
+
+/// Read-only end-drag diagnostics — no mutation (B6.4 deepen follow-up).
+struct EndDragPreflight {
+    bool notDragging = false;
+
+    bool canEnd() const { return !notDragging; }
+};
+
+EndDragPreflight preflightEndDrag(bool dragging);
 
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
                                       GizmoMode mode, GizmoSpace space, f32 axisLength,
@@ -263,11 +297,18 @@ public:
     [[nodiscard]] bool trySnapTransform(const GizmoTransform& transform,
                                         GizmoTransform& out) const;
     [[nodiscard]] UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit) const;
+    [[nodiscard]] bool canUpdateDrag(const GizmoHitTest& hit) const;
     /// Guarded begin-drag — returns false on empty viewport / miss picks (B6.4 deepen follow-up).
     bool tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& current, GizmoResult& out);
     bool tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current, GizmoResult& out);
+    /// Guarded drag update — returns false on empty viewport / screen miss (B6.4 deepen follow-up).
+    bool tryUpdateDrag(const GizmoHitTest& hit, GizmoResult& out);
     GizmoResult updateDrag(const GizmoHitTest& hit);
+    [[nodiscard]] EndDragPreflight preflightEndDrag() const;
+    [[nodiscard]] bool canEndDrag() const;
     GizmoResult endDrag();
+    /// Cancel an active drag without dirty marking (B6.4 deepen follow-up).
+    void cancelDrag();
 
     bool isDragging() const { return m_dragging; }
 
