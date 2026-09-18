@@ -136,6 +136,16 @@ enum class EvictionPolicy : u8 {
     return unload_distance_priority;
 }
 
+/// True when an incoming load (higher `priority` = closer) should evict a resident at `resident_focus_distance`.
+[[nodiscard]] inline bool incoming_outranks_resident(f32 incoming_priority, f32 stream_in_radius,
+                                                     f32 resident_focus_distance) {
+    if (incoming_priority <= 0.f || stream_in_radius <= 0.f) {
+        return false;
+    }
+    const f32 incoming_distance = stream_in_radius - incoming_priority;
+    return incoming_distance < resident_focus_distance;
+}
+
 /// True when an incoming load outranks a resident cell for budget eviction (closer wins).
 [[nodiscard]] inline bool incoming_outranks_eviction(f32 incoming_priority, f32 eviction_score) {
     if (incoming_priority <= 0.f) {
