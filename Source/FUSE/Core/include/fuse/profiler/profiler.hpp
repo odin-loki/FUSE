@@ -63,6 +63,7 @@ void endFrame();
 u32 frameIndex();
 u32 eventCount();
 u32 maxNestingDepth();
+u32 nestingDepth();
 u32 maxFlowNestingDepth();
 u32 scopeNestingDepth();
 u32 flowNestingDepth();

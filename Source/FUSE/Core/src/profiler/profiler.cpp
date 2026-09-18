@@ -265,6 +265,10 @@ u32 maxNestingDepth() {
     return g_maxNestingDepth.load(std::memory_order_acquire);
 }
 
+u32 nestingDepth() {
+    return currentNestingDepth();
+}
+
 u32 maxFlowNestingDepth() {
     return g_maxFlowNestingDepth.load(std::memory_order_acquire);
 }
