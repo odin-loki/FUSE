@@ -127,6 +127,8 @@ struct ClusterLightGridLayout {
     static bool validateContiguousOffsets(const ClusterGridSoA& grid, u32 clusterCount);
     /// Validate contiguous offsets against the clamped cluster count derived from `desc`.
     static bool validateContiguousOffsetsForDesc(const ClusterGridSoA& grid, const ClusterDesc& desc);
+    /// Early-out when a light-grid rebuild would operate on an empty cluster desc.
+    static bool shouldSkipLightGridRebuild(const ClusterDesc& desc);
 };
 
 /// Why grid population validation rejected a rebuilt light grid (B5.4 deepen).
@@ -146,6 +148,7 @@ enum class ClusterLookupRejectReason : u8 {
     EmptyGrid,
     DescMismatch,
     EmptyStorage,
+    OutOfRangeCluster,
 };
 
 /// Human-readable label for lookup reject reasons (logging / tests).
@@ -182,6 +185,21 @@ bool assignLightToCluster(std::vector<std::vector<u32>>& perClusterLights,
                           u32 maxLightsPerCluster);
 /// Copy light indices assigned to one cluster from the rebuilt flat grid.
 u32 lookupClusterLights(const ClusterGridSoA& grid, u32 clusterIdx, std::vector<u32>& outLights);
+/// Preflight guard before direct cluster-index lookup; false when storage is empty or index is OOB.
+bool canLookupCluster(const ClusterGridSoA& grid, u32 clusterIdx);
+/// Diagnose why direct cluster-index lookup preflight would reject.
+bool tryCanLookupCluster(const ClusterGridSoA& grid, u32 clusterIdx, ClusterLookupRejectReason& outReason);
+/// Lookup with guard preflight; returns false when `canLookupCluster` would reject the request.
+bool tryLookupClusterLights(const ClusterGridSoA& grid,
+                            u32 clusterIdx,
+                            std::vector<u32>& outLights,
+                            u32& outCount);
+/// Lookup with guard preflight and reject-reason diagnostics.
+bool tryLookupClusterLights(const ClusterGridSoA& grid,
+                            u32 clusterIdx,
+                            std::vector<u32>& outLights,
+                            u32& outCount,
+                            ClusterLookupRejectReason& outReason);
 /// Lookup at a clamped flat index; returns 0 when grid/desc mismatch or empty.
 u32 lookupClusterLightsAtIndex(const ClusterGridSoA& grid,
                                const ClusterDesc& desc,
@@ -208,6 +226,18 @@ u32 countNonEmptyClusters(const ClusterGridSoA& grid, u32 clusterCount);
 u32 countEmptyClusters(const ClusterGridSoA& grid, u32 clusterCount);
 /// Count clusters holding `maxLightsPerCluster` lights; returns 0 when `clusterCount` is zero.
 u32 countClustersAtCapacity(const ClusterGridSoA& grid, u32 clusterCount, u32 maxLightsPerCluster);
+/// True when at least one cluster has assigned lights; false when `clusterCount` is zero or storage is undersized.
+bool hasAssignedLights(const ClusterGridSoA& grid, u32 clusterCount);
+/// True when every cluster has zero assigned lights; vacuously true when `clusterCount` is zero.
+bool isGridPopulationEmpty(const ClusterGridSoA& grid, u32 clusterCount);
+/// Non-empty cluster count using the clamped cluster count derived from `desc`; returns 0 on mismatch.
+u32 countNonEmptyClustersForDesc(const ClusterGridSoA& grid, const ClusterDesc& desc);
+/// Empty cluster count using the clamped cluster count derived from `desc`; returns 0 on mismatch.
+u32 countEmptyClustersForDesc(const ClusterGridSoA& grid, const ClusterDesc& desc);
+/// At-capacity cluster count using the clamped cluster count derived from `desc`; returns 0 on mismatch.
+u32 countClustersAtCapacityForDesc(const ClusterGridSoA& grid,
+                                   const ClusterDesc& desc,
+                                   u32 maxLightsPerCluster);
 /// True when non-empty + empty cluster counts sum to `clusterCount` and assigned lights match the flat list.
 bool validatePopulationCounts(const ClusterGridSoA& grid, u32 clusterCount);
 /// Population invariant plus contiguous offset packing when `clusterCount` is non-zero.
