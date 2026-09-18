@@ -5,6 +5,8 @@
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/types.hpp>
 
+#include <vector>
+
 namespace fuse::physics::narrowphase {
 
 /// Diagnostic reason a broadphase pair is rejected before narrowphase dispatch (B4.3 deepen).
@@ -17,6 +19,8 @@ enum class ContactPairRejectReason : u8 {
     UnsupportedShapePair,
     BothStatic,
     DegenerateShape,
+    BothSleeping,
+    BothKinematic,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
@@ -70,6 +74,16 @@ bool is_static_contact_pair(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies);
 
+/// Returns true when both bodies carry `RB_SLEEPING` (B4.4 deepen follow-up).
+bool is_sleeping_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies);
+
+/// Returns true when both bodies carry `RB_KINEMATIC` (B4.4 deepen follow-up).
+bool is_kinematic_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies);
+
 /// Returns true when either shape has zero or negative extent (B4.3 deepen pass).
 bool is_degenerate_shape_pair(
     const broadphase::CandidatePair& pair,
@@ -94,6 +108,9 @@ bool can_finalize_contact_manifold(const ContactManifold& manifold);
 /// Returns false when the manifold has no contact points.
 bool generate_contact_manifold(ContactManifold& manifold);
 
+/// Finalize only when `can_finalize_contact_manifold` passes; no-op otherwise (B4.4 deepen follow-up).
+bool generate_contact_manifold_if_needed(ContactManifold& manifold);
+
 /// Build and store an orthonormal tangent frame on `manifold` (B4.3 deepen).
 void compute_friction_tangents(ContactManifold& manifold);
 
@@ -114,6 +131,39 @@ ContactPairPreflight preflight_contact_pair(
 /// Returns true when narrowphase should skip this pair before dispatch (B4.4 deepen pass).
 bool should_skip_contact_pair_dispatch(
     const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Extended reject reason including sleeping/kinematic pairs (B4.4 deepen follow-up).
+/// Does not alter `contact_pair_reject_reason`; use for additive preflight only.
+ContactPairRejectReason contact_pair_deepen_reject_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Const preflight with extended sleeping/kinematic reject checks (B4.4 deepen follow-up).
+struct ContactPairDeepenPreflight {
+    ContactPairRejectReason reason = ContactPairRejectReason::None;
+    bool rejected = false;
+
+    bool can_dispatch() const { return !rejected; }
+};
+
+/// Populate extended pair preflight without running shape dispatch (B4.4 deepen follow-up).
+ContactPairDeepenPreflight preflight_contact_pair_deepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when extended preflight rejects this pair (B4.4 deepen follow-up).
+bool should_skip_contact_pair_deepen_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// True when all pairs are rejected by extended preflight or the pair list is empty (B4.4 deepen follow-up).
+bool can_skip_narrowphase(
+    const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
