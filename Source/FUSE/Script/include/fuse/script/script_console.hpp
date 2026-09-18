@@ -27,10 +27,13 @@ public:
 
     ScriptConsoleCommandResult execute(const char* line);
     [[nodiscard]] const std::string& lastExecutedLine() const { return m_lastExecutedLine; }
+    /// True when a prior non-meta command succeeded and `repeat` can re-dispatch it.
+    [[nodiscard]] bool can_repeat() const { return !m_lastExecutedLine.empty(); }
 
     void setHistoryCapacity(u32 capacity);
     [[nodiscard]] u32 historyCapacity() const { return m_history.capacity(); }
     [[nodiscard]] u32 historyCount() const { return m_history.count(); }
+    [[nodiscard]] bool is_history_empty() const { return m_history.is_empty(); }
     [[nodiscard]] const std::string& historyAt(u32 index) const { return m_history.at(index); }
 
     /// Navigate command history (`previous=true` recalls older entries).

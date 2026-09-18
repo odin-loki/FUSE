@@ -62,6 +62,16 @@ const char* commandKindLabel(ScriptConsoleCommandKind kind) {
     }
 }
 
+/// Lookup/meta commands do not update repeat state or pollute history.
+bool isMetaCommand(const std::string& command) {
+    return command == "help" || command == "list" || command == "describe" || command == "complete" ||
+           command == "suggest" || command == "resolve" || command == "repeat" || command == "history";
+}
+
+bool shouldRecordHistory(const std::string& command, const std::string& /*args*/) {
+    return !isMetaCommand(command);
+}
+
 } // namespace
 
 void ScriptConsole::attach(ScriptHost* host) {
@@ -126,15 +136,12 @@ ScriptConsoleCommandResult ScriptConsole::executeLine_(const char* line, bool re
     }
 
     if (result.ok()) {
-        if (command != "repeat") {
+        if (!isMetaCommand(command)) {
             m_lastExecutedLine = trimmed_line;
         }
-        if (record_history) {
-            const bool history_clear = (command == "history" && args == "clear");
-            if (!history_clear) {
-                m_history.push(line);
-                resetHistoryNavigation();
-            }
+        if (record_history && shouldRecordHistory(command, args)) {
+            m_history.push(line);
+            resetHistoryNavigation();
         }
     }
 
@@ -255,6 +262,10 @@ void ScriptConsole::registerBuiltIns_() {
             console.m_history.clear();
             console.resetHistoryNavigation();
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, "history cleared"};
+        }
+
+        if (console.is_history_empty()) {
+            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, "history empty"};
         }
 
         std::ostringstream out;
