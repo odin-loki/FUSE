@@ -38,6 +38,14 @@ bool should_evaluate_occlusion_blockers(const Vec3& listener, const Vec3& source
 bool should_skip_blockers_visibility(const Vec3& listener, const Vec3& source,
                                      const AABB* blockers, u32 blocker_count);
 
+/// True when blocker geometry may change visibility (inverse of \c should_skip_blockers_visibility).
+bool should_apply_occlusion_blockers(const Vec3& listener, const Vec3& source,
+                                     const AABB* blockers, u32 blocker_count);
+
+/// Readable alias — true when blocker evaluation can be bypassed (empty list or co-located).
+bool should_bypass_occlusion_blockers(const Vec3& listener, const Vec3& source,
+                                      const AABB* blockers, u32 blocker_count);
+
 /// True when the blocker attenuation pipeline can be bypassed (no geometry to evaluate).
 bool should_skip_occlusion_blocker_attenuation(const Vec3& listener, const Vec3& source,
                                                const AABB* blockers, u32 blocker_count);
@@ -65,6 +73,12 @@ float compute_occlusion_combined_gain(const OcclusionAttenuation& attenuation);
 
 /// True when both LF and HF gains are unity (no occlusion attenuation applied).
 bool is_unity_occlusion_attenuation(const OcclusionAttenuation& attenuation);
+
+/// True when either LF or HF gain is below unity (occlusion attenuation is audible).
+bool is_audible_occlusion_attenuation(const OcclusionAttenuation& attenuation);
+
+/// True when combined LF/HF scaling can be skipped (unity attenuation).
+bool should_skip_occlusion_combined_gain(const OcclusionAttenuation& attenuation);
 
 /// Segment-vs-AABB ray stub — true when the listener→source segment intersects the box.
 bool segment_intersects_aabb(const Vec3& listener, const Vec3& source, const AABB& blocker);

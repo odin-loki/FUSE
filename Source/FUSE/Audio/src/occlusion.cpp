@@ -41,6 +41,16 @@ bool should_skip_blockers_visibility(const Vec3& listener, const Vec3& source,
     return !should_evaluate_occlusion_blockers(listener, source, blockers, blocker_count);
 }
 
+bool should_apply_occlusion_blockers(const Vec3& listener, const Vec3& source,
+                                     const AABB* blockers, u32 blocker_count) {
+    return should_evaluate_occlusion_blockers(listener, source, blockers, blocker_count);
+}
+
+bool should_bypass_occlusion_blockers(const Vec3& listener, const Vec3& source,
+                                      const AABB* blockers, u32 blocker_count) {
+    return should_skip_blockers_visibility(listener, source, blockers, blocker_count);
+}
+
 bool should_skip_occlusion_blocker_attenuation(const Vec3& listener, const Vec3& source,
                                                 const AABB* blockers, u32 blocker_count) {
     return should_skip_blockers_visibility(listener, source, blockers, blocker_count);
@@ -125,6 +135,14 @@ float compute_occlusion_combined_gain(const OcclusionAttenuation& attenuation) {
 
 bool is_unity_occlusion_attenuation(const OcclusionAttenuation& attenuation) {
     return attenuation.gain >= 1.f - 1e-5f && attenuation.hf_gain >= 1.f - 1e-5f;
+}
+
+bool is_audible_occlusion_attenuation(const OcclusionAttenuation& attenuation) {
+    return !is_unity_occlusion_attenuation(attenuation);
+}
+
+bool should_skip_occlusion_combined_gain(const OcclusionAttenuation& attenuation) {
+    return is_unity_occlusion_attenuation(attenuation);
 }
 
 float compute_blocker_visibility(const Vec3& listener, const Vec3& source, const AABB& blocker,

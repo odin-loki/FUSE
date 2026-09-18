@@ -51,6 +51,15 @@ void testShouldEvaluateOcclusionBlockers() {
                "co-located positions skip visibility evaluation");
     expectTrue(!fuse::audio::should_skip_blockers_visibility(listener, source, &blocker, 1),
                "separated positions with blockers evaluate visibility");
+
+    expectTrue(fuse::audio::should_apply_occlusion_blockers(listener, source, &blocker, 1),
+               "should_apply mirrors should_evaluate for separated positions");
+    expectTrue(!fuse::audio::should_apply_occlusion_blockers(listener, source, nullptr, 0),
+               "should_apply false when blocker list is empty");
+    expectTrue(fuse::audio::should_bypass_occlusion_blockers(listener, source, nullptr, 0),
+               "should_bypass mirrors should_skip_blockers_visibility");
+    expectTrue(!fuse::audio::should_bypass_occlusion_blockers(listener, source, &blocker, 1),
+               "should_bypass false when blockers should evaluate");
 }
 
 void testShouldSkipOcclusionAttenuation() {
@@ -83,6 +92,15 @@ void testOcclusionCombinedGainHelpers() {
                "fully visible early-out yields unity attenuation");
     expectTrue(fuse::audio::should_skip_occlusion_attenuation(1.2f),
                "should_skip matches evaluate early-out path");
+
+    expectTrue(fuse::audio::should_skip_occlusion_combined_gain(unity),
+               "unity attenuation skips combined gain scaling");
+    expectTrue(!fuse::audio::is_audible_occlusion_attenuation(unity),
+               "unity attenuation is not audible");
+    expectTrue(fuse::audio::is_audible_occlusion_attenuation(blocked),
+               "blocked attenuation is audible");
+    expectTrue(!fuse::audio::should_skip_occlusion_combined_gain(blocked),
+               "blocked attenuation requires combined gain scaling");
 }
 
 void testFullyOccludedVisibilityEarlyOut() {
@@ -142,6 +160,10 @@ void testHasReverbZonesGuard() {
                "should_skip_reverb_zone_blend on zero count");
     expectTrue(!fuse::audio::should_skip_reverb_zone_blend(&zone, 1),
                "should_skip_reverb_zone_blend false for valid list");
+    expectTrue(fuse::audio::should_apply_reverb_zone_blend(&zone, 1),
+               "should_apply_reverb_zone_blend true for valid list");
+    expectTrue(!fuse::audio::should_apply_reverb_zone_blend(nullptr, 0),
+               "should_apply_reverb_zone_blend false for empty list");
 }
 
 void testEffectiveSendGain() {
@@ -214,6 +236,34 @@ void testWetMixGuardConsistency() {
                "zero wet_dry skips wet processing");
 }
 
+void testReverbConvolutionSkipGuards() {
+    const fuse::audio::ReverbZoneParams zone{
+        {{-5.f, -5.f, -5.f}, {5.f, 5.f, 5.f}}, 0.5f, 1.f};
+    const fuse::audio::Vec3 inside{0.f, 0.f, 0.f};
+    const fuse::audio::Vec3 outside{100.f, 0.f, 0.f};
+
+    expectTrue(fuse::audio::should_skip_reverb_convolution(inside, nullptr, 0),
+               "empty zone list skips convolution");
+    expectTrue(fuse::audio::should_skip_reverb_convolution(outside, &zone, 1),
+               "listener outside zones skips convolution");
+    expectTrue(!fuse::audio::should_skip_reverb_convolution(inside, &zone, 1),
+               "listener inside active zone runs convolution");
+
+    expectTrue(fuse::audio::has_listener_in_reverb_zones(inside, &zone, 1),
+               "listener inside zone is detected");
+    expectTrue(!fuse::audio::has_listener_in_reverb_zones(outside, &zone, 1),
+               "listener outside zone is not active");
+
+    expectTrue(!fuse::audio::is_audible_wet_mix(0.f),
+               "zero wet mix is not audible");
+    expectTrue(fuse::audio::is_audible_wet_mix(0.25f),
+               "positive wet mix is audible");
+    expectTrue(fuse::audio::should_skip_blend_dry_wet(0.f),
+               "zero wet mix skips dry/wet blend");
+    expectNear(fuse::audio::blend_dry_wet_sample(1.f, 0.5f, 0.f), 1.f, 1e-5f,
+               "blend_dry_wet_sample routes through should_skip_blend_dry_wet");
+}
+
 } // namespace
 
 int main() {
@@ -227,6 +277,7 @@ int main() {
     testEffectiveSendGain();
     testBlendReverbSampleOneShot();
     testWetMixGuardConsistency();
+    testReverbConvolutionSkipGuards();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

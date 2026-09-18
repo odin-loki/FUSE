@@ -21,6 +21,9 @@ bool is_empty_reverb_zones(const ReverbZoneParams* zones, u32 zone_count);
 /// True when zone blending can be skipped (empty zone list).
 bool should_skip_reverb_zone_blend(const ReverbZoneParams* zones, u32 zone_count);
 
+/// True when zone blending should run (inverse of \c should_skip_reverb_zone_blend).
+bool should_apply_reverb_zone_blend(const ReverbZoneParams* zones, u32 zone_count);
+
 /// Returns true when the listener position lies inside the zone AABB.
 bool listener_in_reverb_zone(const Vec3& listener, const ReverbZoneParams& zone);
 
@@ -56,6 +59,20 @@ bool should_apply_reverb_wet_mix(const ReverbZoneBlend& blend);
 
 /// True when wet convolution and sample blending can be skipped (fully dry path).
 bool should_skip_wet_mix_processing(const ReverbZoneBlend& blend);
+
+/// True when the listener lies inside at least one zone in the list.
+bool has_listener_in_reverb_zones(const Vec3& listener, const ReverbZoneParams* zones,
+                                  u32 zone_count);
+
+/// True when reverb convolution can be skipped (empty list, outside zones, or dry blend).
+bool should_skip_reverb_convolution(const Vec3& listener, const ReverbZoneParams* zones,
+                                    u32 zone_count);
+
+/// True when a clamped wet-mix scalar contributes audible wet signal.
+bool is_audible_wet_mix(float wet_mix);
+
+/// True when dry/wet sample blending can be skipped (fully dry path).
+bool should_skip_blend_dry_wet(float wet_mix);
 
 /// Effective wet mix scalar [0, 1] from a zone blend result.
 float compute_effective_wet_mix(const ReverbZoneBlend& blend);
