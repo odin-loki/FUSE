@@ -209,6 +209,40 @@ void testNearestAllyDistanceSq() {
     expectNear(noneSq, 0.f, 1e-4f, "nearest_ally_distance_sq returns zero when no allies");
 }
 
+void testCountAlliesOutsideRadius() {
+    const std::vector<fuse::ai::AllyCandidate> allies = makeSquad();
+
+    const fuse::u32 outside =
+        fuse::ai::count_allies_outside_radius(0, 1, 0.f, 0.f, 10.f, allies);
+    expectTrue(outside == 1u, "count_allies_outside_radius finds distant ally");
+
+    const fuse::u32 allOutside =
+        fuse::ai::count_allies_outside_radius(0, 1, 0.f, 0.f, 2.f, allies);
+    expectTrue(allOutside == 4u, "count_allies_outside_radius counts all beyond tight radius");
+}
+
+void testHasNoAlliesInRadius() {
+    const std::vector<fuse::ai::AllyCandidate> allies = makeSquad();
+
+    expectTrue(fuse::ai::has_no_allies_in_radius(0, 1, 0.f, 0.f, 2.f, allies),
+               "has_no_allies_in_radius succeeds when none are nearby");
+    expectTrue(!fuse::ai::has_no_allies_in_radius(0, 1, 0.f, 0.f, 100.f, allies),
+               "has_no_allies_in_radius fails when allies are within radius");
+    expectTrue(fuse::ai::has_no_allies_in_radius(0, 1, 0.f, 0.f, 10.f, {}),
+               "has_no_allies_in_radius succeeds on empty ally list");
+}
+
+void testEffectiveMinCount() {
+    fuse::ai::RadiusFilterPolicy policy;
+    policy.minCount = 0;
+    expectTrue(fuse::ai::effective_min_count(policy) == 1u,
+               "effective_min_count defaults zero minCount to one");
+
+    policy.minCount = 3;
+    expectTrue(fuse::ai::effective_min_count(policy) == 3u,
+               "effective_min_count preserves positive minCount");
+}
+
 } // namespace
 
 int run_spatial_query_tests() {
@@ -229,5 +263,8 @@ int run_spatial_query_tests() {
     testIsValidAllyRadius();
     testRadiusSqFromPolicy();
     testNearestAllyDistanceSq();
+    testCountAlliesOutsideRadius();
+    testHasNoAlliesInRadius();
+    testEffectiveMinCount();
     return g_failures;
 }

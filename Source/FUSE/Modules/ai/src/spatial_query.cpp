@@ -39,8 +39,34 @@ float effective_radius(const RadiusFilterPolicy& policy) {
     return clamp_radius_(policy.radius);
 }
 
+u32 effective_min_count(const RadiusFilterPolicy& policy) {
+    return policy.minCount > 0 ? policy.minCount : 1u;
+}
+
 float radius_sq_from_policy(const RadiusFilterPolicy& policy) {
     return radius_sq_(effective_radius(policy));
+}
+
+u32 count_allies_outside_radius(u32 selfIndex,
+                                u32 teamId,
+                                float x,
+                                float y,
+                                float radius,
+                                const std::vector<AllyCandidate>& allies) {
+    const float radiusSq = radius_sq_(radius);
+    u32 count = 0;
+
+    for (const AllyCandidate& candidate : allies) {
+        if (!is_ally_(selfIndex, teamId, candidate)) {
+            continue;
+        }
+        const float distSq = distance_sq_2d(x, y, candidate.x, candidate.y);
+        if (distSq > radiusSq) {
+            ++count;
+        }
+    }
+
+    return count;
 }
 
 u32 count_allies_in_radius(u32 selfIndex,
@@ -142,7 +168,16 @@ bool allies_in_radius_satisfied(u32 selfIndex,
                                              y,
                                              effective_radius(policy),
                                              allies);
-    return count >= policy.minCount;
+    return count >= effective_min_count(policy);
+}
+
+bool has_no_allies_in_radius(u32 selfIndex,
+                             u32 teamId,
+                             float x,
+                             float y,
+                             float radius,
+                             const std::vector<AllyCandidate>& allies) {
+    return count_allies_in_radius(selfIndex, teamId, x, y, radius, allies) == 0;
 }
 
 bool has_any_ally_in_radius(u32 selfIndex,

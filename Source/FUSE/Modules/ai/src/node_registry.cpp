@@ -39,6 +39,8 @@ BehaviorNode makeParallel(const NodeLoadSpec& spec) {
     node.parallelPolicy.abortOnSuccess = spec.abortOnSuccess;
     node.parallelPolicy.requireBoundBlackboard = spec.requireBoundBlackboard;
     node.parallelPolicy.requireAllyContext = spec.requireAllyContext;
+    node.parallelPolicy.requireValidAgent = spec.requireValidAgent;
+    node.parallelPolicy.requireNonEmptyBoard = spec.requireNonEmptyBoard;
     return node;
 }
 
@@ -160,10 +162,25 @@ BehaviorNode makeConditionAnyAllyInRadius(const NodeLoadSpec& spec) {
     return node;
 }
 
+BehaviorNode makeConditionNoAlliesInRadius(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::ConditionNoAlliesInRadius;
+    node.threshold = spec.threshold;
+    return node;
+}
+
 BehaviorNode makeActionAlliesCount(const NodeLoadSpec& spec) {
     BehaviorNode node;
     node.kind = NodeKind::ActionAlliesCount;
     node.threshold = spec.threshold;
+    node.flagIndex = spec.flagIndex;
+    node.scalarSlot = spec.scalarSlot;
+    return node;
+}
+
+BehaviorNode makeActionNearestAllyDistance(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::ActionNearestAllyDistance;
     node.flagIndex = spec.flagIndex;
     node.scalarSlot = spec.scalarSlot;
     return node;
@@ -183,9 +200,23 @@ BehaviorNode makeGuardBlackboardScalarEmpty(const NodeLoadSpec& spec) {
     return node;
 }
 
+BehaviorNode makeGuardBlackboardScalarSet(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::GuardBlackboardScalarSet;
+    node.scalarSlot = spec.scalarSlot;
+    return node;
+}
+
 BehaviorNode makeGuardBlackboardFlagEmpty(const NodeLoadSpec& spec) {
     BehaviorNode node;
     node.kind = NodeKind::GuardBlackboardFlagEmpty;
+    node.flagIndex = spec.flagIndex;
+    return node;
+}
+
+BehaviorNode makeGuardBlackboardFlagSet(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::GuardBlackboardFlagSet;
     node.flagIndex = spec.flagIndex;
     return node;
 }
@@ -197,10 +228,24 @@ BehaviorNode makeGuardBlackboardEmpty(const NodeLoadSpec& spec) {
     return node;
 }
 
+BehaviorNode makeGuardBlackboardAgentValid(const NodeLoadSpec& spec) {
+    (void)spec;
+    BehaviorNode node;
+    node.kind = NodeKind::GuardBlackboardAgentValid;
+    return node;
+}
+
 BehaviorNode makeGuardAllyContext(const NodeLoadSpec& spec) {
     (void)spec;
     BehaviorNode node;
     node.kind = NodeKind::GuardAllyContext;
+    return node;
+}
+
+BehaviorNode makeGuardValidAllyRadius(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::GuardValidAllyRadius;
+    node.threshold = spec.threshold;
     return node;
 }
 
@@ -260,15 +305,21 @@ void NodeRegistry::registerBuiltins() {
     // FUSE spatial query leaves — blackboard ally lookup stubs (BadBehaviour ScriptedBehavior pattern)
     registerFactory("bb.condition.allies_in_radius", makeConditionAlliesInRadius);
     registerFactory("bb.condition.any_ally_in_radius", makeConditionAnyAllyInRadius);
+    registerFactory("bb.condition.no_allies_in_radius", makeConditionNoAlliesInRadius);
     registerFactory("bb.action.nearest_ally", makeActionNearestAlly);
+    registerFactory("bb.action.nearest_ally_distance", makeActionNearestAllyDistance);
     registerFactory("bb.action.allies_count", makeActionAlliesCount);
 
     // FUSE guard leaves — empty blackboard / ally-context preconditions
     registerFactory("bb.guard.blackboard_bound", makeGuardBlackboardBound);
     registerFactory("bb.guard.blackboard_scalar_empty", makeGuardBlackboardScalarEmpty);
+    registerFactory("bb.guard.blackboard_scalar_set", makeGuardBlackboardScalarSet);
     registerFactory("bb.guard.blackboard_flag_empty", makeGuardBlackboardFlagEmpty);
+    registerFactory("bb.guard.blackboard_flag_set", makeGuardBlackboardFlagSet);
     registerFactory("bb.guard.blackboard_empty", makeGuardBlackboardEmpty);
+    registerFactory("bb.guard.blackboard_agent_valid", makeGuardBlackboardAgentValid);
     registerFactory("bb.guard.ally_context", makeGuardAllyContext);
+    registerFactory("bb.guard.valid_ally_radius", makeGuardValidAllyRadius);
 }
 
 std::vector<std::string> NodeRegistry::registeredTypeIds() const {

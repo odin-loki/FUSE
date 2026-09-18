@@ -115,6 +115,12 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
         if (policy.requireBoundBlackboard && !board.isBound()) {
             return {};
         }
+        if (policy.requireNonEmptyBoard && board.isBoardEmpty()) {
+            return {};
+        }
+        if (policy.requireValidAgent && !board.isAgentValid(agentIndex)) {
+            return {};
+        }
         if (policy.requireAllyContext && !ally_context_available(ctx.allies)) {
             return {};
         }
@@ -282,6 +288,22 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
         result.status = found ? BehaviorStatus::Success : BehaviorStatus::Failure;
         return result;
     }
+    case NodeKind::ConditionNoAlliesInRadius: {
+        BehaviorTickResult result;
+        if (!ally_context_available(ctx.allies)) {
+            result.status = BehaviorStatus::Failure;
+            return result;
+        }
+
+        const bool clear = has_no_allies_in_radius(agentIndex,
+                                                   agent.teamId,
+                                                   agent.x,
+                                                   agent.y,
+                                                   node.threshold,
+                                                   *ctx.allies);
+        result.status = clear ? BehaviorStatus::Success : BehaviorStatus::Failure;
+        return result;
+    }
     case NodeKind::ActionAlliesCount: {
         BehaviorTickResult result;
         if (!ally_context_available(ctx.allies)) {
@@ -337,6 +359,36 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
         }
         return result;
     }
+    case NodeKind::ActionNearestAllyDistance: {
+        BehaviorTickResult result;
+        if (!ally_context_available(ctx.allies)) {
+            result.status = BehaviorStatus::Failure;
+            return result;
+        }
+
+        const float distanceSq = nearest_ally_distance_sq(agentIndex,
+                                                           agent.teamId,
+                                                           agent.x,
+                                                           agent.y,
+                                                           *ctx.allies);
+        if (distanceSq <= 0.f) {
+            result.status = BehaviorStatus::Failure;
+            return result;
+        }
+
+        result.status = BehaviorStatus::Success;
+        if (node.scalarSlot < Blackboard::kMaxScalars) {
+            result.wroteScalar = true;
+            result.scalarIndex = node.scalarSlot;
+            result.scalarValue = distanceSq;
+        }
+        if (node.flagIndex < Blackboard::kMaxFlags) {
+            result.wroteFlag = true;
+            result.flagIndex = node.flagIndex;
+            result.flagValue = true;
+        }
+        return result;
+    }
     case NodeKind::GuardBlackboardBound: {
         BehaviorTickResult result;
         result.status = board.isBound() ? BehaviorStatus::Success : BehaviorStatus::Failure;
@@ -353,6 +405,17 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
                                                               : BehaviorStatus::Failure;
         return result;
     }
+    case NodeKind::GuardBlackboardScalarSet: {
+        BehaviorTickResult result;
+        if (!board.isBound() || !board.isAgentValid(agentIndex)) {
+            result.status = BehaviorStatus::Failure;
+            return result;
+        }
+        const u32 slot = node.scalarSlot < Blackboard::kMaxScalars ? node.scalarSlot : 0u;
+        result.status = board.isScalarSet(agentIndex, slot) ? BehaviorStatus::Success
+                                                            : BehaviorStatus::Failure;
+        return result;
+    }
     case NodeKind::GuardBlackboardFlagEmpty: {
         BehaviorTickResult result;
         if (!board.isBound()) {
@@ -364,14 +427,37 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
                                                             : BehaviorStatus::Failure;
         return result;
     }
+    case NodeKind::GuardBlackboardFlagSet: {
+        BehaviorTickResult result;
+        if (!board.isBound() || !board.isAgentValid(agentIndex)) {
+            result.status = BehaviorStatus::Failure;
+            return result;
+        }
+        const u32 flag = node.flagIndex < Blackboard::kMaxFlags ? node.flagIndex : 0u;
+        result.status = board.isFlagSet(agentIndex, flag) ? BehaviorStatus::Success
+                                                          : BehaviorStatus::Failure;
+        return result;
+    }
     case NodeKind::GuardBlackboardEmpty: {
         BehaviorTickResult result;
-        result.status = board.agentCount() == 0u ? BehaviorStatus::Success : BehaviorStatus::Failure;
+        result.status = board.isBoardEmpty() ? BehaviorStatus::Success : BehaviorStatus::Failure;
+        return result;
+    }
+    case NodeKind::GuardBlackboardAgentValid: {
+        BehaviorTickResult result;
+        result.status = board.isAgentValid(agentIndex) ? BehaviorStatus::Success
+                                                       : BehaviorStatus::Failure;
         return result;
     }
     case NodeKind::GuardAllyContext: {
         BehaviorTickResult result;
         result.status = ally_context_available(ctx.allies) ? BehaviorStatus::Success
+                                                           : BehaviorStatus::Failure;
+        return result;
+    }
+    case NodeKind::GuardValidAllyRadius: {
+        BehaviorTickResult result;
+        result.status = is_valid_ally_radius(node.threshold) ? BehaviorStatus::Success
                                                            : BehaviorStatus::Failure;
         return result;
     }
