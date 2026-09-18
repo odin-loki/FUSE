@@ -23,6 +23,26 @@ struct DDGIKernelParams {
     f32 max_ray_distance = 20.f;
 };
 
+/// Why a CUDA probe-kernel launch preflight rejected the request (B5.6 deepen).
+enum class ProbeKernelRejectReason : u8 {
+    None = 0,
+    ZeroUpdateCount,
+    NullProbeIndices,
+};
+
+/// Human-readable label for probe-kernel reject reasons (logging / tests).
+const char* probeKernelRejectReasonLabel(ProbeKernelRejectReason reason);
+
+/// Preflight guard before probe trace kernel launch.
+bool canLaunchProbeTraceKernel(const DDGIKernelParams& params);
+/// Diagnose why probe trace launch preflight would reject.
+bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
+
+/// Preflight guard before probe blend kernel launch.
+bool canLaunchProbeBlendKernel(const DDGIKernelParams& params);
+/// Diagnose why probe blend launch preflight would reject.
+bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
+
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);
 
