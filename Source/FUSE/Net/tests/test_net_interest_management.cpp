@@ -692,6 +692,108 @@ void run_interest_management_tests() {
                "has_any_registered_in_radius false when all entities out of scope");
     expectTrue(registration_manager.count_registered_in_radius() == 0u,
                "count_registered_in_radius zero when has_any is false");
+
+    // --- register_entity / unregister_entity bool returns ---
+    fuse::net::InterestManager register_manager;
+    register_manager.set_policy(policy);
+    register_manager.set_observer_position(origin);
+    const fuse::ecs::EntityID reg_entity = make_entity(180);
+    expectTrue(register_manager.register_entity({reg_entity, {10.f, 0.f, 0.f, 0.f}, 0.f}),
+               "register_entity returns true on first insert");
+    expectTrue(!register_manager.register_entity({reg_entity, {12.f, 0.f, 0.f, 0.f}, 0.f}),
+               "register_entity returns false on duplicate entity");
+    expectTrue(register_manager.candidates().size() == 1u,
+               "duplicate register_entity does not grow candidate list");
+
+    expectTrue(!register_manager.unregister_entity(make_entity(999)),
+               "unregister_entity returns false for unknown entity");
+    expectTrue(register_manager.unregister_entity(reg_entity),
+               "unregister_entity returns true when entity removed");
+    expectTrue(!register_manager.is_entity_registered(reg_entity),
+               "unregistered entity no longer reported as registered");
+    expectTrue(register_manager.candidates().empty(), "unregister_entity clears candidate list");
+
+    register_manager.register_entity({make_entity(181), {10.f, 0.f, 0.f, 0.f}, 0.f});
+    register_manager.evaluate();
+    expectTrue(register_manager.unregister_entity(make_entity(181)),
+               "unregister_entity succeeds after evaluate");
+    register_manager.evaluate();
+    expectTrue(register_manager.scope_set().empty(),
+               "scope set clears after unregister and re-evaluate");
+
+    // --- apply_and_clear / apply_interest_diff helpers ---
+    fuse::net::InterestScopeSet apply_clear_scope;
+    apply_clear_scope.entities = {make_entity(1), make_entity(2)};
+    fuse::net::InterestSetDiff apply_clear_diff{};
+    apply_clear_diff.entered = {make_entity(3)};
+    apply_clear_diff.left = {make_entity(1)};
+    expectTrue(apply_clear_diff.apply_and_clear(apply_clear_scope),
+               "apply_and_clear returns true when scope changes");
+    expectTrue(apply_clear_diff.empty(), "apply_and_clear clears diff payload");
+    expectTrue(apply_clear_scope.contains(make_entity(3)), "apply_and_clear inserts entered entity");
+    expectTrue(!apply_clear_scope.contains(make_entity(1)), "apply_and_clear removes left entity");
+
+    fuse::net::InterestScopeSet alias_clear_scope;
+    alias_clear_scope.entities = {make_entity(5)};
+    fuse::net::InterestSetDiff alias_clear_diff{};
+    alias_clear_diff.entered = {make_entity(6)};
+    expectTrue(alias_clear_diff.apply_to_and_clear(alias_clear_scope),
+               "apply_to_and_clear returns true when scope changes");
+    expectTrue(alias_clear_diff.empty(), "apply_to_and_clear clears diff payload");
+    expectTrue(alias_clear_scope.contains(make_entity(6)), "apply_to_and_clear inserts entered entity");
+
+    fuse::net::InterestScopeSet free_apply_scope;
+    free_apply_scope.entities = {make_entity(7)};
+    fuse::net::InterestSetDiff free_apply_diff{};
+    free_apply_diff.entered = {make_entity(8)};
+    expectTrue(fuse::net::apply_interest_diff(free_apply_diff, free_apply_scope),
+               "apply_interest_diff returns true when scope changes");
+    expectTrue(free_apply_diff.empty(), "apply_interest_diff clears diff");
+    expectTrue(free_apply_scope.contains(make_entity(8)), "apply_interest_diff inserts entered entity");
+
+    fuse::net::InterestSetDiff noop_clear_diff{};
+    const fuse::net::InterestScopeSet noop_before = free_apply_scope;
+    expectTrue(!noop_clear_diff.apply_and_clear(free_apply_scope),
+               "apply_and_clear returns false on empty diff");
+    expectTrue(free_apply_scope.equal_to(noop_before), "apply_and_clear no-op leaves scope unchanged");
+
+    // --- relevance_radii_disabled early-out ---
+    fuse::net::InterestPolicy disabled_policy{};
+    disabled_policy.relevance_radius = 0.f;
+    disabled_policy.always_relevant_radius = 0.f;
+    expectTrue(fuse::net::relevance_radii_disabled(disabled_policy),
+               "relevance_radii_disabled true when both radii are zero");
+
+    std::vector<fuse::net::InterestCandidate> disabled_candidates;
+    disabled_candidates.push_back({make_entity(190), {10.f, 0.f, 0.f, 0.f}, 0.f});
+    disabled_candidates.push_back({make_entity(191), {20.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(fuse::net::count_candidates_in_radius(origin, disabled_policy, disabled_candidates) == 0u,
+               "count_candidates_in_radius early-outs when radii disabled");
+    std::vector<fuse::net::InterestEntry> disabled_filtered;
+    expectTrue(fuse::net::filter_candidates_in_radius(origin, disabled_policy, disabled_candidates,
+                                                      disabled_filtered) == 0u,
+               "filter_candidates_in_radius early-outs when radii disabled");
+    expectTrue(disabled_filtered.empty(), "disabled radii filter leaves output empty");
+
+    fuse::net::InterestScopeSet disabled_prior;
+    disabled_prior.entities = {make_entity(191)};
+    expectTrue(fuse::net::count_candidates_in_radius(origin, disabled_policy, disabled_candidates,
+                                                     disabled_prior) == 0u,
+               "hysteresis count early-outs when radii disabled and prior scope empty");
+    std::vector<fuse::net::InterestEntry> disabled_hysteresis_filtered;
+    expectTrue(fuse::net::filter_candidates_in_radius(origin, disabled_policy, disabled_candidates,
+                                                      disabled_prior,
+                                                      disabled_hysteresis_filtered) == 0u,
+               "hysteresis filter early-outs when radii disabled and prior scope empty");
+
+    fuse::net::InterestPolicy tight_disabled_policy{};
+    tight_disabled_policy.relevance_radius = -1.f;
+    tight_disabled_policy.always_relevant_radius = -1.f;
+    expectTrue(fuse::net::relevance_radii_disabled(tight_disabled_policy),
+               "relevance_radii_disabled treats negative radii as zero");
+    expectTrue(fuse::net::count_candidates_in_radius(origin, tight_disabled_policy,
+                                                     disabled_candidates) == 0u,
+               "negative radii count path early-outs");
 }
 
 } // namespace fuse::net::tests

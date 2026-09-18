@@ -77,6 +77,10 @@ struct InterestSetDiff {
     [[nodiscard]] bool apply_diff(InterestScopeSet& scope) const;
     /// Alias for `apply_diff` — returns true when the scope snapshot changed.
     [[nodiscard]] bool apply_to(InterestScopeSet& scope) const;
+    /// Apply enter/leave and clear this diff — returns true when scope changed.
+    [[nodiscard]] bool apply_and_clear(InterestScopeSet& scope);
+    /// Alias for `apply_and_clear`.
+    [[nodiscard]] bool apply_to_and_clear(InterestScopeSet& scope);
 
     [[nodiscard]] bool has_enters() const { return !entered.empty(); }
     [[nodiscard]] bool has_leaves() const { return !left.empty(); }
@@ -87,8 +91,12 @@ struct InterestSetDiff {
 [[nodiscard]] bool has_scope_leaves(const InterestSetDiff& diff);
 [[nodiscard]] u32 count_scope_diff_entities(const InterestSetDiff& diff);
 void clear_interest_diff(InterestSetDiff& diff);
+/// Apply `diff` to `scope` and clear `diff`. Returns true when scope changed.
+[[nodiscard]] bool apply_interest_diff(InterestSetDiff& diff, InterestScopeSet& scope);
 /// True when `diff` is non-empty and at least one enter/leave would modify `scope`.
 [[nodiscard]] bool can_apply_interest_diff(const InterestSetDiff& diff, const InterestScopeSet& scope);
+/// True when relevance and always-relevant radii are both zero (radius filter early-out).
+[[nodiscard]] bool relevance_radii_disabled(const InterestPolicy& policy);
 
 /// Returns true when `out` is non-empty.
 [[nodiscard]] bool diff_interest_scope_sets(const InterestScopeSet& previous, const InterestScopeSet& current,
@@ -123,7 +131,10 @@ public:
     void set_observer_position(ecs::vec3 position);
     [[nodiscard]] ecs::vec3 observer_position() const { return m_observer; }
 
-    void register_entity(InterestCandidate candidate);
+    /// Returns false when `candidate.entity` is already registered.
+    [[nodiscard]] bool register_entity(InterestCandidate candidate);
+    /// Remove a registered entity — returns false when the entity is not registered.
+    [[nodiscard]] bool unregister_entity(ecs::EntityID entity);
     /// True when `entity` is present in the registered candidate list.
     [[nodiscard]] bool is_entity_registered(ecs::EntityID entity) const;
     /// Update a registered entity position. Returns false when the entity is not registered.
