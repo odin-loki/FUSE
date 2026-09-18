@@ -170,6 +170,10 @@ bool InterestSetDiff::apply_diff(InterestScopeSet& scope) const {
     return changed;
 }
 
+bool InterestSetDiff::apply_to(InterestScopeSet& scope) const {
+    return apply_diff(scope);
+}
+
 bool is_empty_interest_diff(const InterestSetDiff& diff) {
     return diff.empty();
 }
@@ -184,6 +188,28 @@ bool has_scope_leaves(const InterestSetDiff& diff) {
 
 u32 count_scope_diff_entities(const InterestSetDiff& diff) {
     return static_cast<u32>(diff.entered.size() + diff.left.size());
+}
+
+void clear_interest_diff(InterestSetDiff& diff) {
+    diff.clear();
+}
+
+bool can_apply_interest_diff(const InterestSetDiff& diff, const InterestScopeSet& scope) {
+    if (diff.empty()) {
+        return false;
+    }
+
+    for (const ecs::EntityID& entity : diff.left) {
+        if (scope.contains(entity)) {
+            return true;
+        }
+    }
+    for (const ecs::EntityID& entity : diff.entered) {
+        if (!scope.contains(entity)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool diff_interest_scope_sets(const InterestScopeSet& previous, const InterestScopeSet& current,
@@ -333,6 +359,15 @@ void InterestManager::register_entity(InterestCandidate candidate) {
     m_candidates.push_back(candidate);
 }
 
+bool InterestManager::is_entity_registered(ecs::EntityID entity) const {
+    for (const InterestCandidate& candidate : m_candidates) {
+        if (candidate.entity == entity) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool InterestManager::update_entity_position(ecs::EntityID entity, ecs::vec3 position) {
     for (InterestCandidate& candidate : m_candidates) {
         if (candidate.entity == entity) {
@@ -418,6 +453,10 @@ u32 InterestManager::in_scope_count() const {
 
 u32 InterestManager::count_registered_in_radius() const {
     return count_candidates_in_radius(m_observer, m_policy, m_candidates, m_previous_scope_set);
+}
+
+bool InterestManager::has_any_registered_in_radius() const {
+    return count_registered_in_radius() > 0;
 }
 
 u32 InterestManager::filter_registered_in_radius(std::vector<InterestEntry>& out_entries) const {
