@@ -154,6 +154,9 @@ void CommandStack::clear() {
 }
 
 void CommandStack::markClean() {
+    if (!m_dirty) {
+        return;
+    }
     m_dirty = false;
 }
 

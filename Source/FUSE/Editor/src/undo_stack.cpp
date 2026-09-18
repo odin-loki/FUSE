@@ -135,6 +135,9 @@ void UndoStack::clear() {
 }
 
 void UndoStack::markClean() {
+    if (!m_dirty) {
+        return;
+    }
     m_dirty = false;
 }
 
