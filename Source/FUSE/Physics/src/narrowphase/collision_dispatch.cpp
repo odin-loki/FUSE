@@ -16,7 +16,12 @@ void runNarrowphaseIntoBuffer(
     // scheduler reference-capture flakes seen when stacking parallel broadphase + narrowphase
     // under core::initialize(); the slot layout matches the future parallel_for kernel path.
     for (u32 pairIndex = 0; pairIndex < pairCount; ++pairIndex) {
-        ContactManifold manifold = detect_contacts_pair(pairs[pairIndex], bodies, shapes);
+        const broadphase::CandidatePair& pair = pairs[pairIndex];
+        if (should_skip_contact_pair_dispatch(pair, bodies, shapes)) {
+            continue;
+        }
+
+        ContactManifold manifold = detect_contacts_pair(pair, bodies, shapes);
         if (generate_contact_manifold(manifold)) {
             buffer.writeSlot(pairIndex, manifold);
         }
