@@ -644,6 +644,103 @@ void testBilinearTileIrradiance() {
     expectNear(nullSample.x, 0.f, 1e-5f, "bilinear null samples returns zero");
 }
 
+void testProbeSampleCoordGuards() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+
+    fuse::renderer::ProbeSampleCoords built{};
+    expectTrue(fuse::renderer::ProbeGridLayout::buildProbeSampleCoords(desc, {0.5f, 0.5f, 0.5f}, built),
+               "buildProbeSampleCoords produces coords for interior sample");
+    expectTrue(fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, built),
+               "built sample coords pass validity guard");
+
+    fuse::renderer::ProbeSampleCoords reversed{};
+    reversed.x0 = 1u;
+    reversed.x1 = 0u;
+    reversed.y0 = 1u;
+    reversed.y1 = 0u;
+    reversed.z0 = 1u;
+    reversed.z1 = 0u;
+    reversed.tx = 0.25f;
+    reversed.ty = 0.75f;
+    reversed.tz = 0.5f;
+    expectTrue(!fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, reversed),
+               "reversed corner indices fail validity guard");
+    fuse::renderer::ProbeGridLayout::normalizeProbeSampleCoords(reversed);
+    expectTrue(fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, reversed),
+               "normalizeProbeSampleCoords fixes reversed corners");
+    expectTrue(reversed.x0 == 0u && reversed.x1 == 1u, "normalize swaps x corners into order");
+    expectNear(reversed.tx, 0.75f, 1e-5f, "normalize inverts tx when x corners swap");
+
+    fuse::renderer::ProbeSampleCoords oobWeights = built;
+    oobWeights.tx = 2.f;
+    oobWeights.ty = -1.f;
+    fuse::renderer::ProbeGridLayout::normalizeProbeSampleCoords(oobWeights);
+    expectTrue(fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, oobWeights),
+               "normalize clamps OOB trilinear weights");
+
+    fuse::renderer::ProbeSampleCoords oobIndices{};
+    oobIndices.x0 = 9u;
+    oobIndices.x1 = 9u;
+    oobIndices.y0 = 9u;
+    oobIndices.y1 = 9u;
+    oobIndices.z0 = 9u;
+    oobIndices.z1 = 9u;
+    expectTrue(!fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, oobIndices),
+               "OOB corner indices fail validity guard before clamp");
+    fuse::renderer::ProbeGridLayout::clampProbeSampleCoords(desc, oobIndices);
+    expectTrue(fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, oobIndices),
+               "clampProbeSampleCoords yields valid sample coords");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+    expectTrue(!fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(empty, built),
+               "empty grid sample coords invalid");
+}
+
+void testCacheIndexGuards() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+
+    expectTrue(fuse::renderer::ddgi_util::requiredCacheCount(desc) == 8u,
+               "requiredCacheCount matches probeCount");
+    expectTrue(fuse::renderer::ddgi_util::isCacheSizedForGrid(desc, 8u),
+               "cache sized at required count");
+    expectTrue(!fuse::renderer::ddgi_util::isCacheSizedForGrid(desc, 7u),
+               "cache one short of required count rejected");
+
+    expectTrue(fuse::renderer::ddgi_util::isCacheIndexValid(desc, 0u, 8u),
+               "origin probe index valid in full cache");
+    expectTrue(fuse::renderer::ddgi_util::isCacheIndexValid(desc, 7u, 8u),
+               "last probe index valid in full cache");
+    expectTrue(!fuse::renderer::ddgi_util::isCacheIndexValid(desc, 8u, 8u),
+               "probe index equal to cache length rejected");
+    expectTrue(!fuse::renderer::ddgi_util::isCacheIndexValid(desc, 99u, 8u),
+               "OOB probe index rejected even with full cache");
+    expectTrue(!fuse::renderer::ddgi_util::isCacheIndexValid(desc, 3u, 2u),
+               "in-range probe index rejected when cache undersized");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+    expectTrue(fuse::renderer::ddgi_util::requiredCacheCount(empty) == 0u,
+               "requiredCacheCount zero on empty grid");
+    expectTrue(!fuse::renderer::ddgi_util::isCacheIndexValid(empty, 0u, 8u),
+               "cache index invalid on empty grid");
+}
+
+void testLaunchProbeUpdateIndexGuard() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+
+    fuse::u32 validIndices[2] = {0u, 7u};
+    expectTrue(fuse::renderer::launch_ddgi_probe_update(desc, validIndices, 2u, nullptr),
+               "launch accepts in-range probe indices");
+
+    fuse::u32 oobIndices[2] = {0u, 99u};
+    expectTrue(!fuse::renderer::launch_ddgi_probe_update(desc, oobIndices, 2u, nullptr),
+               "launch rejects OOB probe indices");
+}
+
 void testSampleGuards() {
     fuse::renderer::DDGIDesc desc{};
     desc.grid_dims = {2, 2, 2};
@@ -847,6 +944,9 @@ int main() {
     testProbeBorderCounts();
     testResolveSampleDirectionFromSurface();
     testEmptyDirectionGuards();
+    testProbeSampleCoordGuards();
+    testCacheIndexGuards();
+    testLaunchProbeUpdateIndexGuard();
     testSampleGuards();
     testProbeWorldPositionClamped();
     testProbeAtlasLayout();
