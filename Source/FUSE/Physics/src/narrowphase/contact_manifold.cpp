@@ -206,6 +206,44 @@ bool ContactManifold::pruneIfEmpty(f32 separationEpsilon, f32 duplicateEpsilon) 
     return !empty();
 }
 
+u32 ContactManifold::countSeparatedPoints(f32 epsilon) const {
+    u32 separated = 0u;
+    for (u32 i = 0u; i < pointCount; ++i) {
+        if (points[i].penetration < -epsilon) {
+            ++separated;
+        }
+    }
+    return separated;
+}
+
+bool ContactManifold::hasUnitNormal(f32 epsilon) const {
+    if (!hasValidNormal()) {
+        return false;
+    }
+    return std::fabs(contactNormal.length() - 1.f) <= epsilon;
+}
+
+bool ContactManifold::normalizeContactNormal(f32 epsilon) {
+    if (!hasValidNormal(epsilon)) {
+        return false;
+    }
+    const f32 normalLength = contactNormal.length();
+    contactNormal = contactNormal * (1.f / normalLength);
+    return true;
+}
+
+bool ContactManifold::canFinalize(f32 separationEpsilon, f32 /*duplicateEpsilon*/) const {
+    if (empty() || !hasValidNormal()) {
+        return false;
+    }
+    return countPenetratingPoints(separationEpsilon) > 0u;
+}
+
+bool ContactManifold::pruneForFinalization(f32 separationEpsilon, f32 duplicateEpsilon) {
+    pruneContactPoints(separationEpsilon, duplicateEpsilon);
+    return hasPenetratingPoints(separationEpsilon);
+}
+
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};
     if (index >= pointCount) {
