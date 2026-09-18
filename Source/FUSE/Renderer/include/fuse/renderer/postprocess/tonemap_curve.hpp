@@ -94,6 +94,8 @@ public:
     void destroy();
 
     fuse::math::Vec3 apply(const fuse::math::Vec3& hdr) const;
+    /// True when stored curve params pass apply preflight (B5.10 deepen).
+    bool canApply() const;
 
 private:
     TonemapCurveParams m_params{};
