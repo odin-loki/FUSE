@@ -15,6 +15,10 @@ struct CommandStackSnapshot {
     u32 redoDepth = 0;
     u32 appliedCount = 0;
     u32 coalescedCount = 0;
+    u32 coalescedCountAtBaseline = 0;
+    u32 baselineUndoDepth = 0;
+    u32 baselineRedoDepth = 0;
+    bool baselineConfigured = false;
     u32 evictedCount = 0;
     bool dirty = false;
     u32 dirtyRevision = 0;
@@ -40,11 +44,20 @@ public:
     u32 redoDepth() const { return m_redoDepth; }
     u32 appliedCount() const { return m_appliedCount; }
     u32 coalescedCount() const { return m_coalescedCount; }
+    /// Coalesce events recorded since the last `set_baseline_state` call.
+    u32 coalescedCountSinceBaseline() const;
     u32 evictedCount() const { return m_evictedCount; }
 
     [[nodiscard]] bool isDirty() const { return m_dirty; }
     u32 dirtyRevision() const { return m_dirtyRevision; }
+    /// True when `dirtyRevision()` has advanced past `revision` (B6.2 deepen).
+    [[nodiscard]] bool isDirtySince(u32 revision) const { return dirtyRevision() > revision; }
     void markClean();
+    /// Records the current undo/redo depth as the saved-document baseline (B6.2 deepen).
+    void set_baseline_state();
+    [[nodiscard]] bool isAtBaseline() const;
+    /// True when undo/redo depth differs from the last `set_baseline_state` call.
+    [[nodiscard]] bool hasUnsavedChanges() const { return !isAtBaseline(); }
 
     CommandStackSnapshot captureSnapshot() const;
     void restoreSnapshot(const CommandStackSnapshot& snapshot);
@@ -60,6 +73,9 @@ private:
 
     void evictOldestIfNeeded_();
     void markDirty_();
+    void markDirtyAndBump_();
+    /// Clears dirty when undo/redo depth matches the saved baseline; otherwise marks dirty.
+    void syncBaselineDirty_();
 
     CommandQueue m_pending;
     std::vector<EditorCommand> m_undoStack;
@@ -68,6 +84,10 @@ private:
     u32 m_redoDepth = 0;
     u32 m_appliedCount = 0;
     u32 m_coalescedCount = 0;
+    u32 m_coalescedCountAtBaseline = 0;
+    u32 m_baselineUndoDepth = 0;
+    u32 m_baselineRedoDepth = 0;
+    bool m_baselineConfigured = false;
     u32 m_evictedCount = 0;
     bool m_dirty = false;
     u32 m_dirtyRevision = 0;
