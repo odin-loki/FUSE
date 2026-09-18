@@ -12,6 +12,22 @@
 
 namespace fuse::physics::broadphase {
 
+const char* candidateRejectReasonLabel(CandidateRejectReason reason) {
+    switch (reason) {
+    case CandidateRejectReason::None:
+        return "none";
+    case CandidateRejectReason::SelfPair:
+        return "self_pair";
+    case CandidateRejectReason::OutOfRangeBody:
+        return "out_of_range_body";
+    case CandidateRejectReason::AabbSeparated:
+        return "aabb_separated";
+    case CandidateRejectReason::BufferFull:
+        return "buffer_full";
+    }
+    return "unknown";
+}
+
 namespace {
 
 constexpr u32 kBuildGrainSize = 8u;
@@ -47,7 +63,7 @@ CandidatePair canonicalPair(u32 bodyA, u32 bodyB) {
 }
 
 void appendPair(std::vector<CandidatePair>& pairs, u32 bodyA, u32 bodyB) {
-    if (!isValidCandidatePair(bodyA, bodyB)) {
+    if (isRejectedCandidatePair(bodyA, bodyB)) {
         return;
     }
     pairs.push_back(canonicalPair(bodyA, bodyB));
@@ -134,7 +150,7 @@ void populateShapeCells(
 
     const vec3 position = bodies.positions[bodyIndex];
     const f32 radius = shapeRadius(shapes, shapeIndex);
-    const f32 cellSize = params.cellSize > 0.f ? params.cellSize : 1.f;
+    const f32 cellSize = clampCellSize(params.cellSize);
     const u32 tableSize = clampTableSize(params.tableSize);
     const u32 maxSpan = params.maxCellSpanPerAxis;
 
@@ -189,20 +205,31 @@ f32 bodyShapeRadius(const CollisionShapeSoA& shapes, u32 bodyIndex) {
     return 0.5f;
 }
 
+CandidateRejectReason candidatePairRejectReasonImpl(
+    const CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    const CandidateRejectReason indexReason = candidatePairRejectReason(pair, bodies.count());
+    if (indexReason != CandidateRejectReason::None) {
+        return indexReason;
+    }
+
+    const vec3 posA = bodies.positions[pair.bodyA];
+    const vec3 posB = bodies.positions[pair.bodyB];
+    const f32 radiusA = bodyShapeRadius(shapes, pair.bodyA);
+    const f32 radiusB = bodyShapeRadius(shapes, pair.bodyB);
+    if (!sphereAabbOverlap(posA, radiusA, posB, radiusB)) {
+        return CandidateRejectReason::AabbSeparated;
+    }
+    return CandidateRejectReason::None;
+}
+
 bool pairPassesAabbRefine(
     u32 bodyA,
     u32 bodyB,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
-    if (!isValidCandidatePair(bodyA, bodyB, bodies.count())) {
-        return false;
-    }
-
-    const vec3 posA = bodies.positions[bodyA];
-    const vec3 posB = bodies.positions[bodyB];
-    const f32 radiusA = bodyShapeRadius(shapes, bodyA);
-    const f32 radiusB = bodyShapeRadius(shapes, bodyB);
-    return sphereAabbOverlap(posA, radiusA, posB, radiusB);
+    return candidatePairRejectReasonImpl({bodyA, bodyB}, bodies, shapes) == CandidateRejectReason::None;
 }
 
 void runBroadphaseIntoBufferInternal(
@@ -298,7 +325,7 @@ void refineBroadphasePairsParallelImpl(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     PairBufferSoA& buffer) {
-    if (buffer.canSkipSoAIteration() || bodies.count() == 0 || shapes.count() == 0) {
+    if (buffer.canSkipRefine() || bodies.count() == 0 || shapes.count() == 0) {
         return;
     }
 
@@ -310,11 +337,10 @@ void refineBroadphasePairsParallelImpl(
 
         const u32 bodyA = buffer.bodyA[pairIndex];
         const u32 bodyB = buffer.bodyB[pairIndex];
-        if (!isValidCandidatePair(bodyA, bodyB, bodies.count())) {
-            buffer.invalidateSlot(pairIndex);
-            return;
-        }
-        if (!pairPassesAabbRefine(bodyA, bodyB, bodies, shapes)) {
+        const CandidateRejectReason rejectReason =
+            candidatePairRejectReasonImpl({bodyA, bodyB}, bodies, shapes);
+        if (rejectReason != CandidateRejectReason::None) {
+            buffer.lastRejectReason = rejectReason;
             buffer.invalidateSlot(pairIndex);
         }
     });
@@ -323,6 +349,38 @@ void refineBroadphasePairsParallelImpl(
 }
 
 } // namespace
+
+namespace {
+
+f32 bodyShapeRadiusForReject(const CollisionShapeSoA& shapes, u32 bodyIndex) {
+    for (u32 shapeIndex = 0; shapeIndex < shapes.count(); ++shapeIndex) {
+        if (shapes.bodyIndices[shapeIndex] == bodyIndex) {
+            return shapes.params[shapeIndex].x;
+        }
+    }
+    return 0.5f;
+}
+
+} // namespace
+
+CandidateRejectReason candidatePairRejectReason(
+    const CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    const CandidateRejectReason indexReason = candidatePairRejectReason(pair, bodies.count());
+    if (indexReason != CandidateRejectReason::None) {
+        return indexReason;
+    }
+
+    const vec3 posA = bodies.positions[pair.bodyA];
+    const vec3 posB = bodies.positions[pair.bodyB];
+    const f32 radiusA = bodyShapeRadiusForReject(shapes, pair.bodyA);
+    const f32 radiusB = bodyShapeRadiusForReject(shapes, pair.bodyB);
+    if (!sphereAabbOverlap(posA, radiusA, posB, radiusB)) {
+        return CandidateRejectReason::AabbSeparated;
+    }
+    return CandidateRejectReason::None;
+}
 
 void refineBroadphasePairsParallel(
     const RigidBodySoA& bodies,

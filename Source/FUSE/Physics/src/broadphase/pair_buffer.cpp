@@ -29,9 +29,28 @@ void PairBufferSoA::clear() {
     activeCount = 0;
     pairSlotCount = 0;
     droppedCount = 0;
+    lastRejectReason = CandidateRejectReason::None;
     bodyA.resize(0);
     bodyB.resize(0);
     validFlags.resize(0);
+}
+
+bool PairBufferSoA::hasInvalidSlots() const {
+    if (canSkipSoAIteration()) {
+        return false;
+    }
+
+    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+    for (u32 slot = 0; slot < scanCount; ++slot) {
+        if (validFlags[slot] == 0u) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool PairBufferSoA::canSkipCompact() const {
+    return canSkipSoAIteration() || !hasInvalidSlots();
 }
 
 void PairBufferSoA::preparePairSlots(u32 slotCount) {
@@ -44,7 +63,13 @@ void PairBufferSoA::preparePairSlots(u32 slotCount) {
 }
 
 void PairBufferSoA::writeSlot(u32 slot, u32 idxA, u32 idxB) {
-    if (slot >= pairSlotCount || !isValidCandidatePair(idxA, idxB)) {
+    if (slot >= pairSlotCount) {
+        return;
+    }
+
+    const CandidateRejectReason rejectReason = candidatePairRejectReason(idxA, idxB);
+    if (rejectReason != CandidateRejectReason::None) {
+        lastRejectReason = rejectReason;
         return;
     }
 
@@ -62,12 +87,15 @@ void PairBufferSoA::invalidateSlot(u32 slot) {
 }
 
 bool PairBufferSoA::push(u32 idxA, u32 idxB) {
-    if (!isValidCandidatePair(idxA, idxB)) {
+    const CandidateRejectReason rejectReason = candidatePairRejectReason(idxA, idxB);
+    if (rejectReason != CandidateRejectReason::None) {
+        lastRejectReason = rejectReason;
         return false;
     }
 
     if (maxCapacity > 0u && activeCount >= maxCapacity) {
         ++droppedCount;
+        lastRejectReason = CandidateRejectReason::BufferFull;
         return false;
     }
 
@@ -77,19 +105,15 @@ bool PairBufferSoA::push(u32 idxA, u32 idxB) {
     validFlags.push_back(1u);
     ++activeCount;
     pairSlotCount = activeCount;
+    lastRejectReason = CandidateRejectReason::None;
     return true;
 }
 
 u32 PairBufferSoA::compact() {
     const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
-    if (scanCount == 0u) {
-        activeCount = 0u;
-        pairSlotCount = 0u;
-        return activeCount;
-    }
-    if (scanCount == 0u) {
-        activeCount = 0u;
-        pairSlotCount = 0u;
+    if (canSkipCompact()) {
+        activeCount = scanCount;
+        pairSlotCount = scanCount;
         return activeCount;
     }
 
@@ -115,7 +139,7 @@ u32 PairBufferSoA::compact() {
 }
 
 void PairBufferSoA::sortCanonical() {
-    if (canSkipSoAIteration() || activeCount <= 1u) {
+    if (canSkipSort()) {
         return;
     }
 
@@ -170,7 +194,7 @@ u32 PairBufferSoA::compactAndClamp() {
 }
 
 bool PairBufferSoA::isSortedCanonical() const {
-    if (canSkipSoAIteration() || activeCount <= 1u) {
+    if (canSkipSort()) {
         return true;
     }
 
