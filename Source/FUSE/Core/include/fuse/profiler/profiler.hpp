@@ -62,6 +62,7 @@ void endFrame();
 
 u32 frameIndex();
 u32 eventCount();
+u32 ringCapacity();
 u32 maxNestingDepth();
 u32 nestingDepth();
 u32 maxFlowNestingDepth();
@@ -70,11 +71,13 @@ u32 flowNestingDepth();
 u32 openAsyncFlowCount();
 
 bool hasEvents();
+bool hasOpenAsyncFlows();
 bool isBufferEmpty();
 bool isBufferFull();
 bool isEventIndexValid(u32 index);
 bool isValidProfileEvent(const ProfileEvent& event);
 u32 lastEventIndex();
+const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 const ProfileEvent& lastEvent();
 void reset();

@@ -565,11 +565,15 @@ void testHasEventsAndEmptyBufferGuards() {
                "isValidProfileEvent false for empty-buffer sentinel");
     expectTrue(emptyEvent.phase == fuse::profiler::EventPhase::Begin,
                "eventAt sentinel keeps default begin phase");
+    expectTrue(&emptyEvent == &fuse::profiler::emptyProfileEvent(),
+               "eventAt sentinel matches emptyProfileEvent()");
 
     const fuse::profiler::ProfileEvent& oobEvent = fuse::profiler::eventAt(99);
     expectTrue(oobEvent.name == nullptr, "eventAt out-of-range returns sentinel with null name");
     expectTrue(!fuse::profiler::isValidProfileEvent(oobEvent),
                "isValidProfileEvent false for out-of-range sentinel");
+    expectTrue(&oobEvent == &fuse::profiler::emptyProfileEvent(),
+               "out-of-range eventAt returns emptyProfileEvent()");
 
     {
         FUSE_PROFILE_SCOPE("guard_scope");
@@ -984,7 +988,7 @@ void testDisabledCounterPreservesFlowNestingDepth() {
     expectTrue(fuse::profiler::eventCount() == 2u, "flow finish recorded after re-enable");
 }
 
-void testScopeNestingDepthIntrospection() {
+void testNestingDepthAliasIntrospection() {
     resetState();
     fuse::platform::registerMainThread();
 
@@ -1120,6 +1124,8 @@ void testDisabledBeginAsyncFlowDoesNotIncrementOpenCount() {
     expectTrue(fuse::profiler::eventCount() == 0u, "disabled flow begin records nothing");
     expectTrue(fuse::profiler::openAsyncFlowCount() == 0u,
                "disabled flow begin does not increment open count");
+    expectTrue(!fuse::profiler::hasOpenAsyncFlows(),
+               "hasOpenAsyncFlows false when disabled begin is skipped");
     expectTrue(fuse::profiler::flowNestingDepth() == 0u,
                "disabled flow begin does not mutate flow nesting depth");
 
@@ -1127,8 +1133,162 @@ void testDisabledBeginAsyncFlowDoesNotIncrementOpenCount() {
     FUSE_PROFILE_ASYNC_FLOW_BEGIN("enabled_flow", flowId);
     expectTrue(fuse::profiler::openAsyncFlowCount() == 1u,
                "open count resumes cleanly after re-enable");
+    expectTrue(fuse::profiler::hasOpenAsyncFlows(), "hasOpenAsyncFlows true after enabled begin");
     FUSE_PROFILE_ASYNC_FLOW_END("enabled_flow", flowId);
     expectTrue(fuse::profiler::openAsyncFlowCount() == 0u, "enabled flow pair clears open count");
+    expectTrue(!fuse::profiler::hasOpenAsyncFlows(), "hasOpenAsyncFlows false after flow pair");
+}
+
+void testRingCapacityAndBufferFullGuards() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::ringCapacity() > 0u, "ringCapacity exposes non-zero capacity");
+    expectTrue(fuse::profiler::eventCount() < fuse::profiler::ringCapacity(),
+               "empty buffer is below ring capacity");
+    expectTrue(!fuse::profiler::isBufferFull(), "empty buffer is not full");
+
+    {
+        FUSE_PROFILE_SCOPE("capacity_probe");
+    }
+
+    expectTrue(!fuse::profiler::isBufferFull(), "few events do not saturate ring buffer");
+    expectTrue(fuse::profiler::eventCount() <= fuse::profiler::ringCapacity(),
+               "event count stays within ring capacity");
+}
+
+void testDisabledAsyncFlowEndPreservesOpenCount() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("disabled_end_flow", flowId);
+    expectTrue(fuse::profiler::openAsyncFlowCount() == 1u, "flow begin establishes open count");
+    expectTrue(fuse::profiler::hasOpenAsyncFlows(), "hasOpenAsyncFlows true after begin");
+
+    fuse::profiler::setEnabled(false);
+    FUSE_PROFILE_ASYNC_FLOW_END("disabled_end_flow", flowId);
+    expectTrue(fuse::profiler::openAsyncFlowCount() == 1u,
+               "disabled flow finish preserves open async flow count");
+    expectTrue(fuse::profiler::hasOpenAsyncFlows(),
+               "hasOpenAsyncFlows remains true after disabled finish");
+    expectTrue(fuse::profiler::flowNestingDepth() == 1u,
+               "disabled flow finish preserves thread-local flow depth");
+    expectTrue(fuse::profiler::eventCount() == 1u, "disabled finish does not record flow finish event");
+
+    fuse::profiler::setEnabled(true);
+    FUSE_PROFILE_ASYNC_FLOW_END("disabled_end_flow", flowId);
+    expectTrue(fuse::profiler::openAsyncFlowCount() == 0u,
+               "re-enabled flow finish clears open async flow count");
+    expectTrue(!fuse::profiler::hasOpenAsyncFlows(), "hasOpenAsyncFlows false after re-enabled finish");
+    expectTrue(fuse::profiler::flowNestingDepth() == 0u,
+               "re-enabled flow finish restores thread-local flow depth");
+    expectTrue(fuse::profiler::eventCount() == 2u, "paired flow events recorded after disable guard");
+}
+
+void testCrossThreadFlowFinishSkipsWorkerFlowDepthPop() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("cross_thread_flow", flowId);
+    expectTrue(fuse::profiler::flowNestingDepth() == 1u, "begin thread records flow depth");
+    expectTrue(fuse::profiler::hasOpenAsyncFlows(), "cross-thread flow begin marks open async flow");
+
+    std::atomic<bool> workerDone{false};
+    std::thread worker([&]() {
+        expectTrue(fuse::profiler::flowNestingDepth() == 0u,
+                   "worker thread starts with zero flow depth");
+        FUSE_PROFILE_ASYNC_FLOW_END("cross_thread_flow", flowId);
+        expectTrue(fuse::profiler::flowNestingDepth() == 0u,
+                   "cross-thread flow finish does not underflow worker flow depth");
+        workerDone.store(true, std::memory_order_release);
+    });
+    worker.join();
+    expectTrue(workerDone.load(std::memory_order_acquire), "worker thread completed");
+
+    expectTrue(fuse::profiler::openAsyncFlowCount() == 0u,
+               "cross-thread flow finish clears global open count");
+    expectTrue(!fuse::profiler::hasOpenAsyncFlows(),
+               "hasOpenAsyncFlows false after cross-thread finish");
+    expectTrue(fuse::profiler::flowNestingDepth() == 1u,
+               "begin thread flow depth remains after cross-thread finish stub");
+    expectTrue(fuse::profiler::eventCount() == 2u, "cross-thread flow records start and finish");
+
+    fuse::profiler::reset();
+    expectTrue(fuse::profiler::flowNestingDepth() == 0u,
+               "reset clears begin-thread flow depth after cross-thread handoff");
+}
+
+void testDisabledScopeDoesNotMutateScopeNestingDepth() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::setEnabled(false);
+    {
+        FUSE_PROFILE_SCOPE("ignored_scope");
+        expectTrue(fuse::profiler::scopeNestingDepth() == 0u,
+                   "disabled scope does not mutate scope nesting depth");
+        expectTrue(fuse::profiler::nestingDepth() == 0u,
+                   "disabled scope does not mutate nestingDepth introspection");
+    }
+    expectTrue(fuse::profiler::scopeNestingDepth() == 0u,
+               "disabled scope destructor does not underflow scope depth");
+    expectTrue(fuse::profiler::maxNestingDepth() == 0u,
+               "disabled scope does not bump max nesting depth");
+
+    fuse::profiler::setEnabled(true);
+    {
+        FUSE_PROFILE_SCOPE("enabled_scope");
+        expectTrue(fuse::profiler::scopeNestingDepth() == 1u, "scope nesting resumes cleanly after re-enable");
+        expectTrue(fuse::profiler::nestingDepth() == 1u, "nestingDepth mirrors scope depth after re-enable");
+    }
+    expectTrue(fuse::profiler::scopeNestingDepth() == 0u, "enabled scope restores depth after re-enable");
+}
+
+void testResetClearsNestingAndOpenFlowState() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    {
+        FUSE_PROFILE_SCOPE("reset_outer");
+        FUSE_PROFILE_ASYNC_FLOW_BEGIN("reset_flow", flowId);
+        FUSE_PROFILE_COUNTER("reset_counter", 5);
+    }
+
+    expectTrue(fuse::profiler::scopeNestingDepth() == 0u, "scope ends before reset check");
+    expectTrue(fuse::profiler::openAsyncFlowCount() == 1u, "open flow survives scope exit until reset");
+    expectTrue(fuse::profiler::hasOpenAsyncFlows(), "hasOpenAsyncFlows true before reset");
+    expectTrue(fuse::profiler::hasEvents(), "events remain before reset");
+
+    fuse::profiler::reset();
+
+    expectTrue(fuse::profiler::openAsyncFlowCount() == 0u, "reset clears open async flow count");
+    expectTrue(!fuse::profiler::hasOpenAsyncFlows(), "hasOpenAsyncFlows false after reset");
+    expectTrue(fuse::profiler::scopeNestingDepth() == 0u, "reset clears scope nesting depth");
+    expectTrue(fuse::profiler::flowNestingDepth() == 0u, "reset clears flow nesting depth");
+    expectTrue(!fuse::profiler::hasEvents(), "reset clears event buffer");
+    expectTrue(fuse::profiler::isBufferEmpty(), "reset leaves buffer empty");
+    expectTrue(!fuse::profiler::isEventIndexValid(0u), "reset leaves isEventIndexValid false");
+    expectTrue(fuse::profiler::exportChromeTraceJson().find("\"traceEvents\":[]") != std::string::npos,
+               "reset leaves empty chrome export");
+}
+
+void testDisabledProfilerSkipsSnapshotCounter() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::beginFrame();
+    fuse::profiler::setEnabled(false);
+    FUSE_PROFILE_COUNTER_SNAPSHOT_AT_FRAME("ignored_snapshot", 512);
+    FUSE_PROFILE_COUNTER_SNAPSHOT_AT_FRAME("ignored_float_snapshot", 1.25);
+
+    expectTrue(fuse::profiler::eventCount() == 0u,
+               "disabled profiler skips snapshot_at_frame counter samples");
+    expectTrue(fuse::profiler::isBufferEmpty(), "disabled snapshot counter leaves buffer empty");
+    expectTrue(fuse::profiler::exportChromeTraceJson().find("\"traceEvents\":[]") != std::string::npos,
+               "disabled snapshot counter export stays empty");
 }
 
 void testVerifyMacro() {
@@ -1195,13 +1355,19 @@ int main() {
     testDisabledAsyncFlowBeginSkipsDepthAndOpenCount();
     testResetClearsOpenAsyncFlowCount();
     testDisabledCounterPreservesFlowNestingDepth();
-    testScopeNestingDepthIntrospection();
+    testNestingDepthAliasIntrospection();
     testOpenAsyncFlowCountIntrospection();
     testNullNameProfileScopeGuard();
     testResetClearsNestingAndFlowGuardState();
     testDisabledScopeDoesNotMutateNestingDepth();
     testMultipleOrphanAsyncFlowEndsAreIgnored();
     testDisabledBeginAsyncFlowDoesNotIncrementOpenCount();
+    testRingCapacityAndBufferFullGuards();
+    testDisabledAsyncFlowEndPreservesOpenCount();
+    testCrossThreadFlowFinishSkipsWorkerFlowDepthPop();
+    testDisabledScopeDoesNotMutateScopeNestingDepth();
+    testResetClearsNestingAndOpenFlowState();
+    testDisabledProfilerSkipsSnapshotCounter();
     testFatalHandlerHook();
     testVerifyMacro();
 
