@@ -27,9 +27,13 @@ void SpatialMixer::clear_occlusion_blockers() {
     m_occlusionBlockers.clear();
 }
 
+bool SpatialMixer::has_occlusion_blockers() const {
+    return !m_occlusionBlockers.empty();
+}
+
 float SpatialMixer::compute_source_visibility(const Vec3& listener, const Vec3& source,
                                               float source_occlusion) const {
-    if (m_occlusionBlockers.empty()) {
+    if (!has_occlusion_blockers()) {
         return std::clamp(source_occlusion, 0.f, 1.f);
     }
     return compute_effective_visibility(listener, source, source_occlusion,
@@ -39,8 +43,13 @@ float SpatialMixer::compute_source_visibility(const Vec3& listener, const Vec3& 
 
 OcclusionAttenuation SpatialMixer::compute_source_occlusion_attenuation(
     const Vec3& listener, const Vec3& source, float source_occlusion) const {
-    if (m_occlusionBlockers.empty()) {
-        return evaluate_occlusion_attenuation(std::clamp(source_occlusion, 0.f, 1.f));
+    const float visibility = std::clamp(source_occlusion, 0.f, 1.f);
+    if (!has_occlusion_blockers()) {
+        const OcclusionAttenuation attenuation = evaluate_occlusion_attenuation(visibility);
+        if (is_unity_occlusion_attenuation(attenuation)) {
+            return make_unity_occlusion_attenuation();
+        }
+        return attenuation;
     }
     return evaluate_occlusion_from_blockers(listener, source, source_occlusion,
                                             m_occlusionBlockers.data(),
@@ -129,7 +138,7 @@ void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>
             compute_source_occlusion_attenuation(listener_pos, source->position,
                                                  source->desc.occlusion);
         const float effective_attenuation =
-            distance_attenuation * occlusion.gain * occlusion.hf_gain;
+            distance_attenuation * compute_occlusion_combined_gain(occlusion);
 
         const Vec3 world_rel = source->position - listener_pos;
         const Vec3 rel = listener != nullptr ? to_listener_space(world_rel, basis) : world_rel;
