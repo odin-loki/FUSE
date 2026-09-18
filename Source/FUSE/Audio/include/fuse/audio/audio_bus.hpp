@@ -33,6 +33,9 @@ bool is_empty_audio_bus(AudioBus bus);
 /// True when a clamped gain is at or below the mute epsilon.
 bool is_near_zero_bus_gain(float gain);
 
+/// True when listener master volume is at or below the mute epsilon.
+bool is_listener_master_muted(float listener_master_volume);
+
 /// Per-bus gain stub — effective output walks the parent chain to Master.
 class AudioBusMixer {
 public:
@@ -60,11 +63,17 @@ public:
     /// Stub per-bus mute flag (independent of zero gain).
     void set_bus_muted(AudioBus bus, bool muted);
     bool bus_muted(AudioBus bus) const;
+    bool any_bus_muted() const;
+    u32 muted_bus_count() const;
+
+    /// Clear all category mute flags.
+    void clear_bus_mute();
 
     /// Stub solo — when any category bus is soloed, non-solo buses are silenced.
     void set_bus_solo(AudioBus bus, bool solo);
     bool bus_soloed(AudioBus bus) const;
     bool any_bus_soloed() const;
+    u32 soloed_bus_count() const;
 
     /// Clear all category solo flags (solo mode off).
     void clear_bus_solo();
@@ -77,6 +86,9 @@ public:
 
     /// True when solo mode silences \p bus (non-solo category while another bus is soloed).
     bool is_bus_solo_silenced(AudioBus bus) const;
+
+    /// True when any ancestor category bus carries an explicit mute flag.
+    bool is_parent_chain_muted(AudioBus bus) const;
 
 private:
     float m_gains[static_cast<u32>(AudioBus::Count)] = {1.f, 1.f, 1.f, 1.f};
@@ -96,6 +108,13 @@ float compute_mix_output_gain(const AudioBusMixer& mixer, AudioBus bus,
 
 /// True when bus mix should be skipped (invalid, muted, near-zero, or solo-silenced).
 bool should_skip_bus_mix(const AudioBusMixer& mixer, AudioBus bus);
+
+/// True when bus mix should be skipped, including listener master near-zero early-out.
+bool should_skip_bus_mix(const AudioBusMixer& mixer, AudioBus bus,
+                         float listener_master_volume);
+
+/// True when \p bus will not contribute audible mix output (alias of \c should_skip_bus_mix).
+bool is_bus_mix_silenced(const AudioBusMixer& mixer, AudioBus bus);
 
 /// True when \p bus is valid and its effective gain is zero (muted stub).
 bool is_bus_muted(const AudioBusMixer& mixer, AudioBus bus);
