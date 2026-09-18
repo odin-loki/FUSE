@@ -45,6 +45,7 @@ struct EventPumpStats {
     u32 droppedEventCount = 0;
     u32 coalescedResizeCount = 0;
     bool quitRequested = false;
+    bool hasPendingQuitEvent = false;
 };
 
 /// OS event pump — B1.7 stub drains a synthetic queue only (desktop + mobile no-op).
@@ -77,7 +78,15 @@ public:
     /// True when a `WindowResized` event for `window` is still queued.
     bool hasPendingResizeFor(const Window& window) const;
 
+    /// True when at least one queued event matches `type`.
+    bool hasPendingEventOfType(PlatformEventType type) const;
+
+    /// Number of queued events whose `window` pointer matches `window`.
+    u32 countPendingEventsFor(const Window& window) const;
+
     /// Pending resize dimensions for `window`, or `pending == false` when none queued.
+    ///
+    /// Zero width or height on a queued resize is treated as invalid and ignored.
     PendingResizeExtent pendingResizeExtentFor(const Window& window) const;
 
     /// Most recent in-place resize coalesce (invalid when none have occurred).
