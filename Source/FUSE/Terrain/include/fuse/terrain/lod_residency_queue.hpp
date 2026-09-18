@@ -33,6 +33,7 @@ struct CompletedLodResidencyRequest {
     u32 chunk_index = 0;
     LodResidencyRequestKind kind = LodResidencyRequestKind::Load;
     f32 priority = 0.f;
+    u64 submit_sequence = 0; ///< FIFO tie-break when priorities match
     bool success = true;
     LodResidencyMorphSnapshot morph_snapshot{};
 };
@@ -52,11 +53,24 @@ void sync_morph_after_residency(TerrainChunk& chunk, const LodResidencyMorphSnap
 /// Worker-side mesh/heightfield I/O stub — production wiring reads chunk assets from disk.
 using LodResidencyWorkFn = std::function<bool(u32 chunk_index, LodResidencyRequestKind kind)>;
 
+/// Priority ordering: higher priority first, unload before load at equal priority, FIFO tie-break.
+[[nodiscard]] int compare_lod_residency_request_order(f32 priority_a, LodResidencyRequestKind kind_a, u64 sequence_a,
+                                                      f32 priority_b, LodResidencyRequestKind kind_b, u64 sequence_b);
+
 /// Async LOD residency queue backed by JobScheduler (mirrors B7.6 StreamingRequestQueue).
 class LodResidencyQueue {
 public:
     /// Queue a request for later submission. Promotes priority when the same chunk/kind is already pending.
     bool enqueue(LodResidencyRequest request);
+
+    /// Remove the highest-priority pending request into `out`. Returns false when the pending queue is empty.
+    bool dequeue(LodResidencyRequest& out);
+
+    /// True when at least one request is waiting in the pending enqueue buffer.
+    [[nodiscard]] bool has_pending_enqueue() const;
+
+    /// Copy the highest-priority pending request into `out` without removing it. Returns false when empty.
+    [[nodiscard]] bool peek_pending(LodResidencyRequest& out) const;
 
     /// Lower priority for a pending request (returns false when not found).
     bool demote(u32 chunk_index, LodResidencyRequestKind kind, f32 scale);
@@ -75,21 +89,65 @@ public:
     [[nodiscard]] u32 max_pending_submits() const { return m_max_pending_submits; }
     [[nodiscard]] u32 pending_enqueue_count() const;
     [[nodiscard]] u32 pending_submit_count() const;
+    /// Pending priority for chunk/kind, or -1 when not enqueued.
+    [[nodiscard]] f32 pending_priority_for(u32 chunk_index, LodResidencyRequestKind kind) const;
 
     [[nodiscard]] u32 in_flight_count() const;
     [[nodiscard]] u32 completed_count() const;
+    [[nodiscard]] bool empty() const;
 
     void clear();
 
 private:
+    struct PendingLodResidencyRequest {
+        LodResidencyRequest request{};
+        u64 enqueue_sequence = 0;
+    };
+
     [[nodiscard]] bool would_exceed_budget_() const;
+    void sort_pending_by_priority_();
     void push_completed_(CompletedLodResidencyRequest completed);
 
     mutable std::mutex m_mutex;
     u32 m_inFlight = 0;
+    u64 m_submit_sequence = 0;
+    u64 m_enqueue_sequence = 0;
     u32 m_max_pending_submits = 0; ///< 0 = unlimited pending (in-flight + completed buffer)
-    std::vector<LodResidencyRequest> m_pending;
+    std::vector<PendingLodResidencyRequest> m_pending;
     std::vector<CompletedLodResidencyRequest> m_completed;
 };
+
+/// Empty-queue guard: true when the pending enqueue buffer has at least one request.
+[[nodiscard]] inline bool has_pending_enqueue(const LodResidencyQueue& queue) {
+    return queue.has_pending_enqueue();
+}
+
+/// Dequeue helper: removes highest-priority pending request when non-empty.
+[[nodiscard]] inline bool try_dequeue_pending(LodResidencyQueue& queue, LodResidencyRequest& out) {
+    if (!queue.has_pending_enqueue()) {
+        return false;
+    }
+    return queue.dequeue(out);
+}
+
+/// Peek helper: copies highest-priority pending request without removing it.
+[[nodiscard]] inline bool peek_highest_pending(const LodResidencyQueue& queue, LodResidencyRequest& out) {
+    return queue.peek_pending(out);
+}
+
+/// Peek helper: returns the highest pending priority, or -1 when the pending queue is empty.
+[[nodiscard]] inline f32 peek_highest_pending_priority(const LodResidencyQueue& queue) {
+    LodResidencyRequest peeked{};
+    return peek_highest_pending(queue, peeked) ? peeked.priority : -1.f;
+}
+
+/// Dequeue helper: removes the highest-priority pending request only when its priority is at least `min_priority`.
+[[nodiscard]] inline bool try_dequeue_pending_if(LodResidencyQueue& queue, f32 min_priority,
+                                                 LodResidencyRequest& out) {
+    if (!peek_highest_pending(queue, out) || out.priority < min_priority) {
+        return false;
+    }
+    return try_dequeue_pending(queue, out);
+}
 
 } // namespace fuse::terrain

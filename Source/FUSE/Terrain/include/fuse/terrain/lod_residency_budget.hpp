@@ -91,6 +91,22 @@ struct LodResidencyBudgetCounters {
     return max_async_in_flight == 0u || in_flight < max_async_in_flight;
 }
 
+/// True when in-flight plus undrained completions would exceed the pending submit cap.
+[[nodiscard]] inline bool would_exceed_async_budget(u32 in_flight, u32 completed_undrained,
+                                                    u32 max_pending_submits) {
+    if (max_pending_submits == 0u) {
+        return false;
+    }
+    return in_flight + completed_undrained >= max_pending_submits;
+}
+
+/// Guard: async submit allowed when both in-flight and pending-submit caps have headroom.
+[[nodiscard]] inline bool can_submit_async_load_guarded(u32 in_flight, u32 completed_undrained,
+                                                        u32 max_async_in_flight, u32 max_pending_submits) {
+    return can_submit_async_load(in_flight, max_async_in_flight) &&
+           !would_exceed_async_budget(in_flight, completed_undrained, max_pending_submits);
+}
+
 [[nodiscard]] inline u32 async_in_flight_headroom(u32 max_async_in_flight, u32 in_flight) {
     if (max_async_in_flight == 0u) {
         return ~0u;
@@ -168,6 +184,22 @@ struct LodResidencyBudgetCounters {
                                                         u32 incoming_count = 1u) {
     return needs_budget_eviction_for_incoming(max_resident_chunks, resident_count, incoming_count) &&
            has_eviction_candidate;
+}
+
+/// Combine stream-out unload priority with any stored chunk priority (B7.5 stub).
+[[nodiscard]] inline f32 effective_unload_priority(f32 streaming_priority, f32 stored_priority) {
+    return std::max(streaming_priority, stored_priority);
+}
+
+/// Rank unload pressure for eviction queue ordering (B7.5 deepen).
+[[nodiscard]] inline f32 rank_unload_priority(f32 streaming_priority, f32 stored_priority, f32 focus_distance) {
+    return std::max({streaming_priority, stored_priority, focus_distance});
+}
+
+/// Merge unload rank with a budget eviction score for queue ordering (B7.5 deepen).
+[[nodiscard]] inline f32 rank_budget_unload_priority(f32 streaming_priority, f32 stored_priority,
+                                                     f32 focus_distance, f32 budget_score) {
+    return std::max(rank_unload_priority(streaming_priority, stored_priority, focus_distance), budget_score);
 }
 
 } // namespace fuse::terrain
