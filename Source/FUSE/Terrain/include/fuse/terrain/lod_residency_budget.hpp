@@ -170,4 +170,43 @@ struct LodResidencyBudgetCounters {
            has_eviction_candidate;
 }
 
+/// Merge streaming and stored unload priorities (B7.5 deepen — mirrors B7.6).
+[[nodiscard]] inline f32 effective_unload_priority(f32 streaming_priority, f32 stored_priority) {
+    return std::max(streaming_priority, stored_priority);
+}
+
+/// Rank unload candidates by streaming, stored, and focus distance (B7.5 deepen).
+[[nodiscard]] inline f32 rank_unload_priority(f32 streaming_priority, f32 stored_priority, f32 focus_distance) {
+    return std::max({streaming_priority, stored_priority, focus_distance});
+}
+
+/// Merge unload rank with a budget eviction score for queue ordering (B7.5 deepen).
+[[nodiscard]] inline f32 rank_budget_unload_priority(f32 streaming_priority, f32 stored_priority,
+                                                      f32 focus_distance, f32 budget_score) {
+    return std::max(rank_unload_priority(streaming_priority, stored_priority, focus_distance), budget_score);
+}
+
+/// True when in-flight plus completed buffer would exceed the async pending-submit cap.
+[[nodiscard]] inline bool would_exceed_pending_submit_budget(u32 in_flight, u32 completed,
+                                                             u32 max_pending_submits) {
+    if (max_pending_submits == 0u) {
+        return false;
+    }
+    return in_flight + completed >= max_pending_submits;
+}
+
+/// Guard: returns false when the pending-submit budget is already saturated.
+[[nodiscard]] inline bool can_submit_pending_request(u32 in_flight, u32 completed, u32 max_pending_submits) {
+    return !would_exceed_pending_submit_budget(in_flight, completed, max_pending_submits);
+}
+
+/// Guard: clamp how many async submits can be issued this tick given in-flight headroom.
+[[nodiscard]] inline u32 clamp_async_submits_per_tick(u32 requested, u32 in_flight, u32 max_async_in_flight) {
+    if (requested == 0u) {
+        return 0u;
+    }
+    const u32 headroom = async_in_flight_headroom(max_async_in_flight, in_flight);
+    return requested < headroom ? requested : headroom;
+}
+
 } // namespace fuse::terrain
