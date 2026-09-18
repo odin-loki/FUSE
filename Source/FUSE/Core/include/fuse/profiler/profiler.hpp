@@ -68,6 +68,29 @@ u32 maxFlowNestingDepth();
 u32 scopeNestingDepth();
 u32 flowNestingDepth();
 u32 openAsyncFlowCount();
+bool hasOpenAsyncFlows();
+bool isScopeNestingBalanced();
+bool isFlowNestingBalanced();
+
+/// True when `name` is non-null and contains at least one character (B1.6 deepen).
+bool isValidEventName(const char* name);
+
+/// Read-only chrome export diagnostics — no mutation (B1.6 deepen).
+struct ChromeExportPreflight {
+    bool bufferEmpty = false;
+    bool unbalancedScopeNesting = false;
+    bool unbalancedFlowNesting = false;
+    bool hasOpenAsyncFlows = false;
+
+    /// Export always produces valid JSON; preflight surfaces state warnings only.
+    bool canExport() const { return true; }
+
+    bool hasStateWarnings() const {
+        return unbalancedScopeNesting || unbalancedFlowNesting || hasOpenAsyncFlows;
+    }
+};
+
+ChromeExportPreflight preflightChromeExport();
 
 bool hasEvents();
 bool isBufferEmpty();
@@ -76,6 +99,8 @@ bool isEventIndexValid(u32 index);
 bool isValidProfileEvent(const ProfileEvent& event);
 u32 lastEventIndex();
 const ProfileEvent& eventAt(u32 index);
+/// Safe ring-buffer lookup — returns false and clears `outEvent` when the index is invalid.
+bool tryEventAt(u32 index, ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 void reset();
 
