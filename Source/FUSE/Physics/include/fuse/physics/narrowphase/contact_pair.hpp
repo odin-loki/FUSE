@@ -117,4 +117,24 @@ bool should_skip_contact_pair_dispatch(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Per-pair narrowphase dispatch outcome (skip vs detect) for parallel batch stubs (B4.4 deepen pass).
+struct ContactPairDispatchResult {
+    ContactManifold manifold{};
+    bool detected = false;
+    bool skipped = false;
+    ContactPairRejectReason reason = ContactPairRejectReason::None;
+};
+
+/// Guarded pair dispatch with explicit skip/detect outcome (B4.4 deepen pass).
+ContactPairDispatchResult detect_contacts_pair_guarded(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Guarded pair dispatch returning skip/detect outcome without mutating on reject (B4.4 deepen pass).
+ContactPairDispatchResult detect_contacts_pair_result(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
 } // namespace fuse::physics::narrowphase

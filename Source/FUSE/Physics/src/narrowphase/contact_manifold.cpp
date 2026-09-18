@@ -317,7 +317,8 @@ bool ContactManifold::pruneContactPointsIfNeeded(f32 separationEpsilon, f32 dupl
 ManifoldPrunePreflight preflight_manifold_prune(
     const ContactManifold& manifold,
     f32 separationEpsilon,
-    f32 duplicateEpsilon) {
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
     ManifoldPrunePreflight preflight{};
     if (manifold.empty()) {
         preflight.skipped = true;
@@ -328,8 +329,122 @@ ManifoldPrunePreflight preflight_manifold_prune(
     preflight.hasSeparated = manifold.hasSeparatedPoints(separationEpsilon);
     preflight.hasDuplicates = manifold.hasDuplicatePoints(duplicateEpsilon);
     preflight.exceedsMaxPoints = manifold.pointCount > kMaxContactPointsPerManifold;
+    if (shallowMinDepth > 0.f) {
+        preflight.hasShallow = manifold.hasShallowPenetrations(shallowMinDepth);
+    }
     preflight.wouldBeEmpty = manifold.wouldBeEmptyAfterPrune(separationEpsilon, duplicateEpsilon);
     return preflight;
+}
+
+const char* manifold_finalize_failure_reason_name(ManifoldFinalizeFailureReason reason) {
+    switch (reason) {
+    case ManifoldFinalizeFailureReason::None:
+        return "None";
+    case ManifoldFinalizeFailureReason::Empty:
+        return "Empty";
+    case ManifoldFinalizeFailureReason::InvalidNormal:
+        return "InvalidNormal";
+    case ManifoldFinalizeFailureReason::NoPenetratingPoints:
+        return "NoPenetratingPoints";
+    case ManifoldFinalizeFailureReason::PruneWouldEmpty:
+        return "PruneWouldEmpty";
+    case ManifoldFinalizeFailureReason::MissingFrictionBasis:
+        return "MissingFrictionBasis";
+    }
+    return "Unknown";
+}
+
+ManifoldFinalizePreflight preflight_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) {
+    ManifoldFinalizePreflight preflight{};
+    if (manifold.empty()) {
+        preflight.skipped = true;
+        preflight.reason = ManifoldFinalizeFailureReason::Empty;
+        return preflight;
+    }
+
+    preflight.prune = preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon);
+    if (preflight.prune.wouldBeEmpty) {
+        preflight.reason = ManifoldFinalizeFailureReason::PruneWouldEmpty;
+        return preflight;
+    }
+
+    if (!manifold.hasValidNormal()) {
+        preflight.reason = ManifoldFinalizeFailureReason::InvalidNormal;
+        return preflight;
+    }
+
+    if (!manifold.hasPenetratingPoints(separationEpsilon)) {
+        preflight.reason = ManifoldFinalizeFailureReason::NoPenetratingPoints;
+        return preflight;
+    }
+
+    return preflight;
+}
+
+bool should_skip_manifold_finalize(const ContactManifold& manifold) {
+    return !preflight_manifold_finalize(manifold).can_finalize();
+}
+
+ManifoldFinalizeResult generate_contact_manifold_result(ContactManifold& manifold) {
+    ManifoldFinalizeResult result{};
+    const ManifoldFinalizePreflight preflight = preflight_manifold_finalize(manifold);
+    result.reason = preflight.reason;
+    if (!preflight.can_finalize()) {
+        result.skipped = true;
+        if (preflight.reason == ManifoldFinalizeFailureReason::Empty ||
+            preflight.reason == ManifoldFinalizeFailureReason::PruneWouldEmpty ||
+            preflight.reason == ManifoldFinalizeFailureReason::NoPenetratingPoints) {
+            manifold.clear();
+        } else if (preflight.reason == ManifoldFinalizeFailureReason::InvalidNormal ||
+                   preflight.reason == ManifoldFinalizeFailureReason::MissingFrictionBasis) {
+            manifold.clear();
+        }
+        return result;
+    }
+
+    if (!manifold.pruneContactPointsIfNeeded()) {
+        result.skipped = true;
+        result.reason = ManifoldFinalizeFailureReason::PruneWouldEmpty;
+        manifold.clear();
+        return result;
+    }
+
+    if (!manifold.hasValidNormal()) {
+        result.skipped = true;
+        result.reason = ManifoldFinalizeFailureReason::InvalidNormal;
+        manifold.clear();
+        return result;
+    }
+
+    const f32 normalLength = manifold.contactNormal.length();
+    manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+
+    manifold.syncLegacyFields();
+    compute_friction_tangents_if_needed(manifold);
+    if (!manifold.hasFrictionBasis()) {
+        result.skipped = true;
+        result.reason = ManifoldFinalizeFailureReason::MissingFrictionBasis;
+        manifold.clear();
+        return result;
+    }
+
+    manifold.valid = true;
+    result.finalized = true;
+    return result;
+}
+
+ManifoldFinalizeResult generate_contact_manifold_guarded(ContactManifold& manifold) {
+    return generate_contact_manifold_result(manifold);
+}
+
+bool generate_contact_manifold_if_needed(ContactManifold& manifold) {
+    if (should_skip_manifold_finalize(manifold)) {
+        return false;
+    }
+    return generate_contact_manifold_guarded(manifold).finalized;
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

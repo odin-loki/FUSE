@@ -353,34 +353,7 @@ bool can_finalize_contact_manifold(const ContactManifold& manifold) {
 }
 
 bool generate_contact_manifold(ContactManifold& manifold) {
-    if (manifold.empty()) {
-        manifold.clear();
-        return false;
-    }
-
-    manifold.pruneContactPoints();
-    if (manifold.empty()) {
-        manifold.clear();
-        return false;
-    }
-
-    if (!manifold.hasValidNormal()) {
-        manifold.clear();
-        return false;
-    }
-
-    const f32 normalLength = manifold.contactNormal.length();
-    manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
-
-    manifold.syncLegacyFields();
-    compute_friction_tangents(manifold);
-    if (!manifold.hasFrictionBasis()) {
-        manifold.clear();
-        return false;
-    }
-
-    manifold.valid = true;
-    return true;
+    return generate_contact_manifold_guarded(manifold).finalized;
 }
 
 void compute_friction_tangents(ContactManifold& manifold) {
@@ -415,6 +388,30 @@ bool should_skip_contact_pair_dispatch(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return is_invalid_contact_pair(pair, bodies, shapes);
+}
+
+ContactPairDispatchResult detect_contacts_pair_result(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    ContactPairDispatchResult result{};
+    const ContactPairPreflight preflight = preflight_contact_pair(pair, bodies, shapes);
+    result.reason = preflight.reason;
+    if (!preflight.can_dispatch()) {
+        result.skipped = true;
+        return result;
+    }
+
+    result.manifold = dispatchShapePair(pair, bodies, shapes);
+    result.detected = true;
+    return result;
+}
+
+ContactPairDispatchResult detect_contacts_pair_guarded(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return detect_contacts_pair_result(pair, bodies, shapes);
 }
 
 } // namespace fuse::physics::narrowphase

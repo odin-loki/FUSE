@@ -105,6 +105,32 @@ void ContactBufferSoA::buildFrictionTangentBases() {
     }
 }
 
+void ContactBufferSoA::buildFrictionTangentBasesIfNeeded(f32 epsilon) {
+    for (u32 slot = 0u; slot < activeCount; ++slot) {
+        if (validFlags[slot] == 0u) {
+            continue;
+        }
+
+        ContactManifold manifold = manifoldAt(slot);
+        const FrictionBasisPreflight preflight = preflight_friction_basis_rebuild(manifold, epsilon);
+        if (preflight.can_reuse()) {
+            tangent1[slot] = manifold.frictionBasis.tangent1;
+            tangent2[slot] = manifold.frictionBasis.tangent2;
+            continue;
+        }
+
+        if (preflight.shouldSkip) {
+            tangent1[slot] = {};
+            tangent2[slot] = {};
+            continue;
+        }
+
+        const TangentBasis basis = buildTangentBasis(contactNormals[slot]);
+        tangent1[slot] = basis.tangent1;
+        tangent2[slot] = basis.tangent2;
+    }
+}
+
 TangentBasis ContactBufferSoA::tangentBasisAt(u32 index) const {
     if (index >= activeCount || validFlags[index] == 0u) {
         return {};

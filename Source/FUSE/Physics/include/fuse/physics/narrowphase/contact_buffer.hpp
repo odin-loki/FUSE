@@ -40,6 +40,7 @@ struct ContactBufferSoA {
     void writeSlot(u32 slot, const ContactManifold& manifold);
     void applyWarmStartStub(u32 slot, ContactManifold& manifold) const;
     void buildFrictionTangentBases();
+    void buildFrictionTangentBasesIfNeeded(f32 epsilon = 1e-4f);
     u32 compact();
     u32 applyMaxCapacityClamp();
     u32 compactAndClamp();
