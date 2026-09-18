@@ -63,10 +63,12 @@ struct ParticleGpuMirrorPreflight {
     ParticleGpuSyncGuard sync_guard = ParticleGpuSyncGuard::MirrorUninitialized;
     ParticleGpuSyncGuard write_guard = ParticleGpuSyncGuard::MirrorUninitialized;
     bool alive_count_matches_flags = true;
+    bool packed_layout_ok = false;
 
     [[nodiscard]] bool can_sync_from_cpu() const;
     [[nodiscard]] bool can_write_to_cpu() const;
     [[nodiscard]] bool can_pack() const;
+    [[nodiscard]] bool can_unpack(const std::vector<u8>& bytes, u32 particle_capacity) const;
 };
 
 /// Per-column byte sizing and packed SSBO layout helpers.
@@ -88,15 +90,31 @@ struct ParticleGpuBufferLayout {
     static usize packingOverheadBytes(u32 capacity);
     static u64 columnDeviceAddress(ParticleGpuColumn column, u64 base, u32 capacity);
     static bool validateSlotIndex(u32 slot_index, u32 capacity);
+    static bool validateSlotDeviceOffset(ParticleGpuColumn column, u32 slot_index, u32 capacity);
     static usize slotDeviceOffset(ParticleGpuColumn column, u32 slot_index, u32 capacity);
+    static u32 slotIndexFromColumnOffset(ParticleGpuColumn column, usize column_byte_offset, u32 capacity);
     static bool containsByteOffset(usize byte_offset, u32 capacity);
     static bool locateColumnAtOffset(usize byte_offset, u32 capacity, ParticleGpuColumnSpan* out_span);
+    static bool locateSlotAtOffset(usize byte_offset, u32 capacity, ParticleGpuColumn* out_column, u32* out_slot);
+    static bool packedBytesFitCapacity(const std::vector<u8>& bytes, u32 capacity);
     static bool validatePackedLayout(u32 capacity);
     static bool isColumnOffsetAligned(ParticleGpuColumn column, u32 capacity);
     static bool validateColumnSpanChain(u32 capacity);
     static std::array<ParticleGpuColumnSpan, 8> collectColumnSpans(u32 capacity);
     static const char* columnName(ParticleGpuColumn column);
     static const char* syncGuardName(ParticleGpuSyncGuard guard);
+};
+
+/// Dispatch launch preflight for stub kernel wiring (B7.7 GPU deepen follow-up).
+struct ParticleGpuDispatchPreflight {
+    bool sim_covers_capacity = false;
+    bool emit_covers_count = false;
+    bool sim_will_skip_launch = false;
+    bool emit_will_skip_launch = false;
+    bool sim_padding_ok = false;
+    bool emit_padding_ok = false;
+
+    [[nodiscard]] bool ready_for_stub() const;
 };
 
 /// CUDA launch grid bookkeeping for simulate/emit kernels.
@@ -130,6 +148,11 @@ struct ParticleGpuDispatch {
     [[nodiscard]] bool isEmitPaddingThread(u32 global_thread_index, u32 emit_count) const;
     [[nodiscard]] bool simPaddingAccountsFor(u32 slot_count) const;
     [[nodiscard]] bool emitPaddingAccountsFor(u32 emit_count) const;
+    [[nodiscard]] u32 simSlotForThread(u32 global_thread_index, u32 slot_count) const;
+    [[nodiscard]] u32 emitIndexForThread(u32 global_thread_index, u32 emit_count) const;
+    [[nodiscard]] bool simThreadHasValidSlot(u32 global_thread_index, u32 slot_count) const;
+    [[nodiscard]] bool emitThreadHasValidIndex(u32 global_thread_index, u32 emit_count) const;
+    [[nodiscard]] ParticleGpuDispatchPreflight preflight(u32 capacity, u32 emit_count) const;
 };
 
 /// Logical GPU buffer handles — production wiring maps these to `renderer::BufferHandle`.
@@ -174,6 +197,8 @@ struct ParticleGpuMirror {
     [[nodiscard]] bool packedBytesFit(const std::vector<u8>& bytes) const;
 
     [[nodiscard]] std::vector<u8> packToDeviceLayout() const;
+    [[nodiscard]] std::vector<u8> tryPackToDeviceLayout() const;
+    [[nodiscard]] static ParticleGpuSyncGuard unpackGuardForLayout(const std::vector<u8>& bytes, u32 capacity);
     [[nodiscard]] static ParticleGpuMirror unpackFromDeviceLayout(const std::vector<u8>& bytes, u32 capacity);
 
     [[nodiscard]] bool matchesCpuSoA(const ParticleSoA& cpu) const;
@@ -221,6 +246,8 @@ namespace particle_gpu_util {
 [[nodiscard]] u32 blockIndexOf(u32 global_thread_index, u32 block_size);
 [[nodiscard]] u32 localThreadIndex(u32 global_thread_index, u32 block_size);
 [[nodiscard]] u32 globalThreadIndex(u32 block_index, u32 local_thread_index, u32 block_size);
+[[nodiscard]] u32 elementIndexForThread(u32 global_thread_index, u32 element_count);
+[[nodiscard]] bool threadHasValidElement(u32 global_thread_index, u32 element_count);
 } // namespace particle_gpu_util
 
 } // namespace fuse::vfx
