@@ -1098,6 +1098,85 @@ void testUndoStackSetBaselineOnEmptyStackExtended() {
     expectTrue(!stack.hasUnsavedChanges(), "empty saved document has no unsaved changes");
 }
 
+void testCommandStackHasUnsavedChangesBeforeBaseline() {
+    fuse::editor::CommandStack stack;
+
+    expectTrue(!stack.isBaselineConfigured(), "new stack has no baseline configured");
+    expectTrue(!stack.isAtBaseline(), "isAtBaseline false before first save");
+    expectTrue(!stack.hasUnsavedChanges(), "empty unconfigured stack has no unsaved changes");
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
+    expectTrue(stack.hasUnsavedChanges(), "unconfigured stack with edits reports unsaved");
+    expectTrue(!stack.isAtBaseline(), "isAtBaseline false before baseline save");
+
+    stack.set_baseline_state();
+    expectTrue(!stack.hasUnsavedChanges(), "baseline save clears unsaved flag");
+}
+
+void testUndoStackHasUnsavedChangesBeforeBaseline() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    expectTrue(!stack.isBaselineConfigured(), "new undo stack has no baseline configured");
+    expectTrue(!stack.isAtBaseline(), "isAtBaseline false before first save");
+    expectTrue(!stack.hasUnsavedChanges(), "empty unconfigured stack has no unsaved changes");
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "step"));
+    expectTrue(stack.hasUnsavedChanges(), "unconfigured stack with edits reports unsaved");
+    expectTrue(!stack.isAtBaseline(), "isAtBaseline false before baseline save");
+
+    stack.set_baseline_state();
+    expectTrue(!stack.hasUnsavedChanges(), "baseline save clears unsaved flag");
+}
+
+void testCommandStackDoesNotCoalesceInvalidTarget() {
+    fuse::editor::CommandStack stack;
+
+    fuse::editor::EditorCommand first;
+    first.kind = fuse::editor::CommandKind::SetProperty;
+    first.target = fuse::Handle<fuse::Object>::invalid();
+    first.propertyName = "transform.position";
+    first.propertyValue = "1,2,3";
+    stack.execute(std::move(first));
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "4,5,6"));
+
+    expectTrue(stack.undoDepth() == 2u, "invalid target does not coalesce with valid edit");
+    expectTrue(stack.coalescedCount() == 0u, "invalid target guard skips coalesce");
+}
+
+void testCommandStackDoesNotCoalesceMismatchedDragBaseline() {
+    fuse::editor::CommandStack stack;
+
+    stack.push(makeSetPropertyCommand(1u, "transform.position", "4,5,6"), "1,2,3");
+    stack.push(makeSetPropertyCommand(1u, "transform.position", "7,8,9"), "9,9,9");
+
+    expectTrue(stack.undoDepth() == 2u, "mismatched drag baseline does not coalesce");
+    expectTrue(stack.coalescedCount() == 0u, "mismatched propertyValueBefore guard skips coalesce");
+
+    const fuse::editor::EditorCommand* first = stack.peekUndo();
+    expectTrue(first != nullptr && first->propertyValue == "7,8,9",
+               "latest command remains top of undo branch");
+}
+
+void testUndoStackClearOnEmptyWithEvictedCountIsNoOp() {
+    fuse::editor::UndoStack stack;
+    int counter = 0;
+
+    for (int step = 0; step < fuse::editor::UndoStack::kMaxHistory + 3; ++step) {
+        stack.execute(std::make_unique<CounterCommand>(counter, counter, counter + 1,
+                                                         "step " + std::to_string(step)));
+    }
+    expectTrue(stack.evictedCount() > 0u, "eviction occurred before clear");
+
+    stack.clear();
+    expectTrue(stack.evictedCount() == 0u, "clear resets evicted count");
+    expectTrue(stack.undoCount() == 0u, "clear drains undo branch");
+
+    stack.clear();
+    expectTrue(stack.undoCount() == 0u, "second clear on empty stack is a no-op");
+}
+
 } // namespace
 
 int main() {
@@ -1167,6 +1246,11 @@ int main() {
     testUndoStackSetBaselineStateIdempotent();
     testCommandStackSetBaselineOnEmptyStackExtended();
     testUndoStackSetBaselineOnEmptyStackExtended();
+    testCommandStackHasUnsavedChangesBeforeBaseline();
+    testUndoStackHasUnsavedChangesBeforeBaseline();
+    testCommandStackDoesNotCoalesceInvalidTarget();
+    testCommandStackDoesNotCoalesceMismatchedDragBaseline();
+    testUndoStackClearOnEmptyWithEvictedCountIsNoOp();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

@@ -84,7 +84,19 @@ void UndoStack::set_baseline_state() {
 }
 
 bool UndoStack::isAtBaseline() const {
+    if (!m_baselineConfigured) {
+        return false;
+    }
+
     return undoCount() == m_baselineUndoCount;
+}
+
+bool UndoStack::hasUnsavedChanges() const {
+    if (!m_baselineConfigured) {
+        return !isEmpty() || m_dirty;
+    }
+
+    return !isAtBaseline();
 }
 
 void UndoStack::undo() {
@@ -127,8 +139,8 @@ std::string UndoStack::peekRedoDescription() const {
 }
 
 void UndoStack::clear() {
-    if (isEmpty() && m_redo.empty() && !m_baselineConfigured && m_coalescedOps == 0u && !m_dirty &&
-        m_dirtyRevision == 0u) {
+    if (isEmpty() && m_redo.empty() && !m_baselineConfigured && m_coalescedOps == 0u &&
+        m_evictedCount == 0u && !m_dirty && m_dirtyRevision == 0u) {
         return;
     }
 
