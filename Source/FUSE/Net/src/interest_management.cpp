@@ -212,6 +212,13 @@ bool can_apply_interest_diff(const InterestSetDiff& diff, const InterestScopeSet
     return false;
 }
 
+bool apply_interest_diff(const InterestSetDiff& diff, InterestScopeSet& scope) {
+    if (!can_apply_interest_diff(diff, scope)) {
+        return false;
+    }
+    return diff.apply_diff(scope);
+}
+
 bool diff_interest_scope_sets(const InterestScopeSet& previous, const InterestScopeSet& current,
                               InterestSetDiff& out) {
     out.clear();
@@ -273,6 +280,28 @@ u32 count_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& 
         }
     }
     return count;
+}
+
+bool has_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
+                              const std::vector<InterestCandidate>& candidates) {
+    return count_candidates_in_radius(observer, policy, candidates) > 0;
+}
+
+bool has_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
+                              const std::vector<InterestCandidate>& candidates,
+                              const InterestScopeSet& prior_scope) {
+    return count_candidates_in_radius(observer, policy, candidates, prior_scope) > 0;
+}
+
+bool can_filter_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
+                                     const std::vector<InterestCandidate>& candidates) {
+    return !candidates.empty() && has_candidates_in_radius(observer, policy, candidates);
+}
+
+bool can_filter_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
+                                     const std::vector<InterestCandidate>& candidates,
+                                     const InterestScopeSet& prior_scope) {
+    return !candidates.empty() && has_candidates_in_radius(observer, policy, candidates, prior_scope);
 }
 
 u32 filter_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
@@ -355,8 +384,12 @@ void InterestManager::set_observer_position(ecs::vec3 position) {
     m_observer = position;
 }
 
-void InterestManager::register_entity(InterestCandidate candidate) {
+bool InterestManager::register_entity(InterestCandidate candidate) {
+    if (is_entity_registered(candidate.entity)) {
+        return false;
+    }
     m_candidates.push_back(candidate);
+    return true;
 }
 
 bool InterestManager::is_entity_registered(ecs::EntityID entity) const {

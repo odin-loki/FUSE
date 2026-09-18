@@ -692,6 +692,91 @@ void run_interest_management_tests() {
                "has_any_registered_in_radius false when all entities out of scope");
     expectTrue(registration_manager.count_registered_in_radius() == 0u,
                "count_registered_in_radius zero when has_any is false");
+
+    // --- register_entity bool return ---
+    fuse::net::InterestManager register_bool_manager;
+    register_bool_manager.set_policy(policy);
+    register_bool_manager.set_observer_position(origin);
+    const fuse::ecs::EntityID new_entity = make_entity(180);
+    expectTrue(register_bool_manager.register_entity({new_entity, {10.f, 0.f, 0.f, 0.f}, 0.f}),
+               "register_entity returns true on first registration");
+    expectTrue(register_bool_manager.is_entity_registered(new_entity),
+               "register_entity inserts candidate on success");
+    expectTrue(!register_bool_manager.register_entity({new_entity, {20.f, 0.f, 0.f, 0.f}, 0.f}),
+               "register_entity returns false on duplicate entity");
+    expectTrue(register_bool_manager.candidates().size() == 1u,
+               "duplicate register_entity does not add another candidate");
+
+    // --- apply_interest_diff guarded apply ---
+    fuse::net::InterestScopeSet guarded_scope;
+    guarded_scope.entities = {make_entity(1), make_entity(2)};
+    fuse::net::InterestSetDiff guarded_diff{};
+    guarded_diff.entered = {make_entity(3)};
+    expectTrue(fuse::net::apply_interest_diff(guarded_diff, guarded_scope),
+               "apply_interest_diff returns true when diff would change scope");
+    expectTrue(guarded_scope.contains(make_entity(3)), "apply_interest_diff inserts entered entity");
+
+    fuse::net::InterestSetDiff guarded_redundant{};
+    guarded_redundant.entered = {make_entity(1)};
+    guarded_redundant.left = {make_entity(99)};
+    const fuse::net::InterestScopeSet guarded_before = guarded_scope;
+    expectTrue(!fuse::net::apply_interest_diff(guarded_redundant, guarded_scope),
+               "apply_interest_diff returns false on redundant diff");
+    expectTrue(guarded_scope.equal_to(guarded_before),
+               "apply_interest_diff leaves scope unchanged when redundant");
+
+    fuse::net::InterestSetDiff guarded_empty{};
+    expectTrue(!fuse::net::apply_interest_diff(guarded_empty, guarded_scope),
+               "apply_interest_diff returns false on empty diff");
+
+    // --- has_candidates_in_radius + can_filter_candidates_in_radius guards ---
+    fuse::net::InterestPolicy guard_policy{};
+    guard_policy.relevance_radius = 50.f;
+    guard_policy.always_relevant_radius = 5.f;
+
+    std::vector<fuse::net::InterestCandidate> guard_candidates;
+    guard_candidates.push_back({make_entity(190), {10.f, 0.f, 0.f, 0.f}, 0.f});
+    guard_candidates.push_back({make_entity(191), {80.f, 0.f, 0.f, 0.f}, 0.f});
+
+    expectTrue(fuse::net::has_candidates_in_radius(origin, guard_policy, guard_candidates),
+               "has_candidates_in_radius true when at least one candidate in range");
+    expectTrue(fuse::net::can_filter_candidates_in_radius(origin, guard_policy, guard_candidates),
+               "can_filter_candidates_in_radius true for non-empty in-range list");
+
+    std::vector<fuse::net::InterestCandidate> far_only_candidates;
+    far_only_candidates.push_back({make_entity(192), {200.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(!fuse::net::has_candidates_in_radius(origin, guard_policy, far_only_candidates),
+               "has_candidates_in_radius false when all candidates out of range");
+    expectTrue(!fuse::net::can_filter_candidates_in_radius(origin, guard_policy, far_only_candidates),
+               "can_filter_candidates_in_radius false when filter would be empty");
+
+    std::vector<fuse::net::InterestCandidate> empty_guard_candidates;
+    expectTrue(!fuse::net::can_filter_candidates_in_radius(origin, guard_policy, empty_guard_candidates),
+               "can_filter_candidates_in_radius rejects empty candidate list");
+
+    std::vector<fuse::net::InterestCandidate> hysteresis_guard_candidates;
+    hysteresis_guard_candidates.push_back({make_entity(193), {40.f, 0.f, 0.f, 0.f}, 0.f});
+    hysteresis_guard_candidates.push_back({make_entity(194), {55.f, 0.f, 0.f, 0.f}, 0.f});
+
+    fuse::net::InterestScopeSet guard_prior_scope;
+    guard_prior_scope.entities = {make_entity(194)};
+    expectTrue(fuse::net::has_candidates_in_radius(origin, guard_policy, hysteresis_guard_candidates),
+               "has_candidates_in_radius true when near candidate is in relevance");
+    expectTrue(fuse::net::has_candidates_in_radius(origin, guard_policy, hysteresis_guard_candidates,
+                                                   guard_prior_scope),
+               "has_candidates_in_radius with prior scope keeps hysteresis entity");
+    expectTrue(fuse::net::can_filter_candidates_in_radius(origin, guard_policy,
+                                                          hysteresis_guard_candidates, guard_prior_scope),
+               "can_filter_candidates_in_radius accepts hysteresis prior scope");
+
+    std::vector<fuse::net::InterestEntry> guard_filtered;
+    const fuse::u32 guard_filtered_count = fuse::net::filter_candidates_in_radius(
+        origin, guard_policy, hysteresis_guard_candidates, guard_prior_scope, guard_filtered);
+    expectTrue(guard_filtered_count == 2u, "hysteresis filter count matches preflight guard");
+    expectTrue(guard_filtered.size() == 2u, "hysteresis filter output size matches preflight guard");
+    expectTrue(fuse::net::can_filter_candidates_in_radius(origin, guard_policy,
+                                                          hysteresis_guard_candidates, guard_prior_scope),
+               "preflight guard passes after hysteresis filter retains two entries");
 }
 
 } // namespace fuse::net::tests
