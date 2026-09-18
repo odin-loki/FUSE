@@ -15,6 +15,8 @@ bool taaResolveDimensionsMatch(const TaaResolveDesc& desc, const TaaHistoryBuffe
 bool taaResolveBypassesHistoryGenerationGuard(const TaaResolveDesc& desc);
 /// Fill `observed_history_generation` from history when still at the no-guard sentinel.
 void stampObservedHistoryGeneration(TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// True when history is ready, valid, and passes the generation guard (B5.9 deepen).
+bool taaHistoryIsReusable(const TaaHistoryBuffer& history, const TaaResolveDesc& desc);
 
 /// CPU/CUDA resolve facade — records resolve intent; kernel deferred (B5.9 stub).
 class TaaResolve {
