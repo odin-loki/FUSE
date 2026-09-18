@@ -821,6 +821,188 @@ void testFroxelDensityLookupAndSampleCoordGuards() {
     expectNear(rejectedTrilinear, 0.f, 1e-6f, "trySampleDensityTrilinear zeroes output on rejection");
 }
 
+void testFroxelSampleCoordPreflightAndNormalizeGuards() {
+    fuse::renderer::FroxelGridDesc desc{};
+    desc.tilesX = 4;
+    desc.tilesY = 2;
+    desc.slicesZ = 3;
+
+    fuse::renderer::FroxelCameraDesc camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+
+    fuse::renderer::FroxelSampleCoords mapped{};
+    fuse::renderer::SampleCoordRejectReason coordReason = fuse::renderer::SampleCoordRejectReason::None;
+    expectTrue(fuse::renderer::tryMapScreenDepthToSampleCoords(0.25f, 0.5f, 10.f, desc, camera, mapped, coordReason),
+               "tryMap succeeds on valid screen depth");
+    expectTrue(coordReason == fuse::renderer::SampleCoordRejectReason::None,
+               "valid mapping reports no sample-coord reject reason");
+    expectTrue(std::strcmp(fuse::renderer::sampleCoordRejectReasonLabel(coordReason), "none") == 0,
+               "none sample-coord reject reason label");
+
+    fuse::renderer::FroxelGridDesc zeroDesc{};
+    zeroDesc.tilesX = 0u;
+    fuse::renderer::FroxelSampleCoords rejectedCoords{};
+    expectTrue(!fuse::renderer::tryMapScreenDepthToSampleCoords(0.5f, 0.5f, 10.f, zeroDesc, camera, rejectedCoords,
+                                                                coordReason),
+               "tryMap rejects empty froxel grid");
+    expectTrue(coordReason == fuse::renderer::SampleCoordRejectReason::EmptyGrid,
+               "empty grid reports empty_grid sample-coord reject reason");
+    expectTrue(std::strcmp(fuse::renderer::sampleCoordRejectReasonLabel(coordReason), "empty_grid") == 0,
+               "empty_grid sample-coord reject reason label");
+
+    expectTrue(!fuse::renderer::tryMapScreenDepthToSampleCoords(0.5f, 0.5f, 0.01f, desc, camera, rejectedCoords,
+                                                                coordReason),
+               "tryMap rejects depth below near plane");
+    expectTrue(coordReason == fuse::renderer::SampleCoordRejectReason::DepthOutOfRange,
+               "below-near depth reports depth_out_of_range reject reason");
+    expectTrue(std::strcmp(fuse::renderer::sampleCoordRejectReasonLabel(coordReason), "depth_out_of_range") == 0,
+               "depth_out_of_range sample-coord reject reason label");
+
+    expectTrue(!fuse::renderer::tryMapScreenDepthToSampleCoords(0.5f, 0.5f, 200.f, desc, camera, rejectedCoords,
+                                                                coordReason),
+               "tryMap rejects depth above far plane");
+
+    fuse::renderer::FroxelSampleCoords reversed{};
+    reversed.tileX0 = 2u;
+    reversed.tileY0 = 1u;
+    reversed.tileX1 = 1u;
+    reversed.tileY1 = 0u;
+    reversed.sliceZ0 = 2u;
+    reversed.sliceZ1 = 1u;
+    reversed.tx = 0.25f;
+    reversed.ty = 0.75f;
+    reversed.tz = 0.5f;
+    expectTrue(reversed.tileX0 > reversed.tileX1 && reversed.tileY0 > reversed.tileY1 &&
+                   reversed.sliceZ0 > reversed.sliceZ1,
+               "reversed corners are out of canonical order before normalize");
+    fuse::renderer::FroxelGridLayout::normalizeSampleCoords(reversed);
+    expectTrue(reversed.tileX0 <= reversed.tileX1 && reversed.tileY0 <= reversed.tileY1 &&
+                   reversed.sliceZ0 <= reversed.sliceZ1,
+               "normalize fixes reversed tile/slice corners");
+    expectTrue(reversed.tx >= 0.f && reversed.tx <= 1.f && reversed.ty >= 0.f && reversed.ty <= 1.f &&
+                   reversed.tz >= 0.f && reversed.tz <= 1.f,
+               "normalize clamps interpolation weights");
+
+    fuse::renderer::FroxelDensityGrid grid{};
+    grid.allocate(desc);
+    grid.density[0] = 1.f;
+
+    fuse::f32 lookupSample = 0.f;
+    fuse::renderer::DensityLookupRejectReason lookupReason = fuse::renderer::DensityLookupRejectReason::None;
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtIndex(grid, desc, 0u, lookupSample, lookupReason),
+               "trySample at index with reason succeeds on accessible grid");
+    expectTrue(lookupReason == fuse::renderer::DensityLookupRejectReason::None,
+               "successful index lookup reports no reject reason");
+    expectNear(lookupSample, 1.f, 1e-5f, "trySample at index with reason returns density");
+
+    fuse::f32 rejectedLookup = 1.f;
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityAtIndex(grid, zeroDesc, 0u, rejectedLookup, lookupReason),
+               "trySample at index with reason rejects empty froxel desc");
+    expectTrue(lookupReason == fuse::renderer::DensityLookupRejectReason::EmptyGrid,
+               "empty froxel desc reports empty_grid lookup reject reason");
+
+    fuse::renderer::FroxelSampleCoords inBounds = mapped;
+    fuse::f32 trilinearSample = 0.f;
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityTrilinear(grid, desc, inBounds, trilinearSample,
+                                                                      lookupReason),
+               "trySample trilinear with reason succeeds on accessible grid");
+    expectTrue(lookupReason == fuse::renderer::DensityLookupRejectReason::None,
+               "successful trilinear lookup reports no reject reason");
+
+    fuse::renderer::FroxelDensityGrid emptyGrid{};
+    fuse::f32 rejectedTrilinear = 1.f;
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityTrilinear(emptyGrid, desc, inBounds, rejectedTrilinear,
+                                                                       lookupReason),
+               "trySample trilinear with reason rejects empty storage");
+    expectTrue(lookupReason == fuse::renderer::DensityLookupRejectReason::EmptyStorage,
+               "empty storage reports empty_storage lookup reject reason");
+
+    fuse::f32 screenSample = 0.f;
+    fuse::renderer::SampleCoordRejectReason screenCoordReason = fuse::renderer::SampleCoordRejectReason::None;
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtScreen(grid, desc, camera, 0.25f, 0.25f, 3.16f,
+                                                                     screenSample, lookupReason, screenCoordReason),
+               "trySample at screen with reasons succeeds on accessible grid");
+    expectTrue(lookupReason == fuse::renderer::DensityLookupRejectReason::None,
+               "successful screen sample reports no lookup reject reason");
+    expectTrue(screenCoordReason == fuse::renderer::SampleCoordRejectReason::None,
+               "successful screen sample reports no coord reject reason");
+
+    fuse::f32 rejectedScreen = 1.f;
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityAtScreen(emptyGrid, desc, camera, 0.5f, 0.5f, 10.f,
+                                                                      rejectedScreen, lookupReason, screenCoordReason),
+               "trySample at screen with reasons rejects empty storage");
+    expectTrue(lookupReason == fuse::renderer::DensityLookupRejectReason::EmptyStorage,
+               "rejected screen sample reports empty_storage lookup reason");
+    expectTrue(screenCoordReason == fuse::renderer::SampleCoordRejectReason::None,
+               "lookup rejection short-circuits before coord mapping");
+
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityAtScreen(grid, desc, camera, 0.5f, 0.5f, 0.01f,
+                                                                      rejectedScreen, lookupReason, screenCoordReason),
+               "trySample at screen with reasons rejects out-of-range depth");
+    expectTrue(screenCoordReason == fuse::renderer::SampleCoordRejectReason::DepthOutOfRange,
+               "out-of-range depth reports depth_out_of_range coord reason");
+}
+
+void testFroxelGridDensityValidationForDescGuards() {
+    fuse::renderer::FroxelGridDesc desc{};
+    desc.tilesX = 4;
+    desc.tilesY = 2;
+    desc.slicesZ = 3;
+
+    expectTrue(fuse::renderer::froxel_util::canAllocateFroxelGrid(desc),
+               "non-empty froxel desc can allocate");
+    expectTrue(!fuse::renderer::froxel_util::shouldSkipFroxelPopulate(desc),
+               "non-empty froxel desc does not skip populate");
+
+    fuse::renderer::FroxelGridDesc zeroDesc{};
+    zeroDesc.tilesX = 0u;
+    expectTrue(!fuse::renderer::froxel_util::canAllocateFroxelGrid(zeroDesc),
+               "zero-dimension desc cannot allocate");
+    expectTrue(fuse::renderer::froxel_util::shouldSkipFroxelPopulate(zeroDesc),
+               "zero-dimension desc skips populate");
+
+    fuse::renderer::FroxelDensityGrid grid{};
+    grid.allocate(desc);
+
+    fuse::renderer::GridDensityRejectReason densityReason = fuse::renderer::GridDensityRejectReason::None;
+    expectTrue(fuse::renderer::froxel_util::tryValidateGridDensityForDesc(grid, desc, densityReason),
+               "allocated grid validates for matching desc");
+    expectTrue(densityReason == fuse::renderer::GridDensityRejectReason::None,
+               "valid grid reports no density reject reason");
+
+    expectTrue(fuse::renderer::froxel_util::tryValidateGridDensityForDesc(grid, zeroDesc, densityReason),
+               "empty desc vacuously validates density for desc");
+    expectTrue(densityReason == fuse::renderer::GridDensityRejectReason::None,
+               "empty desc reports no density reject reason");
+
+    fuse::renderer::FroxelGridDesc mismatched{};
+    mismatched.tilesX = 2;
+    mismatched.tilesY = 2;
+    mismatched.slicesZ = 2;
+    expectTrue(!fuse::renderer::froxel_util::tryValidateGridDensityForDesc(grid, mismatched, densityReason),
+               "desc mismatch fails density validation for desc");
+    expectTrue(densityReason == fuse::renderer::GridDensityRejectReason::DescMismatch,
+               "desc mismatch reports desc_mismatch density reject reason");
+    expectTrue(std::strcmp(fuse::renderer::gridDensityRejectReasonLabel(densityReason), "desc_mismatch") == 0,
+               "desc_mismatch density reject reason label");
+
+    fuse::renderer::FroxelDensityGrid undersized{};
+    undersized.density.resize(desc.froxelCount() - 1u, 0.f);
+    expectTrue(!fuse::renderer::froxel_util::tryValidateGridDensityForDesc(undersized, desc, densityReason),
+               "undersized storage fails density validation for desc");
+    expectTrue(densityReason == fuse::renderer::GridDensityRejectReason::UndersizedStorage,
+               "undersized storage reports undersized_storage reject reason");
+    expectTrue(std::strcmp(fuse::renderer::gridDensityRejectReasonLabel(densityReason), "undersized_storage") == 0,
+               "undersized_storage density reject reason label");
+
+    fuse::renderer::FroxelDensityGrid emptyGrid{};
+    expectTrue(!fuse::renderer::froxel_util::tryValidateGridDensityForDesc(emptyGrid, desc, densityReason),
+               "empty storage fails density validation for desc");
+    expectTrue(densityReason == fuse::renderer::GridDensityRejectReason::UndersizedStorage,
+               "empty storage on non-empty desc reports undersized_storage");
+}
+
 void testZeroDimensionFroxelGrid() {
     fuse::renderer::FroxelGridDesc zeroDesc{};
     zeroDesc.tilesX = 0u;
@@ -966,6 +1148,8 @@ int main() {
     testFroxelDensityCountValidationAndWriteGuards();
     testFroxelDensityAccessAndClampGuards();
     testFroxelDensityLookupAndSampleCoordGuards();
+    testFroxelSampleCoordPreflightAndNormalizeGuards();
+    testFroxelGridDensityValidationForDescGuards();
     testEmptySceneVolumetricFog();
     testZeroDimensionFroxelGrid();
     testFroxelPopulateFromAnalyticFog();
