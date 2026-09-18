@@ -258,6 +258,16 @@ void testEmptySwapchainSkipGuards() {
                "matching pending extent is duplicate");
     expectTrue(!fuse::renderer::isDuplicatePendingResizeExtent(1920, 1080, 1280, 720),
                "different extent is not duplicate");
+    expectTrue(fuse::renderer::pendingResizeMatchesCurrentExtent(1920, 1080, 1920, 1080),
+               "pending extent matching current is no-op candidate");
+    expectTrue(!fuse::renderer::pendingResizeMatchesCurrentExtent(1920, 1080, 1280, 720),
+               "different pending extent is not no-op");
+    expectTrue(fuse::renderer::isResizeCoalesceRequest(true, 800, 600, 1920, 1080),
+               "pending resize with new extent is coalesce candidate");
+    expectTrue(!fuse::renderer::isResizeCoalesceRequest(false, 0, 0, 1920, 1080),
+               "first resize is not coalesce");
+    expectTrue(!fuse::renderer::isResizeCoalesceRequest(true, 1920, 1080, 1920, 1080),
+               "duplicate pending resize is not coalesce");
 #else
     (void)instance;
 #endif

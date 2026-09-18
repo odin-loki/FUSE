@@ -43,8 +43,11 @@ struct PresentPathStatus {
     u32 resizeCoalesceCount = 0;
     u32 resizeDuplicateCount = 0;
     u32 resizeRejectedCount = 0;
+    u32 resizeDeferredCount = 0;
+    u32 resizeNoOpCount = 0;
     u32 emptyAcquireCount = 0;
     u32 emptyPresentCount = 0;
+    u32 fenceWaitSkippedCount = 0;
     u32 lastPendingFenceCount = 0;
     std::string message;
 };
@@ -53,6 +56,11 @@ struct PresentPathStatus {
 inline bool isPresentCycleActive(PresentPathState state) {
     return state == PresentPathState::FenceWaited || state == PresentPathState::ImageAcquired ||
            state == PresentPathState::ReadyToPresent;
+}
+
+/// True when a resize request must wait until the present cycle completes.
+inline bool shouldDeferResizeDuringPresentCycle(PresentPathState state) {
+    return isPresentCycleActive(state);
 }
 
 /// Acquire / present / fence-wait stubs over `VulkanBootstrap` swapchain + frame ring.

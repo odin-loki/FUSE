@@ -63,6 +63,14 @@ bool PresentPath::processPendingResize() {
         return true;
     }
 
+    if (pendingResizeMatchesCurrentExtent(m_status.width, m_status.height, m_status.pendingResizeWidth,
+                                          m_status.pendingResizeHeight)) {
+        m_status.resizePending = false;
+        ++m_status.resizeNoOpCount;
+        m_status.message = "Resize no-op — pending extent matches current swapchain";
+        return true;
+    }
+
     FrameManager* frameManager = m_bootstrap.frameManager();
     if (frameManager != nullptr && frameManager->isReady()) {
         const bool waitAllSlots = !m_status.headless;
@@ -113,7 +121,10 @@ bool PresentPath::waitInFlightFence() {
     FrameManager* frameManager = m_bootstrap.frameManager();
     if (frameManager != nullptr && frameManager->isReady()) {
         m_status.lastPendingFenceCount = countPendingInFlightFences(*frameManager);
-        if (!waitCurrentInFlightFence(*frameManager)) {
+        if (m_status.lastPendingFenceCount == 0) {
+            ++m_status.fenceWaitSkippedCount;
+        }
+        if (!waitInFlightFencesBeforeAcquire(*frameManager)) {
             m_status.message = "In-flight fence wait failed";
             return false;
         }
@@ -269,7 +280,10 @@ void PresentPath::requestResize(u32 width, u32 height) {
         ++m_status.resizeCoalesceCount;
     }
 
-    const bool midPresentCycle = isPresentCycleActive(m_status.state);
+    const bool midPresentCycle = shouldDeferResizeDuringPresentCycle(m_status.state);
+    if (midPresentCycle) {
+        ++m_status.resizeDeferredCount;
+    }
 
     m_status.pendingResizeWidth = width;
     m_status.pendingResizeHeight = height;
