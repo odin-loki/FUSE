@@ -60,6 +60,28 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaPass::stampObservedHistoryGeneration(desc)` — stamp observed generation from pass history
 - `TaaPass::syncJitterToFrameIndex(frame)` — align pass jitter to a monotonic frame counter
 
+## History warmup / reuse preflight (B5.9 deepen)
+
+- `taaHistoryIsWarmupFrame(history)` — true when history is ready but not yet warmed
+- `preflightTaaHistoryWarmup(history)` — true when history buffers are allocated
+- `preflightTaaHistoryReuse(history, observedGeneration)` — true when temporal reuse is allowed
+- `TaaHistoryBuffer::isWarmupFrame()` / `preflightReuse(observedGeneration)` — buffer-level warmup/reuse preflight
+
+## Jitter sync preflight (B5.9 deepen)
+
+- `TaaJitterLayout::expectedSlotForMonotonicFrame(frame, length)` — expected Halton slot for a monotonic counter
+- `TaaJitterLayout::monotonicFrameMatchesSlot(frame, slot, length)` — true when slot matches expected
+- `TaaJitter::syncToFrameIndexIfReady(frame)` — guarded sync; returns false when sequence invalid
+- `TaaJitter::isSyncedToFrameIndex(frame)` — true when jitter state matches expected slot
+- `TaaPass::syncJitterToFrameIndexIfReady(frame)` / `isJitterSyncedTo(frame)` — pass-level sync preflight
+
+## Resolve blend preflight (B5.9 deepen)
+
+- `TaaResolveBlendPreflightRejectReason` — `HistoryNotReady`, `InvalidWeights`, `ReusePolicyViolation`
+- `diagnoseTaaResolveBlendPreflight(desc, history)` — classify blend preflight reject reason
+- `preflightTaaResolveBlend(desc, history, &reason)` — false when history not ready or weights violate reuse policy
+- `TaaPass::isWarmupResolveFrame()` / `preflightHistoryReuse(observedGeneration)` / `preflightResolveBlend(desc, &reason)` — pass-level preflight
+
 ## Pipeline (stub)
 
 `jitter → gbuffer (velocity) → resolve → history swap`

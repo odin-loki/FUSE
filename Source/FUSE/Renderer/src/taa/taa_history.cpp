@@ -22,8 +22,28 @@ bool taaHistoryNeedsWarmup(const TaaHistoryBuffer& history) {
     return !history.hasValidHistory();
 }
 
+bool taaHistoryIsWarmupFrame(const TaaHistoryBuffer& history) {
+    return history.isReady() && !history.hasValidHistory();
+}
+
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history) {
+    return history.isReady();
+}
+
+bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration) {
+    return taaHistoryReuseAllowed(history, observedGeneration);
+}
+
 bool TaaHistoryBuffer::canReuseHistory() const {
     return taaHistoryCanReuse(*this);
+}
+
+bool TaaHistoryBuffer::isWarmupFrame() const {
+    return taaHistoryIsWarmupFrame(*this);
+}
+
+bool TaaHistoryBuffer::preflightReuse(u32 observedGeneration) const {
+    return preflightTaaHistoryReuse(*this, observedGeneration);
 }
 
 bool TaaHistoryBuffer::init(ResourceManager& resources, const TaaHistoryBufferDesc& desc) {

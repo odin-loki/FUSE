@@ -197,6 +197,49 @@ const char* taaHistoryReuseBlockReasonLabel(TaaHistoryReuseBlockReason reason) {
     return "unknown";
 }
 
+const char* taaResolveBlendPreflightRejectReasonLabel(TaaResolveBlendPreflightRejectReason reason) {
+    switch (reason) {
+    case TaaResolveBlendPreflightRejectReason::None:
+        return "none";
+    case TaaResolveBlendPreflightRejectReason::HistoryNotReady:
+        return "history_not_ready";
+    case TaaResolveBlendPreflightRejectReason::InvalidWeights:
+        return "invalid_weights";
+    case TaaResolveBlendPreflightRejectReason::ReusePolicyViolation:
+        return "reuse_policy_violation";
+    }
+    return "unknown";
+}
+
+TaaResolveBlendPreflightRejectReason diagnoseTaaResolveBlendPreflight(const TaaResolveDesc& desc,
+                                                                      const TaaHistoryBuffer& history) {
+    if (!history.isReady()) {
+        return TaaResolveBlendPreflightRejectReason::HistoryNotReady;
+    }
+
+    const TaaBlendWeights weights = computeTaaResolveBlendWeights(desc, history);
+    if (!taaBlendWeightsValid(weights)) {
+        return TaaResolveBlendPreflightRejectReason::InvalidWeights;
+    }
+
+    const bool historyBlendAllowed = taaHistoryBlendAllowed(!history.hasValidHistory(), history) &&
+                                     taaResolveCanReuseHistory(desc, history);
+    if (!taaBlendWeightsConsistentWithReuse(weights, historyBlendAllowed)) {
+        return TaaResolveBlendPreflightRejectReason::ReusePolicyViolation;
+    }
+
+    return TaaResolveBlendPreflightRejectReason::None;
+}
+
+bool preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                              TaaResolveBlendPreflightRejectReason* reason) {
+    const TaaResolveBlendPreflightRejectReason reject = diagnoseTaaResolveBlendPreflight(desc, history);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == TaaResolveBlendPreflightRejectReason::None;
+}
+
 TaaHistoryReuseBlockReason classifyTaaHistoryReuseBlock(const TaaHistoryBuffer& history, u32 observedGeneration) {
     if (!history.isReady()) {
         return TaaHistoryReuseBlockReason::NotReady;
