@@ -421,6 +421,111 @@ void testCoupledPanVec3UsesCoupledForPath() {
                "Vec3 coupled helper matches coupled_for_path");
 }
 
+void testEmptyIrFallbackAndNormalizeGuards() {
+    const fuse::audio::HrtfIrStub empty = fuse::audio::make_empty_hrtf_ir();
+    expectTrue(fuse::audio::should_fallback_to_ild_itd_stub(empty),
+               "empty IR should fall back to ILD/ITD stub");
+    expectTrue(fuse::audio::should_fallback_to_ild_itd_stub(empty)
+                   == fuse::audio::is_empty_hrtf_ir(empty),
+               "fallback predicate matches is_empty_hrtf_ir");
+    expectTrue(fuse::audio::hrtf_ir_stub_sample_count(empty) == 0,
+               "empty IR reports zero sample count");
+
+    const float samples[] = {0.5f, -0.25f};
+    const fuse::audio::HrtfIrStub valid{samples, 2};
+    expectTrue(!fuse::audio::should_fallback_to_ild_itd_stub(valid),
+               "valid IR does not fall back to ILD/ITD stub");
+    expectTrue(fuse::audio::hrtf_ir_stub_sample_count(valid) == 2,
+               "valid IR reports sample count");
+
+    const fuse::audio::HrtfIrStub invalid{nullptr, 4};
+    const fuse::audio::HrtfIrStub normalized = fuse::audio::normalize_hrtf_ir_stub(invalid);
+    expectTrue(fuse::audio::is_empty_hrtf_ir(normalized),
+               "normalize coerces invalid IR to empty");
+    expectTrue(fuse::audio::normalize_hrtf_ir_stub(valid).samples == valid.samples,
+               "normalize preserves valid IR samples");
+    expectTrue(fuse::audio::resolve_hrtf_pan_path(true, normalized, fuse::audio::Vec3{5.f, 0.f, 0.f})
+                   == fuse::audio::HrtfPanPath::IldItdStub,
+               "normalized empty IR resolves to ILD/ITD stub");
+}
+
+void testApplyBinauralPanForPathToSample() {
+    const fuse::audio::BinauralPanGains wide =
+        fuse::audio::compute_binaural_pan_gains(fuse::audio::Vec3{5.f, 0.f, 0.f});
+    float left = 0.f;
+    float right = 0.f;
+
+    fuse::audio::apply_binaural_pan_for_path_to_sample(fuse::audio::HrtfPanPath::IldItdStub, 1.f,
+                                                       wide, 0.5f, left, right);
+    expectNear(left, 0.5f * wide.left, 1e-5f, "spatial path applies pan gains to left");
+    expectNear(right, 0.5f * wide.right, 1e-5f, "spatial path applies pan gains to right");
+
+    left = 0.f;
+    right = 0.f;
+    fuse::audio::apply_binaural_pan_for_path_to_sample(fuse::audio::HrtfPanPath::Bypass, 1.f, wide,
+                                                       0.5f, left, right);
+    expectNear(left, 0.5f, 1e-5f, "bypass path applies centre mono to left");
+    expectNear(right, 0.5f, 1e-5f, "bypass path applies centre mono to right");
+}
+
+void testNonUnityAndPreserveSpatialImageGuards() {
+    expectTrue(fuse::audio::is_non_unity_hrtf_attenuation(0.5f, 1.f),
+               "reduced distance attenuation is non-unity");
+    expectTrue(!fuse::audio::is_non_unity_hrtf_attenuation(1.f, 1.f),
+               "unity attenuation is not non-unity");
+    expectTrue(fuse::audio::is_non_unity_hrtf_attenuation(1.f, 1.f)
+                   == !fuse::audio::is_unity_hrtf_attenuation(1.f, 1.f),
+               "non-unity is inverse of unity attenuation");
+
+    expectTrue(fuse::audio::should_preserve_hrtf_spatial_image(
+                   fuse::audio::HrtfPanPath::Convolution, 1.f, 1.f),
+               "unity attenuation preserves spatial image");
+    expectTrue(!fuse::audio::should_preserve_hrtf_spatial_image(
+                   fuse::audio::HrtfPanPath::Convolution, 0.2f, 1.f),
+               "reduced distance attenuation does not preserve spatial image");
+    expectTrue(fuse::audio::should_preserve_hrtf_spatial_image(
+                   fuse::audio::HrtfPanPath::Bypass, 0.1f, 0.1f),
+               "bypass always preserves spatial image");
+    expectTrue(fuse::audio::should_preserve_hrtf_spatial_image(
+                   fuse::audio::HrtfPanPath::IldItdStub, 0.3f, 0.4f)
+                   == !fuse::audio::should_narrow_hrtf_spatial_image(
+                          fuse::audio::HrtfPanPath::IldItdStub, 0.3f, 0.4f),
+               "preserve is inverse of narrow spatial image");
+}
+
+void testCombinedAttenuationCouplingPredicate() {
+    expectTrue(fuse::audio::should_apply_hrtf_attenuation_coupling(
+                   fuse::audio::HrtfPanPath::Convolution, 0.2f, 1.f),
+               "combined predicate applies coupling for spatial non-unity attenuation");
+    expectTrue(!fuse::audio::should_apply_hrtf_attenuation_coupling(
+                   fuse::audio::HrtfPanPath::Convolution, 1.f, 1.f),
+               "combined predicate skips unity attenuation");
+    expectTrue(!fuse::audio::should_apply_hrtf_attenuation_coupling(
+                   fuse::audio::HrtfPanPath::Bypass, 0.1f, 0.1f),
+               "combined predicate skips bypass path");
+    expectTrue(fuse::audio::should_apply_hrtf_attenuation_coupling(
+                   fuse::audio::HrtfPanPath::IldItdStub, 0.5f, 0.5f)
+                   == fuse::audio::should_narrow_hrtf_spatial_image(
+                          fuse::audio::HrtfPanPath::IldItdStub, 0.5f, 0.5f),
+               "combined predicate matches narrow spatial image guard");
+}
+
+void testGuardedSpatialBlendHelper() {
+    expectNear(fuse::audio::compute_hrtf_spatial_blend_guarded(
+                   fuse::audio::HrtfPanPath::Bypass, 0.f, 0.f),
+               1.f, 1e-5f, "guarded blend preserves unity on bypass");
+    expectNear(fuse::audio::compute_hrtf_spatial_blend_guarded(
+                   fuse::audio::HrtfPanPath::Convolution, 1.f, 1.f),
+               1.f, 1e-5f, "guarded blend preserves unity at full attenuation");
+
+    const float guarded =
+        fuse::audio::compute_hrtf_spatial_blend_guarded(fuse::audio::HrtfPanPath::IldItdStub,
+                                                        0.2f, 0.8f);
+    const float direct = fuse::audio::compute_hrtf_spatial_blend(0.2f, 0.8f);
+    expectNear(guarded, direct, 1e-5f,
+               "guarded blend matches direct blend for spatial non-unity attenuation");
+}
+
 void testBinauralPanGainSampleHelpers() {
     const fuse::audio::BinauralPanGains centre = fuse::audio::make_centre_binaural_pan_gains();
     expectNear(fuse::audio::compute_binaural_pan_energy(centre), 0.5f, 1e-5f,
@@ -473,6 +578,11 @@ int main() {
     testUnityHrtfAttenuationGuards();
     testClampHrtfAttenuationCouplingWeight();
     testCoupledPanVec3UsesCoupledForPath();
+    testEmptyIrFallbackAndNormalizeGuards();
+    testApplyBinauralPanForPathToSample();
+    testNonUnityAndPreserveSpatialImageGuards();
+    testCombinedAttenuationCouplingPredicate();
+    testGuardedSpatialBlendHelper();
     testBinauralPanGainSampleHelpers();
     fuse::core::shutdown();
 
