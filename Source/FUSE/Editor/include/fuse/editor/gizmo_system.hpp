@@ -100,9 +100,28 @@ bool isSnapEnabled(GizmoMode mode, const GizmoSnapSettings& settings);
 /// Mode-aware snap for accumulated screen-space drag deltas (B6.4 deepen follow-up).
 f32 snapDragDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings);
 
+/// Effective snap step for the active mode — 0 when snap is disabled (B6.4 deepen follow-up).
+f32 snapStepForMode(GizmoMode mode, const GizmoSnapSettings& settings);
+
+/// Clamp snap grid/step values to sane authoring ranges (B6.4 deepen follow-up).
+void clampSnapSettings(GizmoSnapSettings& settings);
+
+/// True when snap grid/step values are positive (B6.4 deepen follow-up).
+bool isSnapSettingsValid(const GizmoSnapSettings& settings);
+
 /// Empty-hit guards — reject degenerate pick inputs before axis tests (B6.4 deepen follow-up).
 bool isRayEmpty(const GizmoRay& ray);
 bool isHitTestEmpty(const GizmoHitTest& hit);
+
+/// Pick-axis preflight — no axis output when inputs are invalid (B6.4 deepen follow-up).
+bool canPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+                 GizmoSpace space, f32 axisLength, f32 pickRadius);
+bool canPickAxis(const GizmoHitTest& hit, GizmoMode mode);
+
+/// Begin-drag preflight — no side effects (B6.4 deepen follow-up).
+bool canBeginDrag(const GizmoHitTest& hit, GizmoMode mode);
+bool canBeginDrag(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+                  GizmoSpace space, f32 axisLength, f32 pickRadius);
 
 /// Pick axis with empty-hit guards — returns false when pick misses (B6.4 deepen follow-up).
 bool tryPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
@@ -168,8 +187,12 @@ public:
     bool tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current, GizmoResult& out);
     GizmoResult updateDrag(const GizmoHitTest& hit);
     GizmoResult endDrag();
+    /// Cancel an active drag without committing transform changes (B6.4 deepen follow-up).
+    void cancelDrag();
 
     bool isDragging() const { return m_dragging; }
+    bool canBeginDrag(const GizmoHitTest& hit, const GizmoTransform& transform) const;
+    bool canBeginDrag(const GizmoRay& ray, const GizmoTransform& transform) const;
 
 private:
     GizmoAxis pickAxisScreen_(const GizmoHitTest& hit) const;
