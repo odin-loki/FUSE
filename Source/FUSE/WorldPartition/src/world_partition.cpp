@@ -151,20 +151,15 @@ WorldCell* WorldPartition::find_budget_eviction_candidate_(f32 incoming_priority
     out_score = -1.f;
 
     if (m_desc.eviction_policy == EvictionPolicy::DistanceFromFocus) {
-        if (!m_residency_set.has_eviction_candidate()) {
-            return nullptr;
-        }
-
-        const auto candidates = m_residency_set.collect_eviction_candidates();
-        const GridCoord picked = pick_budget_eviction_candidate(
-            candidates,
+        const GridCoord picked = pick_budget_eviction_candidate_from_set(
+            m_residency_set,
             [&](GridCoord coord) {
                 const WorldCell* cell = find_cell_(coord);
                 return cell != nullptr ? budget_eviction_score_for_(*cell) : -1.f;
             },
             incoming_priority, m_desc.eviction_policy, out_score);
 
-        if (!is_valid_grid_coord(picked) || out_score <= 0.f) {
+        if (!is_valid_grid_coord(picked) || !is_budget_eviction_score_eligible(out_score)) {
             return nullptr;
         }
         return const_cast<WorldCell*>(find_cell_(picked));
@@ -196,8 +191,12 @@ void WorldPartition::evict_for_budget_(f32 incoming_priority, u64 incoming_bytes
         return;
     }
 
-    if (!m_residency_set.has_eviction_candidate()) {
-        ++m_budget_counters.eviction_skipped;
+    if (!can_attempt_budget_eviction(m_desc.max_loaded_cells, resident_cell_count(),
+                                     m_desc.budget.max_resident_bytes, resident_byte_count(),
+                                     incoming_bytes, m_residency_set.has_eviction_candidate())) {
+        if (should_record_eviction_skipped_on_empty_residency(true, m_residency_set.has_eviction_candidate())) {
+            ++m_budget_counters.eviction_skipped;
+        }
         return;
     }
 
@@ -207,7 +206,7 @@ void WorldPartition::evict_for_budget_(f32 incoming_priority, u64 incoming_bytes
         f32 best_score = -1.f;
         WorldCell* best_candidate = find_budget_eviction_candidate_(incoming_priority, best_score);
 
-        if (best_candidate == nullptr || best_score <= 0.f) {
+        if (best_candidate == nullptr || !is_budget_eviction_score_eligible(best_score)) {
             ++m_budget_counters.eviction_skipped;
             break;
         }
