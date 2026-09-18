@@ -117,12 +117,19 @@ struct ContactManifold {
     bool pruneContactPointsIfNeeded(
         f32 separationEpsilon = 1e-6f,
         f32 duplicateEpsilon = 1e-4f);
+
+    /// True when no shallow slots would be removed by `pruneShallowPenetrations` (B4.4 deepen follow-up).
+    bool canSkipPruneShallowPenetrations(f32 minDepth) const;
+
+    /// Prune shallow slots only when `hasShallowPenetrations`; returns true when points remain (B4.4 deepen follow-up).
+    bool pruneShallowPenetrationsIfNeeded(f32 minDepth);
 };
 
 /// Const preflight for manifold prune dispatch (B4.4 deepen pass).
 struct ManifoldPrunePreflight {
     bool hasSeparated = false;
     bool hasDuplicates = false;
+    bool hasShallow = false;
     bool exceedsMaxPoints = false;
     bool wouldBeEmpty = false;
     bool skipped = false;
@@ -131,6 +138,8 @@ struct ManifoldPrunePreflight {
         return !skipped && (hasSeparated || hasDuplicates || exceedsMaxPoints);
     }
 
+    bool needs_shallow_pruning(f32 minDepth) const { return !skipped && hasShallow; }
+
     bool can_prune_in_place() const { return needs_pruning() && !wouldBeEmpty; }
 };
 
@@ -138,7 +147,34 @@ struct ManifoldPrunePreflight {
 ManifoldPrunePreflight preflight_manifold_prune(
     const ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,
-    f32 duplicateEpsilon = 1e-4f);
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Const preflight for manifold finalize dispatch (B4.4 deepen follow-up).
+struct ManifoldFinalizePreflight {
+    bool skipped = false;
+    bool canFinalize = false;
+    bool needsPruning = false;
+    bool wouldBeEmptyAfterPrune = false;
+    bool needsFrictionBasis = false;
+    bool canReuseFrictionBasis = false;
+
+    bool can_finalize() const { return !skipped && canFinalize; }
+};
+
+/// Populate finalize preflight without mutating the manifold (B4.4 deepen follow-up).
+ManifoldFinalizePreflight preflight_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Returns true when finalize should be skipped for this manifold (B4.4 deepen follow-up).
+bool can_skip_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

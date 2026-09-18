@@ -170,6 +170,26 @@ bool isShapeDegenerate(CollisionShapeType type, const vec3& params) {
     }
 }
 
+bool isDeepenDegenerateShapePair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes) {
+    const u32 shapeA = findShapeForBody(shapes, pair.bodyA, CollisionShapeType::Sphere);
+    const u32 shapeB = findShapeForBody(shapes, pair.bodyB, CollisionShapeType::Sphere);
+    if (shapeA >= shapes.count() || shapeB >= shapes.count()) {
+        return false;
+    }
+
+    const CollisionShapeType typeA = shapeType(shapes, shapeA);
+    const CollisionShapeType typeB = shapeType(shapes, shapeB);
+    if (isShapeDegenerate(typeA, shapes.params[shapeA]) ||
+        isShapeDegenerate(typeB, shapes.params[shapeB])) {
+        return true;
+    }
+
+    return (typeA == CollisionShapeType::Capsule && shapes.params[shapeA].y <= 0.f) ||
+           (typeB == CollisionShapeType::Capsule && shapes.params[shapeB].y <= 0.f);
+}
+
 } // namespace
 
 bool is_self_contact_pair(const broadphase::CandidatePair& pair) {
@@ -206,6 +226,10 @@ const char* contact_pair_reject_reason_name(ContactPairRejectReason reason) {
         return "BothStatic";
     case ContactPairRejectReason::DegenerateShape:
         return "DegenerateShape";
+    case ContactPairRejectReason::BothSleeping:
+        return "BothSleeping";
+    case ContactPairRejectReason::BothKinematic:
+        return "BothKinematic";
     }
     return "Unknown";
 }
@@ -230,6 +254,28 @@ bool is_static_contact_pair(
     const bool staticA = (bodies.flags[pair.bodyA] & RB_STATIC) != 0u;
     const bool staticB = (bodies.flags[pair.bodyB] & RB_STATIC) != 0u;
     return staticA && staticB;
+}
+
+bool is_sleeping_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies) {
+    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
+        return false;
+    }
+    const bool sleepingA = (bodies.flags[pair.bodyA] & RB_SLEEPING) != 0u;
+    const bool sleepingB = (bodies.flags[pair.bodyB] & RB_SLEEPING) != 0u;
+    return sleepingA && sleepingB;
+}
+
+bool is_kinematic_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies) {
+    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
+        return false;
+    }
+    const bool kinematicA = (bodies.flags[pair.bodyA] & RB_KINEMATIC) != 0u;
+    const bool kinematicB = (bodies.flags[pair.bodyB] & RB_KINEMATIC) != 0u;
+    return kinematicA && kinematicB;
 }
 
 bool is_degenerate_shape_pair(
@@ -383,6 +429,13 @@ bool generate_contact_manifold(ContactManifold& manifold) {
     return true;
 }
 
+bool generate_contact_manifold_if_needed(ContactManifold& manifold) {
+    if (!can_finalize_contact_manifold(manifold)) {
+        return false;
+    }
+    return generate_contact_manifold(manifold);
+}
+
 void compute_friction_tangents(ContactManifold& manifold) {
     if (should_skip_friction_tangents(manifold)) {
         manifold.frictionBasis = {};
@@ -415,6 +468,59 @@ bool should_skip_contact_pair_dispatch(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return is_invalid_contact_pair(pair, bodies, shapes);
+}
+
+ContactPairRejectReason contact_pair_deepen_reject_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    const ContactPairRejectReason baseReason = contact_pair_reject_reason(pair, bodies, shapes);
+    if (baseReason != ContactPairRejectReason::None) {
+        return baseReason;
+    }
+    if (isDeepenDegenerateShapePair(pair, shapes)) {
+        return ContactPairRejectReason::DegenerateShape;
+    }
+    if (is_sleeping_contact_pair(pair, bodies)) {
+        return ContactPairRejectReason::BothSleeping;
+    }
+    if (is_kinematic_contact_pair(pair, bodies)) {
+        return ContactPairRejectReason::BothKinematic;
+    }
+    return ContactPairRejectReason::None;
+}
+
+ContactPairDeepenPreflight preflight_contact_pair_deepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    ContactPairDeepenPreflight preflight{};
+    preflight.reason = contact_pair_deepen_reject_reason(pair, bodies, shapes);
+    preflight.rejected = preflight.reason != ContactPairRejectReason::None;
+    return preflight;
+}
+
+bool should_skip_contact_pair_deepen_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return contact_pair_deepen_reject_reason(pair, bodies, shapes) != ContactPairRejectReason::None;
+}
+
+bool can_skip_narrowphase(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (pairs.empty()) {
+        return true;
+    }
+
+    for (const broadphase::CandidatePair& pair : pairs) {
+        if (!should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 } // namespace fuse::physics::narrowphase
