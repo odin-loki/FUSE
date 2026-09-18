@@ -922,6 +922,39 @@ void testEmptyLightDirectionDirectionalShadowUpdate() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testSanitizeCascadeSplitHelpers() {
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+
+    CascadedShadowMapDesc clampDesc{};
+    clampDesc.cascadeSplits[0] = -0.2f;
+    clampDesc.cascadeSplits[1] = 1.5f;
+    clampDesc.cascadeSplits[2] = 0.3f;
+    clampDesc.cascadeSplits[3] = 0.8f;
+    CascadedShadowMapLayout::clampCascadeSplitFractions(clampDesc);
+    expectNear(clampDesc.cascadeSplits[0], 0.f, 0.001f, "clamp helper floors negative split");
+    expectNear(clampDesc.cascadeSplits[1], 1.f, 0.001f, "clamp helper ceilings oversized split");
+    expectNear(clampDesc.cascadeSplits[2], 0.3f, 0.001f, "clamp helper preserves in-range split");
+
+    CascadedShadowMapDesc monotonicDesc{};
+    monotonicDesc.cascadeSplits[0] = 0.1f;
+    monotonicDesc.cascadeSplits[1] = 0.05f;
+    monotonicDesc.cascadeSplits[2] = 0.4f;
+    monotonicDesc.cascadeSplits[3] = 0.2f;
+    CascadedShadowMapLayout::enforceCascadeSplitMonotonicity(monotonicDesc);
+    expectTrue(monotonicDesc.cascadeSplits[1] >= monotonicDesc.cascadeSplits[0],
+               "monotonic helper repairs descending split");
+    expectTrue(monotonicDesc.cascadeSplits[2] >= monotonicDesc.cascadeSplits[1],
+               "monotonic helper preserves ascending tail");
+    expectTrue(monotonicDesc.cascadeSplits[3] >= monotonicDesc.cascadeSplits[2],
+               "monotonic helper repairs trailing dip");
+
+    CascadedShadowMapDesc pinDesc{};
+    pinDesc.cascadeSplits[3] = 0.75f;
+    CascadedShadowMapLayout::pinLastCascadeSplit(pinDesc);
+    expectNear(pinDesc.cascadeSplits[3], 1.f, 0.001f, "pin helper forces last split to far plane");
+}
+
 void testSanitizeCascadeSplits() {
     using fuse::renderer::CascadedShadowMapDesc;
     using fuse::renderer::CascadedShadowMapLayout;
@@ -979,6 +1012,78 @@ void testPopulateCascadeSplitsClamped() {
     expectNear(desc.cascadeSplits[0], 1.f, 0.001f, "single clamped cascade reaches far plane");
 }
 
+void testCascadeShadowSkipReasonBlocking() {
+    using fuse::renderer::CascadeShadowSkipReason;
+    using fuse::renderer::cascadeShadowSkipReasonIsBlocking;
+
+    expectTrue(!cascadeShadowSkipReasonIsBlocking(CascadeShadowSkipReason::None), "None skip reason is not blocking");
+    expectTrue(cascadeShadowSkipReasonIsBlocking(CascadeShadowSkipReason::EmptyLightDirection),
+               "empty light skip reason is blocking");
+    expectTrue(cascadeShadowSkipReasonIsBlocking(CascadeShadowSkipReason::EmptyCameraDepthRange),
+               "empty camera skip reason is blocking");
+}
+
+void testClassifyCascadeShadowSkipPriority() {
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadeShadowSkipReason;
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+
+    CascadedShadowMapDesc desc{};
+    ShadowCameraParams camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+
+    const fuse::math::Vec3 sunDirection{0.f, -1.f, 0.f};
+    expectTrue(CascadeLightSpaceLayout::classifyCascadeShadowSkip(0u, desc, camera, {0.f, 0.f, 0.f}) ==
+                   CascadeShadowSkipReason::EmptyLightDirection,
+               "EmptyLightDirection wins over later checks");
+
+    ShadowCameraParams invertedCamera = camera;
+    invertedCamera.nearPlane = 50.f;
+    invertedCamera.farPlane = 10.f;
+    expectTrue(CascadeLightSpaceLayout::classifyCascadeShadowSkip(0u, desc, invertedCamera, sunDirection) ==
+                   CascadeShadowSkipReason::EmptyCameraDepthRange,
+               "EmptyCameraDepthRange wins when light direction is valid");
+
+    CascadedShadowMapDesc flatDesc{};
+    flatDesc.cascadeSplits[0] = 0.5f;
+    flatDesc.cascadeSplits[1] = 0.5f;
+    flatDesc.cascadeSplits[2] = 1.f;
+    flatDesc.cascadeSplits[3] = 1.f;
+    expectTrue(CascadeLightSpaceLayout::classifyCascadeShadowSkip(1u, flatDesc, camera, sunDirection) ==
+                   CascadeShadowSkipReason::EmptyCascadeFrustum,
+               "EmptyCascadeFrustum classified for zero-thickness slice");
+    expectTrue(CascadeLightSpaceLayout::classifyCascadeShadowSkip(0u, desc, camera, sunDirection) ==
+                   CascadeShadowSkipReason::None,
+               "valid cascade is not skipped");
+}
+
+void testCascadeShadowBypassGuards() {
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+
+    ShadowCameraParams camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+
+    expectTrue(!CascadeLightSpaceLayout::shouldBypassAllCascadeShadowBuilds(camera, {0.f, -1.f, 0.f}),
+               "valid light and camera do not bypass all cascades");
+
+    expectTrue(CascadeLightSpaceLayout::shouldBypassAllCascadeShadowBuilds(camera, {0.f, 0.f, 0.f}),
+               "empty light direction bypasses all cascades");
+
+    ShadowCameraParams invertedCamera = camera;
+    invertedCamera.nearPlane = 80.f;
+    invertedCamera.farPlane = 10.f;
+    expectTrue(CascadedShadowMapLayout::isEmptyCameraDepthRange(invertedCamera),
+               "inverted camera flagged empty before bypass");
+    expectTrue(CascadeLightSpaceLayout::shouldBypassAllCascadeShadowBuilds(invertedCamera, {0.f, -1.f, 0.f}),
+               "empty camera depth range bypasses all cascades");
+}
+
 void testCountSkippedCascadeShadowBuilds() {
     using fuse::renderer::CascadeLightSpaceLayout;
     using fuse::renderer::CascadedShadowMapDesc;
@@ -1008,6 +1113,49 @@ void testCountSkippedCascadeShadowBuilds() {
                        CascadeLightSpaceLayout::countSkippedCascadeShadowBuilds(flatDesc, camera, sunDirection, 4u) ==
                    4u,
                "skipped + valid cascade counts sum to active count");
+}
+
+void testCascadeShadowSkipCountsByKind() {
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::ShadowCameraParams;
+
+    CascadedShadowMapDesc desc{};
+    ShadowCameraParams camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+
+    const fuse::math::Vec3 sunDirection{0.f, -1.f, 0.f};
+    const auto defaultCounts =
+        CascadeLightSpaceLayout::countCascadeShadowSkipsByKind(desc, camera, sunDirection, 4u);
+    expectTrue(defaultCounts.total == 0u, "default cascades have zero skip breakdown");
+    expectTrue(defaultCounts.emptyFrustum == 0u, "default cascades have zero empty-frustum skips");
+
+    const auto emptyLightCounts =
+        CascadeLightSpaceLayout::countCascadeShadowSkipsByKind(desc, camera, {0.f, 0.f, 0.f}, 4u);
+    expectTrue(emptyLightCounts.total == 4u, "empty light skips every cascade");
+    expectTrue(emptyLightCounts.emptyLight == 4u, "empty light breakdown matches total");
+    expectTrue(emptyLightCounts.emptyCamera == 0u, "empty light skips do not count as empty camera");
+
+    ShadowCameraParams invertedCamera = camera;
+    invertedCamera.nearPlane = 50.f;
+    invertedCamera.farPlane = 10.f;
+    const auto emptyCameraCounts =
+        CascadeLightSpaceLayout::countCascadeShadowSkipsByKind(desc, invertedCamera, sunDirection, 4u);
+    expectTrue(emptyCameraCounts.total == 4u, "empty camera skips every cascade");
+    expectTrue(emptyCameraCounts.emptyCamera == 4u, "empty camera breakdown matches total");
+
+    CascadedShadowMapDesc flatDesc{};
+    flatDesc.cascadeSplits[0] = 0.5f;
+    flatDesc.cascadeSplits[1] = 0.5f;
+    flatDesc.cascadeSplits[2] = 1.f;
+    flatDesc.cascadeSplits[3] = 1.f;
+    const auto flatCounts =
+        CascadeLightSpaceLayout::countCascadeShadowSkipsByKind(flatDesc, camera, sunDirection, 4u);
+    expectTrue(flatCounts.total == 2u, "flat cascades skip two slices");
+    expectTrue(flatCounts.emptyFrustum == 2u, "flat cascade skips counted as empty frustum");
+    expectTrue(flatCounts.emptyLight == 0u && flatCounts.emptyCamera == 0u,
+               "flat cascade skips are not attributed to global guards");
 }
 
 void testIsCascadeSlotPopulated() {
@@ -1186,10 +1334,15 @@ int main() {
     testPopulateCascadeShadowData();
     testClearCascadeShadowDataSlots();
     testEmptyLightDirectionDirectionalShadowUpdate();
+    testSanitizeCascadeSplitHelpers();
     testSanitizeCascadeSplits();
     testClampedCascadeFarZ();
     testPopulateCascadeSplitsClamped();
+    testCascadeShadowSkipReasonBlocking();
+    testClassifyCascadeShadowSkipPriority();
+    testCascadeShadowBypassGuards();
     testCountSkippedCascadeShadowBuilds();
+    testCascadeShadowSkipCountsByKind();
     testIsCascadeSlotPopulated();
     testDirectionalShadowEmptyCameraGuard();
     testShadowAtlasLayout();
