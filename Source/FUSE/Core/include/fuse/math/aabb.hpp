@@ -212,4 +212,52 @@ inline AABB mergeAabb(const AABB& a, const AABB& b) {
     return a.merge(b);
 }
 
+/// Writes slab interval on hit; returns false for empty boxes or ray miss.
+inline bool tryRayInterval(const AABB& box, const Vec3& origin, const Vec3& direction, f32& tEnter,
+                           f32& tExit) {
+    if (box.isEmpty()) {
+        return false;
+    }
+    return box.rayInterval(origin, direction, tEnter, tExit);
+}
+
+/// Writes the nearest forward hit distance; returns false for empty boxes or ray miss.
+inline bool tryRayIntersect(const AABB& box, const Vec3& origin, const Vec3& direction, f32& t) {
+    if (box.isEmpty()) {
+        return false;
+    }
+    t = box.rayIntersect(origin, direction);
+    return t >= 0.f;
+}
+
+/// True when the ray hits the box within `[tMin, tMax]`; returns false for empty boxes.
+inline bool tryRayHits(const AABB& box, const Vec3& origin, const Vec3& direction, f32 tMin = 0.f,
+                       f32 tMax = std::numeric_limits<f32>::max()) {
+    if (box.isEmpty()) {
+        return false;
+    }
+    return box.rayHits(origin, direction, tMin, tMax);
+}
+
+/// Ray interval clamped to `[tMin, tMax]`; returns false for empty boxes, inverted clamp, or miss.
+inline bool tryRayIntervalClamped(const AABB& box, const Vec3& origin, const Vec3& direction, f32 tMin,
+                                  f32 tMax, f32& tEnter, f32& tExit) {
+    if (box.isEmpty()) {
+        return false;
+    }
+    return box.rayIntervalClamped(origin, direction, tMin, tMax, tEnter, tExit);
+}
+
+/// Transforms an AABB through a rigid affine matrix; returns false for empty boxes or non-rigid matrices.
+inline bool tryTransformRigidAabb(const Mat4& matrix, const AABB& box, AABB& out, f32 epsilon = 1e-4f) {
+    if (box.isEmpty()) {
+        return false;
+    }
+    if (!isRigid(matrix, epsilon)) {
+        return false;
+    }
+    out = transformAabb(matrix, box);
+    return true;
+}
+
 } // namespace fuse::math
