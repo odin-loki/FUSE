@@ -417,4 +417,58 @@ bool should_skip_contact_pair_dispatch(
     return is_invalid_contact_pair(pair, bodies, shapes);
 }
 
+bool is_empty_narrowphase_input(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return bodies.count() == 0u || shapes.count() == 0u;
+}
+
+bool can_skip_narrowphase_for_empty_input(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return is_empty_narrowphase_input(bodies, shapes);
+}
+
+bool contact_pair_was_rejected(const ContactPairPreflight& preflight) {
+    return preflight.rejected;
+}
+
+ManifoldFinalizePreflight preflight_finalize_contact_manifold(const ContactManifold& manifold) {
+    ManifoldFinalizePreflight preflight{};
+    if (manifold.empty()) {
+        preflight.empty = true;
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    preflight.empty = false;
+    preflight.invalidNormal = !manifold.hasValidNormal();
+    preflight.allSeparated = !manifold.hasPenetratingPoints();
+    return preflight;
+}
+
+bool should_skip_finalize_contact_manifold(const ContactManifold& manifold) {
+    return !preflight_finalize_contact_manifold(manifold).can_finalize();
+}
+
+bool generate_contact_manifold_guarded(ContactManifold& manifold) {
+    const ManifoldFinalizePreflight preflight = preflight_finalize_contact_manifold(manifold);
+    if (!preflight.can_finalize()) {
+        manifold.clear();
+        return false;
+    }
+    return generate_contact_manifold(manifold);
+}
+
+ContactManifold detect_contacts_pair_guarded(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    const ContactPairPreflight preflight = preflight_contact_pair(pair, bodies, shapes);
+    if (contact_pair_was_rejected(preflight)) {
+        return invalidContactManifold();
+    }
+    return detect_contacts_pair(pair, bodies, shapes);
+}
+
 } // namespace fuse::physics::narrowphase

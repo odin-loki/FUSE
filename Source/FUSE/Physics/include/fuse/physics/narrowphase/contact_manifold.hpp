@@ -140,6 +140,18 @@ ManifoldPrunePreflight preflight_manifold_prune(
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f);
 
+/// Returns true when `preflight_manifold_prune` reports no prune work (B4.4 deepen pass).
+bool should_skip_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f);
+
+/// Guarded prune: preflight then `pruneContactPointsIfNeeded` (B4.4 deepen pass).
+bool prune_contact_points_guarded(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f);
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }
