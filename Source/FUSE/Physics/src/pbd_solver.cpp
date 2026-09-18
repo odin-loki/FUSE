@@ -270,7 +270,10 @@ void PBDSolver::step(RigidBodySoA& bodies,
     for (u32 substep = 0; substep < std::max(1u, params.substeps); ++substep) {
         predict(bodies, params, subDt);
         generateContacts(bodies, shapes, params);
-        if (substep == 0u) {
+        if (substep == 0u &&
+            preflight_frame_lambda_warm_start(distanceConstraints_,
+                                              priorDistanceLambdas,
+                                              priorContactLambdas)) {
             frame_lambda_warm_start(workBuffers_,
                                     distanceConstraints_,
                                     priorDistanceLambdas,
