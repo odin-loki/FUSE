@@ -828,6 +828,99 @@ void testTonemapCurvePerKindAndReadyGuards() {
     expectNear(passthrough.z, input.z, 1e-6f, "not-ready reinhard curve preserves blue");
 }
 
+void testHistogramUtilAverageMeteringGuards() {
+    fuse::renderer::LuminanceHistogramParams valid{};
+    const fuse::math::Vec3 samples[] = {{0.18f, 0.18f, 0.18f}, {0.36f, 0.36f, 0.36f}};
+
+    fuse::renderer::LuminanceHistogram histogram{};
+    histogram.init(valid);
+    expectTrue(!fuse::renderer::histogram_util::canMeterAverage(histogram), "empty histogram fails average guard");
+    expectNear(fuse::renderer::histogram_util::meterAverageFromHistogram(histogram), 0.f, 1e-6f,
+               "empty histogram average metering returns zero");
+
+    histogram.accumulate({0.18f, 0.18f, 0.18f});
+    histogram.accumulate({0.36f, 0.36f, 0.36f});
+    expectTrue(fuse::renderer::histogram_util::canMeterAverage(histogram), "populated histogram passes average guard");
+    expectNear(fuse::renderer::histogram_util::meterAverageFromHistogram(histogram), histogram.averageLuminance(),
+               1e-5f, "histogram utility average matches histogram average");
+
+    expectTrue(fuse::renderer::histogram_util::canMeterAverageFromSamples(samples, 2u, valid),
+               "valid samples pass average-from-samples guard");
+    expectTrue(!fuse::renderer::histogram_util::canMeterAverageFromSamples(nullptr, 0u, valid),
+               "empty sample buffer fails average-from-samples guard");
+    fuse::renderer::LuminanceHistogram fromSamples{};
+    fromSamples.init(valid);
+    fuse::renderer::histogram_util::accumulateSamples(fromSamples, samples, 2u);
+    expectNear(fuse::renderer::histogram_util::meterAverageFromSamples(samples, 2u, valid),
+               fromSamples.averageLuminance(), 1e-5f,
+               "average-from-samples matches histogram log-average metering");
+
+    fuse::renderer::LuminanceHistogramParams invalidRange{};
+    invalidRange.max_log_luminance = invalidRange.min_log_luminance;
+    expectTrue(!fuse::renderer::histogram_util::canMeterAverageFromSamples(samples, 2u, invalidRange),
+               "invalid params fail average-from-samples guard");
+    expectNear(fuse::renderer::histogram_util::meterAverageFromSamples(samples, 2u, invalidRange), 0.f, 1e-6f,
+               "meterAverageFromSamples returns zero when params invalid");
+}
+
+void testAutoExposureUpdateWithParamsGuards() {
+    const fuse::math::Vec3 samples[] = {{0.72f, 0.72f, 0.72f}};
+    fuse::renderer::AutoExposureParams params{};
+    fuse::renderer::LuminanceHistogram histogram{};
+    histogram.init({});
+    histogram.accumulate({0.72f, 0.72f, 0.72f});
+
+    expectTrue(fuse::renderer::auto_exposure_can_update_from_samples_with_params(samples, 1u, params, 0.1f),
+               "valid samples and params pass combined update guard");
+    expectTrue(fuse::renderer::auto_exposure_can_update_from_histogram_with_params(histogram, params, 0.1f),
+               "valid histogram and params pass combined update guard");
+
+    fuse::renderer::AutoExposureParams disabled = params;
+    disabled.enabled = false;
+    expectTrue(!fuse::renderer::auto_exposure_can_update_from_samples_with_params(samples, 1u, disabled, 0.1f),
+               "disabled params fail combined sample update guard");
+    expectTrue(!fuse::renderer::auto_exposure_can_update_from_histogram_with_params(histogram, disabled, 0.1f),
+               "disabled params fail combined histogram update guard");
+    expectTrue(!fuse::renderer::auto_exposure_can_update_from_histogram_with_params(histogram, params, 0.f),
+               "zero delta fails combined histogram update guard");
+
+    fuse::renderer::AutoExposure exposure{};
+    expectTrue(!fuse::renderer::auto_exposure_is_ready(exposure), "uninitialized exposure is not ready");
+    exposure.init();
+    expectTrue(fuse::renderer::auto_exposure_is_ready(exposure), "initialized exposure is ready");
+    exposure.setParams(params);
+    exposure.updateFromLuminance(0.72f, 0.5f);
+    const fuse::f32 adaptedEv = exposure.currentEv();
+    expectTrue(adaptedEv > 0.f, "exposure adapts before disabled histogram update");
+
+    exposure.setParams(disabled);
+    const fuse::f32 unchangedEv = exposure.updateFromHistogram(histogram, 0.5f);
+    expectNear(unchangedEv, adaptedEv, 1e-6f, "disabled params block histogram update");
+    expectNear(exposure.state().measured_luminance, 0.72f, 1e-6f,
+               "disabled histogram update does not overwrite measured luminance");
+
+    exposure.destroy();
+    expectTrue(!fuse::renderer::auto_exposure_is_ready(exposure), "destroyed exposure is not ready");
+}
+
+void testTonemapCurveFilmicAndDisplayRangeGuards() {
+    const fuse::renderer::TonemapCurveParams filmic = fuse::renderer::make_filmic_curve_params();
+    expectTrue(fuse::renderer::tonemap_curve_filmic_params_valid(filmic), "filmic preset passes filmic guard");
+    expectTrue(fuse::renderer::tonemap_curve_outputs_in_display_range(filmic), "filmic preset outputs in display range");
+
+    fuse::renderer::TonemapCurveParams invalidFilmic = filmic;
+    invalidFilmic.gamma = 0.f;
+    expectTrue(!fuse::renderer::tonemap_curve_filmic_params_valid(invalidFilmic), "zero gamma fails filmic guard");
+    expectTrue(!fuse::renderer::tonemap_curve_params_valid(invalidFilmic), "invalid filmic fails params guard");
+    expectTrue(!fuse::renderer::tonemap_curve_outputs_in_display_range(invalidFilmic),
+               "invalid filmic fails display-range guard");
+
+    fuse::renderer::TonemapCurveParams disabled{};
+    disabled.enabled = false;
+    expectTrue(fuse::renderer::tonemap_curve_outputs_in_display_range(disabled),
+               "disabled curve passes display-range guard");
+}
+
 void testTonemapCurveApplyAndSpanGuards() {
     const fuse::renderer::TonemapCurveParams filmic = fuse::renderer::make_filmic_curve_params();
     expectTrue(fuse::renderer::tonemap_curve_can_apply(filmic), "filmic preset can apply");
@@ -899,6 +992,9 @@ int main() {
     testHistogramUtilCanAccumulateGuards();
     testExposureMeterCanMeasureGuard();
     testTonemapCurvePerKindAndReadyGuards();
+    testHistogramUtilAverageMeteringGuards();
+    testAutoExposureUpdateWithParamsGuards();
+    testTonemapCurveFilmicAndDisplayRangeGuards();
     testTonemapCurveApplyAndSpanGuards();
 
     fuse::core::shutdown();
