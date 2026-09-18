@@ -794,6 +794,107 @@ void run_interest_management_tests() {
     expectTrue(fuse::net::count_candidates_in_radius(origin, tight_disabled_policy,
                                                      disabled_candidates) == 0u,
                "negative radii count path early-outs");
+
+    // --- diff apply preflight guards (B7.4 deepen follow-up) ---
+    fuse::net::InterestScopeSet apply_preflight_scope;
+    apply_preflight_scope.entities = {make_entity(1), make_entity(2)};
+    fuse::net::InterestSetDiff empty_apply_diff{};
+    const fuse::net::InterestDiffApplyPreflight empty_apply_preflight =
+        fuse::net::preflight_interest_diff(empty_apply_diff, apply_preflight_scope);
+    expectTrue(empty_apply_preflight.empty_diff, "preflight marks empty diff");
+    expectTrue(empty_apply_preflight.skipped, "preflight marks empty diff skipped");
+    expectTrue(!empty_apply_preflight.would_change_scope, "empty diff would not change scope");
+    expectTrue(!empty_apply_preflight.can_apply(), "empty diff preflight cannot apply");
+    expectTrue(empty_apply_preflight.can_apply_or_skip(), "empty diff preflight can_apply_or_skip");
+    expectTrue(fuse::net::should_skip_interest_diff_apply(empty_apply_diff),
+               "should_skip_interest_diff_apply for empty diff");
+    expectTrue(fuse::net::can_apply_or_skip_interest_diff(empty_apply_diff, apply_preflight_scope),
+               "can_apply_or_skip accepts empty diff fast path");
+
+    fuse::net::InterestSetDiff enter_apply_diff{};
+    enter_apply_diff.entered = {make_entity(3)};
+    const fuse::net::InterestDiffApplyPreflight enter_apply_preflight =
+        fuse::net::preflight_interest_diff(enter_apply_diff, apply_preflight_scope);
+    expectTrue(!enter_apply_preflight.empty_diff, "enter diff preflight not empty");
+    expectTrue(enter_apply_preflight.has_enters, "enter diff preflight has_enters");
+    expectTrue(!enter_apply_preflight.has_leaves, "enter-only diff preflight has no leaves");
+    expectTrue(enter_apply_preflight.would_change_scope, "enter diff would change scope");
+    expectTrue(enter_apply_preflight.can_apply(), "enter diff preflight can_apply");
+    expectTrue(!fuse::net::should_skip_interest_diff_apply(enter_apply_diff),
+               "should_skip rejects non-empty enter diff");
+
+    fuse::net::InterestSetDiff redundant_apply_diff{};
+    redundant_apply_diff.entered = {make_entity(1)};
+    redundant_apply_diff.left = {make_entity(99)};
+    const fuse::net::InterestDiffApplyPreflight redundant_apply_preflight =
+        fuse::net::preflight_interest_diff(redundant_apply_diff, apply_preflight_scope);
+    expectTrue(!redundant_apply_preflight.empty_diff, "redundant diff preflight not empty");
+    expectTrue(!redundant_apply_preflight.would_change_scope, "redundant diff would not change scope");
+    expectTrue(!redundant_apply_preflight.can_apply(), "redundant diff preflight cannot apply");
+    expectTrue(!fuse::net::can_apply_or_skip_interest_diff(redundant_apply_diff, apply_preflight_scope),
+               "can_apply_or_skip rejects redundant non-empty diff");
+
+    fuse::net::InterestManager apply_preflight_manager;
+    apply_preflight_manager.set_policy(policy);
+    apply_preflight_manager.set_observer_position(origin);
+    (void)apply_preflight_manager.register_entity({make_entity(200), {10.f, 0.f, 0.f, 0.f}, 0.f});
+    apply_preflight_manager.evaluate();
+    expectTrue(apply_preflight_manager.should_skip_apply_diff(empty_apply_diff),
+               "manager should_skip_apply_diff for empty diff");
+    expectTrue(apply_preflight_manager.can_apply_or_skip_diff(empty_apply_diff),
+               "manager can_apply_or_skip_diff accepts empty diff");
+    fuse::net::InterestSetDiff manager_enter_diff{};
+    manager_enter_diff.entered = {make_entity(201)};
+    const fuse::net::InterestDiffApplyPreflight manager_preflight =
+        apply_preflight_manager.preflight_apply_diff(manager_enter_diff);
+    expectTrue(manager_preflight.would_change_scope, "manager preflight_apply_diff accepts enter");
+    expectTrue(apply_preflight_manager.can_apply_or_skip_diff(manager_enter_diff),
+               "manager can_apply_or_skip_diff accepts valid enter diff");
+
+    // --- radius filter preflight guards (B7.4 deepen follow-up) ---
+    std::vector<fuse::net::InterestCandidate> preflight_candidates;
+    preflight_candidates.push_back({make_entity(210), {10.f, 0.f, 0.f, 0.f}, 0.f});
+
+    const fuse::net::InterestRadiusFilterPreflight active_preflight =
+        fuse::net::preflight_radius_filter(policy, preflight_candidates);
+    expectTrue(!active_preflight.candidates_empty, "radius preflight sees candidates");
+    expectTrue(!active_preflight.radii_disabled, "radius preflight radii enabled");
+    expectTrue(!active_preflight.hysteresis_path, "basic radius preflight not hysteresis path");
+    expectTrue(active_preflight.can_filter(), "radius preflight can_filter with active policy");
+    expectTrue(!fuse::net::should_skip_radius_filter(policy, preflight_candidates),
+               "should_skip_radius_filter false for active policy");
+
+    const fuse::net::InterestRadiusFilterPreflight empty_candidates_preflight =
+        fuse::net::preflight_radius_filter(policy, empty_candidates);
+    expectTrue(empty_candidates_preflight.candidates_empty, "radius preflight marks empty candidates");
+    expectTrue(empty_candidates_preflight.should_skip(), "radius preflight skips empty candidates");
+    expectTrue(fuse::net::should_skip_radius_filter(policy, empty_candidates),
+               "should_skip_radius_filter for empty candidates");
+
+    const fuse::net::InterestRadiusFilterPreflight disabled_preflight =
+        fuse::net::preflight_radius_filter(disabled_policy, preflight_candidates);
+    expectTrue(disabled_preflight.radii_disabled, "radius preflight marks disabled radii");
+    expectTrue(disabled_preflight.should_skip(), "radius preflight skips disabled radii");
+    expectTrue(fuse::net::should_skip_radius_filter(disabled_policy, preflight_candidates),
+               "should_skip_radius_filter for disabled radii");
+
+    fuse::net::InterestScopeSet hysteresis_prior;
+    hysteresis_prior.entities = {make_entity(211)};
+    const fuse::net::InterestRadiusFilterPreflight hysteresis_disabled_preflight =
+        fuse::net::preflight_radius_filter(disabled_policy, preflight_candidates, hysteresis_prior);
+    expectTrue(hysteresis_disabled_preflight.hysteresis_path, "hysteresis radius preflight path set");
+    expectTrue(!hysteresis_disabled_preflight.prior_scope_empty, "hysteresis preflight sees prior scope");
+    expectTrue(!hysteresis_disabled_preflight.should_skip(),
+               "hysteresis preflight does not skip when prior scope retains entities");
+    expectTrue(!fuse::net::should_skip_radius_filter(disabled_policy, preflight_candidates, hysteresis_prior),
+               "hysteresis should_skip false when prior scope non-empty");
+
+    fuse::net::InterestScopeSet empty_hysteresis_prior;
+    const fuse::net::InterestRadiusFilterPreflight hysteresis_empty_prior_preflight =
+        fuse::net::preflight_radius_filter(disabled_policy, preflight_candidates, empty_hysteresis_prior);
+    expectTrue(hysteresis_empty_prior_preflight.prior_scope_empty, "hysteresis preflight prior scope empty");
+    expectTrue(hysteresis_empty_prior_preflight.should_skip(),
+               "hysteresis preflight skips disabled radii with empty prior scope");
 }
 
 } // namespace fuse::net::tests
