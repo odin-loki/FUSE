@@ -40,13 +40,21 @@ u64 recompute_cache_key_for_entry_(const CookCacheEntry& entry) {
     return combine_cook_cache_key(source_hash, entry.upstream_hash);
 }
 
-bool is_prunable_cache_entry_(const CookCacheEntry& entry) {
+bool is_invalid_cache_entry_(const CookCacheEntry& entry) {
+    return !is_valid_cook_cache_entry(entry);
+}
+
+bool is_stale_cache_entry_(const CookCacheEntry& entry) {
     if (!is_valid_cook_cache_entry(entry)) {
-        return true;
+        return false;
     }
 
     const u64 current_key = recompute_cache_key_for_entry_(entry);
     return !is_valid_cook_cache_key(current_key) || entry.content_hash != current_key;
+}
+
+bool is_prunable_cache_entry_(const CookCacheEntry& entry) {
+    return is_invalid_cache_entry_(entry) || is_stale_cache_entry_(entry);
 }
 
 std::string escapeJson(const std::string& text) {
@@ -268,14 +276,13 @@ void CookCache::invalidate_all() {
 }
 
 u32 CookCache::prune_stale_entries() {
-    if (m_entries.empty()) {
+    if (m_entries.empty() || !has_stale_entries()) {
         return 0;
     }
 
     u32 removed = 0;
     for (auto it = m_entries.begin(); it != m_entries.end();) {
-        const u64 current_key = recompute_cache_key_for_entry_(*it);
-        if (!is_valid_cook_cache_key(current_key) || it->content_hash != current_key) {
+        if (is_stale_cache_entry_(*it)) {
             it = m_entries.erase(it);
             ++removed;
             ++m_stats.invalidations;
@@ -287,13 +294,13 @@ u32 CookCache::prune_stale_entries() {
 }
 
 u32 CookCache::prune_invalid_entries() {
-    if (m_entries.empty()) {
+    if (m_entries.empty() || !has_invalid_entries()) {
         return 0;
     }
 
     u32 removed = 0;
     for (auto it = m_entries.begin(); it != m_entries.end();) {
-        if (!is_valid_cook_cache_entry(*it)) {
+        if (is_invalid_cache_entry_(*it)) {
             it = m_entries.erase(it);
             ++removed;
             ++m_stats.invalidations;
@@ -311,17 +318,34 @@ u32 CookCache::prune_all() {
     return prune_invalid_entries() + prune_stale_entries();
 }
 
-bool CookCache::has_prunable_entries() const {
+bool CookCache::has_invalid_entries() const {
     if (m_entries.empty()) {
         return false;
     }
 
     for (const CookCacheEntry& entry : m_entries) {
-        if (is_prunable_cache_entry_(entry)) {
+        if (is_invalid_cache_entry_(entry)) {
             return true;
         }
     }
     return false;
+}
+
+bool CookCache::has_stale_entries() const {
+    if (m_entries.empty()) {
+        return false;
+    }
+
+    for (const CookCacheEntry& entry : m_entries) {
+        if (is_stale_cache_entry_(entry)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool CookCache::has_prunable_entries() const {
+    return has_invalid_entries() || has_stale_entries();
 }
 
 bool CookCache::contains(u64 content_hash) const {
@@ -387,8 +411,11 @@ bool CookCache::load(const std::string& path) {
     buffer << file.rdbuf();
     const std::string contents = buffer.str();
 
-    clear();
+    if (contents.find("\"schemaVersion\"") == std::string::npos) {
+        return false;
+    }
 
+    std::vector<CookCacheEntry> parsed;
     std::size_t cursor = 0;
     while (cursor < contents.size()) {
         const std::size_t objectStart = contents.find('{', cursor);
@@ -486,12 +513,13 @@ bool CookCache::load(const std::string& path) {
         }
 
         if (is_valid_cook_cache_entry(entry)) {
-            m_entries.push_back(std::move(entry));
+            parsed.push_back(std::move(entry));
         }
 
         cursor = objectEnd + 1;
     }
 
+    m_entries = std::move(parsed);
     return true;
 }
 

@@ -79,6 +79,10 @@ public:
     u32 prune_invalid_entries();
     /// Run invalid-entry then stale-entry pruning — no-op on empty cache (B7.9 deepen).
     u32 prune_all();
+    /// True when structural-invalid records are present — `prune_invalid_entries` would remove at least one (B7.9 deepen).
+    [[nodiscard]] bool has_invalid_entries() const;
+    /// True when content-stale records are present — `prune_stale_entries` would remove at least one (B7.9 deepen).
+    [[nodiscard]] bool has_stale_entries() const;
     /// True when invalid or stale records are present — `prune_*` would remove at least one (B7.9 deepen).
     [[nodiscard]] bool has_prunable_entries() const;
 
