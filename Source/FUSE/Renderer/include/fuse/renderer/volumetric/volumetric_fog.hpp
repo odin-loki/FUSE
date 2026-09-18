@@ -172,6 +172,14 @@ struct FroxelGridLayout {
                                                const FroxelCameraDesc& camera,
                                                u32& outFroxelIndex,
                                                ScreenMappingRejectReason& outReason);
+    /// True when interpolation weights or corner indices would be clamped before sampling.
+    static bool wouldClampSampleCoords(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
+    /// Grid-only sample-coord preflight; false on empty desc or hard OOB corners.
+    static bool tryPreflightSampleCoords(const FroxelSampleCoords& coords,
+                                         const FroxelGridDesc& desc,
+                                         SampleCoordRejectReason& outReason);
+    /// Grid-only sample-coord preflight without reject-reason diagnostics.
+    static bool canPreflightSampleCoords(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
 };
 
 /// Why grid density validation rejected a froxel cache (B5.11 deepen).
@@ -186,12 +194,25 @@ enum class GridDensityRejectReason : u8 {
 /// Human-readable label for density reject reasons (logging / tests).
 const char* gridDensityRejectReasonLabel(GridDensityRejectReason reason);
 
+/// Why analytic froxel populate would skip meaningful fill (B5.11 deepen).
+enum class FroxelPopulateRejectReason : u8 {
+    None = 0,
+    EmptyDesc,
+    InvalidCamera,
+    ZeroDensity,
+    ZeroMarchSteps,
+};
+
+/// Human-readable label for populate reject reasons (logging / tests).
+const char* froxelPopulateRejectReasonLabel(FroxelPopulateRejectReason reason);
+
 /// Why a froxel density lookup preflight rejected the request (B5.11 deepen).
 enum class DensityLookupRejectReason : u8 {
     None = 0,
     EmptyGrid,
     DescMismatch,
     EmptyStorage,
+    IndexOutOfRange,
 };
 
 /// Human-readable label for density lookup reject reasons (logging / tests).
@@ -215,6 +236,8 @@ bool tryCanLookupAtIndex(const FroxelDensityGrid& grid,
                          const FroxelGridDesc& desc,
                          u32 index,
                          DensityLookupRejectReason& outReason);
+/// True when a lookup at `index` would clamp into the valid froxel range.
+bool wouldClampDensityLookupIndex(u32 index, const FroxelGridDesc& desc);
 /// Preflight guard before coord-based density sampling; false on inaccessible grid or invalid coords.
 bool canSampleAtCoords(const FroxelDensityGrid& grid,
                        const FroxelGridDesc& desc,
@@ -331,6 +354,24 @@ void populateFromAnalyticFog(FroxelDensityGrid& grid,
                              const FroxelGridDesc& desc,
                              const FroxelCameraDesc& camera,
                              const VolumetricFogParams& params);
+/// Early-out when populate would allocate but skip the analytic fill loop.
+bool shouldSkipFroxelPopulate(const FroxelGridDesc& desc,
+                              const FroxelCameraDesc& camera,
+                              const VolumetricFogParams& params);
+/// True when analytic populate would write non-zero froxel density for a valid camera.
+bool canPopulateFromAnalyticFog(const FroxelGridDesc& desc,
+                                const FroxelCameraDesc& camera,
+                                const VolumetricFogParams& params);
+/// Diagnose why analytic populate would skip meaningful fill.
+bool tryCanPopulateFromAnalyticFog(const FroxelGridDesc& desc,
+                                   const FroxelCameraDesc& camera,
+                                   const VolumetricFogParams& params,
+                                   FroxelPopulateRejectReason& outReason);
+/// Guarded populate — always mirrors `populateFromAnalyticFog`; returns false when preflight rejects fill.
+bool tryPopulateFromAnalyticFog(FroxelDensityGrid& grid,
+                                const FroxelGridDesc& desc,
+                                const FroxelCameraDesc& camera,
+                                const VolumetricFogParams& params);
 } // namespace froxel_util
 
 /// CPU stub — exponential height falloff density sample (P5 acceptance reference).
