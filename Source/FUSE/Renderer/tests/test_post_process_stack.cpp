@@ -734,6 +734,108 @@ void testAutoExposureParamsAndAdaptGuards() {
     expectNear(zeroDeltaEv, state.current_ev, 1e-6f, "zero delta preserves current EV");
 }
 
+void testLuminanceHistogramBinInRange() {
+    fuse::renderer::LuminanceHistogramParams params{};
+    expectTrue(fuse::renderer::luminance_histogram_bin_in_range(0u, params), "first bin is in range");
+    expectTrue(fuse::renderer::luminance_histogram_bin_in_range(params.bin_count - 1u, params),
+               "last bin is in range");
+    expectTrue(!fuse::renderer::luminance_histogram_bin_in_range(params.bin_count, params),
+               "bin at bin_count is out of range");
+
+    fuse::renderer::LuminanceHistogramParams emptyBins{};
+    emptyBins.bin_count = 0;
+    expectTrue(!fuse::renderer::luminance_histogram_bin_in_range(0u, emptyBins), "zero bin count rejects all bins");
+}
+
+void testAutoExposureMeasurementReset() {
+    fuse::renderer::AutoExposureState state{};
+    state.current_ev = 1.5f;
+    state.measured_luminance = 0.72f;
+    state.smoothed_luminance = 0.65f;
+
+    fuse::renderer::reset_auto_exposure_measurements(state);
+    expectNear(state.current_ev, 1.5f, 1e-6f, "measurement reset preserves EV anchor");
+    expectNear(state.measured_luminance, 0.f, 1e-6f, "measurement reset clears measured luminance");
+    expectNear(state.smoothed_luminance, 0.f, 1e-6f, "measurement reset clears smoothed luminance");
+}
+
+void testMeterUtilEmptyGuards() {
+    fuse::renderer::ExposureMeter meter{};
+    expectTrue(!fuse::renderer::meter_util::hasMeteringMeter(meter), "empty meter rejected");
+    expectNear(fuse::renderer::meter_util::meterFromMeter(meter), 0.f, 1e-6f, "empty meter returns zero");
+
+    meter.accumulate({0.18f, 0.18f, 0.18f});
+    expectTrue(fuse::renderer::meter_util::hasMeteringMeter(meter), "populated meter accepted");
+    expectNear(fuse::renderer::meter_util::meterFromMeter(meter), 0.18f, 1e-4f, "meterFromMeter matches average");
+
+    const fuse::math::Vec3 samples[] = {{0.18f, 0.18f, 0.18f}, {0.36f, 0.36f, 0.36f}};
+    expectNear(fuse::renderer::meter_util::meterFromSamples(samples, 2u), 0.27f, 1e-4f,
+               "meterFromSamples averages rec709 luminance");
+    expectNear(fuse::renderer::meter_util::meterFromSamples(nullptr, 0u), 0.f, 1e-6f,
+               "meterFromSamples returns zero for empty input");
+}
+
+void testAutoExposureCanUpdateFromLuminance() {
+    fuse::renderer::AutoExposureParams valid{};
+    expectTrue(fuse::renderer::auto_exposure_can_update_from_luminance(0.72f, valid),
+               "positive luminance can update when adaptation enabled");
+    expectTrue(!fuse::renderer::auto_exposure_can_update_from_luminance(0.f, valid),
+               "zero luminance cannot update");
+    expectTrue(!fuse::renderer::auto_exposure_can_update_from_luminance(-0.1f, valid),
+               "negative luminance cannot update");
+
+    fuse::renderer::AutoExposureParams disabled = valid;
+    disabled.enabled = false;
+    expectTrue(!fuse::renderer::auto_exposure_can_update_from_luminance(0.72f, disabled),
+               "disabled adaptation cannot update from luminance");
+}
+
+void testAutoExposureNonPositiveLuminanceNoOp() {
+    fuse::renderer::AutoExposure exposure{};
+    exposure.init();
+
+    fuse::renderer::AutoExposureParams params{};
+    params.adaptation_speed_up = 8.f;
+    params.adaptation_speed_down = 8.f;
+    exposure.setParams(params);
+    exposure.updateFromLuminance(0.72f, 0.5f);
+    const fuse::f32 adaptedEv = exposure.currentEv();
+    expectTrue(adaptedEv > 0.f, "exposure adapts before non-positive luminance update");
+
+    const fuse::f32 unchangedEv = exposure.updateFromLuminance(0.f, 0.5f);
+    expectNear(unchangedEv, adaptedEv, 1e-6f, "zero luminance preserves adapted EV");
+    expectNear(exposure.state().measured_luminance, 0.72f, 1e-6f,
+               "zero luminance does not overwrite measured luminance");
+
+    fuse::renderer::AutoExposureParams disabled = params;
+    disabled.enabled = false;
+    exposure.setParams(disabled);
+    const fuse::f32 disabledEv = exposure.updateFromLuminance(0.5f, 0.5f);
+    expectNear(disabledEv, adaptedEv, 1e-6f, "disabled adaptation preserves EV");
+    expectNear(exposure.state().measured_luminance, 0.5f, 1e-6f,
+               "disabled adaptation still records positive measured luminance");
+
+    exposure.destroy();
+}
+
+void testTonemapCurveChannelInDisplayRange() {
+    expectTrue(fuse::renderer::tonemap_curve_channel_in_display_range(0.f), "black channel is in range");
+    expectTrue(fuse::renderer::tonemap_curve_channel_in_display_range(1.f), "white channel is in range");
+    expectTrue(fuse::renderer::tonemap_curve_channel_in_display_range(0.5f), "mid channel is in range");
+    expectTrue(!fuse::renderer::tonemap_curve_channel_in_display_range(1.5f), "above-one channel rejected");
+    expectTrue(!fuse::renderer::tonemap_curve_channel_in_display_range(-0.1f), "negative channel rejected");
+
+    const fuse::renderer::TonemapCurveParams filmic = fuse::renderer::make_filmic_curve_params();
+    const fuse::f32 midGrey = fuse::renderer::tonemap_curve_mid_grey_output(filmic);
+    expectTrue(fuse::renderer::tonemap_curve_channel_in_display_range(midGrey),
+               "filmic mid-grey output stays in display range");
+
+    fuse::renderer::TonemapCurveParams invalidAces = fuse::renderer::make_aces_curve_params();
+    invalidAces.aces.shoulder = -1.f;
+    expectTrue(!fuse::renderer::tonemap_curve_params_valid(invalidAces), "negative ACES shoulder rejected");
+    expectTrue(!fuse::renderer::tonemap_curve_can_apply(invalidAces), "invalid ACES curve fails apply guard");
+}
+
 void testTonemapCurveApplyAndSpanGuards() {
     const fuse::renderer::TonemapCurveParams filmic = fuse::renderer::make_filmic_curve_params();
     expectTrue(fuse::renderer::tonemap_curve_can_apply(filmic), "filmic preset can apply");
@@ -801,6 +903,12 @@ int main() {
     testMeteringPercentileValid();
     testHistogramUtilCanMeterPercentile();
     testAutoExposureParamsAndAdaptGuards();
+    testLuminanceHistogramBinInRange();
+    testAutoExposureMeasurementReset();
+    testMeterUtilEmptyGuards();
+    testAutoExposureCanUpdateFromLuminance();
+    testAutoExposureNonPositiveLuminanceNoOp();
+    testTonemapCurveChannelInDisplayRange();
     testTonemapCurveApplyAndSpanGuards();
 
     fuse::core::shutdown();

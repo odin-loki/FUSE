@@ -43,6 +43,8 @@ void reset_auto_exposure_state(AutoExposureState& state);
 void reset_auto_exposure_state_to(AutoExposureState& state, f32 ev = 0.f);
 /// Reset temporal state with EV anchor clamped to `AutoExposureParams` range (B5.10 deepen).
 void reset_auto_exposure_state_to_clamped(AutoExposureState& state, f32 ev, const AutoExposureParams& params);
+/// Clear measured/smoothed luminance while preserving the current EV anchor (B5.10 deepen).
+void reset_auto_exposure_measurements(AutoExposureState& state);
 f32 ema_alpha_for_direction(bool brightening, const AutoExposureParams& params);
 bool is_brightening_luminance(f32 measured_luminance, f32 reference_luminance);
 f32 ema_blend(f32 previous, f32 measured, f32 alpha);
@@ -64,6 +66,8 @@ struct LuminanceHistogramParams {
 bool metering_percentile_valid(f32 percentile);
 /// True when histogram binning and percentile knobs are usable (B5.10 deepen).
 bool luminance_histogram_params_valid(const LuminanceHistogramParams& params);
+/// True when a histogram bin index is within the configured bin count (B5.10 deepen).
+bool luminance_histogram_bin_in_range(u32 bin, const LuminanceHistogramParams& params);
 
 class LuminanceHistogram {
 public:
@@ -138,6 +142,16 @@ void reset_exposure_meter(ExposureMeter& meter);
 /// True when an exposure meter has accumulated samples (B5.10 deepen).
 bool exposure_meter_has_samples(const ExposureMeter& meter);
 
+/// Batch exposure-meter helpers mirroring histogram_util (B5.10 deepen).
+namespace meter_util {
+/// True when an exposure meter has accumulated samples.
+bool hasMeteringMeter(const ExposureMeter& meter);
+/// Average luminance from meter; returns 0 when empty (B5.10 deepen).
+f32 meterFromMeter(const ExposureMeter& meter);
+/// Average luminance from samples; returns 0 when empty (B5.10 deepen).
+f32 meterFromSamples(const fuse::math::Vec3* samples, u32 count);
+} // namespace meter_util
+
 /// Host-side auto-exposure pass stub (CUDA histogram deferred).
 class AutoExposure {
 public:
@@ -165,6 +179,8 @@ private:
 bool auto_exposure_can_update_from_samples(const fuse::math::Vec3* samples, u32 count);
 /// True when a histogram can drive auto-exposure adaptation (B5.10 deepen).
 bool auto_exposure_can_update_from_histogram(const LuminanceHistogram& histogram);
+/// True when a positive measured luminance can drive adaptation (B5.10 deepen).
+bool auto_exposure_can_update_from_luminance(f32 measured_luminance, const AutoExposureParams& params);
 /// Reset temporal auto-exposure state via facade (B5.10 deepen).
 void reset_auto_exposure(AutoExposure& exposure);
 /// Reset temporal auto-exposure state with clamped EV anchor via facade (B5.10 deepen).
