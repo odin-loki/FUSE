@@ -84,6 +84,46 @@ bool preflightTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& his
     return !taaResolveSkipReasonIsBlocking(skip);
 }
 
+bool tryComputeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                        TaaBlendWeights& out) {
+    if (!preflightTaaResolve(desc, history)) {
+        return false;
+    }
+
+    const bool firstFrame = !history.hasValidHistory();
+    out = computeTaaBlendWeights(firstFrame, desc.params);
+    return taaBlendWeightsValid(out);
+}
+
+bool preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                              TaaBlendWeights* weights) {
+    TaaBlendWeights computed{};
+    if (!tryComputeTaaResolveBlendWeights(desc, history, computed)) {
+        return false;
+    }
+
+    if (weights != nullptr) {
+        *weights = computed;
+    }
+    return true;
+}
+
+bool taaResolveHistoryBlendPreflightPasses(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    TaaBlendWeights weights{};
+    if (!tryComputeTaaResolveBlendWeights(desc, history, weights)) {
+        return false;
+    }
+
+    if (weights.history > 0.f && !taaResolveCanReuseHistory(desc, history)) {
+        return false;
+    }
+    return true;
+}
+
+bool taaResolveRequiresWarmup(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return preflightTaaResolve(desc, history) && history.needsWarmup();
+}
+
 TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!history.isReady()) {
         return TaaResolveSkipReason::HistoryNotReady;
