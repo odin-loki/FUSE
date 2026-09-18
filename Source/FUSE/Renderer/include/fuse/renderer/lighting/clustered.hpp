@@ -90,6 +90,12 @@ struct ClusterGridLayout {
     static bool isValidClusterIndex(u32 index, const ClusterDesc& desc);
     /// True when `index` exceeds the valid cluster range (would be clamped).
     static bool isClusterIndexOutOfRange(u32 index, const ClusterDesc& desc);
+    /// True when tile/slice coords lie within the grid and the grid is non-empty.
+    static bool isValidClusterCoords(u32 tileX, u32 tileY, u32 sliceZ, const ClusterDesc& desc);
+    /// True when any tile/slice coord exceeds grid bounds or the grid is empty.
+    static bool isClusterCoordsOutOfRange(u32 tileX, u32 tileY, u32 sliceZ, const ClusterDesc& desc);
+    /// Encode flat index only when coords are in range; returns false on empty grid or OOB coords.
+    static bool tryClusterIndex(u32 tileX, u32 tileY, u32 sliceZ, const ClusterDesc& desc, u32& outIndex);
     static u32 clampClusterIndex(u32 index, const ClusterDesc& desc);
     static u32 clampTileX(u32 tileX, const ClusterDesc& desc);
     static u32 clampTileY(u32 tileY, const ClusterDesc& desc);
@@ -111,6 +117,8 @@ struct ClusterLightGridLayout {
                                 const std::vector<std::vector<u32>>& perClusterLights,
                                 u32 maxLightsPerCluster = 0u);
     static bool validateContiguousOffsets(const ClusterGridSoA& grid, u32 clusterCount);
+    /// True when every cluster entry's offset+count lies within the flat light list.
+    static bool validateLightListBounds(const ClusterGridSoA& grid, u32 clusterCount);
 };
 
 /// CPU light-to-cluster assignment stubs — mirrors CUDA cull kernel list append.
@@ -136,9 +144,18 @@ u32 lookupClusterLightsAtIndex(const ClusterGridSoA& grid,
                                const ClusterDesc& desc,
                                u32 index,
                                std::vector<u32>& outLights);
+/// Strict lookup without index clamp; returns false on empty grid, desc mismatch, or OOB index.
+bool tryLookupClusterLights(const ClusterGridSoA& grid,
+                            const ClusterDesc& desc,
+                            u32 index,
+                            std::vector<u32>& outLights);
 /// Per-cluster assigned-light count from the rebuilt grid; returns 0 when `clusterIdx` is OOB.
 u32 clusterLightCount(const ClusterGridSoA& grid, u32 clusterIdx);
 u32 countAssignedLights(const ClusterGridSoA& grid, u32 clusterCount);
+/// Assigned-light total using `desc.clusterCount()`; returns 0 when grid/desc mismatch or empty.
+u32 countAssignedLightsWithDesc(const ClusterGridSoA& grid, const ClusterDesc& desc);
+/// True when at least one cluster holds assigned lights; returns false when `clusterCount` is zero.
+bool hasAssignedLights(const ClusterGridSoA& grid, u32 clusterCount);
 /// Count clusters with at least one assigned light; returns 0 when `clusterCount` is zero.
 u32 countNonEmptyClusters(const ClusterGridSoA& grid, u32 clusterCount);
 u32 countEmptyClusters(const ClusterGridSoA& grid, u32 clusterCount);
@@ -148,6 +165,8 @@ u32 countClustersAtCapacity(const ClusterGridSoA& grid, u32 clusterCount, u32 ma
 bool validatePopulationCounts(const ClusterGridSoA& grid, u32 clusterCount);
 /// Population invariant plus contiguous offset packing when `clusterCount` is non-zero.
 bool validateGridPopulation(const ClusterGridSoA& grid, u32 clusterCount);
+/// Population + offset + light-list bounds using `desc.clusterCount()`.
+bool validateGridPopulationWithDesc(const ClusterGridSoA& grid, const ClusterDesc& desc);
 } // namespace cluster_util
 
 /// Renderer-side point light input (decoupled from ECS).

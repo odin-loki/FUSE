@@ -373,6 +373,126 @@ void testClusterIndexClampAndGridGuards() {
                "grid population valid after partial assignment");
 }
 
+void testClusterCoordValidationAndTryIndex() {
+    fuse::renderer::ClusterDesc desc{};
+    desc.tilesX = 4;
+    desc.tilesY = 2;
+    desc.slicesZ = 3;
+
+    expectTrue(fuse::renderer::ClusterGridLayout::isValidClusterCoords(0u, 0u, 0u, desc),
+               "origin coords are valid");
+    expectTrue(fuse::renderer::ClusterGridLayout::isValidClusterCoords(3u, 1u, 2u, desc),
+               "last cell coords are valid");
+    expectTrue(!fuse::renderer::ClusterGridLayout::isValidClusterCoords(4u, 0u, 0u, desc),
+               "tile X at count is invalid");
+    expectTrue(!fuse::renderer::ClusterGridLayout::isValidClusterCoords(0u, 2u, 0u, desc),
+               "tile Y at count is invalid");
+    expectTrue(!fuse::renderer::ClusterGridLayout::isValidClusterCoords(0u, 0u, 3u, desc),
+               "slice Z at count is invalid");
+    expectTrue(fuse::renderer::ClusterGridLayout::isClusterCoordsOutOfRange(99u, 99u, 99u, desc),
+               "oversized coords are out of range");
+    expectTrue(!fuse::renderer::ClusterGridLayout::isClusterCoordsOutOfRange(1u, 1u, 1u, desc),
+               "in-bounds coords are not out of range");
+
+    fuse::u32 outIndex = 0u;
+    expectTrue(fuse::renderer::ClusterGridLayout::tryClusterIndex(1u, 1u, 2u, desc, outIndex),
+               "tryClusterIndex succeeds for in-bounds coords");
+    expectTrue(outIndex == 17u, "tryClusterIndex encodes expected flat index");
+    expectTrue(!fuse::renderer::ClusterGridLayout::tryClusterIndex(99u, 99u, 99u, desc, outIndex),
+               "tryClusterIndex rejects OOB coords");
+
+    fuse::renderer::ClusterDesc zeroDesc{};
+    zeroDesc.tilesX = 0u;
+    expectTrue(!fuse::renderer::ClusterGridLayout::isValidClusterCoords(0u, 0u, 0u, zeroDesc),
+               "coords invalid on empty grid");
+    expectTrue(fuse::renderer::ClusterGridLayout::isClusterCoordsOutOfRange(0u, 0u, 0u, zeroDesc),
+               "coords out of range on empty grid");
+    expectTrue(!fuse::renderer::ClusterGridLayout::tryClusterIndex(0u, 0u, 0u, zeroDesc, outIndex),
+               "tryClusterIndex rejects empty grid");
+}
+
+void testStrictLookupAndPopulationHelpers() {
+    fuse::renderer::ClusterDesc desc{};
+    desc.tilesX = 2;
+    desc.tilesY = 2;
+    desc.slicesZ = 1;
+
+    fuse::renderer::ClusterGridSoA grid{};
+    const fuse::u32 clusterCount = desc.clusterCount();
+    const std::vector<std::vector<fuse::u32>> perClusterLights = {
+        {0u, 1u},
+        {},
+        {2u},
+        {3u, 4u},
+    };
+    fuse::renderer::ClusterLightGridLayout::rebuildLightGrid(grid, clusterCount, perClusterLights, 2u);
+
+    std::vector<fuse::u32> strictLights;
+    expectTrue(fuse::renderer::cluster_util::tryLookupClusterLights(grid, desc, 0u, strictLights),
+               "strict lookup succeeds for valid index");
+    expectTrue(strictLights.size() == 2u && strictLights[0] == 0u && strictLights[1] == 1u,
+               "strict lookup copies assigned lights");
+
+    std::vector<fuse::u32> staleOutput = {99u};
+    expectTrue(!fuse::renderer::cluster_util::tryLookupClusterLights(grid, desc, 99u, staleOutput),
+               "strict lookup rejects OOB index without clamping");
+    expectTrue(staleOutput.empty(), "strict lookup clears output on OOB rejection");
+
+    fuse::renderer::ClusterGridSoA emptyGrid{};
+    std::vector<fuse::u32> emptyLights;
+    expectTrue(!fuse::renderer::cluster_util::tryLookupClusterLights(emptyGrid, desc, 0u, emptyLights),
+               "strict lookup rejects empty storage");
+
+    expectTrue(fuse::renderer::cluster_util::hasAssignedLights(grid, clusterCount),
+               "hasAssignedLights true when lights present");
+    expectTrue(!fuse::renderer::cluster_util::hasAssignedLights(grid, 0u),
+               "hasAssignedLights false for zero cluster count");
+    expectTrue(fuse::renderer::cluster_util::countAssignedLightsWithDesc(grid, desc) == 5u,
+               "countAssignedLightsWithDesc matches flat total");
+    expectTrue(fuse::renderer::cluster_util::countAssignedLightsWithDesc(emptyGrid, desc) == 0u,
+               "countAssignedLightsWithDesc zero on empty storage");
+    expectTrue(fuse::renderer::cluster_util::validateGridPopulationWithDesc(grid, desc),
+               "validateGridPopulationWithDesc passes for rebuilt grid");
+    expectTrue(!fuse::renderer::cluster_util::validateGridPopulationWithDesc(emptyGrid, desc),
+               "validateGridPopulationWithDesc rejects empty storage");
+
+    fuse::renderer::ClusterDesc zeroDesc{};
+    zeroDesc.tilesX = 0u;
+    fuse::renderer::ClusterGridSoA zeroGrid{};
+    expectTrue(fuse::renderer::cluster_util::validateGridPopulationWithDesc(zeroGrid, zeroDesc),
+               "validateGridPopulationWithDesc vacuously true for empty grid");
+}
+
+void testLightListBoundsValidation() {
+    fuse::renderer::ClusterGridSoA grid{};
+    const fuse::u32 clusterCount = 2u;
+    grid.grid.resize(clusterCount);
+    grid.grid[0] = {0u, 2u};
+    grid.grid[1] = {2u, 1u};
+    grid.lightList = {0u, 1u, 2u};
+
+    expectTrue(fuse::renderer::ClusterLightGridLayout::validateLightListBounds(grid, clusterCount),
+               "valid grid passes light list bounds check");
+    expectTrue(fuse::renderer::ClusterLightGridLayout::validateContiguousOffsets(grid, clusterCount),
+               "valid grid passes contiguous offsets");
+
+    fuse::renderer::ClusterGridSoA corrupt{};
+    corrupt.grid.resize(clusterCount);
+    corrupt.grid[0] = {2u, 2u};
+    corrupt.grid[1] = {4u, 0u};
+    corrupt.lightList = {0u, 1u, 2u};
+
+    expectTrue(!fuse::renderer::ClusterLightGridLayout::validateLightListBounds(corrupt, clusterCount),
+               "light list bounds rejects entry past list end");
+    expectTrue(!fuse::renderer::ClusterLightGridLayout::validateContiguousOffsets(corrupt, clusterCount),
+               "contiguous offsets also reject misaligned packing");
+    expectTrue(!fuse::renderer::cluster_util::validateGridPopulation(corrupt, clusterCount),
+               "grid population rejects corrupt light list bounds");
+
+    expectTrue(fuse::renderer::ClusterLightGridLayout::validateLightListBounds(grid, 0u),
+               "zero cluster count vacuously validates light list bounds");
+}
+
 void testClusterLookupAtIndexGuards() {
     fuse::renderer::ClusterDesc desc{};
     desc.tilesX = 2;
@@ -866,6 +986,9 @@ int main() {
     testClusterCapacityAndPopulationValidation();
     testClusterGridSoAAllocate();
     testClusterIndexClampAndGridGuards();
+    testClusterCoordValidationAndTryIndex();
+    testStrictLookupAndPopulationHelpers();
+    testLightListBoundsValidation();
     testClusterLookupAtIndexGuards();
     testZeroDimensionClusterGrid();
     testCullerInitClampsOversizedDesc();
