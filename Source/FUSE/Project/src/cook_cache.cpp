@@ -203,7 +203,8 @@ u32 CookCache::invalidate_source(const std::string& source_path) {
 }
 
 u32 CookCache::invalidate_stale_content_for_source(const std::string& source_path, u64 current_content_hash) {
-    if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
+    if (!is_valid_cook_cache_path(source_path) || !is_valid_cook_cache_key(current_content_hash) ||
+        m_entries.empty()) {
         return 0;
     }
 
@@ -214,7 +215,7 @@ u32 CookCache::invalidate_stale_content_for_source(const std::string& source_pat
             continue;
         }
 
-        if (!is_valid_cook_cache_key(current_content_hash) || it->content_hash != current_content_hash) {
+        if (it->content_hash != current_content_hash) {
             it = m_entries.erase(it);
             ++removed;
             ++m_stats.invalidations;
@@ -288,6 +289,13 @@ u32 CookCache::prune_invalid_entries() {
         }
     }
     return removed;
+}
+
+u32 CookCache::prune_all() {
+    if (m_entries.empty()) {
+        return 0;
+    }
+    return prune_invalid_entries() + prune_stale_entries();
 }
 
 bool CookCache::contains(u64 content_hash) const {
