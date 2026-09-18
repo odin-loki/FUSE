@@ -189,6 +189,15 @@ inline u32 ResidencySet::find_index_(GridCoord coord) const {
     return set.has_eviction_candidate() ? set.pick_eviction_candidate() : kInvalidGridCoord;
 }
 
+/// Empty-set guard: return eviction candidates farthest-first; empty set yields no candidates.
+[[nodiscard]] inline std::vector<GridCoord> collect_eviction_candidates_guarded(const ResidencySet& set,
+                                                                                u32 max_count = 0) {
+    if (!set.has_eviction_candidate()) {
+        return {};
+    }
+    return set.collect_eviction_candidates(max_count);
+}
+
 /// Guard: returns -1 when coord is invalid or not resident.
 [[nodiscard]] inline f32 focus_distance_for_guarded(const ResidencySet& set, GridCoord coord) {
     if (!is_valid_grid_coord(coord)) {
@@ -302,7 +311,26 @@ template <typename ScoreFn>
     f32 score = -1.f;
     const GridCoord picked =
         pick_budget_eviction_candidate_from_set(set, score_fn, incoming_priority, policy, score);
-    return is_valid_grid_coord(picked) && score > 0.f;
+    return is_valid_grid_coord(picked) && is_positive_eviction_score(score);
+}
+
+/// Empty-set guard: true when the residency set has an eligible budget eviction candidate.
+template <typename ScoreFn>
+[[nodiscard]] inline bool has_budget_eviction_candidate_guarded(const ResidencySet& set, ScoreFn&& score_fn,
+                                                                 f32 incoming_priority,
+                                                                 EvictionPolicy policy) {
+    if (!set.has_eviction_candidate()) {
+        return false;
+    }
+    return has_budget_eviction_candidate(set, score_fn, incoming_priority, policy);
+}
+
+/// Guard: budget pressure plus a non-empty residency set that can supply eviction candidates.
+[[nodiscard]] inline bool can_attempt_budget_eviction_from_set(const ResidencySet& set, u32 max_loaded_cells,
+                                                                u32 resident_count, u64 max_resident_bytes,
+                                                                u64 resident_bytes, u64 incoming_bytes) {
+    return can_attempt_budget_eviction(max_loaded_cells, resident_count, max_resident_bytes, resident_bytes,
+                                       incoming_bytes, set.has_eviction_candidate());
 }
 
 /// Combined unload rank for budget-driven eviction (B7.6 deepen).
