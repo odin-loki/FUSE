@@ -1,5 +1,7 @@
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
 
+#include <fuse/physics/narrowphase/contact_pair.hpp>
+
 #include <algorithm>
 #include <cmath>
 
@@ -330,6 +332,42 @@ ManifoldPrunePreflight preflight_manifold_prune(
     preflight.exceedsMaxPoints = manifold.pointCount > kMaxContactPointsPerManifold;
     preflight.wouldBeEmpty = manifold.wouldBeEmptyAfterPrune(separationEpsilon, duplicateEpsilon);
     return preflight;
+}
+
+ManifoldFinalizePreflight preflight_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) {
+    ManifoldFinalizePreflight preflight{};
+    if (manifold.empty()) {
+        preflight.empty = true;
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    preflight.invalidNormal = !manifold.hasValidNormal();
+    preflight.noPenetratingPoints = !manifold.hasPenetratingPoints();
+
+    const ManifoldPrunePreflight prunePreflight =
+        preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon);
+    preflight.needsPrune = prunePreflight.needs_pruning();
+    preflight.wouldBeEmptyAfterPrune = prunePreflight.wouldBeEmpty;
+    return preflight;
+}
+
+bool should_skip_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) {
+    return !preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon).can_finalize();
+}
+
+bool generate_contact_manifold_if_needed(ContactManifold& manifold) {
+    if (should_skip_manifold_finalize(manifold)) {
+        manifold.clear();
+        return false;
+    }
+    return generate_contact_manifold(manifold);
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
