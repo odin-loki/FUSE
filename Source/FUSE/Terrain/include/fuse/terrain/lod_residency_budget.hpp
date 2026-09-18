@@ -91,6 +91,32 @@ struct LodResidencyBudgetCounters {
     return max_async_in_flight == 0u || in_flight < max_async_in_flight;
 }
 
+[[nodiscard]] inline bool is_at_async_in_flight_cap(u32 in_flight, u32 max_async_in_flight) {
+    return !can_submit_async_load(in_flight, max_async_in_flight);
+}
+
+[[nodiscard]] inline bool would_exceed_pending_submits(u32 in_flight, u32 completed, u32 max_pending) {
+    if (max_pending == 0u) {
+        return false;
+    }
+    return in_flight + completed >= max_pending;
+}
+
+[[nodiscard]] inline bool can_submit_residency_request(u32 in_flight, u32 completed, u32 max_pending) {
+    return !would_exceed_pending_submits(in_flight, completed, max_pending);
+}
+
+/// Merge load rank with stored priority and focus distance for unload ordering (B7.5 deepen).
+[[nodiscard]] inline f32 rank_unload_priority(f32 load_priority, f32 stored_priority, f32 focus_distance) {
+    return std::max({load_priority, stored_priority, focus_distance});
+}
+
+/// Merge unload rank with a budget eviction score for queue ordering (B7.5 deepen).
+[[nodiscard]] inline f32 rank_budget_unload_priority(f32 load_priority, f32 stored_priority, f32 focus_distance,
+                                                     f32 budget_score) {
+    return std::max(rank_unload_priority(load_priority, stored_priority, focus_distance), budget_score);
+}
+
 [[nodiscard]] inline u32 async_in_flight_headroom(u32 max_async_in_flight, u32 in_flight) {
     if (max_async_in_flight == 0u) {
         return ~0u;
