@@ -244,6 +244,16 @@ bool MaterialPropertyBinding::trySetPropertyVec3(MaterialPropertyId id, f32 x, f
     return setPropertyVec3(id, x, y, z, cmds);
 }
 
+u32 MaterialPropertyBinding::dirtyPropertyCount() const {
+    u32 count = 0u;
+    for (u32 i = 0u; i < materialPropertyCount(); ++i) {
+        if ((m_dirtyMask & propertyBit_(materialPropertyIdAt(i))) != 0u) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 bool MaterialPropertyBinding::isPropertyDirty(MaterialPropertyId id) const {
     return (m_dirtyMask & propertyBit_(id)) != 0u;
 }
@@ -253,6 +263,14 @@ void MaterialPropertyBinding::clearPropertyDirty(MaterialPropertyId id) {
     if (m_dirtyMask == 0u) {
         m_panelRefreshPending = false;
     }
+}
+
+bool MaterialPropertyBinding::tryClearPropertyDirty(MaterialPropertyId id) {
+    if (!isMaterialPropertyIdValid(id)) {
+        return false;
+    }
+    clearPropertyDirty(id);
+    return true;
 }
 
 void MaterialPropertyBinding::clearAllPropertyDirty() {
@@ -265,14 +283,30 @@ void MaterialPropertyBinding::markPanelRefreshed() {
     m_coalescedDirtyCount = 0u;
 }
 
+bool MaterialPropertyBinding::tryMarkPanelRefreshed() {
+    if (!canPostProperty()) {
+        return false;
+    }
+    markPanelRefreshed();
+    return true;
+}
+
 void MaterialPropertyBinding::refreshFromEditState(const MaterialEditState& state) {
-    if (!isBound() || m_editState == nullptr) {
+    if (!canRefreshFromEditState()) {
         return;
     }
 
     *m_editState = state;
     clampMaterialEditState(*m_editState);
     markPanelRefreshed();
+}
+
+bool MaterialPropertyBinding::tryRefreshFromEditState(const MaterialEditState& state) {
+    if (!canRefreshFromEditState()) {
+        return false;
+    }
+    refreshFromEditState(state);
+    return true;
 }
 
 } // namespace fuse::editor
