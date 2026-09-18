@@ -1,5 +1,8 @@
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
 
+#include <fuse/physics/narrowphase/contact_pair.hpp>
+#include <fuse/physics/narrowphase/friction.hpp>
+
 #include <algorithm>
 #include <cmath>
 
@@ -330,6 +333,43 @@ ManifoldPrunePreflight preflight_manifold_prune(
     preflight.exceedsMaxPoints = manifold.pointCount > kMaxContactPointsPerManifold;
     preflight.wouldBeEmpty = manifold.wouldBeEmptyAfterPrune(separationEpsilon, duplicateEpsilon);
     return preflight;
+}
+
+ManifoldFinalizePreflight preflight_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) {
+    ManifoldFinalizePreflight preflight{};
+    if (manifold.empty()) {
+        preflight.skipped = true;
+        preflight.prune.skipped = true;
+        preflight.prune.wouldBeEmpty = true;
+        return preflight;
+    }
+
+    preflight.prune = preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon);
+    preflight.hasValidNormal = manifold.hasValidNormal();
+    preflight.hasPenetrating = manifold.hasPenetratingPoints(separationEpsilon);
+    preflight.needsFrictionBasis = needs_friction_basis_refresh(manifold);
+    return preflight;
+}
+
+bool should_skip_manifold_finalize(const ContactManifold& manifold) {
+    return !can_finalize_contact_manifold(manifold);
+}
+
+bool can_skip_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) {
+    return !preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon).can_finalize();
+}
+
+bool generate_contact_manifold_if_valid(ContactManifold& manifold) {
+    if (should_skip_manifold_finalize(manifold)) {
+        return false;
+    }
+    return generate_contact_manifold(manifold);
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

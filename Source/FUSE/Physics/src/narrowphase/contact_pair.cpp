@@ -417,4 +417,38 @@ bool should_skip_contact_pair_dispatch(
     return is_invalid_contact_pair(pair, bodies, shapes);
 }
 
+ContactPairRejectPreflight preflight_contact_pair_reject(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    ContactPairRejectPreflight preflight{};
+    preflight.reason = contact_pair_reject_reason(pair, bodies, shapes);
+    preflight.rejected = preflight.reason != ContactPairRejectReason::None;
+    preflight.selfPair = preflight.reason == ContactPairRejectReason::SelfPair;
+    preflight.outOfRangeBody = preflight.reason == ContactPairRejectReason::OutOfRangeBody;
+    preflight.missingShape = preflight.reason == ContactPairRejectReason::MissingShape;
+    preflight.bothTriggers = preflight.reason == ContactPairRejectReason::BothTriggers;
+    preflight.unsupportedShapePair = preflight.reason == ContactPairRejectReason::UnsupportedShapePair;
+    preflight.bothStatic = preflight.reason == ContactPairRejectReason::BothStatic;
+    preflight.degenerateShape = preflight.reason == ContactPairRejectReason::DegenerateShape;
+    return preflight;
+}
+
+bool should_reject_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return should_skip_contact_pair_dispatch(pair, bodies, shapes);
+}
+
+ContactPairDispatchPreflight preflight_contact_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    ContactPairDispatchPreflight preflight{};
+    preflight.reject = preflight_contact_pair_reject(pair, bodies, shapes);
+    preflight.skipped = preflight.reject.rejected;
+    return preflight;
+}
+
 } // namespace fuse::physics::narrowphase
