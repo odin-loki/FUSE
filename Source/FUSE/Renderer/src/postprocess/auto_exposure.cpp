@@ -121,6 +121,14 @@ void reset_auto_exposure_state_to_clamped(AutoExposureState& state, f32 ev, cons
     reset_auto_exposure_state_to(state, clamp_ev(ev, params));
 }
 
+bool reset_auto_exposure_state_to_if_valid(AutoExposureState& state, f32 ev, const AutoExposureParams& params) {
+    if (!auto_exposure_ev_anchor_valid(ev, params)) {
+        return false;
+    }
+    reset_auto_exposure_state_to(state, ev);
+    return true;
+}
+
 bool luminance_histogram_params_valid(const LuminanceHistogramParams& params) {
     if (params.bin_count == 0) {
         return false;
@@ -145,8 +153,15 @@ bool hasMeteringHistogram(const LuminanceHistogram& histogram) {
     return !histogram.isEmpty();
 }
 
+bool canMeterFromHistogram(const LuminanceHistogram& histogram) {
+    return luminance_histogram_params_valid(histogram.params()) && hasMeteringHistogram(histogram);
+}
+
 void accumulateSamples(LuminanceHistogram& histogram, const fuse::math::Vec3* samples, u32 count) {
     if (!hasMeteringSamples(samples, count)) {
+        return;
+    }
+    if (!luminance_histogram_params_valid(histogram.params())) {
         return;
     }
     for (u32 i = 0; i < count; ++i) {
@@ -181,6 +196,33 @@ f32 meterFromHistogram(const LuminanceHistogram& histogram, f32 percentile) {
 }
 
 } // namespace histogram_util
+
+namespace meter_util {
+
+bool hasMeteringMeter(const ExposureMeter& meter) {
+    return !meter.isEmpty();
+}
+
+f32 meterFromMeter(const ExposureMeter& meter) {
+    if (!hasMeteringMeter(meter)) {
+        return 0.f;
+    }
+    return meter.averageLuminance();
+}
+
+f32 meterFromSamples(const fuse::math::Vec3* samples, u32 count) {
+    if (!histogram_util::hasMeteringSamples(samples, count)) {
+        return 0.f;
+    }
+    return ExposureMeter::measureAverage(samples, count);
+}
+
+} // namespace meter_util
+
+void reset_metering(LuminanceHistogram& histogram, ExposureMeter& meter) {
+    reset_luminance_histogram(histogram);
+    reset_exposure_meter(meter);
+}
 
 void LuminanceHistogram::reset() {
     m_bins.assign(m_params.bin_count, 0u);
@@ -330,6 +372,14 @@ void AutoExposure::resetToEv(f32 ev) {
     reset_auto_exposure_state_to_clamped(m_state, ev, m_params);
 }
 
+bool AutoExposure::resetToEvIfValid(f32 ev) {
+    if (!auto_exposure_ev_anchor_valid(ev, m_params)) {
+        return false;
+    }
+    reset_auto_exposure_state_to(m_state, ev);
+    return true;
+}
+
 f32 AutoExposure::updateFromLuminance(f32 measured_luminance, f32 delta_seconds) {
     if (m_params.use_ema_adaptation) {
         return update_auto_exposure_ema(m_state, measured_luminance, m_params, delta_seconds);
@@ -338,7 +388,7 @@ f32 AutoExposure::updateFromLuminance(f32 measured_luminance, f32 delta_seconds)
 }
 
 f32 AutoExposure::updateFromHistogram(const LuminanceHistogram& histogram, f32 delta_seconds) {
-    if (!histogram_util::hasMeteringHistogram(histogram)) {
+    if (!histogram_util::canMeterFromHistogram(histogram)) {
         return m_state.current_ev;
     }
     return updateFromLuminance(histogram.meteringLuminance(), delta_seconds);
@@ -348,7 +398,7 @@ f32 AutoExposure::updateFromSamples(const fuse::math::Vec3* samples, u32 count, 
     if (!histogram_util::hasMeteringSamples(samples, count)) {
         return m_state.current_ev;
     }
-    const f32 average = ExposureMeter::measureAverage(samples, count);
+    const f32 average = meter_util::meterFromSamples(samples, count);
     return updateFromLuminance(average, delta_seconds);
 }
 

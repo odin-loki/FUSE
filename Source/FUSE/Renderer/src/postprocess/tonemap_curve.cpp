@@ -95,13 +95,22 @@ bool tonemap_curve_params_valid(const TonemapCurveParams& params) {
     if (params.gamma <= 0.f) {
         return false;
     }
+    if (params.kind == TonemapCurveKind::Filmic &&
+        (params.toe_length < 0.f || params.shoulder_length < 0.f)) {
+        return false;
+    }
     if (params.kind == TonemapCurveKind::Reinhard && params.reinhard.white_point <= 0.f) {
         return false;
     }
-    if (params.kind == TonemapCurveKind::ACES && params.aces.contrast < 0.f) {
+    if (params.kind == TonemapCurveKind::ACES &&
+        (params.aces.contrast < 0.f || params.aces.shoulder < 0.f)) {
         return false;
     }
     return true;
+}
+
+bool tonemap_curve_is_usable(const TonemapCurveParams& params, f32 white_input, f32 epsilon) {
+    return tonemap_curve_has_valid_endpoints(params, white_input, epsilon);
 }
 
 bool tonemap_curve_endpoints_valid(const TonemapCurveEndpoints& endpoints, f32 epsilon) {
