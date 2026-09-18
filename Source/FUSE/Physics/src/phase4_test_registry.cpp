@@ -46,7 +46,7 @@ const std::vector<Phase4TestCase> kCatalog = {
      true,
      false},
     {"solver.island_solve_job",
-     "extract_island / dispatch_solve_island / warm_start_island_* / empty-island guards",
+     "extract_island / dispatch_solve_island / warm_start preflight / empty-island guards",
      Phase4TestCategory::Solver,
      true,
      false},
