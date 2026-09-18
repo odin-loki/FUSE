@@ -71,6 +71,8 @@ public:
     u32 prune_stale_entries();
     /// Drop entries with zero keys or empty paths without touching hit/miss stats (B7.9 deepen).
     u32 prune_invalid_entries();
+    /// Run stale then invalid pruning — no-op when the cache is empty (B7.9 deepen).
+    u32 prune_all();
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

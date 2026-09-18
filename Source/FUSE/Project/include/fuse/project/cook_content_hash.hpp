@@ -24,6 +24,7 @@ namespace fuse::project {
                                              const CookManifest& manifest);
 
 /// Combine source/descriptor hash with upstream dependency hash for cache lookup.
+/// Returns zero when `source_hash` is zero (B7.9 deepen guard).
 [[nodiscard]] u64 combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
 
 /// Content hash over source bytes plus import descriptor knobs (identical inputs → identical hash).

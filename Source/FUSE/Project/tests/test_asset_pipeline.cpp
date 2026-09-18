@@ -1397,6 +1397,12 @@ void testCookCacheEmptyGuards() {
                "downstream invalidation on empty cache returns zero");
     expectTrue(cache.invalidate_downstream_of("", {}, {}) == 0u,
                "downstream invalidation rejects empty output path");
+
+    expectTrue(!cache.invalidate(42u), "hash invalidation on empty cache is a no-op");
+    expectTrue(cache.stats().invalidations == 0u, "empty-cache hash invalidation does not bump stats");
+    expectTrue(!cache.contains(42u), "contains on empty cache returns false");
+    expectTrue(cache.prune_all() == 0u, "prune_all on empty cache returns zero");
+    expectTrue(cache.prune_invalid_entries() == 0u, "prune_invalid on empty cache returns zero");
 }
 
 void testCookCacheContainsHelper() {
@@ -1506,6 +1512,53 @@ void testCookCachePruneInvalidEntries() {
     expectTrue(invalidOnly.prune_invalid_entries() == 0u, "prune on empty cache after rejected load");
 }
 
+void testCookCachePruneAll() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_prune_all.obj", "# prune all v1\n");
+
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_prune_all.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord first = cooker.cook_mesh(desc);
+    expectTrue(first.ok, "seed cook for prune_all ok");
+    expectTrue(cooker.cache().entry_count() == 1u, "one entry before prune_all");
+
+    writeTempFile(source, "# prune all v2\n");
+    const fuse::u32 removed = cooker.cache().prune_all();
+    expectTrue(removed == 1u, "prune_all removes stale entry");
+    expectTrue(cooker.cache().empty(), "cache empty after prune_all");
+    expectTrue(cooker.cache().prune_all() == 0u, "prune_all on empty cache is a no-op");
+}
+
+void testAssetCookerInvalidationEmptyGuards() {
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entry;
+    entry.kind = fuse::project::CookAssetKind::Mesh;
+    entry.source_path = "/tmp/fuse_b79_empty_inv_source.obj";
+    entry.output_path = "/tmp/fuse_b79_empty_inv.fusemesh";
+    manifest.assets.push_back(entry);
+
+    fuse::project::AssetCooker cooker;
+    expectTrue(cooker.cache().empty(), "fresh cooker cache is empty");
+    expectTrue(cooker.invalidate_upstream_dependency(manifest, entry.source_path) == 0u,
+               "upstream invalidation on empty cache returns zero");
+    expectTrue(cooker.invalidate_stale_dependency_hashes(manifest) == 0u,
+               "stale dependency invalidation on empty cache returns zero");
+    expectTrue(cooker.invalidate_upstream_dependency(manifest, "") == 0u,
+               "upstream invalidation rejects empty changed source");
+    expectTrue(cooker.invalidate_stale_dependency_hashes({}) == 0u,
+               "stale dependency invalidation on empty manifest returns zero");
+    expectTrue(cooker.cache().stats().invalidations == 0u,
+               "empty-cache cooker invalidation does not bump stats");
+}
+
+void testContentHashEmptyUpstreamDeps() {
+    const fuse::project::CookManifest manifest;
+    expectTrue(fuse::project::hash_upstream_dependencies({}, manifest) == 0,
+               "empty dependency list yields zero upstream hash");
+}
+
 void testCookManifestCacheHitsOnSecondRun() {
     const std::string source = writeTempFile("/tmp/fuse_b79_rehit_mesh.obj", "# rehit mesh\n");
 
@@ -1578,6 +1631,9 @@ int main() {
     testCookCacheEmptyGuards();
     testCookCacheContainsHelper();
     testCookCachePruneInvalidEntries();
+    testCookCachePruneAll();
+    testAssetCookerInvalidationEmptyGuards();
+    testContentHashEmptyUpstreamDeps();
     testCookManifestCacheHitsOnSecondRun();
     testCookCacheInvalidateChain();
     testCookCacheStaleDependencyHashInvalidation();
