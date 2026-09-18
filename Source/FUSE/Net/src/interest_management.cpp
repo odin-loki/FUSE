@@ -406,8 +406,8 @@ bool InterestManager::unregister_entity(ecs::EntityID entity) {
         if (i < m_was_in_scope.size()) {
             m_was_in_scope.erase(m_was_in_scope.begin() + static_cast<std::ptrdiff_t>(i));
         }
-        m_scope_set.remove_entity(entity);
-        m_previous_scope_set.remove_entity(entity);
+        (void)m_scope_set.remove_entity(entity);
+        (void)m_previous_scope_set.remove_entity(entity);
         return true;
     }
     return false;

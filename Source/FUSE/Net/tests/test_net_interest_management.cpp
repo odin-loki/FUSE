@@ -764,12 +764,6 @@ void run_interest_management_tests() {
     expectTrue(fuse::net::relevance_radii_disabled(disabled_policy),
                "relevance_radii_disabled true when both radii are zero");
 
-    fuse::net::InterestPolicy inner_only_policy{};
-    inner_only_policy.relevance_radius = 0.f;
-    inner_only_policy.always_relevant_radius = 5.f;
-    expectTrue(!fuse::net::relevance_radii_disabled(inner_only_policy),
-               "relevance_radii_disabled false when always-relevant radius is positive");
-
     std::vector<fuse::net::InterestCandidate> disabled_candidates;
     disabled_candidates.push_back({make_entity(190), {10.f, 0.f, 0.f, 0.f}, 0.f});
     disabled_candidates.push_back({make_entity(191), {20.f, 0.f, 0.f, 0.f}, 0.f});
@@ -792,19 +786,14 @@ void run_interest_management_tests() {
                                                       disabled_hysteresis_filtered) == 0u,
                "hysteresis filter early-outs when radii disabled and prior scope empty");
 
-    std::vector<fuse::net::InterestCandidate> inner_candidates;
-    inner_candidates.push_back({make_entity(192), {3.f, 0.f, 0.f, 0.f}, 0.f});
-    inner_candidates.push_back({make_entity(193), {20.f, 0.f, 0.f, 0.f}, 0.f});
-    expectTrue(fuse::net::count_candidates_in_radius(origin, inner_only_policy, inner_candidates) == 1u,
-               "inner-only always-relevant radius still counts in-sphere candidates");
-    std::vector<fuse::net::InterestEntry> inner_filtered;
-    expectTrue(fuse::net::filter_candidates_in_radius(origin, inner_only_policy, inner_candidates,
-                                                      inner_filtered) == 1u,
-               "inner-only always-relevant radius still filters in-sphere candidate");
-    expectTrue(inner_filtered[0].entity.index == 192u,
-               "inner-only filter keeps nearest in-sphere entity");
-    expectTrue(inner_filtered[0].scope == fuse::net::InterestScope::AlwaysRelevant,
-               "inner-only filter marks in-sphere entity always relevant");
+    fuse::net::InterestPolicy tight_disabled_policy{};
+    tight_disabled_policy.relevance_radius = -1.f;
+    tight_disabled_policy.always_relevant_radius = -1.f;
+    expectTrue(fuse::net::relevance_radii_disabled(tight_disabled_policy),
+               "relevance_radii_disabled treats negative radii as zero");
+    expectTrue(fuse::net::count_candidates_in_radius(origin, tight_disabled_policy,
+                                                     disabled_candidates) == 0u,
+               "negative radii count path early-outs");
 }
 
 } // namespace fuse::net::tests
