@@ -101,6 +101,13 @@ void compute_friction_tangents(ContactManifold& manifold);
 struct ContactPairPreflight {
     ContactPairRejectReason reason = ContactPairRejectReason::None;
     bool rejected = false;
+    bool isSelfPair = false;
+    bool isOutOfRange = false;
+    bool isMissingShape = false;
+    bool isBothTriggers = false;
+    bool isUnsupportedShape = false;
+    bool isBothStatic = false;
+    bool isDegenerateShape = false;
 
     bool can_dispatch() const { return !rejected; }
 };
@@ -116,5 +123,18 @@ bool should_skip_contact_pair_dispatch(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
+
+/// Returns true when `preflight.reason` matches `expected` (B4.4 deepen pass).
+bool contact_pair_preflight_matches_reason(
+    const ContactPairPreflight& preflight,
+    ContactPairRejectReason expected);
+
+/// Returns true when the preflight reports a specific reject category (B4.4 deepen pass).
+bool contact_pair_preflight_rejects_for_reason(
+    const ContactPairPreflight& preflight,
+    ContactPairRejectReason expected);
+
+/// Returns true when preflight indicates dispatch may proceed without shape tests (B4.4 deepen pass).
+bool can_dispatch_contact_pair(const ContactPairPreflight& preflight);
 
 } // namespace fuse::physics::narrowphase

@@ -405,6 +405,13 @@ ContactPairPreflight preflight_contact_pair(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     ContactPairPreflight preflight{};
+    preflight.isSelfPair = is_self_contact_pair(pair);
+    preflight.isOutOfRange = is_out_of_range_contact_pair(pair, bodies);
+    preflight.isMissingShape = is_missing_shape_contact_pair(pair, shapes);
+    preflight.isBothTriggers = is_trigger_contact_pair(pair, bodies);
+    preflight.isUnsupportedShape = is_unsupported_shape_pair(pair, shapes);
+    preflight.isBothStatic = is_static_contact_pair(pair, bodies);
+    preflight.isDegenerateShape = is_degenerate_shape_pair(pair, shapes);
     preflight.reason = contact_pair_reject_reason(pair, bodies, shapes);
     preflight.rejected = preflight.reason != ContactPairRejectReason::None;
     return preflight;
@@ -415,6 +422,22 @@ bool should_skip_contact_pair_dispatch(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return is_invalid_contact_pair(pair, bodies, shapes);
+}
+
+bool contact_pair_preflight_matches_reason(
+    const ContactPairPreflight& preflight,
+    ContactPairRejectReason expected) {
+    return preflight.reason == expected;
+}
+
+bool contact_pair_preflight_rejects_for_reason(
+    const ContactPairPreflight& preflight,
+    ContactPairRejectReason expected) {
+    return preflight.rejected && preflight.reason == expected;
+}
+
+bool can_dispatch_contact_pair(const ContactPairPreflight& preflight) {
+    return preflight.can_dispatch();
 }
 
 } // namespace fuse::physics::narrowphase
