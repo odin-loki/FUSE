@@ -78,6 +78,24 @@ struct CascadeFrustumCorners {
     fuse::math::Vec3 corners[8]{};
 };
 
+/// Why a cascade shadow build would be skipped (B5.5 deepen).
+enum class CascadeShadowSkipReason : u8 {
+    None = 0,
+    EmptyLightDirection = 1,
+    EmptyCameraDepthRange = 2,
+    EmptyCascadeFrustum = 3,
+    DegenerateCascadeRange = 4,
+};
+
+/// Per-reason skipped-cascade breakdown for CPU bookkeeping (B5.5 deepen).
+struct CascadeShadowSkipCounts {
+    u32 total = 0;
+    u32 emptyLight = 0;
+    u32 emptyCamera = 0;
+    u32 emptyFrustum = 0;
+    u32 degenerateRange = 0;
+};
+
 /// Static cascade layout helpers.
 struct CascadedShadowMapLayout {
     static u32 cascadeCount() { return kCascadeCount; }
@@ -140,6 +158,12 @@ struct CascadedShadowMapLayout {
     static bool validateCascadeSplits(const CascadedShadowMapDesc& desc);
     /// True when every split lies in [0, 1] and `validateCascadeSplits` passes.
     static bool validateClampedCascadeSplits(const CascadedShadowMapDesc& desc);
+    /// Clamp each split fraction to [0, 1] without enforcing monotonicity.
+    static void clampCascadeSplitFractions(CascadedShadowMapDesc& desc);
+    /// Repair non-monotonic split fractions in ascending order.
+    static void enforceCascadeSplitMonotonicity(CascadedShadowMapDesc& desc);
+    /// Pin the last cascade split to the far-plane fraction (1.0).
+    static void pinLastCascadeSplit(CascadedShadowMapDesc& desc);
     /// Clamp each split to [0, 1], enforce monotonicity, and pin the last slot to 1.0.
     static void sanitizeCascadeSplits(CascadedShadowMapDesc& desc);
     static bool validateCascadeRanges(const CascadedShadowMapDesc& desc, const ShadowCameraParams& camera);
@@ -190,6 +214,14 @@ struct CascadeLightSpaceLayout {
     static bool isDegenerateCascadeRange(const CascadeRange& range, const ShadowCameraParams& camera);
     static bool isDegenerateLightDirection(const fuse::math::Vec3& lightDirection);
     static bool isEmptyLightDirection(const fuse::math::Vec3& lightDirection);
+    /// True when every cascade should be bypassed before per-cascade fitting.
+    static bool shouldBypassAllCascadeShadowBuilds(const ShadowCameraParams& camera,
+                                                 const fuse::math::Vec3& lightDirection);
+    /// Classify why a cascade build would be skipped — same ordering as `shouldSkipCascadeShadowBuild`.
+    static CascadeShadowSkipReason classifyCascadeShadowSkip(u32 cascadeIndex,
+                                                             const CascadedShadowMapDesc& desc,
+                                                             const ShadowCameraParams& camera,
+                                                             const fuse::math::Vec3& lightDirection);
     static bool shouldSkipCascadeShadowBuild(u32 cascadeIndex,
                                              const CascadedShadowMapDesc& desc,
                                              const ShadowCameraParams& camera,
@@ -202,6 +234,11 @@ struct CascadeLightSpaceLayout {
                                                const ShadowCameraParams& camera,
                                                const fuse::math::Vec3& lightDirection,
                                                u32 cascadeCount);
+    /// Per-reason skipped-cascade breakdown for the first `cascadeCount` slots.
+    static CascadeShadowSkipCounts countCascadeShadowSkipsByKind(const CascadedShadowMapDesc& desc,
+                                                                 const ShadowCameraParams& camera,
+                                                                 const fuse::math::Vec3& lightDirection,
+                                                                 u32 cascadeCount);
     static bool validateOrthoBounds(const CascadeOrthoBounds& bounds);
     static fuse::math::Mat4 buildLightView(const fuse::math::Vec3& focus, const fuse::math::Vec3& lightDirection);
     static bool isEmptyLightSpaceAabb(const fuse::math::AABB& aabb);
@@ -243,5 +280,8 @@ struct CascadeLightSpaceLayout {
                                                  u32 cascadeCount,
                                                  CascadeLightSpaceMatrices outMatrices[kCascadeCount]);
 };
+
+/// True when a cascade shadow skip reason blocks matrix population.
+bool cascadeShadowSkipReasonIsBlocking(CascadeShadowSkipReason reason);
 
 } // namespace fuse::renderer
