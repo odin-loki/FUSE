@@ -951,6 +951,97 @@ void testShouldSkipAndCanIterateQueryFilterGuards() {
                "can_iterate_query_filter false for conflicting filter");
 }
 
+void testPreflightExposesConflictAndSignatureMatchGuards() {
+    const fuse::ecs::QueryFilter runnable =
+        fuse::ecs::make_query_filter(fuse::ecs::With<fuse::ecs::Transform>{});
+    fuse::ecs::QueryFilter conflicting = fuse::ecs::make_query_filter(
+        fuse::ecs::With<fuse::ecs::Transform>{}, fuse::ecs::Without<fuse::ecs::Transform>{});
+
+    const fuse::ecs::QueryFilterPreflight runnablePreflight = fuse::ecs::preflight_query_filter(runnable);
+    expectTrue(!runnablePreflight.has_conflict, "runnable filter has no conflict");
+    expectTrue(runnablePreflight.runnable, "runnable filter remains runnable");
+    expectTrue(runnablePreflight.should_skip_match(), "filter-only preflight skips signature match");
+
+    const fuse::ecs::QueryFilterPreflight conflictPreflight = fuse::ecs::preflight_query_filter(conflicting);
+    expectTrue(conflictPreflight.has_conflict, "conflicting filter reports has_conflict");
+    expectTrue(!conflictPreflight.runnable, "conflicting filter is not runnable");
+    expectTrue(conflictPreflight.should_skip_match(), "conflicting filter skips signature match");
+    expectTrue(conflictPreflight.should_skip(), "conflicting filter skips iteration");
+
+    fuse::ecs::Archetype typed = makeArchetypeWithComponents({
+        std::type_index(typeid(fuse::ecs::Transform)),
+    });
+    typed.append_entity(fuse::ecs::EntityID{0, 1});
+    const std::vector<fuse::ecs::Archetype> table = {typed};
+
+    const fuse::ecs::QueryFilterPreflight tableConflict = fuse::ecs::preflight_query_filter(table, conflicting);
+    expectTrue(tableConflict.has_conflict, "table preflight surfaces conflict before scanning");
+    expectEq(tableConflict.matching_archetypes, 0u, "conflict short-circuits archetype count");
+    expectEq(tableConflict.matching_entities, 0u, "conflict short-circuits entity count");
+    expectTrue(tableConflict.should_skip_match(), "table conflict skips signature match");
+    expectTrue(!tableConflict.has_signature_match(), "conflict yields no signature match");
+    expectTrue(fuse::ecs::query_filter_has_conflict(conflicting) == tableConflict.has_conflict,
+               "preflight has_conflict matches query_filter_has_conflict");
+}
+
+void testShouldSkipQueryMatchVersusIteration() {
+    fuse::ecs::Archetype dynamicBody = makeArchetypeWithComponents({
+        std::type_index(typeid(fuse::ecs::Transform)),
+        std::type_index(typeid(fuse::ecs::RigidBody)),
+    });
+    dynamicBody.append_entity(fuse::ecs::EntityID{0, 1});
+
+    const std::vector<fuse::ecs::Archetype> table = {dynamicBody};
+    const fuse::ecs::QueryFilter filter = fuse::ecs::make_query_filter(
+        fuse::ecs::With<fuse::ecs::Transform, fuse::ecs::RigidBody>{},
+        fuse::ecs::Without<fuse::ecs::TagStatic>{});
+
+    expectTrue(!fuse::ecs::should_skip_query_match(table, filter),
+               "should_skip_query_match false when a signature matches");
+    expectTrue(fuse::ecs::can_match_query_filter(table, filter),
+               "can_match_query_filter true when a signature matches");
+    expectTrue(!fuse::ecs::should_skip_query_iteration(table, filter),
+               "should_skip_query_iteration false when entities match");
+
+    expectTrue(fuse::ecs::should_skip_query_match({}, filter),
+               "should_skip_query_match true for empty archetype table");
+    expectTrue(!fuse::ecs::can_match_query_filter({}, filter),
+               "can_match_query_filter false for empty archetype table");
+
+    fuse::ecs::QueryFilter conflicting = fuse::ecs::make_query_filter(
+        fuse::ecs::With<fuse::ecs::Transform>{}, fuse::ecs::Without<fuse::ecs::Transform>{});
+    expectTrue(fuse::ecs::should_skip_query_match(table, conflicting),
+               "should_skip_query_match true for conflicting filter");
+    expectTrue(fuse::ecs::should_skip_query_iteration(table, conflicting),
+               "should_skip_query_iteration true for conflicting filter");
+
+    const fuse::ecs::QueryFilter missingWith =
+        fuse::ecs::make_query_filter(fuse::ecs::With<fuse::ecs::Transform, fuse::ecs::TagPlayer>{});
+    expectTrue(fuse::ecs::should_skip_query_match(table, missingWith),
+               "should_skip_query_match true when no signature satisfies With set");
+    expectTrue(!fuse::ecs::can_match_query_filter(table, missingWith),
+               "can_match_query_filter false when With set is unsatisfied");
+
+    fuse::ecs::Archetype zeroRow = makeArchetypeWithComponents({
+        std::type_index(typeid(fuse::ecs::Transform)),
+        std::type_index(typeid(fuse::ecs::RigidBody)),
+    });
+    const std::vector<fuse::ecs::Archetype> zeroRowTable = {zeroRow};
+    const fuse::ecs::QueryFilterPreflight zeroRowPreflight =
+        fuse::ecs::preflight_query_filter(zeroRowTable, filter);
+    expectTrue(!fuse::ecs::should_skip_query_match(zeroRowTable, filter),
+               "should_skip_query_match false for zero-row matching signature");
+    expectTrue(fuse::ecs::can_match_query_filter(zeroRowTable, filter),
+               "can_match_query_filter true for zero-row matching signature");
+    expectTrue(zeroRowPreflight.has_signature_match(), "zero-row archetype still has signature match");
+    expectTrue(fuse::ecs::should_skip_query_iteration(zeroRowTable, filter),
+               "should_skip_query_iteration true for zero-row matching signature");
+    expectTrue(zeroRowPreflight.should_skip_match() == fuse::ecs::should_skip_query_match(zeroRowTable, filter),
+               "preflight should_skip_match matches should_skip_query_match");
+    expectTrue(zeroRowPreflight.can_match() == fuse::ecs::can_match_query_filter(zeroRowTable, filter),
+               "preflight can_match matches can_match_query_filter");
+}
+
 void testPreflightConflictGuardShortCircuitsCounts() {
     fuse::ecs::Archetype typed = makeArchetypeWithComponents({
         std::type_index(typeid(fuse::ecs::Transform)),
@@ -1004,6 +1095,8 @@ int main() {
     testHasMatchingEntitiesDistinguishesZeroRowArchetypes();
     testPreflightQueryFilterBundlesGuardsAndCounts();
     testPreflightSkippedWhenNoMatchingSignaturesOrEntities();
+    testPreflightExposesConflictAndSignatureMatchGuards();
+    testShouldSkipQueryMatchVersusIteration();
     testShouldSkipAndCanIterateQueryFilterGuards();
     testPreflightConflictGuardShortCircuitsCounts();
     testPreflightAlignsWithCountHelpers();
