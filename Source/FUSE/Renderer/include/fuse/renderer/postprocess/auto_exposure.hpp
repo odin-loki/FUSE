@@ -91,8 +91,12 @@ void reset_luminance_histogram(LuminanceHistogram& histogram);
 namespace histogram_util {
 /// True when a sample buffer can contribute metering (non-null and non-empty).
 bool hasMeteringSamples(const fuse::math::Vec3* samples, u32 count);
+/// True when histogram params and sample buffer are ready for percentile metering (B5.10 deepen).
+bool canMeterFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params);
 /// True when a histogram has accumulated samples (B5.10 deepen).
 bool hasMeteringHistogram(const LuminanceHistogram& histogram);
+/// True when histogram params and accumulated samples are ready for metering (B5.10 deepen).
+bool canMeterFromHistogram(const LuminanceHistogram& histogram);
 void accumulateSamples(LuminanceHistogram& histogram, const fuse::math::Vec3* samples, u32 count);
 f32 measurePercentile(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
                       f32 percentile);
@@ -120,6 +124,8 @@ private:
 };
 
 void reset_exposure_meter(ExposureMeter& meter);
+/// True when an exposure meter has accumulated samples (B5.10 deepen).
+bool exposure_meter_has_samples(const ExposureMeter& meter);
 
 /// Host-side auto-exposure pass stub (CUDA histogram deferred).
 class AutoExposure {
@@ -143,5 +149,14 @@ private:
     AutoExposureState m_state{};
     bool m_ready = false;
 };
+
+/// True when a sample buffer can drive auto-exposure adaptation (B5.10 deepen).
+bool auto_exposure_can_update_from_samples(const fuse::math::Vec3* samples, u32 count);
+/// True when a histogram can drive auto-exposure adaptation (B5.10 deepen).
+bool auto_exposure_can_update_from_histogram(const LuminanceHistogram& histogram);
+/// Reset temporal auto-exposure state via facade (B5.10 deepen).
+void reset_auto_exposure(AutoExposure& exposure);
+/// Reset temporal auto-exposure state with clamped EV anchor via facade (B5.10 deepen).
+void reset_auto_exposure_to_clamped(AutoExposure& exposure, f32 ev, const AutoExposureParams& params);
 
 } // namespace fuse::renderer

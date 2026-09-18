@@ -114,6 +114,17 @@ bool tonemap_curve_endpoints_valid(const TonemapCurveEndpoints& endpoints, f32 e
     return endpoints.white_output > endpoints.black_output + epsilon;
 }
 
+bool tonemap_curve_endpoint_inputs_valid(const TonemapCurveEndpoints& endpoints, f32 epsilon) {
+    if (endpoints.black_input < -epsilon) {
+        return false;
+    }
+    return endpoints.white_input > endpoints.black_input + epsilon;
+}
+
+bool tonemap_curve_white_input_valid(f32 white_input, f32 epsilon) {
+    return white_input > epsilon;
+}
+
 bool tonemap_curve_has_valid_endpoints(const TonemapCurveParams& params, f32 white_input, f32 epsilon) {
     if (!params.enabled) {
         return true;
@@ -121,8 +132,12 @@ bool tonemap_curve_has_valid_endpoints(const TonemapCurveParams& params, f32 whi
     if (!tonemap_curve_params_valid(params)) {
         return false;
     }
+    if (!tonemap_curve_white_input_valid(white_input, epsilon)) {
+        return false;
+    }
     const TonemapCurveEndpoints endpoints = evaluate_tonemap_curve_endpoints(params, white_input);
-    return tonemap_curve_endpoints_valid(endpoints, epsilon);
+    return tonemap_curve_endpoint_inputs_valid(endpoints, epsilon) &&
+           tonemap_curve_endpoints_valid(endpoints, epsilon);
 }
 
 f32 tonemap_curve_mid_grey_output(const TonemapCurveParams& params, f32 mid_grey) {

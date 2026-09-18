@@ -59,6 +59,10 @@ bool tonemap_curve_preserves_black(const TonemapCurveParams& params, f32 epsilon
 bool tonemap_curve_params_valid(const TonemapCurveParams& params);
 /// True when black/white anchors stay in display range with positive span (B5.10 deepen).
 bool tonemap_curve_endpoints_valid(const TonemapCurveEndpoints& endpoints, f32 epsilon = 1e-4f);
+/// True when endpoint input anchors are ordered and non-negative (B5.10 deepen).
+bool tonemap_curve_endpoint_inputs_valid(const TonemapCurveEndpoints& endpoints, f32 epsilon = 1e-4f);
+/// True when white-point input is usable for endpoint evaluation (B5.10 deepen).
+bool tonemap_curve_white_input_valid(f32 white_input, f32 epsilon = 1e-4f);
 /// Evaluate + validate curve black/white anchors in one call (B5.10 deepen).
 bool tonemap_curve_has_valid_endpoints(const TonemapCurveParams& params, f32 white_input = 1.f,
                                        f32 epsilon = 1e-4f);
