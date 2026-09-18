@@ -172,11 +172,24 @@ u32 FroxelGridLayout::clampSliceZ(u32 sliceZ, const FroxelGridDesc& desc) {
 }
 
 u32 FroxelGridLayout::maxFroxelIndex(const FroxelGridDesc& desc) {
-    const u32 count = desc.froxelCount();
-    if (count == 0u) {
-        return 0u;
+    return desc.maxFroxelIndex();
+}
+
+bool FroxelGridLayout::isAtMaxFroxelIndex(u32 index, const FroxelGridDesc& desc) {
+    if (isEmptyGrid(desc)) {
+        return false;
     }
-    return count - 1u;
+    return index == maxFroxelIndex(desc);
+}
+
+bool FroxelGridLayout::tryClampFroxelIndex(u32 index, const FroxelGridDesc& desc, u32& outIndex) {
+    if (isEmptyGrid(desc)) {
+        outIndex = 0u;
+        return false;
+    }
+
+    outIndex = clampFroxelIndex(index, desc);
+    return true;
 }
 
 bool FroxelGridLayout::mapScreenDepthToSampleCoords(f32 screenX,
@@ -226,6 +239,20 @@ bool FroxelGridLayout::mapScreenDepthToFroxelIndex(f32 screenX,
     return true;
 }
 
+const char* densityGridRejectReasonLabel(DensityGridRejectReason reason) {
+    switch (reason) {
+    case DensityGridRejectReason::None:
+        return "none";
+    case DensityGridRejectReason::EmptyGridDesc:
+        return "empty_grid_desc";
+    case DensityGridRejectReason::DescMismatch:
+        return "desc_mismatch";
+    case DensityGridRejectReason::CountPartitionMismatch:
+        return "count_partition_mismatch";
+    }
+    return "unknown";
+}
+
 namespace froxel_util {
 
 f32 lerpDensity(f32 a, f32 b, f32 t) {
@@ -237,6 +264,10 @@ f32 lerpDensity(f32 a, f32 b, f32 t) {
 
 bool gridMatchesDesc(const FroxelDensityGrid& grid, const FroxelGridDesc& desc) {
     return grid.matchesDesc(desc);
+}
+
+bool canAccessDensityAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 /*index*/) {
+    return !FroxelGridLayout::isEmptyGrid(desc) && gridMatchesDesc(grid, desc);
 }
 
 u32 countNonZeroFroxels(const FroxelDensityGrid& grid, f32 epsilon) {
@@ -268,7 +299,7 @@ u32 countEmptyFroxels(const FroxelDensityGrid& grid, f32 epsilon) {
 }
 
 f32 sampleDensityAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index) {
-    if (grid.isEmpty() || FroxelGridLayout::isEmptyGrid(desc) || !grid.matchesDesc(desc)) {
+    if (!canAccessDensityAtIndex(grid, desc, index)) {
         return 0.f;
     }
 
@@ -276,8 +307,21 @@ f32 sampleDensityAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& de
     return grid.density[clampedIndex];
 }
 
+bool trySampleDensityAtIndex(const FroxelDensityGrid& grid,
+                             const FroxelGridDesc& desc,
+                             u32 index,
+                             f32& outDensity) {
+    if (!canAccessDensityAtIndex(grid, desc, index)) {
+        outDensity = 0.f;
+        return false;
+    }
+
+    outDensity = sampleDensityAtIndex(grid, desc, index);
+    return true;
+}
+
 bool writeDensityAtIndex(FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index, f32 value) {
-    if (grid.isEmpty() || FroxelGridLayout::isEmptyGrid(desc) || !grid.matchesDesc(desc)) {
+    if (!canAccessDensityAtIndex(grid, desc, index)) {
         return false;
     }
 
@@ -286,12 +330,56 @@ bool writeDensityAtIndex(FroxelDensityGrid& grid, const FroxelGridDesc& desc, u3
     return true;
 }
 
+bool tryWriteDensityAtIndex(FroxelDensityGrid& grid,
+                            const FroxelGridDesc& desc,
+                            u32 index,
+                            f32 value) {
+    if (!canAccessDensityAtIndex(grid, desc, index)) {
+        return false;
+    }
+
+    return writeDensityAtIndex(grid, desc, index, value);
+}
+
 bool validateDensityCounts(const FroxelDensityGrid& grid, f32 epsilon) {
     if (grid.isEmpty()) {
         return true;
     }
 
     return countNonZeroFroxels(grid, epsilon) + countEmptyFroxels(grid, epsilon) == grid.density.size();
+}
+
+bool tryValidateDensityCounts(const FroxelDensityGrid& grid,
+                            const FroxelGridDesc& desc,
+                            DensityGridRejectReason& outReason,
+                            f32 epsilon) {
+    if (FroxelGridLayout::isEmptyGrid(desc)) {
+        outReason = DensityGridRejectReason::None;
+        return true;
+    }
+
+    if (grid.isEmpty()) {
+        outReason = DensityGridRejectReason::EmptyGridDesc;
+        return false;
+    }
+
+    if (!gridMatchesDesc(grid, desc)) {
+        outReason = DensityGridRejectReason::DescMismatch;
+        return false;
+    }
+
+    if (!validateDensityCounts(grid, epsilon)) {
+        outReason = DensityGridRejectReason::CountPartitionMismatch;
+        return false;
+    }
+
+    outReason = DensityGridRejectReason::None;
+    return true;
+}
+
+bool validateDensityCountsForDesc(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, f32 epsilon) {
+    DensityGridRejectReason reason = DensityGridRejectReason::None;
+    return tryValidateDensityCounts(grid, desc, reason, epsilon);
 }
 
 f32 sampleDensityBilinear(const FroxelDensityGrid& grid,

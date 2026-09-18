@@ -37,6 +37,11 @@ struct FroxelGridDesc {
 
     u32 froxelCount() const { return tilesX * tilesY * slicesZ; }
     bool isEmpty() const { return froxelCount() == 0u; }
+    /// Last valid flat froxel index; returns 0 when the grid has no froxels.
+    u32 maxFroxelIndex() const {
+        const u32 count = froxelCount();
+        return count == 0u ? 0u : count - 1u;
+    }
 
     /// Clamp tile/slice counts to CPU stub limits; zero dimensions remain zero (empty grid).
     static FroxelGridDesc clampCounts(const FroxelGridDesc& raw);
@@ -100,6 +105,10 @@ struct FroxelGridLayout {
     static u32 clampSliceZ(u32 sliceZ, const FroxelGridDesc& desc);
     /// Last valid flat froxel index; returns 0 when the grid has no froxels.
     static u32 maxFroxelIndex(const FroxelGridDesc& desc);
+    /// True when `index` equals the last valid froxel index for a non-empty grid.
+    static bool isAtMaxFroxelIndex(u32 index, const FroxelGridDesc& desc);
+    /// Clamp `index` into range; returns false and zeroes `outIndex` on an empty grid.
+    static bool tryClampFroxelIndex(u32 index, const FroxelGridDesc& desc, u32& outIndex);
     /// Clamp interpolation weights and corner indices to grid bounds.
     static void clampSampleCoords(FroxelSampleCoords& coords, const FroxelGridDesc& desc);
     static bool mapScreenDepthToSampleCoords(f32 screenX,
@@ -117,21 +126,53 @@ struct FroxelGridLayout {
                                             u32& outFroxelIndex);
 };
 
+/// Why density-grid validation rejected a froxel population check (B5.11 deepen).
+enum class DensityGridRejectReason : u8 {
+    None = 0,
+    EmptyGridDesc,
+    DescMismatch,
+    CountPartitionMismatch,
+};
+
+/// Human-readable label for density-grid reject reasons (logging / tests).
+const char* densityGridRejectReasonLabel(DensityGridRejectReason reason);
+
 /// CPU froxel density interpolation helpers — mirrors CUDA trilinear sample stub.
 namespace froxel_util {
 f32 lerpDensity(f32 a, f32 b, f32 t);
 /// True when density storage matches the clamped froxel count for `desc`.
 bool gridMatchesDesc(const FroxelDensityGrid& grid, const FroxelGridDesc& desc);
+/// Preflight guard before index-based density access; false on empty grid or desc mismatch.
+bool canAccessDensityAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index);
 /// Count froxels with density above `epsilon`; returns 0 when the grid is empty.
 u32 countNonZeroFroxels(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
 /// Count froxels with density at or below `epsilon`; returns 0 when the grid is empty.
 u32 countEmptyFroxels(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
 /// Read density at a clamped flat froxel index; returns 0 when grid/desc mismatch or empty.
 f32 sampleDensityAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index);
+/// Sample with guard preflight; returns false when `canAccessDensityAtIndex` would reject the request.
+bool trySampleDensityAtIndex(const FroxelDensityGrid& grid,
+                             const FroxelGridDesc& desc,
+                             u32 index,
+                             f32& outDensity);
 /// Write density at a clamped flat froxel index; returns false when grid/desc mismatch or empty.
 bool writeDensityAtIndex(FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index, f32 value);
+/// Write with guard preflight; returns false when `canAccessDensityAtIndex` would reject the request.
+bool tryWriteDensityAtIndex(FroxelDensityGrid& grid,
+                            const FroxelGridDesc& desc,
+                            u32 index,
+                            f32 value);
 /// True when non-zero + empty froxel counts sum to storage size (empty grid is vacuously true).
 bool validateDensityCounts(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
+/// Diagnose the first density invariant that fails; vacuously succeeds when `desc` is empty.
+bool tryValidateDensityCounts(const FroxelDensityGrid& grid,
+                              const FroxelGridDesc& desc,
+                              DensityGridRejectReason& outReason,
+                              f32 epsilon = 1e-6f);
+/// Validate density counts against the clamped froxel count derived from `desc`.
+bool validateDensityCountsForDesc(const FroxelDensityGrid& grid,
+                                  const FroxelGridDesc& desc,
+                                  f32 epsilon = 1e-6f);
 f32 sampleDensityBilinear(const FroxelDensityGrid& grid,
                           const FroxelGridDesc& desc,
                           const FroxelSampleCoords& coords);
