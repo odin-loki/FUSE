@@ -1113,6 +1113,162 @@ void testDisabledBeginAsyncFlowDoesNotIncrementOpenCount() {
     expectTrue(fuse::profiler::openAsyncFlowCount() == 0u, "enabled flow pair clears open count");
 }
 
+void testEmptyNamePreflightGuards() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::isEmptyProfilerName(nullptr), "null name is empty");
+    expectTrue(fuse::profiler::isEmptyProfilerName(""), "empty string name is empty");
+    expectTrue(!fuse::profiler::isEmptyProfilerName("valid"), "non-empty name is not empty");
+
+    const fuse::profiler::ProfileNamePreflight nullPreflight = fuse::profiler::preflightProfileName(nullptr);
+    expectTrue(nullPreflight.null_name, "preflight flags null name");
+    expectTrue(!nullPreflight.empty_name, "preflight does not flag empty on null");
+    expectTrue(!nullPreflight.canRecord(), "null name cannot record");
+    expectTrue(nullPreflight.shouldSkip(), "null name should skip");
+
+    const fuse::profiler::ProfileNamePreflight emptyPreflight = fuse::profiler::preflightProfileName("");
+    expectTrue(!emptyPreflight.null_name, "preflight does not flag null on empty string");
+    expectTrue(emptyPreflight.empty_name, "preflight flags empty string name");
+    expectTrue(!emptyPreflight.canRecord(), "empty string name cannot record");
+    expectTrue(emptyPreflight.shouldSkip(), "empty string name should skip");
+
+    const fuse::profiler::ProfileNamePreflight validPreflight = fuse::profiler::preflightProfileName("scope");
+    expectTrue(!validPreflight.null_name && !validPreflight.empty_name, "valid name passes preflight flags");
+    expectTrue(validPreflight.canRecord(), "valid name can record");
+    expectTrue(!validPreflight.shouldSkip(), "valid name should not skip");
+
+    expectTrue(fuse::profiler::shouldSkipProfileScope(nullptr), "shouldSkipProfileScope true for null");
+    expectTrue(fuse::profiler::shouldSkipCounterSample(""), "shouldSkipCounterSample true for empty");
+    expectTrue(!fuse::profiler::shouldSkipProfileScope("ok"), "shouldSkipProfileScope false for valid name");
+}
+
+void testScopeNestingPreflight() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::profiler::ScopeNestingPreflight initial = fuse::profiler::preflightScopeNesting();
+    expectTrue(initial.current_depth == 0u, "preflight starts at zero depth");
+    expectTrue(initial.max_depth_seen == 0u, "preflight starts with zero max depth");
+    expectTrue(initial.canPush(), "preflight can push when profiler enabled");
+
+    {
+        FUSE_PROFILE_SCOPE("outer");
+        const fuse::profiler::ScopeNestingPreflight nested = fuse::profiler::preflightScopeNesting();
+        expectTrue(nested.current_depth == 1u, "preflight reflects active scope depth");
+        expectTrue(nested.max_depth_seen == 1u, "preflight reflects max depth seen");
+        expectTrue(nested.canPush(), "preflight can push inside active scope");
+    }
+
+    fuse::profiler::setEnabled(false);
+    const fuse::profiler::ScopeNestingPreflight disabled = fuse::profiler::preflightScopeNesting();
+    expectTrue(disabled.profiler_disabled, "preflight flags disabled profiler");
+    expectTrue(!disabled.canPush(), "preflight cannot push when profiler disabled");
+}
+
+void testAsyncFlowPreflights() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::profiler::AsyncFlowEndPreflight orphanPreflight = fuse::profiler::preflightAsyncFlowEnd("flow");
+    expectTrue(orphanPreflight.orphan_end, "preflight flags orphan end with no open flows");
+    expectTrue(!orphanPreflight.canEnd(), "orphan end cannot proceed");
+    expectTrue(orphanPreflight.shouldSkip(), "orphan end should skip");
+    expectTrue(fuse::profiler::shouldSkipAsyncFlowEnd("flow"), "shouldSkipAsyncFlowEnd true for orphan");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    const fuse::profiler::AsyncFlowBeginPreflight beginPreflight =
+        fuse::profiler::preflightAsyncFlowBegin("vfs_load");
+    expectTrue(beginPreflight.canBegin(), "valid begin preflight passes");
+    expectTrue(!beginPreflight.shouldSkip(), "valid begin should not skip");
+    expectTrue(!fuse::profiler::shouldSkipAsyncFlowBegin("vfs_load"), "shouldSkipAsyncFlowBegin false for valid");
+
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("vfs_load", flowId);
+    const fuse::profiler::AsyncFlowEndPreflight matchedPreflight = fuse::profiler::preflightAsyncFlowEnd("vfs_load");
+    expectTrue(!matchedPreflight.orphan_end, "preflight clears orphan flag after begin");
+    expectTrue(matchedPreflight.canEnd(), "matched end preflight passes");
+    expectTrue(!fuse::profiler::shouldSkipAsyncFlowEnd("vfs_load"), "shouldSkipAsyncFlowEnd false when matched");
+
+    const fuse::profiler::AsyncFlowBeginPreflight nullBegin = fuse::profiler::preflightAsyncFlowBegin(nullptr);
+    expectTrue(nullBegin.null_name, "begin preflight flags null name");
+    expectTrue(nullBegin.shouldSkip(), "null begin should skip");
+    expectTrue(fuse::profiler::shouldSkipAsyncFlowBegin(nullptr), "shouldSkipAsyncFlowBegin true for null");
+
+    FUSE_PROFILE_ASYNC_FLOW_END("vfs_load", flowId);
+}
+
+void testChromeTraceExportPreflight() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::profiler::ChromeTraceExportPreflight emptyPreflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(emptyPreflight.would_emit_empty_trace, "empty buffer would emit empty trace");
+    expectTrue(!emptyPreflight.has_events, "empty buffer has no events");
+    expectTrue(emptyPreflight.shouldSkip(), "empty export should skip");
+    expectTrue(emptyPreflight.canExport(), "export preflight always allows export");
+
+    {
+        FUSE_PROFILE_SCOPE("export_scope");
+    }
+
+    const fuse::profiler::ChromeTraceExportPreflight withEvents = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(withEvents.has_events, "preflight detects recorded events");
+    expectTrue(!withEvents.would_emit_empty_trace, "non-empty buffer would emit trace");
+    expectTrue(!withEvents.shouldSkip(), "non-empty export should not skip");
+    expectTrue(withEvents.event_count >= 2u, "preflight reports event count");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("unmatched", flowId);
+    const fuse::profiler::ChromeTraceExportPreflight unmatched = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(unmatched.has_unmatched_flows, "preflight flags unmatched async flows");
+    expectTrue(unmatched.open_async_flow_count == 1u, "preflight reports open flow count");
+}
+
+void testSafeEventLookupStubs() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::ProfileEvent out{};
+    expectTrue(!fuse::profiler::tryEventAt(0u, out), "tryEventAt false on empty buffer");
+    expectTrue(fuse::profiler::eventAtOrNull(0u) == nullptr, "eventAtOrNull null on empty buffer");
+    expectTrue(fuse::profiler::eventAtOrNull(99u) == nullptr, "eventAtOrNull null when out of range");
+
+    {
+        FUSE_PROFILE_SCOPE("lookup_scope");
+    }
+
+    expectTrue(fuse::profiler::tryEventAt(0u, out), "tryEventAt true for first event");
+    expectTrue(out.name != nullptr && std::string(out.name) == "lookup_scope",
+               "tryEventAt copies scope begin name");
+    expectTrue(out.phase == fuse::profiler::EventPhase::Begin, "tryEventAt copies begin phase");
+
+    expectTrue(fuse::profiler::tryEventAt(1u, out), "tryEventAt true for second event");
+    expectTrue(out.phase == fuse::profiler::EventPhase::End, "tryEventAt copies end phase");
+
+    expectTrue(!fuse::profiler::tryEventAt(2u, out), "tryEventAt false past event count");
+
+    const fuse::profiler::ProfileEvent* beginPtr = fuse::profiler::eventAtOrNull(0u);
+    expectTrue(beginPtr != nullptr, "eventAtOrNull returns pointer for valid index");
+    expectTrue(beginPtr->phase == fuse::profiler::EventPhase::Begin, "eventAtOrNull begin phase");
+    expectTrue(fuse::profiler::eventAtOrNull(2u) == nullptr, "eventAtOrNull null past count");
+}
+
+void testRingBufferCapacityIntrospection() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::ringBufferCapacity() == 4096u, "ring buffer capacity is 4096");
+    expectTrue(fuse::profiler::remainingEventCapacity() == 4096u, "empty buffer has full capacity");
+
+    {
+        FUSE_PROFILE_SCOPE("capacity_probe");
+    }
+
+    expectTrue(fuse::profiler::remainingEventCapacity() == 4094u,
+               "two events reduce remaining capacity");
+    expectTrue(!fuse::profiler::isBufferFull(), "two events do not fill buffer");
+}
+
 void testVerifyMacro() {
     resetState();
     fuse::assertion::setSuppressAbortForTests(true);
@@ -1183,6 +1339,12 @@ int main() {
     testDisabledScopeDoesNotMutateNestingDepth();
     testMultipleOrphanAsyncFlowEndsAreIgnored();
     testDisabledBeginAsyncFlowDoesNotIncrementOpenCount();
+    testEmptyNamePreflightGuards();
+    testScopeNestingPreflight();
+    testAsyncFlowPreflights();
+    testChromeTraceExportPreflight();
+    testSafeEventLookupStubs();
+    testRingBufferCapacityIntrospection();
     testFatalHandlerHook();
     testVerifyMacro();
 

@@ -345,6 +345,89 @@ void reset() {
     threadLocalFlowNestingDepth() = 0u;
 }
 
+u32 remainingEventCapacity() {
+    const u32 count = eventCount();
+    return count >= kRingCapacity ? 0u : kRingCapacity - count;
+}
+
+bool isEmptyProfilerName(const char* name) {
+    return name == nullptr || name[0] == '\0';
+}
+
+ProfileNamePreflight preflightProfileName(const char* name) {
+    ProfileNamePreflight preflight{};
+    preflight.null_name = name == nullptr;
+    preflight.empty_name = name != nullptr && name[0] == '\0';
+    return preflight;
+}
+
+ScopeNestingPreflight preflightScopeNesting() {
+    ScopeNestingPreflight preflight{};
+    preflight.current_depth = currentNestingDepth();
+    preflight.max_depth_seen = g_maxNestingDepth.load(std::memory_order_acquire);
+    preflight.profiler_disabled = !g_enabled.load(std::memory_order_acquire);
+    return preflight;
+}
+
+AsyncFlowBeginPreflight preflightAsyncFlowBegin(const char* name) {
+    AsyncFlowBeginPreflight preflight{};
+    preflight.profiler_disabled = !g_enabled.load(std::memory_order_acquire);
+    preflight.null_name = name == nullptr;
+    preflight.empty_name = name != nullptr && name[0] == '\0';
+    return preflight;
+}
+
+AsyncFlowEndPreflight preflightAsyncFlowEnd(const char* name) {
+    AsyncFlowEndPreflight preflight{};
+    preflight.profiler_disabled = !g_enabled.load(std::memory_order_acquire);
+    preflight.null_name = name == nullptr;
+    preflight.empty_name = name != nullptr && name[0] == '\0';
+    preflight.orphan_end = g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u;
+    return preflight;
+}
+
+ChromeTraceExportPreflight preflightChromeTraceExport() {
+    ChromeTraceExportPreflight preflight{};
+    preflight.event_count = eventCount();
+    preflight.open_async_flow_count = g_openAsyncFlowCount.load(std::memory_order_acquire);
+    preflight.has_events = preflight.event_count > 0u;
+    preflight.has_unmatched_flows = preflight.open_async_flow_count > 0u;
+    preflight.would_emit_empty_trace = !preflight.has_events;
+    return preflight;
+}
+
+bool shouldSkipProfileScope(const char* name) {
+    return preflightProfileName(name).shouldSkip() || !g_enabled.load(std::memory_order_acquire);
+}
+
+bool shouldSkipAsyncFlowBegin(const char* name) {
+    return preflightAsyncFlowBegin(name).shouldSkip();
+}
+
+bool shouldSkipAsyncFlowEnd(const char* name) {
+    return preflightAsyncFlowEnd(name).shouldSkip();
+}
+
+bool shouldSkipCounterSample(const char* track) {
+    return preflightProfileName(track).shouldSkip() || !g_enabled.load(std::memory_order_acquire);
+}
+
+bool tryEventAt(u32 index, ProfileEvent& out) {
+    if (!isEventIndexValid(index)) {
+        return false;
+    }
+    out = eventAt(index);
+    return isValidProfileEvent(out);
+}
+
+const ProfileEvent* eventAtOrNull(u32 index) {
+    if (!isEventIndexValid(index)) {
+        return nullptr;
+    }
+    const ProfileEvent& event = eventAt(index);
+    return isValidProfileEvent(event) ? &event : nullptr;
+}
+
 u32 nextFlowId() {
     return g_nextFlowId.fetch_add(1u, std::memory_order_acq_rel);
 }
