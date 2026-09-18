@@ -73,6 +73,29 @@ const std::string& ScriptConsoleHistoryBuffer::oldest() const {
     return at(0);
 }
 
+bool ScriptConsoleHistoryBuffer::contains(const char* line) const {
+    if (line == nullptr || m_size == 0) {
+        return false;
+    }
+
+    const std::string needle = trim(line);
+    if (needle.empty()) {
+        return false;
+    }
+
+    for (u32 i = 0; i < m_size; ++i) {
+        if (at(i) == needle) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool ScriptConsoleHistoryBuffer::is_navigation_at_end() const {
+    return m_size == 0 || m_navigationCursor >= static_cast<s32>(m_size);
+}
+
 void ScriptConsoleHistoryBuffer::push(const char* line) {
     if (line == nullptr) {
         return;
