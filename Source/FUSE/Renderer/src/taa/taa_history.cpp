@@ -18,6 +18,36 @@ bool taaHistoryReuseAllowed(const TaaHistoryBuffer& history, u32 observedGenerat
     return taaHistoryCanReuse(history) && !history.isHistoryStale(observedGeneration);
 }
 
+bool taaHistoryNeedsWarmup(const TaaHistoryBuffer& history) {
+    return history.isReady() && history.needsWarmup();
+}
+
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
+    return history.isReady() && history.hasValidHistory();
+}
+
+TaaHistoryReuseRejectReason classifyTaaHistoryReuseReject(const TaaHistoryBuffer& history, u32 observedGeneration) {
+    if (!history.isReady()) {
+        return TaaHistoryReuseRejectReason::HistoryNotReady;
+    }
+    if (!history.hasValidHistory()) {
+        return TaaHistoryReuseRejectReason::HistoryNotWarmed;
+    }
+    if (history.isHistoryStale(observedGeneration)) {
+        return TaaHistoryReuseRejectReason::StaleGeneration;
+    }
+    return TaaHistoryReuseRejectReason::None;
+}
+
+bool taaHistoryReusePreflight(const TaaHistoryBuffer& history, u32 observedGeneration,
+                               TaaHistoryReuseRejectReason* reason) {
+    const TaaHistoryReuseRejectReason reject = classifyTaaHistoryReuseReject(history, observedGeneration);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == TaaHistoryReuseRejectReason::None;
+}
+
 bool TaaHistoryBuffer::canReuseHistory() const {
     return taaHistoryCanReuse(*this);
 }

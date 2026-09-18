@@ -122,6 +122,18 @@ bool TaaPass::isObservedHistoryGenerationCurrent(u32 observedGeneration) const {
     return !m_history.isHistoryStale(observedGeneration);
 }
 
+bool TaaPass::isJitterSyncedToFrameIndex(u32 frameIndex) const {
+    return m_jitter.isSyncedToFrameIndex(frameIndex);
+}
+
+bool TaaPass::preflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseRejectReason* reason) const {
+    return taaHistoryReusePreflight(m_history, observedGeneration, reason);
+}
+
+bool TaaPass::preflightResolveBlend(const TaaResolveDesc& desc, TaaBlendPreflightRejectReason* reason) const {
+    return taaResolveBlendPreflight(desc, m_history, reason);
+}
+
 bool TaaPass::resolveFrame(const TaaResolveDesc& desc, void* cudaStream) {
     if (!m_stats.ready) {
         m_stats.message = "TAA pass not ready";

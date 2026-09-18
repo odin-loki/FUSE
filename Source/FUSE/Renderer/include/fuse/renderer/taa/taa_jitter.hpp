@@ -19,6 +19,8 @@ struct TaaJitterLayout {
     static bool jitterIndexInRange(u32 index, u32 sequenceLength);
     /// True when NDC jitter can be produced for viewport and sequence (B5.9 deepen).
     static bool canProduceNdcOffset(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// True when two NDC jitter offsets are approximately equal (B5.9 deepen).
+    static bool ndcOffsetsMatch(const fuse::math::Vec2& a, const fuse::math::Vec2& b, f32 epsilon = 1e-6f);
     /// Returns the jitter cycle length after validation (0 when invalid).
     static u32 sequencePeriod(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Maps a monotonic frame counter into the active Halton slot.
@@ -47,6 +49,8 @@ public:
     void reset();
     /// Align jitter state to a monotonic frame counter (wraps with sequence period).
     void syncToFrameIndex(u32 frameIndex);
+    /// True when monotonic frame counter and slot index match `frameIndex` (B5.9 deepen).
+    bool isSyncedToFrameIndex(u32 frameIndex) const;
 
     u32 index() const { return m_index; }
     /// True when the jitter sequence can advance (B5.9 deepen).
@@ -65,5 +69,12 @@ private:
     u32 m_index = 0;
     u32 m_monotonicFrame = 0;
 };
+
+/// Classify why jitter sync preflight would reject (B5.9 deepen).
+TaaJitterSyncRejectReason classifyTaaJitterSyncReject(const TaaJitter& jitter, u32 frameIndex, u32 width,
+                                                      u32 height);
+/// Preflight jitter sync — returns true when jitter matches `frameIndex` for the viewport (B5.9 deepen).
+bool taaJitterSyncPreflight(const TaaJitter& jitter, u32 frameIndex, u32 width, u32 height,
+                             TaaJitterSyncRejectReason* reason = nullptr);
 
 } // namespace fuse::renderer
