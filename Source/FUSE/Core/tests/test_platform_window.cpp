@@ -804,6 +804,203 @@ void testEventPumpCoalesceZeroDimensionGuard() {
     expectEq(pump.coalescedResizeCount(), 0u, "invalid resize does not increment coalesce count");
 }
 
+void testEventPumpTryPeekEventOfTypeEmptyQueueGuard() {
+    fuse::platform::EventPump pump;
+
+    fuse::platform::PlatformEvent peeked;
+    peeked.type = fuse::platform::PlatformEventType::Quit;
+    expectTrue(!pump.tryPeekEventOfType(fuse::platform::PlatformEventType::WindowResized, peeked),
+               "tryPeekEventOfType returns false on empty queue");
+    expectTrue(peeked.type == fuse::platform::PlatformEventType::None,
+               "tryPeekEventOfType resets outEvent on empty queue");
+}
+
+void testEventPumpTryPeekEventOfTypeTypeMismatchGuard() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    pump.pushWindowFocusLost(window);
+    expectEq(pump.pendingEventCount(), 1u, "focus lost queued before type peek");
+
+    fuse::platform::PlatformEvent peeked;
+    peeked.type = fuse::platform::PlatformEventType::Quit;
+    expectTrue(!pump.tryPeekEventOfType(fuse::platform::PlatformEventType::WindowResized, peeked),
+               "tryPeekEventOfType returns false when front type mismatches");
+    expectTrue(peeked.type == fuse::platform::PlatformEventType::None,
+               "tryPeekEventOfType resets outEvent on type mismatch");
+    expectEq(pump.pendingEventCount(), 1u, "type mismatch peek does not remove queued event");
+}
+
+void testEventPumpTryPeekEventOfTypeMatchesFront() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    window.resize(800, 600, &pump);
+    fuse::platform::PlatformEvent peeked;
+    expectTrue(pump.tryPeekEventOfType(fuse::platform::PlatformEventType::WindowResized, peeked),
+               "tryPeekEventOfType succeeds when front matches");
+    expectEq(peeked.width, 800u, "tryPeekEventOfType copies resize width");
+    expectEq(peeked.height, 600u, "tryPeekEventOfType copies resize height");
+    expectTrue(peeked.window == &window, "tryPeekEventOfType copies window pointer");
+    expectEq(pump.pendingEventCount(), 1u, "tryPeekEventOfType does not pop");
+}
+
+void testEventPumpPeekAfterCoalesceUpdatesFront() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    window.resize(800, 600, &pump);
+    window.resize(1280, 720, &pump);
+    expectEq(pump.coalescedResizeCount(), 1u, "one resize coalesced before peek");
+
+    fuse::platform::PlatformEvent peeked;
+    expectTrue(pump.peekEvent(peeked), "peek succeeds after coalesce");
+    expectEq(peeked.width, 1280u, "peek sees coalesced width");
+    expectEq(peeked.height, 720u, "peek sees coalesced height");
+
+    fuse::platform::PlatformEventType type = fuse::platform::PlatformEventType::None;
+    expectTrue(pump.peekEventType(type), "peekEventType succeeds after coalesce");
+    expectTrue(type == fuse::platform::PlatformEventType::WindowResized,
+               "peekEventType sees resize after coalesce");
+
+    fuse::platform::PlatformEvent typed;
+    expectTrue(pump.tryPeekEventOfType(fuse::platform::PlatformEventType::WindowResized, typed),
+               "tryPeekEventOfType succeeds after coalesce");
+    expectEq(typed.width, 1280u, "tryPeekEventOfType sees coalesced width");
+}
+
+void testEventPumpHasPendingEventOfTypeForEmptyQueueGuard() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    expectTrue(!pump.hasPendingEventOfTypeFor(window,
+                                              fuse::platform::PlatformEventType::WindowResized),
+               "empty queue has no pending resize for window");
+    expectTrue(!pump.hasPendingEventOfTypeFor(window,
+                                              fuse::platform::PlatformEventType::WindowFocusLost),
+               "empty queue has no pending focus lost for window");
+}
+
+void testEventPumpHasPendingEventOfTypeForMixedQueue() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window left;
+    fuse::platform::Window right;
+
+    left.resize(800, 600, &pump);
+    pump.pushWindowFocusLost(left);
+    right.resize(1024, 768, &pump);
+
+    expectTrue(pump.hasPendingEventOfTypeFor(left,
+                                             fuse::platform::PlatformEventType::WindowResized),
+               "left resize detected by window+type guard");
+    expectTrue(pump.hasPendingEventOfTypeFor(left,
+                                             fuse::platform::PlatformEventType::WindowFocusLost),
+               "left focus lost detected by window+type guard");
+    expectTrue(!pump.hasPendingEventOfTypeFor(right,
+                                              fuse::platform::PlatformEventType::WindowFocusLost),
+               "right window has no focus lost pending");
+    expectTrue(pump.hasPendingEventOfTypeFor(right,
+                                             fuse::platform::PlatformEventType::WindowResized),
+               "right resize detected by window+type guard");
+}
+
+void testEventPumpPeekEventTypeMatchesPeekEvent() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    pump.pushWindowFocusGained(window);
+
+    fuse::platform::PlatformEvent peeked;
+    fuse::platform::PlatformEventType type = fuse::platform::PlatformEventType::None;
+    expectTrue(pump.peekEvent(peeked), "peekEvent succeeds with pending focus gained");
+    expectTrue(pump.peekEventType(type), "peekEventType succeeds with pending focus gained");
+    expectTrue(peeked.type == type, "peekEvent and peekEventType agree on front type");
+    expectEq(pump.pendingEventCount(), 1u, "peek pair does not remove queued event");
+}
+
+void testEventPumpHasCoalescedResizeFor() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window left;
+    fuse::platform::Window right;
+
+    expectTrue(!pump.hasCoalescedResizeFor(left), "fresh pump has no coalesce for left");
+    expectTrue(!pump.hasCoalescedResizeFor(right), "fresh pump has no coalesce for right");
+
+    left.resize(800, 600, &pump);
+    left.resize(1024, 768, &pump);
+    expectTrue(pump.hasCoalescedResizeFor(left), "coalesce record targets left window");
+    expectTrue(!pump.hasCoalescedResizeFor(right), "coalesce record does not target right window");
+
+    right.resize(640, 480, &pump);
+    right.resize(800, 600, &pump);
+    expectTrue(pump.hasCoalescedResizeFor(right), "latest coalesce record targets right window");
+    expectTrue(!pump.hasCoalescedResizeFor(left),
+               "latest coalesce record no longer targets left window");
+}
+
+void testEventPumpPushSyntheticNoneTypeGuard() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    fuse::platform::PlatformEvent noneEvent;
+    noneEvent.type = fuse::platform::PlatformEventType::None;
+    noneEvent.window = &window;
+    pump.pushSyntheticEvent(noneEvent);
+
+    expectTrue(!pump.hasPendingEvents(), "None-type synthetic event is ignored");
+    expectEq(pump.pendingEventCount(), 0u, "None-type synthetic event leaves queue empty");
+}
+
+void testEventPumpClearSyntheticEventsEmptyQueueGuard() {
+    fuse::platform::EventPump pump;
+
+    expectTrue(!pump.hasPendingEvents(), "fresh pump queue is empty before clear");
+    pump.clearSyntheticEvents();
+    expectEq(pump.pendingEventCount(), 0u, "clear on empty queue is a no-op");
+    expectTrue(!pump.hasPendingEvents(), "clear on empty queue leaves queue empty");
+}
+
+void testEventPumpIntrospectionAfterRingWrap() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    for (fuse::u32 index = 0; index < 25u; ++index) {
+        fuse::platform::PlatformEvent event;
+        event.type = fuse::platform::PlatformEventType::WindowFocusGained;
+        event.window = &window;
+        pump.pushSyntheticEvent(event);
+    }
+
+    for (fuse::u32 index = 0; index < 15u; ++index) {
+        fuse::platform::PlatformEvent drained;
+        expectTrue(pump.pollEvent(drained), "drain events to advance head");
+    }
+
+    for (fuse::u32 index = 0; index < 15u; ++index) {
+        fuse::platform::PlatformEvent event;
+        event.type = fuse::platform::PlatformEventType::WindowFocusGained;
+        event.window = &window;
+        pump.pushSyntheticEvent(event);
+    }
+
+    pump.pushWindowResized(window);
+
+    expectEq(pump.pendingEventCount(), 26u, "wrapped queue retains pending count");
+    expectEq(pump.countPendingEventsOfType(fuse::platform::PlatformEventType::WindowFocusGained), 25u,
+             "wrapped queue type count correct");
+    expectTrue(pump.hasPendingEventOfType(fuse::platform::PlatformEventType::WindowResized),
+               "wrapped queue detects resize type");
+
+    fuse::platform::PlatformEventType frontType = fuse::platform::PlatformEventType::None;
+    expectTrue(pump.peekEventType(frontType), "peekEventType succeeds after ring wrap");
+    expectTrue(frontType == fuse::platform::PlatformEventType::WindowFocusGained,
+               "peekEventType sees fifo head after ring wrap");
+
+    fuse::platform::PlatformEvent typed;
+    expectTrue(!pump.tryPeekEventOfType(fuse::platform::PlatformEventType::WindowResized, typed),
+               "tryPeekEventOfType false when front type differs after wrap");
+}
+
 void testMobileProfileStillUsesWindowStub() {
     const fuse::platform::PlatformProfile previous =
         fuse::platform::setActiveProfileOverride(fuse::platform::PlatformProfile::Mobile);
@@ -861,6 +1058,17 @@ int main() {
     testEventPumpFrontEventTypeIs();
     testEventPumpWouldCoalesceResize();
     testEventPumpCoalesceZeroDimensionGuard();
+    testEventPumpTryPeekEventOfTypeEmptyQueueGuard();
+    testEventPumpTryPeekEventOfTypeTypeMismatchGuard();
+    testEventPumpTryPeekEventOfTypeMatchesFront();
+    testEventPumpPeekAfterCoalesceUpdatesFront();
+    testEventPumpHasPendingEventOfTypeForEmptyQueueGuard();
+    testEventPumpHasPendingEventOfTypeForMixedQueue();
+    testEventPumpPeekEventTypeMatchesPeekEvent();
+    testEventPumpHasCoalescedResizeFor();
+    testEventPumpPushSyntheticNoneTypeGuard();
+    testEventPumpClearSyntheticEventsEmptyQueueGuard();
+    testEventPumpIntrospectionAfterRingWrap();
     testMobileProfileStillUsesWindowStub();
 
     if (g_failures == 0) {
