@@ -1106,6 +1106,82 @@ void testCascadeShadowSkipReasonBlocking() {
                "empty light skip reason is blocking");
     expectTrue(cascadeShadowSkipReasonIsBlocking(CascadeShadowSkipReason::EmptyCameraDepthRange),
                "empty camera skip reason is blocking");
+    expectTrue(cascadeShadowSkipReasonIsBlocking(CascadeShadowSkipReason::EmptyCascadeFrustum),
+               "empty frustum skip reason is blocking");
+    expectTrue(cascadeShadowSkipReasonIsBlocking(CascadeShadowSkipReason::DegenerateCascadeRange),
+               "degenerate range skip reason is blocking");
+}
+
+void testSplitBypassGuards() {
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+
+    ShadowCameraParams camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+
+    expectTrue(!CascadeLightSpaceLayout::shouldBypassEmptyLightDirection({0.f, -1.f, 0.f}),
+               "valid light direction does not bypass via empty-light guard");
+    expectTrue(CascadeLightSpaceLayout::shouldBypassEmptyLightDirection({0.f, 0.f, 0.f}),
+               "empty light direction bypasses via split guard");
+
+    expectTrue(!CascadeLightSpaceLayout::shouldBypassEmptyCameraDepthRange(camera),
+               "valid camera depth range does not bypass via empty-camera guard");
+
+    ShadowCameraParams invertedCamera = camera;
+    invertedCamera.nearPlane = 80.f;
+    invertedCamera.farPlane = 10.f;
+    expectTrue(CascadedShadowMapLayout::isEmptyCameraDepthRange(invertedCamera),
+               "inverted camera flagged empty before split bypass guard");
+    expectTrue(CascadeLightSpaceLayout::shouldBypassEmptyCameraDepthRange(invertedCamera),
+               "empty camera depth range bypasses via split guard");
+    expectTrue(!CascadeLightSpaceLayout::shouldBypassEmptyLightDirection({0.f, -1.f, 0.f}) &&
+                   CascadeLightSpaceLayout::shouldBypassEmptyCameraDepthRange(invertedCamera),
+               "split bypass guards compose independently");
+}
+
+void testSplitSkipGuardHelpers() {
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+
+    CascadedShadowMapDesc desc{};
+    ShadowCameraParams camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+
+    const fuse::math::Vec3 sunDirection{0.f, -1.f, 0.f};
+    expectTrue(!CascadeLightSpaceLayout::shouldSkipEmptyLightDirection(sunDirection),
+               "valid light direction passes empty-light skip guard");
+    expectTrue(CascadeLightSpaceLayout::shouldSkipEmptyLightDirection({0.f, 0.f, 0.f}),
+               "zero light direction fails empty-light skip guard");
+
+    expectTrue(!CascadeLightSpaceLayout::shouldSkipEmptyCameraDepthRange(camera),
+               "valid camera passes empty-camera skip guard");
+    ShadowCameraParams invertedCamera = camera;
+    invertedCamera.nearPlane = 50.f;
+    invertedCamera.farPlane = 10.f;
+    expectTrue(CascadeLightSpaceLayout::shouldSkipEmptyCameraDepthRange(invertedCamera),
+               "inverted camera fails empty-camera skip guard");
+
+    expectTrue(!CascadeLightSpaceLayout::shouldSkipEmptyCascadeFrustum(0u, desc, camera),
+               "default cascade passes empty-frustum skip guard");
+    CascadedShadowMapDesc flatDesc{};
+    flatDesc.cascadeSplits[0] = 0.5f;
+    flatDesc.cascadeSplits[1] = 0.5f;
+    flatDesc.cascadeSplits[2] = 1.f;
+    flatDesc.cascadeSplits[3] = 1.f;
+    expectTrue(CascadeLightSpaceLayout::shouldSkipEmptyCascadeFrustum(1u, flatDesc, camera),
+               "zero-thickness cascade fails empty-frustum skip guard");
+
+    expectTrue(!CascadeLightSpaceLayout::shouldSkipDegenerateCascadeRange(0u, desc, camera),
+               "default cascade passes degenerate-range skip guard");
+    expectTrue(CascadeLightSpaceLayout::shouldSkipDegenerateCascadeRange(0u, desc, invertedCamera),
+               "inverted camera fails degenerate-range skip guard");
+    expectTrue(CascadeLightSpaceLayout::shouldSkipCascadeShadowBuild(1u, flatDesc, camera, sunDirection),
+               "split skip guards compose into shouldSkipCascadeShadowBuild");
 }
 
 void testClassifyCascadeShadowSkipPriority() {
@@ -1426,6 +1502,8 @@ int main() {
     testPopulateCascadeSplitsClamped();
     testCascadeShadowSkipReasonHelpers();
     testCascadeShadowSkipReasonBlocking();
+    testSplitBypassGuards();
+    testSplitSkipGuardHelpers();
     testClassifyCascadeShadowSkipPriority();
     testCascadeShadowBypassGuards();
     testCountSkippedCascadeShadowBuilds();
