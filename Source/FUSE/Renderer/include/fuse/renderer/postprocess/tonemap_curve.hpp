@@ -55,6 +55,8 @@ TonemapCurveEndpoints evaluate_tonemap_curve_endpoints(const TonemapCurveParams&
 /// Display-range span between evaluated white and black anchors (B5.10 deepen).
 f32 tonemap_curve_output_span(const TonemapCurveParams& params, f32 white_input = 1.f);
 bool tonemap_curve_preserves_black(const TonemapCurveParams& params, f32 epsilon = 1e-4f);
+/// True when Filmic curve knobs are usable (B5.10 deepen).
+bool tonemap_curve_filmic_params_valid(const TonemapCurveParams& params);
 /// True when Reinhard curve knobs are usable (B5.10 deepen).
 bool tonemap_curve_reinhard_params_valid(const ReinhardCurveParams& params);
 /// True when ACES curve knobs are usable (B5.10 deepen).
@@ -81,6 +83,9 @@ bool tonemap_curve_mid_grey_in_display_range(const TonemapCurveParams& params, f
                                              f32 epsilon = 1e-4f);
 /// True when evaluated curve output span is positive (B5.10 deepen).
 bool tonemap_curve_output_span_valid(const TonemapCurveParams& params, f32 white_input = 1.f, f32 epsilon = 1e-4f);
+/// True when mid-grey and endpoint anchors stay in display range (B5.10 deepen).
+bool tonemap_curve_outputs_in_display_range(const TonemapCurveParams& params, f32 white_input = 1.f,
+                                            f32 epsilon = 1e-4f);
 fuse::math::Vec3 apply_exposure_ev(const fuse::math::Vec3& hdr, f32 ev_stops);
 
 f32 evaluate_reinhard_curve_channel(f32 channel, const ReinhardCurveParams& params);
