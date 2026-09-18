@@ -4,6 +4,10 @@
 
 namespace fuse::audio {
 
+bool has_reverb_zones(const ReverbZoneParams* zones, u32 zone_count) {
+    return zones != nullptr && zone_count > 0;
+}
+
 bool listener_in_reverb_zone(const Vec3& listener, const ReverbZoneParams& zone) {
     return zone.bounds.contains(listener);
 }
@@ -11,7 +15,7 @@ bool listener_in_reverb_zone(const Vec3& listener, const ReverbZoneParams& zone)
 ReverbZoneBlend blend_reverb_zones(const Vec3& listener, const ReverbZoneParams* zones,
                                    u32 zone_count) {
     ReverbZoneBlend blend;
-    if (zones == nullptr || zone_count == 0) {
+    if (!has_reverb_zones(zones, zone_count)) {
         return blend;
     }
 
@@ -38,7 +42,7 @@ ReverbZoneBlend blend_reverb_zones(const Vec3& listener, const ReverbZoneParams*
 
 u32 count_listener_reverb_zones(const Vec3& listener, const ReverbZoneParams* zones,
                                 u32 zone_count) {
-    if (zones == nullptr || zone_count == 0) {
+    if (!has_reverb_zones(zones, zone_count)) {
         return 0;
     }
 
@@ -80,6 +84,9 @@ bool should_apply_reverb_wet_mix(const ReverbZoneBlend& blend) {
 
 float compute_effective_wet_mix(const Vec3& listener, const ReverbZoneParams* zones,
                                 u32 zone_count) {
+    if (!has_reverb_zones(zones, zone_count)) {
+        return 0.f;
+    }
     return compute_effective_wet_mix(blend_reverb_zones(listener, zones, zone_count));
 }
 
@@ -92,6 +99,25 @@ float blend_dry_wet_sample(float dry, float wet, float wet_mix) {
         return wet;
     }
     return dry * compute_dry_mix(mix) + wet * mix;
+}
+
+float compute_effective_send_gain(const ReverbZoneBlend& blend) {
+    if (!has_active_reverb_blend(blend)) {
+        return 0.f;
+    }
+    return clamp_wet_mix(blend.send_level);
+}
+
+float blend_reverb_sample(float dry, float wet, const Vec3& listener, const ReverbZoneParams* zones,
+                          u32 zone_count) {
+    if (!has_reverb_zones(zones, zone_count)) {
+        return dry;
+    }
+    const ReverbZoneBlend blend = blend_reverb_zones(listener, zones, zone_count);
+    if (!should_apply_reverb_wet_mix(blend)) {
+        return dry;
+    }
+    return blend_dry_wet_sample(dry, wet, compute_effective_wet_mix(blend));
 }
 
 } // namespace fuse::audio
