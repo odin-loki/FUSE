@@ -67,6 +67,18 @@ enum class TaaResolveSkipReason : u8 {
     StaleHistoryGeneration,
 };
 
+/// Per-reason resolve skip breakdown for preflight bookkeeping (B5.9 deepen).
+struct TaaResolveSkipCounts {
+    u32 total = 0;
+    u32 historyNotReady = 0;
+    u32 invalidDimensions = 0;
+    u32 dimensionMismatch = 0;
+    u32 missingSurfaces = 0;
+    u32 missingVelocityBuffer = 0;
+    u32 missingDepthBuffer = 0;
+    u32 staleHistoryGeneration = 0;
+};
+
 /// Clamp TAA tuning knobs to safe ranges for the CPU resolve stub.
 TAAParams clampTaaParams(const TAAParams& raw);
 /// True when `velocity_rejection` is active and resolve must receive a velocity surface.
@@ -75,6 +87,12 @@ bool taaResolveRequiresVelocity(const TAAParams& params);
 bool taaResolveRequiresDepth(const TAAParams& params);
 /// Blend weight applied this frame — 1.0 on first warm-up frame, else clamped `blend_factor`.
 f32 computeEffectiveBlend(bool firstFrame, const TAAParams& params);
+/// Clamp an effective blend weight to [0, 1].
+f32 clampEffectiveBlend(f32 effectiveBlend);
+/// History accumulation weight — complement of the current-frame effective blend.
+f32 computeHistoryBlendWeight(f32 effectiveBlend);
+/// History accumulation weight from frame state and params.
+f32 computeHistoryBlendWeight(bool firstFrame, const TAAParams& params);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {
@@ -101,5 +119,9 @@ const char* taaResolveSkipReasonLabel(TaaResolveSkipReason reason);
 bool taaResolveDimensionsValid(u32 width, u32 height);
 /// True when resolve would bail before history update (`skip_reason != None`).
 bool taaResolveSkipReasonIsBlocking(TaaResolveSkipReason reason);
+/// Increment `counts` for one classified skip reason (no-op when `None`).
+void accumulateTaaResolveSkipReason(TaaResolveSkipCounts& counts, TaaResolveSkipReason reason);
+/// Build a single-reason skip breakdown from one classified reason.
+TaaResolveSkipCounts taaResolveSkipCountsFromReason(TaaResolveSkipReason reason);
 
 } // namespace fuse::renderer

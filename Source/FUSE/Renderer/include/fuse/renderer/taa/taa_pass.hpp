@@ -51,6 +51,10 @@ public:
     bool matchesDimensions(u32 width, u32 height) const;
     bool needsHistoryWarmup() const { return m_history.needsWarmup(); }
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
+    /// True when history targets are warm enough for temporal reuse.
+    bool canReadHistory() const { return m_history.canReadForResolve(); }
+    /// Effective current-frame blend for the next resolve (1.0 while history is cold).
+    f32 effectiveBlendForNextResolve() const;
     /// Preflight resolve without mutating history (delegates to `TaaResolve::wouldSkip`).
     bool wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason = nullptr) const;
     /// Stamp `observed_history_generation` from pass history when still at the no-guard sentinel.

@@ -19,6 +19,10 @@ bool taaResolveSkipReasonIsBlocking(TaaResolveSkipReason reason) {
     return reason != TaaResolveSkipReason::None;
 }
 
+bool taaResolveSurfacesComplete(const TaaResolveDesc& desc) {
+    return desc.surfaces.current_frame != nullptr && desc.surfaces.output != nullptr;
+}
+
 bool taaResolveDimensionsMatch(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     return history.matchesDimensions(desc.width, desc.height);
 }
@@ -43,7 +47,7 @@ TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const Ta
     if (!taaResolveDimensionsMatch(desc, history)) {
         return TaaResolveSkipReason::DimensionMismatch;
     }
-    if (desc.surfaces.current_frame == nullptr || desc.surfaces.output == nullptr) {
+    if (!taaResolveSurfacesComplete(desc)) {
         return TaaResolveSkipReason::MissingSurfaces;
     }
 
@@ -80,11 +84,86 @@ bool taaResolveRequiresDepth(const TAAParams& params) {
     return params.depth_rejection > 0.f;
 }
 
+bool taaResolveRejectionSurfacesComplete(const TaaResolveDesc& desc) {
+    if (!desc.enforce_rejection_surfaces) {
+        return true;
+    }
+
+    const TAAParams params = clampTaaParams(desc.params);
+    if (taaResolveRequiresVelocity(params) && desc.surfaces.velocity_buffer == nullptr) {
+        return false;
+    }
+    if (taaResolveRequiresDepth(params) && desc.surfaces.depth_buffer == nullptr) {
+        return false;
+    }
+    return true;
+}
+
+bool shouldSkipTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                          TaaResolveSkipReason* reason) {
+    const TaaResolveSkipReason skip = classifyTaaResolveSkip(desc, history);
+    if (reason != nullptr) {
+        *reason = skip;
+    }
+    return taaResolveSkipReasonIsBlocking(skip);
+}
+
 f32 computeEffectiveBlend(bool firstFrame, const TAAParams& params) {
     if (firstFrame) {
         return 1.f;
     }
     return clampTaaParams(params).blend_factor;
+}
+
+f32 clampEffectiveBlend(f32 effectiveBlend) {
+    return clampF32(effectiveBlend, 0.f, 1.f);
+}
+
+f32 computeHistoryBlendWeight(f32 effectiveBlend) {
+    return 1.f - clampEffectiveBlend(effectiveBlend);
+}
+
+f32 computeHistoryBlendWeight(bool firstFrame, const TAAParams& params) {
+    return computeHistoryBlendWeight(computeEffectiveBlend(firstFrame, params));
+}
+
+void accumulateTaaResolveSkipReason(TaaResolveSkipCounts& counts, TaaResolveSkipReason reason) {
+    if (!taaResolveSkipReasonIsBlocking(reason)) {
+        return;
+    }
+
+    ++counts.total;
+    switch (reason) {
+    case TaaResolveSkipReason::HistoryNotReady:
+        ++counts.historyNotReady;
+        break;
+    case TaaResolveSkipReason::InvalidDimensions:
+        ++counts.invalidDimensions;
+        break;
+    case TaaResolveSkipReason::DimensionMismatch:
+        ++counts.dimensionMismatch;
+        break;
+    case TaaResolveSkipReason::MissingSurfaces:
+        ++counts.missingSurfaces;
+        break;
+    case TaaResolveSkipReason::MissingVelocityBuffer:
+        ++counts.missingVelocityBuffer;
+        break;
+    case TaaResolveSkipReason::MissingDepthBuffer:
+        ++counts.missingDepthBuffer;
+        break;
+    case TaaResolveSkipReason::StaleHistoryGeneration:
+        ++counts.staleHistoryGeneration;
+        break;
+    default:
+        break;
+    }
+}
+
+TaaResolveSkipCounts taaResolveSkipCountsFromReason(TaaResolveSkipReason reason) {
+    TaaResolveSkipCounts counts{};
+    accumulateTaaResolveSkipReason(counts, reason);
+    return counts;
 }
 
 const char* taaResolveSkipReasonLabel(TaaResolveSkipReason reason) {
@@ -116,11 +195,7 @@ void TaaResolve::resetBookkeeping() {
 
 bool TaaResolve::wouldSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                            TaaResolveSkipReason* reason) const {
-    const TaaResolveSkipReason skip = classifyTaaResolveSkip(desc, history);
-    if (reason != nullptr) {
-        *reason = skip;
-    }
-    return taaResolveSkipReasonIsBlocking(skip);
+    return shouldSkipTaaResolve(desc, history, reason);
 }
 
 bool TaaResolve::resolve(const TaaResolveDesc& desc, TaaHistoryBuffer& history, void* /*cudaStream*/) {
