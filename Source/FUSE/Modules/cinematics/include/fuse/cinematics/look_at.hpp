@@ -48,6 +48,15 @@ public:
         return false;
     }
 
+    /// Resolve entity world position, or return `fallback` when lookup fails.
+    Vec3 resolve_or(const std::string& target_id, const Vec3& fallback) const {
+        Vec3 out{};
+        if (try_resolve(target_id, out)) {
+            return out;
+        }
+        return fallback;
+    }
+
 private:
     ResolveFn resolve_fn_;
     TryResolveFn try_resolve_fn_;
@@ -56,5 +65,17 @@ private:
 /// Resolve a keyframe's look-at to world space (fixed point or entity stub).
 /// Falls back to `keyframe.look_at` when entity mode is unset or the resolver cannot resolve.
 Vec3 resolve_look_at_world(const CameraKeyframe& keyframe, const LookAtResolver& resolver);
+
+/// Resolve entity look-at, or return `fallback` when entity mode is inactive or unresolved.
+Vec3 resolve_look_at_or_fallback(const CameraKeyframe& keyframe,
+                                 const LookAtResolver& resolver,
+                                 const Vec3& fallback);
+
+/// Unique non-empty entity ids referenced by `keyframes` (editor resolver wiring stub).
+std::vector<std::string> collect_camera_look_at_target_ids(
+    const std::vector<CameraKeyframe>& keyframes);
+
+/// Count keyframes that bind look-at to an entity id.
+std::size_t camera_keyframe_entity_look_at_count(const std::vector<CameraKeyframe>& keyframes);
 
 } // namespace fuse::cinematics

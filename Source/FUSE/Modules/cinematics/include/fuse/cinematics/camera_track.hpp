@@ -34,6 +34,9 @@ struct CameraKeyframe {
 /// Default vertical FOV (degrees) for empty tracks and unset keyframes.
 constexpr float kDefaultCameraFovDeg = 60.f;
 
+/// Default look-at offset distance when synthesizing a pose from position alone.
+constexpr float kDefaultCameraLookAtDistance = 10.f;
+
 struct CameraSample {
     Vec3 position{};
     Vec3 look_at{};
@@ -56,8 +59,18 @@ float camera_look_distance(const Vec3& position, const Vec3& look_at);
 /// Canonical pose when a track or keyframe list has no entries.
 CameraSample default_camera_sample();
 
+/// Pose with `position` and a -Z look-at offset (editor placeholder stub).
+CameraSample default_camera_sample_at_position(const Vec3& position,
+                                               float look_distance = kDefaultCameraLookAtDistance);
+
 /// True when `keyframes` has no entries (editor / rail guard).
 bool camera_keyframes_empty(const std::vector<CameraKeyframe>& keyframes);
+
+/// True when `fov_deg` is within `kMinFovDeg`..`kMaxFovDeg` (import / editor guard).
+bool camera_fov_in_valid_range(float fov_deg);
+
+/// Convenience inverse of `camera_fov_in_valid_range`.
+bool camera_fov_needs_clamp(float fov_deg);
 
 /// True when `keyframe` binds look-at to an entity id (requires `LookAtResolver` stub).
 bool camera_keyframe_uses_entity_look_at(const CameraKeyframe& keyframe);
@@ -67,6 +80,12 @@ bool camera_track_needs_look_at_resolver(const std::vector<CameraKeyframe>& keyf
 
 /// Clamp FOV and leave other fields untouched (editor / import guard).
 void normalize_camera_keyframe(CameraKeyframe& keyframe);
+
+/// Clamp FOV on every keyframe in `keyframes` (batch import guard).
+void normalize_camera_keyframes(std::vector<CameraKeyframe>& keyframes);
+
+/// Clamp FOV on a sampled pose without changing aim or roll (output guard).
+void sanitize_camera_sample(CameraSample& sample);
 
 /// Sample a single keyframe without interpolation (hold pose stub).
 CameraSample sample_camera_keyframe(const CameraKeyframe& keyframe,
@@ -102,6 +121,12 @@ Vec3 sample_camera_look_at(const std::vector<CameraKeyframe>& keyframes,
                            EaseMode ease = EaseMode::Linear,
                            const LookAtResolver* look_at_resolver = nullptr);
 
+/// Sample all camera rails into one pose without a `CameraTrack` wrapper.
+CameraSample sample_camera_pose(const std::vector<CameraKeyframe>& keyframes,
+                                TimelineMs time_ms,
+                                EaseMode ease = EaseMode::Linear,
+                                const LookAtResolver* look_at_resolver = nullptr);
+
 /// Camera animation lane (Verve VCameraTrack / VSceneObjectTrack without Torque bridge).
 class CameraTrack : public Track {
 public:
@@ -118,6 +143,7 @@ public:
     void add_keyframe(const CameraKeyframe& keyframe);
     void clear_keyframes();
     void sort_keyframes();
+    void normalize_keyframes();
 
     bool empty() const { return keyframes_.empty(); }
 
