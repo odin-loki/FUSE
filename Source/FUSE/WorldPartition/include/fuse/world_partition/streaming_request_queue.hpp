@@ -83,6 +83,8 @@ public:
     [[nodiscard]] u32 max_pending_submits() const { return m_max_pending_submits; }
     [[nodiscard]] u32 pending_enqueue_count() const;
     [[nodiscard]] u32 pending_submit_count() const;
+    /// True when a pending request exists for coord+kind.
+    [[nodiscard]] bool has_pending_for(GridCoord coord, StreamingRequestKind kind) const;
     /// Pending priority for coord/kind, or -1 when not enqueued.
     [[nodiscard]] f32 pending_priority_for(GridCoord coord, StreamingRequestKind kind) const;
 
@@ -142,6 +144,35 @@ private:
         return false;
     }
     return try_dequeue_pending(queue, out);
+}
+
+/// Pending-queue guard: true when a pending request exists for coord+kind.
+[[nodiscard]] inline bool has_pending_for(const StreamingRequestQueue& queue, GridCoord coord,
+                                          StreamingRequestKind kind) {
+    return queue.has_pending_for(coord, kind);
+}
+
+/// Guard: pending priority for coord/kind, or -1 when coord is invalid or not enqueued.
+[[nodiscard]] inline f32 pending_priority_for_guarded(const StreamingRequestQueue& queue, GridCoord coord,
+                                                       StreamingRequestKind kind) {
+    if (!is_valid_grid_coord(coord)) {
+        return -1.f;
+    }
+    return queue.pending_priority_for(coord, kind);
+}
+
+/// Flush helper: submits pending batch only when the highest-priority request meets `min_priority`.
+[[nodiscard]] inline u32 try_flush_pending_if(StreamingRequestQueue& queue, u32 budget, f32 min_priority,
+                                               StreamingWorkFn work) {
+    if (!queue.has_pending_enqueue() || work == nullptr || budget == 0u) {
+        return 0u;
+    }
+
+    StreamingRequest peeked{};
+    if (!queue.peek_pending(peeked) || peeked.priority < min_priority) {
+        return 0u;
+    }
+    return queue.flush(budget, work);
 }
 
 } // namespace fuse::world_partition

@@ -213,6 +213,37 @@ inline u32 ResidencySet::find_index_(GridCoord coord) const {
     return try_remove_resident(set, coord);
 }
 
+/// True when focus distance is non-negative (stub validation).
+[[nodiscard]] inline bool is_valid_focus_distance(f32 focus_distance) {
+    return focus_distance >= 0.f;
+}
+
+/// Guard: returns stored focus distance, or -1 when coord is invalid or not resident.
+[[nodiscard]] inline f32 focus_distance_for_guarded(const ResidencySet& set, GridCoord coord) {
+    if (!is_valid_grid_coord(coord) || !set.contains(coord)) {
+        return -1.f;
+    }
+    return set.focus_distance_for(coord);
+}
+
+/// Guard: updates focus distance; returns false when coord is invalid, not resident, or distance invalid.
+[[nodiscard]] inline bool update_focus_distance_guarded(ResidencySet& set, GridCoord coord,
+                                                          f32 focus_distance) {
+    if (!is_valid_grid_coord(coord) || !is_valid_focus_distance(focus_distance)) {
+        return false;
+    }
+    return set.update_focus_distance(coord, focus_distance);
+}
+
+/// Guard: collect eviction candidates; returns empty when the set has no candidates.
+[[nodiscard]] inline std::vector<GridCoord> collect_eviction_candidates_guarded(const ResidencySet& set,
+                                                                                 u32 max_count = 0) {
+    if (!set.has_eviction_candidate()) {
+        return {};
+    }
+    return set.collect_eviction_candidates(max_count);
+}
+
 /// Pick the farthest coord from `candidates` eligible for budget eviction under `policy`.
 /// Returns `kInvalidGridCoord` and leaves `out_score` at -1 when no candidate qualifies.
 template <typename ScoreFn>
