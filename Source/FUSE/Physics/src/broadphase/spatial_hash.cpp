@@ -20,6 +20,10 @@ const char* candidatePairRejectReasonName(CandidatePairRejectReason reason) {
         return "SelfPair";
     case CandidatePairRejectReason::OutOfRangeBody:
         return "OutOfRangeBody";
+    case CandidatePairRejectReason::AabbSeparated:
+        return "AabbSeparated";
+    case CandidatePairRejectReason::BufferFull:
+        return "BufferFull";
     }
     return "Unknown";
 }
@@ -245,7 +249,7 @@ void runBroadphaseIntoBufferInternal(
     bool use2D,
     PairBufferSoA& buffer) {
     buffer.clear();
-    if (bodies.count() == 0 || shapes.count() == 0) {
+    if (canSkipBroadphase(bodies, shapes)) {
         return;
     }
 
@@ -332,7 +336,7 @@ void refineBroadphasePairsParallelImpl(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     PairBufferSoA& buffer) {
-    if (buffer.canSkipSoAIteration() || !buffer.hasValidPairs() || bodies.count() == 0 || shapes.count() == 0) {
+    if (buffer.canSkipRefine() || !buffer.hasValidPairs() || canSkipBroadphase(bodies, shapes)) {
         return;
     }
 
@@ -357,6 +361,33 @@ void refineBroadphasePairsParallelImpl(
 }
 
 } // namespace
+
+CandidatePairRejectReason candidatePairRejectReason(
+    const CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    const CandidatePairRejectReason indexReason = candidatePairRejectReason(pair, bodies.count());
+    if (indexReason != CandidatePairRejectReason::None) {
+        return indexReason;
+    }
+
+    const vec3 posA = bodies.positions[pair.bodyA];
+    const vec3 posB = bodies.positions[pair.bodyB];
+    f32 radiusA = 0.5f;
+    f32 radiusB = 0.5f;
+    for (u32 shapeIndex = 0; shapeIndex < shapes.count(); ++shapeIndex) {
+        if (shapes.bodyIndices[shapeIndex] == pair.bodyA) {
+            radiusA = shapes.params[shapeIndex].x;
+        }
+        if (shapes.bodyIndices[shapeIndex] == pair.bodyB) {
+            radiusB = shapes.params[shapeIndex].x;
+        }
+    }
+    if (!sphereAabbOverlap(posA, radiusA, posB, radiusB)) {
+        return CandidatePairRejectReason::AabbSeparated;
+    }
+    return CandidatePairRejectReason::None;
+}
 
 void refineBroadphasePairsParallel(
     const RigidBodySoA& bodies,

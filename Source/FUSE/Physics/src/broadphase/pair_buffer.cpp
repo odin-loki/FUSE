@@ -29,9 +29,24 @@ void PairBufferSoA::clear() {
     activeCount = 0;
     pairSlotCount = 0;
     droppedCount = 0;
+    lastRejectReason = CandidatePairRejectReason::None;
     bodyA.resize(0);
     bodyB.resize(0);
     validFlags.resize(0);
+}
+
+bool PairBufferSoA::hasInvalidSlots() const {
+    if (canSkipSoAIteration()) {
+        return false;
+    }
+
+    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+    for (u32 slot = 0; slot < scanCount; ++slot) {
+        if (validFlags[slot] == 0u) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void PairBufferSoA::preparePairSlots(u32 slotCount) {
@@ -44,7 +59,13 @@ void PairBufferSoA::preparePairSlots(u32 slotCount) {
 }
 
 void PairBufferSoA::writeSlot(u32 slot, u32 idxA, u32 idxB) {
-    if (slot >= pairSlotCount || !isValidCandidatePair(idxA, idxB)) {
+    if (slot >= pairSlotCount) {
+        return;
+    }
+
+    const CandidatePairRejectReason rejectReason = candidatePairRejectReason(idxA, idxB);
+    if (rejectReason != CandidatePairRejectReason::None) {
+        lastRejectReason = rejectReason;
         return;
     }
 
@@ -73,12 +94,15 @@ bool PairBufferSoA::canApplyMaxCapacityClamp() const {
 }
 
 bool PairBufferSoA::push(u32 idxA, u32 idxB) {
-    if (!isValidCandidatePair(idxA, idxB)) {
+    const CandidatePairRejectReason rejectReason = candidatePairRejectReason(idxA, idxB);
+    if (rejectReason != CandidatePairRejectReason::None) {
+        lastRejectReason = rejectReason;
         return false;
     }
 
     if (isFull()) {
         ++droppedCount;
+        lastRejectReason = CandidatePairRejectReason::BufferFull;
         return false;
     }
 
@@ -88,6 +112,7 @@ bool PairBufferSoA::push(u32 idxA, u32 idxB) {
     validFlags.push_back(1u);
     ++activeCount;
     pairSlotCount = activeCount;
+    lastRejectReason = CandidatePairRejectReason::None;
     return true;
 }
 

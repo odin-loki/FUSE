@@ -28,6 +28,8 @@ enum class CandidatePairRejectReason : u8 {
     None = 0,
     SelfPair,
     OutOfRangeBody,
+    AabbSeparated,
+    BufferFull,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.2 deepen).
@@ -69,6 +71,26 @@ FUSE_PHYSICS_INLINE bool isEmptyCandidatePair(const CandidatePair& pair) {
 
 FUSE_PHYSICS_INLINE bool isValidCandidatePair(const CandidatePair& pair, u32 bodyCount = 0u) {
     return isValidCandidatePair(pair.bodyA, pair.bodyB, bodyCount);
+}
+
+/// Convenience inverse of `candidatePairRejectReason` — true when the pair must be skipped.
+FUSE_PHYSICS_INLINE bool isRejectedCandidatePair(u32 bodyA, u32 bodyB, u32 bodyCount = 0u) {
+    return candidatePairRejectReason(bodyA, bodyB, bodyCount) != CandidatePairRejectReason::None;
+}
+
+FUSE_PHYSICS_INLINE bool isRejectedCandidatePair(const CandidatePair& pair, u32 bodyCount = 0u) {
+    return isRejectedCandidatePair(pair.bodyA, pair.bodyB, bodyCount);
+}
+
+/// Returns the first reject reason including AABB refine (sphere-expanded AABB overlap stub).
+CandidatePairRejectReason candidatePairRejectReason(
+    const CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Empty-set guard: true when broadphase has no bodies or shapes to process.
+FUSE_PHYSICS_INLINE bool canSkipBroadphase(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes) {
+    return bodies.count() == 0u || shapes.count() == 0u;
 }
 
 /// Clamp cell size to a positive stub default (broadphase occupancy guard).
@@ -156,6 +178,39 @@ FUSE_PHYSICS_INLINE u32 estimateCellOccupancyCount(const CellRange2& range) {
     return static_cast<u32>(span.x) * static_cast<u32>(span.y);
 }
 
+/// True when any per-axis span exceeds `maxSpanPerAxis` before clamping (0 = unlimited).
+FUSE_PHYSICS_INLINE bool cellSpanExceedsClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+    if (maxSpanPerAxis == 0u || isEmptyCellRange(range)) {
+        return false;
+    }
+    const ivec3 span = cellSpanPerAxis(range);
+    return span.x > static_cast<s32>(maxSpanPerAxis) || span.y > static_cast<s32>(maxSpanPerAxis) ||
+           span.z > static_cast<s32>(maxSpanPerAxis);
+}
+
+FUSE_PHYSICS_INLINE bool cellSpanExceedsClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+    if (maxSpanPerAxis == 0u || isEmptyCellRange(range)) {
+        return false;
+    }
+    const ivec2 span = cellSpanPerAxis(range);
+    return span.x > static_cast<s32>(maxSpanPerAxis) || span.y > static_cast<s32>(maxSpanPerAxis);
+}
+
+/// Cell-capacity guard: true when occupancy exceeds `maxCells` (0 = unlimited).
+FUSE_PHYSICS_INLINE bool exceedsCellOccupancyBudget(const CellRange3& range, u32 maxCells) {
+    if (maxCells == 0u) {
+        return false;
+    }
+    return estimateCellOccupancyCount(range) > maxCells;
+}
+
+FUSE_PHYSICS_INLINE bool exceedsCellOccupancyBudget(const CellRange2& range, u32 maxCells) {
+    if (maxCells == 0u) {
+        return false;
+    }
+    return estimateCellOccupancyCount(range) > maxCells;
+}
+
 /// Clamp broadphase params to safe stub defaults (positive cell size, at least one bucket).
 FUSE_PHYSICS_INLINE SpatialHashParams normalizeSpatialHashParams(SpatialHashParams params) {
     params.cellSize = clampCellSize(params.cellSize);
@@ -199,6 +254,15 @@ FUSE_PHYSICS_INLINE CellRange2 clampCellRange2(CellRange2 range, u32 maxSpanPerA
     range.minCell.y = clampCellCoord(range.minCell.y, center.y - halfSpan, center.y + halfSpan);
     range.maxCell.y = clampCellCoord(range.maxCell.y, center.y - halfSpan, center.y + halfSpan);
     return range;
+}
+
+/// Occupancy count after per-axis span clamp (budgeting stub).
+FUSE_PHYSICS_INLINE u32 estimateCellOccupancyCountAfterClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+    return estimateCellOccupancyCount(clampCellRange3(range, maxSpanPerAxis));
+}
+
+FUSE_PHYSICS_INLINE u32 estimateCellOccupancyCountAfterClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+    return estimateCellOccupancyCount(clampCellRange2(range, maxSpanPerAxis));
 }
 
 FUSE_PHYSICS_INLINE u32 spatialHash(s32 cx, s32 cy, s32 cz, u32 tableSize) {

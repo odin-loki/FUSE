@@ -17,6 +17,7 @@ struct PairBufferSoA {
     u32 pairSlotCount = 0;
     u32 maxCapacity = 0;
     u32 droppedCount = 0;
+    CandidatePairRejectReason lastRejectReason = CandidatePairRejectReason::None;
 
     bool isEmpty() const { return activeCount == 0u; }
     bool hasValidPairs() const { return activeCount > 0u; }
@@ -28,12 +29,16 @@ struct PairBufferSoA {
     bool canApplyMaxCapacityClamp() const;
     /// True when both dense and slot storage are empty (safe to skip SoA scans).
     bool canSkipSoAIteration() const { return activeCount == 0u && pairSlotCount == 0u; }
+    /// True when AABB refine can be skipped (no pairs to test).
+    bool canSkipRefine() const { return canSkipSoAIteration(); }
     /// True when at most one canonical pair is present (dedupe is a no-op).
     bool canSkipDedupe() const { return canSkipSoAIteration() || activeCount <= 1u; }
     /// True when slot storage has no invalid flags (compact is a no-op).
     bool canSkipCompaction() const;
     /// Count valid flags in prepared slot storage before compaction.
     u32 countValidSlots() const;
+    /// True when any prepared slot has been invalidated.
+    bool hasInvalidSlots() const;
     bool slotIsValid(u32 slot) const;
 
     void reserve(u32 capacity);
