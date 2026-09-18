@@ -47,7 +47,7 @@ void ToiBufferSoA::preparePairSlots(u32 pairCount) {
 }
 
 void ToiBufferSoA::writeSlot(u32 slot, const TOIResult& result) {
-    if (slot >= pairSlotCount || !result.valid) {
+    if (slot >= pairSlotCount || !result.valid || !isToiInWindow(result.toi)) {
         return;
     }
 
@@ -70,8 +70,41 @@ bool ToiBufferSoA::slotIsValid(u32 slot) const {
     return slot < validFlags.size() && validFlags[slot] != 0u;
 }
 
+u32 ToiBufferSoA::countValidSlots() const {
+    if (canSkipSoAIteration()) {
+        return 0u;
+    }
+
+    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+    u32 validCount = 0u;
+    for (u32 slot = 0; slot < scanCount; ++slot) {
+        if (validFlags[slot] != 0u) {
+            ++validCount;
+        }
+    }
+    return validCount;
+}
+
+bool ToiBufferSoA::canSkipCompaction() const {
+    if (canSkipSoAIteration()) {
+        return true;
+    }
+
+    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+    if (scanCount == 0u) {
+        return true;
+    }
+
+    for (u32 slot = 0; slot < scanCount; ++slot) {
+        if (validFlags[slot] == 0u) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool ToiBufferSoA::push(const TOIResult& result) {
-    if (!result.valid) {
+    if (!result.valid || !isToiInWindow(result.toi)) {
         return false;
     }
 
@@ -91,7 +124,7 @@ bool ToiBufferSoA::push(const TOIResult& result) {
 }
 
 void ToiBufferSoA::sortByToi() {
-    if (canSkipSoAIteration() || activeCount <= 1u || isSortedByToi()) {
+    if (canSkipSort()) {
         return;
     }
 
@@ -138,15 +171,14 @@ u32 ToiBufferSoA::compact() {
         return activeCount;
     }
 
-    u32 validCount = 0u;
-    for (u32 i = 0u; i < pairSlotCount; ++i) {
-        if (validFlags[i] != 0u) {
-            ++validCount;
-        }
-    }
-
+    const u32 validCount = countValidSlots();
     if (validCount == 0u) {
         activeCount = 0u;
+        return activeCount;
+    }
+
+    if (canSkipCompaction()) {
+        activeCount = pairSlotCount;
         return activeCount;
     }
 
