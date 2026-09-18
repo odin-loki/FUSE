@@ -102,6 +102,14 @@ void MaterialEditorPanel::refreshPanel() {
     m_previewDirty = false;
 }
 
+bool MaterialEditorPanel::tryRefreshPanel() {
+    if (!canRefreshPanel()) {
+        return false;
+    }
+    refreshPanel();
+    return true;
+}
+
 bool MaterialEditorPanel::setRoughness(f32 roughness, CommandStack& cmds) {
     if (shouldSkipPropertyEdit()) {
         return false;
