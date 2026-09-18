@@ -46,12 +46,33 @@ void testHrtfPanPathResolution() {
 void testShouldUseHrtfIrAlias() {
     const fuse::audio::HrtfIrStub empty{};
     expectTrue(!fuse::audio::should_use_hrtf_ir(empty), "empty IR cannot use convolution");
+    expectTrue(fuse::audio::is_empty_hrtf_ir(empty), "default IR stub is empty");
+    expectTrue(fuse::audio::is_empty_hrtf_ir(empty) == !fuse::audio::has_hrtf_ir(empty),
+               "is_empty_hrtf_ir is inverse of has_hrtf_ir");
 
     const float samples[] = {0.5f};
     const fuse::audio::HrtfIrStub valid{samples, 1};
     expectTrue(fuse::audio::should_use_hrtf_ir(valid), "valid IR enables convolution path");
     expectTrue(fuse::audio::should_use_hrtf_ir(valid) == fuse::audio::has_hrtf_ir(valid),
                "should_use_hrtf_ir matches has_hrtf_ir");
+    expectTrue(!fuse::audio::is_empty_hrtf_ir(valid), "valid IR is not empty");
+
+    const fuse::audio::HrtfIrStub null_with_length{nullptr, 4};
+    expectTrue(fuse::audio::is_empty_hrtf_ir(null_with_length),
+               "null samples with non-zero length remain empty");
+}
+
+void testHrtfPanPathBypassGuards() {
+    expectTrue(fuse::audio::is_hrtf_pan_bypassed(fuse::audio::HrtfPanPath::Bypass),
+               "Bypass path is bypassed");
+    expectTrue(!fuse::audio::is_hrtf_pan_bypassed(fuse::audio::HrtfPanPath::IldItdStub),
+               "ILD stub path is active");
+    expectTrue(!fuse::audio::is_hrtf_pan_bypassed(fuse::audio::HrtfPanPath::Convolution),
+               "convolution path is active");
+    expectTrue(fuse::audio::should_skip_hrtf_pan_path(fuse::audio::HrtfPanPath::Bypass),
+               "should_skip mirrors is_hrtf_pan_bypassed for Bypass");
+    expectTrue(!fuse::audio::should_skip_hrtf_pan_path(fuse::audio::HrtfPanPath::IldItdStub),
+               "ILD stub path is not skipped");
 }
 
 void testItdAndElevationHelpers() {
@@ -177,6 +198,63 @@ void testPanPathForPathHelper() {
         fuse::audio::compute_binaural_pan_gains(offset);
     expectNear(stub.left, direct.left, 1e-5f, "for_path ILD stub matches direct gains");
     expectNear(stub.right, direct.right, 1e-5f, "for_path ILD stub matches direct gains");
+
+    const fuse::audio::BinauralPanGains conv =
+        fuse::audio::compute_binaural_pan_gains_for_path(fuse::audio::HrtfPanPath::Convolution,
+                                                         offset);
+    expectNear(conv.left, direct.left, 1e-5f,
+               "for_path convolution stub matches ILD until IR wired");
+    expectNear(conv.right, direct.right, 1e-5f,
+               "for_path convolution stub matches ILD until IR wired");
+}
+
+void testAttenuationCouplingEarlyOut() {
+    fuse::audio::BinauralPanGains wide =
+        fuse::audio::compute_binaural_pan_gains(fuse::audio::Vec3{5.f, 0.f, 0.f});
+    const float wide_left = wide.left;
+    const float wide_right = wide.right;
+
+    expectTrue(fuse::audio::is_fully_spatial_hrtf_blend(1.f),
+               "unity spatial blend is fully spatial");
+    expectTrue(fuse::audio::should_skip_hrtf_attenuation_coupling(1.f, 1.f),
+               "unity distance and occlusion skip coupling");
+    expectTrue(!fuse::audio::should_skip_hrtf_attenuation_coupling(0.2f, 1.f),
+               "attenuated distance still couples");
+
+    fuse::audio::apply_hrtf_attenuation_coupling(wide, 1.f, 1.f);
+    expectNear(wide.left, wide_left, 1e-5f, "early-out coupling preserves left gain");
+    expectNear(wide.right, wide_right, 1e-5f, "early-out coupling preserves right gain");
+
+    const fuse::audio::BinauralPanGains coupled =
+        fuse::audio::compute_binaural_pan_gains_coupled(true, fuse::audio::Vec3{5.f, 0.f, 0.f},
+                                                        1.f, 1.f);
+    expectNear(coupled.left, wide_left, 1e-5f,
+               "coupled helper early-outs when fully spatial");
+    expectNear(coupled.right, wide_right, 1e-5f,
+               "coupled helper early-outs when fully spatial");
+}
+
+void testBinauralGainHelpers() {
+    const fuse::audio::BinauralPanGains pan =
+        fuse::audio::compute_binaural_pan_gains(fuse::audio::Vec3{5.f, 0.f, 0.f});
+    const fuse::audio::BinauralStereoSample out =
+        fuse::audio::apply_binaural_pan_gains(1.f, pan, 0.5f);
+    expectNear(out.left, 0.5f * pan.left, 1e-5f, "apply_binaural_pan_gains scales left");
+    expectNear(out.right, 0.5f * pan.right, 1e-5f, "apply_binaural_pan_gains scales right");
+
+    float left = 0.1f;
+    float right = 0.2f;
+    fuse::audio::accumulate_binaural_pan(1.f, pan, 0.5f, left, right);
+    expectNear(left, 0.1f + 0.5f * pan.left, 1e-5f, "accumulate_binaural_pan adds left");
+    expectNear(right, 0.2f + 0.5f * pan.right, 1e-5f, "accumulate_binaural_pan adds right");
+
+    fuse::audio::BinauralPanGains scaled = pan;
+    fuse::audio::scale_binaural_pan_gains(scaled, 0.5f);
+    const fuse::audio::BinauralPanGains copied =
+        fuse::audio::scale_binaural_pan_gains_copy(pan, 0.5f);
+    expectNear(scaled.left, copied.left, 1e-5f, "scale copy matches in-place scale");
+    expectNear(scaled.right, copied.right, 1e-5f, "scale copy matches in-place scale");
+    expectNear(scaled.itd_seconds, pan.itd_seconds, 1e-5f, "scale preserves ITD");
 }
 
 } // namespace
@@ -191,6 +269,9 @@ int main() {
     testLerpBinauralPanGains();
     testCoupledPanOneShot();
     testPanPathForPathHelper();
+    testHrtfPanPathBypassGuards();
+    testAttenuationCouplingEarlyOut();
+    testBinauralGainHelpers();
     fuse::core::shutdown();
 
     if (g_failures == 0) {
