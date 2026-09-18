@@ -35,6 +35,14 @@ bool is_audible_bus_gain(float gain) {
     return !is_near_zero_bus_gain(gain);
 }
 
+bool is_near_zero_listener_master_volume(float volume) {
+    return is_near_zero_bus_gain(clamp_listener_master_volume(volume));
+}
+
+bool should_skip_listener_master_mix(float listener_master_volume) {
+    return is_near_zero_listener_master_volume(listener_master_volume);
+}
+
 bool is_valid_audio_bus(AudioBus bus) {
     u32 index = 0;
     return try_bus_index(bus, index);
@@ -177,6 +185,72 @@ void AudioBusMixer::clear_bus_solo() {
     }
 }
 
+void AudioBusMixer::clear_bus_mute() {
+    for (u32 i = 0; i < static_cast<u32>(AudioBus::Count); ++i) {
+        m_muted[i] = false;
+    }
+}
+
+bool AudioBusMixer::is_any_ancestor_bus_muted(AudioBus bus) const {
+    if (!is_valid_audio_bus(bus) || bus == AudioBus::Master) {
+        return false;
+    }
+
+    AudioBus current = bus_parent(bus);
+    u32 hops = 0;
+    while (current != AudioBus::Master) {
+        if (bus_muted(current)) {
+            return true;
+        }
+        current = bus_parent(current);
+        ++hops;
+        if (hops >= static_cast<u32>(AudioBus::Count)) {
+            break;
+        }
+    }
+    return false;
+}
+
+bool AudioBusMixer::is_bus_parent_chain_muted(AudioBus bus) const {
+    if (!is_valid_audio_bus(bus) || bus == AudioBus::Master) {
+        return false;
+    }
+    return bus_muted(bus) || is_any_ancestor_bus_muted(bus);
+}
+
+bool AudioBusMixer::is_any_ancestor_bus_soloed(AudioBus bus) const {
+    if (!is_valid_audio_bus(bus) || bus == AudioBus::Master) {
+        return false;
+    }
+
+    AudioBus current = bus_parent(bus);
+    u32 hops = 0;
+    while (current != AudioBus::Master) {
+        if (bus_soloed(current)) {
+            return true;
+        }
+        current = bus_parent(current);
+        ++hops;
+        if (hops >= static_cast<u32>(AudioBus::Count)) {
+            break;
+        }
+    }
+    return false;
+}
+
+bool AudioBusMixer::is_bus_solo_audible(AudioBus bus) const {
+    if (!any_bus_soloed()) {
+        return true;
+    }
+    if (bus == AudioBus::Master) {
+        return true;
+    }
+    if (!is_valid_audio_bus(bus)) {
+        return false;
+    }
+    return bus_soloed(bus) || is_any_ancestor_bus_soloed(bus);
+}
+
 bool AudioBusMixer::is_bus_solo_silenced(AudioBus bus) const {
     if (!any_bus_soloed()) {
         return false;
@@ -187,14 +261,14 @@ bool AudioBusMixer::is_bus_solo_silenced(AudioBus bus) const {
     if (!is_valid_audio_bus(bus)) {
         return false;
     }
-    return !bus_soloed(bus);
+    return !is_bus_solo_audible(bus);
 }
 
 bool AudioBusMixer::should_apply_bus_gain(AudioBus bus) const {
     if (!is_valid_audio_bus(bus)) {
         return false;
     }
-    if (bus != AudioBus::Master && bus_muted(bus)) {
+    if (bus != AudioBus::Master && is_bus_parent_chain_muted(bus)) {
         return false;
     }
     return is_audible_bus_gain(effective_gain(bus));
@@ -239,6 +313,9 @@ float compute_mix_output_gain(const AudioBusMixer& mixer, AudioBus bus,
     if (is_empty_audio_bus(bus)) {
         return 0.f;
     }
+    if (should_skip_listener_master_mix(listener_master_volume)) {
+        return 0.f;
+    }
     if (should_skip_bus_mix(mixer, bus)) {
         return 0.f;
     }
@@ -247,6 +324,10 @@ float compute_mix_output_gain(const AudioBusMixer& mixer, AudioBus bus,
 
 bool should_skip_bus_mix(const AudioBusMixer& mixer, AudioBus bus) {
     return !mixer.should_mix_bus(bus);
+}
+
+bool is_bus_parent_chain_muted(const AudioBusMixer& mixer, AudioBus bus) {
+    return mixer.is_bus_parent_chain_muted(bus);
 }
 
 bool is_bus_muted(const AudioBusMixer& mixer, AudioBus bus) {
