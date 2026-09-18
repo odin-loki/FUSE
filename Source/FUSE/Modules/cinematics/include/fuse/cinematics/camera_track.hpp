@@ -78,6 +78,10 @@ float effective_camera_fov(float field_of_view);
 /// True when a fixed-point keyframe omits an explicit look-at point.
 bool camera_keyframe_look_at_unset(const CameraKeyframe& keyframe);
 
+/// Fallback world aim when entity resolve fails or fixed / entity aim was omitted.
+Vec3 camera_keyframe_look_at_fallback(const CameraKeyframe& keyframe,
+                                      float default_distance = kDefaultCameraLookAtDistance);
+
 /// Apply unset FOV / fixed look-at defaults, then clamp FOV (import / editor guard).
 void apply_camera_keyframe_defaults(CameraKeyframe& keyframe);
 
@@ -87,8 +91,15 @@ CameraKeyframe make_default_camera_keyframe(TimelineMs time_ms = 0);
 /// True when `keyframe` binds look-at to an entity id (requires `LookAtResolver` stub).
 bool camera_keyframe_uses_entity_look_at(const CameraKeyframe& keyframe);
 
+/// True when `keyframe` requires a `LookAtResolver` at sample time.
+bool camera_keyframe_needs_look_at_resolver(const CameraKeyframe& keyframe);
+
 /// True when any keyframe in `keyframes` requires a `LookAtResolver` at sample time.
 bool camera_track_needs_look_at_resolver(const std::vector<CameraKeyframe>& keyframes);
+
+/// True when entity look-at keyframes need a resolver but `look_at_resolver` is null or cannot resolve.
+bool camera_track_missing_look_at_resolver(const std::vector<CameraKeyframe>& keyframes,
+                                           const LookAtResolver* look_at_resolver);
 
 /// Clamp FOV and leave other fields untouched (editor / import guard).
 void normalize_camera_keyframe(CameraKeyframe& keyframe);
@@ -96,6 +107,13 @@ void normalize_camera_keyframe(CameraKeyframe& keyframe);
 /// Sample a single keyframe without interpolation (hold pose stub).
 CameraSample sample_camera_keyframe(const CameraKeyframe& keyframe,
                                     const LookAtResolver* look_at_resolver = nullptr);
+
+/// Sample a keyframe after applying unset FOV / look-at defaults (import / editor guard).
+CameraSample sample_camera_keyframe_with_defaults(const CameraKeyframe& keyframe,
+                                                  const LookAtResolver* look_at_resolver = nullptr);
+
+/// True when `sample` matches `default_camera_sample()` (empty-track guard).
+bool camera_sample_is_default(const CameraSample& sample);
 
 /// Default world look-at point `distance` units along -Z from `position`.
 Vec3 default_camera_look_at_for_position(const Vec3& position, float distance = 10.f);
@@ -119,6 +137,9 @@ Vec3 sample_camera_position(const std::vector<CameraKeyframe>& keyframes,
 float sample_camera_field_of_view(const std::vector<CameraKeyframe>& keyframes,
                                   TimelineMs time_ms,
                                   EaseMode ease = EaseMode::Linear);
+float sample_camera_field_of_view_with_defaults(const std::vector<CameraKeyframe>& keyframes,
+                                                TimelineMs time_ms,
+                                                EaseMode ease = EaseMode::Linear);
 float sample_camera_roll(const std::vector<CameraKeyframe>& keyframes,
                          TimelineMs time_ms,
                          EaseMode ease = EaseMode::Linear);
@@ -126,6 +147,10 @@ Vec3 sample_camera_look_at(const std::vector<CameraKeyframe>& keyframes,
                            TimelineMs time_ms,
                            EaseMode ease = EaseMode::Linear,
                            const LookAtResolver* look_at_resolver = nullptr);
+Vec3 sample_camera_look_at_with_defaults(const std::vector<CameraKeyframe>& keyframes,
+                                         TimelineMs time_ms,
+                                         EaseMode ease = EaseMode::Linear,
+                                         const LookAtResolver* look_at_resolver = nullptr);
 
 /// Camera animation lane (Verve VCameraTrack / VSceneObjectTrack without Torque bridge).
 class CameraTrack : public Track {
@@ -153,6 +178,9 @@ public:
 
     /// True when any keyframe binds look-at to an entity id.
     bool needs_look_at_resolver() const;
+
+    /// True when entity look-at keyframes need a resolver but `look_at_resolver` is null or cannot resolve.
+    bool missing_look_at_resolver(const LookAtResolver* look_at_resolver) const;
 
     /// Earliest through latest keyframe time (requires sorted keyframes for tight bounds).
     TrackSpan keyframe_span() const;

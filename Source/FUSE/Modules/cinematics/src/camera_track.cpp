@@ -91,6 +91,35 @@ float sample_fov_rail(const std::vector<CameraKeyframe>& keyframes, TimelineMs t
     return previous ? clamp_fov(previous->field_of_view) : kDefaultCameraFovDeg;
 }
 
+float sample_fov_rail_with_defaults(const std::vector<CameraKeyframe>& keyframes,
+                                    TimelineMs time_ms,
+                                    EaseMode ease) {
+    const CameraKeyframe* previous = nullptr;
+    for (const CameraKeyframe& keyframe : keyframes) {
+        if (time_ms < keyframe.time_ms) {
+            if (!previous) {
+                return effective_camera_fov(keyframe.field_of_view);
+            }
+
+            const TimelineMs span = keyframe.time_ms - previous->time_ms;
+            if (span <= 0) {
+                return effective_camera_fov(keyframe.field_of_view);
+            }
+
+            const float t = apply_ease(ease,
+                                       static_cast<float>(time_ms - previous->time_ms)
+                                           / static_cast<float>(span));
+            return lerp_fov(effective_camera_fov(previous->field_of_view),
+                            effective_camera_fov(keyframe.field_of_view),
+                            t);
+        }
+
+        previous = &keyframe;
+    }
+
+    return previous ? effective_camera_fov(previous->field_of_view) : kDefaultCameraFovDeg;
+}
+
 Vec3 sample_look_at_rail(const std::vector<CameraKeyframe>& keyframes,
                          TimelineMs time_ms,
                          EaseMode ease,
@@ -122,6 +151,39 @@ Vec3 sample_look_at_rail(const std::vector<CameraKeyframe>& keyframes,
     }
 
     return previous ? resolve_look_at_world(*previous, resolver) : Vec3{};
+}
+
+Vec3 sample_look_at_rail_with_defaults(const std::vector<CameraKeyframe>& keyframes,
+                                       TimelineMs time_ms,
+                                       EaseMode ease,
+                                       const LookAtResolver* look_at_resolver) {
+    LookAtResolver fallback;
+    const LookAtResolver& resolver = look_at_resolver ? *look_at_resolver : fallback;
+
+    const CameraKeyframe* previous = nullptr;
+    for (const CameraKeyframe& keyframe : keyframes) {
+        if (time_ms < keyframe.time_ms) {
+            const Vec3 current = resolve_look_at_world_or_default(keyframe, resolver);
+            if (!previous) {
+                return current;
+            }
+
+            const TimelineMs span = keyframe.time_ms - previous->time_ms;
+            if (span <= 0) {
+                return current;
+            }
+
+            const float t = apply_ease(ease,
+                                       static_cast<float>(time_ms - previous->time_ms)
+                                           / static_cast<float>(span));
+            const Vec3 from = resolve_look_at_world_or_default(*previous, resolver);
+            return lerp_vec3(from, current, t);
+        }
+
+        previous = &keyframe;
+    }
+
+    return previous ? resolve_look_at_world_or_default(*previous, resolver) : Vec3{};
 }
 
 constexpr float kLookDirectionEpsilon = 1e-6f;
@@ -175,6 +237,19 @@ bool camera_keyframe_look_at_unset(const CameraKeyframe& keyframe) {
     return keyframe.look_at.x == 0.f && keyframe.look_at.y == 0.f && keyframe.look_at.z == 0.f;
 }
 
+Vec3 camera_keyframe_look_at_fallback(const CameraKeyframe& keyframe, float default_distance) {
+    if (camera_keyframe_look_at_unset(keyframe)) {
+        return default_camera_look_at_for_position(keyframe.position, default_distance);
+    }
+
+    if (keyframe.look_at_mode == CameraLookAtMode::TargetEntity && keyframe.look_at.x == 0.f
+        && keyframe.look_at.y == 0.f && keyframe.look_at.z == 0.f) {
+        return default_camera_look_at_for_position(keyframe.position, default_distance);
+    }
+
+    return keyframe.look_at;
+}
+
 void apply_camera_keyframe_defaults(CameraKeyframe& keyframe) {
     if (camera_keyframe_fov_unset(keyframe.field_of_view)) {
         keyframe.field_of_view = kDefaultCameraFovDeg;
@@ -199,12 +274,39 @@ bool camera_keyframe_uses_entity_look_at(const CameraKeyframe& keyframe) {
     return keyframe.look_at_mode == CameraLookAtMode::TargetEntity && !keyframe.look_at_target_id.empty();
 }
 
+bool camera_keyframe_needs_look_at_resolver(const CameraKeyframe& keyframe) {
+    return camera_keyframe_uses_entity_look_at(keyframe);
+}
+
 bool camera_track_needs_look_at_resolver(const std::vector<CameraKeyframe>& keyframes) {
     for (const CameraKeyframe& keyframe : keyframes) {
         if (camera_keyframe_uses_entity_look_at(keyframe)) {
             return true;
         }
     }
+    return false;
+}
+
+bool camera_track_missing_look_at_resolver(const std::vector<CameraKeyframe>& keyframes,
+                                         const LookAtResolver* look_at_resolver) {
+    if (!camera_track_needs_look_at_resolver(keyframes)) {
+        return false;
+    }
+
+    if (!look_at_resolver || !look_at_resolver->can_resolve()) {
+        return true;
+    }
+
+    for (const CameraKeyframe& keyframe : keyframes) {
+        if (!camera_keyframe_uses_entity_look_at(keyframe)) {
+            continue;
+        }
+
+        if (!look_at_resolver_has_target(*look_at_resolver, keyframe.look_at_target_id)) {
+            return true;
+        }
+    }
+
     return false;
 }
 
@@ -223,6 +325,27 @@ CameraSample sample_camera_keyframe(const CameraKeyframe& keyframe,
     sample.field_of_view = clamp_fov(keyframe.field_of_view);
     sample.roll_deg = keyframe.roll_deg;
     return sample;
+}
+
+CameraSample sample_camera_keyframe_with_defaults(const CameraKeyframe& keyframe,
+                                                  const LookAtResolver* look_at_resolver) {
+    LookAtResolver fallback;
+    const LookAtResolver& resolver = look_at_resolver ? *look_at_resolver : fallback;
+
+    CameraSample sample;
+    sample.position = keyframe.position;
+    sample.look_at = resolve_look_at_world_or_default(keyframe, resolver);
+    sample.field_of_view = effective_camera_fov(keyframe.field_of_view);
+    sample.roll_deg = keyframe.roll_deg;
+    return sample;
+}
+
+bool camera_sample_is_default(const CameraSample& sample) {
+    const CameraSample defaults = default_camera_sample();
+    return sample.position.x == defaults.position.x && sample.position.y == defaults.position.y
+           && sample.position.z == defaults.position.z && sample.look_at.x == defaults.look_at.x
+           && sample.look_at.y == defaults.look_at.y && sample.look_at.z == defaults.look_at.z
+           && sample.field_of_view == defaults.field_of_view && sample.roll_deg == defaults.roll_deg;
 }
 
 Vec3 default_camera_look_at_for_position(const Vec3& position, float distance) {
@@ -279,6 +402,15 @@ float sample_camera_field_of_view(const std::vector<CameraKeyframe>& keyframes,
     return sample_fov_rail(keyframes, time_ms, ease);
 }
 
+float sample_camera_field_of_view_with_defaults(const std::vector<CameraKeyframe>& keyframes,
+                                                TimelineMs time_ms,
+                                                EaseMode ease) {
+    if (keyframes.empty()) {
+        return kDefaultCameraFovDeg;
+    }
+    return sample_fov_rail_with_defaults(keyframes, time_ms, ease);
+}
+
 float sample_camera_roll(const std::vector<CameraKeyframe>& keyframes,
                          TimelineMs time_ms,
                          EaseMode ease) {
@@ -296,6 +428,16 @@ Vec3 sample_camera_look_at(const std::vector<CameraKeyframe>& keyframes,
         return {};
     }
     return sample_look_at_rail(keyframes, time_ms, ease, look_at_resolver);
+}
+
+Vec3 sample_camera_look_at_with_defaults(const std::vector<CameraKeyframe>& keyframes,
+                                       TimelineMs time_ms,
+                                       EaseMode ease,
+                                       const LookAtResolver* look_at_resolver) {
+    if (keyframes.empty()) {
+        return {};
+    }
+    return sample_look_at_rail_with_defaults(keyframes, time_ms, ease, look_at_resolver);
 }
 
 Vec3 camera_look_direction(const Vec3& position, const Vec3& look_at) {
@@ -334,6 +476,10 @@ void CameraTrack::add_keyframe(const CameraKeyframe& keyframe) {
 
 bool CameraTrack::needs_look_at_resolver() const {
     return camera_track_needs_look_at_resolver(keyframes_);
+}
+
+bool CameraTrack::missing_look_at_resolver(const LookAtResolver* look_at_resolver) const {
+    return camera_track_missing_look_at_resolver(keyframes_, look_at_resolver);
 }
 
 bool CameraTrack::covers_time(TimelineMs time_ms) const {

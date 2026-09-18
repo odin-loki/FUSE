@@ -683,6 +683,150 @@ void testLookAtResolverResolveOr() {
     expectNear(hero.x, 10.f, 0.001f, "resolve_or returns resolved target");
 }
 
+void testLookAtResolverHasTarget() {
+    fuse::cinematics::LookAtResolver empty;
+    expectTrue(!fuse::cinematics::look_at_resolver_has_target(empty, "hero"),
+               "unwired resolver has no targets");
+
+    fuse::cinematics::LookAtResolver resolver;
+    resolver.set_try_resolve_fn([](const std::string& target_id, fuse::cinematics::Vec3& out) -> bool {
+        if (target_id == "hero") {
+            out = {1.f, 2.f, 3.f};
+            return true;
+        }
+        return false;
+    });
+
+    expectTrue(fuse::cinematics::look_at_resolver_has_target(resolver, "hero"), "try_resolve finds hero");
+    expectTrue(!fuse::cinematics::look_at_resolver_has_target(resolver, "missing"),
+               "try_resolve misses unknown target");
+    expectTrue(!fuse::cinematics::look_at_resolver_has_target(resolver, ""), "empty target id is not resolvable");
+}
+
+void testSampleCameraKeyframeWithDefaults() {
+    fuse::cinematics::CameraKeyframe keyframe{};
+    keyframe.position = {0.f, 0.f, 20.f};
+    keyframe.field_of_view = 0.f;
+
+    const fuse::cinematics::CameraSample sample = fuse::cinematics::sample_camera_keyframe_with_defaults(keyframe);
+    expectNear(sample.field_of_view, fuse::cinematics::kDefaultCameraFovDeg, 0.001f,
+               "defaults sample uses effective fov for unset sentinel");
+    expectNear(sample.look_at.z, 10.f, 0.001f, "defaults sample fills unset fixed look-at");
+
+    keyframe.look_at_mode = fuse::cinematics::CameraLookAtMode::TargetEntity;
+    keyframe.look_at_target_id = "missing";
+
+    fuse::cinematics::LookAtResolver resolver;
+    const fuse::cinematics::CameraSample entityMiss =
+        fuse::cinematics::sample_camera_keyframe_with_defaults(keyframe, &resolver);
+    expectNear(entityMiss.look_at.z, 10.f, 0.001f, "entity miss with unset aim uses position default");
+}
+
+void testSampleCameraFieldOfViewWithDefaults() {
+    std::vector<fuse::cinematics::CameraKeyframe> keyframes;
+    keyframes.push_back({0, {}, fuse::cinematics::CameraLookAtMode::FixedPoint, {}, {}, 0.f, 0.f});
+    keyframes.push_back({1'000, {}, fuse::cinematics::CameraLookAtMode::FixedPoint, {}, {}, 90.f, 0.f});
+
+    expectNear(fuse::cinematics::sample_camera_field_of_view_with_defaults(keyframes, 0),
+               fuse::cinematics::kDefaultCameraFovDeg,
+               0.001f,
+               "defaults fov rail treats unset sentinel as default at start");
+    expectNear(fuse::cinematics::sample_camera_field_of_view_with_defaults(keyframes, 500),
+               75.f,
+               0.001f,
+               "defaults fov rail lerps effective values");
+    expectNear(fuse::cinematics::sample_camera_field_of_view_with_defaults(keyframes, 2'000),
+               90.f,
+               0.001f,
+               "defaults fov rail holds last explicit value");
+}
+
+void testSampleCameraLookAtWithDefaults() {
+    std::vector<fuse::cinematics::CameraKeyframe> keyframes;
+    fuse::cinematics::CameraKeyframe start{};
+    start.time_ms = 0;
+    start.position = {0.f, 0.f, 10.f};
+    start.look_at_mode = fuse::cinematics::CameraLookAtMode::FixedPoint;
+    keyframes.push_back(start);
+
+    fuse::cinematics::CameraKeyframe end{};
+    end.time_ms = 1'000;
+    end.position = {0.f, 0.f, 20.f};
+    end.look_at = {0.f, 0.f, 0.f};
+    keyframes.push_back(end);
+
+    const fuse::cinematics::Vec3 startAim =
+        fuse::cinematics::sample_camera_look_at_with_defaults(keyframes, 0);
+    expectNear(startAim.z, 0.f, 0.001f, "defaults look-at rail fills omitted fixed aim at start");
+
+    const fuse::cinematics::Vec3 mid =
+        fuse::cinematics::sample_camera_look_at_with_defaults(keyframes, 500);
+    expectNear(mid.z, 5.f, 0.001f, "defaults look-at rail interpolates filled defaults");
+}
+
+void testCameraTrackMissingLookAtResolver() {
+    const std::vector<fuse::cinematics::CameraKeyframe> fixed;
+    expectTrue(!fuse::cinematics::camera_track_missing_look_at_resolver(fixed, nullptr),
+               "fixed-point vector never missing resolver");
+
+    fuse::cinematics::CameraKeyframe entity{};
+    entity.look_at_mode = fuse::cinematics::CameraLookAtMode::TargetEntity;
+    entity.look_at_target_id = "hero";
+    const std::vector<fuse::cinematics::CameraKeyframe> entityKeyframes{entity};
+
+    expectTrue(fuse::cinematics::camera_track_missing_look_at_resolver(entityKeyframes, nullptr),
+               "entity track missing when resolver is null");
+    expectTrue(fuse::cinematics::camera_keyframe_needs_look_at_resolver(entity),
+               "single entity keyframe needs resolver");
+
+    fuse::cinematics::LookAtResolver empty;
+    expectTrue(fuse::cinematics::camera_track_missing_look_at_resolver(entityKeyframes, &empty),
+               "entity track missing when resolver is unwired");
+
+    fuse::cinematics::LookAtResolver partial;
+    partial.set_try_resolve_fn([](const std::string& target_id, fuse::cinematics::Vec3& out) -> bool {
+        if (target_id == "hero") {
+            out = {1.f, 0.f, 0.f};
+            return true;
+        }
+        return false;
+    });
+    expectTrue(!fuse::cinematics::camera_track_missing_look_at_resolver(entityKeyframes, &partial),
+               "entity track satisfied when resolver has target");
+
+    fuse::cinematics::CameraTrack track("Follow");
+    track.add_keyframe(entity);
+    expectTrue(track.missing_look_at_resolver(nullptr), "track wrapper reports missing resolver");
+    expectTrue(!track.missing_look_at_resolver(&partial), "track wrapper satisfied with resolver");
+}
+
+void testCameraSampleIsDefault() {
+    const fuse::cinematics::CameraSample defaults = fuse::cinematics::default_camera_sample();
+    expectTrue(fuse::cinematics::camera_sample_is_default(defaults), "default sample matches itself");
+
+    fuse::cinematics::CameraSample mutated = defaults;
+    mutated.field_of_view = 45.f;
+    expectTrue(!fuse::cinematics::camera_sample_is_default(mutated), "mutated fov is not default");
+
+    fuse::cinematics::CameraTrack track("Empty");
+    const fuse::cinematics::CameraSample sampled = track.sample_at(1'000);
+    expectTrue(fuse::cinematics::camera_sample_is_default(sampled), "empty track sample is default");
+}
+
+void testResolveLookAtWorldOrDefaultEntityMiss() {
+    fuse::cinematics::CameraKeyframe entity{};
+    entity.position = {0.f, 0.f, 30.f};
+    entity.look_at_mode = fuse::cinematics::CameraLookAtMode::TargetEntity;
+    entity.look_at_target_id = "missing";
+
+    fuse::cinematics::LookAtResolver resolver;
+    resolver.set_try_resolve_fn([](const std::string&, fuse::cinematics::Vec3&) -> bool { return false; });
+
+    const fuse::cinematics::Vec3 aim =
+        fuse::cinematics::resolve_look_at_world_or_default(entity, resolver, 8.f);
+    expectNear(aim.z, 22.f, 0.001f, "entity miss with unset aim falls back to position default");
+}
+
 void testSpriteTrackSampling() {
     fuse::cinematics::SpriteTrack track("HeroSprite");
     track.set_target_sprite_id("hero");
@@ -995,6 +1139,13 @@ int main() {
     testCameraKeyframeLookAtUnset();
     testResolveLookAtWorldOrDefault();
     testLookAtResolverResolveOr();
+    testLookAtResolverHasTarget();
+    testSampleCameraKeyframeWithDefaults();
+    testSampleCameraFieldOfViewWithDefaults();
+    testSampleCameraLookAtWithDefaults();
+    testCameraTrackMissingLookAtResolver();
+    testCameraSampleIsDefault();
+    testResolveLookAtWorldOrDefaultEntityMiss();
     testSpriteTrackSampling();
     testPropertyTrackSampling();
     testTimelineContentSpan();

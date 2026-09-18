@@ -71,4 +71,7 @@ Vec3 resolve_look_at_world_or_default(const CameraKeyframe& keyframe,
                                       const LookAtResolver& resolver,
                                       float default_distance = kDefaultCameraLookAtDistance);
 
+/// True when `resolver` is wired and can resolve `target_id`.
+bool look_at_resolver_has_target(const LookAtResolver& resolver, const std::string& target_id);
+
 } // namespace fuse::cinematics
