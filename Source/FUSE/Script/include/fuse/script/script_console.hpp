@@ -29,12 +29,19 @@ public:
     [[nodiscard]] const std::string& lastExecutedLine() const { return m_lastExecutedLine; }
     /// True when a prior non-meta command succeeded and `repeat` can re-dispatch it.
     [[nodiscard]] bool can_repeat() const { return !m_lastExecutedLine.empty(); }
+    /// True for lookup/meta built-ins that skip history and repeat-state updates.
+    [[nodiscard]] static bool is_meta_command(const char* name);
 
     void setHistoryCapacity(u32 capacity);
     [[nodiscard]] u32 historyCapacity() const { return m_history.capacity(); }
     [[nodiscard]] u32 historyCount() const { return m_history.count(); }
     [[nodiscard]] bool is_history_empty() const { return m_history.is_empty(); }
+    [[nodiscard]] bool is_history_index_valid(u32 index) const { return m_history.is_valid_index(index); }
     [[nodiscard]] const std::string& historyAt(u32 index) const { return m_history.at(index); }
+    [[nodiscard]] const std::string& history_newest() const { return m_history.newest(); }
+    [[nodiscard]] const std::string& history_oldest() const { return m_history.oldest(); }
+    [[nodiscard]] bool history_contains(const char* line) const { return m_history.contains(line); }
+    [[nodiscard]] bool is_history_navigation_at_end() const { return m_history.is_navigation_at_end(); }
 
     /// Navigate command history (`previous=true` recalls older entries).
     [[nodiscard]] const std::string& recallHistory(bool previous) { return m_history.recall(previous); }
