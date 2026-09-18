@@ -261,4 +261,22 @@ inline bool tryTransformAabb(const Mat4& matrix, const AABB& box, AABB& out) {
     return true;
 }
 
+/// Exact corner-transform path with empty-box early-out.
+inline bool tryTransformAabbCorners(const Mat4& matrix, const AABB& box, AABB& out) {
+    if (box.isEmpty()) {
+        return false;
+    }
+    out = transformAabbCorners(matrix, box);
+    return true;
+}
+
+/// Merges two boxes when at least one operand is non-empty; returns false when both are empty.
+inline bool tryMergeAabb(const AABB& a, const AABB& b, AABB& out) {
+    if (a.isEmpty() && b.isEmpty()) {
+        return false;
+    }
+    out = a.merge(b);
+    return true;
+}
+
 } // namespace fuse::math

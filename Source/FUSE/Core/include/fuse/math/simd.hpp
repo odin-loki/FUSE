@@ -339,8 +339,17 @@ inline bool rayIntersectPlane(const Vec4& plane, const Vec3& origin, const Vec3&
     return fuse::math::rayIntersectPlane(plane, origin, direction, t, epsilon);
 }
 
+inline bool tryRayIntersectPlane(const Vec4& plane, const Vec3& origin, const Vec3& direction, f32& t,
+                                 f32 epsilon = 1e-8f) {
+    return fuse::math::tryRayIntersectPlane(plane, origin, direction, t, epsilon);
+}
+
 inline bool isRigid(const fuse::math::Mat4& matrix, f32 epsilon = 1e-4f) {
     return fuse::math::isRigid(matrix, epsilon);
+}
+
+inline bool isPureRotation(const fuse::math::Mat4& matrix, f32 epsilon = 1e-4f) {
+    return fuse::math::isPureRotation(matrix, epsilon);
 }
 
 inline Vec3 extractTranslation(const fuse::math::Mat4& matrix, f32 epsilon = 1e-5f) {
@@ -398,6 +407,11 @@ inline bool tryTransformPointRigid(const fuse::math::Mat4& matrix, const Vec3& p
     return fuse::math::tryTransformPointRigid(matrix, point, out, epsilon);
 }
 
+inline bool tryTransformDirectionRigid(const fuse::math::Mat4& matrix, const Vec3& direction, Vec3& out,
+                                       f32 epsilon = 1e-4f) {
+    return fuse::math::tryTransformDirectionRigid(matrix, direction, out, epsilon);
+}
+
 inline bool tryExtractRigid(const fuse::math::Mat4& matrix, Vec3& translation, Quat& rotation,
                             f32& uniformScale, f32 epsilon = 1e-4f) {
     return fuse::math::tryExtractRigid(matrix, translation, rotation, uniformScale, epsilon);
@@ -413,6 +427,14 @@ inline bool tryTransformAabb(const Mat4& matrix, const AABB& box, AABB& out) {
     }
     out = transformAabb(matrix, box);
     return true;
+}
+
+inline bool tryTransformAabbCorners(const Mat4& matrix, const AABB& box, AABB& out) {
+    return fuse::math::tryTransformAabbCorners(matrix.toScalar(), box, out);
+}
+
+inline bool tryMergeAabb(const AABB& a, const AABB& b, AABB& out) {
+    return fuse::math::tryMergeAabb(a, b, out);
 }
 
 inline bool tryMakePlaneFromNormalAndPoint(const Vec3& normal, const Vec3& point, Vec4& out,

@@ -114,6 +114,15 @@ inline bool rayIntersectPlane(const Vec4& plane, const Vec3& origin, const Vec3&
     return true;
 }
 
+/// Ray-plane intersection with explicit degenerate-plane early-out.
+inline bool tryRayIntersectPlane(const Vec4& plane, const Vec3& origin, const Vec3& direction, f32& t,
+                                 f32 epsilon = 1e-8f) {
+    if (isDegeneratePlane(plane, epsilon)) {
+        return false;
+    }
+    return rayIntersectPlane(plane, origin, direction, t, epsilon);
+}
+
 /// Positive-vertex test for an AABB against a plane (frustum culling convention).
 inline PlaneSide classifyAabb(const Vec4& plane, const AABB& box) {
     if (box.isEmpty()) {
