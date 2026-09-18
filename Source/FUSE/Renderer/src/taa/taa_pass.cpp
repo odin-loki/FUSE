@@ -98,6 +98,14 @@ void TaaPass::stampObservedHistoryGeneration(TaaResolveDesc& desc) const {
     fuse::renderer::stampObservedHistoryGeneration(desc, m_history);
 }
 
+bool TaaPass::canResolveFrame(const TaaResolveDesc& desc) const {
+    return canAttemptTaaResolve(desc, m_history);
+}
+
+bool TaaPass::prepareAndCanResolve(TaaResolveDesc& desc) const {
+    return prepareTaaResolveDesc(desc, m_history);
+}
+
 bool TaaPass::resolveFrame(const TaaResolveDesc& desc, void* cudaStream) {
     if (!m_stats.ready) {
         m_stats.message = "TAA pass not ready";
