@@ -84,6 +84,27 @@ bool entity_less_(const ecs::EntityID& a, const ecs::EntityID& b) {
     return a.generation < b.generation;
 }
 
+bool has_duplicate_entities_(const std::vector<ecs::EntityID>& entities) {
+    for (u32 i = 0; i < entities.size(); ++i) {
+        for (u32 j = i + 1; j < entities.size(); ++j) {
+            if (entities[i] == entities[j]) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool has_conflicting_entities_(const std::vector<ecs::EntityID>& entered,
+                               const std::vector<ecs::EntityID>& left) {
+    for (const ecs::EntityID& entity : entered) {
+        if (contains_entity_(left, entity)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void sort_entities_(std::vector<ecs::EntityID>& entities) {
     std::sort(entities.begin(), entities.end(), entity_less_);
 }
@@ -212,6 +233,82 @@ bool relevance_radii_disabled(const InterestPolicy& policy) {
     return effective_relevance_radius(policy) <= 0.f && effective_always_relevant_radius(policy) <= 0.f;
 }
 
+InterestSetDiffPreflight preflight_interest_diff(const InterestSetDiff& diff, const InterestScopeSet& scope) {
+    InterestSetDiffPreflight result{};
+    result.empty_diff = diff.empty();
+    result.has_enters = diff.has_enters();
+    result.has_leaves = diff.has_leaves();
+    result.duplicate_enter_ok = !has_duplicate_entities_(diff.entered);
+    result.duplicate_leave_ok = !has_duplicate_entities_(diff.left);
+    result.conflicting_entity_ok = !has_conflicting_entities_(diff.entered, diff.left);
+
+    if (result.empty_diff) {
+        return result;
+    }
+
+    for (const ecs::EntityID& entity : diff.left) {
+        if (scope.contains(entity)) {
+            result.leave_applicable = true;
+            break;
+        }
+    }
+    for (const ecs::EntityID& entity : diff.entered) {
+        if (!scope.contains(entity)) {
+            result.enter_applicable = true;
+            break;
+        }
+    }
+
+    result.redundant = !result.enter_applicable && !result.leave_applicable;
+    return result;
+}
+
+bool should_skip_interest_diff(const InterestSetDiff& diff, const InterestScopeSet& scope) {
+    return preflight_interest_diff(diff, scope).should_skip();
+}
+
+bool apply_interest_diff_if_ready(InterestSetDiff& diff, InterestScopeSet& scope) {
+    const InterestSetDiffPreflight preflight = preflight_interest_diff(diff, scope);
+    if (preflight.empty_diff) {
+        diff.clear();
+        return false;
+    }
+    if (!preflight.can_apply()) {
+        return false;
+    }
+    return diff.apply_and_clear(scope);
+}
+
+RadiusFilterPreflight preflight_radius_filter(const InterestPolicy& policy,
+                                              const std::vector<InterestCandidate>& candidates) {
+    RadiusFilterPreflight result{};
+    result.candidates_empty = candidates.empty();
+    result.radii_disabled = relevance_radii_disabled(policy);
+    result.prior_scope_empty = true;
+    result.uses_hysteresis = false;
+    return result;
+}
+
+RadiusFilterPreflight preflight_radius_filter(const InterestPolicy& policy,
+                                              const std::vector<InterestCandidate>& candidates,
+                                              const InterestScopeSet& prior_scope) {
+    RadiusFilterPreflight result = preflight_radius_filter(policy, candidates);
+    result.prior_scope_empty = prior_scope.empty();
+    result.uses_hysteresis = true;
+    return result;
+}
+
+bool should_skip_radius_filter(const InterestPolicy& policy,
+                               const std::vector<InterestCandidate>& candidates) {
+    return preflight_radius_filter(policy, candidates).should_skip();
+}
+
+bool should_skip_radius_filter(const InterestPolicy& policy,
+                               const std::vector<InterestCandidate>& candidates,
+                               const InterestScopeSet& prior_scope) {
+    return preflight_radius_filter(policy, candidates, prior_scope).should_skip();
+}
+
 bool can_apply_interest_diff(const InterestSetDiff& diff, const InterestScopeSet& scope) {
     if (diff.empty()) {
         return false;
@@ -261,10 +358,7 @@ bool diff_interest_scope_sets(const InterestScopeSet& previous, const InterestSc
 
 u32 count_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
                                const std::vector<InterestCandidate>& candidates) {
-    if (candidates.empty()) {
-        return 0;
-    }
-    if (relevance_radii_disabled(policy)) {
+    if (should_skip_radius_filter(policy, candidates)) {
         return 0;
     }
 
@@ -281,10 +375,7 @@ u32 count_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& 
 u32 count_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
                                const std::vector<InterestCandidate>& candidates,
                                const InterestScopeSet& prior_scope) {
-    if (candidates.empty()) {
-        return 0;
-    }
-    if (relevance_radii_disabled(policy) && prior_scope.empty()) {
+    if (should_skip_radius_filter(policy, candidates, prior_scope)) {
         return 0;
     }
 
@@ -303,10 +394,7 @@ u32 filter_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy&
                                 const std::vector<InterestCandidate>& candidates,
                                 std::vector<InterestEntry>& out_entries) {
     out_entries.clear();
-    if (candidates.empty()) {
-        return 0;
-    }
-    if (relevance_radii_disabled(policy)) {
+    if (should_skip_radius_filter(policy, candidates)) {
         return 0;
     }
 
@@ -333,10 +421,7 @@ u32 filter_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy&
                                 const InterestScopeSet& prior_scope,
                                 std::vector<InterestEntry>& out_entries) {
     out_entries.clear();
-    if (candidates.empty()) {
-        return 0;
-    }
-    if (relevance_radii_disabled(policy) && prior_scope.empty()) {
+    if (should_skip_radius_filter(policy, candidates, prior_scope)) {
         return 0;
     }
 

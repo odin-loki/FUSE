@@ -63,6 +63,55 @@ struct InterestScopeSet {
     [[nodiscard]] u32 size() const { return static_cast<u32>(entities.size()); }
 };
 
+/// Preflight checks before applying an interest scope diff (B7.4 deepen follow-up).
+struct InterestSetDiffPreflight {
+    bool empty_diff = true;
+    bool has_enters = false;
+    bool has_leaves = false;
+    /// True when at least one `entered` entity is absent from `scope`.
+    bool enter_applicable = false;
+    /// True when at least one `left` entity is present in `scope`.
+    bool leave_applicable = false;
+    /// True when the diff is non-empty but would not modify `scope`.
+    bool redundant = false;
+    /// True when no duplicate entity ids appear in `entered`.
+    bool duplicate_enter_ok = true;
+    /// True when no duplicate entity ids appear in `left`.
+    bool duplicate_leave_ok = true;
+    /// True when no entity appears in both `entered` and `left`.
+    bool conflicting_entity_ok = true;
+
+    [[nodiscard]] bool can_apply() const {
+        return !empty_diff && !redundant && duplicate_enter_ok && duplicate_leave_ok &&
+               conflicting_entity_ok && (enter_applicable || leave_applicable);
+    }
+
+    /// True when apply can proceed normally or the diff is an empty no-op payload.
+    [[nodiscard]] bool can_apply_or_skip() const { return can_apply() || empty_diff; }
+
+    [[nodiscard]] bool should_skip() const { return !can_apply() && !empty_diff; }
+};
+
+/// Preflight checks before radius count/filter work (B7.4 deepen follow-up).
+struct RadiusFilterPreflight {
+    bool candidates_empty = true;
+    bool radii_disabled = false;
+    bool prior_scope_empty = true;
+    bool uses_hysteresis = false;
+
+    [[nodiscard]] bool can_filter() const {
+        if (candidates_empty) {
+            return false;
+        }
+        if (radii_disabled) {
+            return uses_hysteresis && !prior_scope_empty;
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool should_skip() const { return !can_filter(); }
+};
+
 /// Entities that entered or left scope between two snapshots.
 struct InterestSetDiff {
     std::vector<ecs::EntityID> entered;
@@ -95,8 +144,28 @@ void clear_interest_diff(InterestSetDiff& diff);
 [[nodiscard]] bool apply_interest_diff(InterestSetDiff& diff, InterestScopeSet& scope);
 /// True when `diff` is non-empty and at least one enter/leave would modify `scope`.
 [[nodiscard]] bool can_apply_interest_diff(const InterestSetDiff& diff, const InterestScopeSet& scope);
+/// Preflight diff apply without mutating `scope` (B7.4 deepen follow-up).
+[[nodiscard]] InterestSetDiffPreflight preflight_interest_diff(const InterestSetDiff& diff,
+                                                                 const InterestScopeSet& scope);
+/// True when diff apply should be skipped (empty no-op or structurally invalid).
+[[nodiscard]] bool should_skip_interest_diff(const InterestSetDiff& diff, const InterestScopeSet& scope);
+/// Apply `diff` when preflight succeeds; returns false when skipped or invalid.
+[[nodiscard]] bool apply_interest_diff_if_ready(InterestSetDiff& diff, InterestScopeSet& scope);
 /// True when relevance and always-relevant radii are both zero (radius filter early-out).
 [[nodiscard]] bool relevance_radii_disabled(const InterestPolicy& policy);
+/// Preflight radius count/filter without building entry rows (B7.4 deepen follow-up).
+[[nodiscard]] RadiusFilterPreflight preflight_radius_filter(const InterestPolicy& policy,
+                                                              const std::vector<InterestCandidate>& candidates);
+/// Preflight hysteresis-aware radius count/filter (B7.4 deepen follow-up).
+[[nodiscard]] RadiusFilterPreflight preflight_radius_filter(const InterestPolicy& policy,
+                                                              const std::vector<InterestCandidate>& candidates,
+                                                              const InterestScopeSet& prior_scope);
+/// True when radius count/filter would early-out for the given inputs.
+[[nodiscard]] bool should_skip_radius_filter(const InterestPolicy& policy,
+                                             const std::vector<InterestCandidate>& candidates);
+[[nodiscard]] bool should_skip_radius_filter(const InterestPolicy& policy,
+                                             const std::vector<InterestCandidate>& candidates,
+                                             const InterestScopeSet& prior_scope);
 
 /// Returns true when `out` is non-empty.
 [[nodiscard]] bool diff_interest_scope_sets(const InterestScopeSet& previous, const InterestScopeSet& current,
