@@ -60,6 +60,12 @@ public:
     /// Copy pending requests into `out` in priority order without removing them. Returns 0 when empty.
     [[nodiscard]] u32 order_by_priority(std::vector<StreamingRequest>& out) const;
 
+    /// True when at least one request is waiting in the pending enqueue buffer.
+    [[nodiscard]] bool has_pending_enqueue() const;
+
+    /// Copy the highest-priority pending request into `out` without removing it. Returns false when empty.
+    [[nodiscard]] bool peek_pending(StreamingRequest& out) const;
+
     /// Lower priority for a pending request (returns false when not found).
     bool demote(GridCoord coord, StreamingRequestKind kind, f32 scale);
 
@@ -105,19 +111,37 @@ private:
     std::vector<CompletedStreamingRequest> m_completed;
 };
 
+/// Empty-queue guard: true when the pending enqueue buffer has at least one request.
+[[nodiscard]] inline bool has_pending_enqueue(const StreamingRequestQueue& queue) {
+    return queue.has_pending_enqueue();
+}
+
 /// Dequeue helper: removes highest-priority pending request when non-empty.
 [[nodiscard]] inline bool try_dequeue_pending(StreamingRequestQueue& queue, StreamingRequest& out) {
+    if (!queue.has_pending_enqueue()) {
+        return false;
+    }
     return queue.dequeue(out);
 }
 
 /// Peek helper: copies highest-priority pending request without removing it.
 [[nodiscard]] inline bool peek_highest_pending(const StreamingRequestQueue& queue, StreamingRequest& out) {
-    std::vector<StreamingRequest> ordered;
-    if (queue.order_by_priority(ordered) == 0u) {
+    return queue.peek_pending(out);
+}
+
+/// Peek helper: returns the highest pending priority, or -1 when the pending queue is empty.
+[[nodiscard]] inline f32 peek_highest_pending_priority(const StreamingRequestQueue& queue) {
+    StreamingRequest peeked{};
+    return peek_highest_pending(queue, peeked) ? peeked.priority : -1.f;
+}
+
+/// Dequeue helper: removes the highest-priority pending request only when its priority is at least `min_priority`.
+[[nodiscard]] inline bool try_dequeue_pending_if(StreamingRequestQueue& queue, f32 min_priority,
+                                                 StreamingRequest& out) {
+    if (!peek_highest_pending(queue, out) || out.priority < min_priority) {
         return false;
     }
-    out = ordered.front();
-    return true;
+    return try_dequeue_pending(queue, out);
 }
 
 } // namespace fuse::world_partition

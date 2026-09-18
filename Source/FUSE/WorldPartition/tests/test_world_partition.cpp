@@ -1066,6 +1066,29 @@ void testResidencySetContainsClear() {
     expectTrue(residency.collect_eviction_candidates().empty(), "no eviction candidates after clear");
 }
 
+void testResidencyGuardedRemoveAndPresence() {
+    fuse::world_partition::ResidencySet residency;
+    const fuse::world_partition::GridCoord resident{2, 2};
+    const fuse::world_partition::GridCoord invalid = fuse::world_partition::kInvalidGridCoord;
+
+    expectTrue(!fuse::world_partition::has_residency_guarded(residency),
+               "has_residency_guarded false on empty set");
+    expectTrue(!fuse::world_partition::remove_resident_guarded(residency, resident),
+               "remove guard false when coord absent");
+    expectTrue(!fuse::world_partition::remove_resident_guarded(residency, invalid),
+               "remove guard rejects invalid coord");
+
+    expectTrue(residency.add(resident, 100.f), "add resident for guarded remove");
+    expectTrue(fuse::world_partition::has_residency_guarded(residency),
+               "has_residency_guarded true when set non-empty");
+    expectTrue(fuse::world_partition::remove_resident_guarded(residency, resident),
+               "remove guard evicts resident coord");
+    expectTrue(!fuse::world_partition::has_residency_guarded(residency),
+               "has_residency_guarded false after guarded remove");
+    expectTrue(!fuse::world_partition::contains_resident_guarded(residency, resident),
+               "contains guard false after guarded remove");
+}
+
 void testResidencyContainsClearGuards() {
     fuse::world_partition::ResidencySet residency;
     const fuse::world_partition::GridCoord resident{2, 2};
@@ -1092,6 +1115,64 @@ void testResidencyContainsClearGuards() {
     expectTrue(residency.empty(), "clear guard empties residency set");
     expectTrue(!fuse::world_partition::clear_residency_guarded(residency),
                "clear guard returns false on second clear");
+}
+
+void testStreamingRequestQueuePendingEnqueueGuards() {
+    fuse::world_partition::StreamingRequestQueue queue;
+    expectTrue(!fuse::world_partition::has_pending_enqueue(queue),
+               "has_pending_enqueue false on empty queue");
+    expectTrue(!queue.has_pending_enqueue(), "member has_pending_enqueue false on empty queue");
+    expectNear(fuse::world_partition::peek_highest_pending_priority(queue), -1.f, 1e-4f,
+               "peek priority returns -1 on empty queue");
+
+    fuse::world_partition::StreamingRequest request{};
+    request.coord = {4, 4};
+    request.kind = fuse::world_partition::StreamingRequestKind::Load;
+    request.priority = 6.f;
+    expectTrue(queue.enqueue(request), "enqueue for pending guard tests");
+    expectTrue(fuse::world_partition::has_pending_enqueue(queue),
+               "has_pending_enqueue true when pending non-empty");
+    expectNear(fuse::world_partition::peek_highest_pending_priority(queue), 6.f, 1e-4f,
+               "peek priority returns highest pending priority");
+
+    fuse::world_partition::StreamingRequest peeked{};
+    expectTrue(queue.peek_pending(peeked), "peek_pending succeeds when pending non-empty");
+    expectTrue(peeked.coord.x == 4 && peeked.priority == 6.f, "peek_pending copies highest-priority request");
+    expectEq(queue.pending_enqueue_count(), 1u, "peek_pending leaves pending queue unchanged");
+}
+
+void testStreamingRequestQueueDequeueIfGuard() {
+    fuse::world_partition::StreamingRequestQueue queue;
+
+    fuse::world_partition::StreamingRequest low{};
+    low.coord = {0, 0};
+    low.kind = fuse::world_partition::StreamingRequestKind::Load;
+    low.priority = 2.f;
+
+    fuse::world_partition::StreamingRequest high{};
+    high.coord = {1, 0};
+    high.kind = fuse::world_partition::StreamingRequestKind::Unload;
+    high.priority = 7.f;
+
+    expectTrue(queue.enqueue(low), "enqueue low-priority load");
+    expectTrue(queue.enqueue(high), "enqueue high-priority unload");
+
+    fuse::world_partition::StreamingRequest out{};
+    expectTrue(!fuse::world_partition::try_dequeue_pending_if(queue, 10.f, out),
+               "dequeue_if false when highest priority below threshold");
+    expectEq(queue.pending_enqueue_count(), 2u, "failed dequeue_if leaves pending queue unchanged");
+
+    expectTrue(fuse::world_partition::try_dequeue_pending_if(queue, 7.f, out),
+               "dequeue_if succeeds at exact priority threshold");
+    expectTrue(out.coord.x == 1 && out.kind == fuse::world_partition::StreamingRequestKind::Unload,
+               "dequeue_if removes highest-priority unload");
+    expectEq(queue.pending_enqueue_count(), 1u, "dequeue_if shrinks pending queue");
+
+    expectTrue(fuse::world_partition::try_dequeue_pending_if(queue, 1.f, out),
+               "dequeue_if drains remaining pending request");
+    expectEq(queue.pending_enqueue_count(), 0u, "dequeue_if drains pending queue");
+    expectTrue(!fuse::world_partition::has_pending_enqueue(queue),
+               "has_pending_enqueue false after drain");
 }
 
 void testStreamingRequestQueueDequeueHelpers() {
@@ -1469,8 +1550,11 @@ int main() {
     testStreamingRequestQueueDequeueOrdering();
     testStreamingRequestQueueDequeueEmptyGuard();
     testStreamingRequestQueueOrderByPriority();
+    testStreamingRequestQueuePendingEnqueueGuards();
+    testStreamingRequestQueueDequeueIfGuard();
     testStreamingRequestQueueDequeueHelpers();
     testResidencySetContainsClear();
+    testResidencyGuardedRemoveAndPresence();
     testResidencyContainsClearGuards();
     testStreamingRequestQueueEnqueuePromoteDemote();
     testStreamingRequestQueueFlushBudget();
