@@ -186,6 +186,44 @@ FUSE_PHYSICS_INLINE u32 estimateCellOccupancyCount(const CellRange2& range) {
     return static_cast<u32>(span.x) * static_cast<u32>(span.y);
 }
 
+/// True when `maxCells == 0` (unlimited occupancy budget stub, B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool hasUnlimitedCellOccupancyBudget(u32 maxCells) {
+    return maxCells == 0u;
+}
+
+/// Largest inclusive per-axis span for occupancy budgeting (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE u32 maxCellSpanAxis(const CellRange3& range) {
+    if (isEmptyCellRange(range)) {
+        return 0u;
+    }
+    const ivec3 span = cellSpanPerAxis(range);
+    const s32 axisMax = std::max(span.x, std::max(span.y, span.z));
+    return static_cast<u32>(axisMax);
+}
+
+FUSE_PHYSICS_INLINE u32 maxCellSpanAxis(const CellRange2& range) {
+    if (isEmptyCellRange(range)) {
+        return 0u;
+    }
+    const ivec2 span = cellSpanPerAxis(range);
+    return static_cast<u32>(std::max(span.x, span.y));
+}
+
+/// Cell-capacity guard: true when any axis span exceeds `maxSpanPerAxis` (0 = unlimited).
+FUSE_PHYSICS_INLINE bool exceedsMaxCellSpanPerAxis(const CellRange3& range, u32 maxSpanPerAxis) {
+    if (maxSpanPerAxis == 0u) {
+        return false;
+    }
+    return maxCellSpanAxis(range) > maxSpanPerAxis;
+}
+
+FUSE_PHYSICS_INLINE bool exceedsMaxCellSpanPerAxis(const CellRange2& range, u32 maxSpanPerAxis) {
+    if (maxSpanPerAxis == 0u) {
+        return false;
+    }
+    return maxCellSpanAxis(range) > maxSpanPerAxis;
+}
+
 /// Cell-capacity guard: true when occupancy exceeds `maxCells` (0 = unlimited budget).
 FUSE_PHYSICS_INLINE bool exceedsCellOccupancyBudget(const CellRange3& range, u32 maxCells) {
     if (maxCells == 0u) {
