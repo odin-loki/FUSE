@@ -64,6 +64,33 @@ bool auto_exposure_can_update_from_histogram(const LuminanceHistogram& histogram
     return histogram_util::canMeterFromHistogram(histogram);
 }
 
+bool auto_exposure_params_valid(const AutoExposureParams& params) {
+    if (params.min_ev > params.max_ev) {
+        return false;
+    }
+    if (params.target_luminance <= 0.f) {
+        return false;
+    }
+    if (params.adaptation_speed_up < 0.f || params.adaptation_speed_down < 0.f) {
+        return false;
+    }
+    if (params.ema_alpha_up < 0.f || params.ema_alpha_up > 1.f) {
+        return false;
+    }
+    if (params.ema_alpha_down < 0.f || params.ema_alpha_down > 1.f) {
+        return false;
+    }
+    return true;
+}
+
+bool auto_exposure_can_adapt(const AutoExposureParams& params) {
+    return params.enabled && auto_exposure_params_valid(params);
+}
+
+bool auto_exposure_can_update_from_luminance(f32 measured_luminance, const AutoExposureParams& params) {
+    return measured_luminance > 0.f && auto_exposure_can_adapt(params);
+}
+
 f32 ema_alpha_for_direction(bool brightening, const AutoExposureParams& params) {
     return brightening ? params.ema_alpha_up : params.ema_alpha_down;
 }
@@ -136,7 +163,15 @@ bool luminance_histogram_params_valid(const LuminanceHistogramParams& params) {
     if (params.max_log_luminance <= params.min_log_luminance) {
         return false;
     }
-    return params.metering_percentile >= 0.f && params.metering_percentile <= 1.f;
+    return luminance_histogram_percentile_valid(params.metering_percentile);
+}
+
+bool luminance_histogram_percentile_valid(f32 percentile) {
+    return percentile >= 0.f && percentile <= 1.f;
+}
+
+bool luminance_histogram_bin_in_range(u32 bin, const LuminanceHistogramParams& params) {
+    return params.bin_count > 0 && bin < params.bin_count;
 }
 
 void reset_luminance_histogram(LuminanceHistogram& histogram) {
@@ -147,6 +182,10 @@ namespace histogram_util {
 
 bool hasMeteringSamples(const fuse::math::Vec3* samples, u32 count) {
     return samples != nullptr && count > 0;
+}
+
+bool canMeterPercentile(f32 percentile, const LuminanceHistogramParams& params) {
+    return luminance_histogram_percentile_valid(percentile) && luminance_histogram_params_valid(params);
 }
 
 bool canMeterFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params) {
@@ -183,14 +222,14 @@ f32 measurePercentile(const fuse::math::Vec3* samples, u32 count, const Luminanc
 
 f32 meterFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
                      f32 percentile) {
-    if (!canMeterFromSamples(samples, count, params)) {
+    if (!canMeterFromSamples(samples, count, params) || !canMeterPercentile(percentile, params)) {
         return 0.f;
     }
     return measurePercentile(samples, count, params, percentile);
 }
 
 f32 meterFromHistogram(const LuminanceHistogram& histogram, f32 percentile) {
-    if (!canMeterFromHistogram(histogram)) {
+    if (!canMeterFromHistogram(histogram) || !canMeterPercentile(percentile, histogram.params())) {
         return 0.f;
     }
     return histogram.percentileLuminance(percentile);
@@ -351,6 +390,12 @@ void AutoExposure::resetToEv(f32 ev) {
 }
 
 f32 AutoExposure::updateFromLuminance(f32 measured_luminance, f32 delta_seconds) {
+    if (!auto_exposure_can_update_from_luminance(measured_luminance, m_params)) {
+        if (measured_luminance > 0.f) {
+            m_state.measured_luminance = measured_luminance;
+        }
+        return m_state.current_ev;
+    }
     if (m_params.use_ema_adaptation) {
         return update_auto_exposure_ema(m_state, measured_luminance, m_params, delta_seconds);
     }
