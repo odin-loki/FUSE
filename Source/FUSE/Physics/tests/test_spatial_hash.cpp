@@ -848,6 +848,123 @@ void testBroadphaseCanSkipIntegration() {
     expectTrue(buffer.isEmpty(), "skippable broadphase leaves empty pair buffer");
 }
 
+void testCellOccupancyPreflightGuards() {
+    const fuse::physics::broadphase::CellRange3 unitRange = {{0, 0, 0}, {1, 1, 1}};
+    const auto withinBudget =
+        fuse::physics::broadphase::preflightCellOccupancy(unitRange, 8u);
+    expectTrue(!withinBudget.skipped, "non-empty range is not skipped");
+    expectEq(withinBudget.cellCount, 8u, "preflight reports occupancy count");
+    expectTrue(!withinBudget.exceedsBudget, "range at budget limit does not exceed");
+
+    const auto overBudget =
+        fuse::physics::broadphase::preflightCellOccupancy(unitRange, 7u);
+    expectTrue(overBudget.exceedsBudget, "preflight flags occupancy above budget");
+
+    fuse::physics::broadphase::CellRange3 inverted = {{2, 2, 2}, {1, 1, 1}};
+    const auto emptyPreflight =
+        fuse::physics::broadphase::preflightCellOccupancy(inverted, 4u);
+    expectTrue(emptyPreflight.skipped, "empty range preflight is skipped");
+    expectEq(emptyPreflight.cellCount, 0u, "empty range reports zero cells");
+
+    const fuse::physics::broadphase::CellRange2 planeRange = {{0, 0}, {3, 1}};
+    const auto planePreflight =
+        fuse::physics::broadphase::preflightCellOccupancy(planeRange, 8u);
+    expectEq(planePreflight.cellCount, 8u, "2D preflight reports occupancy count");
+}
+
+void testPerShapeCellBudgetGuard() {
+    expectEq(fuse::physics::broadphase::perShapeCellBudget(0u, false), 0u,
+             "zero span means unlimited per-shape budget");
+    expectEq(fuse::physics::broadphase::perShapeCellBudget(4u, true), 16u,
+             "2D per-shape budget is span squared");
+    expectEq(fuse::physics::broadphase::perShapeCellBudget(4u, false), 64u,
+             "3D per-shape budget is span cubed");
+}
+
+void testPairSlotPreflightGuards() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.setMaxCapacity(4u);
+
+    const auto zeroSlots = fuse::physics::broadphase::preflightPairSlots(0u, buffer);
+    expectTrue(zeroSlots.skipped, "zero slot preflight is skipped");
+
+    const auto withinCapacity = fuse::physics::broadphase::preflightPairSlots(3u, buffer);
+    expectTrue(!withinCapacity.skipped, "non-zero slot preflight is active");
+    expectTrue(!withinCapacity.exceedsBufferCapacity, "slots within maxCapacity pass preflight");
+
+    const auto exceedsCapacity = fuse::physics::broadphase::preflightPairSlots(8u, buffer);
+    expectTrue(exceedsCapacity.exceedsBufferCapacity,
+               "slot count above maxCapacity is flagged");
+}
+
+void testRefineBroadphasePreflightGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    fuse::physics::broadphase::PairBufferSoA buffer;
+
+    const auto emptyScene =
+        fuse::physics::broadphase::preflightRefineBroadphasePairs(buffer, bodies, shapes);
+    expectTrue(emptyScene.skipped, "refine preflight skips empty scene");
+    expectTrue(emptyScene.emptyBroadphaseInput, "refine preflight marks empty broadphase input");
+    expectTrue(emptyScene.emptyBuffer, "refine preflight marks empty buffer");
+    expectTrue(fuse::physics::broadphase::canSkipRefineBroadphasePairs(buffer, bodies, shapes),
+               "canSkipRefineBroadphasePairs on empty scene");
+
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    bodies.addBody({0.5f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 1, {1.f, 0.f, 0.f});
+    buffer.push(0u, 1u);
+
+    const auto populated =
+        fuse::physics::broadphase::preflightRefineBroadphasePairs(buffer, bodies, shapes);
+    expectTrue(!populated.skipped, "refine preflight runs with valid pairs");
+    expectTrue(!populated.emptyBroadphaseInput, "populated scene is not empty input");
+    expectTrue(!populated.emptyBuffer, "non-empty buffer is not empty");
+    expectTrue(!fuse::physics::broadphase::canSkipRefineBroadphasePairs(buffer, bodies, shapes),
+               "canSkipRefineBroadphasePairs false with valid pairs");
+}
+
+void testPairBufferDedupeAndCompactGuards() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    expectTrue(fuse::physics::broadphase::canSkipDedupeBuffer(buffer),
+               "empty buffer skips dedupe");
+    expectTrue(buffer.canSkipCompactAndClamp(), "empty buffer skips compactAndClamp");
+
+    buffer.push(0u, 1u);
+    expectTrue(buffer.canSkipDedupe(), "single-pair buffer skips dedupe");
+    expectTrue(buffer.isSortedCanonical(), "single-pair buffer is canonically sorted");
+
+    buffer.push(2u, 3u);
+    expectTrue(!buffer.canSkipDedupe(), "multi-pair buffer does not skip dedupe");
+    expectTrue(!fuse::physics::broadphase::canSkipDedupeBuffer(buffer),
+               "canSkipDedupeBuffer false for multi-pair buffer");
+
+    fuse::physics::broadphase::PairBufferSoA slotBuffer;
+    slotBuffer.preparePairSlots(3u);
+    slotBuffer.writeSlot(0u, 2u, 3u);
+    slotBuffer.writeSlot(2u, 0u, 1u);
+    expectTrue(!slotBuffer.canSkipCompaction(), "sparse slots do not skip compaction");
+    expectTrue(!slotBuffer.isSortedCanonical(), "sparse out-of-order slots are not canonical");
+    expectEq(slotBuffer.compactAndClamp(), 2u, "compactAndClamp gathers sparse valid slots");
+    expectTrue(slotBuffer.containsCanonicalPair(0u, 1u), "compactAndClamp preserves first pair");
+    expectTrue(slotBuffer.containsCanonicalPair(2u, 3u), "compactAndClamp preserves second pair");
+}
+
+void testPairBufferSlotValidityBounds() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.preparePairSlots(2u);
+    buffer.writeSlot(0u, 0u, 1u);
+    expectTrue(buffer.slotIsValid(0u), "in-range slot is valid");
+    expectTrue(!buffer.slotIsValid(2u), "slot beyond pairSlotCount is invalid");
+    expectTrue(!buffer.slotIsValid(99u), "slot beyond storage is invalid");
+
+    buffer.invalidateSlot(99u);
+    expectTrue(buffer.slotIsValid(0u), "out-of-range invalidate is a no-op");
+    buffer.invalidateSlot(0u);
+    expectTrue(!buffer.slotIsValid(0u), "in-range invalidate clears slot");
+}
+
 void testBroadphaseBoxShapeCellRange() {
     fuse::physics::RigidBodySoA bodies;
     fuse::physics::CollisionShapeSoA shapes;
@@ -907,6 +1024,12 @@ int main() {
     testEstimatePairCountForUniqueBodies();
     testPairBufferCanAcceptPairsGuard();
     testBroadphaseCanSkipIntegration();
+    testCellOccupancyPreflightGuards();
+    testPerShapeCellBudgetGuard();
+    testPairSlotPreflightGuards();
+    testRefineBroadphasePreflightGuards();
+    testPairBufferDedupeAndCompactGuards();
+    testPairBufferSlotValidityBounds();
     testBroadphaseBoxShapeCellRange();
 
     if (g_failures == 0) {
