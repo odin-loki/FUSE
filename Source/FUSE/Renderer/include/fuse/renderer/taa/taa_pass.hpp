@@ -57,6 +57,10 @@ public:
     bool wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason = nullptr) const;
     /// Stamp `observed_history_generation` from pass history when still at the no-guard sentinel.
     void stampObservedHistoryGeneration(TaaResolveDesc& desc) const;
+    /// Clamp params and stamp observed generation from pass history.
+    void sanitizeResolveDesc(TaaResolveDesc& desc) const;
+    /// True when `observedGeneration` matches the current history invalidate epoch.
+    bool isObservedHistoryGenerationCurrent(u32 observedGeneration) const;
 
     bool resolveFrame(const TaaResolveDesc& desc, void* cudaStream = nullptr);
 

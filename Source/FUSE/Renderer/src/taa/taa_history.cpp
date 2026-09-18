@@ -99,6 +99,14 @@ void TaaHistoryBuffer::invalidateHistory() {
     ++m_validity.invalidateGeneration;
 }
 
+bool TaaHistoryBuffer::invalidateHistoryIfStale(u32 observedGeneration) {
+    if (!isHistoryStale(observedGeneration)) {
+        return false;
+    }
+    invalidateHistory();
+    return true;
+}
+
 void TaaHistoryBuffer::markResolved() {
     m_validity.hasValidHistory = true;
     ++m_validity.accumulatedFrames;

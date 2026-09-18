@@ -36,10 +36,51 @@ bool taaResolveBypassesHistoryGenerationGuard(const TaaResolveDesc& desc) {
     return desc.observed_history_generation == kTaaResolveNoHistoryGeneration;
 }
 
+bool taaResolveHistoryGenerationGuardPasses(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return taaResolveBypassesHistoryGenerationGuard(desc) ||
+           !history.isHistoryStale(desc.observed_history_generation);
+}
+
+bool taaResolveRejectionSurfacesRequired(const TaaResolveDesc& desc) {
+    if (!desc.enforce_rejection_surfaces) {
+        return false;
+    }
+    const TAAParams params = clampTaaParams(desc.params);
+    return taaResolveRequiresVelocity(params) || taaResolveRequiresDepth(params);
+}
+
+bool taaResolveRejectionSurfacesSatisfied(const TaaResolveDesc& desc) {
+    if (!taaResolveRejectionSurfacesRequired(desc)) {
+        return true;
+    }
+    const TAAParams params = clampTaaParams(desc.params);
+    if (taaResolveRequiresVelocity(params) && desc.surfaces.velocity_buffer == nullptr) {
+        return false;
+    }
+    if (taaResolveRequiresDepth(params) && desc.surfaces.depth_buffer == nullptr) {
+        return false;
+    }
+    return true;
+}
+
 void stampObservedHistoryGeneration(TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (taaResolveBypassesHistoryGenerationGuard(desc)) {
         desc.observed_history_generation = history.invalidateGeneration();
     }
+}
+
+void sanitizeTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    normalizeTaaParams(desc.params);
+    stampObservedHistoryGeneration(desc, history);
+}
+
+bool preflightTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                         TaaResolveSkipReason* reason) {
+    const TaaResolveSkipReason skip = classifyTaaResolveSkip(desc, history);
+    if (reason != nullptr) {
+        *reason = skip;
+    }
+    return !taaResolveSkipReasonIsBlocking(skip);
 }
 
 TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
@@ -78,6 +119,19 @@ TAAParams clampTaaParams(const TAAParams& raw) {
     clamped.depth_rejection = std::max(0.f, raw.depth_rejection);
     clamped.clamp_gamma = std::max(1.f, raw.clamp_gamma);
     return clamped;
+}
+
+bool taaParamsInRange(const TAAParams& raw) {
+    return raw.blend_factor >= 0.f && raw.blend_factor <= 1.f && raw.velocity_rejection >= 0.f &&
+           raw.depth_rejection >= 0.f && raw.clamp_gamma >= 1.f;
+}
+
+void normalizeTaaParams(TAAParams& params) {
+    params = clampTaaParams(params);
+}
+
+f32 computeHistoryBlend(f32 effectiveBlend) {
+    return clampF32(1.f - effectiveBlend, 0.f, 1.f);
 }
 
 bool taaResolveRequiresVelocity(const TAAParams& params) {

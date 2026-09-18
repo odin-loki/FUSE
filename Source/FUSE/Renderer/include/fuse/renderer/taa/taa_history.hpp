@@ -34,6 +34,8 @@ public:
 
     void swap();
     void invalidateHistory();
+    /// Invalidate when `observedGeneration` differs from the current epoch; returns true when invalidated.
+    bool invalidateHistoryIfStale(u32 observedGeneration);
     void markResolved();
 
 private:

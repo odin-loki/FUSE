@@ -72,12 +72,18 @@ enum class TaaResolveSkipReason : u8 {
 
 /// Clamp TAA tuning knobs to safe ranges for the CPU resolve stub.
 TAAParams clampTaaParams(const TAAParams& raw);
+/// True when `raw` is already within clamp ranges (no normalization required).
+bool taaParamsInRange(const TAAParams& raw);
+/// Clamp `params` in place — mirrors `clampTaaParams` without returning a copy.
+void normalizeTaaParams(TAAParams& params);
 /// True when `velocity_rejection` is active and resolve must receive a velocity surface.
 bool taaResolveRequiresVelocity(const TAAParams& params);
 /// True when `depth_rejection` is active and resolve must receive a depth surface.
 bool taaResolveRequiresDepth(const TAAParams& params);
 /// Blend weight applied this frame — 1.0 on first warm-up frame, else clamped `blend_factor`.
 f32 computeEffectiveBlend(bool firstFrame, const TAAParams& params);
+/// History contribution weight — complement of `effectiveBlend`, clamped to [0, 1].
+f32 computeHistoryBlend(f32 effectiveBlend);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {
