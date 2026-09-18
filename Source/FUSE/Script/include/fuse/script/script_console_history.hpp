@@ -29,6 +29,9 @@ public:
     [[nodiscard]] const std::string& recall(bool previous);
     void resetNavigation();
     [[nodiscard]] s32 navigationCursor() const { return m_navigationCursor; }
+    [[nodiscard]] bool can_recall_previous() const;
+    [[nodiscard]] bool can_recall_next() const;
+    [[nodiscard]] bool is_at_navigation_end() const;
 
 private:
     [[nodiscard]] u32 ringIndex_(u32 offset) const;
