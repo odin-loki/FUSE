@@ -65,7 +65,8 @@ public:
     u32 baselineRedoDepth() const { return m_baselineRedoDepth; }
     [[nodiscard]] bool isAtBaseline() const;
     /// True when undo/redo depth differs from the last `set_baseline_state` call.
-    [[nodiscard]] bool hasUnsavedChanges() const { return !isAtBaseline(); }
+    /// Unconfigured stacks treat any non-empty or dirty state as unsaved (B6.2 deepen).
+    [[nodiscard]] bool hasUnsavedChanges() const;
 
     CommandStackSnapshot captureSnapshot() const;
     void restoreSnapshot(const CommandStackSnapshot& snapshot);
