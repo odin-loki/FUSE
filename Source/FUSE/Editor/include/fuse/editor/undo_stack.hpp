@@ -53,6 +53,8 @@ public:
     bool canRedo() const { return !m_redo.empty(); }
     /// True when the undo branch has no recorded steps (B6.2 deepen — empty-stack early-out).
     [[nodiscard]] bool isEmpty() const { return m_undo.empty(); }
+    /// True when the redo branch has no recorded steps (B6.2 deepen — empty-stack early-out).
+    [[nodiscard]] bool isRedoEmpty() const { return m_redo.empty(); }
     /// True after `set_baseline_state` has recorded a saved-document depth (B6.2 deepen).
     [[nodiscard]] bool isBaselineConfigured() const { return m_baselineConfigured; }
 
