@@ -65,6 +65,25 @@ struct IslandWarmStartGraphPreflight {
     bool can_warm_start() const { return !skipped && stats.warmStartableCount > 0u; }
 };
 
+/// Batch warm-start summary for parallel iteration stubs.
+struct IslandWarmStartBatchResult {
+    u32 warmedCount = 0;
+    u32 skippedCount = 0;
+    u32 warmStartableCount = 0;
+    bool skipped = false;
+
+    bool any_warmed() const { return warmedCount > 0u; }
+};
+
+/// Contact impulse warm-start preflight for one island.
+struct IslandContactImpulseWarmStartPreflight {
+    u32 ownedContactCount = 0;
+    u32 nonZeroImpulseCoverage = 0;
+    bool skipped = false;
+
+    bool can_warm_start() const { return !skipped && nonZeroImpulseCoverage > 0u; }
+};
+
 /// Warm-start preflight for per-island lambda seeding (parallel-safe selective seed).
 struct IslandWarmStartPreflight {
     u32 ownedDistanceCount = 0;
@@ -75,6 +94,17 @@ struct IslandWarmStartPreflight {
 
     bool can_warm_start() const {
         return !skipped && (priorDistanceCoverage > 0u || priorContactCoverage > 0u);
+    }
+};
+
+/// Combined lambda + contact-impulse warm-start preflight for one island.
+struct IslandCombinedWarmStartPreflight {
+    IslandWarmStartPreflight lambdas{};
+    IslandContactImpulseWarmStartPreflight impulses{};
+    bool skipped = false;
+
+    bool can_warm_start() const {
+        return !skipped && (lambdas.can_warm_start() || impulses.can_warm_start());
     }
 };
 
@@ -347,6 +377,37 @@ u32 warm_start_all_islands_guarded(SolverWorkBuffers& workBuffers,
                                    const std::vector<f32>& priorDistanceLambdas,
                                    const std::vector<f32>& priorContactLambdas = {});
 
+/// Batch guarded warm-start with explicit warmed/skipped counts.
+IslandWarmStartBatchResult warm_start_all_islands_result(
+    SolverWorkBuffers& workBuffers,
+    const ContactIslandGraph& graph,
+    const std::vector<f32>& priorDistanceLambdas,
+    const std::vector<f32>& priorContactLambdas = {});
+
+/// Preflight contact impulse warm-start for one island; sets `skipped` for empty islands.
+IslandContactImpulseWarmStartPreflight preflight_contact_impulse_warm_start_island(
+    const ContactIslandGraph::Island& island,
+    const std::vector<narrowphase::ContactManifold>& contacts);
+
+/// Preflight contact impulse warm-start by island index; out-of-range indices are marked skipped.
+IslandContactImpulseWarmStartPreflight preflight_contact_impulse_warm_start_island_by_index(
+    const ContactIslandGraph& graph,
+    u32 islandIndex,
+    const std::vector<narrowphase::ContactManifold>& contacts);
+
+/// Early-out guard for per-island contact impulse warm-start on empty islands.
+bool should_skip_contact_impulse_warm_start_island(const ContactIslandGraph::Island& island);
+
+/// Early-out guard for contact impulse warm-start by island index (empty or out-of-range).
+bool should_skip_contact_impulse_warm_start_island_index(const ContactIslandGraph& graph, u32 islandIndex);
+
+/// Combined lambda + impulse warm-start preflight for one island.
+IslandCombinedWarmStartPreflight preflight_warm_start_island_combined(
+    const ContactIslandGraph::Island& island,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<f32>& priorDistanceLambdas,
+    const std::vector<f32>& priorContactLambdas = {});
+
 /// Guarded combined lambda + contact-impulse warm-start for one island.
 bool warm_start_island_combined_guarded(SolverWorkBuffers& workBuffers,
                                         const ContactIslandGraph::Island& island,
@@ -366,5 +427,31 @@ bool warm_start_island_contact_impulses_guarded(SolverWorkBuffers& workBuffers,
                                                 const ContactIslandGraph::Island& island,
                                                 const std::vector<narrowphase::ContactManifold>& contacts,
                                                 f32 dt);
+
+/// Guarded contact impulse warm-start with explicit skip/seed outcome.
+IslandWarmStartResult warm_start_island_contact_impulses_result(
+    SolverWorkBuffers& workBuffers,
+    const ContactIslandGraph& graph,
+    u32 islandIndex,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    f32 dt);
+
+/// Guarded contact impulse warm-start by island index.
+bool warm_start_island_contact_impulses_by_index_guarded(SolverWorkBuffers& workBuffers,
+                                                         const ContactIslandGraph& graph,
+                                                         u32 islandIndex,
+                                                         const std::vector<narrowphase::ContactManifold>& contacts,
+                                                         f32 dt);
+
+/// Collect island indices with non-zero contact impulse warm-start coverage.
+std::vector<u32> collect_contact_impulse_warm_startable_island_indices(
+    const ContactIslandGraph& graph,
+    const std::vector<narrowphase::ContactManifold>& contacts);
+
+/// Graph-level guarded contact impulse warm-start; returns islands actually seeded.
+u32 warm_start_all_contact_impulses_guarded(SolverWorkBuffers& workBuffers,
+                                            const ContactIslandGraph& graph,
+                                            const std::vector<narrowphase::ContactManifold>& contacts,
+                                            f32 dt);
 
 } // namespace fuse::physics
