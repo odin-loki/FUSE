@@ -59,8 +59,12 @@ bool tonemap_curve_preserves_black(const TonemapCurveParams& params, f32 epsilon
 bool tonemap_curve_reinhard_params_valid(const ReinhardCurveParams& params);
 /// True when ACES curve knobs are usable (B5.10 deepen).
 bool tonemap_curve_aces_params_valid(const AcesCurveParams& params);
+/// True when Filmic curve knobs are usable (B5.10 deepen).
+bool tonemap_curve_filmic_params_valid(const TonemapCurveParams& params);
 /// True when curve knobs are usable before endpoint evaluation (B5.10 deepen).
 bool tonemap_curve_params_valid(const TonemapCurveParams& params);
+/// True when curve params and black/white anchors pass validation (B5.10 deepen).
+bool tonemap_curve_is_usable(const TonemapCurveParams& params, f32 white_input = 1.f, f32 epsilon = 1e-4f);
 /// True when a tonemap curve can be applied without invalid knobs (B5.10 deepen).
 bool tonemap_curve_can_apply(const TonemapCurveParams& params);
 /// True when curve params and endpoint anchors are ready for application (B5.10 deepen).
