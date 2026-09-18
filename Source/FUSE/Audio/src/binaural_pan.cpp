@@ -5,6 +5,20 @@
 
 namespace fuse::audio {
 
+namespace {
+
+constexpr float kHrtfCoLocatedEpsilon = 1e-5f;
+
+} // namespace
+
+float hrtf_co_located_epsilon() {
+    return kHrtfCoLocatedEpsilon;
+}
+
+bool is_co_located_hrtf_source(const Vec3& rel_listener) {
+    return rel_listener.length() < kHrtfCoLocatedEpsilon;
+}
+
 HrtfIrStub make_empty_hrtf_ir() {
     return HrtfIrStub{};
 }
@@ -28,12 +42,20 @@ bool should_use_hrtf_ir(const HrtfIrStub& ir) {
     return has_hrtf_ir(ir);
 }
 
+bool should_skip_hrtf_convolution(const HrtfIrStub& ir) {
+    return is_empty_hrtf_ir(ir);
+}
+
+bool is_nonnull_zero_length_hrtf_ir(const HrtfIrStub& ir) {
+    return ir.samples != nullptr && ir.length == 0;
+}
+
 HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
                                   const Vec3& rel_listener) {
-    if (!should_apply_hrtf_pan(hrtf_enabled, rel_listener)) {
+    if (should_bypass_hrtf_pan(hrtf_enabled, rel_listener)) {
         return HrtfPanPath::Bypass;
     }
-    if (should_use_hrtf_ir(ir)) {
+    if (!should_skip_hrtf_convolution(ir)) {
         return HrtfPanPath::Convolution;
     }
     return HrtfPanPath::IldItdStub;
@@ -64,7 +86,7 @@ bool should_skip_hrtf_spatial_pan(HrtfPanPath path) {
 }
 
 bool should_apply_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener) {
-    return hrtf_enabled && rel_listener.length() >= 1e-5f;
+    return hrtf_enabled && !is_co_located_hrtf_source(rel_listener);
 }
 
 bool should_bypass_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener) {
@@ -224,7 +246,8 @@ void apply_centre_binaural_pan_to_sample(float mono, float attenuation, float& l
 BinauralPanGains compute_binaural_pan_gains_guarded(bool hrtf_enabled, const Vec3& rel_listener,
                                                     const BinauralPanParams& params) {
     return compute_binaural_pan_gains_for_path(
-        resolve_hrtf_pan_path(hrtf_enabled, HrtfIrStub{}, rel_listener), rel_listener, params);
+        resolve_hrtf_pan_path(hrtf_enabled, make_empty_hrtf_ir(), rel_listener), rel_listener,
+        params);
 }
 
 BinauralPanGains compute_binaural_pan_gains_guarded(bool hrtf_enabled, const HrtfIrStub& ir,
@@ -236,7 +259,7 @@ BinauralPanGains compute_binaural_pan_gains_guarded(bool hrtf_enabled, const Hrt
 
 BinauralPanGains compute_binaural_pan_gains_for_path(HrtfPanPath path, const Vec3& rel_listener,
                                                     const BinauralPanParams& params) {
-    if (path == HrtfPanPath::Bypass) {
+    if (is_hrtf_pan_path_bypass(path)) {
         return make_centre_binaural_pan_gains();
     }
     // Convolution path deferred — ILD/ITD stub until delay-line / IR wiring lands.
@@ -263,8 +286,31 @@ float clamp_hrtf_attenuation(float attenuation) {
     return std::clamp(attenuation, 0.f, 1.f);
 }
 
+float clamp_hrtf_occlusion_coupling_weight(float weight) {
+    return std::clamp(weight, 0.f, 1.f);
+}
+
+bool is_unity_hrtf_attenuation(float distance_attenuation, float occlusion_gain) {
+    return clamp_hrtf_attenuation(distance_attenuation) >= 1.f - 1e-5f
+        && clamp_hrtf_attenuation(occlusion_gain) >= 1.f - 1e-5f;
+}
+
+bool should_skip_hrtf_attenuation_coupling(HrtfPanPath path) {
+    return is_hrtf_pan_path_bypass(path);
+}
+
 bool should_apply_hrtf_attenuation_coupling(HrtfPanPath path) {
-    return is_spatial_hrtf_pan_path(path);
+    return !should_skip_hrtf_attenuation_coupling(path);
+}
+
+bool is_unity_hrtf_spatial_blend(float blend, float epsilon) {
+    return blend >= 1.f - epsilon;
+}
+
+bool should_narrow_hrtf_spatial_image(HrtfPanPath path, float distance_attenuation,
+                                      float occlusion_gain) {
+    return should_apply_hrtf_attenuation_coupling(path)
+        && !is_unity_hrtf_attenuation(distance_attenuation, occlusion_gain);
 }
 
 float compute_hrtf_distance_factor(float distance_attenuation,
@@ -281,6 +327,13 @@ void apply_spatial_blend(BinauralPanGains& gains, float blend) {
     clamp_binaural_pan_gains(gains);
 }
 
+void apply_hrtf_spatial_blend_guarded(BinauralPanGains& gains, float blend) {
+    if (is_unity_hrtf_spatial_blend(blend)) {
+        return;
+    }
+    apply_spatial_blend(gains, blend);
+}
+
 void apply_hrtf_distance_factor(BinauralPanGains& gains, float distance_attenuation,
                                 const BinauralPanParams& params) {
     apply_spatial_blend(gains, compute_hrtf_distance_factor(distance_attenuation, params));
@@ -293,23 +346,32 @@ float compute_hrtf_spatial_blend(float distance_attenuation, float occlusion_gai
         compute_hrtf_distance_factor(clamp_hrtf_attenuation(distance_attenuation), params);
     const float occlusion_blend =
         compute_hrtf_distance_factor(clamp_hrtf_attenuation(occlusion_gain), params);
-    const float weight = std::clamp(coupling.occlusion_weight, 0.f, 1.f);
+    const float weight = clamp_hrtf_occlusion_coupling_weight(coupling.occlusion_weight);
     return distance_blend * (1.f - weight) + occlusion_blend * weight;
+}
+
+bool should_skip_hrtf_spatial_blend(float distance_attenuation, float occlusion_gain,
+                                    const HrtfAttenuationCoupling& coupling,
+                                    const BinauralPanParams& params) {
+    return is_unity_hrtf_spatial_blend(
+        compute_hrtf_spatial_blend(distance_attenuation, occlusion_gain, coupling, params));
 }
 
 void apply_hrtf_attenuation_coupling(BinauralPanGains& gains, float distance_attenuation,
                                      float occlusion_gain, const HrtfAttenuationCoupling& coupling,
                                      const BinauralPanParams& params) {
-    apply_spatial_blend(gains,
-                        compute_hrtf_spatial_blend(distance_attenuation, occlusion_gain, coupling,
-                                                   params));
+    if (should_skip_hrtf_spatial_blend(distance_attenuation, occlusion_gain, coupling, params)) {
+        return;
+    }
+    apply_hrtf_spatial_blend_guarded(
+        gains, compute_hrtf_spatial_blend(distance_attenuation, occlusion_gain, coupling, params));
 }
 
 void apply_hrtf_attenuation_coupling_for_path(BinauralPanGains& gains, HrtfPanPath path,
                                               float distance_attenuation, float occlusion_gain,
                                               const HrtfAttenuationCoupling& coupling,
                                               const BinauralPanParams& params) {
-    if (!should_apply_hrtf_attenuation_coupling(path)) {
+    if (!should_narrow_hrtf_spatial_image(path, distance_attenuation, occlusion_gain)) {
         return;
     }
     apply_hrtf_attenuation_coupling(gains, distance_attenuation, occlusion_gain, coupling, params);
@@ -320,11 +382,9 @@ BinauralPanGains compute_binaural_pan_gains_coupled(bool hrtf_enabled, const Vec
                                                     float occlusion_gain,
                                                     const HrtfAttenuationCoupling& coupling,
                                                     const BinauralPanParams& params) {
-    BinauralPanGains pan = compute_binaural_pan_gains_guarded(hrtf_enabled, rel_listener, params);
-    if (should_apply_hrtf_pan(hrtf_enabled, rel_listener)) {
-        apply_hrtf_attenuation_coupling(pan, distance_attenuation, occlusion_gain, coupling, params);
-    }
-    return pan;
+    return compute_binaural_pan_gains_coupled_for_path(
+        resolve_hrtf_pan_path(hrtf_enabled, rel_listener), rel_listener, distance_attenuation,
+        occlusion_gain, coupling, params);
 }
 
 BinauralPanGains compute_binaural_pan_gains_coupled(bool hrtf_enabled, const HrtfIrStub& ir,
