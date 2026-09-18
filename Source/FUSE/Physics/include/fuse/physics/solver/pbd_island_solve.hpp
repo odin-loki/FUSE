@@ -55,6 +55,38 @@ struct IslandWarmStartPreflight {
     }
 };
 
+/// Frame-level warm-start preflight for first-substep lambda seeding.
+struct FrameWarmStartPreflight {
+    u32 distanceSlotCount = 0;
+    u32 contactSlotCount = 0;
+    u32 priorDistanceCoverage = 0;
+    u32 priorContactCoverage = 0;
+    bool skipped = false;
+
+    bool can_warm_start() const {
+        return !skipped && (priorDistanceCoverage > 0u || priorContactCoverage > 0u);
+    }
+};
+
+/// Combined dispatch preflight (graph + timestep guard).
+struct IslandDispatchPreflight {
+    IslandSolvePreflight solve{};
+    bool invalidDt = false;
+    bool skipped = false;
+
+    bool can_dispatch() const { return !skipped && !invalidDt && solve.can_dispatch(); }
+};
+
+/// Batch dispatch summary for parallel iteration stubs.
+struct IslandBatchDispatchResult {
+    u32 solvedCount = 0;
+    u32 skippedCount = 0;
+    u32 dispatchableCount = 0;
+    bool skipped = false;
+
+    bool any_solved() const { return solvedCount > 0u; }
+};
+
 /// True when `islandIndex` is in range for `extract_island`.
 bool island_index_valid(const ContactIslandGraph& graph, u32 islandIndex);
 
@@ -85,11 +117,20 @@ bool has_dispatchable_islands(const ContactIslandGraph& graph);
 /// True when every island is constraint-free (all empty).
 bool all_islands_empty(const ContactIslandGraph& graph);
 
+/// True when dt is positive for island constraint solve passes.
+bool is_valid_island_solve_dt(f32 dt);
+
 /// Preflight island solve dispatch; sets `skipped` when no islands need work.
 IslandSolvePreflight preflight_island_solve(const ContactIslandGraph& graph);
 
+/// Preflight island dispatch including timestep validity.
+IslandDispatchPreflight preflight_island_dispatch(const ContactIslandGraph& graph, f32 dt);
+
 /// Early-out guard for the island solve loop when nothing is dispatchable.
 bool should_skip_island_solve(const ContactIslandGraph& graph);
+
+/// Early-out guard combining graph preflight and timestep validity.
+bool should_skip_island_dispatch(const ContactIslandGraph& graph, f32 dt);
 
 /// Collect island indices that pass `should_solve_island` (parallel dispatch prep).
 std::vector<u32> collect_dispatchable_island_indices(const ContactIslandGraph& graph);
@@ -122,6 +163,16 @@ u32 dispatch_all_islands(RigidBodySoA& bodies,
                          f32 dt,
                          f32 contactCompliance,
                          const std::function<f32(const RigidBodySoA&, u32)>& invMassFn);
+
+/// Batch guarded dispatch with explicit skip/solve counts.
+IslandBatchDispatchResult dispatch_all_islands_result(
+    RigidBodySoA& bodies,
+    const ContactIslandGraph& graph,
+    SolverWorkBuffers& workBuffers,
+    const std::vector<DistanceConstraint>& distanceConstraints,
+    f32 dt,
+    f32 contactCompliance,
+    const std::function<f32(const RigidBodySoA&, u32)>& invMassFn);
 
 /// Per-constraint-pair delta clear → accumulate → apply (job-safe across parallel islands).
 void per_pair_delta_application(RigidBodySoA& bodies,
@@ -160,6 +211,22 @@ void frame_lambda_warm_start(SolverWorkBuffers& workBuffers,
                              const std::vector<f32>& priorDistanceLambdas,
                              const std::vector<f32>& priorContactLambdas = {});
 
+/// Preflight frame warm-start; sets `skipped` when no prior lambda data exists.
+FrameWarmStartPreflight preflight_frame_lambda_warm_start(
+    const std::vector<DistanceConstraint>& distanceConstraints,
+    const std::vector<f32>& priorDistanceLambdas,
+    const std::vector<f32>& priorContactLambdas = {});
+
+/// Early-out guard for frame lambda warm-start when no prior data exists.
+bool should_skip_frame_warm_start(const std::vector<f32>& priorDistanceLambdas,
+                                  const std::vector<f32>& priorContactLambdas = {});
+
+/// Guarded frame warm-start; clears lambdas and returns false when no prior data exists.
+bool frame_lambda_warm_start_guarded(SolverWorkBuffers& workBuffers,
+                                     const std::vector<DistanceConstraint>& distanceConstraints,
+                                     const std::vector<f32>& priorDistanceLambdas,
+                                     const std::vector<f32>& priorContactLambdas = {});
+
 /// Warm-start only the lambda slots referenced by one island (parallel-safe selective seed).
 void warm_start_island_lambdas(SolverWorkBuffers& workBuffers,
                                const ContactIslandGraph::Island& island,
@@ -179,6 +246,12 @@ bool warm_start_island_lambdas_guarded(SolverWorkBuffers& workBuffers,
                                        const ContactIslandGraph::Island& island,
                                        const std::vector<f32>& priorDistanceLambdas,
                                        const std::vector<f32>& priorContactLambdas = {});
+
+/// Graph-level guarded warm-start across all islands; returns islands actually seeded.
+u32 warm_start_graph_lambdas_guarded(SolverWorkBuffers& workBuffers,
+                                     const ContactIslandGraph& graph,
+                                     const std::vector<f32>& priorDistanceLambdas,
+                                     const std::vector<f32>& priorContactLambdas = {});
 
 /// Seed contact impulse warm-start for contacts owned by one island (per-substep stub).
 void warm_start_island_contact_impulses(SolverWorkBuffers& workBuffers,
