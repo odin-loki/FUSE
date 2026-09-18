@@ -24,6 +24,18 @@ const char* candidatePairRejectReasonName(CandidatePairRejectReason reason) {
     return "Unknown";
 }
 
+const char* cellOccupancyRejectReasonName(CellOccupancyRejectReason reason) {
+    switch (reason) {
+    case CellOccupancyRejectReason::None:
+        return "None";
+    case CellOccupancyRejectReason::EmptyRange:
+        return "EmptyRange";
+    case CellOccupancyRejectReason::ExceedsBudget:
+        return "ExceedsBudget";
+    }
+    return "Unknown";
+}
+
 namespace {
 
 constexpr u32 kBuildGrainSize = 8u;
@@ -200,7 +212,7 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
 }
 
 void dedupeBuffer(PairBufferSoA& buffer) {
-    if (buffer.canSkipDedupe()) {
+    if (!shouldRunDedupeBroadphase(buffer)) {
         return;
     }
 
@@ -332,7 +344,7 @@ void refineBroadphasePairsParallelImpl(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     PairBufferSoA& buffer) {
-    if (buffer.canSkipSoAIteration() || !buffer.hasValidPairs() || canSkipBroadphase(bodies, shapes)) {
+    if (canSkipRefineBroadphase(bodies, shapes, buffer)) {
         return;
     }
 
@@ -357,6 +369,35 @@ void refineBroadphasePairsParallelImpl(
 }
 
 } // namespace
+
+RefineBroadphasePreflight preflightRefineBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer) {
+    RefineBroadphasePreflight preflight{};
+    preflight.emptyBuffer = buffer.canSkipSoAIteration();
+    preflight.noValidPairs = !buffer.hasValidPairs();
+    preflight.emptyInput = canSkipBroadphase(bodies, shapes);
+    return preflight;
+}
+
+bool canSkipRefineBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer) {
+    return !preflightRefineBroadphase(bodies, shapes, buffer).canRefine();
+}
+
+DedupeBroadphasePreflight preflightDedupeBroadphase(const PairBufferSoA& buffer) {
+    DedupeBroadphasePreflight preflight{};
+    preflight.emptyBuffer = buffer.canSkipSoAIteration();
+    preflight.singlePair = !preflight.emptyBuffer && buffer.activeCount <= 1u;
+    return preflight;
+}
+
+bool shouldRunDedupeBroadphase(const PairBufferSoA& buffer) {
+    return preflightDedupeBroadphase(buffer).canDedupe();
+}
 
 void refineBroadphasePairsParallel(
     const RigidBodySoA& bodies,
