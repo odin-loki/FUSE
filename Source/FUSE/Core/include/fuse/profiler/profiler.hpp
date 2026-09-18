@@ -73,11 +73,22 @@ bool hasEvents();
 bool isBufferEmpty();
 bool isBufferFull();
 bool isEventIndexValid(u32 index);
+bool isValidEventName(const char* name);
 bool isValidProfileEvent(const ProfileEvent& event);
 u32 lastEventIndex();
 const ProfileEvent& eventAt(u32 index);
+bool tryEventAt(u32 index, ProfileEvent& out);
 const ProfileEvent& lastEvent();
 void reset();
+
+/// Introspection stubs for guard state — non-zero when scopes or async flows are open on this thread.
+bool hasOpenScopes();
+bool hasOpenAsyncFlows();
+
+/// Export preflight stubs — inspect buffer/export readiness without emitting chrome JSON.
+u32 exportableEventCount();
+bool isExportEmpty();
+bool canExportChromeTrace();
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();

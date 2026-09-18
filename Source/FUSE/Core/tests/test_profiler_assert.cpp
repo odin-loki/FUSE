@@ -1113,6 +1113,122 @@ void testDisabledBeginAsyncFlowDoesNotIncrementOpenCount() {
     expectTrue(fuse::profiler::openAsyncFlowCount() == 0u, "enabled flow pair clears open count");
 }
 
+void testEmptyStringNameGuards() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(!fuse::profiler::isValidEventName(nullptr), "null name is invalid");
+    expectTrue(!fuse::profiler::isValidEventName(""), "empty string name is invalid");
+    expectTrue(fuse::profiler::isValidEventName("valid"), "non-empty name is valid");
+
+    {
+        fuse::profiler::ProfileScope emptyScope("");
+    }
+    fuse::profiler::beginAsyncFlow("", 1u);
+    fuse::profiler::endAsyncFlow("", 1u);
+    fuse::profiler::sampleCounter("", 42);
+    fuse::profiler::sampleCounterFloat("", 1.5);
+    fuse::profiler::sampleCounterSnapshotAtFrame("", 7);
+    fuse::profiler::sampleCounterFloatSnapshotAtFrame("", 0.25);
+
+    expectTrue(fuse::profiler::eventCount() == 0u, "empty-string names record nothing");
+    expectTrue(fuse::profiler::scopeNestingDepth() == 0u, "empty scope name does not mutate nesting depth");
+    expectTrue(fuse::profiler::flowNestingDepth() == 0u, "empty flow name does not mutate flow depth");
+    expectTrue(fuse::profiler::openAsyncFlowCount() == 0u, "empty flow name does not increment open count");
+    expectTrue(fuse::profiler::isExportEmpty(), "empty-string guard leaves export empty");
+    expectTrue(fuse::profiler::exportableEventCount() == 0u, "exportable count is zero with no valid events");
+}
+
+void testHasOpenScopesAndAsyncFlowsIntrospection() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(!fuse::profiler::hasOpenScopes(), "reset leaves hasOpenScopes false");
+    expectTrue(!fuse::profiler::hasOpenAsyncFlows(), "reset leaves hasOpenAsyncFlows false");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    {
+        FUSE_PROFILE_SCOPE("introspect_scope");
+        expectTrue(fuse::profiler::hasOpenScopes(), "hasOpenScopes true inside scope");
+        expectTrue(!fuse::profiler::hasOpenAsyncFlows(), "hasOpenAsyncFlows false before flow begin");
+
+        FUSE_PROFILE_ASYNC_FLOW_BEGIN("introspect_flow", flowId);
+        expectTrue(fuse::profiler::hasOpenScopes(), "hasOpenScopes true with nested flow");
+        expectTrue(fuse::profiler::hasOpenAsyncFlows(), "hasOpenAsyncFlows true after flow begin");
+
+        FUSE_PROFILE_ASYNC_FLOW_END("introspect_flow", flowId);
+        expectTrue(fuse::profiler::hasOpenScopes(), "hasOpenScopes still true after flow end");
+        expectTrue(!fuse::profiler::hasOpenAsyncFlows(), "hasOpenAsyncFlows false after flow end");
+    }
+    expectTrue(!fuse::profiler::hasOpenScopes(), "hasOpenScopes false after scope end");
+}
+
+void testExportPreflightStubs() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::canExportChromeTrace(), "canExportChromeTrace true on empty buffer");
+    expectTrue(fuse::profiler::isExportEmpty(), "isExportEmpty true on reset");
+    expectTrue(fuse::profiler::exportableEventCount() == 0u, "exportableEventCount zero on reset");
+
+    {
+        FUSE_PROFILE_SCOPE("preflight_scope");
+    }
+
+    expectTrue(fuse::profiler::canExportChromeTrace(), "canExportChromeTrace true with events");
+    expectTrue(!fuse::profiler::isExportEmpty(), "isExportEmpty false after recording");
+    expectTrue(fuse::profiler::exportableEventCount() == 2u, "exportableEventCount matches valid scope events");
+    expectTrue(fuse::profiler::exportableEventCount() == fuse::profiler::eventCount(),
+               "exportable count matches event count for valid names");
+
+    fuse::profiler::beginAsyncFlow("", 99u);
+    expectTrue(fuse::profiler::exportableEventCount() == fuse::profiler::eventCount(),
+               "empty-name guard does not inflate exportable count");
+}
+
+void testTryEventAtSafeLookup() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::ProfileEvent out{};
+    expectTrue(!fuse::profiler::tryEventAt(0u, out), "tryEventAt false on empty buffer");
+    expectTrue(!fuse::profiler::isValidProfileEvent(out), "tryEventAt out param unchanged on failure");
+
+    {
+        FUSE_PROFILE_SCOPE("lookup_scope");
+    }
+
+    expectTrue(fuse::profiler::tryEventAt(0u, out), "tryEventAt true for first event");
+    expectTrue(out.phase == fuse::profiler::EventPhase::Begin, "tryEventAt copies begin phase");
+    expectTrue(std::string(out.name) == "lookup_scope", "tryEventAt copies event name");
+
+    expectTrue(fuse::profiler::tryEventAt(1u, out), "tryEventAt true for second event");
+    expectTrue(out.phase == fuse::profiler::EventPhase::End, "tryEventAt copies end phase");
+
+    expectTrue(!fuse::profiler::tryEventAt(2u, out), "tryEventAt false past event count");
+    expectTrue(!fuse::profiler::tryEventAt(99u, out), "tryEventAt false for out-of-range index");
+}
+
+void testIsValidProfileEventRejectsEmptyName() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::ProfileEvent emptyNameEvent{};
+    emptyNameEvent.name = "";
+    expectTrue(!fuse::profiler::isValidProfileEvent(emptyNameEvent),
+               "isValidProfileEvent rejects empty string name");
+
+    fuse::profiler::ProfileEvent nullNameEvent{};
+    expectTrue(!fuse::profiler::isValidProfileEvent(nullNameEvent),
+               "isValidProfileEvent rejects null name");
+
+    {
+        FUSE_PROFILE_SCOPE("valid_event");
+    }
+    expectTrue(fuse::profiler::isValidProfileEvent(fuse::profiler::eventAt(0)),
+               "isValidProfileEvent accepts recorded event");
+}
+
 void testVerifyMacro() {
     resetState();
     fuse::assertion::setSuppressAbortForTests(true);
@@ -1183,6 +1299,11 @@ int main() {
     testDisabledScopeDoesNotMutateNestingDepth();
     testMultipleOrphanAsyncFlowEndsAreIgnored();
     testDisabledBeginAsyncFlowDoesNotIncrementOpenCount();
+    testEmptyStringNameGuards();
+    testHasOpenScopesAndAsyncFlowsIntrospection();
+    testExportPreflightStubs();
+    testTryEventAtSafeLookup();
+    testIsValidProfileEventRejectsEmptyName();
     testFatalHandlerHook();
     testVerifyMacro();
 

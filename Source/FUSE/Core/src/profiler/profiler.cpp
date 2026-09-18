@@ -220,9 +220,13 @@ const char* chromeCategory(EventPhase phase) {
 
 } // namespace
 
+bool isValidEventName(const char* name) {
+    return name != nullptr && name[0] != '\0';
+}
+
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
-      m_active(g_enabled.load(std::memory_order_acquire) && name != nullptr) {
+      m_active(g_enabled.load(std::memory_order_acquire) && isValidEventName(name)) {
     if (m_active) {
         m_scopeId = g_nextScopeId.fetch_add(1u, std::memory_order_acq_rel);
         m_nestingDepth = pushNestingDepth();
@@ -302,7 +306,7 @@ bool isEventIndexValid(u32 index) {
 }
 
 bool isValidProfileEvent(const ProfileEvent& event) {
-    return event.name != nullptr;
+    return isValidEventName(event.name);
 }
 
 const ProfileEvent& eventAt(u32 index) {
@@ -318,6 +322,15 @@ const ProfileEvent& eventAt(u32 index) {
     return g_events[ringIndex];
 }
 
+bool tryEventAt(u32 index, ProfileEvent& out) {
+    if (!isEventIndexValid(index)) {
+        return false;
+    }
+
+    out = eventAt(index);
+    return isValidProfileEvent(out);
+}
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     return count > 0u ? count - 1u : kInvalidEventIndex;
@@ -329,6 +342,33 @@ const ProfileEvent& lastEvent() {
         return eventAt(0);
     }
     return eventAt(index);
+}
+
+bool hasOpenScopes() {
+    return currentNestingDepth() > 0u;
+}
+
+bool hasOpenAsyncFlows() {
+    return g_openAsyncFlowCount.load(std::memory_order_acquire) > 0u;
+}
+
+u32 exportableEventCount() {
+    const u32 count = eventCount();
+    u32 exportable = 0u;
+    for (u32 i = 0; i < count; ++i) {
+        if (isValidProfileEvent(eventAt(i))) {
+            ++exportable;
+        }
+    }
+    return exportable;
+}
+
+bool isExportEmpty() {
+    return exportableEventCount() == 0u;
+}
+
+bool canExportChromeTrace() {
+    return true;
 }
 
 void reset() {
@@ -350,7 +390,7 @@ u32 nextFlowId() {
 }
 
 void beginAsyncFlow(const char* name, u32 flowId) {
-    if (!g_enabled.load(std::memory_order_acquire) || name == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)) {
         return;
     }
 
@@ -364,7 +404,7 @@ void beginAsyncFlow(const char* name, u32 flowId) {
 }
 
 void endAsyncFlow(const char* name, u32 flowId) {
-    if (!g_enabled.load(std::memory_order_acquire) || name == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)) {
         return;
     }
 
@@ -384,7 +424,7 @@ void endAsyncFlow(const char* name, u32 flowId) {
 }
 
 void sampleCounter(const char* track, s64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || track == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
         return;
     }
 
@@ -400,7 +440,7 @@ void sampleCounter(const char* track, s64 value) {
 }
 
 void sampleCounterFloat(const char* track, f64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || track == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
         return;
     }
 
@@ -416,7 +456,7 @@ void sampleCounterFloat(const char* track, f64 value) {
 }
 
 void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || track == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
         return;
     }
 
@@ -432,7 +472,7 @@ void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
 }
 
 void sampleCounterFloatSnapshotAtFrame(const char* track, f64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || track == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
         return;
     }
 
@@ -463,7 +503,7 @@ std::string exportChromeTraceJson() {
 
     for (u32 i = 0; i < count; ++i) {
         const ProfileEvent& event = eventAt(i);
-        if (event.name == nullptr) {
+        if (!isValidProfileEvent(event)) {
             continue;
         }
 
