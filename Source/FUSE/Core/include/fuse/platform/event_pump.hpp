@@ -72,6 +72,10 @@ public:
     /// Inspect only the front event type without removing it. Returns false when empty.
     bool peekEventType(PlatformEventType& outType) const;
 
+    /// Peek the front event only when its type matches `type`. Returns false when empty or
+    /// the front event is a different type (outEvent is reset to None).
+    bool tryPeekEventOfType(PlatformEventType type, PlatformEvent& outEvent) const;
+
     /// True when the front queued event matches `type` (false when empty).
     bool frontEventTypeIs(PlatformEventType type) const;
 
