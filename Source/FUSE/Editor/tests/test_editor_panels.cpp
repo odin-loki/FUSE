@@ -834,6 +834,100 @@ void testMaterialEditorPanelSkipPropertyEdit() {
     expectTrue(cmds.appliedCount() == 0u, "skipped edit posts no commands");
 }
 
+void testMaterialPropertyDirtyMaskHelpers() {
+    expectTrue(fuse::editor::materialPropertyDirtyBit(fuse::editor::MaterialPropertyId::Roughness) == 1u,
+               "roughness dirty bit is bit 0");
+    expectTrue(fuse::editor::materialPropertyDirtyBit(fuse::editor::MaterialPropertyId::Metallic) == 2u,
+               "metallic dirty bit is bit 1");
+    expectTrue(fuse::editor::materialPropertyDirtyBit(fuse::editor::MaterialPropertyId::BaseColor) == 4u,
+               "base color dirty bit is bit 2");
+    expectTrue(fuse::editor::materialPropertyDirtyBit(fuse::editor::MaterialPropertyId::ShadingModel) == 8u,
+               "shading model dirty bit is bit 3");
+
+    expectTrue(fuse::editor::isPropertyDirtyMaskEmpty(0u), "zero mask is empty");
+    expectTrue(!fuse::editor::isPropertyDirtyMaskEmpty(1u), "non-zero mask is not empty");
+
+    expectTrue(fuse::editor::materialPropertyDirtyCount(0u) == 0u, "empty mask counts zero");
+    expectTrue(fuse::editor::materialPropertyDirtyCount(1u) == 1u, "single bit counts one");
+    expectTrue(fuse::editor::materialPropertyDirtyCount(0b1010u) == 2u, "two bits count two");
+    expectTrue(fuse::editor::materialPropertyDirtyCount(0b1111u) == 4u, "all four bits count four");
+}
+
+void testMaterialPropertyBindingDirtyIntrospection() {
+    fuse::editor::MaterialPropertyBinding binding;
+    expectTrue(binding.dirtyPropertyCount() == 0u, "unbound binding has zero dirty properties");
+    expectTrue(!binding.tryIsPropertyDirty(fuse::editor::MaterialPropertyId::Roughness),
+               "tryIsPropertyDirty fails when unbound");
+    expectTrue(!binding.canClearPropertyDirty(fuse::editor::MaterialPropertyId::Roughness),
+               "cannot clear dirty on unbound binding");
+
+    fuse::editor::MaterialEditState state{};
+    expectTrue(binding.tryBind(0u, 1u, state), "binding attaches to valid slot");
+
+    fuse::editor::CommandStack cmds;
+    expectTrue(binding.setRoughness(0.4f, cmds), "roughness edit marks dirty");
+    expectTrue(binding.tryIsPropertyDirty(fuse::editor::MaterialPropertyId::Roughness),
+               "tryIsPropertyDirty reports dirty roughness");
+    expectTrue(binding.dirtyPropertyCount() == 1u, "one dirty property after roughness edit");
+    expectTrue(binding.canClearPropertyDirty(fuse::editor::MaterialPropertyId::Roughness),
+               "can clear dirty roughness");
+    expectTrue(!binding.canClearPropertyDirty(fuse::editor::MaterialPropertyId::Metallic),
+               "cannot clear clean metallic");
+
+    expectTrue(binding.tryClearPropertyDirty(fuse::editor::MaterialPropertyId::Roughness),
+               "tryClearPropertyDirty clears dirty roughness");
+    expectTrue(!binding.isPropertyDirty(fuse::editor::MaterialPropertyId::Roughness),
+               "roughness no longer dirty after tryClear");
+    expectTrue(!binding.tryClearPropertyDirty(fuse::editor::MaterialPropertyId::Roughness),
+               "tryClearPropertyDirty rejects already-clean property");
+}
+
+void testMaterialPropertyBindingGuardedRefresh() {
+    fuse::editor::MaterialPropertyBinding binding;
+    expectTrue(!binding.tryMarkPanelRefreshed(), "tryMarkPanelRefreshed fails when unbound");
+    expectTrue(!binding.canMarkPanelRefreshed(), "unbound binding cannot mark refreshed");
+
+    fuse::editor::MaterialEditState state{};
+    expectTrue(binding.tryBind(0u, 1u, state), "binding attaches to valid slot");
+
+    fuse::editor::CommandStack cmds;
+    expectTrue(binding.setMetallic(0.5f, cmds), "metallic edit marks dirty");
+    expectTrue(binding.canMarkPanelRefreshed(), "dirty binding can mark refreshed");
+    expectTrue(binding.tryMarkPanelRefreshed(), "tryMarkPanelRefreshed succeeds when bound");
+    expectTrue(!binding.hasAnyPropertyDirty(), "tryMarkPanelRefreshed clears dirty mask");
+
+    fuse::editor::MaterialEditState external{};
+    external.roughness = 0.75f;
+    expectTrue(binding.tryRefreshFromEditState(external), "tryRefreshFromEditState succeeds when bound");
+    expectTrue(state.roughness == 0.75f, "tryRefreshFromEditState copies edit state");
+
+    binding.unbind();
+    expectTrue(!binding.tryRefreshFromEditState(external),
+               "tryRefreshFromEditState fails when unbound");
+}
+
+void testMaterialEditorPanelGuardedRefresh() {
+    fuse::editor::EditorState state;
+    fuse::editor::MaterialEditorPanel panel;
+    panel.sync(state, 1u);
+
+    expectTrue(!panel.canRefreshPanel(), "sync alone does not enable guarded refresh");
+    expectTrue(!panel.tryRefreshPanel(), "tryRefreshPanel no-op without selection");
+
+    panel.selectMaterial(0u);
+    expectTrue(!panel.canRefreshPanel(), "selection without dirty flags cannot refresh");
+
+    fuse::editor::CommandStack cmds;
+    expectTrue(panel.setRoughness(0.3f, cmds), "property edit marks dirty");
+    expectTrue(panel.canRefreshPanel(), "dirty selected panel can refresh");
+    expectTrue(panel.hasAnyPropertyDirty(), "panel reports dirty properties");
+    expectTrue(panel.propertyDirtyMask() != 0u, "panel exposes dirty mask");
+
+    expectTrue(panel.tryRefreshPanel(), "tryRefreshPanel clears pending refresh");
+    expectTrue(!panel.canRefreshPanel(), "refresh clears guarded refresh eligibility");
+    expectTrue(!panel.hasAnyPropertyDirty(), "refresh clears panel dirty mask");
+}
+
 #ifdef FUSE_VULKAN_BACKEND
 void testMaterialEditorPanelMaterialSystemBridge() {
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
@@ -951,6 +1045,10 @@ int main() {
     testMaterialInspectorRefreshHelpers();
     testMaterialPropertyBindingScalarVec3Guards();
     testMaterialEditorPanelSkipPropertyEdit();
+    testMaterialPropertyDirtyMaskHelpers();
+    testMaterialPropertyBindingDirtyIntrospection();
+    testMaterialPropertyBindingGuardedRefresh();
+    testMaterialEditorPanelGuardedRefresh();
     testPropertyInspectorMeshMaterialId();
     testPropertyInspectorMeshMaterialEmptyCatalog();
     testPropertyInspectorMeshMaterialTryGet();

@@ -101,4 +101,13 @@ struct MaterialInspectorRefreshInfo {
 /// Early-out when the binding is not live — refresh is a no-op (B6.7 deepen follow-up).
 [[nodiscard]] bool shouldSkipMaterialInspectorRefresh(bool isBound);
 
+/// Dirty-mask bit for one inspector property — 0 when id is invalid (B6.7 deepen).
+[[nodiscard]] u32 materialPropertyDirtyBit(MaterialPropertyId id);
+
+/// True when the dirty mask has no property bits set (B6.7 deepen).
+[[nodiscard]] bool isPropertyDirtyMaskEmpty(u32 dirtyMask);
+
+/// Count set property bits in a dirty mask (B6.7 deepen).
+[[nodiscard]] u32 materialPropertyDirtyCount(u32 dirtyMask);
+
 } // namespace fuse::editor

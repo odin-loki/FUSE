@@ -97,9 +97,21 @@ bool MaterialEditorPanel::canApplyPanelRefresh() const {
     return hasSelectedMaterial() && m_binding.isBound();
 }
 
+bool MaterialEditorPanel::canRefreshPanel() const {
+    return hasSelectedMaterial() && needsPanelRefresh();
+}
+
 void MaterialEditorPanel::refreshPanel() {
     m_binding.markPanelRefreshed();
     m_previewDirty = false;
+}
+
+bool MaterialEditorPanel::tryRefreshPanel() {
+    if (!canRefreshPanel()) {
+        return false;
+    }
+    refreshPanel();
+    return true;
 }
 
 bool MaterialEditorPanel::setRoughness(f32 roughness, CommandStack& cmds) {
