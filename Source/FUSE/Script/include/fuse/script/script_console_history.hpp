@@ -25,7 +25,6 @@ public:
     [[nodiscard]] const std::string& newest() const;
     [[nodiscard]] const std::string& oldest() const;
     [[nodiscard]] bool contains(const char* line) const;
-    [[nodiscard]] bool is_navigation_at_end() const;
 
     /// Navigate history (`previous=true` recalls older entries).
     [[nodiscard]] const std::string& recall(bool previous);

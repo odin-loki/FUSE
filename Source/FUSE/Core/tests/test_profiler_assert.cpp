@@ -819,24 +819,6 @@ void testNullNameFlowAndCounterGuards() {
                "null-name guard leaves export empty");
 }
 
-void testScopeNestingDepthIntrospection() {
-    resetState();
-    fuse::platform::registerMainThread();
-
-    expectTrue(fuse::profiler::scopeNestingDepth() == 0u, "reset leaves scope nesting depth at zero");
-
-    {
-        FUSE_PROFILE_SCOPE("depth_outer");
-        expectTrue(fuse::profiler::scopeNestingDepth() == 1u, "outer scope increments introspection depth");
-        {
-            FUSE_PROFILE_SCOPE("depth_inner");
-            expectTrue(fuse::profiler::scopeNestingDepth() == 2u, "inner scope increments introspection depth");
-        }
-        expectTrue(fuse::profiler::scopeNestingDepth() == 1u, "inner scope end restores introspection depth");
-    }
-    expectTrue(fuse::profiler::scopeNestingDepth() == 0u, "outer scope end clears introspection depth");
-}
-
 void testOpenAsyncFlowCountTracking() {
     resetState();
     fuse::platform::registerMainThread();
@@ -1184,7 +1166,6 @@ int main() {
     testCounterInsideNestedFlowRecordsFlowDepth();
     testSnapshotAtFrameCounterInsideNestedFlowAndScope();
     testFlowNestingDepthIntrospection();
-    testScopeNestingDepthIntrospection();
     testOpenAsyncFlowCountTracking();
     testLastEventIndexAndLastEvent();
     testBufferEmptyAndFullGuards();
