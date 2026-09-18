@@ -5,6 +5,7 @@
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/types.hpp>
 
+#include <climits>
 #include <cmath>
 #include <vector>
 
@@ -210,6 +211,81 @@ FUSE_PHYSICS_INLINE bool cellOccupancyWithinBudget(const CellRange2& range, u32 
     return !exceedsCellOccupancyBudget(range, maxCells);
 }
 
+/// True when a hash cell has fewer than two occupants (no pairs possible).
+FUSE_PHYSICS_INLINE bool isEmptyCellBucket(usize occupantCount) {
+    return occupantCount < 2u;
+}
+
+/// True when any axis span exceeds `maxSpanPerAxis` before clamp (0 = unlimited).
+FUSE_PHYSICS_INLINE bool cellSpanExceedsClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+    if (maxSpanPerAxis == 0u || isEmptyCellRange(range)) {
+        return false;
+    }
+    const ivec3 span = cellSpanPerAxis(range);
+    return span.x > static_cast<s32>(maxSpanPerAxis) || span.y > static_cast<s32>(maxSpanPerAxis) ||
+           span.z > static_cast<s32>(maxSpanPerAxis);
+}
+
+FUSE_PHYSICS_INLINE bool cellSpanExceedsClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+    if (maxSpanPerAxis == 0u || isEmptyCellRange(range)) {
+        return false;
+    }
+    const ivec2 span = cellSpanPerAxis(range);
+    return span.x > static_cast<s32>(maxSpanPerAxis) || span.y > static_cast<s32>(maxSpanPerAxis);
+}
+
+/// Skip shape→cell insertion when range is empty or over occupancy budget (0 = unlimited).
+FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(const CellRange3& range, u32 maxOccupancy) {
+    return isEmptyCellRange(range) || exceedsCellOccupancyBudget(range, maxOccupancy);
+}
+
+FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(const CellRange2& range, u32 maxOccupancy) {
+    return isEmptyCellRange(range) || exceedsCellOccupancyBudget(range, maxOccupancy);
+}
+
+/// Const preflight for cell occupancy budgeting (B4.2 deepen pass).
+struct CellCapacityPreflight {
+    u32 occupancyCount = 0u;
+    bool emptyRange = false;
+    bool exceedsSpanClamp = false;
+    bool exceedsOccupancyBudget = false;
+    bool skipped = false;
+
+    bool can_insert() const { return !skipped && !emptyRange && !exceedsOccupancyBudget; }
+};
+
+FUSE_PHYSICS_INLINE CellCapacityPreflight preflight_cell_capacity(
+    const CellRange3& range,
+    u32 maxSpanPerAxis,
+    u32 maxOccupancy = 0u) {
+    CellCapacityPreflight preflight{};
+    if (isEmptyCellRange(range)) {
+        preflight.emptyRange = true;
+        preflight.skipped = true;
+        return preflight;
+    }
+    preflight.occupancyCount = estimateCellOccupancyCount(range);
+    preflight.exceedsSpanClamp = cellSpanExceedsClamp(range, maxSpanPerAxis);
+    preflight.exceedsOccupancyBudget = exceedsCellOccupancyBudget(range, maxOccupancy);
+    return preflight;
+}
+
+FUSE_PHYSICS_INLINE CellCapacityPreflight preflight_cell_capacity(
+    const CellRange2& range,
+    u32 maxSpanPerAxis,
+    u32 maxOccupancy = 0u) {
+    CellCapacityPreflight preflight{};
+    if (isEmptyCellRange(range)) {
+        preflight.emptyRange = true;
+        preflight.skipped = true;
+        return preflight;
+    }
+    preflight.occupancyCount = estimateCellOccupancyCount(range);
+    preflight.exceedsSpanClamp = cellSpanExceedsClamp(range, maxSpanPerAxis);
+    preflight.exceedsOccupancyBudget = exceedsCellOccupancyBudget(range, maxOccupancy);
+    return preflight;
+}
+
 /// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).
 FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {
     return uniqueBodyCount > 1u ? uniqueBodyCount * (uniqueBodyCount - 1u) / 2u : 0u;
@@ -352,6 +428,59 @@ FUSE_PHYSICS_INLINE bool sphereAabbOverlap(vec3 centerA, f32 radiusA, vec3 cente
 }
 
 struct PairBufferSoA;
+
+/// Const preflight for broadphase input (B4.2 deepen pass).
+struct BroadphaseInputPreflight {
+    bool emptyBodies = false;
+    bool emptyShapes = false;
+    bool skipped = false;
+
+    bool can_run() const { return !skipped; }
+};
+
+BroadphaseInputPreflight preflight_broadphase_input(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Const preflight for pair-buffer capacity (B4.2 deepen pass).
+struct PairBufferPreflight {
+    u32 activeCount = 0u;
+    u32 remaining = UINT32_MAX;
+    bool empty = false;
+    bool full = false;
+    bool hasDropped = false;
+    bool skipped = false;
+
+    bool can_push(u32 additionalCount = 1u) const;
+};
+
+PairBufferPreflight preflight_pair_buffer(const PairBufferSoA& buffer);
+
+/// Const preflight for parallel AABB refine (B4.2 deepen pass).
+struct BroadphaseRefinePreflight {
+    u32 pairCount = 0u;
+    bool emptyBuffer = false;
+    bool emptyInput = false;
+    bool skipped = false;
+
+    bool can_refine() const { return !skipped; }
+};
+
+BroadphaseRefinePreflight preflight_broadphase_refine(
+    const PairBufferSoA& buffer,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Const preflight for canonical pair dedupe (B4.2 deepen pass).
+struct BroadphaseDedupePreflight {
+    u32 activeCount = 0u;
+    bool skipped = false;
+    bool noOp = false;
+
+    bool needs_dedupe() const { return !skipped && !noOp; }
+};
+
+BroadphaseDedupePreflight preflight_broadphase_dedupe(const PairBufferSoA& buffer);
 
 /// Job-safe broadphase: parallel shape→cell + per-cell pair generation into reusable SoA slots.
 void runBroadphaseIntoBuffer(
