@@ -18,6 +18,47 @@ bool taaHistoryReuseAllowed(const TaaHistoryBuffer& history, u32 observedGenerat
     return taaHistoryCanReuse(history) && !history.isHistoryStale(observedGeneration);
 }
 
+bool TaaHistoryWarmupPreflight::readyForResolve() const {
+    return buffer_ready;
+}
+
+bool TaaHistoryWarmupPreflight::warmupComplete() const {
+    return buffer_ready && !needs_warmup;
+}
+
+bool TaaHistoryReusePreflight::canReuseHistory() const {
+    return reuse_allowed;
+}
+
+TaaHistoryWarmupPreflight preflightTaaHistoryWarmup(const TaaHistoryBuffer& history) {
+    TaaHistoryWarmupPreflight preflight{};
+    preflight.buffer_ready = history.isReady();
+    preflight.needs_warmup = history.needsWarmup();
+    preflight.can_reuse = taaHistoryCanReuse(history);
+    preflight.invalidate_generation = history.invalidateGeneration();
+    preflight.accumulated_frames = history.accumulatedFrames();
+    return preflight;
+}
+
+TaaHistoryReusePreflight preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration) {
+    TaaHistoryReusePreflight preflight{};
+    preflight.warmup = preflightTaaHistoryWarmup(history);
+    preflight.observed_generation = observedGeneration;
+    preflight.generation_matches = history.generationMatches(observedGeneration);
+    preflight.reuse_allowed = taaHistoryReuseAllowed(history, observedGeneration);
+    return preflight;
+}
+
+TaaHistoryReusePreflight preflightTaaHistoryReuseForDesc(const TaaHistoryBuffer& history,
+                                                         const TaaResolveDesc& desc) {
+    if (desc.observed_history_generation == kTaaResolveNoHistoryGeneration) {
+        TaaHistoryReusePreflight preflight = preflightTaaHistoryReuse(history, history.invalidateGeneration());
+        preflight.reuse_allowed = taaHistoryCanReuse(history);
+        return preflight;
+    }
+    return preflightTaaHistoryReuse(history, desc.observed_history_generation);
+}
+
 bool TaaHistoryBuffer::canReuseHistory() const {
     return taaHistoryCanReuse(*this);
 }

@@ -56,6 +56,13 @@ public:
     bool historyBlendAllowed() const;
     /// True when pass jitter can produce NDC offsets for the configured viewport (B5.9 deepen).
     bool canProduceJitterNdc() const;
+    /// True when pass jitter slot and monotonic counter match a frame index (B5.9 deepen).
+    bool isJitterSyncedToFrameIndex(u32 frameIndex) const;
+    TaaHistoryWarmupPreflight preflightHistoryWarmup() const;
+    TaaHistoryReusePreflight preflightHistoryReuse(u32 observedGeneration) const;
+    TaaHistoryReusePreflight preflightHistoryReuseForDesc(const TaaResolveDesc& desc) const;
+    TaaJitterSyncPreflight preflightJitterSync(u32 frameIndex) const;
+    TaaResolveBlendPreflight preflightResolveBlend(const TaaResolveDesc& desc) const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
