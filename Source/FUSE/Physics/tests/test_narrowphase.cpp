@@ -903,6 +903,144 @@ void testFrictionBasisGuardHelpers() {
         "ensure_friction_basis returns false when tangents should be skipped");
 }
 
+void testContactPairSleepingKinematicGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 dynamicA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 dynamicB = bodies.addBody({1.5f, 0.f, 0.f}, 1.f);
+    const fuse::u32 sleepingA = bodies.addBody({2.f, 0.f, 0.f}, 1.f, fuse::physics::RB_SLEEPING);
+    const fuse::u32 sleepingB = bodies.addBody({2.5f, 0.f, 0.f}, 1.f, fuse::physics::RB_SLEEPING);
+    const fuse::u32 kinematicA = bodies.addBody({4.f, 0.f, 0.f}, 0.f, fuse::physics::RB_KINEMATIC);
+    const fuse::u32 kinematicB = bodies.addBody({4.5f, 0.f, 0.f}, 0.f, fuse::physics::RB_KINEMATIC);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, dynamicA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, dynamicB, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, sleepingA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, sleepingB, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, kinematicA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, kinematicB, {1.f, 0.f, 0.f});
+
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_reject_reason({sleepingA, sleepingB}, bodies, shapes) ==
+            fuse::physics::narrowphase::ContactPairRejectReason::BothSleeping,
+        "reject reason flags both-sleeping pair");
+    expectTrue(
+        fuse::physics::narrowphase::is_sleeping_contact_pair({sleepingA, sleepingB}, bodies),
+        "sleeping guard detects both-sleeping pair");
+    expectTrue(
+        !fuse::physics::narrowphase::is_sleeping_contact_pair({dynamicA, sleepingA}, bodies),
+        "sleeping guard allows dynamic/sleeping mix");
+
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_reject_reason({kinematicA, kinematicB}, bodies, shapes) ==
+            fuse::physics::narrowphase::ContactPairRejectReason::BothKinematic,
+        "reject reason flags both-kinematic pair");
+    expectTrue(
+        fuse::physics::narrowphase::is_kinematic_contact_pair({kinematicA, kinematicB}, bodies),
+        "kinematic guard detects both-kinematic pair");
+    expectTrue(
+        !fuse::physics::narrowphase::is_kinematic_contact_pair({dynamicA, kinematicA}, bodies),
+        "kinematic guard allows dynamic/kinematic mix");
+
+    const auto sleepingPair =
+        fuse::physics::narrowphase::detect_contacts_pair({sleepingA, sleepingB}, bodies, shapes);
+    expectTrue(!sleepingPair.valid, "both-sleeping pair returns invalid manifold");
+
+    expectTrue(
+        std::strcmp(
+            fuse::physics::narrowphase::contact_pair_reject_reason_name(
+                fuse::physics::narrowphase::ContactPairRejectReason::BothSleeping),
+            "BothSleeping") == 0,
+        "reject reason name resolves BothSleeping");
+    expectTrue(
+        std::strcmp(
+            fuse::physics::narrowphase::contact_pair_reject_reason_name(
+                fuse::physics::narrowphase::ContactPairRejectReason::BothKinematic),
+            "BothKinematic") == 0,
+        "reject reason name resolves BothKinematic");
+}
+
+void testManifoldFinalizeGuards() {
+    fuse::physics::narrowphase::ContactManifold manifold{};
+    manifold.contactNormal = {0.f, 2.f, 0.f};
+    manifold.addPoint({0.f, 0.f, 0.f}, 0.3f);
+    manifold.addPoint({1.f, 0.f, 0.f}, -0.2f);
+    expectTrue(manifold.countSeparatedPoints() == 1u, "countSeparatedPoints tracks separated slots");
+    expectTrue(!manifold.hasUnitNormal(), "hasUnitNormal false before normalization");
+    expectTrue(manifold.canFinalize(), "canFinalize true with penetrating point");
+
+    expectTrue(manifold.normalizeContactNormal(), "normalizeContactNormal succeeds");
+    expectTrue(manifold.hasUnitNormal(), "hasUnitNormal true after normalization");
+    expectNear(manifold.contactNormal.y, 1.f, 1e-4f, "normalizeContactNormal yields unit Y");
+
+    fuse::physics::narrowphase::ContactManifold separatedOnly{};
+    separatedOnly.contactNormal = {0.f, 1.f, 0.f};
+    separatedOnly.addPoint({0.f, 0.f, 0.f}, -0.5f);
+    expectTrue(!separatedOnly.canFinalize(), "canFinalize false when all points separated");
+    expectTrue(
+        !separatedOnly.pruneForFinalization(),
+        "pruneForFinalization false when only separated points remain");
+    expectTrue(separatedOnly.empty(), "pruneForFinalization clears separated manifold");
+
+    fuse::physics::narrowphase::ContactManifold survives{};
+    survives.contactNormal = {0.f, 1.f, 0.f};
+    survives.addPoint({0.f, 0.f, 0.f}, 0.4f);
+    survives.addPoint({0.f, 0.f, 0.f}, 0.5f);
+    survives.addPoint({1.f, 0.f, 0.f}, -0.1f);
+    expectTrue(survives.pruneForFinalization(), "pruneForFinalization true when penetrating points remain");
+    expectTrue(survives.pointCount == 1u, "pruneForFinalization merges duplicates and drops separated");
+    expectNear(survives.maxPenetration(), 0.5f, 1e-4f, "pruneForFinalization keeps deepest merged point");
+}
+
+void testFrictionBasisRebuildGuardOverloads() {
+    fuse::physics::narrowphase::ContactManifold manifold{};
+    manifold.contactNormal = {0.f, 1.f, 0.f};
+    manifold.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    expectTrue(
+        fuse::physics::narrowphase::needs_friction_basis_rebuild(manifold),
+        "needs rebuild before basis is built");
+    expectTrue(
+        fuse::physics::narrowphase::should_rebuild_friction_basis(manifold),
+        "should_rebuild mirrors needs_friction_basis_rebuild");
+
+    expectTrue(
+        fuse::physics::narrowphase::ensure_friction_basis(manifold),
+        "ensure_friction_basis builds orthonormal frame");
+    expectTrue(
+        fuse::physics::narrowphase::isValidFrictionBasisForNormal(
+            manifold.contactNormal, manifold.frictionBasis),
+        "isValidFrictionBasisForNormal accepts built basis");
+
+    const auto cachedTangent1 = manifold.frictionBasis.tangent1;
+    expectTrue(
+        !fuse::physics::narrowphase::needs_friction_basis_rebuild(manifold),
+        "needs rebuild false after ensure");
+    expectTrue(
+        fuse::physics::narrowphase::ensure_friction_basis(manifold),
+        "ensure early-outs with cached basis");
+    expectNear(
+        manifold.frictionBasis.tangent1.x,
+        cachedTangent1.x,
+        1e-4f,
+        "ensure preserves cached tangent1");
+
+    manifold.contactNormal = {1.f, 0.f, 0.f};
+    expectTrue(
+        fuse::physics::narrowphase::needs_friction_basis_rebuild(manifold),
+        "needs rebuild after normal changes");
+    expectTrue(
+        fuse::physics::narrowphase::ensure_friction_basis(manifold),
+        "ensure rebuilds after normal change");
+    expectTrue(
+        fuse::physics::narrowphase::isValidFrictionBasisForNormal(
+            manifold.contactNormal, manifold.frictionBasis),
+        "rebuilt basis matches new normal");
+
+    fuse::physics::narrowphase::ContactManifold empty{};
+    expectTrue(
+        !fuse::physics::narrowphase::ensure_friction_basis(empty),
+        "ensure fails on empty manifold");
+}
+
 void testGjkSupportAndEpaStub() {
     const fuse::physics::vec3 hull[] = {
         {-1.f, 0.f, 0.f},
@@ -950,6 +1088,9 @@ int main() {
     testCanFinalizeContactManifoldGuard();
     testManifoldPrunePreflightGuards();
     testFrictionBasisGuardHelpers();
+    testContactPairSleepingKinematicGuards();
+    testManifoldFinalizeGuards();
+    testFrictionBasisRebuildGuardOverloads();
     testGjkSupportAndEpaStub();
 
     if (g_failures == 0) {
