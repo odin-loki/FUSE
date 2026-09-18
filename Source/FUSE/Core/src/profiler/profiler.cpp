@@ -222,7 +222,7 @@ const char* chromeCategory(EventPhase phase) {
 
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
-      m_active(g_enabled.load(std::memory_order_acquire) && name != nullptr) {
+      m_active(g_enabled.load(std::memory_order_acquire) && isValidProfileName(name)) {
     if (m_active) {
         m_scopeId = g_nextScopeId.fetch_add(1u, std::memory_order_acq_rel);
         m_nestingDepth = pushNestingDepth();
@@ -331,6 +331,50 @@ const ProfileEvent& lastEvent() {
     return eventAt(index);
 }
 
+bool tryEventAt(u32 index, const ProfileEvent*& outEvent) {
+    static const ProfileEvent kEmpty{};
+    if (!isEventIndexValid(index)) {
+        outEvent = &kEmpty;
+        return false;
+    }
+
+    outEvent = &eventAt(index);
+    return true;
+}
+
+ProfilerGuardPreflight preflightGuardState() {
+    ProfilerGuardPreflight preflight{};
+    preflight.scopeDepth = currentNestingDepth();
+    preflight.flowDepth = currentFlowNestingDepth();
+    preflight.openAsyncFlows = g_openAsyncFlowCount.load(std::memory_order_acquire);
+    preflight.maxScopeDepth = g_maxNestingDepth.load(std::memory_order_acquire);
+    preflight.maxFlowDepth = g_maxFlowNestingDepth.load(std::memory_order_acquire);
+    preflight.hasOpenScopes = preflight.scopeDepth > 0u;
+    preflight.hasOpenAsyncFlows = preflight.openAsyncFlows > 0u;
+    preflight.canEndAsyncFlow = preflight.openAsyncFlows > 0u;
+    return preflight;
+}
+
+bool hasOpenScopes() {
+    return currentNestingDepth() > 0u;
+}
+
+bool hasOpenAsyncFlows() {
+    return g_openAsyncFlowCount.load(std::memory_order_acquire) > 0u;
+}
+
+ChromeTraceExportPreflight preflightChromeTraceExport() {
+    ChromeTraceExportPreflight preflight{};
+    preflight.eventCount = eventCount();
+    preflight.frameIndex = frameIndex();
+    preflight.bufferEmpty = preflight.eventCount == 0u;
+    preflight.canExport = true;
+    preflight.hasOpenScopes = hasOpenScopes();
+    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
+    preflight.hasUnmatchedAsyncFlows = preflight.hasOpenAsyncFlows;
+    return preflight;
+}
+
 void reset() {
     const std::lock_guard<std::mutex> lock(g_exportMutex);
     g_writeHead.store(0u, std::memory_order_release);
@@ -350,7 +394,7 @@ u32 nextFlowId() {
 }
 
 void beginAsyncFlow(const char* name, u32 flowId) {
-    if (!g_enabled.load(std::memory_order_acquire) || name == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidProfileName(name)) {
         return;
     }
 
@@ -364,7 +408,7 @@ void beginAsyncFlow(const char* name, u32 flowId) {
 }
 
 void endAsyncFlow(const char* name, u32 flowId) {
-    if (!g_enabled.load(std::memory_order_acquire) || name == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidProfileName(name)) {
         return;
     }
 
@@ -384,7 +428,7 @@ void endAsyncFlow(const char* name, u32 flowId) {
 }
 
 void sampleCounter(const char* track, s64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || track == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidProfileName(track)) {
         return;
     }
 
@@ -400,7 +444,7 @@ void sampleCounter(const char* track, s64 value) {
 }
 
 void sampleCounterFloat(const char* track, f64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || track == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidProfileName(track)) {
         return;
     }
 
@@ -416,7 +460,7 @@ void sampleCounterFloat(const char* track, f64 value) {
 }
 
 void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || track == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidProfileName(track)) {
         return;
     }
 
@@ -432,7 +476,7 @@ void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
 }
 
 void sampleCounterFloatSnapshotAtFrame(const char* track, f64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || track == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidProfileName(track)) {
         return;
     }
 
