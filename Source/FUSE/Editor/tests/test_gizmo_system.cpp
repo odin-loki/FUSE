@@ -1092,6 +1092,171 @@ void testTryEndDragGuards() {
     expectTrue(result.axis == fuse::editor::GizmoAxis::X, "tryEndDrag records active axis");
 }
 
+void testHitTestOutOfBoundsGuards() {
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = -1.f;
+    hit.screenY = 50.f;
+    expectTrue(fuse::editor::isHitTestOutOfBounds(hit),
+               "negative screen X is out of bounds");
+    expectTrue(!fuse::editor::isHitTestInBounds(hit), "out-of-bounds hit is not in bounds");
+
+    hit.screenX = 101.f;
+    expectTrue(fuse::editor::isHitTestOutOfBounds(hit), "screen X past width is out of bounds");
+
+    hit.screenX = 50.f;
+    hit.screenY = -1.f;
+    expectTrue(fuse::editor::isHitTestOutOfBounds(hit), "negative screen Y is out of bounds");
+
+    hit.screenY = 101.f;
+    expectTrue(fuse::editor::isHitTestOutOfBounds(hit), "screen Y past height is out of bounds");
+
+    hit.screenY = 50.f;
+    expectTrue(fuse::editor::isHitTestInBounds(hit), "in-bounds hit clears out-of-bounds guard");
+
+    fuse::editor::GizmoHitTest empty{};
+    empty.viewportWidth = 0.f;
+    expectTrue(!fuse::editor::isHitTestOutOfBounds(empty),
+               "empty viewport is not classified as out of bounds");
+}
+
+void testPickOutOfBoundsPreflight() {
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 150.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::PickPreflight outOfBoundsPick =
+        fuse::editor::preflightPick(hit, fuse::editor::GizmoMode::Translate);
+    expectTrue(outOfBoundsPick.outOfBounds, "pick preflight marks out-of-bounds screen hit");
+    expectTrue(!outOfBoundsPick.canPick(), "pick preflight rejects out-of-bounds screen hit");
+
+    fuse::editor::GizmoAxis axis = fuse::editor::GizmoAxis::X;
+    expectTrue(!fuse::editor::tryPickAxis(hit, fuse::editor::GizmoMode::Translate, axis),
+               "tryPickAxis rejects out-of-bounds screen hit");
+    expectTrue(axis == fuse::editor::GizmoAxis::None, "out-of-bounds pick leaves axis unset");
+
+    fuse::editor::GizmoSystem gizmo;
+    expectTrue(!gizmo.canPickAxis(hit), "gizmo canPickAxis rejects out-of-bounds screen hit");
+}
+
+void testBeginDragSnapDegradedPreflight() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::BeginDragPreflight degradedPreflight =
+        fuse::editor::preflightBeginDrag(hit, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(degradedPreflight.canBegin, "begin preflight still allows drag when snap degraded");
+    expectTrue(degradedPreflight.snapDegraded, "begin preflight marks snap degraded");
+
+    snap.gridSize = 1.f;
+    const fuse::editor::BeginDragPreflight validPreflight =
+        fuse::editor::preflightBeginDrag(hit, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(validPreflight.canBegin, "begin preflight accepts valid snap settings");
+    expectTrue(!validPreflight.snapDegraded, "valid snap clears snapDegraded on begin");
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    const fuse::editor::BeginDragPreflight gizmoPreflight = gizmo.preflightBeginDrag(hit);
+    expectTrue(gizmoPreflight.canBegin, "gizmo begin preflight accepts valid screen hit");
+    expectTrue(!gizmoPreflight.snapDegraded, "gizmo begin preflight clears snapDegraded");
+}
+
+void testBeginDragOutOfBoundsPreflight() {
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 150.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::BeginDragPreflight preflight =
+        fuse::editor::preflightBeginDrag(hit, fuse::editor::GizmoMode::Translate);
+    expectTrue(preflight.outOfBounds, "begin preflight marks out-of-bounds screen hit");
+    expectTrue(!preflight.canBegin, "begin preflight rejects out-of-bounds screen hit");
+
+    fuse::editor::GizmoSystem gizmo;
+    fuse::editor::GizmoTransform transform{};
+    fuse::editor::GizmoResult result{};
+    expectTrue(!gizmo.tryBeginDrag(hit, transform, result),
+               "tryBeginDrag rejects out-of-bounds screen hit");
+    expectTrue(!gizmo.isDragging(), "out-of-bounds hit does not start drag");
+}
+
+void testUpdateDragOutOfBoundsPreflight() {
+    fuse::editor::GizmoSystem gizmo;
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    fuse::editor::GizmoTransform transform{};
+    gizmo.beginDrag(hit, transform);
+
+    hit.screenX = 150.f;
+    const fuse::editor::UpdateDragPreflight outOfBoundsPreflight = gizmo.preflightUpdateDrag(hit);
+    expectTrue(outOfBoundsPreflight.outOfBounds, "update preflight marks out-of-bounds screen hit");
+    expectTrue(!outOfBoundsPreflight.canUpdate(),
+               "update preflight rejects out-of-bounds screen hit");
+
+    fuse::editor::GizmoResult result{};
+    expectTrue(!gizmo.tryUpdateDrag(hit, result), "tryUpdateDrag rejects out-of-bounds screen hit");
+    expectTrue(gizmo.isDragging(), "out-of-bounds update keeps drag active");
+    gizmo.endDrag();
+}
+
+void testGizmoTransformEquals() {
+    fuse::editor::GizmoTransform a{};
+    fuse::editor::GizmoTransform b{};
+    b.rotW = 1.f;
+    expectTrue(fuse::editor::gizmoTransformEquals(a, b), "default transforms compare equal");
+
+    a.posX = 1.f;
+    expectTrue(!fuse::editor::gizmoTransformEquals(a, b), "position delta breaks equality");
+}
+
+void testEndDragUnchangedTransformPreflight() {
+    fuse::editor::GizmoTransform transform{};
+    transform.rotW = 1.f;
+    transform.scaleX = 1.f;
+    transform.scaleY = 1.f;
+    transform.scaleZ = 1.f;
+
+    const fuse::editor::EndDragPreflight unchangedPreflight = fuse::editor::preflightEndDrag(
+        true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate, {}, transform,
+        transform);
+    expectTrue(unchangedPreflight.canEnd(), "end preflight accepts active drag");
+    expectTrue(unchangedPreflight.unchangedTransform,
+               "end preflight marks unchanged transform");
+
+    fuse::editor::GizmoTransform moved = transform;
+    moved.posX = 1.f;
+    const fuse::editor::EndDragPreflight changedPreflight = fuse::editor::preflightEndDrag(
+        true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate, {}, transform,
+        moved);
+    expectTrue(!changedPreflight.unchangedTransform, "moved transform clears unchangedTransform");
+
+    fuse::editor::GizmoSystem gizmo;
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+    gizmo.beginDrag(hit, transform);
+    expectTrue(gizmo.preflightEndDrag().unchangedTransform,
+               "gizmo end preflight marks unchanged drag without updates");
+    gizmo.endDrag();
+}
+
 void testDirtyFlagOnEndDrag() {
     fuse::editor::GizmoSystem gizmo;
     fuse::editor::CommandStack commandStack;
@@ -1159,6 +1324,13 @@ int main() {
     testEndDragPreflightGuards();
     testCanEndDragGuards();
     testTryEndDragGuards();
+    testHitTestOutOfBoundsGuards();
+    testPickOutOfBoundsPreflight();
+    testBeginDragSnapDegradedPreflight();
+    testBeginDragOutOfBoundsPreflight();
+    testUpdateDragOutOfBoundsPreflight();
+    testGizmoTransformEquals();
+    testEndDragUnchangedTransformPreflight();
     testDirtyFlagOnEndDrag();
 
     if (g_failures != 0) {
