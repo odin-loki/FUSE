@@ -1,4 +1,5 @@
 #include <fuse/physics/narrowphase/contact_buffer.hpp>
+#include <fuse/physics/narrowphase/contact_pair.hpp>
 
 #include <algorithm>
 
@@ -52,7 +53,8 @@ void ContactBufferSoA::preparePairSlots(u32 pairCount) {
 }
 
 void ContactBufferSoA::writeSlot(u32 slot, const ContactManifold& manifold) {
-    if (slot >= pairSlotCount || !manifold.valid || manifold.bodyA == manifold.bodyB) {
+    if (slot >= pairSlotCount || !manifold.valid || manifold.bodyA == manifold.bodyB ||
+        !can_finalize_contact_manifold(manifold)) {
         return;
     }
 

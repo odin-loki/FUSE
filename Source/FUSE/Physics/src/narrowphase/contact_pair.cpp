@@ -353,13 +353,13 @@ bool can_finalize_contact_manifold(const ContactManifold& manifold) {
 }
 
 bool generate_contact_manifold(ContactManifold& manifold) {
-    if (manifold.empty()) {
+    const ContactManifoldFinalizePreflight preflight = preflight_contact_manifold_finalize(manifold);
+    if (!preflight.can_finalize()) {
         manifold.clear();
         return false;
     }
 
-    manifold.pruneContactPoints();
-    if (manifold.empty()) {
+    if (!manifold.pruneContactPointsIfNeeded()) {
         manifold.clear();
         return false;
     }
@@ -373,7 +373,7 @@ bool generate_contact_manifold(ContactManifold& manifold) {
     manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
 
     manifold.syncLegacyFields();
-    compute_friction_tangents(manifold);
+    compute_friction_tangents_if_needed(manifold);
     if (!manifold.hasFrictionBasis()) {
         manifold.clear();
         return false;
@@ -414,7 +414,42 @@ bool should_skip_contact_pair_dispatch(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
-    return is_invalid_contact_pair(pair, bodies, shapes);
+    return preflight_contact_pair(pair, bodies, shapes).rejected;
+}
+
+ContactManifoldFinalizePreflight preflight_contact_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) {
+    ContactManifoldFinalizePreflight preflight{};
+    if (manifold.empty()) {
+        preflight.skipped = true;
+        preflight.empty = true;
+        return preflight;
+    }
+
+    if (!manifold.hasValidNormal()) {
+        preflight.invalidNormal = true;
+        return preflight;
+    }
+
+    if (!manifold.hasPenetratingPoints(separationEpsilon)) {
+        preflight.noPenetratingPoints = true;
+        preflight.pruneWouldEmpty = true;
+        return preflight;
+    }
+
+    const ManifoldPrunePreflight prunePreflight =
+        preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon);
+    preflight.pruneWouldEmpty = prunePreflight.wouldBeEmpty;
+    return preflight;
+}
+
+bool should_skip_contact_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) {
+    return !preflight_contact_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon).can_finalize();
 }
 
 } // namespace fuse::physics::narrowphase

@@ -84,7 +84,9 @@ void testContactBufferClearReuse() {
     first.valid = true;
     first.bodyA = 0u;
     first.bodyB = 1u;
+    first.contactNormal = {0.f, 1.f, 0.f};
     first.penetrationDepth = 0.25f;
+    first.addPoint({0.f, 0.f, 0.f}, 0.25f);
     buffer.writeSlot(0u, first);
     expectTrue(buffer.compact() == 1u, "compact keeps valid slot");
 
@@ -895,6 +897,18 @@ void testManifoldPruneSkipGuards() {
 
     const auto dirtyPreflight = fuse::physics::narrowphase::preflight_manifold_prune(dirty);
     expectTrue(!dirtyPreflight.needs_pruning(), "preflight marks already-pruned manifold as clean");
+
+    fuse::physics::narrowphase::ContactManifold overCap{};
+    overCap.contactNormal = {0.f, 1.f, 0.f};
+    overCap.addPoint({0.f, 0.f, 0.f}, 0.5f);
+    overCap.addPoint({1.f, 0.f, 0.f}, 0.4f);
+    overCap.addPoint({2.f, 0.f, 0.f}, 0.3f);
+    overCap.addPoint({3.f, 0.f, 0.f}, 0.2f);
+    overCap.pointCount = 5u;
+    const auto overCapPreflight = fuse::physics::narrowphase::preflight_manifold_prune(overCap);
+    expectTrue(overCapPreflight.exceedsMaxPoints, "preflight flags point count above manifold cap");
+    expectTrue(overCapPreflight.needs_pruning(), "preflight needs pruning when over cap");
+    expectTrue(overCapPreflight.can_prune_in_place(), "preflight can prune over-cap manifold in place");
 }
 
 void testContactPairPreflightGuards() {
@@ -922,6 +936,115 @@ void testContactPairPreflightGuards() {
     expectTrue(
         fuse::physics::narrowphase::should_skip_contact_pair_dispatch({bodyA, bodyA}, bodies, shapes),
         "skip guard rejects self pair");
+
+    const fuse::u32 staticA = bodies.addBody({0.f, 2.f, 0.f}, 0.f, fuse::physics::RB_STATIC);
+    const fuse::u32 staticB = bodies.addBody({0.f, 3.f, 0.f}, 0.f, fuse::physics::RB_STATIC);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, staticA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, staticB, {1.f, 0.f, 0.f});
+    const auto staticPreflight =
+        fuse::physics::narrowphase::preflight_contact_pair({staticA, staticB}, bodies, shapes);
+    expectTrue(!staticPreflight.can_dispatch(), "preflight rejects both-static pair");
+    expectTrue(
+        staticPreflight.reason == fuse::physics::narrowphase::ContactPairRejectReason::BothStatic,
+        "preflight reports BothStatic");
+
+    const fuse::u32 triggerA = bodies.addBody({2.f, 0.f, 0.f}, 1.f, fuse::physics::RB_TRIGGER);
+    const fuse::u32 triggerB = bodies.addBody({3.f, 0.f, 0.f}, 1.f, fuse::physics::RB_TRIGGER);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, triggerA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, triggerB, {1.f, 0.f, 0.f});
+    const auto triggerPreflight =
+        fuse::physics::narrowphase::preflight_contact_pair({triggerA, triggerB}, bodies, shapes);
+    expectTrue(!triggerPreflight.can_dispatch(), "preflight rejects both-trigger pair");
+    expectTrue(
+        triggerPreflight.reason == fuse::physics::narrowphase::ContactPairRejectReason::BothTriggers,
+        "preflight reports BothTriggers");
+
+    const fuse::u32 zeroRadiusBody = bodies.addBody({5.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, zeroRadiusBody, {0.f, 0.f, 0.f});
+    const auto degeneratePreflight =
+        fuse::physics::narrowphase::preflight_contact_pair({bodyA, zeroRadiusBody}, bodies, shapes);
+    expectTrue(!degeneratePreflight.can_dispatch(), "preflight rejects degenerate shape pair");
+    expectTrue(
+        degeneratePreflight.reason == fuse::physics::narrowphase::ContactPairRejectReason::DegenerateShape,
+        "preflight reports DegenerateShape");
+
+    const fuse::u32 planeA = bodies.addBody({0.f, -1.f, 0.f}, 0.f, fuse::physics::RB_STATIC);
+    const fuse::u32 planeB = bodies.addBody({0.f, -2.f, 0.f}, 0.f, fuse::physics::RB_STATIC);
+    shapes.addShape(fuse::physics::CollisionShapeType::Plane, planeA, {0.f, 1.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Plane, planeB, {0.f, 1.f, 0.f});
+    const auto unsupportedPreflight =
+        fuse::physics::narrowphase::preflight_contact_pair({planeA, planeB}, bodies, shapes);
+    expectTrue(!unsupportedPreflight.can_dispatch(), "preflight rejects unsupported plane-plane pair");
+    expectTrue(
+        unsupportedPreflight.reason ==
+            fuse::physics::narrowphase::ContactPairRejectReason::UnsupportedShapePair,
+        "preflight reports UnsupportedShapePair");
+}
+
+void testContactManifoldFinalizePreflightGuards() {
+    fuse::physics::narrowphase::ContactManifold empty{};
+    const auto emptyPreflight = fuse::physics::narrowphase::preflight_contact_manifold_finalize(empty);
+    expectTrue(emptyPreflight.skipped, "finalize preflight skips empty manifold");
+    expectTrue(emptyPreflight.empty, "finalize preflight flags empty manifold");
+    expectTrue(
+        fuse::physics::narrowphase::should_skip_contact_manifold_finalize(empty),
+        "should_skip finalize true for empty manifold");
+
+    fuse::physics::narrowphase::ContactManifold noNormal{};
+    noNormal.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    const auto noNormalPreflight = fuse::physics::narrowphase::preflight_contact_manifold_finalize(noNormal);
+    expectTrue(noNormalPreflight.invalidNormal, "finalize preflight flags invalid normal");
+    expectTrue(
+        !noNormalPreflight.can_finalize(),
+        "finalize preflight rejects zero-length normal");
+
+    fuse::physics::narrowphase::ContactManifold separated{};
+    separated.contactNormal = {0.f, 1.f, 0.f};
+    separated.addPoint({0.f, 0.f, 0.f}, -0.1f);
+    const auto separatedPreflight = fuse::physics::narrowphase::preflight_contact_manifold_finalize(separated);
+    expectTrue(separatedPreflight.noPenetratingPoints, "finalize preflight flags all-separated points");
+    expectTrue(separatedPreflight.pruneWouldEmpty, "finalize preflight flags prune-would-empty");
+    expectTrue(
+        fuse::physics::narrowphase::should_skip_contact_manifold_finalize(separated),
+        "should_skip finalize true for separated manifold");
+
+    fuse::physics::narrowphase::ContactManifold ready{};
+    ready.contactNormal = {0.f, 1.f, 0.f};
+    ready.addPoint({0.f, 0.f, 0.f}, 0.25f);
+    const auto readyPreflight = fuse::physics::narrowphase::preflight_contact_manifold_finalize(ready);
+    expectTrue(readyPreflight.can_finalize(), "finalize preflight accepts penetrating manifold");
+    expectTrue(
+        !fuse::physics::narrowphase::should_skip_contact_manifold_finalize(ready),
+        "should_skip finalize false for ready manifold");
+    expectTrue(
+        fuse::physics::narrowphase::can_finalize_contact_manifold(ready),
+        "can_finalize agrees with finalize preflight for ready manifold");
+}
+
+void testNarrowphaseDispatchPreflightWiring() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 bodyA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 bodyB = bodies.addBody({1.5f, 0.f, 0.f}, 1.f);
+    const fuse::u32 staticA = bodies.addBody({0.f, 2.f, 0.f}, 0.f, fuse::physics::RB_STATIC);
+    const fuse::u32 staticB = bodies.addBody({0.f, 3.f, 0.f}, 0.f, fuse::physics::RB_STATIC);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodyA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodyB, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, staticA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, staticB, {1.f, 0.f, 0.f});
+
+    const std::vector<fuse::physics::broadphase::CandidatePair> pairs = {
+        {bodyA, bodyB},
+        {staticA, staticB},
+        {bodyA, bodyA},
+    };
+    fuse::physics::narrowphase::ContactBufferSoA buffer;
+    fuse::physics::narrowphase::runNarrowphaseIntoBuffer(pairs, bodies, shapes, buffer);
+
+    expectTrue(buffer.activeCount == 1u, "dispatch preflight wiring keeps only valid overlapping pair");
+    const auto restored = buffer.manifoldAt(0u);
+    expectTrue(restored.valid, "dispatch wiring produces valid finalized manifold");
+    expectTrue(restored.hasFrictionBasis(), "dispatch wiring finalizes friction basis");
 }
 
 void testFrictionBasisGuardHelpers() {
@@ -1059,6 +1182,8 @@ int main() {
     testManifoldPrunePreflightGuards();
     testManifoldPruneSkipGuards();
     testContactPairPreflightGuards();
+    testContactManifoldFinalizePreflightGuards();
+    testNarrowphaseDispatchPreflightWiring();
     testFrictionBasisGuardHelpers();
     testFrictionBasisRefreshGuards();
     testGjkSupportAndEpaStub();

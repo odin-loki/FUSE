@@ -117,4 +117,29 @@ bool should_skip_contact_pair_dispatch(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Const preflight for manifold finalize dispatch (B4.4 deepen pass).
+struct ContactManifoldFinalizePreflight {
+    bool empty = false;
+    bool invalidNormal = false;
+    bool noPenetratingPoints = false;
+    bool pruneWouldEmpty = false;
+    bool skipped = false;
+
+    bool can_finalize() const {
+        return !skipped && !empty && !invalidNormal && !noPenetratingPoints && !pruneWouldEmpty;
+    }
+};
+
+/// Populate finalize preflight without mutating manifold slots (B4.4 deepen pass).
+ContactManifoldFinalizePreflight preflight_contact_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f);
+
+/// Returns true when `generate_contact_manifold` would clear and return false (B4.4 deepen pass).
+bool should_skip_contact_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f);
+
 } // namespace fuse::physics::narrowphase
