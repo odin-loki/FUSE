@@ -28,6 +28,8 @@ struct FixedStepPreflight {
 struct VariableTickPreflight {
     bool skipped = false;
     bool wouldSimulate = false;
+
+    bool canSimulate() const { return wouldSimulate; }
 };
 
 /// Captured dirty-flag metadata for PIE restore (B6.12 deepen follow-up).
@@ -44,6 +46,15 @@ struct WorldSnapshotInfo {
     u32 entityCount = 0;
 };
 
+/// Read-only world-snapshot drain diagnostics (B6.12 deepen follow-up — drain guard).
+struct WorldSnapshotPreflight {
+    bool captured = false;
+    u32 entityCount = 0;
+    bool skipped = false;
+
+    bool canDrain() const { return captured; }
+};
+
 /// Read-only dirty-snapshot restore diagnostics (B6.12 deepen follow-up — restore guard).
 struct DirtySnapshotPreflight {
     bool captured = false;
@@ -58,6 +69,8 @@ struct DirtySnapshotPreflight {
 struct TickFixedStepPreflight {
     bool variableTickSkipped = false;
     FixedStepPreflight fixedStep{};
+
+    bool canRunFrame() const { return !variableTickSkipped || fixedStep.canDrain(); }
 };
 
 /// ECS world snapshot for PIE restore (B6.12 deepen — transform payloads per entity).
@@ -139,6 +152,9 @@ public:
     u32 dirtySnapshotDirtyEntityCount() const;
     WorldSnapshotInfo worldSnapshotInfo() const;
     ecs::EntityID worldSnapshotEntityAt(usize index) const;
+    /// Preflight world-snapshot drain without mutating editor state.
+    WorldSnapshotPreflight preflightWorldSnapshot() const;
+    bool canDrainWorldSnapshot() const { return preflightWorldSnapshot().canDrain(); }
     bool shouldSkipWorldSnapshotDrain() const;
     bool shouldSkipDirtySnapshotDrain() const;
     bool hasWorldSnapshot() const { return m_hasWorldSnapshot; }

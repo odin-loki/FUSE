@@ -300,6 +300,19 @@ ecs::EntityID PlaySession::worldSnapshotEntityAt(usize index) const {
     return m_worldSnapshot.entities[index].first;
 }
 
+WorldSnapshotPreflight PlaySession::preflightWorldSnapshot() const {
+    WorldSnapshotPreflight preflight{};
+
+    if (shouldSkipWorldSnapshotDrain()) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    preflight.captured = true;
+    preflight.entityCount = static_cast<u32>(m_worldSnapshot.entities.size());
+    return preflight;
+}
+
 bool PlaySession::shouldSkipWorldSnapshotDrain() const {
     return !m_hasWorldSnapshot;
 }
