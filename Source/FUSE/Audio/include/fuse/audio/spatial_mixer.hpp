@@ -24,6 +24,9 @@ public:
     void set_occlusion_blockers(const AABB* blockers, u32 blocker_count);
     void clear_occlusion_blockers();
 
+    /// True when at least one world-space blocker AABB is registered.
+    bool has_occlusion_blockers() const;
+
     /// Effective visibility [0, 1] from per-source occlusion and registered blockers.
     float compute_source_visibility(const Vec3& listener, const Vec3& source,
                                     float source_occlusion) const;

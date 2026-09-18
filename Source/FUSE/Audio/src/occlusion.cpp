@@ -26,6 +26,22 @@ bool should_skip_blocker_evaluation(const Vec3& listener, const Vec3& source) {
     return delta.dot(delta) < 1e-12f;
 }
 
+bool should_evaluate_occlusion_blockers(const Vec3& listener, const Vec3& source,
+                                        const AABB* blockers, u32 blocker_count,
+                                        float source_occlusion) {
+    return has_occlusion_blockers(blockers, blocker_count)
+        && !is_fully_occluded_occlusion(source_occlusion)
+        && !should_skip_blocker_evaluation(listener, source);
+}
+
+bool is_clear_blocker_factor(float blocker_factor) {
+    return std::clamp(blocker_factor, 0.f, 1.f) <= 0.f;
+}
+
+bool is_full_blocker_factor(float blocker_factor) {
+    return std::clamp(blocker_factor, 0.f, 1.f) >= 1.f;
+}
+
 bool segment_intersects_aabb(const Vec3& start, const Vec3& end, const AABB& box) {
     const Vec3 dir = end - start;
     float t_min = 0.f;
@@ -137,16 +153,16 @@ float compute_blockers_factor(const Vec3& listener, const Vec3& source, const AA
 
 float combine_occlusion_visibility(float source_occlusion, float blocker_factor) {
     const float visibility = clamp_occlusion_visibility(source_occlusion);
-    const float blocked = std::clamp(blocker_factor, 0.f, 1.f);
-    if (blocked <= 0.f) {
+    if (is_clear_blocker_factor(blocker_factor)) {
         return visibility;
     }
-    if (blocked >= 1.f) {
+    if (is_full_blocker_factor(blocker_factor)) {
         return 0.f;
     }
     if (is_fully_occluded_occlusion(visibility)) {
         return 0.f;
     }
+    const float blocked = std::clamp(blocker_factor, 0.f, 1.f);
     return visibility * (1.f - blocked);
 }
 
@@ -154,13 +170,12 @@ float compute_effective_visibility(const Vec3& listener, const Vec3& source,
                                    float source_occlusion, const AABB* blockers, u32 blocker_count,
                                    const OcclusionParams& params) {
     const float visibility = clamp_occlusion_visibility(source_occlusion);
-    if (!has_occlusion_blockers(blockers, blocker_count)) {
-        return visibility;
-    }
-    if (is_fully_occluded_occlusion(visibility)) {
-        return 0.f;
-    }
-    if (should_skip_blocker_evaluation(listener, source)) {
+    if (!should_evaluate_occlusion_blockers(listener, source, blockers, blocker_count,
+                                            visibility)) {
+        if (has_occlusion_blockers(blockers, blocker_count)
+            && is_fully_occluded_occlusion(visibility)) {
+            return 0.f;
+        }
         return visibility;
     }
     const float blocker_factor =
