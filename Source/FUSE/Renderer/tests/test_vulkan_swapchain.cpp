@@ -223,6 +223,46 @@ void testZeroExtentRebuildRejected() {
 #endif
 }
 
+void testEmptySwapchainSkipGuards() {
+    expectTrue(fuse::renderer::shouldSkipAcquireForEmptySwapchain(nullptr),
+               "null swapchain skips acquire");
+    expectTrue(fuse::renderer::shouldEarlyOutEmptyPresent(nullptr, UINT32_MAX, nullptr),
+               "null swapchain early-outs present");
+
+    fuse::renderer::VulkanInstanceDesc instanceDesc{};
+    instanceDesc.enableValidation = false;
+
+    auto instance = fuse::renderer::VulkanInstance::create(instanceDesc);
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!instance->isValid()) {
+        return;
+    }
+
+    auto device = fuse::renderer::VulkanDevice::create(*instance);
+    if (!device->isValid()) {
+        return;
+    }
+
+    fuse::renderer::SwapchainDesc swapDesc{};
+    swapDesc.surface.kind = fuse::renderer::SurfaceKind::Headless;
+    swapDesc.width = 800;
+    swapDesc.height = 600;
+
+    auto swapchain = fuse::renderer::VulkanSwapchain::create(*device, swapDesc);
+    expectTrue(swapchain != nullptr, "headless swapchain allocated");
+    expectTrue(fuse::renderer::shouldSkipAcquireForEmptySwapchain(swapchain.get()),
+               "empty swapchain skips acquire helper");
+    expectTrue(fuse::renderer::shouldEarlyOutEmptyPresent(swapchain.get(), UINT32_MAX, nullptr),
+               "empty acquire index early-outs present");
+    expectTrue(fuse::renderer::isDuplicatePendingResizeExtent(1920, 1080, 1920, 1080),
+               "matching pending extent is duplicate");
+    expectTrue(!fuse::renderer::isDuplicatePendingResizeExtent(1920, 1080, 1280, 720),
+               "different extent is not duplicate");
+#else
+    (void)instance;
+#endif
+}
+
 } // namespace
 
 int main() {
@@ -234,6 +274,7 @@ int main() {
     testAcquireOnEmptySwapchain();
     testPresentEmptyImageIndex();
     testZeroExtentRebuildRejected();
+    testEmptySwapchainSkipGuards();
 
     fuse::core::shutdown();
 

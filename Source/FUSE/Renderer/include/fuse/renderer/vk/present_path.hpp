@@ -41,12 +41,19 @@ struct PresentPathStatus {
     u32 fenceWaitCount = 0;
     u32 swapchainRecreateCount = 0;
     u32 resizeCoalesceCount = 0;
+    u32 resizeDuplicateCount = 0;
     u32 resizeRejectedCount = 0;
     u32 emptyAcquireCount = 0;
     u32 emptyPresentCount = 0;
     u32 lastPendingFenceCount = 0;
     std::string message;
 };
+
+/// True when acquire/present is in progress and resize must be deferred.
+inline bool isPresentCycleActive(PresentPathState state) {
+    return state == PresentPathState::FenceWaited || state == PresentPathState::ImageAcquired ||
+           state == PresentPathState::ReadyToPresent;
+}
 
 /// Acquire / present / fence-wait stubs over `VulkanBootstrap` swapchain + frame ring.
 class PresentPath {
@@ -83,6 +90,8 @@ public:
 
     void requestResize(u32 width, u32 height);
     bool hasPendingResize() const { return m_status.resizePending; }
+    u32 pendingResizeWidth() const { return m_status.pendingResizeWidth; }
+    u32 pendingResizeHeight() const { return m_status.pendingResizeHeight; }
 
     /// Apply a queued resize immediately (fence-waits first). No-op when nothing is pending.
     bool recreateSwapchain();

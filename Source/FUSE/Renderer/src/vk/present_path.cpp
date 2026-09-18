@@ -66,12 +66,7 @@ bool PresentPath::processPendingResize() {
     FrameManager* frameManager = m_bootstrap.frameManager();
     if (frameManager != nullptr && frameManager->isReady()) {
         const bool waitAllSlots = !m_status.headless;
-        if (waitAllSlots) {
-            if (!waitAllInFlightFences(*frameManager)) {
-                m_status.message = "In-flight fence wait failed before swapchain recreate";
-                return false;
-            }
-        } else if (!waitCurrentInFlightFence(*frameManager)) {
+        if (!waitInFlightFencesBeforeRecreate(*frameManager, waitAllSlots)) {
             m_status.message = "In-flight fence wait failed before swapchain recreate";
             return false;
         }
@@ -144,7 +139,7 @@ u32 PresentPath::acquireImage() {
     VulkanSwapchain* swapchain = m_bootstrap.swapchain();
 
     u32 imageIndex = UINT32_MAX;
-    if (swapchain != nullptr && swapchain->isReady() && frameManager != nullptr && frameManager->isReady()) {
+    if (!shouldSkipAcquireForEmptySwapchain(swapchain) && frameManager != nullptr && frameManager->isReady()) {
         const FrameSyncData& slot = frameManager->current();
         imageIndex = swapchain->acquireNextImage(slot.imageAvailable);
     }
@@ -184,12 +179,7 @@ bool PresentPath::presentImage() {
     VulkanSwapchain* swapchain = m_bootstrap.swapchain();
 
     bool presented = false;
-    const bool useEmptyPresentStub =
-        swapchain == nullptr || isSwapchainEmpty(*swapchain) ||
-        isEmptyAcquireResult(m_status.acquiredImageIndex) || frameManager == nullptr ||
-        !frameManager->isReady();
-
-    if (useEmptyPresentStub) {
+    if (shouldEarlyOutEmptyPresent(swapchain, m_status.acquiredImageIndex, frameManager)) {
         presented = true;
         ++m_status.emptyPresentCount;
     } else {
@@ -268,14 +258,18 @@ void PresentPath::requestResize(u32 width, u32 height) {
         return;
     }
 
+    if (m_status.resizePending &&
+        isDuplicatePendingResizeExtent(m_status.pendingResizeWidth, m_status.pendingResizeHeight, width, height)) {
+        ++m_status.resizeDuplicateCount;
+        m_status.message = "Resize duplicate ignored — extent already pending";
+        return;
+    }
+
     if (m_status.resizePending) {
         ++m_status.resizeCoalesceCount;
     }
 
-    const bool midPresentCycle =
-        m_status.state == PresentPathState::FenceWaited ||
-        m_status.state == PresentPathState::ImageAcquired ||
-        m_status.state == PresentPathState::ReadyToPresent;
+    const bool midPresentCycle = isPresentCycleActive(m_status.state);
 
     m_status.pendingResizeWidth = width;
     m_status.pendingResizeHeight = height;

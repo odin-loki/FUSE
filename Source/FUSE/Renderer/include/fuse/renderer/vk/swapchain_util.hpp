@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/renderer/vk/frame.hpp>
 #include <fuse/types.hpp>
 
 namespace fuse::renderer {
@@ -21,5 +22,26 @@ bool isSwapchainPresentable(const VulkanSwapchain& swapchain);
 
 /// True when the swapchain has no backing images (headless stub or not ready).
 bool isSwapchainEmpty(const VulkanSwapchain& swapchain);
+
+/// True when acquire should short-circuit without calling vkAcquireNextImageKHR.
+inline bool shouldSkipAcquireForEmptySwapchain(const VulkanSwapchain* swapchain) {
+    return swapchain == nullptr || isSwapchainEmpty(*swapchain);
+}
+
+/// True when present should succeed without calling vkQueuePresentKHR.
+inline bool shouldEarlyOutEmptyPresent(const VulkanSwapchain* swapchain,
+                                       u32 imageIndex,
+                                       const FrameManager* frameManager) {
+    return swapchain == nullptr || isSwapchainEmpty(*swapchain) || isEmptyAcquireResult(imageIndex) ||
+           frameManager == nullptr || !frameManager->isReady();
+}
+
+/// Returns true when a resize request matches already-queued pending dimensions.
+inline bool isDuplicatePendingResizeExtent(u32 pendingWidth,
+                                           u32 pendingHeight,
+                                           u32 requestedWidth,
+                                           u32 requestedHeight) {
+    return pendingWidth == requestedWidth && pendingHeight == requestedHeight;
+}
 
 } // namespace fuse::renderer
