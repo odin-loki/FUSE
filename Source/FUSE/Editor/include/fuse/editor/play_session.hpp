@@ -12,6 +12,22 @@
 
 namespace fuse::editor {
 
+/// Read-only fixed-step drain diagnostics (B6.12 deepen follow-up — spiral guard).
+struct FixedStepPreflight {
+    u32 pending = 0;
+    u32 allowed = 0;
+    u32 maxSteps = 0;
+    bool wouldCap = false;
+    bool skipped = false;
+};
+
+/// Captured dirty-flag metadata for PIE restore (B6.12 deepen follow-up).
+struct DirtySnapshotInfo {
+    bool captured = false;
+    bool sceneModified = false;
+    u32 entityCount = 0;
+};
+
 /// ECS world snapshot for PIE restore (B6.12 deepen — transform payloads per entity).
 struct PlayWorldSnapshot {
     std::vector<std::pair<ecs::EntityID, ecs::Transform>> entities;
@@ -54,11 +70,24 @@ public:
     u32 coalescedDirtyCount() const { return m_coalescedDirtyCount; }
     u32 skippedInactiveTickCount() const { return m_skippedInactiveTickCount; }
     u32 skippedInactiveFixedStepCount() const { return m_skippedInactiveFixedStepCount; }
+    /// Fixed slices deferred by the last `consumeFixedSteps` maxSteps cap (0 when unlimited).
+    u32 lastDeferredFixedStepCount() const { return m_lastDeferredFixedStepCount; }
     /// Remaining fixed slices in `tickAccumulator()` at the last `consumeFixedSteps` call.
     u32 pendingFixedStepCount(f32 fixedDt) const;
+    /// Preflight a fixed-step drain without mutating session state.
+    FixedStepPreflight preflightFixedSteps(f32 fixedDt, const PlayModePhysicsState& physics,
+                                           u32 maxSteps = 0) const;
+    bool shouldSkipVariableTick(f32 dt, const PlayModePhysicsState& physics) const;
+    bool shouldSkipFixedStepDrain(f32 fixedDt, const PlayModePhysicsState& physics) const;
     u32 dirtySnapshotEntityCount() const {
         return m_hasDirtySnapshot ? static_cast<u32>(m_dirtySnapshot.transformDirty.size()) : 0u;
     }
+    bool dirtySnapshotSceneModified() const {
+        return m_hasDirtySnapshot && m_dirtySnapshot.sceneModified;
+    }
+    DirtySnapshotInfo dirtySnapshotInfo() const;
+    ecs::EntityID dirtySnapshotEntityAt(usize index) const;
+    bool transformDirtyAt(usize index) const;
     bool hasWorldSnapshot() const { return m_hasWorldSnapshot; }
     bool hasDirtySnapshot() const { return m_hasDirtySnapshot; }
 
@@ -96,6 +125,7 @@ private:
     u32 m_coalescedDirtyCount = 0;
     u32 m_skippedInactiveTickCount = 0;
     u32 m_skippedInactiveFixedStepCount = 0;
+    u32 m_lastDeferredFixedStepCount = 0;
 };
 
 } // namespace fuse::editor

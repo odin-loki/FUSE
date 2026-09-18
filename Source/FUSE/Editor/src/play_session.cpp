@@ -46,6 +46,7 @@ void PlaySession::start(EditorScene& editorScene, scene::Scene& scene, EditorSta
     m_coalescedDirtyCount = 0;
     m_skippedInactiveTickCount = 0;
     m_skippedInactiveFixedStepCount = 0;
+    m_lastDeferredFixedStepCount = 0;
 
     state.playing = true;
     state.paused = false;
@@ -65,6 +66,7 @@ void PlaySession::stop(EditorScene& editorScene, scene::Scene& scene, EditorStat
     m_coalescedDirtyCount = 0;
     m_skippedInactiveTickCount = 0;
     m_skippedInactiveFixedStepCount = 0;
+    m_lastDeferredFixedStepCount = 0;
     m_hasWorldSnapshot = false;
     m_hasDirtySnapshot = false;
 
@@ -91,7 +93,7 @@ void PlaySession::resume(scene::Scene& scene, EditorState& state, PlayModePhysic
 }
 
 void PlaySession::tick(f32 dt, EditorScene& editorScene, PlayModePhysicsState& physics) {
-    if (!m_controller.isPlaying() || !physics.simulationActive || dt < 0.f) {
+    if (shouldSkipVariableTick(dt, physics)) {
         ++m_skippedInactiveTickCount;
         return;
     }
@@ -102,8 +104,9 @@ void PlaySession::tick(f32 dt, EditorScene& editorScene, PlayModePhysicsState& p
 
 u32 PlaySession::consumeFixedSteps(f32 fixedDt, EditorScene& editorScene,
                                    PlayModePhysicsState& physics, u32 maxSteps) {
-    if (!m_controller.isPlaying() || !physics.simulationActive || fixedDt <= 0.f) {
+    if (shouldSkipFixedStepDrain(fixedDt, physics)) {
         ++m_skippedInactiveFixedStepCount;
+        m_lastDeferredFixedStepCount = 0;
         return 0;
     }
 
@@ -118,6 +121,7 @@ u32 PlaySession::consumeFixedSteps(f32 fixedDt, EditorScene& editorScene,
         ++steps;
     }
 
+    m_lastDeferredFixedStepCount = pendingFixedStepCount(fixedDt);
     return steps;
 }
 
@@ -133,6 +137,63 @@ u32 PlaySession::pendingFixedStepCount(f32 fixedDt) const {
     }
 
     return static_cast<u32>(m_tickAccumulator / fixedDt);
+}
+
+FixedStepPreflight PlaySession::preflightFixedSteps(f32 fixedDt, const PlayModePhysicsState& physics,
+                                                    u32 maxSteps) const {
+    FixedStepPreflight preflight{};
+    preflight.maxSteps = maxSteps;
+
+    if (shouldSkipFixedStepDrain(fixedDt, physics)) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    preflight.pending = pendingFixedStepCount(fixedDt);
+    if (maxSteps == 0) {
+        preflight.allowed = preflight.pending;
+        return preflight;
+    }
+
+    preflight.allowed = preflight.pending < maxSteps ? preflight.pending : maxSteps;
+    preflight.wouldCap = preflight.pending > maxSteps;
+    return preflight;
+}
+
+bool PlaySession::shouldSkipVariableTick(f32 dt, const PlayModePhysicsState& physics) const {
+    return !m_controller.isPlaying() || !physics.simulationActive || dt < 0.f;
+}
+
+bool PlaySession::shouldSkipFixedStepDrain(f32 fixedDt, const PlayModePhysicsState& physics) const {
+    return !m_controller.isPlaying() || !physics.simulationActive || fixedDt <= 0.f;
+}
+
+DirtySnapshotInfo PlaySession::dirtySnapshotInfo() const {
+    DirtySnapshotInfo info{};
+    info.captured = m_hasDirtySnapshot;
+    if (!m_hasDirtySnapshot) {
+        return info;
+    }
+
+    info.sceneModified = m_dirtySnapshot.sceneModified;
+    info.entityCount = static_cast<u32>(m_dirtySnapshot.transformDirty.size());
+    return info;
+}
+
+ecs::EntityID PlaySession::dirtySnapshotEntityAt(usize index) const {
+    if (!m_hasDirtySnapshot || index >= m_dirtySnapshot.transformDirty.size()) {
+        return ecs::EntityID{};
+    }
+
+    return m_dirtySnapshot.transformDirty[index].first;
+}
+
+bool PlaySession::transformDirtyAt(usize index) const {
+    if (!m_hasDirtySnapshot || index >= m_dirtySnapshot.transformDirty.size()) {
+        return false;
+    }
+
+    return m_dirtySnapshot.transformDirty[index].second;
 }
 
 PlayWorldSnapshot PlaySession::captureWorldSnapshot(EditorScene& editorScene) const {
