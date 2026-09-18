@@ -90,8 +90,9 @@ u32 currentFlowNestingDepth() {
     return threadLocalFlowNestingDepth();
 }
 
-bool isValidEventName(const char* name) {
-    return name != nullptr && name[0] != '\0';
+const ProfileEvent& emptyProfileEventStub() {
+    static const ProfileEvent kEmpty{};
+    return kEmpty;
 }
 
 std::string formatCounterArgsJson(const ProfileEvent& event) {
@@ -265,6 +266,10 @@ u32 eventCount() {
     return g_eventCount.load(std::memory_order_acquire);
 }
 
+u32 ringCapacity() {
+    return kRingCapacity;
+}
+
 u32 maxNestingDepth() {
     return g_maxNestingDepth.load(std::memory_order_acquire);
 }
@@ -301,6 +306,14 @@ bool isFlowNestingBalanced() {
     return flowNestingDepth() == 0u;
 }
 
+bool isNestingBalanced() {
+    return isScopeNestingBalanced() && isFlowNestingBalanced();
+}
+
+bool isValidEventName(const char* name) {
+    return name != nullptr && name[0] != '\0';
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -318,14 +331,17 @@ bool isEventIndexValid(u32 index) {
 }
 
 bool isValidProfileEvent(const ProfileEvent& event) {
-    return event.name != nullptr;
+    return isValidEventName(event.name);
+}
+
+const ProfileEvent& emptyProfileEvent() {
+    return emptyProfileEventStub();
 }
 
 const ProfileEvent& eventAt(u32 index) {
-    static const ProfileEvent kEmpty{};
     const u32 count = eventCount();
     if (count == 0u || index >= count) {
-        return kEmpty;
+        return emptyProfileEventStub();
     }
 
     const u32 head = g_writeHead.load(std::memory_order_acquire);
@@ -347,6 +363,16 @@ bool tryEventAt(u32 index, ProfileEvent& outEvent) {
 u32 lastEventIndex() {
     const u32 count = eventCount();
     return count > 0u ? count - 1u : kInvalidEventIndex;
+}
+
+bool tryLastEvent(ProfileEvent& outEvent) {
+    const u32 index = lastEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
 }
 
 const ProfileEvent& lastEvent() {
@@ -471,6 +497,41 @@ void sampleCounterFloatSnapshotAtFrame(const char* track, f64 value) {
                 0,
                 value,
                 frameIndex());
+}
+
+ChromeTraceExportPreflight preflightChromeTraceExport() {
+    ChromeTraceExportPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.eventCount = eventCount();
+    preflight.emptyBuffer = preflight.eventCount == 0u;
+    preflight.bufferFull = isBufferFull();
+    preflight.scopeNestingDepth = nestingDepth();
+    preflight.flowNestingDepth = flowNestingDepth();
+    preflight.openFlowCount = openAsyncFlowCount();
+    preflight.unbalancedScopeNesting = !isScopeNestingBalanced();
+    preflight.unbalancedFlowNesting = !isFlowNestingBalanced();
+    preflight.openAsyncFlows = hasOpenAsyncFlows();
+    return preflight;
+}
+
+ChromeTraceExportRejectReason chromeTraceExportRejectReason() {
+    const ChromeTraceExportPreflight preflight = preflightChromeTraceExport();
+    if (preflight.emptyBuffer) {
+        return ChromeTraceExportRejectReason::EmptyBuffer;
+    }
+    if (preflight.unbalancedScopeNesting) {
+        return ChromeTraceExportRejectReason::UnbalancedScopeNesting;
+    }
+    if (preflight.openAsyncFlows) {
+        return ChromeTraceExportRejectReason::OpenAsyncFlows;
+    }
+    if (preflight.unbalancedFlowNesting) {
+        return ChromeTraceExportRejectReason::UnbalancedFlowNesting;
+    }
+    if (preflight.bufferFull) {
+        return ChromeTraceExportRejectReason::BufferFull;
+    }
+    return ChromeTraceExportRejectReason::None;
 }
 
 std::string exportChromeTraceJson() {
