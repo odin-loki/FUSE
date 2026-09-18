@@ -144,6 +144,95 @@ void run_reconcile_tests() {
     expectTrue(future_history_result.action == fuse::net::ReconcileAction::NoOp,
                "input history reconcile rejects future frame beyond newest");
     expectTrue(!future_history.has_confirmed(8u), "future frame is not stored by reconcile guard");
+
+    // --- reconcile preflight guards (B7.4 deepen follow-up) ---
+    fuse::net::InputHistoryBuffer preflight_history;
+    preflight_history.init(8);
+    fuse::net::PlayerInput preflight_predicted{};
+    preflight_predicted.frame = 4;
+    preflight_predicted.axis_lx = 100;
+    preflight_history.store_predicted(4, preflight_predicted);
+
+    fuse::net::PlayerInput matching{};
+    matching.frame = 4;
+    matching.axis_lx = 100;
+    const fuse::net::InputReconcilePreflight ready_preflight =
+        fuse::net::preflight_reconcile_input(preflight_history, 4, matching);
+    expectTrue(ready_preflight.buffer_capacity_ok, "preflight sees input history capacity");
+    expectTrue(ready_preflight.frame_in_window, "preflight accepts retained frame");
+    expectTrue(ready_preflight.input_frame_ok, "preflight accepts matching input frame");
+    expectTrue(ready_preflight.has_prediction, "preflight sees stored prediction");
+    expectTrue(ready_preflight.can_reconcile(), "preflight can_reconcile for valid frame");
+
+    fuse::net::PlayerInput mismatched{};
+    mismatched.frame = 99;
+    mismatched.axis_lx = 100;
+    const fuse::net::InputReconcilePreflight mismatch_preflight =
+        fuse::net::preflight_reconcile_input(preflight_history, 4, mismatched);
+    expectTrue(!mismatch_preflight.input_frame_ok, "preflight rejects input frame mismatch");
+    expectTrue(!mismatch_preflight.can_reconcile(), "preflight can_reconcile false on frame mismatch");
+    expectTrue(fuse::net::should_skip_input_reconcile(preflight_history, 4, mismatched),
+               "should_skip_input_reconcile true on frame mismatch");
+
+    const fuse::net::ReconcileResult mismatch_result =
+        fuse::net::reconcile_predicted_input(preflight_history, 4, mismatched);
+    expectTrue(mismatch_result.action == fuse::net::ReconcileAction::NoOp,
+               "frame mismatch reconcile returns NoOp");
+    expectTrue(!preflight_history.has_confirmed(4u), "frame mismatch reconcile has no side effects");
+
+    fuse::net::InputHistoryBuffer empty_preflight_history;
+    empty_preflight_history.init(8);
+    fuse::net::PlayerInput empty_frame_input{};
+    empty_frame_input.frame = 1;
+    const fuse::net::InputReconcilePreflight empty_preflight =
+        fuse::net::preflight_reconcile_input(empty_preflight_history, 1, empty_frame_input);
+    expectTrue(empty_preflight.history_empty, "preflight marks empty history");
+    expectTrue(empty_preflight.can_reconcile(), "empty history still allows reconcile when in window");
+
+    fuse::net::RollbackBuffer rollback_preflight;
+    rollback_preflight.init(4);
+    fuse::net::GameSnapshot snap{};
+    snap.frame = 3;
+    rollback_preflight.store_snapshot(3, snap);
+    fuse::net::PlayerInput preflight_local{};
+    preflight_local.frame = 3;
+    preflight_local.axis_lx = 50;
+    rollback_preflight.store_local_input(3, preflight_local);
+
+    fuse::net::PlayerInput rollback_remote = preflight_local;
+    const fuse::net::RollbackReconcilePreflight rollback_ready =
+        fuse::net::preflight_reconcile_rollback(rollback_preflight, 3, rollback_remote);
+    expectTrue(rollback_ready.buffer_capacity_ok, "rollback preflight sees buffer capacity");
+    expectTrue(!rollback_ready.buffer_empty, "rollback preflight sees populated buffer");
+    expectTrue(rollback_ready.has_snapshot, "rollback preflight sees retained snapshot");
+    expectTrue(rollback_ready.has_local_input, "rollback preflight sees local prediction");
+    expectTrue(rollback_ready.can_reconcile(), "rollback preflight can_reconcile for valid frame");
+
+    fuse::net::PlayerInput rollback_mismatch = preflight_local;
+    rollback_mismatch.frame = 7;
+    const fuse::net::RollbackReconcilePreflight rollback_bad_frame =
+        fuse::net::preflight_reconcile_rollback(rollback_preflight, 3, rollback_mismatch);
+    expectTrue(!rollback_bad_frame.input_frame_ok, "rollback preflight rejects input frame mismatch");
+    expectTrue(fuse::net::should_skip_rollback_reconcile(rollback_preflight, 3, rollback_mismatch),
+               "should_skip_rollback_reconcile true on frame mismatch");
+
+    const fuse::net::ReconcileResult rollback_mismatch_result =
+        fuse::net::reconcile_rollback_buffer(rollback_preflight, 3, rollback_mismatch);
+    expectTrue(rollback_mismatch_result.action == fuse::net::ReconcileAction::NoOp,
+               "rollback frame mismatch reconcile returns NoOp");
+    expectTrue(!rollback_preflight.remote_confirmed(3u),
+               "rollback frame mismatch reconcile has no side effects");
+
+    fuse::net::RollbackBuffer zero_capacity_buffer;
+    zero_capacity_buffer.init(4);
+    zero_capacity_buffer.clear();
+    fuse::net::PlayerInput zero_remote{};
+    zero_remote.frame = 0;
+    const fuse::net::RollbackReconcilePreflight zero_preflight =
+        fuse::net::preflight_reconcile_rollback(zero_capacity_buffer, 0, zero_remote);
+    expectTrue(!zero_preflight.buffer_capacity_ok, "rollback preflight rejects zero capacity buffer");
+    expectTrue(fuse::net::should_skip_rollback_reconcile(zero_capacity_buffer, 0, zero_remote),
+               "should_skip_rollback_reconcile true on zero capacity buffer");
 }
 
 } // namespace fuse::net::tests

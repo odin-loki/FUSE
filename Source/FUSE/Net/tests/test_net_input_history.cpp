@@ -157,6 +157,19 @@ void run_input_history_tests() {
                "can_reconcile rejects evicted frame");
     expectTrue(!fuse::net::can_reconcile_input_frame(bounded, 6u),
                "can_reconcile rejects future frame beyond newest");
+
+    fuse::net::InputHistoryBuffer zero_capacity_history;
+    zero_capacity_history.init(4);
+    zero_capacity_history.clear();
+    expectTrue(!zero_capacity_history.has_capacity(), "cleared input history reports no capacity");
+    expectTrue(fuse::net::should_skip_input_reconcile(zero_capacity_history, 0, fuse::net::PlayerInput{}),
+               "should_skip_input_reconcile true on zero capacity history");
+    expectTrue(fuse::net::input_frame_matches(0u, fuse::net::PlayerInput{}),
+               "input_frame_matches true for default zero frame");
+    fuse::net::PlayerInput wrong_frame{};
+    wrong_frame.frame = 5;
+    expectTrue(!fuse::net::input_frame_matches(2u, wrong_frame),
+               "input_frame_matches rejects mismatched frame field");
 }
 
 } // namespace fuse::net::tests

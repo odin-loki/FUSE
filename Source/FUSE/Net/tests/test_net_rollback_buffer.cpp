@@ -77,6 +77,14 @@ void run_rollback_buffer_tests() {
     expectTrue(buffer.stored_frame_count() == 7u, "evict_oldest shrinks retained count");
     expectTrue(!buffer.has_frame(2u), "evicted frame no longer queryable");
     expectTrue(!buffer.empty(), "rollback buffer non-empty after snapshot store");
+
+    fuse::net::RollbackBuffer zero_capacity;
+    zero_capacity.init(4);
+    zero_capacity.clear();
+    expectTrue(!zero_capacity.has_capacity(), "cleared rollback buffer reports no capacity");
+    expectTrue(zero_capacity.empty(), "cleared rollback buffer reports empty");
+    zero_capacity.store_snapshot(0, frame0);
+    expectTrue(!zero_capacity.has_frame(0u), "zero-capacity buffer rejects snapshot store");
 }
 
 } // namespace fuse::net::tests

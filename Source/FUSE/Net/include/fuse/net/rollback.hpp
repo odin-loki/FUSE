@@ -30,6 +30,12 @@ public:
     [[nodiscard]] bool is_rolling_back() const { return m_rolling_back; }
     [[nodiscard]] const RollbackBuffer& buffer() const { return m_buffer; }
     [[nodiscard]] const InputHistoryBuffer& input_history() const { return m_input_history; }
+    [[nodiscard]] bool has_input_buffer() const { return m_buffer.capacity() > 0; }
+
+    /// True when local input targets the current simulation frame and buffers are ready.
+    [[nodiscard]] bool can_set_local_input(const PlayerInput& input) const;
+    /// True when remote input is eligible for rollback reconcile (frame window + buffer guards).
+    [[nodiscard]] bool can_apply_remote_input(const PlayerInput& input) const;
 
     /// True when `frame` is within the rollback window and a snapshot exists for it.
     [[nodiscard]] bool can_rewind_to(u32 frame) const;

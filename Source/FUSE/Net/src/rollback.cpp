@@ -42,6 +42,26 @@ void RollbackManager::destroy() {
 
 void RollbackManager::bind_registry(ecs::Registry* registry) { m_registry = registry; }
 
+bool RollbackManager::can_set_local_input(const PlayerInput& input) const {
+    if (!has_input_buffer() || m_input_history.capacity() == 0) {
+        return false;
+    }
+    return input.frame == m_current_frame;
+}
+
+bool RollbackManager::can_apply_remote_input(const PlayerInput& input) const {
+    if (!has_input_buffer() || m_input_history.capacity() == 0) {
+        return false;
+    }
+    if (input.frame > m_current_frame) {
+        return false;
+    }
+    if (input.frame < m_current_frame && m_current_frame - input.frame > m_max_rollback) {
+        return false;
+    }
+    return true;
+}
+
 void RollbackManager::capture_registry_state_(GameSnapshot& snapshot) const {
     snapshot.physics_state.clear();
     snapshot.ecs_state.clear();
@@ -169,7 +189,7 @@ void RollbackManager::save_snapshot(u32 frame) {
 }
 
 bool RollbackManager::apply_remote_input(const PlayerInput& input) {
-    if (input.frame > m_current_frame) {
+    if (!can_apply_remote_input(input)) {
         return false;
     }
 
@@ -177,10 +197,6 @@ bool RollbackManager::apply_remote_input(const PlayerInput& input) {
     m_buffer.store_remote_input(input.frame, input, true);
 
     if (input.frame < m_current_frame) {
-        if (m_current_frame - input.frame > m_max_rollback) {
-            return false;
-        }
-
         m_rolling_back = true;
         const u32 target_frame = m_current_frame;
         rollback_to_(input.frame);
@@ -197,6 +213,10 @@ bool RollbackManager::apply_remote_input(const PlayerInput& input) {
 }
 
 void RollbackManager::set_local_input(const PlayerInput& input) {
+    if (!can_set_local_input(input)) {
+        return;
+    }
+
     m_buffer.store_local_input(input.frame, input);
     m_input_history.store_predicted(input.frame, input);
 }
@@ -209,6 +229,10 @@ void RollbackManager::tick(f32 dt) {
 }
 
 void RollbackManager::rollback_to_(u32 frame) {
+    if (!m_buffer.has_frame(frame)) {
+        return;
+    }
+
     const GameSnapshot* snapshot = m_buffer.snapshot(frame);
     if (snapshot != nullptr) {
         restore_registry_state_(*snapshot);

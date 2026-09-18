@@ -27,6 +27,7 @@ public:
     void clear();
 
     [[nodiscard]] u32 capacity() const { return m_capacity; }
+    [[nodiscard]] bool has_capacity() const { return m_capacity > 0; }
     [[nodiscard]] u32 oldest_stored_frame() const { return m_oldest_frame; }
     [[nodiscard]] u32 newest_stored_frame() const { return m_newest_frame; }
     [[nodiscard]] u32 stored_frame_count() const;
