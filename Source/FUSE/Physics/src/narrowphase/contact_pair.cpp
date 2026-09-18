@@ -404,8 +404,13 @@ bool generate_contact_manifold(ContactManifold& manifold) {
         return false;
     }
 
-    manifold.pruneContactPoints();
-    if (manifold.empty()) {
+    const ManifoldFinalizePreflight finalizePreflight = preflight_manifold_finalize(manifold);
+    if (finalizePreflight.wouldBeEmptyAfterPrune) {
+        manifold.clear();
+        return false;
+    }
+
+    if (!manifold.pruneContactPointsIfNeeded()) {
         manifold.clear();
         return false;
     }
@@ -419,7 +424,7 @@ bool generate_contact_manifold(ContactManifold& manifold) {
     manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
 
     manifold.syncLegacyFields();
-    compute_friction_tangents(manifold);
+    compute_friction_tangents_if_needed(manifold);
     if (!manifold.hasFrictionBasis()) {
         manifold.clear();
         return false;
