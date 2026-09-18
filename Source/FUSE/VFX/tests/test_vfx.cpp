@@ -1317,6 +1317,113 @@ void testParticleGpuFramePlanPreflight() {
     expectTrue(idle.preflight().ready_for_stub(), "idle frame preflight is ready");
 }
 
+void testParticleGpuEmitSimEmptyBufferGuards() {
+    const fuse::vfx::ParticleGpuBuffers empty = fuse::vfx::ParticleGpuBuffers::forCapacity(0u);
+    expectTrue(empty.isEmpty(), "zero-capacity buffer is empty");
+    expectTrue(!empty.isBound(), "unbound buffer reports not bound");
+    expectTrue(!empty.bytesMatchLayout(), "empty buffer bytes do not match layout");
+    expectTrue(fuse::vfx::should_skip_empty_buffer(empty), "should_skip_empty_buffer for zero capacity");
+
+    const fuse::vfx::ParticleGpuBufferPreflight empty_preflight = empty.preflight();
+    expectTrue(empty_preflight.is_empty(), "empty buffer preflight is empty");
+    expectTrue(!empty_preflight.can_upload(), "empty buffer preflight blocks upload");
+    expectTrue(!empty_preflight.can_bind_device(), "empty buffer preflight blocks device bind");
+
+    const fuse::vfx::ParticleGpuBuffers sized = fuse::vfx::ParticleGpuBuffers::forCapacity(64u);
+    expectTrue(!sized.isEmpty(), "non-zero capacity buffer is not empty");
+    expectTrue(sized.bytesMatchLayout(), "sized buffer bytes match layout");
+    expectTrue(!fuse::vfx::should_skip_empty_buffer(sized), "sized buffer is not skipped");
+
+    const fuse::vfx::ParticleGpuBufferPreflight sized_preflight = sized.preflight();
+    expectTrue(!sized_preflight.is_empty(), "sized buffer preflight is not empty");
+    expectTrue(sized_preflight.can_upload(), "sized buffer preflight allows upload");
+    expectTrue(!sized_preflight.can_bind_device(), "unbound sized buffer blocks device bind");
+
+    fuse::vfx::ParticleGpuBuffers bound = sized;
+    bound.packedSoa = 0x5000u;
+    expectTrue(bound.preflight().can_bind_device(), "bound sized buffer can bind device");
+
+    fuse::vfx::ParticleGpuBuffers mismatched = bound;
+    mismatched.deviceBytes -= 16u;
+    expectTrue(!mismatched.bytesMatchLayout(), "undersized deviceBytes fail layout match");
+    expectTrue(fuse::vfx::should_skip_empty_buffer(mismatched), "layout mismatch skips buffer");
+
+    expectTrue(fuse::vfx::should_skip_gpu_emit(0u, 64u, 10u), "should_skip_gpu_emit for zero emit count");
+    expectTrue(!fuse::vfx::should_skip_gpu_emit(4u, 64u, 10u), "should_skip_gpu_emit false with free slots");
+    expectTrue(fuse::vfx::should_skip_gpu_emit(4u, 64u, 64u), "should_skip_gpu_emit at capacity");
+    expectTrue(fuse::vfx::should_skip_gpu_emit(4u, 0u, 0u), "should_skip_gpu_emit on zero capacity");
+
+    expectTrue(fuse::vfx::should_skip_gpu_simulate(0u, 0u, 0u), "should_skip_gpu_simulate for zero capacity");
+    expectTrue(fuse::vfx::should_skip_gpu_simulate(64u, 0u, 0u),
+               "should_skip_gpu_simulate when no live particles and no emit");
+    expectTrue(!fuse::vfx::should_skip_gpu_simulate(64u, 8u, 0u),
+               "should_skip_gpu_simulate false with live particles");
+    expectTrue(!fuse::vfx::should_skip_gpu_simulate(64u, 0u, 4u),
+               "should_skip_gpu_simulate false when emit scheduled");
+
+    const fuse::vfx::ParticleGpuFramePlan active =
+        fuse::vfx::ParticleGpuFramePlan::forStub(64u, 8u, 48u);
+    expectEq(active.remainingEmitSlots(), 16u, "frame plan remaining emit slots");
+    expectEq(active.clampedEmitCount(), 8u, "frame plan emit count within free slots");
+    expectTrue(!active.shouldSkipGpuEmit(), "active frame plan emits");
+    expectTrue(!active.shouldSkipGpuSimulate(), "active frame plan simulates");
+
+    const fuse::vfx::ParticleGpuEmitPreflight emit_preflight = active.preflightEmit();
+    expectEq(emit_preflight.requested, 8u, "emit preflight carries requested count");
+    expectEq(emit_preflight.allowed, 8u, "emit preflight allows full request");
+    expectTrue(!emit_preflight.would_clamp, "emit preflight not clamped within free slots");
+    expectTrue(emit_preflight.can_emit(), "emit preflight can emit");
+
+    const fuse::vfx::ParticleGpuSimPreflight sim_preflight = active.preflightSimulate();
+    expectTrue(sim_preflight.has_live_particles, "sim preflight reports live particles");
+    expectTrue(sim_preflight.can_simulate(), "sim preflight can simulate");
+
+    const fuse::vfx::ParticleGpuFramePlan overflow =
+        fuse::vfx::ParticleGpuFramePlan::forStub(64u, 32u, 48u);
+    expectEq(overflow.remainingEmitSlots(), 16u, "overflow frame remaining slots");
+    expectEq(overflow.clampedEmitCount(), 16u, "overflow frame clamps emit count");
+    const fuse::vfx::ParticleGpuEmitPreflight overflow_preflight = overflow.preflightEmit();
+    expectTrue(overflow_preflight.would_clamp, "overflow emit preflight marks clamp");
+    expectTrue(overflow_preflight.can_emit(), "clamped overflow emit still can emit");
+
+    const fuse::vfx::ParticleGpuFramePlan full =
+        fuse::vfx::ParticleGpuFramePlan::forStub(32u, 8u, 32u);
+    expectEq(full.remainingEmitSlots(), 0u, "full frame has no remaining emit slots");
+    expectTrue(full.shouldSkipGpuEmit(), "full frame skips gpu emit");
+    expectTrue(!full.preflightEmit().can_emit(), "full frame emit preflight cannot emit");
+
+    const fuse::vfx::ParticleGpuFramePlan dead =
+        fuse::vfx::ParticleGpuFramePlan::forStub(128u, 0u, 0u);
+    expectTrue(dead.shouldSkipGpuSimulate(), "dead frame skips gpu simulate");
+    expectTrue(dead.preflightSimulate().skipped, "dead frame sim preflight skipped");
+    expectTrue(!dead.preflightSimulate().has_live_particles, "dead frame has no live particles");
+
+    const fuse::vfx::ParticleGpuFramePlan emit_only =
+        fuse::vfx::ParticleGpuFramePlan::forStub(128u, 16u, 0u);
+    expectTrue(!emit_only.shouldSkipGpuSimulate(), "emit-only frame still simulates");
+    expectTrue(!emit_only.shouldSkipGpuEmit(), "emit-only frame emits");
+
+    const fuse::vfx::ParticleGpuFramePreflight active_frame_preflight = active.preflight();
+    expectTrue(active_frame_preflight.can_emit(), "active frame preflight can emit");
+    expectTrue(active_frame_preflight.can_simulate(), "active frame preflight can simulate");
+    expectTrue(!active_frame_preflight.buffers_empty, "active frame buffers not empty");
+    expectTrue(active_frame_preflight.emit_within_capacity, "active frame emit within capacity");
+    expectTrue(active_frame_preflight.ready_for_stub(), "active frame preflight still stub-ready");
+
+    const fuse::vfx::ParticleGpuFramePreflight overflow_frame_preflight = overflow.preflight();
+    expectTrue(!overflow_frame_preflight.emit_within_capacity, "overflow frame emit exceeds capacity");
+    expectTrue(!overflow_frame_preflight.can_emit(), "overflow frame preflight cannot emit unchecked");
+
+    const fuse::vfx::ParticleGpuFramePreflight idle_frame_preflight =
+        fuse::vfx::ParticleGpuFramePlan::forStub(0u, 0u, 0u).preflight();
+    expectTrue(idle_frame_preflight.skip_sim, "idle frame preflight skips sim");
+    expectTrue(idle_frame_preflight.skip_emit, "idle frame preflight skips emit");
+    expectTrue(idle_frame_preflight.buffers_empty, "idle frame preflight marks empty buffers");
+    expectTrue(!idle_frame_preflight.can_emit(), "idle frame preflight cannot emit");
+    expectTrue(!idle_frame_preflight.can_simulate(), "idle frame preflight cannot simulate");
+    expectTrue(idle_frame_preflight.ready_for_stub(), "idle frame preflight remains stub-ready");
+}
+
 void testParticleGpuDispatchPreflight() {
     using fuse::vfx::ParticleGpuDispatch;
     using fuse::vfx::ParticleGpuDispatchPreflight;
@@ -2109,6 +2216,7 @@ int main() {
     testParticleGpuDispatchPaddingAccounting();
     testParticleGpuMirrorPreflight();
     testParticleGpuFramePlanPreflight();
+    testParticleGpuEmitSimEmptyBufferGuards();
     testParticleGpuDispatchPreflight();
     testParticleGpuMirrorSyncSkipGuards();
     testParticleGpuPointerBundle();
