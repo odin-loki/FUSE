@@ -13,8 +13,19 @@ TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const Ta
 bool taaResolveDimensionsMatch(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// True when `observed_history_generation` guard is disabled for this desc.
 bool taaResolveBypassesHistoryGenerationGuard(const TaaResolveDesc& desc);
+/// True when the history-generation guard is enabled and the observed epoch matches history.
+bool taaResolveHistoryGenerationGuardPasses(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// True when rejection surfaces must be present for this resolve request.
+bool taaResolveRejectionSurfacesRequired(const TaaResolveDesc& desc);
+/// True when all required rejection surfaces are bound (or rejection is disabled).
+bool taaResolveRejectionSurfacesSatisfied(const TaaResolveDesc& desc);
 /// Fill `observed_history_generation` from history when still at the no-guard sentinel.
 void stampObservedHistoryGeneration(TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// Clamp params and stamp observed generation — pre-resolve sanitization for callers.
+void sanitizeTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// Preflight resolve without mutating history — returns true when resolve would proceed.
+bool preflightTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                         TaaResolveSkipReason* reason = nullptr);
 
 /// CPU/CUDA resolve facade — records resolve intent; kernel deferred (B5.9 stub).
 class TaaResolve {
