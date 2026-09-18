@@ -16,9 +16,12 @@ namespace fuse::editor {
 struct FixedStepPreflight {
     u32 pending = 0;
     u32 allowed = 0;
+    u32 deferred = 0;
     u32 maxSteps = 0;
     bool wouldCap = false;
     bool skipped = false;
+
+    bool canDrain() const { return !skipped && allowed > 0; }
 };
 
 /// Captured dirty-flag metadata for PIE restore (B6.12 deepen follow-up).
@@ -26,6 +29,22 @@ struct DirtySnapshotInfo {
     bool captured = false;
     bool sceneModified = false;
     u32 entityCount = 0;
+};
+
+/// Read-only dirty-snapshot restore diagnostics (B6.12 deepen follow-up — restore guard).
+struct DirtySnapshotPreflight {
+    bool captured = false;
+    bool sceneModified = false;
+    u32 entityCount = 0;
+    bool skipped = false;
+
+    bool canRestore() const { return captured; }
+};
+
+/// Combined PIE frame preflight — variable tick plus fixed-step drain (B6.12 deepen follow-up).
+struct TickFixedStepPreflight {
+    bool variableTickSkipped = false;
+    FixedStepPreflight fixedStep{};
 };
 
 /// ECS world snapshot for PIE restore (B6.12 deepen — transform payloads per entity).
@@ -77,8 +96,16 @@ public:
     /// Preflight a fixed-step drain without mutating session state.
     FixedStepPreflight preflightFixedSteps(f32 fixedDt, const PlayModePhysicsState& physics,
                                            u32 maxSteps = 0) const;
+    /// Preflight variable tick plus fixed-step drain for one PIE frame.
+    TickFixedStepPreflight preflightTickFixedStep(f32 dt, f32 fixedDt,
+                                                  const PlayModePhysicsState& physics,
+                                                  u32 maxSteps = 0) const;
     bool shouldSkipVariableTick(f32 dt, const PlayModePhysicsState& physics) const;
     bool shouldSkipFixedStepDrain(f32 fixedDt, const PlayModePhysicsState& physics) const;
+    bool shouldSkipDirtySnapshotRestore() const { return !m_hasDirtySnapshot; }
+    /// Preflight dirty-flag restore without mutating editor state.
+    DirtySnapshotPreflight preflightDirtySnapshot() const;
+    bool canRestoreDirtySnapshot() const { return preflightDirtySnapshot().canRestore(); }
     u32 dirtySnapshotEntityCount() const {
         return m_hasDirtySnapshot ? static_cast<u32>(m_dirtySnapshot.transformDirty.size()) : 0u;
     }
