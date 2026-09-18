@@ -115,6 +115,8 @@ struct ClusterGridLayout {
 
 /// CPU light-grid packing helpers — mirrors the GPU offset rebuild pass.
 struct ClusterLightGridLayout {
+    /// True when `clusterCount` is zero or matches the clamped cluster count for `desc`.
+    static bool canRebuildLightGrid(const ClusterDesc& desc, u32 clusterCount);
     static u32 rebuildLightGrid(ClusterGridSoA& grid,
                                 u32 clusterCount,
                                 const std::vector<std::vector<u32>>& perClusterLights,
@@ -125,6 +127,8 @@ struct ClusterLightGridLayout {
 /// Why grid population validation rejected a rebuilt light grid (B5.4 deepen).
 enum class GridPopulationRejectReason : u8 {
     None = 0,
+    EmptyGrid,
+    DescMismatch,
     UndersizedGrid,
     PopulationMismatch,
     NonContiguousOffsets,
@@ -133,12 +137,32 @@ enum class GridPopulationRejectReason : u8 {
 /// Human-readable label for population reject reasons (logging / tests).
 const char* gridPopulationRejectReasonLabel(GridPopulationRejectReason reason);
 
+/// Why cluster light lookup was rejected at a flat or tile/slice index (B5.4 deepen follow-up).
+enum class ClusterLookupRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    DescMismatch,
+    EmptyStorage,
+};
+
+/// Human-readable label for lookup reject reasons (logging / tests).
+const char* clusterLookupRejectReasonLabel(ClusterLookupRejectReason reason);
+
 /// CPU light-to-cluster assignment stubs — mirrors CUDA cull kernel list append.
 namespace cluster_util {
 /// True when light-grid storage matches the clamped cluster count for `desc`.
 bool gridMatchesDesc(const ClusterGridSoA& grid, const ClusterDesc& desc);
+/// True when `desc` is non-empty, storage is allocated, and sizes match.
+bool isLightGridAccessible(const ClusterGridSoA& grid, const ClusterDesc& desc);
+/// Early-out when the grid is inaccessible (empty desc, empty storage, or desc mismatch).
+bool shouldSkipClusterLookup(const ClusterGridSoA& grid, const ClusterDesc& desc);
 /// Preflight guard before index-based cluster lookup; false on empty grid or desc mismatch.
 bool canLookupAtIndex(const ClusterGridSoA& grid, const ClusterDesc& desc, u32 index);
+/// Diagnose why lookup preflight would reject; vacuously succeeds when lookup is allowed.
+bool tryCanLookupAtIndex(const ClusterGridSoA& grid,
+                         const ClusterDesc& desc,
+                         u32 index,
+                         ClusterLookupRejectReason& outReason);
 /// Per-cluster light count at a clamped flat index; returns 0 when grid/desc mismatch or empty.
 u32 clusterLightCountAtIndex(const ClusterGridSoA& grid, const ClusterDesc& desc, u32 index);
 bool tryAssignLight(std::vector<u32>& clusterLights, u32 lightIdx, u32 maxLightsPerCluster);
@@ -157,6 +181,13 @@ u32 lookupClusterLights(const ClusterGridSoA& grid, u32 clusterIdx, std::vector<
 u32 lookupClusterLightsAtIndex(const ClusterGridSoA& grid,
                                const ClusterDesc& desc,
                                u32 index,
+                               std::vector<u32>& outLights);
+/// Lookup at clamped tile/slice coords; returns 0 when grid/desc mismatch or empty.
+u32 lookupClusterLightsAtCoord(const ClusterGridSoA& grid,
+                               const ClusterDesc& desc,
+                               u32 tileX,
+                               u32 tileY,
+                               u32 sliceZ,
                                std::vector<u32>& outLights);
 /// Lookup with guard preflight; returns false when `canLookupAtIndex` would reject the request.
 bool tryLookupClusterLightsAtIndex(const ClusterGridSoA& grid,
@@ -182,6 +213,12 @@ bool tryValidateGridPopulation(const ClusterGridSoA& grid,
                                GridPopulationRejectReason& outReason);
 /// Validate population against the clamped cluster count derived from `desc`.
 bool validateGridPopulationForDesc(const ClusterGridSoA& grid, const ClusterDesc& desc);
+/// Diagnose population validation against `desc`; vacuously succeeds when `desc` is empty.
+bool tryValidateGridPopulationForDesc(const ClusterGridSoA& grid,
+                                      const ClusterDesc& desc,
+                                      GridPopulationRejectReason& outReason);
+/// True when at least one cluster holds assigned lights; false when storage is empty.
+bool hasAssignedLights(const ClusterGridSoA& grid, u32 clusterCount);
 } // namespace cluster_util
 
 /// Renderer-side point light input (decoupled from ECS).
