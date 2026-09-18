@@ -23,6 +23,18 @@ struct CandidatePair {
     u32 bodyB = 0;
 };
 
+/// Diagnostic reason a broadphase candidate pair is rejected (B4.2 deepen follow-up).
+enum class CandidateRejectReason : u8 {
+    None = 0,
+    SelfPair,
+    OutOfRangeBody,
+    AabbSeparated,
+    BufferFull,
+};
+
+/// Human-readable label for candidate reject reasons (logging / tests).
+const char* candidateRejectReasonLabel(CandidateRejectReason reason);
+
 /// Empty-pair guard: true when both indices refer to the same body.
 FUSE_PHYSICS_INLINE bool isEmptyCandidatePair(u32 bodyA, u32 bodyB) {
     return bodyA == bodyB;
@@ -46,6 +58,36 @@ FUSE_PHYSICS_INLINE bool isEmptyCandidatePair(const CandidatePair& pair) {
 FUSE_PHYSICS_INLINE bool isValidCandidatePair(const CandidatePair& pair, u32 bodyCount = 0u) {
     return isValidCandidatePair(pair.bodyA, pair.bodyB, bodyCount);
 }
+
+/// Returns the first reject reason for a pair index pair, or `None` when generation may proceed.
+FUSE_PHYSICS_INLINE CandidateRejectReason candidatePairRejectReason(u32 bodyA, u32 bodyB, u32 bodyCount = 0u) {
+    if (isEmptyCandidatePair(bodyA, bodyB)) {
+        return CandidateRejectReason::SelfPair;
+    }
+    if (bodyCount > 0u && (bodyA >= bodyCount || bodyB >= bodyCount)) {
+        return CandidateRejectReason::OutOfRangeBody;
+    }
+    return CandidateRejectReason::None;
+}
+
+FUSE_PHYSICS_INLINE CandidateRejectReason candidatePairRejectReason(const CandidatePair& pair, u32 bodyCount = 0u) {
+    return candidatePairRejectReason(pair.bodyA, pair.bodyB, bodyCount);
+}
+
+/// Convenience inverse of `candidatePairRejectReason` — true when the pair must be skipped.
+FUSE_PHYSICS_INLINE bool isRejectedCandidatePair(u32 bodyA, u32 bodyB, u32 bodyCount = 0u) {
+    return candidatePairRejectReason(bodyA, bodyB, bodyCount) != CandidateRejectReason::None;
+}
+
+FUSE_PHYSICS_INLINE bool isRejectedCandidatePair(const CandidatePair& pair, u32 bodyCount = 0u) {
+    return isRejectedCandidatePair(pair.bodyA, pair.bodyB, bodyCount);
+}
+
+/// Returns the first reject reason including AABB refine (sphere-expanded AABB overlap stub).
+CandidateRejectReason candidatePairRejectReason(
+    const CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
 
 /// Clamp hash table size to at least one bucket (broadphase stub guard).
 FUSE_PHYSICS_INLINE u32 clampTableSize(u32 tableSize) {
@@ -77,6 +119,46 @@ struct CellRange2 {
     ivec2 minCell{};
     ivec2 maxCell{};
 };
+
+/// Clamp cell size to a positive value (broadphase stub guard).
+FUSE_PHYSICS_INLINE f32 clampCellSize(f32 cellSize) {
+    return cellSize > 0.f ? cellSize : 1.f;
+}
+
+/// Per-axis inclusive cell span for a 3D range.
+FUSE_PHYSICS_INLINE ivec3 cellSpan3(const CellRange3& range) {
+    return {
+        range.maxCell.x - range.minCell.x,
+        range.maxCell.y - range.minCell.y,
+        range.maxCell.z - range.minCell.z,
+    };
+}
+
+/// Per-axis inclusive cell span for a 2D range.
+FUSE_PHYSICS_INLINE ivec2 cellSpan2(const CellRange2& range) {
+    return {
+        range.maxCell.x - range.minCell.x,
+        range.maxCell.y - range.minCell.y,
+    };
+}
+
+/// True when any axis span exceeds `maxSpanPerAxis` (0 = unlimited).
+FUSE_PHYSICS_INLINE bool cellSpanExceedsClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+    if (maxSpanPerAxis == 0u) {
+        return false;
+    }
+    const ivec3 span = cellSpan3(range);
+    return span.x > static_cast<s32>(maxSpanPerAxis) || span.y > static_cast<s32>(maxSpanPerAxis) ||
+           span.z > static_cast<s32>(maxSpanPerAxis);
+}
+
+FUSE_PHYSICS_INLINE bool cellSpanExceedsClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+    if (maxSpanPerAxis == 0u) {
+        return false;
+    }
+    const ivec2 span = cellSpan2(range);
+    return span.x > static_cast<s32>(maxSpanPerAxis) || span.y > static_cast<s32>(maxSpanPerAxis);
+}
 
 /// Limit per-axis cell span from the range center (CUDA occupancy iteration guard stub).
 FUSE_PHYSICS_INLINE CellRange3 clampCellRange3(CellRange3 range, u32 maxSpanPerAxis) {

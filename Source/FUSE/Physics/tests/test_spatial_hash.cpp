@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <vector>
 
 namespace {
@@ -587,11 +588,93 @@ void testPairBufferSoAIterationEarlyOuts() {
     expectTrue(buffer.isSortedCanonical(), "empty buffer is canonically sorted");
     expectEq(buffer.applyMaxCapacityClamp(), 0u, "applyMaxCapacityClamp early-outs when empty");
     expectEq(buffer.compactAndClamp(), 0u, "compactAndClamp early-outs when empty");
+    expectTrue(buffer.canSkipSort(), "empty buffer skips canonical sort");
+    expectTrue(buffer.canSkipRefine(), "empty buffer skips AABB refine");
+    expectTrue(buffer.canSkipCompact(), "empty buffer skips compact gather");
 
     buffer.push(0u, 1u);
     expectTrue(buffer.hasValidPairs(), "non-empty buffer reports valid pairs");
     expectTrue(!buffer.canSkipSoAIteration(), "non-empty buffer does not skip iteration");
+    expectTrue(buffer.canSkipSort(), "single-pair buffer skips canonical sort");
+    expectTrue(!buffer.canSkipRefine(), "single-pair buffer still runs refine");
+    expectTrue(buffer.canSkipCompact(), "dense single-pair buffer skips compact");
     expectEq(buffer.toVector().size(), 1u, "toVector gathers valid pair after push");
+}
+
+void testCandidateRejectReasonGuards() {
+    expectTrue(
+        fuse::physics::broadphase::candidatePairRejectReason(1u, 1u) ==
+            fuse::physics::broadphase::CandidateRejectReason::SelfPair,
+        "reject reason flags self pair");
+    expectTrue(
+        fuse::physics::broadphase::candidatePairRejectReason(0u, 2u, 2u) ==
+            fuse::physics::broadphase::CandidateRejectReason::OutOfRangeBody,
+        "reject reason flags out-of-range body");
+    expectTrue(
+        fuse::physics::broadphase::candidatePairRejectReason(0u, 1u, 2u) ==
+            fuse::physics::broadphase::CandidateRejectReason::None,
+        "in-range pair has no reject reason");
+
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    bodies.addBody({20.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 1, {1.f, 0.f, 0.f});
+
+    expectTrue(
+        fuse::physics::broadphase::candidatePairRejectReason({0u, 1u}, bodies, shapes) ==
+            fuse::physics::broadphase::CandidateRejectReason::AabbSeparated,
+        "reject reason flags AABB-separated pair");
+    expectTrue(
+        fuse::physics::broadphase::candidatePairRejectReason({0u, 0u}, bodies, shapes) ==
+            fuse::physics::broadphase::CandidateRejectReason::SelfPair,
+        "reject reason with bodies still flags self pair first");
+
+    expectTrue(std::strcmp(fuse::physics::broadphase::candidateRejectReasonLabel(
+                               fuse::physics::broadphase::CandidateRejectReason::BufferFull),
+                           "buffer_full") == 0,
+               "reject reason label maps buffer full");
+}
+
+void testPairBufferRejectReasonTracking() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.setMaxCapacity(1u);
+
+    expectTrue(!buffer.push(0u, 0u), "push rejects self-pair");
+    expectTrue(buffer.lastRejectReason == fuse::physics::broadphase::CandidateRejectReason::SelfPair,
+               "push records self-pair reject reason");
+
+    expectTrue(buffer.push(0u, 1u), "push accepts first pair");
+    expectTrue(!buffer.push(1u, 2u), "push rejects pair when buffer is full");
+    expectTrue(buffer.lastRejectReason == fuse::physics::broadphase::CandidateRejectReason::BufferFull,
+               "push records buffer-full reject reason");
+
+    buffer.preparePairSlots(2u);
+    buffer.writeSlot(0u, 2u, 2u);
+    buffer.writeSlot(1u, 0u, 3u);
+    expectEq(buffer.compact(), 1u, "writeSlot rejects self-pair before compact");
+    expectTrue(!buffer.hasInvalidSlots(), "compacted buffer has no invalid slots");
+    expectTrue(buffer.canSkipCompact(), "compacted buffer skips subsequent compact");
+}
+
+void testCellSpanClampDiagnostics() {
+    fuse::physics::broadphase::CellRange3 wideRange = {
+        {-10, -10, -10},
+        {10, 10, 10},
+    };
+    expectTrue(fuse::physics::broadphase::cellSpanExceedsClamp(wideRange, 8u),
+               "wide range exceeds per-axis clamp threshold");
+    expectTrue(!fuse::physics::broadphase::cellSpanExceedsClamp(wideRange, 0u),
+               "zero clamp disables span-exceeds check");
+
+    const fuse::physics::broadphase::CellRange3 clamped =
+        fuse::physics::broadphase::clampCellRange3(wideRange, 8u);
+    expectTrue(!fuse::physics::broadphase::cellSpanExceedsClamp(clamped, 8u),
+               "clampCellRange3 brings span within threshold");
+
+    expectTrue(fuse::physics::broadphase::clampCellSize(0.f) > 0.f, "clampCellSize rejects zero");
+    expectTrue(fuse::physics::broadphase::clampCellSize(-1.f) > 0.f, "clampCellSize rejects negative");
 }
 
 } // namespace
@@ -621,6 +704,9 @@ int main() {
     testCellClampHelpers();
     testBroadphaseCellSpanClampIntegration();
     testPairBufferSoAIterationEarlyOuts();
+    testCandidateRejectReasonGuards();
+    testPairBufferRejectReasonTracking();
+    testCellSpanClampDiagnostics();
 
     if (g_failures == 0) {
         std::printf("fuse_physics_broadphase_tests: all checks passed\n");
