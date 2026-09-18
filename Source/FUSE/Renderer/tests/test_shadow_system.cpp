@@ -1145,6 +1145,141 @@ void testClassifyCascadeShadowSkipPriority() {
                "valid cascade is not skipped");
 }
 
+void testCascadeShadowBypassReasonHelpers() {
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadeShadowBypassReason;
+    using fuse::renderer::CascadedShadowMapLayout;
+    using fuse::renderer::ShadowCameraParams;
+    using fuse::renderer::cascadeShadowBypassReasonIsBlocking;
+    using fuse::renderer::cascadeShadowBypassReasonLabel;
+
+    ShadowCameraParams camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+
+    expectTrue(std::strcmp(cascadeShadowBypassReasonLabel(CascadeShadowBypassReason::None), "none") == 0,
+               "None bypass reason label");
+    expectTrue(std::strcmp(cascadeShadowBypassReasonLabel(CascadeShadowBypassReason::EmptyLightDirection),
+                           "empty_light_direction") == 0,
+               "EmptyLightDirection bypass reason label");
+    expectTrue(std::strcmp(cascadeShadowBypassReasonLabel(CascadeShadowBypassReason::EmptyCameraDepthRange),
+                           "empty_camera_depth_range") == 0,
+               "EmptyCameraDepthRange bypass reason label");
+
+    expectTrue(!cascadeShadowBypassReasonIsBlocking(CascadeShadowBypassReason::None),
+               "None bypass reason is not blocking");
+    expectTrue(cascadeShadowBypassReasonIsBlocking(CascadeShadowBypassReason::EmptyLightDirection),
+               "empty light bypass reason is blocking");
+
+    expectTrue(CascadeLightSpaceLayout::classifyCascadeShadowBypass(camera, {0.f, 0.f, 0.f}) ==
+                   CascadeShadowBypassReason::EmptyLightDirection,
+               "classify bypass picks empty light first");
+
+    ShadowCameraParams invertedCamera = camera;
+    invertedCamera.nearPlane = 80.f;
+    invertedCamera.farPlane = 10.f;
+    expectTrue(CascadeLightSpaceLayout::classifyCascadeShadowBypass(invertedCamera, {0.f, -1.f, 0.f}) ==
+                   CascadeShadowBypassReason::EmptyCameraDepthRange,
+               "classify bypass picks empty camera when light is valid");
+    expectTrue(CascadedShadowMapLayout::isEmptyCameraDepthRange(invertedCamera),
+               "inverted camera flagged before bypass classification");
+}
+
+void testPerCascadeShadowGuardHelpers() {
+    using fuse::renderer::CascadeLightSpaceLayout;
+    using fuse::renderer::CascadeShadowSkipReason;
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::ShadowCameraParams;
+
+    CascadedShadowMapDesc desc{};
+    ShadowCameraParams camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+
+    const fuse::math::Vec3 sunDirection{0.f, -1.f, 0.f};
+    expectTrue(!CascadeLightSpaceLayout::isEmptyLightCascadeShadowGuard(sunDirection),
+               "valid light passes empty-light guard");
+    expectTrue(!CascadeLightSpaceLayout::isEmptyCameraCascadeShadowGuard(camera),
+               "valid camera passes empty-camera guard");
+    expectTrue(!CascadeLightSpaceLayout::isEmptyFrustumCascadeShadowGuard(0u, desc, camera),
+               "default cascade passes empty-frustum guard");
+    expectTrue(!CascadeLightSpaceLayout::isDegenerateRangeCascadeShadowGuard(0u, desc, camera),
+               "default cascade passes degenerate-range guard");
+
+    expectTrue(CascadeLightSpaceLayout::isEmptyLightCascadeShadowGuard({0.f, 0.f, 0.f}),
+               "zero light direction trips empty-light guard");
+
+    CascadedShadowMapDesc flatDesc{};
+    flatDesc.cascadeSplits[0] = 0.5f;
+    flatDesc.cascadeSplits[1] = 0.5f;
+    flatDesc.cascadeSplits[2] = 1.f;
+    flatDesc.cascadeSplits[3] = 1.f;
+    expectTrue(CascadeLightSpaceLayout::isEmptyFrustumCascadeShadowGuard(1u, flatDesc, camera),
+               "zero-thickness cascade trips empty-frustum guard");
+
+    CascadeShadowSkipReason skipReason = CascadeShadowSkipReason::None;
+    expectTrue(CascadeLightSpaceLayout::wouldSkipCascadeShadowBuild(1u, flatDesc, camera, sunDirection, &skipReason),
+               "wouldSkip reports skip for zero-thickness cascade");
+    expectTrue(skipReason == CascadeShadowSkipReason::EmptyCascadeFrustum,
+               "wouldSkip writes empty-frustum reason");
+    expectTrue(!CascadeLightSpaceLayout::wouldSkipCascadeShadowBuild(0u, desc, camera, sunDirection, &skipReason),
+               "wouldSkip allows valid cascade");
+    expectTrue(skipReason == CascadeShadowSkipReason::None, "wouldSkip clears reason for valid cascade");
+}
+
+void testNeedsCascadeSplitSanitizeAlias() {
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+
+    CascadedShadowMapDesc validDesc{};
+    expectTrue(!CascadedShadowMapLayout::needsCascadeSplitSanitize(validDesc),
+               "needsCascadeSplitSanitize alias false for valid splits");
+    expectTrue(CascadedShadowMapLayout::needsCascadeSplitSanitize(validDesc) ==
+                   CascadedShadowMapLayout::cascadeSplitsNeedSanitize(validDesc),
+               "needsCascadeSplitSanitize matches cascadeSplitsNeedSanitize");
+
+    CascadedShadowMapDesc dirtyDesc = validDesc;
+    dirtyDesc.cascadeSplits[3] = 0.75f;
+    expectTrue(CascadedShadowMapLayout::needsCascadeSplitSanitize(dirtyDesc),
+               "needsCascadeSplitSanitize alias true when pin needed");
+
+    CascadedShadowMapDesc pristineDesc = validDesc;
+    CascadedShadowMapLayout::sanitizeCascadeSplits(pristineDesc);
+    expectTrue(CascadedShadowMapLayout::validateClampedCascadeSplits(pristineDesc),
+               "sanitize no-op preserves already-valid splits");
+}
+
+void testConditionalSanitizeStages() {
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+
+    CascadedShadowMapDesc clampOnlyDesc{};
+    clampOnlyDesc.cascadeSplits[0] = -0.1f;
+    clampOnlyDesc.cascadeSplits[1] = 0.2f;
+    clampOnlyDesc.cascadeSplits[2] = 0.4f;
+    clampOnlyDesc.cascadeSplits[3] = 1.f;
+    expectTrue(CascadedShadowMapLayout::needsCascadeSplitClamp(clampOnlyDesc),
+               "clamp-only desc needs clamp stage");
+    expectTrue(!CascadedShadowMapLayout::needsCascadeSplitMonotonicityRepair(clampOnlyDesc),
+               "clamp-only desc does not need monotonicity repair");
+    CascadedShadowMapLayout::sanitizeCascadeSplits(clampOnlyDesc);
+    expectTrue(CascadedShadowMapLayout::validateClampedCascadeSplits(clampOnlyDesc),
+               "conditional sanitize repairs clamp-only splits");
+
+    CascadedShadowMapDesc monotonicOnlyDesc{};
+    monotonicOnlyDesc.cascadeSplits[0] = 0.1f;
+    monotonicOnlyDesc.cascadeSplits[1] = 0.05f;
+    monotonicOnlyDesc.cascadeSplits[2] = 0.6f;
+    monotonicOnlyDesc.cascadeSplits[3] = 1.f;
+    expectTrue(!CascadedShadowMapLayout::needsCascadeSplitClamp(monotonicOnlyDesc),
+               "monotonic-only desc does not need clamp stage");
+    expectTrue(CascadedShadowMapLayout::needsCascadeSplitMonotonicityRepair(monotonicOnlyDesc),
+               "monotonic-only desc needs monotonicity repair");
+    CascadedShadowMapLayout::sanitizeCascadeSplits(monotonicOnlyDesc);
+    expectTrue(CascadedShadowMapLayout::validateClampedCascadeSplits(monotonicOnlyDesc),
+               "conditional sanitize repairs monotonic-only splits");
+}
+
 void testCascadeShadowBypassGuards() {
     using fuse::renderer::CascadeLightSpaceLayout;
     using fuse::renderer::CascadedShadowMapLayout;
@@ -1427,6 +1562,10 @@ int main() {
     testCascadeShadowSkipReasonHelpers();
     testCascadeShadowSkipReasonBlocking();
     testClassifyCascadeShadowSkipPriority();
+    testCascadeShadowBypassReasonHelpers();
+    testPerCascadeShadowGuardHelpers();
+    testNeedsCascadeSplitSanitizeAlias();
+    testConditionalSanitizeStages();
     testCascadeShadowBypassGuards();
     testCountSkippedCascadeShadowBuilds();
     testCascadeShadowSkipCountsByKind();
