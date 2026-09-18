@@ -70,7 +70,7 @@ CookRecord AssetCooker::cook_with_cache_(CookAssetKind kind,
                                          u64 upstream_hash,
                                          const char* stub_note) {
     const u64 cache_key = combine_cook_cache_key(content_hash, upstream_hash);
-    const bool cacheable = is_valid_cook_cache_key(cache_key);
+    const bool cacheable = is_cacheable_cook_cache_key(content_hash, upstream_hash);
 
     CookCacheEntry cached;
     if (cacheable && m_cache.lookup(cache_key, &cached) == CookCacheLookup::Hit) {
@@ -198,6 +198,10 @@ u32 AssetCooker::invalidate_upstream_dependency(const CookManifest& manifest, co
         }
     }
     return removed;
+}
+
+u32 AssetCooker::prune_stale_cache() {
+    return m_cache.prune_all();
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {

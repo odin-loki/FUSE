@@ -25,6 +25,10 @@ u64 hash_bool(bool value) {
 } // namespace
 
 u64 fnv1a64_bytes(const u8* data, usize size) {
+    if (data == nullptr && size > 0) {
+        return 0;
+    }
+
     u64 hash = kFnvOffset;
     for (usize i = 0; i < size; ++i) {
         hash ^= static_cast<u64>(data[i]);

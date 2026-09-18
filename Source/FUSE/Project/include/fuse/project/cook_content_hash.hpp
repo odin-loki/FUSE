@@ -9,6 +9,11 @@
 
 namespace fuse::project {
 
+/// Zero is reserved — unreadable or unhashable sources must not produce cache keys (B7.9 deepen).
+[[nodiscard]] inline bool is_valid_content_hash(u64 hash) {
+    return hash != 0;
+}
+
 /// FNV-1a 64-bit hash over raw bytes — shared by cook cache keys (B7.9 deepen stub).
 [[nodiscard]] u64 fnv1a64_bytes(const u8* data, usize size);
 [[nodiscard]] u64 fnv1a64_combine(u64 left, u64 right);
