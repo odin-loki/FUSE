@@ -93,7 +93,11 @@ bool tonemap_curve_reinhard_params_valid(const ReinhardCurveParams& params) {
 }
 
 bool tonemap_curve_aces_params_valid(const AcesCurveParams& params) {
-    return params.contrast >= 0.f;
+    return params.contrast >= 0.f && params.shoulder >= 0.f;
+}
+
+bool tonemap_curve_filmic_params_valid(const TonemapCurveParams& params) {
+    return params.toe_length >= 0.f && params.shoulder_length >= 0.f;
 }
 
 bool tonemap_curve_params_valid(const TonemapCurveParams& params) {
@@ -110,8 +114,12 @@ bool tonemap_curve_params_valid(const TonemapCurveParams& params) {
         return tonemap_curve_aces_params_valid(params.aces);
     case TonemapCurveKind::Filmic:
     default:
-        return true;
+        return tonemap_curve_filmic_params_valid(params);
     }
+}
+
+bool tonemap_curve_is_usable(const TonemapCurveParams& params, f32 white_input, f32 epsilon) {
+    return tonemap_curve_ready_to_apply(params, white_input, epsilon);
 }
 
 bool tonemap_curve_can_apply(const TonemapCurveParams& params) {

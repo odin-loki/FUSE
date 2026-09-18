@@ -47,6 +47,8 @@ void reset_auto_exposure_state(AutoExposureState& state);
 void reset_auto_exposure_state_to(AutoExposureState& state, f32 ev = 0.f);
 /// Reset temporal state with EV anchor clamped to `AutoExposureParams` range (B5.10 deepen).
 void reset_auto_exposure_state_to_clamped(AutoExposureState& state, f32 ev, const AutoExposureParams& params);
+/// Reset temporal state only when EV anchor is within params range; returns false when rejected (B5.10 deepen).
+bool reset_auto_exposure_state_to_if_valid(AutoExposureState& state, f32 ev, const AutoExposureParams& params);
 f32 ema_alpha_for_direction(bool brightening, const AutoExposureParams& params);
 bool is_brightening_luminance(f32 measured_luminance, f32 reference_luminance);
 f32 ema_blend(f32 previous, f32 measured, f32 alpha);
@@ -68,6 +70,8 @@ struct LuminanceHistogramParams {
 bool metering_percentile_valid(f32 percentile);
 /// True when histogram binning and percentile knobs are usable (B5.10 deepen).
 bool luminance_histogram_params_valid(const LuminanceHistogramParams& params);
+/// True when a histogram bin index is within the configured bin count (B5.10 deepen).
+bool luminance_histogram_bin_in_range(u32 bin, const LuminanceHistogramParams& params);
 
 class LuminanceHistogram {
 public:
@@ -122,6 +126,10 @@ f32 meterFromSamples(const fuse::math::Vec3* samples, u32 count, const Luminance
                      f32 percentile);
 /// Percentile metering from histogram; returns 0 when empty (B5.10 deepen).
 f32 meterFromHistogram(const LuminanceHistogram& histogram, f32 percentile);
+/// True when histogram is ready for its configured metering percentile (B5.10 deepen).
+bool canMeterDefaultPercentile(const LuminanceHistogram& histogram);
+/// Percentile metering using the histogram's configured metering percentile (B5.10 deepen).
+f32 meterDefaultPercentile(const LuminanceHistogram& histogram);
 } // namespace histogram_util
 
 /// CPU histogram-free exposure meter stub (CUDA reduction deferred).
@@ -141,6 +149,22 @@ private:
 };
 
 void reset_exposure_meter(ExposureMeter& meter);
+
+/// Average exposure meter helpers (B5.10 deepen).
+namespace meter_util {
+/// True when a sample buffer can drive average metering (B5.10 deepen).
+bool canMeasureFromSamples(const fuse::math::Vec3* samples, u32 count);
+/// True when an exposure meter has accumulated samples (B5.10 deepen).
+bool hasMeteringMeter(const ExposureMeter& meter);
+/// Average metering from meter; returns 0 when empty (B5.10 deepen).
+f32 meterFromMeter(const ExposureMeter& meter);
+/// Average metering from samples; returns 0 when `count == 0` (B5.10 deepen).
+f32 meterFromSamples(const fuse::math::Vec3* samples, u32 count);
+} // namespace meter_util
+
+/// Reset histogram and average meter together (B5.10 deepen).
+void reset_metering(LuminanceHistogram& histogram, ExposureMeter& meter);
+
 /// True when an exposure meter has accumulated samples (B5.10 deepen).
 bool exposure_meter_has_samples(const ExposureMeter& meter);
 /// True when an exposure meter can report a luminance average (B5.10 deepen).
@@ -158,6 +182,8 @@ public:
     void destroy();
     void reset();
     void resetToEv(f32 ev = 0.f);
+    /// Reset to EV anchor only when within params range; returns false when rejected (B5.10 deepen).
+    bool resetToEvIfValid(f32 ev);
 
     f32 updateFromSamples(const fuse::math::Vec3* samples, u32 count, f32 delta_seconds);
     f32 updateFromHistogram(const LuminanceHistogram& histogram, f32 delta_seconds);
@@ -177,5 +203,7 @@ bool auto_exposure_can_update_from_histogram(const LuminanceHistogram& histogram
 void reset_auto_exposure(AutoExposure& exposure);
 /// Reset temporal auto-exposure state with clamped EV anchor via facade (B5.10 deepen).
 void reset_auto_exposure_to_clamped(AutoExposure& exposure, f32 ev, const AutoExposureParams& params);
+/// Reset temporal auto-exposure state only when EV anchor is valid; returns false when rejected (B5.10 deepen).
+bool reset_auto_exposure_to_if_valid(AutoExposure& exposure, f32 ev, const AutoExposureParams& params);
 
 } // namespace fuse::renderer
