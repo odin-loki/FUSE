@@ -437,6 +437,30 @@ bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis)
     return preflightUpdateDrag(hit, dragging, activeAxis).canUpdate();
 }
 
+EndDragPreflight preflightEndDrag(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+                                  const GizmoSnapSettings& settings) {
+    EndDragPreflight preflight{};
+    if (!dragging) {
+        preflight.notDragging = true;
+        return preflight;
+    }
+
+    if (activeAxis == GizmoAxis::None) {
+        preflight.invalidActiveAxis = true;
+        return preflight;
+    }
+
+    if (canApplySnap(mode, settings)) {
+        preflight.snapWillApply = true;
+    }
+
+    return preflight;
+}
+
+bool canEndDrag(bool dragging, GizmoAxis activeAxis) {
+    return preflightEndDrag(dragging, activeAxis, GizmoMode::Translate, GizmoSnapSettings{}).canEnd();
+}
+
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
                                       GizmoMode mode, GizmoSpace space, f32 axisLength,
                                       f32 pickRadius, bool alreadyDragging) {
@@ -881,22 +905,38 @@ GizmoResult GizmoSystem::updateDrag(const GizmoHitTest& hit) {
     return result;
 }
 
-GizmoResult GizmoSystem::endDrag() {
-    GizmoResult result;
-    if (!m_dragging) {
-        return result;
+bool GizmoSystem::canEndDrag() const {
+    return fuse::editor::preflightEndDrag(m_dragging, m_activeAxis, m_mode, m_snap).canEnd();
+}
+
+EndDragPreflight GizmoSystem::preflightEndDrag() const {
+    return fuse::editor::preflightEndDrag(m_dragging, m_activeAxis, m_mode, m_snap);
+}
+
+bool GizmoSystem::tryEndDrag(GizmoResult& out) {
+    out = {};
+    if (!preflightEndDrag().canEnd()) {
+        return false;
     }
 
     m_currentTransform = applySnapping_(m_currentTransform);
     markDirty_();
 
-    result.active = false;
-    result.changed = true;
-    result.axis = m_activeAxis;
-    result.transform = m_currentTransform;
+    out.active = false;
+    out.changed = true;
+    out.axis = m_activeAxis;
+    out.transform = m_currentTransform;
 
     m_dragging = false;
     m_activeAxis = GizmoAxis::None;
+    return true;
+}
+
+GizmoResult GizmoSystem::endDrag() {
+    GizmoResult result;
+    if (!tryEndDrag(result)) {
+        return result;
+    }
     return result;
 }
 
