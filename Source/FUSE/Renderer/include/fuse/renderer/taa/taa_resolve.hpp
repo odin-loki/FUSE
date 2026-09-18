@@ -26,6 +26,9 @@ void sanitizeTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& histor
 /// Preflight resolve without mutating history — returns true when resolve would proceed.
 bool preflightTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                          TaaResolveSkipReason* reason = nullptr);
+/// Preflight resolve blend weights for the next frame without mutating history (B5.9 deepen).
+bool preflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                    TaaBlendWeights* outWeights = nullptr);
 
 /// CPU/CUDA resolve facade — records resolve intent; kernel deferred (B5.9 stub).
 class TaaResolve {
