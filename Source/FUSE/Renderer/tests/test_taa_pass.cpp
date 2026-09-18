@@ -253,6 +253,34 @@ void testHistoryValidityFlags() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testBlendWeightGuards() {
+    fuse::renderer::TAAParams params{};
+    params.blend_factor = 0.15f;
+
+    expectTrue(fuse::renderer::isTaaBlendFactorInRange(0.f), "zero blend factor in range");
+    expectTrue(fuse::renderer::isTaaBlendFactorInRange(1.f), "unit blend factor in range");
+    expectTrue(fuse::renderer::isTaaBlendFactorInRange(0.15f), "typical blend factor in range");
+    expectTrue(!fuse::renderer::isTaaBlendFactorInRange(-0.1f), "negative blend factor out of range");
+    expectTrue(!fuse::renderer::isTaaBlendFactorInRange(1.1f), "blend factor above one out of range");
+
+    expectTrue(fuse::renderer::taaUsesWarmupBlend(true), "first frame uses warmup blend");
+    expectTrue(!fuse::renderer::taaUsesWarmupBlend(false), "subsequent frames do not use warmup blend");
+
+    const fuse::f32 warmupBlend = fuse::renderer::computeEffectiveBlend(true, params);
+    expectNear(warmupBlend, 1.f, 1e-5f, "warmup effective blend is full current weight");
+    expectTrue(!fuse::renderer::taaBlendWeightReusesHistory(warmupBlend),
+               "warmup blend does not reuse history");
+    expectNear(fuse::renderer::computeHistoryContributionWeight(warmupBlend), 0.f, 1e-5f,
+               "warmup history contribution is zero");
+
+    const fuse::f32 steadyBlend = fuse::renderer::computeEffectiveBlend(false, params);
+    expectNear(steadyBlend, 0.15f, 1e-5f, "steady effective blend uses configured factor");
+    expectTrue(fuse::renderer::taaBlendWeightReusesHistory(steadyBlend),
+               "steady blend reuses history");
+    expectNear(fuse::renderer::computeHistoryContributionWeight(steadyBlend), 0.85f, 1e-5f,
+               "steady history contribution complements effective blend");
+}
+
 void testClampTaaParams() {
     fuse::renderer::TAAParams raw{};
     raw.blend_factor = 2.f;
@@ -403,6 +431,177 @@ void testClassifyTaaResolveSkipPriority() {
                "MissingSurfaces wins when dimensions match");
 
     history.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
+void testHistoryGenerationCurrentHelpers() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for generation current test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaHistoryBuffer history;
+    fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
+    expectTrue(history.init(resources, historyDesc), "history ready for generation current test");
+    expectTrue(fuse::renderer::taaHistoryCanAccumulate(history), "ready history can accumulate");
+    expectTrue(history.isGenerationCurrent(0u), "generation zero is current after init");
+    expectTrue(fuse::renderer::taaHistoryIsGenerationCurrent(history, 0u),
+               "free helper reports current generation");
+    expectTrue(!history.isHistoryStale(0u), "current generation is not stale");
+    expectTrue(!history.isHistoryStale(0u) == history.isGenerationCurrent(0u),
+               "stale and current are complementary");
+
+    history.invalidateHistory();
+    expectTrue(history.isHistoryStale(0u), "prior generation stale after invalidate");
+    expectTrue(!history.isGenerationCurrent(0u), "prior generation not current after invalidate");
+    expectTrue(history.isGenerationCurrent(history.invalidateGeneration()),
+               "current generation matches after invalidate");
+    expectTrue(fuse::renderer::taaHistoryIsGenerationCurrent(history, history.invalidateGeneration()),
+               "free helper matches bumped generation");
+
+    fuse::renderer::TaaHistoryBuffer emptyHistory;
+    expectTrue(!fuse::renderer::taaHistoryCanAccumulate(emptyHistory), "empty history cannot accumulate");
+
+    history.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
+void testResolveSurfaceGuards() {
+    fuse::renderer::TaaResolveDesc desc{};
+    desc.width = 64;
+    desc.height = 64;
+    expectTrue(!fuse::renderer::taaResolveSurfacesSatisfied(desc), "null surfaces not satisfied");
+
+    desc.surfaces.current_frame = reinterpret_cast<void*>(0x1);
+    expectTrue(!fuse::renderer::taaResolveSurfacesSatisfied(desc), "missing output not satisfied");
+
+    desc.surfaces.output = reinterpret_cast<void*>(0x2);
+    expectTrue(fuse::renderer::taaResolveSurfacesSatisfied(desc), "both colour surfaces satisfied");
+
+    desc.params.velocity_rejection = 0.5f;
+    desc.params.depth_rejection = 0.f;
+    desc.enforce_rejection_surfaces = true;
+    expectTrue(!fuse::renderer::taaResolveRejectionSurfacesSatisfied(desc),
+               "velocity rejection requires velocity buffer");
+
+    desc.surfaces.velocity_buffer = reinterpret_cast<void*>(0x3);
+    expectTrue(fuse::renderer::taaResolveRejectionSurfacesSatisfied(desc),
+               "velocity buffer satisfies rejection guard");
+
+    desc.params.velocity_rejection = 0.f;
+    desc.params.depth_rejection = 0.25f;
+    desc.surfaces.velocity_buffer = nullptr;
+    expectTrue(!fuse::renderer::taaResolveRejectionSurfacesSatisfied(desc),
+               "depth rejection requires depth buffer");
+
+    desc.surfaces.depth_buffer = reinterpret_cast<void*>(0x4);
+    expectTrue(fuse::renderer::taaResolveRejectionSurfacesSatisfied(desc),
+               "depth buffer satisfies rejection guard");
+
+    desc.enforce_rejection_surfaces = false;
+    expectTrue(fuse::renderer::taaResolveRejectionSurfacesSatisfied(desc),
+               "rejection guard bypassed when enforcement disabled");
+}
+
+void testCanAttemptAndPrepareResolve() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for canAttempt test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaHistoryBuffer history;
+    fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
+    expectTrue(history.init(resources, historyDesc), "history ready for canAttempt test");
+
+    fuse::renderer::TaaResolveDesc desc{};
+    desc.width = 64;
+    desc.height = 64;
+    desc.surfaces.current_frame = reinterpret_cast<void*>(0x1);
+    desc.surfaces.output = reinterpret_cast<void*>(0x2);
+    expectTrue(fuse::renderer::canAttemptTaaResolve(desc, history),
+               "valid desc can attempt resolve with generation guard bypassed");
+
+    desc.width = 0;
+    expectTrue(!fuse::renderer::canAttemptTaaResolve(desc, history),
+               "invalid dimensions block canAttempt");
+    desc.width = 64;
+
+    desc.observed_history_generation = 0u;
+    expectTrue(fuse::renderer::canAttemptTaaResolve(desc, history),
+               "current generation passes canAttempt");
+
+    history.invalidateHistory();
+    expectTrue(!fuse::renderer::canAttemptTaaResolve(desc, history),
+               "stale generation blocks canAttempt");
+
+    desc.observed_history_generation = fuse::renderer::kTaaResolveNoHistoryGeneration;
+    expectTrue(fuse::renderer::prepareTaaResolveDesc(desc, history),
+               "prepare stamps generation and passes preflight");
+    expectTrue(desc.observed_history_generation == history.invalidateGeneration(),
+               "prepare fills observed generation from history");
+    expectTrue(fuse::renderer::canAttemptTaaResolve(desc, history),
+               "prepared desc passes canAttempt");
+
+    history.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
+void testTaaPassPrepareAndCanResolve() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for pass prepare test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaPassDesc passDesc{};
+    passDesc.width = 64;
+    passDesc.height = 64;
+
+    auto pass = fuse::renderer::TaaPass::create(passDesc);
+    expectTrue(pass->init(resources), "TaaPass initialized for prepare test");
+
+    fuse::renderer::TaaResolveDesc desc{};
+    desc.width = 64;
+    desc.height = 64;
+    desc.surfaces.current_frame = reinterpret_cast<void*>(0x1);
+    desc.surfaces.output = reinterpret_cast<void*>(0x2);
+    expectTrue(pass->canResolveFrame(desc), "pass canResolveFrame with bypassed generation guard");
+
+    desc.observed_history_generation = 0u;
+    expectTrue(pass->prepareAndCanResolve(desc), "pass prepareAndCanResolve stamps and passes");
+    expectTrue(desc.observed_history_generation == pass->historyInvalidateGeneration(),
+               "pass prepare stamps current generation");
+
+    pass->invalidateHistory();
+    desc.observed_history_generation = 0u;
+    expectTrue(!pass->canResolveFrame(desc), "pass canResolveFrame blocks stale generation");
+    desc.observed_history_generation = fuse::renderer::kTaaResolveNoHistoryGeneration;
+    expectTrue(pass->prepareAndCanResolve(desc), "pass prepareAndCanResolve recovers after invalidate");
+
+    pass->destroy();
     resources.destroy();
     bindless.destroy(*bootstrap->device());
 }
@@ -1086,7 +1285,12 @@ int main() {
     testJitterNdcOffset();
     testHistoryBufferPingPong();
     testHistoryValidityFlags();
+    testBlendWeightGuards();
     testClampTaaParams();
+    testHistoryGenerationCurrentHelpers();
+    testResolveSurfaceGuards();
+    testCanAttemptAndPrepareResolve();
+    testTaaPassPrepareAndCanResolve();
     testResolveSkipReasonLabels();
     testResolveDimensionHelpers();
     testClassifyTaaResolveSkipPriority();

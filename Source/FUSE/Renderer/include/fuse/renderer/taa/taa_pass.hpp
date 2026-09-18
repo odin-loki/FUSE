@@ -55,6 +55,10 @@ public:
     bool wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason = nullptr) const;
     /// Stamp `observed_history_generation` from pass history when still at the no-guard sentinel.
     void stampObservedHistoryGeneration(TaaResolveDesc& desc) const;
+    /// True when resolve request passes all preflight guards (B5.9 deepen).
+    bool canResolveFrame(const TaaResolveDesc& desc) const;
+    /// Stamp generation and return whether resolve can proceed (B5.9 deepen).
+    bool prepareAndCanResolve(TaaResolveDesc& desc) const;
 
     bool resolveFrame(const TaaResolveDesc& desc, void* cudaStream = nullptr);
 
