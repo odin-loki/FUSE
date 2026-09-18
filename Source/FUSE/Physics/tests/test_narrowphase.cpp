@@ -1236,6 +1236,80 @@ void testFrictionBasisPreflightGuards() {
     expectTrue(!stalePreflight.can_skip_rebuild(), "friction preflight cannot skip stale basis");
 }
 
+void testRunNarrowphaseDeepenDispatchGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 dynamicA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 dynamicB = bodies.addBody({1.5f, 0.f, 0.f}, 1.f);
+    const fuse::u32 sleepingA = bodies.addBody({0.f, 2.f, 0.f}, 1.f, fuse::physics::RB_SLEEPING);
+    const fuse::u32 sleepingB = bodies.addBody({0.f, 3.f, 0.f}, 1.f, fuse::physics::RB_SLEEPING);
+    const fuse::u32 kinematicA = bodies.addBody({0.f, 4.f, 0.f}, 0.f, fuse::physics::RB_KINEMATIC);
+    const fuse::u32 kinematicB = bodies.addBody({0.f, 5.f, 0.f}, 0.f, fuse::physics::RB_KINEMATIC);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, dynamicA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, dynamicB, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, sleepingA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, sleepingB, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, kinematicA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, kinematicB, {1.f, 0.f, 0.f});
+
+    const std::vector<fuse::physics::broadphase::CandidatePair> deepenRejectedPairs = {
+        {sleepingA, sleepingB},
+        {kinematicA, kinematicB},
+    };
+
+    fuse::physics::narrowphase::ContactBufferSoA rejectedBuffer;
+    fuse::physics::narrowphase::runNarrowphaseIntoBuffer(deepenRejectedPairs, bodies, shapes, rejectedBuffer);
+    expectTrue(rejectedBuffer.isEmpty(), "deepen dispatch skips sleeping and kinematic pairs");
+    expectTrue(
+        fuse::physics::narrowphase::can_skip_narrowphase(deepenRejectedPairs, bodies, shapes),
+        "can_skip_narrowphase true for all deepen-rejected pairs");
+
+    const std::vector<fuse::physics::broadphase::CandidatePair> mixedPairs = {
+        {sleepingA, sleepingB},
+        {dynamicA, dynamicB},
+    };
+
+    fuse::physics::narrowphase::ContactBufferSoA mixedBuffer;
+    fuse::physics::narrowphase::runNarrowphaseIntoBuffer(mixedPairs, bodies, shapes, mixedBuffer);
+    expectTrue(mixedBuffer.activeCount == 1u, "mixed pair list keeps only dispatchable contact");
+    const auto contact = mixedBuffer.manifoldAt(0u);
+    expectTrue(contact.valid, "dispatchable pair still finalizes in hot path");
+    expectTrue(contact.hasFrictionBasis(), "dispatchable pair still builds friction basis");
+}
+
+void testBuildFrictionTangentBasesReuseGuard() {
+    fuse::physics::narrowphase::ContactBufferSoA buffer;
+    buffer.preparePairSlots(1u);
+
+    fuse::physics::narrowphase::ContactManifold manifold{};
+    manifold.valid = true;
+    manifold.bodyA = 0u;
+    manifold.bodyB = 1u;
+    manifold.contactNormal = {0.f, 1.f, 0.f};
+    manifold.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    manifold.buildFrictionBasis();
+    buffer.writeSlot(0u, manifold);
+    expectTrue(buffer.compact() == 1u, "reuse guard test compacts one manifold");
+
+    const auto cachedTangent1 = buffer.tangentBasisAt(0u).tangent1;
+    buffer.buildFrictionTangentBases();
+    expectNear(
+        buffer.tangentBasisAt(0u).tangent1.x,
+        cachedTangent1.x,
+        1e-4f,
+        "buildFrictionTangentBases preserves valid cached basis");
+
+    fuse::physics::narrowphase::ContactManifold stale = buffer.manifoldAt(0u);
+    stale.contactNormal = {1.f, 0.f, 0.f};
+    buffer.writeSlot(0u, stale);
+    buffer.compact();
+    buffer.buildFrictionTangentBases();
+    expectTrue(
+        fuse::physics::narrowphase::isOrthonormalTangentBasis(
+            {1.f, 0.f, 0.f}, buffer.tangentBasisAt(0u)),
+        "buildFrictionTangentBases refreshes stale basis");
+}
+
 void testGjkSupportAndEpaStub() {
     const fuse::physics::vec3 hull[] = {
         {-1.f, 0.f, 0.f},
@@ -1292,6 +1366,8 @@ int main() {
     testGenerateContactManifoldIfNeededGuard();
     testManifoldShallowPruneSkipGuards();
     testFrictionBasisPreflightGuards();
+    testRunNarrowphaseDeepenDispatchGuards();
+    testBuildFrictionTangentBasesReuseGuard();
     testGjkSupportAndEpaStub();
 
     if (g_failures == 0) {

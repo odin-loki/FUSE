@@ -1,5 +1,7 @@
 #include <fuse/physics/narrowphase/contact_buffer.hpp>
 
+#include <fuse/physics/narrowphase/friction.hpp>
+
 #include <algorithm>
 
 namespace fuse::physics::narrowphase {
@@ -99,9 +101,15 @@ void ContactBufferSoA::buildFrictionTangentBases() {
         if (validFlags[slot] == 0u) {
             continue;
         }
-        const TangentBasis basis = buildTangentBasis(contactNormals[slot]);
-        tangent1[slot] = basis.tangent1;
-        tangent2[slot] = basis.tangent2;
+
+        ContactManifold manifold = manifoldAt(slot);
+        if (should_skip_friction_basis_preflight(manifold)) {
+            continue;
+        }
+
+        compute_friction_tangents_if_needed(manifold);
+        tangent1[slot] = manifold.frictionBasis.tangent1;
+        tangent2[slot] = manifold.frictionBasis.tangent2;
     }
 }
 
