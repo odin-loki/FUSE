@@ -575,6 +575,114 @@ void testCameraBracketSmoothStep() {
     expectNear(bracket.segment_t, 0.5f, 0.001f, "smoothstep bracket eased segment t at midpoint");
 }
 
+void testCameraKeyframeFovUnset() {
+    expectTrue(fuse::cinematics::camera_keyframe_fov_unset(0.f), "zero fov is unset");
+    expectTrue(fuse::cinematics::camera_keyframe_fov_unset(-10.f), "negative fov is unset");
+    expectTrue(!fuse::cinematics::camera_keyframe_fov_unset(45.f), "positive fov is set");
+
+    expectNear(fuse::cinematics::effective_camera_fov(0.f),
+               fuse::cinematics::kDefaultCameraFovDeg,
+               0.001f,
+               "effective fov uses default when unset");
+    expectNear(fuse::cinematics::effective_camera_fov(200.f),
+               fuse::cinematics::kMaxFovDeg,
+               0.001f,
+               "effective fov clamps explicit values");
+    expectNear(fuse::cinematics::effective_camera_fov(75.f), 75.f, 0.001f, "effective fov preserves in-range value");
+}
+
+void testApplyCameraKeyframeDefaults() {
+    fuse::cinematics::CameraKeyframe keyframe{};
+    keyframe.position = {5.f, 10.f, 15.f};
+    keyframe.field_of_view = 0.f;
+
+    fuse::cinematics::apply_camera_keyframe_defaults(keyframe);
+    expectNear(keyframe.field_of_view, fuse::cinematics::kDefaultCameraFovDeg, 0.001f, "defaults fill unset fov");
+    expectNear(keyframe.look_at.z, 5.f, 0.001f, "defaults fill unset look-at along -Z");
+    expectNear(keyframe.look_at.x, 5.f, 0.001f, "defaults preserve look-at x");
+    expectNear(keyframe.look_at.y, 10.f, 0.001f, "defaults preserve look-at y");
+
+    keyframe.field_of_view = 250.f;
+    keyframe.look_at = {1.f, 2.f, 3.f};
+    fuse::cinematics::apply_camera_keyframe_defaults(keyframe);
+    expectNear(keyframe.field_of_view, fuse::cinematics::kMaxFovDeg, 0.001f, "defaults clamp explicit fov");
+    expectNear(keyframe.look_at.z, 3.f, 0.001f, "defaults preserve explicit look-at");
+}
+
+void testMakeDefaultCameraKeyframe() {
+    const fuse::cinematics::CameraKeyframe keyframe = fuse::cinematics::make_default_camera_keyframe(500);
+    expectTrue(keyframe.time_ms == 500, "default keyframe time");
+    expectNear(keyframe.field_of_view, fuse::cinematics::kDefaultCameraFovDeg, 0.001f, "default keyframe fov");
+    expectNear(keyframe.look_at.z, -fuse::cinematics::kDefaultCameraLookAtDistance, 0.001f,
+               "default keyframe look-at offset");
+}
+
+void testCameraTrackCoversTime() {
+    const std::vector<fuse::cinematics::CameraKeyframe> empty;
+    expectTrue(fuse::cinematics::camera_keyframe_count(empty) == 0, "empty keyframe count");
+    expectTrue(!fuse::cinematics::camera_track_covers_time(empty, 500), "empty track covers no time");
+
+    fuse::cinematics::CameraTrack track("Span");
+    track.add_keyframe({1'000, {}, fuse::cinematics::CameraLookAtMode::FixedPoint, {}, {}, 60.f, 0.f});
+    track.add_keyframe({3'000, {}, fuse::cinematics::CameraLookAtMode::FixedPoint, {}, {}, 45.f, 0.f});
+    track.sort_keyframes();
+
+    expectTrue(track.keyframe_count() == 2, "track keyframe count");
+    expectTrue(!track.covers_time(500), "time before span is uncovered");
+    expectTrue(track.covers_time(2'000), "time inside span is covered");
+    expectTrue(track.covers_time(3'000), "time at span end is covered");
+    expectTrue(!track.covers_time(4'000), "time after span is uncovered");
+}
+
+void testCameraKeyframeLookAtUnset() {
+    fuse::cinematics::CameraKeyframe unset{};
+    unset.look_at_mode = fuse::cinematics::CameraLookAtMode::FixedPoint;
+    expectTrue(fuse::cinematics::camera_keyframe_look_at_unset(unset), "zero fixed look-at is unset");
+
+    unset.look_at = {0.f, 0.f, 1.f};
+    expectTrue(!fuse::cinematics::camera_keyframe_look_at_unset(unset), "non-zero fixed look-at is set");
+
+    unset.look_at = {};
+    unset.look_at_mode = fuse::cinematics::CameraLookAtMode::TargetEntity;
+    expectTrue(!fuse::cinematics::camera_keyframe_look_at_unset(unset), "entity mode is never unset stub");
+}
+
+void testResolveLookAtWorldOrDefault() {
+    fuse::cinematics::CameraKeyframe fixed{};
+    fixed.position = {0.f, 0.f, 20.f};
+    fixed.look_at_mode = fuse::cinematics::CameraLookAtMode::FixedPoint;
+
+    fuse::cinematics::LookAtResolver resolver;
+    const fuse::cinematics::Vec3 defaulted =
+        fuse::cinematics::resolve_look_at_world_or_default(fixed, resolver, 5.f);
+    expectNear(defaulted.z, 15.f, 0.001f, "unset fixed look-at uses position default");
+
+    fixed.look_at = {1.f, 2.f, 3.f};
+    const fuse::cinematics::Vec3 explicitAim =
+        fuse::cinematics::resolve_look_at_world_or_default(fixed, resolver);
+    expectNear(explicitAim.x, 1.f, 0.001f, "explicit fixed look-at preserved");
+}
+
+void testLookAtResolverResolveOr() {
+    fuse::cinematics::LookAtResolver resolver;
+    resolver.set_try_resolve_fn([](const std::string& target_id, fuse::cinematics::Vec3& out) -> bool {
+        if (target_id == "hero") {
+            out = {10.f, 0.f, 0.f};
+            return true;
+        }
+        return false;
+    });
+
+    const fuse::cinematics::Vec3 fallback{1.f, 2.f, 3.f};
+    const fuse::cinematics::Vec3 missing = resolver.resolve_or("missing", fallback);
+    expectNear(missing.x, 1.f, 0.001f, "resolve_or returns fallback on miss");
+    expectNear(missing.y, 2.f, 0.001f, "resolve_or fallback y");
+    expectNear(missing.z, 3.f, 0.001f, "resolve_or fallback z");
+
+    const fuse::cinematics::Vec3 hero = resolver.resolve_or("hero", fallback);
+    expectNear(hero.x, 10.f, 0.001f, "resolve_or returns resolved target");
+}
+
 void testSpriteTrackSampling() {
     fuse::cinematics::SpriteTrack track("HeroSprite");
     track.set_target_sprite_id("hero");
@@ -880,6 +988,13 @@ int main() {
     testEntityLookAtWithoutResolver();
     testDefaultCameraLookAtForPosition();
     testCameraBracketSmoothStep();
+    testCameraKeyframeFovUnset();
+    testApplyCameraKeyframeDefaults();
+    testMakeDefaultCameraKeyframe();
+    testCameraTrackCoversTime();
+    testCameraKeyframeLookAtUnset();
+    testResolveLookAtWorldOrDefault();
+    testLookAtResolverResolveOr();
     testSpriteTrackSampling();
     testPropertyTrackSampling();
     testTimelineContentSpan();

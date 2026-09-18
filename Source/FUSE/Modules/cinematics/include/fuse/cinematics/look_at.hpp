@@ -36,6 +36,15 @@ public:
         return {};
     }
 
+    /// Resolve entity look-at or return `fallback` when the target cannot be found.
+    Vec3 resolve_or(const std::string& target_id, const Vec3& fallback) const {
+        Vec3 out{};
+        if (try_resolve(target_id, out)) {
+            return out;
+        }
+        return fallback;
+    }
+
     /// Returns true when the target was found. Legacy `resolve_fn` always succeeds.
     bool try_resolve(const std::string& target_id, Vec3& out) const {
         if (try_resolve_fn_) {
@@ -56,5 +65,10 @@ private:
 /// Resolve a keyframe's look-at to world space (fixed point or entity stub).
 /// Falls back to `keyframe.look_at` when entity mode is unset or the resolver cannot resolve.
 Vec3 resolve_look_at_world(const CameraKeyframe& keyframe, const LookAtResolver& resolver);
+
+/// Resolve look-at, using `default_camera_look_at_for_position` when fixed aim is unset.
+Vec3 resolve_look_at_world_or_default(const CameraKeyframe& keyframe,
+                                      const LookAtResolver& resolver,
+                                      float default_distance = kDefaultCameraLookAtDistance);
 
 } // namespace fuse::cinematics

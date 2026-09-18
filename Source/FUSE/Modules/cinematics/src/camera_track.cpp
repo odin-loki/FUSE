@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 
 namespace fuse::cinematics {
 
@@ -134,6 +135,64 @@ CameraSample default_camera_sample() {
 
 bool camera_keyframes_empty(const std::vector<CameraKeyframe>& keyframes) {
     return keyframes.empty();
+}
+
+size_t camera_keyframe_count(const std::vector<CameraKeyframe>& keyframes) {
+    return keyframes.size();
+}
+
+bool camera_track_covers_time(const std::vector<CameraKeyframe>& keyframes, TimelineMs time_ms) {
+    if (keyframes.empty()) {
+        return false;
+    }
+
+    TimelineMs start_ms = keyframes.front().time_ms;
+    TimelineMs end_ms = keyframes.front().time_ms;
+    for (const CameraKeyframe& keyframe : keyframes) {
+        start_ms = std::min(start_ms, keyframe.time_ms);
+        end_ms = std::max(end_ms, keyframe.time_ms);
+    }
+
+    return time_ms >= start_ms && time_ms <= end_ms;
+}
+
+bool camera_keyframe_fov_unset(float field_of_view) {
+    return field_of_view <= 0.f;
+}
+
+float effective_camera_fov(float field_of_view) {
+    if (camera_keyframe_fov_unset(field_of_view)) {
+        return kDefaultCameraFovDeg;
+    }
+    return clamp_fov(field_of_view);
+}
+
+bool camera_keyframe_look_at_unset(const CameraKeyframe& keyframe) {
+    if (keyframe.look_at_mode != CameraLookAtMode::FixedPoint) {
+        return false;
+    }
+
+    return keyframe.look_at.x == 0.f && keyframe.look_at.y == 0.f && keyframe.look_at.z == 0.f;
+}
+
+void apply_camera_keyframe_defaults(CameraKeyframe& keyframe) {
+    if (camera_keyframe_fov_unset(keyframe.field_of_view)) {
+        keyframe.field_of_view = kDefaultCameraFovDeg;
+    } else {
+        keyframe.field_of_view = clamp_fov(keyframe.field_of_view);
+    }
+
+    if (camera_keyframe_look_at_unset(keyframe)) {
+        keyframe.look_at = default_camera_look_at_for_position(keyframe.position, kDefaultCameraLookAtDistance);
+    }
+}
+
+CameraKeyframe make_default_camera_keyframe(TimelineMs time_ms) {
+    CameraKeyframe keyframe;
+    keyframe.time_ms = time_ms;
+    keyframe.field_of_view = kDefaultCameraFovDeg;
+    keyframe.look_at = default_camera_look_at_for_position(keyframe.position, kDefaultCameraLookAtDistance);
+    return keyframe;
 }
 
 bool camera_keyframe_uses_entity_look_at(const CameraKeyframe& keyframe) {
@@ -275,6 +334,10 @@ void CameraTrack::add_keyframe(const CameraKeyframe& keyframe) {
 
 bool CameraTrack::needs_look_at_resolver() const {
     return camera_track_needs_look_at_resolver(keyframes_);
+}
+
+bool CameraTrack::covers_time(TimelineMs time_ms) const {
+    return camera_track_covers_time(keyframes_, time_ms);
 }
 
 void CameraTrack::clear_keyframes() {
