@@ -421,6 +421,83 @@ void testCoupledPanVec3UsesCoupledForPath() {
                "Vec3 coupled helper matches coupled_for_path");
 }
 
+void testSpatialBlendForPathGuards() {
+    expectNear(fuse::audio::compute_hrtf_spatial_blend_for_path(
+                   fuse::audio::HrtfPanPath::Bypass, 0.1f, 0.1f),
+               1.f, 1e-5f, "bypass path returns unity spatial blend");
+    expectNear(fuse::audio::compute_hrtf_spatial_blend_for_path(
+                   fuse::audio::HrtfPanPath::IldItdStub, 1.f, 1.f),
+               1.f, 1e-5f, "unity attenuation on spatial path returns unity blend");
+    expectNear(fuse::audio::compute_hrtf_spatial_blend_for_path(
+                   fuse::audio::HrtfPanPath::Convolution, 0.2f, 0.8f),
+               fuse::audio::compute_hrtf_spatial_blend(0.2f, 0.8f), 1e-5f,
+               "non-unity spatial path matches base spatial blend");
+}
+
+void testAttenuationCouplingGuardedHelpers() {
+    const fuse::audio::Vec3 offset{5.f, 0.f, 0.f};
+    const fuse::audio::HrtfIrStub empty{};
+    const fuse::audio::BinauralPanGains wide =
+        fuse::audio::compute_binaural_pan_gains(offset);
+
+    fuse::audio::BinauralPanGains guarded = wide;
+    fuse::audio::apply_hrtf_attenuation_coupling_guarded(guarded, true, offset, 0.2f, 0.3f);
+    fuse::audio::BinauralPanGains manual = wide;
+    fuse::audio::apply_hrtf_attenuation_coupling_for_path(
+        manual, fuse::audio::resolve_hrtf_pan_path(true, offset), 0.2f, 0.3f);
+    expectNear(guarded.left, manual.left, 1e-5f,
+               "guarded coupling matches manual path coupling");
+    expectNear(guarded.right, manual.right, 1e-5f,
+               "guarded coupling matches manual path coupling");
+
+    fuse::audio::BinauralPanGains ir_guarded = wide;
+    fuse::audio::apply_hrtf_attenuation_coupling_guarded(ir_guarded, true, empty, offset, 0.2f,
+                                                         0.3f);
+    expectNear(ir_guarded.left, guarded.left, 1e-5f,
+               "IR-aware guarded coupling matches empty-IR path");
+    expectNear(ir_guarded.right, guarded.right, 1e-5f,
+               "IR-aware guarded coupling matches empty-IR path");
+
+    fuse::audio::BinauralPanGains bypassed = wide;
+    fuse::audio::apply_hrtf_attenuation_coupling_guarded(bypassed, false, offset, 0.1f, 0.1f);
+    expectNear(bypassed.left, wide.left, 1e-5f, "disabled HRTF skips guarded coupling");
+    expectNear(bypassed.right, wide.right, 1e-5f, "disabled HRTF skips guarded coupling");
+}
+
+void testGuardedBinauralPanSampleApply() {
+    const fuse::audio::Vec3 offset{5.f, 0.f, 0.f};
+    const fuse::audio::BinauralPanGains wide =
+        fuse::audio::compute_binaural_pan_gains(offset);
+
+    float left = 0.f;
+    float right = 0.f;
+    fuse::audio::apply_binaural_pan_to_sample_for_path(fuse::audio::HrtfPanPath::Bypass, 1.f, wide,
+                                                        0.5f, left, right);
+    expectNear(left, 0.5f, 1e-5f, "for_path bypass applies centre mono to left");
+    expectNear(right, 0.5f, 1e-5f, "for_path bypass applies centre mono to right");
+
+    left = 0.f;
+    right = 0.f;
+    fuse::audio::apply_binaural_pan_to_sample_for_path(fuse::audio::HrtfPanPath::IldItdStub, 1.f,
+                                                       wide, 0.5f, left, right);
+    expectNear(left, 0.5f * wide.left, 1e-5f, "for_path spatial stub scales left");
+    expectNear(right, 0.5f * wide.right, 1e-5f, "for_path spatial stub scales right");
+
+    left = 0.f;
+    right = 0.f;
+    fuse::audio::apply_guarded_binaural_pan_to_sample(false, offset, 1.f, wide, 0.25f, left,
+                                                      right);
+    expectNear(left, 0.25f, 1e-5f, "guarded sample apply bypasses to centre when disabled");
+    expectNear(right, 0.25f, 1e-5f, "guarded sample apply bypasses to centre when disabled");
+
+    left = 0.f;
+    right = 0.f;
+    fuse::audio::apply_guarded_binaural_pan_to_sample(true, fuse::audio::Vec3{}, 1.f, wide, 0.25f,
+                                                      left, right);
+    expectNear(left, 0.25f, 1e-5f, "guarded sample apply bypasses co-located source");
+    expectNear(right, 0.25f, 1e-5f, "guarded sample apply bypasses co-located source");
+}
+
 void testBinauralPanGainSampleHelpers() {
     const fuse::audio::BinauralPanGains centre = fuse::audio::make_centre_binaural_pan_gains();
     expectNear(fuse::audio::compute_binaural_pan_energy(centre), 0.5f, 1e-5f,
@@ -473,6 +550,9 @@ int main() {
     testUnityHrtfAttenuationGuards();
     testClampHrtfAttenuationCouplingWeight();
     testCoupledPanVec3UsesCoupledForPath();
+    testSpatialBlendForPathGuards();
+    testAttenuationCouplingGuardedHelpers();
+    testGuardedBinauralPanSampleApply();
     testBinauralPanGainSampleHelpers();
     fuse::core::shutdown();
 

@@ -172,8 +172,24 @@ void scale_binaural_pan_gains(BinauralPanGains& gains, float scale);
 void apply_binaural_pan_to_sample(float mono, const BinauralPanGains& pan, float attenuation,
                                   float& left, float& right);
 
+/// Path-aware sample stub — bypass uses centre mono; spatial paths use per-ear gains.
+void apply_binaural_pan_to_sample_for_path(HrtfPanPath path, float mono,
+                                           const BinauralPanGains& pan, float attenuation,
+                                           float& left, float& right);
+
 /// Centre mono fallback — equal L/R contribution with attenuation.
 void apply_centre_binaural_pan_to_sample(float mono, float attenuation, float& left, float& right);
+
+/// One-shot sample apply with HRTF bypass guards (disabled / co-located → centre mono).
+void apply_guarded_binaural_pan_to_sample(bool hrtf_enabled, const Vec3& rel_listener, float mono,
+                                          const BinauralPanGains& pan, float attenuation,
+                                          float& left, float& right);
+
+/// IR-aware guarded sample apply — empty IR keeps spatial stub; bypass only when disabled/co-located.
+void apply_guarded_binaural_pan_to_sample(bool hrtf_enabled, const HrtfIrStub& ir,
+                                          const Vec3& rel_listener, float mono,
+                                          const BinauralPanGains& pan, float attenuation,
+                                          float& left, float& right);
 
 /// One-shot binaural gains with empty-HRTF guards (disabled / co-located → centre).
 BinauralPanGains compute_binaural_pan_gains_guarded(bool hrtf_enabled, const Vec3& rel_listener,
@@ -227,11 +243,31 @@ float compute_hrtf_spatial_blend(float distance_attenuation, float occlusion_gai
                                  const HrtfAttenuationCoupling& coupling = {},
                                  const BinauralPanParams& params = {});
 
+/// Path-aware spatial blend — bypass returns unity (no narrowing).
+float compute_hrtf_spatial_blend_for_path(HrtfPanPath path, float distance_attenuation,
+                                          float occlusion_gain,
+                                          const HrtfAttenuationCoupling& coupling = {},
+                                          const BinauralPanParams& params = {});
+
 /// Apply distance + occlusion coupling to narrow the binaural image toward mono centre.
 void apply_hrtf_attenuation_coupling(BinauralPanGains& gains, float distance_attenuation,
                                      float occlusion_gain,
                                      const HrtfAttenuationCoupling& coupling = {},
                                      const BinauralPanParams& params = {});
+
+/// Resolve pan path, then apply coupling only when spatial and attenuation is non-unity.
+void apply_hrtf_attenuation_coupling_guarded(BinauralPanGains& gains, bool hrtf_enabled,
+                                             const Vec3& rel_listener, float distance_attenuation,
+                                             float occlusion_gain,
+                                             const HrtfAttenuationCoupling& coupling = {},
+                                             const BinauralPanParams& params = {});
+
+/// IR-aware guarded coupling — empty IR keeps ILD/ITD stub path with coupling guards.
+void apply_hrtf_attenuation_coupling_guarded(BinauralPanGains& gains, bool hrtf_enabled,
+                                             const HrtfIrStub& ir, const Vec3& rel_listener,
+                                             float distance_attenuation, float occlusion_gain,
+                                             const HrtfAttenuationCoupling& coupling = {},
+                                             const BinauralPanParams& params = {});
 
 /// Apply coupling only when the pan path is spatial (skips bypass centre mono).
 void apply_hrtf_attenuation_coupling_for_path(BinauralPanGains& gains, HrtfPanPath path,
