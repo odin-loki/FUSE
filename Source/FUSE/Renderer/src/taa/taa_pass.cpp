@@ -106,6 +106,30 @@ bool TaaPass::canProduceJitterNdc() const {
     return m_jitter.canProduceNdcOffset(m_desc.width, m_desc.height);
 }
 
+bool TaaPass::isJitterSyncedToFrameIndex(u32 frameIndex) const {
+    return m_jitter.isSyncedToFrameIndex(frameIndex);
+}
+
+TaaHistoryWarmupPreflight TaaPass::preflightHistoryWarmup() const {
+    return preflightTaaHistoryWarmup(m_history);
+}
+
+TaaHistoryReusePreflight TaaPass::preflightHistoryReuse(u32 observedGeneration) const {
+    return preflightTaaHistoryReuse(m_history, observedGeneration);
+}
+
+TaaHistoryReusePreflight TaaPass::preflightHistoryReuseForDesc(const TaaResolveDesc& desc) const {
+    return preflightTaaHistoryReuseForDesc(m_history, desc);
+}
+
+TaaJitterSyncPreflight TaaPass::preflightJitterSync(u32 frameIndex) const {
+    return preflightTaaJitterSync(m_jitter, frameIndex, m_desc.width, m_desc.height);
+}
+
+TaaResolveBlendPreflight TaaPass::preflightResolveBlend(const TaaResolveDesc& desc) const {
+    return preflightTaaResolveBlendForDesc(desc, m_history);
+}
+
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
     return m_resolve.wouldSkip(desc, m_history, reason);
 }

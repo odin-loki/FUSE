@@ -127,4 +127,26 @@ void TaaJitter::syncToFrameIndex(u32 frameIndex) {
     m_index = TaaJitterLayout::frameIndexInSequence(frameIndex, m_sequenceLength);
 }
 
+bool TaaJitter::isSyncedToFrameIndex(u32 frameIndex) const {
+    return m_monotonicFrame == frameIndex &&
+           m_index == TaaJitterLayout::frameIndexInSequence(frameIndex, m_sequenceLength);
+}
+
+bool TaaJitterSyncPreflight::synced() const {
+    return sequence_valid && monotonic_matches && slot_matches;
+}
+
+TaaJitterSyncPreflight preflightTaaJitterSync(const TaaJitter& jitter, u32 frameIndex, u32 width, u32 height) {
+    TaaJitterSyncPreflight preflight{};
+    preflight.frame_index = frameIndex;
+    preflight.sequence_valid = jitter.canAdvance();
+    preflight.viewport_valid = TaaJitterLayout::validateViewportDimensions(width, height);
+    preflight.can_produce_ndc = jitter.canProduceNdcOffset(width, height);
+    preflight.expected_slot = TaaJitterLayout::frameIndexInSequence(frameIndex, jitter.sequenceLength());
+    preflight.actual_slot = jitter.index();
+    preflight.slot_matches = preflight.actual_slot == preflight.expected_slot;
+    preflight.monotonic_matches = jitter.monotonicFrameIndex() == frameIndex;
+    return preflight;
+}
+
 } // namespace fuse::renderer
