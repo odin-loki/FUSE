@@ -317,7 +317,8 @@ bool ContactManifold::pruneContactPointsIfNeeded(f32 separationEpsilon, f32 dupl
 ManifoldPrunePreflight preflight_manifold_prune(
     const ContactManifold& manifold,
     f32 separationEpsilon,
-    f32 duplicateEpsilon) {
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
     ManifoldPrunePreflight preflight{};
     if (manifold.empty()) {
         preflight.skipped = true;
@@ -328,8 +329,18 @@ ManifoldPrunePreflight preflight_manifold_prune(
     preflight.hasSeparated = manifold.hasSeparatedPoints(separationEpsilon);
     preflight.hasDuplicates = manifold.hasDuplicatePoints(duplicateEpsilon);
     preflight.exceedsMaxPoints = manifold.pointCount > kMaxContactPointsPerManifold;
+    if (shallowMinDepth > 0.f) {
+        preflight.hasShallow = manifold.hasShallowPenetrations(shallowMinDepth);
+    }
     preflight.wouldBeEmpty = manifold.wouldBeEmptyAfterPrune(separationEpsilon, duplicateEpsilon);
     return preflight;
+}
+
+bool can_skip_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) {
+    return manifold.canSkipPruneContactPoints(separationEpsilon, duplicateEpsilon);
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

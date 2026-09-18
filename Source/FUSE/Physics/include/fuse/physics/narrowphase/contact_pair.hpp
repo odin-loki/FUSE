@@ -117,4 +117,42 @@ bool should_skip_contact_pair_dispatch(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Returns true when both shapes are planes (no narrowphase dispatch path, B4.5 deepen pass).
+bool is_plane_plane_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
+
+/// Inverse of `should_skip_contact_pair_dispatch` (B4.5 deepen pass).
+bool can_dispatch_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when `preflight_contact_pair` reports `expected` (B4.5 deepen pass).
+bool contact_pair_preflight_matches(
+    const ContactPairPreflight& preflight,
+    ContactPairRejectReason expected);
+
+/// Const preflight for manifold finalize dispatch (B4.5 deepen pass).
+struct ManifoldFinalizePreflight {
+    bool empty = false;
+    bool invalidNormal = false;
+    bool noPenetratingPoints = false;
+    bool wouldBeEmptyAfterPrune = false;
+    bool skipped = false;
+
+    bool can_finalize() const {
+        return !skipped && !empty && !invalidNormal && !noPenetratingPoints && !wouldBeEmptyAfterPrune;
+    }
+};
+
+/// Populate finalize preflight without mutating manifold slots (B4.5 deepen pass).
+ManifoldFinalizePreflight preflight_finalize_contact_manifold(const ContactManifold& manifold);
+
+/// Returns true when the manifold is already finalized and valid (B4.5 deepen pass).
+bool can_skip_finalize_contact_manifold(const ContactManifold& manifold);
+
+/// Finalize only when preflight passes and the manifold is not yet valid (B4.5 deepen pass).
+bool generate_contact_manifold_if_needed(ContactManifold& manifold);
+
 } // namespace fuse::physics::narrowphase
