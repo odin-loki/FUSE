@@ -591,6 +591,87 @@ void testMetaCommandsSkipHistoryAndRepeat() {
     expectTrue(console.lastExecutedLine() == "echo anchor", "lookup meta commands preserve repeat target");
 }
 
+void testHistoryNavigationCanRecallGuards() {
+    fuse::script::ScriptConsoleHistoryBuffer history;
+
+    expectTrue(!history.can_recall_previous(), "empty history cannot recall previous");
+    expectTrue(!history.can_recall_next(), "empty history cannot recall next");
+    expectTrue(history.is_at_navigation_end(), "empty history is at navigation end");
+
+    history.push("alpha");
+    expectTrue(history.can_recall_previous(), "single entry can recall from live input");
+    expectTrue(!history.can_recall_next(), "single entry at newest cannot recall next");
+    expectTrue(history.is_at_navigation_end(), "fresh push is at navigation end");
+
+    history.push("beta");
+    expectTrue(history.can_recall_previous(), "two entries can recall previous");
+    expectTrue(!history.can_recall_next(), "at newest cannot recall next");
+
+    history.recall(true);
+    expectTrue(history.can_recall_previous(), "mid-history can recall previous");
+    expectTrue(history.can_recall_next(), "mid-history can recall next");
+    expectTrue(!history.is_at_navigation_end(), "mid-history is not at navigation end");
+
+    history.resetNavigation();
+    expectTrue(history.is_at_navigation_end(), "reset returns to navigation end");
+
+    fuse::script::ScriptConsole console;
+    console.execute("echo one");
+    console.execute("echo two");
+    expectTrue(console.canRecallHistoryPrevious(), "console forwards can recall previous");
+    expectTrue(!console.canRecallHistoryNext(), "console at newest cannot recall next");
+    expectTrue(console.isAtHistoryNavigationEnd(), "console at newest is at navigation end");
+
+    (void)console.recallHistory(true);
+    expectTrue(console.canRecallHistoryNext(), "console mid-history can recall next");
+    expectTrue(!console.isAtHistoryNavigationEnd(), "console mid-history not at end");
+}
+
+void testIsMetaCommandAndWouldRecordHistoryGuards() {
+    expectTrue(fuse::script::ScriptConsole::is_meta_command("help"), "help is meta");
+    expectTrue(fuse::script::ScriptConsole::is_meta_command("resolve"), "resolve is meta");
+    expectTrue(fuse::script::ScriptConsole::is_meta_command("repeat"), "repeat is meta");
+    expectTrue(fuse::script::ScriptConsole::is_meta_command("history"), "history is meta");
+    expectTrue(!fuse::script::ScriptConsole::is_meta_command("echo"), "echo is not meta");
+    expectTrue(!fuse::script::ScriptConsole::is_meta_command("clear"), "clear is not meta");
+    expectTrue(!fuse::script::ScriptConsole::is_meta_command(nullptr), "null is not meta");
+    expectTrue(!fuse::script::ScriptConsole::is_meta_command(""), "empty is not meta");
+
+    fuse::script::ScriptConsole console;
+    expectTrue(!console.would_record_history(nullptr), "null line would not record");
+    expectTrue(!console.would_record_history("   "), "whitespace line would not record");
+    expectTrue(!console.would_record_history("help"), "help would not record");
+    expectTrue(!console.would_record_history("resolve help"), "resolve would not record");
+    expectTrue(!console.would_record_history("repeat"), "repeat would not record");
+    expectTrue(console.would_record_history("echo fuse"), "echo would record");
+    expectTrue(console.would_record_history("clear"), "clear would record");
+}
+
+void testResolveWhitespaceGuard() {
+    fuse::script::ScriptConsole console;
+
+    const auto whitespace = console.execute("resolve    ");
+    expectTrue(whitespace.status == fuse::script::ScriptConsoleCommandStatus::InvalidArgument,
+               "resolve with whitespace-only args fails");
+    expectTrue(whitespace.output == "resolve requires a partial command name",
+               "resolve whitespace guard message");
+
+    const auto trimmed = console.execute("resolve   help   ");
+    expectTrue(trimmed.ok(), "resolve trims surrounding whitespace");
+    expectTrue(trimmed.output == "help", "resolve trimmed args resolve correctly");
+}
+
+void testActionCommandsRecordHistory() {
+    fuse::script::ScriptConsole console;
+
+    console.execute("clear");
+    expectTrue(console.historyCount() == 1u, "clear action command records history");
+    expectTrue(console.historyAt(0) == "clear", "clear stored in history");
+
+    console.execute("help");
+    expectTrue(console.historyCount() == 1u, "help meta command does not add history entry");
+}
+
 void testCanRepeatAccessor() {
     fuse::script::ScriptConsole console;
 
@@ -651,6 +732,10 @@ void run_script_console_tests() {
     testDescribeAndCompleteStubs();
     testPrefixMatchAndCompletionHelpers();
     testResolveCommandStub();
+    testHistoryNavigationCanRecallGuards();
+    testIsMetaCommandAndWouldRecordHistoryGuards();
+    testResolveWhitespaceGuard();
+    testActionCommandsRecordHistory();
     testHistoryEmptyEarlyOut();
     testMetaCommandsSkipHistoryAndRepeat();
     testCanRepeatAccessor();

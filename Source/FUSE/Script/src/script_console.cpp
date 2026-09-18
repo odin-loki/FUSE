@@ -62,17 +62,33 @@ const char* commandKindLabel(ScriptConsoleCommandKind kind) {
     }
 }
 
-/// Lookup/meta commands do not update repeat state or pollute history.
-bool isMetaCommand(const std::string& command) {
+bool isMetaCommandName(const std::string& command) {
     return command == "help" || command == "list" || command == "describe" || command == "complete" ||
            command == "suggest" || command == "resolve" || command == "repeat" || command == "history";
 }
 
-bool shouldRecordHistory(const std::string& command, const std::string& /*args*/) {
-    return !isMetaCommand(command);
+} // namespace
+
+bool ScriptConsole::is_meta_command(const char* name) {
+    if (name == nullptr || name[0] == '\0') {
+        return false;
+    }
+    return isMetaCommandName(name);
 }
 
-} // namespace
+bool ScriptConsole::would_record_history(const char* line) const {
+    if (line == nullptr) {
+        return false;
+    }
+
+    std::string command;
+    std::string args;
+    if (!splitCommandLine(line, command, args)) {
+        return false;
+    }
+
+    return !isMetaCommandName(command);
+}
 
 void ScriptConsole::attach(ScriptHost* host) {
     m_host = host;
@@ -136,10 +152,10 @@ ScriptConsoleCommandResult ScriptConsole::executeLine_(const char* line, bool re
     }
 
     if (result.ok()) {
-        if (!isMetaCommand(command)) {
+        if (!isMetaCommandName(command)) {
             m_lastExecutedLine = trimmed_line;
         }
-        if (record_history && shouldRecordHistory(command, args)) {
+        if (record_history && !isMetaCommandName(command)) {
             m_history.push(line);
             resetHistoryNavigation();
         }
@@ -150,12 +166,12 @@ ScriptConsoleCommandResult ScriptConsole::executeLine_(const char* line, bool re
 
 void ScriptConsole::registerBuiltIns_() {
     m_commands.register_built_in("repeat", [](ScriptConsole& console, const char* /*args*/) {
-        if (console.m_lastExecutedLine.empty()) {
+        if (!console.can_repeat()) {
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
                                               "no command to repeat"};
         }
 
-        return console.executeLine_(console.m_lastExecutedLine.c_str(), true);
+        return console.executeLine_(console.m_lastExecutedLine.c_str(), false);
     });
 
     m_commands.register_built_in("help", [](ScriptConsole& console, const char* /*args*/) {
@@ -203,24 +219,25 @@ void ScriptConsole::registerBuiltIns_() {
     });
 
     m_commands.register_built_in("resolve", [](ScriptConsole& console, const char* args) {
-        if (args == nullptr || args[0] == '\0') {
+        const std::string partial = trim(args != nullptr ? std::string(args) : std::string());
+        if (partial.empty()) {
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
                                               "resolve requires a partial command name"};
         }
 
-        const std::string resolved = console.m_commands.unique_prefix_match(args);
+        const std::string resolved = console.m_commands.unique_prefix_match(partial.c_str());
         if (!resolved.empty()) {
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, resolved};
         }
 
-        const std::vector<std::string> matches = console.m_commands.commands_with_prefix(args);
+        const std::vector<std::string> matches = console.m_commands.commands_with_prefix(partial.c_str());
         if (matches.empty()) {
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::UnknownCommand,
-                                              std::string("no command matches: ") + args};
+                                              std::string("no command matches: ") + partial};
         }
 
         return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
-                                          std::string("ambiguous prefix: ") + args};
+                                          std::string("ambiguous prefix: ") + partial};
     });
 
     m_commands.register_built_in("suggest", [](ScriptConsole& console, const char* args) {
