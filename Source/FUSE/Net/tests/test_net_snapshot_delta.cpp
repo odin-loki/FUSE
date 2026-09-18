@@ -465,6 +465,83 @@ void run_snapshot_delta_tests() {
     expectTrue(!empty_ring_preflight.can_apply(), "empty ring preflight cannot apply");
     expectTrue(empty_helper_ring.should_skip_apply_delta(0u, empty_delta),
                "empty ring should_skip_apply_delta is true");
+
+    // --- deepen preflight: target frame and field mask guards (B7.4 deepen follow-up) ---
+    expectTrue(fuse::net::target_frame_is_valid(patch_delta), "patch delta target frame is valid");
+    expectTrue(fuse::net::ecs_field_mask_valid(patch_delta.entity_patches[0].changed_ecs_fields),
+               "computed ecs mask uses only known bits");
+    expectTrue(fuse::net::physics_field_mask_valid(patch_delta.entity_patches[0].changed_physics_fields),
+               "computed physics mask uses only known bits");
+    expectTrue(fuse::net::validate_entity_patch_field_masks(patch_delta.entity_patches[0]),
+               "computed patch field masks validate");
+    expectTrue(fuse::net::validate_entity_patch_trackable(patch_delta.entity_patches[0]),
+               "computed patch entity index is trackable");
+    expectTrue(fuse::net::entity_index_trackable(1u), "entity index 1 is trackable");
+    expectTrue(!fuse::net::entity_index_trackable(64u), "entity index 64 is not trackable");
+
+    fuse::net::SnapshotDelta bad_target_frame_delta = patch_delta;
+    bad_target_frame_delta.base_frame = 5u;
+    bad_target_frame_delta.target_frame = 4u;
+    expectTrue(!fuse::net::target_frame_is_valid(bad_target_frame_delta),
+               "target frame before base frame is invalid");
+    const fuse::net::SnapshotDeltaPreflight bad_target_frame_preflight =
+        fuse::net::preflight_snapshot_delta(base, bad_target_frame_delta);
+    expectTrue(!bad_target_frame_preflight.target_frame_ok, "preflight rejects backward target frame");
+    expectTrue(!bad_target_frame_preflight.can_apply(), "preflight can_apply fails on target frame mismatch");
+
+    fuse::net::SnapshotEntityPatch invalid_mask_patch = patch_delta.entity_patches[0];
+    invalid_mask_patch.changed_ecs_fields = 0xFFu;
+    expectTrue(!fuse::net::ecs_field_mask_valid(invalid_mask_patch.changed_ecs_fields),
+               "unknown ecs mask bits fail validity check");
+    expectTrue(!fuse::net::validate_entity_patch_field_masks(invalid_mask_patch),
+               "unknown ecs mask bits fail patch field validation");
+
+    fuse::net::SnapshotDelta bad_field_mask_delta = patch_delta;
+    bad_field_mask_delta.entity_patches[0] = invalid_mask_patch;
+    expectTrue(!fuse::net::preflight_snapshot_delta(base, bad_field_mask_delta).field_masks_ok,
+               "preflight rejects invalid field mask bits");
+    expectTrue(!fuse::net::validate_delta_payload(bad_field_mask_delta),
+               "delta payload rejects invalid field mask bits");
+
+    fuse::net::SnapshotDelta bad_full_delta = patch_delta;
+    bad_full_delta.kind = fuse::net::SnapshotDeltaKind::Full;
+    bad_full_delta.entity_patches.clear();
+    bad_full_delta.changed_entity_mask = 0;
+    expectTrue(!fuse::net::validate_full_delta_payload(bad_full_delta),
+               "full delta with empty blobs fails payload validation");
+    expectTrue(!fuse::net::preflight_snapshot_delta(base, bad_full_delta).full_payload_ok,
+               "preflight rejects empty full delta payload");
+
+    fuse::net::SnapshotEntityPatch untrackable_patch = patch_delta.entity_patches[0];
+    untrackable_patch.entity_index = 64u;
+    expectTrue(!fuse::net::validate_entity_patch_trackable(untrackable_patch),
+               "untrackable entity index fails patch trackable validation");
+
+    // --- redundant empty-delta skip helpers (B7.4 deepen follow-up) ---
+    expectTrue(fuse::net::is_redundant_empty_delta(base, empty_delta),
+               "identical-frame empty delta is redundant");
+    expectTrue(fuse::net::should_skip_redundant_empty_apply(base, empty_delta),
+               "redundant empty delta triggers skip helper");
+    expectTrue(!fuse::net::is_redundant_empty_delta(base, patch_delta),
+               "patch delta is not redundant empty");
+
+    fuse::net::SnapshotDelta frame_only_empty_delta = empty_delta;
+    frame_only_empty_delta.target_frame = base.frame + 5u;
+    expectTrue(!fuse::net::is_redundant_empty_delta(base, frame_only_empty_delta),
+               "empty delta that advances frame is not redundant");
+    expectTrue(fuse::net::should_skip_delta_apply(frame_only_empty_delta),
+               "frame-advancing empty delta still skips reconstruct");
+
+    fuse::net::SnapshotHistoryRing target_probe_history;
+    target_probe_history.init(4);
+    target_probe_history.push(base);
+    target_probe_history.apply_delta_and_store(base.frame, patch_delta, nullptr);
+
+    const fuse::net::SnapshotHistoryPreflight stored_target_preflight =
+        target_probe_history.preflight_apply_delta(base.frame, patch_delta);
+    expectTrue(stored_target_preflight.target_already_stored, "history preflight sees stored target frame");
+    expectTrue(target_probe_history.has_target_frame(target.frame), "has_target_frame alias finds stored frame");
+    expectTrue(!target_probe_history.has_target_frame(99u), "has_target_frame rejects missing frame");
 }
 
 } // namespace fuse::net::tests
