@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <vector>
 
 namespace {
@@ -683,6 +684,300 @@ void testLookAtResolverResolveOr() {
     expectNear(hero.x, 10.f, 0.001f, "resolve_or returns resolved target");
 }
 
+void testDefaultCameraFovDeg() {
+    expectNear(fuse::cinematics::default_camera_fov_deg(),
+               fuse::cinematics::kDefaultCameraFovDeg,
+               0.001f,
+               "default_camera_fov_deg matches constexpr");
+    expectNear(fuse::cinematics::default_camera_fov_deg(), 60.f, 0.001f, "default_camera_fov_deg is 60");
+}
+
+void testDefaultCameraSampleAt() {
+    const fuse::cinematics::Vec3 position{5.f, 10.f, 20.f};
+    const fuse::cinematics::CameraSample sample = fuse::cinematics::default_camera_sample_at(position, 8.f);
+
+    expectNear(sample.position.x, 5.f, 0.001f, "default sample at preserves x");
+    expectNear(sample.position.y, 10.f, 0.001f, "default sample at preserves y");
+    expectNear(sample.position.z, 20.f, 0.001f, "default sample at preserves z");
+    expectNear(sample.look_at.z, 12.f, 0.001f, "default sample at offsets look-at along -Z");
+    expectNear(sample.field_of_view, fuse::cinematics::kDefaultCameraFovDeg, 0.001f, "default sample at fov");
+    expectNear(sample.roll_deg, 0.f, 0.001f, "default sample at roll");
+}
+
+void testNormalizeCameraSample() {
+    fuse::cinematics::CameraSample sample{};
+    sample.position = {1.f, 2.f, 3.f};
+    sample.look_at = {4.f, 5.f, 6.f};
+    sample.field_of_view = 250.f;
+    sample.roll_deg = 45.f;
+
+    fuse::cinematics::normalize_camera_sample(sample);
+    expectNear(sample.field_of_view, fuse::cinematics::kMaxFovDeg, 0.001f, "normalize_camera_sample clamps fov");
+    expectNear(sample.roll_deg, 45.f, 0.001f, "normalize_camera_sample preserves roll");
+    expectNear(sample.position.x, 1.f, 0.001f, "normalize_camera_sample preserves position");
+}
+
+void testCameraTrackIsEmpty() {
+    fuse::cinematics::CameraTrack track("AliasGuard");
+    expectTrue(fuse::cinematics::camera_track_is_empty(track), "empty track alias");
+
+    track.add_keyframe({0, {0.f, 0.f, 5.f}, fuse::cinematics::CameraLookAtMode::FixedPoint, {}, {}, 60.f, 0.f});
+    expectTrue(!fuse::cinematics::camera_track_is_empty(track), "non-empty track alias");
+}
+
+void testCameraKeyframeEntityTargetMissing() {
+    fuse::cinematics::CameraKeyframe fixed{};
+    fixed.look_at_mode = fuse::cinematics::CameraLookAtMode::FixedPoint;
+    expectTrue(!fuse::cinematics::camera_keyframe_entity_target_missing(fixed),
+               "fixed point is not missing entity target");
+
+    fuse::cinematics::CameraKeyframe entity{};
+    entity.look_at_mode = fuse::cinematics::CameraLookAtMode::TargetEntity;
+    entity.look_at_target_id = "hero";
+    expectTrue(!fuse::cinematics::camera_keyframe_entity_target_missing(entity),
+               "entity with id is not missing target");
+
+    entity.look_at_target_id.clear();
+    expectTrue(fuse::cinematics::camera_keyframe_entity_target_missing(entity),
+               "entity without id is missing target");
+}
+
+void testEntityLookAtMissingTargetIdFallback() {
+    fuse::cinematics::CameraKeyframe keyframe{};
+    keyframe.look_at_mode = fuse::cinematics::CameraLookAtMode::TargetEntity;
+    keyframe.look_at = {7.f, 8.f, 9.f};
+
+    fuse::cinematics::LookAtResolver resolver;
+    resolver.set_resolve_fn([](const std::string&) -> fuse::cinematics::Vec3 { return {99.f, 0.f, 0.f}; });
+
+    const fuse::cinematics::Vec3 resolved = fuse::cinematics::resolve_look_at_world(keyframe, resolver);
+    expectNear(resolved.x, 7.f, 0.001f, "missing entity id falls back to fixed look-at");
+    expectNear(resolved.y, 8.f, 0.001f, "missing entity id falls back to fixed look-at y");
+    expectNear(resolved.z, 9.f, 0.001f, "missing entity id falls back to fixed look-at z");
+}
+
+void testLookAtResolverHasTarget() {
+    fuse::cinematics::LookAtResolver unconfigured;
+    expectTrue(!fuse::cinematics::look_at_resolver_has_target(unconfigured, "hero"),
+               "unconfigured resolver has no targets");
+    expectTrue(!unconfigured.has_target("hero"), "has_target mirrors unconfigured guard");
+
+    fuse::cinematics::LookAtResolver resolver;
+    resolver.set_try_resolve_fn([](const std::string& target_id, fuse::cinematics::Vec3& out) -> bool {
+        if (target_id == "hero") {
+            out = {1.f, 2.f, 3.f};
+            return true;
+        }
+        return false;
+    });
+
+    expectTrue(fuse::cinematics::look_at_resolver_has_target(resolver, "hero"), "resolver finds known target");
+    expectTrue(resolver.has_target("hero"), "has_target finds known target");
+    expectTrue(!fuse::cinematics::look_at_resolver_has_target(resolver, "missing"),
+               "resolver rejects unknown target");
+    expectTrue(!resolver.has_target(""), "empty target id is rejected");
+}
+
+void testCameraFovRangeGuards() {
+    expectTrue(fuse::cinematics::camera_fov_in_valid_range(60.f), "default fov is in range");
+    expectTrue(fuse::cinematics::camera_fov_in_valid_range(fuse::cinematics::kMinFovDeg), "min fov is in range");
+    expectTrue(fuse::cinematics::camera_fov_in_valid_range(fuse::cinematics::kMaxFovDeg), "max fov is in range");
+    expectTrue(!fuse::cinematics::camera_fov_in_valid_range(0.f), "zero fov is out of range");
+    expectTrue(fuse::cinematics::camera_fov_needs_clamp(250.f), "high fov needs clamp");
+    expectTrue(!fuse::cinematics::camera_fov_needs_clamp(75.f), "in-range fov does not need clamp");
+    expectTrue(fuse::cinematics::camera_fov_uses_default(fuse::cinematics::kDefaultCameraFovDeg),
+               "default fov constant matches guard");
+    expectTrue(!fuse::cinematics::camera_fov_uses_default(45.f), "non-default fov rejected by guard");
+}
+
+void testEffectiveCameraFovNonFinite() {
+    expectNear(fuse::cinematics::effective_camera_fov(std::numeric_limits<float>::quiet_NaN()),
+               fuse::cinematics::kDefaultCameraFovDeg,
+               0.001f,
+               "non-finite fov falls back to default");
+    expectNear(fuse::cinematics::effective_camera_fov(std::numeric_limits<float>::infinity()),
+               fuse::cinematics::kDefaultCameraFovDeg,
+               0.001f,
+               "infinite fov falls back to default");
+}
+
+void testNormalizeCameraKeyframesBatch() {
+    std::vector<fuse::cinematics::CameraKeyframe> keyframes;
+    keyframes.push_back({0, {}, fuse::cinematics::CameraLookAtMode::FixedPoint, {}, {}, 0.f, 0.f});
+    keyframes.push_back({1'000, {}, fuse::cinematics::CameraLookAtMode::FixedPoint, {}, {}, 200.f, 0.f});
+
+    fuse::cinematics::normalize_camera_keyframes(keyframes);
+    expectNear(keyframes[0].field_of_view, fuse::cinematics::kMinFovDeg, 0.001f, "batch normalize clamps min");
+    expectNear(keyframes[1].field_of_view, fuse::cinematics::kMaxFovDeg, 0.001f, "batch normalize clamps max");
+
+    fuse::cinematics::CameraTrack track("BatchNormalize");
+    track.keyframes() = keyframes;
+    track.normalize_keyframes();
+    expectNear(track.keyframes()[1].field_of_view, fuse::cinematics::kMaxFovDeg, 0.001f,
+               "track normalize_keyframes clamps stored keyframes");
+}
+
+void testCameraSampleIsDefault() {
+    const fuse::cinematics::CameraSample defaults = fuse::cinematics::default_camera_sample();
+    expectTrue(fuse::cinematics::camera_sample_is_default(defaults), "default sample passes is_default guard");
+
+    fuse::cinematics::CameraTrack track("DefaultGuard");
+    const fuse::cinematics::CameraSample sampled = track.sample_at(1'000);
+    expectTrue(fuse::cinematics::camera_sample_is_default(sampled), "empty track sample is default");
+
+    fuse::cinematics::CameraSample nonDefault{};
+    nonDefault.position.z = 1.f;
+    expectTrue(!fuse::cinematics::camera_sample_is_default(nonDefault), "non-default position fails guard");
+}
+
+void testResetCameraKeyframeToDefaults() {
+    fuse::cinematics::CameraKeyframe keyframe{};
+    keyframe.time_ms = 2'000;
+    keyframe.position = {1.f, 2.f, 3.f};
+    keyframe.look_at_mode = fuse::cinematics::CameraLookAtMode::TargetEntity;
+    keyframe.look_at_target_id = "hero";
+    keyframe.look_at = {4.f, 5.f, 6.f};
+    keyframe.field_of_view = 30.f;
+    keyframe.roll_deg = 12.f;
+
+    fuse::cinematics::reset_camera_keyframe_to_defaults(keyframe);
+    expectTrue(keyframe.time_ms == 0, "reset clears time");
+    expectNear(keyframe.position.x, 0.f, 0.001f, "reset clears position");
+    expectTrue(keyframe.look_at_mode == fuse::cinematics::CameraLookAtMode::FixedPoint, "reset fixed look-at mode");
+    expectTrue(keyframe.look_at_target_id.empty(), "reset clears entity id");
+    expectNear(keyframe.field_of_view, fuse::cinematics::kDefaultCameraFovDeg, 0.001f, "reset restores default fov");
+    expectNear(keyframe.roll_deg, 0.f, 0.001f, "reset clears roll");
+}
+
+void testSampleCameraPose() {
+    std::vector<fuse::cinematics::CameraKeyframe> keyframes;
+    keyframes.push_back({0, {0.f, 0.f, 0.f}, fuse::cinematics::CameraLookAtMode::FixedPoint, {0.f, 0.f, -10.f}, {}, 60.f, 0.f});
+    keyframes.push_back({2'000, {0.f, 0.f, 10.f}, fuse::cinematics::CameraLookAtMode::FixedPoint, {0.f, 0.f, 10.f}, {}, 40.f, 20.f});
+
+    const fuse::cinematics::CameraSample mid = fuse::cinematics::sample_camera_pose(keyframes, 1'000);
+    expectNear(mid.position.z, 5.f, 0.001f, "sample_camera_pose position midpoint");
+    expectNear(mid.field_of_view, 50.f, 0.001f, "sample_camera_pose fov midpoint");
+    expectNear(mid.roll_deg, 10.f, 0.001f, "sample_camera_pose roll midpoint");
+
+    const fuse::cinematics::CameraSample defaults = fuse::cinematics::sample_camera_pose({}, 500);
+    expectNear(defaults.field_of_view, fuse::cinematics::kDefaultCameraFovDeg, 0.001f,
+               "sample_camera_pose empty vector returns default fov");
+}
+
+void testResolveLookAtOrFallback() {
+    fuse::cinematics::CameraKeyframe keyframe{};
+    keyframe.look_at_mode = fuse::cinematics::CameraLookAtMode::TargetEntity;
+    keyframe.look_at_target_id = "missing";
+    keyframe.look_at = {9.f, 9.f, 9.f};
+
+    fuse::cinematics::LookAtResolver resolver;
+    resolver.set_try_resolve_fn([](const std::string& target_id, fuse::cinematics::Vec3& out) -> bool {
+        if (target_id == "hero") {
+            out = {100.f, 0.f, 0.f};
+            return true;
+        }
+        return false;
+    });
+
+    const fuse::cinematics::Vec3 fallback{3.f, 4.f, 5.f};
+    const fuse::cinematics::Vec3 unresolved =
+        fuse::cinematics::resolve_look_at_or_fallback(keyframe, resolver, fallback);
+    expectNear(unresolved.x, 3.f, 0.001f, "resolve_look_at_or_fallback uses fallback when unresolved");
+
+    keyframe.look_at_target_id = "hero";
+    const fuse::cinematics::Vec3 resolved =
+        fuse::cinematics::resolve_look_at_or_fallback(keyframe, resolver, fallback);
+    expectNear(resolved.x, 100.f, 0.001f, "resolve_look_at_or_fallback resolves entity target");
+}
+
+void testCollectCameraLookAtTargetIds() {
+    std::vector<fuse::cinematics::CameraKeyframe> keyframes;
+    keyframes.push_back({0, {}, fuse::cinematics::CameraLookAtMode::TargetEntity, {}, "hero", 60.f, 0.f});
+    keyframes.push_back({1'000, {}, fuse::cinematics::CameraLookAtMode::TargetEntity, {}, "hero", 60.f, 0.f});
+    keyframes.push_back({2'000, {}, fuse::cinematics::CameraLookAtMode::TargetEntity, {}, "boss", 60.f, 0.f});
+    keyframes.push_back({3'000, {}, fuse::cinematics::CameraLookAtMode::FixedPoint, {0.f, 0.f, 0.f}, "ignored", 60.f, 0.f});
+
+    const std::vector<std::string> ids = fuse::cinematics::collect_camera_look_at_target_ids(keyframes);
+    expectTrue(ids.size() == 2, "collect deduplicates entity look-at ids");
+    expectTrue(ids[0] == "hero", "collect preserves first entity id");
+    expectTrue(ids[1] == "boss", "collect preserves second entity id");
+    expectTrue(fuse::cinematics::camera_keyframe_entity_look_at_count(keyframes) == 3,
+               "entity look-at count includes duplicate ids");
+}
+
+void testLookAtResolverAvailability() {
+    expectTrue(!fuse::cinematics::look_at_resolver_available(nullptr), "null resolver unavailable");
+
+    fuse::cinematics::LookAtResolver empty;
+    expectTrue(!fuse::cinematics::look_at_resolver_available(&empty), "empty resolver unavailable");
+
+    fuse::cinematics::LookAtResolver resolver;
+    resolver.set_resolve_fn([](const std::string&) -> fuse::cinematics::Vec3 { return {}; });
+    expectTrue(fuse::cinematics::look_at_resolver_available(&resolver), "resolver with callback available");
+    expectTrue(fuse::cinematics::look_at_resolver_can_resolve_target(resolver, "any"),
+               "legacy resolve_fn always resolves target");
+}
+
+void testLookAtResolverCanResolveTarget() {
+    fuse::cinematics::LookAtResolver resolver;
+    resolver.set_try_resolve_fn([](const std::string& target_id, fuse::cinematics::Vec3& out) -> bool {
+        if (target_id == "hero") {
+            out = {1.f, 2.f, 3.f};
+            return true;
+        }
+        return false;
+    });
+
+    expectTrue(fuse::cinematics::look_at_resolver_can_resolve_target(resolver, "hero"),
+               "try_resolve finds known target");
+    expectTrue(!fuse::cinematics::look_at_resolver_can_resolve_target(resolver, "missing"),
+               "try_resolve reports missing target");
+}
+
+void testFallbackCameraLookAt() {
+    const fuse::cinematics::Vec3 position{10.f, 20.f, 30.f};
+
+    fuse::cinematics::CameraKeyframe coincident{};
+    coincident.position = position;
+    coincident.look_at = position;
+    const fuse::cinematics::Vec3 offset =
+        fuse::cinematics::fallback_camera_look_at(coincident, position, 5.f);
+    expectNear(offset.z, 25.f, 0.001f, "coincident look-at falls back along -Z");
+
+    fuse::cinematics::CameraKeyframe distinct{};
+    distinct.look_at = {11.f, 20.f, 30.f};
+    const fuse::cinematics::Vec3 fixed =
+        fuse::cinematics::fallback_camera_look_at(distinct, position, 5.f);
+    expectNear(fixed.x, 11.f, 0.001f, "distinct look-at preserved");
+}
+
+void testResolveLookAtWorldWithFallback() {
+    const fuse::cinematics::Vec3 position{0.f, 0.f, 10.f};
+    fuse::cinematics::LookAtResolver resolver;
+    resolver.set_try_resolve_fn([](const std::string& target_id, fuse::cinematics::Vec3& out) -> bool {
+        if (target_id == "hero") {
+            out = {0.f, 0.f, 20.f};
+            return true;
+        }
+        return false;
+    });
+
+    fuse::cinematics::CameraKeyframe entity{};
+    entity.look_at_mode = fuse::cinematics::CameraLookAtMode::TargetEntity;
+    entity.look_at_target_id = "hero";
+    const fuse::cinematics::Vec3 resolved =
+        fuse::cinematics::resolve_look_at_world_with_fallback(entity, resolver, position, 8.f);
+    expectNear(resolved.z, 20.f, 0.001f, "entity resolve skips fallback when distinct");
+
+    fuse::cinematics::CameraKeyframe unresolved{};
+    unresolved.look_at_mode = fuse::cinematics::CameraLookAtMode::TargetEntity;
+    unresolved.look_at_target_id = "missing";
+    unresolved.look_at = position;
+    const fuse::cinematics::Vec3 fallback =
+        fuse::cinematics::resolve_look_at_world_with_fallback(unresolved, resolver, position, 8.f);
+    expectNear(fallback.z, 2.f, 0.001f, "unresolved coincident look-at uses position fallback");
+}
+
 void testSpriteTrackSampling() {
     fuse::cinematics::SpriteTrack track("HeroSprite");
     track.set_target_sprite_id("hero");
@@ -995,6 +1290,25 @@ int main() {
     testCameraKeyframeLookAtUnset();
     testResolveLookAtWorldOrDefault();
     testLookAtResolverResolveOr();
+    testDefaultCameraFovDeg();
+    testDefaultCameraSampleAt();
+    testNormalizeCameraSample();
+    testCameraTrackIsEmpty();
+    testCameraKeyframeEntityTargetMissing();
+    testEntityLookAtMissingTargetIdFallback();
+    testLookAtResolverHasTarget();
+    testCameraFovRangeGuards();
+    testEffectiveCameraFovNonFinite();
+    testNormalizeCameraKeyframesBatch();
+    testCameraSampleIsDefault();
+    testResetCameraKeyframeToDefaults();
+    testSampleCameraPose();
+    testResolveLookAtOrFallback();
+    testCollectCameraLookAtTargetIds();
+    testLookAtResolverAvailability();
+    testLookAtResolverCanResolveTarget();
+    testFallbackCameraLookAt();
+    testResolveLookAtWorldWithFallback();
     testSpriteTrackSampling();
     testPropertyTrackSampling();
     testTimelineContentSpan();
