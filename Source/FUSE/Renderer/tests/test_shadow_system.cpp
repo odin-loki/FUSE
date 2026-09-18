@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace {
 
@@ -922,6 +923,46 @@ void testEmptyLightDirectionDirectionalShadowUpdate() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testCascadeSplitSanitizePreflightGuards() {
+    using fuse::renderer::CascadedShadowMapDesc;
+    using fuse::renderer::CascadedShadowMapLayout;
+
+    CascadedShadowMapDesc validDesc{};
+    expectTrue(!CascadedShadowMapLayout::needsCascadeSplitClamp(validDesc),
+               "default splits do not need clamp");
+    expectTrue(!CascadedShadowMapLayout::needsCascadeSplitMonotonicityRepair(validDesc),
+               "default splits do not need monotonicity repair");
+    expectTrue(!CascadedShadowMapLayout::needsLastCascadeSplitPin(validDesc),
+               "default splits do not need last-slot pin");
+    expectTrue(!CascadedShadowMapLayout::cascadeSplitsNeedSanitize(validDesc),
+               "default splits do not need sanitize");
+
+    CascadedShadowMapDesc outOfRangeDesc{};
+    outOfRangeDesc.cascadeSplits[0] = -0.2f;
+    outOfRangeDesc.cascadeSplits[1] = 1.5f;
+    expectTrue(CascadedShadowMapLayout::needsCascadeSplitClamp(outOfRangeDesc),
+               "out-of-range splits need clamp");
+    expectTrue(CascadedShadowMapLayout::cascadeSplitsNeedSanitize(outOfRangeDesc),
+               "out-of-range splits need sanitize");
+
+    CascadedShadowMapDesc nonMonotonicDesc{};
+    nonMonotonicDesc.cascadeSplits[0] = 0.4f;
+    nonMonotonicDesc.cascadeSplits[1] = 0.2f;
+    nonMonotonicDesc.cascadeSplits[2] = 0.6f;
+    nonMonotonicDesc.cascadeSplits[3] = 1.f;
+    expectTrue(CascadedShadowMapLayout::needsCascadeSplitMonotonicityRepair(nonMonotonicDesc),
+               "descending split needs monotonicity repair");
+    expectTrue(!CascadedShadowMapLayout::needsCascadeSplitClamp(nonMonotonicDesc),
+               "in-range non-monotonic splits do not need clamp");
+
+    CascadedShadowMapDesc unpinnedDesc{};
+    unpinnedDesc.cascadeSplits[3] = 0.75f;
+    expectTrue(CascadedShadowMapLayout::needsLastCascadeSplitPin(unpinnedDesc),
+               "truncated last split needs pin");
+    expectTrue(CascadedShadowMapLayout::cascadeSplitsNeedSanitize(unpinnedDesc),
+               "truncated last split needs sanitize");
+}
+
 void testSanitizeCascadeSplitHelpers() {
     using fuse::renderer::CascadedShadowMapDesc;
     using fuse::renderer::CascadedShadowMapLayout;
@@ -1010,6 +1051,50 @@ void testPopulateCascadeSplitsClamped() {
     expectTrue(CascadedShadowMapLayout::validateClampedCascadeSplits(desc),
                "clamped populate yields valid split fractions");
     expectNear(desc.cascadeSplits[0], 1.f, 0.001f, "single clamped cascade reaches far plane");
+}
+
+void testCascadeShadowSkipReasonHelpers() {
+    using fuse::renderer::CascadeShadowSkipCounts;
+    using fuse::renderer::CascadeShadowSkipReason;
+    using fuse::renderer::accumulateCascadeShadowSkipCount;
+    using fuse::renderer::cascadeShadowSkipReasonIsGlobal;
+    using fuse::renderer::cascadeShadowSkipReasonLabel;
+
+    expectTrue(std::strcmp(cascadeShadowSkipReasonLabel(CascadeShadowSkipReason::None), "none") == 0,
+               "None skip reason label");
+    expectTrue(std::strcmp(cascadeShadowSkipReasonLabel(CascadeShadowSkipReason::EmptyLightDirection),
+                           "empty_light_direction") == 0,
+               "EmptyLightDirection skip reason label");
+    expectTrue(std::strcmp(cascadeShadowSkipReasonLabel(CascadeShadowSkipReason::EmptyCameraDepthRange),
+                           "empty_camera_depth_range") == 0,
+               "EmptyCameraDepthRange skip reason label");
+    expectTrue(std::strcmp(cascadeShadowSkipReasonLabel(CascadeShadowSkipReason::EmptyCascadeFrustum),
+                           "empty_cascade_frustum") == 0,
+               "EmptyCascadeFrustum skip reason label");
+    expectTrue(std::strcmp(cascadeShadowSkipReasonLabel(CascadeShadowSkipReason::DegenerateCascadeRange),
+                           "degenerate_cascade_range") == 0,
+               "DegenerateCascadeRange skip reason label");
+
+    expectTrue(cascadeShadowSkipReasonIsGlobal(CascadeShadowSkipReason::EmptyLightDirection),
+               "empty light skip reason is global");
+    expectTrue(cascadeShadowSkipReasonIsGlobal(CascadeShadowSkipReason::EmptyCameraDepthRange),
+               "empty camera skip reason is global");
+    expectTrue(!cascadeShadowSkipReasonIsGlobal(CascadeShadowSkipReason::EmptyCascadeFrustum),
+               "empty frustum skip reason is per-cascade");
+    expectTrue(!cascadeShadowSkipReasonIsGlobal(CascadeShadowSkipReason::DegenerateCascadeRange),
+               "degenerate range skip reason is per-cascade");
+    expectTrue(!cascadeShadowSkipReasonIsGlobal(CascadeShadowSkipReason::None),
+               "None skip reason is not global");
+
+    CascadeShadowSkipCounts counts{};
+    accumulateCascadeShadowSkipCount(counts, CascadeShadowSkipReason::None);
+    expectTrue(counts.total == 0u, "accumulate ignores None");
+
+    accumulateCascadeShadowSkipCount(counts, CascadeShadowSkipReason::EmptyCascadeFrustum);
+    expectTrue(counts.total == 1u && counts.emptyFrustum == 1u, "accumulate empty-frustum skip");
+
+    accumulateCascadeShadowSkipCount(counts, CascadeShadowSkipReason::EmptyLightDirection);
+    expectTrue(counts.total == 2u && counts.emptyLight == 1u, "accumulate empty-light skip");
 }
 
 void testCascadeShadowSkipReasonBlocking() {
@@ -1334,10 +1419,12 @@ int main() {
     testPopulateCascadeShadowData();
     testClearCascadeShadowDataSlots();
     testEmptyLightDirectionDirectionalShadowUpdate();
+    testCascadeSplitSanitizePreflightGuards();
     testSanitizeCascadeSplitHelpers();
     testSanitizeCascadeSplits();
     testClampedCascadeFarZ();
     testPopulateCascadeSplitsClamped();
+    testCascadeShadowSkipReasonHelpers();
     testCascadeShadowSkipReasonBlocking();
     testClassifyCascadeShadowSkipPriority();
     testCascadeShadowBypassGuards();
