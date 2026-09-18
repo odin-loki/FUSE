@@ -134,6 +134,112 @@ void testMutedSoloBusDoesNotMix() {
                1e-5f, "muted solo bus mix output is zero");
 }
 
+void testListenerMasterAudibleGuards() {
+    expectTrue(fuse::audio::is_listener_master_audible(1.f),
+               "unity listener master is audible");
+    expectTrue(fuse::audio::is_listener_master_audible(0.5f),
+               "mid-range listener master is audible");
+    expectTrue(!fuse::audio::is_listener_master_audible(0.f),
+               "zero listener master is not audible");
+    expectTrue(!fuse::audio::is_listener_master_audible(1e-7f),
+               "sub-epsilon listener master is not audible");
+    expectTrue(fuse::audio::should_skip_listener_master_mix(0.f),
+               "zero listener master skips mix");
+    expectTrue(!fuse::audio::should_skip_listener_master_mix(0.75f),
+               "audible listener master does not skip mix");
+}
+
+void testListenerMasterMixEarlyOut() {
+    fuse::audio::AudioBusMixer mixer;
+    mixer.set_bus_gain(fuse::audio::AudioBus::Master, 1.f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Sfx, 0.8f);
+
+    expectNear(fuse::audio::compute_mix_output_gain(mixer, fuse::audio::AudioBus::Sfx, 1.f), 0.8f,
+               1e-5f, "audible listener master keeps mix output gain");
+    expectNear(fuse::audio::compute_mix_output_gain(mixer, fuse::audio::AudioBus::Sfx, 0.f), 0.f,
+               1e-5f, "zero listener master early-outs mix output");
+    expectNear(fuse::audio::compute_mix_output_gain(mixer, fuse::audio::AudioBus::Sfx, 1e-7f), 0.f,
+               1e-5f, "near-zero listener master early-outs mix output");
+    expectNear(fuse::audio::compute_effective_output_gain(mixer, fuse::audio::AudioBus::Sfx, 0.6f),
+               0.48f, 1e-5f,
+               "effective output gain still applies listener master when not mixing");
+}
+
+void testParentChainGainWalk() {
+    fuse::audio::AudioBusMixer mixer;
+    mixer.set_bus_gain(fuse::audio::AudioBus::Sfx, 0.5f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Voice, 0.8f);
+    mixer.set_bus_parent(fuse::audio::AudioBus::Voice, fuse::audio::AudioBus::Sfx);
+
+    expectNear(fuse::audio::parent_chain_gain(mixer, fuse::audio::AudioBus::Voice), 0.5f, 1e-5f,
+               "parent chain multiplies ancestor gains");
+    expectTrue(fuse::audio::is_parent_chain_audible(mixer, fuse::audio::AudioBus::Voice),
+               "audible parent chain passes guard");
+    expectTrue(!fuse::audio::should_skip_parent_chain_mix(mixer, fuse::audio::AudioBus::Voice),
+               "audible parent chain does not skip mix");
+    expectNear(fuse::audio::parent_chain_gain(mixer, fuse::audio::AudioBus::Master), 1.f, 1e-5f,
+               "master bus has unity parent chain gain");
+}
+
+void testParentChainMuteBlocksChildMix() {
+    fuse::audio::AudioBusMixer mixer;
+    mixer.set_bus_gain(fuse::audio::AudioBus::Master, 1.f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Sfx, 0.8f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Voice, 0.6f);
+    mixer.set_bus_parent(fuse::audio::AudioBus::Voice, fuse::audio::AudioBus::Sfx);
+
+    mixer.set_bus_muted(fuse::audio::AudioBus::Sfx, true);
+    expectTrue(mixer.is_parent_chain_muted(fuse::audio::AudioBus::Voice),
+               "muted parent is detected in chain");
+    expectTrue(fuse::audio::should_skip_parent_chain_mix(mixer, fuse::audio::AudioBus::Voice),
+               "muted parent chain skips mix");
+    expectTrue(!mixer.should_mix_bus(fuse::audio::AudioBus::Voice),
+               "child bus does not mix when parent is muted");
+    expectNear(fuse::audio::compute_mix_output_gain(mixer, fuse::audio::AudioBus::Voice, 1.f), 0.f,
+               1e-5f, "muted parent chain zeroes mix output");
+
+    mixer.clear_bus_mute(fuse::audio::AudioBus::Sfx);
+    expectTrue(!mixer.is_parent_chain_muted(fuse::audio::AudioBus::Voice),
+               "clear_bus_mute restores parent chain");
+    expectTrue(mixer.should_mix_bus(fuse::audio::AudioBus::Voice),
+               "child bus mixes after parent unmuted");
+}
+
+void testParentChainZeroGainBlocksChildMix() {
+    fuse::audio::AudioBusMixer mixer;
+    mixer.set_bus_gain(fuse::audio::AudioBus::Master, 1.f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Sfx, 0.f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Voice, 0.9f);
+    mixer.set_bus_parent(fuse::audio::AudioBus::Voice, fuse::audio::AudioBus::Sfx);
+
+    expectTrue(!mixer.is_parent_chain_muted(fuse::audio::AudioBus::Voice),
+               "zero parent gain is not an explicit parent mute");
+    expectTrue(!fuse::audio::is_parent_chain_audible(mixer, fuse::audio::AudioBus::Voice),
+               "zero parent gain makes chain inaudible");
+    expectTrue(fuse::audio::should_skip_parent_chain_mix(mixer, fuse::audio::AudioBus::Voice),
+               "inaudible parent chain skips mix");
+    expectNear(fuse::audio::compute_mix_output_gain(mixer, fuse::audio::AudioBus::Voice, 1.f), 0.f,
+               1e-5f, "zero parent gain zeroes child mix output");
+}
+
+void testClearAllBusMutesRestoresMix() {
+    fuse::audio::AudioBusMixer mixer;
+    mixer.set_bus_gain(fuse::audio::AudioBus::Master, 1.f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Sfx, 0.8f);
+    mixer.set_bus_gain(fuse::audio::AudioBus::Music, 0.7f);
+
+    mixer.set_bus_muted(fuse::audio::AudioBus::Sfx, true);
+    mixer.set_bus_muted(fuse::audio::AudioBus::Music, true);
+    expectTrue(!mixer.should_mix_bus(fuse::audio::AudioBus::Sfx),
+               "sfx muted before clear");
+
+    mixer.clear_all_bus_mutes();
+    expectTrue(!mixer.bus_muted(fuse::audio::AudioBus::Sfx), "clear_all_bus_mutes clears sfx");
+    expectTrue(!mixer.bus_muted(fuse::audio::AudioBus::Music), "clear_all_bus_mutes clears music");
+    expectTrue(mixer.should_mix_bus(fuse::audio::AudioBus::Sfx),
+               "sfx mixes after clear_all_bus_mutes");
+}
+
 void testComputeMixOutputGainGuards() {
     const auto invalid =
         static_cast<fuse::audio::AudioBus>(static_cast<fuse::u8>(fuse::audio::AudioBus::Count));
@@ -167,6 +273,12 @@ int main() {
     testClearBusSoloRestoresMix();
     testShouldSkipBusMixAlias();
     testMutedSoloBusDoesNotMix();
+    testListenerMasterAudibleGuards();
+    testListenerMasterMixEarlyOut();
+    testParentChainGainWalk();
+    testParentChainMuteBlocksChildMix();
+    testParentChainZeroGainBlocksChildMix();
+    testClearAllBusMutesRestoresMix();
     testComputeMixOutputGainGuards();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
