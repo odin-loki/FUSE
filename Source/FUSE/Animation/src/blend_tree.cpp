@@ -7,6 +7,10 @@ namespace fuse::animation {
 
 namespace {
 
+bool skeleton_has_bones(const Skeleton& skel) {
+    return skel.bone_count > 0 && !skel.bones.empty();
+}
+
 void blend_poses(const Pose& a, const Pose& b, f32 weight, Pose& out) {
     const f32 clamped = std::clamp(weight, 0.f, 1.f);
     out.bone_count = std::max(a.bone_count, b.bone_count);
@@ -97,9 +101,15 @@ void find_blend_space_1d_bracket(const BlendSpace1D& space,
 } // namespace
 
 void BlendNode::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
+    if (!skeleton_has_bones(skel)) {
+        out.clear();
+        return;
+    }
+
     Pose pose = Pose::make_bind_pose(skel);
     evaluate(dt, skel, pose);
     out = pose_to_soa(pose, skel);
+    ensure_pose_soa_bind_fallback(out, skel);
 }
 
 BlendSpace1DSample sample_blend_space_1d(const BlendSpace1D& space, f32 value) {
@@ -135,8 +145,12 @@ BlendSpace2DSample sample_blend_space_2d(const BlendSpace2D& space, vec2 value) 
     return sample;
 }
 
+bool ClipNode::is_empty() const {
+    return clip == nullptr;
+}
+
 void ClipNode::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
-    if (clip == nullptr) {
+    if (!skeleton_has_bones(skel) || clip == nullptr) {
         out = Pose::make_bind_pose(skel);
         return;
     }
@@ -155,6 +169,11 @@ void ClipNode::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
 }
 
 void ClipNode::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
+    if (!skeleton_has_bones(skel)) {
+        out.clear();
+        return;
+    }
+
     if (clip == nullptr) {
         out = PoseSoA::from_bind_pose(skel);
         return;
@@ -198,6 +217,11 @@ bool AnimStateMachine::is_empty() const {
 }
 
 void BlendNode2::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
+    if (!skeleton_has_bones(skel)) {
+        out = Pose::make_bind_pose(skel);
+        return;
+    }
+
     if (is_empty()) {
         out = Pose::make_bind_pose(skel);
         return;
@@ -218,6 +242,11 @@ void BlendNode2::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
 }
 
 void BlendNode2::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
+    if (!skeleton_has_bones(skel)) {
+        out.clear();
+        return;
+    }
+
     if (is_empty()) {
         out = PoseSoA::from_bind_pose(skel);
         return;
@@ -242,6 +271,11 @@ void BlendNode2::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
 }
 
 void BlendSpace1D::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
+    if (!skeleton_has_bones(skel)) {
+        out = Pose::make_bind_pose(skel);
+        return;
+    }
+
     if (is_empty()) {
         out = Pose::make_bind_pose(skel);
         return;
@@ -265,6 +299,11 @@ void BlendSpace1D::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
 }
 
 void BlendSpace1D::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
+    if (!skeleton_has_bones(skel)) {
+        out.clear();
+        return;
+    }
+
     if (is_empty()) {
         out = PoseSoA::from_bind_pose(skel);
         return;
@@ -298,6 +337,11 @@ void BlendSpace2D::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
 }
 
 void BlendSpace2D::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
+    if (!skeleton_has_bones(skel)) {
+        out.clear();
+        return;
+    }
+
     if (is_empty()) {
         out = PoseSoA::from_bind_pose(skel);
         return;
@@ -324,6 +368,11 @@ void BlendSpace2D::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
 }
 
 void LayeredBlendNode::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
+    if (!skeleton_has_bones(skel)) {
+        out.clear();
+        return;
+    }
+
     if (is_empty()) {
         out = PoseSoA::from_bind_pose(skel);
         return;
@@ -366,6 +415,11 @@ void LayeredBlendNode::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
 }
 
 void AdditiveBlendNode::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
+    if (!skeleton_has_bones(skel)) {
+        out.clear();
+        return;
+    }
+
     if (is_empty()) {
         out = PoseSoA::from_bind_pose(skel);
         return;
@@ -576,7 +630,46 @@ bool AnimStateMachine::can_transition(const char* from, const char* to) const {
     return transition_condition_passes(static_cast<u32>(fromIndex), static_cast<u32>(toIndex));
 }
 
+s32 AnimStateMachine::find_named_transition_index(const char* from, const char* to) const {
+    const s32 fromIndex = find_state_index(from);
+    const s32 toIndex = find_state_index(to);
+    if (fromIndex < 0 || toIndex < 0) {
+        return -1;
+    }
+    return find_transition_index(static_cast<u32>(fromIndex), static_cast<u32>(toIndex));
+}
+
+bool AnimStateMachine::outgoing_transition_condition_passes(u32 from_state, u32 edge_index) const {
+    const s32 toState = outgoing_transition_to(from_state, edge_index);
+    if (toState < 0) {
+        return false;
+    }
+    return transition_condition_passes(from_state, static_cast<u32>(toState));
+}
+
+s32 AnimStateMachine::find_first_passing_outgoing_transition(u32 from_state) const {
+    for (u32 i = 0; i < transitions.size(); ++i) {
+        const Transition& transition = transitions[i];
+        if (transition.from != from_state || transition.to == from_state) {
+            continue;
+        }
+        if (!transition.condition || transition.condition()) {
+            return static_cast<s32>(i);
+        }
+    }
+    return -1;
+}
+
+bool AnimStateMachine::has_passing_outgoing_transition(u32 from_state) const {
+    return find_first_passing_outgoing_transition(from_state) >= 0;
+}
+
 void AnimStateMachine::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
+    if (!skeleton_has_bones(skel)) {
+        out.clear();
+        return;
+    }
+
     if (is_empty()) {
         out = PoseSoA::from_bind_pose(skel);
         return;
@@ -673,6 +766,11 @@ void AnimStateMachine::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) 
 }
 
 void AnimStateMachine::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
+    if (!skeleton_has_bones(skel)) {
+        out = Pose::make_bind_pose(skel);
+        return;
+    }
+
     if (is_empty()) {
         out = Pose::make_bind_pose(skel);
         return;
