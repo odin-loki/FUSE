@@ -80,4 +80,10 @@ bool should_skip_tangential_velocity_solve(
     f32 speedThreshold = 1e-6f,
     f32 impulseEpsilon = 1e-8f);
 
+/// Returns true when `basis` is orthonormal and aligned with `normal` (B4.3 deepen pass).
+bool isValidFrictionBasisForNormal(vec3 normal, const TangentBasis& basis, f32 epsilon = 1e-4f);
+
+/// Alias for `needs_friction_basis_rebuild` (B4.3 deepen pass).
+bool should_rebuild_friction_basis(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+
 } // namespace fuse::physics::narrowphase
