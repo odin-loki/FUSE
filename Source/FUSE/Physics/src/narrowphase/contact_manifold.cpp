@@ -49,10 +49,75 @@ bool ContactManifold::hasFrictionBasis() const {
     return isOrthonormalTangentBasis(contactNormal, frictionBasis);
 }
 
+bool ContactManifold::hasPenetratingPoints(f32 epsilon) const {
+    return countPenetratingPoints(epsilon) > 0u;
+}
+
+u32 ContactManifold::countPenetratingPoints(f32 epsilon) const {
+    u32 penetrating = 0u;
+    for (u32 i = 0u; i < pointCount; ++i) {
+        if (points[i].penetration >= -epsilon) {
+            ++penetrating;
+        }
+    }
+    return penetrating;
+}
+
+bool ContactManifold::needsPruning(f32 separationEpsilon, f32 duplicateEpsilon) const {
+    if (pointCount == 0u) {
+        return false;
+    }
+
+    u32 penetrating = 0u;
+    for (u32 i = 0u; i < pointCount; ++i) {
+        if (points[i].penetration < -separationEpsilon) {
+            return true;
+        }
+        if (points[i].penetration >= -separationEpsilon) {
+            ++penetrating;
+        }
+    }
+
+    if (penetrating > kMaxContactPointsPerManifold) {
+        return true;
+    }
+
+    const f32 epsilonSq = duplicateEpsilon * duplicateEpsilon;
+    for (u32 i = 0u; i < pointCount; ++i) {
+        for (u32 j = i + 1u; j < pointCount; ++j) {
+            const vec3 delta = points[i].point - points[j].point;
+            if (delta.dot(delta) <= epsilonSq) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 void ContactManifold::pruneNonPenetratingPoints(f32 epsilon) {
     u32 writeIndex = 0u;
     for (u32 readIndex = 0u; readIndex < pointCount; ++readIndex) {
         if (points[readIndex].penetration < -epsilon) {
+            continue;
+        }
+        if (writeIndex != readIndex) {
+            points[writeIndex] = points[readIndex];
+        }
+        ++writeIndex;
+    }
+
+    for (u32 i = writeIndex; i < pointCount; ++i) {
+        points[i] = {};
+    }
+    pointCount = writeIndex;
+    syncLegacyFields();
+}
+
+void ContactManifold::pruneShallowPenetrations(f32 minDepth) {
+    u32 writeIndex = 0u;
+    for (u32 readIndex = 0u; readIndex < pointCount; ++readIndex) {
+        if (points[readIndex].penetration < minDepth) {
             continue;
         }
         if (writeIndex != readIndex) {
@@ -134,6 +199,11 @@ void ContactManifold::pruneContactPoints(f32 separationEpsilon, f32 duplicateEps
     pruneNonPenetratingPoints(separationEpsilon);
     pruneDuplicatePoints(duplicateEpsilon);
     pruneToMaxPoints(kMaxContactPointsPerManifold);
+}
+
+bool ContactManifold::pruneIfEmpty(f32 separationEpsilon, f32 duplicateEpsilon) {
+    pruneContactPoints(separationEpsilon, duplicateEpsilon);
+    return !empty();
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

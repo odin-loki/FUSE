@@ -15,7 +15,12 @@ enum class ContactPairRejectReason : u8 {
     MissingShape,
     BothTriggers,
     UnsupportedShapePair,
+    BothStatic,
+    DegenerateShape,
 };
+
+/// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
+const char* contact_pair_reject_reason_name(ContactPairRejectReason reason);
 
 /// Returns the first reject reason for a pair, or `None` when dispatch may proceed.
 ContactPairRejectReason contact_pair_reject_reason(
@@ -29,10 +34,26 @@ bool is_invalid_contact_pair(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Inverse of `is_invalid_contact_pair` (B4.3 deepen pass).
+bool is_valid_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
 /// Returns true when both bodies are trigger volumes (no contact response stub).
 bool is_trigger_contact_pair(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies);
+
+/// Returns true when both bodies carry `RB_STATIC` (no solver response stub, B4.3 deepen pass).
+bool is_static_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies);
+
+/// Returns true when either shape has zero or negative extent (B4.3 deepen pass).
+bool is_degenerate_shape_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
 
 /// Returns true when the resolved shape types have no narrowphase dispatch path.
 bool is_unsupported_shape_pair(

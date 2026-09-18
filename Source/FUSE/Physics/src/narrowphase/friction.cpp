@@ -77,6 +77,10 @@ vec2 projectTangentialVelocity(vec3 relativeVelocity, const TangentBasis& basis)
     };
 }
 
+bool has_cached_friction_basis(const ContactManifold& manifold) {
+    return manifold.hasFrictionBasis();
+}
+
 bool should_skip_friction_tangents(const ContactManifold& manifold) {
     if (manifold.empty() || !manifold.hasValidNormal()) {
         return true;
@@ -99,8 +103,24 @@ bool should_skip_friction_solve(
 }
 
 bool hasNegligibleTangentialVelocity(vec2 projected, f32 speedThreshold) {
-    const f32 speedSq = projected.x * projected.x + projected.y * projected.y;
-    return speedSq <= speedThreshold * speedThreshold;
+    return tangentialSpeed(projected) <= speedThreshold;
+}
+
+f32 tangentialSpeed(vec2 projected) {
+    return std::sqrt(projected.x * projected.x + projected.y * projected.y);
+}
+
+bool should_skip_tangential_velocity_solve(
+    vec2 projectedVelocity,
+    f32 staticFriction,
+    f32 dynamicFriction,
+    f32 normalImpulse,
+    f32 speedThreshold,
+    f32 impulseEpsilon) {
+    if (should_skip_friction_solve(staticFriction, dynamicFriction, normalImpulse, impulseEpsilon)) {
+        return true;
+    }
+    return hasNegligibleTangentialVelocity(projectedVelocity, speedThreshold);
 }
 
 } // namespace fuse::physics::narrowphase

@@ -49,8 +49,22 @@ struct ContactManifold {
     const ContactPoint& pointAt(u32 index) const;
     f32 maxPenetration() const;
 
+    /// Returns true when at least one point has penetration above `-epsilon` (B4.3 deepen pass).
+    bool hasPenetratingPoints(f32 epsilon = 1e-6f) const;
+
+    /// Count contact points with penetration above `-epsilon` (B4.3 deepen pass).
+    u32 countPenetratingPoints(f32 epsilon = 1e-6f) const;
+
+    /// Returns true when any prune step would remove points (B4.3 deepen pass).
+    bool needsPruning(
+        f32 separationEpsilon = 1e-6f,
+        f32 duplicateEpsilon = 1e-4f) const;
+
     /// Drop separated contact points with penetration below `-epsilon` (B4.3 deepen).
     void pruneNonPenetratingPoints(f32 epsilon = 1e-6f);
+
+    /// Drop penetrating points shallower than `minDepth` (B4.3 deepen pass).
+    void pruneShallowPenetrations(f32 minDepth);
 
     /// Keep at most `maxPoints` deepest-penetrating slots (B4.3 deepen).
     void pruneToMaxPoints(u32 maxPoints);
@@ -60,6 +74,11 @@ struct ContactManifold {
 
     /// Run non-penetrating, duplicate, and max-point pruning in order (B4.3 deepen).
     void pruneContactPoints(
+        f32 separationEpsilon = 1e-6f,
+        f32 duplicateEpsilon = 1e-4f);
+
+    /// Prune and return true when the manifold still has points (B4.3 deepen pass).
+    bool pruneIfEmpty(
         f32 separationEpsilon = 1e-6f,
         f32 duplicateEpsilon = 1e-4f);
 };
