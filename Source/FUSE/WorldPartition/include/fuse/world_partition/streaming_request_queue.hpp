@@ -2,6 +2,7 @@
 
 #include <fuse/types.hpp>
 #include <fuse/world_partition/grid_cell.hpp>
+#include <fuse/world_partition/streaming_budget.hpp>
 
 #include <functional>
 #include <mutex>
@@ -42,6 +43,31 @@ using StreamingWorkFn = std::function<bool(GridCoord coord, StreamingRequestKind
 /// Priority ordering: higher priority first, unload before load at equal priority, FIFO tie-break.
 [[nodiscard]] int compare_streaming_request_order(f32 priority_a, StreamingRequestKind kind_a, u64 sequence_a,
                                                   f32 priority_b, StreamingRequestKind kind_b, u64 sequence_b);
+
+/// Compare two pending requests using enqueue-sequence tie-break.
+[[nodiscard]] inline int compare_streaming_requests(const StreamingRequest& a, u64 sequence_a,
+                                                    const StreamingRequest& b, u64 sequence_b) {
+    return compare_streaming_request_order(a.priority, a.kind, sequence_a, b.priority, b.kind, sequence_b);
+}
+
+/// True when `a` should be ordered before `b` in a priority drain.
+[[nodiscard]] inline bool is_streaming_request_before(const StreamingRequest& a, u64 sequence_a,
+                                                      const StreamingRequest& b, u64 sequence_b) {
+    return compare_streaming_requests(a, sequence_a, b, sequence_b) > 0;
+}
+
+/// Compare two completed requests using submit-sequence tie-break.
+[[nodiscard]] inline int compare_completed_streaming_requests(const CompletedStreamingRequest& a,
+                                                              const CompletedStreamingRequest& b) {
+    return compare_streaming_request_order(a.priority, a.kind, a.submit_sequence, b.priority, b.kind,
+                                           b.submit_sequence);
+}
+
+/// True when completed request `a` should be ordered before `b`.
+[[nodiscard]] inline bool is_completed_streaming_request_before(const CompletedStreamingRequest& a,
+                                                                const CompletedStreamingRequest& b) {
+    return compare_completed_streaming_requests(a, b) > 0;
+}
 
 /// Sort pending requests by priority (highest first) without removing them. Returns count copied.
 [[nodiscard]] u32 order_by_priority(std::vector<StreamingRequest>& out,
@@ -173,6 +199,56 @@ private:
         return 0u;
     }
     return queue.flush(budget, work);
+}
+
+/// True when at least one pending request matches `kind`.
+[[nodiscard]] inline bool has_pending_request_of_kind(const StreamingRequestQueue& queue,
+                                                      StreamingRequestKind kind) {
+    if (!has_pending_enqueue(queue)) {
+        return false;
+    }
+
+    std::vector<StreamingRequest> ordered;
+    if (queue.order_by_priority(ordered) == 0u) {
+        return false;
+    }
+    for (const StreamingRequest& request : ordered) {
+        if (request.kind == kind) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Empty-queue guard: peek only when pending enqueue is non-empty.
+[[nodiscard]] inline bool peek_highest_pending_guarded(const StreamingRequestQueue& queue, StreamingRequest& out) {
+    if (!has_pending_enqueue(queue)) {
+        return false;
+    }
+    return peek_highest_pending(queue, out);
+}
+
+/// Empty-queue guard: dequeue only when pending enqueue is non-empty.
+[[nodiscard]] inline bool try_dequeue_pending_guarded(StreamingRequestQueue& queue, StreamingRequest& out) {
+    if (!has_pending_enqueue(queue)) {
+        return false;
+    }
+    return try_dequeue_pending(queue, out);
+}
+
+/// Guard: true when async in-flight and pending-submit caps both have headroom.
+[[nodiscard]] inline bool can_submit_to_queue(const StreamingRequestQueue& queue, u32 max_async_in_flight) {
+    return can_submit_async_request_guarded(queue.in_flight_count(), queue.pending_submit_count(),
+                                            max_async_in_flight);
+}
+
+/// Guard: submit only when work is available and async budget guards pass.
+[[nodiscard]] inline bool try_submit_guarded(StreamingRequestQueue& queue, StreamingRequest request,
+                                              StreamingWorkFn work, u32 max_async_in_flight) {
+    if (work == nullptr || !can_submit_to_queue(queue, max_async_in_flight)) {
+        return false;
+    }
+    return queue.submit(std::move(request), std::move(work));
 }
 
 } // namespace fuse::world_partition
