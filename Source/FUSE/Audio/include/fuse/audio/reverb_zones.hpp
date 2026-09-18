@@ -5,6 +5,9 @@
 
 namespace fuse::audio {
 
+/// Epsilon below which wet mix is treated as fully dry.
+inline constexpr float kWetMixDryEpsilon = 1e-6f;
+
 /// Wet/dry mix parameters for a spatial reverb zone (CPU stub — no IR data).
 struct ReverbZoneParams {
     AABB bounds;
@@ -30,6 +33,13 @@ ReverbZoneBlend blend_reverb_zones(const Vec3& listener, const ReverbZoneParams*
 u32 count_listener_reverb_zones(const Vec3& listener, const ReverbZoneParams* zones,
                                 u32 zone_count);
 
+/// True when zone list pointer is non-null and carries at least one zone.
+bool has_reverb_zones(const ReverbZoneParams* zones, u32 zone_count);
+
+/// One-shot listener reverb blend with empty-list guard (returns dry blend when absent).
+ReverbZoneBlend compute_listener_reverb_blend(const Vec3& listener, const ReverbZoneParams* zones,
+                                              u32 zone_count);
+
 /// Clamp a wet-mix scalar into [0, 1].
 float clamp_wet_mix(float wet_mix);
 
@@ -44,6 +54,15 @@ bool is_dry_reverb_blend(const ReverbZoneBlend& blend);
 
 /// True when wet convolution should run for the blend result.
 bool should_apply_reverb_wet_mix(const ReverbZoneBlend& blend);
+
+/// True when wet convolution should be skipped for the blend result.
+bool should_skip_reverb_wet_mix(const ReverbZoneBlend& blend);
+
+/// True when wet_mix is at or below the dry-path epsilon after clamping.
+bool is_near_zero_wet_mix(float wet_mix);
+
+/// True when wet_mix is at or above unity after clamping.
+bool is_unity_wet_mix(float wet_mix);
 
 /// Effective wet mix scalar [0, 1] from a zone blend result.
 float compute_effective_wet_mix(const ReverbZoneBlend& blend);

@@ -11,7 +11,7 @@ bool listener_in_reverb_zone(const Vec3& listener, const ReverbZoneParams& zone)
 ReverbZoneBlend blend_reverb_zones(const Vec3& listener, const ReverbZoneParams* zones,
                                    u32 zone_count) {
     ReverbZoneBlend blend;
-    if (zones == nullptr || zone_count == 0) {
+    if (!has_reverb_zones(zones, zone_count)) {
         return blend;
     }
 
@@ -38,7 +38,7 @@ ReverbZoneBlend blend_reverb_zones(const Vec3& listener, const ReverbZoneParams*
 
 u32 count_listener_reverb_zones(const Vec3& listener, const ReverbZoneParams* zones,
                                 u32 zone_count) {
-    if (zones == nullptr || zone_count == 0) {
+    if (!has_reverb_zones(zones, zone_count)) {
         return 0;
     }
 
@@ -49,6 +49,18 @@ u32 count_listener_reverb_zones(const Vec3& listener, const ReverbZoneParams* zo
         }
     }
     return count;
+}
+
+bool has_reverb_zones(const ReverbZoneParams* zones, u32 zone_count) {
+    return zones != nullptr && zone_count > 0;
+}
+
+ReverbZoneBlend compute_listener_reverb_blend(const Vec3& listener, const ReverbZoneParams* zones,
+                                              u32 zone_count) {
+    if (!has_reverb_zones(zones, zone_count)) {
+        return {};
+    }
+    return blend_reverb_zones(listener, zones, zone_count);
 }
 
 float clamp_wet_mix(float wet_mix) {
@@ -75,7 +87,19 @@ bool is_dry_reverb_blend(const ReverbZoneBlend& blend) {
 }
 
 bool should_apply_reverb_wet_mix(const ReverbZoneBlend& blend) {
-    return has_active_reverb_blend(blend) && compute_effective_wet_mix(blend) > 0.f;
+    return has_active_reverb_blend(blend) && !is_near_zero_wet_mix(compute_effective_wet_mix(blend));
+}
+
+bool should_skip_reverb_wet_mix(const ReverbZoneBlend& blend) {
+    return !should_apply_reverb_wet_mix(blend);
+}
+
+bool is_near_zero_wet_mix(float wet_mix) {
+    return clamp_wet_mix(wet_mix) <= kWetMixDryEpsilon;
+}
+
+bool is_unity_wet_mix(float wet_mix) {
+    return clamp_wet_mix(wet_mix) >= 1.f - kWetMixDryEpsilon;
 }
 
 float compute_effective_wet_mix(const Vec3& listener, const ReverbZoneParams* zones,
@@ -85,10 +109,10 @@ float compute_effective_wet_mix(const Vec3& listener, const ReverbZoneParams* zo
 
 float blend_dry_wet_sample(float dry, float wet, float wet_mix) {
     const float mix = clamp_wet_mix(wet_mix);
-    if (mix <= 0.f) {
+    if (is_near_zero_wet_mix(mix)) {
         return dry;
     }
-    if (mix >= 1.f) {
+    if (is_unity_wet_mix(mix)) {
         return wet;
     }
     return dry * compute_dry_mix(mix) + wet * mix;

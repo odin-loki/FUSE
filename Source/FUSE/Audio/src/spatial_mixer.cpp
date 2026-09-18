@@ -17,7 +17,7 @@ void SpatialMixer::configure(u32 sample_rate, u32 max_sources, bool hrtf_enabled
 
 void SpatialMixer::set_occlusion_blockers(const AABB* blockers, u32 blocker_count) {
     m_occlusionBlockers.clear();
-    if (blockers == nullptr || blocker_count == 0) {
+    if (!::fuse::audio::has_occlusion_blockers(blockers, blocker_count)) {
         return;
     }
     m_occlusionBlockers.assign(blockers, blockers + blocker_count);
@@ -27,23 +27,27 @@ void SpatialMixer::clear_occlusion_blockers() {
     m_occlusionBlockers.clear();
 }
 
+bool SpatialMixer::has_occlusion_blockers() const {
+    return !m_occlusionBlockers.empty();
+}
+
 float SpatialMixer::compute_source_visibility(const Vec3& listener, const Vec3& source,
                                               float source_occlusion) const {
-    if (m_occlusionBlockers.empty()) {
-        return std::clamp(source_occlusion, 0.f, 1.f);
+    const float visibility = clamp_occlusion_visibility(source_occlusion);
+    if (!has_occlusion_blockers()) {
+        return visibility;
     }
-    return compute_effective_visibility(listener, source, source_occlusion,
-                                        m_occlusionBlockers.data(),
+    return compute_effective_visibility(listener, source, visibility, m_occlusionBlockers.data(),
                                         static_cast<u32>(m_occlusionBlockers.size()));
 }
 
 OcclusionAttenuation SpatialMixer::compute_source_occlusion_attenuation(
     const Vec3& listener, const Vec3& source, float source_occlusion) const {
-    if (m_occlusionBlockers.empty()) {
-        return evaluate_occlusion_attenuation(std::clamp(source_occlusion, 0.f, 1.f));
+    const float visibility = clamp_occlusion_visibility(source_occlusion);
+    if (!has_occlusion_blockers()) {
+        return evaluate_occlusion_attenuation(visibility);
     }
-    return evaluate_occlusion_from_blockers(listener, source, source_occlusion,
-                                            m_occlusionBlockers.data(),
+    return evaluate_occlusion_from_blockers(listener, source, visibility, m_occlusionBlockers.data(),
                                             static_cast<u32>(m_occlusionBlockers.size()));
 }
 
