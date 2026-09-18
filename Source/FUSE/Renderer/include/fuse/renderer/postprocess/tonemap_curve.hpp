@@ -55,10 +55,16 @@ TonemapCurveEndpoints evaluate_tonemap_curve_endpoints(const TonemapCurveParams&
 /// Display-range span between evaluated white and black anchors (B5.10 deepen).
 f32 tonemap_curve_output_span(const TonemapCurveParams& params, f32 white_input = 1.f);
 bool tonemap_curve_preserves_black(const TonemapCurveParams& params, f32 epsilon = 1e-4f);
+/// True when Reinhard curve knobs are usable (B5.10 deepen).
+bool tonemap_curve_reinhard_params_valid(const ReinhardCurveParams& params);
+/// True when ACES curve knobs are usable (B5.10 deepen).
+bool tonemap_curve_aces_params_valid(const AcesCurveParams& params);
 /// True when curve knobs are usable before endpoint evaluation (B5.10 deepen).
 bool tonemap_curve_params_valid(const TonemapCurveParams& params);
 /// True when a tonemap curve can be applied without invalid knobs (B5.10 deepen).
 bool tonemap_curve_can_apply(const TonemapCurveParams& params);
+/// True when curve params and endpoint anchors are ready for application (B5.10 deepen).
+bool tonemap_curve_ready_to_apply(const TonemapCurveParams& params, f32 white_input = 1.f, f32 epsilon = 1e-4f);
 /// True when black/white anchors stay in display range with positive span (B5.10 deepen).
 bool tonemap_curve_endpoints_valid(const TonemapCurveEndpoints& endpoints, f32 epsilon = 1e-4f);
 /// True when endpoint input anchors are ordered and non-negative (B5.10 deepen).

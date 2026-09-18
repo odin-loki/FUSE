@@ -734,6 +734,100 @@ void testAutoExposureParamsAndAdaptGuards() {
     expectNear(zeroDeltaEv, state.current_ev, 1e-6f, "zero delta preserves current EV");
 }
 
+void testMeasuredLuminanceAndUpdateFromLuminanceGuards() {
+    expectTrue(fuse::renderer::measured_luminance_valid(0.18f), "positive luminance is valid");
+    expectTrue(fuse::renderer::measured_luminance_valid(1e-7f), "small positive luminance is valid");
+    expectTrue(!fuse::renderer::measured_luminance_valid(0.f), "zero luminance rejected");
+    expectTrue(!fuse::renderer::measured_luminance_valid(-0.1f), "negative luminance rejected");
+
+    fuse::renderer::AutoExposureParams params{};
+    expectTrue(fuse::renderer::auto_exposure_can_update_from_luminance(0.72f, params, 0.1f),
+               "valid luminance and params can update");
+    expectTrue(!fuse::renderer::auto_exposure_can_update_from_luminance(0.f, params, 0.1f),
+               "zero luminance blocks luminance update guard");
+    expectTrue(!fuse::renderer::auto_exposure_can_update_from_luminance(0.72f, params, 0.f),
+               "zero delta blocks luminance update guard");
+
+    fuse::renderer::AutoExposure exposure{};
+    exposure.init();
+    exposure.setParams(params);
+    exposure.updateFromLuminance(0.72f, 0.5f);
+    const fuse::f32 adaptedEv = exposure.currentEv();
+    expectTrue(adaptedEv > 0.f, "exposure adapts before invalid luminance update");
+
+    const fuse::f32 unchangedEv = exposure.updateFromLuminance(-1.f, 0.5f);
+    expectNear(unchangedEv, adaptedEv, 1e-6f, "negative luminance update is a no-op");
+    expectNear(exposure.state().measured_luminance, 0.72f, 1e-6f,
+               "invalid luminance does not overwrite measured luminance");
+
+    exposure.destroy();
+}
+
+void testHistogramUtilCanAccumulateGuards() {
+    fuse::renderer::LuminanceHistogramParams valid{};
+    const fuse::math::Vec3 samples[] = {{0.18f, 0.18f, 0.18f}};
+
+    expectTrue(fuse::renderer::histogram_util::canAccumulateFromSamples(samples, 1u, valid),
+               "valid params and samples pass canAccumulateFromSamples");
+    expectTrue(!fuse::renderer::histogram_util::canAccumulateFromSamples(nullptr, 0u, valid),
+               "empty sample buffer fails canAccumulateFromSamples");
+
+    fuse::renderer::LuminanceHistogramParams invalidRange{};
+    invalidRange.max_log_luminance = invalidRange.min_log_luminance;
+    expectTrue(!fuse::renderer::histogram_util::canAccumulateFromSamples(samples, 1u, invalidRange),
+               "flat log range fails canAccumulateFromSamples");
+
+    fuse::renderer::LuminanceHistogram histogram{};
+    histogram.init(invalidRange);
+    fuse::renderer::histogram_util::accumulateSamples(histogram, samples, 1u);
+    expectTrue(histogram.isEmpty(), "accumulateSamples skips invalid histogram params");
+}
+
+void testExposureMeterCanMeasureGuard() {
+    fuse::renderer::ExposureMeter meter{};
+    expectTrue(!fuse::renderer::exposure_meter_can_measure(meter), "empty meter cannot measure");
+
+    meter.accumulate({0.18f, 0.18f, 0.18f});
+    expectTrue(fuse::renderer::exposure_meter_can_measure(meter), "populated meter can measure");
+    expectTrue(fuse::renderer::exposure_meter_can_measure(meter) == fuse::renderer::exposure_meter_has_samples(meter),
+               "can_measure matches has_samples");
+
+    fuse::renderer::reset_exposure_meter(meter);
+    expectTrue(!fuse::renderer::exposure_meter_can_measure(meter), "reset meter cannot measure");
+}
+
+void testTonemapCurvePerKindAndReadyGuards() {
+    const fuse::renderer::TonemapCurveParams filmic = fuse::renderer::make_filmic_curve_params();
+    expectTrue(fuse::renderer::tonemap_curve_ready_to_apply(filmic), "filmic preset ready to apply");
+
+    fuse::renderer::ReinhardCurveParams reinhardKnobs{};
+    reinhardKnobs.white_point = 4.f;
+    expectTrue(fuse::renderer::tonemap_curve_reinhard_params_valid(reinhardKnobs), "positive white point valid");
+    reinhardKnobs.white_point = 0.f;
+    expectTrue(!fuse::renderer::tonemap_curve_reinhard_params_valid(reinhardKnobs), "zero white point rejected");
+
+    fuse::renderer::AcesCurveParams acesKnobs{};
+    acesKnobs.contrast = 1.f;
+    expectTrue(fuse::renderer::tonemap_curve_aces_params_valid(acesKnobs), "non-negative contrast valid");
+    acesKnobs.contrast = -0.1f;
+    expectTrue(!fuse::renderer::tonemap_curve_aces_params_valid(acesKnobs), "negative contrast rejected");
+
+    fuse::renderer::TonemapCurveParams invalidReinhard = fuse::renderer::make_reinhard_curve_params();
+    invalidReinhard.reinhard.white_point = 0.f;
+    expectTrue(!fuse::renderer::tonemap_curve_ready_to_apply(invalidReinhard),
+               "invalid reinhard white point fails ready guard");
+
+    fuse::renderer::TonemapCurveParams disabled{};
+    disabled.enabled = false;
+    expectTrue(fuse::renderer::tonemap_curve_ready_to_apply(disabled), "disabled curve ready without endpoints");
+
+    const fuse::math::Vec3 input{0.4f, 0.2f, 0.1f};
+    const fuse::math::Vec3 passthrough = fuse::renderer::apply_tonemap_curve(input, invalidReinhard);
+    expectNear(passthrough.x, input.x, 1e-6f, "not-ready reinhard curve preserves red");
+    expectNear(passthrough.y, input.y, 1e-6f, "not-ready reinhard curve preserves green");
+    expectNear(passthrough.z, input.z, 1e-6f, "not-ready reinhard curve preserves blue");
+}
+
 void testTonemapCurveApplyAndSpanGuards() {
     const fuse::renderer::TonemapCurveParams filmic = fuse::renderer::make_filmic_curve_params();
     expectTrue(fuse::renderer::tonemap_curve_can_apply(filmic), "filmic preset can apply");
@@ -801,6 +895,10 @@ int main() {
     testMeteringPercentileValid();
     testHistogramUtilCanMeterPercentile();
     testAutoExposureParamsAndAdaptGuards();
+    testMeasuredLuminanceAndUpdateFromLuminanceGuards();
+    testHistogramUtilCanAccumulateGuards();
+    testExposureMeterCanMeasureGuard();
+    testTonemapCurvePerKindAndReadyGuards();
     testTonemapCurveApplyAndSpanGuards();
 
     fuse::core::shutdown();
