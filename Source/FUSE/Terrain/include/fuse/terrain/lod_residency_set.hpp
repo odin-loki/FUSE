@@ -240,4 +240,38 @@ template <typename ScoreFn>
     return picked != kInvalidChunkIndex && score > 0.f;
 }
 
+/// Guard: returns false when chunk index is invalid or not resident.
+[[nodiscard]] inline bool contains_resident_guarded(const LodResidencySet& set, u32 chunk_index) {
+    return chunk_index != kInvalidChunkIndex && set.contains(chunk_index);
+}
+
+/// Guard: clears residency set; returns false when already empty.
+[[nodiscard]] inline bool clear_residency_guarded(LodResidencySet& set) {
+    if (set.empty()) {
+        return false;
+    }
+    set.clear();
+    return true;
+}
+
+/// Empty-set guard: true when the residency set tracks at least one resident cell.
+[[nodiscard]] inline bool has_residency_guarded(const LodResidencySet& set) {
+    return !set.empty();
+}
+
+/// Guard: removes a resident chunk; returns false when index is invalid or not resident.
+[[nodiscard]] inline bool remove_resident_guarded(LodResidencySet& set, u32 chunk_index) {
+    return try_remove_resident(set, chunk_index);
+}
+
+/// Combined unload rank for budget-driven eviction (B7.5 deepen).
+[[nodiscard]] inline f32 eviction_unload_priority(f32 streaming_priority, f32 stored_priority,
+                                                   f32 focus_distance, f32 unload_distance_priority,
+                                                   u32 last_touch_tick, u32 current_tick,
+                                                   LodEvictionPolicy policy) {
+    const f32 budget_score = budget_eviction_score(focus_distance, unload_distance_priority, last_touch_tick,
+                                                    current_tick, policy);
+    return rank_budget_unload_priority(streaming_priority, stored_priority, focus_distance, budget_score);
+}
+
 } // namespace fuse::terrain
