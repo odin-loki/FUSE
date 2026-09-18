@@ -95,8 +95,21 @@ struct TaaBlendWeights {
 TaaBlendWeights computeTaaBlendWeights(bool firstFrame, const TAAParams& params);
 /// True when blend weights are within [0, 1] and sum to ~1 (B5.9 deepen).
 bool taaBlendWeightsValid(const TaaBlendWeights& weights);
+/// Preflight blend weights for a resolve frame; returns false when weights would be invalid.
+bool preflightTaaBlendWeights(bool firstFrame, const TAAParams& params, TaaBlendWeights* out = nullptr);
+/// True when resolve blend preflight passes for the given history state (B5.9 deepen).
+bool taaResolveBlendPreflightPasses(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// Preflight resolve blend weights; returns false when blend preflight would fail.
+bool preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                              TaaBlendWeights* out = nullptr);
 /// True when history is warm and ready for temporal reuse (B5.9 deepen).
 bool taaHistoryCanReuse(const TaaHistoryBuffer& history);
+/// True when history still needs a warm-up resolve before temporal reuse (B5.9 deepen).
+bool taaHistoryNeedsWarmup(const TaaHistoryBuffer& history);
+/// True when history is ready and warmed for temporal reuse (B5.9 deepen).
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history);
+/// True when history reuse preflight passes for the observed invalidate epoch (B5.9 deepen).
+bool taaHistoryReusePreflightPasses(const TaaHistoryBuffer& history, u32 observedGeneration);
 /// True when history reuse is allowed for the observed invalidate epoch (B5.9 deepen).
 bool taaHistoryReuseAllowed(const TaaHistoryBuffer& history, u32 observedGeneration);
 /// True when resolve may sample prior history this frame (B5.9 deepen).

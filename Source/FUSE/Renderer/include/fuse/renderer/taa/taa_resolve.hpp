@@ -7,6 +7,12 @@
 
 namespace fuse::renderer {
 
+/// True when required colour surfaces are bound (B5.9 deepen).
+bool taaResolveSurfacesSatisfied(const TaaResolveDesc& desc);
+/// True when resolve request passes all preflight guards (inverse of blocking skip).
+bool canAttemptTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// Stamp observed generation and return whether request can proceed (B5.9 deepen).
+bool prepareTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// Classify why resolve would skip — same ordering as `TaaResolve::wouldSkip` (B5.9 deepen).
 TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// True when resolve dimensions match allocated history buffer size.
