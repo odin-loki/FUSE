@@ -38,6 +38,14 @@ bool should_use_hrtf_ir(const HrtfIrStub& ir) {
     return has_hrtf_ir(ir);
 }
 
+bool should_skip_hrtf_convolution(const HrtfIrStub& ir) {
+    return is_empty_hrtf_ir(ir);
+}
+
+bool is_nonnull_zero_length_hrtf_ir(const HrtfIrStub& ir) {
+    return ir.samples != nullptr && ir.length == 0;
+}
+
 HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
                                   const Vec3& rel_listener) {
     if (!should_apply_hrtf_pan(hrtf_enabled, rel_listener)) {
@@ -51,6 +59,14 @@ HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
 
 HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener) {
     return resolve_hrtf_pan_path(hrtf_enabled, make_empty_hrtf_ir(), rel_listener);
+}
+
+bool is_hrtf_pan_bypassed(HrtfPanPath path) {
+    return is_hrtf_pan_path_bypass(path);
+}
+
+bool should_skip_hrtf_pan_path(HrtfPanPath path) {
+    return is_hrtf_pan_bypassed(path);
 }
 
 bool is_spatial_hrtf_pan_path(HrtfPanPath path) {
@@ -322,9 +338,28 @@ void apply_spatial_blend(BinauralPanGains& gains, float blend) {
     clamp_binaural_pan_gains(gains);
 }
 
+bool is_unity_hrtf_spatial_blend(float blend, float epsilon) {
+    return blend >= 1.f - epsilon;
+}
+
+void apply_hrtf_spatial_blend_guarded(BinauralPanGains& gains, float blend) {
+    if (is_unity_hrtf_spatial_blend(blend)) {
+        return;
+    }
+    apply_spatial_blend(gains, blend);
+}
+
+bool should_skip_hrtf_spatial_blend(float distance_attenuation, float occlusion_gain,
+                                    const HrtfAttenuationCoupling& coupling,
+                                    const BinauralPanParams& params) {
+    return is_unity_hrtf_spatial_blend(
+        compute_hrtf_spatial_blend(distance_attenuation, occlusion_gain, coupling, params));
+}
+
 void apply_hrtf_distance_factor(BinauralPanGains& gains, float distance_attenuation,
                                 const BinauralPanParams& params) {
-    apply_spatial_blend(gains, compute_hrtf_distance_factor(distance_attenuation, params));
+    apply_hrtf_spatial_blend_guarded(gains,
+                                     compute_hrtf_distance_factor(distance_attenuation, params));
 }
 
 float compute_hrtf_spatial_blend(float distance_attenuation, float occlusion_gain,
@@ -341,9 +376,11 @@ float compute_hrtf_spatial_blend(float distance_attenuation, float occlusion_gai
 void apply_hrtf_attenuation_coupling(BinauralPanGains& gains, float distance_attenuation,
                                      float occlusion_gain, const HrtfAttenuationCoupling& coupling,
                                      const BinauralPanParams& params) {
-    apply_spatial_blend(gains,
-                        compute_hrtf_spatial_blend(distance_attenuation, occlusion_gain, coupling,
-                                                   params));
+    if (should_skip_hrtf_spatial_blend(distance_attenuation, occlusion_gain, coupling, params)) {
+        return;
+    }
+    apply_hrtf_spatial_blend_guarded(
+        gains, compute_hrtf_spatial_blend(distance_attenuation, occlusion_gain, coupling, params));
 }
 
 void apply_hrtf_attenuation_coupling_for_path(BinauralPanGains& gains, HrtfPanPath path,
