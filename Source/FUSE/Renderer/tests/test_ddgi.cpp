@@ -2,6 +2,7 @@
 #include <fuse/math/vec.hpp>
 #include <fuse/renderer/deferred/frame_pipeline.hpp>
 #include <fuse/renderer/gi/ddgi.hpp>
+#include <fuse/renderer/gi/ddgi_kernels.hpp>
 #include <fuse/renderer/resource_manager.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
@@ -652,6 +653,132 @@ void testBilinearTileIrradiance() {
     expectNear(nullSample.x, 0.f, 1e-5f, "bilinear null samples returns zero");
 }
 
+void testProbeSampleCoordGuards() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+
+    fuse::renderer::ProbeSampleCoords built{};
+    expectTrue(fuse::renderer::ProbeGridLayout::buildProbeSampleCoords(desc, {0.5f, 0.5f, 0.5f}, built),
+               "buildProbeSampleCoords produces coords for interior sample");
+    expectTrue(fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, built),
+               "built sample coords pass validity guard");
+
+    fuse::renderer::ProbeSampleCoords reversed{};
+    reversed.x0 = 1u;
+    reversed.x1 = 0u;
+    reversed.y0 = 1u;
+    reversed.y1 = 0u;
+    reversed.z0 = 1u;
+    reversed.z1 = 0u;
+    reversed.tx = 0.25f;
+    reversed.ty = 0.75f;
+    reversed.tz = 0.5f;
+    expectTrue(!fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, reversed),
+               "reversed corner indices fail validity guard");
+    fuse::renderer::ProbeGridLayout::normalizeProbeSampleCoords(reversed);
+    expectTrue(fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, reversed),
+               "normalizeProbeSampleCoords fixes reversed corners");
+    expectTrue(reversed.x0 == 0u && reversed.x1 == 1u, "normalize swaps x corners into order");
+    expectNear(reversed.tx, 0.75f, 1e-5f, "normalize inverts tx when x corners swap");
+
+    fuse::renderer::ProbeSampleCoords oobWeights = built;
+    oobWeights.tx = 2.f;
+    oobWeights.ty = -1.f;
+    fuse::renderer::ProbeGridLayout::normalizeProbeSampleCoords(oobWeights);
+    expectTrue(fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, oobWeights),
+               "normalize clamps OOB trilinear weights");
+
+    fuse::renderer::ProbeSampleCoords oobIndices{};
+    oobIndices.x0 = 9u;
+    oobIndices.x1 = 9u;
+    oobIndices.y0 = 9u;
+    oobIndices.y1 = 9u;
+    oobIndices.z0 = 9u;
+    oobIndices.z1 = 9u;
+    expectTrue(!fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, oobIndices),
+               "OOB corner indices fail validity guard before clamp");
+    fuse::renderer::ProbeGridLayout::clampProbeSampleCoords(desc, oobIndices);
+    expectTrue(fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, oobIndices),
+               "clampProbeSampleCoords yields valid sample coords");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+    expectTrue(!fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(empty, built),
+               "empty grid sample coords invalid");
+}
+
+void testCacheIndexGuards() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+    desc.irradiance_res = 8;
+
+    expectTrue(fuse::renderer::ddgi_util::isCacheIndexValid(desc, 0u, 8u),
+               "origin probe index valid in full cache");
+    expectTrue(fuse::renderer::ddgi_util::isCacheIndexValid(desc, 7u, 8u),
+               "last probe index valid in full cache");
+    expectTrue(!fuse::renderer::ddgi_util::isCacheIndexValid(desc, 8u, 8u),
+               "probe index equal to cache length rejected");
+    expectTrue(!fuse::renderer::ddgi_util::isCacheIndexValid(desc, 99u, 8u),
+               "OOB probe index rejected even with full cache");
+    expectTrue(!fuse::renderer::ddgi_util::isCacheIndexValid(desc, 3u, 2u),
+               "in-range probe index rejected when cache undersized");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+    expectTrue(!fuse::renderer::ddgi_util::isCacheIndexValid(empty, 0u, 8u),
+               "cache index invalid on empty grid");
+}
+
+void testLaunchProbeUpdateGuards() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+
+    fuse::u32 validIndices[2] = {0u, 7u};
+    expectTrue(fuse::renderer::canLaunchProbeUpdate(desc, validIndices, 2u),
+               "canLaunch accepts in-range probe indices");
+    expectTrue(fuse::renderer::launch_ddgi_probe_update(desc, validIndices, 2u, nullptr),
+               "launch accepts in-range probe indices");
+
+    fuse::u32 oobIndices[2] = {0u, 99u};
+    expectTrue(!fuse::renderer::canLaunchProbeUpdate(desc, oobIndices, 2u),
+               "canLaunch rejects OOB probe indices");
+    expectTrue(!fuse::renderer::launch_ddgi_probe_update(desc, oobIndices, 2u, nullptr),
+               "launch rejects OOB probe indices");
+
+    expectTrue(!fuse::renderer::canLaunchProbeUpdate(desc, nullptr, 2u),
+               "canLaunch rejects null index buffer");
+    expectTrue(!fuse::renderer::canLaunchProbeUpdate(desc, validIndices, 0u),
+               "canLaunch rejects zero probe count");
+
+    fuse::renderer::gi::DDGIKernelParams validParams{};
+    validParams.probe_indices_to_update = validIndices;
+    validParams.probe_update_count = 2u;
+    validParams.rays_per_probe = 256u;
+    expectTrue(fuse::renderer::gi::isValidKernelLaunchParams(validParams),
+               "valid kernel params pass launch guard");
+    expectTrue(fuse::renderer::gi::launch_probe_trace_kernel(validParams, nullptr),
+               "trace kernel launch succeeds with valid params");
+    expectTrue(fuse::renderer::gi::launch_probe_blend_kernel(validParams, nullptr),
+               "blend kernel launch succeeds with valid params");
+
+    fuse::renderer::gi::DDGIKernelParams zeroCount = validParams;
+    zeroCount.probe_update_count = 0u;
+    expectTrue(!fuse::renderer::gi::isValidKernelLaunchParams(zeroCount),
+               "zero probe count fails kernel launch guard");
+    expectTrue(!fuse::renderer::gi::launch_probe_trace_kernel(zeroCount, nullptr),
+               "trace kernel rejects zero probe count");
+
+    fuse::renderer::gi::DDGIKernelParams nullIndices = validParams;
+    nullIndices.probe_indices_to_update = nullptr;
+    expectTrue(!fuse::renderer::gi::isValidKernelLaunchParams(nullIndices),
+               "null index buffer fails kernel launch guard");
+
+    fuse::renderer::gi::DDGIKernelParams zeroRays = validParams;
+    zeroRays.rays_per_probe = 0u;
+    expectTrue(!fuse::renderer::gi::isValidKernelLaunchParams(zeroRays),
+               "zero rays_per_probe fails kernel launch guard");
+}
+
 void testSampleGuards() {
     fuse::renderer::DDGIDesc desc{};
     desc.grid_dims = {2, 2, 2};
@@ -863,6 +990,9 @@ int main() {
     testProbeBorderCounts();
     testResolveSampleDirectionFromSurface();
     testEmptyDirectionGuards();
+    testProbeSampleCoordGuards();
+    testCacheIndexGuards();
+    testLaunchProbeUpdateGuards();
     testSampleGuards();
     testProbeWorldPositionClamped();
     testProbeAtlasLayout();
