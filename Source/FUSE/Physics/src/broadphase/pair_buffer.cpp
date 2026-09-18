@@ -15,6 +15,17 @@ CandidatePair canonicalPair(u32 idxA, u32 idxB) {
 
 } // namespace
 
+PairBufferDedupePreflight preflight_pair_buffer_dedupe(const PairBufferSoA& buffer) {
+    PairBufferDedupePreflight preflight{};
+    preflight.activeCount = buffer.activeCount;
+    preflight.skipped = buffer.canSkipDedupe();
+    return preflight;
+}
+
+bool should_skip_pair_buffer_dedupe(const PairBufferSoA& buffer) {
+    return !preflight_pair_buffer_dedupe(buffer).can_dedupe();
+}
+
 void PairBufferSoA::reserve(u32 capacity) {
     bodyA.reserve(capacity);
     bodyB.reserve(capacity);

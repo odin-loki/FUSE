@@ -137,6 +137,8 @@ struct CellRange2 {
     ivec2 maxCell{};
 };
 
+struct PairBufferSoA;
+
 /// True when any axis has an inverted min/max span (empty occupancy iteration).
 FUSE_PHYSICS_INLINE bool isEmptyCellRange(const CellRange3& range) {
     return range.minCell.x > range.maxCell.x || range.minCell.y > range.maxCell.y ||
@@ -214,6 +216,69 @@ FUSE_PHYSICS_INLINE bool cellOccupancyWithinBudget(const CellRange2& range, u32 
 FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {
     return uniqueBodyCount > 1u ? uniqueBodyCount * (uniqueBodyCount - 1u) / 2u : 0u;
 }
+
+/// Max occupancy budget from per-axis span clamp (0 = unlimited).
+FUSE_PHYSICS_INLINE u32 estimateMaxCellOccupancyBudget(u32 maxSpanPerAxis, bool use3D) {
+    if (maxSpanPerAxis == 0u) {
+        return 0u;
+    }
+    const u32 span = maxSpanPerAxis;
+    return use3D ? span * span * span : span * span;
+}
+
+/// Const preflight for broadphase dispatch (B4.2 deepen pass).
+struct BroadphasePreflight {
+    u32 bodyCount = 0;
+    u32 shapeCount = 0;
+    bool skipped = false;
+
+    bool can_dispatch() const { return !skipped; }
+};
+
+/// Populate broadphase preflight without running hash build (B4.2 deepen pass).
+BroadphasePreflight preflight_broadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Early-out guard for broadphase dispatch (B4.2 deepen pass).
+bool should_skip_broadphase(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
+
+/// Const preflight for shape cell-occupancy iteration (B4.2 deepen pass).
+struct CellOccupancyPreflight {
+    u32 estimatedCells = 0;
+    u32 maxCells = 0;
+    bool emptyRange = false;
+    bool exceedsBudget = false;
+    bool skipped = false;
+
+    bool can_iterate() const { return !skipped && !emptyRange && !exceedsBudget; }
+};
+
+/// Populate cell-occupancy preflight without iterating cells (B4.2 deepen pass).
+CellOccupancyPreflight preflight_cell_occupancy(const CellRange3& range, u32 maxCells);
+CellOccupancyPreflight preflight_cell_occupancy(const CellRange2& range, u32 maxCells);
+
+/// Const preflight for parallel pair refine (B4.2 deepen pass).
+struct RefineBroadphasePreflight {
+    u32 pairCount = 0;
+    u32 bodyCount = 0;
+    u32 shapeCount = 0;
+    bool skipped = false;
+
+    bool can_refine() const { return !skipped && pairCount > 0u; }
+};
+
+/// Populate refine preflight without invalidating pair slots (B4.2 deepen pass).
+RefineBroadphasePreflight preflight_refine_broadphase_pairs(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
+
+/// Early-out guard for parallel pair refine (B4.2 deepen pass).
+bool should_skip_refine_broadphase_pairs(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
 
 /// Clamp broadphase params to safe stub defaults (positive cell size, at least one bucket).
 FUSE_PHYSICS_INLINE SpatialHashParams normalizeSpatialHashParams(SpatialHashParams params) {
@@ -350,8 +415,6 @@ FUSE_PHYSICS_INLINE bool aabbOverlap(const aabb& a, const aabb& b) {
 FUSE_PHYSICS_INLINE bool sphereAabbOverlap(vec3 centerA, f32 radiusA, vec3 centerB, f32 radiusB) {
     return aabbOverlap(aabbFromSphere(centerA, radiusA), aabbFromSphere(centerB, radiusB));
 }
-
-struct PairBufferSoA;
 
 /// Job-safe broadphase: parallel shape→cell + per-cell pair generation into reusable SoA slots.
 void runBroadphaseIntoBuffer(
