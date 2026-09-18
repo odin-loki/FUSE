@@ -8,6 +8,7 @@
 namespace fuse::editor {
 
 struct MaterialEditState;
+struct MaterialInspectorRefreshInfo;
 
 /// Material inspector property identifiers (B6.7 deepen).
 enum class MaterialPropertyId : u8 {
@@ -33,6 +34,27 @@ public:
     /// Binding guard — bound with a live edit-state pointer (B6.7 deepen).
     [[nodiscard]] bool canPostProperty() const { return isBound() && m_editState != nullptr; }
 
+    /// True when any inspector property row is marked dirty (B6.7 deepen follow-up).
+    [[nodiscard]] bool hasAnyPropertyDirty() const { return m_dirtyMask != 0u; }
+
+    /// Refresh guard — bound with a live edit-state pointer (B6.7 deepen follow-up).
+    [[nodiscard]] bool canRefreshFromEditState() const { return canPostProperty(); }
+
+    /// Scalar try-get guard — bound and property id is a scalar field (B6.7 deepen follow-up).
+    [[nodiscard]] bool canTryGetPropertyScalar(MaterialPropertyId id) const;
+
+    /// Scalar try-set guard — bound and property id is a scalar field (B6.7 deepen follow-up).
+    [[nodiscard]] bool canTrySetPropertyScalar(MaterialPropertyId id) const;
+
+    /// Vec3 try-get guard — bound and property id is base color (B6.7 deepen follow-up).
+    [[nodiscard]] bool canTryGetPropertyVec3(MaterialPropertyId id) const;
+
+    /// Vec3 try-set guard — bound and property id is base color (B6.7 deepen follow-up).
+    [[nodiscard]] bool canTrySetPropertyVec3(MaterialPropertyId id) const;
+
+    /// Snapshot of refresh/dirty state for inspector wiring (B6.7 deepen follow-up).
+    [[nodiscard]] MaterialInspectorRefreshInfo refreshInfo() const;
+
     bool getRoughness(f32& out) const;
     bool getMetallic(f32& out) const;
     bool getBaseColor(f32& r, f32& g, f32& b) const;
@@ -57,6 +79,7 @@ public:
 
     [[nodiscard]] bool isPropertyDirty(MaterialPropertyId id) const;
     [[nodiscard]] bool needsPanelRefresh() const { return m_panelRefreshPending; }
+    [[nodiscard]] u32 dirtyPropertyMask() const { return m_dirtyMask; }
     [[nodiscard]] u32 coalescedDirtyCount() const { return m_coalescedDirtyCount; }
 
     void clearPropertyDirty(MaterialPropertyId id);

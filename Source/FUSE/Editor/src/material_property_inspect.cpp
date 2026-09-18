@@ -149,4 +149,29 @@ void clampMaterialEditState(MaterialEditState& state) {
     state.shadingModel = clampShadingModel(state.shadingModel);
 }
 
+bool shouldEarlyOutMaterialEdit(u32 catalogCount, u32 materialId) {
+    return isMaterialCatalogEmpty(catalogCount)
+        || isInvalidMaterialSlot(materialId, catalogCount);
+}
+
+bool canBindMaterialProperty(MaterialPropertyId id, u32 materialId, u32 catalogCount) {
+    return canBindMaterialSlot(materialId, catalogCount) && isMaterialPropertyIdValid(id);
+}
+
+bool canTryMaterialPropertyScalar(MaterialPropertyId id) {
+    return isMaterialPropertyIdValid(id) && !materialPropertyIsVec3(id);
+}
+
+bool canTryMaterialPropertyVec3(MaterialPropertyId id) {
+    return isMaterialPropertyIdValid(id) && materialPropertyIsVec3(id);
+}
+
+bool shouldRefreshMaterialInspector(const MaterialInspectorRefreshInfo& info) {
+    return info.pending || info.dirtyMask != 0u;
+}
+
+bool shouldSkipMaterialInspectorRefresh(bool isBound) {
+    return !isBound;
+}
+
 } // namespace fuse::editor

@@ -216,21 +216,21 @@ bool MaterialPropertyBinding::setPropertyVec3(MaterialPropertyId id, f32 x, f32 
 }
 
 bool MaterialPropertyBinding::tryGetProperty(MaterialPropertyId id, f32& out) const {
-    if (!canPostProperty() || !isMaterialPropertyIdValid(id)) {
+    if (!canTryGetPropertyScalar(id)) {
         return false;
     }
     return getProperty(id, out);
 }
 
 bool MaterialPropertyBinding::trySetProperty(MaterialPropertyId id, f32 value, CommandStack& cmds) {
-    if (!canPostProperty() || !isMaterialPropertyIdValid(id)) {
+    if (!canTrySetPropertyScalar(id)) {
         return false;
     }
     return setProperty(id, value, cmds);
 }
 
 bool MaterialPropertyBinding::tryGetPropertyVec3(MaterialPropertyId id, f32& x, f32& y, f32& z) const {
-    if (!canPostProperty() || !isMaterialPropertyIdValid(id) || id != MaterialPropertyId::BaseColor) {
+    if (!canTryGetPropertyVec3(id)) {
         return false;
     }
     return getPropertyVec3(id, x, y, z);
@@ -238,7 +238,7 @@ bool MaterialPropertyBinding::tryGetPropertyVec3(MaterialPropertyId id, f32& x, 
 
 bool MaterialPropertyBinding::trySetPropertyVec3(MaterialPropertyId id, f32 x, f32 y, f32 z,
                                                CommandStack& cmds) {
-    if (!canPostProperty() || !isMaterialPropertyIdValid(id) || id != MaterialPropertyId::BaseColor) {
+    if (!canTrySetPropertyVec3(id)) {
         return false;
     }
     return setPropertyVec3(id, x, y, z, cmds);
@@ -266,13 +266,33 @@ void MaterialPropertyBinding::markPanelRefreshed() {
 }
 
 void MaterialPropertyBinding::refreshFromEditState(const MaterialEditState& state) {
-    if (!isBound() || m_editState == nullptr) {
+    if (!canRefreshFromEditState()) {
         return;
     }
 
     *m_editState = state;
     clampMaterialEditState(*m_editState);
     markPanelRefreshed();
+}
+
+bool MaterialPropertyBinding::canTryGetPropertyScalar(MaterialPropertyId id) const {
+    return canPostProperty() && canTryMaterialPropertyScalar(id);
+}
+
+bool MaterialPropertyBinding::canTrySetPropertyScalar(MaterialPropertyId id) const {
+    return canPostProperty() && canTryMaterialPropertyScalar(id);
+}
+
+bool MaterialPropertyBinding::canTryGetPropertyVec3(MaterialPropertyId id) const {
+    return canPostProperty() && canTryMaterialPropertyVec3(id);
+}
+
+bool MaterialPropertyBinding::canTrySetPropertyVec3(MaterialPropertyId id) const {
+    return canPostProperty() && canTryMaterialPropertyVec3(id);
+}
+
+MaterialInspectorRefreshInfo MaterialPropertyBinding::refreshInfo() const {
+    return {m_panelRefreshPending, m_dirtyMask, m_coalescedDirtyCount};
 }
 
 } // namespace fuse::editor
