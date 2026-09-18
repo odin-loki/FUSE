@@ -271,12 +271,22 @@ bool hasEvents() {
     return eventCount() > 0u;
 }
 
-const ProfileEvent& eventAt(u32 index) {
-    static const ProfileEvent kEmpty{};
+bool isEventIndexValid(u32 index) {
     const u32 count = eventCount();
-    if (count == 0u || index >= count) {
-        return kEmpty;
+    return count > 0u && index < count;
+}
+
+const ProfileEvent& emptyProfileEvent() {
+    static const ProfileEvent kEmpty{};
+    return kEmpty;
+}
+
+const ProfileEvent& eventAt(u32 index) {
+    if (!isEventIndexValid(index)) {
+        return emptyProfileEvent();
     }
+
+    const u32 count = eventCount();
 
     const u32 head = g_writeHead.load(std::memory_order_acquire);
     const u32 start = head >= count ? head - count : 0u;
@@ -315,17 +325,25 @@ void beginAsyncFlow(const char* name, u32 flowId) {
 }
 
 void endAsyncFlow(const char* name, u32 flowId) {
-    if (!g_enabled.load(std::memory_order_acquire)) {
+    const bool enabled = g_enabled.load(std::memory_order_acquire);
+    const u32 flowDepth = currentFlowNestingDepth();
+
+    if (!enabled) {
+        if (flowDepth > 0u) {
+            popFlowNestingDepth();
+        }
         return;
     }
 
-    const u32 flowDepth = currentFlowNestingDepth();
     recordEvent(name,
                 EventPhase::FlowFinish,
                 flowId,
                 currentNestingDepth(),
                 flowDepth);
-    popFlowNestingDepth();
+
+    if (flowDepth > 0u) {
+        popFlowNestingDepth();
+    }
 }
 
 void sampleCounter(const char* track, s64 value) {
