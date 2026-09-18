@@ -33,6 +33,16 @@ void ToiBufferSoA::preparePairSlots(u32 pairCount) {
     pairSlotCount = pairCount;
     activeCount = 0;
     droppedCount = 0;
+    if (pairCount == 0u) {
+        toiValues.clear();
+        contactPoints.clear();
+        contactNormals.clear();
+        bodyA.clear();
+        bodyB.clear();
+        validFlags.clear();
+        return;
+    }
+
     toiValues.assign(pairCount, 0.f);
     contactPoints.assign(pairCount, {});
     contactNormals.assign(pairCount, {});
@@ -42,7 +52,7 @@ void ToiBufferSoA::preparePairSlots(u32 pairCount) {
 }
 
 void ToiBufferSoA::writeSlot(u32 slot, const TOIResult& result) {
-    if (slot >= pairSlotCount || !result.valid) {
+    if (pairSlotCount == 0u || slot >= pairSlotCount || !result.valid) {
         return;
     }
 
@@ -55,7 +65,7 @@ void ToiBufferSoA::writeSlot(u32 slot, const TOIResult& result) {
 }
 
 bool ToiBufferSoA::push(const TOIResult& result) {
-    if (!result.valid) {
+    if (!result.valid || pairSlotCount > 0u) {
         return false;
     }
 
@@ -118,13 +128,7 @@ u32 ToiBufferSoA::compact() {
         return activeCount;
     }
 
-    u32 validCount = 0u;
-    for (u32 i = 0u; i < pairSlotCount; ++i) {
-        if (validFlags[i] != 0u) {
-            ++validCount;
-        }
-    }
-
+    const u32 validCount = countValidSlots();
     if (validCount == 0u) {
         activeCount = 0u;
         return activeCount;
@@ -217,6 +221,20 @@ u32 ToiBufferSoA::compactAndSort() {
         sortByToi();
     }
     return applyMaxCapacityClamp();
+}
+
+u32 ToiBufferSoA::countValidSlots() const {
+    if (pairSlotCount == 0u) {
+        return activeCount;
+    }
+
+    u32 count = 0u;
+    for (u32 i = 0u; i < pairSlotCount; ++i) {
+        if (validFlags[i] != 0u) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 bool ToiBufferSoA::isSortedByToi() const {
