@@ -105,6 +105,35 @@ std::vector<std::string> CookDependencyGraph::successors(const std::string& node
     return succs;
 }
 
+std::size_t CookDependencyGraph::in_degree(const std::string& node_id) const {
+    if (node_id.empty() || m_nodes.empty() || !has_node_(node_id)) {
+        return 0;
+    }
+    return predecessors(node_id).size();
+}
+
+std::size_t CookDependencyGraph::out_degree(const std::string& node_id) const {
+    if (node_id.empty() || m_nodes.empty() || !has_node_(node_id)) {
+        return 0;
+    }
+    return successors(node_id).size();
+}
+
+std::vector<std::string> CookDependencyGraph::isolated_nodes() const {
+    if (m_nodes.empty()) {
+        return {};
+    }
+
+    std::vector<std::string> isolated;
+    for (const std::string& node : m_nodes) {
+        if (in_degree(node) == 0 && out_degree(node) == 0) {
+            isolated.push_back(node);
+        }
+    }
+    std::sort(isolated.begin(), isolated.end());
+    return isolated;
+}
+
 std::vector<std::string> CookDependencyGraph::roots() const {
     if (m_nodes.empty()) {
         return {};
@@ -393,6 +422,62 @@ CookInvalidationClosureResult CookDependencyGraph::merged_invalidation_closure(
     return result;
 }
 
+CookInvalidationClosureResult CookDependencyGraph::invalidation_bundle(
+    const std::string& from_job_id) const {
+    CookInvalidationClosureResult result;
+
+    if (from_job_id.empty() || m_nodes.empty() || !has_node_(from_job_id)) {
+        result.ok = false;
+        return result;
+    }
+
+    const CookInvalidationClosureResult downstream = transitive_successors(from_job_id);
+    if (!downstream.ok) {
+        result.ok = false;
+        return result;
+    }
+
+    result.job_ids.push_back(from_job_id);
+    result.job_ids.insert(result.job_ids.end(), downstream.job_ids.begin(), downstream.job_ids.end());
+    std::sort(result.job_ids.begin(), result.job_ids.end());
+    result.job_ids.erase(std::unique(result.job_ids.begin(), result.job_ids.end()), result.job_ids.end());
+    return result;
+}
+
+CookInvalidationClosureResult CookDependencyGraph::merged_invalidation_bundle(
+    const std::vector<std::string>& from_job_ids) const {
+    CookInvalidationClosureResult result;
+
+    if (m_nodes.empty() || from_job_ids.empty()) {
+        result.ok = false;
+        return result;
+    }
+
+    std::unordered_set<std::string> merged;
+    for (const std::string& seed : from_job_ids) {
+        if (seed.empty() || !has_node_(seed)) {
+            result.ok = false;
+            result.job_ids.clear();
+            return result;
+        }
+
+        const CookInvalidationClosureResult bundle = invalidation_bundle(seed);
+        if (!bundle.ok) {
+            result.ok = false;
+            result.job_ids.clear();
+            return result;
+        }
+
+        for (const std::string& job_id : bundle.job_ids) {
+            merged.insert(job_id);
+        }
+    }
+
+    result.job_ids.assign(merged.begin(), merged.end());
+    std::sort(result.job_ids.begin(), result.job_ids.end());
+    return result;
+}
+
 bool CookDependencyGraph::is_reachable(const std::string& from_id, const std::string& to_id) const {
     if (from_id.empty() || to_id.empty() || m_nodes.empty()) {
         return false;
@@ -459,6 +544,44 @@ std::vector<std::string> flatten_topological_layers(const CookDependencyLayerRes
         flattened.insert(flattened.end(), layer.begin(), layer.end());
     }
     return flattened;
+}
+
+bool is_valid_topological_order(const CookDependencyGraph& graph, const std::vector<std::string>& order) {
+    if (graph.empty()) {
+        return order.empty();
+    }
+
+    if (order.size() != graph.node_count()) {
+        return false;
+    }
+
+    const CookJobGraphOrderResult topo = graph.topological_order();
+    if (!topo.ok || topo.cycle_detected) {
+        return false;
+    }
+
+    std::unordered_map<std::string, std::size_t> positions;
+    for (std::size_t index = 0; index < order.size(); ++index) {
+        if (!graph.has_node(order[index])) {
+            return false;
+        }
+        if (!positions.emplace(order[index], index).second) {
+            return false;
+        }
+    }
+
+    for (const CookJobDependencyEdge& edge : graph.edges()) {
+        const auto from_it = positions.find(edge.from_job_id);
+        const auto to_it = positions.find(edge.to_job_id);
+        if (from_it == positions.end() || to_it == positions.end()) {
+            return false;
+        }
+        if (from_it->second >= to_it->second) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 CookDependencyCycleResult CookDependencyGraph::detect_cycle_edges() const {

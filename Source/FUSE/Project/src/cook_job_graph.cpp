@@ -273,6 +273,32 @@ CookInvalidationClosureResult CookJobGraph::merged_invalidation_closure(
     return m_dep_graph.merged_invalidation_closure(from_job_ids);
 }
 
+CookInvalidationClosureResult CookJobGraph::invalidation_bundle(const std::string& from_job_id) const {
+    if (m_jobs.empty()) {
+        CookInvalidationClosureResult result;
+        result.ok = false;
+        return result;
+    }
+    return m_dep_graph.invalidation_bundle(from_job_id);
+}
+
+CookInvalidationClosureResult CookJobGraph::merged_invalidation_bundle(
+    const std::vector<std::string>& from_job_ids) const {
+    if (m_jobs.empty()) {
+        CookInvalidationClosureResult result;
+        result.ok = false;
+        return result;
+    }
+    return m_dep_graph.merged_invalidation_bundle(from_job_ids);
+}
+
+bool CookJobGraph::is_valid_topological_order(const std::vector<std::string>& order) const {
+    if (m_jobs.empty()) {
+        return order.empty();
+    }
+    return fuse::project::is_valid_topological_order(m_dep_graph, order);
+}
+
 bool CookJobGraph::run_job_stages_(CookJob& job, AssetCooker& cooker, const CookManifest& manifest,
                                    CookJobGraphExecuteResult& result) {
     CookStageRecord& import_stage = job.stages[0];
