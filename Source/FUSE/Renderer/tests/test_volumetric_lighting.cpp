@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 
 namespace {
@@ -584,6 +585,105 @@ void testFroxelDensityCountValidationAndWriteGuards() {
                "bilinear sample clamps OOB interpolation weights internally");
 }
 
+void testFroxelDensityAccessAndClampGuards() {
+    fuse::renderer::FroxelGridDesc desc{};
+    desc.tilesX = 4;
+    desc.tilesY = 2;
+    desc.slicesZ = 3;
+
+    expectTrue(desc.maxFroxelIndex() == 23u, "desc max froxel index matches last cell");
+    expectTrue(fuse::renderer::FroxelGridLayout::maxFroxelIndex(desc) == desc.maxFroxelIndex(),
+               "layout max froxel index delegates to desc");
+    expectTrue(fuse::renderer::FroxelGridLayout::isAtMaxFroxelIndex(23u, desc),
+               "last index is at max froxel index");
+    expectTrue(!fuse::renderer::FroxelGridLayout::isAtMaxFroxelIndex(22u, desc),
+               "non-last index is not at max froxel index");
+
+    fuse::u32 clampedIndex = 0u;
+    expectTrue(fuse::renderer::FroxelGridLayout::tryClampFroxelIndex(17u, desc, clampedIndex),
+               "tryClamp succeeds on non-empty grid");
+    expectTrue(clampedIndex == 17u, "tryClamp preserves in-bounds index");
+
+    fuse::u32 clampedOob = 0u;
+    expectTrue(fuse::renderer::FroxelGridLayout::tryClampFroxelIndex(999u, desc, clampedOob),
+               "tryClamp succeeds when clamping OOB index");
+    expectTrue(clampedOob == desc.maxFroxelIndex(), "tryClamp clamps OOB index to max");
+
+    fuse::renderer::FroxelGridDesc zeroDesc{};
+    zeroDesc.tilesX = 0u;
+    fuse::u32 emptyClamp = 99u;
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryClampFroxelIndex(5u, zeroDesc, emptyClamp),
+               "tryClamp rejects empty grid");
+    expectTrue(emptyClamp == 0u, "tryClamp zeroes output on empty grid");
+    expectTrue(!fuse::renderer::FroxelGridLayout::isAtMaxFroxelIndex(0u, zeroDesc),
+               "empty grid has no max froxel index");
+
+    fuse::renderer::FroxelDensityGrid grid{};
+    grid.allocate(desc);
+    expectTrue(fuse::renderer::froxel_util::canLookupAtIndex(grid, desc, 0u),
+               "allocated grid passes lookup preflight");
+    expectTrue(fuse::renderer::froxel_util::canLookupAtIndex(grid, desc, 999u),
+               "lookup preflight ignores index when storage matches desc");
+
+    fuse::f32 sampled = 0.f;
+    expectTrue(fuse::renderer::froxel_util::tryWriteDensityAtIndex(grid, desc, 5u, 2.25f),
+               "tryWrite at index succeeds on accessible grid");
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtIndex(grid, desc, 5u, sampled),
+               "trySample at index succeeds on accessible grid");
+    expectNear(sampled, 2.25f, 1e-5f, "trySample returns written density");
+
+    fuse::f32 coordSample = 0.f;
+    expectTrue(fuse::renderer::froxel_util::tryWriteDensityAtCoord(grid, desc, 1u, 1u, 2u, 3.75f),
+               "tryWrite at coord succeeds on accessible grid");
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtCoord(grid, desc, 1u, 1u, 2u, coordSample),
+               "trySample at coord succeeds on accessible grid");
+    expectNear(coordSample, 3.75f, 1e-5f, "trySample at coord returns written density");
+
+    fuse::renderer::FroxelDensityGrid emptyGrid{};
+    fuse::f32 rejectedSample = 1.f;
+    expectTrue(!fuse::renderer::froxel_util::canLookupAtIndex(emptyGrid, desc, 0u),
+               "empty storage fails lookup preflight");
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityAtIndex(emptyGrid, desc, 0u, rejectedSample),
+               "trySample rejects empty storage");
+    expectNear(rejectedSample, 0.f, 1e-6f, "trySample zeroes output on rejection");
+    expectTrue(!fuse::renderer::froxel_util::tryWriteDensityAtIndex(emptyGrid, desc, 0u, 1.f),
+               "tryWrite rejects empty storage");
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityAtCoord(emptyGrid, desc, 0u, 0u, 0u, rejectedSample),
+               "trySample at coord rejects empty storage");
+    expectTrue(!fuse::renderer::froxel_util::tryWriteDensityAtCoord(emptyGrid, desc, 0u, 0u, 0u, 1.f),
+               "tryWrite at coord rejects empty storage");
+
+    fuse::renderer::FroxelGridDesc mismatched{};
+    mismatched.tilesX = 2;
+    mismatched.tilesY = 2;
+    mismatched.slicesZ = 2;
+    expectTrue(!fuse::renderer::froxel_util::canLookupAtIndex(grid, mismatched, 0u),
+               "desc mismatch fails lookup preflight");
+    expectTrue(!fuse::renderer::froxel_util::tryWriteDensityAtIndex(grid, mismatched, 0u, 9.f),
+               "tryWrite rejects desc mismatch");
+
+    fuse::renderer::GridDensityRejectReason reason = fuse::renderer::GridDensityRejectReason::None;
+    expectTrue(fuse::renderer::froxel_util::tryValidateGridDensity(grid, desc, reason),
+               "accessible grid validates density");
+    expectTrue(reason == fuse::renderer::GridDensityRejectReason::None, "valid grid reports no reject reason");
+    expectTrue(std::strcmp(fuse::renderer::gridDensityRejectReasonLabel(reason), "none") == 0,
+               "none reject reason label");
+
+    fuse::renderer::FroxelDensityGrid undersized{};
+    undersized.density.resize(desc.froxelCount() - 1u, 0.f);
+    expectTrue(!fuse::renderer::froxel_util::tryValidateGridDensity(undersized, desc, reason),
+               "undersized storage fails density validation");
+    expectTrue(reason == fuse::renderer::GridDensityRejectReason::UndersizedStorage,
+               "undersized storage reports undersized reject reason");
+    expectTrue(std::strcmp(fuse::renderer::gridDensityRejectReasonLabel(reason), "undersized_storage") == 0,
+               "undersized reject reason label");
+
+    expectTrue(fuse::renderer::froxel_util::tryValidateGridDensity(emptyGrid, zeroDesc, reason),
+               "empty desc vacuously validates density");
+    expectTrue(reason == fuse::renderer::GridDensityRejectReason::None,
+               "empty desc validation reports no reject reason");
+}
+
 void testZeroDimensionFroxelGrid() {
     fuse::renderer::FroxelGridDesc zeroDesc{};
     zeroDesc.tilesX = 0u;
@@ -727,6 +827,7 @@ int main() {
     testFroxelIndexClampAndLerpGuards();
     testFroxelGridDensityValidationAndCoordGuards();
     testFroxelDensityCountValidationAndWriteGuards();
+    testFroxelDensityAccessAndClampGuards();
     testEmptySceneVolumetricFog();
     testZeroDimensionFroxelGrid();
     testFroxelPopulateFromAnalyticFog();
