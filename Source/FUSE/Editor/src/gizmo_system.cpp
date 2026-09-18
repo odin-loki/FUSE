@@ -265,12 +265,65 @@ f32 snapDragDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings) 
     return snapValue(delta, mode, settings);
 }
 
+f32 snapStepForMode(GizmoMode mode, const GizmoSnapSettings& settings) {
+    if (!isSnapEnabled(mode, settings)) {
+        return 0.f;
+    }
+
+    switch (mode) {
+    case GizmoMode::Translate:
+        return settings.gridSize;
+    case GizmoMode::Rotate:
+        return settings.angleStepDegrees * 3.14159265f / 180.f;
+    case GizmoMode::Scale:
+        return settings.scaleGridStep;
+    }
+    return 0.f;
+}
+
+void clampSnapSettings(GizmoSnapSettings& settings) {
+    if (settings.gridSize <= kEpsilon) {
+        settings.gridSize = 1.f;
+    }
+    if (settings.angleStepDegrees <= kEpsilon) {
+        settings.angleStepDegrees = 15.f;
+    }
+    if (settings.scaleGridStep <= kEpsilon) {
+        settings.scaleGridStep = 0.1f;
+    }
+}
+
+bool isSnapSettingsValid(const GizmoSnapSettings& settings) {
+    return settings.gridSize > kEpsilon && settings.angleStepDegrees > kEpsilon &&
+           settings.scaleGridStep > kEpsilon;
+}
+
 bool isRayEmpty(const GizmoRay& ray) {
     return ray.direction.length() < kEpsilon;
 }
 
 bool isHitTestEmpty(const GizmoHitTest& hit) {
     return hit.viewportWidth <= kEpsilon || hit.viewportHeight <= kEpsilon;
+}
+
+bool canPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+                 GizmoSpace space, f32 axisLength, f32 pickRadius) {
+    GizmoAxis axis = GizmoAxis::None;
+    return tryPickAxis(ray, transform, mode, space, axisLength, pickRadius, axis);
+}
+
+bool canPickAxis(const GizmoHitTest& hit, GizmoMode mode) {
+    GizmoAxis axis = GizmoAxis::None;
+    return tryPickAxis(hit, mode, axis);
+}
+
+bool canBeginDrag(const GizmoHitTest& hit, GizmoMode mode) {
+    return !isHitTestEmpty(hit) && canPickAxis(hit, mode);
+}
+
+bool canBeginDrag(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+                  GizmoSpace space, f32 axisLength, f32 pickRadius) {
+    return canPickAxis(ray, transform, mode, space, axisLength, pickRadius);
 }
 
 bool tryPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
@@ -523,7 +576,7 @@ GizmoResult GizmoSystem::beginDrag(const GizmoHitTest& hit, const GizmoTransform
 bool GizmoSystem::tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& current,
                                GizmoResult& out) {
     out = {};
-    if (isHitTestEmpty(hit)) {
+    if (m_dragging || !fuse::editor::canBeginDrag(hit, m_mode)) {
         return false;
     }
 
@@ -546,6 +599,11 @@ bool GizmoSystem::tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& cu
 bool GizmoSystem::tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current,
                                GizmoResult& out) {
     out = {};
+    if (m_dragging ||
+        !fuse::editor::canBeginDrag(ray, current, m_mode, m_space, kAxisLength, kPickRadius)) {
+        return false;
+    }
+
     if (!tryPickAxis(ray, current, m_activeAxis)) {
         return false;
     }
@@ -563,18 +621,9 @@ bool GizmoSystem::tryBeginDrag(const GizmoRay& ray, const GizmoTransform& curren
 
 GizmoResult GizmoSystem::beginDrag(const GizmoRay& ray, const GizmoTransform& current) {
     GizmoResult result;
-    if (!tryPickAxis(ray, current, m_activeAxis)) {
+    if (!tryBeginDrag(ray, current, result)) {
         return result;
     }
-
-    m_dragging = true;
-    m_startTransform = current;
-    m_currentTransform = current;
-    m_lastHit = {};
-
-    result.active = true;
-    result.axis = m_activeAxis;
-    result.transform = m_currentTransform;
     return result;
 }
 
@@ -611,6 +660,28 @@ GizmoResult GizmoSystem::endDrag() {
     m_dragging = false;
     m_activeAxis = GizmoAxis::None;
     return result;
+}
+
+void GizmoSystem::cancelDrag() {
+    if (!m_dragging) {
+        return;
+    }
+
+    m_dragging = false;
+    m_activeAxis = GizmoAxis::None;
+    m_startTransform = {};
+    m_currentTransform = {};
+    m_lastHit = {};
+}
+
+bool GizmoSystem::canBeginDrag(const GizmoHitTest& hit, const GizmoTransform& transform) const {
+    (void)transform;
+    return !m_dragging && fuse::editor::canBeginDrag(hit, m_mode);
+}
+
+bool GizmoSystem::canBeginDrag(const GizmoRay& ray, const GizmoTransform& transform) const {
+    return !m_dragging &&
+           fuse::editor::canBeginDrag(ray, transform, m_mode, m_space, kAxisLength, kPickRadius);
 }
 
 GizmoAxis GizmoSystem::pickAxisScreen_(const GizmoHitTest& hit) const {
