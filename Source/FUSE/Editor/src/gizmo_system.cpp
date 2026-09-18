@@ -285,6 +285,23 @@ bool isHitTestEmpty(const GizmoHitTest& hit) {
     return hit.viewportWidth <= kEpsilon || hit.viewportHeight <= kEpsilon;
 }
 
+bool isRayValid(const GizmoRay& ray) {
+    return !isRayEmpty(ray);
+}
+
+bool isHitTestValid(const GizmoHitTest& hit) {
+    return !isHitTestEmpty(hit);
+}
+
+bool normalizeRay(GizmoRay& ray) {
+    const f32 len = ray.direction.length();
+    if (len < kEpsilon) {
+        return false;
+    }
+    ray.direction = ray.direction * (1.f / len);
+    return true;
+}
+
 bool isPickConfigValid(f32 axisLength, f32 pickRadius) {
     return axisLength > kEpsilon && pickRadius > kEpsilon;
 }
@@ -360,6 +377,41 @@ bool trySnapTransform(const GizmoTransform& transform, GizmoMode mode,
     return true;
 }
 
+bool trySnapValue(f32 value, GizmoMode mode, const GizmoSnapSettings& settings, f32& out) {
+    out = value;
+    if (!canApplySnap(mode, settings)) {
+        return false;
+    }
+
+    out = snapValue(value, mode, settings);
+    return true;
+}
+
+math::Vec3 snapPosition(const math::Vec3& position, const GizmoSnapSettings& settings) {
+    if (!settings.translateSnap) {
+        return position;
+    }
+    return {snapToGrid(position.x, settings.gridSize), snapToGrid(position.y, settings.gridSize),
+            snapToGrid(position.z, settings.gridSize)};
+}
+
+math::Vec3 snapEulerRadians(const math::Vec3& eulerRadians, const GizmoSnapSettings& settings) {
+    if (!settings.rotateSnap) {
+        return eulerRadians;
+    }
+    return {snapAngleRadians(eulerRadians.x, settings.angleStepDegrees),
+            snapAngleRadians(eulerRadians.y, settings.angleStepDegrees),
+            snapAngleRadians(eulerRadians.z, settings.angleStepDegrees)};
+}
+
+math::Vec3 snapScaleVec(const math::Vec3& scale, const GizmoSnapSettings& settings) {
+    if (!settings.scaleSnap) {
+        return scale;
+    }
+    return {snapScale(scale.x, settings.scaleGridStep), snapScale(scale.y, settings.scaleGridStep),
+            snapScale(scale.z, settings.scaleGridStep)};
+}
+
 f32 trySnapDragDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings) {
     if (!canApplySnap(mode, settings)) {
         return delta;
@@ -367,17 +419,40 @@ f32 trySnapDragDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& setting
     return snapValue(delta, mode, settings);
 }
 
-UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging) {
+UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoMode mode,
+                                        GizmoAxis activeAxis) {
     UpdateDragPreflight preflight{};
     if (!dragging) {
         preflight.notDragging = true;
         return preflight;
     }
 
-    if (isHitTestEmpty(hit)) {
-        preflight.emptyHit = true;
+    if (activeAxis == GizmoAxis::None) {
+        preflight.noActiveAxis = true;
+        return preflight;
     }
 
+    if (isHitTestEmpty(hit)) {
+        preflight.emptyHit = true;
+        return preflight;
+    }
+
+    if (isScreenHitMiss(hit, mode)) {
+        preflight.screenMiss = true;
+    }
+
+    return preflight;
+}
+
+bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoMode mode, GizmoAxis activeAxis) {
+    return preflightUpdateDrag(hit, dragging, mode, activeAxis).canUpdate();
+}
+
+EndDragPreflight preflightEndDrag(bool dragging) {
+    EndDragPreflight preflight{};
+    if (!dragging) {
+        preflight.notDragging = true;
+    }
     return preflight;
 }
 
@@ -729,7 +804,11 @@ bool GizmoSystem::trySnapTransform(const GizmoTransform& transform, GizmoTransfo
 }
 
 UpdateDragPreflight GizmoSystem::preflightUpdateDrag(const GizmoHitTest& hit) const {
-    return fuse::editor::preflightUpdateDrag(hit, m_dragging);
+    return fuse::editor::preflightUpdateDrag(hit, m_dragging, m_mode, m_activeAxis);
+}
+
+bool GizmoSystem::canUpdateDrag(const GizmoHitTest& hit) const {
+    return fuse::editor::canUpdateDrag(hit, m_dragging, m_mode, m_activeAxis);
 }
 
 GizmoResult GizmoSystem::beginDrag(const GizmoHitTest& hit, const GizmoTransform& current) {
@@ -794,25 +873,51 @@ GizmoResult GizmoSystem::beginDrag(const GizmoRay& ray, const GizmoTransform& cu
     return result;
 }
 
-GizmoResult GizmoSystem::updateDrag(const GizmoHitTest& hit) {
-    GizmoResult result;
+bool GizmoSystem::tryUpdateDrag(const GizmoHitTest& hit, GizmoResult& out) {
+    out = {};
     if (!preflightUpdateDrag(hit).canUpdate()) {
-        return result;
+        return false;
     }
 
     m_lastHit = hit;
     m_currentTransform = applySnapping_(applyAxisDelta_(hit, m_startTransform));
 
-    result.active = true;
-    result.changed = true;
-    result.axis = m_activeAxis;
-    result.transform = m_currentTransform;
+    out.active = true;
+    out.changed = true;
+    out.axis = m_activeAxis;
+    out.transform = m_currentTransform;
+    return true;
+}
+
+GizmoResult GizmoSystem::updateDrag(const GizmoHitTest& hit) {
+    GizmoResult result;
+    if (!tryUpdateDrag(hit, result)) {
+        return result;
+    }
     return result;
+}
+
+EndDragPreflight GizmoSystem::preflightEndDrag() const {
+    return fuse::editor::preflightEndDrag(m_dragging);
+}
+
+bool GizmoSystem::canEndDrag() const {
+    return preflightEndDrag().canEnd();
+}
+
+void GizmoSystem::cancelDrag() {
+    if (!m_dragging) {
+        return;
+    }
+
+    m_dragging = false;
+    m_activeAxis = GizmoAxis::None;
+    m_currentTransform = m_startTransform;
 }
 
 GizmoResult GizmoSystem::endDrag() {
     GizmoResult result;
-    if (!m_dragging) {
+    if (!preflightEndDrag().canEnd()) {
         return result;
     }
 
