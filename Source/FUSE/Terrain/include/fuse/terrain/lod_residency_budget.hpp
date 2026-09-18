@@ -162,4 +162,12 @@ struct LodResidencyBudgetCounters {
     return incoming_outranks_resident(incoming_priority, load_radius, resident_focus_distance);
 }
 
+/// True when resident cap pressure exists and the residency set can supply an eviction candidate.
+[[nodiscard]] inline bool can_attempt_budget_eviction(u32 max_resident_chunks, u32 resident_count,
+                                                        bool has_eviction_candidate,
+                                                        u32 incoming_count = 1u) {
+    return needs_budget_eviction_for_incoming(max_resident_chunks, resident_count, incoming_count) &&
+           has_eviction_candidate;
+}
+
 } // namespace fuse::terrain

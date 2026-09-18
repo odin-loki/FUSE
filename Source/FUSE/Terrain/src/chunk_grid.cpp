@@ -193,10 +193,11 @@ void ChunkGrid::collect_stream_candidates_(vec3 camera_pos) {
 }
 
 void ChunkGrid::evict_for_resident_cap_(f32 incoming_priority) {
-    if (!needs_budget_eviction(m_desc.max_resident_chunks, resident_chunk_count())) {
+    if (!needs_budget_eviction_for_incoming(m_desc.max_resident_chunks, resident_chunk_count())) {
         return;
     }
-    if (!m_residency_set.has_eviction_candidate()) {
+    if (!can_attempt_budget_eviction(m_desc.max_resident_chunks, resident_chunk_count(),
+                                     m_residency_set.has_eviction_candidate())) {
         ++m_budget_counters.eviction_skipped;
         return;
     }
@@ -208,10 +209,9 @@ void ChunkGrid::evict_for_resident_cap_(f32 incoming_priority) {
             break;
         }
 
-        const std::vector<u32> candidates = m_residency_set.collect_eviction_candidates();
         f32 eviction_score = -1.f;
-        const u32 eviction_index = pick_budget_eviction_candidate(
-            candidates,
+        const u32 eviction_index = pick_budget_eviction_candidate_from_set(
+            m_residency_set,
             [&](u32 chunk_index) { return m_residency_set.focus_distance_for(chunk_index); },
             incoming_priority, load_radius, LodEvictionPolicy::DistanceFromFocus, eviction_score);
         if (eviction_index == kInvalidChunkIndex) {

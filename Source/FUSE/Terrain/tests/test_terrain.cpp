@@ -265,6 +265,78 @@ void testPickBudgetEvictionCandidate() {
     expectNear(score, 20.f, 1e-4f, "picked candidate score recorded");
 }
 
+void testPickBudgetEvictionCandidateFromSet() {
+    fuse::terrain::LodResidencySet residency;
+    fuse::f32 score = -1.f;
+    const fuse::f32 load_radius = 24.f;
+    const fuse::u32 empty_pick = fuse::terrain::pick_budget_eviction_candidate_from_set(
+        residency,
+        [&](fuse::u32) { return 0.f; }, 100.f, load_radius,
+        fuse::terrain::LodEvictionPolicy::DistanceFromFocus, score);
+    expectEq(empty_pick, fuse::terrain::kInvalidChunkIndex, "empty residency guarded pick returns invalid index");
+    expectNear(score, -1.f, 1e-4f, "empty residency leaves score unset");
+
+    expectTrue(residency.add(5u, 900.f), "add far chunk");
+    const fuse::u32 picked = fuse::terrain::pick_budget_eviction_candidate_from_set(
+        residency,
+        [&](fuse::u32 chunk_index) { return residency.focus_distance_for(chunk_index); }, 950.f, load_radius,
+        fuse::terrain::LodEvictionPolicy::DistanceFromFocus, score);
+    expectEq(picked, 5u, "guarded set pick returns eligible candidate");
+    expectNear(score, 900.f, 1e-4f, "guarded set pick records candidate score");
+}
+
+void testHasBudgetEvictionCandidate() {
+    fuse::terrain::LodResidencySet residency;
+    const fuse::f32 load_radius = 24.f;
+    expectTrue(!fuse::terrain::has_budget_eviction_candidate(
+                   residency,
+                   [&](fuse::u32) { return 0.f; }, 100.f, load_radius,
+                   fuse::terrain::LodEvictionPolicy::DistanceFromFocus),
+               "empty residency has no budget eviction candidate");
+
+    expectTrue(residency.add(1u, 10.f), "add near chunk");
+    expectTrue(residency.add(5u, 20.f), "add far chunk");
+
+    expectTrue(!fuse::terrain::has_budget_eviction_candidate(
+                   residency,
+                   [&](fuse::u32 chunk_index) { return residency.focus_distance_for(chunk_index); }, 1.f,
+                   load_radius, fuse::terrain::LodEvictionPolicy::DistanceFromFocus),
+               "weak incoming yields no eligible budget candidate");
+    expectTrue(fuse::terrain::has_budget_eviction_candidate(
+                   residency,
+                   [&](fuse::u32 chunk_index) { return residency.focus_distance_for(chunk_index); }, 20.f,
+                   load_radius, fuse::terrain::LodEvictionPolicy::DistanceFromFocus),
+               "strong incoming finds eligible budget candidate");
+}
+
+void testCanAttemptBudgetEviction() {
+    expectTrue(!fuse::terrain::can_attempt_budget_eviction(2u, 2u, false),
+               "cap pressure without eviction candidate cannot attempt eviction");
+    expectTrue(fuse::terrain::can_attempt_budget_eviction(2u, 2u, true),
+               "cap pressure with eviction candidate can attempt eviction");
+    expectTrue(!fuse::terrain::can_attempt_budget_eviction(4u, 2u, true),
+               "under cap does not attempt budget eviction");
+    expectTrue(!fuse::terrain::can_attempt_budget_eviction(0u, 100u, false),
+               "unlimited cap never attempts budget eviction");
+}
+
+void testInvalidChunkIndexBudgetCandidateFilter() {
+    const std::vector<fuse::u32> candidates = {fuse::terrain::kInvalidChunkIndex, 3u, 1u};
+    const fuse::f32 load_radius = 24.f;
+    fuse::f32 score = -1.f;
+    const fuse::u32 picked = fuse::terrain::pick_budget_eviction_candidate(
+        candidates, [](fuse::u32 chunk_index) { return chunk_index == 3u ? 10.f : 100.f; }, 5.f, load_radius,
+        fuse::terrain::LodEvictionPolicy::DistanceFromFocus, score);
+    expectEq(picked, 1u, "invalid chunk index skipped in budget candidate pick");
+    expectNear(score, 100.f, 1e-4f, "picked score ignores invalid index entries");
+
+    const auto eligible = fuse::terrain::collect_budget_eviction_candidates(
+        candidates, [](fuse::u32 chunk_index) { return chunk_index == 3u ? 10.f : 100.f; }, 5.f, load_radius,
+        fuse::terrain::LodEvictionPolicy::DistanceFromFocus);
+    expectEq(static_cast<fuse::u32>(eligible.size()), 1u, "invalid chunk index skipped in budget candidate collect");
+    expectEq(eligible[0], 1u, "eligible list ignores invalid index entries");
+}
+
 void testPickEvictionCandidateGuarded() {
     fuse::terrain::LodResidencySet residency;
     expectEq(fuse::terrain::pick_eviction_candidate_guarded(residency), fuse::terrain::kInvalidChunkIndex,
@@ -390,6 +462,32 @@ void testChunkGridEmptyResidencyEarlyOut() {
     grid.destroy();
     expectTrue(grid.residency_set().empty(), "destroy clears residency set");
     expectEq(grid.resident_chunk_count(), 0u, "destroy clears resident chunks");
+}
+
+void testChunkGridEmptyResidencyBudgetReject() {
+    fuse::terrain::LodResidencySet residency;
+    expectTrue(residency.empty(), "fresh residency set is empty");
+    expectTrue(!fuse::terrain::can_attempt_budget_eviction(1u, 1u, residency.has_eviction_candidate()),
+               "empty residency cannot attempt budget eviction at cap");
+
+    fuse::terrain::ChunkGrid grid{};
+    fuse::terrain::TerrainDesc desc = makeTestDesc();
+    desc.async_loading = false;
+    desc.max_resident_chunks = 1;
+    desc.load_radius = 28.f;
+    grid.init(desc);
+
+    expectTrue(grid.residency_set().empty(), "grid starts with empty residency");
+    expectEq(grid.budget_counters().eviction_skipped, 0u, "empty grid has no eviction skips");
+
+    const fuse::u32 skipped_before = grid.budget_counters().eviction_skipped;
+    grid.update_lod({desc.world_size * 4.f, 0.f, desc.world_size * 4.f}, 0.016f);
+    expectEq(grid.resident_chunk_count(), 0u, "far camera keeps zero residents");
+    expectTrue(grid.residency_set().empty(), "far camera keeps residency set empty");
+    expectTrue(grid.budget_counters().eviction_skipped == skipped_before,
+               "empty residency does not increment eviction_skipped");
+
+    grid.destroy();
 }
 
 void testChunkGridEvictionSkippedWhenIncomingDoesNotOutrank() {
@@ -829,6 +927,34 @@ void testChunkGridAsyncResidency() {
     });
 }
 
+void testChunkGridAsyncInFlightCapGuard() {
+    withScheduler(1, [] {
+        fuse::terrain::ChunkGrid grid{};
+        fuse::terrain::TerrainDesc desc = makeTestDesc();
+        desc.async_loading = true;
+        desc.max_async_in_flight = 1;
+        desc.load_radius = 28.f;
+        grid.init(desc);
+
+        grid.update_lod({0.f, 0.f, 0.f}, 0.016f);
+        expectTrue(grid.in_flight_request_count() <= desc.max_async_in_flight,
+                   "initial async submit respects in-flight cap");
+        expectTrue(!fuse::terrain::can_submit_async_load(desc.max_async_in_flight, desc.max_async_in_flight),
+                   "at async cap blocks additional submits");
+
+        for (int frame = 0; frame < 64 && grid.resident_chunk_count() == 0u; ++frame) {
+            grid.drain_completed_requests();
+            grid.update_lod({0.f, 0.f, 0.f}, 0.016f);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        expectTrue(grid.resident_chunk_count() >= 1u, "in-flight cap carryover still completes loads");
+        expectEq(grid.in_flight_request_count(), 0u, "in-flight count returns to zero after drain");
+
+        grid.destroy();
+    });
+}
+
 void testHeightfieldRaycast() {
     fuse::terrain::Heightfield field{};
     const fuse::terrain::TerrainDesc desc = makeTestDesc();
@@ -901,6 +1027,10 @@ int main() {
     testIncomingOutranksResident();
     testIncomingOutranksEviction();
     testPickBudgetEvictionCandidate();
+    testPickBudgetEvictionCandidateFromSet();
+    testHasBudgetEvictionCandidate();
+    testCanAttemptBudgetEviction();
+    testInvalidChunkIndexBudgetCandidateFilter();
     testPickEvictionCandidateGuarded();
     testCollectBudgetEvictionCandidates();
     testAsyncInFlightBudgetGuards();
@@ -923,8 +1053,10 @@ int main() {
     testChunkGridLodTransitions();
     testChunkGridResidentCapEviction();
     testChunkGridEmptyResidencyEarlyOut();
+    testChunkGridEmptyResidencyBudgetReject();
     testChunkGridEvictionSkippedWhenIncomingDoesNotOutrank();
     testChunkGridAsyncResidency();
+    testChunkGridAsyncInFlightCapGuard();
     testHeightfieldRaycast();
     testTerrainFacade();
     fuse::core::shutdown();
