@@ -35,6 +35,21 @@ u32 InputHistoryBuffer::stored_frame_count() const {
     return m_newest_frame - m_oldest_frame + 1;
 }
 
+u32 InputHistoryBuffer::remaining_capacity() const {
+    if (m_capacity == 0) {
+        return 0;
+    }
+    return m_capacity - stored_frame_count();
+}
+
+InputReconcilePreflight InputHistoryBuffer::preflight_reconcile(u32 frame) const {
+    return preflight_reconcile_input(*this, frame);
+}
+
+bool InputHistoryBuffer::should_skip_reconcile(u32 frame) const {
+    return should_skip_reconcile_input(*this, frame);
+}
+
 void InputHistoryBuffer::push_frame(u32 frame, const PlayerInput& predicted) {
     store_predicted(frame, predicted);
 }
