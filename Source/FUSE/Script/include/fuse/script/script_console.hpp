@@ -35,11 +35,15 @@ public:
     [[nodiscard]] u32 historyCount() const { return m_history.count(); }
     [[nodiscard]] bool is_history_empty() const { return m_history.is_empty(); }
     [[nodiscard]] const std::string& historyAt(u32 index) const { return m_history.at(index); }
+    [[nodiscard]] const std::string& historyNewest() const { return m_history.newest(); }
+    [[nodiscard]] const std::string& historyOldest() const { return m_history.oldest(); }
 
     /// Navigate command history (`previous=true` recalls older entries).
     [[nodiscard]] const std::string& recallHistory(bool previous) { return m_history.recall(previous); }
     void resetHistoryNavigation() { m_history.resetNavigation(); }
     [[nodiscard]] s32 historyNavigationCursor() const { return m_history.navigationCursor(); }
+    [[nodiscard]] const std::string& historyNavigationEntry() const { return m_history.navigation_entry(); }
+    [[nodiscard]] bool is_history_navigating() const { return m_history.is_navigating(); }
 
     [[nodiscard]] const std::vector<std::string>& outputLines() const { return m_output; }
     void clearOutput();
