@@ -275,6 +275,81 @@ void testAttenuationCouplingForPath() {
                "coupled_for_path matches manual path gains + coupling");
 }
 
+void testMakeHrtfIrStubFactory() {
+    const float samples[] = {0.25f, -0.5f};
+    const fuse::audio::HrtfIrStub valid =
+        fuse::audio::make_hrtf_ir_stub(samples, static_cast<fuse::u32>(2));
+    expectTrue(fuse::audio::has_hrtf_ir(valid), "factory preserves valid IR");
+    expectTrue(!fuse::audio::is_empty_hrtf_ir(valid), "factory valid IR is not empty");
+
+    const fuse::audio::HrtfIrStub null_samples =
+        fuse::audio::make_hrtf_ir_stub(nullptr, 8);
+    expectTrue(fuse::audio::is_empty_hrtf_ir(null_samples),
+               "factory null samples returns empty IR");
+
+    const fuse::audio::HrtfIrStub zero_length =
+        fuse::audio::make_hrtf_ir_stub(samples, 0);
+    expectTrue(fuse::audio::is_empty_hrtf_ir(zero_length),
+               "factory zero length returns empty IR");
+    expectTrue(fuse::audio::make_hrtf_ir_stub(samples, 0).length == 0,
+               "factory zero length clears length field");
+}
+
+void testHrtfPanPathBypassGuards() {
+    expectTrue(fuse::audio::is_hrtf_pan_path_bypass(fuse::audio::HrtfPanPath::Bypass),
+               "bypass path is flagged as bypass");
+    expectTrue(!fuse::audio::is_hrtf_pan_path_bypass(fuse::audio::HrtfPanPath::IldItdStub),
+               "ILD/ITD stub is not bypass");
+    expectTrue(fuse::audio::should_skip_hrtf_spatial_pan(fuse::audio::HrtfPanPath::Bypass),
+               "bypass path skips spatial pan");
+    expectTrue(!fuse::audio::should_skip_hrtf_spatial_pan(fuse::audio::HrtfPanPath::Convolution),
+               "convolution path does not skip spatial pan");
+
+    expectTrue(fuse::audio::hrtf_pan_path_uses_ild_itd_stub(fuse::audio::HrtfPanPath::IldItdStub),
+               "ILD/ITD stub path predicate");
+    expectTrue(!fuse::audio::hrtf_pan_path_uses_ild_itd_stub(fuse::audio::HrtfPanPath::Convolution),
+               "convolution path is not ILD/ITD stub");
+
+    const fuse::audio::Vec3 offset{3.f, 0.f, 0.f};
+    expectTrue(fuse::audio::should_bypass_hrtf_pan(false, offset),
+               "disabled HRTF should bypass pan");
+    expectTrue(!fuse::audio::should_bypass_hrtf_pan(true, offset),
+               "enabled offset source should not bypass pan");
+    expectTrue(fuse::audio::should_bypass_hrtf_pan(true, fuse::audio::Vec3{}),
+               "co-located source should bypass pan");
+    expectTrue(fuse::audio::should_bypass_hrtf_pan(false, offset)
+                   == !fuse::audio::should_apply_hrtf_pan(false, offset),
+               "should_bypass_hrtf_pan inverts should_apply_hrtf_pan");
+}
+
+void testBinauralPanGainSampleHelpers() {
+    const fuse::audio::BinauralPanGains centre = fuse::audio::make_centre_binaural_pan_gains();
+    expectNear(fuse::audio::compute_binaural_pan_energy(centre), 0.5f, 1e-5f,
+               "centre pan energy is 0.5 under equal-power stub");
+
+    const fuse::audio::BinauralPanGains wide =
+        fuse::audio::compute_binaural_pan_gains(fuse::audio::Vec3{5.f, 0.f, 0.f});
+    expectTrue(fuse::audio::has_nonzero_itd(wide), "lateral pan has non-zero ITD stub");
+    expectTrue(!fuse::audio::has_nonzero_itd(centre), "centre pan has zero ITD");
+
+    fuse::audio::BinauralPanGains scaled = wide;
+    fuse::audio::scale_binaural_pan_gains(scaled, 0.5f);
+    expectNear(scaled.left, wide.left * 0.5f, 1e-5f, "scale halves left gain");
+    expectNear(scaled.right, wide.right * 0.5f, 1e-5f, "scale halves right gain");
+
+    float left = 0.f;
+    float right = 0.f;
+    fuse::audio::apply_binaural_pan_to_sample(1.f, wide, 0.5f, left, right);
+    expectNear(left, 0.5f * wide.left, 1e-5f, "apply_binaural_pan_to_sample scales left");
+    expectNear(right, 0.5f * wide.right, 1e-5f, "apply_binaural_pan_to_sample scales right");
+
+    left = 0.f;
+    right = 0.f;
+    fuse::audio::apply_centre_binaural_pan_to_sample(1.f, 0.25f, left, right);
+    expectNear(left, 0.25f, 1e-5f, "centre pan applies equal attenuated mono to left");
+    expectNear(right, 0.25f, 1e-5f, "centre pan applies equal attenuated mono to right");
+}
+
 } // namespace
 
 int main() {
@@ -292,6 +367,9 @@ int main() {
     testResolveHrtfPanPathWithoutIr();
     testClampHrtfAttenuation();
     testAttenuationCouplingForPath();
+    testMakeHrtfIrStubFactory();
+    testHrtfPanPathBypassGuards();
+    testBinauralPanGainSampleHelpers();
     fuse::core::shutdown();
 
     if (g_failures == 0) {
