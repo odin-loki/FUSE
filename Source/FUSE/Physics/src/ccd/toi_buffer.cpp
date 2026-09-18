@@ -27,6 +27,12 @@ void ToiBufferSoA::clear() {
     activeCount = 0;
     pairSlotCount = 0;
     droppedCount = 0;
+    toiValues.clear();
+    contactPoints.clear();
+    contactNormals.clear();
+    bodyA.clear();
+    bodyB.clear();
+    validFlags.clear();
 }
 
 void ToiBufferSoA::preparePairSlots(u32 pairCount) {
@@ -60,14 +66,42 @@ void ToiBufferSoA::writeSlot(u32 slot, const TOIResult& result) {
 }
 
 void ToiBufferSoA::invalidateSlot(u32 slot) {
-    if (slot >= validFlags.size()) {
+    if (canSkipSoAIteration()) {
         return;
     }
+
+    if (pairSlotCount > 0u) {
+        if (slot >= pairSlotCount) {
+            return;
+        }
+    } else if (slot >= validFlags.size()) {
+        return;
+    }
+
     validFlags[slot] = 0u;
 }
 
 bool ToiBufferSoA::slotIsValid(u32 slot) const {
-    return slot < validFlags.size() && validFlags[slot] != 0u;
+    if (canSkipSoAIteration()) {
+        return false;
+    }
+
+    if (pairSlotCount > 0u) {
+        return slot < pairSlotCount && validFlags[slot] != 0u;
+    }
+
+    return slot < activeCount && slot < validFlags.size() && validFlags[slot] != 0u;
+}
+
+u32 ToiBufferSoA::remainingCapacity() const {
+    if (maxCapacity == 0u) {
+        return UINT32_MAX;
+    }
+    return activeCount < maxCapacity ? maxCapacity - activeCount : 0u;
+}
+
+bool ToiBufferSoA::canApplyMaxCapacityClamp() const {
+    return !canSkipSoAIteration() && maxCapacity > 0u && activeCount > maxCapacity;
 }
 
 u32 ToiBufferSoA::countValidSlots() const {
@@ -230,7 +264,7 @@ u32 ToiBufferSoA::compact() {
 }
 
 u32 ToiBufferSoA::applyMaxCapacityClamp() {
-    if (canSkipSoAIteration() || maxCapacity == 0u || activeCount <= maxCapacity) {
+    if (!canApplyMaxCapacityClamp()) {
         return activeCount;
     }
 
@@ -269,7 +303,7 @@ u32 ToiBufferSoA::compactAndSort() {
         return 0u;
     }
 
-    if (!isSortedByToi()) {
+    if (!canSkipSort()) {
         sortByToi();
     }
     return applyMaxCapacityClamp();
