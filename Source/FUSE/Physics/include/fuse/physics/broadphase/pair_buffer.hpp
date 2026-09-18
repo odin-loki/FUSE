@@ -30,6 +30,8 @@ struct PairBufferSoA {
     u32 remainingCapacity() const;
     /// True when post-pass truncation would drop pairs.
     bool canApplyMaxCapacityClamp() const;
+    /// Inverse of `canApplyMaxCapacityClamp` (B4.2 deepen follow-up).
+    bool canSkipMaxCapacityClamp() const { return !canApplyMaxCapacityClamp(); }
     /// True when both dense and slot storage are empty (safe to skip SoA scans).
     bool canSkipSoAIteration() const { return activeCount == 0u && pairSlotCount == 0u; }
     /// True when at most one canonical pair is present (dedupe is a no-op).
@@ -41,6 +43,8 @@ struct PairBufferSoA {
     bool slotIsValid(u32 slot) const;
 
     void reserve(u32 capacity);
+    /// Reserve pair slots for `uniqueBodyCount` canonical pairs (B4.2 deepen follow-up).
+    void reserveForUniqueBodies(u32 uniqueBodyCount);
     void setMaxCapacity(u32 capacity);
     void clear();
     void preparePairSlots(u32 slotCount);

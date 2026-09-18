@@ -21,6 +21,10 @@ void PairBufferSoA::reserve(u32 capacity) {
     validFlags.reserve(capacity);
 }
 
+void PairBufferSoA::reserveForUniqueBodies(u32 uniqueBodyCount) {
+    reserve(estimatePairCountForUniqueBodies(uniqueBodyCount));
+}
+
 void PairBufferSoA::setMaxCapacity(u32 capacity) {
     maxCapacity = capacity;
 }
