@@ -169,6 +169,28 @@ bool is_trigger_contact_pair(
     return triggerA && triggerB;
 }
 
+bool is_static_static_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies) {
+    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
+        return false;
+    }
+    const bool staticA = (bodies.flags[pair.bodyA] & RB_STATIC) != 0u;
+    const bool staticB = (bodies.flags[pair.bodyB] & RB_STATIC) != 0u;
+    return staticA && staticB;
+}
+
+bool is_both_sleeping_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies) {
+    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
+        return false;
+    }
+    const bool sleepingA = (bodies.flags[pair.bodyA] & RB_SLEEPING) != 0u;
+    const bool sleepingB = (bodies.flags[pair.bodyB] & RB_SLEEPING) != 0u;
+    return sleepingA && sleepingB;
+}
+
 bool is_unsupported_shape_pair(
     const broadphase::CandidatePair& pair,
     const CollisionShapeSoA& shapes) {
@@ -220,10 +242,46 @@ ContactPairRejectReason contact_pair_reject_reason(
     if (is_trigger_contact_pair(pair, bodies)) {
         return ContactPairRejectReason::BothTriggers;
     }
+    if (is_static_static_pair(pair, bodies)) {
+        return ContactPairRejectReason::BothStatic;
+    }
+    if (is_both_sleeping_pair(pair, bodies)) {
+        return ContactPairRejectReason::BothSleeping;
+    }
     if (is_unsupported_shape_pair(pair, shapes)) {
         return ContactPairRejectReason::UnsupportedShapePair;
     }
     return ContactPairRejectReason::None;
+}
+
+bool contact_pair_should_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return contact_pair_reject_reason(pair, bodies, shapes) == ContactPairRejectReason::None;
+}
+
+const char* contact_pair_reject_reason_label(ContactPairRejectReason reason) {
+    switch (reason) {
+    case ContactPairRejectReason::None:
+        return "none";
+    case ContactPairRejectReason::SelfPair:
+        return "self_pair";
+    case ContactPairRejectReason::OutOfRangeBody:
+        return "out_of_range_body";
+    case ContactPairRejectReason::MissingShape:
+        return "missing_shape";
+    case ContactPairRejectReason::BothTriggers:
+        return "both_triggers";
+    case ContactPairRejectReason::BothStatic:
+        return "both_static";
+    case ContactPairRejectReason::BothSleeping:
+        return "both_sleeping";
+    case ContactPairRejectReason::UnsupportedShapePair:
+        return "unsupported_shape_pair";
+    default:
+        return "unknown";
+    }
 }
 
 bool is_invalid_contact_pair(
@@ -249,7 +307,7 @@ bool generate_contact_manifold(ContactManifold& manifold) {
         return false;
     }
 
-    manifold.pruneContactPoints();
+    manifold.pruneAndRetainPenetrating();
     if (manifold.empty()) {
         manifold.clear();
         return false;

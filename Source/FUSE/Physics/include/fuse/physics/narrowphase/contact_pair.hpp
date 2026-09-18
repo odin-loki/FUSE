@@ -14,6 +14,8 @@ enum class ContactPairRejectReason : u8 {
     OutOfRangeBody,
     MissingShape,
     BothTriggers,
+    BothStatic,
+    BothSleeping,
     UnsupportedShapePair,
 };
 
@@ -33,6 +35,25 @@ bool is_invalid_contact_pair(
 bool is_trigger_contact_pair(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies);
+
+/// Returns true when both bodies are static (no dynamic response stub).
+bool is_static_static_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies);
+
+/// Returns true when both bodies are sleeping (solver early-out stub).
+bool is_both_sleeping_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies);
+
+/// Returns true when narrowphase dispatch may proceed for this pair.
+bool contact_pair_should_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Human-readable label for diagnostics and tests (B4.3 deepen).
+const char* contact_pair_reject_reason_label(ContactPairRejectReason reason);
 
 /// Returns true when the resolved shape types have no narrowphase dispatch path.
 bool is_unsupported_shape_pair(

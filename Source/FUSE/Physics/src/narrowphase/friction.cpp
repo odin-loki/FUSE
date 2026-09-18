@@ -103,4 +103,50 @@ bool hasNegligibleTangentialVelocity(vec2 projected, f32 speedThreshold) {
     return speedSq <= speedThreshold * speedThreshold;
 }
 
+bool should_skip_friction_for_manifold(
+    const ContactManifold& manifold,
+    f32 staticFriction,
+    f32 dynamicFriction,
+    f32 normalImpulse,
+    f32 impulseEpsilon) {
+    if (should_skip_friction_tangents(manifold)) {
+        return true;
+    }
+    return should_skip_friction_solve(staticFriction, dynamicFriction, normalImpulse, impulseEpsilon);
+}
+
+vec2 combine_body_friction_coefficients(
+    const RigidBodySoA& bodies,
+    u32 bodyA,
+    u32 bodyB) {
+    if (bodyA >= bodies.count() || bodyB >= bodies.count()) {
+        return {};
+    }
+
+    const f32 staticA = bodies.frictionStatic[bodyA];
+    const f32 staticB = bodies.frictionStatic[bodyB];
+    const f32 dynamicA = bodies.frictionDynamic[bodyA];
+    const f32 dynamicB = bodies.frictionDynamic[bodyB];
+    return {
+        std::sqrt(staticA * staticB),
+        std::sqrt(dynamicA * dynamicB),
+    };
+}
+
+bool should_rebuild_friction_basis(
+    vec3 previousNormal,
+    vec3 currentNormal,
+    f32 angleThresholdRadians) {
+    const f32 previousLength = previousNormal.length();
+    const f32 currentLength = currentNormal.length();
+    if (previousLength <= 1e-8f || currentLength <= 1e-8f) {
+        return true;
+    }
+
+    const vec3 unitPrevious = previousNormal * (1.f / previousLength);
+    const vec3 unitCurrent = currentNormal * (1.f / currentLength);
+    const f32 cosine = std::max(-1.f, std::min(1.f, unitPrevious.dot(unitCurrent)));
+    return std::acos(cosine) > angleThresholdRadians;
+}
+
 } // namespace fuse::physics::narrowphase

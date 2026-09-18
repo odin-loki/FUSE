@@ -2,6 +2,7 @@
 
 #include <fuse/physics/config.hpp>
 #include <fuse/physics/math.hpp>
+#include <fuse/physics/physics_data.hpp>
 #include <fuse/types.hpp>
 
 namespace fuse::physics::narrowphase {
@@ -50,5 +51,25 @@ bool should_skip_friction_solve(
 
 /// Returns true when tangential speed is below the solver stub threshold (B4.3 deepen).
 bool hasNegligibleTangentialVelocity(vec2 projected, f32 speedThreshold = 1e-6f);
+
+/// Returns true when friction response should be skipped for this manifold and coefficients (B4.3 deepen).
+bool should_skip_friction_for_manifold(
+    const ContactManifold& manifold,
+    f32 staticFriction,
+    f32 dynamicFriction,
+    f32 normalImpulse = 0.f,
+    f32 impulseEpsilon = 1e-8f);
+
+/// Combine per-body friction coefficients using geometric-mean stub (B4.3 deepen).
+vec2 combine_body_friction_coefficients(
+    const RigidBodySoA& bodies,
+    u32 bodyA,
+    u32 bodyB);
+
+/// Returns true when the contact normal changed enough to invalidate a cached basis (B4.3 deepen).
+bool should_rebuild_friction_basis(
+    vec3 previousNormal,
+    vec3 currentNormal,
+    f32 angleThresholdRadians = 1e-3f);
 
 } // namespace fuse::physics::narrowphase
