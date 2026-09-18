@@ -46,6 +46,49 @@ bool is_nonnull_zero_length_hrtf_ir(const HrtfIrStub& ir) {
     return ir.samples != nullptr && ir.length == 0;
 }
 
+const char* hrtf_ir_reject_reason_label(HrtfIrRejectReason reason) {
+    switch (reason) {
+    case HrtfIrRejectReason::None:
+        return "None";
+    case HrtfIrRejectReason::EmptyIr:
+        return "EmptyIr";
+    case HrtfIrRejectReason::NullSamples:
+        return "NullSamples";
+    case HrtfIrRejectReason::ZeroLength:
+        return "ZeroLength";
+    default:
+        return "Unknown";
+    }
+}
+
+bool try_preflight_hrtf_ir_convolution(const HrtfIrStub& ir, HrtfIrRejectReason& outReason) {
+    if (has_hrtf_ir(ir)) {
+        outReason = HrtfIrRejectReason::None;
+        return true;
+    }
+
+    if (is_nonnull_zero_length_hrtf_ir(ir)) {
+        outReason = HrtfIrRejectReason::ZeroLength;
+        return false;
+    }
+    if (ir.samples == nullptr && ir.length > 0) {
+        outReason = HrtfIrRejectReason::NullSamples;
+        return false;
+    }
+
+    outReason = HrtfIrRejectReason::EmptyIr;
+    return false;
+}
+
+bool preflight_hrtf_ir_convolution(const HrtfIrStub& ir, HrtfIrRejectReason* reason) {
+    HrtfIrRejectReason localReason = HrtfIrRejectReason::None;
+    const bool ok = try_preflight_hrtf_ir_convolution(ir, localReason);
+    if (reason != nullptr) {
+        *reason = localReason;
+    }
+    return ok;
+}
+
 HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
                                   const Vec3& rel_listener) {
     if (!should_apply_hrtf_pan(hrtf_enabled, rel_listener)) {
@@ -91,6 +134,76 @@ bool is_bypass_hrtf_pan_path(HrtfPanPath path) {
 
 bool should_skip_hrtf_spatial_pan(HrtfPanPath path) {
     return is_hrtf_pan_path_bypass(path);
+}
+
+const char* hrtf_pan_path_reject_reason_label(HrtfPanPathRejectReason reason) {
+    switch (reason) {
+    case HrtfPanPathRejectReason::None:
+        return "None";
+    case HrtfPanPathRejectReason::Disabled:
+        return "Disabled";
+    case HrtfPanPathRejectReason::CoLocated:
+        return "CoLocated";
+    default:
+        return "Unknown";
+    }
+}
+
+bool try_preflight_hrtf_spatial_pan(bool hrtf_enabled, const Vec3& rel_listener,
+                                   HrtfPanPath& outPath, HrtfPanPathRejectReason& outReason) {
+    outPath = resolve_hrtf_pan_path(hrtf_enabled, rel_listener);
+    if (!hrtf_enabled) {
+        outReason = HrtfPanPathRejectReason::Disabled;
+        return false;
+    }
+    if (is_co_located_hrtf_source(rel_listener)) {
+        outReason = HrtfPanPathRejectReason::CoLocated;
+        return false;
+    }
+
+    outReason = HrtfPanPathRejectReason::None;
+    return true;
+}
+
+bool preflight_hrtf_spatial_pan(bool hrtf_enabled, const Vec3& rel_listener,
+                                HrtfPanPath* out_path, HrtfPanPathRejectReason* reason) {
+    HrtfPanPath path = HrtfPanPath::Bypass;
+    HrtfPanPathRejectReason localReason = HrtfPanPathRejectReason::None;
+    const bool ok = try_preflight_hrtf_spatial_pan(hrtf_enabled, rel_listener, path, localReason);
+    if (out_path != nullptr) {
+        *out_path = path;
+    }
+    if (reason != nullptr) {
+        *reason = localReason;
+    }
+    return ok;
+}
+
+bool preflight_hrtf_spatial_pan(bool hrtf_enabled, const HrtfIrStub& ir,
+                                const Vec3& rel_listener, HrtfPanPath* out_path,
+                                HrtfPanPathRejectReason* reason) {
+    HrtfPanPath path = resolve_hrtf_pan_path(hrtf_enabled, ir, rel_listener);
+    if (out_path != nullptr) {
+        *out_path = path;
+    }
+
+    if (!hrtf_enabled) {
+        if (reason != nullptr) {
+            *reason = HrtfPanPathRejectReason::Disabled;
+        }
+        return false;
+    }
+    if (is_co_located_hrtf_source(rel_listener)) {
+        if (reason != nullptr) {
+            *reason = HrtfPanPathRejectReason::CoLocated;
+        }
+        return false;
+    }
+
+    if (reason != nullptr) {
+        *reason = HrtfPanPathRejectReason::None;
+    }
+    return true;
 }
 
 bool is_co_located_hrtf_source(const Vec3& rel_listener) {
@@ -322,6 +435,48 @@ bool should_narrow_hrtf_spatial_image(HrtfPanPath path, float distance_attenuati
                                       float occlusion_gain) {
     return should_apply_hrtf_attenuation_coupling(path)
         && !is_unity_hrtf_attenuation(distance_attenuation, occlusion_gain);
+}
+
+const char* hrtf_attenuation_coupling_reject_reason_label(HrtfAttenuationCouplingRejectReason reason) {
+    switch (reason) {
+    case HrtfAttenuationCouplingRejectReason::None:
+        return "None";
+    case HrtfAttenuationCouplingRejectReason::BypassPath:
+        return "BypassPath";
+    case HrtfAttenuationCouplingRejectReason::UnityAttenuation:
+        return "UnityAttenuation";
+    default:
+        return "Unknown";
+    }
+}
+
+bool try_preflight_hrtf_attenuation_coupling(HrtfPanPath path, float distance_attenuation,
+                                             float occlusion_gain,
+                                             HrtfAttenuationCouplingRejectReason& outReason) {
+    if (should_skip_hrtf_attenuation_coupling(path)) {
+        outReason = HrtfAttenuationCouplingRejectReason::BypassPath;
+        return false;
+    }
+    if (is_unity_hrtf_attenuation(distance_attenuation, occlusion_gain)) {
+        outReason = HrtfAttenuationCouplingRejectReason::UnityAttenuation;
+        return false;
+    }
+
+    outReason = HrtfAttenuationCouplingRejectReason::None;
+    return true;
+}
+
+bool preflight_hrtf_attenuation_coupling(HrtfPanPath path, float distance_attenuation,
+                                         float occlusion_gain,
+                                         HrtfAttenuationCouplingRejectReason* reason) {
+    HrtfAttenuationCouplingRejectReason localReason = HrtfAttenuationCouplingRejectReason::None;
+    const bool ok =
+        try_preflight_hrtf_attenuation_coupling(path, distance_attenuation, occlusion_gain,
+                                                localReason);
+    if (reason != nullptr) {
+        *reason = localReason;
+    }
+    return ok;
 }
 
 float compute_hrtf_distance_factor(float distance_attenuation,
