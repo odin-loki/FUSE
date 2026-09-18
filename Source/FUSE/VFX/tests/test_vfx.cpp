@@ -1395,6 +1395,87 @@ void testParticleGpuMirrorSyncSkipGuards() {
     expectTrue(!empty_upload.can_upload(), "empty CPU blocks device upload");
 }
 
+void testParticleGpuSlotOffsetGuards() {
+    using fuse::vfx::ParticleGpuBufferLayout;
+    using fuse::vfx::ParticleGpuColumn;
+
+    const fuse::u32 capacity = 65u;
+    expectEq(static_cast<fuse::u32>(ParticleGpuBufferLayout::slotLocalByteOffset(ParticleGpuColumn::Positions, 3u)),
+             static_cast<fuse::u32>(3u * sizeof(fuse::math::Vec3)),
+             "slotLocalByteOffset advances by element size");
+
+    expectTrue(ParticleGpuBufferLayout::validateSlotDeviceOffset(ParticleGpuColumn::Positions, 0u, capacity),
+               "first positions slot validates");
+    expectTrue(ParticleGpuBufferLayout::validateSlotDeviceOffset(ParticleGpuColumn::Ages, 4u, capacity),
+               "ages slot validates within column span");
+    expectTrue(!ParticleGpuBufferLayout::validateSlotDeviceOffset(ParticleGpuColumn::Positions, capacity, capacity),
+               "slot equal to capacity fails validation");
+
+    const fuse::usize positions_slot_2 =
+        ParticleGpuBufferLayout::slotDeviceOffset(ParticleGpuColumn::Positions, 2u, capacity);
+    fuse::vfx::ParticleGpuColumn located_column = ParticleGpuColumn::AliveFlags;
+    fuse::u32 located_slot = 999u;
+    expectTrue(ParticleGpuBufferLayout::locateSlotAtOffset(positions_slot_2, capacity, &located_column, &located_slot),
+               "locateSlotAtOffset resolves positions slot");
+    expectEq(static_cast<fuse::u32>(located_column), static_cast<fuse::u32>(ParticleGpuColumn::Positions),
+             "located column is positions");
+    expectEq(located_slot, 2u, "located slot index matches request");
+
+    const fuse::usize padding_offset =
+        ParticleGpuBufferLayout::columnDeviceOffset(ParticleGpuColumn::Positions, capacity) +
+        ParticleGpuBufferLayout::columnByteSize(ParticleGpuColumn::Positions, capacity);
+    fuse::vfx::ParticleGpuColumn padding_column = ParticleGpuColumn::Positions;
+    fuse::u32 padding_slot = 0u;
+    expectTrue(!ParticleGpuBufferLayout::locateSlotAtOffset(padding_offset, capacity, &padding_column, &padding_slot),
+               "inter-column padding is not a valid slot offset");
+}
+
+void testParticleGpuFrameDispatchPreflight() {
+    const fuse::vfx::ParticleGpuFramePlan active =
+        fuse::vfx::ParticleGpuFramePlan::forStub(100u, 200u, 48u);
+    const fuse::vfx::ParticleGpuDispatchPreflight dispatch_preflight = active.dispatchPreflight();
+    expectTrue(dispatch_preflight.ready_for_stub(), "frame dispatch preflight is stub-ready");
+    expectTrue(!dispatch_preflight.skip_sim_launch, "frame dispatch preflight launches sim");
+    expectTrue(!dispatch_preflight.skip_emit_launch, "frame dispatch preflight launches emit");
+
+    const fuse::vfx::ParticleGpuFramePreflight frame_preflight = active.preflight();
+    expectTrue(frame_preflight.dispatch_stub_ready, "frame preflight carries dispatch stub readiness");
+    expectTrue(frame_preflight.ready_for_stub(), "integrated frame preflight stays ready");
+
+    const fuse::vfx::ParticleGpuFramePlan idle =
+        fuse::vfx::ParticleGpuFramePlan::forStub(0u, 0u, 0u);
+    expectTrue(fuse::vfx::should_skip_frame_dispatch(idle), "should_skip_frame_dispatch for idle frame");
+    expectTrue(!fuse::vfx::should_skip_frame_dispatch(active), "active frame does not skip dispatch");
+    expectTrue(idle.dispatchPreflight().ready_for_stub(), "idle dispatch preflight is stub-ready");
+}
+
+void testParticleGpuMirrorContentSyncGuards() {
+    fuse::vfx::ParticleSoA cpu{};
+    fuse::vfx::particle_soa::init(cpu, 8u);
+    (void)fuse::vfx::particle_soa::burst_emit(cpu, {}, {}, 2u, 11u);
+
+    fuse::vfx::ParticleGpuMirror mirror{};
+    mirror.syncFromCpuSoA(cpu);
+    expectTrue(fuse::vfx::should_skip_mirror_sync(mirror, cpu), "synced mirror skips redundant sync");
+    expectTrue(fuse::vfx::should_skip_mirror_pack(mirror, cpu), "synced mirror skips redundant pack");
+
+    cpu.positions[0].y += 0.5f;
+    const fuse::vfx::ParticleGpuMirrorPreflight stale = mirror.preflightFromCpu(cpu);
+    expectTrue(stale.needs_content_sync, "CPU drift reports content sync needed");
+    expectTrue(stale.needs_any_sync(), "content drift counts as any sync");
+    expectTrue(!stale.already_synced, "stale CPU is not already synced");
+    expectTrue(mirror.needsContentSyncFromCpu(cpu), "needsContentSyncFromCpu detects drift");
+    expectTrue(!fuse::vfx::should_skip_mirror_sync(mirror, cpu), "stale CPU cannot skip sync");
+    expectTrue(!fuse::vfx::should_skip_mirror_pack(mirror, cpu), "stale CPU cannot skip pack");
+    expectTrue(fuse::vfx::should_attempt_mirror_sync(mirror, cpu), "stale CPU should attempt sync");
+
+    mirror.syncFromCpuSoA(cpu);
+    expectTrue(fuse::vfx::should_skip_mirror_pack(mirror, cpu), "resynced mirror skips pack again");
+
+    fuse::vfx::ParticleSoA empty{};
+    expectTrue(!fuse::vfx::should_attempt_mirror_sync(mirror, empty), "empty CPU does not attempt sync");
+}
+
 void testSoaOpsEmptyBurst() {
     fuse::vfx::ParticleSoA soa{};
     fuse::vfx::ParticleEmitterDesc desc{};
@@ -2111,6 +2192,9 @@ int main() {
     testParticleGpuFramePlanPreflight();
     testParticleGpuDispatchPreflight();
     testParticleGpuMirrorSyncSkipGuards();
+    testParticleGpuSlotOffsetGuards();
+    testParticleGpuFrameDispatchPreflight();
+    testParticleGpuMirrorContentSyncGuards();
     testParticleGpuPointerBundle();
     testParticleGpuLayoutSize();
     testParticleGpuEmptyDispatch();
