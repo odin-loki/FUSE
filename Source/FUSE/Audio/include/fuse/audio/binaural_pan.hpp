@@ -27,6 +27,18 @@ bool has_hrtf_ir(const HrtfIrStub& ir);
 /// Readable alias — true when IR samples are null or zero-length.
 bool is_empty_hrtf_ir(const HrtfIrStub& ir);
 
+/// Read-only empty-IR diagnostics — no mutation (B7.2 deepen follow-up).
+struct HrtfIrPreflight {
+    bool null_samples = true;
+    bool zero_length = true;
+    bool empty_ir = true;
+
+    [[nodiscard]] bool can_use_convolution() const { return !empty_ir; }
+};
+
+/// Preflight an HRTF IR stub before selecting the convolution path.
+HrtfIrPreflight preflight_hrtf_ir(const HrtfIrStub& ir);
+
 /// Alias for `has_hrtf_ir` — convolution path is available when true.
 bool should_use_hrtf_ir(const HrtfIrStub& ir);
 
@@ -42,6 +54,25 @@ HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const
 
 /// Select pan path when no IR is wired (ILD/ITD stub or bypass).
 HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener);
+
+/// Read-only pan-path diagnostics — no mutation (B7.2 deepen follow-up).
+struct HrtfPanPathPreflight {
+    bool hrtf_disabled = false;
+    bool co_located = false;
+    bool empty_ir = true;
+    HrtfPanPath path = HrtfPanPath::Bypass;
+
+    [[nodiscard]] bool can_apply_spatial_pan() const { return path != HrtfPanPath::Bypass; }
+    [[nodiscard]] bool uses_convolution() const { return path == HrtfPanPath::Convolution; }
+    [[nodiscard]] bool uses_ild_itd_stub() const { return path == HrtfPanPath::IldItdStub; }
+};
+
+/// Preflight HRTF pan routing from enable flag, IR stub, and listener-local offset.
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
+                                               const Vec3& rel_listener);
+
+/// Preflight HRTF pan routing when no IR is wired (ILD/ITD stub or bypass).
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener);
 
 /// True when the resolved path produces a lateral spatial image (not centre bypass).
 bool is_spatial_hrtf_pan_path(HrtfPanPath path);
@@ -221,6 +252,20 @@ bool should_skip_hrtf_attenuation_coupling(HrtfPanPath path);
 /// Combined guard — spatial path and non-unity attenuation warrant narrowing.
 bool should_narrow_hrtf_spatial_image(HrtfPanPath path, float distance_attenuation,
                                       float occlusion_gain);
+
+/// Read-only attenuation-coupling diagnostics — no mutation (B7.2 deepen follow-up).
+struct HrtfAttenuationCouplingPreflight {
+    bool bypass_path = true;
+    bool unity_attenuation = true;
+    bool spatial_path = false;
+
+    [[nodiscard]] bool can_apply_coupling() const { return spatial_path && !unity_attenuation; }
+    [[nodiscard]] bool should_narrow() const { return can_apply_coupling(); }
+};
+
+/// Preflight distance/occlusion coupling before narrowing the binaural image.
+HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling(
+    HrtfPanPath path, float distance_attenuation, float occlusion_gain);
 
 /// Combined spatial blend from distance attenuation and occlusion LF gain.
 float compute_hrtf_spatial_blend(float distance_attenuation, float occlusion_gain,
