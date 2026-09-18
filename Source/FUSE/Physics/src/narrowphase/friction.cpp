@@ -77,15 +77,47 @@ vec2 projectTangentialVelocity(vec3 relativeVelocity, const TangentBasis& basis)
     };
 }
 
-bool has_cached_friction_basis(const ContactManifold& manifold) {
-    return manifold.hasFrictionBasis();
-}
-
 bool should_skip_friction_tangents(const ContactManifold& manifold) {
     if (manifold.empty() || !manifold.hasValidNormal()) {
         return true;
     }
     return false;
+}
+
+bool has_cached_friction_basis(const ContactManifold& manifold) {
+    return manifold.hasFrictionBasis();
+}
+
+bool friction_basis_matches_normal(const ContactManifold& manifold, f32 epsilon) {
+    if (!manifold.hasValidNormal()) {
+        return false;
+    }
+    return isOrthonormalTangentBasis(manifold.contactNormal, manifold.frictionBasis, epsilon);
+}
+
+bool needs_friction_basis_rebuild(const ContactManifold& manifold) {
+    if (should_skip_friction_tangents(manifold)) {
+        return false;
+    }
+    return !has_cached_friction_basis(manifold);
+}
+
+void invalidate_friction_basis(ContactManifold& manifold) {
+    manifold.frictionBasis = {};
+}
+
+bool ensure_friction_basis(ContactManifold& manifold) {
+    if (should_skip_friction_tangents(manifold)) {
+        invalidate_friction_basis(manifold);
+        return false;
+    }
+
+    if (has_cached_friction_basis(manifold)) {
+        return true;
+    }
+
+    manifold.buildFrictionBasis();
+    return manifold.hasFrictionBasis();
 }
 
 bool should_skip_friction_solve(

@@ -22,6 +22,26 @@ enum class ContactPairRejectReason : u8 {
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
 const char* contact_pair_reject_reason_name(ContactPairRejectReason reason);
 
+/// Returns true when `contact_pair_reject_reason` matches `expected` (B4.3 deepen pass).
+bool contact_pair_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected);
+
+/// Returns true when both indices reference the same body (B4.3 deepen pass).
+bool is_self_contact_pair(const broadphase::CandidatePair& pair);
+
+/// Returns true when either body index is out of range (B4.3 deepen pass).
+bool is_out_of_range_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies);
+
+/// Returns true when either body has no collision shape (B4.3 deepen pass).
+bool is_missing_shape_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
+
 /// Returns the first reject reason for a pair, or `None` when dispatch may proceed.
 ContactPairRejectReason contact_pair_reject_reason(
     const broadphase::CandidatePair& pair,
@@ -66,6 +86,9 @@ ContactManifold detect_contacts_pair(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
+
+/// Preflight guard before finalize: non-empty, unit normal candidate, penetrating points (B4.3 deepen pass).
+bool can_finalize_contact_manifold(const ContactManifold& manifold);
 
 /// Finalize a detected manifold: sync legacy fields, friction tangents, validity (B4.3 deepen).
 /// Returns false when the manifold has no contact points.

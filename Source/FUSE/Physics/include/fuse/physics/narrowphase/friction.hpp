@@ -44,6 +44,20 @@ bool should_skip_friction_tangents(const ContactManifold& manifold);
 /// Returns true when an existing orthonormal basis can be reused (B4.3 deepen pass).
 bool has_cached_friction_basis(const ContactManifold& manifold);
 
+/// Returns true when `basis` is orthonormal with `manifold.contactNormal` (B4.3 deepen pass).
+bool friction_basis_matches_normal(
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f);
+
+/// Returns true when a valid normal exists but the cached basis is missing or stale (B4.3 deepen pass).
+bool needs_friction_basis_rebuild(const ContactManifold& manifold);
+
+/// Clear the manifold friction basis without touching contact points (B4.3 deepen pass).
+void invalidate_friction_basis(ContactManifold& manifold);
+
+/// Build or reuse an orthonormal tangent frame; returns false when tangents should be skipped (B4.3 deepen pass).
+bool ensure_friction_basis(ContactManifold& manifold);
+
 /// Returns true when both friction coefficients are zero or normal impulse is negligible (B4.3 deepen).
 bool should_skip_friction_solve(
     f32 staticFriction,

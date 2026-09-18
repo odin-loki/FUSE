@@ -60,6 +60,20 @@ struct ContactManifold {
         f32 separationEpsilon = 1e-6f,
         f32 duplicateEpsilon = 1e-4f) const;
 
+    /// Returns true when at least one point is separated below `-epsilon` (B4.3 deepen pass).
+    bool hasSeparatedPoints(f32 epsilon = 1e-6f) const;
+
+    /// Returns true when two slots share the same position within `positionEpsilon` (B4.3 deepen pass).
+    bool hasDuplicatePoints(f32 positionEpsilon = 1e-4f) const;
+
+    /// Const preflight: true when `pruneContactPoints` would leave no penetrating slots (B4.3 deepen pass).
+    bool wouldBeEmptyAfterPrune(
+        f32 separationEpsilon = 1e-6f,
+        f32 duplicateEpsilon = 1e-4f) const;
+
+    /// Clears `valid` when the manifold has no contact points (B4.3 deepen pass).
+    void invalidateIfEmpty();
+
     /// Drop separated contact points with penetration below `-epsilon` (B4.3 deepen).
     void pruneNonPenetratingPoints(f32 epsilon = 1e-6f);
 
