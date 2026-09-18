@@ -10,6 +10,7 @@
 namespace fuse::project {
 
 /// FNV-1a 64-bit hash over raw bytes — shared by cook cache keys (B7.9 deepen stub).
+/// Returns zero when `data` is null or `size` is zero (B7.9 deepen guard).
 [[nodiscard]] u64 fnv1a64_bytes(const u8* data, usize size);
 [[nodiscard]] u64 fnv1a64_combine(u64 left, u64 right);
 
@@ -20,6 +21,7 @@ namespace fuse::project {
 [[nodiscard]] u64 hash_file_content(const std::string& path);
 
 /// Fold upstream dependency source hashes into a cook cache key (manifest output paths).
+/// Returns zero when `dependency_output_paths` is empty (B7.9 deepen guard).
 [[nodiscard]] u64 hash_upstream_dependencies(const std::vector<std::string>& dependency_output_paths,
                                              const CookManifest& manifest);
 
