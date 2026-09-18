@@ -332,6 +332,28 @@ ManifoldPrunePreflight preflight_manifold_prune(
     return preflight;
 }
 
+bool should_skip_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) {
+    const ManifoldPrunePreflight preflight =
+        preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon);
+    return preflight.skipped || !preflight.needs_pruning();
+}
+
+bool prune_contact_points_guarded(
+    ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) {
+    const ManifoldPrunePreflight preflight =
+        preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon);
+    if (preflight.skipped || preflight.wouldBeEmpty) {
+        manifold.clear();
+        return false;
+    }
+    return manifold.pruneContactPointsIfNeeded(separationEpsilon, duplicateEpsilon);
+}
+
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};
     if (index >= pointCount) {
