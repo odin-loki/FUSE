@@ -140,6 +140,40 @@ ManifoldPrunePreflight preflight_manifold_prune(
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f);
 
+/// Const preflight for manifold finalize dispatch (B4.4 deepen pass 2).
+struct ManifoldFinalizePreflight {
+    bool empty = false;
+    bool invalidNormal = false;
+    bool noPenetratingPoints = false;
+    bool needsPrune = false;
+    bool wouldBeEmptyAfterPrune = false;
+    bool skipped = false;
+
+    bool can_finalize() const {
+        return !skipped && !empty && !invalidNormal && !noPenetratingPoints &&
+               !wouldBeEmptyAfterPrune;
+    }
+
+    bool needs_prune_before_finalize() const {
+        return needsPrune && !wouldBeEmptyAfterPrune;
+    }
+};
+
+/// Populate finalize preflight without mutating slots (B4.4 deepen pass 2).
+ManifoldFinalizePreflight preflight_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f);
+
+/// Returns true when finalize should be skipped (B4.4 deepen pass 2).
+bool should_skip_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f);
+
+/// Finalize only when preflight allows; clears on skip (B4.4 deepen pass 2).
+bool generate_contact_manifold_if_needed(ContactManifold& manifold);
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }

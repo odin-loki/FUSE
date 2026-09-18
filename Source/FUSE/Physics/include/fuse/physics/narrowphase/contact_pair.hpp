@@ -117,4 +117,32 @@ bool should_skip_contact_pair_dispatch(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Per-reason reject flags for const pair preflight (B4.4 deepen pass 2).
+struct ContactPairRejectBreakdown {
+    ContactPairRejectReason reason = ContactPairRejectReason::None;
+    bool selfPair = false;
+    bool outOfRangeBody = false;
+    bool missingShape = false;
+    bool bothTriggers = false;
+    bool unsupportedShapePair = false;
+    bool bothStatic = false;
+    bool degenerateShape = false;
+
+    bool rejected() const { return reason != ContactPairRejectReason::None; }
+    bool can_dispatch() const { return !rejected(); }
+};
+
+/// Populate reject breakdown without running shape dispatch (B4.4 deepen pass 2).
+ContactPairRejectBreakdown contact_pair_reject_breakdown(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when breakdown matches the expected reject reason (B4.4 deepen pass 2).
+bool contact_pair_rejects_with_breakdown(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected);
+
 } // namespace fuse::physics::narrowphase

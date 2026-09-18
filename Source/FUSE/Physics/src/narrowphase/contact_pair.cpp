@@ -417,4 +417,63 @@ bool should_skip_contact_pair_dispatch(
     return is_invalid_contact_pair(pair, bodies, shapes);
 }
 
+ContactPairRejectBreakdown contact_pair_reject_breakdown(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    ContactPairRejectBreakdown breakdown{};
+
+    breakdown.selfPair = is_self_contact_pair(pair);
+    if (breakdown.selfPair) {
+        breakdown.reason = ContactPairRejectReason::SelfPair;
+        return breakdown;
+    }
+
+    breakdown.outOfRangeBody = is_out_of_range_contact_pair(pair, bodies);
+    if (breakdown.outOfRangeBody) {
+        breakdown.reason = ContactPairRejectReason::OutOfRangeBody;
+        return breakdown;
+    }
+
+    breakdown.missingShape = is_missing_shape_contact_pair(pair, shapes);
+    if (breakdown.missingShape) {
+        breakdown.reason = ContactPairRejectReason::MissingShape;
+        return breakdown;
+    }
+
+    breakdown.bothTriggers = is_trigger_contact_pair(pair, bodies);
+    if (breakdown.bothTriggers) {
+        breakdown.reason = ContactPairRejectReason::BothTriggers;
+        return breakdown;
+    }
+
+    breakdown.unsupportedShapePair = is_unsupported_shape_pair(pair, shapes);
+    if (breakdown.unsupportedShapePair) {
+        breakdown.reason = ContactPairRejectReason::UnsupportedShapePair;
+        return breakdown;
+    }
+
+    breakdown.bothStatic = is_static_contact_pair(pair, bodies);
+    if (breakdown.bothStatic) {
+        breakdown.reason = ContactPairRejectReason::BothStatic;
+        return breakdown;
+    }
+
+    breakdown.degenerateShape = is_degenerate_shape_pair(pair, shapes);
+    if (breakdown.degenerateShape) {
+        breakdown.reason = ContactPairRejectReason::DegenerateShape;
+        return breakdown;
+    }
+
+    return breakdown;
+}
+
+bool contact_pair_rejects_with_breakdown(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected) {
+    return contact_pair_reject_breakdown(pair, bodies, shapes).reason == expected;
+}
+
 } // namespace fuse::physics::narrowphase
