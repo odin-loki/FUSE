@@ -292,6 +292,18 @@ void testHistoryClearStub() {
     expectTrue(console.historyCount() == 0u, "history clear empties buffer");
 }
 
+void testHistoryClearEmptyEarlyOut() {
+    fuse::script::ScriptConsole console;
+
+    expectTrue(console.is_history_empty(), "fresh console history is empty");
+
+    const auto already_empty = console.execute("history clear");
+    expectTrue(already_empty.ok(), "history clear on empty buffer succeeds");
+    expectTrue(already_empty.output == "history already empty",
+               "history clear empty early-out message");
+    expectTrue(console.historyCount() == 0u, "history clear on empty leaves buffer empty");
+}
+
 void testDescribeAndCompleteStubs() {
     fuse::script::ScriptConsole console;
 
@@ -591,6 +603,107 @@ void testMetaCommandsSkipHistoryAndRepeat() {
     expectTrue(console.lastExecutedLine() == "echo anchor", "lookup meta commands preserve repeat target");
 }
 
+void testHistoryRecallNavigationGuards() {
+    fuse::script::ScriptConsoleHistoryBuffer history;
+
+    expectTrue(!history.can_recall_previous(), "empty history cannot recall previous");
+    expectTrue(!history.can_recall_next(), "empty history cannot recall next");
+    expectTrue(history.is_navigation_at_end(), "empty history navigation at end");
+
+    history.push("alpha");
+    history.push("beta");
+    expectTrue(history.can_recall_previous(), "history with entries can recall previous");
+    expectTrue(!history.can_recall_next(), "fresh navigation cannot recall next");
+    expectTrue(history.is_navigation_at_end(), "fresh navigation sits at end");
+
+    expectTrue(history.recall(true) == "beta", "recall previous reaches newest stored entry");
+    expectTrue(history.can_recall_previous(), "mid-navigation can recall previous");
+    expectTrue(history.can_recall_next(), "mid-navigation can recall next");
+    expectTrue(!history.is_navigation_at_end(), "mid-navigation not at end");
+
+    expectTrue(history.recall(true) == "alpha", "recall previous reaches oldest entry");
+    expectTrue(!history.can_recall_previous(), "oldest entry blocks further recall previous");
+    expectTrue(history.can_recall_next(), "oldest entry allows recall next");
+
+    history.resetNavigation();
+    expectTrue(history.is_navigation_at_end(), "reset navigation returns to end");
+
+    fuse::script::ScriptConsole console;
+    console.execute("echo one");
+    console.execute("echo two");
+    expectTrue(console.can_recall_history(true), "console can recall previous with history");
+    expectTrue(!console.can_recall_history(false), "console cannot recall next at end");
+    expectTrue(console.is_history_navigation_at_end(), "console navigation starts at end");
+
+    expectTrue(console.recallHistory(true) == "echo two", "console recall previous reaches newest stored entry");
+    expectTrue(console.can_recall_history(true), "console mid-navigation can recall previous");
+    expectTrue(console.can_recall_history(false), "console mid-navigation can recall next");
+    expectTrue(!console.is_history_navigation_at_end(), "console mid-navigation not at end");
+}
+
+void testPrefixMatchCountHelpers() {
+    fuse::script::ScriptConsoleCommandRegistry registry;
+    expectTrue(registry.register_built_in("help_alpha",
+                                          [](fuse::script::ScriptConsole& /*repl*/,
+                                             const char* /*args*/) {
+                                              return fuse::script::ScriptConsoleCommandResult{
+                                                  fuse::script::ScriptConsoleCommandStatus::Ok, "ok"};
+                                          }),
+               "register help_alpha for prefix count tests");
+    expectTrue(registry.register_built_in("help_beta",
+                                          [](fuse::script::ScriptConsole& /*repl*/,
+                                             const char* /*args*/) {
+                                              return fuse::script::ScriptConsoleCommandResult{
+                                                  fuse::script::ScriptConsoleCommandStatus::Ok, "ok"};
+                                          }),
+               "register help_beta for prefix count tests");
+
+    expectTrue(!registry.has_commands_with_prefix("zzz"), "registry has no zzz prefix matches");
+    expectTrue(registry.has_commands_with_prefix("help"), "registry has help prefix matches");
+    expectTrue(registry.prefix_match_count("help") == 2u, "registry counts help prefix matches");
+    expectTrue(registry.prefix_match_count("help_alpha") == 1u,
+               "registry counts exact command as one match");
+    expectTrue(registry.prefix_match_count(nullptr) >= 2u,
+               "registry null prefix counts all commands");
+
+    fuse::script::ScriptConsole console;
+    expectTrue(console.has_command_prefix("he"), "console forwards has_command_prefix");
+    expectTrue(console.command_prefix_match_count("he") >= 1u,
+               "console forwards command_prefix_match_count");
+    expectTrue(console.command_prefix_match_count("h") >= 2u,
+               "console counts multiple h-prefix built-ins");
+    expectTrue(!console.has_command_prefix("zzzmissing"), "console reports missing prefix");
+    expectTrue(console.command_prefix_match_count("zzzmissing") == 0u,
+               "console reports zero count for missing prefix");
+}
+
+void testResolveCommandNameHelper() {
+    fuse::script::ScriptConsole console;
+
+    expectTrue(console.resolve_command_name("help") == "help",
+               "resolve_command_name returns exact command");
+    expectTrue(console.resolve_command_name("histor") == "history",
+               "resolve_command_name returns unique prefix match");
+    expectTrue(console.resolve_command_name("h").empty(),
+               "resolve_command_name empty for ambiguous prefix");
+    expectTrue(console.resolve_command_name("zzzmissing").empty(),
+               "resolve_command_name empty for missing prefix");
+    expectTrue(console.resolve_command_name(nullptr).empty(),
+               "resolve_command_name empty for null partial");
+
+    expectTrue(console.register_command("custom_alpha", [](fuse::script::ScriptConsole& /*repl*/,
+                                                           const char* /*args*/) {
+                   return fuse::script::ScriptConsoleCommandResult{
+                       fuse::script::ScriptConsoleCommandStatus::Ok, "ok"};
+               }),
+               "register custom command for resolve_command_name test");
+
+    expectTrue(console.resolve_command_name("custom_al") == "custom_alpha",
+               "resolve_command_name resolves custom command prefix");
+
+    console.unregister_command("custom_alpha");
+}
+
 void testCanRepeatAccessor() {
     fuse::script::ScriptConsole console;
 
@@ -647,6 +760,10 @@ void run_script_console_tests() {
     testLastExecutedLineGuards();
     testHistoryBufferAndNavigation();
     testHistoryClearStub();
+    testHistoryClearEmptyEarlyOut();
+    testHistoryRecallNavigationGuards();
+    testPrefixMatchCountHelpers();
+    testResolveCommandNameHelper();
     testEmptyLineSkipsHistory();
     testDescribeAndCompleteStubs();
     testPrefixMatchAndCompletionHelpers();
