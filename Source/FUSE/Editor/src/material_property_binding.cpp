@@ -265,6 +265,37 @@ void MaterialPropertyBinding::markPanelRefreshed() {
     m_coalescedDirtyCount = 0u;
 }
 
+bool MaterialPropertyBinding::tryRefreshFromEditState(const MaterialEditState& state) {
+    if (!canRefreshFromEditState()) {
+        return false;
+    }
+    refreshFromEditState(state);
+    return true;
+}
+
+bool MaterialPropertyBinding::tryMarkPanelRefreshed() {
+    if (!isBound()) {
+        return false;
+    }
+    markPanelRefreshed();
+    return true;
+}
+
+bool MaterialPropertyBinding::tryClearPropertyDirty(MaterialPropertyId id) {
+    if (!isBound() || !isMaterialPropertyIdValid(id)) {
+        return false;
+    }
+    clearPropertyDirty(id);
+    return true;
+}
+
+bool MaterialPropertyBinding::tryIsPropertyDirty(MaterialPropertyId id) const {
+    if (!isBound() || !isMaterialPropertyIdValid(id)) {
+        return false;
+    }
+    return isPropertyDirty(id);
+}
+
 void MaterialPropertyBinding::refreshFromEditState(const MaterialEditState& state) {
     if (!isBound() || m_editState == nullptr) {
         return;

@@ -28,6 +28,9 @@ inline constexpr u32 kInvalidMaterialSlot = UINT32_MAX;
 /// True when the catalog has no materials (B6.7 deepen — empty-material early-out).
 [[nodiscard]] bool isMaterialCatalogEmpty(u32 catalogCount);
 
+/// Early-out — skip inspector bind/sync when the catalog is empty (B6.7 deepen follow-up).
+[[nodiscard]] bool shouldSkipMaterialInspectorBind(u32 catalogCount);
+
 /// True when `materialId` indexes a slot in `[0, catalogCount)` (B6.7 deepen).
 [[nodiscard]] bool isMaterialSlotValid(u32 materialId, u32 catalogCount);
 
@@ -45,6 +48,9 @@ inline constexpr u32 kInvalidMaterialSlot = UINT32_MAX;
 
 /// Binding guard — slot must be valid before inspector bind (B6.7 deepen).
 [[nodiscard]] bool canBindMaterialSlot(u32 materialId, u32 catalogCount);
+
+/// Refresh guard — slot must be valid before mirroring external edit state (B6.7 deepen follow-up).
+[[nodiscard]] bool canRefreshMaterialSlot(u32 materialId, u32 catalogCount);
 
 /// True when `index` is safe for `materialPropertyIdAt` / descriptor lookup.
 [[nodiscard]] bool isMaterialPropertyIndexValid(u32 index);
