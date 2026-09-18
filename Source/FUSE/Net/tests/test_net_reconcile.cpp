@@ -144,6 +144,90 @@ void run_reconcile_tests() {
     expectTrue(future_history_result.action == fuse::net::ReconcileAction::NoOp,
                "input history reconcile rejects future frame beyond newest");
     expectTrue(!future_history.has_confirmed(8u), "future frame is not stored by reconcile guard");
+
+    // --- reconcile preflight helpers (B7.4 deepen follow-up) ---
+    fuse::net::InputHistoryBuffer preflight_history;
+    preflight_history.init(4);
+    for (fuse::u32 frame = 0; frame < 5; ++frame) {
+        fuse::net::PlayerInput predicted{};
+        predicted.frame = frame;
+        preflight_history.push_frame(frame, predicted);
+    }
+
+    const fuse::net::InputReconcilePreflight retained_preflight = preflight_history.preflight_reconcile(4u);
+    expectTrue(!retained_preflight.zero_capacity, "input preflight sees non-zero capacity");
+    expectTrue(!retained_preflight.ring_empty, "input preflight sees populated ring");
+    expectTrue(retained_preflight.frame_in_window, "input preflight accepts retained frame");
+    expectTrue(!retained_preflight.frame_evicted, "input preflight frame not evicted");
+    expectTrue(!retained_preflight.frame_future, "input preflight frame not future");
+    expectTrue(retained_preflight.has_prediction, "input preflight sees prediction on retained frame");
+    expectTrue(retained_preflight.can_reconcile(), "input preflight can_reconcile for retained frame");
+    expectTrue(!preflight_history.should_skip_reconcile(4u), "should_skip false for retained frame");
+    expectTrue(fuse::net::can_reconcile_input(preflight_history, 4u),
+               "can_reconcile_input matches preflight for retained frame");
+
+    const fuse::net::InputReconcilePreflight evicted_preflight = preflight_history.preflight_reconcile(0u);
+    expectTrue(evicted_preflight.frame_evicted, "input preflight marks evicted frame");
+    expectTrue(!evicted_preflight.frame_in_window, "input preflight rejects evicted frame");
+    expectTrue(!evicted_preflight.can_reconcile(), "input preflight cannot reconcile evicted frame");
+    expectTrue(preflight_history.should_skip_reconcile(0u), "should_skip true for evicted frame");
+
+    fuse::net::InputHistoryBuffer empty_preflight_history;
+    empty_preflight_history.init(4);
+    const fuse::net::InputReconcilePreflight empty_ring_preflight =
+        empty_preflight_history.preflight_reconcile(2u);
+    expectTrue(empty_ring_preflight.ring_empty, "empty input ring preflight reports ring_empty");
+    expectTrue(empty_ring_preflight.frame_in_window, "empty input ring accepts any frame");
+    expectTrue(empty_ring_preflight.can_reconcile(), "empty input ring can reconcile with capacity");
+    expectTrue(!empty_preflight_history.should_skip_reconcile(2u), "empty ring should not skip reconcile");
+
+    fuse::net::InputHistoryBuffer zero_capacity_history;
+    zero_capacity_history.init(4);
+    zero_capacity_history.clear();
+    const fuse::net::InputReconcilePreflight zero_preflight = zero_capacity_history.preflight_reconcile(0u);
+    expectTrue(zero_preflight.zero_capacity, "cleared history preflight reports zero_capacity");
+    expectTrue(!zero_preflight.can_reconcile(), "zero capacity preflight cannot reconcile");
+    expectTrue(zero_capacity_history.should_skip_reconcile(0u), "zero capacity should skip reconcile");
+
+    fuse::net::RollbackBuffer rollback_preflight_buffer;
+    rollback_preflight_buffer.init(4);
+    for (fuse::u32 frame = 0; frame < 5; ++frame) {
+        fuse::net::GameSnapshot snap{};
+        snap.frame = frame;
+        rollback_preflight_buffer.store_snapshot(frame, snap);
+    }
+    fuse::net::PlayerInput local_for_preflight{};
+    local_for_preflight.frame = 4;
+    rollback_preflight_buffer.store_local_input(4, local_for_preflight);
+
+    const fuse::net::RollbackReconcilePreflight rollback_retained =
+        rollback_preflight_buffer.preflight_reconcile(4u);
+    expectTrue(!rollback_retained.zero_capacity, "rollback preflight sees non-zero capacity");
+    expectTrue(!rollback_retained.ring_empty, "rollback preflight sees populated ring");
+    expectTrue(rollback_retained.frame_in_window, "rollback preflight accepts retained frame");
+    expectTrue(rollback_retained.has_snapshot, "rollback preflight sees retained snapshot");
+    expectTrue(rollback_retained.has_local_input, "rollback preflight sees local input");
+    expectTrue(rollback_retained.can_reconcile(), "rollback preflight can_reconcile for retained frame");
+    expectTrue(!rollback_preflight_buffer.should_skip_reconcile(4u),
+               "rollback should_skip false for retained frame");
+    expectTrue(fuse::net::can_reconcile_rollback(rollback_preflight_buffer, 4u),
+               "can_reconcile_rollback matches preflight for retained frame");
+
+    const fuse::net::RollbackReconcilePreflight rollback_evicted =
+        rollback_preflight_buffer.preflight_reconcile(0u);
+    expectTrue(rollback_evicted.frame_evicted, "rollback preflight marks evicted frame");
+    expectTrue(!rollback_evicted.can_reconcile(), "rollback preflight cannot reconcile evicted frame");
+    expectTrue(rollback_preflight_buffer.should_skip_reconcile(0u),
+               "rollback should_skip true for evicted frame");
+
+    fuse::net::RollbackBuffer empty_rollback_preflight;
+    empty_rollback_preflight.init(4);
+    const fuse::net::RollbackReconcilePreflight empty_rollback_ring =
+        empty_rollback_preflight.preflight_reconcile(0u);
+    expectTrue(empty_rollback_ring.ring_empty, "empty rollback ring preflight reports ring_empty");
+    expectTrue(!empty_rollback_ring.can_reconcile(), "empty rollback ring cannot reconcile");
+    expectTrue(empty_rollback_preflight.should_skip_reconcile(0u),
+               "empty rollback ring should skip reconcile");
 }
 
 } // namespace fuse::net::tests
