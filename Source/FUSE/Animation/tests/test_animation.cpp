@@ -2101,6 +2101,83 @@ void testStateMachineElapsedCrossfadeTime() {
                "elapsed crossfade time zero after transition completes");
 }
 
+void testStateMachineTransitionAtHelpers() {
+    fuse::animation::AnimStateMachine machine;
+    machine.add_state("idle", nullptr);
+    machine.add_state("run", nullptr);
+    machine.add_state("jump", nullptr);
+
+    bool shouldRun = true;
+    bool shouldJump = false;
+    machine.add_transition("idle", "run", 0.2f, [&]() { return shouldRun; });
+    machine.add_transition("idle", "jump", 0.35f, [&]() { return shouldJump; });
+    machine.add_transition("run", "idle", 0.15f, []() { return true; });
+
+    expectTrue(machine.is_valid_pending_state(), "pending state valid when idle");
+    expectNear(machine.transition_blend_duration_at(0u), 0.2f, 1e-4f,
+               "transition blend duration at first edge");
+    expectNear(machine.transition_blend_duration_at(1u), 0.35f, 1e-4f,
+               "transition blend duration at second edge");
+    expectNear(machine.transition_blend_duration_at(2u), 0.15f, 1e-4f,
+               "transition blend duration at third edge");
+    expectTrue(machine.transition_blend_duration_at(3u) < 0.f,
+               "transition blend duration at rejects invalid index");
+
+    expectTrue(machine.transition_condition_passes_at(0u),
+               "transition condition passes at first edge");
+    expectTrue(!machine.transition_condition_passes_at(1u),
+               "transition condition fails at second edge");
+    expectTrue(machine.transition_condition_passes_at(2u),
+               "transition condition passes for unconditional edge");
+    expectTrue(!machine.transition_condition_passes_at(3u),
+               "transition condition rejects invalid index");
+}
+
+void testStateMachineCrossfadeBlendFromBindFallback() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::AnimationClip run = makePositionClip(1, 6.f);
+
+    fuse::animation::AnimStateMachine machine;
+    auto idleNode = std::make_unique<fuse::animation::ClipNode>();
+    auto runNode = std::make_unique<fuse::animation::ClipNode>();
+    runNode->clip = &run;
+    machine.add_state("idle", std::move(idleNode));
+    machine.add_state("run", std::move(runNode));
+
+    machine.is_transitioning = true;
+    machine.pending_state = 1u;
+    machine.blend_duration = 0.2f;
+    machine.blend_time = 0.1f;
+    machine.blend_from_pose_soa = fuse::animation::PoseSoA::allocate(2);
+    machine.blend_from_pose_soa.bone_count = skel.bone_count;
+
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::allocate(2);
+    machine.evaluate_soa(0.f, skel, pose);
+    expectTrue(fuse::animation::pose_soa_columns_valid(pose),
+               "crossfade repairs undersized blend_from pose before blending");
+    expectNear(pose.local_positions[1].y, 4.f, 0.05f,
+               "crossfade bind-fallback guard blends from repaired bind pose");
+}
+
+void testStateMachineInvalidPendingStateGuard() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::AnimStateMachine machine;
+    machine.add_state("idle", nullptr);
+    machine.add_state("run", nullptr);
+
+    machine.is_transitioning = true;
+    machine.pending_state = 99u;
+    machine.blend_time = 0.05f;
+    machine.blend_duration = 0.2f;
+
+    expectTrue(!machine.is_valid_pending_state(), "invalid pending state detected");
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::allocate(2);
+    machine.evaluate_soa(0.05f, skel, pose);
+    expectTrue(!machine.is_transitioning, "invalid pending state cancels crossfade");
+    expectTrue(fuse::animation::pose_soa_matches_bind(pose, skel),
+               "invalid pending state falls back to bind pose");
+}
+
 void testStateMachineRemainingCrossfadeTime() {
     const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
     fuse::animation::AnimationClip idle = makePositionClip(1, 1.f);
@@ -2256,6 +2333,9 @@ int main() {
     testBlendNodeIsEmpty();
     testBlendNodeEmptyEarlyOut();
     testStateMachineTransitionHelpers();
+    testStateMachineTransitionAtHelpers();
+    testStateMachineCrossfadeBlendFromBindFallback();
+    testStateMachineInvalidPendingStateGuard();
     testStateMachineElapsedCrossfadeTime();
     testStateMachineRemainingCrossfadeTime();
     testLayeredBlendEvaluateEarlyOut();
