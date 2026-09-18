@@ -445,6 +445,123 @@ void testPickAxisFromRayEmptyGuard() {
                "pickAxisFromRay rejects zero pick radius");
 }
 
+void testSnapGuardValid() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+    expectTrue(!fuse::editor::isSnapGuardValid(fuse::editor::GizmoMode::Translate, snap),
+               "translate snap guard rejects zero grid size");
+    snap.gridSize = 0.5f;
+    expectTrue(fuse::editor::isSnapGuardValid(fuse::editor::GizmoMode::Translate, snap),
+               "translate snap guard accepts positive grid size");
+
+    snap.rotateSnap = true;
+    snap.angleStepDegrees = 0.f;
+    expectTrue(!fuse::editor::isSnapGuardValid(fuse::editor::GizmoMode::Rotate, snap),
+               "rotate snap guard rejects zero angle step");
+    snap.angleStepDegrees = 15.f;
+    expectTrue(fuse::editor::isSnapGuardValid(fuse::editor::GizmoMode::Rotate, snap),
+               "rotate snap guard accepts positive angle step");
+
+    snap.scaleSnap = true;
+    snap.scaleGridStep = 0.f;
+    expectTrue(!fuse::editor::isSnapGuardValid(fuse::editor::GizmoMode::Scale, snap),
+               "scale snap guard rejects zero grid step");
+    snap.scaleGridStep = 0.1f;
+    expectTrue(fuse::editor::isSnapGuardValid(fuse::editor::GizmoMode::Scale, snap),
+               "scale snap guard accepts positive grid step");
+
+    snap.translateSnap = false;
+    expectTrue(fuse::editor::isSnapGuardValid(fuse::editor::GizmoMode::Translate, snap),
+               "snap guard passes when snap disabled for mode");
+
+    expectNear(fuse::editor::snapDragDelta(0.37f, fuse::editor::GizmoMode::Translate, snap), 0.37f,
+               0.001f, "snapDragDelta passthrough when snap disabled");
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+    expectNear(fuse::editor::snapDragDelta(0.37f, fuse::editor::GizmoMode::Translate, snap), 0.37f,
+               0.001f, "snapDragDelta passthrough when snap guard invalid");
+}
+
+void testBeginDragPreflight() {
+    fuse::editor::GizmoSystem gizmo;
+    fuse::editor::GizmoTransform transform{};
+    fuse::editor::GizmoSnapSettings snap{};
+
+    fuse::editor::GizmoRay emptyRay{};
+    const fuse::editor::GizmoBeginDragPreflight emptyRayPreflight =
+        fuse::editor::preflightBeginDrag(emptyRay, transform, fuse::editor::GizmoMode::Translate,
+                                         fuse::editor::GizmoSpace::World,
+                                         fuse::editor::GizmoSystem::kAxisLength,
+                                         fuse::editor::GizmoSystem::kPickRadius, false, snap);
+    expectTrue(emptyRayPreflight.emptyRay, "preflight marks empty ray");
+    expectTrue(!emptyRayPreflight.canBegin(), "preflight blocks empty ray");
+
+    fuse::editor::GizmoHitTest emptyHit{};
+    emptyHit.viewportHeight = 0.f;
+    const fuse::editor::GizmoBeginDragPreflight emptyViewportPreflight =
+        fuse::editor::preflightBeginDrag(emptyHit, fuse::editor::GizmoMode::Translate, false, snap);
+    expectTrue(emptyViewportPreflight.emptyViewport, "preflight marks empty viewport");
+    expectTrue(!emptyViewportPreflight.canBegin(), "preflight blocks empty viewport");
+
+    fuse::editor::GizmoHitTest deadZone{};
+    deadZone.viewportWidth = 100.f;
+    deadZone.viewportHeight = 100.f;
+    deadZone.screenX = 50.f;
+    deadZone.screenY = 50.f;
+    const fuse::editor::GizmoBeginDragPreflight missPreflight =
+        fuse::editor::preflightBeginDrag(deadZone, fuse::editor::GizmoMode::Translate, false, snap);
+    expectTrue(missPreflight.axisMiss, "preflight marks translate dead-zone miss");
+    expectTrue(!missPreflight.canBegin(), "preflight blocks axis miss");
+
+    const fuse::editor::GizmoRay xRay = rayAlongX();
+    const fuse::editor::GizmoBeginDragPreflight validPreflight =
+        fuse::editor::preflightBeginDrag(xRay, transform, fuse::editor::GizmoMode::Translate,
+                                         fuse::editor::GizmoSpace::World,
+                                         fuse::editor::GizmoSystem::kAxisLength,
+                                         fuse::editor::GizmoSystem::kPickRadius, false, snap);
+    expectTrue(validPreflight.canBegin(), "preflight allows valid ray pick");
+    expectTrue(validPreflight.axis == fuse::editor::GizmoAxis::X, "preflight records picked axis");
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+    gizmo.beginDrag(hit, transform);
+    const fuse::editor::GizmoBeginDragPreflight draggingPreflight = gizmo.preflightBeginDrag(hit, transform);
+    expectTrue(draggingPreflight.alreadyDragging, "preflight marks active drag");
+    expectTrue(!draggingPreflight.canBegin(), "preflight blocks begin while dragging");
+    gizmo.endDrag();
+
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+    gizmo.setSnapSettings(snap);
+    const fuse::editor::GizmoBeginDragPreflight snapInvalidPreflight =
+        gizmo.preflightBeginDrag(xRay, transform);
+    expectTrue(snapInvalidPreflight.snapInvalid, "preflight marks invalid snap settings");
+    expectTrue(snapInvalidPreflight.canBegin(),
+               "invalid snap settings do not block begin-drag preflight");
+}
+
+void testTryBeginDragRejectsWhileDragging() {
+    fuse::editor::GizmoSystem gizmo;
+    fuse::editor::GizmoTransform transform{};
+    fuse::editor::GizmoResult result{};
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+    expectTrue(gizmo.tryBeginDrag(hit, transform, result), "first begin-drag succeeds");
+    expectTrue(gizmo.isDragging(), "drag active after first begin");
+
+    expectTrue(!gizmo.tryBeginDrag(hit, transform, result),
+               "tryBeginDrag rejects re-entrant begin while dragging");
+    expectTrue(gizmo.isDragging(), "re-entrant begin leaves drag active");
+}
+
 void testDirtyFlagOnEndDrag() {
     fuse::editor::GizmoSystem gizmo;
     fuse::editor::CommandStack commandStack;
@@ -491,6 +608,9 @@ int main() {
     testCycleModeCancelsDrag();
     testSnapDragDeltaModeAware();
     testPickAxisFromRayEmptyGuard();
+    testSnapGuardValid();
+    testBeginDragPreflight();
+    testTryBeginDragRejectsWhileDragging();
     testDirtyFlagOnEndDrag();
 
     if (g_failures != 0) {

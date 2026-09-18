@@ -97,12 +97,36 @@ f32 snapValue(f32 value, GizmoMode mode, const GizmoSnapSettings& settings);
 /// True when the active gizmo mode has snap enabled (B6.4 deepen follow-up).
 bool isSnapEnabled(GizmoMode mode, const GizmoSnapSettings& settings);
 
+/// True when snap is enabled for `mode` and its grid/step parameters are usable (B6.4 deepen).
+bool isSnapGuardValid(GizmoMode mode, const GizmoSnapSettings& settings);
+
 /// Mode-aware snap for accumulated screen-space drag deltas (B6.4 deepen follow-up).
 f32 snapDragDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings);
 
 /// Empty-hit guards — reject degenerate pick inputs before axis tests (B6.4 deepen follow-up).
 bool isRayEmpty(const GizmoRay& ray);
 bool isHitTestEmpty(const GizmoHitTest& hit);
+
+/// Read-only begin-drag diagnostics without mutating gizmo state (B6.4 deepen).
+struct GizmoBeginDragPreflight {
+    GizmoAxis axis = GizmoAxis::None;
+    bool emptyRay = false;
+    bool emptyViewport = false;
+    bool axisMiss = false;
+    bool alreadyDragging = false;
+    bool snapInvalid = false;
+
+    [[nodiscard]] bool canBegin() const {
+        return !emptyRay && !emptyViewport && !axisMiss && !alreadyDragging;
+    }
+};
+
+GizmoBeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
+                                           GizmoMode mode, GizmoSpace space, f32 axisLength,
+                                           f32 pickRadius, bool alreadyDragging,
+                                           const GizmoSnapSettings& snap);
+GizmoBeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode,
+                                           bool alreadyDragging, const GizmoSnapSettings& snap);
 
 /// Pick axis with empty-hit guards — returns false when pick misses (B6.4 deepen follow-up).
 bool tryPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
@@ -166,6 +190,11 @@ public:
     /// Guarded begin-drag — returns false on empty viewport / miss picks (B6.4 deepen follow-up).
     bool tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& current, GizmoResult& out);
     bool tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current, GizmoResult& out);
+    /// Read-only begin-drag preflight without mutating drag state (B6.4 deepen).
+    GizmoBeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit,
+                                               const GizmoTransform& current) const;
+    GizmoBeginDragPreflight preflightBeginDrag(const GizmoRay& ray,
+                                               const GizmoTransform& current) const;
     GizmoResult updateDrag(const GizmoHitTest& hit);
     GizmoResult endDrag();
 
