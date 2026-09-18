@@ -190,6 +190,9 @@ f32 evaluate_tonemap_curve_channel(f32 channel, const TonemapCurveParams& params
     if (!params.enabled) {
         return channel;
     }
+    if (!tonemap_curve_can_apply(params)) {
+        return channel;
+    }
 
     switch (params.kind) {
     case TonemapCurveKind::Reinhard:
@@ -223,6 +226,10 @@ void TonemapCurve::destroy() {
 
 fuse::math::Vec3 TonemapCurve::apply(const fuse::math::Vec3& hdr) const {
     return apply_tonemap_curve(hdr, m_params);
+}
+
+bool TonemapCurve::canApply() const {
+    return tonemap_curve_can_apply(m_params);
 }
 
 } // namespace fuse::renderer
