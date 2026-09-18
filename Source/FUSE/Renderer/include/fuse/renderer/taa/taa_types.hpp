@@ -97,6 +97,12 @@ TaaBlendWeights computeTaaBlendWeights(bool firstFrame, const TAAParams& params)
 bool taaBlendWeightsValid(const TaaBlendWeights& weights);
 /// True when history is warm and ready for temporal reuse (B5.9 deepen).
 bool taaHistoryCanReuse(const TaaHistoryBuffer& history);
+/// True when history targets are ready and the first resolve has warmed them (B5.9 deepen).
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history);
+/// True when reuse is blocked by warmup or a stale observed generation (B5.9 deepen).
+bool taaHistoryReuseBlocked(const TaaHistoryBuffer& history, u32 observedGeneration);
+/// True when resolve would proceed but history still needs warm-up (B5.9 deepen).
+bool taaResolveRequiresWarmup(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// True when history reuse is allowed for the observed invalidate epoch (B5.9 deepen).
 bool taaHistoryReuseAllowed(const TaaHistoryBuffer& history, u32 observedGeneration);
 /// True when resolve may sample prior history this frame (B5.9 deepen).
