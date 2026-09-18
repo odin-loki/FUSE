@@ -1808,6 +1808,89 @@ void testStateMachineTransitionHelpers() {
     expectTrue(machine.can_transition("run", "idle"), "can transition true for unconditional edge");
 }
 
+void testClipNodeIsEmpty() {
+    fuse::animation::ClipNode node;
+    expectTrue(node.is_empty(), "clip node empty without clip");
+
+    fuse::animation::AnimationClip clip = makePositionClip(1, 1.f);
+    node.clip = &clip;
+    expectTrue(!node.is_empty(), "clip node not empty with clip assigned");
+}
+
+void testPoseSoALayoutAndResetHelpers() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    const fuse::animation::Skeleton empty{};
+
+    fuse::animation::PoseSoA valid = fuse::animation::PoseSoA::from_bind_pose(skel);
+    expectTrue(fuse::animation::pose_soa_has_valid_layout(valid, skel),
+               "pose soa has valid layout for matching skeleton");
+    expectTrue(!fuse::animation::pose_soa_has_valid_layout(valid, empty),
+               "pose soa layout invalid for empty skeleton");
+
+    fuse::animation::PoseSoA edited = valid;
+    edited.local_positions[1].y = 5.f;
+    fuse::animation::reset_pose_soa_to_bind(edited, skel);
+    expectTrue(fuse::animation::pose_soa_matches_bind(edited, skel),
+               "reset pose soa to bind restores bind pose");
+}
+
+void testBlendTreeEmptySkeletonEarlyOut() {
+    const fuse::animation::Skeleton empty{};
+    fuse::animation::AnimationClip clip = makePositionClip(1, 3.f);
+
+    fuse::animation::ClipNode clipNode;
+    clipNode.clip = &clip;
+    fuse::animation::PoseSoA pose = fuse::animation::PoseSoA::allocate(2);
+    clipNode.evaluate_soa(0.f, empty, pose);
+    expectTrue(pose.bone_count == 0u, "clip node soa clears pose on empty skeleton");
+
+    fuse::animation::BlendNode2 blendNode;
+    blendNode.evaluate_soa(0.f, empty, pose);
+    expectTrue(pose.bone_count == 0u, "blend node2 soa clears pose on empty skeleton");
+
+    fuse::animation::AnimStateMachine machine;
+    machine.add_state("idle", std::make_unique<fuse::animation::ClipNode>());
+    machine.evaluate_soa(0.1f, empty, pose);
+    expectTrue(pose.bone_count == 0u, "state machine soa clears pose on empty skeleton");
+}
+
+void testStateMachineOutgoingTransitionHelpers() {
+    fuse::animation::AnimStateMachine machine;
+    machine.add_state("idle", nullptr);
+    machine.add_state("run", nullptr);
+    machine.add_state("jump", nullptr);
+
+    bool shouldRun = true;
+    bool shouldJump = false;
+    machine.add_transition("idle", "run", 0.2f, [&]() { return shouldRun; });
+    machine.add_transition("idle", "jump", 0.35f, [&]() { return shouldJump; });
+    machine.add_transition("run", "idle", 0.15f, []() { return true; });
+
+    expectTrue(machine.find_named_transition_index("idle", "run") == 0,
+               "find named transition index locates idle to run");
+    expectTrue(machine.find_named_transition_index("idle", "missing") < 0,
+               "find named transition index rejects unknown target");
+
+    expectTrue(machine.outgoing_transition_condition_passes(0u, 0u),
+               "outgoing transition condition passes for first edge");
+    expectTrue(!machine.outgoing_transition_condition_passes(0u, 1u),
+               "outgoing transition condition fails for second edge");
+    expectTrue(!machine.outgoing_transition_condition_passes(0u, 2u),
+               "outgoing transition condition rejects invalid edge index");
+
+    expectTrue(machine.find_first_passing_outgoing_transition(0u) == 0,
+               "find first passing outgoing transition returns first edge");
+    expectTrue(machine.find_first_passing_outgoing_transition(1u) == 2,
+               "find first passing outgoing transition from run");
+    expectTrue(machine.find_first_passing_outgoing_transition(2u) < 0,
+               "find first passing outgoing transition none from jump");
+
+    expectTrue(machine.has_passing_outgoing_transition(0u),
+               "has passing outgoing transition true for idle");
+    expectTrue(!machine.has_passing_outgoing_transition(2u),
+               "has passing outgoing transition false for jump");
+}
+
 void testAnimatorTick() {
     const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
     fuse::animation::Animator animator;
@@ -1899,9 +1982,13 @@ int main() {
     testEmptyAdditiveBlendNode();
     testPoseSoAMatchesBind();
     testPoseSoABindFallbackGuards();
+    testPoseSoALayoutAndResetHelpers();
+    testClipNodeIsEmpty();
+    testBlendTreeEmptySkeletonEarlyOut();
     testBlendNodeIsEmpty();
     testBlendNodeEmptyEarlyOut();
     testStateMachineTransitionHelpers();
+    testStateMachineOutgoingTransitionHelpers();
     testStateMachineConditionFalse();
     testStateMachineFirstTransitionWins();
     testStateMachineReset();
