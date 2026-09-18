@@ -585,13 +585,83 @@ void testBroadphaseCellSpanClampIntegration() {
 void testPairBufferSoAIterationEarlyOuts() {
     fuse::physics::broadphase::PairBufferSoA buffer;
     expectTrue(buffer.isSortedCanonical(), "empty buffer is canonically sorted");
+    expectTrue(buffer.canSkipDedupe(), "empty buffer skips dedupe");
+    expectTrue(buffer.canSkipCompaction(), "empty buffer skips compaction");
+    expectEq(buffer.countValidSlots(), 0u, "countValidSlots early-outs when empty");
     expectEq(buffer.applyMaxCapacityClamp(), 0u, "applyMaxCapacityClamp early-outs when empty");
     expectEq(buffer.compactAndClamp(), 0u, "compactAndClamp early-outs when empty");
 
     buffer.push(0u, 1u);
     expectTrue(buffer.hasValidPairs(), "non-empty buffer reports valid pairs");
     expectTrue(!buffer.canSkipSoAIteration(), "non-empty buffer does not skip iteration");
+    expectTrue(buffer.canSkipDedupe(), "single-pair buffer skips dedupe");
     expectEq(buffer.toVector().size(), 1u, "toVector gathers valid pair after push");
+}
+
+void testCandidatePairRejectReasonGuards() {
+    expectEq(static_cast<fuse::u32>(
+                 fuse::physics::broadphase::candidatePairRejectReason(1u, 1u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CandidatePairRejectReason::SelfPair),
+             "self-pair reports SelfPair reject reason");
+    expectEq(static_cast<fuse::u32>(
+                 fuse::physics::broadphase::candidatePairRejectReason(0u, 2u, 2u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CandidatePairRejectReason::OutOfRangeBody),
+             "out-of-range pair reports OutOfRangeBody reject reason");
+    expectEq(static_cast<fuse::u32>(
+                 fuse::physics::broadphase::candidatePairRejectReason(0u, 1u, 2u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CandidatePairRejectReason::None),
+             "in-range pair reports None reject reason");
+}
+
+void testCellRangeFromAabbHelpers() {
+    expectEq(fuse::physics::broadphase::clampCellSize(0.f), 1.f, "clampCellSize falls back to one");
+    expectEq(fuse::physics::broadphase::clampCellSize(-2.f), 1.f, "clampCellSize rejects negative size");
+    expectEq(fuse::physics::broadphase::clampCellSize(2.f), 2.f, "clampCellSize preserves positive size");
+
+    const fuse::physics::aabb bounds = fuse::physics::broadphase::aabbFromBox({0.f, 0.f, 0.f}, {1.f, 2.f, 3.f});
+    const fuse::physics::broadphase::CellRange3 aabbRange =
+        fuse::physics::broadphase::cellRangeFromAabb(bounds, 1.f, 0u);
+    const fuse::physics::ivec3 span = fuse::physics::broadphase::cellSpanPerAxis(aabbRange);
+    expectTrue(span.x >= 2, "cellRangeFromAabb spans x for box half-extents");
+    expectTrue(span.y >= 4, "cellRangeFromAabb spans y for box half-extents");
+    expectTrue(span.z >= 6, "cellRangeFromAabb spans z for box half-extents");
+
+    const fuse::physics::broadphase::CellRange3 boxRange =
+        fuse::physics::broadphase::cellRangeFromBox({0.f, 0.f, 0.f}, {0.5f, 0.5f, 0.5f}, 1.f, 0u);
+    expectTrue(!fuse::physics::broadphase::isEmptyCellRange(boxRange), "cellRangeFromBox is non-empty");
+
+    fuse::physics::broadphase::CellRange3 inverted = {{2, 2, 2}, {1, 1, 1}};
+    expectTrue(fuse::physics::broadphase::isEmptyCellRange(inverted), "inverted range is empty");
+    expectEq(fuse::physics::broadphase::cellSpanPerAxis(inverted).x, 0, "empty range reports zero span");
+}
+
+void testPairBufferCompactionEarlyOuts() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.preparePairSlots(2u);
+    buffer.writeSlot(0u, 0u, 1u);
+    buffer.writeSlot(1u, 2u, 3u);
+    expectEq(buffer.countValidSlots(), 2u, "countValidSlots counts prepared valid slots");
+    expectTrue(buffer.canSkipCompaction(), "all-valid slots skip compaction work");
+    expectEq(buffer.compact(), 2u, "compact early-out preserves active count");
+    expectEq(buffer.activeCount, 2u, "compact early-out leaves pairs intact");
+}
+
+void testBroadphaseBoxShapeCellRange() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    bodies.addBody({1.2f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Box, 0, {1.f, 1.f, 1.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Box, 1, {1.f, 1.f, 1.f});
+
+    fuse::physics::broadphase::SpatialHashParams params;
+    params.cellSize = 2.f;
+    params.tableSize = 128;
+    params.bodyCount = bodies.count();
+
+    const auto pairs = fuse::physics::broadphase::runBroadphase(bodies, shapes, params);
+    expectTrue(!pairs.empty(), "box shapes emit candidate pairs via AABB cell range");
 }
 
 } // namespace
@@ -621,6 +691,10 @@ int main() {
     testCellClampHelpers();
     testBroadphaseCellSpanClampIntegration();
     testPairBufferSoAIterationEarlyOuts();
+    testCandidatePairRejectReasonGuards();
+    testCellRangeFromAabbHelpers();
+    testPairBufferCompactionEarlyOuts();
+    testBroadphaseBoxShapeCellRange();
 
     if (g_failures == 0) {
         std::printf("fuse_physics_broadphase_tests: all checks passed\n");

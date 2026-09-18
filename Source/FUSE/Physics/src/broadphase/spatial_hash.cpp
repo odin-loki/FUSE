@@ -133,13 +133,24 @@ void populateShapeCells(
     }
 
     const vec3 position = bodies.positions[bodyIndex];
-    const f32 radius = shapeRadius(shapes, shapeIndex);
-    const f32 cellSize = params.cellSize > 0.f ? params.cellSize : 1.f;
+    const f32 cellSize = clampCellSize(params.cellSize);
     const u32 tableSize = clampTableSize(params.tableSize);
     const u32 maxSpan = params.maxCellSpanPerAxis;
+    const CollisionShapeType type = shapeType(shapes, shapeIndex);
 
     if (use2D) {
-        const CellRange2 range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
+        CellRange2 range = {};
+        if (type == CollisionShapeType::Box) {
+            const vec3 halfExtents = shapes.params[shapeIndex];
+            const aabb bounds = aabbFromBox(position, halfExtents);
+            range = cellRangeFromAabb2D(bounds, cellSize, maxSpan);
+        } else {
+            const f32 radius = shapeRadius(shapes, shapeIndex);
+            range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
+        }
+        if (isEmptyCellRange(range)) {
+            return;
+        }
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
             for (s32 cx = range.minCell.x; cx <= range.maxCell.x; ++cx) {
                 const u32 key = spatialHash2D(cx, cy, tableSize);
@@ -149,7 +160,17 @@ void populateShapeCells(
         return;
     }
 
-    const CellRange3 range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
+    CellRange3 range = {};
+    if (type == CollisionShapeType::Box) {
+        const vec3 halfExtents = shapes.params[shapeIndex];
+        range = cellRangeFromBox(position, halfExtents, cellSize, maxSpan);
+    } else {
+        const f32 radius = shapeRadius(shapes, shapeIndex);
+        range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
+    }
+    if (isEmptyCellRange(range)) {
+        return;
+    }
     for (s32 cz = range.minCell.z; cz <= range.maxCell.z; ++cz) {
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
             for (s32 cx = range.minCell.x; cx <= range.maxCell.x; ++cx) {
@@ -167,7 +188,7 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
 }
 
 void dedupeBuffer(PairBufferSoA& buffer) {
-    if (buffer.canSkipSoAIteration()) {
+    if (buffer.canSkipDedupe()) {
         return;
     }
 
@@ -298,7 +319,7 @@ void refineBroadphasePairsParallelImpl(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     PairBufferSoA& buffer) {
-    if (buffer.canSkipSoAIteration() || bodies.count() == 0 || shapes.count() == 0) {
+    if (buffer.canSkipSoAIteration() || !buffer.hasValidPairs() || bodies.count() == 0 || shapes.count() == 0) {
         return;
     }
 

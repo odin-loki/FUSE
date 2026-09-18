@@ -23,20 +23,41 @@ struct CandidatePair {
     u32 bodyB = 0;
 };
 
+/// Diagnostic reason a broadphase candidate pair is rejected (B4.2 deepen).
+enum class CandidatePairRejectReason : u8 {
+    None = 0,
+    SelfPair,
+    OutOfRangeBody,
+};
+
+/// Returns the first reject reason for a candidate pair, or `None` when valid.
+FUSE_PHYSICS_INLINE CandidatePairRejectReason candidatePairRejectReason(
+    u32 bodyA,
+    u32 bodyB,
+    u32 bodyCount = 0u) {
+    if (bodyA == bodyB) {
+        return CandidatePairRejectReason::SelfPair;
+    }
+    if (bodyCount > 0u && (bodyA >= bodyCount || bodyB >= bodyCount)) {
+        return CandidatePairRejectReason::OutOfRangeBody;
+    }
+    return CandidatePairRejectReason::None;
+}
+
+FUSE_PHYSICS_INLINE CandidatePairRejectReason candidatePairRejectReason(
+    const CandidatePair& pair,
+    u32 bodyCount = 0u) {
+    return candidatePairRejectReason(pair.bodyA, pair.bodyB, bodyCount);
+}
+
 /// Empty-pair guard: true when both indices refer to the same body.
 FUSE_PHYSICS_INLINE bool isEmptyCandidatePair(u32 bodyA, u32 bodyB) {
-    return bodyA == bodyB;
+    return candidatePairRejectReason(bodyA, bodyB) == CandidatePairRejectReason::SelfPair;
 }
 
 /// Candidate-pair validity stub: rejects self-pairs and optional out-of-range indices.
 FUSE_PHYSICS_INLINE bool isValidCandidatePair(u32 bodyA, u32 bodyB, u32 bodyCount = 0u) {
-    if (isEmptyCandidatePair(bodyA, bodyB)) {
-        return false;
-    }
-    if (bodyCount == 0u) {
-        return true;
-    }
-    return bodyA < bodyCount && bodyB < bodyCount;
+    return candidatePairRejectReason(bodyA, bodyB, bodyCount) == CandidatePairRejectReason::None;
 }
 
 FUSE_PHYSICS_INLINE bool isEmptyCandidatePair(const CandidatePair& pair) {
@@ -45,6 +66,11 @@ FUSE_PHYSICS_INLINE bool isEmptyCandidatePair(const CandidatePair& pair) {
 
 FUSE_PHYSICS_INLINE bool isValidCandidatePair(const CandidatePair& pair, u32 bodyCount = 0u) {
     return isValidCandidatePair(pair.bodyA, pair.bodyB, bodyCount);
+}
+
+/// Clamp cell size to a positive stub default (broadphase occupancy guard).
+FUSE_PHYSICS_INLINE f32 clampCellSize(f32 cellSize) {
+    return cellSize > 0.f ? cellSize : 1.f;
 }
 
 /// Clamp hash table size to at least one bucket (broadphase stub guard).
@@ -77,6 +103,38 @@ struct CellRange2 {
     ivec2 minCell{};
     ivec2 maxCell{};
 };
+
+/// True when any axis has an inverted min/max span (empty occupancy iteration).
+FUSE_PHYSICS_INLINE bool isEmptyCellRange(const CellRange3& range) {
+    return range.minCell.x > range.maxCell.x || range.minCell.y > range.maxCell.y ||
+           range.minCell.z > range.maxCell.z;
+}
+
+FUSE_PHYSICS_INLINE bool isEmptyCellRange(const CellRange2& range) {
+    return range.minCell.x > range.maxCell.x || range.minCell.y > range.maxCell.y;
+}
+
+/// Per-axis inclusive cell span for occupancy budgeting stubs.
+FUSE_PHYSICS_INLINE ivec3 cellSpanPerAxis(const CellRange3& range) {
+    if (isEmptyCellRange(range)) {
+        return {};
+    }
+    return {
+        range.maxCell.x - range.minCell.x + 1,
+        range.maxCell.y - range.minCell.y + 1,
+        range.maxCell.z - range.minCell.z + 1,
+    };
+}
+
+FUSE_PHYSICS_INLINE ivec2 cellSpanPerAxis(const CellRange2& range) {
+    if (isEmptyCellRange(range)) {
+        return {};
+    }
+    return {
+        range.maxCell.x - range.minCell.x + 1,
+        range.maxCell.y - range.minCell.y + 1,
+    };
+}
 
 /// Limit per-axis cell span from the range center (CUDA occupancy iteration guard stub).
 FUSE_PHYSICS_INLINE CellRange3 clampCellRange3(CellRange3 range, u32 maxSpanPerAxis) {
@@ -148,24 +206,6 @@ FUSE_PHYSICS_INLINE ivec2 worldToCell2D(vec2 position, f32 cellSize) {
     };
 }
 
-FUSE_PHYSICS_INLINE CellRange3 cellRangeFromSphere(vec3 center, f32 radius, f32 cellSize, u32 maxSpanPerAxis = 64u) {
-    const f32 cell = cellSize > 0.f ? cellSize : 1.f;
-    CellRange3 range = {
-        worldToCell({center.x - radius, center.y - radius, center.z - radius}, cell),
-        worldToCell({center.x + radius, center.y + radius, center.z + radius}, cell),
-    };
-    return clampCellRange3(range, maxSpanPerAxis);
-}
-
-FUSE_PHYSICS_INLINE CellRange2 cellRangeFromSphere2D(vec2 center, f32 radius, f32 cellSize, u32 maxSpanPerAxis = 64u) {
-    const f32 cell = cellSize > 0.f ? cellSize : 1.f;
-    CellRange2 range = {
-        worldToCell2D({center.x - radius, center.y - radius}, cell),
-        worldToCell2D({center.x + radius, center.y + radius}, cell),
-    };
-    return clampCellRange2(range, maxSpanPerAxis);
-}
-
 FUSE_PHYSICS_INLINE aabb aabbFromSphere(vec3 center, f32 radius) {
     return {
         {center.x - radius, center.y - radius, center.z - radius},
@@ -178,6 +218,41 @@ FUSE_PHYSICS_INLINE aabb aabbFromBox(vec3 center, vec3 halfExtents) {
         {center.x - halfExtents.x, center.y - halfExtents.y, center.z - halfExtents.z},
         {center.x + halfExtents.x, center.y + halfExtents.y, center.z + halfExtents.z},
     };
+}
+
+FUSE_PHYSICS_INLINE CellRange3 cellRangeFromAabb(const aabb& bounds, f32 cellSize, u32 maxSpanPerAxis = 64u) {
+    const f32 cell = clampCellSize(cellSize);
+    CellRange3 range = {
+        worldToCell(bounds.min, cell),
+        worldToCell(bounds.max, cell),
+    };
+    return clampCellRange3(range, maxSpanPerAxis);
+}
+
+FUSE_PHYSICS_INLINE CellRange2 cellRangeFromAabb2D(const aabb& bounds, f32 cellSize, u32 maxSpanPerAxis = 64u) {
+    const f32 cell = clampCellSize(cellSize);
+    CellRange2 range = {
+        worldToCell2D({bounds.min.x, bounds.min.y}, cell),
+        worldToCell2D({bounds.max.x, bounds.max.y}, cell),
+    };
+    return clampCellRange2(range, maxSpanPerAxis);
+}
+
+FUSE_PHYSICS_INLINE CellRange3 cellRangeFromSphere(vec3 center, f32 radius, f32 cellSize, u32 maxSpanPerAxis = 64u) {
+    return cellRangeFromAabb(aabbFromSphere(center, radius), cellSize, maxSpanPerAxis);
+}
+
+FUSE_PHYSICS_INLINE CellRange2 cellRangeFromSphere2D(vec2 center, f32 radius, f32 cellSize, u32 maxSpanPerAxis = 64u) {
+    const f32 cell = clampCellSize(cellSize);
+    CellRange2 range = {
+        worldToCell2D({center.x - radius, center.y - radius}, cell),
+        worldToCell2D({center.x + radius, center.y + radius}, cell),
+    };
+    return clampCellRange2(range, maxSpanPerAxis);
+}
+
+FUSE_PHYSICS_INLINE CellRange3 cellRangeFromBox(vec3 center, vec3 halfExtents, f32 cellSize, u32 maxSpanPerAxis = 64u) {
+    return cellRangeFromAabb(aabbFromBox(center, halfExtents), cellSize, maxSpanPerAxis);
 }
 
 FUSE_PHYSICS_INLINE bool aabbOverlap(const aabb& a, const aabb& b) {

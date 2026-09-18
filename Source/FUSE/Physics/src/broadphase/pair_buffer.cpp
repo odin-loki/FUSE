@@ -81,17 +81,22 @@ bool PairBufferSoA::push(u32 idxA, u32 idxB) {
 }
 
 u32 PairBufferSoA::compact() {
+    if (canSkipSoAIteration()) {
+        activeCount = 0u;
+        pairSlotCount = 0u;
+        return activeCount;
+    }
+
+    if (canSkipCompaction()) {
+        activeCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+        pairSlotCount = activeCount;
+        bodyA.resize(activeCount);
+        bodyB.resize(activeCount);
+        validFlags.resize(activeCount);
+        return activeCount;
+    }
+
     const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
-    if (scanCount == 0u) {
-        activeCount = 0u;
-        pairSlotCount = 0u;
-        return activeCount;
-    }
-    if (scanCount == 0u) {
-        activeCount = 0u;
-        pairSlotCount = 0u;
-        return activeCount;
-    }
 
     u32 writeIndex = 0;
     for (u32 readIndex = 0; readIndex < scanCount; ++readIndex) {
@@ -115,7 +120,7 @@ u32 PairBufferSoA::compact() {
 }
 
 void PairBufferSoA::sortCanonical() {
-    if (canSkipSoAIteration() || activeCount <= 1u) {
+    if (canSkipDedupe()) {
         return;
     }
 
@@ -213,6 +218,39 @@ bool PairBufferSoA::containsCanonicalPair(u32 idxA, u32 idxB) const {
         }
     }
     return false;
+}
+
+u32 PairBufferSoA::countValidSlots() const {
+    if (canSkipSoAIteration()) {
+        return 0u;
+    }
+
+    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+    u32 validCount = 0u;
+    for (u32 slot = 0; slot < scanCount; ++slot) {
+        if (validFlags[slot] != 0u) {
+            ++validCount;
+        }
+    }
+    return validCount;
+}
+
+bool PairBufferSoA::canSkipCompaction() const {
+    if (canSkipSoAIteration()) {
+        return true;
+    }
+
+    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+    if (scanCount == 0u) {
+        return true;
+    }
+
+    for (u32 slot = 0; slot < scanCount; ++slot) {
+        if (validFlags[slot] == 0u) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool PairBufferSoA::slotIsValid(u32 slot) const {
