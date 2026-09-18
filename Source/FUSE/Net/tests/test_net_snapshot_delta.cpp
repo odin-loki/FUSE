@@ -531,6 +531,65 @@ void run_snapshot_delta_tests() {
     const fuse::net::SnapshotHistoryPreflight apply_or_skip_preflight =
         helper_history.preflight_apply_delta(base.frame, empty_delta);
     expectTrue(apply_or_skip_preflight.can_apply_or_skip(), "history preflight can_apply_or_skip for empty delta");
+
+    // --- frame-order, kind, and trackable-index guards (B7.4 deepen follow-up) ---
+    expectTrue(fuse::net::validate_delta_frame_order(patch_delta), "patch delta frame order validates");
+    expectTrue(fuse::net::validate_delta_kind(patch_delta), "patch delta kind validates");
+    expectTrue(fuse::net::is_valid_snapshot_delta_kind(fuse::net::SnapshotDeltaKind::EntityPatch),
+               "entity patch kind is known");
+    expectTrue(fuse::net::entity_index_trackable(1u), "low entity index is trackable");
+    expectTrue(!fuse::net::entity_index_trackable(64u), "entity index 64 is not trackable");
+    expectTrue(fuse::net::validate_entity_patch_trackable(patch_delta.entity_patches[0]),
+               "computed patch index is trackable");
+    expectTrue(fuse::net::validate_entity_patch_indices_trackable(patch_delta),
+               "computed patch delta indices are trackable");
+
+    fuse::net::SnapshotDelta reversed_frame_delta = patch_delta;
+    reversed_frame_delta.base_frame = 10u;
+    reversed_frame_delta.target_frame = 5u;
+    expectTrue(!fuse::net::validate_delta_frame_order(reversed_frame_delta),
+               "target before base fails frame-order validation");
+    const fuse::net::SnapshotDeltaPreflight reversed_preflight =
+        fuse::net::preflight_snapshot_delta(base, reversed_frame_delta);
+    expectTrue(!reversed_preflight.target_frame_ok, "preflight rejects reversed frame order");
+    expectTrue(!reversed_preflight.can_apply(), "preflight can_apply fails on reversed frames");
+    expectTrue(fuse::net::should_reject_snapshot_delta(base, reversed_frame_delta),
+               "should_reject guard catches reversed frames");
+
+    fuse::net::SnapshotDelta untrackable_patch_delta = patch_delta;
+    untrackable_patch_delta.entity_patches[0].entity_index = 64u;
+    untrackable_patch_delta.changed_entity_mask = (1ull << 64);
+    expectTrue(!fuse::net::validate_entity_patch_trackable(untrackable_patch_delta.entity_patches[0]),
+               "entity index 64 fails trackable validation");
+    expectTrue(!fuse::net::validate_entity_patch_indices_trackable(untrackable_patch_delta),
+               "untrackable patch row fails indices validation");
+    expectTrue(!fuse::net::preflight_snapshot_delta(base, untrackable_patch_delta).trackable_indices_ok,
+               "preflight rejects untrackable entity index");
+
+    fuse::net::SnapshotDelta invalid_kind_delta = patch_delta;
+    invalid_kind_delta.kind = static_cast<fuse::net::SnapshotDeltaKind>(99);
+    expectTrue(!fuse::net::is_valid_snapshot_delta_kind(invalid_kind_delta.kind),
+               "unknown kind enumerator is invalid");
+    expectTrue(!fuse::net::validate_delta_kind(invalid_kind_delta), "unknown kind fails delta-kind validation");
+    expectTrue(!fuse::net::preflight_snapshot_delta(base, invalid_kind_delta).kind_ok,
+               "preflight rejects unknown delta kind");
+
+    const fuse::net::SnapshotDelta factory_full =
+        fuse::net::make_full_snapshot_delta(base.frame, target.frame, base.checksum, target.checksum, target);
+    expectTrue(factory_full.kind == fuse::net::SnapshotDeltaKind::Full, "make_full_snapshot_delta builds full kind");
+    expectTrue(fuse::net::validate_full_delta_payload(factory_full), "factory full delta payload validates");
+    expectTrue(fuse::net::preflight_snapshot_delta(base, factory_full).full_payload_ok,
+               "preflight accepts factory full delta");
+    const fuse::net::GameSnapshot factory_applied = fuse::net::apply_snapshot_delta(base, factory_full);
+    expectTrue(factory_applied.ecs_state == target.ecs_state, "factory full delta reconstructs ecs state");
+    expectTrue(factory_applied.physics_state == target.physics_state, "factory full delta reconstructs physics state");
+
+    const fuse::net::DeltaApplyResult full_verified =
+        fuse::net::apply_snapshot_delta_verified(base, factory_full);
+    expectTrue(full_verified.full_payload_ok, "verified apply surfaces full payload success");
+    expectTrue(full_verified.target_frame_ok, "verified apply surfaces target frame success");
+    expectTrue(full_verified.kind_ok, "verified apply surfaces kind success");
+    expectTrue(full_verified.trackable_indices_ok, "verified apply surfaces trackable index success");
 }
 
 } // namespace fuse::net::tests
