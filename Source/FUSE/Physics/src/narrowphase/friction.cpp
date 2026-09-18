@@ -84,6 +84,36 @@ bool should_skip_friction_tangents(const ContactManifold& manifold) {
     return false;
 }
 
+bool hasCachedFrictionBasis(const ContactManifold& manifold) {
+    return manifold.hasFrictionBasis();
+}
+
+bool should_rebuild_friction_tangents(const ContactManifold& manifold, f32 normalEpsilon) {
+    if (should_skip_friction_tangents(manifold)) {
+        return false;
+    }
+    if (!hasCachedFrictionBasis(manifold)) {
+        return true;
+    }
+    return !isOrthonormalTangentBasis(manifold.contactNormal, manifold.frictionBasis, normalEpsilon);
+}
+
+void ensureFrictionBasis(ContactManifold& manifold) {
+    if (should_skip_friction_tangents(manifold)) {
+        manifold.frictionBasis = {};
+        return;
+    }
+    if (!should_rebuild_friction_tangents(manifold)) {
+        return;
+    }
+
+    const f32 normalLength = manifold.contactNormal.length();
+    if (std::fabs(normalLength - 1.f) > 1e-4f && normalLength > 1e-8f) {
+        manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+    }
+    manifold.buildFrictionBasis();
+}
+
 bool should_skip_friction_solve(
     f32 staticFriction,
     f32 dynamicFriction,

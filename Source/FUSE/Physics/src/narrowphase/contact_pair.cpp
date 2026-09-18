@@ -204,6 +204,33 @@ bool is_unsupported_shape_pair(
     return false;
 }
 
+const char* contact_pair_reject_reason_name(ContactPairRejectReason reason) {
+    switch (reason) {
+    case ContactPairRejectReason::None:
+        return "None";
+    case ContactPairRejectReason::SelfPair:
+        return "SelfPair";
+    case ContactPairRejectReason::OutOfRangeBody:
+        return "OutOfRangeBody";
+    case ContactPairRejectReason::MissingShape:
+        return "MissingShape";
+    case ContactPairRejectReason::BothTriggers:
+        return "BothTriggers";
+    case ContactPairRejectReason::UnsupportedShapePair:
+        return "UnsupportedShapePair";
+    default:
+        return "Unknown";
+    }
+}
+
+bool is_empty_contact_manifold(const ContactManifold& manifold) {
+    return manifold.empty();
+}
+
+bool is_valid_contact_manifold(const ContactManifold& manifold) {
+    return manifold.valid && !manifold.empty() && manifold.hasValidNormal();
+}
+
 ContactPairRejectReason contact_pair_reject_reason(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
@@ -275,20 +302,7 @@ bool generate_contact_manifold(ContactManifold& manifold) {
 }
 
 void compute_friction_tangents(ContactManifold& manifold) {
-    if (should_skip_friction_tangents(manifold)) {
-        manifold.frictionBasis = {};
-        return;
-    }
-
-    if (manifold.hasFrictionBasis()) {
-        return;
-    }
-
-    const f32 normalLength = manifold.contactNormal.length();
-    if (std::fabs(normalLength - 1.f) > 1e-4f) {
-        manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
-    }
-    manifold.buildFrictionBasis();
+    ensureFrictionBasis(manifold);
 }
 
 } // namespace fuse::physics::narrowphase

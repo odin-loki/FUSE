@@ -41,6 +41,15 @@ vec2 projectTangentialVelocity(vec3 relativeVelocity, const TangentBasis& basis)
 /// Returns true when friction tangent frames should not be built for this manifold (B4.3 deepen).
 bool should_skip_friction_tangents(const ContactManifold& manifold);
 
+/// Returns true when the manifold already stores a valid orthonormal friction basis (B4.3 deepen).
+bool hasCachedFrictionBasis(const ContactManifold& manifold);
+
+/// Returns true when friction tangents must be rebuilt (missing or stale basis) (B4.3 deepen).
+bool should_rebuild_friction_tangents(const ContactManifold& manifold, f32 normalEpsilon = 1e-4f);
+
+/// Build friction basis only when skip/rebuild guards allow it (B4.3 deepen).
+void ensureFrictionBasis(ContactManifold& manifold);
+
 /// Returns true when both friction coefficients are zero or normal impulse is negligible (B4.3 deepen).
 bool should_skip_friction_solve(
     f32 staticFriction,
