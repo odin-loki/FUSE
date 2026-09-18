@@ -830,27 +830,125 @@ void testUpdateDragPreflightGuards() {
     hit.screenX = 10.f;
     hit.screenY = 50.f;
 
-    const fuse::editor::UpdateDragPreflight inactivePreflight =
-        fuse::editor::preflightUpdateDrag(hit, false);
+    const fuse::editor::UpdateDragPreflight inactivePreflight = fuse::editor::preflightUpdateDrag(
+        hit, false, fuse::editor::GizmoMode::Translate);
     expectTrue(inactivePreflight.notDragging, "update preflight marks inactive drag");
     expectTrue(!inactivePreflight.canUpdate(), "update preflight rejects inactive drag");
     expectTrue(!gizmo.preflightUpdateDrag(hit).canUpdate(),
                "gizmo update preflight rejects inactive drag");
+    expectTrue(!fuse::editor::canUpdateDrag(hit, false, fuse::editor::GizmoMode::Translate),
+               "canUpdateDrag rejects inactive drag");
+    expectTrue(!gizmo.canUpdateDrag(hit), "gizmo canUpdateDrag rejects inactive drag");
 
     fuse::editor::GizmoTransform transform{};
     gizmo.beginDrag(hit, transform);
     const fuse::editor::UpdateDragPreflight activePreflight = gizmo.preflightUpdateDrag(hit);
     expectTrue(activePreflight.canUpdate(), "update preflight accepts active drag with valid hit");
+    expectTrue(gizmo.canUpdateDrag(hit), "gizmo canUpdateDrag accepts active drag with valid hit");
+
+    fuse::editor::GizmoHitTest deadZone = hit;
+    deadZone.screenX = 50.f;
+    deadZone.screenY = 50.f;
+    const fuse::editor::UpdateDragPreflight screenMissPreflight = gizmo.preflightUpdateDrag(deadZone);
+    expectTrue(screenMissPreflight.screenMiss,
+               "update preflight marks translate dead zone as diagnostic screenMiss");
+    expectTrue(screenMissPreflight.canUpdate(),
+               "update preflight still allows dead-zone hit to preserve drag behavior");
+
+    fuse::editor::GizmoResult tryUpdateResult{};
+    expectTrue(gizmo.tryUpdateDrag(deadZone, tryUpdateResult),
+               "tryUpdateDrag accepts dead-zone hit while drag is active");
+    expectTrue(tryUpdateResult.changed, "tryUpdateDrag applies dead-zone update");
 
     hit.viewportWidth = 0.f;
     const fuse::editor::UpdateDragPreflight emptyPreflight = gizmo.preflightUpdateDrag(hit);
     expectTrue(emptyPreflight.emptyHit, "update preflight marks empty viewport");
     expectTrue(!emptyPreflight.canUpdate(), "update preflight rejects empty viewport");
+    expectTrue(!gizmo.canUpdateDrag(hit), "gizmo canUpdateDrag rejects empty viewport");
+
+    fuse::editor::GizmoResult tryRejectResult{};
+    expectTrue(!gizmo.tryUpdateDrag(hit, tryRejectResult),
+               "tryUpdateDrag rejects empty viewport");
+    expectTrue(!tryRejectResult.changed, "tryUpdateDrag leaves result unchanged on reject");
 
     const fuse::editor::GizmoResult update = gizmo.updateDrag(hit);
     expectTrue(!update.changed, "updateDrag ignores empty viewport via preflight guard");
     expectTrue(gizmo.isDragging(), "empty viewport update keeps drag active");
     gizmo.endDrag();
+}
+
+void testEndDragPreflightGuards() {
+    fuse::editor::GizmoSystem gizmo;
+
+    const fuse::editor::EndDragPreflight inactivePreflight = fuse::editor::preflightEndDrag(false);
+    expectTrue(inactivePreflight.notDragging, "end preflight marks inactive drag");
+    expectTrue(!inactivePreflight.canEnd(), "end preflight rejects inactive drag");
+    expectTrue(!fuse::editor::canEndDrag(false), "canEndDrag rejects inactive drag");
+    expectTrue(!gizmo.preflightEndDrag().canEnd(), "gizmo end preflight rejects inactive drag");
+    expectTrue(!gizmo.canEndDrag(), "gizmo canEndDrag rejects inactive drag");
+
+    fuse::editor::GizmoResult tryResult{};
+    expectTrue(!gizmo.tryEndDrag(tryResult), "tryEndDrag rejects when not dragging");
+    expectTrue(!tryResult.changed, "tryEndDrag leaves result unchanged on reject");
+
+    const fuse::editor::GizmoResult endResult = gizmo.endDrag();
+    expectTrue(!endResult.changed, "endDrag no-op when not dragging");
+    expectTrue(!gizmo.transformDirty(), "endDrag no-op does not mark transform dirty");
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    fuse::editor::GizmoTransform transform{};
+    gizmo.beginDrag(hit, transform);
+    expectTrue(gizmo.preflightEndDrag().canEnd(), "gizmo end preflight accepts active drag");
+    expectTrue(gizmo.canEndDrag(), "gizmo canEndDrag accepts active drag");
+    expectTrue(fuse::editor::preflightEndDrag(true).canEnd(),
+               "end preflight accepts active drag");
+    expectTrue(fuse::editor::canEndDrag(true), "canEndDrag accepts active drag");
+
+    expectTrue(gizmo.tryEndDrag(tryResult), "tryEndDrag succeeds on active drag");
+    expectTrue(tryResult.changed, "tryEndDrag marks result changed on success");
+    expectTrue(!gizmo.isDragging(), "tryEndDrag clears drag state");
+
+    gizmo.beginDrag(hit, transform);
+    const fuse::editor::GizmoResult ended = gizmo.endDrag();
+    expectTrue(ended.changed, "endDrag commits active drag");
+    expectTrue(!gizmo.isDragging(), "endDrag clears drag state");
+}
+
+void testSnapPreflightNoChange() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 1.f;
+
+    fuse::editor::GizmoTransform onGrid{};
+    onGrid.posX = 2.f;
+    onGrid.posY = -3.f;
+    onGrid.posZ = 0.f;
+
+    const fuse::editor::SnapPreflight onGridPreflight =
+        fuse::editor::preflightSnap(fuse::editor::GizmoMode::Translate, snap, onGrid);
+    expectTrue(onGridPreflight.canApply(), "snap preflight accepts enabled snap with valid step");
+    expectTrue(onGridPreflight.noChange, "snap preflight marks transform already on grid");
+    expectTrue(!onGridPreflight.wouldSnap(), "wouldSnap false when transform already on grid");
+
+    fuse::editor::GizmoTransform offGrid = onGrid;
+    offGrid.posX = 1.6f;
+    const fuse::editor::SnapPreflight offGridPreflight =
+        fuse::editor::preflightSnap(fuse::editor::GizmoMode::Translate, snap, offGrid);
+    expectTrue(offGridPreflight.canApply(), "snap preflight accepts off-grid transform");
+    expectTrue(!offGridPreflight.noChange, "snap preflight clears noChange for off-grid transform");
+    expectTrue(offGridPreflight.wouldSnap(), "wouldSnap true when transform needs snapping");
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    expectTrue(gizmo.preflightSnap(onGrid).noChange,
+               "gizmo snap preflight marks on-grid transform");
+    expectTrue(!gizmo.preflightSnap(offGrid).noChange,
+               "gizmo snap preflight clears noChange for off-grid transform");
 }
 
 void testDirtyFlagOnEndDrag() {
@@ -911,6 +1009,8 @@ int main() {
     testTrySnapTransformGuards();
     testTrySnapDragDeltaGuards();
     testUpdateDragPreflightGuards();
+    testEndDragPreflightGuards();
+    testSnapPreflightNoChange();
     testDirtyFlagOnEndDrag();
 
     if (g_failures != 0) {
