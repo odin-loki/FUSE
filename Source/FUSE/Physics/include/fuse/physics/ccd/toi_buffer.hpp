@@ -21,18 +21,24 @@ struct ToiBufferSoA {
     u32 maxCapacity = 0;
     u32 droppedCount = 0;
 
+    bool isEmpty() const { return activeCount == 0u; }
+    bool hasValidTois() const { return activeCount > 0u; }
+    /// True when both dense and slot storage are empty (safe to skip SoA scans).
+    bool canSkipSoAIteration() const { return activeCount == 0u && pairSlotCount == 0u; }
+    bool isFull() const { return maxCapacity > 0u && activeCount >= maxCapacity; }
+    bool slotIsValid(u32 slot) const;
+
     void reserve(u32 capacity);
     void setMaxCapacity(u32 capacity);
     void clear();
     void preparePairSlots(u32 pairCount);
     void writeSlot(u32 slot, const TOIResult& result);
+    void invalidateSlot(u32 slot);
     bool push(const TOIResult& result);
     void sortByToi();
     u32 compact();
     u32 applyMaxCapacityClamp();
     u32 compactAndSort();
-    bool isEmpty() const { return activeCount == 0u; }
-    bool isFull() const { return maxCapacity > 0u && activeCount >= maxCapacity; }
     bool isSortedByToi() const;
     TOIResult earliestToi() const;
     TOIResult resultAt(u32 index) const;
