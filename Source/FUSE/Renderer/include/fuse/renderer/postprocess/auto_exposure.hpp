@@ -39,6 +39,8 @@ void reset_auto_exposure_state(AutoExposureState& state);
 void reset_auto_exposure_state_to(AutoExposureState& state, f32 ev = 0.f);
 /// Reset temporal state with EV anchor clamped to `AutoExposureParams` range (B5.10 deepen).
 void reset_auto_exposure_state_to_clamped(AutoExposureState& state, f32 ev, const AutoExposureParams& params);
+/// Reset temporal state only when EV anchor is within params range; returns false when rejected (B5.10 deepen).
+bool reset_auto_exposure_state_to_if_valid(AutoExposureState& state, f32 ev, const AutoExposureParams& params);
 f32 ema_alpha_for_direction(bool brightening, const AutoExposureParams& params);
 bool is_brightening_luminance(f32 measured_luminance, f32 reference_luminance);
 f32 ema_blend(f32 previous, f32 measured, f32 alpha);
@@ -93,6 +95,8 @@ namespace histogram_util {
 bool hasMeteringSamples(const fuse::math::Vec3* samples, u32 count);
 /// True when a histogram has accumulated samples (B5.10 deepen).
 bool hasMeteringHistogram(const LuminanceHistogram& histogram);
+/// True when histogram params are valid and samples are present (B5.10 deepen).
+bool canMeterFromHistogram(const LuminanceHistogram& histogram);
 void accumulateSamples(LuminanceHistogram& histogram, const fuse::math::Vec3* samples, u32 count);
 f32 measurePercentile(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
                       f32 percentile);
@@ -121,6 +125,19 @@ private:
 
 void reset_exposure_meter(ExposureMeter& meter);
 
+/// Average exposure meter helpers (B5.10 deepen).
+namespace meter_util {
+/// True when an exposure meter has accumulated samples (B5.10 deepen).
+bool hasMeteringMeter(const ExposureMeter& meter);
+/// Average metering from meter; returns 0 when empty (B5.10 deepen).
+f32 meterFromMeter(const ExposureMeter& meter);
+/// Average metering from samples; returns 0 when `count == 0` (B5.10 deepen).
+f32 meterFromSamples(const fuse::math::Vec3* samples, u32 count);
+} // namespace meter_util
+
+/// Reset histogram and average meter together (B5.10 deepen).
+void reset_metering(LuminanceHistogram& histogram, ExposureMeter& meter);
+
 /// Host-side auto-exposure pass stub (CUDA histogram deferred).
 class AutoExposure {
 public:
@@ -133,6 +150,8 @@ public:
     void destroy();
     void reset();
     void resetToEv(f32 ev = 0.f);
+    /// Reset to EV anchor only when within params range; returns false when rejected (B5.10 deepen).
+    bool resetToEvIfValid(f32 ev);
 
     f32 updateFromSamples(const fuse::math::Vec3* samples, u32 count, f32 delta_seconds);
     f32 updateFromHistogram(const LuminanceHistogram& histogram, f32 delta_seconds);
