@@ -28,6 +28,7 @@ enum class ProbeKernelRejectReason : u8 {
     None = 0,
     ZeroUpdateCount,
     NullProbeIndices,
+    ZeroRaysPerProbe,
 };
 
 /// Human-readable label for probe-kernel reject reasons (logging / tests).
