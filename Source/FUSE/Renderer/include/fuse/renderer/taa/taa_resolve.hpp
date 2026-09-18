@@ -21,6 +21,8 @@ bool taaResolveRejectionSurfacesRequired(const TaaResolveDesc& desc);
 bool taaResolveRejectionSurfacesSatisfied(const TaaResolveDesc& desc);
 /// Fill `observed_history_generation` from history when still at the no-guard sentinel.
 void stampObservedHistoryGeneration(TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// True when history is ready, valid, and passes the generation guard (B5.9 deepen).
+bool taaHistoryIsReusable(const TaaHistoryBuffer& history, const TaaResolveDesc& desc);
 /// Clamp params and stamp observed generation — pre-resolve sanitization for callers.
 void sanitizeTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// Preflight resolve without mutating history — returns true when resolve would proceed.
