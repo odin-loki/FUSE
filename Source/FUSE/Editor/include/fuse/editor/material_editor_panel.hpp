@@ -45,7 +45,12 @@ public:
     [[nodiscard]] bool previewDirty() const { return m_previewDirty; }
     [[nodiscard]] bool editDirty() const { return m_editDirty; }
     [[nodiscard]] bool needsPanelRefresh() const { return m_binding.needsPanelRefresh(); }
+    [[nodiscard]] bool hasAnyPropertyDirty() const { return m_binding.hasAnyPropertyDirty(); }
+    [[nodiscard]] u32 propertyDirtyMask() const { return m_binding.propertyDirtyMask(); }
     [[nodiscard]] u32 coalescedPropertyDirtyCount() const { return m_binding.coalescedDirtyCount(); }
+
+    /// Panel refresh guard — binding reports pending refresh (B6.7 deepen).
+    [[nodiscard]] bool canRefreshPanel() const { return needsPanelRefresh(); }
 
     /// Early-out when catalog empty, unselected, or binding cannot post (B6.7 deepen follow-up).
     [[nodiscard]] bool shouldSkipPropertyEdit() const;
@@ -64,6 +69,8 @@ public:
     bool pushToMaterialSystem(renderer::MaterialSystem& materials, CommandStack& cmds);
 
     void refreshPanel();
+    /// Guarded panel refresh — no-op when binding is clean (B6.7 deepen).
+    bool tryRefreshPanel();
     void clearPreviewDirty() { m_previewDirty = false; }
     void clearEditDirty() { m_editDirty = false; }
 

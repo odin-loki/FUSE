@@ -101,4 +101,16 @@ struct MaterialInspectorRefreshInfo {
 /// Early-out when the binding is not live — refresh is a no-op (B6.7 deepen follow-up).
 [[nodiscard]] bool shouldSkipMaterialInspectorRefresh(bool isBound);
 
+/// Early-out — skip inspector bind/sync when the catalog is empty (B6.7 deepen).
+[[nodiscard]] bool shouldSkipMaterialInspectorBind(u32 catalogCount);
+
+/// Dirty-mask bit for one inspector property — 0 when id is invalid (B6.7 deepen).
+[[nodiscard]] u32 materialPropertyDirtyBit(MaterialPropertyId id);
+
+/// Count dirty inspector properties encoded in `dirtyMask` (B6.7 deepen).
+[[nodiscard]] u32 materialPropertyDirtyCount(u32 dirtyMask);
+
+/// True when no inspector property bits are set in `dirtyMask` (B6.7 deepen).
+[[nodiscard]] bool isMaterialPropertyDirtyMaskEmpty(u32 dirtyMask);
+
 } // namespace fuse::editor
