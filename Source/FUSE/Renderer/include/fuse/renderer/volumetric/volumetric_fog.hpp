@@ -192,10 +192,23 @@ enum class DensityLookupRejectReason : u8 {
     EmptyGrid,
     DescMismatch,
     EmptyStorage,
+    IndexOutOfRange,
 };
 
 /// Human-readable label for density lookup reject reasons (logging / tests).
 const char* densityLookupRejectReasonLabel(DensityLookupRejectReason reason);
+
+/// Why analytic froxel populate preflight rejected or skipped non-zero fill (B5.11 deepen).
+enum class FroxelPopulateRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    InvalidCamera,
+    ZeroDensity,
+    ZeroMarchSteps,
+};
+
+/// Human-readable label for populate reject reasons (logging / tests).
+const char* froxelPopulateRejectReasonLabel(FroxelPopulateRejectReason reason);
 
 /// CPU froxel density interpolation helpers — mirrors CUDA trilinear sample stub.
 namespace froxel_util {
@@ -224,6 +237,8 @@ bool tryCanSampleAtCoords(const FroxelDensityGrid& grid,
                           const FroxelGridDesc& desc,
                           const FroxelSampleCoords& coords,
                           SampleCoordRejectReason& outReason);
+/// True when tile/slice corners and interpolation weights are valid for sampling.
+bool areSampleCoordsReady(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
 /// True when at least one froxel exceeds `epsilon`; false when storage is empty.
 bool hasNonZeroDensity(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
 /// Early-out when the grid is inaccessible or uniformly below `epsilon`.
@@ -260,6 +275,11 @@ bool tryValidateGridDensity(const FroxelDensityGrid& grid,
                             const FroxelGridDesc& desc,
                             GridDensityRejectReason& outReason,
                             f32 epsilon = 1e-6f);
+/// Diagnose density validation against `desc`; vacuously succeeds on empty grids.
+bool tryValidateGridDensityForDesc(const FroxelDensityGrid& grid,
+                                   const FroxelGridDesc& desc,
+                                   GridDensityRejectReason& outReason,
+                                   f32 epsilon = 1e-6f);
 /// Read density with guard preflight; returns false when `canLookupAtIndex` would reject the request.
 bool trySampleDensityAtIndex(const FroxelDensityGrid& grid,
                              const FroxelGridDesc& desc,
@@ -331,6 +351,31 @@ void populateFromAnalyticFog(FroxelDensityGrid& grid,
                              const FroxelGridDesc& desc,
                              const FroxelCameraDesc& camera,
                              const VolumetricFogParams& params);
+/// True when `camera` has a positive near plane and far exceeds near.
+bool isValidPopulateCamera(const FroxelCameraDesc& camera);
+/// Early-out when analytic populate would not write non-zero froxel density.
+bool shouldSkipFroxelPopulate(const FroxelGridDesc& desc,
+                              const FroxelCameraDesc& camera,
+                              const VolumetricFogParams& params);
+/// True when analytic populate would fill froxels with non-zero density.
+bool canPopulateFromAnalyticFog(const FroxelGridDesc& desc,
+                                const FroxelCameraDesc& camera,
+                                const VolumetricFogParams& params);
+/// Diagnose why non-zero analytic populate would be skipped; false on empty grid or invalid camera.
+bool tryCanPopulateFromAnalyticFog(const FroxelGridDesc& desc,
+                                   const FroxelCameraDesc& camera,
+                                   const VolumetricFogParams& params,
+                                   FroxelPopulateRejectReason& outReason);
+/// Preflight analytic populate without mutation — same semantics as `tryCanPopulateFromAnalyticFog`.
+bool preflightPopulateFromAnalyticFog(const FroxelGridDesc& desc,
+                                      const FroxelCameraDesc& camera,
+                                      const VolumetricFogParams& params,
+                                      FroxelPopulateRejectReason& outReason);
+/// Populate with guard preflight; returns false when empty grid or invalid camera would be rejected.
+bool tryPopulateFromAnalyticFog(FroxelDensityGrid& grid,
+                                const FroxelGridDesc& desc,
+                                const FroxelCameraDesc& camera,
+                                const VolumetricFogParams& params);
 } // namespace froxel_util
 
 /// CPU stub — exponential height falloff density sample (P5 acceptance reference).

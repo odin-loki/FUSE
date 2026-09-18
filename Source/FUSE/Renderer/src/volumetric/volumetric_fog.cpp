@@ -399,6 +399,24 @@ const char* densityLookupRejectReasonLabel(DensityLookupRejectReason reason) {
         return "desc_mismatch";
     case DensityLookupRejectReason::EmptyStorage:
         return "empty_storage";
+    case DensityLookupRejectReason::IndexOutOfRange:
+        return "index_out_of_range";
+    }
+    return "unknown";
+}
+
+const char* froxelPopulateRejectReasonLabel(FroxelPopulateRejectReason reason) {
+    switch (reason) {
+    case FroxelPopulateRejectReason::None:
+        return "none";
+    case FroxelPopulateRejectReason::EmptyGrid:
+        return "empty_grid";
+    case FroxelPopulateRejectReason::InvalidCamera:
+        return "invalid_camera";
+    case FroxelPopulateRejectReason::ZeroDensity:
+        return "zero_density";
+    case FroxelPopulateRejectReason::ZeroMarchSteps:
+        return "zero_march_steps";
     }
     return "unknown";
 }
@@ -434,7 +452,7 @@ bool canLookupAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc,
 
 bool tryCanLookupAtIndex(const FroxelDensityGrid& grid,
                          const FroxelGridDesc& desc,
-                         u32 /*index*/,
+                         u32 index,
                          DensityLookupRejectReason& outReason) {
     if (FroxelGridLayout::isEmptyGrid(desc)) {
         outReason = DensityLookupRejectReason::EmptyGrid;
@@ -449,8 +467,16 @@ bool tryCanLookupAtIndex(const FroxelDensityGrid& grid,
         return false;
     }
 
-    outReason = DensityLookupRejectReason::None;
+    if (FroxelGridLayout::isFroxelIndexOutOfRange(index, desc)) {
+        outReason = DensityLookupRejectReason::IndexOutOfRange;
+    } else {
+        outReason = DensityLookupRejectReason::None;
+    }
     return true;
+}
+
+bool areSampleCoordsReady(const FroxelSampleCoords& coords, const FroxelGridDesc& desc) {
+    return FroxelGridLayout::isValidSampleCoords(coords, desc);
 }
 
 bool canSampleAtCoords(const FroxelDensityGrid& grid,
@@ -630,6 +656,13 @@ bool tryValidateGridDensity(const FroxelDensityGrid& grid,
     return true;
 }
 
+bool tryValidateGridDensityForDesc(const FroxelDensityGrid& grid,
+                                   const FroxelGridDesc& desc,
+                                   GridDensityRejectReason& outReason,
+                                   f32 epsilon) {
+    return tryValidateGridDensity(grid, desc, outReason, epsilon);
+}
+
 bool trySampleDensityAtIndex(const FroxelDensityGrid& grid,
                              const FroxelGridDesc& desc,
                              u32 index,
@@ -802,6 +835,81 @@ bool trySampleDensityAtScreen(const FroxelDensityGrid& grid,
     }
 
     outDensity = sampleDensityTrilinear(grid, desc, coords);
+    return true;
+}
+
+bool isValidPopulateCamera(const FroxelCameraDesc& camera) {
+    return camera.nearPlane > 0.f && camera.farPlane > camera.nearPlane;
+}
+
+bool canPopulateFromAnalyticFog(const FroxelGridDesc& desc,
+                                const FroxelCameraDesc& camera,
+                                const VolumetricFogParams& params) {
+    const FroxelGridDesc clampedDesc = FroxelGridDesc::clampCounts(desc);
+    if (clampedDesc.froxelCount() == 0u) {
+        return false;
+    }
+    if (!isValidPopulateCamera(camera)) {
+        return false;
+    }
+    if (params.density <= 0.f) {
+        return false;
+    }
+    if (params.march_steps == 0u) {
+        return false;
+    }
+    return true;
+}
+
+bool shouldSkipFroxelPopulate(const FroxelGridDesc& desc,
+                              const FroxelCameraDesc& camera,
+                              const VolumetricFogParams& params) {
+    return !canPopulateFromAnalyticFog(desc, camera, params);
+}
+
+bool tryCanPopulateFromAnalyticFog(const FroxelGridDesc& desc,
+                                   const FroxelCameraDesc& camera,
+                                   const VolumetricFogParams& params,
+                                   FroxelPopulateRejectReason& outReason) {
+    const FroxelGridDesc clampedDesc = FroxelGridDesc::clampCounts(desc);
+    if (clampedDesc.froxelCount() == 0u) {
+        outReason = FroxelPopulateRejectReason::EmptyGrid;
+        return false;
+    }
+    if (!isValidPopulateCamera(camera)) {
+        outReason = FroxelPopulateRejectReason::InvalidCamera;
+        return false;
+    }
+    if (params.density <= 0.f) {
+        outReason = FroxelPopulateRejectReason::ZeroDensity;
+        return true;
+    }
+    if (params.march_steps == 0u) {
+        outReason = FroxelPopulateRejectReason::ZeroMarchSteps;
+        return true;
+    }
+
+    outReason = FroxelPopulateRejectReason::None;
+    return true;
+}
+
+bool preflightPopulateFromAnalyticFog(const FroxelGridDesc& desc,
+                                      const FroxelCameraDesc& camera,
+                                      const VolumetricFogParams& params,
+                                      FroxelPopulateRejectReason& outReason) {
+    return tryCanPopulateFromAnalyticFog(desc, camera, params, outReason);
+}
+
+bool tryPopulateFromAnalyticFog(FroxelDensityGrid& grid,
+                                const FroxelGridDesc& desc,
+                                const FroxelCameraDesc& camera,
+                                const VolumetricFogParams& params) {
+    FroxelPopulateRejectReason reason = FroxelPopulateRejectReason::None;
+    if (!tryCanPopulateFromAnalyticFog(desc, camera, params, reason)) {
+        return false;
+    }
+
+    populateFromAnalyticFog(grid, desc, camera, params);
     return true;
 }
 
