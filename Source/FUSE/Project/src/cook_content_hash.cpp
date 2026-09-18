@@ -25,12 +25,20 @@ u64 hash_bool(bool value) {
 } // namespace
 
 u64 fnv1a64_bytes(const u8* data, usize size) {
+    if (data == nullptr) {
+        return size == 0 ? kFnvOffset : 0;
+    }
+
     u64 hash = kFnvOffset;
     for (usize i = 0; i < size; ++i) {
         hash ^= static_cast<u64>(data[i]);
         hash *= kFnvPrime;
     }
     return hash;
+}
+
+bool is_readable_cook_source_path(const std::string& path) {
+    return !path.empty() && !is_zero_cook_hash(hash_file_content(path));
 }
 
 u64 fnv1a64_combine(u64 left, u64 right) {
