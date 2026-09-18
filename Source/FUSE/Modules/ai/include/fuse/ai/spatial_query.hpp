@@ -31,7 +31,16 @@ struct RadiusFilterPolicy {
 [[nodiscard]] bool within_radius(float distanceSq, float radius);
 [[nodiscard]] bool is_valid_ally_radius(float radius);
 [[nodiscard]] float effective_radius(const RadiusFilterPolicy& policy);
+[[nodiscard]] u32 effective_min_count(const RadiusFilterPolicy& policy);
 [[nodiscard]] float radius_sq_from_policy(const RadiusFilterPolicy& policy);
+
+/// Count same-team allies outside `radius` of (`x`, `y`), excluding `selfIndex`.
+[[nodiscard]] u32 count_allies_outside_radius(u32 selfIndex,
+                                              u32 teamId,
+                                              float x,
+                                              float y,
+                                              float radius,
+                                              const std::vector<AllyCandidate>& allies);
 
 /// Count same-team allies within `radius` of (`x`, `y`), excluding `selfIndex`.
 [[nodiscard]] u32 count_allies_in_radius(u32 selfIndex,
@@ -73,6 +82,14 @@ struct RadiusFilterPolicy {
                                               float y,
                                               const RadiusFilterPolicy& policy,
                                               const std::vector<AllyCandidate>& allies);
+
+/// True when no same-team ally lies within `radius` (excludes self).
+[[nodiscard]] bool has_no_allies_in_radius(u32 selfIndex,
+                                           u32 teamId,
+                                           float x,
+                                           float y,
+                                           float radius,
+                                           const std::vector<AllyCandidate>& allies);
 
 /// True when at least one same-team ally lies within `radius` (excludes self).
 [[nodiscard]] bool has_any_ally_in_radius(u32 selfIndex,

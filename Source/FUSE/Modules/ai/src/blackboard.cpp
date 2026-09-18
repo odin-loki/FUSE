@@ -101,6 +101,10 @@ u32 BlackboardView::agentCount() const {
     return m_board ? m_board->agentCount() : 0u;
 }
 
+bool BlackboardView::isBoardEmpty() const {
+    return !m_board || m_board->isEmpty();
+}
+
 bool BlackboardView::isAgentValid(u32 agentIndex) const {
     return m_board && agentIndex < m_board->agentCount();
 }
@@ -119,6 +123,18 @@ bool BlackboardView::isFlagEmpty(u32 agentIndex, u32 flagIndex) const {
         return true;
     }
     return !value;
+}
+
+bool BlackboardView::isScalarSet(u32 agentIndex, u32 slotIndex) const {
+    return !isScalarEmpty(agentIndex, slotIndex);
+}
+
+bool BlackboardView::isFlagSet(u32 agentIndex, u32 flagIndex) const {
+    bool value = false;
+    if (!tryGetFlag(agentIndex, flagIndex, value)) {
+        return false;
+    }
+    return value;
 }
 
 } // namespace fuse::ai
