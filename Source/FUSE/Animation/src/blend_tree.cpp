@@ -176,6 +176,7 @@ void ClipNode::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
     }
 
     clip->evaluate(time, skel, out);
+    ensure_pose_soa_bind_fallback(out, skel);
 }
 
 bool BlendNode2::is_empty() const {
@@ -646,6 +647,50 @@ f32 AnimStateMachine::incoming_transition_blend_duration_at(u32 to_state, u32 ed
         ++seen;
     }
     return -1.f;
+}
+
+f32 AnimStateMachine::elapsed_crossfade_time() const {
+    if (!is_transitioning) {
+        return 0.f;
+    }
+
+    return std::max(0.f, blend_time);
+}
+
+bool AnimStateMachine::has_passing_outgoing_transition(u32 from_state) const {
+    return find_first_passing_outgoing_transition(from_state) >= 0;
+}
+
+bool AnimStateMachine::incoming_transition_condition_passes(u32 to_state, u32 edge_index) const {
+    u32 seen = 0;
+    for (const Transition& transition : transitions) {
+        if (transition.to != to_state) {
+            continue;
+        }
+        if (seen == edge_index) {
+            return !transition.condition || transition.condition();
+        }
+        ++seen;
+    }
+    return false;
+}
+
+bool AnimStateMachine::is_valid_transition_index(u32 transition_index) const {
+    return transition_index < transitions.size();
+}
+
+s32 AnimStateMachine::transition_from_at(u32 transition_index) const {
+    if (!is_valid_transition_index(transition_index)) {
+        return -1;
+    }
+    return static_cast<s32>(transitions[transition_index].from);
+}
+
+s32 AnimStateMachine::transition_to_at(u32 transition_index) const {
+    if (!is_valid_transition_index(transition_index)) {
+        return -1;
+    }
+    return static_cast<s32>(transitions[transition_index].to);
 }
 
 void AnimStateMachine::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
