@@ -663,6 +663,106 @@ void testPropertyInspectorMeshMaterialInvalidSlot() {
     scene.destroy();
 }
 
+void testMaterialPropertyDirtyMaskHelpers() {
+    expectTrue(fuse::editor::materialPropertyDirtyBit(fuse::editor::MaterialPropertyId::Roughness) == 1u,
+               "roughness dirty bit is bit 0");
+    expectTrue(fuse::editor::materialPropertyDirtyBit(fuse::editor::MaterialPropertyId::Metallic) == 2u,
+               "metallic dirty bit is bit 1");
+    expectTrue(fuse::editor::materialPropertyDirtyBit(fuse::editor::MaterialPropertyId::BaseColor) == 4u,
+               "base color dirty bit is bit 2");
+    expectTrue(fuse::editor::materialPropertyDirtyBit(fuse::editor::MaterialPropertyId::ShadingModel) == 8u,
+               "shading model dirty bit is bit 3");
+
+    const fuse::u32 roughnessAndMetallic =
+        fuse::editor::materialPropertyDirtyBit(fuse::editor::MaterialPropertyId::Roughness) |
+        fuse::editor::materialPropertyDirtyBit(fuse::editor::MaterialPropertyId::Metallic);
+    expectTrue(fuse::editor::materialPropertyDirtyCount(roughnessAndMetallic) == 2u,
+               "dirty count tracks two property bits");
+    expectTrue(!fuse::editor::isMaterialPropertyDirtyMaskEmpty(roughnessAndMetallic),
+               "non-zero dirty mask is not empty");
+    expectTrue(fuse::editor::isMaterialPropertyDirtyMaskEmpty(0u), "zero dirty mask is empty");
+}
+
+void testMaterialPropertyBindingDirtyMaskGuards() {
+    fuse::editor::MaterialPropertyBinding binding;
+    expectTrue(!binding.hasAnyPropertyDirty(), "unbound binding has no dirty properties");
+    expectTrue(binding.propertyDirtyMask() == 0u, "unbound dirty mask is zero");
+    expectTrue(binding.dirtyPropertyCount() == 0u, "unbound dirty count is zero");
+    expectTrue(!binding.canClearPropertyDirty(fuse::editor::MaterialPropertyId::Roughness),
+               "cannot clear dirty on clean binding");
+    expectTrue(!binding.tryClearPropertyDirty(fuse::editor::MaterialPropertyId::Roughness),
+               "tryClear rejects clean binding");
+    expectTrue(!binding.canMarkPanelRefreshed(), "clean binding cannot mark panel refreshed");
+    expectTrue(!binding.tryMarkPanelRefreshed(), "tryMarkPanelRefreshed rejects clean binding");
+
+    fuse::editor::MaterialEditState state{};
+    fuse::editor::CommandStack cmds;
+    binding.tryBind(0u, 1u, state);
+    expectTrue(binding.setRoughness(0.4f, cmds), "roughness edit marks dirty");
+    expectTrue(binding.hasAnyPropertyDirty(), "edit sets dirty mask");
+    expectTrue(binding.dirtyPropertyCount() == 1u, "one property dirty after first edit");
+    expectTrue(binding.tryIsPropertyDirty(fuse::editor::MaterialPropertyId::Roughness),
+               "tryIsPropertyDirty reports roughness dirty");
+    expectTrue(binding.canClearPropertyDirty(fuse::editor::MaterialPropertyId::Roughness),
+               "can clear dirty roughness");
+    expectTrue(binding.tryClearPropertyDirty(fuse::editor::MaterialPropertyId::Roughness),
+               "tryClear clears dirty roughness");
+    expectTrue(!binding.hasAnyPropertyDirty(), "clearing last dirty bit empties mask");
+    expectTrue(!binding.needsPanelRefresh(), "clearing last dirty bit clears panel refresh");
+
+    expectTrue(binding.setMetallic(0.5f, cmds), "metallic edit marks dirty");
+    expectTrue(binding.setBaseColor(0.1f, 0.2f, 0.3f, cmds), "base color edit marks dirty");
+    expectTrue(binding.dirtyPropertyCount() == 2u, "two distinct properties dirty");
+    expectTrue(binding.propertyDirtyMask() ==
+                   (fuse::editor::materialPropertyDirtyBit(fuse::editor::MaterialPropertyId::Metallic) |
+                    fuse::editor::materialPropertyDirtyBit(fuse::editor::MaterialPropertyId::BaseColor)),
+               "dirty mask encodes metallic and base color bits");
+    expectTrue(binding.canMarkPanelRefreshed(), "dirty binding can mark panel refreshed");
+    expectTrue(binding.tryMarkPanelRefreshed(), "tryMarkPanelRefreshed drains dirty state");
+    expectTrue(binding.propertyDirtyMask() == 0u, "panel refresh clears dirty mask");
+}
+
+void testMaterialPropertyBindingRefreshGuards() {
+    fuse::editor::MaterialPropertyBinding binding;
+    fuse::editor::MaterialEditState state{};
+    state.roughness = 0.8f;
+
+    expectTrue(!binding.canRefreshFromEditState(), "unbound binding cannot refresh");
+    expectTrue(!binding.tryRefreshFromEditState(state), "tryRefresh rejects unbound binding");
+
+    binding.tryBind(0u, 1u, state);
+    expectTrue(binding.canRefreshFromEditState(), "bound binding can refresh");
+    fuse::editor::MaterialEditState incoming{};
+    incoming.roughness = 2.f;
+    incoming.metallic = -1.f;
+    expectTrue(binding.tryRefreshFromEditState(incoming), "tryRefresh accepts bound binding");
+    expectTrue(state.roughness == 1.f, "tryRefresh clamps incoming roughness");
+    expectTrue(state.metallic == 0.f, "tryRefresh clamps incoming metallic");
+    expectTrue(!binding.needsPanelRefresh(), "refresh clears panel dirty flags");
+}
+
+void testMaterialEditorPanelRefreshGuards() {
+    fuse::editor::EditorState editorState;
+    fuse::editor::MaterialEditorPanel panel;
+    panel.sync(editorState, 1u);
+    panel.selectMaterial(0u);
+    panel.clearPreviewDirty();
+
+    expectTrue(!panel.canRefreshPanel(), "clean panel cannot refresh");
+    expectTrue(!panel.tryRefreshPanel(), "tryRefreshPanel rejects clean panel");
+    expectTrue(!panel.hasAnyPropertyDirty(), "clean panel has no dirty properties");
+    expectTrue(panel.propertyDirtyMask() == 0u, "clean panel dirty mask is zero");
+
+    fuse::editor::CommandStack cmds;
+    expectTrue(panel.setRoughness(0.35f, cmds), "roughness edit dirties panel");
+    expectTrue(panel.canRefreshPanel(), "dirty panel can refresh");
+    expectTrue(panel.hasAnyPropertyDirty(), "dirty panel reports dirty mask");
+    expectTrue(panel.tryRefreshPanel(), "tryRefreshPanel drains dirty panel");
+    expectTrue(!panel.needsPanelRefresh(), "tryRefreshPanel clears refresh flag");
+    expectTrue(!panel.previewDirty(), "tryRefreshPanel clears preview dirty");
+    expectTrue(!panel.tryRefreshPanel(), "second tryRefreshPanel is a no-op");
+}
+
 void testMaterialPropertyBindingUnbound() {
     fuse::editor::MaterialPropertyBinding binding;
     expectTrue(!binding.isBound(), "default binding is unbound");
@@ -835,6 +935,10 @@ int main() {
     testMaterialEditorPanelCatalogShrink();
     testMaterialPropertyBindingClamp();
     testMaterialPropertyBindingDirtyCoalesce();
+    testMaterialPropertyDirtyMaskHelpers();
+    testMaterialPropertyBindingDirtyMaskGuards();
+    testMaterialPropertyBindingRefreshGuards();
+    testMaterialEditorPanelRefreshGuards();
     testMaterialPropertyBindingUnbound();
     testPropertyInspectorMeshMaterialId();
     testPropertyInspectorMeshMaterialEmptyCatalog();
