@@ -465,6 +465,70 @@ void run_snapshot_delta_tests() {
     expectTrue(!empty_ring_preflight.can_apply(), "empty ring preflight cannot apply");
     expectTrue(empty_helper_ring.should_skip_apply_delta(0u, empty_delta),
                "empty ring should_skip_apply_delta is true");
+
+    // --- field-mask, full-payload, and duplicate-index guards (B7.4 deepen follow-up) ---
+    expectTrue(fuse::net::ecs_field_mask_valid(static_cast<fuse::u8>(fuse::net::SnapshotEcsField::Position)),
+               "declared ecs mask bits validate");
+    expectTrue(!fuse::net::ecs_field_mask_valid(0x80), "reserved ecs mask bit fails validation");
+    expectTrue(fuse::net::physics_field_mask_valid(static_cast<fuse::u8>(fuse::net::SnapshotPhysicsField::Mass)),
+               "declared physics mask bits validate");
+    expectTrue(!fuse::net::physics_field_mask_valid(0x10), "reserved physics mask bit fails validation");
+    expectTrue(fuse::net::validate_entity_field_masks(patch_delta.entity_patches[0]),
+               "computed patch field masks validate");
+
+    fuse::net::SnapshotEntityPatch invalid_mask_patch = patch_delta.entity_patches[0];
+    invalid_mask_patch.changed_ecs_fields = 0x80;
+    expectTrue(!fuse::net::validate_entity_field_masks(invalid_mask_patch),
+               "invalid ecs field mask fails validation");
+    expectTrue(!fuse::net::validate_entity_patch_masks(invalid_mask_patch),
+               "invalid field mask fails patch validation");
+
+    fuse::net::SnapshotDelta duplicate_index_delta = patch_delta;
+    duplicate_index_delta.entity_patches.push_back(patch_delta.entity_patches[0]);
+    expectTrue(!fuse::net::validate_entity_patch_indices_unique(duplicate_index_delta),
+               "duplicate entity index fails uniqueness helper");
+    expectTrue(!fuse::net::validate_delta_payload(duplicate_index_delta),
+               "duplicate entity index fails delta payload validation");
+
+    const fuse::net::SnapshotDeltaPreflight duplicate_preflight =
+        fuse::net::preflight_snapshot_delta(base, duplicate_index_delta);
+    expectTrue(!duplicate_preflight.patch_indices_unique_ok,
+               "preflight rejects duplicate entity indices");
+
+    expectTrue(fuse::net::is_full_snapshot_delta(high_index_delta), "high-index fallback is full delta");
+    expectTrue(!fuse::net::is_full_snapshot_delta(patch_delta), "patch delta is not full delta");
+    expectTrue(fuse::net::validate_full_delta_payload(high_index_delta),
+               "computed full delta payload validates");
+
+    fuse::net::SnapshotDelta empty_full_delta = high_index_delta;
+    empty_full_delta.full_ecs_state.clear();
+    empty_full_delta.full_physics_state.clear();
+    expectTrue(!fuse::net::validate_full_delta_payload(empty_full_delta),
+               "full delta with empty payload fails validation");
+    expectTrue(!fuse::net::preflight_snapshot_delta(base, empty_full_delta).full_payload_ok,
+               "preflight rejects empty full delta payload");
+
+    expectTrue(fuse::net::should_skip_verified_apply(base, bad_checksum_delta),
+               "verified apply skip guard rejects checksum mismatch");
+    expectTrue(!fuse::net::should_skip_verified_apply(base, patch_delta),
+               "verified apply skip guard accepts valid patch delta");
+
+    const fuse::net::DeltaApplyResult verified_mask_popcount =
+        fuse::net::apply_snapshot_delta_verified(base, bad_popcount_delta);
+    expectTrue(!verified_mask_popcount.mask_popcount_ok,
+               "verified apply propagates mask popcount failure");
+    expectTrue(verified_mask_popcount.empty_delta == false, "patch delta is not marked empty");
+
+    const fuse::net::DeltaApplyResult verified_empty =
+        fuse::net::apply_snapshot_delta_verified(base, empty_delta);
+    expectTrue(verified_empty.empty_delta, "verified apply marks empty delta");
+
+    const fuse::net::SnapshotHistoryPreflight frame_mismatch_preflight =
+        helper_history.preflight_apply_delta(base.frame, bad_frame_delta);
+    expectTrue(frame_mismatch_preflight.base_frame_mismatch,
+               "history preflight marks base frame mismatch");
+    expectTrue(!frame_mismatch_preflight.can_apply(),
+               "history preflight rejects base frame mismatch");
 }
 
 } // namespace fuse::net::tests
