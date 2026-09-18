@@ -51,6 +51,8 @@ public:
     bool matchesDimensions(u32 width, u32 height) const;
     bool needsHistoryWarmup() const { return m_history.needsWarmup(); }
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
+    /// True when a consumer's observed generation differs from pass history epoch.
+    bool isHistoryStale(u32 observedGeneration) const;
     /// Preflight resolve without mutating history (delegates to `TaaResolve::wouldSkip`).
     bool wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason = nullptr) const;
     /// Stamp `observed_history_generation` from pass history when still at the no-guard sentinel.

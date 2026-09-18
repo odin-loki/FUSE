@@ -23,6 +23,15 @@ bool taaResolveDimensionsMatch(const TaaResolveDesc& desc, const TaaHistoryBuffe
     return history.matchesDimensions(desc.width, desc.height);
 }
 
+bool taaResolveHasDimensionMismatch(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return !taaResolveDimensionsMatch(desc, history);
+}
+
+bool taaResolveHistoryGenerationIsStale(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return !taaResolveBypassesHistoryGenerationGuard(desc) &&
+           history.isHistoryStale(desc.observed_history_generation);
+}
+
 bool taaResolveBypassesHistoryGenerationGuard(const TaaResolveDesc& desc) {
     return desc.observed_history_generation == kTaaResolveNoHistoryGeneration;
 }
@@ -40,7 +49,7 @@ TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const Ta
     if (!taaResolveDimensionsValid(desc.width, desc.height)) {
         return TaaResolveSkipReason::InvalidDimensions;
     }
-    if (!taaResolveDimensionsMatch(desc, history)) {
+    if (taaResolveHasDimensionMismatch(desc, history)) {
         return TaaResolveSkipReason::DimensionMismatch;
     }
     if (desc.surfaces.current_frame == nullptr || desc.surfaces.output == nullptr) {
@@ -56,8 +65,7 @@ TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const Ta
             return TaaResolveSkipReason::MissingDepthBuffer;
         }
     }
-    if (!taaResolveBypassesHistoryGenerationGuard(desc) &&
-        history.isHistoryStale(desc.observed_history_generation)) {
+    if (taaResolveHistoryGenerationIsStale(desc, history)) {
         return TaaResolveSkipReason::StaleHistoryGeneration;
     }
     return TaaResolveSkipReason::None;

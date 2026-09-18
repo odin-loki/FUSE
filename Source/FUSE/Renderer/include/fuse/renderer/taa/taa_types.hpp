@@ -18,6 +18,9 @@ struct TaaJitterDesc {
     u32 sequence_length = 8;
 };
 
+/// Forward declaration — defined in `taa_history.hpp`.
+class TaaHistoryBuffer;
+
 /// Ping-pong history buffer allocation parameters.
 struct TaaHistoryBufferDesc {
     u32 width = 1;
@@ -95,10 +98,19 @@ struct TaaResolveStats {
     u32 history_invalidate_generation = 0;
 };
 
+/// True when history allocation dimensions are non-zero (B5.9 deepen).
+bool taaHistoryBufferDescValid(const TaaHistoryBufferDesc& desc);
+/// True when a resize would change history buffer dimensions (B5.9 deepen).
+bool taaHistoryResizeNeeded(u32 currentWidth, u32 currentHeight, u32 newWidth, u32 newHeight);
+
 /// Human-readable label for resolve skip reasons (logging / tests).
 const char* taaResolveSkipReasonLabel(TaaResolveSkipReason reason);
 /// True when width and height are both non-zero (resolve dimension preflight).
 bool taaResolveDimensionsValid(u32 width, u32 height);
+/// True when resolve dimensions differ from allocated history (dimension-mismatch early-out).
+bool taaResolveHasDimensionMismatch(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// True when `observed_history_generation` guard is active and epoch is stale (B5.9 deepen).
+bool taaResolveHistoryGenerationIsStale(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// True when resolve would bail before history update (`skip_reason != None`).
 bool taaResolveSkipReasonIsBlocking(TaaResolveSkipReason reason);
 

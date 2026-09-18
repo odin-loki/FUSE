@@ -13,6 +13,8 @@ static constexpr u32 kTaaMaxJitterSequenceLength = 64;
 struct TaaJitterLayout {
     static f32 halton(u32 index, u32 base);
     static bool validateSequenceLength(u32 length);
+    /// True when viewport dimensions are non-zero for NDC jitter (B5.9 deepen).
+    static bool validateViewportDimensions(u32 width, u32 height);
     /// Returns the jitter cycle length after validation (0 when invalid).
     static u32 sequencePeriod(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Maps a monotonic frame counter into the active Halton slot.

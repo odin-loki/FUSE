@@ -74,8 +74,12 @@ void TaaPass::invalidateHistory() {
     m_resolve.resetBookkeeping();
 }
 
+bool TaaPass::isHistoryStale(u32 observedGeneration) const {
+    return m_history.isHistoryStale(observedGeneration);
+}
+
 void TaaPass::resize(u32 width, u32 height) {
-    if (m_desc.width == width && m_desc.height == height) {
+    if (!taaHistoryResizeNeeded(m_desc.width, m_desc.height, width, height)) {
         return;
     }
 
@@ -104,7 +108,10 @@ bool TaaPass::resolveFrame(const TaaResolveDesc& desc, void* cudaStream) {
         return false;
     }
 
-    if (!m_resolve.resolve(desc, m_history, cudaStream)) {
+    TaaResolveDesc stampedDesc = desc;
+    stampObservedHistoryGeneration(stampedDesc);
+
+    if (!m_resolve.resolve(stampedDesc, m_history, cudaStream)) {
         m_stats.message = m_resolve.lastMessage();
         return false;
     }

@@ -21,6 +21,10 @@ bool TaaJitterLayout::validateSequenceLength(u32 length) {
     return length > 0u && length <= kTaaMaxJitterSequenceLength;
 }
 
+bool TaaJitterLayout::validateViewportDimensions(u32 width, u32 height) {
+    return width > 0u && height > 0u;
+}
+
 u32 TaaJitterLayout::sequencePeriod(u32 sequenceLength) {
     return validateSequenceLength(sequenceLength) ? sequenceLength : 0u;
 }
