@@ -121,6 +121,9 @@ enum class EvictionPolicy : u8 {
     return unload_distance_priority;
 }
 
+/// Guard: true when a budget eviction score is eligible for eviction (positive).
+[[nodiscard]] inline bool is_positive_eviction_score(f32 score) { return score > 0.f; }
+
 /// Budget-pressure eviction score — prefers residency focus distance over stream-out unload priority.
 [[nodiscard]] inline f32 budget_eviction_score(f32 focus_distance, f32 unload_distance_priority, u32 last_touch_tick,
                                                u32 current_tick, EvictionPolicy policy) {
@@ -134,6 +137,17 @@ enum class EvictionPolicy : u8 {
         return static_cast<f32>(current_tick - last_touch_tick);
     }
     return unload_distance_priority;
+}
+
+/// Guard: budget eviction score; returns -1 when focus distance is invalid for distance policy.
+[[nodiscard]] inline f32 budget_eviction_score_guarded(f32 focus_distance, f32 unload_distance_priority,
+                                                       u32 last_touch_tick, u32 current_tick,
+                                                       EvictionPolicy policy) {
+    if (policy == EvictionPolicy::DistanceFromFocus && focus_distance < 0.f) {
+        return -1.f;
+    }
+    return budget_eviction_score(focus_distance, unload_distance_priority, last_touch_tick, current_tick,
+                                 policy);
 }
 
 /// True when an incoming load (higher `priority` = closer) should evict a resident at `resident_focus_distance`.
@@ -160,13 +174,20 @@ enum class EvictionPolicy : u8 {
 /// True when a budget eviction candidate is eligible under distance policy pressure checks.
 [[nodiscard]] inline bool can_evict_for_incoming(f32 incoming_priority, f32 eviction_score,
                                                 EvictionPolicy policy) {
-    if (eviction_score <= 0.f) {
+    if (!is_positive_eviction_score(eviction_score)) {
         return false;
     }
     if (policy != EvictionPolicy::DistanceFromFocus) {
         return true;
     }
     return incoming_outranks_eviction(incoming_priority, eviction_score);
+}
+
+/// Guard: rejects non-positive eviction scores before policy checks.
+[[nodiscard]] inline bool can_evict_for_incoming_guarded(f32 incoming_priority, f32 eviction_score,
+                                                         EvictionPolicy policy) {
+    return is_positive_eviction_score(eviction_score) &&
+           can_evict_for_incoming(incoming_priority, eviction_score, policy);
 }
 
 /// True when budget pressure exists and the residency set can supply an eviction candidate.
