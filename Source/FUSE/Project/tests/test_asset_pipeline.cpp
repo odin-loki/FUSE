@@ -1397,6 +1397,63 @@ void testCookCacheEmptyGuards() {
                "downstream invalidation on empty cache returns zero");
     expectTrue(cache.invalidate_downstream_of("", {}, {}) == 0u,
                "downstream invalidation rejects empty output path");
+
+    expectTrue(!cache.invalidate(42u), "hash invalidation on empty cache returns false");
+    expectTrue(cache.stats().invalidations == 0u, "hash invalidation on empty cache does not bump stats");
+    expectTrue(!cache.contains(42u), "contains on empty cache returns false");
+
+    const fuse::u64 misses_before = cache.stats().misses;
+    expectTrue(cache.lookup(42u) == fuse::project::CookCacheLookup::Miss, "lookup misses on empty cache");
+    expectTrue(cache.stats().misses == misses_before + 1u, "lookup on empty cache records one miss");
+
+    expectTrue(cache.prune_invalid_entries() == 0u, "prune_invalid on empty cache returns zero");
+    expectTrue(cache.invalidate_stale_content_for_source("", 42u) == 0u,
+               "stale-content invalidation rejects empty source path");
+}
+
+void testCookCacheInvalidatePruneGuards() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_guard_mesh.obj", "# guard mesh\n");
+
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_guard_mesh.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
+    expectTrue(seeded.ok, "seed cook for invalidate/prune guards ok");
+    expectTrue(cooker.cache().entry_count() == 1u, "cache seeded for guard tests");
+
+    expectTrue(cooker.cache().invalidate_source("") == 0u, "empty source path invalidation is a no-op");
+    expectTrue(cooker.cache().entry_count() == 1u, "empty source invalidation leaves cache untouched");
+    expectTrue(cooker.cache().contains(seeded.content_hash), "seeded entry remains after empty source invalidation");
+
+    expectTrue(!cooker.cache().invalidate(0), "zero-hash invalidation on populated cache is a no-op");
+    expectTrue(cooker.cache().contains(seeded.content_hash), "seeded entry remains after zero-hash invalidation");
+
+    expectTrue(cooker.cache().invalidate_stale_content_for_source(source, 0u) == 1u,
+               "zero current hash invalidates all entries for source");
+    expectTrue(cooker.cache().empty(), "cache empty after zero-hash stale-content invalidation");
+
+    const fuse::project::CookRecord reseeded = cooker.cook_mesh(desc);
+    expectTrue(reseeded.ok, "reseed cook ok");
+    expectTrue(cooker.cache().prune_stale_entries() == 0u, "prune_stale on fresh entry is a no-op");
+    expectTrue(cooker.cache().prune_invalid_entries() == 0u, "prune_invalid on valid entry is a no-op");
+    expectTrue(cooker.cache().contains(reseeded.content_hash), "valid entry survives prune guards");
+
+    writeTempFile(source, "# guard mesh updated\n");
+    expectTrue(cooker.cache().prune_stale_entries() == 1u, "prune_stale removes entry after source change");
+    expectTrue(cooker.cache().empty(), "cache empty after stale prune");
+    expectTrue(cooker.cache().prune_stale_entries() == 0u, "second prune_stale on empty cache is a no-op");
+    expectTrue(cooker.cache().prune_invalid_entries() == 0u, "prune_invalid on empty cache after stale prune");
+}
+
+void testCookContentHashGuardHelpers() {
+    fuse::project::CookManifest manifest;
+    expectTrue(fuse::project::hash_upstream_dependencies({}, manifest) == 0,
+               "empty dependency list yields zero upstream hash");
+    expectTrue(fuse::project::combine_cook_cache_key(0, 42u) == 0,
+               "zero source hash stays zero when upstream is non-zero");
+    expectTrue(fuse::project::file_mtime_ns("") == 0, "empty path mtime is zero");
 }
 
 void testCookCacheContainsHelper() {
@@ -1576,6 +1633,8 @@ int main() {
     testCookCacheOutputInvalidation();
     testCookCachePruneStaleEntries();
     testCookCacheEmptyGuards();
+    testCookCacheInvalidatePruneGuards();
+    testCookContentHashGuardHelpers();
     testCookCacheContainsHelper();
     testCookCachePruneInvalidEntries();
     testCookManifestCacheHitsOnSecondRun();

@@ -68,6 +68,10 @@ u64 hash_file_content(const std::string& path) {
 
 u64 hash_upstream_dependencies(const std::vector<std::string>& dependency_output_paths,
                                const CookManifest& manifest) {
+    if (dependency_output_paths.empty()) {
+        return 0;
+    }
+
     u64 hash = 0;
     for (const std::string& dependency_output : dependency_output_paths) {
         hash = fnv1a64_combine(hash, hash_string(dependency_output));
