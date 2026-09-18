@@ -25,8 +25,14 @@ std::atomic<u32> g_eventCount{0};
 std::atomic<u32> g_maxNestingDepth{0};
 std::atomic<u32> g_maxFlowNestingDepth{0};
 std::atomic<u32> g_openAsyncFlowCount{0};
+std::atomic<u32> g_droppedEventCount{0};
+std::atomic<u32> g_totalRecordedEvents{0};
 
 std::mutex g_exportMutex;
+
+bool isNonEmptyProfileName(const char* name) {
+    return name != nullptr && *name != '\0';
+}
 
 u64 nowNanoseconds() {
     const auto now = std::chrono::steady_clock::now().time_since_epoch();
@@ -184,9 +190,13 @@ void recordEvent(const char* name,
         counterSnapshotFrame,
     };
 
+    g_totalRecordedEvents.fetch_add(1u, std::memory_order_acq_rel);
+
     const u32 count = g_eventCount.load(std::memory_order_acquire);
     if (count < kRingCapacity) {
         g_eventCount.fetch_add(1u, std::memory_order_acq_rel);
+    } else {
+        g_droppedEventCount.fetch_add(1u, std::memory_order_acq_rel);
     }
 }
 
@@ -222,7 +232,7 @@ const char* chromeCategory(EventPhase phase) {
 
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
-      m_active(g_enabled.load(std::memory_order_acquire) && name != nullptr) {
+      m_active(g_enabled.load(std::memory_order_acquire) && isNonEmptyProfileName(name)) {
     if (m_active) {
         m_scopeId = g_nextScopeId.fetch_add(1u, std::memory_order_acq_rel);
         m_nestingDepth = pushNestingDepth();
@@ -301,8 +311,12 @@ bool isEventIndexValid(u32 index) {
     return index < eventCount();
 }
 
+bool isValidProfileName(const char* name) {
+    return isNonEmptyProfileName(name);
+}
+
 bool isValidProfileEvent(const ProfileEvent& event) {
-    return event.name != nullptr;
+    return isNonEmptyProfileName(event.name);
 }
 
 const ProfileEvent& eventAt(u32 index) {
@@ -331,6 +345,72 @@ const ProfileEvent& lastEvent() {
     return eventAt(index);
 }
 
+bool hasLastEvent() {
+    return lastEventIndex() != kInvalidEventIndex;
+}
+
+bool tryEventAt(u32 index, ProfileEvent& outEvent) {
+    if (!isEventIndexValid(index)) {
+        return false;
+    }
+
+    outEvent = eventAt(index);
+    return isValidProfileEvent(outEvent);
+}
+
+u32 droppedEventCount() {
+    return g_droppedEventCount.load(std::memory_order_acquire);
+}
+
+NestingStatePreflight preflightNestingState() {
+    NestingStatePreflight preflight{};
+    preflight.scopeDepth = currentNestingDepth();
+    preflight.flowDepth = currentFlowNestingDepth();
+    preflight.openAsyncFlows = g_openAsyncFlowCount.load(std::memory_order_acquire);
+    preflight.maxScopeDepth = g_maxNestingDepth.load(std::memory_order_acquire);
+    preflight.maxFlowDepth = g_maxFlowNestingDepth.load(std::memory_order_acquire);
+    preflight.hasUnbalancedAsyncFlows = preflight.openAsyncFlows > 0u;
+    return preflight;
+}
+
+AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name) {
+    AsyncFlowBeginPreflight preflight{};
+    preflight.profilerDisabled = !g_enabled.load(std::memory_order_acquire);
+    preflight.emptyName = !isNonEmptyProfileName(name);
+    return preflight;
+}
+
+AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name) {
+    AsyncFlowEndPreflight preflight{};
+    preflight.profilerDisabled = !g_enabled.load(std::memory_order_acquire);
+    preflight.emptyName = !isNonEmptyProfileName(name);
+    preflight.orphanEnd = g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u;
+    return preflight;
+}
+
+ChromeExportPreflight preflightChromeExport() {
+    ChromeExportPreflight preflight{};
+    preflight.profilerDisabled = !g_enabled.load(std::memory_order_acquire);
+    preflight.eventCount = eventCount();
+    preflight.bufferEmpty = preflight.eventCount == 0u;
+    preflight.droppedEventCount = droppedEventCount();
+
+    for (u32 i = 0; i < preflight.eventCount; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (isValidProfileEvent(event)) {
+            ++preflight.exportableEventCount;
+        } else {
+            ++preflight.skippedInvalidNameCount;
+        }
+    }
+
+    return preflight;
+}
+
+bool canExportChromeTrace() {
+    return preflightChromeExport().canExport();
+}
+
 void reset() {
     const std::lock_guard<std::mutex> lock(g_exportMutex);
     g_writeHead.store(0u, std::memory_order_release);
@@ -341,6 +421,8 @@ void reset() {
     g_maxNestingDepth.store(0u, std::memory_order_release);
     g_maxFlowNestingDepth.store(0u, std::memory_order_release);
     g_openAsyncFlowCount.store(0u, std::memory_order_release);
+    g_droppedEventCount.store(0u, std::memory_order_release);
+    g_totalRecordedEvents.store(0u, std::memory_order_release);
     threadLocalNestingDepth() = 0u;
     threadLocalFlowNestingDepth() = 0u;
 }
@@ -350,7 +432,7 @@ u32 nextFlowId() {
 }
 
 void beginAsyncFlow(const char* name, u32 flowId) {
-    if (!g_enabled.load(std::memory_order_acquire) || name == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isNonEmptyProfileName(name)) {
         return;
     }
 
@@ -364,7 +446,7 @@ void beginAsyncFlow(const char* name, u32 flowId) {
 }
 
 void endAsyncFlow(const char* name, u32 flowId) {
-    if (!g_enabled.load(std::memory_order_acquire) || name == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isNonEmptyProfileName(name)) {
         return;
     }
 
@@ -384,7 +466,7 @@ void endAsyncFlow(const char* name, u32 flowId) {
 }
 
 void sampleCounter(const char* track, s64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || track == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isNonEmptyProfileName(track)) {
         return;
     }
 
@@ -400,7 +482,7 @@ void sampleCounter(const char* track, s64 value) {
 }
 
 void sampleCounterFloat(const char* track, f64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || track == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isNonEmptyProfileName(track)) {
         return;
     }
 
@@ -416,7 +498,7 @@ void sampleCounterFloat(const char* track, f64 value) {
 }
 
 void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || track == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isNonEmptyProfileName(track)) {
         return;
     }
 
@@ -432,7 +514,7 @@ void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
 }
 
 void sampleCounterFloatSnapshotAtFrame(const char* track, f64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || track == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isNonEmptyProfileName(track)) {
         return;
     }
 
@@ -463,7 +545,7 @@ std::string exportChromeTraceJson() {
 
     for (u32 i = 0; i < count; ++i) {
         const ProfileEvent& event = eventAt(i);
-        if (event.name == nullptr) {
+        if (!isValidProfileEvent(event)) {
             continue;
         }
 

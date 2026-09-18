@@ -73,11 +73,65 @@ bool hasEvents();
 bool isBufferEmpty();
 bool isBufferFull();
 bool isEventIndexValid(u32 index);
+bool isValidProfileName(const char* name);
 bool isValidProfileEvent(const ProfileEvent& event);
 u32 lastEventIndex();
 const ProfileEvent& eventAt(u32 index);
 const ProfileEvent& lastEvent();
+bool hasLastEvent();
+bool tryEventAt(u32 index, ProfileEvent& outEvent);
+u32 droppedEventCount();
 void reset();
+
+/// Read-only scope/async nesting diagnostics — no mutation (B1.6 deepen).
+struct NestingStatePreflight {
+    u32 scopeDepth = 0;
+    u32 flowDepth = 0;
+    u32 openAsyncFlows = 0;
+    u32 maxScopeDepth = 0;
+    u32 maxFlowDepth = 0;
+    bool hasUnbalancedAsyncFlows = false;
+
+    bool isBalanced() const { return !hasUnbalancedAsyncFlows && scopeDepth == 0u && flowDepth == 0u; }
+};
+
+NestingStatePreflight preflightNestingState();
+
+/// Read-only async-flow begin diagnostics — no mutation (B1.6 deepen).
+struct AsyncFlowBeginPreflight {
+    bool profilerDisabled = false;
+    bool emptyName = false;
+
+    bool canBegin() const { return !profilerDisabled && !emptyName; }
+};
+
+AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name);
+
+/// Read-only async-flow end diagnostics — no mutation (B1.6 deepen).
+struct AsyncFlowEndPreflight {
+    bool profilerDisabled = false;
+    bool emptyName = false;
+    bool orphanEnd = false;
+
+    bool canEnd() const { return !profilerDisabled && !emptyName && !orphanEnd; }
+};
+
+AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name);
+
+/// Read-only chrome export diagnostics — no mutation (B1.6 deepen).
+struct ChromeExportPreflight {
+    bool profilerDisabled = false;
+    bool bufferEmpty = false;
+    u32 eventCount = 0;
+    u32 exportableEventCount = 0;
+    u32 skippedInvalidNameCount = 0;
+    u32 droppedEventCount = 0;
+
+    bool canExport() const { return !profilerDisabled; }
+};
+
+ChromeExportPreflight preflightChromeExport();
+bool canExportChromeTrace();
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();
