@@ -18,6 +18,30 @@ bool TransformSystem::should_recompute_in_hierarchy(const Transform& transform) 
     return transform.dirty || transform.parent.valid();
 }
 
+bool TransformSystem::is_root_transform(const Transform& transform) {
+    return !transform.parent.valid();
+}
+
+bool TransformSystem::is_dirty_root_transform(const Transform& transform) {
+    return is_root_transform(transform) && transform.dirty;
+}
+
+bool TransformSystem::should_recompute_dirty_root(const Transform& transform) {
+    return is_dirty_root_transform(transform);
+}
+
+bool TransformSystem::should_skip_dirty_roots_update(Registry& reg) {
+    if (!has_any_transforms(reg)) {
+        return true;
+    }
+
+    return !has_dirty_roots(reg);
+}
+
+bool TransformSystem::should_skip_hierarchy_subtree(Registry& reg, EntityID id) {
+    return !subtree_has_dirty(reg, id);
+}
+
 bool TransformSystem::subtree_has_dirty(Registry& reg, EntityID id) {
     const Transform* transform = reg.get<Transform>(id);
     if (transform == nullptr) {
@@ -107,7 +131,7 @@ u32 TransformSystem::count_roots(Registry& reg) {
 
     u32 count = 0;
     reg.each<Transform>([&](EntityID, Transform& transform) {
-        if (!transform.parent.valid()) {
+        if (is_root_transform(transform)) {
             ++count;
         }
     });
@@ -115,12 +139,12 @@ u32 TransformSystem::count_roots(Registry& reg) {
 }
 
 void TransformSystem::update_dirty_roots_serial(Registry& reg) {
-    if (!has_any_transforms(reg) || !has_dirty_roots(reg)) {
+    if (should_skip_dirty_roots_update(reg)) {
         return;
     }
 
     reg.each<Transform>([&](EntityID, Transform& transform) {
-        if (transform.parent.valid() || !transform.dirty) {
+        if (!should_recompute_dirty_root(transform)) {
             return;
         }
 
@@ -129,13 +153,13 @@ void TransformSystem::update_dirty_roots_serial(Registry& reg) {
 }
 
 void TransformSystem::update_dirty_roots_parallel(Registry& reg, u32 batchSize) {
-    if (!has_any_transforms(reg) || !has_dirty_roots(reg)) {
+    if (should_skip_dirty_roots_update(reg)) {
         return;
     }
 
     const u32 grain = detail::normalize_batch_size(batchSize);
     reg.each_parallel<Transform>([&](EntityID, Transform& transform) {
-        if (transform.parent.valid() || !transform.dirty) {
+        if (!should_recompute_dirty_root(transform)) {
             return;
         }
 
@@ -150,7 +174,7 @@ u32 TransformSystem::count_dirty_roots(Registry& reg) {
 
     u32 count = 0;
     reg.each<Transform>([&](EntityID, Transform& transform) {
-        if (!transform.parent.valid() && transform.dirty) {
+        if (is_dirty_root_transform(transform)) {
             ++count;
         }
     });
@@ -171,7 +195,7 @@ void TransformSystem::update(Registry& reg, const TransformSystemOptions& option
         }
     });
 
-    if (has_dirty_roots(reg)) {
+    if (!should_skip_dirty_roots_update(reg)) {
         if (options.parallelDirtyRoots) {
             update_dirty_roots_parallel(reg, options.batchSize);
         } else {
@@ -184,6 +208,10 @@ void TransformSystem::update(Registry& reg, const TransformSystemOptions& option
     }
 
     for (EntityID root : roots) {
+        if (should_skip_hierarchy_subtree(reg, root)) {
+            continue;
+        }
+
         Transform* transform = reg.get<Transform>(root);
         if (transform == nullptr) {
             continue;

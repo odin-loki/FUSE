@@ -51,6 +51,21 @@ public:
     /// Returns true when a hierarchy visit should recompute world matrices for `transform`.
     [[nodiscard]] static bool should_recompute_in_hierarchy(const Transform& transform);
 
+    /// Returns true when `transform` has no parent entity.
+    [[nodiscard]] static bool is_root_transform(const Transform& transform);
+
+    /// Returns true when `transform` is a root with `dirty == true`.
+    [[nodiscard]] static bool is_dirty_root_transform(const Transform& transform);
+
+    /// Returns true when the dirty-root pass should recompute `transform`.
+    [[nodiscard]] static bool should_recompute_dirty_root(const Transform& transform);
+
+    /// Returns true when dirty-root serial/parallel passes can early-out.
+    [[nodiscard]] static bool should_skip_dirty_roots_update(Registry& reg);
+
+    /// Returns true when a hierarchy subtree walk can be skipped for `id`.
+    [[nodiscard]] static bool should_skip_hierarchy_subtree(Registry& reg, EntityID id);
+
     /// Returns false when the registry has no `Transform` components (empty-transform guard).
     [[nodiscard]] static bool has_any_transforms(Registry& reg);
 
