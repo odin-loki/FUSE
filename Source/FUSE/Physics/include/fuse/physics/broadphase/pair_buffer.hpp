@@ -61,4 +61,34 @@ struct PairBufferSoA {
     std::vector<CandidatePair> toVector() const;
 };
 
+/// Read-only push diagnostics — no mutation (B4.2 deepen follow-up).
+struct PairBufferPushPreflight {
+    bool invalidPair = false;
+    bool atCapacity = false;
+
+    bool canPush() const { return !invalidPair && !atCapacity; }
+};
+
+PairBufferPushPreflight preflightPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
+
+/// Read-only compaction diagnostics — no mutation (B4.2 deepen follow-up).
+struct PairBufferCompactionPreflight {
+    bool emptyBuffer = false;
+    bool allValid = false;
+
+    bool needsCompaction() const { return !emptyBuffer && !allValid; }
+};
+
+PairBufferCompactionPreflight preflightPairBufferCompaction(const PairBufferSoA& buffer);
+
+/// Read-only max-capacity clamp diagnostics — no mutation (B4.2 deepen follow-up).
+struct PairBufferClampPreflight {
+    bool emptyBuffer = false;
+    bool withinCapacity = false;
+
+    bool needsClamp() const { return !emptyBuffer && !withinCapacity; }
+};
+
+PairBufferClampPreflight preflightPairBufferClamp(const PairBufferSoA& buffer);
+
 } // namespace fuse::physics::broadphase

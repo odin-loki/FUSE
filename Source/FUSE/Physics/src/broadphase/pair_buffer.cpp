@@ -305,4 +305,25 @@ std::vector<CandidatePair> PairBufferSoA::toVector() const {
     return pairs;
 }
 
+PairBufferPushPreflight preflightPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB) {
+    PairBufferPushPreflight preflight{};
+    preflight.invalidPair = !isValidCandidatePair(idxA, idxB);
+    preflight.atCapacity = buffer.isFull();
+    return preflight;
+}
+
+PairBufferCompactionPreflight preflightPairBufferCompaction(const PairBufferSoA& buffer) {
+    PairBufferCompactionPreflight preflight{};
+    preflight.emptyBuffer = buffer.canSkipSoAIteration();
+    preflight.allValid = !preflight.emptyBuffer && buffer.canSkipCompaction();
+    return preflight;
+}
+
+PairBufferClampPreflight preflightPairBufferClamp(const PairBufferSoA& buffer) {
+    PairBufferClampPreflight preflight{};
+    preflight.emptyBuffer = buffer.canSkipSoAIteration();
+    preflight.withinCapacity = preflight.emptyBuffer || !buffer.canApplyMaxCapacityClamp();
+    return preflight;
+}
+
 } // namespace fuse::physics::broadphase

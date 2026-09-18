@@ -117,6 +117,23 @@ FUSE_PHYSICS_INLINE bool canSkipBroadphase(
     return canSkipBroadphasePairGeneration(bodies, shapes);
 }
 
+/// Read-only broadphase launch diagnostics — no mutation (B4.2 deepen follow-up).
+struct BroadphasePreflight {
+    bool emptyInput = false;
+    bool singletonInput = false;
+
+    bool canRun() const { return !emptyInput && !singletonInput; }
+};
+
+FUSE_PHYSICS_INLINE BroadphasePreflight preflightBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    BroadphasePreflight preflight{};
+    preflight.emptyInput = isEmptyBroadphaseInput(bodies, shapes);
+    preflight.singletonInput = !preflight.emptyInput && isSingletonBroadphaseInput(bodies, shapes);
+    return preflight;
+}
+
 /// Clamp cell size to a positive stub default (broadphase occupancy guard).
 FUSE_PHYSICS_INLINE f32 clampCellSize(f32 cellSize) {
     return cellSize > 0.f ? cellSize : 1.f;
@@ -246,6 +263,64 @@ FUSE_PHYSICS_INLINE u32 occupancyBudgetRemaining(const CellRange2& range, u32 ma
     }
     const u32 occupancy = estimateCellOccupancyCount(range);
     return occupancy >= maxCells ? 0u : maxCells - occupancy;
+}
+
+/// Why cell occupancy iteration preflight rejected the range (B4.2 deepen follow-up).
+enum class CellOccupancyRejectReason : u8 {
+    None = 0,
+    EmptyRange,
+    ExceedsBudget,
+};
+
+/// Human-readable label for cell-occupancy reject reasons (logging / tests).
+const char* cellOccupancyRejectReasonName(CellOccupancyRejectReason reason);
+
+/// Diagnose why cell occupancy iteration would reject; vacuously succeeds on valid ranges.
+FUSE_PHYSICS_INLINE CellOccupancyRejectReason cellOccupancyRejectReason(const CellRange3& range, u32 maxCells) {
+    if (isEmptyCellRange(range)) {
+        return CellOccupancyRejectReason::EmptyRange;
+    }
+    if (exceedsCellOccupancyBudget(range, maxCells)) {
+        return CellOccupancyRejectReason::ExceedsBudget;
+    }
+    return CellOccupancyRejectReason::None;
+}
+
+FUSE_PHYSICS_INLINE CellOccupancyRejectReason cellOccupancyRejectReason(const CellRange2& range, u32 maxCells) {
+    if (isEmptyCellRange(range)) {
+        return CellOccupancyRejectReason::EmptyRange;
+    }
+    if (exceedsCellOccupancyBudget(range, maxCells)) {
+        return CellOccupancyRejectReason::ExceedsBudget;
+    }
+    return CellOccupancyRejectReason::None;
+}
+
+/// Cell-capacity preflight for shape occupancy iteration (B4.2 deepen follow-up).
+struct CellOccupancyPreflight {
+    bool emptyRange = false;
+    bool exceedsBudget = false;
+    u32 occupancyCount = 0;
+
+    bool canIterate() const { return !emptyRange && !exceedsBudget; }
+};
+
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancy(const CellRange3& range, u32 maxCells) {
+    CellOccupancyPreflight preflight{};
+    preflight.emptyRange = isEmptyCellRange(range);
+    preflight.occupancyCount = estimateCellOccupancyCount(range);
+    preflight.exceedsBudget =
+        cellOccupancyRejectReason(range, maxCells) == CellOccupancyRejectReason::ExceedsBudget;
+    return preflight;
+}
+
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancy(const CellRange2& range, u32 maxCells) {
+    CellOccupancyPreflight preflight{};
+    preflight.emptyRange = isEmptyCellRange(range);
+    preflight.occupancyCount = estimateCellOccupancyCount(range);
+    preflight.exceedsBudget =
+        cellOccupancyRejectReason(range, maxCells) == CellOccupancyRejectReason::ExceedsBudget;
+    return preflight;
 }
 
 /// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).
@@ -404,6 +479,39 @@ void runBroadphase2DIntoBuffer(
     const CollisionShapeSoA& shapes,
     const SpatialHashParams& params,
     PairBufferSoA& buffer);
+
+/// Read-only refine diagnostics — no mutation (B4.2 deepen follow-up).
+struct RefineBroadphasePreflight {
+    bool emptyBuffer = false;
+    bool emptyInput = false;
+    bool noValidPairs = false;
+
+    bool canRefine() const { return !emptyBuffer && !emptyInput && !noValidPairs; }
+};
+
+RefineBroadphasePreflight preflightRefineBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
+
+/// Non-mutating refine predicate — same guards as `preflightRefineBroadphase`.
+bool canSkipRefineBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
+
+/// Read-only dedupe diagnostics — no mutation (B4.2 deepen follow-up).
+struct DedupeBroadphasePreflight {
+    bool emptyBuffer = false;
+    bool singlePair = false;
+
+    bool canDedupe() const { return !emptyBuffer && !singlePair; }
+};
+
+DedupeBroadphasePreflight preflightDedupeBroadphase(const PairBufferSoA& buffer);
+
+/// Non-mutating dedupe predicate — mirrors `PairBufferSoA::canSkipDedupe` inversion.
+bool shouldRunDedupeBroadphase(const PairBufferSoA& buffer);
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(
