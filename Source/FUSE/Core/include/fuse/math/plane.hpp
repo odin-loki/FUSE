@@ -60,6 +60,19 @@ inline Vec4 makePlaneFromNormalAndPoint(const Vec3& normal, const Vec3& point) {
     return {unitNormal.x, unitNormal.y, unitNormal.z, -unitNormal.dot(point)};
 }
 
+/// Builds a normalized plane when the normal is non-degenerate.
+inline bool tryMakePlaneFromNormalAndPoint(const Vec3& normal, const Vec3& point, Vec4& out,
+                                           f32 epsilon = 1e-8f) {
+    const f32 lenSq = normal.dot(normal);
+    if (lenSq < epsilon * epsilon) {
+        return false;
+    }
+    const f32 invLen = 1.f / std::sqrt(lenSq);
+    const Vec3 unitNormal = normal * invLen;
+    out = {unitNormal.x, unitNormal.y, unitNormal.z, -unitNormal.dot(point)};
+    return true;
+}
+
 inline PlaneSide classifyPoint(const Vec4& plane, const Vec3& point, f32 epsilon = 1e-5f) {
     if (isDegeneratePlane(plane, epsilon)) {
         return PlaneSide::On;
@@ -99,6 +112,18 @@ inline bool rayIntersectPlane(const Vec4& plane, const Vec3& origin, const Vec3&
     const f32 numerator = -(planeSignedDistance(plane, origin));
     t = numerator / denominator;
     return true;
+}
+
+/// Ray-plane intersection clamped to `[tMin, tMax]`; returns false on miss or degenerate early-out.
+inline bool tryRayIntersectPlaneClamped(const Vec4& plane, const Vec3& origin, const Vec3& direction, f32 tMin,
+                                        f32 tMax, f32& t, f32 epsilon = 1e-8f) {
+    if (tMin > tMax) {
+        return false;
+    }
+    if (!rayIntersectPlane(plane, origin, direction, t, epsilon)) {
+        return false;
+    }
+    return t >= tMin && t <= tMax;
 }
 
 /// Positive-vertex test for an AABB against a plane (frustum culling convention).
@@ -232,9 +257,9 @@ inline u32 clipPolygonAgainstPlane(const Vec4& plane, const Vec3* input, u32 inp
     return outCount;
 }
 
-/// Classifies an AABB when the plane is usable; returns false on degenerate early-out.
+/// Classifies an AABB when the plane and box are usable; returns false on degenerate or empty early-out.
 inline bool tryClassifyAabb(const Vec4& plane, const AABB& box, PlaneSide& side, f32 epsilon = 1e-8f) {
-    if (isDegeneratePlane(plane, epsilon)) {
+    if (isDegeneratePlane(plane, epsilon) || box.isEmpty()) {
         return false;
     }
     side = classifyAabb(plane, box);

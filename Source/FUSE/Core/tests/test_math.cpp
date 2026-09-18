@@ -1095,6 +1095,146 @@ void testSimdMat4Associativity() {
     expectMat4Near(simdAssoc, scalarAssoc, 1e-4f, "simd Mat4 multiply associativity matches scalar");
 }
 
+void testMat4TryTransposeUpper3x3() {
+    const fuse::math::Mat4 rotation =
+        fuse::math::fromTRS({0.f, 0.f, 0.f}, fuse::math::fromAxisAngle({0.f, 1.f, 0.f}, 0.75f), {1.f, 1.f, 1.f});
+    fuse::math::Mat3 transposed{};
+    expectTrue(fuse::math::tryTransposeUpper3x3(rotation, transposed), "tryTransposeUpper3x3 accepts rotation");
+
+    const fuse::math::Mat3 expected = fuse::math::transposeUpper3x3(rotation);
+    expectNear(transposed.data[0], expected.data[0], 1e-4f, "tryTransposeUpper3x3 matches transposeUpper3x3");
+    expectNear(transposed.data[4], expected.data[4], 1e-4f, "tryTransposeUpper3x3 diagonal matches");
+    expectNear(transposed.data[8], expected.data[8], 1e-4f, "tryTransposeUpper3x3 zz matches");
+
+    const fuse::math::Mat4 scaled =
+        fuse::math::fromTRS({0.f, 0.f, 0.f}, fuse::math::Quat::identity(), {2.f, 2.f, 2.f});
+    fuse::math::Mat3 rejected{};
+    expectTrue(!fuse::math::tryTransposeUpper3x3(scaled, rejected),
+               "tryTransposeUpper3x3 rejects uniform-scale upper block");
+}
+
+void testAabbTryTransformAndRayIntersect() {
+    const fuse::math::AABB local{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
+    const fuse::math::AABB empty{{2.f, 2.f, 2.f}, {1.f, 1.f, 1.f}};
+    const fuse::math::Mat4 translate =
+        fuse::math::fromTRS({3.f, 0.f, 0.f}, fuse::math::Quat::identity(), {1.f, 1.f, 1.f});
+
+    fuse::math::AABB transformed{};
+    expectTrue(fuse::math::tryTransformAabb(translate, local, transformed),
+               "tryTransformAabb succeeds for valid box");
+    expectAabbNear(transformed, fuse::math::transformAabb(translate, local), 1e-4f,
+                   "tryTransformAabb matches transformAabb");
+
+    fuse::math::AABB emptyOut{};
+    expectTrue(!fuse::math::tryTransformAabb(translate, empty, emptyOut),
+               "tryTransformAabb early-outs on empty box");
+    expectTrue(emptyOut.isEmpty(), "tryTransformAabb writes empty box on early-out");
+
+    f32 t = -1.f;
+    expectTrue(fuse::math::tryRayIntersect(local, {-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, t),
+               "tryRayIntersect hits valid box");
+    expectNear(t, 2.f, 1e-4f, "tryRayIntersect entry distance");
+
+    expectTrue(!fuse::math::tryRayIntersect(empty, {0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, t),
+               "tryRayIntersect early-outs on empty box");
+    expectTrue(!fuse::math::tryRayIntersect(local, {-3.f, 2.f, 0.f}, {1.f, 0.f, 0.f}, t),
+               "tryRayIntersect rejects separated ray");
+}
+
+void testPlaneTryMakeAndRayClamped() {
+    fuse::math::Vec4 plane{};
+    expectTrue(fuse::math::tryMakePlaneFromNormalAndPoint({0.f, 2.f, 0.f}, {0.f, 1.f, 0.f}, plane),
+               "tryMakePlaneFromNormalAndPoint succeeds for valid normal");
+    expectNear(plane.y, 1.f, 1e-5f, "tryMakePlaneFromNormalAndPoint normalizes Y");
+    expectNear(plane.w, -1.f, 1e-5f, "tryMakePlaneFromNormalAndPoint preserves point distance");
+
+    fuse::math::Vec4 rejected{};
+    expectTrue(!fuse::math::tryMakePlaneFromNormalAndPoint({0.f, 0.f, 0.f}, {1.f, 2.f, 3.f}, rejected),
+               "tryMakePlaneFromNormalAndPoint rejects zero normal");
+
+    const fuse::math::Vec4 yPlane{0.f, 1.f, 0.f, -2.f};
+    f32 t = 0.f;
+    expectTrue(fuse::math::tryRayIntersectPlaneClamped(yPlane, {0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 0.f, 10.f, t),
+               "tryRayIntersectPlaneClamped hits within segment");
+    expectNear(t, 2.f, 1e-5f, "tryRayIntersectPlaneClamped parametric distance");
+
+    expectTrue(!fuse::math::tryRayIntersectPlaneClamped(yPlane, {0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 3.f, 10.f, t),
+               "tryRayIntersectPlaneClamped rejects segment before hit");
+    expectTrue(!fuse::math::tryRayIntersectPlaneClamped(yPlane, {0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, 0.f, 10.f, t),
+               "tryRayIntersectPlaneClamped rejects parallel ray");
+
+    const fuse::math::Vec4 degenerate{0.f, 0.f, 0.f, 1.f};
+    expectTrue(!fuse::math::tryRayIntersectPlaneClamped(degenerate, {0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 0.f, 10.f,
+                                                            t),
+               "tryRayIntersectPlaneClamped early-outs on degenerate plane");
+
+    const fuse::math::AABB crossing{{0.f, 1.f, 0.f}, {1.f, 3.f, 1.f}};
+    const fuse::math::AABB empty{{2.f, 2.f, 2.f}, {1.f, 1.f, 1.f}};
+    fuse::math::PlaneSide side = fuse::math::PlaneSide::On;
+    expectTrue(!fuse::math::tryClassifyAabb(yPlane, empty, side),
+               "tryClassifyAabb early-outs on empty AABB");
+    expectTrue(fuse::math::tryClassifyAabb(yPlane, crossing, side),
+               "tryClassifyAabb still classifies valid box");
+    expectTrue(side == fuse::math::PlaneSide::Straddling, "tryClassifyAabb reports straddling box");
+}
+
+void testSimdDeepenGuardParity() {
+    const fuse::math::AABB box{{-1.f, -1.f, -1.f}, {1.f, 1.f, 1.f}};
+    const fuse::math::AABB empty{{2.f, 2.f, 2.f}, {1.f, 1.f, 1.f}};
+    const fuse::math::Mat4 translate =
+        fuse::math::fromTRS({3.f, 0.f, 0.f}, fuse::math::Quat::identity(), {1.f, 1.f, 1.f});
+    const fuse::math::simd::Mat4 simdTranslate = fuse::math::simd::Mat4::fromScalar(translate);
+
+    fuse::math::AABB scalarOut{};
+    fuse::math::AABB simdOut{};
+    expectTrue(fuse::math::tryTransformAabb(translate, box, scalarOut),
+               "scalar tryTransformAabb succeeds");
+    expectTrue(fuse::math::simd::tryTransformAabb(simdTranslate, box, simdOut),
+               "simd tryTransformAabb succeeds");
+    expectAabbNear(simdOut, scalarOut, 1e-4f, "simd tryTransformAabb matches scalar");
+    expectTrue(!fuse::math::simd::tryTransformAabb(simdTranslate, empty, simdOut),
+               "simd tryTransformAabb early-outs on empty box");
+
+    f32 scalarT = 0.f;
+    f32 simdT = 0.f;
+    expectTrue(fuse::math::tryRayIntersect(box, {-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, scalarT),
+               "scalar tryRayIntersect hits");
+    expectTrue(fuse::math::simd::tryRayIntersect(box, {-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, simdT),
+               "simd tryRayIntersect hits");
+    expectNear(simdT, scalarT, 1e-4f, "simd tryRayIntersect matches scalar");
+
+    const fuse::math::Mat4 rotation =
+        fuse::math::fromTRS({0.f, 0.f, 0.f}, fuse::math::fromAxisAngle({0.f, 1.f, 0.f}, 0.5f), {1.f, 1.f, 1.f});
+    fuse::math::Mat3 scalarTranspose{};
+    fuse::math::Mat3 simdTranspose{};
+    expectTrue(fuse::math::tryTransposeUpper3x3(rotation, scalarTranspose),
+               "scalar tryTransposeUpper3x3 succeeds");
+    expectTrue(fuse::math::simd::tryTransposeUpper3x3(rotation, simdTranspose),
+               "simd tryTransposeUpper3x3 succeeds");
+    for (u32 i = 0; i < 9; ++i) {
+        expectNear(simdTranspose.data[i], scalarTranspose.data[i], 1e-4f,
+                   "simd tryTransposeUpper3x3 matches scalar");
+    }
+
+    fuse::math::Vec4 scalarPlane{};
+    fuse::math::Vec4 simdPlane{};
+    expectTrue(fuse::math::tryMakePlaneFromNormalAndPoint({0.f, 2.f, 0.f}, {0.f, 1.f, 0.f}, scalarPlane),
+               "scalar tryMakePlaneFromNormalAndPoint succeeds");
+    expectTrue(fuse::math::simd::tryMakePlaneFromNormalAndPoint({0.f, 2.f, 0.f}, {0.f, 1.f, 0.f}, simdPlane),
+               "simd tryMakePlaneFromNormalAndPoint succeeds");
+    expectNear(simdPlane.y, scalarPlane.y, 1e-5f, "simd tryMakePlaneFromNormalAndPoint matches scalar");
+
+    f32 scalarHitT = 0.f;
+    f32 simdHitT = 0.f;
+    expectTrue(fuse::math::tryRayIntersectPlaneClamped(scalarPlane, {0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 0.f, 10.f,
+                                                         scalarHitT),
+               "scalar tryRayIntersectPlaneClamped succeeds");
+    expectTrue(fuse::math::simd::tryRayIntersectPlaneClamped(simdPlane, {0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 0.f,
+                                                            10.f, simdHitT),
+               "simd tryRayIntersectPlaneClamped succeeds");
+    expectNear(simdHitT, scalarHitT, 1e-5f, "simd tryRayIntersectPlaneClamped matches scalar");
+}
+
 } // namespace
 
 int main() {
@@ -1113,6 +1253,7 @@ int main() {
     testMat4TransposeUpper3x3();
     testMat4TryMultiplyRigid();
     testMat4TryToRotationQuat();
+    testMat4TryTransposeUpper3x3();
     testMat4InverseEdgeCases();
     testMat3Upper3x3();
     testQuatRotation();
@@ -1125,6 +1266,7 @@ int main() {
     testAabbTransformHelpers();
     testAabbMergeFreeFunction();
     testAabbTryRayGuards();
+    testAabbTryTransformAndRayIntersect();
     testFrustumCulling();
     testSdfPrimitives();
     testSimdBackend();
@@ -1134,6 +1276,7 @@ int main() {
     testSimdMat4RigidDeepenParity();
     testSimdAabbTryRayParity();
     testSimdPlaneTryClassifyClipParity();
+    testSimdDeepenGuardParity();
     testSimdMat4RigidHelperParity();
     testSimdAabbRayClampedParity();
     testSimdPlaneTryHelperParity();
@@ -1145,6 +1288,7 @@ int main() {
     testSimdPlanePolygonParity();
     testPlaneNormalize();
     testPlaneTryHelpers();
+    testPlaneTryMakeAndRayClamped();
     testPlaneTryClassifyAndClip();
     testPlaneDegenerate();
     testPlaneClassify();
