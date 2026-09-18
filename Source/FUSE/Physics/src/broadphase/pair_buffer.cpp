@@ -72,6 +72,10 @@ bool PairBufferSoA::canApplyMaxCapacityClamp() const {
     return !canSkipSoAIteration() && maxCapacity > 0u && activeCount > maxCapacity;
 }
 
+bool PairBufferSoA::wouldRejectPush(u32 idxA, u32 idxB) const {
+    return !isValidCandidatePair(idxA, idxB) || isFull();
+}
+
 bool PairBufferSoA::push(u32 idxA, u32 idxB) {
     if (!isValidCandidatePair(idxA, idxB)) {
         return false;
