@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <string>
 
 namespace {
@@ -734,6 +735,92 @@ void testAutoExposureParamsAndAdaptGuards() {
     expectNear(zeroDeltaEv, state.current_ev, 1e-6f, "zero delta preserves current EV");
 }
 
+void testHistogramAccumulateGuards() {
+    fuse::renderer::LuminanceHistogramParams valid{};
+    const fuse::math::Vec3 samples[] = {{0.18f, 0.18f, 0.18f}};
+
+    expectTrue(fuse::renderer::luminance_histogram_can_accumulate(valid),
+               "default histogram params can accumulate");
+    expectTrue(fuse::renderer::histogram_util::canAccumulateSamples(samples, 1u, valid),
+               "valid params and samples pass accumulate guard");
+    expectTrue(!fuse::renderer::histogram_util::canAccumulateSamples(nullptr, 0u, valid),
+               "empty sample buffer fails accumulate guard");
+
+    fuse::renderer::LuminanceHistogramParams invalidRange{};
+    invalidRange.max_log_luminance = invalidRange.min_log_luminance;
+    expectTrue(!fuse::renderer::luminance_histogram_can_accumulate(invalidRange),
+               "flat log range fails accumulate guard");
+    expectTrue(!fuse::renderer::histogram_util::canAccumulateSamples(samples, 1u, invalidRange),
+               "invalid params fail accumulate guard");
+
+    fuse::renderer::LuminanceHistogram histogram{};
+    histogram.init(valid);
+    fuse::renderer::histogram_util::accumulateSamples(histogram, samples, 1u);
+    expectTrue(!histogram.isEmpty(), "accumulate guard allows valid accumulation");
+
+    fuse::renderer::LuminanceHistogram invalidHistogram{};
+    invalidHistogram.init(invalidRange);
+    fuse::renderer::histogram_util::accumulateSamples(invalidHistogram, samples, 1u);
+    expectTrue(invalidHistogram.isEmpty(), "accumulate guard blocks invalid histogram params");
+}
+
+void testAutoExposureLuminanceGuards() {
+    expectTrue(fuse::renderer::auto_exposure_measured_luminance_valid(0.f), "zero luminance is valid");
+    expectTrue(fuse::renderer::auto_exposure_measured_luminance_valid(0.72f), "positive luminance is valid");
+    expectTrue(!fuse::renderer::auto_exposure_measured_luminance_valid(-0.1f), "negative luminance rejected");
+    expectTrue(!fuse::renderer::auto_exposure_measured_luminance_valid(
+                   std::numeric_limits<fuse::f32>::infinity()),
+               "infinite luminance rejected");
+
+    expectTrue(fuse::renderer::auto_exposure_can_update_from_luminance(0.72f),
+               "valid luminance passes update guard");
+    expectTrue(!fuse::renderer::auto_exposure_can_update_from_luminance(-1.f),
+               "invalid luminance fails update guard");
+
+    fuse::renderer::AutoExposure exposure{};
+    exposure.init();
+    fuse::renderer::AutoExposureParams params{};
+    params.adaptation_speed_up = 8.f;
+    params.adaptation_speed_down = 8.f;
+    exposure.setParams(params);
+    exposure.updateFromLuminance(0.72f, 0.5f);
+    const fuse::f32 adaptedEv = exposure.currentEv();
+    expectTrue(adaptedEv > 0.f, "exposure adapts before invalid luminance update");
+
+    const fuse::f32 unchangedEv = exposure.updateFromLuminance(-1.f, 0.5f);
+    expectNear(unchangedEv, adaptedEv, 1e-6f, "invalid luminance preserves adapted EV");
+    expectNear(exposure.state().measured_luminance, 0.72f, 1e-6f,
+               "invalid luminance does not overwrite measured luminance");
+
+    exposure.destroy();
+}
+
+void testExposureMeterCanMeasureGuard() {
+    const fuse::math::Vec3 samples[] = {{0.18f, 0.18f, 0.18f}};
+
+    expectTrue(fuse::renderer::exposure_meter_can_measure(samples, 1u), "non-empty buffer can measure");
+    expectTrue(!fuse::renderer::exposure_meter_can_measure(nullptr, 0u), "empty buffer cannot measure");
+    expectNear(fuse::renderer::ExposureMeter::measureAverage(nullptr, 0u), 0.f, 1e-6f,
+               "measureAverage returns zero when guard fails");
+}
+
+void testTonemapCurveEvaluateAndFacadeGuards() {
+    const fuse::renderer::TonemapCurveParams filmic = fuse::renderer::make_filmic_curve_params();
+    fuse::renderer::TonemapCurve curve{};
+    curve.init();
+    curve.setParams(filmic);
+    expectTrue(curve.canApply(), "filmic preset passes facade apply guard");
+
+    fuse::renderer::TonemapCurveParams invalidGamma = filmic;
+    invalidGamma.gamma = 0.f;
+    curve.setParams(invalidGamma);
+    expectTrue(!curve.canApply(), "invalid enabled curve fails facade apply guard");
+    expectNear(fuse::renderer::evaluate_tonemap_curve_channel(0.5f, invalidGamma), 0.5f, 1e-6f,
+               "invalid curve evaluate guard preserves channel");
+
+    curve.destroy();
+}
+
 void testTonemapCurveApplyAndSpanGuards() {
     const fuse::renderer::TonemapCurveParams filmic = fuse::renderer::make_filmic_curve_params();
     expectTrue(fuse::renderer::tonemap_curve_can_apply(filmic), "filmic preset can apply");
@@ -801,6 +888,10 @@ int main() {
     testMeteringPercentileValid();
     testHistogramUtilCanMeterPercentile();
     testAutoExposureParamsAndAdaptGuards();
+    testHistogramAccumulateGuards();
+    testAutoExposureLuminanceGuards();
+    testExposureMeterCanMeasureGuard();
+    testTonemapCurveEvaluateAndFacadeGuards();
     testTonemapCurveApplyAndSpanGuards();
 
     fuse::core::shutdown();
