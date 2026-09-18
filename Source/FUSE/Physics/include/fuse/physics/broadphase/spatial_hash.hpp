@@ -215,6 +215,84 @@ FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {
     return uniqueBodyCount > 1u ? uniqueBodyCount * (uniqueBodyCount - 1u) / 2u : 0u;
 }
 
+/// Const preflight for shape cell occupancy budgeting (B4.2 deepen pass).
+struct CellOccupancyPreflight {
+    u32 cellCount = 0u;
+    bool isEmptyRange = false;
+    bool exceedsBudget = false;
+
+    bool can_populate_cells() const { return !isEmptyRange && !exceedsBudget; }
+};
+
+/// Populate cell occupancy preflight without mutating ranges (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflight_cell_occupancy(const CellRange3& range, u32 maxCells) {
+    CellOccupancyPreflight preflight{};
+    preflight.isEmptyRange = isEmptyCellRange(range);
+    if (preflight.isEmptyRange) {
+        return preflight;
+    }
+    preflight.cellCount = estimateCellOccupancyCount(range);
+    preflight.exceedsBudget = exceedsCellOccupancyBudget(range, maxCells);
+    return preflight;
+}
+
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflight_cell_occupancy(const CellRange2& range, u32 maxCells) {
+    CellOccupancyPreflight preflight{};
+    preflight.isEmptyRange = isEmptyCellRange(range);
+    if (preflight.isEmptyRange) {
+        return preflight;
+    }
+    preflight.cellCount = estimateCellOccupancyCount(range);
+    preflight.exceedsBudget = exceedsCellOccupancyBudget(range, maxCells);
+    return preflight;
+}
+
+/// Returns true when shape cell insertion may be skipped before hash build (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool should_skip_shape_cell_population(const CellRange3& range, u32 maxCells) {
+    const CellOccupancyPreflight preflight = preflight_cell_occupancy(range, maxCells);
+    return preflight.isEmptyRange;
+}
+
+FUSE_PHYSICS_INLINE bool should_skip_shape_cell_population(const CellRange2& range, u32 maxCells) {
+    const CellOccupancyPreflight preflight = preflight_cell_occupancy(range, maxCells);
+    return preflight.isEmptyRange;
+}
+
+struct PairBufferSoA;
+
+/// Const preflight for broadphase pair-buffer dedupe (B4.2 deepen pass).
+struct BroadphaseDedupePreflight {
+    bool skipped = false;
+    u32 validPairCount = 0u;
+
+    bool can_dedupe() const { return !skipped; }
+};
+
+/// Populate dedupe preflight without mutating pair storage (B4.2 deepen pass).
+BroadphaseDedupePreflight preflight_dedupe_pairs(const PairBufferSoA& buffer);
+
+/// Const preflight for parallel broadphase pair refine (B4.2 deepen pass).
+struct BroadphaseRefinePreflight {
+    bool skipped = false;
+    bool emptyInput = false;
+    bool emptyBuffer = false;
+    u32 validPairCount = 0u;
+
+    bool can_refine() const { return !skipped; }
+};
+
+/// Populate refine preflight without invalidating pair slots (B4.2 deepen pass).
+BroadphaseRefinePreflight preflight_refine_broadphase_pairs(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
+
+/// Returns true when refine may early-out before parallel invalidation (B4.2 deepen pass).
+bool should_skip_refine_broadphase_pairs(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
+
 /// Clamp broadphase params to safe stub defaults (positive cell size, at least one bucket).
 FUSE_PHYSICS_INLINE SpatialHashParams normalizeSpatialHashParams(SpatialHashParams params) {
     params.cellSize = clampCellSize(params.cellSize);
@@ -350,8 +428,6 @@ FUSE_PHYSICS_INLINE bool aabbOverlap(const aabb& a, const aabb& b) {
 FUSE_PHYSICS_INLINE bool sphereAabbOverlap(vec3 centerA, f32 radiusA, vec3 centerB, f32 radiusB) {
     return aabbOverlap(aabbFromSphere(centerA, radiusA), aabbFromSphere(centerB, radiusB));
 }
-
-struct PairBufferSoA;
 
 /// Job-safe broadphase: parallel shape→cell + per-cell pair generation into reusable SoA slots.
 void runBroadphaseIntoBuffer(

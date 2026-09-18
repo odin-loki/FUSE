@@ -12,6 +12,32 @@
 
 namespace fuse::physics::broadphase {
 
+BroadphaseDedupePreflight preflight_dedupe_pairs(const PairBufferSoA& buffer) {
+    BroadphaseDedupePreflight preflight{};
+    preflight.validPairCount = buffer.countValidSlots();
+    preflight.skipped = buffer.canSkipDedupe();
+    return preflight;
+}
+
+BroadphaseRefinePreflight preflight_refine_broadphase_pairs(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer) {
+    BroadphaseRefinePreflight preflight{};
+    preflight.emptyInput = canSkipBroadphase(bodies, shapes);
+    preflight.emptyBuffer = buffer.canSkipSoAIteration() || !buffer.hasValidPairs();
+    preflight.validPairCount = buffer.countValidSlots();
+    preflight.skipped = preflight.emptyInput || preflight.emptyBuffer;
+    return preflight;
+}
+
+bool should_skip_refine_broadphase_pairs(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer) {
+    return preflight_refine_broadphase_pairs(bodies, shapes, buffer).skipped;
+}
+
 const char* candidatePairRejectReasonName(CandidatePairRejectReason reason) {
     switch (reason) {
     case CandidatePairRejectReason::None:
@@ -160,7 +186,7 @@ void populateShapeCells(
             const f32 radius = shapeRadius(shapes, shapeIndex);
             range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
         }
-        if (isEmptyCellRange(range)) {
+        if (should_skip_shape_cell_population(range, 0u)) {
             return;
         }
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
@@ -180,7 +206,7 @@ void populateShapeCells(
         const f32 radius = shapeRadius(shapes, shapeIndex);
         range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
     }
-    if (isEmptyCellRange(range)) {
+    if (should_skip_shape_cell_population(range, 0u)) {
         return;
     }
     for (s32 cz = range.minCell.z; cz <= range.maxCell.z; ++cz) {
@@ -200,7 +226,8 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
 }
 
 void dedupeBuffer(PairBufferSoA& buffer) {
-    if (buffer.canSkipDedupe()) {
+    const BroadphaseDedupePreflight preflight = preflight_dedupe_pairs(buffer);
+    if (!preflight.can_dedupe()) {
         return;
     }
 
@@ -332,7 +359,7 @@ void refineBroadphasePairsParallelImpl(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     PairBufferSoA& buffer) {
-    if (buffer.canSkipSoAIteration() || !buffer.hasValidPairs() || canSkipBroadphase(bodies, shapes)) {
+    if (should_skip_refine_broadphase_pairs(bodies, shapes, buffer)) {
         return;
     }
 
