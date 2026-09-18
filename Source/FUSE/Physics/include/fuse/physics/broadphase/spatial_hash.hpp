@@ -16,6 +16,8 @@ struct SpatialHashParams {
     u32 bodyCount = 0;
     /// Per-axis cell span clamp for shape occupancy iteration (0 = unlimited stub).
     u32 maxCellSpanPerAxis = 64u;
+    /// Per-shape cell occupancy budget before hash insertion is skipped (0 = unlimited stub).
+    u32 maxCellOccupancy = 0u;
 };
 
 struct CandidatePair {
@@ -94,11 +96,25 @@ FUSE_PHYSICS_INLINE bool isEmptyBroadphaseInput(
     return bodies.count() == 0u || shapes.count() == 0u;
 }
 
+/// Singleton-set guard: true when fewer than two bodies or shapes can emit any pair.
+FUSE_PHYSICS_INLINE bool isSingletonBroadphaseInput(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return bodies.count() < 2u || shapes.count() < 2u;
+}
+
+/// True when spatial-hash pair generation cannot emit pairs (empty or singleton stub).
+FUSE_PHYSICS_INLINE bool canSkipBroadphasePairGeneration(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return isEmptyBroadphaseInput(bodies, shapes) || isSingletonBroadphaseInput(bodies, shapes);
+}
+
 /// True when the broadphase pipeline may early-out before hash build (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool canSkipBroadphase(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
-    return isEmptyBroadphaseInput(bodies, shapes);
+    return canSkipBroadphasePairGeneration(bodies, shapes);
 }
 
 /// Clamp cell size to a positive stub default (broadphase occupancy guard).
@@ -186,16 +202,21 @@ FUSE_PHYSICS_INLINE u32 estimateCellOccupancyCount(const CellRange2& range) {
     return static_cast<u32>(span.x) * static_cast<u32>(span.y);
 }
 
+/// True when `maxCells == 0` (unlimited occupancy budget stub).
+FUSE_PHYSICS_INLINE bool isUnboundedCellOccupancyBudget(u32 maxCells) {
+    return maxCells == 0u;
+}
+
 /// Cell-capacity guard: true when occupancy exceeds `maxCells` (0 = unlimited budget).
 FUSE_PHYSICS_INLINE bool exceedsCellOccupancyBudget(const CellRange3& range, u32 maxCells) {
-    if (maxCells == 0u) {
+    if (isUnboundedCellOccupancyBudget(maxCells)) {
         return false;
     }
     return estimateCellOccupancyCount(range) > maxCells;
 }
 
 FUSE_PHYSICS_INLINE bool exceedsCellOccupancyBudget(const CellRange2& range, u32 maxCells) {
-    if (maxCells == 0u) {
+    if (isUnboundedCellOccupancyBudget(maxCells)) {
         return false;
     }
     return estimateCellOccupancyCount(range) > maxCells;
@@ -208,6 +229,23 @@ FUSE_PHYSICS_INLINE bool cellOccupancyWithinBudget(const CellRange3& range, u32 
 
 FUSE_PHYSICS_INLINE bool cellOccupancyWithinBudget(const CellRange2& range, u32 maxCells) {
     return !exceedsCellOccupancyBudget(range, maxCells);
+}
+
+/// Remaining occupancy slots before `maxCells` is exceeded (unlimited when `maxCells == 0`).
+FUSE_PHYSICS_INLINE u32 occupancyBudgetRemaining(const CellRange3& range, u32 maxCells) {
+    if (isUnboundedCellOccupancyBudget(maxCells) || isEmptyCellRange(range)) {
+        return maxCells;
+    }
+    const u32 occupancy = estimateCellOccupancyCount(range);
+    return occupancy >= maxCells ? 0u : maxCells - occupancy;
+}
+
+FUSE_PHYSICS_INLINE u32 occupancyBudgetRemaining(const CellRange2& range, u32 maxCells) {
+    if (isUnboundedCellOccupancyBudget(maxCells) || isEmptyCellRange(range)) {
+        return maxCells;
+    }
+    const u32 occupancy = estimateCellOccupancyCount(range);
+    return occupancy >= maxCells ? 0u : maxCells - occupancy;
 }
 
 /// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).

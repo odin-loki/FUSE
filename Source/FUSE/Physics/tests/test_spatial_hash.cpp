@@ -746,10 +746,14 @@ void testEmptyBroadphaseInputGuards() {
                "empty bodies and shapes is empty broadphase input");
     expectTrue(fuse::physics::broadphase::canSkipBroadphase(bodies, shapes),
                "canSkipBroadphase on empty scene");
+    expectTrue(fuse::physics::broadphase::canSkipBroadphasePairGeneration(bodies, shapes),
+               "canSkipBroadphasePairGeneration on empty scene");
 
     bodies.addBody({0.f, 0.f, 0.f}, 1.f);
     expectTrue(fuse::physics::broadphase::isEmptyBroadphaseInput(bodies, shapes),
                "bodies without shapes is empty broadphase input");
+    expectTrue(fuse::physics::broadphase::isSingletonBroadphaseInput(bodies, shapes),
+               "single body without matching shape count is singleton input");
     expectTrue(fuse::physics::broadphase::canSkipBroadphase(bodies, shapes),
                "canSkipBroadphase when shapes are missing");
 
@@ -757,8 +761,22 @@ void testEmptyBroadphaseInputGuards() {
     shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {1.f, 0.f, 0.f});
     expectTrue(fuse::physics::broadphase::isEmptyBroadphaseInput(bodies, shapes),
                "shapes without bodies is empty broadphase input");
+    expectTrue(fuse::physics::broadphase::isSingletonBroadphaseInput(bodies, shapes),
+               "orphan shape is singleton broadphase input");
 
     bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    expectTrue(fuse::physics::broadphase::isSingletonBroadphaseInput(bodies, shapes),
+               "one body and one shape is singleton broadphase input");
+    expectTrue(fuse::physics::broadphase::canSkipBroadphasePairGeneration(bodies, shapes),
+               "singleton scene skips pair generation");
+
+    bodies.addBody({1.f, 0.f, 0.f}, 1.f);
+    expectTrue(fuse::physics::broadphase::isSingletonBroadphaseInput(bodies, shapes),
+               "two bodies with one shape is singleton by shape count");
+
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 1, {1.f, 0.f, 0.f});
+    expectTrue(!fuse::physics::broadphase::isSingletonBroadphaseInput(bodies, shapes),
+               "two bodies and two shapes is not singleton");
     expectTrue(!fuse::physics::broadphase::canSkipBroadphase(bodies, shapes),
                "populated scene does not skip broadphase");
 }
@@ -790,18 +808,28 @@ void testCellOccupancyBudgetGuards() {
                "occupancy at budget limit does not exceed");
     expectTrue(fuse::physics::broadphase::exceedsCellOccupancyBudget(smallRange, 7u),
                "occupancy above budget is flagged");
+    expectTrue(fuse::physics::broadphase::isUnboundedCellOccupancyBudget(0u),
+               "zero maxCells is unbounded occupancy budget");
     expectTrue(fuse::physics::broadphase::cellOccupancyWithinBudget(smallRange, 0u),
                "zero budget means unlimited occupancy");
+    expectEq(fuse::physics::broadphase::occupancyBudgetRemaining(smallRange, 8u), 0u,
+             "occupancy at budget leaves zero headroom");
+    expectEq(fuse::physics::broadphase::occupancyBudgetRemaining(smallRange, 12u), 4u,
+             "occupancyBudgetRemaining reports spare slots");
 
     const fuse::physics::broadphase::CellRange2 planeRange = {{0, 0}, {3, 1}};
     expectEq(fuse::physics::broadphase::estimateCellOccupancyCount(planeRange), 8u,
              "small 2D range has eight cells");
     expectTrue(fuse::physics::broadphase::exceedsCellOccupancyBudget(planeRange, 4u),
                "2D occupancy budget guard flags overflow");
+    expectEq(fuse::physics::broadphase::occupancyBudgetRemaining(planeRange, 10u), 2u,
+             "2D occupancyBudgetRemaining subtracts occupied cells");
 
     fuse::physics::broadphase::CellRange3 inverted = {{2, 2, 2}, {1, 1, 1}};
     expectTrue(fuse::physics::broadphase::cellOccupancyWithinBudget(inverted, 1u),
                "empty range is within any positive budget");
+    expectEq(fuse::physics::broadphase::occupancyBudgetRemaining(inverted, 4u), 4u,
+             "empty range leaves full occupancy budget");
 }
 
 void testEstimatePairCountForUniqueBodies() {
@@ -866,6 +894,71 @@ void testBroadphaseBoxShapeCellRange() {
     expectTrue(!pairs.empty(), "box shapes emit candidate pairs via AABB cell range");
 }
 
+void testBroadphaseSingletonEarlyOut() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {1.f, 0.f, 0.f});
+
+    fuse::physics::broadphase::SpatialHashParams params;
+    params.cellSize = 2.f;
+    params.tableSize = 128;
+    params.bodyCount = bodies.count();
+
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    fuse::physics::broadphase::runBroadphaseIntoBuffer(bodies, shapes, params, buffer);
+    expectTrue(fuse::physics::broadphase::canSkipBroadphasePairGeneration(bodies, shapes),
+               "singleton scene is skippable for pair generation");
+    expectTrue(buffer.isEmpty(), "singleton broadphase leaves empty pair buffer");
+}
+
+void testBroadphaseCellOccupancyBudgetIntegration() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    bodies.addBody({500.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {256.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 1, {1.f, 0.f, 0.f});
+
+    fuse::physics::broadphase::SpatialHashParams params;
+    params.cellSize = 1.f;
+    params.tableSize = 256;
+    params.maxCellSpanPerAxis = 0u;
+    params.maxCellOccupancy = 8u;
+    params.bodyCount = bodies.count();
+
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    fuse::physics::broadphase::runBroadphaseIntoBuffer(bodies, shapes, params, buffer);
+    expectTrue(buffer.isEmpty(), "occupancy budget skips flooding shape insertion");
+}
+
+void testPairBufferReserveForUniqueBodies() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.reserveForUniqueBodies(4u);
+    expectTrue(buffer.bodyA.capacity() >= 6u, "reserveForUniqueBodies sizes for n*(n-1)/2 pairs");
+    expectTrue(buffer.canSkipMaxCapacityClamp(), "fresh buffer skips max-capacity clamp");
+}
+
+void testPairBufferCanSkipMaxCapacityClamp() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    expectTrue(buffer.canSkipMaxCapacityClamp(), "empty buffer skips max-capacity clamp");
+
+    buffer.setMaxCapacity(2u);
+    buffer.push(0u, 1u);
+    expectTrue(buffer.canSkipMaxCapacityClamp(), "under-capacity buffer skips post clamp");
+    buffer.push(2u, 3u);
+    expectTrue(buffer.canSkipMaxCapacityClamp(), "at-capacity buffer skips post clamp");
+
+    fuse::physics::broadphase::PairBufferSoA overflowBuffer;
+    overflowBuffer.push(0u, 1u);
+    overflowBuffer.push(2u, 3u);
+    overflowBuffer.push(4u, 5u);
+    overflowBuffer.setMaxCapacity(2u);
+    expectTrue(!overflowBuffer.canSkipMaxCapacityClamp(), "overflow buffer needs post clamp");
+}
+
 } // namespace
 
 int main() {
@@ -908,6 +1001,10 @@ int main() {
     testPairBufferCanAcceptPairsGuard();
     testBroadphaseCanSkipIntegration();
     testBroadphaseBoxShapeCellRange();
+    testBroadphaseSingletonEarlyOut();
+    testBroadphaseCellOccupancyBudgetIntegration();
+    testPairBufferReserveForUniqueBodies();
+    testPairBufferCanSkipMaxCapacityClamp();
 
     if (g_failures == 0) {
         std::printf("fuse_physics_broadphase_tests: all checks passed\n");
