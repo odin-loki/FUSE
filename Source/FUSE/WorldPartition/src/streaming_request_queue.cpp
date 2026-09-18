@@ -103,6 +103,27 @@ bool StreamingRequestQueue::dequeue(StreamingRequest& out) {
     return true;
 }
 
+bool StreamingRequestQueue::has_pending_enqueue() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return !m_pending.empty();
+}
+
+bool StreamingRequestQueue::peek_pending(StreamingRequest& out) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_pending.empty()) {
+        return false;
+    }
+
+    const PendingStreamingRequest& best = *std::max_element(
+        m_pending.begin(), m_pending.end(),
+        [](const PendingStreamingRequest& a, const PendingStreamingRequest& b) {
+            return compare_streaming_request_order(a.request.priority, a.request.kind, a.enqueue_sequence,
+                                                 b.request.priority, b.request.kind, b.enqueue_sequence) < 0;
+        });
+    out = best.request;
+    return true;
+}
+
 u32 StreamingRequestQueue::order_by_priority(std::vector<StreamingRequest>& out) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_pending.empty()) {
