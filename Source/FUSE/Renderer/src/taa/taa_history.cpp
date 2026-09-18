@@ -1,5 +1,7 @@
 #include <fuse/renderer/taa/taa_history.hpp>
 
+#include <fuse/renderer/taa/taa_jitter.hpp>
+
 namespace fuse::renderer {
 
 bool taaHistoryBufferDescValid(const TaaHistoryBufferDesc& desc) {
@@ -28,6 +30,49 @@ bool taaHistoryReadyForResolve(const TaaHistoryBuffer& history) {
 
 u32 taaHistoryWarmupFramesRemaining(const TaaHistoryBuffer& history) {
     return taaHistoryNeedsWarmup(history) ? 1u : 0u;
+}
+
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
+    return taaHistoryReadyForResolve(history) && !taaHistoryNeedsWarmup(history);
+}
+
+f32 taaHistoryWarmupProgress(const TaaHistoryBuffer& history) {
+    return taaHistoryWarmupComplete(history) ? 1.f : 0.f;
+}
+
+bool taaHistoryReuseReady(const TaaHistoryBuffer& history, u32 observedGeneration) {
+    return taaHistoryWarmupComplete(history) && preflightTaaHistoryReuse(history, observedGeneration);
+}
+
+const char* taaJitterSyncBlockReasonLabel(TaaJitterSyncBlockReason reason) {
+    switch (reason) {
+    case TaaJitterSyncBlockReason::None:
+        return "none";
+    case TaaJitterSyncBlockReason::InvalidSequence:
+        return "invalid_sequence";
+    case TaaJitterSyncBlockReason::InvalidViewport:
+        return "invalid_viewport";
+    }
+    return "unknown";
+}
+
+TaaJitterSyncBlockReason classifyTaaJitterSyncBlock(u32 width, u32 height, u32 sequenceLength) {
+    if (!TaaJitterLayout::validateSequenceLength(sequenceLength)) {
+        return TaaJitterSyncBlockReason::InvalidSequence;
+    }
+    if (!TaaJitterLayout::validateViewportDimensions(width, height)) {
+        return TaaJitterSyncBlockReason::InvalidViewport;
+    }
+    return TaaJitterSyncBlockReason::None;
+}
+
+bool preflightTaaJitterSync(u32 /*frameIndex*/, u32 width, u32 height, u32 sequenceLength,
+                            TaaJitterSyncBlockReason* reason) {
+    const TaaJitterSyncBlockReason block = classifyTaaJitterSyncBlock(width, height, sequenceLength);
+    if (reason != nullptr) {
+        *reason = block;
+    }
+    return block == TaaJitterSyncBlockReason::None;
 }
 
 bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
