@@ -355,10 +355,16 @@ void testPlaySessionTickFixedStep() {
     session.start(editorScene, scene, state, physics);
     expectTrue(session.tickFixedStep(kFixedDt, kFixedDt, editorScene, physics) == 1u,
                "tickFixedStep drains one fixed slice per frame at target dt");
-    expectTrue(session.sessionTickCount() == 2u,
-               "tickFixedStep runs variable tick plus one fixed slice");
     expectTrue(session.tickAccumulator() < kFixedDt,
-               "tickFixedStep leaves sub-fixed remainder in accumulator");
+               "tickFixedStep leaves sub-fixed remainder after first frame");
+    expectTrue(session.tickFixedStep(kFixedDt * 4.f, kFixedDt, editorScene, physics, 1u) == 1u,
+               "tickFixedStep forwards maxSteps cap to fixed drain");
+    expectTrue(session.lastDeferredFixedStepCount() == 3u,
+               "tickFixedStep leaves deferred fixed slices after cap");
+    expectTrue(session.sessionTickCount() == 4u,
+               "tickFixedStep runs variable ticks plus capped fixed slices");
+    expectTrue(session.pendingFixedStepCount(kFixedDt) == 3u,
+               "tickFixedStep maxSteps cap leaves pending fixed slices in accumulator");
 
     session.stop(editorScene, scene, state, physics);
     expectTrue(session.tickFixedStep(kFixedDt, kFixedDt, editorScene, physics) == 0u,
@@ -460,6 +466,20 @@ void testPlaySessionEmptySessionGuards() {
     expectTrue(!session.drainDirtySnapshot(editorScene, state),
                "drainDirtySnapshot guarded before capture");
 
+    fuse::editor::FixedStepPreflight inactivePreflight =
+        session.preflightFixedSteps(1.f / 60.f, physics, 2u);
+    expectTrue(inactivePreflight.skipped, "preflight skips while session inactive");
+    expectTrue(inactivePreflight.pending == 0u, "inactive preflight reports zero pending");
+
+    expectTrue(session.shouldSkipFixedStepDrain(0.f, physics),
+               "shouldSkipFixedStepDrain guards zero fixed dt");
+    expectTrue(session.consumeFixedSteps(0.f, editorScene, physics) == 0u,
+               "zero fixed dt does not consume slices");
+    expectTrue(session.skippedInactiveFixedStepCount() == 1u,
+               "zero fixed dt increments inactive fixed-step skip counter");
+    fuse::editor::FixedStepPreflight zeroPreflight = session.preflightFixedSteps(0.f, physics, 1u);
+    expectTrue(zeroPreflight.skipped, "zero fixed dt preflight is skipped");
+
     editorScene.destroy();
 }
 
@@ -479,8 +499,17 @@ void testPlaySessionFixedStepMaxStepsCap() {
 
     session.start(editorScene, scene, state, physics);
     session.tick(kFixedDt * 5.f, editorScene, physics);
+
+    fuse::editor::FixedStepPreflight cappedPreflight =
+        session.preflightFixedSteps(kFixedDt, physics, 2u);
+    expectTrue(cappedPreflight.pending == 5u, "preflight reports pending accumulator slices");
+    expectTrue(cappedPreflight.allowed == 2u, "preflight limits allowed slices with maxSteps");
+    expectTrue(cappedPreflight.wouldCap, "preflight marks wouldCap when pending exceeds maxSteps");
+
     expectTrue(session.consumeFixedSteps(kFixedDt, editorScene, physics, 2u) == 2u,
                "maxSteps cap limits fixed slices per call");
+    expectTrue(session.lastDeferredFixedStepCount() == 3u,
+               "lastDeferredFixedStepCount reports deferred slices after cap");
     expectTrue(session.pendingFixedStepCount(kFixedDt) == 3u,
                "pendingFixedStepCount reports deferred accumulator slices");
     expectTrue(session.consumeFixedSteps(kFixedDt, editorScene, physics, 0u) == 3u,
@@ -505,6 +534,10 @@ void testPlaySessionNegativeDtGuard() {
     fuse::editor::PlayModePhysicsState physics;
 
     session.start(editorScene, scene, state, physics);
+    expectTrue(!session.shouldSkipVariableTick(0.016f, physics),
+               "shouldSkipVariableTick allows active playing session");
+    expectTrue(session.shouldSkipVariableTick(-0.016f, physics),
+               "shouldSkipVariableTick guards negative dt");
     session.tick(-0.016f, editorScene, physics);
     expectTrue(session.skippedInactiveTickCount() == 1u,
                "negative dt increments inactive tick skip counter");
@@ -513,6 +546,13 @@ void testPlaySessionNegativeDtGuard() {
 
     session.tick(0.016f, editorScene, physics);
     expectTrue(session.sessionTickCount() == 1u, "valid dt resumes simulation");
+
+    physics.simulationActive = false;
+    expectTrue(session.shouldSkipVariableTick(0.016f, physics),
+               "shouldSkipVariableTick guards inactive physics");
+    session.tick(0.016f, editorScene, physics);
+    expectTrue(session.skippedInactiveTickCount() == 2u,
+               "inactive physics increments skipped inactive tick counter");
 
     session.stop(editorScene, scene, state, physics);
     editorScene.destroy();
@@ -574,8 +614,25 @@ void testPlaySessionDirtySnapshotEntityCountAndOrder() {
 
     session.start(editorScene, scene, state, physics);
     expectTrue(session.hasDirtySnapshot(), "dirty snapshot captured on start");
+    fuse::editor::DirtySnapshotInfo info = session.dirtySnapshotInfo();
+    expectTrue(info.captured, "dirtySnapshotInfo reports captured on start");
+    expectTrue(!info.sceneModified, "dirtySnapshotInfo reports scene modified flag");
+    expectTrue(info.entityCount == 2u, "dirtySnapshotInfo reports entity count");
+    expectTrue(!session.dirtySnapshotSceneModified(),
+               "dirtySnapshotSceneModified mirrors captured scene modified flag");
     expectTrue(session.dirtySnapshotEntityCount() == 2u,
                "dirty snapshot captures per-entity dirty flags");
+    expectTrue(session.dirtySnapshotEntityAt(0u).index <= session.dirtySnapshotEntityAt(1u).index,
+               "dirtySnapshotEntityAt preserves stable entity ordering");
+    const bool firstEntityDirty =
+        session.transformDirtyAt(session.dirtySnapshotEntityAt(0u) == first ? 0u : 1u);
+    const bool secondEntityDirty =
+        session.transformDirtyAt(session.dirtySnapshotEntityAt(0u) == second ? 0u : 1u);
+    expectTrue(!firstEntityDirty, "transformDirtyAt reads pre-play clean flag for first entity");
+    expectTrue(secondEntityDirty, "transformDirtyAt reads pre-play dirty flag for second entity");
+    expectTrue(!session.dirtySnapshotEntityAt(99u).valid(),
+               "dirtySnapshotEntityAt guards out-of-range index");
+    expectTrue(!session.transformDirtyAt(99u), "transformDirtyAt guards out-of-range index");
 
     editorScene.registry().get<fuse::ecs::Transform>(first)->dirty = true;
     editorScene.registry().get<fuse::ecs::Transform>(second)->dirty = false;
@@ -591,6 +648,8 @@ void testPlaySessionDirtySnapshotEntityCountAndOrder() {
     session.stop(editorScene, scene, state, physics);
     expectTrue(session.dirtySnapshotEntityCount() == 0u,
                "dirty snapshot entity count clears on stop");
+    expectTrue(!session.dirtySnapshotInfo().captured,
+               "dirtySnapshotInfo clears after stop");
 
     editorScene.destroy();
 }
