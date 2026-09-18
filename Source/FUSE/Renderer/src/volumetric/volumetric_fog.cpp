@@ -185,7 +185,7 @@ bool FroxelGridLayout::mapScreenDepthToSampleCoords(f32 screenX,
                                                     const FroxelGridDesc& desc,
                                                     const FroxelCameraDesc& camera,
                                                     FroxelSampleCoords& outCoords) {
-    if (desc.tilesX == 0u || desc.tilesY == 0u || desc.slicesZ == 0u) {
+    if (isEmptyGrid(desc)) {
         return false;
     }
     if (viewDepth < camera.nearPlane || viewDepth > camera.farPlane) {
@@ -236,7 +236,18 @@ f32 lerpDensity(f32 a, f32 b, f32 t) {
 }
 
 bool gridMatchesDesc(const FroxelDensityGrid& grid, const FroxelGridDesc& desc) {
-    return grid.matchesDesc(desc);
+    const FroxelGridDesc clampedDesc = FroxelGridDesc::clampCounts(desc);
+    if (FroxelGridLayout::isEmptyGrid(clampedDesc)) {
+        return grid.density.empty();
+    }
+    return grid.density.size() == clampedDesc.froxelCount();
+}
+
+bool canAccessDensityGrid(const FroxelDensityGrid& grid, const FroxelGridDesc& desc) {
+    if (grid.isEmpty() || FroxelGridLayout::isEmptyGrid(desc)) {
+        return false;
+    }
+    return gridMatchesDesc(grid, desc);
 }
 
 u32 countNonZeroFroxels(const FroxelDensityGrid& grid, f32 epsilon) {
@@ -268,7 +279,7 @@ u32 countEmptyFroxels(const FroxelDensityGrid& grid, f32 epsilon) {
 }
 
 f32 sampleDensityAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index) {
-    if (grid.isEmpty() || FroxelGridLayout::isEmptyGrid(desc) || !grid.matchesDesc(desc)) {
+    if (!canAccessDensityGrid(grid, desc)) {
         return 0.f;
     }
 
@@ -277,7 +288,7 @@ f32 sampleDensityAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& de
 }
 
 bool writeDensityAtIndex(FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index, f32 value) {
-    if (grid.isEmpty() || FroxelGridLayout::isEmptyGrid(desc) || !grid.matchesDesc(desc)) {
+    if (!canAccessDensityGrid(grid, desc)) {
         return false;
     }
 
@@ -294,10 +305,24 @@ bool validateDensityCounts(const FroxelDensityGrid& grid, f32 epsilon) {
     return countNonZeroFroxels(grid, epsilon) + countEmptyFroxels(grid, epsilon) == grid.density.size();
 }
 
+bool validateGridDensity(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, f32 epsilon) {
+    const FroxelGridDesc clampedDesc = FroxelGridDesc::clampCounts(desc);
+    if (FroxelGridLayout::isEmptyGrid(clampedDesc)) {
+        return grid.isEmpty();
+    }
+    if (grid.isEmpty()) {
+        return false;
+    }
+    if (!gridMatchesDesc(grid, clampedDesc)) {
+        return false;
+    }
+    return validateDensityCounts(grid, epsilon);
+}
+
 f32 sampleDensityBilinear(const FroxelDensityGrid& grid,
                           const FroxelGridDesc& desc,
                           const FroxelSampleCoords& coords) {
-    if (grid.isEmpty() || FroxelGridLayout::isEmptyGrid(desc) || !grid.matchesDesc(desc)) {
+    if (!canAccessDensityGrid(grid, desc)) {
         return 0.f;
     }
 
@@ -317,7 +342,7 @@ f32 sampleDensityBilinear(const FroxelDensityGrid& grid,
 f32 sampleDensityTrilinear(const FroxelDensityGrid& grid,
                            const FroxelGridDesc& desc,
                            const FroxelSampleCoords& coords) {
-    if (grid.isEmpty() || FroxelGridLayout::isEmptyGrid(desc) || !grid.matchesDesc(desc)) {
+    if (!canAccessDensityGrid(grid, desc)) {
         return 0.f;
     }
 
@@ -340,7 +365,7 @@ f32 sampleDensityAtScreen(const FroxelDensityGrid& grid,
                           f32 screenX,
                           f32 screenY,
                           f32 viewDepth) {
-    if (grid.isEmpty() || FroxelGridLayout::isEmptyGrid(desc) || !grid.matchesDesc(desc)) {
+    if (!canAccessDensityGrid(grid, desc)) {
         return 0.f;
     }
 
@@ -357,7 +382,7 @@ void populateFromAnalyticFog(FroxelDensityGrid& grid,
                              const VolumetricFogParams& params) {
     const FroxelGridDesc clampedDesc = FroxelGridDesc::clampCounts(desc);
     grid.allocate(clampedDesc);
-    if (clampedDesc.froxelCount() == 0u || params.density <= 0.f || params.march_steps == 0u) {
+    if (FroxelGridLayout::isEmptyGrid(clampedDesc) || params.density <= 0.f || params.march_steps == 0u) {
         return;
     }
 

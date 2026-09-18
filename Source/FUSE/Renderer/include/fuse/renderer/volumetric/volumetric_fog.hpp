@@ -122,16 +122,20 @@ namespace froxel_util {
 f32 lerpDensity(f32 a, f32 b, f32 t);
 /// True when density storage matches the clamped froxel count for `desc`.
 bool gridMatchesDesc(const FroxelDensityGrid& grid, const FroxelGridDesc& desc);
+/// True when the grid has storage, the desc is non-empty, and storage matches the desc.
+bool canAccessDensityGrid(const FroxelDensityGrid& grid, const FroxelGridDesc& desc);
 /// Count froxels with density above `epsilon`; returns 0 when the grid is empty.
 u32 countNonZeroFroxels(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
 /// Count froxels with density at or below `epsilon`; returns 0 when the grid is empty.
 u32 countEmptyFroxels(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
-/// Read density at a clamped flat froxel index; returns 0 when grid/desc mismatch or empty.
+/// Read density at a clamped flat froxel index; returns 0 when access is denied.
 f32 sampleDensityAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index);
-/// Write density at a clamped flat froxel index; returns false when grid/desc mismatch or empty.
+/// Write density at a clamped flat froxel index; returns false when access is denied.
 bool writeDensityAtIndex(FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index, f32 value);
 /// True when non-zero + empty froxel counts sum to storage size (empty grid is vacuously true).
 bool validateDensityCounts(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
+/// Desc match plus density-count invariant; vacuously true for empty storage or empty froxel desc.
+bool validateGridDensity(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, f32 epsilon = 1e-6f);
 f32 sampleDensityBilinear(const FroxelDensityGrid& grid,
                           const FroxelGridDesc& desc,
                           const FroxelSampleCoords& coords);

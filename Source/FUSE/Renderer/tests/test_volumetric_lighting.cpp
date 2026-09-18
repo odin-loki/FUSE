@@ -510,6 +510,69 @@ void testFroxelDensityCountValidationAndWriteGuards() {
                "bilinear sample clamps OOB interpolation weights internally");
 }
 
+void testFroxelValidateGridDensityAndAccessGuards() {
+    fuse::renderer::FroxelGridDesc desc{};
+    desc.tilesX = 4;
+    desc.tilesY = 2;
+    desc.slicesZ = 3;
+
+    fuse::renderer::FroxelGridDesc zeroDesc{};
+    zeroDesc.tilesX = 0u;
+
+    fuse::renderer::FroxelGridDesc mismatched{};
+    mismatched.tilesX = 2;
+    mismatched.tilesY = 2;
+    mismatched.slicesZ = 2;
+
+    fuse::renderer::FroxelDensityGrid emptyGrid{};
+    expectTrue(fuse::renderer::froxel_util::validateGridDensity(emptyGrid, zeroDesc),
+               "empty storage validates against empty froxel desc");
+    expectTrue(!fuse::renderer::froxel_util::canAccessDensityGrid(emptyGrid, desc),
+               "empty storage cannot access density grid");
+    expectTrue(!fuse::renderer::froxel_util::canAccessDensityGrid(emptyGrid, zeroDesc),
+               "empty storage cannot access zero-dimension desc");
+
+    fuse::renderer::FroxelDensityGrid grid{};
+    grid.allocate(desc);
+    expectTrue(fuse::renderer::froxel_util::canAccessDensityGrid(grid, desc),
+               "allocated grid grants density access");
+    expectTrue(fuse::renderer::froxel_util::validateGridDensity(grid, desc),
+               "fresh allocate validates grid density");
+    expectTrue(!fuse::renderer::froxel_util::validateGridDensity(grid, mismatched),
+               "grid density rejects desc mismatch");
+    expectTrue(!fuse::renderer::froxel_util::validateGridDensity(grid, zeroDesc),
+               "non-empty storage rejects empty froxel desc");
+    expectTrue(!fuse::renderer::froxel_util::canAccessDensityGrid(grid, mismatched),
+               "desc mismatch denies density access");
+    expectTrue(!fuse::renderer::froxel_util::canAccessDensityGrid(grid, zeroDesc),
+               "empty froxel desc denies density access");
+
+    expectTrue(fuse::renderer::froxel_util::writeDensityAtIndex(grid, desc, 5u, 0.75f),
+               "write succeeds when access granted");
+    expectNear(fuse::renderer::froxel_util::sampleDensityAtIndex(grid, desc, 5u), 0.75f, 1e-5f,
+               "sample reads written density");
+    expectTrue(fuse::renderer::froxel_util::validateGridDensity(grid, desc),
+               "partially written grid still validates grid density");
+
+    fuse::renderer::FroxelDensityGrid zeroAllocated{};
+    zeroAllocated.allocate(zeroDesc);
+    expectTrue(zeroAllocated.isEmpty(), "allocate on empty desc stays empty");
+    expectTrue(fuse::renderer::froxel_util::validateGridDensity(zeroAllocated, zeroDesc),
+               "empty allocated grid validates against empty desc");
+    expectTrue(!fuse::renderer::froxel_util::canAccessDensityGrid(zeroAllocated, desc),
+               "empty allocated grid cannot access non-empty desc");
+
+    fuse::renderer::FroxelCameraDesc camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+    expectNear(fuse::renderer::froxel_util::sampleDensityAtScreen(grid, zeroDesc, camera, 0.5f, 0.5f, 10.f),
+               0.f,
+               1e-6f,
+               "screen sample early-outs on empty froxel desc");
+    expectTrue(!fuse::renderer::froxel_util::writeDensityAtIndex(grid, mismatched, 0u, 1.f),
+               "write guard rejects desc mismatch via canAccessDensityGrid");
+}
+
 void testZeroDimensionFroxelGrid() {
     fuse::renderer::FroxelGridDesc zeroDesc{};
     zeroDesc.tilesX = 0u;
@@ -652,6 +715,7 @@ int main() {
     testFroxelDensityLerpHelpers();
     testFroxelIndexClampAndLerpGuards();
     testFroxelDensityCountValidationAndWriteGuards();
+    testFroxelValidateGridDensityAndAccessGuards();
     testEmptySceneVolumetricFog();
     testZeroDimensionFroxelGrid();
     testFroxelPopulateFromAnalyticFog();
