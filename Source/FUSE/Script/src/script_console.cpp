@@ -150,7 +150,7 @@ ScriptConsoleCommandResult ScriptConsole::executeLine_(const char* line, bool re
 
 void ScriptConsole::registerBuiltIns_() {
     m_commands.register_built_in("repeat", [](ScriptConsole& console, const char* /*args*/) {
-        if (console.m_lastExecutedLine.empty()) {
+        if (!console.can_repeat()) {
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
                                               "no command to repeat"};
         }
@@ -259,6 +259,11 @@ void ScriptConsole::registerBuiltIns_() {
 
     m_commands.register_built_in("history", [](ScriptConsole& console, const char* args) {
         if (args != nullptr && std::strcmp(args, "clear") == 0) {
+            if (console.is_history_empty()) {
+                return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok,
+                                                  "history already empty"};
+            }
+
             console.m_history.clear();
             console.resetHistoryNavigation();
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, "history cleared"};

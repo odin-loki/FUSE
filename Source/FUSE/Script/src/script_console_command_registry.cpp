@@ -143,6 +143,14 @@ std::vector<std::string> ScriptConsoleCommandRegistry::commands_with_prefix(cons
     return matches;
 }
 
+bool ScriptConsoleCommandRegistry::has_commands_with_prefix(const char* prefix) const {
+    return !commands_with_prefix(prefix).empty();
+}
+
+usize ScriptConsoleCommandRegistry::prefix_match_count(const char* prefix) const {
+    return commands_with_prefix(prefix).size();
+}
+
 std::string ScriptConsoleCommandRegistry::longest_common_prefix(const char* prefix) const {
     const std::vector<std::string> matches = commands_with_prefix(prefix);
     if (matches.empty()) {

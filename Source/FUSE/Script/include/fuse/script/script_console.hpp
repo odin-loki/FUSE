@@ -40,6 +40,10 @@ public:
     [[nodiscard]] const std::string& recallHistory(bool previous) { return m_history.recall(previous); }
     void resetHistoryNavigation() { m_history.resetNavigation(); }
     [[nodiscard]] s32 historyNavigationCursor() const { return m_history.navigationCursor(); }
+    [[nodiscard]] bool can_recall_history(bool previous) const {
+        return previous ? m_history.can_recall_previous() : m_history.can_recall_next();
+    }
+    [[nodiscard]] bool is_history_navigation_at_end() const { return m_history.is_navigation_at_end(); }
 
     [[nodiscard]] const std::vector<std::string>& outputLines() const { return m_output; }
     void clearOutput();
@@ -59,6 +63,12 @@ public:
     [[nodiscard]] std::vector<std::string> commands_with_prefix(const char* prefix) const {
         return m_commands.commands_with_prefix(prefix);
     }
+    [[nodiscard]] bool has_command_prefix(const char* prefix) const {
+        return m_commands.has_commands_with_prefix(prefix);
+    }
+    [[nodiscard]] usize command_prefix_match_count(const char* prefix) const {
+        return m_commands.prefix_match_count(prefix);
+    }
     [[nodiscard]] std::vector<std::string> suggest_commands(const char* name, u32 max_suggestions = 3) const {
         return m_commands.suggest_commands(name, max_suggestions);
     }
@@ -66,6 +76,10 @@ public:
         return m_commands.longest_common_prefix(prefix);
     }
     [[nodiscard]] std::string unique_prefix_match(const char* partial) const {
+        return m_commands.unique_prefix_match(partial);
+    }
+    /// Resolve `partial` to a command name, or empty when missing/ambiguous.
+    [[nodiscard]] std::string resolve_command_name(const char* partial) const {
         return m_commands.unique_prefix_match(partial);
     }
 
