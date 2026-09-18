@@ -465,6 +465,72 @@ void run_snapshot_delta_tests() {
     expectTrue(!empty_ring_preflight.can_apply(), "empty ring preflight cannot apply");
     expectTrue(empty_helper_ring.should_skip_apply_delta(0u, empty_delta),
                "empty ring should_skip_apply_delta is true");
+
+    // --- preflight field-bit and duplicate-index guards (B7.4 deepen follow-up) ---
+    expectTrue(fuse::net::ecs_field_mask_valid(static_cast<fuse::u8>(fuse::net::SnapshotEcsField::All)),
+               "ecs field mask valid accepts declared bits");
+    expectTrue(!fuse::net::ecs_field_mask_valid(0xFF), "ecs field mask valid rejects reserved bits");
+    expectTrue(fuse::net::physics_field_mask_valid(
+                   static_cast<fuse::u8>(fuse::net::SnapshotPhysicsField::LinearVelocity)),
+               "physics field mask valid accepts declared bits");
+    expectTrue(!fuse::net::physics_field_mask_valid(0xF0), "physics field mask valid rejects reserved bits");
+
+    fuse::net::SnapshotEntityPatch bad_bits_patch = patch_delta.entity_patches[0];
+    bad_bits_patch.changed_ecs_fields = 0xFF;
+    expectTrue(!fuse::net::validate_entity_patch_field_bits(bad_bits_patch),
+               "reserved ecs bits fail field-bit validation");
+    expectTrue(!fuse::net::validate_entity_patch_masks(bad_bits_patch),
+               "reserved ecs bits fail patch mask validation");
+
+    fuse::net::SnapshotDelta duplicate_index_delta = patch_delta;
+    duplicate_index_delta.entity_patches.push_back(patch_delta.entity_patches[0]);
+    duplicate_index_delta.changed_entity_mask |= (1ull << 1);
+    expectTrue(!fuse::net::validate_entity_patch_indices_unique(duplicate_index_delta),
+               "duplicate entity rows fail unique-index validation");
+    expectTrue(!fuse::net::preflight_snapshot_delta(base, duplicate_index_delta).duplicate_index_ok,
+               "preflight rejects duplicate entity rows");
+
+    fuse::net::SnapshotDelta empty_full_delta = patch_delta;
+    empty_full_delta.kind = fuse::net::SnapshotDeltaKind::Full;
+    empty_full_delta.entity_patches.clear();
+    empty_full_delta.changed_entity_mask = 0;
+    empty_full_delta.full_ecs_state.clear();
+    empty_full_delta.full_physics_state.clear();
+    expectTrue(!fuse::net::validate_full_delta_payload(empty_full_delta),
+               "full delta with empty payload fails validation");
+    expectTrue(!fuse::net::preflight_snapshot_delta(base, empty_full_delta).full_payload_ok,
+               "preflight rejects empty full delta payload");
+
+    const fuse::net::SnapshotDelta factory_empty =
+        fuse::net::make_empty_snapshot_delta(base.frame, base.frame + 1u, base.checksum, base.checksum);
+    expectTrue(fuse::net::is_empty_snapshot_delta(factory_empty), "make_empty_snapshot_delta builds none kind");
+    expectTrue(fuse::net::can_apply_or_skip_snapshot_delta(base, factory_empty),
+               "can_apply_or_skip accepts factory empty delta");
+    expectTrue(!fuse::net::can_apply_or_skip_snapshot_delta(base, bad_checksum_delta),
+               "can_apply_or_skip rejects patch delta with checksum mismatch");
+
+    const fuse::net::DeltaApplyResult deepen_verified =
+        fuse::net::apply_snapshot_delta_verified(base, bad_popcount_delta);
+    expectTrue(!deepen_verified.mask_popcount_ok, "verified apply surfaces mask popcount failure");
+    expectTrue(deepen_verified.field_bits_ok, "valid patch delta passes field-bit check in verified apply");
+
+    expectTrue(fuse::net::validate_entity_patch_index_in_mask(patch_delta.entity_patches[0],
+                                                              patch_delta.changed_entity_mask),
+               "patch index helper accepts matching mask bit");
+    fuse::net::SnapshotEntityPatch orphan_patch = patch_delta.entity_patches[0];
+    orphan_patch.entity_index = 7u;
+    expectTrue(!fuse::net::validate_entity_patch_index_in_mask(orphan_patch, patch_delta.changed_entity_mask),
+               "patch index helper rejects orphan mask bit");
+
+    expectTrue(helper_history.can_apply_or_skip_delta(base.frame, empty_delta),
+               "history can_apply_or_skip accepts empty delta fast path");
+    expectTrue(helper_history.can_apply_or_skip_delta(base.frame, patch_delta),
+               "history can_apply_or_skip accepts valid patch delta");
+    expectTrue(!empty_helper_ring.can_apply_or_skip_delta(0u, empty_delta),
+               "empty history ring cannot apply_or_skip without baseline");
+    const fuse::net::SnapshotHistoryPreflight apply_or_skip_preflight =
+        helper_history.preflight_apply_delta(base.frame, empty_delta);
+    expectTrue(apply_or_skip_preflight.can_apply_or_skip(), "history preflight can_apply_or_skip for empty delta");
 }
 
 } // namespace fuse::net::tests
