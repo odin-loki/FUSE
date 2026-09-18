@@ -3,6 +3,7 @@
 #include <fuse/editor/command_stack.hpp>
 #include <fuse/editor/editor_state.hpp>
 #include <fuse/editor/material_property_binding.hpp>
+#include <fuse/editor/material_property_inspect.hpp>
 #include <fuse/types.hpp>
 
 namespace fuse::renderer {
@@ -31,8 +32,13 @@ public:
 
     [[nodiscard]] u32 selectedMaterialId() const { return m_selectedMatId; }
     [[nodiscard]] u32 catalogCount() const { return m_catalogCount; }
-    [[nodiscard]] bool isCatalogEmpty() const { return m_catalogCount == 0u; }
-    [[nodiscard]] bool hasSelectedMaterial() const { return m_selectedMatId != kInvalidMaterialId; }
+    [[nodiscard]] bool isCatalogEmpty() const { return isMaterialCatalogEmpty(m_catalogCount); }
+    [[nodiscard]] bool hasSelectedMaterial() const {
+        return !isSentinelMaterialSlot(m_selectedMatId) && isMaterialSlotValid(m_selectedMatId, m_catalogCount);
+    }
+    [[nodiscard]] bool canSelectMaterial(u32 materialId) const {
+        return canBindMaterialSlot(materialId, m_catalogCount);
+    }
     [[nodiscard]] const MaterialEditState& editState() const { return m_editState; }
     [[nodiscard]] const MaterialPropertyBinding& propertyBinding() const { return m_binding; }
     [[nodiscard]] MaterialPropertyBinding& propertyBinding() { return m_binding; }

@@ -327,6 +327,81 @@ void testMaterialPropertyIdValidation() {
                "base color id is valid");
     expectTrue(fuse::editor::isMaterialPropertyIdValid(fuse::editor::MaterialPropertyId::ShadingModel),
                "shading model id is valid");
+    expectTrue(!fuse::editor::isInvalidMaterialPropertyId(fuse::editor::MaterialPropertyId::Roughness),
+               "valid roughness id is not invalid");
+}
+
+void testMaterialSentinelSlotHelpers() {
+    expectTrue(fuse::editor::isSentinelMaterialSlot(fuse::editor::kInvalidMaterialSlot),
+               "invalid slot sentinel recognized");
+    expectTrue(!fuse::editor::isSentinelMaterialSlot(0u), "zero is not the sentinel");
+    expectTrue(!fuse::editor::canBindMaterialSlot(fuse::editor::kInvalidMaterialSlot, 3u),
+               "sentinel slot cannot bind");
+}
+
+void testMaterialPropertyDescriptorAt() {
+    const fuse::editor::MaterialPropertyDescriptor roughness =
+        fuse::editor::materialPropertyDescriptorAt(0u);
+    expectTrue(roughness.id == fuse::editor::MaterialPropertyId::Roughness,
+               "descriptor at index 0 is roughness");
+    expectTrue(roughness.label != nullptr && roughness.label[0] != '\0',
+               "descriptor at index 0 has label");
+
+    const fuse::editor::MaterialPropertyDescriptor invalid =
+        fuse::editor::materialPropertyDescriptorAt(99u);
+    expectTrue(invalid.label != nullptr && invalid.label[0] == '\0',
+               "out-of-range descriptor returns empty label");
+}
+
+void testMaterialPropertyBindingTryBind() {
+    fuse::editor::MaterialEditState state{};
+    fuse::editor::MaterialPropertyBinding binding;
+
+    expectTrue(!binding.tryBind(0u, 0u, state), "tryBind rejects empty catalog");
+    expectTrue(!binding.isBound(), "failed tryBind leaves binding unbound");
+
+    expectTrue(!binding.tryBind(2u, 2u, state), "tryBind rejects out-of-range slot");
+    expectTrue(!binding.isBound(), "out-of-range tryBind leaves binding unbound");
+
+    expectTrue(binding.tryBind(1u, 2u, state), "tryBind accepts valid slot");
+    expectTrue(binding.isBound(), "successful tryBind marks binding bound");
+    expectTrue(binding.boundMaterialId() == 1u, "tryBind records material id");
+    expectTrue(binding.canPostProperty(), "tryBind enables property posting");
+}
+
+void testMaterialEditorPanelCanSelectMaterial() {
+    fuse::editor::EditorState state;
+    fuse::editor::MaterialEditorPanel panel;
+    panel.sync(state, 2u);
+
+    expectTrue(panel.canSelectMaterial(0u), "first slot selectable");
+    expectTrue(panel.canSelectMaterial(1u), "last slot selectable");
+    expectTrue(!panel.canSelectMaterial(2u), "out-of-range slot not selectable");
+    expectTrue(!panel.canSelectMaterial(fuse::editor::kInvalidMaterialSlot),
+               "sentinel slot not selectable");
+
+    panel.sync(state, 0u);
+    expectTrue(!panel.canSelectMaterial(0u), "empty catalog rejects all slots");
+}
+
+void testMaterialEditorPanelCatalogShrink() {
+    fuse::editor::EditorState state;
+    fuse::editor::MaterialEditorPanel panel;
+    panel.sync(state, 3u);
+    expectTrue(panel.selectMaterial(2u), "select last slot in three-material catalog");
+    expectTrue(panel.hasSelectedMaterial(), "selection active before shrink");
+    expectTrue(panel.propertyBinding().isBound(), "binding active before shrink");
+
+    panel.sync(state, 1u);
+    expectTrue(panel.catalogCount() == 1u, "catalog shrinks to one material");
+    expectTrue(!panel.hasSelectedMaterial(), "shrink clears out-of-range selection");
+    expectTrue(panel.selectedMaterialId() == fuse::editor::MaterialEditorPanel::kInvalidMaterialId,
+               "shrink resets selection id to sentinel");
+    expectTrue(!panel.propertyBinding().isBound(), "shrink unbinds property binding");
+
+    fuse::editor::CommandStack cmds;
+    expectTrue(!panel.setRoughness(0.5f, cmds), "edit fails after catalog shrink");
+    expectTrue(cmds.appliedCount() == 0u, "shrink posts no commands");
 }
 
 void testMaterialPropertyInspectEnumeration() {
@@ -494,6 +569,64 @@ void testPropertyInspectorMeshMaterialId() {
     const fuse::editor::EditorCommand* last = cmds.lastApplied();
     expectTrue(last != nullptr && last->propertyName == "mesh.material_id",
                "mesh material id command property name");
+
+    scene.destroy();
+}
+
+void testPropertyInspectorMeshMaterialEmptyCatalog() {
+    fuse::editor::EditorScene scene;
+    scene.init();
+
+    const fuse::ecs::EntityID entity = scene.registry().create();
+    scene.registry().add<fuse::ecs::Transform>(entity);
+    fuse::ecs::Mesh mesh{};
+    mesh.material_id = 0u;
+    scene.registry().add<fuse::ecs::Mesh>(entity, mesh);
+
+    fuse::editor::EditorState state;
+    state.primarySelection = entity;
+
+    fuse::editor::PropertyInspector inspector;
+    inspector.sync(state, scene);
+
+    fuse::u32 materialId = 0u;
+    expectTrue(!inspector.tryGetMeshMaterialId(scene, 0u, materialId),
+               "tryGet rejects mesh slot when catalog empty");
+    expectTrue(inspector.getMeshMaterialId(scene, materialId),
+               "raw get still reads mesh slot when catalog empty");
+    expectTrue(materialId == 0u, "raw get returns stored mesh slot");
+
+    fuse::editor::CommandStack cmds;
+    expectTrue(!inspector.trySetMeshMaterialId(0u, 0u, scene, cmds),
+               "trySet rejects edit when catalog empty");
+    expectTrue(cmds.appliedCount() == 0u, "empty catalog posts no command");
+
+    scene.destroy();
+}
+
+void testPropertyInspectorMeshMaterialTryGet() {
+    fuse::editor::EditorScene scene;
+    scene.init();
+
+    const fuse::ecs::EntityID entity = scene.registry().create();
+    scene.registry().add<fuse::ecs::Transform>(entity);
+    fuse::ecs::Mesh mesh{};
+    mesh.material_id = 1u;
+    scene.registry().add<fuse::ecs::Mesh>(entity, mesh);
+
+    fuse::editor::EditorState state;
+    state.primarySelection = entity;
+
+    fuse::editor::PropertyInspector inspector;
+    inspector.sync(state, scene);
+
+    fuse::u32 materialId = 0u;
+    expectTrue(inspector.tryGetMeshMaterialId(scene, 2u, materialId),
+               "tryGet accepts in-range mesh slot");
+    expectTrue(materialId == 1u, "tryGet returns mesh material id");
+
+    expectTrue(!inspector.tryGetMeshMaterialId(scene, 1u, materialId),
+               "tryGet rejects out-of-range mesh slot");
 
     scene.destroy();
 }
@@ -695,10 +828,17 @@ int main() {
     testMaterialEditorPanelInvalidSlotSelection();
     testMaterialPropertyBindingTryGuards();
     testMaterialPropertyIdValidation();
+    testMaterialSentinelSlotHelpers();
+    testMaterialPropertyDescriptorAt();
+    testMaterialPropertyBindingTryBind();
+    testMaterialEditorPanelCanSelectMaterial();
+    testMaterialEditorPanelCatalogShrink();
     testMaterialPropertyBindingClamp();
     testMaterialPropertyBindingDirtyCoalesce();
     testMaterialPropertyBindingUnbound();
     testPropertyInspectorMeshMaterialId();
+    testPropertyInspectorMeshMaterialEmptyCatalog();
+    testPropertyInspectorMeshMaterialTryGet();
     testPropertyInspectorMeshMaterialInvalidSlot();
 #ifdef FUSE_VULKAN_BACKEND
     testMaterialEditorPanelMaterialSystemBridge();

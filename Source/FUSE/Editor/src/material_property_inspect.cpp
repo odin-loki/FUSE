@@ -42,6 +42,10 @@ bool isInvalidMaterialSlot(u32 materialId, u32 catalogCount) {
     return !isMaterialSlotValid(materialId, catalogCount);
 }
 
+bool isSentinelMaterialSlot(u32 materialId) {
+    return materialId == kInvalidMaterialSlot;
+}
+
 bool isMaterialPropertyIdValid(MaterialPropertyId id) {
     switch (id) {
     case MaterialPropertyId::Roughness:
@@ -51,6 +55,10 @@ bool isMaterialPropertyIdValid(MaterialPropertyId id) {
         return true;
     }
     return false;
+}
+
+bool isInvalidMaterialPropertyId(MaterialPropertyId id) {
+    return !isMaterialPropertyIdValid(id);
 }
 
 bool canBindMaterialSlot(u32 materialId, u32 catalogCount) {
@@ -79,6 +87,13 @@ u32 materialPropertyIndexOf(MaterialPropertyId id) {
 
 bool materialPropertyIsVec3(MaterialPropertyId id) {
     return id == MaterialPropertyId::BaseColor;
+}
+
+MaterialPropertyDescriptor materialPropertyDescriptorAt(u32 index) {
+    if (!isMaterialPropertyIndexValid(index)) {
+        return {};
+    }
+    return materialPropertyDescriptor(materialPropertyIdAt(index));
 }
 
 MaterialPropertyDescriptor materialPropertyDescriptor(MaterialPropertyId id) {

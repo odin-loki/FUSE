@@ -23,6 +23,8 @@ public:
     static constexpr u32 kInvalidMaterialId = UINT32_MAX;
 
     void bind(u32 materialId, MaterialEditState& editState);
+    /// Catalog-validated bind — unbinds and returns false when the slot is invalid (B6.7 deepen).
+    bool tryBind(u32 materialId, u32 catalogCount, MaterialEditState& editState);
     void unbind();
 
     [[nodiscard]] bool isBound() const { return m_materialId != kInvalidMaterialId; }

@@ -34,8 +34,14 @@ inline constexpr u32 kInvalidMaterialSlot = UINT32_MAX;
 /// Convenience inverse of `isMaterialSlotValid` (B6.7 deepen).
 [[nodiscard]] bool isInvalidMaterialSlot(u32 materialId, u32 catalogCount);
 
+/// True when `materialId` is the catalog sentinel (`kInvalidMaterialSlot`).
+[[nodiscard]] bool isSentinelMaterialSlot(u32 materialId);
+
 /// True when `id` maps to a bindable inspector property (B6.7 deepen).
 [[nodiscard]] bool isMaterialPropertyIdValid(MaterialPropertyId id);
+
+/// Convenience inverse of `isMaterialPropertyIdValid` (B6.7 deepen).
+[[nodiscard]] bool isInvalidMaterialPropertyId(MaterialPropertyId id);
 
 /// Binding guard — slot must be valid before inspector bind (B6.7 deepen).
 [[nodiscard]] bool canBindMaterialSlot(u32 materialId, u32 catalogCount);
@@ -51,6 +57,9 @@ inline constexpr u32 kInvalidMaterialSlot = UINT32_MAX;
 
 /// Metadata for slider/field widgets (B6.7 deepen).
 [[nodiscard]] MaterialPropertyDescriptor materialPropertyDescriptor(MaterialPropertyId id);
+
+/// Descriptor lookup by stable inspector index — returns default descriptor when out of range.
+[[nodiscard]] MaterialPropertyDescriptor materialPropertyDescriptorAt(u32 index);
 
 /// True when the property stores a vec3 (base color) rather than a scalar.
 [[nodiscard]] bool materialPropertyIsVec3(MaterialPropertyId id);

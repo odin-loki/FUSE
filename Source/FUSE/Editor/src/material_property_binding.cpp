@@ -41,6 +41,15 @@ void MaterialPropertyBinding::bind(u32 materialId, MaterialEditState& editState)
     m_panelRefreshPending = false;
 }
 
+bool MaterialPropertyBinding::tryBind(u32 materialId, u32 catalogCount, MaterialEditState& editState) {
+    if (!canBindMaterialSlot(materialId, catalogCount)) {
+        unbind();
+        return false;
+    }
+    bind(materialId, editState);
+    return true;
+}
+
 void MaterialPropertyBinding::unbind() {
     m_materialId = kInvalidMaterialId;
     m_editState = nullptr;
