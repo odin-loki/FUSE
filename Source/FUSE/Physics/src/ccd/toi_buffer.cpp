@@ -29,9 +29,43 @@ void ToiBufferSoA::clear() {
     droppedCount = 0;
 }
 
+u32 ToiBufferSoA::remainingCapacity() const {
+    if (maxCapacity == 0u) {
+        return UINT32_MAX;
+    }
+    return activeCount < maxCapacity ? maxCapacity - activeCount : 0u;
+}
+
+bool ToiBufferSoA::canApplyMaxCapacityClamp() const {
+    return !canSkipSoAIteration() && maxCapacity > 0u && activeCount > maxCapacity;
+}
+
+bool ToiBufferSoA::canSkipCompactAndSort() const {
+    if (canSkipSoAIteration()) {
+        return true;
+    }
+
+    if (pairSlotCount > 0u && countValidSlots() == 0u) {
+        return true;
+    }
+
+    // Pair-slot writes keep activeCount at zero until the first compact pass.
+    if (pairSlotCount > 0u && activeCount == 0u) {
+        return false;
+    }
+
+    return canSkipCompaction() && canSkipSort() && !canApplyMaxCapacityClamp();
+}
+
 void ToiBufferSoA::preparePairSlots(u32 pairCount) {
     if (pairCount == 0u) {
         clear();
+        toiValues.clear();
+        contactPoints.clear();
+        contactNormals.clear();
+        bodyA.clear();
+        bodyB.clear();
+        validFlags.clear();
         return;
     }
 
@@ -47,7 +81,7 @@ void ToiBufferSoA::preparePairSlots(u32 pairCount) {
 }
 
 void ToiBufferSoA::writeSlot(u32 slot, const TOIResult& result) {
-    if (slot >= pairSlotCount || !result.valid || !isToiInWindow(result.toi)) {
+    if (pairSlotCount == 0u || slot >= pairSlotCount || !result.valid || !isToiInWindow(result.toi)) {
         return;
     }
 
@@ -60,6 +94,9 @@ void ToiBufferSoA::writeSlot(u32 slot, const TOIResult& result) {
 }
 
 void ToiBufferSoA::invalidateSlot(u32 slot) {
+    if (pairSlotCount > 0u && slot >= pairSlotCount) {
+        return;
+    }
     if (slot >= validFlags.size()) {
         return;
     }
@@ -67,6 +104,9 @@ void ToiBufferSoA::invalidateSlot(u32 slot) {
 }
 
 bool ToiBufferSoA::slotIsValid(u32 slot) const {
+    if (pairSlotCount > 0u && slot >= pairSlotCount) {
+        return false;
+    }
     return slot < validFlags.size() && validFlags[slot] != 0u;
 }
 
@@ -104,6 +144,10 @@ bool ToiBufferSoA::canSkipCompaction() const {
 }
 
 bool ToiBufferSoA::push(const TOIResult& result) {
+    if (pairSlotCount > 0u) {
+        return false;
+    }
+
     if (!result.valid || !isToiInWindow(result.toi)) {
         return false;
     }
@@ -230,7 +274,7 @@ u32 ToiBufferSoA::compact() {
 }
 
 u32 ToiBufferSoA::applyMaxCapacityClamp() {
-    if (canSkipSoAIteration() || maxCapacity == 0u || activeCount <= maxCapacity) {
+    if (!canApplyMaxCapacityClamp()) {
         return activeCount;
     }
 
@@ -260,8 +304,11 @@ u32 ToiBufferSoA::applyMaxCapacityClamp() {
 }
 
 u32 ToiBufferSoA::compactAndSort() {
-    if (canSkipSoAIteration()) {
-        return 0u;
+    if (canSkipCompactAndSort()) {
+        if (pairSlotCount > 0u) {
+            activeCount = countValidSlots();
+        }
+        return activeCount;
     }
 
     compact();
