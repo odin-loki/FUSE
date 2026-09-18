@@ -1011,6 +1011,132 @@ void testFrictionBasisRefreshGuards() {
         "compute_if_needed preserves valid cached basis");
 }
 
+void testContactPairB45DispatchGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 bodyA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 bodyB = bodies.addBody({1.5f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodyA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodyB, {1.f, 0.f, 0.f});
+
+    expectTrue(
+        fuse::physics::narrowphase::is_contact_pair_dispatchable({bodyA, bodyB}, bodies, shapes),
+        "dispatchable guard allows valid pair");
+    expectTrue(
+        !fuse::physics::narrowphase::should_reject_contact_pair({bodyA, bodyB}, bodies, shapes),
+        "reject guard does not false-positive valid pair");
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_reject_reason(bodyA, bodyB, bodies, shapes) ==
+            fuse::physics::narrowphase::ContactPairRejectReason::None,
+        "body-index reject reason matches valid pair");
+
+    const auto selfPreflight =
+        fuse::physics::narrowphase::preflight_contact_pair({bodyA, bodyA}, bodies, shapes);
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_preflight_matches_reason(
+            selfPreflight, fuse::physics::narrowphase::ContactPairRejectReason::SelfPair),
+        "preflight_matches_reason flags self pair");
+
+    const std::vector<fuse::physics::broadphase::CandidatePair> pairs = {
+        {bodyA, bodyB},
+        {bodyA, bodyA},
+        {bodyA, 99u},
+    };
+    expectTrue(
+        fuse::physics::narrowphase::count_dispatchable_contact_pairs(pairs, bodies, shapes) == 1u,
+        "count_dispatchable tallies valid pairs only");
+    expectTrue(
+        fuse::physics::narrowphase::count_rejected_contact_pairs(pairs, bodies, shapes) == 2u,
+        "count_rejected tallies invalid pairs only");
+}
+
+void testManifoldFinalizeB45Guards() {
+    fuse::physics::narrowphase::ContactManifold clean{};
+    clean.contactNormal = {0.f, 1.f, 0.f};
+    clean.addPoint({0.f, 0.f, 0.f}, 0.4f);
+    clean.addPoint({1.f, 0.f, 0.f}, 0.25f);
+
+    expectTrue(
+        fuse::physics::narrowphase::should_skip_manifold_prune(clean),
+        "skip prune true for clean manifold");
+
+    const auto finalizePreflight =
+        fuse::physics::narrowphase::preflight_finalize_contact_manifold(clean);
+    expectTrue(finalizePreflight.can_finalize(), "finalize preflight accepts penetrating manifold");
+    expectTrue(
+        !fuse::physics::narrowphase::should_skip_finalize_contact_manifold(clean),
+        "skip finalize false for ready manifold");
+
+    fuse::physics::narrowphase::ContactManifold ready = clean;
+    expectTrue(
+        fuse::physics::narrowphase::generate_contact_manifold_if_ready(ready),
+        "generate_if_ready finalizes valid manifold");
+    expectTrue(ready.valid, "generate_if_ready sets validity");
+    expectTrue(ready.hasFrictionBasis(), "generate_if_ready builds friction basis");
+
+    fuse::physics::narrowphase::ContactManifold shallow = clean;
+    shallow.addPoint({2.f, 0.f, 0.f}, 0.01f);
+    expectTrue(
+        shallow.hasShallowPenetrations(0.05f),
+        "shallow guard flags shallow slot before conditional prune");
+    expectTrue(
+        fuse::physics::narrowphase::prune_shallow_penetrations_if_needed(shallow, 0.05f),
+        "conditional shallow prune keeps deep points");
+    expectTrue(shallow.pointCount == 2u, "conditional shallow prune removes shallow slot");
+
+    fuse::physics::narrowphase::ContactManifold empty{};
+    expectTrue(
+        !fuse::physics::narrowphase::generate_contact_manifold_if_ready(empty),
+        "generate_if_ready skips empty manifold");
+    const auto emptyPreflight =
+        fuse::physics::narrowphase::preflight_finalize_contact_manifold(empty);
+    expectTrue(emptyPreflight.skipped, "finalize preflight skips empty manifold");
+    expectTrue(emptyPreflight.wouldFail, "finalize preflight marks empty manifold as failure");
+}
+
+void testFrictionBasisB45PreflightGuards() {
+    fuse::physics::narrowphase::ContactManifold empty{};
+    const auto emptyPreflight =
+        fuse::physics::narrowphase::preflight_friction_basis_rebuild(empty);
+    expectTrue(emptyPreflight.skipped, "friction preflight skips empty manifold");
+    expectTrue(
+        fuse::physics::narrowphase::should_skip_friction_basis_rebuild(empty),
+        "skip rebuild true for empty manifold");
+
+    fuse::physics::narrowphase::ContactManifold unnormalized{};
+    unnormalized.contactNormal = {0.f, 2.f, 0.f};
+    unnormalized.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    expectTrue(
+        fuse::physics::narrowphase::contact_normal_needs_normalization(unnormalized),
+        "normalization guard flags non-unit normal");
+
+    const auto needsPreflight =
+        fuse::physics::narrowphase::preflight_friction_basis_rebuild(unnormalized);
+    expectTrue(needsPreflight.needs_rebuild(), "preflight rebuild true without cached basis");
+    expectTrue(needsPreflight.needsNormalization, "preflight flags non-unit normal");
+
+    const auto rebuildResult =
+        fuse::physics::narrowphase::rebuild_friction_basis_guarded(unnormalized);
+    expectTrue(rebuildResult.rebuilt, "guarded rebuild builds basis");
+    expectTrue(
+        fuse::physics::narrowphase::friction_basis_matches_normal(unnormalized),
+        "guarded rebuild produces matching basis");
+    expectNear(unnormalized.contactNormal.length(), 1.f, 1e-4f, "guarded rebuild normalizes contact normal");
+
+    fuse::physics::narrowphase::ContactManifold cached = unnormalized;
+    const auto cachedPreflight =
+        fuse::physics::narrowphase::preflight_friction_basis_rebuild(cached);
+    expectTrue(
+        fuse::physics::narrowphase::should_skip_friction_basis_rebuild(cached),
+        "skip rebuild true with valid cached basis");
+    expectTrue(!cachedPreflight.needs_rebuild(), "preflight rebuild false with valid cached basis");
+
+    const auto cachedResult =
+        fuse::physics::narrowphase::rebuild_friction_basis_guarded(cached);
+    expectTrue(cachedResult.skipped, "guarded rebuild skips valid cached basis");
+    expectTrue(!cachedResult.rebuilt, "guarded rebuild does not rebuild cached basis");
+}
+
 void testGjkSupportAndEpaStub() {
     const fuse::physics::vec3 hull[] = {
         {-1.f, 0.f, 0.f},
@@ -1061,6 +1187,9 @@ int main() {
     testContactPairPreflightGuards();
     testFrictionBasisGuardHelpers();
     testFrictionBasisRefreshGuards();
+    testContactPairB45DispatchGuards();
+    testManifoldFinalizeB45Guards();
+    testFrictionBasisB45PreflightGuards();
     testGjkSupportAndEpaStub();
 
     if (g_failures == 0) {

@@ -1,5 +1,7 @@
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
 
+#include <fuse/physics/narrowphase/contact_pair.hpp>
+
 #include <algorithm>
 #include <cmath>
 
@@ -330,6 +332,52 @@ ManifoldPrunePreflight preflight_manifold_prune(
     preflight.exceedsMaxPoints = manifold.pointCount > kMaxContactPointsPerManifold;
     preflight.wouldBeEmpty = manifold.wouldBeEmptyAfterPrune(separationEpsilon, duplicateEpsilon);
     return preflight;
+}
+
+bool should_skip_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) {
+    return manifold.canSkipPruneContactPoints(separationEpsilon, duplicateEpsilon);
+}
+
+ManifoldFinalizePreflight preflight_finalize_contact_manifold(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) {
+    ManifoldFinalizePreflight preflight{};
+    if (manifold.empty()) {
+        preflight.skipped = true;
+        preflight.wouldFail = true;
+        preflight.prune.skipped = true;
+        preflight.prune.wouldBeEmpty = true;
+        return preflight;
+    }
+
+    preflight.prune = preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon);
+    preflight.canFinalize = can_finalize_contact_manifold(manifold);
+    preflight.wouldFail = preflight.prune.wouldBeEmpty || !preflight.canFinalize;
+    return preflight;
+}
+
+bool should_skip_finalize_contact_manifold(const ContactManifold& manifold) {
+    return !can_finalize_contact_manifold(manifold);
+}
+
+bool prune_shallow_penetrations_if_needed(ContactManifold& manifold, f32 minDepth) {
+    if (!manifold.hasShallowPenetrations(minDepth)) {
+        return !manifold.empty();
+    }
+    manifold.pruneShallowPenetrations(minDepth);
+    return !manifold.empty();
+}
+
+bool generate_contact_manifold_if_ready(ContactManifold& manifold) {
+    const ManifoldFinalizePreflight preflight = preflight_finalize_contact_manifold(manifold);
+    if (!preflight.can_finalize()) {
+        return false;
+    }
+    return generate_contact_manifold(manifold);
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

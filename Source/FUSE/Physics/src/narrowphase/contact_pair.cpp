@@ -4,6 +4,7 @@
 #include <fuse/physics/narrowphase/friction.hpp>
 
 #include <cmath>
+#include <vector>
 
 namespace fuse::physics::narrowphase {
 
@@ -415,6 +416,60 @@ bool should_skip_contact_pair_dispatch(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return is_invalid_contact_pair(pair, bodies, shapes);
+}
+
+ContactPairRejectReason contact_pair_reject_reason(
+    u32 bodyA,
+    u32 bodyB,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return contact_pair_reject_reason({bodyA, bodyB}, bodies, shapes);
+}
+
+bool is_contact_pair_dispatchable(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !should_skip_contact_pair_dispatch(pair, bodies, shapes);
+}
+
+bool should_reject_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return should_skip_contact_pair_dispatch(pair, bodies, shapes);
+}
+
+bool contact_pair_preflight_matches_reason(
+    const ContactPairPreflight& preflight,
+    ContactPairRejectReason expected) {
+    return preflight.reason == expected;
+}
+
+u32 count_rejected_contact_pairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    u32 rejected = 0u;
+    for (const broadphase::CandidatePair& pair : pairs) {
+        if (should_reject_contact_pair(pair, bodies, shapes)) {
+            ++rejected;
+        }
+    }
+    return rejected;
+}
+
+u32 count_dispatchable_contact_pairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    u32 dispatchable = 0u;
+    for (const broadphase::CandidatePair& pair : pairs) {
+        if (is_contact_pair_dispatchable(pair, bodies, shapes)) {
+            ++dispatchable;
+        }
+    }
+    return dispatchable;
 }
 
 } // namespace fuse::physics::narrowphase
