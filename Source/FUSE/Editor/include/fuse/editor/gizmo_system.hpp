@@ -193,6 +193,19 @@ UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging,
 /// Non-mutating update-drag predicate — same guards as `preflightUpdateDrag` (B6.4 deepen follow-up).
 bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis = GizmoAxis::None);
 
+/// Read-only end-drag diagnostics — no mutation (B6.4 deepen pass).
+struct EndDragPreflight {
+    bool notDragging = false;
+    bool invalidActiveAxis = false;
+
+    bool canEnd() const { return !notDragging && !invalidActiveAxis; }
+};
+
+EndDragPreflight preflightEndDrag(bool dragging, GizmoAxis activeAxis = GizmoAxis::None);
+
+/// Non-mutating end-drag predicate — same guards as `preflightEndDrag` (B6.4 deepen pass).
+bool canEndDrag(bool dragging, GizmoAxis activeAxis = GizmoAxis::None);
+
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
                                       GizmoMode mode, GizmoSpace space, f32 axisLength,
                                       f32 pickRadius, bool alreadyDragging = false);
@@ -292,6 +305,12 @@ public:
     /// Guarded drag update — returns false when preflight rejects the hit (B6.4 deepen follow-up).
     bool tryUpdateDrag(const GizmoHitTest& hit, GizmoResult& out);
     GizmoResult updateDrag(const GizmoHitTest& hit);
+    /// Non-mutating end-drag predicate — rejects inactive drags (B6.4 deepen pass).
+    [[nodiscard]] bool canEndDrag() const;
+    /// Read-only end-drag diagnostics — same guards as `canEndDrag` (B6.4 deepen pass).
+    [[nodiscard]] EndDragPreflight preflightEndDrag() const;
+    /// Guarded end-drag — returns false when preflight rejects inactive drag (B6.4 deepen pass).
+    bool tryEndDrag(GizmoResult& out);
     GizmoResult endDrag();
 
     bool isDragging() const { return m_dragging; }
