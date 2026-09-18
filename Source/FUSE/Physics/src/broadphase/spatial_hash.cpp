@@ -24,6 +24,15 @@ const char* candidatePairRejectReasonName(CandidatePairRejectReason reason) {
     return "Unknown";
 }
 
+u32 pruneInvalidCandidatePairs(std::vector<CandidatePair>& pairs, u32 bodyCount) {
+    const auto invalidIt = std::remove_if(pairs.begin(), pairs.end(), [&](const CandidatePair& pair) {
+        return !isValidCandidatePair(pair, bodyCount);
+    });
+    const u32 removed = static_cast<u32>(std::distance(invalidIt, pairs.end()));
+    pairs.erase(invalidIt, pairs.end());
+    return static_cast<u32>(pairs.size());
+}
+
 namespace {
 
 constexpr u32 kBuildGrainSize = 8u;
@@ -96,7 +105,7 @@ std::vector<u32> uniqueOccupants(const std::vector<u32>& occupants) {
 }
 
 u32 countPairsForCell(const std::vector<u32>& occupants) {
-    if (occupants.size() < 2u) {
+    if (isEmptyCellBucket(occupants.size())) {
         return 0u;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -105,7 +114,7 @@ u32 countPairsForCell(const std::vector<u32>& occupants) {
 }
 
 void generatePairsForCell(const std::vector<u32>& occupants, std::vector<CandidatePair>& out) {
-    if (occupants.size() < 2u) {
+    if (isEmptyCellBucket(occupants.size())) {
         return;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -120,7 +129,7 @@ void writePairsForCellSlots(
     const std::vector<u32>& occupants,
     u32 slotStart,
     PairBufferSoA& buffer) {
-    if (occupants.size() < 2u) {
+    if (isEmptyCellBucket(occupants.size())) {
         return;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -148,6 +157,7 @@ void populateShapeCells(
     const f32 cellSize = clampCellSize(params.cellSize);
     const u32 tableSize = clampTableSize(params.tableSize);
     const u32 maxSpan = params.maxCellSpanPerAxis;
+    const u32 maxOccupancy = params.maxCellOccupancyCount;
     const CollisionShapeType type = shapeType(shapes, shapeIndex);
 
     if (use2D) {
@@ -160,7 +170,7 @@ void populateShapeCells(
             const f32 radius = shapeRadius(shapes, shapeIndex);
             range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
         }
-        if (isEmptyCellRange(range)) {
+        if (canSkipShapeCellInsertion(range, maxOccupancy)) {
             return;
         }
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
@@ -180,7 +190,7 @@ void populateShapeCells(
         const f32 radius = shapeRadius(shapes, shapeIndex);
         range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
     }
-    if (isEmptyCellRange(range)) {
+    if (canSkipShapeCellInsertion(range, maxOccupancy)) {
         return;
     }
     for (s32 cz = range.minCell.z; cz <= range.maxCell.z; ++cz) {
@@ -245,7 +255,7 @@ void runBroadphaseIntoBufferInternal(
     bool use2D,
     PairBufferSoA& buffer) {
     buffer.clear();
-    if (bodies.count() == 0 || shapes.count() == 0) {
+    if (isEmptyBroadphaseInput(bodies, shapes)) {
         return;
     }
 

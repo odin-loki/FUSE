@@ -20,6 +20,8 @@ struct PairBufferSoA {
 
     bool isEmpty() const { return activeCount == 0u; }
     bool hasValidPairs() const { return activeCount > 0u; }
+    /// True when clamped or rejected pushes dropped pairs.
+    bool hasDroppedPairs() const { return droppedCount > 0u; }
     /// True when `maxCapacity` is set and no additional pairs may be pushed.
     bool isFull() const { return maxCapacity > 0u && activeCount >= maxCapacity; }
     /// Remaining push slots before `maxCapacity` clamp (unlimited when `maxCapacity == 0`).
@@ -49,6 +51,10 @@ struct PairBufferSoA {
     u32 compactAndClamp();
     bool isSortedCanonical() const;
     bool containsCanonicalPair(u32 idxA, u32 idxB) const;
+    /// Count active pairs failing the validity guard.
+    u32 countInvalidPairs(u32 bodyCount = 0u) const;
+    /// Invalidate and compact pairs failing the validity guard; returns remaining count.
+    u32 pruneInvalidPairs(u32 bodyCount = 0u);
     CandidatePair pairAt(u32 index) const;
     std::vector<CandidatePair> toVector() const;
 };

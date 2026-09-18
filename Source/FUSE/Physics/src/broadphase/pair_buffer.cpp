@@ -231,6 +231,41 @@ bool PairBufferSoA::containsCanonicalPair(u32 idxA, u32 idxB) const {
     return false;
 }
 
+u32 PairBufferSoA::countInvalidPairs(u32 bodyCount) const {
+    if (canSkipSoAIteration()) {
+        return 0u;
+    }
+
+    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+    u32 invalidCount = 0u;
+    for (u32 i = 0; i < scanCount; ++i) {
+        if (validFlags[i] == 0u) {
+            continue;
+        }
+        if (!isValidCandidatePair(bodyA[i], bodyB[i], bodyCount)) {
+            ++invalidCount;
+        }
+    }
+    return invalidCount;
+}
+
+u32 PairBufferSoA::pruneInvalidPairs(u32 bodyCount) {
+    if (canSkipSoAIteration()) {
+        return 0u;
+    }
+
+    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+    for (u32 i = 0; i < scanCount; ++i) {
+        if (validFlags[i] == 0u) {
+            continue;
+        }
+        if (!isValidCandidatePair(bodyA[i], bodyB[i], bodyCount)) {
+            validFlags[i] = 0u;
+        }
+    }
+    return compact();
+}
+
 u32 PairBufferSoA::countValidSlots() const {
     if (canSkipSoAIteration()) {
         return 0u;
