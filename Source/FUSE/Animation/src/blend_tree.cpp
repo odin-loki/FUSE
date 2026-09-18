@@ -596,6 +596,17 @@ bool AnimStateMachine::can_transition(const char* from, const char* to) const {
     return transition_condition_passes(static_cast<u32>(fromIndex), static_cast<u32>(toIndex));
 }
 
+bool AnimStateMachine::is_valid_transition(u32 from_state, u32 to_state) const {
+    if (!is_valid_state(from_state) || !is_valid_state(to_state) || from_state == to_state) {
+        return false;
+    }
+    return has_transition(from_state, to_state);
+}
+
+bool AnimStateMachine::is_transition_index_valid(u32 transition_index) const {
+    return transition_index < transitions.size();
+}
+
 f32 AnimStateMachine::remaining_crossfade_time() const {
     if (!is_transitioning || blend_duration <= 0.f) {
         return 0.f;
@@ -605,12 +616,13 @@ f32 AnimStateMachine::remaining_crossfade_time() const {
 }
 
 s32 AnimStateMachine::find_first_passing_outgoing_transition(u32 from_state) const {
+    if (!is_valid_state(from_state)) {
+        return -1;
+    }
+
     for (u32 i = 0; i < transitions.size(); ++i) {
         const Transition& transition = transitions[i];
-        if (transition.from != from_state || transition.to == from_state) {
-            continue;
-        }
-        if (transition.to >= states.size()) {
+        if (transition.from != from_state || !is_valid_transition(transition.from, transition.to)) {
             continue;
         }
         if (!transition.condition || transition.condition()) {
@@ -673,6 +685,7 @@ void AnimStateMachine::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) 
             ensure_pose_soa_bind_fallback(targetSoa, skel);
         }
 
+        ensure_pose_soa_bind_fallback(blend_from_pose_soa, skel);
         const f32 alpha = crossfade_alpha();
         blend_poses_soa(blend_from_pose_soa, targetSoa, alpha, out);
         ensure_pose_soa_bind_fallback(out, skel);
@@ -697,14 +710,11 @@ void AnimStateMachine::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) 
     }
 
     for (const Transition& transition : transitions) {
-        if (transition.from != active_state || transition.to == active_state) {
+        if (transition.from != active_state || !is_valid_transition(transition.from, transition.to)) {
             continue;
         }
         if (!transition.condition || !transition.condition()) {
             continue;
-        }
-        if (transition.to >= states.size()) {
-            break;
         }
 
         if (active_state < states.size() && states[active_state].on_exit) {
@@ -712,6 +722,7 @@ void AnimStateMachine::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) 
         }
 
         blend_from_pose_soa = out;
+        ensure_pose_soa_bind_fallback(blend_from_pose_soa, skel);
         pending_state = transition.to;
         blend_duration = transition.blend_duration;
         blend_time = blend_duration <= 0.f ? blend_duration : dt;
@@ -789,14 +800,11 @@ void AnimStateMachine::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
     }
 
     for (const Transition& transition : transitions) {
-        if (transition.from != active_state || transition.to == active_state) {
+        if (transition.from != active_state || !is_valid_transition(transition.from, transition.to)) {
             continue;
         }
         if (!transition.condition || !transition.condition()) {
             continue;
-        }
-        if (transition.to >= states.size()) {
-            break;
         }
 
         if (active_state < states.size() && states[active_state].on_exit) {

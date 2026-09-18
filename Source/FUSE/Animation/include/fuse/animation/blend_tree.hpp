@@ -208,6 +208,12 @@ struct AnimStateMachine : BlendNode {
     /// True when a named transition edge exists and its condition passes.
     bool can_transition(const char* from, const char* to) const;
 
+    /// True when both state indices are valid, distinct, and connected by a registered edge.
+    bool is_valid_transition(u32 from_state, u32 to_state) const;
+
+    /// True when `transition_index` is within the registered transition list.
+    bool is_transition_index_valid(u32 transition_index) const;
+
     /// Remaining crossfade time in seconds; 0 when idle or already complete.
     f32 remaining_crossfade_time() const;
 
