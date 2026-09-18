@@ -3,6 +3,197 @@
 #include <fuse/physics/solver/constraint_accumulation.hpp>
 
 namespace fuse::physics {
+namespace {
+
+bool isStaticOrKinematic(u32 flags) {
+    return (flags & RB_STATIC) != 0u || (flags & RB_KINEMATIC) != 0u;
+}
+
+bool isSleeping(u32 flags) {
+    return (flags & RB_SLEEPING) != 0u;
+}
+
+} // namespace
+
+bool is_body_sleeping(u32 flags) {
+    return isSleeping(flags);
+}
+
+bool is_body_static_or_kinematic(u32 flags) {
+    return isStaticOrKinematic(flags);
+}
+
+bool is_sleep_candidate_body(const RigidBodySoA& bodies,
+                             u32 index,
+                             f32 sleepLinearThreshold,
+                             f32 sleepAngularThreshold) {
+    if (index >= bodies.count()) {
+        return false;
+    }
+    if (isStaticOrKinematic(bodies.flags[index]) || isSleeping(bodies.flags[index])) {
+        return false;
+    }
+    const f32 linearSpeed = bodies.linearVelocities[index].length();
+    const f32 angularSpeed = bodies.angularVelocities[index].length();
+    return linearSpeed < sleepLinearThreshold && angularSpeed < sleepAngularThreshold;
+}
+
+bool is_wake_candidate_body(const RigidBodySoA& bodies,
+                            u32 index,
+                            f32 sleepLinearThreshold,
+                            f32 sleepAngularThreshold) {
+    if (index >= bodies.count()) {
+        return false;
+    }
+    if (!isSleeping(bodies.flags[index]) || isStaticOrKinematic(bodies.flags[index])) {
+        return false;
+    }
+    const f32 linearSpeed = bodies.linearVelocities[index].length();
+    const f32 angularSpeed = bodies.angularVelocities[index].length();
+    return linearSpeed >= sleepLinearThreshold || angularSpeed >= sleepAngularThreshold;
+}
+
+u32 count_sleeping_bodies(const RigidBodySoA& bodies) {
+    u32 count = 0;
+    for (u32 index = 0; index < bodies.count(); ++index) {
+        if (isSleeping(bodies.flags[index])) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+SleepPassPreflight preflight_sleep_pass(const RigidBodySoA& bodies,
+                                        f32 sleepLinearThreshold,
+                                        f32 sleepAngularThreshold) {
+    SleepPassPreflight preflight{};
+    preflight.stats.totalBodies = bodies.count();
+    for (u32 index = 0; index < bodies.count(); ++index) {
+        if (isStaticOrKinematic(bodies.flags[index])) {
+            ++preflight.stats.staticCount;
+            continue;
+        }
+        if (isSleeping(bodies.flags[index])) {
+            ++preflight.stats.sleepingCount;
+            continue;
+        }
+        ++preflight.stats.activeCount;
+        if (is_sleep_candidate_body(bodies, index, sleepLinearThreshold, sleepAngularThreshold)) {
+            ++preflight.stats.sleepCandidateCount;
+        }
+    }
+    preflight.skipped = preflight.stats.activeCount == 0u;
+    return preflight;
+}
+
+bool should_skip_sleep_pass(const RigidBodySoA& bodies,
+                            f32 sleepLinearThreshold,
+                            f32 sleepAngularThreshold) {
+    return !preflight_sleep_pass(bodies, sleepLinearThreshold, sleepAngularThreshold).can_sleep_pass();
+}
+
+WakePreflight preflight_wake_candidates(const RigidBodySoA& bodies,
+                                        f32 sleepLinearThreshold,
+                                        f32 sleepAngularThreshold) {
+    WakePreflight preflight{};
+    for (u32 index = 0; index < bodies.count(); ++index) {
+        if (!isSleeping(bodies.flags[index]) || isStaticOrKinematic(bodies.flags[index])) {
+            continue;
+        }
+        ++preflight.stats.sleepingCount;
+        if (is_wake_candidate_body(bodies, index, sleepLinearThreshold, sleepAngularThreshold)) {
+            ++preflight.stats.wakeCandidateCount;
+        } else {
+            ++preflight.stats.restingSleepingCount;
+        }
+    }
+    preflight.skipped = preflight.stats.sleepingCount == 0u;
+    return preflight;
+}
+
+bool is_valid_constraint_body_pair(const RigidBodySoA& bodies, u32 bodyA, u32 bodyB) {
+    return bodyA < bodies.count() && bodyB < bodies.count();
+}
+
+bool island_all_bodies_inactive(const RigidBodySoA& bodies, const ContactIslandGraph::Island& island) {
+    if (island.bodyIndices.empty()) {
+        return true;
+    }
+    for (u32 bodyIndex : island.bodyIndices) {
+        if (bodyIndex >= bodies.count()) {
+            continue;
+        }
+        if (!isStaticOrKinematic(bodies.flags[bodyIndex]) && !isSleeping(bodies.flags[bodyIndex])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool island_has_active_bodies(const RigidBodySoA& bodies, const ContactIslandGraph::Island& island) {
+    return !island_all_bodies_inactive(bodies, island);
+}
+
+bool should_skip_island_solve_all_inactive(const RigidBodySoA& bodies,
+                                           const ContactIslandGraph::Island& island) {
+    return island_all_bodies_inactive(bodies, island);
+}
+
+IslandSolveWorkPreflight preflight_island_solve_work(const RigidBodySoA& bodies,
+                                                     const SolverWorkBuffers& workBuffers) {
+    IslandSolveWorkPreflight preflight{};
+    preflight.bodyCount = bodies.count();
+    preflight.bufferCapacity = workBuffers.bodyCapacity();
+    preflight.insufficientBufferCapacity = preflight.bufferCapacity < preflight.bodyCount;
+    preflight.skipped = preflight.bodyCount == 0u;
+    return preflight;
+}
+
+IslandConstraintIndexPreflight preflight_island_constraint_indices(
+    const ContactIslandGraph::Island& island,
+    const RigidBodySoA& bodies,
+    u32 contactCount,
+    u32 distanceCount) {
+    IslandConstraintIndexPreflight preflight{};
+    if (!island_has_constraints(island)) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    preflight.ownedContactCount = static_cast<u32>(island.contactIndices.size());
+    preflight.ownedDistanceCount = static_cast<u32>(island.distanceIndices.size());
+
+    for (u32 contactIndex : island.contactIndices) {
+        if (contactIndex >= contactCount) {
+            ++preflight.oobContactIndexCount;
+        }
+    }
+    for (u32 distanceIndex : island.distanceIndices) {
+        if (distanceIndex >= distanceCount) {
+            ++preflight.oobDistanceIndexCount;
+        }
+    }
+    for (u32 bodyIndex : island.bodyIndices) {
+        if (bodyIndex >= bodies.count()) {
+            ++preflight.oobBodyRefCount;
+        }
+    }
+    return preflight;
+}
+
+IslandConstraintIndexPreflight preflight_island_constraint_indices_by_index(
+    const ContactIslandGraph& graph,
+    u32 islandIndex,
+    const RigidBodySoA& bodies,
+    u32 contactCount,
+    u32 distanceCount) {
+    IslandConstraintIndexPreflight preflight{};
+    if (!island_index_valid(graph, islandIndex)) {
+        preflight.skipped = true;
+        return preflight;
+    }
+    return preflight_island_constraint_indices(graph.island(islandIndex), bodies, contactCount, distanceCount);
+}
 
 bool island_index_valid(const ContactIslandGraph& graph, u32 islandIndex) {
     return islandIndex < graph.islandCount();
