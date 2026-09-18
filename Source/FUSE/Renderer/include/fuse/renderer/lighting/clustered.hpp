@@ -137,10 +137,24 @@ const char* gridPopulationRejectReasonLabel(GridPopulationRejectReason reason);
 namespace cluster_util {
 /// True when light-grid storage matches the clamped cluster count for `desc`.
 bool gridMatchesDesc(const ClusterGridSoA& grid, const ClusterDesc& desc);
+/// True when `desc` is non-empty, storage is allocated, and sizes match.
+bool isLightGridAccessible(const ClusterGridSoA& grid, const ClusterDesc& desc);
+/// True when at least one cluster holds lights; false when storage is empty or inaccessible.
+bool hasAssignedLights(const ClusterGridSoA& grid, const ClusterDesc& desc);
+/// Early-out when the grid is inaccessible or has no assigned lights.
+bool shouldSkipClusterLightLookup(const ClusterGridSoA& grid, const ClusterDesc& desc);
 /// Preflight guard before index-based cluster lookup; false on empty grid or desc mismatch.
 bool canLookupAtIndex(const ClusterGridSoA& grid, const ClusterDesc& desc, u32 index);
+/// Preflight guard before tile/slice coord lookup; false on empty grid or desc mismatch.
+bool canLookupAtCoord(const ClusterGridSoA& grid, const ClusterDesc& desc, u32 tileX, u32 tileY, u32 sliceZ);
 /// Per-cluster light count at a clamped flat index; returns 0 when grid/desc mismatch or empty.
 u32 clusterLightCountAtIndex(const ClusterGridSoA& grid, const ClusterDesc& desc, u32 index);
+/// Per-cluster light count at clamped tile/slice coords; returns 0 when grid/desc mismatch or empty.
+u32 clusterLightCountAtCoord(const ClusterGridSoA& grid,
+                             const ClusterDesc& desc,
+                             u32 tileX,
+                             u32 tileY,
+                             u32 sliceZ);
 bool tryAssignLight(std::vector<u32>& clusterLights, u32 lightIdx, u32 maxLightsPerCluster);
 /// Batch-assign candidate lights; returns overflow count dropped at per-cluster capacity.
 u32 assignLights(std::vector<u32>& clusterLights,
@@ -164,6 +178,21 @@ bool tryLookupClusterLightsAtIndex(const ClusterGridSoA& grid,
                                    u32 index,
                                    std::vector<u32>& outLights,
                                    u32& outCount);
+/// Lookup at clamped tile/slice coords; returns 0 when grid/desc mismatch or empty.
+u32 lookupClusterLightsAtCoord(const ClusterGridSoA& grid,
+                               const ClusterDesc& desc,
+                               u32 tileX,
+                               u32 tileY,
+                               u32 sliceZ,
+                               std::vector<u32>& outLights);
+/// Lookup with guard preflight at clamped coords; returns false when inaccessible.
+bool tryLookupClusterLightsAtCoord(const ClusterGridSoA& grid,
+                                   const ClusterDesc& desc,
+                                   u32 tileX,
+                                   u32 tileY,
+                                   u32 sliceZ,
+                                   std::vector<u32>& outLights,
+                                   u32& outCount);
 /// Per-cluster assigned-light count from the rebuilt grid; returns 0 when `clusterIdx` is OOB.
 u32 clusterLightCount(const ClusterGridSoA& grid, u32 clusterIdx);
 u32 countAssignedLights(const ClusterGridSoA& grid, u32 clusterCount);
@@ -182,6 +211,10 @@ bool tryValidateGridPopulation(const ClusterGridSoA& grid,
                                GridPopulationRejectReason& outReason);
 /// Validate population against the clamped cluster count derived from `desc`.
 bool validateGridPopulationForDesc(const ClusterGridSoA& grid, const ClusterDesc& desc);
+/// Diagnose population validation against the clamped cluster count derived from `desc`.
+bool tryValidateGridPopulationForDesc(const ClusterGridSoA& grid,
+                                      const ClusterDesc& desc,
+                                      GridPopulationRejectReason& outReason);
 } // namespace cluster_util
 
 /// Renderer-side point light input (decoupled from ECS).
