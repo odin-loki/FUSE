@@ -556,20 +556,31 @@ void testHasEventsAndEmptyBufferGuards() {
 
     expectTrue(!fuse::profiler::hasEvents(), "reset leaves hasEvents false");
     expectTrue(fuse::profiler::eventCount() == 0u, "reset leaves event count at zero");
+    expectTrue(!fuse::profiler::isEventIndexValid(0u), "isEventIndexValid false on empty buffer");
+    expectTrue(!fuse::profiler::isEventIndexValid(99u), "isEventIndexValid false when out of range");
 
     const fuse::profiler::ProfileEvent& emptyEvent = fuse::profiler::eventAt(0);
     expectTrue(emptyEvent.name == nullptr, "eventAt on empty buffer returns sentinel with null name");
+    expectTrue(!fuse::profiler::isValidProfileEvent(emptyEvent),
+               "isValidProfileEvent false for empty-buffer sentinel");
     expectTrue(emptyEvent.phase == fuse::profiler::EventPhase::Begin,
                "eventAt sentinel keeps default begin phase");
 
     const fuse::profiler::ProfileEvent& oobEvent = fuse::profiler::eventAt(99);
     expectTrue(oobEvent.name == nullptr, "eventAt out-of-range returns sentinel with null name");
+    expectTrue(!fuse::profiler::isValidProfileEvent(oobEvent),
+               "isValidProfileEvent false for out-of-range sentinel");
 
     {
         FUSE_PROFILE_SCOPE("guard_scope");
     }
 
     expectTrue(fuse::profiler::hasEvents(), "hasEvents true after recording scope");
+    expectTrue(fuse::profiler::isEventIndexValid(0u), "isEventIndexValid true for first event");
+    expectTrue(fuse::profiler::isEventIndexValid(1u), "isEventIndexValid true for last event");
+    expectTrue(!fuse::profiler::isEventIndexValid(2u), "isEventIndexValid false past event count");
+    expectTrue(fuse::profiler::isValidProfileEvent(fuse::profiler::eventAt(0)),
+               "isValidProfileEvent true for recorded event");
     expectTrue(fuse::profiler::eventAt(0).name != nullptr, "eventAt(0) valid after recording");
     expectTrue(fuse::profiler::eventAt(2).name == nullptr, "eventAt past count returns sentinel");
 }
@@ -756,6 +767,80 @@ void testSnapshotAtFrameCounterInsideNestedFlowAndScope() {
                "chrome export includes scope depth, flow depth, and snapshot_at_frame");
 }
 
+void testFlowNestingDepthIntrospection() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::flowNestingDepth() == 0u, "reset leaves flow nesting depth at zero");
+
+    const fuse::u32 outerFlowId = fuse::profiler::nextFlowId();
+    const fuse::u32 innerFlowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("depth_outer", outerFlowId);
+    expectTrue(fuse::profiler::flowNestingDepth() == 1u, "flow begin increments introspection depth");
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("depth_inner", innerFlowId);
+    expectTrue(fuse::profiler::flowNestingDepth() == 2u, "nested flow begin increments introspection depth");
+    FUSE_PROFILE_ASYNC_FLOW_END("depth_inner", innerFlowId);
+    expectTrue(fuse::profiler::flowNestingDepth() == 1u, "inner flow end restores introspection depth");
+    FUSE_PROFILE_ASYNC_FLOW_END("depth_outer", outerFlowId);
+    expectTrue(fuse::profiler::flowNestingDepth() == 0u, "outer flow end clears introspection depth");
+}
+
+void testOrphanAsyncFlowEndIsIgnored() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::flowNestingDepth() == 0u, "orphan guard starts with zero flow depth");
+    FUSE_PROFILE_ASYNC_FLOW_END("orphan_finish", 99u);
+
+    expectTrue(fuse::profiler::eventCount() == 0u, "orphan flow finish records no event");
+    expectTrue(fuse::profiler::flowNestingDepth() == 0u, "orphan flow finish does not underflow depth");
+    expectTrue(fuse::profiler::maxFlowNestingDepth() == 0u, "orphan flow finish does not bump max depth");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("paired_flow", flowId);
+    FUSE_PROFILE_ASYNC_FLOW_END("paired_flow", flowId);
+    expectTrue(fuse::profiler::eventCount() == 2u, "paired flow still records after orphan guard");
+}
+
+void testNullNameFlowAndCounterGuards() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::beginAsyncFlow(nullptr, 1u);
+    fuse::profiler::endAsyncFlow(nullptr, 1u);
+    fuse::profiler::sampleCounter(nullptr, 42);
+    fuse::profiler::sampleCounterFloat(nullptr, 1.5);
+    fuse::profiler::sampleCounterSnapshotAtFrame(nullptr, 7);
+    fuse::profiler::sampleCounterFloatSnapshotAtFrame(nullptr, 0.25);
+
+    expectTrue(fuse::profiler::eventCount() == 0u, "null flow/counter names record nothing");
+    expectTrue(fuse::profiler::flowNestingDepth() == 0u, "null flow names do not mutate flow depth");
+    expectTrue(fuse::profiler::exportChromeTraceJson().find("\"traceEvents\":[]") != std::string::npos,
+               "null-name guard leaves export empty");
+}
+
+void testDisabledCounterPreservesFlowNestingDepth() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("budget_flow", flowId);
+    expectTrue(fuse::profiler::flowNestingDepth() == 1u, "flow begin establishes depth before disable");
+
+    fuse::profiler::setEnabled(false);
+    FUSE_PROFILE_COUNTER("ignored_in_flow", 11);
+    FUSE_PROFILE_COUNTER_SNAPSHOT_AT_FRAME("ignored_snapshot", 22);
+    fuse::profiler::setEnabled(true);
+
+    expectTrue(fuse::profiler::flowNestingDepth() == 1u,
+               "disabled counter samples do not mutate flow nesting depth");
+    expectTrue(fuse::profiler::eventCount() == 1u, "only flow begin recorded before counter disable");
+
+    FUSE_PROFILE_ASYNC_FLOW_END("budget_flow", flowId);
+    expectTrue(fuse::profiler::flowNestingDepth() == 0u, "flow end restores depth after re-enable");
+    expectTrue(fuse::profiler::eventCount() == 2u, "flow finish recorded after re-enable");
+}
+
 void testVerifyMacro() {
     resetState();
     fuse::assertion::setSuppressAbortForTests(true);
@@ -808,6 +893,10 @@ int main() {
     testDisabledProfilerDoesNotMutateFlowNestingDepth();
     testCounterInsideNestedFlowRecordsFlowDepth();
     testSnapshotAtFrameCounterInsideNestedFlowAndScope();
+    testFlowNestingDepthIntrospection();
+    testOrphanAsyncFlowEndIsIgnored();
+    testNullNameFlowAndCounterGuards();
+    testDisabledCounterPreservesFlowNestingDepth();
     testFatalHandlerHook();
     testVerifyMacro();
 
