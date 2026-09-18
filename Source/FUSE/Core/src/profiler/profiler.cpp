@@ -380,7 +380,9 @@ void endAsyncFlow(const char* name, u32 flowId) {
                 flowId,
                 currentNestingDepth(),
                 flowDepth);
-    popFlowNestingDepth();
+    if (currentFlowNestingDepth() > 0u) {
+        popFlowNestingDepth();
+    }
 }
 
 void sampleCounter(const char* track, s64 value) {
