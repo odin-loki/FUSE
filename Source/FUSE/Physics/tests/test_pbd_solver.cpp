@@ -1410,6 +1410,227 @@ void testWarmStartIslandContactImpulsesGuarded() {
                "guarded impulse warm-start seeds contact lambda");
 }
 
+void testIsValidIslandSolveDtGuard() {
+    expectTrue(is_valid_island_solve_dt(1.f / 60.f), "positive dt is valid for island solve");
+    expectTrue(!is_valid_island_solve_dt(0.f), "zero dt is invalid for island solve");
+    expectTrue(!is_valid_island_solve_dt(-1.f / 60.f), "negative dt is invalid for island solve");
+}
+
+void testPreflightIslandDispatchGuardsDt() {
+    ContactIslandGraph graph;
+    std::vector<narrowphase::ContactManifold> contacts;
+    std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+    };
+    graph.build(2, contacts, constraints);
+
+    const IslandDispatchPreflight validPreflight = preflight_island_dispatch(graph, 1.f / 60.f);
+    expectTrue(!validPreflight.invalidDt, "valid dt passes dispatch preflight");
+    expectTrue(validPreflight.can_dispatch(), "constrained graph can dispatch with valid dt");
+
+    const IslandDispatchPreflight invalidPreflight = preflight_island_dispatch(graph, 0.f);
+    expectTrue(invalidPreflight.invalidDt, "zero dt fails dispatch preflight");
+    expectTrue(!invalidPreflight.can_dispatch(), "dispatch blocked when dt is invalid");
+    expectTrue(should_skip_island_dispatch(graph, 0.f), "should_skip_island_dispatch on invalid dt");
+    expectTrue(!should_skip_island_dispatch(graph, 1.f / 60.f),
+               "should_skip false for constrained graph with valid dt");
+}
+
+void testDispatchSolveIslandResultSkipsInvalidDt() {
+    ContactIslandGraph graph;
+    std::vector<narrowphase::ContactManifold> contacts;
+    std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+    };
+    graph.build(2, contacts, constraints);
+
+    RigidBodySoA bodies;
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+    bodies.addBody({2.1f, 0.f, 0.f}, 1.f, 0);
+    bodies.predictedPositions = bodies.positions;
+
+    SolverWorkBuffers work;
+    work.init(2, 0, 1);
+    const auto invMassFn = [](const RigidBodySoA&, u32) { return 1.f; };
+
+    const IslandDispatchResult invalidDt = dispatch_solve_island_result(bodies,
+                                                                        graph,
+                                                                        0u,
+                                                                        work,
+                                                                        constraints,
+                                                                        0.f,
+                                                                        0.f,
+                                                                        invMassFn);
+    expectTrue(invalidDt.skipped, "invalid dt dispatch result is skipped");
+    expectTrue(!invalidDt.solved, "invalid dt dispatch result is not solved");
+    expectTrue(!dispatch_solve_island(bodies,
+                                       graph,
+                                       0u,
+                                       work,
+                                       constraints,
+                                       0.f,
+                                       0.f,
+                                       invMassFn),
+               "dispatch_solve_island guards invalid dt");
+}
+
+void testDispatchAllIslandsResultBatch() {
+    ContactIslandGraph graph;
+    std::vector<narrowphase::ContactManifold> contacts;
+    std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+        DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f},
+    };
+    graph.build(4, contacts, constraints);
+
+    RigidBodySoA bodies;
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+    bodies.addBody({2.1f, 0.f, 0.f}, 1.f, 0);
+    bodies.addBody({20.f, 0.f, 0.f}, 1.f, 0);
+    bodies.addBody({22.1f, 0.f, 0.f}, 1.f, 0);
+    bodies.predictedPositions = bodies.positions;
+
+    SolverWorkBuffers work;
+    work.init(4, 0, 2);
+    const auto invMassFn = [](const RigidBodySoA&, u32) { return 1.f; };
+
+    const IslandBatchDispatchResult batch = dispatch_all_islands_result(bodies,
+                                                                        graph,
+                                                                        work,
+                                                                        constraints,
+                                                                        1.f / 60.f,
+                                                                        0.f,
+                                                                        invMassFn);
+    expectTrue(!batch.skipped, "batch dispatch does not skip constrained graph");
+    expectTrue(batch.dispatchableCount == graph.constrainedIslandCount(),
+               "batch dispatch records dispatchable count");
+    expectTrue(batch.solvedCount == graph.constrainedIslandCount(),
+               "batch dispatch solves all constrained islands");
+    expectTrue(batch.any_solved(), "batch dispatch reports solved islands");
+
+    ContactIslandGraph emptyGraph;
+    emptyGraph.build(0, {}, {});
+    const IslandBatchDispatchResult emptyBatch = dispatch_all_islands_result(bodies,
+                                                                             emptyGraph,
+                                                                             work,
+                                                                             constraints,
+                                                                             1.f / 60.f,
+                                                                             0.f,
+                                                                             invMassFn);
+    expectTrue(emptyBatch.skipped, "batch dispatch skips empty graph");
+    expectTrue(!emptyBatch.any_solved(), "empty graph batch reports no solved islands");
+
+    const IslandBatchDispatchResult invalidDtBatch = dispatch_all_islands_result(bodies,
+                                                                                 graph,
+                                                                                 work,
+                                                                                 constraints,
+                                                                                 0.f,
+                                                                                 0.f,
+                                                                                 invMassFn);
+    expectTrue(invalidDtBatch.skipped, "batch dispatch skips invalid dt");
+    expectTrue(invalidDtBatch.solvedCount == 0u, "invalid dt batch solves zero islands");
+}
+
+void testPreflightFrameWarmStartGuards() {
+    const std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+    };
+    const std::vector<f32> priorDistance = {0.12f};
+    const std::vector<f32> priorContact = {0.34f, 0.f};
+
+    const FrameWarmStartPreflight preflight =
+        preflight_frame_lambda_warm_start(constraints, priorDistance, priorContact);
+    expectTrue(!preflight.skipped, "frame preflight does not skip when prior data exists");
+    expectTrue(preflight.can_warm_start(), "frame preflight can warm-start with prior data");
+    expectTrue(preflight.distanceSlotCount == 1u, "frame preflight counts distance slots");
+    expectTrue(preflight.contactSlotCount == 2u, "frame preflight counts contact slots");
+    expectTrue(preflight.priorDistanceCoverage == 1u, "frame preflight counts prior distance coverage");
+    expectTrue(preflight.priorContactCoverage == 1u,
+               "frame preflight counts non-zero prior contact coverage");
+
+    const FrameWarmStartPreflight emptyPrior =
+        preflight_frame_lambda_warm_start(constraints, {}, {});
+    expectTrue(emptyPrior.skipped, "frame preflight skips when no prior data exists");
+    expectTrue(!emptyPrior.can_warm_start(), "frame preflight cannot warm-start without prior data");
+    expectTrue(should_skip_frame_warm_start({}, {}), "should_skip_frame_warm_start on empty priors");
+    expectTrue(!should_skip_frame_warm_start(priorDistance, priorContact),
+               "should_skip false when prior data exists");
+}
+
+void testFrameLambdaWarmStartGuarded() {
+    SolverWorkBuffers work;
+    work.init(2, 2, 1);
+    work.ensureLambdaCapacity(2, 1);
+    work.distanceLambda(0) = 0.42f;
+    work.contactLambda(0) = 0.24f;
+
+    const std::vector<f32> priorDistance = work.distanceLambdas();
+    const std::vector<f32> priorContact = work.contactLambdas();
+    const std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+    };
+
+    work.distanceLambda(0) = 0.99f;
+    work.contactLambda(0) = 0.99f;
+    expectTrue(!frame_lambda_warm_start_guarded(work, constraints, {}, {}),
+               "guarded frame warm-start skips when no prior data exists");
+    expectNear(work.distanceLambdas()[0], 0.f, 1e-6f,
+               "guarded skip still clears distance lambda slots");
+
+    work.distanceLambda(0) = 0.99f;
+    work.contactLambda(0) = 0.99f;
+    expectTrue(frame_lambda_warm_start_guarded(work, constraints, priorDistance, priorContact),
+               "guarded frame warm-start succeeds with prior data");
+    expectNear(work.distanceLambdas()[0], 0.42f, 1e-6f,
+               "guarded frame warm-start reseeds distance slot");
+    expectNear(work.contactLambdas()[0], 0.24f, 1e-6f,
+               "guarded frame warm-start reseeds contact slot");
+}
+
+void testWarmStartGraphLambdasGuarded() {
+    SolverWorkBuffers work;
+    work.init(5, 2, 2);
+    work.ensureLambdaCapacity(2, 2);
+
+    ContactIslandGraph graph;
+    std::vector<narrowphase::ContactManifold> contacts;
+    contacts.push_back(narrowphase::ContactManifold{});
+    contacts.back().valid = true;
+    contacts.back().bodyA = 0;
+    contacts.back().bodyB = 1;
+    contacts.push_back(narrowphase::ContactManifold{});
+    contacts.back().valid = true;
+    contacts.back().bodyA = 2;
+    contacts.back().bodyB = 3;
+
+    std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+        DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f},
+    };
+    graph.build(5, contacts, constraints);
+
+    const std::vector<f32> priorDistance = {0.11f, 0.22f};
+    const std::vector<f32> priorContact = {0.33f, 0.44f};
+
+    work.clearLambdas();
+    const u32 warmedCount =
+        warm_start_graph_lambdas_guarded(work, graph, priorDistance, priorContact);
+    expectTrue(warmedCount == graph.constrainedIslandCount(),
+               "graph warm-start seeds all constrained islands");
+    expectNear(work.distanceLambdas()[0], 0.11f, 1e-6f,
+               "graph warm-start seeds first distance slot");
+    expectNear(work.distanceLambdas()[1], 0.22f, 1e-6f,
+               "graph warm-start seeds second distance slot");
+    expectNear(work.contactLambdas()[0], 0.33f, 1e-6f,
+               "graph warm-start seeds first contact slot");
+    expectNear(work.contactLambdas()[1], 0.44f, 1e-6f,
+               "graph warm-start seeds second contact slot");
+
+    work.clearLambdas();
+    expectTrue(warm_start_graph_lambdas_guarded(work, graph, {}, {}) == 0u,
+               "graph warm-start skips all islands when no prior data exists");
+}
+
 void testEarlyExitWhenResidualBelowTolerance() {
     CollisionShapeSoA shapes;
     RigidBodySoA bodies;
@@ -1486,6 +1707,13 @@ int main() {
     testPreflightWarmStartIslandGuards();
     testWarmStartIslandLambdasGuarded();
     testWarmStartIslandContactImpulsesGuarded();
+    testIsValidIslandSolveDtGuard();
+    testPreflightIslandDispatchGuardsDt();
+    testDispatchSolveIslandResultSkipsInvalidDt();
+    testDispatchAllIslandsResultBatch();
+    testPreflightFrameWarmStartGuards();
+    testFrameLambdaWarmStartGuarded();
+    testWarmStartGraphLambdasGuarded();
     testEarlyExitWhenResidualBelowTolerance();
     fuse::core::shutdown();
 
