@@ -30,6 +30,8 @@ struct RadiusFilterPolicy {
 [[nodiscard]] float distance_sq_2d(float ax, float ay, float bx, float by);
 [[nodiscard]] bool within_radius(float distanceSq, float radius);
 [[nodiscard]] bool is_valid_ally_radius(float radius);
+[[nodiscard]] bool is_valid_radius_policy(const RadiusFilterPolicy& policy);
+[[nodiscard]] u32 effective_min_count(const RadiusFilterPolicy& policy);
 [[nodiscard]] float effective_radius(const RadiusFilterPolicy& policy);
 [[nodiscard]] float radius_sq_from_policy(const RadiusFilterPolicy& policy);
 
