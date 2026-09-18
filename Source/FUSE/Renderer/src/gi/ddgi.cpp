@@ -236,6 +236,10 @@ bool DdgiIrradianceEncoding::isEmptyDirection(const fuse::math::Vec3& direction)
     return direction.dot(direction) < 1e-8f;
 }
 
+bool DdgiIrradianceEncoding::isValidDirection(const fuse::math::Vec3& direction) {
+    return !isEmptyDirection(direction);
+}
+
 fuse::math::Vec3 DdgiIrradianceEncoding::resolveSampleDirection(const fuse::math::Vec3& direction,
                                                                 const fuse::math::Vec3& fallback) {
     if (!isEmptyDirection(direction)) {
@@ -245,6 +249,12 @@ fuse::math::Vec3 DdgiIrradianceEncoding::resolveSampleDirection(const fuse::math
         return fallback.normalized();
     }
     return {0.f, 1.f, 0.f};
+}
+
+fuse::math::Vec3 DdgiIrradianceEncoding::resolveSampleDirectionFromSurface(
+    const fuse::math::Vec3& direction,
+    const fuse::math::Vec3& surface_normal) {
+    return resolveSampleDirection(direction, surface_normal);
 }
 
 fuse::math::Vec2 DdgiIrradianceEncoding::encodeDirection(const fuse::math::Vec3& direction) {
@@ -451,6 +461,54 @@ ProbeBorderCounts countProbesByBorderKind(const DDGIDesc& desc) {
     return counts;
 }
 
+u32 countProbesOfBorderKind(const DDGIDesc& desc, ProbeBorderKind kind) {
+    const ProbeBorderCounts counts = countProbesByBorderKind(desc);
+    switch (kind) {
+    case ProbeBorderKind::Interior:
+        return counts.interior;
+    case ProbeBorderKind::Face:
+        return counts.face;
+    case ProbeBorderKind::Edge:
+        return counts.edge;
+    case ProbeBorderKind::Corner:
+        return counts.corner;
+    case ProbeBorderKind::Invalid:
+        break;
+    }
+    return 0u;
+}
+
+bool validateProbeBorderCounts(const ProbeBorderCounts& counts) {
+    if (counts.total == 0u) {
+        return counts.interior == 0u && counts.border == 0u && counts.face == 0u && counts.edge == 0u &&
+               counts.corner == 0u;
+    }
+    if (counts.interior + counts.border != counts.total) {
+        return false;
+    }
+    return counts.face + counts.edge + counts.corner == counts.border;
+}
+
+bool canSampleProbeGrid(const DDGIDesc& desc) {
+    if (ProbeGridLayout::isEmptyGrid(desc)) {
+        return false;
+    }
+    if (desc.irradiance_res == 0u) {
+        return false;
+    }
+    return desc.probe_spacing.x > 0.f && desc.probe_spacing.y > 0.f && desc.probe_spacing.z > 0.f;
+}
+
+bool isCacheSizedForGrid(const DDGIDesc& desc, u32 cache_count) {
+    return cache_count >= probeCount(desc);
+}
+
+bool isValidSampleRequest(const DDGIDesc& desc,
+                          const DDGISampleRequest& /*request*/,
+                          u32 cache_count) {
+    return canSampleProbeGrid(desc) && isCacheSizedForGrid(desc, cache_count);
+}
+
 fuse::math::Vec3 probeWorldPosition(const DDGIDesc& desc, u32 probe_index) {
     if (ProbeGridLayout::isEmptyGrid(desc)) {
         return desc.grid_origin;
@@ -573,7 +631,7 @@ fuse::math::Vec3 trilinearProbeIrradiance(const DDGIDesc& desc,
                                           const fuse::math::Vec3& world_position,
                                           const IrradianceCacheEntry* cache,
                                           u32 cache_count) {
-    if (cache == nullptr || cache_count == 0u || ProbeGridLayout::isEmptyGrid(desc)) {
+    if (cache == nullptr || !canSampleProbeGrid(desc) || !isCacheSizedForGrid(desc, cache_count)) {
         return {};
     }
 
@@ -615,7 +673,7 @@ fuse::math::Vec3 trilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
                                                      const fuse::math::Vec3& direction,
                                                      const IrradianceCacheEntry* cache,
                                                      u32 cache_count) {
-    if (cache == nullptr || cache_count == 0u || ProbeGridLayout::isEmptyGrid(desc)) {
+    if (cache == nullptr || !canSampleProbeGrid(desc) || !isCacheSizedForGrid(desc, cache_count)) {
         return {};
     }
 
@@ -837,7 +895,8 @@ DDGISampleResult DDGI::sampleIrradiance(const DDGISampleRequest& request) const 
 
     result.nearest_probe = nearest;
     const fuse::math::Vec3 sample_direction =
-        DdgiIrradianceEncoding::resolveSampleDirection(request.world_normal);
+        DdgiIrradianceEncoding::resolveSampleDirectionFromSurface(request.world_normal,
+                                                                  request.world_normal);
     result.irradiance = ddgi_util::trilinearDirectionalProbeIrradiance(m_desc,
                                                                        request.world_position,
                                                                        sample_direction,

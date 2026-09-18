@@ -145,9 +145,14 @@ struct ProbeBorderCounts {
 /// Mirrors `GBufferEncoding` and the deferred-shade probe sampling path.
 struct DdgiIrradianceEncoding {
     static bool isEmptyDirection(const fuse::math::Vec3& direction);
+    /// Inverse of `isEmptyDirection` — true when `direction` has non-zero length².
+    static bool isValidDirection(const fuse::math::Vec3& direction);
     /// Normalizes `direction`, or `fallback` when empty; +Y when both are degenerate.
     static fuse::math::Vec3 resolveSampleDirection(const fuse::math::Vec3& direction,
                                                    const fuse::math::Vec3& fallback = {0.f, 1.f, 0.f});
+    /// Resolve `direction`, then `surface_normal`, then +Y — mirrors deferred-shade GI sampling.
+    static fuse::math::Vec3 resolveSampleDirectionFromSurface(const fuse::math::Vec3& direction,
+                                                              const fuse::math::Vec3& surface_normal);
     static fuse::math::Vec2 encodeDirection(const fuse::math::Vec3& direction);
     static fuse::math::Vec3 decodeDirection(const fuse::math::Vec2& encoded);
     /// Clamp encoded octahedral UV to the unit square before decode/atlas lookup.
@@ -220,6 +225,18 @@ u32 countBorderProbes(const DDGIDesc& desc);
 u32 countInteriorProbes(const DDGIDesc& desc);
 /// Face/edge/corner breakdown; all fields zero on empty grid.
 ProbeBorderCounts countProbesByBorderKind(const DDGIDesc& desc);
+/// Count probes of a single border kind; returns 0 for `Invalid` or empty grids.
+u32 countProbesOfBorderKind(const DDGIDesc& desc, ProbeBorderKind kind);
+/// True when interior+border and face+edge+corner sums match `total`.
+bool validateProbeBorderCounts(const ProbeBorderCounts& counts);
+/// True when the probe grid can participate in spatial irradiance sampling.
+bool canSampleProbeGrid(const DDGIDesc& desc);
+/// True when `cache_count` covers every probe in `desc`.
+bool isCacheSizedForGrid(const DDGIDesc& desc, u32 cache_count);
+/// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
+bool isValidSampleRequest(const DDGIDesc& desc,
+                          const DDGISampleRequest& request,
+                          u32 cache_count);
 fuse::math::Vec3 probeWorldPosition(const DDGIDesc& desc, u32 probe_index);
 /// World position after `clampProbeIndex` — safe for OOB scheduling indices.
 fuse::math::Vec3 probeWorldPositionClamped(const DDGIDesc& desc, u32 probe_index);

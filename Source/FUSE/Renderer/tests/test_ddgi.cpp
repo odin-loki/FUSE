@@ -357,6 +357,53 @@ void testProbeBorderCounts() {
     const fuse::renderer::ProbeBorderCounts emptyKind =
         fuse::renderer::ddgi_util::countProbesByBorderKind(empty);
     expectTrue(emptyKind.total == 0u, "empty grid border-kind total is zero");
+
+    expectTrue(fuse::renderer::ddgi_util::validateProbeBorderCounts(byKind),
+               "3x3x3 border counts satisfy invariants");
+    expectTrue(fuse::renderer::ddgi_util::validateProbeBorderCounts(emptyKind),
+               "empty grid border counts satisfy invariants");
+    expectTrue(fuse::renderer::ddgi_util::countProbesOfBorderKind(desc,
+                                                                  fuse::renderer::ProbeBorderKind::Interior) == 1u,
+               "countProbesOfBorderKind interior");
+    expectTrue(fuse::renderer::ddgi_util::countProbesOfBorderKind(desc,
+                                                                  fuse::renderer::ProbeBorderKind::Corner) == 8u,
+               "countProbesOfBorderKind corner");
+    expectTrue(fuse::renderer::ddgi_util::countProbesOfBorderKind(empty,
+                                                                  fuse::renderer::ProbeBorderKind::Face) == 0u,
+               "countProbesOfBorderKind zero on empty grid");
+    expectTrue(fuse::renderer::ddgi_util::countProbesOfBorderKind(desc,
+                                                                  fuse::renderer::ProbeBorderKind::Invalid) == 0u,
+               "countProbesOfBorderKind Invalid returns zero");
+
+    fuse::renderer::ProbeBorderCounts inconsistent{};
+    inconsistent.total = 8u;
+    inconsistent.interior = 3u;
+    inconsistent.border = 4u;
+    expectTrue(!fuse::renderer::ddgi_util::validateProbeBorderCounts(inconsistent),
+               "inconsistent interior+border sum fails validation");
+}
+
+void testResolveSampleDirectionFromSurface() {
+    const fuse::math::Vec3 up{0.f, 1.f, 0.f};
+    const fuse::math::Vec3 right{1.f, 0.f, 0.f};
+
+    const fuse::math::Vec3 fromDirection =
+        fuse::renderer::DdgiIrradianceEncoding::resolveSampleDirectionFromSurface(right, up);
+    expectNear(fromDirection.x, 1.f, 1e-5f, "surface resolve prefers explicit direction");
+
+    const fuse::math::Vec3 fromNormal =
+        fuse::renderer::DdgiIrradianceEncoding::resolveSampleDirectionFromSurface({0.f, 0.f, 0.f}, up);
+    expectNear(fromNormal.y, 1.f, 1e-5f, "surface resolve falls back to surface normal");
+
+    const fuse::math::Vec3 fromDefault =
+        fuse::renderer::DdgiIrradianceEncoding::resolveSampleDirectionFromSurface({0.f, 0.f, 0.f},
+                                                                                {0.f, 0.f, 0.f});
+    expectNear(fromDefault.y, 1.f, 1e-5f, "surface resolve falls back to +Y when both empty");
+
+    expectTrue(fuse::renderer::DdgiIrradianceEncoding::isValidDirection(up),
+               "isValidDirection true for unit vector");
+    expectTrue(!fuse::renderer::DdgiIrradianceEncoding::isValidDirection({0.f, 0.f, 0.f}),
+               "isValidDirection false for zero vector");
 }
 
 void testEmptyDirectionGuards() {
@@ -597,6 +644,52 @@ void testBilinearTileIrradiance() {
     expectNear(nullSample.x, 0.f, 1e-5f, "bilinear null samples returns zero");
 }
 
+void testSampleGuards() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+    desc.irradiance_res = 8;
+
+    expectTrue(fuse::renderer::ddgi_util::canSampleProbeGrid(desc), "default grid is sampleable");
+    expectTrue(fuse::renderer::ddgi_util::isCacheSizedForGrid(desc, 8u), "full cache sized for grid");
+    expectTrue(!fuse::renderer::ddgi_util::isCacheSizedForGrid(desc, 4u), "undersized cache rejected");
+
+    fuse::renderer::DDGISampleRequest request{};
+    request.world_position = {0.5f, 0.5f, 0.5f};
+    request.world_normal = {0.f, 1.f, 0.f};
+    expectTrue(fuse::renderer::ddgi_util::isValidSampleRequest(desc, request, 8u),
+               "valid sample request with sized cache");
+    expectTrue(!fuse::renderer::ddgi_util::isValidSampleRequest(desc, request, 4u),
+               "invalid sample request with undersized cache");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+    expectTrue(!fuse::renderer::ddgi_util::canSampleProbeGrid(empty), "empty grid not sampleable");
+    expectTrue(!fuse::renderer::ddgi_util::isValidSampleRequest(empty, request, 8u),
+               "empty grid sample request invalid");
+
+    fuse::renderer::DDGIDesc zeroRes = desc;
+    zeroRes.irradiance_res = 0u;
+    expectTrue(!fuse::renderer::ddgi_util::canSampleProbeGrid(zeroRes), "zero irradiance_res not sampleable");
+
+    fuse::renderer::DDGIDesc badSpacing = desc;
+    badSpacing.probe_spacing = {0.f, 2.f, 2.f};
+    expectTrue(!fuse::renderer::ddgi_util::canSampleProbeGrid(badSpacing), "zero spacing not sampleable");
+
+    std::vector<fuse::renderer::IrradianceCacheEntry> cache(8);
+    for (fuse::u32 i = 0; i < 8u; ++i) {
+        cache[i].irradiance = {1.f, 1.f, 1.f};
+    }
+    const fuse::math::Vec3 guarded =
+        fuse::renderer::ddgi_util::trilinearProbeIrradiance(desc, {0.5f, 0.5f, 0.5f}, cache.data(), 4u);
+    expectNear(guarded.x, 0.f, 1e-5f, "undersized cache trilinear returns zero");
+
+    fuse::renderer::DDGISampleRequest emptyNormal{};
+    emptyNormal.world_position = {0.5f, 0.5f, 0.5f};
+    emptyNormal.world_normal = {0.f, 0.f, 0.f};
+    expectTrue(fuse::renderer::ddgi_util::isValidSampleRequest(desc, emptyNormal, 8u),
+               "empty normal still valid — resolved at sample time");
+}
+
 void testPartialCacheTrilinear() {
     fuse::renderer::DDGIDesc desc{};
     desc.grid_origin = {0.f, 0.f, 0.f};
@@ -752,7 +845,9 @@ int main() {
     testProbePerAxisClamp();
     testClampProbeSampleCoords();
     testProbeBorderCounts();
+    testResolveSampleDirectionFromSurface();
     testEmptyDirectionGuards();
+    testSampleGuards();
     testProbeWorldPositionClamped();
     testProbeAtlasLayout();
     testIrradianceOctahedralEncoding();
