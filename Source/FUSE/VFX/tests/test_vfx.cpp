@@ -1317,6 +1317,84 @@ void testParticleGpuFramePlanPreflight() {
     expectTrue(idle.preflight().ready_for_stub(), "idle frame preflight is ready");
 }
 
+void testParticleGpuDispatchPreflight() {
+    using fuse::vfx::ParticleGpuDispatch;
+    using fuse::vfx::ParticleGpuDispatchPreflight;
+
+    expectTrue(fuse::vfx::should_skip_sim_dispatch(0u), "should_skip_sim_dispatch for zero capacity");
+    expectTrue(!fuse::vfx::should_skip_sim_dispatch(64u), "should_skip_sim_dispatch false for live capacity");
+    expectTrue(fuse::vfx::should_skip_emit_dispatch(0u), "should_skip_emit_dispatch for zero emit");
+    expectTrue(!fuse::vfx::should_skip_emit_dispatch(1u), "should_skip_emit_dispatch false for non-zero emit");
+
+    const fuse::vfx::ParticleGpuDispatch sim = ParticleGpuDispatch::forSimulate(100u);
+    const ParticleGpuDispatchPreflight sim_preflight = sim.preflightSimulate(100u);
+    expectEq(sim_preflight.slot_count, 100u, "sim preflight carries slot count");
+    expectTrue(!sim_preflight.skip_sim_launch, "sim preflight launches for non-zero capacity");
+    expectTrue(sim_preflight.can_launch_sim(), "sim preflight can launch");
+    expectTrue(sim_preflight.ready_for_stub(), "sim-only preflight is stub-ready");
+
+    const fuse::vfx::ParticleGpuDispatch zero_sim = ParticleGpuDispatch::forSimulate(0u);
+    const ParticleGpuDispatchPreflight idle_sim = zero_sim.preflightSimulate(0u);
+    expectTrue(idle_sim.skip_sim_launch, "zero capacity sim preflight skips launch");
+    expectTrue(!idle_sim.can_launch_sim(), "idle sim preflight cannot launch");
+    expectTrue(idle_sim.ready_for_stub(), "idle sim preflight is stub-ready");
+
+    const fuse::vfx::ParticleGpuDispatch emit = ParticleGpuDispatch::forEmit(200u);
+    const ParticleGpuDispatchPreflight emit_preflight = emit.preflightEmit(200u);
+    expectEq(emit_preflight.emit_count, 200u, "emit preflight carries emit count");
+    expectTrue(!emit_preflight.skip_emit_launch, "emit preflight launches for non-zero count");
+    expectTrue(emit_preflight.can_launch_emit(), "emit preflight can launch");
+    expectTrue(emit_preflight.emit_padding_ok, "emit preflight padding accounts");
+
+    const fuse::vfx::ParticleGpuDispatch frame = ParticleGpuDispatch::forFrame(256u, 32u);
+    const ParticleGpuDispatchPreflight frame_preflight = frame.preflightFrame(256u, 32u);
+    expectTrue(frame_preflight.can_launch_sim(), "frame preflight can launch sim");
+    expectTrue(frame_preflight.can_launch_emit(), "frame preflight can launch emit");
+    expectTrue(frame_preflight.ready_for_stub(), "frame preflight is stub-ready");
+
+    const ParticleGpuDispatchPreflight idle_frame = frame.preflightFrame(0u, 0u);
+    expectTrue(idle_frame.skip_sim_launch && idle_frame.skip_emit_launch,
+               "idle frame preflight skips both launches");
+    expectTrue(idle_frame.ready_for_stub(), "idle frame dispatch preflight is stub-ready");
+}
+
+void testParticleGpuMirrorSyncSkipGuards() {
+    fuse::vfx::ParticleSoA cpu{};
+    fuse::vfx::particle_soa::init(cpu, 8u);
+    (void)fuse::vfx::particle_soa::burst_emit(cpu, {}, {}, 2u, 7u);
+
+    fuse::vfx::ParticleGpuMirror mirror{};
+    expectTrue(!fuse::vfx::should_skip_mirror_sync(mirror, cpu),
+               "uninitialized mirror cannot skip sync");
+    expectTrue(!fuse::vfx::should_skip_mirror_write(mirror, cpu),
+               "uninitialized mirror cannot skip write");
+
+    const fuse::vfx::ParticleGpuMirrorPreflight uninitialized = mirror.preflightFromCpu(cpu);
+    expectTrue(uninitialized.needs_resize_sync(), "uninitialized mirror needs resize sync");
+    expectTrue(!uninitialized.already_synced, "uninitialized mirror is not already synced");
+    expectTrue(!uninitialized.can_bind_device(), "uninitialized mirror cannot bind device");
+
+    mirror.syncFromCpuSoA(cpu);
+    expectTrue(mirror.shouldSkipSyncFromCpu(cpu), "synced mirror skips redundant sync");
+    expectTrue(fuse::vfx::should_skip_mirror_sync(mirror, cpu), "should_skip_mirror_sync after sync");
+    expectTrue(fuse::vfx::should_skip_mirror_write(mirror, cpu), "should_skip_mirror_write when CPU matches");
+
+    const fuse::vfx::ParticleGpuMirrorUploadPreflight upload = mirror.preflightDeviceUpload(cpu);
+    expectTrue(upload.layout_bytes_ok, "upload preflight validates packed layout bytes");
+    expectTrue(upload.can_upload(), "synced mirror can upload to device stub");
+    expectTrue(upload.mirror.can_bind_device(), "upload preflight mirror can bind device");
+
+    mirror.alive_count = 5u;
+    const fuse::vfx::ParticleGpuMirrorUploadPreflight stale = mirror.preflightDeviceUpload(cpu);
+    expectTrue(!stale.mirror.can_bind_device(), "stale alive_count blocks device bind");
+    expectTrue(!stale.can_upload(), "stale mirror blocks device upload");
+
+    fuse::vfx::ParticleSoA empty{};
+    const fuse::vfx::ParticleGpuMirrorUploadPreflight empty_upload = mirror.preflightDeviceUpload(empty);
+    expectTrue(!empty_upload.layout_bytes_ok, "empty CPU blocks layout byte validation");
+    expectTrue(!empty_upload.can_upload(), "empty CPU blocks device upload");
+}
+
 void testSoaOpsEmptyBurst() {
     fuse::vfx::ParticleSoA soa{};
     fuse::vfx::ParticleEmitterDesc desc{};
@@ -2031,6 +2109,8 @@ int main() {
     testParticleGpuDispatchPaddingAccounting();
     testParticleGpuMirrorPreflight();
     testParticleGpuFramePlanPreflight();
+    testParticleGpuDispatchPreflight();
+    testParticleGpuMirrorSyncSkipGuards();
     testParticleGpuPointerBundle();
     testParticleGpuLayoutSize();
     testParticleGpuEmptyDispatch();
