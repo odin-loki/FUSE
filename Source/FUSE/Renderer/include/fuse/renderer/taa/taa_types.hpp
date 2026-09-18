@@ -84,6 +84,14 @@ bool taaResolveRequiresDepth(const TAAParams& params);
 f32 computeEffectiveBlend(bool firstFrame, const TAAParams& params);
 /// History contribution weight — complement of `effectiveBlend`, clamped to [0, 1].
 f32 computeHistoryBlend(f32 effectiveBlend);
+/// True when `blend_factor` is within [0, 1] before clamping (B5.9 deepen).
+bool isTaaBlendFactorInRange(f32 blend_factor);
+/// True when effective blend reuses prior history (weight strictly below 1.0).
+bool taaBlendWeightReusesHistory(f32 effective_blend);
+/// History contribution weight — complement of `effective_blend` (B5.9 deepen).
+f32 computeHistoryContributionWeight(f32 effective_blend);
+/// True when warm-up path forces full current-frame weight (no history reuse).
+bool taaUsesWarmupBlend(bool first_frame);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {
