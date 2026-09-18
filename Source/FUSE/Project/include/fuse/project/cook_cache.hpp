@@ -46,6 +46,14 @@ struct CookCacheStats {
            is_valid_cook_cache_path(entry.output_path);
 }
 
+/// Inverse of `is_valid_cook_cache_entry` — zero keys or empty paths (B7.9 deepen).
+[[nodiscard]] inline bool is_invalid_cook_cache_entry(const CookCacheEntry& entry) {
+    return !is_valid_cook_cache_entry(entry);
+}
+
+/// True when a structurally valid entry's stored key no longer matches its source (B7.9 deepen).
+[[nodiscard]] bool is_stale_cook_cache_entry(const CookCacheEntry& entry);
+
 /// Combined source/upstream fold is cacheable when non-zero (B7.9 deepen).
 [[nodiscard]] inline bool is_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {
     return is_valid_cook_cache_key(combine_cook_cache_key(source_hash, upstream_hash));
@@ -81,6 +89,12 @@ public:
     u32 prune_all();
     /// True when invalid or stale records are present — `prune_*` would remove at least one (B7.9 deepen).
     [[nodiscard]] bool has_prunable_entries() const;
+    /// True when structurally invalid records are present — `prune_invalid_entries` would remove at least one.
+    [[nodiscard]] bool has_invalid_entries() const;
+    /// True when valid records have drifted from their recomputed content hash.
+    [[nodiscard]] bool has_stale_entries() const;
+    /// Count of invalid or stale records that `prune_all` would remove — zero on empty cache.
+    [[nodiscard]] u32 count_prunable_entries() const;
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 
