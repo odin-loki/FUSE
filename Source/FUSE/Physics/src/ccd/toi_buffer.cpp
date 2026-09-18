@@ -63,11 +63,20 @@ void ToiBufferSoA::invalidateSlot(u32 slot) {
     if (slot >= validFlags.size()) {
         return;
     }
+    if (pairSlotCount > 0u && slot >= pairSlotCount) {
+        return;
+    }
     validFlags[slot] = 0u;
 }
 
 bool ToiBufferSoA::slotIsValid(u32 slot) const {
-    return slot < validFlags.size() && validFlags[slot] != 0u;
+    if (slot >= validFlags.size()) {
+        return false;
+    }
+    if (pairSlotCount > 0u && slot >= pairSlotCount) {
+        return false;
+    }
+    return validFlags[slot] != 0u;
 }
 
 u32 ToiBufferSoA::countValidSlots() const {
@@ -101,6 +110,34 @@ bool ToiBufferSoA::canSkipCompaction() const {
         }
     }
     return true;
+}
+
+bool ToiBufferSoA::canSkipSort() const {
+    if (canSkipSoAIteration()) {
+        return true;
+    }
+
+    const u32 validCount = countValidSlots();
+    if (validCount <= 1u) {
+        return true;
+    }
+
+    return isSortedByToi();
+}
+
+bool ToiBufferSoA::canSkipCompactAndSort() const {
+    return canSkipSoAIteration() || countValidSlots() == 0u;
+}
+
+u32 ToiBufferSoA::remainingCapacity() const {
+    if (maxCapacity == 0u) {
+        return UINT32_MAX;
+    }
+    return activeCount < maxCapacity ? maxCapacity - activeCount : 0u;
+}
+
+bool ToiBufferSoA::canApplyMaxCapacityClamp() const {
+    return !canSkipSoAIteration() && maxCapacity > 0u && activeCount > maxCapacity;
 }
 
 bool ToiBufferSoA::push(const TOIResult& result) {
@@ -230,7 +267,7 @@ u32 ToiBufferSoA::compact() {
 }
 
 u32 ToiBufferSoA::applyMaxCapacityClamp() {
-    if (canSkipSoAIteration() || maxCapacity == 0u || activeCount <= maxCapacity) {
+    if (!canApplyMaxCapacityClamp()) {
         return activeCount;
     }
 
@@ -260,7 +297,8 @@ u32 ToiBufferSoA::applyMaxCapacityClamp() {
 }
 
 u32 ToiBufferSoA::compactAndSort() {
-    if (canSkipSoAIteration()) {
+    if (canSkipCompactAndSort()) {
+        activeCount = 0u;
         return 0u;
     }
 
@@ -276,36 +314,46 @@ u32 ToiBufferSoA::compactAndSort() {
 }
 
 bool ToiBufferSoA::isSortedByToi() const {
-    if (canSkipSoAIteration() || activeCount <= 1u) {
+    if (canSkipSoAIteration()) {
         return true;
     }
 
-    for (u32 i = 1; i < activeCount; ++i) {
-        if (validFlags[i] == 0u || validFlags[i - 1u] == 0u) {
+    const u32 validCount = countValidSlots();
+    if (validCount <= 1u) {
+        return true;
+    }
+
+    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+    f32 prevToi = 0.f;
+    u32 prevBodyA = 0u;
+    u32 prevBodyB = 0u;
+    bool hasPrev = false;
+    for (u32 i = 0; i < scanCount; ++i) {
+        if (validFlags[i] == 0u) {
             continue;
         }
 
-        const f32 prevToi = toiValues[i - 1u];
         const f32 currToi = toiValues[i];
-        if (currToi < prevToi) {
-            return false;
-        }
-        if (currToi != prevToi) {
-            continue;
-        }
-
-        const u32 prevBodyA = bodyA[i - 1u];
         const u32 currBodyA = bodyA[i];
-        if (currBodyA < prevBodyA) {
-            return false;
-        }
-        if (currBodyA != prevBodyA) {
-            continue;
+        const u32 currBodyB = bodyB[i];
+        if (hasPrev) {
+            if (currToi < prevToi) {
+                return false;
+            }
+            if (currToi == prevToi) {
+                if (currBodyA < prevBodyA) {
+                    return false;
+                }
+                if (currBodyA == prevBodyA && currBodyB < prevBodyB) {
+                    return false;
+                }
+            }
         }
 
-        if (bodyB[i] < bodyB[i - 1u]) {
-            return false;
-        }
+        prevToi = currToi;
+        prevBodyA = currBodyA;
+        prevBodyB = currBodyB;
+        hasPrev = true;
     }
 
     return true;
