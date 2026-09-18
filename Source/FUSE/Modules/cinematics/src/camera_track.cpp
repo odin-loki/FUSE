@@ -70,12 +70,12 @@ float sample_fov_rail(const std::vector<CameraKeyframe>& keyframes, TimelineMs t
     for (const CameraKeyframe& keyframe : keyframes) {
         if (time_ms < keyframe.time_ms) {
             if (!previous) {
-                return clamp_fov(keyframe.field_of_view);
+                return effective_camera_fov(keyframe.field_of_view);
             }
 
             const TimelineMs span = keyframe.time_ms - previous->time_ms;
             if (span <= 0) {
-                return clamp_fov(keyframe.field_of_view);
+                return effective_camera_fov(keyframe.field_of_view);
             }
 
             const float t = apply_ease(ease,
@@ -87,7 +87,7 @@ float sample_fov_rail(const std::vector<CameraKeyframe>& keyframes, TimelineMs t
         previous = &keyframe;
     }
 
-    return previous ? clamp_fov(previous->field_of_view) : kDefaultCameraFovDeg;
+    return previous ? effective_camera_fov(previous->field_of_view) : kDefaultCameraFovDeg;
 }
 
 Vec3 sample_look_at_rail(const std::vector<CameraKeyframe>& keyframes,
@@ -132,6 +132,30 @@ CameraSample default_camera_sample() {
     return {};
 }
 
+float effective_camera_fov(float authored_fov_deg) {
+    if (!std::isfinite(authored_fov_deg)) {
+        return kDefaultCameraFovDeg;
+    }
+    return clamp_fov(authored_fov_deg);
+}
+
+bool camera_fov_uses_default(float field_of_view_deg) {
+    return std::fabs(field_of_view_deg - kDefaultCameraFovDeg) <= 1e-4f;
+}
+
+bool camera_sample_is_default(const CameraSample& sample) {
+    const CameraSample defaults = default_camera_sample();
+    return sample.position.x == defaults.position.x && sample.position.y == defaults.position.y
+           && sample.position.z == defaults.position.z && sample.look_at.x == defaults.look_at.x
+           && sample.look_at.y == defaults.look_at.y && sample.look_at.z == defaults.look_at.z
+           && camera_fov_uses_default(sample.field_of_view) && sample.roll_deg == defaults.roll_deg;
+}
+
+void reset_camera_keyframe_to_defaults(CameraKeyframe& keyframe) {
+    keyframe = {};
+    keyframe.field_of_view = kDefaultCameraFovDeg;
+}
+
 bool camera_keyframes_empty(const std::vector<CameraKeyframe>& keyframes) {
     return keyframes.empty();
 }
@@ -150,7 +174,7 @@ bool camera_track_needs_look_at_resolver(const std::vector<CameraKeyframe>& keyf
 }
 
 void normalize_camera_keyframe(CameraKeyframe& keyframe) {
-    keyframe.field_of_view = clamp_fov(keyframe.field_of_view);
+    keyframe.field_of_view = effective_camera_fov(keyframe.field_of_view);
 }
 
 CameraSample sample_camera_keyframe(const CameraKeyframe& keyframe,
@@ -161,7 +185,7 @@ CameraSample sample_camera_keyframe(const CameraKeyframe& keyframe,
     CameraSample sample;
     sample.position = keyframe.position;
     sample.look_at = resolve_look_at_world(keyframe, resolver);
-    sample.field_of_view = clamp_fov(keyframe.field_of_view);
+    sample.field_of_view = effective_camera_fov(keyframe.field_of_view);
     sample.roll_deg = keyframe.roll_deg;
     return sample;
 }

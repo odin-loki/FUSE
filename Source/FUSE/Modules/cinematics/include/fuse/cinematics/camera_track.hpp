@@ -56,6 +56,12 @@ float camera_look_distance(const Vec3& position, const Vec3& look_at);
 /// Canonical pose when a track or keyframe list has no entries.
 CameraSample default_camera_sample();
 
+/// True when `sample` matches `default_camera_sample()` (empty-track guard).
+bool camera_sample_is_default(const CameraSample& sample);
+
+/// Reset `keyframe` to editor defaults (time 0, fixed look-at, default FOV).
+void reset_camera_keyframe_to_defaults(CameraKeyframe& keyframe);
+
 /// True when `keyframes` has no entries (editor / rail guard).
 bool camera_keyframes_empty(const std::vector<CameraKeyframe>& keyframes);
 
@@ -64,6 +70,12 @@ bool camera_keyframe_uses_entity_look_at(const CameraKeyframe& keyframe);
 
 /// True when any keyframe in `keyframes` requires a `LookAtResolver` at sample time.
 bool camera_track_needs_look_at_resolver(const std::vector<CameraKeyframe>& keyframes);
+
+/// Non-finite FOV becomes `kDefaultCameraFovDeg`; finite values are clamped.
+float effective_camera_fov(float authored_fov_deg);
+
+/// True when `field_of_view_deg` matches `kDefaultCameraFovDeg` (within epsilon).
+bool camera_fov_uses_default(float field_of_view_deg);
 
 /// Clamp FOV and leave other fields untouched (editor / import guard).
 void normalize_camera_keyframe(CameraKeyframe& keyframe);
