@@ -157,6 +157,43 @@ void run_input_history_tests() {
                "can_reconcile rejects evicted frame");
     expectTrue(!fuse::net::can_reconcile_input_frame(bounded, 6u),
                "can_reconcile rejects future frame beyond newest");
+
+    // --- empty-buffer and evict-before-write helpers (B7.4 deepen follow-up) ---
+    expectTrue(fuse::net::is_empty_input_history(empty), "is_empty_input_history reports empty ring");
+    expectTrue(!fuse::net::is_empty_input_history(bounded), "is_empty_input_history rejects populated ring");
+    expectTrue(fuse::net::input_history_remaining_capacity(empty) == 8u,
+               "empty history reports full remaining capacity");
+    expectTrue(bounded.remaining_capacity() == 0u, "full ring reports zero remaining capacity");
+
+    fuse::net::InputHistoryBuffer pre_evict;
+    pre_evict.init(4);
+    for (fuse::u32 frame = 0; frame < 4; ++frame) {
+        fuse::net::PlayerInput input{};
+        input.frame = frame;
+        pre_evict.push_frame(frame, input);
+    }
+    expectTrue(!pre_evict.will_evict_oldest_on_push(3u), "in-window rewrite does not evict oldest");
+    expectTrue(pre_evict.will_evict_oldest_on_push(4u), "wrap push predicts oldest eviction");
+    expectTrue(pre_evict.remaining_capacity() == 0u, "full ring remaining capacity is zero");
+
+    const fuse::net::InputReconcilePreflight bounded_preflight =
+        fuse::net::preflight_input_reconcile(bounded, 5u);
+    expectTrue(!bounded_preflight.history_empty, "preflight sees populated history");
+    expectTrue(bounded_preflight.can_reconcile(), "preflight accepts newest retained frame");
+    expectTrue(!fuse::net::should_skip_input_reconcile(bounded, 5u),
+               "should_skip rejects in-window newest frame");
+
+    const fuse::net::InputReconcilePreflight evicted_preflight =
+        fuse::net::preflight_input_reconcile(bounded, 1u);
+    expectTrue(evicted_preflight.frame_before_oldest, "preflight marks evicted frame");
+    expectTrue(fuse::net::should_skip_input_reconcile(bounded, 1u),
+               "should_skip rejects evicted frame");
+
+    const fuse::net::InputReconcilePreflight future_preflight =
+        fuse::net::preflight_input_reconcile(bounded, 6u);
+    expectTrue(future_preflight.frame_beyond_newest, "preflight marks future frame");
+    expectTrue(fuse::net::should_skip_input_reconcile(bounded, 6u),
+               "should_skip rejects future frame");
 }
 
 } // namespace fuse::net::tests

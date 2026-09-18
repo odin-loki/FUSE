@@ -144,6 +144,51 @@ void run_reconcile_tests() {
     expectTrue(future_history_result.action == fuse::net::ReconcileAction::NoOp,
                "input history reconcile rejects future frame beyond newest");
     expectTrue(!future_history.has_confirmed(8u), "future frame is not stored by reconcile guard");
+
+    // --- reconcile preflight and empty-buffer helpers (B7.4 deepen follow-up) ---
+    fuse::net::RollbackBuffer pristine_buffer;
+    pristine_buffer.init(4);
+    expectTrue(fuse::net::is_empty_rollback_buffer(pristine_buffer),
+               "is_empty_rollback_buffer reports empty rollback ring");
+    expectTrue(!fuse::net::is_empty_rollback_buffer(future_buffer),
+               "is_empty_rollback_buffer rejects populated rollback ring");
+
+    const fuse::net::RollbackReconcilePreflight retained_preflight =
+        fuse::net::preflight_rollback_reconcile(future_buffer, 3u);
+    expectTrue(!retained_preflight.buffer_empty, "rollback preflight sees populated buffer");
+    expectTrue(retained_preflight.has_snapshot, "rollback preflight finds retained snapshot");
+    expectTrue(retained_preflight.can_reconcile(), "rollback preflight accepts newest frame");
+    expectTrue(!fuse::net::should_skip_rollback_reconcile(future_buffer, 3u),
+               "should_skip accepts newest rollback frame");
+
+    const fuse::net::RollbackReconcilePreflight future_preflight =
+        fuse::net::preflight_rollback_reconcile(future_buffer, 9u);
+    expectTrue(future_preflight.frame_beyond_newest, "rollback preflight marks future frame");
+    expectTrue(fuse::net::should_skip_rollback_reconcile(future_buffer, 9u),
+               "should_skip rejects future rollback frame");
+
+    const fuse::net::RollbackReconcilePreflight evicted_preflight =
+        fuse::net::preflight_rollback_reconcile(wrapped, 1u);
+    expectTrue(evicted_preflight.frame_before_oldest, "rollback preflight marks evicted frame");
+    expectTrue(fuse::net::should_skip_rollback_reconcile(wrapped, 1u),
+               "should_skip rejects evicted rollback frame");
+
+    fuse::net::InputHistoryBuffer pristine_history;
+    pristine_history.init(8);
+    const fuse::net::InputReconcilePreflight empty_history_preflight =
+        fuse::net::preflight_input_reconcile(pristine_history, 2u);
+    expectTrue(empty_history_preflight.history_empty, "input preflight marks empty history");
+    expectTrue(empty_history_preflight.can_reconcile(), "empty history still allows reconcile window");
+    expectTrue(!fuse::net::should_skip_input_reconcile(pristine_history, 2u),
+               "should_skip allows reconcile on empty history with capacity");
+
+    fuse::net::InputHistoryBuffer zero_capacity_history;
+    zero_capacity_history.clear();
+    const fuse::net::InputReconcilePreflight zero_preflight =
+        fuse::net::preflight_input_reconcile(zero_capacity_history, 0u);
+    expectTrue(zero_preflight.zero_capacity, "input preflight marks zero capacity");
+    expectTrue(fuse::net::should_skip_input_reconcile(zero_capacity_history, 0u),
+               "should_skip rejects zero-capacity history");
 }
 
 } // namespace fuse::net::tests

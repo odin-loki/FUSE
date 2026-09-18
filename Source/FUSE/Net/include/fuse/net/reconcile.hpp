@@ -19,6 +19,50 @@ struct ReconcileResult {
     u32 frame = 0;
 };
 
+/// Preflight for reconciling authoritative input against local prediction (B7.4 deepen follow-up).
+struct InputReconcilePreflight {
+    bool zero_capacity = true;
+    bool history_empty = true;
+    bool frame_before_oldest = false;
+    bool frame_beyond_newest = false;
+
+    [[nodiscard]] bool can_reconcile() const {
+        return !zero_capacity && !frame_before_oldest && !frame_beyond_newest;
+    }
+
+    [[nodiscard]] bool should_skip() const { return !can_reconcile(); }
+};
+
+/// Preflight for reconciling remote input against a rollback-buffer snapshot (B7.4 deepen follow-up).
+struct RollbackReconcilePreflight {
+    bool zero_capacity = true;
+    bool buffer_empty = true;
+    bool frame_before_oldest = false;
+    bool frame_beyond_newest = false;
+    bool has_snapshot = false;
+
+    [[nodiscard]] bool can_reconcile() const {
+        return !zero_capacity && !buffer_empty && !frame_before_oldest && !frame_beyond_newest && has_snapshot;
+    }
+
+    [[nodiscard]] bool should_skip() const { return !can_reconcile(); }
+};
+
+/// True when the rollback buffer ring has no retained snapshots (B7.4 deepen follow-up).
+[[nodiscard]] bool is_empty_rollback_buffer(const RollbackBuffer& buffer);
+
+/// Preflight reconcile window checks without mutating history (B7.4 deepen follow-up).
+[[nodiscard]] InputReconcilePreflight preflight_input_reconcile(const InputHistoryBuffer& history, u32 frame);
+
+/// True when reconcile should be skipped for `frame` (out of window or zero capacity).
+[[nodiscard]] bool should_skip_input_reconcile(const InputHistoryBuffer& history, u32 frame);
+
+/// Preflight rollback-buffer reconcile without recording remote input (B7.4 deepen follow-up).
+[[nodiscard]] RollbackReconcilePreflight preflight_rollback_reconcile(const RollbackBuffer& buffer, u32 frame);
+
+/// True when rollback reconcile should be skipped for `frame`.
+[[nodiscard]] bool should_skip_rollback_reconcile(const RollbackBuffer& buffer, u32 frame);
+
 /// True when `frame` is within the input history ring (or history is empty with non-zero capacity).
 [[nodiscard]] bool can_reconcile_input_frame(const InputHistoryBuffer& history, u32 frame);
 

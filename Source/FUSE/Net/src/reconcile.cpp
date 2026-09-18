@@ -4,40 +4,68 @@
 
 namespace fuse::net {
 
-bool can_reconcile_input_frame(const InputHistoryBuffer& history, u32 frame) {
-    if (history.capacity() == 0) {
-        return false;
+bool is_empty_rollback_buffer(const RollbackBuffer& buffer) {
+    return buffer.empty();
+}
+
+InputReconcilePreflight preflight_input_reconcile(const InputHistoryBuffer& history, u32 frame) {
+    InputReconcilePreflight preflight{};
+    preflight.zero_capacity = history.capacity() == 0;
+    if (preflight.zero_capacity) {
+        return preflight;
     }
 
-    if (history.empty()) {
-        return true;
+    preflight.history_empty = history.empty();
+    if (preflight.history_empty) {
+        return preflight;
     }
 
     if (frame < history.oldest_stored_frame()) {
-        return false;
+        preflight.frame_before_oldest = true;
     }
-
     if (frame > history.newest_stored_frame()) {
-        return false;
+        preflight.frame_beyond_newest = true;
     }
-
-    return true;
+    return preflight;
 }
 
-bool can_reconcile_rollback_frame(const RollbackBuffer& buffer, u32 frame) {
-    if (buffer.capacity() == 0 || buffer.empty()) {
-        return false;
+bool should_skip_input_reconcile(const InputHistoryBuffer& history, u32 frame) {
+    return preflight_input_reconcile(history, frame).should_skip();
+}
+
+RollbackReconcilePreflight preflight_rollback_reconcile(const RollbackBuffer& buffer, u32 frame) {
+    RollbackReconcilePreflight preflight{};
+    preflight.zero_capacity = buffer.capacity() == 0;
+    if (preflight.zero_capacity) {
+        return preflight;
+    }
+
+    preflight.buffer_empty = buffer.empty();
+    if (preflight.buffer_empty) {
+        return preflight;
     }
 
     if (frame < buffer.oldest_stored_frame()) {
-        return false;
+        preflight.frame_before_oldest = true;
     }
-
     if (frame > buffer.newest_stored_frame()) {
-        return false;
+        preflight.frame_beyond_newest = true;
     }
 
-    return buffer.has_frame(frame);
+    preflight.has_snapshot = buffer.has_frame(frame);
+    return preflight;
+}
+
+bool should_skip_rollback_reconcile(const RollbackBuffer& buffer, u32 frame) {
+    return preflight_rollback_reconcile(buffer, frame).should_skip();
+}
+
+bool can_reconcile_input_frame(const InputHistoryBuffer& history, u32 frame) {
+    return preflight_input_reconcile(history, frame).can_reconcile();
+}
+
+bool can_reconcile_rollback_frame(const RollbackBuffer& buffer, u32 frame) {
+    return preflight_rollback_reconcile(buffer, frame).can_reconcile();
 }
 
 ReconcileResult reconcile_predicted_input(InputHistoryBuffer& history, u32 frame,
@@ -45,7 +73,7 @@ ReconcileResult reconcile_predicted_input(InputHistoryBuffer& history, u32 frame
     ReconcileResult result{};
     result.frame = frame;
 
-    if (!can_reconcile_input_frame(history, frame)) {
+    if (should_skip_input_reconcile(history, frame)) {
         return result;
     }
 
@@ -69,7 +97,7 @@ ReconcileResult reconcile_rollback_buffer(RollbackBuffer& buffer, u32 frame, con
     ReconcileResult result{};
     result.frame = frame;
 
-    if (!can_reconcile_rollback_frame(buffer, frame)) {
+    if (should_skip_rollback_reconcile(buffer, frame)) {
         return result;
     }
 

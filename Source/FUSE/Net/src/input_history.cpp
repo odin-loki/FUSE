@@ -35,6 +35,38 @@ u32 InputHistoryBuffer::stored_frame_count() const {
     return m_newest_frame - m_oldest_frame + 1;
 }
 
+u32 InputHistoryBuffer::remaining_capacity() const {
+    if (m_capacity == 0) {
+        return 0;
+    }
+    return m_capacity - stored_frame_count();
+}
+
+bool InputHistoryBuffer::will_evict_oldest_on_push(u32 frame) const {
+    if (m_capacity == 0 || !m_has_any_frame) {
+        return false;
+    }
+
+    u32 oldest = m_oldest_frame;
+    u32 newest = m_newest_frame;
+    if (frame < oldest) {
+        oldest = frame;
+    }
+    if (frame > newest) {
+        newest = frame;
+    }
+
+    return newest - oldest + 1 > m_capacity;
+}
+
+bool is_empty_input_history(const InputHistoryBuffer& history) {
+    return history.empty();
+}
+
+u32 input_history_remaining_capacity(const InputHistoryBuffer& history) {
+    return history.remaining_capacity();
+}
+
 void InputHistoryBuffer::push_frame(u32 frame, const PlayerInput& predicted) {
     store_predicted(frame, predicted);
 }
@@ -100,6 +132,16 @@ InputHistoryBuffer::InputSlot* InputHistoryBuffer::slot_mut_(u32 frame) {
     return &slot;
 }
 
+void InputHistoryBuffer::evict_before_write_(u32 frame) {
+    while (m_newest_frame - m_oldest_frame + 1 > m_capacity) {
+        const u32 evict_slot = m_oldest_frame % m_capacity;
+        if (evict_slot != frame % m_capacity) {
+            m_slots[evict_slot] = {};
+        }
+        ++m_oldest_frame;
+    }
+}
+
 void InputHistoryBuffer::touch_frame_(u32 frame) {
     if (!m_has_any_frame) {
         m_oldest_frame = frame;
@@ -115,13 +157,7 @@ void InputHistoryBuffer::touch_frame_(u32 frame) {
         m_newest_frame = frame;
     }
 
-    while (m_newest_frame - m_oldest_frame + 1 > m_capacity) {
-        const u32 evict_slot = m_oldest_frame % m_capacity;
-        if (evict_slot != frame % m_capacity) {
-            m_slots[evict_slot] = {};
-        }
-        ++m_oldest_frame;
-    }
+    evict_before_write_(frame);
 }
 
 void InputHistoryBuffer::store_predicted(u32 frame, const PlayerInput& input) {
