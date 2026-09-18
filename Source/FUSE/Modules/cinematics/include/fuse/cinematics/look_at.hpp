@@ -28,6 +28,9 @@ public:
 
     bool can_resolve() const { return static_cast<bool>(resolve_fn_ || try_resolve_fn_); }
 
+    /// True when a callback is bound and `target_id` resolves right now (probe guard).
+    bool has_target(const std::string& target_id) const;
+
     Vec3 resolve(const std::string& target_id) const {
         Vec3 out{};
         if (try_resolve(target_id, out)) {
@@ -61,6 +64,9 @@ private:
     ResolveFn resolve_fn_;
     TryResolveFn try_resolve_fn_;
 };
+
+/// True when resolver can resolve `target_id` (empty id or unconfigured resolver returns false).
+bool look_at_resolver_has_target(const LookAtResolver& resolver, const std::string& target_id);
 
 /// Resolve a keyframe's look-at to world space (fixed point or entity stub).
 /// Falls back to `keyframe.look_at` when entity mode is unset or the resolver cannot resolve.

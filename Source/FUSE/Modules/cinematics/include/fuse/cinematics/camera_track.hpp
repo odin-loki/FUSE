@@ -13,6 +13,7 @@
 namespace fuse::cinematics {
 
 class LookAtResolver;
+class CameraTrack;
 
 /// How a camera keyframe resolves its look-at point.
 enum class CameraLookAtMode {
@@ -34,6 +35,9 @@ struct CameraKeyframe {
 
 /// Default vertical FOV (degrees) for empty tracks and unset keyframes.
 constexpr float kDefaultCameraFovDeg = 60.f;
+
+/// Explicit default FOV accessor for editor / import wiring.
+constexpr float default_camera_fov_deg() { return kDefaultCameraFovDeg; }
 
 /// Default look-at distance (world units along -Z) when a fixed keyframe omits aim.
 constexpr float kDefaultCameraLookAtDistance = 10.f;
@@ -60,8 +64,17 @@ float camera_look_distance(const Vec3& position, const Vec3& look_at);
 /// Canonical pose when a track or keyframe list has no entries.
 CameraSample default_camera_sample();
 
+/// Default pose preview anchored at `position` (empty-track / editor placement stub).
+CameraSample default_camera_sample_at(const Vec3& position, float look_distance = kDefaultCameraLookAtDistance);
+
+/// Clamp FOV on a sampled pose; leaves other fields untouched (export / gameplay guard).
+void normalize_camera_sample(CameraSample& sample);
+
 /// True when `keyframes` has no entries (editor / rail guard).
 bool camera_keyframes_empty(const std::vector<CameraKeyframe>& keyframes);
+
+/// Readability alias for `CameraTrack::empty()`.
+bool camera_track_is_empty(const CameraTrack& track);
 
 /// Number of keyframes in `keyframes` (empty-vector guard for editor wiring).
 size_t camera_keyframe_count(const std::vector<CameraKeyframe>& keyframes);
@@ -71,6 +84,12 @@ bool camera_track_covers_time(const std::vector<CameraKeyframe>& keyframes, Time
 
 /// True when `field_of_view` is unset (editor sentinel `<= 0` before normalization).
 bool camera_keyframe_fov_unset(float field_of_view);
+
+/// True when `fov_deg` is within `kMinFovDeg`..`kMaxFovDeg` (import / editor guard).
+bool camera_fov_in_valid_range(float fov_deg);
+
+/// Convenience inverse of `camera_fov_in_valid_range`.
+bool camera_fov_needs_clamp(float fov_deg);
 
 /// Resolve authored FOV: unset values use `kDefaultCameraFovDeg`, otherwise clamp.
 float effective_camera_fov(float field_of_view);
@@ -87,11 +106,17 @@ CameraKeyframe make_default_camera_keyframe(TimelineMs time_ms = 0);
 /// True when `keyframe` binds look-at to an entity id (requires `LookAtResolver` stub).
 bool camera_keyframe_uses_entity_look_at(const CameraKeyframe& keyframe);
 
+/// True when entity look-at mode is active but `look_at_target_id` is empty (import guard).
+bool camera_keyframe_entity_target_missing(const CameraKeyframe& keyframe);
+
 /// True when any keyframe in `keyframes` requires a `LookAtResolver` at sample time.
 bool camera_track_needs_look_at_resolver(const std::vector<CameraKeyframe>& keyframes);
 
 /// Clamp FOV and leave other fields untouched (editor / import guard).
 void normalize_camera_keyframe(CameraKeyframe& keyframe);
+
+/// Clamp FOV on every keyframe in `keyframes` (batch import guard).
+void normalize_camera_keyframes(std::vector<CameraKeyframe>& keyframes);
 
 /// Sample a single keyframe without interpolation (hold pose stub).
 CameraSample sample_camera_keyframe(const CameraKeyframe& keyframe,
@@ -127,6 +152,12 @@ Vec3 sample_camera_look_at(const std::vector<CameraKeyframe>& keyframes,
                            EaseMode ease = EaseMode::Linear,
                            const LookAtResolver* look_at_resolver = nullptr);
 
+/// Sample all camera rails into one pose without a `CameraTrack` wrapper.
+CameraSample sample_camera_pose(const std::vector<CameraKeyframe>& keyframes,
+                                TimelineMs time_ms,
+                                EaseMode ease = EaseMode::Linear,
+                                const LookAtResolver* look_at_resolver = nullptr);
+
 /// Camera animation lane (Verve VCameraTrack / VSceneObjectTrack without Torque bridge).
 class CameraTrack : public Track {
 public:
@@ -143,6 +174,7 @@ public:
     void add_keyframe(const CameraKeyframe& keyframe);
     void clear_keyframes();
     void sort_keyframes();
+    void normalize_keyframes();
 
     bool empty() const { return keyframes_.empty(); }
 
