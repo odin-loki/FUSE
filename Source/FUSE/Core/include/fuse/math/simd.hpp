@@ -351,4 +351,46 @@ inline Vec3 transformDirection(const Mat4& matrix, const Vec3& direction) {
     return fuse::math::transformDirection(matrix.toScalar(), direction);
 }
 
+inline Mat3 transposeUpper3x3(const fuse::math::Mat4& matrix) {
+    return fuse::math::transposeUpper3x3(matrix);
+}
+
+inline bool tryMultiplyRigid(const fuse::math::Mat4& a, const fuse::math::Mat4& b, fuse::math::Mat4& out,
+                             f32 epsilon = 1e-4f) {
+    return fuse::math::tryMultiplyRigid(a, b, out, epsilon);
+}
+
+inline bool tryToRotationQuat(const fuse::math::Mat4& matrix, Quat& out, f32 epsilon = 1e-4f) {
+    return fuse::math::tryToRotationQuat(matrix, out, epsilon);
+}
+
+inline bool tryRayInterval(const AABB& box, const Vec3& origin, const Vec3& direction, f32& tEnter,
+                           f32& tExit) {
+    return fuse::math::tryRayInterval(box, origin, direction, tEnter, tExit);
+}
+
+inline bool tryRayIntervalClamped(const AABB& box, const Vec3& origin, const Vec3& direction, f32 tMin,
+                                  f32 tMax, f32& tEnter, f32& tExit) {
+    return fuse::math::tryRayIntervalClamped(box, origin, direction, tMin, tMax, tEnter, tExit);
+}
+
+inline bool tryRayHits(const AABB& box, const Vec3& origin, const Vec3& direction, f32 tMin = 0.f,
+                       f32 tMax = std::numeric_limits<f32>::max()) {
+    return fuse::math::tryRayHits(box, origin, direction, tMin, tMax);
+}
+
+inline bool tryClassifyAabb(const Vec4& plane, const AABB& box, PlaneSide& side, f32 epsilon = 1e-8f) {
+    return fuse::math::tryClassifyAabb(plane, box, side, epsilon);
+}
+
+inline bool tryClipSegmentAgainstPlane(const Vec4& plane, Vec3& a, Vec3& b, f32 epsilon = 1e-5f) {
+    return fuse::math::tryClipSegmentAgainstPlane(plane, a, b, epsilon);
+}
+
+inline bool tryClipPolygonAgainstPlane(const Vec4& plane, const Vec3* input, u32 inputCount, Vec3* output,
+                                       u32& outCount, u32 maxOutput, f32 epsilon = 1e-5f) {
+    return fuse::math::tryClipPolygonAgainstPlane(plane, input, inputCount, output, outCount, maxOutput,
+                                                  epsilon);
+}
+
 } // namespace fuse::math::simd

@@ -212,4 +212,31 @@ inline AABB mergeAabb(const AABB& a, const AABB& b) {
     return a.merge(b);
 }
 
+/// Slab ray interval with empty-box early-out; returns false when `box` is empty.
+inline bool tryRayInterval(const AABB& box, const Vec3& origin, const Vec3& direction, f32& tEnter,
+                           f32& tExit) {
+    if (box.isEmpty()) {
+        return false;
+    }
+    return box.rayInterval(origin, direction, tEnter, tExit);
+}
+
+/// Clamped slab ray interval with empty-box early-out.
+inline bool tryRayIntervalClamped(const AABB& box, const Vec3& origin, const Vec3& direction, f32 tMin,
+                                  f32 tMax, f32& tEnter, f32& tExit) {
+    if (box.isEmpty()) {
+        return false;
+    }
+    return box.rayIntervalClamped(origin, direction, tMin, tMax, tEnter, tExit);
+}
+
+/// Segment ray hit test with empty-box early-out.
+inline bool tryRayHits(const AABB& box, const Vec3& origin, const Vec3& direction, f32 tMin = 0.f,
+                       f32 tMax = std::numeric_limits<f32>::max()) {
+    if (box.isEmpty()) {
+        return false;
+    }
+    return box.rayHits(origin, direction, tMin, tMax);
+}
+
 } // namespace fuse::math

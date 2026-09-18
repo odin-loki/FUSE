@@ -347,6 +347,73 @@ inline Vec3 transformDirection(const Mat4& matrix, const Vec3& direction) {
     return transformDirection(matrix.upper3x3(), direction);
 }
 
+/// Transposed upper 3×3 block (inverse rotation when the block is orthogonal).
+inline Mat3 transposeUpper3x3(const Mat4& matrix) {
+    Mat3 result{};
+    for (u32 row = 0; row < 3; ++row) {
+        for (u32 col = 0; col < 3; ++col) {
+            result.at(row, col) = matrix.at(col, row);
+        }
+    }
+    return result;
+}
+
+/// Writes `a * b` to `out` when both operands are rigid affine transforms.
+inline bool tryMultiplyRigid(const Mat4& a, const Mat4& b, Mat4& out, f32 epsilon = 1e-4f) {
+    if (!isRigid(a, epsilon) || !isRigid(b, epsilon)) {
+        return false;
+    }
+    out = multiply(a, b);
+    return true;
+}
+
+/// Extracts a unit quaternion from a pure-rotation upper 3×3 block.
+inline bool tryToRotationQuat(const Mat4& matrix, Quat& out, f32 epsilon = 1e-4f) {
+    if (!isOrthogonalUpper3x3(matrix, epsilon)) {
+        return false;
+    }
+
+    const Mat3 rot = matrix.upper3x3();
+    const f32 trace = rot.at(0, 0) + rot.at(1, 1) + rot.at(2, 2);
+
+    if (trace > 0.f) {
+        const f32 s = std::sqrt(trace + 1.f) * 2.f;
+        out = Quat{
+            (rot.at(2, 1) - rot.at(1, 2)) / s,
+            (rot.at(0, 2) - rot.at(2, 0)) / s,
+            (rot.at(1, 0) - rot.at(0, 1)) / s,
+            0.25f * s,
+        };
+    } else if (rot.at(0, 0) > rot.at(1, 1) && rot.at(0, 0) > rot.at(2, 2)) {
+        const f32 s = std::sqrt(1.f + rot.at(0, 0) - rot.at(1, 1) - rot.at(2, 2)) * 2.f;
+        out = Quat{
+            0.25f * s,
+            (rot.at(0, 1) + rot.at(1, 0)) / s,
+            (rot.at(0, 2) + rot.at(2, 0)) / s,
+            (rot.at(2, 1) - rot.at(1, 2)) / s,
+        };
+    } else if (rot.at(1, 1) > rot.at(2, 2)) {
+        const f32 s = std::sqrt(1.f + rot.at(1, 1) - rot.at(0, 0) - rot.at(2, 2)) * 2.f;
+        out = Quat{
+            (rot.at(0, 1) + rot.at(1, 0)) / s,
+            0.25f * s,
+            (rot.at(1, 2) + rot.at(2, 1)) / s,
+            (rot.at(0, 2) - rot.at(2, 0)) / s,
+        };
+    } else {
+        const f32 s = std::sqrt(1.f + rot.at(2, 2) - rot.at(0, 0) - rot.at(1, 1)) * 2.f;
+        out = Quat{
+            (rot.at(0, 2) + rot.at(2, 0)) / s,
+            (rot.at(1, 2) + rot.at(2, 1)) / s,
+            0.25f * s,
+            (rot.at(1, 0) - rot.at(0, 1)) / s,
+        };
+    }
+
+    out = out.normalized();
+    return true;
+}
+
 inline Mat4 operator*(const Mat4& a, const Mat4& b) { return multiply(a, b); }
 inline Mat3 operator*(const Mat3& a, const Mat3& b) { return multiply(a, b); }
 
