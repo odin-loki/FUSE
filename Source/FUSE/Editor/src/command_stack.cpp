@@ -7,6 +7,10 @@ bool CommandStack::canCoalesce_(const EditorCommand& previous, const EditorComma
         return false;
     }
 
+    if (previous.propertyName.empty() || incoming.propertyName.empty()) {
+        return false;
+    }
+
     return previous.target == incoming.target && previous.propertyName == incoming.propertyName;
 }
 
@@ -138,6 +142,11 @@ void CommandStack::redo() {
 }
 
 void CommandStack::clear() {
+    if (isEmpty() && m_redoStack.empty() && !m_baselineConfigured && m_coalescedCount == 0u &&
+        m_appliedCount == 0u && !m_dirty && m_dirtyRevision == 0u) {
+        return;
+    }
+
     m_undoStack.clear();
     m_redoStack.clear();
     m_undoDepth = 0;

@@ -122,6 +122,11 @@ std::string UndoStack::peekRedoDescription() const {
 }
 
 void UndoStack::clear() {
+    if (isEmpty() && m_redo.empty() && !m_baselineConfigured && m_coalescedOps == 0u && !m_dirty &&
+        m_dirtyRevision == 0u) {
+        return;
+    }
+
     m_undo.clear();
     m_redo.clear();
     m_evictedCount = 0;
