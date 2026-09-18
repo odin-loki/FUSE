@@ -7,6 +7,9 @@
 
 namespace fuse::profiler {
 
+/// Sentinel returned by `lastEventIndex()` when the ring buffer has no recorded events.
+constexpr u32 kInvalidEventIndex = static_cast<u32>(-1);
+
 enum class EventPhase : u8 {
     Begin,
     End,
@@ -61,12 +64,18 @@ u32 frameIndex();
 u32 eventCount();
 u32 maxNestingDepth();
 u32 maxFlowNestingDepth();
+u32 scopeNestingDepth();
 u32 flowNestingDepth();
+u32 openAsyncFlowCount();
 
 bool hasEvents();
+bool isBufferEmpty();
+bool isBufferFull();
 bool isEventIndexValid(u32 index);
 bool isValidProfileEvent(const ProfileEvent& event);
+u32 lastEventIndex();
 const ProfileEvent& eventAt(u32 index);
+const ProfileEvent& lastEvent();
 void reset();
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
