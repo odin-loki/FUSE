@@ -51,16 +51,7 @@ u32 count_matching_entities(const std::vector<Archetype>& archetypes, const Quer
 }
 
 bool has_matching_archetypes(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
-    if (archetypes.empty() || !query_filter_is_runnable(filter)) {
-        return false;
-    }
-
-    for (const Archetype& archetype : archetypes) {
-        if (archetype_matches(archetype, filter)) {
-            return true;
-        }
-    }
-    return false;
+    return preflight_query_filter(archetypes, filter).can_match();
 }
 
 bool has_matching_entities(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
@@ -69,17 +60,19 @@ bool has_matching_entities(const std::vector<Archetype>& archetypes, const Query
 
 QueryFilterPreflight preflight_query_filter(const QueryFilter& filter) {
     QueryFilterPreflight result;
-    result.runnable = query_filter_is_runnable(filter);
+    result.has_conflict = query_filter_has_conflict(filter);
+    result.runnable = !result.has_conflict;
     result.empty_table = true;
     return result;
 }
 
 QueryFilterPreflight preflight_query_filter(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
     QueryFilterPreflight result;
-    result.runnable = query_filter_is_runnable(filter);
+    result.has_conflict = query_filter_has_conflict(filter);
+    result.runnable = !result.has_conflict;
     result.empty_table = archetypes.empty();
 
-    if (!result.runnable || result.empty_table) {
+    if (result.has_conflict || result.empty_table) {
         return result;
     }
 
@@ -96,6 +89,10 @@ QueryFilterPreflight preflight_query_filter(const std::vector<Archetype>& archet
 
 bool should_skip_query_iteration(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
     return preflight_query_filter(archetypes, filter).should_skip();
+}
+
+bool should_skip_query_match(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
+    return preflight_query_filter(archetypes, filter).should_skip_match();
 }
 
 bool archetype_matches(const Archetype& archetype, const QueryFilter& filter) {
