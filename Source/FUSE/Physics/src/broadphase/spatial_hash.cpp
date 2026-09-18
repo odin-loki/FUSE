@@ -245,7 +245,7 @@ void runBroadphaseIntoBufferInternal(
     bool use2D,
     PairBufferSoA& buffer) {
     buffer.clear();
-    if (bodies.count() == 0 || shapes.count() == 0) {
+    if (canSkipBroadphase(bodies, shapes)) {
         return;
     }
 
@@ -332,7 +332,7 @@ void refineBroadphasePairsParallelImpl(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     PairBufferSoA& buffer) {
-    if (buffer.canSkipSoAIteration() || !buffer.hasValidPairs() || bodies.count() == 0 || shapes.count() == 0) {
+    if (buffer.canSkipSoAIteration() || !buffer.hasValidPairs() || canSkipBroadphase(bodies, shapes)) {
         return;
     }
 

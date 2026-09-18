@@ -738,6 +738,116 @@ void testPairBufferCompactionEarlyOuts() {
     expectEq(buffer.activeCount, 2u, "compact early-out leaves pairs intact");
 }
 
+void testEmptyBroadphaseInputGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+
+    expectTrue(fuse::physics::broadphase::isEmptyBroadphaseInput(bodies, shapes),
+               "empty bodies and shapes is empty broadphase input");
+    expectTrue(fuse::physics::broadphase::canSkipBroadphase(bodies, shapes),
+               "canSkipBroadphase on empty scene");
+
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    expectTrue(fuse::physics::broadphase::isEmptyBroadphaseInput(bodies, shapes),
+               "bodies without shapes is empty broadphase input");
+    expectTrue(fuse::physics::broadphase::canSkipBroadphase(bodies, shapes),
+               "canSkipBroadphase when shapes are missing");
+
+    bodies.clear();
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {1.f, 0.f, 0.f});
+    expectTrue(fuse::physics::broadphase::isEmptyBroadphaseInput(bodies, shapes),
+               "shapes without bodies is empty broadphase input");
+
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    expectTrue(!fuse::physics::broadphase::canSkipBroadphase(bodies, shapes),
+               "populated scene does not skip broadphase");
+}
+
+void testCandidatePairRejectsForReasonGuards() {
+    expectTrue(fuse::physics::broadphase::candidatePairRejectsForReason(
+                   1u, 1u, 0u, fuse::physics::broadphase::CandidatePairRejectReason::SelfPair),
+               "candidatePairRejectsForReason matches self-pair");
+    expectTrue(fuse::physics::broadphase::candidatePairRejectsForReason(
+                   0u, 2u, 2u, fuse::physics::broadphase::CandidatePairRejectReason::OutOfRangeBody),
+               "candidatePairRejectsForReason matches out-of-range");
+    expectTrue(!fuse::physics::broadphase::candidatePairRejectsForReason(
+                   0u, 1u, 2u, fuse::physics::broadphase::CandidatePairRejectReason::SelfPair),
+               "valid pair does not reject for SelfPair");
+
+    const fuse::physics::broadphase::CandidatePair pair{0u, 1u};
+    expectTrue(!fuse::physics::broadphase::candidatePairRejectsForReason(
+                   pair, 2u, fuse::physics::broadphase::CandidatePairRejectReason::OutOfRangeBody),
+               "candidatePair overload accepts in-range pair");
+}
+
+void testCellOccupancyBudgetGuards() {
+    const fuse::physics::broadphase::CellRange3 smallRange = {{0, 0, 0}, {1, 1, 1}};
+    expectEq(fuse::physics::broadphase::estimateCellOccupancyCount(smallRange), 8u,
+             "small 3D range has eight cells");
+    expectTrue(fuse::physics::broadphase::cellOccupancyWithinBudget(smallRange, 8u),
+               "occupancy at budget limit is within budget");
+    expectTrue(!fuse::physics::broadphase::exceedsCellOccupancyBudget(smallRange, 8u),
+               "occupancy at budget limit does not exceed");
+    expectTrue(fuse::physics::broadphase::exceedsCellOccupancyBudget(smallRange, 7u),
+               "occupancy above budget is flagged");
+    expectTrue(fuse::physics::broadphase::cellOccupancyWithinBudget(smallRange, 0u),
+               "zero budget means unlimited occupancy");
+
+    const fuse::physics::broadphase::CellRange2 planeRange = {{0, 0}, {3, 1}};
+    expectEq(fuse::physics::broadphase::estimateCellOccupancyCount(planeRange), 8u,
+             "small 2D range has eight cells");
+    expectTrue(fuse::physics::broadphase::exceedsCellOccupancyBudget(planeRange, 4u),
+               "2D occupancy budget guard flags overflow");
+
+    fuse::physics::broadphase::CellRange3 inverted = {{2, 2, 2}, {1, 1, 1}};
+    expectTrue(fuse::physics::broadphase::cellOccupancyWithinBudget(inverted, 1u),
+               "empty range is within any positive budget");
+}
+
+void testEstimatePairCountForUniqueBodies() {
+    expectEq(fuse::physics::broadphase::estimatePairCountForUniqueBodies(0u), 0u,
+             "zero bodies yields zero pairs");
+    expectEq(fuse::physics::broadphase::estimatePairCountForUniqueBodies(1u), 0u,
+             "single body yields zero pairs");
+    expectEq(fuse::physics::broadphase::estimatePairCountForUniqueBodies(3u), 3u,
+             "three unique bodies yield three pairs");
+    expectEq(fuse::physics::broadphase::estimatePairCountForUniqueBodies(4u), 6u,
+             "four unique bodies yield six pairs");
+}
+
+void testPairBufferCanAcceptPairsGuard() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.setMaxCapacity(2u);
+    expectTrue(buffer.canAcceptPairs(2u), "empty buffer accepts two pairs");
+    expectTrue(!buffer.canAcceptPairs(3u), "empty buffer rejects three pairs");
+    expectTrue(buffer.canAcceptPairs(0u), "zero additional pairs always accepted");
+
+    buffer.push(0u, 1u);
+    expectTrue(buffer.canAcceptPairs(1u), "partial buffer accepts one more pair");
+    expectTrue(!buffer.canAcceptPairs(2u), "partial buffer rejects two more pairs");
+    expectTrue(!buffer.hasDroppedPairs(), "accepted pushes do not set dropped count");
+
+    buffer.push(2u, 3u);
+    expectTrue(!buffer.canAcceptPairs(1u), "full buffer rejects another pair");
+    expectTrue(!buffer.push(4u, 5u), "push on full buffer fails");
+    expectTrue(buffer.hasDroppedPairs(), "rejected push increments dropped count");
+}
+
+void testBroadphaseCanSkipIntegration() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+
+    fuse::physics::broadphase::SpatialHashParams params;
+    params.cellSize = 2.f;
+    params.tableSize = 128;
+
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    fuse::physics::broadphase::runBroadphaseIntoBuffer(bodies, shapes, params, buffer);
+    expectTrue(fuse::physics::broadphase::canSkipBroadphase(bodies, shapes),
+               "integration scene is skippable before population");
+    expectTrue(buffer.isEmpty(), "skippable broadphase leaves empty pair buffer");
+}
+
 void testBroadphaseBoxShapeCellRange() {
     fuse::physics::RigidBodySoA bodies;
     fuse::physics::CollisionShapeSoA shapes;
@@ -791,6 +901,12 @@ int main() {
     testNormalizeSpatialHashParamsAndOccupancy();
     testBroadphaseNormalizedParamsGuard();
     testPairBufferCompactionEarlyOuts();
+    testEmptyBroadphaseInputGuards();
+    testCandidatePairRejectsForReasonGuards();
+    testCellOccupancyBudgetGuards();
+    testEstimatePairCountForUniqueBodies();
+    testPairBufferCanAcceptPairsGuard();
+    testBroadphaseCanSkipIntegration();
     testBroadphaseBoxShapeCellRange();
 
     if (g_failures == 0) {
