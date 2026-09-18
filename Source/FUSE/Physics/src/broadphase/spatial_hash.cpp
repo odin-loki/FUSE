@@ -24,6 +24,25 @@ const char* candidatePairRejectReasonName(CandidatePairRejectReason reason) {
     return "Unknown";
 }
 
+BroadphaseRefinePreflight preflight_broadphase_refine(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer) {
+    BroadphaseRefinePreflight preflight{};
+    preflight.emptyInput = canSkipBroadphase(bodies, shapes);
+    preflight.emptyBuffer = buffer.canSkipSoAIteration() || !buffer.hasValidPairs();
+    preflight.validPairCount = buffer.countValidSlots();
+    preflight.skipped = preflight.emptyInput || preflight.emptyBuffer || preflight.validPairCount == 0u;
+    return preflight;
+}
+
+bool canSkipRefineBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer) {
+    return !preflight_broadphase_refine(bodies, shapes, buffer).can_refine();
+}
+
 namespace {
 
 constexpr u32 kBuildGrainSize = 8u;
@@ -160,7 +179,7 @@ void populateShapeCells(
             const f32 radius = shapeRadius(shapes, shapeIndex);
             range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
         }
-        if (isEmptyCellRange(range)) {
+        if (!preflight_cell_occupancy(range).can_insert_cells()) {
             return;
         }
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
@@ -180,7 +199,7 @@ void populateShapeCells(
         const f32 radius = shapeRadius(shapes, shapeIndex);
         range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
     }
-    if (isEmptyCellRange(range)) {
+    if (!preflight_cell_occupancy(range).can_insert_cells()) {
         return;
     }
     for (s32 cz = range.minCell.z; cz <= range.maxCell.z; ++cz) {
@@ -245,7 +264,7 @@ void runBroadphaseIntoBufferInternal(
     bool use2D,
     PairBufferSoA& buffer) {
     buffer.clear();
-    if (canSkipBroadphase(bodies, shapes)) {
+    if (!preflight_broadphase_dispatch(bodies, shapes).can_dispatch()) {
         return;
     }
 
@@ -332,7 +351,7 @@ void refineBroadphasePairsParallelImpl(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     PairBufferSoA& buffer) {
-    if (buffer.canSkipSoAIteration() || !buffer.hasValidPairs() || canSkipBroadphase(bodies, shapes)) {
+    if (canSkipRefineBroadphase(bodies, shapes, buffer)) {
         return;
     }
 
