@@ -210,6 +210,42 @@ TaaHistoryReuseBlockReason classifyTaaHistoryReuseBlock(const TaaHistoryBuffer& 
     return TaaHistoryReuseBlockReason::None;
 }
 
+const char* taaResolveBlendRejectReasonLabel(TaaResolveBlendRejectReason reason) {
+    switch (reason) {
+    case TaaResolveBlendRejectReason::None:
+        return "none";
+    case TaaResolveBlendRejectReason::InvalidWeights:
+        return "invalid_weights";
+    case TaaResolveBlendRejectReason::InconsistentWithReuse:
+        return "inconsistent_with_reuse";
+    }
+    return "unknown";
+}
+
+TaaResolveBlendRejectReason classifyTaaResolveBlendReject(const TaaResolveDesc& desc,
+                                                          const TaaHistoryBuffer& history) {
+    const TaaBlendWeights weights = computeTaaResolveBlendWeights(desc, history);
+    if (!taaBlendWeightsValid(weights)) {
+        return TaaResolveBlendRejectReason::InvalidWeights;
+    }
+    const bool firstFrame = !history.hasValidHistory();
+    const bool historyBlendAllowed = taaHistoryBlendAllowed(firstFrame, history) &&
+                                     taaResolveCanReuseHistory(desc, history);
+    if (!taaBlendWeightsConsistentWithReuse(weights, historyBlendAllowed)) {
+        return TaaResolveBlendRejectReason::InconsistentWithReuse;
+    }
+    return TaaResolveBlendRejectReason::None;
+}
+
+bool preflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                     TaaResolveBlendRejectReason* reason) {
+    const TaaResolveBlendRejectReason reject = classifyTaaResolveBlendReject(desc, history);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == TaaResolveBlendRejectReason::None;
+}
+
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaHistoryCanReuse(history)) {
         return false;

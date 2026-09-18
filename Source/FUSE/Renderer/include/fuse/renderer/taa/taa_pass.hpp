@@ -46,6 +46,10 @@ public:
     void advanceJitter();
     /// Align jitter to a monotonic frame counter (wraps with sequence period).
     void syncJitterToFrameIndex(u32 frameIndex);
+    /// Sync jitter only when the sequence is valid; returns false when blocked (B5.9 deepen).
+    bool syncJitterToFrameIndexIfReady(u32 frameIndex);
+    /// True when pass jitter monotonic counter and slot match `frameIndex` (B5.9 deepen).
+    bool jitterAlignedToFrameIndex(u32 frameIndex) const;
     void invalidateHistory();
     void resize(u32 width, u32 height);
     bool matchesDimensions(u32 width, u32 height) const;
@@ -64,6 +68,11 @@ public:
     bool resolveWouldReuseHistory(const TaaResolveDesc& desc) const;
     /// Classify why pass history reuse is blocked (B5.9 deepen).
     TaaHistoryReuseBlockReason classifyHistoryReuseBlock(u32 observedGeneration) const;
+    /// True when pass history temporal reuse is allowed (B5.9 deepen).
+    bool preflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBlockReason* reason = nullptr) const;
+    /// True when expected resolve blend weights pass validation and reuse policy (B5.9 deepen).
+    bool preflightResolveBlendWeights(const TaaResolveDesc& desc,
+                                      TaaResolveBlendRejectReason* reason = nullptr) const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
