@@ -90,6 +90,10 @@ u32 currentFlowNestingDepth() {
     return threadLocalFlowNestingDepth();
 }
 
+bool isValidEventName(const char* name) {
+    return name != nullptr && name[0] != '\0';
+}
+
 std::string formatCounterArgsJson(const ProfileEvent& event) {
     std::string args = "\"args\":{\"value\":";
     if (event.counterKind == CounterValueKind::Float) {
@@ -222,7 +226,7 @@ const char* chromeCategory(EventPhase phase) {
 
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
-      m_active(g_enabled.load(std::memory_order_acquire) && name != nullptr) {
+      m_active(g_enabled.load(std::memory_order_acquire) && isValidEventName(name)) {
     if (m_active) {
         m_scopeId = g_nextScopeId.fetch_add(1u, std::memory_order_acq_rel);
         m_nestingDepth = pushNestingDepth();
@@ -285,6 +289,18 @@ u32 openAsyncFlowCount() {
     return g_openAsyncFlowCount.load(std::memory_order_acquire);
 }
 
+bool hasOpenAsyncFlows() {
+    return openAsyncFlowCount() > 0u;
+}
+
+bool isScopeNestingBalanced() {
+    return nestingDepth() == 0u;
+}
+
+bool isFlowNestingBalanced() {
+    return flowNestingDepth() == 0u;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -316,6 +332,16 @@ const ProfileEvent& eventAt(u32 index) {
     const u32 start = head >= count ? head - count : 0u;
     const u32 ringIndex = (start + index) % kRingCapacity;
     return g_events[ringIndex];
+}
+
+bool tryEventAt(u32 index, ProfileEvent& outEvent) {
+    if (!isEventIndexValid(index)) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    outEvent = eventAt(index);
+    return isValidProfileEvent(outEvent);
 }
 
 u32 lastEventIndex() {
@@ -350,7 +376,7 @@ u32 nextFlowId() {
 }
 
 void beginAsyncFlow(const char* name, u32 flowId) {
-    if (!g_enabled.load(std::memory_order_acquire) || name == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)) {
         return;
     }
 
@@ -364,7 +390,7 @@ void beginAsyncFlow(const char* name, u32 flowId) {
 }
 
 void endAsyncFlow(const char* name, u32 flowId) {
-    if (!g_enabled.load(std::memory_order_acquire) || name == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)) {
         return;
     }
 
@@ -384,7 +410,7 @@ void endAsyncFlow(const char* name, u32 flowId) {
 }
 
 void sampleCounter(const char* track, s64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || track == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
         return;
     }
 
@@ -400,7 +426,7 @@ void sampleCounter(const char* track, s64 value) {
 }
 
 void sampleCounterFloat(const char* track, f64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || track == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
         return;
     }
 
@@ -416,7 +442,7 @@ void sampleCounterFloat(const char* track, f64 value) {
 }
 
 void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || track == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
         return;
     }
 
@@ -432,7 +458,7 @@ void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
 }
 
 void sampleCounterFloatSnapshotAtFrame(const char* track, f64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || track == nullptr) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
         return;
     }
 
