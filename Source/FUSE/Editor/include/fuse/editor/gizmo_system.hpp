@@ -116,6 +116,40 @@ bool isSnapStepValid(GizmoMode mode, const GizmoSnapSettings& settings);
 /// True when snap is enabled with a usable step for the active mode (B6.4 deepen pass).
 bool canApplySnap(GizmoMode mode, const GizmoSnapSettings& settings);
 
+/// Read-only pick diagnostics — no mutation (B6.4 deepen follow-up — pick guard).
+struct PickPreflight {
+    bool emptyRay = false;
+    bool emptyHit = false;
+    bool invalidPickConfig = false;
+    bool screenMiss = false;
+    bool pickMiss = false;
+
+    bool canPick() const {
+        return !emptyRay && !emptyHit && !invalidPickConfig && !screenMiss && !pickMiss;
+    }
+};
+
+PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+                            GizmoSpace space, f32 axisLength, f32 pickRadius);
+PickPreflight preflightPick(const GizmoHitTest& hit, GizmoMode mode);
+
+/// Read-only snap diagnostics — no mutation (B6.4 deepen follow-up — snap guard).
+struct SnapPreflight {
+    bool snapDisabled = false;
+    bool invalidStep = false;
+
+    bool canApply() const { return !snapDisabled && !invalidStep; }
+};
+
+SnapPreflight preflightSnap(GizmoMode mode, const GizmoSnapSettings& settings);
+
+/// Guarded transform snap — returns false when snap cannot apply (B6.4 deepen follow-up).
+bool trySnapTransform(const GizmoTransform& transform, GizmoMode mode,
+                      const GizmoSnapSettings& settings, GizmoTransform& out);
+
+/// Mode-aware drag-delta snap with step validation (B6.4 deepen follow-up).
+f32 trySnapDragDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings);
+
 /// Read-only begin-drag diagnostics — no mutation (B6.4 deepen pass).
 struct BeginDragPreflight {
     bool canBegin = false;
@@ -126,6 +160,16 @@ struct BeginDragPreflight {
     bool pickMiss = false;
     bool alreadyDragging = false;
 };
+
+/// Read-only update-drag diagnostics — no mutation (B6.4 deepen follow-up).
+struct UpdateDragPreflight {
+    bool notDragging = false;
+    bool emptyHit = false;
+
+    bool canUpdate() const { return !notDragging && !emptyHit; }
+};
+
+UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging);
 
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
                                       GizmoMode mode, GizmoSpace space, f32 axisLength,
@@ -211,6 +255,14 @@ public:
     [[nodiscard]] BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit) const;
     [[nodiscard]] BeginDragPreflight preflightBeginDrag(const GizmoRay& ray,
                                                          const GizmoTransform& transform) const;
+    [[nodiscard]] PickPreflight preflightPick(const GizmoRay& ray,
+                                              const GizmoTransform& transform) const;
+    [[nodiscard]] PickPreflight preflightPick(const GizmoHitTest& hit) const;
+    [[nodiscard]] SnapPreflight preflightSnap() const;
+    [[nodiscard]] bool canApplySnapNow() const;
+    [[nodiscard]] bool trySnapTransform(const GizmoTransform& transform,
+                                        GizmoTransform& out) const;
+    [[nodiscard]] UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit) const;
     /// Guarded begin-drag — returns false on empty viewport / miss picks (B6.4 deepen follow-up).
     bool tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& current, GizmoResult& out);
     bool tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current, GizmoResult& out);
