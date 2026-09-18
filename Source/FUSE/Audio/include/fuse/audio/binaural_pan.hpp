@@ -36,6 +36,22 @@ bool should_skip_hrtf_convolution(const HrtfIrStub& ir);
 /// True when IR samples are non-null but length is zero (malformed stub).
 bool is_nonnull_zero_length_hrtf_ir(const HrtfIrStub& ir);
 
+/// Empty-IR preflight diagnostics — read-only guard bundle (B7.2 deepen).
+struct HrtfIrPreflight {
+    bool emptyIr = false;
+    bool nullSamples = false;
+    bool zeroLength = false;
+    bool malformedIr = false;
+
+    bool can_convolve() const { return !emptyIr && !malformedIr; }
+};
+
+/// Preflight an HRTF IR stub before convolution dispatch.
+HrtfIrPreflight preflight_hrtf_ir(const HrtfIrStub& ir);
+
+/// Non-mutating convolution predicate — mirrors \c HrtfIrPreflight::can_convolve.
+bool can_convolve_hrtf_ir(const HrtfIrPreflight& preflight);
+
 /// HRTF pan routing — empty IR uses ILD/ITD stub; convolution deferred until IR wired.
 enum class HrtfPanPath {
     Bypass,
@@ -48,6 +64,28 @@ HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const
 
 /// Select pan path when no IR is wired (ILD/ITD stub or bypass).
 HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener);
+
+/// Pan-path preflight diagnostics — read-only guard bundle (B7.2 deepen).
+struct HrtfPanPathPreflight {
+    HrtfPanPath path = HrtfPanPath::Bypass;
+    bool hrtfDisabled = false;
+    bool coLocated = false;
+    bool emptyIr = false;
+    bool skipped = false;
+
+    bool can_spatial_pan() const { return !skipped && path != HrtfPanPath::Bypass; }
+    bool can_convolve() const { return can_spatial_pan() && path == HrtfPanPath::Convolution; }
+};
+
+/// Preflight HRTF pan routing from enable flag, IR stub, and listener-local offset.
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
+                                              const Vec3& rel_listener);
+
+/// Preflight pan routing when no IR is wired (ILD/ITD stub or bypass).
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener);
+
+/// Non-mutating spatial-pan predicate — mirrors \c HrtfPanPathPreflight::can_spatial_pan.
+bool can_apply_spatial_hrtf_pan(const HrtfPanPathPreflight& preflight);
 
 /// True when a resolved pan path bypasses HRTF (disabled or co-located).
 bool is_hrtf_pan_bypassed(HrtfPanPath path);
@@ -236,6 +274,25 @@ bool should_skip_hrtf_attenuation_coupling(HrtfPanPath path);
 /// Combined guard — spatial path and non-unity attenuation warrant narrowing.
 bool should_narrow_hrtf_spatial_image(HrtfPanPath path, float distance_attenuation,
                                       float occlusion_gain);
+
+/// Attenuation-coupling preflight diagnostics — read-only guard bundle (B7.2 deepen).
+struct HrtfAttenuationCouplingPreflight {
+    bool bypassPath = false;
+    bool unityAttenuation = false;
+    bool skipped = false;
+    float spatialBlend = 1.f;
+
+    bool can_narrow() const { return !skipped; }
+};
+
+/// Preflight distance + occlusion coupling before spatial image narrowing.
+HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling(
+    HrtfPanPath path, float distance_attenuation, float occlusion_gain,
+    const HrtfAttenuationCoupling& coupling = {},
+    const BinauralPanParams& params = {});
+
+/// Non-mutating narrowing predicate — mirrors \c HrtfAttenuationCouplingPreflight::can_narrow.
+bool can_narrow_hrtf_spatial_image(const HrtfAttenuationCouplingPreflight& preflight);
 
 /// True when a spatial blend preserves full L/R separation.
 bool is_unity_hrtf_spatial_blend(float blend, float epsilon = 1e-5f);

@@ -46,6 +46,38 @@ bool is_nonnull_zero_length_hrtf_ir(const HrtfIrStub& ir) {
     return ir.samples != nullptr && ir.length == 0;
 }
 
+HrtfIrPreflight preflight_hrtf_ir(const HrtfIrStub& ir) {
+    HrtfIrPreflight preflight{};
+    preflight.nullSamples = ir.samples == nullptr;
+    preflight.zeroLength = ir.length == 0;
+    preflight.malformedIr = is_nonnull_zero_length_hrtf_ir(ir);
+    preflight.emptyIr = is_empty_hrtf_ir(ir);
+    return preflight;
+}
+
+bool can_convolve_hrtf_ir(const HrtfIrPreflight& preflight) {
+    return preflight.can_convolve();
+}
+
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
+                                             const Vec3& rel_listener) {
+    HrtfPanPathPreflight preflight{};
+    preflight.hrtfDisabled = !hrtf_enabled;
+    preflight.coLocated = is_co_located_hrtf_source(rel_listener);
+    preflight.emptyIr = is_empty_hrtf_ir(ir);
+    preflight.path = resolve_hrtf_pan_path(hrtf_enabled, ir, rel_listener);
+    preflight.skipped = should_skip_hrtf_pan_path(preflight.path);
+    return preflight;
+}
+
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener) {
+    return preflight_hrtf_pan_path(hrtf_enabled, make_empty_hrtf_ir(), rel_listener);
+}
+
+bool can_apply_spatial_hrtf_pan(const HrtfPanPathPreflight& preflight) {
+    return preflight.can_spatial_pan();
+}
+
 HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
                                   const Vec3& rel_listener) {
     if (!should_apply_hrtf_pan(hrtf_enabled, rel_listener)) {
@@ -324,6 +356,23 @@ bool should_narrow_hrtf_spatial_image(HrtfPanPath path, float distance_attenuati
         && !is_unity_hrtf_attenuation(distance_attenuation, occlusion_gain);
 }
 
+HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling(
+    HrtfPanPath path, float distance_attenuation, float occlusion_gain,
+    const HrtfAttenuationCoupling& coupling, const BinauralPanParams& params) {
+    HrtfAttenuationCouplingPreflight preflight{};
+    preflight.bypassPath = is_hrtf_pan_path_bypass(path);
+    preflight.unityAttenuation =
+        is_unity_hrtf_attenuation(distance_attenuation, occlusion_gain);
+    preflight.spatialBlend =
+        compute_hrtf_spatial_blend(distance_attenuation, occlusion_gain, coupling, params);
+    preflight.skipped = preflight.bypassPath || preflight.unityAttenuation;
+    return preflight;
+}
+
+bool can_narrow_hrtf_spatial_image(const HrtfAttenuationCouplingPreflight& preflight) {
+    return preflight.can_narrow();
+}
+
 float compute_hrtf_distance_factor(float distance_attenuation,
                                    const BinauralPanParams& params) {
     const float atten = clamp_hrtf_attenuation(distance_attenuation);
@@ -387,7 +436,9 @@ void apply_hrtf_attenuation_coupling_for_path(BinauralPanGains& gains, HrtfPanPa
                                               float distance_attenuation, float occlusion_gain,
                                               const HrtfAttenuationCoupling& coupling,
                                               const BinauralPanParams& params) {
-    if (!should_narrow_hrtf_spatial_image(path, distance_attenuation, occlusion_gain)) {
+    if (!can_narrow_hrtf_spatial_image(
+            preflight_hrtf_attenuation_coupling(path, distance_attenuation, occlusion_gain,
+                                                coupling, params))) {
         return;
     }
     apply_hrtf_attenuation_coupling(gains, distance_attenuation, occlusion_gain, coupling, params);
