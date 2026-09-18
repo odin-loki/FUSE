@@ -139,6 +139,61 @@ void ContactManifold::invalidateIfEmpty() {
     }
 }
 
+u32 ContactManifold::countSeparatedPoints(f32 epsilon) const {
+    u32 separated = 0u;
+    for (u32 i = 0u; i < pointCount; ++i) {
+        if (points[i].penetration < -epsilon) {
+            ++separated;
+        }
+    }
+    return separated;
+}
+
+bool ContactManifold::hasShallowPenetrations(f32 minDepth) const {
+    for (u32 i = 0u; i < pointCount; ++i) {
+        if (points[i].penetration >= 0.f && points[i].penetration < minDepth) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ContactManifold::hasExcessContactPoints() const {
+    return pointCount > kMaxContactPointsPerManifold;
+}
+
+ManifoldPrunePreflight ContactManifold::prunePreflight(
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) const {
+    ManifoldPrunePreflight preflight{};
+    preflight.separatedCount = countSeparatedPoints(separationEpsilon);
+    preflight.excessPoints = pointCount > kMaxContactPointsPerManifold;
+
+    const f32 epsilonSq = duplicateEpsilon * duplicateEpsilon;
+    for (u32 i = 0u; i < pointCount; ++i) {
+        for (u32 j = i + 1u; j < pointCount; ++j) {
+            const vec3 delta = points[i].point - points[j].point;
+            if (delta.dot(delta) <= epsilonSq) {
+                ++preflight.duplicatePairs;
+            }
+        }
+    }
+
+    return preflight;
+}
+
+bool ContactManifold::pruneContactPointsIfNeeded(
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) {
+    if (!needsPruning(separationEpsilon, duplicateEpsilon)) {
+        return false;
+    }
+
+    const u32 before = pointCount;
+    pruneContactPoints(separationEpsilon, duplicateEpsilon);
+    return pointCount != before;
+}
+
 bool ContactManifold::needsPruning(f32 separationEpsilon, f32 duplicateEpsilon) const {
     if (pointCount == 0u) {
         return false;

@@ -204,10 +204,34 @@ const char* contact_pair_reject_reason_name(ContactPairRejectReason reason) {
         return "UnsupportedShapePair";
     case ContactPairRejectReason::BothStatic:
         return "BothStatic";
+    case ContactPairRejectReason::BothSleeping:
+        return "BothSleeping";
+    case ContactPairRejectReason::BothKinematic:
+        return "BothKinematic";
     case ContactPairRejectReason::DegenerateShape:
         return "DegenerateShape";
     }
     return "Unknown";
+}
+
+bool contact_pair_reject_reason_is_structural(ContactPairRejectReason reason) {
+    switch (reason) {
+    case ContactPairRejectReason::SelfPair:
+    case ContactPairRejectReason::OutOfRangeBody:
+    case ContactPairRejectReason::MissingShape:
+        return true;
+    default:
+        return false;
+    }
+}
+
+ContactPairDispatchPreflight preflight_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    ContactPairDispatchPreflight preflight{};
+    preflight.reason = contact_pair_reject_reason(pair, bodies, shapes);
+    return preflight;
 }
 
 bool is_trigger_contact_pair(
@@ -230,6 +254,28 @@ bool is_static_contact_pair(
     const bool staticA = (bodies.flags[pair.bodyA] & RB_STATIC) != 0u;
     const bool staticB = (bodies.flags[pair.bodyB] & RB_STATIC) != 0u;
     return staticA && staticB;
+}
+
+bool is_sleeping_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies) {
+    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
+        return false;
+    }
+    const bool sleepingA = (bodies.flags[pair.bodyA] & RB_SLEEPING) != 0u;
+    const bool sleepingB = (bodies.flags[pair.bodyB] & RB_SLEEPING) != 0u;
+    return sleepingA && sleepingB;
+}
+
+bool is_kinematic_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies) {
+    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
+        return false;
+    }
+    const bool kinematicA = (bodies.flags[pair.bodyA] & RB_KINEMATIC) != 0u;
+    const bool kinematicB = (bodies.flags[pair.bodyB] & RB_KINEMATIC) != 0u;
+    return kinematicA && kinematicB;
 }
 
 bool is_degenerate_shape_pair(
@@ -303,6 +349,12 @@ ContactPairRejectReason contact_pair_reject_reason(
     }
     if (is_static_contact_pair(pair, bodies)) {
         return ContactPairRejectReason::BothStatic;
+    }
+    if (is_sleeping_contact_pair(pair, bodies)) {
+        return ContactPairRejectReason::BothSleeping;
+    }
+    if (is_kinematic_contact_pair(pair, bodies)) {
+        return ContactPairRejectReason::BothKinematic;
     }
     if (is_degenerate_shape_pair(pair, shapes)) {
         return ContactPairRejectReason::DegenerateShape;
@@ -389,7 +441,7 @@ void compute_friction_tangents(ContactManifold& manifold) {
         return;
     }
 
-    if (has_cached_friction_basis(manifold)) {
+    if (has_cached_friction_basis(manifold) && !friction_basis_is_stale(manifold)) {
         return;
     }
 

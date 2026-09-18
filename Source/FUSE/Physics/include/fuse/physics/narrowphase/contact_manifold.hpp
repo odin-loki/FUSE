@@ -8,6 +8,17 @@ namespace fuse::physics::narrowphase {
 
 constexpr u32 kMaxContactPointsPerManifold = 4u;
 
+/// Const preflight summary for manifold prune steps (B4.3 deepen pass).
+struct ManifoldPrunePreflight {
+    u32 separatedCount = 0u;
+    u32 duplicatePairs = 0u;
+    bool excessPoints = false;
+
+    bool should_prune() const {
+        return separatedCount > 0u || duplicatePairs > 0u || excessPoints;
+    }
+};
+
 struct ContactPoint {
     vec3 point{};
     f32 penetration = 0.f;
@@ -73,6 +84,25 @@ struct ContactManifold {
 
     /// Clears `valid` when the manifold has no contact points (B4.3 deepen pass).
     void invalidateIfEmpty();
+
+    /// Count contact points separated below `-epsilon` (B4.3 deepen pass).
+    u32 countSeparatedPoints(f32 epsilon = 1e-6f) const;
+
+    /// Returns true when at least one penetrating point is shallower than `minDepth` (B4.3 deepen pass).
+    bool hasShallowPenetrations(f32 minDepth) const;
+
+    /// Returns true when `pointCount` exceeds `kMaxContactPointsPerManifold` (B4.3 deepen pass).
+    bool hasExcessContactPoints() const;
+
+    /// Build a prune preflight summary without mutating slots (B4.3 deepen pass).
+    ManifoldPrunePreflight prunePreflight(
+        f32 separationEpsilon = 1e-6f,
+        f32 duplicateEpsilon = 1e-4f) const;
+
+    /// Prune only when `needsPruning` is true; returns whether any points were removed (B4.3 deepen pass).
+    bool pruneContactPointsIfNeeded(
+        f32 separationEpsilon = 1e-6f,
+        f32 duplicateEpsilon = 1e-4f);
 
     /// Drop separated contact points with penetration below `-epsilon` (B4.3 deepen).
     void pruneNonPenetratingPoints(f32 epsilon = 1e-6f);
