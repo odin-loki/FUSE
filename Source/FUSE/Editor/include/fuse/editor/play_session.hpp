@@ -24,10 +24,24 @@ struct FixedStepPreflight {
     bool canDrain() const { return !skipped && allowed > 0; }
 };
 
+/// Read-only variable-tick guard diagnostics (B6.12 deepen follow-up — inactive tick).
+struct VariableTickPreflight {
+    bool skipped = false;
+    bool wouldSimulate = false;
+    bool wouldAdvanceAccumulator = false;
+};
+
 /// Captured dirty-flag metadata for PIE restore (B6.12 deepen follow-up).
 struct DirtySnapshotInfo {
     bool captured = false;
     bool sceneModified = false;
+    u32 entityCount = 0;
+    u32 dirtyEntityCount = 0;
+};
+
+/// Captured world snapshot metadata for PIE restore (B6.12 deepen follow-up).
+struct WorldSnapshotInfo {
+    bool captured = false;
     u32 entityCount = 0;
 };
 
@@ -100,8 +114,15 @@ public:
     TickFixedStepPreflight preflightTickFixedStep(f32 dt, f32 fixedDt,
                                                   const PlayModePhysicsState& physics,
                                                   u32 maxSteps = 0) const;
+    /// Preflight a variable tick without mutating session state.
+    VariableTickPreflight preflightVariableTick(f32 dt, const PlayModePhysicsState& physics) const;
     bool shouldSkipVariableTick(f32 dt, const PlayModePhysicsState& physics) const;
     bool shouldSkipFixedStepDrain(f32 fixedDt, const PlayModePhysicsState& physics) const;
+    bool hasPendingFixedSteps(f32 fixedDt, const PlayModePhysicsState& physics) const;
+    bool canConsumeFixedSteps(f32 fixedDt, const PlayModePhysicsState& physics,
+                              u32 maxSteps = 0) const;
+    /// Sub-fixed remainder left in `tickAccumulator()` after pending slices.
+    f32 fixedAccumulatorRemainder(f32 fixedDt) const;
     bool shouldSkipDirtySnapshotRestore() const { return !m_hasDirtySnapshot; }
     /// Preflight dirty-flag restore without mutating editor state.
     DirtySnapshotPreflight preflightDirtySnapshot() const;
@@ -115,6 +136,12 @@ public:
     DirtySnapshotInfo dirtySnapshotInfo() const;
     ecs::EntityID dirtySnapshotEntityAt(usize index) const;
     bool transformDirtyAt(usize index) const;
+    bool transformDirtyForEntity(ecs::EntityID entityId) const;
+    u32 dirtySnapshotDirtyEntityCount() const;
+    WorldSnapshotInfo worldSnapshotInfo() const;
+    ecs::EntityID worldSnapshotEntityAt(usize index) const;
+    bool shouldSkipWorldSnapshotDrain() const;
+    bool shouldSkipDirtySnapshotDrain() const;
     bool hasWorldSnapshot() const { return m_hasWorldSnapshot; }
     bool hasDirtySnapshot() const { return m_hasDirtySnapshot; }
 
