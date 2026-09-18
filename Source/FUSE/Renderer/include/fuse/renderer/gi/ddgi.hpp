@@ -82,6 +82,41 @@ struct DDGISampleResult {
     bool valid = false;
 };
 
+/// Why probe sample-coord preflight rejected the request (B5.6 deepen).
+enum class ProbeSampleRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    OutOfBounds,
+    InvalidWeights,
+};
+
+/// Human-readable label for probe sample-coord reject reasons (logging / tests).
+const char* probeSampleRejectReasonLabel(ProbeSampleRejectReason reason);
+
+/// Why probe cache-index lookup preflight rejected the request (B5.6 deepen).
+enum class CacheLookupRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    UndersizedCache,
+    ProbeIndexOutOfRange,
+};
+
+/// Human-readable label for cache-index reject reasons (logging / tests).
+const char* cacheLookupRejectReasonLabel(CacheLookupRejectReason reason);
+
+/// Why DDGI probe-update launch preflight rejected the request (B5.6 deepen).
+enum class LaunchRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    NullIndices,
+    ZeroCount,
+    ProbeIndexOutOfRange,
+    ZeroRaysPerProbe,
+};
+
+/// Human-readable label for launch reject reasons (logging / tests).
+const char* launchRejectReasonLabel(LaunchRejectReason reason);
+
 /// Integer probe coordinate within the 3D grid (B5.6 deepen).
 struct ProbeGridCoord {
     u32 x = 0;
@@ -201,10 +236,21 @@ struct ProbeGridLayout {
     static void normalizeProbeSampleCoords(ProbeSampleCoords& coords);
     /// True when corner indices lie within the grid and weights are in [0, 1].
     static bool isValidProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// True when corner indices and interpolation weights lie within grid bounds.
+    static bool areProbeSampleCoordsInBounds(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// True when sample coords exceed grid bounds or interpolation weights are outside [0, 1].
+    static bool isProbeSampleCoordsOutOfRange(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// Clamp sample coords in place; returns false without modifying `coords` on an empty grid.
+    static bool tryClampProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCoords& coords);
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
                                        ProbeSampleCoords& out_coords);
+    /// Build sample coords with reject-reason diagnostics.
+    static bool tryBuildProbeSampleCoords(const DDGIDesc& desc,
+                                            const fuse::math::Vec3& world_position,
+                                            ProbeSampleCoords& out_coords,
+                                            ProbeSampleRejectReason& outReason);
     /// Fractional grid coordinates — origin cell centre is (0,0,0).
     static fuse::math::Vec3 worldToProbeGridCoord(const DDGIDesc& desc,
                                                   const fuse::math::Vec3& world_position);
@@ -247,10 +293,35 @@ bool isCacheSizedForGrid(const DDGIDesc& desc, u32 cache_count);
 u32 cacheEntriesMissing(const DDGIDesc& desc, u32 cache_count);
 /// Combined probe-index + cache-length guard for cache lookups.
 bool isCacheIndexValid(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
+/// Preflight guard before cache-index lookup; false on empty grid or undersized cache.
+bool canLookupCacheAtIndex(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
+/// Diagnose why cache-index lookup preflight would reject.
+bool tryCanLookupCacheAtIndex(const DDGIDesc& desc,
+                              u32 probe_index,
+                              u32 cache_count,
+                              CacheLookupRejectReason& outReason);
+/// Early-out when probe irradiance sampling should be skipped.
+bool shouldSkipProbeSample(const DDGIDesc& desc, u32 cache_count);
+/// Early-out when probe update launch should be skipped for an empty grid.
+bool shouldSkipProbeUpdate(const DDGIDesc& desc);
+/// Preflight guard before coord-based probe sampling; false on inaccessible grid or invalid coords.
+bool canSampleAtProbeCoords(const DDGIDesc& desc,
+                            const ProbeSampleCoords& coords,
+                            u32 cache_count);
+/// Diagnose why coord-based probe sample preflight would reject.
+bool tryCanSampleAtProbeCoords(const DDGIDesc& desc,
+                               const ProbeSampleCoords& coords,
+                               u32 cache_count,
+                               ProbeSampleRejectReason& outReason);
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
 bool isValidSampleRequest(const DDGIDesc& desc,
                           const DDGISampleRequest& request,
                           u32 cache_count);
+/// Diagnose why a sample request preflight would reject.
+bool tryIsValidSampleRequest(const DDGIDesc& desc,
+                             const DDGISampleRequest& request,
+                             u32 cache_count,
+                             CacheLookupRejectReason& outReason);
 fuse::math::Vec3 probeWorldPosition(const DDGIDesc& desc, u32 probe_index);
 /// World position after `clampProbeIndex` — safe for OOB scheduling indices.
 fuse::math::Vec3 probeWorldPositionClamped(const DDGIDesc& desc, u32 probe_index);
@@ -328,6 +399,11 @@ private:
 
 /// Preflight guard before host probe-update launch; false on empty grid or OOB indices.
 bool canLaunchDdgiProbeUpdate(const DDGIDesc& desc, const u32* probe_indices, u32 probe_count);
+/// Diagnose why probe-update launch preflight would reject.
+bool tryCanLaunchDdgiProbeUpdate(const DDGIDesc& desc,
+                                 const u32* probe_indices,
+                                 u32 probe_count,
+                                 LaunchRejectReason& outReason);
 
 /// Host launcher for probe trace + blend kernels — stub until CUDA kernels land.
 bool launch_ddgi_probe_update(const DDGIDesc& desc,
