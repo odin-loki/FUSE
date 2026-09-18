@@ -1182,6 +1182,141 @@ void testParticleGpuMirrorSyncAndWriteGuard() {
     expectTrue(mirror.isEmpty() == (mirror.alive_count == 0u), "isEmpty tracks alive count");
 }
 
+void testParticleGpuSlotOffsetHelpers() {
+    using fuse::vfx::ParticleGpuBufferLayout;
+    using fuse::vfx::ParticleGpuColumn;
+
+    const fuse::u32 capacity = 65u;
+    expectTrue(!ParticleGpuBufferLayout::validateSlotIndex(capacity, capacity),
+               "slot index equal to capacity is invalid");
+    expectTrue(!ParticleGpuBufferLayout::validateSlotIndex(0u, 0u), "zero capacity rejects slot index");
+    expectTrue(ParticleGpuBufferLayout::validateSlotIndex(0u, capacity), "first slot is valid");
+
+    const fuse::usize positions_slot_3 =
+        ParticleGpuBufferLayout::slotDeviceOffset(ParticleGpuColumn::Positions, 3u, capacity);
+    const fuse::usize positions_base =
+        ParticleGpuBufferLayout::columnDeviceOffset(ParticleGpuColumn::Positions, capacity);
+    expectEq(static_cast<fuse::u32>(positions_slot_3),
+             static_cast<fuse::u32>(positions_base + 3u * sizeof(fuse::math::Vec3)),
+             "slotDeviceOffset advances by element size");
+
+    const fuse::usize ages_slot_1 =
+        ParticleGpuBufferLayout::slotDeviceOffset(ParticleGpuColumn::Ages, 1u, capacity);
+    expectTrue(ages_slot_1 > positions_slot_3, "later columns have larger slot offsets");
+
+    const fuse::usize packed = ParticleGpuBufferLayout::packedDeviceBytes(capacity);
+    expectTrue(ParticleGpuBufferLayout::containsByteOffset(0u, capacity), "offset zero is in packed SSBO");
+    expectTrue(!ParticleGpuBufferLayout::containsByteOffset(packed, capacity),
+               "offset at packed size is out of bounds");
+    expectTrue(!ParticleGpuBufferLayout::containsByteOffset(packed + 16u, capacity),
+               "offset past packed size is out of bounds");
+
+    fuse::vfx::ParticleGpuColumnSpan span{};
+    expectTrue(ParticleGpuBufferLayout::locateColumnAtOffset(positions_slot_3, capacity, &span),
+               "locateColumnAtOffset finds positions column");
+    expectEq(static_cast<fuse::u32>(span.element_size), static_cast<fuse::u32>(sizeof(fuse::math::Vec3)),
+             "located span carries positions element size");
+
+    const fuse::usize padding_offset =
+        ParticleGpuBufferLayout::columnDeviceOffset(ParticleGpuColumn::Positions, capacity) +
+        ParticleGpuBufferLayout::columnByteSize(ParticleGpuColumn::Positions, capacity);
+    fuse::vfx::ParticleGpuColumnSpan padding_span{};
+    expectTrue(!ParticleGpuBufferLayout::locateColumnAtOffset(padding_offset, capacity, &padding_span),
+               "inter-column padding is not mapped to a column span");
+}
+
+void testParticleGpuGridThreadMapping() {
+    using fuse::vfx::particle_gpu_util::blockIndexOf;
+    using fuse::vfx::particle_gpu_util::globalThreadIndex;
+    using fuse::vfx::particle_gpu_util::localThreadIndex;
+
+    expectEq(blockIndexOf(255u, 256u), 0u, "blockIndexOf for last thread in first block");
+    expectEq(blockIndexOf(256u, 256u), 1u, "blockIndexOf rolls over at block boundary");
+    expectEq(localThreadIndex(255u, 256u), 255u, "localThreadIndex for last thread in block");
+    expectEq(localThreadIndex(256u, 256u), 0u, "localThreadIndex wraps at block boundary");
+    expectEq(globalThreadIndex(3u, 17u, 64u), 209u, "globalThreadIndex composes block and local indices");
+    expectEq(blockIndexOf(globalThreadIndex(3u, 17u, 64u), 64u), 3u, "blockIndexOf inverts globalThreadIndex");
+}
+
+void testParticleGpuDispatchPaddingAccounting() {
+    using fuse::vfx::ParticleGpuBufferLayout;
+    using fuse::vfx::ParticleGpuDispatch;
+
+    const fuse::vfx::ParticleGpuDispatch partial = ParticleGpuDispatch::forSimulate(100u);
+    expectTrue(partial.simPaddingAccountsFor(100u), "partial sim grid accounts for padding threads");
+    expectTrue(!partial.simPaddingAccountsFor(0u), "partial sim grid rejects zero slot accounting");
+
+    const fuse::vfx::ParticleGpuDispatch exact =
+        ParticleGpuDispatch::forSimulate(ParticleGpuBufferLayout::kSimBlockSize);
+    expectTrue(exact.simPaddingAccountsFor(ParticleGpuBufferLayout::kSimBlockSize),
+               "exact sim grid has zero padding accounting");
+
+    const fuse::vfx::ParticleGpuDispatch emit = ParticleGpuDispatch::forEmit(200u);
+    expectTrue(emit.emitPaddingAccountsFor(200u), "partial emit grid accounts for padding threads");
+    expectTrue(emit.emitPaddingAccountsFor(0u), "zero emit padding accounting passes");
+
+    const fuse::vfx::ParticleGpuDispatch idle = ParticleGpuDispatch::forFrame(0u, 0u);
+    expectTrue(idle.simPaddingAccountsFor(0u), "idle sim padding accounting passes");
+    expectTrue(idle.emitPaddingAccountsFor(0u), "idle emit padding accounting passes");
+}
+
+void testParticleGpuMirrorPreflight() {
+    using fuse::vfx::ParticleGpuSyncGuard;
+
+    fuse::vfx::ParticleSoA cpu{};
+    fuse::vfx::particle_soa::init(cpu, 8u);
+
+    fuse::vfx::ParticleGpuMirror mirror{};
+    const fuse::vfx::ParticleGpuMirrorPreflight uninitialized = mirror.preflightFromCpu(cpu);
+    expectTrue(!uninitialized.can_sync_from_cpu(), "uninitialized mirror preflight blocks guarded sync");
+    expectTrue(!uninitialized.can_write_to_cpu(), "uninitialized mirror preflight blocks write");
+    expectTrue(!uninitialized.can_pack(), "uninitialized mirror preflight blocks pack");
+
+    mirror.syncFromCpuSoA(cpu);
+    const fuse::vfx::ParticleGpuMirrorPreflight synced = mirror.preflightFromCpu(cpu);
+    expectTrue(synced.can_sync_from_cpu(), "synced mirror preflight allows sync");
+    expectTrue(synced.can_write_to_cpu(), "synced mirror preflight allows write");
+    expectTrue(synced.can_pack(), "synced mirror preflight allows pack");
+    expectTrue(synced.alive_count_matches_flags, "synced mirror alive count matches flags");
+
+    mirror.alive_count = 99u;
+    const fuse::vfx::ParticleGpuMirrorPreflight mismatched = mirror.preflightFromCpu(cpu);
+    expectTrue(!mismatched.alive_count_matches_flags, "stale alive_count fails preflight");
+    expectTrue(!mismatched.can_write_to_cpu(), "stale alive_count blocks write preflight");
+
+    mirror.syncAliveCountFromFlags();
+    expectTrue(mirror.tryWriteToCpuSoA(cpu), "tryWriteToCpuSoA succeeds after alive count repair");
+    expectEq(static_cast<fuse::u32>(mirror.writeGuardForCpu(cpu)),
+             static_cast<fuse::u32>(ParticleGpuSyncGuard::Ok),
+             "write guard ok after repair");
+
+    fuse::vfx::ParticleSoA smaller{};
+    fuse::vfx::particle_soa::init(smaller, 4u);
+    expectTrue(!mirror.tryWriteToCpuSoA(smaller), "tryWriteToCpuSoA rejects capacity mismatch");
+}
+
+void testParticleGpuFramePlanPreflight() {
+    const fuse::vfx::ParticleGpuFramePlan active =
+        fuse::vfx::ParticleGpuFramePlan::forStub(100u, 200u, 48u);
+    const fuse::vfx::ParticleGpuFramePreflight active_preflight = active.preflight();
+    expectTrue(active_preflight.ready_for_stub(), "active frame preflight is ready");
+    expectTrue(active_preflight.buffers_ok, "active frame buffers validate");
+    expectTrue(active_preflight.sim_dispatch_ok, "active frame sim dispatch covers capacity");
+    expectTrue(active_preflight.emit_dispatch_ok, "active frame emit dispatch covers count");
+    expectTrue(active_preflight.sim_padding_ok, "active frame sim padding accounts");
+    expectTrue(active_preflight.emit_padding_ok, "active frame emit padding accounts");
+
+    fuse::vfx::ParticleGpuFramePlan broken = active;
+    broken.buffers.capacity = 0u;
+    const fuse::vfx::ParticleGpuFramePreflight broken_preflight = broken.preflight();
+    expectTrue(!broken_preflight.ready_for_stub(), "broken frame preflight fails ready check");
+    expectTrue(!broken_preflight.buffers_ok, "broken frame fails buffer sizing");
+
+    const fuse::vfx::ParticleGpuFramePlan idle =
+        fuse::vfx::ParticleGpuFramePlan::forStub(0u, 0u, 0u);
+    expectTrue(idle.preflight().ready_for_stub(), "idle frame preflight is ready");
+}
+
 void testSoaOpsEmptyBurst() {
     fuse::vfx::ParticleSoA soa{};
     fuse::vfx::ParticleEmitterDesc desc{};
@@ -1891,6 +2026,11 @@ int main() {
     testParticleGpuFramePlanPaddingAndBuffers();
     testParticleGpuFramePlan();
     testParticleGpuMirrorSyncAndWriteGuard();
+    testParticleGpuSlotOffsetHelpers();
+    testParticleGpuGridThreadMapping();
+    testParticleGpuDispatchPaddingAccounting();
+    testParticleGpuMirrorPreflight();
+    testParticleGpuFramePlanPreflight();
     testParticleGpuPointerBundle();
     testParticleGpuLayoutSize();
     testParticleGpuEmptyDispatch();
