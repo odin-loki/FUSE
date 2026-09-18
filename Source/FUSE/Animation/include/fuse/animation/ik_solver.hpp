@@ -7,6 +7,21 @@
 
 namespace fuse::animation {
 
+/// True when `pose` has no bones or no world transforms.
+[[nodiscard]] bool is_pose_empty(const Pose& pose);
+
+/// True when `pose` has no bones or its bone count does not match the skeleton.
+[[nodiscard]] bool needs_pose_bind_fallback(const Pose& pose, const Skeleton& skel);
+
+/// Seed `pose` from skeleton bind pose when it is empty or mismatched.
+void ensure_pose_bind_fallback(Pose& pose, const Skeleton& skel);
+
+/// True when `root`→`mid`→`end` form a valid parent chain with in-range, distinct indices.
+[[nodiscard]] bool is_valid_two_bone_chain(const Skeleton& skel, u32 root, u32 mid, u32 end);
+
+/// True when `bone_indices` has at least two in-range entries on a non-empty skeleton.
+[[nodiscard]] bool is_valid_fabrik_chain(const Skeleton& skel, const std::vector<u32>& bone_indices);
+
 /// Normalize a pole hint; when zero or parallel to `root_to_target`, pick a stable bend axis.
 [[nodiscard]] vec3 normalize_ik_pole_vector(const vec3& pole, const vec3& root_to_target);
 
@@ -56,6 +71,9 @@ struct FABRIKChain {
     [[nodiscard]] bool has_valid_chain(const Skeleton& skel) const;
 
     /// Returns false when `has_valid_chain` is false.
+    [[nodiscard]] bool can_solve(const Skeleton& skel) const;
+
+    /// Returns false when `has_valid_chain` is false.
     [[nodiscard]] bool solve(Pose& pose, const Skeleton& skel);
 };
 
@@ -78,6 +96,9 @@ struct TwoBoneIK {
 
     /// Pole vector after zero/parallel fallback relative to the current root→target direction.
     [[nodiscard]] vec3 effective_pole_vector(const Pose& pose) const;
+
+    /// True when the chain is valid and limb segments are non-degenerate in `pose`.
+    [[nodiscard]] bool can_solve(const Pose& pose, const Skeleton& skel) const;
 
     /// Closed-form two-bone IK (O(1)). Solves in-place on the current pose; returns false when invalid.
     bool solve(Pose& pose, const Skeleton& skel);

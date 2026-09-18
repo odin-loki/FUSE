@@ -38,6 +38,12 @@ struct RetargetMap {
     /// Target bone index for a source bone, or -1 when unmapped.
     [[nodiscard]] s32 find_target_bone(u32 source_bone) const;
 
+    /// True when `apply_pose_soa` would copy mapped local TRS (non-empty source, valid map, non-empty target).
+    [[nodiscard]] bool can_apply_pose_soa(const PoseSoA& source_pose, const Skeleton& target_skel) const;
+
+    /// True when `apply_pose` would copy mapped world transforms (non-empty source, valid map, non-empty target).
+    [[nodiscard]] bool can_apply_pose(const Pose& source_pose, const Skeleton& target_skel) const;
+
     /// Pair bones that share the same name in source and target skeletons.
     static RetargetMap build_by_name(const Skeleton& source, const Skeleton& target);
 

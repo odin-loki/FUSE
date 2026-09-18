@@ -1063,6 +1063,128 @@ void testTwoBoneIKDegenerateSegments() {
     expectTrue(!ik.solve(pose, skel), "two bone ik rejects degenerate limb segments");
 }
 
+void testPoseBindFallbackGuards() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+
+    fuse::animation::Pose empty{};
+    expectTrue(fuse::animation::is_pose_empty(empty), "is_pose_empty true for default pose");
+    expectTrue(fuse::animation::needs_pose_bind_fallback(empty, skel),
+               "needs_pose_bind_fallback true for empty pose");
+
+    fuse::animation::Pose mismatched = fuse::animation::Pose::make_bind_pose(makeTwoBoneSkeleton());
+    expectTrue(fuse::animation::needs_pose_bind_fallback(mismatched, skel),
+               "needs_pose_bind_fallback true for mismatched bone count");
+
+    fuse::animation::Pose valid = fuse::animation::Pose::make_bind_pose(skel);
+    expectTrue(!fuse::animation::is_pose_empty(valid), "is_pose_empty false for bind pose");
+    expectTrue(!fuse::animation::needs_pose_bind_fallback(valid, skel),
+               "needs_pose_bind_fallback false for valid pose");
+
+    fuse::animation::ensure_pose_bind_fallback(empty, skel);
+    expectTrue(empty.bone_count == skel.bone_count, "ensure_pose_bind_fallback sets bone count");
+    expectTrue(!fuse::animation::needs_pose_bind_fallback(empty, skel),
+               "ensure_pose_bind_fallback seeds bind pose");
+}
+
+void testTwoBoneFabrikChainValidityHelpers() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+
+    expectTrue(fuse::animation::is_valid_two_bone_chain(skel, 0, 1, 2),
+               "is_valid_two_bone_chain accepts root-mid-end chain");
+    expectTrue(!fuse::animation::is_valid_two_bone_chain(skel, 0, 2, 1),
+               "is_valid_two_bone_chain rejects wrong parent order");
+    expectTrue(!fuse::animation::is_valid_two_bone_chain(skel, 0, 0, 2),
+               "is_valid_two_bone_chain rejects duplicate indices");
+    expectTrue(!fuse::animation::is_valid_two_bone_chain(skel, 0, 1, 99),
+               "is_valid_two_bone_chain rejects out of range end");
+
+    expectTrue(fuse::animation::is_valid_fabrik_chain(skel, {0, 1, 2}),
+               "is_valid_fabrik_chain accepts multi-bone index list");
+    expectTrue(!fuse::animation::is_valid_fabrik_chain(skel, {}),
+               "is_valid_fabrik_chain rejects empty index list");
+    expectTrue(!fuse::animation::is_valid_fabrik_chain(skel, {0}),
+               "is_valid_fabrik_chain rejects single-bone list");
+    expectTrue(!fuse::animation::is_valid_fabrik_chain(skel, {0, 99}),
+               "is_valid_fabrik_chain rejects out of range index");
+}
+
+void testTwoBoneIKCanSolve() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+    fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
+
+    fuse::animation::TwoBoneIK ik;
+    ik.root_bone = 0;
+    ik.mid_bone = 1;
+    ik.end_bone = 2;
+    ik.target = {1.f, 1.f, 0.f, 0.f};
+    expectTrue(ik.can_solve(pose, skel), "two bone ik can_solve true for valid bind pose");
+
+    pose.bone_world_transforms[1].data[12] = pose.bone_world_transforms[0].data[12];
+    pose.bone_world_transforms[1].data[13] = pose.bone_world_transforms[0].data[13];
+    pose.bone_world_transforms[1].data[14] = pose.bone_world_transforms[0].data[14];
+    expectTrue(!ik.can_solve(pose, skel), "two bone ik can_solve false for degenerate segments");
+    expectTrue(!ik.solve(pose, skel), "two bone ik solve rejects degenerate pose via can_solve");
+}
+
+void testFabrikCanSolve() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    fuse::animation::FABRIKChain chain;
+    expectTrue(!chain.can_solve(skel), "fabrik can_solve false for empty chain");
+
+    chain.bone_indices = {0};
+    expectTrue(!chain.can_solve(skel), "fabrik can_solve false for single-bone chain");
+
+    chain.bone_indices = {0, 1};
+    expectTrue(chain.can_solve(skel), "fabrik can_solve true for valid two-bone chain");
+}
+
+void testIkSolveEmptyPoseSeed() {
+    const fuse::animation::Skeleton skel = makeLimbSkeleton();
+
+    fuse::animation::Pose empty{};
+    fuse::animation::TwoBoneIK ik;
+    ik.root_bone = 0;
+    ik.mid_bone = 1;
+    ik.end_bone = 2;
+    ik.target = {1.f, 1.f, 0.f, 0.f};
+    ik.pole_vector = {0.f, 0.f, 1.f, 0.f};
+    expectTrue(ik.solve(empty, skel), "two bone ik solve seeds empty aos pose from bind");
+    expectTrue(empty.bone_count == skel.bone_count, "two bone ik solve sets bone count on empty pose");
+
+    fuse::animation::PoseSoA emptySoa = fuse::animation::PoseSoA::allocate(0);
+    expectTrue(ik.solve(emptySoa, skel), "two bone ik solve seeds empty soa pose from bind");
+    expectTrue(emptySoa.bone_count == skel.bone_count, "two bone ik soa solve sets bone count on empty pose");
+
+    fuse::animation::FABRIKChain chain;
+    chain.bone_indices = {0, 1, 2};
+    chain.target = {0.5f, 2.f, 0.f, 0.f};
+    fuse::animation::Pose fabrikPose{};
+    expectTrue(chain.solve(fabrikPose, skel), "fabrik solve seeds empty aos pose from bind");
+    expectTrue(fabrikPose.bone_count == skel.bone_count, "fabrik solve sets bone count on empty pose");
+}
+
+void testRetargetCanApplyPose() {
+    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    const fuse::animation::RetargetMap map = fuse::animation::RetargetMap::build_identity(skel);
+    const fuse::animation::Pose source = fuse::animation::Pose::make_bind_pose(skel);
+    const fuse::animation::PoseSoA sourceSoa = fuse::animation::PoseSoA::from_bind_pose(skel);
+
+    expectTrue(map.can_apply_pose(source, skel), "retarget can_apply_pose true for valid inputs");
+    expectTrue(map.can_apply_pose_soa(sourceSoa, skel), "retarget can_apply_pose_soa true for valid inputs");
+
+    fuse::animation::Pose emptyPose{};
+    expectTrue(!map.can_apply_pose(emptyPose, skel), "retarget can_apply_pose false for empty source");
+    fuse::animation::PoseSoA emptySoa = fuse::animation::PoseSoA::allocate(0);
+    expectTrue(!map.can_apply_pose_soa(emptySoa, skel), "retarget can_apply_pose_soa false for empty source");
+
+    fuse::animation::RetargetMap invalid{};
+    expectTrue(!invalid.can_apply_pose(source, skel), "retarget can_apply_pose false for invalid map");
+    expectTrue(!invalid.can_apply_pose_soa(sourceSoa, skel), "retarget can_apply_pose_soa false for invalid map");
+
+    fuse::animation::Skeleton emptySkel{};
+    expectTrue(!map.can_apply_pose(source, emptySkel), "retarget can_apply_pose false for empty target skeleton");
+}
+
 void testFabrikChainGuards() {
     const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
     fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
@@ -1871,8 +1993,14 @@ int main() {
     testTwoBoneIKSolveHelpers();
     testTwoBoneIKZeroPoleVector();
     testTwoBoneIKDegenerateSegments();
+    testPoseBindFallbackGuards();
+    testTwoBoneFabrikChainValidityHelpers();
+    testTwoBoneIKCanSolve();
+    testFabrikCanSolve();
+    testIkSolveEmptyPoseSeed();
     testFabrikChainGuards();
     testRetargetAddBoneMapping();
+    testRetargetCanApplyPose();
     testRetargetApplyEmptySourcePose();
     testRetargetApplyInvalidMap();
     testRetargetClear();
