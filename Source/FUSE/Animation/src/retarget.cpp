@@ -48,7 +48,19 @@ bool RetargetMap::is_target_mapped(u32 target_bone) const {
     return find_source_bone(target_bone) >= 0;
 }
 
+bool RetargetMap::can_apply_pose_soa(const PoseSoA& source_pose, const Skeleton& target_skel) const {
+    return is_valid() && !target_skel.bones.empty() && source_pose.bone_count > 0;
+}
+
+bool RetargetMap::can_apply_pose(const Pose& source_pose, const Skeleton& target_skel) const {
+    return is_valid() && !target_skel.bones.empty() && source_pose.bone_count > 0;
+}
+
 s32 RetargetMap::find_source_bone(u32 target_bone) const {
+    if (!is_valid()) {
+        return -1;
+    }
+
     for (const RetargetBoneEntry& entry : bone_map) {
         if (entry.target_bone == target_bone) {
             return static_cast<s32>(entry.source_bone);
@@ -58,6 +70,10 @@ s32 RetargetMap::find_source_bone(u32 target_bone) const {
 }
 
 s32 RetargetMap::find_target_bone(u32 source_bone) const {
+    if (!is_valid()) {
+        return -1;
+    }
+
     for (const RetargetBoneEntry& entry : bone_map) {
         if (entry.source_bone == source_bone) {
             return static_cast<s32>(entry.target_bone);
@@ -68,6 +84,10 @@ s32 RetargetMap::find_target_bone(u32 source_bone) const {
 
 RetargetMap RetargetMap::build_identity(const Skeleton& skel) {
     RetargetMap map{};
+    if (skel.bones.empty()) {
+        return map;
+    }
+
     map.source_bone_count = static_cast<u32>(skel.bones.size());
     map.target_bone_count = map.source_bone_count;
 
@@ -84,6 +104,10 @@ RetargetMap RetargetMap::build_identity(const Skeleton& skel) {
 
 RetargetMap RetargetMap::build_by_name(const Skeleton& source, const Skeleton& target) {
     RetargetMap map{};
+    if (source.bones.empty() || target.bones.empty()) {
+        return map;
+    }
+
     map.source_bone_count = static_cast<u32>(source.bones.size());
     map.target_bone_count = static_cast<u32>(target.bones.size());
 
@@ -106,7 +130,7 @@ RetargetMap RetargetMap::build_by_name(const Skeleton& source, const Skeleton& t
 void RetargetMap::apply_pose_soa(const PoseSoA& source_pose,
                                  const Skeleton& target_skel,
                                  PoseSoA& out_pose) const {
-    if (target_skel.bones.empty() || source_pose.bone_count == 0 || !is_valid()) {
+    if (!can_apply_pose_soa(source_pose, target_skel)) {
         out_pose.clear();
         return;
     }
@@ -135,7 +159,7 @@ void RetargetMap::apply_pose_soa(const PoseSoA& source_pose,
 void RetargetMap::apply_pose(const Pose& source_pose,
                              const Skeleton& target_skel,
                              Pose& out_pose) const {
-    if (target_skel.bones.empty() || source_pose.bone_count == 0 || !is_valid()) {
+    if (!can_apply_pose(source_pose, target_skel)) {
         out_pose.bone_count = 0;
         out_pose.bone_world_transforms.clear();
         return;

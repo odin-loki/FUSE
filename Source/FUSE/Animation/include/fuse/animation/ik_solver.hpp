@@ -24,8 +24,24 @@ namespace fuse::animation {
                                                  f32 lower_len,
                                                  f32 reach_epsilon);
 
+/// World-space distance from root to target (O(1)).
+[[nodiscard]] f32 two_bone_root_to_target_distance(const vec3& root, const vec3& target);
+
+/// True when `target` lies outside the reachable sphere or within `reach_epsilon` of the root.
+[[nodiscard]] bool needs_two_bone_target_clamp(const vec3& root,
+                                                const vec3& target,
+                                                f32 upper_len,
+                                                f32 lower_len,
+                                                f32 reach_epsilon);
+
 /// Maximum root→target distance before clamping (upper + lower − `reach_epsilon`).
 [[nodiscard]] f32 two_bone_max_reach(f32 upper_len, f32 lower_len, f32 reach_epsilon);
+
+/// Returns false when the skeleton is empty or indices do not form a root→mid→end chain.
+[[nodiscard]] bool is_valid_two_bone_chain(u32 root_bone,
+                                            u32 mid_bone,
+                                            u32 end_bone,
+                                            const Skeleton& skel);
 
 /// Clamp `target` to the reachable sphere defined by segment lengths and `reach_epsilon`.
 [[nodiscard]] vec3 clamp_two_bone_target(const vec3& root,
