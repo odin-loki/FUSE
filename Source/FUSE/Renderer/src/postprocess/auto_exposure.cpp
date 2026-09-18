@@ -33,6 +33,10 @@ f32 compute_rec709_luminance(const fuse::math::Vec3& rgb) {
     return 0.2126f * rgb.x + 0.7152f * rgb.y + 0.0722f * rgb.z;
 }
 
+bool measured_luminance_valid(f32 luminance, f32 epsilon) {
+    return luminance >= epsilon;
+}
+
 f32 luminance_to_ev(f32 luminance, f32 target_luminance) {
     const f32 safeLum = std::max(luminance, 1e-8f);
     const f32 safeTarget = std::max(target_luminance, 1e-8f);
@@ -73,6 +77,10 @@ bool auto_exposure_params_valid(const AutoExposureParams& params) {
 
 bool auto_exposure_can_adapt(const AutoExposureParams& params, f32 delta_seconds) {
     return auto_exposure_params_valid(params) && params.enabled && delta_seconds > 0.f;
+}
+
+bool auto_exposure_can_update_from_luminance(f32 luminance, const AutoExposureParams& params, f32 delta_seconds) {
+    return measured_luminance_valid(luminance) && auto_exposure_can_adapt(params, delta_seconds);
 }
 
 bool auto_exposure_ev_anchor_valid(f32 ev, const AutoExposureParams& params) {
@@ -176,8 +184,12 @@ bool hasMeteringSamples(const fuse::math::Vec3* samples, u32 count) {
     return samples != nullptr && count > 0;
 }
 
-bool canMeterFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params) {
+bool canAccumulateFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params) {
     return hasMeteringSamples(samples, count) && luminance_histogram_params_valid(params);
+}
+
+bool canMeterFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params) {
+    return canAccumulateFromSamples(samples, count, params);
 }
 
 bool hasMeteringHistogram(const LuminanceHistogram& histogram) {
@@ -198,7 +210,7 @@ bool canMeterPercentileFromSamples(const fuse::math::Vec3* samples, u32 count, c
 }
 
 void accumulateSamples(LuminanceHistogram& histogram, const fuse::math::Vec3* samples, u32 count) {
-    if (!hasMeteringSamples(samples, count)) {
+    if (!canAccumulateFromSamples(samples, count, histogram.params())) {
         return;
     }
     for (u32 i = 0; i < count; ++i) {
@@ -345,6 +357,10 @@ bool exposure_meter_has_samples(const ExposureMeter& meter) {
     return !meter.isEmpty();
 }
 
+bool exposure_meter_can_measure(const ExposureMeter& meter) {
+    return exposure_meter_has_samples(meter);
+}
+
 void ExposureMeter::accumulate(const fuse::math::Vec3& rgb) {
     m_luminanceSum += static_cast<f64>(compute_rec709_luminance(rgb));
     ++m_sampleCount;
@@ -387,6 +403,9 @@ void AutoExposure::resetToEv(f32 ev) {
 }
 
 f32 AutoExposure::updateFromLuminance(f32 measured_luminance, f32 delta_seconds) {
+    if (!measured_luminance_valid(measured_luminance)) {
+        return m_state.current_ev;
+    }
     if (m_params.use_ema_adaptation) {
         return update_auto_exposure_ema(m_state, measured_luminance, m_params, delta_seconds);
     }

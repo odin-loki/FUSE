@@ -29,6 +29,8 @@ struct AutoExposureState {
 };
 
 f32 compute_rec709_luminance(const fuse::math::Vec3& rgb);
+/// True when a scalar luminance sample is usable for metering (B5.10 deepen).
+bool measured_luminance_valid(f32 luminance, f32 epsilon = 1e-8f);
 f32 luminance_to_ev(f32 luminance, f32 target_luminance);
 f32 ev_to_luminance(f32 ev, f32 target_luminance);
 f32 compute_target_ev(f32 measured_luminance, const AutoExposureParams& params);
@@ -37,6 +39,8 @@ f32 clamp_ev(f32 ev, const AutoExposureParams& params);
 bool auto_exposure_params_valid(const AutoExposureParams& params);
 /// True when auto-exposure can adapt over a non-zero frame interval (B5.10 deepen).
 bool auto_exposure_can_adapt(const AutoExposureParams& params, f32 delta_seconds);
+/// True when a luminance sample can drive auto-exposure adaptation (B5.10 deepen).
+bool auto_exposure_can_update_from_luminance(f32 luminance, const AutoExposureParams& params, f32 delta_seconds);
 bool auto_exposure_ev_anchor_valid(f32 ev, const AutoExposureParams& params);
 void reset_auto_exposure_state(AutoExposureState& state);
 /// Reset temporal state while preserving a scene-load EV anchor (B5.10 deepen).
@@ -97,6 +101,8 @@ void reset_luminance_histogram(LuminanceHistogram& histogram);
 namespace histogram_util {
 /// True when a sample buffer can contribute metering (non-null and non-empty).
 bool hasMeteringSamples(const fuse::math::Vec3* samples, u32 count);
+/// True when histogram params and sample buffer are ready for accumulation (B5.10 deepen).
+bool canAccumulateFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params);
 /// True when histogram params and sample buffer are ready for percentile metering (B5.10 deepen).
 bool canMeterFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params);
 /// True when a histogram has accumulated samples (B5.10 deepen).
@@ -137,6 +143,8 @@ private:
 void reset_exposure_meter(ExposureMeter& meter);
 /// True when an exposure meter has accumulated samples (B5.10 deepen).
 bool exposure_meter_has_samples(const ExposureMeter& meter);
+/// True when an exposure meter can report a luminance average (B5.10 deepen).
+bool exposure_meter_can_measure(const ExposureMeter& meter);
 
 /// Host-side auto-exposure pass stub (CUDA histogram deferred).
 class AutoExposure {

@@ -88,6 +88,14 @@ bool tonemap_curve_preserves_black(const TonemapCurveParams& params, f32 epsilon
     return black <= epsilon;
 }
 
+bool tonemap_curve_reinhard_params_valid(const ReinhardCurveParams& params) {
+    return params.white_point > 0.f;
+}
+
+bool tonemap_curve_aces_params_valid(const AcesCurveParams& params) {
+    return params.contrast >= 0.f;
+}
+
 bool tonemap_curve_params_valid(const TonemapCurveParams& params) {
     if (!params.enabled) {
         return true;
@@ -95,13 +103,15 @@ bool tonemap_curve_params_valid(const TonemapCurveParams& params) {
     if (params.gamma <= 0.f) {
         return false;
     }
-    if (params.kind == TonemapCurveKind::Reinhard && params.reinhard.white_point <= 0.f) {
-        return false;
+    switch (params.kind) {
+    case TonemapCurveKind::Reinhard:
+        return tonemap_curve_reinhard_params_valid(params.reinhard);
+    case TonemapCurveKind::ACES:
+        return tonemap_curve_aces_params_valid(params.aces);
+    case TonemapCurveKind::Filmic:
+    default:
+        return true;
     }
-    if (params.kind == TonemapCurveKind::ACES && params.aces.contrast < 0.f) {
-        return false;
-    }
-    return true;
 }
 
 bool tonemap_curve_can_apply(const TonemapCurveParams& params) {
@@ -109,6 +119,16 @@ bool tonemap_curve_can_apply(const TonemapCurveParams& params) {
         return true;
     }
     return tonemap_curve_params_valid(params);
+}
+
+bool tonemap_curve_ready_to_apply(const TonemapCurveParams& params, f32 white_input, f32 epsilon) {
+    if (!tonemap_curve_can_apply(params)) {
+        return false;
+    }
+    if (!params.enabled) {
+        return true;
+    }
+    return tonemap_curve_has_valid_endpoints(params, white_input, epsilon);
 }
 
 bool tonemap_curve_endpoints_valid(const TonemapCurveEndpoints& endpoints, f32 epsilon) {
@@ -203,7 +223,7 @@ f32 evaluate_tonemap_curve_channel(f32 channel, const TonemapCurveParams& params
 }
 
 fuse::math::Vec3 apply_tonemap_curve(const fuse::math::Vec3& hdr, const TonemapCurveParams& params) {
-    if (!tonemap_curve_can_apply(params)) {
+    if (!tonemap_curve_ready_to_apply(params)) {
         return hdr;
     }
     if (!params.enabled) {
