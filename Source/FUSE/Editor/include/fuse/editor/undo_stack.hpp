@@ -51,6 +51,10 @@ public:
 
     bool canUndo() const { return !m_undo.empty(); }
     bool canRedo() const { return !m_redo.empty(); }
+    /// True when the undo branch has no recorded steps (B6.2 deepen — empty-stack early-out).
+    [[nodiscard]] bool isEmpty() const { return m_undo.empty(); }
+    /// True after `set_baseline_state` has recorded a saved-document depth (B6.2 deepen).
+    [[nodiscard]] bool isBaselineConfigured() const { return m_baselineConfigured; }
 
     u32 undoCount() const { return static_cast<u32>(m_undo.size()); }
     u32 redoCount() const { return static_cast<u32>(m_redo.size()); }
