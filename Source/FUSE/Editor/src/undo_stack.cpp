@@ -18,13 +18,20 @@ void UndoStack::evictOldestIfNeeded_() {
 }
 
 void UndoStack::markDirty_() {
+    if (!m_dirty) {
+        ++m_dirtyRevision;
+    }
+    m_dirty = true;
+}
+
+void UndoStack::markDirtyAndBump_() {
     m_dirty = true;
     ++m_dirtyRevision;
 }
 
 void UndoStack::syncBaselineDirty_() {
     if (!m_baselineConfigured) {
-        markDirty_();
+        markDirtyAndBump_();
         return;
     }
 
@@ -33,7 +40,7 @@ void UndoStack::syncBaselineDirty_() {
         return;
     }
 
-    markDirty_();
+    markDirtyAndBump_();
 }
 
 u32 UndoStack::coalescedOpsSinceBaseline() const {
@@ -60,7 +67,7 @@ void UndoStack::execute(std::unique_ptr<UndoCommand> command) {
     m_undo.push_back(std::move(command));
     m_redo.clear();
     evictOldestIfNeeded_();
-    markDirty_();
+    markDirtyAndBump_();
 }
 
 void UndoStack::set_baseline_state() {

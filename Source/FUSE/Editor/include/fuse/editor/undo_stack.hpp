@@ -61,6 +61,8 @@ public:
 
     [[nodiscard]] bool isDirty() const { return m_dirty; }
     u32 dirtyRevision() const { return m_dirtyRevision; }
+    /// True when `dirtyRevision()` has advanced past `revision` (B6.2 deepen).
+    [[nodiscard]] bool isDirtySince(u32 revision) const { return dirtyRevision() > revision; }
     void markClean();
     /// Records the current undo/redo depth as the saved-document baseline (B6.2 deepen).
     void set_baseline_state();
@@ -81,6 +83,7 @@ private:
     void evictOldestIfNeeded_();
 
     void markDirty_();
+    void markDirtyAndBump_();
     /// Clears dirty when undo depth matches the saved baseline; otherwise marks dirty.
     void syncBaselineDirty_();
 
