@@ -89,10 +89,17 @@ bool has_matching_entities(const std::vector<Archetype>& archetypes, const Query
 
 QueryFilterPreflight preflight_query_filter(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
     QueryFilterPreflight result;
-    result.runnable = query_filter_is_runnable(filter);
+    result.has_conflict = query_filter_has_conflict(filter);
+    result.runnable = !result.has_conflict;
     result.empty_table = archetypes.empty();
 
-    if (!result.runnable || result.empty_table) {
+    if (!result.runnable) {
+        result.skipped = true;
+        return result;
+    }
+
+    if (result.empty_table) {
+        result.skipped = true;
         return result;
     }
 
@@ -104,7 +111,17 @@ QueryFilterPreflight preflight_query_filter(const std::vector<Archetype>& archet
         ++result.matching_archetypes;
         result.matching_entities += static_cast<u32>(archetype.count());
     }
+
+    result.skipped = result.matching_entities == 0;
     return result;
+}
+
+bool should_skip_query_filter(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
+    return preflight_query_filter(archetypes, filter).skipped;
+}
+
+bool can_iterate_query_filter(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
+    return preflight_query_filter(archetypes, filter).can_iterate();
 }
 
 bool archetype_matches(const Archetype& archetype, const QueryFilter& filter) {
