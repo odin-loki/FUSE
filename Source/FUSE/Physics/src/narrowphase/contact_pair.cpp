@@ -172,6 +172,22 @@ bool isShapeDegenerate(CollisionShapeType type, const vec3& params) {
 
 } // namespace
 
+bool is_self_contact_pair(const broadphase::CandidatePair& pair) {
+    return pair.bodyA == pair.bodyB;
+}
+
+bool is_out_of_range_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies) {
+    return pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count();
+}
+
+bool is_missing_shape_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes) {
+    return !hasShapeForBody(shapes, pair.bodyA) || !hasShapeForBody(shapes, pair.bodyB);
+}
+
 const char* contact_pair_reject_reason_name(ContactPairRejectReason reason) {
     switch (reason) {
     case ContactPairRejectReason::None:
@@ -294,6 +310,14 @@ ContactPairRejectReason contact_pair_reject_reason(
     return ContactPairRejectReason::None;
 }
 
+bool contact_pair_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected) {
+    return contact_pair_reject_reason(pair, bodies, shapes) == expected;
+}
+
 bool is_invalid_contact_pair(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
@@ -316,6 +340,16 @@ ContactManifold detect_contacts_pair(
         return invalidContactManifold();
     }
     return dispatchShapePair(pair, bodies, shapes);
+}
+
+bool can_finalize_contact_manifold(const ContactManifold& manifold) {
+    if (manifold.empty()) {
+        return false;
+    }
+    if (!manifold.hasValidNormal()) {
+        return false;
+    }
+    return manifold.hasPenetratingPoints();
 }
 
 bool generate_contact_manifold(ContactManifold& manifold) {

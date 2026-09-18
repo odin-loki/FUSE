@@ -63,6 +63,82 @@ u32 ContactManifold::countPenetratingPoints(f32 epsilon) const {
     return penetrating;
 }
 
+bool ContactManifold::hasSeparatedPoints(f32 epsilon) const {
+    for (u32 i = 0u; i < pointCount; ++i) {
+        if (points[i].penetration < -epsilon) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ContactManifold::hasDuplicatePoints(f32 positionEpsilon) const {
+    if (pointCount <= 1u) {
+        return false;
+    }
+
+    const f32 epsilonSq = positionEpsilon * positionEpsilon;
+    for (u32 i = 0u; i < pointCount; ++i) {
+        for (u32 j = i + 1u; j < pointCount; ++j) {
+            const vec3 delta = points[i].point - points[j].point;
+            if (delta.dot(delta) <= epsilonSq) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool ContactManifold::wouldBeEmptyAfterPrune(
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) const {
+    if (pointCount == 0u) {
+        return true;
+    }
+
+    ContactPoint surviving[kMaxContactPointsPerManifold]{};
+    u32 survivingCount = 0u;
+    const f32 epsilonSq = duplicateEpsilon * duplicateEpsilon;
+
+    for (u32 readIndex = 0u; readIndex < pointCount; ++readIndex) {
+        if (points[readIndex].penetration < -separationEpsilon) {
+            continue;
+        }
+
+        bool duplicate = false;
+        for (u32 existing = 0u; existing < survivingCount; ++existing) {
+            const vec3 delta = points[readIndex].point - surviving[existing].point;
+            if (delta.dot(delta) <= epsilonSq) {
+                if (points[readIndex].penetration > surviving[existing].penetration) {
+                    surviving[existing] = points[readIndex];
+                }
+                duplicate = true;
+                break;
+            }
+        }
+        if (duplicate) {
+            continue;
+        }
+
+        if (survivingCount < kMaxContactPointsPerManifold) {
+            surviving[survivingCount] = points[readIndex];
+            ++survivingCount;
+        }
+    }
+
+    if (survivingCount > kMaxContactPointsPerManifold) {
+        survivingCount = kMaxContactPointsPerManifold;
+    }
+
+    return survivingCount == 0u;
+}
+
+void ContactManifold::invalidateIfEmpty() {
+    if (empty()) {
+        valid = false;
+    }
+}
+
 bool ContactManifold::needsPruning(f32 separationEpsilon, f32 duplicateEpsilon) const {
     if (pointCount == 0u) {
         return false;
