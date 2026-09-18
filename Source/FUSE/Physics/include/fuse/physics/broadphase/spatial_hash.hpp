@@ -215,6 +215,85 @@ FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {
     return uniqueBodyCount > 1u ? uniqueBodyCount * (uniqueBodyCount - 1u) / 2u : 0u;
 }
 
+/// Cell-capacity preflight for shape occupancy iteration (B4.2 deepen pass).
+struct CellOccupancyPreflight {
+    u32 cellCount = 0u;
+    u32 maxCells = 0u;
+    bool emptyRange = false;
+    bool exceedsBudget = false;
+
+    bool can_insert() const { return !emptyRange && !exceedsBudget; }
+};
+
+/// Populate cell-occupancy preflight without mutating the range (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflight_cell_occupancy(const CellRange3& range, u32 maxCells) {
+    CellOccupancyPreflight preflight{};
+    preflight.maxCells = maxCells;
+    if (isEmptyCellRange(range)) {
+        preflight.emptyRange = true;
+        return preflight;
+    }
+    preflight.cellCount = estimateCellOccupancyCount(range);
+    preflight.exceedsBudget = exceedsCellOccupancyBudget(range, maxCells);
+    return preflight;
+}
+
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflight_cell_occupancy(const CellRange2& range, u32 maxCells) {
+    CellOccupancyPreflight preflight{};
+    preflight.maxCells = maxCells;
+    if (isEmptyCellRange(range)) {
+        preflight.emptyRange = true;
+        return preflight;
+    }
+    preflight.cellCount = estimateCellOccupancyCount(range);
+    preflight.exceedsBudget = exceedsCellOccupancyBudget(range, maxCells);
+    return preflight;
+}
+
+/// Derive a per-shape cell budget from `maxSpanPerAxis` (0 = unlimited).
+FUSE_PHYSICS_INLINE u32 maxCellBudgetFromSpanPerAxis(u32 maxSpanPerAxis, bool use2D) {
+    if (maxSpanPerAxis == 0u) {
+        return 0u;
+    }
+    return use2D ? maxSpanPerAxis * maxSpanPerAxis : maxSpanPerAxis * maxSpanPerAxis * maxSpanPerAxis;
+}
+
+/// True when shape cell insertion should be skipped before hash build (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool should_skip_shape_cell_insertion(const CellRange3& range, u32 maxSpanPerAxis) {
+    const CellOccupancyPreflight preflight =
+        preflight_cell_occupancy(range, maxCellBudgetFromSpanPerAxis(maxSpanPerAxis, false));
+    return !preflight.can_insert();
+}
+
+FUSE_PHYSICS_INLINE bool should_skip_shape_cell_insertion(const CellRange2& range, u32 maxSpanPerAxis) {
+    const CellOccupancyPreflight preflight =
+        preflight_cell_occupancy(range, maxCellBudgetFromSpanPerAxis(maxSpanPerAxis, true));
+    return !preflight.can_insert();
+}
+
+struct PairBufferSoA;
+
+/// Broadphase refine preflight for parallel AABB refine dispatch (B4.2 deepen pass).
+struct BroadphaseRefinePreflight {
+    bool skipped = false;
+    bool emptyBuffer = false;
+    bool emptyScene = false;
+
+    bool can_refine() const { return !skipped; }
+};
+
+/// Populate refine preflight without mutating the pair buffer (B4.2 deepen pass).
+BroadphaseRefinePreflight preflight_broadphase_refine(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
+
+/// True when parallel refine should early-out before AABB overlap tests (B4.2 deepen pass).
+bool should_skip_broadphase_refine(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
+
 /// Clamp broadphase params to safe stub defaults (positive cell size, at least one bucket).
 FUSE_PHYSICS_INLINE SpatialHashParams normalizeSpatialHashParams(SpatialHashParams params) {
     params.cellSize = clampCellSize(params.cellSize);
@@ -350,8 +429,6 @@ FUSE_PHYSICS_INLINE bool aabbOverlap(const aabb& a, const aabb& b) {
 FUSE_PHYSICS_INLINE bool sphereAabbOverlap(vec3 centerA, f32 radiusA, vec3 centerB, f32 radiusB) {
     return aabbOverlap(aabbFromSphere(centerA, radiusA), aabbFromSphere(centerB, radiusB));
 }
-
-struct PairBufferSoA;
 
 /// Job-safe broadphase: parallel shape→cell + per-cell pair generation into reusable SoA slots.
 void runBroadphaseIntoBuffer(
