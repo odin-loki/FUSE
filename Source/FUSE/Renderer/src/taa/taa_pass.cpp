@@ -106,6 +106,26 @@ bool TaaPass::canProduceJitterNdc() const {
     return m_jitter.canProduceNdcOffset(m_desc.width, m_desc.height);
 }
 
+bool TaaPass::advanceJitterIfReady() {
+    if (!m_jitter.advanceIfReady()) {
+        return false;
+    }
+    m_stats.lastJitterNdc = currentJitterNdc();
+    return true;
+}
+
+TaaBlendWeights TaaPass::expectedResolveBlendWeights(const TaaResolveDesc& desc) const {
+    return computeTaaResolveBlendWeights(desc, m_history);
+}
+
+bool TaaPass::resolveWouldReuseHistory(const TaaResolveDesc& desc) const {
+    return taaResolveCanReuseHistory(desc, m_history) && taaResolveAppliesHistoryBlend(desc, m_history);
+}
+
+TaaHistoryReuseBlockReason TaaPass::classifyHistoryReuseBlock(u32 observedGeneration) const {
+    return classifyTaaHistoryReuseBlock(m_history, observedGeneration);
+}
+
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
     return m_resolve.wouldSkip(desc, m_history, reason);
 }

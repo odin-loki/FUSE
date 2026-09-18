@@ -19,6 +19,8 @@ struct TaaJitterLayout {
     static bool jitterIndexInRange(u32 index, u32 sequenceLength);
     /// True when NDC jitter can be produced for viewport and sequence (B5.9 deepen).
     static bool canProduceNdcOffset(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// True when jitter can align to a monotonic frame counter (B5.9 deepen).
+    static bool canSyncToFrameIndex(u32 /*frameIndex*/, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Returns the jitter cycle length after validation (0 when invalid).
     static u32 sequencePeriod(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Maps a monotonic frame counter into the active Halton slot.
@@ -44,6 +46,8 @@ public:
     fuse::math::Vec2 currentNdcOffset(u32 width, u32 height) const;
 
     void advance();
+    /// Advance only when the sequence is valid; returns false when blocked (B5.9 deepen).
+    bool advanceIfReady();
     void reset();
     /// Align jitter state to a monotonic frame counter (wraps with sequence period).
     void syncToFrameIndex(u32 frameIndex);
@@ -53,6 +57,8 @@ public:
     bool canAdvance() const;
     /// True when NDC jitter can be produced for the given viewport (B5.9 deepen).
     bool canProduceNdcOffset(u32 width, u32 height) const;
+    /// True when jitter can align to a monotonic frame counter (B5.9 deepen).
+    bool canSyncToFrameIndex(u32 frameIndex) const;
     /// Monotonic frame counter — incremented by `advance`, set by `syncToFrameIndex`, cleared by `reset`.
     u32 monotonicFrameIndex() const { return m_monotonicFrame; }
     u32 sequenceLength() const { return m_sequenceLength; }
