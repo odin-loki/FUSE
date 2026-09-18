@@ -254,6 +254,25 @@ CookInvalidationClosureResult CookJobGraph::invalidation_closure(const std::stri
     return m_dep_graph.transitive_successors(from_job_id);
 }
 
+CookInvalidationClosureResult CookJobGraph::upstream_invalidation_closure(const std::string& to_job_id) const {
+    if (m_jobs.empty()) {
+        CookInvalidationClosureResult result;
+        result.ok = false;
+        return result;
+    }
+    return m_dep_graph.transitive_predecessors(to_job_id);
+}
+
+CookInvalidationClosureResult CookJobGraph::merged_invalidation_closure(
+    const std::vector<std::string>& from_job_ids) const {
+    if (m_jobs.empty()) {
+        CookInvalidationClosureResult result;
+        result.ok = false;
+        return result;
+    }
+    return m_dep_graph.merged_invalidation_closure(from_job_ids);
+}
+
 bool CookJobGraph::run_job_stages_(CookJob& job, AssetCooker& cooker, const CookManifest& manifest,
                                    CookJobGraphExecuteResult& result) {
     CookStageRecord& import_stage = job.stages[0];
