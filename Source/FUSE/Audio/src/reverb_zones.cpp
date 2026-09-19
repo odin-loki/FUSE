@@ -157,3 +157,8 @@ float blend_reverb_sample(float dry, float wet, const Vec3& listener, const Reve
 }
 
 } // namespace fuse::audio
+
+// --- deepen additive from deepen-b72-occlusion-reverb-e7fc ---
+    return should_skip_reverb_wet_mix(blend);
+bool should_skip_reverb_wet_mix(const ReverbZoneBlend& blend) {
+    if (should_skip_reverb_wet_mix(blend)) {

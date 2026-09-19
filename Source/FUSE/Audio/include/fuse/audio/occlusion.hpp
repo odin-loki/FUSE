@@ -110,3 +110,6 @@ OcclusionAttenuation evaluate_occlusion_from_blockers(const Vec3& listener, cons
                                                       const OcclusionParams& params = {});
 
 } // namespace fuse::audio
+
+// --- deepen additive from deepen-b72-occlusion-reverb-e7fc ---
+bool should_skip_occlusion_blocker_eval(const Vec3& listener, const Vec3& source,
