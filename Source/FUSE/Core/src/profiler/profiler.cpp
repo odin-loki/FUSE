@@ -3062,14 +3062,12 @@ bool tryLastExportableEvent(ProfileEvent& outEvent) {
     const u32 index = lastExportableEventIndex();
 
 
-u32 findFirstEventIndexByFlowId(u32 flowId) {
 
         if (!isValidEventName(event.name)) {
             continue;
         if ((event.phase == EventPhase::FlowStart || event.phase == EventPhase::FlowFinish)
             && event.scopeId == flowId) {
 
-u32 findLastEventIndexByFlowId(u32 flowId) {
 
 
 u32 exportableFirstEventIndex() {
@@ -3139,7 +3137,6 @@ bool isFlowPhaseEvent(const ProfileEvent& event) {
         if (isValidEventName(event.name) && isFlowPhaseEvent(event) && event.scopeId == flowId) {
 
 
-u32 countEventsByFlowId(u32 flowId) {
 
         if (eventNameMatches(event, name)) {
 
@@ -3359,7 +3356,6 @@ u32 countOrphanEndsForPhases(EventPhase beginPhase, EventPhase endPhase) {
 
     if (wouldSkipFlowIdLookup(flowId)) {
 
-        if (isFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
 
 
 
@@ -3620,12 +3616,8 @@ bool tryFirstFlowEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
 
 
 
-    }
 
 
-    if (index == kInvalidEventIndex) {
-        outIndex = kInvalidEventIndex;
-        return false;
 
 
 
@@ -3637,6 +3629,32 @@ bool tryFindFirstEventIndexByFlowId(u32 flowId, u32& outIndex) {
 
 
 bool tryFindLastEventIndexByFlowId(u32 flowId, u32& outIndex) {
+
+
+
+bool isAsyncFlowPhase(EventPhase phase) {
+
+
+
+
+
+
+
+
+
+
+bool tryExportableFirstEvent(ProfileEvent& outEvent) {
+    const u32 index = firstEventIndex();
+
+
+bool tryExportableLastEvent(ProfileEvent& outEvent) {
+    const u32 index = lastEventIndex();
+
+
+
+
+
+
 
 
 
@@ -4308,6 +4326,32 @@ NestingConsistencyPreflight preflightNestingConsistency() {
 
 
 
+    return preflight;
+}
+
+ProfileScopePreflight preflightProfileScope(const char* name) {
+    ProfileScopePreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
+    return preflight;
+}
+
+AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
+    AsyncFlowBeginPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
+    return preflight;
+}
+
+AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
+    AsyncFlowEndPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
+    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
+        && !preflight.wouldUnderflowOpenCount;
     return preflight;
 }
 
