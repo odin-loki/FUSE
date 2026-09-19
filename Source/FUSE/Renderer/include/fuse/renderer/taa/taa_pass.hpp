@@ -816,21 +816,24 @@ public:
     TaaJitterGuardRejectReason classifyJitterSyncReject() const;
     /// Classify why pass NDC jitter production would be rejected (B5.9 deepen).
     TaaJitterGuardRejectReason classifyJitterNdcReject() const;
-    /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
-    bool tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const;
     /// Classify why pass jitter advance would be rejected (B5.9 deepen).
     TaaJitterGuardRejectReason classifyJitterAdvanceReject() const;
-    /// True when pass jitter can advance for the configured sequence (B5.9 deepen).
-    bool preflightJitterAdvance(TaaJitterGuardRejectReason* reason = nullptr) const;
-    /// History resolve-readiness preflight with mandatory reject-reason output (B5.9 deepen).
-    bool tryPreflightHistoryReadyForResolve(TaaHistoryReuseBlockReason& reason) const;
     /// Classify why pass resolve blend weights would be rejected (B5.9 deepen).
-    TaaResolveBlendRejectReason classifyResolveBlendReject(const TaaResolveDesc& desc) const;
     bool tryPreflightResolveBlendWeights(const TaaResolveDesc& desc, TaaResolveBlendRejectReason& reason) const;
     /// Compute expected resolve blend weights with reject-reason diagnostics (B5.9 deepen).
     /// Classify why resolve would skip for the pass history state (B5.9 deepen).
-    /// Resolve preflight with mandatory skip-reason output (B5.9 deepen).
-    bool tryPreflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason& reason) const;
+    /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen follow-up).
+    /// NDC jitter preflight with mandatory reject-reason output (B5.9 deepen follow-up).
+    /// Jitter advance preflight with mandatory reject-reason output (B5.9 deepen follow-up).
+    /// True when pass jitter can advance for the configured sequence (B5.9 deepen follow-up).
+    /// Early-out when pass jitter advance preflight would reject (B5.9 deepen follow-up).
+    /// History reuse preflight with mandatory reject-reason output (B5.9 deepen follow-up).
+    /// History resolve-readiness preflight with mandatory reject-reason output (B5.9 deepen follow-up).
+    /// Resolve blend preflight with mandatory reject-reason output (B5.9 deepen follow-up).
+    /// Compute resolve blend weights with reject-reason diagnostics (B5.9 deepen follow-up).
+    /// Resolve preflight with mandatory skip-reason output (B5.9 deepen follow-up).
+    /// Combined resolve-frame preflight — resolve skip plus blend-weight guards (B5.9 deepen follow-up).
+    /// Early-out when combined resolve-frame preflight would reject (B5.9 deepen follow-up).
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
