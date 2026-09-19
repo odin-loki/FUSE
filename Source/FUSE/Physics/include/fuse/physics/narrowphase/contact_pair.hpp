@@ -204,6 +204,11 @@ bool is_plane_plane_contact_pair(
     const broadphase::CandidatePair& pair,
     const CollisionShapeSoA& shapes);
 
+/// Returns true when shapes pass base checks but have no narrowphase dispatch path (B4.6 deepen follow-up pass).
+bool is_undispatched_shape_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
+
 /// Const preflight for narrowphase batch dispatch (B4.5 deepen follow-up pass).
 struct NarrowphaseBatchPreflight {
     u32 pairCount = 0u;
@@ -222,6 +227,42 @@ NarrowphaseBatchPreflight preflight_narrowphase_batch(
 
 /// Returns true when batch preflight reports no dispatchable pairs (B4.5 deepen follow-up pass).
 bool narrowphase_batch_rejects_all(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating pair-dispatch skip predicate for base preflight (B4.6 deepen follow-up pass).
+bool can_skip_contact_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating pair-dispatch predicate — mirrors `preflight_contact_pair` (B4.6 deepen follow-up pass).
+bool should_run_contact_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating deepen-dispatch skip predicate (B4.6 deepen follow-up pass).
+bool can_skip_contact_pair_deepen_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating deepen-dispatch predicate — mirrors `preflight_contact_pair_deepen` (B4.6 deepen follow-up pass).
+bool should_run_contact_pair_deepen_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating narrowphase predicate — inverse of `can_skip_narrowphase` (B4.6 deepen follow-up pass).
+bool should_run_narrowphase(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating batch predicate — inverse of `narrowphase_batch_rejects_all` (B4.6 deepen follow-up pass).
+bool should_run_narrowphase_batch(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
