@@ -1465,3 +1465,13 @@ CellShapeInsertPreflight preflightShapeCellInsert(
     case CellCapacityInsertRejectReason::ExceedsOccupancyBudget:
         return CellCapacityInsertRejectReason::ExceedsOccupancyBudget;
         preflight.reason == CellCapacityInsertRejectReason::ExceedsOccupancyBudget;
+
+// --- deepen additive from b4-broadphase-deepen-guards-46d8 ---
+    const CellPairGenPreflight preflight = preflightCellPairGen(occupants);
+    case CellCapacityInsertRejectReason::OccupancyRejected:
+            return CellCapacityInsertRejectReason::OccupancyRejected;
+    return cellCapacityInsertRejectReason(shapeIndex, bodies, shapes, params, use2D) == expected;
+    preflight.reason = cellCapacityInsertRejectReason(shapeIndex, bodies, shapes, params, use2D);
+    preflight.occupancyRejected = preflight.reason == CellCapacityInsertRejectReason::OccupancyRejected;
+    return !preflightCellCapacityInsert(shapeIndex, bodies, shapes, params, use2D).canInsert();
+    return preflightCellCapacityInsert(shapeIndex, bodies, shapes, params, use2D).canInsert();

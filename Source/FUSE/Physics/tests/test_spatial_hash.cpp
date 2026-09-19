@@ -3716,3 +3716,10 @@ void testCellShapeInsertRejectReasonGuards() {
                  fuse::physics::broadphase::cellCapacityInsertRejectReason(inverted, 4u)),
         fuse::physics::broadphase::preflightCellCapacityInsert(validRange, 8u);
         fuse::physics::broadphase::preflightCellPairGen(3u);
+
+// --- deepen additive from b4-broadphase-deepen-guards-46d8 ---
+                   buffer, 2u, fuse::physics::broadphase::PairBufferInvalidateRejectReason::OutOfRangeSlot),
+                 fuse::physics::broadphase::cellPairGenRejectReason(singletonOccupants)),
+                 fuse::physics::broadphase::cellPairGenRejectReason(pairOccupants)),
+        fuse::physics::broadphase::preflightCellPairGen(tripleOccupants);
+                 fuse::physics::broadphase::CellCapacityInsertRejectReason::OccupancyRejected),
