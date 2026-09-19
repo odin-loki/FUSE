@@ -412,3 +412,10 @@ FrictionBasisRebuildRejectReason friction_basis_rebuild_reject_reason(
     return FrictionBasisRebuildRejectReason::None;
     FrictionBasisRebuildRejectReason expected,
     if (should_skip_friction_basis_preflight(manifold, epsilon)) {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-071f ---
+    case FrictionBasisRejectReason::CanReuseBasis:
+        return FrictionBasisRejectReason::CanReuseBasis;
+        preflight.skipped = preflight.reason == FrictionBasisRejectReason::EmptyManifold ||
+                            preflight.reason == FrictionBasisRejectReason::InvalidNormal;
+        if (preflight.reason == FrictionBasisRejectReason::CanReuseBasis) {

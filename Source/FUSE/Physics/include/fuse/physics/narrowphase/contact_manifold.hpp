@@ -338,3 +338,6 @@ ManifoldPruneDispatchPreflight preflight_manifold_prune_dispatch(
         return reason == ManifoldPruneRejectReason::Empty ||
                reason == ManifoldPruneRejectReason::AlreadyClean;
     bool can_prune() const { return reason == ManifoldPruneRejectReason::None; }
+
+// --- deepen additive from deepen-b4-narrowphase-guards-071f ---
+        if (reason != ManifoldPruneRejectReason::None) {

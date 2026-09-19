@@ -2443,3 +2443,8 @@ void testFrictionBasisDeepenPassRejectGuards() {
             fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::NeedsRebuild,
             fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::CanReuse,
                 fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::NeedsRebuild),
+
+// --- deepen additive from deepen-b4-narrowphase-guards-071f ---
+            fuse::physics::narrowphase::FrictionBasisRejectReason::EmptyManifold,
+            fuse::physics::narrowphase::FrictionBasisRejectReason::CanReuseBasis,
+                fuse::physics::narrowphase::FrictionBasisRejectReason::CanReuseBasis),
