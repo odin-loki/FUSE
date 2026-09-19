@@ -3915,3 +3915,13 @@ void testCellSpanCapacityRejectReasonGuards() {
     expectTrue(planePreflight.exceedsSpanPerAxis, "2D span-capacity preflight marks exceedsSpanPerAxis");
 void testDedupeBroadphasePairBufferLayerGuards() {
     testCellSpanCapacityRejectReasonGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-1140 ---
+    const fuse::physics::broadphase::PairBufferWritePreflight validPreflight =
+    expectTrue(validPreflight.canWrite(), "write preflight accepts valid slot");
+                 fuse::physics::broadphase::pairBufferInvalidateRejectReason(buffer, 4u)),
+void testShapeCellInsertionPreflightGuards() {
+                 fuse::physics::broadphase::cellOccupancyRejectReasonForParams(validRange, params)),
+        fuse::physics::broadphase::preflightCellOccupancyForParams(validRange, params);
+    expectTrue(!fuse::physics::broadphase::preflightMergePairsIntoBuffer(pairs, buffer).canMerge(),
+    testShapeCellInsertionPreflightGuards();

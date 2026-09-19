@@ -1595,3 +1595,10 @@ FUSE_PHYSICS_INLINE CellSpanCapacityPreflight preflightCellSpanCapacity(
     return preflightCellSpanCapacity(range, maxSpanPerAxis).withinSpanLimit();
     CellSpanCapacityRejectReason expected) {
     return cellSpanCapacityRejectReason(range, maxSpanPerAxis) == expected;
+
+// --- deepen additive from deepen-b4-broadphase-guards-1140 ---
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancyForParams(
+FUSE_PHYSICS_INLINE CellOccupancyRejectReason cellOccupancyRejectReasonForParams(
+    return cellOccupancyRejectReason(range, params.maxCellOccupancy);
+    return !preflightCellOccupancyForParams(range, params).canIterate();
+    return preflightCellOccupancyForParams(range, params).canIterate();
