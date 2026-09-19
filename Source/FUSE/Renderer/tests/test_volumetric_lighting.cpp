@@ -589,6 +589,7 @@ void testFroxelDensityAccessAndClampGuards() {
 void testFroxelValidateGridDensityAndAccessGuards() {
 void testFroxelDensityAccessGuardsAndValidation() {
 void testFroxelMaxIndexDeepenHelpers() {
+void testFroxelTryClampAndDensityAccessGuards() {
     fuse::renderer::FroxelGridDesc desc{};
     desc.tilesX = 4;
     desc.tilesY = 2;
@@ -605,6 +606,7 @@ void testFroxelMaxIndexDeepenHelpers() {
                "FroxelGridLayout maxFroxelIndex delegates to FroxelGridDesc");
 
                "last froxel index is at max");
+
                "penultimate froxel index is not at max");
     expectTrue(!fuse::renderer::FroxelGridLayout::isAtMaxFroxelIndex(23u, {}),
                "max index check rejects empty grid");
@@ -711,8 +713,6 @@ void testFroxelSampleCoordGuards() {
     desc.tilesY = 2;
     desc.slicesZ = 3;
 
-    fuse::renderer::FroxelDensityGrid grid{};
-    grid.allocate(desc);
 
     expectTrue(!fuse::renderer::froxel_util::shouldSkipFroxelGrid(desc),
                "non-empty froxel desc does not skip grid ops");
@@ -1564,23 +1564,14 @@ void testFroxelClassifyPreflightAndIsBlockingGuards() {
     expectTrue(fuse::renderer::FroxelGridLayout::areSampleCoordsInBounds(clamped, desc),
                "tryClamp sample coords produces in-bounds coords");
 
-    fuse::renderer::FroxelGridDesc zeroDesc{};
-    zeroDesc.tilesX = 0u;
     fuse::renderer::FroxelSampleCoords emptyClamp = oobWeights;
     expectTrue(!fuse::renderer::FroxelGridLayout::tryClampSampleCoords(emptyClamp, zeroDesc),
                "tryClamp sample coords rejects empty grid");
     expectTrue(!fuse::renderer::FroxelGridLayout::areSampleCoordsInBounds(inBounds, zeroDesc),
                "in-bounds coords rejected on empty grid desc");
-}
 
 void testFroxelDensityAccessAndValidationDeepen() {
-    fuse::renderer::FroxelGridDesc desc{};
-    desc.tilesX = 4;
-    desc.tilesY = 2;
-    desc.slicesZ = 3;
 
-    fuse::renderer::FroxelDensityGrid grid{};
-    grid.allocate(desc);
     grid.density[0] = 1.5f;
     grid.density[23] = 2.5f;
 
@@ -1589,7 +1580,6 @@ void testFroxelDensityAccessAndValidationDeepen() {
     expectTrue(fuse::renderer::froxel_util::canSampleDensityAtIndex(grid, desc, 999u),
                "canSample accepts OOB index that will be clamped");
 
-    fuse::f32 sampled = 0.f;
     expectTrue(fuse::renderer::froxel_util::trySampleDensityAtIndex(grid, desc, 0u, sampled),
                "trySample succeeds on valid grid");
     expectNear(sampled, 1.5f, 1e-5f, "trySample returns origin density");
@@ -1599,11 +1589,36 @@ void testFroxelDensityAccessAndValidationDeepen() {
                "trySample succeeds when clamping OOB index");
     expectNear(clampedSample, 2.5f, 1e-5f, "trySample clamps OOB index to last froxel");
 
-    fuse::renderer::FroxelDensityGrid emptyGrid{};
     fuse::f32 rejectedSample = 9.f;
-    expectTrue(!fuse::renderer::froxel_util::trySampleDensityAtIndex(emptyGrid, desc, 0u, rejectedSample),
-               "trySample rejects empty storage");
     expectNear(rejectedSample, 0.f, 1e-6f, "trySample zeroes output on guard failure");
+
+    grid.density[23] = 2.75f;
+
+    expectTrue(fuse::renderer::froxel_util::canSampleAtIndex(grid, desc, 0u),
+    expectTrue(fuse::renderer::froxel_util::canSampleAtIndex(grid, desc, 999u),
+    expectTrue(fuse::renderer::froxel_util::canSampleAtCoord(grid, desc),
+               "canSampleAtCoord accepts matching grid and desc");
+
+               "trySample at origin succeeds");
+    expectNear(sampledDensity, 1.25f, 1e-5f, "trySample at origin returns stored density");
+
+    fuse::f32 clampedDensity = 0.f;
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtIndex(grid, desc, 999u, clampedDensity),
+               "trySample at OOB index succeeds");
+    expectNear(clampedDensity, 2.75f, 1e-5f, "trySample at clamped last index returns stored density");
+
+    fuse::f32 coordDensity = 0.f;
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtCoord(grid, desc, 0u, 0u, 0u, coordDensity),
+               "trySample at tile coords succeeds");
+    expectNear(coordDensity, 1.25f, 1e-5f, "trySample at tile coords returns stored density");
+
+    fuse::f32 rejectedDensity = 9.f;
+    expectTrue(!fuse::renderer::froxel_util::canSampleAtIndex(emptyGrid, desc, 0u),
+               "canSample rejects empty storage");
+    expectTrue(!fuse::renderer::froxel_util::canSampleAtCoord(emptyGrid, desc),
+               "canSampleAtCoord rejects empty storage");
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityAtIndex(emptyGrid, desc, 0u, rejectedDensity),
+    expectNear(rejectedDensity, 0.f, 1e-6f, "trySample zeroes output on guard failure");
 
     fuse::renderer::FroxelGridDesc mismatched{};
     mismatched.tilesX = 2;
@@ -1648,6 +1663,40 @@ void testFroxelDensityAccessAndValidationDeepen() {
 
     expectTrue(!fuse::renderer::froxel_util::validateGridDensityForDesc(grid, mismatched),
                "validateGridDensityForDesc rejects desc mismatch");
+    expectTrue(!fuse::renderer::froxel_util::canSampleAtIndex(grid, mismatched, 0u),
+    expectTrue(!fuse::renderer::froxel_util::canSampleAtCoord(grid, mismatched),
+               "canSampleAtCoord rejects desc mismatch");
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityAtCoord(grid, mismatched, 0u, 0u, 0u, coordDensity),
+               "trySample at coord rejects desc mismatch");
+
+    fuse::renderer::FroxelSampleCoords unclampedCoords{};
+    unclampedCoords.tileX0 = 99u;
+    unclampedCoords.tileY0 = 99u;
+    unclampedCoords.tileX1 = 99u;
+    unclampedCoords.tileY1 = 99u;
+    unclampedCoords.sliceZ0 = 99u;
+    unclampedCoords.sliceZ1 = 99u;
+    unclampedCoords.tx = 2.f;
+    unclampedCoords.ty = -1.f;
+    unclampedCoords.tz = 3.f;
+    expectTrue(fuse::renderer::FroxelGridLayout::tryClampSampleCoords(unclampedCoords, desc),
+               "tryClamp sample coords succeeds on non-empty grid");
+    expectTrue(unclampedCoords.tileX0 == 3u && unclampedCoords.tileY0 == 1u && unclampedCoords.sliceZ0 == 2u,
+               "tryClamp sample coords clamps tile/slice corners");
+
+    fuse::renderer::FroxelSampleCoords emptyCoords{};
+    emptyCoords.tileX0 = 99u;
+    emptyCoords.tileY0 = 99u;
+    emptyCoords.tileX1 = 99u;
+    emptyCoords.tileY1 = 99u;
+    emptyCoords.sliceZ0 = 99u;
+    emptyCoords.sliceZ1 = 99u;
+    emptyCoords.tx = 2.f;
+    emptyCoords.ty = -1.f;
+    emptyCoords.tz = 3.f;
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryClampSampleCoords(emptyCoords, zeroDesc),
+               "tryClamp sample coords rejects empty grid");
+    expectTrue(emptyCoords.tileX0 == 99u, "tryClamp leaves coords untouched on empty grid");
 }
 
 void testZeroDimensionFroxelGrid() {
@@ -1805,6 +1854,7 @@ int main() {
     testFroxelMaxIndexDeepenHelpers();
     testFroxelSampleCoordGuards();
     testFroxelDensityAccessAndValidationDeepen();
+    testFroxelTryClampAndDensityAccessGuards();
     testEmptySceneVolumetricFog();
     testZeroDimensionFroxelGrid();
     testFroxelPopulateFromAnalyticFog();

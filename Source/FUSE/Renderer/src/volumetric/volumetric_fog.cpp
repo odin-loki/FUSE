@@ -247,6 +247,15 @@ bool FroxelGridLayout::tryClampSampleCoords(FroxelSampleCoords& coords, const Fr
     return true;
 }
 
+bool FroxelGridLayout::tryClampSampleCoords(FroxelSampleCoords& coords, const FroxelGridDesc& desc) {
+    if (isEmptyGrid(desc)) {
+        return false;
+    }
+
+    clampSampleCoords(coords, desc);
+    return true;
+}
+
 u32 FroxelGridLayout::clampTileX(u32 tileX, const FroxelGridDesc& desc) {
     if (desc.tilesX == 0u) {
         return 0u;
@@ -307,7 +316,6 @@ bool FroxelGridLayout::tryMapScreenDepthToSampleCoords(f32 screenX,
     mapScreenDepthToSampleCoordsImpl(screenX, screenY, viewDepth, desc, camera, outCoords);
     outReason = ScreenMappingRejectReason::None;
 bool FroxelGridLayout::areSampleCoordsInBounds(const FroxelSampleCoords& coords, const FroxelGridDesc& desc) {
-    }
 
     const u32 maxTileX = desc.tilesX - 1u;
     const u32 maxTileY = desc.tilesY - 1u;
@@ -324,7 +332,6 @@ bool FroxelGridLayout::isSampleCoordsOutOfRange(const FroxelSampleCoords& coords
 bool FroxelGridLayout::tryClampSampleCoords(FroxelSampleCoords& coords, const FroxelGridDesc& desc) {
 
     clampSampleCoords(coords, desc);
-    return true;
 }
 
 bool FroxelGridLayout::mapScreenDepthToSampleCoords(f32 screenX,
@@ -752,6 +759,9 @@ bool canAccessDensityAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc
     return !FroxelGridLayout::isEmptyGrid(desc) && gridMatchesDesc(grid, desc);
 
 bool canSampleDensityAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 /*index*/) {
+bool canSampleAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 /*index*/) {
+
+bool canSampleAtCoord(const FroxelDensityGrid& grid, const FroxelGridDesc& desc) {
 
 u32 countNonZeroFroxels(const FroxelDensityGrid& grid, f32 epsilon) {
     if (grid.isEmpty()) {
@@ -808,6 +818,7 @@ bool trySampleDensityAtIndex(const FroxelDensityGrid& grid,
                              u32 index,
                              f32& outDensity) {
     if (!canSampleDensityAtIndex(grid, desc, index)) {
+    if (!canSampleAtIndex(grid, desc, index)) {
         outDensity = 0.f;
         return false;
     }
@@ -828,6 +839,22 @@ f32 sampleDensityAtCoord(const FroxelDensityGrid& grid,
 
     const u32 index = FroxelGridLayout::froxelIndexClamped(tileX, tileY, sliceZ, desc);
     return grid.density[index];
+
+bool trySampleDensityAtCoord(const FroxelDensityGrid& grid,
+                             const FroxelGridDesc& desc,
+                             u32 tileX,
+                             u32 tileY,
+                             u32 sliceZ,
+                             f32& outDensity) {
+    if (!canSampleAtCoord(grid, desc)) {
+        outDensity = 0.f;
+        return false;
+    }
+
+    const u32 index = FroxelGridLayout::froxelIndexClamped(tileX, tileY, sliceZ, desc);
+    outDensity = grid.density[index];
+    return true;
+}
 
 bool writeDensityAtIndex(FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index, f32 value) {
     if (!canAccessDensityGrid(grid, desc)) {
