@@ -1021,3 +1021,22 @@ int main() {
     std::fprintf(stderr, "fuse_ecs_query_filter_tests: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+// --- deepen additive from deepen-b3-ecs-filters-preflight-6c37 ---
+    expectTrue(!preflight.should_skip(), "preflight should_skip false when entities are present");
+    expectTrue(emptyTable.should_skip(), "preflight should_skip true on empty table");
+    expectTrue(!conflictPreflight.can_match(), "preflight can_match false for conflicting filter");
+    expectTrue(conflictPreflight.should_skip(), "preflight should_skip true for conflicting filter");
+    expectTrue(preflight.should_skip() == fuse::ecs::should_skip_query_filter(table, filter),
+               "preflight should_skip matches should_skip_query_filter");
+void testPreflightCanMatchWithoutEntities() {
+    expectTrue(preflight.should_skip(), "zero-row matching signature should_skip iteration");
+    expectTrue(fuse::ecs::should_skip_query_filter(table, filter),
+               "should_skip_query_filter true for zero-row signature");
+    expectTrue(fuse::ecs::should_skip_query_filter({}, filter),
+               "should_skip_query_filter true for empty archetype table");
+    expectTrue(fuse::ecs::should_skip_query_filter({typed}, conflicting),
+               "should_skip_query_filter true for conflicting filter");
+    expectTrue(fuse::ecs::should_skip_query_filter({typed}, missingWith),
+               "should_skip_query_filter true when With set is unsatisfied");
+    testPreflightCanMatchWithoutEntities();

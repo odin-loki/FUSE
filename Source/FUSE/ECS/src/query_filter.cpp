@@ -125,3 +125,6 @@ bool archetype_matches(const Archetype& archetype, const QueryFilter& filter) {
 }
 
 } // namespace fuse::ecs
+
+// --- deepen additive from deepen-b3-ecs-filters-preflight-6c37 ---
+bool should_skip_query_filter(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {

@@ -112,3 +112,7 @@ template <typename... WithTs, typename... WithoutTs>
 }
 
 } // namespace fuse::ecs
+
+// --- deepen additive from deepen-b3-ecs-filters-preflight-6c37 ---
+    [[nodiscard]] bool should_skip() const { return !can_iterate(); }
+[[nodiscard]] bool should_skip_query_filter(const std::vector<Archetype>& archetypes, const QueryFilter& filter);
