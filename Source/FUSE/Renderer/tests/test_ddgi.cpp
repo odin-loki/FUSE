@@ -1989,3 +1989,6 @@ void testCacheSizingGuards() {
 
 // --- deepen additive from deepen-ddgi-probe-guards-340e ---
 void testProbeSampleAndCacheGuards() {
+
+// --- deepen additive from deepen-b56-ddgi-probe-guards-b315 ---
+void testLaunchProbeUpdateIndexGuard() {
