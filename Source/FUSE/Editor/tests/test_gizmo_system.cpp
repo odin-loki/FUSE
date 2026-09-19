@@ -3071,3 +3071,21 @@ void testSnapPreflightNoChange() {
     const fuse::editor::SnapPreflight wouldChangePreflight =
     expectTrue(!wouldChangePreflight.noChange, "transform snap preflight clears noChange when snap would move");
     expectTrue(wouldChangePreflight.wouldSnap(), "transform snap preflight wouldSnap when transform off grid");
+
+// --- deepen additive from deepen-b6-gizmo-end-drag-preflight-709c ---
+    expectTrue(!gizmo.tryUpdateDrag(hit, tryUpdateResult),
+    expectTrue(!tryUpdateResult.changed, "tryUpdateDrag leaves result unchanged on reject");
+        fuse::editor::preflightEndDrag(false, fuse::editor::GizmoMode::Translate, snap);
+    const fuse::editor::EndDragPreflight snapSkippedPreflight =
+        fuse::editor::preflightEndDrag(true, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(snapSkippedPreflight.canEnd(), "end preflight allows end when snap step invalid");
+    expectTrue(snapSkippedPreflight.snapSkipped,
+    expectTrue(validSnapPreflight.canEnd(), "end preflight accepts active drag with valid snap");
+    expectTrue(!validSnapPreflight.snapSkipped, "valid snap preflight clears snapSkipped");
+    fuse::editor::GizmoResult tryEndResult{};
+    expectTrue(gizmo.tryEndDrag(tryEndResult), "tryEndDrag succeeds on active drag");
+    expectTrue(tryEndResult.changed, "tryEndDrag marks result changed");
+    expectTrue(!tryEndResult.active, "tryEndDrag deactivates drag");
+    expectTrue(!gizmo.tryEndDrag(tryEndResult), "tryEndDrag rejects inactive drag");
+    expectTrue(!tryEndResult.changed, "inactive tryEndDrag leaves result unchanged");
+    expectTrue(end.changed, "endDrag applies via tryEndDrag guard");

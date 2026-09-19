@@ -2285,3 +2285,8 @@ SnapPreflight GizmoSystem::preflightSnap(const GizmoTransform& transform) const 
 
 // --- deepen additive from deepen-gizmo-end-drag-preflights-fffd ---
     return preflightUpdateDrag(hit, dragging, GizmoMode::Translate);
+
+// --- deepen additive from deepen-b6-gizmo-end-drag-preflight-709c ---
+EndDragPreflight preflightEndDrag(bool dragging, GizmoMode mode, const GizmoSnapSettings& settings) {
+    return preflightEndDrag(dragging, mode, settings).canEnd();
+    return fuse::editor::preflightEndDrag(m_dragging, m_mode, m_snap);

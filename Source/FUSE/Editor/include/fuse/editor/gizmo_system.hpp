@@ -997,3 +997,6 @@ bool shouldSkipUpdateDrag(const UpdateDragPreflight& preflight);
 SnapPreflight preflightSnap(GizmoMode mode, const GizmoSnapSettings& settings,
 UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoMode mode);
     [[nodiscard]] SnapPreflight preflightSnap(const GizmoTransform& transform) const;
+
+// --- deepen additive from deepen-b6-gizmo-end-drag-preflight-709c ---
+EndDragPreflight preflightEndDrag(bool dragging, GizmoMode mode, const GizmoSnapSettings& settings);
