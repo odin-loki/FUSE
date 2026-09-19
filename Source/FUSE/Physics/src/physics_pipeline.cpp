@@ -31,6 +31,12 @@ u32 PhysicsPipeline::addSphereBody(vec3 position, f32 radius, f32 invMass, u32 f
     return bodyIndex;
 }
 
+u32 PhysicsPipeline::addBoxBody(vec3 position, vec3 halfExtents, f32 invMass, u32 flags) {
+    const u32 bodyIndex = m_bodies.addBody(position, invMass, flags);
+    m_shapes.addShape(CollisionShapeType::Box, bodyIndex, halfExtents);
+    return bodyIndex;
+}
+
 u32 PhysicsPipeline::addStaticPlane(vec3 normal, f32 distance) {
     const u32 bodyIndex = m_bodies.addBody({}, 0.f, RB_STATIC);
     m_shapes.addShape(CollisionShapeType::Plane, bodyIndex, normal, distance);

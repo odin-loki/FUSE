@@ -13,6 +13,7 @@ set(FUSE_PROJECT_PUBLIC_HEADERS
     include/fuse/project/cook_cache.hpp
     include/fuse/project/import_pipeline.hpp
     include/fuse/project/importer_extract.hpp
+    include/fuse/project/t3d_asset_vfs.hpp
 )
 
 set(FUSE_PROJECT_SOURCES
@@ -29,6 +30,7 @@ set(FUSE_PROJECT_SOURCES
     src/cook_cache.cpp
     src/import_pipeline.cpp
     src/importer_extract.cpp
+    src/t3d_asset_vfs.cpp
 )
 
 add_library(fuse_project STATIC

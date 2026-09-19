@@ -1,5 +1,7 @@
+#include <fuse/io/vfs.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/project/t2d_module_bridge.hpp>
+#include <fuse/project/t3d_asset_vfs.hpp>
 #include <fuse/project/t3d_datablock_resolve.hpp>
 #include <fuse/project/world_converter.hpp>
 #include <fuse/scene/serialiser.hpp>
@@ -7,6 +9,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -237,19 +240,19 @@ void testT3DDatablockResolveFromScene() {
 }
 
 void testT2DModuleRuntimeBridgeLayersPhysicsComposite() {
-    const std::string module = writeTempFile(
-        "/tmp/fuse_t2d_deep_bridge.cs",
-        R"(module "CompositeToy";
-new SceneToy() {
-  new CompositeSprite(Composite) {
-    layer = 2;
-    new SpritePlayer(ChildA) {
-      position = "1 2";
-      sortPoint = 10;
-      physicsEnabled = true;
-    };
-  };
-};)");
+    const std::string moduleText =
+        "module \"CompositeToy\";\n"
+        "new SceneToy() {\n"
+        "  new CompositeSprite(Composite) {\n"
+        "    layer = 2;\n"
+        "    new SpritePlayer(ChildA) {\n"
+        "      position = \"1 2\";\n"
+        "      sortPoint = 10;\n"
+        "      physicsEnabled = true;\n"
+        "    };\n"
+        "  };\n"
+        "};\n";
+    const std::string module = writeTempFile("/tmp/fuse_t2d_deep_bridge.cs", moduleText);
 
     fuse::world2d::World2D world;
     const fuse::project::T2DRuntimeBridgeResult bridged =
@@ -258,6 +261,108 @@ new SceneToy() {
     expectTrue(bridged.ok, "t2d deep runtime bridge ok");
     expectTrue(bridged.spriteCount >= 2u, "composite + child sprites bridged");
     expectTrue(world.isPhysicsEnabled(), "physics enabled when module requests it");
+    expectTrue(bridged.physicsBodyCount >= 1u, "physics body count recorded");
+    expectTrue(bridged.circleBodyCount >= 1u, "default physics shape is circle");
+}
+
+void testT2DPhysicsShapesCollisionLayers() {
+    const std::string moduleText =
+        R"(module "PhysicsToy";
+new SceneToy() {
+  new BoxSprite(Wall) {
+    position = "0 0";
+    physicsEnabled = true;
+    shapeType = "box";
+    size = "4 2";
+    collisionLayer = 3;
+    collisionMask = 5;
+  };
+  new CircleSprite(Ball) {
+    position = "1 1";
+    physicsEnabled = true;
+    collisionRadius = 1.5;
+    collisionLayer = 1;
+  };
+};)";
+    const std::string module = writeTempFile("/tmp/fuse_t2d_physics_shapes.cs", moduleText);
+
+    const fuse::project::T2DModuleExtract extract =
+        fuse::project::extractT2DModuleFields(moduleText, module);
+    expectTrue(extract.sceneNodes.size() >= 2u, "physics module extract produced nodes");
+
+    bool foundBox = false;
+    bool foundCircle = false;
+    for (const fuse::project::T2DSceneNodeStub& node : extract.sceneNodes) {
+        if (node.objectName == "Wall") {
+            foundBox = true;
+            expectTrue(node.physicsShape == fuse::project::T2DPhysicsShape::Box,
+                       "box sprite maps to box physics shape");
+            expectTrue(node.collisionLayer == 3, "collision layer parsed");
+            expectTrue(node.collisionMask == 5u, "collision mask parsed");
+        }
+        if (node.objectName == "Ball") {
+            foundCircle = true;
+            expectTrue(node.physicsShape == fuse::project::T2DPhysicsShape::Circle,
+                       "circle sprite maps to circle physics shape");
+            expectTrue(node.physicsRadius > 1.f, "collision radius parsed");
+        }
+    }
+    expectTrue(foundBox && foundCircle, "box and circle nodes extracted");
+
+    fuse::world2d::World2D world;
+    const fuse::project::T2DRuntimeBridgeResult bridged =
+        fuse::project::populateWorld2DFromModuleExtract(world, extract);
+    expectTrue(bridged.ok, "physics shapes bridge ok");
+    expectTrue(bridged.physicsBodyCount == 2u, "two physics bodies bridged");
+    expectTrue(bridged.boxBodyCount == 1u, "one box body");
+    expectTrue(bridged.circleBodyCount == 1u, "one circle body");
+    expectTrue(bridged.collisionLayerCount >= 1u, "collision layers recorded");
+    expectTrue(world.physics().bodyCount() == 2u, "world physics bodies created");
+}
+
+void testT3DMaterialVfsMountAndResolve() {
+    const std::filesystem::path projectRoot = std::filesystem::path("/tmp/fuse_vfs_project");
+    const std::filesystem::path materialPath =
+        projectRoot / "data" / "materials" / "Prototyping" / "FloorGray.mat";
+    std::filesystem::create_directories(materialPath.parent_path());
+    writeTempFile(materialPath.string(), "stub material");
+
+    fuse::project::ProjectManifest manifest{};
+    manifest.projectRoot = projectRoot.string();
+    const fuse::project::ProjectVfsMountResult mount =
+        fuse::project::mountProjectAssetRoots(manifest);
+    expectTrue(mount.mountsAdded >= 1u, "project vfs mounts added");
+    expectTrue(mount.t3dMount, "t3d mount registered");
+
+    const std::string virtualPath =
+        fuse::project::materialAssetToVirtualPath("Prototyping:FloorGray");
+    expectTrue(virtualPath == "/t3d/materials/Prototyping/FloorGray.mat",
+               "material ref maps to virtual path");
+
+    std::string resolvedPhysical;
+    expectTrue(fuse::io::VirtualFileSystem::instance().resolve(virtualPath, resolvedPhysical),
+               "mounted vfs resolves material path");
+
+    const std::string mission = writeTempFile(
+        "/tmp/fuse_vfs_mission.mis",
+        "new Scene(ExampleLevel) {\n"
+        "   new GroundPlane(Floor) {\n"
+        "      MaterialAsset = \"Prototyping:FloorGray\";\n"
+        "   };\n"
+        "};\n");
+    const std::string missionText = [&]() {
+        std::ifstream in(mission);
+        std::ostringstream buffer;
+        buffer << in.rdbuf();
+        return buffer.str();
+    }();
+
+    const fuse::project::T3DMissionExtract extract =
+        fuse::project::extractT3DMissionFields(missionText);
+    const fuse::project::T3DMaterialVfsResolveResult resolved =
+        fuse::project::resolveT3DMaterialVfsPaths(extract);
+    expectTrue(resolved.materialCount >= 1u, "material vfs resolve counted refs");
+    expectTrue(resolved.resolvedCount >= 1u, "material vfs path resolved on disk");
 }
 
 void testT2DModuleRuntimeBridge() {
@@ -289,6 +394,8 @@ int main() {
     testT3DDatablockResolveFromScene();
     testT2DModuleRuntimeBridge();
     testT2DModuleRuntimeBridgeLayersPhysicsComposite();
+    testT2DPhysicsShapesCollisionLayers();
+    testT3DMaterialVfsMountAndResolve();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

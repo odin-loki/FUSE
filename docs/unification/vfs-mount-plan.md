@@ -55,3 +55,7 @@ Completed loads queue in FIFO **completion** order (`pushCompleted` → `drainCo
 1. Frame-allocator scratch for decode/cook staging on workers  
 2. TSan nightly on I/O handoff path (`fuse_core_io_handle` in [fuse-tsan-nightly.yml](../../.github/workflows/fuse-tsan-nightly.yml))  
 3. Cancellation when `fuse::platform::getPowerState() == Background`
+
+## Wave 10 (U7 project wiring)
+
+`fuse::project::mountProjectAssetRoots` mounts project `Assets/` + `data/` (+ project root for `/t2d/`) into the process VFS. `materialAssetToVirtualPath` maps legacy `MaterialAsset` refs to `/t3d/materials/...` for resolve checks; runtime embed loads call this on world load (`RuntimeEmbedSession::projectVfsMounts`).

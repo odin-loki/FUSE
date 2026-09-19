@@ -11,11 +11,14 @@
 #include <fuse/platform/window_wsi.hpp>
 #include <fuse/jobs/worker_count.hpp>
 #include <fuse/project/loader.hpp>
+#include <fuse/project/t3d_asset_vfs.hpp>
 #include <fuse/scene/project_io.hpp>
 #include <fuse/scene/serialiser.hpp>
 #include <fuse/scene/wire_runtime_bind.hpp>
 
 #include <vector>
+
+#include <algorithm>
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <fuse/frame/frame_ctx.hpp>
@@ -236,6 +239,10 @@ void RuntimeViewportHook::ensureWorldLoaded_(EditorHost& host) {
 
     fuse::jobs::setProjectWorkerCap(projectLoad.manifest.workerCap);
 
+    const fuse::project::ProjectVfsMountResult vfsMount =
+        fuse::project::mountProjectAssetRoots(projectLoad.manifest);
+    m_embedSession.projectVfsMounts = vfsMount.mountsAdded;
+
     fuse::scene::Scene& runtimeScene = host.runtimeScene();
     const fuse::scene::SerialiseResult loaded =
         fuse::scene::loadForProject(runtimeScene, projectLoad);
@@ -252,6 +259,14 @@ void RuntimeViewportHook::ensureWorldLoaded_(EditorHost& host) {
     m_embedSession.wireMaterialEntries = wireBindings.materialEntries;
     m_embedSession.wireEcsMaterialApplied = wireBindings.ecsMaterialApplied;
     m_embedSession.wireEcsSpawnApplied = wireBindings.ecsSpawnApplied;
+
+    const fuse::project::T3DDatablockResolveResult materialBindings =
+        fuse::project::resolveT3DBindingsFromScene(runtimeScene);
+    const fuse::project::T3DMaterialVfsResolveResult materialVfs =
+        fuse::project::resolveT3DMaterialVfsFromBindings(materialBindings);
+    m_embedSession.materialVfsResolved = materialVfs.resolvedCount;
+    m_embedSession.materialVfsUnresolved = materialVfs.unresolvedCount;
+
     m_embedSession.worldLoaded = true;
     m_embedded = true;
 
@@ -315,6 +330,38 @@ void RuntimeViewportHook::mirrorEditorEntities_(EditorHost& host) {
     m_embedded = true;
 }
 
+#if defined(FUSE_VULKAN_BACKEND)
+void recreateHybridForExternalSurface(RuntimeViewportHook& hook, RuntimeViewportHeadlessGpuStub* gpu) {
+    if (gpu == nullptr || hook.swapchainHandoff().nativeSurface == nullptr ||
+        !hook.swapchainHandoff().qtRealSurface) {
+        return;
+    }
+
+    if (gpu->hybrid != nullptr) {
+        gpu->hybrid->shutdown();
+        gpu->hybrid.reset();
+        hook.embedSession().wsiPresentPathReady = false;
+    }
+
+    fuse::hybrid::HybridRendererBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.presentable.backend = fuse::hybrid::PresentableBackend::Headless;
+    bootstrapDesc.presentable.swapchainWidth = hook.swapchainHandoff().width > 0 ? hook.swapchainHandoff().width
+                                                                                  : hook.panel().width();
+    bootstrapDesc.presentable.swapchainHeight =
+        hook.swapchainHandoff().height > 0 ? hook.swapchainHandoff().height : hook.panel().height();
+    bootstrapDesc.renderer.rhi.bootstrap.instance.enableValidation = false;
+    bootstrapDesc.renderer.rhi.bootstrap.createSwapchain = true;
+    bootstrapDesc.renderer.rhi.bootstrap.swapchain = hook.buildSwapchainDescHandoff();
+
+    gpu->hybrid = fuse::hybrid::HybridRendererBootstrap::create(bootstrapDesc);
+    if (gpu->hybrid != nullptr && gpu->hybrid->isReady()) {
+        hook.embedSession().wsiPresentPathReady = true;
+        hook.embedSession().qtLivePresentReady = true;
+        hook.embedSession().headlessGpuReady = true;
+    }
+}
+#endif
+
 void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 dt) {
     if (!m_embedded) {
         return;
@@ -371,6 +418,10 @@ void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 dt) {
     if (m_embedSession.wsiPresentPathReady && gpu->hybrid != nullptr) {
         fuse::renderer::PresentPath* presentPath = gpu->hybrid->presentPath();
         if (presentPath != nullptr) {
+            if (m_surfaceHandoff.qtRealSurface && m_embedSession.usesExternalSwapchain) {
+                ++m_embedSession.qtLivePresentAttempts;
+            }
+            const u32 priorRealPresentCount = presentPath->status().realPresentCallCount;
             if (presentPath->waitInFlightFence()) {
                 presentPath->acquireImage();
                 presentPath->markReadyToPresent();
@@ -390,6 +441,15 @@ void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 dt) {
                         m_embedSession.realPresentCallCount = presentPath->status().realPresentCallCount;
                     }
 #endif
+                    if (m_surfaceHandoff.qtRealSurface && m_embedSession.usesExternalSwapchain) {
+                        ++m_embedSession.qtLivePresentTicks;
+                    }
+                }
+                if (presentPath->status().realPresentCallCount > priorRealPresentCount &&
+                    m_surfaceHandoff.qtRealSurface) {
+                    m_embedSession.qtLivePresentTicks =
+                        std::max(m_embedSession.qtLivePresentTicks,
+                                 presentPath->status().realPresentCallCount);
                 }
                 if (presentPath->status().presentSkippedNoWsiCount >
                     m_embedSession.presentSkippedNoWsiCount) {
@@ -467,6 +527,9 @@ void RuntimeViewportHook::tick(EditorHost& host, f32 dt) {
                 m_embedSession.usesExternalSwapchain = true;
                 gpu->externalSwapchainWired = true;
                 m_embedSession.usesHeadlessGpuPath = false;
+                if (m_surfaceHandoff.qtRealSurface) {
+                    recreateHybridForExternalSurface(*this, gpu);
+                }
             }
 #if defined(FUSE_HAS_VULKAN_RHI)
             if (gpu->hybrid != nullptr && m_surfaceHandoff.consumed) {

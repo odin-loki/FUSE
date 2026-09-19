@@ -56,10 +56,14 @@ public:
 
     physics::PhysicsWorld2D& physics() { return m_physics; }
     const physics::PhysicsWorld2D& physics() const { return m_physics; }
-    void setPhysicsEnabled(bool enabled) { m_physicsEnabled = enabled; }
+    void setPhysicsEnabled(bool enabled);
     bool isPhysicsEnabled() const { return m_physicsEnabled; }
 
 private:
+    static constexpr u32 kNoPhysicsBody = 0xFFFFFFFFu;
+
+    void attachPhysicsBodyForSprite_(SceneObject2D* sprite);
+    void rebuildPhysicsBodies_();
     void buildSnapshot(frame::FrameCtx& ctx);
     void syncPhysicsFromScene();
     void syncSceneFromPhysics();

@@ -32,6 +32,12 @@ struct T3DMissionExtract {
     std::vector<T3DDatablockRefStub> datablocks;
 };
 
+enum class T2DPhysicsShape : u8 {
+    None = 0,
+    Circle = 1,
+    Box = 2,
+};
+
 struct T2DSceneNodeStub {
     std::string className;
     std::string objectName;
@@ -41,6 +47,12 @@ struct T2DSceneNodeStub {
     u32 sortKey = 0;
     bool physicsEnabled = false;
     bool isCompositeSprite = false;
+    s32 collisionLayer = 0;
+    u32 collisionMask = 0xFFFFFFFFu;
+    T2DPhysicsShape physicsShape = T2DPhysicsShape::None;
+    float physicsRadius = 0.5f;
+    float boxHalfWidth = 0.5f;
+    float boxHalfHeight = 0.5f;
 };
 
 struct T2DModuleExtract {

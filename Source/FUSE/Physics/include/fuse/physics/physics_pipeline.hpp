@@ -28,6 +28,7 @@ public:
     void reset();
 
     u32 addSphereBody(vec3 position, f32 radius, f32 invMass = 1.f, u32 flags = 0);
+    u32 addBoxBody(vec3 position, vec3 halfExtents, f32 invMass = 1.f, u32 flags = 0);
     u32 addStaticPlane(vec3 normal, f32 distance);
 
     void step(f32 dt);

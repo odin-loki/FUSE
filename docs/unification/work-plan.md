@@ -303,7 +303,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | L |
 | **Scope** | In-process PIE; UI thread vs game thread command queue; one feature pane |
 | **Deps** | WP-06, WP-05 |
-| **Status** | 🚧 Wave 8: `PresentPath` deepen on `RuntimeViewportHook` (headless-safe); live Qt swapchain deferred — [U6-EDITOR.md](./U6-EDITOR.md) |
+| **Status** | 🚧 Wave 10: Qt real-surface live present counters + project VFS mount on embed load — [U6-EDITOR.md](./U6-EDITOR.md) |
 
 ---
 
@@ -314,7 +314,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | L |
 | **Scope** | `project.json`, importers, cookers under `Tools/FUSE/` |
 | **Deps** | WP-06 |
-| **Status** | 🚧 Wave 8: T2D runtime bridge + in-house BC7 mode-6 encoder (`FUSETEX_BC7`) — [U7-PROJECT-FORMAT.md](./U7-PROJECT-FORMAT.md) |
+| **Status** | 🚧 Wave 10: T2D physics shapes/collision layers + T3D material VFS mount wiring — [U7-PROJECT-FORMAT.md](./U7-PROJECT-FORMAT.md) |
 
 ---
 

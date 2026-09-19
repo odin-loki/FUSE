@@ -2,7 +2,7 @@
 
 **Phase:** U6 / WP-08 vertical slice  
 **Date:** 2026-09-19  
-**Status:** Inspector + coalesced UI property undo + runtime embed with `PresentPath` deepen (headless-safe null WSI)
+**Status:** Inspector + coalesced UI property undo + runtime embed with `PresentPath` deepen (headless-safe null WSI); Qt real-surface live present counters
 
 ---
 
@@ -144,6 +144,8 @@ ctest --test-dir build-fuse -R fuse_editor --output-on-failure
 | Optional `QVulkanInstance` surface path in viewport widget (headless-safe: skips when no DISPLAY/WAYLAND; winId stub fallback) | — |
 | `probeQVulkanWindowWsi` — headless-safe `QVulkanWindow` surface probe; `RuntimeEmbedSession::qVulkanWindowWsiReady` counter | Full in-process GPU viewport compositing |
 | `RuntimeViewportHook` loads manifest world, applies wire bindings + `workerCap`, mirrors editor entities, `PresentPath` tick counters | Live Qt swapchain present under real WSI |
+| `RuntimeEmbedSession` tracks project VFS mounts + material resolve counts on world load | — |
+| `qtLivePresentAttempts` / `qtLivePresentTicks` when `qtRealSurface` + external swapchain wired (headless CI stays stub) | Full in-process GPU viewport compositing |
 
 ---
 

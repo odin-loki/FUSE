@@ -73,7 +73,7 @@ target_include_directories(fuse_editor_api
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
-target_link_libraries(fuse_editor_api PUBLIC fuse_core fuse_ecs fuse_scene fuse_project)
+target_link_libraries(fuse_editor_api PUBLIC fuse_core fuse_ecs fuse_scene fuse_project fuse_world_converter)
 if(FUSE_BUILD_MODULES)
     target_link_libraries(fuse_editor_api PUBLIC fuse_ai fuse_cinematics)
 endif()

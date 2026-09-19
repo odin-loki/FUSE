@@ -2,7 +2,7 @@
 
 **Phase:** U7 content / converters  
 **Date:** 2026-09-19  
-**Status:** `project.json` v1 + `.fuselevel` v2 hierarchy + T2D runtime bridge + BC7 mode-6 cook encoder + encoder hooks (honest stubs)
+**Status:** `project.json` v1 + `.fuselevel` v2 hierarchy + T2D runtime bridge (physics shapes/collision layers) + T3D material VFS mount wiring + BC7 mode-6 cook encoder + encoder hooks (honest stubs)
 
 ---
 
@@ -201,9 +201,19 @@ Cook encoder hooks (`fuse_cook_stubs`): vendored Assimp fallback when system `li
 
 CTest: `fuse_scene_wire_runtime_bind`, `fuse_world2d_fuselevel_bridge`, `fuse_world_converter`, `fuse_bc7_encoder`, `fuse_assets_b79`.
 
-## 12. Deferred (honest backlog)
+## 12. Wave 10 progress
+
+| API | Role |
+|-----|------|
+| `T2DPhysicsShape` + collision layer/mask fields on module extract | Parses `collisionLayer`, `collisionMask`, `shapeType`, `size`, `collisionRadius` from toybox modules |
+| `populateWorld2DFromModuleExtract` | Circle/box physics bodies + collision layer stats; enables physics before sprite registration |
+| `mountProjectAssetRoots` | Mounts `/game/`, `/t3d/`, `/t2d/` from `projectRoot` into process VFS |
+| `materialAssetToVirtualPath` / `resolveT3DMaterialVfsPaths` | Maps `MaterialAsset = "Folder:Name"` → `/t3d/materials/Folder/Name.mat` and resolves via VFS |
+| `resolveT3DMaterialVfsFromBindings` | Resolves material wire stubs from loaded `.fuselevel` scenes |
+
+## 13. Deferred (honest backlog)
 
 - ispc_texcomp-quality BC7/BC5 compression replacing in-house mode-6 encoder
 - libvorbisenc system package on CI images (runtime libs present; dev headers optional today)
-- Full T2D toybox physics shapes / collision layers beyond circle bodies
-- Asset path remapping via VFS mounts ([vfs-mount-plan.md](./vfs-mount-plan.md))
+- Broadphase collision-layer filtering (layers stored on sprites; filter deferred)
+- Async material load via VFS I/O lane into cook cache

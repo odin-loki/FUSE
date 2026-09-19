@@ -17,6 +17,23 @@ bool importSceneObject(const LegacySceneObjectStub& legacy, SceneObject2D& out) 
     out.setPosition(legacy.x, legacy.y);
     out.setLayer(legacy.layer);
     out.setSortKey(legacy.sortKey);
+    out.setPhysicsEnabled(legacy.physicsEnabled);
+    out.setCollisionLayer(legacy.collisionLayer);
+    out.setCollisionMask(legacy.collisionMask);
+    out.setPhysicsRadius(legacy.physicsRadius);
+    out.setBoxHalfWidth(legacy.boxHalfWidth);
+    out.setBoxHalfHeight(legacy.boxHalfHeight);
+    switch (legacy.physicsShape) {
+    case LegacyPhysicsShape::Circle:
+        out.setPhysicsShape(PhysicsShape2D::Circle);
+        break;
+    case LegacyPhysicsShape::Box:
+        out.setPhysicsShape(PhysicsShape2D::Box);
+        break;
+    default:
+        out.setPhysicsShape(PhysicsShape2D::None);
+        break;
+    }
     return true;
 }
 
@@ -31,6 +48,23 @@ bool exportSceneObject(const SceneObject2D& src, LegacySceneObjectStub& out) {
     out.y = src.y();
     out.layer = src.layer();
     out.sortKey = src.sortKey();
+    out.physicsEnabled = src.physicsEnabled();
+    out.collisionLayer = src.collisionLayer();
+    out.collisionMask = src.collisionMask();
+    out.physicsRadius = src.physicsRadius();
+    out.boxHalfWidth = src.boxHalfWidth();
+    out.boxHalfHeight = src.boxHalfHeight();
+    switch (src.physicsShape()) {
+    case PhysicsShape2D::Circle:
+        out.physicsShape = LegacyPhysicsShape::Circle;
+        break;
+    case PhysicsShape2D::Box:
+        out.physicsShape = LegacyPhysicsShape::Box;
+        break;
+    default:
+        out.physicsShape = LegacyPhysicsShape::None;
+        break;
+    }
     return true;
 }
 

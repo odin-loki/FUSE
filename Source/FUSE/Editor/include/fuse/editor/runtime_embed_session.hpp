@@ -29,6 +29,12 @@ struct RuntimeEmbedSession {
     u32 wireMaterialEntries = 0;
     u32 wireEcsMaterialApplied = 0;
     u32 wireEcsSpawnApplied = 0;
+    u32 projectVfsMounts = 0;
+    u32 materialVfsResolved = 0;
+    u32 materialVfsUnresolved = 0;
+    u32 qtLivePresentAttempts = 0;
+    u32 qtLivePresentTicks = 0;
+    bool qtLivePresentReady = false;
     bool usesExternalSwapchain = false;
     u32 submittedFrames = 0;
     bool worldLoaded = false;

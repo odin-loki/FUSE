@@ -67,6 +67,23 @@ legacy::t2d::LegacySceneObjectStub makeLegacyStub(const T2DSceneNodeStub& node, 
     legacy.layer = node.layer;
     legacy.sortKey = node.sortKey;
     legacy.compositeSprite = node.isCompositeSprite;
+    legacy.physicsEnabled = node.physicsEnabled;
+    legacy.collisionLayer = node.collisionLayer;
+    legacy.collisionMask = node.collisionMask;
+    legacy.physicsRadius = node.physicsRadius;
+    legacy.boxHalfWidth = node.boxHalfWidth;
+    legacy.boxHalfHeight = node.boxHalfHeight;
+    switch (node.physicsShape) {
+    case T2DPhysicsShape::Circle:
+        legacy.physicsShape = legacy::t2d::LegacyPhysicsShape::Circle;
+        break;
+    case T2DPhysicsShape::Box:
+        legacy.physicsShape = legacy::t2d::LegacyPhysicsShape::Box;
+        break;
+    default:
+        legacy.physicsShape = legacy::t2d::LegacyPhysicsShape::None;
+        break;
+    }
     if (!node.position.empty()) {
         parseFloatPair(node.position, legacy.x, legacy.y);
     }
@@ -113,6 +130,16 @@ T2DRuntimeBridgeResult populateWorld2DFromModuleExtract(fuse::world2d::World2D& 
     result.nodeCount = static_cast<u32>(extract.sceneNodes.size());
 
     bool anyPhysics = false;
+    for (const T2DSceneNodeStub& node : extract.sceneNodes) {
+        if (node.physicsEnabled) {
+            anyPhysics = true;
+            break;
+        }
+    }
+    if (anyPhysics) {
+        world.setPhysicsEnabled(true);
+    }
+
     u32 spriteIndex = 0;
     std::vector<fuse::SceneObject2D*> depthParents;
     depthParents.resize(32u, nullptr);
@@ -133,6 +160,10 @@ T2DRuntimeBridgeResult populateWorld2DFromModuleExtract(fuse::world2d::World2D& 
             continue;
         }
 
+        if (node.physicsEnabled && sprite->physicsShape() == fuse::PhysicsShape2D::None) {
+            sprite->setPhysicsShape(fuse::PhysicsShape2D::Circle);
+        }
+
         fuse::SceneObject2D* parent = nullptr;
         if (node.depth > 0 && static_cast<std::size_t>(node.depth - 1) < depthParents.size()) {
             parent = depthParents[static_cast<std::size_t>(node.depth - 1)];
@@ -150,21 +181,26 @@ T2DRuntimeBridgeResult populateWorld2DFromModuleExtract(fuse::world2d::World2D& 
                 node.isCompositeSprite ? sprite.get() : nullptr;
         }
 
-        world.adoptOwnedSprite(std::move(sprite));
         if (node.physicsEnabled) {
-            anyPhysics = true;
+            ++result.physicsBodyCount;
+            if (node.physicsShape == T2DPhysicsShape::Box) {
+                ++result.boxBodyCount;
+            } else {
+                ++result.circleBodyCount;
+            }
+            if (node.collisionLayer != 0) {
+                ++result.collisionLayerCount;
+            }
         }
-        ++spriteIndex;
-    }
 
-    if (anyPhysics) {
-        world.setPhysicsEnabled(true);
+        world.adoptOwnedSprite(std::move(sprite));
+        ++spriteIndex;
     }
 
     result.spriteCount = spriteIndex;
     result.ok = true;
     result.note = "bridged " + std::to_string(result.spriteCount) +
-                  " sprites from T2D module extract (layers/physics/composite)";
+                  " sprites from T2D module extract (layers/physics shapes/collision)";
     return result;
 }
 

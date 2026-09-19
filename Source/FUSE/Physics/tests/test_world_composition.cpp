@@ -24,6 +24,7 @@ void testWorld2DComposesPhysics() {
 
     fuse::SceneObject2D sprite("physics_sprite");
     sprite.setPosition(0.f, 2.f);
+    sprite.setPhysicsEnabled(true);
     world.addSprite(&sprite);
 
     fuse::frame::FrameCtx ctx;

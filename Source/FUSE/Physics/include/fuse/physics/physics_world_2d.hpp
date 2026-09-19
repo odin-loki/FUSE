@@ -12,6 +12,7 @@ public:
     void reset();
 
     u32 addCircleBody(float x, float y, f32 radius, f32 invMass = 1.f);
+    u32 addBoxBody(float x, float y, f32 halfWidth, f32 halfHeight, f32 invMass = 1.f);
     void setBodyPosition(u32 bodyIndex, float x, float y);
     void getBodyPosition(u32 bodyIndex, float& x, float& y) const;
 

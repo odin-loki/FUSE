@@ -97,6 +97,66 @@ bool parseBoolToken(std::string_view text, bool& out) {
     return false;
 }
 
+bool parseS32Token(std::string_view text, s32& out) {
+    u32 unsignedValue = 0;
+    if (!parseU32Token(text, unsignedValue)) {
+        return false;
+    }
+    out = static_cast<s32>(unsignedValue);
+    return true;
+}
+
+bool parseFloatToken(std::string_view text, float& out) {
+    std::string trimmed = trimToken(text);
+    if (trimmed.empty()) {
+        return false;
+    }
+
+    char* end = nullptr;
+    const float value = std::strtof(trimmed.c_str(), &end);
+    if (end == trimmed.c_str() || (end != nullptr && *end != '\0')) {
+        return false;
+    }
+
+    out = value;
+    return true;
+}
+
+bool parseFloatPairToken(std::string_view text, float& x, float& y) {
+    std::string trimmed = trimToken(text);
+    if (trimmed.empty()) {
+        return false;
+    }
+
+    for (char& ch : trimmed) {
+        if (ch == ',') {
+            ch = ' ';
+        }
+    }
+
+    char* cursor = trimmed.data();
+    char* end = nullptr;
+    x = std::strtof(cursor, &end);
+    if (end == cursor) {
+        return false;
+    }
+    cursor = end;
+    y = std::strtof(cursor, &end);
+    return end != cursor;
+}
+
+T2DPhysicsShape inferPhysicsShapeFromClass(const std::string& className) {
+    if (className.find("Box") != std::string::npos ||
+        className.find("Rect") != std::string::npos) {
+        return T2DPhysicsShape::Box;
+    }
+    if (className.find("Circle") != std::string::npos ||
+        className.find("Sphere") != std::string::npos) {
+        return T2DPhysicsShape::Circle;
+    }
+    return T2DPhysicsShape::None;
+}
+
 bool isCompositeSpriteClass(const std::string& className) {
     return className.find("CompositeSprite") != std::string::npos;
 }
@@ -308,6 +368,7 @@ T2DModuleExtract extractT2DModuleFields(const std::string& moduleText, const std
             node.objectName = objectName;
             node.depth = depth;
             node.isCompositeSprite = isCompositeSpriteClass(className);
+            node.physicsShape = inferPhysicsShapeFromClass(className);
             extract.sceneNodes.push_back(node);
             current = &extract.sceneNodes.back();
         }
@@ -349,6 +410,56 @@ T2DModuleExtract extractT2DModuleFields(const std::string& moduleText, const std
             const std::string usePhysics = extractAssignmentValue(line, "usePhysics = ");
             if (!usePhysics.empty() && parseBoolToken(usePhysics, physics)) {
                 current->physicsEnabled = physics;
+            }
+
+            s32 collisionLayerValue = 0;
+            const std::string collisionLayer = extractAssignmentValue(line, "collisionLayer = ");
+            if (!collisionLayer.empty() && parseS32Token(collisionLayer, collisionLayerValue)) {
+                current->collisionLayer = collisionLayerValue;
+            }
+
+            const std::string sceneGroup = extractAssignmentValue(line, "SceneGroup = ");
+            if (!sceneGroup.empty() && parseS32Token(sceneGroup, collisionLayerValue)) {
+                current->collisionLayer = collisionLayerValue;
+            }
+
+            u32 maskValue = 0;
+            const std::string collisionMask = extractAssignmentValue(line, "collisionMask = ");
+            if (!collisionMask.empty() && parseU32Token(collisionMask, maskValue)) {
+                current->collisionMask = maskValue;
+            }
+
+            const std::string shapeType = extractAssignmentValue(line, "shapeType = ");
+            if (!shapeType.empty()) {
+                if (shapeType.find("box") != std::string::npos ||
+                    shapeType.find("Box") != std::string::npos) {
+                    current->physicsShape = T2DPhysicsShape::Box;
+                } else if (shapeType.find("circle") != std::string::npos ||
+                           shapeType.find("Circle") != std::string::npos) {
+                    current->physicsShape = T2DPhysicsShape::Circle;
+                }
+            }
+
+            float radius = 0.f;
+            const std::string collisionRadius = extractAssignmentValue(line, "collisionRadius = ");
+            if (!collisionRadius.empty() && parseFloatToken(collisionRadius, radius)) {
+                current->physicsRadius = radius;
+                if (current->physicsShape == T2DPhysicsShape::None) {
+                    current->physicsShape = T2DPhysicsShape::Circle;
+                }
+            }
+
+            const std::string size = extractAssignmentValue(line, "size = ");
+            if (!size.empty()) {
+                float halfWidth = 0.f;
+                float halfHeight = 0.f;
+                if (parseFloatPairToken(size, halfWidth, halfHeight)) {
+                    current->boxHalfWidth = halfWidth * 0.5f;
+                    current->boxHalfHeight = halfHeight * 0.5f;
+                    if (current->physicsShape == T2DPhysicsShape::None) {
+                        current->physicsShape = T2DPhysicsShape::Box;
+                    }
+                }
             }
         }
 

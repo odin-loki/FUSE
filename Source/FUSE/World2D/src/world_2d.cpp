@@ -15,7 +15,9 @@ World2D::World2D() : m_root(std::make_unique<SceneObject2D>("World2DRoot")) {
     m_physics.init();
 }
 
-World2D::~World2D() = default;
+World2D::~World2D() {
+    clearLoadedSprites_();
+}
 
 void World2D::clearLoadedSprites_() {
     if (m_root) {
@@ -24,8 +26,17 @@ void World2D::clearLoadedSprites_() {
         }
     }
     m_sprites.clear();
-    m_ownedSprites.clear();
+    while (!m_ownedSprites.empty()) {
+        SceneObject2D* sprite = m_ownedSprites.back().get();
+        if (sprite != nullptr && sprite->parent() != nullptr) {
+            sprite->parent()->removeChild(sprite);
+        }
+        m_ownedSprites.pop_back();
+    }
+    m_physics.reset();
+    m_physics.init();
     m_physicsBodyIndices.clear();
+    m_physicsEnabled = false;
     m_snapshot.clear();
     m_transformSoA.clear();
     m_cullVisible.clear();
@@ -66,10 +77,46 @@ void World2D::addSprite(SceneObject2D* sprite) {
     if (m_root) {
         m_root->addChild(sprite);
     }
-    if (m_physicsEnabled) {
-        const u32 bodyIndex = m_physics.addCircleBody(sprite->x(), sprite->y(), 0.5f, 1.f);
-        m_physicsBodyIndices.push_back(bodyIndex);
+    attachPhysicsBodyForSprite_(sprite);
+}
+
+void World2D::attachPhysicsBodyForSprite_(SceneObject2D* sprite) {
+    if (!m_physicsEnabled || sprite == nullptr || !sprite->physicsEnabled()) {
+        m_physicsBodyIndices.push_back(kNoPhysicsBody);
+        return;
     }
+
+    u32 bodyIndex = kNoPhysicsBody;
+    if (sprite->physicsShape() == PhysicsShape2D::Box) {
+        bodyIndex = m_physics.addBoxBody(sprite->x(), sprite->y(), sprite->boxHalfWidth(),
+                                         sprite->boxHalfHeight(), 1.f);
+    } else {
+        const f32 radius =
+            sprite->physicsShape() == PhysicsShape2D::Circle ? sprite->physicsRadius() : 0.5f;
+        bodyIndex = m_physics.addCircleBody(sprite->x(), sprite->y(), radius, 1.f);
+    }
+    m_physicsBodyIndices.push_back(bodyIndex);
+}
+
+void World2D::rebuildPhysicsBodies_() {
+    m_physics.reset();
+    m_physics.init();
+    m_physicsBodyIndices.clear();
+    if (!m_physicsEnabled) {
+        return;
+    }
+
+    for (SceneObject2D* sprite : m_sprites) {
+        attachPhysicsBodyForSprite_(sprite);
+    }
+}
+
+void World2D::setPhysicsEnabled(bool enabled) {
+    if (m_physicsEnabled == enabled) {
+        return;
+    }
+    m_physicsEnabled = enabled;
+    rebuildPhysicsBodies_();
 }
 
 void World2D::adoptOwnedSprite(std::unique_ptr<SceneObject2D> sprite) {
@@ -81,23 +128,31 @@ void World2D::adoptOwnedSprite(std::unique_ptr<SceneObject2D> sprite) {
 
 void World2D::syncPhysicsFromScene() {
     for (usize i = 0; i < m_sprites.size() && i < m_physicsBodyIndices.size(); ++i) {
+        const u32 bodyIndex = m_physicsBodyIndices[i];
+        if (bodyIndex == kNoPhysicsBody) {
+            continue;
+        }
         const SceneObject2D* sprite = m_sprites[i];
         if (sprite == nullptr) {
             continue;
         }
-        m_physics.setBodyPosition(m_physicsBodyIndices[i], sprite->x(), sprite->y());
+        m_physics.setBodyPosition(bodyIndex, sprite->x(), sprite->y());
     }
 }
 
 void World2D::syncSceneFromPhysics() {
     for (usize i = 0; i < m_sprites.size() && i < m_physicsBodyIndices.size(); ++i) {
+        const u32 bodyIndex = m_physicsBodyIndices[i];
+        if (bodyIndex == kNoPhysicsBody) {
+            continue;
+        }
         SceneObject2D* sprite = m_sprites[i];
         if (sprite == nullptr) {
             continue;
         }
         float x = 0.f;
         float y = 0.f;
-        m_physics.getBodyPosition(m_physicsBodyIndices[i], x, y);
+        m_physics.getBodyPosition(bodyIndex, x, y);
         sprite->setPosition(x, y);
     }
 }
