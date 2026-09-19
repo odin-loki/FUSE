@@ -4401,3 +4401,34 @@ void testDdgiKernelUpdatePreflightGuards() {
                "clampable_sample_coords is not blocking for wouldSkip");
                "wouldSkipProbeTrilinearSample true for hard OOB sample coords");
                "preflightProbeBlendKernel reports zero_rays_per_probe reason");
+
+// --- deepen additive from deepen-ddgi-b56-guards-8799 ---
+    expectTrue(fuse::renderer::ddgi_util::tryValidateProbeGridSource(descSource, sourceReason),
+    expectTrue(fuse::renderer::ddgi_util::preflightProbeGridSource(descSource),
+               "preflightProbeGridSource succeeds for desc-only source");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeGridSource(descSource),
+               "wouldSkip false for valid desc-only source");
+    expectTrue(fuse::renderer::ddgi_util::tryValidateProbeGridSourceForSampling(cacheSource, sourceReason),
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSourceReject(cacheSource) ==
+               "classifyProbeGridSourceReject none for full cache");
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateProbeGridSource(nullCacheSource, sourceReason),
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeGridSource(nullCacheSource),
+               "wouldSkip true for null cache source");
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateProbeGridSource(undersizedSource, sourceReason),
+    expectTrue(sourceReason == fuse::renderer::ProbeGridSourceRejectReason::UndersizedCache,
+    expectTrue(std::strcmp(fuse::renderer::probeGridSourceRejectReasonLabel(sourceReason), "undersized_cache") == 0,
+    expectTrue(fuse::renderer::ddgi_util::tryValidateProbeGridSource(probeDataSource, sourceReason),
+    expectTrue(fuse::renderer::ddgi_util::preflightProbeGridSource(probeDataSource),
+               "preflightProbeGridSource succeeds for probe-data source");
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateProbeGridSource(mismatchSource, sourceReason),
+    expectTrue(sourceReason == fuse::renderer::ProbeGridSourceRejectReason::DescProbeDataMismatch,
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateProbeGridSource(emptySource, sourceReason),
+    expectTrue(sourceReason == fuse::renderer::ProbeGridSourceRejectReason::EmptyGrid,
+    expectTrue(fuse::renderer::ddgi_util::tryValidateProbeGridSource(zeroResSource, sourceReason),
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateProbeGridSourceForSampling(zeroResSource, sourceReason),
+    expectTrue(sourceReason == fuse::renderer::ProbeGridSourceRejectReason::NotSampleable,
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(desc, invalid),
+               "classifyProbeScheduleRejectAtRate zero probes per frame");
+               "preflightProbeScheduleAtRate rejects zero probes per frame");
+    expectTrue(fuse::renderer::gi::classifyProbeBlendKernelReject(zeroCount) ==
+               "classifyProbeBlendKernelReject zero update count");

@@ -1036,3 +1036,6 @@ bool wouldClampCacheIndexCoordForLookup(const DDGIDesc& desc, const ProbeGridCoo
 // --- deepen additive from deepen-b56-ddgi-guards-a5ff ---
 bool wouldSkipCacheIndexLookupAtCoord(const DDGIDesc& desc, u32 x, u32 y, u32 z, u32 cache_count);
 bool wouldClampCacheIndexLookupCoord(const DDGIDesc& desc, u32 x, u32 y, u32 z);
+
+// --- deepen additive from deepen-ddgi-b56-guards-8799 ---
+bool tryValidateProbeGridSourceForSampling(const ProbeGridSource& source,

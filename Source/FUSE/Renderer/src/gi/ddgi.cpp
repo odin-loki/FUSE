@@ -3174,3 +3174,16 @@ bool wouldSkipCacheIndexLookupAtCoord(const DDGIDesc& desc, u32 x, u32 y, u32 z,
     return !tryValidateCacheIndexAtCoord(desc, x, y, z, cache_count, reason);
     return !tryValidateCacheIndexAtCoord(desc, cache, x, y, z, cache_count, reason);
 bool wouldClampCacheIndexLookupCoord(const DDGIDesc& desc, u32 x, u32 y, u32 z) {
+
+// --- deepen additive from deepen-ddgi-b56-guards-8799 ---
+    case ProbeGridSourceRejectReason::InvalidKind:
+    case ProbeGridSourceRejectReason::NullDesc:
+    case ProbeGridSourceRejectReason::NullProbeData:
+    case ProbeGridSourceRejectReason::DescProbeDataMismatch:
+                               ProbeTrilinearSampleRejectReason& outReason);
+        outReason = ProbeGridSourceRejectReason::InvalidKind;
+        outReason = ProbeGridSourceRejectReason::NullDesc;
+            outReason = ProbeGridSourceRejectReason::NullProbeData;
+            outReason = ProbeGridSourceRejectReason::DescProbeDataMismatch;
+bool tryValidateProbeGridSourceForSampling(const ProbeGridSource& source,
+    if (!tryValidateProbeGridSource(source, outReason)) {
