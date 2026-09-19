@@ -5707,3 +5707,16 @@ void testAsyncFlowPreflight() {
     expectTrue(fuse::profiler::tryFirstEventByFlowId(flowId, flowEvent),
     expectTrue(flowEvent.scopeId == flowId, "tryFirstEventByFlowId preserves flow id");
     expectTrue(fuse::profiler::tryLastEventByFlowId(flowId, flowEvent),
+
+// --- deepen additive from b16-profiler-deepen-guards-ca75 ---
+               "wouldSkipCounterSnapshotAtFrame true for null track");
+    expectTrue(!fuse::profiler::wouldSkipCounterSnapshotAtFrame("valid_snapshot"),
+               "wouldSkipCounterSnapshotAtFrame false for valid track");
+    expectTrue(fuse::profiler::wouldSkipEndAsyncFlow("orphan", flowId),
+    expectTrue(fuse::profiler::wouldSkipBeginAsyncFlow("ignored", flowId),
+    expectTrue(fuse::profiler::wouldSkipEndAsyncFlow("ignored", flowId),
+    expectTrue(fuse::profiler::wouldSkipCounterSnapshotAtFrame("ignored"),
+               "wouldSkipCounterSnapshotAtFrame true when disabled");
+    expectTrue(fuse::profiler::wouldSkipBeginAsyncFlow("flow", flowId)
+    expectTrue(fuse::profiler::wouldSkipEndAsyncFlow("flow", flowId)
+               "wouldSkipEndAsyncFlow agrees with end preflight");
