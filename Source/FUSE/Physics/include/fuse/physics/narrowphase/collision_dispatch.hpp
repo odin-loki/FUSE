@@ -1,9 +1,9 @@
 #pragma once
 
-#include <fuse/physics/broadphase/spatial_hash.hpp>
 #include <fuse/physics/config.hpp>
 #include <fuse/physics/math.hpp>
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
+#include <fuse/physics/narrowphase/contact_pair.hpp>
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/types.hpp>
 
@@ -189,6 +189,33 @@ struct ContactBufferSoA;
 
 /// Job-safe narrowphase: one output slot per candidate pair, then compact valid contacts.
 void runNarrowphaseIntoBuffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactBufferSoA& buffer);
+
+/// Const preflight for narrowphase into-buffer dispatch (B4.6 deepen pass).
+struct NarrowphaseIntoBufferPreflight {
+    NarrowphaseBatchPreflight batch{};
+    bool skipped = false;
+
+    bool can_run() const { return !skipped && batch.can_dispatch(); }
+};
+
+/// Populate into-buffer preflight without running shape dispatch (B4.6 deepen pass).
+NarrowphaseIntoBufferPreflight preflight_narrowphase_into_buffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when into-buffer dispatch should be skipped entirely (B4.6 deepen pass).
+bool can_skip_narrowphase_into_buffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Run narrowphase into buffer only when preflight allows; clears buffer when skipped (B4.6 deepen pass).
+void run_narrowphase_into_buffer_with_preflight(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
