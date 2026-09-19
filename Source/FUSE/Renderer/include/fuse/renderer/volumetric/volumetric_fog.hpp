@@ -832,3 +832,6 @@ bool preflightDensityAtScreen(const FroxelDensityGrid& grid,
     static bool preflightFroxelScreenDepth(f32 screenX,
 bool froxelCameraRejectReasonIsBlocking(FroxelCameraRejectReason reason);
 bool tryValidateFroxelCamera(const FroxelCameraDesc& camera, FroxelCameraRejectReason& outReason);
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-da54 ---
+    static ScreenMappingRejectReason classifyScreenDepthMappingReject(f32 screenX,

@@ -2145,3 +2145,8 @@ bool tryValidateFroxelCamera(const FroxelCameraDesc& camera, FroxelCameraRejectR
         return GridDensityRejectReason::NonFiniteDensity;
         return GridDensityRejectReason::DensityCountMismatch;
     return GridDensityRejectReason::None;
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-da54 ---
+ScreenMappingRejectReason FroxelGridLayout::classifyScreenDepthMappingReject(f32 screenX,
+        classifyScreenDepthMappingReject(screenX, screenY, viewDepth, desc, camera);
+        classifyDensityLookupReject(grid, desc, tileX, tileY, sliceZ);
