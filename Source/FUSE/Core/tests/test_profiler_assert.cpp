@@ -5790,3 +5790,13 @@ void testWouldSkipCounterAndExportGuards() {
     expectTrue(fuse::profiler::eventCount() == 4u, "counter records when wouldSkip false");
     expectTrue(!fuse::profiler::wouldSkipAsyncFlowEnd("tracked_flow", flowId),
     expectTrue(fuse::profiler::eventCount() == 5u, "flow end records when wouldSkip false");
+
+// --- deepen additive from b16-profiler-deepen-guards-801b ---
+               "wouldSkipChromeTraceExportSafely false on empty balanced buffer");
+               "wouldSkipChromeTraceExportSafely false for balanced trace");
+    expectTrue(fuse::profiler::wouldSkipProfileScope(nullptr) ==
+                   !fuse::profiler::preflightProfileScope(nullptr).canEnter,
+               "wouldSkipProfileScope agrees with preflight canEnter");
+    expectTrue(fuse::profiler::wouldSkipBeginAsyncFlow("flow", flowId) ==
+                   !fuse::profiler::preflightBeginAsyncFlow("flow", flowId).canBegin,
+               "wouldSkipBeginAsyncFlow agrees with preflight canBegin");
