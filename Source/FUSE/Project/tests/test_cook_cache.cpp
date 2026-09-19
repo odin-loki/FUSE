@@ -1676,8 +1676,6 @@ void testCookCacheInvalidationProbes() {
                "empty source path upstream probe is zero");
 
     const std::string source = writeTempFile("/tmp/fuse_b79_probe_stale.obj", "# probe v1\n");
-    fuse::project::MeshImportDesc desc;
-    desc.input_path = source;
     desc.output_path = "/tmp/fuse_b79_probe_stale.fusemesh";
 
     fuse::project::AssetCooker cooker;
@@ -1735,6 +1733,7 @@ void testCookHashPreflightGuards() {
                "empty mesh input reports EmptyInputOrOutput");
 
     mesh.input_path = source;
+    mesh.output_path = "/tmp/fuse_b79_preflight_out.fusemesh";
     expectTrue(fuse::project::preflight_hash_mesh_import(mesh, &reason),
                "valid mesh import passes preflight");
     expectTrue(fuse::project::hash_mesh_import(mesh) != 0,
@@ -1774,6 +1773,11 @@ void testCookCacheInvalidationProbes() {
 
     desc.output_path = "/tmp/fuse_b79_probe_mesh.fusemesh";
 
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
     expectTrue(seeded.ok, "seed cook for invalidation probes ok");
     expectTrue(cooker.cache().entry_count() == 1u, "cache seeded for probes");
 
@@ -1810,6 +1814,7 @@ void testCookCacheInvalidationProbes() {
     expectTrue(cooker.cache().entry_count() == 1u, "probes leave cache untouched");
     expectTrue(cooker.cache().stats().invalidations == invalidations_before,
                "probes do not bump invalidation stats");
+}
 
 void testCookCacheReconcileEstimators() {
     fuse::project::CookCache cache;
@@ -1831,6 +1836,7 @@ void testCookCacheReconcileEstimators() {
     stale_desc.input_path = stale_source;
     stale_desc.output_path = "/tmp/fuse_b79_reconcile_stale.fusemesh";
 
+    fuse::project::AssetCooker cooker;
     const fuse::project::CookRecord valid_cook = cooker.cook_mesh(valid_desc);
     const fuse::project::CookRecord stale_cook = cooker.cook_mesh(stale_desc);
     expectTrue(valid_cook.ok && stale_cook.ok, "seed entries for reconcile estimators");

@@ -1212,6 +1212,7 @@ void testCookCacheStaleDependencyEstimatorProbe() {
                "actual stale dependency invalidation meets estimator lower bound");
     expectTrue(cooker.cache().stats().invalidations > invalidations_before,
                "stale dependency invalidation bumps stats after estimator probe");
+    expectTrue(cooker.estimate_stale_dependency_hashes(manifest) == 0u,
 }
 
 void testCookCacheUpstreamInvalidation() {

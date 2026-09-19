@@ -56,6 +56,7 @@ const char* cookHashPreflightRejectReasonLabel(CookHashPreflightRejectReason rea
 [[nodiscard]] bool preflight_hash_texture_import(const TextureImportDesc& desc,
 [[nodiscard]] bool preflight_hash_audio_import(const AudioImportDesc& desc,
 [[nodiscard]] bool preflight_hash_manifest_entry(const CookManifestEntry& entry,
+                                              CookHashPreflightRejectReason* reason = nullptr);
 
 /// Preflight guard before `combine_cook_cache_key` — true when the fold would be cacheable.
 [[nodiscard]] bool preflight_combine_cook_cache_key(u64 source_hash,
@@ -103,6 +104,7 @@ struct CookCacheKeyPreflight {
 
     [[nodiscard]] bool can_combine() const { return !zero_source_hash; }
     [[nodiscard]] bool should_skip() const { return !can_combine(); }
+                                                    CookHashPreflightRejectReason* reason = nullptr);
 
 /// FNV-1a 64-bit hash over raw bytes — shared by cook cache keys (B7.9 deepen stub).
 [[nodiscard]] u64 fnv1a64_bytes(const u8* data, usize size);

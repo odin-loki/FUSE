@@ -410,6 +410,7 @@ CookCacheReconcileEstimate AssetCooker::estimate_invalidate_stale_dependency_has
 u32 AssetCooker::estimate_stale_dependency_reconcile(const CookManifest& manifest) const {
 CookCacheReconcileEstimate AssetCooker::estimate_stale_dependency_hashes(const CookManifest& manifest) const {
 
+
     std::vector<std::pair<std::string, u64>> source_upstream;
     source_upstream.reserve(graph.jobs().size());
     for (const CookJob& job : graph.jobs()) {
@@ -434,6 +435,7 @@ CookCacheReconcileEstimate AssetCooker::estimate_stale_dependency_hashes(const C
     return estimate;
     return m_cache.count_stale_upstream_entries(source_upstream);
     return m_cache.estimate_stale_upstream_invalidations(source_upstream);
+        }
 }
 
 CookBatchResult AssetCooker::cook_dirty(AssetGraph& graph, const std::string& project_dir) {
