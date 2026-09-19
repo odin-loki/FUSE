@@ -23,6 +23,7 @@ enum class ContactPairRejectReason : u8 {
     BothKinematic,
     AnyTrigger,
     BothMassless,
+    NoDispatchPath,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
@@ -202,6 +203,37 @@ bool contact_pair_deepen_rejects_for_reason(
 /// Returns true when both shapes resolve to plane types (B4.5 deepen follow-up pass).
 bool is_plane_plane_contact_pair(
     const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when one shape is a box and the other is a plane (B4.6 deepen pass).
+bool is_box_plane_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when one shape is a capsule and the other is a plane (B4.6 deepen pass).
+bool is_capsule_plane_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when both shapes resolve to capsule types (B4.6 deepen pass).
+bool is_capsule_capsule_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when one shape is a box and the other is a capsule (B4.6 deepen pass).
+bool is_box_capsule_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when `dispatchShapePair` has no narrowphase path despite passing base checks (B4.6 deepen pass).
+bool is_undispatched_shape_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
+
+/// Run shape dispatch only when extended deepen preflight allows (B4.6 deepen pass).
+ContactManifold detect_contacts_pair_deepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
 /// Const preflight for narrowphase batch dispatch (B4.5 deepen follow-up pass).

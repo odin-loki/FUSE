@@ -105,6 +105,33 @@ void ContactBufferSoA::buildFrictionTangentBases() {
     }
 }
 
+bool ContactBufferSoA::frictionBasisMatchesNormalAt(u32 slot, f32 epsilon) const {
+    if (slot >= activeCount || validFlags[slot] == 0u) {
+        return false;
+    }
+    const TangentBasis basis{tangent1[slot], tangent2[slot]};
+    return isOrthonormalTangentBasis(contactNormals[slot], basis, epsilon);
+}
+
+bool ContactBufferSoA::canSkipBuildFrictionTangentBases(f32 epsilon) const {
+    return can_skip_build_friction_tangent_bases(*this, epsilon);
+}
+
+void ContactBufferSoA::buildFrictionTangentBasesIfNeeded() {
+    if (canSkipBuildFrictionTangentBases()) {
+        return;
+    }
+
+    for (u32 slot = 0u; slot < activeCount; ++slot) {
+        if (validFlags[slot] == 0u || frictionBasisMatchesNormalAt(slot)) {
+            continue;
+        }
+        const TangentBasis basis = buildTangentBasis(contactNormals[slot]);
+        tangent1[slot] = basis.tangent1;
+        tangent2[slot] = basis.tangent2;
+    }
+}
+
 TangentBasis ContactBufferSoA::tangentBasisAt(u32 index) const {
     if (index >= activeCount || validFlags[index] == 0u) {
         return {};
@@ -273,6 +300,26 @@ std::vector<ContactManifold> ContactBufferSoA::toVector() const {
         }
     }
     return manifolds;
+}
+
+ContactBufferFrictionPreflight preflight_contact_buffer_friction_rebuild(
+    const ContactBufferSoA& buffer,
+    f32 epsilon) {
+    ContactBufferFrictionPreflight preflight{};
+    preflight.activeCount = buffer.activeCount;
+    for (u32 slot = 0u; slot < buffer.activeCount; ++slot) {
+        if (buffer.validFlags[slot] == 0u) {
+            continue;
+        }
+        if (!buffer.frictionBasisMatchesNormalAt(slot, epsilon)) {
+            ++preflight.staleCount;
+        }
+    }
+    return preflight;
+}
+
+bool can_skip_build_friction_tangent_bases(const ContactBufferSoA& buffer, f32 epsilon) {
+    return preflight_contact_buffer_friction_rebuild(buffer, epsilon).can_skip_rebuild();
 }
 
 } // namespace fuse::physics::narrowphase
