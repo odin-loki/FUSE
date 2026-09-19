@@ -23,6 +23,7 @@ enum class ContactPairRejectReason : u8 {
     BothKinematic,
     AnyTrigger,
     BothMassless,
+    BothPlanes,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
@@ -225,5 +226,14 @@ bool narrowphase_batch_rejects_all(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
+
+/// Run shape dispatch only when extended deepen preflight passes (B4.6 deepen pass).
+ContactManifold detect_contacts_pair_with_preflight(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Finalize only when `preflight_manifold_finalize` passes; no-op otherwise (B4.6 deepen pass).
+bool finalize_contact_manifold_if_needed(ContactManifold& manifold);
 
 } // namespace fuse::physics::narrowphase

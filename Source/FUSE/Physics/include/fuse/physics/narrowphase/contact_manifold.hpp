@@ -256,6 +256,16 @@ bool finalize_contact_manifold_with_preflight(
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
 
+/// Normalize the contact normal when `needsNormalNormalization` is true (B4.6 deepen pass).
+bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
+
+/// Prune only when `preflight_manifold_prune` reports work; returns true when points remain (B4.6 deepen pass).
+bool prune_contact_manifold_if_needed(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }
