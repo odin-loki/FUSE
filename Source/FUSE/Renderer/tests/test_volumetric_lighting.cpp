@@ -3966,3 +3966,29 @@ void testFroxelRejectClassifyAndPreflightGuards() {
 void testFroxelIsBlockingClassifyAndPreflightGuards() {
                "preflightDensityLookupAtCoord succeeds for accessible grid");
     testFroxelIsBlockingClassifyAndPreflightGuards();
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-d9ce ---
+void testFroxelIsBlockingAndPreflightGuards() {
+    expectTrue(fuse::renderer::FroxelGridLayout::preflightMapScreenDepthToSampleCoords(
+               "preflightMapScreenDepthToSampleCoords succeeds in range");
+               "preflightMapScreenDepthToSampleCoords reports no reject reason in range");
+    expectTrue(fuse::renderer::FroxelGridLayout::preflightMapScreenDepthToFroxelIndex(
+               "preflightMapScreenDepthToFroxelIndex succeeds in range");
+    expectTrue(froxelIndex < desc.froxelCount(), "preflightMapScreenDepthToFroxelIndex returns valid index");
+    expectTrue(!fuse::renderer::FroxelGridLayout::preflightMapScreenDepthToSampleCoords(
+               "preflightMapScreenDepthToSampleCoords rejects empty grid");
+               "preflightMapScreenDepthToSampleCoords reports empty_grid for empty desc");
+    expectTrue(fuse::renderer::FroxelGridLayout::classifyScreenMappingFroxelIndexReject(
+               "classifyScreenMappingFroxelIndexReject reports empty_grid for empty desc");
+    expectTrue(fuse::renderer::froxel_util::preflightTrilinearSampleAtCoords(grid, desc, inBounds, &trilinearReason),
+               "preflightTrilinearSampleAtCoords succeeds on accessible grid");
+               "preflightTrilinearSampleAtCoords reports no reject reason for in-bounds coords");
+    expectTrue(fuse::renderer::froxel_util::preflightTrilinearSampleAtCoords(grid, desc, warnWeights, &trilinearReason),
+               "preflightTrilinearSampleAtCoords succeeds for clampable weights");
+               "preflightTrilinearSampleAtCoords reports clampable_weights for OOB weights");
+    expectTrue(!fuse::renderer::froxel_util::preflightTrilinearSampleAtCoords(grid, desc, hardOob, &trilinearReason),
+               "preflightTrilinearSampleAtCoords rejects hard OOB coords");
+               "preflightTrilinearSampleAtCoords reports invalid_sample_coords for hard OOB coords");
+               "preflightGridDensity reports no reject reason on accessible grid");
+               "classifyGridDensityReject reports none on accessible grid");
+    testFroxelIsBlockingAndPreflightGuards();

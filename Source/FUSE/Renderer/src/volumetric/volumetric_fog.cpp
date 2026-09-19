@@ -2375,3 +2375,9 @@ bool preflightFroxelSampleAtCoords(const FroxelDensityGrid& grid,
 // --- deepen additive from deepen-b511-froxel-guards-80e2 ---
 bool FroxelGridLayout::preflightScreenMappingReady(f32 screenX,
 bool preflightGridDensityReady(const FroxelDensityGrid& grid,
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-d9ce ---
+bool FroxelGridLayout::preflightMapScreenDepthToSampleCoords(f32 screenX,
+ScreenMappingRejectReason FroxelGridLayout::classifyScreenMappingFroxelIndexReject(f32 screenX,
+bool FroxelGridLayout::preflightMapScreenDepthToFroxelIndex(f32 screenX,
+bool preflightTrilinearSampleAtCoords(const FroxelDensityGrid& grid,
