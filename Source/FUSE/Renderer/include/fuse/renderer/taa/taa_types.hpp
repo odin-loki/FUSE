@@ -126,6 +126,13 @@ TaaHistoryReuseBlockReason classifyTaaHistoryReuseBlock(const TaaHistoryBuffer& 
 /// True when history temporal reuse is allowed for the observed invalidate epoch (B5.9 deepen).
 bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
                               TaaHistoryReuseBlockReason* reason = nullptr);
+/// Early-out when history temporal reuse would be blocked (B5.9 deepen).
+bool wouldSkipTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration);
+/// Diagnose history reuse preflight with a required reject reason (B5.9 deepen).
+bool tryPreflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
+                                 TaaHistoryReuseBlockReason& outReason);
+/// True when history warm-up is complete and ready for temporal reuse (B5.9 deepen).
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history);
 /// True when history buffers are allocated and ready for resolve (B5.9 deepen).
 bool taaHistoryReadyForResolve(const TaaHistoryBuffer& history);
 /// Frames remaining before temporal reuse is allowed — 0 when warmed (B5.9 deepen).
@@ -145,6 +152,11 @@ TaaResolveBlendRejectReason classifyTaaResolveBlendReject(const TaaResolveDesc& 
 /// True when computed resolve blend weights pass validation and reuse policy (B5.9 deepen).
 bool preflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                      TaaResolveBlendRejectReason* reason = nullptr);
+/// Early-out when resolve blend-weight preflight would reject (B5.9 deepen).
+bool wouldRejectTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// Diagnose resolve blend preflight with a required reject reason (B5.9 deepen).
+bool tryPreflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                        TaaResolveBlendRejectReason& outReason);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {

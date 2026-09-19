@@ -6,6 +6,15 @@
 
 namespace fuse::renderer {
 
+/// Why jitter sync-to-frame preflight rejected the request (B5.9 deepen).
+enum class TaaJitterSyncRejectReason : u8 {
+    None = 0,
+    InvalidSequence,
+};
+
+/// Human-readable label for jitter sync reject reasons (B5.9 deepen).
+const char* taaJitterSyncRejectReasonLabel(TaaJitterSyncRejectReason reason);
+
 static constexpr u32 kTaaDefaultJitterSequenceLength = 8;
 static constexpr u32 kTaaMaxJitterSequenceLength = 64;
 
@@ -21,6 +30,11 @@ struct TaaJitterLayout {
     static bool canProduceNdcOffset(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// True when jitter can align to a monotonic frame counter (B5.9 deepen).
     static bool canSyncToFrameIndex(u32 /*frameIndex*/, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// Early-out when jitter sync would be blocked for the sequence (B5.9 deepen).
+    static bool wouldSkipSyncToFrameIndex(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// Classify why jitter sync would be rejected (B5.9 deepen).
+    static TaaJitterSyncRejectReason classifyTaaJitterSyncReject(
+        u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// True when `slot` is the active Halton index for `frameIndex` (B5.9 deepen).
     static bool jitterSlotMatchesFrameIndex(u32 frameIndex, u32 slot, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Returns the jitter cycle length after validation (0 when invalid).
@@ -55,6 +69,10 @@ public:
     void syncToFrameIndex(u32 frameIndex);
     /// Sync only when the sequence is valid; returns false when blocked (B5.9 deepen).
     bool syncToFrameIndexIfReady(u32 frameIndex);
+    /// Sync with required reject-reason diagnostics; returns false when blocked (B5.9 deepen).
+    bool trySyncToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncRejectReason& outReason);
+    /// Early-out when jitter sync would be blocked (B5.9 deepen).
+    bool wouldSkipSyncToFrameIndex(u32 frameIndex) const;
     /// True when monotonic frame counter and slot match `frameIndex` (B5.9 deepen).
     bool isAlignedToFrameIndex(u32 frameIndex) const;
 
