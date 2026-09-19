@@ -4823,3 +4823,7 @@ void testTaaPassTryClassifyGuardWrappers() {
 
 // --- deepen additive from taa-pass-try-classify-wrappers-d015 ---
     expectTrue(fallbackPass->tryPreflightJitterSync(3u, jitterReject),
+
+// --- deepen additive from deepen-taa-pass-b59-guards-1b8e ---
+               "pass classifyJitterSyncReject matches module classifier");
+               "pass classifyResolveBlendReject matches module classifier");
