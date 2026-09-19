@@ -2,6 +2,10 @@
 
 #include <fuse/types.hpp>
 
+namespace fuse::renderer {
+struct DDGIDesc;
+} // namespace fuse::renderer
+
 namespace fuse::renderer::gi {
 
 /// CUDA kernel parameter bundle for DDGI probe update (B5.6 — P5 §5.6).
@@ -45,6 +49,18 @@ bool wouldSkipProbeKernelLaunch(const DDGIKernelParams& params);
 
 /// Non-mutating kernel launch preflight — returns true when both kernels would proceed.
 bool preflightProbeKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
+
+/// Populate params from desc + indices, then preflight both probe kernels without launching.
+bool preflightDdgiKernelUpdate(const DDGIDesc& desc,
+                               const u32* probe_indices,
+                               u32 probe_count,
+                               u64 frame_seed,
+                               ProbeKernelRejectReason* reason = nullptr);
+/// Early-out when desc-populated probe kernel update would be rejected.
+bool wouldSkipDdgiKernelUpdate(const DDGIDesc& desc,
+                               const u32* probe_indices,
+                               u32 probe_count,
+                               u64 frame_seed = 0);
 
 /// Populate kernel params from desc + scheduled indices without changing launch guards.
 void populateDDGIKernelParams(DDGIKernelParams& params,
