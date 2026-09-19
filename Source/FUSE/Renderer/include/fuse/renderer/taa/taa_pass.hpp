@@ -60,6 +60,8 @@ public:
     u32 warmupFramesRemaining() const;
     /// True when pass history is warmed and may be sampled (B5.9 deepen).
     bool canReuseHistory() const;
+    /// True when pass history has completed warm-up (B5.9 deepen).
+    bool isHistoryWarm() const;
     /// True when pass history is ready, warmed, and generation matches for reuse (B5.9 deepen).
     bool historyReuseReady(u32 observedGeneration) const;
     /// Early-out when pass history temporal reuse should be skipped (B5.9 deepen).
@@ -78,13 +80,35 @@ public:
     TaaHistoryReuseBlockReason classifyHistoryReuseBlock(u32 observedGeneration) const;
     /// True when pass history temporal reuse is allowed (B5.9 deepen).
     bool preflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBlockReason* reason = nullptr) const;
+    /// History reuse preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBlockReason& reason) const;
     /// True when expected resolve blend weights pass validation and reuse policy (B5.9 deepen).
     bool preflightResolveBlendWeights(const TaaResolveDesc& desc,
                                       TaaResolveBlendRejectReason* reason = nullptr) const;
+    /// Resolve blend preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightResolveBlendWeights(const TaaResolveDesc& desc,
+                                         TaaResolveBlendRejectReason& reason) const;
+    /// Compute expected resolve blend weights with reject-reason diagnostics (B5.9 deepen).
+    bool tryComputeResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& outWeights,
+                                       TaaResolveBlendRejectReason& reason) const;
     /// Early-out when resolve blend-weight preflight would reject (B5.9 deepen).
     bool shouldSkipResolveBlend(const TaaResolveDesc& desc) const;
+    /// True when history reuse and resolve blend preflights both pass (B5.9 deepen).
+    bool preflightTemporalResolveGuards(const TaaResolveDesc& desc, u32 observedGeneration,
+                                        TaaHistoryReuseBlockReason* reuseReason = nullptr,
+                                        TaaResolveBlendRejectReason* blendReason = nullptr) const;
+    /// Early-out when temporal resolve guards would reject blend preflight (B5.9 deepen).
+    bool shouldSkipTemporalResolveGuards(const TaaResolveDesc& desc, u32 observedGeneration) const;
     /// True when pass jitter can sync to `frameIndex` (B5.9 deepen).
     bool preflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason* reason = nullptr) const;
+    /// Early-out when pass jitter sync preflight would reject (B5.9 deepen).
+    bool shouldSkipJitterSync(u32 frameIndex) const;
+    /// True when pass jitter can produce NDC offsets for viewport (B5.9 deepen).
+    bool preflightJitterNdc(u32 width, u32 height, TaaJitterGuardRejectReason* reason = nullptr) const;
+    /// True when pass jitter can produce NDC offsets for configured viewport (B5.9 deepen).
+    bool preflightJitterNdcIfReady(TaaJitterGuardRejectReason* reason = nullptr) const;
+    /// Early-out when pass NDC jitter preflight would reject (B5.9 deepen).
+    bool shouldSkipJitterNdc() const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
