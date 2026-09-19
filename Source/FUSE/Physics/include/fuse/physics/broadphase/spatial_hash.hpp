@@ -144,200 +144,42 @@ FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
 }
 
 /// Non-mutating broadphase predicate — inverse of `canSkipBroadphase` (B4.2 deepen pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphase(bodies, shapes);
-}
 
-/// Non-mutating broadphase launch predicate — inverse of `canSkipBroadphase` (B4.2 deepen pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphase(bodies, shapes);
-}
 
-/// Non-mutating broadphase launch predicate — inverse of `canSkipBroadphase` (B4.2 deepen pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphase(bodies, shapes);
-}
 
 /// Non-mutating broadphase predicate — inverse of `canSkipBroadphase` (B4.2 deepen follow-up pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphase(bodies, shapes);
-}
 
 /// Non-mutating broadphase predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     return !canSkipBroadphasePairGeneration(bodies, shapes);
-}
 
-/// Non-mutating broadphase predicate — inverse of `canSkipBroadphase` (B4.2 deepen pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphase(bodies, shapes);
-}
 
-/// Non-mutating broadphase predicate — inverse of `canSkipBroadphase` (B4.2 deepen follow-up pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphase(bodies, shapes);
-}
 
 /// Non-mutating pair-generation predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen follow-up pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphasePairGeneration(bodies, shapes);
-}
 
-/// Non-mutating broadphase predicate — inverse of `canSkipBroadphase` (B4.2 deepen follow-up pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphase(bodies, shapes);
-}
 
-/// Non-mutating broadphase predicate — inverse of `canSkipBroadphase` (B4.2 deepen follow-up pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphase(bodies, shapes);
-}
 
-/// Non-mutating pair-generation predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen follow-up pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphasePairGeneration(bodies, shapes);
-}
 
-/// Non-mutating broadphase predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphasePairGeneration(bodies, shapes);
-}
 
-/// Non-mutating broadphase predicate — inverse of `canSkipBroadphase` (B4.2 deepen pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     return shouldRunBroadphasePairGeneration(bodies, shapes);
-}
 
-/// Non-mutating broadphase predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphasePairGeneration(bodies, shapes);
-}
 
 /// Non-mutating broadphase predicate — mirrors `preflightBroadphase` (B4.2 deepen pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return shouldRunBroadphasePairGeneration(bodies, shapes);
-}
 
 /// Non-mutating broadphase predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen follow-up pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphasePairGeneration(bodies, shapes);
-}
 
-/// Non-mutating broadphase predicate — inverse of `canSkipBroadphase` (B4.2 deepen follow-up pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphase(bodies, shapes);
-}
 
-/// Non-mutating broadphase launch predicate — inverse of `canSkipBroadphase` (B4.2 deepen pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphase(bodies, shapes);
-}
 
-/// Non-mutating broadphase predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen follow-up pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphasePairGeneration(bodies, shapes);
-}
 
-/// Non-mutating broadphase predicate — inverse of `canSkipBroadphase` (B4.2 deepen follow-up pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphase(bodies, shapes);
-}
 
-/// Non-mutating broadphase launch predicate — inverse of `canSkipBroadphase` (B4.2 deepen pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphase(bodies, shapes);
-}
 
 /// Non-mutating pair-generation predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphasePairGeneration(bodies, shapes);
-}
 
-/// Non-mutating broadphase launch predicate — inverse of `canSkipBroadphase` (B4.2 deepen pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphase(bodies, shapes);
-}
 
-/// Non-mutating broadphase predicate — inverse of `canSkipBroadphase` (B4.2 deepen follow-up pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphase(bodies, shapes);
-}
 
-/// Non-mutating broadphase predicate — inverse of `canSkipBroadphase` (B4.2 deepen follow-up pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphase(bodies, shapes);
-}
 
-/// Non-mutating broadphase predicate — inverse of `canSkipBroadphase` (B4.2 deepen pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphase(bodies, shapes);
-}
 
-/// Non-mutating pair-generation predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphasePairGeneration(bodies, shapes);
-}
 
-/// Non-mutating broadphase predicate — inverse of `canSkipBroadphase` (B4.2 deepen follow-up pass).
-FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !canSkipBroadphase(bodies, shapes);
-}
 
 /// Why broadphase pair generation would early-out (B4.2 deepen follow-up pass).
 enum class BroadphaseRejectReason : u8 {
@@ -444,6 +286,7 @@ FUSE_PHYSICS_INLINE BroadphasePreflight preflightBroadphase(
 
 /// Non-mutating broadphase predicate — mirrors `preflightBroadphase` (B4.2 deepen follow-up pass).
 /// Non-mutating broadphase predicate — inverse of `canSkipBroadphase` (B4.2 deepen pass).
+/// True when the broadphase pipeline may proceed before hash build (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
@@ -455,6 +298,9 @@ FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return !canSkipBroadphasePairGeneration(bodies, shapes);
+/// True when the broadphase pipeline may early-out before hash build (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool canSkipBroadphase(
+    return !shouldRunBroadphase(bodies, shapes);
 }
 
 /// Clamp cell size to a positive stub default (broadphase occupancy guard).
@@ -2045,6 +1891,85 @@ FUSE_PHYSICS_INLINE u32 cellOccupancyBudgetFromSpan2D(u32 maxSpanPerAxis) {
 /// Limit per-axis cell span from the range center (CUDA occupancy iteration guard stub).
 FUSE_PHYSICS_INLINE CellRange3 clampCellRange3(CellRange3 range, u32 maxSpanPerAxis) {
     if (!shouldRunCellSpanClamp(range, maxSpanPerAxis)) {
+/// True when `maxSpanPerAxis == 0` (unlimited per-axis span clamp stub).
+FUSE_PHYSICS_INLINE bool isUnboundedCellSpanClamp(u32 maxSpanPerAxis) {
+    return maxSpanPerAxis == 0u;
+
+/// True when any axis span exceeds `maxSpanPerAxis` before center clamping.
+FUSE_PHYSICS_INLINE bool exceedsCellSpanPerAxis(const CellRange3& range, u32 maxSpanPerAxis) {
+    if (isUnboundedCellSpanClamp(maxSpanPerAxis) || isEmptyCellRange(range)) {
+    const ivec3 span = cellSpanPerAxis(range);
+    const s32 limit = static_cast<s32>(maxSpanPerAxis);
+    return span.x > limit || span.y > limit || span.z > limit;
+
+FUSE_PHYSICS_INLINE bool exceedsCellSpanPerAxis(const CellRange2& range, u32 maxSpanPerAxis) {
+    const ivec2 span = cellSpanPerAxis(range);
+    return span.x > limit || span.y > limit;
+
+/// Why per-axis cell span clamp would early-out (B4.2 deepen pass).
+enum class CellSpanClampRejectReason : u8 {
+    None = 0,
+    EmptyRange,
+    WithinSpanLimit,
+    UnlimitedSpan,
+};
+
+/// Human-readable label for cell-span clamp reject reasons (logging / tests).
+const char* cellSpanClampRejectReasonName(CellSpanClampRejectReason reason);
+
+/// Diagnose why span clamp would skip; vacuously succeeds when clamp may proceed.
+FUSE_PHYSICS_INLINE CellSpanClampRejectReason cellSpanClampRejectReason(const CellRange3& range, u32 maxSpanPerAxis) {
+    if (isUnboundedCellSpanClamp(maxSpanPerAxis)) {
+        return CellSpanClampRejectReason::UnlimitedSpan;
+    if (isEmptyCellRange(range)) {
+        return CellSpanClampRejectReason::EmptyRange;
+    if (!exceedsCellSpanPerAxis(range, maxSpanPerAxis)) {
+        return CellSpanClampRejectReason::WithinSpanLimit;
+    return CellSpanClampRejectReason::None;
+
+FUSE_PHYSICS_INLINE CellSpanClampRejectReason cellSpanClampRejectReason(const CellRange2& range, u32 maxSpanPerAxis) {
+
+/// Returns true when `cellSpanClampRejectReason` matches `expected` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool cellSpanClampRejectsForReason(
+    const CellRange3& range,
+    u32 maxSpanPerAxis,
+    CellSpanClampRejectReason expected) {
+    return cellSpanClampRejectReason(range, maxSpanPerAxis) == expected;
+
+    const CellRange2& range,
+
+/// Read-only cell-span clamp diagnostics — no mutation (B4.2 deepen pass).
+struct CellSpanClampPreflight {
+    CellSpanClampRejectReason reason = CellSpanClampRejectReason::None;
+    bool emptyRange = false;
+    bool withinSpanLimit = false;
+    bool unlimitedSpan = false;
+
+    bool needsClamp() const { return reason == CellSpanClampRejectReason::None; }
+
+FUSE_PHYSICS_INLINE CellSpanClampPreflight preflightCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+    CellSpanClampPreflight preflight{};
+    preflight.reason = cellSpanClampRejectReason(range, maxSpanPerAxis);
+    preflight.emptyRange = preflight.reason == CellSpanClampRejectReason::EmptyRange;
+    preflight.withinSpanLimit = preflight.reason == CellSpanClampRejectReason::WithinSpanLimit;
+    preflight.unlimitedSpan = preflight.reason == CellSpanClampRejectReason::UnlimitedSpan;
+    return preflight;
+
+FUSE_PHYSICS_INLINE CellSpanClampPreflight preflightCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+
+/// Non-mutating span-clamp skip predicate — inverse of `needsClamp` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool canSkipCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+    return !preflightCellSpanClamp(range, maxSpanPerAxis).needsClamp();
+
+FUSE_PHYSICS_INLINE bool canSkipCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+
+/// Non-mutating span-clamp predicate — mirrors `preflightCellSpanClamp` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+    return preflightCellSpanClamp(range, maxSpanPerAxis).needsClamp();
+
+FUSE_PHYSICS_INLINE bool shouldRunCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+
+    if (canSkipCellSpanClamp(range, maxSpanPerAxis)) {
         return range;
     }
 
@@ -2065,6 +1990,7 @@ FUSE_PHYSICS_INLINE CellRange3 clampCellRange3(CellRange3 range, u32 maxSpanPerA
 
 FUSE_PHYSICS_INLINE CellRange2 clampCellRange2(CellRange2 range, u32 maxSpanPerAxis) {
     if (!shouldRunCellSpanClamp(range, maxSpanPerAxis)) {
+    if (canSkipCellSpanClamp(range, maxSpanPerAxis)) {
         return range;
     }
 

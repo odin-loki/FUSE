@@ -631,6 +631,12 @@ const char* cellSpanRejectReasonName(CellSpanRejectReason reason) {
         return "Unbounded";
     case CellSpanRejectReason::WithinSpanLimit:
         return "WithinSpanLimit";
+const char* cellSpanClampRejectReasonName(CellSpanClampRejectReason reason) {
+    case CellSpanClampRejectReason::None:
+    case CellSpanClampRejectReason::EmptyRange:
+    case CellSpanClampRejectReason::WithinSpanLimit:
+    case CellSpanClampRejectReason::UnlimitedSpan:
+        return "UnlimitedSpan";
     }
     return "Unknown";
 }
@@ -651,23 +657,12 @@ const char* mergeBroadphaseBufferRejectReasonName(BroadphaseMergeBufferRejectRea
         return "BufferAtCapacity";
     }
     return "Unknown";
-}
 
-const char* broadphaseMergeRejectReasonName(BroadphaseMergeRejectReason reason) {
-    switch (reason) {
-    case BroadphaseMergeRejectReason::None:
-        return "None";
     case BroadphaseMergeRejectReason::NoPlaneBodies:
         return "NoPlaneBodies";
     case BroadphaseMergeRejectReason::NoDynamicBodies:
         return "NoDynamicBodies";
-    }
-    return "Unknown";
 
-    case BroadphaseMergeRejectReason::EmptyPlaneBodies:
-        return "EmptyPlaneBodies";
-    case BroadphaseMergeRejectReason::EmptyDynamicBodies:
-        return "EmptyDynamicBodies";
 
 const char* dedupeBroadphaseRejectReasonName(DedupeBroadphaseRejectReason reason) {
     case DedupeBroadphaseRejectReason::None:
