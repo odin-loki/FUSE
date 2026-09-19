@@ -30,6 +30,49 @@ u32 taaHistoryWarmupFramesRemaining(const TaaHistoryBuffer& history) {
     return taaHistoryNeedsWarmup(history) ? 1u : 0u;
 }
 
+const char* taaHistoryWarmupRejectReasonLabel(TaaHistoryWarmupRejectReason reason) {
+    switch (reason) {
+    case TaaHistoryWarmupRejectReason::None:
+        return "none";
+    case TaaHistoryWarmupRejectReason::NotReady:
+        return "not_ready";
+    case TaaHistoryWarmupRejectReason::AlreadyWarm:
+        return "already_warm";
+    }
+    return "unknown";
+}
+
+TaaHistoryWarmupRejectReason classifyTaaHistoryWarmupReject(const TaaHistoryBuffer& history) {
+    if (!history.isReady()) {
+        return TaaHistoryWarmupRejectReason::NotReady;
+    }
+    if (!history.needsWarmup()) {
+        return TaaHistoryWarmupRejectReason::AlreadyWarm;
+    }
+    return TaaHistoryWarmupRejectReason::None;
+}
+
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupRejectReason* reason) {
+    const TaaHistoryWarmupRejectReason reject = classifyTaaHistoryWarmupReject(history);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == TaaHistoryWarmupRejectReason::None;
+}
+
+bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupRejectReason& reason) {
+    reason = classifyTaaHistoryWarmupReject(history);
+    return reason == TaaHistoryWarmupRejectReason::None;
+}
+
+bool shouldSkipTaaHistoryWarmup(const TaaHistoryBuffer& history) {
+    return !preflightTaaHistoryWarmup(history);
+}
+
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
+    return history.isReady() && !history.needsWarmup();
+}
+
 bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
                               TaaHistoryReuseBlockReason* reason) {
     const TaaHistoryReuseBlockReason block = classifyTaaHistoryReuseBlock(history, observedGeneration);
@@ -59,6 +102,10 @@ bool TaaHistoryBuffer::canReuseHistory() const {
 
 u32 TaaHistoryBuffer::warmupFramesRemaining() const {
     return taaHistoryWarmupFramesRemaining(*this);
+}
+
+bool TaaHistoryBuffer::warmupComplete() const {
+    return taaHistoryWarmupComplete(*this);
 }
 
 bool TaaHistoryBuffer::reuseReady(u32 observedGeneration) const {
