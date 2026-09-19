@@ -70,6 +70,18 @@ bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
 bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
 /// Preflight guard before probe update launch — false when params or indices are unusable.
 bool canLaunchProbeUpdate(const DDGIKernelParams& params);
+/// Why a probe-kernel launch preflight rejected the request (B5.6 deepen).
+enum class ProbeKernelLaunchRejectReason : u8 {
+    ZeroProbeCount,
+
+/// Human-readable label for probe-kernel launch reject reasons (logging / tests).
+const char* probeKernelLaunchRejectReasonLabel(ProbeKernelLaunchRejectReason reason);
+
+/// Preflight guard before probe trace/blend kernel launch.
+bool canLaunchProbeKernels(const DDGIKernelParams& params);
+
+/// Diagnose why probe-kernel launch preflight would reject the request.
+bool tryCanLaunchProbeKernels(const DDGIKernelParams& params, ProbeKernelLaunchRejectReason& outReason);
 
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);

@@ -551,38 +551,17 @@ bool ProbeGridLayout::hasFullTrilinearNeighbourhood(const DDGIDesc& desc, const 
 
         const ProbeValidityFlags flags = probeValidity(desc, corner);
         if (!flags.valid || !flags.has_trilinear_neighbourhood) {
-}
 
-bool ProbeGridLayout::isValidProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
-    if (isEmptyGrid(desc)) {
-        return false;
-    }
 
-    const u32 max_x = desc.grid_dims.x - 1u;
-    const u32 max_y = desc.grid_dims.y - 1u;
-    const u32 max_z = desc.grid_dims.z - 1u;
     if (coords.x0 > max_x || coords.y0 > max_y || coords.z0 > max_z) {
-        return false;
-    }
     if (coords.x1 > max_x || coords.y1 > max_y || coords.z1 > max_z) {
-        return false;
-    }
-    if (coords.x1 < coords.x0 || coords.y1 < coords.y0 || coords.z1 < coords.z0) {
-        return false;
-    }
     return coords.tx >= 0.f && coords.tx <= 1.f && coords.ty >= 0.f && coords.ty <= 1.f && coords.tz >= 0.f &&
            coords.tz <= 1.f;
-}
 
 void ProbeGridLayout::sanitizeProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCoords& coords) {
-    if (isEmptyGrid(desc)) {
         coords = {};
         return;
-    }
 
-    const u32 max_x = desc.grid_dims.x - 1u;
-    const u32 max_y = desc.grid_dims.y - 1u;
-    const u32 max_z = desc.grid_dims.z - 1u;
 
     coords.x0 = std::clamp(coords.x0, 0u, max_x);
     coords.y0 = std::clamp(coords.y0, 0u, max_y);
@@ -703,6 +682,8 @@ bool ProbeGridLayout::sampleCoordsTouchBorder(const DDGIDesc& desc, const ProbeS
         if (isBorderProbeCoord(desc, corner)) {
 bool ProbeGridLayout::buildAndClampProbeSampleCoords(const DDGIDesc& desc,
     clampProbeSampleCoords(desc, out_coords);
+        return false;
+    }
 }
 
 fuse::math::Vec2 DdgiIrradianceEncoding::clampEncodedUV(const fuse::math::Vec2& encoded) {
@@ -1323,6 +1304,10 @@ u32 clampProbeIndexForCache(u32 probe_index, u32 cache_count) {
     return std::min(probe_index, cache_count - 1u);
 }
 
+bool isCacheIndexValid(const DDGIDesc& desc, u32 probe_index, u32 cache_count) {
+    return ProbeGridLayout::isValidProbeIndex(desc, probe_index) && probe_index < cache_count;
+}
+
 bool isValidSampleRequest(const DDGIDesc& desc,
                           const DDGISampleRequest& /*request*/,
                           u32 cache_count) {
@@ -1636,6 +1621,9 @@ fuse::math::Vec3 trilinearProbeIrradiance(const DDGIDesc& desc,
     if (!ProbeGridLayout::buildAndClampProbeSampleCoords(desc, world_position, coords)) {
         return {};
     }
+    if (!ProbeGridLayout::isValidProbeSampleCoords(desc, coords)) {
+        return {};
+    }
 
 fuse::math::Vec3 trilinearProbeIrradianceFromCoords(const DDGIDesc& desc,
                                                     const ProbeSampleCoords& coords,
@@ -1730,6 +1718,9 @@ fuse::math::Vec3 trilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
     }
     if (!ProbeGridLayout::isValidProbeSampleCoords(desc, coords)) {
     if (!ProbeGridLayout::buildAndClampProbeSampleCoords(desc, world_position, coords)) {
+        return {};
+    }
+    if (!ProbeGridLayout::isValidProbeSampleCoords(desc, coords)) {
         return {};
     }
 
@@ -2025,10 +2016,27 @@ bool canLaunchProbeUpdate(const DDGIKernelParams& params) {
     if (params.probe_indices_to_update == nullptr || params.probe_update_count == 0u ||
         params.rays_per_probe == 0u) {
     return params.max_ray_distance > 0.f;
-}
 
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream) {
     if (!canLaunchProbeTraceKernel(params)) {
+const char* probeKernelLaunchRejectReasonLabel(ProbeKernelLaunchRejectReason reason) {
+    case ProbeKernelLaunchRejectReason::None:
+    case ProbeKernelLaunchRejectReason::NullProbeIndices:
+    case ProbeKernelLaunchRejectReason::ZeroProbeCount:
+        return "zero_probe_count";
+    case ProbeKernelLaunchRejectReason::ZeroRaysPerProbe:
+
+bool tryCanLaunchProbeKernels(const DDGIKernelParams& params, ProbeKernelLaunchRejectReason& outReason) {
+    outReason = ProbeKernelLaunchRejectReason::None;
+        outReason = ProbeKernelLaunchRejectReason::NullProbeIndices;
+        outReason = ProbeKernelLaunchRejectReason::ZeroProbeCount;
+        outReason = ProbeKernelLaunchRejectReason::ZeroRaysPerProbe;
+
+bool canLaunchProbeKernels(const DDGIKernelParams& params) {
+    ProbeKernelLaunchRejectReason reason = ProbeKernelLaunchRejectReason::None;
+    return tryCanLaunchProbeKernels(params, reason);
+
+    if (!canLaunchProbeKernels(params)) {
         return false;
     }
     (void)cuda_stream;
@@ -2060,6 +2068,7 @@ bool tryLaunch_probe_kernels(const DDGIKernelParams& params,
 
 bool launch_probe_blend_kernel(const DDGIKernelParams& params, void* cuda_stream) {
     if (!canLaunchProbeBlendKernel(params)) {
+    if (!canLaunchProbeKernels(params)) {
         return false;
     }
     (void)cuda_stream;

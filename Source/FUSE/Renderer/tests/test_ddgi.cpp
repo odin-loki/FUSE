@@ -916,6 +916,12 @@ void testProbeSampleCoordGuards() {
     expectTrue(fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, built),
                "built sample coords pass validity guard");
 
+    fuse::renderer::ProbeSampleCoords tryBuilt{};
+    expectTrue(fuse::renderer::ProbeGridLayout::tryBuildProbeSampleCoords(desc, {0.5f, 0.5f, 0.5f}, tryBuilt),
+               "tryBuildProbeSampleCoords succeeds for interior sample");
+    expectTrue(fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, tryBuilt),
+               "tryBuild sample coords pass validity guard");
+
     fuse::renderer::ProbeSampleCoords reversed{};
     reversed.x0 = 1u;
     reversed.x1 = 0u;
@@ -958,6 +964,9 @@ void testProbeSampleCoordGuards() {
     empty.grid_dims = {0, 2, 2};
     expectTrue(!fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(empty, built),
                "empty grid sample coords invalid");
+    fuse::renderer::ProbeSampleCoords emptyBuilt{};
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryBuildProbeSampleCoords(empty, {0.f, 0.f, 0.f}, emptyBuilt),
+               "tryBuildProbeSampleCoords fails on empty grid");
 }
 
 void testCacheIndexGuards() {
@@ -1777,6 +1786,58 @@ void testDdgiPreflightDeepenGuards() {
                "clampProbeIndexForCache returns 0 on empty cache");
 }
 
+void testKernelLaunchGuards() {
+    using fuse::renderer::gi::ProbeKernelLaunchRejectReason;
+
+    fuse::renderer::gi::DDGIKernelParams params{};
+    params.probe_indices_to_update = indices;
+    params.probe_update_count = 2u;
+    params.rays_per_probe = 256u;
+
+    expectTrue(fuse::renderer::gi::canLaunchProbeKernels(params),
+               "valid kernel params pass launch preflight");
+
+    ProbeKernelLaunchRejectReason reason = ProbeKernelLaunchRejectReason::None;
+    expectTrue(fuse::renderer::gi::tryCanLaunchProbeKernels(params, reason),
+               "tryCanLaunchProbeKernels succeeds for valid params");
+    expectTrue(reason == ProbeKernelLaunchRejectReason::None, "valid params reject reason is None");
+
+    fuse::renderer::gi::DDGIKernelParams nullIndices = params;
+    expectTrue(!fuse::renderer::gi::canLaunchProbeKernels(nullIndices),
+               "null probe indices fail launch preflight");
+    expectTrue(!fuse::renderer::gi::tryCanLaunchProbeKernels(nullIndices, reason),
+               "tryCanLaunchProbeKernels returns false for null indices");
+    expectTrue(reason == ProbeKernelLaunchRejectReason::NullProbeIndices,
+               "null indices reject reason");
+    expectTrue(std::string(fuse::renderer::gi::probeKernelLaunchRejectReasonLabel(reason)) ==
+                   "null_probe_indices",
+               "null indices reject reason label");
+
+    fuse::renderer::gi::DDGIKernelParams zeroCount = params;
+    expectTrue(!fuse::renderer::gi::canLaunchProbeKernels(zeroCount),
+               "zero probe count fails launch preflight");
+    expectTrue(!fuse::renderer::gi::tryCanLaunchProbeKernels(zeroCount, reason),
+               "tryCanLaunchProbeKernels returns false for zero count");
+    expectTrue(reason == ProbeKernelLaunchRejectReason::ZeroProbeCount,
+               "zero count reject reason");
+
+    fuse::renderer::gi::DDGIKernelParams zeroRays = params;
+    expectTrue(!fuse::renderer::gi::canLaunchProbeKernels(zeroRays),
+               "zero rays per probe fails launch preflight");
+    expectTrue(!fuse::renderer::gi::tryCanLaunchProbeKernels(zeroRays, reason),
+               "tryCanLaunchProbeKernels returns false for zero rays");
+    expectTrue(reason == ProbeKernelLaunchRejectReason::ZeroRaysPerProbe,
+               "zero rays reject reason");
+
+               "launch_probe_trace_kernel rejects invalid params");
+    expectTrue(!fuse::renderer::gi::launch_probe_blend_kernel(zeroRays, nullptr),
+               "launch_probe_blend_kernel rejects invalid params");
+    expectTrue(fuse::renderer::gi::launch_probe_trace_kernel(params, nullptr),
+               "launch_probe_trace_kernel accepts valid params");
+    expectTrue(fuse::renderer::gi::launch_probe_blend_kernel(params, nullptr),
+               "launch_probe_blend_kernel accepts valid params");
+}
+
 void testSampleGuards() {
     fuse::renderer::DDGIDesc desc{};
     desc.grid_dims = {2, 2, 2};
@@ -2162,6 +2223,7 @@ int main() {
     testDdgiWouldSkipDeepenGuards();
     testDdgiPreflightDeepenGuards();
     testLaunchProbeUpdateIndexGuard();
+    testKernelLaunchGuards();
     testSampleGuards();
     testProbeSampleAndCacheGuards();
     testKernelLaunchGuards();
