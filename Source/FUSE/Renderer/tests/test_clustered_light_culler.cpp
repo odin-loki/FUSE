@@ -1444,3 +1444,16 @@ void testClusterLightGridAccessAndCoordLookupGuards() {
     expectTrue(rejectedCoordLights.empty(), "tryLookup at coord clears output on guard failure");
     expectTrue(!fuse::renderer::cluster_util::tryValidateGridPopulationForDesc(undersized, desc, reason),
                "tryValidateGridPopulationForDesc rejects undersized grid");
+
+// --- deepen additive from deepen-b5-clustered-lights-lookup-population-guards-e80d ---
+void testClusterLightGridAccessibilityGuards() {
+    fuse::renderer::GridPopulationRejectReason zeroPopReason = fuse::renderer::GridPopulationRejectReason::None;
+    expectTrue(fuse::renderer::cluster_util::tryValidateGridPopulationForDesc(grid, zeroDesc, zeroPopReason),
+    expectTrue(zeroPopReason == fuse::renderer::GridPopulationRejectReason::None,
+    expectTrue(fuse::renderer::cluster_util::tryCanLookupAtIndex(grid, desc, 0u, lookupReason),
+    expectTrue(!fuse::renderer::cluster_util::tryCanLookupAtIndex(emptyGrid, desc, 0u, lookupReason),
+    expectTrue(std::strcmp(fuse::renderer::clusterLookupRejectReasonLabel(lookupReason), "empty_storage") == 0,
+    expectTrue(!fuse::renderer::cluster_util::tryCanLookupAtIndex(grid, mismatched, 0u, lookupReason),
+    expectTrue(lookupReason == fuse::renderer::ClusterLookupRejectReason::DescMismatch,
+    expectTrue(!fuse::renderer::cluster_util::tryCanLookupAtIndex(grid, zeroDesc, 0u, lookupReason),
+    expectTrue(std::strcmp(fuse::renderer::clusterLookupRejectReasonLabel(lookupReason), "empty_grid") == 0,
