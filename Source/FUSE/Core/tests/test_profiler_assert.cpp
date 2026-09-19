@@ -3385,3 +3385,21 @@ void testChromeTraceExportPreflightWouldExportEmpty() {
     expectTrue(blankPreflight.eventCount == 0u, "blank-name attempts do not change event count");
     testChromeTraceExportPreflightCleanTrace();
     testChromeTraceExportPreflightWouldExportEmpty();
+
+// --- deepen additive from deepen-b16-profiler-guards-c0f6 ---
+void testWhitespaceOnlyNameGuards() {
+void testFindFirstEventIndexByPhaseGuard() {
+    expectTrue(!fuse::profiler::tryFindFirstEventByPhase(fuse::profiler::EventPhase::Counter, outEvent),
+               "tryFindFirstEventByPhase false on empty buffer");
+    expectTrue(outEvent.name == nullptr, "tryFindFirstEventByPhase clears output on empty buffer");
+    expectTrue(fuse::profiler::tryFindFirstEventByPhase(fuse::profiler::EventPhase::Counter, outEvent),
+               "tryFindFirstEventByPhase true for counter phase");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::Counter, "tryFindFirstEventByPhase copies phase");
+               "tryFindFirstEventByPhase copies counter track name");
+void testChromeTraceExportPreflightPhaseCounts() {
+void testChromeTraceExportPreflightBufferedFlowImbalance() {
+void testChromeTraceExportPreflightOrphanCount() {
+void testMixedWhitespaceAndValidNameGuards() {
+    testChromeTraceExportPreflightPhaseCounts();
+    testChromeTraceExportPreflightBufferedFlowImbalance();
+    testChromeTraceExportPreflightOrphanCount();

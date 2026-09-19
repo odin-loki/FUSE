@@ -403,3 +403,6 @@ bool tryFindEventByScopeId(u32 scopeId, ProfileEvent& outEvent);
 // --- deepen additive from deepen-b16-profiler-guards-2ba8 ---
     bool wouldExportEmptyTrace() const { return canExport() && exportableEventCount == 0; }
 bool tryFindFirstEventWithPhase(EventPhase phase, ProfileEvent& outEvent);
+
+// --- deepen additive from deepen-b16-profiler-guards-c0f6 ---
+bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent);
