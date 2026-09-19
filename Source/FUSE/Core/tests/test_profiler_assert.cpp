@@ -4610,3 +4610,8 @@ void testActiveScopeAndFlowNestingPreflight() {
 void testChromeTraceExportPreflightExportableBounds() {
     testActiveScopeAndFlowNestingPreflight();
     testChromeTraceExportPreflightExportableBounds();
+
+// --- deepen additive from deepen-b16-profiler-name-flow-lookup-4a14 ---
+void testChromeTraceExportPreflightOpenScopeBlocksSafeExport() {
+    expectTrue(closedPreflight.canExportSafely(), "paired flow restores safe export preflight");
+    testChromeTraceExportPreflightOpenScopeBlocksSafeExport();
