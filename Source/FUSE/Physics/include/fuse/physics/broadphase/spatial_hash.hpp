@@ -703,6 +703,11 @@ FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellOccupancyPrefli
 /// Non-mutating cell-occupancy skip predicate — inverse of `preflightCellOccupancy().canIterate()`.
 
 
+
+
+    preflight.occupancyCount = estimateCellOccupancyCount(range);
+    preflight.exceedsBudget = preflight.reason == CellOccupancyRejectReason::ExceedsBudget;
+    return preflight;
 }
 
 /// Non-mutating cell-occupancy skip predicate — inverse of `preflightCellOccupancy` (B4.2 deepen pass).
@@ -1970,9 +1975,7 @@ struct RefineDedupeBroadphasePreflight {
     bool needsDedupe() const { return hasDuplicatePairs && canDedupe(); }
 
 RefineDedupeBroadphasePreflight preflightRefineDedupeBroadphase(
-};
 
-    const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     const PairBufferSoA& buffer);
 
@@ -1997,25 +2000,16 @@ bool canSkipRefineDedupeBroadphase(
 
 
 
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
-    const PairBufferSoA& buffer);
 
-/// Why plane/dynamic merge would early-out (B4.2 deepen follow-up pass).
-enum class BroadphaseMergeRejectReason : u8 {
-    None = 0,
-};
 
-/// Human-readable label for merge reject reasons (logging / tests).
-const char* broadphaseMergeRejectReasonName(BroadphaseMergeRejectReason reason);
 
-/// Diagnose why merge would skip; vacuously succeeds when merge may proceed.
-BroadphaseMergeRejectReason broadphaseMergeRejectReason(
-    const CollisionShapeSoA& shapes);
 
-/// Returns true when `broadphaseMergeRejectReason` matches `expected` (B4.2 deepen follow-up pass).
-bool broadphaseMergeRejectsForReason(
-    const CollisionShapeSoA& shapes,
+/// Non-mutating refine predicate — inverse of `canSkipRefineBroadphase` (B4.2 deepen pass).
+bool shouldRunRefineBroadphase(
+
+
+
+
     BroadphaseMergeRejectReason expected);
 
 /// Read-only plane/dynamic merge diagnostics — no mutation (B4.2 deepen follow-up pass).
@@ -2141,8 +2135,6 @@ bool shouldRunBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSo
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
-/// Non-mutating merge skip predicate — inverse of `preflightBroadphaseMerge().canMerge()` (B4.2 deepen follow-up pass).
-bool canSkipBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(

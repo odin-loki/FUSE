@@ -232,6 +232,8 @@ const char* pairBufferCompactionRejectReasonName(PairBufferCompactionRejectReaso
 /// Human-readable label for compaction reject reasons (logging / tests).
 
 
+
+
 /// Diagnose why compaction would skip; vacuously succeeds when compaction may proceed.
 PairBufferCompactionRejectReason pairBufferCompactionRejectReason(const PairBufferSoA& buffer);
 
@@ -350,6 +352,11 @@ enum class PairBufferClampRejectReason : u8 {
 
 
 
+
+
+
+/// Why max-capacity clamp would early-out (B4.2 deepen pass).
+
 const char* pairBufferClampRejectReasonName(PairBufferClampRejectReason reason);
 
 /// Diagnose why clamp would skip; vacuously succeeds when clamp may proceed.
@@ -434,6 +441,10 @@ const char* pairBufferDedupeRejectReasonName(PairBufferDedupeRejectReason reason
 
 /// Diagnose why SoA dedupe would skip; vacuously succeeds when dedupe may proceed.
 /// Diagnose why dedupe would skip; vacuously succeeds when dedupe may proceed.
+
+
+/// Human-readable label for SoA dedupe reject reasons (logging / tests).
+
 PairBufferDedupeRejectReason pairBufferDedupeRejectReason(const PairBufferSoA& buffer);
 
 /// Returns true when `pairBufferDedupeRejectReason` matches `expected` (B4.2 deepen pass).
@@ -464,6 +475,7 @@ struct PairBufferDedupePreflight {
 
 
 
+
 };
 
 PairBufferDedupePreflight preflightPairBufferDedupe(const PairBufferSoA& buffer);
@@ -480,6 +492,7 @@ bool shouldRunPairBufferDedupe(const PairBufferSoA& buffer);
 
 /// Why pair-buffer canonical sort would early-out (B4.2 deepen pass).
 /// Why canonical sort would early-out at the SoA layer (B4.2 deepen follow-up pass).
+/// Why canonical sort would early-out (B4.2 deepen pass).
 enum class PairBufferSortRejectReason : u8 {
     None = 0,
     EmptyBuffer,
@@ -487,6 +500,7 @@ enum class PairBufferSortRejectReason : u8 {
 };
 
 /// Human-readable label for pair-buffer sort reject reasons (logging / tests).
+/// Human-readable label for sort reject reasons (logging / tests).
 const char* pairBufferSortRejectReasonName(PairBufferSortRejectReason reason);
 
 /// Diagnose why sort would skip; vacuously succeeds when sort may proceed.
@@ -774,7 +788,6 @@ struct PairBufferPrepareSlotsPreflight {
     bool zeroSlots = false;
 
     bool canPrepare() const { return !zeroSlots; }
-};
 
 PairBufferPrepareSlotsPreflight preflightPairBufferPrepareSlots(u32 slotCount);
 
@@ -786,7 +799,6 @@ struct PairBufferMergePreflight {
     u32 rejectedCount = 0;
 
     bool canMergeAny() const { return !emptyIncoming && !atCapacity; }
-};
 
 PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u32 incomingCount);
 
@@ -810,10 +822,11 @@ BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
 
 /// Non-mutating sort skip predicate — inverse of `needsSort` (B4.2 deepen follow-up pass).
 
-};
 
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
-    const PairBufferSoA& buffer,
+
+
+
+
+/// Non-mutating sort skip predicate — inverse of `preflightPairBufferSort` (B4.2 deepen pass).
 
 } // namespace fuse::physics::broadphase
