@@ -609,6 +609,7 @@ bool tryPreflightDdgiProbeUpdate(const DDGIDesc& desc,
                                  u32 probe_count,
                                  ProbeUpdateLaunchRejectReason& reason);
 /// Early-out when probe-update launch would be rejected (B5.6 deepen pass).
+/// Early-out when host probe-update launch would be rejected (B5.6 deepen pass).
 bool shouldSkipDdgiProbeUpdate(const DDGIDesc& desc, const u32* probe_indices, u32 probe_count);
 
     NullOutIndices,
@@ -825,7 +826,6 @@ struct ProbeGridLayout {
     /// Grid-only sample-coord preflight; false on empty grid or hard OOB corners.
     static bool tryPreflightProbeSampleCoords(const DDGIDesc& desc,
                                               const ProbeSampleCoords& coords,
-                                              ProbeSampleCoordsRejectReason& outReason);
     /// Grid-only sample-coord preflight without reject-reason diagnostics.
     static bool canPreflightProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// Early-out when sample-coord validation would reject — same ordering as `isValidProbeSampleCoords`.
@@ -844,6 +844,12 @@ struct ProbeGridLayout {
     /// Classify why sample-coord validation would reject (B5.6 deepen).
     /// Early-out when sample-coord validation would be rejected (B5.6 deepen).
     /// Preflight sample-coord validation with optional reject-reason output (B5.6 deepen).
+    /// Early-out when probe sample-coord preflight would reject (B5.6 deepen pass).
+    static bool shouldSkipProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// Build sample coords only when grid build + validation succeed (B5.6 deepen pass).
+    static bool buildProbeSampleCoordsIfReady(const DDGIDesc& desc,
+                                              const fuse::math::Vec3& world_position,
+                                              ProbeSampleCoords& out_coords);
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
@@ -1031,6 +1037,12 @@ bool tryCanSampleAtProbeCoord(const DDGIDesc& desc,
                               u32 x,
                               u32 y,
                               u32 z,
+/// Classify why coord-based probe trilinear sampling preflight would reject (B5.6 deepen pass).
+/// Non-mutating trilinear sample preflight — returns true when sampling would proceed (B5.6 deepen pass).
+                                      ProbeTrilinearSampleRejectReason& reason);
+/// Early-out when coord-based probe trilinear sampling would be rejected (B5.6 deepen pass).
+/// True when coord-based probe trilinear sampling would proceed (B5.6 deepen pass).
+bool trilinearProbeSampleReady(const DDGIDesc& desc,
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
@@ -1174,6 +1186,11 @@ CacheIndexRejectReason classifyCacheIndexRejectAtCoord(const DDGIDesc& desc,
 bool shouldSkipCacheIndexLookup(const DDGIDesc& desc,
 /// True when probe-grid coordinates exceed grid bounds (would be clamped before lookup).
 bool wouldClampCacheIndexCoord(const DDGIDesc& desc, u32 x, u32 y, u32 z);
+                                  u32 probe_index,
+                                  u32 cache_count,
+/// Early-out when cache-index lookup would be rejected (B5.6 deepen pass).
+/// True when cache-index lookup would proceed (B5.6 deepen pass).
+bool cacheIndexLookupReady(const DDGIDesc& desc,
 /// True when `probe_index` exceeds the valid probe range on a non-empty grid.
 bool wouldClampProbeIndexForLookup(u32 probe_index, const DDGIDesc& desc);
 /// Minimum irradiance cache entries required for full-grid sampling; 0 on empty grid.
@@ -1500,6 +1517,10 @@ bool tryPreflightProbeSchedule(u32 probe_count,
                                ProbeScheduleRejectReason& reason);
 /// Early-out when probe scheduling would be rejected (B5.6 deepen pass).
 bool shouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_indices, u32* out_count);
+bool shouldSkipProbeSchedule(u32 probe_count,
+                             u32 max_indices,
+                             const u32* out_indices,
+                             u32* out_count);
 /// True when output capacity would cap scheduled probes below `probes_per_frame`.
 bool wouldClampScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
 /// Early-out when probe scheduling would be rejected — same ordering as `tryScheduleProbeUpdates`.

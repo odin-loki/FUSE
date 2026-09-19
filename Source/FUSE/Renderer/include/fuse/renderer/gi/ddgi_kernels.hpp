@@ -110,6 +110,7 @@ bool tryPreflightProbeKernelLaunch(const DDGIKernelParams& params, ProbeKernelRe
 bool tryPreflightProbeKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason& reason);
 
 /// Early-out when either probe kernel launch would be rejected (B5.6 deepen pass).
+/// Early-out when probe kernel launch would be rejected (B5.6 deepen pass).
 bool shouldSkipProbeKernelLaunch(const DDGIKernelParams& params);
 
 /// Populate kernel params from desc + scheduled indices without changing launch guards.
