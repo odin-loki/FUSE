@@ -1634,3 +1634,17 @@ bool tryFindLastFlowFinishById(u32 flowId, ProfileEvent& outEvent) {
     preflight.asyncFlow = preflightAsyncFlow();
     preflight.wouldSkipInvalidNameExport = preflight.hasInvalidNameEvents;
 bool wouldSkipCounter(const char* name) {
+
+// --- deepen additive from deepen-b16-profiler-guards-1f04 ---
+bool tryFindFirstFlowEventIndexById(u32 flowId, u32& outIndex) {
+bool tryFindLastFlowEventIndexById(u32 flowId, u32& outIndex) {
+AsyncFlowBeginPreflight preflightAsyncFlowBegin(const char* name, u32 /*flowId*/) {
+bool tryPreflightProfileScope(const char* name, ProfileScopePreflight& outPreflight) {
+    outPreflight = preflightProfileScope(name);
+    return outPreflight.canRecord();
+bool tryPreflightAsyncFlowBegin(const char* name, u32 flowId, AsyncFlowBeginPreflight& outPreflight) {
+    outPreflight = preflightAsyncFlowBegin(name, flowId);
+bool tryPreflightAsyncFlowEnd(const char* name, u32 flowId, AsyncFlowEndPreflight& outPreflight) {
+    outPreflight = preflightAsyncFlowEnd(name, flowId);
+bool tryPreflightCounterSample(const char* track, CounterSamplePreflight& outPreflight) {
+    outPreflight = preflightCounterSample(track);

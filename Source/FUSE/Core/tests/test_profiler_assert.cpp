@@ -6025,3 +6025,64 @@ void testEventNameRejectDiagnostics() {
         expectTrue(activePreflight.canLookupNamedEvents(),
         expectTrue(activePreflight.scopeNesting.activeDepth == 1u,
         expectTrue(activePreflight.asyncFlow.openFlowCount == 1u,
+
+// --- deepen additive from deepen-b16-profiler-guards-1f04 ---
+    expectTrue(!fuse::profiler::wouldSkipProfileScope("valid_scope"), "valid scope name would not skip");
+        fuse::profiler::preflightProfileScope("scope_preflight");
+    expectTrue(validPreflight.canRecord(), "valid scope preflight can record");
+    expectTrue(!validPreflight.invalidName, "valid scope preflight has valid name");
+    expectTrue(validPreflight.projectedScopeNestingDepth == 1u,
+    expectTrue(!nullPreflight.canRecord(), "null scope preflight cannot record");
+    expectTrue(nullPreflight.nullName, "null scope preflight marks null name");
+    expectTrue(nullPreflight.projectedScopeNestingDepth == 0u,
+    fuse::profiler::ProfileScopePreflight outPreflight{};
+    expectTrue(fuse::profiler::tryPreflightProfileScope("try_scope", outPreflight),
+               "tryPreflightProfileScope succeeds for valid name");
+    expectTrue(outPreflight.canRecord(), "tryPreflightProfileScope output can record");
+    expectTrue(!fuse::profiler::tryPreflightProfileScope("", outPreflight),
+               "tryPreflightProfileScope fails for empty name");
+    expectTrue(outPreflight.emptyName, "tryPreflightProfileScope marks empty name");
+        fuse::profiler::preflightAsyncFlowBegin("flow_preflight", flowId);
+    expectTrue(beginPreflight.canRecord(), "valid flow begin preflight can record");
+    expectTrue(beginPreflight.projectedOpenAsyncFlowCount == 1u,
+    expectTrue(beginPreflight.projectedFlowNestingDepth == 1u,
+        fuse::profiler::preflightAsyncFlowEnd("orphan_flow", flowId);
+    expectTrue(!orphanPreflight.canRecord(), "orphan flow end preflight cannot record");
+    expectTrue(orphanPreflight.orphanFinish, "orphan flow end preflight marks orphan finish");
+    const fuse::profiler::AsyncFlowEndPreflight pairedPreflight =
+        fuse::profiler::preflightAsyncFlowEnd("paired_preflight", flowId);
+    expectTrue(pairedPreflight.canRecord(), "paired flow end preflight can record");
+    expectTrue(!pairedPreflight.orphanFinish, "paired flow end preflight clears orphan flag");
+    expectTrue(pairedPreflight.openAsyncFlowCount == 1u, "paired flow end preflight sees open count");
+    fuse::profiler::AsyncFlowBeginPreflight outBegin{};
+    expectTrue(fuse::profiler::tryPreflightAsyncFlowBegin("try_flow", flowId, outBegin),
+               "tryPreflightAsyncFlowBegin succeeds for valid name");
+    fuse::profiler::AsyncFlowEndPreflight outEnd{};
+    expectTrue(fuse::profiler::tryPreflightAsyncFlowEnd("try_flow", flowId, outEnd),
+               "tryPreflightAsyncFlowEnd succeeds with open flow");
+void testCounterSamplePreflightGuard() {
+        const fuse::profiler::CounterSamplePreflight preflight =
+            fuse::profiler::preflightCounterSample("counter_preflight");
+        fuse::profiler::CounterSamplePreflight outPreflight{};
+        expectTrue(!fuse::profiler::tryPreflightCounterSample(nullptr, outPreflight),
+                   "tryPreflightCounterSample fails for null track");
+        expectTrue(outPreflight.nullName, "tryPreflightCounterSample marks null track");
+    expectTrue(resetPreflight.canRecordNestedWork(), "reset nesting preflight is clean");
+        expectTrue(!activePreflight.scopeNestingBalanced, "active scope marks unbalanced scope nesting");
+        expectTrue(!activePreflight.flowNestingBalanced, "open flow marks unbalanced flow nesting");
+        expectTrue(!activePreflight.canRecordNestedWork(),
+    expectTrue(closedPreflight.canRecordNestedWork(), "closed nesting preflight is clean");
+    expectTrue(fuse::profiler::tryFindLastEventIndexByName("lookup_scope", lastIndex),
+    expectTrue(fuse::profiler::tryFindFirstFlowEventIndexById(flowId, outIndex),
+               "tryFindFirstFlowEventIndexById finds flow start");
+    expectTrue(fuse::profiler::tryFindLastFlowEventIndexById(flowId, lastIndex),
+               "tryFindLastFlowEventIndexById finds flow finish");
+               "tryFindFirstEventByName finds counter event");
+               "tryFindFirstEventIndexByName rejects empty query name");
+    expectTrue(!fuse::profiler::tryFindFirstFlowEventIndexById(999u, outIndex),
+               "tryFindFirstFlowEventIndexById misses unknown flow id");
+               "tryFindFirstEventIndexByPhase clears index on miss");
+    expectTrue(fuse::profiler::tryFindFirstEventIndexByPhase(fuse::profiler::EventPhase::Counter, outIndex),
+               "tryFindFirstEventIndexByPhase finds counter");
+               "tryFindLastEventIndexByPhase finds counter");
+    testCounterSamplePreflightGuard();
