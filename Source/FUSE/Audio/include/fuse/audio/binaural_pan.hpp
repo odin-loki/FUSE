@@ -67,7 +67,6 @@ struct HrtfIrPreflight {
 
     /// True when convolution dispatch should be skipped (empty or malformed IR).
     bool should_skip_convolution() const { return !can_convolve(); }
-};
 
 /// Preflight an HRTF IR stub before convolution dispatch.
 HrtfIrPreflight preflight_hrtf_ir(const HrtfIrStub& ir);
@@ -185,6 +184,13 @@ bool should_apply_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener);
 
 /// Inverse of `should_apply_hrtf_pan` — disabled or co-located sources.
 bool should_bypass_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener);
+/// True when the pan path uses the ILD/ITD stub (empty or unwired IR).
+bool hrtf_pan_path_uses_ild_stub(HrtfPanPath path);
+
+/// True when the pan path is centre bypass (no lateral image).
+
+
+/// True when HRTF pan should not run (disabled or co-located).
 
 /// Stereo pan law used for ILD stub gains.
 enum class PanLaw {
@@ -332,6 +338,7 @@ void accumulate_binaural_pan(float mono, const BinauralPanGains& pan, float outp
 void apply_spatial_blend(BinauralPanGains& gains, float blend);
 
 /// Apply spatial blend only when blend is below unity (no-op at full separation).
+/// Apply spatial blend only when blend is below unity.
 void apply_hrtf_spatial_blend_guarded(BinauralPanGains& gains, float blend);
 
 /// Attenuation coupling — blends distance and occlusion into spatial image narrowing.
@@ -347,6 +354,7 @@ float clamp_hrtf_attenuation_coupling_weight(float weight);
 
 /// True when distance and occlusion are both fully audible (no narrowing).
 bool is_unity_hrtf_attenuation(float distance_attenuation, float occlusion_gain);
+float clamp_hrtf_occlusion_coupling_weight(float weight);
 
 /// True when distance/occlusion coupling should narrow the binaural image.
 bool should_apply_hrtf_attenuation_coupling(HrtfPanPath path);
@@ -402,11 +410,15 @@ bool can_narrow_hrtf_spatial_image(const HrtfAttenuationCouplingPreflight& prefl
 /// Non-mutating skip predicate — mirrors \c HrtfAttenuationCouplingPreflight::should_skip.
 bool should_skip_hrtf_attenuation_coupling_preflight(const HrtfAttenuationCouplingPreflight& preflight);
 
+/// True when attenuation coupling should not narrow the binaural image.
+
 /// True when a spatial blend preserves full L/R separation.
 bool is_unity_hrtf_spatial_blend(float blend, float epsilon = 1e-5f);
 
 /// True when distance/occlusion scalars produce unity spatial blend — skip narrowing.
 bool should_skip_hrtf_spatial_blend(float distance_attenuation, float occlusion_gain,
+                                    const HrtfAttenuationCoupling& coupling = {},
+                                    const BinauralPanParams& params = {});
 
 /// Combined spatial blend from distance attenuation and occlusion LF gain.
 float compute_hrtf_spatial_blend(float distance_attenuation, float occlusion_gain,
