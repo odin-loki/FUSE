@@ -450,18 +450,14 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] bool wouldHashAudioImport(const AudioImportDesc& desc);
 [[nodiscard]] bool wouldHashManifestEntry(const CookManifestEntry& entry);
 [[nodiscard]] bool wouldHashUpstreamDependencies(const std::vector<std::string>& dependency_output_paths,
-                                                 const CookManifest& manifest);
 [[nodiscard]] bool wouldHashCookCacheKey(u64 source_hash, u64 upstream_hash);
 
 /// Bool preflight wrappers that populate `reason` on rejection (B7.9 deepen).
 [[nodiscard]] bool tryPreflightFileContentHash(const std::string& path, CookHashRejectReason& reason);
-[[nodiscard]] bool tryPreflightMeshImportHash(const MeshImportDesc& desc, CookHashRejectReason& reason);
-[[nodiscard]] bool tryPreflightTextureImportHash(const TextureImportDesc& desc, CookHashRejectReason& reason);
-[[nodiscard]] bool tryPreflightAudioImportHash(const AudioImportDesc& desc, CookHashRejectReason& reason);
-[[nodiscard]] bool tryPreflightManifestEntryHash(const CookManifestEntry& entry, CookHashRejectReason& reason);
 [[nodiscard]] bool tryPreflightUpstreamDependenciesHash(
     const std::vector<std::string>& dependency_output_paths, const CookManifest& manifest,
     CookHashRejectReason& reason);
 [[nodiscard]] bool tryPreflightCookCacheKey(u64 source_hash, u64 upstream_hash, CookHashRejectReason& reason);
+/// Cacheability preflight — mirrors `is_cacheable_cook_cache_key` with reject diagnostics (B7.9 deepen).
 
 } // namespace fuse::project

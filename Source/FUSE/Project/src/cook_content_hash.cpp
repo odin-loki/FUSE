@@ -1865,6 +1865,23 @@ bool tryPreflightCookCacheKey(u64 source_hash, u64 upstream_hash, CookHashReject
     return preflight.ok();
 }
 
+CookHashPreflight preflight_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    const CookHashPreflight key_preflight = preflight_cook_cache_key(source_hash, upstream_hash);
+    if (!key_preflight.can_hash) {
+        return key_preflight;
+    }
+
+    CookHashPreflight preflight;
+    if (combine_cook_cache_key(source_hash, upstream_hash) == 0) {
+        preflight.reason = CookHashRejectReason::ZeroSourceHash;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
+}
+
 u64 hash_manifest_entry(const CookManifestEntry& entry) {
     if (entry.source_path.empty() || entry.output_path.empty()) {
         return 0;

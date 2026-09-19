@@ -450,6 +450,7 @@ struct CookCacheInvalidationEstimate {
 /// Structural store preflight — mirrors `is_valid_cook_cache_entry` with reject reasons (B7.9 deepen).
 /// Read-only cache-entry hash preflight — paths, key, and on-disk source readability (B7.9 deepen).
 enum class CookCacheEntryRejectReason : u8 {
+enum class CookCacheRejectReason : u8 {
     None,
     ZeroContentHash,
     EmptySourcePath,
@@ -462,6 +463,18 @@ enum class CookCacheEntryRejectReason : u8 {
 
 
 const char* cookCacheEntryRejectReasonLabel(CookCacheEntryRejectReason reason);
+};
+
+/// Read-only store preflight — mirrors `is_valid_cook_cache_entry` guards (B7.9 deepen).
+struct CookCacheEntryPreflight {
+    bool can_store = false;
+    CookCacheRejectReason reason = CookCacheRejectReason::None;
+
+    [[nodiscard]] bool ok() const { return can_store; }
+
+const char* cookCacheRejectReasonLabel(CookCacheRejectReason reason);
+
+[[nodiscard]] CookCacheEntryPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
 
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
@@ -508,6 +521,8 @@ public:
     [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
     /// Read-only mirror of `invalidate_source` — true when at least one entry matches (B7.9 deepen).
     /// Read-only mirror of `invalidate_output` — true when at least one entry matches (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_all() const;
+    [[nodiscard]] u32 count_invalidate_all() const;
     [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
     [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
                                                                  u64 current_content_hash) const;
