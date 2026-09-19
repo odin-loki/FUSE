@@ -880,6 +880,45 @@ bool should_run_contact_island_build(
     return !can_skip_contact_island_build(bodyCount, contacts, distanceConstraints);
 }
 
+IslandBuildInputStats scan_island_build_inputs(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    IslandBuildInputStats stats{};
+    stats.bodyCount = bodyCount;
+    stats.contactSlotCount = static_cast<u32>(contacts.size());
+    stats.distanceSlotCount = static_cast<u32>(distanceConstraints.size());
+
+    for (const narrowphase::ContactManifold& contact : contacts) {
+        if (contact.valid) {
+            ++stats.validContactCount;
+        }
+        const bool inRange = contact.bodyA < bodyCount && contact.bodyB < bodyCount;
+        if (inRange) {
+            ++stats.inRangeContactCount;
+        } else if (contact.valid) {
+            ++stats.outOfRangeContactBodyCount;
+        }
+    }
+
+    for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (constraint.bodyA < bodyCount && constraint.bodyB < bodyCount) {
+            ++stats.inRangeDistanceCount;
+        } else {
+            ++stats.outOfRangeDistanceBodyCount;
+        }
+    }
+
+    return stats;
+}
+
+bool island_build_inputs_safe(u32 bodyCount,
+                              const std::vector<narrowphase::ContactManifold>& contacts,
+                              const std::vector<DistanceConstraint>& distanceConstraints) {
+    const IslandBuildInputStats stats = scan_island_build_inputs(bodyCount, contacts, distanceConstraints);
+    return !stats.has_unsafe_refs();
+}
+
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();
@@ -925,6 +964,12 @@ bool ContactIslandGraph::build_guarded(u32 bodyCount,
     if (should_skip_island_build(bodyCount, contacts, distanceConstraints)) {
 bool ContactIslandGraph::buildGuarded(u32 bodyCount,
     if (shouldSkipContactIslandGraphBuild(bodyCount, contacts, distanceConstraints)) {
+    const IslandBuildInputStats stats = scan_island_build_inputs(bodyCount, contacts, distanceConstraints);
+    if (stats.has_unsafe_refs()) {
+        clear();
+        return false;
+    }
+    if (bodyCount == 0u && stats.inRangeContactCount == 0u && stats.inRangeDistanceCount == 0u) {
         clear();
         return false;
     }

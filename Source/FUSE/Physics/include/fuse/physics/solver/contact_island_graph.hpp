@@ -112,6 +112,15 @@ struct ContactIslandBuildInputStats {
 
 /// Summarize island graph build inputs without mutating the graph.
 ContactIslandBuildInputStats compute_contact_island_build_input_stats(
+/// Input coverage for island graph build (out-of-range body-index guards).
+struct IslandBuildInputStats {
+
+    bool has_unsafe_refs() const {
+        return outOfRangeContactBodyCount > 0u || outOfRangeDistanceBodyCount > 0u;
+    }
+
+/// Scan contact/distance refs for out-of-range body indices before `ContactIslandGraph::build`.
+IslandBuildInputStats scan_island_build_inputs(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
@@ -539,6 +548,10 @@ struct IslandGraphIntegrityPreflight {
                stats.outOfRangeDistanceRefCount > 0u;
 
     bool can_use() const { return !skipped && !has_unsafe_refs(); }
+/// True when build inputs carry no out-of-range body references.
+bool island_build_inputs_safe(u32 bodyCount,
+                              const std::vector<narrowphase::ContactManifold>& contacts,
+                              const std::vector<DistanceConstraint>& distanceConstraints);
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
@@ -572,6 +585,7 @@ struct ContactIslandGraph {
     /// Guarded build — returns false when preflight skips the empty no-op path.
     /// Guarded build wrapper; returns false when preflight skips (B4.4 deepen).
     /// Guarded build; clears graph and returns false when preflight rejects inputs.
+    /// Guarded build; returns false and clears when inputs are unsafe or empty.
 
     void clear();
 
