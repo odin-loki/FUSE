@@ -2937,3 +2937,30 @@ void testPreflightBeginDragGuards() {
     expectTrue(gizmo.tryUpdateDrag(hit, updateResult), "tryUpdateDrag accepts valid viewport");
     expectTrue(updateResult.changed, "valid tryUpdateDrag reports change");
     testPreflightBeginDragGuards();
+
+// --- deepen additive from deepen-b6-gizmo-begin-drag-snap-guards-7da7 ---
+void testSnapGuardValid() {
+    const fuse::editor::GizmoBeginDragPreflight emptyRayPreflight =
+        fuse::editor::preflightBeginDrag(emptyRay, transform, fuse::editor::GizmoMode::Translate,
+    expectTrue(!emptyRayPreflight.canBegin(), "preflight blocks empty ray");
+    const fuse::editor::GizmoBeginDragPreflight emptyViewportPreflight =
+        fuse::editor::preflightBeginDrag(emptyHit, fuse::editor::GizmoMode::Translate, false, snap);
+    expectTrue(emptyViewportPreflight.emptyViewport, "preflight marks empty viewport");
+    expectTrue(!emptyViewportPreflight.canBegin(), "preflight blocks empty viewport");
+    const fuse::editor::GizmoBeginDragPreflight missPreflight =
+        fuse::editor::preflightBeginDrag(deadZone, fuse::editor::GizmoMode::Translate, false, snap);
+    expectTrue(missPreflight.axisMiss, "preflight marks translate dead-zone miss");
+    expectTrue(!missPreflight.canBegin(), "preflight blocks axis miss");
+    const fuse::editor::GizmoBeginDragPreflight validPreflight =
+        fuse::editor::preflightBeginDrag(xRay, transform, fuse::editor::GizmoMode::Translate,
+    expectTrue(validPreflight.canBegin(), "preflight allows valid ray pick");
+    expectTrue(validPreflight.axis == fuse::editor::GizmoAxis::X, "preflight records picked axis");
+    const fuse::editor::GizmoBeginDragPreflight draggingPreflight = gizmo.preflightBeginDrag(hit, transform);
+    expectTrue(draggingPreflight.alreadyDragging, "preflight marks active drag");
+    expectTrue(!draggingPreflight.canBegin(), "preflight blocks begin while dragging");
+    const fuse::editor::GizmoBeginDragPreflight snapInvalidPreflight =
+    expectTrue(snapInvalidPreflight.snapInvalid, "preflight marks invalid snap settings");
+    expectTrue(snapInvalidPreflight.canBegin(),
+void testTryBeginDragRejectsWhileDragging() {
+    expectTrue(gizmo.tryBeginDrag(hit, transform, result), "first begin-drag succeeds");
+               "tryBeginDrag rejects re-entrant begin while dragging");

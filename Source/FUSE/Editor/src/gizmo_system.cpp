@@ -2230,3 +2230,14 @@ BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, const GizmoTransf
 BeginDragPreflight GizmoSystem::preflightBeginDrag(const GizmoHitTest& hit,
     return fuse::editor::preflightBeginDrag(hit, current, m_mode);
     return fuse::editor::preflightBeginDrag(ray, current, m_mode, m_space, kAxisLength,
+
+// --- deepen additive from deepen-b6-gizmo-begin-drag-snap-guards-7da7 ---
+GizmoBeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
+    GizmoBeginDragPreflight preflight{};
+GizmoBeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode,
+    const GizmoBeginDragPreflight preflight =
+        fuse::editor::preflightBeginDrag(hit, m_mode, m_dragging, m_snap);
+    const GizmoBeginDragPreflight preflight = fuse::editor::preflightBeginDrag(
+GizmoBeginDragPreflight GizmoSystem::preflightBeginDrag(const GizmoHitTest& hit,
+    return fuse::editor::preflightBeginDrag(hit, m_mode, m_dragging, m_snap);
+GizmoBeginDragPreflight GizmoSystem::preflightBeginDrag(const GizmoRay& ray,

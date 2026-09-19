@@ -970,3 +970,10 @@ private:
 
 // --- deepen additive from deepen-b6-gizmo-begin-drag-snap-bfd5 ---
 BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, const GizmoTransform& transform,
+
+// --- deepen additive from deepen-b6-gizmo-begin-drag-snap-guards-7da7 ---
+struct GizmoBeginDragPreflight {
+GizmoBeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
+GizmoBeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode,
+    GizmoBeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit,
+    GizmoBeginDragPreflight preflightBeginDrag(const GizmoRay& ray,
