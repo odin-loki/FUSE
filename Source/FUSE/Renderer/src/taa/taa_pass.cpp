@@ -442,3 +442,6 @@ bool TaaPass::preflightResolveTemporalBlend(const TaaResolveDesc& desc,
     return preflightTaaResolveTemporalBlend(desc, m_history, reason);
 bool TaaPass::canPreflightResolveTemporalBlend(const TaaResolveDesc& desc) const {
     return canPreflightTaaResolveTemporalBlend(desc, m_history);
+
+// --- deepen additive from deepen-b59-taa-guards-298c ---
+    return preflightTaaResolveFrame(desc, m_history, skipReason, blendReason);

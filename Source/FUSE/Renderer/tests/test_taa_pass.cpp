@@ -3207,3 +3207,16 @@ void testTaaPassDeepenPreflightWrappers() {
     expectNear(weights.current, 0.35f, 1e-5f, "pass tryExpected fills configured current blend");
     testResolveTemporalBlendPreflightGuards();
     testTaaPassDeepenPreflightWrappers();
+
+// --- deepen additive from deepen-b59-taa-guards-298c ---
+void testSafeNdcOffsetGuards() {
+    expectTrue(fuse::renderer::preflightTaaJitterSync(jitter, 0u), "default jitter passes sync preflight");
+    expectTrue(fuse::renderer::preflightTaaJitterSync(jitter, 5u), "synced jitter passes preflight");
+    expectTrue(fuse::renderer::preflightTaaJitterSync(fallbackJitter, 0u),
+void testBlendFactorRangeGuards() {
+    expectTrue(!fuse::renderer::preflightTaaHistoryWarmup(history, &reason),
+void testResolveFramePreflightGuards() {
+void testTaaPassResolveFrameAndJitterGuards() {
+    expectTrue(!pass->preflightJitterSync(99u, &jitterReason), "pass jitter sync preflight fails when drifted");
+    expectTrue(pass->preflightJitterSync(99u, &jitterReason), "pass jitter sync preflight passes after sync");
+    testResolveFramePreflightGuards();
