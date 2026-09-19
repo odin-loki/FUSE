@@ -235,6 +235,9 @@ bool screenMappingRejectReasonIsBlocking(ScreenMappingRejectReason reason);
 /// True when screen-mapping reject reason blocks the mapping preflight.
 bool screenMappingRejectReasonIsBlocking(ScreenMappingRejectReason reason);
 
+/// True when a screen-mapping reject reason would block mapping (B5.11 deepen).
+bool screenMappingRejectReasonIsBlocking(ScreenMappingRejectReason reason);
+
 /// Why froxel sample-coord preflight rejected the request (B5.11 deepen).
 enum class SampleCoordRejectReason : u8 {
     None = 0,
@@ -350,6 +353,9 @@ bool sampleCoordRejectReasonIsBlocking(SampleCoordRejectReason reason);
 bool sampleCoordRejectReasonIsBlocking(SampleCoordRejectReason reason);
 
 /// True when sample-coord reject reason blocks the sample preflight.
+bool sampleCoordRejectReasonIsBlocking(SampleCoordRejectReason reason);
+
+/// True when a sample-coord reject reason would block sampling (B5.11 deepen).
 bool sampleCoordRejectReasonIsBlocking(SampleCoordRejectReason reason);
 
 /// Why froxel trilinear density sampling preflight rejected the request (B5.11 deepen).
@@ -535,6 +541,9 @@ bool froxelTrilinearSampleRejectReasonIsBlocking(FroxelTrilinearSampleRejectReas
 bool froxelTrilinearSampleRejectReasonIsBlocking(FroxelTrilinearSampleRejectReason reason);
 
 /// True when trilinear sample reject reason blocks the trilinear preflight.
+bool froxelTrilinearSampleRejectReasonIsBlocking(FroxelTrilinearSampleRejectReason reason);
+
+/// True when a trilinear sample reject reason would block sampling (B5.11 deepen).
 bool froxelTrilinearSampleRejectReasonIsBlocking(FroxelTrilinearSampleRejectReason reason);
 
 /// Froxel grid indexing helpers — mirrors clustered light layout (B5.4).
@@ -971,6 +980,9 @@ bool gridDensityRejectReasonIsBlocking(GridDensityRejectReason reason);
 /// True when grid-density reject reason blocks the validation preflight.
 bool gridDensityRejectReasonIsBlocking(GridDensityRejectReason reason);
 
+/// True when a grid-density reject reason would block validation (B5.11 deepen).
+bool gridDensityRejectReasonIsBlocking(GridDensityRejectReason reason);
+
 /// Why analytic froxel populate would skip meaningful fill (B5.11 deepen).
 enum class FroxelPopulateRejectReason : u8 {
     InvalidCamera,
@@ -1156,6 +1168,9 @@ bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 
 /// True when populate reject reason blocks the analytic-fill preflight.
+bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
+
+/// True when a populate reject reason would block meaningful fill (B5.11 deepen).
 bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 
 /// Why a froxel density lookup preflight rejected the request (B5.11 deepen).
@@ -1367,6 +1382,9 @@ bool densityLookupRejectReasonIsBlocking(DensityLookupRejectReason reason);
 /// True when density lookup reject reason blocks the lookup preflight.
 bool densityLookupRejectReasonIsBlocking(DensityLookupRejectReason reason);
 
+/// True when a density lookup reject reason would block lookup (B5.11 deepen).
+bool densityLookupRejectReasonIsBlocking(DensityLookupRejectReason reason);
+
 /// CPU froxel density interpolation helpers — mirrors CUDA trilinear sample stub.
 namespace froxel_util {
 f32 lerpDensity(f32 a, f32 b, f32 t);
@@ -1551,6 +1569,7 @@ bool canLookupAtCoord(const FroxelDensityGrid& grid,
 /// Non-mutating coord lookup preflight; returns true when lookup would not block.
 DensityLookupRejectReason classifyDensityLookupCoordReject(const FroxelDensityGrid& grid,
 bool preflightDensityLookupCoord(const FroxelDensityGrid& grid,
+bool preflightDensityLookupReady(const FroxelDensityGrid& grid,
 /// Diagnose why coord lookup preflight would reject; vacuously succeeds on accessible grids.
 bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
                          const FroxelGridDesc& desc,
@@ -2290,6 +2309,7 @@ bool preflightFroxelGridDensity(const FroxelDensityGrid& grid,
 /// Non-mutating grid density validation preflight — returns true when validation would succeed.
 /// Non-mutating grid-density validation preflight; vacuously succeeds when `desc` is empty.
 /// Non-mutating grid-density preflight — returns true when density cache is valid for `desc`.
+bool preflightGridDensityReady(const FroxelDensityGrid& grid,
 /// Read density with guard preflight; returns false when `canLookupAtIndex` would reject the request.
 bool trySampleDensityAtIndex(const FroxelDensityGrid& grid,
                              u32 index,
