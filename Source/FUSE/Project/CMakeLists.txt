@@ -44,6 +44,21 @@ target_include_directories(fuse_project
 target_link_libraries(fuse_project PUBLIC fuse_hybrid fuse_core)
 target_compile_features(fuse_project PUBLIC cxx_std_17)
 
+add_library(fuse_world_converter STATIC
+    src/world_converter.cpp
+    include/fuse/project/world_converter.hpp
+)
+
+add_library(fuse::world_converter ALIAS fuse_world_converter)
+
+target_include_directories(fuse_world_converter
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+
+target_link_libraries(fuse_world_converter PUBLIC fuse_project fuse_scene)
+target_compile_features(fuse_world_converter PUBLIC cxx_std_17)
+
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)
 endif()

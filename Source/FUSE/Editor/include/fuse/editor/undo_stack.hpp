@@ -1,5 +1,8 @@
 #pragma once
 
+#include <fuse/ecs/components/transform.hpp>
+#include <fuse/ecs/entity.hpp>
+#include <fuse/ecs/registry.hpp>
 #include <fuse/object.hpp>
 #include <fuse/types.hpp>
 
@@ -135,6 +138,41 @@ private:
     Object& m_object;
     Object* m_newParent = nullptr;
     Object* m_oldParent = nullptr;
+};
+
+/// Reparent an ECS entity via Transform::parent (U6 game-thread apply).
+class ReparentEntityCommand final : public UndoCommand {
+public:
+    ReparentEntityCommand(ecs::Registry& registry, ecs::EntityID entity, ecs::EntityID newParent,
+                          ecs::EntityID oldParent);
+
+    void execute() override;
+    void undo() override;
+    std::string description() const override;
+
+private:
+    ecs::Registry& m_registry;
+    ecs::EntityID m_entity = ecs::EntityID::null();
+    ecs::EntityID m_newParent = ecs::EntityID::null();
+    ecs::EntityID m_oldParent = ecs::EntityID::null();
+};
+
+/// Destroy an ECS entity and orphan its transform children (U6 game-thread apply).
+class DeleteEntityCommand final : public UndoCommand {
+public:
+    DeleteEntityCommand(ecs::Registry& registry, ecs::EntityID entity);
+
+    void execute() override;
+    void undo() override;
+    std::string description() const override;
+
+private:
+    ecs::Registry& m_registry;
+    ecs::EntityID m_entity = ecs::EntityID::null();
+    ecs::EntityID m_restoredEntity = ecs::EntityID::null();
+    std::vector<ecs::EntityID> m_orphanedChildren;
+    bool m_hadTransform = false;
+    ecs::Transform m_transform{};
 };
 
 } // namespace fuse::editor

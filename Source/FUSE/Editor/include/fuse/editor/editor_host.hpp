@@ -5,6 +5,7 @@
 #include <fuse/editor/editor_state.hpp>
 #include <fuse/editor/play_mode_controller.hpp>
 #include <fuse/editor/play_session.hpp>
+#include <fuse/editor/runtime_viewport.hpp>
 #include <fuse/editor/undo_stack.hpp>
 #include <fuse/scene/scene.hpp>
 #include <fuse/types.hpp>
@@ -42,10 +43,16 @@ public:
     u32 gameTickCount() const { return m_gameTickCount; }
     u32 commandsAppliedLastTick() const { return m_commandsAppliedLastTick; }
 
+    RuntimeViewportHook& runtimeViewport() { return m_runtimeViewport; }
+    const RuntimeViewportHook& runtimeViewport() const { return m_runtimeViewport; }
+
     void postFromUi(EditorCommand command);
     void gameTick();
+    void setLoadedProject(std::string project);
 
 private:
+    friend class RuntimeViewportHook;
+
     void ensureInitialized_();
     void applyCommand_(const EditorCommand& command);
 
@@ -56,6 +63,7 @@ private:
     scene::Scene m_runtimeScene;
     PlaySession m_playSession;
     PlayModePhysicsState m_physics;
+    RuntimeViewportHook m_runtimeViewport;
     std::string m_loadedProject;
     u32 m_gameTickCount = 0;
     u32 m_commandsAppliedLastTick = 0;

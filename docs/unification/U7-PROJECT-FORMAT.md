@@ -2,7 +2,7 @@
 
 **Phase:** U7 content / converters  
 **Date:** 2026-09-15  
-**Status:** Minimal `project.json` loader + honest importer stubs landed
+**Status:** `project.json` loader + importer stubs + `.fuselevel` world converter (`fuse_convert`) landed
 
 ---
 
@@ -16,6 +16,7 @@ FUSE projects are directories containing a versioned `project.json` manifest. Th
 | T3D mission importer | `fuse/project/importer.hpp` | `.mis` → World3D placeholder |
 | T2D module importer | `fuse/project/importer.hpp` | `main.cs` / `.cs` → World2D placeholder |
 | CLI dry-run | `Tools/FUSE/fuse_import` | Headless import validation |
+| World converter | `Tools/FUSE/fuse_convert` + `fuse_world_converter` | `.mis`/`.cs` → `.fuselevel` via `SceneSerialiser` |
 
 ---
 
@@ -107,16 +108,21 @@ When `sourcePath` is empty, importers run against `defaultWorld3D` / `defaultWor
 ## 5. CLI
 
 ```bash
-cmake --build build-fuse --target fuse_import
+cmake --build build-fuse --target fuse_import fuse_convert
 
 # Load project + dry-run default worlds
 ./build-fuse/Tools/FUSE/fuse_import --project Samples/unification/demo_3d_empty
 
 # Dry-run a single legacy file
 ./build-fuse/Tools/FUSE/fuse_import --source Templates/BaseGame/game/data/ExampleModule/levels/ExampleLevel.mis
+
+# Convert a T3D mission to .fuselevel (writes binary scene v1)
+./build-fuse/Tools/FUSE/fuse_convert --mis Templates/BaseGame/game/data/ExampleModule/levels/ExampleLevel.mis \
+  --output /tmp/ExampleLevel.fuselevel
 ```
 
-Exit `0` on success; prints one line per registered world.
+`fuse_import` exit `0` on success; prints one line per registered world.  
+`fuse_convert` writes `.fuselevel` files for supported legacy sources (`.mis`, `.cs`).
 
 ---
 
@@ -125,6 +131,7 @@ Exit `0` on success; prints one line per registered world.
 | Test | Target |
 |------|--------|
 | `fuse_project_tests` | Manifest parse, schema rejection, T3D/T2D importer stubs |
+| `fuse_world_converter_tests` | `.mis`/`.cs` → `.fuselevel` round-trip via `SceneSerialiser` |
 
 ---
 
@@ -136,8 +143,8 @@ Each demo under `Samples/unification/<demo_id>/` ships a `project.json` consumed
 
 ## 8. Deferred (honest backlog)
 
-- Real `.fuselevel` binary format + cookers under `Tools/FUSE/Cook/`
-- Full T3D SimObject tree extraction from `.mis`
-- T2D scene graph import from toybox modules
+- Full `.fuselevel` v2 format (asset table, archetypes, SVO) + mesh/texture cookers under `Tools/FUSE/Cook/`
+- Full T3D SimObject tree + parent hierarchy extraction from `.mis` (converter emits flat named objects with transforms when present)
+- T2D scene graph import from toybox modules (converter emits module root placeholder only)
 - Asset path remapping via VFS mounts ([vfs-mount-plan.md](./vfs-mount-plan.md))
 - `project.json` `workerCap` override for `computeWorkerCount()`

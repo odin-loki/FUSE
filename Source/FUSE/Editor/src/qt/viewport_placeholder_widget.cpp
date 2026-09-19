@@ -1,12 +1,16 @@
 #include "viewport_placeholder_widget.hpp"
 
+#include <fuse/editor/command_queue.hpp>
+
 #include <QColor>
 #include <QPainter>
 #include <QPalette>
+#include <QResizeEvent>
 
 namespace fuse::editor::qt {
 
-ViewportPlaceholderWidget::ViewportPlaceholderWidget(QWidget* parent) : QWidget(parent) {
+ViewportPlaceholderWidget::ViewportPlaceholderWidget(EditorHost& host, QWidget* parent)
+    : QWidget(parent), m_host(host) {
     setMinimumSize(640, 360);
     setAutoFillBackground(true);
     QPalette palette = this->palette();
@@ -19,14 +23,47 @@ void ViewportPlaceholderWidget::setProjectLabel(const QString& projectName) {
     update();
 }
 
+void ViewportPlaceholderWidget::postViewportResize() {
+    const QSize size = this->size();
+    if (size.width() <= 0 || size.height() <= 0) {
+        return;
+    }
+
+    EditorCommand widthCmd;
+    widthCmd.kind = CommandKind::SetProperty;
+    widthCmd.propertyName = "viewport.width";
+    widthCmd.propertyValue = std::to_string(static_cast<unsigned>(size.width()));
+    m_host.postFromUi(std::move(widthCmd));
+
+    EditorCommand heightCmd;
+    heightCmd.kind = CommandKind::SetProperty;
+    heightCmd.propertyName = "viewport.height";
+    heightCmd.propertyValue = std::to_string(static_cast<unsigned>(size.height()));
+    m_host.postFromUi(std::move(heightCmd));
+}
+
+void ViewportPlaceholderWidget::resizeEvent(QResizeEvent* event) {
+    QWidget::resizeEvent(event);
+    postViewportResize();
+}
+
 void ViewportPlaceholderWidget::paintEvent(QPaintEvent* /*event*/) {
     QPainter painter(this);
     painter.fillRect(rect(), palette().color(QPalette::Window));
 
+    const RuntimeViewportHook& hook = m_host.runtimeViewport();
+    const QString project = m_projectName.isEmpty() ? tr("(none)") : m_projectName;
+
     painter.setPen(QColor(180, 190, 210));
-    painter.drawText(rect().adjusted(16, 16, -16, -16), Qt::AlignCenter,
-        tr("Viewport placeholder\n\nProject: %1\n\nEmbedded runtime + GPU viewport follow in U6+")
-            .arg(m_projectName.isEmpty() ? tr("(none)") : m_projectName));
+    painter.drawText(
+        rect().adjusted(16, 16, -16, -16),
+        Qt::AlignCenter,
+        tr("Runtime viewport hook\n\nProject: %1\nSize: %2 × %3\nRuntime ticks: %4\nEmbedded: %5")
+            .arg(project)
+            .arg(hook.panel().width())
+            .arg(hook.panel().height())
+            .arg(hook.runtimeTickCount())
+            .arg(hook.isEmbedded() ? tr("yes") : tr("no")));
 }
 
 } // namespace fuse::editor::qt

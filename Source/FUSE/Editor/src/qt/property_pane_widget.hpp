@@ -7,9 +7,11 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
+class QDoubleSpinBox;
+
 namespace fuse::editor::qt {
 
-/// WP-08 property pane — posts play/stop commands through FeaturePaneBridge on the UI thread.
+/// WP-08 property pane — posts play/stop and live property edits through FeaturePaneBridge.
 class PropertyPaneWidget final : public QWidget {
     Q_OBJECT
 
@@ -21,11 +23,17 @@ public:
 private:
     void onPlayClicked();
     void onStopClicked();
+    void onPositionEdited();
+    void syncPositionFields();
 
     FeaturePaneBridge& m_bridge;
     QLabel* m_summaryLabel = nullptr;
+    QDoubleSpinBox* m_posX = nullptr;
+    QDoubleSpinBox* m_posY = nullptr;
+    QDoubleSpinBox* m_posZ = nullptr;
     QPushButton* m_playButton = nullptr;
     QPushButton* m_stopButton = nullptr;
+    bool m_syncingFields = false;
 };
 
 } // namespace fuse::editor::qt

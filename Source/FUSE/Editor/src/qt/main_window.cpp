@@ -24,7 +24,7 @@ MainWindow::MainWindow(const QString& samplesRoot, QWidget* parent)
     m_projectHub = new ProjectHubWidget(splitter);
     m_projectHub->setSamplesRoot(samplesRoot);
     m_propertyPane = new PropertyPaneWidget(m_featureBridge, splitter);
-    m_viewport = new ViewportPlaceholderWidget(splitter);
+    m_viewport = new ViewportPlaceholderWidget(m_host, splitter);
     splitter->addWidget(m_projectHub);
     splitter->addWidget(m_propertyPane);
     splitter->addWidget(m_viewport);

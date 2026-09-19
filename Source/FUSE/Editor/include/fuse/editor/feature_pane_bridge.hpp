@@ -5,6 +5,8 @@
 #include <fuse/ecs/entity.hpp>
 #include <fuse/types.hpp>
 
+#include <string>
+
 namespace fuse::editor {
 
 /// WP-08 feature-pane hook — panes post EditorCommands through EditorHost instead of
@@ -23,6 +25,10 @@ public:
     void postPlayRequested();
     void postStopRequested();
     void postSelectEntity(ecs::EntityID entity);
+    void postSetProperty(ecs::EntityID entity, const std::string& propertyName,
+                         const std::string& propertyValue);
+    void postDeleteEntity(ecs::EntityID entity);
+    void postReparentEntity(ecs::EntityID entity, ecs::EntityID newParent);
 
 private:
     EditorHost& m_host;

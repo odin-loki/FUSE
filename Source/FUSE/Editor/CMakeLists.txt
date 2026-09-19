@@ -6,7 +6,9 @@ set(FUSE_EDITOR_API_SOURCES
     src/command_stack.cpp
     src/console_panel.cpp
     src/editor_host.cpp
+    src/editor_command_apply.cpp
     src/feature_pane_bridge.cpp
+    src/runtime_viewport.cpp
     src/gizmo_system.cpp
     src/hierarchy_model.cpp
     src/material_editor_panel.cpp
@@ -29,6 +31,7 @@ set(FUSE_EDITOR_API_HEADERS
     include/fuse/editor/console_panel.hpp
     include/fuse/editor/editor_host.hpp
     include/fuse/editor/editor_scene.hpp
+    include/fuse/editor/runtime_viewport.hpp
     include/fuse/editor/editor_state.hpp
     include/fuse/editor/feature_pane_bridge.hpp
     include/fuse/editor/gizmo_system.hpp

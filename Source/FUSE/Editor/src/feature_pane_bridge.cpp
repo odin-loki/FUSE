@@ -30,4 +30,29 @@ void FeaturePaneBridge::postSelectEntity(ecs::EntityID entity) {
     m_host.postFromUi(std::move(cmd));
 }
 
+void FeaturePaneBridge::postSetProperty(ecs::EntityID entity, const std::string& propertyName,
+                                        const std::string& propertyValue) {
+    EditorCommand cmd;
+    cmd.kind = CommandKind::SetProperty;
+    cmd.target = Handle<Object>(entity.index, entity.generation);
+    cmd.propertyName = propertyName;
+    cmd.propertyValue = propertyValue;
+    m_host.postFromUi(std::move(cmd));
+}
+
+void FeaturePaneBridge::postDeleteEntity(ecs::EntityID entity) {
+    EditorCommand cmd;
+    cmd.kind = CommandKind::DeleteObject;
+    cmd.target = Handle<Object>(entity.index, entity.generation);
+    m_host.postFromUi(std::move(cmd));
+}
+
+void FeaturePaneBridge::postReparentEntity(ecs::EntityID entity, ecs::EntityID newParent) {
+    EditorCommand cmd;
+    cmd.kind = CommandKind::ReparentObject;
+    cmd.target = Handle<Object>(entity.index, entity.generation);
+    cmd.parent = Handle<Object>(newParent.index, newParent.generation);
+    m_host.postFromUi(std::move(cmd));
+}
+
 } // namespace fuse::editor

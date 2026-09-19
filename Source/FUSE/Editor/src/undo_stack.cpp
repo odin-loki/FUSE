@@ -1,5 +1,7 @@
 #include <fuse/editor/undo_stack.hpp>
 
+#include <fuse/ecs/components/transform.hpp>
+
 namespace fuse::editor {
 
 namespace {
@@ -240,6 +242,91 @@ void ReparentObjectCommand::undo() {
 
 std::string ReparentObjectCommand::description() const {
     return "Reparent " + m_object.name();
+}
+
+ReparentEntityCommand::ReparentEntityCommand(ecs::Registry& registry, ecs::EntityID entity,
+                                             ecs::EntityID newParent, ecs::EntityID oldParent)
+    : m_registry(registry),
+      m_entity(entity),
+      m_newParent(newParent),
+      m_oldParent(oldParent) {}
+
+void ReparentEntityCommand::execute() {
+    ecs::Transform* transform = m_registry.get<ecs::Transform>(m_entity);
+    if (transform == nullptr) {
+        return;
+    }
+
+    transform->parent = m_newParent;
+    transform->dirty = true;
+}
+
+void ReparentEntityCommand::undo() {
+    ecs::Transform* transform = m_registry.get<ecs::Transform>(m_entity);
+    if (transform == nullptr) {
+        return;
+    }
+
+    transform->parent = m_oldParent;
+    transform->dirty = true;
+}
+
+std::string ReparentEntityCommand::description() const {
+    return "Reparent entity";
+}
+
+DeleteEntityCommand::DeleteEntityCommand(ecs::Registry& registry, ecs::EntityID entity)
+    : m_registry(registry), m_entity(entity) {}
+
+void DeleteEntityCommand::execute() {
+    if (!m_entity.valid() || !m_registry.alive(m_entity)) {
+        return;
+    }
+
+    m_orphanedChildren.clear();
+    m_hadTransform = false;
+
+    m_registry.each_query<ecs::Transform>([&](ecs::EntityID id, ecs::Transform& transform) {
+        if (transform.parent == m_entity) {
+            m_orphanedChildren.push_back(id);
+            transform.parent = ecs::EntityID::null();
+            transform.dirty = true;
+        }
+    });
+
+    if (ecs::Transform* transform = m_registry.get<ecs::Transform>(m_entity)) {
+        m_transform = *transform;
+        m_hadTransform = true;
+    }
+
+    m_registry.destroy_entity(m_entity);
+}
+
+void DeleteEntityCommand::undo() {
+    if (m_restoredEntity.valid() && m_registry.alive(m_restoredEntity)) {
+        return;
+    }
+
+    m_restoredEntity = m_registry.create();
+    if (m_hadTransform) {
+        m_registry.add(m_restoredEntity, m_transform);
+    }
+
+    for (ecs::EntityID child : m_orphanedChildren) {
+        if (!m_registry.alive(child)) {
+            continue;
+        }
+        ecs::Transform* childTransform = m_registry.get<ecs::Transform>(child);
+        if (childTransform == nullptr) {
+            continue;
+        }
+        childTransform->parent = m_restoredEntity;
+        childTransform->dirty = true;
+    }
+}
+
+std::string DeleteEntityCommand::description() const {
+    return "Delete entity";
 }
 
 } // namespace fuse::editor

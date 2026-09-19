@@ -1,22 +1,28 @@
 #pragma once
 
+#include <fuse/editor/editor_host.hpp>
+
 #include <QWidget>
 
 namespace fuse::editor::qt {
 
-/// Placeholder viewport pane until Vulkan/Metal embed lands (U6 follow-up).
+/// Embedded runtime viewport hook surface (U6) — posts resize commands to the game thread.
 class ViewportPlaceholderWidget final : public QWidget {
     Q_OBJECT
 
 public:
-    explicit ViewportPlaceholderWidget(QWidget* parent = nullptr);
+    explicit ViewportPlaceholderWidget(EditorHost& host, QWidget* parent = nullptr);
 
     void setProjectLabel(const QString& projectName);
 
 protected:
     void paintEvent(QPaintEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
 
 private:
+    void postViewportResize();
+
+    EditorHost& m_host;
     QString m_projectName;
 };
 

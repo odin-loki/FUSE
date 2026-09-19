@@ -154,6 +154,89 @@ void testFeaturePaneBridgeSelectEntity() {
     expectTrue(bridge.propertyInspector().hasSelection(), "property pane syncs after selection");
 }
 
+void testHostDeleteObjectViaQueue() {
+    fuse::editor::EditorHost host;
+    const fuse::ecs::EntityID entity = host.editorScene().registry().create();
+    host.editorScene().registry().add<fuse::ecs::Transform>(entity);
+
+    fuse::editor::EditorCommand deleteCmd;
+    deleteCmd.kind = fuse::editor::CommandKind::DeleteObject;
+    deleteCmd.target = fuse::Handle<fuse::Object>(entity.index, entity.generation);
+    host.postFromUi(std::move(deleteCmd));
+    host.gameTick();
+
+    expectTrue(!host.editorScene().registry().alive(entity), "delete command destroys entity on game thread");
+    expectTrue(host.editorState().primarySelection != entity, "selection cleared after delete");
+}
+
+void testHostReparentObjectViaQueue() {
+    fuse::editor::EditorHost host;
+    const fuse::ecs::EntityID parent = host.editorScene().registry().create();
+    const fuse::ecs::EntityID child = host.editorScene().registry().create();
+    host.editorScene().registry().add<fuse::ecs::Transform>(parent);
+    host.editorScene().registry().add<fuse::ecs::Transform>(child);
+
+    fuse::editor::EditorCommand reparent;
+    reparent.kind = fuse::editor::CommandKind::ReparentObject;
+    reparent.target = fuse::Handle<fuse::Object>(child.index, child.generation);
+    reparent.parent = fuse::Handle<fuse::Object>(parent.index, parent.generation);
+    host.postFromUi(std::move(reparent));
+    host.gameTick();
+
+    const fuse::ecs::Transform* childTransform = host.editorScene().registry().get<fuse::ecs::Transform>(child);
+    expectTrue(childTransform != nullptr, "child transform still alive");
+    expectTrue(childTransform->parent == parent, "reparent command updates transform parent on game thread");
+}
+
+void testHostSetPropertyTransformViaQueue() {
+    fuse::editor::EditorHost host;
+    fuse::editor::FeaturePaneBridge bridge(host);
+
+    const fuse::ecs::EntityID entity = host.editorScene().registry().create();
+    host.editorScene().registry().add<fuse::ecs::Transform>(entity);
+    bridge.postSelectEntity(entity);
+    host.gameTick();
+
+    bridge.postSetProperty(entity, "transform.position", "1,2,3");
+    host.gameTick();
+
+    const fuse::ecs::Transform* transform = host.editorScene().registry().get<fuse::ecs::Transform>(entity);
+    expectTrue(transform != nullptr, "transform present");
+    expectTrue(transform->position.x == 1.f && transform->position.y == 2.f && transform->position.z == 3.f,
+               "transform.position applied through command queue");
+    expectTrue(host.editorState().sceneModified, "scene marked modified after property edit");
+}
+
+void testRuntimeViewportHookTicksWithProject() {
+    fuse::editor::EditorHost host;
+
+    fuse::editor::EditorCommand projectCmd;
+    projectCmd.kind = fuse::editor::CommandKind::SetProperty;
+    projectCmd.propertyName = "project";
+    projectCmd.propertyValue = "demo_viewport";
+    host.postFromUi(std::move(projectCmd));
+
+    fuse::editor::EditorCommand widthCmd;
+    widthCmd.kind = fuse::editor::CommandKind::SetProperty;
+    widthCmd.propertyName = "viewport.width";
+    widthCmd.propertyValue = "1280";
+    host.postFromUi(std::move(widthCmd));
+
+    fuse::editor::EditorCommand heightCmd;
+    heightCmd.kind = fuse::editor::CommandKind::SetProperty;
+    heightCmd.propertyName = "viewport.height";
+    heightCmd.propertyValue = "720";
+    host.postFromUi(std::move(heightCmd));
+
+    host.gameTick();
+
+    expectTrue(host.runtimeViewport().isEmbedded(), "runtime viewport embedded after project load");
+    expectTrue(host.runtimeViewport().panel().width() == 1280u, "viewport width applied on game thread");
+    expectTrue(host.runtimeViewport().panel().height() == 720u, "viewport height applied on game thread");
+    expectTrue(host.runtimeViewport().runtimeTickCount() == 1u, "runtime viewport ticked on game thread");
+    expectTrue(host.runtimeScene().name() == "demo_viewport", "runtime scene label synced from project");
+}
+
 } // namespace
 
 int main() {
@@ -165,6 +248,10 @@ int main() {
     testCrossThreadUiGameQueue();
     testFeaturePaneBridgePostsPlayCommands();
     testFeaturePaneBridgeSelectEntity();
+    testHostDeleteObjectViaQueue();
+    testHostReparentObjectViaQueue();
+    testHostSetPropertyTransformViaQueue();
+    testRuntimeViewportHookTicksWithProject();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

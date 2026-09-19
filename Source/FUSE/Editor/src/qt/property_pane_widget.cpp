@@ -1,6 +1,11 @@
 #include "property_pane_widget.hpp"
 
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/ecs/components/transform.hpp>
+
+#include <QDoubleSpinBox>
+#include <QFormLayout>
+#include <QHBoxLayout>
 
 namespace fuse::editor::qt {
 
@@ -11,6 +16,22 @@ PropertyPaneWidget::PropertyPaneWidget(FeaturePaneBridge& bridge, QWidget* paren
     m_summaryLabel = new QLabel(tr("Property pane — no selection"), this);
     m_summaryLabel->setWordWrap(true);
     layout->addWidget(m_summaryLabel);
+
+    auto* positionForm = new QFormLayout();
+    m_posX = new QDoubleSpinBox(this);
+    m_posY = new QDoubleSpinBox(this);
+    m_posZ = new QDoubleSpinBox(this);
+    for (QDoubleSpinBox* spin : {m_posX, m_posY, m_posZ}) {
+        spin->setRange(-100000.0, 100000.0);
+        spin->setDecimals(3);
+        spin->setEnabled(false);
+        connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
+                &PropertyPaneWidget::onPositionEdited);
+    }
+    positionForm->addRow(tr("Position X"), m_posX);
+    positionForm->addRow(tr("Position Y"), m_posY);
+    positionForm->addRow(tr("Position Z"), m_posZ);
+    layout->addLayout(positionForm);
 
     m_playButton = new QPushButton(tr("Play (PIE)"), this);
     m_stopButton = new QPushButton(tr("Stop"), this);
@@ -34,6 +55,51 @@ void PropertyPaneWidget::refresh() {
                           .arg(host.editorState().playing ? tr("yes") : tr("no"))
                           .arg(inspector.hasSelection() ? static_cast<int>(inspector.sections().size()) : 0);
     m_summaryLabel->setText(summary);
+    syncPositionFields();
+}
+
+void PropertyPaneWidget::syncPositionFields() {
+    m_syncingFields = true;
+
+    const PropertyInspector& inspector = m_bridge.propertyInspector();
+    const bool hasTransform = inspector.hasSelection() &&
+                              m_bridge.host().editorScene().registry().has<ecs::Transform>(
+                                  inspector.target());
+
+    for (QDoubleSpinBox* spin : {m_posX, m_posY, m_posZ}) {
+        spin->setEnabled(hasTransform);
+    }
+
+    if (hasTransform) {
+        const ecs::Transform* transform =
+            m_bridge.host().editorScene().registry().get<ecs::Transform>(inspector.target());
+        if (transform != nullptr) {
+            m_posX->setValue(transform->position.x);
+            m_posY->setValue(transform->position.y);
+            m_posZ->setValue(transform->position.z);
+        }
+    } else {
+        m_posX->setValue(0.0);
+        m_posY->setValue(0.0);
+        m_posZ->setValue(0.0);
+    }
+
+    m_syncingFields = false;
+}
+
+void PropertyPaneWidget::onPositionEdited() {
+    if (m_syncingFields) {
+        return;
+    }
+
+    const PropertyInspector& inspector = m_bridge.propertyInspector();
+    if (!inspector.hasSelection()) {
+        return;
+    }
+
+    const std::string value = std::to_string(m_posX->value()) + "," + std::to_string(m_posY->value()) +
+                              "," + std::to_string(m_posZ->value());
+    m_bridge.postSetProperty(inspector.target(), "transform.position", value);
 }
 
 void PropertyPaneWidget::onPlayClicked() {
