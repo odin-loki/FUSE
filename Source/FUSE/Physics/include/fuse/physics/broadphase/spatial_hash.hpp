@@ -1643,3 +1643,7 @@ FUSE_PHYSICS_INLINE CellCapacityPreflight preflightCellCapacity(const CellRange2
     MergePairsIntoBufferRejectReason bufferReason = MergePairsIntoBufferRejectReason::None;
         return mergeReason == BroadphaseMergeRejectReason::None &&
                bufferReason == MergePairsIntoBufferRejectReason::None;
+
+// --- deepen additive from deepen-b4-broadphase-guards-e0c4 ---
+struct RefineAndDedupeBroadphasePreflight {
+RefineAndDedupeBroadphasePreflight preflightRefineAndDedupeBroadphase(

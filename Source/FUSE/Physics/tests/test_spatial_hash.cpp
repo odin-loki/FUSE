@@ -4014,3 +4014,20 @@ void testCellOccupancyPreflightShapeInsertGuards() {
     expectTrue(!overPreflight.canIterate(), "large range fails cell-occupancy preflight");
     expectTrue(overPreflight.exceedsBudget, "over-budget preflight flags exceedsBudget");
     testCellOccupancyPreflightShapeInsertGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-e0c4 ---
+                 fuse::physics::broadphase::pairBufferWriteRejectReason(buffer, 4u, 0u, 1u)),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferInvalidateRejectReason(buffer, 8u)),
+        fuse::physics::broadphase::preflightPairBufferInvalidate(buffer, 8u);
+void testCellOccupancyBudgetRemainingPreflight() {
+    expectEq(planePreflight.budgetRemaining, 2u, "2D preflight reports remaining occupancy budget");
+void testRefineAndDedupeBroadphasePreflightGuards() {
+    const fuse::physics::broadphase::RefineAndDedupeBroadphasePreflight preflight =
+        fuse::physics::broadphase::preflightRefineAndDedupeBroadphase(bodies, shapes, buffer);
+void testBroadphaseMergeDeepenPreflightGuards() {
+void testMergePairsIntoBufferDeepenPreflightGuards() {
+    expectEq(fullPreflight.mergeablePairCount, 0u, "full buffer merge preflight counts zero mergeable pairs");
+    testCellOccupancyBudgetRemainingPreflight();
+    testRefineAndDedupeBroadphasePreflightGuards();
+    testBroadphaseMergeDeepenPreflightGuards();
+    testMergePairsIntoBufferDeepenPreflightGuards();

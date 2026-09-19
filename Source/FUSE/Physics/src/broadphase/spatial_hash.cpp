@@ -1647,3 +1647,10 @@ MergeBroadphasePushPreflight preflightMergeBroadphasePush(
     preflight.bufferFull = bufferPreflight.bufferFull;
     return !preflightBroadphaseMergeIntoBuffer(bodies, shapes, pairs, buffer).canMergeIntoBuffer();
     return preflightBroadphaseMergeIntoBuffer(bodies, shapes, pairs, buffer).canMergeIntoBuffer();
+
+// --- deepen additive from deepen-b4-broadphase-guards-e0c4 ---
+RefineAndDedupeBroadphasePreflight preflightRefineAndDedupeBroadphase(
+    RefineAndDedupeBroadphasePreflight preflight{};
+    return !preflightRefineAndDedupeBroadphase(bodies, shapes, buffer).canRunEither();
+    return preflightRefineAndDedupeBroadphase(bodies, shapes, buffer).canRunEither();
+        if (preflightPairBufferPush(buffer, pair.bodyA, pair.bodyB).canPush()) {
