@@ -84,6 +84,11 @@ public:
 
     /// Read-only invalidation probes — mirror `invalidate_*` guards without mutating stats (B7.9 deepen).
     [[nodiscard]] bool would_invalidate(u64 content_hash) const;
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
+                                                    const std::vector<CookJobDependencyEdge>& edges,
+                                                    const std::vector<CookJob>& jobs) const;
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,
@@ -98,6 +103,9 @@ public:
                                           const std::vector<CookJob>& jobs) const;
     [[nodiscard]] u32 count_prunable_entries() const;
     [[nodiscard]] u32 count_invalid_entries() const;
+    [[nodiscard]] u32 count_stale_entries() const;
+    /// Entries `prune_all` would remove — mirrors early-exit guards without mutating stats (B7.9 deepen).
+    [[nodiscard]] u32 estimate_prune_all() const;
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 
