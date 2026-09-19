@@ -4656,3 +4656,8 @@ void testTaaPassTryAndClassifyGuardWrappers() {
 
 // --- deepen additive from deepen-b59-taa-guards-a216 ---
     expectTrue(pass->tryPreflightHistoryReuse(resolveDesc.observed_history_generation, reuseReason),
+
+// --- deepen additive from deepen-taa-pass-guards-86f6 ---
+               "pass classifyJitterSyncReject passes for default sequence");
+               "pass classifyJitterNdcReject passes for valid viewport");
+               "pass classifyJitterAdvanceReject passes for default sequence");
