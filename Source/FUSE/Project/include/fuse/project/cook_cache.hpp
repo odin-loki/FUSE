@@ -207,6 +207,14 @@ struct CookCacheUpstreamInvalidationEstimate {
     [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
 };
 
+/// Read-only upstream invalidation breakdown — mirrors `invalidate_downstream_of` (B7.9 deepen).
+struct CookCacheUpstreamInvalidationEstimate {
+    u32 direct_entries = 0;
+    u32 downstream_entries = 0;
+
+    [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
+};
+
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
 [[nodiscard]] inline bool is_valid_cook_cache_key(u64 content_hash) {
     return content_hash != 0;
@@ -450,15 +458,9 @@ enum class CookCacheEntryRejectReason : u8 {
     CookCacheEntryRejectReason reason = CookCacheEntryRejectReason::None;
 
 
-};
 
-/// Read-only store preflight — mirrors `is_valid_cook_cache_entry` with reject reasons (B7.9 deepen).
-struct CookCacheEntryPreflight {
-    bool can_store = false;
 
-    [[nodiscard]] bool ok() const { return can_store; }
 
-[[nodiscard]] CookCacheEntryPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
 const char* cookCacheEntryRejectReasonLabel(CookCacheEntryRejectReason reason);
 
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
@@ -504,6 +506,8 @@ public:
     [[nodiscard]] bool would_invalidate(u64 content_hash) const;
     /// Read-only boolean probes — mirror `count_*` / `invalidate_*` guards (B7.9 deepen).
     [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    /// Read-only mirror of `invalidate_source` — true when at least one entry matches (B7.9 deepen).
+    /// Read-only mirror of `invalidate_output` — true when at least one entry matches (B7.9 deepen).
     [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
     [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
                                                                  u64 current_content_hash) const;

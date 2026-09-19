@@ -831,6 +831,7 @@ CookHashPreflight preflight_shader_manifest_hash(const CookManifestEntry& entry)
         const CookHashPreflight dependency_preflight = preflight_file_content_hash(dependency);
         if (!dependency_preflight.can_hash) {
             return dependency_preflight;
+        }
 
     preflight.can_hash = true;
     preflight.reason = CookHashRejectReason::None;
@@ -868,6 +869,9 @@ CookHashPreflight preflight_upstream_dependencies_hash(const std::vector<std::st
 
 
             preflight.reason = CookHashRejectReason::UnknownDependencyOutput;
+
+
+
 
     preflight.can_hash = true;
     preflight.reason = CookHashRejectReason::None;

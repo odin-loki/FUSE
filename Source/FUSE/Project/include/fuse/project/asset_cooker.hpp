@@ -216,7 +216,6 @@ public:
     /// True when `count_stale_dependency_invalidation` is non-zero (B7.9 deepen).
     [[nodiscard]] bool would_stale_dependency_invalidation(const CookManifest& manifest) const;
     /// Upstream invalidation breakdown — mirrors `count_upstream_invalidation` components (B7.9 deepen).
-    /// True when `count_upstream_invalidation` would remove at least one entry (B7.9 deepen).
     [[nodiscard]] bool would_stale_dependency_invalidate(const CookManifest& manifest) const;
     /// True when `estimate_reconcile_invalidation().total()` is non-zero (B7.9 deepen).
     [[nodiscard]] bool would_reconcile_invalidate(const CookManifest& manifest) const;

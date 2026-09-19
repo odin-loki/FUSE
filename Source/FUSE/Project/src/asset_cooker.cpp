@@ -552,9 +552,7 @@ CookUpstreamInvalidationEstimate AssetCooker::estimate_upstream_invalidation(
                 m_cache.count_downstream_of(job.output_path, graph.edges(), graph.jobs());
 
 bool AssetCooker::would_upstream_invalidate(const CookManifest& manifest,
-    }
 
-    for (const CookJob& job : graph.jobs()) {
 
         for (const std::string& path : downstream) {
                 if (recorded == path) {
@@ -598,7 +596,6 @@ u32 AssetCooker::estimate_prune_all() const {
 
 u32 AssetCooker::estimate_reconcile_invalidation(const CookManifest& manifest) const {
     return count_stale_dependency_invalidation(manifest) + estimate_prune_all();
-    if (m_cache.would_invalidate_source(changed_source)) {
         append_unique_source_for_probe_(sources, changed_source);
 
         for (const std::string& source : downstream) {
@@ -620,6 +617,7 @@ u32 AssetCooker::estimate_reconcile_invalidation(const CookManifest& manifest) c
         estimate.downstream_entries += downstream.total();
 
 bool AssetCooker::would_upstream_invalidation(const CookManifest& manifest,
+
 
 
 std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(
@@ -645,6 +643,17 @@ std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(
             for (const std::string& recorded : sources) {
                     already_recorded = true;
                     break;
+    }
+
+    if (m_cache.would_invalidate_source(changed_source)) {
+
+    for (const CookJob& job : graph.jobs()) {
+
+        for (const std::string& path : downstream) {
+                if (recorded == path) {
+            if (!already_recorded) {
+                sources.push_back(path);
+    return sources;
 
 u32 AssetCooker::count_stale_dependency_invalidation(const CookManifest& manifest) const {
     return estimate_stale_dependency_invalidation(manifest);
@@ -1257,6 +1266,7 @@ bool AssetCooker::should_skip_upstream_invalidation(const CookManifest& manifest
 
 bool AssetCooker::should_skip_stale_dependency_invalidation(const CookManifest& manifest) const {
     return count_stale_dependency_invalidation(manifest) == 0;
+
 
 }
 
