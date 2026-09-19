@@ -418,6 +418,7 @@ bool isGuardStateBalanced();
 
 /// Preflight for scope/flow/counter names before recording (rejects null and empty strings).
 bool isEventNameValid(const char* name);
+bool isProfilerNestingPreflightOk();
 
 bool hasEvents();
 bool hasExportableEvents();
@@ -463,6 +464,8 @@ const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason rea
 bool canLookupEventAt(u32 index);
 bool tryCanLookupEventAt(u32 index, EventLookupRejectReason& outReason);
 const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason);
+bool isValidProfilerName(const char* name);
+bool isEventLookupPreflightOk(u32 index);
 u32 lastEventIndex();
 u32 findFirstEventIndexByPhase(EventPhase phase);
 u32 findLastEventIndexByPhase(EventPhase phase);
@@ -729,6 +732,9 @@ inline void sampleCounterSnapshotAtFrameDispatch(const char* track, T value) {
         sampleCounterSnapshotAtFrame(track, static_cast<s64>(value));
     }
 }
+
+/// Preflight: true when chrome export can run without dangling scope/flow nesting state.
+bool isChromeExportPreflightOk();
 
 /// Stub export for chrome://tracing offline analysis (not hot path).
 std::string exportChromeTraceJson();

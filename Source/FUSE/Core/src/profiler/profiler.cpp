@@ -576,6 +576,10 @@ bool isGuardStateBalanced() {
     return isScopeNestingBalanced() && isFlowNestingBalanced() && !hasOpenAsyncFlows();
 }
 
+bool isProfilerNestingPreflightOk() {
+    return isScopeNestingBalanced() && isFlowNestingBalanced() && !hasOpenAsyncFlows();
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -655,6 +659,10 @@ bool isValidEventName(const char* name) {
     return name != nullptr && name[0] != '\0';
 }
 
+bool isValidProfilerName(const char* name) {
+    return isValidEventName(name);
+}
+
 bool isValidProfileEvent(const ProfileEvent& event) {
     return isValidEventName(event.name);
 
@@ -680,6 +688,13 @@ u32 exportableEventCount() {
 bool isEventExportable(u32 index) {
     return isEventIndexValid(index) && isValidEventName(eventAt(index).name);
     return isRecordableName(event.name);
+}
+
+bool isEventLookupPreflightOk(u32 index) {
+    if (!isEventIndexValid(index)) {
+        return false;
+
+    return isValidProfileEvent(eventAt(index));
 }
 
 bool isEventNameValid(const char* name) {
@@ -837,6 +852,7 @@ const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason) {
 bool tryEventAt(u32 index, ProfileEvent& outEvent) {
     EventLookupRejectReason reason = EventLookupRejectReason::None;
     if (!tryCanLookupEventAt(index, reason)) {
+    if (!isEventLookupPreflightOk(index)) {
         outEvent = ProfileEvent{};
         return false;
     }
@@ -995,30 +1011,16 @@ bool tryLastEvent(ProfileEvent& outEvent) {
     if (index == kInvalidEventIndex) {
         outEvent = ProfileEvent{};
         return false;
-    }
 
     return tryEventAt(index, outEvent);
-}
 
-bool tryLastEvent(ProfileEvent& outEvent) {
-    const u32 index = lastEventIndex();
-    if (index == kInvalidEventIndex) {
-        outEvent = ProfileEvent{};
-        return false;
-    }
 
-    return tryEventAt(index, outEvent);
-}
 
 bool hasExportableEvents() {
     const u32 count = eventCount();
     for (u32 i = 0; i < count; ++i) {
         if (isValidProfileEvent(eventAt(i))) {
             return true;
-        }
-    }
-    return false;
-}
 
 bool isChromeTraceExportEmpty() {
     return !hasExportableEvents();
@@ -1596,6 +1598,8 @@ bool isValidChromeTraceExport(const std::string& json) {
     return json.find("\"displayTimeUnit\":\"ns\"") != std::string::npos &&
            json.find("\"metadata\":{\"name\":\"FUSE CPU profiler\"") != std::string::npos &&
            json.find("\"traceEvents\":[") != std::string::npos;
+bool isChromeExportPreflightOk() {
+    return isProfilerNestingPreflightOk();
 
 std::string exportChromeTraceJson() {
     std::string json;
