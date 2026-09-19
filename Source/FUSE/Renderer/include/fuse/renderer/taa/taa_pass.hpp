@@ -110,6 +110,9 @@ public:
     /// Early-out when pass history still needs warm-up (B5.9 deepen).
     bool shouldSkipHistoryWarmup() const;
     /// True when pass history is allocated and warmed for temporal reuse (B5.9 deepen).
+    /// Classify pass history warm-up lifecycle (B5.9 deepen).
+    TaaHistoryWarmupState classifyHistoryWarmupState() const;
+    bool preflightHistoryWarmup(TaaHistoryWarmupState* state = nullptr) const;
     /// Frames remaining before pass history may be temporally reused (B5.9 deepen).
     u32 warmupFramesRemaining() const;
     /// True when pass history is allocated but still awaiting first resolve (B5.9 deepen).
@@ -201,7 +204,6 @@ public:
     bool tryComputeResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& outWeights,
     /// Early-out when resolve blend-weight preflight would reject (B5.9 deepen).
     bool shouldSkipResolveBlend(const TaaResolveDesc& desc) const;
-    /// Resolve blend preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightResolveBlendWeights(const TaaResolveDesc& desc, TaaResolveBlendRejectReason& reason) const;
     /// Early-out when resolve preflight would bail (B5.9 deepen).
     bool shouldSkipResolve(const TaaResolveDesc& desc) const;
@@ -221,6 +223,11 @@ public:
     bool shouldSkipTemporalBlend(const TaaResolveDesc& desc) const;
     /// True when pass history has completed warm-up (B5.9 deepen).
     bool isHistoryWarmed() const;
+    /// True when combined resolve temporal-blend preflight passes (B5.9 deepen).
+    bool preflightResolveTemporalBlend(const TaaResolveDesc& desc,
+                                       TaaResolveTemporalRejectReason* reason = nullptr) const;
+    /// Early-out when combined resolve temporal-blend preflight would reject (B5.9 deepen).
+    bool shouldSkipResolveTemporalBlend(const TaaResolveDesc& desc) const;
     /// Early-out when pass jitter sync preflight would reject (B5.9 deepen).
     bool shouldSkipJitterSync(u32 frameIndex) const;
     /// True when pass jitter can produce NDC offsets for the configured viewport (B5.9 deepen).

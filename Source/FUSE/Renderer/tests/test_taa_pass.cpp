@@ -12,10 +12,22 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 
 namespace {
 
 int g_failures = 0;
+
+std::unique_ptr<fuse::renderer::VulkanBootstrap> createTaaTestBootstrap() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    if (bootstrap == nullptr || bootstrap->device() == nullptr || !bootstrap->device()->isValid()) {
+        return nullptr;
+    }
+    return bootstrap;
+}
 
 void expectTrue(bool condition, const char* message) {
     if (!condition) {
@@ -181,11 +193,11 @@ void testJitterNdcOffset() {
 }
 
 void testHistoryBufferPingPong() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for TAA history test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for TAA history test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -215,11 +227,11 @@ void testHistoryBufferPingPong() {
 }
 
 void testHistoryValidityFlags() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for TAA history validity test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for TAA history validity test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -1126,11 +1138,11 @@ void testHistoryBufferDescValid() {
 }
 
 void testResolveDimensionMismatchHelper() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for dimension mismatch helper test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for dimension mismatch helper test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -1157,11 +1169,11 @@ void testResolveDimensionMismatchHelper() {
 }
 
 void testHistoryGenerationMatchHelpers() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for generation match helper test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for generation match helper test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -1206,11 +1218,11 @@ void testJitterViewportDimensions() {
 }
 
 void testTaaPassAutoStampResolveFrame() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for auto-stamp resolve test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for auto-stamp resolve test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -1252,11 +1264,11 @@ void testResolveDimensionHelpers() {
     expectTrue(!fuse::renderer::taaResolveDimensionsValid(64u, 0u), "zero height is invalid");
     expectTrue(!fuse::renderer::taaResolveDimensionsValid(0u, 0u), "zero width and height are invalid");
 
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for dimension helper test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for dimension helper test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -1296,11 +1308,11 @@ void testClassifyTaaResolveSkipPriority() {
                    fuse::renderer::TaaResolveSkipReason::HistoryNotReady,
                "HistoryNotReady wins over later checks");
 
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for classify priority test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for classify priority test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -1374,6 +1386,11 @@ void testHistoryGenerationCurrentHelpers() {
     auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
     expectTrue(bootstrap != nullptr, "bootstrap allocated for sanitize/preflight test");
     expectTrue(bootstrap != nullptr, "bootstrap allocated for generation current test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for sanitize/preflight test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -1488,11 +1505,11 @@ void testCanAttemptAndPrepareResolve() {
 }
 
 void testHistoryGenerationGuardPasses() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for generation guard passes test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for generation guard passes test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -1543,6 +1560,11 @@ void testTaaPassPrepareAndCanResolve() {
     bootstrapDesc.createSwapchain = false;
     auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
     expectTrue(bootstrap != nullptr, "bootstrap allocated for invalidate-if-stale test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for invalidate-if-stale test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -1576,6 +1598,11 @@ void testTaaPassSanitizeAndGenerationCurrent() {
     auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
     expectTrue(bootstrap != nullptr, "bootstrap allocated for pass sanitize test");
     expectTrue(bootstrap != nullptr, "bootstrap allocated for pass prepare test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for pass sanitize test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -1625,11 +1652,11 @@ void testTaaPassSanitizeAndGenerationCurrent() {
 }
 
 void testHistoryGenerationGuardBypass() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for generation guard bypass test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for generation guard bypass test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -1669,11 +1696,11 @@ void testHistoryGenerationGuardBypass() {
 }
 
 void testStampObservedHistoryGeneration() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for stamp generation test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for stamp generation test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -1723,11 +1750,11 @@ void testStampObservedHistoryGeneration() {
 }
 
 void testInvalidDimensionsSkipReason() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for invalid dimensions test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for invalid dimensions test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -1760,11 +1787,11 @@ void testInvalidDimensionsSkipReason() {
 }
 
 void testDimensionMismatchResolve() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for dimension mismatch test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for dimension mismatch test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -1799,11 +1826,11 @@ void testDimensionMismatchResolve() {
 }
 
 void testMissingSurfacesSkipReason() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for missing surfaces test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for missing surfaces test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -1834,11 +1861,11 @@ void testMissingSurfacesSkipReason() {
 }
 
 void testMissingVelocityDepthSkipReason() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for velocity/depth skip test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for velocity/depth skip test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -1883,11 +1910,11 @@ void testMissingVelocityDepthSkipReason() {
 }
 
 void testStaleHistoryGenerationSkipReason() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for stale generation test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for stale generation test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -1931,11 +1958,11 @@ void testStaleHistoryGenerationSkipReason() {
 }
 
 void testHistoryInvalidateGeneration() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for invalidate generation test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for invalidate generation test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -1997,11 +2024,11 @@ void testEmptyHistoryResolve() {
 }
 
 void testValidityResetAfterInvalidate() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for validity reset test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for validity reset test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -2039,11 +2066,11 @@ void testValidityResetAfterInvalidate() {
 }
 
 void testResolveStub() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for TAA resolve test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for TAA resolve test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -2090,11 +2117,11 @@ void testResolveStub() {
 }
 
 void testTaaPassLifecycle() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for TaaPass test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for TaaPass test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -2133,11 +2160,11 @@ void testTaaPassLifecycle() {
 }
 
 void testTaaPassInvalidateHistory() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for TaaPass invalidate test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for TaaPass invalidate test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -2178,11 +2205,11 @@ void testTaaPassInvalidateHistory() {
 }
 
 void testTaaPassResize() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for pass resize test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for pass resize test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -2222,11 +2249,11 @@ void testTaaPassResize() {
 }
 
 void testTaaPassWouldSkipResolve() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for pass wouldSkip test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for pass wouldSkip test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -2329,11 +2356,11 @@ void testBlendWeightGuards() {
 }
 
 void testHistoryReuseGuards() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for history reuse guard test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for history reuse guard test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -2734,11 +2761,11 @@ void testTaaPassJitterSyncGuards() {
 }
 
 void testResolveHistoryBlendStats() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for history blend stats test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for history blend stats test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -2775,11 +2802,11 @@ void testResolveHistoryBlendStats() {
 }
 
 void testHistoryNeedsWarmupGuard() {
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for needs-warmup guard test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for needs-warmup guard test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -2810,6 +2837,11 @@ void testComputeTaaResolveBlendWeights() {
     bootstrapDesc.instance.enableValidation = false;
     bootstrapDesc.createSwapchain = false;
     auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for resolve blend weights test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -2890,6 +2922,11 @@ void testClassifyTaaHistoryReuseBlock() {
     bootstrapDesc.instance.enableValidation = false;
     bootstrapDesc.createSwapchain = false;
     auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for reuse block classify test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -2961,6 +2998,10 @@ void testTaaPassExpectedBlendAndReuseGuards() {
     bootstrapDesc.instance.enableValidation = false;
     bootstrapDesc.createSwapchain = false;
     auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for pass expected blend test (Vulkan device unavailable)\n");
+        return;
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -3016,6 +3057,11 @@ void testPreflightTaaHistoryReuse() {
                "empty history reuse preflight reason is NotReady");
 
     expectTrue(bootstrap != nullptr, "bootstrap allocated for history reuse preflight test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for history reuse preflight test (Vulkan device unavailable)\n");
+        return;
+    }
 
 
 
@@ -3053,6 +3099,11 @@ void testPreflightTaaResolveBlendWeights() {
                "InconsistentWithReuse blend reject label");
 
     expectTrue(bootstrap != nullptr, "bootstrap allocated for blend preflight test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for blend preflight test (Vulkan device unavailable)\n");
+        return;
+    }
 
 
 
@@ -3231,6 +3282,11 @@ void testHistoryWarmupReuseGuards() {
     expectTrue(bootstrap != nullptr, "bootstrap allocated for history reuse reject test");
     expectTrue(bootstrap != nullptr, "bootstrap allocated for history warmup guard test");
     expectTrue(bootstrap != nullptr, "bootstrap allocated for warmup preflight test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for pass preflight helper test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -3540,6 +3596,11 @@ void testResolveBlendPreflight() {
 
     expectTrue(bootstrap != nullptr, "bootstrap allocated for should-skip reuse test");
     expectTrue(bootstrap != nullptr, "bootstrap allocated for resolve blend preflight test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for should-skip reuse test (Vulkan device unavailable)\n");
+        return;
+    }
 
 
 
@@ -3795,6 +3856,11 @@ void testTaaPassSyncWarmupAndBlendPreflight() {
     expectTrue(bootstrap != nullptr, "bootstrap allocated for pass jitter/blend preflight test");
     expectTrue(bootstrap != nullptr, "bootstrap allocated for pass warmup/blend preflight test");
     expectTrue(bootstrap != nullptr, "bootstrap allocated for pass sync/warmup/blend preflight test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for blend try/should-skip test (Vulkan device unavailable)\n");
+        return;
+    }
 
 
 
@@ -3839,6 +3905,11 @@ void testTaaPassDeepenGuardWrappers() {
                "pass preflightJitterSync reject reason is None");
 
     expectTrue(bootstrap != nullptr, "bootstrap allocated for pass deepen wrapper test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for pass deepen wrapper test (Vulkan device unavailable)\n");
+        return;
+    }
 
 
     expectTrue(pass->init(resources), "TaaPass initialized for deepen wrapper test");
@@ -4286,6 +4357,19 @@ void testHistoryWarmupPreflightFollowUp() {
     expectTrue(bootstrap != nullptr, "bootstrap allocated for warmup preflight test");
     expectTrue(bootstrap != nullptr, "bootstrap allocated for is-warmed guard test");
     expectTrue(bootstrap != nullptr, "bootstrap allocated for warmup preflight follow-up test");
+               "empty history warm-up state is NotReady");
+               "NotReady warm-up state label");
+               "empty history should skip warm-up completion");
+               "empty history warm-up is not complete");
+
+    expectTrue(!fuse::renderer::tryPreflightTaaHistoryWarmup(emptyHistory, state),
+               "tryPreflight warm-up fails for empty history");
+               "tryPreflight warm-up state is NotReady for empty history");
+
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: history warm-up state guards (Vulkan device unavailable)\n");
+        return;
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -4381,6 +4465,30 @@ void testHistoryWarmupPreflightFollowUp() {
     expectTrue(fuse::renderer::tryPreflightTaaHistoryWarmup(history, tryOut),
                "tryPreflight warmup passes after first resolve");
     expectTrue(tryOut.isWarmed(), "tryPreflight warmup output marks warmed");
+    expectTrue(history.init(resources, historyDesc), "history ready for warm-up state test");
+               "allocated history warm-up state is NeedsWarmup");
+    expectTrue(std::strcmp(fuse::renderer::taaHistoryWarmupStateLabel(
+                               fuse::renderer::TaaHistoryWarmupState::NeedsWarmup),
+                           "needs_warmup") == 0,
+               "NeedsWarmup warm-up state label");
+    expectTrue(history.needsWarmup(), "history needsWarmup before first resolve");
+    expectTrue(!history.warmupComplete(), "history warmupComplete false before first resolve");
+    expectTrue(fuse::renderer::preflightTaaHistoryWarmup(history, &state) == false,
+               "warm-up preflight fails before first resolve");
+    expectTrue(state == fuse::renderer::TaaHistoryWarmupState::NeedsWarmup,
+               "warm-up preflight state is NeedsWarmup before first resolve");
+
+                   fuse::renderer::TaaHistoryWarmupState::Complete,
+               "warmed history warm-up state is Complete");
+                               fuse::renderer::TaaHistoryWarmupState::Complete),
+                           "complete") == 0,
+               "Complete warm-up state label");
+    expectTrue(history.warmupComplete(), "history warmupComplete after first resolve");
+               "warmed history should not skip warm-up completion");
+    expectTrue(fuse::renderer::tryPreflightTaaHistoryWarmup(history, state),
+               "tryPreflight warm-up passes after first resolve");
+    expectTrue(state == fuse::renderer::TaaHistoryWarmupState::Complete,
+               "tryPreflight warm-up state is Complete after first resolve");
 
     history.destroy();
     resources.destroy();
@@ -4390,6 +4498,11 @@ void testJitterShouldSkipAndAdvanceGuards() {
 
 
 void testJitterShouldSkipAndTryNdcGuards() {
+}
+
+void testJitterShouldSkipAndPixelOffsetGuards() {
+    using fuse::renderer::TaaJitterLayout;
+
     expectTrue(!fuse::renderer::shouldSkipTaaJitterSync(5u, 8u),
                "valid sequence should not skip jitter sync");
     expectTrue(fuse::renderer::shouldSkipTaaJitterSync(5u, 0u),
@@ -4412,6 +4525,11 @@ void testJitterShouldSkipAndReadyGuards() {
 
     fuse::renderer::TaaJitterGuardRejectReason rejectReason =
         fuse::renderer::TaaJitterGuardRejectReason::None;
+               "valid viewport should not skip NDC jitter");
+    expectTrue(fuse::renderer::shouldSkipTaaJitterNdc(0u, 128u, 8u),
+               "zero width should skip NDC jitter");
+
+    expectTrue(fuse::renderer::tryPreflightTaaJitterNdc(128u, 128u, 8u, rejectReason),
                "tryPreflightTaaJitterNdc passes for valid viewport");
     expectTrue(rejectReason == fuse::renderer::TaaJitterGuardRejectReason::None,
                "tryPreflightTaaJitterNdc reject reason is None");
@@ -4531,6 +4649,42 @@ void testResolveBlendPreflightFollowUp() {
     expectTrue(bootstrap != nullptr, "bootstrap allocated for temporal blend preflight test");
     expectTrue(bootstrap != nullptr, "bootstrap allocated for temporal guard bundle test");
     expectTrue(bootstrap != nullptr, "bootstrap allocated for resolve blend preflight follow-up test");
+    fuse::math::Vec2 pixelOut{};
+    expectTrue(jitter.currentPixelOffsetIfReady(pixelOut), "currentPixelOffsetIfReady succeeds");
+    const fuse::math::Vec2 directPixel = jitter.currentPixelOffset();
+    expectNear(pixelOut.x, directPixel.x, 1e-6f, "currentPixelOffsetIfReady matches currentPixelOffset X");
+    expectNear(pixelOut.y, directPixel.y, 1e-6f, "currentPixelOffsetIfReady matches currentPixelOffset Y");
+
+    fuse::renderer::TaaJitterDesc invalidDesc{};
+    invalidDesc.sequence_length = 0u;
+    fuse::renderer::TaaJitter fallbackJitter(invalidDesc);
+    expectTrue(fallbackJitter.currentPixelOffsetIfReady(pixelOut),
+               "currentPixelOffsetIfReady succeeds after invalid desc fallback");
+    expectTrue(fallbackJitter.sequenceLength() == 8u,
+               "invalid desc still falls back to default sequence length");
+
+    expectTrue(TaaJitterLayout::jitterSlotMatchesFrameIndex(13u, 5u, 8u),
+               "wrapped frame index still matches slot for sync guard");
+
+void testResolveTemporalBlendPreflight() {
+    expectTrue(std::strcmp(fuse::renderer::taaResolveTemporalRejectReasonLabel(
+                               fuse::renderer::TaaResolveTemporalRejectReason::None),
+               "None temporal reject label");
+                               fuse::renderer::TaaResolveTemporalRejectReason::HistoryReuseBlocked),
+               "HistoryReuseBlocked temporal reject label");
+                               fuse::renderer::TaaResolveTemporalRejectReason::BlendWeightsRejected),
+               "BlendWeightsRejected temporal reject label");
+
+    expectTrue(fuse::renderer::classifyTaaResolveTemporalBlendReject(desc, emptyHistory) ==
+                   fuse::renderer::TaaResolveTemporalRejectReason::HistoryReuseBlocked,
+               "empty history blocks temporal blend preflight");
+    expectTrue(fuse::renderer::shouldSkipTaaResolveTemporalBlend(desc, emptyHistory),
+               "empty history should skip temporal blend");
+
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: resolve temporal blend preflight (Vulkan device unavailable)\n");
+        return;
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -4690,12 +4844,25 @@ void testResolveBlendPreflightFollowUp() {
     expectTrue(!warmupPreflight.appliesHistoryBlend(),
                "warmup resolve blend preflight does not apply history blend");
 
-    history.markResolved();
     const fuse::renderer::TaaResolveBlendPreflight steadyPreflight =
     expectTrue(steadyPreflight.can_apply, "steady resolve blend preflight can apply");
     expectNear(steadyPreflight.weights.current, 0.4f, 1e-5f, "steady resolve blend preflight current weight");
     expectTrue(steadyPreflight.appliesHistoryBlend(),
                "steady resolve blend preflight applies history blend");
+
+    fuse::renderer::TaaResolveTemporalRejectReason rejectReason =
+        fuse::renderer::TaaResolveTemporalRejectReason::None;
+    expectTrue(!fuse::renderer::preflightTaaResolveTemporalBlend(desc, history, &rejectReason),
+               "unwarmed history fails temporal blend preflight");
+    expectTrue(rejectReason == fuse::renderer::TaaResolveTemporalRejectReason::HistoryReuseBlocked,
+               "unwarmed history temporal reject reason is HistoryReuseBlocked");
+
+    expectTrue(fuse::renderer::tryPreflightTaaResolveTemporalBlend(desc, history, rejectReason),
+               "warmed history passes temporal blend preflight");
+    expectTrue(rejectReason == fuse::renderer::TaaResolveTemporalRejectReason::None,
+               "warmed history temporal reject reason is None");
+    expectTrue(!fuse::renderer::shouldSkipTaaResolveTemporalBlend(desc, history),
+               "warmed history should not skip temporal blend");
 
     history.destroy();
     resources.destroy();
@@ -4841,6 +5008,18 @@ void testTaaPassSkipReadyAndTryPreflights() {
     expectTrue(pass->jitterNdcReady(), "pass jitter NDC ready before init");
     expectTrue(!pass->shouldSkipJitterNdc(), "pass should not skip jitter NDC before init");
     expectTrue(!pass->historyWarmupComplete(), "pass history warmup not complete before init");
+}
+
+void testTaaPassTemporalAndJitterPreflightWrappers() {
+    passDesc.params.blend_factor = 0.2f;
+
+    expectTrue(pass->classifyHistoryWarmupState() == fuse::renderer::TaaHistoryWarmupState::NotReady,
+               "pass warm-up state is NotReady before init");
+    expectTrue(pass->shouldSkipHistoryWarmup(), "pass should skip warm-up completion before init");
+    expectTrue(!pass->preflightHistoryWarmup(), "pass warm-up preflight fails before init");
+    expectTrue(!pass->shouldSkipJitterSync(4u), "pass jitter sync should not skip before init");
+    expectTrue(!pass->shouldSkipJitterNdc(), "pass NDC jitter should not skip before init");
+    expectTrue(pass->preflightJitterNdc(), "pass NDC jitter preflight passes before init");
 
     fuse::renderer::TaaJitterGuardRejectReason jitterReject =
         fuse::renderer::TaaJitterGuardRejectReason::None;
@@ -4916,6 +5095,11 @@ void testTaaPassWarmupAndJitterPreflightFollowUp() {
     expectTrue(bootstrap != nullptr, "bootstrap allocated for pass temporal/jitter skip test");
     expectTrue(bootstrap != nullptr, "bootstrap allocated for pass warmup/jitter preflight follow-up test");
 
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: pass temporal/jitter preflight wrappers (Vulkan device unavailable)\n");
+        return;
+
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
 
@@ -4925,6 +5109,10 @@ void testTaaPassWarmupAndJitterPreflightFollowUp() {
     expectTrue(pass->shouldSkipHistoryWarmup(), "pass should skip warmup after init");
     expectTrue(pass->init(resources), "TaaPass initialized for temporal/jitter preflight test");
     expectTrue(pass->init(resources), "TaaPass initialized for temporal/jitter skip test");
+    expectTrue(pass->init(resources), "TaaPass initialized for temporal/jitter wrapper test");
+    expectTrue(pass->classifyHistoryWarmupState() == fuse::renderer::TaaHistoryWarmupState::NeedsWarmup,
+               "pass warm-up state is NeedsWarmup after init");
+    expectTrue(pass->shouldSkipHistoryWarmup(), "pass should skip warm-up completion after init");
 
     fuse::renderer::TaaResolveDesc resolveDesc{};
     resolveDesc.width = 128;
@@ -6269,6 +6457,20 @@ void testResolveTemporalBlendPreflight() {
     zeroWidthDesc.height = 96;
     expectTrue(zeroPass->shouldSkipJitterNdc(), "zero-width pass should skip jitter NDC preflight");
 
+
+    fuse::renderer::TaaResolveTemporalRejectReason temporalReject =
+    expectTrue(!pass->preflightResolveTemporalBlend(resolveDesc, &temporalReject),
+               "pass temporal blend preflight fails before warmup resolve");
+    expectTrue(temporalReject == fuse::renderer::TaaResolveTemporalRejectReason::HistoryReuseBlocked,
+               "pass temporal reject reason is HistoryReuseBlocked before warmup");
+
+    expectTrue(pass->historyWarmupComplete(), "pass historyWarmupComplete after resolve");
+    expectTrue(!pass->shouldSkipHistoryWarmup(), "pass should not skip warm-up after resolve");
+    expectTrue(pass->preflightResolveTemporalBlend(resolveDesc, &temporalReject),
+    expectTrue(!pass->shouldSkipResolveTemporalBlend(resolveDesc),
+
+               "pass tryPreflightResolveBlendWeights passes after warmup");
+
     resources.destroy();
     bindless.destroy(*bootstrap->device());
 }
@@ -6283,11 +6485,11 @@ void testTaaPassReuseAndJitterGuards() {
     expectTrue(!pass->historyBlendAllowed(), "pass history blend blocked before init");
     expectTrue(pass->canProduceJitterNdc(), "pass jitter can produce NDC before init");
 
-    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
-    bootstrapDesc.instance.enableValidation = false;
-    bootstrapDesc.createSwapchain = false;
-    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
-    expectTrue(bootstrap != nullptr, "bootstrap allocated for pass reuse/jitter guard test");
+    auto bootstrap = createTaaTestBootstrap();
+    if (bootstrap == nullptr) {
+        std::fprintf(stderr, "SKIP: bootstrap allocated for pass reuse/jitter guard test (Vulkan device unavailable)\n");
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -8367,6 +8569,10 @@ int main() {
     testJitterShouldSkipAndAdvancePreflights();
     testResolveBlendPreflightFollowUp();
     testTaaPassWarmupAndJitterPreflightFollowUp();
+    testHistoryWarmupStateGuards();
+    testJitterShouldSkipAndPixelOffsetGuards();
+    testResolveTemporalBlendPreflight();
+    testTaaPassTemporalAndJitterPreflightWrappers();
 
     fuse::core::shutdown();
 

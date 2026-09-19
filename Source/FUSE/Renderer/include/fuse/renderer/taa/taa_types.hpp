@@ -458,6 +458,9 @@ TaaHistoryWarmupPreflight preflightTaaHistoryWarmup(const TaaHistoryBuffer& hist
 bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupPreflight& out);
 /// Early-out when history still needs warm-up before temporal reuse (B5.9 deepen follow-up).
 
+/// History warm-up lifecycle for temporal reuse guards (B5.9 deepen).
+/// Classify history warm-up lifecycle (B5.9 deepen).
+
 /// Why resolve blend-weight preflight rejected the request (B5.9 deepen).
 enum class TaaResolveBlendRejectReason : u8 {
     InvalidWeights,
@@ -774,6 +777,26 @@ struct TaaResolveBlendPreflight {
 };
 /// Populate resolve blend diagnostics without mutating history (B5.9 deepen follow-up).
 TaaResolveBlendPreflight preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+
+/// Why combined resolve temporal-blend preflight rejected the request (B5.9 deepen).
+enum class TaaResolveTemporalRejectReason : u8 {
+    None = 0,
+    HistoryReuseBlocked,
+    BlendWeightsRejected,
+};
+/// Human-readable label for resolve temporal-blend reject reasons (B5.9 deepen).
+const char* taaResolveTemporalRejectReasonLabel(TaaResolveTemporalRejectReason reason);
+/// Classify why combined resolve temporal-blend preflight would reject (B5.9 deepen).
+TaaResolveTemporalRejectReason classifyTaaResolveTemporalBlendReject(const TaaResolveDesc& desc,
+                                                                   const TaaHistoryBuffer& history);
+/// True when history reuse and blend-weight preflights both pass (B5.9 deepen).
+bool preflightTaaResolveTemporalBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                      TaaResolveTemporalRejectReason* reason = nullptr);
+/// Combined resolve temporal-blend preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaResolveTemporalBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                         TaaResolveTemporalRejectReason& reason);
+/// Early-out when combined resolve temporal-blend preflight would reject (B5.9 deepen).
+bool shouldSkipTaaResolveTemporalBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {

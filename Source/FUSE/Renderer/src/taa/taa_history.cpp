@@ -637,6 +637,49 @@ bool shouldSkipTaaHistoryWarmup(const TaaHistoryBuffer& history) {
     return !taaHistoryWarmupComplete(history);
 }
 
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
+    return history.isReady() && !taaHistoryNeedsWarmup(history);
+}
+
+const char* taaHistoryWarmupStateLabel(TaaHistoryWarmupState state) {
+    switch (state) {
+    case TaaHistoryWarmupState::NotReady:
+        return "not_ready";
+    case TaaHistoryWarmupState::NeedsWarmup:
+        return "needs_warmup";
+    case TaaHistoryWarmupState::Complete:
+        return "complete";
+    }
+    return "unknown";
+}
+
+TaaHistoryWarmupState classifyTaaHistoryWarmupState(const TaaHistoryBuffer& history) {
+    if (!history.isReady()) {
+        return TaaHistoryWarmupState::NotReady;
+    }
+    if (taaHistoryNeedsWarmup(history)) {
+        return TaaHistoryWarmupState::NeedsWarmup;
+    }
+    return TaaHistoryWarmupState::Complete;
+}
+
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupState* state) {
+    const TaaHistoryWarmupState warmupState = classifyTaaHistoryWarmupState(history);
+    if (state != nullptr) {
+        *state = warmupState;
+    }
+    return warmupState == TaaHistoryWarmupState::Complete;
+}
+
+bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupState& state) {
+    state = classifyTaaHistoryWarmupState(history);
+    return state == TaaHistoryWarmupState::Complete;
+}
+
+bool shouldSkipTaaHistoryWarmup(const TaaHistoryBuffer& history) {
+    return !preflightTaaHistoryWarmup(history);
+}
+
 bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
                               TaaHistoryReuseBlockReason* reason) {
     const TaaHistoryReuseBlockReason block = classifyTaaHistoryReuseBlock(history, observedGeneration);
@@ -1007,6 +1050,10 @@ bool TaaHistoryBuffer::warmupComplete() const {
 
 TaaHistoryWarmupState TaaHistoryBuffer::warmupState() const {
     return classifyTaaHistoryWarmupState(*this);
+}
+
+bool TaaHistoryBuffer::warmupComplete() const {
+    return taaHistoryWarmupComplete(*this);
 }
 
 bool TaaHistoryBuffer::init(ResourceManager& resources, const TaaHistoryBufferDesc& desc) {
