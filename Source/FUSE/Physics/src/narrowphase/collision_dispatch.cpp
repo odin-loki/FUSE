@@ -4,6 +4,25 @@
 
 namespace fuse::physics::narrowphase {
 
+NarrowphaseBufferFinalizePreflight preflight_narrowphase_buffer_finalize(const ContactBufferSoA& buffer) {
+    NarrowphaseBufferFinalizePreflight preflight{};
+    preflight.pairSlotCount = buffer.pairSlotCount;
+    preflight.validSlotCount = buffer.countValidSlots();
+    if (preflight.pairSlotCount == 0u) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    preflight.needsCompaction = should_run_contact_buffer_compaction(buffer);
+    preflight.needsClamp = should_run_contact_buffer_clamp(buffer);
+    return preflight;
+}
+
+bool can_skip_narrowphase_buffer_finalize(const ContactBufferSoA& buffer) {
+    const NarrowphaseBufferFinalizePreflight preflight = preflight_narrowphase_buffer_finalize(buffer);
+    return preflight.skipped || (!preflight.needsCompaction && !preflight.needsClamp);
+}
+
 void runNarrowphaseIntoBuffer(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,

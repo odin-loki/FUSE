@@ -23,6 +23,7 @@ enum class ContactPairRejectReason : u8 {
     BothKinematic,
     AnyTrigger,
     BothMassless,
+    PlanePlane,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
@@ -223,6 +224,12 @@ NarrowphaseBatchPreflight preflight_narrowphase_batch(
 /// Returns true when batch preflight reports no dispatchable pairs (B4.5 deepen follow-up pass).
 bool narrowphase_batch_rejects_all(
     const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Run shape dispatch only when pair preflight allows; returns invalid manifold when skipped (B4.6 deepen follow-up pass).
+ContactManifold detect_contacts_pair_with_preflight(
+    const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 

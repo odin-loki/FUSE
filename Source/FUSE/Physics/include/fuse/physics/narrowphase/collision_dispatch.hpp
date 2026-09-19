@@ -187,6 +187,23 @@ ContactManifold collideBoxBox(
 
 struct ContactBufferSoA;
 
+/// Const preflight for narrowphase buffer finalize (B4.6 deepen follow-up pass).
+struct NarrowphaseBufferFinalizePreflight {
+    u32 pairSlotCount = 0u;
+    u32 validSlotCount = 0u;
+    bool needsCompaction = false;
+    bool needsClamp = false;
+    bool skipped = false;
+
+    bool can_finalize() const { return !skipped && pairSlotCount > 0u; }
+};
+
+/// Populate buffer finalize preflight without mutating the buffer (B4.6 deepen follow-up pass).
+NarrowphaseBufferFinalizePreflight preflight_narrowphase_buffer_finalize(const ContactBufferSoA& buffer);
+
+/// Returns true when buffer finalize should be skipped (B4.6 deepen follow-up pass).
+bool can_skip_narrowphase_buffer_finalize(const ContactBufferSoA& buffer);
+
 /// Job-safe narrowphase: one output slot per candidate pair, then compact valid contacts.
 void runNarrowphaseIntoBuffer(
     const std::vector<broadphase::CandidatePair>& pairs,
