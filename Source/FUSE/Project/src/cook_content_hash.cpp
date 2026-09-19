@@ -465,3 +465,6 @@ CookHashPreflight preflight_hash_manifest_entry(const CookManifestEntry& entry) 
     CookHashPreflight preflight = preflight_hash_file_content(entry.source_path);
     if (preflight.should_skip()) {
         if (dependency_preflight.should_skip()) {
+
+// --- deepen additive from deepen-b79-cooker-hash-0896 ---
+CookHashPreflight preflight_fnv1a64_input(const u8* data, usize size) {

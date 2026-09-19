@@ -135,3 +135,6 @@ enum class CookHashPreflightReject : u8 {
 [[nodiscard]] CookHashPreflight preflight_hash_manifest_entry(const CookManifestEntry& entry);
 [[nodiscard]] CookCacheKeyPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
 [[nodiscard]] bool should_skip_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
+
+// --- deepen additive from deepen-b79-cooker-hash-0896 ---
+[[nodiscard]] CookHashPreflight preflight_fnv1a64_input(const u8* data, usize size);

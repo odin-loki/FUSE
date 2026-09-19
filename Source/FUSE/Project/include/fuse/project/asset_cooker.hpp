@@ -89,3 +89,6 @@ private:
 
 // --- deepen additive from b79-cooker-hash-guards-111f ---
         [[nodiscard]] bool would_reconcile() const { return total_entries() > 0; }
+
+// --- deepen additive from deepen-b79-cooker-hash-0896 ---
+    [[nodiscard]] bool would_reconcile_stale_dependencies(const CookManifest& manifest) const;

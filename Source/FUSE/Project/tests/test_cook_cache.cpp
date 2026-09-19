@@ -961,3 +961,16 @@ void testCookContentHashPreflightGuards() {
     const fuse::project::CookHashPreflight missing =
     const fuse::project::CookHashPreflight mesh_empty_input = fuse::project::preflight_mesh_import(mesh);
     const fuse::project::CookHashPreflight mesh_empty_output = fuse::project::preflight_mesh_import(mesh);
+
+// --- deepen additive from deepen-b79-cooker-hash-0896 ---
+void testCookHashPreflightFnvAndCacheEntryGuards() {
+    const fuse::project::CookHashPreflight null_data = fuse::project::preflight_fnv1a64_input(nullptr, 4u);
+    expectTrue(null_data.reason == fuse::project::CookHashRejectReason::NullData,
+    const fuse::project::CookHashPreflight empty_data = fuse::project::preflight_fnv1a64_input(nullptr, 0);
+    const fuse::project::CookHashPreflight zero_entry =
+    expectTrue(zero_entry.reason == fuse::project::CookHashRejectReason::ZeroSourceHash,
+    expectTrue(!cache.would_invalidate_stale_content_for_source("/tmp/fuse_b79_would_src.obj", 42u),
+    expectTrue(!cache.would_invalidate_stale_upstream_hashes({{"/tmp/fuse_b79_would_src.obj", 1u}}),
+    expectTrue(!cache.would_invalidate_downstream_of("/tmp/fuse_b79_would_out.fusemesh", {}, {}),
+               "would_invalidate_stale_content with mismatched hash is true");
+    testCookHashPreflightFnvAndCacheEntryGuards();
