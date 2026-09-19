@@ -1806,3 +1806,25 @@ void testCookCacheShouldSkipStoreGuard() {
                "should_skip allows zero upstream on valid source key");
                "would_invalidate_stale_content true after source revision");
     expectTrue(!cooker.cache().would_invalidate_all(), "would_invalidate_all false after prune");
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-dc52 ---
+               "should_skip true for unreadable file path");
+               "should_skip mesh import false for readable source");
+               "should_skip mesh import true for empty input path");
+               "should_skip cache key true for zero source hash");
+               "should_skip combine cache key false for valid fold");
+               "should_skip fnv bytes true for null non-zero span");
+               "should_skip fnv bytes false for zero-size null span");
+               "should_skip upstream dependencies true for empty list");
+    expectTrue(cache.should_skip_invalidate_source("/tmp/fuse_b79_skip_probe.obj"),
+    expectTrue(cache.should_skip_invalidate_output("/tmp/fuse_b79_skip_probe.fusemesh"),
+    expectTrue(cache.should_skip_invalidate_stale_content_for_source("/tmp/fuse_b79_skip_probe.obj", 1u),
+               "should_skip stale content on empty cache");
+    expectTrue(cache.should_skip_invalidate_stale_upstream_hashes({{"/tmp/fuse_b79_skip_probe.obj", 1u}}),
+               "should_skip stale upstream on empty cache");
+               "should_skip_invalidate false when entry exists");
+               "should_skip stale content when hash matches");
+    expectTrue(!cooker.cache().should_skip_invalidate_stale_content_for_source(source, seeded.content_hash + 1u),
+               "should_skip stale content false when hash mismatches");
+               "would_invalidate stale content after disk change");
+               "prune estimate should_skip matches should_skip_prune_all");

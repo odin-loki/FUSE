@@ -2239,3 +2239,8 @@ void testCookerReconcileShouldSkipGuards() {
                "reconcile should_skip matches estimate should_skip");
     expectTrue(removed >= 1u, "stale dependency invalidation runs after should_skip cleared");
                "stale dependency should_skip restored after invalidation");
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-dc52 ---
+               "reconcile should_skip false when stale dependency entries exist");
+    expectTrue(upstream_count >= 1u, "upstream count non-zero before should_skip check");
+               "upstream should_skip false when entries would be removed");
