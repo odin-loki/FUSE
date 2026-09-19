@@ -2846,3 +2846,7 @@ void testRefineBroadphaseNoValidPairsRejectReason() {
 // --- deepen additive from deepen-b4-broadphase-guards-f83b ---
 void testRefineAndMergeRejectReasonGuards() {
     testRefineAndMergeRejectReasonGuards();
+
+// --- deepen additive from b4-broadphase-deepen-guards-f2a3 ---
+void testRefineBroadphaseShouldRunGuard() {
+    expectTrue(std::strcmp(fuse::physics::broadphase::pairBufferDedupeRejectReasonName(
