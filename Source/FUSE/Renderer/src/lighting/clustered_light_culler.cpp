@@ -993,3 +993,6 @@ bool ClusterGridLayout::tryClusterIndex(u32 tileX, u32 tileY, u32 sliceZ, const 
 
 // --- deepen additive from deepen-b5-clustered-lights-lookup-guards-d4e0 ---
     return tryLookupClusterLightsAtIndex(grid, desc, clusterIndex, outLights, outCount);
+
+// --- deepen additive from deepen-b5-clustered-lights-lookup-population-guards-8337 ---
+bool cluster_util::tryClusterLightCountAtIndex(const ClusterGridSoA& grid,

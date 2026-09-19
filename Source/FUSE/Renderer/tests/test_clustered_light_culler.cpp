@@ -1457,3 +1457,24 @@ void testClusterLightGridAccessibilityGuards() {
     expectTrue(lookupReason == fuse::renderer::ClusterLookupRejectReason::DescMismatch,
     expectTrue(!fuse::renderer::cluster_util::tryCanLookupAtIndex(grid, zeroDesc, 0u, lookupReason),
     expectTrue(std::strcmp(fuse::renderer::clusterLookupRejectReasonLabel(lookupReason), "empty_grid") == 0,
+
+// --- deepen additive from deepen-b5-clustered-lights-lookup-population-guards-8337 ---
+    expectTrue(popReason == fuse::renderer::GridPopulationRejectReason::PopulationMismatch,
+    expectTrue(fuse::renderer::cluster_util::tryClusterLightCountAtIndex(grid, desc, 0u, tryCount, reason),
+               "tryClusterLightCountAtIndex succeeds on accessible grid");
+    expectTrue(tryCount == 2u, "tryClusterLightCountAtIndex reports cluster light count");
+               "tryClusterLightCountAtIndex clears reject reason on success");
+    expectTrue(!fuse::renderer::cluster_util::tryClusterLightCountAtIndex(emptyGrid, desc, 0u, rejectedCount, reason),
+               "tryClusterLightCountAtIndex rejects empty storage");
+    expectTrue(rejectedCount == 0u, "tryClusterLightCountAtIndex zeroes count on failure");
+               "tryClusterLightCountAtIndex reports empty_storage reason");
+    expectTrue(fuse::renderer::cluster_util::tryLookupClusterLightsAtCoord(grid, desc, 0u, 0u, 0u, coordTryLights,
+               "tryLookupClusterLightsAtCoord succeeds on accessible grid");
+    expectTrue(coordTryCount == 2u, "tryLookupClusterLightsAtCoord reports cluster light count");
+               "tryLookupClusterLightsAtCoord copies assigned lights");
+    expectTrue(!fuse::renderer::cluster_util::tryLookupClusterLightsAtCoord(grid, zeroDesc, 0u, 0u, 0u,
+               "tryLookupClusterLightsAtCoord rejects empty grid desc");
+    expectTrue(coordRejectedCount == 0u, "tryLookupClusterLightsAtCoord zeroes count on failure");
+    expectTrue(coordRejectedLights.empty(), "tryLookupClusterLightsAtCoord clears output on failure");
+               "tryLookupClusterLightsAtCoord reports empty_grid reason");
+void testClusterAssignedLightingGuards() {
