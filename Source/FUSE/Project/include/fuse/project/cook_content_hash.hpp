@@ -763,4 +763,22 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] bool should_skip_fnv1a64_bytes(const u8* data, usize size);
 [[nodiscard]] bool should_skip_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
 
+/// Structural cache-entry preflight — mirrors `CookCache::store` guards (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
+
+/// True when `CookCache::store` would reject `entry` (B7.9 deepen).
+[[nodiscard]] bool should_skip_cook_cache_store(const CookCacheEntry& entry);
+
+/// Convenience skip guards — mirror each `preflight_*_hash` helper (B7.9 deepen).
+[[nodiscard]] bool should_skip_file_content_hash(const std::string& path);
+[[nodiscard]] bool should_skip_mesh_import_hash(const MeshImportDesc& desc);
+[[nodiscard]] bool should_skip_texture_import_hash(const TextureImportDesc& desc);
+[[nodiscard]] bool should_skip_audio_import_hash(const AudioImportDesc& desc);
+[[nodiscard]] bool should_skip_manifest_entry_hash(const CookManifestEntry& entry);
+[[nodiscard]] bool should_skip_upstream_dependencies_hash(const std::vector<std::string>& dependency_output_paths,
+                                                          const CookManifest& manifest);
+[[nodiscard]] bool should_skip_cook_cache_key(u64 source_hash, u64 upstream_hash);
+[[nodiscard]] bool should_skip_fnv1a64_bytes(const u8* data, usize size);
+[[nodiscard]] bool should_skip_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
+
 } // namespace fuse::project
