@@ -348,4 +348,43 @@ BinauralPanGains compute_binaural_pan_gains_coupled_for_path(HrtfPanPath path,
                                                               const HrtfAttenuationCoupling& coupling = {},
                                                               const BinauralPanParams& params = {});
 
+/// Composite binaural/HRTF preflight — bundles empty-IR, pan-path, and attenuation-coupling guards (B7.2 deepen).
+struct HrtfBinauralPreflight {
+    HrtfIrPreflight ir{};
+    HrtfPanPathPreflight panPath{};
+    HrtfAttenuationCouplingPreflight attenuationCoupling{};
+
+    HrtfPanPath path() const { return panPath.path; }
+
+    bool can_spatial_pan() const { return panPath.can_spatial_pan(); }
+    bool can_convolve() const { return panPath.can_convolve(); }
+    bool can_narrow_spatial_image() const { return attenuationCoupling.can_narrow(); }
+    bool is_bypass() const { return panPath.skipped; }
+};
+
+/// Preflight all binaural/HRTF guards for one source (IR-aware).
+HrtfBinauralPreflight preflight_hrtf_binaural(bool hrtf_enabled, const HrtfIrStub& ir,
+                                              const Vec3& rel_listener, float distance_attenuation,
+                                              float occlusion_gain,
+                                              const HrtfAttenuationCoupling& coupling = {},
+                                              const BinauralPanParams& params = {});
+
+/// Preflight all binaural/HRTF guards when no IR is wired.
+HrtfBinauralPreflight preflight_hrtf_binaural(bool hrtf_enabled, const Vec3& rel_listener,
+                                              float distance_attenuation, float occlusion_gain,
+                                              const HrtfAttenuationCoupling& coupling = {},
+                                              const BinauralPanParams& params = {});
+
+/// Non-mutating spatial-pan predicate — mirrors \c HrtfBinauralPreflight::can_spatial_pan.
+bool can_apply_hrtf_binaural_pan(const HrtfBinauralPreflight& preflight);
+
+/// True when the composite preflight selects centre bypass (disabled or co-located).
+bool should_skip_hrtf_binaural(const HrtfBinauralPreflight& preflight);
+
+/// Apply pan + coupling using a preflight bundle (read-only guards; valid paths unchanged).
+BinauralPanGains compute_binaural_pan_gains_from_preflight(const HrtfBinauralPreflight& preflight,
+                                                           const Vec3& rel_listener,
+                                                           const HrtfAttenuationCoupling& coupling = {},
+                                                           const BinauralPanParams& params = {});
+
 } // namespace fuse::audio
