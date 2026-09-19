@@ -1,5 +1,7 @@
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
 
+#include <fuse/physics/narrowphase/contact_pair.hpp>
+
 #include <algorithm>
 #include <cmath>
 
@@ -412,6 +414,53 @@ bool can_skip_manifold_finalize(
     f32 frictionEpsilon) {
     return !preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon)
                 .can_finalize();
+}
+
+bool can_skip_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
+    const ManifoldPrunePreflight preflight =
+        preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+    return preflight.skipped || !preflight.needs_any_pruning(shallowMinDepth);
+}
+
+bool prune_manifold_if_needed(
+    ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
+    if (can_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth)) {
+        return !manifold.empty();
+    }
+
+    const ManifoldPrunePreflight preflight =
+        preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+    if (preflight.needs_pruning()) {
+        if (!manifold.pruneContactPointsIfNeeded(separationEpsilon, duplicateEpsilon)) {
+            return false;
+        }
+    }
+    if (preflight.needs_shallow_pruning(shallowMinDepth)) {
+        if (!manifold.pruneShallowPenetrationsIfNeeded(shallowMinDepth)) {
+            return false;
+        }
+    }
+    return !manifold.empty();
+}
+
+bool finalize_contact_manifold_if_needed(
+    ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 frictionEpsilon) {
+    const ManifoldFinalizePreflight preflight =
+        preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+    if (!preflight.can_finalize()) {
+        return false;
+    }
+    return generate_contact_manifold(manifold);
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

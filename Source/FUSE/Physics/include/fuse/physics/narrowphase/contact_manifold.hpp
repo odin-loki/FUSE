@@ -143,7 +143,15 @@ struct ManifoldPrunePreflight {
 
     bool needs_shallow_pruning(f32 minDepth) const { return !skipped && hasShallow; }
 
+    bool needs_any_pruning(f32 shallowMinDepth = 0.f) const {
+        return needs_pruning() || needs_shallow_pruning(shallowMinDepth);
+    }
+
     bool can_prune_in_place() const { return needs_pruning() && !wouldBeEmpty; }
+
+    bool can_prune_shallow_in_place(f32 shallowMinDepth) const {
+        return needs_shallow_pruning(shallowMinDepth) && !wouldBeEmpty;
+    }
 
     bool can_skip_prune(f32 shallowMinDepth = 0.f) const {
         return skipped || (!needs_pruning() && !needs_shallow_pruning(shallowMinDepth));
@@ -175,6 +183,8 @@ struct ManifoldFinalizePreflight {
     bool canReuseFrictionBasis = false;
 
     bool can_finalize() const { return !skipped && canFinalize; }
+
+    bool needs_any_work() const { return needsPruning || needsFrictionBasis; }
 };
 
 /// Populate finalize preflight without mutating the manifold (B4.4 deepen follow-up).
@@ -187,6 +197,27 @@ ManifoldFinalizePreflight preflight_manifold_finalize(
 /// Returns true when finalize should be skipped for this manifold (B4.4 deepen follow-up).
 bool can_skip_manifold_finalize(
     const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Returns true when manifold prune should be skipped (B4.5 deepen follow-up).
+bool can_skip_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Prune only when preflight indicates work is needed; returns true when points remain (B4.5 deepen follow-up).
+bool prune_manifold_if_needed(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Finalize using deepen preflight; no-op when finalize preflight rejects (B4.5 deepen follow-up).
+bool finalize_contact_manifold_if_needed(
+    ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
