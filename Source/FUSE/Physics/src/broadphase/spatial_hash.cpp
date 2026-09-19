@@ -36,6 +36,37 @@ const char* cellOccupancyRejectReasonName(CellOccupancyRejectReason reason) {
     return "Unknown";
 }
 
+const char* cellSpanRejectReasonName(CellSpanRejectReason reason) {
+    switch (reason) {
+    case CellSpanRejectReason::None:
+        return "None";
+    case CellSpanRejectReason::EmptyRange:
+        return "EmptyRange";
+    case CellSpanRejectReason::ExceedsSpanLimit:
+        return "ExceedsSpanLimit";
+    }
+    return "Unknown";
+}
+
+CellSpanPreflight preflightCellSpan(const CellRange3& range, u32 maxSpanPerAxis) {
+    CellSpanPreflight preflight{};
+    preflight.reason = cellSpanRejectReason(range, maxSpanPerAxis);
+    preflight.emptyRange = preflight.reason == CellSpanRejectReason::EmptyRange;
+    preflight.exceedsSpanLimit = preflight.reason == CellSpanRejectReason::ExceedsSpanLimit;
+    preflight.spanPerAxis = cellSpanPerAxis(range);
+    return preflight;
+}
+
+CellSpanPreflight preflightCellSpan2D(const CellRange2& range, u32 maxSpanPerAxis) {
+    CellSpanPreflight preflight{};
+    preflight.reason = cellSpanRejectReason(range, maxSpanPerAxis);
+    preflight.emptyRange = preflight.reason == CellSpanRejectReason::EmptyRange;
+    preflight.exceedsSpanLimit = preflight.reason == CellSpanRejectReason::ExceedsSpanLimit;
+    const ivec2 span = cellSpanPerAxis(range);
+    preflight.spanPerAxis = {span.x, span.y, 0};
+    return preflight;
+}
+
 const char* broadphaseRejectReasonName(BroadphaseRejectReason reason) {
     switch (reason) {
     case BroadphaseRejectReason::None:
@@ -189,7 +220,10 @@ void writePairsForCellSlots(
     u32 slot = slotStart;
     for (usize i = 0; i < uniqueBodies.size(); ++i) {
         for (usize j = i + 1; j < uniqueBodies.size(); ++j) {
-            buffer.writeSlot(slot++, uniqueBodies[i], uniqueBodies[j]);
+            if (shouldRunPairBufferWrite(buffer, slot, uniqueBodies[i], uniqueBodies[j])) {
+                buffer.writeSlot(slot, uniqueBodies[i], uniqueBodies[j]);
+            }
+            ++slot;
         }
     }
 }
@@ -262,7 +296,7 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
     }
 
     for (const CandidatePair& pair : pairs) {
-        if (!preflightPairBufferPush(buffer, pair.bodyA, pair.bodyB).canPush()) {
+        if (!shouldRunMergePairIntoBuffer(pair, buffer)) {
             break;
         }
         buffer.push(pair.bodyA, pair.bodyB);
@@ -414,11 +448,8 @@ void refineBroadphasePairsParallelImpl(
 
         const u32 bodyA = buffer.bodyA[pairIndex];
         const u32 bodyB = buffer.bodyB[pairIndex];
-        if (!isValidCandidatePair(bodyA, bodyB, bodies.count())) {
-            buffer.invalidateSlot(pairIndex);
-            return;
-        }
-        if (!pairPassesAabbRefine(bodyA, bodyB, bodies, shapes)) {
+        if (shouldInvalidatePairDuringRefine(bodyA, bodyB, bodies, shapes) &&
+            shouldRunPairBufferInvalidate(buffer, pairIndex)) {
             buffer.invalidateSlot(pairIndex);
         }
     });
@@ -506,6 +537,80 @@ bool shouldRunDedupeBroadphase(const PairBufferSoA& buffer) {
 
 bool canSkipDedupeBroadphase(const PairBufferSoA& buffer) {
     return !shouldRunDedupeBroadphase(buffer);
+}
+
+bool dedupeBroadphaseWouldChange(const PairBufferSoA& buffer) {
+    if (!shouldRunDedupeBroadphase(buffer)) {
+        return false;
+    }
+
+    std::unordered_set<u64> seen;
+    seen.reserve(buffer.activeCount * 2 + 1);
+    for (u32 i = 0; i < buffer.activeCount; ++i) {
+        if (!buffer.slotIsValid(i)) {
+            continue;
+        }
+        const u64 key = (static_cast<u64>(buffer.bodyA[i]) << 32) | buffer.bodyB[i];
+        if (!seen.insert(key).second) {
+            return true;
+        }
+    }
+    return false;
+}
+
+const char* refinePairRejectReasonName(RefinePairRejectReason reason) {
+    switch (reason) {
+    case RefinePairRejectReason::None:
+        return "None";
+    case RefinePairRejectReason::InvalidPair:
+        return "InvalidPair";
+    case RefinePairRejectReason::Separated:
+        return "Separated";
+    }
+    return "Unknown";
+}
+
+RefinePairRejectReason refinePairRejectReason(
+    u32 bodyA,
+    u32 bodyB,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (!isValidCandidatePair(bodyA, bodyB, bodies.count())) {
+        return RefinePairRejectReason::InvalidPair;
+    }
+    if (!pairPassesAabbRefine(bodyA, bodyB, bodies, shapes)) {
+        return RefinePairRejectReason::Separated;
+    }
+    return RefinePairRejectReason::None;
+}
+
+bool refinePairRejectsForReason(
+    u32 bodyA,
+    u32 bodyB,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    RefinePairRejectReason expected) {
+    return refinePairRejectReason(bodyA, bodyB, bodies, shapes) == expected;
+}
+
+RefinePairPreflight preflightRefinePair(
+    u32 bodyA,
+    u32 bodyB,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    RefinePairPreflight preflight{};
+    preflight.reason = refinePairRejectReason(bodyA, bodyB, bodies, shapes);
+    preflight.invalidPair = preflight.reason == RefinePairRejectReason::InvalidPair;
+    preflight.separated = preflight.reason == RefinePairRejectReason::Separated;
+    return preflight;
+}
+
+bool shouldInvalidatePairDuringRefine(
+    u32 bodyA,
+    u32 bodyB,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !preflightRefinePair(bodyA, bodyB, bodies, shapes).passesRefine();
 }
 
 BroadphaseMergePreflight preflightBroadphaseMerge(
@@ -602,7 +707,73 @@ MergePairsIntoBufferPreflight preflightMergePairsIntoBuffer(
     preflight.reason = mergePairsIntoBufferRejectReason(pairs, buffer);
     preflight.emptyPairs = preflight.reason == MergePairsIntoBufferRejectReason::EmptyPairs;
     preflight.bufferFull = preflight.reason == MergePairsIntoBufferRejectReason::BufferFull;
+    preflight.mergeablePairCount = countMergeablePairsIntoBuffer(pairs, buffer);
+    preflight.partialMergeOnly =
+        preflight.canMerge() && preflight.mergeablePairCount < static_cast<u32>(pairs.size());
     return preflight;
+}
+
+const char* mergePairIntoBufferRejectReasonName(MergePairIntoBufferRejectReason reason) {
+    switch (reason) {
+    case MergePairIntoBufferRejectReason::None:
+        return "None";
+    case MergePairIntoBufferRejectReason::InvalidPair:
+        return "InvalidPair";
+    case MergePairIntoBufferRejectReason::AtCapacity:
+        return "AtCapacity";
+    }
+    return "Unknown";
+}
+
+MergePairIntoBufferRejectReason mergePairIntoBufferRejectReason(
+    const CandidatePair& pair,
+    const PairBufferSoA& buffer) {
+    return static_cast<MergePairIntoBufferRejectReason>(
+        static_cast<u8>(pairBufferPushRejectReason(buffer, pair.bodyA, pair.bodyB)));
+}
+
+bool mergePairIntoBufferRejectsForReason(
+    const CandidatePair& pair,
+    const PairBufferSoA& buffer,
+    MergePairIntoBufferRejectReason expected) {
+    return mergePairIntoBufferRejectReason(pair, buffer) == expected;
+}
+
+MergePairIntoBufferPreflight preflightMergePairIntoBuffer(
+    const CandidatePair& pair,
+    const PairBufferSoA& buffer) {
+    MergePairIntoBufferPreflight preflight{};
+    preflight.reason = mergePairIntoBufferRejectReason(pair, buffer);
+    preflight.invalidPair = preflight.reason == MergePairIntoBufferRejectReason::InvalidPair;
+    preflight.atCapacity = preflight.reason == MergePairIntoBufferRejectReason::AtCapacity;
+    return preflight;
+}
+
+u32 countMergeablePairsIntoBuffer(
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer) {
+    u32 mergeableCount = 0u;
+    u32 simulatedActive = buffer.activeCount;
+    const u32 maxCap = buffer.maxCapacity;
+    for (const CandidatePair& pair : pairs) {
+        if (!isValidCandidatePair(pair.bodyA, pair.bodyB)) {
+            continue;
+        }
+        if (maxCap > 0u && simulatedActive >= maxCap) {
+            break;
+        }
+        ++mergeableCount;
+        ++simulatedActive;
+    }
+    return mergeableCount;
+}
+
+bool canSkipMergePairIntoBuffer(const CandidatePair& pair, const PairBufferSoA& buffer) {
+    return !preflightMergePairIntoBuffer(pair, buffer).canMerge();
+}
+
+bool shouldRunMergePairIntoBuffer(const CandidatePair& pair, const PairBufferSoA& buffer) {
+    return preflightMergePairIntoBuffer(pair, buffer).canMerge();
 }
 
 bool canSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer) {
