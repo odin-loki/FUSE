@@ -882,3 +882,11 @@ void buildContactBufferFrictionBasesWithPreflight(ContactBufferSoA& buffer) {
 const char* contact_buffer_warm_start_reject_reason_name(ContactBufferWarmStartRejectReason reason) {
 ContactBufferWarmStartRejectReason contact_buffer_warm_start_reject_reason(
 ContactBufferWarmStartPreflight preflight_contact_buffer_warm_start(
+
+// --- deepen additive from b4-narrowphase-deepen-guards-ea87 ---
+u32 ContactBufferSoA::applyMaxCapacityClampWithPreflight() {
+bool ContactBufferSoA::applyWarmStartStubWithPreflight(u32 slot, ContactManifold& manifold) const {
+    case ContactBufferFrictionTangentRejectReason::AllOrthonormal:
+    return ContactBufferFrictionTangentRejectReason::AllOrthonormal;
+ContactBufferFrictionTangentPreflight preflight_contact_buffer_friction_tangent_bases(
+    preflight.allOrthonormal = preflight.reason == ContactBufferFrictionTangentRejectReason::AllOrthonormal;

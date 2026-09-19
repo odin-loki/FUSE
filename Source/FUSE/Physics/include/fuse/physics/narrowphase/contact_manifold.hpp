@@ -395,3 +395,6 @@ ManifoldFinalizeRejectReason manifold_finalize_second_reject_reason(
     const ManifoldPrunePreflight preflight =
     if (preflight.reason != ManifoldPruneRejectReason::None) {
         if (preflight.reason == ManifoldPruneRejectReason::AllSeparated) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-ea87 ---
+        return skipped || reason != ManifoldPruneRejectReason::None || !needs_shallow_pruning(shallowMinDepth);

@@ -586,3 +586,8 @@ FUSE_PHYSICS_INLINE ContactBufferTangentBasisPreflight preflight_contact_buffer_
     ContactBufferTangentBasisPreflight preflight{};
     preflight.emptyBuffer = preflight.reason == ContactBufferTangentBasisRejectReason::EmptyBuffer;
     preflight.noValidSlots = preflight.reason == ContactBufferTangentBasisRejectReason::NoValidSlots;
+
+// --- deepen additive from b4-narrowphase-deepen-guards-ea87 ---
+    u32 applyMaxCapacityClampWithPreflight();
+    bool applyWarmStartStubWithPreflight(u32 slot, ContactManifold& manifold) const;
+ContactBufferFrictionTangentPreflight preflight_contact_buffer_friction_tangent_bases(

@@ -836,3 +836,6 @@ ManifoldFinalizeRejectReason manifold_finalize_second_reject_reason(
 
 // --- deepen additive from b4-narrowphase-deepen-guards-bee6 ---
     return preflight.reason == ManifoldPruneRejectReason::None &&
+
+// --- deepen additive from b4-narrowphase-deepen-guards-ea87 ---
+    return prunePreflight.wouldBeEmpty || !prunePreflight.can_prune_in_place();

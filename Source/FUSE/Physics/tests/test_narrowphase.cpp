@@ -3475,3 +3475,21 @@ void testContactBufferSoAGuardPreflights() {
 void testContactPairManifoldDeepenFollowupGuards() {
         fuse::physics::narrowphase::should_skip_contact_pair_deepen_followup_dispatch({planeA, planeB}, bodies, shapes),
 void testFrictionDeepenFollowupGuards() {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-ea87 ---
+void testContactBufferSoAGuardHelpers() {
+        !buffer.writeSlotWithPreflight(99u, valid),
+        "writeSlotWithPreflight rejects out-of-range slot");
+    expectTrue(buffer.compactWithPreflight() == 1u, "compactWithPreflight compacts valid slot");
+    expectTrue(singleSlotBuffer.compactWithPreflight() == 1u, "single-slot compact succeeds");
+        "compactAndClampWithPreflight clamps to max capacity");
+        buffer.applyWarmStartStubWithPreflight(0u, valid),
+        "applyWarmStartStubWithPreflight copies warm-start data");
+        !buffer.applyWarmStartStubWithPreflight(99u, valid),
+        "applyWarmStartStubWithPreflight rejects out-of-range slot");
+void testContactPairDeepenPreflightDetectGuards() {
+void testManifoldFinalizeAfterPruneGuards() {
+        shallowPreflight.can_skip_shallow_prune(0.05f),
+void testFrictionBasisPreflightWrapperGuards() {
+    testContactPairDeepenPreflightDetectGuards();
+    testFrictionBasisPreflightWrapperGuards();
