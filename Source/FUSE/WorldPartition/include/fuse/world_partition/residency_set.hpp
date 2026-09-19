@@ -238,26 +238,34 @@ inline u32 ResidencySet::find_index_(GridCoord coord) const {
 /// Guard: removes a resident cell; returns false when coord is invalid or not resident.
 [[nodiscard]] inline bool remove_resident_guarded(ResidencySet& set, GridCoord coord) {
     return try_remove_resident(set, coord);
-}
 
 /// Guard: returns stored focus distance, or -1 when coord is invalid or not resident.
 [[nodiscard]] inline f32 focus_distance_for_guarded(const ResidencySet& set, GridCoord coord) {
     if (!is_valid_grid_coord(coord) || !set.contains(coord)) {
         return -1.f;
-    }
     return set.focus_distance_for(coord);
-}
 
 /// Guard: updates focus distance; returns false when coord is invalid, not resident, or distance invalid.
 [[nodiscard]] inline bool update_focus_distance_guarded(ResidencySet& set, GridCoord coord,
                                                           f32 focus_distance) {
     if (!is_valid_grid_coord(coord) || !is_valid_focus_distance(focus_distance)) {
+/// Stub: update focus distance for a resident cell; rejects invalid coords.
+[[nodiscard]] inline bool try_update_focus_distance(ResidencySet& set, GridCoord coord, f32 focus_distance) {
+    if (!is_valid_grid_coord(coord)) {
         return false;
     }
     return set.update_focus_distance(coord, focus_distance);
 }
 
 /// Guard: collect eviction candidates; returns empty when the set has no candidates.
+/// Guard: returns focus distance for a resident coord, or -1 when coord is invalid or absent.
+[[nodiscard]] inline f32 focus_distance_for_guarded(const ResidencySet& set, GridCoord coord) {
+    if (!is_valid_grid_coord(coord)) {
+        return -1.f;
+    }
+    return set.focus_distance_for(coord);
+
+/// Empty-set guard: collect eviction candidates or return an empty list when none exist.
 [[nodiscard]] inline std::vector<GridCoord> collect_eviction_candidates_guarded(const ResidencySet& set,
                                                                                  u32 max_count = 0) {
     if (!set.has_eviction_candidate()) {
