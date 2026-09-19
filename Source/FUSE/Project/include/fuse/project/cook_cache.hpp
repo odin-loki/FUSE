@@ -983,5 +983,6 @@ private:
 /// Non-mutating skip predicate — mirrors `CookCachePruneEstimate::should_skip` (B7.9 deepen).
 [[nodiscard]] inline bool should_skip_prune_reconcile(const CookCachePruneEstimate& estimate) {
     return estimate.should_skip();
+/// True when prune reconcile estimate reports nothing to remove (B7.9 deepen).
 
 } // namespace fuse::project

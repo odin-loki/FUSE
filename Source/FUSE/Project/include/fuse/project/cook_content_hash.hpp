@@ -132,6 +132,7 @@ struct CookCacheKeyPreflight {
     /// True when hashing should be skipped — mirrors `ok()` guard without computing keys (B7.9 deepen).
     /// True when hashing should be skipped — mirrors empty-input guards without computing keys (B7.9 deepen).
     /// True when hash computation should be skipped — mirrors `!ok()` (B7.9 deepen).
+    [[nodiscard]] bool should_skip() const { return !ok(); }
 };
 
 /// True when hash preflight succeeded — mirrors `CookHashPreflight::ok()` (B7.9 deepen).
@@ -1008,5 +1009,10 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] bool should_skip_cook_cache_key(u64 source_hash, u64 upstream_hash);
 [[nodiscard]] bool should_skip_fnv1a64_bytes(const u8* data, usize size);
 [[nodiscard]] bool should_skip_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
+
+/// True when hash preflight rejects the inputs — convenience over `CookHashPreflight::should_skip` (B7.9 deepen).
+[[nodiscard]] inline bool should_skip_cook_hash(const CookHashPreflight& preflight) {
+    return preflight.should_skip();
+}
 
 } // namespace fuse::project

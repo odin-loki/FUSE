@@ -1392,6 +1392,7 @@ bool AssetCooker::should_skip_reconcile_invalidation(const CookManifest& manifes
 
 
     return !estimate_reconcile_invalidation(manifest).should_skip();
+
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {
