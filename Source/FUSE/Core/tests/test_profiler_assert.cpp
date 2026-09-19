@@ -3964,3 +3964,13 @@ void testChromeTraceExportPreflightNonExportableCount() {
     expectTrue(fuse::profiler::tryFindFirstEventByName("valid_track", counterEvent),
                "tryFindFirstEventByName succeeds after blank-name attempts");
     testChromeTraceExportPreflightNonExportableCount();
+
+// --- deepen additive from deepen-b16-profiler-guards-5734 ---
+void testScopeBeginEndMismatchGuard() {
+void testFlowStartFinishMismatchGuard() {
+void testChromeTraceExportPreflightEventPairing() {
+    const fuse::profiler::ChromeTraceExportPreflight unmatchedPreflight =
+    expectTrue(unmatchedPreflight.flowStartFinishMismatch,
+    expectTrue(unmatchedPreflight.hasEventPairingMismatch(),
+    expectTrue(!unmatchedPreflight.canExportSafely(),
+    testChromeTraceExportPreflightEventPairing();
