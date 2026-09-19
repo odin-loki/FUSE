@@ -35,6 +35,21 @@ struct HrtfIrPreflight {
 
 /// Preflight empty-IR stub — surfaces null samples and zero-length guards.
 HrtfIrPreflight preflight_hrtf_ir(const HrtfIrStub& ir);
+/// Why HRTF IR convolution preflight rejected the stub (B7.2 deepen).
+enum class HrtfIrPreflightRejectReason : u8 {
+    None = 0,
+    NullSamples = 1,
+    ZeroLength = 2,
+
+/// Why HRTF pan-path preflight would bypass spatial processing (B7.2 deepen).
+enum class HrtfPanPreflightRejectReason : u8 {
+    Disabled = 1,
+    CoLocated = 2,
+
+/// Why attenuation-coupling preflight would skip spatial narrowing (B7.2 deepen).
+enum class HrtfAttenuationCouplingPreflightRejectReason : u8 {
+    BypassPath = 1,
+    UnityAttenuation = 2,
 
 /// Listener-local distance below which a source is treated as co-located.
 float hrtf_co_located_epsilon();
@@ -234,6 +249,12 @@ bool try_preflight_hrtf_ir_convolution(const HrtfIrStub& ir, HrtfIrRejectReason&
 
 /// Preflight guard before HRTF IR convolution; false on empty/null/zero-length stub.
 bool preflight_hrtf_ir_convolution(const HrtfIrStub& ir, HrtfIrRejectReason* reason = nullptr);
+/// Preflight guard — true when IR stub is ready for convolution (non-empty samples).
+bool preflight_hrtf_ir_convolution(const HrtfIrStub& ir);
+
+/// Diagnose why IR convolution preflight rejected; vacuously succeeds on valid IR.
+bool try_preflight_hrtf_ir_convolution(const HrtfIrStub& ir,
+                                       HrtfIrPreflightRejectReason* reason = nullptr);
 
 /// HRTF pan routing — empty IR uses ILD/ITD stub; convolution deferred until IR wired.
 enum class HrtfPanPath {
@@ -611,6 +632,16 @@ HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_
 /// Non-mutating pan-path predicate — same guards as \c preflight_hrtf_pan_path (B7.2 deepen).
 bool can_apply_hrtf_spatial_pan(HrtfPanPath path);
 
+/// Preflight guard — true when spatial HRTF pan may run (enabled, not co-located).
+bool preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener);
+
+/// Preflight guard on a resolved pan path — true when path is spatial (not bypass).
+bool preflight_hrtf_pan_path(HrtfPanPath path);
+
+/// Diagnose why pan-path preflight would bypass spatial processing.
+bool try_preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener,
+                                 HrtfPanPreflightRejectReason* reason = nullptr);
+
 /// Stereo pan law used for ILD stub gains.
 enum class PanLaw {
     EqualPower,
@@ -984,6 +1015,12 @@ bool try_preflight_hrtf_attenuation_coupling(HrtfPanPath path, float distance_at
 /// Preflight guard before attenuation coupling; false on bypass path or unity attenuation.
 bool preflight_hrtf_attenuation_coupling(HrtfPanPath path, float distance_attenuation,
                                          HrtfAttenuationCouplingRejectReason* reason = nullptr);
+/// Preflight guard — true when attenuation coupling should narrow the spatial image.
+                                         float occlusion_gain);
+
+/// Diagnose why attenuation-coupling preflight would skip spatial narrowing.
+                                             HrtfAttenuationCouplingPreflightRejectReason* reason =
+                                                 nullptr);
 
 /// True when a spatial blend preserves full L/R separation.
 bool is_unity_hrtf_spatial_blend(float blend, float epsilon = 1e-5f);
