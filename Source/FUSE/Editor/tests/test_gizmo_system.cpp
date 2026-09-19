@@ -7457,6 +7457,8 @@ void testSnapDragRejectReasonGuards() {
     expectTrue(fuse::editor::isSnapDegraded(fuse::editor::GizmoMode::Translate, snap),
                "isSnapDegraded true when snap enabled with invalid step");
 
+               "valid snap-drag reject reason is None after step fix");
+
     const fuse::editor::SnapDragPreflight nanPreflight = fuse::editor::preflightSnapDrag(
         std::numeric_limits<fuse::f32>::quiet_NaN(), fuse::editor::GizmoMode::Translate, snap);
     expectTrue(fuse::editor::classifySnapDragReject(nanPreflight) ==
