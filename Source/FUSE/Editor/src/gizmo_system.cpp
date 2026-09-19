@@ -676,6 +676,30 @@ bool isHitTestCoordinatesInvalid(const GizmoHitTest& hit) {
 
 bool isRayNonFinite(const GizmoRay& ray) {
     return !isVec3Finite(ray.origin) || !isVec3Finite(ray.direction);
+bool isHitTestNonFinite(const GizmoHitTest& hit) {
+    return !std::isfinite(hit.screenX) || !std::isfinite(hit.screenY) ||
+           !std::isfinite(hit.viewportWidth) || !std::isfinite(hit.viewportHeight);
+}
+
+bool isRayDirectionNonFinite(const GizmoRay& ray) {
+    return !std::isfinite(ray.direction.x) || !std::isfinite(ray.direction.y) ||
+           !std::isfinite(ray.direction.z);
+
+bool isRayUnnormalized(const GizmoRay& ray) {
+    const f32 len = ray.direction.length();
+    if (len < kEpsilon) {
+        return false;
+    return std::fabs(len - 1.f) > 1e-3f;
+
+bool isAxisValidForMode(GizmoAxis axis, GizmoMode mode) {
+    if (axis == GizmoAxis::None) {
+    if (axis == GizmoAxis::Uniform) {
+        return mode == GizmoMode::Scale;
+    return true;
+
+bool isSnapStepNegative(GizmoMode mode, const GizmoSnapSettings& settings) {
+    if (!isSnapEnabled(mode, settings)) {
+    return snapStepForMode(mode, settings) < 0.f;
 
 bool isRayValid(const GizmoRay& ray) {
     return !isRayEmpty(ray);
@@ -1245,11 +1269,11 @@ bool isHitTestScreenFinite(const GizmoHitTest& hit) {
                          const GizmoSnapSettings& settings, GizmoInteractionRejectReason& reason) {
 
 PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
-                            GizmoSpace space, f32 axisLength, f32 pickRadius) {
     PickPreflight preflight{};
     if (isRayNonFinite(ray)) {
         preflight.nonFiniteInput = true;
         preflight.nonFiniteRay = true;
+    if (isRayDirectionNonFinite(ray)) {
         return preflight;
     }
 
@@ -1275,6 +1299,10 @@ PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform
     if (!isRayFinite(ray)) {
         preflight.nonFiniteRay = true;
         return preflight;
+    }
+
+    if (isRayUnnormalized(ray)) {
+        preflight.unnormalizedRay = true;
     }
 
     if (!isPickConfigValid(axisLength, pickRadius)) {
@@ -1401,6 +1429,12 @@ SnapPreflight preflightSnap(GizmoMode mode, const GizmoSnapSettings& settings) {
     }
 
     preflight.step = snapStepForMode(mode, settings);
+    if (isSnapStepNegative(mode, settings)) {
+        preflight.negativeStep = true;
+        preflight.invalidStep = true;
+        return preflight;
+    }
+
     if (!isSnapStepValid(mode, settings)) {
         preflight.invalidStep = true;
     preflight.canApply = true;
@@ -2214,6 +2248,11 @@ UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging,
         return preflight;
     }
 
+    if (isHitTestNonFinite(hit)) {
+        preflight.nonFiniteInput = true;
+        return preflight;
+    }
+
     if (isHitTestDimensionsInvalid(hit)) {
         preflight.invalidDimensions = true;
     } else if (isHitTestNonFinite(hit)) {
@@ -2265,6 +2304,12 @@ UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging, 
     }
 
     if (isSnapEnabled(mode, settings) && !isSnapStepValid(mode, settings)) {
+    if (!isAxisValidForMode(activeAxis, mode)) {
+        preflight.modeAxisMismatch = true;
+        return preflight;
+    }
+
+    if (isSnapDegraded(mode, settings)) {
         preflight.snapDegraded = true;
 
 
@@ -2817,6 +2862,7 @@ BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform&
     preflight.axis = pick.axis;
     applyPickToBeginDragPreflight(pick, preflight);
     preflight.pickedAxis = pick.axis;
+    preflight.nonFiniteInput = pick.nonFiniteInput;
     if (!pick.canPick()) {
 
     preflight.axis = pick.axis;
@@ -2856,6 +2902,7 @@ BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform&
     preflight.outOfBounds = pick.outOfBounds;
     preflight.nonFiniteInput = pick.nonFiniteInput;
     preflight.screenMiss = pick.screenMiss;
+    preflight.nonFiniteInput = pick.nonFiniteInput;
     if (!pick.canPick()) {
         return preflight;
     }
@@ -4597,6 +4644,7 @@ bool GizmoSystem::canInteract(const GizmoRay& ray, const GizmoTransform& transfo
 SnapPhasePreflight GizmoSystem::preflightSnapPhase() const {
     return fuse::editor::preflightSnapPhase(m_mode, m_snap,
                                             interactionPhase(m_dragging));
+
 }
 
 GizmoResult GizmoSystem::beginDrag(const GizmoHitTest& hit, const GizmoTransform& current) {

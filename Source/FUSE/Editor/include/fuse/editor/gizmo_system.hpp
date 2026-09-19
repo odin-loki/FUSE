@@ -312,6 +312,20 @@ bool isRayNonFinite(const GizmoRay& ray);
 
 /// True when screen coordinates are finite (B6.4 deepen pass — pick/update guard).
 bool isHitTestScreenFinite(const GizmoHitTest& hit);
+/// True when screen or viewport fields are NaN / Inf (B6.4 deepen pass).
+bool isHitTestNonFinite(const GizmoHitTest& hit);
+
+/// True when ray direction components are NaN / Inf (B6.4 deepen pass).
+bool isRayDirectionNonFinite(const GizmoRay& ray);
+
+/// True when ray direction length is non-zero but not unit length (B6.4 deepen pass).
+bool isRayUnnormalized(const GizmoRay& ray);
+
+/// True when the active axis is incompatible with the gizmo mode (B6.4 deepen pass).
+bool isAxisValidForMode(GizmoAxis axis, GizmoMode mode);
+
+/// True when snap is enabled and the mode step is negative (B6.4 deepen pass).
+bool isSnapStepNegative(GizmoMode mode, const GizmoSnapSettings& settings);
 
 /// Read-only pick diagnostics — no mutation (B6.4 deepen follow-up — pick guard).
 struct PickPreflight {
@@ -337,6 +351,9 @@ struct PickPreflight {
     bool invalidTransform = false;
     bool nonFiniteRay = false;
     bool nonFiniteHit = false;
+    bool nonFiniteInput = false;
+    /// Non-unit direction — pick still proceeds (B6.4 deepen pass).
+    bool unnormalizedRay = false;
     GizmoAxis axis = GizmoAxis::None;
 
     bool canPick() const {
@@ -357,6 +374,7 @@ struct PickPreflight {
                !invalidCoordinates && !outOfBounds && !screenMiss && !pickMiss;
         return !emptyRay && !emptyHit && !invalidPickConfig && !invalidDimensions && !nonFiniteRay &&
                !nonFiniteScreen && !outOfBounds && !screenMiss && !pickMiss;
+               !screenMiss && !pickMiss && !nonFiniteInput;
     }
 /// Read-only pick diagnostics — no mutation (B6.4 deepen follow-up).
     bool canPick = false;
@@ -396,6 +414,7 @@ struct SnapPreflight {
     /// Resolved step for the active gizmo mode (B6.4 deepen follow-up).
     /// Resolved step for the active gizmo mode (B6.4 deepen pass).
     f32 step = 0.f;
+    bool negativeStep = false;
 
     bool canApply() const { return !snapDisabled && !invalidStep; }
     /// Enabled snap with unusable step — drag still applies without grid rounding (B6.4 deepen pass).
@@ -756,6 +775,7 @@ struct BeginDragPreflight {
     bool invalidTransform = false;
     bool nonFiniteRay = false;
     bool nonFiniteHit = false;
+    bool nonFiniteInput = false;
     bool alreadyDragging = false;
     GizmoAxis axis = GizmoAxis::None;
     /// Snap is enabled but the mode step is unusable — begin still applies (B6.4 deepen pass follow-up).
@@ -910,6 +930,8 @@ struct UpdateDragPreflight {
         return !notDragging && !emptyHit && !invalidDimensions && !invalidCoordinates &&
                !outOfBounds && !invalidActiveAxis;
         return !notDragging && !emptyHit && !invalidDimensions && !nonFiniteScreen && !outOfBounds &&
+        return !notDragging && !emptyHit && !invalidDimensions && !outOfBounds && !invalidActiveAxis &&
+               !nonFiniteInput && !modeAxisMismatch;
     }
     bool canUpdate() const { return reason == UpdateDragRejectReason::None; }
         return !notDragging && !emptyHit && !nonFiniteInput && !invalidDimensions && !outOfBounds &&
