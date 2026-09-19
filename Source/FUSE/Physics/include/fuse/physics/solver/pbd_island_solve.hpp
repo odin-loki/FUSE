@@ -12052,4 +12052,45 @@ IslandPipelineDispatchResult dispatch_island_pipeline_guarded(
     f32 contactCompliance,
     const std::function<f32(const RigidBodySoA&, u32)>& invMassFn);
 
+/// Combined wake-then-solve pipeline preflight (B4.4 deepen follow-up pass).
+struct IslandSolvePipelinePreflight {
+    IslandWakeGraphPreflight wake{};
+    IslandDispatchPreflight dispatch{};
+    IslandSleepGraphPreflight sleep{};
+    IslandDispatchRejectReason reason = IslandDispatchRejectReason::None;
+    bool skipped = false;
+
+    bool can_dispatch() const { return !skipped && reason == IslandDispatchRejectReason::None; }
+};
+
+/// Combined wake-then-solve pipeline outcome (B4.4 deepen follow-up pass).
+struct IslandSolvePipelineResult {
+    u32 wokeCount = 0;
+    IslandBatchDispatchResult dispatch{};
+    IslandDispatchRejectReason reason = IslandDispatchRejectReason::None;
+    bool skipped = false;
+
+    bool any_solved() const { return dispatch.any_solved(); }
+};
+
+/// Preflight wake-then-solve pipeline without mutating bodies (B4.4 deepen follow-up pass).
+IslandSolvePipelinePreflight preflight_island_solve_pipeline(const ContactIslandGraph& graph,
+                                                             const RigidBodySoA& bodies,
+                                                             f32 dt);
+
+/// Early-out guard for wake-then-solve pipeline dispatch (B4.4 deepen follow-up pass).
+bool should_skip_island_solve_pipeline(const ContactIslandGraph& graph,
+                                         const RigidBodySoA& bodies,
+                                         f32 dt);
+
+/// Guarded wake-then-solve pipeline over all dispatchable islands (B4.4 deepen follow-up pass).
+IslandSolvePipelineResult dispatch_island_solve_pipeline(
+    RigidBodySoA& bodies,
+    const ContactIslandGraph& graph,
+    SolverWorkBuffers& workBuffers,
+    const std::vector<DistanceConstraint>& distanceConstraints,
+    f32 dt,
+    f32 contactCompliance,
+    const std::function<f32(const RigidBodySoA&, u32)>& invMassFn);
+
 } // namespace fuse::physics

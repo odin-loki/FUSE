@@ -20755,4 +20755,50 @@ IslandPipelineDispatchResult dispatch_island_pipeline_guarded(
     return result;
 }
 
+IslandSolvePipelinePreflight preflight_island_solve_pipeline(const ContactIslandGraph& graph,
+                                                             const RigidBodySoA& bodies,
+                                                             f32 dt) {
+    IslandSolvePipelinePreflight preflight{};
+    preflight.wake = preflight_island_wake_graph(graph, bodies);
+    preflight.sleep = preflight_island_sleep_graph(graph, bodies);
+    preflight.dispatch = preflight_island_dispatch(graph, dt);
+    preflight.reason = island_dispatch_reject_reason(graph, dt);
+    preflight.skipped = preflight.dispatch.skipped;
+    return preflight;
+}
+
+bool should_skip_island_solve_pipeline(const ContactIslandGraph& graph,
+                                       const RigidBodySoA& bodies,
+                                       f32 dt) {
+    return !preflight_island_solve_pipeline(graph, bodies, dt).can_dispatch();
+}
+
+IslandSolvePipelineResult dispatch_island_solve_pipeline(
+    RigidBodySoA& bodies,
+    const ContactIslandGraph& graph,
+    SolverWorkBuffers& workBuffers,
+    const std::vector<DistanceConstraint>& distanceConstraints,
+    f32 dt,
+    f32 contactCompliance,
+    const std::function<f32(const RigidBodySoA&, u32)>& invMassFn) {
+    IslandSolvePipelineResult result{};
+    const IslandSolvePipelinePreflight preflight = preflight_island_solve_pipeline(graph, bodies, dt);
+    result.reason = preflight.reason;
+    if (!preflight.can_dispatch()) {
+        result.skipped = true;
+        return result;
+    }
+
+    result.wokeCount = wake_all_island_sleepers_guarded(bodies, graph);
+    result.dispatch = dispatch_all_islands_result(bodies,
+                                                  graph,
+                                                  workBuffers,
+                                                  distanceConstraints,
+                                                  dt,
+                                                  contactCompliance,
+                                                  invMassFn);
+    result.skipped = result.dispatch.skipped;
+    return result;
+}
+
 } // namespace fuse::physics
