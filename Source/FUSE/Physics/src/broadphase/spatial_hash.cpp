@@ -86,6 +86,40 @@ const char* dedupeBroadphaseRejectReasonName(DedupeBroadphaseRejectReason reason
     return "Unknown";
 }
 
+const char* cellPairGenRejectReasonName(CellPairGenRejectReason reason) {
+    switch (reason) {
+    case CellPairGenRejectReason::None:
+        return "None";
+    case CellPairGenRejectReason::EmptyCell:
+        return "EmptyCell";
+    case CellPairGenRejectReason::SingletonOccupant:
+        return "SingletonOccupant";
+    }
+    return "Unknown";
+}
+
+const char* shapeCellInsertRejectReasonName(ShapeCellInsertRejectReason reason) {
+    switch (reason) {
+    case ShapeCellInsertRejectReason::None:
+        return "None";
+    case ShapeCellInsertRejectReason::OutOfRangeBody:
+        return "OutOfRangeBody";
+    case ShapeCellInsertRejectReason::OccupancySkipped:
+        return "OccupancySkipped";
+    }
+    return "Unknown";
+}
+
+const char* broadphaseCellPairGenRejectReasonName(BroadphaseCellPairGenRejectReason reason) {
+    switch (reason) {
+    case BroadphaseCellPairGenRejectReason::None:
+        return "None";
+    case BroadphaseCellPairGenRejectReason::EmptyCells:
+        return "EmptyCells";
+    }
+    return "Unknown";
+}
+
 const char* mergeBroadphaseRejectReasonName(BroadphaseMergeRejectReason reason) {
     switch (reason) {
     case BroadphaseMergeRejectReason::None:
@@ -169,17 +203,33 @@ std::vector<u32> uniqueOccupants(const std::vector<u32>& occupants) {
     return uniqueBodies;
 }
 
-u32 countPairsForCell(const std::vector<u32>& occupants) {
-    if (occupants.size() < 2u) {
+u32 countUniqueCellOccupantsImpl(const std::vector<u32>& occupants) {
+    if (occupants.empty()) {
         return 0u;
     }
-    const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
-    const u32 bodyCount = static_cast<u32>(uniqueBodies.size());
-    return bodyCount > 1u ? bodyCount * (bodyCount - 1u) / 2u : 0u;
+    return static_cast<u32>(uniqueOccupants(occupants).size());
+}
+
+CellPairGenPreflight preflightCellPairGenerationImpl(const std::vector<u32>& occupants) {
+    CellPairGenPreflight preflight{};
+    preflight.uniqueOccupantCount = countUniqueCellOccupantsImpl(occupants);
+    preflight.reason = cellPairGenRejectReason(preflight.uniqueOccupantCount);
+    preflight.emptyCell = preflight.reason == CellPairGenRejectReason::EmptyCell;
+    preflight.singletonOccupant = preflight.reason == CellPairGenRejectReason::SingletonOccupant;
+    preflight.pairCount = estimateCellPairCount(preflight.uniqueOccupantCount);
+    return preflight;
+}
+
+u32 countPairsForCell(const std::vector<u32>& occupants) {
+    const CellPairGenPreflight preflight = preflightCellPairGenerationImpl(occupants);
+    if (!preflight.canGenerate()) {
+        return 0u;
+    }
+    return preflight.pairCount;
 }
 
 void generatePairsForCell(const std::vector<u32>& occupants, std::vector<CandidatePair>& out) {
-    if (occupants.size() < 2u) {
+    if (!preflightCellPairGenerationImpl(occupants).canGenerate()) {
         return;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -194,7 +244,7 @@ void writePairsForCellSlots(
     const std::vector<u32>& occupants,
     u32 slotStart,
     PairBufferSoA& buffer) {
-    if (occupants.size() < 2u) {
+    if (!preflightCellPairGenerationImpl(occupants).canGenerate()) {
         return;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -206,21 +256,19 @@ void writePairsForCellSlots(
     }
 }
 
-void populateShapeCells(
+ShapeCellInsertRejectReason shapeCellInsertRejectReasonImpl(
     u32 shapeIndex,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     const SpatialHashParams& params,
-    bool use2D,
-    CellBuckets& cells) {
+    bool use2D) {
     const u32 bodyIndex = shapeBodyIndex(shapes, shapeIndex);
     if (bodyIndex >= bodies.count()) {
-        return;
+        return ShapeCellInsertRejectReason::OutOfRangeBody;
     }
 
     const vec3 position = bodies.positions[bodyIndex];
     const f32 cellSize = clampCellSize(params.cellSize);
-    const u32 tableSize = clampTableSize(params.tableSize);
     const u32 maxSpan = params.maxCellSpanPerAxis;
     const u32 maxOccupancy = params.maxCellOccupancy;
     const CollisionShapeType type = shapeType(shapes, shapeIndex);
@@ -236,7 +284,98 @@ void populateShapeCells(
             range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
         }
         if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
-            return;
+            return ShapeCellInsertRejectReason::OccupancySkipped;
+        }
+        return ShapeCellInsertRejectReason::None;
+    }
+
+    CellRange3 range = {};
+    if (type == CollisionShapeType::Box) {
+        const vec3 halfExtents = shapes.params[shapeIndex];
+        range = cellRangeFromBox(position, halfExtents, cellSize, maxSpan);
+    } else {
+        const f32 radius = shapeRadius(shapes, shapeIndex);
+        range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
+    }
+    if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+        return ShapeCellInsertRejectReason::OccupancySkipped;
+    }
+    return ShapeCellInsertRejectReason::None;
+}
+
+ShapeCellInsertPreflight preflightShapeCellInsertImpl(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D) {
+    ShapeCellInsertPreflight preflight{};
+    preflight.reason = shapeCellInsertRejectReasonImpl(shapeIndex, bodies, shapes, params, use2D);
+    preflight.outOfRangeBody = preflight.reason == ShapeCellInsertRejectReason::OutOfRangeBody;
+    preflight.occupancySkipped = preflight.reason == ShapeCellInsertRejectReason::OccupancySkipped;
+
+    if (preflight.reason != ShapeCellInsertRejectReason::OutOfRangeBody) {
+        const u32 bodyIndex = shapeBodyIndex(shapes, shapeIndex);
+        const vec3 position = bodies.positions[bodyIndex];
+        const f32 cellSize = clampCellSize(params.cellSize);
+        const u32 maxSpan = params.maxCellSpanPerAxis;
+        const CollisionShapeType type = shapeType(shapes, shapeIndex);
+        if (use2D) {
+            CellRange2 range = {};
+            if (type == CollisionShapeType::Box) {
+                const vec3 halfExtents = shapes.params[shapeIndex];
+                const aabb bounds = aabbFromBox(position, halfExtents);
+                range = cellRangeFromAabb2D(bounds, cellSize, maxSpan);
+            } else {
+                const f32 radius = shapeRadius(shapes, shapeIndex);
+                range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
+            }
+            preflight.occupancyCount = estimateCellOccupancyCount(range);
+        } else {
+            CellRange3 range = {};
+            if (type == CollisionShapeType::Box) {
+                const vec3 halfExtents = shapes.params[shapeIndex];
+                range = cellRangeFromBox(position, halfExtents, cellSize, maxSpan);
+            } else {
+                const f32 radius = shapeRadius(shapes, shapeIndex);
+                range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
+            }
+            preflight.occupancyCount = estimateCellOccupancyCount(range);
+        }
+    }
+
+    return preflight;
+}
+
+void populateShapeCells(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D,
+    CellBuckets& cells) {
+    const ShapeCellInsertPreflight insertPreflight =
+        preflightShapeCellInsertImpl(shapeIndex, bodies, shapes, params, use2D);
+    if (!insertPreflight.canInsert()) {
+        return;
+    }
+
+    const u32 bodyIndex = shapeBodyIndex(shapes, shapeIndex);
+    const vec3 position = bodies.positions[bodyIndex];
+    const f32 cellSize = clampCellSize(params.cellSize);
+    const u32 tableSize = clampTableSize(params.tableSize);
+    const u32 maxSpan = params.maxCellSpanPerAxis;
+    const CollisionShapeType type = shapeType(shapes, shapeIndex);
+
+    if (use2D) {
+        CellRange2 range = {};
+        if (type == CollisionShapeType::Box) {
+            const vec3 halfExtents = shapes.params[shapeIndex];
+            const aabb bounds = aabbFromBox(position, halfExtents);
+            range = cellRangeFromAabb2D(bounds, cellSize, maxSpan);
+        } else {
+            const f32 radius = shapeRadius(shapes, shapeIndex);
+            range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
         }
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
             for (s32 cx = range.minCell.x; cx <= range.maxCell.x; ++cx) {
@@ -254,9 +393,6 @@ void populateShapeCells(
     } else {
         const f32 radius = shapeRadius(shapes, shapeIndex);
         range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
-    }
-    if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
-        return;
     }
     for (s32 cz = range.minCell.z; cz <= range.maxCell.z; ++cz) {
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
@@ -282,7 +418,7 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
 }
 
 void dedupeBuffer(PairBufferSoA& buffer) {
-    if (!shouldRunDedupeBroadphase(buffer)) {
+    if (!shouldRunDedupeBroadphase(buffer) || !shouldRunPairBufferDedupe(buffer)) {
         return;
     }
 
@@ -348,7 +484,7 @@ void runBroadphaseIntoBufferInternal(
     }
 
     buffer.preparePairSlots(totalCellSlots);
-    if (totalCellSlots == 0u) {
+    if (!shouldRunBroadphaseCellPairGen(totalCellSlots)) {
         return;
     }
 
@@ -405,7 +541,7 @@ void runBroadphaseIntoBufferInternal(
         dedupeBuffer(buffer);
     }
 
-    if (buffer.maxCapacity > 0u) {
+    if (shouldRunPairBufferClamp(buffer)) {
         buffer.applyMaxCapacityClamp();
     }
 }
@@ -435,10 +571,100 @@ void refineBroadphasePairsParallelImpl(
         }
     });
 
-    buffer.compact();
+    if (shouldRunPairBufferCompaction(buffer)) {
+        buffer.compact();
+    }
 }
 
 } // namespace
+
+u32 countUniqueCellOccupants(const std::vector<u32>& occupants) {
+    return countUniqueCellOccupantsImpl(occupants);
+}
+
+CellPairGenPreflight preflightCellPairGeneration(const std::vector<u32>& occupants) {
+    return preflightCellPairGenerationImpl(occupants);
+}
+
+bool canSkipCellPairGeneration(const std::vector<u32>& occupants) {
+    return !preflightCellPairGeneration(occupants).canGenerate();
+}
+
+bool shouldRunCellPairGeneration(const std::vector<u32>& occupants) {
+    return preflightCellPairGeneration(occupants).canGenerate();
+}
+
+ShapeCellInsertRejectReason shapeCellInsertRejectReason(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D) {
+    return shapeCellInsertRejectReasonImpl(shapeIndex, bodies, shapes, params, use2D);
+}
+
+ShapeCellInsertPreflight preflightShapeCellInsert(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D) {
+    return preflightShapeCellInsertImpl(shapeIndex, bodies, shapes, params, use2D);
+}
+
+bool shapeCellInsertRejectsForReason(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D,
+    ShapeCellInsertRejectReason expected) {
+    return shapeCellInsertRejectReason(shapeIndex, bodies, shapes, params, use2D) == expected;
+}
+
+bool canSkipShapeCellInsert(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D) {
+    return !preflightShapeCellInsert(shapeIndex, bodies, shapes, params, use2D).canInsert();
+}
+
+bool shouldRunShapeCellInsert(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D) {
+    return preflightShapeCellInsert(shapeIndex, bodies, shapes, params, use2D).canInsert();
+}
+
+BroadphaseCellPairGenRejectReason broadphaseCellPairGenRejectReason(u32 totalCellSlots) {
+    if (totalCellSlots == 0u) {
+        return BroadphaseCellPairGenRejectReason::EmptyCells;
+    }
+    return BroadphaseCellPairGenRejectReason::None;
+}
+
+bool broadphaseCellPairGenRejectsForReason(u32 totalCellSlots, BroadphaseCellPairGenRejectReason expected) {
+    return broadphaseCellPairGenRejectReason(totalCellSlots) == expected;
+}
+
+BroadphaseCellPairGenPreflight preflightBroadphaseCellPairGen(u32 totalCellSlots) {
+    BroadphaseCellPairGenPreflight preflight{};
+    preflight.reason = broadphaseCellPairGenRejectReason(totalCellSlots);
+    preflight.emptyCells = preflight.reason == BroadphaseCellPairGenRejectReason::EmptyCells;
+    return preflight;
+}
+
+bool canSkipBroadphaseCellPairGen(u32 totalCellSlots) {
+    return !preflightBroadphaseCellPairGen(totalCellSlots).canGenerate();
+}
+
+bool shouldRunBroadphaseCellPairGen(u32 totalCellSlots) {
+    return preflightBroadphaseCellPairGen(totalCellSlots).canGenerate();
+}
 
 RefineBroadphaseRejectReason refineBroadphaseRejectReason(
     const RigidBodySoA& bodies,
@@ -643,8 +869,12 @@ bool refineBroadphasePairsParallelWithPreflight(
     return true;
 }
 
-void dedupeBroadphasePairBufferWithPreflight(PairBufferSoA& buffer) {
+bool dedupeBroadphasePairBufferWithPreflight(PairBufferSoA& buffer) {
+    if (!shouldRunDedupeBroadphase(buffer)) {
+        return false;
+    }
     dedupeBuffer(buffer);
+    return true;
 }
 
 void mergePairsIntoBufferWithPreflight(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer) {
