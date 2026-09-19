@@ -5800,3 +5800,34 @@ void testWouldSkipCounterAndExportGuards() {
     expectTrue(fuse::profiler::wouldSkipBeginAsyncFlow("flow", flowId) ==
                    !fuse::profiler::preflightBeginAsyncFlow("flow", flowId).canBegin,
                "wouldSkipBeginAsyncFlow agrees with preflight canBegin");
+
+// --- deepen additive from deepen-b16-profiler-guards-ceb7 ---
+               "wouldSkipAsyncFlowEnd false for paired finish");
+void testProfileNestingPreflight() {
+    const fuse::profiler::ProfileNestingPreflight resetPreflight = fuse::profiler::preflightNesting();
+    expectTrue(resetPreflight.canNestSafely(), "reset nesting preflight can nest safely");
+        const fuse::profiler::ProfileNestingPreflight activePreflight = fuse::profiler::preflightNesting();
+        expectTrue(!activePreflight.canNestSafely(), "active scope/flow preflight cannot nest safely");
+    const fuse::profiler::ProfileNestingPreflight closedPreflight = fuse::profiler::preflightNesting();
+    expectTrue(closedPreflight.isBalanced(), "closed scope/flow nesting preflight is balanced");
+    expectTrue(closedPreflight.canNestSafely(), "closed nesting preflight can nest safely");
+    expectTrue(!closedPreflight.hasOpenAsyncFlows, "closed nesting preflight has no open flows");
+    expectTrue(!fuse::profiler::tryFindFirstEventIndexByName("", outIndex),
+               "tryFindFirstEventIndexByName false for empty query name");
+    expectTrue(!fuse::profiler::tryFindAsyncFlowStartIndex(42u, outIndex),
+               "tryFindAsyncFlowStartIndex false on empty buffer");
+               "tryFindFirstEventIndexByPhase finds scope begin");
+               "tryFindLastEventIndexByPhase finds scope end");
+    expectTrue(fuse::profiler::tryFindFirstEventIndexByName("find_flow", outIndex),
+               "tryFindFirstEventIndexByName finds flow name");
+    expectTrue(fuse::profiler::tryFindLastEventIndexByName("find_outer", outIndex),
+               "tryFindLastEventIndexByName finds outer scope name");
+    expectTrue(fuse::profiler::tryFindAsyncFlowStartIndex(flowId, outIndex),
+               "tryFindAsyncFlowStartIndex finds flow start");
+    expectTrue(fuse::profiler::tryFindAsyncFlowFinishIndex(flowId, outIndex),
+               "tryFindAsyncFlowFinishIndex finds flow finish");
+void testChromeTraceExportPreflightExtensions() {
+               "wouldSkipSafeChromeTraceExport false for balanced trace");
+                   "wouldSkipSafeChromeTraceExport true with open scope and flow");
+    testProfileNestingPreflight();
+    testChromeTraceExportPreflightExtensions();

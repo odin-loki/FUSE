@@ -1590,3 +1590,11 @@ bool wouldSkipChromeTraceExport(bool requireBalancedNesting) {
     if (nameReason == EventNameRejectReason::Null) {
     if (nameReason == EventNameRejectReason::Empty) {
 bool wouldSkipSafeChromeTraceExport(ProfileRecordSkipReason* reason) {
+
+// --- deepen additive from deepen-b16-profiler-guards-ceb7 ---
+bool wouldSkipCounter(const char* track, ProfileRecordSkipReason* reason) {
+bool wouldSkipSafeChromeTraceExport(ChromeTraceExportSkipReason* reason) {
+bool tryFindAsyncFlowStartIndex(u32 flowId, u32& outIndex) {
+bool tryFindAsyncFlowFinishIndex(u32 flowId, u32& outIndex) {
+ProfileNestingPreflight preflightNesting() {
+    ProfileNestingPreflight preflight{};

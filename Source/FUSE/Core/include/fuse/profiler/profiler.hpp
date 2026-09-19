@@ -619,3 +619,11 @@ bool wouldSkipChromeTraceExport(bool requireBalancedNesting = false);
 
 // --- deepen additive from deepen-b16-profiler-wouldskip-lookup-6516 ---
 bool wouldSkipSafeChromeTraceExport(ProfileRecordSkipReason* reason = nullptr);
+
+// --- deepen additive from deepen-b16-profiler-guards-ceb7 ---
+struct ProfileNestingPreflight {
+bool wouldSkipCounter(const char* track, ProfileRecordSkipReason* reason = nullptr);
+bool wouldSkipSafeChromeTraceExport(ChromeTraceExportSkipReason* reason = nullptr);
+bool tryFindAsyncFlowStartIndex(u32 flowId, u32& outIndex);
+bool tryFindAsyncFlowFinishIndex(u32 flowId, u32& outIndex);
+ProfileNestingPreflight preflightNesting();
