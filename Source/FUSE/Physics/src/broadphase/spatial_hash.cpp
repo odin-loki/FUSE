@@ -548,6 +548,38 @@ const char* cellOccupancyRejectReasonName(CellOccupancyRejectReason reason) {
     return "Unknown";
 }
 
+const char* broadphaseRejectReasonName(BroadphaseRejectReason reason) {
+    switch (reason) {
+    case BroadphaseRejectReason::None:
+        return "None";
+    case BroadphaseRejectReason::EmptyInput:
+        return "EmptyInput";
+    case BroadphaseRejectReason::SingletonInput:
+        return "SingletonInput";
+    }
+    return "Unknown";
+
+const char* refineBroadphaseRejectReasonName(RefineBroadphaseRejectReason reason) {
+    case RefineBroadphaseRejectReason::None:
+    case RefineBroadphaseRejectReason::EmptyBuffer:
+        return "EmptyBuffer";
+    case RefineBroadphaseRejectReason::EmptyInput:
+    case RefineBroadphaseRejectReason::NoValidPairs:
+        return "NoValidPairs";
+
+const char* dedupeBroadphaseRejectReasonName(DedupeBroadphaseRejectReason reason) {
+    case DedupeBroadphaseRejectReason::None:
+    case DedupeBroadphaseRejectReason::EmptyBuffer:
+    case DedupeBroadphaseRejectReason::SinglePair:
+        return "SinglePair";
+
+const char* broadphaseMergeRejectReasonName(BroadphaseMergeRejectReason reason) {
+    case BroadphaseMergeRejectReason::None:
+    case BroadphaseMergeRejectReason::EmptyPlaneBodies:
+        return "EmptyPlaneBodies";
+    case BroadphaseMergeRejectReason::EmptyDynamicBodies:
+        return "EmptyDynamicBodies";
+
 namespace {
 
 constexpr u32 kBuildGrainSize = 8u;
@@ -1007,6 +1039,7 @@ void runBroadphaseIntoBufferInternal(
 
     const BroadphaseMergePreflight mergePreflight = preflightBroadphaseMerge(bodies, shapes);
     if (shouldRunBroadphaseMerge(bodies, shapes)) {
+    if (!canSkipBroadphaseMerge(bodies, shapes)) {
         std::unordered_set<u64> existing;
         existing.reserve(buffer.activeCount * 2 + 1);
         for (u32 i = 0; i < buffer.activeCount; ++i) {
@@ -1217,6 +1250,20 @@ bool wouldSkipDedupeBroadphase(const PairBufferSoA& buffer, DedupeBroadphaseReje
     const DedupeBroadphaseRejectReason reject = dedupeBroadphaseRejectReason(buffer);
     return reject != DedupeBroadphaseRejectReason::None;
 
+BroadphaseMergeRejectReason broadphaseMergeRejectReason(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    const BroadphaseMergePreflight preflight = preflightBroadphaseMerge(bodies, shapes);
+    return preflight.reason;
+}
+
+bool broadphaseMergeRejectsForReason(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    BroadphaseMergeRejectReason expected) {
+    return broadphaseMergeRejectReason(bodies, shapes) == expected;
+}
+
 BroadphaseMergePreflight preflightBroadphaseMerge(
     const CollisionShapeSoA& shapes) {
     BroadphaseMergePreflight preflight{};
@@ -1380,6 +1427,7 @@ bool broadphaseMergeRejectsForReason(
 bool canSkipBroadphaseMerge(
 
 bool shouldRunBroadphaseMerge(
+
 }
 
 void refineBroadphasePairsParallel(
