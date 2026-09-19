@@ -2239,3 +2239,30 @@ void testFroxelPreflightValidateAndLookupReasonGuards() {
     expectTrue(!fuse::renderer::froxel_util::tryWriteDensityAtCoord(grid, mismatched, 0u, 0u, 0u, 9.f, lookupReason),
                "tryWriteDensityAtCoord with reason rejects desc mismatch");
     testFroxelPreflightValidateAndLookupReasonGuards();
+
+// --- deepen additive from deepen-b511-froxel-guards-2580 ---
+void testFroxelPopulatePreflightAndIndexValidationGuards() {
+               "tryCanPopulate succeeds on valid inputs");
+    expectTrue(fuse::renderer::froxel_util::tryPopulateFromAnalyticFog(grid, desc, camera, params, populateReason),
+    expectTrue(grid.matchesDesc(desc), "tryPopulate allocates matching density storage");
+               "tryPopulate fills all froxels with non-zero density");
+    fuse::renderer::DensityLookupRejectReason indexReason = fuse::renderer::DensityLookupRejectReason::None;
+    expectTrue(fuse::renderer::froxel_util::tryValidateFroxelIndex(5u, desc, indexReason),
+    expectTrue(indexReason == fuse::renderer::DensityLookupRejectReason::None,
+    expectTrue(!fuse::renderer::froxel_util::tryValidateFroxelIndex(99u, desc, indexReason),
+    expectTrue(indexReason == fuse::renderer::DensityLookupRejectReason::IndexOutOfRange,
+    expectTrue(std::strcmp(fuse::renderer::densityLookupRejectReasonLabel(indexReason), "index_out_of_range") == 0,
+    expectTrue(!fuse::renderer::froxel_util::tryValidateFroxelIndex(0u, zeroDesc, indexReason),
+    expectTrue(indexReason == fuse::renderer::DensityLookupRejectReason::EmptyGrid,
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtIndex(grid, desc, 0u, indexedSample, indexReason),
+    expectTrue(fuse::renderer::FroxelGridLayout::tryValidateSampleCoords(validCoords, desc, sampleReason),
+               "valid sample coords pass tryValidateSampleCoords");
+               "reversed sample corners fail tryValidateSampleCoords");
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryValidateSampleCoords(oobIndices, desc, sampleReason),
+               "OOB tile indices fail tryValidateSampleCoords");
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryValidateSampleCoords(oobWeights, desc, sampleReason),
+               "OOB interpolation weights fail tryValidateSampleCoords");
+    fuse::renderer::ScreenMappingRejectReason screenReason = fuse::renderer::ScreenMappingRejectReason::None;
+    expectTrue(screenReason == fuse::renderer::ScreenMappingRejectReason::None,
+    expectTrue(screenReason == fuse::renderer::ScreenMappingRejectReason::DepthOutOfRange,
+    testFroxelPopulatePreflightAndIndexValidationGuards();

@@ -1640,3 +1640,7 @@ bool tryPreflightDensityGridAccess(const FroxelDensityGrid& grid,
                                    GridDensityRejectReason& outReason) {
     if (!FroxelGridLayout::tryPreflightNonEmptyGrid(desc, outReason)) {
     return tryValidateGridDensityForDesc(grid, desc, reason, epsilon);
+
+// --- deepen additive from deepen-b511-froxel-guards-2580 ---
+bool tryValidateFroxelIndex(u32 index, const FroxelGridDesc& desc, DensityLookupRejectReason& outReason) {
+    if (!tryCanPopulateFromAnalyticFog(desc, camera, params, outReason)) {
