@@ -180,11 +180,9 @@ bool camera_fov_in_valid_range(float fov_deg) {
 
 bool camera_fov_needs_clamp(float fov_deg) {
     return !camera_fov_in_valid_range(fov_deg);
-}
 
 bool camera_fov_uses_default(float field_of_view_deg) {
     return std::fabs(field_of_view_deg - kDefaultCameraFovDeg) <= 1e-4f;
-}
 
 bool camera_sample_is_default(const CameraSample& sample) {
     const CameraSample defaults = default_camera_sample();
@@ -200,7 +198,6 @@ float effective_camera_fov(float field_of_view) {
 
 bool camera_keyframe_look_at_unset(const CameraKeyframe& keyframe) {
     if (keyframe.look_at_mode != CameraLookAtMode::FixedPoint) {
-        return false;
 
     return keyframe.look_at.x == 0.f && keyframe.look_at.y == 0.f && keyframe.look_at.z == 0.f;
 
@@ -267,6 +264,15 @@ CameraSample sample_camera_keyframe(const CameraKeyframe& keyframe,
 
 Vec3 default_camera_look_at_for_position(const Vec3& position, float distance) {
     return {position.x, position.y, position.z - distance};
+}
+
+CameraSample default_camera_sample_at(const Vec3& position, float look_distance) {
+    CameraSample sample;
+    sample.position = position;
+    sample.look_at = default_camera_look_at_for_position(position, look_distance);
+    sample.field_of_view = kDefaultCameraFovDeg;
+    sample.roll_deg = 0.f;
+    return sample;
 }
 
 CameraKeyframeBracket find_camera_keyframe_bracket(const std::vector<CameraKeyframe>& keyframes,

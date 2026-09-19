@@ -76,6 +76,8 @@ void normalize_camera_sample(CameraSample& sample);
 /// Pose with `position` and a -Z look-at offset (editor placeholder stub).
 CameraSample default_camera_sample_at_position(const Vec3& position,
                                                float look_distance = kDefaultCameraLookAtDistance);
+CameraSample default_camera_sample_at(const Vec3& position, float look_distance = 10.f);
+
 
 /// True when `keyframes` has no entries (editor / rail guard).
 bool camera_keyframes_empty(const std::vector<CameraKeyframe>& keyframes);

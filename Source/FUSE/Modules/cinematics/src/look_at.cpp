@@ -31,16 +31,13 @@ bool look_at_resolver_available(const LookAtResolver* resolver) {
 bool look_at_resolver_can_resolve_target(const LookAtResolver& resolver, const std::string& target_id) {
     Vec3 out{};
     return resolver.try_resolve(target_id, out);
-}
 
 Vec3 fallback_camera_look_at(const CameraKeyframe& keyframe,
                              const Vec3& camera_position,
                              float default_look_distance) {
     if (camera_look_distance(camera_position, keyframe.look_at) <= kLookAtCoincidentEpsilon) {
         return default_camera_look_at_for_position(camera_position, default_look_distance);
-    }
     return keyframe.look_at;
-}
 
 Vec3 resolve_look_at_world(const CameraKeyframe& keyframe, const LookAtResolver& resolver) {
     if (keyframe.look_at_mode == CameraLookAtMode::TargetEntity && !keyframe.look_at_target_id.empty()
