@@ -2630,62 +2630,139 @@ void testNonFiniteRejectReasonGuards() {
     gizmo.endDrag();
 }
 
-void testSnapDragRejectReasonGuards() {
+void testBeginDragInteractionRejectReasonGuards() {
+    fuse::editor::GizmoTransform transform{};
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 1.f;
+
+    fuse::editor::GizmoHitTest emptyHit{};
+    emptyHit.viewportWidth = 0.f;
+    fuse::editor::GizmoBeginDragRejectReason reason =
+        fuse::editor::GizmoBeginDragRejectReason::None;
+    expectTrue(!fuse::editor::tryPreflightBeginDragInteraction(emptyHit,
+                                                               fuse::editor::GizmoMode::Translate,
+                                                               snap, reason),
+               "tryPreflightBeginDragInteraction rejects empty viewport");
+    expectTrue(reason == fuse::editor::GizmoBeginDragRejectReason::EmptyHit,
+               "empty viewport interaction reject reason is EmptyHit");
+    expectTrue(fuse::editor::shouldSkipBeginDragInteraction(emptyHit,
+                                                            fuse::editor::GizmoMode::Translate,
+                                                            snap),
+               "shouldSkipBeginDragInteraction true for empty viewport");
+
+    fuse::editor::GizmoHitTest hit = hitFromValidScreen();
+    const fuse::editor::BeginDragInteractionPreflight validInteraction =
+        fuse::editor::preflightBeginDragInteraction(hit, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(fuse::editor::classifyBeginDragInteractionReject(validInteraction) ==
+                   fuse::editor::GizmoBeginDragRejectReason::None,
+               "classifyBeginDragInteractionReject maps valid begin");
+
+    fuse::editor::GizmoRay emptyRay{};
+    expectTrue(!fuse::editor::preflightBeginDragInteractionReady(
+                   emptyRay, transform, fuse::editor::GizmoMode::Translate,
+                   fuse::editor::GizmoSpace::World, fuse::editor::GizmoSystem::kAxisLength,
+                   fuse::editor::GizmoSystem::kPickRadius, snap, &reason),
+               "preflightBeginDragInteractionReady rejects empty ray");
+    expectTrue(reason == fuse::editor::GizmoBeginDragRejectReason::EmptyRay,
+               "empty ray interaction reject reason is EmptyRay");
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    expectTrue(gizmo.preflightBeginDragInteractionReady(hit),
+               "gizmo preflightBeginDragInteractionReady accepts valid hit");
+    expectTrue(!gizmo.shouldSkipBeginDragInteraction(hit),
+               "gizmo shouldSkipBeginDragInteraction false for valid hit");
+}
+
+void testUpdateDragInteractionRejectReasonGuards() {
     fuse::editor::GizmoSnapSettings snap{};
     snap.translateSnap = true;
     snap.gridSize = 0.5f;
 
-    fuse::editor::GizmoSnapDragRejectReason reason = fuse::editor::GizmoSnapDragRejectReason::None;
-    expectTrue(!fuse::editor::tryPreflightSnapDrag(std::numeric_limits<fuse::f32>::quiet_NaN(),
-                                                   fuse::editor::GizmoMode::Translate, snap,
-                                                   reason),
-               "tryPreflightSnapDrag rejects non-finite delta");
-    expectTrue(reason == fuse::editor::GizmoSnapDragRejectReason::DeltaNonFinite,
-               "non-finite delta reject reason is DeltaNonFinite");
-    expectTrue(fuse::editor::shouldSkipSnapDrag(std::numeric_limits<fuse::f32>::infinity(),
-                                                fuse::editor::GizmoMode::Translate, snap),
-               "shouldSkipSnapDrag true for non-finite delta");
+    fuse::editor::GizmoHitTest hit = hitFromValidScreen();
+    fuse::editor::GizmoUpdateDragRejectReason dragReason =
+        fuse::editor::GizmoUpdateDragRejectReason::None;
+    fuse::editor::GizmoSnapDragRejectReason snapDragReason =
+        fuse::editor::GizmoSnapDragRejectReason::None;
 
-    snap.translateSnap = false;
-    expectTrue(!fuse::editor::preflightSnapDragReady(0.37f, fuse::editor::GizmoMode::Translate,
-                                                     snap, &reason),
-               "preflightSnapDragReady rejects disabled snap");
-    expectTrue(reason == fuse::editor::GizmoSnapDragRejectReason::SnapDisabled,
-               "disabled snap-drag reject reason is SnapDisabled");
-
-    snap.translateSnap = true;
-    snap.gridSize = 0.f;
-    expectTrue(!fuse::editor::tryPreflightSnapDrag(0.37f, fuse::editor::GizmoMode::Translate, snap,
-                                                   reason),
-               "tryPreflightSnapDrag rejects invalid step");
-    expectTrue(reason == fuse::editor::GizmoSnapDragRejectReason::InvalidStep,
-               "invalid step snap-drag reject reason is InvalidStep");
-
-    snap.gridSize = 0.5f;
-    expectTrue(fuse::editor::tryPreflightSnapDrag(0.37f, fuse::editor::GizmoMode::Translate, snap,
-                                                  reason),
-               "tryPreflightSnapDrag accepts valid delta and snap");
-    expectTrue(reason == fuse::editor::GizmoSnapDragRejectReason::None,
-               "valid snap-drag reject reason is None");
-
-    const fuse::editor::SnapDragPreflight nanPreflight = fuse::editor::preflightSnapDrag(
-        std::numeric_limits<fuse::f32>::quiet_NaN(), fuse::editor::GizmoMode::Translate, snap);
-    expectTrue(fuse::editor::classifySnapDragReject(nanPreflight) ==
-                   fuse::editor::GizmoSnapDragRejectReason::DeltaNonFinite,
-               "classifySnapDragReject maps deltaNonFinite flag");
-    expectTrue(std::strcmp(fuse::editor::gizmoSnapDragRejectReasonLabel(
-                   fuse::editor::GizmoSnapDragRejectReason::DeltaNonFinite),
-               "DeltaNonFinite") == 0,
-               "snap-drag reject reason label for DeltaNonFinite");
+    expectTrue(!fuse::editor::tryPreflightUpdateDragInteraction(hit, false,
+                                                               fuse::editor::GizmoAxis::None,
+                                                               fuse::editor::GizmoMode::Translate,
+                                                               snap, dragReason),
+               "tryPreflightUpdateDragInteraction rejects inactive drag");
+    expectTrue(dragReason == fuse::editor::GizmoUpdateDragRejectReason::NotDragging,
+               "inactive drag interaction reject reason is NotDragging");
+    expectTrue(fuse::editor::shouldSkipUpdateDragInteraction(hit, false,
+                                                             fuse::editor::GizmoAxis::None,
+                                                             fuse::editor::GizmoMode::Translate,
+                                                             snap),
+               "shouldSkipUpdateDragInteraction true when not dragging");
 
     fuse::editor::GizmoSystem gizmo;
     gizmo.setSnapSettings(snap);
-    expectTrue(gizmo.preflightSnapDragReady(0.37f), "gizmo preflightSnapDragReady accepts valid");
-    expectTrue(gizmo.tryPreflightSnapDrag(0.37f, reason),
-               "gizmo tryPreflightSnapDrag accepts valid delta");
-    expectTrue(!gizmo.shouldSkipSnapDrag(0.37f), "gizmo shouldSkipSnapDrag false for valid delta");
-    expectTrue(gizmo.shouldSkipSnapDrag(std::numeric_limits<fuse::f32>::quiet_NaN()),
-               "gizmo shouldSkipSnapDrag true for non-finite delta");
+    fuse::editor::GizmoTransform transform{};
+    gizmo.beginDrag(hit, transform);
+
+    expectTrue(gizmo.preflightUpdateDragInteractionReady(hit),
+               "gizmo preflightUpdateDragInteractionReady accepts active drag");
+    expectTrue(gizmo.tryPreflightUpdateDragInteraction(hit, 0.37f, dragReason, snapDragReason),
+               "gizmo tryPreflightUpdateDragInteraction accepts finite delta");
+    expectTrue(snapDragReason == fuse::editor::GizmoSnapDragRejectReason::None,
+               "finite delta interaction snap-drag reject reason is None");
+    expectTrue(gizmo.preflightUpdateDragInteractionSnapDragReady(hit, 0.37f),
+               "gizmo preflightUpdateDragInteractionSnapDragReady accepts finite delta");
+
+    expectTrue(!gizmo.preflightUpdateDragInteractionSnapDragReady(
+                   hit, std::numeric_limits<fuse::f32>::quiet_NaN(), &snapDragReason),
+               "gizmo preflightUpdateDragInteractionSnapDragReady rejects non-finite delta");
+    expectTrue(snapDragReason == fuse::editor::GizmoSnapDragRejectReason::DeltaNonFinite,
+               "non-finite delta interaction snap-drag reject reason is DeltaNonFinite");
+
+    const fuse::editor::UpdateDragInteractionPreflight nanInteraction =
+        fuse::editor::preflightUpdateDragInteraction(hit, true, fuse::editor::GizmoAxis::X,
+                                                     fuse::editor::GizmoMode::Translate, snap,
+                                                     std::numeric_limits<fuse::f32>::quiet_NaN());
+    expectTrue(fuse::editor::classifyUpdateDragInteractionSnapDragReject(nanInteraction) ==
+                   fuse::editor::GizmoSnapDragRejectReason::DeltaNonFinite,
+               "classifyUpdateDragInteractionSnapDragReject maps deltaNonFinite flag");
+    gizmo.endDrag();
+}
+
+void testEndDragInteractionRejectReasonGuards() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 1.f;
+
+    fuse::editor::GizmoEndDragRejectReason reason = fuse::editor::GizmoEndDragRejectReason::None;
+    expectTrue(!fuse::editor::tryPreflightEndDragInteraction(false, fuse::editor::GizmoAxis::None,
+                                                             fuse::editor::GizmoMode::Translate,
+                                                             snap, reason),
+               "tryPreflightEndDragInteraction rejects inactive drag");
+    expectTrue(reason == fuse::editor::GizmoEndDragRejectReason::NotDragging,
+               "inactive end interaction reject reason is NotDragging");
+    expectTrue(fuse::editor::shouldSkipEndDragInteraction(false, fuse::editor::GizmoAxis::None,
+                                                          fuse::editor::GizmoMode::Translate,
+                                                          snap),
+               "shouldSkipEndDragInteraction true when not dragging");
+
+    const fuse::editor::EndDragInteractionPreflight activeInteraction =
+        fuse::editor::preflightEndDragInteraction(true, fuse::editor::GizmoAxis::X,
+                                                  fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(fuse::editor::classifyEndDragInteractionReject(activeInteraction) ==
+                   fuse::editor::GizmoEndDragRejectReason::None,
+               "classifyEndDragInteractionReject maps active end");
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    fuse::editor::GizmoHitTest hit = hitFromValidScreen();
+    fuse::editor::GizmoTransform transform{};
+    gizmo.beginDrag(hit, transform);
+    expectTrue(gizmo.preflightEndDragInteractionReady(),
+               "gizmo preflightEndDragInteractionReady accepts active drag");
+    expectTrue(!gizmo.shouldSkipEndDragInteraction(),
+               "gizmo shouldSkipEndDragInteraction false during drag");
+    gizmo.endDrag();
 }
 
 } // namespace
@@ -2766,7 +2843,9 @@ int main() {
     testUpdateDragInteractionDeltaPreflight();
     testRejectReasonMirrorsExistingPreflights();
     testNonFiniteRejectReasonGuards();
-    testSnapDragRejectReasonGuards();
+    testBeginDragInteractionRejectReasonGuards();
+    testUpdateDragInteractionRejectReasonGuards();
+    testEndDragInteractionRejectReasonGuards();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d test failure(s)\n", g_failures);
