@@ -4016,3 +4016,6 @@ void testFroxelDeepenPreflightAndClassifyGuards() {
     expectTrue(!fuse::renderer::froxel_util::preflightFroxelSample(grid, desc, hardOob),
                "preflightFroxelSample rejects hard OOB coords");
     testFroxelDeepenPreflightAndClassifyGuards();
+
+// --- deepen additive from deepen-b511-froxel-preflight-ce10 ---
+               "preflightDensityLookupAtCoord still succeeds for clampable OOB coords");
