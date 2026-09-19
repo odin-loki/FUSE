@@ -90,10 +90,6 @@ u32 currentFlowNestingDepth() {
     return threadLocalFlowNestingDepth();
 }
 
-bool isValidEventName(const char* name) {
-    return name != nullptr && name[0] != '\0';
-}
-
 std::string formatCounterArgsJson(const ProfileEvent& event) {
     std::string args = "\"args\":{\"value\":";
     if (event.counterKind == CounterValueKind::Float) {
@@ -224,6 +220,10 @@ const char* chromeCategory(EventPhase phase) {
 
 } // namespace
 
+bool isValidEventName(const char* name) {
+    return name != nullptr && name[0] != '\0';
+}
+
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
       m_active(g_enabled.load(std::memory_order_acquire) && isValidEventName(name)) {
@@ -301,6 +301,35 @@ bool isFlowNestingBalanced() {
     return flowNestingDepth() == 0u;
 }
 
+NestingIntrospection nestingIntrospection() {
+    NestingIntrospection result{};
+    result.scopeDepth = nestingDepth();
+    result.flowDepth = flowNestingDepth();
+    result.maxScopeDepth = maxNestingDepth();
+    result.maxFlowDepth = maxFlowNestingDepth();
+    result.openAsyncFlowCount = openAsyncFlowCount();
+    result.scopeBalanced = isScopeNestingBalanced();
+    result.flowBalanced = isFlowNestingBalanced();
+    result.hasOpenAsyncFlows = hasOpenAsyncFlows();
+    return result;
+}
+
+bool isNestingStateClean() {
+    return isScopeNestingBalanced() && isFlowNestingBalanced() && !hasOpenAsyncFlows();
+}
+
+ChromeTraceExportPreflight preflightChromeTraceExport() {
+    ChromeTraceExportPreflight result{};
+    result.profilerDisabled = !enabled();
+    result.emptyBuffer = isBufferEmpty();
+    result.unbalancedScopeNesting = !isScopeNestingBalanced();
+    result.unbalancedFlowNesting = !isFlowNestingBalanced();
+    result.hasOpenAsyncFlows = hasOpenAsyncFlows();
+    result.eventCount = eventCount();
+    result.frameIndex = frameIndex();
+    return result;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -318,7 +347,7 @@ bool isEventIndexValid(u32 index) {
 }
 
 bool isValidProfileEvent(const ProfileEvent& event) {
-    return event.name != nullptr;
+    return isValidEventName(event.name);
 }
 
 const ProfileEvent& eventAt(u32 index) {
@@ -355,6 +384,16 @@ const ProfileEvent& lastEvent() {
         return eventAt(0);
     }
     return eventAt(index);
+}
+
+bool tryLastEvent(ProfileEvent& outEvent) {
+    const u32 index = lastEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
 }
 
 void reset() {
