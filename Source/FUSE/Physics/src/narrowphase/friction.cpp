@@ -1297,4 +1297,5 @@ bool compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 eps
         if (normalLength > 1e-8f) {
 
 
+
 } // namespace fuse::physics::narrowphase

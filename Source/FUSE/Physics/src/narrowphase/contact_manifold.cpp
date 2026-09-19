@@ -2278,6 +2278,26 @@ bool finalize_contact_manifold_with_preflight(
 
     return !can_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
 
+const char* manifold_shallow_prune_reject_reason_name(ManifoldShallowPruneRejectReason reason) {
+    case ManifoldShallowPruneRejectReason::None:
+    case ManifoldShallowPruneRejectReason::EmptyManifold:
+    case ManifoldShallowPruneRejectReason::NoShallowPoints:
+        return "NoShallowPoints";
+
+ManifoldShallowPruneRejectReason manifold_shallow_prune_reject_reason(
+    f32 minDepth) {
+        return ManifoldShallowPruneRejectReason::EmptyManifold;
+    if (!manifold.hasShallowPenetrations(minDepth)) {
+        return ManifoldShallowPruneRejectReason::NoShallowPoints;
+    return ManifoldShallowPruneRejectReason::None;
+
+bool manifold_shallow_prune_rejects_for_reason(
+    ManifoldShallowPruneRejectReason expected,
+    return manifold_shallow_prune_reject_reason(manifold, minDepth) == expected;
+
+bool prune_shallow_penetrations_with_preflight(ContactManifold& manifold, f32 minDepth) {
+    if (manifold_shallow_prune_reject_reason(manifold, minDepth) != ManifoldShallowPruneRejectReason::None) {
+    return manifold.pruneShallowPenetrationsIfNeeded(minDepth);
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

@@ -2099,4 +2099,33 @@ bool should_run_narrowphase_batch(
     return !can_skip_narrowphase_batch(pairs, bodies, shapes);
 }
 
+NarrowphaseRunPreflight preflight_run_narrowphase(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    NarrowphaseRunPreflight preflight{};
+    preflight.pairCount = static_cast<u32>(pairs.size());
+    preflight.emptyInput = pairs.empty();
+    preflight.batch = preflight_narrowphase_batch(pairs, bodies, shapes);
+    preflight.canSkip = preflight.emptyInput;
+    return preflight;
+}
+
+bool can_skip_narrowphase_run(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return preflight_run_narrowphase(pairs, bodies, shapes).canSkip;
+}
+
+ContactManifold detect_contacts_pair_with_deepen_preflight(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
+        return invalidContactManifold();
+    }
+    return detect_contacts_pair(pair, bodies, shapes);
+}
+
 } // namespace fuse::physics::narrowphase

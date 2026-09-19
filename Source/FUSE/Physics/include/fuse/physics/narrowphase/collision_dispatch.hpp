@@ -208,6 +208,12 @@ bool should_skip_narrowphase_pair_slot(
 
 /// Non-mutating pair-slot predicate — inverse of `should_skip_narrowphase_pair_slot` (B4.4 deepen guard pass).
 bool should_run_narrowphase_pair_slot(
+/// Populate narrowphase run preflight without mutating buffers (B4.6 deepen pass).
+NarrowphaseRunPreflight preflightNarrowphaseRun(
+    const std::vector<broadphase::CandidatePair>& pairs,
+
+/// Returns true when narrowphase run should early-out before pair dispatch (B4.6 deepen pass).
+bool canSkipNarrowphaseRun(
 
 /// Job-safe narrowphase: one output slot per candidate pair, then compact valid contacts.
 void runNarrowphaseIntoBuffer(
