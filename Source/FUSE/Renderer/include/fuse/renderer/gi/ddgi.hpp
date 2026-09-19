@@ -544,6 +544,14 @@ struct ProbeGridLayout {
     static bool isProbeSampleCoordsOutOfRange(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// True when corner indices lie within grid bounds (weights unchecked).
     static bool areProbeSampleCoordsInBounds(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// True when interpolation weights or corner indices would be clamped before sampling.
+    static bool wouldClampProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// Grid-only sample-coord preflight without reject-reason diagnostics.
+    static bool canPreflightProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// Grid-only sample-coord preflight; false on empty desc or hard OOB corners.
+    static bool tryPreflightProbeSampleCoords(const DDGIDesc& desc,
+                                              const ProbeSampleCoords& coords,
+                                              ProbeSampleCoordsRejectReason& outReason);
     /// Diagnose why sample-coord validation would reject; vacuously succeeds on valid coords.
     static bool tryValidateProbeSampleCoords(const DDGIDesc& desc,
                                              const ProbeSampleCoords& coords,
@@ -842,6 +850,11 @@ bool canSampleAtProbeCoords(const DDGIDesc& desc, const ProbeSampleCoords& coord
                                ProbeSpatialSampleRejectReason& outReason);
 /// Diagnose why cache access preflight would reject; checks null cache before index validation.
 bool tryValidateCacheAccess(const DDGIDesc& desc,
+/// Diagnose why cache lookup preflight would reject; checks null cache before index bounds.
+bool tryValidateCacheLookup(const DDGIDesc& desc,
+/// Early-out when cache-index validation would be rejected.
+bool wouldSkipCacheIndexValidation(const DDGIDesc& desc,
+                                   u32 probe_index);
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
     /// True when `probe_index` is out of range for the grid or exceeds `cache_count`.
     bool isCacheIndexOutOfRange(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
@@ -875,6 +888,19 @@ bool tryScheduleProbeUpdates(u32 probe_count,
                              const u32* out_indices,
                              u32* out_count,
                              ProbeScheduleRejectReason& outReason);
+/// Why probe round-robin scheduling preflight rejected the request (B5.6 deepen).
+enum class ProbeScheduleRejectReason : u8 {
+    None = 0,
+    ZeroProbeCount,
+    NullIndicesBuffer,
+    NullCountOut,
+    ZeroMaxIndices,
+    ZeroProbesPerFrame,
+};
+
+/// Human-readable label for probe-schedule reject reasons (logging / tests).
+const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason);
+
 void scheduleProbeUpdates(u32 frame_index,
                           u32 probe_count,
                           u32 probes_per_frame,
@@ -910,6 +936,8 @@ bool tryPreflightProbeScheduleAtRate(u32 probe_count,
 /// Preflight guard before probe round-robin scheduling.
 bool canScheduleProbeUpdates(u32 probe_count,
 bool wouldSkipProbeSchedule(u32 probe_count,
+                             const u32* out_count);
+/// Early-out when probe scheduling would be rejected.
 /// Schedule probes with reject-reason diagnostics; false when preflight rejects.
 bool tryScheduleProbeUpdates(u32 frame_index,
                              u32 probe_count,
