@@ -524,5 +524,17 @@ bool tryPreflightTaaJitterAlignment(const TaaJitter& jitter, u32 frameIndex,
 /// True when jitter monotonic counter and slot match `frameIndex` (B5.9 deepen).
 /// Early-out when jitter alignment preflight would reject (B5.9 deepen).
 bool shouldSkipTaaJitterAlignment(const TaaJitter& jitter, u32 frameIndex);
+/// Why jitter alignment to a monotonic frame counter was rejected (B5.9 deepen).
+enum class TaaJitterAlignmentRejectReason : u8 {
+    SyncBlocked,
+/// Human-readable label for jitter alignment reject reasons (B5.9 deepen).
+const char* taaJitterAlignmentRejectReasonLabel(TaaJitterAlignmentRejectReason reason);
+TaaJitterAlignmentRejectReason classifyTaaJitterAlignmentReject(u32 frameIndex, const TaaJitter& jitter);
+/// True when jitter can sync to and is aligned with `frameIndex` (B5.9 deepen).
+bool preflightTaaJitterAligned(u32 frameIndex, const TaaJitter& jitter,
+                               TaaJitterAlignmentRejectReason* reason = nullptr);
+bool tryPreflightTaaJitterAligned(u32 frameIndex, const TaaJitter& jitter,
+                                  TaaJitterAlignmentRejectReason& reason);
+bool shouldSkipTaaJitterAlignment(u32 frameIndex, const TaaJitter& jitter);
 
 } // namespace fuse::renderer

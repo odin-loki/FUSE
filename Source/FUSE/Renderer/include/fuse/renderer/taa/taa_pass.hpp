@@ -96,6 +96,7 @@ public:
     bool preflightJitterSync(u32 frameIndex, TaaJitterSyncRejectReason* reason = nullptr) const;
     void invalidateHistory();
     /// Invalidate when `observedGeneration` differs from pass history epoch (B5.9 deepen).
+    /// Invalidate when `observedGeneration` differs from pass history epoch; returns true when invalidated.
     bool invalidateHistoryIfStale(u32 observedGeneration);
     void resize(u32 width, u32 height);
     bool matchesDimensions(u32 width, u32 height) const;
@@ -234,6 +235,15 @@ public:
                                    TaaResolveWithBlendRejectReason* reason = nullptr) const;
     /// Early-out when combined resolve+blend preflight would reject (B5.9 deepen).
     bool shouldSkipResolveWithBlend(const TaaResolveDesc& desc) const;
+    /// Compute expected resolve blend weights with reject-reason diagnostics (B5.9 deepen).
+    bool tryComputeExpectedResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& outWeights,
+    /// True when combined history-reuse and blend-weight preflights pass (B5.9 deepen).
+    bool preflightResolveTemporal(const TaaResolveDesc& desc, u32 observedGeneration,
+                                  TaaResolveTemporalRejectReason* reason = nullptr) const;
+    /// Early-out when combined resolve temporal preflight would reject (B5.9 deepen).
+    bool shouldSkipResolveTemporal(const TaaResolveDesc& desc, u32 observedGeneration) const;
+    /// History reuse preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBlockReason& reason) const;
     /// True when pass jitter can sync to `frameIndex` (B5.9 deepen).
     bool preflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason* reason = nullptr) const;
     /// Classify why jitter sync to a frame counter would be rejected (B5.9 deepen).
@@ -272,6 +282,12 @@ public:
     bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
     /// Jitter alignment preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightJitterAlignment(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
+    /// True when pass jitter can advance for the configured sequence (B5.9 deepen).
+    bool preflightJitterAdvance(TaaJitterGuardRejectReason* reason = nullptr) const;
+    /// Early-out when pass jitter advance preflight would reject (B5.9 deepen).
+    bool shouldSkipJitterAdvance() const;
+    /// True when pass jitter is aligned to `frameIndex` (B5.9 deepen).
+    bool preflightJitterAligned(u32 frameIndex, TaaJitterAlignmentRejectReason* reason = nullptr) const;
     /// Early-out when pass jitter alignment preflight would reject (B5.9 deepen).
     bool shouldSkipJitterAlignment(u32 frameIndex) const;
     /// True when pass jitter can produce NDC offsets for the configured viewport (B5.9 deepen).
@@ -300,6 +316,10 @@ public:
     bool tryPreflightHistoryWarmup(TaaHistoryWarmupBlockReason& reason) const;
     bool preflightHistoryWarmup(TaaHistoryReuseBlockReason* reason = nullptr) const;
     bool tryPreflightHistoryWarmup(TaaHistoryReuseBlockReason& reason) const;
+    /// True when pass history warm-up completion preflight passes (B5.9 deepen).
+    bool preflightHistoryWarmupComplete(TaaHistoryWarmupRejectReason* reason = nullptr) const;
+    /// Early-out when pass history warm-up is not yet complete (B5.9 deepen).
+    bool shouldSkipHistoryWarmupComplete() const;
     /// True when pass history buffers are allocated and ready for resolve (B5.9 deepen).
     bool historyReadyForResolve() const;
     /// Early-out when pass history is not ready for resolve (B5.9 deepen).
