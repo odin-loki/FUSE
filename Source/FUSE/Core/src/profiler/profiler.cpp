@@ -25,6 +25,7 @@ std::atomic<u32> g_eventCount{0};
 std::atomic<u32> g_maxNestingDepth{0};
 std::atomic<u32> g_maxFlowNestingDepth{0};
 std::atomic<u32> g_openAsyncFlowCount{0};
+std::atomic<u32> g_orphanAsyncFlowEndCount{0};
 
 std::mutex g_exportMutex;
 
@@ -291,6 +292,10 @@ u32 openAsyncFlowCount() {
     return g_openAsyncFlowCount.load(std::memory_order_acquire);
 }
 
+u32 orphanAsyncFlowEndCount() {
+    return g_orphanAsyncFlowEndCount.load(std::memory_order_acquire);
+}
+
 bool hasOpenAsyncFlows() {
     return openAsyncFlowCount() > 0u;
 }
@@ -328,7 +333,25 @@ bool isEventIndexValid(u32 index) {
 }
 
 bool isValidEventName(const char* name) {
-    return name != nullptr && name[0] != '\0';
+    if (name == nullptr || name[0] == '\0') {
+        return false;
+    }
+
+    for (const char* cursor = name; *cursor != '\0'; ++cursor) {
+        switch (*cursor) {
+        case ' ':
+        case '\t':
+        case '\n':
+        case '\r':
+        case '\f':
+        case '\v':
+            continue;
+        default:
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool isValidProfileEvent(const ProfileEvent& event) {
@@ -348,6 +371,37 @@ u32 exportableEventCount() {
 
 bool isEventExportable(u32 index) {
     return isEventIndexValid(index) && isValidEventName(eventAt(index).name);
+}
+
+u32 countEventsByPhase(EventPhase phase) {
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (eventAt(i).phase == phase) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 findFirstEventIndexByPhase(EventPhase phase) {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (eventAt(i).phase == phase) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByPhase(phase);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
 }
 
 const ProfileEvent& emptyProfileEvent() {
@@ -430,6 +484,12 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
     preflight.flowDepthDetached = isFlowDepthDetached();
+    preflight.scopeBeginEventCount = countEventsByPhase(EventPhase::Begin);
+    preflight.scopeEndEventCount = countEventsByPhase(EventPhase::End);
+    preflight.flowStartEventCount = countEventsByPhase(EventPhase::FlowStart);
+    preflight.flowFinishEventCount = countEventsByPhase(EventPhase::FlowFinish);
+    preflight.counterEventCount = countEventsByPhase(EventPhase::Counter);
+    preflight.orphanAsyncFlowEndCount = orphanAsyncFlowEndCount();
     return preflight;
 }
 
@@ -443,6 +503,7 @@ void reset() {
     g_maxNestingDepth.store(0u, std::memory_order_release);
     g_maxFlowNestingDepth.store(0u, std::memory_order_release);
     g_openAsyncFlowCount.store(0u, std::memory_order_release);
+    g_orphanAsyncFlowEndCount.store(0u, std::memory_order_release);
     threadLocalNestingDepth() = 0u;
     threadLocalFlowNestingDepth() = 0u;
 }
@@ -471,6 +532,7 @@ void endAsyncFlow(const char* name, u32 flowId) {
     }
 
     if (g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u) {
+        g_orphanAsyncFlowEndCount.fetch_add(1u, std::memory_order_acq_rel);
         return;
     }
 
