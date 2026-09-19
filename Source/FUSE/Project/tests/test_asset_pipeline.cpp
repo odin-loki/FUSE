@@ -2283,3 +2283,14 @@ void testCookerReconcileShouldSkipGuards() {
     expectTrue(cooker.should_skip_prune_reconcile(), "empty cache prune reconcile should_skip");
     expectTrue(cooker.estimate_reconcile_invalidation(empty_manifest).should_skip(),
                "empty manifest reconcile estimate should_skip");
+
+// --- deepen additive from b79-cooker-hash-should-skip-probes-2961 ---
+    expectTrue(!cooker.should_skip_upstream_invalidation(manifest, sourceA),
+               "should_skip_upstream_invalidation false when chain is seeded");
+    expectTrue(cooker.should_skip_prune_reconcile(), "fresh prune reconcile should_skip is true");
+               "fresh combined reconcile should_skip is true");
+               "fresh stale dependency should_skip is true");
+               "fresh upstream should_skip is false when chain is seeded");
+               "stale dependency should_skip is false after upstream change");
+               "combined reconcile should_skip is false after upstream change");
+               "would_invalidate_downstream_of guards empty output path");
