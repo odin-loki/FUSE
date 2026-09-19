@@ -1973,3 +1973,28 @@ void testFrictionBasisB45PreflightGuards() {
         fuse::physics::narrowphase::should_skip_friction_basis_rebuild(cached),
     expectTrue(!cachedPreflight.needs_rebuild(), "preflight rebuild false with valid cached basis");
     testFrictionBasisB45PreflightGuards();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-d755 ---
+void testContactPairRejectPreflightGuards() {
+    expectTrue(validPreflight.can_dispatch(), "reject preflight allows valid pair");
+    expectTrue(!validPreflight.rejected, "reject preflight does not flag valid pair");
+    expectTrue(!validPreflight.selfPair, "reject preflight self flag false for valid pair");
+    expectTrue(!selfPreflight.can_dispatch(), "reject preflight rejects self pair");
+    expectTrue(selfPreflight.selfPair, "reject preflight sets self flag");
+    expectTrue(triggerPreflight.bothTriggers, "reject preflight sets both-triggers flag");
+    expectTrue(emptyPreflight.empty, "finalize preflight sets empty flag");
+            fuse::physics::narrowphase::ManifoldFinalizeRejectReason::Empty,
+        !fuse::physics::narrowphase::should_skip_finalize_contact_manifold(ready),
+        "should_skip_finalize false for ready manifold");
+            fuse::physics::narrowphase::ManifoldFinalizeRejectReason::NoPenetratingPoints,
+        fuse::physics::narrowphase::should_skip_prune_contact_manifold(onlySeparated),
+        "should_skip_prune true when prune would empty manifold");
+    const auto combinedPreflight =
+    expectTrue(combinedPreflight.can_finalize_after_prune(), "combined preflight allows finalize on clean manifold");
+                fuse::physics::narrowphase::ManifoldFinalizeRejectReason::PruneWouldEmpty),
+void testFrictionBasisRebuildPreflightGuards() {
+    expectTrue(missingPreflight.needs_rebuild(), "friction preflight needs rebuild without cached basis");
+    expectTrue(cachedPreflight.canReuse, "friction preflight can reuse valid basis");
+    expectTrue(cachedPreflight.can_skip_rebuild(), "friction preflight skips rebuild for cached basis");
+    testContactPairRejectPreflightGuards();
+    testFrictionBasisRebuildPreflightGuards();

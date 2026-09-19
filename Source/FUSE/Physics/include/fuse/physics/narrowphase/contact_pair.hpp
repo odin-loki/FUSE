@@ -270,3 +270,16 @@ bool should_skip_contact_manifold_finalize(
 // --- deepen additive from deepen-b4-narrowphase-guards-d11b ---
 bool contact_pair_was_rejected(const ContactPairPreflight& preflight);
 bool should_skip_finalize_contact_manifold(const ContactManifold& manifold);
+
+// --- deepen additive from deepen-b4-narrowphase-guards-d755 ---
+struct ContactPairRejectPreflight {
+ContactPairRejectPreflight preflight_contact_pair_reject(
+enum class ManifoldFinalizeRejectReason : u8 {
+const char* manifold_finalize_reject_reason_name(ManifoldFinalizeRejectReason reason);
+    ManifoldFinalizeRejectReason reason = ManifoldFinalizeRejectReason::None;
+ManifoldFinalizeRejectReason manifold_finalize_reject_reason(
+struct ManifoldPruneFinalizePreflight {
+    ManifoldPrunePreflight prune{};
+    ManifoldFinalizePreflight finalize{};
+ManifoldPruneFinalizePreflight preflight_manifold_prune_finalize(
+bool should_skip_prune_contact_manifold(
