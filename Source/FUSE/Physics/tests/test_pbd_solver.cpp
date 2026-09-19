@@ -3938,3 +3938,32 @@ void testPreflightIslandBodyRefsGuards() {
                "should_skip false when wake candidates exist");
     expectTrue(should_skip_island_wake_graph(allAwakeGraph, awakeBodies, contacts),
                "should_skip true when no sleeping bodies need wake");
+
+// --- deepen additive from deepen-pbd-island-guards-6182 ---
+    expectTrue(should_skip_island_build(0u, contacts, constraints), "should_skip build for zero bodies");
+    expectTrue(island_build_rejects_for_reason(0u, contacts, constraints, IslandBuildRejectReason::ZeroBodies),
+    const IslandBuildPreflight valid = preflight_island_build(4u, contacts, constraints);
+    expectTrue(!should_skip_island_build(4u, contacts, constraints), "should_skip false for valid build");
+void testIslandBuildGuardedSkipsZeroBodies() {
+    const IslandSleepWakePreflight sleepingPreflight =
+    expectTrue(sleepingPreflight.all_sleeping(), "both-sleeping island flagged all sleeping");
+    expectTrue(sleepingPreflight.should_remain_asleep(), "sleeping island should remain asleep");
+               "should_skip sleeping island");
+    const IslandSleepWakePreflight mixedPreflight =
+    expectTrue(mixedPreflight.has_awake_dynamic(), "mixed island has awake dynamic body");
+    expectTrue(mixedPreflight.should_wake(), "mixed island should wake");
+    expectTrue(mixedPreflight.can_solve(), "mixed island can solve");
+    expectTrue(!should_skip_solve_sleeping_island(graph.island(mixedIsland), bodies),
+               "should_skip false for awake dynamic island");
+    expectTrue(should_skip_island_constraint_solve(island, bodies, contacts, constraints),
+               "should_skip combined solve for all-sleeping island");
+    expectTrue(awakePreflight.can_solve(), "constraint solve preflight allows partially awake island");
+    expectTrue(!should_skip_island_constraint_solve(island, bodies, contacts, constraints),
+void testPreflightIslandSleepWakeGraphGuards() {
+    const IslandSleepWakeGraphPreflight preflight = preflight_island_sleep_wake_graph(graph, bodies);
+    expectTrue(!should_skip_island_solve_sleep_wake(graph, bodies),
+               "should_skip graph false when solvable island exists");
+    const IslandSleepWakeGraphPreflight allSleeping =
+    expectTrue(should_skip_island_solve_sleep_wake(graph, bodies),
+               "should_skip graph true when no solvable islands");
+    testPreflightIslandSleepWakeGraphGuards();

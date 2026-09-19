@@ -1374,3 +1374,10 @@ IslandWakePreflight preflight_island_wake(const ContactIslandGraph::Island& isla
 bool should_skip_island_solve_all_sleeping(const ContactIslandGraph& graph,
 bool should_skip_sleeping_island(const ContactIslandGraph::Island& island,
 bool should_skip_sleeping_island_index(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-pbd-island-guards-6182 ---
+    IslandSleepWakePreflight sleepWake{};
+struct IslandSleepWakeGraphPreflight {
+IslandSleepWakePreflight preflight_island_sleep_wake(const ContactIslandGraph::Island& island,
+IslandSleepWakeGraphPreflight preflight_island_sleep_wake_graph(const ContactIslandGraph& graph,
+bool should_skip_island_solve_sleep_wake(const ContactIslandGraph& graph, const RigidBodySoA& bodies);

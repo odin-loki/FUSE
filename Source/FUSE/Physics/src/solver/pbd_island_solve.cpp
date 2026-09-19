@@ -2218,3 +2218,11 @@ bool should_skip_sleeping_island_index(const ContactIslandGraph& graph,
     const IslandSleepPreflight preflight = preflight_island_sleep_by_index(graph, islandIndex, bodies);
         if (!should_skip_sleeping_island(*job.island, bodies)) {
     if (should_skip_sleeping_island(*job.island, bodies)) {
+
+// --- deepen additive from deepen-pbd-island-guards-6182 ---
+IslandSleepWakePreflight preflight_island_sleep_wake(const ContactIslandGraph::Island& island,
+        const IslandSleepWakePreflight preflight = preflight_island_sleep_wake(graph.island(islandIndex), bodies);
+IslandSleepWakeGraphPreflight preflight_island_sleep_wake_graph(const ContactIslandGraph& graph,
+    IslandSleepWakeGraphPreflight preflight{};
+bool should_skip_island_solve_sleep_wake(const ContactIslandGraph& graph, const RigidBodySoA& bodies) {
+    if (should_skip_island_constraint_solve(island, bodies, contacts, distanceConstraints)) {
