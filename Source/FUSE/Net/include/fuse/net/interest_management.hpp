@@ -172,6 +172,9 @@ struct InterestDiffPreflight {
 /// Applies enter/leave when preflight passes; returns true when `scope` changed (B7.4 deepen follow-up).
 [[nodiscard]] bool apply_interest_diff_verified(InterestScopeSet& scope, const InterestSetDiff& diff);
 
+/// Preflight diff-apply without mutating `scope` (B7.4 deepen follow-up).
+[[nodiscard]] InterestDiffPreflight preflight_interest_diff_apply(const InterestSetDiff& diff,
+[[nodiscard]] bool should_skip_interest_diff_apply(const InterestSetDiff& diff, const InterestScopeSet& scope);
 /// True when relevance and always-relevant radii are both zero (radius filter early-out).
 [[nodiscard]] bool relevance_radii_disabled(const InterestPolicy& policy);
 /// True when `candidates` is empty (B7.4 deepen follow-up).
@@ -288,6 +291,10 @@ struct InterestRadiusPreflight {
 /// True when radius count/filter can be skipped (empty candidates or zero relevance radii).
 [[nodiscard]] bool should_skip_radius_filter(const std::vector<InterestCandidate>& candidates,
                                              const InterestPolicy& policy);
+/// True when hysteresis-aware radius count/filter can be skipped.
+[[nodiscard]] bool should_skip_radius_filter(const std::vector<InterestCandidate>& candidates,
+                                             const InterestPolicy& policy,
+                                             const InterestScopeSet& prior_scope);
 /// True when at least one candidate is in scope for `observer` (no hysteresis).
 [[nodiscard]] bool has_any_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
                                                 const std::vector<InterestCandidate>& candidates);
