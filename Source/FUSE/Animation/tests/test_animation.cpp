@@ -2512,3 +2512,8 @@ void testStateMachineTransitionEdgeGuards() {
 // --- deepen additive from deepen-b71-animation-blend-guards-408b ---
 void testBlendTreeEmptySkeletonGuards() {
 void testStateMachineTransitionValidationGuards() {
+
+// --- deepen additive from deepen-b71-animation-blend-guards-df46 ---
+void testStateMachineCrossfadeBindFallbackGuard() {
+void testEmptySkeletonBlendTreeGuards() {
+void testLayeredBlendBindFallbackGuard() {
