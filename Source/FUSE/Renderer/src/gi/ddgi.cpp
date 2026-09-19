@@ -2380,3 +2380,9 @@ bool tryCanLaunchProbeTraceKernelWithResources(const DDGIKernelParams& params,
     return tryValidateProbeKernelResources(params, outResourceReason);
 bool tryCanLaunchProbeBlendKernelWithResources(const DDGIKernelParams& params,
     return tryCanLaunchProbeTraceKernelWithResources(params, outLaunchReason, outResourceReason);
+
+// --- deepen additive from deepen-b56-ddgi-guards-214e ---
+bool preflightScheduleProbeUpdates(u32 probe_count,
+    return preflightScheduleProbeUpdates(probe_count, max_indices, out_indices, out_count, reason);
+    if (!preflightScheduleProbeUpdates(probe_count, max_indices, out_indices, out_count, outReason)) {
+    tryScheduleProbeUpdates(frame_index, probe_count, probes_per_frame, out_indices, max_indices, out_count,

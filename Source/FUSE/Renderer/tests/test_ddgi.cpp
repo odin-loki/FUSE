@@ -2659,3 +2659,20 @@ void testProbeKernelResourcePreflight() {
     expectTrue(!fuse::renderer::gi::tryCanLaunchProbeTraceKernelWithResources(
                "tryCanLaunchProbeTraceKernelWithResources fails without resources");
     testProbeKernelResourcePreflight();
+
+// --- deepen additive from deepen-b56-ddgi-guards-214e ---
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(desc, built),
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(empty, built),
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookup(desc, 99u, 8u),
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookup(desc, cache.data(), 99u, 8u),
+               "successful tryLaunch trace reports no reject reason");
+               "tryLaunch blend rejects null indices");
+               "tryLaunch blend null indices report null_probe_indices reason");
+               "trySchedule succeeds for valid inputs");
+    expectTrue(count == 64u, "trySchedule writes expected probe count");
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 2048u, 64u, indices, 0u, &count, reason),
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 2048u, 64u, nullptr, 64u, &count, reason),
+               "trySchedule rejects null output indices");
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 2048u, 64u, indices, 64u, nullptr, reason),
+               "trySchedule rejects null output count");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeSchedule(2048u, 0u, indices, &count),
