@@ -21,6 +21,11 @@ void runNarrowphaseIntoBuffer(
         }
         ContactManifold manifold = detect_contacts_pair(pairs[pairIndex], bodies, shapes);
         if (finalize_contact_manifold_with_preflight(manifold)) {
+        const broadphase::CandidatePair& pair = pairs[pairIndex];
+        if (should_skip_contact_pair_dispatch(pair, bodies, shapes)) {
+
+        ContactManifold manifold = detect_contacts_pair(pair, bodies, shapes);
+        if (generate_contact_manifold(manifold)) {
             buffer.writeSlot(pairIndex, manifold);
         }
     }

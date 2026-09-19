@@ -545,13 +545,15 @@ bool can_finalize_contact_manifold(const ContactManifold& manifold) {
 }
 
 bool generate_contact_manifold(ContactManifold& manifold) {
-    if (manifold.empty()) {
+    const ContactManifoldFinalizePreflight preflight = preflight_contact_manifold_finalize(manifold);
+    if (!preflight.can_finalize()) {
         manifold.clear();
         return false;
     }
 
     manifold.pruneAndRetainPenetrating();
     if (manifold.empty()) {
+    if (!manifold.pruneContactPointsIfNeeded()) {
         manifold.clear();
         return false;
     }
@@ -565,7 +567,7 @@ bool generate_contact_manifold(ContactManifold& manifold) {
     manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
 
     manifold.syncLegacyFields();
-    compute_friction_tangents(manifold);
+    compute_friction_tangents_if_needed(manifold);
     if (!manifold.hasFrictionBasis()) {
         manifold.clear();
         return false;
@@ -700,63 +702,41 @@ ContactManifold detect_contacts_pair_if_valid(
     const CollisionShapeSoA& shapes) {
     if (should_skip_contact_pair_dispatch(pair, bodies, shapes)) {
         return invalidContactManifold();
-    }
     return dispatchShapePair(pair, bodies, shapes);
-}
 
 ContactPairDispatchResult dispatch_contact_pair_if_valid(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     ContactPairDispatchResult result{};
     result.preflight = preflight_contact_pair(pair, bodies, shapes);
     if (result.preflight.rejected) {
         return result;
-    }
 
     result.manifold = dispatchShapePair(pair, bodies, shapes);
     result.detected = result.manifold.valid;
-    return result;
-}
 
 const char* contact_pair_preflight_reason_name(const ContactPairPreflight& preflight) {
     return contact_pair_reject_reason_name(preflight.reason);
-}
 
 bool generate_contact_manifold_if_valid(ContactManifold& manifold) {
     if (!can_finalize_contact_manifold(manifold)) {
         manifold.clear();
         return false;
-    }
     return generate_contact_manifold(manifold);
-}
 
 bool is_plane_plane_contact_pair(
-    const broadphase::CandidatePair& pair,
-    const CollisionShapeSoA& shapes) {
     const u32 shapeA = findShapeForBody(shapes, pair.bodyA, CollisionShapeType::Sphere);
     const u32 shapeB = findShapeForBody(shapes, pair.bodyB, CollisionShapeType::Sphere);
     if (shapeA >= shapes.count() || shapeB >= shapes.count()) {
-        return false;
-    }
 
     const CollisionShapeType typeA = shapeType(shapes, shapeA);
     const CollisionShapeType typeB = shapeType(shapes, shapeB);
     return typeA == CollisionShapeType::Plane && typeB == CollisionShapeType::Plane;
-}
 
 bool can_dispatch_contact_pair(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-    return !should_skip_contact_pair_dispatch(pair, bodies, shapes);
-}
 
 bool contact_pair_preflight_matches(
     const ContactPairPreflight& preflight,
     ContactPairRejectReason expected) {
     return preflight.reason == expected;
-}
 
 ManifoldFinalizePreflight preflight_finalize_contact_manifold(const ContactManifold& manifold) {
     ManifoldFinalizePreflight preflight{};
@@ -765,90 +745,80 @@ ManifoldFinalizePreflight preflight_finalize_contact_manifold(const ContactManif
         preflight.empty = true;
         preflight.wouldBeEmptyAfterPrune = true;
         return preflight;
-    }
 
     preflight.invalidNormal = !manifold.hasValidNormal();
     preflight.noPenetratingPoints = !manifold.hasPenetratingPoints();
     preflight.wouldBeEmptyAfterPrune = manifold.wouldBeEmptyAfterPrune();
-    return preflight;
-}
 
 bool can_skip_finalize_contact_manifold(const ContactManifold& manifold) {
     return manifold.valid && manifold.hasFrictionBasis() &&
            std::fabs(manifold.contactNormal.length() - 1.f) <= 1e-4f;
-}
 
 bool generate_contact_manifold_if_needed(ContactManifold& manifold) {
     if (can_skip_finalize_contact_manifold(manifold)) {
         return true;
-    }
 
     const ManifoldFinalizePreflight preflight = preflight_finalize_contact_manifold(manifold);
     if (!preflight.can_finalize()) {
-        manifold.clear();
-        return false;
-    }
 
-    return generate_contact_manifold(manifold);
-}
 
 ContactPairRejectBreakdown contact_pair_reject_breakdown(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     ContactPairRejectBreakdown breakdown{};
 
     breakdown.selfPair = is_self_contact_pair(pair);
     if (breakdown.selfPair) {
         breakdown.reason = ContactPairRejectReason::SelfPair;
         return breakdown;
-    }
 
     breakdown.outOfRangeBody = is_out_of_range_contact_pair(pair, bodies);
     if (breakdown.outOfRangeBody) {
         breakdown.reason = ContactPairRejectReason::OutOfRangeBody;
-        return breakdown;
-    }
 
     breakdown.missingShape = is_missing_shape_contact_pair(pair, shapes);
     if (breakdown.missingShape) {
         breakdown.reason = ContactPairRejectReason::MissingShape;
-        return breakdown;
-    }
 
     breakdown.bothTriggers = is_trigger_contact_pair(pair, bodies);
     if (breakdown.bothTriggers) {
         breakdown.reason = ContactPairRejectReason::BothTriggers;
-        return breakdown;
-    }
 
     breakdown.unsupportedShapePair = is_unsupported_shape_pair(pair, shapes);
     if (breakdown.unsupportedShapePair) {
         breakdown.reason = ContactPairRejectReason::UnsupportedShapePair;
-        return breakdown;
-    }
 
     breakdown.bothStatic = is_static_contact_pair(pair, bodies);
     if (breakdown.bothStatic) {
         breakdown.reason = ContactPairRejectReason::BothStatic;
-        return breakdown;
-    }
 
     breakdown.degenerateShape = is_degenerate_shape_pair(pair, shapes);
     if (breakdown.degenerateShape) {
         breakdown.reason = ContactPairRejectReason::DegenerateShape;
-        return breakdown;
-    }
 
-    return breakdown;
-}
 
 bool contact_pair_rejects_with_breakdown(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
-    ContactPairRejectReason expected) {
     return contact_pair_reject_breakdown(pair, bodies, shapes).reason == expected;
+    return preflight_contact_pair(pair, bodies, shapes).rejected;
+
+ContactManifoldFinalizePreflight preflight_contact_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) {
+    ContactManifoldFinalizePreflight preflight{};
+
+    if (!manifold.hasValidNormal()) {
+        preflight.invalidNormal = true;
+
+    if (!manifold.hasPenetratingPoints(separationEpsilon)) {
+        preflight.noPenetratingPoints = true;
+        preflight.pruneWouldEmpty = true;
+
+    const ManifoldPrunePreflight prunePreflight =
+        preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon);
+    preflight.pruneWouldEmpty = prunePreflight.wouldBeEmpty;
+
+bool should_skip_contact_manifold_finalize(
+    return !preflight_contact_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon).can_finalize();
 }
 
 } // namespace fuse::physics::narrowphase

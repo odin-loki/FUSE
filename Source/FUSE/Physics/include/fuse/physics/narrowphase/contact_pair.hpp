@@ -227,9 +227,6 @@ struct ContactPairRejectBreakdown {
 
 /// Populate reject breakdown without running shape dispatch (B4.4 deepen pass 2).
 ContactPairRejectBreakdown contact_pair_reject_breakdown(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Combined preflight + detect outcome for parallel dispatch stubs (B4.5 deepen pass).
 struct ContactPairDispatchResult {
@@ -261,7 +258,6 @@ bool contact_pair_deepen_rejects_for_reason(
     ContactPairRejectReason expected);
 
 /// Returns true when both shapes resolve to plane types (B4.5 deepen follow-up pass).
-bool is_plane_plane_contact_pair(
 
 /// Const preflight for narrowphase batch dispatch (B4.5 deepen follow-up pass).
 struct NarrowphaseBatchPreflight {
@@ -318,7 +314,19 @@ bool generate_contact_manifold_if_needed(ContactManifold& manifold);
 
 /// Returns true when breakdown matches the expected reject reason (B4.4 deepen pass 2).
 bool contact_pair_rejects_with_breakdown(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
+/// Const preflight for manifold finalize dispatch (B4.4 deepen pass).
+struct ContactManifoldFinalizePreflight {
+    bool pruneWouldEmpty = false;
+
+        return !skipped && !empty && !invalidNormal && !noPenetratingPoints && !pruneWouldEmpty;
+
+/// Populate finalize preflight without mutating manifold slots (B4.4 deepen pass).
+ContactManifoldFinalizePreflight preflight_contact_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f);
+
+/// Returns true when `generate_contact_manifold` would clear and return false (B4.4 deepen pass).
+bool should_skip_contact_manifold_finalize(
 
 } // namespace fuse::physics::narrowphase
