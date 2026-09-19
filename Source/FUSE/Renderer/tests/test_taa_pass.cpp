@@ -4607,3 +4607,6 @@ void testTaaPassHistoryWarmupPreflight() {
 // --- deepen additive from deepen-fuse-b59-taa-beec ---
     expectTrue(zeroPass->tryPreflightJitterSync(0u, jitterReject),
                "pass tryPreflightJitterAdvance passes after fallback sequence length");
+
+// --- deepen additive from deepen-b59-taa-try-preflights-c552 ---
+    expectTrue(pass->tryPreflightJitterSync(3u, jitterReject), "pass tryPreflightJitterSync passes before init");
