@@ -256,6 +256,66 @@ bool finalize_contact_manifold_with_preflight(
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
 
+/// Non-mutating manifold prune skip predicate with optional reject reason (B4.6 deepen pass).
+inline bool wouldSkipManifoldPrune(
+    const ContactManifold& manifold,
+    ManifoldPruneRejectReason* reason = nullptr,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f) {
+    if (should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth)) {
+        if (reason != nullptr) {
+            *reason = manifold_prune_reject_reason(manifold, separationEpsilon, duplicateEpsilon);
+        }
+        return true;
+    }
+    if (reason != nullptr) {
+        *reason = ManifoldPruneRejectReason::None;
+    }
+    return false;
+}
+
+/// Non-mutating manifold finalize skip predicate with optional reject reason (B4.6 deepen pass).
+inline bool wouldSkipManifoldFinalize(
+    const ContactManifold& manifold,
+    ManifoldFinalizeRejectReason* reason = nullptr,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f) {
+    const ManifoldFinalizeRejectReason rejectReason =
+        manifold_finalize_reject_reason(manifold, separationEpsilon, duplicateEpsilon);
+    if (reason != nullptr) {
+        *reason = rejectReason;
+    }
+    return can_skip_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+}
+
+/// Prune only when preflight allows; returns false when skipped (B4.6 deepen pass).
+inline bool tryPruneContactManifold(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f) {
+    if (wouldSkipManifoldPrune(manifold, nullptr, separationEpsilon, duplicateEpsilon, shallowMinDepth)) {
+        return false;
+    }
+    return prune_contact_manifold_with_preflight(
+        manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+}
+
+/// Finalize only when preflight allows; returns false when skipped (B4.6 deepen pass).
+inline bool tryFinalizeContactManifold(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f) {
+    if (wouldSkipManifoldFinalize(manifold, nullptr, separationEpsilon, duplicateEpsilon, frictionEpsilon)) {
+        return false;
+    }
+    return finalize_contact_manifold_with_preflight(
+        manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+}
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }

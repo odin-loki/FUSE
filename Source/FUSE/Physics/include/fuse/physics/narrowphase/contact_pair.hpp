@@ -226,4 +226,75 @@ bool narrowphase_batch_rejects_all(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Non-mutating pair-dispatch skip predicate with optional reject reason (B4.6 deepen pass).
+inline bool wouldSkipContactPairDispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason* reason = nullptr) {
+    const ContactPairRejectReason rejectReason = contact_pair_reject_reason(pair, bodies, shapes);
+    if (reason != nullptr) {
+        *reason = rejectReason;
+    }
+    return rejectReason != ContactPairRejectReason::None;
+}
+
+/// Non-mutating deepen pair-dispatch skip predicate with optional reject reason (B4.6 deepen pass).
+inline bool wouldSkipContactPairDeepenDispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason* reason = nullptr) {
+    const ContactPairRejectReason rejectReason =
+        contact_pair_deepen_reject_reason(pair, bodies, shapes);
+    if (reason != nullptr) {
+        *reason = rejectReason;
+    }
+    return rejectReason != ContactPairRejectReason::None;
+}
+
+/// Detect contacts only when pair preflight allows; returns false when skipped (B4.6 deepen pass).
+inline bool tryDetectContactsPair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactManifold& outManifold) {
+    if (wouldSkipContactPairDispatch(pair, bodies, shapes)) {
+        outManifold = invalidContactManifold();
+        return false;
+    }
+    outManifold = detect_contacts_pair(pair, bodies, shapes);
+    return true;
+}
+
+/// Detect contacts only when deepen preflight allows; returns false when skipped (B4.6 deepen pass).
+inline bool tryDetectContactsPairDeepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactManifold& outManifold) {
+    if (wouldSkipContactPairDeepenDispatch(pair, bodies, shapes)) {
+        outManifold = invalidContactManifold();
+        return false;
+    }
+    outManifold = detect_contacts_pair(pair, bodies, shapes);
+    return true;
+}
+
+/// Finalize manifold only when preflight allows; returns false when skipped (B4.6 deepen pass).
+inline bool tryGenerateContactManifold(ContactManifold& manifold) {
+    if (!can_finalize_contact_manifold(manifold)) {
+        return false;
+    }
+    return generate_contact_manifold(manifold);
+}
+
+/// Finalize manifold only when `can_finalize_contact_manifold` passes; no-op otherwise (B4.6 deepen pass).
+inline bool tryGenerateContactManifoldIfNeeded(ContactManifold& manifold) {
+    if (!can_finalize_contact_manifold(manifold)) {
+        return false;
+    }
+    return generate_contact_manifold_if_needed(manifold);
+}
+
 } // namespace fuse::physics::narrowphase
