@@ -503,6 +503,67 @@ u32 CookCache::count_invalid_entries() const {
     return count;
 }
 
+u32 CookCache::count_stale_entries() const {
+    if (m_entries.empty()) {
+        return 0;
+    }
+
+    u32 count = 0;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (is_valid_cook_cache_entry(entry) && is_stale_cache_entry_(entry)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 CookCache::count_invalidate_all() const {
+    if (m_entries.empty()) {
+        return 0;
+    }
+    return static_cast<u32>(m_entries.size());
+}
+
+u32 CookCache::estimate_prune_all() const {
+    if (m_entries.empty() || !has_prunable_entries()) {
+        return 0;
+    }
+    return count_prunable_entries();
+}
+
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) > 0;
+}
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) > 0;
+}
+
+std::vector<std::string> CookCache::probe_stale_content_sources() const {
+    if (m_entries.empty()) {
+        return {};
+    }
+
+    std::vector<std::string> stale_sources;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (!is_valid_cook_cache_entry(entry) || !is_stale_cache_entry_(entry)) {
+            continue;
+        }
+
+        bool already_listed = false;
+        for (const std::string& listed : stale_sources) {
+            if (listed == entry.source_path) {
+                already_listed = true;
+                break;
+            }
+        }
+        if (!already_listed) {
+            stale_sources.push_back(entry.source_path);
+        }
+    }
+    return stale_sources;
+}
+
 bool CookCache::contains(u64 content_hash) const {
     if (!is_valid_cook_cache_key(content_hash) || m_entries.empty()) {
         return false;
