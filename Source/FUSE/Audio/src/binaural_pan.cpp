@@ -1554,3 +1554,11 @@ HrtfBinauralConvolveRejectReason classify_hrtf_binaural_convolve_reject(
         return HrtfBinauralConvolveRejectReason::NullSamples;
         return HrtfBinauralConvolveRejectReason::ZeroLength;
         return HrtfBinauralConvolveRejectReason::EmptyIr;
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-d5f8 ---
+bool should_skip_hrtf_pan_path_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
+bool try_preflight_hrtf_pan_convolution(bool hrtf_enabled, const HrtfIrStub& ir,
+bool should_skip_hrtf_pan_convolution_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
+    return !preflight.should_skip();
+bool should_skip_hrtf_binaural_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
+bool should_skip_hrtf_binaural_preflight(bool hrtf_enabled, const Vec3& rel_listener,

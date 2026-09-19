@@ -2097,3 +2097,20 @@ void testRejectReasonMirrorsExistingPreflights() {
     expectTrue(conv_preflight.convolveReject == fuse::audio::HrtfBinauralConvolveRejectReason::None,
     expectTrue(bypass_preflight.convolveReject
     expectTrue(composite.convolveReject
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-d5f8 ---
+    expectTrue(fuse::audio::should_skip_hrtf_ir_preflight(empty),
+               "should_skip_hrtf_ir_preflight true for empty IR");
+               "should_skip_hrtf_ir_preflight false for valid IR");
+    expectTrue(!fuse::audio::should_skip_hrtf_pan_path_preflight(true, empty, offset),
+    expectTrue(fuse::audio::should_skip_hrtf_pan_path_preflight(false, valid, offset),
+               "should_skip_hrtf_pan_path_preflight true when disabled");
+    expectTrue(fuse::audio::should_skip_hrtf_pan_convolution_preflight(true, empty, offset),
+               "should_skip_hrtf_pan_convolution_preflight true for empty IR");
+               "should_skip_hrtf_attenuation_coupling_preflight true on bypass");
+               "should_skip_hrtf_attenuation_coupling_preflight false when narrowing applies");
+    expectTrue(!fuse::audio::should_skip_hrtf_binaural_preflight(true, empty, offset, 0.2f, 0.3f),
+               "should_skip_hrtf_binaural_preflight false on stub path");
+void testHrtfRejectReasonMirrorsExistingPreflights() {
+               "preflight_hrtf_binaural_ready mirrors should_skip_hrtf_binaural inverse");
+    testHrtfRejectReasonMirrorsExistingPreflights();

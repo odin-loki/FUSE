@@ -1010,3 +1010,10 @@ enum class HrtfBinauralConvolveRejectReason : u8 {
     HrtfBinauralConvolveRejectReason convolveReject = HrtfBinauralConvolveRejectReason::None;
 const char* hrtf_binaural_convolve_reject_reason_label(HrtfBinauralConvolveRejectReason reason);
 HrtfBinauralConvolveRejectReason classify_hrtf_binaural_convolve_reject(
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-d5f8 ---
+bool should_skip_hrtf_pan_path_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
+bool try_preflight_hrtf_pan_convolution(bool hrtf_enabled, const HrtfIrStub& ir,
+bool should_skip_hrtf_pan_convolution_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
+bool should_skip_hrtf_binaural_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
+bool should_skip_hrtf_binaural_preflight(bool hrtf_enabled, const Vec3& rel_listener,
