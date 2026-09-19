@@ -4806,3 +4806,6 @@ void testTaaPassTryClassifyGuardWrappers() {
     expectTrue(pass->tryPreflightJitterSync(2u, jitterReject), "pass tryPreflightJitterSync passes before init");
     expectNear(weights.current, 0.4f, 1e-5f, "pass tryCompute steady current weight after warmup");
     expectNear(weights.history, 0.6f, 1e-5f, "pass tryCompute steady history weight after warmup");
+
+// --- deepen additive from deepen-taa-b59-guards-64d7 ---
+               "pass tryPreflightResolveBlendWeights reject reason is None after warmup");
