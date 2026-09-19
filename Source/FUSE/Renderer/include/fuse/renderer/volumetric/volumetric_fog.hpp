@@ -900,3 +900,7 @@ bool preflightFroxelGridDensity(const FroxelDensityGrid& grid,
 
 // --- deepen additive from deepen-b511-froxel-guards-713a ---
 bool preflightFroxelSampleAtCoords(const FroxelDensityGrid& grid,
+
+// --- deepen additive from deepen-b511-froxel-guards-80e2 ---
+    static bool preflightScreenMappingReady(f32 screenX,
+bool preflightGridDensityReady(const FroxelDensityGrid& grid,

@@ -3916,3 +3916,30 @@ void testFroxelRejectClassifyAndPreflightGuards() {
                "classifyFroxelTrilinearSampleReject reports invalid_sample_coords for hard OOB coords");
                "classifyFroxelPopulateReject reports none for valid populate inputs");
                "classifySampleCoordReject reports empty_grid for empty desc");
+
+// --- deepen additive from deepen-b511-froxel-guards-80e2 ---
+    expectTrue(fuse::renderer::FroxelGridLayout::preflightScreenMappingReady(0.5f, 0.5f, 10.f, desc, camera),
+    expectTrue(!fuse::renderer::FroxelGridLayout::preflightScreenMappingReady(0.5f, 0.5f, 0.01f, desc, camera),
+               "preflightScreenMappingReady rejects depth below near plane");
+    expectTrue(fuse::renderer::FroxelGridLayout::preflightSampleCoordsReady(warnWeights, desc),
+    expectTrue(!fuse::renderer::FroxelGridLayout::preflightSampleCoordsReady(hardOob, desc),
+               "preflightSampleCoordsReady rejects hard OOB tile coord");
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookupReady(grid, desc, 999u),
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookupReady(grid, desc, 1u, 1u, 2u),
+               "preflightDensityLookupReady succeeds for in-range coords");
+    expectTrue(!fuse::renderer::froxel_util::preflightDensityLookupReady(emptyGrid, desc, 0u),
+    expectTrue(fuse::renderer::froxel_util::preflightFroxelTrilinearSampleReady(grid, desc, warnWeights),
+    expectTrue(!fuse::renderer::froxel_util::preflightFroxelTrilinearSampleReady(grid, desc, hardOob),
+    expectTrue(fuse::renderer::froxel_util::preflightGridDensityReady(grid, desc),
+               "preflightGridDensityReady succeeds for accessible grid");
+    expectTrue(!fuse::renderer::froxel_util::preflightGridDensityReady(undersized, desc),
+               "preflightGridDensityReady rejects undersized storage");
+               "preflightFroxelPopulateReady succeeds for valid inputs");
+    expectTrue(!fuse::renderer::froxel_util::preflightFroxelPopulateReady(desc, camera, zeroDensity),
+               "preflightFroxelPopulateReady rejects zero density param");
+    expectTrue(fuse::renderer::froxel_util::preflightFroxelPopulateReady(desc, camera, params) ==
+               "preflightFroxelPopulateReady mirrors canPopulateFromAnalyticFog on valid path");
+    expectTrue(fuse::renderer::FroxelGridLayout::preflightSampleCoordsReady(inBounds, desc) ==
+               "preflightSampleCoordsReady mirrors canPreflightSampleCoords on valid path");
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookupReady(grid, desc, 0u) ==
+               "preflightDensityLookupReady mirrors canLookupAtIndex on valid path");
