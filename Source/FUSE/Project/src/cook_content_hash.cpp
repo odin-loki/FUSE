@@ -25,6 +25,9 @@ u64 hash_bool(bool value) {
 } // namespace
 
 u64 fnv1a64_bytes(const u8* data, usize size) {
+    if (!is_valid_fnv1a64_input(data, size)) {
+        return kFnvOffset;
+    }
     if (size == 0) {
         return kFnvOffset;
     }
@@ -185,6 +188,8 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason) {
         return "empty_dependency_list";
     case CookHashRejectReason::ZeroSourceHash:
         return "zero_source_hash";
+    case CookHashRejectReason::NonCacheableKey:
+        return "non_cacheable_key";
     }
     return "unknown";
 }
@@ -298,6 +303,35 @@ CookHashPreflight preflight_cook_cache_key(u64 source_hash, u64 /*upstream_hash*
     CookHashPreflight preflight;
     if (source_hash == 0) {
         preflight.reason = CookHashRejectReason::ZeroSourceHash;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
+}
+
+CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size) {
+    CookHashPreflight preflight;
+    if (!is_valid_fnv1a64_input(data, size)) {
+        preflight.reason = CookHashRejectReason::NullData;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
+}
+
+CookHashPreflight preflight_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    const CookHashPreflight key_preflight = preflight_cook_cache_key(source_hash, upstream_hash);
+    if (!key_preflight.can_hash) {
+        return key_preflight;
+    }
+
+    CookHashPreflight preflight;
+    if (combine_cook_cache_key(source_hash, upstream_hash) == 0) {
+        preflight.reason = CookHashRejectReason::NonCacheableKey;
         return preflight;
     }
 
