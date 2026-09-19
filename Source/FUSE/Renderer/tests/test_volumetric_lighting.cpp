@@ -19273,6 +19273,7 @@ void testFroxelDeepenGuardPredicates() {
     expectTrue(fuse::renderer::froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason::ZeroDensity),
                "zero_density populate reject reason is blocking");
 
+void testFroxelClassifyRejectAndPreflightGuards() {
     fuse::renderer::FroxelGridDesc desc{};
     desc.tilesX = 4;
     desc.tilesY = 2;
@@ -19717,11 +19718,15 @@ void testFroxelIsBlockingClassifyAndPreflightGuards() {
                    ScreenMappingRejectReason::None,
                    ScreenMappingRejectReason::DepthOutOfRange,
                "classifyScreenMappingReject depth_out_of_range below near plane");
+    expectTrue(fuse::renderer::preflightScreenMappingReady(0.5f, 0.5f, 10.f, desc, camera),
+    expectTrue(!fuse::renderer::preflightScreenMappingReady(0.5f, 0.5f, 0.01f, desc, camera),
 
     fuse::renderer::FroxelGridDesc zeroDesc{};
     zeroDesc.tilesX = 0u;
     expectTrue(fuse::renderer::classifyScreenMappingReject(0.5f, 0.5f, 10.f, zeroDesc, camera) ==
                    ScreenMappingRejectReason::EmptyGrid,
+                   fuse::renderer::ScreenMappingRejectReason::EmptyGrid,
+               "classifyScreenMappingReject empty_grid for zero-dimension desc");
 
     fuse::renderer::FroxelSampleCoords inBounds{};
     inBounds.tileX0 = 0u;
@@ -19901,6 +19906,8 @@ void testFroxelIsBlockingClassifyAndPreflightGuards() {
                "none sample-coord reject reason is not blocking");
 
                    SampleCoordRejectReason::None,
+    expectTrue(fuse::renderer::FroxelGridLayout::preflightSampleCoordsReady(inBounds, desc),
+               "preflightSampleCoordsReady succeeds for in-bounds coords");
 
     fuse::renderer::FroxelSampleCoords warnWeights = inBounds;
     warnWeights.tx = 2.f;
@@ -19910,6 +19917,11 @@ void testFroxelIsBlockingClassifyAndPreflightGuards() {
     expectTrue(fuse::renderer::FroxelGridLayout::preflightSampleCoords(warnWeights, desc),
                "preflightSampleCoords succeeds for clampable weights");
                    SampleCoordRejectReason::InvalidWeights,
+    expectTrue(!fuse::renderer::sampleCoordRejectReasonIsBlocking(
+                   fuse::renderer::SampleCoordRejectReason::InvalidWeights),
+               "invalid_weights sample-coord reject reason is not blocking");
+    expectTrue(fuse::renderer::FroxelGridLayout::preflightSampleCoordsReady(warnWeights, desc),
+               "preflightSampleCoordsReady succeeds for clampable weights");
 
     fuse::renderer::FroxelSampleCoords hardOob = inBounds;
     hardOob.tileX0 = 99u;
@@ -19980,6 +19992,7 @@ void testFroxelIsBlockingClassifyAndPreflightGuards() {
                "preflightSampleCoordsReady rejects hard OOB coords");
     expectTrue(sampleReason == SampleCoordRejectReason::OutOfBounds,
                "preflightSampleCoordsReady reports out_of_bounds");
+    expectTrue(!fuse::renderer::FroxelGridLayout::preflightSampleCoordsReady(hardOob, desc),
 
     fuse::renderer::FroxelDensityGrid grid{};
     grid.allocate(desc);
@@ -20006,6 +20019,17 @@ void testFroxelIsBlockingClassifyAndPreflightGuards() {
                "classifyDensityLookupReject none for in-range coords");
     expectTrue(fuse::renderer::froxel_util::preflightDensityLookup(grid, desc, 1u, 1u, 2u),
                "preflightDensityLookup succeeds for in-range coords");
+    expectTrue(fuse::renderer::densityLookupRejectReasonIsBlocking(
+                   fuse::renderer::DensityLookupRejectReason::EmptyStorage),
+               "empty_storage density lookup reject reason is blocking");
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookupReady(grid, desc, 0u),
+               "preflightDensityLookupReady succeeds for accessible grid");
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookupReady(grid, desc, 999u),
+               "preflightDensityLookupReady succeeds for clampable OOB index");
+    expectTrue(fuse::renderer::froxel_util::classifyDensityLookupCoordReject(grid, desc, 1u, 1u, 2u) ==
+               "classifyDensityLookupCoordReject none for in-range coords");
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookupCoordReady(grid, desc, 1u, 1u, 2u),
+               "preflightDensityLookupCoordReady succeeds for in-range coords");
 
     fuse::renderer::FroxelDensityGrid emptyGrid{};
     expectTrue(fuse::renderer::froxel_util::classifyDensityLookupReject(emptyGrid, desc, 0u) ==
@@ -20117,6 +20141,14 @@ void testFroxelIsBlockingClassifyAndPreflightGuards() {
     expectTrue(fuse::renderer::froxel_util::preflightFroxelTrilinearSample(
                    grid, desc, warnWeights, &trilinearReason),
                "preflightFroxelTrilinearSample warns but succeeds for clampable weights");
+    expectTrue(!fuse::renderer::froxel_util::preflightDensityLookupReady(emptyGrid, desc, 0u),
+
+    expectTrue(fuse::renderer::froxel_util::preflightFroxelTrilinearSampleReady(grid, desc, inBounds),
+               "preflightFroxelTrilinearSampleReady succeeds for in-bounds coords");
+    expectTrue(fuse::renderer::froxel_util::preflightFroxelTrilinearSampleReady(grid, desc, warnWeights),
+               "preflightFroxelTrilinearSampleReady succeeds for clampable weights");
+    expectTrue(!fuse::renderer::froxel_util::preflightFroxelTrilinearSampleReady(grid, desc, hardOob),
+               "preflightFroxelTrilinearSampleReady rejects hard OOB coords");
 
     expectTrue(!fuse::renderer::gridDensityRejectReasonIsBlocking(
                    fuse::renderer::GridDensityRejectReason::None),
@@ -20135,6 +20167,7 @@ void testFroxelIsBlockingClassifyAndPreflightGuards() {
                "preflightGridDensityReady succeeds for accessible grid");
     expectTrue(densityReason == fuse::renderer::GridDensityRejectReason::None,
                "preflightGridDensityReady reports no reject reason on success");
+    expectTrue(fuse::renderer::froxel_util::preflightGridDensityReady(grid, desc),
 
     fuse::renderer::FroxelDensityGrid undersized{};
     undersized.density.resize(desc.froxelCount() - 1u, 0.f);
@@ -20267,6 +20300,7 @@ void testFroxelIsBlockingClassifyAndPreflightGuards() {
                "preflightTrilinearSampleReady reports clampable_weights");
     expectTrue(trilinearReason == FroxelTrilinearSampleRejectReason::InvalidSampleCoords,
                "preflightTrilinearSampleReady reports invalid_sample_coords");
+    expectTrue(!fuse::renderer::froxel_util::preflightGridDensityReady(undersized, desc),
 
     fuse::renderer::VolumetricFogParams params{};
     params.density = 0.02f;
@@ -20397,6 +20431,18 @@ void testFroxelIsBlockingClassifyAndPreflightGuards() {
                "countEmptyFroxelsForDesc returns full count on desc mismatch");
     expectTrue(!fuse::renderer::froxel_util::validateDensityCountsForDesc(grid, mismatched),
                "validateDensityCountsForDesc fails on desc mismatch");
+               "none populate reject reason is not blocking");
+               "zero_density populate reject reason is blocking");
+    expectTrue(fuse::renderer::froxel_util::classifyFroxelPopulateReject(desc, camera, params) ==
+               "classifyFroxelPopulateReject none for valid populate inputs");
+    expectTrue(fuse::renderer::froxel_util::preflightFroxelPopulateReady(desc, camera, params),
+               "preflightFroxelPopulateReady succeeds for valid populate inputs");
+
+    expectTrue(fuse::renderer::froxel_util::classifyFroxelPopulateReject(desc, camera, zeroDensity) ==
+                   fuse::renderer::FroxelPopulateRejectReason::ZeroDensity,
+               "classifyFroxelPopulateReject zero_density for zero density");
+    expectTrue(!fuse::renderer::froxel_util::preflightFroxelPopulateReady(desc, camera, zeroDensity),
+               "preflightFroxelPopulateReady rejects zero density");
 
     fuse::renderer::FroxelCameraDesc badCamera{};
     badCamera.nearPlane = 100.f;
@@ -21239,6 +21285,12 @@ void testFroxelIsBlockingClassifyAndPreflightGuards() {
                "preflightDensityLookupReady mirrors canLookupAtIndex on valid path");
                "preflightTrilinearSampleReady mirrors canTrilinearSampleAtCoords on valid path");
     expectTrue(fuse::renderer::froxel_util::preflightFroxelPopulateReady(desc, camera, params) ==
+    expectTrue(!fuse::renderer::froxel_util::preflightFroxelPopulateReady(desc, badCamera, params),
+               "preflightFroxelPopulateReady rejects invalid camera");
+
+    fuse::renderer::FroxelSampleCoords mappedMirror{};
+    expectTrue(fuse::renderer::preflightScreenMappingReady(0.5f, 0.5f, 10.f, desc, camera) ==
+                       0.5f, 0.5f, 10.f, desc, camera, mappedMirror),
                "preflightFroxelPopulateReady mirrors canPopulateFromAnalyticFog on valid path");
 }
 
@@ -21423,6 +21475,7 @@ int main() {
     testFroxelDeepenGuardPredicatesAndPreflights();
     testFroxelGuardClassifyAndPreflightHelpers();
     testFroxelDeepenGuardPredicates();
+    testFroxelClassifyRejectAndPreflightGuards();
     testEmptySceneVolumetricFog();
     testZeroDimensionFroxelGrid();
     testFroxelPopulateFromAnalyticFog();
