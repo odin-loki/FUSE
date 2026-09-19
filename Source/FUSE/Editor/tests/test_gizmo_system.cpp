@@ -7449,12 +7449,13 @@ void testSnapDragRejectReasonGuards() {
 
     snap.gridSize = 0.5f;
     expectTrue(fuse::editor::tryPreflightSnapDrag(0.37f, fuse::editor::GizmoMode::Translate, snap,
-                                                  reason),
                "tryPreflightSnapDrag accepts valid delta and snap");
     expectTrue(reason == fuse::editor::GizmoSnapDragRejectReason::None,
                "valid snap-drag reject reason is None");
                "tryPreflightSnapDrag accepts valid delta and snap after step reset");
                "valid snap-drag reject reason is None after step reset");
+    expectTrue(fuse::editor::isSnapDegraded(fuse::editor::GizmoMode::Translate, snap),
+               "isSnapDegraded true when snap enabled with invalid step");
 
     const fuse::editor::SnapDragPreflight nanPreflight = fuse::editor::preflightSnapDrag(
         std::numeric_limits<fuse::f32>::quiet_NaN(), fuse::editor::GizmoMode::Translate, snap);
