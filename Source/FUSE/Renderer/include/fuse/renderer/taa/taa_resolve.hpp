@@ -7,6 +7,10 @@
 
 namespace fuse::renderer {
 
+/// True when history is ready to accept resolve accumulation (B5.9 deepen).
+bool taaHistoryCanAccumulate(const TaaHistoryBuffer& history);
+/// True when observed epoch matches current invalidate generation (B5.9 deepen).
+bool taaHistoryIsGenerationCurrent(const TaaHistoryBuffer& history, u32 observed_generation);
 /// Classify why resolve would skip — same ordering as `TaaResolve::wouldSkip` (B5.9 deepen).
 TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// Stamp observed generation then classify — convenience preflight for resolve callers.
@@ -18,6 +22,14 @@ bool shouldSkipTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& hi
 bool taaResolveSurfacesComplete(const TaaResolveDesc& desc);
 /// True when rejection surfaces are present when enforcement is enabled.
 bool taaResolveRejectionSurfacesComplete(const TaaResolveDesc& desc);
+/// True when required colour surfaces are bound (B5.9 deepen).
+bool taaResolveSurfacesSatisfied(const TaaResolveDesc& desc);
+/// True when rejection surfaces are present when `enforce_rejection_surfaces` is set (B5.9 deepen).
+bool taaResolveRejectionSurfacesSatisfied(const TaaResolveDesc& desc);
+/// True when resolve request passes all preflight guards (inverse of blocking skip).
+bool canAttemptTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// Stamp observed generation and return whether request can proceed (B5.9 deepen).
+bool prepareTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// True when resolve dimensions match allocated history buffer size.
 bool taaResolveDimensionsMatch(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// True when pass viewport dimensions match the resolve request.

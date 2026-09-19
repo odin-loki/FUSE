@@ -37,6 +37,8 @@ public:
     /// True when `observedGeneration` matches the current history invalidate epoch.
     /// True when history targets are allocated and match the resolve dimensions.
     bool canAcceptResolveAt(u32 width, u32 height) const;
+    /// True when observed epoch matches current invalidate generation (B5.9 deepen).
+    bool isGenerationCurrent(u32 observedGeneration) const;
     bool matchesDimensions(u32 width, u32 height) const;
     const TaaHistoryBufferDesc& desc() const { return m_desc; }
     const TaaHistoryValidity& validity() const { return m_validity; }

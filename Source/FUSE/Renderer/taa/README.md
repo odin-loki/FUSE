@@ -34,11 +34,18 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaHistoryBuffer::isHistoryStale(observedGeneration)` — true when a consumer's epoch differs from current history
 - `TaaHistoryBuffer::generationMatches(observedGeneration)` — inverse of `isHistoryStale`
 - `TaaHistoryBuffer::canAcceptResolveAt(w, h)` — true when history is ready and dimensions match
+- `TaaHistoryBuffer::isGenerationCurrent(observedGeneration)` — inverse of `isHistoryStale`
+- `taaHistoryCanAccumulate(history)` — true when history buffers are allocated and ready
+- `taaHistoryIsGenerationCurrent(history, observed_generation)` — free-function generation epoch check
 - `TaaHistoryBuffer::matchesDimensions(w, h)` — true when resolve dimensions match allocated history
 - `clampTaaParams(params)` — clamps blend/rejection/gamma knobs to safe ranges
 - `taaParamsRequireClamping(params)` — true when `clampTaaParams` would change any field
 - `computeEffectiveBlend(firstFrame, params)` — 1.0 on warm-up frame, else clamped `blend_factor`
 - `computeEffectiveBlendForHistory(history, params)` — effective blend from history warm-up state
+- `isTaaBlendFactorInRange(blend_factor)` — true when blend is within [0, 1] before clamping
+- `taaBlendWeightReusesHistory(effective_blend)` — true when effective blend is strictly below 1.0
+- `computeHistoryContributionWeight(effective_blend)` — `1.0 - effective_blend`
+- `taaUsesWarmupBlend(first_frame)` — true when warm-up forces full current-frame weight
 - `taaResolveRequiresVelocity/Depth(params)` — true when rejection thresholds require G-buffer surfaces
 - `taaResolveRequiresRejectionSurfaces(params)` — true when either rejection threshold is active
 - `TaaHistoryBuffer::invalidateHistory()` — clears validity (called on resize)
@@ -58,6 +65,10 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `isObservedHistoryGenerationCurrent(desc, history)` — true when generation guard is bypassed or current
 - `taaResolveSkipReasonIsBlocking(reason)` — true when resolve would bail before history update
 - `stampObservedHistoryGeneration(desc, history)` — fill observed generation from history when sentinel is set
+- `taaResolveSurfacesSatisfied(desc)` — true when current/output colour surfaces are bound
+- `taaResolveRejectionSurfacesSatisfied(desc)` — true when velocity/depth surfaces present when enforced
+- `canAttemptTaaResolve(desc, history)` — true when all preflight guards pass (inverse of blocking skip)
+- `prepareTaaResolveDesc(desc, history)` — stamp generation and return whether resolve can proceed
 - `TaaResolve::wouldSkip(desc, history, &reason)` — preflight skip check without mutating history
 - `TaaResolve::resetBookkeeping()` — clears resolve stats/message (called on `TaaPass::destroy` / `invalidateHistory`)
 - `TaaPass::invalidateHistory()` — clears history validity and resolve bookkeeping without destroying buffers
@@ -69,6 +80,8 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaPass::wouldSkipResolve(desc, &reason)` — pass-level preflight skip check
 - `TaaPass::historyInvalidateGeneration()` — current history invalidate epoch
 - `TaaPass::stampObservedHistoryGeneration(desc)` — stamp observed generation from pass history
+- `TaaPass::canResolveFrame(desc)` — pass-level preflight without mutating history
+- `TaaPass::prepareAndCanResolve(desc)` — stamp generation and return whether resolve can proceed
 - `TaaPass::syncJitterToFrameIndex(frame)` — align pass jitter to a monotonic frame counter
 
 ## Pipeline (stub)
