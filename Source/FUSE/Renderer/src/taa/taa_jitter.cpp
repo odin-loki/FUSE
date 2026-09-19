@@ -305,3 +305,6 @@ bool taaJitterSyncPreflight(const TaaJitter& jitter, u32 frameIndex, u32 width, 
 // --- deepen additive from deepen-b59-taa-guards-27d7 ---
 bool TaaJitter::preflightSync(u32 frameIndex, u32 width, u32 height, TaaJitterSyncBlockReason* reason) const {
     return preflightTaaJitterSync(frameIndex, width, height, m_sequenceLength, reason);
+
+// --- deepen additive from deepen-b59-taa-guards-117f ---
+bool preflightTaaJitterSync(const TaaJitter& jitter, u32 frameIndex, TaaJitterSyncBlockReason* reason) {

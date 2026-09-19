@@ -255,3 +255,6 @@ bool TaaHistoryBuffer::preflightReuse(u32 observedGeneration) const {
 // --- deepen additive from deepen-b59-taa-guards-27d7 ---
     return taaHistoryWarmupComplete(history) && preflightTaaHistoryReuse(history, observedGeneration);
 bool preflightTaaJitterSync(u32 /*frameIndex*/, u32 width, u32 height, u32 sequenceLength,
+
+// --- deepen additive from deepen-b59-taa-guards-117f ---
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupBlockReason* reason) {

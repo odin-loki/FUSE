@@ -261,3 +261,9 @@ TaaResolveBlendPreflightRejectReason diagnoseTaaResolveBlendPreflight(const TaaR
 
 // --- deepen additive from deepen-b59-taa-guards-27d7 ---
 bool preflightTaaJitterSync(u32 /*frameIndex*/, u32 width, u32 height, u32 sequenceLength = 8u,
+
+// --- deepen additive from deepen-b59-taa-guards-117f ---
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupBlockReason* reason = nullptr);
+bool preflightTaaHistoryReuseForResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+bool preflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                               TaaResolveBlendRejectReason* blendRejectReason = nullptr);

@@ -211,3 +211,9 @@ void addTaaPassToGraph(RenderGraph& graph);
     bool preflightJitterSync(u32 frameIndex, TaaJitterSyncBlockReason* reason = nullptr) const;
     bool preflightResolveWithBlend(const TaaResolveDesc& desc, TaaResolveSkipReason* skipReason = nullptr,
                                    TaaResolveBlendRejectReason* blendReason = nullptr) const;
+
+// --- deepen additive from deepen-b59-taa-guards-117f ---
+    bool preflightHistoryWarmup(TaaHistoryWarmupBlockReason* reason = nullptr) const;
+    bool preflightHistoryReuseForResolve(const TaaResolveDesc& desc,
+    bool preflightResolveFrame(const TaaResolveDesc& desc, TaaResolveSkipReason* skipReason = nullptr,
+                               TaaResolveBlendRejectReason* blendRejectReason = nullptr) const;

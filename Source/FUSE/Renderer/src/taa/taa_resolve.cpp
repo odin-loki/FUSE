@@ -507,3 +507,12 @@ bool preflightTaaResolveWithBlend(const TaaResolveDesc& desc, const TaaHistoryBu
     if (!preflightTaaResolve(desc, history, skipReason)) {
             *blendReason = TaaResolveBlendRejectReason::None;
     return preflightTaaResolveBlendWeights(desc, history, blendReason);
+
+// --- deepen additive from deepen-b59-taa-guards-117f ---
+bool preflightTaaHistoryReuseForResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+    return preflightTaaHistoryReuse(history, observedGeneration, reason);
+bool preflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                              TaaResolveSkipReason* skipReason, TaaResolveBlendRejectReason* blendRejectReason) {
+        if (blendRejectReason != nullptr) {
+            *blendRejectReason = TaaResolveBlendRejectReason::None;
+    return preflightTaaResolveBlendWeights(desc, history, blendRejectReason);
