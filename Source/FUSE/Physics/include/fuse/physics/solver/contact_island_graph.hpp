@@ -471,6 +471,27 @@ IslandBuildPreflight preflight_island_build(
 /// Guarded build entry: clears graph and returns false when build preflight fails.
 bool build_island_graph_guarded(
     ContactIslandGraph& graph,
+/// Why island graph build would early-out (B4.4 deepen pass).
+enum class IslandBuildRejectReason : u8 {
+    None = 0,
+    ZeroBodyCount,
+    StaleContactBodyRefs,
+    StaleDistanceBodyRefs,
+
+/// Human-readable label for island build reject reasons (logging / tests).
+const char* islandBuildRejectReasonName(IslandBuildRejectReason reason);
+
+/// Read-only island build diagnostics — no mutation (B4.4 deepen pass).
+    IslandBuildRejectReason reason = IslandBuildRejectReason::None;
+    u32 distanceCount = 0;
+    u32 staleContactRefCount = 0;
+    u32 staleDistanceRefCount = 0;
+    bool zeroBodyCount = false;
+
+    bool can_build() const { return !zeroBodyCount; }
+    bool inputs_clean() const { return reason == IslandBuildRejectReason::None; }
+
+/// Diagnose island build inputs without mutating a graph.
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
@@ -491,5 +512,12 @@ bool island_build_inputs_valid(u32 bodyCount,
 bool build_contact_island_graph_guarded(ContactIslandGraph& graph,
 /// Guarded island build; returns false when preflight rejects input.
 bool build_guarded(ContactIslandGraph& graph,
+/// Non-mutating island build skip predicate — vacuous zero-body early-out (B4.4 deepen pass).
+bool should_skip_island_build(u32 bodyCount,
+                              const std::vector<narrowphase::ContactManifold>& contacts,
+                              const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Guarded build entry: returns false without mutating when body count is zero.
+                                u32 bodyCount,
 
 } // namespace fuse::physics
