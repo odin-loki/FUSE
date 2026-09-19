@@ -37,6 +37,9 @@ struct ContactIslandGraph {
 
     static constexpr u32 invalidIsland = ~0u;
 
+    /// True when `islandIndex` is in range for graph accessors (B4.4 deepen follow-up).
+    bool islandIndexInRange(u32 islandIndex) const { return islandIndex < islandCount(); }
+
 private:
     void unionBodies(u32 a, u32 b);
     u32 findRoot(u32 index) const;
