@@ -333,6 +333,7 @@ bool isValidFlowLookupId(u32 flowId) {
     return flowId != 0u;
 
     return isValidEventName(event.name) && isFlowEventPhase(event.phase) && event.scopeId == flowId;
+bool isFlowPhase(EventPhase phase) {
 }
 
 } // namespace
@@ -2679,6 +2680,16 @@ bool tryFindLastEventByFlow(u32 flowId, ProfileEvent& outEvent) {
 
 
 
+
+
+
+
+
+
+
+
+
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -3004,6 +3015,18 @@ u32 findLastEventIndexByFlow(u32 flowId) {
 
 u32 countEventsByFlow(u32 flowId) {
 
+
+
+
+
+
+
+u32 findFirstEventIndexByFlowId(u32 flowId) {
+        if (isFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
+
+u32 findLastEventIndexByFlowId(u32 flowId) {
+
+u32 countEventsByFlowId(u32 flowId) {
 
 bool tryFindFirstEventIndexByPhase(EventPhase phase, u32& outIndex) {
     const u32 index = findFirstEventIndexByPhase(phase);
@@ -3594,6 +3617,26 @@ bool tryFirstFlowEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
 
         if (eventMatchesFlowId(event, flowId)) {
 
+
+
+
+    }
+
+
+    if (index == kInvalidEventIndex) {
+        outIndex = kInvalidEventIndex;
+        return false;
+
+
+
+
+bool tryFindLastEventIndexByName(const char* name, u32& outIndex) {
+
+
+bool tryFindFirstEventIndexByFlowId(u32 flowId, u32& outIndex) {
+
+
+bool tryFindLastEventIndexByFlowId(u32 flowId, u32& outIndex) {
 
 
 
@@ -4261,6 +4304,9 @@ NestingConsistencyPreflight preflightNestingConsistency() {
         preflight.recordedScopeBeginCount != preflight.recordedScopeEndCount;
     preflight.hasUnpairedRecordedFlows =
         preflight.recordedFlowStartCount != preflight.recordedFlowFinishCount;
+
+
+
 
     return preflight;
 }

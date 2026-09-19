@@ -226,6 +226,11 @@ struct ChromeTraceExportPreflight {
     bool hasUnpairedRecordedScopes = false;
     bool hasUnpairedRecordedFlows = false;
 
+    bool exportWouldTrimEvents = false;
+    bool hasOnlyExportableEvents = false;
+    u32 orphanAsyncFlowEndCount = 0;
+    bool hasOrphanAsyncFlowEnds = false;
+
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
     bool hasNonExportableEvents() const { return nonExportableEventCount > 0; }
@@ -641,6 +646,28 @@ struct AsyncFlowEndPreflight {
     bool canEnd = false;
 };
 
+/// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
+struct ProfileScopePreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canEnter = false;
+};
+
+/// Read-only async-flow begin diagnostics — safe to call before `beginAsyncFlow()`.
+struct AsyncFlowBeginPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canBegin = false;
+};
+
+/// Read-only async-flow end diagnostics — safe to call before `endAsyncFlow()`.
+struct AsyncFlowEndPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool wouldUnderflowOpenCount = false;
+    bool canEnd = false;
+};
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:
@@ -755,6 +782,7 @@ bool isNullEventName(const char* name);
 bool isEmptyEventName(const char* name);
 bool isInvalidEventIndex(u32 index);
 /// True for null, empty, or whitespace-only names — does not affect recording guards.
+/// True for null, empty, or whitespace-only names — diagnostic only; does not affect recording guards.
 bool isValidEventName(const char* name);
 
 /// Read-only chrome export diagnostics — no mutation (B1.6 deepen).
@@ -1043,6 +1071,7 @@ bool hasFlowEvent(u32 flowId);
 bool eventNameMatches(const ProfileEvent& event, const char* name);
 bool isFlowPairedInBuffer(u32 flowId);
 bool tryFindFirstEventIndexByFlow(u32 flowId, u32& outIndex);
+bool tryFindLastEventIndexByName(const char* name, u32& outIndex);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 const char* eventNameAt(u32 index);
