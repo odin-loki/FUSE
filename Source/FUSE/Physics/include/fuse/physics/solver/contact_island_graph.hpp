@@ -8,6 +8,33 @@
 
 namespace fuse::physics {
 
+/// Why island graph build would reject inputs (B4.4 deepen follow-up pass).
+enum class IslandGraphBuildRejectReason : u8 {
+    None = 0,
+    EmptyInputs,
+    OutOfRangeContactBody,
+    OutOfRangeDistanceBody,
+};
+
+/// Human-readable label for island graph build reject reasons (B4.4 deepen follow-up pass).
+const char* island_graph_build_reject_reason_name(IslandGraphBuildRejectReason reason);
+
+/// Diagnose why island graph build would skip; vacuously succeeds when build may proceed.
+IslandGraphBuildRejectReason island_graph_build_reject_reason(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Returns true when `island_graph_build_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
+bool island_graph_build_rejects_for_reason(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints,
+    IslandGraphBuildRejectReason expected);
+
+/// True when `bodyIndex` fits the declared body count for island partitioning.
+bool island_body_index_in_range(u32 bodyIndex, u32 bodyCount);
+
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
 /// contacts and distance constraints run sequentially (Gauss-Seidel stub).
