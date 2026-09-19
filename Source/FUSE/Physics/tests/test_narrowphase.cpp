@@ -3337,3 +3337,18 @@ void testContactBufferGuardHelpers() {
     expectTrue(validPreflight.batch.dispatchableCount == 1u, "dispatch preflight counts dispatchable pair");
 void testManifoldFinalizeIfNotFinalizedGuards() {
 void testFrictionNormalizeAndRebuildGuards() {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-69fc ---
+        fuse::physics::narrowphase::preflightContactBufferWrite(buffer, 2u, valid);
+        outOfRangePreflight.reason ==
+    expectTrue(!invalidPreflight.canWrite(), "write preflight rejects invalid manifold");
+        invalidPreflight.reason ==
+        selfPreflight.reason == fuse::physics::narrowphase::ContactBufferWriteRejectReason::SelfPair,
+void testContactBufferCompactionGuards() {
+void testContactBufferClampAndCapacityGuards() {
+void testContactBufferFrictionBasisPreflightGuards() {
+    fuse::physics::narrowphase::buildFrictionTangentBasesWithPreflight(buffer);
+void testContactPairDeepenPassSixGuards() {
+void testManifoldFinalizeIfNeededGuards() {
+void testCanSkipNarrowphaseDispatchGuard() {
+    testContactBufferFrictionBasisPreflightGuards();

@@ -798,3 +798,18 @@ ContactBufferFrictionRebuildPreflight preflight_contact_buffer_friction_rebuild(
 ContactBufferPreflight preflight_contact_buffer(const ContactBufferSoA& buffer) {
     ContactBufferPreflight preflight{};
 bool should_skip_contact_buffer_iteration(const ContactBufferSoA& buffer) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-69fc ---
+    if (!preflightContactBufferFrictionBasis(*this).needsFrictionBasisBuild()) {
+    const ContactBufferCompactionPreflight preflight = preflightContactBufferCompaction(*this);
+const char* contactBufferFrictionBasisRejectReasonName(ContactBufferFrictionBasisRejectReason reason) {
+    case ContactBufferFrictionBasisRejectReason::AllValid:
+ContactBufferFrictionBasisRejectReason contactBufferFrictionBasisRejectReason(const ContactBufferSoA& buffer) {
+        return ContactBufferFrictionBasisRejectReason::AllValid;
+    return contactBufferFrictionBasisRejectReason(buffer) == expected;
+ContactBufferFrictionBasisPreflight preflightContactBufferFrictionBasis(const ContactBufferSoA& buffer) {
+    preflight.reason = contactBufferFrictionBasisRejectReason(buffer);
+    preflight.allValid = preflight.reason == ContactBufferFrictionBasisRejectReason::AllValid;
+    return !preflightContactBufferFrictionBasis(buffer).needsFrictionBasisBuild();
+    return preflightContactBufferFrictionBasis(buffer).needsFrictionBasisBuild();
+void buildFrictionTangentBasesWithPreflight(ContactBufferSoA& buffer) {

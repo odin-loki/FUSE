@@ -947,3 +947,6 @@ NarrowphasePairDispatchPreflight preflight_narrowphase_pair_dispatch(
 // --- deepen additive from b4-narrowphase-guards-91b3 ---
     const FrictionBasisPreflight preflight = preflight_friction_basis_rebuild(manifold, epsilon);
     if (preflight.reason != FrictionBasisRejectReason::None) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-69fc ---
+ContactPairRejectReason narrowphase_batch_first_reject_reason(

@@ -319,3 +319,10 @@ ContactBufferFrictionRebuildPreflight preflight_contact_buffer_friction_rebuild(
 struct ContactBufferPreflight {
 ContactBufferPreflight preflight_contact_buffer(const ContactBufferSoA& buffer);
 bool should_skip_contact_buffer_iteration(const ContactBufferSoA& buffer);
+
+// --- deepen additive from b4-narrowphase-deepen-guards-69fc ---
+const char* contactBufferFrictionBasisRejectReasonName(ContactBufferFrictionBasisRejectReason reason);
+ContactBufferFrictionBasisRejectReason contactBufferFrictionBasisRejectReason(const ContactBufferSoA& buffer);
+    bool needsFrictionBasisBuild() const { return reason == ContactBufferFrictionBasisRejectReason::None; }
+ContactBufferFrictionBasisPreflight preflightContactBufferFrictionBasis(const ContactBufferSoA& buffer);
+void buildFrictionTangentBasesWithPreflight(ContactBufferSoA& buffer);
