@@ -2386,3 +2386,11 @@ bool preflightScheduleProbeUpdates(u32 probe_count,
     return preflightScheduleProbeUpdates(probe_count, max_indices, out_indices, out_count, reason);
     if (!preflightScheduleProbeUpdates(probe_count, max_indices, out_indices, out_count, outReason)) {
     tryScheduleProbeUpdates(frame_index, probe_count, probes_per_frame, out_indices, max_indices, out_count,
+
+// --- deepen additive from deepen-ddgi-guards-769b ---
+    return tryValidateCacheIndex(desc, cache, probe_index, cache_count, reason);
+bool wouldSkipSampleRequest(const DDGIDesc& desc,
+bool probeSchedulePreflight(u32 probe_count,
+    return probeSchedulePreflight(probe_count, max_indices, out_indices, out_count, reason);
+bool wouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_indices, const u32* out_count) {
+    if (!probeSchedulePreflight(probe_count, max_indices, out_indices, out_count, outReason)) {

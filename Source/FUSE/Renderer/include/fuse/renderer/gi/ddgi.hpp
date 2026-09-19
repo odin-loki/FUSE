@@ -795,3 +795,7 @@ ProbeUpdateLaunchRejectReason classifyProbeUpdateLaunchReject(const DDGIDesc& de
 
 // --- deepen additive from deepen-ddgi-b56-guards-be5b ---
 bool wouldClampCacheIndex(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
+
+// --- deepen additive from deepen-ddgi-guards-769b ---
+bool wouldSkipSampleRequest(const DDGIDesc& desc,
+bool wouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_indices, const u32* out_count);

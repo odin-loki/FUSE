@@ -2676,3 +2676,22 @@ void testProbeKernelResourcePreflight() {
     expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 2048u, 64u, indices, 64u, nullptr, reason),
                "trySchedule rejects null output count");
     expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeSchedule(2048u, 0u, indices, &count),
+
+// --- deepen additive from deepen-ddgi-guards-769b ---
+void testProbeSchedulePreflights() {
+    expectTrue(fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 2048u, 64u, indices, 8u, &count, reason),
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::None, "valid schedule reports no reject reason");
+    expectTrue(count == 8u, "tryScheduleProbeUpdates writes scheduled count");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeSchedule(2048u, 8u, indices, &count),
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 2048u, 64u, nullptr, 8u, &count, reason),
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 2048u, 64u, indices, 8u, nullptr, reason),
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 0u, 64u, indices, 8u, &count, reason),
+    expectTrue(reason == fuse::renderer::SampleRequestRejectReason::None, "valid sample request reports no reject reason");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipSampleRequest(desc, request, 8u),
+               "wouldSkipSampleRequest false for valid request");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipSampleRequest(desc, request, 4u),
+               "wouldSkipSampleRequest true for undersized cache");
+               "build coords for wouldSkip test");
+               "wouldSkip false for valid sample coords");
+               "wouldSkip true for unordered corners");
+    testProbeSchedulePreflights();
