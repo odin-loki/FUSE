@@ -2584,3 +2584,6 @@ void testHrtfPanConvolveRejectReasonGuards() {
     fuse::audio::HrtfAttenuationCouplingRejectReason narrowReason =
     expectTrue(narrowReason == fuse::audio::HrtfAttenuationCouplingRejectReason::None,
     expectTrue(narrowReason == fuse::audio::HrtfAttenuationCouplingRejectReason::BypassPath,
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-d9df ---
+                   stub_preflight, fuse::audio::HrtfPanPathRejectReason::EmptyIr),
