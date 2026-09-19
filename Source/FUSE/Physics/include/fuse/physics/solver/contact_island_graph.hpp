@@ -8,6 +8,49 @@
 
 namespace fuse::physics {
 
+/// Coverage counts for island graph build inputs (out-of-range body-index guards).
+struct IslandGraphBuildStats {
+    u32 bodyCount = 0;
+    u32 validContactCount = 0;
+    u32 inRangeContactCount = 0;
+    u32 inRangeDistanceCount = 0;
+    u32 outOfRangeContactBodyCount = 0;
+    u32 outOfRangeDistanceBodyCount = 0;
+};
+
+/// Preflight diagnostics for island graph build inputs (B4.4 deepen follow-up).
+struct IslandGraphBuildPreflight {
+    IslandGraphBuildStats stats{};
+    bool skipped = false;
+
+    bool has_unsafe_refs() const {
+        return stats.outOfRangeContactBodyCount > 0u || stats.outOfRangeDistanceBodyCount > 0u;
+    }
+
+    bool can_build() const { return !skipped && !has_unsafe_refs(); }
+};
+
+/// Summarize build inputs without mutating a graph.
+IslandGraphBuildStats count_island_graph_build_input(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Const preflight for island graph build dispatch.
+IslandGraphBuildPreflight preflight_contact_island_graph_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Returns true when island graph build should be skipped before mutation.
+bool should_skip_contact_island_graph_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// True when both body indices are in range for union during graph build.
+bool island_build_body_pair_in_range(u32 bodyCount, u32 bodyA, u32 bodyB);
+
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
 /// contacts and distance constraints run sequentially (Gauss-Seidel stub).
@@ -24,6 +67,11 @@ struct ContactIslandGraph {
     void build(u32 bodyCount,
                const std::vector<narrowphase::ContactManifold>& contacts,
                const std::vector<DistanceConstraint>& distanceConstraints);
+
+    /// Build only when `preflight_contact_island_graph_build` passes; clears and returns false otherwise.
+    bool build_guarded(u32 bodyCount,
+                       const std::vector<narrowphase::ContactManifold>& contacts,
+                       const std::vector<DistanceConstraint>& distanceConstraints);
 
     void clear();
 
