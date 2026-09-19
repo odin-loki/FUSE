@@ -299,7 +299,7 @@ public:
     /// History reuse preflight with mandatory block-reason output (B5.9 deepen).
     /// History resolve-readiness preflight with mandatory block-reason output (B5.9 deepen).
     /// Compute resolve blend weights with mandatory reject-reason output (B5.9 deepen).
-                                       TaaResolveBlendRejectReason& reason) const;
+    bool tryComputeExpectedResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& outWeights,
     /// Early-out when resolve blend-weight preflight would reject (B5.9 deepen).
     bool shouldSkipResolveBlend(const TaaResolveDesc& desc) const;
     /// Early-out when resolve preflight would bail (B5.9 deepen).
