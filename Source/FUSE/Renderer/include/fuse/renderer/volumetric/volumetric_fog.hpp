@@ -458,6 +458,7 @@ enum class FroxelPopulateRejectReason : u8 {
     DescMismatch,
     EmptyStorage,
     IndexOutOfRange,
+    ScreenMappingFailed,
 };
 
 /// Human-readable label for density lookup reject reasons (logging / tests).
@@ -574,6 +575,13 @@ bool wouldSkipDensityLookup(const FroxelDensityGrid& grid, const FroxelGridDesc&
 bool wouldSkipDensityLookup(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index);
 /// Early-out when coord-based density lookup would be rejected; OOB coords that clamp are not skipped.
 bool wouldSkipDensityLookupAtCoord(const FroxelDensityGrid& grid,
+                         const FroxelGridDesc& desc,
+                         u32 tileX,
+                         u32 tileY,
+                         u32 sliceZ,
+                         DensityLookupRejectReason& outReason);
+/// Diagnose why coord lookup preflight would reject; vacuously succeeds on accessible grids.
+bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
                          const FroxelGridDesc& desc,
                          u32 tileX,
                          u32 tileY,
@@ -1056,6 +1064,10 @@ bool tryPopulateFromAnalyticFog(FroxelDensityGrid& grid,
                                 const FroxelCameraDesc& camera,
                                 const VolumetricFogParams& params,
                                 FroxelPopulateRejectReason& outReason);
+/// Diagnose density validation against the clamped froxel count derived from `desc`.
+bool tryValidateGridDensityForDesc(const FroxelDensityGrid& grid,
+                                   GridDensityRejectReason& outReason,
+                                   f32 epsilon = 1e-6f);
 } // namespace froxel_util
 
 /// CPU stub — exponential height falloff density sample (P5 acceptance reference).
