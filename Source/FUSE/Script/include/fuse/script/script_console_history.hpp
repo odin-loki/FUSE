@@ -30,6 +30,11 @@ public:
     [[nodiscard]] const std::string& recall(bool previous);
     void resetNavigation();
     [[nodiscard]] s32 navigationCursor() const { return m_navigationCursor; }
+    /// Entry at the current navigation cursor, or empty when at end / history is empty.
+    [[nodiscard]] const std::string& navigation_entry() const;
+    [[nodiscard]] bool is_navigating() const {
+        return m_size > 0 && m_navigationCursor >= 0 && m_navigationCursor < static_cast<s32>(m_size);
+    }
     /// True when `recall(true)` would move to an older stored entry.
     [[nodiscard]] bool can_recall_previous() const;
     /// True when `recall(false)` would move toward the live input position.

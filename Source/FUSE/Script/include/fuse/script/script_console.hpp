@@ -66,6 +66,7 @@ public:
     [[nodiscard]] bool canRecallHistoryPrevious() const { return m_history.can_recall_previous(); }
     [[nodiscard]] bool canRecallHistoryNext() const { return m_history.can_recall_next(); }
     [[nodiscard]] bool isAtHistoryNavigationEnd() const { return m_history.is_at_navigation_end(); }
+    [[nodiscard]] const std::string& history_navigation_entry() const { return m_history.navigation_entry(); }
 
     [[nodiscard]] const std::vector<std::string>& outputLines() const { return m_output; }
     void clearOutput();

@@ -113,11 +113,8 @@ bool ScriptConsole::is_meta_line(const char* line) {
     std::string command;
     std::string args;
     if (!splitCommandLine(line, command, args)) {
-        return false;
-    }
 
     return is_meta_command(command.c_str());
-}
 
 bool ScriptConsole::would_record_history(const char* line) const {
     if (line == nullptr) {
@@ -140,11 +137,8 @@ std::string ScriptConsole::resolve_command_name(const char* partial) const {
 
     const std::string trimmed = trim(partial);
     if (trimmed.empty()) {
-        return {};
-    }
 
     return m_commands.unique_prefix_match(trimmed.c_str());
-}
 
 void ScriptConsole::attach(ScriptHost* host) {
     m_host = host;
@@ -278,7 +272,11 @@ ScriptConsoleCommandResult ScriptConsole::executeLine_(const char* line, bool re
 }
 
 void ScriptConsole::registerBuiltIns_() {
-    m_commands.register_built_in("repeat", [](ScriptConsole& console, const char* /*args*/) {
+    m_commands.register_built_in("repeat", [](ScriptConsole& console, const char* args) {
+        if (args != nullptr && !trim(args).empty()) {
+            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
+                                              "repeat does not accept arguments"};
+        }
         if (!console.can_repeat()) {
     m_commands.register_built_in("repeat", [](ScriptConsole& console, const char* args) {
         if (args != nullptr && !trim(args).empty()) {
@@ -407,6 +405,8 @@ void ScriptConsole::registerBuiltIns_() {
                                                   "history subcommand must be clear"};
             }
 
+        const std::string subcommand = trim(args != nullptr ? args : "");
+        if (subcommand == "clear") {
             if (console.is_history_empty()) {
                 return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok,
                                                   "history already empty"};
@@ -423,6 +423,7 @@ void ScriptConsole::registerBuiltIns_() {
                 return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, "history empty"};
             }
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, console.historyNewest()};
+            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, console.history_newest()};
         }
         if (subcommand == "count") {
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok,
