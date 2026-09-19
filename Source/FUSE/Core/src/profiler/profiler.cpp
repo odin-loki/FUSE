@@ -289,6 +289,10 @@ void setEnabled(bool enabled) {
     g_enabled.store(enabled, std::memory_order_release);
 }
 
+bool isValidEventName(const char* name) {
+    return name != nullptr && name[0] != '\0';
+}
+
 void beginFrame() {
     g_frameIndex.fetch_add(1u, std::memory_order_acq_rel);
 }
@@ -311,7 +315,8 @@ u32 ringCapacity() {
 
 u32 droppedEventCount() {
     return g_droppedEventCount.load(std::memory_order_acquire);
-}
+
+u32 ringBufferCapacity() {
 
 u32 maxNestingDepth() {
     return g_maxNestingDepth.load(std::memory_order_acquire);
@@ -916,6 +921,16 @@ bool tryEventAt(u32 index, ProfileEvent& out) {
 
 }
 
+bool tryLastEvent(ProfileEvent& outEvent) {
+    const u32 index = lastEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
+}
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     return count > 0u ? count - 1u : kInvalidEventIndex;
@@ -1094,6 +1109,13 @@ bool isExportEmpty() {
 
 
 
+
+    return preflightChromeTraceExport().canExport();
+
+    preflight.emptyBuffer = isBufferEmpty();
+    preflight.unbalancedScopeNesting = !isScopeNestingBalanced();
+    preflight.unbalancedFlowNesting = !isFlowNestingBalanced();
+    preflight.bufferTruncated = isBufferFull();
 
 void reset() {
     const std::lock_guard<std::mutex> lock(g_exportMutex);
