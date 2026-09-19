@@ -2653,3 +2653,7 @@ bool should_skip_island_sleep_wake_solve_graph(
     const IslandSleepWakeSolveGraphPreflight preflight = preflight_island_sleep_wake_solve_graph(
         const IslandSleepWakeSolvePreflight islandPreflight = preflight_island_sleep_wake_solve(
         if (islandPreflight.needs_wake() &&
+
+// --- deepen additive from deepen-pbd-island-guards-dcf7 ---
+    const IslandConstraintSolveGraphPreflight preflight =
+    const IslandSleepAwareDispatchPreflight preflight = preflight_island_sleep_aware_dispatch(graph, bodies, dt);

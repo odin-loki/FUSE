@@ -4778,3 +4778,12 @@ void testPreflightIslandSolveBodiesOutOfRangeCount() {
     const IslandSolveBodiesPreflight preflight = preflight_island_solve_bodies(island, bodies);
     testPreflightSolveIslandJobFullGuards();
     testPreflightIslandSolveBodiesOutOfRangeCount();
+
+// --- deepen additive from deepen-pbd-island-guards-dcf7 ---
+void testBuildIslandGraphInRangeGuarded() {
+    expectTrue(!should_skip_island_constraint_solve_graph(graph, bodies, work.contactManifolds(), constraints),
+               "should_skip constraint-solve graph false when mixed islands exist");
+    const IslandSolveBodiesPreflight staleBodies = preflight_island_solve_bodies(staleIsland, bodies);
+void testSolveIslandJobGuardedAndSleepAwareDispatch() {
+    const IslandSleepAwareDispatchPreflight sleepDispatch =
+    expectTrue(!should_skip_island_sleep_aware_dispatch(graph, freshBodies, dt),
