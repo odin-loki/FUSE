@@ -1111,3 +1111,19 @@ void testMaterialEditorPanelRefreshGuards() {
     expectTrue(panel.tryRefreshPanel(), "tryRefreshPanel drains dirty panel");
     expectTrue(!panel.needsPanelRefresh(), "tryRefreshPanel clears refresh flag");
     expectTrue(!panel.tryRefreshPanel(), "second tryRefreshPanel is a no-op");
+
+// --- deepen additive from deepen-b6-material-inspector-ec25 ---
+    expectTrue(binding.tryClearPropertyDirty(fuse::editor::MaterialPropertyId::Metallic),
+               "tryClearPropertyDirty accepts valid id");
+               "tryClearPropertyDirty clears metallic bit");
+    expectTrue(!binding.tryClearPropertyDirty(static_cast<fuse::editor::MaterialPropertyId>(99)),
+               "tryClearPropertyDirty rejects invalid id");
+    expectTrue(binding.tryBind(0u, 1u, editState), "tryBind succeeds for refresh guard test");
+    expectTrue(binding.tryRefreshFromEditState(state), "tryRefresh succeeds when bound");
+    expectTrue(editState.roughness == 1.f, "tryRefresh clamps roughness into edit state");
+    expectTrue(editState.metallic == 0.f, "tryRefresh clamps metallic into edit state");
+    expectTrue(editState.baseColorR == 1.f, "tryRefresh clamps base color into edit state");
+    expectTrue(editState.shadingModel == 5u, "tryRefresh clamps shading model into edit state");
+    expectTrue(!binding.hasAnyPropertyDirty(), "tryRefresh clears dirty mask");
+void testMaterialPropertyBindingPanelRefreshGuards() {
+    expectTrue(!binding.tryMarkPanelRefreshed(), "tryMarkPanelRefreshed guarded when unbound");
