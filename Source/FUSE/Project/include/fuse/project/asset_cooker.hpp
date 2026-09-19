@@ -370,6 +370,8 @@ public:
     /// True when `invalidate_stale_dependency_hashes` would remove at least one entry (B7.9 deepen).
     [[nodiscard]] bool would_invalidate_stale_dependencies(const CookManifest& manifest) const;
     /// Structured upstream invalidation probe — guarded on empty `changed_source` (B7.9 deepen).
+    /// True when `estimate_prune_reconcile().total()` is non-zero (B7.9 deepen).
+    [[nodiscard]] bool would_prune_reconcile() const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

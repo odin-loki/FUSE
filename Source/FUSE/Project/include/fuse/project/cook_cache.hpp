@@ -248,6 +248,10 @@ struct CookCacheReconcileEstimate {
     case CookAssetKind::Shader: {
         preflight.reason = CookHashRejectReason::SourceUnreadable;
     return {};
+/// Read-only structural preflight for cache records — mirrors `store` guards (B7.9 deepen).
+        preflight.reason = CookHashRejectReason::InvalidCacheKey;
+    if (!is_valid_cook_cache_path(entry.source_path)) {
+    if (!is_valid_cook_cache_path(entry.output_path)) {
 
 /// Combined source/upstream fold is cacheable when non-zero (B7.9 deepen).
 [[nodiscard]] inline bool is_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {
@@ -484,6 +488,8 @@ public:
     /// Deduplicated stale-upstream source count — one increment per matching source path (B7.9 deepen).
     [[nodiscard]] u32 count_unique_stale_upstream_hashes(
     /// Deduplicated stale-upstream source paths — mirrors `invalidate_stale_upstream_hashes` (B7.9 deepen).
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    [[nodiscard]] u32 count_unique_stale_upstream_sources(
     [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
     [[nodiscard]] u32 count_prunable_entries() const;
     [[nodiscard]] u32 count_stale_entries() const;
