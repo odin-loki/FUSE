@@ -2777,3 +2777,9 @@ bool preflightProbeTraceKernelLaunch(const DDGIKernelParams& params, ProbeKernel
 bool preflightProbeBlendKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason* reason) {
 bool populateAndPreflightDDGIKernelParams(DDGIKernelParams& params,
     return preflightProbeKernelLaunch(params, reason);
+
+// --- deepen additive from deepen-ddgi-guards-d9ab ---
+bool preflightTrilinearProbeSampleAtWorldPosition(const DDGIDesc& desc,
+    ProbeKernelRejectReason reject = ProbeKernelRejectReason::None;
+    tryCanLaunchProbeTraceKernel(params, reject);
+    tryCanLaunchProbeBlendKernel(params, reject);

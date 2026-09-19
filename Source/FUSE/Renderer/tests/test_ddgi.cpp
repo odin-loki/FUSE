@@ -3548,3 +3548,26 @@ void testPerKernelPreflightGuards() {
                "classifyProbeTrilinearSampleReject null cache from world position");
     expectTrue(fuse::renderer::ddgi_util::classifyProbeTrilinearSampleReject(desc, oobIndices, cache.data(), 8u) ==
                "classifyProbeTrilinearSampleReject invalid_sample_coords");
+
+// --- deepen additive from deepen-ddgi-guards-d9ab ---
+void testDdgiDeepenFollowUpGuards() {
+               "preflightTrilinearProbeSample succeeds at valid coords");
+    expectTrue(fuse::renderer::ddgi_util::preflightTrilinearProbeSampleAtWorldPosition(
+               "preflightTrilinearProbeSampleAtWorldPosition succeeds from world position");
+    expectTrue(!fuse::renderer::ddgi_util::preflightTrilinearProbeSample(desc, coords, nullptr, 8u, &trilinearReason),
+               "preflightTrilinearProbeSample rejects null cache");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeTrilinearSampleReject(desc, invalid, cache.data(), 8u) ==
+               "classifyProbeTrilinearSampleReject invalid_sample_coords for unordered corners");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipTrilinearProbeSample(desc, invalid, cache.data(), 8u),
+               "wouldSkipTrilinearProbeSample true for invalid coords");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeTrilinearSampleReject(empty, coords, cache.data(), 8u) ==
+               "classifyProbeTrilinearSampleReject empty_grid");
+    expectTrue(!fuse::renderer::ddgi_util::preflightTrilinearProbeSampleAtWorldPosition(
+               "preflightTrilinearProbeSampleAtWorldPosition rejects empty grid from world position");
+    expectTrue(trilinearReason == fuse::renderer::ProbeTrilinearSampleRejectReason::EmptyGrid,
+               "classifyProbeScheduleRejectAtRate none for valid rate");
+               "tryScheduleProbeUpdatesAtRate rejects zero probe count");
+               "preflightProbeTraceKernel zero rays reports zero_rays_per_probe reason");
+    expectTrue(!fuse::renderer::gi::preflightProbeBlendKernel(zeroRays, &kernelReason),
+               "preflightProbeBlendKernel rejects zero rays per probe");
+               "preflightProbeBlendKernel zero rays reports zero_rays_per_probe reason");
