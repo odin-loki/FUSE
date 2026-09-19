@@ -4191,3 +4191,30 @@ void testTryFindEventByFlowIdGuard() {
 void testBufferedFlowPairConsistencyGuard() {
 void testChromeTraceExportPreflightCleanExport() {
     testChromeTraceExportPreflightCleanExport();
+
+// --- deepen additive from deepen-fuse-b16-profiler-guards-9bc9 ---
+               "tryFindFirstEventByName false for null name");
+               "tryFindFirstEventByName clears output for null name");
+    expectTrue(!fuse::profiler::tryFindLastEventByName("", outEvent),
+               "tryFindLastEventByName false for empty name");
+               "tryFindFirstEventByName copies scope name");
+               "tryFindLastEventByName true for scope end");
+    expectTrue(!fuse::profiler::tryFindFirstEventByFlowId(0u, outEvent),
+               "tryFindFirstEventByFlowId false for zero flow id");
+               "tryFindFirstEventByFlowId clears output for zero flow id");
+    expectTrue(outEvent.scopeId == flowId, "tryFindFirstEventByFlowId copies flow id");
+void testChromeTraceExportPreflightEventPairCounts() {
+    expectTrue(emptyPreflight.scopeBeginEventCount == 0u, "empty preflight scope begin count is zero");
+    expectTrue(emptyPreflight.scopeEndEventCount == 0u, "empty preflight scope end count is zero");
+    expectTrue(emptyPreflight.flowStartEventCount == 0u, "empty preflight flow start count is zero");
+    expectTrue(emptyPreflight.flowFinishEventCount == 0u, "empty preflight flow finish count is zero");
+    expectTrue(emptyPreflight.counterEventCount == 0u, "empty preflight counter count is zero");
+    expectTrue(emptyPreflight.hasPairedScopeEventsInBuffer(), "empty buffer has paired scope events");
+    expectTrue(emptyPreflight.hasPairedFlowEventsInBuffer(), "empty buffer has paired flow events");
+    expectTrue(emptyPreflight.hasConsistentEventPairsInBuffer(), "empty buffer event pairs are consistent");
+    expectTrue(emptyPreflight.canExportSafelyWithConsistentBuffer(),
+    expectTrue(!openPreflight.hasPairedFlowEventsInBuffer(),
+    expectTrue(!openPreflight.hasConsistentEventPairsInBuffer(),
+    expectTrue(!openPreflight.canExportSafelyWithConsistentBuffer(),
+    expectTrue(!openPreflight.canExportSafely(),
+    testChromeTraceExportPreflightEventPairCounts();
