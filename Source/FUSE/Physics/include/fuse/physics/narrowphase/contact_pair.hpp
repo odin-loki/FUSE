@@ -2023,6 +2023,8 @@ bool can_skip_contact_pair_deepen_dispatch(
 void compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 FUSE_PHYSICS_INLINE bool can_skip_detect_contacts_pair(
+/// Non-mutating pair-dispatch skip predicate — mirrors `should_skip_contact_pair_dispatch` (B4.5 deepen follow-up pass).
+inline bool wouldSkipContactPairDispatch(
     const CollisionShapeSoA& shapes) {
     return should_skip_contact_pair_dispatch(pair, bodies, shapes);
 }
@@ -2169,6 +2171,26 @@ inline bool should_run_contact_pair_dispatch(
 /// Returns true when extended deepen preflight may dispatch (B4.5 deepen pass).
 inline bool should_run_contact_pair_deepen_dispatch(
     return !should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
+/// Non-mutating deepen pair-dispatch skip predicate — mirrors `should_skip_contact_pair_deepen_dispatch` (B4.5 deepen follow-up pass).
+inline bool wouldSkipContactPairDeepenDispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
+}
+
+/// Non-mutating narrowphase skip predicate — mirrors `can_skip_narrowphase` (B4.5 deepen follow-up pass).
+inline bool wouldSkipNarrowphase(
+    return can_skip_narrowphase(pairs, bodies, shapes);
+
+/// Guarded pair dispatch — returns invalid manifold when preflight rejects (B4.5 deepen follow-up pass).
+inline ContactManifold tryDetectContactsPair(
+    if (wouldSkipContactPairDispatch(pair, bodies, shapes)) {
+
+/// Guarded manifold finalize — returns false when preflight rejects (B4.5 deepen follow-up pass).
+inline bool tryGenerateContactManifold(ContactManifold& manifold) {
+    if (!can_finalize_contact_manifold(manifold)) {
+    return generate_contact_manifold(manifold);
 }
 
 } // namespace fuse::physics::narrowphase

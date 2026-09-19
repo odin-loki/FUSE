@@ -1748,6 +1748,25 @@ FUSE_PHYSICS_INLINE bool prune_shallow_contact_manifold_with_preflight(
     if (!preflight.needs_shallow_pruning(minDepth)) {
         return !manifold.empty();
     return manifold.pruneShallowPenetrationsIfNeeded(minDepth);
+/// Non-mutating prune skip predicate — mirrors `should_skip_manifold_prune` (B4.5 deepen follow-up pass).
+inline bool wouldSkipManifoldPrune(
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f) {
+    return should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+
+/// Non-mutating finalize skip predicate — mirrors `can_skip_manifold_finalize` (B4.5 deepen follow-up pass).
+inline bool wouldSkipManifoldFinalize(
+    f32 frictionEpsilon = 1e-4f) {
+    return can_skip_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+
+/// Guarded manifold prune — returns false when preflight rejects (B4.5 deepen follow-up pass).
+inline bool tryPruneContactManifold(
+    return prune_contact_manifold_with_preflight(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+
+/// Guarded manifold finalize — returns false when preflight rejects (B4.5 deepen follow-up pass).
+inline bool tryFinalizeContactManifold(
+    return finalize_contact_manifold_with_preflight(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
 }
 
 } // namespace fuse::physics::narrowphase
