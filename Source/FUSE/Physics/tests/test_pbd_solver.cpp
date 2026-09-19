@@ -4605,3 +4605,16 @@ void testPreflightIslandSleepWakeCombinedGuards() {
     expectTrue(should_skip_island_dispatch_solveable(emptyGraph, bodies, contacts, constraints, dt),
                "should_skip dispatch-solveable true for empty graph");
     testPreflightIslandSleepWakeCombinedGuards();
+
+// --- deepen additive from deepen-pbd-island-guards-0bfe ---
+void testIslandBuildResultGuards() {
+    expectTrue(should_skip_island_constraint_solve_by_index(graph, sleepingIsland, bodies, contacts, constraints),
+    expectTrue(!graphPreflight.skipped, "constraint solve graph preflight has solveable island");
+    expectTrue(graphPreflight.stats.solveableCount == 1u, "constraint solve graph counts solveable island");
+    expectTrue(graphPreflight.stats.blockedByBodiesCount == 1u,
+               "should_skip constraint solve graph false when mixed island exists");
+    const IslandSolveBodiesPreflight bodiesByIndex =
+    expectTrue(!should_skip_island_sleep_dispatch(graph, bodies, 1.f / 60.f),
+    const IslandSleepDispatchPreflight allSleepingDispatch =
+    expectTrue(should_skip_island_sleep_dispatch(graph, bodies, 1.f / 60.f),
+               "should_skip sleep dispatch true for all-sleeping graph");

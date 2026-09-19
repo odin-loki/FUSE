@@ -1569,3 +1569,6 @@ struct IslandDispatchSolveablePreflight {
     IslandConstraintSolveGraphPreflight constraintSolve{};
 IslandDispatchSolveablePreflight preflight_island_dispatch_solveable(const ContactIslandGraph& graph,
 bool should_skip_island_dispatch_solveable(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-pbd-island-guards-0bfe ---
+    IslandBuildPreflight preflight{};

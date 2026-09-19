@@ -2559,3 +2559,6 @@ IslandDispatchSolveablePreflight preflight_island_dispatch_solveable(
     IslandDispatchSolveablePreflight preflight{};
 bool should_skip_island_dispatch_solveable(const ContactIslandGraph& graph,
     const IslandDispatchSolveablePreflight preflight =
+
+// --- deepen additive from deepen-pbd-island-guards-0bfe ---
+    const IslandSleepDispatchPreflight preflight = preflight_island_sleep_dispatch(graph, bodies, dt);
