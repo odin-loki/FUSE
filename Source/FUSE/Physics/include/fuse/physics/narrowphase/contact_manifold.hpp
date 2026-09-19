@@ -1210,6 +1210,12 @@ bool manifold_shallow_prune_rejects_for_reason(
 /// Prune shallow slots only when preflight allows; returns true when points remain (B4.6 deepen pass).
 bool prune_shallow_penetrations_with_preflight(ContactManifold& manifold, f32 minDepth);
 
+/// Prune then finalize only when preflights pass; no-op otherwise (B4.6 deepen pass).
+bool prune_and_finalize_contact_manifold_with_preflight(
+
+/// Alias for `finalize_contact_manifold_with_preflight` (B4.6 deepen pass).
+bool generate_contact_manifold_with_preflight(
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }

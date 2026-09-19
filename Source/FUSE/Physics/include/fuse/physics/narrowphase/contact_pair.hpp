@@ -1248,22 +1248,17 @@ bool should_run_contact_pair_deepen_dispatch(
 
 /// Detect contacts only when extended deepen preflight passes; invalid manifold otherwise (B4.6 deepen pass).
 ContactManifold detect_contacts_pair_with_preflight(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Returns true when both shapes resolve to capsule types (B4.6 deepen pass).
 bool is_capsule_capsule_contact_pair(
-    const broadphase::CandidatePair& pair,
-    const CollisionShapeSoA& shapes);
 
 /// Returns true when one shape is a box and the other is a plane (B4.6 deepen pass).
 bool is_box_plane_contact_pair(
-    const broadphase::CandidatePair& pair,
-    const CollisionShapeSoA& shapes);
 
 /// First deepen reject reason in a pair list, or `None` when at least one pair may dispatch (B4.6 deepen pass).
 ContactPairRejectReason first_contact_pair_deepen_reject_in_batch(
+/// Returns the first deepen reject reason in `pairs`, or `None` when all may dispatch (B4.6 deepen pass).
+ContactPairRejectReason first_contact_pair_deepen_reject_reason(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -1276,9 +1271,6 @@ bool can_skip_contact_pair_deepen_dispatch(
 
 /// Non-mutating deepen-dispatch predicate — inverse of `can_skip_contact_pair_deepen_dispatch` (B4.6 deepen pass).
 bool should_run_contact_pair_deepen_dispatch(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Human-readable label for narrowphase batch reject reasons (B4.6 deepen pass).
 const char* narrowphase_batch_reject_reason_name(NarrowphaseBatchRejectReason reason);
@@ -1286,27 +1278,17 @@ const char* narrowphase_batch_reject_reason_name(NarrowphaseBatchRejectReason re
 /// Diagnose why batch dispatch would skip; vacuously succeeds when dispatch may proceed (B4.6 deepen pass).
 NarrowphaseBatchRejectReason narrowphase_batch_reject_reason(
     const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Returns true when `narrowphase_batch_reject_reason` matches `expected` (B4.6 deepen pass).
 bool narrowphase_batch_rejects_for_reason(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     NarrowphaseBatchRejectReason expected);
 
 /// Non-mutating batch skip predicate — mirrors `can_skip_narrowphase` (B4.6 deepen pass).
 bool can_skip_narrowphase_batch(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Non-mutating batch predicate — inverse of `can_skip_narrowphase_batch` (B4.6 deepen pass).
 bool should_run_narrowphase_batch(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Const preflight for narrowphase run dispatch (B4.6 deepen pass).
 struct NarrowphaseRunPreflight {
@@ -1320,20 +1302,36 @@ struct NarrowphaseRunPreflight {
 
 /// Populate run preflight without mutating buffers or running shape dispatch (B4.6 deepen pass).
 NarrowphaseRunPreflight preflight_run_narrowphase(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Returns true when narrowphase run should early-out before pair dispatch (B4.6 deepen pass).
 bool can_skip_narrowphase_run(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Run shape dispatch only when deepen preflight allows; returns invalid manifold when rejected (B4.6 deepen pass).
+/// Returns true when `first_contact_pair_deepen_reject_reason` matches `expected` (B4.6 deepen pass).
+bool first_contact_pair_deepen_rejects_for_reason(
+    ContactPairRejectReason expected);
+
+/// Shape dispatch only when deepen preflight passes; invalid manifold otherwise (B4.6 deepen pass).
 ContactManifold detect_contacts_pair_with_deepen_preflight(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
+
+/// Const preflight for narrowphase run dispatch (B4.6 deepen pass).
+struct NarrowphaseRunPreflight {
+    NarrowphaseBatchPreflight batch{};
+    bool skipped = false;
+
+    bool can_run() const { return !skipped && batch.can_dispatch(); }
+};
+
+/// Populate run preflight without mutating buffers (B4.6 deepen pass).
+NarrowphaseRunPreflight preflight_narrowphase_run(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when narrowphase run should skip all pair dispatch (B4.6 deepen pass).
+bool should_skip_narrowphase_run(
 
 } // namespace fuse::physics::narrowphase

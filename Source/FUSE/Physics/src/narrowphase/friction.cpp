@@ -1,6 +1,7 @@
 #include <fuse/physics/narrowphase/friction.hpp>
 
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
+#include <fuse/physics/narrowphase/contact_pair.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -1295,6 +1296,13 @@ bool compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 eps
 
     if (should_normalize_contact_normal_before_friction(manifold, epsilon)) {
         if (normalLength > 1e-8f) {
+
+
+
+
+    compute_friction_tangents(manifold);
+
+bool ensure_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilon) {
 
 
 

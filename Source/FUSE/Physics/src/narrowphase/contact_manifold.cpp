@@ -2298,6 +2298,12 @@ bool manifold_shallow_prune_rejects_for_reason(
 bool prune_shallow_penetrations_with_preflight(ContactManifold& manifold, f32 minDepth) {
     if (manifold_shallow_prune_reject_reason(manifold, minDepth) != ManifoldShallowPruneRejectReason::None) {
     return manifold.pruneShallowPenetrationsIfNeeded(minDepth);
+bool prune_and_finalize_contact_manifold_with_preflight(
+    f32 frictionEpsilon,
+    if (!prune_contact_manifold_with_preflight(
+            manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth)) {
+
+bool generate_contact_manifold_with_preflight(
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
