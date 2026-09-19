@@ -300,7 +300,15 @@ struct ManifoldPrunePreflight {
         return needs_pruning() || needs_shallow_pruning(shallowMinDepth);
     }
 
+    bool needs_any_pruning(f32 shallowMinDepth = 0.f) const {
+        return needs_pruning() || needs_shallow_pruning(shallowMinDepth);
+    }
+
     bool can_prune_in_place() const { return needs_pruning() && !wouldBeEmpty; }
+
+    bool can_prune_shallow_in_place(f32 shallowMinDepth) const {
+        return needs_shallow_pruning(shallowMinDepth) && !wouldBeEmpty;
+    }
 
     bool can_skip_prune(f32 shallowMinDepth = 0.f) const {
         return skipped || reason != ManifoldPruneRejectReason::None ||
@@ -837,6 +845,8 @@ struct ManifoldFinalizeDeepenPreflight {
     ManifoldFinalizeRejectReason rejectReason = ManifoldFinalizeRejectReason::None;
 
     bool can_finalize() const { return !skipped && canFinalize; }
+
+    bool needs_any_work() const { return needsPruning || needsFrictionBasis; }
 };
 
 /// Populate second deepen finalize preflight without mutating the manifold (B4.5 deepen pass).
@@ -967,6 +977,27 @@ bool prune_contact_manifold_if_needed(
 
 /// Non-mutating finalize predicate — inverse of `can_skip_manifold_finalize` (B4.4 deepen pass).
 bool should_run_manifold_finalize(
+
+/// Returns true when manifold prune should be skipped (B4.5 deepen follow-up).
+bool can_skip_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Prune only when preflight indicates work is needed; returns true when points remain (B4.5 deepen follow-up).
+bool prune_manifold_if_needed(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Finalize using deepen preflight; no-op when finalize preflight rejects (B4.5 deepen follow-up).
+bool finalize_contact_manifold_if_needed(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

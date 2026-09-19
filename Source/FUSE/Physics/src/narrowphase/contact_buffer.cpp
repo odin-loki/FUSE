@@ -3,6 +3,8 @@
 
 #include <fuse/physics/narrowphase/friction.hpp>
 
+#include <fuse/physics/narrowphase/friction.hpp>
+
 #include <algorithm>
 
 namespace fuse::physics::narrowphase {
@@ -117,69 +119,42 @@ void ContactBufferSoA::buildFrictionTangentBases() {
         tangent1[slot] = manifold.frictionBasis.tangent1;
         tangent2[slot] = manifold.frictionBasis.tangent2;
     }
-}
 
 void ContactBufferSoA::buildFrictionTangentBasesIfNeeded(f32 epsilon) {
     for (u32 slot = 0u; slot < activeCount; ++slot) {
         if (validFlags[slot] == 0u) {
             continue;
-        }
 
         ContactManifold manifold = manifoldAt(slot);
         const FrictionBasisPreflight preflight = preflight_friction_basis_rebuild(manifold, epsilon);
         if (preflight.can_reuse()) {
             tangent1[slot] = manifold.frictionBasis.tangent1;
             tangent2[slot] = manifold.frictionBasis.tangent2;
-            continue;
-        }
 
         if (preflight.shouldSkip) {
             tangent1[slot] = {};
             tangent2[slot] = {};
-            continue;
-        }
 
         const TangentBasis basis = buildTangentBasis(contactNormals[slot]);
         tangent1[slot] = basis.tangent1;
         tangent2[slot] = basis.tangent2;
-    }
-}
 
 bool ContactBufferSoA::canSkipCompaction() const {
     if (pairSlotCount == 0u) {
         return true;
-    }
 
     for (u32 slot = 0u; slot < pairSlotCount; ++slot) {
-        if (validFlags[slot] == 0u) {
             return false;
-        }
-    }
-    return true;
-}
 
 bool ContactBufferSoA::canApplyMaxCapacityClamp() const {
     return activeCount > 0u && maxCapacity > 0u && activeCount > maxCapacity;
-}
 
-void ContactBufferSoA::buildFrictionTangentBasesIfNeeded(f32 epsilon) {
     if (can_skip_build_friction_tangent_bases(*this, epsilon)) {
         return;
-    }
 
-    for (u32 slot = 0u; slot < activeCount; ++slot) {
-        if (validFlags[slot] == 0u) {
-            continue;
-        }
 
-        ContactManifold manifold = manifoldAt(slot);
         if (can_skip_friction_basis_rebuild(manifold, epsilon)) {
-            continue;
-        }
 
-        const TangentBasis basis = buildTangentBasis(contactNormals[slot]);
-        tangent1[slot] = basis.tangent1;
-        tangent2[slot] = basis.tangent2;
     }
 }
 

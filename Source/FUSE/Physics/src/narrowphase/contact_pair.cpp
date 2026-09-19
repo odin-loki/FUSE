@@ -618,6 +618,10 @@ bool generate_contact_manifold(ContactManifold& manifold) {
         return false;
     }
 
+        manifold.clear();
+        return false;
+    }
+
 
     if (!manifold.hasValidNormal()) {
 
@@ -1357,6 +1361,9 @@ bool contact_pair_deepen_rejects_for_reason(
 
 NarrowphasePairBatchStats compute_narrowphase_pair_stats(
     const std::vector<broadphase::CandidatePair>& pairs,
+}
+
+    const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     NarrowphasePairBatchStats stats{};
     stats.totalPairs = static_cast<u32>(pairs.size());
@@ -1414,9 +1421,6 @@ ContactManifold detect_contacts_pair_if_valid(
     return dispatchShapePair(pair, bodies, shapes);
 
 ContactManifold detect_contacts_pair_deepen(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     }
             ++stats.rejectedPairs;
             ++stats.dispatchablePairs;
@@ -1424,7 +1428,6 @@ ContactManifold detect_contacts_pair_deepen(
     return stats;
 
 u32 count_dispatchable_contact_pairs(
-    const std::vector<broadphase::CandidatePair>& pairs,
     return compute_narrowphase_pair_stats(pairs, bodies, shapes).dispatchablePairs;
 
 NarrowphasePairBatchPreflight preflight_narrowphase_pairs(
@@ -1435,27 +1438,15 @@ NarrowphasePairBatchPreflight preflight_narrowphase_pairs(
 
 ContactManifold detect_contacts_pair_if_needed(
     return detect_contacts_pair(pair, bodies, shapes);
-}
 
-bool contact_pair_deepen_rejects_for_reason(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
-    ContactPairRejectReason expected) {
-    return contact_pair_deepen_reject_reason(pair, bodies, shapes) == expected;
+
 }
 
 u32 count_dispatchable_contact_pairs(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
-    u32 dispatchable = 0u;
-    for (const broadphase::CandidatePair& pair : pairs) {
-        if (!should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
-            ++dispatchable;
-        }
-    }
-    return dispatchable;
+    return compute_narrowphase_pair_stats(pairs, bodies, shapes).dispatchablePairs;
 }
 
 u32 count_rejected_contact_pairs_deepen(
@@ -1492,9 +1483,7 @@ NarrowphaseRejectReason narrowphase_reject_reason(
     }
     if (count_dispatchable_contact_pairs(pairs, bodies, shapes) == 0u) {
         return NarrowphaseRejectReason::AllPairsRejected;
-    }
     return NarrowphaseRejectReason::None;
-}
 
 bool narrowphase_rejects_for_reason(
     const std::vector<broadphase::CandidatePair>& pairs,
@@ -1502,11 +1491,8 @@ bool narrowphase_rejects_for_reason(
     const CollisionShapeSoA& shapes,
     NarrowphaseRejectReason expected) {
     return narrowphase_reject_reason(pairs, bodies, shapes) == expected;
-}
 
 NarrowphasePreflight preflight_narrowphase(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     NarrowphasePreflight preflight{};
     preflight.totalPairs = static_cast<u32>(pairs.size());
@@ -1516,60 +1502,44 @@ NarrowphasePreflight preflight_narrowphase(
     preflight.allPairsRejected = !pairs.empty() && preflight.dispatchablePairs == 0u;
     preflight.reason = narrowphase_reject_reason(pairs, bodies, shapes);
     return preflight;
-}
 
 bool can_skip_narrowphase_preflight(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     return !preflight_narrowphase(pairs, bodies, shapes).can_dispatch();
-}
 
 bool contact_pair_deepen_rejects_for_reason(
     const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
     ContactPairRejectReason expected) {
     return contact_pair_deepen_reject_reason(pair, bodies, shapes) == expected;
-}
 
 NarrowphaseBatchPreflight preflight_narrowphase_batch(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     NarrowphaseBatchPreflight preflight{};
     preflight.stats.totalPairs = static_cast<u32>(pairs.size());
-    if (pairs.empty()) {
         preflight.skipped = true;
-        return preflight;
-    }
 
     for (const broadphase::CandidatePair& pair : pairs) {
         if (should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
             ++preflight.stats.rejectedCount;
         } else {
             ++preflight.stats.dispatchableCount;
-        }
-    }
 
     if (preflight.stats.dispatchableCount == 0u) {
-        preflight.skipped = true;
-    }
-    return preflight;
-}
 
 u32 count_dispatchable_contact_pairs(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     return preflight_narrowphase_batch(pairs, bodies, shapes).stats.dispatchableCount;
-}
 
 bool has_dispatchable_contact_pairs(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     return count_dispatchable_contact_pairs(pairs, bodies, shapes) > 0u;
+    return preflight_narrowphase_pairs(pairs, bodies, shapes).hasDispatchable;
+
+NarrowphasePairBatchPreflight preflight_narrowphase_pairs(
+    NarrowphasePairBatchPreflight preflight{};
+    preflight.stats = compute_narrowphase_pair_stats(pairs, bodies, shapes);
+    preflight.allRejected = preflight.stats.totalPairs == 0u || preflight.stats.dispatchablePairs == 0u;
+    preflight.hasDispatchable = preflight.stats.dispatchablePairs > 0u;
+
+ContactManifold detect_contacts_pair_if_needed(
+        return invalidContactManifold();
+    return detect_contacts_pair(pair, bodies, shapes);
 }
 
 bool contact_pair_deepen_rejects_for_reason(

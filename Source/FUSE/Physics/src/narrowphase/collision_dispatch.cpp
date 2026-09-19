@@ -33,6 +33,7 @@ void runNarrowphaseIntoBuffer(
         if (generate_contact_manifold(manifold)) {
         if (should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
 
+
         if (generate_contact_manifold_if_needed(manifold)) {
             buffer.writeSlot(pairIndex, manifold);
         }

@@ -403,24 +403,20 @@ bool ensure_friction_basis_guarded(ContactManifold& manifold, f32 epsilon = 1e-4
 bool should_skip_friction_basis_preflight(const ContactManifold& manifold);
 
 /// Rebuild friction basis only when preflight allows; no-op when skip/reuse (B4.4 deepen follow-up pass).
-bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 /// Compute friction tangents only when preflight needs rebuild (B4.4 deepen follow-up pass).
 void compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 /// Rebuild friction basis using preflight dispatch; no-op when skip is allowed (B4.5 deepen follow-up).
-bool rebuild_friction_basis_from_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 /// Build or reuse friction basis using preflight dispatch (B4.5 deepen follow-up).
 bool ensure_friction_basis_from_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 /// Non-mutating rebuild predicate — inverse of `should_skip_friction_basis_preflight` (B4.4 deepen pass).
-bool should_rebuild_friction_basis(
     const ContactManifold& manifold,
     f32 epsilon = 1e-4f);
 
 /// Rebuild friction tangents only when preflight reports `needsRebuild` (B4.4 deepen pass).
-bool rebuild_friction_basis_from_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 /// Returns true when friction-basis rebuild can proceed (B4.5 deepen follow-up).
 bool can_run_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon = 1e-4f);
 
