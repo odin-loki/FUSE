@@ -1641,6 +1641,117 @@ void testDdgiInfo() {
 #endif
 }
 
+void testDdgiShouldSkipTryPreflightGuards() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+    desc.irradiance_res = 8;
+
+    fuse::u32 indices[64]{};
+    fuse::u32 count = 0u;
+
+    fuse::renderer::ProbeScheduleRejectReason scheduleReason =
+        fuse::renderer::ProbeScheduleRejectReason::None;
+    expectTrue(fuse::renderer::ddgi_util::tryPreflightProbeSchedule(2048u, 64u, indices, &count, scheduleReason),
+               "tryPreflightProbeSchedule passes for valid inputs");
+    expectTrue(scheduleReason == fuse::renderer::ProbeScheduleRejectReason::None,
+               "tryPreflightProbeSchedule reports no reject reason on success");
+    expectTrue(!fuse::renderer::ddgi_util::shouldSkipProbeSchedule(2048u, 64u, indices, &count),
+               "shouldSkipProbeSchedule false for valid inputs");
+    expectTrue(!fuse::renderer::ddgi_util::tryPreflightProbeSchedule(0u, 64u, indices, &count, scheduleReason),
+               "tryPreflightProbeSchedule fails for zero probe count");
+    expectTrue(scheduleReason == fuse::renderer::ProbeScheduleRejectReason::ZeroProbeCount,
+               "tryPreflightProbeSchedule reports zero_probe_count reason");
+    expectTrue(fuse::renderer::ddgi_util::shouldSkipProbeSchedule(0u, 64u, indices, &count),
+               "shouldSkipProbeSchedule true for zero probe count");
+
+    std::vector<fuse::renderer::IrradianceCacheEntry> cache(8);
+    fuse::renderer::CacheIndexRejectReason cacheReason = fuse::renderer::CacheIndexRejectReason::None;
+    expectTrue(fuse::renderer::ddgi_util::tryPreflightCacheIndexLookup(desc, cache.data(), 3u, 8u, cacheReason),
+               "tryPreflightCacheIndexLookup passes for valid index");
+    expectTrue(cacheReason == fuse::renderer::CacheIndexRejectReason::None,
+               "tryPreflightCacheIndexLookup reports no reject reason on success");
+    expectTrue(fuse::renderer::ddgi_util::cacheIndexLookupReady(desc, cache.data(), 3u, 8u),
+               "cacheIndexLookupReady true for valid lookup");
+    expectTrue(!fuse::renderer::ddgi_util::shouldSkipCacheIndexLookup(desc, cache.data(), 3u, 8u),
+               "shouldSkipCacheIndexLookup false for valid lookup");
+    expectTrue(!fuse::renderer::ddgi_util::tryPreflightCacheIndexLookup(desc, nullptr, 3u, 8u, cacheReason),
+               "tryPreflightCacheIndexLookup fails for null cache");
+    expectTrue(cacheReason == fuse::renderer::CacheIndexRejectReason::NullCache,
+               "tryPreflightCacheIndexLookup reports null_cache reason");
+    expectTrue(fuse::renderer::ddgi_util::shouldSkipCacheIndexLookup(desc, nullptr, 3u, 8u),
+               "shouldSkipCacheIndexLookup true for null cache");
+
+    fuse::renderer::ProbeSampleCoords built{};
+    expectTrue(fuse::renderer::ProbeGridLayout::buildProbeSampleCoordsIfReady(desc, {0.5f, 0.5f, 0.5f}, built),
+               "buildProbeSampleCoordsIfReady succeeds for interior sample");
+    expectTrue(!fuse::renderer::ProbeGridLayout::shouldSkipProbeSampleCoords(desc, built),
+               "shouldSkipProbeSampleCoords false for valid coords");
+
+    fuse::renderer::ProbeSampleCoords oobIndices = built;
+    oobIndices.x0 = 9u;
+    oobIndices.x1 = 9u;
+    expectTrue(fuse::renderer::ProbeGridLayout::shouldSkipProbeSampleCoords(desc, oobIndices),
+               "shouldSkipProbeSampleCoords true for OOB indices");
+
+    fuse::renderer::ProbeTrilinearSampleRejectReason trilinearReason =
+        fuse::renderer::ProbeTrilinearSampleRejectReason::None;
+    expectTrue(fuse::renderer::ddgi_util::tryPreflightTrilinearProbeSample(
+                   desc, built, cache.data(), 8u, trilinearReason),
+               "tryPreflightTrilinearProbeSample passes for valid sample");
+    expectTrue(trilinearReason == fuse::renderer::ProbeTrilinearSampleRejectReason::None,
+               "tryPreflightTrilinearProbeSample reports no reject reason on success");
+    expectTrue(fuse::renderer::ddgi_util::trilinearProbeSampleReady(desc, built, cache.data(), 8u),
+               "trilinearProbeSampleReady true for valid sample");
+    expectTrue(!fuse::renderer::probeTrilinearSampleRejectReasonIsBlocking(trilinearReason),
+               "none trilinear reject reason is not blocking");
+    expectTrue(fuse::renderer::probeTrilinearSampleRejectReasonIsBlocking(
+                   fuse::renderer::ProbeTrilinearSampleRejectReason::NullCache),
+               "null_cache trilinear reject reason is blocking");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeTrilinearSampleReject(desc, built, cache.data(), 8u) ==
+                   fuse::renderer::ProbeTrilinearSampleRejectReason::None,
+               "classifyProbeTrilinearSampleReject none for valid sample");
+    expectTrue(!fuse::renderer::ddgi_util::shouldSkipTrilinearProbeSample(desc, built, cache.data(), 8u),
+               "shouldSkipTrilinearProbeSample false for valid sample");
+    expectTrue(fuse::renderer::ddgi_util::shouldSkipTrilinearProbeSample(desc, built, nullptr, 8u),
+               "shouldSkipTrilinearProbeSample true for null cache");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeTrilinearSampleReject(desc, built, nullptr, 8u) ==
+                   fuse::renderer::ProbeTrilinearSampleRejectReason::NullCache,
+               "classifyProbeTrilinearSampleReject null_cache");
+
+    fuse::u32 validLaunchIndices[2] = {0u, 7u};
+    fuse::renderer::ProbeUpdateLaunchRejectReason launchReason =
+        fuse::renderer::ProbeUpdateLaunchRejectReason::None;
+    expectTrue(fuse::renderer::tryPreflightDdgiProbeUpdate(desc, validLaunchIndices, 2u, launchReason),
+               "tryPreflightDdgiProbeUpdate passes for valid launch");
+    expectTrue(launchReason == fuse::renderer::ProbeUpdateLaunchRejectReason::None,
+               "tryPreflightDdgiProbeUpdate reports no reject reason on success");
+    expectTrue(!fuse::renderer::shouldSkipDdgiProbeUpdate(desc, validLaunchIndices, 2u),
+               "shouldSkipDdgiProbeUpdate false for valid launch");
+    expectTrue(fuse::renderer::shouldSkipDdgiProbeUpdate(desc, nullptr, 1u),
+               "shouldSkipDdgiProbeUpdate true for null indices");
+
+    fuse::renderer::gi::DDGIKernelParams kernelParams{};
+    kernelParams.probe_indices_to_update = validLaunchIndices;
+    kernelParams.probe_update_count = 2u;
+    kernelParams.rays_per_probe = 256u;
+    fuse::renderer::gi::ProbeKernelRejectReason kernelReason = fuse::renderer::gi::ProbeKernelRejectReason::None;
+    expectTrue(fuse::renderer::gi::tryPreflightProbeKernelLaunch(kernelParams, kernelReason),
+               "tryPreflightProbeKernelLaunch passes for valid params");
+    expectTrue(kernelReason == fuse::renderer::gi::ProbeKernelRejectReason::None,
+               "tryPreflightProbeKernelLaunch reports no reject reason on success");
+    expectTrue(!fuse::renderer::gi::shouldSkipProbeKernelLaunch(kernelParams),
+               "shouldSkipProbeKernelLaunch false for valid params");
+
+    fuse::renderer::gi::DDGIKernelParams zeroRays = kernelParams;
+    zeroRays.rays_per_probe = 0u;
+    expectTrue(!fuse::renderer::gi::tryPreflightProbeKernelLaunch(zeroRays, kernelReason),
+               "tryPreflightProbeKernelLaunch fails for zero rays");
+    expectTrue(kernelReason == fuse::renderer::gi::ProbeKernelRejectReason::ZeroRaysPerProbe,
+               "tryPreflightProbeKernelLaunch reports zero_rays_per_probe reason");
+    expectTrue(fuse::renderer::gi::shouldSkipProbeKernelLaunch(zeroRays),
+               "shouldSkipProbeKernelLaunch true for zero rays");
+}
+
 } // namespace
 
 int main() {
@@ -1679,6 +1790,7 @@ int main() {
     testTryLaunchProbeKernels();
     testProbeKernelLaunchGuards();
     testDdgiPreflightDeepenGuards();
+    testDdgiShouldSkipTryPreflightGuards();
     testSampleGuards();
     testProbeWorldPositionClamped();
     testProbeAtlasLayout();
