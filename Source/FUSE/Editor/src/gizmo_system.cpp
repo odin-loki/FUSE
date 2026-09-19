@@ -1190,6 +1190,19 @@ bool canUpdateDrag(const GizmoHitTest& hit, bool dragging) {
 
 bool canEndDrag(bool dragging, GizmoMode mode, const GizmoSnapSettings& settings) {
     return preflightEndDrag(dragging, mode, settings).canEnd();
+EndDragPreflight preflightEndDrag(bool dragging, GizmoMode mode, const GizmoSnapSettings& settings) {
+    EndDragPreflight preflight{};
+    if (!dragging) {
+        preflight.notDragging = true;
+        return preflight;
+    }
+
+    const SnapPreflight snap = preflightSnap(mode, settings);
+    preflight.snapDisabled = snap.snapDisabled;
+    preflight.invalidSnapStep = snap.invalidStep;
+
+bool canEndDrag(bool dragging) {
+    return preflightEndDrag(dragging, GizmoMode::Translate, GizmoSnapSettings{}).canEnd();
 }
 
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
@@ -2090,6 +2103,18 @@ bool GizmoSystem::canEndDrag() const {
     return fuse::editor::canEndDrag(m_dragging, m_mode, m_snap);
 }
 
+bool GizmoSystem::canUpdateDrag(const GizmoHitTest& hit) const {
+    return fuse::editor::canUpdateDrag(hit, m_dragging);
+}
+
+EndDragPreflight GizmoSystem::preflightEndDrag() const {
+    return fuse::editor::preflightEndDrag(m_dragging, m_mode, m_snap);
+}
+
+bool GizmoSystem::canEndDrag() const {
+    return fuse::editor::canEndDrag(m_dragging);
+}
+
 GizmoResult GizmoSystem::beginDrag(const GizmoHitTest& hit, const GizmoTransform& current) {
     GizmoResult result;
     if (!tryBeginDrag(hit, current, result)) {
@@ -2196,6 +2221,7 @@ UpdateDragPreflight GizmoSystem::preflightUpdateDrag(const GizmoHitTest& hit) co
 
     const UpdateDragPreflight preflight = preflightUpdateDrag(hit);
     if (!preflight.canUpdate) {
+    if (!canUpdateDrag(hit)) {
         return result;
 
 
@@ -2255,6 +2281,7 @@ GizmoResult GizmoSystem::endDrag() {
     GizmoResult result;
     if (!tryEndDrag(result)) {
     if (!preflightEndDrag().canEnd()) {
+    if (!canEndDrag()) {
         return result;
     }
     return result;
@@ -2297,6 +2324,16 @@ bool GizmoSystem::canBeginDrag(const GizmoHitTest& hit, const GizmoTransform& tr
 bool GizmoSystem::canBeginDrag(const GizmoRay& ray, const GizmoTransform& transform) const {
     return !m_dragging &&
            fuse::editor::canBeginDrag(ray, transform, m_mode, m_space, kAxisLength, kPickRadius);
+}
+
+bool GizmoSystem::tryEndDrag(GizmoResult& out) {
+    out = {};
+    if (!canEndDrag()) {
+        return false;
+    }
+
+    out = endDrag();
+    return true;
 }
 
 GizmoAxis GizmoSystem::pickAxisScreen_(const GizmoHitTest& hit) const {
