@@ -2841,3 +2841,11 @@ void testPreflightAndCanProceedHelpers() {
     expectTrue(fuse::renderer::preflightTaaResolve(desc, history) == fuse::renderer::TaaResolveSkipReason::None,
     expectTrue(fuse::renderer::preflightTaaResolve(desc, history) ==
     testPreflightAndCanProceedHelpers();
+
+// --- deepen additive from deepen-b59-taa-history-resolve-skip-guards-1865 ---
+void testHistoryReadGuards() {
+void testResolveSurfaceGuards() {
+    expectTrue(fuse::renderer::taaResolveRejectionSurfacesComplete(desc),
+    expectTrue(!fuse::renderer::taaResolveRejectionSurfacesComplete(desc),
+    expectTrue(resolve.wouldSkip(desc, history, &skipReason) ==
+               "shouldSkipTaaResolve matches TaaResolve::wouldSkip");
