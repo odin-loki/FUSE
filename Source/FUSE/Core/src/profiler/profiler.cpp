@@ -910,6 +910,9 @@ u32 remainingEventCapacity() {
 }
 
 bool isEventIndexValid(u32 index) {
+    if (index == kInvalidEventIndex) {
+        return false;
+    }
     return index < eventCount();
 
 bool isBlankEventName(const char* name) {
@@ -1344,6 +1347,7 @@ bool isEmptyProfileEvent(const ProfileEvent& event) {
 }
 
 const ProfileEvent& eventAt(u32 index) {
+    if (index == kInvalidEventIndex || !isEventIndexValid(index)) {
         return emptyProfileEvent();
 
     const u32 count = eventCount();
@@ -2016,6 +2020,7 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
         preflight.eventCount > preflight.exportableEventCount
             ? preflight.eventCount - preflight.exportableEventCount
             : 0u;
+    preflight.ringCapacity = ringCapacity();
     preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();

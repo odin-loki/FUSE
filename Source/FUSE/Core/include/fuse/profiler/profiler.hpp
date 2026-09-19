@@ -144,6 +144,7 @@ struct ChromeTraceExportPreflight {
     bool allEventsExportable = false;
     u32 firstExportableEventIndex = kInvalidEventIndex;
     u32 lastExportableEventIndex = kInvalidEventIndex;
+    u32 ringCapacity = 0;
     bool scopeNestingUnbalanced = false;
     bool flowNestingUnbalanced = false;
     bool hasOpenAsyncFlows = false;
