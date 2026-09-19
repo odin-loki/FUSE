@@ -29,20 +29,38 @@ enum class ProbeKernelRejectReason : u8 {
     ZeroUpdateCount,
     NullProbeIndices,
     ZeroRaysPerProbe,
+    NullProbeWorldPositions,
+    NullPrevIrradiance,
+    NullOutRadiance,
+    NullIrradianceAtlas,
+    NullDepthAtlas,
 };
 
 /// Human-readable label for probe-kernel reject reasons (logging / tests).
 const char* probeKernelRejectReasonLabel(ProbeKernelRejectReason reason);
 
+/// Classify why probe trace launch preflight would reject (B5.6 deepen).
+ProbeKernelRejectReason classifyProbeKernelTraceReject(const DDGIKernelParams& params);
+/// Classify why probe blend launch preflight would reject (B5.6 deepen).
+ProbeKernelRejectReason classifyProbeKernelBlendReject(const DDGIKernelParams& params);
+
 /// Preflight guard before probe trace kernel launch.
 bool canLaunchProbeTraceKernel(const DDGIKernelParams& params);
 /// Diagnose why probe trace launch preflight would reject.
 bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
+/// Early-out when probe trace launch would be rejected — same ordering as `canLaunchProbeTraceKernel`.
+bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
+/// Diagnose probe-world-position readiness for trace launch (B5.6 deepen).
+bool tryPreflightProbeTraceWorldPositions(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
 
 /// Preflight guard before probe blend kernel launch.
 bool canLaunchProbeBlendKernel(const DDGIKernelParams& params);
 /// Diagnose why probe blend launch preflight would reject.
 bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
+/// Early-out when probe blend launch would be rejected — same ordering as `canLaunchProbeBlendKernel`.
+bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
+/// Diagnose atlas/surface readiness for blend launch (B5.6 deepen).
+bool tryPreflightProbeBlendSurfaces(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
 
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);
