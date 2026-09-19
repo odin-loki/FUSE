@@ -5569,3 +5569,39 @@ void testScopeAndAsyncFlowPreflight() {
     expectTrue(fuse::profiler::tryFirstExportableEventByName("lookup_counter", counterEvent),
                "tryFirstExportableEventByName finds valid counter");
     testScopeAndAsyncFlowPreflight();
+
+// --- deepen additive from deepen-b16-profiler-guards-d08f ---
+               "wouldSkip true for orphan flow end");
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowBegin("paired_flow", &reason),
+               "wouldSkip false for valid flow end with open count");
+    expectTrue(fuse::profiler::wouldSkipCounter("", &reason),
+               "wouldSkip true for empty counter track");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd("paired_flow", &reason),
+               "wouldSkip true for flow end after paired teardown");
+               "wouldSkip export on empty buffer");
+    expectTrue(fuse::profiler::wouldSkipSafeChromeTraceExport(&reason),
+               "wouldSkip safe export on empty buffer");
+               "wouldSkip false after recording exportable events");
+    expectTrue(!fuse::profiler::wouldSkipSafeChromeTraceExport(&reason),
+               "wouldSkip raw export false with open flow");
+               "wouldSkip safe export true with unbalanced flow nesting");
+               "wouldSkip export true when profiler disabled");
+void testProfilerNestingPreflight() {
+    expectTrue(resetPreflight.isHealthy(), "reset nesting preflight is healthy");
+            expectTrue(!activePreflight.isHealthy(), "nested open scope/flow is not healthy");
+            expectTrue(activePreflight.activeScopeNestingDepth == 2u,
+            expectTrue(activePreflight.activeFlowNestingDepth == 2u,
+            expectTrue(activePreflight.openAsyncFlowCount == 2u,
+    expectTrue(closedPreflight.isHealthy(), "nested teardown restores healthy nesting preflight");
+    expectTrue(fuse::profiler::tryFirstEventByName("lookup_scope", outEvent),
+    expectTrue(fuse::profiler::tryLastEventByName("lookup_scope", outEvent),
+               "tryLastEventByName succeeds for last matching event");
+               "tryLastEventByName copies scope end for shared name");
+    expectTrue(fuse::profiler::tryFirstEventByFlowId(flowId, flowStart),
+    expectTrue(fuse::profiler::tryLastEventByFlowId(flowId, flowFinish),
+               "wouldSkip agrees with hot path for empty flow begin");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd("", &reason),
+               "wouldSkip agrees with hot path for empty flow end");
+               "wouldSkip agrees with hot path for null counter");
+               "invalid-name wouldSkip reasons stay InvalidName");
+    testProfilerNestingPreflight();

@@ -1548,3 +1548,13 @@ bool wouldSkipSafeChromeTraceExport() {
 // --- deepen additive from deepen-b16-profiler-wouldskip-68ea ---
 bool tryFirstExportableEventByFlow(u32 flowId, ProfileEvent& outEvent) {
 bool tryLastExportableEventByFlow(u32 flowId, ProfileEvent& outEvent) {
+
+// --- deepen additive from deepen-b16-profiler-guards-d08f ---
+bool wouldSkipProfileScope(const char* name, ProfilerSkipReason* reason) {
+bool wouldSkipAsyncFlowBegin(const char* name, ProfilerSkipReason* reason) {
+    return wouldSkipProfileScope(name, reason);
+bool wouldSkipAsyncFlowEnd(const char* name, ProfilerSkipReason* reason) {
+bool wouldSkipCounter(const char* track, ProfilerSkipReason* reason) {
+    return wouldSkipProfileScope(track, reason);
+bool wouldSkipChromeTraceExport(ProfilerSkipReason* reason) {
+bool wouldSkipSafeChromeTraceExport(ProfilerSkipReason* reason) {
