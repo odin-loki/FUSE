@@ -773,9 +773,15 @@ void testPickPreflightAxisResolution() {
     fuse::editor::GizmoRay emptyRay{};
     const fuse::editor::PickPreflight emptyPick = fuse::editor::preflightPick(
         emptyRay, transform, fuse::editor::GizmoMode::Translate, fuse::editor::GizmoSpace::World,
-        fuse::editor::GizmoSystem::kAxisLength, fuse::editor::GizmoSystem::kPickRadius);
     expectTrue(emptyPick.axis == fuse::editor::GizmoAxis::None,
                "failed pick preflight leaves axis unset");
+    deadZone.screenX = 150.f;
+    const fuse::editor::PickPreflight outOfBoundsPick =
+        fuse::editor::preflightPick(deadZone, fuse::editor::GizmoMode::Translate);
+    expectTrue(outOfBoundsPick.outOfBounds, "pick preflight marks out-of-bounds screen coords");
+    expectTrue(!outOfBoundsPick.canPick(), "pick preflight rejects out-of-bounds screen coords");
+    expectTrue(!gizmo.preflightPick(deadZone).canPick(),
+               "gizmo pick preflight rejects out-of-bounds screen coords");
 }
 
 void testSnapPreflightGuards() {
@@ -819,6 +825,8 @@ void testSnapPreflightGuards() {
     expectTrue(gizmo.preflightSnap(onGrid).noChange,
                "gizmo transform snap preflight marks already-snapped transform");
     expectTrue(gizmo.canApplySnapNow(), "gizmo canApplySnapNow mirrors preflight");
+    expectTrue(gizmo.canSnapDragDeltaNow(), "gizmo canSnapDragDeltaNow mirrors snap drag guards");
+}
 
 void testTrySnapTransformGuards() {
     snap.gridSize = 1.f;
@@ -871,6 +879,15 @@ void testUpdateDragPreflightGuards() {
     expectTrue(emptyPreflight.emptyHit, "update preflight marks empty viewport");
     expectTrue(!emptyPreflight.canUpdate(), "update preflight rejects empty viewport");
 
+    hit.viewportWidth = 100.f;
+    hit.screenX = 150.f;
+    const fuse::editor::UpdateDragPreflight outOfBoundsPreflight = gizmo.preflightUpdateDrag(hit);
+    expectTrue(outOfBoundsPreflight.outOfBounds, "update preflight marks out-of-bounds coords");
+    expectTrue(!outOfBoundsPreflight.canUpdate(), "update preflight rejects out-of-bounds coords");
+    expectTrue(!gizmo.canUpdateDrag(hit), "gizmo canUpdateDrag rejects out-of-bounds coords");
+
+    hit.viewportWidth = 0.f;
+    const fuse::editor::GizmoResult update = gizmo.updateDrag(hit);
     expectTrue(!update.changed, "updateDrag ignores empty viewport via preflight guard");
     expectTrue(gizmo.isDragging(), "empty viewport update keeps drag active");
 
@@ -890,6 +907,15 @@ void testPickInputValidityGuards() {
     expectTrue(!fuse::editor::isHitTestValid(emptyHit), "isHitTestValid rejects empty viewport");
 
     expectTrue(fuse::editor::isHitTestValid(hit), "isHitTestValid accepts valid viewport");
+    expectTrue(fuse::editor::isScreenCoordInViewport(hit),
+               "isScreenCoordInViewport accepts origin viewport coords");
+
+    hit.screenX = 150.f;
+    expectTrue(!fuse::editor::isScreenCoordInViewport(hit),
+               "isScreenCoordInViewport rejects X beyond viewport width");
+    hit.screenX = -1.f;
+               "isScreenCoordInViewport rejects negative X");
+}
 
 void testSnapComponentHelpers() {
 
@@ -2209,6 +2235,26 @@ void testEndDragPreflightGuards() {
     expectTrue(!gizmo.preflightEndDrag().canEnd(),
                "gizmo end preflight rejects inactive drag");
 
+
+    expectTrue(!noAxisPreflight.canEnd(), "end preflight rejects missing active axis");
+
+    const fuse::editor::EndDragPreflight activePreflight =
+    expectTrue(activePreflight.canEnd(), "end preflight accepts active drag with axis");
+    expectTrue(!activePreflight.notDragging, "active end preflight clears notDragging");
+    expectTrue(!activePreflight.invalidActiveAxis, "active end preflight clears invalidActiveAxis");
+
+    expectTrue(!gizmo.preflightEndDrag().canEnd(), "gizmo end preflight rejects inactive drag");
+
+    fuse::editor::GizmoTransform transform{};
+    gizmo.beginDrag(hit, transform);
+    expectTrue(gizmo.preflightEndDrag().canEnd(), "gizmo end preflight accepts active drag");
+    expectTrue(gizmo.canEndDrag(), "gizmo canEndDrag accepts active drag");
+    gizmo.endDrag();
+}
+
+void testCanEndDragGuards() {
+    expectTrue(fuse::editor::canEndDrag(true, fuse::editor::GizmoAxis::Y),
+
     fuse::editor::GizmoHitTest hit{};
     hit.viewportWidth = 100.f;
     hit.viewportHeight = 100.f;
@@ -2240,6 +2286,13 @@ void testEndDragUsesTryEndDrag() {
     const fuse::editor::GizmoResult inactive = gizmo.endDrag();
     expectTrue(!inactive.changed, "endDrag no-op when inactive via tryEndDrag guard");
     expectTrue(!gizmo.isDragging(), "inactive endDrag leaves drag inactive");
+    expectTrue(gizmo.canEndDrag(), "gizmo canEndDrag true while dragging");
+    gizmo.endDrag();
+    expectTrue(!gizmo.canEndDrag(), "gizmo canEndDrag false after endDrag");
+
+void testTryEndDragGuards() {
+
+    expectTrue(!gizmo.transformDirty(), "inactive tryEndDrag does not mark dirty");
 
     fuse::editor::GizmoHitTest hit{};
     hit.viewportWidth = 100.f;
@@ -2257,6 +2310,33 @@ void testEndDragUsesTryEndDrag() {
     expectTrue(ended.changed, "endDrag commits transform on active drag");
     expectTrue(!gizmo.isDragging(), "endDrag clears drag state");
     expectTrue(ended.axis == fuse::editor::GizmoAxis::X, "endDrag records ended axis");
+    expectTrue(gizmo.tryEndDrag(result), "tryEndDrag accepts active drag");
+    expectTrue(result.changed, "tryEndDrag marks result changed");
+    expectTrue(!result.active, "tryEndDrag deactivates drag");
+    expectTrue(result.axis == fuse::editor::GizmoAxis::X, "tryEndDrag records axis");
+    expectTrue(!gizmo.isDragging(), "tryEndDrag clears dragging state");
+    expectTrue(gizmo.transformDirty(), "tryEndDrag marks transform dirty");
+
+    expectTrue(!gizmo.tryEndDrag(result), "tryEndDrag rejects after drag ended");
+}
+
+void testEndDragUsesTryEndDrag() {
+    fuse::editor::GizmoSystem gizmo;
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    fuse::editor::GizmoTransform transform{};
+    const fuse::editor::GizmoResult inactive = gizmo.endDrag();
+    expectTrue(!inactive.changed, "endDrag no-op when inactive via tryEndDrag guard");
+
+    gizmo.beginDrag(hit, transform);
+    hit.screenX = 30.f;
+    gizmo.updateDrag(hit);
+    expectTrue(ended.changed, "endDrag commits via tryEndDrag on active drag");
+    expectTrue(!gizmo.isDragging(), "endDrag clears dragging state");
 }
 
 void testDirtyFlagOnEndDrag() {

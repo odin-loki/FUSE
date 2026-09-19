@@ -389,6 +389,14 @@ bool isHitTestValid(const GizmoHitTest& hit) {
 
 
 
+bool isScreenCoordInViewport(const GizmoHitTest& hit) {
+    if (isHitTestEmpty(hit)) {
+        return false;
+    }
+    return hit.screenX >= 0.f && hit.screenX <= hit.viewportWidth && hit.screenY >= 0.f &&
+           hit.screenY <= hit.viewportHeight;
+}
+
 bool normalizeRay(GizmoRay& ray) {
     const f32 len = ray.direction.length();
     if (len < kEpsilon) {
@@ -449,6 +457,11 @@ PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform
 PickPreflight preflightPick(const GizmoHitTest& hit, GizmoMode mode) {
     if (isHitTestEmpty(hit)) {
         preflight.emptyHit = true;
+
+    if (!isScreenCoordInViewport(hit)) {
+        preflight.outOfBounds = true;
+        return preflight;
+    }
 
     if (isScreenHitMiss(hit, mode)) {
         preflight.screenMiss = true;
@@ -952,6 +965,10 @@ UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging, 
 
     if (isScreenHitMiss(hit, mode)) {
         preflight.screenMiss = true;
+    }
+
+    if (!isScreenCoordInViewport(hit)) {
+        preflight.outOfBounds = true;
     }
 
     return preflight;
@@ -1920,6 +1937,10 @@ bool GizmoSystem::canApplySnapNow() const {
     return fuse::editor::canApplySnap(m_mode, m_snap);
 }
 
+bool GizmoSystem::canSnapDragDeltaNow() const {
+    return fuse::editor::canSnapDragDelta(m_mode, m_snap);
+}
+
 bool GizmoSystem::trySnapTransform(const GizmoTransform& transform, GizmoTransform& out) const {
     return fuse::editor::trySnapTransform(transform, m_mode, m_snap, out);
 }
@@ -2085,6 +2106,14 @@ bool GizmoSystem::canUpdateDrag(const GizmoHitTest& hit) const {
 
 EndDragPreflight GizmoSystem::preflightEndDrag() const {
     return fuse::editor::preflightEndDrag(m_dragging);
+
+bool GizmoSystem::canEndDrag() const {
+    return preflightEndDrag().canEnd();
+}
+
+EndDragPreflight GizmoSystem::preflightEndDrag() const {
+    return fuse::editor::preflightEndDrag(m_dragging, m_activeAxis);
+}
 
 bool GizmoSystem::canEndDrag() const {
     return preflightEndDrag().canEnd();
@@ -2320,6 +2349,7 @@ bool GizmoSystem::tryEndDrag(GizmoResult& out) {
 
     out = endDrag();
     return true;
+
 
 
 GizmoResult GizmoSystem::endDrag() {
