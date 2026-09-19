@@ -1395,3 +1395,9 @@ void testCookHashTryPreflightAndShouldSkipGuards() {
                "would_invalidate_stale_upstream false on empty cache");
                "would_invalidate_downstream false on empty cache");
     testCookHashTryPreflightAndShouldSkipGuards();
+
+// --- deepen additive from b79-cooker-hash-deeper-a1cf ---
+    expectTrue(!cooker.cache().would_invalidate_source("/tmp/fuse_b79_unknown.obj"),
+    expectTrue(!cooker.cache().would_invalidate_output("/tmp/fuse_b79_unknown.fusemesh"),
+               "would_invalidate_output rejects unknown output");
+    expectTrue(cache.preflight_store_entry(zero_key).reason == fuse::project::CookHashRejectReason::ZeroSourceHash,
