@@ -25,6 +25,18 @@ void runNarrowphaseIntoBuffer(
     buffer.compactAndClamp();
 }
 
+void runNarrowphaseIntoBufferIfDispatchable(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactBufferSoA& buffer) {
+    if (narrowphase_batch_rejects_all(pairs, bodies, shapes)) {
+        buffer.clear();
+        return;
+    }
+    runNarrowphaseIntoBuffer(pairs, bodies, shapes, buffer);
+}
+
 std::vector<ContactManifold> runNarrowphase(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,

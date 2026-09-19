@@ -226,4 +226,32 @@ bool narrowphase_batch_rejects_all(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Returns true when extended preflight would reject before buffer slot write (B4.6 deepen pass).
+bool should_skip_contact_pair_for_buffer(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Detect contacts only when extended deepen preflight allows dispatch (B4.6 deepen pass).
+ContactManifold detect_contacts_pair_if_dispatchable(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Per-slot narrowphase write preflight combining pair reject + manifold validity (B4.6 deepen pass).
+struct NarrowphaseSlotPreflight {
+    ContactPairRejectReason pairReason = ContactPairRejectReason::None;
+    bool pairRejected = false;
+    bool canDetect = false;
+    bool canWrite = false;
+
+    bool can_dispatch() const { return canDetect && !pairRejected; }
+};
+
+/// Populate slot preflight without running shape dispatch or buffer write (B4.6 deepen pass).
+NarrowphaseSlotPreflight preflight_narrowphase_slot(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
 } // namespace fuse::physics::narrowphase
