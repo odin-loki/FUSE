@@ -4,6 +4,67 @@
 
 namespace fuse::physics {
 
+bool contact_references_in_range_body(u32 bodyA, u32 bodyB, u32 bodyCount) {
+    return bodyA < bodyCount && bodyB < bodyCount;
+}
+
+bool distance_constraint_references_in_range_body(const DistanceConstraint& constraint, u32 bodyCount) {
+    return contact_references_in_range_body(constraint.bodyA, constraint.bodyB, bodyCount);
+}
+
+IslandBuildPreflight preflight_island_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    IslandBuildPreflight preflight{};
+    preflight.bodyCount = bodyCount;
+    if (bodyCount == 0u) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    preflight.ownedContactCount = static_cast<u32>(contacts.size());
+    preflight.ownedDistanceCount = static_cast<u32>(distanceConstraints.size());
+
+    for (const narrowphase::ContactManifold& contact : contacts) {
+        if (!contact_references_in_range_body(contact.bodyA, contact.bodyB, bodyCount)) {
+            ++preflight.outOfRangeContactCount;
+            continue;
+        }
+        ++preflight.inRangeContactCount;
+        if (contact.valid) {
+            ++preflight.validContactCount;
+        }
+    }
+
+    for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (distance_constraint_references_in_range_body(constraint, bodyCount)) {
+            ++preflight.inRangeDistanceCount;
+        } else {
+            ++preflight.outOfRangeDistanceCount;
+        }
+    }
+
+    return preflight;
+}
+
+bool should_skip_island_build(u32 bodyCount,
+                              const std::vector<narrowphase::ContactManifold>& contacts,
+                              const std::vector<DistanceConstraint>& distanceConstraints) {
+    return !preflight_island_build(bodyCount, contacts, distanceConstraints).can_build();
+}
+
+void build_island_graph_guarded(ContactIslandGraph& graph,
+                                u32 bodyCount,
+                                const std::vector<narrowphase::ContactManifold>& contacts,
+                                const std::vector<DistanceConstraint>& distanceConstraints) {
+    if (should_skip_island_build(bodyCount, contacts, distanceConstraints)) {
+        graph.clear();
+        return;
+    }
+    graph.build(bodyCount, contacts, distanceConstraints);
+}
+
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();
