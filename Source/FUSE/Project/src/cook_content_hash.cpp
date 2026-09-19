@@ -392,3 +392,24 @@ CookFileHashPreflight preflight_file_content_hash(const std::string& path) {
         preflight.reason = CookFileHashRejectReason::EmptyPath;
         preflight.reason = CookFileHashRejectReason::UnreadableSource;
     preflight.reason = CookFileHashRejectReason::None;
+
+// --- deepen additive from b79-hash-preflight-probes-fd33 ---
+bool set_preflight_reason(CookHashPreflightRejectReason* reason, CookHashPreflightRejectReason value) {
+    return value == CookHashPreflightRejectReason::None;
+const char* cookHashPreflightRejectReasonLabel(CookHashPreflightRejectReason reason) {
+    case CookHashPreflightRejectReason::None:
+    case CookHashPreflightRejectReason::EmptyPath:
+    case CookHashPreflightRejectReason::MissingFile:
+    case CookHashPreflightRejectReason::EmptyInputOrOutput:
+    case CookHashPreflightRejectReason::ZeroSourceHash:
+bool preflight_hash_file_content(const std::string& path, CookHashPreflightRejectReason* reason) {
+        return set_preflight_reason(reason, CookHashPreflightRejectReason::EmptyPath);
+        return set_preflight_reason(reason, CookHashPreflightRejectReason::MissingFile);
+    return set_preflight_reason(reason, CookHashPreflightRejectReason::None);
+bool preflight_hash_mesh_import(const MeshImportDesc& desc, CookHashPreflightRejectReason* reason) {
+        return set_preflight_reason(reason, CookHashPreflightRejectReason::EmptyInputOrOutput);
+bool preflight_hash_texture_import(const TextureImportDesc& desc, CookHashPreflightRejectReason* reason) {
+bool preflight_hash_audio_import(const AudioImportDesc& desc, CookHashPreflightRejectReason* reason) {
+bool preflight_hash_manifest_entry(const CookManifestEntry& entry, CookHashPreflightRejectReason* reason) {
+bool preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash, CookHashPreflightRejectReason* reason) {
+        return set_preflight_reason(reason, CookHashPreflightRejectReason::ZeroSourceHash);

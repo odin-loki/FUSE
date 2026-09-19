@@ -165,3 +165,7 @@ struct CookCacheStorePreflight {
     [[nodiscard]] bool would_invalidate() const { return affected_count > 0; }
     [[nodiscard]] bool would_reconcile() const { return total() > 0; }
 [[nodiscard]] CookCacheKeyPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
+
+// --- deepen additive from b79-hash-preflight-probes-fd33 ---
+    [[nodiscard]] bool probe_would_invalidate_hash(u64 content_hash) const;
+    [[nodiscard]] bool probe_would_invalidate_source(const std::string& source_path) const;

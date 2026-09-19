@@ -1930,3 +1930,7 @@ void testCookCachePreflightAndReconcileEstimators() {
 // --- deepen additive from deepen-b79-cooker-hash-guards-7fd3 ---
         cooker.cache().probe_downstream_of(entryA.output_path, graph.edges(), graph.jobs());
     expectTrue(!cooker.cache().probe_stale_upstream_hashes(empty_upstream).would_invalidate(),
+
+// --- deepen additive from b79-hash-preflight-probes-fd33 ---
+    fuse::project::CookHashPreflightRejectReason reason = fuse::project::CookHashPreflightRejectReason::None;
+    expectTrue(reason == fuse::project::CookHashPreflightRejectReason::EmptyPath,

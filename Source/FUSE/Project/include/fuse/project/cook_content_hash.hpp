@@ -97,3 +97,8 @@ enum class CookFileHashRejectReason : u8 {
 struct CookFileHashPreflight {
     CookFileHashRejectReason reason = CookFileHashRejectReason::None;
 [[nodiscard]] CookFileHashPreflight preflight_file_content_hash(const std::string& path);
+
+// --- deepen additive from b79-hash-preflight-probes-fd33 ---
+enum class CookHashPreflightRejectReason : u8 {
+const char* cookHashPreflightRejectReasonLabel(CookHashPreflightRejectReason reason);
+                                               CookHashPreflightRejectReason* reason = nullptr);

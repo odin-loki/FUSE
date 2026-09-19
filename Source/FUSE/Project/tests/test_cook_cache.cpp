@@ -845,3 +845,15 @@ void testCookCacheHashPreflightGuards() {
     expectTrue(!empty.probe_invalidate_source("/tmp/fuse_b79_probe.obj").would_invalidate(),
     expectTrue(stale_probe.would_invalidate(), "stale-content probe detects mismatched hash");
     testCookCacheHashPreflightGuards();
+
+// --- deepen additive from b79-hash-preflight-probes-fd33 ---
+    fuse::project::CookHashPreflightRejectReason reason = fuse::project::CookHashPreflightRejectReason::None;
+    expectTrue(reason == fuse::project::CookHashPreflightRejectReason::EmptyPath,
+    expectTrue(reason == fuse::project::CookHashPreflightRejectReason::MissingFile,
+    expectTrue(reason == fuse::project::CookHashPreflightRejectReason::None,
+    expectTrue(reason == fuse::project::CookHashPreflightRejectReason::EmptyInputOrOutput,
+    expectTrue(reason == fuse::project::CookHashPreflightRejectReason::ZeroSourceHash,
+    expectTrue(cooker.cache().probe_would_invalidate_hash(seeded.content_hash),
+    expectTrue(!cooker.cache().probe_would_invalidate_hash(seeded.content_hash + 1u),
+    expectTrue(cooker.cache().probe_would_invalidate_source(source),
+    expectTrue(!cooker.cache().probe_would_invalidate_source(""),

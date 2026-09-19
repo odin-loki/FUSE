@@ -814,3 +814,7 @@ CookCacheKeyPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
     CookCacheKeyPreflight preflight{};
         preflight.reason = CookCacheKeyRejectReason::ZeroSourceHash;
         preflight.reason = CookCacheKeyRejectReason::UncacheableFold;
+
+// --- deepen additive from b79-hash-preflight-probes-fd33 ---
+bool CookCache::probe_would_invalidate_hash(u64 content_hash) const {
+bool CookCache::probe_would_invalidate_source(const std::string& source_path) const {
