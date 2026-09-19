@@ -3284,3 +3284,26 @@ void testResolveBlendModeGuards() {
 void testTaaPassWarmupBlendAndJitterDriftGuards() {
     expectTrue(!pass->preflightHistoryWarmup(&warmupState),
     expectTrue(pass->preflightHistoryWarmup(&warmupState), "pass warmup preflight passes after resolve");
+
+// --- deepen additive from deepen-b59-taa-guards-53dc ---
+void testPreflightTaaHistoryWarmup() {
+void testJitterAdvanceIfAlignedGuards() {
+    expectTrue(fuse::renderer::preflightTaaJitterAlignment(6u, jitter),
+               "preflightTaaJitterAlignment passes for current frame");
+    expectTrue(!fuse::renderer::preflightTaaJitterAlignment(5u, jitter),
+               "preflightTaaJitterAlignment fails for stale frame");
+    expectTrue(pass->preflightJitterAlignment(4u), "pass preflightJitterAlignment passes when synced");
+void testPreflightTaaResolveDesc() {
+    fuse::renderer::TaaResolveDescPreflight result{};
+    expectTrue(!fuse::renderer::preflightTaaResolveDesc(desc, emptyHistory, &result),
+    expectTrue(fuse::renderer::preflightTaaResolveDesc(desc, history, &result),
+    expectTrue(result.blend_reject_reason == fuse::renderer::TaaResolveBlendRejectReason::None,
+    expectTrue(resolve.preflightDesc(desc, history, &result),
+               "TaaResolve::preflightDesc passes for valid desc");
+    expectTrue(!fuse::renderer::preflightTaaResolveDesc(desc, history, &result),
+    expectTrue(!pass->preflightHistoryWarmup(&warmupReason),
+    expectTrue(pass->preflightResolveDesc(desc, &result), "pass preflightResolveDesc passes valid desc");
+    expectTrue(pass->resolveFrame(desc), "resolveFrame succeeds after preflightResolveDesc");
+    expectTrue(pass->preflightHistoryWarmup(&warmupReason), "pass warmup preflight passes after resolve");
+    testPreflightTaaHistoryWarmup();
+    testPreflightTaaResolveDesc();

@@ -74,3 +74,7 @@ bool preflightTaaResolveWithBlend(const TaaResolveDesc& desc, const TaaHistoryBu
 
 // --- deepen additive from deepen-b59-taa-guards-298c ---
 bool preflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+
+// --- deepen additive from deepen-b59-taa-guards-53dc ---
+    bool preflightDesc(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                       TaaResolveDescPreflight* result = nullptr) const;

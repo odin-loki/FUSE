@@ -96,3 +96,10 @@ Part of `fuse_rhi`. Built with `FUSE_BUILD_CORE=ON`. Tests run when `FUSE_BUILD_
 - `diagnoseTaaResolveBlendPreflight(desc, history)` — classify blend preflight reject reason
 - `preflightTaaResolveBlend(desc, history, &reason)` — false when history not ready or weights violate reuse policy
 - `TaaPass::isWarmupResolveFrame()` / `preflightHistoryReuse(observedGeneration)` / `preflightResolveBlend(desc, &reason)` — pass-level preflight
+
+// --- deepen additive from deepen-b59-taa-guards-53dc ---
+- `TaaHistoryWarmupBlockReason` / `classifyTaaHistoryWarmupBlock` / `preflightTaaHistoryWarmup` — warm-up preflight guards
+- `TaaJitter::advanceIfAlignedToFrameIndex(frame)` / `preflightTaaJitterAlignment` — advance only when jitter is synced
+- `TaaPass::advanceJitterIfAligned(frame)` / `preflightJitterAlignment` — pass-level jitter alignment guards
+- `TaaResolveDescPreflight` / `preflightTaaResolveDesc` — combined resolve skip + blend-weight preflight
+- `TaaResolve::preflightDesc` / `TaaPass::preflightResolveDesc` / `TaaPass::preflightHistoryWarmup` — pass/resolve wrappers

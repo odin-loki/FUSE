@@ -464,3 +464,9 @@ bool TaaPass::preflightHistoryWarmup(TaaHistoryWarmupPhase* phase) const {
 // --- deepen additive from deepen-b59-taa-guards-d966 ---
 bool TaaPass::preflightHistoryWarmup(TaaHistoryWarmupState* state) const {
     return preflightTaaHistoryWarmup(m_history, state);
+
+// --- deepen additive from deepen-b59-taa-guards-53dc ---
+bool TaaPass::preflightJitterAlignment(u32 expectedFrameIndex) const {
+    return preflightTaaJitterAlignment(expectedFrameIndex, m_jitter);
+bool TaaPass::preflightResolveDesc(const TaaResolveDesc& desc, TaaResolveDescPreflight* result) const {
+    return preflightTaaResolveDesc(desc, m_history, result);

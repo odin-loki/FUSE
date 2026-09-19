@@ -239,3 +239,7 @@ void addTaaPassToGraph(RenderGraph& graph);
 
 // --- deepen additive from deepen-b59-taa-guards-d966 ---
     bool preflightHistoryWarmup(TaaHistoryWarmupState* state = nullptr) const;
+
+// --- deepen additive from deepen-b59-taa-guards-53dc ---
+    bool preflightJitterAlignment(u32 expectedFrameIndex) const;
+    bool preflightResolveDesc(const TaaResolveDesc& desc, TaaResolveDescPreflight* result = nullptr) const;

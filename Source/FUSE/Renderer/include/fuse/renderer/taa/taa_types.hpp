@@ -292,3 +292,9 @@ bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmup
 // --- deepen additive from deepen-b59-taa-guards-d966 ---
 bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupState* state = nullptr);
                               TaaResolveBlendRejectReason* blendReason = nullptr);
+
+// --- deepen additive from deepen-b59-taa-guards-53dc ---
+struct TaaResolveDescPreflight {
+    TaaResolveBlendRejectReason blend_reject_reason = TaaResolveBlendRejectReason::None;
+bool preflightTaaResolveDesc(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                             TaaResolveDescPreflight* result = nullptr);

@@ -552,3 +552,14 @@ bool preflightTaaResolveGuards(const TaaResolveDesc& desc, const TaaHistoryBuffe
 
 // --- deepen additive from deepen-b59-taa-guards-d966 ---
                               TaaResolveSkipReason* skipReason, TaaResolveBlendRejectReason* blendReason) {
+
+// --- deepen additive from deepen-b59-taa-guards-53dc ---
+bool preflightTaaResolveDesc(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                             TaaResolveDescPreflight* result) {
+    TaaResolveDescPreflight local{};
+    if (taaResolveSkipReasonIsBlocking(local.skip_reason)) {
+    local.blend_reject_reason = classifyTaaResolveBlendReject(desc, history);
+    if (local.blend_reject_reason != TaaResolveBlendRejectReason::None) {
+bool TaaResolve::preflightDesc(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                               TaaResolveDescPreflight* result) const {
+    return preflightTaaResolveDesc(desc, history, result);
