@@ -1461,6 +1461,39 @@ bool canSkipPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB) {
 
 bool shouldRunPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB) {
     return preflightPairBufferPush(buffer, idxA, idxB).canPush();
+const char* pairBufferAcceptPairsRejectReasonName(PairBufferAcceptPairsRejectReason reason) {
+    switch (reason) {
+    case PairBufferAcceptPairsRejectReason::None:
+        return "None";
+    case PairBufferAcceptPairsRejectReason::AtCapacity:
+        return "AtCapacity";
+    }
+    return "Unknown";
+
+PairBufferAcceptPairsRejectReason pairBufferAcceptPairsRejectReason(
+    const PairBufferSoA& buffer,
+    u32 additionalCount) {
+    if (additionalCount == 0u || buffer.canAcceptPairs(additionalCount)) {
+        return PairBufferAcceptPairsRejectReason::None;
+    return PairBufferAcceptPairsRejectReason::AtCapacity;
+
+bool pairBufferAcceptPairsRejectsForReason(
+    u32 additionalCount,
+    PairBufferAcceptPairsRejectReason expected) {
+    return pairBufferAcceptPairsRejectReason(buffer, additionalCount) == expected;
+
+PairBufferAcceptPairsPreflight preflightPairBufferAcceptPairs(const PairBufferSoA& buffer, u32 additionalCount) {
+    PairBufferAcceptPairsPreflight preflight{};
+    preflight.reason = pairBufferAcceptPairsRejectReason(buffer, additionalCount);
+    preflight.atCapacity = preflight.reason == PairBufferAcceptPairsRejectReason::AtCapacity;
+    return preflight;
+
+bool canSkipPairBufferAcceptPairs(const PairBufferSoA& buffer, u32 additionalCount) {
+    return !preflightPairBufferAcceptPairs(buffer, additionalCount).canAccept();
+
+bool shouldRunPairBufferAcceptPairs(const PairBufferSoA& buffer, u32 additionalCount) {
+    return preflightPairBufferAcceptPairs(buffer, additionalCount).canAccept();
+
 const char* pairBufferWriteSlotRejectReasonName(PairBufferWriteSlotRejectReason reason) {
     switch (reason) {
     case PairBufferWriteSlotRejectReason::None:
@@ -1496,6 +1529,8 @@ PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
     u32 slot,
     u32 idxA,
 
+
+
     u32 idxB) {
     PairBufferWriteSlotPreflight preflight{};
     preflight.reason = pairBufferWriteSlotRejectReason(buffer, slot, idxA, idxB);
@@ -1505,6 +1540,8 @@ PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
 
 bool canSkipPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB) {
     return !preflightPairBufferWriteSlot(buffer, slot, idxA, idxB).canWrite();
+}
+
 
 bool shouldRunPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB) {
     return preflightPairBufferWriteSlot(buffer, slot, idxA, idxB).canWrite();
