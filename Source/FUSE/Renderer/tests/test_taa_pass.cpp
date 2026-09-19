@@ -9443,6 +9443,13 @@ void testTaaPassTryClassifyGuardWrappers() {
 
 
 
+
+
+
+    expectTrue(!pass->tryPreflightHistoryReadyForResolve(reuseReason),
+               "pass tryPreflightHistoryReadyForResolve fails before init");
+    expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::NotReady,
+               "pass tryPreflightHistoryReadyForResolve reason is NotReady before init");
     expectTrue(!pass->tryPreflightHistoryReuse(0u, reuseReason),
                "pass tryPreflightHistoryReuse fails before init");
     expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::NotReady,
@@ -10369,6 +10376,9 @@ void testTaaPassDeepenAlignmentAndTemporalBlend() {
 
 
 
+
+
+
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
     bootstrapDesc.createSwapchain = false;
@@ -10709,6 +10719,7 @@ void testTaaPassDeepenAlignmentAndTemporalBlend() {
                "pass tryPreflightHistoryReadyForResolve passes after init");
     expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::None,
                "pass tryPreflightHistoryReadyForResolve reason is None after init");
+
     expectTrue(!pass->tryPreflightHistoryReuse(0u, reuseReason),
                "pass tryPreflightHistoryReuse fails before warmup");
     expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::NotWarm,
@@ -10717,9 +10728,18 @@ void testTaaPassDeepenAlignmentAndTemporalBlend() {
     expectTrue(pass->tryPreflightResolve(resolveDesc, skipReason),
     expectTrue(skipReason == fuse::renderer::TaaResolveSkipReason::None,
                "pass tryPreflightResolve passes after init");
+    expectTrue(pass->classifyHistoryReuseBlock(0u) == fuse::renderer::TaaHistoryReuseBlockReason::NotWarm,
+               "pass classifyHistoryReuseBlock is NotWarm before warmup");
+
                "pass tryPreflightResolve skip reason is None after init");
     expectTrue(pass->classifyResolveSkip(resolveDesc) == fuse::renderer::TaaResolveSkipReason::None,
                "pass classifyResolveSkip is None after init");
+
+    fuse::renderer::TaaBlendWeights weights{};
+    expectTrue(pass->tryComputeResolveBlendWeights(resolveDesc, weights, blendReason),
+               "pass tryComputeResolveBlendWeights passes before warmup");
+    expectNear(weights.current, 1.f, 1e-5f, "pass tryCompute warmup current weight is full");
+    expectNear(weights.history, 0.f, 1e-5f, "pass tryCompute warmup history weight is zero");
 
     expectTrue(pass->resolveFrame(resolveDesc), "initial resolve warms pass history");
 
@@ -10761,6 +10781,12 @@ void testTaaPassDeepenAlignmentAndTemporalBlend() {
                "pass classifyResolveBlendReject is None after warmup");
 
                "pass classifyHistoryReuseBlock is StaleGeneration after invalidate");
+
+    expectNear(weights.current, 0.35f, 1e-5f, "pass tryCompute steady current weight");
+    expectNear(weights.history, 0.65f, 1e-5f, "pass tryCompute steady history weight");
+    expectTrue(blendReason == fuse::renderer::TaaResolveBlendRejectReason::None,
+               "pass tryPreflightResolveBlendWeights reject reason is None after warmup");
+
     expectTrue(!pass->tryPreflightHistoryReuse(0u, reuseReason),
                "pass tryPreflightHistoryReuse fails after invalidate");
     expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::StaleGeneration,
