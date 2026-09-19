@@ -60,6 +60,30 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaPass::stampObservedHistoryGeneration(desc)` — stamp observed generation from pass history
 - `TaaPass::syncJitterToFrameIndex(frame)` — align pass jitter to a monotonic frame counter
 
+## Guard preflights (B5.9 deepen)
+
+### History warm-up
+- `classifyTaaHistoryWarmupBlock(history)` — `NotReady` / `NeedsWarmup` / `None`
+- `taaHistoryWarmupComplete(history)` — true when buffers are ready and warmed
+- `preflightTaaHistoryWarmup` / `tryPreflightTaaHistoryWarmup` / `shouldSkipTaaHistoryWarmup`
+- `TaaPass::historyWarmupComplete()` / `preflightHistoryWarmup()` / `shouldSkipHistoryWarmup()`
+
+### History reuse
+- `preflightTaaHistoryReuse` / `tryPreflightTaaHistoryReuse` / `shouldSkipTaaHistoryReuse`
+- `taaHistoryReuseReady(history, observedGeneration)` — warmed + generation matches
+
+### Jitter sync
+- `preflightTaaJitterSync` / `tryPreflightTaaJitterSync` / `shouldSkipTaaJitterSync`
+- `preflightTaaJitterNdc` / `tryPreflightTaaJitterNdc` / `shouldSkipTaaJitterNdc`
+- `taaJitterSyncReady` / `taaJitterNdcReady` — positive readiness checks
+- `TaaPass::preflightJitterSync` / `preflightJitterNdc` / `shouldSkipJitterSync` / `shouldSkipJitterNdc`
+
+### Resolve blend + frame
+- `preflightTaaResolveBlendWeights` / `tryPreflightTaaResolveBlendWeights` / `shouldSkipTaaResolveBlend`
+- `tryPreflightTaaResolve` / `shouldSkipTaaResolve` — resolve skip preflight deepening
+- `preflightTaaResolveFrame` / `tryPreflightTaaResolveFrame` / `shouldSkipTaaResolveFrame` — combined skip + blend
+- `TaaPass::preflightResolveFrame()` / `shouldSkipResolveFrame()`
+
 ## Pipeline (stub)
 
 `jitter → gbuffer (velocity) → resolve → history swap`

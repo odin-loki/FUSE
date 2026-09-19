@@ -84,6 +84,40 @@ bool preflightTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& his
     return !taaResolveSkipReasonIsBlocking(skip);
 }
 
+bool tryPreflightTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                            TaaResolveSkipReason& reason) {
+    reason = classifyTaaResolveSkip(desc, history);
+    return !taaResolveSkipReasonIsBlocking(reason);
+}
+
+bool shouldSkipTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return !preflightTaaResolve(desc, history);
+}
+
+bool preflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                              TaaResolveSkipReason* skipReason, TaaResolveBlendRejectReason* blendReason) {
+    if (!preflightTaaResolve(desc, history, skipReason)) {
+        if (blendReason != nullptr) {
+            *blendReason = TaaResolveBlendRejectReason::None;
+        }
+        return false;
+    }
+    return preflightTaaResolveBlendWeights(desc, history, blendReason);
+}
+
+bool tryPreflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                 TaaResolveSkipReason& skipReason, TaaResolveBlendRejectReason& blendReason) {
+    if (!tryPreflightTaaResolve(desc, history, skipReason)) {
+        blendReason = TaaResolveBlendRejectReason::None;
+        return false;
+    }
+    return tryPreflightTaaResolveBlendWeights(desc, history, blendReason);
+}
+
+bool shouldSkipTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return !preflightTaaResolveFrame(desc, history);
+}
+
 TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!history.isReady()) {
         return TaaResolveSkipReason::HistoryNotReady;
