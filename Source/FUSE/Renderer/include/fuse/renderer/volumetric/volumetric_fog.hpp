@@ -193,6 +193,9 @@ bool sampleCoordRejectReasonIsBlocking(SampleCoordRejectReason reason);
 
 /// Why froxel bilinear density sampling preflight rejected the request (B5.11 deepen).
 enum class FroxelBilinearSampleRejectReason : u8 {
+
+/// Why froxel trilinear density sampling preflight rejected the request (B5.11 deepen).
+enum class FroxelTrilinearSampleRejectReason : u8 {
     None = 0,
     EmptyGrid,
     InaccessibleGrid,
@@ -574,6 +577,11 @@ struct FroxelGridLayout {
     /// Early-out when screen-depth → sample-coords mapping would be rejected.
     /// Early-out when screen-depth → froxel index mapping would be rejected.
     static bool wouldSkipScreenDepthToFroxelIndex(f32 screenX,
+    /// Grid-only sample-coord preflight — returns true when sampling would proceed.
+    /// Classify screen-depth mapping rejection — same ordering as `tryMapScreenDepthToSampleCoords`.
+    /// Non-mutating screen-depth mapping preflight — returns true when mapping would proceed.
+    /// Early-out when screen-depth mapping would be rejected — same ordering as `tryMapScreenDepthToSampleCoords`.
+    static bool wouldSkipScreenMapping(f32 screenX,
 };
 
 /// Why screen-depth → sample-coord mapping rejected the request (B5.11 deepen).
@@ -738,6 +746,9 @@ bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 /// True when a populate reject reason would block meaningful fill (B5.11 deepen).
 bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 
+/// True when a populate reject reason would block meaningful fill (B5.11 deepen).
+bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
+
 /// Why a froxel density lookup preflight rejected the request (B5.11 deepen).
 enum class DensityLookupRejectReason : u8 {
     None = 0,
@@ -849,6 +860,7 @@ bool froxelTrilinearSampleRejectReasonIsBlocking(FroxelTrilinearSampleRejectReas
 /// True when a density-lookup reject reason would block lookup (B5.11 deepen pass).
 
 /// True when a trilinear sample reject reason would block sampling (B5.11 deepen).
+
 
 
 
@@ -1034,6 +1046,10 @@ DensityLookupRejectReason classifyDensityLookupReject(const FroxelDensityGrid& g
 /// Classify why coord density lookup preflight would reject — same ordering as `tryCanLookupAtCoord`.
 /// Non-mutating density lookup preflight — returns true when lookup may proceed.
 /// Non-mutating coord density lookup preflight — returns true when lookup may proceed.
+/// Classify why index lookup preflight would reject — same ordering as `tryCanLookupAtIndex`.
+/// Classify why coord lookup preflight would reject — same ordering as `tryCanLookupAtCoord`.
+/// Non-mutating index lookup preflight — returns true when lookup would proceed.
+/// Non-mutating coord lookup preflight — returns true when lookup would proceed.
 /// Early-out when density lookup would be rejected — same ordering as `tryCanLookupAtIndex`.
 bool wouldSkipDensityLookup(const FroxelDensityGrid& grid, const FroxelGridDesc& desc);
 /// Early-out when index-based density lookup would be rejected; OOB indices that clamp are not skipped.
@@ -1316,6 +1332,13 @@ SampleCoordRejectReason classifyDensitySampleCoordReject(const FroxelDensityGrid
 bool preflightDensitySampleAtCoords(const FroxelDensityGrid& grid,
 /// Early-out when coord-based sample preflight would reject.
 bool wouldSkipDensitySampleAtCoords(const FroxelDensityGrid& grid,
+/// Classify why trilinear sample preflight would reject — same ordering as `tryCanTrilinearSampleAtCoords`.
+FroxelTrilinearSampleRejectReason classifyTrilinearSampleReject(const FroxelDensityGrid& grid,
+/// Non-mutating trilinear sample preflight — returns true when sampling would proceed.
+bool preflightDensityTrilinearSample(const FroxelDensityGrid& grid,
+                                     FroxelTrilinearSampleRejectReason* reason = nullptr);
+/// Early-out when bilinear density sampling would be rejected — same ordering as `tryCanSampleAtCoords`.
+bool wouldSkipDensityBilinearSample(const FroxelDensityGrid& grid,
 /// True when at least one froxel exceeds `epsilon`; false when storage is empty.
 bool hasNonZeroDensity(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
 /// Early-out when the grid is inaccessible or uniformly below `epsilon`.
@@ -1479,6 +1502,7 @@ bool hasNonFiniteDensity(const FroxelDensityGrid& grid);
 /// Non-mutating grid density preflight — returns true when validation may proceed.
 /// Diagnose density validation against `desc`; vacuously succeeds when `desc` is empty.
 /// Early-out when grid density validation would be rejected — same ordering as `tryValidateGridDensity`.
+/// Non-mutating grid density preflight — returns true when validation would pass.
 /// Read density with guard preflight; returns false when `canLookupAtIndex` would reject the request.
 bool trySampleDensityAtIndex(const FroxelDensityGrid& grid,
                              u32 index,
@@ -1854,8 +1878,13 @@ bool canPopulateFromAnalyticFog(const FroxelGridDesc& desc,
 FroxelPopulateRejectReason classifyFroxelPopulateReject(const FroxelGridDesc& desc,
 /// Non-mutating analytic populate preflight — returns true when meaningful fill would proceed.
 bool preflightFroxelPopulate(const FroxelGridDesc& desc,
-                             const VolumetricFogParams& params,
-                             FroxelPopulateRejectReason* reason = nullptr);
+FroxelPopulateRejectReason classifyPopulateReject(const FroxelGridDesc& desc,
+                                                  const FroxelCameraDesc& camera,
+                                                  const VolumetricFogParams& params);
+/// Non-mutating populate preflight — returns true when meaningful fill would proceed.
+/// Guarded populate — always mirrors `populateFromAnalyticFog`; returns false when preflight rejects fill.
+bool tryPopulateFromAnalyticFog(FroxelDensityGrid& grid,
+                                const FroxelGridDesc& desc,
                                 const FroxelCameraDesc& camera,
                                 const VolumetricFogParams& params);
 /// Grid-only populate preflight without reject-reason diagnostics.
