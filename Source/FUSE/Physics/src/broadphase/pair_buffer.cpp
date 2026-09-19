@@ -548,6 +548,7 @@ u32 PairBufferSoA::compactAndClamp() {
         return 0u;
     const PairBufferCompactionPreflight compactionPreflight = preflightPairBufferCompaction(*this);
     if (compactionPreflight.emptyBuffer) {
+    if (canSkipPairBufferCompactAndClamp(*this)) {
 
     compact();
     if (isEmpty()) {
@@ -1764,6 +1765,15 @@ PairBufferSortRejectReason pairBufferSortRejectReason(const PairBufferSoA& buffe
 bool pairBufferSortRejectsForReason(
     PairBufferSortRejectReason expected) {
     return pairBufferSortRejectReason(buffer) == expected;
+PairBufferCompactAndClampPreflight preflightPairBufferCompactAndClamp(const PairBufferSoA& buffer) {
+    PairBufferCompactAndClampPreflight preflight{};
+
+bool canSkipPairBufferCompactAndClamp(const PairBufferSoA& buffer) {
+    return preflightPairBufferCompactAndClamp(buffer).emptyBuffer;
+
+    return buffer.canSkipCompaction();
+
+    return buffer.canSkipMaxCapacityClamp();
 }
 
 bool canSkipPairBufferSort(const PairBufferSoA& buffer) {
@@ -1797,5 +1807,6 @@ PairBufferCompactAndClampPreflight preflightPairBufferCompactAndClamp(const Pair
 
 bool canSkipPairBufferCompactAndClamp(const PairBufferSoA& buffer) {
     return !preflightPairBufferCompactAndClamp(buffer).needsWork();
+
 
 } // namespace fuse::physics::broadphase

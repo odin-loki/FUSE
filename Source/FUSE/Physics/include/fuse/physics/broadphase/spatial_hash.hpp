@@ -707,13 +707,16 @@ FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellOccupancyPrefli
 
     preflight.occupancyCount = estimateCellOccupancyCount(range);
     preflight.exceedsBudget = preflight.reason == CellOccupancyRejectReason::ExceedsBudget;
-    return preflight;
+
+
+
+
 }
 
-/// Non-mutating cell-occupancy skip predicate — inverse of `preflightCellOccupancy` (B4.2 deepen pass).
+/// Non-mutating cell-occupancy skip predicate — inverse of `preflightCellOccupancy::canIterate` (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellRange3& range, u32 maxCells) {
     return !preflightCellOccupancy(range, maxCells).canIterate();
-
+}
 
 FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellRange2& range, u32 maxCells) {
     return !preflightCellOccupancy(range, maxCells).canIterate();
@@ -1887,6 +1890,12 @@ bool shouldRunRefineBroadphase(
     const CollisionShapeSoA& shapes,
     const PairBufferSoA& buffer);
 
+/// Non-mutating refine predicate — inverse of `canSkipRefineBroadphase` (B4.2 deepen pass).
+bool shouldRunRefineBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
+
 /// Why broadphase pair dedupe would early-out (B4.2 deepen follow-up pass).
 enum class DedupeBroadphaseRejectReason : u8 {
     SinglePair,
@@ -1951,13 +1960,10 @@ MergeBroadphaseRejectReason mergeBroadphaseRejectReason(
 
 /// Returns true when `mergeBroadphaseRejectReason` matches `expected` (B4.2 deepen pass).
 bool mergeBroadphaseRejectsForReason(
-    None = 0,
-};
 
 const char* broadphaseMergeRejectReasonName(BroadphaseMergeRejectReason reason);
 
 BroadphaseMergeRejectReason broadphaseMergeRejectReason(
-    const RigidBodySoA& bodies,
 
 /// Returns true when `broadphaseMergeRejectReason` matches `expected` (B4.2 deepen pass).
 bool broadphaseMergeRejectsForReason(
@@ -2029,6 +2035,9 @@ bool canSkipRefineDedupeBroadphase(
 
 /// Non-mutating refine predicate — inverse of `canSkipRefineBroadphase` (B4.2 deepen pass).
 bool shouldRunRefineBroadphase(
+
+
+
 
 
 
@@ -2134,6 +2143,7 @@ bool canSkipBroadphaseMerge(
 /// Non-mutating merge skip predicate — inverse of `preflightBroadphaseMerge::canMerge` (B4.2 deepen follow-up pass).
 /// Non-mutating merge skip predicate — inverse of `BroadphaseMergePreflight::canMerge` (B4.2 deepen pass).
 /// Non-mutating merge skip predicate — inverse of `preflightBroadphaseMerge().canMerge()`.
+/// Non-mutating merge skip predicate — inverse of `preflightBroadphaseMerge::canMerge` (B4.2 deepen pass).
 bool canSkipBroadphaseMerge(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);

@@ -939,5 +939,18 @@ BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
 
 
 /// Non-mutating compact-and-clamp skip predicate — true when both sub-passes are no-ops (B4.2 deepen pass).
+/// Read-only compact+clamp diagnostics — no mutation (B4.2 deepen pass).
+
+    bool needsWork() const { return !emptyBuffer && (needsCompaction || needsClamp); }
+
+
+/// Non-mutating compact+clamp skip predicate — true only when the buffer is empty (B4.2 deepen pass).
+
+/// Non-mutating compaction skip predicate — mirrors `PairBufferSoA::canSkipCompaction` (B4.2 deepen pass).
+
+/// Non-mutating clamp skip predicate — mirrors `PairBufferSoA::canSkipMaxCapacityClamp` (B4.2 deepen pass).
+bool canSkipPairBufferClamp(const PairBufferSoA& buffer);
+
+/// Non-mutating sort skip predicate — inverse of `preflightPairBufferSort::needsSort` (B4.2 deepen pass).
 
 } // namespace fuse::physics::broadphase
