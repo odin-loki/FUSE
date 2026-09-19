@@ -4702,3 +4702,16 @@ void testDdgiDeepenGuardPass2() {
     expectTrue(fuse::renderer::classifyProbeGridReject(zeroRes) ==
     expectTrue(fuse::renderer::classifyProbeGridReject(zeroSpacing) ==
                "preflightTrilinearProbeSample succeeds for accessible grid");
+
+// --- deepen additive from deepen-ddgi-b56-guards-9559 ---
+               "shouldSkipProbeGrid matches wouldSkipProbeGridSource");
+                   fuse::renderer::ProbeGridSourceRejectReason::InvalidProbeSpacing,
+               "classifyProbeGridSourceReject invalid_probe_spacing");
+    expectTrue(fuse::renderer::wouldSkipProbeGridSource(badSpacing),
+               "wouldSkipProbeGridSource true for invalid spacing");
+    expectTrue(fuse::renderer::ddgi_util::preflightTrilinearProbeSample(desc, coords, cache.data(), 8u, &reason),
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(desc, invalid),
+               "wouldSkipProbeSampleCoords false for clampable unordered corners");
+    expectTrue(fuse::renderer::gi::tryPreflightProbeKernelLaunch(params, reason),
+    expectTrue(!fuse::renderer::gi::tryPreflightProbeKernelLaunch(zeroCount, reason),
+               "tryPreflightProbeKernelLaunch rejects zero update count");

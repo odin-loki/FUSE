@@ -3347,3 +3347,8 @@ bool wouldSkipProbeBlendKernelWithGrid(const DDGIDesc& desc, const DDGIKernelPar
 bool tryValidateProbeGridSource(const DDGIDesc& desc, ProbeGridRejectReason& outReason) {
         outReason = ProbeGridRejectReason::ZeroSpacing;
 bool preflightProbeGridSource(const DDGIDesc& desc, ProbeGridRejectReason* reason) {
+
+// --- deepen additive from deepen-ddgi-b56-guards-9559 ---
+    case ProbeGridSourceRejectReason::InvalidProbeSpacing:
+        outReason = ProbeGridSourceRejectReason::InvalidProbeSpacing;
+    return wouldSkipTrilinearProbeIrradiance(desc, world_position, cache, cache_count);
