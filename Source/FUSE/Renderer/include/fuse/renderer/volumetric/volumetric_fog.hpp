@@ -280,6 +280,7 @@ const char* trilinearSampleRejectReasonLabel(TrilinearSampleRejectReason reason)
 
 /// True when a sample-coord reject reason would block sampling (B5.11 deepen).
 
+
 /// Froxel grid indexing helpers — mirrors clustered light layout (B5.4).
 struct FroxelGridLayout {
     static bool isEmptyGrid(const FroxelGridDesc& desc);
@@ -536,6 +537,12 @@ struct FroxelGridLayout {
     /// Classify sample-coord rejection — same ordering as `tryPreflightSampleCoords`.
     /// Classify screen-depth → sample-coords rejection — same ordering as `tryMapScreenDepthToSampleCoords`.
     /// Non-mutating screen-depth → sample-coords preflight — returns true when mapping would proceed.
+    /// Classify sample-coord rejection — same ordering as `tryPreflightSampleCoords` (B5.11 deepen).
+    /// Non-mutating sample-coord preflight — returns true when sampling would proceed (B5.11 deepen).
+    static bool preflightFroxelSampleCoords(const FroxelSampleCoords& coords,
+    /// Classify screen-depth → sample-coords rejection (B5.11 deepen).
+    /// Non-mutating screen-depth preflight — returns true when mapping would proceed (B5.11 deepen).
+    static bool preflightFroxelScreenDepth(f32 screenX,
 };
 
 /// Why screen-depth → sample-coord mapping rejected the request (B5.11 deepen).
@@ -563,6 +570,8 @@ enum class GridDensityRejectReason : u8 {
     DescMismatch,
     UndersizedStorage,
     DensityCountMismatch,
+    NonFiniteDensity,
+};
 
 /// Human-readable label for density reject reasons (logging / tests).
 const char* gridDensityRejectReasonLabel(GridDensityRejectReason reason);
@@ -689,6 +698,9 @@ bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 /// True when a populate reject reason would block analytic fill (B5.11 deepen pass).
 bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 
+/// True when a populate reject reason would block meaningful fill (B5.11 deepen).
+bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
+
 /// Why a froxel density lookup preflight rejected the request (B5.11 deepen).
 enum class DensityLookupRejectReason : u8 {
     None = 0,
@@ -740,6 +752,26 @@ bool densityLookupRejectReasonIsBlocking(DensityLookupRejectReason reason);
     ClampableWeights,
 /// True when a density lookup reject reason would block lookup (B5.11 deepen).
 
+/// True when a density-lookup reject reason would block lookup (B5.11 deepen).
+
+/// Why froxel camera validation rejected the request (B5.11 deepen).
+enum class FroxelCameraRejectReason : u8 {
+    InvalidPlanes,
+    ZeroScreenDimensions,
+};
+
+/// Human-readable label for camera reject reasons (logging / tests).
+const char* froxelCameraRejectReasonLabel(FroxelCameraRejectReason reason);
+
+/// True when a camera reject reason would block froxel screen mapping (B5.11 deepen).
+bool froxelCameraRejectReasonIsBlocking(FroxelCameraRejectReason reason);
+
+/// True when near/far planes and screen dimensions are valid for froxel mapping.
+bool isValidFroxelCamera(const FroxelCameraDesc& camera);
+
+/// Diagnose why froxel camera validation would reject (B5.11 deepen).
+bool tryValidateFroxelCamera(const FroxelCameraDesc& camera, FroxelCameraRejectReason& outReason);
+
 };
 
 /// Human-readable label for trilinear sample reject reasons (logging / tests).
@@ -781,6 +813,7 @@ bool froxelTrilinearSampleRejectReasonIsBlocking(FroxelTrilinearSampleRejectReas
 /// True when a density-lookup reject reason would block lookup (B5.11 deepen pass).
 
 /// True when a trilinear sample reject reason would block sampling (B5.11 deepen).
+
 
 
 /// CPU froxel density interpolation helpers — mirrors CUDA trilinear sample stub.
@@ -884,6 +917,12 @@ DensityLookupRejectReason classifyDensityLookupRejectAtIndex(const FroxelDensity
                                                              u32 tileX,
                                                              u32 tileY,
                                                              u32 sliceZ);
+/// Classify density-lookup rejection — same ordering as `tryCanLookupAtIndex` (B5.11 deepen).
+/// Classify coord density-lookup rejection — same ordering as `tryCanLookupAtCoord` (B5.11 deepen).
+DensityLookupRejectReason classifyDensityLookupCoordReject(const FroxelDensityGrid& grid,
+/// Non-mutating index lookup preflight — returns true when lookup would proceed (B5.11 deepen).
+bool preflightDensityLookupAtIndex(const FroxelDensityGrid& grid,
+/// Non-mutating coord lookup preflight — returns true when lookup would proceed (B5.11 deepen).
 /// Diagnose why lookup preflight would reject; vacuously succeeds on accessible grids.
 bool tryCanLookupAtIndex(const FroxelDensityGrid& grid,
                          DensityLookupRejectReason& outReason);
@@ -1042,15 +1081,15 @@ FroxelTrilinearSampleRejectReason classifyFroxelTrilinearSampleReject(const Frox
                                                                       const FroxelSampleCoords& coords);
 /// Diagnose why trilinear sample preflight would reject.
 bool tryCanSampleAtTrilinear(const FroxelDensityGrid& grid,
-                             const FroxelGridDesc& desc,
                              const FroxelSampleCoords& coords,
                              FroxelTrilinearSampleRejectReason& outReason);
 /// Non-mutating trilinear sample preflight with optional density output.
 bool preflightFroxelTrilinearSample(const FroxelDensityGrid& grid,
-                                    const FroxelGridDesc& desc,
-                                    const FroxelSampleCoords& coords,
                                     f32* outDensity = nullptr,
                                     FroxelTrilinearSampleRejectReason* outReason = nullptr);
+/// Classify coord-based trilinear sample rejection (B5.11 deepen).
+/// Non-mutating trilinear sample preflight — returns true when sampling would proceed (B5.11 deepen).
+                                    FroxelTrilinearSampleRejectReason* reason = nullptr);
 /// Diagnose why coord-based sample preflight would reject.
 bool tryCanSampleAtCoords(const FroxelDensityGrid& grid,
                           const FroxelSampleCoords& coords,
@@ -1361,6 +1400,16 @@ FroxelPopulateRejectReason classifyFroxelPopulateReject(const FroxelGridDesc& de
 bool preflightPopulateFromAnalyticFog(const FroxelGridDesc& desc,
                                       const VolumetricFogParams& params,
                                       FroxelPopulateRejectReason* reason = nullptr);
+/// Classify grid-density rejection — may report `EmptyDesc` or `NonFiniteDensity` (B5.11 deepen).
+/// Non-mutating grid-density preflight — returns true when validation would pass (B5.11 deepen).
+/// True when `value` is finite and non-negative (B5.11 deepen).
+bool isFiniteDensityValue(f32 value);
+/// Clamp non-finite or negative density to zero (B5.11 deepen).
+f32 sanitizeDensityValue(f32 value);
+/// Count froxels with non-finite density; returns 0 when storage is empty (B5.11 deepen).
+u32 countNonFiniteDensities(const FroxelDensityGrid& grid);
+/// True when at least one froxel holds a non-finite density value (B5.11 deepen).
+bool hasNonFiniteDensity(const FroxelDensityGrid& grid);
 /// Read density with guard preflight; returns false when `canLookupAtIndex` would reject the request.
 bool trySampleDensityAtIndex(const FroxelDensityGrid& grid,
                              u32 index,
@@ -1739,6 +1788,8 @@ FroxelPopulateRejectReason classifyFroxelPopulateReject(const FroxelGridDesc& de
                                                         const FroxelCameraDesc& camera,
                                                         const VolumetricFogParams& params);
 /// Analytic populate preflight with optional reject-reason diagnostics.
+/// Classify populate rejection — same ordering as `tryCanPopulateFromAnalyticFog` (B5.11 deepen).
+/// Non-mutating populate preflight — returns true when fill would proceed (B5.11 deepen).
 bool preflightFroxelPopulate(const FroxelGridDesc& desc,
                              const FroxelCameraDesc& camera,
                              const VolumetricFogParams& params,
