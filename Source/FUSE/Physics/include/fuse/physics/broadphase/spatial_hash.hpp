@@ -1245,3 +1245,19 @@ struct BroadphaseMergeBufferPreflight {
     BroadphaseMergeRejectReason sceneReason = BroadphaseMergeRejectReason::None;
         return sceneReason == BroadphaseMergeRejectReason::None && !bufferFull;
 BroadphaseMergeBufferPreflight preflightBroadphaseMergeIntoBuffer(
+
+// --- deepen additive from deepen-b4-broadphase-guards-b316 ---
+        return CellSpanRejectReason::Unbounded;
+        return CellSpanRejectReason::WithinSpanLimit;
+    bool needsClamp() const { return reason == CellSpanRejectReason::None; }
+    preflight.unbounded = preflight.reason == CellSpanRejectReason::Unbounded;
+    preflight.withinSpanLimit = preflight.reason == CellSpanRejectReason::WithinSpanLimit;
+FUSE_PHYSICS_INLINE CellSpanPreflight preflightCellSpan(const CellRange2& range, u32 maxSpanPerAxis) {
+    return !preflightCellSpan(range, maxSpanPerAxis).needsClamp();
+    return preflightCellSpan(range, maxSpanPerAxis).needsClamp();
+enum class BroadphaseMergeBufferRejectReason : u8 {
+const char* mergeBroadphaseBufferRejectReasonName(BroadphaseMergeBufferRejectReason reason);
+BroadphaseMergeBufferRejectReason mergeBroadphaseBufferRejectReason(
+    BroadphaseMergeBufferRejectReason expected);
+    BroadphaseMergeBufferRejectReason reason = BroadphaseMergeBufferRejectReason::None;
+    bool canMergeIntoBuffer() const { return reason == BroadphaseMergeBufferRejectReason::None; }

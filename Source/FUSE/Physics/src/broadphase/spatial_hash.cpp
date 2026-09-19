@@ -1147,3 +1147,21 @@ BroadphaseMergeBufferPreflight preflightBroadphaseMergeIntoBuffer(
     preflight.emptyDynamicBodies = scenePreflight.emptyDynamicBodies;
     return !preflightBroadphaseMergeIntoBuffer(bodies, shapes, buffer).canMergeIntoBuffer();
     return preflightBroadphaseMergeIntoBuffer(bodies, shapes, buffer).canMergeIntoBuffer();
+
+// --- deepen additive from deepen-b4-broadphase-guards-b316 ---
+    case CellSpanRejectReason::Unbounded:
+    case CellSpanRejectReason::WithinSpanLimit:
+const char* mergeBroadphaseBufferRejectReasonName(BroadphaseMergeBufferRejectReason reason) {
+    case BroadphaseMergeBufferRejectReason::None:
+    case BroadphaseMergeBufferRejectReason::SceneNotMergeable:
+    case BroadphaseMergeBufferRejectReason::BufferAtCapacity:
+BroadphaseMergeBufferRejectReason mergeBroadphaseBufferRejectReason(
+    if (!preflightBroadphaseMerge(bodies, shapes).canMerge()) {
+        return BroadphaseMergeBufferRejectReason::SceneNotMergeable;
+        return BroadphaseMergeBufferRejectReason::BufferAtCapacity;
+    return BroadphaseMergeBufferRejectReason::None;
+    BroadphaseMergeBufferRejectReason expected) {
+    return mergeBroadphaseBufferRejectReason(bodies, shapes, buffer) == expected;
+    preflight.reason = mergeBroadphaseBufferRejectReason(bodies, shapes, buffer);
+    preflight.sceneNotMergeable = preflight.reason == BroadphaseMergeBufferRejectReason::SceneNotMergeable;
+    preflight.bufferAtCapacity = preflight.reason == BroadphaseMergeBufferRejectReason::BufferAtCapacity;

@@ -2992,3 +2992,23 @@ void testShouldRunPairBufferDedupeGuards() {
 void testMergePairsIntoBufferRejectReasonGuards() {
     testPairBufferCompactAndClampRejectReasonGuards();
     testMergePairsIntoBufferRejectReasonGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-b316 ---
+                   buffer, fuse::physics::broadphase::PairBufferSortRejectReason::SinglePair),
+                 fuse::physics::broadphase::cellSpanRejectReason(validRange, 4u)),
+                 fuse::physics::broadphase::cellSpanRejectReason(compactRange, 4u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellSpanRejectReason::WithinSpanLimit),
+                 fuse::physics::broadphase::cellSpanRejectReason(compactRange, 0u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellSpanRejectReason::Unbounded),
+                               fuse::physics::broadphase::CellSpanRejectReason::WithinSpanLimit),
+    const fuse::physics::broadphase::CellSpanPreflight preflight =
+    expectTrue(emptyPreflight.sceneNotMergeable, "empty scene merge buffer preflight marks scene not mergeable");
+    const fuse::physics::broadphase::BroadphaseMergeBufferPreflight mergePreflight =
+    expectTrue(mergePreflight.canMergeIntoBuffer(), "mergeable scene with room can merge into buffer");
+    expectTrue(fullPreflight.bufferAtCapacity, "full buffer merge preflight marks at capacity");
+    expectEq(static_cast<fuse::u32>(fullPreflight.reason),
+             static_cast<fuse::u32>(fuse::physics::broadphase::BroadphaseMergeBufferRejectReason::BufferAtCapacity),
+    expectTrue(fuse::physics::broadphase::mergeBroadphaseBufferRejectsForReason(
+                   fuse::physics::broadphase::BroadphaseMergeBufferRejectReason::BufferAtCapacity),
+    expectTrue(std::strcmp(fuse::physics::broadphase::mergeBroadphaseBufferRejectReasonName(
+                               fuse::physics::broadphase::BroadphaseMergeBufferRejectReason::SceneNotMergeable),
