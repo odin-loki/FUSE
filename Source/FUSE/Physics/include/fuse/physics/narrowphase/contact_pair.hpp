@@ -309,3 +309,7 @@ NarrowphasePairListPreflight preflight_narrowphase_pair_list(
 // --- deepen additive from deepen-b4-narrowphase-guards-72f5 ---
 struct NarrowphasePreflight {
 NarrowphasePreflight preflight_narrowphase(
+
+// --- deepen additive from b4-narrowphase-deepen-guards-699f ---
+struct NarrowphasePairBatchPreflight {
+NarrowphasePairBatchPreflight preflight_narrowphase_pairs(

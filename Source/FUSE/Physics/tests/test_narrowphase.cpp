@@ -2226,3 +2226,21 @@ void testContactPairDeepenPassGuards() {
         fuse::physics::narrowphase::should_skip_manifold_prune(allSeparated),
         "should_skip_manifold_prune when prune would leave no points");
     expectTrue(dirtyPreflight.can_skip_prune(), "can_skip_prune true after prune_if_needed");
+
+// --- deepen additive from b4-narrowphase-deepen-guards-699f ---
+void testNarrowphasePairBatchPreflightGuards() {
+    const auto batchPreflight = fuse::physics::narrowphase::preflight_narrowphase_pairs(mixed, bodies, shapes);
+    expectTrue(batchPreflight.hasDispatchable, "batch preflight has dispatchable pair");
+    expectTrue(!batchPreflight.can_skip_batch(), "batch preflight cannot skip mixed list");
+    expectTrue(batchPreflight.can_dispatch_any(), "batch preflight can dispatch any");
+    expectTrue(rejectedPreflight.can_skip_batch(), "batch preflight skips all-rejected list");
+    expectTrue(!rejectedPreflight.can_dispatch_any(), "batch preflight cannot dispatch all-rejected list");
+void testManifoldPruneFinalizeDeepenGuards() {
+    const auto dirtyPreflight = fuse::physics::narrowphase::preflight_manifold_prune(dirty, 1e-6f, 1e-4f, 0.05f);
+    expectTrue(!dirtyPreflight.needs_any_pruning(0.05f), "prune preflight clean after conditional prune");
+    const auto finalizePreflight = fuse::physics::narrowphase::preflight_manifold_finalize(manifold);
+    expectTrue(finalizePreflight.needs_any_work(), "finalize preflight needs work before finalize");
+void testFrictionBasisDeepenPreflightGuards() {
+    expectTrue(needsPreflight.can_rebuild(), "friction preflight can_rebuild without cached basis");
+    testNarrowphasePairBatchPreflightGuards();
+    testFrictionBasisDeepenPreflightGuards();
