@@ -45,6 +45,10 @@ bool wouldSkipProbeKernelLaunch(const DDGIKernelParams& params);
 
 /// Non-mutating kernel launch preflight — returns true when both kernels would proceed.
 bool preflightProbeKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
+/// Kernel launch preflight with mandatory reject-reason output (B5.6 deepen pass).
+bool tryPreflightProbeKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason& reason);
+/// Early-out when probe kernel launch would be rejected (B5.6 deepen pass).
+bool shouldSkipProbeKernelLaunch(const DDGIKernelParams& params);
 
 /// Populate kernel params from desc + scheduled indices without changing launch guards.
 void populateDDGIKernelParams(DDGIKernelParams& params,
