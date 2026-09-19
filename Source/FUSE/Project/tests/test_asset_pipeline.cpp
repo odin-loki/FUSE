@@ -1628,7 +1628,13 @@ void testCookerReconcileEstimateProbes() {
 
     const fuse::project::CookCacheReconcileEstimate fresh = cooker.estimate_reconcile_invalidation(manifest);
     expectTrue(fresh.total() == 0u, "fresh cache reconcile estimate is zero");
+    expectTrue(fresh.should_skip(), "fresh cache reconcile estimate should_skip");
+    expectTrue(fuse::project::should_skip_reconcile_invalidation(fresh),
+               "should_skip_reconcile_invalidation true for fresh estimate");
+    expectTrue(cooker.should_skip_reconcile_invalidation(manifest),
+               "cooker should_skip_reconcile_invalidation on fresh cache");
     expectTrue(cooker.estimate_prune_reconcile().total() == 0u, "fresh prune reconcile estimate is zero");
+    expectTrue(cooker.should_skip_prune_reconcile(), "cooker should_skip_prune_reconcile on fresh cache");
 
     writeTempFile(source_a, "# reconcile a revised\n");
     const fuse::u32 stale_count = cooker.count_stale_dependency_invalidation(manifest);
@@ -1638,6 +1644,9 @@ void testCookerReconcileEstimateProbes() {
     expectTrue(stale.stale_dependency_entries == stale_count,
                "reconcile estimate stale count matches dependency probe");
     expectTrue(stale.total() >= stale_count, "reconcile estimate total includes stale dependency count");
+    expectTrue(!stale.should_skip(), "stale reconcile estimate should not skip");
+    expectTrue(!cooker.should_skip_reconcile_invalidation(manifest),
+               "cooker should_skip_reconcile_invalidation false after upstream change");
 
     const fuse::u32 removed = cooker.invalidate_stale_dependency_hashes(manifest);
     expectTrue(removed >= stale_count, "stale dependency invalidation removes at least estimated count");
@@ -1647,6 +1656,7 @@ void testCookerReconcileEstimateProbes() {
                "stale dependency reconcile estimate zero after stale invalidation");
     expectTrue(after.prune_stale_entries >= 1u,
                "changed upstream entry remains stale for prune reconcile");
+    expectTrue(!after.should_skip(), "prune-only reconcile estimate should not skip");
 }
 
 void testCookCacheDownstreamSourceProbe() {
@@ -1702,6 +1712,10 @@ void testCookCacheDownstreamSourceProbe() {
 
     const fuse::u32 counted = cooker.cache().count_downstream_of(entry_a.output_path, graph.edges(), graph.jobs());
     expectTrue(counted == 2u, "downstream count matches dependent entries only");
+    expectTrue(cooker.cache().would_invalidate_downstream_of(entry_a.output_path, graph.edges(), graph.jobs()),
+               "would_invalidate_downstream true for seeded chain");
+    expectTrue(!cooker.cache().would_invalidate_downstream_of("", graph.edges(), graph.jobs()),
+               "would_invalidate_downstream guarded on empty output path");
     expectTrue(cooker.cache().probe_downstream_sources("", graph.edges(), graph.jobs()).empty(),
                "empty output path downstream probe is guarded");
 }
