@@ -573,14 +573,6 @@ bool can_skip_narrowphase(
     return preflight_narrowphase_pairs(pairs, bodies, shapes).can_skip_batch();
 }
 
-bool contact_pair_deepen_rejects_for_reason(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
-    ContactPairRejectReason expected) {
-    return contact_pair_deepen_reject_reason(pair, bodies, shapes) == expected;
-}
-
 NarrowphasePairBatchStats compute_narrowphase_pair_stats(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,

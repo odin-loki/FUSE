@@ -211,13 +211,6 @@ bool has_dispatchable_contact_pair(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
-/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.5 deepen follow-up).
-bool contact_pair_deepen_rejects_for_reason(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
-    ContactPairRejectReason expected);
-
 /// Per-batch narrowphase pair dispatch counts (B4.5 deepen follow-up).
 struct NarrowphasePairBatchStats {
     u32 totalPairs = 0u;

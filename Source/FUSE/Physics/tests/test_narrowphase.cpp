@@ -1823,6 +1823,7 @@ void testBuildFrictionTangentBasesReuseGuard() {
         fuse::physics::narrowphase::isOrthonormalTangentBasis(
             {1.f, 0.f, 0.f}, buffer.tangentBasisAt(0u)),
         "buildFrictionTangentBases refreshes stale basis");
+}
 
 void testGjkSupportAndEpaStub() {
     const fuse::physics::vec3 hull[] = {
