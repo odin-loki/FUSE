@@ -737,3 +737,12 @@ FUSE_PHYSICS_INLINE bool buildContactBufferFrictionTangentBasesWithPreflight(Con
 FUSE_PHYSICS_INLINE u32 applyMaxCapacityClampWithPreflight(ContactBufferSoA& buffer) {
 FUSE_PHYSICS_INLINE bool writeContactBufferSlotWithPreflight(
     return writeContactBufferSlotWithPreflight(buffer, slot, manifold);
+
+// --- deepen additive from b4-narrowphase-deepen-guards-bcad ---
+    return !preflightContactBufferWarmStart(buffer, slot).canApply();
+    return preflightContactBufferWarmStart(buffer, slot).canApply();
+    case ContactBufferFrictionBasesRejectReason::NoValidSlots:
+        return ContactBufferFrictionBasesRejectReason::NoValidSlots;
+    preflight.noValidSlots = preflight.reason == ContactBufferFrictionBasesRejectReason::NoValidSlots;
+    return !preflightContactBufferFrictionBases(buffer).needsRebuild();
+    return preflightContactBufferFrictionBases(buffer).needsRebuild();

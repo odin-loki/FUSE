@@ -528,3 +528,14 @@ FUSE_PHYSICS_INLINE bool try_generate_contact_manifold(ContactManifold& manifold
 // --- deepen additive from b4-narrowphase-b46-guards-34a6 ---
 bool try_generate_contact_manifold_if_needed(ContactManifold& manifold);
 FUSE_PHYSICS_INLINE bool try_generate_contact_manifold_if_needed(ContactManifold& manifold) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-bcad ---
+    const ContactPairPreflight preflight = preflight_contact_pair(pair, bodies, shapes);
+inline bool try_preflight_contact_pair(
+    ContactPairRejectReason& reason) {
+    const ContactPairDeepenPreflight preflight = preflight_contact_pair_deepen(pair, bodies, shapes);
+inline bool try_preflight_contact_pair_deepen(
+    NarrowphaseBatchPreflight* out = nullptr) {
+    const NarrowphaseBatchPreflight preflight = preflight_narrowphase_batch(pairs, bodies, shapes);
+inline bool try_preflight_narrowphase_batch(
+    NarrowphaseBatchPreflight& out) {

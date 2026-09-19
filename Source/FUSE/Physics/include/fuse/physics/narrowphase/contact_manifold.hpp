@@ -461,3 +461,10 @@ FUSE_PHYSICS_INLINE bool would_skip_manifold_prune(
 FUSE_PHYSICS_INLINE bool would_skip_manifold_finalize(
 FUSE_PHYSICS_INLINE bool try_prune_contact_manifold(
 FUSE_PHYSICS_INLINE bool try_finalize_contact_manifold(
+
+// --- deepen additive from b4-narrowphase-deepen-guards-bcad ---
+inline bool try_preflight_manifold_prune(
+    ManifoldPruneRejectReason& reason,
+    const ManifoldFinalizePreflight preflight =
+inline bool try_preflight_manifold_finalize(
+    ManifoldFinalizeRejectReason& reason,

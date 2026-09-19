@@ -386,3 +386,14 @@ FUSE_PHYSICS_INLINE const char* narrowphaseIntoBufferRejectReasonName(Narrowphas
     preflight.allRejected = preflight.reason == NarrowphaseIntoBufferRejectReason::AllRejected;
     if (would_skip_narrowphase_into_buffer(pairs, bodies, shapes)) {
     return runNarrowphaseIntoBufferWithPreflight(pairs, bodies, shapes, buffer);
+
+// --- deepen additive from b4-narrowphase-deepen-guards-bcad ---
+        return reason == NarrowphaseIntoBufferRejectReason::None && batch.can_dispatch();
+        return reason != NarrowphaseIntoBufferRejectReason::None || batch.can_skip();
+    NarrowphaseIntoBufferRejectReason* reason = nullptr);
+bool try_preflight_narrowphase_into_buffer(
+    NarrowphaseIntoBufferRejectReason& reason);
+    NarrowphaseIntoBufferRejectReason* reason) {
+    const NarrowphaseIntoBufferPreflight preflight = preflight_narrowphase_into_buffer(pairs, bodies, shapes);
+FUSE_PHYSICS_INLINE bool try_preflight_narrowphase_into_buffer(
+    NarrowphaseIntoBufferRejectReason& reason) {

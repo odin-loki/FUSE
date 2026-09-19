@@ -3826,3 +3826,23 @@ void testWouldSkipTryWrapperGuards() {
         !fuse::physics::narrowphase::would_skip_friction_basis_rebuild(needsBasis),
         fuse::physics::narrowphase::would_skip_friction_basis_rebuild(needsBasis),
         "would_skip_friction_basis_rebuild true after rebuild");
+
+// --- deepen additive from b4-narrowphase-deepen-guards-bcad ---
+            allValid, fuse::physics::narrowphase::ContactBufferCompactionRejectReason::AllValid),
+            clampBuffer, fuse::physics::narrowphase::ContactBufferClampRejectReason::WithinCapacity),
+            empty, fuse::physics::narrowphase::ContactBufferToVectorRejectReason::EmptyBuffer),
+            warmBuffer, 99u, fuse::physics::narrowphase::ContactBufferWarmStartRejectReason::OutOfRangeSlot),
+    fuse::physics::narrowphase::NarrowphaseIntoBufferRejectReason rejectReason =
+        rejectReason == fuse::physics::narrowphase::NarrowphaseIntoBufferRejectReason::AllPairsRejected,
+        "runNarrowphaseIntoBufferWithPreflight returns true for dispatchable pair");
+void testWouldSkipAndTryPreflightWrappers() {
+        "would_skip pair dispatch mirrors should_skip for self pair");
+    fuse::physics::narrowphase::ContactPairRejectReason pairReason =
+        pairReason == fuse::physics::narrowphase::ContactPairRejectReason::None,
+        "would_skip manifold prune true for clean manifold");
+        finalizeReason == fuse::physics::narrowphase::ManifoldFinalizeRejectReason::None,
+    fuse::physics::narrowphase::FrictionBasisRejectReason frictionReason =
+        "would_skip friction rebuild false without cached basis");
+        frictionReason == fuse::physics::narrowphase::FrictionBasisRejectReason::None,
+    fuse::physics::narrowphase::NarrowphaseBatchPreflight batch{};
+    testWouldSkipAndTryPreflightWrappers();
