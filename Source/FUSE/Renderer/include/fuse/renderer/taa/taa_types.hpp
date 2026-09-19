@@ -217,3 +217,6 @@ TaaHistoryReusePreflight preflightTaaHistoryReuse(const TaaHistoryBuffer& histor
 TaaHistoryReusePreflight preflightTaaHistoryReuseForDesc(const TaaHistoryBuffer& history,
 TaaResolveBlendPreflight preflightTaaResolveBlend(bool firstFrame, const TAAParams& params,
 TaaResolveBlendPreflight preflightTaaResolveBlendForDesc(const TaaResolveDesc& desc,
+
+// --- deepen additive from deepen-b59-taa-guards-e811 ---
+TaaBlendWeights preflightTaaBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);

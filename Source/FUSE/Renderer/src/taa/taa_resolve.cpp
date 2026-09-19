@@ -418,3 +418,6 @@ TaaResolveBlendPreflight preflightTaaResolveBlend(bool firstFrame, const TAAPara
     TaaResolveBlendPreflight preflight{};
 TaaResolveBlendPreflight preflightTaaResolveBlendForDesc(const TaaResolveDesc& desc,
     TaaResolveBlendPreflight preflight = preflightTaaResolveBlend(firstFrame, desc.params, history);
+
+// --- deepen additive from deepen-b59-taa-guards-e811 ---
+TaaBlendWeights preflightTaaBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {

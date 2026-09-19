@@ -84,3 +84,6 @@ Part of `fuse_rhi`. Built with `FUSE_BUILD_CORE=ON`. Tests run when `FUSE_BUILD_
 // --- deepen additive from deepen-b59-taa-history-resolve-skip-b406 ---
 - `preflightTaaResolve(desc, history)` — stamp observed generation then classify
 - `taaResolveCanProceed(desc, history, &reason)` — inverse of `wouldSkip`
+
+// --- deepen additive from deepen-b59-taa-guards-e811 ---
+- `computeTaaBlendWeightsWithReuseGuard` / `preflightTaaBlendWeights` — resolve-blend preflights

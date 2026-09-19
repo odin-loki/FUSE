@@ -2912,3 +2912,9 @@ void testTaaPassPreflightGuards() {
     testJitterSyncPreflight();
     testResolveBlendPreflight();
     testTaaPassPreflightGuards();
+
+// --- deepen additive from deepen-b59-taa-guards-e811 ---
+void testHistoryWarmupGuards() {
+void testJitterSyncGuards() {
+        fuse::renderer::preflightTaaBlendWeights(desc, history);
+void testTaaPassJitterSyncGuards() {
