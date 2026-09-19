@@ -35,6 +35,26 @@ std::string camelToSnake(std::string_view camel) {
     return out;
 }
 
+bool appendMissionInfoKey(AfxMissionBody& body, const std::string& key) {
+    for (const std::string& existing : body.missionInfoKeys) {
+        if (existing == key) {
+            return false;
+        }
+    }
+    body.missionInfoKeys.push_back(key);
+    return true;
+}
+
+bool appendSimObjectName(AfxMissionBody& body, const std::string& name) {
+    for (const std::string& existing : body.simObjectNames) {
+        if (existing == name) {
+            return false;
+        }
+    }
+    body.simObjectNames.push_back(name);
+    return true;
+}
+
 bool appendHook(std::vector<AfxMissionHook>& hooks, const std::string& functionName) {
     if (functionName == "onSpellCast") {
         hooks.push_back({"AFXDemo_Minimal", "on_spell_cast", "fireball"});
@@ -70,6 +90,81 @@ bool appendHook(std::vector<AfxMissionHook>& hooks, const std::string& functionN
 }
 
 } // namespace
+
+bool parse_afx_mission_body_from_mis(const std::string& misText, AfxMissionBody& outBody,
+                                     std::string* errorOut) {
+    outBody = AfxMissionBody{};
+    std::stringstream stream(misText);
+    std::string line;
+
+    while (std::getline(stream, line)) {
+        line = trim(line);
+        if (line.empty()) {
+            continue;
+        }
+
+        if (line.rfind("//---", 0) == 0 && line.find("MISSION") != std::string::npos) {
+            const std::size_t namePos = line.find("MISSION");
+            if (namePos != std::string::npos) {
+                std::string missionToken = trim(line.substr(namePos + 7));
+                const std::size_t dash = missionToken.find("---");
+                if (dash != std::string::npos) {
+                    missionToken = trim(missionToken.substr(0, dash));
+                }
+                if (!missionToken.empty()) {
+                    outBody.missionName = missionToken;
+                }
+            }
+            continue;
+        }
+
+        if (line.rfind("new SimObject(", 0) == 0) {
+            const std::size_t paren = line.find('(');
+            const std::size_t close = line.find(')', paren);
+            if (paren != std::string::npos && close != std::string::npos) {
+                appendSimObjectName(outBody, trim(line.substr(paren + 1, close - paren - 1)));
+            }
+            continue;
+        }
+
+        if (line.rfind("MissionInfo", 0) == 0 || line.find("missionInfo") != std::string::npos) {
+            const std::size_t dot = line.find('.');
+            if (dot != std::string::npos) {
+                const std::size_t eq = line.find('=', dot);
+                if (eq != std::string::npos) {
+                    appendMissionInfoKey(outBody, trim(line.substr(dot + 1, eq - dot - 1)));
+                }
+            }
+            continue;
+        }
+
+        if (line.rfind("missionName", 0) == 0 || line.find("missionName") != std::string::npos) {
+            const std::size_t eq = line.find('=');
+            if (eq != std::string::npos) {
+                std::string value = trim(line.substr(eq + 1));
+                while (!value.empty() && value.back() == ';') {
+                    value.pop_back();
+                }
+                value = trim(value);
+                if (!value.empty() && value.front() == '"' && value.back() == '"') {
+                    value = value.substr(1, value.size() - 2);
+                }
+                if (!value.empty()) {
+                    outBody.missionName = value;
+                }
+            }
+        }
+    }
+
+    if (outBody.missionName.empty() && outBody.simObjectNames.empty() && outBody.missionInfoKeys.empty()) {
+        if (errorOut != nullptr) {
+            *errorOut = "no AFX mission body content found in .mis text";
+        }
+        return false;
+    }
+
+    return true;
+}
 
 bool load_afx_mission_hooks_from_mis(const std::string& misText,
                                      std::vector<AfxMissionHook>& outHooks,
@@ -144,9 +239,20 @@ bool apply_afx_mission_spell_assignments(const std::string& misText, std::vector
 
 bool register_afx_mission_from_mis(const std::string& misText, FxComposer& composer, AfxMissionScriptVm& vm,
                                    std::string* errorOut) {
+    AfxMissionBody body;
+    parse_afx_mission_body_from_mis(misText, body);
+
     std::vector<AfxMissionHook> hooks;
     if (!load_afx_mission_hooks_from_mis(misText, hooks, errorOut)) {
         return false;
+    }
+
+    if (!body.missionName.empty()) {
+        for (AfxMissionHook& hook : hooks) {
+            if (hook.missionId == "mis_stub") {
+                hook.missionId = body.missionName;
+            }
+        }
     }
 
     apply_afx_mission_spell_assignments(misText, hooks);

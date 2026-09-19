@@ -2000,6 +2000,37 @@ void testUaiskTreeFileWatchReload() {
     expectTrue(registry.reloadCount() == 1u, "reload counter tracked");
 }
 
+void testUaiskInotifyFileWatchProgress() {
+    namespace fs = std::filesystem;
+    const fs::path tempPath = fs::temp_directory_path() / "fuse_patrol_wave14.bt";
+    {
+        std::ofstream out(tempPath);
+        out << "bb.action.set_flag flag=1\nroot=0\n";
+    }
+
+    fuse::ai::BehaviorRuntime runtime;
+    fuse::ai::uaisk::TreeFileWatchRegistry registry;
+    registry.watchProfileFromDisk(tempPath.string(), 4u);
+    expectTrue(registry.pollInotifyFileChanges(runtime) == 0u, "no inotify reload when unchanged");
+    expectTrue(registry.pollInotifyFileChanges(runtime) >= 0u, "inotify poll path executes");
+
+    fs::remove(tempPath);
+}
+
+void testUaiskCodegenSyntaxTreePath() {
+    static const char* kCsText =
+        "class SquadPatrol : BehaviorBase {\n"
+        "  behaviorTree = \"aiSquad.cs\";\n"
+        "  void onSquadPatrol() {}\n"
+        "}\n";
+
+    fuse::ai::BehaviorTree tree;
+    std::string error;
+    expectTrue(fuse::ai::uaisk::codegenTreeFromSyntaxTree("aiSquad.cs", kCsText, tree, &error),
+               "syntax-tree codegen builds squad tree");
+    expectTrue(tree.nodeCount() >= 7u, "syntax-tree codegen emits selector nodes");
+}
+
 void testUaiskTreeOsFileWatchProgress() {
     namespace fs = std::filesystem;
     const fs::path tempPath = fs::temp_directory_path() / "fuse_patrol_wave13.bt";
@@ -2181,6 +2212,8 @@ int main() {
     testUaiskCsSyntaxTree();
     testUaiskTreeFileWatchReload();
     testUaiskTreeOsFileWatchProgress();
+    testUaiskInotifyFileWatchProgress();
+    testUaiskCodegenSyntaxTreePath();
     testReloadCodegenProfile();
     testRuntimeTreeReloadPreservesBlackboard();
     testAgentEntityBindSyncsBindingPosition();

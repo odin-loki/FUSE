@@ -68,6 +68,7 @@ public:
     const std::string& loadedCinematicsSeqAsset() const { return m_loadedCinematicsSeqAsset; }
     fuse::cinematics::TimelineMs cinematicsSeqScrubPreviewMs() const { return m_cinematicsSeqScrubPreviewMs; }
     const fuse::cinematics::SeqScrubPreview& cinematicsSeqScrubPreview() const { return m_cinematicsSeqScrubPreview; }
+    u32 cinematicsSeqPreviewPaneWireCount() const { return m_cinematicsSeqPreviewPaneWireCount; }
     u32 gameTickCount() const { return m_gameTickCount; }
     u32 commandsAppliedLastTick() const { return m_commandsAppliedLastTick; }
 
@@ -85,6 +86,7 @@ public:
     void setLoadedCinematicsSeqAsset(std::string assetText);
     void setCinematicsSeqScrubPreview(fuse::cinematics::TimelineMs timeMs,
                                       const fuse::cinematics::SeqScrubPreview& preview);
+    void incrementCinematicsSeqPreviewPaneWireCount();
 
     /// Undo/redo property edits recorded on the game-thread `CommandStack`.
     void undoPropertyEdit();
@@ -111,6 +113,7 @@ private:
     std::string m_loadedCinematicsSeqAsset;
     fuse::cinematics::TimelineMs m_cinematicsSeqScrubPreviewMs = 0;
     fuse::cinematics::SeqScrubPreview m_cinematicsSeqScrubPreview;
+    u32 m_cinematicsSeqPreviewPaneWireCount = 0;
     u32 m_selectedAiTreeProfileId = 0;
     u32 m_selectedAiAgentIndex = 0;
     u32 m_aiCodegenReloadCount = 0;

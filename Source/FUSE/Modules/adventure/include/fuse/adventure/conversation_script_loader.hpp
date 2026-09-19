@@ -19,4 +19,14 @@ namespace fuse::adventure {
                                                            ConversationScriptVm& vm,
                                                            std::string* errorOut = nullptr);
 
+/// Parse TorqueScript-style conversation function declarations from script text.
+[[nodiscard]] bool load_conversation_hooks_from_torquescript(const std::string& scriptText,
+                                                              std::vector<ConversationScriptHook>& outHooks,
+                                                              std::string* errorOut = nullptr);
+
+/// Register TorqueScript conversation hooks on the VM.
+[[nodiscard]] bool register_conversation_hooks_from_torquescript(const std::string& scriptText,
+                                                                   ConversationScriptVm& vm,
+                                                                   std::string* errorOut = nullptr);
+
 } // namespace fuse::adventure

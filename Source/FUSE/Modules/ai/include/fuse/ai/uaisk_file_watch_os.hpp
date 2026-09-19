@@ -8,15 +8,42 @@
 
 namespace fuse::ai::uaisk {
 
-/// OS file-watch progress stub (stat mtime on Linux; content-hash fallback elsewhere).
+enum class OsFileWatchBackend : u8 {
+    StatPoll = 0,
+    Inotify,
+    FSEvents,
+};
+
+/// OS file-watch status (inotify/FSEvents when portable; stat mtime + content-hash fallback).
 struct OsFileWatchStatus {
     bool exists = false;
     bool readable = false;
+    bool changed = false;
     u64 lastModifiedNs = 0;
+    OsFileWatchBackend backend = OsFileWatchBackend::StatPoll;
     std::string content;
     std::string error;
 };
 
+/// Portable OS file-watch handle (inotify fd on Linux; stat poll elsewhere).
+struct OsFileWatchHandle {
+    int watchFd = -1;
+    int inotifyFd = -1;
+    std::string path;
+    OsFileWatchBackend backend = OsFileWatchBackend::StatPoll;
+    u64 lastModifiedNs = 0;
+    u64 lastSize = 0;
+    bool active = false;
+};
+
 [[nodiscard]] OsFileWatchStatus readOsFileWatchStatus(std::string_view path);
+
+/// Create an OS file-watch handle when the platform supports it (inotify on Linux).
+[[nodiscard]] bool createOsFileWatch(std::string_view path, OsFileWatchHandle& outHandle);
+
+/// Poll a watch handle — returns true when the file changed since the last poll.
+[[nodiscard]] bool pollOsFileWatch(OsFileWatchHandle& handle, OsFileWatchStatus& outStatus);
+
+void closeOsFileWatch(OsFileWatchHandle& handle);
 
 } // namespace fuse::ai::uaisk

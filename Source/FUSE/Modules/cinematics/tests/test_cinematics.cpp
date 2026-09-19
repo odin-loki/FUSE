@@ -1373,6 +1373,8 @@ void testVActorShapeBaseAttach() {
     expectTrue(bridge.mount_point_for("agent_3d") == "cockpit", "mount point stored");
     expectNear(agent.z(), 1.5f, 0.001f, "cockpit mount raises agent Z");
     expectNear(agent.yawDeg(), 15.f, 0.001f, "cockpit mount applies ShapeBase yaw");
+    expectNear(agent.pitchDeg(), -5.f, 0.001f, "cockpit mount applies ShapeBase pitch");
+    expectNear(agent.rollDeg(), 0.f, 0.001f, "cockpit mount applies ShapeBase roll");
 }
 
 void testMotionTrackPathSampling() {

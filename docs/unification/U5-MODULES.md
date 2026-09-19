@@ -292,6 +292,16 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_mechanics` | GMK `LightComponent` + `MoveComponent` leaves; `BroadphaseWorldStub` Bullet proxy registry deepen |
 | `fuse_adventure` | `WeaponMountAnimationStub` mount pose on grant; `conversation_script_loader` + `dispatchAllLines()` VM deepen |
 
+#### Landed wave 14 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_ai` | Linux inotify file-watch handles + `pollInotifyFileChanges()`; `codegenTreeFromSyntaxTree()` fuller AST codegen path |
+| `fuse_cinematics` | `SceneObject3D` pitch/roll on ShapeBase attach; `CinematicsSeqImport::wirePreviewPaneToHost()` Qt seq preview wiring |
+| `fuse_fx` | CUDA particle position integration kernel deepen; `parse_afx_mission_body_from_mis()` SimObject/missionInfo body parse |
+| `fuse_mechanics` | GMK `CameraComponent` + `FollowComponent` leaves; `BroadphaseWorldStub` remove/AABB query deepen |
+| `fuse_adventure` | `SkeletalMountStub` bone mount pose; `register_conversation_hooks_from_torquescript()` bridge deepen |
+
 ---
 
 ## 8. Related docs

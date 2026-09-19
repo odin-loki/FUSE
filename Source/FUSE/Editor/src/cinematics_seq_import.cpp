@@ -91,4 +91,20 @@ SeqPreviewPaneSample CinematicsSeqImport::previewPaneSampleAtMs(fuse::cinematics
     return sample;
 }
 
+bool CinematicsSeqImport::wirePreviewPaneToHost(fuse::cinematics::TimelineMs initialTimeMs) {
+    if (!postImportEmbeddedOutpostIntro()) {
+        return false;
+    }
+
+    EditorCommand wireCommand;
+    wireCommand.kind = CommandKind::SetProperty;
+    wireCommand.propertyName = "cinematics.seq_preview_pane_wire";
+    wireCommand.propertyValue = std::to_string(initialTimeMs);
+    m_host.postFromUi(std::move(wireCommand));
+
+    ++m_previewPaneWireCount;
+    m_lastWiredPreviewSample = previewPaneSampleAtMs(initialTimeMs);
+    return m_lastWiredPreviewSample.valid;
+}
+
 } // namespace fuse::editor

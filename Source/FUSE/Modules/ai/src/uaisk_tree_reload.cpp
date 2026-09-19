@@ -39,10 +39,18 @@ void TreeFileWatchRegistry::watchProfileFromDisk(std::string_view path, u32 prof
     entry.profileId = profileId;
     entry.osWatchEnabled = status.readable;
     entry.lastModifiedNs = status.lastModifiedNs;
+    entry.osBackend = status.backend;
     entry.contentHash = status.readable ? hashContent(status.content) : std::string{};
     m_watches[entry.path] = entry;
     if (status.readable) {
         m_contents[entry.path] = status.content;
+    }
+
+    OsFileWatchHandle handle;
+    if (createOsFileWatch(path, handle)) {
+        m_osHandles[entry.path] = std::move(handle);
+        entry.osBackend = handle.backend;
+        m_watches[entry.path].osBackend = handle.backend;
     }
 }
 
@@ -143,7 +151,44 @@ u32 TreeFileWatchRegistry::pollOsFileChanges(BehaviorRuntime& runtime, std::stri
         }
 
         if (applyOsStatus_(entry, status.content, status.lastModifiedNs, runtime, errorOut)) {
+            entry.osBackend = status.backend;
             ++m_osReloadCount;
+            ++reloaded;
+        }
+    }
+
+    return reloaded;
+}
+
+u32 TreeFileWatchRegistry::pollInotifyFileChanges(BehaviorRuntime& runtime, std::string* errorOut) {
+    u32 reloaded = 0;
+    ++m_inotifyPollCount;
+
+    for (auto& entryPair : m_watches) {
+        TreeFileWatchEntry& entry = entryPair.second;
+        if (!entry.osWatchEnabled) {
+            continue;
+        }
+
+        auto handleIt = m_osHandles.find(entry.path);
+        if (handleIt == m_osHandles.end()) {
+            continue;
+        }
+
+        OsFileWatchStatus status;
+        if (!pollOsFileWatch(handleIt->second, status)) {
+            continue;
+        }
+        if (!status.readable) {
+            if (errorOut != nullptr && !status.error.empty()) {
+                *errorOut = status.error;
+            }
+            continue;
+        }
+
+        if (applyOsStatus_(entry, status.content, status.lastModifiedNs, runtime, errorOut)) {
+            entry.osBackend = status.backend;
+            ++m_inotifyReloadCount;
             ++reloaded;
         }
     }

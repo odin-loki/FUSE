@@ -1,3 +1,5 @@
+#include <fuse/mechanics/camera_component.hpp>
+#include <fuse/mechanics/follow_component.hpp>
 #include <fuse/mechanics/light_component.hpp>
 #include <fuse/mechanics/move_component.hpp>
 #include <fuse/mechanics/broadphase_world_stub.hpp>
@@ -51,6 +53,23 @@ int main() {
     expectTrue(world.queryOverlaps(fuse::mechanics::BroadphaseProxyFilter::Character,
                                    fuse::mechanics::BroadphaseProxyFilter::Trigger) >= 1u,
                "broadphase world stub finds character/trigger overlap");
+
+    fuse::mechanics::CameraComponent camera("outpost_cam", 75.f);
+    camera.activate();
+    expectTrue(camera.active(), "camera component active");
+    expectTrue(camera.activateCount() == 1u, "camera activate counted");
+
+    fuse::mechanics::FollowComponent follower("agent_follow", 3.f);
+    follower.setPosition(0.f, 0.f, 0.f);
+    follower.setTargetObjectId(1);
+    follower.advanceToward(3.f, 0.f, 0.f, 1.f);
+    expectTrue(follower.tickCount() == 1u, "follow component tick counted");
+    expectTrue(follower.x() > 0.f, "follow component advances");
+
+    expectTrue(world.removeBody(2), "broadphase world removes body");
+    expectTrue(world.bodyCount() == 1u, "broadphase world body count after remove");
+    expectTrue(world.queryAabbOverlaps(-1.f, -1.f, -1.f, 2.f, 2.f, 2.f) >= 1u,
+               "broadphase world aabb query finds body");
 
     fuse::core::shutdown();
 

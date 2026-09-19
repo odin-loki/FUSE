@@ -45,6 +45,11 @@ public:
     /// Qt seq preview pane stub — posts scrub time through EditorHost for game-thread sampling.
     bool postScrubPreviewAtMs(fuse::cinematics::TimelineMs timeMs);
     [[nodiscard]] SeqPreviewPaneSample previewPaneSampleAtMs(fuse::cinematics::TimelineMs timeMs) const;
+
+    /// Wire Qt seq preview pane — import asset + post initial scrub through EditorHost.
+    bool wirePreviewPaneToHost(fuse::cinematics::TimelineMs initialTimeMs = 0);
+    [[nodiscard]] const SeqPreviewPaneSample& lastWiredPreviewSample() const { return m_lastWiredPreviewSample; }
+    [[nodiscard]] u32 previewPaneWireCount() const { return m_previewPaneWireCount; }
     [[nodiscard]] u32 scrubPreviewPostCount() const { return m_scrubPreviewPostCount; }
 
 private:
@@ -52,6 +57,8 @@ private:
     std::string m_lastAssetText;
     u32 m_importCount = 0;
     u32 m_scrubPreviewPostCount = 0;
+    u32 m_previewPaneWireCount = 0;
+    SeqPreviewPaneSample m_lastWiredPreviewSample{};
 };
 
 } // namespace fuse::editor

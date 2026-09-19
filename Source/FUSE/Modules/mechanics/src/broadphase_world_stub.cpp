@@ -6,6 +6,16 @@ void BroadphaseWorldStub::addBody(const BroadphaseWorldBody& body) {
     m_bodies.push_back(body);
 }
 
+bool BroadphaseWorldStub::removeBody(u32 objectId) {
+    for (auto it = m_bodies.begin(); it != m_bodies.end(); ++it) {
+        if (it->objectId == objectId) {
+            m_bodies.erase(it);
+            return true;
+        }
+    }
+    return false;
+}
+
 void BroadphaseWorldStub::setBodyPosition(u32 objectId, float x, float y, float z) {
     for (BroadphaseWorldBody& body : m_bodies) {
         if (body.objectId == objectId) {
@@ -41,6 +51,21 @@ u32 BroadphaseWorldStub::queryOverlaps(BroadphaseProxyFilter filterA, Broadphase
             if ((dx * dx + dy * dy + dz * dz) <= 4.f) {
                 ++m_lastOverlapCount;
             }
+        }
+    }
+
+    return m_lastOverlapCount;
+}
+
+u32 BroadphaseWorldStub::queryAabbOverlaps(float minX, float minY, float minZ, float maxX, float maxY,
+                                           float maxZ) {
+    ++m_aabbQueryCount;
+    m_lastOverlapCount = 0;
+
+    for (const BroadphaseWorldBody& body : m_bodies) {
+        if (body.x >= minX && body.x <= maxX && body.y >= minY && body.y <= maxY && body.z >= minZ &&
+            body.z <= maxZ) {
+            ++m_lastOverlapCount;
         }
     }
 

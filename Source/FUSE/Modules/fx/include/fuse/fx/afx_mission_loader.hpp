@@ -9,6 +9,16 @@
 
 namespace fuse::fx {
 
+struct AfxMissionBody {
+    std::string missionName;
+    std::vector<std::string> simObjectNames;
+    std::vector<std::string> missionInfoKeys;
+};
+
+/// Parse TorqueScript `.mis` body blocks (missionInfo, SimObject declarations).
+[[nodiscard]] bool parse_afx_mission_body_from_mis(const std::string& misText, AfxMissionBody& outBody,
+                                                   std::string* errorOut = nullptr);
+
 /// Scan TorqueScript `.mis` text for AFX mission hook function declarations.
 [[nodiscard]] bool load_afx_mission_hooks_from_mis(const std::string& misText,
                                                  std::vector<AfxMissionHook>& outHooks,

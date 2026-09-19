@@ -1,6 +1,7 @@
 #include <fuse/ai/uaisk_cs_codegen.hpp>
 
 #include <fuse/ai/behavior_runtime.hpp>
+#include <fuse/ai/uaisk_cs_syntax_tree.hpp>
 
 namespace fuse::ai::uaisk {
 
@@ -53,6 +54,39 @@ bool codegenDistanceLessSpecs(std::vector<NodeLoadSpec>& specs, u32& rootIndex) 
     return true;
 }
 
+bool codegenWaitThenMoveSpecs(std::vector<NodeLoadSpec>& specs, u32& rootIndex) {
+    specs = {
+        {"bb.action.wait", 0.5f},
+        {"gb.action.move_toward", 0.25f},
+        {"bb.sequence", 0.f, 0, 1, "", {0, 1}},
+    };
+    rootIndex = 2;
+    return true;
+}
+
+bool codegenAlliesThenPatrolSpecs(std::vector<NodeLoadSpec>& specs, u32& rootIndex) {
+    specs = {
+        {"bb.condition.allies_in_radius", 6.f, 0, 1},
+        {"bb.action.set_flag", 0.f, 1},
+        {"bb.condition.distance_less", 4.f},
+        {"bb.action.set_flag", 0.f, 0},
+        {"bb.sequence", 0.f, 0, 1, "", {0, 1}},
+        {"bb.sequence", 0.f, 0, 1, "", {2, 3}},
+        {"bb.selector", 0.f, 0, 1, "aiSquad.cs", {4, 5}},
+    };
+    rootIndex = 6;
+    return true;
+}
+
+bool methodImpliesCodegen(const UaiskCsAst& ast, std::string_view methodName) {
+    for (const UaiskCsMethodRef& method : ast.methods) {
+        if (method.name == methodName) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 bool buildAstFromParse(const UaiskCsParseResult& parsed, UaiskCsAst& outAst) {
@@ -87,6 +121,45 @@ bool buildAstFromParse(const UaiskCsParseResult& parsed, UaiskCsAst& outAst) {
     return true;
 }
 
+bool buildAstFromSyntaxTree(const UaiskCsSyntaxTree& tree, UaiskCsAst& outAst) {
+    if (!tree.valid) {
+        return false;
+    }
+
+    outAst = UaiskCsAst{};
+    outAst.moduleName = tree.moduleName;
+    outAst.className = tree.rootClassName;
+    outAst.behaviorTreeHooks = tree.behaviorTreeHooks;
+
+    for (const UaiskCsSyntaxNode& node : tree.nodes) {
+        if (node.kind == UaiskCsSyntaxNodeKind::Class && outAst.baseClass.empty() && !node.value.empty()) {
+            outAst.baseClass = node.value;
+        }
+        if (node.kind == UaiskCsSyntaxNodeKind::Method) {
+            UaiskCsMethodRef method;
+            method.name = node.name;
+            for (const std::string& hook : tree.behaviorTreeHooks) {
+                if (hook.find(node.name) != std::string::npos) {
+                    method.behaviorTreeRefs.push_back(hook);
+                }
+            }
+            outAst.methods.push_back(std::move(method));
+        }
+        if (node.kind == UaiskCsSyntaxNodeKind::Field) {
+            UaiskCsFieldRef field;
+            field.name = node.name;
+            field.typeName = "float";
+            field.defaultValue = node.value;
+            outAst.fields.push_back(std::move(field));
+        }
+        if (node.kind == UaiskCsSyntaxNodeKind::Attribute && node.name == "behaviorTree") {
+            outAst.primaryRegistryTypeId = node.value;
+        }
+    }
+
+    return !outAst.moduleName.empty();
+}
+
 bool codegenSpecsForModule(const UaiskCsAst& ast,
                            std::vector<NodeLoadSpec>& outSpecs,
                            u32& outRootIndex,
@@ -102,6 +175,12 @@ bool codegenSpecsForModule(const UaiskCsAst& ast,
     }
     if (containsHook(ast, "aiTargeting.cs") || ast.primaryRegistryTypeId == "bb.condition.distance_less") {
         return codegenDistanceLessSpecs(outSpecs, outRootIndex);
+    }
+    if (containsHook(ast, "aiSquad.cs") || methodImpliesCodegen(ast, "onSquadPatrol")) {
+        return codegenAlliesThenPatrolSpecs(outSpecs, outRootIndex);
+    }
+    if (methodImpliesCodegen(ast, "onWaitThenMove") || methodImpliesCodegen(ast, "onPatrolWait")) {
+        return codegenWaitThenMoveSpecs(outSpecs, outRootIndex);
     }
 
     if (errorOut != nullptr) {
@@ -139,6 +218,42 @@ bool codegenTreeFromCs(std::string_view csModule,
     if (!loadTreeFromSpecs(specs, rootIndex, outTree)) {
         if (errorOut != nullptr) {
             *errorOut = "UAISK codegen tree load failed";
+        }
+        return false;
+    }
+
+    return true;
+}
+
+bool codegenTreeFromSyntaxTree(std::string_view csModule,
+                               std::string_view csText,
+                               BehaviorTree& outTree,
+                               std::string* errorOut) {
+    UaiskCsSyntaxTree tree;
+    if (!parseCsSyntaxTree(csModule, csText, tree)) {
+        if (errorOut != nullptr) {
+            *errorOut = "UAISK syntax tree parse failed";
+        }
+        return false;
+    }
+
+    UaiskCsAst ast;
+    if (!buildAstFromSyntaxTree(tree, ast)) {
+        if (errorOut != nullptr) {
+            *errorOut = "UAISK ast build from syntax tree failed";
+        }
+        return false;
+    }
+
+    std::vector<NodeLoadSpec> specs;
+    u32 rootIndex = 0;
+    if (!codegenSpecsForModule(ast, specs, rootIndex, errorOut)) {
+        return false;
+    }
+
+    if (!loadTreeFromSpecs(specs, rootIndex, outTree)) {
+        if (errorOut != nullptr) {
+            *errorOut = "UAISK syntax-tree codegen tree load failed";
         }
         return false;
     }

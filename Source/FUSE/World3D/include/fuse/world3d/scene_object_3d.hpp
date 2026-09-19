@@ -20,12 +20,20 @@ public:
     float yawDeg() const { return m_yawDeg; }
     void setYawDeg(float yawDeg) { m_yawDeg = yawDeg; }
 
+    float pitchDeg() const { return m_pitchDeg; }
+    void setPitchDeg(float pitchDeg) { m_pitchDeg = pitchDeg; }
+
+    float rollDeg() const { return m_rollDeg; }
+    void setRollDeg(float rollDeg) { m_rollDeg = rollDeg; }
+
     LocalTransform3D localTransform3D() const;
     WorldTransform3D worldTransform3D() const;
 
 private:
     float m_z = 0.f;
     float m_yawDeg = 0.f;
+    float m_pitchDeg = 0.f;
+    float m_rollDeg = 0.f;
 };
 
 } // namespace fuse

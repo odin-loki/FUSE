@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/ai/behavior_runtime.hpp>
+#include <fuse/ai/uaisk_file_watch_os.hpp>
 #include <fuse/types.hpp>
 
 #include <string>
@@ -18,6 +19,7 @@ struct TreeFileWatchEntry {
     u32 reloadCount = 0;
     u64 lastModifiedNs = 0;
     bool osWatchEnabled = false;
+    OsFileWatchBackend osBackend = OsFileWatchBackend::StatPoll;
 };
 
 /// Registry that polls watched `.bt` / `.cs` assets and reloads tree profiles on change.
@@ -32,6 +34,9 @@ public:
 
     /// OS poll — stat mtime / disk read and reload changed profiles into `runtime`.
     u32 pollOsFileChanges(BehaviorRuntime& runtime, std::string* errorOut = nullptr);
+
+    /// Inotify/FSEvents poll — uses portable OS watch handles when available.
+    u32 pollInotifyFileChanges(BehaviorRuntime& runtime, std::string* errorOut = nullptr);
 
     u32 watchCount() const { return static_cast<u32>(m_watches.size()); }
     u32 reloadCount() const { return m_reloadCount; }
@@ -50,6 +55,9 @@ private:
     u32 m_reloadCount = 0;
     u32 m_osPollCount = 0;
     u32 m_osReloadCount = 0;
+    u32 m_inotifyPollCount = 0;
+    u32 m_inotifyReloadCount = 0;
+    std::unordered_map<std::string, OsFileWatchHandle> m_osHandles;
 };
 
 } // namespace fuse::ai::uaisk

@@ -461,6 +461,22 @@ void testParticlePoolCudaSkip() {
     expectTrue(gpuBackend.cudaSkipCount() == 1u, "cuda dispatch skipped without toolkit");
 }
 
+void testAfxMissionBodyParse() {
+    static const char* kMisText =
+        "//--- MISSION AFXDemo_Minimal ---\n"
+        "new SimObject(MissionCleanup) {}\n"
+        "missionName = \"AFXDemo_Minimal\";\n"
+        "MissionInfo.addScoreId = 0;\n"
+        "function onSpellCast() {}\n";
+
+    fuse::fx::AfxMissionBody body;
+    std::string error;
+    expectTrue(fuse::fx::parse_afx_mission_body_from_mis(kMisText, body, &error), ".mis body parse succeeds");
+    expectTrue(body.missionName == "AFXDemo_Minimal", ".mis body mission name parsed");
+    expectTrue(!body.simObjectNames.empty(), ".mis body simobject parsed");
+    expectTrue(!body.missionInfoKeys.empty(), ".mis body missionInfo key parsed");
+}
+
 void testAfxChoreographerBridge() {
     fuse::fx::FxComposer composer;
     composer.registerDemoVerticalSlice();
@@ -513,6 +529,7 @@ int main() {
     testAfxMissionHooks();
     testAfxMissionScriptVm();
     testAfxMissionLoaderFromMis();
+    testAfxMissionBodyParse();
     testAfxMissionLoaderVmBridge();
     testAfxMissionScriptVmImpactHook();
     testParticlePoolCudaNotSyncedSkip();

@@ -1,5 +1,6 @@
 #include <fuse/adventure/conversation_interactable.hpp>
 #include <fuse/adventure/conversation_script_loader.hpp>
+#include <fuse/adventure/skeletal_mount_stub.hpp>
 #include <fuse/adventure/weapon_mount_animation.hpp>
 #include <fuse/adventure/interaction.hpp>
 #include <fuse/adventure/inventory.hpp>
@@ -134,6 +135,27 @@ int main() {
     expectTrue(mountAnim.applyOnGrant(inventory, fuse::adventure::ItemId("sidearm")),
                "weapon mount animation applies on grant");
     expectTrue(mountAnim.applyCount() == 1u, "weapon mount animation counted");
+
+    fuse::adventure::SkeletalMountStub skeletalMount;
+    fuse::adventure::SkeletalBoneMount bone{};
+    bone.boneName = "spine_weapon";
+    bone.yawDeg = 20.f;
+    bone.pitchDeg = -8.f;
+    skeletalMount.setBoneMount(bone);
+    fuse::adventure::WeaponMountAnimationStub skeletalAnim;
+    expectTrue(skeletalMount.applyToMountAnimation(skeletalAnim), "skeletal mount applies to animation stub");
+    expectTrue(skeletalMount.applyCount() == 1u, "skeletal mount apply counted");
+    expectTrue(skeletalAnim.pose().mountPoint == "spine_weapon", "skeletal mount bone name wired");
+
+    static const char* kTsConvText =
+        "function onConversation_outpost_guard_welcome() {\n"
+        "  echo(\"Welcome to the outpost.\");\n"
+        "}\n";
+    fuse::adventure::ConversationScriptVm tsVm;
+    expectTrue(fuse::adventure::register_conversation_hooks_from_torquescript(kTsConvText, tsVm),
+               "TorqueScript conversation loader registers hooks");
+    expectTrue(tsVm.branchLineCount("outpost_guard", "welcome") == 1u,
+               "TorqueScript conversation branch line parsed");
 
     fuse::core::shutdown();
 

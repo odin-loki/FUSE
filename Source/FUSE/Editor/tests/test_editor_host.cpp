@@ -692,6 +692,19 @@ void testCinematicsSeqScrubPreviewPostsSample() {
     expectTrue(sample.mount_pitch_deg != 0.f, "seq preview pane mount pitch sampled");
 }
 
+void testCinematicsSeqPreviewPaneWire() {
+    fuse::editor::EditorHost host;
+    fuse::editor::CinematicsSeqImport importer(host);
+
+    expectTrue(importer.wirePreviewPaneToHost(2'500), "seq preview pane wire posts commands");
+    host.gameTick();
+    host.gameTick();
+    expectTrue(importer.previewPaneWireCount() == 1u, "seq preview pane wire counted");
+    expectTrue(host.cinematicsSeqPreviewPaneWireCount() == 1u, "host preview pane wire counted on game thread");
+    expectTrue(importer.lastWiredPreviewSample().valid, "wired preview sample valid");
+    expectTrue(importer.lastWiredPreviewSample().mount_point == "cockpit", "wired preview mount point");
+}
+
 void testCinematicsSeqImportPostsAsset() {
     fuse::editor::EditorHost host;
     fuse::editor::CinematicsSeqImport importer(host);
@@ -739,6 +752,7 @@ int main() {
     testAiAgentSelectionDeepen();
     testAiTreeFileReloadFromPicker();
     testCinematicsSeqScrubPreviewPostsSample();
+    testCinematicsSeqPreviewPaneWire();
     testCinematicsSeqImportPostsAsset();
     fuse::core::shutdown();
 

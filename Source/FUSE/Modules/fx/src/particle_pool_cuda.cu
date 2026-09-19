@@ -4,7 +4,7 @@
 
 namespace {
 
-__global__ void fuse_fx_age_particles_kernel(u8* packed, u32 activeCount, float dt) {
+__global__ void fuse_fx_integrate_particles_kernel(u8* packed, u32 activeCount, float dt) {
     const u32 slotIndex = blockIdx.x * blockDim.x + threadIdx.x;
     if (slotIndex >= activeCount) {
         return;
@@ -12,10 +12,19 @@ __global__ void fuse_fx_age_particles_kernel(u8* packed, u32 activeCount, float 
 
     constexpr u32 kBytesPerSlot = 40u;
     u8* slot = packed + slotIndex * kBytesPerSlot;
+    float* position = reinterpret_cast<float*>(slot);
+    const float* velocity = reinterpret_cast<const float*>(slot + 12);
+    float* lifetime = reinterpret_cast<float*>(slot + 24);
     float* age = reinterpret_cast<float*>(slot + 28);
-    const float* lifetime = reinterpret_cast<const float*>(slot + 24);
     u32* alive = reinterpret_cast<u32*>(slot + 36);
 
+    if (*alive == 0u) {
+        return;
+    }
+
+    position[0] += velocity[0] * dt;
+    position[1] += velocity[1] * dt;
+    position[2] += velocity[2] * dt;
     *age += dt;
     if (*age >= *lifetime) {
         *alive = 0u;
@@ -27,6 +36,7 @@ struct DeviceSsboState {
     u32 deviceCapacityBytes = 0;
     u32 allocCount = 0;
     u32 reuseCount = 0;
+    u32 integrateDispatchCount = 0;
 };
 
 DeviceSsboState& deviceSsboState() {
@@ -72,6 +82,10 @@ extern "C" u32 fuse_fx_particle_pool_device_ssbo_capacity_bytes() {
     return deviceSsboState().deviceCapacityBytes;
 }
 
+extern "C" u32 fuse_fx_particle_pool_cuda_integrate_dispatch_count() {
+    return deviceSsboState().integrateDispatchCount;
+}
+
 extern "C" void fuse_fx_particle_pool_cuda_stub(const u8* packed, u32 activeCount, float dt) {
     if (packed == nullptr || activeCount == 0u) {
         return;
@@ -89,7 +103,8 @@ extern "C" void fuse_fx_particle_pool_cuda_stub(const u8* packed, u32 activeCoun
 
     const int blockSize = 64;
     const int gridSize = static_cast<int>((activeCount + blockSize - 1u) / blockSize);
-    fuse_fx_age_particles_kernel<<<gridSize, blockSize>>>(devicePacked, activeCount, dt);
+    fuse_fx_integrate_particles_kernel<<<gridSize, blockSize>>>(devicePacked, activeCount, dt);
     cudaDeviceSynchronize();
     cudaMemcpy(const_cast<u8*>(packed), devicePacked, bytes, cudaMemcpyDeviceToHost);
+    ++deviceSsboState().integrateDispatchCount;
 }

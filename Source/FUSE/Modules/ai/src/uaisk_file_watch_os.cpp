@@ -4,10 +4,64 @@
 #include <sstream>
 
 #if defined(__linux__)
+#include <sys/inotify.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#elif defined(__APPLE__)
+#include <sys/stat.h>
+#else
 #include <sys/stat.h>
 #endif
 
 namespace fuse::ai::uaisk {
+
+namespace {
+
+bool readFileContent(const std::string& pathStr, OsFileWatchStatus& status) {
+    std::ifstream stream(pathStr, std::ios::binary);
+    if (!stream.is_open()) {
+        status.error = "open failed";
+        return false;
+    }
+
+    std::ostringstream buffer;
+    buffer << stream.rdbuf();
+    status.content = buffer.str();
+    status.readable = true;
+    return true;
+}
+
+u64 statModifiedNs(const std::string& pathStr, u64& outSize) {
+#if defined(__linux__) || defined(__APPLE__)
+    struct stat fileStat {};
+    if (stat(pathStr.c_str(), &fileStat) != 0) {
+        outSize = 0;
+        return 0;
+    }
+    outSize = static_cast<u64>(fileStat.st_size);
+#if defined(__linux__)
+    return static_cast<u64>(fileStat.st_mtim.tv_sec) * 1'000'000'000ull +
+           static_cast<u64>(fileStat.st_mtim.tv_nsec);
+#else
+    return static_cast<u64>(fileStat.st_mtimespec.tv_sec) * 1'000'000'000ull +
+           static_cast<u64>(fileStat.st_mtimespec.tv_nsec);
+#endif
+#else
+    outSize = 0;
+    return 0;
+#endif
+}
+
+u64 contentHashNs(const std::string& content) {
+    u64 hash = 2166136261u;
+    for (unsigned char ch : content) {
+        hash ^= static_cast<u64>(ch);
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+} // namespace
 
 OsFileWatchStatus readOsFileWatchStatus(std::string_view path) {
     OsFileWatchStatus status{};
@@ -17,42 +71,128 @@ OsFileWatchStatus readOsFileWatchStatus(std::string_view path) {
     }
 
     const std::string pathStr(path);
-
-#if defined(__linux__)
-    struct stat fileStat {};
-    if (stat(pathStr.c_str(), &fileStat) != 0) {
-        status.error = "stat failed";
-        return status;
+    u64 fileSize = 0;
+    const u64 mtimeNs = statModifiedNs(pathStr, fileSize);
+    if (mtimeNs == 0 && fileSize == 0) {
+        std::ifstream probe(pathStr);
+        if (!probe.is_open()) {
+            status.error = "stat failed";
+            return status;
+        }
     }
-    status.exists = true;
-    status.lastModifiedNs =
-        static_cast<u64>(fileStat.st_mtim.tv_sec) * 1'000'000'000ull +
-        static_cast<u64>(fileStat.st_mtim.tv_nsec);
-#else
-    status.exists = true;
-#endif
 
-    std::ifstream stream(pathStr, std::ios::binary);
-    if (!stream.is_open()) {
-        status.error = "open failed";
+    status.exists = true;
+    status.lastModifiedNs = mtimeNs;
+    status.backend = OsFileWatchBackend::StatPoll;
+
+    if (!readFileContent(pathStr, status)) {
         return status;
     }
 
-    std::ostringstream buffer;
-    buffer << stream.rdbuf();
-    status.content = buffer.str();
-    status.readable = true;
-
-#if !defined(__linux__)
-    u64 hash = 2166136261u;
-    for (unsigned char ch : status.content) {
-        hash ^= static_cast<u64>(ch);
-        hash *= 16777619u;
-    }
-    status.lastModifiedNs = hash;
+#if !defined(__linux__) && !defined(__APPLE__)
+    status.lastModifiedNs = contentHashNs(status.content);
 #endif
 
     return status;
+}
+
+bool createOsFileWatch(std::string_view path, OsFileWatchHandle& outHandle) {
+    closeOsFileWatch(outHandle);
+    outHandle = OsFileWatchHandle{};
+    if (path.empty()) {
+        return false;
+    }
+
+    outHandle.path = std::string(path);
+
+#if defined(__linux__)
+    outHandle.inotifyFd = inotify_init1(IN_NONBLOCK);
+    if (outHandle.inotifyFd < 0) {
+        outHandle.backend = OsFileWatchBackend::StatPoll;
+    } else {
+        outHandle.watchFd = inotify_add_watch(outHandle.inotifyFd, outHandle.path.c_str(),
+                                              IN_MODIFY | IN_CLOSE_WRITE | IN_MOVED_TO);
+        if (outHandle.watchFd >= 0) {
+            outHandle.backend = OsFileWatchBackend::Inotify;
+            outHandle.active = true;
+            u64 fileSize = 0;
+            outHandle.lastModifiedNs = statModifiedNs(outHandle.path, fileSize);
+            outHandle.lastSize = fileSize;
+            return true;
+        }
+        close(outHandle.inotifyFd);
+        outHandle.inotifyFd = -1;
+    }
+#endif
+
+    u64 fileSize = 0;
+    outHandle.lastModifiedNs = statModifiedNs(outHandle.path, fileSize);
+    outHandle.lastSize = fileSize;
+    outHandle.backend = OsFileWatchBackend::StatPoll;
+    outHandle.active = true;
+    return true;
+}
+
+bool pollOsFileWatch(OsFileWatchHandle& handle, OsFileWatchStatus& outStatus) {
+    outStatus = OsFileWatchStatus{};
+    if (!handle.active || handle.path.empty()) {
+        outStatus.error = "inactive watch";
+        return false;
+    }
+
+    bool changed = false;
+
+#if defined(__linux__)
+    if (handle.backend == OsFileWatchBackend::Inotify && handle.inotifyFd >= 0) {
+        char buffer[512];
+        const ssize_t bytesRead = read(handle.inotifyFd, buffer, sizeof(buffer));
+        if (bytesRead > 0) {
+            changed = true;
+        }
+        outStatus.backend = OsFileWatchBackend::Inotify;
+    }
+#endif
+
+    u64 fileSize = 0;
+    const u64 mtimeNs = statModifiedNs(handle.path, fileSize);
+    if (mtimeNs != 0) {
+        outStatus.exists = true;
+        outStatus.lastModifiedNs = mtimeNs;
+        if (mtimeNs != handle.lastModifiedNs || fileSize != handle.lastSize) {
+            changed = true;
+        }
+    }
+
+    if (!changed) {
+        outStatus.changed = false;
+        return false;
+    }
+
+    if (!readFileContent(handle.path, outStatus)) {
+        return false;
+    }
+
+    handle.lastModifiedNs = outStatus.lastModifiedNs;
+    handle.lastSize = fileSize;
+    outStatus.changed = true;
+    if (outStatus.backend == OsFileWatchBackend::StatPoll) {
+        outStatus.backend = handle.backend;
+    }
+    return true;
+}
+
+void closeOsFileWatch(OsFileWatchHandle& handle) {
+#if defined(__linux__)
+    if (handle.inotifyFd >= 0) {
+        if (handle.watchFd >= 0) {
+            inotify_rm_watch(handle.inotifyFd, handle.watchFd);
+        }
+        close(handle.inotifyFd);
+    }
+#endif
+    handle.watchFd = -1;
+    handle.inotifyFd = -1;
+    handle.active = false;
 }
 
 } // namespace fuse::ai::uaisk

@@ -13,6 +13,7 @@ add_library(fuse_adventure STATIC
     src/weapon_runtime.cpp
     src/weapon_grant_pipeline.cpp
     src/weapon_mount_animation.cpp
+    src/skeletal_mount_stub.cpp
     src/hud_prompt_interactable.cpp
     src/mechanics_bridge.cpp
     src/puzzle_gate.cpp
@@ -42,6 +43,7 @@ add_library(fuse_adventure STATIC
     include/fuse/adventure/conversation_script_vm.hpp
     include/fuse/adventure/conversation_script_loader.hpp
     include/fuse/adventure/weapon_mount_animation.hpp
+    include/fuse/adventure/skeletal_mount_stub.hpp
 )
 
 add_library(fuse::adventure ALIAS fuse_adventure)

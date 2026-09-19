@@ -22,19 +22,24 @@ struct BroadphaseWorldBody {
 class BroadphaseWorldStub {
 public:
     void addBody(const BroadphaseWorldBody& body);
+    bool removeBody(u32 objectId);
     void setBodyPosition(u32 objectId, float x, float y, float z);
     void clear();
 
     [[nodiscard]] u32 bodyCount() const { return static_cast<u32>(m_bodies.size()); }
     [[nodiscard]] u32 overlapQueryCount() const { return m_overlapQueryCount; }
     [[nodiscard]] u32 lastOverlapCount() const { return m_lastOverlapCount; }
+    [[nodiscard]] u32 aabbQueryCount() const { return m_aabbQueryCount; }
 
     [[nodiscard]] u32 queryOverlaps(BroadphaseProxyFilter filterA, BroadphaseProxyFilter filterB);
+    [[nodiscard]] u32 queryAabbOverlaps(float minX, float minY, float minZ, float maxX, float maxY,
+                                        float maxZ);
 
 private:
     std::vector<BroadphaseWorldBody> m_bodies;
     u32 m_overlapQueryCount = 0;
     u32 m_lastOverlapCount = 0;
+    u32 m_aabbQueryCount = 0;
 };
 
 } // namespace fuse::mechanics
