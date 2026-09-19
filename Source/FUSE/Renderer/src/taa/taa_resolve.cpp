@@ -694,3 +694,7 @@ bool tryPreflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuf
 // --- deepen additive from deepen-b59-taa-guards-7381 ---
 bool preflightTaaTemporalResolveGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
     return !preflightTaaTemporalResolveGuards(desc, history, observedGeneration);
+
+// --- deepen additive from deepen-b59-taa-guards-f66d ---
+    if (!tryPreflightTaaResolve(desc, history, skipReason)) {
+    return tryPreflightTaaResolveBlendWeights(desc, history, blendReason);

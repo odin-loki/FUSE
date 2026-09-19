@@ -3828,3 +3828,16 @@ void testTaaPassTemporalAndJitterGuardWrappers() {
                "pass preflightTemporalResolveGuards passes after warmup");
     testJitterShouldSkipAndTryNdcPreflight();
     testTemporalResolveGuardPreflights();
+
+// --- deepen additive from deepen-b59-taa-guards-f66d ---
+               "tryPreflight warmup reason is None after warmup");
+               "tryPreflightTaaResolve passes for valid desc");
+               "tryPreflightTaaResolveFrame passes for warmup");
+               "tryPreflightTaaResolveFrame skip reason is None");
+               "tryPreflightTaaResolveFrame blend reason is None");
+    expectTrue(!fuse::renderer::tryPreflightTaaResolveFrame(desc, history, skipReason, blendReason),
+               "tryPreflightTaaResolveFrame fails for invalid dimensions");
+               "tryPreflightTaaResolveFrame skip reason is InvalidDimensions");
+void testTaaPassWarmupAndResolveFrameGuards() {
+    expectTrue(pass->preflightJitterNdc(), "pass jitter NDC preflight passes");
+    expectTrue(pass->preflightJitterSync(4u), "pass jitter sync preflight passes");

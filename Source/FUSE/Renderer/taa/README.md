@@ -159,3 +159,15 @@ Part of `fuse_rhi`. Built with `FUSE_BUILD_CORE=ON`. Tests run when `FUSE_BUILD_
 - `TaaPass::tryPreflightJitterNdc` / `shouldSkipJitterNdc` / `shouldSkipJitterSync` — pass-level jitter guard wrappers
 - `TaaPass::tryPreflightHistoryWarmup` / `shouldSkipHistoryWarmup` — pass-level warm-up guard wrappers
 - `TaaPass::tryPreflightResolve` / `shouldSkipResolve` — pass-level resolve skip guard wrappers
+
+// --- deepen additive from deepen-b59-taa-guards-f66d ---
+- `preflightTaaHistoryWarmup` / `tryPreflightTaaHistoryWarmup` / `shouldSkipTaaHistoryWarmup`
+- `TaaPass::historyWarmupComplete()` / `preflightHistoryWarmup()` / `shouldSkipHistoryWarmup()`
+- `preflightTaaHistoryReuse` / `tryPreflightTaaHistoryReuse` / `shouldSkipTaaHistoryReuse`
+- `preflightTaaJitterSync` / `tryPreflightTaaJitterSync` / `shouldSkipTaaJitterSync`
+- `preflightTaaJitterNdc` / `tryPreflightTaaJitterNdc` / `shouldSkipTaaJitterNdc`
+- `TaaPass::preflightJitterSync` / `preflightJitterNdc` / `shouldSkipJitterSync` / `shouldSkipJitterNdc`
+- `preflightTaaResolveBlendWeights` / `tryPreflightTaaResolveBlendWeights` / `shouldSkipTaaResolveBlend`
+- `tryPreflightTaaResolve` / `shouldSkipTaaResolve` — resolve skip preflight deepening
+- `preflightTaaResolveFrame` / `tryPreflightTaaResolveFrame` / `shouldSkipTaaResolveFrame` — combined skip + blend
+- `TaaPass::preflightResolveFrame()` / `shouldSkipResolveFrame()`
