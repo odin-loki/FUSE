@@ -218,6 +218,14 @@ bool PairBufferSoA::invalidateSlotWithPreflight(u32 slot) {
     return true;
 }
 
+bool PairBufferSoA::invalidateSlotWithPreflight(u32 slot) {
+    if (!preflightPairBufferInvalidateSlot(*this, slot).canInvalidate()) {
+        return false;
+    }
+    validFlags[slot] = 0u;
+    return true;
+}
+
 u32 PairBufferSoA::remainingCapacity() const {
     if (maxCapacity == 0u) {
         return UINT32_MAX;
@@ -2963,6 +2971,8 @@ PairBufferInvalidateSlotRejectReason pairBufferInvalidateSlotRejectReason(const 
     if (buffer.validFlags[slot] == 0u) {
 
 
+    if (slot >= buffer.pairSlotCount) {
+
 bool pairBufferInvalidateSlotRejectsForReason(
     const PairBufferSoA& buffer,
     u32 slot,
@@ -3022,9 +3032,9 @@ bool wouldSkipPairBufferPush(
 
 bool wouldSkipPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
     return canSkipPairBufferInvalidateSlot(buffer, slot);
-    if (reason != nullptr) {
-        *reason = rejectReason;
-    }
+
+
+
 
 const char* pairBufferToVectorRejectReasonName(PairBufferToVectorRejectReason reason) {
     case PairBufferToVectorRejectReason::None:
