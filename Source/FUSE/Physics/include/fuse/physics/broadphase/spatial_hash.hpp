@@ -283,6 +283,20 @@ FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
     return !canSkipBroadphase(bodies, shapes);
 }
 
+/// Non-mutating broadphase launch predicate — inverse of `canSkipBroadphase` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !canSkipBroadphase(bodies, shapes);
+}
+
+/// Non-mutating pair-generation predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !canSkipBroadphasePairGeneration(bodies, shapes);
+}
+
 /// Why broadphase pair generation would early-out (B4.2 deepen follow-up pass).
 enum class BroadphaseRejectReason : u8 {
     None = 0,
@@ -1732,6 +1746,16 @@ bool should_skip_broadphase_refine(
 /// True when shape cell iteration should skip due to an empty range (B4.2 deepen pass).
 bool should_skip_shape_cell_insert(const CellRange3& range, u32 maxCells = 0u);
 bool should_skip_shape_cell_insert(const CellRange2& range, u32 maxCells = 0u);
+/// Per-shape cell budget derived from `maxCellSpanPerAxis` (0 = unlimited stub).
+
+/// True when estimated occupancy exceeds the per-shape span budget (0 = unlimited).
+FUSE_PHYSICS_INLINE bool exceedsPerShapeCellBudget(
+    u32 maxCellSpanPerAxis) {
+    const u32 budget = perShapeCellBudget(maxCellSpanPerAxis, false);
+    if (budget == 0u) {
+    return estimateCellOccupancyCount(range) > budget;
+
+    const u32 budget = perShapeCellBudget(maxCellSpanPerAxis, true);
 
 /// Clamp broadphase params to safe stub defaults (positive cell size, at least one bucket).
 FUSE_PHYSICS_INLINE SpatialHashParams normalizeSpatialHashParams(SpatialHashParams params) {
