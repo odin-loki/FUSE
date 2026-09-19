@@ -423,6 +423,30 @@ inline bool tryTransformPointRigid(const Mat4& matrix, const Vec3& point, Vec3& 
     return true;
 }
 
+/// Writes `transformDirection(matrix, direction)` when the matrix is a rigid affine transform.
+inline bool tryTransformDirectionRigid(const Mat4& matrix, const Vec3& direction, Vec3& out,
+                                       f32 epsilon = 1e-4f) {
+    if (!isRigid(matrix, epsilon)) {
+        return false;
+    }
+    out = transformDirection(matrix, direction);
+    return true;
+}
+
+/// Builds a rigid affine matrix from translation, rotation, and positive uniform scale.
+inline bool tryFromRigid(const Vec3& translation, const Quat& rotation, f32 uniformScale, Mat4& out,
+                         f32 epsilon = 1e-4f) {
+    if (uniformScale < epsilon) {
+        return false;
+    }
+    const f32 lenSq = rotation.dot(rotation);
+    if (lenSq < epsilon * epsilon) {
+        return false;
+    }
+    out = fromTRS(translation, rotation.normalized(), {uniformScale, uniformScale, uniformScale});
+    return true;
+}
+
 /// Decomposes a rigid affine matrix into translation, unit rotation, and uniform column scale.
 inline bool tryExtractRigid(const Mat4& matrix, Vec3& translation, Quat& rotation, f32& uniformScale,
                             f32 epsilon = 1e-4f) {
