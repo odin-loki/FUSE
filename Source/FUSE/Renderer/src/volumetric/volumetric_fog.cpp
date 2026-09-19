@@ -2281,3 +2281,14 @@ bool preflightFroxelPopulateReady(const FroxelGridDesc& desc,
 
 // --- deepen additive from deepen-b511-froxel-volumetrics-5ada ---
     if (reject == ScreenMappingRejectReason::None) {
+
+// --- deepen additive from deepen-b511-froxel-guards-d9de ---
+bool wouldSkipScreenMapping(f32 screenX,
+        classifyScreenMappingReject(screenX, screenY, viewDepth, desc, camera));
+SampleCoordRejectReason classifySampleCoordReject(const FroxelSampleCoords& coords, const FroxelGridDesc& desc) {
+bool preflightSampleCoords(const FroxelSampleCoords& coords,
+FroxelBilinearSampleRejectReason classifyFroxelBilinearSampleReject(const FroxelDensityGrid& grid,
+    return froxelBilinearSampleRejectReasonIsBlocking(
+        classifyFroxelBilinearSampleReject(grid, desc, coords));
+    froxel_util::tryValidateGridDensity(grid, desc, reason, epsilon);
+    froxel_util::tryCanLookupAtCoord(grid, desc, tileX, tileY, sliceZ, reason);

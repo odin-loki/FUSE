@@ -3621,3 +3621,31 @@ void testFroxelClassifyRejectAndPreflightReadyGuards() {
                "preflightFroxelTrilinearSample still succeeds for clampable weights");
     expectTrue(!fuse::renderer::froxel_util::preflightFroxelTrilinearSample(emptyGrid, desc, inBounds),
                "preflightScreenDepthMapping returns mapped sample coords");
+
+// --- deepen additive from deepen-b511-froxel-guards-d9de ---
+void testFroxelClassifyPreflightAndBilinearGuards() {
+    expectTrue(fuse::renderer::froxel_util::wouldSkipFroxelMarch(grid, desc),
+               "uniformly zero grid skips froxel march via wouldSkip");
+    expectTrue(fuse::renderer::froxel_util::wouldSkipFroxelMarch(grid, desc) ==
+               "wouldSkipFroxelMarch agrees with shouldSkipFroxelMarch");
+                               fuse::renderer::ScreenMappingRejectReason::InvalidCamera),
+    expectTrue(!fuse::renderer::wouldSkipScreenMapping(0.5f, 0.5f, 10.f, desc, camera),
+    expectTrue(fuse::renderer::wouldSkipScreenMapping(0.5f, 0.5f, 0.01f, desc, camera),
+               "preflightScreenMapping succeeds for valid inputs");
+    expectTrue(fuse::renderer::classifySampleCoordReject(inBounds, desc) ==
+    expectTrue(fuse::renderer::preflightSampleCoords(inBounds, desc),
+    expectTrue(fuse::renderer::classifySampleCoordReject(inBounds, zeroDesc) ==
+    expectTrue(fuse::renderer::preflightDensityLookup(grid, desc, 0u),
+    expectTrue(fuse::renderer::classifyDensityLookupRejectAtCoord(grid, desc, 99u, 99u, 99u) ==
+                   fuse::renderer::GridDensityRejectReason::DensityCountMismatch),
+    expectTrue(fuse::renderer::classifyGridDensityReject(grid, desc) ==
+               "tryValidateGridDensityForDesc succeeds for accessible grid");
+               "tryValidateGridDensityForDesc reports no reject reason");
+                               fuse::renderer::FroxelPopulateRejectReason::ZeroMarchSteps),
+    expectTrue(fuse::renderer::preflightFroxelPopulate(desc, camera, params),
+    expectTrue(fuse::renderer::froxel_util::classifyFroxelBilinearSampleReject(grid, desc, warnWeights) ==
+               "classifyFroxelBilinearSampleReject clampable_weights for OOB weights");
+               "trySampleDensityAtScreen with lookup reason succeeds on accessible grid");
+               "trySampleDensityAtScreen with lookup reason rejects desc mismatch");
+    expectNear(rejectedScreen, 0.f, 1e-6f, "trySampleDensityAtScreen with lookup reason zeroes output on rejection");
+    testFroxelClassifyPreflightAndBilinearGuards();

@@ -875,3 +875,7 @@ bool preflightDensityLookupReady(const FroxelDensityGrid& grid,
 bool preflightDensityLookupAtCoordReady(const FroxelDensityGrid& grid,
 bool preflightFroxelTrilinearSampleReady(const FroxelDensityGrid& grid,
 bool preflightFroxelPopulateReady(const FroxelGridDesc& desc,
+
+// --- deepen additive from deepen-b511-froxel-guards-d9de ---
+SampleCoordRejectReason classifySampleCoordReject(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
+FroxelBilinearSampleRejectReason classifyFroxelBilinearSampleReject(const FroxelDensityGrid& grid,
