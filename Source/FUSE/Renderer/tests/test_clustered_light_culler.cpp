@@ -1743,3 +1743,24 @@ void testClusterCoordLookupPreflightGuards() {
     expectTrue(!fuse::renderer::cluster_util::tryCanLookupAtCoord(emptyGrid, desc, coordReason),
 void testClusterPopulationForDescGuards() {
     testClusterCoordLookupPreflightGuards();
+
+// --- deepen additive from deepen-b5-clustered-lights-guards-fe19 ---
+               "mapScreenDepthToClusterIndex delegates to tryMap on valid path");
+void testLightGridRebuildPreflightGuards() {
+    fuse::renderer::LightGridRebuildRejectReason rebuildReason =
+        fuse::renderer::LightGridRebuildRejectReason::None;
+    expectTrue(rebuildReason == fuse::renderer::LightGridRebuildRejectReason::None,
+    expectTrue(dropped == 0u, "tryRebuild reports zero dropped when within capacity");
+    expectTrue(grid.lightList.size() == 5u, "tryRebuild packs flat light list");
+               "tryRebuild rejects count mismatch without modifying grid");
+    expectTrue(rebuildReason == fuse::renderer::LightGridRebuildRejectReason::CountMismatch,
+    expectTrue(std::strcmp(fuse::renderer::lightGridRebuildRejectReasonLabel(rebuildReason), "count_mismatch") == 0,
+    expectTrue(rebuildReason == fuse::renderer::LightGridRebuildRejectReason::EmptyGrid,
+               "tryRebuild vacuously succeeds on zero cluster count");
+               "zero-count tryRebuild clears storage");
+    expectTrue(!fuse::renderer::cluster_util::tryCanLookupAtCoord(grid, zeroDesc, 0u, 0u, 0u, lookupReason),
+                   grid, desc, 0u, 0u, 0u, tryCoordLights, tryCoordCount, lookupReason),
+               "tryLookupClusterLightsAtCoord with reason succeeds on accessible grid");
+    expectTrue(tryCoordCount == 2u, "coord lookup with reason reports cluster light count");
+               "tryLookupClusterLightsAtCoord with reason rejects empty storage");
+    testLightGridRebuildPreflightGuards();

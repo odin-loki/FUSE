@@ -429,3 +429,8 @@ const char* clusterScreenMappingRejectReasonLabel(ClusterScreenMappingRejectReas
 
 // --- deepen additive from deepen-b5-clustered-lights-lookup-population-guards-f597 ---
 bool tryCanLookupCluster(const ClusterGridSoA& grid, u32 clusterIdx, ClusterLookupRejectReason& outReason);
+
+// --- deepen additive from deepen-b5-clustered-lights-guards-fe19 ---
+enum class LightGridRebuildRejectReason : u8 {
+const char* lightGridRebuildRejectReasonLabel(LightGridRebuildRejectReason reason);
+                                       LightGridRebuildRejectReason& outReason);

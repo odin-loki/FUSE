@@ -1085,3 +1085,15 @@ bool cluster_util::tryCanLookupCluster(const ClusterGridSoA& grid,
     ClusterScreenMappingRejectReason reason = ClusterScreenMappingRejectReason::None;
     return tryMapScreenDepthToClusterIndex(screenX, screenY, viewDepth, desc, camera, outClusterIndex, reason);
     return tryRebuildLightGrid(grid, desc, clusterCount, perClusterLights, maxLightsPerCluster, outDropped,
+
+// --- deepen additive from deepen-b5-clustered-lights-guards-fe19 ---
+const char* lightGridRebuildRejectReasonLabel(LightGridRebuildRejectReason reason) {
+    case LightGridRebuildRejectReason::None:
+    case LightGridRebuildRejectReason::EmptyGrid:
+    case LightGridRebuildRejectReason::CountMismatch:
+    LightGridRebuildRejectReason reason = LightGridRebuildRejectReason::None;
+                                                     LightGridRebuildRejectReason& outReason) {
+        outReason = LightGridRebuildRejectReason::None;
+        outReason = LightGridRebuildRejectReason::EmptyGrid;
+        outReason = LightGridRebuildRejectReason::CountMismatch;
+    return tryRebuildLightGrid(grid, desc, clusterCount, perClusterLights, maxLightsPerCluster, outDropped, reason);
