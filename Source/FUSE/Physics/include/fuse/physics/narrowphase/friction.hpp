@@ -417,13 +417,11 @@ bool ensure_friction_basis_from_preflight(ContactManifold& manifold, f32 epsilon
     f32 epsilon = 1e-4f);
 
 /// Rebuild friction tangents only when preflight reports `needsRebuild` (B4.4 deepen pass).
-bool rebuild_friction_basis_from_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 /// Returns true when friction-basis rebuild can proceed (B4.5 deepen follow-up).
 bool can_run_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 /// Build or reuse friction basis using deepen preflight; no-op when preflight says skip (B4.5 deepen follow-up).
-bool ensure_friction_basis_if_needed(ContactManifold& manifold, f32 epsilon = 1e-4f);
 /// Returns true when only one tangent axis is populated or lengths are non-unit (B4.5 deepen pass).
 bool has_partial_friction_basis(const ContactManifold& manifold, f32 epsilon = 1e-4f);
 
@@ -439,12 +437,10 @@ struct FrictionBasisDeepenPreflight {
     bool needsRebuild = false;
     bool needsNormalNormalization = false;
 
-    bool can_skip_rebuild() const { return skipped || canReuse; }
 };
 
 /// Populate second deepen friction-basis preflight without mutating the manifold (B4.5 deepen pass).
 FrictionBasisDeepenPreflight preflight_friction_basis_rebuild_deepen(
-    const ContactManifold& manifold,
     f32 epsilon = 1e-4f,
     f32 normalEpsilon = 1e-4f);
 
@@ -453,7 +449,6 @@ bool should_skip_friction_basis_deepen_preflight(
 
 /// Rebuild friction tangents with partial-basis and normal-normalization preflights (B4.5 deepen pass).
 void compute_friction_tangents_deepen_if_needed(
-    ContactManifold& manifold,
 /// Const preflight for warm-start friction impulse restore (B4.4 deepen follow-up pass).
 struct WarmStartFrictionPreflight {
     bool hasWarmImpulse = false;
@@ -482,7 +477,6 @@ const char* friction_basis_reject_reason_name(FrictionBasisRejectReason reason);
 
 /// Diagnose why friction-basis rebuild would skip; vacuously succeeds when rebuild may proceed.
 FrictionBasisRejectReason friction_basis_reject_reason(
-    f32 epsilon = 1e-4f);
 
 /// Returns true when `friction_basis_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
 bool friction_basis_rejects_for_reason(
@@ -505,13 +499,34 @@ bool can_skip_friction_basis_ensure(
 /// Build or reuse basis only when preflight requires it (B4.4 deepen follow-up pass).
 
 /// Rebuild basis using preflight gate; returns false when tangents should be skipped (B4.4 deepen follow-up pass).
-bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 /// Returns true when friction-basis rebuild dispatch may proceed (B4.5 deepen follow-up).
 bool can_dispatch_friction_basis_rebuild(
 /// Rebuild friction basis only when preflight allows; returns false when skipped (B4.4 deepen follow-up pass).
 
 /// Build friction tangents only when preflight allows rebuild (B4.4 deepen follow-up pass).
-void compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
+/// Why friction-basis rebuild would early-out (B4.4 deepen pass).
+enum class FrictionBasisRebuildRejectReason : u8 {
+    SkippedEmpty,
+    SkippedNoNormal,
+    CanReuse,
+    NeedsRebuild,
+
+/// Human-readable label for friction-basis rebuild reject reasons (logging / tests).
+const char* friction_basis_rebuild_reject_reason_name(FrictionBasisRebuildRejectReason reason);
+
+FrictionBasisRebuildRejectReason friction_basis_rebuild_reject_reason(
+
+/// Returns true when `friction_basis_rebuild_reject_reason` matches `expected` (B4.4 deepen pass).
+bool friction_basis_rebuild_rejects_for_reason(
+    FrictionBasisRebuildRejectReason expected,
+
+bool should_run_friction_basis_rebuild(
+
+/// Normalize the contact normal only when `should_normalize_contact_normal_before_friction` (B4.4 deepen pass).
+bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
+
+/// Rebuild friction basis after preflight normalize/rebuild guards (B4.4 deepen pass).
+bool ensure_friction_basis_after_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase

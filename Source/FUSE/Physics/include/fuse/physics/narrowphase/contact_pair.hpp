@@ -33,6 +33,9 @@ enum class ContactPairRejectReason : u8 {
     NegativeInverseMass,
     BothZeroMass,
     SleepingKinematicMix,
+    PlanePlane,
+    InvalidPlaneNormal,
+    ShapeBodyMismatch,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
@@ -985,16 +988,51 @@ struct NarrowphasePairBatchPreflight {
 NarrowphasePairBatchPreflight preflight_narrowphase_pairs(
 
 /// Run shape dispatch only when deepen preflight allows; invalid manifold otherwise (B4.5 deepen follow-up).
-};
 
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Non-mutating narrowphase predicate — inverse of `can_skip_narrowphase` (B4.4 deepen pass).
 bool should_run_narrowphase_dispatch(
 
 ContactManifold detect_contacts_pair_if_needed(
     const broadphase::CandidatePair& pair,
+/// Returns true when both resolved shapes are planes (B4.4 deepen pass).
+bool is_plane_plane_contact_pair(
+
+/// Returns true when either plane shape has a degenerate normal vector (B4.4 deepen pass).
+bool is_invalid_plane_normal_pair(
+
+/// Returns true when resolved shapes are not bound to the pair body indices (B4.4 deepen pass).
+bool is_shape_body_mismatch_contact_pair(
+
+/// Extended deepen-pass reject checks beyond `contact_pair_deepen_reject_reason` (B4.4 deepen pass).
+/// Does not alter `contact_pair_deepen_reject_reason`; use for additive preflight only.
+ContactPairRejectReason contact_pair_deepen_pass_reject_reason(
+
+/// Const preflight with deepen-pass plane/mismatch reject checks (B4.4 deepen pass).
+struct ContactPairDeepenPassPreflight {
+    ContactPairRejectReason reason = ContactPairRejectReason::None;
+    bool rejected = false;
+
+    bool can_dispatch() const { return !rejected; }
+
+/// Populate deepen-pass pair preflight without running shape dispatch (B4.4 deepen pass).
+ContactPairDeepenPassPreflight preflight_contact_pair_deepen_pass(
+
+/// Returns true when deepen-pass preflight rejects this pair (B4.4 deepen pass).
+bool should_skip_contact_pair_deepen_pass_dispatch(
+
+/// Read-only batch diagnostics for pair-list narrowphase launch (B4.4 deepen pass).
+struct ContactPairBatchPreflight {
+    u32 dispatchableCount = 0u;
+    u32 rejectedCount = 0u;
+    bool emptyInput = false;
+
+    bool can_dispatch() const { return dispatchableCount > 0u; }
+
+/// Populate batch pair preflight without running shape dispatch (B4.4 deepen pass).
+ContactPairBatchPreflight preflight_contact_pair_batch(
+
+/// Returns true when no pair passes deepen-pass preflight (B4.4 deepen pass).
+bool should_skip_contact_pair_batch(
 
 } // namespace fuse::physics::narrowphase
