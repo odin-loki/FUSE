@@ -2462,6 +2462,7 @@ enum class GizmoPickRejectReason : u8 {
     NonFiniteRay,
     NonFiniteHit,
     EmptyRay,
+    NonFiniteHit,
     EmptyHit,
     NonFiniteRay,
     NonFiniteHit,
@@ -2484,6 +2485,7 @@ enum class GizmoBeginDragRejectReason : u8 {
     NonFiniteRay,
     NonFiniteHit,
     EmptyRay,
+    NonFiniteHit,
     EmptyHit,
     NonFiniteRay,
     NonFiniteHit,
@@ -2499,7 +2501,6 @@ enum class GizmoUpdateDragRejectReason : u8 {
     NotDragging,
     NonFiniteHit,
     EmptyHit,
-    NonFiniteHit,
     InvalidDimensions,
     OutOfBounds,
     InvalidActiveAxis,
@@ -2514,26 +2515,20 @@ enum class GizmoSnapDragRejectReason : u8 {
     NonFiniteStep,
     InvalidStep,
 
-};
 
-/// Why snap-drag preflight rejected the request (B6.4 deepen pass).
-enum class GizmoSnapDragRejectReason : u8 {
-    None = 0,
-    DeltaNonFinite,
-    SnapDisabled,
-    InvalidStep,
-};
 
-/// Why snap-drag preflight rejected the request (B6.4 deepen pass).
-enum class GizmoSnapDragRejectReason : u8 {
-    None = 0,
-    DeltaNonFinite,
-    SnapDisabled,
-    InvalidStep,
 };
 
 /// Why end-drag preflight rejected the request (B6.4 deepen pass).
 enum class GizmoEndDragRejectReason : u8 {
+
+/// Why snap-drag preflight rejected the request (B6.4 deepen pass).
+enum class GizmoSnapDragRejectReason : u8 {
+    None = 0,
+    DeltaNonFinite,
+    SnapDisabled,
+    InvalidStep,
+};
 
 const char* gizmoPickRejectReasonLabel(GizmoPickRejectReason reason);
 const char* gizmoSnapRejectReasonLabel(GizmoSnapRejectReason reason);
