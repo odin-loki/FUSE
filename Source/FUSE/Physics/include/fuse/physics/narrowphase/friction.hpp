@@ -103,6 +103,9 @@ struct FrictionBasisPreflight {
     bool needsRebuild = false;
 
     bool can_skip_rebuild() const { return skipped || canReuse; }
+
+    /// True when a friction-basis rebuild pass has work to do (B4.5 deepen follow-up).
+    bool needs_work() const { return !skipped && needsRebuild; }
 };
 
 /// Populate friction-basis preflight without mutating the manifold (B4.4 deepen follow-up).
@@ -114,5 +117,11 @@ FrictionBasisPreflight preflight_friction_basis_rebuild(
 bool should_skip_friction_basis_preflight(
     const ContactManifold& manifold,
     f32 epsilon = 1e-4f);
+
+/// Rebuild friction basis using preflight dispatch; no-op when skip is allowed (B4.5 deepen follow-up).
+bool rebuild_friction_basis_from_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Build or reuse friction basis using preflight dispatch (B4.5 deepen follow-up).
+bool ensure_friction_basis_from_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase

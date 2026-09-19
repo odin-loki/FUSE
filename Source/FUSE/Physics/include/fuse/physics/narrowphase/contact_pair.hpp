@@ -167,4 +167,50 @@ bool can_skip_narrowphase(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.5 deepen follow-up).
+bool contact_pair_deepen_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected);
+
+/// Returns true when both shapes resolve to planes (B4.5 deepen follow-up).
+bool is_plane_plane_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when both bodies have zero static and dynamic friction (B4.5 deepen follow-up).
+bool is_zero_friction_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies);
+
+/// Count pairs that pass deepen preflight without rejection (B4.5 deepen follow-up).
+u32 count_dispatchable_contact_pairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Const batch preflight for narrowphase dispatch (B4.5 deepen follow-up).
+struct NarrowphaseBatchPreflight {
+    u32 totalPairs = 0;
+    u32 rejectedCount = 0;
+    u32 dispatchableCount = 0;
+    bool allRejected = false;
+
+    bool can_dispatch() const { return dispatchableCount > 0; }
+    bool can_skip() const { return allRejected; }
+};
+
+/// Populate batch preflight without running shape dispatch (B4.5 deepen follow-up).
+NarrowphaseBatchPreflight preflight_narrowphase_batch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Inverse of `can_skip_narrowphase` (B4.5 deepen follow-up).
+bool should_run_narrowphase(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
 } // namespace fuse::physics::narrowphase
