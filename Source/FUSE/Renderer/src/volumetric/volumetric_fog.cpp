@@ -1845,3 +1845,15 @@ bool preflightDensityLookupAtIndex(const FroxelDensityGrid& grid,
     return preflightDensityLookupAtCoord(grid, desc, tileX, tileY, sliceZ, reason);
     return preflightPopulateFromAnalyticFog(desc, camera, params);
     return preflightPopulateFromAnalyticFog(desc, camera, params, reason);
+
+// --- deepen additive from deepen-b511-froxel-preflights-49c6 ---
+bool FroxelGridLayout::wouldSkipSampleCoords(const FroxelSampleCoords& coords, const FroxelGridDesc& desc) {
+    case FroxelTrilinearSampleRejectReason::CoordsOutOfRange:
+    case FroxelTrilinearSampleRejectReason::InvalidWeights:
+        outReason = FroxelTrilinearSampleRejectReason::CoordsOutOfRange;
+    if (coordReason == SampleCoordRejectReason::InvalidWeights) {
+        outReason = FroxelTrilinearSampleRejectReason::InvalidWeights;
+bool wouldSkipTrilinearSample(const FroxelDensityGrid& grid,
+    return !tryPreflightTrilinearSample(grid, desc, coords, reason);
+    if (!tryPreflightTrilinearSample(grid, desc, coords, outReason)) {
+bool wouldSkipAnalyticPopulate(const FroxelGridDesc& desc,

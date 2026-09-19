@@ -2721,3 +2721,33 @@ void testFroxelTrilinearAndPreflightGuards() {
                "preflightPopulateFromAnalyticFog rejects invalid camera");
                "preflightPopulateFromAnalyticFog reports invalid_camera reject reason");
     testFroxelTrilinearAndPreflightGuards();
+
+// --- deepen additive from deepen-b511-froxel-preflights-49c6 ---
+void testFroxelTrilinearPreflightAndSkipGuards() {
+    expectTrue(fuse::renderer::froxel_util::wouldSkipDensityLookup(grid, mismatched),
+    expectTrue(fuse::renderer::froxel_util::wouldSkipDensityLookupAtCoord(grid, mismatched, 0u, 0u, 0u),
+    expectTrue(!fuse::renderer::froxel_util::tryCanLookupAtCoord(grid, mismatched, 0u, 0u, 0u, lookupReason),
+               "tryCanLookupAtCoord rejects desc mismatch");
+    expectTrue(!fuse::renderer::FroxelGridLayout::wouldSkipSampleCoords(inBounds, desc),
+    expectTrue(fuse::renderer::FroxelGridLayout::wouldSkipSampleCoords(hardOob, desc),
+               "canPreflightTrilinearSample succeeds on accessible grid");
+    expectTrue(!fuse::renderer::froxel_util::wouldSkipTrilinearSample(grid, desc, inBounds),
+    expectTrue(trilinearReason == fuse::renderer::FroxelTrilinearSampleRejectReason::InvalidWeights,
+    expectTrue(std::strcmp(fuse::renderer::froxelTrilinearSampleRejectReasonLabel(trilinearReason), "invalid_weights") ==
+    expectTrue(!fuse::renderer::froxel_util::wouldSkipTrilinearSample(grid, desc, warnWeights),
+               "tryPreflightTrilinearSample rejects empty storage");
+    expectTrue(fuse::renderer::froxel_util::wouldSkipTrilinearSample(emptyGrid, desc, inBounds),
+    expectTrue(!fuse::renderer::froxel_util::tryPreflightTrilinearSample(grid, mismatched, inBounds, trilinearReason),
+               "tryPreflightTrilinearSample rejects desc mismatch");
+    expectTrue(std::strcmp(fuse::renderer::froxelTrilinearSampleRejectReasonLabel(trilinearReason), "desc_mismatch") ==
+    expectTrue(trilinearReason == fuse::renderer::FroxelTrilinearSampleRejectReason::CoordsOutOfRange,
+    expectTrue(fuse::renderer::froxel_util::wouldSkipTrilinearSample(grid, desc, hardOob),
+    expectTrue(!fuse::renderer::froxel_util::tryPreflightTrilinearSample(grid, zeroDesc, inBounds, trilinearReason),
+               "tryPreflightTrilinearSample rejects empty desc");
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityTrilinear(grid, desc, hardOob, rejectedOob,
+    expectTrue(!fuse::renderer::froxel_util::wouldSkipAnalyticPopulate(desc, camera, params),
+    expectTrue(fuse::renderer::froxel_util::wouldSkipAnalyticPopulate(zeroDesc, camera, params),
+    expectTrue(fuse::renderer::froxel_util::wouldSkipAnalyticPopulate(desc, badCamera, params),
+    expectTrue(fuse::renderer::froxel_util::wouldSkipAnalyticPopulate(desc, camera, zeroDensity),
+    expectTrue(!fuse::renderer::froxel_util::tryValidateGridDensity(corrupt, desc, densityReason),
+    testFroxelTrilinearPreflightAndSkipGuards();

@@ -729,3 +729,8 @@ bool tryPreflightDensityLookupAtCoord(const FroxelDensityGrid& grid,
 bool preflightSampleAtCoords(const FroxelDensityGrid& grid,
 bool wouldClampSampleAtCoords(const FroxelDensityGrid& grid,
 bool preflightDensityLookupAtIndex(const FroxelDensityGrid& grid,
+
+// --- deepen additive from deepen-b511-froxel-preflights-49c6 ---
+    static bool wouldSkipSampleCoords(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
+bool wouldSkipTrilinearSample(const FroxelDensityGrid& grid,
+bool wouldSkipAnalyticPopulate(const FroxelGridDesc& desc,
