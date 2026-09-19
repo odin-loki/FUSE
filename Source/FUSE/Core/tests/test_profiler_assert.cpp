@@ -5160,3 +5160,80 @@ void testProfileRecordPreflights() {
     if (fuse::profiler::wouldSkipCounterSample("")) {
                "wouldSkip true blocks invalid-name recording");
     testProfileRecordPreflights();
+
+// --- deepen additive from deepen-b16-profiler-guards-e7e3 ---
+void testWouldSkipRecordingGuards() {
+    expectTrue(fuse::profiler::wouldSkipScopeRecording(nullptr), "wouldSkipScopeRecording true for null name");
+    expectTrue(fuse::profiler::wouldSkipScopeRecording(""), "wouldSkipScopeRecording true for empty name");
+    expectTrue(!fuse::profiler::wouldSkipScopeRecording("scope"), "wouldSkipScopeRecording false for valid name");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowBegin(nullptr), "wouldSkipAsyncFlowBegin true for null name");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowBegin(""), "wouldSkipAsyncFlowBegin true for empty name");
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowBegin("flow"), "wouldSkipAsyncFlowBegin false for valid name");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd(nullptr), "wouldSkipAsyncFlowEnd true for null name");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd(""), "wouldSkipAsyncFlowEnd true for empty name");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd("flow"),
+    expectTrue(fuse::profiler::wouldSkipCounterRecording(nullptr), "wouldSkipCounterRecording true for null name");
+    expectTrue(fuse::profiler::wouldSkipCounterRecording(""), "wouldSkipCounterRecording true for empty name");
+    expectTrue(!fuse::profiler::wouldSkipCounterRecording("counter"),
+               "wouldSkipCounterRecording false for valid track");
+    expectTrue(fuse::profiler::wouldSkipScopeRecording("scope"), "wouldSkipScopeRecording true when disabled");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowBegin("flow"), "wouldSkipAsyncFlowBegin true when disabled");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd("flow"), "wouldSkipAsyncFlowEnd true when disabled");
+    expectTrue(fuse::profiler::wouldSkipCounterRecording("counter"),
+               "wouldSkipCounterRecording true when disabled");
+void testRecordingPreflightGuards() {
+    const fuse::profiler::ScopeRecordingPreflight emptyScopePreflight =
+        fuse::profiler::preflightScopeRecording("");
+    expectTrue(emptyScopePreflight.wouldSkip(), "scope preflight skips empty name");
+    expectTrue(emptyScopePreflight.invalidName, "scope preflight marks invalid empty name");
+    expectTrue(!emptyScopePreflight.wouldRecord(), "scope preflight wouldRecord false for empty name");
+    const fuse::profiler::AsyncFlowBeginPreflight emptyFlowPreflight =
+    expectTrue(emptyFlowPreflight.wouldSkip(), "flow begin preflight skips null name");
+    expectTrue(emptyFlowPreflight.invalidName, "flow begin preflight marks invalid null name");
+        fuse::profiler::preflightAsyncFlowEnd("orphan");
+    expectTrue(orphanEndPreflight.wouldSkip(), "flow end preflight skips with no open flows");
+    expectTrue(orphanEndPreflight.noOpenFlows, "flow end preflight marks no open flows");
+    const fuse::profiler::CounterRecordingPreflight emptyCounterPreflight =
+        fuse::profiler::preflightCounterRecording("");
+    expectTrue(emptyCounterPreflight.wouldSkip(), "counter preflight skips empty track");
+    expectTrue(emptyCounterPreflight.invalidName, "counter preflight marks invalid empty track");
+        const fuse::profiler::ScopeRecordingPreflight activeScopePreflight =
+            fuse::profiler::preflightScopeRecording("inner_scope");
+        expectTrue(activeScopePreflight.wouldRecord(), "scope preflight wouldRecord inside active scope");
+        expectTrue(activeScopePreflight.activeNestingDepth == 1u,
+        expectTrue(activeScopePreflight.maxNestingDepth == 1u, "scope preflight reports max nesting depth");
+        const fuse::profiler::AsyncFlowBeginPreflight activeFlowPreflight =
+            fuse::profiler::preflightAsyncFlowBegin("nested_flow");
+        expectTrue(activeFlowPreflight.wouldRecord(), "flow begin preflight wouldRecord with open flow");
+        expectTrue(activeFlowPreflight.openAsyncFlowCount == 1u,
+        expectTrue(activeFlowPreflight.activeFlowNestingDepth == 1u,
+        const fuse::profiler::AsyncFlowEndPreflight activeEndPreflight =
+            fuse::profiler::preflightAsyncFlowEnd("preflight_flow");
+        expectTrue(activeEndPreflight.wouldRecord(), "flow end preflight wouldRecord with open flow");
+        expectTrue(!activeEndPreflight.noOpenFlows, "flow end preflight clears noOpenFlows with open flow");
+        const fuse::profiler::CounterRecordingPreflight activeCounterPreflight =
+            fuse::profiler::preflightCounterRecording("preflight_counter");
+        expectTrue(activeCounterPreflight.wouldRecord(), "counter preflight wouldRecord inside scope/flow");
+        expectTrue(activeCounterPreflight.activeNestingDepth == 1u,
+        expectTrue(activeCounterPreflight.activeFlowNestingDepth == 1u,
+    const fuse::profiler::ScopeRecordingPreflight disabledScopePreflight =
+        fuse::profiler::preflightScopeRecording("scope");
+    expectTrue(disabledScopePreflight.wouldSkip(), "scope preflight skips when profiler disabled");
+    expectTrue(disabledScopePreflight.profilerDisabled, "scope preflight marks profiler disabled");
+    expectTrue(fuse::profiler::tryFirstEventByName("name_outer", outEvent),
+               "tryFirstEventByName succeeds for outer begin");
+               "tryFirstEventByName copies outer begin phase");
+    expectTrue(fuse::profiler::tryLastEventByName("name_outer", outEvent),
+               "tryFirstEventByName false for empty query name");
+               "tryFirstEventByName clears output for empty query name");
+               "tryFirstEventByFlowId copies flow name");
+    expectTrue(!fuse::profiler::tryLastEventByFlowId(flowId + 999u, outEvent),
+               "tryLastEventByFlowId false for unknown flow id");
+    expectTrue(fuse::profiler::wouldSkipScopeRecording(""), "wouldSkip true before empty scope attempt");
+               "empty scope records nothing when wouldSkip predicted skip");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowBegin(nullptr), "wouldSkip true before null flow begin");
+               "null flow begin records nothing when wouldSkip predicted skip");
+    expectTrue(fuse::profiler::wouldSkipCounterRecording(""), "wouldSkip true before empty counter");
+               "empty counter records nothing when wouldSkip predicted skip");
+               "valid scope records when wouldSkip predicted record");
+    testRecordingPreflightGuards();

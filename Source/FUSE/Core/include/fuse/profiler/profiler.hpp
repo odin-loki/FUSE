@@ -548,3 +548,14 @@ bool wouldSkipProfileScope(const char* name, ProfileRecordSkipReason* reason = n
 bool wouldSkipAsyncFlowBegin(const char* name, ProfileRecordSkipReason* reason = nullptr);
 bool wouldSkipAsyncFlowEnd(const char* name, ProfileRecordSkipReason* reason = nullptr);
 bool wouldSkipCounterSample(const char* track, ProfileRecordSkipReason* reason = nullptr);
+
+// --- deepen additive from deepen-b16-profiler-guards-e7e3 ---
+struct ScopeRecordingPreflight {
+    bool wouldSkip() const { return profilerDisabled || invalidName; }
+    bool wouldRecord() const { return !wouldSkip(); }
+    bool wouldSkip() const { return profilerDisabled || invalidName || noOpenFlows; }
+struct CounterRecordingPreflight {
+bool wouldSkipScopeRecording(const char* name);
+bool wouldSkipCounterRecording(const char* track);
+ScopeRecordingPreflight preflightScopeRecording(const char* name);
+CounterRecordingPreflight preflightCounterRecording(const char* track);
