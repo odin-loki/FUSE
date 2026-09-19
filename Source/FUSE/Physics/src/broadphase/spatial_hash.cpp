@@ -1404,6 +1404,9 @@ ShapeCellInsertPreflight preflightShapeCellInsertImpl(
     const u32 maxOccupancy = params.maxCellOccupancyCount;
     const u32 occupancyBudget = use2D ? cellOccupancyBudgetFromSpan2D(maxSpan) : cellOccupancyBudgetFromSpan(maxSpan);
     const u32 occupancyBudget = estimateMaxCellOccupancyBudget(maxSpan, !use2D);
+    const u32 tableSize = clampTableSize(params.tableSize);
+    const u32 maxSpan = params.maxCellSpanPerAxis;
+    const CollisionShapeType type = shapeType(shapes, shapeIndex);
 
     if (use2D) {
         CellRange2 range = {};
@@ -1519,6 +1522,9 @@ ShapeCellInsertPreflight preflightShapeCellInsertImpl(
 
 
         }
+        if (canSkipShapeCellInsertion(range, params)) {
+            return;
+        }
             return;
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
             for (s32 cx = range.minCell.x; cx <= range.maxCell.x; ++cx) {
@@ -1574,6 +1580,7 @@ ShapeCellInsertPreflight preflightShapeCellInsertImpl(
     if (!preflightShapeCellInsert(bodyIndex, bodyCount, range, maxOccupancy).canInsert()) {
     if (canSkipShapeCellInsert(bodyIndex, bodies.count(), range, maxOccupancy)) {
     if (canSkipShapeCellOccupancyIteration(range, params)) {
+    if (canSkipShapeCellInsertion(range, params)) {
         return;
     if (isEmptyCellRange(range)) {
     if (params.maxCellOccupancyPerShape > 0u) {
@@ -1608,6 +1615,7 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
         if (canSkipPairBufferPush(buffer, pair.bodyA, pair.bodyB)) {
         if (!shouldRunPairBufferPush(buffer, pair.bodyA, pair.bodyB)) {
         if (!preflightMergePairPush(buffer, pair.bodyA, pair.bodyB).canPush()) {
+        if (!preflightMergePairIntoBuffer(buffer, pair.bodyA, pair.bodyB).canMerge()) {
             break;
         if (!buffer.canAcceptPairs(1u)) {
         if (buffer.push(pair.bodyA, pair.bodyB)) {
@@ -1880,6 +1888,7 @@ void refineBroadphasePairsParallelImpl(
             shouldRunPairBufferInvalidateSlot(buffer, pairIndex)) {
             }
             return;
+            shouldRunPairBufferInvalidate(buffer, pairIndex)) {
         }
     });
 
@@ -3840,11 +3849,8 @@ MergePairPushPreflight preflightMergePairPush(const PairBufferSoA& buffer, u32 i
     preflight.reason = mergePairPushRejectReason(buffer, idxA, idxB);
     preflight.invalidPair = preflight.reason == MergePairPushRejectReason::InvalidPair;
     preflight.atCapacity = preflight.reason == MergePairPushRejectReason::AtCapacity;
-    }
-    return "Unknown";
 
 MergePairPushRejectReason mergePairPushRejectReason(
-    const PairBufferSoA& buffer,
     u32 bodyA,
     u32 bodyB) {
     const PairBufferPushRejectReason pushReason = pairBufferPushRejectReason(buffer, bodyA, bodyB);
@@ -3858,7 +3864,6 @@ MergePairPushRejectReason mergePairPushRejectReason(
 
 MergePairPushPreflight preflightMergePairPush(const PairBufferSoA& buffer, u32 bodyA, u32 bodyB) {
     preflight.reason = mergePairPushRejectReason(buffer, bodyA, bodyB);
-    return preflight;
 
 bool canSkipMergePairPush(const PairBufferSoA& buffer, u32 bodyA, u32 bodyB) {
     return !preflightMergePairPush(buffer, bodyA, bodyB).canPush();
@@ -3866,61 +3871,32 @@ bool canSkipMergePairPush(const PairBufferSoA& buffer, u32 bodyA, u32 bodyB) {
 bool shouldRunMergePairPush(const PairBufferSoA& buffer, u32 bodyA, u32 bodyB) {
     return preflightMergePairPush(buffer, bodyA, bodyB).canPush();
 
-namespace {
 
 ShapeCellInsertRejectReason shapeCellInsertRejectReasonImpl(
-    u32 shapeIndex,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
-    const SpatialHashParams& params,
-    bool use2D) {
     if (shapeIndex >= shapes.count()) {
-        return ShapeCellInsertRejectReason::OutOfRangeBody;
 
     const u32 bodyIndex = shapes.bodyIndices[shapeIndex];
-    if (bodyIndex >= bodies.count()) {
 
     CellRange3 range3 = {};
     CellRange2 range2 = {};
     if (!shapeCellRangeForInsert(shapeIndex, bodies, shapes, params, use2D, range3, range2)) {
 
     const u32 maxOccupancy = params.maxCellOccupancy;
-    if (use2D) {
         if (canSkipCellOccupancyIteration(range2, maxOccupancy)) {
             return ShapeCellInsertRejectReason::CellOccupancyRejected;
     } else if (canSkipCellOccupancyIteration(range3, maxOccupancy)) {
-    return ShapeCellInsertRejectReason::None;
 
-} // namespace
 
-const char* shapeCellInsertRejectReasonName(ShapeCellInsertRejectReason reason) {
-    switch (reason) {
-    case ShapeCellInsertRejectReason::None:
-        return "None";
-    case ShapeCellInsertRejectReason::OutOfRangeBody:
-        return "OutOfRangeBody";
     case ShapeCellInsertRejectReason::CellOccupancyRejected:
         return "CellOccupancyRejected";
 
-ShapeCellInsertRejectReason shapeCellInsertRejectReason(
     return shapeCellInsertRejectReasonImpl(shapeIndex, bodies, shapes, params, use2D);
 
-bool shapeCellInsertRejectsForReason(
-    bool use2D,
-    ShapeCellInsertRejectReason expected) {
-    return shapeCellInsertRejectReason(shapeIndex, bodies, shapes, params, use2D) == expected;
 
-ShapeCellInsertPreflight preflightShapeCellInsert(
-    ShapeCellInsertPreflight preflight{};
     preflight.reason = shapeCellInsertRejectReason(shapeIndex, bodies, shapes, params, use2D);
-    preflight.outOfRangeBody = preflight.reason == ShapeCellInsertRejectReason::OutOfRangeBody;
     preflight.cellOccupancyRejected = preflight.reason == ShapeCellInsertRejectReason::CellOccupancyRejected;
 
-bool canSkipShapeCellInsert(
-    return !preflightShapeCellInsert(shapeIndex, bodies, shapes, params, use2D).canInsert();
 
-bool shouldRunShapeCellInsert(
-    return preflightShapeCellInsert(shapeIndex, bodies, shapes, params, use2D).canInsert();
 
 const char* refinePairRejectReasonName(RefinePairRejectReason reason) {
     case RefinePairRejectReason::None:
@@ -3929,23 +3905,17 @@ const char* refinePairRejectReasonName(RefinePairRejectReason reason) {
     case RefinePairRejectReason::InvalidSlot:
         return "InvalidSlot";
     case RefinePairRejectReason::InvalidPair:
-        return "InvalidPair";
 
 RefinePairRejectReason refinePairRejectReason(
     u32 pairIndex,
-    u32 bodyCount) {
     if (pairIndex >= buffer.activeCount) {
         return RefinePairRejectReason::OutOfRangeSlot;
-    if (!buffer.slotIsValid(pairIndex)) {
         return RefinePairRejectReason::InvalidSlot;
-    const u32 bodyA = buffer.bodyA[pairIndex];
-    const u32 bodyB = buffer.bodyB[pairIndex];
     if (!isValidCandidatePair(bodyA, bodyB, bodyCount)) {
         return RefinePairRejectReason::InvalidPair;
     return RefinePairRejectReason::None;
 
 bool refinePairRejectsForReason(
-    u32 bodyCount,
     RefinePairRejectReason expected) {
     return refinePairRejectReason(buffer, pairIndex, bodyCount) == expected;
 
@@ -3961,6 +3931,32 @@ bool canSkipRefinePair(const PairBufferSoA& buffer, u32 pairIndex, u32 bodyCount
 
 bool shouldRunRefinePair(const PairBufferSoA& buffer, u32 pairIndex, u32 bodyCount) {
     return preflightRefinePair(buffer, pairIndex, bodyCount).canRefine();
+const char* mergePairIntoBufferRejectReasonName(MergePairIntoBufferRejectReason reason) {
+    case MergePairIntoBufferRejectReason::None:
+    case MergePairIntoBufferRejectReason::InvalidPair:
+    case MergePairIntoBufferRejectReason::BufferFull:
+
+MergePairIntoBufferRejectReason mergePairIntoBufferRejectReason(
+    if (!isValidCandidatePair(bodyA, bodyB)) {
+        return MergePairIntoBufferRejectReason::InvalidPair;
+        return MergePairIntoBufferRejectReason::BufferFull;
+    return MergePairIntoBufferRejectReason::None;
+
+bool mergePairIntoBufferRejectsForReason(
+    MergePairIntoBufferRejectReason expected) {
+    return mergePairIntoBufferRejectReason(buffer, bodyA, bodyB) == expected;
+
+MergePairIntoBufferPreflight preflightMergePairIntoBuffer(
+    MergePairIntoBufferPreflight preflight{};
+    preflight.reason = mergePairIntoBufferRejectReason(buffer, bodyA, bodyB);
+    preflight.invalidPair = preflight.reason == MergePairIntoBufferRejectReason::InvalidPair;
+    preflight.bufferFull = preflight.reason == MergePairIntoBufferRejectReason::BufferFull;
+
+bool canSkipMergePairIntoBuffer(const PairBufferSoA& buffer, u32 bodyA, u32 bodyB) {
+    return !preflightMergePairIntoBuffer(buffer, bodyA, bodyB).canMerge();
+
+bool shouldRunMergePairIntoBuffer(const PairBufferSoA& buffer, u32 bodyA, u32 bodyB) {
+    return preflightMergePairIntoBuffer(buffer, bodyA, bodyB).canMerge();
 
 void refineBroadphasePairsParallel(
     const RigidBodySoA& bodies,
