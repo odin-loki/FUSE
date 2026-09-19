@@ -226,6 +226,10 @@ IslandGraphBuildRejectReason islandGraphBuildRejectReason(
 
 
 
+    OutOfRangeContactRef,
+    OutOfRangeDistanceRef,
+
+
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
@@ -892,6 +896,7 @@ struct ContactIslandGraph {
     /// Guarded build — clears and returns false when preflight rejects partition inputs.
     /// Build only when preflight allows; clears the graph and returns false when skipped.
     /// Guarded build: clears and returns false when preflight rejects inputs.
+    /// Guarded build; returns false and clears when preflight rejects unsafe or empty inputs.
 
     void clear();
 
