@@ -11051,6 +11051,7 @@ void testPairBufferInvalidateSlotRejectReasonGuards() {
 
 
 
+
              "valid slot reports None invalidate reject reason");
     expectTrue(fuse::physics::broadphase::shouldRunPairBufferInvalidateSlot(buffer, 0u),
                "shouldRunPairBufferInvalidateSlot true for valid slot");
@@ -13000,6 +13001,14 @@ void testPairBufferWouldSkipWriteSlotGuards() {
 
 
 
+
+
+
+
+
+
+
+
              "wouldSkipCellOccupancyIteration reports ExceedsBudget over budget");
     expectTrue(fuse::physics::broadphase::wouldSkipCellOccupancyIteration(validRange, 7u) ==
                    fuse::physics::broadphase::canSkipCellOccupancyIteration(validRange, 7u),
@@ -13072,6 +13081,8 @@ void testWouldSkipBroadphaseGuardHelpers() {
 
     const fuse::physics::broadphase::CellRange2 planeRange = {{0, 0}, {3, 1}};
 }
+
+
 
     fuse::physics::broadphase::PairBufferSoA buffer;
 
@@ -13411,6 +13422,8 @@ void testWouldSkipBroadphaseHelperGuards() {
     buffer.setMaxCapacity(1u);
     buffer.push(0u, 1u);
              static_cast<fuse::u32>(fuse::physics::broadphase::MergePairsIntoBufferRejectReason::BufferFull),
+
+
 }
 
 } // namespace

@@ -1144,6 +1144,7 @@ FUSE_PHYSICS_INLINE bool wouldSkipShapeCellInsertion(const CellRange2& range, u3
 }
 
 FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
+
     u32 maxCells,
     CellOccupancyRejectReason* reason = nullptr) {
     const CellOccupancyPreflight preflight = preflightCellOccupancy(range, maxCells);
@@ -1154,6 +1155,21 @@ FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
     const CellRange3& range,
 
 
+
+    }
+
+/// Cell-capacity preflight for shape occupancy using `SpatialHashParams` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightShapeCellOccupancy(
+    const SpatialHashParams& params) {
+    return preflightCellOccupancy(range, params.maxCellOccupancy);
+
+    const CellRange2& range,
+
+/// True when shape cell insertion would skip occupancy iteration (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool wouldSkipShapeCellOccupancy(
+    const SpatialHashParams& params,
+    CellOccupancyRejectReason* reason = nullptr) {
+    return wouldSkipCellOccupancyIteration(range, params.maxCellOccupancy, reason);
 
 
 /// Returns true when `cellOccupancyRejectReason` matches `expected` (B4.2 deepen follow-up pass).
@@ -6052,6 +6068,7 @@ bool wouldSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs,
 /// Predict whether merge-into-buffer would bail before pushing pairs (B4.2 deepen pass).
 
 /// Early-out when merge-into-buffer would skip — same ordering as `canSkipMergePairsIntoBuffer` (B4.2 deepen pass).
+
 
 
 
