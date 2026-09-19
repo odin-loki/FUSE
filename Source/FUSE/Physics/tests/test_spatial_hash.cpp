@@ -4560,3 +4560,12 @@ void testWouldSkipBroadphaseGuardParity() {
                "wouldSkipCellSpanClamp false when span exceeds params budget");
                "shouldRunCellSpanClamp agrees with wouldSkipCellSpanClamp inverse");
                "wouldSkipPairBufferWriteSlot false for valid pair");
+
+// --- deepen additive from b4-broadphase-deepen-guards-9505 ---
+               "wouldSkipCellSpanClamp true when span clamp is a no-op");
+    expectTrue(!fuse::physics::broadphase::wouldSkipCellSpanClamp(withinRange, 3u),
+               "wouldSkipRefineBroadphase on empty scene");
+               "wouldSkipDedupeBroadphase on empty buffer");
+               "wouldSkipBroadphaseMerge on empty scene");
+               "wouldSkipMergePairsIntoBuffer on empty pair list");
+               "wouldSkipBroadphaseMerge false for mergeable scene");
