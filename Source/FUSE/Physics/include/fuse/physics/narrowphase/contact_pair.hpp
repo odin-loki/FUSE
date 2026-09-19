@@ -226,4 +226,57 @@ bool narrowphase_batch_rejects_all(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Const preflight for single-pair detect dispatch (B4.6 deepen pass).
+struct ContactPairDetectPreflight {
+    ContactPairDeepenPreflight pair{};
+    bool rejected = false;
+
+    bool can_detect() const { return !rejected && pair.can_dispatch(); }
+};
+
+/// Populate detect preflight without running shape dispatch (B4.6 deepen pass).
+ContactPairDetectPreflight preflight_detect_contacts_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when detect should skip this pair (B4.6 deepen pass).
+bool can_skip_detect_contacts_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Run shape dispatch only when deepen preflight passes; invalid manifold otherwise (B4.6 deepen pass).
+ContactManifold detect_contacts_pair_with_preflight(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+inline ContactPairDetectPreflight preflight_detect_contacts_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    ContactPairDetectPreflight preflight{};
+    preflight.pair = preflight_contact_pair_deepen(pair, bodies, shapes);
+    preflight.rejected = preflight.pair.rejected;
+    return preflight;
+}
+
+inline bool can_skip_detect_contacts_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !preflight_detect_contacts_pair(pair, bodies, shapes).can_detect();
+}
+
+inline ContactManifold detect_contacts_pair_with_preflight(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (can_skip_detect_contacts_pair(pair, bodies, shapes)) {
+        return invalidContactManifold();
+    }
+    return detect_contacts_pair(pair, bodies, shapes);
+}
+
 } // namespace fuse::physics::narrowphase
