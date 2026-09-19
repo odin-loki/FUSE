@@ -725,6 +725,7 @@ bool tryEventAt(u32 index, const ProfileEvent*& outEvent) {
     outEvent = &eventAt(index);
     return true;
 
+
 ProfilerGuardPreflight preflightGuardState() {
     ProfilerGuardPreflight preflight{};
     preflight.scopeDepth = currentNestingDepth();
@@ -745,6 +746,16 @@ bool hasOpenAsyncFlows() {
     preflight.bufferEmpty = preflight.eventCount == 0u;
     preflight.canExport = true;
     preflight.hasOpenScopes = hasOpenScopes();
+    return preflight;
+}
+
+
+
+ChromeTraceExportPreflight preflightChromeTraceExport() {
+    ChromeTraceExportPreflight preflight{};
+    preflight.eventCount = eventCount();
+    preflight.frameIndex = frameIndex();
+    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
     preflight.hasUnmatchedAsyncFlows = preflight.hasOpenAsyncFlows;
     return preflight;
 }
