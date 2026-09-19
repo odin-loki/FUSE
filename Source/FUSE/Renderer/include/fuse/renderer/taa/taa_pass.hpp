@@ -68,6 +68,10 @@ public:
     bool isJitterSyncedTo(u32 frameIndex) const;
     /// Align jitter only when the sequence is valid; returns false when blocked (B5.9 deepen).
     /// True when pass jitter index and monotonic counter match `frameIndex` (B5.9 deepen).
+    /// Jitter sync preflight without mutating pass state (B5.9 deepen).
+    bool preflightJitterSync(u32 frameIndex, TaaJitterSyncBlockReason* reason = nullptr) const;
+    /// Advance jitter only when aligned to `frameIndex` (B5.9 deepen).
+    bool advanceJitterIfAlignedToFrameIndex(u32 frameIndex);
     void invalidateHistory();
     /// Invalidate when `observedGeneration` differs from pass history epoch (B5.9 deepen).
     bool invalidateHistoryIfStale(u32 observedGeneration);
@@ -246,6 +250,10 @@ public:
     /// Frames remaining before pass history may be temporally reused (B5.9 deepen).
     u32 historyWarmupFramesRemaining() const;
     /// True when pass history has completed warm-up (B5.9 deepen).
+    /// History reuse preflight using resolve desc generation (B5.9 deepen).
+    bool preflightHistoryReuseForDesc(const TaaResolveDesc& desc,
+    /// Combined resolve skip + blend-weight preflight (B5.9 deepen).
+    bool preflightResolveGuards(const TaaResolveDesc& desc, TaaResolveSkipReason* skipReason = nullptr,
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;

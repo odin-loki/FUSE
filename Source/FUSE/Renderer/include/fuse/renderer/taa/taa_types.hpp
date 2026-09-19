@@ -230,6 +230,13 @@ bool shouldSkipTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGene
 bool taaHistoryReuseReady(const TaaHistoryBuffer& history, u32 observedGeneration);
 /// Convenience wrapper — true when `preflightTaaHistoryReuse` would pass (B5.9 deepen).
 bool canPreflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration);
+/// True when a reuse block reason would prevent temporal history sampling (B5.9 deepen).
+bool taaHistoryReuseBlockReasonIsBlocking(TaaHistoryReuseBlockReason reason);
+/// True when history is allocated and warmed for temporal reuse (B5.9 deepen).
+bool taaHistoryWarmupSatisfied(const TaaHistoryBuffer& history);
+/// History reuse preflight using `desc.observed_history_generation` (sentinel bypasses epoch guard).
+bool preflightTaaHistoryReuseForDesc(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                    TaaHistoryReuseBlockReason* reason = nullptr);
 /// True when history buffers are allocated and ready for resolve (B5.9 deepen).
 bool taaHistoryReadyForResolve(const TaaHistoryBuffer& history);
 /// Frames remaining before temporal reuse is allowed — 0 when warmed (B5.9 deepen).
@@ -473,6 +480,10 @@ bool preflightTaaResolveTemporalBlend(const TaaResolveDesc& desc, const TaaHisto
                                       TaaResolveTemporalRejectReason* reason = nullptr);
 /// Convenience wrapper — true when `preflightTaaResolveTemporalBlend` would pass (B5.9 deepen).
 bool canPreflightTaaResolveTemporalBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// True when a blend reject reason would block resolve blend-weight application (B5.9 deepen).
+bool taaResolveBlendRejectReasonIsBlocking(TaaResolveBlendRejectReason reason);
+/// Combined resolve skip + blend-weight preflight (B5.9 deepen).
+bool preflightTaaResolveGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {

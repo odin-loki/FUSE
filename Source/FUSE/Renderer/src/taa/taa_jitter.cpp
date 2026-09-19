@@ -9,6 +9,9 @@ const char* taaJitterSyncRejectReasonLabel(TaaJitterSyncRejectReason reason) {
     case TaaJitterSyncRejectReason::None:
         return "none";
     case TaaJitterSyncRejectReason::InvalidSequence:
+const char* taaJitterSyncBlockReasonLabel(TaaJitterSyncBlockReason reason) {
+    case TaaJitterSyncBlockReason::None:
+    case TaaJitterSyncBlockReason::InvalidSequence:
         return "invalid_sequence";
     }
     return "unknown";
@@ -19,19 +22,15 @@ TaaJitterSyncRejectReason classifyTaaJitterSyncReject(u32 /*frameIndex*/, u32 se
         return TaaJitterSyncRejectReason::InvalidSequence;
     }
     return TaaJitterSyncRejectReason::None;
-}
 
 bool preflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterSyncRejectReason* reason) {
     const TaaJitterSyncRejectReason reject = classifyTaaJitterSyncReject(frameIndex, sequenceLength);
     if (reason != nullptr) {
         *reason = reject;
-    }
     return reject == TaaJitterSyncRejectReason::None;
-}
 
 bool canPreflightTaaJitterSync(u32 frameIndex, u32 sequenceLength) {
     return preflightTaaJitterSync(frameIndex, sequenceLength);
-}
 
 const char* taaJitterNdcRejectReasonLabel(TaaJitterNdcRejectReason reason) {
     switch (reason) {
@@ -41,30 +40,32 @@ const char* taaJitterNdcRejectReasonLabel(TaaJitterNdcRejectReason reason) {
         return "invalid_sequence";
     case TaaJitterNdcRejectReason::InvalidViewport:
         return "invalid_viewport";
-    }
     return "unknown";
-}
 
 TaaJitterNdcRejectReason classifyTaaJitterNdcReject(u32 width, u32 height, u32 sequenceLength) {
-    if (!TaaJitterLayout::validateSequenceLength(sequenceLength)) {
         return TaaJitterNdcRejectReason::InvalidSequence;
-    }
     if (!TaaJitterLayout::validateViewportDimensions(width, height)) {
         return TaaJitterNdcRejectReason::InvalidViewport;
-    }
     return TaaJitterNdcRejectReason::None;
-}
 
 bool preflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength, TaaJitterNdcRejectReason* reason) {
     const TaaJitterNdcRejectReason reject = classifyTaaJitterNdcReject(width, height, sequenceLength);
-    if (reason != nullptr) {
-        *reason = reject;
-    }
     return reject == TaaJitterNdcRejectReason::None;
-}
 
 bool canPreflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength) {
     return preflightTaaJitterNdc(width, height, sequenceLength);
+bool taaJitterSyncBlockReasonIsBlocking(TaaJitterSyncBlockReason reason) {
+    return reason != TaaJitterSyncBlockReason::None;
+
+TaaJitterSyncBlockReason classifyTaaJitterSyncBlock(u32 /*frameIndex*/, u32 sequenceLength) {
+    if (!TaaJitterLayout::canSyncToFrameIndex(0u, sequenceLength)) {
+        return TaaJitterSyncBlockReason::InvalidSequence;
+    return TaaJitterSyncBlockReason::None;
+
+bool preflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterSyncBlockReason* reason) {
+    const TaaJitterSyncBlockReason block = classifyTaaJitterSyncBlock(frameIndex, sequenceLength);
+        *reason = block;
+    return block == TaaJitterSyncBlockReason::None;
 }
 
 f32 TaaJitterLayout::halton(u32 index, u32 base) {
@@ -449,6 +450,14 @@ bool TaaJitter::needsResyncToFrameIndex(u32 frameIndex) const {
     return !isAlignedToFrameIndex(frameIndex);
 }
 
+TaaJitterSyncBlockReason TaaJitter::classifySyncBlock(u32 frameIndex) const {
+    return classifyTaaJitterSyncBlock(frameIndex, m_sequenceLength);
+}
+
+bool TaaJitter::preflightSync(u32 frameIndex, TaaJitterSyncBlockReason* reason) const {
+    return preflightTaaJitterSync(frameIndex, m_sequenceLength, reason);
+}
+
 bool TaaJitter::syncToFrameIndexIfReady(u32 frameIndex) {
     if (!canSyncToFrameIndex(frameIndex)) {
     syncToFrameIndex(frameIndex);
@@ -512,6 +521,14 @@ bool taaJitterFrameSynced(const TaaJitter& jitter, u32 frameIndex) {
 
 bool TaaJitter::canSyncToFrameIndex(u32 frameIndex) const {
     return TaaJitterLayout::canSyncToFrameIndex(frameIndex, m_sequenceLength);
+}
+
+bool TaaJitter::advanceIfAlignedToFrameIndex(u32 frameIndex) {
+    if (!isAlignedToFrameIndex(frameIndex)) {
+        return false;
+    }
+    advance();
+    return true;
 }
 
 bool TaaJitter::advanceIfReady() {

@@ -87,10 +87,17 @@ bool TaaPass::canSyncJitterToFrameIndex(u32 frameIndex) const {
 
 TaaJitterSyncRejectReason TaaPass::classifyJitterSyncReject(u32 frameIndex) const {
     return m_jitter.classifySyncReject(frameIndex);
-}
 
 bool TaaPass::preflightJitterSync(u32 frameIndex, TaaJitterSyncRejectReason* reason) const {
     return m_jitter.preflightSyncToFrameIndex(frameIndex, reason);
+bool TaaPass::preflightJitterSync(u32 frameIndex, TaaJitterSyncBlockReason* reason) const {
+    return m_jitter.preflightSync(frameIndex, reason);
+
+bool TaaPass::advanceJitterIfAlignedToFrameIndex(u32 frameIndex) {
+    if (!m_jitter.advanceIfAlignedToFrameIndex(frameIndex)) {
+        return false;
+    m_stats.lastJitterNdc = currentJitterNdc();
+    return true;
 }
 
 bool TaaPass::jitterAlignedToFrameIndex(u32 frameIndex) const {
@@ -464,6 +471,9 @@ bool TaaPass::canPreflightHistoryWarmup() const {
 bool TaaPass::temporalBlendReady(const TaaResolveDesc& desc) const {
     return taaHistoryTemporalBlendReady(desc, m_history);
 
+bool TaaPass::preflightHistoryReuseForDesc(const TaaResolveDesc& desc,
+    return preflightTaaHistoryReuseForDesc(desc, m_history, reason);
+
 bool TaaPass::preflightResolveBlendWeights(const TaaResolveDesc& desc,
                                            TaaResolveBlendRejectReason* reason) const {
     return preflightTaaResolveBlendWeights(desc, m_history, reason);
@@ -506,6 +516,8 @@ u32 TaaPass::historyWarmupFramesRemaining() const {
 
 bool TaaPass::historyWarmupComplete() const {
     return taaHistoryWarmupComplete(m_history);
+bool TaaPass::preflightResolveGuards(const TaaResolveDesc& desc, TaaResolveSkipReason* skipReason,
+    return preflightTaaResolveGuards(desc, m_history, skipReason, blendRejectReason);
 }
 
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
