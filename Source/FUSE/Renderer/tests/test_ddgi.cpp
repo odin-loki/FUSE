@@ -4262,3 +4262,16 @@ void testProbeScheduleAtRatePreflights() {
     testProbeTrilinearSamplePreflights();
     testWouldSkipSampleCoordPreflight();
     testProbeScheduleAtRatePreflights();
+
+// --- deepen additive from deepen-b56-ddgi-guards-fc82 ---
+               "shouldSkipProbeGrid matches wouldSkipProbeGridSource on empty grid");
+               "classifyTrilinearProbeIrradianceReject none for valid sample");
+               "classifyTrilinearProbeIrradianceReject empty grid");
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(desc, oobWeights),
+               "wouldSkipProbeSampleCoords false for clampable weights");
+void testProbeScheduleAtRatePreflight() {
+    expectTrue(fuse::renderer::gi::classifyProbeTraceKernelReject(params) ==
+    expectTrue(fuse::renderer::gi::classifyProbeBlendKernelReject(params) ==
+    expectTrue(fuse::renderer::gi::preflightProbeTraceKernel(params),
+    expectTrue(fuse::renderer::gi::preflightProbeBlendKernel(params),
+    testProbeScheduleAtRatePreflight();

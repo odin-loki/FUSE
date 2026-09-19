@@ -3120,3 +3120,6 @@ bool wouldSkipScheduledCacheIndices(const DDGIDesc& desc,
         return ProbeGridSourceRejectReason::InvalidSpacing;
     return ProbeGridSourceRejectReason::None;
     return !preflightProbeGridSource(desc);
+
+// --- deepen additive from deepen-b56-ddgi-guards-fc82 ---
+    return probeSampleCoordsRejectReasonIsBlocking(classifyProbeSampleCoordsReject(desc, coords));
