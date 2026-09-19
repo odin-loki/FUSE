@@ -70,11 +70,19 @@ struct ContactManifold {
 
     /// Const preflight: true when `pruneContactPoints` would leave no penetrating slots (B4.3 deepen pass).
     bool wouldBeEmptyAfterPrune(
-        f32 separationEpsilon = 1e-6f,
-        f32 duplicateEpsilon = 1e-4f) const;
 
     /// Clears `valid` when the manifold has no contact points (B4.3 deepen pass).
     void invalidateIfEmpty();
+    /// Count contact points with penetration >= `-epsilon` (touching or penetrating) (B4.3 deepen).
+    u32 penetratingPointCount(f32 epsilon = 1e-6f) const;
+
+    /// Count contact points with penetration < `-epsilon` (separated) (B4.3 deepen).
+    u32 separatedPointCount(f32 epsilon = 1e-6f) const;
+
+    /// True when any point has penetration strictly above `epsilon` (B4.3 deepen).
+
+    /// Clear cached friction basis so the next tangent build recomputes (B4.3 deepen).
+    void invalidateFrictionBasis();
 
     /// Drop separated contact points with penetration below `-epsilon` (B4.3 deepen).
     void pruneNonPenetratingPoints(f32 epsilon = 1e-6f);
@@ -109,7 +117,6 @@ struct ContactManifold {
 
     /// True when `pruneContactPoints` would be a no-op (B4.4 deepen pass).
     bool canSkipPruneContactPoints(
-        f32 separationEpsilon = 1e-6f,
         f32 duplicateEpsilon = 1e-4f) const;
 
     /// Returns true when at least one penetrating point is shallower than `minDepth` (B4.4 deepen pass).
@@ -117,14 +124,13 @@ struct ContactManifold {
 
     /// Prune only when `needsPruning`; returns true when points remain (B4.4 deepen pass).
     bool pruneContactPointsIfNeeded(
-        f32 separationEpsilon = 1e-6f,
-        f32 duplicateEpsilon = 1e-4f);
 
     /// True when no shallow slots would be removed by `pruneShallowPenetrations` (B4.4 deepen follow-up).
     bool canSkipPruneShallowPenetrations(f32 minDepth) const;
 
     /// Prune shallow slots only when `hasShallowPenetrations`; returns true when points remain (B4.4 deepen follow-up).
     bool pruneShallowPenetrationsIfNeeded(f32 minDepth);
+    /// Prune contact points; returns false when the manifold is empty afterward (B4.3 deepen).
 };
 
 /// Why manifold prune would early-out (B4.5 deepen follow-up pass).

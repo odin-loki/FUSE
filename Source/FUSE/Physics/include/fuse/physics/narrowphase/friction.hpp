@@ -57,6 +57,14 @@ void invalidate_friction_basis(ContactManifold& manifold);
 
 /// Build or reuse an orthonormal tangent frame; returns false when tangents should be skipped (B4.3 deepen pass).
 bool ensure_friction_basis(ContactManifold& manifold);
+/// Returns true when the manifold already stores a valid orthonormal friction basis (B4.3 deepen).
+bool hasCachedFrictionBasis(const ContactManifold& manifold);
+
+/// Returns true when friction tangents must be rebuilt (missing or stale basis) (B4.3 deepen).
+bool should_rebuild_friction_tangents(const ContactManifold& manifold, f32 normalEpsilon = 1e-4f);
+
+/// Build friction basis only when skip/rebuild guards allow it (B4.3 deepen).
+void ensureFrictionBasis(ContactManifold& manifold);
 
 /// Returns true when both friction coefficients are zero or normal impulse is negligible (B4.3 deepen).
 bool should_skip_friction_solve(
