@@ -239,6 +239,11 @@ bool canMeterPercentile(f32 percentile, const LuminanceHistogramParams& params) 
     return luminance_histogram_percentile_valid(percentile) && luminance_histogram_params_valid(params);
 }
 
+bool canMeterPercentileFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
+                                   f32 percentile) {
+    return canMeterFromSamples(samples, count, params) && luminance_histogram_percentile_valid(percentile);
+}
+
 bool canMeterFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params) {
     return hasMeteringSamples(samples, count) && luminance_histogram_params_valid(params);
 }

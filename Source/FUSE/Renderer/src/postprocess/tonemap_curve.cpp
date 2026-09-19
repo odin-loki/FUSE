@@ -145,6 +145,8 @@ bool tonemap_curve_is_usable(const TonemapCurveParams& params, f32 white_input, 
     if (params.kind == TonemapCurveKind::ACES && params.aces.contrast < 0.f) {
         return false;
     if (params.kind == TonemapCurveKind::ACES && params.aces.shoulder < 0.f) {
+    }
+        return false;
     return true;
 }
 
@@ -205,6 +207,7 @@ bool tonemap_curve_mid_grey_in_display_range(const TonemapCurveParams& params, f
     }
     const f32 output = tonemap_curve_mid_grey_output(params, mid_grey);
     return output >= -epsilon && output <= 1.f + epsilon;
+    return tonemap_curve_channel_in_display_range(output, epsilon);
 }
 
 bool tonemap_curve_output_span_valid(const TonemapCurveParams& params, f32 white_input, f32 epsilon) {
@@ -256,8 +259,6 @@ fuse::math::Vec3 apply_tonemap_curve(const fuse::math::Vec3& hdr, const TonemapC
     }
     if (!params.enabled) {
     if (!params.enabled || !tonemap_curve_can_apply(params)) {
-        return hdr;
-    }
     if (!tonemap_curve_params_valid(params)) {
         return hdr;
     }
