@@ -1,5 +1,7 @@
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
 
+#include <fuse/physics/narrowphase/contact_pair.hpp>
+
 #include <algorithm>
 #include <cmath>
 
@@ -389,6 +391,83 @@ bool can_skip_manifold_finalize(
     f32 frictionEpsilon) {
     return !preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon)
                 .can_finalize();
+}
+
+bool ContactManifold::hasUnnormalizedNormal(f32 epsilon) const {
+    if (!hasValidNormal()) {
+        return false;
+    }
+    const f32 normalLength = contactNormal.length();
+    return std::fabs(normalLength - 1.f) > epsilon;
+}
+
+bool ContactManifold::canSkipNormalizeContactNormal(f32 epsilon) const {
+    return !hasUnnormalizedNormal(epsilon);
+}
+
+void ContactManifold::normalizeContactNormalIfNeeded(f32 epsilon) {
+    if (!hasUnnormalizedNormal(epsilon)) {
+        return;
+    }
+    const f32 normalLength = contactNormal.length();
+    if (normalLength < 1e-8f) {
+        return;
+    }
+    contactNormal = contactNormal * (1.f / normalLength);
+}
+
+ManifoldFinalizeDeepenPreflight preflight_manifold_finalize_deepen(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 frictionEpsilon,
+    f32 normalEpsilon) {
+    ManifoldFinalizeDeepenPreflight preflight{};
+    if (manifold.empty()) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    const ManifoldFinalizePreflight basePreflight =
+        preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+    preflight.canFinalize = basePreflight.canFinalize;
+    preflight.needsPruning = basePreflight.needsPruning;
+    preflight.wouldBeEmptyAfterPrune = basePreflight.wouldBeEmptyAfterPrune;
+    preflight.needsFrictionBasis = basePreflight.needsFrictionBasis;
+    preflight.canReuseFrictionBasis = basePreflight.canReuseFrictionBasis;
+    preflight.needsNormalNormalization = manifold.hasUnnormalizedNormal(normalEpsilon);
+    return preflight;
+}
+
+bool can_skip_manifold_finalize_deepen(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 frictionEpsilon,
+    f32 normalEpsilon) {
+    return !preflight_manifold_finalize_deepen(
+                manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon, normalEpsilon)
+                .can_finalize();
+}
+
+bool generate_contact_manifold_deepen_if_needed(ContactManifold& manifold) {
+    if (can_skip_manifold_finalize_deepen(manifold)) {
+        return false;
+    }
+    return generate_contact_manifold_if_needed(manifold);
+}
+
+bool can_skip_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
+    const ManifoldPrunePreflight preflight =
+        preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+    if (preflight.skipped) {
+        return false;
+    }
+    return !preflight.needs_pruning();
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

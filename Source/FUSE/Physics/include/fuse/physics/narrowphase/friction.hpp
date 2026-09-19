@@ -115,4 +115,40 @@ bool should_skip_friction_basis_preflight(
     const ContactManifold& manifold,
     f32 epsilon = 1e-4f);
 
+/// Returns true when only one tangent axis is populated or lengths are non-unit (B4.5 deepen pass).
+bool has_partial_friction_basis(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Returns true when a valid normal exists but the cached basis is incomplete (B4.5 deepen pass).
+bool friction_basis_needs_completion(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Const preflight for friction-basis rebuild with partial-basis checks (B4.5 deepen pass).
+struct FrictionBasisDeepenPreflight {
+    bool skipped = false;
+    bool stale = false;
+    bool partial = false;
+    bool canReuse = false;
+    bool needsRebuild = false;
+    bool needsNormalNormalization = false;
+
+    bool can_skip_rebuild() const { return skipped || canReuse; }
+};
+
+/// Populate second deepen friction-basis preflight without mutating the manifold (B4.5 deepen pass).
+FrictionBasisDeepenPreflight preflight_friction_basis_rebuild_deepen(
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f,
+    f32 normalEpsilon = 1e-4f);
+
+/// Returns true when second deepen friction-basis rebuild should be skipped (B4.5 deepen pass).
+bool should_skip_friction_basis_deepen_preflight(
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f,
+    f32 normalEpsilon = 1e-4f);
+
+/// Rebuild friction tangents with partial-basis and normal-normalization preflights (B4.5 deepen pass).
+void compute_friction_tangents_deepen_if_needed(
+    ContactManifold& manifold,
+    f32 epsilon = 1e-4f,
+    f32 normalEpsilon = 1e-4f);
+
 } // namespace fuse::physics::narrowphase
