@@ -1102,3 +1102,20 @@ void testPlaySessionTickFixedStepPreflightWouldSimulateFrame() {
     expectTrue(playingPreflight.wouldSimulateFrame(),
     expectTrue(!pausedPreflight.wouldSimulateFrame(),
     testPlaySessionTickFixedStepPreflightWouldSimulateFrame();
+
+// --- deepen additive from deepen-b6-editor-pie-guards-8426 ---
+void testPlaySessionWorldSnapshotPreflightGuards() {
+    expectTrue(!inactivePreflight.canRunFrame(),
+    expectTrue(playingPreflight.canRunFrame(),
+    fuse::editor::TickFixedStepPreflight pendingPreflight =
+    expectTrue(pendingPreflight.canRunFrame(),
+    expectTrue(!pausedPreflight.canRunFrame(),
+    expectTrue(!inactivePreflight.canSimulate(),
+    expectTrue(inactivePreflight.skipped == !inactivePreflight.canSimulate(),
+    expectTrue(activePreflight.canSimulate(),
+    fuse::editor::VariableTickPreflight negativePreflight =
+        session.preflightVariableTick(-0.016f, physics);
+    expectTrue(!negativePreflight.canSimulate(),
+    fuse::editor::VariableTickPreflight pausedPreflight =
+    expectTrue(!pausedPreflight.canSimulate(),
+    testPlaySessionWorldSnapshotPreflightGuards();
