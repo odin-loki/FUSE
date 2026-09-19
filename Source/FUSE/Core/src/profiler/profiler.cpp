@@ -311,6 +311,14 @@ bool isFlowDepthDetached() {
     return flowNestingDepth() != openAsyncFlowCount();
 }
 
+bool hasActiveScope() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool hasActiveAsyncFlowNesting() {
+    return flowNestingDepth() > 0u;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -346,6 +354,12 @@ u32 exportableEventCount() {
     return count;
 }
 
+u32 nonExportableEventCount() {
+    const u32 total = eventCount();
+    const u32 exportable = exportableEventCount();
+    return total >= exportable ? total - exportable : 0u;
+}
+
 bool isEventExportable(u32 index) {
     return isEventIndexValid(index) && isValidEventName(eventAt(index).name);
 }
@@ -377,6 +391,16 @@ bool tryEventAt(u32 index, ProfileEvent& outEvent) {
     return isValidProfileEvent(outEvent);
 }
 
+bool tryExportableEventAt(u32 index, ProfileEvent& outEvent) {
+    if (!isEventExportable(index)) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    outEvent = eventAt(index);
+    return true;
+}
+
 bool tryFirstEvent(ProfileEvent& outEvent) {
     const u32 index = firstEventIndex();
     if (index == kInvalidEventIndex) {
@@ -397,6 +421,26 @@ bool tryLastEvent(ProfileEvent& outEvent) {
     return tryEventAt(index, outEvent);
 }
 
+bool tryFirstExportableEvent(ProfileEvent& outEvent) {
+    const u32 index = firstExportableEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
+bool tryLastExportableEvent(ProfileEvent& outEvent) {
+    const u32 index = lastExportableEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -404,6 +448,31 @@ u32 firstEventIndex() {
 u32 lastEventIndex() {
     const u32 count = eventCount();
     return count > 0u ? count - 1u : kInvalidEventIndex;
+}
+
+u32 firstExportableEventIndex() {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (isEventExportable(i)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 lastExportableEventIndex() {
+    const u32 total = eventCount();
+    if (total == 0u) {
+        return kInvalidEventIndex;
+    }
+
+    for (u32 i = total; i > 0u; --i) {
+        const u32 index = i - 1u;
+        if (isEventExportable(index)) {
+            return index;
+        }
+    }
+    return kInvalidEventIndex;
 }
 
 const ProfileEvent& lastEvent() {
@@ -419,6 +488,9 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.profilerDisabled = !enabled();
     preflight.eventCount = eventCount();
     preflight.exportableEventCount = exportableEventCount();
+    preflight.nonExportableEventCount = nonExportableEventCount();
+    preflight.firstExportableEventIndex = firstExportableEventIndex();
+    preflight.lastExportableEventIndex = lastExportableEventIndex();
     preflight.frameIndex = frameIndex();
     preflight.openAsyncFlowCount = openAsyncFlowCount();
     preflight.activeScopeNestingDepth = scopeNestingDepth();
@@ -426,6 +498,7 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.maxScopeNestingDepth = maxNestingDepth();
     preflight.maxFlowNestingDepth = maxFlowNestingDepth();
     preflight.bufferEmpty = isBufferEmpty();
+    preflight.bufferFull = isBufferFull();
     preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
@@ -565,7 +638,7 @@ std::string exportChromeTraceJson() {
 
     for (u32 i = 0; i < count; ++i) {
         const ProfileEvent& event = eventAt(i);
-        if (event.name == nullptr) {
+        if (!isValidEventName(event.name)) {
             continue;
         }
 
