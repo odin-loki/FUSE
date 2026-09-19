@@ -4190,3 +4190,6 @@ void testFroxelGuardClassifyPreflightAndIsBlocking() {
     expectTrue(fuse::renderer::preflightFroxelPopulateReady(desc, camera, params, &populateReason),
                "preflightFroxelPopulateReady reports none reject reason on success");
     testFroxelGuardClassifyPreflightAndIsBlocking();
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-d893 ---
+               "preflightGridDensity mirrors validateGridDensity on accessible grid");
