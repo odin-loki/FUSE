@@ -4590,3 +4590,9 @@ void testTaaPassHistoryWarmupPreflight() {
     expectTrue(pass->preflightJitterAdvance(&jitterReject), "pass preflightJitterAdvance passes before init");
     expectTrue(pass->preflightResolve(resolveDesc, &skipReason), "pass preflightResolve passes before warmup");
     testTaaPassHistoryWarmupPreflight();
+
+// --- deepen additive from deepen-b59-taa-try-preflights-199a ---
+               "pass tryComputeExpectedResolveBlendWeights passes before init");
+    expectTrue(invalidSeqPass->tryPreflightJitterAdvance(jitterReject),
+               "fallback pass tryPreflightJitterAdvance passes after defaulting sequence");
+               "fallback pass tryPreflightJitterAdvance reject reason is None");
