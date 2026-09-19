@@ -849,6 +849,7 @@ void endAsyncFlow(const char* name, u32 flowId) {
                 flowDepth);
 
     if (flowDepth > 0u) {
+    if (currentFlowNestingDepth() > 0u) {
         popFlowNestingDepth();
     }
 }
