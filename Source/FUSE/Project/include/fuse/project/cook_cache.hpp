@@ -244,3 +244,6 @@ struct CookCacheEntryPreflight {
 
 // --- deepen additive from deepen-b79-cooker-hash-guards-93a9 ---
         preflight.reason = CookHashRejectReason::InvalidCacheKey;
+
+// --- deepen additive from b79-cooker-hash-deepen-2f84 ---
+    [[nodiscard]] static CookCacheEntryPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);

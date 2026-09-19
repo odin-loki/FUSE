@@ -1321,3 +1321,8 @@ void testCookCacheWouldInvalidateGuards() {
 void testCookHashPreflightManifestWithUpstream() {
     const fuse::project::CookHashPreflight with_deps =
     testCookHashPreflightManifestWithUpstream();
+
+// --- deepen additive from b79-cooker-hash-deepen-2f84 ---
+               "would_invalidate mirrors contains for seeded hash");
+    const fuse::project::CookCacheEntryPreflight zero_key =
+               "would_invalidate_stale_upstream mirrors non-zero count");
