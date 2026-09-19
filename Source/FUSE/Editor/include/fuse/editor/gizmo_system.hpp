@@ -1452,6 +1452,7 @@ UpdateDragInteractionPreflight preflightUpdateDragInteraction(const GizmoHitTest
                                                               const GizmoSnapSettings& settings,
                                                               Handle<Object> target);
                                                               f32 dragDelta = 0.f);
+                                                              f32 delta = 0.f);
 
 /// Combined end-drag + snap diagnostics — no mutation (B6.4 deepen pass — interaction guard).
 struct EndDragInteractionPreflight {
@@ -2511,6 +2512,14 @@ enum class GizmoSnapDragRejectReason : u8 {
     InvalidStep,
 };
 
+/// Why snap-drag preflight rejected the request (B6.4 deepen pass).
+enum class GizmoSnapDragRejectReason : u8 {
+    None = 0,
+    DeltaNonFinite,
+    SnapDisabled,
+    InvalidStep,
+};
+
 /// Why end-drag preflight rejected the request (B6.4 deepen pass).
 enum class GizmoEndDragRejectReason : u8 {
 
@@ -2776,6 +2785,7 @@ public:
     [[nodiscard]] DragUpdateFramePreflight preflightDragUpdateFrame(const GizmoHitTest& hit) const;
     [[nodiscard]] UpdateInteractionPreflight preflightUpdateInteraction(
         const GizmoHitTest& hit) const;
+        const GizmoHitTest& hit, f32 delta = 0.f) const;
     [[nodiscard]] bool canUpdateDrag(const GizmoHitTest& hit) const;
     /// Combined pick + snap diagnostics (B6.4 deepen pass).
     [[nodiscard]] PickSnapPreflight preflightPickSnap(const GizmoHitTest& hit) const;
