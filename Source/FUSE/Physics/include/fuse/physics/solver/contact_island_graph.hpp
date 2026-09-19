@@ -46,4 +46,37 @@ private:
     std::vector<Island> islands_;
 };
 
+/// Post-build integrity counts for island graph consistency checks (B4.4 deepen).
+struct IslandGraphIntegrityStats {
+    u32 islandCount = 0;
+    u32 constrainedIslandCount = 0;
+    u32 orphanedContactRefCount = 0;
+    u32 orphanedDistanceRefCount = 0;
+    u32 outOfRangeBodyIndexCount = 0;
+};
+
+/// Preflight diagnostics for built island graph consistency (B4.4 deepen).
+struct IslandGraphIntegrityPreflight {
+    IslandGraphIntegrityStats stats{};
+    bool skipped = false;
+
+    bool is_consistent() const {
+        return !skipped && stats.orphanedContactRefCount == 0u && stats.orphanedDistanceRefCount == 0u &&
+               stats.outOfRangeBodyIndexCount == 0u;
+    }
+};
+
+/// Validate a built graph against body/constraint slot coverage; sets `skipped` for empty graphs.
+IslandGraphIntegrityPreflight preflight_island_graph_integrity(
+    const ContactIslandGraph& graph,
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Early-out guard when a built graph fails integrity preflight.
+bool should_skip_island_graph_integrity(const ContactIslandGraph& graph,
+                                        u32 bodyCount,
+                                        const std::vector<narrowphase::ContactManifold>& contacts,
+                                        const std::vector<DistanceConstraint>& distanceConstraints);
+
 } // namespace fuse::physics
