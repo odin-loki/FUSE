@@ -874,3 +874,7 @@ CookHashPreflight CookCache::preflight_cook_cache_entry(const CookCacheEntry& en
 
 // --- deepen additive from deepen-b79-cooker-hash-7a34 ---
 CookHashPreflight CookCache::preflight_cache_entry(const CookCacheEntry& entry) const {
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-e0db ---
+CookCacheEntryPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    CookCacheEntryPreflight preflight;

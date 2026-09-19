@@ -1185,3 +1185,9 @@ void testCookCachePreflightEntryAndManifestCoverage() {
                "would_invalidate still true for stale hash key");
 void testCookHashManifestDependencyPreflight() {
     testCookHashManifestDependencyPreflight();
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-e0db ---
+void testCookHashPreflightCacheableKeyGuards() {
+    const fuse::project::CookCacheEntryPreflight ok =
+    expectTrue(cooker.cache().would_invalidate_all(), "would_invalidate_all on populated cache is true");
+    testCookHashPreflightCacheableKeyGuards();

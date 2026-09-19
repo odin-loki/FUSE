@@ -534,3 +534,6 @@ CookHashPreflight preflight_manifest_entry_with_dependencies_hash(const CookMani
     const CookHashPreflight coverage = preflight_manifest_dependency_coverage(dependency_output_paths, manifest);
 CookHashPreflight preflight_manifest_dependency_coverage(
             preflight.reason = CookHashRejectReason::MissingManifestDependency;
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-e0db ---
+    const CookHashPreflight combined = preflight_combine_cook_cache_key(source_hash, upstream_hash);
