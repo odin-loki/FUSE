@@ -655,3 +655,6 @@ bool tryPreflightDensityGridAccess(const FroxelDensityGrid& grid,
 
 // --- deepen additive from deepen-b511-froxel-guards-2580 ---
 bool tryValidateFroxelIndex(u32 index, const FroxelGridDesc& desc, DensityLookupRejectReason& outReason);
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-ecd6 ---
+bool preflightPopulateFromAnalyticFog(const FroxelGridDesc& desc,

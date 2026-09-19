@@ -2266,3 +2266,13 @@ void testFroxelPopulatePreflightAndIndexValidationGuards() {
     expectTrue(screenReason == fuse::renderer::ScreenMappingRejectReason::None,
     expectTrue(screenReason == fuse::renderer::ScreenMappingRejectReason::DepthOutOfRange,
     testFroxelPopulatePreflightAndIndexValidationGuards();
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-ecd6 ---
+    expectTrue(fuse::renderer::froxel_util::preflightPopulateFromAnalyticFog(desc, camera, params, populateReason),
+    expectTrue(!fuse::renderer::froxel_util::tryPopulateFromAnalyticFog(rejectedGrid, zeroDesc, camera, params),
+               "tryPopulate rejects empty froxel desc without mutating storage");
+    expectTrue(fuse::renderer::froxel_util::tryCanPopulateFromAnalyticFog(desc, camera, zeroDensity, populateReason),
+    expectTrue(fuse::renderer::froxel_util::tryCanPopulateFromAnalyticFog(desc, camera, zeroMarch, populateReason),
+    expectTrue(!fuse::renderer::froxel_util::preflightPopulateFromAnalyticFog(desc, badCamera, params, populateReason),
+    expectTrue(!fuse::renderer::froxel_util::tryPopulateFromAnalyticFog(guardedGrid, desc, badCamera, params),
+               "tryPopulate rejects invalid camera without filling density");
