@@ -1693,3 +1693,9 @@ bool tryCanSampleAtCoordsStrict(const FroxelDensityGrid& grid,
             outMapReason = ScreenMappingRejectReason::EmptyGrid;
         outSampleReason = SampleCoordRejectReason::OutOfBounds;
     return trySampleDensityTrilinear(grid, desc, coords, outDensity, outSampleReason);
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-037c ---
+bool FroxelGridLayout::tryPreflightTileCoords(u32 tileX,
+bool FroxelGridLayout::canPreflightTileCoords(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc) {
+    return tryPreflightTileCoords(tileX, tileY, sliceZ, desc, reason);
+    if (!tryCanSampleAtCoords(grid, desc, coords, sampleReason)) {

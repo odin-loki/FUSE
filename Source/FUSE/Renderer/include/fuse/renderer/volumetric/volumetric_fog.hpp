@@ -675,3 +675,8 @@ bool tryCanSampleAtCoordsStrict(const FroxelDensityGrid& grid,
 
 // --- deepen additive from deepen-froxel-volumetrics-b511-4bac ---
                               ScreenMappingRejectReason& outMapReason);
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-037c ---
+    static bool wouldClampTileCoords(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc);
+    static bool tryPreflightTileCoords(u32 tileX,
+    static bool canPreflightTileCoords(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc);

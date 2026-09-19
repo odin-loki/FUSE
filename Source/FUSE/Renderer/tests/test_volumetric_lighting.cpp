@@ -2353,3 +2353,28 @@ void testFroxelDeepenedLookupPopulateAndScreenGuards() {
                "trySampleDensityAtScreen with map reason rejects empty storage");
     expectTrue(fuse::renderer::froxel_util::tryPopulateFromAnalyticFog(populateGrid, desc, camera, params,
     expectTrue(!fuse::renderer::froxel_util::tryPopulateFromAnalyticFog(rejectedPopulate, desc, badCamera, zeroDensity,
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-037c ---
+void testFroxelDeepenDensitySamplePopulateGuards() {
+               "tryCanLookupAtCoord accepts in-bounds tile coords");
+    fuse::renderer::SampleCoordRejectReason tileReason = fuse::renderer::SampleCoordRejectReason::None;
+    expectTrue(fuse::renderer::FroxelGridLayout::tryPreflightTileCoords(1u, 1u, 2u, desc, tileReason),
+               "tryPreflightTileCoords succeeds for in-bounds coords");
+    expectTrue(tileReason == fuse::renderer::SampleCoordRejectReason::None,
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryPreflightTileCoords(99u, 0u, 0u, desc, tileReason),
+               "tryPreflightTileCoords rejects hard OOB tile coord");
+    expectTrue(tileReason == fuse::renderer::SampleCoordRejectReason::OutOfBounds,
+    expectTrue(fuse::renderer::FroxelGridLayout::canPreflightTileCoords(0u, 0u, 0u, desc),
+               "canPreflightTileCoords succeeds for origin");
+    expectNear(rejectedIndexSample, 0.f, 1e-6f, "trySampleDensityAtIndex zeroes output on rejection");
+    expectTrue(fuse::renderer::froxel_util::tryWriteDensityAtIndex(grid, desc, 5u, 3.25f, lookupReason),
+    expectTrue(fuse::renderer::froxel_util::tryWriteDensityAtCoord(grid, desc, 1u, 1u, 2u, 4.75f, lookupReason),
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtCoord(grid, desc, 1u, 1u, 2u, writtenCoord, lookupReason),
+               "trySampleDensityAtCoord reads back written coord density");
+    expectNear(writtenCoord, 4.75f, 1e-5f, "tryWriteDensityAtCoord with reason persists density");
+               "trySampleDensityAtScreen with reason succeeds for in-bounds depth");
+    expectTrue(populated.matchesDesc(desc), "tryPopulateFromAnalyticFog with reason allocates matching grid");
+               "tryPopulateFromAnalyticFog with reason rejects zero density");
+    expectTrue(skippedPopulate.matchesDesc(desc), "tryPopulateFromAnalyticFog still allocates on rejected fill");
+    expectTrue(std::strcmp(fuse::renderer::sampleCoordRejectReasonLabel(tileReason), "out_of_bounds") == 0,
+                   fuse::renderer::DensityLookupRejectReason::SampleCoordRejected),
