@@ -1831,3 +1831,16 @@ FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(const CellRange2& range, const S
 
 // --- deepen additive from b4-broadphase-wouldskip-invalidate-77b6 ---
     return reject != CellSpanRejectReason::ExceedsSpan;
+
+// --- deepen additive from b4-broadphase-wouldskip-guards-b15a ---
+FUSE_PHYSICS_INLINE bool tryPreflightBroadphase(
+    BroadphaseRejectReason& reason) {
+FUSE_PHYSICS_INLINE bool tryPreflightCellOccupancy(
+    CellOccupancyRejectReason& reason) {
+bool tryPreflightRefineBroadphase(
+    RefineBroadphaseRejectReason& reason);
+bool tryPreflightDedupeBroadphase(const PairBufferSoA& buffer, DedupeBroadphaseRejectReason& reason);
+bool tryPreflightBroadphaseMerge(
+    BroadphaseMergeRejectReason& reason);
+bool tryPreflightMergePairsIntoBuffer(
+    MergePairsIntoBufferRejectReason& reason);

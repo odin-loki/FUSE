@@ -1801,3 +1801,16 @@ bool wouldSkipCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis, CellSpa
     const CellSpanRejectReason rejectReason = cellSpanRejectReason(range, maxSpanPerAxis);
     return rejectReason != CellSpanRejectReason::ExceedsSpan;
 bool wouldSkipCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis, CellSpanRejectReason* reason) {
+
+// --- deepen additive from b4-broadphase-wouldskip-guards-b15a ---
+bool tryPreflightRefineBroadphase(
+    RefineBroadphaseRejectReason& reason) {
+    return reason == RefineBroadphaseRejectReason::None;
+bool tryPreflightDedupeBroadphase(const PairBufferSoA& buffer, DedupeBroadphaseRejectReason& reason) {
+    return reason == DedupeBroadphaseRejectReason::None;
+bool tryPreflightBroadphaseMerge(
+    BroadphaseMergeRejectReason& reason) {
+    return reason == BroadphaseMergeRejectReason::None;
+bool tryPreflightMergePairsIntoBuffer(
+    MergePairsIntoBufferRejectReason& reason) {
+    return reason == MergePairsIntoBufferRejectReason::None;

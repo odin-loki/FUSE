@@ -1238,3 +1238,11 @@ bool wouldSkipPairBufferDedupe(const PairBufferSoA& buffer) {
 bool wouldSkipPairBufferSort(const PairBufferSoA& buffer) {
 bool wouldSkipPairBufferCompactAndClamp(const PairBufferSoA& buffer) {
 bool wouldSkipPairBufferToVector(const PairBufferSoA& buffer) {
+
+// --- deepen additive from b4-broadphase-wouldskip-guards-b15a ---
+bool tryPreflightPairBufferWriteSlot(
+    PairBufferWriteSlotRejectReason& reason) {
+    return reason == PairBufferWriteSlotRejectReason::None;
+bool tryPreflightPairBufferInvalidateSlot(
+    PairBufferInvalidateSlotRejectReason& reason) {
+    return reason == PairBufferInvalidateSlotRejectReason::None;

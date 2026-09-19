@@ -4608,3 +4608,28 @@ void testWouldSkipBroadphaseGuardParity() {
                "wouldSkipPairBufferInvalidateSlot fills reject reason");
     expectTrue(fuse::physics::broadphase::wouldSkipCellSpanClamp(validRange, 3u, &spanReason),
              "wouldSkipCellSpanClamp reports None when span is within limit");
+
+// --- deepen additive from b4-broadphase-wouldskip-guards-b15a ---
+    expectTrue(fuse::physics::broadphase::tryPreflightPairBufferInvalidateSlot(buffer, 1u, invalidateReason),
+               "tryPreflightPairBufferInvalidateSlot succeeds for valid slot");
+             "tryPreflightPairBufferInvalidateSlot reports None on success");
+    expectTrue(fuse::physics::broadphase::tryPreflightPairBufferWriteSlot(buffer, 0u, 0u, 1u, writeReason),
+               "tryPreflightPairBufferWriteSlot succeeds for valid write");
+             "tryPreflightPairBufferWriteSlot reports None on success");
+    expectTrue(!fuse::physics::broadphase::tryPreflightPairBufferWriteSlot(buffer, 0u, 1u, 1u, writeReason),
+               "tryPreflightPairBufferWriteSlot fails for self-pair");
+             "tryPreflightPairBufferWriteSlot reports InvalidPair on self-pair");
+    fuse::physics::broadphase::CellOccupancyRejectReason reason =
+    expectTrue(fuse::physics::broadphase::tryPreflightCellOccupancy(validRange, 8u, reason),
+               "tryPreflightCellOccupancy succeeds within budget");
+             "tryPreflightCellOccupancy reports None on success");
+    expectTrue(!fuse::physics::broadphase::tryPreflightCellOccupancy(validRange, 7u, reason),
+               "tryPreflightCellOccupancy fails over budget");
+             "tryPreflightCellOccupancy reports ExceedsBudget over budget");
+    expectTrue(!fuse::physics::broadphase::tryPreflightBroadphase(bodies, shapes, broadphaseReason),
+               "tryPreflightBroadphase fails on empty scene");
+             "tryPreflightBroadphase reports EmptyInput on empty scene");
+    expectTrue(!fuse::physics::broadphase::tryPreflightDedupeBroadphase(buffer, dedupeReason),
+               "tryPreflightDedupeBroadphase fails on empty buffer");
+    expectTrue(fuse::physics::broadphase::tryPreflightRefineBroadphase(bodies, shapes, buffer, refineReason),
+               "tryPreflightRefineBroadphase succeeds for valid scene");
