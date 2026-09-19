@@ -190,14 +190,77 @@ PairBufferDedupePreflight preflightPairBufferDedupe(const PairBufferSoA& buffer)
 /// Non-mutating dedupe skip predicate — mirrors `PairBufferSoA::canSkipDedupe` (B4.2 deepen follow-up pass).
 bool canSkipPairBufferDedupe(const PairBufferSoA& buffer);
 
+/// Non-mutating dedupe predicate — inverse of `canSkipPairBufferDedupe` (B4.2 deepen pass).
+bool shouldRunPairBufferDedupe(const PairBufferSoA& buffer);
+
+/// Why pair-buffer canonical sort would early-out (B4.2 deepen pass).
+enum class PairBufferSortRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    SinglePair,
+};
+
+/// Human-readable label for pair-buffer sort reject reasons (logging / tests).
+const char* pairBufferSortRejectReasonName(PairBufferSortRejectReason reason);
+
+/// Diagnose why canonical sort would skip; vacuously succeeds when sort may proceed.
+PairBufferSortRejectReason pairBufferSortRejectReason(const PairBufferSoA& buffer);
+
+/// Returns true when `pairBufferSortRejectReason` matches `expected` (B4.2 deepen pass).
+bool pairBufferSortRejectsForReason(const PairBufferSoA& buffer, PairBufferSortRejectReason expected);
+
 /// Read-only canonical-sort diagnostics — no mutation (B4.2 deepen follow-up pass).
 struct PairBufferSortPreflight {
+    PairBufferSortRejectReason reason = PairBufferSortRejectReason::None;
     bool emptyBuffer = false;
     bool singlePair = false;
 
-    bool needsSort() const { return !emptyBuffer && !singlePair; }
+    bool needsSort() const { return reason == PairBufferSortRejectReason::None; }
 };
 
 PairBufferSortPreflight preflightPairBufferSort(const PairBufferSoA& buffer);
+
+/// Non-mutating sort skip predicate — inverse of `needsSort` (B4.2 deepen pass).
+bool canSkipPairBufferSort(const PairBufferSoA& buffer);
+
+/// Non-mutating sort predicate — mirrors `preflightPairBufferSort` (B4.2 deepen pass).
+bool shouldRunPairBufferSort(const PairBufferSoA& buffer);
+
+/// Why pair-buffer compact-and-clamp would early-out (B4.2 deepen pass).
+enum class PairBufferCompactClampRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    NoWork,
+};
+
+/// Human-readable label for pair-buffer compact-and-clamp reject reasons (logging / tests).
+const char* pairBufferCompactClampRejectReasonName(PairBufferCompactClampRejectReason reason);
+
+/// Diagnose why compact-and-clamp would skip; vacuously succeeds when work may proceed.
+PairBufferCompactClampRejectReason pairBufferCompactClampRejectReason(const PairBufferSoA& buffer);
+
+/// Returns true when `pairBufferCompactClampRejectReason` matches `expected` (B4.2 deepen pass).
+bool pairBufferCompactClampRejectsForReason(
+    const PairBufferSoA& buffer,
+    PairBufferCompactClampRejectReason expected);
+
+/// Read-only compact-and-clamp diagnostics — no mutation (B4.2 deepen pass).
+struct PairBufferCompactClampPreflight {
+    PairBufferCompactClampRejectReason reason = PairBufferCompactClampRejectReason::None;
+    bool emptyBuffer = false;
+    bool noWork = false;
+    bool needsCompaction = false;
+    bool needsClamp = false;
+
+    bool canRun() const { return reason == PairBufferCompactClampRejectReason::None; }
+};
+
+PairBufferCompactClampPreflight preflightPairBufferCompactClamp(const PairBufferSoA& buffer);
+
+/// Non-mutating compact-and-clamp skip predicate — inverse of `canRun` (B4.2 deepen pass).
+bool canSkipPairBufferCompactClamp(const PairBufferSoA& buffer);
+
+/// Non-mutating compact-and-clamp predicate — mirrors `preflightPairBufferCompactClamp` (B4.2 deepen pass).
+bool shouldRunPairBufferCompactClamp(const PairBufferSoA& buffer);
 
 } // namespace fuse::physics::broadphase

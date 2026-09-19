@@ -270,7 +270,7 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
 }
 
 void dedupeBuffer(PairBufferSoA& buffer) {
-    if (canSkipDedupeBroadphase(buffer)) {
+    if (!shouldRunDedupeBroadphase(buffer)) {
         return;
     }
 
@@ -460,6 +460,7 @@ RefineBroadphasePreflight preflightRefineBroadphase(
     preflight.emptyBuffer = buffer.canSkipSoAIteration();
     preflight.noValidPairs = !buffer.hasValidPairs();
     preflight.emptyInput = canSkipBroadphase(bodies, shapes);
+    preflight.activePairCount = buffer.activeCount;
     preflight.reason = refineBroadphaseRejectReason(bodies, shapes, buffer);
     return preflight;
 }
@@ -512,8 +513,8 @@ BroadphaseMergePreflight preflightBroadphaseMerge(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     BroadphaseMergePreflight preflight{};
-    bool hasPlaneBodies = false;
-    bool hasDynamicBodies = false;
+    std::unordered_set<u32> planeBodies;
+    std::unordered_set<u32> dynamicBodies;
 
     for (u32 shapeIndex = 0; shapeIndex < shapes.count(); ++shapeIndex) {
         const u32 bodyIndex = shapes.bodyIndices[shapeIndex];
@@ -522,17 +523,16 @@ BroadphaseMergePreflight preflightBroadphaseMerge(
         }
         const CollisionShapeType type = static_cast<CollisionShapeType>(shapes.types[shapeIndex]);
         if (type == CollisionShapeType::Plane) {
-            hasPlaneBodies = true;
+            planeBodies.insert(bodyIndex);
         } else if ((bodies.flags[bodyIndex] & RB_STATIC) == 0) {
-            hasDynamicBodies = true;
-        }
-        if (hasPlaneBodies && hasDynamicBodies) {
-            break;
+            dynamicBodies.insert(bodyIndex);
         }
     }
 
-    preflight.emptyPlaneBodies = !hasPlaneBodies;
-    preflight.emptyDynamicBodies = !hasDynamicBodies;
+    preflight.stats.planeBodyCount = static_cast<u32>(planeBodies.size());
+    preflight.stats.dynamicBodyCount = static_cast<u32>(dynamicBodies.size());
+    preflight.emptyPlaneBodies = preflight.stats.planeBodyCount == 0u;
+    preflight.emptyDynamicBodies = preflight.stats.dynamicBodyCount == 0u;
     if (preflight.emptyPlaneBodies) {
         preflight.reason = BroadphaseMergeRejectReason::EmptyPlaneBodies;
     } else if (preflight.emptyDynamicBodies) {
