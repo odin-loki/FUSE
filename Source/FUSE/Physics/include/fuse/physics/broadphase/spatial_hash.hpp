@@ -117,6 +117,13 @@ FUSE_PHYSICS_INLINE bool canSkipBroadphase(
     return canSkipBroadphasePairGeneration(bodies, shapes);
 }
 
+/// Non-mutating broadphase predicate — inverse of `canSkipBroadphase` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !canSkipBroadphase(bodies, shapes);
+}
+
 /// Why broadphase pair generation would early-out (B4.2 deepen follow-up pass).
 enum class BroadphaseRejectReason : u8 {
     None = 0,
@@ -388,6 +395,114 @@ FUSE_PHYSICS_INLINE bool cellOccupancyRejectsForReason(
     u32 maxCells,
     CellOccupancyRejectReason expected) {
     return cellOccupancyRejectReason(range, maxCells) == expected;
+}
+
+/// Why per-axis cell span would require clamping (B4.2 deepen follow-up pass).
+enum class CellSpanRejectReason : u8 {
+    None = 0,
+    EmptyRange,
+    ExceedsMaxSpan,
+};
+
+/// Human-readable label for cell-span reject reasons (logging / tests).
+const char* cellSpanRejectReasonName(CellSpanRejectReason reason);
+
+/// True when any axis span exceeds `maxSpanPerAxis` (0 = unlimited stub).
+FUSE_PHYSICS_INLINE bool exceedsCellSpanPerAxis(const CellRange3& range, u32 maxSpanPerAxis) {
+    if (maxSpanPerAxis == 0u || isEmptyCellRange(range)) {
+        return false;
+    }
+    const ivec3 span = cellSpanPerAxis(range);
+    const s32 maxSpan = static_cast<s32>(maxSpanPerAxis);
+    return span.x > maxSpan || span.y > maxSpan || span.z > maxSpan;
+}
+
+FUSE_PHYSICS_INLINE bool exceedsCellSpanPerAxis(const CellRange2& range, u32 maxSpanPerAxis) {
+    if (maxSpanPerAxis == 0u || isEmptyCellRange(range)) {
+        return false;
+    }
+    const ivec2 span = cellSpanPerAxis(range);
+    const s32 maxSpan = static_cast<s32>(maxSpanPerAxis);
+    return span.x > maxSpan || span.y > maxSpan;
+}
+
+/// Diagnose why cell span clamp would skip; vacuously succeeds when span is within budget.
+FUSE_PHYSICS_INLINE CellSpanRejectReason cellSpanRejectReason(const CellRange3& range, u32 maxSpanPerAxis) {
+    if (isEmptyCellRange(range)) {
+        return CellSpanRejectReason::EmptyRange;
+    }
+    if (exceedsCellSpanPerAxis(range, maxSpanPerAxis)) {
+        return CellSpanRejectReason::ExceedsMaxSpan;
+    }
+    return CellSpanRejectReason::None;
+}
+
+FUSE_PHYSICS_INLINE CellSpanRejectReason cellSpanRejectReason(const CellRange2& range, u32 maxSpanPerAxis) {
+    if (isEmptyCellRange(range)) {
+        return CellSpanRejectReason::EmptyRange;
+    }
+    if (exceedsCellSpanPerAxis(range, maxSpanPerAxis)) {
+        return CellSpanRejectReason::ExceedsMaxSpan;
+    }
+    return CellSpanRejectReason::None;
+}
+
+/// Returns true when `cellSpanRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool cellSpanRejectsForReason(
+    const CellRange3& range,
+    u32 maxSpanPerAxis,
+    CellSpanRejectReason expected) {
+    return cellSpanRejectReason(range, maxSpanPerAxis) == expected;
+}
+
+FUSE_PHYSICS_INLINE bool cellSpanRejectsForReason(
+    const CellRange2& range,
+    u32 maxSpanPerAxis,
+    CellSpanRejectReason expected) {
+    return cellSpanRejectReason(range, maxSpanPerAxis) == expected;
+}
+
+/// Cell-span preflight for shape occupancy clamp (B4.2 deepen follow-up pass).
+struct CellSpanPreflight {
+    CellSpanRejectReason reason = CellSpanRejectReason::None;
+    bool emptyRange = false;
+    bool exceedsMaxSpan = false;
+
+    bool needsClamp() const { return reason == CellSpanRejectReason::ExceedsMaxSpan; }
+};
+
+FUSE_PHYSICS_INLINE CellSpanPreflight preflightCellSpan(const CellRange3& range, u32 maxSpanPerAxis) {
+    CellSpanPreflight preflight{};
+    preflight.reason = cellSpanRejectReason(range, maxSpanPerAxis);
+    preflight.emptyRange = preflight.reason == CellSpanRejectReason::EmptyRange;
+    preflight.exceedsMaxSpan = preflight.reason == CellSpanRejectReason::ExceedsMaxSpan;
+    return preflight;
+}
+
+FUSE_PHYSICS_INLINE CellSpanPreflight preflightCellSpan(const CellRange2& range, u32 maxSpanPerAxis) {
+    CellSpanPreflight preflight{};
+    preflight.reason = cellSpanRejectReason(range, maxSpanPerAxis);
+    preflight.emptyRange = preflight.reason == CellSpanRejectReason::EmptyRange;
+    preflight.exceedsMaxSpan = preflight.reason == CellSpanRejectReason::ExceedsMaxSpan;
+    return preflight;
+}
+
+/// Non-mutating cell-span skip predicate — inverse of `needsClamp` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool canSkipCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+    return !preflightCellSpan(range, maxSpanPerAxis).needsClamp();
+}
+
+FUSE_PHYSICS_INLINE bool canSkipCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+    return !preflightCellSpan(range, maxSpanPerAxis).needsClamp();
+}
+
+/// Non-mutating cell-span predicate — mirrors `preflightCellSpan` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool shouldRunCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+    return preflightCellSpan(range, maxSpanPerAxis).needsClamp();
+}
+
+FUSE_PHYSICS_INLINE bool shouldRunCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+    return preflightCellSpan(range, maxSpanPerAxis).needsClamp();
 }
 
 /// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).
