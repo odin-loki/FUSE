@@ -3898,3 +3898,24 @@ void testSnapPhasePreflight() {
     const fuse::editor::InteractionPreflight validSnap = fuse::editor::preflightInteraction(
     testPickSnapPreflightDegraded();
     testSnapPhasePreflight();
+
+// --- deepen additive from gizmo-interaction-preflight-guards-8470 ---
+    const fuse::editor::UpdateDragPreflight nanUpdatePreflight =
+        fuse::editor::preflightUpdateDrag(nanHit, true, fuse::editor::GizmoAxis::X,
+    expectTrue(nanUpdatePreflight.nonFiniteInput, "update preflight marks non-finite hit");
+    expectTrue(!nanUpdatePreflight.canUpdate(), "update preflight rejects non-finite hit");
+    expectTrue(!gizmo.tryUpdateDrag(nanHit, updateResult),
+               "tryUpdateDrag rejects non-finite hit");
+    expectTrue(nanBeginPreflight.nonFiniteInput, "begin preflight marks non-finite screen hit");
+void testRayUnnormalizedPreflight() {
+    const fuse::editor::PickPreflight unnormalizedPick = fuse::editor::preflightPick(
+void testAxisModeMismatchGuards() {
+    const fuse::editor::UpdateDragPreflight gizmoUpdatePreflight = gizmo.preflightUpdateDrag(hit);
+    expectTrue(gizmoUpdatePreflight.canUpdate(),
+void testSnapNegativeStepPreflight() {
+    const fuse::editor::SnapPreflight negativePreflight =
+    expectTrue(negativePreflight.negativeStep, "snap preflight marks negative step");
+    expectTrue(negativePreflight.invalidStep, "snap preflight marks invalid step");
+    expectTrue(!negativePreflight.canApply(), "snap preflight rejects negative step");
+    testRayUnnormalizedPreflight();
+    testSnapNegativeStepPreflight();
