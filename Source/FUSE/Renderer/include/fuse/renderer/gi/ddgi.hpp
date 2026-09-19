@@ -1004,3 +1004,7 @@ bool wouldClampCacheIndexLookupCoord(const DDGIDesc& desc, const ProbeGridCoord&
 
 // --- deepen additive from deepen-b56-ddgi-wouldskip-preflights-a4ee ---
 bool preflightProbeGridSource(const DDGIDesc& desc, ProbeSampleCoordsRejectReason* reason = nullptr);
+
+// --- deepen additive from deepen-ddgi-b56-guards-22da ---
+bool wouldSkipProbeLookupAtIndex(const DDGIDesc& desc,
+bool wouldSkipProbeLookupAtCoord(const DDGIDesc& desc,

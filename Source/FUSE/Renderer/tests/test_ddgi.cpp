@@ -4159,3 +4159,26 @@ void testDdgiWouldSkipPreflightGuards() {
                "wouldSkipCacheIndexLookupAtCoord true for undersized cache");
     expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(desc, invalid, 8u),
     testDdgiWouldSkipPreflightGuards();
+
+// --- deepen additive from deepen-ddgi-b56-guards-22da ---
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoordPreflight(desc, hardOob),
+    expectTrue(fuse::renderer::ddgi_util::tryValidateProbeGridSource(desc, cache.data(), 8u, sourceReason),
+               "tryValidateProbeGridSource succeeds for accessible grid");
+    expectTrue(!fuse::renderer::probeGridSourceRejectReasonIsBlocking(sourceReason),
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeLookupAtIndex(desc, cache.data(), 3u, 8u),
+               "wouldSkipProbeLookupAtIndex false for in-range index");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeLookupAtIndex(desc, cache.data(), 99u, 8u),
+               "wouldSkipProbeLookupAtIndex true for OOB index");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeLookupAtCoord(desc, cache.data(), validCoord, 8u),
+               "wouldSkipProbeLookupAtCoord false for valid coord");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeLookupAtCoord(desc, cache.data(), invalidCoord, 8u),
+               "wouldSkipProbeLookupAtCoord true for invalid coord");
+               "wouldSkipProbeTrilinearSample false for valid coords");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSample(desc, warnWeights, cache.data(), 8u),
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSample(desc, hardOob, cache.data(), 8u),
+               "wouldSkipProbeTrilinearSample true for hard OOB indices");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSourceReject(empty, cache.data(), 8u) ==
+               "classifyProbeGridSourceReject empty grid");
+                               fuse::renderer::ProbeGridSourceRejectReason::EmptyGrid),
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSourceReject(zeroRes, cache.data(), 8u) ==
+               "classifyProbeGridSourceReject not sampleable grid");

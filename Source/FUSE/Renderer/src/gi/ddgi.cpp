@@ -3081,3 +3081,9 @@ bool preflightProbeGridSource(const DDGIDesc& desc, ProbeSampleCoordsRejectReaso
         *reason = ProbeSampleCoordsRejectReason::None;
     return !preflightProbeGridSource(desc, nullptr);
     return wouldSkipProbeGridSource(desc);
+
+// --- deepen additive from deepen-ddgi-b56-guards-22da ---
+    return !preflightProbeGridSource(desc, cache, cache_count);
+bool wouldSkipProbeLookupAtIndex(const DDGIDesc& desc,
+bool wouldSkipProbeLookupAtCoord(const DDGIDesc& desc,
+    return wouldSkipProbeLookupAtIndex(desc, cache, probe_index, cache_count);
