@@ -183,10 +183,24 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason) {
         return "source_unreadable";
     case CookHashRejectReason::EmptyDependencyList:
         return "empty_dependency_list";
+    case CookHashRejectReason::UnresolvedDependency:
+        return "unresolved_dependency";
     case CookHashRejectReason::ZeroSourceHash:
         return "zero_source_hash";
     }
     return "unknown";
+}
+
+CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size) {
+    CookHashPreflight preflight;
+    if (!is_valid_fnv1a64_input(data, size)) {
+        preflight.reason = CookHashRejectReason::NullData;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
 }
 
 CookHashPreflight preflight_file_content_hash(const std::string& path) {
@@ -278,14 +292,24 @@ CookHashPreflight preflight_upstream_dependencies_hash(const std::vector<std::st
         if (dependency_output.empty()) {
             continue;
         }
+
+        bool resolved = false;
         for (const CookManifestEntry& asset : manifest.assets) {
-            if (asset.output_path == dependency_output) {
-                const CookHashPreflight source_preflight = preflight_file_content_hash(asset.source_path);
-                if (!source_preflight.can_hash) {
-                    return source_preflight;
-                }
-                break;
+            if (asset.output_path != dependency_output) {
+                continue;
             }
+
+            resolved = true;
+            const CookHashPreflight source_preflight = preflight_file_content_hash(asset.source_path);
+            if (!source_preflight.can_hash) {
+                return source_preflight;
+            }
+            break;
+        }
+
+        if (!resolved) {
+            preflight.reason = CookHashRejectReason::UnresolvedDependency;
+            return preflight;
         }
     }
 

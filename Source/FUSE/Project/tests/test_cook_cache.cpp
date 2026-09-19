@@ -408,8 +408,13 @@ void testCookCacheLoadPreservesEntriesWithoutOnDiskSource() {
 }
 
 void testCookHashPreflightGuards() {
-    expectTrue(!fuse::project::is_valid_fnv1a64_input(nullptr, 4u),
-               "null data with non-zero size fails FNV input validation");
+    const fuse::project::CookHashPreflight null_fnv = fuse::project::preflight_fnv1a64_bytes(nullptr, 4u);
+    expectTrue(!null_fnv.ok(), "null data with non-zero size fails FNV preflight");
+    expectTrue(null_fnv.reason == fuse::project::CookHashRejectReason::NullData,
+               "null FNV preflight reason is NullData");
+
+    const fuse::project::CookHashPreflight empty_fnv = fuse::project::preflight_fnv1a64_bytes(nullptr, 0);
+    expectTrue(empty_fnv.ok(), "null data with zero size passes FNV preflight");
     expectTrue(fuse::project::is_valid_fnv1a64_input(nullptr, 0),
                "null data with zero size passes FNV input validation");
 
@@ -456,6 +461,44 @@ void testCookHashPreflightGuards() {
     expectTrue(std::string(fuse::project::cookHashRejectReasonLabel(
                    fuse::project::CookHashRejectReason::EmptyPath)) == "empty_path",
                "reject reason label for empty path");
+    expectTrue(std::string(fuse::project::cookHashRejectReasonLabel(
+                   fuse::project::CookHashRejectReason::UnresolvedDependency)) == "unresolved_dependency",
+               "reject reason label for unresolved dependency");
+
+    const std::string tex_source = writeTempFile("/tmp/fuse_b79_preflight_tex.png", "# preflight tex\n");
+    fuse::project::TextureImportDesc tex;
+    tex.input_path = tex_source;
+    tex.output_path = "/tmp/fuse_b79_preflight_tex.fusetex";
+    expectTrue(fuse::project::preflight_texture_import_hash(tex).ok(), "readable texture import passes preflight");
+
+    tex.input_path = "";
+    expectTrue(fuse::project::preflight_texture_import_hash(tex).reason ==
+                   fuse::project::CookHashRejectReason::EmptyInputPath,
+               "empty texture input path preflight reason");
+
+    const std::string audio_source = writeTempFile("/tmp/fuse_b79_preflight_audio.wav", "# preflight audio\n");
+    fuse::project::AudioImportDesc audio;
+    audio.input_path = audio_source;
+    audio.output_path = "/tmp/fuse_b79_preflight_audio.fuseaudio";
+    expectTrue(fuse::project::preflight_audio_import_hash(audio).ok(), "readable audio import passes preflight");
+
+    audio.output_path = "";
+    expectTrue(fuse::project::preflight_audio_import_hash(audio).reason ==
+                   fuse::project::CookHashRejectReason::EmptyOutputPath,
+               "empty audio output path preflight reason");
+
+    fuse::project::CookManifestEntry manifest_entry;
+    manifest_entry.kind = fuse::project::CookAssetKind::Mesh;
+    manifest_entry.source_path = tex_source;
+    manifest_entry.output_path = "/tmp/fuse_b79_preflight_manifest.fusemesh";
+    expectTrue(fuse::project::preflight_manifest_entry_hash(manifest_entry).ok(),
+               "readable manifest entry passes preflight");
+
+    const fuse::project::CookHashPreflight unresolved_upstream =
+        fuse::project::preflight_upstream_dependencies_hash({"/tmp/fuse_b79_missing_dep.fusemesh"}, manifest);
+    expectTrue(!unresolved_upstream.ok(), "unresolved dependency output fails upstream preflight");
+    expectTrue(unresolved_upstream.reason == fuse::project::CookHashRejectReason::UnresolvedDependency,
+               "unresolved dependency preflight reason");
 }
 
 void testCookCacheInvalidationProbes() {
@@ -488,6 +531,20 @@ void testCookCacheInvalidationProbes() {
                "count_stale_content with matching hash returns zero");
     expectTrue(cooker.cache().count_stale_content_for_source(source, seeded.content_hash + 1u) == 1u,
                "count_stale_content with mismatched hash returns one");
+
+    expectTrue(!cooker.cache().would_invalidate_source(""), "would_invalidate_source rejects empty path");
+    expectTrue(cooker.cache().would_invalidate_source(source), "would_invalidate_source reports seeded source");
+    expectTrue(!cooker.cache().would_invalidate_output(""), "would_invalidate_output rejects empty path");
+    expectTrue(cooker.cache().would_invalidate_output(desc.output_path),
+               "would_invalidate_output reports seeded output");
+    expectTrue(!cooker.cache().would_invalidate_stale_content(source, seeded.content_hash),
+               "would_invalidate_stale_content false when hash matches");
+    expectTrue(cooker.cache().would_invalidate_stale_content(source, seeded.content_hash + 1u),
+               "would_invalidate_stale_content true when hash mismatches");
+    expectTrue(!cooker.cache().would_invalidate_stale_upstream({{source, 0u}}),
+               "would_invalidate_stale_upstream false when upstream hash matches");
+    expectTrue(cooker.cache().would_invalidate_stale_upstream({{source, 42u}}),
+               "would_invalidate_stale_upstream true when upstream hash mismatches");
 
     writeTempFile(source, "# probe mesh updated\n");
     expectTrue(cooker.cache().count_prunable_entries() == 1u, "count_prunable reports stale entry");
