@@ -3648,3 +3648,38 @@ void testChromeTraceExportPreflightExportableIndices() {
     expectTrue(emptyPreflight.firstExportableEventIndex == fuse::profiler::kInvalidEventIndex,
     expectTrue(!emptyPreflight.bufferFull, "preflight bufferFull false on empty buffer");
     testChromeTraceExportPreflightExportableIndices();
+
+// --- deepen additive from deepen-b16-profiler-guards-7722 ---
+void testNullOrEmptyEventNameGuard() {
+void testWouldRecordWithNameGuard() {
+void testTryFindEventByPhaseGuard() {
+    expectTrue(!fuse::profiler::tryFindFirstEventByPhase(fuse::profiler::EventPhase::Begin, outEvent),
+    expectTrue(!fuse::profiler::tryEventAtPhase(0u, fuse::profiler::EventPhase::Counter, outEvent),
+    expectTrue(fuse::profiler::tryFindFirstEventByPhase(fuse::profiler::EventPhase::Begin, outEvent),
+               "tryFindFirstEventByPhase true for scope begin");
+               "tryFindFirstEventByPhase copies begin scope name");
+    expectTrue(fuse::profiler::tryEventAtPhase(1u, fuse::profiler::EventPhase::Counter, outEvent),
+               "tryEventAtPhase true when index and phase match");
+    expectTrue(outEvent.counterIntValue == 8, "tryEventAtPhase copies counter value");
+    expectTrue(!fuse::profiler::tryEventAtPhase(1u, fuse::profiler::EventPhase::Begin, outEvent),
+               "tryEventAtPhase false when phase mismatches");
+    expectTrue(!fuse::profiler::tryEventAtPhase(9u, fuse::profiler::EventPhase::Counter, outEvent),
+               "tryEventAtPhase false when index out of range");
+    expectTrue(fuse::profiler::tryFindFirstEventByName("name_inner", outEvent),
+               "tryFindFirstEventByName true for recorded name");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::Begin, "tryFindFirstEventByName copies phase");
+    expectTrue(!fuse::profiler::tryFindFirstEventByName("", outEvent),
+               "tryFindFirstEventByName false for empty name");
+    expectTrue(outEvent.name == nullptr, "tryFindFirstEventByName clears output for empty name");
+void testFlowDepthMismatchGuard() {
+void testChromeTraceExportPreflightBufferAndExportReady() {
+    expectTrue(!emptyPreflight.isExportReady(), "preflight isExportReady false on empty buffer");
+    expectTrue(emptyPreflight.isNestingClean(), "preflight isNestingClean on reset");
+    const fuse::profiler::ChromeTraceExportPreflight readyPreflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(readyPreflight.isExportReady(), "preflight isExportReady with exportable events");
+    expectTrue(readyPreflight.isNestingClean(), "preflight isNestingClean after balanced scope");
+    expectTrue(!readyPreflight.bufferFull, "preflight bufferFull false after few events");
+    expectTrue(readyPreflight.nonExportableEventCount == 0u,
+    expectTrue(readyPreflight.exportableEventCount == readyPreflight.eventCount,
+    expectTrue(closedPreflight.isNestingClean(), "preflight isNestingClean after balanced teardown");
+    testChromeTraceExportPreflightBufferAndExportReady();
