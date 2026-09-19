@@ -1234,6 +1234,125 @@ void testCrossThreadFlowPreservesOpenCountGuard() {
                "cross-thread finish records worker tid");
 }
 
+void testIsValidProfilerNamePreflight() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(!fuse::profiler::isValidProfilerName(nullptr), "null name fails preflight");
+    expectTrue(!fuse::profiler::isValidProfilerName(""), "empty name fails preflight");
+    expectTrue(fuse::profiler::isValidProfilerName("valid_scope"), "non-empty name passes preflight");
+
+    {
+        FUSE_PROFILE_SCOPE("valid_scope");
+    }
+    expectTrue(fuse::profiler::isValidProfileEvent(fuse::profiler::eventAt(0)),
+               "recorded scope begin passes profile-event preflight");
+}
+
+void testEventLookupPreflightGuards() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(!fuse::profiler::isEventLookupPreflightOk(0u),
+               "event lookup preflight false on empty buffer");
+    expectTrue(!fuse::profiler::isEventLookupPreflightOk(99u),
+               "event lookup preflight false when out of range");
+
+    {
+        FUSE_PROFILE_SCOPE("lookup_scope");
+    }
+
+    expectTrue(fuse::profiler::isEventLookupPreflightOk(0u),
+               "event lookup preflight true for first event");
+    expectTrue(fuse::profiler::isEventLookupPreflightOk(1u),
+               "event lookup preflight true for last event");
+    expectTrue(!fuse::profiler::isEventLookupPreflightOk(2u),
+               "event lookup preflight false past event count");
+}
+
+void testTryLastEventGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::ProfileEvent outEvent{};
+    expectTrue(!fuse::profiler::tryLastEvent(outEvent), "tryLastEvent false on empty buffer");
+    expectTrue(outEvent.name == nullptr, "tryLastEvent clears output on empty buffer");
+
+    {
+        FUSE_PROFILE_SCOPE("last_scope");
+    }
+
+    expectTrue(fuse::profiler::tryLastEvent(outEvent), "tryLastEvent true after recording");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::End, "tryLastEvent copies end phase");
+    expectTrue(outEvent.name != nullptr && std::string(outEvent.name) == "last_scope",
+               "tryLastEvent copies most recent scope name");
+}
+
+void testProfilerNestingPreflightGuards() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::isProfilerNestingPreflightOk(),
+               "reset leaves profiler nesting preflight ok");
+    expectTrue(fuse::profiler::isChromeExportPreflightOk(),
+               "reset leaves chrome export preflight ok");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    {
+        FUSE_PROFILE_SCOPE("preflight_outer");
+        expectTrue(!fuse::profiler::isProfilerNestingPreflightOk(),
+                   "active scope fails nesting preflight");
+        expectTrue(!fuse::profiler::isChromeExportPreflightOk(),
+                   "active scope fails chrome export preflight");
+        FUSE_PROFILE_ASYNC_FLOW_BEGIN("preflight_flow", flowId);
+        expectTrue(!fuse::profiler::isProfilerNestingPreflightOk(),
+                   "open flow fails nesting preflight");
+        FUSE_PROFILE_ASYNC_FLOW_END("preflight_flow", flowId);
+        expectTrue(!fuse::profiler::isProfilerNestingPreflightOk(),
+                   "open scope still fails nesting preflight");
+    }
+    expectTrue(fuse::profiler::isProfilerNestingPreflightOk(),
+               "balanced scope and flow restore nesting preflight");
+    expectTrue(fuse::profiler::isChromeExportPreflightOk(),
+               "balanced scope and flow restore chrome export preflight");
+}
+
+void testChromeExportPreflightWithUnmatchedFlow() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("unmatched_flow", flowId);
+
+    expectTrue(!fuse::profiler::isProfilerNestingPreflightOk(),
+               "unmatched flow begin fails nesting preflight");
+    expectTrue(!fuse::profiler::isChromeExportPreflightOk(),
+               "unmatched flow begin fails chrome export preflight");
+    expectTrue(fuse::profiler::hasOpenAsyncFlows(), "unmatched flow leaves open async flows");
+
+    const std::string json = fuse::profiler::exportChromeTraceJson();
+    expectTrue(json.find("\"name\":\"unmatched_flow\"") != std::string::npos,
+               "export still emits unmatched flow start for offline inspection");
+
+    fuse::profiler::reset();
+    expectTrue(fuse::profiler::isChromeExportPreflightOk(),
+               "reset restores chrome export preflight after unmatched flow");
+}
+
+void testEmptyNameDoesNotPassProfileEventPreflight() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::ProfileEvent emptyNameEvent{};
+    emptyNameEvent.name = "";
+    expectTrue(!fuse::profiler::isValidProfileEvent(emptyNameEvent),
+               "empty-string profile event fails preflight");
+
+    fuse::profiler::ProfileEvent nullNameEvent{};
+    expectTrue(!fuse::profiler::isValidProfileEvent(nullNameEvent),
+               "null-name profile event fails preflight");
+}
+
 void testVerifyMacro() {
     resetState();
     fuse::assertion::setSuppressAbortForTests(true);
@@ -1309,6 +1428,12 @@ int main() {
     testTryEventAtGuard();
     testResetRestoresNestingBalance();
     testCrossThreadFlowPreservesOpenCountGuard();
+    testIsValidProfilerNamePreflight();
+    testEventLookupPreflightGuards();
+    testTryLastEventGuard();
+    testProfilerNestingPreflightGuards();
+    testChromeExportPreflightWithUnmatchedFlow();
+    testEmptyNameDoesNotPassProfileEventPreflight();
     testFatalHandlerHook();
     testVerifyMacro();
 

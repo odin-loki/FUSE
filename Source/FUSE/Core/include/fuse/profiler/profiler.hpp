@@ -71,15 +71,19 @@ u32 openAsyncFlowCount();
 bool hasOpenAsyncFlows();
 bool isScopeNestingBalanced();
 bool isFlowNestingBalanced();
+bool isProfilerNestingPreflightOk();
 
 bool hasEvents();
 bool isBufferEmpty();
 bool isBufferFull();
 bool isEventIndexValid(u32 index);
+bool isValidProfilerName(const char* name);
 bool isValidProfileEvent(const ProfileEvent& event);
+bool isEventLookupPreflightOk(u32 index);
 u32 lastEventIndex();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
+bool tryLastEvent(ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 void reset();
 
@@ -117,6 +121,9 @@ inline void sampleCounterSnapshotAtFrameDispatch(const char* track, T value) {
         sampleCounterSnapshotAtFrame(track, static_cast<s64>(value));
     }
 }
+
+/// Preflight: true when chrome export can run without dangling scope/flow nesting state.
+bool isChromeExportPreflightOk();
 
 /// Stub export for chrome://tracing offline analysis (not hot path).
 std::string exportChromeTraceJson();

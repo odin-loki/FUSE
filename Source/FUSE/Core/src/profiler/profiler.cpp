@@ -301,6 +301,10 @@ bool isFlowNestingBalanced() {
     return flowNestingDepth() == 0u;
 }
 
+bool isProfilerNestingPreflightOk() {
+    return isScopeNestingBalanced() && isFlowNestingBalanced() && !hasOpenAsyncFlows();
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -317,8 +321,20 @@ bool isEventIndexValid(u32 index) {
     return index < eventCount();
 }
 
+bool isValidProfilerName(const char* name) {
+    return isValidEventName(name);
+}
+
 bool isValidProfileEvent(const ProfileEvent& event) {
-    return event.name != nullptr;
+    return isValidEventName(event.name);
+}
+
+bool isEventLookupPreflightOk(u32 index) {
+    if (!isEventIndexValid(index)) {
+        return false;
+    }
+
+    return isValidProfileEvent(eventAt(index));
 }
 
 const ProfileEvent& eventAt(u32 index) {
@@ -335,13 +351,23 @@ const ProfileEvent& eventAt(u32 index) {
 }
 
 bool tryEventAt(u32 index, ProfileEvent& outEvent) {
-    if (!isEventIndexValid(index)) {
+    if (!isEventLookupPreflightOk(index)) {
         outEvent = ProfileEvent{};
         return false;
     }
 
     outEvent = eventAt(index);
-    return isValidProfileEvent(outEvent);
+    return true;
+}
+
+bool tryLastEvent(ProfileEvent& outEvent) {
+    const u32 index = lastEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
 }
 
 u32 lastEventIndex() {
@@ -473,6 +499,10 @@ void sampleCounterFloatSnapshotAtFrame(const char* track, f64 value) {
                 frameIndex());
 }
 
+bool isChromeExportPreflightOk() {
+    return isProfilerNestingPreflightOk();
+}
+
 std::string exportChromeTraceJson() {
     const std::lock_guard<std::mutex> lock(g_exportMutex);
 
@@ -489,7 +519,7 @@ std::string exportChromeTraceJson() {
 
     for (u32 i = 0; i < count; ++i) {
         const ProfileEvent& event = eventAt(i);
-        if (event.name == nullptr) {
+        if (!isValidEventName(event.name)) {
             continue;
         }
 
