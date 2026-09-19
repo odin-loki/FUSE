@@ -4,6 +4,7 @@
 #include <fuse/physics/config.hpp>
 #include <fuse/physics/math.hpp>
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
+#include <fuse/physics/narrowphase/contact_pair.hpp>
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/types.hpp>
 
@@ -199,5 +200,29 @@ std::vector<ContactManifold> runNarrowphase(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
+
+/// Const preflight for one narrowphase pair slot (B4.6 deepen pass).
+struct NarrowphasePairSlotPreflight {
+    ContactPairSlotPreflight pair{};
+    bool skipped = false;
+
+    bool can_dispatch() const { return !skipped && pair.can_dispatch(); }
+};
+
+/// Populate pair-slot preflight without running shape dispatch (B4.6 deepen pass).
+NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const std::vector<broadphase::CandidatePair>& pairs,
+    u32 pairIndex);
+
+/// Returns true when narrowphase should skip this pair slot before dispatch (B4.6 deepen pass).
+bool should_skip_narrowphase_pair_slot(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const std::vector<broadphase::CandidatePair>& pairs,
+    u32 pairIndex);
 
 } // namespace fuse::physics::narrowphase
