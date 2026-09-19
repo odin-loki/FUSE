@@ -8,6 +8,59 @@
 
 namespace fuse::physics {
 
+/// Why island graph build would early-out (B4.4 deepen follow-up).
+enum class IslandBuildRejectReason : u8 {
+    None = 0,
+    EmptyInput,
+    UnsafeRefs,
+};
+
+/// Human-readable label for island build reject reasons (logging / tests).
+const char* island_build_reject_reason_name(IslandBuildRejectReason reason);
+
+/// Input sizing for island graph build without mutating the graph (B4.4 deepen follow-up).
+struct ContactIslandBuildInputStats {
+    u32 bodyCount = 0;
+    u32 contactSlotCount = 0;
+    u32 validContactCount = 0;
+    u32 distanceSlotCount = 0;
+    u32 inRangeContactCount = 0;
+    u32 inRangeDistanceCount = 0;
+    u32 outOfRangeContactBodyCount = 0;
+    u32 outOfRangeDistanceBodyCount = 0;
+};
+
+/// Summarize island graph build inputs without mutating the graph.
+ContactIslandBuildInputStats compute_contact_island_build_input_stats(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Diagnose why island graph build would skip; vacuously succeeds on populated in-range scenes.
+IslandBuildRejectReason island_build_reject_reason(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Returns true when `island_build_reject_reason` matches `expected`.
+bool island_build_rejects_for_reason(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints,
+    IslandBuildRejectReason expected);
+
+/// Non-mutating island build skip predicate — inverse of a successful guarded build.
+bool can_skip_contact_island_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Non-mutating island build predicate — mirrors guarded build eligibility.
+bool should_run_contact_island_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
 /// contacts and distance constraints run sequentially (Gauss-Seidel stub).
