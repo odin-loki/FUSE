@@ -2642,3 +2642,18 @@ bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelReject
     return !tryCanLaunchProbeTraceKernel(params, outReason);
 bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
     return !tryCanLaunchProbeBlendKernel(params, outReason);
+
+// --- deepen additive from deepen-ddgi-b56-guards-15d4 ---
+bool wouldClampProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
+    if (classifyProbeSampleCoordsReject(desc, coords) != ProbeSampleCoordsRejectReason::None) {
+    const ProbeSampleCoordsRejectReason coordReject = classifyProbeSampleCoordsReject(desc, coords);
+    if (coordReject != ProbeSampleCoordsRejectReason::None) {
+    return outReason != CacheIndexRejectReason::None;
+    return wouldSkipCacheIndexLookup(desc, probe_index, cache_count, reason);
+    return wouldSkipCacheIndexLookup(desc, cache, probe_index, cache_count, reason);
+    if (outReason == ProbeScheduleRejectReason::ZeroProbeCount && out_count != nullptr) {
+    if (outReason == ProbeScheduleRejectReason::ZeroMaxIndices && out_count != nullptr) {
+    return outReason != ProbeScheduleRejectReason::None;
+    return wouldSkipProbeSchedule(probe_count, max_indices, out_indices, out_count, reason);
+    return outReason != ProbeUpdateLaunchRejectReason::None;
+    return wouldSkipDdgiProbeUpdate(desc, probe_indices, probe_count, reason);

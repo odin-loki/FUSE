@@ -3284,3 +3284,28 @@ void testWouldSkipGuardOverloads() {
                "zero update count wouldSkip reports zero_update_count reason");
     expectTrue(fuse::renderer::gi::wouldSkipProbeBlendKernel(kernelParams),
                "wouldSkipProbeBlendKernel true without reason param");
+
+// --- deepen additive from deepen-ddgi-b56-guards-15d4 ---
+void testClassifyGuardHelpers() {
+    expectTrue(fuse::renderer::classifyProbeSampleCoordsReject(desc, valid) ==
+    expectTrue(fuse::renderer::classifyProbeSampleCoordsReject(desc, oob) ==
+               "wouldSkip with reason false for valid index");
+               "valid cache-index wouldSkip reports none reason");
+               "wouldSkip with reason true for null cache");
+    expectTrue(fuse::renderer::classifyProbeTrilinearSampleReject(desc, valid, cache.data(), 8u) ==
+               "wouldSkip schedule false for valid inputs");
+               "valid schedule wouldSkip reports none reason");
+               "wouldSkip schedule true for zero probe count");
+    expectTrue(fuse::renderer::classifyProbeUpdateLaunchReject(desc, launchIndices, 2u) ==
+    expectTrue(!fuse::renderer::wouldSkipDdgiProbeUpdate(desc, launchIndices, 2u, launchReason),
+               "wouldSkip launch false for valid indices");
+               "valid launch wouldSkip reports none reason");
+               "wouldSkip launch true for OOB indices");
+               "wouldSkip trace true for zero rays per probe");
+    fuse::renderer::CacheIndexRejectReason readReason = fuse::renderer::CacheIndexRejectReason::None;
+    expectTrue(fuse::renderer::ddgi_util::tryReadIrradianceAtIndex(desc, cache.data(), 8u, 3u, irradiance, readReason),
+    expectTrue(readReason == fuse::renderer::CacheIndexRejectReason::None,
+               "successful tryRead reports none reason");
+    expectNear(irradiance.x, 0.1f, 1e-5f, "tryRead with reason returns stored irradiance");
+    expectTrue(!fuse::renderer::ddgi_util::tryReadIrradianceAtIndex(desc, nullptr, 8u, 3u, irradiance, readReason),
+    expectTrue(readReason == fuse::renderer::CacheIndexRejectReason::NullCache,
