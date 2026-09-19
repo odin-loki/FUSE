@@ -1114,3 +1114,7 @@ ProfilerExportPreflight preflightChromeTraceExport() {
 
 // --- deepen additive from deepen-b16-profiler-preflights-ea42 ---
 bool tryEventAt(u32 index, ProfileEvent& out) {
+
+// --- deepen additive from deepen-b16-profiler-guards-0c1a ---
+ChromeExportPreflight preflightChromeExport() {
+    ChromeExportPreflight preflight{};

@@ -2593,3 +2593,24 @@ void testChromeTraceExportPreflight() {
     testIsValidProfileNamePreflight();
     testNestingBalancePreflights();
     testChromeTraceExportPreflight();
+
+// --- deepen additive from deepen-b16-profiler-guards-0c1a ---
+void testRingCapacityAndHasOpenAsyncFlowsGuards() {
+void testChromeExportPreflight() {
+    const fuse::profiler::ChromeExportPreflight emptyPreflight = fuse::profiler::preflightChromeExport();
+    expectTrue(emptyPreflight.canExport, "empty preflight allows export");
+    expectTrue(emptyPreflight.bufferEmpty, "empty preflight reports empty buffer");
+    expectTrue(!emptyPreflight.hasEvents, "empty preflight reports no events");
+    expectTrue(emptyPreflight.eventCount == 0u, "empty preflight reports zero event count");
+    expectTrue(emptyPreflight.scopeNestingBalanced, "empty preflight reports balanced scope nesting");
+    expectTrue(emptyPreflight.flowNestingBalanced, "empty preflight reports balanced flow nesting");
+    expectTrue(!emptyPreflight.hasOpenAsyncFlows, "empty preflight reports no open async flows");
+    const fuse::profiler::ChromeExportPreflight activePreflight = fuse::profiler::preflightChromeExport();
+    expectTrue(activePreflight.canExport, "active preflight allows export");
+    expectTrue(!activePreflight.bufferEmpty, "active preflight reports non-empty buffer");
+    expectTrue(activePreflight.hasEvents, "active preflight reports events");
+    expectTrue(activePreflight.eventCount >= 4u, "active preflight reports recorded event count");
+    expectTrue(activePreflight.scopeNestingBalanced, "ended scope leaves nesting balanced in preflight");
+    expectTrue(!activePreflight.flowNestingBalanced, "unmatched flow leaves flow nesting unbalanced in preflight");
+    expectTrue(activePreflight.hasOpenAsyncFlows, "unmatched flow reports open async flows in preflight");
+    testChromeExportPreflight();
