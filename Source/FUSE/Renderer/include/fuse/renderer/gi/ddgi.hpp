@@ -398,6 +398,29 @@ enum class ProbeScheduleRejectReason : u8 {
     ZeroMaxIndices,
 };
 
+/// Why probe scheduling preflight rejected the request (B5.6 deepen).
+enum class ProbeScheduleRejectReason : u8 {
+    None = 0,
+    NullOutputIndices,
+    NullOutputCount,
+    ZeroProbeCount,
+    ZeroMaxIndices,
+};
+
+/// Human-readable label for probe-schedule reject reasons (logging / tests).
+const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason);
+
+/// Why a sample-request preflight rejected the request (B5.6 deepen).
+enum class SampleRequestRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    NotSampleable,
+    UndersizedCache,
+};
+
+/// Human-readable label for sample-request reject reasons (logging / tests).
+const char* sampleRequestRejectReasonLabel(SampleRequestRejectReason reason);
+
 /// Why a host probe-update launch preflight rejected the request (B5.6 deepen).
 enum class ProbeUpdateLaunchRejectReason : u8 {
     NullIndices,
@@ -624,6 +647,7 @@ struct ProbeGridLayout {
                                               ProbeSampleCoordsRejectReason& outReason);
     /// Grid-only sample-coord preflight without reject-reason diagnostics.
     static bool canPreflightProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// Early-out when sample-coord validation would reject — same ordering as `isValidProbeSampleCoords`.
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
@@ -836,7 +860,6 @@ bool trySampleCacheAtIndex(const DDGIDesc& desc,
 /// Read irradiance at probe grid coord with guard preflight.
 bool trySampleCacheAtCoord(const DDGIDesc& desc,
 /// True when `probe_index` is out of grid range or exceeds `cache_count`.
-bool isCacheIndexOutOfRange(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
 /// Diagnose why cache-index preflight would reject; vacuously succeeds on valid lookups.
 bool tryIsCacheIndexValid(const DDGIDesc& desc,
 /// Diagnose why a cache-index guard would reject; vacuously succeeds when valid.
@@ -886,7 +909,6 @@ bool tryValidateCacheLookup(const DDGIDesc& desc,
 bool wouldSkipCacheIndexValidation(const DDGIDesc& desc,
                                    u32 probe_index);
 /// Diagnose why cache-index preflight would reject, including null-cache guard.
-bool tryValidateCacheIndex(const DDGIDesc& desc,
 /// Classify cache-index reject including null-cache guard.
 /// Early-out when cache-index preflight would reject.
 bool wouldSkipCacheIndex(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
@@ -903,6 +925,9 @@ bool wouldClampCacheIndex(const DDGIDesc& desc, u32 probe_index, u32 cache_count
 /// Diagnose why cache-index preflight would reject, including null-cache detection.
 /// Early-out when cache-index lookup would be rejected — same ordering as `isCacheIndexValid`.
 /// Early-out when cache-index lookup would be rejected, including null-cache detection.
+/// Combined probe-index + cache pointer guard for cache lookups.
+bool isCacheIndexValid(const DDGIDesc& desc,
+/// Diagnose why cache-index preflight would reject, including null-cache check.
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
     /// True when `probe_index` is out of range for the grid or exceeds `cache_count`.
     bool isCacheIndexOutOfRange(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
@@ -921,6 +946,9 @@ bool tryIsValidSampleRequest(const DDGIDesc& desc,
 /// Diagnose why sample-request preflight would reject; vacuously succeeds on valid requests.
 bool tryValidateSampleRequest(const DDGIDesc& desc,
                               SampleRequestRejectReason& outReason);
+/// Early-out when sample-request preflight would reject — same ordering as `isValidSampleRequest`.
+bool wouldSkipSampleRequest(const DDGIDesc& desc,
+                            u32 cache_count);
 fuse::math::Vec3 probeWorldPosition(const DDGIDesc& desc, u32 probe_index);
 /// World position after `clampProbeIndex` — safe for OOB scheduling indices.
 fuse::math::Vec3 probeWorldPositionClamped(const DDGIDesc& desc, u32 probe_index);
@@ -982,7 +1010,6 @@ bool preflightProbeScheduleAtRate(u32 probe_count,
 /// Rate-aware schedule preflight with mandatory reject-reason output (B5.6 deepen pass).
 bool tryPreflightProbeScheduleAtRate(u32 probe_count,
 /// Schedule probe updates with reject-reason diagnostics; false when preflight rejects.
-/// Preflight guard before probe round-robin scheduling.
 bool canScheduleProbeUpdates(u32 probe_count,
 bool wouldSkipProbeSchedule(u32 probe_count,
                              const u32* out_count);
@@ -993,6 +1020,9 @@ bool wouldSkipProbeSchedule(u32 probe_count,
 ProbeScheduleRejectReason classifyProbeScheduleReject(u32 probe_count,
 /// Early-out when probe scheduling preflight would reject.
 /// Schedule with reject-reason diagnostics; leaves buffers unchanged on reject.
+/// Preflight guard before probe scheduling; false on null outputs or zero capacity.
+bool canScheduleProbeUpdates(u32 probe_count, u32 max_indices, const u32* out_indices, const u32* out_count);
+bool wouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_indices, const u32* out_count);
 bool tryScheduleProbeUpdates(u32 frame_index,
                              u32 probe_count,
                              u32 probes_per_frame,

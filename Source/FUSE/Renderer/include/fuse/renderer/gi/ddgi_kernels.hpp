@@ -112,6 +112,7 @@ const char* probeKernelResourceRejectReasonLabel(ProbeKernelResourceRejectReason
 /// Preflight guard before probe trace kernel launch.
 bool canLaunchProbeTraceKernel(const DDGIKernelParams& params);
 /// Early-out when probe trace launch would be rejected.
+/// Early-out when probe trace launch would be rejected — same ordering as `canLaunchProbeTraceKernel`.
 bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
 /// Diagnose why probe trace launch preflight would reject.
 bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
@@ -119,6 +120,7 @@ bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRej
 /// Preflight guard before probe blend kernel launch.
 bool canLaunchProbeBlendKernel(const DDGIKernelParams& params);
 /// Early-out when probe blend launch would be rejected.
+/// Early-out when probe blend launch would be rejected — same ordering as `canLaunchProbeBlendKernel`.
 bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
 /// Diagnose why probe blend launch preflight would reject.
 bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);

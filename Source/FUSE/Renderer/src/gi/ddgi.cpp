@@ -27,6 +27,36 @@ const char* probeSampleCoordsRejectReasonLabel(ProbeSampleCoordsRejectReason rea
     return "unknown";
 }
 
+const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason) {
+    switch (reason) {
+    case ProbeScheduleRejectReason::None:
+        return "none";
+    case ProbeScheduleRejectReason::NullOutputIndices:
+        return "null_output_indices";
+    case ProbeScheduleRejectReason::NullOutputCount:
+        return "null_output_count";
+    case ProbeScheduleRejectReason::ZeroProbeCount:
+        return "zero_probe_count";
+    case ProbeScheduleRejectReason::ZeroMaxIndices:
+        return "zero_max_indices";
+    }
+    return "unknown";
+}
+
+const char* sampleRequestRejectReasonLabel(SampleRequestRejectReason reason) {
+    switch (reason) {
+    case SampleRequestRejectReason::None:
+        return "none";
+    case SampleRequestRejectReason::EmptyGrid:
+        return "empty_grid";
+    case SampleRequestRejectReason::NotSampleable:
+        return "not_sampleable";
+    case SampleRequestRejectReason::UndersizedCache:
+        return "undersized_cache";
+    }
+    return "unknown";
+}
+
 const char* cacheIndexRejectReasonLabel(CacheIndexRejectReason reason) {
     switch (reason) {
     case CacheIndexRejectReason::None:
@@ -644,6 +674,11 @@ bool ProbeGridLayout::tryPreflightProbeSampleCoords(const DDGIDesc& desc,
 }
 
 bool ProbeGridLayout::wouldClampProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
+bool ProbeGridLayout::wouldSkipProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
+    return !isValidProbeSampleCoords(desc, coords);
+}
+
+bool ProbeGridLayout::tryClampProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCoords& coords) {
     if (isEmptyGrid(desc)) {
         return false;
     }
@@ -1930,6 +1965,8 @@ bool wouldSkipCacheIndexLookup(const DDGIDesc& desc, u32 probe_index, u32 cache_
 bool wouldSkipCacheIndexLookup(const DDGIDesc& desc,
                                u32 cache_count) {
     return !tryValidateCacheIndex(desc, cache, probe_index, cache_count, reason);
+bool isCacheIndexValid(const DDGIDesc& desc,
+    return tryValidateCacheIndex(desc, cache, probe_index, cache_count, reason);
 
 bool isValidSampleRequest(const DDGIDesc& desc,
                           const DDGISampleRequest& /*request*/,
@@ -2098,6 +2135,32 @@ bool tryValidateSampleRequest(const DDGIDesc& desc,
     return tryValidateSampleRequest(desc, request, cache_count, reason);
 }
 
+bool tryValidateSampleRequest(const DDGIDesc& desc,
+                              const DDGISampleRequest& /*request*/,
+                              u32 cache_count,
+                              SampleRequestRejectReason& outReason) {
+    if (ProbeGridLayout::isEmptyGrid(desc)) {
+        outReason = SampleRequestRejectReason::EmptyGrid;
+        return false;
+    }
+    if (!canSampleProbeGrid(desc)) {
+        outReason = SampleRequestRejectReason::NotSampleable;
+        return false;
+    }
+    if (!isCacheSizedForGrid(desc, cache_count)) {
+        outReason = SampleRequestRejectReason::UndersizedCache;
+        return false;
+    }
+    outReason = SampleRequestRejectReason::None;
+    return true;
+}
+
+bool wouldSkipSampleRequest(const DDGIDesc& desc,
+                            const DDGISampleRequest& request,
+                            u32 cache_count) {
+    return !isValidSampleRequest(desc, request, cache_count);
+}
+
 fuse::math::Vec3 probeWorldPosition(const DDGIDesc& desc, u32 probe_index) {
     if (ProbeGridLayout::isEmptyGrid(desc)) {
         return desc.grid_origin;
@@ -2187,6 +2250,20 @@ bool canScheduleProbeUpdates(u32 probe_count,
 
 bool wouldSkipProbeSchedule(u32 probe_count,
     return !canScheduleProbeUpdates(probe_count, probes_per_frame, out_indices, max_indices, out_count);
+
+bool probeSchedulePreflight(u32 probe_count,
+        outReason = ProbeScheduleRejectReason::NullOutputIndices;
+        outReason = ProbeScheduleRejectReason::NullOutputCount;
+
+
+bool canScheduleProbeUpdates(u32 probe_count, u32 max_indices, const u32* out_indices, const u32* out_count) {
+    return probeSchedulePreflight(probe_count, max_indices, out_indices, out_count, reason);
+
+bool wouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_indices, const u32* out_count) {
+    return !canScheduleProbeUpdates(probe_count, max_indices, out_indices, out_count);
+
+    if (!probeSchedulePreflight(probe_count, max_indices, out_indices, out_count, outReason)) {
+
 
 void scheduleProbeUpdates(u32 frame_index,
                           u32* out_count) {
@@ -3093,6 +3170,10 @@ bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params) {
     return !canLaunchProbeTraceKernel(params);
 }
 
+bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params) {
+    return !canLaunchProbeTraceKernel(params);
+}
+
 bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
     return tryCanLaunchProbeTraceKernel(params, outReason);
     if (!tryCanLaunchProbeTraceKernel(params, outReason)) {
@@ -3257,6 +3338,19 @@ bool tryCanLaunchProbeBlendKernelWithResources(const DDGIKernelParams& params,
 
 bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params) {
     return !canLaunchProbeTraceKernel(params);
+}
+
+bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params) {
+    return !canLaunchProbeBlendKernel(params);
+}
+
+bool tryLaunch_probe_trace_kernel(const DDGIKernelParams& params,
+                                  void* cuda_stream,
+                                  ProbeKernelRejectReason& outReason) {
+    if (!tryCanLaunchProbeTraceKernel(params, outReason)) {
+        return false;
+    }
+    return launch_probe_trace_kernel(params, cuda_stream);
 }
 
 bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params) {
@@ -3437,6 +3531,7 @@ bool tryLaunch_probe_blend_kernel(const DDGIKernelParams& params,
         return false;
     }
     return launch_probe_blend_kernel(params, cuda_stream);
+}
 
 bool launch_probe_blend_kernel(const DDGIKernelParams& params, void* cuda_stream) {
     if (!canLaunchProbeBlendKernel(params)) {
