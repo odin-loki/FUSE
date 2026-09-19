@@ -24,6 +24,22 @@ enum class CounterValueKind : u8 {
     Float,
 };
 
+/// Why a profiler record attempt would be skipped — same ordering as `wouldSkip*` helpers (B1.6 deepen).
+enum class ProfileRecordSkipReason : u8 {
+    None = 0,
+    ProfilerDisabled,
+    NullName,
+    EmptyName,
+    OrphanAsyncFlowEnd,
+};
+
+/// Classify invalid event names for diagnostics (B1.6 deepen).
+enum class InvalidNameReason : u8 {
+    None = 0,
+    Null,
+    Empty,
+};
+
 struct ProfileEvent {
     const char* name = nullptr;
     u64 timestampNs = 0;
@@ -58,12 +74,88 @@ struct ChromeTraceExportPreflight {
     bool ringBufferFull = false;
     bool hasInvalidNameEvents = false;
     bool crossThreadFlowHandoffPending = false;
+    u32 beginEventCount = 0;
+    u32 endEventCount = 0;
+    u32 flowStartEventCount = 0;
+    u32 flowFinishEventCount = 0;
+    u32 counterEventCount = 0;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
     bool hasUnbalancedNesting() const { return scopeNestingUnbalanced || flowNestingUnbalanced; }
     bool canExportSafely() const {
         return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending;
+    }
+};
+
+/// Read-only scope record preflight — safe to call before constructing `ProfileScope` (B1.6 deepen).
+struct ProfileScopePreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool nullName = false;
+    bool emptyName = false;
+    u32 activeScopeNestingDepth = 0;
+    u32 projectedScopeNestingDepth = 0;
+
+    bool canRecord() const { return !profilerDisabled && !invalidName; }
+};
+
+/// Read-only async flow begin preflight (B1.6 deepen).
+struct AsyncFlowBeginPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool nullName = false;
+    bool emptyName = false;
+    u32 activeScopeNestingDepth = 0;
+    u32 activeFlowNestingDepth = 0;
+    u32 projectedFlowNestingDepth = 0;
+    u32 projectedOpenAsyncFlowCount = 0;
+
+    bool canRecord() const { return !profilerDisabled && !invalidName; }
+};
+
+/// Read-only async flow end preflight (B1.6 deepen).
+struct AsyncFlowEndPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool nullName = false;
+    bool emptyName = false;
+    bool orphanFinish = false;
+    u32 activeScopeNestingDepth = 0;
+    u32 activeFlowNestingDepth = 0;
+    u32 openAsyncFlowCount = 0;
+
+    bool canRecord() const { return !profilerDisabled && !invalidName && !orphanFinish; }
+};
+
+/// Read-only counter sample preflight (B1.6 deepen).
+struct CounterSamplePreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool nullName = false;
+    bool emptyName = false;
+    u32 activeScopeNestingDepth = 0;
+    u32 activeFlowNestingDepth = 0;
+
+    bool canRecord() const { return !profilerDisabled && !invalidName; }
+};
+
+/// Read-only nesting/async-flow balance preflight (B1.6 deepen).
+struct NestingPreflight {
+    u32 activeScopeNestingDepth = 0;
+    u32 activeFlowNestingDepth = 0;
+    u32 openAsyncFlowCount = 0;
+    u32 maxScopeNestingDepth = 0;
+    u32 maxFlowNestingDepth = 0;
+    bool scopeNestingBalanced = true;
+    bool flowNestingBalanced = true;
+    bool flowDepthDetached = false;
+    bool crossThreadFlowHandoffPending = false;
+
+    bool hasUnbalancedNesting() const { return !scopeNestingBalanced || !flowNestingBalanced; }
+    bool canRecordNestedWork() const {
+        return scopeNestingBalanced && flowNestingBalanced && !flowDepthDetached
+            && !crossThreadFlowHandoffPending;
     }
 };
 
@@ -110,6 +202,15 @@ bool isBufferEmpty();
 bool isBufferFull();
 bool isEventIndexValid(u32 index);
 bool isValidEventName(const char* name);
+bool isNullEventName(const char* name);
+bool isEmptyEventName(const char* name);
+InvalidNameReason classifyInvalidNameReason(const char* name);
+ProfileRecordSkipReason classifyProfileScopeSkip(const char* name);
+ProfileRecordSkipReason classifyAsyncFlowBeginSkip(const char* name);
+ProfileRecordSkipReason classifyAsyncFlowEndSkip(const char* name);
+ProfileRecordSkipReason classifyCounterSampleSkip(const char* track);
+const char* profileRecordSkipReasonLabel(ProfileRecordSkipReason reason);
+const char* invalidNameReasonLabel(InvalidNameReason reason);
 bool isValidProfileEvent(const ProfileEvent& event);
 bool isProfileEventSentinel(const ProfileEvent& event);
 u32 invalidNameEventCount();
@@ -121,6 +222,14 @@ u32 lastEventIndex();
 u32 findFirstEventIndexByPhase(EventPhase phase);
 u32 findLastEventIndexByPhase(EventPhase phase);
 u32 countEventsByPhase(EventPhase phase);
+bool tryFindFirstEventIndexByPhase(EventPhase phase, u32& outIndex);
+bool tryFindLastEventIndexByPhase(EventPhase phase, u32& outIndex);
+bool tryFindFirstEventIndexByName(const char* name, u32& outIndex);
+bool tryFindLastEventIndexByName(const char* name, u32& outIndex);
+bool tryFindFirstFlowEventIndexById(u32 flowId, u32& outIndex);
+bool tryFindLastFlowEventIndexById(u32 flowId, u32& outIndex);
+bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent);
+bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
@@ -131,6 +240,20 @@ const ProfileEvent& lastEvent();
 void reset();
 
 ChromeTraceExportPreflight preflightChromeTraceExport();
+ProfileScopePreflight preflightProfileScope(const char* name);
+AsyncFlowBeginPreflight preflightAsyncFlowBegin(const char* name, u32 flowId);
+AsyncFlowEndPreflight preflightAsyncFlowEnd(const char* name, u32 flowId);
+CounterSamplePreflight preflightCounterSample(const char* track);
+NestingPreflight preflightNesting();
+
+bool wouldSkipProfileScope(const char* name, ProfileRecordSkipReason* reason = nullptr);
+bool wouldSkipAsyncFlowBegin(const char* name, ProfileRecordSkipReason* reason = nullptr);
+bool wouldSkipAsyncFlowEnd(const char* name, ProfileRecordSkipReason* reason = nullptr);
+bool wouldSkipCounterSample(const char* track, ProfileRecordSkipReason* reason = nullptr);
+bool tryPreflightProfileScope(const char* name, ProfileScopePreflight& outPreflight);
+bool tryPreflightAsyncFlowBegin(const char* name, u32 flowId, AsyncFlowBeginPreflight& outPreflight);
+bool tryPreflightAsyncFlowEnd(const char* name, u32 flowId, AsyncFlowEndPreflight& outPreflight);
+bool tryPreflightCounterSample(const char* track, CounterSamplePreflight& outPreflight);
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();
