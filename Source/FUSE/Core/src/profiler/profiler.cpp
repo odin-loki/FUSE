@@ -373,6 +373,19 @@ bool isAsyncFlowEventForId(const ProfileEvent& event, u32 flowId) {
 
 } // namespace
 
+bool eventNameMatches(const ProfileEvent& event, const char* name) {
+    return isValidEventName(name) && isValidEventName(event.name) && std::strcmp(event.name, name) == 0;
+}
+
+bool eventFlowIdMatches(const ProfileEvent& event, u32 flowId) {
+    if (flowId == 0u) {
+        return false;
+    }
+
+    return (event.phase == EventPhase::FlowStart || event.phase == EventPhase::FlowFinish)
+        && event.scopeId == flowId;
+}
+
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
       m_active(g_enabled.load(std::memory_order_acquire) && isValidEventName(name)) {
@@ -1927,6 +1940,17 @@ bool tryLastExportableEvent(ProfileEvent& outEvent) {
         if (tryExportableEventAt(i - 1u, outEvent)) {
 
 
+
+
+
+bool tryFindFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByFlowId(flowId);
+
+
+bool tryFindLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+    const u32 index = findLastEventIndexByFlowId(flowId);
+
+
 bool tryFirstEvent(ProfileEvent& outEvent) {
     const u32 index = firstEventIndex();
         outEvent = ProfileEvent{};
@@ -2875,6 +2899,21 @@ bool tryFindFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
 
 
 bool tryFindLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+
+
+        if (eventNameMatches(eventAt(i), name)) {
+
+
+        if (eventNameMatches(eventAt(i - 1u), name)) {
+
+
+
+
+        if (eventFlowIdMatches(eventAt(i), flowId)) {
+
+
+        if (eventFlowIdMatches(eventAt(i - 1u), flowId)) {
+
 
 
 u32 lastEventIndex() {

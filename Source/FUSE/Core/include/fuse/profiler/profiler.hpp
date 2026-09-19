@@ -221,6 +221,11 @@ struct ChromeTraceExportPreflight {
     bool hasUnbalancedNesting() const { return scopeNestingUnbalanced || flowNestingUnbalanced; }
     bool canExportWithEvents() const { return canExport() && hasExportableEvents(); }
     bool canExportNonEmptyTrace() const { return canExport() && hasExportableEvents(); }
+    bool hasPairedScopeEventsInBuffer() const { return scopeBeginEventCount == scopeEndEventCount; }
+    bool hasPairedFlowEventsInBuffer() const { return flowStartEventCount == flowFinishEventCount; }
+    bool hasConsistentEventPairsInBuffer() const {
+        return hasPairedScopeEventsInBuffer() && hasPairedFlowEventsInBuffer();
+    }
     bool canExportSafely() const {
         return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending
             && !ringBufferFull && !hasInvalidNameEvents;
@@ -560,6 +565,8 @@ struct NestingStatePreflight {
 
         return canExportSafely() && !hasInvalidNameEvents && !ringBufferFull && droppedEventCount == 0u;
         return canExportSafely() && !hasInvalidNameEvents && !ringBufferFull && !hasUnbalancedBufferedFlowPairs;
+    bool canExportSafelyWithConsistentBuffer() const {
+        return canExportSafely() && hasConsistentEventPairsInBuffer();
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -952,6 +959,8 @@ bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent);
 bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent);
 bool tryFirstExportableEvent(ProfileEvent& outEvent);
 bool tryLastExportableEvent(ProfileEvent& outEvent);
+bool tryFindFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent);
+bool tryFindLastEventByFlowId(u32 flowId, ProfileEvent& outEvent);
 bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
 bool tryFirstEventByName(const char* name, ProfileEvent& outEvent);
