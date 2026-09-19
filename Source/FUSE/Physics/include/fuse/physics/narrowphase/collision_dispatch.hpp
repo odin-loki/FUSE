@@ -4,6 +4,7 @@
 #include <fuse/physics/config.hpp>
 #include <fuse/physics/math.hpp>
 #include <fuse/physics/narrowphase/contact_buffer.hpp>
+#include <fuse/physics/narrowphase/contact_pair.hpp>
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
 #include <fuse/physics/narrowphase/contact_pair.hpp>
 #include <fuse/physics/physics_data.hpp>
@@ -510,5 +511,27 @@ NarrowphaseBufferDispatchPreflight preflight_narrowphase_buffer_dispatch(
 
 /// Returns true when narrowphase buffer finalize should be skipped (B4.6 deepen pass).
 bool can_skip_narrowphase_buffer_finalize(
+/// Const preflight for narrowphase-into-buffer dispatch (B4.6 deepen pass).
+
+
+/// Populate into-buffer preflight without mutating the contact buffer (B4.6 deepen pass).
+FUSE_PHYSICS_INLINE NarrowphaseIntoBufferPreflight preflight_narrowphase_into_buffer(
+    const CollisionShapeSoA& shapes) {
+    NarrowphaseIntoBufferPreflight preflight{};
+    preflight.batch = preflight_narrowphase_batch(pairs, bodies, shapes);
+    preflight.skipped = preflight.batch.can_skip();
+    return preflight;
+
+/// Returns true when narrowphase-into-buffer should early-out (B4.6 deepen pass).
+FUSE_PHYSICS_INLINE bool can_skip_narrowphase_into_buffer(
+    return preflight_narrowphase_into_buffer(pairs, bodies, shapes).can_skip();
+
+/// Narrowphase into buffer only when batch preflight reports dispatchable pairs (B4.6 deepen pass).
+FUSE_PHYSICS_INLINE void runNarrowphaseIntoBufferIfNeeded(
+    ContactBufferSoA& buffer) {
+    if (can_skip_narrowphase_into_buffer(pairs, bodies, shapes)) {
+        buffer.clear();
+        return;
+    runNarrowphaseIntoBuffer(pairs, bodies, shapes, buffer);
 
 } // namespace fuse::physics::narrowphase

@@ -874,5 +874,14 @@ bool should_run_rebuild_friction_basis_if_needed(const ContactManifold& manifold
 
 /// Returns true when preflight-guarded friction-basis rebuild may proceed (B4.6 deepen pass).
 bool should_run_rebuild_friction_basis_with_preflight(
+/// Returns true when `rebuild_friction_basis_with_preflight` would be a no-op (B4.6 deepen pass).
+inline bool can_skip_rebuild_friction_basis_with_preflight(
+    f32 epsilon = 1e-4f) {
+    return preflight_friction_basis_rebuild(manifold, epsilon).can_skip_rebuild();
+
+/// Returns true when `compute_friction_tangents_if_needed` would be a no-op (B4.6 deepen pass).
+inline bool can_skip_compute_friction_tangents_if_needed(
+    return should_skip_friction_tangents(manifold) ||
+           can_skip_friction_basis_rebuild(manifold, epsilon);
 
 } // namespace fuse::physics::narrowphase
