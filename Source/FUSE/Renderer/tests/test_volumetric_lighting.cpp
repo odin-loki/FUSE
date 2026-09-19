@@ -2983,3 +2983,20 @@ void testFroxelPreflightHelperGuards() {
                "preflightPopulateFromAnalyticFog rejects empty desc");
                "preflightPopulateFromAnalyticFog reports empty_desc");
     testFroxelPreflightHelperGuards();
+
+// --- deepen additive from deepen-b511-froxel-guards-ca59 ---
+void testFroxelTrilinearSkipAndWouldSkipGuards() {
+    expectTrue(!fuse::renderer::froxel_util::wouldSkipDensityLookupAtIndex(grid, desc, 999u),
+    expectTrue(!fuse::renderer::froxel_util::wouldSkipDensityLookupAtCoord(grid, desc, 0u, 0u, 0u),
+    expectTrue(!fuse::renderer::froxel_util::wouldSkipFroxelTrilinearSample(grid, desc, inBounds),
+    expectTrue(fuse::renderer::froxel_util::tryCanSampleTrilinearAtCoords(grid, desc, warnWeights, trilinearReason),
+               "tryCanSampleTrilinearAtCoords succeeds when weights will be clamped");
+    expectTrue(!fuse::renderer::froxel_util::tryCanSampleTrilinearAtCoords(grid, desc, hardOob, trilinearReason),
+               "tryCanSampleTrilinearAtCoords rejects hard OOB tile coord");
+    expectTrue(fuse::renderer::froxel_util::wouldSkipFroxelTrilinearSample(grid, desc, hardOob),
+    expectTrue(!fuse::renderer::froxel_util::tryCanSampleTrilinearAtCoords(grid, zeroDesc, inBounds, trilinearReason),
+               "tryCanSampleTrilinearAtCoords rejects empty froxel desc");
+               "valid populate inputs do not skip via wouldSkipFroxelPopulate");
+               "empty desc skips via wouldSkipFroxelPopulate");
+               "zero density skips via wouldSkipFroxelPopulate");
+               "invalid camera skips via wouldSkipFroxelPopulate");

@@ -2019,3 +2019,9 @@ bool tryValidatePopulateResult(const FroxelDensityGrid& grid,
 // --- deepen additive from deepen-b511-froxel-preflights-e22d ---
     const bool ok = tryCanLookupAtCoord(grid, desc, tileX, tileY, sliceZ, localReason);
     const bool ok = tryCanSampleAtCoords(grid, desc, coords, localReason);
+
+// --- deepen additive from deepen-b511-froxel-guards-ca59 ---
+    return tryCanSampleTrilinearAtCoords(grid, desc, coords, reason);
+        outReason = sampleReason == SampleCoordRejectReason::OutOfBounds
+                        ? FroxelTrilinearSampleRejectReason::HardOutOfBounds
+    return !tryCanSampleTrilinearAtCoords(grid, desc, coords, reason);
