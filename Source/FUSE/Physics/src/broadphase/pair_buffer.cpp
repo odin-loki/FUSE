@@ -1167,3 +1167,6 @@ PairBufferWritePreflight preflightPairBufferWrite(const PairBufferSoA& buffer, u
     case PairBufferInvalidateRejectReason::NoSlotStorage:
         return PairBufferInvalidateRejectReason::NoSlotStorage;
     preflight.noSlotStorage = preflight.reason == PairBufferInvalidateRejectReason::NoSlotStorage;
+
+// --- deepen additive from b4-broadphase-deepen-guards-ed9f ---
+PairBufferInvalidatePreflight preflightPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {

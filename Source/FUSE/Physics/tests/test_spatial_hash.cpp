@@ -3977,3 +3977,13 @@ void testMergePairsIntoBufferExtendedPreflightGuards() {
     expectEq(mixedPreflight.invalidPairCount, 1u, "merge preflight reports invalid pair count");
     testRefinePairSlotRejectReasonGuards();
     testMergePairsIntoBufferExtendedPreflightGuards();
+
+// --- deepen additive from b4-broadphase-deepen-guards-ed9f ---
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferInvalidateRejectReason(buffer, 4u)),
+void testCellOccupancyForParamsGuards() {
+void testDedupeBroadphasePairBufferPreflightParity() {
+void testMergePairsIntoBufferPreflightFields() {
+    expectTrue(!fullPreflight.canMerge(), "merge preflight rejects when buffer is full");
+    expectTrue(fullPreflight.bufferFull, "full merge preflight marks bufferFull");
+    testDedupeBroadphasePairBufferPreflightParity();
+    testMergePairsIntoBufferPreflightFields();
