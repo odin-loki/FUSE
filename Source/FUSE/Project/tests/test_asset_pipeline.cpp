@@ -1914,3 +1914,6 @@ int main() {
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
+
+// --- deepen additive from deepen-b79-cooker-hash-e7c4 ---
+void testCombineCookCacheKeyZeroSourceGuard() {
