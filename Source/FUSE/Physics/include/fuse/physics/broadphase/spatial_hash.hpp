@@ -906,7 +906,6 @@ enum class CellSpanRejectReason : u8 {
     EmptyRange,
     ExceedsMaxSpan,
 /// Why a clamped cell span cannot drive occupancy iteration (B4.2 deepen pass).
-};
 
 /// Human-readable label for cell-span reject reasons (logging / tests).
 const char* cellSpanRejectReasonName(CellSpanRejectReason reason);
@@ -951,34 +950,15 @@ FUSE_PHYSICS_INLINE bool shouldRunCellSpanClamp(const CellRange3& range, u32 max
 
 FUSE_PHYSICS_INLINE bool shouldRunCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis) {
 /// Diagnose why cell-span clamp would reject; vacuously succeeds on clampable ranges.
-FUSE_PHYSICS_INLINE CellSpanRejectReason cellSpanRejectReason(const CellRange3& range, u32 maxSpanPerAxis) {
-    if (isEmptyCellRange(range)) {
-        return CellSpanRejectReason::EmptyRange;
-    }
     if (maxSpanPerAxis > 0u) {
         const ivec3 span = cellSpanPerAxis(range);
         if (span.x > static_cast<s32>(maxSpanPerAxis) || span.y > static_cast<s32>(maxSpanPerAxis) ||
             span.z > static_cast<s32>(maxSpanPerAxis)) {
-    return CellSpanRejectReason::None;
 
-FUSE_PHYSICS_INLINE CellSpanRejectReason cellSpanRejectReason(const CellRange2& range, u32 maxSpanPerAxis) {
-            return CellSpanRejectReason::ExceedsMaxSpan;
-        }
 
-    if (isEmptyCellRange(range)) {
-        return CellSpanRejectReason::EmptyRange;
 
-    if (maxSpanPerAxis > 0u) {
-        const ivec2 span = cellSpanPerAxis(range);
         if (span.x > static_cast<s32>(maxSpanPerAxis) || span.y > static_cast<s32>(maxSpanPerAxis)) {
-            return CellSpanRejectReason::ExceedsMaxSpan;
-        }
 
-    if (isEmptyCellRange(range)) {
-        return CellSpanRejectReason::EmptyRange;
-    if (maxSpanPerAxis > 0u) {
-    }
-    return CellSpanRejectReason::None;
 
 /// Returns true when `cellSpanRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool cellSpanRejectsForReason(
@@ -994,7 +974,6 @@ FUSE_PHYSICS_INLINE bool cellSpanRejectsForReason(
 
 
 /// True when any axis span exceeds `maxSpanPerAxis` (0 = unlimited clamp stub).
-    const ivec3 span = cellSpanPerAxis(range);
     return span.x > static_cast<s32>(maxSpanPerAxis) || span.y > static_cast<s32>(maxSpanPerAxis) ||
            span.z > static_cast<s32>(maxSpanPerAxis);
 
@@ -1016,15 +995,9 @@ FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellRange3& range, 
 
 FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellRange2& range, u32 maxCells) {
 
-/// Why cell-span clamp preflight rejected the range (B4.2 deepen follow-up pass).
 
 
-/// Diagnose why cell-span clamp would reject; vacuously succeeds on clampable ranges.
-    if (maxSpanPerAxis > 0u) {
-        if (span.x > static_cast<s32>(maxSpanPerAxis) || span.y > static_cast<s32>(maxSpanPerAxis) ||
-            span.z > static_cast<s32>(maxSpanPerAxis)) {
 
-        if (span.x > static_cast<s32>(maxSpanPerAxis) || span.y > static_cast<s32>(maxSpanPerAxis)) {
 
 
 
@@ -1265,6 +1238,15 @@ const char* broadphaseShapeInsertRejectReasonName(BroadphaseShapeInsertRejectRea
 
 /// Diagnose why shape→cell insertion would skip; vacuously succeeds when insertion may proceed.
 BroadphaseShapeInsertRejectReason broadphaseShapeInsertRejectReason(
+/// Why shape→cell insertion would early-out (B4.2 deepen pass).
+enum class CellShapeInsertRejectReason : u8 {
+    OccupancyRejected,
+
+/// Human-readable label for shape→cell insert reject reasons (logging / tests).
+const char* cellShapeInsertRejectReasonName(CellShapeInsertRejectReason reason);
+
+/// Diagnose why shape→cell insertion would skip; vacuously succeeds when insert may proceed.
+CellShapeInsertRejectReason cellShapeInsertRejectReason(
     u32 shapeIndex,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
@@ -1527,6 +1509,30 @@ u32 estimateCellPairCount(const std::vector<u32>& occupants);
 enum class CellPairGenRejectReason : u8 {
     EmptyOccupants,
     InsufficientOccupants,
+/// Returns true when `cellShapeInsertRejectReason` matches `expected` (B4.2 deepen pass).
+bool cellShapeInsertRejectsForReason(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    CellShapeInsertRejectReason expected);
+
+/// Read-only shape→cell insert diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct CellShapeInsertPreflight {
+    CellShapeInsertRejectReason reason = CellShapeInsertRejectReason::None;
+    bool occupancyRejected = false;
+
+    bool canInsert() const { return reason == CellShapeInsertRejectReason::None; }
+
+CellShapeInsertPreflight preflightShapeCellInsert(
+    bool use2D);
+
+bool canSkipShapeCellInsert(
+
+bool shouldRunShapeCellInsert(
+
+/// Why per-cell pair generation would early-out (B4.2 deepen pass).
+    SingleOccupant,
 
 /// Human-readable label for cell-pair generation reject reasons (logging / tests).
 const char* cellPairGenRejectReasonName(CellPairGenRejectReason reason);
@@ -1536,6 +1542,11 @@ CellPairGenRejectReason cellPairGenRejectReason(const std::vector<u32>& occupant
 
 /// Returns true when `cellPairGenRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 bool cellPairGenRejectsForReason(const std::vector<u32>& occupants, CellPairGenRejectReason expected);
+/// Diagnose why cell-pair generation would skip; vacuously succeeds when generation may proceed.
+CellPairGenRejectReason cellPairGenRejectReason(u32 occupantCount);
+
+/// Returns true when `cellPairGenRejectReason` matches `expected` (B4.2 deepen pass).
+bool cellPairGenRejectsForReason(u32 occupantCount, CellPairGenRejectReason expected);
 
 /// Read-only cell-pair generation diagnostics — no mutation (B4.2 deepen follow-up pass).
 struct CellPairGenPreflight {
@@ -1583,8 +1594,6 @@ FUSE_PHYSICS_INLINE CellSpanPreflight2D preflightCellSpan(const CellRange2& rang
 /// Non-mutating cell-span predicate — true when clamp would shrink an over-span range (B4.2 deepen follow-up pass).
     return maxSpanPerAxis > 0u && cellSpanRejectReason(range, maxSpanPerAxis) == CellSpanRejectReason::ExceedsMaxSpan;
 
-    return preflight;
-}
 
 FUSE_PHYSICS_INLINE bool canSkipCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis) {
 
@@ -1604,7 +1613,6 @@ enum class CellPairGenRejectReason : u8 {
     SingletonOccupant,
     EmptyOccupants,
     SingleOccupant,
-};
 
 /// Human-readable label for cell-pair-gen reject reasons (logging / tests).
 const char* cellPairGenRejectReasonName(CellPairGenRejectReason reason);
@@ -1626,25 +1634,28 @@ struct CellPairGenPreflight {
     CellPairGenRejectReason reason = CellPairGenRejectReason::None;
     bool singletonOccupant = false;
     u32 occupantCount = 0;
-    u32 estimatedPairCount = 0;
 
-    bool canGenerate() const { return reason == CellPairGenRejectReason::None; }
     bool emptyOccupants = false;
     bool singleOccupant = false;
     u32 uniqueBodyCount = 0;
 
-};
 
-CellPairGenPreflight preflightCellPairGen(const std::vector<u32>& occupants);
 
 /// Non-mutating cell-pair-gen skip predicate — inverse of `canGenerate` (B4.2 deepen follow-up pass).
-bool canSkipCellPairGen(const std::vector<u32>& occupants);
 
 /// Non-mutating cell-pair-gen predicate — mirrors `preflightCellPairGen` (B4.2 deepen follow-up pass).
-bool shouldRunCellPairGen(const std::vector<u32>& occupants);
 
 /// Unique-body pair count for a cell occupant list (0 when fewer than two occupants).
 u32 countPairsForOccupants(const std::vector<u32>& occupants);
+
+
+CellPairGenPreflight preflightCellPairGen(u32 occupantCount);
+
+/// Non-mutating cell-pair generation skip predicate — inverse of `canGenerate` (B4.2 deepen pass).
+bool canSkipCellPairGeneration(u32 occupantCount);
+
+/// Non-mutating cell-pair generation predicate — mirrors `preflightCellPairGen` (B4.2 deepen pass).
+bool shouldRunCellPairGeneration(u32 occupantCount);
 
 /// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).
 FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {
