@@ -1100,3 +1100,7 @@ const char* lightGridRebuildRejectReasonLabel(LightGridRebuildRejectReason reaso
 
 // --- deepen additive from deepen-b5-clustered-lights-18c4 ---
     return tryRebuildLightGrid(grid, desc, clusterCount, perClusterLights, maxLightsPerCluster, outReason);
+
+// --- deepen additive from deepen-b5-clustered-guards-c3bf ---
+    case LightGridRebuildRejectReason::ClusterCountMismatch:
+        outReason = LightGridRebuildRejectReason::ClusterCountMismatch;

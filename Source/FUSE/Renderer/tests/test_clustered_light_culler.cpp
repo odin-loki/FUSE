@@ -1776,3 +1776,16 @@ void testLightGridRebuildPreflightGuards() {
     expectTrue(fuse::renderer::cluster_util::tryCanLookupAtCoord(grid, desc, lookupReason),
     expectTrue(!fuse::renderer::cluster_util::tryCanLookupAtCoord(emptyGrid, desc, lookupReason),
     expectTrue(!fuse::renderer::cluster_util::tryCanLookupAtCoord(grid, mismatched, lookupReason),
+
+// --- deepen additive from deepen-b5-clustered-guards-c3bf ---
+void testClusterScreenMappingAndRebuildPreflights() {
+    expectTrue(legacyIndex == clusterIndex, "legacy mapping matches tryMap output on valid path");
+    expectTrue(rebuildReason == fuse::renderer::LightGridRebuildRejectReason::ClusterCountMismatch,
+               "canRebuild delegates to tryCanRebuild on valid path");
+               "canRebuild delegates to tryCanRebuild on invalid path");
+void testClusterCoordLookupPreflights() {
+    expectTrue(tryCoordCount == 2u, "tryLookup with reason reports cluster light count");
+    expectTrue(rejectedCoordCount == 0u, "tryLookup with reason zeroes count on failure");
+    expectTrue(rejectedCoordLights.empty(), "tryLookup with reason clears output on failure");
+    testClusterScreenMappingAndRebuildPreflights();
+    testClusterCoordLookupPreflights();
