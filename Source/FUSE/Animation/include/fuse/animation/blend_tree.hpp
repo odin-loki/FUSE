@@ -311,6 +311,9 @@ struct AnimStateMachine : BlendNode {
 
     /// Global index of the first outgoing edge from `from_state`, or -1 when none exist.
     s32 first_outgoing_transition_index(u32 from_state) const;
+
+
+    /// True while crossfading and `pending_state` is a registered state index.
 };
 
 } // namespace fuse::animation
