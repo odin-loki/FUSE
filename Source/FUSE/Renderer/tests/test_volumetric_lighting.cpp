@@ -1974,3 +1974,51 @@ void testFroxelDensityValidationAndSampleGuardDeepen() {
     expectNear(coordReasonSample, 1.f, 1e-5f, "trySample at coord with reason returns origin density");
     expectTrue(fuse::renderer::froxel_util::trySampleDensityBilinear(grid, desc, inBounds, bilinearReasonSample,
                "trySampleDensityAtScreen with reason matches unguarded screen sample");
+
+// --- deepen additive from froxel-volumetric-guards-000f ---
+void testFroxelDeepenGuardPreflights() {
+    fuse::renderer::FroxelCameraRejectReason cameraReason = fuse::renderer::FroxelCameraRejectReason::None;
+    expectTrue(fuse::renderer::FroxelSliceLayout::tryValidateCamera(camera, cameraReason),
+               "tryValidateCamera accepts valid camera");
+    expectTrue(cameraReason == fuse::renderer::FroxelCameraRejectReason::None, "valid camera reports no reject reason");
+    expectTrue(!fuse::renderer::FroxelSliceLayout::tryValidateCamera(invalidNear, cameraReason),
+               "tryValidateCamera rejects zero near plane");
+    expectTrue(cameraReason == fuse::renderer::FroxelCameraRejectReason::InvalidNearPlane,
+    expectTrue(std::strcmp(fuse::renderer::froxelCameraRejectReasonLabel(cameraReason), "invalid_near_plane") == 0,
+    expectTrue(!fuse::renderer::FroxelSliceLayout::tryValidateCamera(invertedRange, cameraReason),
+               "tryValidateCamera rejects inverted depth range");
+    expectTrue(cameraReason == fuse::renderer::FroxelCameraRejectReason::InvertedDepthRange,
+    fuse::renderer::FroxelGridRejectReason gridReason = fuse::renderer::FroxelGridRejectReason::None;
+    expectTrue(fuse::renderer::froxel_util::tryValidateFroxelGridDesc(desc, gridReason),
+    expectTrue(gridReason == fuse::renderer::FroxelGridRejectReason::None, "valid desc reports no grid reject reason");
+    expectTrue(!fuse::renderer::froxel_util::tryValidateFroxelGridDesc(zeroY, gridReason),
+    expectTrue(gridReason == fuse::renderer::FroxelGridRejectReason::EmptyTilesY,
+    expectTrue(std::strcmp(fuse::renderer::froxelGridRejectReasonLabel(gridReason), "empty_tiles_y") == 0,
+    fuse::renderer::FroxelScreenMappingRejectReason mappingReason =
+        fuse::renderer::FroxelScreenMappingRejectReason::None;
+               "tryMapScreenDepthToSampleCoords succeeds on valid inputs");
+    expectTrue(mappingReason == fuse::renderer::FroxelScreenMappingRejectReason::None,
+               "tryMap rejects depth below near plane");
+    expectTrue(mappingReason == fuse::renderer::FroxelScreenMappingRejectReason::DepthBelowNear,
+    expectTrue(std::strcmp(fuse::renderer::froxelScreenMappingRejectReasonLabel(mappingReason), "depth_below_near") ==
+               "tryMap rejects invalid camera");
+    expectTrue(mappingReason == fuse::renderer::FroxelScreenMappingRejectReason::InvalidCamera,
+               "tryMapScreenDepthToFroxelIndex succeeds on valid inputs");
+    expectTrue(fuse::renderer::FroxelGridLayout::tryValidateSampleCoords(inBounds, desc, coordReason),
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryValidateSampleCoords(badTile, desc, coordReason),
+    expectTrue(coordReason == fuse::renderer::SampleCoordRejectReason::TileOutOfRange,
+    expectTrue(std::strcmp(fuse::renderer::sampleCoordRejectReasonLabel(coordReason), "tile_out_of_range") == 0,
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryValidateSampleCoords(badWeight, desc, coordReason),
+    expectTrue(coordReason == fuse::renderer::SampleCoordRejectReason::WeightOutOfRange,
+    expectTrue(fuse::renderer::froxel_util::tryCanLookupAtIndexInRange(grid, desc, 0u, lookupReason),
+    expectTrue(!fuse::renderer::froxel_util::tryCanLookupAtIndexInRange(grid, desc, 999u, lookupReason),
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityTrilinearInBounds(
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityTrilinearInBounds(
+    expectTrue(!fuse::renderer::froxel_util::tryValidateGridDensity(grid, mismatched, densityReason),
+    fuse::renderer::FroxelGridRejectReason populateGridReason = fuse::renderer::FroxelGridRejectReason::None;
+    fuse::renderer::FroxelCameraRejectReason populateCameraReason = fuse::renderer::FroxelCameraRejectReason::None;
+               "tryPopulate succeeds on valid inputs");
+    expectTrue(populateGrid.density.size() == desc.froxelCount(), "tryPopulate fills froxel grid");
+               "tryPopulate rejects empty grid desc without modifying grid");
+    expectTrue(populateGridReason == fuse::renderer::FroxelGridRejectReason::EmptyTilesY,
+    testFroxelDeepenGuardPreflights();

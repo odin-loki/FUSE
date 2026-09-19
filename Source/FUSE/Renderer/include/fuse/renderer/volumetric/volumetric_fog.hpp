@@ -611,3 +611,20 @@ bool trySampleDensityTrilinearAtCoords(const FroxelDensityGrid& grid,
 
 // --- deepen additive from deepen-b511-froxel-guards-0e8b ---
 bool tryValidateSampleCoords(const FroxelSampleCoords& coords,
+
+// --- deepen additive from froxel-volumetric-guards-000f ---
+enum class FroxelCameraRejectReason : u8 {
+const char* froxelCameraRejectReasonLabel(FroxelCameraRejectReason reason);
+    static bool tryValidateCamera(const FroxelCameraDesc& camera, FroxelCameraRejectReason& outReason);
+enum class FroxelGridRejectReason : u8 {
+const char* froxelGridRejectReasonLabel(FroxelGridRejectReason reason);
+enum class FroxelScreenMappingRejectReason : u8 {
+const char* froxelScreenMappingRejectReasonLabel(FroxelScreenMappingRejectReason reason);
+    static bool tryValidateSampleCoords(const FroxelSampleCoords& coords,
+                                                FroxelScreenMappingRejectReason& outReason);
+bool tryValidateFroxelGridDesc(const FroxelGridDesc& desc, FroxelGridRejectReason& outReason);
+bool tryCanLookupAtIndexInRange(const FroxelDensityGrid& grid,
+bool trySampleDensityBilinearInBounds(const FroxelDensityGrid& grid,
+bool trySampleDensityTrilinearInBounds(const FroxelDensityGrid& grid,
+                                FroxelGridRejectReason& outGridReason,
+                                FroxelCameraRejectReason& outCameraReason);

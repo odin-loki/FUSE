@@ -1505,3 +1505,58 @@ bool trySampleDensityTrilinearAtCoords(const FroxelDensityGrid& grid,
     case GridDensityRejectReason::EmptyGrid:
         outReason = GridDensityRejectReason::EmptyGrid;
 bool tryValidateSampleCoords(const FroxelSampleCoords& coords,
+
+// --- deepen additive from froxel-volumetric-guards-000f ---
+const char* froxelCameraRejectReasonLabel(FroxelCameraRejectReason reason) {
+    case FroxelCameraRejectReason::None:
+    case FroxelCameraRejectReason::InvalidNearPlane:
+    case FroxelCameraRejectReason::InvalidFarPlane:
+    case FroxelCameraRejectReason::InvertedDepthRange:
+    FroxelCameraRejectReason reason = FroxelCameraRejectReason::None;
+    return tryValidateCamera(camera, reason);
+bool FroxelSliceLayout::tryValidateCamera(const FroxelCameraDesc& camera, FroxelCameraRejectReason& outReason) {
+        outReason = FroxelCameraRejectReason::InvalidNearPlane;
+        outReason = FroxelCameraRejectReason::InvalidFarPlane;
+        outReason = FroxelCameraRejectReason::InvertedDepthRange;
+    outReason = FroxelCameraRejectReason::None;
+const char* froxelGridRejectReasonLabel(FroxelGridRejectReason reason) {
+    case FroxelGridRejectReason::None:
+    case FroxelGridRejectReason::EmptyTilesX:
+    case FroxelGridRejectReason::EmptyTilesY:
+    case FroxelGridRejectReason::EmptySlicesZ:
+    case SampleCoordRejectReason::TileOutOfRange:
+    case SampleCoordRejectReason::WeightOutOfRange:
+const char* froxelScreenMappingRejectReasonLabel(FroxelScreenMappingRejectReason reason) {
+    case FroxelScreenMappingRejectReason::None:
+    case FroxelScreenMappingRejectReason::EmptyGrid:
+    case FroxelScreenMappingRejectReason::InvalidCamera:
+    case FroxelScreenMappingRejectReason::DepthBelowNear:
+    case FroxelScreenMappingRejectReason::DepthAboveFar:
+bool FroxelGridLayout::tryValidateSampleCoords(const FroxelSampleCoords& coords,
+        outReason = SampleCoordRejectReason::TileOutOfRange;
+        outReason = SampleCoordRejectReason::WeightOutOfRange;
+                                                       FroxelScreenMappingRejectReason& outReason) {
+        outReason = FroxelScreenMappingRejectReason::EmptyGrid;
+    FroxelCameraRejectReason cameraReason = FroxelCameraRejectReason::None;
+    if (!FroxelSliceLayout::tryValidateCamera(camera, cameraReason)) {
+        outReason = FroxelScreenMappingRejectReason::InvalidCamera;
+        outReason = FroxelScreenMappingRejectReason::DepthBelowNear;
+        outReason = FroxelScreenMappingRejectReason::DepthAboveFar;
+    outReason = FroxelScreenMappingRejectReason::None;
+bool tryValidateFroxelGridDesc(const FroxelGridDesc& desc, FroxelGridRejectReason& outReason) {
+        outReason = FroxelGridRejectReason::EmptyTilesX;
+        outReason = FroxelGridRejectReason::EmptyTilesY;
+        outReason = FroxelGridRejectReason::EmptySlicesZ;
+    outReason = FroxelGridRejectReason::None;
+    return tryCanLookupAtIndexInRange(grid, desc, index, reason);
+bool tryCanLookupAtIndexInRange(const FroxelDensityGrid& grid,
+bool trySampleDensityBilinearInBounds(const FroxelDensityGrid& grid,
+    if (!tryCanLookupAtIndexInRange(grid, desc, 0u, outReason)) {
+    if (!FroxelGridLayout::tryValidateSampleCoords(coords, desc, coordReason)) {
+bool trySampleDensityTrilinearInBounds(const FroxelDensityGrid& grid,
+                                FroxelGridRejectReason& outGridReason,
+                                FroxelCameraRejectReason& outCameraReason) {
+    outGridReason = FroxelGridRejectReason::None;
+    outCameraReason = FroxelCameraRejectReason::None;
+    if (!tryValidateFroxelGridDesc(desc, outGridReason)) {
+    if (!FroxelSliceLayout::tryValidateCamera(camera, outCameraReason)) {
