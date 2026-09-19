@@ -185,6 +185,10 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason) {
         return "empty_dependency_list";
     case CookHashRejectReason::ZeroSourceHash:
         return "zero_source_hash";
+    case CookHashRejectReason::UnknownDependency:
+        return "unknown_dependency";
+    case CookHashRejectReason::UnsupportedKind:
+        return "unsupported_kind";
     }
     return "unknown";
 }
@@ -247,6 +251,10 @@ CookHashPreflight preflight_audio_import_hash(const AudioImportDesc& desc) {
 }
 
 CookHashPreflight preflight_manifest_entry_hash(const CookManifestEntry& entry) {
+    if (entry.kind == CookAssetKind::Shader) {
+        return preflight_shader_manifest_hash(entry);
+    }
+
     CookHashPreflight preflight;
     if (entry.source_path.empty()) {
         preflight.reason = CookHashRejectReason::EmptyInputPath;
@@ -257,6 +265,18 @@ CookHashPreflight preflight_manifest_entry_hash(const CookManifestEntry& entry) 
         return preflight;
     }
     return preflight_file_content_hash(entry.source_path);
+}
+
+CookHashPreflight preflight_shader_manifest_hash(const CookManifestEntry& entry) {
+    CookHashPreflight preflight;
+    if (entry.kind != CookAssetKind::Shader) {
+        preflight.can_hash = true;
+        preflight.reason = CookHashRejectReason::None;
+        return preflight;
+    }
+    (void)entry;
+    preflight.reason = CookHashRejectReason::UnsupportedKind;
+    return preflight;
 }
 
 CookHashPreflight preflight_upstream_dependencies_hash(const std::vector<std::string>& dependency_output_paths,
@@ -278,14 +298,20 @@ CookHashPreflight preflight_upstream_dependencies_hash(const std::vector<std::st
         if (dependency_output.empty()) {
             continue;
         }
+        bool found = false;
         for (const CookManifestEntry& asset : manifest.assets) {
             if (asset.output_path == dependency_output) {
+                found = true;
                 const CookHashPreflight source_preflight = preflight_file_content_hash(asset.source_path);
                 if (!source_preflight.can_hash) {
                     return source_preflight;
                 }
                 break;
             }
+        }
+        if (!found) {
+            preflight.reason = CookHashRejectReason::UnknownDependency;
+            return preflight;
         }
     }
 

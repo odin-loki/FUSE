@@ -18,6 +18,8 @@ enum class CookHashRejectReason : u8 {
     SourceUnreadable,
     EmptyDependencyList,
     ZeroSourceHash,
+    UnknownDependency,
+    UnsupportedKind,
 };
 
 /// Read-only hash preflight — mirrors empty-input guards without computing keys (B7.9 deepen).
@@ -70,5 +72,7 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size);
 /// Fold source/upstream preflight — upstream zero is allowed on valid source keys (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
+/// Shader manifest entries are not hashable in the stub cook path (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_shader_manifest_hash(const CookManifestEntry& entry);
 
 } // namespace fuse::project
