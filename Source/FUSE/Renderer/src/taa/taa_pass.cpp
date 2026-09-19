@@ -966,6 +966,15 @@ bool TaaPass::invalidateHistoryIfStale(u32 observedGeneration) {
     if (invalidated) {
         m_resolve.resetBookkeeping();
     return invalidated;
+}
+
+
+TaaHistoryWarmupPreflight TaaPass::preflightHistoryWarmup() const {
+    return preflightTaaHistoryWarmup(m_history);
+
+
+TaaResolveBlendPreflight TaaPass::preflightResolveBlend(const TaaResolveDesc& desc) const {
+    return preflightTaaResolveBlend(desc, m_history);
 
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
     return m_resolve.wouldSkip(desc, m_history, reason);

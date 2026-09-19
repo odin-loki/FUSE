@@ -447,6 +447,12 @@ public:
     bool shouldSkipTemporalResolve(const TaaResolveDesc& desc) const;
     /// Invalidate history when `observedGeneration` differs from the current epoch (B5.9 deepen).
     bool invalidateHistoryIfStale(u32 observedGeneration);
+    /// Early-out when pass jitter sync would be rejected (B5.9 deepen follow-up).
+    /// True when pass jitter can produce NDC offsets for the configured viewport (B5.9 deepen follow-up).
+    /// Early-out when pass jitter NDC production would be rejected (B5.9 deepen follow-up).
+    /// Populate history warm-up diagnostics without mutating pass state (B5.9 deepen follow-up).
+    /// Early-out when pass history still needs warm-up (B5.9 deepen follow-up).
+    /// Populate resolve blend diagnostics without mutating pass state (B5.9 deepen follow-up).
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;

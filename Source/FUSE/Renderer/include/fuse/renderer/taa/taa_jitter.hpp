@@ -155,6 +155,11 @@ bool tryComputeTaaJitterNdcOffset(u32 frameIndex, u32 width, u32 height, u32 seq
                                   fuse::math::Vec2& outOffset, TaaJitterGuardRejectReason& reason);
 /// Early-out when jitter sync would be rejected for the sequence (B5.9 deepen).
 bool shouldSkipTaaJitterSync(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen follow-up).
+/// Early-out when jitter sync to a frame counter would be rejected (B5.9 deepen follow-up).
+/// Early-out when NDC jitter production would be rejected (B5.9 deepen follow-up).
+/// True when jitter can advance for the given sequence (B5.9 deepen follow-up).
+/// Early-out when jitter advance would be rejected (B5.9 deepen follow-up).
 
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {

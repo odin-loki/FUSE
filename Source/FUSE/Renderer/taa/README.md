@@ -158,6 +158,27 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaPass::preflightJitterNdc` / `shouldSkipJitterSync` / `shouldSkipJitterNdc` — pass-level jitter skip/preflight helpers
 - `TaaPass::invalidateHistoryIfStale(observedGeneration)` — invalidate when observed epoch differs; resets resolve bookkeeping
 
+## History warm-up preflight (B5.9 deepen follow-up)
+
+- `taaHistoryWarmupComplete(history)` — true when history is allocated and warmed
+- `TaaHistoryWarmupPreflight` — read-only warm-up diagnostics (`history_ready`, `needs_warmup`, `warmup_frames_remaining`)
+- `preflightTaaHistoryWarmup(history)` / `tryPreflightTaaHistoryWarmup` — populate warm-up diagnostics without mutation
+- `shouldSkipTaaHistoryWarmup(history)` — early-out when history still needs warm-up
+- `TaaPass::preflightHistoryWarmup()` / `shouldSkipHistoryWarmup()` — pass-level warm-up preflight wrappers
+
+## Jitter sync/NDC shouldSkip (B5.9 deepen follow-up)
+
+- `shouldSkipTaaJitterSync(frame, length)` / `shouldSkipTaaJitterNdc(w, h, length)` — early-out inverses of jitter preflights
+- `tryPreflightTaaJitterNdc(w, h, length, reason)` — NDC preflight with mandatory reject-reason output
+- `preflightTaaJitterAdvance(length)` / `shouldSkipTaaJitterAdvance(length)` — advance guard preflights
+- `TaaPass::shouldSkipJitterSync(frame)` / `preflightJitterNdc()` / `shouldSkipJitterNdc()` — pass-level jitter preflight wrappers
+
+## Resolve blend preflight struct (B5.9 deepen follow-up)
+
+- `TaaResolveBlendPreflight` — read-only blend diagnostics (`weights`, `reject_reason`, `can_apply`, `appliesHistoryBlend()`)
+- `preflightTaaResolveBlend(desc, history)` — populate blend diagnostics without mutation
+- `TaaPass::preflightResolveBlend(desc)` — pass-level resolve blend preflight wrapper
+
 ## Pipeline (stub)
 
 `jitter → gbuffer (velocity) → resolve → history swap`

@@ -240,6 +240,9 @@ bool tryComputeTaaJitterNdcOffset(u32 frameIndex, u32 width, u32 height, u32 seq
         return false;
     outOffset = TaaJitterLayout::ndcOffsetForFrameIndex(frameIndex, width, height, sequenceLength);
     return true;
+    return preflightTaaJitterSync(0u, sequenceLength, reason);
+
+    return shouldSkipTaaJitterSync(0u, sequenceLength);
 
 bool TaaJitterLayout::validateSequenceLength(u32 length) {
     return length > 0u && length <= kTaaMaxJitterSequenceLength;
