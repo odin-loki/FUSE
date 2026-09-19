@@ -246,6 +246,25 @@ bool preflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistor
     return reject == TaaResolveBlendRejectReason::None;
 }
 
+bool preflightTaaHistoryReuseForResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                        TaaHistoryReuseBlockReason* reason) {
+    const u32 observedGeneration = taaResolveBypassesHistoryGenerationGuard(desc)
+                                       ? history.invalidateGeneration()
+                                       : desc.observed_history_generation;
+    return preflightTaaHistoryReuse(history, observedGeneration, reason);
+}
+
+bool preflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                              TaaResolveSkipReason* skipReason, TaaResolveBlendRejectReason* blendRejectReason) {
+    if (!preflightTaaResolve(desc, history, skipReason)) {
+        if (blendRejectReason != nullptr) {
+            *blendRejectReason = TaaResolveBlendRejectReason::None;
+        }
+        return false;
+    }
+    return preflightTaaResolveBlendWeights(desc, history, blendRejectReason);
+}
+
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaHistoryCanReuse(history)) {
         return false;
