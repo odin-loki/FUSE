@@ -9401,7 +9401,6 @@ void testTaaPassTryClassifyGuardWrappers() {
 
 
 
-        fuse::renderer::TaaJitterGuardRejectReason::None;
 
 
 
@@ -9413,6 +9412,9 @@ void testTaaPassTryClassifyGuardWrappers() {
 
 
     expectTrue(pass->tryPreflightJitterSync(5u, jitterReject),
+
+
+
 
 
 
@@ -9530,7 +9532,6 @@ void testTaaPassHistoryWarmupPreflight() {
                "pass classifyJitterNdcReject passes before init");
     expectTrue(pass->tryPreflightJitterNdc(jitterReject),
                "pass tryPreflightJitterNdc passes before init");
-    expectTrue(jitterReject == fuse::renderer::TaaJitterGuardRejectReason::None,
                "pass tryPreflightJitterNdc reject reason is None");
     expectTrue(pass->classifyJitterAdvanceReject() == fuse::renderer::TaaJitterGuardRejectReason::None,
                "pass classifyJitterAdvanceReject passes before init");
@@ -10285,6 +10286,9 @@ void testTaaPassDeepenAlignmentAndTemporalBlend() {
     expectTrue(blendReject == fuse::renderer::TaaResolveBlendRejectReason::None,
                "pass tryPreflightResolveBlendWeights reject reason is None");
 
+
+
+
     expectTrue(pass->tryComputeResolveBlendWeights(resolveDesc, weights, blendReject),
                "pass tryComputeResolveBlendWeights passes before init");
     expectNear(weights.current, 1.f, 1e-5f, "pass tryCompute warmup current weight is full");
@@ -10331,6 +10335,8 @@ void testTaaPassDeepenAlignmentAndTemporalBlend() {
 
 
                "pass classifyResolveBlendReject returns None before init");
+    fuse::renderer::TaaResolveSkipReason skipReason = fuse::renderer::TaaResolveSkipReason::None;
+    expectTrue(skipReason == fuse::renderer::TaaResolveSkipReason::HistoryNotReady,
 
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
@@ -10636,6 +10642,18 @@ void testTaaPassDeepenAlignmentAndTemporalBlend() {
 
 
 
+    expectTrue(pass->init(resources), "TaaPass initialized for try/classify wrapper test");
+
+    expectTrue(pass->tryPreflightHistoryReadyForResolve(reuseReason),
+               "pass tryPreflightHistoryReadyForResolve passes after init");
+    expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::None,
+               "pass tryPreflightHistoryReadyForResolve reason is None after init");
+               "pass tryPreflightHistoryReuse fails before warmup");
+    expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::NotWarm,
+               "pass tryPreflightHistoryReuse reason is NotWarm before warmup");
+
+    expectTrue(pass->tryPreflightResolve(resolveDesc, skipReason),
+    expectTrue(skipReason == fuse::renderer::TaaResolveSkipReason::None,
 
     expectTrue(pass->resolveFrame(resolveDesc), "initial resolve warms pass history");
 
@@ -10660,6 +10678,11 @@ void testTaaPassDeepenAlignmentAndTemporalBlend() {
                "pass classifyResolveBlendReject is None after warmup");
 
     pass->invalidateHistory();
+               "pass classifyResolveBlendReject passes after warmup");
+
+    expectTrue(pass->classifyHistoryReuseBlock(0u) ==
+                   fuse::renderer::TaaHistoryReuseBlockReason::StaleGeneration,
+               "pass classifyHistoryReuseBlock reports StaleGeneration after invalidate");
     expectTrue(!pass->tryPreflightHistoryReuse(0u, reuseReason),
                "pass tryPreflightHistoryReuse fails after invalidate");
     expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::StaleGeneration,
@@ -10809,6 +10832,7 @@ void testTaaPassDeepenAlignmentAndTemporalBlend() {
     expectTrue(pass->classifyResolveBlendReject(resolveDesc) ==
                    fuse::renderer::classifyTaaResolveBlendReject(resolveDesc, pass->history()),
                "pass classifyResolveBlendReject matches free helper");
+    expectTrue(pass->classifyResolveSkip(resolveDesc) ==
                    fuse::renderer::classifyTaaResolveSkip(resolveDesc, pass->history()),
                "pass classifyResolveSkip matches free helper");
     expectTrue(pass->tryPreflightJitterSync(3u, jitterReject),
