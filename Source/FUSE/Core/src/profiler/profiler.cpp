@@ -339,8 +339,8 @@ u32 exportableEventCount() {
     for (u32 i = 0u; i < count; ++i) {
         if (isValidProfileEvent(eventAt(i))) {
             ++exportable;
-        }
     return exportable;
+
 
 u32 maxNestingDepth() {
     return g_maxNestingDepth.load(std::memory_order_acquire);
@@ -1144,6 +1144,16 @@ bool tryLastEvent(ProfileEvent& outEvent) {
     return tryEventAt(index, outEvent);
 }
 
+bool tryLastEvent(ProfileEvent& outEvent) {
+    const u32 index = lastEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
+}
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     return count > 0u ? count - 1u : kInvalidEventIndex;
@@ -1201,9 +1211,6 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
         if (isValidEventName(eventAt(i).name)) {
             ++preflight.exportableEventCount;
         }
-    }
-    preflight.frameIndex = frameIndex();
-    preflight.openAsyncFlowCount = openAsyncFlowCount();
     preflight.bufferEmpty = isBufferEmpty();
     preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
@@ -1219,7 +1226,6 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.orphanAsyncFlowEndCount = orphanAsyncFlowEndCount();
     preflight.hasOrphanAsyncFlowEnds = hasOrphanAsyncFlowEnds();
     return preflight;
-}
 
 ProfileScopePreflight preflightProfileScope(const char* name) {
     ProfileScopePreflight preflight{};
@@ -1320,7 +1326,6 @@ ChromeExportPreflight preflightChromeExport() {
     for (u32 i = 0; i < preflight.eventCount; ++i) {
         const ProfileEvent& event = eventAt(i);
         if (isValidProfileEvent(event)) {
-            ++preflight.exportableEventCount;
         } else {
             ++preflight.skippedInvalidNameCount;
 
@@ -1352,13 +1357,13 @@ bool isExportEmpty() {
     preflight.unbalancedFlowNesting = !isFlowNestingBalanced();
     preflight.bufferTruncated = isBufferFull();
     for (u32 i = 0u; i < count; ++i) {
-        if (isValidEventName(eventAt(i).name)) {
 
 bool hasExportableEvents() {
     return exportableEventCount() > 0u;
 
 bool isChromeTraceExportEmpty() {
     return !hasExportableEvents();
+
 
 
 
