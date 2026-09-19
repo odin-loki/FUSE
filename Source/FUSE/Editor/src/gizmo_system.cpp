@@ -5544,43 +5544,21 @@ GizmoSnapDragRejectReason classifySnapDragReject(const SnapDragPreflight& prefli
 GizmoEndDragRejectReason classifyEndDragReject(const EndDragPreflight& preflight) {
     if (preflight.notDragging) {
         return GizmoEndDragRejectReason::NotDragging;
-    }
-    if (preflight.snapDisabled) {
-        return GizmoSnapDragRejectReason::SnapDisabled;
-    }
-    if (preflight.invalidStep) {
-        return GizmoSnapDragRejectReason::InvalidStep;
-    }
-    return GizmoSnapDragRejectReason::None;
-}
 
 GizmoBeginDragRejectReason classifyBeginInteractionReject(
     const BeginInteractionPreflight& preflight) {
     return classifyBeginDragReject(preflight.begin);
-}
 
 GizmoUpdateDragRejectReason classifyUpdateInteractionReject(
     const UpdateInteractionPreflight& preflight) {
     return classifyUpdateDragReject(preflight.update);
-}
 
 GizmoEndDragRejectReason classifyEndInteractionReject(const EndInteractionPreflight& preflight) {
     return classifyEndDragReject(preflight.end);
-}
 
-GizmoSnapDragRejectReason classifySnapDragReject(const SnapDragPreflight& preflight) {
-    if (preflight.deltaNonFinite) {
-        return GizmoSnapDragRejectReason::DeltaNonFinite;
-    }
-    if (preflight.snapDisabled) {
-        return GizmoSnapDragRejectReason::SnapDisabled;
-    if (preflight.invalidStep) {
-        return GizmoSnapDragRejectReason::InvalidStep;
-    return GizmoSnapDragRejectReason::None;
 
 GizmoBeginDragRejectReason classifyBeginDragInteractionReject(
     const BeginDragInteractionPreflight& preflight) {
-    return classifyBeginDragReject(preflight.begin);
 
 GizmoUpdateDragRejectReason classifyUpdateDragInteractionReject(
     const UpdateDragInteractionPreflight& preflight) {
@@ -5588,7 +5566,6 @@ GizmoUpdateDragRejectReason classifyUpdateDragInteractionReject(
 
 GizmoEndDragRejectReason classifyEndDragInteractionReject(
     const EndDragInteractionPreflight& preflight) {
-    return classifyEndDragReject(preflight.end);
 
 
 

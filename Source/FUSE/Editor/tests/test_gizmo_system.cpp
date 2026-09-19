@@ -7582,11 +7582,20 @@ void testSnapDragRejectReasonGuards() {
                "DeltaNonFinite") == 0,
                "snap-drag reject reason label for DeltaNonFinite");
 
+    snap.gridSize = 0.5f;
+    expectTrue(fuse::editor::tryPreflightSnapDrag(0.37f, fuse::editor::GizmoMode::Translate, snap,
+                                                  reason),
+               "tryPreflightSnapDrag accepts valid delta and snap after reset");
+    expectTrue(reason == fuse::editor::GizmoSnapDragRejectReason::None,
+               "valid snap-drag reject reason is None after reset");
     const fuse::editor::SnapDragPreflight nanPreflight = fuse::editor::preflightSnapDrag(
         std::numeric_limits<fuse::f32>::quiet_NaN(), fuse::editor::GizmoMode::Translate, snap);
     expectTrue(fuse::editor::classifySnapDragReject(nanPreflight) ==
                    fuse::editor::GizmoSnapDragRejectReason::DeltaNonFinite,
                "classifySnapDragReject maps deltaNonFinite flag");
+    expectTrue(fuse::editor::shouldSkipSnapDrag(std::numeric_limits<fuse::f32>::infinity(),
+                                                fuse::editor::GizmoMode::Translate, snap),
+               "shouldSkipSnapDrag true for non-finite delta");
 
     fuse::editor::GizmoSystem gizmo;
     gizmo.setSnapSettings(snap);
@@ -10369,17 +10378,11 @@ void testIsSnapDragDegraded() {
 }
 
 void testUpdateDragInteractionSnapDragDegraded() {
-    fuse::editor::GizmoSnapSettings snap{};
-    snap.translateSnap = true;
-    snap.gridSize = 0.f;
 
-    fuse::editor::GizmoHitTest hit = hitFromValidScreen();
     fuse::editor::GizmoSystem gizmo;
     gizmo.setSnapSettings(snap);
-    fuse::editor::GizmoTransform transform{};
     gizmo.beginDrag(hit, transform);
 
-    const fuse::editor::UpdateDragInteractionPreflight degraded =
         gizmo.preflightUpdateDragInteraction(hit, 0.37f);
     expectTrue(degraded.canUpdate(), "update interaction still allows drag with degraded snap");
     expectTrue(degraded.snapDragDegraded(),
@@ -10387,10 +10390,8 @@ void testUpdateDragInteractionSnapDragDegraded() {
     expectTrue(!degraded.snapDragWillApply(),
                "degraded snap-drag does not apply rounding in interaction preflight");
     gizmo.endDrag();
-}
 
 void testUpdateDragInteractionRejectReasonGuards() {
-    snap.gridSize = 0.5f;
 
     fuse::editor::GizmoUpdateDragRejectReason dragReason =
         fuse::editor::GizmoUpdateDragRejectReason::None;
@@ -10405,7 +10406,6 @@ void testUpdateDragInteractionRejectReasonGuards() {
     expectTrue(fuse::editor::shouldSkipUpdateDragInteraction(hit, false,
                "shouldSkipUpdateDragInteraction true when not dragging");
 
-    gizmo.beginDrag(hit, transform);
 
     expectTrue(gizmo.tryPreflightUpdateDragInteraction(hit, 0.37f, dragReason, snapDragReason),
                "gizmo tryPreflightUpdateDragInteraction accepts finite delta");
@@ -10423,7 +10423,6 @@ void testUpdateDragInteractionRejectReasonGuards() {
                                                      std::numeric_limits<fuse::f32>::quiet_NaN());
     expectTrue(fuse::editor::classifyUpdateDragInteractionSnapDragReject(nanInteraction) ==
                "classifyUpdateDragInteractionSnapDragReject maps deltaNonFinite flag");
-    gizmo.endDrag();
 
 void testEndDragInteractionRejectReasonGuards() {
 
