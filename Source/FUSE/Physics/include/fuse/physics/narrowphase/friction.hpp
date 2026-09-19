@@ -95,14 +95,35 @@ bool rebuild_friction_basis_if_needed(ContactManifold& manifold, f32 epsilon = 1
 /// Rebuild friction tangents only when the cached basis is missing or stale (B4.4 deepen pass).
 void compute_friction_tangents_if_needed(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
+/// Why friction-basis rebuild would early-out (B4.4 deepen follow-up pass).
+enum class FrictionBasisRejectReason : u8 {
+    None = 0,
+    EmptyManifold,
+    InvalidNormal,
+};
+
+/// Human-readable label for friction-basis reject reasons (logging / tests).
+const char* friction_basis_reject_reason_name(FrictionBasisRejectReason reason);
+
+/// Diagnose why friction-basis rebuild would skip; vacuously succeeds when rebuild may proceed.
+FrictionBasisRejectReason friction_basis_reject_reason(const ContactManifold& manifold);
+
+/// Returns true when `friction_basis_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
+bool friction_basis_rejects_for_reason(
+    const ContactManifold& manifold,
+    FrictionBasisRejectReason expected);
+
 /// Const preflight for friction-basis rebuild dispatch (B4.4 deepen follow-up).
 struct FrictionBasisPreflight {
+    FrictionBasisRejectReason reason = FrictionBasisRejectReason::None;
     bool skipped = false;
     bool stale = false;
     bool canReuse = false;
     bool needsRebuild = false;
 
-    bool can_skip_rebuild() const { return skipped || canReuse; }
+    bool can_skip_rebuild() const {
+        return reason != FrictionBasisRejectReason::None || skipped || canReuse;
+    }
 };
 
 /// Populate friction-basis preflight without mutating the manifold (B4.4 deepen follow-up).
@@ -114,5 +135,11 @@ FrictionBasisPreflight preflight_friction_basis_rebuild(
 bool should_skip_friction_basis_preflight(
     const ContactManifold& manifold,
     f32 epsilon = 1e-4f);
+
+/// Rebuild friction basis only when preflight allows; returns false when skipped (B4.4 deepen follow-up pass).
+bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Build friction tangents only when preflight allows rebuild (B4.4 deepen follow-up pass).
+void compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase

@@ -348,12 +348,56 @@ ManifoldPrunePreflight preflight_manifold_prune(
     return preflight;
 }
 
+const char* manifold_finalize_reject_reason_name(ManifoldFinalizeRejectReason reason) {
+    switch (reason) {
+    case ManifoldFinalizeRejectReason::None:
+        return "None";
+    case ManifoldFinalizeRejectReason::EmptyManifold:
+        return "EmptyManifold";
+    case ManifoldFinalizeRejectReason::InvalidNormal:
+        return "InvalidNormal";
+    case ManifoldFinalizeRejectReason::NoPenetration:
+        return "NoPenetration";
+    case ManifoldFinalizeRejectReason::EmptyAfterPrune:
+        return "EmptyAfterPrune";
+    }
+    return "Unknown";
+}
+
+ManifoldFinalizeRejectReason manifold_finalize_reject_reason(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) {
+    if (manifold.empty()) {
+        return ManifoldFinalizeRejectReason::EmptyManifold;
+    }
+    if (!manifold.hasValidNormal()) {
+        return ManifoldFinalizeRejectReason::InvalidNormal;
+    }
+    if (manifold.wouldBeEmptyAfterPrune(separationEpsilon, duplicateEpsilon)) {
+        return ManifoldFinalizeRejectReason::EmptyAfterPrune;
+    }
+    if (!manifold.hasPenetratingPoints(separationEpsilon)) {
+        return ManifoldFinalizeRejectReason::NoPenetration;
+    }
+    return ManifoldFinalizeRejectReason::None;
+}
+
+bool manifold_finalize_rejects_for_reason(
+    const ContactManifold& manifold,
+    ManifoldFinalizeRejectReason expected,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) {
+    return manifold_finalize_reject_reason(manifold, separationEpsilon, duplicateEpsilon) == expected;
+}
+
 ManifoldFinalizePreflight preflight_manifold_finalize(
     const ContactManifold& manifold,
     f32 separationEpsilon,
     f32 duplicateEpsilon,
     f32 frictionEpsilon) {
     ManifoldFinalizePreflight preflight{};
+    preflight.reason = manifold_finalize_reject_reason(manifold, separationEpsilon, duplicateEpsilon);
     if (manifold.empty()) {
         preflight.skipped = true;
         return preflight;
@@ -364,15 +408,7 @@ ManifoldFinalizePreflight preflight_manifold_finalize(
     preflight.needsPruning = prunePreflight.needs_pruning();
     preflight.wouldBeEmptyAfterPrune = prunePreflight.wouldBeEmpty;
 
-    if (!manifold.hasValidNormal()) {
-        return preflight;
-    }
-
-    if (preflight.wouldBeEmptyAfterPrune) {
-        return preflight;
-    }
-
-    if (!manifold.hasPenetratingPoints(separationEpsilon)) {
+    if (preflight.reason != ManifoldFinalizeRejectReason::None) {
         return preflight;
     }
 
@@ -380,6 +416,61 @@ ManifoldFinalizePreflight preflight_manifold_finalize(
     preflight.canReuseFrictionBasis = can_skip_friction_basis_rebuild(manifold, frictionEpsilon);
     preflight.needsFrictionBasis = needs_friction_basis_refresh(manifold, frictionEpsilon);
     return preflight;
+}
+
+ManifoldPruneDispatchPreflight preflight_manifold_prune_dispatch(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
+    ManifoldPruneDispatchPreflight preflight{};
+    if (manifold.empty()) {
+        preflight.skipped = true;
+        preflight.wouldBeEmpty = true;
+        return preflight;
+    }
+
+    const ManifoldPrunePreflight regularPreflight =
+        preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon);
+    preflight.needsRegularPrune = regularPreflight.needs_pruning();
+    preflight.wouldBeEmpty = regularPreflight.wouldBeEmpty;
+    if (shallowMinDepth > 0.f) {
+        preflight.needsShallowPrune = manifold.hasShallowPenetrations(shallowMinDepth);
+    }
+    return preflight;
+}
+
+bool can_skip_manifold_prune_dispatch(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
+    return preflight_manifold_prune_dispatch(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth)
+        .can_skip();
+}
+
+bool prune_contact_manifold_if_needed(
+    ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
+    const ManifoldPruneDispatchPreflight preflight =
+        preflight_manifold_prune_dispatch(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+    if (preflight.can_skip()) {
+        return !manifold.empty();
+    }
+
+    if (preflight.needsRegularPrune) {
+        if (!manifold.pruneContactPointsIfNeeded(separationEpsilon, duplicateEpsilon)) {
+            return false;
+        }
+    }
+
+    if (shallowMinDepth > 0.f && preflight.needsShallowPrune) {
+        return manifold.pruneShallowPenetrationsIfNeeded(shallowMinDepth);
+    }
+
+    return !manifold.empty();
 }
 
 bool can_skip_manifold_finalize(
