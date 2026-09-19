@@ -3853,3 +3853,13 @@ void testDdgiTrilinearAndGridPreflightGuards() {
     expectTrue(!fuse::renderer::gi::preflightProbeBlendKernelLaunch(zeroRays),
                "preflightProbeBlendKernelLaunch rejects zero rays");
     testDdgiTrilinearAndGridPreflightGuards();
+
+// --- deepen additive from deepen-ddgi-preflight-guards-f74b ---
+    expectTrue(!fuse::renderer::ddgi_util::preflightTrilinearProbeSample(desc, built, nullptr, 8u),
+               "wouldSkipTrilinearProbeSample true for unordered corners");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(desc, cache.data(), validCoord, 8u),
+               "wouldSkipCacheIndexLookupAtCoord false for valid coord");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(desc, cache.data(), invalidCoord, 8u),
+               "wouldSkipCacheIndexLookupAtCoord true for invalid coord");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(desc, nullptr, validCoord, 8u),
+               "wouldSkipCacheIndexLookupAtCoord true for null cache");
