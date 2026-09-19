@@ -862,6 +862,78 @@ void dedupeBroadphasePairBufferWithPreflight(PairBufferSoA& buffer);
 /// Merge candidate pairs into buffer only when `preflightMergePairsIntoBuffer` allows (B4.2 deepen follow-up pass).
 void mergePairsIntoBufferWithPreflight(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer);
 
+/// Preflight alias for broadphase launch skip checks (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool wouldSkipBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    BroadphaseRejectReason* reason = nullptr) {
+    if (reason != nullptr) {
+        *reason = broadphaseRejectReason(bodies, shapes);
+    }
+    return canSkipBroadphase(bodies, shapes);
+}
+
+/// Shape cell-occupancy preflight using `SpatialHashParams::maxCellOccupancy` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightShapeCellOccupancy(
+    const CellRange3& range,
+    const SpatialHashParams& params) {
+    return preflightCellOccupancy(range, params.maxCellOccupancy);
+}
+
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightShapeCellOccupancy(
+    const CellRange2& range,
+    const SpatialHashParams& params) {
+    return preflightCellOccupancy(range, params.maxCellOccupancy);
+}
+
+/// Preflight alias for shape cell-occupancy skip checks (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool wouldSkipShapeCellOccupancy(const CellRange3& range, const SpatialHashParams& params) {
+    return canSkipCellOccupancyIteration(range, params.maxCellOccupancy);
+}
+
+FUSE_PHYSICS_INLINE bool wouldSkipShapeCellOccupancy(const CellRange2& range, const SpatialHashParams& params) {
+    return canSkipCellOccupancyIteration(range, params.maxCellOccupancy);
+}
+
+/// Preflight alias for per-axis cell-span clamp skip checks (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+    return canSkipCellSpanClamp(range, maxSpanPerAxis);
+}
+
+FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+    return canSkipCellSpanClamp(range, maxSpanPerAxis);
+}
+
+FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(const CellRange3& range, const SpatialHashParams& params) {
+    return canSkipCellSpanClamp(range, params.maxCellSpanPerAxis);
+}
+
+FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(const CellRange2& range, const SpatialHashParams& params) {
+    return canSkipCellSpanClamp(range, params.maxCellSpanPerAxis);
+}
+
+/// Preflight alias for refine skip checks (B4.2 deepen pass).
+bool wouldSkipRefineBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer,
+    RefineBroadphaseRejectReason* reason = nullptr);
+
+/// Preflight alias for dedupe skip checks (B4.2 deepen pass).
+bool wouldSkipDedupeBroadphase(const PairBufferSoA& buffer, DedupeBroadphaseRejectReason* reason = nullptr);
+
+/// Preflight alias for plane/dynamic merge skip checks (B4.2 deepen pass).
+bool wouldSkipBroadphaseMerge(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    BroadphaseMergeRejectReason* reason = nullptr);
+
+/// Preflight alias for merge-into-buffer skip checks (B4.2 deepen pass).
+bool wouldSkipMergePairsIntoBuffer(
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer,
+    MergePairsIntoBufferRejectReason* reason = nullptr);
+
 /// CPU stub of the CUDA broad-phase pipeline (B4.2).
 /// Phase 1 jobifies shape→cell insertion; phase 2 jobifies per-cell candidate generation
 /// via `fuse::jobs::parallel_for` (serial when the job scheduler is single-threaded).
