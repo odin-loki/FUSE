@@ -147,3 +147,14 @@ ContactBufferClampRejectReason contact_buffer_clamp_reject_reason(const ContactB
     ContactBufferClampRejectReason expected);
     ContactBufferClampRejectReason reason = ContactBufferClampRejectReason::None;
     bool needsClamp() const { return reason == ContactBufferClampRejectReason::None; }
+
+// --- deepen additive from b4-narrowphase-deepen-guards-046d ---
+const char* contactBufferWriteRejectReasonName(ContactBufferWriteRejectReason reason);
+ContactBufferWriteRejectReason contactBufferWriteRejectReason(
+ContactBufferWritePreflight preflightContactBufferWrite(
+const char* contactBufferCompactionRejectReasonName(ContactBufferCompactionRejectReason reason);
+ContactBufferCompactionRejectReason contactBufferCompactionRejectReason(const ContactBufferSoA& buffer);
+ContactBufferCompactionPreflight preflightContactBufferCompaction(const ContactBufferSoA& buffer);
+const char* contactBufferClampRejectReasonName(ContactBufferClampRejectReason reason);
+ContactBufferClampRejectReason contactBufferClampRejectReason(const ContactBufferSoA& buffer);
+ContactBufferClampPreflight preflightContactBufferClamp(const ContactBufferSoA& buffer);

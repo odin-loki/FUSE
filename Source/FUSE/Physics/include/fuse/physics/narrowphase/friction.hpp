@@ -218,3 +218,9 @@ FrictionBasisRebuildRejectReason friction_basis_rebuild_reject_reason(
 
 // --- deepen additive from deepen-b4-narrowphase-guards-fbc2 ---
     FrictionBasisRebuildRejectReason reason = FrictionBasisRebuildRejectReason::None;
+
+// --- deepen additive from b4-narrowphase-deepen-guards-046d ---
+struct FrictionBasisNormalizePreflight {
+    FrictionBasisPreflight rebuild{};
+FrictionBasisNormalizePreflight preflight_friction_basis_normalize_rebuild(
+bool should_skip_friction_basis_normalize_rebuild(

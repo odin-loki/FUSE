@@ -726,3 +726,8 @@ ManifoldPruneDispatchPreflight preflight_manifold_prune_dispatch(
     case ManifoldPruneRejectReason::CleanManifold:
     if (prunePreflight.can_skip_prune(shallowMinDepth)) {
         return ManifoldPruneRejectReason::CleanManifold;
+
+// --- deepen additive from b4-narrowphase-deepen-guards-046d ---
+ManifoldPruneFinalizePreflight preflight_manifold_prune_finalize(
+    ManifoldPruneFinalizePreflight preflight{};
+bool should_skip_manifold_prune_finalize(

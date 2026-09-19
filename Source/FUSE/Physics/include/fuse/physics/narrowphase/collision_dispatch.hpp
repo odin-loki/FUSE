@@ -201,3 +201,12 @@ std::vector<ContactManifold> runNarrowphase(
     const CollisionShapeSoA& shapes);
 
 } // namespace fuse::physics::narrowphase
+
+// --- deepen additive from b4-narrowphase-deepen-guards-046d ---
+struct NarrowphaseDispatchPreflight {
+    NarrowphaseBatchPreflight batch{};
+    ContactBufferCompactionPreflight compaction{};
+    ContactBufferClampPreflight clamp{};
+        return compaction.reason != ContactBufferCompactionRejectReason::None &&
+               clamp.reason != ContactBufferClampRejectReason::None;
+NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(

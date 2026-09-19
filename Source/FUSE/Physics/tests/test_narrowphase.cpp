@@ -2501,3 +2501,30 @@ void testFrictionBasisRebuildRejectGuards() {
             noNormal, fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::NoValidNormal),
             withBasis, fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::CanReuseBasis),
                 fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::CanReuseBasis),
+
+// --- deepen additive from b4-narrowphase-deepen-guards-046d ---
+void testContactBufferDeepenPassPreflights() {
+        fuse::physics::narrowphase::preflightContactBufferCompaction(buffer);
+            fuse::physics::narrowphase::ContactBufferCompactionRejectReason::EmptyBuffer,
+    const auto writePreflight =
+        fuse::physics::narrowphase::preflightContactBufferWrite(buffer, 0u, valid);
+    expectTrue(writePreflight.canWrite(), "write preflight allows valid manifold");
+            buffer, 99u, valid, fuse::physics::narrowphase::ContactBufferWriteRejectReason::InvalidSlot),
+        fuse::physics::narrowphase::contactBufferWriteRejectReason(buffer, 0u, selfPair) ==
+            fuse::physics::narrowphase::ContactBufferWriteRejectReason::SelfPair,
+        fuse::physics::narrowphase::preflightContactBufferClamp(buffer).reason ==
+            fuse::physics::narrowphase::ContactBufferClampRejectReason::WithinCapacity,
+void testNarrowphaseBatchDeepenPassGuards() {
+    expectTrue(batchPreflight.can_dispatch(), "batch preflight can dispatch mixed list");
+void testManifoldPruneFinalizeCombinedPreflights() {
+        !fuse::physics::narrowphase::should_skip_manifold_prune_finalize(ready),
+void testFrictionBasisNormalizeCombinedPreflights() {
+        !fuse::physics::narrowphase::should_skip_friction_basis_normalize_rebuild(unnormalized),
+        fuse::physics::narrowphase::should_skip_friction_basis_normalize_rebuild(unit),
+void testNarrowphaseDispatchPreflightGuards() {
+    expectTrue(dispatchPreflight.can_dispatch(), "dispatch preflight allows valid pair list");
+    expectTrue(skippedPreflight.skipped, "dispatch preflight skips empty pair list");
+    testContactBufferDeepenPassPreflights();
+    testManifoldPruneFinalizeCombinedPreflights();
+    testFrictionBasisNormalizeCombinedPreflights();
+    testNarrowphaseDispatchPreflightGuards();

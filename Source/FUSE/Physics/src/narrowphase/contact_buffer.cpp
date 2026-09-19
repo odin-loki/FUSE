@@ -460,3 +460,27 @@ ContactBufferClampRejectReason contact_buffer_clamp_reject_reason(const ContactB
     ContactBufferClampRejectReason expected) {
     preflight.emptyBuffer = preflight.reason == ContactBufferClampRejectReason::EmptyBuffer;
     preflight.withinCapacity = preflight.reason == ContactBufferClampRejectReason::WithinCapacity;
+
+// --- deepen additive from b4-narrowphase-deepen-guards-046d ---
+const char* contactBufferWriteRejectReasonName(ContactBufferWriteRejectReason reason) {
+    case ContactBufferWriteRejectReason::InvalidSlot:
+ContactBufferWriteRejectReason contactBufferWriteRejectReason(
+        return ContactBufferWriteRejectReason::InvalidSlot;
+    return contactBufferWriteRejectReason(buffer, slot, manifold) == expected;
+ContactBufferWritePreflight preflightContactBufferWrite(
+    preflight.reason = contactBufferWriteRejectReason(buffer, slot, manifold);
+    preflight.invalidSlot = preflight.reason == ContactBufferWriteRejectReason::InvalidSlot;
+const char* contactBufferCompactionRejectReasonName(ContactBufferCompactionRejectReason reason) {
+ContactBufferCompactionRejectReason contactBufferCompactionRejectReason(const ContactBufferSoA& buffer) {
+    return contactBufferCompactionRejectReason(buffer) == expected;
+ContactBufferCompactionPreflight preflightContactBufferCompaction(const ContactBufferSoA& buffer) {
+    preflight.reason = contactBufferCompactionRejectReason(buffer);
+    return !preflightContactBufferCompaction(buffer).needsCompaction();
+    return preflightContactBufferCompaction(buffer).needsCompaction();
+const char* contactBufferClampRejectReasonName(ContactBufferClampRejectReason reason) {
+ContactBufferClampRejectReason contactBufferClampRejectReason(const ContactBufferSoA& buffer) {
+    return contactBufferClampRejectReason(buffer) == expected;
+ContactBufferClampPreflight preflightContactBufferClamp(const ContactBufferSoA& buffer) {
+    preflight.reason = contactBufferClampRejectReason(buffer);
+    return !preflightContactBufferClamp(buffer).needsClamp();
+    return preflightContactBufferClamp(buffer).needsClamp();

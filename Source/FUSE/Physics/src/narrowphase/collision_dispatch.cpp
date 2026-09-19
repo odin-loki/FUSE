@@ -45,3 +45,9 @@ std::vector<ContactManifold> runNarrowphase(
 
 // --- deepen additive from deepen-b4-narrowphase-guards-7360 ---
         if (should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-046d ---
+NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(
+    NarrowphaseDispatchPreflight preflight{};
+    preflight.compaction = preflightContactBufferCompaction(buffer);
+    preflight.clamp = preflightContactBufferClamp(buffer);
