@@ -765,6 +765,171 @@ void testLaunchProbeUpdateGuards() {
                "preflight rejects empty grid");
 }
 
+void testProbeSampleCoordPreflight() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+
+    fuse::renderer::ProbeSampleCoords built{};
+    expectTrue(fuse::renderer::ProbeGridLayout::buildProbeSampleCoords(desc, {0.5f, 0.5f, 0.5f}, built),
+               "build coords for preflight test");
+
+    fuse::renderer::ProbeSampleCoordsRejectReason reason = fuse::renderer::ProbeSampleCoordsRejectReason::None;
+    expectTrue(fuse::renderer::ProbeGridLayout::tryPreflightProbeSampleCoords(desc, built, reason),
+               "valid coords pass grid-only preflight");
+    expectTrue(reason == fuse::renderer::ProbeSampleCoordsRejectReason::None,
+               "valid preflight reports no reject reason");
+    expectTrue(fuse::renderer::ProbeGridLayout::canPreflightProbeSampleCoords(desc, built),
+               "canPreflight succeeds on valid coords");
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldClampProbeSampleCoords(desc, built),
+               "valid coords would not clamp");
+
+    fuse::renderer::ProbeSampleCoords oobWeights = built;
+    oobWeights.tx = 2.f;
+    expectTrue(fuse::renderer::ProbeGridLayout::tryPreflightProbeSampleCoords(desc, oobWeights, reason),
+               "OOB weights pass soft preflight for clamp path");
+    expectTrue(reason == fuse::renderer::ProbeSampleCoordsRejectReason::OutOfRangeWeights,
+               "OOB weights report out_of_range_weights on soft preflight");
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldClampProbeSampleCoords(desc, oobWeights),
+               "OOB weights would clamp");
+
+    fuse::renderer::ProbeSampleCoords oobIndices = built;
+    oobIndices.x0 = 9u;
+    oobIndices.x1 = 9u;
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryPreflightProbeSampleCoords(desc, oobIndices, reason),
+               "OOB indices fail hard preflight");
+    expectTrue(reason == fuse::renderer::ProbeSampleCoordsRejectReason::OutOfRangeIndices,
+               "OOB indices report out_of_range_indices on hard preflight");
+
+    fuse::renderer::ProbeSampleCoords reversed = built;
+    reversed.x0 = 1u;
+    reversed.x1 = 0u;
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryPreflightProbeSampleCoords(desc, reversed, reason),
+               "unordered corners fail hard preflight");
+    expectTrue(reason == fuse::renderer::ProbeSampleCoordsRejectReason::UnorderedCorners,
+               "unordered corners report unordered_corners on hard preflight");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryPreflightProbeSampleCoords(empty, built, reason),
+               "empty grid fails preflight");
+    expectTrue(reason == fuse::renderer::ProbeSampleCoordsRejectReason::EmptyGrid,
+               "empty grid preflight reports empty_grid");
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldClampProbeSampleCoords(empty, built),
+               "empty grid wouldClamp returns false");
+}
+
+void testProbeSchedulePreflightGuards() {
+    fuse::u32 indices[8]{};
+    fuse::u32 count = 0u;
+
+    fuse::renderer::ProbeScheduleRejectReason reason = fuse::renderer::ProbeScheduleRejectReason::None;
+    expectTrue(fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 8u, 4u, indices, 8u, &count, reason),
+               "trySchedule succeeds with valid outputs");
+    expectTrue(count == 4u, "trySchedule writes expected count");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::None,
+               "valid schedule reports no reject reason");
+    expectTrue(std::strcmp(fuse::renderer::probeScheduleRejectReasonLabel(reason), "none") == 0,
+               "none schedule reject reason label");
+    expectTrue(fuse::renderer::ddgi_util::canScheduleProbeUpdates(8u, indices, 8u, &count),
+               "canSchedule succeeds with valid outputs");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeSchedule(8u, indices, 8u, &count),
+               "wouldSkip false for valid schedule");
+
+    expectTrue(fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 0u, 4u, indices, 8u, &count, reason),
+               "zero probe count vacuously succeeds");
+    expectTrue(count == 0u, "zero probe count schedules zero probes");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::None,
+               "zero probe count reports no reject reason");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 8u, 4u, nullptr, 8u, &count, reason),
+               "null output buffer fails schedule preflight");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::NullOutputBuffer,
+               "null output buffer reports null_output_buffer reason");
+    expectTrue(std::strcmp(fuse::renderer::probeScheduleRejectReasonLabel(reason), "null_output_buffer") == 0,
+               "null_output_buffer schedule reject reason label");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 8u, 4u, indices, 8u, nullptr, reason),
+               "null output count fails schedule preflight");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::NullOutputCount,
+               "null output count reports null_output_count reason");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 8u, 4u, indices, 0u, &count, reason),
+               "zero max_indices fails schedule preflight");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::ZeroMaxIndices,
+               "zero max_indices reports zero_max_indices reason");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeSchedule(8u, indices, 0u, &count),
+               "wouldSkip true for zero max_indices");
+}
+
+void testCacheLookupValidation() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+
+    std::vector<fuse::renderer::IrradianceCacheEntry> cache(8);
+
+    fuse::renderer::CacheIndexRejectReason reason = fuse::renderer::CacheIndexRejectReason::None;
+    expectTrue(fuse::renderer::ddgi_util::tryValidateCacheLookup(desc, cache.data(), 8u, 3u, reason),
+               "tryValidateCacheLookup succeeds for in-range index");
+    expectTrue(reason == fuse::renderer::CacheIndexRejectReason::None,
+               "valid cache lookup reports no reject reason");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateCacheLookup(desc, nullptr, 8u, 3u, reason),
+               "tryValidateCacheLookup rejects null cache");
+    expectTrue(reason == fuse::renderer::CacheIndexRejectReason::NullCache,
+               "null cache reports null_cache reason");
+    expectTrue(std::strcmp(fuse::renderer::cacheIndexRejectReasonLabel(reason), "null_cache") == 0,
+               "null_cache reject reason label");
+
+    expectTrue(fuse::renderer::ddgi_util::shouldSkipCacheLookup(desc, nullptr, 8u),
+               "shouldSkipCacheLookup true for null cache");
+    expectTrue(!fuse::renderer::ddgi_util::shouldSkipCacheLookup(desc, cache.data(), 8u),
+               "shouldSkipCacheLookup false for accessible cache");
+
+    expectTrue(!fuse::renderer::ddgi_util::wouldClampProbeIndex(3u, desc),
+               "in-range probe index would not clamp");
+    expectTrue(fuse::renderer::ddgi_util::wouldClampProbeIndex(99u, desc),
+               "OOB probe index would clamp");
+}
+
+void testKernelWouldSkipAndTryLaunch() {
+    fuse::u32 indices[2] = {0u, 1u};
+    fuse::renderer::gi::DDGIKernelParams validParams{};
+    validParams.probe_indices_to_update = indices;
+    validParams.probe_update_count = 2u;
+    validParams.rays_per_probe = 256u;
+
+    expectTrue(!fuse::renderer::gi::wouldSkipProbeTraceKernel(validParams),
+               "wouldSkip false for valid trace params");
+    expectTrue(!fuse::renderer::gi::wouldSkipProbeBlendKernel(validParams),
+               "wouldSkip false for valid blend params");
+
+    fuse::renderer::gi::ProbeKernelRejectReason reason = fuse::renderer::gi::ProbeKernelRejectReason::None;
+    expectTrue(fuse::renderer::gi::tryLaunch_probe_trace_kernel(validParams, nullptr, reason),
+               "tryLaunch trace succeeds for valid params");
+    expectTrue(reason == fuse::renderer::gi::ProbeKernelRejectReason::None,
+               "successful trace tryLaunch reports no reject reason");
+    expectTrue(fuse::renderer::gi::tryLaunch_probe_blend_kernel(validParams, nullptr, reason),
+               "tryLaunch blend succeeds for valid params");
+
+    fuse::renderer::gi::DDGIKernelParams zeroCount = validParams;
+    zeroCount.probe_update_count = 0u;
+    expectTrue(fuse::renderer::gi::wouldSkipProbeTraceKernel(zeroCount),
+               "wouldSkip true for zero update count");
+    expectTrue(!fuse::renderer::gi::tryLaunch_probe_trace_kernel(zeroCount, nullptr, reason),
+               "tryLaunch trace rejects zero update count");
+    expectTrue(reason == fuse::renderer::gi::ProbeKernelRejectReason::ZeroUpdateCount,
+               "tryLaunch trace zero count reports zero_update_count reason");
+
+    fuse::renderer::gi::DDGIKernelParams nullIndices = validParams;
+    nullIndices.probe_indices_to_update = nullptr;
+    expectTrue(fuse::renderer::gi::wouldSkipProbeBlendKernel(nullIndices),
+               "wouldSkip true for null probe indices");
+    expectTrue(!fuse::renderer::gi::tryLaunch_probe_blend_kernel(nullIndices, nullptr, reason),
+               "tryLaunch blend rejects null probe indices");
+    expectTrue(reason == fuse::renderer::gi::ProbeKernelRejectReason::NullProbeIndices,
+               "tryLaunch blend null indices reports null_probe_indices reason");
+}
+
 void testProbeSampleCoordRejectReasons() {
     fuse::renderer::DDGIDesc desc{};
     desc.grid_dims = {2, 2, 2};
@@ -1406,9 +1571,12 @@ int main() {
     testResolveSampleDirectionFromSurface();
     testEmptyDirectionGuards();
     testProbeSampleCoordGuards();
+    testProbeSampleCoordPreflight();
     testProbeSampleCoordsInBounds();
     testTryBuildProbeSampleCoords();
     testProbeSampleCoordRejectReasons();
+    testProbeSchedulePreflightGuards();
+    testCacheLookupValidation();
     testProbeCacheAccessibilityGuards();
     testTryReadIrradianceAtIndex();
     testTryCanSampleAtProbeCoords();
@@ -1421,6 +1589,7 @@ int main() {
     testLaunchProbeUpdateGuards();
     testLaunchProbeUpdateRejectReasons();
     testProbeKernelLaunchGuards();
+    testKernelWouldSkipAndTryLaunch();
     testSampleGuards();
     testProbeWorldPositionClamped();
     testProbeAtlasLayout();
