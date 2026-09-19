@@ -17,6 +17,18 @@ float hrtf_co_located_epsilon() {
 
 bool is_co_located_hrtf_source(const Vec3& rel_listener) {
     return rel_listener.length() < kHrtfCoLocatedEpsilon;
+HrtfIrPreflight preflight_hrtf_ir(const HrtfIrStub& ir) {
+    HrtfIrPreflight result;
+    result.null_samples = ir.samples == nullptr;
+    result.zero_length = ir.length == 0;
+    return result;
+}
+
+HrtfIrPreflight preflight_hrtf_ir(const float* samples, u32 length) {
+    return preflight_hrtf_ir(HrtfIrStub{samples, length});
+
+bool can_use_hrtf_ir_preflight(const HrtfIrStub& ir) {
+    return preflight_hrtf_ir(ir).has_valid_ir();
 }
 
 HrtfIrStub make_empty_hrtf_ir() {
@@ -409,6 +421,26 @@ HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_
 }
 
 bool can_apply_hrtf_spatial_pan(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener) {
+    return preflight_hrtf_pan_path(hrtf_enabled, ir, rel_listener).can_apply_spatial_pan();
+}
+
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
+                                             const Vec3& rel_listener) {
+    HrtfPanPathPreflight result;
+    result.ir_preflight = preflight_hrtf_ir(ir);
+    result.hrtf_disabled = !hrtf_enabled;
+    result.co_located = is_co_located_hrtf_source(rel_listener);
+    result.empty_ir = result.ir_preflight.is_empty();
+    result.path = resolve_hrtf_pan_path(hrtf_enabled, ir, rel_listener);
+    return result;
+}
+
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener) {
+    return preflight_hrtf_pan_path(hrtf_enabled, make_empty_hrtf_ir(), rel_listener);
+}
+
+bool can_apply_hrtf_spatial_pan_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
+                                          const Vec3& rel_listener) {
     return preflight_hrtf_pan_path(hrtf_enabled, ir, rel_listener).can_apply_spatial_pan();
 }
 
@@ -894,6 +926,25 @@ HrtfSpatialPanPreflight preflight_hrtf_spatial_pan(bool hrtf_enabled, const Hrtf
     result.coupling =
         preflight_hrtf_attenuation_coupling(result.pan.path, distance_attenuation, occlusion_gain);
     return result;
+}
+
+HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling(HrtfPanPath path,
+                                                                     float distance_attenuation,
+                                                                     float occlusion_gain) {
+    HrtfAttenuationCouplingPreflight result;
+    result.bypass_path = is_hrtf_pan_path_bypass(path);
+    result.clamped_distance_attenuation = clamp_hrtf_attenuation(distance_attenuation);
+    result.clamped_occlusion_gain = clamp_hrtf_attenuation(occlusion_gain);
+    result.unity_attenuation =
+        is_unity_hrtf_attenuation(distance_attenuation, occlusion_gain);
+    result.will_narrow = should_narrow_hrtf_spatial_image(path, distance_attenuation, occlusion_gain);
+    return result;
+}
+
+bool should_narrow_hrtf_spatial_image_preflight(HrtfPanPath path, float distance_attenuation,
+                                                float occlusion_gain) {
+    return preflight_hrtf_attenuation_coupling(path, distance_attenuation, occlusion_gain)
+        .should_narrow_spatial_image();
 }
 
 float compute_hrtf_distance_factor(float distance_attenuation,

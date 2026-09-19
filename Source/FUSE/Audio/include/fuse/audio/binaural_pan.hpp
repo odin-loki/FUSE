@@ -12,6 +12,24 @@ struct HrtfIrStub {
     u32 length = 0;
 };
 
+/// Read-only empty-IR diagnostics — no mutation (B7.2 deepen).
+struct HrtfIrPreflight {
+    bool null_samples = false;
+    bool zero_length = false;
+
+    [[nodiscard]] bool is_empty() const { return null_samples || zero_length; }
+    [[nodiscard]] bool has_valid_ir() const { return !is_empty(); }
+};
+
+/// Preflight empty-IR guard checks for an HRTF impulse-response stub.
+[[nodiscard]] HrtfIrPreflight preflight_hrtf_ir(const HrtfIrStub& ir);
+
+/// Preflight empty-IR guard checks from raw sample pointer and length.
+[[nodiscard]] HrtfIrPreflight preflight_hrtf_ir(const float* samples, u32 length);
+
+/// Convenience guard — `preflight_hrtf_ir(ir).has_valid_ir()`.
+[[nodiscard]] bool can_use_hrtf_ir_preflight(const HrtfIrStub& ir);
+
 /// Listener-local distance below which a source is treated as co-located.
 float hrtf_co_located_epsilon();
 
@@ -228,6 +246,21 @@ struct HrtfPanPathPreflight {
 
 /// Convenience guard — `preflight_hrtf_pan_path(...).can_apply_spatial_pan()`.
 [[nodiscard]] bool can_apply_hrtf_spatial_pan(bool hrtf_enabled, const HrtfIrStub& ir,
+/// Read-only pan-path diagnostics — no mutation (B7.2 deepen).
+    bool empty_ir = false;
+    HrtfIrPreflight ir_preflight{};
+
+    [[nodiscard]] bool will_bypass() const { return path == HrtfPanPath::Bypass; }
+    [[nodiscard]] bool will_use_ild_itd_stub() const { return path == HrtfPanPath::IldItdStub; }
+    [[nodiscard]] bool will_use_convolution() const { return path == HrtfPanPath::Convolution; }
+    [[nodiscard]] bool can_apply_spatial_pan() const { return !will_bypass(); }
+
+/// Preflight pan-path guard checks from HRTF enable flag, IR stub, and listener-local offset.
+
+/// Preflight pan-path guard checks when no IR is wired.
+[[nodiscard]] HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled,
+
+[[nodiscard]] bool can_apply_hrtf_spatial_pan_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
 
 /// Select pan path from HRTF enable flag, IR stub, and listener-local offset.
 HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener);
@@ -612,6 +645,21 @@ struct HrtfAttenuationCouplingPreflight {
 [[nodiscard]] bool can_apply_hrtf_attenuation_coupling_narrowing(HrtfPanPath path,
                                                                   float distance_attenuation,
                                                                   float occlusion_gain);
+/// Read-only attenuation-coupling diagnostics — no mutation (B7.2 deepen).
+    bool bypass_path = false;
+    bool unity_attenuation = false;
+    bool will_narrow = false;
+    float clamped_distance_attenuation = 1.f;
+    float clamped_occlusion_gain = 1.f;
+
+    [[nodiscard]] bool should_apply_coupling() const { return !bypass_path; }
+    [[nodiscard]] bool should_skip_coupling() const { return bypass_path || unity_attenuation; }
+    [[nodiscard]] bool should_narrow_spatial_image() const { return will_narrow; }
+
+/// Preflight attenuation-coupling guard checks for a resolved pan path.
+
+/// Convenience guard — `preflight_hrtf_attenuation_coupling(...).should_narrow_spatial_image()`.
+[[nodiscard]] bool should_narrow_hrtf_spatial_image_preflight(HrtfPanPath path,
 
 /// Clamp distance or occlusion attenuation scalars into [0, 1].
 float clamp_hrtf_attenuation(float attenuation);
