@@ -1219,3 +1219,13 @@ SnapDeltaPreflight preflightSnapDelta(f32 delta, GizmoMode mode, const GizmoSnap
 // --- deepen additive from deepen-gizmo-interaction-preflights-fe30 ---
 struct RayPreflight {
 RayPreflight preflightRay(const GizmoRay& ray);
+
+// --- deepen additive from deepen-gizmo-preflights-cff3 ---
+struct SnapDragDeltaPreflight {
+SnapDragDeltaPreflight preflightSnapDragDelta(GizmoMode mode, const GizmoSnapSettings& settings);
+struct DragSessionPreflight {
+DragSessionPreflight preflightDragSession(const GizmoHitTest& hit, bool dragging,
+DragSessionPreflight preflightDragSession(const GizmoRay& ray, const GizmoTransform& transform,
+    [[nodiscard]] SnapDragDeltaPreflight preflightSnapDragDelta() const;
+    [[nodiscard]] DragSessionPreflight preflightDragSession(const GizmoHitTest& hit) const;
+    [[nodiscard]] DragSessionPreflight preflightDragSession(const GizmoRay& ray,

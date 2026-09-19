@@ -2841,3 +2841,20 @@ SnapDeltaPreflight GizmoSystem::preflightSnapDelta(f32 delta) const {
 RayPreflight preflightRay(const GizmoRay& ray) {
     RayPreflight preflight{};
     return preflightRay(ray).canUse();
+
+// --- deepen additive from deepen-gizmo-preflights-cff3 ---
+SnapDragDeltaPreflight preflightSnapDragDelta(GizmoMode mode, const GizmoSnapSettings& settings) {
+    SnapDragDeltaPreflight preflight{};
+DragSessionPreflight preflightDragSession(const GizmoHitTest& hit, bool dragging,
+    DragSessionPreflight preflight{};
+DragSessionPreflight preflightDragSession(const GizmoRay& ray, const GizmoTransform& transform,
+        preflight.update = preflightUpdateDrag({}, dragging, activeAxis, mode, settings);
+    const DragSessionPreflight preflight =
+        preflightDragSession(hit, dragging, activeAxis, mode, settings, alreadyDragging);
+    const DragSessionPreflight preflight = preflightDragSession(
+DragSessionPreflight GizmoSystem::preflightDragSession(const GizmoHitTest& hit) const {
+    return fuse::editor::preflightDragSession(hit, m_dragging, m_activeAxis, m_mode, m_snap,
+DragSessionPreflight GizmoSystem::preflightDragSession(const GizmoRay& ray,
+    return fuse::editor::preflightDragSession(ray, transform, m_dragging, m_activeAxis, m_mode,
+    return preflightDragInteraction(hit).canActOnPhase();
+SnapDragDeltaPreflight GizmoSystem::preflightSnapDragDelta() const {

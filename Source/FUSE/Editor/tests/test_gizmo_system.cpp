@@ -4023,3 +4023,20 @@ void testInteractionPreflightPhaseRouting() {
     expectTrue(gizmo.preflightInteraction(hit).snapWillApplyOnPhase(),
     testRayPreflightGuards();
     testInteractionPreflightPhaseRouting();
+
+// --- deepen additive from deepen-gizmo-preflights-cff3 ---
+void testSnapDragDeltaPreflight() {
+    const fuse::editor::SnapDragDeltaPreflight disabledPreflight =
+    expectTrue(!disabledPreflight.isDegraded(), "disabled snap is not degraded");
+    const fuse::editor::SnapDragDeltaPreflight degradedPreflight =
+    const fuse::editor::SnapDragDeltaPreflight validPreflight =
+    expectTrue(!validPreflight.invalidStep, "valid snap-drag preflight clears invalidStep");
+void testDragSessionPreflight() {
+    const fuse::editor::DragSessionPreflight idleSession = fuse::editor::preflightDragSession(
+    const fuse::editor::DragSessionPreflight activeSession = fuse::editor::preflightDragSession(
+    const fuse::editor::DragSessionPreflight emptyHitSession = fuse::editor::preflightDragSession(
+    const fuse::editor::DragSessionPreflight raySession = fuse::editor::preflightDragSession(
+    expectTrue(gizmo.preflightDragSession(hit).canBegin(),
+    expectTrue(gizmo.preflightDragSession(hit).canUpdate(),
+    testSnapDragDeltaPreflight();
+    testDragSessionPreflight();
