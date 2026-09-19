@@ -2800,6 +2800,54 @@ void testIslandRejectReasonNames() {
                "NoWakeTarget wake reject reason has stable label");
 }
 
+void testIslandSolvePipelineDispatchGuards() {
+    ContactIslandGraph graph;
+    std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+        DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f},
+    };
+    graph.build(4, {}, constraints);
+
+    RigidBodySoA bodies;
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+    bodies.addBody({2.1f, 0.f, 0.f}, 1.f, RB_SLEEPING);
+    bodies.addBody({20.f, 0.f, 0.f}, 1.f, 0);
+    bodies.addBody({22.f, 0.f, 0.f}, 1.f, 0);
+    bodies.predictedPositions = bodies.positions;
+
+    SolverWorkBuffers work;
+    work.init(4, 0, 2);
+    const auto invMassFn = [](const RigidBodySoA&, u32) { return 1.f; };
+    const f32 dt = 1.f / 60.f;
+
+    const IslandSolvePipelinePreflight preflight = preflight_island_solve_pipeline(graph, bodies, dt);
+    expectTrue(!preflight.skipped, "pipeline preflight does not skip constrained graph");
+    expectTrue(preflight.can_dispatch(), "pipeline preflight can dispatch constrained graph");
+    expectTrue(preflight.reason == IslandDispatchRejectReason::None, "pipeline preflight records None reason");
+    expectTrue(preflight.wake.can_wake(), "pipeline preflight can wake mixed island");
+    expectTrue(!should_skip_island_solve_pipeline(graph, bodies, dt),
+               "should_skip pipeline false for constrained graph");
+
+    const IslandSolvePipelineResult pipeline = dispatch_island_solve_pipeline(
+        bodies, graph, work, constraints, dt, 0.f, invMassFn);
+    expectTrue(!pipeline.skipped, "pipeline dispatch does not skip constrained graph");
+    expectTrue(pipeline.wokeCount == 1u, "pipeline dispatch wakes mixed island sleepers");
+    expectTrue((bodies.flags[1] & RB_SLEEPING) == 0u, "pipeline dispatch clears sleeping flag");
+    expectTrue(pipeline.any_solved(), "pipeline dispatch solves constrained islands");
+    expectTrue(pipeline.dispatch.solvedCount == graph.constrainedIslandCount(),
+               "pipeline dispatch solves all constrained islands");
+
+    ContactIslandGraph emptyGraph;
+    emptyGraph.build(0, {}, {});
+    expectTrue(should_skip_island_solve_pipeline(emptyGraph, bodies, dt),
+               "should_skip pipeline true for empty graph");
+    const IslandSolvePipelineResult emptyPipeline = dispatch_island_solve_pipeline(
+        bodies, emptyGraph, work, constraints, dt, 0.f, invMassFn);
+    expectTrue(emptyPipeline.skipped, "pipeline dispatch skips empty graph");
+    expectTrue(emptyPipeline.reason == IslandDispatchRejectReason::NoDispatchableIslands,
+               "pipeline dispatch records no-dispatchable reject reason");
+}
+
 void testEarlyExitWhenResidualBelowTolerance() {
     CollisionShapeSoA shapes;
     RigidBodySoA bodies;
@@ -2914,6 +2962,7 @@ int main() {
     testIslandConstraintSolveRejectReasonGuards();
     testIslandSleepWakeRejectReasonGuards();
     testIslandRejectReasonNames();
+    testIslandSolvePipelineDispatchGuards();
     testEarlyExitWhenResidualBelowTolerance();
     fuse::core::shutdown();
 
