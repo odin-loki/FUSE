@@ -2098,3 +2098,48 @@ void testFroxelSampleCoordPreflightAndEmptyGridValidation() {
     expectTrue(!fuse::renderer::froxel_util::trySampleDensityTrilinear(emptyGrid, desc, inBounds, rejectedBilinear,
                "trySampleDensityTrilinear with reason rejects empty storage");
     testFroxelSampleCoordPreflightAndEmptyGridValidation();
+
+// --- deepen additive from deepen-b511-froxel-guards-1cb0 ---
+void testFroxelSampleCoordMappingPreflightGuards() {
+    fuse::renderer::SampleCoordRejectReason reason = fuse::renderer::SampleCoordRejectReason::None;
+    expectTrue(reason == fuse::renderer::SampleCoordRejectReason::None,
+    expectTrue(std::strcmp(fuse::renderer::sampleCoordRejectReasonLabel(reason), "none") == 0,
+    expectTrue(reason == fuse::renderer::SampleCoordRejectReason::DepthBelowNear,
+    expectTrue(std::strcmp(fuse::renderer::sampleCoordRejectReasonLabel(reason), "depth_below_near") == 0,
+    expectTrue(reason == fuse::renderer::SampleCoordRejectReason::DepthAboveFar,
+    expectTrue(std::strcmp(fuse::renderer::sampleCoordRejectReasonLabel(reason), "depth_above_far") == 0,
+    expectTrue(reason == fuse::renderer::SampleCoordRejectReason::EmptyGrid,
+    expectTrue(std::strcmp(fuse::renderer::sampleCoordRejectReasonLabel(reason), "empty_grid") == 0,
+               "tryMapScreenDepthToFroxelIndex rejects below-near depth");
+    expectTrue(rejectedIndex == 0u, "tryMapScreenDepthToFroxelIndex zeroes output on rejection");
+void testFroxelSampleCoordBoundsPreflightGuards() {
+    fuse::renderer::SampleCoordBoundsRejectReason boundsReason =
+        fuse::renderer::SampleCoordBoundsRejectReason::None;
+    expectTrue(fuse::renderer::froxel_util::tryValidateSampleCoords(inBounds, desc, boundsReason),
+    expectTrue(boundsReason == fuse::renderer::SampleCoordBoundsRejectReason::None,
+    expectTrue(std::strcmp(fuse::renderer::sampleCoordBoundsRejectReasonLabel(boundsReason), "none") == 0,
+    expectTrue(!fuse::renderer::froxel_util::tryValidateSampleCoords(oobTile, desc, boundsReason),
+               "tryValidateSampleCoords rejects OOB tile coord");
+    expectTrue(boundsReason == fuse::renderer::SampleCoordBoundsRejectReason::OutOfBoundsTile,
+    expectTrue(std::strcmp(fuse::renderer::sampleCoordBoundsRejectReasonLabel(boundsReason), "out_of_bounds_tile") ==
+    expectTrue(!fuse::renderer::froxel_util::tryValidateSampleCoords(oobWeight, desc, boundsReason),
+    expectTrue(boundsReason == fuse::renderer::SampleCoordBoundsRejectReason::OutOfBoundsWeight,
+    expectTrue(std::strcmp(fuse::renderer::sampleCoordBoundsRejectReasonLabel(boundsReason),
+    expectTrue(!fuse::renderer::froxel_util::tryValidateSampleCoords(inBounds, zeroDesc, boundsReason),
+               "tryValidateSampleCoords rejects empty grid desc");
+    expectTrue(boundsReason == fuse::renderer::SampleCoordBoundsRejectReason::EmptyGrid,
+void testFroxelDensityLookupAndValidationPreflightGuards() {
+    expectNear(sampled, 1.25f, 1e-5f, "trySampleDensityAtIndex with reason returns written density");
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityAtIndex(emptyGrid, desc, 0u, rejectedSample, lookupReason),
+    expectNear(rejectedSample, 0.f, 1e-6f, "trySampleDensityAtIndex with reason zeroes output on failure");
+    expectTrue(!fuse::renderer::froxel_util::tryWriteDensityAtIndex(emptyGrid, desc, 0u, 9.f, lookupReason),
+    expectTrue(!fuse::renderer::froxel_util::tryWriteDensityAtIndex(grid, mismatched, 0u, 9.f, lookupReason),
+               "tryWriteDensityAtIndex with reason rejects desc mismatch");
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityBilinear(grid, desc, coords, bilinearSample, lookupReason),
+               "trySampleDensityAtScreen with reasons succeeds on accessible grid");
+               "trySampleDensityAtScreen with reasons rejects below-near depth");
+    expectNear(rejectedScreen, 0.f, 1e-6f, "trySampleDensityAtScreen zeroes output on mapping failure");
+    expectTrue(sampleReason == fuse::renderer::SampleCoordRejectReason::DepthBelowNear,
+    testFroxelSampleCoordMappingPreflightGuards();
+    testFroxelSampleCoordBoundsPreflightGuards();
+    testFroxelDensityLookupAndValidationPreflightGuards();

@@ -633,3 +633,9 @@ bool trySampleDensityTrilinearInBounds(const FroxelDensityGrid& grid,
     static bool tryCanSampleAtCoords(const FroxelSampleCoords& coords,
                           DensityLookupRejectReason& outLookupReason,
                           SampleCoordRejectReason& outCoordReason);
+
+// --- deepen additive from deepen-b511-froxel-guards-1cb0 ---
+enum class SampleCoordBoundsRejectReason : u8 {
+const char* sampleCoordBoundsRejectReasonLabel(SampleCoordBoundsRejectReason reason);
+                             SampleCoordBoundsRejectReason& outReason);
+                              SampleCoordRejectReason& outSampleReason);

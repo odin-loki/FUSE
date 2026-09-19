@@ -1596,3 +1596,17 @@ bool FroxelGridLayout::tryCanSampleAtCoords(const FroxelSampleCoords& coords,
     if (!FroxelGridLayout::tryAreSampleCoordsInBounds(coords, desc, coordReason)) {
         outReason = DensityLookupRejectReason::SampleCoordRejected;
         outReason = DensityLookupRejectReason::ScreenMappingFailed;
+
+// --- deepen additive from deepen-b511-froxel-guards-1cb0 ---
+const char* sampleCoordBoundsRejectReasonLabel(SampleCoordBoundsRejectReason reason) {
+    case SampleCoordBoundsRejectReason::None:
+    case SampleCoordBoundsRejectReason::EmptyGrid:
+    case SampleCoordBoundsRejectReason::OutOfBoundsTile:
+    case SampleCoordBoundsRejectReason::OutOfBoundsWeight:
+                             SampleCoordBoundsRejectReason& outReason) {
+        outReason = SampleCoordBoundsRejectReason::EmptyGrid;
+        outReason = SampleCoordBoundsRejectReason::OutOfBoundsTile;
+        outReason = SampleCoordBoundsRejectReason::OutOfBoundsWeight;
+    outReason = SampleCoordBoundsRejectReason::None;
+                              SampleCoordRejectReason& outSampleReason) {
+        outSampleReason = SampleCoordRejectReason::None;
