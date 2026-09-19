@@ -1772,6 +1772,258 @@ void testPairBufferShouldRunDedupeGuards() {
                "canSkipPairBufferDedupe false when shouldRunPairBufferDedupe true");
 }
 
+void testPairBufferPushSkipGuards() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.setMaxCapacity(1u);
+    buffer.push(0u, 1u);
+
+    expectTrue(fuse::physics::broadphase::canSkipPairBufferPush(buffer, 2u, 3u),
+               "canSkipPairBufferPush true when buffer is full");
+    expectTrue(!fuse::physics::broadphase::shouldRunPairBufferPush(buffer, 2u, 3u),
+               "shouldRunPairBufferPush false when buffer is full");
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferPush(buffer, 2u, 3u),
+               "wouldSkipPairBufferPush true when buffer is full");
+
+    fuse::physics::broadphase::PairBufferPushRejectReason reason =
+        fuse::physics::broadphase::PairBufferPushRejectReason::None;
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferPush(buffer, 2u, 3u, &reason),
+               "wouldSkipPairBufferPush writes reject reason");
+    expectEq(static_cast<fuse::u32>(reason),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferPushRejectReason::AtCapacity),
+             "wouldSkipPairBufferPush reports AtCapacity");
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferPush(buffer, 2u, 3u) ==
+                   fuse::physics::broadphase::canSkipPairBufferPush(buffer, 2u, 3u),
+               "wouldSkipPairBufferPush agrees with canSkipPairBufferPush");
+}
+
+void testPairBufferInvalidateSlotRejectReasonGuards() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.preparePairSlots(2u);
+    buffer.writeSlot(0u, 0u, 1u);
+
+    expectEq(static_cast<fuse::u32>(
+                 fuse::physics::broadphase::pairBufferInvalidateSlotRejectReason(buffer, 0u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason::None),
+             "in-range slot reports None invalidate reject reason");
+    expectTrue(fuse::physics::broadphase::pairBufferInvalidateSlotRejectsForReason(
+                   buffer, 0u, fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason::None),
+               "in-range slot rejects for None");
+
+    expectEq(static_cast<fuse::u32>(
+                 fuse::physics::broadphase::pairBufferInvalidateSlotRejectReason(buffer, 4u)),
+             static_cast<fuse::u32>(
+                 fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason::OutOfRangeSlot),
+             "out-of-range slot reports OutOfRangeSlot invalidate reject reason");
+    expectTrue(std::strcmp(fuse::physics::broadphase::pairBufferInvalidateSlotRejectReasonName(
+                               fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason::OutOfRangeSlot),
+                           "OutOfRangeSlot") == 0,
+               "OutOfRangeSlot invalidate reject reason has stable label");
+
+    const fuse::physics::broadphase::PairBufferInvalidateSlotPreflight validPreflight =
+        fuse::physics::broadphase::preflightPairBufferInvalidateSlot(buffer, 1u);
+    expectTrue(validPreflight.canInvalidate(), "invalidate-slot preflight accepts in-range slot");
+    expectTrue(fuse::physics::broadphase::shouldRunPairBufferInvalidateSlot(buffer, 1u),
+               "shouldRunPairBufferInvalidateSlot true for in-range slot");
+
+    fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason reason =
+        fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason::None;
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferInvalidateSlot(buffer, 8u, &reason),
+               "wouldSkipPairBufferInvalidateSlot true for out-of-range slot");
+    expectEq(static_cast<fuse::u32>(reason),
+             static_cast<fuse::u32>(
+                 fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason::OutOfRangeSlot),
+             "wouldSkipPairBufferInvalidateSlot reports OutOfRangeSlot");
+
+    buffer.invalidateSlot(1u);
+    expectTrue(!buffer.slotIsValid(1u), "invalidateSlot clears valid flag via preflight gate");
+    expectTrue(fuse::physics::broadphase::canSkipPairBufferInvalidateSlot(buffer, 8u),
+               "canSkipPairBufferInvalidateSlot true for out-of-range slot");
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferInvalidateSlot(buffer, 8u) ==
+                   fuse::physics::broadphase::canSkipPairBufferInvalidateSlot(buffer, 8u),
+               "wouldSkipPairBufferInvalidateSlot agrees with canSkipPairBufferInvalidateSlot");
+}
+
+void testCellPairGenRejectReasonGuards() {
+    const std::vector<fuse::u32> emptyOccupants;
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::cellPairGenRejectReason(0u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellPairGenRejectReason::EmptyCell),
+             "zero occupants report EmptyCell pair-gen reject reason");
+    expectTrue(fuse::physics::broadphase::cellPairGenRejectsForReason(
+                   0u, fuse::physics::broadphase::CellPairGenRejectReason::EmptyCell),
+               "zero occupants reject for EmptyCell");
+
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::cellPairGenRejectReason(1u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellPairGenRejectReason::SingletonOccupant),
+             "singleton occupants report SingletonOccupant pair-gen reject reason");
+    expectTrue(std::strcmp(fuse::physics::broadphase::cellPairGenRejectReasonName(
+                               fuse::physics::broadphase::CellPairGenRejectReason::SingletonOccupant),
+                           "SingletonOccupant") == 0,
+               "SingletonOccupant pair-gen reject reason has stable label");
+
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::cellPairGenRejectReason(3u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellPairGenRejectReason::None),
+             "three unique occupants report None pair-gen reject reason");
+    expectEq(fuse::physics::broadphase::estimateCellPairCount(3u), 3u,
+             "estimateCellPairCount returns n*(n-1)/2");
+
+    const fuse::physics::broadphase::CellPairGenPreflight emptyPreflight =
+        fuse::physics::broadphase::preflightCellPairGeneration(emptyOccupants);
+    expectTrue(!emptyPreflight.canGenerate(), "empty cell pair-gen preflight cannot generate");
+    expectTrue(fuse::physics::broadphase::canSkipCellPairGeneration(emptyOccupants),
+               "canSkipCellPairGeneration on empty cell");
+
+    fuse::physics::broadphase::CellPairGenRejectReason reason =
+        fuse::physics::broadphase::CellPairGenRejectReason::None;
+    expectTrue(fuse::physics::broadphase::wouldSkipCellPairGeneration(emptyOccupants, &reason),
+               "wouldSkipCellPairGeneration true on empty cell");
+    expectEq(static_cast<fuse::u32>(reason),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellPairGenRejectReason::EmptyCell),
+             "wouldSkipCellPairGeneration reports EmptyCell");
+
+    const std::vector<fuse::u32> duplicateOccupants = {0u, 0u};
+    const fuse::physics::broadphase::CellPairGenPreflight duplicatePreflight =
+        fuse::physics::broadphase::preflightCellPairGeneration(duplicateOccupants);
+    expectTrue(duplicatePreflight.singletonOccupant,
+               "duplicate single-body occupants mark singletonOccupant");
+    expectEq(duplicatePreflight.pairCount, 0u, "duplicate single-body occupants emit zero pairs");
+
+    const std::vector<fuse::u32> multiOccupants = {0u, 1u, 2u};
+    const fuse::physics::broadphase::CellPairGenPreflight multiPreflight =
+        fuse::physics::broadphase::preflightCellPairGeneration(multiOccupants);
+    expectTrue(multiPreflight.canGenerate(), "multi-body cell pair-gen preflight can generate");
+    expectEq(multiPreflight.pairCount, 3u, "three-body cell emits three canonical pairs");
+    expectTrue(fuse::physics::broadphase::shouldRunCellPairGeneration(multiOccupants),
+               "shouldRunCellPairGeneration true for multi-body cell");
+    expectEq(fuse::physics::broadphase::countUniqueCellOccupants(multiOccupants), 3u,
+             "countUniqueCellOccupants dedupes occupant list");
+    expectTrue(fuse::physics::broadphase::wouldSkipCellPairGeneration(multiOccupants) ==
+                   fuse::physics::broadphase::canSkipCellPairGeneration(multiOccupants),
+               "wouldSkipCellPairGeneration agrees with canSkipCellPairGeneration");
+}
+
+void testShapeCellInsertRejectReasonGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 99u, {1.f, 0.f, 0.f});
+
+    fuse::physics::broadphase::SpatialHashParams params;
+    params.cellSize = 2.f;
+    params.tableSize = 128;
+
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::shapeCellInsertRejectReason(
+                 0u, bodies, shapes, params, false)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::ShapeCellInsertRejectReason::OutOfRangeBody),
+             "orphan shape reports OutOfRangeBody insert reject reason");
+    expectTrue(fuse::physics::broadphase::shapeCellInsertRejectsForReason(
+                   0u, bodies, shapes, params, false,
+                   fuse::physics::broadphase::ShapeCellInsertRejectReason::OutOfRangeBody),
+               "orphan shape rejects for OutOfRangeBody");
+    expectTrue(fuse::physics::broadphase::canSkipShapeCellInsert(0u, bodies, shapes, params, false),
+               "canSkipShapeCellInsert on orphan shape");
+
+    shapes.clear();
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {256.f, 0.f, 0.f});
+    params.maxCellSpanPerAxis = 0u;
+    params.maxCellOccupancy = 8u;
+
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::shapeCellInsertRejectReason(
+                 0u, bodies, shapes, params, false)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::ShapeCellInsertRejectReason::OccupancySkipped),
+             "oversized shape reports OccupancySkipped insert reject reason");
+    expectTrue(std::strcmp(fuse::physics::broadphase::shapeCellInsertRejectReasonName(
+                               fuse::physics::broadphase::ShapeCellInsertRejectReason::OccupancySkipped),
+                           "OccupancySkipped") == 0,
+               "OccupancySkipped insert reject reason has stable label");
+
+    const fuse::physics::broadphase::ShapeCellInsertPreflight skippedPreflight =
+        fuse::physics::broadphase::preflightShapeCellInsert(0u, bodies, shapes, params, false);
+    expectTrue(!skippedPreflight.canInsert(), "oversized shape insert preflight cannot insert");
+    expectTrue(skippedPreflight.occupancySkipped, "oversized shape insert preflight marks occupancySkipped");
+
+    fuse::physics::broadphase::ShapeCellInsertRejectReason reason =
+        fuse::physics::broadphase::ShapeCellInsertRejectReason::None;
+    expectTrue(fuse::physics::broadphase::wouldSkipShapeCellInsert(0u, bodies, shapes, params, false, &reason),
+               "wouldSkipShapeCellInsert true for oversized shape");
+    expectEq(static_cast<fuse::u32>(reason),
+             static_cast<fuse::u32>(fuse::physics::broadphase::ShapeCellInsertRejectReason::OccupancySkipped),
+             "wouldSkipShapeCellInsert reports OccupancySkipped");
+
+    bodies.addBody({1.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 1, {1.f, 0.f, 0.f});
+    params.maxCellOccupancy = 0u;
+
+    const fuse::physics::broadphase::ShapeCellInsertPreflight validPreflight =
+        fuse::physics::broadphase::preflightShapeCellInsert(1u, bodies, shapes, params, false);
+    expectTrue(validPreflight.canInsert(), "normal shape insert preflight can insert");
+    expectTrue(fuse::physics::broadphase::shouldRunShapeCellInsert(1u, bodies, shapes, params, false),
+               "shouldRunShapeCellInsert true for normal shape");
+    expectTrue(validPreflight.occupancyCount > 0u, "normal shape insert preflight reports occupancy count");
+    expectTrue(fuse::physics::broadphase::wouldSkipShapeCellInsert(1u, bodies, shapes, params, false) ==
+                   fuse::physics::broadphase::canSkipShapeCellInsert(1u, bodies, shapes, params, false),
+               "wouldSkipShapeCellInsert agrees with canSkipShapeCellInsert");
+}
+
+void testBroadphaseWouldSkipGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    fuse::physics::broadphase::PairBufferSoA buffer;
+
+    fuse::physics::broadphase::BroadphaseRejectReason broadphaseReason =
+        fuse::physics::broadphase::BroadphaseRejectReason::None;
+    expectTrue(fuse::physics::broadphase::wouldSkipBroadphase(bodies, shapes, &broadphaseReason),
+               "wouldSkipBroadphase true on empty scene");
+    expectEq(static_cast<fuse::u32>(broadphaseReason),
+             static_cast<fuse::u32>(fuse::physics::broadphase::BroadphaseRejectReason::EmptyInput),
+             "wouldSkipBroadphase reports EmptyInput");
+    expectTrue(fuse::physics::broadphase::wouldSkipBroadphase(bodies, shapes) ==
+                   fuse::physics::broadphase::canSkipBroadphase(bodies, shapes),
+               "wouldSkipBroadphase agrees with canSkipBroadphase");
+
+    fuse::physics::broadphase::RefineBroadphaseRejectReason refineReason =
+        fuse::physics::broadphase::RefineBroadphaseRejectReason::None;
+    expectTrue(fuse::physics::broadphase::wouldSkipRefineBroadphase(bodies, shapes, buffer, &refineReason),
+               "wouldSkipRefineBroadphase true on empty scene");
+    expectTrue(fuse::physics::broadphase::wouldSkipRefineBroadphase(bodies, shapes, buffer) ==
+                   fuse::physics::broadphase::canSkipRefineBroadphase(bodies, shapes, buffer),
+               "wouldSkipRefineBroadphase agrees with canSkipRefineBroadphase");
+
+    fuse::physics::broadphase::DedupeBroadphaseRejectReason dedupeReason =
+        fuse::physics::broadphase::DedupeBroadphaseRejectReason::None;
+    expectTrue(fuse::physics::broadphase::wouldSkipDedupeBroadphase(buffer, &dedupeReason),
+               "wouldSkipDedupeBroadphase true on empty buffer");
+    expectTrue(fuse::physics::broadphase::wouldSkipDedupeBroadphase(buffer) ==
+                   fuse::physics::broadphase::canSkipDedupeBroadphase(buffer),
+               "wouldSkipDedupeBroadphase agrees with canSkipDedupeBroadphase");
+
+    fuse::physics::broadphase::BroadphaseMergeRejectReason mergeReason =
+        fuse::physics::broadphase::BroadphaseMergeRejectReason::None;
+    expectTrue(fuse::physics::broadphase::wouldSkipBroadphaseMerge(bodies, shapes, &mergeReason),
+               "wouldSkipBroadphaseMerge true on empty scene");
+    expectTrue(fuse::physics::broadphase::wouldSkipBroadphaseMerge(bodies, shapes) ==
+                   fuse::physics::broadphase::canSkipBroadphaseMerge(bodies, shapes),
+               "wouldSkipBroadphaseMerge agrees with canSkipBroadphaseMerge");
+
+    const std::vector<fuse::physics::broadphase::CandidatePair> pairs = {{0u, 1u}};
+    fuse::physics::broadphase::MergePairsIntoBufferRejectReason mergeIntoReason =
+        fuse::physics::broadphase::MergePairsIntoBufferRejectReason::None;
+    expectTrue(!fuse::physics::broadphase::wouldSkipMergePairsIntoBuffer(pairs, buffer, &mergeIntoReason),
+               "wouldSkipMergePairsIntoBuffer false for valid merge into empty buffer");
+    expectTrue(fuse::physics::broadphase::wouldSkipMergePairsIntoBuffer(pairs, buffer) ==
+                   fuse::physics::broadphase::canSkipMergePairsIntoBuffer(pairs, buffer),
+               "wouldSkipMergePairsIntoBuffer agrees with canSkipMergePairsIntoBuffer");
+
+    const fuse::physics::broadphase::CellRange3 overBudget = {{0, 0, 0}, {4, 4, 4}};
+    fuse::physics::broadphase::CellOccupancyRejectReason occupancyReason =
+        fuse::physics::broadphase::CellOccupancyRejectReason::None;
+    expectTrue(fuse::physics::broadphase::wouldSkipCellOccupancyIteration(overBudget, 8u, &occupancyReason),
+               "wouldSkipCellOccupancyIteration true when range exceeds budget");
+    expectEq(static_cast<fuse::u32>(occupancyReason),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellOccupancyRejectReason::ExceedsBudget),
+             "wouldSkipCellOccupancyIteration reports ExceedsBudget");
+}
+
 void testBroadphaseMergeRejectReasonGuards() {
     fuse::physics::RigidBodySoA bodies;
     fuse::physics::CollisionShapeSoA shapes;
@@ -1885,6 +2137,11 @@ int main() {
     testPairBufferToVectorRejectReasonGuards();
     testCellSpanRejectReasonAndPreflight();
     testRefineDedupeMergeWithPreflightGuards();
+    testPairBufferPushSkipGuards();
+    testPairBufferInvalidateSlotRejectReasonGuards();
+    testCellPairGenRejectReasonGuards();
+    testShapeCellInsertRejectReasonGuards();
+    testBroadphaseWouldSkipGuards();
 
     if (g_failures == 0) {
         std::printf("fuse_physics_broadphase_tests: all checks passed\n");
