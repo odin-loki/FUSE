@@ -515,6 +515,8 @@ bool eventFlowIdEquals(const ProfileEvent& event, u32 flowId) {
 
 
 
+
+
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
       m_active(g_enabled.load(std::memory_order_acquire) && isValidEventName(name)) {
@@ -1716,6 +1718,14 @@ bool wouldSkipCounterSample(const char* track) {
 
 bool wouldSkipChromeTraceExport() {
     return !enabled() || exportableEventCount() == 0u;
+}
+
+bool hasActiveScope() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool hasActiveAsyncFlowNesting() {
+    return flowNestingDepth() > 0u;
 }
 
 bool hasActiveScope() {
@@ -3672,6 +3682,8 @@ bool tryLastExportableEventByFlow(u32 flowId, ProfileEvent& outEvent) {
 
 
 
+
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -5265,6 +5277,23 @@ bool isFlowIdTracked(u32 flowId) {
 bool eventNameMatches(const char* eventName, const char* queryName) {
     if (!isValidEventName(queryName) || !isValidEventName(eventName)) {
     return std::strcmp(eventName, queryName) == 0;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -7069,6 +7098,33 @@ bool wouldSkipSafeChromeTraceExport(ProfileRecordSkipReason* reason) {
         *reason = ProfileRecordSkipReason::None;
     }
     return false;
+}
+
+bool wouldSkipScope(const char* name) {
+    return !enabled() || !isValidEventName(name);
+}
+
+bool wouldSkipAsyncFlowBegin(const char* name, u32 /*flowId*/) {
+    return !enabled() || !isValidEventName(name);
+}
+
+bool wouldSkipAsyncFlowEnd(const char* name, u32 /*flowId*/) {
+    if (!enabled() || !isValidEventName(name)) {
+        return true;
+    }
+    return openAsyncFlowCount() == 0u;
+}
+
+bool wouldSkipCounterSample(const char* track) {
+    return !enabled() || !isValidEventName(track);
+}
+
+bool wouldSkipChromeTraceExport() {
+    return !enabled();
+}
+
+bool wouldSkipChromeTraceExportSafely() {
+    return !preflightChromeTraceExport().canExportSafely();
 }
 
 bool wouldSkipScope(const char* name) {

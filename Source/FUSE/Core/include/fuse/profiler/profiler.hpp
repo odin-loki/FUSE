@@ -485,7 +485,6 @@ struct AsyncFlowPreflight {
 
 /// Read-only scope/async-flow nesting diagnostics — safe before recording or export.
 struct NestingPreflight {
-};
 
 
 
@@ -516,13 +515,7 @@ struct CounterSamplePreflight {
 /// Read-only nesting/async-flow state preflight — safe before nested scopes or flows.
 struct NestingStatePreflight {
 /// Read-only nesting/async-flow diagnostics — safe to call before recording (B1.6 deepen).
-    bool hasOpenAsyncFlows = false;
-    bool flowDepthDetached = false;
-    bool crossThreadFlowHandoffPending = false;
 
-    bool hasUnbalancedNesting() const { return scopeNestingUnbalanced || flowNestingUnbalanced; }
-    bool isBalanced() const {
-        return !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending;
         return canExport() && !hasNestingCleanupPending() && !hasInvalidNameEvents;
 
             && !hasUnpairedFlowEvents && !hasInvalidNameEvents;
@@ -931,7 +924,6 @@ struct ProfilerNestingPreflight {
 
     bool canRecord() const { return !profilerDisabled; }
 
-/// Read-only scope nesting diagnostics — safe before entering or ending scopes.
 
 /// Read-only async-flow nesting diagnostics — safe before flow begin/end.
     bool consistent = true;
@@ -943,10 +935,6 @@ struct ProfilerNestingPreflight {
     }
 
 /// Read-only scope nesting diagnostics — safe to call without recording events.
-struct ScopeNestingPreflight {
-    u32 activeDepth = 0;
-    u32 maxDepth = 0;
-    bool balanced = true;
 
     bool canNestSafely() const { return !profilerDisabled; }
 
@@ -961,7 +949,6 @@ struct ScopeNestingPreflight {
 
 
 
-/// Read-only scope nesting diagnostics — safe to call before `FUSE_PROFILE_SCOPE`.
     bool wouldSkip = false;
 
     bool canRecord() const { return !wouldSkip; }
