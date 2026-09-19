@@ -3709,3 +3709,22 @@ void testChromeTraceExportPreflightBufferFull() {
     expectTrue(resetPreflight.flowNestingUnbalanced == false,
     testChromeTraceExportPreflightEventIndices();
     testChromeTraceExportPreflightBufferFull();
+
+// --- deepen additive from deepen-b16-profiler-guards-58e6 ---
+void testInvalidEventIndexLookupGuards() {
+    expectTrue(!fuse::profiler::tryEventAt(fuse::profiler::kInvalidEventIndex, outEvent),
+               "tryEventAt false for kInvalidEventIndex on empty buffer");
+    expectTrue(outEvent.name == nullptr, "tryEventAt clears output for kInvalidEventIndex");
+               "tryEventAt false for kInvalidEventIndex with recorded events");
+    expectTrue(fuse::profiler::tryEventAt(0u, outEvent), "tryEventAt succeeds for oldest after wrap");
+    expectTrue(outEvent.counterIntValue == 1, "tryEventAt copies oldest counter after wrap");
+    expectTrue(fuse::profiler::tryLastEvent(outEvent), "tryLastEvent succeeds after wrap");
+               "tryLastEvent copies newest counter after wrap");
+void testEmptyNameInsideActiveScopeGuards() {
+void testChromeTraceExportPreflightDisabledWithEvents() {
+    const fuse::profiler::ChromeTraceExportPreflight enabledPreflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(enabledPreflight.canExport(), "preflight allows export after re-enable");
+    expectTrue(enabledPreflight.hasExportableEvents(), "preflight exportable events survive re-enable");
+void testChromeTraceExportPreflightUnbalancedAfterReset() {
+    testChromeTraceExportPreflightDisabledWithEvents();
+    testChromeTraceExportPreflightUnbalancedAfterReset();
