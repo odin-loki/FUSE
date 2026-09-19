@@ -66,5 +66,9 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_upstream_dependencies_hash(
     const std::vector<std::string>& dependency_output_paths, const CookManifest& manifest);
 [[nodiscard]] CookHashPreflight preflight_cook_cache_key(u64 source_hash, u64 upstream_hash);
+/// Read-only FNV input guard — mirrors `is_valid_fnv1a64_input` with reject reason (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size);
+/// Read-only manifest entry guard — source plus dependency paths must be readable (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_manifest_entry_dependencies(const CookManifestEntry& entry);
 
 } // namespace fuse::project

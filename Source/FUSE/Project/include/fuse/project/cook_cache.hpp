@@ -93,6 +93,16 @@ public:
     /// Source paths that `invalidate_stale_upstream_hashes` would touch — one push per matching entry (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_stale_upstream_sources(
         const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    /// True when `invalidate_source` would remove at least one entry — guarded on empty path (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    /// True when `invalidate_output` would remove at least one entry — guarded on empty path (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
+    /// Entries whose on-disk content no longer matches stored keys — excludes structurally invalid (B7.9 deepen).
+    [[nodiscard]] u32 count_stale_entries() const;
+    /// Source paths that `prune_stale_entries` would touch — one push per matching entry (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_stale_content_sources() const;
+    /// Estimated removals from `prune_all` — mirrors invalid then stale prune guards (B7.9 deepen).
+    [[nodiscard]] u32 count_prune_all() const;
     [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
                                           const std::vector<CookJobDependencyEdge>& edges,
                                           const std::vector<CookJob>& jobs) const;
