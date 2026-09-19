@@ -3061,3 +3061,10 @@ void testBroadphaseCellPairPreflightGuards() {
 
 // --- deepen additive from b4-broadphase-deepen-guards-5209 ---
 void testPerShapeCellBudgetGuards() {
+
+// --- deepen additive from deepen-b4-broadphase-guards-f56d ---
+                   wideRange, 8u, fuse::physics::broadphase::CellSpanRejectReason::ExceedsMaxSpan),
+    const fuse::physics::broadphase::CellSpanPreflight clampPreflight =
+        fuse::physics::broadphase::preflightCellSpan(wideRange, 8u);
+    expectTrue(clampPreflight.needsClamp(), "span preflight requests clamp for wide range");
+    expectTrue(clampPreflight.exceedsMaxSpan, "span preflight marks exceedsMaxSpan");

@@ -1271,3 +1271,6 @@ struct BroadphaseCellPairPreflight {
     BroadphaseCellPairRejectReason reason = BroadphaseCellPairRejectReason::None;
     bool canGenerate() const { return reason == BroadphaseCellPairRejectReason::None; }
 BroadphaseCellPairPreflight preflightBroadphaseCellPairs(u32 totalCellSlots);
+
+// --- deepen additive from deepen-b4-broadphase-guards-f56d ---
+    bool needsClamp() const { return reason == CellSpanRejectReason::ExceedsMaxSpan; }
