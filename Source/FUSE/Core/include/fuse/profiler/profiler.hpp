@@ -772,6 +772,31 @@ struct AsyncFlowEndPreflight {
     bool canEnd = false;
 };
 
+/// Read-only scope preflight — safe to call before constructing `ProfileScope`.
+struct ProfileScopePreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+
+    bool canRecord() const { return !profilerDisabled && !invalidName; }
+};
+
+/// Read-only async-flow begin preflight — safe to call before `beginAsyncFlow()`.
+struct AsyncFlowBeginPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+
+    bool canBegin() const { return !profilerDisabled && !invalidName; }
+};
+
+/// Read-only async-flow end preflight — safe to call before `endAsyncFlow()`.
+struct AsyncFlowEndPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool orphanFinish = false;
+
+    bool canEnd() const { return !profilerDisabled && !invalidName && !orphanFinish; }
+};
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:
@@ -1195,6 +1220,10 @@ bool tryFindFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent);
 bool tryFindLastEventByFlowId(u32 flowId, ProfileEvent& outEvent);
 bool tryFindFirstExportableEventByName(const char* name, ProfileEvent& outEvent);
 bool tryFindFirstExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent);
+bool tryFirstExportableEventByName(const char* name, ProfileEvent& outEvent);
+bool tryLastExportableEventByName(const char* name, ProfileEvent& outEvent);
+bool tryFirstExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent);
+bool tryLastExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent);
 bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
 bool tryFirstExportableEvent(ProfileEvent& outEvent);

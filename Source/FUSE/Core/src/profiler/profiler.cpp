@@ -2231,6 +2231,17 @@ bool tryFindFirstExportableEventByName(const char* name, ProfileEvent& outEvent)
 
 bool tryFindFirstExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
 
+bool tryFirstExportableEventByName(const char* name, ProfileEvent& outEvent) {
+
+
+bool tryLastExportableEventByName(const char* name, ProfileEvent& outEvent) {
+
+
+bool tryFirstExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+
+
+bool tryLastExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+
 
 bool tryFirstEvent(ProfileEvent& outEvent) {
     const u32 index = firstEventIndex();
@@ -3853,6 +3864,21 @@ bool tryExportableLastEvent(ProfileEvent& outEvent) {
 
 
 
+    return isValidEventName(event.name) && isValidEventName(name) && std::strcmp(event.name, name) == 0;
+
+bool eventMatchesFlowId(const ProfileEvent& event, u32 flowId) {
+    return isValidEventName(event.name)
+        && (event.phase == EventPhase::FlowStart || event.phase == EventPhase::FlowFinish)
+        && event.scopeId == flowId;
+
+
+
+
+
+
+
+
+
 
 u32 lastEventIndex() {
     const u32 count = eventCount();
@@ -3996,6 +4022,10 @@ NestingStatePreflight preflightNestingState() {
     preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
+ProfileScopePreflight preflightProfileScope(const char* name) {
+    ProfileScopePreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
     return preflight;
 }
 
@@ -4125,6 +4155,11 @@ NestingAsyncFlowPreflight preflightNestingAndAsyncFlow() {
 }
 
     preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+
+AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 flowId) {
+    preflight.orphanFinish = openAsyncFlowCount() == 0u;
+    (void)flowId;
     return preflight;
 }
 
