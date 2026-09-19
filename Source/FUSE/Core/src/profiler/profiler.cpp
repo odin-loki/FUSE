@@ -1584,3 +1584,9 @@ bool wouldSkipChromeTraceExport(bool requireBalancedNesting) {
 
 // --- deepen additive from b16-profiler-deepen-guards-aba4 ---
     return !preflightChromeTraceExport().canExport();
+
+// --- deepen additive from deepen-b16-profiler-wouldskip-lookup-6516 ---
+    const EventNameRejectReason nameReason = diagnoseEventNameRejectReason(name);
+    if (nameReason == EventNameRejectReason::Null) {
+    if (nameReason == EventNameRejectReason::Empty) {
+bool wouldSkipSafeChromeTraceExport(ProfileRecordSkipReason* reason) {

@@ -5741,3 +5741,26 @@ void testWouldSkipGuards() {
                "tryFindLastEventIndexByPhase true for scope end");
     expectTrue(outIndex == 4u, "tryFindLastEventIndexByPhase returns scope end index");
     expectTrue(fuse::profiler::tryFindFirstEventIndexByName("index_counter", outIndex),
+
+// --- deepen additive from deepen-b16-profiler-wouldskip-lookup-6516 ---
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowBegin("flow", &reason),
+    expectTrue(fuse::profiler::wouldSkipCounterSample("counter", &reason),
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowBegin("flow", &reason),
+               "wouldSkipAsyncFlowBegin false for valid name when enabled");
+    expectTrue(!fuse::profiler::wouldSkipCounterSample("counter", &reason),
+               "wouldSkipCounterSample false for valid track when enabled");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd("orphan", &reason),
+    expectTrue(fuse::profiler::tryValidateEventName("valid", reason),
+    expectTrue(!fuse::profiler::wouldSkipNameLookup("scope"), "wouldSkipNameLookup false for valid name");
+    expectTrue(!fuse::profiler::tryFirstEventByFlowId(99u, outEvent),
+    expectTrue(resetPreflight.isBalanced(), "reset leaves nesting/async preflight balanced");
+    expectTrue(!resetPreflight.hasActiveScope(), "reset preflight has no active scope");
+    expectTrue(!resetPreflight.hasActiveAsyncFlowNesting(),
+        expectTrue(activePreflight.hasActiveScope(), "preflight marks active scope");
+        expectTrue(activePreflight.hasActiveAsyncFlowNesting(),
+        expectTrue(!activePreflight.isBalanced(), "preflight unbalanced with open scope and flow");
+    expectTrue(closedPreflight.isBalanced(), "preflight balanced after scope and flow end");
+    expectTrue(!closedPreflight.hasActiveScope(), "preflight clears active scope after end");
+void testWouldSkipSafeChromeTraceExportGuard() {
+               "wouldSkipSafeChromeTraceExport false on balanced empty buffer");
+               "wouldSkipSafeChromeTraceExport true with open async flow");

@@ -616,3 +616,6 @@ bool wouldSkipAsyncFlowBegin(const char* name, ProfilerRecordSkipReason* reason 
 bool wouldSkipAsyncFlowEnd(const char* name, ProfilerRecordSkipReason* reason = nullptr);
 bool wouldSkipCounter(const char* track, ProfilerRecordSkipReason* reason = nullptr);
 bool wouldSkipChromeTraceExport(bool requireBalancedNesting = false);
+
+// --- deepen additive from deepen-b16-profiler-wouldskip-lookup-6516 ---
+bool wouldSkipSafeChromeTraceExport(ProfileRecordSkipReason* reason = nullptr);
