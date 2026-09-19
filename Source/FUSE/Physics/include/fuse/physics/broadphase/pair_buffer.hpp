@@ -62,34 +62,97 @@ struct PairBufferSoA {
 };
 
 /// Read-only push diagnostics — no mutation (B4.2 deepen follow-up).
+/// Why pair-buffer push would early-out (B4.2 deepen follow-up pass).
+enum class PairBufferPushRejectReason : u8 {
+    None = 0,
+    InvalidPair,
+    AtCapacity,
+};
+
+/// Human-readable label for push reject reasons (logging / tests).
+const char* pairBufferPushRejectReasonName(PairBufferPushRejectReason reason);
+
+/// Diagnose why push would skip; vacuously succeeds when push may proceed.
+PairBufferPushRejectReason pairBufferPushRejectReason(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
+
+/// Returns true when `pairBufferPushRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+bool pairBufferPushRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 idxA,
+    u32 idxB,
+    PairBufferPushRejectReason expected);
+
 struct PairBufferPushPreflight {
+    PairBufferPushRejectReason reason = PairBufferPushRejectReason::None;
     bool invalidPair = false;
     bool atCapacity = false;
 
-    bool canPush() const { return !invalidPair && !atCapacity; }
+    bool canPush() const { return reason == PairBufferPushRejectReason::None; }
 };
 
 PairBufferPushPreflight preflightPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
 
 /// Read-only compaction diagnostics — no mutation (B4.2 deepen follow-up).
+/// Why pair-buffer compaction would early-out (B4.2 deepen follow-up pass).
+enum class PairBufferCompactionRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    AllValid,
+};
+
+/// Human-readable label for compaction reject reasons (logging / tests).
+const char* pairBufferCompactionRejectReasonName(PairBufferCompactionRejectReason reason);
+
+/// Diagnose why compaction would skip; vacuously succeeds when compaction may proceed.
+PairBufferCompactionRejectReason pairBufferCompactionRejectReason(const PairBufferSoA& buffer);
+
+/// Returns true when `pairBufferCompactionRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+bool pairBufferCompactionRejectsForReason(
+    const PairBufferSoA& buffer,
+    PairBufferCompactionRejectReason expected);
+
 struct PairBufferCompactionPreflight {
+    PairBufferCompactionRejectReason reason = PairBufferCompactionRejectReason::None;
     bool emptyBuffer = false;
     bool allValid = false;
 
-    bool needsCompaction() const { return !emptyBuffer && !allValid; }
+    bool needsCompaction() const { return reason == PairBufferCompactionRejectReason::None; }
 };
 
 PairBufferCompactionPreflight preflightPairBufferCompaction(const PairBufferSoA& buffer);
 
+/// Non-mutating compaction skip predicate — inverse of `preflightPairBufferCompaction().needsCompaction()`.
+bool canSkipPairBufferCompaction(const PairBufferSoA& buffer);
+
 /// Read-only max-capacity clamp diagnostics — no mutation (B4.2 deepen follow-up).
+/// Why pair-buffer clamp would early-out (B4.2 deepen follow-up pass).
+enum class PairBufferClampRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    WithinCapacity,
+};
+
+/// Human-readable label for clamp reject reasons (logging / tests).
+const char* pairBufferClampRejectReasonName(PairBufferClampRejectReason reason);
+
+/// Diagnose why clamp would skip; vacuously succeeds when clamp may proceed.
+PairBufferClampRejectReason pairBufferClampRejectReason(const PairBufferSoA& buffer);
+
+/// Returns true when `pairBufferClampRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+bool pairBufferClampRejectsForReason(const PairBufferSoA& buffer, PairBufferClampRejectReason expected);
+
 struct PairBufferClampPreflight {
+    PairBufferClampRejectReason reason = PairBufferClampRejectReason::None;
     bool emptyBuffer = false;
     bool withinCapacity = false;
 
-    bool needsClamp() const { return !emptyBuffer && !withinCapacity; }
+    bool needsClamp() const { return reason == PairBufferClampRejectReason::None; }
 };
 
 PairBufferClampPreflight preflightPairBufferClamp(const PairBufferSoA& buffer);
+
+/// Non-mutating clamp skip predicate — inverse of `preflightPairBufferClamp().needsClamp()`.
+bool canSkipPairBufferClamp(const PairBufferSoA& buffer);
 
 /// Read-only dedupe diagnostics at the SoA layer — no mutation (B4.2 deepen follow-up pass).
 struct PairBufferDedupePreflight {
