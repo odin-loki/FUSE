@@ -4201,3 +4201,7 @@ void testSnapStepFiniteGuards() {
                "tryPreflightSnapDrag accepts valid delta");
     expectTrue(gizmo.preflightSnapDragReady(0.25f), "gizmo preflightSnapDragReady accepts delta");
     const fuse::editor::UpdateDragInteractionPreflight withDelta =
+
+// --- deepen additive from deepen-gizmo-guards-5805 ---
+                   fuse::editor::preflightBeginDrag(nanHit, fuse::editor::GizmoMode::Translate)) ==
+                   fuse::editor::preflightUpdateDrag(hit, true, fuse::editor::GizmoAxis::X)) ==
