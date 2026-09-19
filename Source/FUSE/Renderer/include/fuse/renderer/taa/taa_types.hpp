@@ -298,3 +298,12 @@ struct TaaResolveDescPreflight {
     TaaResolveBlendRejectReason blend_reject_reason = TaaResolveBlendRejectReason::None;
 bool preflightTaaResolveDesc(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                              TaaResolveDescPreflight* result = nullptr);
+
+// --- deepen additive from deepen-b59-taa-guards-efe8 ---
+bool tryPreflightTaaHistoryReuseForResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupBlockReason& outReason);
+                                        TaaResolveBlendRejectReason& outReason);
+struct TaaResolveTemporalPreflight {
+    TaaResolveBlendRejectReason blend_reject = TaaResolveBlendRejectReason::None;
+bool preflightTaaResolveTemporalAccumulation(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                             TaaResolveTemporalPreflight* result = nullptr);

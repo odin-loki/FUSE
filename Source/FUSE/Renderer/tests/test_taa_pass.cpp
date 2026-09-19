@@ -3307,3 +3307,31 @@ void testPreflightTaaResolveDesc() {
     expectTrue(pass->preflightHistoryWarmup(&warmupReason), "pass warmup preflight passes after resolve");
     testPreflightTaaHistoryWarmup();
     testPreflightTaaResolveDesc();
+
+// --- deepen additive from deepen-b59-taa-guards-efe8 ---
+    expectTrue(!fuse::renderer::tryPreflightTaaHistoryWarmup(history, reason),
+               "tryPreflightTaaHistoryWarmup fails before first resolve");
+               "tryPreflightTaaHistoryWarmup reason is NeedsWarmup");
+void testHistoryReuseForResolveGuards() {
+    expectTrue(fuse::renderer::preflightTaaHistoryReuseForResolve(desc, history),
+    expectTrue(!fuse::renderer::tryPreflightTaaHistoryReuseForResolve(desc, history, reason),
+               "tryPreflightTaaHistoryReuseForResolve fails on stale generation");
+               "tryPreflightTaaHistoryReuseForResolve reason is StaleGeneration");
+void testJitterSyncViewportGuards() {
+    expectTrue(jitter.trySyncToFrameIndexIfReady(4u, reason), "trySyncToFrameIndexIfReady succeeds");
+    expectTrue(jitter.trySyncToFrameIndexIfViewportReady(6u, 1920u, 1080u, reason),
+               "trySyncToFrameIndexIfViewportReady succeeds with valid viewport");
+    expectTrue(jitter.tryAdvanceIfReady(advanceReason), "tryAdvanceIfReady succeeds");
+    expectTrue(jitter.tryAdvanceIfViewportReady(1920u, 1080u, advanceReason),
+               "tryAdvanceIfViewportReady succeeds with valid viewport");
+    expectTrue(!pass->trySyncJitterToFrameIndexIfReady(2u, passReason),
+               "pass trySyncJitterToFrameIndexIfReady blocks zero width");
+void testResolveTemporalAccumulationPreflight() {
+    fuse::renderer::TaaResolveTemporalPreflight preflight{};
+    expectTrue(fuse::renderer::preflightTaaResolveTemporalAccumulation(desc, history, &preflight),
+    expectTrue(preflight.blend_reject == fuse::renderer::TaaResolveBlendRejectReason::None,
+    expectTrue(!fuse::renderer::preflightTaaResolveTemporalAccumulation(desc, history, &preflight),
+               "tryPreflightTaaResolveBlendWeights succeeds for steady history");
+    expectTrue(pass->preflightHistoryWarmup(), "pass warmup preflight passes after first resolve");
+    expectTrue(pass->preflightResolveTemporalAccumulation(desc, &preflight),
+    testResolveTemporalAccumulationPreflight();

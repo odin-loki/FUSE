@@ -470,3 +470,10 @@ bool TaaPass::preflightJitterAlignment(u32 expectedFrameIndex) const {
     return preflightTaaJitterAlignment(expectedFrameIndex, m_jitter);
 bool TaaPass::preflightResolveDesc(const TaaResolveDesc& desc, TaaResolveDescPreflight* result) const {
     return preflightTaaResolveDesc(desc, m_history, result);
+
+// --- deepen additive from deepen-b59-taa-guards-efe8 ---
+bool TaaPass::trySyncJitterToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncBlockReason& outReason) {
+    if (!m_jitter.trySyncToFrameIndexIfViewportReady(frameIndex, m_desc.width, m_desc.height, outReason)) {
+bool TaaPass::preflightResolveTemporalAccumulation(const TaaResolveDesc& desc,
+                                                   TaaResolveTemporalPreflight* result) const {
+    return preflightTaaResolveTemporalAccumulation(desc, m_history, result);

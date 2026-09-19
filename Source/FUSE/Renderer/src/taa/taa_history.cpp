@@ -278,3 +278,6 @@ bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmup
 
 // --- deepen additive from deepen-b59-taa-guards-d966 ---
 bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupState* state) {
+
+// --- deepen additive from deepen-b59-taa-guards-efe8 ---
+bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupBlockReason& outReason) {

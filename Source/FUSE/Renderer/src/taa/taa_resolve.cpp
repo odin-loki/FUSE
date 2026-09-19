@@ -563,3 +563,15 @@ bool preflightTaaResolveDesc(const TaaResolveDesc& desc, const TaaHistoryBuffer&
 bool TaaResolve::preflightDesc(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                TaaResolveDescPreflight* result) const {
     return preflightTaaResolveDesc(desc, history, result);
+
+// --- deepen additive from deepen-b59-taa-guards-efe8 ---
+bool tryPreflightTaaHistoryReuseForResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                        TaaResolveBlendRejectReason& outReason) {
+    outReason = classifyTaaResolveBlendReject(desc, history);
+    return outReason == TaaResolveBlendRejectReason::None;
+bool preflightTaaResolveTemporalAccumulation(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                             TaaResolveTemporalPreflight* result) {
+    TaaResolveTemporalPreflight local{};
+    local.blend_reject = classifyTaaResolveBlendReject(desc, history);
+    local.passes = !taaResolveSkipReasonIsBlocking(local.skip_reason) &&
+                   local.blend_reject == TaaResolveBlendRejectReason::None;
