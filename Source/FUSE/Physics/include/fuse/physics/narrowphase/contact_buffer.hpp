@@ -32,6 +32,17 @@ struct ContactBufferSoA {
     u32 droppedCount = 0;
 
     bool isEmpty() const { return activeCount == 0u; }
+    bool hasValidContacts() const { return activeCount > 0u; }
+    bool hasDroppedContacts() const { return droppedCount > 0u; }
+    bool isFull() const { return maxCapacity > 0u && activeCount >= maxCapacity; }
+    bool canAcceptContacts(u32 additionalCount = 1u) const;
+    u32 remainingCapacity() const;
+    bool canApplyMaxCapacityClamp() const;
+    bool canSkipMaxCapacityClamp() const { return !canApplyMaxCapacityClamp(); }
+    bool canSkipSoAIteration() const { return activeCount == 0u && pairSlotCount == 0u; }
+    bool canSkipCompaction() const;
+    u32 countValidSlots() const;
+    bool slotIsValid(u32 slot) const;
 
     void reserve(u32 capacity);
     void setMaxCapacity(u32 capacity);
@@ -43,6 +54,9 @@ struct ContactBufferSoA {
     u32 compact();
     u32 applyMaxCapacityClamp();
     u32 compactAndClamp();
+    bool writeSlotWithPreflight(u32 slot, const ContactManifold& manifold);
+    u32 compactWithPreflight();
+    u32 compactAndClampWithPreflight();
     TangentBasis tangentBasisAt(u32 index) const;
     ContactManifold manifoldAt(u32 index) const;
     std::vector<ContactManifold> toVector() const;
@@ -50,5 +64,133 @@ struct ContactBufferSoA {
 private:
     u32 pointSlotBase(u32 slot) const { return slot * kMaxContactPointsPerManifold; }
 };
+
+/// Why contact-buffer write would reject (B4.6 narrowphase deepen pass).
+enum class ContactBufferWriteRejectReason : u8 {
+    None = 0,
+    InvalidSlot,
+    InvalidManifold,
+    SelfPair,
+};
+
+const char* contact_buffer_write_reject_reason_name(ContactBufferWriteRejectReason reason);
+
+ContactBufferWriteRejectReason contact_buffer_write_reject_reason(
+    const ContactBufferSoA& buffer,
+    u32 slot,
+    const ContactManifold& manifold);
+
+bool contact_buffer_write_rejects_for_reason(
+    const ContactBufferSoA& buffer,
+    u32 slot,
+    const ContactManifold& manifold,
+    ContactBufferWriteRejectReason expected);
+
+struct ContactBufferWritePreflight {
+    ContactBufferWriteRejectReason reason = ContactBufferWriteRejectReason::None;
+    bool invalidSlot = false;
+    bool invalidManifold = false;
+    bool selfPair = false;
+
+    bool canWrite() const { return reason == ContactBufferWriteRejectReason::None; }
+};
+
+ContactBufferWritePreflight preflight_contact_buffer_write(
+    const ContactBufferSoA& buffer,
+    u32 slot,
+    const ContactManifold& manifold);
+
+bool canSkipContactBufferWrite(
+    const ContactBufferSoA& buffer,
+    u32 slot,
+    const ContactManifold& manifold);
+
+/// Why contact-buffer compaction would early-out (B4.6 narrowphase deepen pass).
+enum class ContactBufferCompactionRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    AllValid,
+};
+
+const char* contact_buffer_compaction_reject_reason_name(ContactBufferCompactionRejectReason reason);
+
+ContactBufferCompactionRejectReason contact_buffer_compaction_reject_reason(const ContactBufferSoA& buffer);
+
+bool contact_buffer_compaction_rejects_for_reason(
+    const ContactBufferSoA& buffer,
+    ContactBufferCompactionRejectReason expected);
+
+struct ContactBufferCompactionPreflight {
+    ContactBufferCompactionRejectReason reason = ContactBufferCompactionRejectReason::None;
+    bool emptyBuffer = false;
+    bool allValid = false;
+
+    bool needsCompaction() const { return reason == ContactBufferCompactionRejectReason::None; }
+};
+
+ContactBufferCompactionPreflight preflight_contact_buffer_compaction(const ContactBufferSoA& buffer);
+
+bool canSkipContactBufferCompaction(const ContactBufferSoA& buffer);
+
+bool shouldRunContactBufferCompaction(const ContactBufferSoA& buffer);
+
+/// Why contact-buffer max-capacity clamp would early-out (B4.6 narrowphase deepen pass).
+enum class ContactBufferClampRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    WithinCapacity,
+};
+
+const char* contact_buffer_clamp_reject_reason_name(ContactBufferClampRejectReason reason);
+
+ContactBufferClampRejectReason contact_buffer_clamp_reject_reason(const ContactBufferSoA& buffer);
+
+bool contact_buffer_clamp_rejects_for_reason(
+    const ContactBufferSoA& buffer,
+    ContactBufferClampRejectReason expected);
+
+struct ContactBufferClampPreflight {
+    ContactBufferClampRejectReason reason = ContactBufferClampRejectReason::None;
+    bool emptyBuffer = false;
+    bool withinCapacity = false;
+
+    bool needsClamp() const { return reason == ContactBufferClampRejectReason::None; }
+};
+
+ContactBufferClampPreflight preflight_contact_buffer_clamp(const ContactBufferSoA& buffer);
+
+bool canSkipContactBufferClamp(const ContactBufferSoA& buffer);
+
+bool shouldRunContactBufferClamp(const ContactBufferSoA& buffer);
+
+/// Why contact-buffer compact-and-clamp would early-out (B4.6 narrowphase deepen pass).
+enum class ContactBufferCompactAndClampRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    NoWork,
+};
+
+const char* contact_buffer_compact_and_clamp_reject_reason_name(ContactBufferCompactAndClampRejectReason reason);
+
+ContactBufferCompactAndClampRejectReason contact_buffer_compact_and_clamp_reject_reason(
+    const ContactBufferSoA& buffer);
+
+bool contact_buffer_compact_and_clamp_rejects_for_reason(
+    const ContactBufferSoA& buffer,
+    ContactBufferCompactAndClampRejectReason expected);
+
+struct ContactBufferCompactAndClampPreflight {
+    ContactBufferCompactAndClampRejectReason reason = ContactBufferCompactAndClampRejectReason::None;
+    bool emptyBuffer = false;
+    bool noWork = false;
+
+    bool needsCompactAndClamp() const { return reason == ContactBufferCompactAndClampRejectReason::None; }
+};
+
+ContactBufferCompactAndClampPreflight preflight_contact_buffer_compact_and_clamp(const ContactBufferSoA& buffer);
+
+bool canSkipContactBufferCompactAndClamp(const ContactBufferSoA& buffer);
+
+bool shouldRunContactBufferCompactAndClamp(const ContactBufferSoA& buffer);
 
 } // namespace fuse::physics::narrowphase
