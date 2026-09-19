@@ -4003,3 +4003,14 @@ void testMergePairsIntoBufferPreflightFields() {
     expectTrue(!fullPreflight.canMergeIntoBuffer(), "full buffer cannot merge additional pairs");
     expectTrue(fullPreflight.bufferFull, "merge-into-buffer preflight marks buffer full");
     expectEq(static_cast<fuse::u32>(fullPreflight.bufferReason),
+
+// --- deepen additive from b4-broadphase-deepen-write-invalidate-e0fc ---
+                 fuse::physics::broadphase::pairBufferWriteRejectReason(buffer, 0u, 3u, 3u)),
+        if (!fuse::physics::broadphase::preflightPairBufferPush(mergeBuffer, pair.bodyA, pair.bodyB)
+void testCellOccupancyPreflightShapeInsertGuards() {
+        fuse::physics::broadphase::preflightCellOccupancy(withinRange, 8u);
+    expectTrue(withinPreflight.canIterate(), "small range passes cell-occupancy preflight");
+        fuse::physics::broadphase::preflightCellOccupancy(overBudgetRange, 8u);
+    expectTrue(!overPreflight.canIterate(), "large range fails cell-occupancy preflight");
+    expectTrue(overPreflight.exceedsBudget, "over-budget preflight flags exceedsBudget");
+    testCellOccupancyPreflightShapeInsertGuards();
