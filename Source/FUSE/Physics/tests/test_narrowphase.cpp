@@ -2312,3 +2312,10 @@ void testWarmStartFrictionPreflightGuards() {
         needsPreflight.reason == fuse::physics::narrowphase::FrictionBasisRejectReason::MissingBasis,
             stale, fuse::physics::narrowphase::FrictionBasisRejectReason::StaleBasis),
                 fuse::physics::narrowphase::FrictionBasisRejectReason::StaleBasis),
+
+// --- deepen additive from deepen-b4-narrowphase-guards-ae90 ---
+            allRejected, bodies, shapes, fuse::physics::narrowphase::NarrowphaseRejectReason::AllPairsRejected),
+            mixed, bodies, shapes, fuse::physics::narrowphase::NarrowphaseRejectReason::None),
+    const fuse::physics::narrowphase::NarrowphasePreflight preflight =
+            clean, fuse::physics::narrowphase::ManifoldPruneRejectReason::None),
+            fresh, fuse::physics::narrowphase::FrictionBasisRejectReason::None),

@@ -366,3 +366,6 @@ bool should_skip_warm_start_friction(
     case FrictionBasisRejectReason::StaleBasis:
         return FrictionBasisRejectReason::StaleBasis;
         return FrictionBasisRejectReason::MissingBasis;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-ae90 ---
+    return should_skip_friction_basis_preflight(manifold, epsilon);
