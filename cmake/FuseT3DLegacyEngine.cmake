@@ -5,7 +5,6 @@ if(NOT TARGET fuse_t3d_legacy)
     message(FATAL_ERROR "FuseT3DLegacyEngine.cmake requires fuse_t3d_legacy target")
 endif()
 
-# Blocked until torqueConfig + platform/types closure lands (platform.h pulls 69+ headers).
 # SimObject remains blocked — 122-header closure, IMPLEMENT_CONOBJECT, T2D ODR. See U2-SMOKE §3.1.
 set(FUSE_T3D_LEGACY_ENGINE_PROBE OFF CACHE BOOL
     "Compile Engine/source gfx probe into fuse_t3d_legacy (bitmapUtils extrude)")
@@ -32,6 +31,8 @@ configure_file(
 )
 
 target_sources(fuse_t3d_legacy PRIVATE
+    src/engine_probe/platform_stub.cpp
+    src/engine_probe/bitmap_probe_smoke.cpp
     "${CMAKE_SOURCE_DIR}/Engine/source/gfx/bitmap/bitmapUtils.cpp"
 )
 
@@ -40,8 +41,12 @@ target_include_directories(fuse_t3d_legacy PRIVATE
     "${_fuse_t3d_legacy_engine_dir}"
 )
 
+# C++17 drops the legacy `linux` macro; types.gcc.h needs LINUX for types.posix.h (dsize_t, FileTime).
 target_compile_definitions(fuse_t3d_legacy PRIVATE
-    TORQUE_OS_LINUX=1
+    LINUX=1
     TORQUE_LITTLE_ENDIAN=1
     TORQUE_DISABLE_MEMORY_MANAGER=1
+    FUSE_T3D_LEGACY_ENGINE_PROBE=1
 )
+
+message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (bitmapUtils + platform_stub)")

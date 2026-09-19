@@ -4,6 +4,7 @@
 #include <cstdint>
 
 extern "C" std::uint32_t fuse_t2d_StringTable_intern(const char* value);
+extern "C" void fuse_t2d_Con_registerFunction(const char* fn);
 
 namespace fuse::legacy::t2d {
 
@@ -19,6 +20,7 @@ bool initialize() {
     fuse_t2d_StringTable_intern("FUSE_T2D_BOOT");
     Con::init();
     Con::addPathExpando("game", "/game");
+    fuse_t2d_Con_registerFunction("legacyBoot");
     Con::setVariable("$FuseT2D", "1");
     Con::execute("legacyBoot();");
     fuse::log::info("[t2d] dimension initialized");

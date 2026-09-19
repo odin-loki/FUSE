@@ -199,6 +199,11 @@ SHIM_REQUIRED_SYMBOLS = {
         "fuse_t3d_Con_addPathExpando",
         "fuse_t3d_Con_expandPath",
         "fuse_t3d_Con_collapsePath",
+        "fuse_t3d_Con_addVariable",
+        "fuse_t3d_Con_getData",
+        "fuse_t3d_Con_setData",
+        "fuse_t3d_Con_isFunction",
+        "fuse_t3d_Con_threadSafeExecute",
         "fuse_t3d_StringTable_intern",
     ],
     "t2d": [
@@ -217,6 +222,11 @@ SHIM_REQUIRED_SYMBOLS = {
         "fuse_t2d_Con_addPathExpando",
         "fuse_t2d_Con_expandPath",
         "fuse_t2d_Con_collapsePath",
+        "fuse_t2d_Con_addVariable",
+        "fuse_t2d_Con_getData",
+        "fuse_t2d_Con_setData",
+        "fuse_t2d_Con_isFunction",
+        "fuse_t2d_Con_threadSafeExecute",
         "fuse_t2d_StringTable_intern",
     ],
 }

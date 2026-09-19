@@ -21,4 +21,8 @@ if(FUSE_SMOKE_ENABLE_ASAN)
     target_link_options(fuse_runtime_smoke PRIVATE -fsanitize=address)
 endif()
 
+if(FUSE_T3D_LEGACY_ENGINE_PROBE)
+    target_compile_definitions(fuse_runtime_smoke PRIVATE FUSE_T3D_LEGACY_ENGINE_PROBE=1)
+endif()
+
 add_test(NAME fuse_runtime_smoke COMMAND fuse_runtime_smoke)

@@ -7,11 +7,113 @@
 #include <cstring>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace {
 
 std::unordered_map<std::string, std::string> g_variables;
 std::unordered_map<std::string, std::string> g_pathExpandos;
+
+struct BoundVariable {
+    int type = 0;
+    void* ptr = nullptr;
+};
+
+std::unordered_map<std::string, BoundVariable> g_bindings;
+std::unordered_set<std::string> g_functionNames;
+
+thread_local char g_dataBuffer[512];
+
+bool parseBool(const char* value, bool def);
+
+int typeElementSize(int type) {
+    switch (type) {
+    case fuse::legacy::t3d::DynamicType::Bool:
+        return static_cast<int>(sizeof(bool));
+    case fuse::legacy::t3d::DynamicType::S32:
+        return static_cast<int>(sizeof(int));
+    case fuse::legacy::t3d::DynamicType::F32:
+        return static_cast<int>(sizeof(float));
+    default:
+        return 0;
+    }
+}
+
+const char* formatDataValue(int type, void* dptr, int index) {
+    if (!dptr || typeElementSize(type) == 0) {
+        g_dataBuffer[0] = '\0';
+        return g_dataBuffer;
+    }
+
+    const char* base = static_cast<const char*>(dptr) + static_cast<std::size_t>(index) *
+                                                              static_cast<std::size_t>(typeElementSize(type));
+
+    switch (type) {
+    case fuse::legacy::t3d::DynamicType::Bool: {
+        const bool value = *reinterpret_cast<const bool*>(base);
+        std::snprintf(g_dataBuffer, sizeof(g_dataBuffer), "%s", value ? "1" : "0");
+        break;
+    }
+    case fuse::legacy::t3d::DynamicType::S32: {
+        const int value = *reinterpret_cast<const int*>(base);
+        std::snprintf(g_dataBuffer, sizeof(g_dataBuffer), "%d", value);
+        break;
+    }
+    case fuse::legacy::t3d::DynamicType::F32: {
+        const float value = *reinterpret_cast<const float*>(base);
+        std::snprintf(g_dataBuffer, sizeof(g_dataBuffer), "%g", static_cast<double>(value));
+        break;
+    }
+    default:
+        g_dataBuffer[0] = '\0';
+        break;
+    }
+    return g_dataBuffer;
+}
+
+void applyDataValue(int type, void* dptr, int index, const char* value) {
+    if (!dptr || typeElementSize(type) == 0) {
+        return;
+    }
+
+    char* base = static_cast<char*>(dptr) + static_cast<std::size_t>(index) *
+                                                static_cast<std::size_t>(typeElementSize(type));
+
+    switch (type) {
+    case fuse::legacy::t3d::DynamicType::Bool:
+        *reinterpret_cast<bool*>(base) = parseBool(value, false);
+        break;
+    case fuse::legacy::t3d::DynamicType::S32: {
+        char* end = nullptr;
+        const long parsed = std::strtol(value ? value : "0", &end, 10);
+        *reinterpret_cast<int*>(base) = static_cast<int>(parsed);
+        break;
+    }
+    case fuse::legacy::t3d::DynamicType::F32: {
+        char* end = nullptr;
+        const float parsed = static_cast<float>(std::strtod(value ? value : "0", &end));
+        *reinterpret_cast<float*>(base) = parsed;
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+void syncBindingToVariable(const std::string& key) {
+    const auto bindingIt = g_bindings.find(key);
+    if (bindingIt == g_bindings.end()) {
+        return;
+    }
+    g_variables[key] = formatDataValue(bindingIt->second.type, bindingIt->second.ptr, 0);
+}
+
+void registerFunctionName(const char* name) {
+    if (!name || name[0] == '\0') {
+        return;
+    }
+    g_functionNames.emplace(name);
+}
 
 void logFormatted(fuse::log::Level level, const char* fmt, va_list args) {
     fuse::log::Logger::instance().logV(level, fmt, args);
@@ -71,6 +173,8 @@ bool parseBool(const char* value, bool def) {
 extern "C" void fuse_t3d_Con_init() {
     g_variables.clear();
     g_pathExpandos.clear();
+    g_bindings.clear();
+    g_functionNames.clear();
 }
 
 extern "C" void fuse_t3d_Con_execute(const char* script) {
@@ -111,7 +215,12 @@ extern "C" const char* fuse_t3d_Con_getVariable(const char* name) {
     if (!name) {
         return "";
     }
-    const auto it = g_variables.find(normalizeVariableName(name));
+    const std::string key = normalizeVariableName(name);
+    const auto bindingIt = g_bindings.find(key);
+    if (bindingIt != g_bindings.end()) {
+        return formatDataValue(bindingIt->second.type, bindingIt->second.ptr, 0);
+    }
+    const auto it = g_variables.find(key);
     if (it == g_variables.end()) {
         return "";
     }
@@ -122,7 +231,12 @@ extern "C" void fuse_t3d_Con_setVariable(const char* name, const char* value) {
     if (!name) {
         return;
     }
-    g_variables[normalizeVariableName(name)] = value ? value : "";
+    const std::string key = normalizeVariableName(name);
+    g_variables[key] = value ? value : "";
+    const auto bindingIt = g_bindings.find(key);
+    if (bindingIt != g_bindings.end()) {
+        applyDataValue(bindingIt->second.type, bindingIt->second.ptr, 0, value);
+    }
 }
 
 extern "C" int fuse_t3d_Con_getIntVariable(const char* name, int def) {
@@ -151,6 +265,44 @@ extern "C" int fuse_t3d_Con_getBoolVariable(const char* name, int def) {
 
 extern "C" void fuse_t3d_Con_setBoolVariable(const char* name, int value) {
     fuse_t3d_Con_setVariable(name, value ? "1" : "0");
+}
+
+extern "C" void fuse_t3d_Con_addVariable(const char* name, int type, void* pointer, const char* /*usage*/) {
+    if (!name || !pointer) {
+        return;
+    }
+    const std::string key = normalizeVariableName(name);
+    g_bindings[key] = BoundVariable{type, pointer};
+    syncBindingToVariable(key);
+}
+
+extern "C" void fuse_t3d_Con_setData(int type, void* dptr, int index, int argc, const char** argv,
+                                     const void* /*tbl*/, unsigned /*flag*/) {
+    if (!dptr || argc <= 0 || !argv || !argv[0]) {
+        return;
+    }
+    applyDataValue(type, dptr, index, argv[0]);
+}
+
+extern "C" const char* fuse_t3d_Con_getData(int type, void* dptr, int index, const void* /*tbl*/,
+                                            unsigned /*flag*/) {
+    return formatDataValue(type, dptr, index);
+}
+
+extern "C" int fuse_t3d_Con_isFunction(const char* fn) {
+    if (!fn || fn[0] == '\0') {
+        return 0;
+    }
+    return g_functionNames.find(fn) != g_functionNames.end() ? 1 : 0;
+}
+
+extern "C" void fuse_t3d_Con_registerFunction(const char* fn) {
+    registerFunctionName(fn);
+}
+
+extern "C" void fuse_t3d_Con_threadSafeExecute(const char* script) {
+    // U2 quarantine: no SimEvent queue yet — game-thread smoke calls execute directly.
+    fuse_t3d_Con_execute(script);
 }
 
 extern "C" void fuse_t3d_Con_addPathExpando(const char* expandoName, const char* path) {
@@ -303,6 +455,26 @@ bool getBoolVariable(const char* name, bool def) {
 
 void setBoolVariable(const char* name, bool value) {
     fuse_t3d_Con_setBoolVariable(name, value ? 1 : 0);
+}
+
+void addVariable(const char* name, int type, void* pointer, const char* usage) {
+    fuse_t3d_Con_addVariable(name, type, pointer, usage);
+}
+
+void setData(int type, void* dptr, int index, int argc, const char** argv) {
+    fuse_t3d_Con_setData(type, dptr, index, argc, argv, nullptr, 0);
+}
+
+const char* getData(int type, void* dptr, int index) {
+    return fuse_t3d_Con_getData(type, dptr, index, nullptr, 0);
+}
+
+bool isFunction(const char* fn) {
+    return fuse_t3d_Con_isFunction(fn) != 0;
+}
+
+void threadSafeExecute(const char* script) {
+    fuse_t3d_Con_threadSafeExecute(script);
 }
 
 void addPathExpando(const char* expandoName, const char* path) {

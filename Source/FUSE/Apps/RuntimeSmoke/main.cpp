@@ -76,6 +76,31 @@ void runLegacyConSmoke() {
     check(std::strcmp(expanded, "^game/textures/foo.png") == 0, "t3d collapsePath round-trip");
     fuse::legacy::t2d::Con::collapsePath(expanded, sizeof(expanded), "/game/textures/foo.png");
     check(std::strcmp(expanded, "^game/textures/foo.png") == 0, "t2d collapsePath round-trip");
+
+    int t3dBound = 7;
+    int t2dBound = 9;
+    fuse::legacy::t3d::Con::addVariable("$BoundInt", fuse::legacy::t3d::DynamicType::S32, &t3dBound);
+    fuse::legacy::t2d::Con::addVariable("$BoundInt", fuse::legacy::t2d::DynamicType::S32, &t2dBound);
+    check(t3dBound == 7, "t3d addVariable initial sync");
+    check(t2dBound == 9, "t2d addVariable initial sync");
+    fuse::legacy::t3d::Con::setVariable("$BoundInt", "42");
+    fuse::legacy::t2d::Con::setVariable("$BoundInt", "24");
+    check(t3dBound == 42, "t3d addVariable setVariable round-trip");
+    check(t2dBound == 24, "t2d addVariable setVariable round-trip");
+
+    float t3dFloat = 1.5f;
+    const char* t3dFloatArgv[] = {"2.75"};
+    fuse::legacy::t3d::Con::setData(fuse::legacy::t3d::DynamicType::F32, &t3dFloat, 0, 1, t3dFloatArgv);
+    check(t3dFloat > 2.74f && t3dFloat < 2.76f, "t3d setData F32 round-trip");
+    const char* t3dFloatOut = fuse::legacy::t3d::Con::getData(fuse::legacy::t3d::DynamicType::F32, &t3dFloat, 0);
+    check(t3dFloatOut != nullptr && t3dFloatOut[0] != '\0', "t3d getData F32 non-empty");
+
+    check(fuse::legacy::t3d::Con::isFunction("legacyBoot"), "t3d isFunction legacyBoot");
+    check(!fuse::legacy::t3d::Con::isFunction("notARealFn"), "t3d isFunction rejects unknown");
+    check(fuse::legacy::t2d::Con::isFunction("legacyBoot"), "t2d isFunction legacyBoot");
+
+    fuse::legacy::t3d::Con::threadSafeExecute("echo threadSafe T3D");
+    fuse::legacy::t2d::Con::threadSafeExecute("echo threadSafe T2D");
 }
 
 void runImageCompressSmoke() {
@@ -140,6 +165,15 @@ int main() {
     check(fuse::legacy::t2d::stringTableEntryCount() >= 1u, "t2d string table populated");
 
     runImageCompressSmoke();
+
+#if defined(FUSE_T3D_LEGACY_ENGINE_PROBE)
+    {
+        fuse::u16 src[4] = {0xFFFFu, 0xFFFFu, 0xFFFFu, 0xFFFFu};
+        fuse::u16 dst[1] = {};
+        fuse::legacy::t3d::engineProbe::bitmapExtrude5551Smoke(src, dst, 2, 2);
+        check(dst[0] != 0, "engine probe bitmapExtrude5551 produces non-zero mip");
+    }
+#endif
 
 #if defined(FUSE_HAS_VULKAN_RHI)
     {

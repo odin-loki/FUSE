@@ -14,8 +14,8 @@
 | Component | Target | Role |
 |-----------|--------|------|
 | FUSE core | `fuse_core` | `fuse::core::initialize()`, adaptive job pool |
-| T3D quarantine | `fuse_t3d_legacy` | Prefixed `fuse_t3d_Con_*` (14 APIs), `fuse_t3d_StringTable_*`, `image::compressMipsParallel` |
-| T2D quarantine | `fuse_t2d_legacy` | Prefixed `fuse_t2d_Con_*` (14 APIs), `fuse_t2d_StringTable_*` |
+| T3D quarantine | `fuse_t3d_legacy` | Prefixed `fuse_t3d_Con_*` (19 APIs), `fuse_t3d_StringTable_*`, optional `bitmapUtils` probe |
+| T2D quarantine | `fuse_t2d_legacy` | Prefixed `fuse_t2d_Con_*` (19 APIs), `fuse_t2d_StringTable_*` |
 
 Both legacy dimensions call `initialize()` / `shutdown()` sequentially on the **game thread** (main), exercising explicit init order without static-init collisions on shared `Con::` / `StringTable` globals.
 
@@ -51,7 +51,7 @@ Source/FUSE/Legacy/T2D/  → fuse_t2d_legacy
 
 Each lib wraps **collision-surface shims** that model the highest-severity symbols from [symbol-collision-report.md](./symbol-collision-report.md):
 
-- `Con::init`, `Con::execute`, `Con::executef`, `Con::printf`, `Con::errorf`, `Con::warnf`, `Con::getVariable`, `Con::setVariable`, `Con::getIntVariable`, `Con::setIntVariable`, `Con::getBoolVariable`, `Con::setBoolVariable`, `Con::addPathExpando`, `Con::expandPath`, `Con::collapsePath` → prefixed `fuse_t3d_Con_*` / `fuse_t2d_Con_*`
+- `Con::init`, `Con::execute`, `Con::executef`, `Con::printf`, `Con::errorf`, `Con::warnf`, `Con::getVariable`, `Con::setVariable`, `Con::getIntVariable`, `Con::setIntVariable`, `Con::getBoolVariable`, `Con::setBoolVariable`, `Con::addVariable`, `Con::getData`, `Con::setData`, `Con::isFunction`, `Con::threadSafeExecute`, `Con::addPathExpando`, `Con::expandPath`, `Con::collapsePath` → prefixed `fuse_t3d_Con_*` / `fuse_t2d_Con_*`
 - `StringTable` singleton → `fuse_t3d_StringTable_intern`, `fuse_t2d_StringTable_intern`
 - `ImageUtil::ddsCompress` mip loop (Tier A) → `fuse::legacy::t3d::image::compressMipsParallel` via `parallel_for_indices` (WP-11 P1 quarantine route; squish linked, no Engine `.cpp`)
 
@@ -101,17 +101,17 @@ No parallel tick; no cross-thread legacy calls (per [architecture-parallel.md](.
 
 | Surface | Status | Next step |
 |---------|--------|-----------|
-| `Con::` logging + variables + paths | ✅ **14/33** APIs per dimension | `addVariable`, `getData`, `setData`, `isFunction`, `threadSafeExecute`, … |
+| `Con::` logging + variables + paths + data | ✅ **19/33** APIs per dimension | remaining doc-listed overlaps (`executef` variants, notify APIs, …) |
 | `StringTable` | ✅ shim singleton per dimension | Route to FUSE core table (U3 / R14) |
 | Scene adapter stub | ✅ `LegacySceneObjectStub` ↔ `SceneObject3D` | Wire first real `SimObject` batch (U3) |
 | Image mip compress | ✅ `compressMipsParallel` (squish + `parallel_for`) | `imageUtils.cpp` call-site swap deferred — Engine batch blocked (below) |
-| Engine `.cpp` probe | ⏳ **blocked** | `FUSE_T3D_LEGACY_ENGINE_PROBE` cmake hook added; `bitmapUtils.cpp` needs full `platform.h` closure (~69 headers, `dsize_t`/`FileTime` deps) |
-| Full `SimObject` | ⏳ **blocked** | 122-header closure, `IMPLEMENT_CONOBJECT`, Gui/Con/sim pulls, T2D `SimObject` ODR — cannot drop `simObject.cpp` into quarantine lib |
+| Engine `.cpp` probe | ✅ **opt-in** `-DFUSE_T3D_LEGACY_ENGINE_PROBE=ON` | `bitmapUtils.cpp` + `platform_stub.cpp`; needs `LINUX=1` under C++17 for `types.posix.h` |
+| Full `SimObject` | ⏳ **blocked** | 122-header closure, `IMPLEMENT_CONOBJECT`, Gui/Con/sim pulls, T2D `SimObject` ODR — **not** force-linking `simObject.cpp` |
 | Gui / script VM | ⏳ blocked | See §3 table |
 
-**SimObject blocker detail:** T3D `simObject.cpp` (3,550 LOC) transitively pulls `console.cpp`, `simManager.cpp`, `guiInspector.h`, TorqueScript registration, and `sim/netObject.h`. T2D declares an identical `class SimObject : public ConsoleObject` — linking both trees exports colliding vtables. Prefix tooling (`prefix_legacy_symbols.py`) plans `fuse_t3d_SimObject` renames but does not rewrite C++ class names at scale. **Unblock path:** U3 `fuse::Object` extraction + single-console-host or curated adapter slice, not raw `simObject.cpp` drop-in.
+**SimObject blocker detail (unchanged):** T3D `simObject.cpp` (3,550 LOC) transitively pulls `console.cpp`, `simManager.cpp`, `guiInspector.h`, TorqueScript registration, and `sim/netObject.h`. T2D declares an identical `class SimObject : public ConsoleObject` — linking both trees exports colliding vtables. **Unblock path:** U3 `fuse::Object` extraction + single-console-host or curated adapter slice, not raw `simObject.cpp` drop-in.
 
-**Engine probe detail:** Smallest collision-free T3D candidate is `gfx/bitmap/bitmapUtils.cpp` (no `Con::`, no `IMPLEMENT_CONOBJECT`), but `#include "platform/platform.h"` requires torque platform types not yet wired for umbrella smoke. Quarantine route (`image_compress_route.cpp`) remains the active WP-11 P1 implementation until probe infra lands.
+**Engine probe detail:** Smallest collision-free T3D candidate is `gfx/bitmap/bitmapUtils.cpp`. Under `-std=c++17` GCC drops the legacy `linux` macro; probe compile adds `-DLINUX=1` so `types.gcc.h` pulls `types.posix.h` (`dsize_t`, `FileTime`). Quarantine `platform_stub.cpp` supplies `Float_Inf` + `dMem*`. Smoke calls `engineProbe::bitmapExtrude5551Smoke()` when probe flag is ON.
 
 ---
 
@@ -119,7 +119,7 @@ No parallel tick; no cross-thread legacy calls (per [architecture-parallel.md](.
 
 | Metric (U0 baseline) | U2 status (2026-09-19) |
 |----------------------|------------------------|
-| `Con::` collisions (33) | **14 shimmed** per dimension (`init`, `execute`, `executef`, `printf`, `errorf`, `warnf`, `getVariable`, `setVariable`, `getIntVariable`, `setIntVariable`, `getBoolVariable`, `setBoolVariable`, `expandPath`, `collapsePath`) + `addPathExpando` + `StringTable_intern` — **19 open** |
+| `Con::` collisions (33) | **19 shimmed** per dimension (`init`, `execute`, `executef`, `printf`, `errorf`, `warnf`, `getVariable`, `setVariable`, `getIntVariable`, `setIntVariable`, `getBoolVariable`, `setBoolVariable`, `addVariable`, `getData`, `setData`, `isFunction`, `threadSafeExecute`, `expandPath`, `collapsePath`) + `addPathExpando` + `StringTable_intern` — **14 open** |
 | Class collisions (311) | **0 merged** — adapters deferred to U3–U5 |
 | Basename collisions (237) | **0 merged** — include isolation via separate libs |
 | IMPLEMENT_CONOBJECT dupes (1) | **Unchanged** (`SimXMLDocument`) |
