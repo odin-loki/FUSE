@@ -1784,3 +1784,6 @@ int main() {
     std::fprintf(stderr, "fuse_volumetric_lighting: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+// --- deepen additive from deepen-b511-froxel-density-guards-7755 ---
+void testFroxelValidateGridDensityAndAccessGuards() {
