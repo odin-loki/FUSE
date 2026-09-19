@@ -4237,3 +4237,6 @@ void testDdgiProbeGridSourceGuards() {
     expectTrue(!fuse::renderer::ddgi_util::wouldSkipCacheIndexLookup(desc, 3u, 8u, &indexReason),
     expectTrue(indexReason == fuse::renderer::CacheIndexRejectReason::None,
                "wouldSkipCacheIndexLookup reports none reason on success");
+
+// --- deepen additive from deepen-ddgi-b56-guards-aa73 ---
+               "wouldSkipProbeGridSource false for valid init desc");
