@@ -182,3 +182,7 @@ struct CookCacheStorePreflight {
                                                    LookupRejectReason* reason = nullptr) const;
     enum class StoreRejectReason : u8 {
                                        StoreRejectReason* reason = nullptr) const;
+
+// --- deepen additive from deepen-b79-cooker-hash-preflight-633e ---
+struct CookCacheEntryPreflight {
+[[nodiscard]] CookCacheEntryPreflight preflight_cache_entry(const CookCacheEntry& entry);

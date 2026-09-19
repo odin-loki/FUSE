@@ -448,3 +448,6 @@ CookHashPreflight preflight_audio_import(const AudioImportDesc& desc) {
 CookHashPreflight preflight_manifest_entry(const CookManifestEntry& entry) {
     CookHashPreflight result = preflight_hash_file_content(entry.source_path);
         const CookHashPreflight dependency_preflight = preflight_hash_file_content(dependency);
+
+// --- deepen additive from deepen-b79-cooker-hash-preflight-633e ---
+    CookCacheKeyPreflight result;

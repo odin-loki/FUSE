@@ -914,3 +914,13 @@ void testCookCachePreflightLookupAndStore() {
     const fuse::project::CookHashPreflight ok = fuse::project::preflight_hash_file_content(source);
     expectTrue(ok.reject == fuse::project::CookHashPreflightReject::None, "ok preflight reject is None");
                    fuse::project::CookHashPreflightReject::ZeroKey,
+
+// --- deepen additive from deepen-b79-cooker-hash-preflight-633e ---
+    const fuse::project::CookCacheKeyPreflight zero =
+    const fuse::project::CookCacheKeyPreflight source_only =
+    const fuse::project::CookCacheKeyPreflight combined =
+void testCookCacheEntryPreflight() {
+    const fuse::project::CookCacheEntryPreflight invalid_preflight =
+    const fuse::project::CookCacheEntryPreflight fresh_preflight =
+    const fuse::project::CookCacheEntryPreflight stale_preflight =
+    testCookCacheEntryPreflight();

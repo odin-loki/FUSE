@@ -841,3 +841,7 @@ CookCacheLookup CookCache::preflight_lookup(u64 content_hash, LookupRejectReason
 bool CookCache::preflight_store(const CookCacheEntry& entry, StoreRejectReason* reason) const {
             *reason = StoreRejectReason::InvalidEntry;
         *reason = StoreRejectReason::None;
+
+// --- deepen additive from deepen-b79-cooker-hash-preflight-633e ---
+CookCacheEntryPreflight preflight_cache_entry(const CookCacheEntry& entry) {
+    CookCacheEntryPreflight result;
