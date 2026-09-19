@@ -4056,3 +4056,11 @@ void testFroxelDeepenIsBlockingAndPreflightGuards() {
                "preflightScreenDepthToFroxelIndex succeeds for valid mapping");
                "preflightDensityLookup still succeeds for OOB index that clamps");
     testFroxelDeepenIsBlockingAndPreflightGuards();
+
+// --- deepen additive from froxel-volumetric-b511-deepen-5b86 ---
+    expectTrue(fuse::renderer::froxel_util::classifyFroxelTrilinearSampleReject(grid, desc, trilinearWarn) ==
+    expectTrue(fuse::renderer::froxel_util::preflightTrilinearSample(grid, desc, trilinearWarn, &trilinearReason),
+               "preflightSampleCoords mirrors canPreflightSampleCoords on valid coords");
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookupAtIndex(grid, desc, 0u) ==
+               "preflightDensityLookupAtIndex mirrors canLookupAtIndex on accessible grid");
+               "preflightFroxelPopulate mirrors canPopulateFromAnalyticFog on valid inputs");

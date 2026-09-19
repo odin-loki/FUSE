@@ -2391,3 +2391,6 @@ bool preflightTrilinearSampleAtCoords(const FroxelDensityGrid& grid,
 
 // --- deepen additive from deepen-froxel-volumetrics-b511-034f ---
     return !screenMappingRejectReasonIsBlocking(rejectReason);
+
+// --- deepen additive from froxel-volumetric-b511-deepen-5b86 ---
+    return preflightScreenMapping(screenX, screenY, viewDepth, desc, camera, reason);
