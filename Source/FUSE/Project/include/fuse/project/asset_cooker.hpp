@@ -19,6 +19,14 @@ struct CookCacheReconcileEstimate {
     }
 };
 
+/// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
+struct CookUpstreamInvalidationEstimate {
+    u32 direct_source_entries = 0;
+    u32 downstream_entries = 0;
+
+    [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
+};
+
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
 class AssetCooker {
 public:
@@ -47,6 +55,16 @@ public:
     /// Combined dependency + prune reconcile estimator for incremental invalidation planning (B7.9 deepen).
     [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile_invalidation(
         const CookManifest& manifest) const;
+    /// Upstream invalidation breakdown — guarded on empty `changed_source` (B7.9 deepen).
+    [[nodiscard]] CookUpstreamInvalidationEstimate estimate_upstream_invalidation(
+        const CookManifest& manifest, const std::string& changed_source) const;
+    /// True when `estimate_upstream_invalidation(...).total()` is non-zero (B7.9 deepen).
+    [[nodiscard]] bool would_upstream_invalidation(const CookManifest& manifest,
+                                                   const std::string& changed_source) const;
+    /// True when `estimate_reconcile_invalidation(...).total()` is non-zero (B7.9 deepen).
+    [[nodiscard]] bool would_reconcile_invalidation(const CookManifest& manifest) const;
+    /// True when `estimate_prune_reconcile().total()` is non-zero (B7.9 deepen).
+    [[nodiscard]] bool would_prune_reconcile() const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

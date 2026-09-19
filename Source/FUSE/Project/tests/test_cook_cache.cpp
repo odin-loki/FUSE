@@ -596,6 +596,129 @@ void testCookHashPreflightFnvAndCombineGuards() {
                "combine cache key preflight ok for valid fold");
 }
 
+void testCookCacheWouldInvalidationProbes() {
+    fuse::project::CookCache cache;
+    expectTrue(!cache.would_invalidate_source("/tmp/fuse_b79_would_src.obj"),
+               "would_invalidate_source on empty cache is false");
+    expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_would_out.fusemesh"),
+               "would_invalidate_output on empty cache is false");
+    expectTrue(!cache.would_invalidate_stale_content_for_source("/tmp/fuse_b79_would_stale.obj", 42u),
+               "would_invalidate_stale_content on empty cache is false");
+    expectTrue(!cache.would_invalidate_stale_upstream_hashes({{"/tmp/fuse_b79_would_up.obj", 1u}}),
+               "would_invalidate_stale_upstream on empty cache is false");
+    expectTrue(!cache.would_invalidate_downstream_of("/tmp/fuse_b79_would_down.fusemesh", {}, {}),
+               "would_invalidate_downstream on empty cache is false");
+    expectTrue(cache.probe_stale_upstream_source_paths({{"/tmp/fuse_b79_would_up.obj", 1u}}).empty(),
+               "probe_stale_upstream_source_paths on empty cache is empty");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_would_mesh.obj", "# would probe\n");
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_would_mesh.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
+    expectTrue(seeded.ok, "seed cook for would probes ok");
+
+    expectTrue(cooker.cache().would_invalidate_source(source), "would_invalidate_source reports seeded entry");
+    expectTrue(cooker.cache().would_invalidate_output(desc.output_path),
+               "would_invalidate_output reports seeded entry");
+    expectTrue(!cooker.cache().would_invalidate_stale_content_for_source(source, seeded.content_hash),
+               "would_invalidate_stale_content false when hash matches");
+    expectTrue(cooker.cache().would_invalidate_stale_content_for_source(source, seeded.content_hash + 1u),
+               "would_invalidate_stale_content true when hash mismatches");
+
+    expectTrue(!cooker.cache().would_invalidate_source(""), "would_invalidate_source rejects empty path");
+    expectTrue(!cooker.cache().would_invalidate_output(""), "would_invalidate_output rejects empty path");
+}
+
+void testCookCachePreflightStoreEntry() {
+    fuse::project::CookCache cache;
+
+    fuse::project::CookCacheEntry invalid_key;
+    invalid_key.content_hash = 0;
+    invalid_key.source_path = "/tmp/fuse_b79_preflight_store.obj";
+    invalid_key.output_path = "/tmp/fuse_b79_preflight_store.fusemesh";
+    const fuse::project::CookHashPreflight zero_key = cache.preflight_store_entry(invalid_key);
+    expectTrue(!zero_key.ok(), "zero content hash fails store preflight");
+    expectTrue(zero_key.reason == fuse::project::CookHashRejectReason::ZeroSourceHash,
+               "zero content hash store preflight reason");
+
+    fuse::project::CookCacheEntry empty_source;
+    empty_source.content_hash = 42;
+    empty_source.output_path = "/tmp/fuse_b79_preflight_store.fusemesh";
+    const fuse::project::CookHashPreflight empty_src = cache.preflight_store_entry(empty_source);
+    expectTrue(!empty_src.ok(), "empty source path fails store preflight");
+    expectTrue(empty_src.reason == fuse::project::CookHashRejectReason::EmptyInputPath,
+               "empty source store preflight reason");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_preflight_store_ok.obj", "# store preflight\n");
+    fuse::project::CookCacheEntry valid;
+    valid.content_hash = 99;
+    valid.source_path = source;
+    valid.output_path = "/tmp/fuse_b79_preflight_store_ok.fusemesh";
+    valid.kind = fuse::project::CookAssetKind::Mesh;
+    const fuse::project::CookHashPreflight ok = cache.preflight_store_entry(valid);
+    expectTrue(ok.ok(), "readable mesh entry passes store preflight");
+
+    fuse::project::CookCacheEntry shader;
+    shader.content_hash = 100;
+    shader.source_path = "/tmp/fuse_b79_preflight_shader.obj";
+    shader.output_path = "/tmp/fuse_b79_preflight_shader.fuseshader";
+    shader.kind = fuse::project::CookAssetKind::Shader;
+    const fuse::project::CookHashPreflight shader_preflight = cache.preflight_store_entry(shader);
+    expectTrue(!shader_preflight.ok(), "shader kind fails store preflight");
+    expectTrue(shader_preflight.reason == fuse::project::CookHashRejectReason::SourceUnreadable,
+               "shader store preflight reason");
+}
+
+void testCookCacheProbeStaleUpstreamSourcePaths() {
+    fuse::project::CookCache cache;
+
+    fuse::project::CookCacheEntry fresh;
+    fresh.content_hash = 201;
+    fresh.upstream_hash = 10;
+    fresh.source_path = "/tmp/fuse_b79_up_probe_a.obj";
+    fresh.output_path = "/tmp/fuse_b79_up_probe_a.fusemesh";
+    cache.store(fresh);
+
+    fuse::project::CookCacheEntry stale;
+    stale.content_hash = 202;
+    stale.upstream_hash = 20;
+    stale.source_path = "/tmp/fuse_b79_up_probe_b.obj";
+    stale.output_path = "/tmp/fuse_b79_up_probe_b.fusemesh";
+    cache.store(stale);
+
+    fuse::project::CookCacheEntry stale_dup = stale;
+    stale_dup.content_hash = 203;
+    cache.store(stale_dup);
+    expectTrue(cache.entry_count() == 3u, "three entries seeded for upstream source path probe");
+
+    const std::vector<std::pair<std::string, fuse::u64>> fresh_upstream = {
+        {"/tmp/fuse_b79_up_probe_a.obj", 10u},
+        {"/tmp/fuse_b79_up_probe_b.obj", 20u},
+    };
+    expectTrue(cache.probe_stale_upstream_source_paths(fresh_upstream).empty(),
+               "matching upstream hashes yield empty deduplicated probe");
+    expectTrue(!cache.would_invalidate_stale_upstream_hashes(fresh_upstream),
+               "would_invalidate_stale_upstream false when hashes match");
+
+    const std::vector<std::pair<std::string, fuse::u64>> stale_upstream = {
+        {"/tmp/fuse_b79_up_probe_a.obj", 10u},
+        {"/tmp/fuse_b79_up_probe_b.obj", 99u},
+    };
+
+    const std::vector<std::string> per_entry = cache.probe_stale_upstream_sources(stale_upstream);
+    expectTrue(per_entry.size() == 2u, "per-entry stale upstream probe reports one push per stale entry");
+
+    const std::vector<std::string> deduped = cache.probe_stale_upstream_source_paths(stale_upstream);
+    expectTrue(deduped.size() == 1u, "deduplicated stale upstream source path probe");
+    expectTrue(deduped[0] == "/tmp/fuse_b79_up_probe_b.obj", "deduplicated stale upstream source path");
+    expectTrue(cache.would_invalidate_stale_upstream_hashes(stale_upstream),
+               "would_invalidate_stale_upstream true when stale entries present");
+    expectTrue(!cache.would_invalidate_stale_upstream_hashes({}), "empty upstream list guarded");
+}
+
 void testCookCachePruneInvalidEntriesOnLoad() {
     const std::string source = writeTempFile("/tmp/fuse_b79_prune_load_valid.obj", "# prune load valid\n");
     fuse::project::MeshImportDesc desc;
@@ -663,6 +786,9 @@ int main() {
     testCookCacheInvalidationProbes();
     testCookCachePruneReconcileEstimateGuards();
     testCookCacheProbeStaleContentSources();
+    testCookCacheWouldInvalidationProbes();
+    testCookCachePreflightStoreEntry();
+    testCookCacheProbeStaleUpstreamSourcePaths();
     testCookCachePruneInvalidEntriesOnLoad();
 
     fuse::core::shutdown();
