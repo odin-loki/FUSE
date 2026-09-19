@@ -892,6 +892,11 @@ void writePairsForCellSlots(
     for (usize i = 0; i < uniqueBodies.size(); ++i) {
         for (usize j = i + 1; j < uniqueBodies.size(); ++j) {
             buffer.writeSlot(slot++, uniqueBodies[i], uniqueBodies[j], bodyCount);
+            if (!shouldRunPairBufferWriteSlot(buffer, slot, uniqueBodies[i], uniqueBodies[j])) {
+                ++slot;
+                continue;
+            }
+            buffer.writeSlot(slot++, uniqueBodies[i], uniqueBodies[j]);
         }
     }
 }
@@ -1451,6 +1456,25 @@ bool canSkipBroadphaseShapeInsert(
 
 bool shouldRunBroadphaseShapeInsert(
     return preflightBroadphaseShapeInsert(shapeIndex, bodies, shapes, params, use2D).canInsert();
+const char* broadphaseCellSlotRejectReasonName(BroadphaseCellSlotRejectReason reason) {
+    case BroadphaseCellSlotRejectReason::None:
+    case BroadphaseCellSlotRejectReason::ZeroSlots:
+
+BroadphaseCellSlotRejectReason broadphaseCellSlotRejectReason(u32 totalCellSlots) {
+        return BroadphaseCellSlotRejectReason::ZeroSlots;
+    return BroadphaseCellSlotRejectReason::None;
+
+bool broadphaseCellSlotRejectsForReason(u32 totalCellSlots, BroadphaseCellSlotRejectReason expected) {
+    return broadphaseCellSlotRejectReason(totalCellSlots) == expected;
+
+BroadphaseCellSlotPreflight preflightBroadphaseCellSlots(u32 totalCellSlots) {
+    BroadphaseCellSlotPreflight preflight{};
+    preflight.reason = broadphaseCellSlotRejectReason(totalCellSlots);
+    preflight.zeroSlots = preflight.reason == BroadphaseCellSlotRejectReason::ZeroSlots;
+
+    return !preflightBroadphaseCellSlots(totalCellSlots).canGenerate();
+
+    return preflightBroadphaseCellSlots(totalCellSlots).canGenerate();
 
 RefineBroadphaseRejectReason refineBroadphaseRejectReason(
     const RigidBodySoA& bodies,

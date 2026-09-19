@@ -246,6 +246,9 @@ bool PairBufferSoA::canSkipDedupe() const {
 bool PairBufferSoA::canSkipCompactAndClamp() const {
     return canSkipSoAIteration() || countValidSlots() == 0u;
     return preflightPairBufferAcceptPairs(*this, additionalCount).canAccept();
+
+bool PairBufferSoA::canWriteSlot(u32 slot, u32 idxA, u32 idxB) const {
+    return preflightPairBufferWriteSlot(*this, slot, idxA, idxB).canWrite();
 }
 
 bool PairBufferSoA::canApplyMaxCapacityClamp() const {
@@ -2369,6 +2372,9 @@ PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
 
 
 
+
+
+
     PairBufferWriteSlotPreflight preflight{};
     preflight.reason = pairBufferWriteSlotRejectReason(buffer, slot, idxA, idxB);
     preflight.outOfRangeSlot = preflight.reason == PairBufferWriteSlotRejectReason::OutOfRangeSlot;
@@ -2960,12 +2966,18 @@ bool shouldRunPairBufferMerge(const PairBufferSoA& buffer, u32 pairCount) {
 
 
 
+
+
+
 const char* pairBufferAcceptPairsRejectReasonName(PairBufferAcceptPairsRejectReason reason) {
     switch (reason) {
     case PairBufferAcceptPairsRejectReason::None:
         return "None";
     case PairBufferAcceptPairsRejectReason::ExceedsCapacity:
     return "Unknown";
+    case PairBufferAcceptPairsRejectReason::AtCapacity:
+        return "AtCapacity";
+    }
 
 PairBufferAcceptPairsRejectReason pairBufferAcceptPairsRejectReason(
     const PairBufferSoA& buffer,
@@ -3016,5 +3028,17 @@ bool canSkipPairBufferPrepareSlots(u32 slotCount) {
 
 bool shouldRunPairBufferPrepareSlots(u32 slotCount) {
     return preflightPairBufferPrepareSlots(slotCount).canPrepare();
+    }
+        return PairBufferAcceptPairsRejectReason::AtCapacity;
+    return PairBufferAcceptPairsRejectReason::None;
+
+    const PairBufferSoA& buffer,
+
+    u32 additionalCount) {
+    preflight.atCapacity = preflight.reason == PairBufferAcceptPairsRejectReason::AtCapacity;
+    return preflight;
+
+
+bool shouldRunPairBufferAcceptPairs(const PairBufferSoA& buffer, u32 additionalCount) {
 
 } // namespace fuse::physics::broadphase
