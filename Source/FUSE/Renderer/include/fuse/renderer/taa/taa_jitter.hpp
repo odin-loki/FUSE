@@ -52,6 +52,7 @@ enum class TaaJitterSyncRejectReason : u8 {
     InvalidSequence,
     InvalidViewport,
     Misaligned,
+    MisalignedFrame,
 };
 /// Human-readable label for jitter sync reject reasons (B5.9 deepen).
 const char* taaJitterSyncRejectReasonLabel(TaaJitterSyncRejectReason reason);
@@ -71,6 +72,8 @@ class TaaJitter;
 
 /// Human-readable label for jitter guard reject reasons (B5.9 deepen).
 const char* taaJitterGuardRejectReasonLabel(TaaJitterGuardRejectReason reason);
+/// True when a jitter guard reject reason would block the guarded operation (B5.9 deepen).
+bool taaJitterGuardRejectReasonIsBlocking(TaaJitterGuardRejectReason reason);
 /// Classify why jitter sync to a frame counter would be rejected (B5.9 deepen).
 TaaJitterGuardRejectReason classifyTaaJitterSyncReject(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 /// Classify why NDC jitter production would be rejected (B5.9 deepen).
@@ -518,6 +521,7 @@ bool preflightTaaJitterAlignment(const TaaJitter& jitter, u32 frameIndex,
 /// Jitter alignment preflight with mandatory reject-reason output (B5.9 deepen).
 bool tryPreflightTaaJitterAlignment(const TaaJitter& jitter, u32 frameIndex,
                                     TaaJitterGuardRejectReason& reason);
+/// True when jitter monotonic counter and slot match `frameIndex` (B5.9 deepen).
 /// Early-out when jitter alignment preflight would reject (B5.9 deepen).
 bool shouldSkipTaaJitterAlignment(const TaaJitter& jitter, u32 frameIndex);
 

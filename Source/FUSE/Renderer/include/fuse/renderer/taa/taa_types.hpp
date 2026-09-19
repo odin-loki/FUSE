@@ -237,6 +237,8 @@ enum class TaaHistoryReuseBlockReason : u8 {
 };
 /// Human-readable label for history reuse block reasons (B5.9 deepen).
 const char* taaHistoryReuseBlockReasonLabel(TaaHistoryReuseBlockReason reason);
+/// True when a history reuse block reason would block temporal reuse (B5.9 deepen).
+bool taaHistoryReuseBlockReasonIsBlocking(TaaHistoryReuseBlockReason reason);
 /// Classify why history reuse is blocked for an observed invalidate epoch (B5.9 deepen).
 TaaHistoryReuseBlockReason classifyTaaHistoryReuseBlock(const TaaHistoryBuffer& history, u32 observedGeneration);
 /// True when history temporal reuse is allowed for the observed invalidate epoch (B5.9 deepen).
@@ -534,6 +536,12 @@ bool tryComputeTaaResolveBlendWeightsIfResolveReady(const TaaResolveDesc& desc,
                                            TaaHistoryReuseBlockReason& reason);
 TaaHistoryReuseBlockReason classifyTaaHistoryWarmupBlock(const TaaHistoryBuffer& history);
 /// True when history is ready and warmed for temporal reuse (B5.9 deepen).
+/// Classify why history still needs warm-up before temporal reuse (B5.9 deepen).
+/// True when history is warmed and no longer needs a warm-up frame (B5.9 deepen).
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history,
+                               TaaHistoryReuseBlockReason* reason = nullptr);
+/// History warm-up preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryReuseBlockReason& reason);
 
 /// Why resolve blend-weight preflight rejected the request (B5.9 deepen).
 enum class TaaResolveBlendRejectReason : u8 {
@@ -541,6 +549,8 @@ enum class TaaResolveBlendRejectReason : u8 {
     InconsistentWithReuse,
 /// Human-readable label for resolve blend reject reasons (B5.9 deepen).
 const char* taaResolveBlendRejectReasonLabel(TaaResolveBlendRejectReason reason);
+/// True when a resolve blend reject reason would block blend-weight use (B5.9 deepen).
+bool taaResolveBlendRejectReasonIsBlocking(TaaResolveBlendRejectReason reason);
 /// Classify why resolve blend weights would be rejected (B5.9 deepen).
 TaaResolveBlendRejectReason classifyTaaResolveBlendReject(const TaaResolveDesc& desc,
                                                           const TaaHistoryBuffer& history);
