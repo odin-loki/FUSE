@@ -2090,3 +2090,35 @@ void testKernelLaunchPreflightGuards() {
     expectTrue(!fuse::renderer::gi::tryCanLaunchDdgiKernels(desc, oobParams, reason),
     expectTrue(reason == fuse::renderer::gi::DdgiKernelRejectReason::OutOfRangeIndex,
     testKernelLaunchPreflightGuards();
+
+// --- deepen additive from deepen-ddgi-guards-4e05 ---
+void testProbeSampleCoordsRejectReasons() {
+    expectTrue(fuse::renderer::ProbeGridLayout::tryBuildProbeSampleCoords(desc, {0.5f, 0.5f, 0.5f}, built, reason),
+    expectTrue(reason == fuse::renderer::ProbeSampleCoordsRejectReason::None, "interior build reports no reject reason");
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryBuildProbeSampleCoords(empty, {0.f, 0.f, 0.f}, built, reason),
+               "tryValidate rejects OOB corner indices");
+               "tryValidate rejects unordered corners");
+               "tryValidate rejects OOB trilinear weights");
+    expectTrue(std::strcmp(fuse::renderer::probeSampleCoordsRejectReasonLabel(reason), "out_of_range_weights") == 0,
+               "tryIsCacheIndexValid succeeds for origin probe");
+               "tryIsCacheIndexValid rejects OOB probe index");
+    expectTrue(reason == fuse::renderer::CacheIndexRejectReason::ProbeIndexOutOfRange,
+    expectTrue(std::strcmp(fuse::renderer::cacheIndexRejectReasonLabel(reason), "probe_index_out_of_range") == 0,
+               "tryIsCacheIndexValid rejects undersized cache");
+    expectTrue(reason == fuse::renderer::CacheIndexRejectReason::CacheUndersized,
+    expectTrue(std::strcmp(fuse::renderer::cacheIndexRejectReasonLabel(reason), "cache_undersized") == 0,
+               "tryIsCacheIndexValid rejects empty grid");
+void testLaunchRejectReasons() {
+               "tryCanLaunch succeeds for in-range indices");
+    expectTrue(std::strcmp(fuse::renderer::ddgiLaunchRejectReasonLabel(reason), "out_of_range_index") == 0,
+    expectTrue(std::strcmp(fuse::renderer::ddgiLaunchRejectReasonLabel(reason), "empty_grid") == 0,
+void testKernelPreflightGuards() {
+    expectTrue(fuse::renderer::gi::tryCanLaunchProbeTraceKernel(params, reason),
+    expectTrue(fuse::renderer::gi::tryCanLaunchProbeBlendKernel(params, reason),
+    expectTrue(!fuse::renderer::gi::tryCanLaunchProbeTraceKernel(params, reason),
+    expectTrue(!fuse::renderer::gi::tryCanLaunchProbeBlendKernel(params, reason),
+    expectTrue(reason == fuse::renderer::gi::DdgiKernelRejectReason::ZeroRaysPerProbe,
+    expectTrue(std::strcmp(fuse::renderer::gi::ddgiKernelRejectReasonLabel(reason), "zero_rays_per_probe") == 0,
+    testProbeSampleCoordsRejectReasons();
+    testLaunchRejectReasons();
+    testKernelPreflightGuards();

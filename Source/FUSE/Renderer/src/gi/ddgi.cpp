@@ -2127,3 +2127,15 @@ bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, DdgiKernelReje
 bool tryCanLaunchDdgiKernels(const DDGIDesc& desc,
                              DdgiKernelRejectReason& outReason) {
             outReason = DdgiKernelRejectReason::OutOfRangeIndex;
+
+// --- deepen additive from deepen-ddgi-guards-4e05 ---
+    case CacheIndexRejectReason::ProbeIndexOutOfRange:
+    case CacheIndexRejectReason::CacheUndersized:
+        outReason = ProbeSampleCoordsRejectReason::OutOfRangeIndices;
+        outReason = ProbeSampleCoordsRejectReason::OutOfRangeWeights;
+    outReason = built ? ProbeSampleCoordsRejectReason::None : ProbeSampleCoordsRejectReason::EmptyGrid;
+        outReason = CacheIndexRejectReason::ProbeIndexOutOfRange;
+        outReason = CacheIndexRejectReason::CacheUndersized;
+    return tryIsCacheIndexValid(desc, probe_index, cache_count, reason);
+    case DdgiKernelRejectReason::ZeroRaysPerProbe:
+        outReason = DdgiKernelRejectReason::ZeroRaysPerProbe;
