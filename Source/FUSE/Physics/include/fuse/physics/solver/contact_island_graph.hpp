@@ -607,6 +607,7 @@ struct ContactIslandGraph {
     bool buildGuarded(u32 bodyCount,
     /// True when `islandIndex` is in range for graph accessors (B4.4 deepen follow-up).
     bool islandIndexInRange(u32 islandIndex) const { return islandIndex < islandCount(); }
+    /// Guarded build entry; returns false when build inputs fail validation (B4.5 deepen follow-up).
 
 private:
     void unionBodies(u32 a, u32 b);
@@ -693,6 +694,8 @@ struct IslandGraphIntegrityPreflight {
 /// Validate a built graph against body/constraint slot coverage; sets `skipped` for empty graphs.
 IslandGraphIntegrityPreflight preflight_island_graph_integrity(
     const ContactIslandGraph& graph,
+/// Validate body-index coverage before graph build (B4.5 deepen follow-up pass).
+bool island_graph_build_inputs_valid(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
