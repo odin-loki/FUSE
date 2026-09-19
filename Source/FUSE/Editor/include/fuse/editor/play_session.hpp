@@ -33,13 +33,8 @@ struct VariableTickPreflight {
 
 /// Read-only variable-tick guard diagnostics (B6.12 deepen — inactive-tick guard).
 struct VariableTickPreflight {
-    bool skipped = false;
-    bool wouldSimulate = false;
-    bool wouldAdvanceAccumulator = false;
-};
 
 /// Read-only variable-tick guard diagnostics (B6.12 deepen follow-up — inactive tick).
-struct VariableTickPreflight {
     bool skipped = false;
     bool wouldSimulate = false;
     bool wouldAdvanceAccumulator = false;
@@ -59,11 +54,27 @@ struct WorldSnapshotInfo {
 struct WorldSnapshotPreflight {
 
     bool canDrain() const { return captured; }
+};
 
 /// Read-only dirty-snapshot restore diagnostics (B6.12 deepen follow-up — restore guard).
 struct DirtySnapshotPreflight {
 
     bool canRestore() const { return captured; }
+
+/// Read-only world-snapshot drain diagnostics (B6.12 deepen follow-up — drain guard).
+struct WorldSnapshotPreflight {
+    bool captured = false;
+    u32 entityCount = 0;
+    bool skipped = false;
+
+    bool canDrain() const { return captured; }
+};
+
+/// Captured world snapshot metadata for PIE restore (B6.12 deepen follow-up).
+struct WorldSnapshotInfo {
+    bool captured = false;
+    u32 entityCount = 0;
+};
 
 /// Combined PIE frame preflight — variable tick plus fixed-step drain (B6.12 deepen follow-up).
 struct TickFixedStepPreflight {
@@ -146,17 +157,23 @@ public:
     /// Preflight variable tick plus fixed-step drain for one PIE frame.
     TickFixedStepPreflight preflightTickFixedStep(f32 dt, f32 fixedDt,
                                                   const PlayModePhysicsState& physics,
+                                                  u32 maxSteps = 0) const;
     /// Preflight a variable tick without mutating session state.
     VariableTickPreflight preflightVariableTick(f32 dt, const PlayModePhysicsState& physics) const;
     bool shouldSkipVariableTick(f32 dt, const PlayModePhysicsState& physics) const;
     bool shouldSkipFixedStepDrain(f32 fixedDt, const PlayModePhysicsState& physics) const;
     bool hasPendingFixedSteps(f32 fixedDt, const PlayModePhysicsState& physics) const;
     bool canConsumeFixedSteps(f32 fixedDt, const PlayModePhysicsState& physics,
+                              u32 maxSteps = 0) const;
     /// Sub-fixed remainder left in `tickAccumulator()` after pending slices.
     f32 fixedAccumulatorRemainder(f32 fixedDt) const;
     bool shouldSkipDirtySnapshotRestore() const { return !m_hasDirtySnapshot; }
+    bool shouldSkipDirtySnapshotDrain() const;
+    bool shouldSkipWorldSnapshotDrain() const;
     /// Preflight dirty-flag restore without mutating editor state.
     DirtySnapshotPreflight preflightDirtySnapshot() const;
+    /// Preflight world-snapshot drain without mutating editor state.
+    WorldSnapshotPreflight preflightWorldSnapshot() const;
     bool canRestoreDirtySnapshot() const { return preflightDirtySnapshot().canRestore(); }
     bool shouldSkipWorldSnapshotRestore() const { return !m_hasWorldSnapshot; }
     /// Preflight world snapshot drain without mutating editor state.
@@ -167,6 +184,7 @@ public:
     bool hasPendingFixedSteps(f32 fixedDt) const { return pendingFixedStepCount(fixedDt) > 0u; }
     /// Sub-fixed remainder in `tickAccumulator()` after draining `fixedDt` slices.
     f32 tickAccumulatorRemainder(f32 fixedDt) const;
+    bool canDrainDirtySnapshot() const { return !shouldSkipDirtySnapshotDrain(); }
     u32 dirtySnapshotEntityCount() const {
         return m_hasDirtySnapshot ? static_cast<u32>(m_dirtySnapshot.transformDirty.size()) : 0u;
     }
