@@ -5655,3 +5655,22 @@ void testIslandPipelineDispatchGuarded() {
                                IslandPipelineDispatchRejectReason::NoDispatchableIslands),
     const IslandPipelineDispatchPreflight allSleepingPipeline =
     expectTrue(allSleepingPipeline.reason == IslandPipelineDispatchRejectReason::AllSleeping,
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-2834 ---
+    expectTrue(classify_island_graph_build_reject(buildPreflight) ==
+    IslandDispatchRejectReason reason = IslandDispatchRejectReason::None;
+    expectTrue(reason == IslandDispatchRejectReason::NoDispatchableIslands,
+    expectTrue(reason == IslandDispatchRejectReason::InvalidDt, "invalid dt dispatch reject reason");
+    const IslandDispatchPreflight dispatchPreflight = preflight_island_dispatch(graph, 0.f);
+    expectTrue(classify_island_dispatch_reject(dispatchPreflight) ==
+    expectTrue(classify_island_solve_reject(solvePreflight) ==
+    expectTrue(classify_island_sleep_reject(mixedSleep) == IslandSleepRejectReason::NotAllSleeping,
+    expectTrue(classify_island_sleep_reject(allSleeping) == IslandSleepRejectReason::None,
+    expectTrue(classify_island_wake_reject(mixedWake) == IslandWakeRejectReason::None,
+    expectTrue(mixedWake.reason == IslandWakeRejectReason::None, "mixed island wake reason is none");
+    expectTrue(reason == IslandDispatchRejectReason::None, "pipeline dispatch preflight reason none");
+    expectTrue(pipelinePreflight.can_dispatch(), "pipeline preflight can dispatch");
+    expectTrue(pipelinePreflight.wake.can_wake(), "pipeline preflight includes wakeable islands");
+    expectTrue(reason == IslandDispatchRejectReason::InvalidDt,
+    expectTrue(preflight_island_dispatch_ready(graph, dt) == !should_skip_island_dispatch(graph, dt),
+               "preflight_island_dispatch_ready mirrors should_skip_island_dispatch");

@@ -1920,3 +1920,9 @@ bool should_skip_island_pipeline_dispatch(u32 bodyCount,
     bool can_dispatch() const { return reason == IslandSolveRejectReason::None && !skipped && stats.dispatchableCount > 0u; }
         return reason == IslandWakeRejectReason::None && !skipped && stats.wakeableCount > 0u;
         return reason == IslandPipelineDispatchRejectReason::None && !skipped && dispatch.can_dispatch() &&
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-2834 ---
+    bool can_dispatch() const { return !skipped && reason == IslandDispatchRejectReason::None && dispatch.can_dispatch(); }
+IslandSolveRejectReason classify_island_solve_reject(const IslandConstraintSolvePreflight& preflight);
+IslandGraphBuildRejectReason classify_island_graph_build_reject(const IslandBuildPreflight& preflight);
+bool try_preflight_island_pipeline_dispatch(const ContactIslandGraph& graph,

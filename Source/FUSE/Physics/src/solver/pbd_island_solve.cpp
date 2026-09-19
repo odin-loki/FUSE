@@ -3256,3 +3256,10 @@ bool should_skip_island_pipeline_dispatch(u32 bodyCount,
         preflight.reason = IslandPipelineDispatchRejectReason::NoDispatchableIslands;
     if (preflight.sleep.reason == IslandSleepRejectReason::NoSolveableIslands) {
         preflight.reason = IslandPipelineDispatchRejectReason::AllSleeping;
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-2834 ---
+IslandSolveRejectReason classify_island_solve_reject(const IslandConstraintSolvePreflight& preflight) {
+IslandGraphBuildRejectReason classify_island_graph_build_reject(const IslandBuildPreflight& preflight) {
+        return IslandGraphBuildRejectReason::UnsafeContactRefs;
+        return IslandGraphBuildRejectReason::UnsafeDistanceRefs;
+bool try_preflight_island_pipeline_dispatch(const ContactIslandGraph& graph,
