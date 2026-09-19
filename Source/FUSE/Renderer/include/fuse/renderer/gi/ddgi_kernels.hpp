@@ -97,3 +97,8 @@ bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, DdgiKernelReje
 bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, DdgiKernelRejectReason& outReason);
 bool tryCanLaunchDdgiKernels(const ::fuse::renderer::DDGIDesc& desc,
                              DdgiKernelRejectReason& outReason);
+
+// --- deepen additive from ddgi-b56-guards-deepen-c1b1 ---
+enum class DdgiKernelLaunchRejectReason : u8 {
+const char* ddgiKernelLaunchRejectReasonLabel(DdgiKernelLaunchRejectReason reason);
+bool tryCanLaunchDdgiKernelParams(const DDGIKernelParams& params, DdgiKernelLaunchRejectReason& outReason);

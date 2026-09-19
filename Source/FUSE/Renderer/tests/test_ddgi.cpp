@@ -2122,3 +2122,31 @@ void testKernelPreflightGuards() {
     testProbeSampleCoordsRejectReasons();
     testLaunchRejectReasons();
     testKernelPreflightGuards();
+
+// --- deepen additive from ddgi-b56-guards-deepen-c1b1 ---
+    expectTrue(fuse::renderer::ddgi_util::tryIsCacheIndexValid(desc, 3u, 8u, reason),
+               "tryIsCacheIndexValid succeeds for valid cache lookup");
+               "tryIsCacheIndexValid rejects invalid probe index");
+    expectTrue(std::strcmp(fuse::renderer::cacheIndexRejectReasonLabel(reason), "invalid_probe_index") == 0,
+               "tryCanLaunchDdgiProbeUpdate succeeds for valid indices");
+    expectTrue(std::strcmp(fuse::renderer::probeUpdateLaunchRejectReasonLabel(reason), "out_of_range_index") == 0,
+               "tryCanLaunchDdgiProbeUpdate rejects null index buffer");
+    expectTrue(std::strcmp(fuse::renderer::probeUpdateLaunchRejectReasonLabel(reason), "null_indices") == 0,
+               "tryCanLaunchDdgiProbeUpdate rejects zero probe count");
+    expectTrue(std::strcmp(fuse::renderer::probeUpdateLaunchRejectReasonLabel(reason), "zero_count") == 0,
+void testKernelLaunchPreflights() {
+    fuse::renderer::gi::DdgiKernelLaunchRejectReason reason =
+        fuse::renderer::gi::DdgiKernelLaunchRejectReason::None;
+    expectTrue(fuse::renderer::gi::tryCanLaunchDdgiKernelParams(valid, reason),
+               "tryCanLaunchDdgiKernelParams succeeds for valid params");
+    expectTrue(std::strcmp(fuse::renderer::gi::ddgiKernelLaunchRejectReasonLabel(reason), "none") == 0,
+    expectTrue(!fuse::renderer::gi::tryCanLaunchDdgiKernelParams(zeroCount, reason),
+               "tryCanLaunchDdgiKernelParams rejects zero update count");
+    expectTrue(std::strcmp(fuse::renderer::gi::ddgiKernelLaunchRejectReasonLabel(reason), "zero_update_count") == 0,
+    expectTrue(!fuse::renderer::gi::tryCanLaunchDdgiKernelParams(nullIndices, reason),
+               "tryCanLaunchDdgiKernelParams rejects null probe indices");
+    expectTrue(std::strcmp(fuse::renderer::gi::ddgiKernelLaunchRejectReasonLabel(reason), "null_probe_indices") == 0,
+    expectTrue(!fuse::renderer::gi::tryCanLaunchDdgiKernelParams(zeroRays, reason),
+               "tryCanLaunchDdgiKernelParams rejects zero rays per probe");
+    expectTrue(std::strcmp(fuse::renderer::gi::ddgiKernelLaunchRejectReasonLabel(reason), "zero_rays_per_probe") == 0,
+    testKernelLaunchPreflights();
