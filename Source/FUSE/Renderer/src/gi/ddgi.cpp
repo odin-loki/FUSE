@@ -438,6 +438,11 @@ bool ProbeGridLayout::canPreflightProbeSampleCoords(const DDGIDesc& desc, const 
     return tryPreflightProbeSampleCoords(desc, coords, reason);
 }
 
+bool ProbeGridLayout::wouldSkipProbeSampleCoordPreflight(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
+    ProbeSampleCoordsRejectReason reason = ProbeSampleCoordsRejectReason::None;
+    return !tryPreflightProbeSampleCoords(desc, coords, reason);
+}
+
 ProbeSampleCoordsRejectReason ProbeGridLayout::classifyProbeSampleCoordsReject(const DDGIDesc& desc,
                                                                              const ProbeSampleCoords& coords) {
     ProbeSampleCoordsRejectReason reason = ProbeSampleCoordsRejectReason::None;
@@ -946,6 +951,13 @@ bool preflightTrilinearProbeSample(const DDGIDesc& desc,
     return !probeTrilinearSampleRejectReasonIsBlocking(reject);
 }
 
+bool wouldSkipTrilinearProbeSample(const DDGIDesc& desc,
+                                   const ProbeSampleCoords& coords,
+                                   const IrradianceCacheEntry* cache,
+                                   u32 cache_count) {
+    return !preflightTrilinearProbeSample(desc, coords, cache, cache_count);
+}
+
 bool tryCanSampleAtProbeCoords(const DDGIDesc& desc,
                                const ProbeSampleCoords& coords,
                                const IrradianceCacheEntry* cache,
@@ -1080,6 +1092,20 @@ bool wouldSkipCacheIndexLookup(const DDGIDesc& desc,
                                u32 cache_count) {
     CacheIndexRejectReason reason = CacheIndexRejectReason::None;
     return !tryValidateCacheIndex(desc, cache, probe_index, cache_count, reason);
+}
+
+bool wouldSkipCacheIndexLookupAtCoord(const DDGIDesc& desc,
+                                      const IrradianceCacheEntry* cache,
+                                      const ProbeGridCoord& coord,
+                                      u32 cache_count) {
+    if (!ProbeGridLayout::isValidProbeCoord(desc, coord)) {
+        return true;
+    }
+    const u32 probe_index = ProbeGridLayout::probeIndexFromCoord(desc, coord);
+    if (probe_index == UINT32_MAX) {
+        return true;
+    }
+    return wouldSkipCacheIndexLookup(desc, cache, probe_index, cache_count);
 }
 
 CacheIndexRejectReason classifyCacheIndexReject(const DDGIDesc& desc,
