@@ -1016,6 +1016,14 @@ bool shouldSkipIslandGraphBuild(u32 bodyCount,
     return !preflightIslandGraphBuild(bodyCount, contacts, distanceConstraints).can_build();
 }
 
+bool contact_bodies_in_range(const narrowphase::ContactManifold& contact, u32 bodyCount) {
+    return contact.bodyA < bodyCount && contact.bodyB < bodyCount;
+}
+
+bool distance_bodies_in_range(const DistanceConstraint& constraint, u32 bodyCount) {
+    return constraint.bodyA < bodyCount && constraint.bodyB < bodyCount;
+}
+
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();
@@ -1084,7 +1092,7 @@ void ContactIslandGraph::build(u32 bodyCount,
     }
 
     for (const narrowphase::ContactManifold& contact : contacts) {
-        if (!contact.valid) {
+        if (!contact.valid || !contact_bodies_in_range(contact, bodyCount)) {
             continue;
         }
         if (!contactBodiesInRange(contact.bodyA, contact.bodyB, bodyCount)) {
@@ -1099,6 +1107,7 @@ void ContactIslandGraph::build(u32 bodyCount,
         if (!contactBodiesInRange(constraint.bodyA, constraint.bodyB, bodyCount)) {
         if (!distance_pair_in_range(constraint, bodyCount)) {
         if (constraint.bodyA >= bodyCount || constraint.bodyB >= bodyCount) {
+        if (!distance_bodies_in_range(constraint, bodyCount)) {
             continue;
         }
         unionBodies(constraint.bodyA, constraint.bodyB);
@@ -1128,9 +1137,7 @@ void ContactIslandGraph::build(u32 bodyCount,
         if (!contactBodiesInRange(contact.bodyA, contact.bodyB, bodyCount)) {
         if (!contact_pair_in_range(contact, bodyCount)) {
         if (contact.bodyA >= bodyCount || contact.bodyB >= bodyCount) {
-            continue;
-        }
-        if (contact.bodyA >= bodyCount || contact.bodyB >= bodyCount) {
+        if (!contact.valid || !contact_bodies_in_range(contact, bodyCount)) {
             continue;
         }
         const u32 islandIndex = rootToIsland[findRoot(contact.bodyA)];
@@ -1145,6 +1152,7 @@ void ContactIslandGraph::build(u32 bodyCount,
         if (!distance_pair_in_range(constraint, bodyCount)) {
         if (constraint.bodyA >= bodyCount || constraint.bodyB >= bodyCount) {
         if (!distance_body_indices_in_range(constraint, bodyCount)) {
+        if (!distance_bodies_in_range(constraint, bodyCount)) {
             continue;
         }
         const u32 islandIndex = rootToIsland[findRoot(constraint.bodyA)];

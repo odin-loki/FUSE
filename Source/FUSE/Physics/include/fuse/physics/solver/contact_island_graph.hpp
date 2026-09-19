@@ -502,7 +502,6 @@ struct ContactIslandGraphBuildStats {
 /// Preflight diagnostics for island graph build inputs (B4.4 deepen follow-up).
     ContactIslandGraphBuildStats stats{};
 
-        return stats.outOfRangeContactBodyCount > 0u || stats.outOfRangeDistanceBodyCount > 0u;
 
     bool has_self_contacts() const { return stats.selfContactCount > 0u; }
 
@@ -528,16 +527,12 @@ bool shouldSkipContactIslandGraphBuild(u32 bodyCount,
 /// Non-mutating island build predicate — mirrors guarded build eligibility.
 bool should_run_contact_island_build(
 /// Input coverage for island graph build (out-of-range and degenerate body-index guards).
-struct IslandGraphBuildStats {
 
-struct IslandGraphBuildPreflight {
-    IslandGraphBuildStats stats{};
 
 
     bool has_degenerate_refs() const {
         return stats.selfPairContactCount > 0u || stats.selfPairDistanceCount > 0u;
 
-    bool can_build() const { return !skipped && !has_unsafe_refs(); }
 
 /// Post-build integrity coverage for island body/constraint refs.
 struct IslandGraphIntegrityStats {
@@ -573,8 +568,9 @@ inline bool is_in_range_island_distance(const DistanceConstraint& constraint, u3
     return are_island_body_refs_in_range(constraint.bodyA, constraint.bodyB, bodyCount);
 /// Early-out guard when build inputs cannot form any constrained partition.
 bool shouldSkipIslandGraphBuild(u32 bodyCount,
-                                const std::vector<narrowphase::ContactManifold>& contacts,
-                                const std::vector<DistanceConstraint>& distanceConstraints);
+bool contact_bodies_in_range(const narrowphase::ContactManifold& contact, u32 bodyCount);
+
+bool distance_bodies_in_range(const DistanceConstraint& constraint, u32 bodyCount);
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
