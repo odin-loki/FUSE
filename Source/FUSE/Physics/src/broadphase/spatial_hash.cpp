@@ -1617,6 +1617,17 @@ BroadphaseMergeScan scanBroadphaseMergeBodies(
 
     preflight.emptyPlaneBodies = planeBodyCount == 0u;
     preflight.emptyDynamicBodies = dynamicBodyCount == 0u;
+            dynamicBodies.push_back(bodyIndex);
+
+    std::sort(planeBodies.begin(), planeBodies.end());
+    planeBodies.erase(std::unique(planeBodies.begin(), planeBodies.end()), planeBodies.end());
+    std::sort(dynamicBodies.begin(), dynamicBodies.end());
+    dynamicBodies.erase(std::unique(dynamicBodies.begin(), dynamicBodies.end()), dynamicBodies.end());
+
+    preflight.planeBodyCount = static_cast<u32>(planeBodies.size());
+    preflight.dynamicBodyCount = static_cast<u32>(dynamicBodies.size());
+    preflight.emptyPlaneBodies = preflight.planeBodyCount == 0u;
+    preflight.emptyDynamicBodies = preflight.dynamicBodyCount == 0u;
     if (preflight.emptyPlaneBodies) {
         preflight.reason = BroadphaseMergeRejectReason::EmptyPlaneBodies;
     } else if (preflight.emptyDynamicBodies) {
@@ -2151,6 +2162,17 @@ bool canSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const 
 
 bool shouldRunMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer) {
     return preflightMergePairsIntoBuffer(pairs, buffer).canMerge();
+}
+
+u32 countValidBroadphasePairs(const PairBufferSoA& buffer) {
+    if (buffer.canSkipSoAIteration()) {
+        return 0u;
+    }
+    return buffer.countValidSlots() > 0u ? buffer.countValidSlots() : buffer.activeCount;
+}
+
+bool hasMultipleBroadphasePairs(const PairBufferSoA& buffer) {
+    return countValidBroadphasePairs(buffer) > 1u;
 }
 
 void refineBroadphasePairsParallel(
