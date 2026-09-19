@@ -26,6 +26,7 @@ struct CookHashPreflight {
     CookHashRejectReason reason = CookHashRejectReason::None;
 
     [[nodiscard]] bool ok() const { return can_hash; }
+    [[nodiscard]] bool should_skip() const { return !can_hash; }
 };
 
 /// FNV-1a 64-bit hash over raw bytes — shared by cook cache keys (B7.9 deepen stub).
@@ -70,5 +71,7 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size);
 /// Fold source/upstream preflight — upstream zero is allowed on valid source keys (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
+/// Cacheable fold preflight — mirrors `is_cacheable_cook_cache_key` (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash);
 
 } // namespace fuse::project
