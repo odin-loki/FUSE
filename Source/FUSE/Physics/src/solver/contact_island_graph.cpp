@@ -4,6 +4,100 @@
 
 namespace fuse::physics {
 
+namespace {
+
+bool contactBodiesInRange(u32 bodyCount, const narrowphase::ContactManifold& contact) {
+    return contact.bodyA < bodyCount && contact.bodyB < bodyCount;
+}
+
+bool distanceBodiesInRange(u32 bodyCount, const DistanceConstraint& constraint) {
+    return constraint.bodyA < bodyCount && constraint.bodyB < bodyCount;
+}
+
+} // namespace
+
+const char* islandBuildRejectReasonName(IslandBuildRejectReason reason) {
+    switch (reason) {
+    case IslandBuildRejectReason::None:
+        return "None";
+    case IslandBuildRejectReason::ZeroBodyCount:
+        return "ZeroBodyCount";
+    case IslandBuildRejectReason::OutOfRangeContactBodies:
+        return "OutOfRangeContactBodies";
+    case IslandBuildRejectReason::OutOfRangeDistanceBodies:
+        return "OutOfRangeDistanceBodies";
+    default:
+        return "Unknown";
+    }
+}
+
+IslandBuildRejectReason island_build_reject_reason(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    if (bodyCount == 0u) {
+        return IslandBuildRejectReason::ZeroBodyCount;
+    }
+
+    for (const narrowphase::ContactManifold& contact : contacts) {
+        if (!contact.valid) {
+            continue;
+        }
+        if (!contactBodiesInRange(bodyCount, contact)) {
+            return IslandBuildRejectReason::OutOfRangeContactBodies;
+        }
+    }
+
+    for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (!distanceBodiesInRange(bodyCount, constraint)) {
+            return IslandBuildRejectReason::OutOfRangeDistanceBodies;
+        }
+    }
+
+    return IslandBuildRejectReason::None;
+}
+
+IslandBuildPreflight preflight_island_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    IslandBuildPreflight preflight{};
+    preflight.bodyCount = bodyCount;
+    preflight.reason = island_build_reject_reason(bodyCount, contacts, distanceConstraints);
+    preflight.skipped = preflight.reason != IslandBuildRejectReason::None;
+
+    for (const narrowphase::ContactManifold& contact : contacts) {
+        if (!contact.valid) {
+            continue;
+        }
+        ++preflight.ownedContactCount;
+        if (contactBodiesInRange(bodyCount, contact)) {
+            ++preflight.inRangeContactCount;
+        }
+    }
+
+    for (const DistanceConstraint& constraint : distanceConstraints) {
+        ++preflight.ownedDistanceCount;
+        if (distanceBodiesInRange(bodyCount, constraint)) {
+            ++preflight.inRangeDistanceCount;
+        }
+    }
+
+    return preflight;
+}
+
+bool should_skip_island_build(u32 bodyCount,
+                              const std::vector<narrowphase::ContactManifold>& contacts,
+                              const std::vector<DistanceConstraint>& distanceConstraints) {
+    return !preflight_island_build(bodyCount, contacts, distanceConstraints).can_build();
+}
+
+bool can_build_island_graph(u32 bodyCount,
+                            const std::vector<narrowphase::ContactManifold>& contacts,
+                            const std::vector<DistanceConstraint>& distanceConstraints) {
+    return preflight_island_build(bodyCount, contacts, distanceConstraints).can_build();
+}
+
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();
