@@ -226,4 +226,60 @@ bool narrowphase_batch_rejects_all(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Const preflight for detect_contacts_pair dispatch (B4.5 deepen pass).
+struct ContactPairDetectPreflight {
+    ContactPairRejectReason reason = ContactPairRejectReason::None;
+    bool rejected = false;
+
+    bool can_detect() const { return !rejected; }
+};
+
+/// Populate detect preflight without running shape dispatch (B4.5 deepen pass).
+inline ContactPairDetectPreflight preflight_detect_contacts_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    ContactPairDetectPreflight preflight{};
+    preflight.reason = contact_pair_reject_reason(pair, bodies, shapes);
+    preflight.rejected = preflight.reason != ContactPairRejectReason::None;
+    return preflight;
+}
+
+/// Returns true when detect_contacts_pair would return an invalid manifold (B4.5 deepen pass).
+inline bool should_skip_detect_contacts_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !preflight_detect_contacts_pair(pair, bodies, shapes).can_detect();
+}
+
+/// Non-mutating detect skip predicate — mirrors `should_skip_detect_contacts_pair` (B4.5 deepen pass).
+inline bool can_skip_detect_contacts_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return should_skip_detect_contacts_pair(pair, bodies, shapes);
+}
+
+/// Detect only when base pair preflight passes; invalid manifold otherwise (B4.5 deepen pass).
+inline ContactManifold detect_contacts_pair_if_valid(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (should_skip_detect_contacts_pair(pair, bodies, shapes)) {
+        return invalidContactManifold();
+    }
+    return detect_contacts_pair(pair, bodies, shapes);
+}
+
+/// Returns true when plane-plane pairs are rejected by base preflight (B4.5 deepen pass).
+inline bool contact_pair_rejects_plane_plane(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return contact_pair_reject_reason(pair, bodies, shapes) ==
+           ContactPairRejectReason::UnsupportedShapePair &&
+           is_plane_plane_contact_pair(pair, shapes);
+}
+
 } // namespace fuse::physics::narrowphase
