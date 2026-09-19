@@ -4690,3 +4690,6 @@ void testOutOfRangeBodyCountInPreflights() {
     expectTrue(wakePreflight.outOfRangeBodyCount == 1u, "wake preflight counts out-of-range body index");
     testPreflightIslandSolveableGraph();
     testOutOfRangeBodyCountInPreflights();
+
+// --- deepen additive from deepen-pbd-island-guards-c9b6 ---
+    expectTrue(preflight.reason == IslandBuildRejectReason::DegenerateRefs,

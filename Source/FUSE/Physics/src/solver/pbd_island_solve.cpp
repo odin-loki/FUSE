@@ -2600,3 +2600,7 @@ bool should_skip_wake_then_solve_island(const ContactIslandGraph::Island& island
         if (!constraintPreflight.refs.can_solve()) {
         if (!constraintPreflight.bodies.can_solve()) {
         if (should_skip_island_sleep_solve(*job.island, bodies)) {
+
+// --- deepen additive from deepen-pbd-island-guards-c9b6 ---
+    case IslandBuildRejectReason::DegenerateRefs:
+        return IslandBuildRejectReason::DegenerateRefs;
