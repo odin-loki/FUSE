@@ -2,6 +2,7 @@
 
 #include <fuse/physics/config.hpp>
 #include <fuse/physics/broadphase/spatial_hash.hpp>
+#include <fuse/physics/config.hpp>
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
 #include <fuse/physics/narrowphase/friction.hpp>
 #include <fuse/physics/physics_data.hpp>
@@ -1993,6 +1994,7 @@ bool should_run_narrowphase_batch(
 /// Run shape dispatch only when pair preflight allows (B4.3 deepen pass).
 ContactManifold detect_contacts_pair_with_preflight(
 /// Non-mutating pair-dispatch skip predicate — mirrors `should_skip_contact_pair_dispatch` (B4.5 deepen follow-up pass).
+/// Non-mutating pair-dispatch skip predicate — mirrors `should_skip_contact_pair_dispatch` (B4.6 deepen pass).
 bool would_skip_contact_pair_dispatch(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
@@ -2030,6 +2032,7 @@ inline bool wouldSkipContactPairDispatch(
 inline bool would_skip_contact_pair_dispatch(
 /// Alias for `should_skip_contact_pair_dispatch` (B4.6 deepen pass).
 /// Non-mutating deepen pair-dispatch skip predicate — mirrors `should_skip_contact_pair_deepen_dispatch` (B4.5 deepen follow-up pass).
+/// Non-mutating deepen pair-dispatch skip predicate — mirrors `should_skip_contact_pair_deepen_dispatch` (B4.6 deepen pass).
 bool would_skip_contact_pair_deepen_dispatch(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
@@ -2055,6 +2058,18 @@ bool try_generate_contact_manifold(ContactManifold& manifold);
 namespace fuse::physics::narrowphase {
 
 FUSE_PHYSICS_INLINE bool would_skip_contact_pair_dispatch(
+/// Non-mutating narrowphase batch skip predicate — mirrors `can_skip_narrowphase` (B4.6 deepen pass).
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Guarded pair dispatch — returns invalid manifold when deepen preflight rejects (B4.6 deepen pass).
+    const broadphase::CandidatePair& pair,
+
+/// Guarded manifold finalize — no-op when `can_finalize_contact_manifold` fails (B4.6 deepen pass).
+
+/// Guarded manifold finalize-if-needed — same guards as `generate_contact_manifold_if_needed` (B4.6 deepen pass).
+bool try_generate_contact_manifold_if_needed(ContactManifold& manifold);
+
     const CollisionShapeSoA& shapes) {
     return should_skip_contact_pair_dispatch(pair, bodies, shapes);
 }
@@ -2283,6 +2298,11 @@ FUSE_PHYSICS_INLINE ContactManifold try_detect_contacts_pair(
 FUSE_PHYSICS_INLINE ContactManifold try_detect_contacts_pair_deepen(
 
 FUSE_PHYSICS_INLINE bool try_generate_contact_manifold(ContactManifold& manifold) {
+
+
+
+
+FUSE_PHYSICS_INLINE bool try_generate_contact_manifold_if_needed(ContactManifold& manifold) {
     return generate_contact_manifold_if_needed(manifold);
 }
 

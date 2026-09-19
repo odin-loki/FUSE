@@ -1078,5 +1078,18 @@ FUSE_PHYSICS_INLINE bool try_rebuild_friction_basis(ContactManifold& manifold, f
 FUSE_PHYSICS_INLINE bool try_compute_friction_tangents(ContactManifold& manifold, f32 epsilon) {
     if (would_skip_friction_tangent_build(manifold)) {
     if (!would_skip_friction_basis_rebuild(manifold, epsilon)) {
+/// Non-mutating friction-basis rebuild skip predicate — mirrors `should_skip_friction_basis_preflight` (B4.6 deepen pass).
+
+/// Guarded friction-basis rebuild — same guards as `rebuild_friction_basis_with_preflight` (B4.6 deepen pass).
+
+/// Guarded friction tangent build — same guards as `ensure_friction_basis` (B4.6 deepen pass).
+bool try_ensure_friction_basis(ContactManifold& manifold);
+
+FUSE_PHYSICS_INLINE bool would_skip_friction_basis_rebuild(
+    f32 epsilon) {
+
+
+FUSE_PHYSICS_INLINE bool try_ensure_friction_basis(ContactManifold& manifold) {
+    return ensure_friction_basis(manifold);
 
 } // namespace fuse::physics::narrowphase

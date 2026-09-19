@@ -1755,6 +1755,13 @@ bool try_prune_contact_manifold(
 
 /// Finalize only when preflight passes; no-op otherwise (B4.5 deepen follow-up pass).
 bool try_finalize_contact_manifold(
+/// Non-mutating manifold-prune skip predicate — mirrors `should_skip_manifold_prune` (B4.6 deepen pass).
+
+/// Non-mutating manifold-finalize skip predicate — mirrors `can_skip_manifold_finalize` (B4.6 deepen pass).
+
+/// Guarded manifold prune — same guards as `prune_contact_manifold_with_preflight` (B4.6 deepen pass).
+
+/// Guarded manifold finalize — same guards as `finalize_contact_manifold_with_preflight` (B4.6 deepen pass).
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
@@ -1817,7 +1824,6 @@ inline bool tryPruneContactManifold(
 /// Guarded manifold finalize — returns false when preflight rejects (B4.5 deepen follow-up pass).
 inline bool tryFinalizeContactManifold(
     return finalize_contact_manifold_with_preflight(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
-}
 
 } // namespace fuse::physics::narrowphase
 
