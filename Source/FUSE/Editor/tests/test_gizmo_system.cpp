@@ -4356,3 +4356,9 @@ void testInteractionRejectReasonGuards() {
     expectTrue(gizmo.preflightEndInteractionReady(),
                "gizmo preflightEndInteractionReady accepts active drag");
     testInteractionRejectReasonGuards();
+
+// --- deepen additive from deepen-b6-gizmo-preflight-guards-ffe4 ---
+    expectTrue(fuse::editor::preflightSnapDragReady(0.25f, fuse::editor::GizmoMode::Translate,
+    expectTrue(!fuse::editor::preflightSnapDragReady(0.25f, fuse::editor::GizmoMode::Translate,
+        fuse::editor::preflightSnapDrag(0.25f, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(gizmo.tryPreflightSnapDrag(0.25f, reason),
