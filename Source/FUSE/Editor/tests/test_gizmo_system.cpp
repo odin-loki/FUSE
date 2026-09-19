@@ -4281,3 +4281,6 @@ void testNonFiniteRejectReasonClassifiers() {
 // --- deepen additive from deepen-gizmo-preflights-6885 ---
 void testNonFiniteRejectReasonClassification() {
     testNonFiniteRejectReasonClassification();
+
+// --- deepen additive from deepen-gizmo-b6-preflights-ccc2 ---
+    expectTrue(gizmo.tryPreflightSnapDrag(0.37f, reason), "gizmo tryPreflightSnapDrag accepts valid");
