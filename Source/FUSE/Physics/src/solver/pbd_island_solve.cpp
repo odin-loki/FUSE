@@ -2011,3 +2011,10 @@ IslandCombinedWarmStartGraphPreflight preflight_warm_start_combined_graph(
     IslandCombinedWarmStartGraphPreflight preflight{};
 bool should_skip_warm_start_combined_graph(const ContactIslandGraph& graph,
     const IslandCombinedWarmStartGraphPreflight preflight =
+
+// --- deepen additive from pbd-island-guards-deepen-0fe3 ---
+IslandSolveJobPreflight preflight_solve_island_job_by_index(const ContactIslandGraph& graph,
+bool should_skip_solve_island_job_stale(const IslandSolveJob& job,
+    const IslandSolveJobPreflight preflight = preflight_solve_island_job(job, contacts, distanceConstraints);
+IslandDispatchIndexPreflight preflight_dispatch_island_by_index(const ContactIslandGraph& graph,
+    IslandDispatchIndexPreflight preflight{};

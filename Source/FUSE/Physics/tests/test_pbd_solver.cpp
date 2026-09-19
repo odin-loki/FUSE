@@ -3283,3 +3283,47 @@ void testPreflightWarmStartCombinedGraphAndIndex() {
     expectTrue(!invalidDtPreflight.can_warm_start(), "combined graph preflight blocked on invalid dt");
     testPreflightIslandDispatchFromJobs();
     testPreflightWarmStartCombinedGraphAndIndex();
+
+// --- deepen additive from pbd-island-guards-deepen-0fe3 ---
+void testPreflightSolveIslandJobStaleIndices() {
+    const IslandSolveJobPreflight validPreflight =
+    expectTrue(!validPreflight.skipped, "valid job preflight does not skip constrained island");
+    expectTrue(!validPreflight.hasStaleIndices, "valid job has no stale indices");
+    expectTrue(validPreflight.validContactCount == 1u, "valid job counts owned contacts");
+    expectTrue(validPreflight.validDistanceCount == 0u, "valid job has no distance constraints");
+    expectTrue(validPreflight.can_solve(), "valid job can solve");
+    expectTrue(!should_skip_solve_island_job_stale(validJob, contacts, constraints),
+               "should_skip_solve_island_job_stale false for valid job");
+    const IslandSolveJobPreflight stalePreflight =
+    expectTrue(stalePreflight.hasStaleIndices, "truncated contacts mark stale indices");
+    expectTrue(stalePreflight.staleContactCount == 1u, "stale preflight counts stale contacts");
+    expectTrue(!stalePreflight.can_solve(), "stale job cannot solve");
+    expectTrue(should_skip_solve_island_job_stale(validJob, truncatedContacts, constraints),
+               "should_skip_solve_island_job_stale on stale contacts");
+    const IslandSolveJobPreflight emptyPreflight = preflight_solve_island_job(emptyJob, contacts, constraints);
+    expectTrue(emptyPreflight.skipped, "empty job preflight is skipped");
+void testPreflightDispatchIslandByIndex() {
+    const IslandDispatchIndexPreflight validPreflight =
+    expectTrue(!validPreflight.skipped, "dispatch index preflight does not skip constrained island");
+    expectTrue(!validPreflight.invalidDt, "dispatch index preflight accepts valid dt");
+    expectTrue(validPreflight.can_dispatch(), "dispatch index preflight can dispatch constrained island");
+    expectTrue(should_solve_island(validPreflight.job), "dispatch index preflight extracts dispatchable job");
+    expectTrue(!should_skip_dispatch_island_index(graph, constrainedIndex, dt),
+               "should_skip_dispatch_island_index false for constrained island");
+    const IslandDispatchIndexPreflight invalidDt =
+    expectTrue(should_skip_dispatch_island_index(graph, constrainedIndex, 0.f),
+               "should_skip_dispatch_island_index on invalid dt");
+    const IslandDispatchIndexPreflight outOfRange =
+    expectTrue(should_skip_dispatch_island_index(graph, graph.islandCount() + 1u, dt),
+        const IslandDispatchIndexPreflight emptyPreflight =
+        expectTrue(emptyPreflight.skipped, "dispatch index preflight skips empty island");
+        expectTrue(should_skip_dispatch_island_index(graph, islandIndex, dt),
+                   "should_skip_dispatch_island_index on empty island");
+void testPreflightWarmStartCombinedGraphGuards() {
+               "should_skip_warm_start_combined_graph false when prior data exists");
+    expectTrue(!indexPreflight.skipped, "combined index preflight does not skip contact island");
+    expectTrue(indexPreflight.can_warm_start(), "combined index preflight can warm-start contact island");
+    expectTrue(should_skip_warm_start_combined_graph(zeroImpulseGraph, zeroImpulseContacts, dt, {}, {}),
+    testPreflightSolveIslandJobStaleIndices();
+    testPreflightDispatchIslandByIndex();
+    testPreflightWarmStartCombinedGraphGuards();
