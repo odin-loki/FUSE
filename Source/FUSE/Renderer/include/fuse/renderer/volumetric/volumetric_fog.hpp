@@ -45,6 +45,8 @@ struct FroxelGridDesc {
 
     /// Clamp tile/slice counts to CPU stub limits; zero dimensions remain zero (empty grid).
     static FroxelGridDesc clampCounts(const FroxelGridDesc& raw);
+    /// True when any dimension exceeds CPU stub maxima and would be clamped by `clampCounts`.
+    static bool wouldClampCounts(const FroxelGridDesc& raw);
 };
 
 /// Camera inputs for froxel depth-slice distribution and screen mapping.
@@ -134,6 +136,7 @@ enum class SampleCoordRejectReason : u8 {
     EmptyGrid,
     UnorderedCorners,
     OutOfBounds,
+    InvalidCorners,
     InvalidWeights,
 /// Why froxel grid desc validation rejected the request (B5.11 deepen).
 enum class FroxelGridRejectReason : u8 {
@@ -246,6 +249,8 @@ struct FroxelGridLayout {
     static u32 clampTileX(u32 tileX, const FroxelGridDesc& desc);
     static u32 clampTileY(u32 tileY, const FroxelGridDesc& desc);
     static u32 clampSliceZ(u32 sliceZ, const FroxelGridDesc& desc);
+    /// True when tile/slice coords exceed grid bounds (would be clamped before lookup).
+    static bool isTileCoordOutOfRange(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc);
     /// Last valid flat froxel index; returns 0 when the grid has no froxels.
     static u32 maxFroxelIndex(const FroxelGridDesc& desc);
     /// True when `index` equals the last valid froxel index for a non-empty grid.
@@ -588,6 +593,11 @@ bool canPopulateFromAnalyticFog(const FroxelGridDesc& desc,
 bool tryCanPopulateFromAnalyticFog(const FroxelGridDesc& desc,
                                    const VolumetricFogParams& params,
                                    FroxelPopulateRejectReason& outReason);
+                         u32 tileX,
+                         u32 tileY,
+                         u32 sliceZ,
+                         DensityLookupRejectReason& outReason);
+/// True when tile/slice coords would clamp before density lookup.
 /// Preflight guard before coord-based density sampling; false on inaccessible grid or invalid coords.
 bool canSampleAtCoords(const FroxelDensityGrid& grid,
                        const FroxelSampleCoords& coords);
@@ -941,6 +951,7 @@ bool trySampleDensityAtScreen(const FroxelDensityGrid& grid,
 /// Screen-space trilinear density sample with guard preflight and reject-reason diagnostics.
 /// Screen-space sample with guard preflight and reject-reason diagnostics.
 /// Screen-space sample with lookup and sample-coord reject-reason diagnostics.
+/// Screen-space sample with screen-mapping reject-reason diagnostics.
 bool trySampleDensityAtScreen(const FroxelDensityGrid& grid,
                               const FroxelGridDesc& desc,
                               const FroxelCameraDesc& camera,
@@ -1019,6 +1030,12 @@ bool isValidPopulateCamera(const FroxelCameraDesc& camera);
 /// Preflight analytic populate without mutation — same semantics as `tryCanPopulateFromAnalyticFog`.
 bool preflightPopulateFromAnalyticFog(const FroxelGridDesc& desc,
 /// Populate with guard preflight; returns false when empty grid or invalid camera would be rejected.
+                                const FroxelCameraDesc& camera,
+                                const VolumetricFogParams& params);
+bool tryPopulateFromAnalyticFog(FroxelDensityGrid& grid,
+                                const FroxelGridDesc& desc,
+                                const VolumetricFogParams& params,
+                                FroxelPopulateRejectReason& outReason);
 } // namespace froxel_util
 
 /// CPU stub — exponential height falloff density sample (P5 acceptance reference).
