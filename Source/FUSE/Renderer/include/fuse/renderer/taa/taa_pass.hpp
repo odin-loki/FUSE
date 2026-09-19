@@ -316,3 +316,6 @@ void addTaaPassToGraph(RenderGraph& graph);
 
 // --- deepen additive from deepen-b59-taa-guards-48f5 ---
     bool preflightTemporalResolve(const TaaResolveDesc& desc, TaaHistoryReuseBlockReason* reuseReason = nullptr,
+
+// --- deepen additive from deepen-taa-b59-guards-d5f5 ---
+    bool preflightResolveFrameGuards(const TaaResolveDesc& desc, TaaResolveSkipReason* skipReason = nullptr,

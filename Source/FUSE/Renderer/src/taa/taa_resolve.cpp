@@ -710,3 +710,10 @@ TaaFrameGuardPreflight preflightTaaFrameGuards(const TaaResolveDesc& desc, const
 // --- deepen additive from deepen-b59-taa-guards-48f5 ---
     if (!preflightTaaHistoryReuse(history, observedGeneration, reuseReason)) {
     return preflightTaaResolveTemporal(desc, history, &reuseReason, &blendReason);
+
+// --- deepen additive from deepen-taa-b59-guards-d5f5 ---
+bool preflightTaaResolveFrameGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+    const bool skipOk = preflightTaaResolve(desc, history, skipReason);
+bool tryPreflightTaaResolveFrameGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+    return preflightTaaResolveFrameGuards(desc, history, &skipReason, &blendReason);
+    return !preflightTaaResolveFrameGuards(desc, history);

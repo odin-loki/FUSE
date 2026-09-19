@@ -396,3 +396,7 @@ TaaFrameGuardPreflight preflightTaaFrameGuards(const TaaResolveDesc& desc, const
 
 // --- deepen additive from deepen-b59-taa-guards-48f5 ---
                                     TaaResolveBlendRejectReason& blendReason);
+
+// --- deepen additive from deepen-taa-b59-guards-d5f5 ---
+bool preflightTaaResolveFrameGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+bool tryPreflightTaaResolveFrameGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,

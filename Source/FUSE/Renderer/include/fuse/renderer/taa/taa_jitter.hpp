@@ -221,3 +221,6 @@ TaaJitterFramePreflight preflightTaaJitterFrame(u32 frameIndex, u32 width, u32 h
 
 // --- deepen additive from deepen-b59-taa-guards-804f ---
     static bool tryNdcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height, fuse::math::Vec2& out,
+
+// --- deepen additive from deepen-taa-b59-guards-d5f5 ---
+    bool trySyncToFrameIndex(u32 frameIndex, TaaJitterGuardRejectReason& reason);

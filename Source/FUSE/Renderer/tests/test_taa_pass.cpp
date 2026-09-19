@@ -3954,3 +3954,21 @@ void testHistoryWarmupCompleteGuards() {
     expectTrue(!fuse::renderer::tryPreflightTaaResolveTemporal(desc, history, reuseReason, blendReason),
                "tryPreflightTaaResolveTemporal fails for stale generation");
     expectTrue(!pass->preflightTemporalResolve(resolveDesc),
+
+// --- deepen additive from deepen-taa-b59-guards-d5f5 ---
+void testHistoryReuseForResolvePreflight() {
+    expectTrue(fuse::renderer::tryPreflightTaaHistoryReuseForResolve(desc, history, reason),
+               "tryPreflight passes for warmed history with sentinel generation");
+    expectTrue(jitter.trySyncToFrameIndex(9u, rejectReason), "trySyncToFrameIndex succeeds for valid sequence");
+    expectTrue(jitter.isAlignedToFrameIndex(9u), "jitter aligned after trySyncToFrameIndex");
+               "trySyncToFrameIndex reject reason is None");
+void testResolveFrameGuardsPreflight() {
+    expectTrue(fuse::renderer::preflightTaaResolveFrameGuards(desc, history, &skipReason, &blendReason),
+    expectTrue(fuse::renderer::tryPreflightTaaResolveFrameGuards(desc, history, skipReason, blendReason) == false,
+               "tryPreflightTaaResolveFrameGuards fails for invalid dimensions");
+               "tryPreflight resolve frame guards skip reason is InvalidDimensions");
+void testTaaPassDeepenFrameGuards() {
+    expectTrue(pass->preflightJitterNdc(&jitterReject), "pass preflightJitterNdc passes after init");
+    expectTrue(pass->preflightResolveFrameGuards(resolveDesc, &skipReason, &blendReason),
+    testHistoryReuseForResolvePreflight();
+    testResolveFrameGuardsPreflight();
