@@ -1018,3 +1018,11 @@ PairBufferAcceptPairsPreflight preflightPairBufferAcceptPairs(
     preflight.exceedsCapacity = preflight.reason == PairBufferAcceptPairsRejectReason::ExceedsCapacity;
     return !preflightPairBufferAcceptPairs(buffer, additionalCount).canAccept();
     return preflightPairBufferAcceptPairs(buffer, additionalCount).canAccept();
+
+// --- deepen additive from deepen-b4-broadphase-guards-5597 ---
+    case PairBufferDedupeRejectReason::AlreadyUnique:
+        return PairBufferDedupeRejectReason::AlreadyUnique;
+    preflight.alreadyUnique = preflight.reason == PairBufferDedupeRejectReason::AlreadyUnique;
+    case PairBufferSortRejectReason::AlreadySorted:
+        return PairBufferSortRejectReason::AlreadySorted;
+    preflight.alreadySorted = preflight.reason == PairBufferSortRejectReason::AlreadySorted;

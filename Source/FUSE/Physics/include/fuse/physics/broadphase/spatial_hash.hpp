@@ -1329,3 +1329,17 @@ BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
     DedupeBroadphaseRejectReason dedupeReason = DedupeBroadphaseRejectReason::None;
     bool canRefine() const { return refineReason == RefineBroadphaseRejectReason::None; }
     bool canDedupe() const { return dedupeReason == DedupeBroadphaseRejectReason::None; }
+
+// --- deepen additive from deepen-b4-broadphase-guards-5597 ---
+        return CellSpanRejectReason::ExceedsSpanBudget;
+    preflight.exceedsSpanBudget = preflight.reason == CellSpanRejectReason::ExceedsSpanBudget;
+    return !preflightCellSpan2D(range, maxSpanPerAxis).canIterate();
+    return preflightCellSpan2D(range, maxSpanPerAxis).canIterate();
+enum class BroadphaseShapeInsertRejectReason : u8 {
+const char* broadphaseShapeInsertRejectReasonName(BroadphaseShapeInsertRejectReason reason);
+BroadphaseShapeInsertRejectReason broadphaseShapeInsertRejectReason(
+    BroadphaseShapeInsertRejectReason expected);
+struct BroadphaseShapeInsertPreflight {
+    BroadphaseShapeInsertRejectReason reason = BroadphaseShapeInsertRejectReason::None;
+    bool canInsert() const { return reason == BroadphaseShapeInsertRejectReason::None; }
+BroadphaseShapeInsertPreflight preflightBroadphaseShapeInsert(

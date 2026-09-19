@@ -3248,3 +3248,37 @@ void testMergePairsIntoBufferPartialCapacityPreflight() {
     expectEq(partialPreflight.requestedPairCount, 2u, "partial-capacity preflight records requested count");
     testPairBufferAcceptPairsRejectReasonGuards();
     testMergePairsIntoBufferPartialCapacityPreflight();
+
+// --- deepen additive from deepen-b4-broadphase-guards-5597 ---
+    const fuse::physics::broadphase::DedupeBroadphasePreflight uniquePreflight =
+    expectTrue(uniquePreflight.alreadyUnique, "dedupe preflight marks already-unique pairs");
+    expectTrue(!uniquePreflight.canDedupe(), "dedupe preflight skips already-unique pairs");
+    expectTrue(multiPreflight.canDedupe(), "dedupe preflight accepts duplicate pairs");
+             static_cast<fuse::u32>(fuse::physics::broadphase::DedupeBroadphaseRejectReason::AlreadyUnique),
+    const fuse::physics::broadphase::PairBufferDedupePreflight uniqueDedupe =
+        fuse::physics::broadphase::preflightPairBufferSort(unsortedBuffer);
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferDedupeRejectReason::AlreadyUnique),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferSortRejectReason::AlreadySorted),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferSortRejectReason(unsortedBuffer)),
+                   validRange, 3u, fuse::physics::broadphase::CellSpanRejectReason::ExceedsSpanBudget),
+                               fuse::physics::broadphase::CellSpanRejectReason::ExceedsSpanBudget),
+        fuse::physics::broadphase::preflightCellSpan(validRange, 8u);
+void testBroadphaseShapeInsertPreflightGuards() {
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::broadphaseShapeInsertRejectReason(
+                 fuse::physics::broadphase::BroadphaseShapeInsertRejectReason::OutOfRangeBody),
+                 fuse::physics::broadphase::BroadphaseShapeInsertRejectReason::ExceedsOccupancyBudget),
+    const fuse::physics::broadphase::BroadphaseShapeInsertPreflight validPreflight =
+        fuse::physics::broadphase::preflightBroadphaseShapeInsert(0u, bodies, shapes, params, false);
+    expectTrue(validPreflight.canInsert(), "valid shape insert preflight can insert");
+void testRefineBroadphaseAllSlotsInvalidGuard() {
+             static_cast<fuse::u32>(fuse::physics::broadphase::RefineBroadphaseRejectReason::AllSlotsInvalid),
+                               fuse::physics::broadphase::RefineBroadphaseRejectReason::AllSlotsInvalid),
+void testPairBufferSortAlreadySortedGuard() {
+                               fuse::physics::broadphase::PairBufferSortRejectReason::AlreadySorted),
+void testMergePairsAllInvalidPreflightGuards() {
+                 fuse::physics::broadphase::mergePairsIntoBufferRejectReason(invalidPairs, buffer)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::MergePairsIntoBufferRejectReason::AllInvalidPairs),
+                               fuse::physics::broadphase::MergePairsIntoBufferRejectReason::AllInvalidPairs),
+        fuse::physics::broadphase::preflightMergePairsIntoBuffer(invalidPairs, buffer);
+    testBroadphaseShapeInsertPreflightGuards();
+    testMergePairsAllInvalidPreflightGuards();

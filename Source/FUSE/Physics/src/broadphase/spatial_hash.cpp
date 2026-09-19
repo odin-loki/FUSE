@@ -1233,3 +1233,34 @@ BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
 
 // --- deepen additive from deepen-b4-broadphase-guards-ff66 ---
     if (preflight.reason == MergePairsIntoBufferRejectReason::None) {
+
+// --- deepen additive from deepen-b4-broadphase-guards-5597 ---
+    case RefineBroadphaseRejectReason::AllSlotsInvalid:
+    case DedupeBroadphaseRejectReason::AlreadyUnique:
+    case CellSpanRejectReason::ExceedsSpanBudget:
+const char* broadphaseShapeInsertRejectReasonName(BroadphaseShapeInsertRejectReason reason) {
+    case BroadphaseShapeInsertRejectReason::None:
+    case BroadphaseShapeInsertRejectReason::OutOfRangeBody:
+    case BroadphaseShapeInsertRejectReason::EmptyCellRange:
+    case BroadphaseShapeInsertRejectReason::ExceedsOccupancyBudget:
+BroadphaseShapeInsertRejectReason broadphaseShapeInsertRejectReason(
+        return BroadphaseShapeInsertRejectReason::OutOfRangeBody;
+            return BroadphaseShapeInsertRejectReason::EmptyCellRange;
+            return BroadphaseShapeInsertRejectReason::ExceedsOccupancyBudget;
+        return BroadphaseShapeInsertRejectReason::None;
+    BroadphaseShapeInsertRejectReason expected) {
+    return broadphaseShapeInsertRejectReason(shapeIndex, bodies, shapes, params, use2D) == expected;
+BroadphaseShapeInsertPreflight preflightBroadphaseShapeInsert(
+    BroadphaseShapeInsertPreflight preflight{};
+    preflight.reason = broadphaseShapeInsertRejectReason(shapeIndex, bodies, shapes, params, use2D);
+    preflight.outOfRangeBody = preflight.reason == BroadphaseShapeInsertRejectReason::OutOfRangeBody;
+    preflight.emptyCellRange = preflight.reason == BroadphaseShapeInsertRejectReason::EmptyCellRange;
+        preflight.reason == BroadphaseShapeInsertRejectReason::ExceedsOccupancyBudget;
+    return !preflightBroadphaseShapeInsert(shapeIndex, bodies, shapes, params, use2D).canInsert();
+    return preflightBroadphaseShapeInsert(shapeIndex, bodies, shapes, params, use2D).canInsert();
+        return RefineBroadphaseRejectReason::AllSlotsInvalid;
+        return DedupeBroadphaseRejectReason::AlreadyUnique;
+    preflight.alreadyUnique = preflight.reason == DedupeBroadphaseRejectReason::AlreadyUnique;
+    case MergePairsIntoBufferRejectReason::AllInvalidPairs:
+        return MergePairsIntoBufferRejectReason::AllInvalidPairs;
+    preflight.allInvalidPairs = preflight.reason == MergePairsIntoBufferRejectReason::AllInvalidPairs;
