@@ -366,3 +366,8 @@ bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReaso
 
 // --- deepen additive from deepen-b16-profiler-preflight-guards-b702 ---
 bool tryExportChromeTraceJson(std::string& outJson);
+
+// --- deepen additive from deepen-b16-profiler-preflights-acf4 ---
+bool isProfilerNestingPreflightOk();
+bool isEventLookupPreflightOk(u32 index);
+bool isChromeExportPreflightOk();

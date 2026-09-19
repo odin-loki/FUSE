@@ -3079,3 +3079,22 @@ void testExportPreflightGuards() {
 void testGuardStateBalancedIntrospection() {
     testEventNameValidPreflight();
     testExportPreflightGuards();
+
+// --- deepen additive from deepen-b16-profiler-preflights-acf4 ---
+void testEventLookupPreflightGuards() {
+    expectTrue(!fuse::profiler::isEventLookupPreflightOk(0u),
+    expectTrue(!fuse::profiler::isEventLookupPreflightOk(99u),
+    expectTrue(fuse::profiler::isEventLookupPreflightOk(0u),
+    expectTrue(fuse::profiler::isEventLookupPreflightOk(1u),
+    expectTrue(!fuse::profiler::isEventLookupPreflightOk(2u),
+void testProfilerNestingPreflightGuards() {
+    expectTrue(fuse::profiler::isProfilerNestingPreflightOk(),
+    expectTrue(fuse::profiler::isChromeExportPreflightOk(),
+        expectTrue(!fuse::profiler::isProfilerNestingPreflightOk(),
+        expectTrue(!fuse::profiler::isChromeExportPreflightOk(),
+void testChromeExportPreflightWithUnmatchedFlow() {
+void testEmptyNameDoesNotPassProfileEventPreflight() {
+    testEventLookupPreflightGuards();
+    testProfilerNestingPreflightGuards();
+    testChromeExportPreflightWithUnmatchedFlow();
+    testEmptyNameDoesNotPassProfileEventPreflight();
