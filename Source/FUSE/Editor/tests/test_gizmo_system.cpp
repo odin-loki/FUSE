@@ -3483,3 +3483,14 @@ void testBeginDragPreflightPickedAxis() {
                "gizmo trySnapDragDelta snaps translate delta");
     testPickPreflightOutOfBounds();
     testBeginDragPreflightPickedAxis();
+
+// --- deepen additive from deepen-gizmo-preflight-guards-ab8f ---
+    const fuse::editor::BeginDragPreflight screenPreflight =
+    expectTrue(screenPreflight.canBegin, "begin preflight accepts valid screen hit");
+    expectTrue(screenPreflight.axis == fuse::editor::GizmoAxis::X,
+    expectTrue(deadZonePreflight.screenMiss, "update preflight marks translate dead zone");
+    expectTrue(gizmoPreflight.canUpdate(), "gizmo update preflight allows dead-zone cursor");
+    expectTrue(gizmoPreflight.screenMiss, "gizmo update preflight marks screen miss");
+    const fuse::editor::UpdateDragPreflight axisPreflight = gizmo.preflightUpdateDrag(hit);
+    expectTrue(axisPreflight.canUpdate(), "gizmo update preflight accepts axis-band cursor");
+    expectTrue(!axisPreflight.screenMiss, "axis-band cursor clears screenMiss");
