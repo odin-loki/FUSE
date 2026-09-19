@@ -523,6 +523,122 @@ FUSE_PHYSICS_INLINE bool shouldRunCellSpanClamp(const CellRange2& range, u32 max
     return cellSpanRejectReason(range, maxSpanPerAxis) == CellSpanRejectReason::ExceedsSpan;
 }
 
+/// Why combined cell-capacity iteration would early-out (B4.2 deepen pass).
+enum class CellCapacityRejectReason : u8 {
+    None = 0,
+    EmptyRange,
+    ExceedsSpan,
+    ExceedsBudget,
+};
+
+/// Human-readable label for combined cell-capacity reject reasons (logging / tests).
+const char* cellCapacityRejectReasonName(CellCapacityRejectReason reason);
+
+/// Diagnose why combined cell-capacity iteration would reject; vacuously succeeds on valid ranges.
+FUSE_PHYSICS_INLINE CellCapacityRejectReason cellCapacityRejectReason(
+    const CellRange3& range,
+    u32 maxCells,
+    u32 maxSpanPerAxis) {
+    if (isEmptyCellRange(range)) {
+        return CellCapacityRejectReason::EmptyRange;
+    }
+    if (exceedsCellSpanPerAxis(range, maxSpanPerAxis)) {
+        return CellCapacityRejectReason::ExceedsSpan;
+    }
+    if (exceedsCellOccupancyBudget(range, maxCells)) {
+        return CellCapacityRejectReason::ExceedsBudget;
+    }
+    return CellCapacityRejectReason::None;
+}
+
+FUSE_PHYSICS_INLINE CellCapacityRejectReason cellCapacityRejectReason(
+    const CellRange2& range,
+    u32 maxCells,
+    u32 maxSpanPerAxis) {
+    if (isEmptyCellRange(range)) {
+        return CellCapacityRejectReason::EmptyRange;
+    }
+    if (exceedsCellSpanPerAxis(range, maxSpanPerAxis)) {
+        return CellCapacityRejectReason::ExceedsSpan;
+    }
+    if (exceedsCellOccupancyBudget(range, maxCells)) {
+        return CellCapacityRejectReason::ExceedsBudget;
+    }
+    return CellCapacityRejectReason::None;
+}
+
+/// Returns true when `cellCapacityRejectReason` matches `expected` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool cellCapacityRejectsForReason(
+    const CellRange3& range,
+    u32 maxCells,
+    u32 maxSpanPerAxis,
+    CellCapacityRejectReason expected) {
+    return cellCapacityRejectReason(range, maxCells, maxSpanPerAxis) == expected;
+}
+
+FUSE_PHYSICS_INLINE bool cellCapacityRejectsForReason(
+    const CellRange2& range,
+    u32 maxCells,
+    u32 maxSpanPerAxis,
+    CellCapacityRejectReason expected) {
+    return cellCapacityRejectReason(range, maxCells, maxSpanPerAxis) == expected;
+}
+
+/// Combined cell-capacity preflight for shape occupancy iteration (B4.2 deepen pass).
+struct CellCapacityPreflight {
+    CellCapacityRejectReason reason = CellCapacityRejectReason::None;
+    bool emptyRange = false;
+    bool exceedsSpan = false;
+    bool exceedsBudget = false;
+    u32 occupancyCount = 0;
+
+    bool canIterate() const { return reason == CellCapacityRejectReason::None; }
+};
+
+FUSE_PHYSICS_INLINE CellCapacityPreflight preflightCellCapacity(
+    const CellRange3& range,
+    u32 maxCells,
+    u32 maxSpanPerAxis) {
+    CellCapacityPreflight preflight{};
+    preflight.reason = cellCapacityRejectReason(range, maxCells, maxSpanPerAxis);
+    preflight.emptyRange = preflight.reason == CellCapacityRejectReason::EmptyRange;
+    preflight.exceedsSpan = preflight.reason == CellCapacityRejectReason::ExceedsSpan;
+    preflight.exceedsBudget = preflight.reason == CellCapacityRejectReason::ExceedsBudget;
+    preflight.occupancyCount = estimateCellOccupancyCount(range);
+    return preflight;
+}
+
+FUSE_PHYSICS_INLINE CellCapacityPreflight preflightCellCapacity(
+    const CellRange2& range,
+    u32 maxCells,
+    u32 maxSpanPerAxis) {
+    CellCapacityPreflight preflight{};
+    preflight.reason = cellCapacityRejectReason(range, maxCells, maxSpanPerAxis);
+    preflight.emptyRange = preflight.reason == CellCapacityRejectReason::EmptyRange;
+    preflight.exceedsSpan = preflight.reason == CellCapacityRejectReason::ExceedsSpan;
+    preflight.exceedsBudget = preflight.reason == CellCapacityRejectReason::ExceedsBudget;
+    preflight.occupancyCount = estimateCellOccupancyCount(range);
+    return preflight;
+}
+
+/// Non-mutating combined cell-capacity skip predicate — inverse of `canIterate` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool canSkipCellCapacityCheck(const CellRange3& range, u32 maxCells, u32 maxSpanPerAxis) {
+    return !preflightCellCapacity(range, maxCells, maxSpanPerAxis).canIterate();
+}
+
+FUSE_PHYSICS_INLINE bool canSkipCellCapacityCheck(const CellRange2& range, u32 maxCells, u32 maxSpanPerAxis) {
+    return !preflightCellCapacity(range, maxCells, maxSpanPerAxis).canIterate();
+}
+
+/// Non-mutating combined cell-capacity predicate — mirrors `preflightCellCapacity` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunCellCapacityCheck(const CellRange3& range, u32 maxCells, u32 maxSpanPerAxis) {
+    return preflightCellCapacity(range, maxCells, maxSpanPerAxis).canIterate();
+}
+
+FUSE_PHYSICS_INLINE bool shouldRunCellCapacityCheck(const CellRange2& range, u32 maxCells, u32 maxSpanPerAxis) {
+    return preflightCellCapacity(range, maxCells, maxSpanPerAxis).canIterate();
+}
+
 /// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).
 FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {
     return uniqueBodyCount > 1u ? uniqueBodyCount * (uniqueBodyCount - 1u) / 2u : 0u;
@@ -856,11 +972,17 @@ bool refineBroadphasePairsParallelWithPreflight(
     const CollisionShapeSoA& shapes,
     PairBufferSoA& buffer);
 
-/// Dedupe pair buffer only when `preflightDedupeBroadphase` allows (B4.2 deepen follow-up pass).
-void dedupeBroadphasePairBufferWithPreflight(PairBufferSoA& buffer);
+/// Dedupe pair buffer only when `preflightDedupeBroadphase` allows; returns false when skipped (B4.2 deepen pass).
+bool dedupeBroadphasePairBufferWithPreflight(PairBufferSoA& buffer);
 
-/// Merge candidate pairs into buffer only when `preflightMergePairsIntoBuffer` allows (B4.2 deepen follow-up pass).
-void mergePairsIntoBufferWithPreflight(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer);
+/// Merge candidate pairs into buffer only when `preflightMergePairsIntoBuffer` allows; returns false when skipped (B4.2 deepen pass).
+bool mergePairsIntoBufferWithPreflight(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer);
+
+/// Merge plane/dynamic candidate pairs only when `preflightBroadphaseMerge` allows; returns false when skipped (B4.2 deepen pass).
+bool mergeBroadphasePlaneDynamicWithPreflight(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    PairBufferSoA& buffer);
 
 /// CPU stub of the CUDA broad-phase pipeline (B4.2).
 /// Phase 1 jobifies shape→cell insertion; phase 2 jobifies per-cell candidate generation
