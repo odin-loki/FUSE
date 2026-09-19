@@ -4253,3 +4253,35 @@ void testFroxelGuardClassifyAndPreflightHelpers() {
                "classifyFroxelSampleAtCoordsReject none for accessible grid");
                "preflightFroxelSampleAtCoords succeeds for accessible grid");
     testFroxelGuardClassifyAndPreflightHelpers();
+
+// --- deepen additive from deepen-froxel-volumetric-guards-b511-5161 ---
+    expectTrue(fuse::renderer::gridDensityRejectReasonIsBlocking(GridDensityRejectReason::DescMismatch),
+               "preflightScreenMappingReady accepts valid mapping");
+    expectTrue(mapReason == ScreenMappingRejectReason::None, "preflightScreenMappingReady reports none");
+               "preflightScreenMappingReady reports depth_out_of_range");
+    expectTrue(sampleReason == SampleCoordRejectReason::None, "preflightSampleCoordsReady reports none");
+               "preflightSampleCoordsReady warns but accepts clampable weights");
+    expectTrue(sampleReason == SampleCoordRejectReason::InvalidWeights,
+               "preflightSampleCoordsReady reports invalid_weights");
+               "preflightSampleCoordsReady reports out_of_bounds");
+    expectTrue(lookupReason == DensityLookupRejectReason::None, "preflightDensityLookupReady reports none");
+               "preflightDensityLookupReady warns but accepts OOB index");
+    expectTrue(lookupReason == DensityLookupRejectReason::IndexOutOfRange,
+               "preflightDensityLookupReady reports index_out_of_range");
+               "preflightDensityLookupReady reports empty_storage");
+    fuse::renderer::GridDensityRejectReason densityReason = GridDensityRejectReason::None;
+    expectTrue(densityReason == GridDensityRejectReason::UndersizedStorage,
+               "preflightGridDensityReady reports undersized_storage");
+               "preflightTrilinearSampleReady accepts in-bounds coords");
+               "preflightTrilinearSampleReady reports none");
+               "preflightTrilinearSampleReady warns but accepts clampable weights");
+    expectTrue(trilinearReason == FroxelTrilinearSampleRejectReason::ClampableWeights,
+               "preflightTrilinearSampleReady reports clampable_weights");
+    expectTrue(trilinearReason == FroxelTrilinearSampleRejectReason::InvalidSampleCoords,
+               "preflightTrilinearSampleReady reports invalid_sample_coords");
+               "preflightFroxelPopulateReady accepts valid populate inputs");
+    expectTrue(populateReason == FroxelPopulateRejectReason::None, "preflightFroxelPopulateReady reports none");
+               "preflightFroxelPopulateReady reports zero_density");
+    expectTrue(fuse::renderer::FroxelGridLayout::preflightScreenMappingReady(0.5f, 0.5f, 10.f, desc, camera) ==
+               "preflightScreenMappingReady mirrors mapScreenDepthToSampleCoords on valid path");
+               "preflightTrilinearSampleReady mirrors canTrilinearSampleAtCoords on valid path");
