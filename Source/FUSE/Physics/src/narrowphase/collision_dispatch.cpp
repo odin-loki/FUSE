@@ -98,6 +98,11 @@ NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(
 
 bool should_skip_narrowphase_dispatch(
     return preflight_narrowphase_dispatch(pairs, bodies, shapes).can_skip();
+    preflight.emptyPairList = pairs.empty();
+    preflight.canSkipDispatch = preflight.emptyPairList || preflight.batch.can_skip();
+
+bool can_skip_narrowphase_dispatch(
+    return preflight_narrowphase_dispatch(pairs, bodies, shapes).canSkipDispatch;
 }
 
 void runNarrowphaseIntoBuffer(
@@ -129,6 +134,7 @@ void runNarrowphaseIntoBuffer(
 
 
     if (pairCount == 0u) {
+        buffer.compactAndClampIfNeeded();
         return;
     }
 
@@ -238,7 +244,7 @@ void runNarrowphaseIntoBufferWithDeepenGuards(
         }
     }
 
-    buffer.compactAndClamp();
+    buffer.compactAndClampIfNeeded();
 }
 
 std::vector<ContactManifold> runNarrowphase(

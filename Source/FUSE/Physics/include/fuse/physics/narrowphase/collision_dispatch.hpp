@@ -284,6 +284,16 @@ NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(
 
 /// Returns true when narrowphase dispatch should early-out before pair iteration (B4.5 deepen follow-up pass).
 bool should_skip_narrowphase_dispatch(
+/// Const preflight for job-safe narrowphase buffer dispatch (B4.6 deepen pass).
+    bool emptyPairList = false;
+    bool canSkipDispatch = false;
+
+    bool can_dispatch() const { return !canSkipDispatch && batch.can_dispatch(); }
+
+/// Populate narrowphase dispatch preflight without running shape tests (B4.6 deepen pass).
+
+/// Returns true when narrowphase dispatch can early-out before shape tests (B4.6 deepen pass).
+bool can_skip_narrowphase_dispatch(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 

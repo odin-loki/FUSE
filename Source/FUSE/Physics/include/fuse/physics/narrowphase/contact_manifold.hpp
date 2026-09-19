@@ -1469,6 +1469,11 @@ bool is_contact_manifold_finalized(
 
 /// Normalize contact normal only when `needsNormalNormalization` is true (B4.6 deepen pass).
 
+/// Returns true when the manifold is valid with a unit normal and friction basis (B4.6 deepen pass).
+
+/// Finalize only when not already finalized; no-op when `is_finalized_contact_manifold` passes (B4.6 deepen pass).
+bool finalize_contact_manifold_if_not_finalized(
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }

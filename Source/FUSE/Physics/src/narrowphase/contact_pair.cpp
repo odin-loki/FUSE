@@ -3500,4 +3500,36 @@ bool narrowphase_batch_has_rejected_pairs(
     return preflight_narrowphase_batch(pairs, bodies, shapes).rejectedCount > 0u;
 }
 
+bool is_deepen_only_rejected_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    const ContactPairRejectReason baseReason = contact_pair_reject_reason(pair, bodies, shapes);
+    if (baseReason != ContactPairRejectReason::None) {
+        return false;
+    }
+    return contact_pair_deepen_reject_reason(pair, bodies, shapes) != ContactPairRejectReason::None;
+}
+
+bool is_fully_rejected_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return contact_pair_deepen_reject_reason(pair, bodies, shapes) != ContactPairRejectReason::None;
+}
+
+ContactManifold detect_contacts_pair_deepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
+        return invalidContactManifold();
+    }
+    return dispatchShapePair(pair, bodies, shapes);
+}
+
+bool generate_contact_manifold_deepen(ContactManifold& manifold) {
+    return finalize_contact_manifold_with_preflight(manifold);
+}
+
 } // namespace fuse::physics::narrowphase

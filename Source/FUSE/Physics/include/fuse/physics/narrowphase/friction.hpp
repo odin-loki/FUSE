@@ -860,4 +860,6 @@ FrictionBasisRejectReason friction_basis_stale_reject_reason(
 /// Clear friction basis only when stale; returns true when invalidated (B4.6 deepen pass).
 bool invalidate_friction_basis_if_stale(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
+/// Normalize the contact normal and rebuild friction tangents when preflight requires both (B4.6 deepen pass).
+
 } // namespace fuse::physics::narrowphase
