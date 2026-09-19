@@ -236,3 +236,6 @@ bool should_skip_occlusion_blocker_eval(const Vec3& listener, const Vec3& source
     return should_skip_blocker_evaluation(listener, source);
     if (should_skip_blocker_geometry_eval(listener, source, blockers, blocker_count)) {
     if (should_skip_occlusion_blocker_eval(listener, source, blockers, blocker_count, visibility)) {
+
+// --- deepen additive from deepen-b72-occlusion-reverb-guards-4674 ---
+        || should_skip_blocker_evaluation(listener, source)) {
