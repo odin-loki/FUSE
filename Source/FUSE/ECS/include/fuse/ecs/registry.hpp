@@ -242,6 +242,10 @@ void Registry::each_query(Fn&& fn, Without<WithoutTs...> /*exclude*/) {
 
 template <typename... WithTs, typename Fn>
 void Registry::each_query_impl_(const QueryFilter& filter, Fn&& fn) {
+    if (should_skip_query_filter(m_archetypes, filter)) {
+        return;
+    }
+
     for (Archetype& archetype : m_archetypes) {
         if (!archetype_matches(archetype, filter)) {
             continue;
@@ -281,6 +285,10 @@ void Registry::each_query_parallel(Fn&& fn, Without<WithoutTs...> /*exclude*/, u
 
 template <typename... WithTs, typename Fn>
 void Registry::each_query_parallel_impl_(const QueryFilter& filter, Fn&& fn, u32 batchSize) {
+    if (should_skip_query_filter(m_archetypes, filter)) {
+        return;
+    }
+
     batchSize = detail::normalize_batch_size(batchSize);
 
     for (Archetype& archetype : m_archetypes) {
