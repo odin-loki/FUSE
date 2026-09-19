@@ -556,6 +556,7 @@ bool island_build_inputs_safe(u32 bodyCount,
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
 /// contacts and distance constraints run sequentially (Gauss-Seidel stub).
+/// Input validation and guarded build entry points live in `pbd_island_solve.hpp` (B4.5 deepen follow-up).
 struct ContactIslandGraph {
     struct Island {
         std::vector<u32> bodyIndices;
