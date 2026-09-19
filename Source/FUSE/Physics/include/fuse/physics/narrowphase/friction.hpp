@@ -811,4 +811,5 @@ bool normalize_and_rebuild_friction_basis(ContactManifold& manifold, f32 epsilon
 
 /// Returns true when friction-basis rebuild should run for this manifold (B4.6 deepen pass).
 
+
 } // namespace fuse::physics::narrowphase

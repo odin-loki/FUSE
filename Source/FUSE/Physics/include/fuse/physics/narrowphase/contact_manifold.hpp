@@ -1406,6 +1406,7 @@ bool prune_and_finalize_contact_manifold(
 
 
 
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }

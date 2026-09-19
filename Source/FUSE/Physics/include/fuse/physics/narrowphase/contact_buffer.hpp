@@ -473,6 +473,7 @@ struct ContactBufferWritePreflight {
 bool contact_buffer_write_slot_rejects_for_reason(
     const ContactBufferSoA& buffer,
     u32 slot,
+    const ContactManifold& manifold,
     ContactBufferWriteSlotRejectReason expected);
 
 /// Read-only write-slot diagnostics — no mutation (B4.6 deepen pass).
@@ -549,6 +550,8 @@ bool should_skip_contact_buffer_write_slot(
 
 
 };
+
+
 
 
     const ContactBufferSoA& buffer,
@@ -657,12 +660,26 @@ bool contactBufferCompactionRejectsForReason(
 
 /// Why contact-buffer compaction would early-out (B4.6 deepen pass).
 enum class ContactBufferCompactionRejectReason : u8 {
+/// Non-mutating write-slot skip predicate — inverse of `canWrite` (B4.6 deepen pass).
+bool should_skip_contact_buffer_write_slot(
+    const ContactBufferSoA& buffer,
+    u32 slot,
+    const ContactManifold& manifold);
+
     EmptyBuffer,
     AllValid,
 };
 
 
 
+/// Human-readable label for contact-buffer compaction reject reasons (B4.6 deepen pass).
+const char* contact_buffer_compaction_reject_reason_name(ContactBufferCompactionRejectReason reason);
+
+/// Diagnose why compaction would skip its scan loop; vacuously succeeds when compaction may proceed.
+ContactBufferCompactionRejectReason contact_buffer_compaction_reject_reason(const ContactBufferSoA& buffer);
+
+/// Returns true when `contact_buffer_compaction_reject_reason` matches `expected` (B4.6 deepen pass).
+bool contact_buffer_compaction_rejects_for_reason(
     const ContactBufferSoA& buffer,
     ContactBufferCompactionRejectReason expected);
 
@@ -677,6 +694,7 @@ struct ContactBufferCompactionPreflight {
 
 
 /// Populate compaction preflight without mutating the buffer (B4.6 deepen pass).
+
 
 
 
@@ -1201,6 +1219,13 @@ bool should_run_contact_buffer_compact(const ContactBufferSoA& buffer);
 
 
 
+
+
+
+
+
+
+
 /// Non-mutating clamp predicate — mirrors `preflight_contact_buffer_clamp` (B4.6 deepen pass).
 bool should_run_contact_buffer_clamp(const ContactBufferSoA& buffer);
 
@@ -1226,6 +1251,7 @@ bool contact_buffer_friction_bases_rejects_for_reason(
 
     const ContactBufferSoA& buffer);
 
+
     const ContactBufferSoA& buffer,
     ContactBufferFrictionBasesRejectReason expected);
 
@@ -1238,6 +1264,8 @@ struct ContactBufferFrictionBasesPreflight {
 
     bool emptyBuffer = false;
 
+
+};
 
 ContactBufferFrictionBasesPreflight preflight_contact_buffer_friction_bases(const ContactBufferSoA& buffer);
 
@@ -1296,6 +1324,7 @@ bool contactBufferCompactAndClampRejectsForReason(
 /// Human-readable label for compact-and-clamp reject reasons (logging / tests).
 
 
+
     const ContactBufferSoA& buffer,
     ContactBufferCompactAndClampRejectReason expected);
 
@@ -1318,6 +1347,8 @@ ContactBufferCompactAndClampPreflight preflight_contact_buffer_compact_and_clamp
     bool noWork = false;
 
 };
+
+
 
 
 
