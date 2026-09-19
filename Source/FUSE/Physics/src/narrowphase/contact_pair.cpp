@@ -631,3 +631,9 @@ const char* contact_pair_reject_reason_label(ContactPairRejectReason reason) {
 // --- deepen additive from deepen-b4-narrowphase-guards-56bb ---
     if (should_skip_contact_pair_dispatch(pair, bodies, shapes)) {
 const char* contact_pair_preflight_reason_name(const ContactPairPreflight& preflight) {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-d8a9 ---
+    const ContactPairPreflight& preflight,
+ManifoldFinalizePreflight preflight_finalize_contact_manifold(const ContactManifold& manifold) {
+    ManifoldFinalizePreflight preflight{};
+    const ManifoldFinalizePreflight preflight = preflight_finalize_contact_manifold(manifold);

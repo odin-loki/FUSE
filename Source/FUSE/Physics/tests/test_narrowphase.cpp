@@ -1846,3 +1846,34 @@ void testManifoldPrunePreflightExGuards() {
         fuse::physics::narrowphase::should_skip_friction_basis_compute(fresh),
         "should_skip_friction_basis_compute true with valid basis");
     testManifoldPrunePreflightExGuards();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-d8a9 ---
+void testContactPairDeepenPreflightGuards() {
+            selfPreflight,
+    const auto planePreflight =
+            planePreflight,
+    const auto emptyPreflight = fuse::physics::narrowphase::preflight_finalize_contact_manifold(empty);
+    expectTrue(!emptyPreflight.can_finalize(), "finalize preflight cannot finalize empty");
+    const auto noNormalPreflight = fuse::physics::narrowphase::preflight_finalize_contact_manifold(noNormal);
+    expectTrue(noNormalPreflight.invalidNormal, "finalize preflight flags invalid normal");
+    expectTrue(!noNormalPreflight.can_finalize(), "finalize preflight rejects invalid normal");
+    const auto separatedPreflight = fuse::physics::narrowphase::preflight_finalize_contact_manifold(separated);
+    expectTrue(separatedPreflight.noPenetratingPoints, "finalize preflight flags no penetrating points");
+    const auto readyPreflight = fuse::physics::narrowphase::preflight_finalize_contact_manifold(ready);
+    expectTrue(readyPreflight.can_finalize(), "finalize preflight accepts penetrating manifold");
+void testManifoldPruneDeepenPreflightGuards() {
+    expectTrue(cleanPreflight.can_skip_prune(), "prune preflight can_skip_prune on clean manifold");
+    const auto shallowPreflight = fuse::physics::narrowphase::preflight_manifold_prune(shallow, 1e-6f, 1e-4f, 0.05f);
+    expectTrue(shallowPreflight.hasShallow, "prune preflight flags shallow penetrations");
+    expectTrue(shallowPreflight.needs_pruning(), "prune preflight needs pruning with shallow flag");
+    expectTrue(!emptyPreflight.needs_rebuild(), "friction preflight does not rebuild empty manifold");
+    const auto missingPreflight = fuse::physics::narrowphase::preflight_friction_basis_rebuild(needsBuild);
+    expectTrue(missingPreflight.missing, "friction preflight flags missing basis");
+    expectTrue(missingPreflight.needs_rebuild(), "friction preflight needs rebuild when missing");
+    const auto freshPreflight = fuse::physics::narrowphase::preflight_friction_basis_rebuild(needsBuild);
+    expectTrue(freshPreflight.can_reuse(), "friction preflight can_reuse fresh basis");
+    const auto stalePreflight = fuse::physics::narrowphase::preflight_friction_basis_rebuild(needsBuild);
+    expectTrue(stalePreflight.stale, "friction preflight flags stale basis after normal change");
+    expectTrue(stalePreflight.needs_rebuild(), "friction preflight needs rebuild when stale");
+    testContactPairDeepenPreflightGuards();
+    testManifoldPruneDeepenPreflightGuards();
