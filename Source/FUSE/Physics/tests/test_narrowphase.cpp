@@ -3456,3 +3456,14 @@ void testContactPairDetectPreflightGuards() {
 void testManifoldFrictionPreflightSkipGuards() {
     testContactPairDetectPreflightGuards();
     testManifoldFrictionPreflightSkipGuards();
+
+// --- deepen additive from b4-narrowphase-deepen-8324 ---
+void testContactBufferSoAGuardPreflights() {
+    expectTrue(writePreflight.can_write(), "write preflight allows valid manifold in range");
+    expectTrue(!clampPreflight.needs_clamp(), "clamp preflight skips within-capacity buffer");
+            exportBuffer, fuse::physics::narrowphase::ContactBufferToVectorRejectReason::EmptyBuffer),
+    const auto dispatchPreflight = fuse::physics::narrowphase::preflight_run_narrowphase(
+    expectTrue(dispatchPreflight.batch.dispatchableCount == 1u, "dispatch preflight counts dispatchable pairs");
+    expectTrue(dispatchPreflight.can_dispatch(), "dispatch preflight can dispatch mixed batch");
+    fuse::physics::narrowphase::runNarrowphaseIntoBufferWithPreflight(
+    testContactBufferSoAGuardPreflights();

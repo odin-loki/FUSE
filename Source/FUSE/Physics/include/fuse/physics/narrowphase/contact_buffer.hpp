@@ -451,3 +451,21 @@ FUSE_PHYSICS_INLINE ContactBufferClampPreflight preflight_contact_buffer_clamp(c
     ContactBufferToVectorRejectReason expected) {
     ContactBufferToVectorPreflight preflight{};
     preflight.emptyBuffer = preflight.reason == ContactBufferToVectorRejectReason::EmptyBuffer;
+
+// --- deepen additive from b4-narrowphase-deepen-8324 ---
+const char* contact_buffer_friction_tangent_reject_reason_name(ContactBufferFrictionTangentRejectReason reason);
+    preflight.outOfRangeSlot = preflight.reason == ContactBufferWriteSlotRejectReason::OutOfRangeSlot;
+    preflight.invalidManifold = preflight.reason == ContactBufferWriteSlotRejectReason::InvalidManifold;
+    preflight.emptyBuffer = preflight.reason == ContactBufferCompactAndClampRejectReason::EmptyBuffer;
+    case ContactBufferFrictionTangentRejectReason::AllValid:
+        return ContactBufferFrictionTangentRejectReason::AllValid;
+    preflight.emptyBuffer = preflight.reason == ContactBufferFrictionTangentRejectReason::EmptyBuffer;
+    preflight.allValid = preflight.reason == ContactBufferFrictionTangentRejectReason::AllValid;
+    const ContactBufferFrictionTangentRejectReason reason =
+    return reason != ContactBufferFrictionTangentRejectReason::None;
+    const ContactBufferCompactionPreflight preflight = preflight_contact_buffer_compaction(buffer);
+    if (preflight.reason == ContactBufferCompactionRejectReason::EmptyBuffer) {
+    if (preflight.reason == ContactBufferCompactionRejectReason::AllValid) {
+    const ContactBufferCompactAndClampPreflight preflight = preflight_contact_buffer_compact_and_clamp(buffer);
+    if (preflight.reason == ContactBufferCompactAndClampRejectReason::EmptyBuffer) {
+    if (preflight.reason == ContactBufferCompactAndClampRejectReason::NoWork) {

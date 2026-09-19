@@ -445,3 +445,8 @@ inline ContactPairDetectPreflight preflight_detect_contacts_pair(
     ContactPairDetectPreflight preflight{};
     preflight.rejected = preflight.reason != ContactPairDetectRejectReason::None;
            ContactPairDetectRejectReason::None;
+
+// --- deepen additive from b4-narrowphase-deepen-8324 ---
+    return !should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
+    if (should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
+    return !should_skip_contact_pair_dispatch(pair, bodies, shapes);
