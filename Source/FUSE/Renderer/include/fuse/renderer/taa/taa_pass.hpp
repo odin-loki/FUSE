@@ -331,3 +331,6 @@ void addTaaPassToGraph(RenderGraph& graph);
                                TaaResolveBlendRejectReason* blendReject = nullptr) const;
     bool tryPreflightResolveFrame(const TaaResolveDesc& desc, TaaResolveSkipReason& skipReason,
                                   TaaResolveBlendRejectReason& blendReject) const;
+
+// --- deepen additive from deepen-b59-taa-guards-985f ---
+    bool tryPreflightJitterAlignment(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;

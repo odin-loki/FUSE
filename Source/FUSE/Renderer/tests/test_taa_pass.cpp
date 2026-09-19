@@ -4054,3 +4054,36 @@ void testTaaPassDeepenTryAndFrameGuards() {
                "pass tryPreflightResolveFrame passes before first resolve");
     expectTrue(pass->trySyncJitterToFrameIndex(4u, jitterReject),
                "pass trySyncJitterToFrameIndex succeeds after init");
+
+// --- deepen additive from deepen-b59-taa-guards-985f ---
+void testRejectReasonIsBlockingHelpers() {
+    expectTrue(!fuse::renderer::taaJitterGuardRejectReasonIsBlocking(
+    expectTrue(fuse::renderer::taaJitterGuardRejectReasonIsBlocking(
+                   fuse::renderer::TaaJitterGuardRejectReason::MisalignedFrame),
+void testJitterAlignmentGuards() {
+    expectTrue(fuse::renderer::classifyTaaJitterAlignmentReject(jitter, 0u) ==
+    expectTrue(fuse::renderer::preflightTaaJitterAlignment(jitter, 0u),
+               "preflightTaaJitterAlignment passes at frame zero");
+                   fuse::renderer::TaaJitterGuardRejectReason::MisalignedFrame,
+    expectTrue(!fuse::renderer::tryPreflightTaaJitterAlignment(jitter, 0u, rejectReason),
+               "tryPreflightTaaJitterAlignment rejects misaligned frame");
+    expectTrue(rejectReason == fuse::renderer::TaaJitterGuardRejectReason::MisalignedFrame,
+               "tryPreflightTaaJitterAlignment passes after sync");
+               "unwarmed history fails tryPreflightTaaHistoryWarmup");
+               "warmed history passes tryPreflightTaaHistoryWarmup");
+void testTaaPassTryPreflightWrappers() {
+    expectTrue(pass->tryPreflightJitterAlignment(0u, jitterReason),
+               "pass tryPreflightJitterAlignment passes at frame zero");
+    expectTrue(!pass->tryPreflightHistoryWarmup(historyReason),
+    expectTrue(!pass->tryPreflightHistoryReuse(0u, historyReason),
+    expectTrue(!pass->tryPreflightHistoryReadyForResolve(historyReason),
+    expectTrue(pass->tryPreflightHistoryReadyForResolve(historyReason),
+               "pass tryPreflightResolveBlendWeights passes before warmup resolve");
+    expectTrue(pass->tryPreflightHistoryWarmup(historyReason),
+    expectTrue(pass->tryPreflightHistoryReuse(0u, historyReason),
+               "pass tryPreflightHistoryReuse passes after resolve");
+    expectTrue(!pass->tryPreflightJitterAlignment(0u, jitterReason),
+               "pass tryPreflightJitterAlignment rejects after advance");
+    expectTrue(jitterReason == fuse::renderer::TaaJitterGuardRejectReason::MisalignedFrame,
+    testRejectReasonIsBlockingHelpers();
+    testTaaPassTryPreflightWrappers();

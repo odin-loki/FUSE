@@ -236,3 +236,6 @@ bool preflightTaaJitterSlot(u32 slot, u32 sequenceLength = kTaaDefaultJitterSequ
 bool tryPreflightTaaJitterSlot(u32 slot, u32 sequenceLength, TaaJitterGuardRejectReason& reason);
 bool trySyncTaaJitter(TaaJitter& jitter, u32 frameIndex, TaaJitterGuardRejectReason& reason);
 bool tryAdvanceTaaJitter(TaaJitter& jitter, TaaJitterGuardRejectReason& reason);
+
+// --- deepen additive from deepen-b59-taa-guards-985f ---
+bool taaJitterGuardRejectReasonIsBlocking(TaaJitterGuardRejectReason reason);

@@ -456,3 +456,9 @@ bool trySyncTaaJitter(TaaJitter& jitter, u32 frameIndex, TaaJitterGuardRejectRea
     if (!tryPreflightTaaJitterSync(frameIndex, jitter.sequenceLength(), reason)) {
 bool tryAdvanceTaaJitter(TaaJitter& jitter, TaaJitterGuardRejectReason& reason) {
     if (!preflightTaaJitterAdvance(jitter.sequenceLength(), &reason)) {
+
+// --- deepen additive from deepen-b59-taa-guards-985f ---
+    case TaaJitterGuardRejectReason::MisalignedFrame:
+bool taaJitterGuardRejectReasonIsBlocking(TaaJitterGuardRejectReason reason) {
+    return reason != TaaJitterGuardRejectReason::None;
+        return TaaJitterGuardRejectReason::MisalignedFrame;
