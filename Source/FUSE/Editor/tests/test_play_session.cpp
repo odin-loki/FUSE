@@ -1086,3 +1086,19 @@ void testPlaySessionZeroDtInactiveTickGuard() {
     fuse::editor::VariableTickPreflight activePreflight = session.preflightTick(0.016f, physics);
     expectTrue(!activePreflight.skipped, "preflightTick allows positive dt while playing");
     expectTrue(activePreflight.wouldSimulate, "positive dt preflight would simulate");
+
+// --- deepen additive from deepen-b6-editor-pie-fixed-step-dirty-snapshot-guards-fd19 ---
+    expectTrue(!zeroPreflight.skipped, "variable preflight allows zero dt while playing");
+    expectTrue(zeroPreflight.wouldSimulate, "zero dt still simulates one play step");
+    fuse::editor::WorldSnapshotPreflight capturedPreflight = session.preflightWorldSnapshot();
+    expectTrue(!capturedPreflight.skipped, "world preflight runs after capture");
+    expectTrue(capturedPreflight.canRestore(), "world preflight can restore captured snapshot");
+    expectTrue(capturedPreflight.entityCount == 2u, "world preflight reports entity count");
+    expectTrue(!session.preflightWorldSnapshot().canRestore(),
+void testPlaySessionTickFixedStepPreflightWouldSimulateFrame() {
+    expectTrue(!inactivePreflight.wouldSimulateFrame(),
+    fuse::editor::TickFixedStepPreflight playingPreflight =
+        session.preflightTickFixedStep(0.f, kFixedDt, physics, 0u);
+    expectTrue(playingPreflight.wouldSimulateFrame(),
+    expectTrue(!pausedPreflight.wouldSimulateFrame(),
+    testPlaySessionTickFixedStepPreflightWouldSimulateFrame();
