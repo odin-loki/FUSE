@@ -681,12 +681,11 @@ bool generate_contact_manifold(ContactManifold& manifold) {
 
 
     if (!manifold.hasValidNormal()) {
-
-    const f32 normalLength = manifold.contactNormal.length();
-    manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+    if (!normalize_contact_normal_if_needed(manifold)) {
 
     manifold.syncLegacyFields();
     compute_friction_tangents_if_needed(manifold);
+    compute_friction_tangents_with_preflight(manifold);
     if (!manifold.hasFrictionBasis()) {
 
     manifold.valid = true;
@@ -792,6 +791,7 @@ ContactPairRejectReason contact_pair_deepen_reject_reason(
     if (baseReason == ContactPairRejectReason::UnsupportedShapePair &&
         is_plane_plane_contact_pair(pair, shapes)) {
         return ContactPairRejectReason::PlanePlane;
+        return ContactPairRejectReason::BothPlane;
     }
     if (baseReason != ContactPairRejectReason::None) {
         return baseReason;
@@ -2941,6 +2941,20 @@ bool should_run_narrowphase_batch(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return !can_skip_narrowphase_batch(pairs, bodies, shapes);
+}
+
+bool should_run_contact_pair_deepen_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
+}
+
+bool should_run_narrowphase_batch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !narrowphase_batch_rejects_all(pairs, bodies, shapes);
 }
 
 } // namespace fuse::physics::narrowphase

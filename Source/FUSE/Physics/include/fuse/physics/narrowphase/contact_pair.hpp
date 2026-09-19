@@ -1522,13 +1522,11 @@ bool is_non_canonical_contact_pair(const broadphase::CandidatePair& pair);
 
 /// Returns true when an identical pair appears earlier in the batch (B4.6 deepen pass).
 bool is_duplicate_contact_pair_in_batch(
-    const std::vector<broadphase::CandidatePair>& pairs,
     u32 pairIndex);
 
 /// Extended reject reason including canonical-order and batch-duplicate checks (B4.6 deepen pass).
 /// Does not alter `contact_pair_deepen_reject_reason`; use for additive preflight only.
 ContactPairRejectReason contact_pair_deepen_pass_reject_reason(
-    const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
 
 /// Const preflight with canonical-order and batch-duplicate reject checks (B4.6 deepen pass).
@@ -1562,7 +1560,6 @@ ContactManifold detect_contacts_pair_with_preflight(
 u32 count_deepen_pass_rejected_contact_pairs(
 /// Non-mutating pair-dispatch predicate — inverse of `should_skip_contact_pair_dispatch` (B4.5 deepen pass).
 bool should_run_contact_pair_dispatch(
-    const CollisionShapeSoA& shapes);
 
 /// Non-mutating deepen pair-dispatch predicate — inverse of `should_skip_contact_pair_deepen_dispatch` (B4.5 deepen pass).
 bool should_run_contact_pair_deepen_dispatch(
@@ -1572,6 +1569,9 @@ bool can_skip_narrowphase_batch(
 
 /// Non-mutating batch predicate — inverse of `can_skip_narrowphase_batch` (B4.5 deepen pass).
 bool should_run_narrowphase_batch(
+/// Non-mutating deepen dispatch predicate — inverse of `should_skip_contact_pair_deepen_dispatch` (B4.6 deepen pass).
+
+/// Non-mutating batch predicate — inverse of `narrowphase_batch_rejects_all` (B4.6 deepen pass).
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 

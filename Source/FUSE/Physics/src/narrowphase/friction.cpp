@@ -1471,4 +1471,6 @@ bool can_skip_friction_basis_rebuild_after_normalize(
     normalize_contact_normal_before_friction_if_needed(normalized, lengthEpsilon);
     return should_skip_friction_basis_preflight(normalized, epsilon);
 
+    if (!manifold.hasFrictionBasis()) {
+
 } // namespace fuse::physics::narrowphase

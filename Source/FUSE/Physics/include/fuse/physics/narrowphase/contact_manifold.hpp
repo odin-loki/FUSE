@@ -198,6 +198,7 @@ struct ContactManifold {
 enum class ManifoldPruneRejectReason : u8 {
     None = 0,
     EmptyManifold,
+    InvalidNormal,
     AllSeparated,
     ExceedsMaxPoints,
     InvalidNormal,
@@ -1382,6 +1383,10 @@ bool finalize_contact_manifold_beyond_preflight(
 
 /// Returns true when prune can be skipped after optional normal normalization (B4.6 deepen pass).
 bool can_skip_manifold_prune_after_normalize(
+
+/// Normalize `contactNormal` when non-unit; returns false when the normal is invalid (B4.6 deepen pass).
+
+
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

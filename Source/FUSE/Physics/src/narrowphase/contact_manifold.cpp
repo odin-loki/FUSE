@@ -386,6 +386,8 @@ const char* manifold_prune_reject_reason_name(ManifoldPruneRejectReason reason) 
         return "None";
     case ManifoldPruneRejectReason::EmptyManifold:
         return "EmptyManifold";
+    case ManifoldPruneRejectReason::InvalidNormal:
+        return "InvalidNormal";
     case ManifoldPruneRejectReason::AllSeparated:
         return "AllSeparated";
     return "Unknown";
@@ -2068,6 +2070,8 @@ bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEps
     return manifold.hasValidNormal();
 
 ManifoldBeyondPrunePreflight preflight_manifold_beyond_prune(
+
+bool should_run_manifold_prune(
     const ContactManifold& manifold,
     f32 separationEpsilon,
     f32 duplicateEpsilon,
@@ -2436,6 +2440,11 @@ bool can_skip_manifold_prune_after_normalize(
     normalize_contact_normal_if_needed(normalized, lengthEpsilon);
     return should_skip_manifold_prune(
         normalized, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+}
+
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};

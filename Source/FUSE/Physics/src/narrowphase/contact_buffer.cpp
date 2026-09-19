@@ -749,6 +749,28 @@ ContactBufferCompactRejectReason contact_buffer_compact_reject_reason(const Cont
 bool contact_buffer_compact_rejects_for_reason(
     ContactBufferCompactRejectReason expected) {
     return contact_buffer_compact_reject_reason(buffer) == expected;
+u32 countValidContactBufferSlots(const ContactBufferSoA& buffer) {
+    u32 count = 0u;
+    for (u32 i = 0u; i < buffer.pairSlotCount; ++i) {
+        if (buffer.validFlags[i] != 0u) {
+            ++count;
+    return count;
+
+bool contactBufferNeedsCompaction(const ContactBufferSoA& buffer) {
+    if (buffer.pairSlotCount == 0u) {
+
+    for (u32 readIndex = 0u; readIndex < buffer.pairSlotCount; ++readIndex) {
+        if (buffer.validFlags[readIndex] != 0u) {
+
+    if (buffer.maxCapacity == 0u) {
+    return countValidContactBufferSlots(buffer) > buffer.maxCapacity;
+
+
+    case ContactBufferCompactRejectReason::NoWork:
+
+    if (!contactBufferNeedsCompaction(buffer)) {
+        return ContactBufferCompactRejectReason::NoWork;
+
 
 ContactBufferCompactPreflight preflight_contact_buffer_compact(const ContactBufferSoA& buffer) {
     ContactBufferCompactPreflight preflight{};
@@ -774,6 +796,49 @@ bool should_run_contact_buffer_compact(const ContactBufferSoA& buffer) {
 
 
 
+    preflight.noWork = preflight.reason == ContactBufferCompactRejectReason::NoWork;
+    return preflight;
+}
+
+
+
+const char* contact_buffer_compact_and_clamp_reject_reason_name(
+    ContactBufferCompactAndClampRejectReason reason) {
+    switch (reason) {
+    case ContactBufferCompactAndClampRejectReason::None:
+        return "None";
+    case ContactBufferCompactAndClampRejectReason::EmptyBuffer:
+        return "EmptyBuffer";
+    case ContactBufferCompactAndClampRejectReason::NoWork:
+        return "NoWork";
+    return "Unknown";
+
+ContactBufferCompactAndClampRejectReason contact_buffer_compact_and_clamp_reject_reason(
+    const ContactBufferSoA& buffer) {
+    if (buffer.pairSlotCount == 0u) {
+        return ContactBufferCompactAndClampRejectReason::EmptyBuffer;
+    if (!should_run_contact_buffer_compact(buffer) && !contactBufferNeedsClamp(buffer)) {
+        const u32 validCount = countValidContactBufferSlots(buffer);
+        if (buffer.activeCount != validCount) {
+            return ContactBufferCompactAndClampRejectReason::None;
+        return ContactBufferCompactAndClampRejectReason::NoWork;
+
+bool contact_buffer_compact_and_clamp_rejects_for_reason(
+    const ContactBufferSoA& buffer,
+    ContactBufferCompactAndClampRejectReason expected) {
+    return contact_buffer_compact_and_clamp_reject_reason(buffer) == expected;
+
+ContactBufferCompactAndClampPreflight preflight_contact_buffer_compact_and_clamp(
+    ContactBufferCompactAndClampPreflight preflight{};
+    preflight.reason = contact_buffer_compact_and_clamp_reject_reason(buffer);
+    preflight.emptyBuffer = preflight.reason == ContactBufferCompactAndClampRejectReason::EmptyBuffer;
+    preflight.noWork = preflight.reason == ContactBufferCompactAndClampRejectReason::NoWork;
+
+bool can_skip_contact_buffer_compact_and_clamp(const ContactBufferSoA& buffer) {
+    return !preflight_contact_buffer_compact_and_clamp(buffer).needsCompactAndClamp();
+
+bool should_run_contact_buffer_compact_and_clamp(const ContactBufferSoA& buffer) {
+    return preflight_contact_buffer_compact_and_clamp(buffer).needsCompactAndClamp();
 
 void ContactBufferSoA::setMaxCapacity(u32 capacity) {
     maxCapacity = capacity;
@@ -1498,6 +1563,9 @@ bool ContactBufferSoA::canSkipClamp() const {
     const ContactBufferCompactPreflight preflight = preflight_contact_buffer_compact(*this);
     if (preflight.reason == ContactBufferCompactRejectReason::EmptyBuffer) {
     if (preflight.reason == ContactBufferCompactRejectReason::AllValid) {
+        activeCount = 0;
+    if (preflight.reason == ContactBufferCompactRejectReason::NoWork) {
+        activeCount = countValidContactBufferSlots(*this);
 
     u32 writeIndex = 0;
     for (u32 readIndex = 0; readIndex < pairSlotCount; ++readIndex) {
@@ -1709,6 +1777,9 @@ u32 ContactBufferSoA::compactAndClamp() {
         pairSlotCount = 0u;
     if (preflight.reason == ContactBufferCompactAndClampRejectReason::NoWork) {
         activeCount = countValidSlots();
+        activeCount = 0;
+        return activeCount;
+    }
 
     compact();
     return applyMaxCapacityClamp();

@@ -25,6 +25,14 @@ const char* contact_buffer_compact_reject_reason_name(ContactBufferCompactReject
 ContactBufferCompactRejectReason contact_buffer_compact_reject_reason(const ContactBufferSoA& buffer);
 
 /// Returns true when `contact_buffer_compact_reject_reason` matches `expected` (B4.5 deepen pass).
+/// Why contact-buffer compaction would early-out (B4.6 deepen pass).
+    NoWork,
+
+/// Human-readable label for contact-buffer compact reject reasons (B4.6 deepen pass).
+
+/// Diagnose why contact-buffer compact would skip; vacuously succeeds when compact may proceed (B4.6 deepen pass).
+
+/// Returns true when `contact_buffer_compact_reject_reason` matches `expected` (B4.6 deepen pass).
 bool contact_buffer_compact_rejects_for_reason(
     const ContactBufferSoA& buffer,
     ContactBufferCompactRejectReason expected);
@@ -34,6 +42,8 @@ struct ContactBufferCompactPreflight {
     ContactBufferCompactRejectReason reason = ContactBufferCompactRejectReason::None;
     bool emptyBuffer = false;
     bool allValid = false;
+/// Read-only compact diagnostics — no mutation (B4.6 deepen pass).
+    bool noWork = false;
 
     bool needsCompaction() const { return reason == ContactBufferCompactRejectReason::None; }
 };
@@ -71,7 +81,6 @@ struct ContactBufferClampPreflight {
     bool withinCapacity = false;
 
     bool needsClamp() const { return reason == ContactBufferClampRejectReason::None; }
-};
 
 ContactBufferClampPreflight preflight_contact_buffer_clamp(const ContactBufferSoA& buffer);
 
@@ -82,6 +91,13 @@ bool can_skip_contact_buffer_clamp(const ContactBufferSoA& buffer);
 bool should_run_contact_buffer_clamp(const ContactBufferSoA& buffer);
 
 /// Why contact-buffer compact-and-clamp would early-out (B4.5 deepen pass).
+/// Populate compact preflight without mutating the buffer (B4.6 deepen pass).
+
+/// Non-mutating compact skip predicate — inverse of `needsCompaction` (B4.6 deepen pass).
+
+/// Non-mutating compact predicate — mirrors `preflight_contact_buffer_compact` (B4.6 deepen pass).
+
+/// Why contact-buffer compact-and-clamp would early-out (B4.6 deepen pass).
 enum class ContactBufferCompactAndClampRejectReason : u8 {
     None = 0,
     EmptyBuffer,
@@ -96,11 +112,17 @@ ContactBufferCompactAndClampRejectReason contact_buffer_compact_and_clamp_reject
     const ContactBufferSoA& buffer);
 
 /// Returns true when `contact_buffer_compact_and_clamp_reject_reason` matches `expected` (B4.5 deepen pass).
+/// Human-readable label for contact-buffer compact-and-clamp reject reasons (B4.6 deepen pass).
+
+/// Diagnose why compact-and-clamp would skip; vacuously succeeds when work may proceed (B4.6 deepen pass).
+
+/// Returns true when `contact_buffer_compact_and_clamp_reject_reason` matches `expected` (B4.6 deepen pass).
 bool contact_buffer_compact_and_clamp_rejects_for_reason(
     const ContactBufferSoA& buffer,
     ContactBufferCompactAndClampRejectReason expected);
 
 /// Read-only compact-and-clamp diagnostics — no mutation (B4.5 deepen pass).
+/// Read-only compact-and-clamp diagnostics — no mutation (B4.6 deepen pass).
 struct ContactBufferCompactAndClampPreflight {
     ContactBufferCompactAndClampRejectReason reason = ContactBufferCompactAndClampRejectReason::None;
     bool emptyBuffer = false;
@@ -115,6 +137,17 @@ ContactBufferCompactAndClampPreflight preflight_contact_buffer_compact_and_clamp
 bool can_skip_contact_buffer_compact_and_clamp(const ContactBufferSoA& buffer);
 
 /// Non-mutating compact-and-clamp predicate — mirrors `preflight_contact_buffer_compact_and_clamp` (B4.5 deepen pass).
+    bool needsCompactAndClamp() const {
+        return reason == ContactBufferCompactAndClampRejectReason::None;
+    }
+
+/// Populate compact-and-clamp preflight without mutating the buffer (B4.6 deepen pass).
+ContactBufferCompactAndClampPreflight preflight_contact_buffer_compact_and_clamp(
+    const ContactBufferSoA& buffer);
+
+/// Non-mutating compact-and-clamp skip predicate (B4.6 deepen pass).
+
+/// Non-mutating compact-and-clamp predicate (B4.6 deepen pass).
 bool should_run_contact_buffer_compact_and_clamp(const ContactBufferSoA& buffer);
 
 /// SoA contact storage with clear/reuse for frame-to-frame narrowphase output (B4.3 deepen).
