@@ -3041,3 +3041,19 @@ void testChromeTraceExportPreflightAfterValidCapture() {
     testChromeTraceExportPreflightOpenAsyncFlows();
     testChromeTraceExportPreflightUnbalancedFlowNesting();
     testChromeTraceExportPreflightAfterValidCapture();
+
+// --- deepen additive from deepen-b16-profiler-preflights-07a7 ---
+void testIsValidEventNamePreflight() {
+void testRecordEntryPointPreflights() {
+void testCanEndAsyncFlowPreflightWithOpenFlow() {
+void testProfilerGuardStateBalancedPreflight() {
+void testTryLastEventPreflight() {
+void testExportPreflights() {
+void testPreflightsRejectInvalidNamesWithoutRecording() {
+    testIsValidEventNamePreflight();
+    testRecordEntryPointPreflights();
+    testCanEndAsyncFlowPreflightWithOpenFlow();
+    testProfilerGuardStateBalancedPreflight();
+    testTryLastEventPreflight();
+    testExportPreflights();
+    testPreflightsRejectInvalidNamesWithoutRecording();
