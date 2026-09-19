@@ -215,6 +215,36 @@ inline u32 LodResidencySet::find_index_(u32 chunk_index) const {
     return try_remove_resident(set, chunk_index);
 }
 
+/// True when focus distance is non-negative (stub validation).
+[[nodiscard]] inline bool is_valid_focus_distance(f32 focus_distance) { return focus_distance >= 0.f; }
+
+/// True when an eviction score is positive (stub validation).
+[[nodiscard]] inline bool is_positive_eviction_score(f32 score) { return score > 0.f; }
+
+/// Guard: returns stored focus distance, or -1 when chunk index is invalid or not resident.
+[[nodiscard]] inline f32 focus_distance_for_guarded(const LodResidencySet& set, u32 chunk_index) {
+    if (!is_valid_chunk_index(chunk_index) || !set.contains(chunk_index)) {
+        return -1.f;
+    }
+    return set.focus_distance_for(chunk_index);
+
+/// Stub: refresh focus distance for a resident chunk; rejects invalid index and negative distance.
+[[nodiscard]] inline bool try_update_resident_focus(LodResidencySet& set, u32 chunk_index, f32 focus_distance) {
+    if (!is_valid_chunk_index(chunk_index) || !is_valid_focus_distance(focus_distance)) {
+        return false;
+    return set.update_focus_distance(chunk_index, focus_distance);
+
+/// Guard: updates focus distance; returns false when index is invalid, not resident, or distance invalid.
+[[nodiscard]] inline bool update_focus_distance_guarded(LodResidencySet& set, u32 chunk_index,
+                                                          f32 focus_distance) {
+
+/// Guard: collect eviction candidates; returns empty when the set has no candidates.
+[[nodiscard]] inline std::vector<u32> collect_eviction_candidates_guarded(const LodResidencySet& set,
+                                                                            u32 max_count = 0) {
+    if (!set.has_eviction_candidate()) {
+        return {};
+    return set.collect_eviction_candidates(max_count);
+
 /// Pick the farthest chunk from `candidates` eligible for budget eviction under `policy`.
 /// Returns `kInvalidChunkIndex` and leaves `out_score` at -1 when no candidate qualifies.
 template <typename ScoreFn>
@@ -306,6 +336,9 @@ template <typename ScoreFn>
 /// Guard: budget pressure plus a non-empty residency set that can supply eviction candidates.
 [[nodiscard]] inline bool can_attempt_budget_eviction_from_set(const LodResidencySet& set, u32 max_resident_chunks,
                                                                 u32 resident_count, u32 incoming_count = 1u) {
+[[nodiscard]] inline bool can_attempt_budget_eviction_from_set(const LodResidencySet& set,
+                                                                 u32 max_resident_chunks, u32 resident_count,
+                                                                 u32 incoming_count = 1u) {
     return can_attempt_budget_eviction(max_resident_chunks, resident_count, set.has_eviction_candidate(),
                                        incoming_count);
 }

@@ -271,8 +271,10 @@ struct LodResidencyBudgetCounters {
                                                      f32 focus_distance, f32 budget_score) {
     return std::max(rank_unload_priority(streaming_priority, stored_priority, focus_distance), budget_score);
 /// Rank unload candidates by streaming, stored, and focus distance (B7.5 deepen).
-}
 
+
+[[nodiscard]] inline bool is_at_async_in_flight_cap(u32 in_flight, u32 max_async_in_flight) {
+    return !can_submit_async_load(in_flight, max_async_in_flight);
 
 /// True when in-flight plus completed buffer would exceed the async pending-submit cap.
 [[nodiscard]] inline bool would_exceed_pending_submit_budget(u32 in_flight, u32 completed,
@@ -280,10 +282,12 @@ struct LodResidencyBudgetCounters {
     if (max_pending_submits == 0u) {
         return false;
     return in_flight + completed >= max_pending_submits;
+    }
 
 /// Guard: returns false when the pending-submit budget is already saturated.
 [[nodiscard]] inline bool can_submit_pending_request(u32 in_flight, u32 completed, u32 max_pending_submits) {
     return !would_exceed_pending_submit_budget(in_flight, completed, max_pending_submits);
+}
 
 /// Guard: clamp how many async submits can be issued this tick given in-flight headroom.
 [[nodiscard]] inline u32 clamp_async_submits_per_tick(u32 requested, u32 in_flight, u32 max_async_in_flight) {
@@ -291,5 +295,6 @@ struct LodResidencyBudgetCounters {
         return 0u;
     const u32 headroom = async_in_flight_headroom(max_async_in_flight, in_flight);
     return requested < headroom ? requested : headroom;
+    }
 
 } // namespace fuse::terrain

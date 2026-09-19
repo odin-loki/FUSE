@@ -132,11 +132,13 @@ bool LodResidencyQueue::peek_pending(LodResidencyRequest& out) const {
 
     std::lock_guard<std::mutex> lock(m_mutex);
 
+
     const PendingLodResidencyRequest& best = *std::max_element(
         m_pending.begin(), m_pending.end(),
         [](const PendingLodResidencyRequest& a, const PendingLodResidencyRequest& b) {
             return compare_lod_residency_request_order(a.request.priority, a.request.kind, a.enqueue_sequence,
                                                        b.request.priority, b.request.kind, b.enqueue_sequence) < 0;
+            return compare_residency_request_order(a.request.priority, a.request.kind, a.enqueue_sequence,
         });
     out = best.request;
     return true;

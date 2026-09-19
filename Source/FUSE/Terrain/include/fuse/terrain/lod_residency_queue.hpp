@@ -146,6 +146,7 @@ private:
                                          queue.max_pending_submits());
 /// Async-submit guard: true when pending/in-flight counts are below `max_pending_submits`.
     return can_submit_residency_request(queue.in_flight_count(), queue.completed_count(),
+    return can_submit_pending_request(queue.in_flight_count(), queue.completed_count(),
 }
 
 /// Dequeue helper: removes highest-priority pending request when non-empty.
@@ -187,6 +188,8 @@ private:
     if (!is_valid_chunk_index(chunk_index)) {
         return -1.f;
     return queue.pending_priority_for(chunk_index, kind);
+                                                       LodResidencyRequestKind kind) {
+    }
 
 /// Flush helper: submits pending batch only when the highest-priority request meets `min_priority`.
 [[nodiscard]] inline u32 try_flush_pending_if(LodResidencyQueue& queue, u32 budget, f32 min_priority,
@@ -197,5 +200,8 @@ private:
     LodResidencyRequest peeked{};
     if (!queue.peek_pending(peeked) || peeked.priority < min_priority) {
     return queue.flush(budget, work);
+    }
+
+        return 0u;
 
 } // namespace fuse::terrain
