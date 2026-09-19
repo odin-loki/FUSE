@@ -2147,3 +2147,6 @@ HrtfPanConvolveRejectReason classify_hrtf_pan_convolve_reject(const HrtfPanPathP
 bool try_preflight_hrtf_pan_convolve(bool hrtf_enabled, const HrtfIrStub& ir,
                                      const Vec3& rel_listener, HrtfPanConvolveRejectReason& reason) {
 bool should_skip_hrtf_pan_convolve(bool hrtf_enabled, const HrtfIrStub& ir,
+
+// --- deepen additive from b7-2-hrtf-reject-reasons-6afb ---
+                                   float occlusion_gain, HrtfConvolutionRejectReason& reason,

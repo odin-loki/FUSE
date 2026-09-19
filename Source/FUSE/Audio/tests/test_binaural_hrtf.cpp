@@ -2549,3 +2549,12 @@ void testHrtfPanConvolveRejectReasonGuards() {
                    fuse::audio::HrtfPanConvolveRejectReason::EmptyIr),
     expectTrue(fuse::audio::should_skip_hrtf_binaural_ready(true, valid, co_located, 0.1f, 0.1f),
     testHrtfPanConvolveRejectReasonGuards();
+
+// --- deepen additive from b7-2-hrtf-reject-reasons-6afb ---
+               "should_skip coupling preflight true at unity attenuation");
+    expectTrue(fuse::audio::should_skip_hrtf_binaural_preflight(false, valid, offset, 0.1f, 0.1f),
+               "should_skip binaural preflight true when disabled");
+    expectTrue(fuse::audio::should_skip_hrtf_convolution_preflight(true, empty, offset, 1.f, 1.f),
+               "should_skip convolution preflight true on empty IR");
+                   fuse::audio::HrtfConvolutionRejectReason::MalformedIr),
+               "preflight_hrtf_binaural_ready mirrors should_skip inverse");
