@@ -271,5 +271,17 @@ bool finalize_contact_manifold_if_needed(ContactManifold& manifold);
 /// Job-safe narrowphase with deepen pair preflight and finalize guards (B4.4 deepen pass).
 void runNarrowphaseDeepenIntoBuffer(
     ContactBufferSoA& buffer);
+/// Read-only narrowphase buffer dispatch diagnostics (B4.5 deepen pass).
+    bool emptyPairs = false;
+    bool allPairsDeepenRejected = false;
+    u32 pairCount = 0u;
+    u32 dispatchablePairCount = 0u;
+
+    bool can_prepare_buffer() const { return !emptyPairs; }
+    bool can_skip_entire_dispatch() const { return emptyPairs || allPairsDeepenRejected; }
+
+/// Populate narrowphase dispatch preflight without mutating buffers (B4.5 deepen pass).
+
+/// Returns true when pair-slot narrowphase dispatch may be skipped via deepen preflight (B4.5 deepen pass).
 
 } // namespace fuse::physics::narrowphase

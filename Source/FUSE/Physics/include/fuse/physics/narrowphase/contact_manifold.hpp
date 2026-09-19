@@ -1078,22 +1078,9 @@ bool can_skip_manifold_prune_dispatch(
 /// Non-mutating finalize predicate — inverse of `can_skip_manifold_finalize` (B4.4 deepen guard pass).
 
 
-bool should_run_manifold_finalize(
-    const ContactManifold& manifold,
-    f32 separationEpsilon = 1e-6f,
-    f32 duplicateEpsilon = 1e-4f,
-    f32 frictionEpsilon = 1e-4f);
 
 /// Finalize only when `should_run_manifold_finalize` passes; no-op otherwise (B4.4 deepen pass).
-bool finalize_contact_manifold_if_needed(
-    ContactManifold& manifold,
-    f32 separationEpsilon = 1e-6f,
-    f32 duplicateEpsilon = 1e-4f,
-    f32 frictionEpsilon = 1e-4f);
 
-/// Non-mutating finalize predicate — inverse of `can_skip_manifold_finalize` (B4.4 deepen pass).
-bool should_run_manifold_finalize(
-    const ContactManifold& manifold,
 
 
 /// Non-mutating finalize predicate — mirrors `preflight_manifold_finalize` (B4.4 deepen pass).
@@ -1107,15 +1094,32 @@ struct ManifoldPruneFinalizePreflight {
     bool can_finalize() const { return finalize.can_finalize(); }
     bool can_skip_all(f32 shallowMinDepth = 0.f) const {
         return can_skip_prune(shallowMinDepth) && !finalize.can_finalize();
-    }
-};
 
 /// Populate combined prune/finalize preflight without mutating the manifold (B4.4 deepen pass).
 ManifoldPruneFinalizePreflight preflight_manifold_prune_finalize(
-    f32 shallowMinDepth = 0.f,
 
 /// Non-mutating skip predicate for combined prune/finalize (B4.4 deepen pass).
 bool should_skip_manifold_prune_finalize(
+/// Why manifold prune would early-out (B4.5 deepen pass).
+    AlreadyClean,
+
+/// Human-readable label for manifold prune reject reasons (B4.5 deepen pass).
+
+/// Diagnose why prune would skip; vacuously succeeds when prune may proceed (B4.5 deepen pass).
+
+/// Returns true when `manifold_prune_reject_reason` matches `expected` (B4.5 deepen pass).
+
+/// Non-mutating prune predicate — inverse of `can_skip_manifold_prune` (B4.5 deepen pass).
+
+/// Why manifold finalize would early-out (B4.5 deepen pass).
+
+/// Human-readable label for manifold finalize reject reasons (B4.5 deepen pass).
+
+/// Diagnose why finalize would skip; vacuously succeeds when finalize may proceed (B4.5 deepen pass).
+
+/// Returns true when `manifold_finalize_reject_reason` matches `expected` (B4.5 deepen pass).
+
+/// Non-mutating finalize predicate — inverse of `can_skip_manifold_finalize` (B4.5 deepen pass).
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

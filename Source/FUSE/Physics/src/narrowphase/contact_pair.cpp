@@ -171,6 +171,28 @@ bool isShapeDegenerate(CollisionShapeType type, const vec3& params) {
     }
 }
 
+bool isShapeNearDegenerate(CollisionShapeType type, const vec3& params, f32 extentEpsilon) {
+    switch (type) {
+    case CollisionShapeType::Sphere:
+    case CollisionShapeType::Capsule:
+        return params.x > 0.f && params.x < extentEpsilon;
+    case CollisionShapeType::Box:
+        return (params.x > 0.f && params.x < extentEpsilon) ||
+               (params.y > 0.f && params.y < extentEpsilon) ||
+               (params.z > 0.f && params.z < extentEpsilon);
+    default:
+        return false;
+    }
+}
+
+bool isPlaneNormalUnnormalized(const vec3& planeNormal, f32 lengthEpsilon) {
+    const f32 length = planeNormal.length();
+    if (length < 1e-8f) {
+        return false;
+    }
+    return std::fabs(length - 1.f) > lengthEpsilon;
+}
+
 bool isDeepenDegenerateShapePair(
     const broadphase::CandidatePair& pair,
     const CollisionShapeSoA& shapes) {
@@ -1779,6 +1801,60 @@ NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(
 
     preflight.dispatchableCount = count_dispatchable_contact_pairs(pairs, bodies, shapes);
     return preflight;
+}
+
+bool contact_pair_deepen_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected) {
+    return contact_pair_deepen_reject_reason(pair, bodies, shapes) == expected;
+}
+
+bool is_unnormalized_plane_shape_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes,
+    f32 lengthEpsilon) {
+    const u32 shapeA = findShapeForBody(shapes, pair.bodyA, CollisionShapeType::Sphere);
+    const u32 shapeB = findShapeForBody(shapes, pair.bodyB, CollisionShapeType::Sphere);
+    if (shapeA >= shapes.count() || shapeB >= shapes.count()) {
+        return false;
+    }
+
+    const CollisionShapeType typeA = shapeType(shapes, shapeA);
+    const CollisionShapeType typeB = shapeType(shapes, shapeB);
+    if (typeA == CollisionShapeType::Plane &&
+        isPlaneNormalUnnormalized(shapes.params[shapeA], lengthEpsilon)) {
+        return true;
+    }
+    if (typeB == CollisionShapeType::Plane &&
+        isPlaneNormalUnnormalized(shapes.params[shapeB], lengthEpsilon)) {
+        return true;
+    }
+    return false;
+}
+
+bool is_near_degenerate_shape_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes,
+    f32 extentEpsilon) {
+    const u32 shapeA = findShapeForBody(shapes, pair.bodyA, CollisionShapeType::Sphere);
+    const u32 shapeB = findShapeForBody(shapes, pair.bodyB, CollisionShapeType::Sphere);
+    if (shapeA >= shapes.count() || shapeB >= shapes.count()) {
+        return false;
+    }
+
+    const CollisionShapeType typeA = shapeType(shapes, shapeA);
+    const CollisionShapeType typeB = shapeType(shapes, shapeB);
+    if (isShapeNearDegenerate(typeA, shapes.params[shapeA], extentEpsilon) ||
+        isShapeNearDegenerate(typeB, shapes.params[shapeB], extentEpsilon)) {
+        return true;
+    }
+
+    return (typeA == CollisionShapeType::Capsule &&
+            shapes.params[shapeA].y > 0.f && shapes.params[shapeA].y < extentEpsilon) ||
+           (typeB == CollisionShapeType::Capsule &&
+            shapes.params[shapeB].y > 0.f && shapes.params[shapeB].y < extentEpsilon);
 }
 
 } // namespace fuse::physics::narrowphase

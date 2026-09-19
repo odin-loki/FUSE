@@ -1100,6 +1100,7 @@ struct NarrowphaseBatchPreflight {
 NarrowphaseBatchPreflight preflight_narrowphase_batch(
 
 /// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 deepen guard pass).
+/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.5 deepen pass).
 bool contact_pair_deepen_rejects_for_reason(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
@@ -1138,10 +1139,15 @@ bool contact_pair_deepen_rejects_for_reason(
 /// Non-mutating deepen dispatch predicate — inverse of `should_skip_contact_pair_deepen_dispatch` (B4.4 deepen pass).
 /// Non-mutating deepen dispatch predicate — inverse of `should_skip_contact_pair_deepen_dispatch` (B4.4 deepen guard pass).
 bool should_run_contact_pair_deepen_dispatch(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Non-mutating deepen dispatch skip predicate — mirrors `should_skip_contact_pair_deepen_dispatch` (B4.4 deepen pass).
 bool can_skip_contact_pair_deepen_dispatch(
+/// Returns true when either shape is a plane with a non-unit normal (B4.5 deepen pass).
+bool is_unnormalized_plane_shape_pair(
+    f32 lengthEpsilon = 1e-4f);
+
+/// Returns true when either shape extent is positive but below the deepen epsilon (B4.5 deepen pass).
+bool is_near_degenerate_shape_pair(
+    f32 extentEpsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase

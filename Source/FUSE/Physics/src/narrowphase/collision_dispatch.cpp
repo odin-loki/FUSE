@@ -130,6 +130,17 @@ void runNarrowphaseDeepenIntoBuffer(
             buffer.writeSlot(pairIndex, manifold);
 
     buffer.compactAndClamp();
+    preflight.pairCount = static_cast<u32>(pairs.size());
+    preflight.emptyPairs = pairs.empty();
+    if (preflight.emptyPairs) {
+        preflight.allPairsDeepenRejected = true;
+
+    preflight.dispatchablePairCount = count_dispatchable_contact_pairs(pairs, bodies, shapes);
+    preflight.allPairsDeepenRejected = preflight.dispatchablePairCount == 0u;
+
+bool should_skip_narrowphase_pair_slot(
+    const RigidBodySoA& bodies,
+    return should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
 }
 
 } // namespace fuse::physics::narrowphase

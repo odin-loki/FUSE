@@ -545,7 +545,6 @@ enum class FrictionBasisRejectReason : u8 {
     InvalidNormal,
     StaleBasis,
     CanReuse,
-};
 
 /// Human-readable label for friction-basis reject reasons (logging / tests).
 const char* friction_basis_reject_reason_name(FrictionBasisRejectReason reason);
@@ -580,11 +579,9 @@ bool can_dispatch_friction_basis_rebuild(
 /// Rebuild friction basis only when preflight allows; returns false when skipped (B4.4 deepen follow-up pass).
 
 /// Build friction tangents only when preflight allows rebuild (B4.4 deepen follow-up pass).
-/// Why friction-basis rebuild would early-out (B4.4 deepen pass).
 enum class FrictionBasisRebuildRejectReason : u8 {
     SkippedEmpty,
     SkippedNoNormal,
-    CanReuse,
     NeedsRebuild,
 
 /// Human-readable label for friction-basis rebuild reject reasons (logging / tests).
@@ -632,10 +629,18 @@ bool can_skip_friction_basis_rebuild_dispatch(const ContactManifold& manifold, f
 /// Returns true when `friction_basis_rebuild_reject_reason` matches `expected` (B4.4 deepen guard pass).
 
 /// Non-mutating rebuild predicate — inverse of `should_skip_friction_basis_preflight` (B4.4 deepen guard pass).
-    const ContactManifold& manifold,
-    f32 epsilon = 1e-4f);
 
 /// Returns true when `friction_basis_reject_reason` matches `expected` (B4.4 deepen pass).
 
+/// Why friction-basis rebuild would early-out (B4.5 deepen pass).
+    Skipped,
+
+/// Human-readable label for friction-basis reject reasons (B4.5 deepen pass).
+
+/// Diagnose why friction-basis rebuild would skip; vacuously succeeds when rebuild may proceed (B4.5 deepen pass).
+
+/// Returns true when `friction_basis_reject_reason` matches `expected` (B4.5 deepen pass).
+
+/// Non-mutating rebuild predicate — inverse of `should_skip_friction_basis_preflight` (B4.5 deepen pass).
 
 } // namespace fuse::physics::narrowphase

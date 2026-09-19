@@ -255,7 +255,6 @@ const char* contactBufferWriteRejectReasonName(ContactBufferWriteRejectReason re
         return "SelfPair";
     }
     return "Unknown";
-}
 
 ContactBufferWriteRejectReason contactBufferWriteRejectReason(
     const ContactBufferSoA& buffer,
@@ -263,39 +262,27 @@ ContactBufferWriteRejectReason contactBufferWriteRejectReason(
     const ContactManifold& manifold) {
     if (slot >= buffer.pairSlotCount) {
         return ContactBufferWriteRejectReason::OutOfRangeSlot;
-    }
     if (!manifold.valid) {
         return ContactBufferWriteRejectReason::InvalidManifold;
-    }
     if (manifold.bodyA == manifold.bodyB) {
         return ContactBufferWriteRejectReason::SelfPair;
-    }
     return ContactBufferWriteRejectReason::None;
-}
 
 bool contactBufferWriteRejectsForReason(
-    const ContactBufferSoA& buffer,
-    u32 slot,
     const ContactManifold& manifold,
     ContactBufferWriteRejectReason expected) {
     return contactBufferWriteRejectReason(buffer, slot, manifold) == expected;
-}
 
 ContactBufferWritePreflight preflightContactBufferWrite(
-    const ContactBufferSoA& buffer,
-    u32 slot,
-    const ContactManifold& manifold) {
     ContactBufferWritePreflight preflight{};
     preflight.reason = contactBufferWriteRejectReason(buffer, slot, manifold);
     preflight.outOfRangeSlot = preflight.reason == ContactBufferWriteRejectReason::OutOfRangeSlot;
     preflight.invalidManifold = preflight.reason == ContactBufferWriteRejectReason::InvalidManifold;
     preflight.selfPair = preflight.reason == ContactBufferWriteRejectReason::SelfPair;
     return preflight;
-}
 
 bool ContactBufferSoA::canSkipWrite(u32 slot, const ContactManifold& manifold) const {
     return !preflightContactBufferWrite(*this, slot, manifold).canWrite();
-}
 
 void ContactBufferSoA::writeSlot(u32 slot, const ContactManifold& manifold) {
     if (slot >= pairSlotCount || !manifold.valid || manifold.bodyA == manifold.bodyB ||
@@ -307,6 +294,26 @@ void ContactBufferSoA::writeSlot(u32 slot, const ContactManifold& manifold) {
     const ContactBufferWritePreflight writePreflight = preflightContactBufferWrite(*this, slot, manifold);
     const ContactBufferWritePreflight preflight = preflight_contact_buffer_write(*this, slot, manifold);
     if (!preflightContactBufferWrite(*this, slot, manifold).canWrite()) {
+bool ContactBufferSoA::canSkipCompaction() const {
+    if (pairSlotCount == 0u) {
+        return true;
+    for (u32 slot = 0u; slot < pairSlotCount; ++slot) {
+        if (validFlags[slot] == 0u) {
+            return false;
+
+bool ContactBufferSoA::canApplyMaxCapacityClamp() const {
+    return maxCapacity > 0u && activeCount > maxCapacity;
+
+u32 ContactBufferSoA::countValidSlots() const {
+    u32 validCount = 0u;
+        if (validFlags[slot] != 0u) {
+            ++validCount;
+    return validCount;
+
+bool ContactBufferSoA::slotIsValid(u32 slot) const {
+    return slot < pairSlotCount && validFlags[slot] != 0u;
+
+    if (contactBufferWriteRejectReason(*this, slot, manifold) != ContactBufferWriteRejectReason::None) {
         return;
     }
 
@@ -477,8 +484,6 @@ u32 ContactBufferSoA::compact() {
 
     if (canSkipCompaction()) {
         activeCount = pairSlotCount;
-    const ContactBufferCompactionPreflight compactionPreflight = preflight_contact_buffer_compaction(*this);
-    if (compactionPreflight.reason == ContactBufferCompactionRejectReason::EmptyBuffer) {
         pairSlotCount = 0u;
 
     if (compactionPreflight.reason == ContactBufferCompactionRejectReason::AllValid) {
@@ -491,9 +496,8 @@ u32 ContactBufferSoA::compact() {
             pointCounts[i] = 0u;
 
 
-        activeCount = 0u;
-        }
     if (compactionPreflight.reason == ContactBufferCompactRejectReason::AllValid) {
+
         return activeCount;
     }
 
@@ -585,6 +589,7 @@ u32 ContactBufferSoA::applyMaxCapacityClamp() {
     if (!clampPreflight.needsClamp()) {
     if (clampPreflight.reason != ContactBufferClampRejectReason::None) {
     if (!preflightContactBufferClamp(*this).needsClamp()) {
+    if (contactBufferClampRejectReason(*this) != ContactBufferClampRejectReason::None) {
         return activeCount;
     }
 
@@ -772,6 +777,7 @@ ContactBufferWriteRejectReason contact_buffer_write_reject_reason(
 ContactBufferWriteRejectReason contactBufferWriteRejectReason(
 
 
+
     const ContactBufferSoA& buffer,
     u32 slot,
     const ContactManifold& manifold) {
@@ -813,6 +819,13 @@ ContactBufferWritePreflight preflightContactBufferWrite(
 
 
 
+    const ContactManifold& manifold,
+    ContactBufferWriteRejectReason expected) {
+}
+
+    const ContactBufferSoA& buffer,
+    u32 slot,
+    ContactBufferWritePreflight preflight{};
     preflight.invalidSlot = preflight.reason == ContactBufferWriteRejectReason::InvalidSlot;
     preflight.invalidManifold = preflight.reason == ContactBufferWriteRejectReason::InvalidManifold;
     preflight.selfPair = preflight.reason == ContactBufferWriteRejectReason::SelfPair;
@@ -830,6 +843,7 @@ bool should_run_contact_buffer_write(
     return preflight_contact_buffer_write(buffer, slot, manifold).canWrite();
 
 const char* contact_buffer_compaction_reject_reason_name(ContactBufferCompactionRejectReason reason) {
+
     switch (reason) {
     case ContactBufferCompactionRejectReason::None:
         return "None";
@@ -1052,6 +1066,27 @@ bool shouldRunContactBufferCompact(const ContactBufferSoA& buffer) {
 
 
 
+    }
+
+
+    const ContactBufferSoA& buffer,
+
+    return preflight;
+
+    return contactBufferCompactionRejectReason(buffer) != ContactBufferCompactionRejectReason::None;
+
+    return contactBufferCompactionRejectReason(buffer) == ContactBufferCompactionRejectReason::None;
+
+    switch (reason) {
+        return "None";
+        return "EmptyBuffer";
+
+
+
+
+    return contactBufferClampRejectReason(buffer) != ContactBufferClampRejectReason::None;
+
+    return contactBufferClampRejectReason(buffer) == ContactBufferClampRejectReason::None;
 }
 
 } // namespace fuse::physics::narrowphase
