@@ -54,7 +54,6 @@ public:
                                                   const std::string& changed_source) const;
     /// True when `invalidate_upstream_dependency` would remove at least one entry (B7.9 deepen).
     [[nodiscard]] bool would_invalidate_upstream_dependency(const CookManifest& manifest,
-                                                            const std::string& changed_source) const;
     /// Read-only stale dependency-hash reconcile probe (B7.9 deepen).
     [[nodiscard]] u32 count_stale_dependency_invalidation(const CookManifest& manifest) const;
     /// True when `invalidate_stale_dependency_hashes` would remove at least one entry (B7.9 deepen).
@@ -71,11 +70,9 @@ public:
     [[nodiscard]] bool would_reconcile_invalidation(const CookManifest& manifest) const;
     /// Deduplicated source paths `invalidate_upstream_dependency` would touch (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_upstream_invalidation_sources(
-        const CookManifest& manifest, const std::string& changed_source) const;
 
     /// Non-mutating upstream invalidation scope probe via the cook job graph (B7.9 deepen).
     [[nodiscard]] CookCacheInvalidationProbe probe_upstream_dependency(const CookManifest& manifest,
-                                                                       const std::string& changed_source) const;
     /// Non-mutating reconcile estimate for stale upstream dependency hashes (B7.9 deepen).
     struct CookDependencyReconcileEstimate {
         u32 stale_upstream_entries = 0;
@@ -88,14 +85,13 @@ public:
         [[nodiscard]] bool would_reconcile() const { return total_entries() > 0; }
     };
     [[nodiscard]] CookDependencyReconcileEstimate estimate_stale_dependency_hashes(
-        const CookManifest& manifest) const;
 
     /// Non-mutating reconcile estimate for upstream dependency invalidation (B7.9 deepen).
     [[nodiscard]] CookCacheReconcileEstimate estimate_invalidate_upstream_dependency(
-        const CookManifest& manifest, const std::string& changed_source) const;
     /// Non-mutating reconcile estimate for stale dependency-hash invalidation (B7.9 deepen).
     [[nodiscard]] CookCacheReconcileEstimate estimate_invalidate_stale_dependency_hashes(
-        const CookManifest& manifest) const;
+    /// Non-mutating estimate of entries `invalidate_stale_dependency_hashes` would drop (B7.9 deepen).
+    [[nodiscard]] u32 estimate_stale_dependency_hashes(const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

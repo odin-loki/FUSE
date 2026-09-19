@@ -344,22 +344,18 @@ CookCacheReconcileEstimate AssetCooker::estimate_invalidate_upstream_dependency(
     for (const CookJob& job : graph.jobs()) {
         if (job.source_path != changed_source) {
             continue;
-        }
         estimate.downstream_count +=
             m_cache.probe_downstream_of(job.output_path, graph.edges(), graph.jobs()).affected_count;
-    }
-    return estimate;
-}
 
 CookCacheReconcileEstimate AssetCooker::estimate_invalidate_stale_dependency_hashes(
     const CookManifest& manifest) const {
-    CookCacheReconcileEstimate estimate;
     if (m_cache.empty()) {
-        return estimate;
-    }
 
-    CookJobGraph graph;
-    graph.build_from_manifest(manifest);
+
+u32 AssetCooker::estimate_stale_dependency_hashes(const CookManifest& manifest) const {
+
+    if (graph.empty()) {
+        return 0;
 
     std::vector<std::pair<std::string, u64>> source_upstream;
     source_upstream.reserve(graph.jobs().size());
@@ -369,12 +365,17 @@ CookCacheReconcileEstimate AssetCooker::estimate_invalidate_stale_dependency_has
 
     const std::vector<std::string> stale_sources = m_cache.probe_stale_upstream_source_paths(source_upstream);
     estimate.direct_count = static_cast<u32>(stale_sources.size());
+    u32 estimate = m_cache.estimate_stale_upstream_invalidation(source_upstream);
+    const std::vector<std::string> stale_sources =
+        m_cache.probe_stale_upstream_invalidation_sources(source_upstream);
 
     for (const std::string& stale_source : stale_sources) {
         for (const CookJob& job : graph.jobs()) {
             if (job.source_path == stale_source) {
                 estimate.downstream_count +=
                     m_cache.probe_downstream_of(job.output_path, graph.edges(), graph.jobs()).affected_count;
+                estimate += m_cache.estimate_invalidation_downstream_of(job.output_path, graph.edges(),
+                                                                          graph.jobs());
                 break;
             }
         }

@@ -38,6 +38,28 @@ struct CookHashPreflight {
 [[nodiscard]] inline bool is_valid_content_hash(u64 hash) {
     return hash != 0;
 }
+/// Why a cook content-hash preflight rejected the request (B7.9 deepen).
+enum class CookHashPreflightRejectReason : u8 {
+    None = 0,
+    MissingFile,
+    EmptyInputOrOutput,
+
+/// Human-readable label for hash preflight reject reasons (logging / tests).
+const char* cookHashPreflightRejectReasonLabel(CookHashPreflightRejectReason reason);
+
+/// Preflight guard before `hash_file_content` — true when the path is non-empty and readable.
+[[nodiscard]] bool preflight_hash_file_content(const std::string& path,
+                                               CookHashPreflightRejectReason* reason = nullptr);
+
+/// Preflight guard before import/manifest hashing — true when inputs would yield a non-zero hash.
+[[nodiscard]] bool preflight_hash_mesh_import(const MeshImportDesc& desc,
+[[nodiscard]] bool preflight_hash_texture_import(const TextureImportDesc& desc,
+[[nodiscard]] bool preflight_hash_audio_import(const AudioImportDesc& desc,
+[[nodiscard]] bool preflight_hash_manifest_entry(const CookManifestEntry& entry,
+
+/// Preflight guard before `combine_cook_cache_key` — true when the fold would be cacheable.
+[[nodiscard]] bool preflight_combine_cook_cache_key(u64 source_hash,
+                                                    u64 upstream_hash,
 
 /// FNV-1a 64-bit hash over raw bytes — shared by cook cache keys (B7.9 deepen stub).
 [[nodiscard]] u64 fnv1a64_bytes(const u8* data, usize size);

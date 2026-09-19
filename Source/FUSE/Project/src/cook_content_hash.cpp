@@ -12,6 +12,21 @@ namespace {
 constexpr u64 kFnvOffset = 14695981039346656037ull;
 constexpr u64 kFnvPrime = 1099511628211ull;
 
+bool set_preflight_reason(CookHashPreflightRejectReason* reason, CookHashPreflightRejectReason value) {
+    if (reason) {
+        *reason = value;
+    }
+    return value == CookHashPreflightRejectReason::None;
+}
+
+bool path_exists(const std::string& path) {
+    if (path.empty()) {
+        return false;
+    }
+    std::error_code ec;
+    return std::filesystem::exists(std::filesystem::path(path), ec);
+}
+
 u64 hash_u64(u64 value) {
     return fnv1a64_bytes(reinterpret_cast<const u8*>(&value), sizeof(value));
 }
@@ -25,6 +40,87 @@ u64 hash_bool(bool value) {
 }
 
 } // namespace
+
+const char* cookHashPreflightRejectReasonLabel(CookHashPreflightRejectReason reason) {
+    switch (reason) {
+    case CookHashPreflightRejectReason::None:
+        return "None";
+    case CookHashPreflightRejectReason::EmptyPath:
+        return "EmptyPath";
+    case CookHashPreflightRejectReason::MissingFile:
+        return "MissingFile";
+    case CookHashPreflightRejectReason::EmptyInputOrOutput:
+        return "EmptyInputOrOutput";
+    case CookHashPreflightRejectReason::ZeroSourceHash:
+        return "ZeroSourceHash";
+    }
+    return "Unknown";
+}
+
+bool preflight_hash_file_content(const std::string& path, CookHashPreflightRejectReason* reason) {
+    if (path.empty()) {
+        return set_preflight_reason(reason, CookHashPreflightRejectReason::EmptyPath);
+    }
+    if (!path_exists(path)) {
+        return set_preflight_reason(reason, CookHashPreflightRejectReason::MissingFile);
+    }
+    return set_preflight_reason(reason, CookHashPreflightRejectReason::None);
+}
+
+bool preflight_hash_mesh_import(const MeshImportDesc& desc, CookHashPreflightRejectReason* reason) {
+    if (desc.input_path.empty() || desc.output_path.empty()) {
+        return set_preflight_reason(reason, CookHashPreflightRejectReason::EmptyInputOrOutput);
+    }
+    if (!preflight_hash_file_content(desc.input_path, reason)) {
+        return false;
+    }
+    return set_preflight_reason(reason, CookHashPreflightRejectReason::None);
+}
+
+bool preflight_hash_texture_import(const TextureImportDesc& desc, CookHashPreflightRejectReason* reason) {
+    if (desc.input_path.empty() || desc.output_path.empty()) {
+        return set_preflight_reason(reason, CookHashPreflightRejectReason::EmptyInputOrOutput);
+    }
+    if (!preflight_hash_file_content(desc.input_path, reason)) {
+        return false;
+    }
+    return set_preflight_reason(reason, CookHashPreflightRejectReason::None);
+}
+
+bool preflight_hash_audio_import(const AudioImportDesc& desc, CookHashPreflightRejectReason* reason) {
+    if (desc.input_path.empty() || desc.output_path.empty()) {
+        return set_preflight_reason(reason, CookHashPreflightRejectReason::EmptyInputOrOutput);
+    }
+    if (!preflight_hash_file_content(desc.input_path, reason)) {
+        return false;
+    }
+    return set_preflight_reason(reason, CookHashPreflightRejectReason::None);
+}
+
+bool preflight_hash_manifest_entry(const CookManifestEntry& entry, CookHashPreflightRejectReason* reason) {
+    if (entry.source_path.empty() || entry.output_path.empty()) {
+        return set_preflight_reason(reason, CookHashPreflightRejectReason::EmptyInputOrOutput);
+    }
+    if (!preflight_hash_file_content(entry.source_path, reason)) {
+        return false;
+    }
+    for (const std::string& dependency : entry.dependencies) {
+        if (dependency.empty()) {
+            continue;
+        }
+        if (!preflight_hash_file_content(dependency, reason)) {
+            return false;
+        }
+    }
+    return set_preflight_reason(reason, CookHashPreflightRejectReason::None);
+}
+
+bool preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash, CookHashPreflightRejectReason* reason) {
+    if (source_hash == 0) {
+        return set_preflight_reason(reason, CookHashPreflightRejectReason::ZeroSourceHash);
+    }
+    return set_preflight_reason(reason, CookHashPreflightRejectReason::None);
+}
 
 u64 fnv1a64_bytes(const u8* data, usize size) {
     if (size == 0) {
