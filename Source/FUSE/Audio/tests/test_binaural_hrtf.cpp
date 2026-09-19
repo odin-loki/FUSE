@@ -1226,3 +1226,6 @@ int main() {
     expectTrue(!fuse::audio::should_skip_hrtf_pan_path(fuse::audio::HrtfPanPath::IldItdStub),
     expectTrue(fuse::audio::should_skip_hrtf_attenuation_coupling(1.f, 1.f),
     expectTrue(!fuse::audio::should_skip_hrtf_attenuation_coupling(0.2f, 1.f),
+
+// --- deepen additive from deepen-b72-hrtf-pan-guards-6bae ---
+    expectTrue(fuse::audio::should_skip_hrtf_attenuation_coupling(fuse::audio::HrtfPanPath::Bypass),
