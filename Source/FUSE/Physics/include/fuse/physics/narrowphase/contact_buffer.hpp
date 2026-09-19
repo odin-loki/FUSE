@@ -44,6 +44,14 @@ struct ContactBufferSoA {
     u32 compact();
     u32 applyMaxCapacityClamp();
     u32 compactAndClamp();
+    /// True when slot storage has no invalid flags (compact is a no-op) (B4.4 deepen follow-up pass).
+    bool canSkipCompaction() const;
+    /// True when post-pass truncation would drop contacts (B4.4 deepen follow-up pass).
+    bool canApplyMaxCapacityClamp() const;
+    /// Inverse of `canApplyMaxCapacityClamp` (B4.4 deepen follow-up pass).
+    bool canSkipMaxCapacityClamp() const { return !canApplyMaxCapacityClamp(); }
+    /// Rebuild friction tangents only for slots with missing or stale bases (B4.4 deepen follow-up pass).
+    void buildFrictionTangentBasesIfNeeded(f32 epsilon = 1e-4f);
     TangentBasis tangentBasisAt(u32 index) const;
     ContactManifold manifoldAt(u32 index) const;
     std::vector<ContactManifold> toVector() const;
@@ -77,7 +85,6 @@ struct ContactBufferCompactionPreflight {
     bool noWork = false;
 
     bool needsCompaction() const { return reason == ContactBufferCompactionRejectReason::None; }
-};
 
 /// Populate compaction preflight without mutating the buffer (B4.6 deepen pass).
 ContactBufferCompactionPreflight preflight_contact_buffer_compaction(const ContactBufferSoA& buffer);
@@ -90,10 +97,7 @@ bool should_run_contact_buffer_compaction(const ContactBufferSoA& buffer);
 
 /// Why contact-buffer friction-basis rebuild would early-out (B4.6 deepen pass).
 enum class ContactBufferFrictionBasisRejectReason : u8 {
-    None = 0,
-    EmptyBuffer,
     NoValidManifolds,
-};
 
 /// Human-readable label for contact-buffer friction-basis reject reasons (B4.6 deepen pass).
 const char* contact_buffer_friction_basis_reject_reason_name(ContactBufferFrictionBasisRejectReason reason);
@@ -104,17 +108,14 @@ ContactBufferFrictionBasisRejectReason contact_buffer_friction_basis_reject_reas
 
 /// Returns true when `contact_buffer_friction_basis_reject_reason` matches `expected` (B4.6 deepen pass).
 bool contact_buffer_friction_basis_rejects_for_reason(
-    const ContactBufferSoA& buffer,
     ContactBufferFrictionBasisRejectReason expected);
 
 /// Read-only friction-basis rebuild diagnostics — no mutation (B4.6 deepen pass).
 struct ContactBufferFrictionBasisPreflight {
     ContactBufferFrictionBasisRejectReason reason = ContactBufferFrictionBasisRejectReason::None;
-    bool emptyBuffer = false;
     bool noValidManifolds = false;
 
     bool needsRebuild() const { return reason == ContactBufferFrictionBasisRejectReason::None; }
-};
 
 /// Populate friction-basis preflight without mutating the buffer (B4.6 deepen pass).
 ContactBufferFrictionBasisPreflight preflight_contact_buffer_friction_basis(const ContactBufferSoA& buffer);
@@ -124,5 +125,40 @@ bool can_skip_contact_buffer_friction_basis(const ContactBufferSoA& buffer);
 
 /// Non-mutating friction-basis predicate — mirrors `preflight_contact_buffer_friction_basis` (B4.6 deepen pass).
 bool should_run_contact_buffer_friction_basis(const ContactBufferSoA& buffer);
+/// Read-only write-slot diagnostics — no mutation (B4.4 deepen follow-up pass).
+struct ContactBufferWritePreflight {
+    bool invalidManifold = false;
+    bool selfPair = false;
+
+    bool canWrite() const { return !invalidManifold && !selfPair; }
+
+ContactBufferWritePreflight preflight_contact_buffer_write(const ContactManifold& manifold);
+
+/// Read-only compaction diagnostics — no mutation (B4.4 deepen follow-up pass).
+    bool allValid = false;
+
+    bool needsCompaction() const { return !emptyBuffer && !allValid; }
+
+
+/// Read-only max-capacity clamp diagnostics — no mutation (B4.4 deepen follow-up pass).
+struct ContactBufferClampPreflight {
+    bool withinCapacity = false;
+
+    bool needsClamp() const { return !emptyBuffer && !withinCapacity; }
+
+ContactBufferClampPreflight preflight_contact_buffer_clamp(const ContactBufferSoA& buffer);
+
+/// Read-only friction-basis rebuild diagnostics at the SoA layer (B4.4 deepen follow-up pass).
+struct ContactBufferFrictionPreflight {
+    u32 staleSlotCount = 0u;
+    u32 rebuildSlotCount = 0u;
+
+    bool can_skip_rebuild() const { return emptyBuffer || rebuildSlotCount == 0u; }
+
+ContactBufferFrictionPreflight preflight_contact_buffer_friction_rebuild(
+    f32 epsilon = 1e-4f);
+
+/// Non-mutating friction rebuild skip predicate (B4.4 deepen follow-up pass).
+bool can_skip_build_friction_tangent_bases(
 
 } // namespace fuse::physics::narrowphase

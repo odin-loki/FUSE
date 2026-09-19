@@ -51,10 +51,11 @@ bool ContactManifold::hasNonUnitNormal(f32 lengthEpsilon) const {
     }
     const f32 normalLength = contactNormal.length();
     return std::fabs(normalLength - 1.f) > lengthEpsilon;
-}
 
 bool ContactManifold::needsNormalNormalization(f32 lengthEpsilon) const {
     return hasNonUnitNormal(lengthEpsilon);
+bool ContactManifold::hasUnitNormal(f32 epsilon) const {
+    return std::fabs(contactNormal.length() - 1.f) <= epsilon;
 }
 
 bool ContactManifold::hasFrictionBasis() const {
@@ -622,6 +623,7 @@ ManifoldFinalizePreflight preflight_manifold_finalize(
     }
 
     preflight.canFinalize = true;
+    preflight.needsNormalNormalization = !manifold.hasUnitNormal(frictionEpsilon);
     preflight.canReuseFrictionBasis = can_skip_friction_basis_rebuild(manifold, frictionEpsilon);
     preflight.needsFrictionBasis = needs_friction_basis_refresh(manifold, frictionEpsilon);
 
@@ -1135,7 +1137,6 @@ bool generate_contact_manifold_deepen_if_needed(ContactManifold& manifold) {
         return false;
     }
     return generate_contact_manifold_if_needed(manifold);
-}
 
 bool can_skip_manifold_prune(
     const ContactManifold& manifold,
@@ -1145,9 +1146,40 @@ bool can_skip_manifold_prune(
     const ManifoldPrunePreflight preflight =
         preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
     if (preflight.skipped) {
-        return false;
-    }
     return !preflight.needs_pruning();
+bool finalize_contact_manifold_if_needed(
+    ContactManifold& manifold,
+    f32 frictionEpsilon) {
+    const ManifoldFinalizePreflight preflight =
+        preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+    if (!preflight.can_finalize()) {
+
+    if (preflight.needsPruning) {
+        if (!manifold.pruneContactPointsIfNeeded(separationEpsilon, duplicateEpsilon)) {
+            manifold.clear();
+
+    if (!manifold.hasValidNormal()) {
+
+    if (preflight.needsNormalNormalization) {
+        const f32 normalLength = manifold.contactNormal.length();
+        manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+
+    manifold.syncLegacyFields();
+    compute_friction_tangents_if_needed(manifold, frictionEpsilon);
+    if (!manifold.hasFrictionBasis()) {
+
+    manifold.valid = true;
+    return true;
+
+bool generate_contact_manifold_deepen(
+    f32 shallowMinDepth,
+    if (manifold.empty()) {
+
+    if (shallowMinDepth > 0.f) {
+        manifold.pruneShallowPenetrationsIfNeeded(shallowMinDepth);
+
+    return finalize_contact_manifold_if_needed(
+        manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

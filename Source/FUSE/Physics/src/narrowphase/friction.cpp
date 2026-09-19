@@ -680,6 +680,19 @@ void compute_friction_tangents_deepen_if_needed(
         preflight_friction_basis_rebuild_deepen(manifold, epsilon, normalEpsilon);
 
     manifold.buildFrictionBasis();
+WarmStartFrictionPreflight preflight_warm_start_friction(
+    f32 impulseEpsilon,
+    f32 basisEpsilon) {
+    WarmStartFrictionPreflight preflight{};
+    if (manifold.empty() || !manifold.hasValidNormal()) {
+
+    preflight.hasWarmImpulse =
+        std::fabs(manifold.warmNormalImpulse) > impulseEpsilon ||
+        tangentialSpeed(manifold.warmTangentImpulse) > impulseEpsilon;
+    preflight.hasValidBasis = can_skip_friction_basis_rebuild(manifold, basisEpsilon);
+
+bool should_skip_warm_start_friction(
+    return !preflight_warm_start_friction(manifold, impulseEpsilon, basisEpsilon).can_warm_start();
 }
 
 } // namespace fuse::physics::narrowphase

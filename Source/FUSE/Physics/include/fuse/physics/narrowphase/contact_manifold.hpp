@@ -66,6 +66,8 @@ struct ContactManifold {
     bool hasValidNormal(f32 epsilon = 1e-6f) const;
     bool hasNonUnitNormal(f32 lengthEpsilon = 1e-4f) const;
     bool needsNormalNormalization(f32 lengthEpsilon = 1e-4f) const;
+    /// Returns true when `contactNormal` is approximately unit length (B4.4 deepen follow-up pass).
+    bool hasUnitNormal(f32 epsilon = 1e-4f) const;
     bool hasFrictionBasis() const;
     const ContactPoint& pointAt(u32 index) const;
     f32 maxPenetration() const;
@@ -720,6 +722,7 @@ struct ManifoldFinalizeDeepenPreflight {
     bool needsNormalNormalization = false;
     bool needsPruning = false;
     bool wouldBeEmptyAfterPrune = false;
+    bool needsNormalNormalization = false;
     bool needsFrictionBasis = false;
     bool canReuseFrictionBasis = false;
 
@@ -751,6 +754,21 @@ bool can_skip_manifold_prune(
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f,
     f32 shallowMinDepth = 0.f);
+
+/// Finalize with conditional prune and friction rebuild; no-op when preflight rejects (B4.4 deepen follow-up pass).
+bool finalize_contact_manifold_if_needed(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Finalize with optional shallow penetration prune in deepen path only (B4.4 deepen follow-up pass).
+bool generate_contact_manifold_deepen(
+    ContactManifold& manifold,
+    f32 shallowMinDepth = 0.f,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
