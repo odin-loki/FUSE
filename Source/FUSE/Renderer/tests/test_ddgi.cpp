@@ -3960,3 +3960,27 @@ void testDdgiKernelGridAwarePreflightGuards() {
     expectTrue(!fuse::renderer::gi::preflightProbeBlendKernel(zeroRays),
                "preflightProbeBlendKernel rejects zero rays");
                "wouldSkipProbeSampleCoords true for hard OOB indices");
+
+// --- deepen additive from deepen-ddgi-guards-5451 ---
+void testProbeGridRejectReasons() {
+    expectTrue(fuse::renderer::ProbeGridLayout::preflightProbeCoord(desc, valid),
+    expectTrue(fuse::renderer::ProbeGridLayout::classifyProbeCoordReject(desc, valid) ==
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeCoordLookup(desc, valid),
+               "wouldSkipProbeCoordLookup false for valid coord");
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryValidateProbeCoord(desc, invalid, gridReason),
+               "tryValidateProbeCoord rejects OOB coord");
+    expectTrue(gridReason == fuse::renderer::ProbeGridRejectReason::InvalidCoord,
+    expectTrue(std::strcmp(fuse::renderer::probeGridRejectReasonLabel(gridReason), "invalid_coord") == 0,
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeCoordLookup(desc, invalid),
+               "wouldSkipProbeCoordLookup true for invalid coord");
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeIndexLookup(desc, 3u),
+               "wouldSkipProbeIndexLookup false for valid index");
+    expectTrue(!fuse::renderer::ProbeGridLayout::preflightProbeIndex(desc, 99u),
+               "preflightProbeIndex rejects OOB index");
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeIndexLookup(desc, 99u),
+               "wouldSkipProbeIndexLookup true for OOB index");
+               "classifyProbeIndexReject empty_grid on empty volume");
+                   fuse::renderer::ProbeGridRejectReason::InvalidCoord),
+    expectTrue(!fuse::renderer::ddgi_util::preflightProbeTrilinearSample(desc, coords, cache.data(), 4u),
+               "classifyProbeScheduleAtRateReject none for valid rate");
+    testProbeGridRejectReasons();

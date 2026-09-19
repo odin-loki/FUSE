@@ -2959,3 +2959,9 @@ bool ProbeGridLayout::wouldSkipProbeIndex(const DDGIDesc& desc, u32 probe_index)
     return !preflightProbeIndex(desc, probe_index);
 bool ProbeGridLayout::wouldSkipProbeCoord(const DDGIDesc& desc, const ProbeGridCoord& coord) {
     return !preflightProbeCoord(desc, coord);
+
+// --- deepen additive from deepen-ddgi-guards-5451 ---
+    case ProbeGridRejectReason::InvalidCoord:
+        outReason = ProbeGridRejectReason::InvalidCoord;
+bool ProbeGridLayout::wouldSkipProbeCoordLookup(const DDGIDesc& desc, const ProbeGridCoord& coord) {
+bool ProbeGridLayout::wouldSkipProbeIndexLookup(const DDGIDesc& desc, u32 probe_index) {
