@@ -488,3 +488,6 @@ ContactNormalNormalizePreflight preflight_contact_normal_normalize(
 // --- deepen additive from deepen-narrowphase-b4-guards-1d13 ---
         preflight.reason = manifold.empty() ? FrictionBasisRejectReason::EmptyManifold
                                             : FrictionBasisRejectReason::InvalidNormal;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-f881 ---
+    if (expected == FrictionBasisRejectReason::StaleBasis) {

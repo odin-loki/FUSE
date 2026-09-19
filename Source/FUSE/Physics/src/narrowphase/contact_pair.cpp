@@ -859,3 +859,9 @@ bool should_skip_narrowphase_batch(
 // --- deepen additive from deepen-fuse-b4-narrowphase-0ba7 ---
     case ContactPairRejectReason::BothPlanes:
         return ContactPairRejectReason::BothPlanes;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-f881 ---
+bool should_skip_contact_pair_for_buffer(
+NarrowphaseSlotPreflight preflight_narrowphase_slot(
+    NarrowphaseSlotPreflight preflight{};
+    preflight.pairRejected = preflight.pairReason != ContactPairRejectReason::None;

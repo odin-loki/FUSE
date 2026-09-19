@@ -3057,3 +3057,20 @@ void testComputeFrictionTangentsWithPreflightGuard() {
                 fuse::physics::narrowphase::ContactPairRejectReason::BothPlanes),
 void testNormalizeAndRebuildFrictionBasisPreflight() {
     testNormalizeAndRebuildFrictionBasisPreflight();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-f881 ---
+        buffer.writeSlotIfPreflight(0u, valid),
+        "writeSlotIfPreflight writes valid manifold");
+        !buffer.writeSlotIfPreflight(1u, invalid),
+        "writeSlotIfPreflight skips invalid manifold");
+    expectTrue(noWorkPreflight.noWork, "compact-and-clamp preflight no-work on clean buffer");
+void testContactPairBufferDispatchGuards() {
+        fuse::physics::narrowphase::should_skip_contact_pair_for_buffer(
+        !fuse::physics::narrowphase::should_skip_contact_pair_for_buffer(
+    expectTrue(slotPreflight.can_dispatch(), "slot preflight allows valid pair");
+    expectTrue(slotPreflight.canWrite, "slot preflight can write valid pair");
+    expectTrue(rejectedPreflight.pairRejected, "slot preflight rejects sleeping pair");
+    expectTrue(!rejectedPreflight.canWrite, "slot preflight cannot write rejected pair");
+void testManifoldFinalizeDeepenPassGuards() {
+            unnormalized, fuse::physics::narrowphase::ManifoldFinalizeRejectReason::NeedsNormalNormalize),
+void testRunNarrowphaseIfDispatchableGuard() {

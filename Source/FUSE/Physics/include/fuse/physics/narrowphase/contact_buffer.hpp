@@ -281,3 +281,6 @@ ContactBufferFrictionRebuildPreflight preflightContactBufferFrictionRebuild(
 
 // --- deepen additive from deepen-b4-narrowphase-guards-e78a ---
 bool writeContactSlotWithPreflight(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-f881 ---
+    bool writeSlotIfPreflight(u32 slot, const ContactManifold& manifold);

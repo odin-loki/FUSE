@@ -786,3 +786,8 @@ bool should_skip_contact_manifold_buffer_write(const ContactManifold& manifold) 
 ManifoldShallowPrunePreflight preflight_manifold_shallow_prune(
     ManifoldShallowPrunePreflight preflight{};
     if (preflight.reason != ManifoldShallowPruneRejectReason::None) {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-f881 ---
+    if (expected == ManifoldPruneRejectReason::ExceedsMaxPoints) {
+    case ManifoldFinalizeRejectReason::NeedsNormalNormalize:
+    if (expected == ManifoldFinalizeRejectReason::NeedsNormalNormalize) {
