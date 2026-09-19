@@ -3557,3 +3557,10 @@ void testFrictionTangentsPreflightWrapperGuards() {
     testRunNarrowphaseIntoBufferPreflightGuards();
     testManifoldFinalizePreflightWrapperGuards();
     testFrictionTangentsPreflightWrapperGuards();
+
+// --- deepen additive from b4-narrowphase-deepen-guards-c120 ---
+void testContactBufferPreflightWrappers() {
+    expectTrue(frictionPreflight.canRebuild(), "friction preflight can rebuild with valid slot");
+void testNarrowphaseDispatchDeepenPassGuards() {
+void testManifoldFrictionDeepenPassSkipGuards() {
+    testContactBufferPreflightWrappers();

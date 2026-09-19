@@ -636,3 +636,6 @@ inline u32 compactAndClampContactBufferWithPreflight(ContactBufferSoA& buffer) {
 // --- deepen additive from deepen-b4-narrowphase-guards-5f30 ---
     bool canApply() const { return reason == ContactBufferWarmStartRejectReason::None; }
 ContactBufferWarmStartPreflight preflight_contact_buffer_warm_start(const ContactBufferSoA& buffer, u32 slot);
+
+// --- deepen additive from b4-narrowphase-deepen-guards-c120 ---
+    bool canRebuild() const { return reason == ContactBufferFrictionBasisRejectReason::None; }
