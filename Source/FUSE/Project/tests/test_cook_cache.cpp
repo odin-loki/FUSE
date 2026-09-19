@@ -788,6 +788,11 @@ void testCookHashPreflightGuards() {
     const fuse::u8 byte = 42;
     expectTrue(fuse::project::preflight_fnv1a64_bytes(&byte, 1u).ok(),
                "non-null data passes FNV preflight");
+    expectTrue(!null_bytes.ok(), "null data with non-zero size fails byte hash preflight");
+               "null byte preflight reason is NullData");
+
+    const fuse::project::CookHashPreflight valid_bytes = fuse::project::preflight_fnv1a64_bytes(&byte, 1u);
+    expectTrue(valid_bytes.ok(), "non-null byte buffer passes hash preflight");
 
     const fuse::project::CookHashPreflight empty_path =
         fuse::project::preflight_file_content_hash("");
@@ -1014,6 +1019,13 @@ void testCookCacheReconcileEstimators() {
     expectTrue(fuse::project::preflight_texture_import_hash(tex_desc).ok(),
 
     const std::string audio_source = writeTempFile("/tmp/fuse_b79_preflight_audio.wav", "WAV\n");
+                   fuse::project::CookHashRejectReason::NullData)) == "null_data",
+               "reject reason label for null data");
+
+    const std::string texture_source = writeTempFile("/tmp/fuse_b79_preflight_tex.png", "# preflight tex\n");
+    tex_desc.input_path = texture_source;
+
+    const std::string audio_source = writeTempFile("/tmp/fuse_b79_preflight_audio.wav", "# preflight audio\n");
     fuse::project::AudioImportDesc audio_desc;
     audio_desc.input_path = audio_source;
     audio_desc.output_path = "/tmp/fuse_b79_preflight_audio.fuseaudio";
@@ -1199,6 +1211,11 @@ void testCookCachePruneReconcileEstimate() {
     manifest.assets.push_back(upstream);
     expectTrue(!fuse::project::preflight_manifest_entry_with_upstream_hash(entry, manifest).ok(),
                "manifest entry with unreadable upstream fails preflight");
+    fuse::project::CookManifestEntry manifest_entry;
+    manifest_entry.source_path = texture_source;
+    manifest_entry.output_path = "/tmp/fuse_b79_preflight_manifest.fusemesh";
+    expectTrue(fuse::project::preflight_manifest_entry_hash(manifest_entry).ok(),
+               "readable manifest entry passes hash preflight");
 }
 
 void testCookCacheInvalidationProbes() {
@@ -1208,6 +1225,7 @@ void testCookCacheInvalidationProbes() {
     expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_probe.fusemesh"),
                "would_invalidate_output on empty cache is false");
     expectTrue(!cache.would_invalidate_stale_content_for_source("/tmp/fuse_b79_probe.obj", 1u),
+    expectTrue(!cache.would_invalidate_stale_content_for_source("/tmp/fuse_b79_probe.obj", 42u),
                "would_invalidate_stale_content on empty cache is false");
     expectTrue(!cache.would_invalidate_stale_upstream_hashes({{"/tmp/fuse_b79_probe.obj", 1u}}),
                "would_invalidate_stale_upstream on empty cache is false");
@@ -1252,6 +1270,12 @@ void testCookCacheInvalidationProbes() {
                "would_invalidate_output reports seeded entry");
     expectTrue(cooker.cache().count_by_source(source) == 1u, "count_by_source finds seeded entry");
     expectTrue(cooker.cache().count_by_output(desc.output_path) == 1u, "count_by_output finds seeded entry");
+    expectTrue(cooker.cache().would_invalidate_source(source), "would_invalidate_source finds seeded entry");
+    expectTrue(cooker.cache().would_invalidate_output(desc.output_path),
+               "would_invalidate_output finds seeded entry");
+    expectTrue(!cooker.cache().would_invalidate_source(""), "would_invalidate_source rejects empty path");
+    expectTrue(!cooker.cache().would_invalidate_stale_content_for_source(source, seeded.content_hash),
+               "would_invalidate_stale_content with matching hash is false");
     expectTrue(cooker.cache().count_stale_content_for_source(source, seeded.content_hash) == 0u,
                "count_stale_content with matching hash returns zero");
     expectTrue(!cooker.cache().would_invalidate_stale_content_for_source(source, seeded.content_hash),
@@ -1284,7 +1308,6 @@ void testCookCacheInvalidationProbes() {
         cooker.cache().probe_stale_content_sources({{source, seeded.content_hash + 1u}});
     expectTrue(stale_content_probe.size() == 1u, "probe_stale_content finds mismatched hash");
     expectTrue(stale_content_probe.front() == source, "probe_stale_content returns stale source path");
-    expectTrue(cooker.cache().probe_stale_content_sources({{source, seeded.content_hash}}).empty(),
                "probe_stale_content empty when hash matches");
 
     writeTempFile(source, "# probe mesh updated\n");

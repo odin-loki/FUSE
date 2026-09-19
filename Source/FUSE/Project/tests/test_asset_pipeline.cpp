@@ -1808,6 +1808,30 @@ void testCookerUpstreamInvalidationSourceProbe() {
                "would_invalidate_downstream_of true on repopulated chain cache");
     expectTrue(!cooker.cache().would_invalidate_downstream_of("", graph.edges(), graph.jobs()),
                "empty output path downstream probe guarded");
+
+    const fuse::project::CookReconcileEstimate upstream_estimate =
+        cooker.estimate_upstream_invalidation(manifest, sourceA);
+    expectTrue(upstream_estimate.direct_entries >= 1u, "upstream estimate counts direct entries");
+    expectTrue(upstream_estimate.downstream_entries >= 1u, "upstream estimate counts downstream entries");
+    expectTrue(upstream_estimate.total() == cooker.count_upstream_invalidation(manifest, sourceA),
+               "upstream estimate total matches count probe");
+    expectTrue(cooker.would_invalidate_upstream_dependency(manifest, sourceA),
+               "would_invalidate_upstream_dependency true for seeded chain");
+    expectTrue(!cooker.would_invalidate_upstream_dependency(manifest, ""),
+               "would_invalidate_upstream_dependency false for empty source");
+
+    const fuse::project::CookReconcileEstimate fresh_reconcile =
+        cooker.estimate_stale_dependency_reconcile(manifest);
+    expectTrue(fresh_reconcile.total() == 0u, "fresh cache reconcile estimate is zero");
+    expectTrue(!fresh_reconcile.would_invalidate(), "fresh cache would not reconcile");
+
+    const fuse::project::CookReconcileEstimate stale_reconcile =
+    expectTrue(stale_reconcile.direct_entries >= 1u, "stale reconcile counts direct upstream entries");
+    expectTrue(stale_reconcile.total() == cooker.count_stale_dependency_invalidation(manifest),
+               "stale reconcile total matches count probe");
+    expectTrue(stale_reconcile.would_invalidate(), "stale reconcile would invalidate");
+
+    expectTrue(removed >= stale_reconcile.total(), "reconcile invalidation removes at least estimated total");
 }
 
 void testCookerInvalidationCountProbes() {
