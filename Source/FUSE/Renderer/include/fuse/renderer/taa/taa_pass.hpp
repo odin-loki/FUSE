@@ -308,6 +308,9 @@ public:
     bool shouldSkipHistoryWarmupAndReuse(u32 observedGeneration) const;
     bool tryComputeExpectedResolveBlendWeights(const TaaResolveDesc& desc,
                                                TaaBlendWeights& outWeights,
+                                       TaaResolveBlendRejectReason& reason) const;
+    /// Classify why resolve blend weights would be rejected (B5.9 deepen).
+    TaaResolveBlendRejectReason classifyResolveBlendReject(const TaaResolveDesc& desc) const;
     /// Early-out when resolve blend-weight preflight would reject (B5.9 deepen).
     bool shouldSkipResolveBlend(const TaaResolveDesc& desc) const;
     /// Early-out when resolve preflight would bail (B5.9 deepen).
