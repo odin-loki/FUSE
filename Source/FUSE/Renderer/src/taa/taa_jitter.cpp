@@ -67,6 +67,18 @@ bool preflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength, TaaJitterG
     return reject == TaaJitterGuardRejectReason::None;
 }
 
+bool tryPreflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength, TaaJitterGuardRejectReason& reason) {
+    return preflightTaaJitterNdc(width, height, sequenceLength, &reason);
+}
+
+bool shouldSkipTaaJitterSync(u32 sequenceLength) {
+    return !preflightTaaJitterSync(0u, sequenceLength);
+}
+
+bool shouldSkipTaaJitterNdc(u32 width, u32 height, u32 sequenceLength) {
+    return !preflightTaaJitterNdc(width, height, sequenceLength);
+}
+
 bool TaaJitterLayout::validateSequenceLength(u32 length) {
     return length > 0u && length <= kTaaMaxJitterSequenceLength;
 }
@@ -132,6 +144,15 @@ fuse::math::Vec2 TaaJitterLayout::ndcOffsetForFrameIndex(u32 frameIndex, u32 wid
     return haltonNdcOffset(slot, width, height, sequenceLength);
 }
 
+bool TaaJitterLayout::tryNdcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
+                                                fuse::math::Vec2& out, TaaJitterGuardRejectReason& reason) {
+    if (!tryPreflightTaaJitterNdc(width, height, sequenceLength, reason)) {
+        return false;
+    }
+    out = ndcOffsetForFrameIndex(frameIndex, width, height, sequenceLength);
+    return true;
+}
+
 bool TaaJitterLayout::fillHaltonSequence(u32 length, fuse::math::Vec2* out) {
     if (out == nullptr || !validateSequenceLength(length)) {
         return false;
@@ -174,6 +195,15 @@ bool TaaJitter::currentNdcOffsetIfReady(u32 width, u32 height, fuse::math::Vec2&
     return true;
 }
 
+bool TaaJitter::tryCurrentNdcOffsetIfReady(u32 width, u32 height, fuse::math::Vec2& out,
+                                           TaaJitterGuardRejectReason& reason) const {
+    if (!tryPreflightTaaJitterNdc(width, height, m_sequenceLength, reason)) {
+        return false;
+    }
+    out = TaaJitterLayout::haltonNdcOffset(m_index, width, height, m_sequenceLength);
+    return true;
+}
+
 bool TaaJitter::canAdvance() const {
     return TaaJitterLayout::validateSequenceLength(m_sequenceLength);
 }
@@ -193,6 +223,14 @@ bool TaaJitter::isAlignedToFrameIndex(u32 frameIndex) const {
 
 bool TaaJitter::syncToFrameIndexIfReady(u32 frameIndex) {
     if (!canSyncToFrameIndex(frameIndex)) {
+        return false;
+    }
+    syncToFrameIndex(frameIndex);
+    return true;
+}
+
+bool TaaJitter::trySyncToFrameIndexIfReady(u32 frameIndex, TaaJitterGuardRejectReason& reason) {
+    if (!tryPreflightTaaJitterSync(frameIndex, m_sequenceLength, reason)) {
         return false;
     }
     syncToFrameIndex(frameIndex);
