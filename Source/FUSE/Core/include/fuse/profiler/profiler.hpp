@@ -24,6 +24,13 @@ enum class CounterValueKind : u8 {
     Float,
 };
 
+/// Classify why an event name would be rejected — same ordering as `wouldSkipInvalidEventName`.
+enum class InvalidEventNameReason : u8 {
+    None,
+    NullPointer,
+    EmptyString,
+};
+
 struct ProfileEvent {
     const char* name = nullptr;
     u64 timestampNs = 0;
@@ -58,6 +65,9 @@ struct ChromeTraceExportPreflight {
     bool ringBufferFull = false;
     bool hasInvalidNameEvents = false;
     bool crossThreadFlowHandoffPending = false;
+    u32 ringWriteHead = 0;
+    u32 ringOverflowEventCount = 0;
+    bool hasRingOverflowEvents = false;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
@@ -65,6 +75,30 @@ struct ChromeTraceExportPreflight {
     bool canExportSafely() const {
         return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending;
     }
+    bool canExportCleanly() const {
+        return canExportSafely() && !hasInvalidNameEvents && !hasRingOverflowEvents;
+    }
+    bool hasExportBlockers() const {
+        return profilerDisabled || hasInvalidNameEvents || hasRingOverflowEvents;
+    }
+};
+
+/// Read-only nesting/async-flow diagnostics — safe to call before recording or export.
+struct NestingPreflight {
+    u32 activeScopeNestingDepth = 0;
+    u32 activeFlowNestingDepth = 0;
+    u32 maxScopeNestingDepth = 0;
+    u32 maxFlowNestingDepth = 0;
+    u32 openAsyncFlowCount = 0;
+    bool scopeNestingBalanced = true;
+    bool flowNestingBalanced = true;
+    bool hasOpenAsyncFlows = false;
+    bool flowDepthDetached = false;
+    bool crossThreadFlowHandoffPending = false;
+
+    bool isBalanced() const { return scopeNestingBalanced && flowNestingBalanced; }
+    bool hasUnbalancedNesting() const { return !scopeNestingBalanced || !flowNestingBalanced; }
+    bool canEndAsyncFlowSafely() const { return openAsyncFlowCount > 0u; }
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -110,6 +144,9 @@ bool isBufferEmpty();
 bool isBufferFull();
 bool isEventIndexValid(u32 index);
 bool isValidEventName(const char* name);
+InvalidEventNameReason classifyInvalidEventName(const char* name);
+const char* describeInvalidEventNameReason(InvalidEventNameReason reason);
+bool wouldSkipInvalidEventName(const char* name);
 bool isValidProfileEvent(const ProfileEvent& event);
 bool isProfileEventSentinel(const ProfileEvent& event);
 u32 invalidNameEventCount();
@@ -121,16 +158,36 @@ u32 lastEventIndex();
 u32 findFirstEventIndexByPhase(EventPhase phase);
 u32 findLastEventIndexByPhase(EventPhase phase);
 u32 countEventsByPhase(EventPhase phase);
+bool tryFindFirstEventIndexByName(const char* name, u32& outIndex);
+bool tryFindLastEventIndexByName(const char* name, u32& outIndex);
+bool tryFindFirstEventIndexByPhase(EventPhase phase, u32& outIndex);
+bool tryFindLastEventIndexByPhase(EventPhase phase, u32& outIndex);
+bool tryFindFirstFlowEventIndex(u32 flowId, EventPhase phase, u32& outIndex);
+bool tryFindLastFlowEventIndex(u32 flowId, EventPhase phase, u32& outIndex);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
 bool tryExportableEventAt(u32 index, ProfileEvent& outEvent);
 bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
+bool tryFirstEventByName(const char* name, ProfileEvent& outEvent);
+bool tryLastEventByName(const char* name, ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
+u32 ringWriteHead();
+u32 ringOverflowEventCount();
+bool hasRingOverflowEvents();
 void reset();
 
 ChromeTraceExportPreflight preflightChromeTraceExport();
+NestingPreflight preflightNesting();
+
+bool wouldSkipProfileScope(const char* name);
+bool wouldSkipAsyncFlowBegin(const char* name);
+bool wouldSkipAsyncFlowEnd(const char* name);
+bool wouldSkipCounterSample(const char* track);
+bool wouldSkipChromeTraceExport();
+bool wouldSkipChromeTraceExportSafely();
+bool wouldSkipChromeTraceExportCleanly();
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();
