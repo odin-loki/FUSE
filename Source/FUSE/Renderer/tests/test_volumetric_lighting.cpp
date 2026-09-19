@@ -3657,3 +3657,10 @@ void testFroxelClassifyPreflightAndBilinearGuards() {
                "preflightFroxelPopulate reports no reject reason");
     expectTrue(fuse::renderer::froxel_util::classifyDensityLookupReject(grid, zeroDesc, 0u) ==
                "classifyDensityLookupReject empty_grid for empty desc");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-114a ---
+    expectTrue(fuse::renderer::densityLookupRejectReasonIsBlocking(fuse::renderer::DensityLookupRejectReason::EmptyGrid),
+               "preflightDensityLookupAtIndex reports empty_storage reject reason");
+    expectTrue(fuse::renderer::classifyScreenDepthMappingReject(0.5f, 0.5f, 10.f, desc, camera) ==
+    expectTrue(fuse::renderer::classifyScreenDepthMappingReject(0.5f, 0.5f, 0.01f, desc, camera) ==
+               "classifyScreenDepthMappingReject depth_out_of_range for below-near depth");

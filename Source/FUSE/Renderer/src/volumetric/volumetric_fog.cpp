@@ -2292,3 +2292,6 @@ FroxelBilinearSampleRejectReason classifyFroxelBilinearSampleReject(const Froxel
         classifyFroxelBilinearSampleReject(grid, desc, coords));
     froxel_util::tryValidateGridDensity(grid, desc, reason, epsilon);
     froxel_util::tryCanLookupAtCoord(grid, desc, tileX, tileY, sliceZ, reason);
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-114a ---
+ScreenMappingRejectReason classifyScreenDepthMappingReject(f32 screenX,
