@@ -154,3 +154,11 @@ enum class IslandBuildRejectReason : u32 {
 // --- deepen additive from deepen-pbd-island-guards-9f8d ---
 enum class ContactIslandGraphBuildRejectReason {
         return !skipped && reason == ContactIslandGraphBuildRejectReason::None && !has_unsafe_refs() &&
+
+// --- deepen additive from deepen-pbd-island-guards-e84e ---
+struct IslandGraphBuildPreflight {
+struct IslandGraphIntegrityPreflight {
+IslandGraphBuildPreflight preflight_island_graph_build(
+bool should_skip_island_graph_build(u32 bodyCount,
+IslandGraphIntegrityPreflight preflight_island_graph_integrity(const ContactIslandGraph& graph,
+bool should_skip_island_graph_integrity(const ContactIslandGraph& graph,

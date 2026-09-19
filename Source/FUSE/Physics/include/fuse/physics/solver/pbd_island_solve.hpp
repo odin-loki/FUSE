@@ -1460,3 +1460,6 @@ bool should_skip_island_solve_pipeline(const ContactIslandGraph::Island& island,
     IslandConstraintSolvePreflight constraintSolve{};
 bool should_skip_island_constraint_solve_index(const ContactIslandGraph& graph,
 IslandSolvePipelinePreflight preflight_island_solve_pipeline(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-pbd-island-guards-e84e ---
+    IslandConstraintSolvePreflight constraint{};

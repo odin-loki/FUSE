@@ -383,3 +383,11 @@ IslandBuildRejectReason island_build_reject_reason(
         return IslandBuildRejectReason::EmptyInput;
         return IslandBuildRejectReason::UnsafeRefs;
     return island_build_reject_reason(bodyCount, contacts, distanceConstraints) != IslandBuildRejectReason::None;
+
+// --- deepen additive from deepen-pbd-island-guards-e84e ---
+    if (should_skip_island_graph_build(bodyCount, contacts, distanceConstraints)) {
+IslandGraphBuildPreflight preflight_island_graph_build(
+bool should_skip_island_graph_build(u32 bodyCount,
+IslandGraphIntegrityPreflight preflight_island_graph_integrity(const ContactIslandGraph& graph,
+    IslandGraphIntegrityPreflight preflight{};
+bool should_skip_island_graph_integrity(const ContactIslandGraph& graph,

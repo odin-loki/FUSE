@@ -2329,3 +2329,21 @@ bool should_skip_island_constraint_solve_index(const ContactIslandGraph& graph,
 IslandSolvePipelinePreflight preflight_island_solve_pipeline(const ContactIslandGraph& graph,
     const IslandWakeGraphPreflight preflight = preflight_island_wake_graph(graph, bodies);
         const IslandSleepPreflight sleepPreflight = preflight_island_sleep(*job.island, bodies);
+
+// --- deepen additive from deepen-pbd-island-guards-e84e ---
+    const IslandGraphBuildPreflight graphPreflight =
+    preflight.stats.bodyCount = graphPreflight.stats.bodyCount;
+    preflight.stats.contactSlotCount = graphPreflight.stats.contactSlotCount;
+    preflight.stats.distanceSlotCount = graphPreflight.stats.distanceSlotCount;
+    preflight.stats.validContactCount = graphPreflight.stats.validContactCount;
+    preflight.stats.inRangeContactCount = graphPreflight.stats.inRangeContactCount;
+    preflight.stats.inRangeDistanceCount = graphPreflight.stats.inRangeDistanceCount;
+    preflight.stats.selfPairContactCount = graphPreflight.stats.selfPairContactCount;
+    preflight.stats.selfPairDistanceCount = graphPreflight.stats.selfPairDistanceCount;
+    preflight.stats.outOfRangeContactBodyCount = graphPreflight.stats.outOfRangeContactBodyCount;
+    preflight.stats.outOfRangeDistanceBodyCount = graphPreflight.stats.outOfRangeDistanceBodyCount;
+    return should_skip_island_graph_build(bodyCount, contacts, distanceConstraints);
+    const IslandDispatchBodiesPreflight preflight = preflight_island_dispatch_with_bodies(graph, bodies, dt);
+        const IslandSolvePipelinePreflight islandPreflight = preflight_island_solve_pipeline(
+        if (!islandPreflight.can_solve()) {
+            if (!islandPreflight.skipped && islandPreflight.sleep.can_skip_solve()) {

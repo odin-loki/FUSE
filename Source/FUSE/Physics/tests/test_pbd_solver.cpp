@@ -4344,3 +4344,31 @@ void testSolveIslandJobGuardedAndPipeline() {
     expectTrue(should_skip_island_constraint_solve_index(graph, sleepingIsland, bodies, contacts, constraints),
                "should_skip constraint solve index on all-sleeping island");
     const IslandSolvePipelinePreflight pipeline =
+
+// --- deepen additive from deepen-pbd-island-guards-e84e ---
+void testPreflightIslandGraphBuildDeepenGuards() {
+    const IslandGraphBuildPreflight graphPreflight = preflight_island_graph_build(3, contacts, constraints);
+    expectTrue(!graphPreflight.skipped, "graph build preflight does not skip valid partition inputs");
+    expectTrue(graphPreflight.stats.selfPairContactCount == 1u,
+    expectTrue(graphPreflight.stats.selfPairDistanceCount == 0u,
+    expectTrue(graphPreflight.has_degenerate_refs(), "graph build preflight flags degenerate refs");
+    expectTrue(graphPreflight.can_build(), "self-pairs alone do not block guarded build");
+    const IslandBuildPreflight pbdPreflight = preflight_island_build(3, contacts, constraints);
+    expectTrue(pbdPreflight.stats.selfPairContactCount == 1u,
+    expectTrue(pbdPreflight.has_degenerate_refs(), "pbd build preflight flags degenerate refs");
+    const IslandGraphIntegrityPreflight integrity =
+    expectTrue(!should_skip_island_graph_integrity(graph, 3, static_cast<u32>(contacts.size()),
+               "should_skip integrity false for valid graph");
+void testPreflightIslandSolvePipelineGuards() {
+    const IslandSolvePipelinePreflight mixedPipeline =
+    expectTrue(!should_skip_island_solve_pipeline(graph.island(mixedIsland), bodies, contacts, constraints),
+    expectTrue(should_skip_island_solve_pipeline(graph.island(sleepingIsland), bodies, contacts, constraints),
+    const IslandSolvePipelinePreflight outOfRangePipeline =
+void testDispatchIslandPipelineBatchGuards() {
+    const IslandDispatchBodiesPreflight dispatchPreflight =
+    expectTrue(!dispatchPreflight.skipped, "dispatch-with-bodies preflight does not skip mixed graph");
+    expectTrue(dispatchPreflight.can_dispatch(), "dispatch-with-bodies preflight can dispatch");
+    expectTrue(dispatchPreflight.wake.can_wake(), "dispatch-with-bodies preflight sees wakeable island");
+               "should_skip dispatch-with-bodies false for mixed graph");
+    testPreflightIslandGraphBuildDeepenGuards();
+    testPreflightIslandSolvePipelineGuards();
