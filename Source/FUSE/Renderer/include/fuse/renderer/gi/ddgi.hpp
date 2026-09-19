@@ -470,6 +470,18 @@ enum class ProbeScheduleRejectReason : u8 {
 /// Human-readable label for probe-schedule reject reasons (logging / tests).
 const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason);
 
+/// Why probe scheduling preflight rejected the request (B5.6 deepen).
+enum class ProbeScheduleRejectReason : u8 {
+    None = 0,
+    ZeroProbeCount,
+    NullOutputIndices,
+    NullOutputCount,
+    ZeroMaxIndices,
+};
+
+/// Human-readable label for probe-schedule reject reasons (logging / tests).
+const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason);
+
 /// Why a host probe-update launch preflight rejected the request (B5.6 deepen).
 enum class ProbeUpdateLaunchRejectReason : u8 {
     NullIndices,
@@ -709,6 +721,8 @@ struct ProbeGridLayout {
     /// Grid-only sample-coord preflight without reject-reason diagnostics.
     static bool canPreflightProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// Early-out when sample-coord validation would reject — same ordering as `isValidProbeSampleCoords`.
+    /// Preflight guard before trilinear sample-coord use — same ordering as `isValidProbeSampleCoords`.
+    /// Diagnose why sample-coord preflight would reject; vacuously succeeds on valid coords.
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
@@ -1016,6 +1030,9 @@ bool tryProbeWorldPosition(const DDGIDesc& desc,
 bool wouldClampProbeIndex(u32 probe_index, const DDGIDesc& desc);
 /// Early-out when cache lookup should be skipped (empty grid, null cache, or undersized storage).
 bool shouldSkipCacheLookup(const DDGIDesc& desc, const IrradianceCacheEntry* cache, u32 cache_count);
+/// Diagnose why cache-index preflight would reject; checks `cache` for null (B5.6 deepen).
+bool tryValidateCacheIndex(const DDGIDesc& desc,
+/// Combined probe-index + cache guard for cache lookups (B5.6 deepen).
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
     /// True when `probe_index` is out of range for the grid or exceeds `cache_count`.
     bool isCacheIndexOutOfRange(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
@@ -1128,6 +1145,8 @@ bool wouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_ind
 /// Preflight guard before probe scheduling; false on null/zero output buffers or zero probe count.
                              u32* out_indices,
 /// Preflight guard before probe scheduling; false on null outputs or zero `max_indices`.
+/// Preflight guard before probe scheduling; false on zero probe count or null outputs.
+                                const u32* out_count,
 bool tryScheduleProbeUpdates(u32 frame_index,
                              u32 probe_count,
                              u32 probes_per_frame,
