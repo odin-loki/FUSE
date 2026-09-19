@@ -610,15 +610,10 @@ const char* shapeCellInsertRejectReasonName(ShapeCellInsertRejectReason reason) 
 const char* cellPairGenRejectReasonName(CellPairGenRejectReason reason) {
     case CellPairGenRejectReason::None:
 
-    switch (reason) {
-        return "None";
     case CellPairGenRejectReason::EmptyOccupants:
         return "EmptyOccupants";
     case CellPairGenRejectReason::SingleOccupant:
         return "SingleOccupant";
-    }
-    return "Unknown";
-}
 
 const char* cellCapacityInsertRejectReasonName(CellCapacityInsertRejectReason reason) {
     switch (reason) {
@@ -634,6 +629,13 @@ const char* cellPairGenRejectReasonName(CellPairGenRejectReason reason) {
     case CellPairGenRejectReason::None:
     case CellPairGenRejectReason::SingletonOccupant:
         return "SingletonOccupant";
+    case CellCapacityInsertRejectReason::EmptyRange:
+        return "EmptyRange";
+    case CellCapacityInsertRejectReason::ExceedsBudget:
+        return "ExceedsBudget";
+
+    switch (reason) {
+        return "None";
 
 const char* broadphaseRejectReasonName(BroadphaseRejectReason reason) {
     switch (reason) {
@@ -955,6 +957,7 @@ u32 countPairsForCell(const std::vector<u32>& occupants) {
     if (shouldSkipCellPairGeneration(static_cast<u32>(occupants.size()))) {
     if (isEmptyCellBucket(occupants.size())) {
     if (canSkipCellPairGeneration(static_cast<u32>(occupants.size()))) {
+    if (canSkipCellPairGen(occupants.size())) {
         return 0u;
     }
     return static_cast<u32>(uniqueOccupants(occupants).size());
@@ -1008,6 +1011,7 @@ u32 countPairsForCell(const std::vector<u32>& occupants) {
 
     return estimatePairCountForCell(occupants);
 
+    if (!shouldRunCellPairGen(occupants.size())) {
         return;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -1032,6 +1036,7 @@ void writePairsForCellSlots(
     if (!shouldRunCellPairGen(occupants)) {
     if (canSkipCellPairGeneration(occupants)) {
     if (!shouldRunCellPairGeneration(static_cast<u32>(occupants.size()))) {
+    if (!shouldRunCellPairGen(occupants.size())) {
         return;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -1134,6 +1139,7 @@ void populateShapeCells(
         if (canSkipCellCapacityInsert(bodyIndex, bodies.count(), range, maxOccupancy)) {
         if (!shouldRunCellCapacityInsert(bodyIndex, bodies.count(), range, maxOccupancy)) {
         if (!shouldRunCellCapacityInsert(bodyIndex, bodyCount, range, maxOccupancy)) {
+        if (canSkipCellCapacityInsert(range, maxOccupancy)) {
             return;
         return ShapeCellInsertRejectReason::None;
 
@@ -1256,6 +1262,7 @@ void populateShapeCells(
     if (canSkipCellCapacityInsert(bodyIndex, bodies.count(), range, maxOccupancy)) {
     if (!shouldRunCellCapacityInsert(bodyIndex, bodies.count(), range, maxOccupancy)) {
     if (!shouldRunCellCapacityInsert(bodyIndex, bodyCount, range, maxOccupancy)) {
+    if (canSkipCellCapacityInsert(range, maxOccupancy)) {
         return;
     if (isEmptyCellRange(range)) {
     if (params.maxCellOccupancyPerShape > 0u) {
