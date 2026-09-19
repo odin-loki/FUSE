@@ -1259,6 +1259,26 @@ bool shouldSkipTaaResolveTemporal(const TaaResolveDesc& desc, const TaaHistoryBu
     return !preflightTaaResolveTemporal(desc, history);
 }
 
+bool taaResolveBlendWeightsReady(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return preflightTaaResolveBlendWeights(desc, history);
+}
+
+bool computeTaaResolveBlendWeightsIfReady(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                          TaaBlendWeights& outWeights,
+                                          TaaResolveBlendRejectReason* reason) {
+    TaaResolveBlendRejectReason rejectReason = TaaResolveBlendRejectReason::None;
+    if (!tryComputeTaaResolveBlendWeights(desc, history, outWeights, rejectReason)) {
+        if (reason != nullptr) {
+            *reason = rejectReason;
+        }
+        return false;
+    }
+    if (reason != nullptr) {
+        *reason = TaaResolveBlendRejectReason::None;
+    }
+    return true;
+}
+
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaHistoryCanReuse(history)) {
     if (taaResolveBypassesHistoryGenerationGuard(desc)) {

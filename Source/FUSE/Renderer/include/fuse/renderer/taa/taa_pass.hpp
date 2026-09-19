@@ -45,6 +45,8 @@ public:
     fuse::math::Vec2 currentJitterNdc() const;
     /// NDC jitter only when viewport is valid; returns false when blocked (B5.9 deepen).
     bool currentJitterNdcIfReady(fuse::math::Vec2& out) const;
+    /// NDC jitter with reject-reason diagnostics (B5.9 deepen).
+    bool tryCurrentJitterNdcIfReady(fuse::math::Vec2& out, TaaJitterGuardRejectReason& reason) const;
     void advanceJitter();
     /// Align jitter to a monotonic frame counter (wraps with sequence period).
     void syncJitterToFrameIndex(u32 frameIndex);
@@ -64,6 +66,8 @@ public:
     bool needsJitterSyncToFrameIndex(u32 frameIndex) const;
     /// Sync jitter only when misaligned; returns false when blocked (B5.9 deepen).
     bool syncJitterToFrameIndexIfMisaligned(u32 frameIndex);
+    /// Sync jitter with reject-reason diagnostics (B5.9 deepen).
+    bool trySyncJitterToFrameIndexIfReady(u32 frameIndex, TaaJitterGuardRejectReason& reason);
     /// True when pass jitter monotonic counter and slot match `frameIndex` (B5.9 deepen).
     bool jitterAlignedToFrameIndex(u32 frameIndex) const;
     /// True when pass jitter matches the expected monotonic frame counter (B5.9 deepen).
@@ -103,6 +107,7 @@ public:
     /// True when pass history warm-up is complete (B5.9 deepen).
     /// Early-out when pass history still needs warm-up (B5.9 deepen).
     bool shouldSkipHistoryWarmup() const;
+    /// True when pass history is allocated and warmed for temporal reuse (B5.9 deepen).
     /// Frames remaining before pass history may be temporally reused (B5.9 deepen).
     u32 warmupFramesRemaining() const;
     /// True when pass history is allocated but still awaiting first resolve (B5.9 deepen).
@@ -154,6 +159,8 @@ public:
     bool tryPreflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBlockReason& reason) const;
     /// Alias for `shouldSkipHistoryReuse` — same ordering as reuse preflight (B5.9 deepen).
     bool wouldSkipHistoryReuse(u32 observedGeneration) const;
+    bool preflightHistoryWarmup(TaaHistoryWarmupRejectReason* reason = nullptr) const;
+    /// Early-out when pass history still needs warm-up (B5.9 deepen).
     /// True when history blend is allowed on the next resolve (B5.9 deepen).
     bool historyBlendAllowed() const;
     /// True when pass jitter can produce NDC offsets for the configured viewport (B5.9 deepen).
@@ -416,7 +423,10 @@ public:
     /// True when pass history is warmed for temporal accumulation (B5.9 deepen).
     bool preflightHistoryWarmup(TaaHistoryReuseBlockReason* reason = nullptr) const;
     /// Early-out when resolve would bail before history update (B5.9 deepen).
-    bool shouldSkipResolve(const TaaResolveDesc& desc) const;
+    /// True when expected resolve blend weights are ready (B5.9 deepen).
+    /// Compute expected resolve blend weights only when preflight passes (B5.9 deepen).
+    bool computeResolveBlendWeightsIfReady(const TaaResolveDesc& desc, TaaBlendWeights& outWeights,
+                                           TaaResolveBlendRejectReason* reason = nullptr) const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;

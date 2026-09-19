@@ -523,6 +523,53 @@ bool shouldSkipTaaHistoryWarmup(const TaaHistoryBuffer& history) {
     return !preflightTaaHistoryWarmup(history);
 }
 
+const char* taaHistoryWarmupRejectReasonLabel(TaaHistoryWarmupRejectReason reason) {
+    switch (reason) {
+    case TaaHistoryWarmupRejectReason::None:
+        return "none";
+    case TaaHistoryWarmupRejectReason::NotReady:
+        return "not_ready";
+    case TaaHistoryWarmupRejectReason::NeedsWarmup:
+        return "needs_warmup";
+    }
+    return "unknown";
+}
+
+TaaHistoryWarmupRejectReason classifyTaaHistoryWarmupReject(const TaaHistoryBuffer& history) {
+    if (!history.isReady()) {
+        return TaaHistoryWarmupRejectReason::NotReady;
+    }
+    if (history.needsWarmup()) {
+        return TaaHistoryWarmupRejectReason::NeedsWarmup;
+    }
+    return TaaHistoryWarmupRejectReason::None;
+}
+
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
+    return classifyTaaHistoryWarmupReject(history) == TaaHistoryWarmupRejectReason::None;
+}
+
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupRejectReason* reason) {
+    const TaaHistoryWarmupRejectReason reject = classifyTaaHistoryWarmupReject(history);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == TaaHistoryWarmupRejectReason::None;
+}
+
+bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupRejectReason& reason) {
+    reason = classifyTaaHistoryWarmupReject(history);
+    return reason == TaaHistoryWarmupRejectReason::None;
+}
+
+bool shouldSkipTaaHistoryWarmup(const TaaHistoryBuffer& history) {
+    return !preflightTaaHistoryWarmup(history);
+}
+
+bool taaHistoryReuseBlockedByWarmup(const TaaHistoryBuffer& history) {
+    return history.isReady() && history.needsWarmup();
+}
+
 bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
                               TaaHistoryReuseBlockReason* reason) {
     const TaaHistoryReuseBlockReason block = classifyTaaHistoryReuseBlock(history, observedGeneration);

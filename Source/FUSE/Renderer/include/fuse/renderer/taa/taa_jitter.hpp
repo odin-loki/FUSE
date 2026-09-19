@@ -153,6 +153,8 @@ bool shouldSkipTaaJitterAdvance(u32 sequenceLength = kTaaDefaultJitterSequenceLe
 /// Compute NDC jitter for a frame counter with reject-reason diagnostics (B5.9 deepen).
 bool tryComputeTaaJitterNdcOffset(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
                                   fuse::math::Vec2& outOffset, TaaJitterGuardRejectReason& reason);
+/// Early-out when jitter sync would be rejected for the sequence (B5.9 deepen).
+bool shouldSkipTaaJitterSync(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {
@@ -237,6 +239,9 @@ struct TaaJitterLayout {
     static bool slotMatchesMonotonicFrame(u32 slot, u32 frameIndex,
     /// NDC jitter for a monotonic frame counter when viewport and sequence are valid (B5.9 deepen).
     static bool ndcOffsetForFrameIndexIfReady(u32 frameIndex, u32 width, u32 height, fuse::math::Vec2* out,
+    /// NDC jitter for a monotonic frame counter with reject-reason diagnostics (B5.9 deepen).
+    static bool tryNdcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
+                                          fuse::math::Vec2& out, TaaJitterGuardRejectReason& reason);
     /// Fills a Halton (2,3) table; returns false when `out` is null or length is invalid.
     static bool fillHaltonSequence(u32 length, fuse::math::Vec2* out);
     /// True when `slot` is the expected Halton slot for a monotonic frame counter (B5.9 deepen).
@@ -266,6 +271,9 @@ public:
     bool canProvideNdcOffset(u32 width, u32 height) const;
     /// NDC offset with mandatory reject-reason diagnostics (B5.9 deepen).
     bool tryCurrentNdcOffset(u32 width, u32 height, fuse::math::Vec2& out, TaaJitterGuardRejectReason& reason) const;
+    /// NDC offset with reject-reason diagnostics (B5.9 deepen).
+    bool tryCurrentNdcOffsetIfReady(u32 width, u32 height, fuse::math::Vec2& out,
+                                    TaaJitterGuardRejectReason& reason) const;
 
     void advance();
     /// Advance only when the sequence is valid; returns false when blocked (B5.9 deepen).
@@ -308,6 +316,8 @@ public:
     bool trySyncToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncRejectReason& outReason);
     /// Early-out when jitter sync would be blocked (B5.9 deepen).
     bool wouldSkipSyncToFrameIndex(u32 frameIndex) const;
+    /// Sync with reject-reason diagnostics (B5.9 deepen).
+    bool trySyncToFrameIndexIfReady(u32 frameIndex, TaaJitterGuardRejectReason& reason);
     /// True when monotonic frame counter and slot match `frameIndex` (B5.9 deepen).
     bool isAlignedToFrameIndex(u32 frameIndex) const;
     /// True when jitter slot and monotonic counter match a frame index (B5.9 deepen).
