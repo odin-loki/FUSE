@@ -3296,3 +3296,28 @@ void testContactBufferB46Guards() {
 void testDetectContactsPairDeepenGuards() {
 void testFinalizeContactManifoldIfNeededDeepenGuard() {
                 fuse::physics::narrowphase::FrictionBasisRejectReason::StaleNormal),
+
+// --- deepen additive from deepen-narrowphase-b4-guards-b5a3 ---
+        validWritePreflight.reason == fuse::physics::narrowphase::ContactBufferWriteRejectReason::None,
+    const auto selfWritePreflight =
+    expectTrue(!selfWritePreflight.canWrite(), "write preflight rejects self pair");
+    expectTrue(selfWritePreflight.selfPair, "write preflight marks self pair");
+    expectTrue(!invalidWritePreflight.canWrite(), "write preflight rejects invalid manifold");
+    expectTrue(invalidWritePreflight.invalidManifold, "write preflight marks invalid manifold");
+    expectTrue(outOfRangePreflight.outOfRangeSlot, "write preflight marks out-of-range slot");
+    expectTrue(compactionPreflight.needsCompaction(), "compaction preflight needs compaction after invalidation");
+    expectTrue(!allValidPreflight.needsCompaction(), "compaction preflight skips all-valid buffer");
+    expectTrue(!emptyCompactionPreflight.needsCompaction(), "compaction preflight skips empty buffer");
+            emptyBuffer, fuse::physics::narrowphase::ContactBufferCompactionRejectReason::EmptyBuffer),
+    expectTrue(clampPreflight.needsClamp(), "clamp preflight needs clamp when over max");
+    const auto withinClampPreflight = fuse::physics::narrowphase::preflight_contact_buffer_clamp(clampBuffer);
+    expectTrue(!withinClampPreflight.needsClamp(), "clamp preflight skips within-capacity buffer");
+    expectTrue(withinClampPreflight.withinCapacity, "clamp preflight marks within-capacity buffer");
+    expectTrue(noWorkPreflight.noWork, "compactAndClamp preflight marks no-work buffer");
+    expectTrue(emptyPreflight.can_skip(), "dispatch preflight can skip empty pair list");
+        fuse::physics::narrowphase::should_skip_narrowphase_dispatch({}, bodies, shapes),
+        "should_skip_narrowphase_dispatch on empty pair list");
+    expectTrue(!validPreflight.emptyPairs, "dispatch preflight does not mark non-empty pair list");
+    expectTrue(validPreflight.can_dispatch(), "dispatch preflight can dispatch valid pair");
+        !fuse::physics::narrowphase::should_skip_narrowphase_dispatch(validPairs, bodies, shapes),
+        "should_skip_narrowphase_dispatch false for dispatchable pair");
