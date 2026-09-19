@@ -1443,6 +1443,9 @@ struct UpdateDragInteractionPreflight {
 
     bool snapWillApply() const { return snap.canApply(); }
     bool isSnapDegraded() const { return snapDegraded; }
+    /// Enabled snap with unusable step — drag update still applies without delta rounding (B6.4 deepen pass).
+    bool snapDragDegraded() const { return snapDrag.isDegraded(); }
+    bool snapDegraded() const { return drag.snapDegraded; }
 };
 
 UpdateDragInteractionPreflight preflightUpdateDragInteraction(const GizmoHitTest& hit, bool dragging,
@@ -1583,6 +1586,8 @@ struct BeginInteractionPreflight {
     bool isSnapDegraded() const { return begin.snapDegraded; }
     /// Snap enabled but step unusable — begin still allowed (B6.4 deepen pass).
     bool snapDegraded() const { return begin.snapDegraded || snap.isDegraded(); }
+    /// Snap is enabled but the mode step is unusable — begin still applies (B6.4 deepen pass).
+    bool snapDegraded() const { return begin.snapDegraded; }
 };
 
 /// Combined update-drag + snap diagnostics — no mutation (B6.4 deepen pass).
@@ -2733,14 +2738,6 @@ enum class GizmoSnapDragRejectReason : u8 {
     InvalidStep,
 };
 
-/// Why snap-drag preflight rejected the request (B6.4 deepen pass).
-enum class GizmoSnapDragRejectReason : u8 {
-    None = 0,
-    DeltaNonFinite,
-    SnapDisabled,
-    InvalidStep,
-};
-
 const char* gizmoPickRejectReasonLabel(GizmoPickRejectReason reason);
 const char* gizmoSnapRejectReasonLabel(GizmoSnapRejectReason reason);
 const char* gizmoSnapDragRejectReasonLabel(GizmoSnapDragRejectReason reason);
@@ -2767,7 +2764,6 @@ GizmoUpdateDragRejectReason classifyUpdateDragInteractionReject(
 GizmoEndDragRejectReason classifyEndDragInteractionReject(
     const EndDragInteractionPreflight& preflight);
 GizmoSnapDragRejectReason classifyUpdateDragInteractionSnapDragReject(
-    const UpdateDragInteractionPreflight& preflight);
 
 /// Begin-drag interaction preflight with optional reject-reason output (B6.4 deepen pass).
 bool preflightBeginDragInteractionReady(const GizmoRay& ray, const GizmoTransform& transform,

@@ -5546,16 +5546,13 @@ GizmoSnapDragRejectReason classifySnapDragReject(const SnapDragPreflight& prefli
     }
     if (preflight.snapDisabled) {
         return GizmoSnapDragRejectReason::SnapDisabled;
-    }
     if (preflight.invalidStep) {
         return GizmoSnapDragRejectReason::InvalidStep;
-    }
     return GizmoSnapDragRejectReason::None;
-}
 
-GizmoSnapDragRejectReason classifySnapDragReject(const SnapDragPreflight& preflight) {
-    if (preflight.deltaNonFinite) {
-        return GizmoSnapDragRejectReason::DeltaNonFinite;
+GizmoEndDragRejectReason classifyEndDragReject(const EndDragPreflight& preflight) {
+    if (preflight.notDragging) {
+        return GizmoEndDragRejectReason::NotDragging;
     }
     if (preflight.snapDisabled) {
         return GizmoSnapDragRejectReason::SnapDisabled;
