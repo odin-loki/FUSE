@@ -1706,6 +1706,48 @@ void testCookCacheDownstreamSourceProbe() {
                "empty output path downstream probe is guarded");
 }
 
+void testCookerWouldReconcileAndUpstreamProbes() {
+    const std::string source_a = writeTempFile("/tmp/fuse_b79_would_reconcile_a.obj", "# would reconcile a\n");
+    const std::string source_b = writeTempFile("/tmp/fuse_b79_would_reconcile_b.obj", "# would reconcile b\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entry_a;
+    entry_a.kind = fuse::project::CookAssetKind::Mesh;
+    entry_a.source_path = source_a;
+    entry_a.output_path = "/tmp/fuse_b79_would_reconcile_a.fusemesh";
+    manifest.assets.push_back(entry_a);
+
+    fuse::project::CookManifestEntry entry_b;
+    entry_b.kind = fuse::project::CookAssetKind::Mesh;
+    entry_b.source_path = source_b;
+    entry_b.output_path = "/tmp/fuse_b79_would_reconcile_b.fusemesh";
+    entry_b.dependencies.push_back(entry_a.output_path);
+    manifest.assets.push_back(entry_b);
+
+    fuse::project::AssetCooker cooker;
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for would reconcile probes ok");
+    expectTrue(!cooker.would_reconcile_invalidation(manifest), "fresh cache would_reconcile is false");
+    expectTrue(!cooker.would_upstream_invalidation(manifest, ""), "empty changed source would_upstream is false");
+    expectTrue(cooker.would_upstream_invalidation(manifest, source_a),
+               "would_upstream true for seeded chain head");
+    expectTrue(cooker.probe_upstream_invalidation_sources(manifest, "").empty(),
+               "empty changed source upstream probe is empty");
+
+    const std::vector<std::string> upstream_sources = cooker.probe_upstream_invalidation_sources(manifest, source_a);
+    expectTrue(upstream_sources.size() >= 2u, "upstream probe lists head and downstream sources");
+    expectTrue(upstream_sources[0] == source_a, "upstream probe starts at changed source");
+
+    writeTempFile(source_a, "# would reconcile a revised\n");
+    expectTrue(cooker.would_reconcile_invalidation(manifest), "would_reconcile true after upstream change");
+    expectTrue(cooker.estimate_reconcile_invalidation(manifest).total() != 0u,
+               "estimate total non-zero when would_reconcile is true");
+
+    fuse::project::CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+    expectTrue(cooker.cache().would_invalidate_downstream_of(entry_a.output_path, graph.edges(), graph.jobs()),
+               "would_invalidate_downstream true for chain producer");
+}
+
 void testCookManifestCacheHitsOnSecondRun() {
     const std::string source = writeTempFile("/tmp/fuse_b79_rehit_mesh.obj", "# rehit mesh\n");
 
@@ -1790,6 +1832,7 @@ int main() {
     testCookerInvalidationCountProbes();
     testCookerReconcileEstimateProbes();
     testCookCacheDownstreamSourceProbe();
+    testCookerWouldReconcileAndUpstreamProbes();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;

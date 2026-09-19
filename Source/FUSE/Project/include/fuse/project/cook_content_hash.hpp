@@ -17,6 +17,7 @@ enum class CookHashRejectReason : u8 {
     EmptyOutputPath,
     SourceUnreadable,
     EmptyDependencyList,
+    MissingManifestDependency,
     ZeroSourceHash,
 };
 
@@ -70,5 +71,8 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size);
 /// Fold source/upstream preflight — upstream zero is allowed on valid source keys (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
+/// Non-empty dependency output paths must resolve to manifest entries (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_manifest_dependency_coverage(
+    const std::vector<std::string>& dependency_output_paths, const CookManifest& manifest);
 
 } // namespace fuse::project
