@@ -1055,6 +1055,10 @@ void ContactIslandGraph::clear() {
     islands_.clear();
 }
 
+bool ContactIslandGraph::bodiesInRange(u32 bodyCount, u32 bodyA, u32 bodyB) {
+    return bodyA < bodyCount && bodyB < bodyCount;
+}
+
 u32 ContactIslandGraph::findRoot(u32 index) const {
     u32 root = index;
     while (parent_[root] != root) {
@@ -1073,7 +1077,7 @@ void ContactIslandGraph::compressPath(u32 index) {
 }
 
 void ContactIslandGraph::unionBodies(u32 a, u32 b) {
-    if (a >= parent_.size() || b >= parent_.size()) {
+    if (!bodiesInRange(static_cast<u32>(parent_.size()), a, b)) {
         return;
     }
 
