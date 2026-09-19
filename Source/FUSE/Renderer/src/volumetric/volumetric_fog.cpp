@@ -2150,3 +2150,41 @@ bool tryValidateFroxelCamera(const FroxelCameraDesc& camera, FroxelCameraRejectR
 ScreenMappingRejectReason FroxelGridLayout::classifyScreenDepthMappingReject(f32 screenX,
         classifyScreenDepthMappingReject(screenX, screenY, viewDepth, desc, camera);
         classifyDensityLookupReject(grid, desc, tileX, tileY, sliceZ);
+
+// --- deepen additive from deepen-froxel-b511-guards-8718 ---
+    if (!tryMapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, coords, reason)) {
+        return screenMappingRejectReasonIsBlocking(reason);
+bool FroxelGridLayout::wouldSkipScreenDepthToFroxelIndex(f32 screenX,
+    if (!tryMapScreenDepthToFroxelIndex(screenX, screenY, viewDepth, desc, camera, froxelIndex, reason)) {
+    return reason == SampleCoordRejectReason::EmptyGrid || reason == SampleCoordRejectReason::OutOfBounds;
+const char* froxelBilinearSampleRejectReasonLabel(FroxelBilinearSampleRejectReason reason) {
+    case FroxelBilinearSampleRejectReason::None:
+    case FroxelBilinearSampleRejectReason::EmptyGrid:
+    case FroxelBilinearSampleRejectReason::InaccessibleGrid:
+    case FroxelBilinearSampleRejectReason::InvalidSampleCoords:
+    case FroxelBilinearSampleRejectReason::ClampableWeights:
+bool froxelBilinearSampleRejectReasonIsBlocking(FroxelBilinearSampleRejectReason reason) {
+    return reason == FroxelBilinearSampleRejectReason::EmptyGrid ||
+           reason == FroxelBilinearSampleRejectReason::InaccessibleGrid ||
+           reason == FroxelBilinearSampleRejectReason::InvalidSampleCoords;
+    return reason == FroxelTrilinearSampleRejectReason::EmptyGrid ||
+           reason == FroxelTrilinearSampleRejectReason::InaccessibleGrid ||
+           reason == FroxelTrilinearSampleRejectReason::InvalidSampleCoords;
+    return reason == GridDensityRejectReason::UndersizedStorage ||
+           reason == GridDensityRejectReason::DescMismatch ||
+           reason == GridDensityRejectReason::DensityCountMismatch;
+    return reason == DensityLookupRejectReason::EmptyGrid ||
+           reason == DensityLookupRejectReason::DescMismatch ||
+           reason == DensityLookupRejectReason::EmptyStorage;
+    FroxelBilinearSampleRejectReason reason = FroxelBilinearSampleRejectReason::None;
+    return tryCanBilinearSampleAtCoords(grid, desc, coords, reason);
+bool tryCanBilinearSampleAtCoords(const FroxelDensityGrid& grid,
+                                  FroxelBilinearSampleRejectReason& outReason) {
+            outReason = FroxelBilinearSampleRejectReason::EmptyGrid;
+            outReason = FroxelBilinearSampleRejectReason::InaccessibleGrid;
+        outReason = FroxelBilinearSampleRejectReason::InvalidSampleCoords;
+        outReason = FroxelBilinearSampleRejectReason::ClampableWeights;
+    outReason = FroxelBilinearSampleRejectReason::None;
+bool wouldSkipDensityBilinearSample(const FroxelDensityGrid& grid,
+    return !tryCanBilinearSampleAtCoords(grid, desc, coords, reason);
+    if (!tryCanBilinearSampleAtCoords(grid, desc, coords, outReason)) {

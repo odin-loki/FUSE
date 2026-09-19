@@ -835,3 +835,12 @@ bool tryValidateFroxelCamera(const FroxelCameraDesc& camera, FroxelCameraRejectR
 
 // --- deepen additive from deepen-froxel-volumetrics-b511-da54 ---
     static ScreenMappingRejectReason classifyScreenDepthMappingReject(f32 screenX,
+
+// --- deepen additive from deepen-froxel-b511-guards-8718 ---
+enum class FroxelBilinearSampleRejectReason : u8 {
+const char* froxelBilinearSampleRejectReasonLabel(FroxelBilinearSampleRejectReason reason);
+bool froxelBilinearSampleRejectReasonIsBlocking(FroxelBilinearSampleRejectReason reason);
+    static bool wouldSkipScreenDepthToFroxelIndex(f32 screenX,
+bool tryCanBilinearSampleAtCoords(const FroxelDensityGrid& grid,
+                                  FroxelBilinearSampleRejectReason& outReason);
+bool wouldSkipDensityBilinearSample(const FroxelDensityGrid& grid,

@@ -3272,3 +3272,37 @@ void testFroxelVolumetricDeepenGuards() {
     expectTrue(fuse::renderer::froxel_util::preflightGridDensity(grid, zeroDesc),
                "preflightGridDensity vacuously succeeds for empty desc");
                "preflightFroxelPopulate succeeds for valid populate inputs");
+
+// --- deepen additive from deepen-froxel-b511-guards-8718 ---
+void testFroxelBilinearScreenMappingAndGridDensityGuards() {
+    expectTrue(!fuse::renderer::froxel_util::wouldSkipDensityBilinearSample(grid, desc, inBounds),
+    fuse::renderer::FroxelBilinearSampleRejectReason bilinearReason =
+        fuse::renderer::FroxelBilinearSampleRejectReason::None;
+    expectTrue(fuse::renderer::froxel_util::tryCanBilinearSampleAtCoords(grid, desc, inBounds, bilinearReason),
+               "tryCanBilinearSampleAtCoords succeeds on accessible grid");
+    expectTrue(bilinearReason == fuse::renderer::FroxelBilinearSampleRejectReason::None,
+    expectTrue(std::strcmp(fuse::renderer::froxelBilinearSampleRejectReasonLabel(bilinearReason), "none") == 0,
+    expectTrue(!fuse::renderer::froxelBilinearSampleRejectReasonIsBlocking(bilinearReason),
+    expectTrue(fuse::renderer::froxel_util::tryCanBilinearSampleAtCoords(grid, desc, warnWeights, bilinearReason),
+               "tryCanBilinearSampleAtCoords warns but succeeds for clampable weights");
+    expectTrue(bilinearReason == fuse::renderer::FroxelBilinearSampleRejectReason::ClampableWeights,
+    expectTrue(!fuse::renderer::froxel_util::wouldSkipDensityBilinearSample(grid, desc, warnWeights),
+    expectTrue(!fuse::renderer::froxel_util::tryCanBilinearSampleAtCoords(grid, desc, hardOob, bilinearReason),
+               "tryCanBilinearSampleAtCoords rejects hard OOB tile coord");
+    expectTrue(bilinearReason == fuse::renderer::FroxelBilinearSampleRejectReason::InvalidSampleCoords,
+    expectTrue(fuse::renderer::froxelBilinearSampleRejectReasonIsBlocking(bilinearReason),
+    expectTrue(fuse::renderer::froxel_util::wouldSkipDensityBilinearSample(grid, desc, hardOob),
+    expectTrue(!fuse::renderer::froxel_util::tryCanBilinearSampleAtCoords(emptyGrid, desc, inBounds, bilinearReason),
+               "tryCanBilinearSampleAtCoords rejects empty storage");
+    expectTrue(bilinearReason == fuse::renderer::FroxelBilinearSampleRejectReason::InaccessibleGrid,
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityBilinear(grid, desc, inBounds, bilinearSample, bilinearReason),
+               "trySampleDensityBilinear with bilinear reason succeeds on accessible grid");
+               "trySampleDensityBilinear with bilinear reason matches unguarded sample");
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityBilinear(grid, desc, hardOob, rejectedBilinear, bilinearReason),
+               "trySampleDensityBilinear with bilinear reason rejects hard OOB coords");
+    expectNear(rejectedBilinear, 0.f, 1e-6f, "trySampleDensityBilinear with bilinear reason zeroes output on rejection");
+    expectTrue(fuse::renderer::FroxelGridLayout::wouldSkipScreenDepthMapping(
+    expectTrue(!fuse::renderer::FroxelGridLayout::wouldSkipScreenDepthToFroxelIndex(
+    expectTrue(fuse::renderer::FroxelGridLayout::wouldSkipScreenDepthToFroxelIndex(
+    expectTrue(fuse::renderer::gridDensityRejectReasonIsBlocking(densityReason),
+    expectTrue(!fuse::renderer::froxel_util::wouldSkipGridDensityValidation(emptyGrid, zeroDesc),
