@@ -338,6 +338,27 @@ bool TaaPass::shouldSkipHistoryWarmup() const {
     return shouldSkipTaaHistoryWarmup(m_history);
 }
 
+TaaHistoryWarmupPhase TaaPass::historyWarmupPhase() const {
+    return classifyTaaHistoryWarmupPhase(m_history);
+}
+
+bool TaaPass::shouldSkipHistoryReuseForResolve(const TaaResolveDesc& desc) const {
+    return shouldSkipTaaHistoryReuseForResolve(desc, m_history);
+}
+
+bool TaaPass::preflightHistoryReuseForResolve(const TaaResolveDesc& desc,
+                                              TaaHistoryReuseBlockReason* reason) const {
+    return preflightTaaHistoryReuseForResolve(desc, m_history, reason);
+}
+
+bool TaaPass::invalidateHistoryIfStale(u32 observedGeneration) {
+    if (!m_history.invalidateHistoryIfStale(observedGeneration)) {
+        return false;
+    }
+    m_resolve.resetBookkeeping();
+    return true;
+}
+
 bool TaaPass::historyBlendAllowed() const {
     return taaHistoryBlendAllowed(!m_history.hasValidHistory(), m_history);
 
@@ -1125,6 +1146,14 @@ bool TaaPass::preflightTemporalResolve(const TaaResolveDesc& desc, TaaHistoryReu
     return preflightTaaResolveTemporal(desc, m_history, reuseReason, blendReason);
 
 bool TaaPass::shouldSkipTemporalResolve(const TaaResolveDesc& desc) const {
+
+
+
+bool TaaPass::preflightResolveFrameGuards(const TaaResolveDesc& desc, TaaResolveSkipReason* skipReason,
+    return preflightTaaResolveFrameGuards(desc, m_history, skipReason, blendReason);
+
+bool TaaPass::shouldSkipResolveFrameGuards(const TaaResolveDesc& desc) const {
+    return shouldSkipTaaResolveFrameGuards(desc, m_history);
 
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
     return m_resolve.wouldSkip(desc, m_history, reason);

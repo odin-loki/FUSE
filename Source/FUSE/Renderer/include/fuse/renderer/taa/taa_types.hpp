@@ -206,6 +206,19 @@ bool shouldSkipTaaHistoryWarmup(const TaaHistoryBuffer& history);
 /// True when history has completed warm-up and may be temporally reused (B5.9 deepen).
 bool taaHistoryIsWarmed(const TaaHistoryBuffer& history);
 bool taaHistoryIsWarm(const TaaHistoryBuffer& history);
+
+/// History warm-up phase for temporal reuse gating (B5.9 deepen).
+enum class TaaHistoryWarmupPhase : u8 {
+    NotReady = 0,
+    Cold,
+    Warm,
+};
+/// Human-readable label for history warm-up phases (B5.9 deepen).
+const char* taaHistoryWarmupPhaseLabel(TaaHistoryWarmupPhase phase);
+/// Classify history warm-up phase from buffer state (B5.9 deepen).
+TaaHistoryWarmupPhase classifyTaaHistoryWarmupPhase(const TaaHistoryBuffer& history);
+/// True when history is in the warm phase and may be temporally reused (B5.9 deepen).
+bool taaHistoryWarmupPhaseAllowsReuse(TaaHistoryWarmupPhase phase);
 /// Blend weights for a resolve frame considering warm-up and reuse guards (B5.9 deepen).
 TaaBlendWeights computeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// True when resolve would apply a non-zero history blend weight (B5.9 deepen).
@@ -280,6 +293,12 @@ bool wouldSkipTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGener
 /// Diagnose history reuse preflight with a required reject reason (B5.9 deepen).
 /// True when history warm-up is complete and ready for temporal reuse (B5.9 deepen).
 bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history);
+/// Classify why history reuse is blocked for a resolve request (B5.9 deepen).
+/// True when history temporal reuse is allowed for a resolve request (B5.9 deepen).
+/// History reuse preflight for resolve with mandatory reject-reason output (B5.9 deepen).
+                                           TaaHistoryReuseBlockReason& reason);
+/// Early-out when history temporal reuse should be skipped for a resolve request (B5.9 deepen).
+bool shouldSkipTaaHistoryReuseForResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// True when history buffers are allocated and ready for resolve (B5.9 deepen).
 bool taaHistoryReadyForResolve(const TaaHistoryBuffer& history);
 /// Frames remaining before temporal reuse is allowed — 0 when warmed (B5.9 deepen).
@@ -835,6 +854,17 @@ TaaFrameGuardPreflight preflightTaaFrameGuards(const TaaResolveDesc& desc, const
                                     TaaHistoryReuseBlockReason& reuseReason,
                                     TaaResolveBlendRejectReason& blendReason);
 /// Early-out when combined temporal resolve preflight would reject (B5.9 deepen).
+
+/// True when resolve skip and blend-weight preflights both pass (B5.9 deepen).
+bool preflightTaaResolveFrameGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                    TaaResolveSkipReason* skipReason = nullptr,
+                                    TaaResolveBlendRejectReason* blendReason = nullptr);
+/// Resolve frame preflight with mandatory reject-reason outputs (B5.9 deepen).
+bool tryPreflightTaaResolveFrameGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                       TaaResolveSkipReason& skipReason,
+                                       TaaResolveBlendRejectReason& blendReason);
+/// Early-out when resolve frame guards would reject (B5.9 deepen).
+bool shouldSkipTaaResolveFrameGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {

@@ -178,6 +178,8 @@ TaaJitterFramePreflight preflightTaaJitterFrame(u32 frameIndex, u32 width, u32 h
                                                 u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 /// True when jitter can sync to a monotonic frame counter (B5.9 deepen).
 bool taaJitterSyncReady(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// Early-out when jitter sync to a frame counter should be skipped (B5.9 deepen).
+/// Early-out when NDC jitter production should be skipped (B5.9 deepen).
 
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {
@@ -346,6 +348,8 @@ public:
     bool wouldSkipSyncToFrameIndex(u32 frameIndex) const;
     /// Sync with reject-reason diagnostics (B5.9 deepen).
     bool trySyncToFrameIndexIfReady(u32 frameIndex, TaaJitterGuardRejectReason& reason);
+    /// Sync with mandatory reject-reason output; returns false when blocked (B5.9 deepen).
+    bool trySyncToFrameIndex(u32 frameIndex, TaaJitterGuardRejectReason& reason);
     /// True when monotonic frame counter and slot match `frameIndex` (B5.9 deepen).
     bool isAlignedToFrameIndex(u32 frameIndex) const;
     /// True when jitter slot and monotonic counter match a frame index (B5.9 deepen).
