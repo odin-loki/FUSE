@@ -362,6 +362,14 @@ public:
     bool resolveBlendReady(const TaaResolveDesc& desc) const;
     bool preflightHistoryWarmup(TaaHistoryWarmupRejectReason* reason = nullptr) const;
     /// Early-out when pass history warm-up should be skipped (B5.9 deepen).
+    /// Early-out when pass jitter NDC preflight would reject (B5.9 deepen).
+    /// History reuse preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBlockReason& reason) const;
+    /// Resolve blend preflight with mandatory reject-reason output (B5.9 deepen).
+    /// Compute resolve blend weights with reject-reason diagnostics (B5.9 deepen).
+    bool tryComputeResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& outWeights,
+                                       TaaResolveBlendRejectReason& reason) const;
+    /// True when resolve blend weights pass validation and reuse policy (B5.9 deepen).
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;

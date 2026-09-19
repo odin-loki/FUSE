@@ -123,6 +123,10 @@ bool preflightTaaJitterSync(u32 frameIndex, u32 width, u32 height,
 /// NDC jitter preflight with mandatory reject-reason output (B5.9 deepen).
 /// Early-out when jitter sync preflight would reject (B5.9 deepen).
 bool shouldSkipTaaJitterSync(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength, TaaJitterGuardRejectReason& reason);
+/// Early-out when NDC jitter preflight would reject (B5.9 deepen).
+bool shouldSkipTaaJitterNdc(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 /// True when jitter can sync to `frameIndex` for the given sequence (B5.9 deepen).
 bool taaJitterSyncReady(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 /// True when NDC jitter can be produced for viewport and sequence (B5.9 deepen).

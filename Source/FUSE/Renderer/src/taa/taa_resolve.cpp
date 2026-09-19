@@ -1145,6 +1145,10 @@ bool tryPreflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHis
     return outReason == TaaResolveBlendRejectReason::None;
 }
 
+bool taaResolveBlendReady(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return !shouldSkipTaaResolveBlend(desc, history);
+}
+
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaHistoryCanReuse(history)) {
     if (taaResolveBypassesHistoryGenerationGuard(desc)) {

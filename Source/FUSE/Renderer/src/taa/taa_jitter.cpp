@@ -210,6 +210,7 @@ bool taaJitterSyncReady(u32 frameIndex, u32 sequenceLength) {
 bool taaJitterNdcReady(u32 width, u32 height, u32 sequenceLength) {
     return preflightTaaJitterNdc(width, height, sequenceLength);
 
+
 bool TaaJitterLayout::validateSequenceLength(u32 length) {
     return length > 0u && length <= kTaaMaxJitterSequenceLength;
 }
