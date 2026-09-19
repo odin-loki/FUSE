@@ -1,5 +1,7 @@
 #include <fuse/animation/retarget.hpp>
 
+#include <fuse/animation/ik_solver.hpp>
+
 namespace fuse::animation {
 
 bool RetargetMap::is_valid() const {
@@ -88,6 +90,14 @@ s32 RetargetMap::find_target_bone(u32 source_bone) const {
         }
     }
     return -1;
+}
+
+bool RetargetMap::can_apply_pose_soa(const PoseSoA& source_pose, const Skeleton& target_skel) const {
+    return !target_skel.bones.empty() && source_pose.bone_count > 0 && is_valid();
+}
+
+bool RetargetMap::can_apply_pose(const Pose& source_pose, const Skeleton& target_skel) const {
+    return !target_skel.bones.empty() && !is_pose_empty(source_pose) && is_valid();
 }
 
 RetargetMap RetargetMap::build_identity(const Skeleton& skel) {
