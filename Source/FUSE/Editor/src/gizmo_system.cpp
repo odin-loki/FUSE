@@ -2960,3 +2960,52 @@ GizmoSnapDragRejectReason classifySnapDragReject(const SnapDragPreflight& prefli
             *reason = GizmoEndDragRejectReason::NotDragging;
         *reason = GizmoEndDragRejectReason::None;
 bool GizmoSystem::preflightBeginDragInteractionReady(const GizmoRay& ray,
+
+// --- deepen additive from deepen-gizmo-b6-guards-6739 ---
+GizmoBeginDragRejectReason classifyBeginInteractionReject(
+    const BeginInteractionPreflight& preflight) {
+    return classifyBeginDragReject(preflight.begin);
+GizmoUpdateDragRejectReason classifyUpdateInteractionReject(
+    const UpdateInteractionPreflight& preflight) {
+    return classifyUpdateDragReject(preflight.update);
+GizmoEndDragRejectReason classifyEndInteractionReject(const EndInteractionPreflight& preflight) {
+bool preflightBeginInteractionReady(const GizmoHitTest& hit, GizmoMode mode,
+    const BeginInteractionPreflight preflight =
+        preflightBeginInteraction(hit, mode, settings, alreadyDragging);
+        *reason = classifyBeginInteractionReject(preflight);
+bool preflightBeginInteractionReady(const GizmoRay& ray, const GizmoTransform& transform,
+    const BeginInteractionPreflight preflight = preflightBeginInteraction(
+bool tryPreflightBeginInteraction(const GizmoHitTest& hit, GizmoMode mode,
+    return preflightBeginInteractionReady(hit, mode, settings, &reason, alreadyDragging);
+bool tryPreflightBeginInteraction(const GizmoRay& ray, const GizmoTransform& transform,
+    return preflightBeginInteractionReady(ray, transform, mode, space, axisLength, pickRadius,
+    return !preflightBeginInteractionReady(hit, mode, settings, nullptr, alreadyDragging);
+    return !preflightBeginInteractionReady(ray, transform, mode, space, axisLength, pickRadius,
+bool preflightUpdateInteractionReady(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis,
+    const UpdateInteractionPreflight preflight =
+        *reason = classifyUpdateInteractionReject(preflight);
+bool tryPreflightUpdateInteraction(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis,
+    return preflightUpdateInteractionReady(hit, dragging, activeAxis, mode, settings, &reason);
+    return !preflightUpdateInteractionReady(hit, dragging, activeAxis, mode, settings);
+bool preflightEndInteractionReady(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+    const EndInteractionPreflight preflight =
+        *reason = classifyEndInteractionReject(preflight);
+bool tryPreflightEndInteraction(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+    return preflightEndInteractionReady(dragging, activeAxis, mode, settings, &reason);
+    return !preflightEndInteractionReady(dragging, activeAxis, mode, settings);
+bool GizmoSystem::preflightBeginInteractionReady(const GizmoHitTest& hit,
+    return fuse::editor::preflightBeginInteractionReady(hit, m_mode, m_snap, reason, m_dragging);
+bool GizmoSystem::preflightBeginInteractionReady(const GizmoRay& ray,
+    return fuse::editor::preflightBeginInteractionReady(ray, transform, m_mode, m_space, kAxisLength,
+bool GizmoSystem::tryPreflightBeginInteraction(const GizmoHitTest& hit,
+    return fuse::editor::tryPreflightBeginInteraction(hit, m_mode, m_snap, reason, m_dragging);
+bool GizmoSystem::tryPreflightBeginInteraction(const GizmoRay& ray,
+    return fuse::editor::tryPreflightBeginInteraction(ray, transform, m_mode, m_space, kAxisLength,
+bool GizmoSystem::preflightUpdateInteractionReady(const GizmoHitTest& hit,
+    return fuse::editor::preflightUpdateInteractionReady(hit, m_dragging, m_activeAxis, m_mode,
+bool GizmoSystem::tryPreflightUpdateInteraction(const GizmoHitTest& hit,
+    return fuse::editor::tryPreflightUpdateInteraction(hit, m_dragging, m_activeAxis, m_mode, m_snap,
+bool GizmoSystem::preflightEndInteractionReady(GizmoEndDragRejectReason* reason) const {
+    return fuse::editor::preflightEndInteractionReady(m_dragging, m_activeAxis, m_mode, m_snap,
+bool GizmoSystem::tryPreflightEndInteraction(GizmoEndDragRejectReason& reason) const {
+    return fuse::editor::tryPreflightEndInteraction(m_dragging, m_activeAxis, m_mode, m_snap,

@@ -1266,3 +1266,23 @@ GizmoSnapDragRejectReason classifySnapDragReject(const SnapDragPreflight& prefli
 
 // --- deepen additive from deepen-gizmo-preflight-guards-6643 ---
     GizmoBeginDragRejectReason* reason = nullptr, bool alreadyDragging = false);
+
+// --- deepen additive from deepen-gizmo-b6-guards-6739 ---
+GizmoBeginDragRejectReason classifyBeginInteractionReject(const BeginInteractionPreflight& preflight);
+GizmoUpdateDragRejectReason classifyUpdateInteractionReject(const UpdateInteractionPreflight& preflight);
+GizmoEndDragRejectReason classifyEndInteractionReject(const EndInteractionPreflight& preflight);
+bool preflightBeginInteractionReady(const GizmoHitTest& hit, GizmoMode mode,
+bool preflightBeginInteractionReady(const GizmoRay& ray, const GizmoTransform& transform,
+bool tryPreflightBeginInteraction(const GizmoHitTest& hit, GizmoMode mode,
+bool tryPreflightBeginInteraction(const GizmoRay& ray, const GizmoTransform& transform,
+bool preflightUpdateInteractionReady(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis,
+bool tryPreflightUpdateInteraction(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis,
+bool preflightEndInteractionReady(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+bool tryPreflightEndInteraction(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+    [[nodiscard]] bool preflightBeginInteractionReady(
+    [[nodiscard]] bool tryPreflightBeginInteraction(const GizmoHitTest& hit,
+    [[nodiscard]] bool tryPreflightBeginInteraction(const GizmoRay& ray,
+    [[nodiscard]] bool preflightUpdateInteractionReady(
+    [[nodiscard]] bool tryPreflightUpdateInteraction(const GizmoHitTest& hit,
+    [[nodiscard]] bool preflightEndInteractionReady(
+    [[nodiscard]] bool tryPreflightEndInteraction(GizmoEndDragRejectReason& reason) const;

@@ -4334,3 +4334,25 @@ void testNonFiniteUpdateDragRejectReasonGuards() {
 // --- deepen additive from deepen-gizmo-preflight-guards-dd74 ---
     expectTrue(!gizmo.preflightSnapDragReady(std::numeric_limits<fuse::f32>::infinity(), &reason),
                "gizmo preflightSnapDragReady rejects non-finite delta");
+
+// --- deepen additive from deepen-gizmo-b6-guards-6739 ---
+void testInteractionRejectReasonGuards() {
+    expectTrue(fuse::editor::tryPreflightBeginInteraction(hit, fuse::editor::GizmoMode::Translate,
+               "tryPreflightBeginInteraction accepts valid screen hit");
+    expectTrue(!fuse::editor::preflightBeginInteractionReady(hit, fuse::editor::GizmoMode::Translate,
+               "preflightBeginInteractionReady rejects non-finite hit");
+    expectTrue(fuse::editor::preflightUpdateInteractionReady(
+               "preflightUpdateInteractionReady accepts active drag");
+    expectTrue(!fuse::editor::tryPreflightUpdateInteraction(
+               "tryPreflightUpdateInteraction rejects inactive drag");
+    expectTrue(fuse::editor::tryPreflightEndInteraction(true, fuse::editor::GizmoAxis::X,
+               "tryPreflightEndInteraction accepts active drag");
+    expectTrue(fuse::editor::classifyBeginInteractionReject(beginInteraction) ==
+               "classifyBeginInteractionReject maps valid begin preflight");
+    expectTrue(gizmo.preflightBeginInteractionReady(hit),
+               "gizmo preflightBeginInteractionReady accepts valid hit");
+    expectTrue(gizmo.preflightUpdateInteractionReady(hit),
+               "gizmo preflightUpdateInteractionReady accepts active drag");
+    expectTrue(gizmo.preflightEndInteractionReady(),
+               "gizmo preflightEndInteractionReady accepts active drag");
+    testInteractionRejectReasonGuards();
