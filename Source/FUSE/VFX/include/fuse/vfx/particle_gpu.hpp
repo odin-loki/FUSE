@@ -22,6 +22,10 @@ enum class ParticleGpuSlotGuard : u8 {
     Ok,
     OutOfRange,
     InvalidCapacity,
+/// Per-slot packed-layout access guards for column byte/device offset helpers.
+enum class ParticleGpuSlotOffsetGuard : u8 {
+    UninitializedCapacity,
+    SlotOutOfRange,
 };
 
 /// GPU SoA column identifiers — mirrors P7 `ParticleSoAGPU` device arrays.
@@ -134,10 +138,8 @@ struct ParticleGpuDispatchPreflight {
 
     [[nodiscard]] bool coversElements() const { return !skipped && covered_threads >= element_count; }
     [[nodiscard]] bool hasPadding() const { return padding_threads > 0u; }
-};
 
 /// Dispatch preflight for stub CUDA launch wiring (B7.7 GPU deepen follow-up).
-struct ParticleGpuDispatchPreflight {
     u32 slot_count = 0u;
     u32 emit_count = 0u;
     bool skip_sim_launch = true;
@@ -150,6 +152,42 @@ struct ParticleGpuDispatchPreflight {
     [[nodiscard]] bool can_launch_sim() const;
     [[nodiscard]] bool can_launch_emit() const;
     [[nodiscard]] bool ready_for_stub() const;
+    static const char* slotOffsetGuardName(ParticleGpuSlotOffsetGuard guard);
+
+    [[nodiscard]] static bool isValidSlotIndex(u32 slot, u32 capacity);
+    [[nodiscard]] static ParticleGpuSlotOffsetGuard slotOffsetGuard(u32 slot, u32 capacity);
+    [[nodiscard]] static usize columnSlotByteOffset(ParticleGpuColumn column, u32 capacity, u32 slot);
+    [[nodiscard]] static u64 columnSlotDeviceAddress(ParticleGpuColumn column, u64 base, u32 capacity, u32 slot);
+    [[nodiscard]] static bool canAccessSlotAtOffset(ParticleGpuColumn column, u32 capacity, u32 slot);
+
+/// Non-mutating dispatch launch bookkeeping for stub frame planning.
+struct DispatchPreflight {
+    u32 capacity = 0u;
+    bool skip_sim = true;
+    bool skip_emit = true;
+    u32 sim_padding_threads = 0u;
+    u32 emit_padding_threads = 0u;
+    bool is_idle = true;
+
+/// Non-mutating mirror sync/write guard summary for CPU upload paths.
+struct MirrorPreflight {
+    ParticleGpuSyncGuard sync_guard = ParticleGpuSyncGuard::MirrorUninitialized;
+    ParticleGpuSyncGuard write_guard = ParticleGpuSyncGuard::MirrorUninitialized;
+    bool can_sync = false;
+    bool can_write = false;
+    bool would_resize = false;
+
+/// Non-mutating slot offset guard for packed column access.
+struct ParticleGpuSlotOffsetPreflight {
+    ParticleGpuSlotOffsetGuard guard = ParticleGpuSlotOffsetGuard::UninitializedCapacity;
+    u32 slot = 0u;
+    usize column_byte_offset = 0u;
+    bool can_access = false;
+
+/// Non-mutating frame-plan guard tying buffer sizing to dispatch preflight.
+struct FramePlanPreflight {
+    DispatchPreflight dispatch{};
+    bool buffers_sized = false;
 };
 
 /// CUDA launch grid bookkeeping for simulate/emit kernels.
@@ -201,6 +239,8 @@ struct ParticleGpuBufferPreflight {
 
     [[nodiscard]] bool can_allocate() const;
     [[nodiscard]] bool ready_for_stub() const;
+
+    [[nodiscard]] DispatchPreflight preflight(u32 capacity, u32 emit_count) const;
 };
 
 /// Logical GPU buffer handles — production wiring maps these to `renderer::BufferHandle`.
@@ -256,6 +296,7 @@ struct ParticleGpuMirror {
     [[nodiscard]] ParticleGpuMirrorSyncPreflight preflightWriteToCpu(const ParticleSoA& cpu) const;
     [[nodiscard]] ParticleGpuSlotGuard slotGuard(u32 slot_index) const;
     [[nodiscard]] bool isSlotInRange(u32 slot_index) const;
+    [[nodiscard]] MirrorPreflight preflightSync(const ParticleSoA& cpu) const;
 
     [[nodiscard]] static ParticleGpuMirror fromCpuSoA(const ParticleSoA& cpu);
     [[nodiscard]] bool writeToCpuSoA(ParticleSoA& cpu) const;
@@ -331,6 +372,7 @@ struct ParticleGpuFramePlan {
     [[nodiscard]] u32 emitPaddingThreadCount() const;
     [[nodiscard]] ParticleGpuFramePreflight preflight() const;
     [[nodiscard]] ParticleSoAGPU gpuPointers(u64 packed_device_address) const;
+    [[nodiscard]] FramePlanPreflight preflight() const;
 };
 
 [[nodiscard]] bool should_skip_sim_dispatch(u32 capacity);
@@ -350,6 +392,9 @@ namespace particle_gpu_util {
 [[nodiscard]] u32 blockIndexOf(u32 global_thread_index, u32 block_size);
 [[nodiscard]] u32 localThreadIndex(u32 global_thread_index, u32 block_size);
 [[nodiscard]] u32 globalThreadIndex(u32 block_index, u32 local_thread_index, u32 block_size);
+[[nodiscard]] DispatchPreflight preflight_dispatch(u32 capacity, u32 emit_count);
+[[nodiscard]] FramePlanPreflight preflight_frame_plan(u32 capacity, u32 emit_count, u32 alive_count);
+[[nodiscard]] ParticleGpuSlotOffsetPreflight preflight_slot_offset(ParticleGpuColumn column, u32 capacity, u32 slot);
 } // namespace particle_gpu_util
 
 } // namespace fuse::vfx

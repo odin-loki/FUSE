@@ -180,6 +180,18 @@ const char* ParticleGpuBufferLayout::syncGuardName(ParticleGpuSyncGuard guard) {
     return "unknown";
 }
 
+const char* ParticleGpuBufferLayout::slotOffsetGuardName(ParticleGpuSlotOffsetGuard guard) {
+    switch (guard) {
+    case ParticleGpuSlotOffsetGuard::Ok:
+        return "ok";
+    case ParticleGpuSlotOffsetGuard::UninitializedCapacity:
+        return "uninitialized_capacity";
+    case ParticleGpuSlotOffsetGuard::SlotOutOfRange:
+        return "slot_out_of_range";
+    }
+    return "unknown";
+}
+
 const char* ParticleGpuBufferLayout::columnName(ParticleGpuColumn column) {
     switch (column) {
     case ParticleGpuColumn::Positions:
@@ -284,6 +296,42 @@ bool ParticleGpuBufferLayout::validatePackedLayout(u32 capacity) {
         cursor = alignUp(cursor + column_bytes, kColumnAlignment);
     }
     return cursor == packedDeviceBytes(capacity);
+}
+
+bool ParticleGpuBufferLayout::isValidSlotIndex(u32 slot, u32 capacity) {
+    return capacity > 0u && slot < capacity;
+}
+
+ParticleGpuSlotOffsetGuard ParticleGpuBufferLayout::slotOffsetGuard(u32 slot, u32 capacity) {
+    if (capacity == 0u) {
+        return ParticleGpuSlotOffsetGuard::UninitializedCapacity;
+    }
+    if (slot >= capacity) {
+        return ParticleGpuSlotOffsetGuard::SlotOutOfRange;
+    }
+    return ParticleGpuSlotOffsetGuard::Ok;
+}
+
+usize ParticleGpuBufferLayout::columnSlotByteOffset(ParticleGpuColumn column, u32 capacity, u32 slot) {
+    if (!isValidSlotIndex(slot, capacity)) {
+        return 0u;
+    }
+    return columnDeviceOffset(column, capacity) + elementSize(column) * static_cast<usize>(slot);
+}
+
+u64 ParticleGpuBufferLayout::columnSlotDeviceAddress(ParticleGpuColumn column, u64 base, u32 capacity, u32 slot) {
+    if (base == 0u || !isValidSlotIndex(slot, capacity)) {
+        return 0u;
+    }
+    return base + columnSlotByteOffset(column, capacity, slot);
+}
+
+bool ParticleGpuBufferLayout::canAccessSlotAtOffset(ParticleGpuColumn column, u32 capacity, u32 slot) {
+    if (slotOffsetGuard(slot, capacity) != ParticleGpuSlotOffsetGuard::Ok) {
+        return false;
+    }
+    const usize slot_end = columnSlotByteOffset(column, capacity, slot) + elementSize(column);
+    return slot_end <= packedDeviceBytes(capacity);
 }
 
 ParticleGpuDispatch ParticleGpuDispatch::forSimulate(u32 capacity) {
@@ -408,27 +456,19 @@ bool ParticleGpuDispatch::simPaddingAccountsFor(u32 slot_count) const {
     }
     if (slot_count == 0u) {
         return false;
-    }
     return totalSimThreads() == slot_count + simPaddingThreads(slot_count);
-}
 
 bool ParticleGpuDispatch::emitPaddingAccountsFor(u32 emit_count) const {
     if (emit_count == 0u) {
         return true;
-    }
     if (!hasEmitLaunch()) {
-        return false;
-    }
     return totalEmitThreads() == emit_count + emitPaddingThreads(emit_count);
-}
 
 bool ParticleGpuDispatchPreflight::can_launch_sim() const {
     return !skip_sim_launch && sim_covers && sim_padding_ok;
-}
 
 bool ParticleGpuDispatchPreflight::can_launch_emit() const {
     return !skip_emit_launch && emit_covers && emit_padding_ok;
-}
 
 bool ParticleGpuDispatchPreflight::ready_for_stub() const {
     const bool sim_ready = skip_sim_launch || can_launch_sim();
@@ -436,7 +476,6 @@ bool ParticleGpuDispatchPreflight::ready_for_stub() const {
     const bool sim_padding_valid = slot_count == 0u || sim_padding_ok;
     const bool emit_padding_valid = emit_count == 0u || emit_padding_ok;
     return sim_ready && emit_ready && sim_padding_valid && emit_padding_valid;
-}
 
 ParticleGpuDispatchPreflight ParticleGpuDispatch::preflightSimulate(u32 slot_count) const {
     ParticleGpuDispatchPreflight preflight{};
@@ -448,10 +487,8 @@ ParticleGpuDispatchPreflight ParticleGpuDispatch::preflightSimulate(u32 slot_cou
     preflight.emit_covers = true;
     preflight.emit_padding_ok = emitPaddingAccountsFor(0u);
     return preflight;
-}
 
 ParticleGpuDispatchPreflight ParticleGpuDispatch::preflightEmit(u32 emit_count) const {
-    ParticleGpuDispatchPreflight preflight{};
     preflight.emit_count = emit_count;
     preflight.skip_emit_launch = shouldSkipEmitLaunch(emit_count);
     preflight.emit_covers = emitCovers(emit_count);
@@ -459,8 +496,6 @@ ParticleGpuDispatchPreflight ParticleGpuDispatch::preflightEmit(u32 emit_count) 
     preflight.skip_sim_launch = true;
     preflight.sim_covers = true;
     preflight.sim_padding_ok = simPaddingAccountsFor(0u);
-    return preflight;
-}
 
 ParticleGpuDispatchPreflight ParticleGpuDispatch::preflightFrame(u32 slot_count, u32 emit_count) const {
     ParticleGpuDispatchPreflight preflight = preflightSimulate(slot_count);
@@ -469,7 +504,18 @@ ParticleGpuDispatchPreflight ParticleGpuDispatch::preflightFrame(u32 slot_count,
     preflight.skip_emit_launch = emit_preflight.skip_emit_launch;
     preflight.emit_covers = emit_preflight.emit_covers;
     preflight.emit_padding_ok = emit_preflight.emit_padding_ok;
-    return preflight;
+DispatchPreflight ParticleGpuDispatch::preflight(u32 capacity, u32 emit_count) const {
+    DispatchPreflight result{};
+    result.capacity = capacity;
+    result.emit_count = emit_count;
+    result.skip_sim = shouldSkipSimLaunch(capacity);
+    result.skip_emit = shouldSkipEmitLaunch(emit_count);
+    result.sim_padding_threads = simPaddingThreads(capacity);
+    result.emit_padding_threads = emitPaddingThreads(emit_count);
+    result.sim_covers = simCovers(capacity);
+    result.emit_covers = emitCovers(emit_count);
+    result.is_idle = result.skip_sim && result.skip_emit;
+    return result;
 }
 
 ParticleGpuBuffers ParticleGpuBuffers::forCapacity(u32 particle_capacity) {
@@ -634,6 +680,14 @@ ParticleGpuSlotGuard ParticleGpuMirror::slotGuard(u32 slot_index) const {
 
 bool ParticleGpuMirror::isSlotInRange(u32 slot_index) const {
     return ParticleGpuBufferLayout::isSlotInRange(slot_index, capacity);
+MirrorPreflight ParticleGpuMirror::preflightSync(const ParticleSoA& cpu) const {
+    MirrorPreflight result{};
+    result.sync_guard = syncGuardForCpu(cpu);
+    result.write_guard = writeGuardForCpu(cpu);
+    result.can_sync = canSyncFromCpuSoA(cpu);
+    result.can_write = canWriteToCpuSoA(cpu);
+    result.would_resize = capacity == 0u && cpu.capacity > 0u;
+    return result;
 }
 
 bool ParticleGpuMirror::trySyncFromCpuSoA(const ParticleSoA& cpu) {
@@ -1003,6 +1057,14 @@ ParticleSoAGPU ParticleGpuFramePlan::gpuPointers(u64 packed_device_address) cons
     return mirror.toGpuPointers(packed_device_address);
 }
 
+FramePlanPreflight ParticleGpuFramePlan::preflight() const {
+    FramePlanPreflight result{};
+    result.dispatch = dispatch.preflight(capacity, emit_count);
+    result.buffers_sized = buffersSizedForCapacity();
+    result.is_idle = isIdle();
+    return result;
+}
+
 namespace particle_gpu_util {
 
 u32 gridDimX(u32 element_count, u32 block_size) {
@@ -1043,17 +1105,27 @@ u32 blockIndexOf(u32 global_thread_index, u32 block_size) {
         return 0u;
     }
     return global_thread_index / block_size;
-}
 
 u32 localThreadIndex(u32 global_thread_index, u32 block_size) {
-    if (block_size == 0u) {
-        return 0u;
-    }
     return global_thread_index % block_size;
-}
 
 u32 globalThreadIndex(u32 block_index, u32 local_thread_index, u32 block_size) {
     return block_index * block_size + local_thread_index;
+DispatchPreflight preflight_dispatch(u32 capacity, u32 emit_count) {
+    return ParticleGpuDispatch::forFrame(capacity, emit_count).preflight(capacity, emit_count);
+
+FramePlanPreflight preflight_frame_plan(u32 capacity, u32 emit_count, u32 alive_count) {
+    return ParticleGpuFramePlan::forStub(capacity, emit_count, alive_count).preflight();
+
+ParticleGpuSlotOffsetPreflight preflight_slot_offset(ParticleGpuColumn column, u32 capacity, u32 slot) {
+    ParticleGpuSlotOffsetPreflight result{};
+    result.slot = slot;
+    result.capacity = capacity;
+    result.guard = ParticleGpuBufferLayout::slotOffsetGuard(slot, capacity);
+    result.can_access = ParticleGpuBufferLayout::canAccessSlotAtOffset(column, capacity, slot);
+    if (result.can_access) {
+        result.column_byte_offset = ParticleGpuBufferLayout::columnSlotByteOffset(column, capacity, slot);
+    return result;
 }
 
 } // namespace particle_gpu_util
