@@ -2683,3 +2683,9 @@ bool GizmoSystem::tryPreflightUpdateDrag(const GizmoHitTest& hit, UpdateDragPref
     return fuse::editor::tryPreflightUpdateDrag(hit, m_dragging, m_activeAxis, m_mode, m_snap, out,
 bool GizmoSystem::tryPreflightEndDrag(EndDragPreflight& out,
     return fuse::editor::tryPreflightEndDrag(m_dragging, m_activeAxis, m_mode, m_snap, out, reason);
+
+// --- deepen additive from deepen-gizmo-preflight-guards-2e07 ---
+    return preflightInteraction(hit, dragging, activeAxis, mode, settings).canActOnPhase();
+    return preflightInteraction(ray, transform, dragging, activeAxis, mode, space, axisLength,
+    return preflightInteraction(hit).canActOnPhase();
+    return preflightInteraction(ray, transform).canActOnPhase();

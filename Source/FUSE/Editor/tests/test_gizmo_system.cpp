@@ -3718,3 +3718,9 @@ void testClassifyRejectFromPreflights() {
     testRejectReasonLabels();
     testTryPreflightRejectReasons();
     testClassifyRejectFromPreflights();
+
+// --- deepen additive from deepen-gizmo-preflight-guards-2e07 ---
+               "tryPickAxis rejects NaN screen coordinates");
+    const fuse::editor::BeginDragPreflight nanRayBegin = fuse::editor::preflightBeginDrag(
+    expectTrue(!fuse::editor::preflightInteraction(hit, false, fuse::editor::GizmoAxis::None,
+    expectTrue(!gizmo.preflightInteraction(hit).canBegin(),
