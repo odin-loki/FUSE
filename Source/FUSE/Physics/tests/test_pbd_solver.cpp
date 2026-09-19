@@ -4326,3 +4326,21 @@ void testGuardedIslandSolvePipelineWithWake() {
                "should_skip pipeline true for all-sleeping island");
     testContactIslandGraphBuildPreflightGuards();
     testPreflightIslandConstraintSolveGraphGuards();
+
+// --- deepen additive from deepen-pbd-island-guards-73b7 ---
+    expectTrue(std::strcmp(island_build_reject_reason_name(IslandBuildRejectReason::None), "None") == 0,
+    expectTrue(std::strcmp(island_build_reject_reason_name(IslandBuildRejectReason::EmptyInput), "EmptyInput") == 0,
+    expectTrue(std::strcmp(island_build_reject_reason_name(IslandBuildRejectReason::UnsafeRefs), "UnsafeRefs") == 0,
+    expectTrue(island_build_reject_reason(0, {}, {}) == IslandBuildRejectReason::EmptyInput,
+    expectTrue(island_build_rejects_for_reason(0, {}, {}, IslandBuildRejectReason::EmptyInput),
+    expectTrue(island_build_reject_reason(4, contacts, constraints) == IslandBuildRejectReason::UnsafeRefs,
+    expectTrue(unsafeResult.reason == IslandBuildRejectReason::UnsafeRefs,
+    expectTrue(preflight.reason == IslandBuildRejectReason::UnsafeRefs,
+void testSolveIslandJobGuardedAndPipeline() {
+    const IslandConstraintSolvePreflight mixedPreflight =
+    expectTrue(!mixedPreflight.skipped, "constraint solve index preflight does not skip mixed island");
+    expectTrue(mixedPreflight.can_solve(), "mixed island can solve via index preflight");
+    expectTrue(!sleepingPreflight.can_solve(), "all-sleeping island blocked by index preflight");
+    expectTrue(should_skip_island_constraint_solve_index(graph, sleepingIsland, bodies, contacts, constraints),
+               "should_skip constraint solve index on all-sleeping island");
+    const IslandSolvePipelinePreflight pipeline =

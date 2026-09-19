@@ -2321,3 +2321,11 @@ bool should_skip_island_solve_pipeline(const ContactIslandGraph::Island& island,
     const IslandDispatchPreflight dispatchPreflight = preflight_island_dispatch(graph, dt);
     result.dispatchableCount = dispatchPreflight.solve.stats.dispatchableCount;
     if (!dispatchPreflight.can_dispatch()) {
+
+// --- deepen additive from deepen-pbd-island-guards-73b7 ---
+    preflight.skipped = preflight.reason == IslandBuildRejectReason::EmptyInput;
+    const IslandBuildPreflight preflight = preflight_island_build(bodyCount, contacts, distanceConstraints);
+bool should_skip_island_constraint_solve_index(const ContactIslandGraph& graph,
+IslandSolvePipelinePreflight preflight_island_solve_pipeline(const ContactIslandGraph& graph,
+    const IslandWakeGraphPreflight preflight = preflight_island_wake_graph(graph, bodies);
+        const IslandSleepPreflight sleepPreflight = preflight_island_sleep(*job.island, bodies);

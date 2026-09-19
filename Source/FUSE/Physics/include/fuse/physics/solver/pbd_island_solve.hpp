@@ -1453,3 +1453,10 @@ bool should_skip_island_constraint_solve_graph(
 IslandSolvePipelinePreflight preflight_island_solve_pipeline(
 IslandSolvePipelinePreflight preflight_island_solve_pipeline_by_index(
 bool should_skip_island_solve_pipeline(const ContactIslandGraph::Island& island,
+
+// --- deepen additive from deepen-pbd-island-guards-73b7 ---
+    IslandBuildRejectReason reason = IslandBuildRejectReason::None;
+    bool can_build() const { return reason == IslandBuildRejectReason::None && !skipped && !has_unsafe_refs(); }
+    IslandConstraintSolvePreflight constraintSolve{};
+bool should_skip_island_constraint_solve_index(const ContactIslandGraph& graph,
+IslandSolvePipelinePreflight preflight_island_solve_pipeline(const ContactIslandGraph& graph,

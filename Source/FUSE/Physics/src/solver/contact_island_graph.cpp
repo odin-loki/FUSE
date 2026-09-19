@@ -376,3 +376,10 @@ IslandBuildRejectReason island_build_reject_reason(
         preflight.reason = ContactIslandGraphBuildRejectReason::EmptyInput;
         preflight.reason = ContactIslandGraphBuildRejectReason::UnsafeRefs;
         preflight.reason = ContactIslandGraphBuildRejectReason::SelfContact;
+
+// --- deepen additive from deepen-pbd-island-guards-73b7 ---
+    case IslandBuildRejectReason::EmptyInput:
+    case IslandBuildRejectReason::UnsafeRefs:
+        return IslandBuildRejectReason::EmptyInput;
+        return IslandBuildRejectReason::UnsafeRefs;
+    return island_build_reject_reason(bodyCount, contacts, distanceConstraints) != IslandBuildRejectReason::None;
