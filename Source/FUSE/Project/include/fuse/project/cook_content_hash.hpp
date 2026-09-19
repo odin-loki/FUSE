@@ -125,3 +125,13 @@ enum class CookHashPreflightReject : u8 {
 [[nodiscard]] inline CookHashPreflight preflight_cook_cache_key(u64 source_hash, u64 upstream_hash) {
     CookHashPreflight result;
         result.reject = CookHashPreflightReject::ZeroKey;
+
+// --- deepen additive from deepen-b79-cooker-hash-preflight-e529 ---
+    [[nodiscard]] bool should_skip() const { return !can_combine(); }
+[[nodiscard]] bool should_skip_hash_file_content(const std::string& path);
+[[nodiscard]] CookHashPreflight preflight_hash_mesh_import(const MeshImportDesc& desc);
+[[nodiscard]] CookHashPreflight preflight_hash_texture_import(const TextureImportDesc& desc);
+[[nodiscard]] CookHashPreflight preflight_hash_audio_import(const AudioImportDesc& desc);
+[[nodiscard]] CookHashPreflight preflight_hash_manifest_entry(const CookManifestEntry& entry);
+[[nodiscard]] CookCacheKeyPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
+[[nodiscard]] bool should_skip_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);

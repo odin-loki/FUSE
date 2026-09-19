@@ -190,3 +190,9 @@ struct CookCacheEntryPreflight {
 // --- deepen additive from b79-hash-preflight-probes-15d5 ---
     [[nodiscard]] bool probe_would_invalidate_output(const std::string& output_path) const;
     [[nodiscard]] bool probe_would_invalidate_stale_content(const std::string& source_path,
+
+// --- deepen additive from deepen-b79-cooker-hash-preflight-e529 ---
+    [[nodiscard]] bool would_invalidate() const { return affected_entries > 0; }
+    [[nodiscard]] bool should_skip() const { return !would_invalidate(); }
+    [[nodiscard]] bool would_reconcile() const { return total_removable > 0; }
+    [[nodiscard]] bool should_skip() const { return !would_reconcile(); }

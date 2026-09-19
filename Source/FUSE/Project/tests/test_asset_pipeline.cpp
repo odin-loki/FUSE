@@ -1944,3 +1944,6 @@ void testCookCachePreflightAndReconcileEstimators() {
 // --- deepen additive from deepen-b79-cooker-hash-7359 ---
     entryA.output_path = "/tmp/fuse_b79_est_up_a.fusemesh";
     entryB.output_path = "/tmp/fuse_b79_est_up_b.fusemesh";
+
+// --- deepen additive from deepen-b79-cooker-hash-preflight-e529 ---
+    expectTrue(fresh_estimate.should_skip(), "fresh manifest reconcile estimate should skip");

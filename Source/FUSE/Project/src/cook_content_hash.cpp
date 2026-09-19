@@ -451,3 +451,17 @@ CookHashPreflight preflight_manifest_entry(const CookManifestEntry& entry) {
 
 // --- deepen additive from deepen-b79-cooker-hash-preflight-633e ---
     CookCacheKeyPreflight result;
+
+// --- deepen additive from deepen-b79-cooker-hash-preflight-e529 ---
+bool should_skip_hash_file_content(const std::string& path) {
+    return preflight_hash_file_content(path).should_skip();
+CookCacheKeyPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+bool should_skip_combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    return preflight_combine_cook_cache_key(source_hash, upstream_hash).should_skip();
+CookHashPreflight preflight_hash_mesh_import(const MeshImportDesc& desc) {
+CookHashPreflight preflight_hash_texture_import(const TextureImportDesc& desc) {
+CookHashPreflight preflight_hash_audio_import(const AudioImportDesc& desc) {
+CookHashPreflight preflight_hash_manifest_entry(const CookManifestEntry& entry) {
+    CookHashPreflight preflight = preflight_hash_file_content(entry.source_path);
+    if (preflight.should_skip()) {
+        if (dependency_preflight.should_skip()) {

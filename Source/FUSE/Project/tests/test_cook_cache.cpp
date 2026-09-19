@@ -930,3 +930,28 @@ void testCookCacheEntryPreflight() {
     expectTrue(!cooker.cache().probe_would_invalidate_output(""),
     expectTrue(!cooker.cache().probe_would_invalidate_stale_content(source, seeded.content_hash),
     expectTrue(cooker.cache().probe_would_invalidate_stale_content(source, seeded.content_hash + 1u),
+
+// --- deepen additive from deepen-b79-cooker-hash-preflight-e529 ---
+void testCookContentHashPreflightGuards() {
+    expectTrue(fuse::project::should_skip_hash_file_content(""), "empty path skips file hash preflight");
+    const fuse::project::CookHashPreflight empty_preflight = fuse::project::preflight_hash_file_content("");
+    expectTrue(empty_preflight.should_skip(), "empty path preflight should skip");
+    expectTrue(fuse::project::should_skip_hash_file_content("/tmp/fuse_b79_preflight_missing.obj"),
+    const fuse::project::CookHashPreflight missing_preflight =
+    expectTrue(missing_preflight.should_skip(), "missing file preflight should skip");
+    const fuse::project::CookHashPreflight valid_preflight =
+    expectTrue(!valid_preflight.should_skip(), "valid file preflight does not skip");
+    expectTrue(fuse::project::preflight_hash_mesh_import(desc).should_skip(),
+    const fuse::project::CookCacheKeyPreflight key_preflight =
+    expectTrue(fuse::project::should_skip_combine_cook_cache_key(0, 42u),
+    expectTrue(empty_probe.should_skip(), "probe on empty cache should skip");
+    expectTrue(zero_probe.should_skip(), "zero hash probe should skip");
+    expectTrue(known_probe.would_invalidate(), "known hash probe would invalidate");
+    expectTrue(unknown_probe.should_skip(), "unknown hash probe should skip");
+    expectTrue(source_probe.would_invalidate(), "source probe would invalidate");
+    expectTrue(output_probe.would_invalidate(), "output probe would invalidate");
+    expectTrue(cache.probe_invalidate_stale_content_for_source(valid.source_path, 802u).would_invalidate(),
+    expectTrue(cache.probe_invalidate_stale_content_for_source(valid.source_path, 801u).should_skip(),
+    expectTrue(empty_estimate.should_skip(), "empty cache reconcile estimate should skip");
+    expectTrue(cooker.cache().estimate_prune_all().should_skip(),
+    testCookContentHashPreflightGuards();
