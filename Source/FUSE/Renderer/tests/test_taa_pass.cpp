@@ -4834,3 +4834,8 @@ void testTaaPassTryClassifyGuardWrappers() {
     expectTrue(invalidPass->tryPreflightJitterSync(2u, jitterReason),
                "pass tryPreflightJitterSync passes with fallback sequence length");
                "pass tryPreflightJitterSync reason is None with fallback sequence length");
+
+// --- deepen additive from deepen-b59-taa-pass-guards-0a68 ---
+    expectTrue(invalidJitterPass->classifyJitterSyncReject() ==
+    expectTrue(invalidJitterPass->tryPreflightJitterSync(5u, jitterReject),
+               "pass tryPreflightJitterSync reject reason is None after invalid desc fallback");
