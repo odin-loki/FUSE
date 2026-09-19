@@ -22,7 +22,55 @@ __global__ void fuse_fx_age_particles_kernel(u8* packed, u32 activeCount, float 
     }
 }
 
+struct DeviceSsboState {
+    u8* devicePacked = nullptr;
+    u32 deviceCapacityBytes = 0;
+    u32 allocCount = 0;
+    u32 reuseCount = 0;
+};
+
+DeviceSsboState& deviceSsboState() {
+    static DeviceSsboState state;
+    return state;
+}
+
+bool ensureDeviceSsbo(u32 bytes, u8** outDevicePacked) {
+    DeviceSsboState& state = deviceSsboState();
+    if (state.devicePacked != nullptr && state.deviceCapacityBytes >= bytes) {
+        ++state.reuseCount;
+        *outDevicePacked = state.devicePacked;
+        return true;
+    }
+
+    if (state.devicePacked != nullptr) {
+        cudaFree(state.devicePacked);
+        state.devicePacked = nullptr;
+        state.deviceCapacityBytes = 0;
+    }
+
+    if (cudaMalloc(reinterpret_cast<void**>(&state.devicePacked), bytes) != cudaSuccess) {
+        return false;
+    }
+
+    state.deviceCapacityBytes = bytes;
+    ++state.allocCount;
+    *outDevicePacked = state.devicePacked;
+    return true;
+}
+
 } // namespace
+
+extern "C" u32 fuse_fx_particle_pool_device_ssbo_alloc_count() {
+    return deviceSsboState().allocCount;
+}
+
+extern "C" u32 fuse_fx_particle_pool_device_ssbo_reuse_count() {
+    return deviceSsboState().reuseCount;
+}
+
+extern "C" u32 fuse_fx_particle_pool_device_ssbo_capacity_bytes() {
+    return deviceSsboState().deviceCapacityBytes;
+}
 
 extern "C" void fuse_fx_particle_pool_cuda_stub(const u8* packed, u32 activeCount, float dt) {
     if (packed == nullptr || activeCount == 0u) {
@@ -31,12 +79,11 @@ extern "C" void fuse_fx_particle_pool_cuda_stub(const u8* packed, u32 activeCoun
 
     u8* devicePacked = nullptr;
     const usize bytes = static_cast<usize>(activeCount) * 40u;
-    if (cudaMalloc(reinterpret_cast<void**>(&devicePacked), bytes) != cudaSuccess) {
+    if (!ensureDeviceSsbo(static_cast<u32>(bytes), &devicePacked)) {
         return;
     }
 
     if (cudaMemcpy(devicePacked, packed, bytes, cudaMemcpyHostToDevice) != cudaSuccess) {
-        cudaFree(devicePacked);
         return;
     }
 
@@ -45,5 +92,4 @@ extern "C" void fuse_fx_particle_pool_cuda_stub(const u8* packed, u32 activeCoun
     fuse_fx_age_particles_kernel<<<gridSize, blockSize>>>(devicePacked, activeCount, dt);
     cudaDeviceSynchronize();
     cudaMemcpy(const_cast<u8*>(packed), devicePacked, bytes, cudaMemcpyDeviceToHost);
-    cudaFree(devicePacked);
 }

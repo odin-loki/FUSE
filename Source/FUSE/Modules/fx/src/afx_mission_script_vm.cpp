@@ -9,6 +9,11 @@ void AfxMissionScriptVm::registerHooks(const std::vector<AfxMissionHook>& hooks)
     for (const AfxMissionHook& hook : hooks) {
         m_hooks[hook.scriptHook] = hook;
     }
+    m_registeredHooks = hooks;
+}
+
+const std::vector<AfxMissionHook>& AfxMissionScriptVm::registeredHooks() const {
+    return m_registeredHooks;
 }
 
 bool AfxMissionScriptVm::dispatch(const std::string& scriptHook,
@@ -51,6 +56,13 @@ bool AfxMissionScriptVm::dispatch(const std::string& scriptHook,
         composer.particlePoolGpu().syncFromCpu(composer.particlePool());
         composer.particlePoolGpu().cudaDispatchOrSkip(ctx);
         return true;
+    }
+
+    if (hook.scriptHook == "on_spell_ready") {
+        CastBinding binding;
+        binding.caster = fuse::Handle<fuse::Object>(4u, 1u);
+        binding.target = fuse::Handle<fuse::Object>(5u, 1u);
+        return composer.beginCast(hook.spellId.empty() ? "spark_burst" : hook.spellId, binding);
     }
 
     return false;

@@ -357,7 +357,8 @@ void testAfxMissionLoaderVmBridge() {
         "function onSpellCast(%caster, %spell) {\n"
         "}\n"
         "function onAmbientFx() {\n"
-        "}\n";
+        "}\n"
+        "%on_spell_cast = \"fireball\"\n";
 
     fuse::fx::FxComposer composer;
     fuse::fx::AfxMissionScriptVm vm;
@@ -365,6 +366,9 @@ void testAfxMissionLoaderVmBridge() {
     expectTrue(fuse::fx::register_afx_mission_from_mis(kMisText, composer, vm, &error),
                ".mis bridge registers mission VM hooks");
     expectTrue(vm.hookCount() >= 2u, ".mis bridge populates VM table");
+    expectTrue(fuse::fx::dispatch_afx_mission_from_mis(kMisText, composer, vm, &error),
+               ".mis bridge dispatches all hooks");
+    expectTrue(vm.dispatchCount() >= 1u, ".mis bridge deepens dispatch count");
 }
 
 void testAfxMissionLoaderFromMis() {

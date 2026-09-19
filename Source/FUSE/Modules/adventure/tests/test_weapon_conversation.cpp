@@ -1,5 +1,6 @@
 #include <fuse/adventure/conversation_interactable.hpp>
-#include <fuse/adventure/conversation_script_vm.hpp>
+#include <fuse/adventure/conversation_script_loader.hpp>
+#include <fuse/adventure/weapon_mount_animation.hpp>
 #include <fuse/adventure/interaction.hpp>
 #include <fuse/adventure/inventory.hpp>
 #include <fuse/adventure/weapon_grant_pipeline.hpp>
@@ -106,6 +107,33 @@ int main() {
     expectTrue(scriptVm.grantCount() == 1u, "conversation VM grants item on branch");
     expectTrue(inventory.hasInventory(fuse::adventure::ItemId("security_badge")),
                "conversation VM grant item in inventory");
+
+    static const char* kConvText =
+        "# outpost guard conv\n"
+        "branch outpost_guard veteran\n"
+        "line Welcome back, veteran.\n"
+        "requires service_medal 1\n";
+    fuse::adventure::ConversationScriptVm loadedVm;
+    expectTrue(fuse::adventure::register_conversation_hooks_from_text(kConvText, loadedVm),
+               "conversation script loader registers hooks");
+    inventory.setMaxLimit(fuse::adventure::ItemId("service_medal"), 1);
+    inventory.incInventory(fuse::adventure::ItemId("service_medal"), 1);
+    fuse::adventure::ConversationBranch veteranBranch;
+    veteranBranch.id = "veteran";
+    veteranBranch.lines = {"Welcome back, veteran."};
+    fuse::adventure::ConversationInteractable guardVeteran({"Halt."}, {veteranBranch});
+    expectTrue(loadedVm.dispatchAllLines("outpost_guard", "veteran", ctx, guardVeteran) == 1u,
+               "conversation VM dispatches all branch lines");
+    expectTrue(loadedVm.lineDispatchCount() == 1u, "conversation VM line dispatch counted");
+
+    fuse::adventure::WeaponMountAnimationStub mountAnim;
+    fuse::adventure::WeaponMountPose pose{};
+    pose.mountYawDeg = 15.f;
+    pose.mountPitchDeg = -5.f;
+    mountAnim.setPose(pose);
+    expectTrue(mountAnim.applyOnGrant(inventory, fuse::adventure::ItemId("sidearm")),
+               "weapon mount animation applies on grant");
+    expectTrue(mountAnim.applyCount() == 1u, "weapon mount animation counted");
 
     fuse::core::shutdown();
 

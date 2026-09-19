@@ -12,12 +12,14 @@ add_library(fuse_adventure STATIC
     src/weapon_pickup_interactable.cpp
     src/weapon_runtime.cpp
     src/weapon_grant_pipeline.cpp
+    src/weapon_mount_animation.cpp
     src/hud_prompt_interactable.cpp
     src/mechanics_bridge.cpp
     src/puzzle_gate.cpp
     src/outpost_loader.cpp
     src/outpost_spawn.cpp
     src/conversation_script_vm.cpp
+    src/conversation_script_loader.cpp
     include/fuse/adventure/item_id.hpp
     include/fuse/adventure/inventory.hpp
     include/fuse/adventure/inventory_component.hpp
@@ -38,6 +40,8 @@ add_library(fuse_adventure STATIC
     include/fuse/adventure/outpost_loader.hpp
     include/fuse/adventure/outpost_spawn.hpp
     include/fuse/adventure/conversation_script_vm.hpp
+    include/fuse/adventure/conversation_script_loader.hpp
+    include/fuse/adventure/weapon_mount_animation.hpp
 )
 
 add_library(fuse::adventure ALIAS fuse_adventure)

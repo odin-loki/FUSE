@@ -17,6 +17,8 @@ struct ShapeBaseMountOffset {
     float y = 0.f;
     float z = 0.f;
     float yaw_deg = 0.f;
+    float pitch_deg = 0.f;
+    float roll_deg = 0.f;
     MountQuaternion orientation{};
 };
 

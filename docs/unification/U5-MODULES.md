@@ -282,6 +282,16 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_mechanics` | GMK `SoundComponent` leaf |
 | `fuse_adventure` | `armed` conversation branch gated on `plasma_rifle` inventory |
 
+#### Landed wave 13 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_ai` | `uaisk_file_watch_os` stat-mtime OS poll; `TreeFileWatchRegistry::pollOsFileChanges()`; picker `postBindSelectedEntityAndReloadTree()` + `ai.tree_file_reload` command |
+| `fuse_cinematics` | Mount euler pitch/roll deepen; `SeqScrubPreview` mount point/pitch/roll; `SeqPreviewPaneSample` editor pane stub |
+| `fuse_fx` | Persistent CUDA device SSBO reuse counters; `dispatch_afx_mission_from_mis()` + `%hook = "spell"` TorqueScript deepen |
+| `fuse_mechanics` | GMK `LightComponent` + `MoveComponent` leaves; `BroadphaseWorldStub` Bullet proxy registry deepen |
+| `fuse_adventure` | `WeaponMountAnimationStub` mount pose on grant; `conversation_script_loader` + `dispatchAllLines()` VM deepen |
+
 ---
 
 ## 8. Related docs

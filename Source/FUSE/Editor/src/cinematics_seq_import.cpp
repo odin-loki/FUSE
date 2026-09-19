@@ -70,4 +70,25 @@ bool CinematicsSeqImport::postScrubPreviewAtMs(fuse::cinematics::TimelineMs time
     return true;
 }
 
+SeqPreviewPaneSample CinematicsSeqImport::previewPaneSampleAtMs(fuse::cinematics::TimelineMs timeMs) const {
+    SeqPreviewPaneSample sample{};
+    fuse::cinematics::SeqScrubPreview preview;
+    if (!scrubPreviewAtMs(timeMs, preview)) {
+        return sample;
+    }
+
+    sample.time_ms = preview.time_ms;
+    sample.valid = preview.valid;
+    sample.has_actor_events = preview.has_actor_events;
+    sample.actor_id = preview.actor_id;
+    sample.mount_point = preview.mount_point;
+    sample.mount_yaw_deg = preview.mount_yaw_deg;
+    sample.mount_pitch_deg = preview.mount_pitch_deg;
+    sample.mount_roll_deg = preview.mount_roll_deg;
+    sample.sprite_x = preview.sprite_x;
+    sample.sprite_y = preview.sprite_y;
+    sample.camera_fov = preview.camera_fov;
+    return sample;
+}
+
 } // namespace fuse::editor

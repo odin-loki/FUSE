@@ -10,6 +10,20 @@
 
 namespace fuse::editor {
 
+struct SeqPreviewPaneSample {
+    fuse::cinematics::TimelineMs time_ms = 0;
+    bool valid = false;
+    bool has_actor_events = false;
+    std::string actor_id;
+    std::string mount_point;
+    float mount_yaw_deg = 0.f;
+    float mount_pitch_deg = 0.f;
+    float mount_roll_deg = 0.f;
+    float sprite_x = 0.f;
+    float sprite_y = 0.f;
+    float camera_fov = 0.f;
+};
+
 /// WP-08 / U5 stub — posts `.seq` asset text through EditorHost for game-thread import.
 class CinematicsSeqImport {
 public:
@@ -30,6 +44,7 @@ public:
 
     /// Qt seq preview pane stub — posts scrub time through EditorHost for game-thread sampling.
     bool postScrubPreviewAtMs(fuse::cinematics::TimelineMs timeMs);
+    [[nodiscard]] SeqPreviewPaneSample previewPaneSampleAtMs(fuse::cinematics::TimelineMs timeMs) const;
     [[nodiscard]] u32 scrubPreviewPostCount() const { return m_scrubPreviewPostCount; }
 
 private:

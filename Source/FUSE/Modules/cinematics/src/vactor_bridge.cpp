@@ -65,13 +65,13 @@ const std::string& VActorBridge::mount_point_for(const std::string& actor_id) co
 
 ShapeBaseMountOffset VActorBridge::mount_offset_for(const std::string& mount_point) const {
     if (mount_point == "cockpit") {
-        return {0.f, 0.f, 1.5f, 15.f};
+        return {0.f, 0.f, 1.5f, 15.f, -5.f, 0.f};
     }
     if (mount_point == "vehicle_seat") {
-        return {0.f, 0.5f, 0.75f, 0.f};
+        return {0.f, 0.5f, 0.75f, 0.f, 0.f, 0.f};
     }
     if (mount_point == "turret") {
-        return {0.f, 1.25f, 2.f, 90.f};
+        return {0.f, 1.25f, 2.f, 90.f, 10.f, -15.f};
     }
     return {};
 }
@@ -89,11 +89,26 @@ void VActorBridge::apply_shapebase_attach(const std::string& actor_id,
     }
 
     state.offset = mount_offset_for(mount_point);
-    state.offset.yaw_deg = combine_mount_yaw_deg(state.offset.yaw_deg, mount_yaw_deg);
-    const MountQuaternion mountQuat = yaw_deg_to_quaternion(state.offset.yaw_deg);
-    const MountQuaternion eventQuat = yaw_deg_to_quaternion(mount_yaw_deg);
-    state.offset.orientation = combine_mount_orientation(mountQuat, eventQuat);
-    state.offset.yaw_deg = quaternion_to_yaw_deg(state.offset.orientation);
+    const MountEulerDeg mountEuler{state.offset.yaw_deg, state.offset.pitch_deg, state.offset.roll_deg};
+    if (mount_yaw_deg == 0.f) {
+        state.offset.orientation = euler_deg_to_quaternion(mountEuler);
+        state.offset.yaw_deg = mountEuler.yaw_deg;
+        state.offset.pitch_deg = mountEuler.pitch_deg;
+        state.offset.roll_deg = mountEuler.roll_deg;
+    } else {
+        const MountEulerDeg eventEuler{mount_yaw_deg, 0.f, 0.f};
+        const MountEulerDeg combinedEuler = combine_mount_euler_deg(mountEuler, eventEuler);
+        state.offset.yaw_deg = combinedEuler.yaw_deg;
+        state.offset.pitch_deg = combinedEuler.pitch_deg;
+        state.offset.roll_deg = combinedEuler.roll_deg;
+        const MountQuaternion mountQuat = euler_deg_to_quaternion(mountEuler);
+        const MountQuaternion eventQuat = yaw_deg_to_quaternion(mount_yaw_deg);
+        state.offset.orientation = combine_mount_orientation(mountQuat, eventQuat);
+        const MountEulerDeg finalEuler = quaternion_to_euler_deg(state.offset.orientation);
+        state.offset.yaw_deg = finalEuler.yaw_deg;
+        state.offset.pitch_deg = finalEuler.pitch_deg;
+        state.offset.roll_deg = finalEuler.roll_deg;
+    }
     state.mounted = true;
     state.runtimeAttached = true;
     ++m_shapebaseAttachCount;
@@ -116,7 +131,7 @@ void VActorBridge::sync_bound_objects() {
         state.object->setPosition(state.baseX + state.offset.x + state.motionX,
                                   state.baseY + state.offset.y + state.motionY);
         state.object->setZ(state.baseZ + state.offset.z + state.motionZ);
-        state.object->setYawDeg(quaternion_to_yaw_deg(state.offset.orientation));
+        state.object->setYawDeg(state.offset.yaw_deg);
     }
     ++m_syncCount;
 }

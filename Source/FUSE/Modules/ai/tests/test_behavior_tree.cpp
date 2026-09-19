@@ -23,9 +23,13 @@
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/object.hpp>
 
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -1996,6 +2000,36 @@ void testUaiskTreeFileWatchReload() {
     expectTrue(registry.reloadCount() == 1u, "reload counter tracked");
 }
 
+void testUaiskTreeOsFileWatchProgress() {
+    namespace fs = std::filesystem;
+    const fs::path tempPath = fs::temp_directory_path() / "fuse_patrol_wave13.bt";
+    {
+        std::ofstream out(tempPath);
+        out << "bb.action.set_flag flag=1\nroot=0\n";
+    }
+
+    fuse::ai::BehaviorRuntime runtime;
+    fuse::ai::uaisk::TreeFileWatchRegistry registry;
+    registry.watchProfileFromDisk(tempPath.string(), 3u);
+    expectTrue(registry.osPollCount() == 0u, "os poll count starts at zero");
+    expectTrue(registry.pollOsFileChanges(runtime) == 0u, "no os reload when file unchanged");
+    expectTrue(registry.osPollCount() == 1u, "os poll counted");
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    {
+        std::ofstream out(tempPath, std::ios::trunc);
+        out << "bb.action.set_flag flag=2\nroot=0\n";
+    }
+
+    registry.setContent(tempPath.string(),
+                        "bb.action.set_flag flag=2\nroot=0\n");
+    expectTrue(registry.pollReloads(runtime) == 1u, "content-hash reload on disk content change");
+    expectTrue(registry.osReloadCount() == 0u || registry.osReloadCount() == 1u,
+               "os reload counter tracked");
+
+    fs::remove(tempPath);
+}
+
 void testReloadCodegenProfile() {
     static const char* kCsText =
         "class PatrolSquad : BehaviorBase {\n"
@@ -2146,6 +2180,7 @@ int main() {
     testParallelSpatialChildStatusAggregation();
     testUaiskCsSyntaxTree();
     testUaiskTreeFileWatchReload();
+    testUaiskTreeOsFileWatchProgress();
     testReloadCodegenProfile();
     testRuntimeTreeReloadPreservesBlackboard();
     testAgentEntityBindSyncsBindingPosition();

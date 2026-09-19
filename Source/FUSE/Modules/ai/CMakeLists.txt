@@ -11,6 +11,7 @@ add_library(fuse_ai STATIC
     src/uaisk_cs_codegen.cpp
     src/uaisk_cs_syntax_tree.cpp
     src/uaisk_tree_reload.cpp
+    src/uaisk_file_watch_os.cpp
     src/agent_entity_bind.cpp
     src/uaisk_script_host_bridge.cpp
     include/fuse/ai/agent_entity_bind.hpp
@@ -27,6 +28,7 @@ add_library(fuse_ai STATIC
     include/fuse/ai/uaisk_cs_codegen.hpp
     include/fuse/ai/uaisk_cs_syntax_tree.hpp
     include/fuse/ai/uaisk_tree_reload.hpp
+    include/fuse/ai/uaisk_file_watch_os.hpp
     include/fuse/ai/uaisk_script_host_bridge.hpp
 )
 

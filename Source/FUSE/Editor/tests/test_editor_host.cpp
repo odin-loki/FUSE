@@ -615,6 +615,29 @@ void testAiAgentSelectionDeepen() {
     expectTrue(picker.selectedAgentIndex() == 2u, "picker tracks selected agent");
 }
 
+void testAiTreeFileReloadFromPicker() {
+    namespace fs = std::filesystem;
+    const fs::path tempPath = fs::temp_directory_path() / "fuse_picker_wave13.bt";
+    {
+        std::ofstream out(tempPath);
+        out << "bb.action.set_flag flag=1\nroot=0\n";
+    }
+
+    fuse::editor::EditorHost host;
+    fuse::editor::AiTreeProfilePicker picker(host);
+    const fuse::ecs::EntityID entity = host.editorScene().registry().create();
+    host.editorScene().registry().add<fuse::ecs::Transform>(entity);
+    host.editorState().primarySelection = entity;
+
+    expectTrue(picker.postBindSelectedEntityAndReloadTree(tempPath.string(), 1u),
+               "picker binds entity and posts tree reload");
+    host.gameTick();
+    expectTrue(host.aiTreeFileReloadCount() == 1u, "tree file reload applied on game thread");
+    expectTrue(host.aiAgentEntityBindings().size() == 1u, "entity binding stored with reload");
+
+    fs::remove(tempPath);
+}
+
 void testCinematicsSeqScrubPreviewPostsSample() {
     fuse::editor::EditorHost host;
     fuse::editor::CinematicsSeqImport importer(host);
@@ -625,6 +648,12 @@ void testCinematicsSeqScrubPreviewPostsSample() {
     host.gameTick();
     expectTrue(host.cinematicsSeqScrubPreviewMs() == 2'500u, "seq scrub preview time on game thread");
     expectTrue(importer.scrubPreviewPostCount() == 1u, "seq scrub preview post counted");
+
+    const fuse::editor::SeqPreviewPaneSample sample = importer.previewPaneSampleAtMs(2'500);
+    expectTrue(sample.valid, "seq preview pane sample valid");
+    expectTrue(sample.has_actor_events, "seq preview pane sees actor track");
+    expectTrue(sample.mount_point == "cockpit", "seq preview pane mount point sampled");
+    expectTrue(sample.mount_pitch_deg != 0.f, "seq preview pane mount pitch sampled");
 }
 
 void testCinematicsSeqImportPostsAsset() {
@@ -670,6 +699,7 @@ int main() {
     testAiAgentEntityBindingPostsCommand();
     testAiCodegenReloadPostsCommand();
     testAiAgentSelectionDeepen();
+    testAiTreeFileReloadFromPicker();
     testCinematicsSeqScrubPreviewPostsSample();
     testCinematicsSeqImportPostsAsset();
     fuse::core::shutdown();

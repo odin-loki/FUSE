@@ -26,6 +26,9 @@ public:
     u32 capacity() const { return m_capacity; }
     u32 activeCount() const { return m_activeCount; }
     u32 packedDeviceBytes() const { return static_cast<u32>(m_packed.size()); }
+    u32 deviceSsboCapacityBytes() const { return m_deviceSsboCapacityBytes; }
+    u32 deviceSsboAllocCount() const { return m_deviceSsboAllocCount; }
+    u32 deviceSsboReuseCount() const { return m_deviceSsboReuseCount; }
     bool hasDeviceBinding() const { return !m_packed.empty(); }
     u32 syncCount() const { return m_syncCount; }
     u32 cudaDispatchCount() const { return m_cudaDispatchCount; }
@@ -49,6 +52,9 @@ private:
     u32 m_cudaDispatchCount = 0;
     u32 m_cudaSkipCount = 0;
     u32 m_writebackCount = 0;
+    u32 m_deviceSsboCapacityBytes = 0;
+    u32 m_deviceSsboAllocCount = 0;
+    u32 m_deviceSsboReuseCount = 0;
     bool m_cudaEnabled = false;
     bool m_syncedFromCpu = false;
     ParticlePoolCudaSkipReason m_lastCudaSkipReason = ParticlePoolCudaSkipReason::None;

@@ -254,6 +254,32 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
         return host.reloadAiCodegenProfile(profileId, uaiskModule, csText);
     }
 
+    if (command.propertyName == "ai.tree_file_reload") {
+        u32 profileId = 0;
+        std::string watchPath;
+        std::istringstream headerStream(command.propertyValue);
+        std::string token;
+        while (std::getline(headerStream, token, ';')) {
+            const std::size_t eq = token.find('=');
+            if (eq == std::string::npos) {
+                continue;
+            }
+            const std::string key = token.substr(0, eq);
+            const std::string value = token.substr(eq + 1);
+            if (key == "profile") {
+                profileId = static_cast<u32>(std::strtoul(value.c_str(), nullptr, 10));
+            } else if (key == "path") {
+                watchPath = value;
+            }
+        }
+
+        if (watchPath.empty()) {
+            return false;
+        }
+
+        return host.reloadAiTreeFromDisk(profileId, watchPath);
+    }
+
     if (command.propertyName == "cinematics.seq_asset") {
         host.setLoadedCinematicsSeqAsset(command.propertyValue);
         return true;
@@ -428,6 +454,22 @@ bool EditorHost::reloadAiCodegenProfile(u32 profileId, const std::string& uaiskM
         return false;
     }
     ++m_aiCodegenReloadCount;
+    syncPieAiBindings_();
+    return true;
+}
+
+bool EditorHost::reloadAiTreeFromDisk(u32 profileId, const std::string& watchPath) {
+    m_aiTreeFileWatch.watchProfileFromDisk(watchPath, profileId);
+    std::string error;
+    u32 reloaded = m_aiTreeFileWatch.pollOsFileChanges(m_pieBehaviorRuntime, &error);
+    if (reloaded == 0u) {
+        reloaded = m_aiTreeFileWatch.pollReloads(m_pieBehaviorRuntime, &error);
+    }
+    if (reloaded == 0u && m_aiTreeFileWatch.entryFor(watchPath) == nullptr) {
+        return false;
+    }
+    ++m_aiTreeFileReloadCount;
+    syncPieAiBindings_();
     return true;
 }
 
@@ -614,6 +656,7 @@ void EditorHost::gameTick() {
 
     if (m_state.playing && !m_state.paused) {
         syncPieAiBindings_();
+        m_aiTreeFileWatch.pollOsFileChanges(m_pieBehaviorRuntime);
         m_playSession.tick(kEditorTickDt, m_editorScene, m_physics);
     }
 

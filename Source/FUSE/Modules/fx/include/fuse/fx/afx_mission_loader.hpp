@@ -14,11 +14,19 @@ namespace fuse::fx {
                                                  std::vector<AfxMissionHook>& outHooks,
                                                  std::string* errorOut = nullptr);
 
+/// Deepen TorqueScript bridge — scan `%spellId = "..."` assignments and attach to hooks.
+[[nodiscard]] bool apply_afx_mission_spell_assignments(const std::string& misText,
+                                                       std::vector<AfxMissionHook>& hooks);
+
 class AfxMissionScriptVm;
 class FxComposer;
 
 /// TorqueScript `.mis` bridge — scan hooks and register them on the mission VM + composer.
 [[nodiscard]] bool register_afx_mission_from_mis(const std::string& misText, FxComposer& composer,
                                                  AfxMissionScriptVm& vm, std::string* errorOut = nullptr);
+
+/// Deepen TorqueScript bridge — dispatch all hooks found in `.mis` text through the VM.
+[[nodiscard]] bool dispatch_afx_mission_from_mis(const std::string& misText, FxComposer& composer,
+                                               AfxMissionScriptVm& vm, std::string* errorOut = nullptr);
 
 } // namespace fuse::fx

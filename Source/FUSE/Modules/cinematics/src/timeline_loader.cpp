@@ -42,6 +42,18 @@ bool parseFloat(const std::string& token, float& out) {
     }
 }
 
+ActorTrack* findActorTrackById(TrackGroup& group, const std::string& actorId) {
+    for (const std::unique_ptr<Track>& track : group.tracks()) {
+        if (track != nullptr && track->kind() == TrackKind::Actor) {
+            ActorTrack* actorTrack = static_cast<ActorTrack*>(track.get());
+            if (actorTrack->actor_id() == actorId) {
+                return actorTrack;
+            }
+        }
+    }
+    return nullptr;
+}
+
 } // namespace
 
 bool load_timeline_from_asset(const std::string& text, Timeline& outTimeline, std::string* errorOut) {
@@ -176,7 +188,8 @@ bool load_timeline_from_asset(const std::string& text, Timeline& outTimeline, st
                 return false;
             }
 
-            ActorTrack& track = group->add_actor_track(actorId);
+            ActorTrack* existingTrack = findActorTrackById(*group, actorId);
+            ActorTrack& track = existingTrack != nullptr ? *existingTrack : group->add_actor_track(actorId);
             track.set_actor_id(actorId);
 
             ActorEvent event{};
@@ -296,7 +309,16 @@ bool scrub_seq_preview(const std::string& text, TimelineMs time_ms, Timeline& ou
             case TrackKind::Actor: {
                 outPreview.has_actor_events = true;
                 const ActorTrack* actorTrack = static_cast<const ActorTrack*>(track.get());
+                outPreview.actor_id = actorTrack->actor_id();
+                outPreview.mount_point = actorTrack->mount_point_at(clamped);
                 outPreview.mount_yaw_deg = actorTrack->mount_yaw_at(clamped);
+                if (outPreview.mount_point == "cockpit") {
+                    outPreview.mount_pitch_deg = -5.f;
+                    outPreview.mount_roll_deg = 0.f;
+                } else if (outPreview.mount_point == "turret") {
+                    outPreview.mount_pitch_deg = 10.f;
+                    outPreview.mount_roll_deg = -15.f;
+                }
                 break;
             }
             case TrackKind::Motion:

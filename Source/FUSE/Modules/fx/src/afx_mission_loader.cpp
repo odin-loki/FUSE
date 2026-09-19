@@ -1,7 +1,9 @@
 #include <fuse/fx/afx_mission_loader.hpp>
 
 #include <fuse/fx/afx_mission_script_vm.hpp>
+#include <fuse/fx/effect_descriptor.hpp>
 #include <fuse/fx/fx_composer.hpp>
+#include <fuse/fx/spell_descriptor.hpp>
 
 #include <cctype>
 #include <sstream>
@@ -48,6 +50,10 @@ bool appendHook(std::vector<AfxMissionHook>& hooks, const std::string& functionN
     }
     if (functionName == "onTick") {
         hooks.push_back({"AFXDemo_Minimal", "on_tick", "spark_burst"});
+        return true;
+    }
+    if (functionName == "onSpellReady") {
+        hooks.push_back({"AFXDemo_Minimal", "on_spell_ready", "fireball"});
         return true;
     }
 
@@ -100,6 +106,42 @@ bool load_afx_mission_hooks_from_mis(const std::string& misText,
     return true;
 }
 
+bool apply_afx_mission_spell_assignments(const std::string& misText, std::vector<AfxMissionHook>& hooks) {
+    std::stringstream stream(misText);
+    std::string line;
+    bool changed = false;
+
+    while (std::getline(stream, line)) {
+        line = trim(line);
+        if (line.rfind("%", 0) != 0) {
+            continue;
+        }
+
+        const std::size_t eq = line.find('=');
+        if (eq == std::string::npos) {
+            continue;
+        }
+
+        const std::string key = trim(line.substr(1, eq - 1));
+        std::string value = trim(line.substr(eq + 1));
+        if (!value.empty() && value.front() == '"' && value.back() == '"') {
+            value = value.substr(1, value.size() - 2);
+        }
+        if (value.empty()) {
+            continue;
+        }
+
+        for (AfxMissionHook& hook : hooks) {
+            if (hook.scriptHook == key || hook.scriptHook == camelToSnake(key)) {
+                hook.spellId = value;
+                changed = true;
+            }
+        }
+    }
+
+    return changed;
+}
+
 bool register_afx_mission_from_mis(const std::string& misText, FxComposer& composer, AfxMissionScriptVm& vm,
                                    std::string* errorOut) {
     std::vector<AfxMissionHook> hooks;
@@ -107,9 +149,26 @@ bool register_afx_mission_from_mis(const std::string& misText, FxComposer& compo
         return false;
     }
 
+    apply_afx_mission_spell_assignments(misText, hooks);
     vm.registerHooks(hooks);
-    (void)composer;
+
+    composer.registerEffect(EffectDescriptor::makeSparkBurst());
+    composer.registerEffect(EffectDescriptor::makeMuzzleFlash());
+    composer.registerSpell(SpellDescriptor::makeFireball());
     return true;
+}
+
+bool dispatch_afx_mission_from_mis(const std::string& misText, FxComposer& composer, AfxMissionScriptVm& vm,
+                                   std::string* errorOut) {
+    if (!register_afx_mission_from_mis(misText, composer, vm, errorOut)) {
+        return false;
+    }
+
+    bool dispatched = false;
+    for (const AfxMissionHook& hook : vm.registeredHooks()) {
+        dispatched = vm.dispatch(hook.scriptHook, composer) || dispatched;
+    }
+    return dispatched;
 }
 
 } // namespace fuse::fx

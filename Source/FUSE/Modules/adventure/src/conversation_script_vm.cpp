@@ -79,6 +79,32 @@ bool ConversationScriptVm::dispatchBranch(const std::string& npcId,
     return target.chooseBranch(ctx, branchId) == InteractResult::Examined;
 }
 
+u32 ConversationScriptVm::dispatchAllLines(const std::string& npcId,
+                                           const std::string& branchId,
+                                           InteractContext& ctx,
+                                           ConversationInteractable& target) {
+    const auto it = m_hooks.find(hookKey(npcId, branchId));
+    if (it == m_hooks.end()) {
+        return 0;
+    }
+
+    if (!canDispatchBranch(npcId, branchId, ctx)) {
+        return 0;
+    }
+
+    u32 dispatched = 0;
+    for (const std::string& line : it->second.lines) {
+        (void)line;
+        ++dispatched;
+        ++m_lineDispatchCount;
+    }
+
+    if (dispatchBranch(npcId, branchId, ctx, target)) {
+        return dispatched;
+    }
+    return 0;
+}
+
 void registerOutpostConversationScriptHooks(ConversationScriptVm& vm) {
     ConversationScriptHook polite{};
     polite.npcId = "outpost_guard";

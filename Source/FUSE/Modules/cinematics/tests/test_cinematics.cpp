@@ -1423,6 +1423,15 @@ void testMountOrientationYawQuaternion() {
     const fuse::cinematics::MountQuaternion quat = fuse::cinematics::yaw_deg_to_quaternion(90.f);
     expectNear(fuse::cinematics::quaternion_to_yaw_deg(quat), 90.f, 0.01f, "yaw/quaternion round trip");
     expectNear(fuse::cinematics::combine_mount_yaw_deg(15.f, 7.5f), 22.5f, 0.001f, "mount yaw combine");
+
+    fuse::cinematics::MountEulerDeg euler{};
+    euler.yaw_deg = 15.f;
+    euler.pitch_deg = -5.f;
+    euler.roll_deg = 10.f;
+    const fuse::cinematics::MountEulerDeg combined =
+        fuse::cinematics::combine_mount_euler_deg(euler, fuse::cinematics::MountEulerDeg{7.5f, 2.f, 0.f});
+    expectNear(combined.yaw_deg, 22.5f, 0.001f, "mount euler yaw combine");
+    expectNear(combined.pitch_deg, -3.f, 0.001f, "mount euler pitch combine");
 }
 
 void testSeqScrubPreviewStub() {
@@ -1444,6 +1453,8 @@ void testSeqScrubPreviewStub() {
     expectNear(preview.sprite_x, 5.f, 0.1f, "seq scrub preview samples sprite x");
     expectNear(preview.camera_fov, 62.5f, 0.5f, "seq scrub preview samples camera fov");
     expectNear(preview.mount_yaw_deg, 10.f, 0.01f, "seq scrub preview samples mount yaw");
+    expectTrue(preview.mount_point == "cockpit", "seq scrub preview samples mount point");
+    expectNear(preview.mount_pitch_deg, -5.f, 0.01f, "seq scrub preview samples mount pitch");
 }
 
 void testMountQuaternionCombine() {

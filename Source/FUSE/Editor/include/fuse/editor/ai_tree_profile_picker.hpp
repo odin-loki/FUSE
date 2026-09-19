@@ -36,8 +36,12 @@ public:
     void postBindAgentEntity(u32 agentIndex, fuse::Handle<fuse::Object> entity);
     /// Bind the currently selected agent to the editor's primary entity selection.
     void postBindSelectedEntity();
+    /// Bind selected entity and hot-reload the watched UAISK tree profile from disk.
+    bool postBindSelectedEntityAndReloadTree(std::string_view watchPath, u32 profileId);
     /// Codegen UAISK `.cs` and hot-reload the mapped profile on the game thread.
     bool postCodegenReload(std::string_view uaiskModule, std::string_view csText, u32 profileId);
+    /// Register a disk-backed tree watch and reload on the game thread.
+    bool postTreeFileWatchReload(std::string_view watchPath, u32 profileId);
 
 private:
     EditorHost& m_host;

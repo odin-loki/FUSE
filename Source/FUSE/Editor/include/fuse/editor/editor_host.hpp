@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/ai/behavior_runtime.hpp>
+#include <fuse/ai/uaisk_tree_reload.hpp>
 #include <fuse/cinematics/timeline_loader.hpp>
 #include <fuse/editor/command_queue.hpp>
 #include <fuse/editor/command_stack.hpp>
@@ -57,9 +58,13 @@ public:
     u32 selectedAiTreeProfileId() const { return m_selectedAiTreeProfileId; }
     u32 selectedAiAgentIndex() const { return m_selectedAiAgentIndex; }
     u32 aiCodegenReloadCount() const { return m_aiCodegenReloadCount; }
+    u32 aiTreeFileReloadCount() const { return m_aiTreeFileReloadCount; }
+    u32 aiTreeOsPollCount() const { return m_aiTreeFileWatch.osPollCount(); }
     const std::vector<AiAgentEntityBinding>& aiAgentEntityBindings() const { return m_aiAgentEntityBindings; }
     fuse::ai::BehaviorRuntime& pieBehaviorRuntime() { return m_pieBehaviorRuntime; }
     const fuse::ai::BehaviorRuntime& pieBehaviorRuntime() const { return m_pieBehaviorRuntime; }
+    fuse::ai::uaisk::TreeFileWatchRegistry& aiTreeFileWatch() { return m_aiTreeFileWatch; }
+    const fuse::ai::uaisk::TreeFileWatchRegistry& aiTreeFileWatch() const { return m_aiTreeFileWatch; }
     const std::string& loadedCinematicsSeqAsset() const { return m_loadedCinematicsSeqAsset; }
     fuse::cinematics::TimelineMs cinematicsSeqScrubPreviewMs() const { return m_cinematicsSeqScrubPreviewMs; }
     const fuse::cinematics::SeqScrubPreview& cinematicsSeqScrubPreview() const { return m_cinematicsSeqScrubPreview; }
@@ -76,6 +81,7 @@ public:
     void setSelectedAiAgentIndex(u32 agentIndex);
     void setAiAgentEntityBinding(u32 agentIndex, Handle<Object> entity);
     bool reloadAiCodegenProfile(u32 profileId, const std::string& uaiskModule, const std::string& csText);
+    bool reloadAiTreeFromDisk(u32 profileId, const std::string& watchPath);
     void setLoadedCinematicsSeqAsset(std::string assetText);
     void setCinematicsSeqScrubPreview(fuse::cinematics::TimelineMs timeMs,
                                       const fuse::cinematics::SeqScrubPreview& preview);
@@ -108,7 +114,9 @@ private:
     u32 m_selectedAiTreeProfileId = 0;
     u32 m_selectedAiAgentIndex = 0;
     u32 m_aiCodegenReloadCount = 0;
+    u32 m_aiTreeFileReloadCount = 0;
     std::vector<AiAgentEntityBinding> m_aiAgentEntityBindings;
+    fuse::ai::uaisk::TreeFileWatchRegistry m_aiTreeFileWatch;
     fuse::ai::BehaviorRuntime m_pieBehaviorRuntime;
     u32 m_gameTickCount = 0;
     u32 m_commandsAppliedLastTick = 0;
