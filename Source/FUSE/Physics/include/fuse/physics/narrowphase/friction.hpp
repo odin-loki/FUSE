@@ -124,4 +124,23 @@ bool should_normalize_contact_normal_before_friction(
     const ContactManifold& manifold,
     f32 lengthEpsilon = 1e-4f);
 
+/// Combined normalize + rebuild diagnostics — no mutation (B4.4 deepen pass).
+struct FrictionBasisNormalizePreflight {
+    FrictionBasisPreflight rebuild{};
+    bool needsNormalize = false;
+
+    bool can_skip_all() const { return rebuild.can_skip_rebuild() && !needsNormalize; }
+    bool needs_work() const { return needsNormalize || rebuild.needsRebuild; }
+};
+
+/// Populate combined normalize/rebuild preflight without mutating the manifold (B4.4 deepen pass).
+FrictionBasisNormalizePreflight preflight_friction_basis_normalize_rebuild(
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f);
+
+/// Non-mutating skip predicate for combined normalize/rebuild (B4.4 deepen pass).
+bool should_skip_friction_basis_normalize_rebuild(
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f);
+
 } // namespace fuse::physics::narrowphase
