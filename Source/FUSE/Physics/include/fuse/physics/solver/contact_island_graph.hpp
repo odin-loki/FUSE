@@ -97,7 +97,6 @@ u32 count_valid_island_build_distance_constraints(
 /// Why island graph build would reject input (B4.4 deepen follow-up).
     OutOfRangeContactBody,
     OutOfRangeDistanceBody,
-/// Why island graph build would early-out (B4.4 deepen follow-up pass).
 
 /// Human-readable label for island build reject reasons (logging / tests).
 const char* island_build_reject_reason_name(IslandBuildRejectReason reason);
@@ -148,7 +147,6 @@ struct ContactIslandBuildPreflight {
 
 /// Preflight contact island graph build inputs; sets `skipped` when nothing can partition.
 ContactIslandBuildPreflight preflight_contact_island_build(
-enum class IslandGraphBuildRejectReason : u8 {
     EmptyInputs,
 
 /// Human-readable label for island graph build reject reasons (B4.4 deepen follow-up pass).
@@ -209,6 +207,8 @@ IslandGraphBuildRejectReason islandGraphBuildRejectReason(
 
 
 /// Returns the first reject reason for build inputs, or `None` when build may proceed.
+
+
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
@@ -849,6 +849,7 @@ struct ContactIslandGraph {
     /// Build only when `can_build_island_graph` passes; clears and returns false otherwise.
     /// Guarded build; returns false and clears when preflight rejects inputs.
     /// Guarded build entry: skips empty inputs and out-of-range constraint refs.
+    /// Build only when inputs pass preflight guards; clears graph and returns false on reject.
                        IslandGraphBuildRejectReason* reason = nullptr);
 
     void clear();
