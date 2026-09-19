@@ -735,7 +735,6 @@ struct ManifoldFinalizeDeepenPreflight {
     bool needsNormalNormalization = false;
     bool needsPruning = false;
     bool wouldBeEmptyAfterPrune = false;
-    bool needsNormalNormalization = false;
     bool needsFrictionBasis = false;
     bool canReuseFrictionBasis = false;
 
@@ -752,41 +751,25 @@ ManifoldFinalizeDeepenPreflight preflight_manifold_finalize_deepen(
 
 /// Returns true when second deepen finalize should be skipped (B4.5 deepen pass).
 bool can_skip_manifold_finalize_deepen(
-    const ContactManifold& manifold,
-    f32 separationEpsilon = 1e-6f,
-    f32 duplicateEpsilon = 1e-4f,
-    f32 frictionEpsilon = 1e-4f,
-    f32 normalEpsilon = 1e-4f);
 
 /// Finalize only when second deepen preflight passes; no-op otherwise (B4.5 deepen pass).
 bool generate_contact_manifold_deepen_if_needed(ContactManifold& manifold);
 
 /// Returns true when manifold prune should be skipped (B4.5 deepen pass).
 bool can_skip_manifold_prune(
-    const ContactManifold& manifold,
-    f32 separationEpsilon = 1e-6f,
-    f32 duplicateEpsilon = 1e-4f,
     f32 shallowMinDepth = 0.f);
 
 /// Finalize with conditional prune and friction rebuild; no-op when preflight rejects (B4.4 deepen follow-up pass).
 bool finalize_contact_manifold_if_needed(
     ContactManifold& manifold,
-    f32 separationEpsilon = 1e-6f,
-    f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
 
 /// Finalize with optional shallow penetration prune in deepen path only (B4.4 deepen follow-up pass).
 bool generate_contact_manifold_deepen(
-    ContactManifold& manifold,
     f32 shallowMinDepth = 0.f,
-    f32 separationEpsilon = 1e-6f,
-    f32 duplicateEpsilon = 1e-4f,
-    f32 frictionEpsilon = 1e-4f);
 
 /// Prune only when preflight allows; returns true when points remain (B4.4 deepen follow-up pass).
 bool prune_manifold_if_needed(
-    ContactManifold& manifold,
-    f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f);
 
 /// Finalize only when preflight allows; no-op otherwise (B4.4 deepen follow-up pass).

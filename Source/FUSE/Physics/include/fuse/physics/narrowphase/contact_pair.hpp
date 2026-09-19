@@ -750,6 +750,7 @@ bool is_plane_plane_pair(
 bool has_dispatchable_contact_pairs(
 /// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
 bool contact_pair_deepen_rejects_for_reason(
+/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.5 deepen follow-up).
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     ContactPairRejectReason expected);
@@ -778,6 +779,13 @@ ContactPairBatchPreflight preflight_contact_pair_batch(
     bool can_run() const { return !skipped && dispatchableCount > 0u; }
 
 NarrowphaseBatchPreflight preflight_narrowphase_batch(
+/// Per-batch narrowphase pair dispatch counts (B4.5 deepen follow-up).
+struct NarrowphasePairBatchStats {
+    u32 dispatchablePairs = 0u;
+    u32 rejectedPairs = 0u;
+
+/// Count dispatchable vs rejected pairs without running shape dispatch (B4.5 deepen follow-up).
+NarrowphasePairBatchStats compute_narrowphase_pair_stats(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -792,6 +800,25 @@ ContactManifold detect_contacts_pair_if_valid(
 
 /// Run shape dispatch only when extended deepen preflight allows (B4.4 deepen follow-up pass).
 ContactManifold detect_contacts_pair_deepen(
+/// Convenience count of pairs that pass deepen preflight (B4.5 deepen follow-up).
+u32 count_dispatchable_contact_pairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+
+/// Const batch preflight for narrowphase pair dispatch (B4.5 deepen follow-up).
+struct NarrowphasePairBatchPreflight {
+    NarrowphasePairBatchStats stats{};
+    bool allRejected = false;
+    bool hasDispatchable = false;
+
+    bool can_skip_batch() const { return allRejected; }
+    bool can_dispatch_any() const { return hasDispatchable; }
+};
+
+/// Populate batch pair preflight without running shape dispatch (B4.5 deepen follow-up).
+NarrowphasePairBatchPreflight preflight_narrowphase_pairs(
+
+/// Run shape dispatch only when deepen preflight allows; invalid manifold otherwise (B4.5 deepen follow-up).
+ContactManifold detect_contacts_pair_if_needed(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
