@@ -1582,3 +1582,25 @@ void testClusterCoordLookupRejectReasonAndScreenMapping() {
     expectTrue(rejectedIndex == 99u, "tryMapScreenDepth does not write index on empty grid");
     testClusterContiguousOffsetPreflightGuards();
     testClusterCoordLookupRejectReasonAndScreenMapping();
+
+// --- deepen additive from deepen-b5-clustered-lights-a545 ---
+    expectTrue(fuse::renderer::ClusterLightGridLayout::tryCanRebuildLightGridForDesc(desc, rebuildReason),
+               "tryCanRebuildForDesc accepts non-empty desc");
+    const fuse::u32 rejectedDropped = fuse::renderer::ClusterLightGridLayout::tryRebuildLightGrid(
+    expectTrue(rejectedDropped == 0u, "tryRebuild returns zero when preflight rejects");
+    expectTrue(grid.lightList.size() == preservedListSize, "tryRebuild leaves grid unchanged on reject");
+        fuse::renderer::ClusterLightGridLayout::tryRebuildLightGrid(grid, desc, clusterCount, perClusterLights, 2u);
+    expectTrue(acceptedDropped == 0u, "tryRebuild succeeds on valid preflight");
+               "tryRebuild packs assigned lights");
+    const fuse::u32 descScopedDropped = fuse::renderer::ClusterLightGridLayout::tryRebuildLightGridForDesc(
+    expectTrue(descScopedDropped == 0u, "tryRebuildForDesc succeeds on valid desc");
+               "tryRebuildForDesc produces contiguous offsets");
+    const fuse::u32 clearedDescDropped = fuse::renderer::ClusterLightGridLayout::tryRebuildLightGridForDesc(
+    expectTrue(clearedDescDropped == 0u, "tryRebuildForDesc returns zero on empty desc");
+               "tryRebuildForDesc clears storage on empty desc");
+    const fuse::u32 rejectedDescDropped = fuse::renderer::ClusterLightGridLayout::tryRebuildLightGrid(
+    expectTrue(rejectedDescDropped == 0u, "tryRebuild returns zero when desc/count mismatch rejects");
+               "tryRebuild leaves grid unchanged on desc/count mismatch reject");
+void testClusterContiguousOffsetPreflight() {
+    expectTrue(reason == fuse::renderer::ClusterLookupRejectReason::None, "accessible coord lookup reports no reason");
+    testClusterContiguousOffsetPreflight();

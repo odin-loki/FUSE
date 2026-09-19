@@ -1029,3 +1029,12 @@ bool ClusterLightGridLayout::tryRebuildLightGrid(ClusterGridSoA& grid,
     return tryValidateContiguousOffsets(grid, clusterCount, outReason);
     return tryValidateContiguousOffsets(grid, clusterCount, reason);
 bool ClusterLightGridLayout::tryValidateContiguousOffsets(const ClusterGridSoA& grid,
+
+// --- deepen additive from deepen-b5-clustered-lights-a545 ---
+    return tryCanRebuildLightGridForDesc(desc, reason);
+bool ClusterLightGridLayout::tryCanRebuildLightGridForDesc(const ClusterDesc& desc,
+    return tryCanRebuildLightGrid(desc, clusterCount, outReason);
+    return !tryCanRebuildLightGrid(desc, clusterCount, reason);
+u32 ClusterLightGridLayout::tryRebuildLightGrid(ClusterGridSoA& grid,
+u32 ClusterLightGridLayout::tryRebuildLightGridForDesc(ClusterGridSoA& grid,
+    if (!tryCanRebuildLightGridForDesc(desc, reason)) {
