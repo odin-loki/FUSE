@@ -3072,6 +3072,33 @@ void testHistoryWarmupGuards() {
                "empty history warmup is incomplete");
     expectTrue(!fuse::renderer::preflightTaaHistoryReuse(emptyHistory, 0u),
 
+
+    expectTrue(TaaJitterLayout::slotMatchesFrameIndex(5u, 13u, 8u),
+               "slot matches wrapped monotonic frame index");
+    expectTrue(!TaaJitterLayout::slotMatchesFrameIndex(6u, 13u, 8u),
+               "mismatched slot fails frame-index sync check");
+    expectTrue(!TaaJitterLayout::slotMatchesFrameIndex(0u, 0u, 0u),
+               "invalid sequence rejects slot/frame sync check");
+
+    expectTrue(jitter.canSyncToFrameIndex(), "default jitter can sync to frame index");
+    expectTrue(jitter.isSyncedToFrameIndex(0u), "fresh jitter is synced to frame zero");
+
+    expectTrue(!jitter.isSyncedToFrameIndex(0u), "advanced jitter is not synced to frame zero");
+    expectTrue(jitter.isSyncedToFrameIndex(1u), "advanced jitter is synced to its monotonic frame");
+
+    jitter.syncToFrameIndex(21u);
+    expectTrue(jitter.isSyncedToFrameIndex(21u), "syncToFrameIndex marks jitter as synced");
+    expectTrue(jitter.index() == 5u, "synced jitter slot wraps monotonic frame");
+    expectTrue(TaaJitterLayout::slotMatchesFrameIndex(jitter.index(), 21u, jitter.sequenceLength()),
+               "synced slot matches layout frame mapping");
+    expectTrue(fuse::renderer::taaJitterFrameSynced(jitter, 21u),
+               "free-function jitter sync guard matches instance check");
+    expectTrue(!fuse::renderer::taaJitterFrameSynced(jitter, 20u),
+               "free-function jitter sync guard rejects prior frame");
+
+    expectTrue(jitter.isSyncedToFrameIndex(0u), "reset jitter is synced to frame zero");
+
+void testHistoryWarmupReuseGuards() {
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
     bootstrapDesc.createSwapchain = false;
@@ -3237,6 +3264,27 @@ void testResolveSurfaceAndPreflightHelpers() {
     expectTrue(preparedPass.observed_history_generation == 0u, "pass prepare stamps generation");
 
     pass->destroy();
+    expectTrue(!fuse::renderer::taaHistoryWarmupComplete(history), "warmup incomplete before first resolve");
+    expectTrue(fuse::renderer::taaHistoryReuseBlocked(history, 0u),
+               "reuse blocked before warmup completes");
+
+    expectTrue(fuse::renderer::taaResolveRequiresWarmup(desc, history),
+               "resolve requires warmup before first successful resolve");
+
+    expectTrue(fuse::renderer::taaHistoryWarmupComplete(history), "warmup complete after first resolve");
+    expectTrue(!fuse::renderer::taaHistoryReuseBlocked(history, 0u),
+               "reuse allowed when warmup complete and generation matches");
+    expectTrue(!fuse::renderer::taaResolveRequiresWarmup(desc, history),
+               "resolve no longer requires warmup after first resolve");
+
+    expectTrue(!fuse::renderer::taaHistoryWarmupComplete(history), "invalidate clears warmup-complete state");
+               "stale generation blocks reuse after invalidate");
+    expectTrue(fuse::renderer::taaHistoryReuseBlocked(history, history.invalidateGeneration()),
+               "warmup still required after invalidate even with current generation");
+
+    expectTrue(!fuse::renderer::taaHistoryReuseBlocked(history, history.invalidateGeneration()),
+               "current generation allows reuse after re-warm");
+
     resources.destroy();
     bindless.destroy(*bootstrap->device());
 }
@@ -3459,6 +3507,33 @@ void testResolveBlendPreflight() {
 
     expectTrue(!fuse::renderer::preflightTaaResolveBlend(desc, history, &projected),
                "preflightTaaResolveBlend rejects invalid dimensions");
+    desc.observed_history_generation = 0u;
+
+    expectTrue(fuse::renderer::tryComputeTaaResolveBlendWeights(desc, history, weights),
+               "blend-weight preflight succeeds for valid resolve desc");
+    expectNear(weights.current, 1.f, 1e-5f, "warmup blend preflight uses full current weight");
+    expectNear(weights.history, 0.f, 1e-5f, "warmup blend preflight uses zero history weight");
+    expectTrue(fuse::renderer::preflightTaaResolveBlend(desc, history, &weights),
+               "resolve-blend preflight passes before first resolve");
+    expectTrue(fuse::renderer::taaResolveHistoryBlendPreflightPasses(desc, history),
+               "history-blend preflight passes before first resolve");
+
+               "blend-weight preflight succeeds after warmup");
+    expectNear(weights.current, 0.3f, 1e-5f, "steady blend preflight uses configured current weight");
+    expectNear(weights.history, 0.7f, 1e-5f, "steady blend preflight uses history complement");
+               "history-blend preflight passes when reuse is allowed");
+
+    history.invalidateHistory();
+    expectTrue(!fuse::renderer::taaResolveHistoryBlendPreflightPasses(desc, history),
+               "history-blend preflight fails when observed generation is stale");
+
+    desc.observed_history_generation = history.invalidateGeneration();
+               "history-blend preflight passes with current generation after invalidate");
+
+    expectTrue(!fuse::renderer::tryComputeTaaResolveBlendWeights(desc, history, weights),
+               "blend-weight preflight rejects invalid dimensions");
+    expectTrue(!fuse::renderer::preflightTaaResolveBlend(desc, history),
+               "resolve-blend preflight rejects invalid dimensions");
 
     history.destroy();
     resources.destroy();
@@ -3528,6 +3603,7 @@ void testResolveBlendTryAndShouldSkip() {
 void testTaaPassPreflightGuards() {
 void testTaaPassJitterSyncAndBlendPreflight() {
 void testTaaPassWarmupAndBlendPreflight() {
+void testTaaPassSyncWarmupAndBlendPreflight() {
     fuse::renderer::TaaPassDesc passDesc{};
     passDesc.width = 128;
     passDesc.height = 128;
@@ -3549,6 +3625,9 @@ void testTaaPassWarmupAndBlendPreflight() {
     expectTrue(!pass->historyWarmupRequired(), "pass warmup not required before init");
     expectTrue(!pass->historyWarmupComplete(), "pass warmup incomplete before init");
     expectTrue(!pass->isJitterSyncedToFrameIndex(4u), "pass jitter not synced before explicit sync");
+    pass->syncJitterToFrameIndex(11u);
+    expectTrue(pass->isJitterSyncedToFrameIndex(11u), "pass reports jitter synced after syncJitterToFrameIndex");
+    expectTrue(!pass->isJitterSyncedToFrameIndex(10u), "pass reports jitter not synced to prior frame");
 
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
@@ -3558,6 +3637,7 @@ void testTaaPassWarmupAndBlendPreflight() {
     expectTrue(bootstrap != nullptr, "bootstrap allocated for pass preflight guard test");
     expectTrue(bootstrap != nullptr, "bootstrap allocated for pass jitter/blend preflight test");
     expectTrue(bootstrap != nullptr, "bootstrap allocated for pass warmup/blend preflight test");
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for pass sync/warmup/blend preflight test");
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -3633,6 +3713,8 @@ void testTaaPassDeepenGuardWrappers() {
 
     pass->syncJitterToFrameIndex(4u);
     expectTrue(pass->isJitterSyncedToFrameIndex(4u), "pass reports jitter synced after sync");
+    expectTrue(pass->init(resources), "TaaPass initialized for sync/warmup/blend preflight test");
+    expectTrue(!pass->historyWarmupComplete(), "pass warmup incomplete before first resolve");
 
     fuse::renderer::TaaResolveDesc resolveDesc{};
     resolveDesc.width = 128;
@@ -3731,6 +3813,13 @@ void testTaaPassDeepenGuardWrappers() {
                "pass resolve blend preflight passes after warmup");
     expectNear(projected.current, 0.2f, 1e-5f, "pass preflight projects steady current weight");
     expectNear(projected.history, 0.8f, 1e-5f, "pass preflight projects steady history weight");
+               "pass resolve-blend preflight passes before first resolve");
+    expectNear(weights.current, 1.f, 1e-5f, "pass preflight warmup blend uses full current weight");
+
+    expectTrue(pass->resolveFrame(resolveDesc), "initial resolve warms pass history");
+    expectTrue(pass->preflightResolveBlend(resolveDesc, &weights),
+               "pass resolve-blend preflight passes after warmup");
+    expectNear(weights.current, 0.2f, 1e-5f, "pass preflight steady blend uses configured current weight");
 
     pass->destroy();
     resources.destroy();
@@ -4585,6 +4674,8 @@ int main() {
     testJitterSyncGuards();
     testHistoryWarmupPreflightGuards();
     testTaaPassWarmupAndBlendPreflight();
+    testHistoryWarmupReuseGuards();
+    testTaaPassSyncWarmupAndBlendPreflight();
     testTaaPassReuseAndJitterGuards();
     testHistoryWarmupAndResolveShouldSkip();
     testJitterShouldSkipAndAdvancePreflight();

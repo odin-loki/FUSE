@@ -21,10 +21,13 @@ bool taaHistoryWarmupRequired(const TaaHistoryBuffer& history) {
 
 bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
     return history.isReady() && !history.needsWarmup();
-}
 
 bool taaHistoryReusePreflightPasses(const TaaHistoryBuffer& history, u32 observedGeneration) {
     return taaHistoryReuseAllowed(history, observedGeneration);
+    return taaHistoryCanReuse(history);
+
+bool taaHistoryReuseBlocked(const TaaHistoryBuffer& history, u32 observedGeneration) {
+    return !taaHistoryReuseAllowed(history, observedGeneration);
 }
 
 bool taaHistoryReuseAllowed(const TaaHistoryBuffer& history, u32 observedGeneration) {

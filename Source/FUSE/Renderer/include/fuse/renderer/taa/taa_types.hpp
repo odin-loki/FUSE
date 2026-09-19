@@ -154,6 +154,11 @@ bool taaHistoryReusePreflightPasses(const TaaHistoryBuffer& history, u32 observe
 /// True when allocated history still needs its first resolve warm-up (B5.9 deepen).
 bool taaHistoryWarmupRequired(const TaaHistoryBuffer& history);
 /// True when allocated history has completed warm-up (B5.9 deepen).
+/// True when history targets are ready and the first resolve has warmed them (B5.9 deepen).
+/// True when reuse is blocked by warmup or a stale observed generation (B5.9 deepen).
+bool taaHistoryReuseBlocked(const TaaHistoryBuffer& history, u32 observedGeneration);
+/// True when resolve would proceed but history still needs warm-up (B5.9 deepen).
+bool taaResolveRequiresWarmup(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// True when history reuse is allowed for the observed invalidate epoch (B5.9 deepen).
 bool taaHistoryReuseAllowed(const TaaHistoryBuffer& history, u32 observedGeneration);
 /// Preflight guard for temporal history reuse — false when unwarmed or epoch is stale (B5.9 deepen).

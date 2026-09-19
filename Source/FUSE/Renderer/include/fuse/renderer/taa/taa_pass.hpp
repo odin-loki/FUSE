@@ -169,6 +169,9 @@ public:
     /// True when jitter may be aligned via `syncJitterToFrameIndex` (B5.9 deepen).
     bool canSyncJitterToFrameIndex() const;
     /// Preflight resolve plus blend-weight validation; optionally fills `weights` (B5.9 deepen).
+    /// True when pass jitter monotonic frame and slot align with `frameIndex` (B5.9 deepen).
+    /// True when pass history is warmed after the first successful resolve (B5.9 deepen).
+    bool historyWarmupComplete() const;
     bool preflightResolveBlend(const TaaResolveDesc& desc, TaaBlendWeights* weights = nullptr) const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
