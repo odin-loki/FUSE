@@ -923,3 +923,8 @@ SampleCoordRejectReason classifyFroxelSampleAtCoordsReject(const FroxelDensityGr
 
 // --- deepen additive from deepen-froxel-volumetrics-b511-2686 ---
                                        ScreenMappingRejectReason* reason = nullptr,
+
+// --- deepen additive from b511-froxel-deepen-guards-f275 ---
+    static bool tryPreflightSampleCoordsDeepen(const FroxelSampleCoords& coords,
+    static bool tryPreflightScreenMapping(f32 screenX,
+bool tryPreflightGridDensity(const FroxelDensityGrid& grid,

@@ -4361,3 +4361,14 @@ void testFroxelBlockingClassifyAndPreflightWrappers() {
     expectTrue(!fuse::renderer::preflightFroxelPopulate(desc, camera, zeroDensity, &populateReject),
     expectTrue(populateReject == fuse::renderer::FroxelPopulateRejectReason::ZeroDensity,
     testFroxelBlockingClassifyAndPreflightWrappers();
+
+// --- deepen additive from b511-froxel-deepen-guards-f275 ---
+void testFroxelDeepenGuardPreflight() {
+    expectTrue(fuse::renderer::froxel_util::classifyDensityLookupReject(grid, desc, 3u) ==
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookup(grid, desc, 3u),
+               "classifySampleCoordReject out_of_bounds for hard OOB coords");
+                   0.25f, 0.25f, 3.16f, desc, camera) == fuse::renderer::ScreenMappingRejectReason::None,
+               "classifyScreenMappingReject none for valid screen sample");
+               "preflightScreenMapping succeeds for valid screen sample");
+               "preflightPopulate succeeds for valid populate inputs");
+    testFroxelDeepenGuardPreflight();

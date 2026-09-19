@@ -2428,3 +2428,15 @@ SampleCoordRejectReason classifyFroxelSampleAtCoordsReject(const FroxelDensityGr
 
 // --- deepen additive from deepen-froxel-volumetrics-b511-2686 ---
                                               ScreenMappingRejectReason* reason,
+
+// --- deepen additive from b511-froxel-deepen-guards-f275 ---
+bool FroxelGridLayout::tryPreflightSampleCoordsDeepen(const FroxelSampleCoords& coords,
+    return preflightSampleCoords(coords, desc, &outReason);
+    if (!tryMapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, coords, reject)) {
+bool FroxelGridLayout::tryPreflightScreenMapping(f32 screenX,
+    return preflightScreenMapping(screenX, screenY, viewDepth, desc, camera, &outCoords, &outReason);
+    return preflightDensityLookup(grid, desc, index, &outReason);
+    return preflightTrilinearSample(grid, desc, coords, &outReason);
+bool tryPreflightGridDensity(const FroxelDensityGrid& grid,
+    return preflightGridDensity(grid, desc, &outReason, epsilon);
+    return preflightPopulate(desc, camera, params, &outReason);
