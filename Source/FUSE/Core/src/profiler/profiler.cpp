@@ -839,6 +839,14 @@ void reconcileDetachedFlowNesting() {
     threadLocalFlowNestingDepth() = openAsyncFlowCount();
 }
 
+bool hasActiveScope() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool hasActiveAsyncFlowNesting() {
+    return flowNestingDepth() > 0u;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -953,7 +961,6 @@ bool isNullEventName(const char* name) {
 
 bool isEmptyEventName(const char* name) {
     return name != nullptr && name[0] == '\0';
-}
 
 bool isValidEventName(const char* name) {
     return name != nullptr && name[0] != '\0';
@@ -984,7 +991,6 @@ bool isValidProfileName(const char* name) {
     return count > 0u && index < count;
     if (name == nullptr || name[0] == '\0') {
         return false;
-    }
 
     for (const char* cursor = name; *cursor != '\0'; ++cursor) {
         switch (*cursor) {
@@ -1001,31 +1007,16 @@ bool isValidProfileName(const char* name) {
     return !isEmptyEventName(name);
     return !isBlankEventName(name);
     return !isNullEventName(name) && !isEmptyEventName(name);
-}
 
-}
 
-bool isValidProfileName(const char* name) {
     return isValidEventName(name);
 
 bool isValidProfilerName(const char* name) {
 
 bool isBlankEventName(const char* name) {
-    if (name == nullptr || name[0] == '\0') {
-        return true;
 
-    for (const char* cursor = name; *cursor != '\0'; ++cursor) {
-        switch (*cursor) {
-        case ' ':
-        case '\t':
-        case '\n':
-        case '\r':
             break;
-        default:
-            return false;
 
-bool isValidEventName(const char* name) {
-    return !isBlankEventName(name);
 
 
 bool wouldRecordEventName(const char* name) {
@@ -1048,19 +1039,15 @@ bool hasInvalidNameEvents() {
 
 bool canRecordEvent(const char* name) {
     return enabled() && isValidEventName(name);
-}
 
 bool canBeginAsyncFlow(const char* name) {
     return canRecordEvent(name);
-}
 
 bool canEndAsyncFlow(const char* name) {
     return canRecordEvent(name) && openAsyncFlowCount() > 0u;
-}
 
 bool isExportableProfileEvent(const ProfileEvent& event) {
     return isValidProfileEvent(event);
-}
 
 u32 exportableEventCount() {
     u32 count = 0u;
@@ -1070,31 +1057,10 @@ u32 exportableEventCount() {
     return count;
 
 u32 invalidEventCount() {
-    const u32 total = eventCount();
     return total >= exportableEventCount() ? total - exportableEventCount() : 0u;
-}
 
-u32 invalidNameEventCount() {
-    u32 count = 0u;
-    const u32 total = eventCount();
-    for (u32 i = 0u; i < total; ++i) {
         if (!isValidEventName(eventAt(i).name)) {
-            ++count;
-        }
-    }
-    return count;
-}
 
-u32 invalidNameEventCount() {
-    u32 count = 0u;
-    const u32 total = eventCount();
-    for (u32 i = 0u; i < total; ++i) {
-        if (!isValidEventName(eventAt(i).name)) {
-            ++count;
-        }
-    }
-    return count;
-}
 
 u32 nonExportableEventCount() {
     const u32 total = eventCount();
@@ -1543,6 +1509,16 @@ bool tryExportableEventAt(u32 index, ProfileEvent& outEvent) {
     return true;
 }
 
+bool tryExportableEventAt(u32 index, ProfileEvent& outEvent) {
+    if (!isEventExportable(index)) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    outEvent = eventAt(index);
+    return true;
+}
+
 bool tryFirstEvent(ProfileEvent& outEvent) {
     const u32 index = firstEventIndex();
     if (index == kInvalidEventIndex) {
@@ -1772,6 +1748,13 @@ bool tryEventPhaseAt(u32 index, EventPhase& outPhase) {
         outPhase = EventPhase::Begin;
 
     outPhase = eventAt(index).phase;
+}
+
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+
+    return tryExportableEventAt(index, outEvent);
 
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
@@ -1855,6 +1838,31 @@ bool tryFindLastEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
     return tryEventAt(index, outEvent);
 }
 
+u32 firstExportableEventIndex() {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (isEventExportable(i)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 lastExportableEventIndex() {
+    const u32 total = eventCount();
+    if (total == 0u) {
+        return kInvalidEventIndex;
+    }
+
+    for (u32 i = total; i > 0u; --i) {
+        const u32 index = i - 1u;
+        if (isEventExportable(index)) {
+            return index;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
 const ProfileEvent& lastEvent() {
     const u32 index = lastEventIndex();
     if (index == kInvalidEventIndex) {
@@ -1907,6 +1915,8 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.totalEventsWritten = totalEventsWritten();
     preflight.droppedEventCount = droppedEventCount();
     preflight.nonExportableEventCount = nonExportableEventCount();
+    preflight.firstExportableEventIndex = firstExportableEventIndex();
+    preflight.lastExportableEventIndex = lastExportableEventIndex();
     preflight.frameIndex = frameIndex();
     preflight.openAsyncFlowCount = openAsyncFlowCount();
     preflight.activeScopeNestingDepth = scopeNestingDepth();

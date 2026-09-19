@@ -142,6 +142,8 @@ struct ChromeTraceExportPreflight {
     bool hasRingWrapped = false;
     u32 remainingCapacity = 0;
     bool allEventsExportable = false;
+    u32 firstExportableEventIndex = kInvalidEventIndex;
+    u32 lastExportableEventIndex = kInvalidEventIndex;
     bool scopeNestingUnbalanced = false;
     bool flowNestingUnbalanced = false;
     bool hasOpenAsyncFlows = false;
@@ -516,6 +518,8 @@ bool needsFlowNestingCleanup();
 bool wouldIgnoreOrphanAsyncFlowEnd();
 bool wouldRecordEvent(const char* name);
 void reconcileDetachedFlowNesting();
+bool hasActiveScope();
+bool hasActiveAsyncFlowNesting();
 
 /// True when `name` is non-null and contains at least one character (B1.6 deepen).
 bool hasEvents();
@@ -569,6 +573,7 @@ u32 exportableEventCount();
 u32 invalidEventCount();
 bool isExportableProfileEvent(const ProfileEvent& event);
 u32 invalidNameEventCount();
+u32 nonExportableEventCount();
 bool isEventExportable(u32 index);
 bool isFirstEventIndex(u32 index);
 bool isLastEventIndex(u32 index);
