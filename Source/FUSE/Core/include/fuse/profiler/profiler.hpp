@@ -48,8 +48,12 @@ struct ChromeTraceExportPreflight {
     u32 activeFlowNestingDepth = 0;
     u32 maxScopeNestingDepth = 0;
     u32 maxFlowNestingDepth = 0;
+    u32 nonExportableEventCount = 0;
+    u32 droppedEventCount = 0;
     bool profilerDisabled = false;
     bool bufferEmpty = false;
+    bool bufferFull = false;
+    bool ringBufferWrapped = false;
     bool scopeNestingUnbalanced = false;
     bool flowNestingUnbalanced = false;
     bool hasOpenAsyncFlows = false;
@@ -58,6 +62,11 @@ struct ChromeTraceExportPreflight {
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
     bool hasUnbalancedNesting() const { return scopeNestingUnbalanced || flowNestingUnbalanced; }
+    bool hasDroppedEvents() const { return droppedEventCount > 0u; }
+    bool hasExportWarnings() const {
+        return hasUnbalancedNesting() || hasOpenAsyncFlows || flowDepthDetached || hasDroppedEvents()
+               || nonExportableEventCount > 0u;
+    }
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -96,11 +105,20 @@ bool isScopeNestingBalanced();
 bool isFlowNestingBalanced();
 bool hasUnbalancedNesting();
 bool isFlowDepthDetached();
+bool canEndAsyncFlow();
+bool hasActiveScopes();
+bool hasActiveFlows();
 
 bool hasEvents();
 bool isBufferEmpty();
 bool isBufferFull();
+bool hasRingBufferWrapped();
+u32 totalWriteCount();
+u32 droppedEventCount();
+u32 nonExportableEventCount();
 bool isEventIndexValid(u32 index);
+bool isFirstEventIndex(u32 index);
+bool isLastEventIndex(u32 index);
 bool isValidEventName(const char* name);
 bool isValidProfileEvent(const ProfileEvent& event);
 u32 exportableEventCount();
@@ -110,8 +128,10 @@ u32 lastEventIndex();
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
+bool tryEventPhaseAt(u32 index, EventPhase& outPhase);
 bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
+u32 countEventsByPhase(EventPhase phase);
 const ProfileEvent& lastEvent();
 void reset();
 

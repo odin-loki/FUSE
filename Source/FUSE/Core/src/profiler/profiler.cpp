@@ -311,6 +311,18 @@ bool isFlowDepthDetached() {
     return flowNestingDepth() != openAsyncFlowCount();
 }
 
+bool canEndAsyncFlow() {
+    return openAsyncFlowCount() > 0u;
+}
+
+bool hasActiveScopes() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool hasActiveFlows() {
+    return flowNestingDepth() > 0u;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -321,6 +333,30 @@ bool isBufferEmpty() {
 
 bool isBufferFull() {
     return eventCount() >= kRingCapacity;
+}
+
+bool hasRingBufferWrapped() {
+    return totalWriteCount() > kRingCapacity;
+}
+
+u32 totalWriteCount() {
+    return g_writeHead.load(std::memory_order_acquire);
+}
+
+u32 droppedEventCount() {
+    const u32 writes = totalWriteCount();
+    return writes > kRingCapacity ? writes - kRingCapacity : 0u;
+}
+
+u32 nonExportableEventCount() {
+    const u32 total = eventCount();
+    u32 nonExportable = 0u;
+    for (u32 i = 0u; i < total; ++i) {
+        if (!isValidEventName(eventAt(i).name)) {
+            ++nonExportable;
+        }
+    }
+    return nonExportable;
 }
 
 bool isEventIndexValid(u32 index) {
@@ -377,6 +413,35 @@ bool tryEventAt(u32 index, ProfileEvent& outEvent) {
     return isValidProfileEvent(outEvent);
 }
 
+bool tryEventPhaseAt(u32 index, EventPhase& outPhase) {
+    if (!isEventIndexValid(index)) {
+        return false;
+    }
+
+    outPhase = eventAt(index).phase;
+    return true;
+}
+
+bool isFirstEventIndex(u32 index) {
+    return hasEvents() && index == firstEventIndex();
+}
+
+bool isLastEventIndex(u32 index) {
+    const u32 last = lastEventIndex();
+    return last != kInvalidEventIndex && index == last;
+}
+
+u32 countEventsByPhase(EventPhase phase) {
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (eventAt(i).phase == phase) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 bool tryFirstEvent(ProfileEvent& outEvent) {
     const u32 index = firstEventIndex();
     if (index == kInvalidEventIndex) {
@@ -426,6 +491,10 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.maxScopeNestingDepth = maxNestingDepth();
     preflight.maxFlowNestingDepth = maxFlowNestingDepth();
     preflight.bufferEmpty = isBufferEmpty();
+    preflight.bufferFull = isBufferFull();
+    preflight.ringBufferWrapped = hasRingBufferWrapped();
+    preflight.droppedEventCount = droppedEventCount();
+    preflight.nonExportableEventCount = nonExportableEventCount();
     preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
@@ -565,7 +634,7 @@ std::string exportChromeTraceJson() {
 
     for (u32 i = 0; i < count; ++i) {
         const ProfileEvent& event = eventAt(i);
-        if (event.name == nullptr) {
+        if (!isValidEventName(event.name)) {
             continue;
         }
 
