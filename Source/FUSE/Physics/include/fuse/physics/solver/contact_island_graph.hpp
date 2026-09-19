@@ -155,6 +155,7 @@ ContactIslandBuildPreflight preflight_contact_island_build(
     UnsafeDistanceRefs,
 
 
+
 const char* island_graph_build_reject_reason_name(IslandGraphBuildRejectReason reason);
 
 /// Diagnose why island graph build would skip; vacuously succeeds when build may proceed.
@@ -813,6 +814,7 @@ bool islandGraphBuildRejectsForReason(u32 bodyCount,
 
 
 /// Returns true when `islandGraphBuildRejectReason` matches `expected` (B4.4 deepen follow-up).
+/// Returns true when `island_graph_build_reject_reason` matches `expected`.
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
@@ -888,6 +890,7 @@ struct ContactIslandGraph {
     /// Guarded build entry: clears and returns false when preflight rejects inputs.
     /// Guarded build — clears and returns false when preflight rejects partition inputs.
     /// Build only when preflight allows; clears the graph and returns false when skipped.
+    /// Guarded build: clears and returns false when preflight rejects inputs.
 
     void clear();
 
