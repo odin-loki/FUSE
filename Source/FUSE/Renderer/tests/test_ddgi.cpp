@@ -3243,3 +3243,8 @@ void testClassifyCacheIndexReject() {
                "wouldSkipProbeTrilinearSample true for undersized cache");
     expectTrue(fuse::renderer::wouldSkipDdgiProbeUpdate(desc, validIndices, 2u),
                "wouldSkip trace true for null probe indices");
+
+// --- deepen additive from deepen-ddgi-guards-b07e ---
+void testClassifyAndWouldClampGuards() {
+    expectTrue(fuse::renderer::classifyProbeSampleCoordsReject(desc, oobIndices) ==
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeTrilinearSampleReject(desc, built, cache.data(), 8u) ==

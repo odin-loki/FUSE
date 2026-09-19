@@ -854,3 +854,6 @@ bool wouldSkipScheduledProbeUpdate(const DDGIDesc& desc, const u32* probe_indice
 
 // --- deepen additive from deepen-ddgi-guards-badf ---
 bool wouldSkipTrilinearSampleAtCoords(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-guards-b07e ---
+bool wouldClampCacheIndexLookup(const DDGIDesc& desc, u32 probe_index);

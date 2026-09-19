@@ -2624,3 +2624,10 @@ bool wouldSkipTrilinearSampleAtCoords(const DDGIDesc& desc,
 // --- deepen additive from deepen-ddgi-guards-2134 ---
     return classifyCacheIndexReject(desc, cache, probe_index, cache_count) != CacheIndexRejectReason::None;
     if (classifyCacheIndexReject(desc, cache, probe_index, cache_count) != CacheIndexRejectReason::None) {
+
+// --- deepen additive from deepen-ddgi-guards-b07e ---
+    if (outReason != CacheIndexRejectReason::None) {
+bool wouldClampCacheIndexLookup(const DDGIDesc& desc, u32 probe_index) {
+    return classifyCacheIndexReject(desc, probe_index, cache_count) != CacheIndexRejectReason::None;
+    return classifyProbeScheduleReject(probe_count, max_indices, out_indices, out_count) !=
+    return classifyProbeUpdateLaunchReject(desc, probe_indices, probe_count) !=
