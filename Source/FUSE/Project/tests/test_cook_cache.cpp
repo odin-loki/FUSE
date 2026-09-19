@@ -1842,3 +1842,10 @@ void testCookCacheShouldSkipStoreGuard() {
     expectTrue(seeded.ok, "seed cook for would_invalidate probes");
                "matching hash not stale in would_invalidate_stale_content");
                "mismatched hash stale in would_invalidate_stale_content");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-25dc ---
+               "should_skip allows valid cache key");
+               "should_skip allows readable texture import");
+               "should_skip allows readable audio import");
+               "should_skip allows readable manifest entry");
+               "would_invalidate_stale_content with freshly computed hash is true");

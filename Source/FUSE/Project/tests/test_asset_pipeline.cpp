@@ -2253,3 +2253,16 @@ void testCookerReconcileShouldSkipGuards() {
     expectTrue(!upstream_plan.should_skip(), "upstream reconcile plan should not skip");
                "stale dependency reconcile should_skip after invalidation");
     expectTrue(!after.should_skip(), "prune stale entries keep reconcile plan active");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-25dc ---
+               "should_skip upstream invalidation false when chain would be touched");
+               "should_skip combined reconcile on fresh cache");
+               "should_skip combined reconcile false after upstream change");
+               "reconcile estimate should_skip matches cooker probe");
+    expectTrue(removed >= 1u, "stale dependency invalidation removes entries after should_skip cleared");
+               "should_skip stale dependency invalidation true after reconcile");
+               "should_skip prune reconcile false when stale upstream entry remains");
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for downstream would_invalidate ok");
+               "would_invalidate_downstream rejects empty output path");
+    expectTrue(cooker.cache().would_invalidate_downstream_of(entry_a.output_path, graph.edges(), graph.jobs()) ==
+               "would_invalidate_downstream matches count_downstream_of");
