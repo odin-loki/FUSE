@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 
 namespace fuse::profiler {
@@ -222,6 +223,17 @@ const char* chromeCategory(EventPhase phase) {
 
 bool isValidEventName(const char* name);
 
+bool eventNameEquals(const char* lhs, const char* rhs) {
+    if (lhs == nullptr || rhs == nullptr) {
+        return false;
+    }
+    return std::strcmp(lhs, rhs) == 0;
+}
+
+bool isFlowPhase(EventPhase phase) {
+    return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
+}
+
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
       m_active(g_enabled.load(std::memory_order_acquire) && isValidEventName(name)) {
@@ -313,6 +325,114 @@ bool isFlowDepthDetached() {
 
 bool isCrossThreadFlowHandoffPending() {
     return isFlowDepthDetached() && flowNestingDepth() > 0u;
+}
+
+bool wouldSkipProfileScope(const char* name, ProfileSkipReason* reason) {
+    if (!enabled()) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::ProfilerDisabled;
+        }
+        return true;
+    }
+    if (!isValidEventName(name)) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::InvalidName;
+        }
+        return true;
+    }
+    return false;
+}
+
+bool wouldSkipAsyncFlowBegin(const char* name, ProfileSkipReason* reason) {
+    if (!enabled()) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::ProfilerDisabled;
+        }
+        return true;
+    }
+    if (!isValidEventName(name)) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::InvalidName;
+        }
+        return true;
+    }
+    return false;
+}
+
+bool wouldSkipAsyncFlowEnd(const char* name, u32 /*flowId*/, ProfileSkipReason* reason) {
+    if (!enabled()) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::ProfilerDisabled;
+        }
+        return true;
+    }
+    if (!isValidEventName(name)) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::InvalidName;
+        }
+        return true;
+    }
+    if (openAsyncFlowCount() == 0u) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::NoOpenFlow;
+        }
+        return true;
+    }
+    return false;
+}
+
+bool wouldSkipCounter(const char* track, ProfileSkipReason* reason) {
+    if (!enabled()) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::ProfilerDisabled;
+        }
+        return true;
+    }
+    if (!isValidEventName(track)) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::InvalidName;
+        }
+        return true;
+    }
+    return false;
+}
+
+bool wouldSkipChromeTraceExport(ProfileSkipReason* reason) {
+    if (!enabled()) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::ProfilerDisabled;
+        }
+        return true;
+    }
+    return false;
+}
+
+bool wouldSkipChromeTraceExportSafely(ProfileSkipReason* reason) {
+    if (!enabled()) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::ProfilerDisabled;
+        }
+        return true;
+    }
+    if (hasUnbalancedNesting()) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::UnbalancedNesting;
+        }
+        return true;
+    }
+    if (isFlowDepthDetached()) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::FlowDepthDetached;
+        }
+        return true;
+    }
+    if (isCrossThreadFlowHandoffPending()) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::CrossThreadFlowHandoffPending;
+        }
+        return true;
+    }
+    return false;
 }
 
 bool hasEvents() {
@@ -426,6 +546,46 @@ bool tryLastEvent(ProfileEvent& outEvent) {
     return tryEventAt(index, outEvent);
 }
 
+bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByName(name);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
+bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent) {
+    const u32 index = findLastEventIndexByName(name);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
+bool tryFindFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByFlowId(flowId);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
+bool tryFindLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+    const u32 index = findLastEventIndexByFlowId(flowId);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -464,6 +624,86 @@ u32 countEventsByPhase(EventPhase phase) {
     return count;
 }
 
+u32 findFirstEventIndexByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (isValidEventName(event.name) && eventNameEquals(event.name, name)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 findLastEventIndexByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        const ProfileEvent& event = eventAt(i - 1u);
+        if (isValidEventName(event.name) && eventNameEquals(event.name, name)) {
+            return i - 1u;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 countEventsByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return 0u;
+    }
+
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (isValidEventName(event.name) && eventNameEquals(event.name, name)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 findFirstEventIndexByFlowId(u32 flowId) {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (isFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 findLastEventIndexByFlowId(u32 flowId) {
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        const ProfileEvent& event = eventAt(i - 1u);
+        if (isFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
+            return i - 1u;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 countEventsByFlowId(u32 flowId) {
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (isFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     return count > 0u ? count - 1u : kInvalidEventIndex;
@@ -475,6 +715,27 @@ const ProfileEvent& lastEvent() {
         return emptyProfileEvent();
     }
     return eventAt(index);
+}
+
+ScopeNestingPreflight preflightScopeNesting() {
+    ScopeNestingPreflight preflight{};
+    preflight.activeDepth = scopeNestingDepth();
+    preflight.maxDepth = maxNestingDepth();
+    preflight.balanced = isScopeNestingBalanced();
+    preflight.hasActiveScope = preflight.activeDepth > 0u;
+    return preflight;
+}
+
+AsyncFlowPreflight preflightAsyncFlow() {
+    AsyncFlowPreflight preflight{};
+    preflight.activeDepth = flowNestingDepth();
+    preflight.maxDepth = maxFlowNestingDepth();
+    preflight.openFlowCount = openAsyncFlowCount();
+    preflight.balanced = isFlowNestingBalanced();
+    preflight.depthDetached = isFlowDepthDetached();
+    preflight.crossThreadHandoffPending = isCrossThreadFlowHandoffPending();
+    preflight.hasOpenFlows = hasOpenAsyncFlows();
+    return preflight;
 }
 
 ChromeTraceExportPreflight preflightChromeTraceExport() {
