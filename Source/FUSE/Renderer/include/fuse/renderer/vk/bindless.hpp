@@ -209,3 +209,9 @@ private:
 // --- deepen additive from deepen-b2-bindless-preflight-bf1a ---
     bool preflightSlotHandle(BindlessSlotHandle handle) const { return validateSlot(handle); }
     bool tryBindingIndexForHandle(BindlessSlotHandle handle, BindlessBindingIndex& out) const;
+
+// --- deepen additive from deepen-b2-rhi-bindless-20d9 ---
+struct BindlessSlotAllocPreflight {
+struct BindlessSlotFreePreflight {
+    BindlessSlotAllocPreflight preflightAllocateSlot(BindlessHeapKind kind) const;
+    BindlessSlotFreePreflight preflightFreeSlot(BindlessSlotHandle handle) const;

@@ -778,3 +778,30 @@ void testTryBindingIndexForHandlePreflight() {
     testCanFreeSlotPreflight();
     testCanResizeHeapPreflight();
     testTryBindingIndexForHandlePreflight();
+
+// --- deepen additive from deepen-b2-rhi-bindless-20d9 ---
+void testHeapCapacityInstanceGuards() {
+void testSlotAllocPreflight() {
+    const fuse::renderer::BindlessSlotAllocPreflight uninitialized =
+        bindless.preflightAllocateSlot(fuse::renderer::BindlessHeapKind::Buffer);
+    const fuse::renderer::BindlessSlotAllocPreflight fresh =
+    const fuse::renderer::BindlessSlotAllocPreflight full =
+        bindless.preflightAllocateSlot(fuse::renderer::BindlessHeapKind::Sampler);
+void testSlotFreePreflight() {
+    const fuse::renderer::BindlessSlotFreePreflight livePreflight = bindless.preflightFreeSlot(live);
+    expectTrue(livePreflight.can_free(), "live handle passes free preflight");
+    expectTrue(livePreflight.generation_matches, "live preflight generation matches");
+    expectTrue(livePreflight.slot_occupied, "live preflight slot occupied");
+    expectTrue(!livePreflight.already_on_free_list, "live slot not on free list");
+    const fuse::renderer::BindlessSlotFreePreflight stalePreflight = bindless.preflightFreeSlot(stale);
+    expectTrue(stalePreflight.skipped(), "stale generation skipped by free preflight");
+    const fuse::renderer::BindlessSlotFreePreflight afterFree = bindless.preflightFreeSlot(live);
+    const fuse::renderer::BindlessSlotFreePreflight oobPreflight = bindless.preflightFreeSlot(oob);
+    expectTrue(!oobPreflight.index_in_range, "OOB handle fails index_in_range preflight");
+    expectTrue(oobPreflight.skipped(), "OOB free preflight skipped");
+void testFreeListGuardAfterDoubleFree() {
+    const fuse::renderer::BindlessSlotFreePreflight doubleFreePreflight = bindless.preflightFreeSlot(handle);
+    expectTrue(doubleFreePreflight.already_on_free_list, "stale handle sees free-list membership");
+    expectTrue(!doubleFreePreflight.can_free(), "double-free blocked by free preflight");
+    testSlotAllocPreflight();
+    testSlotFreePreflight();

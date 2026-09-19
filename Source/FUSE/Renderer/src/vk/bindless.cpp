@@ -538,3 +538,10 @@ void BindlessDescriptors::unregisterSlot(BindlessSlotHandle handle) {
 
 // --- deepen additive from deepen-b2-bindless-preflight-bf1a ---
 bool BindlessDescriptors::tryBindingIndexForHandle(BindlessSlotHandle handle,
+
+// --- deepen additive from deepen-b2-rhi-bindless-20d9 ---
+BindlessSlotAllocPreflight BindlessDescriptors::preflightAllocateSlot(BindlessHeapKind kind) const {
+    BindlessSlotAllocPreflight preflight{};
+    return preflightFreeSlot(handle).can_free();
+BindlessSlotFreePreflight BindlessDescriptors::preflightFreeSlot(BindlessSlotHandle handle) const {
+    BindlessSlotFreePreflight preflight{};
