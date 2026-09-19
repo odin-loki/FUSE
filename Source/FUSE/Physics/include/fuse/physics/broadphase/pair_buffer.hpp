@@ -3407,6 +3407,7 @@ enum class PairBufferInvalidateSlotRejectReason : u8 {
 
 
 
+    EmptyBuffer,
 
 /// Human-readable label for pair-buffer invalidate-slot reject reasons (logging / tests).
 const char* pairBufferInvalidateSlotRejectReasonName(PairBufferInvalidateSlotRejectReason reason);
@@ -3414,6 +3415,7 @@ const char* pairBufferInvalidateSlotRejectReasonName(PairBufferInvalidateSlotRej
 /// Diagnose why invalidateSlot would reject; vacuously succeeds when invalidation may proceed.
 /// Diagnose why invalidateSlot would skip; vacuously succeeds when invalidate may proceed.
 /// Diagnose why slot invalidate would skip; vacuously succeeds when invalidate may proceed.
+/// Diagnose why invalidateSlot would reject; vacuously succeeds when invalidate may proceed.
 PairBufferInvalidateSlotRejectReason pairBufferInvalidateSlotRejectReason(const PairBufferSoA& buffer, u32 slot);
 
 /// Returns true when `pairBufferInvalidateSlotRejectReason` matches `expected` (B4.2 deepen pass).
@@ -3452,6 +3454,8 @@ struct PairBufferInvalidateSlotPreflight {
 
 
 
+
+    bool emptyBuffer = false;
 
 };
 
@@ -3659,5 +3663,8 @@ bool shouldRunPairBufferInvalidate(const PairBufferSoA& buffer, u32 slot);
 
 /// Dedupe SoA pair buffer only when `preflightPairBufferDedupe` allows (B4.2 deepen follow-up pass).
 void dedupePairBufferSoAWithPreflight(PairBufferSoA& buffer);
+
+/// Invalidate only when `preflightPairBufferInvalidateSlot` allows; returns false when skipped (B4.2 deepen pass).
+bool invalidateSlotWithPreflight(PairBufferSoA& buffer, u32 slot);
 
 } // namespace fuse::physics::broadphase

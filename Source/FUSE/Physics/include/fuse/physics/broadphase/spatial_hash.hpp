@@ -1135,6 +1135,69 @@ FUSE_PHYSICS_INLINE CellSpanPreflight preflightCellSpanClamp(const CellRange2& r
     preflight.spanPerAxis = {span.x, span.y, 1};
 /// Why per-axis cell span would require clamping (B4.2 deepen follow-up pass).
 /// Why cell-span clamp preflight rejected the range (B4.2 deepen follow-up pass).
+/// Why combined shape cell-capacity iteration would reject (B4.2 deepen pass).
+enum class ShapeCellCapacityRejectReason : u8 {
+    None = 0,
+    EmptyRange,
+    ExceedsSpan,
+    ExceedsBudget,
+
+/// Human-readable label for shape cell-capacity reject reasons (logging / tests).
+const char* shapeCellCapacityRejectReasonName(ShapeCellCapacityRejectReason reason);
+
+/// Diagnose why shape cell iteration would reject after span clamp and occupancy budgeting.
+FUSE_PHYSICS_INLINE ShapeCellCapacityRejectReason shapeCellCapacityRejectReason(
+    const CellRange3& range,
+    u32 maxSpanPerAxis,
+    u32 maxCells) {
+        return ShapeCellCapacityRejectReason::EmptyRange;
+    }
+        return ShapeCellCapacityRejectReason::ExceedsSpan;
+    if (exceedsCellOccupancyBudget(range, maxCells)) {
+        return ShapeCellCapacityRejectReason::ExceedsBudget;
+    return ShapeCellCapacityRejectReason::None;
+
+    const CellRange2& range,
+
+/// Returns true when `shapeCellCapacityRejectReason` matches `expected` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shapeCellCapacityRejectsForReason(
+    u32 maxCells,
+    ShapeCellCapacityRejectReason expected) {
+    return shapeCellCapacityRejectReason(range, maxSpanPerAxis, maxCells) == expected;
+
+
+/// Combined cell-capacity preflight for shape occupancy iteration (B4.2 deepen pass).
+struct ShapeCellCapacityPreflight {
+    ShapeCellCapacityRejectReason reason = ShapeCellCapacityRejectReason::None;
+    bool exceedsSpan = false;
+    bool exceedsBudget = false;
+    u32 occupancyCount = 0;
+
+    bool canIterate() const { return reason == ShapeCellCapacityRejectReason::None; }
+
+FUSE_PHYSICS_INLINE ShapeCellCapacityPreflight preflightShapeCellCapacity(
+    ShapeCellCapacityPreflight preflight{};
+    preflight.reason = shapeCellCapacityRejectReason(range, maxSpanPerAxis, maxCells);
+    preflight.emptyRange = preflight.reason == ShapeCellCapacityRejectReason::EmptyRange;
+    preflight.exceedsSpan = preflight.reason == ShapeCellCapacityRejectReason::ExceedsSpan;
+    preflight.exceedsBudget = preflight.reason == ShapeCellCapacityRejectReason::ExceedsBudget;
+    preflight.occupancyCount = estimateCellOccupancyCount(range);
+
+FUSE_PHYSICS_INLINE ShapeCellCapacityPreflight preflightShapeCellCapacity2D(
+
+/// Non-mutating shape cell-capacity skip predicate — inverse of `canIterate` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool canSkipShapeCellCapacityIteration(
+    return !preflightShapeCellCapacity(range, maxSpanPerAxis, maxCells).canIterate();
+
+    return !preflightShapeCellCapacity2D(range, maxSpanPerAxis, maxCells).canIterate();
+
+/// Non-mutating shape cell-capacity predicate — mirrors `preflightShapeCellCapacity` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunShapeCellCapacityIteration(
+    return preflightShapeCellCapacity(range, maxSpanPerAxis, maxCells).canIterate();
+
+    return preflightShapeCellCapacity2D(range, maxSpanPerAxis, maxCells).canIterate();
+
+/// Why per-axis cell-span clamp would modify the range (B4.2 deepen follow-up pass).
 enum class CellSpanRejectReason : u8 {
     None = 0,
     EmptyRange,
@@ -5124,8 +5187,73 @@ bool refineBroadphasePairsParallelWithPreflight(
 /// Dedupe pair buffer only when `preflightDedupeBroadphase` allows; returns false when skipped (B4.2 deepen pass).
 bool dedupeBroadphasePairBufferWithPreflight(PairBufferSoA& buffer);
 
-/// Merge candidate pairs into buffer only when `preflightMergePairsIntoBuffer` allows (B4.2 deepen follow-up pass).
-void mergePairsIntoBufferWithPreflight(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer);
+/// Merge candidate pairs into buffer only when `preflightMergePairsIntoBuffer` allows; returns false when skipped (B4.2 deepen pass).
+bool mergePairsIntoBufferWithPreflight(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer);
+
+/// Why combined plane/dynamic merge-into-buffer would early-out (B4.2 deepen pass).
+enum class BroadphaseMergePairsIntoBufferRejectReason : u8 {
+    None = 0,
+    EmptyPlaneBodies,
+    EmptyDynamicBodies,
+    EmptyPairs,
+    BufferFull,
+};
+
+/// Human-readable label for combined merge-into-buffer reject reasons (logging / tests).
+const char* broadphaseMergePairsIntoBufferRejectReasonName(BroadphaseMergePairsIntoBufferRejectReason reason);
+
+/// Diagnose why combined merge-into-buffer would skip; vacuously succeeds when merge may proceed.
+BroadphaseMergePairsIntoBufferRejectReason broadphaseMergePairsIntoBufferRejectReason(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer);
+
+/// Returns true when `broadphaseMergePairsIntoBufferRejectReason` matches `expected` (B4.2 deepen pass).
+bool broadphaseMergePairsIntoBufferRejectsForReason(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer,
+    BroadphaseMergePairsIntoBufferRejectReason expected);
+
+/// Read-only combined merge-into-buffer diagnostics — no mutation (B4.2 deepen pass).
+struct BroadphaseMergePairsIntoBufferPreflight {
+    BroadphaseMergePairsIntoBufferRejectReason reason = BroadphaseMergePairsIntoBufferRejectReason::None;
+    bool emptyPlaneBodies = false;
+    bool emptyDynamicBodies = false;
+    bool emptyPairs = false;
+    bool bufferFull = false;
+
+    bool canMerge() const { return reason == BroadphaseMergePairsIntoBufferRejectReason::None; }
+};
+
+BroadphaseMergePairsIntoBufferPreflight preflightBroadphaseMergePairsIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer);
+
+/// Non-mutating combined merge-into-buffer skip predicate — inverse of `canMerge` (B4.2 deepen pass).
+bool canSkipBroadphaseMergePairsIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer);
+
+/// Non-mutating combined merge-into-buffer predicate — mirrors `preflightBroadphaseMergePairsIntoBuffer` (B4.2 deepen pass).
+bool shouldRunBroadphaseMergePairsIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer);
+
+/// Merge candidate pairs only when combined preflight allows; returns false when skipped (B4.2 deepen pass).
+bool mergeBroadphasePairsIntoBufferWithPreflight(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const std::vector<CandidatePair>& pairs,
+    PairBufferSoA& buffer);
 
 /// Why broadphase cell-pair generation would early-out (B4.2 deepen pass).
 enum class BroadphaseCellPairGenRejectReason : u8 {
