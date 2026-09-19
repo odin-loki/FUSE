@@ -651,6 +651,28 @@ struct NestingAsyncFlowPreflight {
     bool hasUnbalancedNesting() const { return !scopeNestingBalanced || !flowNestingBalanced; }
 };
 
+/// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
+struct ProfileScopePreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canEnter = false;
+};
+
+/// Read-only async-flow begin diagnostics — safe to call before `beginAsyncFlow()`.
+struct AsyncFlowBeginPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canBegin = false;
+};
+
+/// Read-only async-flow end diagnostics — safe to call before `endAsyncFlow()`.
+struct AsyncFlowEndPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool wouldUnderflowOpenCount = false;
+    bool canEnd = false;
+};
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:
@@ -763,6 +785,7 @@ u32 countEventsWithPhase(EventPhase phase);
 bool isNullEventName(const char* name);
 bool isEmptyEventName(const char* name);
 bool isInvalidEventIndex(u32 index);
+/// True for null, empty, or whitespace-only names — does not affect recording guards.
 bool isValidEventName(const char* name);
 
 /// Read-only chrome export diagnostics — no mutation (B1.6 deepen).
@@ -1077,8 +1100,6 @@ bool tryFindLastFlowEvent(u32 flowId, ProfileEvent& outEvent);
 bool tryEventAt(u32 index, ProfileEvent& out);
 /// Safe ring-buffer lookup — returns false and clears `outEvent` when the index is invalid.
 bool isLastEventIndexValid();
-bool tryFirstExportableEvent(ProfileEvent& outEvent);
-bool tryLastExportableEvent(ProfileEvent& outEvent);
 bool tryEventAtReverse(u32 reverseIndex, ProfileEvent& outEvent);
 u32 findEventIndex(EventPhase phase, u32 startIndex = 0u);
 bool tryFindEventByScopeId(u32 scopeId, ProfileEvent& outEvent);
