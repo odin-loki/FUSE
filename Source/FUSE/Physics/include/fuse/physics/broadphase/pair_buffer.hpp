@@ -83,6 +83,8 @@ struct PairBufferSoA {
     bool canSkipDedupeAndClamp() const;
     /// True when compact has invalidated slots to gather.
     /// True when at most one valid canonical pair is present (dedupe is a no-op).
+    /// True when post-pass max-capacity clamp would drop pairs.
+    bool needsMaxCapacityClamp() const { return canApplyMaxCapacityClamp(); }
     /// Count valid flags in prepared slot storage before compaction.
     u32 countValidSlots() const;
     /// True when canonical sort is a no-op (empty or single pair).
@@ -452,5 +454,25 @@ PairBufferDedupePreflight preflight_pair_buffer_dedupe(const PairBufferSoA& buff
 
 /// Early-out guard for pair-buffer dedupe (B4.2 deepen pass).
 bool should_skip_pair_buffer_dedupe(const PairBufferSoA& buffer);
+
+/// Const preflight for pair-buffer capacity and compaction guards (B4.2 deepen pass).
+struct PairBufferPreflight {
+    u32 droppedCount = 0;
+    u32 remainingCapacity = 0;
+    bool empty = false;
+    bool full = false;
+    bool skipDedupe = false;
+    bool skipCompaction = false;
+    bool needsClamp = false;
+
+    bool can_push(u32 additionalCount = 1u) const;
+    bool can_compact() const { return !skipped && !skipCompaction; }
+
+PairBufferPreflight preflight_pair_buffer(const PairBufferSoA& buffer);
+
+/// True when dedupe is unnecessary for this buffer state (B4.2 deepen pass).
+
+/// True when compaction would be a no-op (B4.2 deepen pass).
+bool should_skip_pair_buffer_compaction(const PairBufferSoA& buffer);
 
 } // namespace fuse::physics::broadphase

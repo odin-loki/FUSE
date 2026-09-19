@@ -197,6 +197,26 @@ CandidatePairRejectReason candidatePairRejectReason(
 /// Empty-set guard: true when broadphase has no bodies or shapes to process.
 FUSE_PHYSICS_INLINE bool canSkipBroadphase(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes) {
 
+/// Const preflight for broadphase input empty-set guard (B4.2 deepen pass).
+struct BroadphaseInputPreflight {
+    u32 bodyCount = 0;
+    u32 shapeCount = 0;
+    bool emptyBodies = false;
+    bool emptyShapes = false;
+    bool skipped = false;
+
+    bool can_build() const { return !skipped; }
+};
+
+BroadphaseInputPreflight preflight_broadphase_input(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// True when broadphase should skip before hash build (B4.2 deepen pass).
+bool should_skip_broadphase_build(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
 /// Clamp cell size to a positive stub default (broadphase occupancy guard).
 FUSE_PHYSICS_INLINE f32 clampCellSize(f32 cellSize) {
     return cellSize > 0.f ? cellSize : 1.f;
@@ -970,6 +990,15 @@ FUSE_PHYSICS_INLINE bool should_skip_shape_cell_insertion(const CellRange2& rang
 
 /// True when parallel refine should early-out before AABB overlap tests (B4.2 deepen pass).
 bool should_skip_broadphase_refine(
+    u32 occupancyCount = 0;
+
+    bool within_budget() const { return !exceedsBudget; }
+    bool can_insert() const { return !skipped && within_budget(); }
+
+
+/// True when shape cell iteration should skip due to an empty range (B4.2 deepen pass).
+bool should_skip_shape_cell_insert(const CellRange3& range, u32 maxCells = 0u);
+bool should_skip_shape_cell_insert(const CellRange2& range, u32 maxCells = 0u);
 
 /// Clamp broadphase params to safe stub defaults (positive cell size, at least one bucket).
 FUSE_PHYSICS_INLINE SpatialHashParams normalizeSpatialHashParams(SpatialHashParams params) {
@@ -1403,8 +1432,6 @@ RefineBroadphaseRejectReason refineBroadphaseRejectReason(
 
 /// Returns true when `refineBroadphaseRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 bool refineBroadphaseRejectsForReason(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
     const PairBufferSoA& buffer,
     RefineBroadphaseRejectReason expected);
 
@@ -1416,38 +1443,22 @@ struct RefineBroadphasePreflight {
     bool noValidPairs = false;
 
     bool canRefine() const { return reason == RefineBroadphaseRejectReason::None; }
-};
 
 RefineBroadphasePreflight preflightRefineBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
-    const PairBufferSoA& buffer);
 
 /// Non-mutating refine predicate — same guards as `preflightRefineBroadphase`.
 bool canSkipRefineBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
-    const PairBufferSoA& buffer);
 
 /// Non-mutating refine predicate — inverse of `canSkipRefineBroadphase` (B4.2 deepen pass).
 bool shouldRunRefineBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
-    const PairBufferSoA& buffer);
 
 /// Early-out when refine preflight would reject — same ordering as `canSkipRefineBroadphase` (B4.2 deepen pass).
 bool wouldSkipRefineBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
-    const PairBufferSoA& buffer,
     RefineBroadphaseRejectReason* reason = nullptr);
 
 /// Why broadphase pair dedupe would early-out (B4.2 deepen follow-up pass).
 enum class DedupeBroadphaseRejectReason : u8 {
-    None = 0,
-    EmptyBuffer,
     SinglePair,
-};
 
 /// Human-readable label for dedupe reject reasons (logging / tests).
 const char* dedupeBroadphaseRejectReasonName(DedupeBroadphaseRejectReason reason);
@@ -1461,11 +1472,9 @@ bool dedupeBroadphaseRejectsForReason(const PairBufferSoA& buffer, DedupeBroadph
 /// Read-only dedupe diagnostics — no mutation (B4.2 deepen follow-up).
 struct DedupeBroadphasePreflight {
     DedupeBroadphaseRejectReason reason = DedupeBroadphaseRejectReason::None;
-    bool emptyBuffer = false;
     bool singlePair = false;
 
     bool canDedupe() const { return reason == DedupeBroadphaseRejectReason::None; }
-};
 
 DedupeBroadphasePreflight preflightDedupeBroadphase(const PairBufferSoA& buffer);
 
@@ -1480,23 +1489,18 @@ bool wouldSkipDedupeBroadphase(const PairBufferSoA& buffer, DedupeBroadphaseReje
 
 /// Why plane/dynamic merge would early-out (B4.2 deepen pass).
 enum class BroadphaseMergeRejectReason : u8 {
-    None = 0,
     EmptyPlaneBodies,
     EmptyDynamicBodies,
-};
 
 /// Human-readable label for merge reject reasons (logging / tests).
 const char* mergeBroadphaseRejectReasonName(BroadphaseMergeRejectReason reason);
 
 /// Diagnose why merge would skip; vacuously succeeds when merge may proceed.
 BroadphaseMergeRejectReason mergeBroadphaseRejectReason(
-    const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
 /// Returns true when `mergeBroadphaseRejectReason` matches `expected` (B4.2 deepen pass).
 bool mergeBroadphaseRejectsForReason(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
     BroadphaseMergeRejectReason expected);
 
 /// Read-only plane/dynamic merge diagnostics — no mutation (B4.2 deepen follow-up pass).
@@ -1506,11 +1510,8 @@ struct BroadphaseMergePreflight {
     bool emptyDynamicBodies = false;
 
     bool canMerge() const { return reason == BroadphaseMergeRejectReason::None; }
-};
 
 BroadphaseMergePreflight preflightBroadphaseMerge(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Non-mutating merge skip predicate — inverse of `shouldRunBroadphaseMerge` (B4.2 deepen pass).
 bool canSkipBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
@@ -1520,16 +1521,12 @@ bool shouldRunBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSo
 
 /// Early-out when plane/dynamic merge preflight would reject — same ordering as `canSkipBroadphaseMerge` (B4.2 deepen pass).
 bool wouldSkipBroadphaseMerge(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
     BroadphaseMergeRejectReason* reason = nullptr);
 
 /// Why merge-into-buffer would early-out before pushing pairs (B4.2 deepen pass).
 enum class MergePairsIntoBufferRejectReason : u8 {
-    None = 0,
     EmptyPairs,
     BufferFull,
-};
 
 /// Human-readable label for merge-into-buffer reject reasons (logging / tests).
 const char* mergePairsIntoBufferRejectReasonName(MergePairsIntoBufferRejectReason reason);
@@ -1537,12 +1534,9 @@ const char* mergePairsIntoBufferRejectReasonName(MergePairsIntoBufferRejectReaso
 /// Diagnose why merge-into-buffer would skip; vacuously succeeds when merge may proceed.
 MergePairsIntoBufferRejectReason mergePairsIntoBufferRejectReason(
     const std::vector<CandidatePair>& pairs,
-    const PairBufferSoA& buffer);
 
 /// Returns true when `mergePairsIntoBufferRejectReason` matches `expected` (B4.2 deepen pass).
 bool mergePairsIntoBufferRejectsForReason(
-    const std::vector<CandidatePair>& pairs,
-    const PairBufferSoA& buffer,
     MergePairsIntoBufferRejectReason expected);
 
 /// Read-only merge-into-buffer diagnostics — no mutation (B4.2 deepen pass).
@@ -1552,11 +1546,8 @@ struct MergePairsIntoBufferPreflight {
     bool bufferFull = false;
 
     bool canMerge() const { return reason == MergePairsIntoBufferRejectReason::None; }
-};
 
 MergePairsIntoBufferPreflight preflightMergePairsIntoBuffer(
-    const std::vector<CandidatePair>& pairs,
-    const PairBufferSoA& buffer);
 
 /// Non-mutating merge-into-buffer skip predicate — inverse of `canMerge` (B4.2 deepen pass).
 bool canSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer);
@@ -1566,9 +1557,19 @@ bool shouldRunMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, cons
 
 /// Early-out when merge-into-buffer preflight would reject — same ordering as `canSkipMergePairsIntoBuffer` (B4.2 deepen pass).
 bool wouldSkipMergePairsIntoBuffer(
-    const std::vector<CandidatePair>& pairs,
-    const PairBufferSoA& buffer,
     MergePairsIntoBufferRejectReason* reason = nullptr);
+
+/// Const preflight for parallel pair refine dispatch (B4.2 deepen pass).
+    u32 pairCount = 0;
+    u32 validPairCount = 0;
+    bool skipped = false;
+
+    bool can_refine() const { return !skipped && validPairCount > 0u; }
+
+RefineBroadphasePreflight preflight_refine_broadphase(
+
+/// True when refineBroadphasePairsParallel may early-out (B4.2 deepen pass).
+bool should_skip_refine_broadphase(
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(
