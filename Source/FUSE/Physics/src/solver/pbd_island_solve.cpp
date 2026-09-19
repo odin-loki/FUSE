@@ -2060,3 +2060,17 @@ bool should_skip_island_dispatch_sleep(const RigidBodySoA& bodies,
     const IslandSolveSleepPreflight preflight = preflight_island_solve_sleep_by_index(
     const IslandDispatchSleepPreflight preflight = preflight_island_dispatch_sleep(bodies, graph, dt);
         } else if (should_skip_island_solve_for_sleep_index(bodies, graph, islandIndex)) {
+
+// --- deepen additive from deepen-pbd-island-guards-a261 ---
+bool should_skip_solve_island_all_sleeping(const ContactIslandGraph::Island& island,
+    const IslandSleepPreflight sleepPreflight = preflight_island_sleep_state(island, bodies);
+    return !sleepPreflight.skipped && sleepPreflight.all_dynamic_sleeping();
+bool should_skip_solve_island_all_static(const ContactIslandGraph::Island& island,
+    return !sleepPreflight.skipped && sleepPreflight.all_static();
+bool should_skip_solve_island_job_preflight(const IslandSolveJobPreflight& preflight) {
+IslandSleepPreflight preflight_island_sleep_state(const ContactIslandGraph::Island& island,
+IslandSleepPreflight preflight_island_sleep_state_by_index(const ContactIslandGraph& graph,
+bool should_skip_sleep_detection_for_body(const RigidBodySoA& bodies, u32 bodyIndex) {
+IslandSleepWakePreflight preflight_island_sleep_wake(
+    IslandSleepWakePreflight preflight{};
+IslandSleepWakePreflight preflight_island_sleep_wake_by_index(

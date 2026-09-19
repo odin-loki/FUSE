@@ -3440,3 +3440,51 @@ void testDispatchAllIslandsSleepGuarded() {
     expectTrue(!should_skip_island_dispatch_sleep(bodies, graph, dt),
                "should_skip false for graph with solvable island");
     testPreflightIslandConstraintSolveGuards();
+
+// --- deepen additive from deepen-pbd-island-guards-a261 ---
+void testPreflightIslandGraphBuildGuards() {
+    const IslandBuildPreflight zeroBodies = preflight_island_graph_build(0, contacts, constraints);
+    const IslandBuildPreflight validBuild = preflight_island_graph_build(5, contacts, constraints);
+    expectTrue(should_skip_island_graph_build(0u), "should_skip_island_graph_build for zero bodies");
+    expectTrue(!should_skip_island_graph_build(5u), "should_skip_island_graph_build allows positive count");
+    const IslandSolveJobPreflight awakePreflight =
+    expectTrue(!awakePreflight.skipped, "solve preflight does not skip constrained island");
+    expectTrue(awakePreflight.can_solve(), "awake island has solvable constraints");
+    expectTrue(awakePreflight.solvableConstraintPairs == 2u,
+    const IslandSolveJobPreflight sleepingPreflight =
+    expectTrue(!sleepingPreflight.skipped, "solve preflight does not skip sleeping island shell");
+    expectTrue(!sleepingPreflight.can_solve(), "all-sleeping island has no solvable pairs");
+    expectTrue(sleepingPreflight.immovableConstraintPairs == 1u,
+    expectTrue(should_skip_solve_island_all_sleeping(graph.island(sleepingIsland), bodies),
+               "should_skip_solve_island_all_sleeping for sleeping island");
+    expectTrue(!should_skip_solve_island_all_sleeping(graph.island(awakeIsland), bodies),
+    expectTrue(should_skip_solve_island_all_static(staticGraph.island(0), staticBodies),
+               "should_skip_solve_island_all_static for static island");
+    expectTrue(should_skip_solve_island_job_preflight(sleepingPreflight),
+               "should_skip_solve_island_job_preflight when nothing is solvable");
+    const IslandSolveJobPreflight oobPreflight =
+    expectTrue(oobPreflight.outOfRangeDistances == 1u, "solve preflight counts out-of-range distance index");
+    const IslandSolveJobPreflight invalidIndexPreflight =
+    expectTrue(invalidIndexPreflight.skipped, "solve preflight by index skips out-of-range island");
+    const IslandSleepPreflight sleepPreflight =
+    expectTrue(!sleepPreflight.skipped, "sleep preflight does not skip populated island");
+    expectTrue(sleepPreflight.dynamicBodyCount == 2u, "sleep preflight counts dynamic bodies");
+    expectTrue(sleepPreflight.sleepingBodyCount == 1u, "sleep preflight counts sleeping bodies");
+    expectTrue(sleepPreflight.staticBodyCount == 1u, "sleep preflight counts static bodies in island");
+    expectTrue(sleepPreflight.bodiesWithForces == 1u, "sleep preflight counts bodies with forces");
+    expectTrue(sleepPreflight.bodiesWithCcd == 1u, "sleep preflight counts CCD bodies");
+    expectTrue(!sleepPreflight.all_dynamic_sleeping(), "mixed island is not all sleeping");
+    expectTrue(!sleepPreflight.all_static(), "mixed island is not all static");
+    expectTrue(should_skip_sleep_detection_for_body(bodies, awake),
+               "should_skip_sleep_detection_for body with forces and CCD");
+    expectTrue(!should_skip_sleep_detection_for_body(bodies, sleeping),
+    const IslandSleepWakePreflight wakePreflight =
+    expectTrue(!wakePreflight.skipped, "sleep/wake preflight does not skip contact island");
+    expectTrue(wakePreflight.activeContactCount == 1u, "sleep/wake preflight counts active contacts");
+    expectTrue(wakePreflight.contactsTouchingSleepingBody == 1u,
+    expectTrue(wakePreflight.should_wake, "sleep/wake preflight requests wake on mixed contact");
+    const IslandSleepPreflight invalidSleepPreflight =
+    expectTrue(invalidSleepPreflight.skipped, "sleep preflight by index skips out-of-range island");
+    const IslandSleepWakePreflight invalidWakePreflight =
+    expectTrue(invalidWakePreflight.skipped, "sleep/wake preflight by index skips out-of-range island");
+    testPreflightIslandGraphBuildGuards();
