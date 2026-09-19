@@ -32,6 +32,17 @@ struct ContactBufferSoA {
     u32 droppedCount = 0;
 
     bool isEmpty() const { return activeCount == 0u; }
+    bool hasValidContacts() const { return activeCount > 0u; }
+    bool hasDroppedContacts() const { return droppedCount > 0u; }
+    bool isFull() const { return maxCapacity > 0u && activeCount >= maxCapacity; }
+    bool canAcceptContacts(u32 additionalCount = 1u) const;
+    u32 remainingCapacity() const;
+    bool canApplyMaxCapacityClamp() const;
+    bool canSkipMaxCapacityClamp() const { return !canApplyMaxCapacityClamp(); }
+    bool canSkipSoAIteration() const { return activeCount == 0u && pairSlotCount == 0u; }
+    bool canSkipCompaction() const;
+    u32 countValidSlots() const;
+    bool slotIsValid(u32 slot) const;
 
     void reserve(u32 capacity);
     void setMaxCapacity(u32 capacity);
@@ -50,5 +61,114 @@ struct ContactBufferSoA {
 private:
     u32 pointSlotBase(u32 slot) const { return slot * kMaxContactPointsPerManifold; }
 };
+
+/// Why contact-buffer write would reject (B4.4 guard pass).
+enum class ContactBufferWriteRejectReason : u8 {
+    None = 0,
+    OutOfRangeSlot,
+    InvalidManifold,
+    SelfPair,
+};
+
+/// Human-readable label for contact-buffer write reject reasons (B4.4 guard pass).
+const char* contactBufferWriteRejectReasonName(ContactBufferWriteRejectReason reason);
+
+/// Diagnose why write would reject; vacuously succeeds when write may proceed (B4.4 guard pass).
+ContactBufferWriteRejectReason contactBufferWriteRejectReason(
+    const ContactBufferSoA& buffer,
+    u32 slot,
+    const ContactManifold& manifold);
+
+/// Returns true when `contactBufferWriteRejectReason` matches `expected` (B4.4 guard pass).
+bool contactBufferWriteRejectsForReason(
+    const ContactBufferSoA& buffer,
+    u32 slot,
+    const ContactManifold& manifold,
+    ContactBufferWriteRejectReason expected);
+
+/// Read-only write diagnostics — no mutation (B4.4 guard pass).
+struct ContactBufferWritePreflight {
+    ContactBufferWriteRejectReason reason = ContactBufferWriteRejectReason::None;
+    bool outOfRangeSlot = false;
+    bool invalidManifold = false;
+    bool selfPair = false;
+
+    bool canWrite() const { return reason == ContactBufferWriteRejectReason::None; }
+};
+
+ContactBufferWritePreflight preflightContactBufferWrite(
+    const ContactBufferSoA& buffer,
+    u32 slot,
+    const ContactManifold& manifold);
+
+/// Why contact-buffer compaction would early-out (B4.4 guard pass).
+enum class ContactBufferCompactionRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    AllValid,
+};
+
+/// Human-readable label for contact-buffer compaction reject reasons (B4.4 guard pass).
+const char* contactBufferCompactionRejectReasonName(ContactBufferCompactionRejectReason reason);
+
+/// Diagnose why compaction would skip; vacuously succeeds when compaction may proceed (B4.4 guard pass).
+ContactBufferCompactionRejectReason contactBufferCompactionRejectReason(const ContactBufferSoA& buffer);
+
+/// Returns true when `contactBufferCompactionRejectReason` matches `expected` (B4.4 guard pass).
+bool contactBufferCompactionRejectsForReason(
+    const ContactBufferSoA& buffer,
+    ContactBufferCompactionRejectReason expected);
+
+/// Read-only compaction diagnostics — no mutation (B4.4 guard pass).
+struct ContactBufferCompactionPreflight {
+    ContactBufferCompactionRejectReason reason = ContactBufferCompactionRejectReason::None;
+    bool emptyBuffer = false;
+    bool allValid = false;
+
+    bool needsCompaction() const { return reason == ContactBufferCompactionRejectReason::None; }
+};
+
+ContactBufferCompactionPreflight preflightContactBufferCompaction(const ContactBufferSoA& buffer);
+
+/// Non-mutating compaction skip predicate — inverse of `needsCompaction` (B4.4 guard pass).
+bool canSkipContactBufferCompaction(const ContactBufferSoA& buffer);
+
+/// Non-mutating compaction predicate — mirrors `preflightContactBufferCompaction` (B4.4 guard pass).
+bool shouldRunContactBufferCompaction(const ContactBufferSoA& buffer);
+
+/// Why contact-buffer max-capacity clamp would early-out (B4.4 guard pass).
+enum class ContactBufferClampRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    WithinCapacity,
+};
+
+/// Human-readable label for contact-buffer clamp reject reasons (B4.4 guard pass).
+const char* contactBufferClampRejectReasonName(ContactBufferClampRejectReason reason);
+
+/// Diagnose why clamp would skip; vacuously succeeds when clamp may proceed (B4.4 guard pass).
+ContactBufferClampRejectReason contactBufferClampRejectReason(const ContactBufferSoA& buffer);
+
+/// Returns true when `contactBufferClampRejectReason` matches `expected` (B4.4 guard pass).
+bool contactBufferClampRejectsForReason(
+    const ContactBufferSoA& buffer,
+    ContactBufferClampRejectReason expected);
+
+/// Read-only max-capacity clamp diagnostics — no mutation (B4.4 guard pass).
+struct ContactBufferClampPreflight {
+    ContactBufferClampRejectReason reason = ContactBufferClampRejectReason::None;
+    bool emptyBuffer = false;
+    bool withinCapacity = false;
+
+    bool needsClamp() const { return reason == ContactBufferClampRejectReason::None; }
+};
+
+ContactBufferClampPreflight preflightContactBufferClamp(const ContactBufferSoA& buffer);
+
+/// Non-mutating clamp skip predicate — inverse of `needsClamp` (B4.4 guard pass).
+bool canSkipContactBufferClamp(const ContactBufferSoA& buffer);
+
+/// Non-mutating clamp predicate — mirrors `preflightContactBufferClamp` (B4.4 guard pass).
+bool shouldRunContactBufferClamp(const ContactBufferSoA& buffer);
 
 } // namespace fuse::physics::narrowphase

@@ -98,8 +98,31 @@ void compute_friction_tangents_if_needed(ContactManifold& manifold, f32 epsilon 
 /// Returns true when the contact normal is valid but not unit length (B4.4 deepen pass).
 bool contact_normal_needs_normalize(const ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
 
+/// Why friction-basis rebuild would early-out (B4.4 guard pass).
+enum class FrictionBasisRebuildRejectReason : u8 {
+    None = 0,
+    EmptyManifold,
+    InvalidNormal,
+    CanReuseBasis,
+};
+
+/// Human-readable label for friction-basis rebuild reject reasons (B4.4 guard pass).
+const char* friction_basis_rebuild_reject_reason_name(FrictionBasisRebuildRejectReason reason);
+
+/// Diagnose why rebuild would skip; vacuously succeeds when rebuild may proceed (B4.4 guard pass).
+FrictionBasisRebuildRejectReason friction_basis_rebuild_reject_reason(
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f);
+
+/// Returns true when `friction_basis_rebuild_reject_reason` matches `expected` (B4.4 guard pass).
+bool friction_basis_rebuild_rejects_for_reason(
+    const ContactManifold& manifold,
+    FrictionBasisRebuildRejectReason expected,
+    f32 epsilon = 1e-4f);
+
 /// Const preflight for friction-basis rebuild dispatch (B4.4 deepen follow-up).
 struct FrictionBasisPreflight {
+    FrictionBasisRebuildRejectReason reason = FrictionBasisRebuildRejectReason::None;
     bool skipped = false;
     bool stale = false;
     bool needsNormalNormalize = false;
@@ -123,5 +146,8 @@ bool should_skip_friction_basis_preflight(
 bool should_normalize_contact_normal_before_friction(
     const ContactManifold& manifold,
     f32 lengthEpsilon = 1e-4f);
+
+/// Non-mutating rebuild predicate — inverse of `should_skip_friction_basis_preflight` (B4.4 guard pass).
+bool should_run_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase
