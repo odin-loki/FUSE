@@ -2258,3 +2258,6 @@ HrtfBinauralRejectBundle classify_hrtf_binaural_rejects(const HrtfBinauralPrefli
 bool preflight_hrtf_ir_convolve_ready(const HrtfIrStub& ir, HrtfIrRejectReason* reason) {
 bool try_preflight_hrtf_ir_convolve(const HrtfIrStub& ir, HrtfIrRejectReason& reason) {
     const HrtfBinauralRejectReason spatial_reject = classify_hrtf_binaural_spatial_pan_reject(preflight);
+
+// --- deepen additive from b72-hrtf-reject-reason-wrappers-9880 ---
+HrtfPanPathRejectReason classify_hrtf_binaural_pan_reject(const HrtfBinauralPreflight& preflight) {

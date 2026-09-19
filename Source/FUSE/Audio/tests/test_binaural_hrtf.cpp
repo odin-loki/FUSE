@@ -2655,3 +2655,10 @@ void testHrtfBinauralCompositeRejectReasonWrappers() {
     expectTrue(rejects.spatialPan == fuse::audio::HrtfPanPathRejectReason::HrtfDisabled,
     expectTrue(rejects.spatialPan == fuse::audio::HrtfPanPathRejectReason::CoLocated,
     expectTrue(rejects.narrowing == fuse::audio::HrtfAttenuationCouplingRejectReason::BypassPath,
+
+// --- deepen additive from b72-hrtf-reject-reason-wrappers-9880 ---
+               "should_skip attenuation coupling preflight true on bypass");
+               "should_skip attenuation coupling preflight false when narrowing applies");
+    fuse::audio::HrtfIrRejectReason irReason = fuse::audio::HrtfIrRejectReason::None;
+    expectTrue(irReason == fuse::audio::HrtfIrRejectReason::NullSamples,
+    expectTrue(irReason == fuse::audio::HrtfIrRejectReason::None,
