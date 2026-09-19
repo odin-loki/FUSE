@@ -2187,3 +2187,12 @@ void testCookerShouldSkipReconcileGuards() {
     expectTrue(cooker.would_invalidate_upstream(manifest, source_a), "would_invalidate_upstream after content change");
     expectTrue(cooker.should_skip_upstream_invalidation(manifest, source_a),
                "should_skip upstream invalidation after cache cleared");
+
+// --- deepen additive from deepen-b79-cooker-hash-7463 ---
+               "would_invalidate_upstream true when chain entries exist");
+               "stale upstream makes should_skip reconcile false");
+               "would_invalidate_upstream true for changed source");
+               "should_skip_upstream false when invalidation would occur");
+    expectTrue(removed >= 1u, "stale dependency invalidation runs after should_skip probes");
+               "post-invalidation should_skip upstream returns true");
+               "post-invalidation should_skip reconcile returns true");

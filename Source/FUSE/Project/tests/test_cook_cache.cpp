@@ -1741,3 +1741,19 @@ void testCookCacheWouldInvalidateAndShouldSkipGuards() {
     expectTrue(!cooker.cache().should_skip_store(valid_entry), "should_skip_store accepts valid entry");
     expectTrue(cooker.cache().should_skip_prune_all(), "clean cache should_skip_prune_all");
     expectTrue(cooker.cache().estimate_prune_removals().should_skip(), "clean prune estimate should skip");
+
+// --- deepen additive from deepen-b79-cooker-hash-7463 ---
+    expectTrue(!cooker.cache().should_skip_lookup(seeded.content_hash),
+               "should_skip_lookup false for valid hash key");
+    expectTrue(cooker.cache().should_skip_lookup(0), "should_skip_lookup true for zero hash");
+    expectTrue(cooker.cache().should_skip_store(invalid_entry),
+               "should_skip_store true for invalid entry");
+               "should_skip_store false for valid entry");
+void testCookCacheShouldSkipStoreGuard() {
+    expectTrue(!cache.should_skip_store(valid), "valid entry does not skip store preflight");
+    expectTrue(cache.should_skip_store(invalid), "empty source path skips store preflight");
+    expectTrue(cache.should_skip_lookup(0), "zero hash skips lookup preflight");
+    expectTrue(!cache.should_skip_lookup(909), "non-zero hash does not skip lookup preflight");
+    const std::string source = writeTempFile("/tmp/fuse_b79_should_skip.obj", "# should skip\n");
+    desc.output_path = "/tmp/fuse_b79_should_skip.fusemesh";
+               "should_skip_mesh mirrors preflight should_skip");
