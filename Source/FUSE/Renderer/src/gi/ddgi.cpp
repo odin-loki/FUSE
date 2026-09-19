@@ -3290,3 +3290,7 @@ bool wouldSkipProbeTrilinearSampleAtCoords(const DDGIDesc& desc,
     case ProbeGridSourceRejectReason::ZeroProbeSpacing:
         outReason = ProbeGridSourceRejectReason::ZeroProbeSpacing;
     ddgi_util::tryValidateProbeGridSource(desc, reason);
+
+// --- deepen additive from deepen-ddgi-b56-guards-e607 ---
+bool preflightTrilinearProbeSampleAtWorld(const DDGIDesc& desc,
+bool wouldSkipProbeTrilinearSampleAtWorld(const DDGIDesc& desc,

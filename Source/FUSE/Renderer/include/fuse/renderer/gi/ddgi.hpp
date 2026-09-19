@@ -1076,3 +1076,7 @@ bool wouldSkipProbeGridSource(const ProbeVolume& volume, const DDGIDesc& desc);
 // --- deepen additive from deepen-b56-ddgi-guards-e427 ---
 bool preflightProbeTrilinearSampleAtCoords(const DDGIDesc& desc,
 bool wouldSkipProbeTrilinearSampleAtCoords(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-b56-guards-e607 ---
+bool preflightTrilinearProbeSampleAtWorld(const DDGIDesc& desc,
+bool wouldSkipProbeTrilinearSampleAtWorld(const DDGIDesc& desc,

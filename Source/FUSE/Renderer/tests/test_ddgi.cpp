@@ -4608,3 +4608,17 @@ void testTryPreflightProbeKernelLaunch() {
     expectTrue(!fuse::renderer::gi::tryPreflightProbeKernelLaunch(nullIndices, reason),
                "tryPreflightProbeKernelLaunch rejects null indices");
     testTryPreflightProbeKernelLaunch();
+
+// --- deepen additive from deepen-ddgi-b56-guards-e607 ---
+    expectTrue(fuse::renderer::ddgi_util::preflightTrilinearProbeSampleAtWorld(
+               "preflightTrilinearProbeSampleAtWorld succeeds for interior sample");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSampleAtWorld(
+               "wouldSkipProbeTrilinearSampleAtWorld false for valid sample");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSample(desc, invalid, cache.data(), 8u),
+               "wouldSkipProbeTrilinearSample true for invalid coords");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSampleAtWorld(
+               "wouldSkipProbeTrilinearSampleAtWorld true for empty grid");
+void testProbeSampleCoordPreflightSkip() {
+void testKernelPreflightSplitGuards() {
+    testProbeSampleCoordPreflightSkip();
+    testKernelPreflightSplitGuards();
