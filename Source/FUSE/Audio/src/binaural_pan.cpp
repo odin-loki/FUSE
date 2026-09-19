@@ -1098,3 +1098,6 @@ HrtfBinauralRejectReason hrtf_binaural_reject_reason(bool hrtf_enabled, const Ve
         return HrtfIrRejectReason::MalformedStub;
 HrtfBinauralRejectReason hrtf_binaural_reject_reason(HrtfPanPathRejectReason pan_reason) {
     return preflight.rejectReason() != HrtfBinauralRejectReason::None;
+
+// --- deepen additive from deepen-hrtf-reject-reason-preflights-1e2a ---
+    return preflight.reason != HrtfBinauralRejectReason::None;

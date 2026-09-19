@@ -1690,3 +1690,21 @@ void testHrtfBinauralRejectReasonPreflight() {
     expectTrue(bypass.rejectReason() == fuse::audio::HrtfBinauralRejectReason::HrtfDisabled,
     expectTrue(fuse::audio::should_skip_hrtf_binaural(bypass),
                "composite should_skip true on disabled HRTF");
+
+// --- deepen additive from deepen-hrtf-reject-reason-preflights-1e2a ---
+void testHrtfRejectReasonPreflights() {
+    expectTrue(fuse::audio::hrtf_ir_rejects_for_reason(valid, fuse::audio::HrtfIrRejectReason::None),
+    const fuse::audio::HrtfIrPreflight ir_preflight = fuse::audio::preflight_hrtf_ir(valid);
+    expectTrue(ir_preflight.reason == fuse::audio::HrtfIrRejectReason::None,
+    expectTrue(ir_preflight.can_convolve() == (ir_preflight.reason == fuse::audio::HrtfIrRejectReason::None),
+                   true, offset, fuse::audio::HrtfPanPathRejectReason::None),
+    const fuse::audio::HrtfPanPathPreflight pan_preflight =
+    expectTrue(pan_preflight.reason == fuse::audio::HrtfPanPathRejectReason::None,
+                   fuse::audio::HrtfAttenuationCouplingRejectReason::None),
+    const fuse::audio::HrtfAttenuationCouplingPreflight coupling_preflight =
+    expectTrue(coupling_preflight.reason == fuse::audio::HrtfAttenuationCouplingRejectReason::None,
+                   true, offset, fuse::audio::HrtfBinauralRejectReason::None),
+    const fuse::audio::HrtfBinauralPreflight composite_preflight =
+    expectTrue(composite_preflight.reason == fuse::audio::HrtfBinauralRejectReason::None,
+               "should_skip_hrtf_binaural true when composite reject reason is set");
+    testHrtfRejectReasonPreflights();
