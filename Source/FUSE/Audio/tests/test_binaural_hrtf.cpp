@@ -1405,3 +1405,24 @@ void testPreflightHrtfAttenuationCoupling() {
     const fuse::audio::HrtfAttenuationCouplingPreflight manual =
     const fuse::audio::HrtfAttenuationCouplingPreflight disabled_bundle =
     expectTrue(disabled_bundle.should_skip_coupling(),
+
+// --- deepen additive from deepen-b72-hrtf-preflights-815c ---
+void testPreflightHrtfIrConvolution() {
+    fuse::audio::HrtfIrRejectReason reason = fuse::audio::HrtfIrRejectReason::EmptyIr;
+    expectTrue(reason == fuse::audio::HrtfIrRejectReason::None,
+    expectTrue(reason == fuse::audio::HrtfIrRejectReason::EmptyIr,
+    expectTrue(reason == fuse::audio::HrtfIrRejectReason::NullSamples,
+    expectTrue(reason == fuse::audio::HrtfIrRejectReason::ZeroLength,
+               "preflight inverts should_skip_hrtf_convolution");
+void testPreflightHrtfSpatialPan() {
+    fuse::audio::HrtfPanPathRejectReason reason = fuse::audio::HrtfPanPathRejectReason::Disabled;
+    expectTrue(reason == fuse::audio::HrtfPanPathRejectReason::None,
+    expectTrue(reason == fuse::audio::HrtfPanPathRejectReason::Disabled,
+    expectTrue(reason == fuse::audio::HrtfPanPathRejectReason::CoLocated,
+    fuse::audio::HrtfAttenuationCouplingRejectReason reason =
+        fuse::audio::HrtfAttenuationCouplingRejectReason::BypassPath;
+    expectTrue(reason == fuse::audio::HrtfAttenuationCouplingRejectReason::None,
+    expectTrue(reason == fuse::audio::HrtfAttenuationCouplingRejectReason::BypassPath,
+    expectTrue(reason == fuse::audio::HrtfAttenuationCouplingRejectReason::UnityAttenuation,
+    testPreflightHrtfIrConvolution();
+    testPreflightHrtfSpatialPan();

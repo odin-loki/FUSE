@@ -615,3 +615,16 @@ enum class HrtfPanSkipReason : u8 {
     bool should_skip_coupling() const { return bypass_pan_path || unity_spatial_blend; }
     bool should_narrow_spatial_image() const { return !should_skip_coupling(); }
     bool can_couple() const { return !should_skip_coupling(); }
+
+// --- deepen additive from deepen-b72-hrtf-preflights-815c ---
+const char* hrtf_ir_reject_reason_label(HrtfIrRejectReason reason);
+bool try_preflight_hrtf_ir_convolution(const HrtfIrStub& ir, HrtfIrRejectReason& outReason);
+bool preflight_hrtf_ir_convolution(const HrtfIrStub& ir, HrtfIrRejectReason* reason = nullptr);
+const char* hrtf_pan_path_reject_reason_label(HrtfPanPathRejectReason reason);
+bool try_preflight_hrtf_spatial_pan(bool hrtf_enabled, const Vec3& rel_listener,
+                                   HrtfPanPath& outPath, HrtfPanPathRejectReason& outReason);
+                                HrtfPanPathRejectReason* reason = nullptr);
+const char* hrtf_attenuation_coupling_reject_reason_label(HrtfAttenuationCouplingRejectReason reason);
+bool try_preflight_hrtf_attenuation_coupling(HrtfPanPath path, float distance_attenuation,
+                                             HrtfAttenuationCouplingRejectReason& outReason);
+                                         HrtfAttenuationCouplingRejectReason* reason = nullptr);

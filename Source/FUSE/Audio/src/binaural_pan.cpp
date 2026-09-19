@@ -903,3 +903,35 @@ bool HrtfAttenuationCouplingPreflight::should_skip_coupling() const {
     HrtfAttenuationCouplingPreflight out;
     out.bypass_pan_path = should_skip_hrtf_pan_path(path);
     const HrtfPanPathPreflight pan = preflight_hrtf_pan_path(hrtf_enabled, ir, rel_listener);
+
+// --- deepen additive from deepen-b72-hrtf-preflights-815c ---
+const char* hrtf_ir_reject_reason_label(HrtfIrRejectReason reason) {
+    case HrtfIrRejectReason::EmptyIr:
+bool try_preflight_hrtf_ir_convolution(const HrtfIrStub& ir, HrtfIrRejectReason& outReason) {
+        outReason = HrtfIrRejectReason::None;
+        outReason = HrtfIrRejectReason::ZeroLength;
+        outReason = HrtfIrRejectReason::NullSamples;
+    outReason = HrtfIrRejectReason::EmptyIr;
+bool preflight_hrtf_ir_convolution(const HrtfIrStub& ir, HrtfIrRejectReason* reason) {
+    HrtfIrRejectReason localReason = HrtfIrRejectReason::None;
+const char* hrtf_pan_path_reject_reason_label(HrtfPanPathRejectReason reason) {
+    case HrtfPanPathRejectReason::Disabled:
+bool try_preflight_hrtf_spatial_pan(bool hrtf_enabled, const Vec3& rel_listener,
+                                   HrtfPanPath& outPath, HrtfPanPathRejectReason& outReason) {
+        outReason = HrtfPanPathRejectReason::Disabled;
+        outReason = HrtfPanPathRejectReason::CoLocated;
+    outReason = HrtfPanPathRejectReason::None;
+                                HrtfPanPath* out_path, HrtfPanPathRejectReason* reason) {
+    HrtfPanPathRejectReason localReason = HrtfPanPathRejectReason::None;
+                                HrtfPanPathRejectReason* reason) {
+            *reason = HrtfPanPathRejectReason::Disabled;
+            *reason = HrtfPanPathRejectReason::CoLocated;
+        *reason = HrtfPanPathRejectReason::None;
+const char* hrtf_attenuation_coupling_reject_reason_label(HrtfAttenuationCouplingRejectReason reason) {
+bool try_preflight_hrtf_attenuation_coupling(HrtfPanPath path, float distance_attenuation,
+                                             HrtfAttenuationCouplingRejectReason& outReason) {
+        outReason = HrtfAttenuationCouplingRejectReason::BypassPath;
+        outReason = HrtfAttenuationCouplingRejectReason::UnityAttenuation;
+    outReason = HrtfAttenuationCouplingRejectReason::None;
+                                         HrtfAttenuationCouplingRejectReason* reason) {
+    HrtfAttenuationCouplingRejectReason localReason = HrtfAttenuationCouplingRejectReason::None;
