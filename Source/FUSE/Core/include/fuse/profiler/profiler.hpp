@@ -1014,6 +1014,28 @@ struct AsyncFlowEndPreflight {
     bool canEnd = false;
 };
 
+/// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
+struct ProfileScopePreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canEnter = false;
+};
+
+/// Read-only async-flow begin diagnostics — safe to call before `beginAsyncFlow()`.
+struct AsyncFlowBeginPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canBegin = false;
+};
+
+/// Read-only async-flow end diagnostics — safe to call before `endAsyncFlow()`.
+struct AsyncFlowEndPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool wouldUnderflowOpenCount = false;
+    bool canEnd = false;
+};
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:
@@ -1427,6 +1449,12 @@ bool hasFlowStartFinishMismatch();
 bool hasEventsByPhase(EventPhase phase);
 bool hasDroppedEvents();
 u32 orphanAsyncFlowEndCount();
+u32 findFirstEventIndexByName(const char* name);
+u32 findLastEventIndexByName(const char* name);
+u32 countEventsByName(const char* name);
+u32 findFirstEventIndexByFlowId(u32 flowId);
+u32 findLastEventIndexByFlowId(u32 flowId);
+u32 countEventsByFlowId(u32 flowId);
 bool hasFlowStartEvent(u32 flowId);
 bool hasFlowFinishEvent(u32 flowId);
 bool isFlowPairRecorded(u32 flowId);
@@ -1833,7 +1861,6 @@ bool wouldSkipAsyncFlowEnd(const char* name, u32 flowId, AsyncFlowEndSkipReason*
 bool wouldSkipCounterSample(const char* track, CounterSampleSkipReason* reason = nullptr);
 bool wouldSkipChromeTraceExport(ChromeTraceExportSkipReason* reason = nullptr);
 bool wouldSkipChromeTraceExportSafely(ChromeTraceExportSkipReason* reason = nullptr);
-ProfileScopePreflight preflightProfileScope(const char* name);
 
 /// Preflight skip checks — mirror recording guards without mutating profiler state.
 bool wouldSkipChromeTraceExport();
@@ -1854,6 +1881,8 @@ bool wouldSkipAsyncFlowEnd(const char* name);
 
 /// Predict whether profiler entry points would no-op — mirrors recording guards without mutating state.
 
+
+/// Preflight skip checks — mirror hot-path guards without recording events.
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();
