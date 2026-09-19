@@ -127,16 +127,16 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 
 ---
 
-### WP-06b — Track B Vulkan bootstrap (B2.1 kickoff)
+### WP-06b — Track B Vulkan bootstrap (B2.1–B2.2)
 
 | Field | Value |
 |-------|-------|
 | **Effort** | M |
-| **Scope** | `fuse_rhi` instance/device/swapchain placeholder, `RenderCommandList`, `gl_context.hpp`, Hybrid dual-path wiring, `FUSE_BUILD_VULKAN` |
+| **Scope** | `fuse_rhi` instance/device/swapchain (headless + External surface path), `RenderCommandList`, `PresentPath`, `gl_context.hpp`, Hybrid dual-path wiring, `FUSE_BUILD_VULKAN` |
 | **MT note** | Submit on `renderThread()` only; workers stay snapshot-only |
-| **Exit** | Headless bootstrap tests green; CI honest stub/Lavapipe story; U4 placeholder renderer unchanged |
+| **Exit** | Headless bootstrap tests green; CI honest stub/Lavapipe story documented (umbrella CI not re-enabled); U4 placeholder renderer unchanged |
 | **Deps** | WP-06 scaffolding |
-| **Status** | 🚧 Kickoff — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) |
+| **Status** | ✅ B2.1 instance/device + B2.2 swapchain/frame ring + present-path stubs landed — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) §WP-06b |
 
 ---
 
@@ -264,7 +264,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 
-**Next:** WP-07 ore extraction per module; **WP-06b Track B B2.2 swapchain** (bootstrap landed — [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md)); U7 `.fuselevel` cookers.
+**Next:** WP-07 ore extraction per module; U7 `.fuselevel` cookers; Track B B2.4+ follow-up (bindless pool, real queue submit).
 
 ---
 

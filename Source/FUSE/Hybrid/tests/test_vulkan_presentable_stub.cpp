@@ -82,9 +82,10 @@ void testPresentPathThroughHybridBootstrap() {
     expectTrue(runtime->presentable()->needsResizeRecreate(), "presentable resize queued");
     fuse::frame::FrameCtx frameCtx{};
     runtime->render(frameCtx);
-    expectTrue(presentPath->hasPendingResize(), "render forwards resize to present path");
-    expectTrue(presentPath->waitInFlightFence(), "resize recreate on fence wait");
-    expectTrue(!presentPath->hasPendingResize(), "resize cleared after recreate");
+    expectTrue(!presentPath->hasPendingResize(), "render applies resize on fence wait");
+    expectTrue(presentPath->status().width == 800u, "resize width applied through render");
+    expectTrue(presentPath->status().height == 600u, "resize height applied through render");
+    expectTrue(presentPath->status().presentedFrames >= 2u, "second present frame after resize render");
 
     runtime->shutdown();
     fuse::core::shutdown();

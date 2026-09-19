@@ -1023,18 +1023,3 @@ int main() {
     std::fprintf(stderr, "fuse_post_process_b510: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
-
-// --- deepen additive from deepen-b510-tonemap-exposure-guards-1c90 ---
-void testMeterUtilEmptyGuards() {
-
-// --- deepen additive from deepen-b510-tonemap-exposure-guards-269c ---
-void testHistogramAccumulateInvalidParamsGuard() {
-
-// --- deepen additive from deepen-b510-post-tonemap-guards-2f90 ---
-void testAutoExposureParamsValidAndAdaptGuards() {
-void testHistogramPercentileAndBinGuards() {
-
-// --- deepen additive from deepen-b510-post-tonemap-01dd ---
-void testHistogramUtilAverageMeteringGuards() {
-void testAutoExposureUpdateWithParamsGuards() {
-void testTonemapCurveFilmicAndDisplayRangeGuards() {

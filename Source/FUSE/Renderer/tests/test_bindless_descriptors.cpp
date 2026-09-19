@@ -717,94 +717,6 @@ void testPreflightFreeFunction() {
     expectTrue(oob.index_in_range == false, "free-function preflight rejects OOB index");
 }
 
-void testBindlessHeapPreflight() {
-    const fuse::renderer::BindlessHeapPreflight empty =
-        fuse::renderer::preflightBindlessHeap(0u, 0u, fuse::renderer::kMaxTextures, false);
-    expectTrue(!empty.can_allocate(), "uninitialized heap cannot allocate");
-
-    const fuse::renderer::BindlessHeapPreflight fresh =
-        fuse::renderer::preflightBindlessHeap(0u, 0u, fuse::renderer::kMaxTextures, true);
-    expectTrue(fresh.can_allocate(), "fresh initialized heap can grow first slot");
-    expectTrue(!fresh.at_capacity, "fresh heap not at capacity");
-    expectTrue(fresh.can_grow, "fresh heap can grow");
-    expectTrue(!fresh.free_list_has_entries, "fresh heap has no free-list entries");
-
-    const fuse::renderer::BindlessHeapPreflight recycled =
-        fuse::renderer::preflightBindlessHeap(fuse::renderer::kMaxSamplers, 3u,
-                                              fuse::renderer::kMaxSamplers, true);
-    expectTrue(recycled.can_allocate(), "full table with free-list headroom can allocate");
-    expectTrue(!recycled.at_capacity, "free-list prevents at-capacity flag");
-    expectTrue(recycled.free_list_has_entries, "free-list entries detected in preflight");
-
-    const fuse::renderer::BindlessHeapPreflight exhausted =
-        fuse::renderer::preflightBindlessHeap(fuse::renderer::kMaxSamplers, 0u,
-                                              fuse::renderer::kMaxSamplers, true);
-    expectTrue(!exhausted.can_allocate(), "exhausted heap cannot allocate");
-    expectTrue(exhausted.at_capacity, "exhausted heap flagged at capacity");
-    expectTrue(!exhausted.can_grow, "exhausted heap cannot grow");
-}
-
-void testCanAllocateSlotGuard() {
-    expectTrue(fuse::renderer::bindlessCanAllocateSlot(0u, 0u, fuse::renderer::kMaxBuffers, true),
-               "empty initialized heap can allocate");
-    expectTrue(!fuse::renderer::bindlessCanAllocateSlot(0u, 0u, fuse::renderer::kMaxBuffers, false),
-               "uninitialized heap rejects allocation");
-    expectTrue(fuse::renderer::bindlessFreeListHasEntries(1u), "free-list helper sees entries");
-    expectTrue(!fuse::renderer::bindlessFreeListHasEntries(0u), "empty free-list helper");
-    expectTrue(fuse::renderer::bindlessHeapCanGrow(4u, fuse::renderer::kMaxTextures),
-               "heap below cap can grow");
-    expectTrue(!fuse::renderer::bindlessHeapCanGrow(fuse::renderer::kMaxTextures, fuse::renderer::kMaxTextures),
-               "heap at cap cannot grow");
-
-    auto bootstrap = makeBootstrap();
-    fuse::renderer::BindlessDescriptors bindless;
-    bindless.init(*bootstrap->device());
-    expectTrue(bindless.canAllocateSlot(fuse::renderer::BindlessHeapKind::Texture),
-               "instance canAllocate on fresh heap");
-
-    const fuse::renderer::BindlessSlotHandle handle = bindless.allocateTextureSlot(false);
-    bindless.freeTextureSlot(handle);
-    const fuse::renderer::BindlessHeapPreflight heapPreflight =
-        bindless.preflightHeap(fuse::renderer::BindlessHeapKind::Texture);
-    expectTrue(heapPreflight.can_allocate(), "preflightHeap sees free-list recycle path");
-    expectTrue(heapPreflight.free_list_has_entries, "preflightHeap counts free slot");
-    expectTrue(bindless.isIndexOnFreeList(fuse::renderer::BindlessHeapKind::Texture, handle.index),
-               "freed index appears on free list");
-
-    bindless.destroy(*bootstrap->device());
-}
-
-void testFreeListGuards() {
-    expectTrue(fuse::renderer::bindlessFreeListIndexInRange(0u, 4u), "index zero in range for positive capacity");
-    expectTrue(!fuse::renderer::bindlessFreeListIndexInRange(4u, 4u),
-               "index equal to capacity is out of range for free-list pop");
-    expectTrue(!fuse::renderer::bindlessFreeListIndexInRange(0u, 0u),
-               "zero capacity rejects every free-list index");
-
-    const std::vector<u32> freeList{2u, 5u, 5u};
-    expectTrue(fuse::renderer::bindlessFreeListContainsIndex(freeList, 5u),
-               "free-list contains known index");
-    expectTrue(!fuse::renderer::bindlessFreeListContainsIndex(freeList, 9u),
-               "free-list rejects unknown index");
-
-    auto bootstrap = makeBootstrap();
-    fuse::renderer::BindlessDescriptors bindless;
-    bindless.init(*bootstrap->device());
-
-    const fuse::renderer::BindlessSlotHandle handle = bindless.allocateBufferSlot(false);
-    bindless.freeBufferSlot(handle);
-    expectTrue(bindless.isIndexOnFreeList(fuse::renderer::BindlessHeapKind::Buffer, handle.index),
-               "single free enqueues index once");
-    expectTrue(bindless.heapFreeCount(fuse::renderer::BindlessHeapKind::Buffer) == 1u,
-               "free-list count stays at one after guarded free");
-
-    bindless.freeBufferSlot(handle);
-    expectTrue(bindless.heapFreeCount(fuse::renderer::BindlessHeapKind::Buffer) == 1u,
-               "duplicate free guarded by free-list contains check");
-
-    bindless.destroy(*bootstrap->device());
-}
-
 } // namespace
 
 int main() {
@@ -841,9 +753,6 @@ int main() {
     testHeapAtCapacityGuard();
     testCanFreeSlotGuard();
     testPreflightFreeFunction();
-    testBindlessHeapPreflight();
-    testCanAllocateSlotGuard();
-    testFreeListGuards();
 
     fuse::core::shutdown();
 
@@ -855,44 +764,3 @@ int main() {
     std::fprintf(stderr, "fuse_bindless_descriptors: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
-
-// --- deepen additive from deepen-b2-bindless-preflight-bf1a ---
-void testCanAllocateSlotPreflight() {
-void testCanFreeSlotPreflight() {
-    expectTrue(bindless.preflightSlotHandle(live), "preflightSlotHandle agrees with validate");
-    expectTrue(!bindless.preflightSlotHandle(stale), "preflight rejects stale generation");
-void testCanResizeHeapPreflight() {
-void testTryBindingIndexForHandlePreflight() {
-    expectTrue(bindless.tryBindingIndexForHandle(live, out), "try binding succeeds for live handle");
-    expectTrue(!bindless.tryBindingIndexForHandle(stale, out), "try binding rejects stale handle");
-    testCanAllocateSlotPreflight();
-    testCanFreeSlotPreflight();
-    testCanResizeHeapPreflight();
-    testTryBindingIndexForHandlePreflight();
-
-// --- deepen additive from deepen-b2-rhi-bindless-20d9 ---
-void testHeapCapacityInstanceGuards() {
-void testSlotAllocPreflight() {
-    const fuse::renderer::BindlessSlotAllocPreflight uninitialized =
-        bindless.preflightAllocateSlot(fuse::renderer::BindlessHeapKind::Buffer);
-    const fuse::renderer::BindlessSlotAllocPreflight fresh =
-    const fuse::renderer::BindlessSlotAllocPreflight full =
-        bindless.preflightAllocateSlot(fuse::renderer::BindlessHeapKind::Sampler);
-void testSlotFreePreflight() {
-    const fuse::renderer::BindlessSlotFreePreflight livePreflight = bindless.preflightFreeSlot(live);
-    expectTrue(livePreflight.can_free(), "live handle passes free preflight");
-    expectTrue(livePreflight.generation_matches, "live preflight generation matches");
-    expectTrue(livePreflight.slot_occupied, "live preflight slot occupied");
-    expectTrue(!livePreflight.already_on_free_list, "live slot not on free list");
-    const fuse::renderer::BindlessSlotFreePreflight stalePreflight = bindless.preflightFreeSlot(stale);
-    expectTrue(stalePreflight.skipped(), "stale generation skipped by free preflight");
-    const fuse::renderer::BindlessSlotFreePreflight afterFree = bindless.preflightFreeSlot(live);
-    const fuse::renderer::BindlessSlotFreePreflight oobPreflight = bindless.preflightFreeSlot(oob);
-    expectTrue(!oobPreflight.index_in_range, "OOB handle fails index_in_range preflight");
-    expectTrue(oobPreflight.skipped(), "OOB free preflight skipped");
-void testFreeListGuardAfterDoubleFree() {
-    const fuse::renderer::BindlessSlotFreePreflight doubleFreePreflight = bindless.preflightFreeSlot(handle);
-    expectTrue(doubleFreePreflight.already_on_free_list, "stale handle sees free-list membership");
-    expectTrue(!doubleFreePreflight.can_free(), "double-free blocked by free preflight");
-    testSlotAllocPreflight();
-    testSlotFreePreflight();

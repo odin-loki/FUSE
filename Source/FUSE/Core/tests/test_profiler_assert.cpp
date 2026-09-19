@@ -1842,6 +1842,7 @@ void testIsBlankEventNameGuard() {
                "whitespace-only scope name still records on valid path");
     expectTrue(fuse::profiler::countEventsByName(" \t") == 2u,
                "name lookup finds whitespace-only scope events");
+}
 
 void testFindEventIndexByNameGuard() {
     resetState();

@@ -53,6 +53,14 @@ void testHybridBootstrapInitShutdownOrder() {
     expectTrue(runtime->composer().frameCount() == 1u, "runFrame ticked one frame");
     expectTrue(runtime->composer().renderer().sample(160, 120) > 0, "software path still produces pixels");
 
+#if defined(FUSE_HAS_VULKAN_RHI)
+    expectTrue(runtime->presentPath() != nullptr, "present path wired through hybrid bootstrap");
+    expectTrue(runtime->presentPath()->status().presentedFrames >= 1u,
+               "present path exercised during runFrame");
+    expectTrue(runtime->composer().lastCommandList().commandCount() > 0u,
+               "RHI command mirror recorded on render thread");
+#endif
+
     runtime->shutdown();
     expectTrue(!runtime->isReady(), "shutdown clears ready state");
     expectTrue(!runtime->status().composerAttached, "composer detached on shutdown");

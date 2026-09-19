@@ -108,7 +108,18 @@ void HybridRendererBootstrap::render(frame::FrameCtx& ctx) {
                                      presentableStatus.pendingResizeHeight);
     }
 
+    // B2.2 — present-path fence wait + acquire before RHI record; present after software+RHI mirror.
+    if (m_presentPath != nullptr) {
+        m_presentPath->waitInFlightFence();
+        m_presentPath->acquireImage();
+        m_presentPath->markReadyToPresent();
+    }
+
     m_composer.render(ctx);
+
+    if (m_presentPath != nullptr) {
+        m_presentPath->presentImage();
+    }
 }
 
 void HybridRendererBootstrap::runFrame(frame::FrameCtx& ctx) {

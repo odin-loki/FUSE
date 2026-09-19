@@ -1,6 +1,6 @@
 # Track B — Vulkan Bootstrap (B2.1–B2.10) + CUDA Ray March (B2.7)
 
-**Status:** B2.1 bootstrap + B2.2 swapchain/frame ring + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.5 command buffer / render graph scaffolding + B2.6 CUDA/interop stubs + B2.7 SDF ray-march CUDA path scaffolding + B2.8 rasterisation pipeline scaffold + B2.9 composite pass scaffold + B2.10 renderer init & main-loop glue + **B2.11 Phase 2 deliverables & integration test suite**  
+**Status:** WP-06b ✅ B2.1 bootstrap + B2.2 swapchain/frame ring + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.5 command buffer / render graph scaffolding + B2.6 CUDA/interop stubs + B2.7 SDF ray-march CUDA path scaffolding + B2.8 rasterisation pipeline scaffold + B2.9 composite pass scaffold + B2.10 renderer init & main-loop glue + **B2.11 Phase 2 deliverables & integration test suite**  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B2.1–B2.5, §B2.6, §B2.7, §B2.8, §B2.9, §B2.10  
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §4.2, §4.4, §5.3  
 **Hybrid integration:** [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md)
@@ -69,6 +69,13 @@ Only `fuse::platform::renderThread()` may:
 - Call `RhiContext::beginFrame()` / `submitFrame()`
 
 Workers produce snapshot SOA / staging data only. Job code never includes `<vulkan/vulkan.h>`.
+
+`HybridRendererBootstrap::render()` (preferred entry):
+
+1. Forward resize → `PresentPath::requestResize` when `VulkanPresentable` needs recreate
+2. `PresentPath::waitInFlightFence` → `acquireImage` → `markReadyToPresent` (headless stubs on CI)
+3. `HybridComposer::render()` — software placeholder + RHI mirror (below)
+4. `PresentPath::presentImage` (no `vkQueuePresentKHR` when headless)
 
 `HybridComposer::render()`:
 
@@ -520,12 +527,31 @@ ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|
 
 ---
 
+## WP-06b deliverables (B2.1–B2.2)
+
+| Deliverable | Status | Notes |
+|-------------|--------|-------|
+| `VulkanInstance` / `VulkanDevice` headless bootstrap | **Done** | Real `VkInstance`/`VkDevice` when Lavapipe ICD present; stub when loader missing |
+| `VulkanSwapchain` headless desc + External `VkSwapchainKHR` path | **Done** | CI uses `SurfaceKind::Headless`; `acquireNextImage`/`present` no-op safely |
+| Triple-buffered `FrameManager` ring | **Done** | Fences + semaphores per slot; aligned with `FrameBarrier` |
+| `PresentPath` acquire/present/fence-wait/resize stubs | **Done** | `fuse_rhi_present_path_stub` + hybrid bootstrap wiring |
+| `RenderCommandList` + `RhiContext::submitFrame` on render thread | **Done** | `platform::requireGpuContextThread()` guard; hybrid mirrors software draws |
+| `HybridRendererBootstrap` dual path | **Done** | Software `PlaceholderRenderer` + RHI mirror + `PresentPath` per frame |
+| Headless bootstrap tests | **Done** | `fuse_vulkan_bootstrap`, `fuse_vulkan_swapchain`, `fuse_hybrid_renderer_bootstrap`, `fuse_hybrid_vulkan_presentable` |
+
+**Deferred (post–WP-06b):** real `vkQueueSubmit` + WSI present on desktop window; Editor Qt surface (`U6`); Android/MoltenVK WSI; bindless descriptor pool (B2.4 follow-up).
+
+---
+
 ## CI story (honest)
 
-1. **Linux umbrella** — `FUSE_BUILD_VULKAN=ON`, Mesa Lavapipe for headless ICD; Khronos validation layers used when installed, otherwise stub message (non-fatal). Swapchain stays **headless** (no `VkSurfaceKHR`); frame ring exercises real fences/semaphores. `fuse_hybrid_vulkan_presentable` exercises null-window + External-surface wiring only — no GPU window on runner.
-2. **Android NDK** — `FUSE_BUILD_VULKAN=OFF`; `fuse_core` + `fuse_hybrid` unchanged.
-3. **iOS stub workflow** — unchanged; Vulkan deferred.
-4. **CUDA** — umbrella Linux enables `FUSE_BUILD_CUDA=ON`; no NVIDIA toolkit required. `fuse_cuda_jobs`, `fuse_cuda_interop`, and `fuse_ray_march_stub` exercise stub paths.
+> **Note:** Umbrella GitHub Actions may be paused on `main` — do **not** re-enable CI as part of Track B landings. Validation is local/`ctest` with Lavapipe or stub backend.
+
+1. **Linux umbrella (when CI runs)** — `FUSE_BUILD_VULKAN=ON`, Mesa Lavapipe for headless ICD; Khronos validation layers used when installed, otherwise stub message (non-fatal). Swapchain stays **headless** (no `VkSurfaceKHR`); frame ring exercises real fences/semaphores. `fuse_hybrid_vulkan_presentable` exercises null-window + External-surface wiring only — no GPU window on runner.
+2. **Local / agent validation** — `cmake -B build -DFUSE_UMBRELLA=ON -DFUSE_BUILD_VULKAN=ON -DFUSE_BUILD_T3D=OFF -DFUSE_BUILD_T2D=OFF` then `ctest -R 'fuse_vulkan|fuse_hybrid_renderer|fuse_hybrid_vulkan_presentable|fuse_rhi_present_path_stub|fuse_render_command'`.
+3. **Android NDK** — `FUSE_BUILD_VULKAN=OFF`; `fuse_core` + `fuse_hybrid` unchanged.
+4. **iOS stub workflow** — unchanged; Vulkan deferred.
+5. **CUDA** — umbrella Linux enables `FUSE_BUILD_CUDA=ON`; no NVIDIA toolkit required. `fuse_cuda_jobs`, `fuse_cuda_interop`, and `fuse_ray_march_stub` exercise stub paths.
 
 No GPU window on runner is OK: stub backend keeps configure/build green; when Lavapipe is present, tests exercise real instance/device + frame sync objects.
 

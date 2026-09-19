@@ -50,39 +50,3 @@ private:
 };
 
 } // namespace fuse::renderer
-
-// --- deepen additive from deepen-b59-taa-history-resolve-skip-b406 ---
-TaaResolveSkipReason preflightTaaResolve(TaaResolveDesc& desc, const TaaHistoryBuffer& history);
-
-// --- deepen additive from deepen-b59-taa-guards-94f6 ---
-bool preflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
-
-// --- deepen additive from deepen-b59-taa-guards-2b1e ---
-bool preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
-bool taaResolveBlendPreflightPasses(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
-
-// --- deepen additive from deepen-b59-taa-guards-94db ---
-TaaBlendWeights computeTaaResolveBlendPreflight(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
-
-// --- deepen additive from deepen-b59-taa-guards-108b ---
-bool tryComputeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
-bool taaResolveHistoryBlendPreflightPasses(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
-
-// --- deepen additive from deepen-b59-taa-guards-27d7 ---
-bool preflightTaaResolveWithBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
-                                 TaaResolveBlendRejectReason* blendReason = nullptr);
-
-// --- deepen additive from deepen-b59-taa-guards-298c ---
-bool preflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
-
-// --- deepen additive from deepen-b59-taa-guards-53dc ---
-    bool preflightDesc(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
-                       TaaResolveDescPreflight* result = nullptr) const;
-
-// --- deepen additive from deepen-taa-b59-guards-9bd6 ---
-bool tryPreflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
-                                 TaaResolveSkipReason& skipReason, TaaResolveBlendRejectReason& blendReason);
-
-// --- deepen additive from deepen-b59-taa-guards-de0e ---
-bool preflightTaaResolvePipeline(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
-bool tryPreflightTaaResolvePipeline(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,

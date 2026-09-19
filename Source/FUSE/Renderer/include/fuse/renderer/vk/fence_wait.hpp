@@ -54,6 +54,3 @@ inline bool needsInFlightFenceWaitForSlot(const FrameManager& manager, u32 slotI
 bool waitInFlightFencesBeforeAcquire(FrameManager& manager);
 
 } // namespace fuse::renderer
-
-// --- deepen additive from deepen-b2-rhi-present-fence-resize-guards-fdcb ---
-enum class FenceWaitSkipReason : u8 {

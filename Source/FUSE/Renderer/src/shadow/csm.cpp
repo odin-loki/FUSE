@@ -606,38 +606,9 @@ bool CascadeLightSpaceLayout::isEmptyLightDirection(const fuse::math::Vec3& ligh
     return isDegenerateLightDirection(lightDirection);
 }
 
-bool CascadeLightSpaceLayout::shouldBypassEmptyLightDirection(const fuse::math::Vec3& lightDirection) {
-    return isEmptyLightDirection(lightDirection);
-}
-
-bool CascadeLightSpaceLayout::shouldBypassEmptyCameraDepthRange(const ShadowCameraParams& camera) {
-    return CascadedShadowMapLayout::isEmptyCameraDepthRange(camera);
-}
-
 bool CascadeLightSpaceLayout::shouldBypassAllCascadeShadowBuilds(const ShadowCameraParams& camera,
                                                                  const fuse::math::Vec3& lightDirection) {
-    return shouldBypassEmptyLightDirection(lightDirection) || shouldBypassEmptyCameraDepthRange(camera);
-}
-
-bool CascadeLightSpaceLayout::shouldSkipEmptyLightDirection(const fuse::math::Vec3& lightDirection) {
-    return isEmptyLightDirection(lightDirection);
-}
-
-bool CascadeLightSpaceLayout::shouldSkipEmptyCameraDepthRange(const ShadowCameraParams& camera) {
-    return CascadedShadowMapLayout::isEmptyCameraDepthRange(camera);
-}
-
-bool CascadeLightSpaceLayout::shouldSkipEmptyCascadeFrustum(u32 cascadeIndex,
-                                                            const CascadedShadowMapDesc& desc,
-                                                            const ShadowCameraParams& camera) {
-    return CascadedShadowMapLayout::isEmptyCascadeFrustum(cascadeIndex, desc, camera);
-}
-
-bool CascadeLightSpaceLayout::shouldSkipDegenerateCascadeRange(u32 cascadeIndex,
-                                                               const CascadedShadowMapDesc& desc,
-                                                               const ShadowCameraParams& camera) {
-    const CascadeRange range = CascadedShadowMapLayout::computeCascadeRange(cascadeIndex, desc, camera);
-    return isDegenerateCascadeRange(range, camera);
+    return isEmptyLightDirection(lightDirection) || CascadedShadowMapLayout::isEmptyCameraDepthRange(camera);
 }
 
 CascadeShadowSkipReason CascadeLightSpaceLayout::classifyCascadeShadowSkip(
@@ -645,16 +616,18 @@ CascadeShadowSkipReason CascadeLightSpaceLayout::classifyCascadeShadowSkip(
     const CascadedShadowMapDesc& desc,
     const ShadowCameraParams& camera,
     const fuse::math::Vec3& lightDirection) {
-    if (shouldSkipEmptyLightDirection(lightDirection)) {
+    if (isEmptyLightDirection(lightDirection)) {
         return CascadeShadowSkipReason::EmptyLightDirection;
     }
-    if (shouldSkipEmptyCameraDepthRange(camera)) {
+    if (CascadedShadowMapLayout::isEmptyCameraDepthRange(camera)) {
         return CascadeShadowSkipReason::EmptyCameraDepthRange;
     }
-    if (shouldSkipEmptyCascadeFrustum(cascadeIndex, desc, camera)) {
+    if (CascadedShadowMapLayout::isEmptyCascadeFrustum(cascadeIndex, desc, camera)) {
         return CascadeShadowSkipReason::EmptyCascadeFrustum;
     }
-    if (shouldSkipDegenerateCascadeRange(cascadeIndex, desc, camera)) {
+
+    const CascadeRange range = CascadedShadowMapLayout::computeCascadeRange(cascadeIndex, desc, camera);
+    if (isDegenerateCascadeRange(range, camera)) {
         return CascadeShadowSkipReason::DegenerateCascadeRange;
     }
 
@@ -1046,16 +1019,3 @@ u32 CascadeLightSpaceLayout::buildAllCascadeLightSpaceMatrices(
 }
 
 } // namespace fuse::renderer
-
-// --- deepen additive from deepen-csm-sanitize-skip-guards-8bc6 ---
-    return cascadeShadowSkipReasonIsBlocking(classifyCascadePopulationEarlyOut(camera, lightDirection));
-    return !cascadeShadowSkipReasonIsBlocking(skip);
-    if (cascadeShadowSkipReasonIsBlocking(populationEarlyOut)) {
-
-// --- deepen additive from deepen-b55-csm-split-guards-b8b6 ---
-    return cascadeShadowBypassReasonIsBlocking(classifyCascadeShadowBypass(camera, lightDirection));
-bool cascadeShadowBypassReasonIsBlocking(CascadeShadowBypassReason reason) {
-
-// --- deepen additive from deepen-b55-csm-split-guards-448c ---
-bool CascadeLightSpaceLayout::wouldSkipCascadeShadowBuild(u32 cascadeIndex,
-    return wouldSkipCascadeShadowBuild(cascadeIndex, desc, camera, lightDirection);

@@ -58,6 +58,3 @@ private:
 };
 
 } // namespace fuse::renderer
-
-// --- deepen additive from deepen-b59-taa-guards-a831 ---
-    bool preflightReuse(u32 observedGeneration) const;
