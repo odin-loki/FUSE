@@ -8,6 +8,9 @@
 
 namespace fuse::physics {
 
+/// True when both body indices are valid for a `bodyCount`-body partition.
+bool body_pair_in_range(u32 bodyCount, u32 bodyA, u32 bodyB);
+
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
 /// contacts and distance constraints run sequentially (Gauss-Seidel stub).
