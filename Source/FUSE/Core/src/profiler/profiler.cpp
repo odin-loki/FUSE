@@ -436,6 +436,8 @@ void assignSkipReason(ProfilerSkipReason* reason, ProfilerSkipReason value) {
         && isValidEventName(event.name);
 
 
+        return lhs == rhs;
+
 
 } // namespace
 
@@ -2314,6 +2316,7 @@ bool wouldSkipCounterSample(const char* track, ProfileRecordSkipReason* reason) 
     return wouldSkipProfileScope(track, reason);
 
 
+
 bool isValidProfileEvent(const ProfileEvent& event) {
     return tryValidateEventName(event.name, reason);
 
@@ -3883,35 +3886,41 @@ bool tryLastExportableEventByFlow(u32 flowId, ProfileEvent& outEvent) {
 
 
 
-            return true;
-        }
 
-    outEvent = ProfileEvent{};
-    return false;
 
-    if (flowId == 0u) {
 
-    const u32 total = eventCount();
 
         if (event.name != nullptr && std::strcmp(event.name, name) == 0 && isValidEventName(event.name)) {
             outIndex = i;
 
-    outIndex = kInvalidEventIndex;
 
 bool tryFindLastEventIndexByName(const char* name, u32& outIndex) {
-    if (!isValidEventName(name)) {
 
             outIndex = i - 1u;
 
 
 bool tryFindAsyncFlowStartIndex(u32 flowId, u32& outIndex) {
-    for (u32 i = 0u; i < total; ++i) {
-        const ProfileEvent& event = eventAt(i);
         if (event.phase == EventPhase::FlowStart && event.scopeId == flowId && isValidEventName(event.name)) {
 
 
 bool tryFindAsyncFlowFinishIndex(u32 flowId, u32& outIndex) {
         if (event.phase == EventPhase::FlowFinish && event.scopeId == flowId && isValidEventName(event.name)) {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 u32 firstEventIndex() {
@@ -5640,12 +5649,21 @@ bool eventNameMatches(const char* eventName, const char* queryName) {
 
 
 
-        }
 
-    std::unordered_map<u32, FlowPairCounts> counts;
-    accumulateFlowPairCounts(counts);
 
-    for (const auto& entry : counts) {
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -6691,16 +6709,9 @@ bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReaso
 
 
     preflight.hasActiveProfilingNesting = hasActiveProfilingNesting();
-    preflight.firstExportableEventIndex = firstExportableEventIndex();
     preflight.hasActiveScopeNesting = hasActiveScopeNesting();
     preflight.hasActiveFlowNesting = hasActiveFlowNesting();
     preflight.hasNestedAsyncFlowContext = hasNestedAsyncFlowContext();
-    preflight.hasActiveScopes = hasActiveScopes();
-    preflight.danglingFlowBeginCount = countDanglingFlowBegins();
-    preflight.orphanFlowEndCount = countOrphanFlowEnds();
-    preflight.hasUnpairedFlowEvents =
-        preflight.danglingFlowBeginCount > 0u || preflight.orphanFlowEndCount > 0u;
-    preflight.nestingStateConsistent = isNestingStateConsistent();
     preflight.unbalancedFlowPairCount = countUnbalancedFlowPairsInBuffer();
     preflight.hasUnbalancedFlowPairsInBuffer = preflight.unbalancedFlowPairCount > 0u;
 
@@ -6733,8 +6744,6 @@ NestingConsistencyPreflight preflightNestingConsistency() {
     preflight.openAsyncFlowCount = openAsyncFlowCount();
     preflight.activeScopeNestingDepth = scopeNestingDepth();
     preflight.activeFlowNestingDepth = flowNestingDepth();
-    preflight.hasActiveScope = hasActiveScope();
-    preflight.hasActiveAsyncFlowNesting = hasActiveAsyncFlowNesting();
     preflight.hasUnbalancedBufferedFlowPairs = hasUnbalancedBufferedFlowPairs();
 
 
@@ -6835,738 +6844,245 @@ NestingPreflight preflightNesting() {
 
 
 
-    return preflight;
-}
 
-ProfileScopePreflight preflightProfileScope(const char* name) {
-    ProfileScopePreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowBeginPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowEndPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
-    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
-        && !preflight.wouldUnderflowOpenCount;
-    return preflight;
-}
 
 bool wouldSkipProfileScope(const char* name) {
     return !preflightProfileScope(name).canEnter;
-}
 
 bool wouldSkipBeginAsyncFlow(const char* name, u32 flowId) {
     return !preflightBeginAsyncFlow(name, flowId).canBegin;
-}
 
 bool wouldSkipEndAsyncFlow(const char* name, u32 flowId) {
     return !preflightEndAsyncFlow(name, flowId).canEnd;
-}
 
 bool wouldSkipCounterSample(const char* track) {
     return !enabled() || !isValidEventName(track);
-}
 
-ProfileScopePreflight preflightProfileScope(const char* name) {
-    ProfileScopePreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowBeginPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowEndPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
-    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
-        && !preflight.wouldUnderflowOpenCount;
-    return preflight;
-}
 
-ScopeNestingPreflight preflightScopeNesting() {
-    ScopeNestingPreflight preflight{};
-    preflight.activeDepth = scopeNestingDepth();
-    preflight.maxDepth = maxNestingDepth();
-    preflight.balanced = isScopeNestingBalanced();
-    return preflight;
-}
 
 AsyncFlowNestingPreflight preflightAsyncFlowNesting() {
     AsyncFlowNestingPreflight preflight{};
     preflight.activeFlowDepth = flowNestingDepth();
     preflight.maxFlowDepth = maxFlowNestingDepth();
     preflight.openFlowCount = openAsyncFlowCount();
-    preflight.balanced = isFlowNestingBalanced();
-    preflight.flowDepthDetached = isFlowDepthDetached();
-    preflight.crossThreadHandoffPending = isCrossThreadFlowHandoffPending();
-    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
-    return preflight;
-}
 
-bool wouldSkipProfileScope(const char* name) {
-    return !preflightProfileScope(name).canEnter;
-}
 
 bool wouldSkipBeginAsyncFlow(const char* name) {
     return !preflightBeginAsyncFlow(name, 0u).canBegin;
-}
 
 bool wouldSkipEndAsyncFlow(const char* name) {
     return !preflightEndAsyncFlow(name, 0u).canEnd;
-}
 
 bool wouldSkipCounter(const char* track) {
-    return !enabled() || !isValidEventName(track);
-}
 
 bool wouldSkipCounterSnapshotAtFrame(const char* track) {
     return wouldSkipCounter(track);
-}
 
-ProfileScopePreflight preflightProfileScope(const char* name) {
-    ProfileScopePreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowBeginPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowEndPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
-    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
-        && !preflight.wouldUnderflowOpenCount;
-    return preflight;
-}
 
-ScopeNestingPreflight preflightScopeNesting() {
-    ScopeNestingPreflight preflight{};
-    preflight.activeDepth = scopeNestingDepth();
-    preflight.maxDepth = maxNestingDepth();
-    preflight.balanced = isScopeNestingBalanced();
-    return preflight;
-}
 
-AsyncFlowNestingPreflight preflightAsyncFlowNesting() {
-    AsyncFlowNestingPreflight preflight{};
-    preflight.activeFlowDepth = flowNestingDepth();
-    preflight.maxFlowDepth = maxFlowNestingDepth();
-    preflight.openFlowCount = openAsyncFlowCount();
-    preflight.balanced = isFlowNestingBalanced();
-    preflight.flowDepthDetached = isFlowDepthDetached();
-    preflight.crossThreadHandoffPending = isCrossThreadFlowHandoffPending();
-    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
-    return preflight;
-}
 
-bool wouldSkipProfileScope(const char* name) {
-    return !preflightProfileScope(name).canEnter;
-}
 
-bool wouldSkipBeginAsyncFlow(const char* name) {
-    return !preflightBeginAsyncFlow(name, 0u).canBegin;
-}
 
-bool wouldSkipEndAsyncFlow(const char* name) {
-    return !preflightEndAsyncFlow(name, 0u).canEnd;
-}
 
-bool wouldSkipCounter(const char* track) {
-    return !enabled() || !isValidEventName(track);
-}
 
-bool wouldSkipCounterSnapshotAtFrame(const char* track) {
-    return wouldSkipCounter(track);
-}
 
-ProfileScopePreflight preflightProfileScope(const char* name) {
-    ProfileScopePreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowBeginPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowEndPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
-    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
-        && !preflight.wouldUnderflowOpenCount;
-    return preflight;
-}
 
-NestingAsyncFlowPreflight preflightNestingAsyncFlow() {
-    NestingAsyncFlowPreflight preflight{};
-    preflight.activeScopeNestingDepth = scopeNestingDepth();
-    preflight.activeFlowNestingDepth = flowNestingDepth();
-    preflight.maxScopeNestingDepth = maxNestingDepth();
-    preflight.maxFlowNestingDepth = maxFlowNestingDepth();
-    preflight.openAsyncFlowCount = openAsyncFlowCount();
-    preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
-    preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
-    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
-    preflight.flowDepthDetached = isFlowDepthDetached();
-    preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
-    return preflight;
-}
 
-bool wouldSkipProfileScope(const char* name) {
-    return !preflightProfileScope(name).canEnter;
-}
 
-bool wouldSkipBeginAsyncFlow(const char* name, u32 flowId) {
-    return !preflightBeginAsyncFlow(name, flowId).canBegin;
-}
 
-bool wouldSkipEndAsyncFlow(const char* name, u32 flowId) {
-    return !preflightEndAsyncFlow(name, flowId).canEnd;
-}
 
-bool wouldSkipCounter(const char* track) {
-    return !enabled() || !isValidEventName(track);
-}
 
 bool wouldSkipChromeTraceExport() {
     return !enabled();
-}
 
-bool wouldSkipProfileScope(const char* name) {
     return !enabled() || !isValidEventName(name);
-}
 
 bool wouldSkipAsyncFlowBegin(const char* name, u32 /*flowId*/) {
-    return !enabled() || !isValidEventName(name);
-}
 
 bool wouldSkipAsyncFlowEnd(const char* name, u32 /*flowId*/) {
     return !enabled() || !isValidEventName(name) || openAsyncFlowCount() == 0u;
-}
 
-bool wouldSkipCounterSample(const char* track) {
-    return !enabled() || !isValidEventName(track);
-}
 
-bool wouldSkipChromeTraceExport() {
-    return !enabled();
-}
 
 bool wouldSkipChromeTraceExportSafely() {
     return !preflightChromeTraceExport().canExportSafely();
-}
 
 bool wouldSkipProfileScope(const char* name, ProfilerSkipReason* reason) {
-    if (!enabled()) {
         assignSkipReason(reason, ProfilerSkipReason::ProfilerDisabled);
-        return true;
-    }
 
     if (!isValidEventName(name)) {
         assignSkipReason(reason, ProfilerSkipReason::InvalidName);
-        return true;
-    }
 
     assignSkipReason(reason, ProfilerSkipReason::None);
-    return false;
-}
 
 bool wouldSkipAsyncFlowBegin(const char* name, ProfilerSkipReason* reason) {
     return wouldSkipProfileScope(name, reason);
-}
 
 bool wouldSkipAsyncFlowEnd(const char* name, ProfilerSkipReason* reason) {
-    if (!enabled()) {
-        assignSkipReason(reason, ProfilerSkipReason::ProfilerDisabled);
-        return true;
-    }
 
-    if (!isValidEventName(name)) {
-        assignSkipReason(reason, ProfilerSkipReason::InvalidName);
-        return true;
-    }
 
     if (openAsyncFlowCount() == 0u) {
         assignSkipReason(reason, ProfilerSkipReason::NoOpenAsyncFlow);
-        return true;
-    }
 
-    assignSkipReason(reason, ProfilerSkipReason::None);
-    return false;
-}
 
 bool wouldSkipCounter(const char* track, ProfilerSkipReason* reason) {
     return wouldSkipProfileScope(track, reason);
-}
 
 bool wouldSkipChromeTraceExport(ProfilerSkipReason* reason) {
-    if (!enabled()) {
-        assignSkipReason(reason, ProfilerSkipReason::ProfilerDisabled);
-        return true;
-    }
 
-    if (exportableEventCount() == 0u) {
         assignSkipReason(reason, ProfilerSkipReason::NoExportableEvents);
-        return true;
-    }
 
-    assignSkipReason(reason, ProfilerSkipReason::None);
-    return false;
-}
 
 bool wouldSkipSafeChromeTraceExport(ProfilerSkipReason* reason) {
     const ChromeTraceExportPreflight preflight = preflightChromeTraceExport();
 
     if (!preflight.canExport()) {
-        assignSkipReason(reason, ProfilerSkipReason::ProfilerDisabled);
-        return true;
-    }
 
     if (!preflight.hasExportableEvents()) {
-        assignSkipReason(reason, ProfilerSkipReason::NoExportableEvents);
-        return true;
-    }
 
     if (preflight.hasUnbalancedNesting()) {
         assignSkipReason(reason, ProfilerSkipReason::UnbalancedNesting);
-        return true;
-    }
 
     if (preflight.flowDepthDetached) {
         assignSkipReason(reason, ProfilerSkipReason::FlowDepthDetached);
-        return true;
-    }
 
     if (preflight.crossThreadFlowHandoffPending) {
         assignSkipReason(reason, ProfilerSkipReason::CrossThreadFlowHandoffPending);
-        return true;
-    }
 
-    assignSkipReason(reason, ProfilerSkipReason::None);
-    return false;
-}
 
 bool wouldSkipChromeTraceExport(bool requireBalancedNesting) {
-    const ChromeTraceExportPreflight preflight = preflightChromeTraceExport();
-    if (!preflight.canExport()) {
-        return true;
-    }
     if (requireBalancedNesting && !preflight.canExportSafely()) {
-        return true;
-    }
-    return false;
-}
 
-ProfileScopePreflight preflightProfileScope(const char* name) {
-    ProfileScopePreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowBeginPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowEndPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
-    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
-        && !preflight.wouldUnderflowOpenCount;
-    return preflight;
-}
 
-bool wouldSkipProfileScope(const char* name) {
-    return !preflightProfileScope(name).canEnter;
-}
 
-bool wouldSkipBeginAsyncFlow(const char* name, u32 flowId) {
-    return !preflightBeginAsyncFlow(name, flowId).canBegin;
-}
 
-bool wouldSkipEndAsyncFlow(const char* name, u32 flowId) {
-    return !preflightEndAsyncFlow(name, flowId).canEnd;
-}
 
-bool wouldSkipCounter(const char* track) {
-    return !enabled() || !isValidEventName(track);
-}
 
-bool wouldSkipCounterSnapshotAtFrame(const char* track) {
-    return !enabled() || !isValidEventName(track);
-}
 
-ProfileScopePreflight preflightProfileScope(const char* name) {
-    ProfileScopePreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowBeginPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowEndPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
-    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
-        && !preflight.wouldUnderflowOpenCount;
-    return preflight;
-}
 
-bool wouldSkipProfileScope(const char* name) {
-    return !preflightProfileScope(name).canEnter;
-}
 
 bool wouldSkipAsyncFlowBegin(const char* name) {
-    return !preflightBeginAsyncFlow(name, 0u).canBegin;
-}
 
 bool wouldSkipAsyncFlowEnd(const char* name) {
-    return !preflightEndAsyncFlow(name, 0u).canEnd;
-}
 
-bool wouldSkipCounter(const char* track) {
-    return !enabled() || !isValidEventName(track);
-}
 
-bool wouldSkipChromeTraceExport() {
     return !preflightChromeTraceExport().canExport();
-}
 
-bool wouldSkipChromeTraceExportSafely() {
-    return !preflightChromeTraceExport().canExportSafely();
-}
 
-ProfileScopePreflight preflightProfileScope(const char* name) {
-    ProfileScopePreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowBeginPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowEndPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
-    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
-        && !preflight.wouldUnderflowOpenCount;
-    return preflight;
-}
 
-NestingAsyncFlowPreflight preflightNestingAsyncFlow() {
-    NestingAsyncFlowPreflight preflight{};
-    preflight.activeScopeNestingDepth = scopeNestingDepth();
-    preflight.activeFlowNestingDepth = flowNestingDepth();
-    preflight.maxScopeNestingDepth = maxNestingDepth();
-    preflight.maxFlowNestingDepth = maxFlowNestingDepth();
-    preflight.openAsyncFlowCount = openAsyncFlowCount();
-    preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
-    preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
-    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
-    preflight.flowDepthDetached = isFlowDepthDetached();
-    preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
-    return preflight;
-}
 
-bool wouldSkipProfileScope(const char* name) {
-    return !preflightProfileScope(name).canEnter;
-}
 
-bool wouldSkipAsyncFlowBegin(const char* name) {
-    return !preflightBeginAsyncFlow(name, 0u).canBegin;
-}
 
-bool wouldSkipAsyncFlowEnd(const char* name) {
-    return !preflightEndAsyncFlow(name, 0u).canEnd;
-}
 
-bool wouldSkipCounterSample(const char* track) {
     return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(track);
-}
 
-bool wouldSkipChromeTraceExport() {
-    return !enabled();
-}
 
-bool wouldSkipChromeTraceExportSafely() {
-    return !preflightChromeTraceExport().canExportSafely();
-}
 
 bool wouldSkipSafeChromeTraceExport(ProfileRecordSkipReason* reason) {
-    if (!enabled()) {
-        if (reason != nullptr) {
             *reason = ProfileRecordSkipReason::ProfilerDisabled;
-        }
-        return true;
-    }
 
-    if (!isScopeNestingBalanced()) {
-        if (reason != nullptr) {
             *reason = ProfileRecordSkipReason::UnbalancedScopeNesting;
-        }
-        return true;
-    }
 
-    if (!isFlowNestingBalanced()) {
-        if (reason != nullptr) {
             *reason = ProfileRecordSkipReason::UnbalancedFlowNesting;
-        }
-        return true;
-    }
 
-    if (hasOpenAsyncFlows()) {
-        if (reason != nullptr) {
             *reason = ProfileRecordSkipReason::NoOpenFlows;
-        }
-        return true;
-    }
 
-    if (isFlowDepthDetached()) {
-        if (reason != nullptr) {
             *reason = ProfileRecordSkipReason::FlowDepthDetached;
-        }
-        return true;
-    }
 
     if (isCrossThreadFlowHandoffPending()) {
-        if (reason != nullptr) {
             *reason = ProfileRecordSkipReason::CrossThreadHandoffPending;
-        }
-        return true;
-    }
 
-    if (reason != nullptr) {
         *reason = ProfileRecordSkipReason::None;
-    }
-    return false;
-}
 
 bool wouldSkipScope(const char* name) {
-    return !enabled() || !isValidEventName(name);
-}
 
-bool wouldSkipAsyncFlowBegin(const char* name, u32 /*flowId*/) {
-    return !enabled() || !isValidEventName(name);
-}
 
-bool wouldSkipAsyncFlowEnd(const char* name, u32 /*flowId*/) {
     if (!enabled() || !isValidEventName(name)) {
-        return true;
-    }
-    return openAsyncFlowCount() == 0u;
-}
 
-bool wouldSkipCounterSample(const char* track) {
-    return !enabled() || !isValidEventName(track);
-}
 
-bool wouldSkipChromeTraceExport() {
-    return !enabled();
-}
 
-bool wouldSkipChromeTraceExportSafely() {
-    return !preflightChromeTraceExport().canExportSafely();
-}
 
-bool wouldSkipScope(const char* name) {
-    return !enabled() || !isValidEventName(name);
-}
 
-bool wouldSkipAsyncFlowBegin(const char* name, u32 /*flowId*/) {
-    return !enabled() || !isValidEventName(name);
-}
 
-bool wouldSkipAsyncFlowEnd(const char* name, u32 /*flowId*/) {
-    if (!enabled() || !isValidEventName(name)) {
-        return true;
-    }
-    return openAsyncFlowCount() == 0u;
-}
 
-bool wouldSkipCounterSample(const char* track) {
-    return !enabled() || !isValidEventName(track);
-}
 
-bool wouldSkipChromeTraceExport() {
-    return !enabled();
-}
 
-bool wouldSkipChromeTraceExportSafely() {
-    return !preflightChromeTraceExport().canExportSafely();
-}
 
-ProfileScopePreflight preflightProfileScope(const char* name) {
-    ProfileScopePreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowBeginPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowEndPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
-    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
-        && !preflight.wouldUnderflowOpenCount;
-    return preflight;
-}
 
-bool wouldSkipProfileScope(const char* name) {
-    return !preflightProfileScope(name).canEnter;
-}
 
-bool wouldSkipBeginAsyncFlow(const char* name, u32 flowId) {
-    return !preflightBeginAsyncFlow(name, flowId).canBegin;
-}
 
-bool wouldSkipEndAsyncFlow(const char* name, u32 flowId) {
-    return !preflightEndAsyncFlow(name, flowId).canEnd;
-}
 
-bool wouldSkipCounterSample(const char* track) {
-    return !enabled() || !isValidEventName(track);
-}
 
-ProfileScopePreflight preflightProfileScope(const char* name) {
-    ProfileScopePreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowBeginPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowEndPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
-    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
-        && !preflight.wouldUnderflowOpenCount;
-    return preflight;
-}
 
-bool wouldSkipProfileScope(const char* name) {
-    return !preflightProfileScope(name).canEnter;
-}
 
-bool wouldSkipBeginAsyncFlow(const char* name, u32 flowId) {
-    return !preflightBeginAsyncFlow(name, flowId).canBegin;
-}
 
-bool wouldSkipEndAsyncFlow(const char* name, u32 flowId) {
-    return !preflightEndAsyncFlow(name, flowId).canEnd;
-}
 
-bool wouldSkipCounter(const char* track) {
-    return !enabled() || !isValidEventName(track);
-}
 
-bool wouldSkipChromeTraceExport() {
-    return !preflightChromeTraceExport().canExport();
-}
 
-bool wouldSkipChromeTraceExportSafely() {
-    return !preflightChromeTraceExport().canExportSafely();
-}
 
 ProfileNestingPreflight preflightNesting() {
     ProfileNestingPreflight preflight{};
-    preflight.activeScopeNestingDepth = scopeNestingDepth();
-    preflight.activeFlowNestingDepth = flowNestingDepth();
-    preflight.maxScopeNestingDepth = maxNestingDepth();
-    preflight.maxFlowNestingDepth = maxFlowNestingDepth();
-    preflight.openAsyncFlowCount = openAsyncFlowCount();
-    preflight.scopeNestingBalanced = isScopeNestingBalanced();
-    preflight.flowNestingBalanced = isFlowNestingBalanced();
-    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
-    preflight.flowDepthDetached = isFlowDepthDetached();
-    preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
     return preflight;
+}
+
+ProfileScopePreflight preflightProfileScope(const char* name) {
+    ProfileScopePreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
+    return preflight;
+}
+
+AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
+    AsyncFlowBeginPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
+    return preflight;
+}
+
+AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
+    AsyncFlowEndPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
+    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
+        && !preflight.wouldUnderflowOpenCount;
+    return preflight;
+}
+
+bool wouldSkipProfileScope(const char* name) {
+    return !preflightProfileScope(name).canEnter;
+}
+
+bool wouldSkipBeginAsyncFlow(const char* name, u32 flowId) {
+    return !preflightBeginAsyncFlow(name, flowId).canBegin;
+}
+
+bool wouldSkipEndAsyncFlow(const char* name, u32 flowId) {
+    return !preflightEndAsyncFlow(name, flowId).canEnd;
+}
+
+bool wouldSkipCounterSample(const char* track) {
+    return !enabled() || !isValidEventName(track);
 }
 
 void reset() {
