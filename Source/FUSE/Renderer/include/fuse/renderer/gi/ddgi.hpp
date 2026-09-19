@@ -380,6 +380,7 @@ struct ProbeGridLayout {
     /// True when corner indices and blend weights are usable for trilinear lookup.
     /// Clamp sample coords; returns false and clears coords on empty grid.
     static bool areProbeSampleCoordsInBounds(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// Alias for `isValidProbeSampleCoords` — mirrors froxel `areSampleCoordsInBounds`.
     /// Clamp sample coords in place; returns false without modifying `coords` on an empty grid.
     static bool tryClampProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCoords& coords);
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
@@ -415,6 +416,17 @@ struct ProbeGridLayout {
     /// Top-left texel of the probe's depth-variance tile in the atlas.
     static fuse::math::Vec2 probeDepthAtlasOrigin(const DDGIDesc& desc, const ProbeGridCoord& coord);
 };
+
+/// Why a probe-cache index lookup preflight rejected the request (B5.6 deepen).
+enum class CacheIndexRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    OutOfRangeIndex,
+    UndersizedCache,
+};
+
+/// Human-readable label for cache-index reject reasons (logging / tests).
+const char* cacheIndexRejectReasonLabel(CacheIndexRejectReason reason);
 
 /// CPU-side probe grid helpers — mirrors CUDA scheduling without GPU.
 namespace ddgi_util {
@@ -552,6 +564,11 @@ bool trySampleCacheAtIndex(const DDGIDesc& desc,
                            fuse::math::Vec3& outIrradiance);
 /// Read irradiance at probe grid coord with guard preflight.
 bool trySampleCacheAtCoord(const DDGIDesc& desc,
+/// True when `probe_index` is out of grid range or exceeds `cache_count`.
+bool isCacheIndexOutOfRange(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
+/// Diagnose why cache-index preflight would reject; vacuously succeeds on valid lookups.
+bool tryIsCacheIndexValid(const DDGIDesc& desc,
+                          CacheIndexRejectReason& outReason);
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
     /// True when `probe_index` is out of range for the grid or exceeds `cache_count`.
     bool isCacheIndexOutOfRange(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
@@ -746,6 +763,7 @@ private:
 };
 
 /// Why probe-update launch preflight rejected the request (B5.6 deepen).
+/// Why a host probe-update launch preflight rejected the request (B5.6 deepen).
 enum class DdgiLaunchRejectReason : u8 {
     None = 0,
     EmptyGrid,
@@ -776,6 +794,7 @@ bool preflightDdgiProbeUpdate(const DDGIDesc& desc,
                                  DdgiLaunchRejectReason& out_reason);
 /// Count probe indices that exceed the valid probe range; returns 0 on empty grid or null buffer.
 u32 countInvalidLaunchProbeIndices(const DDGIDesc& desc, const u32* probe_indices, u32 probe_count);
+/// Diagnose why launch preflight would reject; vacuously succeeds when launch is allowed.
 
 /// Host launcher for probe trace + blend kernels — stub until CUDA kernels land.
 bool launch_ddgi_probe_update(const DDGIDesc& desc,
