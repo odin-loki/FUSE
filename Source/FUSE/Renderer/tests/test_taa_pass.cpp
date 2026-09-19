@@ -4547,3 +4547,13 @@ void testTaaPassTryPreflightAndCompositeGuards() {
                "pass tryPreflightJitterAdvance passes for valid sequence");
                "pass classifyResolveBlendReject returns None before warmup");
                "zero-width pass classifyJitterNdcReject returns InvalidViewport");
+
+// --- deepen additive from deepen-b59-taa-pass-try-preflights-d3c4 ---
+               "pass tryComputeExpectedResolveBlendWeights passes before warmup resolve");
+               "pass tryPreflightResolve skip reason is None before warmup resolve");
+               "pass tryPreflightHistoryReuse passes with matching generation after warmup");
+               "pass tryComputeExpectedResolveBlendWeights passes after warmup");
+    expectTrue(pass->tryPreflightJitterSync(9u, jitterReject),
+    expectTrue(!pass->tryPreflightHistoryReuse(resolveDesc.observed_history_generation, reuseReason),
+               "pass tryPreflightHistoryReuse fails with current generation after invalidate");
+               "pass tryPreflightHistoryReuse reason is NotWarm after invalidate with current generation");
