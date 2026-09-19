@@ -1146,3 +1146,19 @@ bool tryPreflightSnap(GizmoMode mode, const GizmoSnapSettings& settings, SnapPre
 struct PhaseActionPreflight {
 PhaseActionPreflight preflightPhaseAction(const GizmoHitTest& hit, bool dragging,
     [[nodiscard]] PhaseActionPreflight preflightPhaseAction(const GizmoHitTest& hit) const;
+
+// --- deepen additive from deepen-b6-gizmo-preflight-reject-reasons-9a19 ---
+                      GizmoPickRejectReason& outReason);
+                      GizmoSnapRejectReason& outReason);
+                           const GizmoSnapSettings& settings, BeginDragPreflight& out,
+                           GizmoBeginDragRejectReason& outReason, bool alreadyDragging = false);
+                            UpdateDragPreflight& out, GizmoUpdateDragRejectReason& outReason);
+                         GizmoEndDragRejectReason& outReason);
+bool shouldSkipBeginDrag(const BeginDragPreflight& preflight);
+bool shouldSkipEndDrag(const EndDragPreflight& preflight);
+    [[nodiscard]] GizmoBeginDragRejectReason classifyBeginDragReject(const GizmoHitTest& hit) const;
+    [[nodiscard]] GizmoPickRejectReason classifyPickReject(const GizmoHitTest& hit) const;
+    [[nodiscard]] GizmoPickRejectReason classifyPickReject(const GizmoRay& ray,
+    [[nodiscard]] GizmoSnapRejectReason classifySnapReject() const;
+    [[nodiscard]] GizmoUpdateDragRejectReason classifyUpdateDragReject(const GizmoHitTest& hit) const;
+    [[nodiscard]] GizmoEndDragRejectReason classifyEndDragReject() const;

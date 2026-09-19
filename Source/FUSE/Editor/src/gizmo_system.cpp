@@ -2704,3 +2704,38 @@ PhaseActionPreflight preflightPhaseAction(const GizmoHitTest& hit, bool dragging
     return preflightInteraction(m_lastHit).snapWillApplyOnPhase();
 PhaseActionPreflight GizmoSystem::preflightPhaseAction(const GizmoHitTest& hit) const {
     return fuse::editor::preflightPhaseAction(hit, m_dragging, m_activeAxis, m_mode, m_snap);
+
+// --- deepen additive from deepen-b6-gizmo-preflight-reject-reasons-9a19 ---
+                      GizmoPickRejectReason& outReason) {
+    outReason = classifyPickReject(out);
+                      GizmoSnapRejectReason& outReason) {
+    outReason = classifySnapReject(out);
+                           const GizmoSnapSettings& settings, BeginDragPreflight& out,
+                           GizmoBeginDragRejectReason& outReason, bool alreadyDragging) {
+    outReason = classifyBeginDragReject(out);
+                            UpdateDragPreflight& out, GizmoUpdateDragRejectReason& outReason) {
+    outReason = classifyUpdateDragReject(out);
+                         GizmoEndDragRejectReason& outReason) {
+    outReason = classifyEndDragReject(out);
+bool shouldSkipBeginDrag(const BeginDragPreflight& preflight) {
+bool shouldSkipEndDrag(const EndDragPreflight& preflight) {
+GizmoEndDragRejectReason GizmoSystem::classifyEndDragReject() const {
+    return fuse::editor::classifyEndDragReject(preflightEndDrag());
+    return fuse::editor::shouldSkipEndDrag(preflightEndDrag());
+GizmoBeginDragRejectReason GizmoSystem::classifyBeginDragReject(const GizmoHitTest& hit) const {
+    return fuse::editor::classifyBeginDragReject(preflightBeginDrag(hit));
+    return fuse::editor::classifyBeginDragReject(preflightBeginDrag(ray, transform));
+    return fuse::editor::shouldSkipBeginDrag(preflightBeginDrag(hit));
+    return fuse::editor::shouldSkipBeginDrag(preflightBeginDrag(ray, transform));
+GizmoPickRejectReason GizmoSystem::classifyPickReject(const GizmoHitTest& hit) const {
+    return fuse::editor::classifyPickReject(preflightPick(hit));
+GizmoPickRejectReason GizmoSystem::classifyPickReject(const GizmoRay& ray,
+    return fuse::editor::classifyPickReject(preflightPick(ray, transform));
+    return fuse::editor::shouldSkipPick(preflightPick(hit));
+    return fuse::editor::shouldSkipPick(preflightPick(ray, transform));
+GizmoSnapRejectReason GizmoSystem::classifySnapReject() const {
+    return fuse::editor::classifySnapReject(preflightSnap());
+    return fuse::editor::shouldSkipSnap(preflightSnap());
+GizmoUpdateDragRejectReason GizmoSystem::classifyUpdateDragReject(const GizmoHitTest& hit) const {
+    return fuse::editor::classifyUpdateDragReject(preflightUpdateDrag(hit));
+    return fuse::editor::shouldSkipUpdateDrag(preflightUpdateDrag(hit));

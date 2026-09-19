@@ -3739,3 +3739,53 @@ void testInteractionPreflightPhaseSnapHelpers() {
     expectTrue(endPreflight.snapDegraded(), "end interaction marks snapDegraded when step invalid");
     testPhaseActionPreflight();
     testInteractionPreflightPhaseSnapHelpers();
+
+// --- deepen additive from deepen-b6-gizmo-preflight-reject-reasons-9a19 ---
+    fuse::editor::PickPreflight pickPreflight{};
+                                               fuse::editor::GizmoSystem::kPickRadius, pickPreflight,
+    expectTrue(pickReason == fuse::editor::GizmoPickRejectReason::EmptyRay,
+    expectTrue(fuse::editor::shouldSkipPick(pickPreflight), "shouldSkipPick true on empty ray");
+    expectTrue(std::strcmp(fuse::editor::gizmoPickRejectReasonLabel(pickReason), "EmptyRay") == 0,
+    expectTrue(!fuse::editor::shouldSkipPick(pickPreflight), "shouldSkipPick false on valid ray");
+                                               pickPreflight, pickReason),
+    expectTrue(pickReason == fuse::editor::GizmoPickRejectReason::ScreenMiss,
+    expectTrue(fuse::editor::classifyPickReject(pickPreflight) == pickReason,
+               "classifyPickReject mirrors tryPreflightPick reason");
+    expectTrue(gizmo.classifyPickReject(deadZone) == fuse::editor::GizmoPickRejectReason::None,
+               "gizmo classifyPickReject returns None on valid screen hit");
+    expectTrue(gizmo.classifyPickReject(xRay, transform) == fuse::editor::GizmoPickRejectReason::None,
+               "gizmo classifyPickReject returns None on valid ray");
+                                               snapPreflight, snapReason),
+    expectTrue(snapReason == fuse::editor::GizmoSnapRejectReason::SnapDisabled,
+    expectTrue(fuse::editor::shouldSkipSnap(snapPreflight), "shouldSkipSnap true when disabled");
+    expectTrue(fuse::editor::classifySnapReject(snapPreflight) == snapReason,
+               "classifySnapReject mirrors tryPreflightSnap reason");
+    expectTrue(gizmo.classifySnapReject() == fuse::editor::GizmoSnapRejectReason::None,
+               "gizmo classifySnapReject returns None with valid settings");
+    expectTrue(!fuse::editor::tryPreflightBeginDrag(emptyHit, fuse::editor::GizmoMode::Translate, snap,
+                                                    beginPreflight, beginReason),
+    expectTrue(beginReason == fuse::editor::GizmoBeginDragRejectReason::EmptyHit,
+    expectTrue(fuse::editor::shouldSkipBeginDrag(beginPreflight),
+                                                    beginPreflight, beginReason, true),
+    expectTrue(fuse::editor::classifyBeginDragReject(beginPreflight) == beginReason,
+               "classifyBeginDragReject mirrors tryPreflightBeginDrag reason");
+    expectTrue(!fuse::editor::tryPreflightBeginDrag(emptyRay, transform,
+    expectTrue(beginReason == fuse::editor::GizmoBeginDragRejectReason::EmptyRay,
+    expectTrue(gizmo.classifyBeginDragReject(hit) ==
+               "gizmo classifyBeginDragReject returns None on valid hit");
+                                                     updatePreflight, updateReason),
+    expectTrue(fuse::editor::shouldSkipUpdateDrag(updatePreflight),
+    expectTrue(!fuse::editor::tryPreflightUpdateDrag(hit, true, fuse::editor::GizmoAxis::None,
+               "tryPreflightUpdateDrag rejects missing active axis");
+    expectTrue(updateReason == fuse::editor::GizmoUpdateDragRejectReason::InvalidActiveAxis,
+    expectTrue(updateReason == fuse::editor::GizmoUpdateDragRejectReason::EmptyHit,
+    expectTrue(gizmo.classifyUpdateDragReject(hit) == updateReason,
+               "gizmo classifyUpdateDragReject mirrors tryPreflightUpdateDrag reason");
+    fuse::editor::EndDragPreflight endPreflight{};
+                                                  endPreflight, endReason),
+    expectTrue(fuse::editor::shouldSkipEndDrag(endPreflight),
+    expectTrue(std::strcmp(fuse::editor::gizmoEndDragRejectReasonLabel(endReason), "NotDragging") ==
+    expectTrue(fuse::editor::classifyEndDragReject(endPreflight) == endReason,
+               "classifyEndDragReject mirrors tryPreflightEndDrag reason");
+    expectTrue(gizmo.classifyEndDragReject() == fuse::editor::GizmoEndDragRejectReason::None,
+               "gizmo classifyEndDragReject returns None when dragging");
