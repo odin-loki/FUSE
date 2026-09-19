@@ -1695,6 +1695,14 @@ bool wouldSkipChromeTraceExport() {
     return !enabled() || exportableEventCount() == 0u;
 }
 
+bool hasActiveScope() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool hasActiveAsyncFlowNesting() {
+    return flowNestingDepth() > 0u;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -2009,7 +2017,22 @@ bool wouldSkipProfileRecord(const char* name,
     return std::strcmp(eventName, queryName) == 0;
 
 
-} // namespace
+    }
+
+bool wouldSkipScope(const char* name) {
+    return !enabled() || !isValidEventName(name);
+
+bool wouldSkipAsyncFlowBegin(const char* name) {
+    return wouldSkipScope(name);
+
+bool wouldSkipAsyncFlowEnd(const char* name) {
+    return wouldSkipScope(name) || openAsyncFlowCount() == 0u;
+
+bool wouldSkipCounter(const char* track) {
+    return wouldSkipScope(track);
+
+bool wouldSkipChromeTraceExport() {
+    return !preflightChromeTraceExport().canExportSafely();
 
 bool isValidProfileEvent(const ProfileEvent& event) {
     return tryValidateEventName(event.name, reason);
@@ -2575,6 +2598,33 @@ void accumulateFlowPairCounts(std::unordered_map<u32, FlowPairCounts>& counts) {
     }
 
 } // namespace
+
+}
+
+
+EventLookupRejectReason eventLookupRejectReason(u32 index) {
+    if (isBufferEmpty()) {
+        return EventLookupRejectReason::EmptyBuffer;
+    if (!isEventIndexValid(index)) {
+        return EventLookupRejectReason::OutOfRange;
+    if (!isValidProfileEvent(eventAt(index))) {
+        return EventLookupRejectReason::NotExportable;
+    return EventLookupRejectReason::None;
+
+EventLookupRejectReason exportableEventLookupRejectReason(u32 index) {
+    if (!isEventExportable(index)) {
+
+const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason) {
+    switch (reason) {
+    case EventLookupRejectReason::None:
+        return "none";
+    case EventLookupRejectReason::EmptyBuffer:
+        return "empty_buffer";
+    case EventLookupRejectReason::OutOfRange:
+        return "out_of_range";
+    case EventLookupRejectReason::NotExportable:
+        return "not_exportable";
+    return "unknown";
 
 bool tryEventAt(u32 index, ProfileEvent& outEvent) {
     if (!isEventIndexValid(index)) {
@@ -3153,6 +3203,14 @@ bool tryFirstFlowStartById(u32 flowId, ProfileEvent& outEvent) {
 
 
 
+
+    return tryExportableEventAt(index, outEvent);
+
+
+
+
+
+
     const u32 total = eventCount();
     for (u32 i = 0u; i < total; ++i) {
         const ProfileEvent& event = eventAt(i);
@@ -3407,6 +3465,17 @@ bool tryFindLastFlowEventById(u32 flowId, ProfileEvent& outEvent) {
 
 
 
+
+            return true;
+        }
+
+    outEvent = ProfileEvent{};
+    return false;
+
+    if (flowId == 0u) {
+
+    const u32 total = eventCount();
+            outEvent = event;
 
 
 u32 firstEventIndex() {
@@ -3909,6 +3978,25 @@ bool hasFlowFinishEvent(u32 flowId) {
 
 bool isFlowPairRecorded(u32 flowId) {
     return hasFlowStartEvent(flowId) && hasFlowFinishEvent(flowId);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -4876,6 +4964,14 @@ bool isFlowIdTracked(u32 flowId) {
 
 
 
+        }
+
+    std::unordered_map<u32, FlowPairCounts> counts;
+    accumulateFlowPairCounts(counts);
+
+    for (const auto& entry : counts) {
+
+
 
 u32 lastEventIndex() {
     const u32 count = eventCount();
@@ -5049,7 +5145,6 @@ const char* profileScopeSkipReasonName(ProfileScopeSkipReason reason) {
         return "profiler_disabled";
     case ProfileScopeSkipReason::InvalidName:
         return "invalid_name";
-    }
     return "unknown";
 
 const char* asyncFlowBeginSkipReasonName(AsyncFlowBeginSkipReason reason) {
@@ -5161,6 +5256,7 @@ void reconcileDetachedFlowDepth() {
 
 const char* nestingStateRejectReasonLabel(NestingStateRejectReason reason) {
     case NestingStateRejectReason::None:
+
     case NestingStateRejectReason::ActiveScope:
         return "active_scope";
     case NestingStateRejectReason::ActiveFlowNesting:
@@ -5169,6 +5265,10 @@ const char* nestingStateRejectReasonLabel(NestingStateRejectReason reason) {
         return "open_async_flows";
     case NestingStateRejectReason::FlowDepthDetached:
     case NestingStateRejectReason::CrossThreadFlowHandoffPending:
+        return "flow_depth_detached";
+        return "cross_thread_flow_handoff_pending";
+    }
+    return "unknown";
 
 ChromeTraceExportRejectReason chromeTraceExportRejectReason() {
     if (!enabled()) {
@@ -5362,6 +5462,21 @@ bool wouldSkipChromeTraceExportSafely(ChromeTraceExportSkipReason* reason) {
 
     preflight.consistent = isFlowNestingConsistent();
     return preflight;
+    }
+    if (isCrossThreadFlowHandoffPending()) {
+    if (isFlowDepthDetached()) {
+    if (!isFlowPairingConsistent()) {
+        return ChromeTraceExportRejectReason::UnpairedFlowEvents;
+
+    switch (reason) {
+        return "none";
+        return "profiler_disabled";
+        return "unbalanced_nesting";
+        return "flow_depth_detached";
+        return "cross_thread_flow_handoff_pending";
+    case ChromeTraceExportRejectReason::UnpairedFlowEvents:
+        return "unpaired_flow_events";
+    return "unknown";
 }
 
 ChromeTraceExportPreflight preflightChromeTraceExport() {
@@ -5466,6 +5581,11 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.flowStartFinishMismatch = hasFlowStartFinishMismatch();
     preflight.firstExportableEventIndex = firstExportableEventIndex();
     preflight.hasActiveScopes = hasActiveScopes();
+    preflight.danglingFlowBeginCount = countDanglingFlowBegins();
+    preflight.orphanFlowEndCount = countOrphanFlowEnds();
+    preflight.hasUnpairedFlowEvents =
+        preflight.danglingFlowBeginCount > 0u || preflight.orphanFlowEndCount > 0u;
+    preflight.nestingStateConsistent = isNestingStateConsistent();
     return preflight;
 
 ProfileScopePreflight preflightProfileScope(const char* name) {

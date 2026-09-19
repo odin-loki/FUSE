@@ -150,6 +150,11 @@ enum class CounterSampleSkipReason : u8 {
 
 /// Why chrome trace export would be skipped or blocked (B1.6 deepen).
 enum class ChromeTraceExportSkipReason : u8 {
+    None = 0,
+};
+
+
+    UnpairedFlowEvents,
 };
 
 struct ProfileEvent {
@@ -341,6 +346,7 @@ struct ChromeTraceExportPreflight {
     bool scopeBeginEndMismatch = false;
     bool flowStartFinishMismatch = false;
     bool hasActiveProfilingNesting = false;
+    u32 firstExportableEventIndex = kInvalidEventIndex;
     u32 danglingFlowBeginCount = 0;
     u32 orphanFlowEndCount = 0;
     bool hasUnpairedFlowEvents = false;
@@ -489,37 +495,22 @@ struct NestingStatePreflight {
     bool hasUnbalancedNesting() const { return scopeNestingUnbalanced || flowNestingUnbalanced; }
     bool isBalanced() const {
         return !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending;
-    }
         return canExport() && !hasNestingCleanupPending() && !hasInvalidNameEvents;
 
-    bool canExportSafely() const {
-        return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending
             && !hasUnpairedFlowEvents && !hasInvalidNameEvents;
-    bool hasUnpairedFlowEventsInBuffer() const { return hasUnpairedFlowEvents; }
-    bool isNestingStateConsistent() const { return nestingStateConsistent; }
-            && !hasUnpairedFlowEvents;
         return canExport() && !hasExportBlockers();
             && !hasInconsistentRecordedNesting();
-            && !ringBufferFull && !hasInvalidNameEvents;
     bool hasBufferPairImbalance() const { return scopePairImbalancedInBuffer || flowPairImbalancedInBuffer; }
             && !hasBufferPairImbalance() && !hasDroppedEvents && !hasInvalidNameEvents;
             && !ringBufferFull;
-            && !hasInvalidNameEvents && !ringBufferFull;
     bool hasEventPairingMismatch() const { return scopeBeginEndMismatch || flowStartFinishMismatch; }
             && !hasEventPairingMismatch() && !ringBufferFull;
-    u32 ringCapacity = 0;
-    u32 firstExportableEventIndex = 0;
-    u32 lastExportableEventIndex = 0;
-    bool hasActiveScopeNesting = false;
-    bool hasActiveFlowNesting = false;
-    bool hasNestedAsyncFlowContext = false;
 
     u32 scopeBeginEventCount = 0;
     u32 counterEventCount = 0;
     u32 flowStartEventCount = 0;
     bool hasActiveScopes = false;
 
-            && !hasInvalidNameEvents;
             && !hasUnbalancedFlowPairsInBuffer;
     u32 unbalancedFlowPairCount = 0;
     bool hasUnbalancedFlowPairsInBuffer = false;
@@ -742,7 +733,6 @@ struct ExportPreflight {
     bool canReadValidEvent() const { return canLookup() && !invalidEvent; }
 
 
-    bool canExportNonEmptyTrace() const { return canExport() && hasExportableEvents(); }
     bool hasBalancedScopeEventsInBuffer() const { return scopeBeginEventCount == scopeEndEventCount; }
     bool hasBalancedAsyncFlowEventsInBuffer() const {
         return asyncFlowStartEventCount == asyncFlowFinishEventCount;
@@ -912,42 +902,13 @@ struct CounterRecordingPreflight {
 struct ProfilerNestingPreflight {
 
     bool canRecord() const { return !profilerDisabled; }
-};
 
 /// Read-only scope nesting diagnostics — safe before entering or ending scopes.
-struct ScopeNestingPreflight {
-    u32 activeDepth = 0;
-    u32 maxDepth = 0;
-    bool balanced = true;
-    bool hasActiveScopes = false;
-};
 
 /// Read-only async-flow nesting diagnostics — safe before flow begin/end.
-struct AsyncFlowPreflight {
-    u32 activeDepth = 0;
-    u32 maxDepth = 0;
-    u32 openFlowCount = 0;
-    bool balanced = true;
     bool consistent = true;
-    bool depthDetached = false;
-    bool crossThreadHandoffPending = false;
-    bool hasOpenFlows = false;
-};
 
-/// Read-only scope/async-flow nesting diagnostics — safe before recording or export.
-struct NestingPreflight {
-    u32 activeScopeNestingDepth = 0;
-    u32 activeFlowNestingDepth = 0;
-    u32 openAsyncFlowCount = 0;
-    u32 maxScopeNestingDepth = 0;
-    u32 maxFlowNestingDepth = 0;
-    bool scopeNestingBalanced = true;
-    bool flowNestingBalanced = true;
-    bool hasOpenAsyncFlows = false;
-    bool flowDepthDetached = false;
-    bool crossThreadFlowHandoffPending = false;
 
-    bool hasUnbalancedNesting() const { return !scopeNestingBalanced || !flowNestingBalanced; }
     bool isSafe() const {
         return scopeNestingBalanced && flowNestingBalanced && !flowDepthDetached
             && !crossThreadFlowHandoffPending;
@@ -1281,6 +1242,11 @@ bool isFlowEventPhase(EventPhase phase);
 bool eventMatchesName(const ProfileEvent& event, const char* name);
 /// True for null, empty, or whitespace-only names — does not affect recording guards.
 bool isBlankEventName(const char* name);
+bool wouldSkipScope(const char* name);
+bool wouldSkipAsyncFlowBegin(const char* name);
+bool wouldSkipAsyncFlowEnd(const char* name);
+bool wouldSkipCounter(const char* track);
+bool wouldSkipChromeTraceExport();
 bool isValidProfileEvent(const ProfileEvent& event);
 bool isProfileEventSentinel(const ProfileEvent& event);
 bool isFlowPhaseEvent(const ProfileEvent& event);
@@ -1397,6 +1363,9 @@ u32 findFirstFlowEventIndex(u32 flowId);
 u32 findLastFlowEventIndex(u32 flowId);
 u32 countFlowEvents(u32 flowId);
 bool isFlowIdTracked(u32 flowId);
+EventLookupRejectReason eventLookupRejectReason(u32 index);
+EventLookupRejectReason exportableEventLookupRejectReason(u32 index);
+const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 const char* eventNameAt(u32 index);
