@@ -4733,3 +4733,14 @@ void testTaaPassTryClassifyGuardWrappers() {
 // --- deepen additive from taa-pass-try-classify-wrappers-ed8d ---
     expectTrue(pass->tryPreflightJitterSync(7u, jitterReject),
                "pass tryPreflightJitterSync reject reason is None after sync");
+
+// --- deepen additive from deepen-taa-pass-guards-6b06 ---
+    expectTrue(pass->trySyncJitterToFrameIndex(6u, jitterReason),
+               "pass trySyncJitterToFrameIndex succeeds");
+               "pass trySyncJitterToFrameIndex sets monotonic counter");
+               "pass tryPreflightResolve passes with valid desc and history");
+               "pass classifyJitterSyncReject passes after jitter fallback");
+               "pass tryPreflightJitterSync passes after jitter fallback");
+    expectTrue(invalidSeqPass->trySyncJitterToFrameIndex(0u, jitterReason),
+               "pass trySyncJitterToFrameIndex passes after jitter fallback");
+               "pass classifyJitterNdcReject fails for zero width");
