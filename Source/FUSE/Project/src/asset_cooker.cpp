@@ -371,6 +371,8 @@ u32 AssetCooker::estimate_upstream_invalidation(const CookManifest& manifest,
     if (!is_valid_cook_cache_path(changed_source) || m_cache.empty()) {
 CookCacheUpstreamInvalidationEstimate AssetCooker::estimate_upstream_invalidation(
     CookCacheUpstreamInvalidationEstimate estimate;
+CookCacheUpstreamInvalidateEstimate AssetCooker::estimate_upstream_invalidation(
+    CookCacheUpstreamInvalidateEstimate estimate;
         return estimate;
     }
 
@@ -400,10 +402,13 @@ bool AssetCooker::would_upstream_invalidation(const CookManifest& manifest,
                                               const std::string& changed_source) const {
     return estimate_upstream_invalidation(manifest, changed_source).total() != 0;
 
+    return estimate_upstream_invalidation(manifest, changed_source).total() > 0;
+
 std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(
     const CookManifest& manifest, const std::string& changed_source) const {
     if (!is_valid_cook_cache_path(changed_source)) {
         return {};
+    }
 
     CookJobGraph graph;
     graph.build_from_manifest(manifest);
@@ -434,6 +439,18 @@ bool AssetCooker::would_stale_dependency_invalidate(const CookManifest& manifest
 
 bool AssetCooker::would_reconcile_invalidate(const CookManifest& manifest) const {
     return estimate_reconcile_invalidation(manifest).total() != 0;
+    auto append_unique = [&](const std::string& source_path) {
+        if (!is_valid_cook_cache_path(source_path)) {
+            return;
+        }
+    };
+
+    append_unique(changed_source);
+    for (const CookJob& job : graph.jobs()) {
+
+        const std::vector<std::string> downstream = m_cache.probe_downstream_sources(
+            job.output_path, graph.edges(), graph.jobs());
+            append_unique(source_path);
 }
 
 std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(
@@ -931,6 +948,7 @@ std::vector<std::string> AssetCooker::probe_upstream_invalidation_closure(
         const std::vector<std::string> downstream = m_cache.probe_downstream_sources(
             job.output_path, graph.edges(), graph.jobs());
             append_unique(sources, path);
+
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {
