@@ -4862,6 +4862,7 @@ void testSampleRequestRejectReasons() {
                "tryLaunch blend rejects null indices");
     expectTrue(reason == fuse::renderer::gi::ProbeKernelRejectReason::NullProbeIndices,
                "tryLaunch blend null indices report null_probe_indices reason");
+}
 
 void testProbeScheduleGuards() {
     fuse::u32 indices[64]{};

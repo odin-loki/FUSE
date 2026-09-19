@@ -414,6 +414,7 @@ const char* sampleRequestRejectReasonLabel(SampleRequestRejectReason reason) {
     case ProbeScheduleRejectReason::ZeroMaxIndices:
         return "zero_max_indices";
     return "unknown";
+    }
 
 bool ProbeGridLayout::isEmptyGrid(const DDGIDesc& desc) {
     return desc.grid_dims.x == 0u || desc.grid_dims.y == 0u || desc.grid_dims.z == 0u;
@@ -681,6 +682,10 @@ bool ProbeGridLayout::wouldSkipProbeSampleCoords(const DDGIDesc& desc, const Pro
 
 bool ProbeGridLayout::wouldSkipProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
     return !isValidProbeSampleCoords(desc, coords);
+}
+
+bool ProbeGridLayout::wouldSkipProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
+    return isProbeSampleCoordsOutOfRange(desc, coords);
 }
 
 bool ProbeGridLayout::tryValidateProbeSampleCoords(const DDGIDesc& desc,
@@ -1822,6 +1827,9 @@ bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
     if (!isCacheSizedForGrid(desc, cache_count)) {
         outReason = CacheIndexRejectReason::UndersizedCache;
     if (!tryValidateCacheLookup(desc, cache, cache_count, probe_index, reason)) {
+        out_irradiance = {};
+        return false;
+    }
     out_irradiance = cache[probe_index].irradiance;
     outReason = CacheIndexRejectReason::None;
     return true;
@@ -2202,6 +2210,7 @@ bool shouldSkipCacheLookup(const DDGIDesc& desc, const IrradianceCacheEntry* cac
     return tryValidateCacheIndex(desc, cache, cache_count, probe_index, reason);
 
     return !isCacheIndexValid(desc, cache, cache_count, probe_index);
+
 
 bool isValidSampleRequest(const DDGIDesc& desc,
                           const DDGISampleRequest& /*request*/,
@@ -2604,6 +2613,11 @@ bool tryPreflightProbeScheduleAtRate(u32 probe_count,
                                     max_indices,
                                     out_count,
                                     outReason)) {
+
+
+
+
+
     }
 
     const u32 count = std::min(probes_per_frame, std::min(probe_count, max_indices));
@@ -3724,6 +3738,23 @@ bool tryLaunch_probe_trace_kernel(const DDGIKernelParams& params,
 
 bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params) {
     return !canLaunchProbeTraceKernel(params);
+}
+
+bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params) {
+    return !canLaunchProbeTraceKernel(params);
+}
+
+bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params) {
+    return !canLaunchProbeBlendKernel(params);
+}
+
+bool tryLaunch_probe_trace_kernel(const DDGIKernelParams& params,
+                                  void* cuda_stream,
+                                  ProbeKernelRejectReason& outReason) {
+    if (!tryCanLaunchProbeTraceKernel(params, outReason)) {
+        return false;
+    }
+    return launch_probe_trace_kernel(params, cuda_stream);
 }
 
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream) {
