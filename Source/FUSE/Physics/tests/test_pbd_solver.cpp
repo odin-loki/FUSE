@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <tuple>
 
@@ -34,6 +35,13 @@ void expectNear(f32 actual, f32 expected, f32 epsilon, const char* message) {
                      message,
                      expected,
                      actual);
+        ++g_failures;
+    }
+}
+
+void expectEq(u32 actual, u32 expected, const char* message) {
+    if (actual != expected) {
+        std::fprintf(stderr, "FAIL: %s (expected %u, got %u)\n", message, expected, actual);
         ++g_failures;
     }
 }
@@ -2562,6 +2570,284 @@ void testBodyFlagHelpers() {
     expectTrue(!is_body_movable(bodies, 99u), "out-of-range body is not movable");
 }
 
+void testIslandGraphBuildRejectReasonGuards() {
+    std::vector<narrowphase::ContactManifold> contacts;
+    contacts.push_back(narrowphase::ContactManifold{});
+    contacts.back().valid = true;
+    contacts.back().bodyA = 8;
+    contacts.back().bodyB = 9;
+
+    const std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+    };
+
+    expectEq(static_cast<u32>(island_graph_build_reject_reason(4, contacts, constraints)),
+             static_cast<u32>(IslandGraphBuildRejectReason::OutOfRangeContactBody),
+             "out-of-range contact reports OutOfRangeContactBody reject reason");
+    expectTrue(island_graph_build_rejects_for_reason(
+                   4, contacts, constraints, IslandGraphBuildRejectReason::OutOfRangeContactBody),
+               "rejects_for_reason matches out-of-range contact");
+
+    std::vector<narrowphase::ContactManifold> safeContacts;
+    safeContacts.push_back(narrowphase::ContactManifold{});
+    safeContacts.back().valid = true;
+    safeContacts.back().bodyA = 0;
+    safeContacts.back().bodyB = 1;
+    const std::vector<DistanceConstraint> outOfRangeDistance = {
+        DistanceConstraint{.bodyA = 4, .bodyB = 5, .restLength = 2.f},
+    };
+    expectEq(static_cast<u32>(island_graph_build_reject_reason(4, safeContacts, outOfRangeDistance)),
+             static_cast<u32>(IslandGraphBuildRejectReason::OutOfRangeDistanceBody),
+             "out-of-range distance reports OutOfRangeDistanceBody reject reason");
+
+    expectEq(static_cast<u32>(island_graph_build_reject_reason(0, {}, {})),
+             static_cast<u32>(IslandGraphBuildRejectReason::EmptyInput),
+             "zero-body empty input reports EmptyInput reject reason");
+
+    expectEq(static_cast<u32>(island_graph_build_reject_reason(4, safeContacts, constraints)),
+             static_cast<u32>(IslandGraphBuildRejectReason::None),
+             "in-range inputs report None reject reason");
+    expectTrue(can_build_island_graph(4, safeContacts, constraints),
+               "can_build_island_graph true for in-range inputs");
+
+    ContactIslandGraph graph;
+    expectTrue(!graph.build_guarded(4, contacts, constraints), "build_guarded rejects unsafe contacts");
+    expectTrue(graph.islandCount() == 0u, "rejected build_guarded clears graph");
+    expectTrue(graph.build_guarded(4, safeContacts, constraints), "build_guarded succeeds for safe inputs");
+    expectTrue(graph.constrainedIslandCount() == 1u, "build_guarded forms constrained island");
+}
+
+void testIslandGraphBuildRejectReasonNames() {
+    expectTrue(std::strcmp(island_graph_build_reject_reason_name(IslandGraphBuildRejectReason::None), "None") ==
+                   0,
+               "None graph build reject reason has stable label");
+    expectTrue(std::strcmp(island_graph_build_reject_reason_name(IslandGraphBuildRejectReason::EmptyInput),
+                           "EmptyInput") == 0,
+               "EmptyInput graph build reject reason has stable label");
+    expectTrue(std::strcmp(island_graph_build_reject_reason_name(
+                               IslandGraphBuildRejectReason::OutOfRangeContactBody),
+                           "OutOfRangeContactBody") == 0,
+               "OutOfRangeContactBody graph build reject reason has stable label");
+}
+
+void testIslandDispatchRejectReasonGuards() {
+    ContactIslandGraph emptyGraph;
+    emptyGraph.build(2, {}, {});
+    const f32 dt = 1.f / 60.f;
+
+    expectEq(static_cast<u32>(island_dispatch_reject_reason(emptyGraph, dt)),
+             static_cast<u32>(IslandDispatchRejectReason::NoDispatchableIslands),
+             "empty graph reports NoDispatchableIslands reject reason");
+    expectTrue(island_dispatch_rejects_for_reason(
+                   emptyGraph, dt, IslandDispatchRejectReason::NoDispatchableIslands),
+               "dispatch rejects_for_reason matches empty graph");
+
+    ContactIslandGraph graph;
+    std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+    };
+    graph.build(3, {}, constraints);
+    expectEq(static_cast<u32>(island_dispatch_reject_reason(graph, dt)),
+             static_cast<u32>(IslandDispatchRejectReason::None),
+             "constrained graph reports None dispatch reject reason");
+    expectEq(static_cast<u32>(island_dispatch_reject_reason(graph, 0.f)),
+             static_cast<u32>(IslandDispatchRejectReason::InvalidDt),
+             "zero dt reports InvalidDt dispatch reject reason");
+
+    const IslandDispatchPreflight preflight = preflight_island_dispatch(graph, dt);
+    expectEq(static_cast<u32>(preflight.reason),
+             static_cast<u32>(IslandDispatchRejectReason::None),
+             "dispatch preflight reason None on valid graph");
+    const IslandDispatchPreflight invalidPreflight = preflight_island_dispatch(graph, 0.f);
+    expectEq(static_cast<u32>(invalidPreflight.reason),
+             static_cast<u32>(IslandDispatchRejectReason::InvalidDt),
+             "dispatch preflight reason InvalidDt on zero dt");
+}
+
+void testIslandSolveJobRejectReasonGuards() {
+    const f32 dt = 1.f / 60.f;
+    IslandSolveJob emptyJob{};
+    expectEq(static_cast<u32>(island_solve_job_reject_reason(emptyJob, dt)),
+             static_cast<u32>(IslandSolveJobRejectReason::EmptyJob),
+             "default job reports EmptyJob reject reason");
+    expectEq(static_cast<u32>(island_solve_job_reject_reason(emptyJob, 0.f)),
+             static_cast<u32>(IslandSolveJobRejectReason::InvalidDt),
+             "invalid dt reports InvalidDt before empty job");
+
+    ContactIslandGraph graph;
+    graph.build(2, {}, {DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f}});
+    const IslandSolveJob job = extract_island(graph, 0);
+    expectEq(static_cast<u32>(island_solve_job_reject_reason(job, dt)),
+             static_cast<u32>(IslandSolveJobRejectReason::None),
+             "constrained job reports None reject reason");
+    expectTrue(island_solve_job_rejects_for_reason(job, dt, IslandSolveJobRejectReason::None),
+               "solve job rejects_for_reason matches constrained job");
+}
+
+void testIslandConstraintSolveRejectReasonGuards() {
+    ContactIslandGraph graph;
+    std::vector<narrowphase::ContactManifold> contacts;
+    contacts.push_back(narrowphase::ContactManifold{});
+    contacts.back().valid = true;
+    contacts.back().bodyA = 0;
+    contacts.back().bodyB = 1;
+    graph.build(4, contacts, {});
+
+    RigidBodySoA bodies;
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
+    bodies.addBody({2.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
+
+    const ContactIslandGraph::Island& island = graph.island(graph.bodyIsland(0));
+    expectEq(static_cast<u32>(island_constraint_refs_reject_reason(island, contacts, {})),
+             static_cast<u32>(IslandConstraintRefsRejectReason::None),
+             "in-range contact refs report None reject reason");
+
+    ContactIslandGraph::Island staleIsland{};
+    staleIsland.bodyIndices = {0, 1};
+    staleIsland.contactIndices = {9u};
+    expectEq(static_cast<u32>(island_constraint_refs_reject_reason(staleIsland, contacts, {})),
+             static_cast<u32>(IslandConstraintRefsRejectReason::NoInRangeRefs),
+             "stale refs report NoInRangeRefs reject reason");
+
+    expectEq(static_cast<u32>(island_constraint_solve_reject_reason(island, bodies, contacts, {})),
+             static_cast<u32>(IslandConstraintSolveRejectReason::NoMovableBodies),
+             "all-sleeping island reports NoMovableBodies solve reject reason");
+    expectTrue(island_constraint_solve_rejects_for_reason(
+                   island, bodies, contacts, {}, IslandConstraintSolveRejectReason::NoMovableBodies),
+               "constraint solve rejects_for_reason matches all-sleeping island");
+
+    bodies.flags[0] &= ~RB_SLEEPING;
+    expectEq(static_cast<u32>(island_constraint_solve_reject_reason(island, bodies, contacts, {})),
+             static_cast<u32>(IslandConstraintSolveRejectReason::None),
+             "mixed island reports None constraint solve reject reason");
+}
+
+void testIslandSleepWakeRejectReasonGuards() {
+    ContactIslandGraph graph;
+    graph.build(4, {}, {DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+                        DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f}});
+
+    RigidBodySoA bodies;
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+    bodies.addBody({2.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
+    bodies.addBody({20.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
+    bodies.addBody({22.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
+
+    const u32 mixedIsland = graph.bodyIsland(0);
+    const u32 sleepingIsland = graph.bodyIsland(2);
+
+    expectEq(static_cast<u32>(island_sleep_reject_reason(graph.island(mixedIsland), bodies)),
+             static_cast<u32>(IslandSleepRejectReason::None),
+             "mixed island sleep reject reason is None");
+    expectEq(static_cast<u32>(island_sleep_reject_reason(graph.island(sleepingIsland), bodies)),
+             static_cast<u32>(IslandSleepRejectReason::AllSleeping),
+             "all-sleeping island reports AllSleeping reject reason");
+    expectEq(static_cast<u32>(island_sleep_reject_reason_by_index(graph, graph.islandCount() + 1u, bodies)),
+             static_cast<u32>(IslandSleepRejectReason::OutOfRangeIndex),
+             "out-of-range sleep index reports OutOfRangeIndex reject reason");
+
+    expectEq(static_cast<u32>(island_wake_reject_reason(graph.island(mixedIsland), bodies)),
+             static_cast<u32>(IslandWakeRejectReason::None),
+             "mixed island wake reject reason is None");
+    expectEq(static_cast<u32>(island_wake_reject_reason(graph.island(sleepingIsland), bodies)),
+             static_cast<u32>(IslandWakeRejectReason::NoWakeTarget),
+             "all-sleeping island reports NoWakeTarget wake reject reason");
+    expectTrue(island_wake_rejects_for_reason(
+                   graph.island(sleepingIsland), bodies, IslandWakeRejectReason::NoWakeTarget),
+               "wake rejects_for_reason matches all-sleeping island");
+
+    expectEq(static_cast<u32>(island_sleep_graph_reject_reason(graph, bodies)),
+             static_cast<u32>(IslandSleepGraphRejectReason::None),
+             "mixed graph sleep reject reason is None");
+    expectEq(static_cast<u32>(island_wake_graph_reject_reason(graph, bodies)),
+             static_cast<u32>(IslandWakeGraphRejectReason::None),
+             "mixed graph wake reject reason is None");
+
+    bodies.flags[0] |= RB_SLEEPING;
+    expectEq(static_cast<u32>(island_sleep_graph_reject_reason(graph, bodies)),
+             static_cast<u32>(IslandSleepGraphRejectReason::AllIslandsSleeping),
+             "all-sleeping graph reports AllIslandsSleeping reject reason");
+    expectEq(static_cast<u32>(island_wake_graph_reject_reason(graph, bodies)),
+             static_cast<u32>(IslandWakeGraphRejectReason::NoWakeableIslands),
+             "all-sleeping graph reports NoWakeableIslands wake reject reason");
+
+    const IslandSleepPreflight sleepPreflight = preflight_island_sleep(graph.island(mixedIsland), bodies);
+    expectEq(static_cast<u32>(sleepPreflight.reason),
+             static_cast<u32>(IslandSleepRejectReason::AllSleeping),
+             "sleep preflight reason matches all-sleeping island");
+    const IslandWakeGraphPreflight wakeGraphPreflight = preflight_island_wake_graph(graph, bodies);
+    expectEq(static_cast<u32>(wakeGraphPreflight.reason),
+             static_cast<u32>(IslandWakeGraphRejectReason::NoWakeableIslands),
+             "wake graph preflight reason matches no wakeable islands");
+}
+
+void testIslandRejectReasonNames() {
+    expectTrue(std::strcmp(island_dispatch_reject_reason_name(IslandDispatchRejectReason::InvalidDt),
+                           "InvalidDt") == 0,
+               "InvalidDt dispatch reject reason has stable label");
+    expectTrue(std::strcmp(island_solve_job_reject_reason_name(IslandSolveJobRejectReason::EmptyJob),
+                           "EmptyJob") == 0,
+               "EmptyJob solve job reject reason has stable label");
+    expectTrue(std::strcmp(island_constraint_solve_reject_reason_name(
+                               IslandConstraintSolveRejectReason::NoMovableBodies),
+                           "NoMovableBodies") == 0,
+               "NoMovableBodies constraint solve reject reason has stable label");
+    expectTrue(std::strcmp(island_sleep_reject_reason_name(IslandSleepRejectReason::AllSleeping),
+                           "AllSleeping") == 0,
+               "AllSleeping sleep reject reason has stable label");
+    expectTrue(std::strcmp(island_wake_reject_reason_name(IslandWakeRejectReason::NoWakeTarget),
+                           "NoWakeTarget") == 0,
+               "NoWakeTarget wake reject reason has stable label");
+}
+
+void testIslandSolvePipelineDispatchGuards() {
+    ContactIslandGraph graph;
+    std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+        DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f},
+    };
+    graph.build(4, {}, constraints);
+
+    RigidBodySoA bodies;
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+    bodies.addBody({2.1f, 0.f, 0.f}, 1.f, RB_SLEEPING);
+    bodies.addBody({20.f, 0.f, 0.f}, 1.f, 0);
+    bodies.addBody({22.f, 0.f, 0.f}, 1.f, 0);
+    bodies.predictedPositions = bodies.positions;
+
+    SolverWorkBuffers work;
+    work.init(4, 0, 2);
+    const auto invMassFn = [](const RigidBodySoA&, u32) { return 1.f; };
+    const f32 dt = 1.f / 60.f;
+
+    const IslandSolvePipelinePreflight preflight = preflight_island_solve_pipeline(graph, bodies, dt);
+    expectTrue(!preflight.skipped, "pipeline preflight does not skip constrained graph");
+    expectTrue(preflight.can_dispatch(), "pipeline preflight can dispatch constrained graph");
+    expectTrue(preflight.reason == IslandDispatchRejectReason::None, "pipeline preflight records None reason");
+    expectTrue(preflight.wake.can_wake(), "pipeline preflight can wake mixed island");
+    expectTrue(!should_skip_island_solve_pipeline(graph, bodies, dt),
+               "should_skip pipeline false for constrained graph");
+
+    const IslandSolvePipelineResult pipeline = dispatch_island_solve_pipeline(
+        bodies, graph, work, constraints, dt, 0.f, invMassFn);
+    expectTrue(!pipeline.skipped, "pipeline dispatch does not skip constrained graph");
+    expectTrue(pipeline.wokeCount == 1u, "pipeline dispatch wakes mixed island sleepers");
+    expectTrue((bodies.flags[1] & RB_SLEEPING) == 0u, "pipeline dispatch clears sleeping flag");
+    expectTrue(pipeline.any_solved(), "pipeline dispatch solves constrained islands");
+    expectTrue(pipeline.dispatch.solvedCount == graph.constrainedIslandCount(),
+               "pipeline dispatch solves all constrained islands");
+
+    ContactIslandGraph emptyGraph;
+    emptyGraph.build(0, {}, {});
+    expectTrue(should_skip_island_solve_pipeline(emptyGraph, bodies, dt),
+               "should_skip pipeline true for empty graph");
+    const IslandSolvePipelineResult emptyPipeline = dispatch_island_solve_pipeline(
+        bodies, emptyGraph, work, constraints, dt, 0.f, invMassFn);
+    expectTrue(emptyPipeline.skipped, "pipeline dispatch skips empty graph");
+    expectTrue(emptyPipeline.reason == IslandDispatchRejectReason::NoDispatchableIslands,
+               "pipeline dispatch records no-dispatchable reject reason");
+}
+
 void testEarlyExitWhenResidualBelowTolerance() {
     CollisionShapeSoA shapes;
     RigidBodySoA bodies;
@@ -2669,6 +2955,14 @@ int main() {
     testPreflightIslandSolveBodiesGuards();
     testPreflightIslandSleepWakeGuards();
     testBodyFlagHelpers();
+    testIslandGraphBuildRejectReasonGuards();
+    testIslandGraphBuildRejectReasonNames();
+    testIslandDispatchRejectReasonGuards();
+    testIslandSolveJobRejectReasonGuards();
+    testIslandConstraintSolveRejectReasonGuards();
+    testIslandSleepWakeRejectReasonGuards();
+    testIslandRejectReasonNames();
+    testIslandSolvePipelineDispatchGuards();
     testEarlyExitWhenResidualBelowTolerance();
     fuse::core::shutdown();
 
