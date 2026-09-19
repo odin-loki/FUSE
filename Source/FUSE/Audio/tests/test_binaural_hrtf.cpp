@@ -1247,3 +1247,32 @@ void testSpatialBlendSkipGuards() {
 void testEmptyIrFallbackAndNormalizeGuards() {
 void testNonUnityAndPreserveSpatialImageGuards() {
 void testGuardedSpatialBlendHelper() {
+
+// --- deepen additive from deepen-hrtf-guards-71c7 ---
+void testEmptyIrConvolutionGuards() {
+    expectTrue(fuse::audio::should_skip_hrtf_ir_convolution(empty),
+    expectTrue(fuse::audio::should_skip_hrtf_ir_convolution(empty)
+    fuse::audio::HrtfPanRejectReason reason = fuse::audio::HrtfPanRejectReason::None;
+    expectTrue(reason == fuse::audio::HrtfPanRejectReason::None,
+    expectTrue(reason == fuse::audio::HrtfPanRejectReason::Disabled,
+    expectTrue(reason == fuse::audio::HrtfPanRejectReason::CoLocated,
+                               fuse::audio::HrtfPanRejectReason::Disabled),
+void testHrtfPanPreflight() {
+    const fuse::audio::HrtfPanPreflight spatial =
+    const fuse::audio::HrtfPanPreflight empty_ir =
+    const fuse::audio::HrtfPanPreflight bypass =
+    expectTrue(bypass.reject_reason == fuse::audio::HrtfPanRejectReason::Disabled,
+    const fuse::audio::HrtfPanPreflight no_ir =
+    const fuse::audio::HrtfPanPreflight co_located_preflight =
+    expectTrue(co_located_preflight.reject_reason == fuse::audio::HrtfPanRejectReason::CoLocated,
+void testAttenuationCouplingPreflight() {
+    const fuse::audio::HrtfAttenuationCouplingPreflight unity =
+    const fuse::audio::HrtfAttenuationCouplingPreflight narrowed =
+    const fuse::audio::HrtfAttenuationCouplingPreflight bypass =
+    const fuse::audio::HrtfAttenuationCouplingPreflight coupled =
+    const fuse::audio::HrtfAttenuationCouplingPreflight coupled_no_ir =
+    expectTrue(fuse::audio::should_skip_hrtf_attenuation_coupling_mapping(1.f, 1.f),
+    expectTrue(fuse::audio::should_skip_hrtf_attenuation_coupling_mapping(1.f, 1.f)
+void testAttenuationCouplingMappingSkipGuard() {
+    testHrtfPanPreflight();
+    testAttenuationCouplingPreflight();

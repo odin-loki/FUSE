@@ -813,3 +813,32 @@ bool should_skip_hrtf_attenuation_coupling(float distance_attenuation, float occ
 
 // --- deepen additive from deepen-b72-hrtf-pan-empty-ir-guards-3df6 ---
     if (should_skip_hrtf_spatial_pan(path)) {
+
+// --- deepen additive from deepen-hrtf-guards-71c7 ---
+bool should_skip_hrtf_ir_convolution(const HrtfIrStub& ir) {
+    return !should_skip_hrtf_ir_convolution(ir);
+const char* hrtf_pan_reject_reason_label(HrtfPanRejectReason reason) {
+    case HrtfPanRejectReason::None:
+    case HrtfPanRejectReason::Disabled:
+    case HrtfPanRejectReason::CoLocated:
+bool HrtfPanPreflight::can_apply_spatial_pan() const {
+bool HrtfPanPreflight::skip_convolution() const {
+bool HrtfPanPreflight::ready_for_stub_mix() const {
+    return reject_reason == HrtfPanRejectReason::None || path == HrtfPanPath::Bypass;
+bool HrtfAttenuationCouplingPreflight::can_narrow_image() const {
+bool HrtfAttenuationCouplingPreflight::ready_for_coupling() const {
+bool try_resolve_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+                               HrtfPanPath& out_path, HrtfPanRejectReason& out_reason) {
+    out_reason = HrtfPanRejectReason::None;
+            out_reason = HrtfPanRejectReason::Disabled;
+            out_reason = HrtfPanRejectReason::CoLocated;
+HrtfPanPreflight preflight_hrtf_pan(bool hrtf_enabled, const HrtfIrStub& ir,
+    HrtfPanPreflight preflight;
+HrtfPanPreflight preflight_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener) {
+    HrtfPanRejectReason reason = HrtfPanRejectReason::None;
+bool should_skip_hrtf_attenuation_coupling_mapping(float distance_attenuation,
+    HrtfAttenuationCouplingPreflight preflight;
+        should_skip_hrtf_attenuation_coupling_mapping(distance_attenuation, occlusion_gain);
+HrtfAttenuationCouplingPreflight preflight_hrtf_coupled_pan(bool hrtf_enabled,
+    const HrtfPanPreflight pan_preflight = preflight_hrtf_pan(hrtf_enabled, ir, rel_listener);
+    if (should_skip_hrtf_attenuation_coupling_mapping(distance_attenuation, occlusion_gain)) {

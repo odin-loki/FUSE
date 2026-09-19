@@ -555,3 +555,16 @@ void apply_binaural_pan_to_sample_from_preflight(float mono, const HrtfBinauralP
 
 // --- deepen additive from deepen-b72-hrtf-pan-guards-e91a ---
 bool should_skip_hrtf_attenuation_coupling(float distance_attenuation, float occlusion_gain,
+
+// --- deepen additive from deepen-hrtf-guards-71c7 ---
+enum class HrtfPanRejectReason : u8 {
+const char* hrtf_pan_reject_reason_label(HrtfPanRejectReason reason);
+struct HrtfPanPreflight {
+    HrtfPanRejectReason reject_reason = HrtfPanRejectReason::None;
+bool should_skip_hrtf_ir_convolution(const HrtfIrStub& ir);
+bool try_resolve_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+                                HrtfPanPath& out_path, HrtfPanRejectReason& out_reason);
+HrtfPanPreflight preflight_hrtf_pan(bool hrtf_enabled, const HrtfIrStub& ir,
+HrtfPanPreflight preflight_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener);
+bool should_skip_hrtf_attenuation_coupling_mapping(float distance_attenuation,
+HrtfAttenuationCouplingPreflight preflight_hrtf_coupled_pan(bool hrtf_enabled,
