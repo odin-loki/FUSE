@@ -275,11 +275,7 @@ enum class ProbeSampleSkipReason : u8 {
 enum class ProbeTrilinearSampleRejectReason : u8 {
     None = 0,
     EmptyGrid,
-    NotSampleable,
     InvalidSampleCoords,
-    UndersizedCache,
-    NullCache,
-};
 
 /// Human-readable label for trilinear sample reject reasons (logging / tests).
 const char* probeTrilinearSampleRejectReasonLabel(ProbeTrilinearSampleRejectReason reason);
@@ -297,7 +293,8 @@ bool cacheIndexRejectReasonIsBlocking(CacheIndexRejectReason reason);
 enum class ProbeUpdateLaunchRejectReason : u8 {
     NullIndices,
     ZeroCount,
-    OutOfRangeProbeIndex,
+
+
 
 /// Human-readable label for probe-update launch reject reasons (logging / tests).
 const char* probeUpdateLaunchRejectReasonLabel(ProbeUpdateLaunchRejectReason reason);
