@@ -289,6 +289,63 @@ bool shouldSkipTaaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
     return !preflightTaaHistoryWarmupComplete(history);
 }
 
+const char* taaHistoryWarmupStateLabel(TaaHistoryWarmupState state) {
+    switch (state) {
+    case TaaHistoryWarmupState::NotReady:
+        return "not_ready";
+    case TaaHistoryWarmupState::NeedsWarmup:
+        return "needs_warmup";
+    case TaaHistoryWarmupState::Complete:
+        return "complete";
+    }
+    return "unknown";
+}
+
+TaaHistoryWarmupState classifyTaaHistoryWarmupState(const TaaHistoryBuffer& history) {
+    if (!history.isReady()) {
+        return TaaHistoryWarmupState::NotReady;
+    }
+    if (history.needsWarmup()) {
+        return TaaHistoryWarmupState::NeedsWarmup;
+    }
+    return TaaHistoryWarmupState::Complete;
+}
+
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
+    return classifyTaaHistoryWarmupState(history) == TaaHistoryWarmupState::Complete;
+}
+
+bool preflightTaaHistoryWarmupComplete(const TaaHistoryBuffer& history, TaaHistoryWarmupState* state) {
+    const TaaHistoryWarmupState warmupState = classifyTaaHistoryWarmupState(history);
+    if (state != nullptr) {
+        *state = warmupState;
+    }
+    return warmupState == TaaHistoryWarmupState::Complete;
+}
+
+bool tryPreflightTaaHistoryWarmupComplete(const TaaHistoryBuffer& history, TaaHistoryWarmupState& state) {
+    state = classifyTaaHistoryWarmupState(history);
+    return state == TaaHistoryWarmupState::Complete;
+}
+
+bool shouldSkipTaaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
+    return !preflightTaaHistoryWarmupComplete(history);
+}
+
+bool preflightTaaHistoryForTemporalBlend(const TaaHistoryBuffer& history, u32 observedGeneration,
+                                         TaaHistoryReuseBlockReason* reason) {
+    return preflightTaaHistoryReuse(history, observedGeneration, reason);
+}
+
+bool tryPreflightTaaHistoryForTemporalBlend(const TaaHistoryBuffer& history, u32 observedGeneration,
+                                            TaaHistoryReuseBlockReason& reason) {
+    return tryPreflightTaaHistoryReuse(history, observedGeneration, reason);
+}
+
+bool shouldSkipTaaHistoryForTemporalBlend(const TaaHistoryBuffer& history, u32 observedGeneration) {
+    return shouldSkipTaaHistoryReuse(history, observedGeneration);
+}
+
 bool TaaHistoryBuffer::readyForResolve() const {
     return taaHistoryReadyForResolve(*this);
 

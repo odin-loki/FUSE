@@ -214,6 +214,12 @@ bool tryPreflightTaaJitterAlignment(const TaaJitter& jitter, u32 frameIndex,
                                      TaaJitterGuardRejectReason& reason);
 /// Early-out when jitter alignment preflight would reject (B5.9 deepen).
 bool shouldSkipTaaJitterAlignment(const TaaJitter& jitter, u32 frameIndex);
+/// Classify why jitter slot/monotonic state would fail alignment to `frameIndex` (B5.9 deepen).
+TaaJitterGuardRejectReason classifyTaaJitterAlignmentReject(u32 frameIndex, u32 slot, u32 monotonicFrame,
+/// True when jitter slot and monotonic counter match `frameIndex` (B5.9 deepen).
+bool preflightTaaJitterAlignment(u32 frameIndex, u32 slot, u32 monotonicFrame,
+bool tryPreflightTaaJitterAlignment(u32 frameIndex, u32 slot, u32 monotonicFrame, u32 sequenceLength,
+bool shouldSkipTaaJitterAlignment(u32 frameIndex, u32 slot, u32 monotonicFrame,
 
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {
@@ -418,6 +424,7 @@ public:
     bool syncToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncRejectReason* reason);
     /// True when jitter state differs from the expected slot for `frameIndex` (B5.9 deepen).
     /// True when jitter state must resync to `frameIndex` before projection (B5.9 deepen).
+    /// True when jitter must resync before sampling offsets for `frameIndex` (B5.9 deepen).
 
     u32 index() const { return m_index; }
     /// True when monotonic frame counter matches `frameIndex` (B5.9 deepen).
