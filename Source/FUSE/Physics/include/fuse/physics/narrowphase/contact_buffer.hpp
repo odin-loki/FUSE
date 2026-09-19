@@ -284,3 +284,6 @@ bool writeContactSlotWithPreflight(
 
 // --- deepen additive from deepen-b4-narrowphase-guards-f881 ---
     bool writeSlotIfPreflight(u32 slot, const ContactManifold& manifold);
+
+// --- deepen additive from deepen-b4-narrowphase-2570 ---
+    bool needs_compact_and_clamp() const { return reason == ContactBufferCompactAndClampRejectReason::None; }

@@ -3074,3 +3074,14 @@ void testContactPairBufferDispatchGuards() {
 void testManifoldFinalizeDeepenPassGuards() {
             unnormalized, fuse::physics::narrowphase::ManifoldFinalizeRejectReason::NeedsNormalNormalize),
 void testRunNarrowphaseIfDispatchableGuard() {
+
+// --- deepen additive from deepen-b4-narrowphase-2570 ---
+        "should_skip false for valid manifold write");
+        fuse::physics::narrowphase::should_skip_contact_buffer_write(buffer, 0u, selfPair),
+        "should_skip true for self-pair write");
+            fuse::physics::narrowphase::ContactBufferCompactionRejectReason::None,
+            fuse::physics::narrowphase::ContactBufferClampRejectReason::EmptyBuffer,
+            fuse::physics::narrowphase::ContactBufferClampRejectReason::None,
+            fuse::physics::narrowphase::ContactBufferCompactAndClampRejectReason::None,
+    const auto afterPreflight =
+        afterPreflight.reason ==
