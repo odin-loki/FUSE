@@ -3404,10 +3404,13 @@ void testPerShapeCellBudgetGuards() {
 void testPairBufferSortRejectReasonGuards() {
     fuse::physics::broadphase::PairBufferSoA buffer;
 
+
+
              static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferSortRejectReason::EmptyBuffer),
              "empty buffer reports EmptyBuffer sort reject reason");
     expectTrue(fuse::physics::broadphase::pairBufferSortRejectsForReason(
                    buffer, fuse::physics::broadphase::PairBufferSortRejectReason::EmptyBuffer),
+               "empty buffer rejects for EmptyBuffer sort reason");
     expectTrue(std::strcmp(fuse::physics::broadphase::pairBufferSortRejectReasonName(
                                fuse::physics::broadphase::PairBufferSortRejectReason::SinglePair),
                            "SinglePair") == 0,
@@ -3470,6 +3473,7 @@ void testShouldRunPairBufferDedupeAndSortGuards() {
 void testPairSlotPreflightGuards() {
 }
 
+
     fuse::physics::broadphase::PairBufferSoA buffer;
     buffer.setMaxCapacity(2u);
 
@@ -3495,6 +3499,7 @@ void testPairBufferCompactAndClampPreflightGuards() {
     buffer.preparePairSlots(0u);
     expectTrue(buffer.canSkipSoAIteration(), "preparePairSlots(0) clears slot storage via preflight");
 }
+
 
     fuse::physics::broadphase::PairBufferSoA buffer;
     expectEq(static_cast<fuse::u32>(
@@ -4387,6 +4392,7 @@ void testBroadphaseCellPairPreflightGuards() {
 
                "sparse slots need compact+clamp work");
                                fuse::physics::broadphase::PairBufferCompactAndClampRejectReason::NoWorkNeeded),
+
 
 
 void testBroadphaseMergeRejectReasonGuards() {

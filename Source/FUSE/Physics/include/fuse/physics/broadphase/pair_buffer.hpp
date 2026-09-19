@@ -646,6 +646,7 @@ const char* pairBufferSortRejectReasonName(PairBufferSortRejectReason reason);
 
 
 
+
 PairBufferSortRejectReason pairBufferSortRejectReason(const PairBufferSoA& buffer);
 
 /// Returns true when `pairBufferSortRejectReason` matches `expected` (B4.2 deepen pass).
@@ -668,6 +669,7 @@ enum class PairBufferSortRejectReason : u8 {
     bool singlePair = false;
 
 /// Returns true when `pairBufferSortRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+
 
 
 
@@ -772,6 +774,7 @@ const char* pairBufferCompactAndClampRejectReasonName(PairBufferCompactAndClampR
 
 
 
+
 /// Pair-buffer slot preflight before `preparePairSlots` (B4.2 deepen pass).
 struct PairSlotPreflight {
     bool skipped = false;
@@ -817,6 +820,12 @@ enum class PairBufferCompactAndClampRejectReason : u8 {
 const char* pairBufferCompactAndClampRejectReasonName(PairBufferCompactAndClampRejectReason reason);
 
 
+/// Human-readable label for compact+clamp reject reasons (logging / tests).
+
+/// Diagnose why compact+clamp would skip; vacuously succeeds when work may proceed.
+PairBufferCompactAndClampRejectReason pairBufferCompactAndClampRejectReason(const PairBufferSoA& buffer);
+
+/// Returns true when `pairBufferCompactAndClampRejectReason` matches `expected` (B4.2 deepen pass).
 bool pairBufferCompactAndClampRejectsForReason(
     const PairBufferSoA& buffer,
     PairBufferCompactAndClampRejectReason expected);
@@ -1224,6 +1233,10 @@ bool shouldRunPairBufferDedupe(const PairBufferSoA& buffer);
 /// Non-mutating compact-and-clamp skip predicate — inverse of `shouldRunPairBufferCompactAndClamp`.
 
 /// Non-mutating compact-and-clamp predicate — mirrors `preflightPairBufferCompactAndClamp`.
+
+
+
+
 
 
 
