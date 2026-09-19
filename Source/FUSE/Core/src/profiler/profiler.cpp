@@ -956,6 +956,14 @@ u32 flowDepthMismatch() {
     return flowDepth >= openCount ? flowDepth - openCount : openCount - flowDepth;
 }
 
+void reconcilePendingFlowHandoff() {
+    if (!isCrossThreadFlowHandoffPending()) {
+        return;
+    }
+
+    popFlowNestingDepth();
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -1147,6 +1155,8 @@ bool eventNameMatches(const char* lhs, const char* rhs) {
 
 bool isLookupNameValid(const char* name) {
     return isValidEventName(name);
+
+    return name == nullptr || name[0] == '\0';
 
 bool isValidProfileEvent(const ProfileEvent& event) {
     EventNameRejectReason reason = EventNameRejectReason::None;
@@ -2078,6 +2088,8 @@ bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
     const u32 index = findFirstEventIndexByPhase(phase);
 bool tryFirstEventOfPhase(EventPhase phase, ProfileEvent& outEvent) {
     const u32 index = firstEventIndexOfPhase(phase);
+bool tryLastExportableEvent(ProfileEvent& outEvent) {
+    const u32 index = lastEventIndex();
         outEvent = ProfileEvent{};
         return false;
     }
@@ -2111,6 +2123,7 @@ bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent) {
 
 bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent) {
     const u32 index = findLastEventIndexByName(name);
+
 
 
 u32 firstEventIndex() {
@@ -2322,29 +2335,17 @@ u32 asyncFlowStartFinishEventDelta() {
 
 
             return i - 1u;
-        }
-    }
-    return kInvalidEventIndex;
-}
 
 u32 lastEventIndexByPhase(EventPhase phase) {
 u32 countEventsByName(const char* name) {
-    if (!isValidEventName(name)) {
-    if (!isLookupNameValid(name)) {
         return 0u;
-    }
 
     u32 count = 0u;
-    const u32 total = eventCount();
-    for (u32 i = 0u; i < total; ++i) {
-        const ProfileEvent& event = eventAt(i);
-        if (isValidEventName(event.name) && std::strcmp(event.name, name) == 0) {
             ++count;
     return count;
 
 u32 droppedEventCount() {
     return g_droppedEventCount.load(std::memory_order_acquire);
-        }
 
 bool tryFindEventIndexByName(const char* name, u32& outIndex) {
     const u32 index = findFirstEventIndexByName(name);
@@ -2356,23 +2357,11 @@ bool tryFindEventIndexByName(const char* name, u32& outIndex) {
     return true;
 
 u32 findFirstEventIndexByScopeId(u32 scopeId) {
-    const u32 total = eventCount();
-    for (u32 i = 0u; i < total; ++i) {
-        const ProfileEvent& event = eventAt(i);
         if (event.scopeId == scopeId && isValidEventName(event.name)) {
-            return i;
-    return kInvalidEventIndex;
 
 u32 countEventsByScopeId(u32 scopeId) {
-    u32 count = 0u;
 
-u32 firstExportableEventIndex() {
-        if (isEventExportable(i)) {
 
-u32 lastExportableEventIndex() {
-    for (u32 i = total; i > 0u; --i) {
-        if (isEventExportable(i - 1u)) {
-            return i - 1u;
 
 bool tryFirstExportableEvent(ProfileEvent& outEvent) {
     const u32 index = firstExportableEventIndex();
@@ -2394,16 +2383,10 @@ u32 findFirstEventIndexByFlowId(u32 flowId) {
 
 u32 findLastEventIndexByFlowId(u32 flowId) {
 
-        const ProfileEvent& event = eventAt(i - 1u);
-        if (isValidEventName(event.name) && eventNameMatches(event.name, name)) {
-        if (event.name != nullptr && std::strcmp(event.name, name) == 0) {
 
 u32 exportableFirstEventIndex() {
 
 u32 exportableLastEventIndex() {
-        const u32 index = i - 1u;
-        if (isEventExportable(index)) {
-            return index;
 
 bool hasScopeBeginEndMismatch() {
     return countEventsByPhase(EventPhase::Begin) != countEventsByPhase(EventPhase::End);
@@ -2414,6 +2397,16 @@ bool hasFlowStartFinishMismatch() {
     const u64 total = g_totalRecorded.load(std::memory_order_acquire);
     const u32 retained = eventCount();
     return total > static_cast<u64>(retained) ? static_cast<u32>(total - static_cast<u64>(retained)) : 0u;
+bool hasEventsByPhase(EventPhase phase) {
+    return findFirstEventIndexByPhase(phase) != kInvalidEventIndex;
+
+bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByPhase(phase);
+
+
+bool tryFindLastEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
+    const u32 index = findLastEventIndexByPhase(phase);
+
 
 u32 lastEventIndex() {
     const u32 count = eventCount();
