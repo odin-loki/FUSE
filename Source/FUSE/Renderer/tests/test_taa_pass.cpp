@@ -2939,3 +2939,46 @@ void testResolveBlendPreflightGuards() {
     testHistoryWarmupPreflightGuards();
     testResolveSurfaceAndPreflightHelpers();
     testResolveBlendPreflightGuards();
+
+// --- deepen additive from deepen-b59-taa-guards-94f6 ---
+void testHistoryReuseRejectReasons() {
+    expectTrue(std::strcmp(fuse::renderer::taaHistoryReuseRejectReasonLabel(
+                               fuse::renderer::TaaHistoryReuseRejectReason::None),
+                               fuse::renderer::TaaHistoryReuseRejectReason::NotReady),
+                               fuse::renderer::TaaHistoryReuseRejectReason::NeedsWarmup),
+                               fuse::renderer::TaaHistoryReuseRejectReason::StaleGeneration),
+    expectTrue(fuse::renderer::classifyTaaHistoryReuseReject(emptyHistory, 0u) ==
+                   fuse::renderer::TaaHistoryReuseRejectReason::NotReady,
+    expectTrue(!fuse::renderer::tryTaaHistoryReuse(emptyHistory, 0u),
+               "empty history fails tryTaaHistoryReuse");
+    expectTrue(fuse::renderer::classifyTaaHistoryReuseReject(history, 0u) ==
+                   fuse::renderer::TaaHistoryReuseRejectReason::NeedsWarmup,
+    expectTrue(fuse::renderer::tryTaaHistoryReuse(history, 0u),
+               "warmed history passes tryTaaHistoryReuse");
+    expectTrue(fuse::renderer::classifyTaaHistoryReuseReject(history, 99u) ==
+                   fuse::renderer::TaaHistoryReuseRejectReason::StaleGeneration,
+    expectTrue(fuse::renderer::classifyTaaHistoryReuseReject(history, history.invalidateGeneration()) ==
+                   fuse::renderer::TaaHistoryReuseRejectReason::None,
+    expectTrue(fuse::renderer::classifyTaaHistoryReuseReject(
+void testJitterSyncPreflightGuards() {
+    expectTrue(std::strcmp(fuse::renderer::taaJitterSyncRejectReasonLabel(
+                               fuse::renderer::TaaJitterSyncRejectReason::None),
+                               fuse::renderer::TaaJitterSyncRejectReason::InvalidSequence),
+                               fuse::renderer::TaaJitterSyncRejectReason::InvalidViewport),
+                               fuse::renderer::TaaJitterSyncRejectReason::FrameIndexMismatch),
+    fuse::renderer::TaaJitterSyncRejectReason syncReason = fuse::renderer::TaaJitterSyncRejectReason::None;
+    expectTrue(fuse::renderer::preflightTaaJitterSync(jitter, 5u, 128u, 128u, &syncReason),
+    expectTrue(syncReason == fuse::renderer::TaaJitterSyncRejectReason::None,
+    expectTrue(!fuse::renderer::preflightTaaJitterSync(jitter, 6u, 128u, 128u, &syncReason),
+    expectTrue(syncReason == fuse::renderer::TaaJitterSyncRejectReason::FrameIndexMismatch,
+    expectTrue(!fuse::renderer::preflightTaaJitterSync(jitter, 5u, 0u, 128u, &syncReason),
+    expectTrue(syncReason == fuse::renderer::TaaJitterSyncRejectReason::InvalidViewport,
+    expectTrue(fuse::renderer::preflightTaaResolveBlendWeights(desc, history, &weights),
+    fuse::renderer::TaaResolveBlendPreflight snapshot{};
+    expectTrue(fuse::renderer::preflightTaaResolveBlend(desc, history, &snapshot),
+    expectTrue(!fuse::renderer::preflightTaaResolveBlend(desc, history, &snapshot),
+    expectTrue(pass->classifyHistoryReuseReject(0u) ==
+    expectTrue(pass->preflightResolveBlend(resolveDesc, &snapshot), "pass preflight passes before resolve");
+    expectTrue(pass->preflightResolveBlend(resolveDesc, &snapshot), "pass preflight passes after warmup");
+    testHistoryReuseRejectReasons();
+    testJitterSyncPreflightGuards();

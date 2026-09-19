@@ -223,3 +223,18 @@ TaaHistoryReusePreflight preflightTaaHistoryReuseForDesc(const TaaHistoryBuffer&
 
 // --- deepen additive from deepen-b59-taa-jitter-history-preflights-ddf1 ---
 bool taaHistoryReusePreflightPasses(const TaaHistoryBuffer& history, u32 observedGeneration) {
+
+// --- deepen additive from deepen-b59-taa-guards-94f6 ---
+const char* taaHistoryReuseRejectReasonLabel(TaaHistoryReuseRejectReason reason) {
+    case TaaHistoryReuseRejectReason::None:
+    case TaaHistoryReuseRejectReason::NotReady:
+    case TaaHistoryReuseRejectReason::NeedsWarmup:
+    case TaaHistoryReuseRejectReason::StaleGeneration:
+TaaHistoryReuseRejectReason classifyTaaHistoryReuseReject(const TaaHistoryBuffer& history, u32 observedGeneration) {
+        return TaaHistoryReuseRejectReason::NotReady;
+        return TaaHistoryReuseRejectReason::NeedsWarmup;
+        return TaaHistoryReuseRejectReason::StaleGeneration;
+    return TaaHistoryReuseRejectReason::None;
+bool tryTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration, TaaHistoryReuseRejectReason* reason) {
+    const TaaHistoryReuseRejectReason reject = classifyTaaHistoryReuseReject(history, observedGeneration);
+    return reject == TaaHistoryReuseRejectReason::None;

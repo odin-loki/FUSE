@@ -429,3 +429,8 @@ bool taaResolveBlendPreflightPasses(const TaaResolveDesc& desc, const TaaHistory
     return preflightTaaBlendWeights(!history.hasValidHistory(), desc.params);
 bool preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history, TaaBlendWeights* out) {
     return preflightTaaBlendWeights(!history.hasValidHistory(), desc.params, out);
+
+// --- deepen additive from deepen-b59-taa-guards-94f6 ---
+                              TaaResolveBlendPreflight* out) {
+    TaaResolveBlendPreflight snapshot{};
+    snapshot.resolve_would_pass = !taaResolveSkipReasonIsBlocking(snapshot.resolve_skip_reason);

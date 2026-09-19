@@ -277,3 +277,16 @@ void TaaJitter::syncToFrameIndex(u32 frameIndex) {
 bool TaaJitterSyncPreflight::synced() const {
 TaaJitterSyncPreflight preflightTaaJitterSync(const TaaJitter& jitter, u32 frameIndex, u32 width, u32 height) {
     TaaJitterSyncPreflight preflight{};
+
+// --- deepen additive from deepen-b59-taa-guards-94f6 ---
+const char* taaJitterSyncRejectReasonLabel(TaaJitterSyncRejectReason reason) {
+    case TaaJitterSyncRejectReason::None:
+    case TaaJitterSyncRejectReason::InvalidSequence:
+    case TaaJitterSyncRejectReason::InvalidViewport:
+    case TaaJitterSyncRejectReason::FrameIndexMismatch:
+bool preflightTaaJitterSync(const TaaJitter& jitter, u32 frameIndex, u32 width, u32 height,
+                            TaaJitterSyncRejectReason* reason) {
+            *reason = TaaJitterSyncRejectReason::InvalidSequence;
+            *reason = TaaJitterSyncRejectReason::InvalidViewport;
+            *reason = TaaJitterSyncRejectReason::FrameIndexMismatch;
+        *reason = TaaJitterSyncRejectReason::None;

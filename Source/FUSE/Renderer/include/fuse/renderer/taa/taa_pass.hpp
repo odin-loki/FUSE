@@ -188,3 +188,7 @@ void addTaaPassToGraph(RenderGraph& graph);
 
 // --- deepen additive from deepen-b59-taa-jitter-history-preflights-ddf1 ---
     bool preflightResolveBlend(const TaaResolveDesc& desc, TaaBlendWeights* out = nullptr) const;
+
+// --- deepen additive from deepen-b59-taa-guards-94f6 ---
+    TaaHistoryReuseRejectReason classifyHistoryReuseReject(u32 observedGeneration) const;
+    bool preflightResolveBlend(const TaaResolveDesc& desc, TaaResolveBlendPreflight* out = nullptr) const;

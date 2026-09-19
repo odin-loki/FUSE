@@ -128,3 +128,7 @@ private:
 // --- deepen additive from deepen-b59-taa-guards-8293 ---
 struct TaaJitterSyncPreflight {
 TaaJitterSyncPreflight preflightTaaJitterSync(const TaaJitter& jitter, u32 frameIndex, u32 width, u32 height);
+
+// --- deepen additive from deepen-b59-taa-guards-94f6 ---
+bool preflightTaaJitterSync(const TaaJitter& jitter, u32 frameIndex, u32 width, u32 height,
+                            TaaJitterSyncRejectReason* reason = nullptr);

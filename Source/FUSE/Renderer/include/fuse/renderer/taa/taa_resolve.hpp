@@ -53,3 +53,6 @@ private:
 
 // --- deepen additive from deepen-b59-taa-history-resolve-skip-b406 ---
 TaaResolveSkipReason preflightTaaResolve(TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+
+// --- deepen additive from deepen-b59-taa-guards-94f6 ---
+bool preflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,

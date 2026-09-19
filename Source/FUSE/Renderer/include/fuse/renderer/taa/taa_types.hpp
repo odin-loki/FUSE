@@ -226,3 +226,13 @@ bool preflightTaaBlendWeights(bool firstFrame, const TAAParams& params, TaaBlend
 bool taaResolveBlendPreflightPasses(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 bool preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
 bool taaHistoryReusePreflightPasses(const TaaHistoryBuffer& history, u32 observedGeneration);
+
+// --- deepen additive from deepen-b59-taa-guards-94f6 ---
+enum class TaaHistoryReuseRejectReason : u8 {
+const char* taaHistoryReuseRejectReasonLabel(TaaHistoryReuseRejectReason reason);
+TaaHistoryReuseRejectReason classifyTaaHistoryReuseReject(const TaaHistoryBuffer& history, u32 observedGeneration);
+bool tryTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
+                        TaaHistoryReuseRejectReason* reason = nullptr);
+enum class TaaJitterSyncRejectReason : u8 {
+const char* taaJitterSyncRejectReasonLabel(TaaJitterSyncRejectReason reason);
+                              TaaResolveBlendPreflight* out = nullptr);
