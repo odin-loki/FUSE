@@ -81,6 +81,9 @@ public:
     [[nodiscard]] bool hasUnsavedChanges() const {
         return !isAtBaseline() || coalescedOpsSinceBaseline() > 0u;
     }
+    /// True when undo/redo depth differs from the last `set_baseline_state` call.
+    /// Unconfigured stacks treat any non-empty or dirty state as unsaved (B6.2 deepen).
+    [[nodiscard]] bool hasUnsavedChanges() const;
 
     std::string peekUndoDescription() const;
     std::string peekRedoDescription() const;

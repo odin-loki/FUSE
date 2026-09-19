@@ -73,10 +73,9 @@ public:
         return !isAtBaseline() || coalescedCountSinceBaseline() > 0u;
     }
 
-    /// True when undo/redo depth or post-baseline coalesce differs from the last save point.
-    [[nodiscard]] bool hasUnsavedChanges() const {
-        return !isAtBaseline() || coalescedCountSinceBaseline() > 0u;
-    }
+    /// True when undo/redo depth differs from the last `set_baseline_state` call.
+    /// Unconfigured stacks treat any non-empty or dirty state as unsaved (B6.2 deepen).
+    [[nodiscard]] bool hasUnsavedChanges() const;
 
     CommandStackSnapshot captureSnapshot() const;
     void restoreSnapshot(const CommandStackSnapshot& snapshot);

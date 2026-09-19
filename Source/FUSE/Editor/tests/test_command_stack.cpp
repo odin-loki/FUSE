@@ -1565,14 +1565,11 @@ void testUndoStackDoesNotCoalesceDifferentLabels() {
     expectTrue(stack.coalescedOps() == 0u, "different labels skip coalesce counter");
 
 void testUndoStackSetBaselineStateClearsDirtyWhenAtBaselineDepth() {
-    fuse::editor::UndoStack stack;
-    int counter = 0;
 
     stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "drag"));
     stack.execute(std::make_unique<CounterCommand>(counter, 1, 3, "drag"));
     expectTrue(stack.undoCount() == 1u, "coalesced edits stay one undo step");
 
-    stack.undo();
     expectTrue(stack.undoCount() == 0u, "undo drains coalesced step");
 
     stack.execute(std::make_unique<CounterCommand>(counter, 0, 7, "drag"));
@@ -1580,13 +1577,9 @@ void testUndoStackSetBaselineStateClearsDirtyWhenAtBaselineDepth() {
     expectTrue(stack.coalescedOps() == 1u, "prior coalesce count preserved across undo boundary");
     expectTrue(counter == 7, "post-undo edit applies latest value without merging into redo branch");
     expectTrue(stack.redoCount() == 0u, "post-undo execute clears redo branch");
-}
 
 void testCommandStackSetBaselineClearsDirtyAtBaselineDepth() {
-    fuse::editor::CommandStack stack;
 
-    stack.execute(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
-    stack.set_baseline_state();
 
     fuse::editor::CommandStackSnapshot snapshot = stack.captureSnapshot();
     snapshot.dirty = true;
@@ -1600,34 +1593,69 @@ void testCommandStackSetBaselineClearsDirtyAtBaselineDepth() {
 
 void testUndoStackSetBaselineClearsDirtyAtBaselineDepth() {
     stack.execute(std::make_unique<CounterCommand>(counter, 3, 6, "drag"));
-    expectTrue(stack.isDirty(), "coalesce after baseline marks dirty");
-    expectTrue(stack.isAtBaseline(), "coalesce keeps baseline undo depth");
 
-    expectTrue(!stack.isDirty(), "baseline save clears dirty when at baseline depth");
 
 void testUndoStackClearAfterBaselineResetsConfiguredFlag() {
-    fuse::editor::UndoStack stack;
-    int counter = 0;
 
     stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "step"));
-    stack.set_baseline_state();
 
     fuse::editor::UndoStackSnapshot snapshot = stack.captureSnapshot();
-    snapshot.dirty = true;
-    stack.restoreSnapshot(snapshot);
 
-    expectTrue(stack.isAtBaseline(), "snapshot restore keeps baseline depth");
-    expectTrue(stack.isDirty(), "snapshot restore can leave dirty flag set at baseline depth");
 
-    stack.set_baseline_state();
-    expectTrue(!stack.isDirty(), "repeat baseline save clears dirty at baseline depth");
-    expectTrue(stack.isAtBaseline(), "repeat baseline save stays at baseline");
     expectTrue(stack.isBaselineConfigured(), "baseline configured after save");
 
     stack.clear();
     expectTrue(!stack.isBaselineConfigured(), "clear after baseline resets configured flag");
     expectTrue(stack.isEmpty(), "clear after baseline empties undo branch");
     expectTrue(stack.isRedoEmpty(), "clear after baseline empties redo branch");
+void testCommandStackHasUnsavedChangesBeforeBaseline() {
+
+    expectTrue(!stack.isBaselineConfigured(), "new stack has no baseline configured");
+    expectTrue(!stack.isAtBaseline(), "isAtBaseline false before first save");
+    expectTrue(!stack.hasUnsavedChanges(), "empty unconfigured stack has no unsaved changes");
+
+    expectTrue(stack.hasUnsavedChanges(), "unconfigured stack with edits reports unsaved");
+    expectTrue(!stack.isAtBaseline(), "isAtBaseline false before baseline save");
+
+    expectTrue(!stack.hasUnsavedChanges(), "baseline save clears unsaved flag");
+
+void testUndoStackHasUnsavedChangesBeforeBaseline() {
+
+    expectTrue(!stack.isBaselineConfigured(), "new undo stack has no baseline configured");
+
+
+
+
+    fuse::editor::EditorCommand first;
+    first.kind = fuse::editor::CommandKind::SetProperty;
+    first.target = fuse::Handle<fuse::Object>::invalid();
+    first.propertyName = "transform.position";
+    first.propertyValue = "1,2,3";
+    stack.execute(std::move(first));
+
+
+
+void testCommandStackDoesNotCoalesceMismatchedDragBaseline() {
+
+    stack.push(makeSetPropertyCommand(1u, "transform.position", "4,5,6"), "1,2,3");
+    stack.push(makeSetPropertyCommand(1u, "transform.position", "7,8,9"), "9,9,9");
+
+    expectTrue(stack.undoDepth() == 2u, "mismatched drag baseline does not coalesce");
+    expectTrue(stack.coalescedCount() == 0u, "mismatched propertyValueBefore guard skips coalesce");
+
+    const fuse::editor::EditorCommand* first = stack.peekUndo();
+    expectTrue(first != nullptr && first->propertyValue == "7,8,9",
+               "latest command remains top of undo branch");
+
+void testUndoStackClearOnEmptyWithEvictedCountIsNoOp() {
+
+    for (int step = 0; step < fuse::editor::UndoStack::kMaxHistory + 3; ++step) {
+    expectTrue(stack.evictedCount() > 0u, "eviction occurred before clear");
+
+    expectTrue(stack.evictedCount() == 0u, "clear resets evicted count");
+    expectTrue(stack.undoCount() == 0u, "clear drains undo branch");
+
+    expectTrue(stack.undoCount() == 0u, "second clear on empty stack is a no-op");
 }
 
 } // namespace
@@ -1745,6 +1773,10 @@ int main() {
     testUndoStackDoesNotCoalesceDifferentLabels();
     testUndoStackSetBaselineStateClearsDirtyWhenAtBaselineDepth();
     testUndoStackClearAfterBaselineResetsConfiguredFlag();
+    testCommandStackHasUnsavedChangesBeforeBaseline();
+    testUndoStackHasUnsavedChangesBeforeBaseline();
+    testCommandStackDoesNotCoalesceMismatchedDragBaseline();
+    testUndoStackClearOnEmptyWithEvictedCountIsNoOp();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

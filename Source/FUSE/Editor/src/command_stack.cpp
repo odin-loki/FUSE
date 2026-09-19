@@ -49,6 +49,15 @@ bool CommandStack::canCoalesce_(const EditorCommand& previous, const EditorComma
         return false;
     }
 
+    if (previous.target == Handle<Object>::invalid() || incoming.target == Handle<Object>::invalid()) {
+        return false;
+    }
+
+    if (!previous.propertyValueBefore.empty() && !incoming.propertyValueBefore.empty() &&
+        previous.propertyValueBefore != incoming.propertyValueBefore) {
+        return false;
+    }
+
     return previous.target == incoming.target && previous.propertyName == incoming.propertyName;
 }
 
@@ -125,9 +134,18 @@ void CommandStack::set_baseline_state() {
 bool CommandStack::isAtBaseline() const {
     if (!m_baselineConfigured) {
         return m_undoDepth == 0u && m_redoDepth == 0u;
+        return false;
     }
 
     return m_undoDepth == m_baselineUndoDepth;
+}
+
+bool CommandStack::hasUnsavedChanges() const {
+    if (!m_baselineConfigured) {
+        return !isEmpty() || m_dirty;
+    }
+
+    return !isAtBaseline();
 }
 
 void CommandStack::execute(EditorCommand command) {
