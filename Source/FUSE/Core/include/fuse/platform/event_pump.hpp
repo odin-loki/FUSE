@@ -138,6 +138,12 @@ public:
 
 
     /// Number of queued events matching `type`.
+    /// Number of queued events whose type matches `type` (0 when empty).
+
+
+
+    /// True when the most recent in-place resize coalesce targeted `window`.
+    bool hasCoalescedResizeFor(const Window& window) const;
 
     /// Pending resize dimensions for `window`, or `pending == false` when none queued.
     ///

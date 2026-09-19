@@ -860,6 +860,15 @@ void testEventPumpCountPendingEventsOfType() {
              "empty queue has zero resize events");
     expectEq(pump.countPendingEventsOfType(fuse::platform::PlatformEventType::Quit), 0u,
              "empty queue has zero quit events");
+void testEventPumpCountPendingEventsOfTypeEmptyQueueGuard() {
+
+             "empty queue reports zero resize events");
+             "empty queue reports zero quit events");
+    expectTrue(!pump.hasPendingEventOfType(fuse::platform::PlatformEventType::WindowResized),
+               "hasPendingEventOfType stays false on empty queue");
+}
+
+void testEventPumpCountPendingEventsOfTypeMixedQueue() {
 
     pump.pushWindowResized(window);
     pump.pushWindowFocusLost(window);
@@ -896,13 +905,9 @@ void testEventPumpFrontEventTypeIs() {
 
     fuse::platform::PlatformEvent polled;
     expectTrue(pump.pollEvent(polled), "poll drains front resize");
-    expectTrue(!pump.frontEventTypeIs(fuse::platform::PlatformEventType::WindowResized),
                "front type guard false after poll drains queue");
-}
 
 void testEventPumpWouldCoalesceResize() {
-    fuse::platform::EventPump pump;
-    fuse::platform::Window window;
 
     fuse::platform::PlatformEvent candidate;
     candidate.type = fuse::platform::PlatformEventType::WindowResized;
@@ -911,7 +916,6 @@ void testEventPumpWouldCoalesceResize() {
     candidate.height = 768;
     expectTrue(!pump.wouldCoalesceResize(candidate), "empty queue would not coalesce");
 
-    window.resize(800, 600, &pump);
     expectTrue(pump.wouldCoalesceResize(candidate),
                "duplicate resize for same window would coalesce");
 
@@ -927,19 +931,11 @@ void testEventPumpWouldCoalesceResize() {
     candidate.window = &other;
     expectTrue(!pump.wouldCoalesceResize(candidate),
                "resize for other window would not coalesce");
-}
 
 void testEventPumpCoalesceZeroDimensionGuard() {
-    fuse::platform::EventPump pump;
-    fuse::platform::Window window;
 
-    window.resize(800, 600, &pump);
     expectEq(pump.pendingEventCount(), 1u, "valid resize queued");
 
-    fuse::platform::PlatformEvent invalid;
-    invalid.type = fuse::platform::PlatformEventType::WindowResized;
-    invalid.window = &window;
-    invalid.width = 0;
     invalid.height = 720;
     pump.pushSyntheticEvent(invalid);
     expectEq(pump.pendingEventCount(), 2u,
@@ -950,10 +946,8 @@ void testEventPumpCoalesceZeroDimensionGuard() {
     expectEq(extent.width, 800u, "valid resize width not overwritten by invalid coalesce");
     expectEq(extent.height, 600u, "valid resize height not overwritten by invalid coalesce");
     expectEq(pump.coalescedResizeCount(), 0u, "invalid resize does not increment coalesce count");
-}
 
 void testEventPumpTryPeekEventOfTypeEmptyQueueGuard() {
-    fuse::platform::EventPump pump;
 
     fuse::platform::PlatformEvent peeked;
     peeked.type = fuse::platform::PlatformEventType::Quit;
@@ -961,47 +955,30 @@ void testEventPumpTryPeekEventOfTypeEmptyQueueGuard() {
                "tryPeekEventOfType returns false on empty queue");
     expectTrue(peeked.type == fuse::platform::PlatformEventType::None,
                "tryPeekEventOfType resets outEvent on empty queue");
-}
 
 void testEventPumpTryPeekEventOfTypeTypeMismatchGuard() {
-    fuse::platform::EventPump pump;
-    fuse::platform::Window window;
 
     pump.pushWindowFocusLost(window);
     expectEq(pump.pendingEventCount(), 1u, "focus lost queued before type peek");
 
-    fuse::platform::PlatformEvent peeked;
-    peeked.type = fuse::platform::PlatformEventType::Quit;
-    expectTrue(!pump.tryPeekEventOfType(fuse::platform::PlatformEventType::WindowResized, peeked),
                "tryPeekEventOfType returns false when front type mismatches");
-    expectTrue(peeked.type == fuse::platform::PlatformEventType::None,
                "tryPeekEventOfType resets outEvent on type mismatch");
     expectEq(pump.pendingEventCount(), 1u, "type mismatch peek does not remove queued event");
-}
 
 void testEventPumpTryPeekEventOfTypeMatchesFront() {
-    fuse::platform::EventPump pump;
-    fuse::platform::Window window;
 
-    window.resize(800, 600, &pump);
-    fuse::platform::PlatformEvent peeked;
     expectTrue(pump.tryPeekEventOfType(fuse::platform::PlatformEventType::WindowResized, peeked),
                "tryPeekEventOfType succeeds when front matches");
     expectEq(peeked.width, 800u, "tryPeekEventOfType copies resize width");
     expectEq(peeked.height, 600u, "tryPeekEventOfType copies resize height");
     expectTrue(peeked.window == &window, "tryPeekEventOfType copies window pointer");
     expectEq(pump.pendingEventCount(), 1u, "tryPeekEventOfType does not pop");
-}
 
 void testEventPumpPeekAfterCoalesceUpdatesFront() {
-    fuse::platform::EventPump pump;
-    fuse::platform::Window window;
 
-    window.resize(800, 600, &pump);
     window.resize(1280, 720, &pump);
     expectEq(pump.coalescedResizeCount(), 1u, "one resize coalesced before peek");
 
-    fuse::platform::PlatformEvent peeked;
     expectTrue(pump.peekEvent(peeked), "peek succeeds after coalesce");
     expectEq(peeked.width, 1280u, "peek sees coalesced width");
     expectEq(peeked.height, 720u, "peek sees coalesced height");
@@ -1015,6 +992,11 @@ void testEventPumpPeekAfterCoalesceUpdatesFront() {
     expectTrue(pump.tryPeekEventOfType(fuse::platform::PlatformEventType::WindowResized, typed),
                "tryPeekEventOfType succeeds after coalesce");
     expectEq(typed.width, 1280u, "tryPeekEventOfType sees coalesced width");
+             "mixed queue counts one resize");
+             "mixed queue counts one focus lost");
+             "mixed queue counts one quit");
+             0u,
+             "mixed queue counts zero close requested");
 }
 
 void testEventPumpHasPendingEventOfTypeForEmptyQueueGuard() {
@@ -1064,6 +1046,49 @@ void testEventPumpPeekEventTypeMatchesPeekEvent() {
     expectTrue(pump.peekEventType(type), "peekEventType succeeds with pending focus gained");
     expectTrue(peeked.type == type, "peekEvent and peekEventType agree on front type");
     expectEq(pump.pendingEventCount(), 1u, "peek pair does not remove queued event");
+}
+
+void testEventPumpCoalesceInvalidDimensionGuard() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    window.resize(800, 600, &pump);
+    expectEq(pump.pendingEventCount(), 1u, "valid resize enqueues one event");
+
+    fuse::platform::PlatformEvent invalidWidth;
+    invalidWidth.type = fuse::platform::PlatformEventType::WindowResized;
+    invalidWidth.window = &window;
+    invalidWidth.width = 0;
+    invalidWidth.height = 720;
+    pump.pushSyntheticEvent(invalidWidth);
+    expectEq(pump.pendingEventCount(), 2u, "zero-width resize does not coalesce");
+    expectEq(pump.coalescedResizeCount(), 0u, "invalid resize does not increment coalesce count");
+
+    fuse::platform::PlatformEvent invalidHeight;
+    invalidHeight.type = fuse::platform::PlatformEventType::WindowResized;
+    invalidHeight.window = &window;
+    invalidHeight.width = 640;
+    invalidHeight.height = 0;
+    pump.pushSyntheticEvent(invalidHeight);
+    expectEq(pump.pendingEventCount(), 3u, "zero-height resize does not coalesce");
+
+    window.resize(1280, 720, &pump);
+    expectEq(pump.pendingEventCount(), 3u, "valid resize coalesces into latest pending resize slot");
+    expectEq(pump.coalescedResizeCount(), 1u, "valid resize merge increments coalesce count once");
+
+    fuse::platform::PlatformEvent first;
+    expectTrue(pump.pollEvent(first), "original valid resize polled first");
+    expectEq(first.width, 800u, "head resize keeps original width");
+    expectEq(first.height, 600u, "head resize keeps original height");
+
+    fuse::platform::PlatformEvent second;
+    expectTrue(pump.pollEvent(second), "invalid width resize polled second");
+    expectEq(second.width, 0u, "invalid width resize preserved in queue order");
+
+    fuse::platform::PlatformEvent third;
+    expectTrue(pump.pollEvent(third), "coalesced valid resize polled third");
+    expectEq(third.width, 1280u, "coalesced valid resize keeps latest width");
+    expectEq(third.height, 720u, "coalesced valid resize keeps latest height");
 }
 
 void testEventPumpHasCoalescedResizeFor() {
@@ -1122,14 +1147,7 @@ void testEventPumpIntrospectionAfterRingWrap() {
     for (fuse::u32 index = 0; index < 15u; ++index) {
         fuse::platform::PlatformEvent drained;
         expectTrue(pump.pollEvent(drained), "drain events to advance head");
-    }
 
-    for (fuse::u32 index = 0; index < 15u; ++index) {
-        fuse::platform::PlatformEvent event;
-        event.type = fuse::platform::PlatformEventType::WindowFocusGained;
-        event.window = &window;
-        pump.pushSyntheticEvent(event);
-    }
 
     pump.pushWindowResized(window);
 
@@ -1147,11 +1165,8 @@ void testEventPumpIntrospectionAfterRingWrap() {
     fuse::platform::PlatformEvent typed;
     expectTrue(!pump.tryPeekEventOfType(fuse::platform::PlatformEventType::WindowResized, typed),
                "tryPeekEventOfType false when front type differs after wrap");
-}
 
 void testEventPumpTryPeekEventForEmptyQueueGuard() {
-    fuse::platform::EventPump pump;
-    fuse::platform::Window window;
 
     fuse::platform::PlatformEvent peeked;
     peeked.type = fuse::platform::PlatformEventType::Quit;
@@ -1159,58 +1174,38 @@ void testEventPumpTryPeekEventForEmptyQueueGuard() {
                "tryPeekEventFor returns false on empty queue");
     expectTrue(peeked.type == fuse::platform::PlatformEventType::None,
                "tryPeekEventFor resets outEvent on empty queue");
-}
 
 void testEventPumpTryPeekEventForWindowMismatchGuard() {
-    fuse::platform::EventPump pump;
     fuse::platform::Window left;
     fuse::platform::Window right;
 
     left.resize(800, 600, &pump);
     expectEq(pump.pendingEventCount(), 1u, "left resize queued before window peek");
 
-    fuse::platform::PlatformEvent peeked;
-    peeked.type = fuse::platform::PlatformEventType::Quit;
     expectTrue(!pump.tryPeekEventFor(right, peeked),
                "tryPeekEventFor returns false when front window mismatches");
-    expectTrue(peeked.type == fuse::platform::PlatformEventType::None,
                "tryPeekEventFor resets outEvent on window mismatch");
     expectEq(pump.pendingEventCount(), 1u, "window mismatch peek does not remove queued event");
-}
 
 void testEventPumpTryPeekEventForMatchesFront() {
-    fuse::platform::EventPump pump;
-    fuse::platform::Window window;
 
     window.resize(800, 600, &pump);
-    fuse::platform::PlatformEvent peeked;
     expectTrue(pump.tryPeekEventFor(window, peeked), "tryPeekEventFor succeeds when front matches");
     expectTrue(peeked.type == fuse::platform::PlatformEventType::WindowResized,
                "tryPeekEventFor copies resize type");
     expectEq(peeked.width, 800u, "tryPeekEventFor copies resize width");
     expectTrue(peeked.window == &window, "tryPeekEventFor copies window pointer");
     expectEq(pump.pendingEventCount(), 1u, "tryPeekEventFor does not pop");
-}
 
 void testEventPumpTryPeekEventOfTypeForEmptyQueueGuard() {
-    fuse::platform::EventPump pump;
-    fuse::platform::Window window;
 
-    fuse::platform::PlatformEvent peeked;
-    peeked.type = fuse::platform::PlatformEventType::Quit;
     expectTrue(!pump.tryPeekEventOfTypeFor(window, fuse::platform::PlatformEventType::WindowResized,
                                            peeked),
                "tryPeekEventOfTypeFor returns false on empty queue");
-    expectTrue(peeked.type == fuse::platform::PlatformEventType::None,
                "tryPeekEventOfTypeFor resets outEvent on empty queue");
-}
 
 void testEventPumpTryPeekEventOfTypeForMismatchGuards() {
-    fuse::platform::EventPump pump;
-    fuse::platform::Window left;
-    fuse::platform::Window right;
 
-    left.resize(800, 600, &pump);
     pump.pushWindowFocusLost(left);
 
     fuse::platform::PlatformEvent typeMismatch;
@@ -1229,24 +1224,17 @@ void testEventPumpTryPeekEventOfTypeForMismatchGuards() {
     expectTrue(windowMismatch.type == fuse::platform::PlatformEventType::None,
                "tryPeekEventOfTypeFor resets outEvent on window mismatch");
     expectEq(pump.pendingEventCount(), 2u, "mismatch peeks do not remove queued events");
-}
 
 void testEventPumpTryPeekEventOfTypeForMatchesFront() {
-    fuse::platform::EventPump pump;
-    fuse::platform::Window window;
 
     window.resize(1024, 768, &pump);
-    fuse::platform::PlatformEvent peeked;
     expectTrue(pump.tryPeekEventOfTypeFor(window, fuse::platform::PlatformEventType::WindowResized,
-                                           peeked),
                "tryPeekEventOfTypeFor succeeds when front matches");
     expectEq(peeked.width, 1024u, "tryPeekEventOfTypeFor copies resize width");
     expectEq(peeked.height, 768u, "tryPeekEventOfTypeFor copies resize height");
     expectEq(pump.pendingEventCount(), 1u, "tryPeekEventOfTypeFor does not pop");
-}
 
 void testEventPumpTryPollEventOfTypeEmptyQueueGuard() {
-    fuse::platform::EventPump pump;
 
     fuse::platform::PlatformEvent polled;
     polled.type = fuse::platform::PlatformEventType::Quit;
@@ -1254,153 +1242,93 @@ void testEventPumpTryPollEventOfTypeEmptyQueueGuard() {
                "tryPollEventOfType returns false on empty queue");
     expectTrue(polled.type == fuse::platform::PlatformEventType::None,
                "tryPollEventOfType resets outEvent on empty queue");
-}
 
 void testEventPumpTryPollEventOfTypeTypeMismatchGuard() {
-    fuse::platform::EventPump pump;
-    fuse::platform::Window window;
 
     pump.pushWindowFocusLost(window);
     expectEq(pump.pendingEventCount(), 1u, "focus lost queued before type poll");
 
-    fuse::platform::PlatformEvent polled;
-    polled.type = fuse::platform::PlatformEventType::Quit;
-    expectTrue(!pump.tryPollEventOfType(fuse::platform::PlatformEventType::WindowResized, polled),
                "tryPollEventOfType returns false when front type mismatches");
-    expectTrue(polled.type == fuse::platform::PlatformEventType::None,
                "tryPollEventOfType resets outEvent on type mismatch");
     expectEq(pump.pendingEventCount(), 1u, "type mismatch poll does not remove queued event");
-}
 
 void testEventPumpTryPollEventOfTypeMatchesFront() {
-    fuse::platform::EventPump pump;
-    fuse::platform::Window window;
 
-    window.resize(800, 600, &pump);
-    fuse::platform::PlatformEvent polled;
     expectTrue(pump.tryPollEventOfType(fuse::platform::PlatformEventType::WindowResized, polled),
                "tryPollEventOfType succeeds when front matches");
     expectEq(polled.width, 800u, "tryPollEventOfType copies resize width");
     expectEq(pump.pendingEventCount(), 0u, "tryPollEventOfType removes matched event");
-}
 
 void testEventPumpTryPollEventOfTypeForMismatchGuards() {
-    fuse::platform::EventPump pump;
-    fuse::platform::Window left;
-    fuse::platform::Window right;
 
-    left.resize(800, 600, &pump);
-    pump.pushWindowFocusLost(left);
 
-    fuse::platform::PlatformEvent polled;
-    polled.type = fuse::platform::PlatformEventType::Quit;
     expectTrue(!pump.tryPollEventOfTypeFor(left, fuse::platform::PlatformEventType::WindowFocusLost,
                                            polled),
                "tryPollEventOfTypeFor returns false when front type mismatches");
-    expectTrue(polled.type == fuse::platform::PlatformEventType::None,
                "tryPollEventOfTypeFor resets outEvent on type mismatch");
     expectEq(pump.pendingEventCount(), 2u, "type mismatch poll does not remove queued events");
 
-    polled.type = fuse::platform::PlatformEventType::Quit;
     expectTrue(!pump.tryPollEventOfTypeFor(right, fuse::platform::PlatformEventType::WindowResized,
-                                           polled),
                "tryPollEventOfTypeFor returns false when front window mismatches");
     expectEq(pump.pendingEventCount(), 2u, "window mismatch poll does not remove queued events");
 
     expectTrue(pump.tryPollEventOfTypeFor(left, fuse::platform::PlatformEventType::WindowResized,
-                                          polled),
                "tryPollEventOfTypeFor polls matching front resize");
     expectEq(polled.width, 800u, "tryPollEventOfTypeFor copies resize width");
     expectEq(pump.pendingEventCount(), 1u, "tryPollEventOfTypeFor removes matched event only");
-}
 
 void testEventPumpFrontEventIsForEmptyQueueGuard() {
-    fuse::platform::EventPump pump;
-    fuse::platform::Window window;
 
     expectTrue(!pump.frontEventIsFor(window, fuse::platform::PlatformEventType::WindowResized),
                "frontEventIsFor returns false on empty queue");
-}
 
 void testEventPumpFrontEventIsForMismatchGuards() {
-    fuse::platform::EventPump pump;
-    fuse::platform::Window left;
-    fuse::platform::Window right;
 
-    left.resize(800, 600, &pump);
     expectTrue(!pump.frontEventIsFor(left, fuse::platform::PlatformEventType::WindowFocusLost),
                "frontEventIsFor returns false when front type mismatches");
     expectTrue(!pump.frontEventIsFor(right, fuse::platform::PlatformEventType::WindowResized),
                "frontEventIsFor returns false when front window mismatches");
     expectTrue(pump.frontEventIsFor(left, fuse::platform::PlatformEventType::WindowResized),
                "frontEventIsFor returns true when front matches window and type");
-}
 
 void testEventPumpHasPendingEventsForEmptyQueueGuard() {
-    fuse::platform::EventPump pump;
-    fuse::platform::Window window;
 
     expectTrue(!pump.hasPendingEventsFor(window), "empty queue has no pending events for window");
-}
 
 void testEventPumpHasPendingEventsForMixedQueue() {
-    fuse::platform::EventPump pump;
-    fuse::platform::Window left;
-    fuse::platform::Window right;
 
-    left.resize(800, 600, &pump);
-    pump.pushWindowFocusLost(left);
     right.resize(1024, 768, &pump);
 
     expectTrue(pump.hasPendingEventsFor(left), "left window has pending events");
     expectTrue(pump.hasPendingEventsFor(right), "right window has pending events");
     expectEq(pump.countPendingEventsFor(left), 2u, "left pending count matches helper");
-}
 
 void testEventPumpCountPendingEventsOfTypeFor() {
-    fuse::platform::EventPump pump;
-    fuse::platform::Window left;
-    fuse::platform::Window right;
 
     expectEq(pump.countPendingEventsOfTypeFor(left,
                                               fuse::platform::PlatformEventType::WindowResized),
              0u, "empty queue has zero resize events for left");
 
-    left.resize(800, 600, &pump);
-    pump.pushWindowFocusLost(left);
-    right.resize(1024, 768, &pump);
     left.resize(1280, 720, &pump);
 
-    expectEq(pump.countPendingEventsOfTypeFor(left,
-                                              fuse::platform::PlatformEventType::WindowResized),
              1u, "coalesced resize counts once for left");
-    expectEq(pump.countPendingEventsOfTypeFor(left,
                                               fuse::platform::PlatformEventType::WindowFocusLost),
              1u, "focus lost counted for left");
     expectEq(pump.countPendingEventsOfTypeFor(right,
-                                              fuse::platform::PlatformEventType::WindowResized),
              1u, "right resize counted separately");
-    expectEq(pump.countPendingEventsOfTypeFor(right,
-                                              fuse::platform::PlatformEventType::WindowFocusLost),
              0u, "right has no focus lost events");
-}
 
 void testEventPumpWouldCoalesceResizeFor() {
-    fuse::platform::EventPump pump;
-    fuse::platform::Window window;
 
     expectTrue(!pump.wouldCoalesceResizeFor(window), "empty queue would not coalesce for window");
 
-    window.resize(800, 600, &pump);
     expectTrue(pump.wouldCoalesceResizeFor(window), "pending resize would coalesce for window");
 
     fuse::platform::Window other;
     expectTrue(!pump.wouldCoalesceResizeFor(other),
                "other window would not coalesce against left resize");
-}
 
 void testEventPumpPushSyntheticNullWindowGuard() {
-    fuse::platform::EventPump pump;
 
     fuse::platform::PlatformEvent resize;
     resize.type = fuse::platform::PlatformEventType::WindowResized;
@@ -1422,10 +1350,8 @@ void testEventPumpPushSyntheticNullWindowGuard() {
     pump.pushSyntheticEvent(quit);
     expectTrue(pump.hasPendingEventOfType(fuse::platform::PlatformEventType::Quit),
                "null-window quit event is still accepted");
-}
 
 void testEventPumpResetEventStatsEmptyQueueGuard() {
-    fuse::platform::EventPump pump;
 
     expectEq(pump.coalescedResizeCount(), 0u, "fresh pump has zero coalesce count");
     pump.resetEventStats();
@@ -1433,23 +1359,16 @@ void testEventPumpResetEventStatsEmptyQueueGuard() {
     expectTrue(!pump.lastCoalescedResize().valid,
                "resetEventStats on empty queue clears coalesce record");
     expectEq(pump.droppedEventCount(), 0u, "resetEventStats on empty queue clears drop count");
-}
 
 void testEventPumpTryPollEventOfTypeQuitSetsFlag() {
-    fuse::platform::EventPump pump;
 
-    fuse::platform::PlatformEvent quit;
-    quit.type = fuse::platform::PlatformEventType::Quit;
-    pump.pushSyntheticEvent(quit);
     expectTrue(!pump.quitRequested(), "quit flag not set until quit event is polled");
 
-    fuse::platform::PlatformEvent polled;
     expectTrue(pump.tryPollEventOfType(fuse::platform::PlatformEventType::Quit, polled),
                "tryPollEventOfType polls quit when front matches");
     expectTrue(pump.quitRequested(), "tryPollEventOfType sets quit flag when polling quit");
     expectTrue(polled.type == fuse::platform::PlatformEventType::Quit,
                "tryPollEventOfType copies quit type");
-}
 
 void testMobileProfileStillUsesWindowStub() {
     const fuse::platform::PlatformProfile previous =
@@ -1545,6 +1464,9 @@ int main() {
     testEventPumpPushSyntheticNullWindowGuard();
     testEventPumpResetEventStatsEmptyQueueGuard();
     testEventPumpTryPollEventOfTypeQuitSetsFlag();
+    testEventPumpCountPendingEventsOfTypeEmptyQueueGuard();
+    testEventPumpCountPendingEventsOfTypeMixedQueue();
+    testEventPumpCoalesceInvalidDimensionGuard();
     testMobileProfileStillUsesWindowStub();
 
     if (g_failures == 0) {

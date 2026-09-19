@@ -268,6 +268,20 @@ bool EventPump::hasPendingEventOfType(PlatformEventType type) const {
 }
 
 u32 EventPump::countPendingEventsOfType(PlatformEventType type) const {
+    if (m_syntheticHead == m_syntheticTail) {
+        return 0;
+    }
+
+    u32 count = 0;
+    u32 index = m_syntheticHead;
+    while (index != m_syntheticTail) {
+        if (m_syntheticEvents[index].type == type) {
+            ++count;
+
+        index = (index + 1u) % kMaxSyntheticEvents;
+
+    return count;
+
 bool EventPump::hasPendingEventOfTypeFor(const Window& window, PlatformEventType type) const {
     if (m_syntheticHead == m_syntheticTail) {
         return 0;
