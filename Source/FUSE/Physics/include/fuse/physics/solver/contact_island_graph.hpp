@@ -8,6 +8,40 @@
 
 namespace fuse::physics {
 
+/// Aggregate counts for island graph build preflight (B4.4 deepen).
+struct IslandBuildStats {
+    u32 bodyCount = 0;
+    u32 contactCount = 0;
+    u32 distanceConstraintCount = 0;
+    u32 invalidContacts = 0;
+    u32 outOfRangeContacts = 0;
+    u32 outOfRangeDistanceConstraints = 0;
+    u32 validUnionEdges = 0;
+};
+
+/// Const preflight for island graph build inputs (B4.4 deepen).
+struct IslandBuildPreflight {
+    IslandBuildStats stats{};
+    bool skipped = false;
+
+    bool can_build() const { return !skipped; }
+};
+
+/// Summarize contact/constraint validity before union-find island build.
+IslandBuildStats compute_island_build_stats(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Preflight island graph build; sets `skipped` when `bodyCount` is zero.
+IslandBuildPreflight preflight_island_graph_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Early-out guard when there are no bodies to partition.
+bool should_skip_island_graph_build(u32 bodyCount);
+
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
 /// contacts and distance constraints run sequentially (Gauss-Seidel stub).
