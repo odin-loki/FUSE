@@ -306,3 +306,6 @@ struct NarrowphaseBufferPreflight {
 inline NarrowphaseBufferPreflight preflight_run_narrowphase_into_buffer(
     NarrowphaseBufferPreflight preflight{};
     preflight.bufferPostPass = preflightContactBufferCompactAndClamp(buffer);
+
+// --- deepen additive from b4-narrowphase-deepen-guards-c379 ---
+inline NarrowphaseIntoBufferPreflight preflight_run_narrowphase_into_buffer(

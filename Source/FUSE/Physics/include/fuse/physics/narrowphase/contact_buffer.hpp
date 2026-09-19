@@ -647,3 +647,9 @@ inline bool ContactBufferSoA::writeSlotWithPreflight(u32 slot, const ContactMani
     ContactBufferFrictionBasisRejectReason expected) {
 inline ContactBufferFrictionBasisPreflight preflight_contact_buffer_friction_basis(
     preflight.noValidContacts = preflight.reason == ContactBufferFrictionBasisRejectReason::NoValidContacts;
+
+// --- deepen additive from b4-narrowphase-deepen-guards-c379 ---
+ContactBufferFrictionTangentPreflight preflight_contact_buffer_friction_tangent(
+inline ContactBufferFrictionTangentPreflight preflight_contact_buffer_friction_tangent(
+    preflight.allOrthonormal = preflight.reason == ContactBufferFrictionTangentRejectReason::AllOrthonormal;
+inline const char* contact_buffer_warm_start_reject_reason_name(ContactBufferWarmStartRejectReason reason) {

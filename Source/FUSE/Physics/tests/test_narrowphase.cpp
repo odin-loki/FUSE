@@ -3574,3 +3574,11 @@ void testNarrowphaseDispatchAndDetectPreflightGuards() {
     expectTrue(!detectPreflight.can_detect(), "detect preflight rejects self pair");
 void testManifoldAndFrictionAliasGuardHelpers() {
     testNarrowphaseDispatchAndDetectPreflightGuards();
+
+// --- deepen additive from b4-narrowphase-deepen-guards-c379 ---
+            buffer, fuse::physics::narrowphase::ContactBufferCompactionRejectReason::AllValid) == false,
+            fuse::physics::narrowphase::ContactBufferFrictionTangentRejectReason::AllOrthonormal,
+    const auto dispatchPreflight = fuse::physics::narrowphase::preflight_run_narrowphase_into_buffer(
+    expectTrue(dispatchPreflight.can_dispatch(), "dispatch preflight can run with one valid pair");
+void testFrictionComputeWithPreflightGuards() {
+    testFrictionComputeWithPreflightGuards();

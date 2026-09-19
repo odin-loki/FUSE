@@ -300,3 +300,6 @@ inline FrictionTangentComputePreflight preflight_friction_tangent_compute(
         preflight.reason == FrictionTangentComputeRejectReason::InvalidNormal) {
     if (preflight.reason == FrictionTangentComputeRejectReason::CachedBasis) {
     const FrictionTangentComputePreflight preflight = preflight_friction_tangent_compute(manifold, epsilon);
+
+// --- deepen additive from b4-narrowphase-deepen-guards-c379 ---
+    return should_skip_friction_tangents(manifold) || can_skip_friction_basis_rebuild(manifold, epsilon);
