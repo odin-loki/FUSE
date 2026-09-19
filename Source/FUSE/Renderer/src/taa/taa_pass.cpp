@@ -77,6 +77,18 @@ bool TaaPass::syncJitterToFrameIndexIfReady(u32 frameIndex) {
     return true;
 }
 
+bool TaaPass::canSyncJitterToFrameIndex(u32 frameIndex) const {
+    return m_jitter.preflightSyncToFrameIndex(frameIndex);
+}
+
+TaaJitterSyncRejectReason TaaPass::classifyJitterSyncReject(u32 frameIndex) const {
+    return m_jitter.classifySyncReject(frameIndex);
+}
+
+bool TaaPass::preflightJitterSync(u32 frameIndex, TaaJitterSyncRejectReason* reason) const {
+    return m_jitter.preflightSyncToFrameIndex(frameIndex, reason);
+}
+
 bool TaaPass::jitterAlignedToFrameIndex(u32 frameIndex) const {
     return m_jitter.isAlignedToFrameIndex(frameIndex);
 }
@@ -142,9 +154,47 @@ bool TaaPass::preflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBlock
     return preflightTaaHistoryReuse(m_history, observedGeneration, reason);
 }
 
+bool TaaPass::canPreflightHistoryReuse(u32 observedGeneration) const {
+    return canPreflightTaaHistoryReuse(m_history, observedGeneration);
+}
+
+TaaHistoryWarmupBlockReason TaaPass::classifyHistoryWarmupBlock() const {
+    return classifyTaaHistoryWarmupBlock(m_history);
+}
+
+bool TaaPass::preflightHistoryWarmup(TaaHistoryWarmupBlockReason* reason) const {
+    return preflightTaaHistoryWarmup(m_history, reason);
+}
+
+bool TaaPass::canPreflightHistoryWarmup() const {
+    return canPreflightTaaHistoryWarmup(m_history);
+}
+
+bool TaaPass::temporalBlendReady(const TaaResolveDesc& desc) const {
+    return taaHistoryTemporalBlendReady(desc, m_history);
+}
+
 bool TaaPass::preflightResolveBlendWeights(const TaaResolveDesc& desc,
                                            TaaResolveBlendRejectReason* reason) const {
     return preflightTaaResolveBlendWeights(desc, m_history, reason);
+}
+
+bool TaaPass::canPreflightResolveBlendWeights(const TaaResolveDesc& desc) const {
+    return canPreflightTaaResolveBlendWeights(desc, m_history);
+}
+
+bool TaaPass::tryExpectedResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& out,
+                                            TaaResolveBlendRejectReason* reason) const {
+    return tryComputeTaaResolveBlendWeights(desc, m_history, out, reason);
+}
+
+bool TaaPass::preflightResolveTemporalBlend(const TaaResolveDesc& desc,
+                                            TaaResolveTemporalRejectReason* reason) const {
+    return preflightTaaResolveTemporalBlend(desc, m_history, reason);
+}
+
+bool TaaPass::canPreflightResolveTemporalBlend(const TaaResolveDesc& desc) const {
+    return canPreflightTaaResolveTemporalBlend(desc, m_history);
 }
 
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
