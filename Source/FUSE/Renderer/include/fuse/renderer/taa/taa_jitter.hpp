@@ -142,7 +142,6 @@ bool taaJitterNdcReady(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJi
 bool taaJitterNdcReady(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength,
                        TaaJitterGuardRejectReason* reason = nullptr);
 /// Early-out when NDC jitter production would be blocked (B5.9 deepen).
-/// Early-out when NDC jitter production would be rejected (B5.9 deepen).
 /// Classify why jitter advance would be rejected (B5.9 deepen).
 TaaJitterGuardRejectReason classifyTaaJitterAdvanceReject(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 /// True when jitter can advance for the given sequence (B5.9 deepen).
@@ -151,6 +150,9 @@ bool preflightTaaJitterAdvance(u32 sequenceLength = kTaaDefaultJitterSequenceLen
 bool tryPreflightTaaJitterAdvance(u32 sequenceLength, TaaJitterGuardRejectReason& reason);
 /// Early-out when jitter advance would be rejected (B5.9 deepen).
 bool shouldSkipTaaJitterAdvance(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// Compute NDC jitter for a frame counter with reject-reason diagnostics (B5.9 deepen).
+bool tryComputeTaaJitterNdcOffset(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
+                                  fuse::math::Vec2& outOffset, TaaJitterGuardRejectReason& reason);
 
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {
@@ -262,6 +264,8 @@ public:
     bool currentNdcOffsetIfReady(u32 width, u32 height, fuse::math::Vec2& out) const;
     /// True when viewport dimensions allow NDC jitter output (B5.9 deepen).
     bool canProvideNdcOffset(u32 width, u32 height) const;
+    /// NDC offset with mandatory reject-reason diagnostics (B5.9 deepen).
+    bool tryCurrentNdcOffset(u32 width, u32 height, fuse::math::Vec2& out, TaaJitterGuardRejectReason& reason) const;
 
     void advance();
     /// Advance only when the sequence is valid; returns false when blocked (B5.9 deepen).

@@ -396,61 +396,24 @@ bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmup
 bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupRejectReason& reason);
 /// Early-out when history warm-up should be skipped (B5.9 deepen).
 
-/// Why history warm-up preflight rejected the request (B5.9 deepen).
-enum class TaaHistoryWarmupBlockReason : u8 {
-    None = 0,
-    NotReady,
-    NeedsWarmup,
-};
-/// Human-readable label for history warm-up block reasons (B5.9 deepen).
-const char* taaHistoryWarmupBlockReasonLabel(TaaHistoryWarmupBlockReason reason);
 /// Classify why history warm-up is incomplete (B5.9 deepen).
-TaaHistoryWarmupBlockReason classifyTaaHistoryWarmupBlock(const TaaHistoryBuffer& history);
-/// True when history is allocated and warmed for temporal reuse (B5.9 deepen).
-bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history);
-/// True when history warm-up preflight passes (B5.9 deepen).
-bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history,
-                               TaaHistoryWarmupBlockReason* reason = nullptr);
-/// History warm-up preflight with mandatory reject-reason output (B5.9 deepen).
 bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupBlockReason& reason);
 /// Early-out when history warm-up should be skipped (still needs first resolve) (B5.9 deepen).
-bool shouldSkipTaaHistoryWarmup(const TaaHistoryBuffer& history);
 
-/// Why history warm-up preflight rejected the request (B5.9 deepen).
-enum class TaaHistoryWarmupRejectReason : u8 {
-    None = 0,
-    NotReady,
-    AlreadyWarm,
-};
-/// Human-readable label for history warm-up reject reasons (B5.9 deepen).
-const char* taaHistoryWarmupRejectReasonLabel(TaaHistoryWarmupRejectReason reason);
-/// Classify why history warm-up preflight would reject (B5.9 deepen).
-TaaHistoryWarmupRejectReason classifyTaaHistoryWarmupReject(const TaaHistoryBuffer& history);
 /// True when history is allocated and still needs its first resolve frame (B5.9 deepen).
-bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupRejectReason* reason = nullptr);
-/// History warm-up preflight with mandatory reject-reason output (B5.9 deepen).
-bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupRejectReason& reason);
 /// Early-out when history warm-up is complete or the buffer is not ready (B5.9 deepen).
-bool shouldSkipTaaHistoryWarmup(const TaaHistoryBuffer& history);
 /// True when history has completed warm-up and may be temporally reused (B5.9 deepen).
-bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history);
 
 /// History warm-up lifecycle for temporal reuse (B5.9 deepen).
-enum class TaaHistoryWarmupState : u8 {
-    NotReady = 0,
-    NeedsWarmup,
     Ready,
-};
-/// Human-readable label for history warm-up states (B5.9 deepen).
-const char* taaHistoryWarmupStateLabel(TaaHistoryWarmupState state);
 /// Classify history warm-up readiness (B5.9 deepen).
-TaaHistoryWarmupState classifyTaaHistoryWarmupState(const TaaHistoryBuffer& history);
-/// True when history is allocated and warmed for temporal reuse (B5.9 deepen).
-bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history);
 /// True when history warm-up is complete (B5.9 deepen).
-bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupState* state = nullptr);
 /// History warm-up preflight with mandatory state output (B5.9 deepen).
 bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupState& state);
+/// True when history is allocated and warmed for temporal accumulation (B5.9 deepen).
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryReuseBlockReason* reason = nullptr);
+/// History warmup preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryReuseBlockReason& reason);
 /// Early-out when history still needs warm-up before temporal reuse (B5.9 deepen).
 bool shouldSkipTaaHistoryWarmup(const TaaHistoryBuffer& history);
 

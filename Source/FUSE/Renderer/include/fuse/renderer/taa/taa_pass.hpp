@@ -413,6 +413,10 @@ public:
     /// True when combined resolve temporal preflight passes (B5.9 deepen).
     /// Early-out when combined resolve temporal preflight would reject (B5.9 deepen).
     bool shouldSkipResolveTemporal(const TaaResolveDesc& desc) const;
+    /// True when pass history is warmed for temporal accumulation (B5.9 deepen).
+    bool preflightHistoryWarmup(TaaHistoryReuseBlockReason* reason = nullptr) const;
+    /// Early-out when resolve would bail before history update (B5.9 deepen).
+    bool shouldSkipResolve(const TaaResolveDesc& desc) const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
