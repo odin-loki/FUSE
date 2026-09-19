@@ -879,3 +879,11 @@ bool is_blocking_hrtf_binaural_convolution_reject_reason(HrtfBinauralRejectReaso
 HrtfBinauralPreflight try_preflight_hrtf_binaural(bool hrtf_enabled, const HrtfIrStub& ir,
                                                   float occlusion_gain, HrtfBinauralRejectReason& reason,
 HrtfBinauralPreflight try_preflight_hrtf_binaural(bool hrtf_enabled, const Vec3& rel_listener,
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-aa20 ---
+bool hrtf_pan_path_reject_reason_is_blocking(HrtfPanPathRejectReason reason);
+                                             HrtfAttenuationCouplingRejectReason& reason);
+bool hrtf_binaural_reject_reason_is_blocking(HrtfBinauralRejectReason reason);
+    bool can_spatial_pan() const { return reason == HrtfBinauralRejectReason::None; }
+                              const BinauralPanParams& params, HrtfBinauralRejectReason* reason);
+                                 const BinauralPanParams& params, HrtfBinauralRejectReason& reason);
