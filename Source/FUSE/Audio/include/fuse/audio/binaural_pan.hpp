@@ -941,6 +941,23 @@ bool preflight_hrtf_ir_ready(const HrtfIrStub& ir, HrtfIrRejectReason* reason = 
 bool try_preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrRejectReason& reason);
 bool should_skip_hrtf_ir_preflight(const HrtfIrStub& ir);
 
+/// Why IR preflight rejected convolution dispatch (B7.2 deepen).
+enum class HrtfIrRejectReason : u8 {
+    None = 0,
+    EmptyIr,
+    NullSamples,
+    ZeroLength,
+    MalformedIr,
+};
+
+const char* hrtf_ir_reject_reason_label(HrtfIrRejectReason reason);
+HrtfIrRejectReason classify_hrtf_ir_reject(const HrtfIrPreflight& preflight);
+
+/// IR preflight with optional reject-reason output (B7.2 deepen).
+bool preflight_hrtf_ir_ready(const HrtfIrStub& ir, HrtfIrRejectReason* reason = nullptr);
+bool try_preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrRejectReason& reason);
+bool should_skip_hrtf_ir_preflight(const HrtfIrStub& ir);
+
 /// HRTF pan routing — empty IR uses ILD/ITD stub; convolution deferred until IR wired.
 enum class HrtfPanPath {
     Bypass,
@@ -1806,6 +1823,10 @@ bool should_skip_hrtf_spatial_pan_preflight(bool hrtf_enabled, const Vec3& rel_l
 
 /// Convolution-path preflight with optional reject-reason output (B7.2 deepen).
 bool should_skip_hrtf_convolution_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
+
+
+bool should_skip_hrtf_pan_path_preflight(bool hrtf_enabled, const Vec3& rel_listener);
+
 
 /// True when a resolved pan path bypasses HRTF (disabled or co-located).
 bool is_hrtf_pan_bypassed(HrtfPanPath path);
@@ -3153,6 +3174,9 @@ bool preflight_hrtf_narrowing_ready(HrtfPanPath path, float distance_attenuation
                                     HrtfAttenuationCouplingRejectReason* reason = nullptr,
 bool try_preflight_hrtf_narrowing(HrtfPanPath path, float distance_attenuation, float occlusion_gain,
 bool should_skip_hrtf_narrowing_preflight(HrtfPanPath path, float distance_attenuation,
+bool preflight_hrtf_attenuation_coupling_ready(
+    const HrtfAttenuationCoupling& coupling = {}, const BinauralPanParams& params = {},
+bool should_skip_hrtf_attenuation_coupling_preflight(
 
 /// True when a spatial blend preserves full L/R separation.
 bool is_unity_hrtf_spatial_blend(float blend, float epsilon = 1e-5f);
@@ -4391,6 +4415,7 @@ bool try_preflight_hrtf_binaural(bool hrtf_enabled, const Vec3& rel_listener,
 /// Why composite binaural/HRTF preflight rejected spatial pan or convolution (B7.2 deepen pass).
 /// Why HRTF binaural composite preflight rejected an operation (B7.2 deepen).
 /// Why composite binaural spatial-pan preflight rejected the request (B7.2 deepen).
+/// Why composite binaural/HRTF preflight rejected a dispatch path (B7.2 deepen).
 enum class HrtfBinauralRejectReason : u8 {
     None = 0,
     HrtfDisabled,
@@ -4547,7 +4572,6 @@ enum class HrtfBinauralConvolutionRejectReason : u8 {
     None = 0,
     HrtfDisabled,
     CoLocated,
-};
 
 /// Why composite binaural narrowing preflight rejected the request (B7.2 deepen).
 enum class HrtfBinauralNarrowingRejectReason : u8 {
@@ -4575,6 +4599,16 @@ bool try_preflight_hrtf_binaural(bool hrtf_enabled, const Vec3& rel_listener,
                                              HrtfBinauralConvolutionRejectReason& reason);
                                              HrtfBinauralNarrowingRejectReason* reason = nullptr);
                                            HrtfBinauralNarrowingRejectReason& reason);
+
+
+/// Composite spatial-pan preflight with optional reject-reason output (B7.2 deepen).
+                                           HrtfBinauralRejectReason* reason = nullptr);
+
+bool try_preflight_hrtf_binaural_convolution(bool hrtf_enabled, const HrtfIrStub& ir,
+
+                                             const BinauralPanParams& params = {},
+bool try_preflight_hrtf_binaural_narrowing(bool hrtf_enabled, const HrtfIrStub& ir,
+                                           float occlusion_gain, HrtfBinauralRejectReason& reason,
 
 /// Apply pan + coupling using a preflight bundle (read-only guards; valid paths unchanged).
 BinauralPanGains compute_binaural_pan_gains_from_preflight(const HrtfBinauralPreflight& preflight,
