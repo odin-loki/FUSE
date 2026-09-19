@@ -14395,6 +14395,13 @@ void testEmptyNameAttemptsDoNotAffectNameLookup() {
                "name lookup finds valid event after empty-name attempts");
     expectTrue(fuse::profiler::countEventsByName("valid_name") == 1u,
                "countEventsByName finds valid event after empty-name attempts");
+    {
+        FUSE_PROFILE_SCOPE("valid_after_empty_lookup");
+    }
+    expectTrue(fuse::profiler::findFirstEventIndexByName("valid_after_empty_lookup") == 0u,
+               "name lookup finds valid scope after empty-name attempts");
+    expectTrue(fuse::profiler::countEventsByName("valid_after_empty_lookup") == 2u,
+               "countEventsByName counts valid scope after empty-name attempts");
 }
 
 void testWouldSkipNameAndFlowLookupGuards() {
