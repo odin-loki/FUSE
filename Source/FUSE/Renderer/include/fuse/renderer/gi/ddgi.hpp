@@ -412,6 +412,10 @@ struct ProbeGridLayout {
     /// Ensure corner indices are ordered (x0≤x1, …) and weights stay in [0, 1].
     static void normalizeProbeSampleCoords(ProbeSampleCoords& coords);
     /// True when corner indices lie within the grid and weights are in [0, 1].
+    static bool areProbeSampleCoordsInBounds(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// True when sample coords exceed grid bounds or interpolation weights are outside [0, 1].
+    static bool isProbeSampleCoordsOutOfRange(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// True when corner indices lie within the grid, are ordered, and weights are in [0, 1].
     static bool isValidProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// True when sample coords exceed grid bounds or interpolation weights are outside [0, 1].
     static bool isProbeSampleCoordsOutOfRange(const DDGIDesc& desc, const ProbeSampleCoords& coords);
@@ -492,11 +496,24 @@ enum class CacheIndexRejectReason : u8 {
     None = 0,
     EmptyGrid,
     OutOfRangeIndex,
+    InvalidProbeIndex,
     UndersizedCache,
 };
 
 /// Human-readable label for cache-index reject reasons (logging / tests).
 const char* cacheIndexRejectReasonLabel(CacheIndexRejectReason reason);
+
+/// Why a probe-update launch preflight rejected the request (B5.6 deepen).
+enum class ProbeUpdateLaunchRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    NullIndices,
+    ZeroCount,
+    OutOfRangeIndex,
+};
+
+/// Human-readable label for probe-update launch reject reasons (logging / tests).
+const char* probeUpdateLaunchRejectReasonLabel(ProbeUpdateLaunchRejectReason reason);
 
 /// CPU-side probe grid helpers — mirrors CUDA scheduling without GPU.
 namespace ddgi_util {
