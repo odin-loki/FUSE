@@ -3432,3 +3432,14 @@ void testBeginDragPreflightAxisAndSnap() {
     const fuse::editor::BeginDragPreflight degradedPreflight = fuse::editor::preflightBeginDrag(
     const fuse::editor::BeginDragPreflight validSnapPreflight = fuse::editor::preflightBeginDrag(
     testBeginDragPreflightAxisAndSnap();
+
+// --- deepen additive from deepen-gizmo-preflight-guards-f71a ---
+void testScreenHitOutOfBoundsGuards() {
+    const fuse::editor::UpdateDragPreflight outOfBoundsUpdate = gizmo.preflightUpdateDrag(hit);
+    expectTrue(rayDegradedPreflight.canBegin, "ray begin preflight still allows drag with valid pick");
+    expectTrue(!rayDegradedPreflight.snapDegraded, "valid snap clears snapDegraded on ray begin");
+void testDragUpdateFramePreflight() {
+    const fuse::editor::DragUpdateFramePreflight degradedFrame = fuse::editor::preflightDragUpdateFrame(
+    const fuse::editor::DragUpdateFramePreflight validFrame = fuse::editor::preflightDragUpdateFrame(
+    const fuse::editor::DragUpdateFramePreflight gizmoFrame = gizmo.preflightDragUpdateFrame(hit);
+    testDragUpdateFramePreflight();

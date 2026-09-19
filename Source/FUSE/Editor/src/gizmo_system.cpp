@@ -2475,3 +2475,15 @@ BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode, b
 // --- deepen additive from deepen-b6-gizmo-preflights-deb7 ---
     return preflightBeginDrag(ray, transform, mode, space, axisLength, pickRadius, alreadyDragging)
     return preflightBeginDrag(hit, mode, alreadyDragging).canBegin;
+
+// --- deepen additive from deepen-gizmo-preflight-guards-f71a ---
+void applyPickToBeginDragPreflight(const PickPreflight& pick, BeginDragPreflight& preflight) {
+void applySnapDegradedToBeginDragPreflight(GizmoMode mode, const GizmoSnapSettings& settings,
+    applyPickToBeginDragPreflight(pick, preflight);
+    applySnapDegradedToBeginDragPreflight(mode, settings, preflight);
+DragUpdateFramePreflight preflightDragUpdateFrame(const GizmoHitTest& hit, bool dragging,
+    DragUpdateFramePreflight frame{};
+    frame.update = preflightUpdateDrag(hit, dragging, activeAxis, mode, settings);
+    frame.snap = preflightSnap(mode, settings);
+DragUpdateFramePreflight GizmoSystem::preflightDragUpdateFrame(const GizmoHitTest& hit) const {
+    return fuse::editor::preflightDragUpdateFrame(hit, m_dragging, m_activeAxis, m_mode, m_snap);

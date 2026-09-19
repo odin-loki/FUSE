@@ -1074,3 +1074,9 @@ GizmoEndDragRejectReason classifyEndDragReject(const struct EndDragPreflight& pr
     SnapPreflight snap;
 BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode, bool alreadyDragging,
     [[nodiscard]] InteractionPreflight preflightInteraction(const GizmoRay& ray,
+
+// --- deepen additive from deepen-gizmo-preflight-guards-f71a ---
+struct DragUpdateFramePreflight {
+    UpdateDragPreflight update;
+DragUpdateFramePreflight preflightDragUpdateFrame(const GizmoHitTest& hit, bool dragging,
+    [[nodiscard]] DragUpdateFramePreflight preflightDragUpdateFrame(const GizmoHitTest& hit) const;
