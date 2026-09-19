@@ -90,6 +90,8 @@ void testHybridComposerSoftwarePlaceholderToggle() {
 
     expectTrue(runtime->composer().renderer().pixelCount() == 0u,
                "disabled software placeholder skips RGBA buffer writes");
+    expectTrue(runtime->composer().softwarePlaceholderSkippedFrames() == 1u,
+               "disabled software placeholder records skipped frame count");
 
 #if defined(FUSE_HAS_VULKAN_RHI)
     expectTrue(runtime->composer().lastCommandList().commandCount() > 0u,

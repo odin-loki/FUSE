@@ -32,10 +32,13 @@ inline bool shouldDisableSoftwarePlaceholderForEmbed(const ViewportSwapchainHand
     if (viewportQtPresentEligible(handoff)) {
         return true;
     }
+    if (viewportQtPresentPathReady(handoff, externalSwapchainWired)) {
+        return true;
+    }
     if (externalSwapchainWired && handoff.qtRealSurface) {
         return true;
     }
-    return handoff.nativeSurface != nullptr && !handoff.qtStubSurface;
+    return handoff.nativeSurface != nullptr;
 }
 
 } // namespace fuse::editor

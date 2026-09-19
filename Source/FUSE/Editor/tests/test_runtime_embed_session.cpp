@@ -61,6 +61,21 @@ void testRuntimeEmbedSwapchainHandoff() {
     expectTrue(session.surfaceHandoffConsumed, "surface handoff consumed on game thread");
 }
 
+void testRuntimeEmbedSoftwarePlaceholderRetirement() {
+    fuse::editor::EditorHost host;
+    host.runtimeViewport().setExternalSurfaceHandle(reinterpret_cast<void*>(0x7000u), 800, 600,
+                                                    "qt_vulkan_instance", false, true);
+    host.gameTick();
+    host.gameTick();
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (host.runtimeViewport().embedSession().headlessGpuReady) {
+        expectTrue(host.runtimeViewport().embedSession().softwarePlaceholderRetiredTicks >= 1u,
+                   "embed session records software placeholder retirement on Qt path ready");
+    }
+#endif
+}
+
 void testRuntimeViewportSwapchainRecreateStub() {
     fuse::editor::EditorHost host;
     host.runtimeViewport().setProjectLabel("recreate_test");
@@ -133,6 +148,7 @@ int main() {
     testRuntimeViewportHeadlessTick();
     testRuntimeEmbedSessionCounters();
     testRuntimeEmbedSwapchainHandoff();
+    testRuntimeEmbedSoftwarePlaceholderRetirement();
     testRuntimeViewportSwapchainRecreateStub();
     testRuntimeEmbedTeardownStress();
     fuse::core::shutdown();

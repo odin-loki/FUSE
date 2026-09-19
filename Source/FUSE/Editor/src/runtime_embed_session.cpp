@@ -20,6 +20,8 @@ void RuntimeEmbedSession::reset() {
     consumedSwapchainPresentTicks = 0;
     qtPresentEligibleTicks = 0;
     qtPresentPathReadyTicks = 0;
+    qtPresentPathEligibleTicks = 0;
+    softwarePlaceholderRetiredTicks = 0;
     realPresentCallCount = 0;
     qtRealPresentCallCount = 0;
     wireDatablockEntries = 0;

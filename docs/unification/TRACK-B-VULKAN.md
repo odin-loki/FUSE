@@ -1,6 +1,6 @@
 # Track B — Vulkan Bootstrap (B2.1–B2.10) + CUDA Ray March (B2.7)
 
-**Status:** WP-06b ✅ B2.1 bootstrap + B2.2 swapchain/frame ring + **WP-06c ✅ real `vkQueueSubmit` + honest headless present sink** + **WP-06d ✅ `vkCmdBeginRenderPass` graph encode + bindless pool + null/GLFW WSI scaffold** + **WP-06e ✅ graph `vkCmdPipelineBarrier` + bindless `vkUpdateDescriptorSets` + pipeline cache disk I/O + swapchain FB present pass scaffold** + **WP-06f ✅ bindless composite GPU blit + CUDA interop/timeline honest stubs** + **WP-06g ✅ CUDA interop import deepen + composite CUDA texture path + GLFW present gate + U6 `SwapchainDesc` handoff** + **WP-06h ✅ CUDA interop fill kernel + frame-sync progress + Qt surface stub + composite SPIR-V regen docs** + **WP-06i ✅ Qt `QVulkanInstance` bootstrap + load-stress stubs** + **WP-06j ✅ Lavapipe teardown hardening + Qt embed/timeline stress** + **WP-06k ✅ Lavapipe tune + composite SPIR-V regen + viewport swapchain recreate stubs** + **WP-06l ✅ spirv-val regen gate + consumed swapchain present after recreate + PlaceholderRenderer toggle** + **WP-06m ✅ Qt `vkQueuePresentKHR` gate + viewport present eligibility + PlaceholderRenderer embed deepen + Android/MoltenVK cmake stubs** + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.5 command buffer / render graph scaffolding + B2.6 CUDA/interop stubs + B2.7 SDF ray-march CUDA path scaffolding + B2.8 rasterisation pipeline scaffold + B2.9 composite pass scaffold + B2.10 renderer init & main-loop glue + **B2.11 Phase 2 deliverables & integration test suite**  
+**Status:** WP-06b ✅ B2.1 bootstrap + B2.2 swapchain/frame ring + **WP-06c ✅ real `vkQueueSubmit` + honest headless present sink** + **WP-06d ✅ `vkCmdBeginRenderPass` graph encode + bindless pool + null/GLFW WSI scaffold** + **WP-06e ✅ graph `vkCmdPipelineBarrier` + bindless `vkUpdateDescriptorSets` + pipeline cache disk I/O + swapchain FB present pass scaffold** + **WP-06f ✅ bindless composite GPU blit + CUDA interop/timeline honest stubs** + **WP-06g ✅ CUDA interop import deepen + composite CUDA texture path + GLFW present gate + U6 `SwapchainDesc` handoff** + **WP-06h ✅ CUDA interop fill kernel + frame-sync progress + Qt surface stub + composite SPIR-V regen docs** + **WP-06i ✅ Qt `QVulkanInstance` bootstrap + load-stress stubs** + **WP-06j ✅ Lavapipe teardown hardening + Qt embed/timeline stress** + **WP-06k ✅ Lavapipe tune + composite SPIR-V regen + viewport swapchain recreate stubs** + **WP-06l ✅ spirv-val regen gate + consumed swapchain present after recreate + PlaceholderRenderer toggle** + **WP-06m ✅ Qt `vkQueuePresentKHR` gate + viewport present eligibility + PlaceholderRenderer embed deepen + Android/MoltenVK cmake stubs** + **WP-06n ✅ Qt present path readiness + combined CUDA/timeline stress** + **WP-06o ✅ Qt present path eligible diagnostics + scoped PlaceholderRenderer retirement deepen** + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.5 command buffer / render graph scaffolding + B2.6 CUDA/interop stubs + B2.7 SDF ray-march CUDA path scaffolding + B2.8 rasterisation pipeline scaffold + B2.9 composite pass scaffold + B2.10 renderer init & main-loop glue + **B2.11 Phase 2 deliverables & integration test suite**  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B2.1–B2.5, §B2.6, §B2.7, §B2.8, §B2.9, §B2.10  
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §4.2, §4.4, §5.3  
 **Hybrid integration:** [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md)
@@ -734,7 +734,22 @@ spirv-val Source/FUSE/Renderer/shaders/fixtures/composite.frag.spv
 | `RuntimeEmbedSession::reset()` hygiene | **Done** | Restores Qt present counters dropped in prior deepen |
 | Lavapipe serial `ctest -j1` | **Done** | Vulkan ICD targets remain green after Qt present + CUDA stress wiring |
 
-**Deferred (post–WP-06n):** exercise real `vkQueuePresentKHR` on display with `FUSE_ENABLE_QT_PRESENT=ON` + Qt6 Gui; driver-wired timeline stress on NVIDIA CI; full software placeholder removal (keep fallback for headless CI).
+**Deferred (post–WP-06n):** ~~Qt present path eligible diagnostics + scoped PlaceholderRenderer retirement deepen~~ → landed WP-06o; exercise real `vkQueuePresentKHR` on display with `FUSE_ENABLE_QT_PRESENT=ON` + Qt6 Gui; driver-wired timeline stress on NVIDIA CI; full software placeholder removal (keep fallback for headless CI).
+
+---
+
+## WP-06o deliverables (Qt present path eligible diagnostics + scoped PlaceholderRenderer retirement deepen)
+
+| Deliverable | Status | Notes |
+|-------------|--------|-------|
+| `viewportQtPresentPathEligible` in present result | **Done** | `ViewportSwapchainPresentResult` tracks full gate+swapchain eligibility |
+| Embed session eligible/retirement counters | **Done** | `qtPresentPathEligibleTicks`, `softwarePlaceholderRetiredTicks` |
+| `shouldDisableSoftwarePlaceholderForEmbed` deepen | **Done** | Retires software RGBA when `viewportQtPresentPathReady` (gate may still be OFF) |
+| `HybridComposer::softwarePlaceholderSkippedFrames` | **Done** | Per-frame counter when software path disabled; RHI mirror unchanged |
+| Present diagnostics helper consolidation | **Done** | `recordViewportPresentDiagnostics` / `maybeRetireSoftwarePlaceholder` in `runtime_viewport.cpp` |
+| Lavapipe serial `ctest -j1` | **Done** | Vulkan ICD targets remain green after Qt present + placeholder retirement wiring |
+
+**Deferred (post–WP-06o):** exercise real `vkQueuePresentKHR` on display with `FUSE_ENABLE_QT_PRESENT=ON` + Qt6 Gui; driver-wired timeline stress on NVIDIA CI; full software placeholder removal (keep fallback for headless CI).
 
 ---
 
@@ -834,6 +849,7 @@ Thread ownership unchanged: CUDA launch jobs run on worker threads; Vulkan recor
 - [x] Editor viewport consumed swapchain present after recreate (`presentViewportSwapchainFrame`, WP-06l)
 - [x] Qt `vkQueuePresentKHR` gate + viewport present eligibility (`FUSE_ENABLE_QT_PRESENT`, WP-06m)
 - [x] Qt present path readiness + combined timeline/CUDA stress (`realQtPresentEligible`, `stressFrameSyncAndInteropFillUnderLoad`, WP-06n)
+- [x] Qt present path eligible diagnostics + scoped PlaceholderRenderer retirement deepen (`viewportQtPresentPathEligible`, `softwarePlaceholderRetiredTicks`, WP-06o)
 - [x] Android Vulkan WSI + MoltenVK macOS cmake stubs (`FuseVulkanMobile.cmake`, WP-06m)
 - [ ] Editor Qt native surface (`U6` viewport) → real `vkQueuePresentKHR` on display with gate ON (WP-06i bootstrap; WP-06m gate)
 

@@ -172,6 +172,10 @@ void HybridComposer::render(frame::FrameCtx& ctx) {
     }
 #endif
 
+    if (!m_softwarePlaceholderEnabled) {
+        ++m_softwarePlaceholderSkippedFrames;
+    }
+
     (void)ctx;
 }
 

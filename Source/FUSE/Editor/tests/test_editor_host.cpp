@@ -618,6 +618,26 @@ void testViewportQtPresentPathReadyHeadlessSafe() {
                "Qt present path not ready without presentable swapchain");
     expectTrue(!fuse::editor::viewportQtPresentPathEligible(handoff, true),
                "full Qt eligibility still requires compile-time gate on headless CI");
+    expectTrue(fuse::editor::shouldDisableSoftwarePlaceholderForEmbed(handoff, true),
+               "Qt path ready retires software placeholder when external swapchain wired");
+    expectTrue(!fuse::editor::shouldDisableSoftwarePlaceholderForEmbed(handoff, false),
+               "software placeholder kept when swapchain not yet presentable");
+}
+
+void testViewportQtPresentPathEligibleEmbedCounters() {
+    fuse::editor::EditorHost host;
+    host.runtimeViewport().setExternalSurfaceHandle(reinterpret_cast<void*>(0x6000u), 960, 540,
+                                                    "qt_vulkan_instance", false, true);
+    host.gameTick();
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (host.runtimeViewport().embedSession().headlessGpuReady) {
+        expectTrue(host.runtimeViewport().embedSession().qtPresentPathReadyTicks >= 1u,
+                   "real Qt surface handoff records present path ready ticks");
+        expectTrue(host.runtimeViewport().embedSession().softwarePlaceholderRetiredTicks >= 1u,
+                   "real Qt surface handoff retires software placeholder when path ready");
+    }
+#endif
 }
 
 void testRuntimeViewportHookTicksWithProject() {
@@ -815,6 +835,7 @@ int main() {
     testRuntimeViewportSwapchainRecreateAfterHandoff();
     testViewportQtPresentGateHeadlessSafe();
     testViewportQtPresentPathReadyHeadlessSafe();
+    testViewportQtPresentPathEligibleEmbedCounters();
     testRuntimeViewportHookTicksWithProject();
     testAiTreeProfilePickerPostsCommand();
     testAiAgentEntityBindingPostsCommand();

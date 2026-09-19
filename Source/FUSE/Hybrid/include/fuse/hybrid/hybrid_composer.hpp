@@ -39,6 +39,7 @@ public:
     /// When false, skip software RGBA writes — RHI mirror remains for headless CI fallback tests.
     void setSoftwarePlaceholderEnabled(bool enabled) { m_softwarePlaceholderEnabled = enabled; }
     bool softwarePlaceholderEnabled() const { return m_softwarePlaceholderEnabled; }
+    u32 softwarePlaceholderSkippedFrames() const { return m_softwarePlaceholderSkippedFrames; }
 
     u32 frameCount() const { return m_frameCount; }
     const frame::FrameBarrier& frameBarrier() const { return m_barrier; }
@@ -69,6 +70,7 @@ private:
     PlaceholderRenderer m_renderer;
     u32 m_frameCount = 0;
     bool m_softwarePlaceholderEnabled = true;
+    u32 m_softwarePlaceholderSkippedFrames = 0;
 #if defined(FUSE_HAS_VULKAN_RHI)
     renderer::RenderCommandList m_commandList;
     renderer::RhiContext* m_sharedRhiContext = nullptr;

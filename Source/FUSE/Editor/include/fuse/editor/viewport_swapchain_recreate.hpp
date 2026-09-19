@@ -34,6 +34,7 @@ struct ViewportSwapchainPresentResult {
     bool realPresentEligible = false;
     bool qtRealSurfaceHandoff = false;
     bool viewportQtPresentPathReady = false;
+    bool viewportQtPresentPathEligible = false;
     bool desktopPresentRuntimeReady = false;
     u32 presentSkippedNoWsiCount = 0;
     u32 realPresentCallCount = 0;

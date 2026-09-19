@@ -125,6 +125,8 @@ ViewportSwapchainPresentResult presentViewportSwapchainFrame(
         const bool swapchainPresentable = !status.headless && status.width > 0 && status.height > 0;
         result.viewportQtPresentPathReady =
             fuse::editor::viewportQtPresentPathReady(*handoff, swapchainPresentable);
+        result.viewportQtPresentPathEligible =
+            fuse::editor::viewportQtPresentPathEligible(*handoff, swapchainPresentable);
     }
 
     if (result.qtRealPresentCallCount > qtRealPresentCallsBefore) {

@@ -46,6 +46,57 @@ RuntimeViewportHeadlessGpuStub* asHeadlessGpuStub(void* stub) {
 const RuntimeViewportHeadlessGpuStub* asHeadlessGpuStub(const void* stub) {
     return static_cast<const RuntimeViewportHeadlessGpuStub*>(stub);
 }
+
+void recordViewportPresentDiagnostics(RuntimeEmbedSession& session,
+                                      const ViewportSwapchainPresentResult& present,
+                                      const ViewportSwapchainHandoff& handoff,
+                                      const fuse::renderer::PresentPath& presentPath) {
+    if (!present.attempted) {
+        return;
+    }
+
+    ++session.consumedSwapchainPresentTicks;
+    if (present.presented) {
+        ++session.swapchainPresentAfterRecreateCount;
+    }
+    if (present.viewportQtPresentPathReady) {
+        ++session.qtPresentPathReadyTicks;
+    }
+    if (present.viewportQtPresentPathEligible) {
+        ++session.qtPresentPathEligibleTicks;
+    }
+    if (present.qtPresentGateEnabled && viewportQtPresentEligible(handoff)) {
+        ++session.qtPresentEligibleTicks;
+    }
+    const fuse::renderer::PresentPathStatus& status = presentPath.status();
+    if (status.realPresentCallCount > session.realPresentCallCount) {
+        session.realPresentCallCount = status.realPresentCallCount;
+    }
+    if (status.qtRealPresentCallCount > session.qtRealPresentCallCount) {
+        session.qtRealPresentCallCount = status.qtRealPresentCallCount;
+    }
+    if (status.presentSkippedNoWsiCount > session.presentSkippedNoWsiCount) {
+        session.presentSkippedNoWsiCount = status.presentSkippedNoWsiCount;
+    }
+}
+
+void maybeRetireSoftwarePlaceholder(RuntimeViewportHeadlessGpuStub* gpu, RuntimeEmbedSession& session,
+                                    const ViewportSwapchainHandoff& handoff) {
+#if defined(FUSE_HAS_VULKAN_RHI)
+    if (gpu == nullptr || gpu->hybrid == nullptr) {
+        return;
+    }
+
+    if (!shouldDisableSoftwarePlaceholderForEmbed(handoff, gpu->externalSwapchainWired)) {
+        return;
+    }
+
+    if (gpu->hybrid->composer().softwarePlaceholderEnabled()) {
+        gpu->hybrid->composer().setSoftwarePlaceholderEnabled(false);
+        ++session.softwarePlaceholderRetiredTicks;
+    }
+#endif
+}
 #endif
 
 RuntimeViewportHook::~RuntimeViewportHook() {
@@ -178,27 +229,9 @@ void RuntimeViewportHook::applyPendingResize_() {
                 if (handoffConsumed) {
                     const ViewportSwapchainPresentResult present =
                         presentViewportSwapchainFrame(*presentPath, &m_surfaceHandoff);
-                    if (present.attempted) {
-                        ++m_embedSession.consumedSwapchainPresentTicks;
-                        if (present.presented) {
-                            ++m_embedSession.swapchainPresentAfterRecreateCount;
-                        }
-                        if (present.viewportQtPresentPathReady) {
-                            ++m_embedSession.qtPresentPathReadyTicks;
-                        }
-                        if (present.qtPresentGateEnabled && viewportQtPresentEligible(m_surfaceHandoff)) {
-                            ++m_embedSession.qtPresentEligibleTicks;
-                        }
-                        if (present.realPresentCallCount > m_embedSession.realPresentCallCount) {
-                            m_embedSession.realPresentCallCount = present.realPresentCallCount;
-                        }
-                        if (present.qtRealPresentCallCount > m_embedSession.qtRealPresentCallCount) {
-                            m_embedSession.qtRealPresentCallCount = present.qtRealPresentCallCount;
-                        }
-                        if (present.presentSkippedNoWsiCount > m_embedSession.presentSkippedNoWsiCount) {
-                            m_embedSession.presentSkippedNoWsiCount = present.presentSkippedNoWsiCount;
-                        }
-                    }
+                    recordViewportPresentDiagnostics(m_embedSession, present, m_surfaceHandoff,
+                                                     *presentPath);
+                    maybeRetireSoftwarePlaceholder(gpu, m_embedSession, m_surfaceHandoff);
                 }
             } else if (gpu->context != nullptr) {
                 const ViewportSwapchainRecreateResult queued = requestViewportSwapchainRecreate(
@@ -215,20 +248,10 @@ void RuntimeViewportHook::applyPendingResize_() {
                 if (applied.recreated) {
                     ++m_embedSession.swapchainRecreateCount;
                 }
-                if (present.attempted) {
-                    ++m_embedSession.consumedSwapchainPresentTicks;
-                    if (present.presented) {
-                        ++m_embedSession.swapchainPresentAfterRecreateCount;
-                    }
-                    if (present.viewportQtPresentPathReady) {
-                        ++m_embedSession.qtPresentPathReadyTicks;
-                    }
-                    if (present.qtRealPresentCallCount > m_embedSession.qtRealPresentCallCount) {
-                        m_embedSession.qtRealPresentCallCount = present.qtRealPresentCallCount;
-                    }
-                    if (present.presentSkippedNoWsiCount > m_embedSession.presentSkippedNoWsiCount) {
-                        m_embedSession.presentSkippedNoWsiCount = present.presentSkippedNoWsiCount;
-                    }
+                if (present.attempted && gpu->fallbackPresentPath != nullptr) {
+                    recordViewportPresentDiagnostics(m_embedSession, present, m_surfaceHandoff,
+                                                     *gpu->fallbackPresentPath);
+                    maybeRetireSoftwarePlaceholder(gpu, m_embedSession, m_surfaceHandoff);
                 }
             }
         }
@@ -408,10 +431,8 @@ void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 dt) {
             m_embedSession.wsiPresentPathReady = true;
             m_embedSession.headlessGpuReady = true;
 #if defined(FUSE_HAS_VULKAN_RHI)
-            if (shouldDisableSoftwarePlaceholderForEmbed(m_surfaceHandoff, gpu->externalSwapchainWired)) {
-                syncHybridBootstrapFromConsumedHandoff(*gpu->hybrid, m_surfaceHandoff);
-                gpu->hybrid->composer().setSoftwarePlaceholderEnabled(false);
-            }
+            syncHybridBootstrapFromConsumedHandoff(*gpu->hybrid, m_surfaceHandoff);
+            maybeRetireSoftwarePlaceholder(gpu, m_embedSession, m_surfaceHandoff);
 #endif
         }
     }
@@ -442,12 +463,12 @@ void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 dt) {
                     ++gpu->submittedFrames;
                     m_embedSession.submittedFrames = gpu->submittedFrames;
 #if defined(FUSE_HAS_VULKAN_RHI)
-                    if (shouldDisableSoftwarePlaceholderForEmbed(m_surfaceHandoff,
-                                                                 gpu->externalSwapchainWired)) {
-                        gpu->hybrid->composer().setSoftwarePlaceholderEnabled(false);
-                    }
+                    maybeRetireSoftwarePlaceholder(gpu, m_embedSession, m_surfaceHandoff);
                     if (viewportQtPresentPathReady(m_surfaceHandoff, gpu->externalSwapchainWired)) {
                         ++m_embedSession.qtPresentPathReadyTicks;
+                    }
+                    if (viewportQtPresentPathEligible(m_surfaceHandoff, gpu->externalSwapchainWired)) {
+                        ++m_embedSession.qtPresentPathEligibleTicks;
                     }
                     if (viewportQtPresentEligible(m_surfaceHandoff)) {
                         ++m_embedSession.qtPresentEligibleTicks;
@@ -552,9 +573,7 @@ void RuntimeViewportHook::tick(EditorHost& host, f32 dt) {
 #if defined(FUSE_HAS_VULKAN_RHI)
             if (gpu->hybrid != nullptr && m_surfaceHandoff.consumed) {
                 syncHybridBootstrapFromConsumedHandoff(*gpu->hybrid, m_surfaceHandoff);
-                if (shouldDisableSoftwarePlaceholderForEmbed(m_surfaceHandoff, wiring.swapchainReady)) {
-                    gpu->hybrid->composer().setSoftwarePlaceholderEnabled(false);
-                }
+                maybeRetireSoftwarePlaceholder(gpu, m_embedSession, m_surfaceHandoff);
             }
 #endif
         } else {
