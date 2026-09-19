@@ -307,3 +307,7 @@ bool can_finalize_with_preflight(const ManifoldFinalizePreflight& preflight);
         return reason == ManifoldPruneRejectReason::None &&
         return reason == ManifoldPruneRejectReason::None && hasShallow;
     bool can_finalize() const { return reason == ManifoldFinalizeRejectReason::None; }
+
+// --- deepen additive from deepen-b4-narrowphase-guards-72f5 ---
+        return skipped || reason != ManifoldPruneRejectReason::None || !needs_pruning();
+    bool can_finalize() const { return reason == ManifoldFinalizeRejectReason::None && canFinalize; }

@@ -2164,3 +2164,27 @@ void testFrictionBasisRejectReasonGuards() {
     testManifoldPruneRejectReasonGuards();
     testManifoldFinalizeRejectReasonGuards();
     testFrictionBasisRejectReasonGuards();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-72f5 ---
+void testNarrowphaseBatchPreflightGuards() {
+    expectTrue(!emptyPreflight.can_run(), "batch preflight cannot run on empty pair list");
+    expectTrue(emptyPreflight.totalPairs == 0u, "batch preflight reports zero total pairs");
+    expectTrue(!rejectedPreflight.can_run(), "batch preflight cannot run when all pairs rejected");
+    expectTrue(rejectedPreflight.rejectedPairs == 1u, "batch preflight counts rejected pair");
+    const auto mixedPreflight = fuse::physics::narrowphase::preflight_narrowphase(mixed, bodies, shapes);
+    expectTrue(mixedPreflight.can_run(), "batch preflight can run with dispatchable pair");
+    expectTrue(mixedPreflight.dispatchablePairs == 1u, "batch preflight counts one dispatchable pair");
+    expectTrue(mixedPreflight.rejectedPairs == 1u, "batch preflight counts one rejected pair");
+            fuse::physics::narrowphase::ManifoldPruneRejectReason::EmptyManifold,
+            fuse::physics::narrowphase::ManifoldPruneRejectReason::WouldBeEmptyAfterPrune,
+        "should_skip_manifold_prune on clean manifold");
+    expectTrue(cleanPreflight.can_skip_prune(), "prune preflight can skip clean manifold");
+        cleanPreflight.reason == fuse::physics::narrowphase::ManifoldPruneRejectReason::None,
+            fuse::physics::narrowphase::ManifoldFinalizeRejectReason::EmptyManifold,
+        "should_skip_manifold_finalize on empty manifold");
+            fuse::physics::narrowphase::ManifoldFinalizeRejectReason::InvalidNormal,
+    expectTrue(readyPreflight.can_finalize(), "finalize preflight can finalize ready manifold");
+            fuse::physics::narrowphase::FrictionBasisRejectReason::SkippedManifold,
+            fuse::physics::narrowphase::FrictionBasisRejectReason::BasisCurrent,
+                fuse::physics::narrowphase::FrictionBasisRejectReason::BasisCurrent),
+    testNarrowphaseBatchPreflightGuards();

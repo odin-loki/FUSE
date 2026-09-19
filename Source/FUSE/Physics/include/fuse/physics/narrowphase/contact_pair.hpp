@@ -305,3 +305,7 @@ struct NarrowphasePairListPreflight {
     NarrowphaseRejectReason reason = NarrowphaseRejectReason::None;
     bool can_dispatch() const { return reason == NarrowphaseRejectReason::None; }
 NarrowphasePairListPreflight preflight_narrowphase_pair_list(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-72f5 ---
+struct NarrowphasePreflight {
+NarrowphasePreflight preflight_narrowphase(

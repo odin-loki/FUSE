@@ -721,3 +721,7 @@ NarrowphasePairListPreflight preflight_narrowphase_pair_list(
     if (preflight.reason == NarrowphaseRejectReason::None) {
             if (should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
     return narrowphase_reject_reason(pairs, bodies, shapes) != NarrowphaseRejectReason::None;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-72f5 ---
+NarrowphasePreflight preflight_narrowphase(
+    NarrowphasePreflight preflight{};

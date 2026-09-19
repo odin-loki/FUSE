@@ -341,3 +341,7 @@ bool should_skip_friction_basis_preflight(const ContactManifold& manifold) {
     if (preflight.reason == FrictionBasisRejectReason::SkippedManifold) {
     if (preflight.reason == FrictionBasisRejectReason::ValidCachedBasis) {
     return friction_basis_reject_reason(manifold, epsilon) != FrictionBasisRejectReason::None;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-72f5 ---
+    case FrictionBasisRejectReason::BasisCurrent:
+        return FrictionBasisRejectReason::BasisCurrent;
