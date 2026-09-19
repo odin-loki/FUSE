@@ -32,6 +32,17 @@ struct ContactBufferSoA {
     u32 droppedCount = 0;
 
     bool isEmpty() const { return activeCount == 0u; }
+    bool hasValidContacts() const { return activeCount > 0u; }
+    bool hasDroppedContacts() const { return droppedCount > 0u; }
+    bool isFull() const { return maxCapacity > 0u && activeCount >= maxCapacity; }
+    bool canAcceptContacts(u32 additionalCount = 1u) const;
+    u32 remainingCapacity() const;
+    bool canApplyMaxCapacityClamp() const;
+    bool canSkipMaxCapacityClamp() const { return !canApplyMaxCapacityClamp(); }
+    bool canSkipSoAIteration() const { return activeCount == 0u && pairSlotCount == 0u; }
+    bool canSkipCompaction() const;
+    u32 countValidSlots() const;
+    bool slotIsValid(u32 slot) const;
 
     void reserve(u32 capacity);
     void setMaxCapacity(u32 capacity);
@@ -74,6 +85,38 @@ const char* contact_buffer_compaction_reject_reason_name(ContactBufferCompaction
 ContactBufferCompactionRejectReason contact_buffer_compaction_reject_reason(const ContactBufferSoA& buffer);
 
 /// Returns true when `contact_buffer_compaction_reject_reason` matches `expected` (B4.6 deepen pass).
+/// Why contact-buffer write would reject (B4.4 deepen guard pass).
+enum class ContactBufferWriteRejectReason : u8 {
+    OutOfRangeSlot,
+    InvalidManifold,
+    SelfPair,
+
+const char* contact_buffer_write_reject_reason_name(ContactBufferWriteRejectReason reason);
+
+ContactBufferWriteRejectReason contact_buffer_write_reject_reason(
+    const ContactBufferSoA& buffer,
+    u32 slot,
+    const ContactManifold& manifold);
+
+bool contact_buffer_write_rejects_for_reason(
+    const ContactManifold& manifold,
+    ContactBufferWriteRejectReason expected);
+
+struct ContactBufferWritePreflight {
+    ContactBufferWriteRejectReason reason = ContactBufferWriteRejectReason::None;
+    bool outOfRangeSlot = false;
+    bool invalidManifold = false;
+    bool selfPair = false;
+
+    bool canWrite() const { return reason == ContactBufferWriteRejectReason::None; }
+
+ContactBufferWritePreflight preflight_contact_buffer_write(
+
+/// Why contact-buffer compaction would early-out (B4.4 deepen guard pass).
+    AllValid,
+
+
+
 bool contact_buffer_compaction_rejects_for_reason(
     const ContactBufferSoA& buffer,
     ContactBufferCompactionRejectReason expected);
@@ -160,5 +203,35 @@ ContactBufferFrictionPreflight preflight_contact_buffer_friction_rebuild(
 
 /// Non-mutating friction rebuild skip predicate (B4.4 deepen follow-up pass).
 bool can_skip_build_friction_tangent_bases(
+
+};
+
+
+bool canSkipContactBufferCompaction(const ContactBufferSoA& buffer);
+
+bool shouldRunContactBufferCompaction(const ContactBufferSoA& buffer);
+
+/// Why contact-buffer max-capacity clamp would early-out (B4.4 deepen guard pass).
+enum class ContactBufferClampRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    WithinCapacity,
+
+const char* contact_buffer_clamp_reject_reason_name(ContactBufferClampRejectReason reason);
+
+ContactBufferClampRejectReason contact_buffer_clamp_reject_reason(const ContactBufferSoA& buffer);
+
+bool contact_buffer_clamp_rejects_for_reason(
+    const ContactBufferSoA& buffer,
+    ContactBufferClampRejectReason expected);
+
+    ContactBufferClampRejectReason reason = ContactBufferClampRejectReason::None;
+
+    bool needsClamp() const { return reason == ContactBufferClampRejectReason::None; }
+
+
+bool canSkipContactBufferClamp(const ContactBufferSoA& buffer);
+
+bool shouldRunContactBufferClamp(const ContactBufferSoA& buffer);
 
 } // namespace fuse::physics::narrowphase

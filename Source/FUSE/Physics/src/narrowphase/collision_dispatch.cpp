@@ -9,6 +9,11 @@ void runNarrowphaseIntoBuffer(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     ContactBufferSoA& buffer) {
+    if (pairs.empty()) {
+        buffer.preparePairSlots(0u);
+        return;
+    }
+
     const u32 pairCount = static_cast<u32>(pairs.size());
     buffer.preparePairSlots(pairCount);
 

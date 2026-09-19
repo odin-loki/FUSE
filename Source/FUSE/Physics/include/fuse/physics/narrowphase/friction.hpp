@@ -203,6 +203,18 @@ FrictionBasisRejectReason friction_basis_reject_reason(
 
 /// Diagnose why friction-basis rebuild would skip; vacuously succeeds when rebuild may proceed (B4.4 deepen pass).
 
+/// Why friction-basis rebuild would early-out (B4.4 deepen guard pass).
+enum class FrictionBasisRebuildRejectReason : u8 {
+    NoValidNormal,
+
+const char* friction_basis_rebuild_reject_reason_name(FrictionBasisRebuildRejectReason reason);
+
+FrictionBasisRebuildRejectReason friction_basis_rebuild_reject_reason(
+
+bool friction_basis_rebuild_rejects_for_reason(
+    FrictionBasisRebuildRejectReason expected,
+
+bool should_run_friction_basis_rebuild(
 
 /// Const preflight for friction-basis rebuild dispatch (B4.4 deepen follow-up).
 struct FrictionBasisPreflight {

@@ -221,6 +221,19 @@ bool should_skip_contact_pair_dispatch(
 
 /// Non-mutating dispatch predicate — inverse of `should_skip_contact_pair_dispatch` (B4.4 deepen pass).
 bool should_run_contact_pair_dispatch(
+/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 deepen guard pass).
+bool contact_pair_deepen_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected);
+
+/// Non-mutating dispatch predicate — inverse of `should_skip_contact_pair_dispatch` (B4.4 deepen guard pass).
+    const CollisionShapeSoA& shapes);
+
+/// Extended reject reason including sleeping/kinematic pairs (B4.4 deepen follow-up).
+/// Does not alter `contact_pair_reject_reason`; use for additive preflight only.
+ContactPairRejectReason contact_pair_deepen_reject_reason(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -792,6 +805,7 @@ bool contact_pair_deepen_rejects_for_reason(
 bool should_run_contact_pair_deepen_dispatch(
 /// Non-mutating pair-dispatch predicate — inverse of `should_skip_contact_pair_dispatch` (B4.4 deepen pass).
 bool should_run_contact_pair_dispatch(
+/// Non-mutating deepen dispatch predicate — inverse of `should_skip_contact_pair_deepen_dispatch` (B4.4 deepen guard pass).
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
