@@ -71,4 +71,28 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 /// Fold source/upstream preflight — upstream zero is allowed on valid source keys (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
 
+/// Map a preflight result to its reject reason — `None` when `ok()` (B7.9 deepen).
+[[nodiscard]] CookHashRejectReason classifyCookHashReject(const CookHashPreflight& preflight);
+
+/// Non-mutating hash preflight predicates — mirror `preflight_*` without computing keys (B7.9 deepen).
+[[nodiscard]] bool wouldHashFileContent(const std::string& path);
+[[nodiscard]] bool wouldHashMeshImport(const MeshImportDesc& desc);
+[[nodiscard]] bool wouldHashTextureImport(const TextureImportDesc& desc);
+[[nodiscard]] bool wouldHashAudioImport(const AudioImportDesc& desc);
+[[nodiscard]] bool wouldHashManifestEntry(const CookManifestEntry& entry);
+[[nodiscard]] bool wouldHashUpstreamDependencies(const std::vector<std::string>& dependency_output_paths,
+                                                 const CookManifest& manifest);
+[[nodiscard]] bool wouldHashCookCacheKey(u64 source_hash, u64 upstream_hash);
+
+/// Bool preflight wrappers that populate `reason` on rejection (B7.9 deepen).
+[[nodiscard]] bool tryPreflightFileContentHash(const std::string& path, CookHashRejectReason& reason);
+[[nodiscard]] bool tryPreflightMeshImportHash(const MeshImportDesc& desc, CookHashRejectReason& reason);
+[[nodiscard]] bool tryPreflightTextureImportHash(const TextureImportDesc& desc, CookHashRejectReason& reason);
+[[nodiscard]] bool tryPreflightAudioImportHash(const AudioImportDesc& desc, CookHashRejectReason& reason);
+[[nodiscard]] bool tryPreflightManifestEntryHash(const CookManifestEntry& entry, CookHashRejectReason& reason);
+[[nodiscard]] bool tryPreflightUpstreamDependenciesHash(
+    const std::vector<std::string>& dependency_output_paths, const CookManifest& manifest,
+    CookHashRejectReason& reason);
+[[nodiscard]] bool tryPreflightCookCacheKey(u64 source_hash, u64 upstream_hash, CookHashRejectReason& reason);
+
 } // namespace fuse::project
