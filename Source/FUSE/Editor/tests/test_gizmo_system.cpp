@@ -672,7 +672,7 @@ void testSnapStepGuards() {
     hit.screenX = 10.f;
     hit.screenY = 50.f;
     gizmo.beginDrag(hit, transform);
-    hit.screenX = 40.f;
+    hit.screenX = 25.f;
     const fuse::editor::GizmoResult update = gizmo.updateDrag(hit);
     expectTrue(update.changed, "drag update still applies when snap step invalid");
     gizmo.endDrag();
@@ -1444,6 +1444,185 @@ void testEndInteractionPreflight() {
     gizmo.endDrag();
 }
 
+void testUpdateDragScreenMissPreflight() {
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::UpdateDragPreflight activePreflight = fuse::editor::preflightUpdateDrag(
+        hit, true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate, {});
+    expectTrue(activePreflight.canUpdate(), "update preflight accepts in-bounds axis hit");
+    expectTrue(!activePreflight.screenMiss, "in-bounds update clears screenMiss");
+
+    hit.screenX = 50.f;
+    hit.screenY = 50.f;
+    const fuse::editor::UpdateDragPreflight deadZonePreflight = fuse::editor::preflightUpdateDrag(
+        hit, true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate, {});
+    expectTrue(deadZonePreflight.screenMiss, "update preflight marks translate dead zone");
+    expectTrue(!deadZonePreflight.canUpdate(), "update preflight rejects translate dead zone");
+
+    const fuse::editor::UpdateDragPreflight noModePreflight =
+        fuse::editor::preflightUpdateDrag(hit, true, fuse::editor::GizmoAxis::X);
+    expectTrue(noModePreflight.canUpdate(),
+               "mode-less update preflight unchanged for dead-zone hit");
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setMode(fuse::editor::GizmoMode::Scale);
+    fuse::editor::GizmoTransform transform{};
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+    gizmo.beginDrag(hit, transform);
+
+    hit.screenX = 50.f;
+    hit.screenY = 50.f;
+    const fuse::editor::UpdateDragPreflight scaleCenterPreflight = gizmo.preflightUpdateDrag(hit);
+    expectTrue(scaleCenterPreflight.canUpdate(),
+               "scale mode update still accepts uniform handle at center");
+    expectTrue(!scaleCenterPreflight.screenMiss,
+               "scale center handle is not a screen miss during update");
+
+    hit.screenX = 70.f;
+    hit.screenY = 70.f;
+    const fuse::editor::UpdateDragPreflight scaleMissPreflight = gizmo.preflightUpdateDrag(hit);
+    expectTrue(scaleMissPreflight.screenMiss,
+               "scale mode update marks miss outside axis bands and uniform handle");
+    expectTrue(!scaleMissPreflight.canUpdate(), "scale mode update rejects screen miss");
+
+    fuse::editor::GizmoResult result{};
+    expectTrue(!gizmo.tryUpdateDrag(hit, result), "tryUpdateDrag rejects screen miss during drag");
+    expectTrue(gizmo.isDragging(), "screen miss update reject keeps drag active");
+    gizmo.endDrag();
+}
+
+void testCanInteractionPredicates() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 1.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    expectTrue(fuse::editor::canPickSnap(hit, fuse::editor::GizmoMode::Translate, snap),
+               "canPickSnap accepts valid screen hit with snap ready");
+    expectTrue(fuse::editor::canBeginInteraction(hit, fuse::editor::GizmoMode::Translate, snap),
+               "canBeginInteraction accepts valid screen hit");
+
+    snap.gridSize = 0.f;
+    expectTrue(fuse::editor::canPickSnap(hit, fuse::editor::GizmoMode::Translate, snap),
+               "canPickSnap still allows pick when snap step invalid");
+    expectTrue(fuse::editor::canBeginInteraction(hit, fuse::editor::GizmoMode::Translate, snap),
+               "canBeginInteraction still allows begin when snap step invalid");
+    expectTrue(!fuse::editor::canBeginInteraction(hit, fuse::editor::GizmoMode::Translate, snap,
+                                                  true),
+               "canBeginInteraction rejects while already dragging");
+
+    hit.screenX = 50.f;
+    hit.screenY = 50.f;
+    expectTrue(!fuse::editor::canPickSnap(hit, fuse::editor::GizmoMode::Translate, snap),
+               "canPickSnap rejects translate dead zone");
+    expectTrue(!fuse::editor::canBeginInteraction(hit, fuse::editor::GizmoMode::Translate, snap),
+               "canBeginInteraction rejects translate dead zone");
+
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+    snap.gridSize = 1.f;
+    expectTrue(fuse::editor::canUpdateInteraction(hit, true, fuse::editor::GizmoAxis::X,
+                                                  fuse::editor::GizmoMode::Translate, snap),
+               "canUpdateInteraction accepts active drag with valid hit");
+    expectTrue(!fuse::editor::canUpdateInteraction(hit, false, fuse::editor::GizmoAxis::X,
+                                                   fuse::editor::GizmoMode::Translate, snap),
+               "canUpdateInteraction rejects inactive drag");
+
+    hit.screenX = 50.f;
+    hit.screenY = 50.f;
+    expectTrue(!fuse::editor::canUpdateInteraction(hit, true, fuse::editor::GizmoAxis::X,
+                                                   fuse::editor::GizmoMode::Translate, snap),
+               "canUpdateInteraction rejects translate dead zone during drag");
+
+    expectTrue(!fuse::editor::canEndInteraction(false, fuse::editor::GizmoAxis::None,
+                                                  fuse::editor::GizmoMode::Translate, snap),
+               "canEndInteraction rejects inactive drag");
+    expectTrue(fuse::editor::canEndInteraction(true, fuse::editor::GizmoAxis::X,
+                                               fuse::editor::GizmoMode::Translate, snap),
+               "canEndInteraction accepts active drag");
+
+    fuse::editor::GizmoTransform transform{};
+    const fuse::editor::GizmoRay xRay = rayAlongX();
+    snap.gridSize = 1.f;
+    expectTrue(fuse::editor::canPickSnap(xRay, transform, fuse::editor::GizmoMode::Translate,
+                                         fuse::editor::GizmoSpace::World,
+                                         fuse::editor::GizmoSystem::kAxisLength,
+                                         fuse::editor::GizmoSystem::kPickRadius, snap),
+               "canPickSnap accepts valid ray pick");
+    expectTrue(fuse::editor::canBeginInteraction(
+                   xRay, transform, fuse::editor::GizmoMode::Translate,
+                   fuse::editor::GizmoSpace::World, fuse::editor::GizmoSystem::kAxisLength,
+                   fuse::editor::GizmoSystem::kPickRadius, snap),
+               "canBeginInteraction accepts valid ray pick");
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+    expectTrue(gizmo.canPickSnap(hit), "gizmo canPickSnap accepts valid screen hit");
+    expectTrue(gizmo.canBeginInteraction(hit), "gizmo canBeginInteraction accepts valid screen hit");
+    expectTrue(gizmo.canPickSnap(xRay, transform), "gizmo canPickSnap accepts valid ray");
+    expectTrue(gizmo.canBeginInteraction(xRay, transform),
+               "gizmo canBeginInteraction accepts valid ray");
+
+    gizmo.beginDrag(hit, transform);
+    expectTrue(gizmo.canUpdateInteraction(hit), "gizmo canUpdateInteraction accepts active drag");
+    expectTrue(gizmo.canEndInteraction(), "gizmo canEndInteraction accepts active drag");
+
+    hit.screenX = 50.f;
+    hit.screenY = 50.f;
+    expectTrue(!gizmo.canUpdateInteraction(hit),
+               "gizmo canUpdateInteraction rejects translate dead zone");
+    gizmo.endDrag();
+}
+
+void testUpdateInteractionScreenMissPreflight() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 1.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::UpdateInteractionPreflight activeUpdate =
+        fuse::editor::preflightUpdateInteraction(hit, true, fuse::editor::GizmoAxis::X,
+                                               fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(activeUpdate.canUpdate(), "update interaction accepts in-bounds hit");
+    expectTrue(!activeUpdate.update.screenMiss, "update interaction clears screenMiss");
+
+    hit.screenX = 50.f;
+    hit.screenY = 50.f;
+    const fuse::editor::UpdateInteractionPreflight deadZoneUpdate =
+        fuse::editor::preflightUpdateInteraction(hit, true, fuse::editor::GizmoAxis::X,
+                                                 fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(!deadZoneUpdate.canUpdate(), "update interaction rejects translate dead zone");
+    expectTrue(deadZoneUpdate.update.screenMiss,
+               "update interaction embeds screenMiss on dead-zone hit");
+
+    const fuse::editor::InteractionPreflight deadZoneInteraction =
+        fuse::editor::preflightInteraction(hit, true, fuse::editor::GizmoAxis::X,
+                                           fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(!deadZoneInteraction.canUpdate(),
+               "combined interaction rejects update on translate dead zone");
+    expectTrue(deadZoneInteraction.update.update.screenMiss,
+               "combined interaction embeds screenMiss on update");
+    expectTrue(deadZoneInteraction.canEnd(),
+               "combined interaction still allows end while update is rejected");
+}
+
 void testInteractionPreflightCombined() {
     fuse::editor::GizmoSnapSettings snap{};
     snap.translateSnap = true;
@@ -1553,6 +1732,9 @@ int main() {
     testBeginInteractionPreflight();
     testUpdateInteractionPreflight();
     testEndInteractionPreflight();
+    testUpdateDragScreenMissPreflight();
+    testCanInteractionPredicates();
+    testUpdateInteractionScreenMissPreflight();
     testInteractionPreflightCombined();
 
     if (g_failures != 0) {
