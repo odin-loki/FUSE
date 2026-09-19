@@ -4765,3 +4765,18 @@ void testEmptyNameLookupGuardsDoNotMatchValidEvents() {
     expectTrue(openPreflight.activeFlowDepth == 1u, "open flow preflight tracks active depth");
     expectTrue(!closedPreflight.hasOpenFlows, "closed flow preflight clears open flows");
     const fuse::profiler::AsyncFlowPreflight preflight = fuse::profiler::preflightAsyncFlow();
+
+// --- deepen additive from b16-profiler-deepen-guards-c03f ---
+void testPreflightNestingGuard() {
+    expectTrue(resetPreflight.scopeNestingBalanced, "nesting preflight balanced on reset");
+    expectTrue(resetPreflight.flowNestingBalanced, "flow nesting preflight balanced on reset");
+    expectTrue(!resetPreflight.hasOrphanAsyncFlowEnds, "nesting preflight has no orphan ends on reset");
+        const fuse::profiler::NestingPreflight activeScopePreflight = fuse::profiler::preflightNesting();
+        expectTrue(activeScopePreflight.canNestScope(),
+        const fuse::profiler::NestingPreflight openFlowPreflight = fuse::profiler::preflightNesting();
+        expectTrue(openFlowPreflight.hasOpenAsyncFlows, "nesting preflight marks open async flows");
+        expectTrue(openFlowPreflight.activeFlowNestingDepth == 1u,
+        expectTrue(openFlowPreflight.canNestAsyncFlow(),
+    const fuse::profiler::NestingPreflight orphanPreflight = fuse::profiler::preflightNesting();
+    expectTrue(orphanPreflight.hasOrphanAsyncFlowEnds, "nesting preflight marks orphan async flow ends");
+    testPreflightNestingGuard();
