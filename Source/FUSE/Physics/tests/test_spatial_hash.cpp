@@ -3723,3 +3723,15 @@ void testCellShapeInsertRejectReasonGuards() {
                  fuse::physics::broadphase::cellPairGenRejectReason(pairOccupants)),
         fuse::physics::broadphase::preflightCellPairGen(tripleOccupants);
                  fuse::physics::broadphase::CellCapacityInsertRejectReason::OccupancyRejected),
+
+// --- deepen additive from deepen-b4-broadphase-guards-78cd ---
+                 fuse::physics::broadphase::pairBufferWriteRejectReason(buffer, 0u, 1u, 2u)),
+                 fuse::physics::broadphase::pairBufferWriteRejectReason(buffer, 2u, 1u, 2u)),
+                 fuse::physics::broadphase::pairBufferWriteRejectReason(buffer, 0u, 2u, 2u)),
+        fuse::physics::broadphase::preflightPairBufferWrite(buffer, 0u, 1u, 2u);
+    const fuse::physics::broadphase::CellPairGenPreflight validPreflight =
+    expectTrue(validPreflight.canGenerate(), "pair-gen preflight accepts two unique occupants");
+    expectEq(validPreflight.uniqueBodyCount, 2u, "pair-gen preflight reports unique body count");
+             static_cast<fuse::u32>(fuse::physics::broadphase::ShapeCellInsertRejectReason::ExceedsBudget),
+    const fuse::physics::broadphase::ShapeCellInsertPreflight preflight =
+        fuse::physics::broadphase::preflightShapeCellInsert(0u, 4u, validRange, 8u);
