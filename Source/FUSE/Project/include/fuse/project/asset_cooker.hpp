@@ -33,6 +33,19 @@ struct CookCacheUpstreamReconcileEstimate {
     u32 prunable_entries = 0;
     u32 invalid_entries = 0;
     u32 stale_entries = 0;
+/// Breakdown of upstream invalidation removals — read-only planning estimate (B7.9 deepen).
+struct CookUpstreamInvalidationEstimate {
+    u32 direct = 0;
+    u32 downstream = 0;
+
+    [[nodiscard]] u32 total() const { return direct + downstream; }
+
+/// Breakdown of stale dependency-hash reconcile removals — read-only planning estimate (B7.9 deepen).
+struct CookStaleDependencyReconcileEstimate {
+    u32 direct_stale = 0;
+    u32 downstream_cascade = 0;
+
+    [[nodiscard]] u32 total() const { return direct_stale + downstream_cascade; }
 };
 
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
@@ -135,6 +148,12 @@ public:
     [[nodiscard]] CookCacheReconcileEstimate estimate_cache_reconcile(const CookManifest& manifest) const;
     /// Upstream-change reconcile estimate — upstream cascade plus prunable entry counts (B7.9 deepen).
     [[nodiscard]] CookCacheReconcileEstimate estimate_upstream_change_reconcile(
+    /// Read-only upstream invalidation breakdown — guarded on empty `changed_source` (B7.9 deepen).
+    [[nodiscard]] CookUpstreamInvalidationEstimate estimate_upstream_invalidation(
+    /// Read-only stale dependency-hash reconcile breakdown (B7.9 deepen).
+    [[nodiscard]] CookStaleDependencyReconcileEstimate estimate_stale_dependency_reconcile(
+    /// True when `estimate_stale_dependency_reconcile` would remove at least one entry (B7.9 deepen).
+    [[nodiscard]] bool would_need_stale_dependency_reconcile(const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

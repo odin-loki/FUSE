@@ -1648,7 +1648,6 @@ u32 CookCache::count_stale_entries() const {
 u32 CookCache::estimate_prune_all() const {
 
         if (is_prunable_cache_entry_(entry)) {
-        }
 
 bool CookCache::would_invalidate_source(const std::string& source_path) const {
     return count_by_source(source_path) > 0;
@@ -1663,11 +1662,9 @@ bool CookCache::would_invalidate_stale_content_for_source(const std::string& sou
 u32 CookCache::estimate_prune_invalid_entries() const {
     return count_invalid_entries();
 
-u32 CookCache::estimate_prune_stale_entries() const {
     return count_stale_entries();
 
     if (m_entries.empty() || !has_prunable_entries()) {
-        return 0;
     return count_prunable_entries();
 
 CookCacheReconcileEstimate CookCache::estimate_reconcile() const {
@@ -1906,9 +1903,7 @@ u32 CookCache::count_prune_all() const {
 u32 CookCache::estimate_prune_removals() const {
 
 std::vector<std::string> CookCache::probe_stale_content_sources() const {
-    if (m_entries.empty()) {
 
-    for (const CookCacheEntry& entry : m_entries) {
         if (!is_valid_cook_cache_entry(entry) || !is_stale_cache_entry_(entry)) {
 
         bool already_recorded = false;
@@ -1921,6 +1916,12 @@ std::vector<std::string> CookCache::probe_stale_content_sources() const {
 
 
         if (is_stale_only_cache_entry_(entry)) {
+
+
+
+
+
+        if (is_stale_cache_entry_(entry)) {
 
 bool CookCache::contains(u64 content_hash) const {
     if (!is_valid_cook_cache_key(content_hash) || m_entries.empty()) {
