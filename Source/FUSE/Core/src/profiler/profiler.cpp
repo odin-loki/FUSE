@@ -5019,6 +5019,26 @@ bool isFlowIdTracked(u32 flowId) {
 
 
 
+bool eventNameMatches(const char* eventName, const char* queryName) {
+    if (!isValidEventName(queryName) || !isValidEventName(eventName)) {
+    return std::strcmp(eventName, queryName) == 0;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 u32 lastEventIndex() {
     const u32 count = eventCount();
@@ -5542,6 +5562,27 @@ bool wouldSkipSafeChromeTraceExport(ProfilerSkipReason* reason) {
 
 ProfilerNestingPreflight preflightNesting() {
     ProfilerNestingPreflight preflight{};
+bool wouldSkipRecording() {
+
+    return wouldSkipRecording() || !isValidEventName(name);
+
+
+    return wouldSkipRecording() || !isValidEventName(name)
+        || openAsyncFlowCount() == 0u;
+
+    return wouldSkipRecording() || !isValidEventName(track);
+
+    return wouldSkipRecording();
+
+ScopeNestingPreflight preflightScopeNesting(const char* name) {
+    preflight.profilerDisabled = wouldSkipRecording();
+    preflight.invalidName = name != nullptr && !isValidEventName(name);
+    preflight.wouldSkip = preflight.profilerDisabled
+        || (name != nullptr && !isValidEventName(name));
+
+    preflight.wouldSkip = wouldSkipAsyncFlowBegin(name);
+
+    preflight.wouldSkip = wouldSkipAsyncFlowEnd(name);
 }
 
 ChromeTraceExportPreflight preflightChromeTraceExport() {
