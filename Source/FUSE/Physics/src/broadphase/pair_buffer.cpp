@@ -853,3 +853,6 @@ BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
     return preflightPairBufferPush(buffer, idxA, idxB, 0u);
     return preflightPairBufferWriteSlot(buffer, slot, idxA, idxB, 0u);
 PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u32 incomingPairCount) {
+
+// --- deepen additive from deepen-b4-broadphase-guards-f83b ---
+    return !preflightPairBufferPush(buffer, idxA, idxB).canPush();

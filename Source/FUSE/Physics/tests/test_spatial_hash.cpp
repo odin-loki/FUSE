@@ -2842,3 +2842,7 @@ void testRefineBroadphaseNoValidPairsRejectReason() {
     testPairBufferPushBodyCountPreflightGuards();
     testRefineBroadphaseEmptyInputRejectReason();
     testRefineBroadphaseNoValidPairsRejectReason();
+
+// --- deepen additive from deepen-b4-broadphase-guards-f83b ---
+void testRefineAndMergeRejectReasonGuards() {
+    testRefineAndMergeRejectReasonGuards();
