@@ -4285,3 +4285,11 @@ void testFroxelGuardClassifyAndPreflightHelpers() {
     expectTrue(fuse::renderer::FroxelGridLayout::preflightScreenMappingReady(0.5f, 0.5f, 10.f, desc, camera) ==
                "preflightScreenMappingReady mirrors mapScreenDepthToSampleCoords on valid path");
                "preflightTrilinearSampleReady mirrors canTrilinearSampleAtCoords on valid path");
+
+// --- deepen additive from froxel-volumetrics-b511-deepen-c27d ---
+void testFroxelClassifyRejectAndPreflightGuards() {
+    expectTrue(!fuse::renderer::preflightScreenMappingReady(0.5f, 0.5f, 0.01f, desc, camera),
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookupCoordReady(grid, desc, 1u, 1u, 2u),
+               "preflightDensityLookupCoordReady succeeds for in-range coords");
+    expectTrue(fuse::renderer::preflightScreenMappingReady(0.5f, 0.5f, 10.f, desc, camera) ==
+    testFroxelClassifyRejectAndPreflightGuards();
