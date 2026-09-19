@@ -2026,3 +2026,21 @@ void testCookCachePruneReconcileShouldSkipGuards() {
     expectTrue(!valid_key.should_skip(), "valid cache key preflight should not skip");
                "should_skip_fnv1a64_bytes mirrors null bytes preflight");
                "should_skip_fnv1a64_bytes false for zero-size null bytes");
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-ae02 ---
+    const fuse::project::CookHashPreflight empty_path = fuse::project::preflight_file_content_hash("");
+    expectTrue(fuse::project::should_skip_cook_hash(empty_path),
+               "should_skip_cook_hash true for empty path preflight");
+    expectTrue(empty_path.should_skip() == !empty_path.ok(), "should_skip mirrors ok() for empty path");
+    const fuse::project::CookHashPreflight readable = fuse::project::preflight_file_content_hash(source);
+    expectTrue(!readable.should_skip(), "readable file preflight should not skip");
+    expectTrue(!fuse::project::should_skip_cook_hash(readable),
+               "should_skip_cook_hash false for readable file preflight");
+    expectTrue(fuse::project::should_skip_cook_hash(
+               "combine cache key preflight should_skip for zero source");
+    expectTrue(fuse::project::should_skip_prune_reconcile(empty),
+               "should_skip_prune_reconcile true for empty estimate");
+    expectTrue(empty.should_skip() == !cache.would_prune_all(),
+               "prune estimate should_skip mirrors would_prune_all negation");
+    expectTrue(!fuse::project::should_skip_prune_reconcile(stale),
+               "should_skip_prune_reconcile false when stale entries present");
