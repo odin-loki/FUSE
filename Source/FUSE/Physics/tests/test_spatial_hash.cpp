@@ -3381,3 +3381,21 @@ void testMergeBroadphasePreflightRejectsForReasonGuards() {
     testRefineBroadphasePreflightRejectsForReasonGuards();
     testDedupeBroadphasePreflightRejectsForReasonGuards();
     testMergeBroadphasePreflightRejectsForReasonGuards();
+
+// --- deepen additive from b4-broadphase-deepen-ed2f ---
+void testPairBufferPushShouldRunGuards() {
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::cellSpanRejectReason(validRange)),
+                   inverted, fuse::physics::broadphase::CellSpanRejectReason::EmptyRange),
+        fuse::physics::broadphase::preflightCellSpan(validRange);
+        fuse::physics::broadphase::preflightCellSpan(planeRange);
+    expectTrue(planePreflight.canUseRange(), "2D cell-span preflight accepts valid range");
+    expectEq(planePreflight.occupancyCount, 8u, "2D cell-span preflight reports occupancy count");
+void testShapeCellInsertPreflightGuards() {
+    const fuse::physics::broadphase::ShapeCellInsertPreflight withinBudget =
+        fuse::physics::broadphase::preflightShapeCellInsert(validRange, 8u);
+                               fuse::physics::broadphase::ShapeCellInsertRejectReason::ExceedsBudget),
+    const fuse::physics::broadphase::ShapeCellInsertPreflight overBudget =
+        fuse::physics::broadphase::preflightShapeCellInsert(validRange, 7u);
+                 fuse::physics::broadphase::shapeCellInsertRejectReason(inverted, 8u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::ShapeCellInsertRejectReason::EmptyRange),
+    testShapeCellInsertPreflightGuards();

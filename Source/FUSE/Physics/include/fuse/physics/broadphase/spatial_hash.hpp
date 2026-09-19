@@ -1382,3 +1382,31 @@ BroadphaseCellPairPreflight preflightBroadphaseCellPairGeneration(u32 totalCellS
 bool refineBroadphasePreflightRejectsForReason(
 bool dedupeBroadphasePreflightRejectsForReason(
 bool mergeBroadphasePreflightRejectsForReason(
+
+// --- deepen additive from b4-broadphase-deepen-ed2f ---
+FUSE_PHYSICS_INLINE CellSpanRejectReason cellSpanRejectReason(const CellRange3& range) {
+FUSE_PHYSICS_INLINE CellSpanRejectReason cellSpanRejectReason(const CellRange2& range) {
+    return cellSpanRejectReason(range) == expected;
+    bool canUseRange() const { return reason == CellSpanRejectReason::None; }
+FUSE_PHYSICS_INLINE CellSpanPreflight preflightCellSpan(const CellRange3& range) {
+    preflight.reason = cellSpanRejectReason(range);
+FUSE_PHYSICS_INLINE CellSpanPreflight preflightCellSpan(const CellRange2& range) {
+    return !preflightCellSpan(range).canUseRange();
+    return preflightCellSpan(range).canUseRange();
+FUSE_PHYSICS_INLINE ShapeCellInsertRejectReason shapeCellInsertRejectReason(const CellRange3& range, u32 maxCells) {
+    const CellSpanRejectReason spanReason = cellSpanRejectReason(range);
+    if (spanReason == CellSpanRejectReason::EmptyRange) {
+        return ShapeCellInsertRejectReason::EmptyRange;
+        return ShapeCellInsertRejectReason::ExceedsBudget;
+    return ShapeCellInsertRejectReason::None;
+FUSE_PHYSICS_INLINE ShapeCellInsertRejectReason shapeCellInsertRejectReason(const CellRange2& range, u32 maxCells) {
+    ShapeCellInsertRejectReason expected) {
+    return shapeCellInsertRejectReason(range, maxCells) == expected;
+FUSE_PHYSICS_INLINE ShapeCellInsertPreflight preflightShapeCellInsert(const CellRange3& range, u32 maxCells) {
+    ShapeCellInsertPreflight preflight{};
+    preflight.reason = shapeCellInsertRejectReason(range, maxCells);
+    preflight.emptyRange = preflight.reason == ShapeCellInsertRejectReason::EmptyRange;
+    preflight.exceedsBudget = preflight.reason == ShapeCellInsertRejectReason::ExceedsBudget;
+FUSE_PHYSICS_INLINE ShapeCellInsertPreflight preflightShapeCellInsert(const CellRange2& range, u32 maxCells) {
+    return !preflightShapeCellInsert(range, maxCells).canInsert();
+    return preflightShapeCellInsert(range, maxCells).canInsert();

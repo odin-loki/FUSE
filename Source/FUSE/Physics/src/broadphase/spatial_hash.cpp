@@ -1289,3 +1289,7 @@ bool dedupeBroadphasePreflightRejectsForReason(
     return preflightDedupeBroadphase(buffer).reason == expected;
 bool mergeBroadphasePreflightRejectsForReason(
     return preflightBroadphaseMerge(bodies, shapes).reason == expected;
+
+// --- deepen additive from b4-broadphase-deepen-ed2f ---
+    case ShapeCellInsertRejectReason::EmptyRange:
+    case ShapeCellInsertRejectReason::ExceedsBudget:
