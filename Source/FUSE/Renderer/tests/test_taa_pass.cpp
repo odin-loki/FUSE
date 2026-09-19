@@ -4481,3 +4481,15 @@ void testTaaPassTemporalGuardsAndTryPreflight() {
     expectTrue(pass->jitterAlignedToFrameIndex(6u), "pass jitter aligned after sync for tryPreflight");
     expectTrue(zeroPass->tryPreflightJitterSync(0u, jitterReason),
                "zero-width pass tryPreflightJitterSync still valid for sequence");
+
+// --- deepen additive from deepen-b59-taa-pass-guards-82e7 ---
+               "pass classifyResolveBlendReject passes before first resolve");
+               "pass tryPreflightResolveBlendWeights passes before first resolve");
+               "pass tryComputeResolveBlendWeights passes before first resolve");
+               "pass classifyJitterSyncReject passes after init");
+    expectTrue(fallbackPass->classifyJitterSyncReject() == fuse::renderer::TaaJitterGuardRejectReason::None,
+               "pass classifyJitterSyncReject passes after invalid desc fallback");
+    expectTrue(fallbackPass->tryPreflightJitterSync(2u, jitterReject),
+               "pass tryPreflightJitterSync passes after invalid desc fallback");
+               "pass classifyJitterNdcReject detects zero width");
+               "pass tryPreflightJitterNdc reject reason is InvalidViewport");
