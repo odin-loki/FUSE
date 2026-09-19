@@ -1197,3 +1197,12 @@ IslandContactImpulsePreflight preflight_warm_start_island_contact_impulses(
 IslandContactImpulsePreflight preflight_warm_start_island_contact_impulses_by_index(
 IslandContactImpulseGraphPreflight preflight_warm_start_contact_impulses_graph(
 bool should_skip_contact_impulse_warm_start_graph(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-b4-pbd-island-solver-ac66 ---
+IslandSolveJobPreflight preflight_island_solve_job(const IslandSolveJob& job);
+IslandContactImpulsePreflight preflight_island_contact_impulses(
+IslandContactImpulsePreflight preflight_island_contact_impulses_by_index(
+IslandContactImpulseGraphPreflight preflight_contact_impulse_graph(
+bool should_skip_contact_impulse_graph(const ContactIslandGraph& graph,
+bool should_skip_contact_impulse_island(const ContactIslandGraph::Island& island,
+bool should_skip_contact_impulse_island_index(const ContactIslandGraph& graph,

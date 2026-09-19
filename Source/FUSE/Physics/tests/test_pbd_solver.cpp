@@ -3194,3 +3194,40 @@ void testPreflightDispatchIslandIndexGuards() {
     expectTrue(should_skip_contact_impulse_warm_start_graph(emptyGraph, contacts, dt),
     expectTrue(should_skip_contact_impulse_warm_start_graph(graph, contacts, 0.f),
     testPreflightDispatchIslandIndexGuards();
+
+// --- deepen additive from deepen-b4-pbd-island-solver-ac66 ---
+    const IslandSolveJobPreflight invalidPreflight = preflight_island_solve_job(invalid);
+    expectTrue(invalidPreflight.outOfRange, "null-island job preflight marks out-of-range");
+    expectTrue(invalidPreflight.skipped, "null-island job preflight is skipped");
+    expectTrue(!invalidPreflight.can_dispatch(), "null-island job cannot dispatch");
+        const IslandSolveJobPreflight preflight = preflight_island_solve_job(job);
+void testIsValidContactImpulseWarmStartDtGuard() {
+void testPreflightIslandContactImpulsesGuards() {
+        const IslandContactImpulsePreflight preflight = preflight_island_contact_impulses(island, contacts, dt);
+        expectTrue(should_skip_contact_impulse_island(island, contacts, dt),
+                   "should_skip_contact_impulse_island on empty island");
+    expectTrue(!constrainedPreflight.skipped, "preflight does not skip constrained contact island");
+    expectTrue(constrainedPreflight.ownedContactCount == 1u, "preflight counts owned contact slots");
+    expectTrue(constrainedPreflight.impulseCoverage == 1u, "preflight counts non-zero impulse coverage");
+    expectTrue(constrainedPreflight.can_warm_start(), "constrained island can warm-start impulses");
+    const IslandContactImpulsePreflight invalidDtPreflight =
+    expectTrue(!invalidDtPreflight.can_warm_start(), "invalid dt blocks impulse warm-start");
+    const IslandContactImpulseGraphPreflight preflight = preflight_contact_impulse_graph(graph, contacts, dt);
+    expectTrue(!should_skip_contact_impulse_graph(graph, contacts, dt),
+               "should_skip_contact_impulse_graph false when impulses exist");
+    expectTrue(should_skip_contact_impulse_graph(emptyGraph, contacts, dt),
+    const IslandContactImpulseGraphPreflight invalidDtPreflight =
+    expectTrue(invalidDtPreflight.invalidDt, "graph impulse preflight marks invalid dt");
+    expectTrue(!invalidDtPreflight.can_warm_start(), "invalid dt blocks graph impulse warm-start");
+    expectTrue(should_skip_contact_impulse_graph(graph, contacts, 0.f),
+               "should_skip_contact_impulse_graph on invalid dt");
+void testPreflightIslandContactImpulsesByIndex() {
+    expectTrue(should_skip_contact_impulse_island_index(graph, graph.islandCount() + 1u, contacts, dt),
+               "should_skip_contact_impulse_island_index on out-of-range index");
+        expectTrue(emptyPreflight.skipped, "index impulse preflight skips empty island");
+        expectTrue(should_skip_contact_impulse_island_index(graph, islandIndex, contacts, dt),
+                   "should_skip_contact_impulse_island_index on empty island");
+    expectTrue(!constrainedPreflight.skipped, "index impulse preflight does not skip constrained island");
+    expectTrue(constrainedPreflight.can_warm_start(), "index impulse preflight can warm-start constrained island");
+    testPreflightIslandContactImpulsesGuards();
+    testPreflightIslandContactImpulsesByIndex();
