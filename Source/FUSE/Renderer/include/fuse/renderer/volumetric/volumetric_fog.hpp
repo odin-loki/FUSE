@@ -821,3 +821,8 @@ ScreenMappingRejectReason classifyScreenDensitySampleReject(const FroxelDensityG
 
 // --- deepen additive from deepen-b511-froxel-guards-9fe1 ---
     static bool wouldClampScreenCoords(f32 screenX, f32 screenY);
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-2f19 ---
+DensityLookupRejectReason classifyDensityLookupAtIndex(const FroxelDensityGrid& grid,
+DensityLookupRejectReason classifyDensityLookupAtCoord(const FroxelDensityGrid& grid,
+bool preflightDensityAtScreen(const FroxelDensityGrid& grid,

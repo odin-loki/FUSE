@@ -3162,3 +3162,31 @@ void testFroxelGridDensityPreflightTrilinearAndPopulateGuards() {
                "tryCanSampleTrilinearAtCoords warns but succeeds for clampable weights");
     expectTrue(!fuse::renderer::froxel_util::tryCanSampleTrilinearAtCoords(grid, desc, hardOob, sampleReason),
     testFroxelGridDensityPreflightTrilinearAndPopulateGuards();
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-2f19 ---
+               "classifySampleCoordReject out_of_bounds for hard OOB tile");
+    fuse::renderer::FroxelSampleCoords preflightCoords{};
+                   0.5f, 0.5f, 10.f, desc, camera, &preflightCoords),
+               "preflightScreenDepthToSampleCoords succeeds in range");
+    expectTrue(preflightCoords.tileX0 < desc.tilesX && preflightCoords.sliceZ0 < desc.slicesZ,
+               "preflightScreenDepthToSampleCoords returns mapped coords");
+    fuse::u32 preflightIndex = 0u;
+                   0.5f, 0.5f, 10.f, desc, camera, &preflightIndex, &mapReason),
+               "preflightScreenDepthToFroxelIndex succeeds in range");
+    expectTrue(preflightIndex < desc.froxelCount(), "preflightScreenDepthToFroxelIndex returns valid index");
+    expectTrue(fuse::renderer::FroxelGridLayout::classifyScreenMappingReject(0.5f, 0.5f, 0.01f, desc, camera) ==
+               "classifyScreenMappingReject depth_out_of_range below near plane");
+               "classifyGridDensityReject undersized_storage");
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookupAtIndex(grid, desc, 999u),
+               "preflightDensityLookupAtIndex still succeeds with clamp warning");
+    expectTrue(!fuse::renderer::froxel_util::preflightDensityLookupAtCoord(emptyGrid, desc, 0u, 0u, 0u),
+               "classifyFroxelPopulateReject zero_density");
+    expectTrue(fuse::renderer::froxel_util::preflightTrilinearDensitySample(grid, desc, inBounds, &sampleReason),
+               "preflightTrilinearDensitySample succeeds for accessible grid");
+    expectTrue(!fuse::renderer::froxel_util::preflightTrilinearDensitySample(emptyGrid, desc, inBounds, &sampleReason),
+               "preflightTrilinearDensitySample rejects empty storage");
+    expectTrue(fuse::renderer::froxel_util::preflightDensityAtScreen(grid, desc, camera, 0.25f, 0.25f, 3.16f),
+               "preflightDensityAtScreen succeeds for accessible grid");
+    expectTrue(!fuse::renderer::froxel_util::preflightDensityAtScreen(
+               "preflightDensityAtScreen rejects empty storage");
+               "preflightDensityAtScreen rejects depth below near plane");

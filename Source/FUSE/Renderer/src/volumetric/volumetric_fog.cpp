@@ -2106,3 +2106,21 @@ ScreenMappingRejectReason classifyScreenDensitySampleReject(const FroxelDensityG
 // --- deepen additive from deepen-b511-froxel-guards-9fe1 ---
     return tryMapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, coords, reason);
     return tryMapScreenDepthToFroxelIndex(screenX, screenY, viewDepth, desc, camera, froxelIndex, reason);
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-2f19 ---
+    ScreenMappingRejectReason rejectReason = ScreenMappingRejectReason::None;
+        tryMapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, coords, rejectReason);
+        tryMapScreenDepthToFroxelIndex(screenX, screenY, viewDepth, desc, camera, froxelIndex, rejectReason);
+    GridDensityRejectReason rejectReason = GridDensityRejectReason::None;
+    const bool ok = tryValidateGridDensity(grid, desc, rejectReason, epsilon);
+DensityLookupRejectReason classifyDensityLookupAtIndex(const FroxelDensityGrid& grid,
+DensityLookupRejectReason classifyDensityLookupAtCoord(const FroxelDensityGrid& grid,
+    const DensityLookupRejectReason rejectReason = classifyDensityLookupAtIndex(grid, desc, index);
+    return !densityLookupRejectReasonIsBlocking(rejectReason);
+    const DensityLookupRejectReason rejectReason = classifyDensityLookupAtCoord(grid, desc, tileX, tileY, sliceZ);
+    FroxelPopulateRejectReason rejectReason = FroxelPopulateRejectReason::None;
+    const bool ok = tryCanPopulateFromAnalyticFog(desc, camera, params, rejectReason);
+    SampleCoordRejectReason rejectReason = SampleCoordRejectReason::None;
+    const bool ok = tryCanSampleAtCoords(grid, desc, coords, rejectReason);
+bool preflightDensityAtScreen(const FroxelDensityGrid& grid,
+    const bool ok = FroxelGridLayout::tryMapScreenDepthToSampleCoords(
