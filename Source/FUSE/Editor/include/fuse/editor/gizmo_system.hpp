@@ -1210,3 +1210,8 @@ struct SnapInteractionPreflight {
 SnapInteractionPreflight preflightSnapInteraction(GizmoInteractionPhase phase, GizmoMode mode,
     SnapInteractionPreflight snapInteraction{};
     [[nodiscard]] SnapInteractionPreflight preflightSnapInteraction() const;
+
+// --- deepen additive from deepen-b6-gizmo-preflights-66a7 ---
+struct SnapDeltaPreflight {
+SnapDeltaPreflight preflightSnapDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings);
+    [[nodiscard]] SnapDeltaPreflight preflightSnapDelta(f32 delta) const;

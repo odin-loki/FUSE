@@ -2829,3 +2829,10 @@ SnapInteractionPreflight GizmoSystem::preflightSnapInteraction() const {
     return fuse::editor::preflightSnapInteraction(interactionPhase(m_dragging), m_mode, m_snap);
     return preflightSnapInteraction().canApply();
     return preflightSnapInteraction().isDegraded();
+
+// --- deepen additive from deepen-b6-gizmo-preflights-66a7 ---
+SnapDeltaPreflight preflightSnapDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings) {
+    SnapDeltaPreflight preflight{};
+    return preflightSnapDelta(delta, mode, settings).canApply();
+SnapDeltaPreflight GizmoSystem::preflightSnapDelta(f32 delta) const {
+    return fuse::editor::preflightSnapDelta(delta, m_mode, m_snap);

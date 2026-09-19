@@ -3968,3 +3968,17 @@ void testNonFiniteInteractionPreflightGuards() {
     testNonFiniteUpdateDragPreflightGuards();
     testAxisModeUpdateEndPreflightGuards();
     testNonFiniteInteractionPreflightGuards();
+
+// --- deepen additive from deepen-b6-gizmo-preflights-66a7 ---
+void testRayNormalizationPreflight() {
+    const fuse::editor::PickPreflight unitPick = fuse::editor::preflightPick(
+    const fuse::editor::PickPreflight scaledPick = fuse::editor::preflightPick(
+void testSnapDeltaPreflight() {
+    const fuse::editor::SnapDeltaPreflight disabled =
+        fuse::editor::preflightSnapDelta(0.37f, fuse::editor::GizmoMode::Translate, snap);
+    const fuse::editor::SnapDeltaPreflight degraded =
+    const fuse::editor::SnapDeltaPreflight valid =
+    const fuse::editor::SnapDeltaPreflight gizmoDelta = gizmo.preflightSnapDelta(0.37f);
+    expectNear(gizmo.preflightSnapDelta(0.37f).snappedDelta, 0.5f, 0.001f,
+    testRayNormalizationPreflight();
+    testSnapDeltaPreflight();
