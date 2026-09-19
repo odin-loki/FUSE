@@ -1991,3 +1991,10 @@ SampleCoordRejectReason classifyTrilinearSampleReject(const FroxelDensityGrid& g
     return !preflightTrilinearSample(grid, desc, coords);
     return tryPreflightFroxelPopulate(desc, camera, params, outReason);
     return preflightFroxelPopulate(desc, camera, params);
+
+// --- deepen additive from deepen-froxel-volumetric-guards-b511-453e ---
+    return tryPreflightTrilinearSample(grid, desc, coords, outReason);
+    FroxelTrilinearSampleRejectReason trilinearReason = FroxelTrilinearSampleRejectReason::None;
+    if (!tryPreflightTrilinearSample(grid, desc, coords, trilinearReason)) {
+    if (trilinearReason == FroxelTrilinearSampleRejectReason::InvalidSampleCoords) {
+bool tryLookupDensityFromScreen(const FroxelDensityGrid& grid,

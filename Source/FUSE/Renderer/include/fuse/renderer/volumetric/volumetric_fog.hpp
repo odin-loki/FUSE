@@ -774,3 +774,6 @@ DensityLookupRejectReason classifyDensityLookupCoordReject(const FroxelDensityGr
                                       DensityLookupRejectReason& reason);
 SampleCoordRejectReason classifyTrilinearSampleReject(const FroxelDensityGrid& grid,
                                  SampleCoordRejectReason& reason);
+
+// --- deepen additive from deepen-froxel-volumetric-guards-b511-453e ---
+bool tryLookupDensityFromScreen(const FroxelDensityGrid& grid,

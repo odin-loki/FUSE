@@ -2913,3 +2913,20 @@ void testFroxelClassifyAndPreflightGuards() {
     expectTrue(!fuse::renderer::preflightScreenDepthMapping(0.5f, 0.5f, 0.01f, desc, camera, &mapReason),
     expectTrue(fuse::renderer::classifyScreenMappingReject(0.5f, 0.5f, 10.f, zeroDesc, camera) ==
     testFroxelClassifyAndPreflightGuards();
+
+// --- deepen additive from deepen-froxel-volumetric-guards-b511-453e ---
+void testFroxelTrilinearAndDensityLookupGuards() {
+    fuse::renderer::SampleCoordRejectReason validateReason = fuse::renderer::SampleCoordRejectReason::None;
+    expectTrue(fuse::renderer::FroxelGridLayout::tryValidateSampleCoords(inBounds, desc, validateReason),
+    expectTrue(validateReason == fuse::renderer::SampleCoordRejectReason::None,
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryValidateSampleCoords(invalidWeights, desc, validateReason),
+               "tryValidateSampleCoords rejects invalid interpolation weights");
+    expectTrue(validateReason == fuse::renderer::SampleCoordRejectReason::InvalidWeights,
+               "tryPreflightTrilinearSample warns but succeeds for clampable slice weight");
+               "tryPreflightTrilinearSample rejects hard OOB tile coord");
+    expectTrue(fuse::renderer::froxel_util::tryLookupDensityFromScreen(
+               "tryLookupDensityFromScreen succeeds on accessible grid");
+               "tryLookupDensityFromScreen matches unguarded screen sample");
+    expectTrue(!fuse::renderer::froxel_util::tryLookupDensityFromScreen(
+               "tryLookupDensityFromScreen rejects empty storage");
+               "tryLookupDensityFromScreen rejects depth below near plane");
