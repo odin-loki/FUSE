@@ -229,3 +229,6 @@ struct LodResidencyBudgetCounters {
 [[nodiscard]] inline bool is_positive_eviction_score(f32 score) { return score > 0.f; }
 
 } // namespace fuse::terrain
+
+// --- deepen additive from deepen-b75-terrain-lod-budget-eviction-async-guards-6898 ---
+[[nodiscard]] inline bool would_exceed_async_budget(u32 in_flight, u32 completed_undrained,
