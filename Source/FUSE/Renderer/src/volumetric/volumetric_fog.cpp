@@ -1169,6 +1169,8 @@ bool FroxelGridLayout::tryPreflightSampleCoords(const FroxelSampleCoords& coords
                                                 SampleCoordRejectReason& outReason) {
     outReason = classifySampleCoordReject(coords, desc);
     return !sampleCoordRejectReasonIsBlocking(outReason);
+    outReason = SampleCoordRejectReason::UnorderedCorners;
+    return true;
 
 bool FroxelGridLayout::canPreflightSampleCoords(const FroxelSampleCoords& coords, const FroxelGridDesc& desc) {
     SampleCoordRejectReason reason = SampleCoordRejectReason::None;
@@ -1984,7 +1986,18 @@ bool froxelTrilinearSampleRejectReasonIsBlocking(FroxelTrilinearSampleRejectReas
     case FroxelTrilinearSampleRejectReason::InvalidSampleCoords:
         return true;
     }
-    return true;
+const char* froxelBilinearSampleRejectReasonLabel(FroxelBilinearSampleRejectReason reason) {
+    case FroxelBilinearSampleRejectReason::None:
+        return "none";
+    case FroxelBilinearSampleRejectReason::EmptyGrid:
+        return "empty_grid";
+    case FroxelBilinearSampleRejectReason::InaccessibleGrid:
+        return "inaccessible_grid";
+    case FroxelBilinearSampleRejectReason::InvalidSampleCoords:
+        return "invalid_sample_coords";
+    case FroxelBilinearSampleRejectReason::ClampableWeights:
+        return "clampable_weights";
+    return "unknown";
 }
 
 const char* gridDensityRejectReasonLabel(GridDensityRejectReason reason) {
@@ -2667,6 +2680,8 @@ bool preflightDensityLookupAtIndex(const FroxelDensityGrid& grid,
 bool preflightDensityLookupAtCoord(const FroxelDensityGrid& grid,
                                    u32 sliceZ,
     return tryCanLookupAtCoord(grid, desc, tileX, tileY, sliceZ, outReason);
+bool wouldSkipFroxelLookup(const FroxelDensityGrid& grid, const FroxelGridDesc& desc) {
+    return wouldSkipDensityLookup(grid, desc);
 }
 
 bool shouldSkipFroxelGrid(const FroxelGridDesc& desc) {
@@ -3591,6 +3606,41 @@ bool tryCanBilinearSampleAtCoords(const FroxelDensityGrid& grid,
     if (!FroxelGridLayout::tryPreflightSampleCoords(coords, desc, sampleReason)) {
         outReason = FroxelBilinearSampleRejectReason::InvalidSampleCoords;
 
+    if (sampleReason == SampleCoordRejectReason::InvalidWeights ||
+        sampleReason == SampleCoordRejectReason::UnorderedCorners) {
+        outReason = FroxelBilinearSampleRejectReason::ClampableWeights;
+        return true;
+
+    outReason = FroxelBilinearSampleRejectReason::None;
+
+bool wouldSkipDensityBilinearSample(const FroxelDensityGrid& grid,
+    return !tryCanBilinearSampleAtCoords(grid, desc, coords, reason);
+
+bool canTrilinearSampleAtCoords(const FroxelDensityGrid& grid,
+    FroxelTrilinearSampleRejectReason reason = FroxelTrilinearSampleRejectReason::None;
+    return tryCanTrilinearSampleAtCoords(grid, desc, coords, reason);
+}
+
+bool tryCanBilinearSampleAtCoords(const FroxelDensityGrid& grid,
+                                  const FroxelSampleCoords& coords,
+                                  FroxelBilinearSampleRejectReason& outReason) {
+    DensityLookupRejectReason lookupReason = DensityLookupRejectReason::None;
+    if (!tryCanLookupAtIndex(grid, desc, 0u, lookupReason)) {
+        switch (lookupReason) {
+        case DensityLookupRejectReason::EmptyGrid:
+            outReason = FroxelBilinearSampleRejectReason::EmptyGrid;
+            break;
+        case DensityLookupRejectReason::EmptyStorage:
+        case DensityLookupRejectReason::DescMismatch:
+        case DensityLookupRejectReason::IndexOutOfRange:
+        case DensityLookupRejectReason::None:
+            outReason = FroxelBilinearSampleRejectReason::InaccessibleGrid;
+        return false;
+
+    SampleCoordRejectReason sampleReason = SampleCoordRejectReason::None;
+    if (!FroxelGridLayout::tryPreflightSampleCoords(coords, desc, sampleReason)) {
+        outReason = FroxelBilinearSampleRejectReason::InvalidSampleCoords;
+
     if (sampleReason == SampleCoordRejectReason::InvalidWeights) {
         outReason = FroxelBilinearSampleRejectReason::ClampableWeights;
         return true;
@@ -3666,6 +3716,9 @@ bool tryCanBilinearSampleAtCoords(const FroxelDensityGrid& grid,
 
     if (sampleReason == SampleCoordRejectReason::InvalidWeights) {
         outReason = FroxelBilinearSampleRejectReason::ClampableWeights;
+    if (sampleReason == SampleCoordRejectReason::InvalidWeights ||
+        sampleReason == SampleCoordRejectReason::UnorderedCorners) {
+        outReason = FroxelTrilinearSampleRejectReason::ClampableWeights;
         return true;
     }
 
@@ -4870,6 +4923,19 @@ bool tryValidateGridDensityForDesc(const FroxelDensityGrid& grid,
     if (FroxelGridLayout::isEmptyGrid(desc)) {
         outReason = GridDensityRejectReason::EmptyDesc;
         return false;
+
+    return tryValidateGridDensity(grid, desc, outReason, epsilon);
+}
+
+bool tryValidateGridDensityForDesc(const FroxelDensityGrid& grid,
+                                   GridDensityRejectReason& outReason,
+    const FroxelGridDesc clampedDesc = FroxelGridDesc::clampCounts(desc);
+    if (clampedDesc.froxelCount() == 0u) {
+        outReason = GridDensityRejectReason::None;
+        return true;
+    if (FroxelGridLayout::isEmptyGrid(desc)) {
+        outReason = GridDensityRejectReason::EmptyDesc;
+        return false;
     if (!gridMatchesDesc(grid, desc)) {
         outReason = GridDensityRejectReason::DescMismatch;
 
@@ -5693,6 +5759,20 @@ bool trySampleDensityBilinear(const FroxelDensityGrid& grid,
         outReason = DensityLookupRejectReason::SampleCoordRejected;
 
     outReason = DensityLookupRejectReason::None;
+    return true;
+}
+
+bool trySampleDensityBilinear(const FroxelDensityGrid& grid,
+                              const FroxelGridDesc& desc,
+                              const FroxelSampleCoords& coords,
+                              f32& outDensity,
+                              FroxelBilinearSampleRejectReason& outReason) {
+    if (!tryCanBilinearSampleAtCoords(grid, desc, coords, outReason)) {
+        outDensity = 0.f;
+        return false;
+    }
+
+    outDensity = sampleDensityBilinear(grid, desc, coords);
     return true;
 }
 
