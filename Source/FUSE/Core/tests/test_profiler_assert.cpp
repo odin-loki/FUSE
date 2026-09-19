@@ -5831,3 +5831,11 @@ void testChromeTraceExportPreflightExtensions() {
                    "wouldSkipSafeChromeTraceExport true with open scope and flow");
     testProfileNestingPreflight();
     testChromeTraceExportPreflightExtensions();
+
+// --- deepen additive from b16-profiler-deepen-guards-0ad1 ---
+    expectTrue(outIndex == 0u, "tryFindFirstEventIndexByPhase returns begin index");
+               "tryFindLastEventIndexByPhase true for counter sample");
+    expectTrue(outIndex == 1u, "tryFindLastEventIndexByPhase returns counter index");
+    expectTrue(fuse::profiler::tryFindFirstEventIndexByName("index_scope", outIndex),
+               "tryFindFirstEventIndexByName true for scope name");
+    expectTrue(outIndex == 0u, "tryFindFirstEventIndexByName returns scope begin index");
