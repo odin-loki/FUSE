@@ -637,6 +637,8 @@ struct ProbeGridLayout {
     static ProbeGridCoord probeCoordFromClampedIndex(const DDGIDesc& desc, u32 probe_index);
     static u32 probeIndexFromCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
     static bool isValidProbeCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
+    /// True when grid coords exceed grid bounds (would be clamped).
+    static bool isProbeGridCoordOutOfRange(const DDGIDesc& desc, const ProbeGridCoord& coord);
     static bool isValidProbeIndex(const DDGIDesc& desc, u32 probe_index);
     static bool isBorderProbeCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
     /// Border probe check via flat index; false when index is out of range or grid is empty.
@@ -714,6 +716,8 @@ struct ProbeGridLayout {
     /// Early-out when sample-coord validation would reject — same ordering as `isValidProbeSampleCoords`.
     /// Early-out when sample-coord validation would reject; same ordering as `isValidProbeSampleCoords`.
     static bool wouldSkipProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// Grid-only sample-coord preflight without reject-reason diagnostics.
+    static bool canPreflightProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// Diagnose why sample-coord validation would reject; vacuously succeeds on valid coords.
     static bool tryValidateProbeSampleCoords(const DDGIDesc& desc,
                                              const ProbeSampleCoords& coords,
@@ -931,6 +935,14 @@ bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
                               fuse::math::Vec3& out_irradiance,
                               CacheIndexRejectReason& outReason);
+                              fuse::math::Vec3& out_irradiance);
+/// Read irradiance with guard preflight and cache-index reject-reason diagnostics.
+bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
+                              const IrradianceCacheEntry* cache,
+                              u32 cache_count,
+                              u32 probe_index,
+/// True when a cache lookup at `probe_index` would clamp into the valid probe range.
+bool wouldClampCacheIndex(u32 probe_index, const DDGIDesc& desc);
 /// Minimum irradiance-cache entries for trilinear sampling; 0 when the grid is not sampleable.
 u32 requiredCacheCount(const DDGIDesc& desc);
 /// True when `cache_count` covers every probe in `desc`.
@@ -1257,6 +1269,9 @@ bool wouldSkipProbeSchedule(u32 probe_count, u32* out_indices, u32 max_indices, 
 /// Preflight guard before probe scheduling; false on null output buffers.
 bool canScheduleProbeUpdates(u32 probe_count,
 bool wouldSkipProbeSchedule(u32 probe_count,
+/// Probes actually scheduled given capacity — `min(probes_per_frame, probe_count, max_indices)`.
+u32 effectiveScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
+/// True when scheduling would write fewer probes than requested due to capacity or grid size.
 fuse::math::Vec3 blendIrradiance(const fuse::math::Vec3& previous,
                                  const fuse::math::Vec3& incoming,
                                  f32 hysteresis);
