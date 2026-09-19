@@ -2006,6 +2006,10 @@ bool wouldSkipChromeTraceExport() {
     return !enabled() || exportableEventCount() == 0u;
 }
 
+bool hasActiveScopes() {
+    return scopeNestingDepth() > 0u;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -3590,6 +3594,20 @@ bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent) {
 bool tryFirstExportableEventByName(const char* name, ProfileEvent& outEvent) {
     u32 index = kInvalidEventIndex;
     if (!tryFindFirstEventIndexByName(name, index)) {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (tryExportableEventAt(i, outEvent)) {
+            return true;
+        }
+
+    outEvent = ProfileEvent{};
+    return false;
+
+bool tryExportableLastEvent(ProfileEvent& outEvent) {
+    for (u32 i = total; i > 0u; --i) {
+        if (tryExportableEventAt(i - 1u, outEvent)) {
+
+
         outEvent = ProfileEvent{};
         return false;
     }
@@ -3718,7 +3736,6 @@ bool tryFindLastEventIndexByPhase(EventPhase phase, u32& outIndex) {
     if (!isValidEventName(name)) {
 
 
-    return tryExportableEventAt(index, outEvent);
 
 
 
@@ -4126,6 +4143,12 @@ bool tryFindAsyncFlowFinishIndex(u32 flowId, u32& outIndex) {
 
     u32 index = kInvalidEventIndex;
     if (!tryFindLastEventIndexByName(name, index)) {
+
+
+
+
+
+
 
 
 
@@ -6184,6 +6207,14 @@ bool tryFindLastFlowEventIndexById(u32 flowId, u32& outIndex) {
 
 
 
+
+
+
+
+
+
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -7093,7 +7124,6 @@ NestingStatePreflight preflightNestingState() {
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
     preflight.flowDepthDetached = isFlowDepthDetached();
     preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
-    return preflight;
 
 
 
@@ -7223,7 +7253,6 @@ bool isChromeTraceExportEmpty() {
 
 
     return diagnoseChromeTraceExportRejectReason() == ChromeTraceExportRejectReason::None;
-}
 
 bool preflightChromeTraceNesting(ChromeTraceExportRejectReason* reason) {
     const ChromeTraceExportRejectReason rejectReason = diagnoseChromeTraceExportRejectReason();
@@ -7608,6 +7637,7 @@ bool wouldSkipScope(const char* name) {
 
 ProfileNestingPreflight preflightNesting() {
     ProfileNestingPreflight preflight{};
+
 
 
 

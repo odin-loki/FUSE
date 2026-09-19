@@ -452,6 +452,11 @@ struct ChromeTraceExportPreflight {
     u32 orphanAsyncFlowEndCount = 0;
     bool hasOrphanAsyncFlowEnds = false;
 
+    u32 scopeBeginEventCount = 0;
+    u32 counterEventCount = 0;
+    u32 flowStartEventCount = 0;
+    bool hasActiveScopes = false;
+
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
     bool hasNonExportableEvents() const { return nonExportableEventCount > 0; }
@@ -1361,6 +1366,10 @@ bool wouldSkipCounter(const char* track, ProfileRecordSkipReason* reason = nullp
 ChromeTraceExportSkipReason classifyChromeTraceExportSkip();
 bool wouldSkipChromeTraceExport(ChromeTraceExportSkipReason* reason = nullptr);
 bool wouldSkipSafeChromeTraceExport(ChromeTraceExportSkipReason* reason = nullptr);
+
+bool wouldSkipBeginAsyncFlow(const char* name);
+bool wouldSkipEndAsyncFlow(const char* name);
+bool wouldSkipCounterSnapshotAtFrame(const char* track);
 
 bool hasEvents();
 bool isBufferEmpty();
