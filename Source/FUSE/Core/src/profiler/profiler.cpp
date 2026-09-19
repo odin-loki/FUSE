@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 
 namespace fuse::profiler {
@@ -218,6 +219,23 @@ const char* chromeCategory(EventPhase phase) {
     }
 }
 
+void assignSkipReason(ProfilerSkipReason* reason, ProfilerSkipReason value) {
+    if (reason != nullptr) {
+        *reason = value;
+    }
+}
+
+bool eventNameMatches(const ProfileEvent& event, const char* name) {
+    return isValidEventName(event.name) && isValidEventName(name) && std::strcmp(event.name, name) == 0;
+}
+
+bool eventFlowIdMatches(const ProfileEvent& event, u32 flowId) {
+    return flowId != 0u
+        && (event.phase == EventPhase::FlowStart || event.phase == EventPhase::FlowFinish)
+        && event.scopeId == flowId
+        && isValidEventName(event.name);
+}
+
 } // namespace
 
 bool isValidEventName(const char* name);
@@ -426,6 +444,46 @@ bool tryLastEvent(ProfileEvent& outEvent) {
     return tryEventAt(index, outEvent);
 }
 
+bool tryFirstEventByName(const char* name, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByName(name);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
+bool tryLastEventByName(const char* name, ProfileEvent& outEvent) {
+    const u32 index = findLastEventIndexByName(name);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
+bool tryFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByFlowId(flowId);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
+bool tryLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+    const u32 index = findLastEventIndexByFlowId(flowId);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -464,6 +522,98 @@ u32 countEventsByPhase(EventPhase phase) {
     return count;
 }
 
+u32 findFirstEventIndexByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (eventNameMatches(event, name)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 findLastEventIndexByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        const ProfileEvent& event = eventAt(i - 1u);
+        if (eventNameMatches(event, name)) {
+            return i - 1u;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 countEventsByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return 0u;
+    }
+
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (eventNameMatches(event, name)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 findFirstEventIndexByFlowId(u32 flowId) {
+    if (flowId == 0u) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (eventFlowIdMatches(event, flowId)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 findLastEventIndexByFlowId(u32 flowId) {
+    if (flowId == 0u) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        const ProfileEvent& event = eventAt(i - 1u);
+        if (eventFlowIdMatches(event, flowId)) {
+            return i - 1u;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 countEventsByFlowId(u32 flowId) {
+    if (flowId == 0u) {
+        return 0u;
+    }
+
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (eventFlowIdMatches(event, flowId)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     return count > 0u ? count - 1u : kInvalidEventIndex;
@@ -475,6 +625,111 @@ const ProfileEvent& lastEvent() {
         return emptyProfileEvent();
     }
     return eventAt(index);
+}
+
+bool wouldSkipProfileScope(const char* name, ProfilerSkipReason* reason) {
+    if (!enabled()) {
+        assignSkipReason(reason, ProfilerSkipReason::ProfilerDisabled);
+        return true;
+    }
+
+    if (!isValidEventName(name)) {
+        assignSkipReason(reason, ProfilerSkipReason::InvalidName);
+        return true;
+    }
+
+    assignSkipReason(reason, ProfilerSkipReason::None);
+    return false;
+}
+
+bool wouldSkipAsyncFlowBegin(const char* name, ProfilerSkipReason* reason) {
+    return wouldSkipProfileScope(name, reason);
+}
+
+bool wouldSkipAsyncFlowEnd(const char* name, ProfilerSkipReason* reason) {
+    if (!enabled()) {
+        assignSkipReason(reason, ProfilerSkipReason::ProfilerDisabled);
+        return true;
+    }
+
+    if (!isValidEventName(name)) {
+        assignSkipReason(reason, ProfilerSkipReason::InvalidName);
+        return true;
+    }
+
+    if (openAsyncFlowCount() == 0u) {
+        assignSkipReason(reason, ProfilerSkipReason::NoOpenAsyncFlow);
+        return true;
+    }
+
+    assignSkipReason(reason, ProfilerSkipReason::None);
+    return false;
+}
+
+bool wouldSkipCounter(const char* track, ProfilerSkipReason* reason) {
+    return wouldSkipProfileScope(track, reason);
+}
+
+bool wouldSkipChromeTraceExport(ProfilerSkipReason* reason) {
+    if (!enabled()) {
+        assignSkipReason(reason, ProfilerSkipReason::ProfilerDisabled);
+        return true;
+    }
+
+    if (exportableEventCount() == 0u) {
+        assignSkipReason(reason, ProfilerSkipReason::NoExportableEvents);
+        return true;
+    }
+
+    assignSkipReason(reason, ProfilerSkipReason::None);
+    return false;
+}
+
+bool wouldSkipSafeChromeTraceExport(ProfilerSkipReason* reason) {
+    const ChromeTraceExportPreflight preflight = preflightChromeTraceExport();
+
+    if (!preflight.canExport()) {
+        assignSkipReason(reason, ProfilerSkipReason::ProfilerDisabled);
+        return true;
+    }
+
+    if (!preflight.hasExportableEvents()) {
+        assignSkipReason(reason, ProfilerSkipReason::NoExportableEvents);
+        return true;
+    }
+
+    if (preflight.hasUnbalancedNesting()) {
+        assignSkipReason(reason, ProfilerSkipReason::UnbalancedNesting);
+        return true;
+    }
+
+    if (preflight.flowDepthDetached) {
+        assignSkipReason(reason, ProfilerSkipReason::FlowDepthDetached);
+        return true;
+    }
+
+    if (preflight.crossThreadFlowHandoffPending) {
+        assignSkipReason(reason, ProfilerSkipReason::CrossThreadFlowHandoffPending);
+        return true;
+    }
+
+    assignSkipReason(reason, ProfilerSkipReason::None);
+    return false;
+}
+
+ProfilerNestingPreflight preflightNesting() {
+    ProfilerNestingPreflight preflight{};
+    preflight.activeScopeNestingDepth = scopeNestingDepth();
+    preflight.activeFlowNestingDepth = flowNestingDepth();
+    preflight.maxScopeNestingDepth = maxNestingDepth();
+    preflight.maxFlowNestingDepth = maxFlowNestingDepth();
+    preflight.openAsyncFlowCount = openAsyncFlowCount();
+    preflight.scopeNestingBalanced = isScopeNestingBalanced();
+    preflight.flowNestingBalanced = isFlowNestingBalanced();
+    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
+    preflight.flowDepthDetached = isFlowDepthDetached();
+    preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
+    return preflight;
 }
 
 ChromeTraceExportPreflight preflightChromeTraceExport() {
