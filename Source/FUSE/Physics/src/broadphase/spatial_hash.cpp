@@ -623,6 +623,14 @@ const char* broadphaseMergeRejectReasonName(BroadphaseMergeRejectReason reason) 
         return "NoPlaneBodies";
     case BroadphaseMergeRejectReason::NoDynamicBodies:
         return "NoDynamicBodies";
+const char* cellSpanRejectReasonName(CellSpanRejectReason reason) {
+    case CellSpanRejectReason::None:
+    case CellSpanRejectReason::EmptyRange:
+        return "EmptyRange";
+    case CellSpanRejectReason::Unbounded:
+        return "Unbounded";
+    case CellSpanRejectReason::WithinSpanLimit:
+        return "WithinSpanLimit";
     }
     return "Unknown";
 }
@@ -635,6 +643,12 @@ const char* broadphaseMergeRejectReasonName(BroadphaseMergeRejectReason reason) 
         return "EmptyPlaneBodies";
     case BroadphaseMergeRejectReason::EmptyDynamicBodies:
         return "EmptyDynamicBodies";
+const char* mergeBroadphaseBufferRejectReasonName(BroadphaseMergeBufferRejectReason reason) {
+    case BroadphaseMergeBufferRejectReason::None:
+    case BroadphaseMergeBufferRejectReason::SceneNotMergeable:
+        return "SceneNotMergeable";
+    case BroadphaseMergeBufferRejectReason::BufferAtCapacity:
+        return "BufferAtCapacity";
     }
     return "Unknown";
 }
@@ -649,19 +663,11 @@ const char* broadphaseMergeRejectReasonName(BroadphaseMergeRejectReason reason) 
         return "NoDynamicBodies";
     }
     return "Unknown";
-}
 
-const char* broadphaseMergeRejectReasonName(BroadphaseMergeRejectReason reason) {
-    switch (reason) {
-    case BroadphaseMergeRejectReason::None:
-        return "None";
     case BroadphaseMergeRejectReason::EmptyPlaneBodies:
         return "EmptyPlaneBodies";
     case BroadphaseMergeRejectReason::EmptyDynamicBodies:
         return "EmptyDynamicBodies";
-    }
-    return "Unknown";
-}
 
 const char* dedupeBroadphaseRejectReasonName(DedupeBroadphaseRejectReason reason) {
     case DedupeBroadphaseRejectReason::None:
@@ -669,40 +675,12 @@ const char* dedupeBroadphaseRejectReasonName(DedupeBroadphaseRejectReason reason
     case DedupeBroadphaseRejectReason::SinglePair:
         return "SinglePair";
 
-const char* broadphaseMergeRejectReasonName(BroadphaseMergeRejectReason reason) {
-    case BroadphaseMergeRejectReason::None:
-    case BroadphaseMergeRejectReason::EmptyPlaneBodies:
-        return "EmptyPlaneBodies";
-    case BroadphaseMergeRejectReason::EmptyDynamicBodies:
-        return "EmptyDynamicBodies";
 
-const char* broadphaseMergeRejectReasonName(BroadphaseMergeRejectReason reason) {
-    switch (reason) {
-    case BroadphaseMergeRejectReason::None:
-        return "None";
-    case BroadphaseMergeRejectReason::EmptyPlaneBodies:
-        return "EmptyPlaneBodies";
-    case BroadphaseMergeRejectReason::EmptyDynamicBodies:
-        return "EmptyDynamicBodies";
-    }
-    return "Unknown";
-}
 
-const char* broadphaseMergeRejectReasonName(BroadphaseMergeRejectReason reason) {
-    switch (reason) {
-    case BroadphaseMergeRejectReason::None:
-        return "None";
-    case BroadphaseMergeRejectReason::EmptyPlaneBodies:
-        return "EmptyPlaneBodies";
-    case BroadphaseMergeRejectReason::EmptyDynamicBodies:
 const char* mergeBroadphaseRejectReasonName(MergeBroadphaseRejectReason reason) {
     case MergeBroadphaseRejectReason::None:
     case MergeBroadphaseRejectReason::EmptyPlaneBodies:
     case MergeBroadphaseRejectReason::EmptyDynamicBodies:
-        return "EmptyDynamicBodies";
-    }
-    return "Unknown";
-}
 
 CellOccupancyPreflight preflightCellOccupancy(const CellRange3& range, u32 maxCells) {
     CellOccupancyPreflight preflight{};
@@ -711,7 +689,6 @@ CellOccupancyPreflight preflightCellOccupancy(const CellRange3& range, u32 maxCe
     preflight.occupancyCount = estimateCellOccupancyCount(range);
     preflight.exceedsBudget = preflight.reason == CellOccupancyRejectReason::ExceedsBudget;
     return preflight;
-}
 
 CellOccupancyPreflight preflightCellOccupancy(const CellRange2& range, u32 maxCells) {
 
@@ -1962,6 +1939,52 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
         }
         buffer.push(pair.bodyA, pair.bodyB);
     }
+}
+
+BroadphaseMergeBufferRejectReason mergeBroadphaseBufferRejectReason(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer) {
+    if (!preflightBroadphaseMerge(bodies, shapes).canMerge()) {
+        return BroadphaseMergeBufferRejectReason::SceneNotMergeable;
+    }
+    if (buffer.isFull()) {
+        return BroadphaseMergeBufferRejectReason::BufferAtCapacity;
+    }
+    return BroadphaseMergeBufferRejectReason::None;
+}
+
+bool mergeBroadphaseBufferRejectsForReason(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer,
+    BroadphaseMergeBufferRejectReason expected) {
+    return mergeBroadphaseBufferRejectReason(bodies, shapes, buffer) == expected;
+}
+
+BroadphaseMergeBufferPreflight preflightBroadphaseMergeIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer) {
+    BroadphaseMergeBufferPreflight preflight{};
+    preflight.reason = mergeBroadphaseBufferRejectReason(bodies, shapes, buffer);
+    preflight.sceneNotMergeable = preflight.reason == BroadphaseMergeBufferRejectReason::SceneNotMergeable;
+    preflight.bufferAtCapacity = preflight.reason == BroadphaseMergeBufferRejectReason::BufferAtCapacity;
+    return preflight;
+}
+
+bool canSkipBroadphaseMergeIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer) {
+    return !preflightBroadphaseMergeIntoBuffer(bodies, shapes, buffer).canMergeIntoBuffer();
+}
+
+bool shouldRunBroadphaseMergeIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer) {
+    return preflightBroadphaseMergeIntoBuffer(bodies, shapes, buffer).canMergeIntoBuffer();
 }
 
 void refineBroadphasePairsParallel(
