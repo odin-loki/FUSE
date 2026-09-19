@@ -1,6 +1,7 @@
 #include <fuse/physics/narrowphase/contact_pair.hpp>
 
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
+#include <fuse/physics/narrowphase/contact_buffer.hpp>
 #include <fuse/physics/narrowphase/friction.hpp>
 
 #include <cmath>
@@ -2174,6 +2175,34 @@ bool should_skip_narrowphase_run(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return !preflight_narrowphase_run(pairs, bodies, shapes).can_run();
+}
+
+ContactManifold detect_contacts_pair_deepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
+        return invalidContactManifold();
+    }
+    return dispatchShapePair(pair, bodies, shapes);
+}
+
+bool can_write_contact_manifold_to_buffer(const ContactManifold& manifold) {
+    return preflight_contact_manifold_buffer_write(manifold).can_write();
+}
+
+bool write_contact_manifold_to_buffer_with_preflight(
+    ContactBufferSoA& buffer,
+    u32 slot,
+    const ContactManifold& manifold) {
+    if (!preflight_contact_manifold_buffer_write(manifold).can_write()) {
+        return false;
+    }
+    if (!preflightContactBufferWrite(buffer, slot, manifold).canWrite()) {
+        return false;
+    }
+    buffer.writeSlot(slot, manifold);
+    return true;
 }
 
 } // namespace fuse::physics::narrowphase

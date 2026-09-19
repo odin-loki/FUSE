@@ -199,6 +199,11 @@ std::vector<ContactManifold> runNarrowphaseDeepen(
 
 
 std::vector<ContactManifold> runNarrowphaseWithDeepenPreflight(
+    for (u32 pairIndex = 0u; pairIndex < pairCount; ++pairIndex) {
+
+            write_contact_manifold_to_buffer_with_preflight(buffer, pairIndex, manifold);
+
+
     runNarrowphaseIntoBufferWithDeepenPreflight(pairs, bodies, shapes, buffer);
     return buffer.toVector();
 }

@@ -313,4 +313,8 @@ bool runNarrowphaseIntoBufferIfNeeded(
 /// CPU stub with extended deepen preflight gates (B4.6 deepen pass).
 std::vector<ContactManifold> runNarrowphaseWithDeepenPreflight(
 
+/// Job-safe narrowphase with extended deepen preflight rejects (B4.6 deepen pass).
+
+/// CPU stub with extended deepen preflight rejects (B4.6 deepen pass).
+
 } // namespace fuse::physics::narrowphase

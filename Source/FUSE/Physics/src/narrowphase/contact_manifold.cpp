@@ -2304,6 +2304,35 @@ bool prune_and_finalize_contact_manifold_with_preflight(
             manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth)) {
 
 bool generate_contact_manifold_with_preflight(
+const char* contact_manifold_write_reject_reason_name(ContactManifoldWriteRejectReason reason) {
+    case ContactManifoldWriteRejectReason::None:
+    case ContactManifoldWriteRejectReason::EmptyManifold:
+    case ContactManifoldWriteRejectReason::InvalidNormal:
+    case ContactManifoldWriteRejectReason::NotFinalized:
+        return "NotFinalized";
+    case ContactManifoldWriteRejectReason::SelfPair:
+        return "SelfPair";
+
+ContactManifoldWriteRejectReason contact_manifold_write_reject_reason(const ContactManifold& manifold) {
+        return ContactManifoldWriteRejectReason::EmptyManifold;
+        return ContactManifoldWriteRejectReason::InvalidNormal;
+    if (!manifold.valid) {
+        return ContactManifoldWriteRejectReason::NotFinalized;
+    if (manifold.bodyA == manifold.bodyB) {
+        return ContactManifoldWriteRejectReason::SelfPair;
+    return ContactManifoldWriteRejectReason::None;
+
+bool contact_manifold_write_rejects_for_reason(
+    ContactManifoldWriteRejectReason expected) {
+    return contact_manifold_write_reject_reason(manifold) == expected;
+
+ContactManifoldWritePreflight preflight_contact_manifold_buffer_write(const ContactManifold& manifold) {
+    ContactManifoldWritePreflight preflight{};
+    preflight.reason = contact_manifold_write_reject_reason(manifold);
+    preflight.skipped = preflight.reason != ContactManifoldWriteRejectReason::None;
+
+bool should_skip_contact_manifold_buffer_write(const ContactManifold& manifold) {
+    return !preflight_contact_manifold_buffer_write(manifold).can_write();
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

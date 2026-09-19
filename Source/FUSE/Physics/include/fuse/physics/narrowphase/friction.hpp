@@ -678,5 +678,9 @@ bool compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 eps
 
 /// Build or reuse friction basis only when preflight allows; returns false when skipped (B4.6 deepen pass).
 bool ensure_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
+struct ContactBufferSoA;
+
+/// Rebuild contact-buffer friction tangents only when preflight allows (B4.6 deepen pass).
+bool rebuild_contact_buffer_friction_bases_with_preflight(ContactBufferSoA& buffer);
 
 } // namespace fuse::physics::narrowphase

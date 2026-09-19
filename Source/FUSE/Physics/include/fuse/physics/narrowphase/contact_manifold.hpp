@@ -1215,6 +1215,32 @@ bool prune_and_finalize_contact_manifold_with_preflight(
 
 /// Alias for `finalize_contact_manifold_with_preflight` (B4.6 deepen pass).
 bool generate_contact_manifold_with_preflight(
+/// Why a manifold may not be written to a contact buffer (B4.6 deepen pass).
+enum class ContactManifoldWriteRejectReason : u8 {
+    NotFinalized,
+    SelfPair,
+
+/// Human-readable label for manifold write reject reasons (B4.6 deepen pass).
+const char* contact_manifold_write_reject_reason_name(ContactManifoldWriteRejectReason reason);
+
+/// Diagnose why manifold buffer write would skip; vacuously succeeds when write may proceed (B4.6 deepen pass).
+ContactManifoldWriteRejectReason contact_manifold_write_reject_reason(const ContactManifold& manifold);
+
+/// Returns true when `contact_manifold_write_reject_reason` matches `expected` (B4.6 deepen pass).
+bool contact_manifold_write_rejects_for_reason(
+    ContactManifoldWriteRejectReason expected);
+
+/// Const preflight for manifold buffer-write dispatch (B4.6 deepen pass).
+struct ContactManifoldWritePreflight {
+    ContactManifoldWriteRejectReason reason = ContactManifoldWriteRejectReason::None;
+
+    bool can_write() const { return !skipped && reason == ContactManifoldWriteRejectReason::None; }
+
+/// Populate manifold write preflight without mutating slots (B4.6 deepen pass).
+ContactManifoldWritePreflight preflight_contact_manifold_buffer_write(const ContactManifold& manifold);
+
+/// Returns true when manifold buffer write should be skipped (B4.6 deepen pass).
+bool should_skip_contact_manifold_buffer_write(const ContactManifold& manifold);
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
