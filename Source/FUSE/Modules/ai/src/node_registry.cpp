@@ -41,6 +41,8 @@ BehaviorNode makeParallel(const NodeLoadSpec& spec) {
     node.parallelPolicy.requireAllyContext = spec.requireAllyContext;
     node.parallelPolicy.requireValidAgent = spec.requireValidAgent;
     node.parallelPolicy.requireNonEmptyBoard = spec.requireNonEmptyBoard;
+    node.parallelPolicy.requireValidAllyRadius = spec.requireValidAllyRadius;
+    node.threshold = spec.threshold;
     return node;
 }
 
@@ -267,6 +269,18 @@ BehaviorNode makeGuardBlackboardAgentValid(const NodeLoadSpec& spec) {
 BehaviorNode makeGuardValidAllyRadius(const NodeLoadSpec& spec) {
     BehaviorNode node;
     node.kind = NodeKind::GuardValidAllyRadius;
+BehaviorNode makeGuardBlackboardScalarSet(const NodeLoadSpec& spec) {
+    node.kind = NodeKind::GuardBlackboardScalarSet;
+    node.scalarSlot = spec.scalarSlot;
+    return node;
+}
+
+BehaviorNode makeGuardBlackboardFlagSet(const NodeLoadSpec& spec) {
+    node.kind = NodeKind::GuardBlackboardFlagSet;
+    node.flagIndex = spec.flagIndex;
+
+BehaviorNode makeGuardAllyRadiusValid(const NodeLoadSpec& spec) {
+    node.kind = NodeKind::GuardAllyRadiusValid;
     node.threshold = spec.threshold;
     return node;
 }
@@ -345,6 +359,10 @@ void NodeRegistry::registerBuiltins() {
     registerFactory("bb.guard.spatial_radius_valid", makeGuardSpatialRadiusValid);
     registerFactory("bb.guard.ally_context", makeGuardAllyContext);
     registerFactory("bb.guard.valid_ally_radius", makeGuardValidAllyRadius);
+    registerFactory("bb.guard.blackboard_agent_valid", makeGuardBlackboardAgentValid);
+    registerFactory("bb.guard.blackboard_scalar_set", makeGuardBlackboardScalarSet);
+    registerFactory("bb.guard.blackboard_flag_set", makeGuardBlackboardFlagSet);
+    registerFactory("bb.guard.ally_radius_valid", makeGuardAllyRadiusValid);
 }
 
 std::vector<std::string> NodeRegistry::registeredTypeIds() const {

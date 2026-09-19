@@ -60,6 +60,7 @@ enum class NodeKind {
     GuardSpatialRadiusValid,
     GuardAllyContext,
     GuardValidAllyRadius,
+    GuardAllyRadiusValid,
 };
 
 /// Optional per-tick eval state for leaves that span frames (wait) or read runtime tick count.
@@ -91,6 +92,9 @@ struct ParallelPolicy {
     bool requireNonEmptyBoard = false;
     /// When true, fail immediately when `agentIndex` is out of range for the bound board.
     /// When true, fail immediately when the agent index is out of blackboard range.
+    /// When true, fail immediately when the agent index is out of range for the blackboard.
+    /// When true, fail immediately when the parallel node's `threshold` is not a valid ally radius.
+    bool requireValidAllyRadius = false;
 };
 
 /// Flat behavior-tree node — ore analogue: BadBehaviour composite/decorator/leaf nodes.

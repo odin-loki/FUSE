@@ -124,6 +124,12 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
         if (policy.requireValidAgent && !board.isAgentValid(agentIndex)) {
             return {};
         }
+        if (policy.requireValidAgent && !board.isAgentValid(agentIndex)) {
+            return {};
+        }
+        if (policy.requireValidAllyRadius && !is_valid_ally_radius(node.threshold)) {
+            return {};
+        }
 
         const u32 failLimit = effective_fail_threshold(policy);
         const u32 successNeeded = effective_success_threshold(policy, kParallelChildCount);
@@ -489,6 +495,19 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
         BehaviorTickResult result;
         result.status = is_valid_ally_radius(node.threshold) ? BehaviorStatus::Success
                                                            : BehaviorStatus::Failure;
+    case NodeKind::GuardBlackboardAgentValid: {
+        result.status = board.isAgentValid(agentIndex) ? BehaviorStatus::Success
+        return result;
+    }
+    case NodeKind::GuardBlackboardScalarSet: {
+        if (!board.isBound()) {
+            result.status = BehaviorStatus::Failure;
+        const u32 slot = node.scalarSlot < Blackboard::kMaxScalars ? node.scalarSlot : 0u;
+        result.status = board.isScalarSet(agentIndex, slot) ? BehaviorStatus::Success
+    case NodeKind::GuardBlackboardFlagSet: {
+        const u32 flag = node.flagIndex < Blackboard::kMaxFlags ? node.flagIndex : 0u;
+        result.status = board.isFlagSet(agentIndex, flag) ? BehaviorStatus::Success
+    case NodeKind::GuardAllyRadiusValid: {
         return result;
     }
     }

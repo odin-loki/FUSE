@@ -219,7 +219,6 @@ RadiusFilterPolicy normalize_radius_filter_policy(const RadiusFilterPolicy& poli
     normalized.radius = effective_radius(policy);
     normalized.minCount = policy.minCount >= 1u ? policy.minCount : 1u;
     return normalized;
-}
 
 u32 count_allies_outside_radius(u32 selfIndex,
                                 u32 teamId,
@@ -233,23 +232,18 @@ u32 count_allies_outside_radius(u32 selfIndex,
     for (const AllyCandidate& candidate : allies) {
         if (!is_ally_(selfIndex, teamId, candidate)) {
             continue;
-        }
         const float distSq = distance_sq_2d(x, y, candidate.x, candidate.y);
         if (distSq > radiusSq) {
             ++count;
-        }
-    }
 
     return count;
-}
 
 bool has_ally_outside_radius(u32 selfIndex,
-                             u32 teamId,
-                             float x,
-                             float y,
-                             float radius,
-                             const std::vector<AllyCandidate>& allies) {
     return count_allies_outside_radius(selfIndex, teamId, x, y, radius, allies) > 0;
+bool is_radius_policy_valid(const RadiusFilterPolicy& policy) {
+
+bool ally_radius_query_valid(float radius, const std::vector<AllyCandidate>* allies) {
+    return is_valid_ally_radius(radius) && ally_context_available(allies);
 }
 
 } // namespace fuse::ai

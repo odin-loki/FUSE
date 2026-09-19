@@ -127,10 +127,9 @@ struct RadiusFilterPolicy {
 
 /// True when at least one same-team ally lies outside `radius` (excludes self).
 [[nodiscard]] bool has_ally_outside_radius(u32 selfIndex,
-                                           u32 teamId,
-                                           float x,
-                                           float y,
-                                           float radius,
-                                           const std::vector<AllyCandidate>& allies);
+[[nodiscard]] bool is_radius_policy_valid(const RadiusFilterPolicy& policy);
+
+/// True when radius is positive and ally context is available.
+[[nodiscard]] bool ally_radius_query_valid(float radius, const std::vector<AllyCandidate>* allies);
 
 } // namespace fuse::ai
