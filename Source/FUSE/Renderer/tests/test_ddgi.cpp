@@ -1986,3 +1986,6 @@ void testBorderProbeIndexGuards() {
 void testCacheSizingGuards() {
     expectTrue(!fuse::renderer::probeSampleSkipReasonIsBlocking(ProbeSampleSkipReason::None),
     expectTrue(fuse::renderer::probeSampleSkipReasonIsBlocking(ProbeSampleSkipReason::UndersizedCache),
+
+// --- deepen additive from deepen-ddgi-probe-guards-340e ---
+void testProbeSampleAndCacheGuards() {
