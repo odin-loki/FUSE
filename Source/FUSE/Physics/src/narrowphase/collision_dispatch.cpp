@@ -338,12 +338,18 @@ bool should_skip_narrowphase_dispatch(
     return preflight_run_narrowphase_into_buffer(pairs, bodies, shapes).can_skip();
     if (narrowphase_batch_rejects_all(pairs, bodies, shapes)) {
         compact_and_clamp_contact_buffer_with_preflight(buffer);
-    }
 
         ContactManifold manifold = detect_contacts_pair_with_deepen_preflight(pairs[pairIndex], bodies, shapes);
         if (generate_contact_manifold_with_deepen_preflight(manifold)) {
             write_contact_buffer_slot_with_preflight(buffer, pairIndex, manifold);
 
+NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
+    u32 pairIndex) {
+    NarrowphasePairSlotPreflight preflight{};
+    preflight.pair = preflight_contact_pair_slot(pair, bodies, shapes, pairs, pairIndex);
+    preflight.skipped = !preflight.pair.can_dispatch();
+
+    return !preflight_narrowphase_pair_slot(pair, bodies, shapes, pairs, pairIndex).can_dispatch();
 }
 
 } // namespace fuse::physics::narrowphase

@@ -1460,4 +1460,11 @@ void compute_friction_tangents_beyond_preflight(ContactManifold& manifold, f32 e
         if (friction_basis_reject_reason(manifold) != FrictionBasisRejectReason::None) {
     rebuild_friction_basis_beyond_preflight(manifold, epsilon);
 
+
+bool can_skip_friction_basis_rebuild_after_normalize(
+    f32 epsilon,
+    ContactManifold normalized = manifold;
+    normalize_contact_normal_before_friction_if_needed(normalized, lengthEpsilon);
+    return should_skip_friction_basis_preflight(normalized, epsilon);
+
 } // namespace fuse::physics::narrowphase

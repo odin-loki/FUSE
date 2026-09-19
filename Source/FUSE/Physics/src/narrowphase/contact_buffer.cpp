@@ -1259,6 +1259,16 @@ void ContactBufferSoA::buildFrictionTangentBasesIfNeeded(f32 epsilon) {
         rebuildFrictionTangentBasisAt(slot, epsilon);
 
 ContactBufferFrictionPreflight preflight_contact_buffer_friction_rebuild(
+bool ContactBufferSoA::canSkipFrictionRebuild(f32 epsilon) const {
+    return should_skip_buffer_friction_rebuild(*this, epsilon);
+
+void ContactBufferSoA::rebuildFrictionTangentBasesIfNeeded(f32 epsilon) {
+    if (should_skip_buffer_friction_rebuild(*this, epsilon)) {
+
+
+        if (rebuild_friction_basis_with_preflight(manifold, epsilon)) {
+
+ContactBufferFrictionPreflight preflight_buffer_friction_rebuild(
     const ContactBufferSoA& buffer,
     f32 epsilon) {
     ContactBufferFrictionPreflight preflight{};
@@ -1320,6 +1330,17 @@ bool ContactBufferSoA::writeSlotWithFinalize(
     f32 frictionEpsilon) {
     if (!finalize_contact_manifold_beyond_preflight(manifold, 1e-6f, 1e-4f, frictionEpsilon)) {
     writeSlot(slot, manifold);
+    if (buffer.isEmpty()) {
+        preflight.skipped = true;
+    }
+
+            continue;
+        const ContactManifold manifold = buffer.manifoldAt(slot);
+        if (needs_friction_basis_refresh(manifold, epsilon)) {
+            ++preflight.needsRebuildCount;
+
+bool should_skip_buffer_friction_rebuild(const ContactBufferSoA& buffer, f32 epsilon) {
+    return preflight_buffer_friction_rebuild(buffer, epsilon).can_skip_rebuild();
 }
 
 TangentBasis ContactBufferSoA::tangentBasisAt(u32 index) const {

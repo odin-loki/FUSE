@@ -40,6 +40,8 @@ enum class ContactPairRejectReason : u8 {
     BothPlanes,
     RestingPair,
     UndispatchableShapePair,
+    NonCanonicalPair,
+    DuplicatePairInBatch,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
@@ -1569,6 +1571,49 @@ bool narrowphase_beyond_batch_rejects_all(
 /// Run shape dispatch only when beyond deepen preflight allows (B4.6 deepen pass).
 ContactManifold detect_contacts_pair_beyond(
     const broadphase::CandidatePair& pair,
+/// Returns true when `bodyA` is greater than `bodyB` (non-canonical ordering, B4.6 deepen pass).
+bool is_non_canonical_contact_pair(const broadphase::CandidatePair& pair);
+
+/// Returns true when an identical pair appears earlier in the batch (B4.6 deepen pass).
+bool is_duplicate_contact_pair_in_batch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    u32 pairIndex);
+
+/// Extended reject reason including canonical-order and batch-duplicate checks (B4.6 deepen pass).
+/// Does not alter `contact_pair_deepen_reject_reason`; use for additive preflight only.
+ContactPairRejectReason contact_pair_deepen_pass_reject_reason(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+
+/// Const preflight with canonical-order and batch-duplicate reject checks (B4.6 deepen pass).
+struct ContactPairDeepenPassPreflight {
+    ContactPairRejectReason reason = ContactPairRejectReason::None;
+    bool rejected = false;
+
+    bool can_dispatch() const { return !rejected; }
+};
+
+/// Populate deepen-pass pair preflight without running shape dispatch (B4.6 deepen pass).
+ContactPairDeepenPassPreflight preflight_contact_pair_deepen_pass(
+
+/// Returns true when deepen-pass preflight rejects this pair (B4.6 deepen pass).
+bool should_skip_contact_pair_deepen_pass_dispatch(
+
+/// Combined base + deepen-pass preflight for one pair slot (B4.6 deepen pass).
+struct ContactPairSlotPreflight {
+    ContactPairPreflight base{};
+    ContactPairDeepenPreflight deepen{};
+    ContactPairDeepenPassPreflight deepenPass{};
+
+
+/// Populate slot preflight without running shape dispatch (B4.6 deepen pass).
+ContactPairSlotPreflight preflight_contact_pair_slot(
+
+/// Run shape dispatch only when slot preflight allows; invalid manifold otherwise (B4.6 deepen pass).
+ContactManifold detect_contacts_pair_with_preflight(
+
+/// Count pairs rejected by deepen-pass preflight (B4.6 deepen pass).
+u32 count_deepen_pass_rejected_contact_pairs(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 

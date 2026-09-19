@@ -202,6 +202,7 @@ enum class ManifoldPruneRejectReason : u8 {
     ExceedsMaxPoints,
     InvalidNormal,
     NonUnitNormal,
+    NeedsNormalNormalize,
 };
 
 /// Human-readable label for manifold prune reject reasons (B4.5 deepen follow-up pass).
@@ -1354,6 +1355,15 @@ bool should_skip_manifold_beyond_prune(
 /// Finalize only when beyond preflight passes; no-op otherwise (B4.6 deepen pass).
 bool finalize_contact_manifold_beyond_preflight(
 
+
+/// Normalize contact normal when non-unit; returns true when normalization applied (B4.6 deepen pass).
+
+/// Prune only when preflight reports in-place pruning is needed; no-op otherwise (B4.6 deepen pass).
+
+/// Finalize only when preflight passes; no-op otherwise (B4.6 deepen pass).
+
+/// Returns true when prune can be skipped after optional normal normalization (B4.6 deepen pass).
+bool can_skip_manifold_prune_after_normalize(
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

@@ -16127,6 +16127,283 @@ void testFrictionBasisEnsureWithPreflight() {
         "ensure_with_preflight preserves cached tangent1");
 }
 
+void testContactPairDeepenPass2RejectGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 bodyA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 bodyB = bodies.addBody({1.5f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodyA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodyB, {1.f, 0.f, 0.f});
+
+    expectTrue(
+        fuse::physics::narrowphase::is_non_canonical_contact_pair({bodyB, bodyA}),
+        "non-canonical guard flags swapped body order");
+    expectTrue(
+        !fuse::physics::narrowphase::is_non_canonical_contact_pair({bodyA, bodyB}),
+        "non-canonical guard allows canonical order");
+
+    const std::vector<fuse::physics::broadphase::CandidatePair> batch = {
+        {bodyA, bodyB},
+        {bodyA, bodyB},
+    };
+    expectTrue(
+        fuse::physics::narrowphase::is_duplicate_contact_pair_in_batch(batch[1], batch, 1u),
+        "duplicate guard flags repeated pair in batch");
+    expectTrue(
+        !fuse::physics::narrowphase::is_duplicate_contact_pair_in_batch(batch[0], batch, 0u),
+        "duplicate guard allows first occurrence");
+
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_deepen_pass_reject_reason(
+            {bodyB, bodyA}, bodies, shapes, batch, 0u) ==
+            fuse::physics::narrowphase::ContactPairRejectReason::NonCanonicalPair,
+        "deepen pass reject reason flags non-canonical pair");
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_deepen_pass_reject_reason(
+            batch[1], bodies, shapes, batch, 1u) ==
+            fuse::physics::narrowphase::ContactPairRejectReason::DuplicatePairInBatch,
+        "deepen pass reject reason flags duplicate pair");
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_deepen_reject_reason({bodyA, bodyB}, bodies, shapes) ==
+            fuse::physics::narrowphase::ContactPairRejectReason::None,
+        "deepen reject reason unchanged for canonical valid pair");
+
+    const auto deepenPassPreflight =
+        fuse::physics::narrowphase::preflight_contact_pair_deepen_pass(batch[1], bodies, shapes, batch, 1u);
+    expectTrue(!deepenPassPreflight.can_dispatch(), "deepen pass preflight rejects duplicate pair");
+    expectTrue(
+        deepenPassPreflight.reason ==
+            fuse::physics::narrowphase::ContactPairRejectReason::DuplicatePairInBatch,
+        "deepen pass preflight reports DuplicatePairInBatch");
+
+    const auto slotPreflight =
+        fuse::physics::narrowphase::preflight_contact_pair_slot(batch[0], bodies, shapes, batch, 0u);
+    expectTrue(slotPreflight.can_dispatch(), "slot preflight allows first canonical pair");
+    expectTrue(
+        slotPreflight.reason == fuse::physics::narrowphase::ContactPairRejectReason::None,
+        "slot preflight reports None for valid pair");
+
+    const auto duplicateManifold = fuse::physics::narrowphase::detect_contacts_pair_with_preflight(
+        batch[1], bodies, shapes, batch, 1u);
+    expectTrue(!duplicateManifold.valid, "detect_with_preflight rejects duplicate pair");
+
+    const auto validManifold = fuse::physics::narrowphase::detect_contacts_pair_with_preflight(
+        batch[0], bodies, shapes, batch, 0u);
+    expectTrue(validManifold.valid, "detect_with_preflight dispatches valid pair");
+
+    expectTrue(
+        fuse::physics::narrowphase::count_deepen_pass_rejected_contact_pairs(batch, bodies, shapes) == 1u,
+        "count deepen pass rejected tracks duplicate slot");
+
+    expectTrue(
+        std::strcmp(
+            fuse::physics::narrowphase::contact_pair_reject_reason_name(
+                fuse::physics::narrowphase::ContactPairRejectReason::NonCanonicalPair),
+            "NonCanonicalPair") == 0,
+        "reject reason name resolves NonCanonicalPair");
+    expectTrue(
+        std::strcmp(
+            fuse::physics::narrowphase::contact_pair_reject_reason_name(
+                fuse::physics::narrowphase::ContactPairRejectReason::DuplicatePairInBatch),
+            "DuplicatePairInBatch") == 0,
+        "reject reason name resolves DuplicatePairInBatch");
+}
+
+void testManifoldPruneFinalizePass2Guards() {
+    fuse::physics::narrowphase::ContactManifold unnormalized{};
+    unnormalized.contactNormal = {0.f, 2.f, 0.f};
+    unnormalized.addPoint({0.f, 0.f, 0.f}, 0.3f);
+    expectTrue(
+        fuse::physics::narrowphase::manifold_prune_rejects_for_reason(
+            unnormalized, fuse::physics::narrowphase::ManifoldPruneRejectReason::NeedsNormalNormalize),
+        "prune rejects_for_reason flags non-unit normal");
+    expectTrue(
+        fuse::physics::narrowphase::normalize_contact_normal_if_needed(unnormalized),
+        "normalize_if_needed applies to scaled normal");
+    expectNear(unnormalized.contactNormal.y, 1.f, 1e-4f, "normalize_if_needed produces unit normal");
+    expectTrue(
+        !fuse::physics::narrowphase::normalize_contact_normal_if_needed(unnormalized),
+        "normalize_if_needed no-ops on unit normal");
+
+    fuse::physics::narrowphase::ContactManifold capped{};
+    capped.contactNormal = {0.f, 1.f, 0.f};
+    capped.addPoint({0.f, 0.f, 0.f}, 0.5f);
+    capped.addPoint({1.f, 0.f, 0.f}, 0.4f);
+    capped.addPoint({2.f, 0.f, 0.f}, 0.3f);
+    capped.addPoint({3.f, 0.f, 0.f}, 0.2f);
+    capped.pointCount = fuse::physics::narrowphase::kMaxContactPointsPerManifold + 1u;
+    expectTrue(
+        fuse::physics::narrowphase::manifold_prune_rejects_for_reason(
+            capped, fuse::physics::narrowphase::ManifoldPruneRejectReason::ExceedsMaxPoints),
+        "prune rejects_for_reason flags excess contact points");
+
+    fuse::physics::narrowphase::ContactManifold dirty{};
+    dirty.contactNormal = {0.f, 2.f, 0.f};
+    dirty.addPoint({0.f, 0.f, 0.f}, 0.4f);
+    dirty.addPoint({1.f, 0.f, 0.f}, -0.2f);
+    expectTrue(
+        fuse::physics::narrowphase::prune_contact_manifold_if_needed(dirty),
+        "prune_if_needed keeps penetrating slots after normalize");
+    expectTrue(dirty.pointCount == 1u, "prune_if_needed removes separated slot");
+    expectNear(dirty.contactNormal.y, 1.f, 1e-4f, "prune_if_needed normalizes contact normal");
+
+    fuse::physics::narrowphase::ContactManifold ready =
+        fuse::physics::narrowphase::collideSphereSphere({0.f, 0.f, 0.f}, 1.f, {1.5f, 0.f, 0.f}, 1.f, 0u, 1u);
+    expectTrue(
+        fuse::physics::narrowphase::finalize_contact_manifold_if_needed(ready),
+        "finalize_if_needed finalizes valid manifold");
+    expectTrue(ready.valid, "finalize_if_needed sets validity");
+    expectTrue(ready.hasFrictionBasis(), "finalize_if_needed builds friction basis");
+
+    fuse::physics::narrowphase::ContactManifold clean{};
+    clean.contactNormal = {0.f, 1.f, 0.f};
+    clean.addPoint({0.f, 0.f, 0.f}, 0.4f);
+    expectTrue(
+        fuse::physics::narrowphase::can_skip_manifold_prune_after_normalize(clean),
+        "can_skip_prune_after_normalize true for clean manifold");
+
+    expectTrue(
+        std::strcmp(
+            fuse::physics::narrowphase::manifold_prune_reject_reason_name(
+                fuse::physics::narrowphase::ManifoldPruneRejectReason::NeedsNormalNormalize),
+            "NeedsNormalNormalize") == 0,
+        "prune reject reason name resolves NeedsNormalNormalize");
+}
+
+void testFrictionBasisPass2RejectGuards() {
+    fuse::physics::narrowphase::ContactManifold stale{};
+    stale.contactNormal = {0.f, 1.f, 0.f};
+    stale.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    stale.buildFrictionBasis();
+    stale.contactNormal = {1.f, 0.f, 0.f};
+    expectTrue(
+        fuse::physics::narrowphase::friction_basis_rejects_for_reason(
+            stale, fuse::physics::narrowphase::FrictionBasisRejectReason::StaleBasis),
+        "friction rejects_for_reason flags stale basis");
+
+    fuse::physics::narrowphase::ContactManifold scaled{};
+    scaled.contactNormal = {0.f, 2.f, 0.f};
+    scaled.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    expectTrue(
+        fuse::physics::narrowphase::normalize_contact_normal_before_friction_if_needed(scaled),
+        "normalize before friction applies to scaled normal");
+    expectNear(scaled.contactNormal.y, 1.f, 1e-4f, "normalize before friction produces unit normal");
+
+    expectTrue(
+        fuse::physics::narrowphase::compute_friction_tangents_with_preflight(scaled),
+        "compute_with_preflight builds basis for valid manifold");
+    expectTrue(scaled.hasFrictionBasis(), "compute_with_preflight stores orthonormal basis");
+
+    const auto cachedTangent1 = scaled.frictionBasis.tangent1;
+    expectTrue(
+        fuse::physics::narrowphase::compute_friction_tangents_with_preflight(scaled),
+        "compute_with_preflight reuses valid basis");
+    expectNear(
+        scaled.frictionBasis.tangent1.x,
+        cachedTangent1.x,
+        1e-4f,
+        "compute_with_preflight preserves cached tangent1");
+
+    fuse::physics::narrowphase::ContactManifold empty{};
+    expectTrue(
+        !fuse::physics::narrowphase::compute_friction_tangents_with_preflight(empty),
+        "compute_with_preflight skips empty manifold");
+
+    fuse::physics::narrowphase::ContactManifold unit{};
+    unit.contactNormal = {0.f, 1.f, 0.f};
+    unit.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    unit.buildFrictionBasis();
+    expectTrue(
+        fuse::physics::narrowphase::can_skip_friction_basis_rebuild_after_normalize(unit),
+        "can_skip_rebuild_after_normalize true for valid basis");
+
+    expectTrue(
+        std::strcmp(
+            fuse::physics::narrowphase::friction_basis_reject_reason_name(
+                fuse::physics::narrowphase::FrictionBasisRejectReason::StaleBasis),
+            "StaleBasis") == 0,
+        "friction reject reason name resolves StaleBasis");
+}
+
+void testContactBufferFrictionPass2Guards() {
+    fuse::physics::narrowphase::ContactBufferSoA empty{};
+    const auto emptyPreflight = fuse::physics::narrowphase::preflight_buffer_friction_rebuild(empty);
+    expectTrue(emptyPreflight.skipped, "empty buffer friction preflight skipped");
+    expectTrue(
+        fuse::physics::narrowphase::should_skip_buffer_friction_rebuild(empty),
+        "empty buffer skips friction rebuild");
+
+    fuse::physics::narrowphase::ContactBufferSoA buffer;
+    buffer.preparePairSlots(2u);
+
+    fuse::physics::narrowphase::ContactManifold first{};
+    first.valid = true;
+    first.bodyA = 0u;
+    first.bodyB = 1u;
+    first.contactNormal = {0.f, 0.f, 1.f};
+    first.addPoint({0.f, 0.f, 0.f}, 0.1f);
+    first.buildFrictionBasis();
+    buffer.writeSlot(0u, first);
+
+    fuse::physics::narrowphase::ContactManifold second{};
+    second.valid = true;
+    second.bodyA = 2u;
+    second.bodyB = 3u;
+    second.contactNormal = {1.f, 0.f, 0.f};
+    second.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    buffer.writeSlot(1u, second);
+
+    expectTrue(buffer.compact() == 2u, "buffer compacts two manifolds for friction preflight");
+    const auto preflight = fuse::physics::narrowphase::preflight_buffer_friction_rebuild(buffer);
+    expectTrue(preflight.needsRebuildCount == 0u, "valid buffer slots need no friction rebuild");
+    expectTrue(
+        fuse::physics::narrowphase::should_skip_buffer_friction_rebuild(buffer),
+        "buffer skips rebuild when all slot bases are valid");
+    expectTrue(buffer.canSkipFrictionRebuild(), "canSkipFrictionRebuild mirrors preflight skip");
+
+    buffer.rebuildFrictionTangentBasesIfNeeded();
+    const auto firstBasis = buffer.tangentBasisAt(0u);
+    const auto secondBasis = buffer.tangentBasisAt(1u);
+    expectTrue(
+        fuse::physics::narrowphase::isOrthonormalTangentBasis({0.f, 0.f, 1.f}, firstBasis),
+        "rebuild_if_needed preserves first orthonormal basis");
+    expectTrue(
+        fuse::physics::narrowphase::isOrthonormalTangentBasis({1.f, 0.f, 0.f}, secondBasis),
+        "rebuild_if_needed preserves second orthonormal basis");
+}
+
+void testNarrowphasePairSlotPass2Guards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 bodyA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 bodyB = bodies.addBody({1.5f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodyA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodyB, {1.f, 0.f, 0.f});
+
+    const std::vector<fuse::physics::broadphase::CandidatePair> pairs = {
+        {bodyA, bodyB},
+        {bodyB, bodyA},
+    };
+
+    const auto validPreflight =
+        fuse::physics::narrowphase::preflight_narrowphase_pair_slot(pairs[0], bodies, shapes, pairs, 0u);
+    expectTrue(validPreflight.can_dispatch(), "pair slot preflight allows canonical pair");
+    expectTrue(
+        !fuse::physics::narrowphase::should_skip_narrowphase_pair_slot(pairs[0], bodies, shapes, pairs, 0u),
+        "pair slot skip guard allows canonical pair");
+
+    const auto swappedPreflight =
+        fuse::physics::narrowphase::preflight_narrowphase_pair_slot(pairs[1], bodies, shapes, pairs, 1u);
+    expectTrue(!swappedPreflight.can_dispatch(), "pair slot preflight rejects non-canonical pair");
+    expectTrue(
+        fuse::physics::narrowphase::should_skip_narrowphase_pair_slot(pairs[1], bodies, shapes, pairs, 1u),
+        "pair slot skip guard rejects non-canonical pair");
+    expectTrue(
+        swappedPreflight.pair.reason ==
+            fuse::physics::narrowphase::ContactPairRejectReason::NonCanonicalPair,
+        "pair slot preflight reports NonCanonicalPair");
+}
+
 } // namespace
 
 int main() {
@@ -16410,6 +16687,11 @@ int main() {
     testManifoldBeyondPruneFinalizeGuards();
     testFrictionBasisBeyondRebuildGuards();
     testRunNarrowphaseBeyondAndBufferGuards();
+    testContactPairDeepenPass2RejectGuards();
+    testManifoldPruneFinalizePass2Guards();
+    testFrictionBasisPass2RejectGuards();
+    testContactBufferFrictionPass2Guards();
+    testNarrowphasePairSlotPass2Guards();
 
     if (g_failures == 0) {
         std::printf("fuse_physics_narrowphase_tests: all checks passed\n");

@@ -405,5 +405,14 @@ NarrowphaseDispatchPreflight preflight_run_narrowphase_into_buffer(
 /// Returns true when narrowphase dispatch preflight reports no dispatchable pairs (B4.6 deepen pass).
 bool should_skip_narrowphase_dispatch(
 /// Narrowphase dispatch using extended deepen pair preflight and contact-buffer guarded writes (B4.6 deepen pass).
+/// Const preflight for one narrowphase pair slot (B4.6 deepen pass).
+    ContactPairSlotPreflight pair{};
+
+    bool can_dispatch() const { return !skipped && pair.can_dispatch(); }
+
+/// Populate pair-slot preflight without running shape dispatch (B4.6 deepen pass).
+    u32 pairIndex);
+
+/// Returns true when narrowphase should skip this pair slot before dispatch (B4.6 deepen pass).
 
 } // namespace fuse::physics::narrowphase

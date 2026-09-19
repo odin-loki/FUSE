@@ -175,6 +175,11 @@ struct ContactBufferSoA {
     /// True when compaction would be a no-op (B4.6 deepen pass).
 
     /// True when max-capacity clamp would be a no-op (B4.6 deepen pass).
+    /// Returns true when every active slot has a valid orthonormal friction basis (B4.6 deepen pass).
+    bool canSkipFrictionRebuild(f32 epsilon = 1e-4f) const;
+
+    /// Rebuild tangent SoA columns only for slots missing or stale bases (B4.6 deepen pass).
+    void rebuildFrictionTangentBasesIfNeeded(f32 epsilon = 1e-4f);
 
 private:
     u32 pointSlotBase(u32 slot) const { return slot * kMaxContactPointsPerManifold; }
@@ -1751,5 +1756,12 @@ u32 clamp_contact_buffer_with_preflight(ContactBufferSoA& buffer);
 
 /// Returns true when buffer friction rebuild should be skipped (B4.6 deepen pass).
 bool can_skip_contact_buffer_friction_rebuild(
+/// Const preflight for buffer friction-basis rebuild (B4.6 deepen pass).
+
+
+/// Populate buffer friction preflight without mutating tangent columns (B4.6 deepen pass).
+ContactBufferFrictionPreflight preflight_buffer_friction_rebuild(
+
+bool should_skip_buffer_friction_rebuild(const ContactBufferSoA& buffer, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase
