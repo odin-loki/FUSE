@@ -1084,3 +1084,6 @@ void testToiBufferPushRejectsPairSlotMode() {
 
 // --- deepen additive from deepen-b4-ccd-toibuffer-guards-21cd ---
 void testToiBufferWriteSlotGuards() {
+
+// --- deepen additive from deepen-b4-ccd-toibuffer-guards-0635 ---
+void testToiBufferSlotGuards() {
