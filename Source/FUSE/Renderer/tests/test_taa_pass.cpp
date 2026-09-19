@@ -3570,3 +3570,18 @@ void testTaaDeepenDiagnosticGuardOverloads() {
     expectTrue(!pass->wouldSkipResolveBlend(resolveDesc), "pass wouldSkipResolveBlend before warmup resolve");
     expectTrue(!pass->wouldSkipHistoryReuse(0u), "pass wouldSkipHistoryReuse after warmup");
     expectTrue(!pass->wouldSkipResolveBlend(resolveDesc), "pass wouldSkipResolveBlend after warmup");
+
+// --- deepen additive from deepen-b59-taa-guards-8e7a ---
+void testHistoryWarmupRejectGuards() {
+    fuse::renderer::TaaHistoryWarmupRejectReason reason = fuse::renderer::TaaHistoryWarmupRejectReason::None;
+               "tryPreflight warmup passes for unwarmed history");
+void testJitterShouldSkipAndAdvanceGuards() {
+    expectTrue(!fuse::renderer::tryPreflightTaaJitterAdvance(0u, rejectReason),
+               "tryPreflightTaaJitterAdvance rejects invalid sequence");
+void testResolveHistoryBlendPreflightGuards() {
+    expectTrue(!fuse::renderer::tryPreflightTaaResolveHistoryBlend(desc, history, rejectReason),
+               "tryPreflight history blend fails on warmup");
+    expectTrue(fuse::renderer::tryPreflightTaaResolveHistoryBlend(desc, history, rejectReason),
+               "tryPreflight history blend passes after warmup");
+    expectTrue(pass->preflightJitterAdvance(&jitterReject), "pass preflightJitterAdvance passes");
+    testResolveHistoryBlendPreflightGuards();
