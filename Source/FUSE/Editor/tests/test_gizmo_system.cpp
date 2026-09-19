@@ -4287,3 +4287,15 @@ void testNonFiniteRejectReasonClassification() {
 
 // --- deepen additive from deepen-gizmo-preflights-9b3e ---
     expectTrue(fuse::editor::classifySnapDragReject(invalidStepPreflight) ==
+
+// --- deepen additive from deepen-gizmo-preflight-guards-ef0e ---
+    expectTrue(!fuse::editor::tryPreflightPick(nanHit, fuse::editor::GizmoMode::Translate, reason),
+    const fuse::editor::BeginDragPreflight beginNanHit =
+    expectTrue(fuse::editor::classifyBeginDragReject(beginNanHit) ==
+    const fuse::editor::BeginDragPreflight beginNanRay = fuse::editor::preflightBeginDrag(
+    expectTrue(fuse::editor::classifyBeginDragReject(beginNanRay) ==
+    const fuse::editor::UpdateDragPreflight updateNanPreflight =
+    expectTrue(fuse::editor::classifyUpdateDragReject(updateNanPreflight) ==
+    const fuse::editor::SnapDragPreflight disabledPreflight = fuse::editor::preflightSnapDrag(
+    expectTrue(fuse::editor::classifySnapDragReject(disabledPreflight) ==
+               "classifySnapDragReject maps snapDisabled flag");
