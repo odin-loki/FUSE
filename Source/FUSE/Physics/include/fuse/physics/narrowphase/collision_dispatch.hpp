@@ -194,6 +194,13 @@ void runNarrowphaseIntoBuffer(
     const CollisionShapeSoA& shapes,
     ContactBufferSoA& buffer);
 
+/// Early-out when batch preflight rejects all pairs; otherwise delegates to `runNarrowphaseIntoBuffer` (B4.6 deepen pass).
+void runNarrowphaseIntoBufferIfDispatchable(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactBufferSoA& buffer);
+
 /// CPU stub of the CUDA narrow-phase dispatch (B4.3).
 std::vector<ContactManifold> runNarrowphase(
     const std::vector<broadphase::CandidatePair>& pairs,
