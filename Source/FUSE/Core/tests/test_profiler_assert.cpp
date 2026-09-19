@@ -4174,3 +4174,20 @@ void testTryEventByFlowIdGuard() {
     expectTrue(closedPreflight.canExportNonEmptyTrace(),
     expectTrue(!closedPreflight.hasActiveScope, "closed preflight clears hasActiveScope");
     expectTrue(fuse::profiler::tryFirstEventByName("lookup_valid_scope", outEvent),
+
+// --- deepen additive from deepen-b16-profiler-name-flow-lookup-cb6d ---
+    expectTrue(fuse::profiler::tryFindFirstEventByName("try_name_scope", outEvent),
+               "tryFindFirstEventByName true for recorded scope");
+    expectTrue(fuse::profiler::tryFindLastEventByName("try_name_scope", outEvent),
+               "tryFindLastEventByName true for recorded scope");
+void testTryFindEventByFlowIdGuard() {
+    expectTrue(fuse::profiler::tryFindFirstEventByFlowId(flowId, outEvent),
+               "tryFindFirstEventByFlowId true for flow start");
+               "tryFindFirstEventByFlowId copies flow start phase");
+    expectTrue(outEvent.scopeId == flowId, "tryFindFirstEventByFlowId preserves flow id");
+    expectTrue(fuse::profiler::tryFindLastEventByFlowId(flowId, outEvent),
+               "tryFindLastEventByFlowId true for flow finish");
+               "tryFindLastEventByFlowId copies flow finish phase");
+void testBufferedFlowPairConsistencyGuard() {
+void testChromeTraceExportPreflightCleanExport() {
+    testChromeTraceExportPreflightCleanExport();
