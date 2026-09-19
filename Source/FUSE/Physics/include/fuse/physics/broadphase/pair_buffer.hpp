@@ -256,6 +256,12 @@ enum class PairBufferClampRejectReason : u8 {
     None = 0,
     EmptyBuffer,
 
+
+/// Non-mutating compaction predicate — inverse of `canSkipPairBufferCompaction` (B4.2 deepen pass).
+
+/// Non-mutating compaction skip predicate — mirrors `PairBufferSoA::canSkipCompaction` inversion (B4.2 deepen pass).
+
+
 /// Human-readable label for pair-buffer clamp reject reasons (logging / tests).
 const char* pairBufferClampRejectReasonName(PairBufferClampRejectReason reason);
 
@@ -311,10 +317,19 @@ enum class PairBufferDedupeRejectReason : u8 {
     None = 0,
     EmptyBuffer,
 
+
+
+/// Non-mutating clamp predicate — inverse of `canSkipPairBufferClamp` (B4.2 deepen pass).
+
+/// Non-mutating clamp skip predicate — mirrors `PairBufferSoA::canSkipMaxCapacityClamp` inversion (B4.2 deepen pass).
+
+/// Why pair-buffer dedupe would early-out (B4.2 deepen pass).
+
 /// Human-readable label for pair-buffer dedupe reject reasons (logging / tests).
 const char* pairBufferDedupeRejectReasonName(PairBufferDedupeRejectReason reason);
 
 /// Diagnose why SoA dedupe would skip; vacuously succeeds when dedupe may proceed.
+/// Diagnose why dedupe would skip; vacuously succeeds when dedupe may proceed.
 PairBufferDedupeRejectReason pairBufferDedupeRejectReason(const PairBufferSoA& buffer);
 
 /// Returns true when `pairBufferDedupeRejectReason` matches `expected` (B4.2 deepen pass).
@@ -333,9 +348,13 @@ struct PairBufferDedupePreflight {
     bool canDedupe() const { return reason == PairBufferDedupeRejectReason::None; }
     bool emptyBuffer = false;
 
+
 };
 
 PairBufferDedupePreflight preflightPairBufferDedupe(const PairBufferSoA& buffer);
+
+/// Non-mutating dedupe predicate — inverse of `canSkipPairBufferDedupe` (B4.2 deepen pass).
+bool shouldRunPairBufferDedupe(const PairBufferSoA& buffer);
 
 /// Non-mutating dedupe skip predicate — mirrors `PairBufferSoA::canSkipDedupe` (B4.2 deepen follow-up pass).
 bool canSkipPairBufferDedupe(const PairBufferSoA& buffer);
@@ -593,5 +612,11 @@ bool should_skip_pair_buffer_compaction(const PairBufferSoA& buffer);
 
 
 /// Non-mutating sort launch predicate — inverse of sort preflight skip (B4.2 deepen pass).
+
+
+
+/// Non-mutating sort predicate — inverse of `canSkipPairBufferSort` (B4.2 deepen pass).
+
+/// Non-mutating sort skip predicate — mirrors sort preflight inversion (B4.2 deepen pass).
 
 } // namespace fuse::physics::broadphase
