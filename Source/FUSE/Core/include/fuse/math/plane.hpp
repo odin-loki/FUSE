@@ -276,6 +276,8 @@ inline bool tryClipPolygonAgainstPlane(const Vec4& plane, const Vec3* input, u32
                                        u32& outCount, u32 maxOutput, f32 epsilon = 1e-5f) {
     if (isDegeneratePlane(plane, epsilon)) {
         outCount = 0;
+/// Clips a convex polygon when the plane is usable; returns false on degenerate early-out.
+                                       u32 maxOutput, u32& outCount, f32 epsilon = 1e-5f) {
         return false;
     }
     outCount = clipPolygonAgainstPlane(plane, input, inputCount, output, maxOutput, epsilon);

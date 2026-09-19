@@ -234,6 +234,9 @@ inline bool tryExtractTranslation(const Mat4& matrix, Vec3& translation, f32 eps
         return false;
     }
     translation = {matrix.data[12], matrix.data[13], matrix.data[14]};
+/// Writes the translation column when the matrix is affine; returns false on early-out.
+inline bool tryExtractTranslation(const Mat4& matrix, Vec3& out, f32 epsilon = 1e-5f) {
+    out = {matrix.data[12], matrix.data[13], matrix.data[14]};
     return true;
 }
 
