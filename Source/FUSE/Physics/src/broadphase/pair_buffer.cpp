@@ -340,6 +340,26 @@ u32 PairBufferSoA::compact() {
 }
 
 bool PairBufferSoA::hasDuplicateCanonicalPairs() const {
+bool PairBufferSoA::canSkipSortCanonical() const {
+    return canSkipDedupe() || isSortedCanonical();
+}
+
+bool PairBufferSoA::isDuplicateFree() const {
+    if (canSkipSoAIteration()) {
+        return true;
+
+    for (u32 i = 0; i < activeCount; ++i) {
+        if (!slotIsValid(i)) {
+            continue;
+        for (u32 j = i + 1u; j < activeCount; ++j) {
+            if (!slotIsValid(j)) {
+            if (bodyA[i] == bodyA[j] && bodyB[i] == bodyB[j]) {
+                return false;
+
+bool PairBufferSoA::canSkipDedupePass() const {
+    return canSkipDedupe() || (isSortedCanonical() && isDuplicateFree());
+
+void PairBufferSoA::sortCanonical() {
     if (canSkipDedupe()) {
         return false;
     }
@@ -417,6 +437,12 @@ void PairBufferSoA::sortCanonical() {
     validFlags.swap(sortedValidFlags);
 }
 
+void PairBufferSoA::sortCanonicalIfNeeded() {
+    if (!canSkipSortCanonical()) {
+        sortCanonical();
+    }
+}
+
 u32 PairBufferSoA::applyMaxCapacityClamp() {
     if (!preflightPairBufferClamp(*this).needsClamp()) {
         return activeCount;
@@ -425,6 +451,7 @@ u32 PairBufferSoA::applyMaxCapacityClamp() {
     if (!isSortedCanonical()) {
         sortCanonical();
     }
+    sortCanonicalIfNeeded();
 
     const u32 excess = activeCount - maxCapacity;
     droppedCount += excess;

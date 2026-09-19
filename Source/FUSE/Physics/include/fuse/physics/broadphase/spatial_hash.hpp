@@ -1445,6 +1445,55 @@ BroadphaseDedupePreflight preflight_broadphase_dedupe(const PairBufferSoA& buffe
 
 /// Early-out guard combining refine preflight checks (B4.2 deepen pass).
 bool canSkipRefineBroadphase(
+/// Const preflight for broadphase dispatch (B4.2 deepen follow-up).
+struct BroadphasePreflight {
+    bool singletonInput = false;
+
+    bool can_dispatch() const { return !skipped; }
+
+/// Populate broadphase preflight without running hash build (B4.2 deepen follow-up).
+BroadphasePreflight preflight_broadphase(
+
+/// Returns true when broadphase dispatch should early-out (B4.2 deepen follow-up).
+bool can_skip_broadphase_dispatch(
+
+/// Const preflight for refine dispatch (B4.2 deepen follow-up).
+    bool noValidPairs = false;
+    bool skippedBroadphase = false;
+
+
+/// Populate refine preflight without invalidating pair slots (B4.2 deepen follow-up).
+
+/// Returns true when refine should early-out before parallel invalidation (B4.2 deepen follow-up).
+
+/// Const preflight for dedupe dispatch (B4.2 deepen follow-up).
+struct DedupeBroadphasePreflight {
+    u32 activeCount = 0;
+
+    bool can_dedupe() const { return !skipped; }
+
+/// Populate dedupe preflight without mutating the pair buffer (B4.2 deepen follow-up).
+DedupeBroadphasePreflight preflight_dedupe_broadphase(const PairBufferSoA& buffer);
+
+/// Returns true when sort+unique dedupe would leave the buffer unchanged (B4.2 deepen follow-up).
+bool should_skip_dedupe_broadphase(const PairBufferSoA& buffer);
+
+/// Const preflight for shape→cell occupancy insertion (B4.2 deepen follow-up).
+    u32 occupancyCount = 0;
+    u32 budgetRemaining = 0;
+
+    bool can_insert() const { return !skipped; }
+
+/// Populate 3D cell-occupancy preflight without hash insertion (B4.2 deepen follow-up).
+
+/// Populate 2D cell-occupancy preflight without hash insertion (B4.2 deepen follow-up).
+CellOccupancyPreflight preflight_cell_occupancy_2d(const CellRange2& range, u32 maxCells);
+
+/// Returns true when shape→cell insertion should be skipped for occupancy (B4.2 deepen follow-up).
+bool should_skip_shape_cell_insertion(const CellRange3& range, u32 maxCells);
+
+/// Returns true when 2D shape→cell insertion should be skipped for occupancy (B4.2 deepen follow-up).
+bool should_skip_shape_cell_insertion_2d(const CellRange2& range, u32 maxCells);
 
 /// Job-safe broadphase: parallel shape→cell + per-cell pair generation into reusable SoA slots.
 void runBroadphaseIntoBuffer(

@@ -71,6 +71,13 @@ struct PairBufferSoA {
     /// True when compact+clamp would leave the buffer unchanged.
     bool canSkipCompactAndClamp() const;
     /// True when refine would be a no-op (empty buffer or no valid pairs).
+    /// Buffer-only refine guard: empty buffer or no valid pairs (B4.2 deepen follow-up).
+    /// True when canonical sort would leave pair order unchanged (B4.2 deepen follow-up).
+    bool canSkipSortCanonical() const;
+    /// True when no duplicate canonical pairs are present (B4.2 deepen follow-up).
+    bool isDuplicateFree() const;
+    /// True when sort+unique dedupe pass would be a no-op (B4.2 deepen follow-up).
+    bool canSkipDedupePass() const;
     /// True when slot storage has no invalid flags (compact is a no-op).
     bool canSkipCompaction() const;
     /// True when compact has no invalidated slots to gather.
@@ -120,6 +127,8 @@ struct PairBufferSoA {
     u32 invalidateInvalidPairs(u32 bodyCount);
     u32 compact();
     void sortCanonical();
+    /// Sort only when `canSkipSortCanonical` is false (B4.2 deepen follow-up).
+    void sortCanonicalIfNeeded();
     u32 applyMaxCapacityClamp();
     u32 compactAndClamp();
     bool isSortedCanonical() const;
