@@ -4867,3 +4867,8 @@ void testTaaPassTryClassifyGuardWrappers() {
 // --- deepen additive from deepen-b59-taa-try-classify-wrappers-90db ---
     expectTrue(invalidSeqPass->tryPreflightJitterSync(3u, jitterReject),
                "pass tryPreflightJitterSync reject reason is None with fallback");
+
+// --- deepen additive from taa-pass-try-classify-wrappers-1019 ---
+    expectTrue(invalidPass->classifyJitterSyncReject() == fuse::renderer::TaaJitterGuardRejectReason::None,
+    expectTrue(invalidPass->tryPreflightJitterSync(3u, jitterReason),
+               "pass with fallback jitter sequence tryPreflightJitterSync passes");
