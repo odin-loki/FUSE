@@ -43,6 +43,93 @@ void ContactIslandGraph::unionBodies(u32 a, u32 b) {
     }
 }
 
+void ContactIslandGraph::buildInRange(u32 bodyCount,
+                                      const std::vector<narrowphase::ContactManifold>& contacts,
+                                      const std::vector<DistanceConstraint>& distanceConstraints,
+                                      ContactIslandGraphBuildStats* outStats) {
+    ContactIslandGraphBuildStats stats{};
+    stats.bodyCount = bodyCount;
+
+    clear();
+    parent_.resize(bodyCount);
+    for (u32 i = 0; i < bodyCount; ++i) {
+        parent_[i] = i;
+    }
+
+    for (const narrowphase::ContactManifold& contact : contacts) {
+        if (!contact.valid) {
+            continue;
+        }
+        if (contact.bodyA >= bodyCount || contact.bodyB >= bodyCount) {
+            ++stats.skippedOutOfRangeContactCount;
+            continue;
+        }
+        ++stats.processedValidContactCount;
+        unionBodies(contact.bodyA, contact.bodyB);
+    }
+
+    for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (constraint.bodyA >= bodyCount || constraint.bodyB >= bodyCount) {
+            ++stats.skippedOutOfRangeDistanceCount;
+            continue;
+        }
+        ++stats.processedDistanceCount;
+        unionBodies(constraint.bodyA, constraint.bodyB);
+    }
+
+    for (u32 i = 0; i < bodyCount; ++i) {
+        compressPath(i);
+    }
+
+    std::vector<u32> rootToIsland(bodyCount, invalidIsland);
+    islands_.clear();
+
+    for (u32 bodyIndex = 0; bodyIndex < bodyCount; ++bodyIndex) {
+        const u32 root = findRoot(bodyIndex);
+        if (rootToIsland[root] == invalidIsland) {
+            rootToIsland[root] = static_cast<u32>(islands_.size());
+            islands_.push_back({});
+        }
+        islands_[rootToIsland[root]].bodyIndices.push_back(bodyIndex);
+    }
+
+    for (u32 contactIndex = 0; contactIndex < contacts.size(); ++contactIndex) {
+        const narrowphase::ContactManifold& contact = contacts[contactIndex];
+        if (!contact.valid) {
+            continue;
+        }
+        if (contact.bodyA >= bodyCount || contact.bodyB >= bodyCount) {
+            continue;
+        }
+        const u32 islandIndex = rootToIsland[findRoot(contact.bodyA)];
+        if (islandIndex != invalidIsland) {
+            islands_[islandIndex].contactIndices.push_back(contactIndex);
+        }
+    }
+
+    for (u32 distanceIndex = 0; distanceIndex < distanceConstraints.size(); ++distanceIndex) {
+        const DistanceConstraint& constraint = distanceConstraints[distanceIndex];
+        if (constraint.bodyA >= bodyCount || constraint.bodyB >= bodyCount) {
+            continue;
+        }
+        const u32 islandIndex = rootToIsland[findRoot(constraint.bodyA)];
+        if (islandIndex != invalidIsland) {
+            islands_[islandIndex].distanceIndices.push_back(distanceIndex);
+        }
+    }
+
+    std::sort(islands_.begin(), islands_.end(), [](const Island& left, const Island& right) {
+        if (left.bodyIndices.empty() || right.bodyIndices.empty()) {
+            return left.bodyIndices.size() < right.bodyIndices.size();
+        }
+        return left.bodyIndices.front() < right.bodyIndices.front();
+    });
+
+    if (outStats != nullptr) {
+        *outStats = stats;
+    }
+}
+
 void ContactIslandGraph::build(u32 bodyCount,
                                const std::vector<narrowphase::ContactManifold>& contacts,
                                const std::vector<DistanceConstraint>& distanceConstraints) {
