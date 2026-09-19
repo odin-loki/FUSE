@@ -926,3 +926,7 @@ const char* cookCacheRejectReasonLabel(CookCacheRejectReason reason) {
 bool CookCache::should_skip_invalidate(u64 content_hash) const {
     return !would_invalidate(content_hash);
 bool CookCache::should_skip_prune() const {
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-fa40 ---
+bool CookCache::should_skip_lookup(u64 content_hash) const {
+bool CookCache::should_skip_store(const CookCacheEntry& entry) const {

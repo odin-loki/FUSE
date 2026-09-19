@@ -131,3 +131,6 @@ private:
 
 // --- deepen additive from b79-cooker-hash-skip-guards-93f1 ---
     [[nodiscard]] bool should_skip() const { return !would_reconcile(); }
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-fa40 ---
+    [[nodiscard]] bool should_skip_prune_reconcile() const;

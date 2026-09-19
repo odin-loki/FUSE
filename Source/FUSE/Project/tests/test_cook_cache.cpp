@@ -1547,3 +1547,20 @@ void testCookCacheEntryPreflightAndStoreSkip() {
     expectTrue(!cooker.cache().should_skip_prune(), "should_skip_prune false when entry is stale");
     expectTrue(estimate.should_skip() == cooker.cache().should_skip_prune(),
                "prune estimate should_skip matches cache should_skip_prune");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-fa40 ---
+               "should_skip rejects missing file path");
+               "should_skip allows readable mesh import");
+    expectTrue(fuse::project::preflight_mesh_import_hash(desc).should_skip() ==
+               "should_skip matches preflight should_skip for mesh import");
+               "should_skip allows valid cache key fold");
+               "should_skip allows zero-size null bytes");
+void testCookCacheShouldSkipAndWouldInvalidateGuards() {
+    expectTrue(cache.should_skip_lookup(0), "should_skip_lookup rejects zero hash");
+    expectTrue(!cache.should_skip_lookup(42u), "should_skip_lookup allows valid hash on empty cache");
+    invalid.source_path = "/tmp/fuse_b79_should_skip_store.obj";
+    invalid.output_path = "/tmp/fuse_b79_should_skip_store.fusemesh";
+    expectTrue(cache.should_skip_store(invalid), "should_skip_store rejects invalid entry");
+    expectTrue(!cache.should_skip_store(valid), "should_skip_store allows valid entry");
+    expectTrue(cooker.cache().would_invalidate_stale_content_for_source(source, new_hash),
+               "would_invalidate_stale_content true after source change with new hash");
