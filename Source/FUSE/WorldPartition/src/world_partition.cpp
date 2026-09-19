@@ -198,6 +198,7 @@ void WorldPartition::evict_for_budget_(f32 incoming_priority, u64 incoming_bytes
     }
 
     if (!can_attempt_budget_eviction(m_desc.max_loaded_cells, resident_cell_count(),
+                                     m_desc.budget.max_resident_bytes, resident_byte_count(),
                                      incoming_bytes, m_residency_set.has_eviction_candidate())) {
         if (should_record_eviction_skipped_on_empty_residency(true, m_residency_set.has_eviction_candidate())) {
             ++m_budget_counters.eviction_skipped;

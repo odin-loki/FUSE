@@ -275,6 +275,19 @@ inline u32 ResidencySet::find_index_(GridCoord coord) const {
 /// Guard: returns -1 when coord is invalid or not resident.
 }
 
+/// Empty-set guard: returns false when the residency set has no eviction candidate.
+[[nodiscard]] inline bool has_residency_eviction_candidate_guarded(const ResidencySet& set) {
+    return set.has_eviction_candidate();
+}
+
+/// Guard: returns -1 when coord is invalid or not resident.
+[[nodiscard]] inline f32 focus_distance_for_guarded(const ResidencySet& set, GridCoord coord) {
+    if (!is_valid_grid_coord(coord) || !set.contains(coord)) {
+        return -1.f;
+    }
+    return set.focus_distance_for(coord);
+}
+
 /// Pick the farthest coord from `candidates` eligible for budget eviction under `policy`.
 /// Returns `kInvalidGridCoord` and leaves `out_score` at -1 when no candidate qualifies.
 template <typename ScoreFn>
@@ -414,6 +427,8 @@ template <typename ScoreFn>
 [[nodiscard]] inline bool can_attempt_budget_eviction_from_set(u32 max_loaded_cells, u32 resident_count,
                                                                 u64 max_resident_bytes, u64 resident_bytes,
                                                                 u64 incoming_bytes, const ResidencySet& set) {
+    return can_attempt_budget_eviction(max_loaded_cells, resident_count, max_resident_bytes, resident_bytes,
+                                       incoming_bytes, set.has_eviction_candidate());
 }
 
 /// Combined unload rank for budget-driven eviction (B7.6 deepen).
@@ -437,6 +452,14 @@ template <typename ScoreFn>
         return rank_unload_priority_guarded(streaming_priority, stored_priority, focus_distance);
     }
     return rank_budget_unload_priority_guarded(streaming_priority, stored_priority, focus_distance, budget_score);
+/// Guarded unload rank: returns 0 when the computed budget eviction score is not eligible.
+    const f32 budget_score = budget_eviction_score(focus_distance, unload_distance_priority, last_touch_tick,
+                                                    current_tick, policy);
+    if (!is_budget_eviction_score_eligible(budget_score)) {
+        return 0.f;
+    const f32 rank =
+        rank_budget_unload_priority(streaming_priority, stored_priority, focus_distance, budget_score);
+    return is_valid_unload_rank(rank) ? rank : 0.f;
 }
 
 } // namespace fuse::world_partition
