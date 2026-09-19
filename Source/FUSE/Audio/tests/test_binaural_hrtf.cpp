@@ -2829,3 +2829,7 @@ void testHrtfBinauralCouplingRejectReasonGuards() {
     expectTrue(!fuse::audio::preflightHrtfBinauralReady(false, valid, offset, 0.1f, 0.1f, &reason),
                "preflightHrtfBinauralReady rejects disabled HRTF");
                "preflightHrtfBinauralReady returns HrtfDisabled when disabled");
+
+// --- deepen additive from b7-2-hrtf-reject-reasons-72a1 ---
+    fuse::audio::HrtfIrRejectReason ir_reason = fuse::audio::HrtfIrRejectReason::None;
+    fuse::audio::HrtfBinauralRejectReason binaural_reason =
