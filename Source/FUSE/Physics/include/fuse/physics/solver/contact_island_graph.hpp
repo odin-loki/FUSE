@@ -37,6 +37,67 @@ struct ContactIslandGraph {
 
     static constexpr u32 invalidIsland = ~0u;
 
+    /// Input coverage for graph build (out-of-range body-index guards, B4.4 deepen follow-up).
+    struct BuildStats {
+        u32 bodyCount = 0;
+        u32 validContactCount = 0;
+        u32 inRangeContactCount = 0;
+        u32 skippedOutOfRangeContactCount = 0;
+        u32 distanceSlotCount = 0;
+        u32 inRangeDistanceCount = 0;
+        u32 skippedOutOfRangeDistanceCount = 0;
+    };
+
+    /// Why graph build would early-out (B4.4 deepen follow-up).
+    enum class BuildRejectReason : u8 {
+        None = 0,
+        EmptyInputs,
+        OutOfRangeContactBodies,
+        OutOfRangeDistanceBodies,
+    };
+
+    /// Human-readable label for graph build reject reasons (logging / tests).
+    static const char* buildRejectReasonName(BuildRejectReason reason);
+
+    /// Diagnose why build would reject; vacuously succeeds when build may proceed.
+    static BuildRejectReason buildRejectReason(
+        u32 bodyCount,
+        const std::vector<narrowphase::ContactManifold>& contacts,
+        const std::vector<DistanceConstraint>& distanceConstraints);
+
+    /// Returns true when `buildRejectReason` matches `expected` (B4.4 deepen follow-up).
+    static bool buildRejectsForReason(
+        u32 bodyCount,
+        const std::vector<narrowphase::ContactManifold>& contacts,
+        const std::vector<DistanceConstraint>& distanceConstraints,
+        BuildRejectReason expected);
+
+    /// Read-only build diagnostics — no mutation (B4.4 deepen follow-up).
+    struct BuildPreflight {
+        BuildRejectReason reason = BuildRejectReason::None;
+        BuildStats stats{};
+        bool rejected = false;
+
+        bool can_build() const { return !rejected; }
+    };
+
+    /// Populate build preflight without mutating the graph (B4.4 deepen follow-up).
+    static BuildPreflight preflightBuild(
+        u32 bodyCount,
+        const std::vector<narrowphase::ContactManifold>& contacts,
+        const std::vector<DistanceConstraint>& distanceConstraints);
+
+    /// Non-mutating build skip predicate — inverse of `preflightBuild().can_build()` (B4.4 deepen follow-up).
+    static bool shouldSkipBuild(
+        u32 bodyCount,
+        const std::vector<narrowphase::ContactManifold>& contacts,
+        const std::vector<DistanceConstraint>& distanceConstraints);
+
+    /// Guarded build; clears the graph and returns false when preflight rejects inputs.
+    bool buildGuarded(u32 bodyCount,
+                      const std::vector<narrowphase::ContactManifold>& contacts,
+                      const std::vector<DistanceConstraint>& distanceConstraints);
+
 private:
     void unionBodies(u32 a, u32 b);
     u32 findRoot(u32 index) const;
