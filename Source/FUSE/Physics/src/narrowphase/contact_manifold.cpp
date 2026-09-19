@@ -621,3 +621,8 @@ bool should_skip_manifold_finalize(
 ManifoldFinalizePreflight preflight_finalize_contact_manifold(
 bool should_skip_finalize_contact_manifold(const ContactManifold& manifold) {
     const ManifoldFinalizePreflight preflight = preflight_finalize_contact_manifold(manifold);
+
+// --- deepen additive from b4-narrowphase-guards-deepen-ea96 ---
+ManifoldFinalizePreflight preflight_manifold_finalize(const ContactManifold& manifold) {
+bool should_skip_manifold_finalize(const ContactManifold& manifold) {
+bool can_finalize_with_preflight(const ManifoldFinalizePreflight& preflight) {

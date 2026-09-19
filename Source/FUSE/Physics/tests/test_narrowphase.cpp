@@ -1998,3 +1998,50 @@ void testFrictionBasisRebuildPreflightGuards() {
     expectTrue(cachedPreflight.can_skip_rebuild(), "friction preflight skips rebuild for cached basis");
     testContactPairRejectPreflightGuards();
     testFrictionBasisRebuildPreflightGuards();
+
+// --- deepen additive from b4-narrowphase-guards-deepen-ea96 ---
+void testContactPairPreflightDeepenGuards() {
+    expectTrue(validPreflight.can_dispatch(), "deepen preflight allows valid pair");
+        fuse::physics::narrowphase::can_dispatch_contact_pair(validPreflight),
+    expectTrue(!validPreflight.isSelfPair, "valid preflight has no self flag");
+    expectTrue(!validPreflight.isOutOfRange, "valid preflight has no OOB flag");
+    expectTrue(!validPreflight.isMissingShape, "valid preflight has no missing-shape flag");
+    const auto missingShapePreflight =
+    expectTrue(!missingShapePreflight.can_dispatch(), "deepen preflight rejects missing shape");
+    expectTrue(missingShapePreflight.isMissingShape, "deepen preflight flags missing shape");
+            missingShapePreflight,
+            fuse::physics::narrowphase::ContactPairRejectReason::MissingShape),
+    expectTrue(triggerPreflight.isBothTriggers, "deepen preflight flags both-trigger pair");
+            triggerPreflight,
+            fuse::physics::narrowphase::ContactPairRejectReason::BothTriggers),
+    expectTrue(staticPreflight.isBothStatic, "deepen preflight flags both-static pair");
+    expectTrue(degeneratePreflight.isDegenerateShape, "deepen preflight flags degenerate shape");
+            degeneratePreflight,
+            fuse::physics::narrowphase::ContactPairRejectReason::DegenerateShape),
+    expectTrue(emptyPreflight.isEmpty, "finalize preflight flags empty");
+        "should_skip_manifold_finalize true for empty");
+    expectTrue(noNormalPreflight.hasInvalidNormal, "finalize preflight flags invalid normal");
+        !fuse::physics::narrowphase::can_finalize_with_preflight(noNormalPreflight),
+    expectTrue(separatedPreflight.hasNoPenetratingPoints, "finalize preflight flags all-separated");
+        fuse::physics::narrowphase::should_skip_manifold_finalize(separated),
+        "should_skip_manifold_finalize true for separated");
+        fuse::physics::narrowphase::can_finalize_with_preflight(readyPreflight),
+        !fuse::physics::narrowphase::should_skip_manifold_finalize(ready),
+        "should_skip_manifold_finalize false for ready manifold");
+void testManifoldPruneShallowPreflightGuards() {
+    expectTrue(shallowPreflight.hasShallowPenetrations, "prune preflight flags shallow penetrations");
+    expectTrue(shallowPreflight.needs_pruning(), "prune preflight needs pruning with shallow slot");
+    expectTrue(!cleanPreflight.hasShallowPenetrations, "prune preflight clean without shallow slots");
+    expectTrue(!cleanPreflight.needs_pruning(), "prune preflight skips clean manifold with shallow check");
+        fuse::physics::narrowphase::should_skip_friction_basis_rebuild_preflight(emptyPreflight),
+    expectTrue(needsBuildPreflight.needs_rebuild(), "friction preflight needs rebuild without cache");
+    expectTrue(!needsBuildPreflight.can_reuse(), "friction preflight cannot reuse missing basis");
+        !fuse::physics::narrowphase::should_skip_friction_basis_rebuild_preflight(needsBuildPreflight),
+    expectTrue(cachedPreflight.hasCachedBasis, "friction preflight detects cached basis");
+    expectTrue(cachedPreflight.can_reuse(), "friction preflight can reuse valid basis");
+        fuse::physics::narrowphase::can_reuse_friction_basis(cachedPreflight),
+        fuse::physics::narrowphase::should_skip_friction_basis_rebuild_preflight(cachedPreflight),
+    expectTrue(stalePreflight.wouldRebuild, "friction preflight would rebuild stale basis");
+        !fuse::physics::narrowphase::should_skip_friction_basis_rebuild_preflight(stalePreflight),
+    testContactPairPreflightDeepenGuards();
+    testManifoldPruneShallowPreflightGuards();

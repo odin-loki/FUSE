@@ -683,3 +683,6 @@ ManifoldPruneFinalizePreflight preflight_manifold_prune_finalize(
     ManifoldPruneFinalizePreflight preflight{};
         preflight.finalize.reason = ManifoldFinalizeRejectReason::Empty;
 bool should_skip_prune_contact_manifold(
+
+// --- deepen additive from b4-narrowphase-guards-deepen-ea96 ---
+bool can_dispatch_contact_pair(const ContactPairPreflight& preflight) {
