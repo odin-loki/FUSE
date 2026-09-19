@@ -326,6 +326,9 @@ bool isAxisValidForMode(GizmoAxis axis, GizmoMode mode);
 
 /// True when snap is enabled and the mode step is negative (B6.4 deepen pass).
 bool isSnapStepNegative(GizmoMode mode, const GizmoSnapSettings& settings);
+/// True when ray origin or direction contains NaN/Inf (B6.4 deepen pass).
+
+/// True when screen coordinates or viewport dimensions contain NaN/Inf (B6.4 deepen pass).
 
 /// Read-only pick diagnostics — no mutation (B6.4 deepen follow-up — pick guard).
 struct PickPreflight {
@@ -1869,6 +1872,13 @@ bool canInteract(const GizmoRay& ray, const GizmoTransform& transform, bool drag
                  GizmoAxis activeAxis, GizmoMode mode, GizmoSpace space, f32 axisLength,
                  f32 pickRadius, const GizmoSnapSettings& settings);
 
+/// Non-mutating phase-routing predicate — same guards as `InteractionPreflight::canActOnPhase` (B6.4 deepen pass).
+bool canActOnPhase(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+                   const GizmoSnapSettings& settings);
+bool canActOnPhase(const GizmoRay& ray, const GizmoTransform& transform, bool dragging,
+                   GizmoAxis activeAxis, GizmoMode mode, GizmoSpace space, f32 axisLength,
+                   f32 pickRadius, const GizmoSnapSettings& settings);
+
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
                                       f32 pickRadius, bool alreadyDragging = false);
                                       f32 pickRadius, const GizmoSnapSettings& settings,
@@ -2390,6 +2400,9 @@ public:
     [[nodiscard]] SnapInteractionPreflight preflightSnapInteraction() const;
     [[nodiscard]] bool canApplySnapOnPhase() const;
     [[nodiscard]] bool isSnapDegradedOnPhase() const;
+    /// Current drag lifecycle phase (B6.4 deepen pass).
+    [[nodiscard]] GizmoInteractionPhase interactionPhase() const;
+    [[nodiscard]] bool canActOnPhase(const GizmoRay& ray,
     /// Guarded begin-drag — returns false on empty viewport / miss picks (B6.4 deepen follow-up).
     bool tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& current, GizmoResult& out);
     bool tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current, GizmoResult& out);

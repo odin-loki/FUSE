@@ -6835,6 +6835,76 @@ void testSnapInteractionPreflight() {
     expectTrue(!gizmo.canApplySnapOnPhase(), "gizmo canApplySnapOnPhase rejects invalid step");
 
 void testInteractionPreflightSnapOnPhase() {
+void testNonFiniteInputGuards() {
+    fuse::editor::GizmoRay nanRay{};
+    nanRay.origin = {0.f, 0.f, 0.f};
+    nanRay.direction = {NAN, 0.f, 0.f};
+    expectTrue(fuse::editor::isRayNonFinite(nanRay), "isRayNonFinite rejects NaN direction");
+    expectTrue(!fuse::editor::isRayEmpty(nanRay),
+               "NaN direction is not classified as empty by isRayEmpty");
+
+    fuse::editor::GizmoRay infRay{};
+    infRay.origin = {INFINITY, 0.f, 0.f};
+    infRay.direction = {1.f, 0.f, 0.f};
+    expectTrue(fuse::editor::isRayNonFinite(infRay), "isRayNonFinite rejects Inf origin");
+
+    expectTrue(!fuse::editor::isRayNonFinite(xRay), "valid ray clears non-finite guard");
+
+    fuse::editor::GizmoHitTest nanHit{};
+    nanHit.viewportWidth = 100.f;
+    nanHit.viewportHeight = 100.f;
+    nanHit.screenX = NAN;
+    nanHit.screenY = 50.f;
+    expectTrue(fuse::editor::isHitTestNonFinite(nanHit), "isHitTestNonFinite rejects NaN screen X");
+
+    nanHit.screenX = 10.f;
+    nanHit.viewportWidth = INFINITY;
+    expectTrue(fuse::editor::isHitTestNonFinite(nanHit),
+               "isHitTestNonFinite rejects Inf viewport width");
+
+    const fuse::editor::PickPreflight nanPick = fuse::editor::preflightPick(
+        nanRay, transform, fuse::editor::GizmoMode::Translate, fuse::editor::GizmoSpace::World,
+        fuse::editor::GizmoSystem::kAxisLength, fuse::editor::GizmoSystem::kPickRadius);
+    expectTrue(nanPick.nonFiniteRay, "pick preflight marks non-finite ray");
+    expectTrue(!nanPick.canPick(), "pick preflight rejects non-finite ray");
+
+    const fuse::editor::PickPreflight nanHitPick =
+        fuse::editor::preflightPick(nanHit, fuse::editor::GizmoMode::Translate);
+    expectTrue(nanHitPick.nonFiniteHit, "pick preflight marks non-finite screen hit");
+    expectTrue(!nanHitPick.canPick(), "pick preflight rejects non-finite screen hit");
+
+    const fuse::editor::BeginDragPreflight nanBegin =
+        fuse::editor::preflightBeginDrag(nanHit, fuse::editor::GizmoMode::Translate);
+    expectTrue(nanBegin.nonFiniteHit, "begin preflight marks non-finite screen hit");
+    expectTrue(!nanBegin.canBegin, "begin preflight rejects non-finite screen hit");
+
+    fuse::editor::GizmoHitTest validHit{};
+    validHit.viewportWidth = 100.f;
+    validHit.viewportHeight = 100.f;
+    validHit.screenX = 10.f;
+    validHit.screenY = 50.f;
+    const fuse::editor::UpdateDragPreflight nanUpdate =
+        fuse::editor::preflightUpdateDrag(nanHit, true, fuse::editor::GizmoAxis::X);
+    expectTrue(nanUpdate.nonFiniteHit, "update preflight marks non-finite screen hit");
+    expectTrue(!nanUpdate.canUpdate(), "update preflight rejects non-finite screen hit");
+
+    fuse::editor::GizmoAxis axis = fuse::editor::GizmoAxis::X;
+    expectTrue(!fuse::editor::tryPickAxis(nanHit, fuse::editor::GizmoMode::Translate, axis),
+               "tryPickAxis rejects non-finite screen hit");
+    expectTrue(axis == fuse::editor::GizmoAxis::None,
+               "non-finite screen hit leaves axis unset");
+
+    expectTrue(!gizmo.canPickAxis(nanHit), "gizmo canPickAxis rejects non-finite screen hit");
+    expectTrue(!gizmo.canBeginDrag(nanHit), "gizmo canBeginDrag rejects non-finite screen hit");
+
+    gizmo.beginDrag(validHit, transform);
+    fuse::editor::GizmoResult result{};
+    expectTrue(!gizmo.tryUpdateDrag(nanHit, result),
+               "gizmo tryUpdateDrag rejects non-finite screen hit");
+    expectTrue(gizmo.isDragging(), "non-finite update reject keeps drag active");
+    gizmo.endDrag();
+
+void testGizmoInteractionPhaseRouting() {
     snap.gridSize = 1.f;
 
     fuse::editor::GizmoHitTest hit{};
@@ -6959,6 +7029,24 @@ void testGizmoPreflightRouter() {
                "gizmo interaction preflight reports snap degraded while dragging");
     expectTrue(!gizmo.preflightInteraction(hit).snapWillApplyOnPhase(),
                "gizmo interaction snapWillApplyOnPhase false when degraded");
+    expectTrue(gizmo.interactionPhase() == fuse::editor::GizmoInteractionPhase::Idle,
+               "gizmo interactionPhase reports idle before drag");
+    expectTrue(gizmo.canActOnPhase(hit), "gizmo canActOnPhase allows begin when idle");
+
+    expectTrue(gizmo.interactionPhase() == fuse::editor::GizmoInteractionPhase::Dragging,
+               "gizmo interactionPhase reports dragging after begin");
+    expectTrue(gizmo.canActOnPhase(hit), "gizmo canActOnPhase allows update when dragging");
+
+    hit.viewportWidth = 0.f;
+               "gizmo canActOnPhase rejects update on empty viewport while dragging");
+    expectTrue(fuse::editor::canActOnPhase(hit, true, fuse::editor::GizmoAxis::X,
+                                           fuse::editor::GizmoMode::Translate, snap) ==
+                   gizmo.canActOnPhase(hit),
+               "free canActOnPhase mirrors gizmo canActOnPhase while dragging");
+
+    hit.viewportWidth = 100.f;
+               "free canActOnPhase allows begin for valid ray when idle");
+               "gizmo canActOnPhase allows begin for valid ray when idle");
 
 void testCanInteractionPredicates() {
     fuse::editor::GizmoSnapSettings snap{};
@@ -7530,6 +7618,7 @@ int main() {
     testPickSnapDegradedHelper();
     testSnapInteractionPreflight();
     testInteractionPreflightSnapOnPhase();
+    testGizmoInteractionPhaseRouting();
     testCanInteractionPredicates();
     testPickRejectReasonGuards();
     testSnapRejectReasonGuards();
