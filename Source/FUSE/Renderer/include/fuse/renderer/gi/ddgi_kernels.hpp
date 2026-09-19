@@ -114,6 +114,11 @@ const char* probeKernelResourceRejectReasonLabel(ProbeKernelResourceRejectReason
 /// Classify why probe kernel launch preflight would reject — same ordering as `tryCanLaunchProbeTraceKernel`.
 /// Classify why probe-kernel launch preflight would reject (B5.6 deepen).
 
+/// Classify why a CUDA probe-kernel launch preflight would reject (B5.6 deepen).
+ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params);
+
+/// Early-out when probe trace launch would be rejected — same ordering as `canLaunchProbeTraceKernel`.
+bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
 /// Preflight guard before probe trace kernel launch.
 bool canLaunchProbeTraceKernel(const DDGIKernelParams& params);
 /// Early-out when probe trace launch would be rejected.
@@ -133,6 +138,8 @@ bool preflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelReject
 bool shouldSkipProbeTraceKernel(const DDGIKernelParams& params);
 /// Probe trace launch preflight; false when launch would be rejected (B5.6 deepen).
 
+/// Early-out when probe blend launch would be rejected — same ordering as `canLaunchProbeBlendKernel`.
+bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
 /// Preflight guard before probe blend kernel launch.
 bool canLaunchProbeBlendKernel(const DDGIKernelParams& params);
 /// Early-out when probe blend launch would be rejected.

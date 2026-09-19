@@ -343,6 +343,10 @@ bool probeGridSourceRejectReasonIsBlocking(ProbeGridSourceRejectReason reason);
 /// Classify why sample-coord validation would reject; vacuously returns `None` on valid coords (B5.6 deepen).
 /// Classify why sample-coord validation would reject; vacuously `None` on valid coords (B5.6 deepen).
 
+/// Classify why probe sample coord validation would reject (B5.6 deepen).
+ProbeSampleCoordsRejectReason classifyProbeSampleCoordsReject(const DDGIDesc& desc,
+                                                              const ProbeSampleCoords& coords);
+
 /// Why a cache-index lookup preflight rejected the request (B5.6 deepen).
 enum class CacheIndexRejectReason : u8 {
     OutOfRangeProbeIndex,
@@ -431,6 +435,11 @@ const char* probeUpdateLaunchRejectReasonLabel(ProbeUpdateLaunchRejectReason rea
 /// Classify why probe-update launch preflight would reject — same ordering as `tryCanLaunchDdgiProbeUpdate`.
 /// Classify why probe-update launch preflight would reject; vacuously returns `None` when launchable (B5.6 deepen).
 /// Classify why probe-update launch preflight would reject (B5.6 deepen).
+ProbeUpdateLaunchRejectReason classifyProbeUpdateLaunchReject(const DDGIDesc& desc,
+                                                              const u32* probe_indices,
+                                                              u32 probe_count);
+
+/// Classify why host probe-update launch preflight would reject (B5.6 deepen).
 ProbeUpdateLaunchRejectReason classifyProbeUpdateLaunchReject(const DDGIDesc& desc,
                                                               const u32* probe_indices,
                                                               u32 probe_count);
@@ -603,6 +612,7 @@ struct ProbeGridLayout {
     /// True when grid coords exceed grid bounds (would be clamped).
     static bool isProbeGridCoordOutOfRange(const DDGIDesc& desc, const ProbeGridCoord& coord);
     /// True when grid coordinates exceed bounds (would be clamped).
+    /// True when tile coords exceed grid bounds (would be clamped).
     static bool isProbeCoordOutOfRange(const DDGIDesc& desc, const ProbeGridCoord& coord);
     static bool isValidProbeIndex(const DDGIDesc& desc, u32 probe_index);
     static bool isBorderProbeCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
@@ -692,6 +702,7 @@ struct ProbeGridLayout {
     static ProbeSampleCoordsRejectReason classifyProbeSampleCoordsReject(const DDGIDesc& desc,
                                                                          const ProbeSampleCoords& coords);
     /// Early-out when sample-coord validation would reject — same ordering as `tryValidateProbeSampleCoords`.
+    /// True when sample coords would be modified by clampProbeSampleCoords.
     /// Diagnose why sample-coord validation would reject; vacuously succeeds on valid coords.
     static bool tryValidateProbeSampleCoords(const DDGIDesc& desc,
                                              const ProbeSampleCoords& coords,
@@ -1007,6 +1018,10 @@ bool wouldSkipReadIrradianceAtIndex(const DDGIDesc& desc,
                                     u32 probe_index);
 /// Classify why cache-index preflight would reject; returns `None` on valid indices.
 CacheIndexRejectReason classifyCacheIndexReject(const DDGIDesc& desc,
+/// Classify why cache-index preflight would reject (B5.6 deepen).
+/// Classify cache-index preflight including null-cache rejection (B5.6 deepen).
+/// True when a cache lookup at `probe_index` would clamp into the valid probe range.
+bool wouldClampCacheIndexLookup(const DDGIDesc& desc, u32 probe_index);
 /// Early-out when cache-index lookup would be rejected — same ordering as `tryValidateCacheIndex`.
 bool wouldSkipCacheIndexLookup(const DDGIDesc& desc,
                                u32 probe_index,
@@ -1354,6 +1369,7 @@ bool tryValidateScheduledProbeIndices(const DDGIDesc& desc,
                                       const u32* scheduled_indices,
                                       u32 scheduled_count,
                                       ProbeUpdateLaunchRejectReason& outReason);
+/// Classify why probe-update scheduling preflight would reject (B5.6 deepen).
 fuse::math::Vec3 blendIrradiance(const fuse::math::Vec3& previous,
                                  const fuse::math::Vec3& incoming,
                                  f32 hysteresis);
