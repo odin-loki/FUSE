@@ -2756,4 +2756,44 @@ bool shouldRunPairBufferCompactClamp(const PairBufferSoA& buffer) {
 
 
 
+    case PairBufferWriteSlotRejectReason::InvalidSlot:
+        return "InvalidSlot";
+
+        return PairBufferWriteSlotRejectReason::InvalidSlot;
+
+
+    preflight.invalidSlot = preflight.reason == PairBufferWriteSlotRejectReason::InvalidSlot;
+
+
+
+
+
+
+
+const char* pairBufferMergeRejectReasonName(PairBufferMergeRejectReason reason) {
+    case PairBufferMergeRejectReason::None:
+    case PairBufferMergeRejectReason::EmptyPairs:
+        return "EmptyPairs";
+    case PairBufferMergeRejectReason::AtCapacity:
+
+PairBufferMergeRejectReason pairBufferMergeRejectReason(const PairBufferSoA& buffer, u32 pairCount) {
+        return PairBufferMergeRejectReason::EmptyPairs;
+        return PairBufferMergeRejectReason::AtCapacity;
+    return PairBufferMergeRejectReason::None;
+
+bool pairBufferMergeRejectsForReason(
+    PairBufferMergeRejectReason expected) {
+    return pairBufferMergeRejectReason(buffer, pairCount) == expected;
+
+PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u32 pairCount) {
+    preflight.reason = pairBufferMergeRejectReason(buffer, pairCount);
+    preflight.emptyPairs = preflight.reason == PairBufferMergeRejectReason::EmptyPairs;
+    preflight.atCapacity = preflight.reason == PairBufferMergeRejectReason::AtCapacity;
+
+bool canSkipPairBufferMerge(const PairBufferSoA& buffer, u32 pairCount) {
+    return !preflightPairBufferMerge(buffer, pairCount).canMerge();
+
+bool shouldRunPairBufferMerge(const PairBufferSoA& buffer, u32 pairCount) {
+    return preflightPairBufferMerge(buffer, pairCount).canMerge();
+
 } // namespace fuse::physics::broadphase
