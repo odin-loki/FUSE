@@ -932,3 +932,6 @@ PairBufferSlotReservationPreflight preflightPairBufferSlotReservation(
 
 // --- deepen additive from b4-broadphase-deepen-guards-5209 ---
     if (!preflightPairSlots(slotCount, *this).canPrepare()) {
+
+// --- deepen additive from b4-broadphase-deepen-guards-ca26 ---
+    return preflightPairBufferPush(buffer, idxA, idxB).canPush();

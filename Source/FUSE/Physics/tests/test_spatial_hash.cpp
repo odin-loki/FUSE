@@ -3081,3 +3081,23 @@ void testBroadphaseMergePreflightCounts() {
     const fuse::physics::broadphase::BroadphaseMergePreflight mergeable =
     testCellOccupancyPreflightCanSkipGuards();
     testBroadphaseMergePreflightCounts();
+
+// --- deepen additive from b4-broadphase-deepen-guards-ca26 ---
+void testPairBufferPushSkipGuards() {
+    expectTrue(!emptyPreflight.canDedupe(), "combined preflight cannot dedupe empty buffer");
+    expectTrue(!emptyPreflight.canRefineDedupe(), "combined preflight cannot refine+dedupe empty scene");
+    const fuse::physics::broadphase::RefineDedupeBroadphasePreflight singlePreflight =
+    expectTrue(singlePreflight.canRefine(), "combined preflight can refine valid scene");
+    expectTrue(!singlePreflight.canDedupe(), "combined preflight cannot dedupe single pair");
+    expectTrue(!singlePreflight.canRefineDedupe(), "combined preflight cannot refine+dedupe single pair");
+    const fuse::physics::broadphase::RefineDedupeBroadphasePreflight multiPreflight =
+    expectTrue(multiPreflight.canRefineDedupe(), "combined preflight can refine+dedupe multiple pairs");
+void testBroadphaseMergeLaunchPreflightGuards() {
+    const fuse::physics::broadphase::BroadphaseMergeLaunchPreflight emptyLaunch =
+        fuse::physics::broadphase::preflightBroadphaseMergeLaunch(bodies, shapes);
+    const fuse::physics::broadphase::BroadphaseMergeLaunchPreflight planeOnlyLaunch =
+    const fuse::physics::broadphase::BroadphaseMergeLaunchPreflight launchPreflight =
+    expectTrue(launchPreflight.canRunBroadphase(), "populated scene can run broadphase");
+    expectTrue(launchPreflight.canMerge(), "plane plus dynamic scene can merge");
+    expectTrue(launchPreflight.canLaunchMerge(), "merge launch preflight can launch mergeable scene");
+    testBroadphaseMergeLaunchPreflightGuards();

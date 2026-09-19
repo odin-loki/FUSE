@@ -1186,3 +1186,13 @@ BroadphaseCellPairPreflight preflightBroadphaseCellPairs(u32 totalCellSlots) {
     preflight.zeroSlots = preflight.reason == BroadphaseCellPairRejectReason::ZeroSlots;
     return !preflightBroadphaseCellPairs(totalCellSlots).canGenerate();
     return preflightBroadphaseCellPairs(totalCellSlots).canGenerate();
+
+// --- deepen additive from b4-broadphase-deepen-guards-ca26 ---
+    return !preflightRefineDedupeBroadphase(bodies, shapes, buffer).canRefineDedupe();
+    return preflightRefineDedupeBroadphase(bodies, shapes, buffer).canRefineDedupe();
+BroadphaseMergeLaunchPreflight preflightBroadphaseMergeLaunch(
+    BroadphaseMergeLaunchPreflight preflight{};
+    preflight.broadphase = preflightBroadphase(bodies, shapes);
+    preflight.merge = preflightBroadphaseMerge(bodies, shapes);
+    return !preflightBroadphaseMergeLaunch(bodies, shapes).canLaunchMerge();
+    return preflightBroadphaseMergeLaunch(bodies, shapes).canLaunchMerge();
