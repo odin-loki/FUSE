@@ -2402,3 +2402,22 @@ void testEmptyBroadphaseOutputGuard() {
     testRefineBroadphasePreflight();
     testPairBufferDedupePreflight();
     testPairBufferClampPreflight();
+
+// --- deepen additive from b4-broadphase-deepen-guards-1b87 ---
+void testCellOccupancyPreflightGuards() {
+        fuse::physics::broadphase::preflightCellOccupancy(unitRange, 8u);
+        fuse::physics::broadphase::preflightCellOccupancy(unitRange, 7u);
+        fuse::physics::broadphase::preflightCellOccupancy(inverted, 4u);
+    expectTrue(emptyPreflight.skipped, "empty range preflight is skipped");
+    expectEq(emptyPreflight.cellCount, 0u, "empty range reports zero cells");
+        fuse::physics::broadphase::preflightCellOccupancy(planeRange, 8u);
+    expectEq(planePreflight.cellCount, 8u, "2D preflight reports occupancy count");
+void testPerShapeCellBudgetGuard() {
+void testPairSlotPreflightGuards() {
+    const auto zeroSlots = fuse::physics::broadphase::preflightPairSlots(0u, buffer);
+    const auto withinCapacity = fuse::physics::broadphase::preflightPairSlots(3u, buffer);
+    const auto exceedsCapacity = fuse::physics::broadphase::preflightPairSlots(8u, buffer);
+        fuse::physics::broadphase::preflightRefineBroadphasePairs(buffer, bodies, shapes);
+void testPairBufferDedupeAndCompactGuards() {
+    testCellOccupancyPreflightGuards();
+    testPairSlotPreflightGuards();

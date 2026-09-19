@@ -1015,3 +1015,13 @@ bool should_skip_refine_broadphase(
     if (should_skip_dedupe_pair_buffer(buffer)) {
     if (should_skip_broadphase(bodies, shapes)) {
     if (should_skip_refine_broadphase(bodies, shapes, buffer)) {
+
+// --- deepen additive from b4-broadphase-deepen-guards-1b87 ---
+BroadphaseRefinePreflight preflightRefineBroadphasePairs(
+    return preflightRefineBroadphasePairs(buffer, bodies, shapes).skipped;
+        const CellOccupancyPreflight occupancyPreflight =
+            preflightCellOccupancy(range, perShapeCellBudget(maxSpan, true));
+        if (occupancyPreflight.skipped || occupancyPreflight.exceedsBudget) {
+        preflightCellOccupancy(range, perShapeCellBudget(maxSpan, false));
+    const PairSlotPreflight slotPreflight = preflightPairSlots(totalCellSlots, buffer);
+    if (slotPreflight.skipped) {

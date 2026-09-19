@@ -1141,3 +1141,6 @@ CellOccupancyPreflight preflight_cell_occupancy(const CellRange3& range, u32 max
 CellOccupancyPreflight preflight_cell_occupancy(const CellRange2& range, u32 maxCells);
 RefineBroadphasePreflight preflight_refine_broadphase(
 bool should_skip_refine_broadphase(
+
+// --- deepen additive from b4-broadphase-deepen-guards-1b87 ---
+BroadphaseRefinePreflight preflightRefineBroadphasePairs(
