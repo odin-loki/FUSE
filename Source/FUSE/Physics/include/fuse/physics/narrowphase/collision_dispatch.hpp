@@ -3,7 +3,9 @@
 #include <fuse/physics/broadphase/spatial_hash.hpp>
 #include <fuse/physics/config.hpp>
 #include <fuse/physics/math.hpp>
+#include <fuse/physics/narrowphase/contact_buffer.hpp>
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
+#include <fuse/physics/narrowphase/contact_pair.hpp>
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/types.hpp>
 
@@ -185,8 +187,6 @@ ContactManifold collideBoxBox(
     u32 idxA,
     u32 idxB);
 
-struct ContactBufferSoA;
-
 /// Job-safe narrowphase: one output slot per candidate pair, then compact valid contacts.
 void runNarrowphaseIntoBuffer(
     const std::vector<broadphase::CandidatePair>& pairs,
@@ -196,6 +196,33 @@ void runNarrowphaseIntoBuffer(
 
 /// CPU stub of the CUDA narrow-phase dispatch (B4.3).
 std::vector<ContactManifold> runNarrowphase(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Read-only narrowphase dispatch diagnostics — no mutation (B4.4 deepen pass).
+struct NarrowphaseDispatchPreflight {
+    NarrowphaseBatchPreflight batch{};
+    ContactBufferCompactionPreflight compaction{};
+    ContactBufferClampPreflight clamp{};
+    bool skipped = false;
+
+    bool can_dispatch() const { return !skipped && batch.can_dispatch(); }
+    bool can_skip_buffer_passes() const {
+        return compaction.reason != ContactBufferCompactionRejectReason::None &&
+               clamp.reason != ContactBufferClampRejectReason::None;
+    }
+};
+
+/// Populate dispatch preflight without running shape dispatch (B4.4 deepen pass).
+NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const ContactBufferSoA& buffer);
+
+/// Non-mutating dispatch skip predicate — mirrors `can_skip_narrowphase` (B4.4 deepen pass).
+bool can_skip_narrowphase_dispatch(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);

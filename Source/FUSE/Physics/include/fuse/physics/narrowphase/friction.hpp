@@ -571,5 +571,18 @@ bool ensure_friction_basis_after_preflight(ContactManifold& manifold, f32 epsilo
 /// Non-mutating friction-basis rebuild predicate — inverse of `should_skip_friction_basis_preflight` (B4.4 deepen pass).
 
 /// Returns true when friction-basis rebuild may proceed (B4.4 deepen pass).
+/// Combined normalize + rebuild diagnostics — no mutation (B4.4 deepen pass).
+struct FrictionBasisNormalizePreflight {
+    FrictionBasisPreflight rebuild{};
+    bool needsNormalize = false;
+
+    bool can_skip_all() const { return rebuild.can_skip_rebuild() && !needsNormalize; }
+    bool needs_work() const { return needsNormalize || rebuild.needsRebuild; }
+
+/// Populate combined normalize/rebuild preflight without mutating the manifold (B4.4 deepen pass).
+FrictionBasisNormalizePreflight preflight_friction_basis_normalize_rebuild(
+
+/// Non-mutating skip predicate for combined normalize/rebuild (B4.4 deepen pass).
+bool should_skip_friction_basis_normalize_rebuild(
 
 } // namespace fuse::physics::narrowphase

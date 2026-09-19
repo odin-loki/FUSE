@@ -1180,4 +1180,19 @@ bool can_dispatch_friction_basis_rebuild(
     return should_run_friction_basis_rebuild(manifold, epsilon);
 }
 
+FrictionBasisNormalizePreflight preflight_friction_basis_normalize_rebuild(
+    const ContactManifold& manifold,
+    f32 epsilon) {
+    FrictionBasisNormalizePreflight preflight{};
+    preflight.rebuild = preflight_friction_basis_rebuild(manifold, epsilon);
+    preflight.needsNormalize = should_normalize_contact_normal_before_friction(manifold, epsilon);
+    return preflight;
+}
+
+bool should_skip_friction_basis_normalize_rebuild(
+    const ContactManifold& manifold,
+    f32 epsilon) {
+    return preflight_friction_basis_normalize_rebuild(manifold, epsilon).can_skip_all();
+}
+
 } // namespace fuse::physics::narrowphase

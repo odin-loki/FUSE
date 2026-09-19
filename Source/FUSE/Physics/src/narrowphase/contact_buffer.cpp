@@ -6,6 +6,7 @@
 #include <fuse/physics/narrowphase/friction.hpp>
 
 #include <algorithm>
+#include <climits>
 
 namespace fuse::physics::narrowphase {
 
@@ -21,9 +22,16 @@ bool ContactBufferSoA::canAcceptContacts(u32 additionalCount) const {
         return true;
     }
     if (maxCapacity == 0u) {
-        return true;
-    }
     return activeCount + additionalCount <= maxCapacity;
+bool ContactBufferSoA::canSkipCompaction() const {
+    if (canSkipSoAIteration()) {
+
+    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+    if (scanCount == 0u) {
+
+    for (u32 slot = 0u; slot < scanCount; ++slot) {
+        if (validFlags[slot] == 0u) {
+            return false;
 }
 
 bool ContactBufferSoA::canApplyMaxCapacityClamp() const {
@@ -35,15 +43,13 @@ bool ContactBufferSoA::canSkipCompaction() const {
         return true;
     }
     if (pairSlotCount == 0u) {
-        return true;
-    }
     return countValidSlots() == pairSlotCount;
-}
 
 u32 ContactBufferSoA::countValidSlots() const {
     u32 validCount = 0u;
     const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
     for (u32 slot = 0u; slot < scanCount; ++slot) {
+    for (u32 slot = 0u; slot < pairSlotCount; ++slot) {
         if (validFlags[slot] != 0u) {
             ++validCount;
         }
@@ -54,6 +60,102 @@ u32 ContactBufferSoA::countValidSlots() const {
 bool ContactBufferSoA::slotIsValid(u32 slot) const {
     return slot < validFlags.size() && validFlags[slot] != 0u;
 }
+
+const char* contactBufferWriteRejectReasonName(ContactBufferWriteRejectReason reason) {
+    switch (reason) {
+    case ContactBufferWriteRejectReason::None:
+        return "None";
+    case ContactBufferWriteRejectReason::InvalidSlot:
+        return "InvalidSlot";
+    case ContactBufferWriteRejectReason::InvalidManifold:
+        return "InvalidManifold";
+    case ContactBufferWriteRejectReason::SelfPair:
+        return "SelfPair";
+    }
+    return "Unknown";
+
+ContactBufferWriteRejectReason contactBufferWriteRejectReason(
+    const ContactBufferSoA& buffer,
+    u32 slot,
+    const ContactManifold& manifold) {
+    if (slot >= buffer.pairSlotCount) {
+        return ContactBufferWriteRejectReason::InvalidSlot;
+    if (!manifold.valid) {
+        return ContactBufferWriteRejectReason::InvalidManifold;
+    if (manifold.bodyA == manifold.bodyB) {
+        return ContactBufferWriteRejectReason::SelfPair;
+    return ContactBufferWriteRejectReason::None;
+
+bool contactBufferWriteRejectsForReason(
+    const ContactManifold& manifold,
+    ContactBufferWriteRejectReason expected) {
+    return contactBufferWriteRejectReason(buffer, slot, manifold) == expected;
+
+ContactBufferWritePreflight preflightContactBufferWrite(
+    ContactBufferWritePreflight preflight{};
+    preflight.reason = contactBufferWriteRejectReason(buffer, slot, manifold);
+    preflight.invalidSlot = preflight.reason == ContactBufferWriteRejectReason::InvalidSlot;
+    preflight.invalidManifold = preflight.reason == ContactBufferWriteRejectReason::InvalidManifold;
+    preflight.selfPair = preflight.reason == ContactBufferWriteRejectReason::SelfPair;
+    return preflight;
+
+const char* contactBufferCompactionRejectReasonName(ContactBufferCompactionRejectReason reason) {
+    case ContactBufferCompactionRejectReason::None:
+    case ContactBufferCompactionRejectReason::EmptyBuffer:
+        return "EmptyBuffer";
+    case ContactBufferCompactionRejectReason::AllValid:
+        return "AllValid";
+
+ContactBufferCompactionRejectReason contactBufferCompactionRejectReason(const ContactBufferSoA& buffer) {
+    if (buffer.canSkipSoAIteration()) {
+        return ContactBufferCompactionRejectReason::EmptyBuffer;
+    if (buffer.canSkipCompaction()) {
+        return ContactBufferCompactionRejectReason::AllValid;
+    return ContactBufferCompactionRejectReason::None;
+
+bool contactBufferCompactionRejectsForReason(
+    ContactBufferCompactionRejectReason expected) {
+    return contactBufferCompactionRejectReason(buffer) == expected;
+
+ContactBufferCompactionPreflight preflightContactBufferCompaction(const ContactBufferSoA& buffer) {
+    ContactBufferCompactionPreflight preflight{};
+    preflight.reason = contactBufferCompactionRejectReason(buffer);
+    preflight.emptyBuffer = preflight.reason == ContactBufferCompactionRejectReason::EmptyBuffer;
+    preflight.allValid = preflight.reason == ContactBufferCompactionRejectReason::AllValid;
+
+bool canSkipContactBufferCompaction(const ContactBufferSoA& buffer) {
+    return !preflightContactBufferCompaction(buffer).needsCompaction();
+
+bool shouldRunContactBufferCompaction(const ContactBufferSoA& buffer) {
+    return preflightContactBufferCompaction(buffer).needsCompaction();
+
+const char* contactBufferClampRejectReasonName(ContactBufferClampRejectReason reason) {
+    case ContactBufferClampRejectReason::None:
+    case ContactBufferClampRejectReason::EmptyBuffer:
+    case ContactBufferClampRejectReason::WithinCapacity:
+        return "WithinCapacity";
+
+ContactBufferClampRejectReason contactBufferClampRejectReason(const ContactBufferSoA& buffer) {
+        return ContactBufferClampRejectReason::EmptyBuffer;
+    if (buffer.canSkipMaxCapacityClamp()) {
+        return ContactBufferClampRejectReason::WithinCapacity;
+    return ContactBufferClampRejectReason::None;
+
+bool contactBufferClampRejectsForReason(
+    ContactBufferClampRejectReason expected) {
+    return contactBufferClampRejectReason(buffer) == expected;
+
+ContactBufferClampPreflight preflightContactBufferClamp(const ContactBufferSoA& buffer) {
+    ContactBufferClampPreflight preflight{};
+    preflight.reason = contactBufferClampRejectReason(buffer);
+    preflight.emptyBuffer = preflight.reason == ContactBufferClampRejectReason::EmptyBuffer;
+    preflight.withinCapacity = preflight.reason == ContactBufferClampRejectReason::WithinCapacity;
+
+bool canSkipContactBufferClamp(const ContactBufferSoA& buffer) {
+    return !preflightContactBufferClamp(buffer).needsClamp();
+
+bool shouldRunContactBufferClamp(const ContactBufferSoA& buffer) {
+    return preflightContactBufferClamp(buffer).needsClamp();
 
 void ContactBufferSoA::setMaxCapacity(u32 capacity) {
     maxCapacity = capacity;
