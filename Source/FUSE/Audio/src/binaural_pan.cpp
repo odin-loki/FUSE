@@ -1110,3 +1110,26 @@ bool try_preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrPreflight& preflight, Hrt
                                                   HrtfAttenuationCouplingRejectReason expected,
 HrtfBinauralRejectReason classify_hrtf_binaural_reject(bool hrtf_enabled, const Vec3& rel_listener) {
                                  HrtfBinauralPreflight& preflight, HrtfBinauralRejectReason& reason,
+
+// --- deepen additive from deepen-hrtf-reject-reason-preflights-cb75 ---
+const char* hrtfIrRejectReasonName(HrtfIrRejectReason reason) {
+HrtfIrRejectReason hrtfIrRejectReason(const HrtfIrStub& ir) {
+bool hrtfIrRejectsForReason(const HrtfIrStub& ir, HrtfIrRejectReason expected) {
+    return hrtfIrRejectReason(ir) == expected;
+    preflight.reason = hrtfIrRejectReason(ir);
+const char* hrtfPanPathRejectReasonName(HrtfPanPathRejectReason reason) {
+HrtfPanPathRejectReason hrtfPanPathRejectReason(bool hrtf_enabled, const Vec3& rel_listener) {
+    return hrtfPanPathRejectReason(hrtf_enabled, rel_listener) == expected;
+    preflight.reason = hrtfPanPathRejectReason(hrtf_enabled, rel_listener);
+    preflight.skipped = preflight.reason != HrtfPanPathRejectReason::None;
+const char* hrtfAttenuationCouplingRejectReasonName(HrtfAttenuationCouplingRejectReason reason) {
+HrtfAttenuationCouplingRejectReason hrtfAttenuationCouplingRejectReason(
+    return hrtfAttenuationCouplingRejectReason(path, distance_attenuation, occlusion_gain)
+        hrtfAttenuationCouplingRejectReason(path, distance_attenuation, occlusion_gain);
+const char* hrtfBinauralRejectReasonName(HrtfBinauralRejectReason reason) {
+HrtfBinauralRejectReason hrtfBinauralRejectReason(const HrtfBinauralPreflight& preflight) {
+HrtfIrRejectReason hrtfBinauralConvolutionRejectReason(const HrtfBinauralPreflight& preflight) {
+HrtfAttenuationCouplingRejectReason hrtfBinauralNarrowingRejectReason(
+bool hrtfBinauralRejectsForReason(const HrtfBinauralPreflight& preflight,
+    return hrtfBinauralRejectReason(preflight) == expected;
+    preflight.reason = hrtfBinauralRejectReason(preflight);

@@ -1716,3 +1716,31 @@ void testHrtfRejectReasonPreflights() {
     expectTrue(preflight.rejectReason == fuse::audio::HrtfBinauralRejectReason::None,
     expectTrue(preflight.ir.rejectReason == fuse::audio::HrtfIrRejectReason::NullSamples,
     expectTrue(preflight.panPath.rejectReason == fuse::audio::HrtfPanPathRejectReason::None,
+
+// --- deepen additive from deepen-hrtf-reject-reason-preflights-cb75 ---
+    expectTrue(fuse::audio::hrtfIrRejectReason(empty)
+    expectTrue(fuse::audio::hrtfIrRejectsForReason(empty,
+    expectTrue(fuse::audio::hrtfIrRejectReason(valid) == fuse::audio::HrtfIrRejectReason::None,
+    expectTrue(!fuse::audio::hrtfIrRejectsForReason(valid,
+    expectTrue(fuse::audio::hrtfIrRejectReason(malformed)
+    expectTrue(std::strcmp(fuse::audio::hrtfIrRejectReasonName(
+    expectTrue(fuse::audio::hrtfPanPathRejectReason(false, offset)
+    expectTrue(fuse::audio::hrtfPanPathRejectReason(true, co_located)
+    expectTrue(fuse::audio::hrtfPanPathRejectReason(true, offset)
+    expectTrue(fuse::audio::hrtfPanPathRejectsForReason(
+    expectTrue(std::strcmp(fuse::audio::hrtfPanPathRejectReasonName(
+    expectTrue(disabled_preflight.reason == fuse::audio::HrtfPanPathRejectReason::HrtfDisabled,
+    expectTrue(fuse::audio::hrtfAttenuationCouplingRejectReason(
+    expectTrue(fuse::audio::hrtfAttenuationCouplingRejectsForReason(
+    expectTrue(std::strcmp(fuse::audio::hrtfAttenuationCouplingRejectReasonName(
+    expectTrue(fuse::audio::hrtfBinauralConvolutionRejectReason(stub_preflight)
+    expectTrue(fuse::audio::hrtfBinauralNarrowingRejectReason(stub_preflight)
+    expectTrue(disabled_preflight.reason == fuse::audio::HrtfBinauralRejectReason::HrtfDisabled,
+    expectTrue(fuse::audio::hrtfBinauralRejectReason(disabled_preflight)
+               "hrtfBinauralRejectReason accessor matches preflight reason");
+    expectTrue(fuse::audio::hrtfBinauralRejectsForReason(
+                   disabled_preflight, fuse::audio::HrtfBinauralRejectReason::HrtfDisabled),
+    expectTrue(fuse::audio::should_skip_hrtf_binaural(disabled_preflight),
+               "should_skip_hrtf_binaural mirrors spatial reject reason");
+    expectTrue(std::strcmp(fuse::audio::hrtfBinauralRejectReasonName(
+    expectTrue(unity_preflight.ir.reason == fuse::audio::HrtfIrRejectReason::None,

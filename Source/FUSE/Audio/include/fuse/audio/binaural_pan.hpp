@@ -772,3 +772,18 @@ bool try_preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrPreflight& preflight,
 HrtfBinauralRejectReason classify_hrtf_binaural_reject(bool hrtf_enabled, const Vec3& rel_listener);
     HrtfBinauralRejectReason rejectReason = HrtfBinauralRejectReason::None;
                                  HrtfBinauralPreflight& preflight, HrtfBinauralRejectReason& reason,
+
+// --- deepen additive from deepen-hrtf-reject-reason-preflights-cb75 ---
+const char* hrtfIrRejectReasonName(HrtfIrRejectReason reason);
+HrtfIrRejectReason hrtfIrRejectReason(const HrtfIrStub& ir);
+bool hrtfIrRejectsForReason(const HrtfIrStub& ir, HrtfIrRejectReason expected);
+const char* hrtfPanPathRejectReasonName(HrtfPanPathRejectReason reason);
+HrtfPanPathRejectReason hrtfPanPathRejectReason(bool hrtf_enabled, const Vec3& rel_listener);
+const char* hrtfAttenuationCouplingRejectReasonName(HrtfAttenuationCouplingRejectReason reason);
+HrtfAttenuationCouplingRejectReason hrtfAttenuationCouplingRejectReason(
+struct HrtfBinauralPreflight;
+const char* hrtfBinauralRejectReasonName(HrtfBinauralRejectReason reason);
+HrtfBinauralRejectReason hrtfBinauralRejectReason(const HrtfBinauralPreflight& preflight);
+HrtfIrRejectReason hrtfBinauralConvolutionRejectReason(const HrtfBinauralPreflight& preflight);
+HrtfAttenuationCouplingRejectReason hrtfBinauralNarrowingRejectReason(
+bool hrtfBinauralRejectsForReason(const HrtfBinauralPreflight& preflight,
