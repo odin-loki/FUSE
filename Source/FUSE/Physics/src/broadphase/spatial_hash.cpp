@@ -730,9 +730,10 @@ bool shouldRunShapeCellInsert(u32 bodyIndex, u32 bodyCount, const CellRange3& ra
 
 bool shouldRunShapeCellInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& range, u32 maxOccupancy) {
 
-    switch (reason) {
-        return "None";
-        return "EmptyRange";
+const char* cellSpanCapacityRejectReasonName(CellSpanCapacityRejectReason reason) {
+    case CellSpanCapacityRejectReason::None:
+    case CellSpanCapacityRejectReason::EmptyRange:
+    case CellSpanCapacityRejectReason::ExceedsSpanPerAxis:
 
 const char* broadphaseRejectReasonName(BroadphaseRejectReason reason) {
     switch (reason) {

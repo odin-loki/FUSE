@@ -1772,6 +1772,59 @@ FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsertion(const CellRange3& range, co
     return !canSkipShapeCellInsertion(range, params);
 
 FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsertion(const CellRange2& range, const SpatialHashParams& params) {
+/// True when `maxSpanPerAxis == 0` (unlimited per-axis span stub).
+
+/// Cell-capacity guard: true when any axis span exceeds `maxSpanPerAxis` (0 = unlimited stub).
+    if (isUnboundedCellSpanPerAxis(maxSpanPerAxis) || isEmptyCellRange(range)) {
+
+
+FUSE_PHYSICS_INLINE bool cellSpanWithinPerAxisLimit(const CellRange3& range, u32 maxSpanPerAxis) {
+
+FUSE_PHYSICS_INLINE bool cellSpanWithinPerAxisLimit(const CellRange2& range, u32 maxSpanPerAxis) {
+
+/// Why per-axis cell-span clamp preflight rejected the range (B4.2 deepen follow-up pass).
+enum class CellSpanCapacityRejectReason : u8 {
+
+/// Human-readable label for cell-span capacity reject reasons (logging / tests).
+const char* cellSpanCapacityRejectReasonName(CellSpanCapacityRejectReason reason);
+
+/// Diagnose why span clamp would modify the range; vacuously succeeds when span is within limit.
+FUSE_PHYSICS_INLINE CellSpanCapacityRejectReason cellSpanCapacityRejectReason(
+        return CellSpanCapacityRejectReason::EmptyRange;
+        return CellSpanCapacityRejectReason::ExceedsSpanPerAxis;
+    return CellSpanCapacityRejectReason::None;
+
+
+/// Cell-span capacity preflight for shape occupancy iteration (B4.2 deepen follow-up pass).
+struct CellSpanCapacityPreflight {
+    CellSpanCapacityRejectReason reason = CellSpanCapacityRejectReason::None;
+
+    bool withinSpanLimit() const { return reason == CellSpanCapacityRejectReason::None; }
+
+FUSE_PHYSICS_INLINE CellSpanCapacityPreflight preflightCellSpanCapacity(
+    CellSpanCapacityPreflight preflight{};
+    preflight.reason = cellSpanCapacityRejectReason(range, maxSpanPerAxis);
+    preflight.emptyRange = preflight.reason == CellSpanCapacityRejectReason::EmptyRange;
+    preflight.exceedsSpanPerAxis = preflight.reason == CellSpanCapacityRejectReason::ExceedsSpanPerAxis;
+
+
+/// Non-mutating span-capacity skip predicate — inverse of `withinSpanLimit` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool canSkipCellSpanCapacityCheck(const CellRange3& range, u32 maxSpanPerAxis) {
+    return !preflightCellSpanCapacity(range, maxSpanPerAxis).withinSpanLimit();
+
+FUSE_PHYSICS_INLINE bool canSkipCellSpanCapacityCheck(const CellRange2& range, u32 maxSpanPerAxis) {
+
+/// Non-mutating span-capacity predicate — mirrors `preflightCellSpanCapacity` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool shouldRunCellSpanCapacityCheck(const CellRange3& range, u32 maxSpanPerAxis) {
+    return preflightCellSpanCapacity(range, maxSpanPerAxis).withinSpanLimit();
+
+FUSE_PHYSICS_INLINE bool shouldRunCellSpanCapacityCheck(const CellRange2& range, u32 maxSpanPerAxis) {
+
+/// Returns true when `cellSpanCapacityRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool cellSpanCapacityRejectsForReason(
+    CellSpanCapacityRejectReason expected) {
+    return cellSpanCapacityRejectReason(range, maxSpanPerAxis) == expected;
+
 
 /// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).
 FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {

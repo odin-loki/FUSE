@@ -1519,6 +1519,7 @@ PairBufferWriteRejectReason pairBufferWriteRejectReason(
 
 
 
+
     u32 slot,
     u32 idxA,
     u32 idxB) {
@@ -1607,6 +1608,13 @@ PairBufferWritePreflight preflightPairBufferWrite(const PairBufferSoA& buffer, u
         return PairBufferWriteRejectReason::UnpreparedSlots;
 
 
+    }
+
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+
+    u32 idxB) {
     PairBufferWritePreflight preflight{};
     preflight.reason = pairBufferWriteRejectReason(buffer, slot, idxA, idxB);
     preflight.outOfRangeSlot = preflight.reason == PairBufferWriteRejectReason::OutOfRangeSlot;
@@ -1679,6 +1687,20 @@ bool pairBufferInvalidateRejectsForReason(
         return PairBufferInvalidateRejectReason::NoSlotStorage;
     if (slot >= buffer.pairSlotCount || slot >= buffer.validFlags.size()) {
 
+    return preflight;
+}
+
+
+
+    switch (reason) {
+        return "None";
+        return "OutOfRangeSlot";
+    return "Unknown";
+
+    if (slot >= buffer.validFlags.size()) {
+
+    const PairBufferSoA& buffer,
+    u32 slot,
 
 PairBufferInvalidatePreflight preflightPairBufferInvalidate(const PairBufferSoA& buffer, u32 slot) {
     PairBufferInvalidatePreflight preflight{};
@@ -1767,6 +1789,8 @@ bool shouldRunPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
 
 
     preflight.alreadyInvalid = preflight.reason == PairBufferInvalidateSlotRejectReason::AlreadyInvalid;
+
+
 
 
 
