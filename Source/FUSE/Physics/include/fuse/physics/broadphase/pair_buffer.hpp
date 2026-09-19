@@ -1774,9 +1774,11 @@ bool wouldSkipPairBufferWriteSlot(
 bool wouldSkipPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB);
 
 /// Why pair-buffer slot invalidate would early-out (B4.2 deepen pass).
-/// Why pair-buffer slot invalidate would early-out (B4.2 deepen follow-up pass).
 enum class PairBufferInvalidateSlotRejectReason : u8 {
     None = 0,
+bool wouldSkipPairBufferWriteSlot(const PairBufferSoA& buffer,
+
+    EmptyBuffer,
     OutOfRangeSlot,
     AlreadyInvalid,
 };
@@ -1937,9 +1939,10 @@ PairBufferInvalidateSlotRejectReason pairBufferInvalidateSlotRejectReason(const 
 
 /// Returns true when `pairBufferInvalidateSlotRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 bool pairBufferInvalidateSlotRejectsForReason(
-    const PairBufferSoA& buffer,
-    u32 slot,
     PairBufferInvalidateSlotRejectReason expected);
+
+
+bool pairBufferInvalidateSlotRejectsForReason(const PairBufferSoA& buffer,
 
 /// Read-only invalidate-slot diagnostics — no mutation (B4.2 deepen pass).
 struct PairBufferInvalidateSlotPreflight {
@@ -1955,6 +1958,8 @@ struct PairBufferInvalidateSlotPreflight {
 
 
 /// Read-only invalidate-slot diagnostics — no mutation (B4.2 deepen follow-up pass).
+
+    bool emptyBuffer = false;
 
 };
 
@@ -1990,7 +1995,6 @@ bool wouldSkipPairBufferInvalidateSlot(
 
 /// Early-out when push preflight would reject — same ordering as `pairBufferPushRejectReason` (B4.2 deepen pass).
 bool wouldSkipPairBufferPush(
-    const PairBufferSoA& buffer,
     u32 idxA,
     u32 idxB,
     PairBufferPushRejectReason* reason = nullptr);
@@ -1998,6 +2002,9 @@ bool wouldSkipPairBufferPush(
 
 /// Non-mutating invalidate-slot skip predicate — mirrors `canSkipPairBufferInvalidateSlot` (B4.2 deepen pass).
 bool wouldSkipPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
+
+
+bool wouldSkipPairBufferInvalidateSlot(const PairBufferSoA& buffer,
 
 /// Why pair-buffer toVector would early-out (B4.2 deepen follow-up pass).
 enum class PairBufferToVectorRejectReason : u8 {
