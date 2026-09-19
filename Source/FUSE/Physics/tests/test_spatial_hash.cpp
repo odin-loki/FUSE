@@ -4569,3 +4569,21 @@ void testWouldSkipBroadphaseGuardParity() {
                "wouldSkipBroadphaseMerge on empty scene");
                "wouldSkipMergePairsIntoBuffer on empty pair list");
                "wouldSkipBroadphaseMerge false for mergeable scene");
+
+// --- deepen additive from deepen-b4-broadphase-guards-09a7 ---
+    expectTrue(fuse::physics::broadphase::wouldSkipCellSpanClamp(spanRange, 0u),
+               "wouldSkipCellSpanClamp true when span limit disabled");
+    expectTrue(!fuse::physics::broadphase::wouldSkipPairBufferPush(buffer, 0u, 1u),
+               "wouldSkipPairBufferPush false on empty buffer accepting push");
+    expectTrue(!fuse::physics::broadphase::wouldSkipPairBufferCompaction(buffer),
+               "wouldSkipPairBufferCompaction false when invalid slots exist");
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferClamp(buffer),
+               "wouldSkipPairBufferClamp true when within capacity");
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferDedupe(buffer),
+               "wouldSkipPairBufferDedupe true on single valid slot");
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferSort(buffer),
+               "wouldSkipPairBufferSort true on single valid slot");
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferCompactAndClamp(buffer),
+               "wouldSkipPairBufferCompactAndClamp true after compact within capacity");
+    expectTrue(!fuse::physics::broadphase::wouldSkipPairBufferToVector(buffer),
+               "wouldSkipPairBufferToVector false when buffer has exportable pair");
