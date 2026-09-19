@@ -1452,3 +1452,10 @@ bool tryCanApplySpatialHrtfPan(bool hrtf_enabled, const HrtfIrStub& ir, const Ve
 bool tryCanApplySpatialHrtfPan(bool hrtf_enabled, const Vec3& rel_listener,
 HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener,
 bool tryCanNarrowHrtfSpatialImage(HrtfPanPath path, float distance_attenuation, float occlusion_gain,
+
+// --- deepen additive from b7-2-hrtf-reject-reason-wrappers-3c1c ---
+HrtfIrRejectReason classifyHrtfBinauralConvolutionReject(const HrtfBinauralPreflight& preflight);
+HrtfPanPathRejectReason classifyHrtfBinauralPanReject(const HrtfBinauralPreflight& preflight);
+HrtfAttenuationCouplingRejectReason classifyHrtfBinauralCouplingReject(
+bool preflightHrtfBinauralReady(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+bool preflightHrtfBinauralReady(bool hrtf_enabled, const Vec3& rel_listener,

@@ -2378,3 +2378,18 @@ HrtfBinauralRejectReason classifyHrtfBinauralConvolutionReject(const HrtfBinaura
     if (panReject != HrtfBinauralRejectReason::None) {
 HrtfBinauralRejectReason classifyHrtfBinauralNarrowingReject(const HrtfBinauralPreflight& preflight) {
         *reason = classifyHrtfBinauralReject(preflight);
+
+// --- deepen additive from b7-2-hrtf-reject-reason-wrappers-3c1c ---
+    return classifyHrtfIrReject(preflight_hrtf_ir(ir)) == expected;
+    preflight.reason = classifyHrtfPanPathReject(preflight);
+    return classifyHrtfPanPathReject(preflight_hrtf_pan_path(hrtf_enabled, ir, rel_listener))
+    return classifyHrtfAttenuationCouplingReject(
+HrtfIrRejectReason classifyHrtfBinauralConvolutionReject(const HrtfBinauralPreflight& preflight) {
+HrtfPanPathRejectReason classifyHrtfBinauralPanReject(const HrtfBinauralPreflight& preflight) {
+HrtfAttenuationCouplingRejectReason classifyHrtfBinauralCouplingReject(
+    return classifyHrtfBinauralReject(preflight_hrtf_binaural(
+bool preflightHrtfBinauralReady(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+bool preflightHrtfBinauralReady(bool hrtf_enabled, const Vec3& rel_listener,
+    return preflightHrtfBinauralReady(hrtf_enabled, make_empty_hrtf_ir(), rel_listener,
+    return preflightHrtfBinauralReady(hrtf_enabled, ir, rel_listener, distance_attenuation,
+    return preflightHrtfBinauralReady(hrtf_enabled, rel_listener, distance_attenuation,
