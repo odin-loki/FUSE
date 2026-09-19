@@ -3503,3 +3503,41 @@ void testCellShapeInsertPreflightGuards() {
                    fuse::physics::broadphase::CellShapeInsertRejectReason::ExceedsBudget),
     testCellPairGenPreflightGuards();
     testCellShapeInsertPreflightGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-18e5 ---
+                   buffer, 0u, 1u, 1u, fuse::physics::broadphase::PairBufferWriteSlotRejectReason::InvalidPair),
+    const fuse::physics::broadphase::PairBufferWriteSlotPreflight outOfSlotWrite =
+void testPairBufferInvalidateSlotPreflightGuards() {
+    const fuse::physics::broadphase::PairBufferInvalidateSlotPreflight validInvalidate =
+        fuse::physics::broadphase::preflightPairBufferInvalidateSlot(buffer, 0u);
+    const fuse::physics::broadphase::PairBufferInvalidateSlotPreflight alreadyInvalid =
+                   buffer, 0u, fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason::AlreadyInvalid),
+                 fuse::physics::broadphase::pairBufferInvalidateSlotRejectReason(buffer, 8u)),
+                 fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason::OutOfSlot),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellPairGenRejectReason::InsufficientOccupants),
+    const fuse::physics::broadphase::CellPairGenPreflight twoBodyPreflight =
+        fuse::physics::broadphase::preflightCellPairGen(2u);
+    expectTrue(twoBodyPreflight.canGenerate(), "two unique bodies can generate cell pairs");
+    expectEq(twoBodyPreflight.pairCount, 1u, "two-body cell reports one pair");
+        fuse::physics::broadphase::preflightCellPairGen(duplicateOccupants);
+    expectTrue(duplicatePreflight.canGenerate(), "duplicate occupants dedupe to one pair");
+    expectEq(duplicatePreflight.uniqueBodyCount, 2u, "duplicate occupants report two unique bodies");
+                   singleOccupant, fuse::physics::broadphase::CellPairGenRejectReason::InsufficientOccupants),
+void testCellCapacityInsertPreflightGuards() {
+    const fuse::physics::broadphase::CellCapacityInsertPreflight withinBudget =
+        fuse::physics::broadphase::preflightCellCapacityInsert(validRange, 8u, 0u, 4u);
+    const fuse::physics::broadphase::CellCapacityInsertPreflight outOfRangeBody =
+        fuse::physics::broadphase::preflightCellCapacityInsert(validRange, 8u, 5u, 4u);
+    expectTrue(fuse::physics::broadphase::cellCapacityInsertRejectsForReason(
+                   validRange, 8u, 5u, 4u, fuse::physics::broadphase::CellCapacityInsertRejectReason::OutOfRangeBody),
+    const fuse::physics::broadphase::CellCapacityInsertPreflight overBudget =
+        fuse::physics::broadphase::preflightCellCapacityInsert(validRange, 7u, 0u, 4u);
+                 fuse::physics::broadphase::cellCapacityInsertRejectReason(inverted, 8u, 0u, 4u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellCapacityInsertRejectReason::EmptyRange),
+    const fuse::physics::broadphase::CellCapacityInsertPreflight planePreflight =
+        fuse::physics::broadphase::preflightCellCapacityInsert(planeRange, 4u, 1u, 2u);
+    expectTrue(!planePreflight.canInsert(), "2D cell-capacity insert preflight rejects over-budget range");
+    expectTrue(std::strcmp(fuse::physics::broadphase::cellCapacityInsertRejectReasonName(
+                               fuse::physics::broadphase::CellCapacityInsertRejectReason::ExceedsBudget),
+    testPairBufferInvalidateSlotPreflightGuards();
+    testCellCapacityInsertPreflightGuards();

@@ -1465,3 +1465,17 @@ struct CellShapeInsertPreflight {
     CellShapeInsertRejectReason reason = CellShapeInsertRejectReason::None;
     bool canInsert() const { return reason == CellShapeInsertRejectReason::None; }
 CellShapeInsertPreflight preflightCellShapeInsert(
+
+// --- deepen additive from deepen-b4-broadphase-guards-18e5 ---
+CellPairGenRejectReason cellPairGenRejectReason(u32 occupantCount);
+bool cellPairGenRejectsForReason(u32 occupantCount, CellPairGenRejectReason expected);
+CellPairGenPreflight preflightCellPairGen(u32 occupantCount);
+CellPairGenPreflight preflightCellPairGen(const std::vector<u32>& occupants);
+enum class CellCapacityInsertRejectReason : u8 {
+const char* cellCapacityInsertRejectReasonName(CellCapacityInsertRejectReason reason);
+CellCapacityInsertRejectReason cellCapacityInsertRejectReason(
+    CellCapacityInsertRejectReason expected);
+struct CellCapacityInsertPreflight {
+    CellCapacityInsertRejectReason reason = CellCapacityInsertRejectReason::None;
+    bool canInsert() const { return reason == CellCapacityInsertRejectReason::None; }
+CellCapacityInsertPreflight preflightCellCapacityInsert(

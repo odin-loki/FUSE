@@ -1370,3 +1370,52 @@ CellShapeInsertPreflight preflightCellShapeInsert(
     preflight.exceedsBudget = preflight.reason == CellShapeInsertRejectReason::ExceedsBudget;
     return !preflightCellShapeInsert(bodyIndex, bodyCount, range, maxCells).canInsert();
     return preflightCellShapeInsert(bodyIndex, bodyCount, range, maxCells).canInsert();
+
+// --- deepen additive from deepen-b4-broadphase-guards-18e5 ---
+    const fuse::physics::broadphase::CellPairGenPreflight preflight =
+        fuse::physics::broadphase::preflightCellPairGen(occupants);
+    case CellPairGenRejectReason::InsufficientOccupants:
+CellPairGenPreflight buildCellPairGenPreflight(u32 uniqueBodyCount) {
+        preflight.reason = CellPairGenRejectReason::InsufficientOccupants;
+        preflight.reason = CellPairGenRejectReason::None;
+CellCapacityInsertRejectReason cellCapacityInsertRejectReasonImpl(
+    const CellOccupancyPreflight& occupancyPreflight,
+        return CellCapacityInsertRejectReason::OutOfRangeBody;
+    if (occupancyPreflight.emptyRange) {
+        return CellCapacityInsertRejectReason::EmptyRange;
+    if (occupancyPreflight.exceedsBudget) {
+        return CellCapacityInsertRejectReason::ExceedsBudget;
+    return CellCapacityInsertRejectReason::None;
+CellCapacityInsertPreflight buildCellCapacityInsertPreflight(
+    CellCapacityInsertPreflight preflight{};
+    preflight.occupancyCount = occupancyPreflight.occupancyCount;
+    preflight.reason = cellCapacityInsertRejectReasonImpl(occupancyPreflight, bodyIndex, bodyCount);
+    preflight.outOfRangeBody = preflight.reason == CellCapacityInsertRejectReason::OutOfRangeBody;
+    preflight.emptyRange = preflight.reason == CellCapacityInsertRejectReason::EmptyRange;
+    preflight.exceedsBudget = preflight.reason == CellCapacityInsertRejectReason::ExceedsBudget;
+CellPairGenRejectReason cellPairGenRejectReason(u32 occupantCount) {
+    return buildCellPairGenPreflight(occupantCount).reason;
+    return preflightCellPairGen(occupants).reason;
+bool cellPairGenRejectsForReason(u32 occupantCount, CellPairGenRejectReason expected) {
+    return cellPairGenRejectReason(occupantCount) == expected;
+CellPairGenPreflight preflightCellPairGen(u32 occupantCount) {
+    return buildCellPairGenPreflight(occupantCount);
+CellPairGenPreflight preflightCellPairGen(const std::vector<u32>& occupants) {
+    return buildCellPairGenPreflight(uniqueOccupantCount(occupants));
+    return !preflightCellPairGen(occupantCount).canGenerate();
+    return !preflightCellPairGen(occupants).canGenerate();
+    return preflightCellPairGen(occupantCount).canGenerate();
+    return preflightCellPairGen(occupants).canGenerate();
+const char* cellCapacityInsertRejectReasonName(CellCapacityInsertRejectReason reason) {
+    case CellCapacityInsertRejectReason::None:
+    case CellCapacityInsertRejectReason::OutOfRangeBody:
+    case CellCapacityInsertRejectReason::EmptyRange:
+    case CellCapacityInsertRejectReason::ExceedsBudget:
+CellCapacityInsertRejectReason cellCapacityInsertRejectReason(
+    return preflightCellCapacityInsert(range, maxCells, bodyIndex, bodyCount).reason;
+    CellCapacityInsertRejectReason expected) {
+    return cellCapacityInsertRejectReason(range, maxCells, bodyIndex, bodyCount) == expected;
+CellCapacityInsertPreflight preflightCellCapacityInsert(
+    return buildCellCapacityInsertPreflight(preflightCellOccupancy(range, maxCells), bodyIndex, bodyCount);
+    return !preflightCellCapacityInsert(range, maxCells, bodyIndex, bodyCount).canInsert();
+    return preflightCellCapacityInsert(range, maxCells, bodyIndex, bodyCount).canInsert();

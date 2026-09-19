@@ -1068,3 +1068,11 @@ PairBufferAcceptPreflight preflightPairBufferAccept(const PairBufferSoA& buffer,
     preflight.exceedsCapacity = preflight.reason == PairBufferAcceptRejectReason::ExceedsCapacity;
     return !preflightPairBufferAccept(buffer, additionalCount).canAccept();
     return preflightPairBufferAccept(buffer, additionalCount).canAccept();
+
+// --- deepen additive from deepen-b4-broadphase-guards-18e5 ---
+    case PairBufferWriteSlotRejectReason::OutOfSlot:
+        return PairBufferWriteSlotRejectReason::OutOfSlot;
+    preflight.outOfSlot = preflight.reason == PairBufferWriteSlotRejectReason::OutOfSlot;
+    case PairBufferInvalidateSlotRejectReason::OutOfSlot:
+        return PairBufferInvalidateSlotRejectReason::OutOfSlot;
+    preflight.outOfSlot = preflight.reason == PairBufferInvalidateSlotRejectReason::OutOfSlot;
