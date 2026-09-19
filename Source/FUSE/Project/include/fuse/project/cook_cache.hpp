@@ -102,6 +102,14 @@ struct CookCacheInvalidationEstimate {
     [[nodiscard]] bool would_invalidate_all() const { return all_entries != 0; }
 };
 
+/// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
+struct CookCacheUpstreamInvalidationEstimate {
+    u32 direct_source_entries = 0;
+    u32 downstream_entries = 0;
+
+    [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
+};
+
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
 [[nodiscard]] inline bool is_valid_cook_cache_key(u64 content_hash) {
     return content_hash != 0;
@@ -176,6 +184,7 @@ struct CookCacheReconcileEstimate {
 /// Read-only cache-entry preflight — structural paths plus source readability (B7.9 deepen).
 /// Read-only cache-entry hash preflight — mirrors `is_valid_cook_cache_entry` (B7.9 deepen).
 /// Read-only cache-entry preflight — mirrors `is_valid_cook_cache_entry` guards (B7.9 deepen).
+/// Read-only cache-entry hash preflight — mirrors `is_valid_cook_cache_entry` guards (B7.9 deepen).
 
 /// Combined source/upstream fold is cacheable when non-zero (B7.9 deepen).
 [[nodiscard]] inline bool is_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {

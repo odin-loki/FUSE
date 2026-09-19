@@ -251,6 +251,9 @@ public:
     [[nodiscard]] std::vector<std::string> probe_stale_dependency_sources(
         const CookManifest& manifest) const;
     /// True when `count_upstream_invalidation(manifest, changed_source)` is non-zero (B7.9 deepen).
+    /// True when `estimate_reconcile_invalidation` would remove at least one entry (B7.9 deepen).
+    /// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
+    [[nodiscard]] CookCacheUpstreamInvalidationEstimate estimate_upstream_invalidation(
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
