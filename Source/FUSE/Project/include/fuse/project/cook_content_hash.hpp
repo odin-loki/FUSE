@@ -70,5 +70,10 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size);
 /// Fold source/upstream preflight — upstream zero is allowed on valid source keys (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
+/// Path-only preflight for deferred shader cooks — no source readability required (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_shader_entry_hash(const CookManifestEntry& entry);
+/// Manifest entry plus optional upstream dependency preflight — read-only planning guard (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_manifest_entry_with_upstream(const CookManifestEntry& entry,
+                                                                       const CookManifest& manifest);
 
 } // namespace fuse::project
