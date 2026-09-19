@@ -8,6 +8,12 @@
 
 namespace fuse::physics {
 
+/// True when both contact body indices are in `[0, bodyCount)`.
+bool contact_bodies_in_range(const narrowphase::ContactManifold& contact, u32 bodyCount);
+
+/// True when both distance-constraint body indices are in `[0, bodyCount)`.
+bool distance_bodies_in_range(const DistanceConstraint& constraint, u32 bodyCount);
+
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
 /// contacts and distance constraints run sequentially (Gauss-Seidel stub).

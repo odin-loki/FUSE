@@ -4,6 +4,14 @@
 
 namespace fuse::physics {
 
+bool contact_bodies_in_range(const narrowphase::ContactManifold& contact, u32 bodyCount) {
+    return contact.bodyA < bodyCount && contact.bodyB < bodyCount;
+}
+
+bool distance_bodies_in_range(const DistanceConstraint& constraint, u32 bodyCount) {
+    return constraint.bodyA < bodyCount && constraint.bodyB < bodyCount;
+}
+
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();
@@ -53,13 +61,16 @@ void ContactIslandGraph::build(u32 bodyCount,
     }
 
     for (const narrowphase::ContactManifold& contact : contacts) {
-        if (!contact.valid) {
+        if (!contact.valid || !contact_bodies_in_range(contact, bodyCount)) {
             continue;
         }
         unionBodies(contact.bodyA, contact.bodyB);
     }
 
     for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (!distance_bodies_in_range(constraint, bodyCount)) {
+            continue;
+        }
         unionBodies(constraint.bodyA, constraint.bodyB);
     }
 
@@ -81,7 +92,7 @@ void ContactIslandGraph::build(u32 bodyCount,
 
     for (u32 contactIndex = 0; contactIndex < contacts.size(); ++contactIndex) {
         const narrowphase::ContactManifold& contact = contacts[contactIndex];
-        if (!contact.valid) {
+        if (!contact.valid || !contact_bodies_in_range(contact, bodyCount)) {
             continue;
         }
         const u32 islandIndex = rootToIsland[findRoot(contact.bodyA)];
@@ -92,6 +103,9 @@ void ContactIslandGraph::build(u32 bodyCount,
 
     for (u32 distanceIndex = 0; distanceIndex < distanceConstraints.size(); ++distanceIndex) {
         const DistanceConstraint& constraint = distanceConstraints[distanceIndex];
+        if (!distance_bodies_in_range(constraint, bodyCount)) {
+            continue;
+        }
         const u32 islandIndex = rootToIsland[findRoot(constraint.bodyA)];
         if (islandIndex != invalidIsland) {
             islands_[islandIndex].distanceIndices.push_back(distanceIndex);
