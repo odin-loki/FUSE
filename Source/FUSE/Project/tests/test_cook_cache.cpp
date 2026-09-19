@@ -594,6 +594,84 @@ void testCookHashPreflightFnvAndCombineGuards() {
                "combine cache key preflight allows zero upstream");
     expectTrue(fuse::project::preflight_combine_cook_cache_key(99u, 42u).ok(),
                "combine cache key preflight ok for valid fold");
+
+    expectTrue(!fuse::project::preflight_cacheable_cook_cache_key(0, 42u).ok(),
+               "cacheable cache key preflight rejects zero source");
+    expectTrue(fuse::project::preflight_cacheable_cook_cache_key(99u, 0).ok(),
+               "cacheable cache key preflight allows zero upstream");
+    expectTrue(fuse::project::preflight_cacheable_cook_cache_key(99u, 42u).ok(),
+               "cacheable cache key preflight ok for valid fold");
+}
+
+void testCookCacheWouldInvalidateProbes() {
+    fuse::project::CookCache cache;
+    expectTrue(!cache.would_invalidate_source("/tmp/fuse_b79_would_inv.obj"),
+               "would_invalidate_source on empty cache is false");
+    expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_would_inv.fusemesh"),
+               "would_invalidate_output on empty cache is false");
+    expectTrue(!cache.would_invalidate_stale_content_for_source("/tmp/fuse_b79_would_inv.obj", 42u),
+               "would_invalidate_stale_content on empty cache is false");
+    expectTrue(!cache.would_invalidate_downstream_of("/tmp/fuse_b79_would_inv.fusemesh", {}, {}),
+               "would_invalidate_downstream on empty cache is false");
+    expectTrue(!cache.would_invalidate_all(), "would_invalidate_all on empty cache is false");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_would_inv_mesh.obj", "# would inv\n");
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_would_inv_mesh.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
+    expectTrue(seeded.ok, "seed cook for would_invalidate probes ok");
+
+    expectTrue(cooker.cache().would_invalidate_source(source),
+               "would_invalidate_source reports seeded entry");
+    expectTrue(cooker.cache().would_invalidate_output(desc.output_path),
+               "would_invalidate_output reports seeded entry");
+    expectTrue(!cooker.cache().would_invalidate_stale_content_for_source(source, seeded.content_hash),
+               "would_invalidate_stale_content false when hash matches");
+    expectTrue(cooker.cache().would_invalidate_stale_content_for_source(source, seeded.content_hash + 1u),
+               "would_invalidate_stale_content true when hash mismatches");
+    expectTrue(cooker.cache().would_invalidate_all(), "would_invalidate_all true on populated cache");
+
+    writeTempFile(source, "# would inv updated\n");
+    const fuse::u64 updated_hash = fuse::project::hash_mesh_import(desc);
+    expectTrue(updated_hash != seeded.content_hash, "source change yields new content hash");
+    expectTrue(cooker.cache().would_invalidate_stale_content_for_source(source, updated_hash),
+               "would_invalidate_stale_content true when current hash differs from stored");
+
+    expectTrue(cooker.cache().invalidate_source(source) == 1u, "source invalidation removes probed entry");
+    expectTrue(!cooker.cache().would_invalidate_all(), "would_invalidate_all false after source invalidation");
+}
+
+void testCookCacheUniqueStaleUpstreamCount() {
+    fuse::project::CookCache cache;
+
+    fuse::project::CookCacheEntry entry_a;
+    entry_a.content_hash = 901;
+    entry_a.upstream_hash = 1;
+    entry_a.source_path = "/tmp/fuse_b79_unique_upstream_a.obj";
+    entry_a.output_path = "/tmp/fuse_b79_unique_upstream_a.fusemesh";
+    cache.store(entry_a);
+
+    fuse::project::CookCacheEntry entry_b = entry_a;
+    entry_b.content_hash = 902;
+    entry_b.source_path = "/tmp/fuse_b79_unique_upstream_b.obj";
+    entry_b.output_path = "/tmp/fuse_b79_unique_upstream_b.fusemesh";
+    cache.store(entry_b);
+
+    const std::vector<std::pair<std::string, fuse::u64>> stale_pairs = {
+        {entry_a.source_path, 2u},
+        {entry_a.source_path, 2u},
+        {entry_b.source_path, 2u},
+    };
+
+    expectTrue(cache.count_stale_upstream_hashes(stale_pairs) == 3u,
+               "stale upstream count includes duplicate source matches");
+    expectTrue(cache.count_unique_stale_upstream_sources(stale_pairs) == 2u,
+               "unique stale upstream count deduplicates sources");
+    expectTrue(cache.probe_stale_upstream_sources(stale_pairs).size() == 3u,
+               "stale upstream probe preserves per-entry matches");
 }
 
 void testCookCachePruneInvalidEntriesOnLoad() {
@@ -660,6 +738,8 @@ int main() {
     testCookCachePruneAllMixedInvalidAndStale();
     testCookHashPreflightGuards();
     testCookHashPreflightFnvAndCombineGuards();
+    testCookCacheWouldInvalidateProbes();
+    testCookCacheUniqueStaleUpstreamCount();
     testCookCacheInvalidationProbes();
     testCookCachePruneReconcileEstimateGuards();
     testCookCacheProbeStaleContentSources();
