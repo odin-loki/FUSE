@@ -944,3 +944,10 @@ bool tryPreflightHrtfBinaural(bool hrtf_enabled, const Vec3& rel_listener,
 HrtfPanPathRejectReason classifyHrtfPanPathReject(bool hrtf_enabled, const HrtfIrStub& ir,
 bool hrtfBinauralRejectReasonIsBlocking(HrtfBinauralRejectReason reason);
 HrtfBinauralRejectReason classifyHrtfBinauralReject(const HrtfBinauralPreflight& preflight);
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-a304 ---
+    HrtfAttenuationCouplingRejectReason* reason = nullptr,
+HrtfIrRejectReason classify_hrtf_binaural_convolution_reject(const HrtfBinauralPreflight& preflight);
+HrtfAttenuationCouplingRejectReason classify_hrtf_binaural_narrowing_reject(
+                                   float occlusion_gain, HrtfBinauralRejectReason* reason = nullptr,
+                                   HrtfBinauralRejectReason* reason = nullptr,

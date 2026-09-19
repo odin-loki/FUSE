@@ -1452,3 +1452,9 @@ HrtfBinauralRejectReason classifyHrtfBinauralReject(const HrtfBinauralPreflight&
     if (preflight.panPath.reason == HrtfPanPathRejectReason::EmptyIr) {
     preflight.reason = classifyHrtfBinauralReject(preflight);
     return !hrtfBinauralRejectReasonIsBlocking(preflight.reason);
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-a304 ---
+    HrtfAttenuationCouplingRejectReason* reason, const HrtfAttenuationCoupling& coupling,
+    const HrtfAttenuationCouplingPreflight preflight = preflight_hrtf_attenuation_coupling(
+HrtfIrRejectReason classify_hrtf_binaural_convolution_reject(const HrtfBinauralPreflight& preflight) {
+HrtfAttenuationCouplingRejectReason classify_hrtf_binaural_narrowing_reject(
