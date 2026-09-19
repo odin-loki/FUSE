@@ -943,6 +943,34 @@ BroadphaseRefinePreflight preflight_refine_broadphase_pairs(
 
 /// Returns true when refine may early-out before parallel invalidation (B4.2 deepen pass).
 
+    bool can_insert() const { return !emptyRange && !exceedsBudget; }
+
+        preflight.emptyRange = true;
+
+
+/// Derive a per-shape cell budget from `maxSpanPerAxis` (0 = unlimited).
+FUSE_PHYSICS_INLINE u32 maxCellBudgetFromSpanPerAxis(u32 maxSpanPerAxis, bool use2D) {
+    return use2D ? maxSpanPerAxis * maxSpanPerAxis : maxSpanPerAxis * maxSpanPerAxis * maxSpanPerAxis;
+
+/// True when shape cell insertion should be skipped before hash build (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool should_skip_shape_cell_insertion(const CellRange3& range, u32 maxSpanPerAxis) {
+    const CellOccupancyPreflight preflight =
+        preflight_cell_occupancy(range, maxCellBudgetFromSpanPerAxis(maxSpanPerAxis, false));
+    return !preflight.can_insert();
+
+FUSE_PHYSICS_INLINE bool should_skip_shape_cell_insertion(const CellRange2& range, u32 maxSpanPerAxis) {
+        preflight_cell_occupancy(range, maxCellBudgetFromSpanPerAxis(maxSpanPerAxis, true));
+
+
+/// Broadphase refine preflight for parallel AABB refine dispatch (B4.2 deepen pass).
+    bool emptyScene = false;
+
+
+/// Populate refine preflight without mutating the pair buffer (B4.2 deepen pass).
+
+/// True when parallel refine should early-out before AABB overlap tests (B4.2 deepen pass).
+bool should_skip_broadphase_refine(
+
 /// Clamp broadphase params to safe stub defaults (positive cell size, at least one bucket).
 FUSE_PHYSICS_INLINE SpatialHashParams normalizeSpatialHashParams(SpatialHashParams params) {
     params.cellSize = clampCellSize(params.cellSize);

@@ -138,6 +138,9 @@ void PairBufferSoA::invalidateSlot(u32 slot) {
     if (pairSlotCount > 0u && slot >= pairSlotCount) {
         return;
     }
+    if (pairSlotCount > 0u && slot >= pairSlotCount) {
+        return;
+    }
     validFlags[slot] = 0u;
 }
 
@@ -476,9 +479,21 @@ u32 PairBufferSoA::compactAndClamp() {
 
 bool PairBufferSoA::isSortedCanonical() const {
     if (canSkipSort()) {
+bool PairBufferSoA::canSkipDedupe() const {
     if (canSkipSoAIteration()) {
         return true;
     }
+
+    const u32 validCount = countValidSlots();
+    return validCount <= 1u;
+}
+
+bool PairBufferSoA::canSkipCompactAndClamp() const {
+    return canSkipSoAIteration() || countValidSlots() == 0u;
+
+bool PairBufferSoA::isSortedCanonical() const {
+    if (canSkipSoAIteration()) {
+        return true;
 
     const u32 validCount = countValidSlots();
     if (validCount <= 1u) {

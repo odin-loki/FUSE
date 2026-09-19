@@ -69,6 +69,11 @@ BroadphaseRefinePreflight preflight_refine_broadphase_pairs(
 
 bool should_skip_refine_broadphase_pairs(
     return preflight_refine_broadphase_pairs(bodies, shapes, buffer).skipped;
+    preflight.emptyScene = canSkipBroadphase(bodies, shapes);
+    preflight.skipped = preflight.emptyScene || preflight.emptyBuffer;
+
+bool should_skip_broadphase_refine(
+    return preflight_broadphase_refine(bodies, shapes, buffer).skipped;
 }
 
 const char* candidatePairRejectReasonName(CandidatePairRejectReason reason) {
@@ -648,6 +653,7 @@ void populateShapeCells(
         if (!preflight_cell_occupancy(range).can_insert_cells()) {
         if (!preflight_cell_occupancy(range, occupancyBudget).can_iterate()) {
         if (should_skip_shape_cell_population(range, 0u)) {
+        if (should_skip_shape_cell_insertion(range, maxSpan)) {
             return;
         }
         if (params.maxCellOccupancyPerShape > 0u) {
@@ -684,6 +690,7 @@ void populateShapeCells(
     if (!preflight_cell_occupancy(range).can_insert_cells()) {
     if (!preflight_cell_occupancy(range, occupancyBudget).can_iterate()) {
     if (should_skip_shape_cell_population(range, 0u)) {
+    if (should_skip_shape_cell_insertion(range, maxSpan)) {
         return;
     }
     if (isEmptyCellRange(range)) {
@@ -914,6 +921,7 @@ void refineBroadphasePairsParallelImpl(
     if (!refinePreflight.can_refine()) {
     if (canSkipRefineBroadphase(bodies, shapes, buffer)) {
     if (should_skip_refine_broadphase_pairs(bodies, shapes, buffer)) {
+    if (should_skip_broadphase_refine(bodies, shapes, buffer)) {
         return;
     }
 
