@@ -23,6 +23,9 @@ enum class ContactPairRejectReason : u8 {
     BothKinematic,
     AnyTrigger,
     BothMassless,
+    PlanePlane,
+    InvalidPlaneNormal,
+    ShapeBodyMismatch,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
@@ -188,6 +191,78 @@ u32 count_dispatchable_contact_pairs(
 
 /// True when at least one pair passes extended deepen preflight (B4.4 deepen pass).
 bool has_dispatchable_contact_pair(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 deepen pass).
+bool contact_pair_deepen_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected);
+
+/// Returns true when both resolved shapes are planes (B4.4 deepen pass).
+bool is_plane_plane_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when either plane shape has a degenerate normal vector (B4.4 deepen pass).
+bool is_invalid_plane_normal_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when resolved shapes are not bound to the pair body indices (B4.4 deepen pass).
+bool is_shape_body_mismatch_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
+
+/// Extended deepen-pass reject checks beyond `contact_pair_deepen_reject_reason` (B4.4 deepen pass).
+/// Does not alter `contact_pair_deepen_reject_reason`; use for additive preflight only.
+ContactPairRejectReason contact_pair_deepen_pass_reject_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Const preflight with deepen-pass plane/mismatch reject checks (B4.4 deepen pass).
+struct ContactPairDeepenPassPreflight {
+    ContactPairRejectReason reason = ContactPairRejectReason::None;
+    bool rejected = false;
+
+    bool can_dispatch() const { return !rejected; }
+};
+
+/// Populate deepen-pass pair preflight without running shape dispatch (B4.4 deepen pass).
+ContactPairDeepenPassPreflight preflight_contact_pair_deepen_pass(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when deepen-pass preflight rejects this pair (B4.4 deepen pass).
+bool should_skip_contact_pair_deepen_pass_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Read-only batch diagnostics for pair-list narrowphase launch (B4.4 deepen pass).
+struct ContactPairBatchPreflight {
+    u32 totalPairs = 0u;
+    u32 dispatchableCount = 0u;
+    u32 rejectedCount = 0u;
+    bool emptyInput = false;
+    bool allRejected = false;
+
+    bool can_dispatch() const { return dispatchableCount > 0u; }
+};
+
+/// Populate batch pair preflight without running shape dispatch (B4.4 deepen pass).
+ContactPairBatchPreflight preflight_contact_pair_batch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when no pair passes deepen-pass preflight (B4.4 deepen pass).
+bool should_skip_contact_pair_batch(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
