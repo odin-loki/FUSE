@@ -226,4 +226,91 @@ bool narrowphase_batch_rejects_all(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Non-mutating pair-dispatch skip predicate — mirrors `should_skip_contact_pair_dispatch` (B4.3 deepen follow-up pass).
+inline bool would_skip_contact_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return should_skip_contact_pair_dispatch(pair, bodies, shapes);
+}
+
+/// Non-mutating deepen pair-dispatch skip predicate — mirrors `should_skip_contact_pair_deepen_dispatch` (B4.3 deepen follow-up pass).
+inline bool would_skip_contact_pair_deepen_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
+}
+
+/// Pair preflight with optional reject-reason output (B4.3 deepen follow-up pass).
+inline bool contact_pair_preflight_ready(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason* reason = nullptr) {
+    const ContactPairPreflight preflight = preflight_contact_pair(pair, bodies, shapes);
+    if (reason != nullptr) {
+        *reason = preflight.reason;
+    }
+    return preflight.can_dispatch();
+}
+
+/// Pair preflight with reject-reason output (B4.3 deepen follow-up pass).
+inline bool try_preflight_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason& reason) {
+    const ContactPairPreflight preflight = preflight_contact_pair(pair, bodies, shapes);
+    reason = preflight.reason;
+    return preflight.can_dispatch();
+}
+
+/// Deepen pair preflight with optional reject-reason output (B4.3 deepen follow-up pass).
+inline bool contact_pair_deepen_preflight_ready(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason* reason = nullptr) {
+    const ContactPairDeepenPreflight preflight = preflight_contact_pair_deepen(pair, bodies, shapes);
+    if (reason != nullptr) {
+        *reason = preflight.reason;
+    }
+    return preflight.can_dispatch();
+}
+
+/// Deepen pair preflight with reject-reason output (B4.3 deepen follow-up pass).
+inline bool try_preflight_contact_pair_deepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason& reason) {
+    const ContactPairDeepenPreflight preflight = preflight_contact_pair_deepen(pair, bodies, shapes);
+    reason = preflight.reason;
+    return preflight.can_dispatch();
+}
+
+/// Batch preflight with optional reject-reason output (B4.3 deepen follow-up pass).
+inline bool narrowphase_batch_preflight_ready(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    NarrowphaseBatchPreflight* out = nullptr) {
+    const NarrowphaseBatchPreflight preflight = preflight_narrowphase_batch(pairs, bodies, shapes);
+    if (out != nullptr) {
+        *out = preflight;
+    }
+    return preflight.can_dispatch();
+}
+
+/// Batch preflight with output (B4.3 deepen follow-up pass).
+inline bool try_preflight_narrowphase_batch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    NarrowphaseBatchPreflight& out) {
+    out = preflight_narrowphase_batch(pairs, bodies, shapes);
+    return out.can_dispatch();
+}
+
 } // namespace fuse::physics::narrowphase
