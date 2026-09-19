@@ -562,3 +562,13 @@ bool TaaPass::preflightTemporalResolveGuards(const TaaResolveDesc& desc, u32 obs
 bool TaaPass::preflightJitterNdc(u32 width, u32 height, TaaJitterGuardRejectReason* reason) const {
     return preflightTaaJitterNdc(width, height, m_jitter.sequenceLength(), reason);
 bool TaaPass::preflightJitterNdcIfReady(TaaJitterGuardRejectReason* reason) const {
+
+// --- deepen additive from b59-taa-deepen-guards-602b ---
+TaaJitterFramePreflight TaaPass::preflightJitterFrame(u32 frameIndex) const {
+    return preflightTaaJitterFrame(frameIndex, m_desc.width, m_desc.height, m_jitter.sequenceLength());
+TaaHistoryWarmupPreflight TaaPass::preflightHistoryWarmup(u32 observedGeneration) const {
+    return preflightTaaHistoryWarmup(m_history, observedGeneration);
+TaaResolveBlendPreflight TaaPass::preflightResolveBlendFrame(const TaaResolveDesc& desc) const {
+    return preflightTaaResolveBlendFrame(desc, m_history);
+TaaFrameGuardPreflight TaaPass::preflightFrameGuards(const TaaResolveDesc& desc, u32 observedGeneration) const {
+    return preflightTaaFrameGuards(desc, m_history, observedGeneration);

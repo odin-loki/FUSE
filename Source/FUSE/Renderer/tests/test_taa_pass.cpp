@@ -3848,3 +3848,73 @@ void testTaaPassWarmupAndResolveFrameGuards() {
                "tryPreflightResolveBlendWeights passes before first resolve");
                "tryPreflightResolveBlendWeights reason is None before first resolve");
                "tryPreflightHistoryReuse passes after warmup");
+
+// --- deepen additive from b59-taa-deepen-guards-602b ---
+void testJitterFramePreflightAndShouldSkip() {
+    const fuse::renderer::TaaJitterFramePreflight framePreflight =
+        fuse::renderer::preflightTaaJitterFrame(13u, 1920u, 1080u, 8u);
+    expectTrue(framePreflight.canSync(), "frame preflight allows sync for valid sequence");
+    expectTrue(framePreflight.canProduceNdc(), "frame preflight allows NDC for valid viewport");
+    expectTrue(framePreflight.passes(), "frame preflight passes for valid inputs");
+    expectTrue(framePreflight.slot == TaaJitterLayout::frameIndexInSequence(13u, 8u),
+    const fuse::renderer::TaaJitterFramePreflight invalidPreflight =
+        fuse::renderer::preflightTaaJitterFrame(0u, 0u, 1080u, 8u);
+    expectTrue(invalidPreflight.canSync(), "frame preflight sync still valid with invalid viewport");
+    expectTrue(!invalidPreflight.canProduceNdc(), "frame preflight blocks NDC for zero width");
+    expectTrue(!invalidPreflight.passes(), "frame preflight fails when NDC is blocked");
+    expectTrue(invalidPreflight.ndcReject == fuse::renderer::TaaJitterGuardRejectReason::InvalidViewport,
+        fuse::renderer::preflightTaaHistoryWarmup(emptyHistory, 0u);
+    expectTrue(!emptyPreflight.isWarmupComplete(), "empty history preflight warmup incomplete");
+    expectTrue(!emptyPreflight.canReuse(), "empty history preflight cannot reuse");
+    expectTrue(!emptyPreflight.passes(), "empty history warmup preflight fails");
+    expectTrue(emptyPreflight.reuseBlock == fuse::renderer::TaaHistoryReuseBlockReason::NotReady,
+    const fuse::renderer::TaaHistoryWarmupPreflight unwarmedPreflight =
+        fuse::renderer::preflightTaaHistoryWarmup(history, 0u);
+    expectTrue(unwarmedPreflight.framesRemaining == 1u, "unwarmed preflight has one frame remaining");
+    expectTrue(!unwarmedPreflight.isWarmupComplete(), "unwarmed preflight warmup incomplete");
+    expectTrue(unwarmedPreflight.reuseBlock == fuse::renderer::TaaHistoryReuseBlockReason::NotWarm,
+    expectTrue(warmedPreflight.isWarmupComplete(), "warmed preflight warmup complete");
+    expectTrue(warmedPreflight.canReuse(), "warmed preflight can reuse");
+    expectTrue(warmedPreflight.passes(), "warmed preflight passes");
+    const fuse::renderer::TaaHistoryWarmupPreflight staleWarmPreflight =
+        fuse::renderer::preflightTaaHistoryWarmup(history, 999u);
+    expectTrue(staleWarmPreflight.isWarmupComplete(), "stale observed gen preflight warmup still complete");
+    expectTrue(!staleWarmPreflight.canReuse(), "stale observed gen preflight cannot reuse");
+    expectTrue(staleWarmPreflight.reuseBlock == fuse::renderer::TaaHistoryReuseBlockReason::StaleGeneration,
+    const fuse::renderer::TaaHistoryWarmupPreflight postInvalidatePreflight =
+        fuse::renderer::preflightTaaHistoryWarmup(history, history.invalidateGeneration());
+    expectTrue(!postInvalidatePreflight.isWarmupComplete(), "invalidated history preflight warmup incomplete");
+    expectTrue(!postInvalidatePreflight.canReuse(), "invalidated history preflight cannot reuse");
+    expectTrue(postInvalidatePreflight.reuseBlock == fuse::renderer::TaaHistoryReuseBlockReason::NotWarm,
+void testResolveBlendFramePreflightGuards() {
+        fuse::renderer::preflightTaaResolveBlendFrame(desc, history);
+    expectTrue(warmupPreflight.passes(), "warmup blend frame preflight passes");
+    expectTrue(!warmupPreflight.historyBlendAllowed, "warmup blend frame preflight blocks history blend");
+    expectTrue(!warmupPreflight.historyDegraded, "warmup blend frame preflight is not degraded");
+    expectNear(warmupPreflight.weights.current, 1.f, 1e-5f, "warmup blend frame preflight current is full");
+    expectTrue(steadyPreflight.passes(), "steady blend frame preflight passes");
+    expectTrue(steadyPreflight.historyBlendAllowed, "steady blend frame preflight allows history blend");
+    expectTrue(!steadyPreflight.historyDegraded, "steady blend frame preflight is not degraded");
+    expectNear(steadyPreflight.weights.current, 0.4f, 1e-5f, "steady blend frame preflight current weight");
+    const fuse::renderer::TaaResolveBlendPreflight stalePreflight =
+    expectTrue(stalePreflight.passes(), "stale blend frame preflight still passes weight validation");
+    expectTrue(!stalePreflight.historyBlendAllowed, "stale blend frame preflight blocks history blend");
+    expectTrue(stalePreflight.historyDegraded, "stale blend frame preflight is degraded");
+void testTaaFrameGuardPreflight() {
+    const fuse::renderer::TaaJitterFramePreflight jitterPreflight = pass->preflightJitterFrame(9u);
+    expectTrue(jitterPreflight.passes(), "pass jitter frame preflight passes before init");
+    const fuse::renderer::TaaFrameGuardPreflight preInitGuards =
+        pass->preflightFrameGuards(resolveDesc, 0u);
+    const fuse::renderer::TaaHistoryWarmupPreflight warmupPreflight = pass->preflightHistoryWarmup(0u);
+    expectTrue(!warmupPreflight.passes(), "pass history warmup preflight fails before resolve");
+    expectTrue(warmupPreflight.reuseBlock == fuse::renderer::TaaHistoryReuseBlockReason::NotWarm,
+        pass->preflightResolveBlendFrame(resolveDesc);
+    expectTrue(blendPreflight.passes(), "pass blend frame preflight passes before first resolve");
+    expectTrue(!blendPreflight.historyBlendAllowed, "pass blend frame preflight blocks history before warmup");
+    const fuse::renderer::TaaFrameGuardPreflight warmedGuards = pass->preflightFrameGuards(resolveDesc, 0u);
+    const fuse::renderer::TaaFrameGuardPreflight staleGuards = pass->preflightFrameGuards(resolveDesc, 999u);
+    const fuse::renderer::TaaFrameGuardPreflight postInvalidateGuards =
+        pass->preflightFrameGuards(resolveDesc, pass->historyInvalidateGeneration());
+    testJitterFramePreflightAndShouldSkip();
+    testResolveBlendFramePreflightGuards();
+    testTaaFrameGuardPreflight();

@@ -417,3 +417,9 @@ bool TaaJitter::trySyncToFrameIndexIfReady(u32 frameIndex, TaaJitterGuardRejectR
 
 // --- deepen additive from deepen-b59-taa-guards-61ca ---
 bool TaaJitterLayout::tryComputeNdcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height,
+
+// --- deepen additive from b59-taa-deepen-guards-602b ---
+TaaJitterFramePreflight preflightTaaJitterFrame(u32 frameIndex, u32 width, u32 height, u32 sequenceLength) {
+    TaaJitterFramePreflight preflight{};
+    preflight.syncReject = classifyTaaJitterSyncReject(sequenceLength);
+    preflight.ndcReject = classifyTaaJitterNdcReject(width, height, sequenceLength);

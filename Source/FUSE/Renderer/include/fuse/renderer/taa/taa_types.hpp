@@ -383,3 +383,13 @@ bool tryPreflightTaaResolveTemporalBlend(const TaaResolveDesc& desc, const TaaHi
 
 // --- deepen additive from deepen-b59-taa-guards-7381 ---
 bool preflightTaaTemporalResolveGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+
+// --- deepen additive from b59-taa-deepen-guards-602b ---
+TaaHistoryWarmupPreflight preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, u32 observedGeneration);
+    TaaResolveBlendRejectReason rejectReason = TaaResolveBlendRejectReason::None;
+    bool passes() const { return rejectReason == TaaResolveBlendRejectReason::None; }
+TaaResolveBlendPreflight preflightTaaResolveBlendFrame(const TaaResolveDesc& desc,
+struct TaaFrameGuardPreflight {
+    TaaHistoryWarmupPreflight history{};
+    TaaResolveBlendPreflight blend{};
+TaaFrameGuardPreflight preflightTaaFrameGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,

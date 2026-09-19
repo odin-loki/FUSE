@@ -210,3 +210,11 @@ bool tryComputeTaaJitterNdcOffset(u32 frameIndex, u32 width, u32 height, u32 seq
 
 // --- deepen additive from deepen-b59-taa-guards-61ca ---
     static bool tryComputeNdcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
+
+// --- deepen additive from b59-taa-deepen-guards-602b ---
+struct TaaJitterFramePreflight {
+    TaaJitterGuardRejectReason syncReject = TaaJitterGuardRejectReason::None;
+    TaaJitterGuardRejectReason ndcReject = TaaJitterGuardRejectReason::None;
+    bool canSync() const { return syncReject == TaaJitterGuardRejectReason::None; }
+    bool canProduceNdc() const { return ndcReject == TaaJitterGuardRejectReason::None; }
+TaaJitterFramePreflight preflightTaaJitterFrame(u32 frameIndex, u32 width, u32 height,
