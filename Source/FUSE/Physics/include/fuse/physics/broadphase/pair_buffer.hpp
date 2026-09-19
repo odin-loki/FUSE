@@ -66,6 +66,8 @@ struct PairBufferSoA {
     bool canSkipCompactAndClamp() const;
     /// True when refine dispatch has no valid pairs to scan (B4.2 deepen pass).
     bool canSkipRefineIteration() const;
+    /// True when dedupe followed by clamp would be a no-op (B4.2 deepen pass).
+    bool canSkipDedupeAndClamp() const;
     /// Count valid flags in prepared slot storage before compaction.
     u32 countValidSlots() const;
     /// True when canonical sort is a no-op (empty or single pair).
@@ -396,5 +398,32 @@ inline bool canSkipBroadphaseRefine(
     const PairBufferSoA& buffer) {
     return canSkipBroadphase(bodies, shapes) || buffer.canSkipRefineIteration();
 }
+
+/// Empty-output guard: true when broadphase produced no active pairs (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool isEmptyBroadphaseOutput(const PairBufferSoA& buffer) {
+    return buffer.isEmpty() || buffer.canSkipSoAIteration();
+
+/// Const preflight for pair-buffer dedupe dispatch (B4.2 deepen pass).
+    u32 activePairCount = 0;
+    bool skipped = false;
+
+    bool needs_dedupe() const { return !skipped && activePairCount > 1u; }
+    bool can_dedupe() const { return needs_dedupe(); }
+
+/// Populate dedupe preflight without sorting pair slots (B4.2 deepen pass).
+PairBufferDedupePreflight preflight_dedupe_pair_buffer(const PairBufferSoA& buffer);
+
+/// Returns true when dedupe should skip before sort/unique pass (B4.2 deepen pass).
+bool should_skip_dedupe_pair_buffer(const PairBufferSoA& buffer);
+
+/// Const preflight for pair-buffer capacity clamp (B4.2 deepen pass).
+    u32 maxCapacity = 0;
+    u32 excessCount = 0;
+
+    bool needs_clamp() const { return !skipped && maxCapacity > 0u && activePairCount > maxCapacity; }
+    bool can_clamp() const { return needs_clamp(); }
+
+/// Populate clamp preflight without truncating pair slots (B4.2 deepen pass).
+PairBufferClampPreflight preflight_pair_buffer_clamp(const PairBufferSoA& buffer);
 
 } // namespace fuse::physics::broadphase

@@ -543,6 +543,38 @@ bool PairBufferSoA::canSkipCompaction() const {
     return !hasInvalidSlots();
 }
 
+bool PairBufferSoA::canSkipDedupeAndClamp() const {
+    return canSkipDedupe() && !canApplyMaxCapacityClamp();
+}
+
+PairBufferDedupePreflight preflight_dedupe_pair_buffer(const PairBufferSoA& buffer) {
+    PairBufferDedupePreflight preflight{};
+    if (buffer.canSkipDedupe()) {
+        preflight.skipped = true;
+        return preflight;
+    }
+    preflight.activePairCount = buffer.activeCount;
+    return preflight;
+}
+
+bool should_skip_dedupe_pair_buffer(const PairBufferSoA& buffer) {
+    return buffer.canSkipDedupe();
+}
+
+PairBufferClampPreflight preflight_pair_buffer_clamp(const PairBufferSoA& buffer) {
+    PairBufferClampPreflight preflight{};
+    if (buffer.canSkipSoAIteration()) {
+        preflight.skipped = true;
+        return preflight;
+    }
+    preflight.activePairCount = buffer.activeCount;
+    preflight.maxCapacity = buffer.maxCapacity;
+    if (buffer.canApplyMaxCapacityClamp()) {
+        preflight.excessCount = buffer.activeCount - buffer.maxCapacity;
+    }
+    return preflight;
+}
+
 bool PairBufferSoA::slotIsValid(u32 slot) const {
     if (slot >= validFlags.size()) {
         return false;
