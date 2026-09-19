@@ -39,7 +39,7 @@ bool ScriptHostBridge::attach() {
 bool ScriptHostBridge::importCsModule(std::string_view csModule,
                                       const std::string& btText,
                                       std::string* errorOut) {
-    const u32 profileId = treeProfileForModule(csModule);
+    const u32 profileId = treeProfileForModuleText(csModule, btText);
     if (!importTemplateAsset(btText, profileId, m_runtime, errorOut)) {
         return false;
     }

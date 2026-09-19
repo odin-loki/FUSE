@@ -176,6 +176,46 @@ std::unordered_map<std::string, std::string> findNamedObjects(const std::string&
     return objects;
 }
 
+float findFieldFloat(const std::string& objectBody, const std::string& fieldKey) {
+    const std::string needle = "\"" + fieldKey + "\"";
+    const std::size_t keyPos = objectBody.find(needle);
+    if (keyPos == std::string::npos) {
+        return 0.f;
+    }
+
+    const std::size_t colon = objectBody.find(':', keyPos);
+    if (colon == std::string::npos) {
+        return 0.f;
+    }
+
+    std::size_t valueStart = colon + 1;
+    while (valueStart < objectBody.size() && std::isspace(static_cast<unsigned char>(objectBody[valueStart]))) {
+        ++valueStart;
+    }
+
+    std::size_t valueEnd = valueStart;
+    while (valueEnd < objectBody.size() &&
+           (std::isdigit(static_cast<unsigned char>(objectBody[valueEnd])) || objectBody[valueEnd] == '.' ||
+            objectBody[valueEnd] == '-')) {
+        ++valueEnd;
+    }
+
+    if (valueEnd == valueStart) {
+        return 0.f;
+    }
+
+    return std::stof(objectBody.substr(valueStart, valueEnd - valueStart));
+}
+
+OutpostTransformSpec parseTransformBody(const std::string& objectBody) {
+    OutpostTransformSpec transform;
+    transform.x = findFieldFloat(objectBody, "x");
+    transform.y = findFieldFloat(objectBody, "y");
+    transform.z = findFieldFloat(objectBody, "z");
+    transform.yaw_deg = findFieldFloat(objectBody, "yaw");
+    return transform;
+}
+
 } // namespace
 
 bool loadOutpostStubFromJson(const std::string& jsonText, OutpostStubContent& outContent, std::string* errorOut) {
@@ -231,6 +271,14 @@ bool loadOutpostStubFromJson(const std::string& jsonText, OutpostStubContent& ou
         }
     }
 
+    const std::string placementsBody = findObjectBody(jsonText, "placements");
+    if (!placementsBody.empty()) {
+        const auto placements = findNamedObjects(placementsBody);
+        for (const auto& entry : placements) {
+            outContent.placements[entry.first] = parseTransformBody(entry.second);
+        }
+    }
+
     if (outContent.conversations.empty() && outContent.doors.empty() && outContent.weaponPickups.empty()) {
         if (errorOut) {
             *errorOut = "no interactables parsed";
@@ -277,6 +325,10 @@ bool loadEmbeddedOutpostStub(OutpostStubContent& outContent, std::string* errorO
         "        }\n"
         "      }\n"
         "    }\n"
+        "  },\n"
+        "  \"placements\": {\n"
+        "    \"outpost_guard\": { \"x\": 2.0, \"y\": 1.0, \"z\": 0.0, \"yaw\": 90.0 },\n"
+        "    \"lever_interactable\": { \"x\": 3.0, \"y\": 0.0, \"z\": 0.0, \"yaw\": 0.0 }\n"
         "  }\n"
         "}\n";
 

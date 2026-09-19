@@ -63,13 +63,13 @@ const std::string& VActorBridge::mount_point_for(const std::string& actor_id) co
 
 ShapeBaseMountOffset VActorBridge::mount_offset_for(const std::string& mount_point) const {
     if (mount_point == "cockpit") {
-        return {0.f, 0.f, 1.5f};
+        return {0.f, 0.f, 1.5f, 15.f};
     }
     if (mount_point == "vehicle_seat") {
-        return {0.f, 0.5f, 0.75f};
+        return {0.f, 0.5f, 0.75f, 0.f};
     }
     if (mount_point == "turret") {
-        return {0.f, 1.25f, 2.f};
+        return {0.f, 1.25f, 2.f, 90.f};
     }
     return {};
 }
@@ -97,10 +97,43 @@ void VActorBridge::sync_bound_objects() {
             continue;
         }
 
-        state.object->setPosition(state.baseX + state.offset.x, state.baseY + state.offset.y);
-        state.object->setZ(state.baseZ + state.offset.z);
+        state.object->setPosition(state.baseX + state.offset.x + state.motionX,
+                                  state.baseY + state.offset.y + state.motionY);
+        state.object->setZ(state.baseZ + state.offset.z + state.motionZ);
     }
     ++m_syncCount;
+}
+
+const MotionTrack* find_first_motion_track(const Timeline& timeline) {
+    for (const TrackGroup& group : timeline.groups()) {
+        for (const std::unique_ptr<Track>& track : group.tracks()) {
+            if (track != nullptr && track->enabled() && track->kind() == TrackKind::Motion) {
+                return static_cast<const MotionTrack*>(track.get());
+            }
+        }
+    }
+    return nullptr;
+}
+
+void VActorBridge::sync_motion_from_timeline(const Timeline& timeline) {
+    const MotionTrack* motionTrack = find_first_motion_track(timeline);
+    if (motionTrack == nullptr) {
+        return;
+    }
+
+    const MotionSample sample = motionTrack->sample_at(timeline.playhead().time_ms());
+    for (auto& entry : m_actors) {
+        BoundActorState& state = entry.second;
+        if (state.object == nullptr || !state.mounted) {
+            continue;
+        }
+        state.motionX = sample.position.x * 0.01f;
+        state.motionY = sample.position.y * 0.01f;
+        state.motionZ = sample.position.z * 0.01f;
+    }
+
+    sync_bound_objects();
+    ++m_motionSyncCount;
 }
 
 void drain_actor_cues(const Timeline& timeline, VActorBridge& bridge, TimelineMs since_ms) {

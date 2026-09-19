@@ -28,6 +28,8 @@ int main() {
     expectTrue(content.conversations["outpost_guard"].lines.size() == 2u, "guard has two lines");
     expectTrue(content.doors.count("maintenance_door") == 1, "maintenance door present");
     expectTrue(content.weaponPickups.count("armory_rifle") == 1, "armory rifle present");
+    expectTrue(content.placements.count("outpost_guard") == 1, "guard placement parsed");
+    expectTrue(content.placements.at("outpost_guard").x == 2.f, "guard placement x parsed");
 
     fuse::core::shutdown();
 

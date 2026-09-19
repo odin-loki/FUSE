@@ -350,6 +350,28 @@ void testAfxMissionScriptVm() {
     expectTrue(vm.dispatchCount() == 1u, "mission VM dispatch counted");
 }
 
+void testAfxMissionScriptVmImpactHook() {
+    fuse::fx::FxComposer composer;
+    fuse::fx::AfxMissionScriptVm vm;
+    expectTrue(fuse::fx::registerAfxTemplateMissionVm(composer, vm), "mission VM registers hooks");
+    expectTrue(vm.dispatch("on_impact_fx", composer), "impact hook dispatched");
+    expectTrue(vm.lastHookDispatched() == "on_impact_fx", "impact hook recorded");
+}
+
+void testParticlePoolCudaSkipReason() {
+    fuse::fx::ParticlePool pool(4);
+    pool.spawn({0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 0.5f);
+
+    fuse::fx::ParticlePoolGpuBackend gpuBackend(4);
+    gpuBackend.syncFromCpu(pool);
+
+    fuse::frame::FrameCtx ctx;
+    gpuBackend.cudaDispatchOrSkip(ctx);
+    expectTrue(gpuBackend.cudaSkipCount() == 1u, "cuda dispatch skipped without toolkit");
+    expectTrue(gpuBackend.lastCudaSkipReason() == fuse::fx::ParticlePoolCudaSkipReason::Disabled,
+               "cuda skip reason recorded");
+}
+
 void testParticlePoolCudaSkip() {
     fuse::fx::ParticlePool pool(4);
     pool.spawn({0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 0.5f);
@@ -393,6 +415,8 @@ int main() {
     testParticlePoolGpuBackend();
     testAfxMissionHooks();
     testAfxMissionScriptVm();
+    testAfxMissionScriptVmImpactHook();
+    testParticlePoolCudaSkipReason();
     testParticlePoolCudaSkip();
     testParticlePoolTick();
     fuse::core::shutdown();

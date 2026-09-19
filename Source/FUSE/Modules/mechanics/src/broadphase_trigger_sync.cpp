@@ -35,6 +35,28 @@ void BroadphaseTriggerSync::testBodyAgainstTrigger(u32 objectId, const BodyState
     m_trigger->testObject(objectId, body.x, body.y, body.z);
 }
 
+void BroadphaseTriggerSync::testNeighborCells(u32 objectId, const BodyState& body) {
+    const s32 baseX = static_cast<s32>(std::floor(body.x / m_cellSize));
+    const s32 baseY = static_cast<s32>(std::floor(body.y / m_cellSize));
+
+    for (s32 dx = -1; dx <= 1; ++dx) {
+        for (s32 dy = -1; dy <= 1; ++dy) {
+            const s32 key = ((baseX + dx) << 16) ^ ((baseY + dy) & 0xFFFF);
+            const auto cellIt = m_cells.find(key);
+            if (cellIt == m_cells.end()) {
+                continue;
+            }
+            for (u32 candidateId : cellIt->second) {
+                if (candidateId == objectId) {
+                    testBodyAgainstTrigger(objectId, body);
+                } else {
+                    ++m_neighborCandidateCount;
+                }
+            }
+        }
+    }
+}
+
 void BroadphaseTriggerSync::syncAll() {
     m_cells.clear();
     m_candidateCount = 0;
@@ -60,7 +82,7 @@ void BroadphaseTriggerSync::syncAll() {
             if (bodyIt == m_bodies.end()) {
                 continue;
             }
-            testBodyAgainstTrigger(objectId, bodyIt->second);
+            testNeighborCells(objectId, bodyIt->second);
         }
     }
 

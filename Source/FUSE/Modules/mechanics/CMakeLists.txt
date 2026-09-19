@@ -8,11 +8,13 @@ add_library(fuse_mechanics STATIC
     src/polyhedron_trigger.cpp
     src/physics_trigger_bridge.cpp
     src/broadphase_trigger_sync.cpp
+    src/physics_broadphase_bridge.cpp
     src/counter_component.cpp
     src/message_component.cpp
     src/delay_component.cpp
     src/rotate_component.cpp
     src/toggle_component.cpp
+    src/switch_component.cpp
     src/inventory_provider.cpp
     src/interact_action.cpp
     src/interactable.cpp
@@ -26,11 +28,13 @@ add_library(fuse_mechanics STATIC
     include/fuse/mechanics/polyhedron_trigger.hpp
     include/fuse/mechanics/physics_trigger_bridge.hpp
     include/fuse/mechanics/broadphase_trigger_sync.hpp
+    include/fuse/mechanics/physics_broadphase_bridge.hpp
     include/fuse/mechanics/counter_component.hpp
     include/fuse/mechanics/message_component.hpp
     include/fuse/mechanics/delay_component.hpp
     include/fuse/mechanics/rotate_component.hpp
     include/fuse/mechanics/toggle_component.hpp
+    include/fuse/mechanics/switch_component.hpp
     include/fuse/mechanics/inventory_provider.hpp
     include/fuse/mechanics/interact_action.hpp
     include/fuse/mechanics/interactable.hpp

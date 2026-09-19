@@ -1,21 +1,20 @@
 #include <fuse/ai/uaisk_script_import.hpp>
 
 #include <fuse/ai/tree_loader.hpp>
+#include <fuse/ai/uaisk_cs_parser.hpp>
 
 namespace fuse::ai::uaisk {
 
 u32 treeProfileForModule(std::string_view csModule) {
-    for (const TemplateHook& hook : kTemplateHooks) {
-        if (hook.uaiskModule == csModule) {
-            if (hook.fuseRegistryTypeId == "gb.action.move_toward") {
-                return 0;
-            }
-            if (hook.fuseRegistryTypeId == "bb.selector") {
-                return 1;
-            }
-        }
+    return treeProfileForModuleText(csModule, {});
+}
+
+u32 treeProfileForModuleText(std::string_view csModule, std::string_view csText) {
+    UaiskCsParseResult parsed;
+    if (!parseCsModule(csModule, csText, parsed)) {
+        return 0;
     }
-    return 0;
+    return treeProfileForParsedModule(parsed);
 }
 
 bool importTemplateAsset(const std::string& btText, u32 profileId, BehaviorRuntime& runtime, std::string* errorOut) {

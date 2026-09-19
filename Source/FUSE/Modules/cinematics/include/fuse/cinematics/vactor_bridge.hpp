@@ -15,6 +15,7 @@ struct ShapeBaseMountOffset {
     float x = 0.f;
     float y = 0.f;
     float z = 0.f;
+    float yaw_deg = 0.f;
 };
 
 /// Headless VActor mount bridge — maps actor_id strings to SceneObject3D instances.
@@ -28,6 +29,7 @@ public:
     /// Apply ShapeBase mount offset to bound scene object (VActor ore without Torque).
     void apply_shapebase_attach(const std::string& actor_id, const std::string& mount_point);
     void sync_bound_objects();
+    void sync_motion_from_timeline(const Timeline& timeline);
 
     const std::string& mount_point_for(const std::string& actor_id) const;
     ShapeBaseMountOffset mount_offset_for(const std::string& mount_point) const;
@@ -35,6 +37,7 @@ public:
     u32 unmountCount() const { return m_unmountCount; }
     u32 shapebaseAttachCount() const { return m_shapebaseAttachCount; }
     u32 syncCount() const { return m_syncCount; }
+    u32 motionSyncCount() const { return m_motionSyncCount; }
 
 private:
     struct BoundActorState {
@@ -44,6 +47,9 @@ private:
         float baseZ = 0.f;
         ShapeBaseMountOffset offset{};
         bool mounted = false;
+        float motionX = 0.f;
+        float motionY = 0.f;
+        float motionZ = 0.f;
     };
 
     std::unordered_map<std::string, BoundActorState> m_actors;
@@ -52,6 +58,7 @@ private:
     u32 m_unmountCount = 0;
     u32 m_shapebaseAttachCount = 0;
     u32 m_syncCount = 0;
+    u32 m_motionSyncCount = 0;
 };
 
 /// Drain actor mount/unmount cues crossed since `since_ms` up to the playhead time.

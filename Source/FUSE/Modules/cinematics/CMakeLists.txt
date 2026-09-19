@@ -14,6 +14,7 @@ add_library(fuse_cinematics STATIC
     src/vactor_bridge.cpp
     src/timeline_loader.cpp
     src/cue_queue.cpp
+    src/cue_preview.cpp
     src/group.cpp
     src/playhead.cpp
     src/timeline.cpp
@@ -34,6 +35,7 @@ add_library(fuse_cinematics STATIC
     include/fuse/cinematics/timeline_loader.hpp
     include/fuse/cinematics/cue_payload.hpp
     include/fuse/cinematics/cue_queue.hpp
+    include/fuse/cinematics/cue_preview.hpp
     include/fuse/cinematics/group.hpp
     include/fuse/cinematics/playhead.hpp
     include/fuse/cinematics/timeline.hpp

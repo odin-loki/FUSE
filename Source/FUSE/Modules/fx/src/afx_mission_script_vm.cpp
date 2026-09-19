@@ -20,6 +20,7 @@ bool AfxMissionScriptVm::dispatch(const std::string& scriptHook,
 
     const AfxMissionHook& hook = it->second;
     ++m_dispatchCount;
+    m_lastHookDispatched = scriptHook;
 
     if (hook.scriptHook == "on_spell_cast") {
         CastBinding binding;
@@ -36,7 +37,27 @@ bool AfxMissionScriptVm::dispatch(const std::string& scriptHook,
         return composer.attach(socket);
     }
 
+    if (hook.scriptHook == "on_impact_fx") {
+        FxSocket socket;
+        socket.kind = FxSocketKind::Shape3D;
+        socket.effectId = hook.spellId.empty() ? "muzzle_flash" : hook.spellId;
+        socket.owner = fuse::Handle<fuse::Object>(3u, 1u);
+        (void)ctx;
+        return composer.attach(socket);
+    }
+
     return false;
+}
+
+bool AfxMissionScriptVm::dispatchTick(FxComposer& composer, const frame::FrameCtx& ctx) {
+    bool dispatched = false;
+    if (m_hooks.count("on_ambient_fx") != 0) {
+        dispatched = dispatch("on_ambient_fx", composer, ctx) || dispatched;
+    }
+    if (m_hooks.count("on_spell_cast") != 0 && composer.castPipeline().activeCount() == 0u) {
+        dispatched = dispatch("on_spell_cast", composer, ctx) || dispatched;
+    }
+    return dispatched;
 }
 
 bool registerAfxTemplateMissionVm(FxComposer& composer, AfxMissionScriptVm& vm) {
@@ -45,6 +66,7 @@ bool registerAfxTemplateMissionVm(FxComposer& composer, AfxMissionScriptVm& vm) 
         return false;
     }
 
+    hooks.push_back({"AFXDemo_Minimal", "on_impact_fx", "muzzle_flash"});
     vm.registerHooks(hooks);
     return true;
 }

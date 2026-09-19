@@ -366,10 +366,11 @@ void testAiTreeProfilePickerPostsCommand() {
     fuse::editor::EditorHost host;
     fuse::editor::AiTreeProfilePicker picker(host);
 
-    expectTrue(picker.options().size() >= 2u, "tree profile options listed");
-    picker.postSelectProfile(1u);
+    expectTrue(picker.options().size() >= 4u, "tree profile options listed from UAISK hooks");
+    picker.postSelectModule("aiBehaviors.cs");
     host.gameTick();
     expectTrue(host.selectedAiTreeProfileId() == 1u, "tree profile applied on game thread");
+    expectTrue(picker.selectedUaiskModule() == "aiBehaviors.cs", "picker tracks UAISK module");
     expectTrue(picker.postCount() == 1u, "picker post counted");
 }
 

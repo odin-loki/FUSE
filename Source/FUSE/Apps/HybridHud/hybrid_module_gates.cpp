@@ -126,6 +126,10 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
     state.spawnedOutpostInteractables =
         state.loadedOutpostStub &&
         fuse::adventure::spawnOutpostInteractables(state.outpostContent, state.outpostSpawn);
+    state.appliedOutpostPlacements =
+        state.spawnedOutpostInteractables &&
+        fuse::adventure::applyOutpostScenePlacements(state.outpostSpawn, state.guard3D, state.lever3D);
+    fuse::adventure::registerOutpostConversationScriptHooks(state.conversationScriptVm);
 
     state.leverInteractable.setSupportedVerbs({"use"});
     state.leverInteractable.attach();
@@ -134,7 +138,10 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
     const fuse::mechanics::ConvexPolyhedron triggerVolume =
         fuse::mechanics::ConvexPolyhedron::axis_aligned_box(-5.f, -1.f, -1.f, 4.5f, 1.f, 1.f);
     state.leverTrigger.setPolyhedron(triggerVolume);
-    state.leverConsole.registerMethod("toggleLever", [&state]() { state.leverToggle.toggle(); });
+    state.leverConsole.registerMethod("toggleLever", [&state]() {
+        state.leverToggle.toggle();
+        state.leverSwitch.flip();
+    });
     state.leverTrigger.setOnEnter([&state](u32 /*objectId*/) {
         state.agentInsideTrigger = true;
         state.leverConsole.invoke("toggleLever");
@@ -153,6 +160,9 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
 
         auto guardIt = state.outpostSpawn.conversations.find("outpost_guard");
         if (guardIt != state.outpostSpawn.conversations.end() && guardIt->second != nullptr) {
+            fuse::adventure::InteractContext branchCtx;
+            branchCtx.actorName = "player";
+            state.conversationScriptVm.dispatchBranch("outpost_guard", "polite", branchCtx, *guardIt->second);
             state.guardLineText =
                 state.adventureSystem.converseBranch(adventureCtx, *guardIt->second, "polite");
         }
@@ -166,6 +176,15 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
         return {};
     });
 
+    state.physicsBroadphaseBridge.bindTrigger(&state.leverTrigger);
+    state.physicsBroadphaseBridge.setPositionProvider([&state](fuse::u32 objectId) -> fuse::mechanics::PhysicsBodyPosition {
+        if (objectId == kAgentObjectId) {
+            return {state.agent3D.x(), state.agent3D.y(), state.agent3D.z()};
+        }
+        return {};
+    });
+    state.physicsBroadphaseBridge.trackBody(kAgentObjectId, state.agent3D.x(), state.agent3D.y(), state.agent3D.z());
+
     state.broadphaseTriggerSync.bindTrigger(&state.leverTrigger);
     state.broadphaseTriggerSync.setPositionProvider([&state](fuse::u32 objectId) -> fuse::mechanics::PhysicsBodyPosition {
         if (objectId == kAgentObjectId) {
@@ -174,6 +193,9 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
         return {};
     });
     state.broadphaseTriggerSync.trackBody(kAgentObjectId, state.agent3D.x(), state.agent3D.y(), state.agent3D.z());
+
+    const auto cuePreview = fuse::cinematics::preview_cues_at(state.timeline, 2'500);
+    state.cuePreviewCount = static_cast<fuse::u32>(cuePreview.size());
 }
 
 void tickFrame(State& state, fuse::hybrid::HybridComposer& composer, const fuse::frame::FrameCtx& ctx) {
@@ -185,6 +207,7 @@ void tickFrame(State& state, fuse::hybrid::HybridComposer& composer, const fuse:
     state.timeline.advance(deltaMs);
     fuse::cinematics::drain_actor_cues(state.timeline, state.vactorBridge, timelineBefore);
     state.vactorBridge.sync_bound_objects();
+    state.vactorBridge.sync_motion_from_timeline(state.timeline);
     state.lastTimelineMs = state.timeline.playhead().time_ms();
 
     const fuse::cinematics::HybridTimelineSample drive =
@@ -205,7 +228,10 @@ void tickFrame(State& state, fuse::hybrid::HybridComposer& composer, const fuse:
     }
 
     state.fxComposer.tick(ctx);
+    state.missionScriptVm.dispatchTick(state.fxComposer, ctx);
 
+    state.physicsBroadphaseBridge.trackBody(kAgentObjectId, state.agent3D.x(), state.agent3D.y(), state.agent3D.z());
+    state.physicsBroadphaseBridge.syncBody(kAgentObjectId);
     state.physicsTriggerBridge.syncObject(kAgentObjectId);
     state.broadphaseTriggerSync.trackBody(kAgentObjectId, state.agent3D.x(), state.agent3D.y(), state.agent3D.z());
     state.broadphaseTriggerSync.syncAll();
@@ -251,6 +277,12 @@ VerifyResult verify(const State& state, const fuse::hybrid::HybridComposer& comp
     if (state.vactorBridge.syncCount() == 0u) {
         return {false, "fuse_cinematics ShapeBase attach sync applied"};
     }
+    if (state.vactorBridge.motionSyncCount() == 0u) {
+        return {false, "fuse_cinematics ShapeBase motion sync applied"};
+    }
+    if (state.cuePreviewCount == 0u) {
+        return {false, "fuse_cinematics cue preview stub collected cues"};
+    }
     if (state.fxComposer.attachmentCount() < 2u || state.fxComposer.tickCount() != static_cast<fuse::u32>(kFrameCount)) {
         return {false, "fuse_fx sockets ticked each frame"};
     }
@@ -262,6 +294,10 @@ VerifyResult verify(const State& state, const fuse::hybrid::HybridComposer& comp
     }
     if (state.fxComposer.particlePoolGpu().cudaSkipCount() == 0u) {
         return {false, "fuse_fx CUDA particle pool skip-clean path exercised"};
+    }
+    if (state.fxComposer.particlePoolGpu().lastCudaSkipReason() ==
+        fuse::fx::ParticlePoolCudaSkipReason::None) {
+        return {false, "fuse_fx CUDA skip reason recorded"};
     }
     if (state.fxComposer.findEffect("afx_demo_spark") == nullptr) {
         return {false, "fuse_fx AFX-Template sample pack registered"};
@@ -284,11 +320,17 @@ VerifyResult verify(const State& state, const fuse::hybrid::HybridComposer& comp
     if (state.leverMessage.sendCount() == 0u) {
         return {false, "fuse_mechanics MessageComponent sent on trigger enter"};
     }
+    if (state.leverSwitch.switchCount() == 0u) {
+        return {false, "fuse_mechanics SwitchComponent flipped on trigger enter"};
+    }
     if (state.physicsTriggerBridge.syncCount() == 0u) {
         return {false, "fuse_mechanics physics trigger polyhedron bridge synced"};
     }
     if (state.broadphaseTriggerSync.syncCount() == 0u) {
         return {false, "fuse_mechanics broadphase trigger sync progressed"};
+    }
+    if (state.physicsBroadphaseBridge.syncCount() == 0u) {
+        return {false, "fuse_mechanics physics broadphase pipeline synced"};
     }
     if (state.leverInteractable.interactionCount() == 0u) {
         return {false, "fuse_mechanics 3D interactable fired on trigger enter"};
@@ -298,6 +340,12 @@ VerifyResult verify(const State& state, const fuse::hybrid::HybridComposer& comp
     }
     if (!state.spawnedOutpostInteractables) {
         return {false, "fuse_adventure door/weapon spawned from loaded JSON"};
+    }
+    if (!state.appliedOutpostPlacements) {
+        return {false, "fuse_adventure scene placements applied from JSON transforms"};
+    }
+    if (state.guard3D.x() < 1.5f) {
+        return {false, "fuse_adventure outpost_guard placed from JSON x/y/z"};
     }
     if (state.outpostSpawn.doors.find("maintenance_door") == state.outpostSpawn.doors.end()) {
         return {false, "fuse_adventure maintenance door spawned from JSON"};
@@ -313,6 +361,9 @@ VerifyResult verify(const State& state, const fuse::hybrid::HybridComposer& comp
     }
     if (state.guardLineText != "Thank you, traveler. Proceed with caution.") {
         return {false, "fuse_adventure NPC conversation branch in hybrid demo"};
+    }
+    if (state.conversationScriptVm.dispatchCount() == 0u) {
+        return {false, "fuse_adventure conversation script VM dispatched branch"};
     }
     if (state.world2D.readSnapshot().sprites().size() != 1u) {
         return {false, "2D snapshot built via hierarchy fillSnapshotSoA"};

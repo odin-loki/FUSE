@@ -2,6 +2,7 @@
 
 #include <fuse/adventure/hud_prompt_interactable.hpp>
 #include <fuse/adventure/interaction.hpp>
+#include <fuse/adventure/conversation_script_vm.hpp>
 #include <fuse/adventure/outpost_loader.hpp>
 #include <fuse/adventure/outpost_spawn.hpp>
 #include <fuse/ai/behavior_runtime.hpp>
@@ -17,11 +18,14 @@
 #include <fuse/mechanics/delay_component.hpp>
 #include <fuse/mechanics/interactable.hpp>
 #include <fuse/mechanics/message_component.hpp>
+#include <fuse/mechanics/physics_broadphase_bridge.hpp>
 #include <fuse/mechanics/physics_trigger_bridge.hpp>
 #include <fuse/mechanics/polyhedron_trigger.hpp>
 #include <fuse/mechanics/registry.hpp>
 #include <fuse/mechanics/rotate_component.hpp>
+#include <fuse/mechanics/switch_component.hpp>
 #include <fuse/mechanics/toggle_component.hpp>
+#include <fuse/cinematics/cue_preview.hpp>
 #include <fuse/cinematics/vactor_bridge.hpp>
 #include <fuse/world2d/scene_object_2d.hpp>
 #include <fuse/world3d/scene_object_3d.hpp>
@@ -67,6 +71,7 @@ struct State {
     fuse::mechanics::MechanicsRegistry mechanicsRegistry;
     fuse::mechanics::InteractableComponent leverInteractable{"lever_interactable"};
     fuse::mechanics::ToggleComponent leverToggle{"lever_toggle"};
+    fuse::mechanics::SwitchComponent leverSwitch{"lever_switch", false, "armed", "safe"};
     fuse::mechanics::ConsoleMethodComponent leverConsole{"lever_console"};
     fuse::mechanics::DelayComponent leverDelay{"lever_delay", 100};
     fuse::mechanics::RotateComponent leverRotate{"lever_rotate", 45.f};
@@ -75,8 +80,10 @@ struct State {
     fuse::mechanics::PolyhedronTriggerZone leverTrigger;
     fuse::mechanics::PhysicsTriggerBridge physicsTriggerBridge;
     fuse::mechanics::BroadphaseTriggerSync broadphaseTriggerSync;
+    fuse::mechanics::PhysicsBroadphaseBridge physicsBroadphaseBridge;
 
     fuse::adventure::InteractionSystem adventureSystem;
+    fuse::adventure::ConversationScriptVm conversationScriptVm;
     fuse::adventure::HudPromptInteractable hudPrompt{"Press E to activate lever"};
     fuse::adventure::OutpostStubContent outpostContent;
     fuse::adventure::OutpostSpawnBundle outpostSpawn;
@@ -89,6 +96,8 @@ struct State {
     bool agentInsideTrigger = false;
     bool loadedOutpostStub = false;
     bool spawnedOutpostInteractables = false;
+    bool appliedOutpostPlacements = false;
+    u32 cuePreviewCount = 0;
     float initialClearR = 0.f;
     float initialClearG = 0.f;
     float initialClearB = 0.f;

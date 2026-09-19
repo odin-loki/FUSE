@@ -23,6 +23,7 @@ public:
     u32 cudaDispatchCount() const { return m_cudaDispatchCount; }
     u32 cudaSkipCount() const { return m_cudaSkipCount; }
     bool cudaEnabled() const { return m_cudaEnabled; }
+    ParticlePoolCudaSkipReason lastCudaSkipReason() const { return m_lastCudaSkipReason; }
 
     void syncFromCpu(const ParticlePool& pool);
     void tick(const frame::FrameCtx& ctx);
@@ -37,6 +38,7 @@ private:
     u32 m_cudaDispatchCount = 0;
     u32 m_cudaSkipCount = 0;
     bool m_cudaEnabled = false;
+    ParticlePoolCudaSkipReason m_lastCudaSkipReason = ParticlePoolCudaSkipReason::None;
     std::vector<u8> m_packed;
 };
 

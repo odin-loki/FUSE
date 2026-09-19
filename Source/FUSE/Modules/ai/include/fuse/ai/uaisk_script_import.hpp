@@ -12,6 +12,9 @@ namespace fuse::ai::uaisk {
 /// Maps a UAISK `.cs` module name to a fuse_ai tree profile id (script-host import stub).
 [[nodiscard]] u32 treeProfileForModule(std::string_view csModule);
 
+/// Map a UAISK module + optional `.cs` text to a tree profile id (richer parser path).
+[[nodiscard]] u32 treeProfileForModuleText(std::string_view csModule, std::string_view csText);
+
 /// Load a UAISK template `.bt` asset and register it under `profileId`.
 bool importTemplateAsset(const std::string& btText, u32 profileId, BehaviorRuntime& runtime, std::string* errorOut = nullptr);
 

@@ -1,6 +1,7 @@
 #include <fuse/ai/behavior_runtime.hpp>
 #include <fuse/ai/behavior_tree.hpp>
 #include <fuse/ai/uaisk_script_import.hpp>
+#include <fuse/ai/uaisk_cs_parser.hpp>
 #if __has_include(<fuse/ai/uaisk_script_host_bridge.hpp>)
 #include <fuse/ai/uaisk_script_host_bridge.hpp>
 #include <fuse/script/script_host.hpp>
@@ -320,6 +321,20 @@ void testUaiskScriptHostBridge() {
     expectTrue(bridge.importCount() >= 1u, "ScriptHost import count tracked");
     expectTrue(runtime.treeProfileCount() >= 2u, "ScriptHost import registers profile");
 #endif
+}
+
+void testUaiskCsParser() {
+    static const char* kCsText =
+        "class PatrolSquad {\n"
+        "  behaviorTree = \"patrol_squad.bt\";\n"
+        "  bb.selector children=4,5 hook=aiBehaviors.cs\n"
+        "}\n";
+
+    fuse::ai::uaisk::UaiskCsParseResult parsed;
+    expectTrue(fuse::ai::uaisk::parseCsModule("aiBehaviors.cs", kCsText, parsed), "UAISK cs parser succeeds");
+    expectTrue(parsed.className == "PatrolSquad", "UAISK cs parser extracts class name");
+    expectTrue(parsed.profileId == 1u, "UAISK cs parser maps aiBehaviors to profile 1");
+    expectTrue(!parsed.behaviorTreeHooks.empty(), "UAISK cs parser collects hook refs");
 }
 
 void testUaiskScriptImportProfile() {
@@ -1918,6 +1933,7 @@ int main() {
     testPatrolWithAllySupportDemoTree();
     testPerAgentTreeSelection();
     testUaiskScriptHostBridge();
+    testUaiskCsParser();
     testUaiskScriptImportProfile();
     testUaiskPatrolSquadTemplateLoad();
     testGuideBotMoveTowardLeaf();

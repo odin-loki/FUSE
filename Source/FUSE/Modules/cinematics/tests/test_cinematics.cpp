@@ -1402,6 +1402,25 @@ void testMotionTrackPathSampling() {
     expectTrue(track.kind() == fuse::cinematics::TrackKind::Motion, "motion track kind");
 }
 
+void testCuePreviewActorMount() {
+    fuse::cinematics::Timeline timeline = fuse::cinematics::make_outpost_intro_30s_stub();
+    const std::vector<fuse::cinematics::CuePreviewEntry> previews =
+        fuse::cinematics::preview_cues_at(timeline, 2'500);
+    expectTrue(!previews.empty(), "cue preview finds actor mount cue");
+    expectTrue(previews[0].track_kind == fuse::cinematics::TrackKind::Actor, "actor mount preview kind");
+}
+
+void testVActorMotionSync() {
+    fuse::cinematics::Timeline timeline = fuse::cinematics::make_outpost_intro_30s_stub();
+    fuse::SceneObject3D agent("agent_3d");
+    fuse::cinematics::VActorBridge bridge;
+    bridge.bind("agent_3d", &agent);
+    bridge.apply_shapebase_attach("agent_3d", "cockpit");
+    timeline.scrub_to(15'000, false);
+    bridge.sync_motion_from_timeline(timeline);
+    expectTrue(bridge.motionSyncCount() == 1u, "motion sync counted");
+}
+
 } // namespace
 
 int main() {
@@ -1485,6 +1504,8 @@ int main() {
     testLoopResetClearsConsumedCues();
     testEmptyTimelineProducesNoCues();
     testCuePayloadStubs();
+    testCuePreviewActorMount();
+    testVActorMotionSync();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

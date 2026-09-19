@@ -25,6 +25,7 @@ public:
     void syncAll();
     u32 syncCount() const { return m_syncCount; }
     u32 candidateCount() const { return m_candidateCount; }
+    u32 neighborCandidateCount() const { return m_neighborCandidateCount; }
 
 private:
     struct BodyState {
@@ -36,6 +37,7 @@ private:
     s32 cellKey(float x, float y) const;
     void insertBodyCell(u32 objectId, s32 key);
     void testBodyAgainstTrigger(u32 objectId, const BodyState& body);
+    void testNeighborCells(u32 objectId, const BodyState& body);
 
     float m_cellSize = 2.f;
     PolyhedronTriggerZone* m_trigger = nullptr;
@@ -44,6 +46,7 @@ private:
     std::unordered_map<s32, std::vector<u32>> m_cells;
     u32 m_syncCount = 0;
     u32 m_candidateCount = 0;
+    u32 m_neighborCandidateCount = 0;
 };
 
 } // namespace fuse::mechanics

@@ -11,6 +11,12 @@ constexpr usize kBytesPerSlot = 40u; // pos(12) + vel(12) + lifetime(4) + age(4)
 
 #if defined(FUSE_HAS_CUDA) && FUSE_HAS_CUDA
 constexpr bool kCudaCompiled = true;
+
+extern "C" void fuse_fx_particle_pool_cuda_stub(const u8* packed, u32 activeCount, float dt);
+
+void launchParticlePoolCudaStub(const std::vector<u8>& packed, u32 activeCount, float dt) {
+    fuse_fx_particle_pool_cuda_stub(packed.data(), activeCount, dt);
+}
 #else
 constexpr bool kCudaCompiled = false;
 #endif
@@ -55,14 +61,34 @@ void ParticlePoolGpuBackend::tick(const frame::FrameCtx& ctx) {
 }
 
 void ParticlePoolGpuBackend::cudaDispatchOrSkip(const frame::FrameCtx& ctx) {
-    (void)ctx;
-    if (!m_cudaEnabled || m_activeCount == 0u || m_packed.empty()) {
+    m_lastCudaSkipReason = ParticlePoolCudaSkipReason::None;
+
+    if (!m_cudaEnabled) {
+        m_lastCudaSkipReason = ParticlePoolCudaSkipReason::Disabled;
+        ++m_cudaSkipCount;
+        return;
+    }
+    if (m_packed.empty()) {
+        m_lastCudaSkipReason = ParticlePoolCudaSkipReason::EmptyPool;
+        ++m_cudaSkipCount;
+        return;
+    }
+    if (m_activeCount == 0u) {
+        m_lastCudaSkipReason = ParticlePoolCudaSkipReason::NoActiveParticles;
         ++m_cudaSkipCount;
         return;
     }
 
-    // CUDA afxParticlePool kernel dispatch lands in B7.7 — CPU packed mirror is ready.
+#if defined(FUSE_HAS_CUDA) && FUSE_HAS_CUDA
+    launchParticlePoolCudaStub(m_packed, m_activeCount, ctx.dt);
+#endif
     ++m_cudaDispatchCount;
 }
 
 } // namespace fuse::fx
+
+#if defined(FUSE_HAS_CUDA) && FUSE_HAS_CUDA
+extern "C" void fuse_fx_particle_pool_cuda_stub(const u8* /*packed*/, u32 /*activeCount*/, float /*dt*/) {
+    // B7.7 afxParticlePool CUDA kernel lands here — honest no-op stub for toolkit builds.
+}
+#endif

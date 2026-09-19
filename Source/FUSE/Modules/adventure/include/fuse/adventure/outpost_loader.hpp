@@ -32,11 +32,19 @@ struct OutpostConversationSpec {
     std::vector<ConversationBranch> branches;
 };
 
+struct OutpostTransformSpec {
+    float x = 0.f;
+    float y = 0.f;
+    float z = 0.f;
+    float yaw_deg = 0.f;
+};
+
 struct OutpostStubContent {
     std::string scene;
     std::unordered_map<std::string, OutpostDoorSpec> doors;
     std::unordered_map<std::string, OutpostWeaponPickupSpec> weaponPickups;
     std::unordered_map<std::string, OutpostConversationSpec> conversations;
+    std::unordered_map<std::string, OutpostTransformSpec> placements;
 };
 
 /// Parse `outpost_stub.json` into adventure interactable specs (minimal JSON reader).
