@@ -881,6 +881,10 @@ void testToiBufferCapacityGuards() {
     buffer.setMaxCapacity(2u);
     expectTrue(!buffer.isFull(), "empty buffer is not full");
     expectTrue(buffer.remainingCapacity() == 2u, "empty buffer reports full remaining capacity");
+    expectTrue(buffer.canAcceptTois(2u), "empty buffer accepts two TOIs");
+    expectTrue(!buffer.canAcceptTois(3u), "empty buffer rejects three TOIs");
+    expectTrue(buffer.canAcceptTois(0u), "zero additional TOIs always accepted");
+    expectTrue(!buffer.hasDroppedTois(), "empty buffer has no dropped TOIs");
 
     TOIResult result{};
     result.valid = true;
@@ -889,6 +893,8 @@ void testToiBufferCapacityGuards() {
     expectTrue(buffer.push(result), "push accepts TOI under capacity");
     expectTrue(!buffer.isFull(), "partial buffer is not full");
     expectTrue(buffer.remainingCapacity() == 1u, "partial buffer reports one remaining slot");
+    expectTrue(buffer.canAcceptTois(1u), "partial buffer accepts one more TOI");
+    expectTrue(!buffer.canAcceptTois(2u), "partial buffer rejects two more TOIs");
 
     expectTrue(buffer.push(result), "push accepts second TOI at capacity");
     expectTrue(buffer.isFull(), "buffer at max capacity reports full");
@@ -896,6 +902,8 @@ void testToiBufferCapacityGuards() {
     expectTrue(!buffer.push(result), "push on full buffer is rejected");
     expectTrue(buffer.droppedCount == 1u, "push on full buffer increments dropped count");
 
+    expectTrue(!buffer.canAcceptTois(1u), "full buffer rejects another TOI");
+    expectTrue(buffer.hasDroppedTois(), "full buffer tracks dropped TOI after overflow push");
     expectTrue(!buffer.canApplyMaxCapacityClamp(), "at-capacity buffer does not need post clamp");
 
     ToiBufferSoA overflowBuffer;
@@ -1033,6 +1041,12 @@ void testToiBufferCountValidSlots() {
 
 void testToiBufferClearResetsDroppedCount() {
     buffer.setMaxCapacity(1u);
+    expectTrue(overflowBuffer.compact() == 3u, "overflow buffer gathers three TOIs before clamp");
+    expectTrue(overflowBuffer.hasDroppedTois(), "overflow clamp marks dropped TOIs");
+    expectNear(overflowBuffer.resultAt(0u).toi, 0.1f, 1e-5f, "overflow clamp keeps earliest TOI");
+
+void testToiBufferPairModeGuards() {
+    ToiBufferSoA buffer;
 
     TOIResult result{};
     result.valid = true;
@@ -1083,6 +1097,28 @@ void testToiBufferSlotModeSortGuard() {
     buffer.clear();
     expectTrue(buffer.droppedCount == 0u, "clear resets dropped count");
     expectTrue(buffer.isEmpty(), "clear leaves buffer empty");
+    result.bodyA = 1u;
+    result.bodyB = 2u;
+
+    expectTrue(!buffer.push(result), "push rejects pair-slot mode buffer");
+    expectTrue(buffer.isValidSlot(0u), "in-range slot passes validity guard");
+    expectTrue(buffer.isValidSlot(1u), "last pair slot passes validity guard");
+    expectTrue(!buffer.isValidSlot(2u), "out-of-range slot fails validity guard");
+    expectTrue(!buffer.slotIsValid(0u), "unwritten slot is not valid");
+    expectTrue(!buffer.resultAtSlot(0u).valid, "resultAtSlot on unwritten slot is invalid");
+
+    buffer.writeSlot(1u, result);
+    expectTrue(buffer.slotIsValid(1u), "written slot reports valid");
+    expectTrue(!buffer.slotIsValid(0u), "untouched slot remains invalid");
+    expectNear(buffer.resultAtSlot(1u).toi, 0.4f, 1e-5f, "resultAtSlot reads prepared slot");
+    expectTrue(buffer.resultAtSlot(1u).bodyA == 1u, "resultAtSlot preserves body metadata");
+    expectTrue(!buffer.resultAtSlot(2u).valid, "resultAtSlot rejects out-of-range slot");
+
+    ToiBufferSoA pushBuffer;
+    pushBuffer.writeSlot(0u, result);
+    expectTrue(!pushBuffer.slotIsValid(0u), "writeSlot rejects push-mode buffer");
+    expectTrue(pushBuffer.push(result), "push still works after rejected writeSlot");
+    expectTrue(pushBuffer.hasValidTois(), "push-mode buffer accepts TOI after rejected writeSlot");
 }
 
 void testToiBufferApplyMaxCapacityClamp() {
@@ -1708,6 +1744,7 @@ int main() {
     testToiBufferSingleElementSortEarlyOut();
     testToiBufferCountValidSlots();
     testToiBufferClearResetsDroppedCount();
+    testToiBufferPairModeGuards();
     testToiBufferApplyMaxCapacityClamp();
     testToiBufferCapacityGuards();
     testToiBufferCompactAndSortSkipGuards();

@@ -29,6 +29,8 @@ struct ToiBufferSoA {
     u32 remainingCapacity() const;
     /// True when post-pass truncation would drop TOIs.
     bool canApplyMaxCapacityClamp() const;
+    /// True when clamping dropped one or more TOI impacts.
+    bool hasDroppedTois() const { return droppedCount > 0u; }
     /// True when both dense and slot storage are empty (safe to skip SoA scans).
     bool canSkipSoAIteration() const { return activeCount == 0u && pairSlotCount == 0u; }
     /// True when at most one valid TOI is present (sort is a no-op).
@@ -43,6 +45,8 @@ struct ToiBufferSoA {
     u32 countValidSlots() const;
     /// True when `maxCapacity` is set and no additional TOIs may be pushed.
     bool isFull() const { return maxCapacity > 0u && activeCount >= maxCapacity; }
+    /// TOI-list guard: true when `additionalCount` impacts fit before `maxCapacity` clamp.
+    bool canAcceptTois(u32 additionalCount = 1u) const;
     /// Remaining push slots before `maxCapacity` clamp (unlimited when `maxCapacity == 0`).
     u32 remainingCapacity() const;
     /// True when post-pass truncation would drop TOIs.
@@ -53,6 +57,8 @@ struct ToiBufferSoA {
     /// True when `slot` references prepared pair or push storage.
     bool slotInRange(u32 slot) const;
     /// True when compact, sort, and clamp pipeline is a no-op.
+    /// Pair-slot range guard: true when `slot` refers to a prepared pair slot.
+    bool isValidSlot(u32 slot) const { return slot < pairSlotCount; }
     bool slotIsValid(u32 slot) const;
 
     void reserve(u32 capacity);
