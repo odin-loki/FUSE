@@ -86,6 +86,8 @@ bool bitVectorSmoke();
 bool colorStaticConstSmoke();
 bool stockColorSmoke();
 bool dataChunkerSmoke();
+bool resizeFilterStreamSmoke();
+bool tagDictionarySmoke();
 } // namespace engineProbe
 #endif
 

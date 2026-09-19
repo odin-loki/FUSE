@@ -112,9 +112,24 @@ bool writeBitmapPathSmoke() {
     FrameAllocator::destroy();
     return ok;
 #else
-    // Without libpng, STB file-path write is blocked by Torque::Path::getFullPath in probe (POSIX root).
-    // Stream TGA encode is exercised by writeBitmapStreamRoundTripSmoke(); defer path write to PNG gate.
-    return true;
+    bitmapStbRegisterAnchor();
+
+    GBitmap bitmap;
+    bitmap.allocateBitmap(1, 1, false, GFXFormatR8G8B8);
+    U8* bits = bitmap.getWritableBits();
+    bits[0] = 0xAA;
+    bits[1] = 0xBB;
+    bits[2] = 0xCC;
+
+    const String path("/tmp/fuse_u2_writebitmap_stb_probe.bmp");
+    const Torque::Path torquePath(path);
+    const bool wrote = bitmap.writeBitmap(String("bmp"), torquePath, 1u);
+    GBitmap loaded;
+    const bool ok = wrote && torquePath.getFullPath().isNotEmpty() &&
+                    loaded.readBitmap(String("bmp"), torquePath) && loaded.getWidth() == 1u &&
+                    loaded.getHeight() == 1u && loaded.getByteSize() > 0u;
+    std::remove(path.c_str());
+    return ok;
 #endif
 }
 

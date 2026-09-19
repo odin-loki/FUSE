@@ -285,15 +285,7 @@ bool GBitmap::readBitmapStream(const String& bmType, Stream& ioStream, U32 len) 
 }
 
 bool GBitmap::writeBitmap(const String& bmType, const Torque::Path& path, U32 compressionLevel) {
-    FileStream stream;
-    if (!stream.open(path, Torque::FS::File::Write)) {
-        Con::errorf("GBitmap::writeBitmap failed to open path %s", path.getFullFileName().c_str());
-        stream.close();
-        return false;
-    }
-
-    // free file for stb
-    stream.close();
+    Torque::FS::CreatePath(path);
 
     const GBitmap::Registration* regInfo = GBitmap::sFindRegInfo(bmType);
     if (regInfo == nullptr) {

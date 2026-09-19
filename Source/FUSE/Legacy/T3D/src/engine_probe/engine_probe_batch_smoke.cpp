@@ -15,6 +15,8 @@
 #include "gfx/bitmap/loaders/ies/ies_loader.h"
 #include "core/util/md5.h"
 #include "core/dataChunker.h"
+#include "core/resizeStream.h"
+#include "core/tagDictionary.h"
 
 #include <cstdio>
 #include <cstring>
@@ -166,6 +168,40 @@ bool dataChunkerSmoke() {
     const dsize_t used = chunker.countUsedBytes();
     chunker.freeBlocks(false);
     return managed && used >= 192;
+}
+
+bool resizeFilterStreamSmoke() {
+    const char payload[] = "fuse_u2_resize_stream";
+    MemStream mem(static_cast<U32>(sizeof(payload)), true, true);
+    if (!mem.write(static_cast<U32>(sizeof(payload)), payload)) {
+        return false;
+    }
+    mem.setPosition(0);
+
+    ResizeFilterStream resize;
+    if (!resize.attachStream(&mem)) {
+        return false;
+    }
+    if (!resize.setStreamOffset(8, 6)) {
+        return false;
+    }
+
+    char out[7] = {};
+    if (!resize.read(6, out)) {
+        return false;
+    }
+    return std::strncmp(out, "resize", 6) == 0 && resize.getLastBytesRead() == 6u;
+}
+
+bool tagDictionarySmoke() {
+    static const char kDefine[] = "TAG_FUSE_PROBE";
+    static const char kLabel[] = "FUSE probe tag";
+
+    TagDictionary dict;
+    if (!dict.addEntry(42, kDefine, kLabel)) {
+        return false;
+    }
+    return dict.defineToId(kDefine) == 42 && dict.idToDefine(42) == kDefine;
 }
 
 } // namespace fuse::legacy::t3d::engineProbe

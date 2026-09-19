@@ -156,7 +156,8 @@ String::SizeType String::find(StringChar c, SizeType pos, U32 mode) const
         if (length() == 0) {
             return NPos;
         }
-        for (SizeType i = (pos < length() ? pos : length() - 1); i != NPos; --i) {
+        const SizeType start = length() - 1;
+        for (SizeType i = start; i >= pos; --i) {
             if (text[i] == c) {
                 return i;
             }
@@ -188,7 +189,8 @@ String::SizeType String::find(const StringChar* str, SizeType pos, U32 mode) con
         if (length() < needleLen) {
             return NPos;
         }
-        for (SizeType i = (pos < length() ? pos : length() - needleLen); i != NPos; --i) {
+        const SizeType start = length() - needleLen;
+        for (SizeType i = start; i >= pos; --i) {
             if (std::strncmp(hay + i, str, needleLen) == 0) {
                 return i;
             }

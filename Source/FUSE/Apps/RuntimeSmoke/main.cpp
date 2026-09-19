@@ -333,12 +333,11 @@ int main() {
               "engine probe writeBitmapStream rejects unknown format");
         check(fuse::legacy::t3d::engineProbe::writeBitmapStreamRoundTripSmoke(),
               "engine probe writeBitmapStream STB TGA encode");
-#if defined(FUSE_T3D_LEGACY_ENGINE_PROBE_PNG)
         check(fuse::legacy::t3d::engineProbe::writeBitmapPathSmoke(),
+#if defined(FUSE_T3D_LEGACY_ENGINE_PROBE_PNG)
               "engine probe writeBitmap PNG path round-trip");
 #else
-        check(fuse::legacy::t3d::engineProbe::writeBitmapPathSmoke(),
-              "engine probe writeBitmap path gate (STB path deferred without libpng)");
+              "engine probe writeBitmap STB BMP path round-trip");
 #endif
 #if defined(FUSE_T3D_LEGACY_ENGINE_PROBE_PNG)
         check(fuse::legacy::t3d::engineProbe::writeBitmapPngRoundTripSmoke(),
@@ -360,6 +359,10 @@ int main() {
               "engine probe StockColor create/isColor/colorI");
         check(fuse::legacy::t3d::engineProbe::dataChunkerSmoke(),
               "engine probe DataChunker alloc/isManagedByChunker");
+        check(fuse::legacy::t3d::engineProbe::resizeFilterStreamSmoke(),
+              "engine probe ResizeFilterStream offset window read");
+        check(fuse::legacy::t3d::engineProbe::tagDictionarySmoke(),
+              "engine probe TagDictionary addEntry/defineToId round-trip");
     }
 #endif
 
