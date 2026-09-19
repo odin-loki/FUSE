@@ -130,6 +130,14 @@ enum class EvictionPolicy : u8 {
 /// Guard: true when a budget eviction score is eligible for eviction (positive).
 [[nodiscard]] inline bool is_positive_eviction_score(f32 score) { return score > 0.f; }
 
+/// Guard: eviction score; returns -1 when unload distance priority is invalid for distance policy.
+[[nodiscard]] inline f32 eviction_score_for_guarded(f32 unload_distance_priority, u32 last_touch_tick,
+                                                    u32 current_tick, EvictionPolicy policy) {
+    if (policy == EvictionPolicy::DistanceFromFocus && unload_distance_priority < 0.f) {
+        return -1.f;
+    }
+    return eviction_score_for(unload_distance_priority, last_touch_tick, current_tick, policy);
+
 /// Resident bytes that must be freed before `incoming_bytes` can fit under the byte cap (0 when unlimited or fits).
 [[nodiscard]] inline u64 eviction_byte_deficit(u64 max_resident_bytes, u64 resident_bytes, u64 incoming_bytes) {
     if (byte_budget_unlimited(max_resident_bytes) || incoming_bytes == 0u) {

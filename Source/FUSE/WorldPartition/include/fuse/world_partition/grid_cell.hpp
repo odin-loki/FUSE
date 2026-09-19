@@ -90,6 +90,7 @@ enum class CellResidencyState : u8 {
 }
 
 /// Guard: effective unload priority with negative component inputs clamped to zero.
+/// Guard: effective unload priority, clamping negative component inputs to zero.
 [[nodiscard]] inline f32 effective_unload_priority_guarded(f32 streaming_priority, f32 stored_priority) {
     return effective_unload_priority(std::max(0.f, streaming_priority), std::max(0.f, stored_priority));
 }
