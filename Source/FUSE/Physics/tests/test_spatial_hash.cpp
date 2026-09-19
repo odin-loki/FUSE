@@ -4364,3 +4364,27 @@ void testWouldSkipPairBufferWriteInvalidateGuards() {
     expectTrue(fuse::physics::broadphase::wouldSkipMergePairsIntoBuffer(pairs, buffer, &mergeIntoReason),
              "wouldSkipMergePairsIntoBuffer reports BufferFull when buffer is full");
                "wouldSkipDedupeBroadphase false for multiple pairs in populated refine scene");
+
+// --- deepen additive from deepen-b4-broadphase-wouldskip-6462 ---
+    expectTrue(buffer.invalidateSlotWithPreflight(1u), "invalidateSlotWithPreflight clears valid slot");
+    expectTrue(!buffer.slotIsValid(1u), "invalidateSlotWithPreflight clears slot validity");
+    expectTrue(!buffer.invalidateSlotWithPreflight(1u),
+               "invalidateSlotWithPreflight returns false on already-invalid slot");
+void testPairBufferWouldSkipWriteInvalidateGuards() {
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferInvalidateSlot(buffer, 1u, &invalidateReason),
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferInvalidateSlot(buffer, 0u, &invalidateReason),
+             "wouldSkipPairBufferInvalidateSlot reports AlreadyInvalid");
+    expectTrue(!fuse::physics::broadphase::wouldSkipCellSpanClamp(overSpanRange, 4u, &spanReason),
+    expectTrue(fuse::physics::broadphase::wouldSkipCellSpanClamp(overSpanRange, 4u) ==
+    expectTrue(fuse::physics::broadphase::wouldSkipCellSpanClamp(withinSpanRange, 4u, &spanReason),
+               "wouldSkipCellSpanClamp true when span within limit");
+             "wouldSkipCellSpanClamp reports None when span within limit");
+    expectTrue(fuse::physics::broadphase::wouldSkipCellSpanClamp(overSpanRange, 0u),
+               "wouldSkipCellSpanClamp true for unlimited span budget");
+    expectTrue(refineReason == fuse::physics::broadphase::RefineBroadphaseRejectReason::EmptyBuffer ||
+                   refineReason == fuse::physics::broadphase::RefineBroadphaseRejectReason::EmptyInput,
+               "wouldSkipRefineBroadphase reports empty-scene reject reason");
+               "wouldSkipRefineBroadphase false for valid scene");
+             "wouldSkipRefineBroadphase reports None for valid scene");
+    expectTrue(fuse::physics::broadphase::wouldSkipBroadphase(emptyBodies, emptyShapes, &broadphaseReason),
+    expectTrue(!fuse::physics::broadphase::wouldSkipBroadphase(bodies, shapes, &broadphaseReason),

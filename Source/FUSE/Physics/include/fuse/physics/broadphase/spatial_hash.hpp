@@ -1782,3 +1782,7 @@ FUSE_PHYSICS_INLINE bool wouldSkipShapeCellInsertion2D(const CellRange2& range, 
 bool wouldSkipDedupeBroadphase(const PairBufferSoA& buffer);
 bool wouldSkipBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
 bool wouldSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer);
+
+// --- deepen additive from deepen-b4-broadphase-wouldskip-6462 ---
+            *reason = CellSpanRejectReason::None;
+    return rejectReason != CellSpanRejectReason::ExceedsSpan;
