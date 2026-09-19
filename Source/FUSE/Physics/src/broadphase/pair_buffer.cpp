@@ -980,3 +980,24 @@ PairBufferCompactClampPreflight preflightPairBufferCompactClamp(const PairBuffer
 
 // --- deepen additive from deepen-b4-broadphase-guards-ce99 ---
     const PairBufferWriteSlotPreflight preflight = preflightPairBufferWriteSlot(*this, slot, idxA, idxB);
+
+// --- deepen additive from deepen-b4-broadphase-guards-a65f ---
+    case PairBufferWriteSlotRejectReason::InvalidSlot:
+        return PairBufferWriteSlotRejectReason::InvalidSlot;
+    preflight.invalidSlot = preflight.reason == PairBufferWriteSlotRejectReason::InvalidSlot;
+const char* pairBufferMergeRejectReasonName(PairBufferMergeRejectReason reason) {
+    case PairBufferMergeRejectReason::None:
+    case PairBufferMergeRejectReason::EmptyPairs:
+    case PairBufferMergeRejectReason::AtCapacity:
+PairBufferMergeRejectReason pairBufferMergeRejectReason(const PairBufferSoA& buffer, u32 pairCount) {
+        return PairBufferMergeRejectReason::EmptyPairs;
+        return PairBufferMergeRejectReason::AtCapacity;
+    return PairBufferMergeRejectReason::None;
+    PairBufferMergeRejectReason expected) {
+    return pairBufferMergeRejectReason(buffer, pairCount) == expected;
+PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u32 pairCount) {
+    preflight.reason = pairBufferMergeRejectReason(buffer, pairCount);
+    preflight.emptyPairs = preflight.reason == PairBufferMergeRejectReason::EmptyPairs;
+    preflight.atCapacity = preflight.reason == PairBufferMergeRejectReason::AtCapacity;
+    return !preflightPairBufferMerge(buffer, pairCount).canMerge();
+    return preflightPairBufferMerge(buffer, pairCount).canMerge();

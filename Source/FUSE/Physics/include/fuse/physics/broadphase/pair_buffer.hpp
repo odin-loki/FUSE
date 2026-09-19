@@ -519,3 +519,12 @@ struct PairBufferCompactClampPreflight {
     PairBufferCompactClampRejectReason reason = PairBufferCompactClampRejectReason::None;
     bool canRun() const { return reason == PairBufferCompactClampRejectReason::None; }
 PairBufferCompactClampPreflight preflightPairBufferCompactClamp(const PairBufferSoA& buffer);
+
+// --- deepen additive from deepen-b4-broadphase-guards-a65f ---
+enum class PairBufferMergeRejectReason : u8 {
+const char* pairBufferMergeRejectReasonName(PairBufferMergeRejectReason reason);
+PairBufferMergeRejectReason pairBufferMergeRejectReason(
+    PairBufferMergeRejectReason expected);
+    PairBufferMergeRejectReason reason = PairBufferMergeRejectReason::None;
+    bool canMerge() const { return reason == PairBufferMergeRejectReason::None; }
+PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u32 pairCount);

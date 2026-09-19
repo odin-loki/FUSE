@@ -1319,3 +1319,13 @@ struct BroadphaseMergeIntoBufferPreflight {
     BroadphaseMergeIntoBufferRejectReason reason = BroadphaseMergeIntoBufferRejectReason::None;
     bool canMerge() const { return reason == BroadphaseMergeIntoBufferRejectReason::None; }
 BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
+
+// --- deepen additive from deepen-b4-broadphase-guards-a65f ---
+    bool canIterate() const { return reason == CellSpanRejectReason::None; }
+    return !preflightCellSpan(range, maxSpanPerAxis).canIterate();
+    return preflightCellSpan(range, maxSpanPerAxis).canIterate();
+    bool canMerge() const { return reason == BroadphaseMergeBufferRejectReason::None; }
+    RefineBroadphaseRejectReason refineReason = RefineBroadphaseRejectReason::None;
+    DedupeBroadphaseRejectReason dedupeReason = DedupeBroadphaseRejectReason::None;
+    bool canRefine() const { return refineReason == RefineBroadphaseRejectReason::None; }
+    bool canDedupe() const { return dedupeReason == DedupeBroadphaseRejectReason::None; }

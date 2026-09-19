@@ -3190,3 +3190,35 @@ void testBroadphaseMergeStatsPreflight() {
 // --- deepen additive from deepen-b4-broadphase-guards-ce99 ---
     const fuse::physics::broadphase::CellOccupancyPreflight atBudget =
     const fuse::physics::broadphase::PairBufferWriteSlotPreflight invalidWrite =
+
+// --- deepen additive from deepen-b4-broadphase-guards-a65f ---
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferWriteSlotRejectReason::InvalidSlot),
+                               fuse::physics::broadphase::PairBufferWriteSlotRejectReason::InvalidSlot),
+void testPairBufferMergeRejectReasonGuards() {
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferMergeRejectReason(buffer, 0u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferMergeRejectReason::EmptyPairs),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferMergeRejectReason(buffer, 1u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferMergeRejectReason::AtCapacity),
+    expectTrue(std::strcmp(fuse::physics::broadphase::pairBufferMergeRejectReasonName(
+                               fuse::physics::broadphase::PairBufferMergeRejectReason::AtCapacity),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferMergeRejectReason(openBuffer, 2u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferMergeRejectReason::None),
+    const fuse::physics::broadphase::PairBufferMergePreflight preflight =
+        fuse::physics::broadphase::preflightPairBufferMerge(openBuffer, 2u);
+void testCellSpanRejectReasonGuards() {
+                 fuse::physics::broadphase::cellSpanRejectReason(validRange, 2u)),
+                   wideRange, 4u, fuse::physics::broadphase::CellSpanRejectReason::ExceedsSpan),
+        fuse::physics::broadphase::preflightCellSpan(validRange, 2u);
+void testBroadphaseMergeBufferRejectReasonGuards() {
+                 fuse::physics::broadphase::mergeBroadphaseBufferRejectReason(bodies, shapes, buffer)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::BroadphaseMergeBufferRejectReason::SceneRejected),
+             static_cast<fuse::u32>(fuse::physics::broadphase::BroadphaseMergeBufferRejectReason::None),
+    const fuse::physics::broadphase::BroadphaseMergeBufferPreflight preflight =
+    expectEq(static_cast<fuse::u32>(emptyPreflight.refineReason),
+    expectEq(static_cast<fuse::u32>(emptyPreflight.dedupeReason),
+    const fuse::physics::broadphase::RefineDedupeBroadphasePreflight validPreflight =
+    expectTrue(validPreflight.canRefine(), "combined preflight can refine valid scene");
+    expectTrue(validPreflight.canDedupe(), "combined preflight can dedupe multiple pairs");
+    testPairBufferMergeRejectReasonGuards();
+    testCellSpanRejectReasonGuards();
+    testBroadphaseMergeBufferRejectReasonGuards();

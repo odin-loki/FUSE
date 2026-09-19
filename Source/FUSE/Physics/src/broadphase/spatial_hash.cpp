@@ -1223,3 +1223,10 @@ BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
     preflight.bufferFull = preflight.reason == BroadphaseMergeIntoBufferRejectReason::BufferFull;
     return !preflightBroadphaseMergeIntoBuffer(bodies, shapes, buffer).canMerge();
     return preflightBroadphaseMergeIntoBuffer(bodies, shapes, buffer).canMerge();
+
+// --- deepen additive from deepen-b4-broadphase-guards-a65f ---
+    case BroadphaseMergeBufferRejectReason::SceneRejected:
+        return BroadphaseMergeBufferRejectReason::SceneRejected;
+    preflight.sceneRejected = preflight.reason == BroadphaseMergeBufferRejectReason::SceneRejected;
+    preflight.refineReason = refineBroadphaseRejectReason(bodies, shapes, buffer);
+    preflight.dedupeReason = dedupeBroadphaseRejectReason(buffer);
