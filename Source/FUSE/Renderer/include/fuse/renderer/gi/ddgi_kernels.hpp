@@ -628,4 +628,9 @@ bool tryLaunch_probe_kernels(const DDGIKernelParams& params,
                              void* cuda_stream,
                              ProbeKernelRejectReason& outReason);
 
+/// Launch probe trace + blend kernels with shared reject-reason diagnostics; false when preflight rejects.
+bool tryLaunch_probe_kernels(const DDGIKernelParams& params,
+                             void* cuda_stream,
+                             ProbeKernelRejectReason& outReason);
+
 } // namespace fuse::renderer::gi

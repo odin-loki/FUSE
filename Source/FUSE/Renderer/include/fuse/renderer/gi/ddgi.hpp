@@ -572,6 +572,15 @@ bool tryValidateProbeGridSource(const DDGIDesc& desc, ProbeGridSourceRejectReaso
 bool validateProbeGridSource(const DDGIDesc& desc);
 
 /// Non-mutating probe-grid source preflight — returns true when init/update would proceed.
+/// True when a probe-grid source reject reason would block use (B5.6 deepen pass).
+
+
+/// Diagnose why probe-grid source validation would reject.
+
+/// Early-out when probe-grid source validation would be rejected.
+bool wouldSkipProbeGridSource(const DDGIDesc& desc);
+
+/// Non-mutating probe-grid source preflight — returns true when desc is usable for allocation/update.
 bool preflightProbeGridSource(const DDGIDesc& desc, ProbeGridSourceRejectReason* reason = nullptr);
 
 /// Why a cache-index lookup preflight rejected the request (B5.6 deepen).
@@ -2134,6 +2143,7 @@ ProbeTrilinearSampleRejectReason classifyTrilinearSampleRejectAtCoords(const DDG
 bool preflightTrilinearSampleAtCoords(const DDGIDesc& desc,
 ProbeTrilinearSampleRejectReason classifyTrilinearSampleRejectAtWorld(const DDGIDesc& desc,
 /// Diagnose why trilinear sample preflight would reject; warns on clampable coords.
+/// Non-mutating world-position trilinear sample preflight.
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
