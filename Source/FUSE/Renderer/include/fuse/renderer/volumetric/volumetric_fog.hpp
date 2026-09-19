@@ -639,3 +639,6 @@ enum class SampleCoordBoundsRejectReason : u8 {
 const char* sampleCoordBoundsRejectReasonLabel(SampleCoordBoundsRejectReason reason);
                              SampleCoordBoundsRejectReason& outReason);
                               SampleCoordRejectReason& outSampleReason);
+
+// --- deepen additive from deepen-froxel-volumetric-guards-8201 ---
+                              DensityLookupRejectReason& outReason,

@@ -1610,3 +1610,7 @@ const char* sampleCoordBoundsRejectReasonLabel(SampleCoordBoundsRejectReason rea
     outReason = SampleCoordBoundsRejectReason::None;
                               SampleCoordRejectReason& outSampleReason) {
         outSampleReason = SampleCoordRejectReason::None;
+
+// --- deepen additive from deepen-froxel-volumetric-guards-8201 ---
+bool tryMapScreenDepthToSampleCoords(f32 screenX,
+    if (!tryMapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, coords, outCoordReason)) {
