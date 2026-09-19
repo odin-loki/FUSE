@@ -1254,6 +1254,29 @@ FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
     return rejectReason != CellOccupancyRejectReason::None;
 }
 
+/// Predict whether cell-occupancy iteration would bail (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
+    const CellRange3& range,
+    u32 maxCells,
+    CellOccupancyRejectReason* reason = nullptr) {
+    const CellOccupancyPreflight preflight = preflightCellOccupancy(range, maxCells);
+    if (reason != nullptr) {
+        *reason = preflight.reason;
+    }
+    return !preflight.canIterate();
+}
+
+FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
+    const CellRange2& range,
+    u32 maxCells,
+    CellOccupancyRejectReason* reason = nullptr) {
+    const CellOccupancyPreflight preflight = preflightCellOccupancy(range, maxCells);
+    if (reason != nullptr) {
+        *reason = preflight.reason;
+    }
+    return !preflight.canIterate();
+}
+
 /// Returns true when `cellOccupancyRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool cellOccupancyRejectsForReason(
     const CellRange3& range,
@@ -2906,6 +2929,29 @@ FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(
     return rejectReason != CellSpanRejectReason::ExceedsSpan;
 }
 
+/// Predict whether cell-span clamp would bail (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(
+    const CellRange3& range,
+    u32 maxSpanPerAxis,
+    CellSpanRejectReason* reason = nullptr) {
+    const CellSpanRejectReason rejectReason = cellSpanRejectReason(range, maxSpanPerAxis);
+    if (reason != nullptr) {
+        *reason = rejectReason;
+    }
+    return canSkipCellSpanClamp(range, maxSpanPerAxis);
+}
+
+FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(
+    const CellRange2& range,
+    u32 maxSpanPerAxis,
+    CellSpanRejectReason* reason = nullptr) {
+    const CellSpanRejectReason rejectReason = cellSpanRejectReason(range, maxSpanPerAxis);
+    if (reason != nullptr) {
+        *reason = rejectReason;
+    }
+    return canSkipCellSpanClamp(range, maxSpanPerAxis);
+}
+
 /// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).
 FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {
     return uniqueBodyCount > 1u ? uniqueBodyCount * (uniqueBodyCount - 1u) / 2u : 0u;
@@ -4475,6 +4521,7 @@ bool wouldSkipRefineBroadphase(
 /// Non-mutating refine skip predicate — mirrors `canSkipRefineBroadphase` (B4.2 deepen pass).
     const PairBufferSoA& buffer);
 /// Predict refine skip — same ordering as `refineBroadphaseRejectReason` (B4.2 deepen pass).
+/// Predict whether refine would bail before mutation (B4.2 deepen follow-up pass).
 
 /// Why broadphase pair dedupe would early-out (B4.2 deepen follow-up pass).
 enum class DedupeBroadphaseRejectReason : u8 {
@@ -4604,6 +4651,7 @@ bool wouldSkipDedupeBroadphase(const PairBufferSoA& buffer);
 bool wouldSkipDedupeBroadphase(
     const PairBufferSoA& buffer,
     DedupeBroadphaseRejectReason* reason = nullptr);
+/// Predict whether dedupe would bail before mutation (B4.2 deepen follow-up pass).
 
 /// Why plane/dynamic merge would early-out (B4.2 deepen pass).
 enum class BroadphaseMergeRejectReason : u8 {
@@ -4801,6 +4849,7 @@ bool shouldRunBroadphaseMergeLaunch(const RigidBodySoA& bodies, const CollisionS
 /// Non-mutating merge skip predicate — mirrors `canSkipBroadphaseMerge` (B4.2 deepen pass).
 bool wouldSkipBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
 /// Predict plane/dynamic merge skip — same ordering as `mergeBroadphaseRejectReason` (B4.2 deepen pass).
+/// Predict whether plane/dynamic merge would bail before mutation (B4.2 deepen follow-up pass).
 
 /// Why merge-into-buffer would early-out before pushing pairs (B4.2 deepen pass).
 enum class MergePairsIntoBufferRejectReason : u8 {
@@ -5965,6 +6014,8 @@ bool wouldSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, cons
 
 
 /// Predict merge-into-buffer skip — same ordering as `mergePairsIntoBufferRejectReason` (B4.2 deepen pass).
+
+/// Predict whether merge-into-buffer would bail before mutation (B4.2 deepen follow-up pass).
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(
