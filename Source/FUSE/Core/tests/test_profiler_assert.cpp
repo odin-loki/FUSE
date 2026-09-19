@@ -3403,3 +3403,46 @@ void testMixedWhitespaceAndValidNameGuards() {
     testChromeTraceExportPreflightPhaseCounts();
     testChromeTraceExportPreflightBufferedFlowImbalance();
     testChromeTraceExportPreflightOrphanCount();
+
+// --- deepen additive from deepen-b16-profiler-guards-dcff ---
+void testIsEmptyEventNameGuard() {
+void testAsyncFlowBeginEndPreflights() {
+    expectTrue(disabledBegin.profilerDisabled == false, "preflightBegin captures state before disable");
+    const fuse::profiler::AsyncFlowBeginPreflight disabledAfter =
+    expectTrue(disabledAfter.profilerDisabled, "preflightBegin marks disabled profiler");
+    expectTrue(!disabledAfter.canBegin(), "preflightBegin rejects disabled profiler");
+    expectTrue(emptyBegin.emptyName, "preflightBegin marks empty name");
+    expectTrue(!emptyBegin.canBegin(), "preflightBegin rejects empty name");
+    const fuse::profiler::AsyncFlowEndPreflight orphanEnd = fuse::profiler::preflightEndAsyncFlow("flow");
+    expectTrue(orphanEnd.orphanEnd, "preflightEnd marks orphan finish");
+    expectTrue(!orphanEnd.canEnd(), "preflightEnd rejects orphan finish");
+        fuse::profiler::preflightEndAsyncFlow("paired_preflight");
+    expectTrue(pairedEnd.canEnd(), "preflightEnd accepts paired finish");
+    expectTrue(!pairedEnd.orphanEnd, "preflightEnd clears orphan flag for paired finish");
+    const fuse::profiler::NestingStatePreflight resetPreflight = fuse::profiler::preflightNestingState();
+    expectTrue(resetPreflight.isClean(), "reset nesting preflight is clean");
+    expectTrue(resetPreflight.scopeBalanced, "reset scope nesting balanced");
+    expectTrue(resetPreflight.flowBalanced, "reset flow nesting balanced");
+        const fuse::profiler::NestingStatePreflight activePreflight = fuse::profiler::preflightNestingState();
+        expectTrue(!activePreflight.isClean(), "active scope/flow preflight is not clean");
+        expectTrue(activePreflight.scopeDepth == 1u, "nesting preflight reports scope depth");
+        expectTrue(activePreflight.flowDepth == 1u, "nesting preflight reports flow depth");
+        expectTrue(activePreflight.openAsyncFlows == 1u, "nesting preflight reports open flows");
+    const fuse::profiler::NestingStatePreflight closedPreflight = fuse::profiler::preflightNestingState();
+    expectTrue(closedPreflight.isClean(), "nesting preflight clean after teardown");
+void testEventIndexLookupGuards() {
+               "tryExportableEventAt true for exportable end");
+    expectTrue(emptyPreflight.firstEventIndex == fuse::profiler::kInvalidEventIndex,
+    expectTrue(emptyPreflight.lastEventIndex == fuse::profiler::kInvalidEventIndex,
+    expectTrue(emptyPreflight.ringCapacity == fuse::profiler::ringCapacity(),
+    expectTrue(emptyPreflight.droppedEventCount == 0u, "preflight dropped count zero on reset");
+    expectTrue(!emptyPreflight.isBufferFull, "preflight buffer not full on reset");
+    expectTrue(!emptyPreflight.canExportTrace(), "preflight canExportTrace false on empty buffer");
+    expectTrue(!emptyPreflight.hasExportWarnings(), "preflight hasExportWarnings false on reset");
+    const fuse::profiler::ChromeTraceExportPreflight filledPreflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(filledPreflight.firstEventIndex == 0u, "preflight firstEventIndex zero after recording");
+    expectTrue(filledPreflight.lastEventIndex == 1u, "preflight lastEventIndex points at scope end");
+    expectTrue(filledPreflight.canExportTrace(), "preflight canExportTrace true with exportable events");
+    expectTrue(!filledPreflight.hasExportWarnings(), "preflight hasExportWarnings false after balanced scope");
+void testDroppedEventCountGuard() {
+    testAsyncFlowBeginEndPreflights();

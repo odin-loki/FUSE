@@ -1291,3 +1291,6 @@ bool tryFindFirstEventWithPhase(EventPhase phase, ProfileEvent& outEvent) {
 
 // --- deepen additive from deepen-b16-profiler-guards-c0f6 ---
 bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
+
+// --- deepen additive from deepen-b16-profiler-guards-dcff ---
+    return preflightChromeTraceExport().canExportTrace();
