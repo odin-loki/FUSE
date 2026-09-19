@@ -125,6 +125,12 @@ struct ContactManifold {
 
     /// Prune shallow slots only when `hasShallowPenetrations`; returns true when points remain (B4.4 deepen follow-up).
     bool pruneShallowPenetrationsIfNeeded(f32 minDepth);
+
+    /// Normalize `contactNormal` when non-zero; no-op when invalid (B4.6 deepen pass).
+    bool normalizeContactNormal(f32 lengthEpsilon = 1e-4f);
+
+    /// Normalize only when `needsNormalNormalization` reports true (B4.6 deepen pass).
+    bool normalizeContactNormalIfNeeded(f32 lengthEpsilon = 1e-4f);
 };
 
 /// Why manifold prune would early-out (B4.5 deepen follow-up pass).
@@ -255,6 +261,28 @@ bool finalize_contact_manifold_with_preflight(
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
+
+/// Prune only when `should_skip_manifold_prune` is false; returns true when points remain (B4.6 deepen pass).
+bool prune_contact_manifold_if_needed(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Finalize only when `can_skip_manifold_finalize` is false; no-op otherwise (B4.6 deepen pass).
+bool finalize_contact_manifold_if_needed(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Prune then finalize using preflight guards; returns false when either step fails (B4.6 deepen pass).
+bool prune_and_finalize_contact_manifold(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
