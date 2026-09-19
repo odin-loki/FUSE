@@ -90,9 +90,6 @@ u32 currentFlowNestingDepth() {
     return threadLocalFlowNestingDepth();
 }
 
-bool isValidEventName(const char* name) {
-    return name != nullptr && name[0] != '\0';
-}
 
 std::string formatCounterArgsJson(const ProfileEvent& event) {
     std::string args = "\"args\":{\"value\":";
@@ -301,6 +298,14 @@ bool isFlowNestingBalanced() {
     return flowNestingDepth() == 0u;
 }
 
+bool isProfilerGuardStateBalanced() {
+    return isScopeNestingBalanced() && isFlowNestingBalanced() && !hasOpenAsyncFlows();
+}
+
+bool isValidEventName(const char* name) {
+    return name != nullptr && name[0] != '\0';
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -318,7 +323,7 @@ bool isEventIndexValid(u32 index) {
 }
 
 bool isValidProfileEvent(const ProfileEvent& event) {
-    return event.name != nullptr;
+    return isValidEventName(event.name);
 }
 
 const ProfileEvent& eventAt(u32 index) {
@@ -349,12 +354,45 @@ u32 lastEventIndex() {
     return count > 0u ? count - 1u : kInvalidEventIndex;
 }
 
+bool isLastEventIndexValid() {
+    return lastEventIndex() != kInvalidEventIndex;
+}
+
+bool tryLastEvent(ProfileEvent& outEvent) {
+    const u32 index = lastEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
+}
+
 const ProfileEvent& lastEvent() {
     const u32 index = lastEventIndex();
     if (index == kInvalidEventIndex) {
         return eventAt(0);
     }
     return eventAt(index);
+}
+
+u32 exportableEventCount() {
+    u32 exportable = 0u;
+    const u32 count = eventCount();
+    for (u32 i = 0u; i < count; ++i) {
+        if (isValidEventName(eventAt(i).name)) {
+            ++exportable;
+        }
+    }
+    return exportable;
+}
+
+bool hasExportableEvents() {
+    return exportableEventCount() > 0u;
+}
+
+bool isChromeTraceExportEmpty() {
+    return !hasExportableEvents();
 }
 
 void reset() {
