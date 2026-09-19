@@ -168,6 +168,7 @@ PairBufferPushRejectReason pairBufferPushRejectReason(const PairBufferSoA& buffe
 /// Diagnose why push would reject; vacuously succeeds on valid pairs under capacity.
 
 /// Returns true when `pairBufferPushRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+
 bool pairBufferPushRejectsForReason(
     const PairBufferSoA& buffer,
     u32 idxA,
@@ -217,6 +218,9 @@ enum class PairBufferCompactionRejectReason : u8 {
 const char* pairBufferCompactionRejectReasonName(PairBufferCompactionRejectReason reason);
 
 /// Diagnose why compaction would skip its scan loop; vacuously succeeds when compaction may proceed.
+
+/// Human-readable label for compaction reject reasons (logging / tests).
+
 /// Diagnose why compaction would skip; vacuously succeeds when compaction may proceed.
 PairBufferCompactionRejectReason pairBufferCompactionRejectReason(const PairBufferSoA& buffer);
 
@@ -285,6 +289,12 @@ enum class PairBufferClampRejectReason : u8 {
 
 
 /// Human-readable label for pair-buffer clamp reject reasons (logging / tests).
+
+
+/// Non-mutating compaction skip predicate — inverse of `PairBufferCompactionPreflight::needsCompaction` (B4.2 deepen pass).
+
+
+/// Human-readable label for clamp reject reasons (logging / tests).
 const char* pairBufferClampRejectReasonName(PairBufferClampRejectReason reason);
 
 /// Diagnose why clamp would skip; vacuously succeeds when clamp may proceed.
@@ -370,6 +380,10 @@ bool pairBufferDedupeRejectsForReason(const PairBufferSoA& buffer, PairBufferDed
 
 
 /// Non-mutating clamp skip predicate — inverse of `preflightPairBufferClamp().needsClamp()`.
+
+
+
+/// Non-mutating clamp skip predicate — inverse of `PairBufferClampPreflight::needsClamp` (B4.2 deepen pass).
 
 /// Read-only dedupe diagnostics at the SoA layer — no mutation (B4.2 deepen follow-up pass).
 struct PairBufferDedupePreflight {
@@ -672,5 +686,7 @@ bool canSkipPairBufferCompaction(const PairBufferSoA& buffer);
 
     bool canSkip() const { return emptyBuffer || (!needsCompaction && !needsClamp); }
 
+
+/// Non-mutating sort skip predicate — inverse of `PairBufferSortPreflight::needsSort` (B4.2 deepen pass).
 
 } // namespace fuse::physics::broadphase

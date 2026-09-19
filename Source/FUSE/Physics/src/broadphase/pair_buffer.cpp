@@ -336,6 +336,7 @@ u32 PairBufferSoA::compact() {
     if (preflight.reason == PairBufferCompactionRejectReason::AllValid) {
     if (!preflight.needsCompaction()) {
     if (!compactionPreflight.needsCompaction()) {
+    if (canSkipPairBufferCompaction(*this)) {
         activeCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
     u32 validCount = 0u;
     for (u32 i = 0u; i < scanCount; ++i) {
@@ -863,6 +864,7 @@ bool pairBufferSortRejectsForReason(const PairBufferSoA& buffer, PairBufferSortR
 
 
 
+
 PairBufferPushPreflight preflightPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB) {
     PairBufferPushPreflight preflight{};
     preflight.reason = pairBufferPushRejectReason(buffer, idxA, idxB);
@@ -924,6 +926,32 @@ bool pairBufferCompactionRejectsForReason(const PairBufferSoA& buffer, PairBuffe
     return pairBufferCompactionRejectReason(buffer) == expected;
 }
 
+const char* pairBufferCompactionRejectReasonName(PairBufferCompactionRejectReason reason) {
+    switch (reason) {
+    case PairBufferCompactionRejectReason::None:
+        return "None";
+    case PairBufferCompactionRejectReason::EmptyBuffer:
+        return "EmptyBuffer";
+    case PairBufferCompactionRejectReason::AllValid:
+        return "AllValid";
+    }
+    return "Unknown";
+}
+
+PairBufferCompactionRejectReason pairBufferCompactionRejectReason(const PairBufferSoA& buffer) {
+    if (buffer.canSkipSoAIteration()) {
+        return PairBufferCompactionRejectReason::EmptyBuffer;
+    }
+    if (buffer.canSkipCompaction()) {
+        return PairBufferCompactionRejectReason::AllValid;
+    }
+    return PairBufferCompactionRejectReason::None;
+}
+
+bool pairBufferCompactionRejectsForReason(const PairBufferSoA& buffer, PairBufferCompactionRejectReason expected) {
+    return pairBufferCompactionRejectReason(buffer) == expected;
+}
+
 PairBufferCompactionPreflight preflightPairBufferCompaction(const PairBufferSoA& buffer) {
     PairBufferCompactionPreflight preflight{};
     preflight.reason = pairBufferCompactionRejectReason(buffer);
@@ -941,6 +969,7 @@ bool shouldRunPairBufferCompaction(const PairBufferSoA& buffer) {
 
 
     return !shouldRunPairBufferCompaction(buffer);
+
 
 
 const char* pairBufferClampRejectReasonName(PairBufferClampRejectReason reason) {
@@ -1003,6 +1032,7 @@ PairBufferDedupeRejectReason pairBufferDedupeRejectReason(const PairBufferSoA& b
 
 bool pairBufferDedupeRejectsForReason(const PairBufferSoA& buffer, PairBufferDedupeRejectReason expected) {
     return pairBufferDedupeRejectReason(buffer) == expected;
+
 }
 
 PairBufferDedupePreflight preflightPairBufferDedupe(const PairBufferSoA& buffer) {
