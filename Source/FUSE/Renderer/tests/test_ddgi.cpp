@@ -4692,3 +4692,13 @@ void testDdgiDeepenGuardPass2() {
     expectTrue(fuse::renderer::gi::classifyProbeKernelGridReject(empty, emptyGridParams) ==
                    fuse::renderer::gi::ProbeKernelGridRejectReason::EmptyGrid,
                "classifyProbeKernelGridReject empty_grid");
+
+// --- deepen additive from deepen-ddgi-b56-guards-e369 ---
+    fuse::renderer::ProbeGridRejectReason reason = fuse::renderer::ProbeGridRejectReason::None;
+    expectTrue(reason == fuse::renderer::ProbeGridRejectReason::None, "valid grid reports no probe-grid reject reason");
+    expectTrue(std::strcmp(fuse::renderer::probeGridRejectReasonLabel(reason), "none") == 0,
+    expectTrue(!fuse::renderer::probeGridRejectReasonIsBlocking(reason),
+    expectTrue(fuse::renderer::classifyProbeGridReject(empty) == fuse::renderer::ProbeGridRejectReason::EmptyGrid,
+    expectTrue(fuse::renderer::classifyProbeGridReject(zeroRes) ==
+    expectTrue(fuse::renderer::classifyProbeGridReject(zeroSpacing) ==
+               "preflightTrilinearProbeSample succeeds for accessible grid");

@@ -1085,3 +1085,7 @@ bool wouldSkipProbeTrilinearSampleAtWorld(const DDGIDesc& desc,
 ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleReject(const ProbeGridSource& source,
 bool preflightProbeTrilinearSample(const ProbeGridSource& source,
 bool wouldSkipProbeTrilinearSample(const ProbeGridSource& source, const ProbeSampleCoords& coords);
+
+// --- deepen additive from deepen-ddgi-b56-guards-e369 ---
+bool tryValidateProbeGridSource(const DDGIDesc& desc, ProbeGridRejectReason& outReason);
+bool preflightProbeGridSource(const DDGIDesc& desc, ProbeGridRejectReason* reason = nullptr);

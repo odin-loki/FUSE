@@ -3342,3 +3342,8 @@ bool wouldSkipProbeTraceKernelWithGrid(const DDGIDesc& desc, const DDGIKernelPar
     return !tryCanLaunchProbeTraceKernelWithGrid(desc, params, reason);
 bool wouldSkipProbeBlendKernelWithGrid(const DDGIDesc& desc, const DDGIKernelParams& params) {
     return !tryCanLaunchProbeBlendKernelWithGrid(desc, params, reason);
+
+// --- deepen additive from deepen-ddgi-b56-guards-e369 ---
+bool tryValidateProbeGridSource(const DDGIDesc& desc, ProbeGridRejectReason& outReason) {
+        outReason = ProbeGridRejectReason::ZeroSpacing;
+bool preflightProbeGridSource(const DDGIDesc& desc, ProbeGridRejectReason* reason) {
