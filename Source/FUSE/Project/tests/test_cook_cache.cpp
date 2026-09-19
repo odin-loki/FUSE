@@ -1246,3 +1246,10 @@ void testCookHashShaderAndManifestUpstreamPreflights() {
 // --- deepen additive from deepen-b79-cooker-hash-3c16 ---
     expectTrue(cooker.cache().would_invalidate_all(), "would_invalidate_all true on populated cache");
     expectTrue(!cooker.cache().would_invalidate_all(), "would_invalidate_all false after source invalidation");
+
+// --- deepen additive from deepen-b79-cooker-hash-2ca8 ---
+void testCookHashPreflightImportPathsAndCacheEntry() {
+    const fuse::project::CookHashPreflight empty_input =
+    expectTrue(empty_input.reason == fuse::project::CookHashRejectReason::EmptyInputPath,
+    expectTrue(!cooker.cache().would_invalidate_source(""), "empty source path would_invalidate is guarded");
+    testCookHashPreflightImportPathsAndCacheEntry();

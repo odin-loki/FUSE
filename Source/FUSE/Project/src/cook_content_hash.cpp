@@ -552,3 +552,6 @@ CookHashPreflight preflight_file_mtime(const std::string& path) {
 // --- deepen additive from deepen-fuse-b79-cooker-hash-1101 ---
 CookHashPreflight preflight_shader_entry_hash(const CookManifestEntry& entry) {
     const CookHashPreflight upstream_preflight =
+
+// --- deepen additive from deepen-b79-cooker-hash-2ca8 ---
+CookHashPreflight preflight_import_paths(const std::string& input_path, const std::string& output_path) {
