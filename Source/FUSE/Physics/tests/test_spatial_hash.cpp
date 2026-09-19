@@ -3595,3 +3595,21 @@ void testPairBufferSlotInvalidatePreflightGuards() {
     expectEq(multiPreflight.uniqueBodyCount, 3u, "multi-occupant preflight dedupes unique bodies");
     expectEq(multiPreflight.pairCount, 3u, "three unique bodies yield three pairs");
     testPairBufferSlotInvalidatePreflightGuards();
+
+// --- deepen additive from deepen-fuse-b4-broadphase-guards-1fa1 ---
+                 fuse::physics::broadphase::pairBufferWriteSlotRejectReason(buffer, 2u, 2u, 3u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason::AlreadyInvalid),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason::OutOfRangeSlot),
+    const fuse::physics::broadphase::PairBufferInvalidateSlotPreflight preflight =
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::cellPairGenRejectReason(duplicateBodies)),
+        fuse::physics::broadphase::preflightCellPairGen(validOccupants);
+                 fuse::physics::broadphase::shapeCellInsertRejectReason(0u, 2u, validRange, 8u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::ShapeCellInsertRejectReason::None),
+                 fuse::physics::broadphase::shapeCellInsertRejectReason(2u, 2u, validRange, 8u)),
+                 fuse::physics::broadphase::shapeCellInsertRejectReason(0u, 2u, validRange, 7u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::ShapeCellInsertRejectReason::ExceedsOccupancyBudget),
+    const fuse::physics::broadphase::ShapeCellInsertPreflight planePreflight =
+        fuse::physics::broadphase::preflightShapeCellInsert(0u, 2u, planeRange, 4u);
+    expectTrue(!planePreflight.canInsert(), "2D shape-insert preflight rejects over-budget range");
+    expectTrue(planePreflight.exceedsOccupancyBudget, "2D shape-insert preflight marks exceedsOccupancyBudget");
+                               fuse::physics::broadphase::ShapeCellInsertRejectReason::ExceedsOccupancyBudget),

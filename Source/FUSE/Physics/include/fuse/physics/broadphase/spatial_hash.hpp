@@ -1479,3 +1479,9 @@ struct CellCapacityInsertPreflight {
     CellCapacityInsertRejectReason reason = CellCapacityInsertRejectReason::None;
     bool canInsert() const { return reason == CellCapacityInsertRejectReason::None; }
 CellCapacityInsertPreflight preflightCellCapacityInsert(
+
+// --- deepen additive from deepen-fuse-b4-broadphase-guards-1fa1 ---
+ShapeCellInsertRejectReason shapeCellInsertRejectReason(u32 bodyIndex, u32 bodyCount, const CellRange3& range, u32 maxOccupancy);
+ShapeCellInsertRejectReason shapeCellInsertRejectReason(u32 bodyIndex, u32 bodyCount, const CellRange2& range, u32 maxOccupancy);
+ShapeCellInsertPreflight preflightShapeCellInsert(u32 bodyIndex, u32 bodyCount, const CellRange3& range, u32 maxOccupancy);
+ShapeCellInsertPreflight preflightShapeCellInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& range, u32 maxOccupancy);

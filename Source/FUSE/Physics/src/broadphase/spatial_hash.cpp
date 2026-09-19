@@ -1426,3 +1426,13 @@ CellCapacityInsertPreflight preflightCellCapacityInsert(
         return CellPairGenRejectReason::InsufficientOccupants;
     preflight.emptyOccupants = preflight.reason == CellPairGenRejectReason::EmptyOccupants;
     preflight.insufficientOccupants = preflight.reason == CellPairGenRejectReason::InsufficientOccupants;
+
+// --- deepen additive from deepen-fuse-b4-broadphase-guards-1fa1 ---
+    case ShapeCellInsertRejectReason::ExceedsOccupancyBudget:
+    return preflightCellPairGen(occupants).pairCount;
+        return ShapeCellInsertRejectReason::ExceedsOccupancyBudget;
+    return shapeCellInsertRejectReason(bodyIndex, bodyCount, range, maxOccupancy) == expected;
+    preflight.reason = shapeCellInsertRejectReason(bodyIndex, bodyCount, range, maxOccupancy);
+    preflight.exceedsOccupancyBudget = preflight.reason == ShapeCellInsertRejectReason::ExceedsOccupancyBudget;
+    return !preflightShapeCellInsert(bodyIndex, bodyCount, range, maxOccupancy).canInsert();
+    return preflightShapeCellInsert(bodyIndex, bodyCount, range, maxOccupancy).canInsert();
