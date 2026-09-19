@@ -4755,3 +4755,17 @@ void testTaaPassTryClassifyGuardWrappers() {
                "invalid sequence falls back to default length for classifyJitterSyncReject");
     expectTrue(invalidPass->tryPreflightJitterSync(3u, jitterReject),
                "invalid sequence falls back to default length for tryPreflightJitterSync");
+
+// --- deepen additive from deepen-b59-taa-pass-try-classify-7e95 ---
+               "pass tryPreflightResolve reason is HistoryNotReady before init");
+               "pass tryPreflightResolve reason is None after init");
+    expectTrue(pass->tryPreflightJitterSync(11u, jitterReason),
+               "pass tryPreflightJitterSync reason is None after sync");
+               "pass classifyJitterSyncReject passes after sync");
+    expectTrue(sanitizedSeqPass->classifyJitterSyncReject() ==
+               "pass classifyJitterSyncReject uses sanitized default sequence");
+    expectTrue(sanitizedSeqPass->tryPreflightJitterSync(0u, jitterReason),
+               "pass tryPreflightJitterSync passes with sanitized default sequence");
+               "pass tryPreflightJitterSync reason is None with sanitized default sequence");
+               "pass tryPreflightResolve fails for invalid dimensions");
+               "pass tryPreflightResolve reason is InvalidDimensions");
