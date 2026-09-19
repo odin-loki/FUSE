@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 
 namespace fuse::profiler {
@@ -311,6 +312,17 @@ bool isFlowDepthDetached() {
     return flowNestingDepth() != openAsyncFlowCount();
 }
 
+bool reconcileDetachedFlowDepth() {
+    if (!isFlowDepthDetached()) {
+        return false;
+    }
+
+    while (flowNestingDepth() > openAsyncFlowCount()) {
+        popFlowNestingDepth();
+    }
+    return true;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -348,6 +360,42 @@ u32 exportableEventCount() {
 
 bool isEventExportable(u32 index) {
     return isEventIndexValid(index) && isValidEventName(eventAt(index).name);
+}
+
+u32 countEventsOfPhase(EventPhase phase) {
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (eventAt(i).phase == phase) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 firstEventIndexOfPhase(EventPhase phase) {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (eventAt(i).phase == phase) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 lastEventIndexOfPhase(EventPhase phase) {
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        const u32 index = i - 1u;
+        if (eventAt(index).phase == phase) {
+            return index;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+bool isEventAtPhase(u32 index, EventPhase phase) {
+    return isEventIndexValid(index) && eventAt(index).phase == phase;
 }
 
 const ProfileEvent& emptyProfileEvent() {
@@ -397,6 +445,45 @@ bool tryLastEvent(ProfileEvent& outEvent) {
     return tryEventAt(index, outEvent);
 }
 
+bool tryFirstEventOfPhase(EventPhase phase, ProfileEvent& outEvent) {
+    const u32 index = firstEventIndexOfPhase(phase);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
+}
+
+bool tryLastEventOfPhase(EventPhase phase, ProfileEvent& outEvent) {
+    const u32 index = lastEventIndexOfPhase(phase);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
+}
+
+bool tryFindEventByName(const char* name, u32& outIndex) {
+    if (!isValidEventName(name)) {
+        outIndex = kInvalidEventIndex;
+        return false;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (event.name != nullptr && std::strcmp(event.name, name) == 0) {
+            outIndex = i;
+            return true;
+        }
+    }
+
+    outIndex = kInvalidEventIndex;
+    return false;
+}
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -426,6 +513,7 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.maxScopeNestingDepth = maxNestingDepth();
     preflight.maxFlowNestingDepth = maxFlowNestingDepth();
     preflight.bufferEmpty = isBufferEmpty();
+    preflight.bufferFull = isBufferFull();
     preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
