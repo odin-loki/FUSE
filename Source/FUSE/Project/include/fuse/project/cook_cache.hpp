@@ -59,6 +59,25 @@ struct CookCachePruneEstimate {
     return is_valid_cook_cache_key(combine_cook_cache_key(source_hash, upstream_hash));
 }
 
+enum class CookCacheRejectReason : u8 {
+    None,
+    ZeroContentHash,
+    EmptySourcePath,
+    EmptyOutputPath,
+};
+
+/// Read-only store preflight — mirrors `is_valid_cook_cache_entry` guards (B7.9 deepen).
+struct CookCacheEntryPreflight {
+    bool can_store = false;
+    CookCacheRejectReason reason = CookCacheRejectReason::None;
+
+    [[nodiscard]] bool ok() const { return can_store; }
+};
+
+const char* cookCacheRejectReasonLabel(CookCacheRejectReason reason);
+
+[[nodiscard]] CookCacheEntryPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
+
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
 public:
@@ -92,6 +111,17 @@ public:
 
     /// Read-only invalidation probes — mirror `invalidate_*` guards without mutating stats (B7.9 deepen).
     [[nodiscard]] bool would_invalidate(u64 content_hash) const;
+    [[nodiscard]] bool would_invalidate_all() const;
+    [[nodiscard]] u32 count_invalidate_all() const;
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                                 u64 current_content_hash) const;
+    [[nodiscard]] bool would_invalidate_stale_upstream_hashes(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
+                                                      const std::vector<CookJobDependencyEdge>& edges,
+                                                      const std::vector<CookJob>& jobs) const;
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,

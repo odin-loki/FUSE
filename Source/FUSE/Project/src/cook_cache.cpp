@@ -81,6 +81,40 @@ std::string escapeJson(const std::string& text) {
 
 } // namespace
 
+const char* cookCacheRejectReasonLabel(CookCacheRejectReason reason) {
+    switch (reason) {
+    case CookCacheRejectReason::None:
+        return "none";
+    case CookCacheRejectReason::ZeroContentHash:
+        return "zero_content_hash";
+    case CookCacheRejectReason::EmptySourcePath:
+        return "empty_source_path";
+    case CookCacheRejectReason::EmptyOutputPath:
+        return "empty_output_path";
+    }
+    return "unknown";
+}
+
+CookCacheEntryPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    CookCacheEntryPreflight preflight;
+    if (!is_valid_cook_cache_key(entry.content_hash)) {
+        preflight.reason = CookCacheRejectReason::ZeroContentHash;
+        return preflight;
+    }
+    if (!is_valid_cook_cache_path(entry.source_path)) {
+        preflight.reason = CookCacheRejectReason::EmptySourcePath;
+        return preflight;
+    }
+    if (!is_valid_cook_cache_path(entry.output_path)) {
+        preflight.reason = CookCacheRejectReason::EmptyOutputPath;
+        return preflight;
+    }
+
+    preflight.can_store = true;
+    preflight.reason = CookCacheRejectReason::None;
+    return preflight;
+}
+
 CookCacheEntry* CookCache::find_entry_(u64 content_hash) {
     for (CookCacheEntry& entry : m_entries) {
         if (entry.content_hash == content_hash) {
@@ -346,6 +380,41 @@ bool CookCache::would_invalidate(u64 content_hash) const {
         return false;
     }
     return find_entry_(content_hash) != nullptr;
+}
+
+bool CookCache::would_invalidate_all() const {
+    return !m_entries.empty();
+}
+
+u32 CookCache::count_invalidate_all() const {
+    if (m_entries.empty()) {
+        return 0;
+    }
+    return static_cast<u32>(m_entries.size());
+}
+
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) != 0;
+}
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) != 0;
+}
+
+bool CookCache::would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                        u64 current_content_hash) const {
+    return count_stale_content_for_source(source_path, current_content_hash) != 0;
+}
+
+bool CookCache::would_invalidate_stale_upstream_hashes(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    return count_stale_upstream_hashes(source_upstream_by_path) != 0;
+}
+
+bool CookCache::would_invalidate_downstream_of(const std::string& output_path,
+                                               const std::vector<CookJobDependencyEdge>& edges,
+                                               const std::vector<CookJob>& jobs) const {
+    return count_downstream_of(output_path, edges, jobs) != 0;
 }
 
 u32 CookCache::count_by_source(const std::string& source_path) const {
