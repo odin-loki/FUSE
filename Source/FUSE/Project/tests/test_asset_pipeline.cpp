@@ -4818,6 +4818,8 @@ void testCookerShouldSkipReconcileProbes() {
     const std::string source_a = writeTempFile("/tmp/fuse_b79_skip_reconcile_a.obj", "# skip reconcile a\n");
     const std::string source_b = writeTempFile("/tmp/fuse_b79_skip_reconcile_b.obj", "# skip reconcile b\n");
 
+void testCookerReconcileShouldSkipHelpers() {
+
     entry_a.output_path = "/tmp/fuse_b79_skip_reconcile_a.fusemesh";
     manifest.assets.push_back(entry_a);
 
@@ -4888,6 +4890,29 @@ void testCookerShouldSkipReconcileProbes() {
 }
 
 void testCookCacheDownstreamWouldInvalidateProbe() {
+
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for should_skip reconcile ok");
+
+               "should_skip_upstream rejects empty changed source");
+               "should_skip_upstream false when chain is cached");
+               "should_skip_stale_dependency true on fresh cache");
+    expectTrue(cooker.should_skip_prune_reconcile(), "should_skip_prune true on fresh cache");
+
+    const fuse::project::CookCacheReconcileEstimate fresh = cooker.estimate_reconcile_invalidation(manifest);
+    expectTrue(fresh.should_skip(), "fresh reconcile estimate should_skip is true");
+               "should_skip_reconcile true on fresh cache");
+    expectTrue(cooker.should_skip_reconcile_invalidation(manifest) == fresh.should_skip(),
+               "should_skip_reconcile mirrors estimate should_skip");
+
+               "should_skip_stale_dependency false after upstream change");
+               "should_skip_reconcile false after upstream change");
+
+    const fuse::project::CookCacheReconcileEstimate stale = cooker.estimate_reconcile_invalidation(manifest);
+    expectTrue(!stale.should_skip(), "stale reconcile estimate should_skip is false");
+    expectTrue(stale.stale_dependency_entries >= 1u,
+               "stale reconcile estimate reports dependency work");
+
+void testCookCacheWouldInvalidateDownstreamProbe() {
     const std::string source_a = writeTempFile("/tmp/fuse_b79_would_down_a.obj", "# would down a\n");
     const std::string source_b = writeTempFile("/tmp/fuse_b79_would_down_b.obj", "# would down b\n");
 
@@ -4902,6 +4927,8 @@ void testCookCacheDownstreamWouldInvalidateProbe() {
     entry_b.kind = fuse::project::CookAssetKind::Mesh;
     entry_b.source_path = source_b;
     entry_b.output_path = "/tmp/fuse_b79_would_down_b.fusemesh";
+    entry_b.dependencies.push_back(entry_a.output_path);
+    manifest.assets.push_back(entry_b);
 
     fuse::project::CookJobGraph graph;
     graph.build_from_manifest(manifest);
@@ -4921,6 +4948,15 @@ void testCookCacheDownstreamWouldInvalidateProbe() {
                "should_skip_invalidate_downstream_of true after removal");
     expectTrue(!cooker.cache().would_invalidate_downstream_of(entry_a.output_path, graph.edges(), graph.jobs()),
                "would_invalidate_downstream_of false after removal");
+    fuse::project::AssetCooker cooker;
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for would_invalidate downstream ok");
+               "would_invalidate_downstream true for cached chain");
+    expectTrue(!cooker.cache().would_invalidate_downstream_of("", graph.edges(), graph.jobs()),
+               "would_invalidate_downstream guarded on empty output path");
+
+    expectTrue(cooker.cache().would_invalidate_downstream_of(entry_a.output_path, graph.edges(), graph.jobs()) ==
+                   cooker.cache().count_downstream_of(entry_a.output_path, graph.edges(), graph.jobs()) >= 1u,
+               "would_invalidate_downstream aligns with count probe");
 }
 
 } // namespace
@@ -5111,6 +5147,8 @@ int main() {
     testCookerWouldInvalidateProbes();
     testCookerWouldReconcileAndUpstreamEstimateProbes();
     testCookerShouldSkipAndWouldInvalidateProbes();
+    testCookerReconcileShouldSkipHelpers();
+    testCookCacheWouldInvalidateDownstreamProbe();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;

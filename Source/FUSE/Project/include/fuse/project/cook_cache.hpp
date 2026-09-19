@@ -171,6 +171,7 @@ struct CookCacheInvalidationSurface {
 
     /// True when prune reconcile would be a no-op — `total()` is zero (B7.9 deepen).
     /// True when prune reconcile would be a no-op — mirrors `total() == 0` (B7.9 deepen).
+    /// True when no prune work is needed — mirrors `prune_all` early-out (B7.9 deepen).
 };
 
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
@@ -649,6 +650,8 @@ public:
     /// True when prune reconcile can be skipped — inverse of `would_prune_all` (B7.9 deepen).
     /// True when `estimate_prune_removals().should_skip()` — no prune work needed (B7.9 deepen).
     [[nodiscard]] bool should_skip_prune_reconcile() const;
+    /// True when prune reconcile can be skipped — mirrors `prune_all` early-out (B7.9 deepen).
+    [[nodiscard]] bool should_skip_prune() const;
     /// Deduplicated source paths whose stored keys are stale on disk (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_stale_content_sources() const;
     /// Source paths `invalidate_downstream_of` would touch — deduplicated (B7.9 deepen).

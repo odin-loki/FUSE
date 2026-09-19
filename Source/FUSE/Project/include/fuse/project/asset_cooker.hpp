@@ -182,6 +182,7 @@ struct CookUpstreamInvalidateEstimate {
 
     /// True when reconcile invalidation would be a no-op — `total()` is zero (B7.9 deepen).
     /// True when reconcile invalidation can be skipped — all estimate buckets zero (B7.9 deepen).
+    /// True when reconcile invalidation can be skipped — mirrors early-out on fresh cache (B7.9 deepen).
 };
 
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
@@ -533,6 +534,7 @@ public:
     /// True when `estimate_prune_reconcile()` would report nothing to remove (B7.9 deepen).
     /// True when `estimate_reconcile_invalidation` would report nothing to invalidate (B7.9 deepen).
     /// True when `estimate_prune_reconcile` would remove nothing (B7.9 deepen).
+    /// True when prune reconcile can be skipped — mirrors `CookCache::should_skip_prune` (B7.9 deepen).
     [[nodiscard]] bool should_skip_reconcile_invalidation(const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
