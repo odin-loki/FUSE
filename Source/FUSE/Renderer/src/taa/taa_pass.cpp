@@ -649,3 +649,6 @@ bool TaaPass::preflightJitterSyncAndNdc(u32 frameIndex, TaaJitterGuardRejectReas
     return preflightTaaJitterSyncAndNdc(frameIndex, m_desc.width, m_desc.height, m_jitter.sequenceLength(),
 bool TaaPass::preflightHistoryTemporalSample(u32 observedGeneration,
     return preflightTaaHistoryTemporalSample(m_history, observedGeneration, reason);
+
+// --- deepen additive from deepen-b59-taa-guards-258a ---
+    if (!m_jitter.tryAdvanceIfReady(reason)) {

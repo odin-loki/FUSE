@@ -526,3 +526,11 @@ bool tryPreflightTaaJitterSyncAndNdc(u32 frameIndex, u32 width, u32 height, u32 
     reason = TaaJitterGuardRejectReason::None;
 bool TaaJitter::preflightAlignmentToFrameIndex(u32 frameIndex, TaaJitterGuardRejectReason* reason) const {
     return preflightTaaJitterAlignment(frameIndex, m_monotonicFrame, m_index, m_sequenceLength, reason);
+
+// --- deepen additive from deepen-b59-taa-guards-258a ---
+bool TaaJitterLayout::tryOffsetForFrameIndexIfReady(u32 frameIndex, u32 sequenceLength, fuse::math::Vec2& out,
+    reason = classifyTaaJitterSyncReject(sequenceLength);
+bool TaaJitterLayout::tryNdcOffsetForFrameIndexIfReady(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
+    reason = classifyTaaJitterNdcReject(width, height, sequenceLength);
+    reason = classifyTaaJitterNdcReject(width, height, m_sequenceLength);
+    if (!tryPreflightTaaJitterAdvance(m_sequenceLength, reason)) {

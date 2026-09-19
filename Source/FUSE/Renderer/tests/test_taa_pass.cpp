@@ -4272,3 +4272,55 @@ void testTaaPassDeepenFollowUpGuards() {
     expectTrue(pass->preflightResolveTemporalBlend(resolveDesc),
     expectTrue(pass->trySyncJitterToFrameIndexIfReady(11u, jitterReason),
     expectTrue(pass->jitterAlignedToFrameIndex(11u), "pass jitter aligned after trySync");
+
+// --- deepen additive from deepen-b59-taa-guards-258a ---
+               "tryPreflight warmup reason is NotWarm for unwarmed history");
+void testJitterTryIfReadyWithRejectReason() {
+               "tryCurrentNdcOffsetIfReady reject reason is None");
+               "tryCurrentNdcOffsetIfReady reject reason is InvalidViewport");
+    expectTrue(jitter.isAlignedToFrameIndex(4u), "jitter aligned after trySyncToFrameIndexIfReady");
+    expectTrue(TaaJitterLayout::tryOffsetForFrameIndexIfReady(2u, 8u, pixelOut, rejectReason),
+               "tryOffsetForFrameIndexIfReady succeeds for valid sequence");
+    expectNear(pixelOut.x, directPixel.x, 1e-6f, "tryOffsetForFrameIndexIfReady matches offsetForFrameIndex X");
+    expectTrue(!TaaJitterLayout::tryOffsetForFrameIndexIfReady(2u, 0u, pixelOut, rejectReason),
+               "tryOffsetForFrameIndexIfReady rejects invalid sequence");
+               "tryOffsetForFrameIndexIfReady reject reason is InvalidSequence");
+    expectTrue(TaaJitterLayout::tryNdcOffsetForFrameIndexIfReady(2u, 128u, 128u, 8u, ndcOut, rejectReason),
+               "tryNdcOffsetForFrameIndexIfReady succeeds for valid viewport");
+    expectNear(ndcOut.x, directNdc.x, 1e-6f, "tryNdcOffsetForFrameIndexIfReady matches ndcOffsetForFrameIndex X");
+    expectTrue(!TaaJitterLayout::tryNdcOffsetForFrameIndexIfReady(2u, 0u, 128u, 8u, ndcOut, rejectReason),
+               "tryNdcOffsetForFrameIndexIfReady rejects zero width");
+               "tryNdcOffsetForFrameIndexIfReady reject reason is InvalidViewport");
+void testResolveFramePreflight() {
+    expectTrue(!fuse::renderer::tryPreflightTaaResolveFrame(desc, emptyHistory, skipReason, blendReason),
+               "tryPreflightTaaResolveFrame fails when history not ready");
+    expectTrue(fuse::renderer::preflightTaaResolveFrame(desc, history),
+    expectTrue(!pass->tryPreflightHistoryWarmup(reuseReason),
+               "tryPreflightHistoryWarmup fails before init");
+               "warmup tryPreflight reason is NotReady before init");
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for pass tryPreflight wrapper test");
+    expectTrue(pass->init(resources), "TaaPass initialized for tryPreflight wrapper test");
+    expectTrue(!pass->preflightHistoryWarmup(&reuseReason),
+               "preflightHistoryWarmup fails before first resolve");
+    expectTrue(pass->preflightJitterAdvance(), "preflightJitterAdvance passes after init");
+    expectTrue(pass->trySyncJitterToFrameIndexIfReady(6u, jitterReason),
+               "trySyncJitterToFrameIndexIfReady succeeds");
+    expectTrue(pass->tryAdvanceJitterIfReady(jitterReason), "tryAdvanceJitterIfReady succeeds");
+    expectTrue(pass->jitter().index() != jitterIndexBefore, "tryAdvanceJitterIfReady advances jitter");
+               "tryPreflightResolve passes before first resolve");
+               "preflightResolveFrame passes before first resolve");
+    expectTrue(pass->tryPreflightHistoryWarmup(reuseReason), "tryPreflightHistoryWarmup passes after resolve");
+    expectTrue(pass->preflightHistoryWarmup(), "preflightHistoryWarmup passes after resolve");
+               "tryPreflightHistoryReuse passes with current generation after resolve");
+               "tryPreflightHistoryReuse fails with stale generation after invalidate");
+               "tryPreflightHistoryReuse reason is StaleGeneration after invalidate");
+    expectTrue(!pass->tryPreflightHistoryReuse(pass->historyInvalidateGeneration(), reuseReason),
+               "tryPreflightHistoryReuse fails after invalidate even with current generation");
+               "tryPreflightHistoryReuse reason is NotWarm after invalidate clears warmth");
+    expectTrue(pass->tryPreflightHistoryReuse(pass->historyInvalidateGeneration(), reuseReason),
+               "tryPreflightHistoryReuse passes after re-warm with current generation");
+               "tryPreflightResolveBlendWeights passes after warmup");
+               "tryPreflightResolveFrame passes after warmup");
+               "tryPreflightHistoryReadyForResolve passes after init");
+    testJitterTryIfReadyWithRejectReason();
+    testResolveFramePreflight();

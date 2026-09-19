@@ -794,3 +794,7 @@ TaaResolveTemporalBlendRejectReason classifyTaaResolveTemporalBlendReject(const 
     return reject == TaaResolveTemporalBlendRejectReason::None;
                                            TaaResolveTemporalBlendRejectReason& reason) {
     return reason == TaaResolveTemporalBlendRejectReason::None;
+
+// --- deepen additive from deepen-b59-taa-guards-258a ---
+    blendReason = classifyTaaResolveBlendReject(desc, history);
+    return blendReason == TaaResolveBlendRejectReason::None;

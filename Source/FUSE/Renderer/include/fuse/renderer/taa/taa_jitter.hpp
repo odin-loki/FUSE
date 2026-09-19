@@ -270,3 +270,7 @@ TaaJitterGuardRejectReason classifyTaaJitterSyncAndNdcReject(u32 width, u32 heig
 bool preflightTaaJitterSyncAndNdc(u32 /*frameIndex*/, u32 width, u32 height,
 bool tryPreflightTaaJitterSyncAndNdc(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
     bool preflightAlignmentToFrameIndex(u32 frameIndex, TaaJitterGuardRejectReason* reason = nullptr) const;
+
+// --- deepen additive from deepen-b59-taa-guards-258a ---
+    static bool tryOffsetForFrameIndexIfReady(u32 frameIndex, u32 sequenceLength, fuse::math::Vec2& out,
+    static bool tryNdcOffsetForFrameIndexIfReady(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
