@@ -4,6 +4,22 @@
 
 namespace fuse::physics {
 
+namespace {
+
+bool bodyIndexInRange(u32 bodyIndex, u32 bodyCount) {
+    return bodyIndex < bodyCount;
+}
+
+bool contactPairEligibleForBuild(u32 bodyA, u32 bodyB, u32 bodyCount) {
+    return bodyA != bodyB && bodyIndexInRange(bodyA, bodyCount) && bodyIndexInRange(bodyB, bodyCount);
+}
+
+bool distancePairEligibleForBuild(u32 bodyA, u32 bodyB, u32 bodyCount) {
+    return bodyIndexInRange(bodyA, bodyCount) && bodyIndexInRange(bodyB, bodyCount);
+}
+
+} // namespace
+
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();
@@ -56,10 +72,16 @@ void ContactIslandGraph::build(u32 bodyCount,
         if (!contact.valid) {
             continue;
         }
+        if (!contactPairEligibleForBuild(contact.bodyA, contact.bodyB, bodyCount)) {
+            continue;
+        }
         unionBodies(contact.bodyA, contact.bodyB);
     }
 
     for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (!distancePairEligibleForBuild(constraint.bodyA, constraint.bodyB, bodyCount)) {
+            continue;
+        }
         unionBodies(constraint.bodyA, constraint.bodyB);
     }
 
@@ -84,6 +106,9 @@ void ContactIslandGraph::build(u32 bodyCount,
         if (!contact.valid) {
             continue;
         }
+        if (!contactPairEligibleForBuild(contact.bodyA, contact.bodyB, bodyCount)) {
+            continue;
+        }
         const u32 islandIndex = rootToIsland[findRoot(contact.bodyA)];
         if (islandIndex != invalidIsland) {
             islands_[islandIndex].contactIndices.push_back(contactIndex);
@@ -92,6 +117,9 @@ void ContactIslandGraph::build(u32 bodyCount,
 
     for (u32 distanceIndex = 0; distanceIndex < distanceConstraints.size(); ++distanceIndex) {
         const DistanceConstraint& constraint = distanceConstraints[distanceIndex];
+        if (!distancePairEligibleForBuild(constraint.bodyA, constraint.bodyB, bodyCount)) {
+            continue;
+        }
         const u32 islandIndex = rootToIsland[findRoot(constraint.bodyA)];
         if (islandIndex != invalidIsland) {
             islands_[islandIndex].distanceIndices.push_back(distanceIndex);
