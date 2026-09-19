@@ -2739,3 +2739,51 @@ GizmoSnapRejectReason GizmoSystem::classifySnapReject() const {
 GizmoUpdateDragRejectReason GizmoSystem::classifyUpdateDragReject(const GizmoHitTest& hit) const {
     return fuse::editor::classifyUpdateDragReject(preflightUpdateDrag(hit));
     return fuse::editor::shouldSkipUpdateDrag(preflightUpdateDrag(hit));
+
+// --- deepen additive from gizmo-interaction-reject-reasons-f5f0 ---
+const char* gizmoInteractionRejectReasonLabel(GizmoInteractionRejectReason reason) {
+    case GizmoInteractionRejectReason::None:
+    case GizmoInteractionRejectReason::EmptyRay:
+    case GizmoInteractionRejectReason::EmptyHit:
+    case GizmoInteractionRejectReason::InvalidPickConfig:
+    case GizmoInteractionRejectReason::InvalidDimensions:
+    case GizmoInteractionRejectReason::OutOfBounds:
+    case GizmoInteractionRejectReason::ScreenMiss:
+    case GizmoInteractionRejectReason::PickMiss:
+    case GizmoInteractionRejectReason::SnapDisabled:
+    case GizmoInteractionRejectReason::InvalidSnapStep:
+    case GizmoInteractionRejectReason::NotDragging:
+    case GizmoInteractionRejectReason::AlreadyDragging:
+    case GizmoInteractionRejectReason::InvalidActiveAxis:
+GizmoInteractionRejectReason classifyPickReject(const PickPreflight& preflight) {
+GizmoInteractionRejectReason classifySnapReject(const SnapPreflight& preflight) {
+GizmoInteractionRejectReason classifyBeginDragReject(const BeginDragPreflight& preflight) {
+GizmoInteractionRejectReason classifyUpdateDragReject(const UpdateDragPreflight& preflight) {
+GizmoInteractionRejectReason classifyEndDragReject(const EndDragPreflight& preflight) {
+                      GizmoInteractionRejectReason& reason) {
+bool tryPreflightPick(const GizmoHitTest& hit, GizmoMode mode, GizmoInteractionRejectReason& reason) {
+                           GizmoInteractionRejectReason& reason, bool alreadyDragging) {
+                         const GizmoSnapSettings& settings, GizmoInteractionRejectReason& reason) {
+GizmoInteractionRejectReason classifyPickInteractionReject(const PickInteractionPreflight& preflight) {
+    return classifyPickReject(preflight.pick);
+GizmoInteractionRejectReason classifyBeginDragInteractionReject(
+    const BeginDragInteractionPreflight& preflight) {
+    const GizmoInteractionRejectReason beginReason = classifyBeginDragReject(preflight.begin);
+    if (beginReason != GizmoInteractionRejectReason::None) {
+GizmoInteractionRejectReason classifyUpdateDragInteractionReject(
+    const UpdateDragInteractionPreflight& preflight) {
+    return classifyUpdateDragReject(preflight.drag);
+GizmoInteractionRejectReason classifyEndDragInteractionReject(
+    const EndDragInteractionPreflight& preflight) {
+    return classifyEndDragReject(preflight.end);
+GizmoInteractionRejectReason classifyInteractionReject(const InteractionPreflight& preflight) {
+    return preflight.primaryRejectReason();
+bool shouldSkipPickInteraction(const PickInteractionPreflight& preflight) {
+bool shouldSkipBeginDragInteraction(const BeginDragInteractionPreflight& preflight) {
+bool shouldSkipUpdateDragInteraction(const UpdateDragInteractionPreflight& preflight) {
+bool shouldSkipEndDragInteraction(const EndDragInteractionPreflight& preflight) {
+bool shouldSkipInteraction(const InteractionPreflight& preflight) {
+GizmoInteractionRejectReason InteractionPreflight::primaryRejectReason() const {
+        return classifyBeginDragReject(begin.begin);
+        return classifyUpdateDragReject(update.update);
+    return fuse::editor::shouldSkipInteraction(preflightInteraction(hit));

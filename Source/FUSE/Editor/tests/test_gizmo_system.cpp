@@ -3789,3 +3789,47 @@ void testInteractionPreflightPhaseSnapHelpers() {
                "classifyEndDragReject mirrors tryPreflightEndDrag reason");
     expectTrue(gizmo.classifyEndDragReject() == fuse::editor::GizmoEndDragRejectReason::None,
                "gizmo classifyEndDragReject returns None when dragging");
+
+// --- deepen additive from gizmo-interaction-reject-reasons-f5f0 ---
+void testGizmoInteractionRejectReasons() {
+    fuse::editor::GizmoInteractionRejectReason reason = fuse::editor::GizmoInteractionRejectReason::None;
+    expectTrue(reason == fuse::editor::GizmoInteractionRejectReason::EmptyRay,
+    expectTrue(std::strcmp(fuse::editor::gizmoInteractionRejectReasonLabel(reason), "empty_ray") == 0,
+    expectTrue(reason == fuse::editor::GizmoInteractionRejectReason::None,
+    expectTrue(!fuse::editor::tryPreflightPick(emptyHit, fuse::editor::GizmoMode::Translate, reason),
+               "tryPreflightPick rejects empty viewport");
+    expectTrue(reason == fuse::editor::GizmoInteractionRejectReason::EmptyHit,
+    expectTrue(reason == fuse::editor::GizmoInteractionRejectReason::SnapDisabled,
+    expectTrue(reason == fuse::editor::GizmoInteractionRejectReason::InvalidSnapStep,
+    expectTrue(fuse::editor::tryPreflightBeginDrag(hit, fuse::editor::GizmoMode::Translate, reason),
+    expectTrue(!fuse::editor::tryPreflightBeginDrag(hit, fuse::editor::GizmoMode::Translate, reason),
+               "tryPreflightBeginDrag rejects translate dead zone");
+    expectTrue(reason == fuse::editor::GizmoInteractionRejectReason::ScreenMiss,
+    expectTrue(!fuse::editor::tryPreflightUpdateDrag(hit, false, fuse::editor::GizmoAxis::None, reason),
+    expectTrue(reason == fuse::editor::GizmoInteractionRejectReason::NotDragging,
+    expectTrue(fuse::editor::tryPreflightUpdateDrag(hit, true, fuse::editor::GizmoAxis::X, reason),
+               "tryPreflightUpdateDrag accepts active drag with axis");
+void testShouldSkipPreflights() {
+    const fuse::editor::PickPreflight deadZonePick =
+    expectTrue(fuse::editor::classifyPickReject(deadZonePick) ==
+                   fuse::editor::GizmoInteractionRejectReason::ScreenMiss,
+               "classifyPickReject marks screen miss");
+    const fuse::editor::SnapPreflight degradedSnap =
+    expectTrue(fuse::editor::classifySnapReject(degradedSnap) ==
+               "classifySnapReject marks invalid step");
+    const fuse::editor::BeginDragPreflight validBegin =
+    const fuse::editor::UpdateDragPreflight inactiveUpdate =
+    expectTrue(fuse::editor::classifyUpdateDragReject(inactiveUpdate) ==
+                   fuse::editor::GizmoInteractionRejectReason::NotDragging,
+               "classifyUpdateDragReject marks not dragging");
+    const fuse::editor::EndDragPreflight inactiveEnd =
+void testInteractionPrimaryRejectReason() {
+    const fuse::editor::InteractionPreflight idleDeadZone = fuse::editor::preflightInteraction(
+    expectTrue(idleDeadZone.primaryRejectReason() ==
+    const fuse::editor::InteractionPreflight emptyUpdate =
+    expectTrue(emptyUpdate.primaryRejectReason() ==
+    expectTrue(fuse::editor::classifyInteractionReject(emptyUpdate) ==
+               "classifyInteractionReject matches primary reject");
+    testGizmoInteractionRejectReasons();
+    testShouldSkipPreflights();
+    testInteractionPrimaryRejectReason();

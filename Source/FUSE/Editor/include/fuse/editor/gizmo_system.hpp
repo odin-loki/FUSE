@@ -1162,3 +1162,29 @@ bool shouldSkipEndDrag(const EndDragPreflight& preflight);
     [[nodiscard]] GizmoSnapRejectReason classifySnapReject() const;
     [[nodiscard]] GizmoUpdateDragRejectReason classifyUpdateDragReject(const GizmoHitTest& hit) const;
     [[nodiscard]] GizmoEndDragRejectReason classifyEndDragReject() const;
+
+// --- deepen additive from gizmo-interaction-reject-reasons-f5f0 ---
+enum class GizmoInteractionRejectReason : u8 {
+const char* gizmoInteractionRejectReasonLabel(GizmoInteractionRejectReason reason);
+GizmoInteractionRejectReason classifyPickReject(const PickPreflight& preflight);
+GizmoInteractionRejectReason classifySnapReject(const SnapPreflight& preflight);
+GizmoInteractionRejectReason classifyBeginDragReject(const BeginDragPreflight& preflight);
+GizmoInteractionRejectReason classifyUpdateDragReject(const UpdateDragPreflight& preflight);
+GizmoInteractionRejectReason classifyEndDragReject(const EndDragPreflight& preflight);
+                      GizmoInteractionRejectReason& reason);
+                           GizmoInteractionRejectReason& reason, bool alreadyDragging = false);
+                         const GizmoSnapSettings& settings, GizmoInteractionRejectReason& reason);
+    GizmoInteractionRejectReason primaryRejectReason() const;
+GizmoInteractionRejectReason classifyPickInteractionReject(const PickInteractionPreflight& preflight);
+GizmoInteractionRejectReason classifyBeginDragInteractionReject(
+    const BeginDragInteractionPreflight& preflight);
+GizmoInteractionRejectReason classifyUpdateDragInteractionReject(
+    const UpdateDragInteractionPreflight& preflight);
+GizmoInteractionRejectReason classifyEndDragInteractionReject(
+    const EndDragInteractionPreflight& preflight);
+GizmoInteractionRejectReason classifyInteractionReject(const InteractionPreflight& preflight);
+bool shouldSkipPickInteraction(const PickInteractionPreflight& preflight);
+bool shouldSkipBeginDragInteraction(const BeginDragInteractionPreflight& preflight);
+bool shouldSkipUpdateDragInteraction(const UpdateDragInteractionPreflight& preflight);
+bool shouldSkipEndDragInteraction(const EndDragInteractionPreflight& preflight);
+bool shouldSkipInteraction(const InteractionPreflight& preflight);
