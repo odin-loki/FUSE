@@ -1649,3 +1649,11 @@ IslandPreSolvePreflight preflight_island_pre_solve(
 IslandPreSolvePreflight preflight_island_pre_solve_by_index(
 bool should_skip_island_pre_solve(const ContactIslandGraph::Island& island,
 IslandPreSolveGraphPreflight preflight_island_pre_solve_graph(
+
+// --- deepen additive from deepen-pbd-island-guards-6c77 ---
+struct IslandJobSolvePreflight {
+struct IslandGraphSolvePreflight {
+IslandJobSolvePreflight preflight_island_job_solve(const IslandSolveJob& job,
+bool should_skip_island_job_solve(const IslandSolveJob& job,
+IslandGraphSolvePreflight preflight_island_graph_solve(const ContactIslandGraph& graph,
+bool should_skip_island_graph_solve(const ContactIslandGraph& graph,

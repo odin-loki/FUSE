@@ -4835,3 +4835,24 @@ void testPreflightIslandPreSolvePipeline() {
     const IslandConstraintSolvePreflight indexPreflight = preflight_island_constraint_solve_by_index(
     expectTrue(indexPreflight.reason == IslandConstraintSolveRejectReason::NoMovableBodies,
     expectTrue(!indexPreflight.can_solve(), "index constraint-solve preflight cannot solve all-sleeping island");
+
+// --- deepen additive from deepen-pbd-island-guards-6c77 ---
+void testPreflightIslandJobSolveGuards() {
+    const IslandJobSolvePreflight mixedPreflight =
+    expectTrue(!mixedPreflight.skipped, "job solve preflight does not skip mixed island");
+    expectTrue(mixedPreflight.can_solve(), "mixed island passes composed job solve preflight");
+    expectTrue(!should_skip_island_job_solve(mixedJob, bodies, contacts, constraints, dt),
+               "should_skip false for mixed awake island");
+    const IslandJobSolvePreflight sleepingPreflight =
+    expectTrue(!sleepingPreflight.can_solve(), "all-sleeping island fails composed job solve preflight");
+    expectTrue(should_skip_island_job_solve(sleepingJob, bodies, contacts, constraints, dt),
+    expectTrue(should_skip_island_job_solve(invalid, bodies, contacts, constraints, dt),
+               "should_skip true for default job");
+    const IslandGraphSolvePreflight graphPreflight =
+    expectTrue(!graphPreflight.skipped, "graph solve preflight does not skip mixed graph");
+    expectTrue(graphPreflight.can_solve(), "graph solve preflight can solve mixed graph");
+    expectTrue(!should_skip_island_graph_solve(graph, bodies, contacts, constraints, dt),
+               "should_skip graph solve false for mixed graph");
+void testDispatchSolveableIslandsGuarded() {
+void testDispatchWithWakeGuarded() {
+    testPreflightIslandJobSolveGuards();

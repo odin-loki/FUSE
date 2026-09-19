@@ -2698,3 +2698,17 @@ IslandPreSolveGraphPreflight preflight_island_pre_solve_graph(
         return IslandBuildRejectReason::OutOfRangeContact;
         return IslandBuildRejectReason::OutOfRangeDistance;
     return island_sleep_reject_reason(island, bodies) != IslandSleepRejectReason::None;
+
+// --- deepen additive from deepen-pbd-island-guards-6c77 ---
+IslandJobSolvePreflight preflight_island_job_solve(const IslandSolveJob& job,
+    IslandJobSolvePreflight preflight{};
+bool should_skip_island_job_solve(const IslandSolveJob& job,
+        const IslandJobSolvePreflight preflight =
+IslandGraphSolvePreflight preflight_island_graph_solve(const ContactIslandGraph& graph,
+    IslandGraphSolvePreflight preflight{};
+bool should_skip_island_graph_solve(const ContactIslandGraph& graph,
+        if (!should_skip_island_job_solve(job, bodies, contacts, distanceConstraints, dt)) {
+    if (should_skip_island_job_solve(job, bodies, contacts, distanceConstraints, dt) || job.island == nullptr) {
+    if (should_skip_island_job_solve(job, bodies, contacts, distanceConstraints, dt)) {
+    const IslandGraphSolvePreflight preflight = preflight_island_graph_solve(
+    const IslandGraphSolvePreflight preflight =
