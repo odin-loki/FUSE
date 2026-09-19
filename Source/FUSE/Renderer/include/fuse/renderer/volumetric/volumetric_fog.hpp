@@ -168,6 +168,18 @@ const char* froxelGridRejectReasonLabel(FroxelGridRejectReason reason);
     UnorderedCorners,
 };
 
+/// Why trilinear density sample preflight rejected the request (B5.11 deepen).
+enum class FroxelTrilinearSampleRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    InaccessibleGrid,
+    InvalidSampleCoords,
+    ScreenMappingFailed,
+};
+
+/// Human-readable label for trilinear sample reject reasons (logging / tests).
+const char* froxelTrilinearSampleRejectReasonLabel(FroxelTrilinearSampleRejectReason reason);
+
 /// Human-readable label for sample-coord reject reasons (logging / tests).
 const char* sampleCoordRejectReasonLabel(SampleCoordRejectReason reason);
 
@@ -306,6 +318,8 @@ struct FroxelGridLayout {
     static bool tryValidateSampleCoords(const FroxelSampleCoords& coords,
                                         const FroxelGridDesc& desc,
                                         SampleCoordRejectReason& outReason);
+    /// Clamp sample coords with reject-reason diagnostics.
+    static bool tryClampSampleCoords(FroxelSampleCoords& coords,
     static bool mapScreenDepthToSampleCoords(f32 screenX,
                                              f32 screenY,
                                              f32 viewDepth,
@@ -662,6 +676,9 @@ bool wouldSkipDensityLookupAtCoord(const FroxelDensityGrid& grid,
                          u32 tileY,
                          u32 sliceZ,
                          DensityLookupRejectReason& outReason);
+/// Preflight guard before tile/slice coord lookup; false on empty grid or desc mismatch.
+bool canLookupAtCoord(const FroxelDensityGrid& grid,
+                      u32 sliceZ);
 /// Diagnose why coord lookup preflight would reject; vacuously succeeds on accessible grids.
 bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
                          const FroxelGridDesc& desc,
@@ -715,6 +732,7 @@ bool canLookupAtCoord(const FroxelDensityGrid& grid,
 /// True when tile/slice coords exceed grid bounds before clamping.
 /// True when tile/slice coords exceed grid bounds (would be clamped before lookup).
 bool wouldClampCoordLookup(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc);
+/// True when tile/slice coords would clamp before a density lookup.
 /// Preflight guard before coord-based density sampling; false on inaccessible grid or invalid coords.
 bool canSampleAtCoords(const FroxelDensityGrid& grid,
                        const FroxelSampleCoords& coords);
@@ -804,6 +822,7 @@ bool tryCanSampleAtCoords(const FroxelDensityGrid& grid,
 bool tryCanSampleDensityTrilinear(const FroxelDensityGrid& grid,
 /// Diagnose why trilinear density sampling preflight would reject.
 bool tryCanSampleTrilinear(const FroxelDensityGrid& grid,
+bool canSampleDensityTrilinear(const FroxelDensityGrid& grid,
 /// True when at least one froxel exceeds `epsilon`; false when storage is empty.
 bool hasNonZeroDensity(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
 /// Early-out when the grid is inaccessible or uniformly below `epsilon`.
@@ -1085,6 +1104,7 @@ bool shouldSkipTrilinearSample(const FroxelDensityGrid& grid, const FroxelGridDe
 /// Trilinear sample with combined trilinear preflight reject-reason diagnostics.
 bool trySampleDensityTrilinear(const FroxelDensityGrid& grid,
                                f32& outDensity,
+/// Trilinear sample with dedicated trilinear reject-reason diagnostics.
 /// Screen-space trilinear density sample; returns 0 when mapping fails or grid is empty.
 f32 sampleDensityAtScreen(const FroxelDensityGrid& grid,
                           const FroxelGridDesc& desc,
@@ -1152,6 +1172,7 @@ bool trySampleDensityAtScreen(const FroxelDensityGrid& grid,
                               ScreenMappingRejectReason& outMapReason);
 /// Screen-space sample with screen-mapping and sample-coord reject-reason diagnostics.
 /// Screen-space sample with mapping and sample-coord reject-reason diagnostics.
+/// Screen-space sample with trilinear preflight reject-reason diagnostics.
                               f32 screenX,
                               f32 screenY,
                               f32 viewDepth,
