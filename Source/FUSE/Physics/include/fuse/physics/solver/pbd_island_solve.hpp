@@ -1664,7 +1664,6 @@ const char* islandConstraintSolveRejectReasonName(IslandConstraintSolveRejectRea
 /// Why island constraint solve would early-out (B4.4 deepen follow-up pass).
     StaleRefs,
     AllSleeping,
-};
 
 /// Human-readable label for island constraint-solve reject reasons (B4.4 deepen follow-up pass).
 const char* island_constraint_solve_reject_reason_name(IslandConstraintSolveRejectReason reason);
@@ -1765,15 +1764,12 @@ bool should_run_solve_island_job(const IslandSolveJob& job, f32 dt);
 struct IslandConstraintSolveJobPreflight {
     IslandSolveJobPreflight job{};
     IslandConstraintSolvePreflight solve{};
-    bool skipped = false;
 
     bool can_solve() const { return !skipped && job.can_dispatch() && solve.can_solve(); }
-};
 
 /// Per-island wake outcome for parallel batch stubs (B4.4 deepen).
 struct IslandWakeResult {
     bool woke = false;
-    u32 islandIndex = ContactIslandGraph::invalidIsland;
     u32 bodiesWoken = 0;
 
 /// Batch wake summary for graph-level guards (B4.4 deepen).
@@ -1787,24 +1783,14 @@ struct IslandBatchWakeResult {
 /// Batch dispatch with body-participation guards (B4.4 deepen).
 struct IslandBatchBodiesDispatchResult {
     u32 solvedCount = 0;
-    u32 solveableCount = 0;
 
     bool any_solved() const { return solvedCount > 0u; }
 /// Aggregate constraint-solve participation counts for graph-level batch guards.
-struct IslandConstraintSolveGraphStats {
-    u32 totalIslands = 0;
-    u32 allSleepingCount = 0;
     u32 staleRefsCount = 0;
-    u32 emptyCount = 0;
 
 /// Graph-level constraint solve preflight for selective per-island dispatch.
-struct IslandConstraintSolveGraphPreflight {
-    IslandConstraintSolveGraphStats stats{};
 
     bool can_dispatch() const { return !skipped && stats.solveableCount > 0u; }
-/// Aggregate constraint-solve counts for graph-level batch guards.
-    u32 blockedByBodiesCount = 0;
-    u32 blockedByRefsCount = 0;
 
 /// Graph-level constraint-solve preflight for selective per-island dispatch.
 
@@ -1813,7 +1799,6 @@ struct IslandConstraintSolveGraphPreflight {
 
 /// Wake-then-solve outcome for one island dispatch stub.
 struct IslandWakeAndSolveResult {
-    bool solved = false;
 
 /// Graph-level wake-then-dispatch batch summary.
 struct IslandWakeAndDispatchResult {
@@ -1822,9 +1807,6 @@ struct IslandWakeAndDispatchResult {
     bool any_solved() const { return dispatch.any_solved(); }
 
 bool island_constraint_solve_reject_reason_is(
-    const ContactIslandGraph::Island& island,
-    const RigidBodySoA& bodies,
-    const std::vector<narrowphase::ContactManifold>& contacts,
 
 /// Per-island sleep state for solve early-out stubs.
 struct IslandSleepPreflight {
@@ -2255,6 +2237,50 @@ struct IslandNonsleepingDispatchResult {
     u32 solvedCount = 0;
     u32 skippedCount = 0;
     u32 solveableCount = 0;
+    bool skipped = false;
+
+    bool any_solved() const { return solvedCount > 0u; }
+};
+
+/// Combined sleep/wake + constraint-solve preflight for guarded island dispatch.
+struct IslandSleepWakeDispatchPreflight {
+    IslandSleepPreflight islandSleep{};
+    IslandWakePreflight islandWake{};
+    IslandConstraintSolvePreflight constraintSolve{};
+    bool invalidDt = false;
+    bool skipped = false;
+
+    bool can_wake() const { return !skipped && islandWake.should_wake_sleepers(); }
+
+    bool can_dispatch() const {
+        return !skipped && !invalidDt && !islandSleep.can_skip_solve() && constraintSolve.can_solve();
+    }
+};
+
+/// Aggregate active-solve counts for graph-level sleep/wake dispatch guards.
+struct IslandActiveSolveStats {
+    u32 totalIslands = 0;
+    u32 activeSolveCount = 0;
+    u32 allSleepingCount = 0;
+    u32 noMovableCount = 0;
+    u32 emptyCount = 0;
+};
+
+/// Graph-level active-solve preflight for sleep/wake-aware batch dispatch.
+struct IslandActiveSolveGraphPreflight {
+    IslandActiveSolveStats stats{};
+    bool invalidDt = false;
+    bool skipped = false;
+
+    bool can_dispatch() const { return !skipped && !invalidDt && stats.activeSolveCount > 0u; }
+};
+
+/// Batch sleep/wake dispatch summary for parallel iteration stubs.
+struct IslandSleepWakeBatchDispatchResult {
+    u32 solvedCount = 0;
+    u32 skippedCount = 0;
+    u32 wokeCount = 0;
+    u32 activeSolveCount = 0;
     bool skipped = false;
 
     bool any_solved() const { return solvedCount > 0u; }

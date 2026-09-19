@@ -568,7 +568,6 @@ u32 countOutOfRangeDistanceRefs(u32 bodyCount,
         if (isOutOfRangeBodyRef(bodyCount, constraint.bodyA) || isOutOfRangeBodyRef(bodyCount, constraint.bodyB)) {
 }
 
-} // namespace
 
 
         preflight.skipped = !contacts.empty() || !distanceConstraints.empty();
@@ -611,17 +610,10 @@ bool distance_constraint_bodies_in_range(u32 bodyCount, const DistanceConstraint
 
 
 
-bool should_skip_island_build(u32 bodyCount,
-                              const std::vector<narrowphase::ContactManifold>& contacts,
-                              const std::vector<DistanceConstraint>& distanceConstraints) {
-    return preflight_island_build(bodyCount, contacts, distanceConstraints).skipped;
 
 bool is_island_build_body_index_valid(u32 bodyIndex, u32 bodyCount) {
-    return bodyIndex < bodyCount;
 
 bool is_contact_valid_for_island_build(const narrowphase::ContactManifold& contact, u32 bodyCount) {
-    if (!contact.valid) {
-        return false;
     return is_island_build_body_index_valid(contact.bodyA, bodyCount) &&
            is_island_build_body_index_valid(contact.bodyB, bodyCount);
 
@@ -629,33 +621,22 @@ bool is_distance_constraint_valid_for_island_build(const DistanceConstraint& con
     return is_island_build_body_index_valid(constraint.bodyA, bodyCount) &&
            is_island_build_body_index_valid(constraint.bodyB, bodyCount);
 
-IslandBuildPreflight preflight_island_build(
-    u32 bodyCount,
-    IslandBuildPreflight preflight{};
-    preflight.bodyCount = bodyCount;
 
         if (is_contact_valid_for_island_build(contact, bodyCount)) {
-        } else if (contact.valid) {
-            ++preflight.staleContactCount;
 
         if (is_distance_constraint_valid_for_island_build(constraint, bodyCount)) {
-            ++preflight.validDistanceCount;
-            ++preflight.staleDistanceCount;
 
     preflight.skipped =
         bodyCount == 0u && contacts.empty() && distanceConstraints.empty();
 
 
 IslandBuildStats compute_island_build_stats(const ContactIslandGraph& graph) {
-    IslandBuildStats stats{};
     stats.totalIslands = graph.islandCount();
     for (u32 islandIndex = 0; islandIndex < stats.totalIslands; ++islandIndex) {
         if (graph.island(islandIndex).isEmpty()) {
             ++stats.emptyCount;
             ++stats.constrainedCount;
-    return stats;
 
-namespace {
 
 bool contact_indices_valid(const narrowphase::ContactManifold& contact, u32 bodyCount) {
     return contact.valid && contact.bodyA < bodyCount && contact.bodyB < bodyCount;
@@ -663,23 +644,17 @@ bool contact_indices_valid(const narrowphase::ContactManifold& contact, u32 body
 bool distance_indices_valid(const DistanceConstraint& constraint, u32 bodyCount) {
     return constraint.bodyA < bodyCount && constraint.bodyB < bodyCount;
 
-} // namespace
 
-bool is_valid_island_build_body_count(u32 bodyCount) {
-    return true;
 
 
         if (contact_indices_valid(contact, bodyCount)) {
-            ++preflight.invalidContactCount;
 
         if (distance_indices_valid(constraint, bodyCount)) {
-            ++preflight.invalidDistanceCount;
 
     preflight.skipped = bodyCount == 0u && !preflight.has_valid_constraints();
 
 
 bool contact_references_in_range_body(u32 bodyA, u32 bodyB, u32 bodyCount) {
-    return bodyA < bodyCount && bodyB < bodyCount;
 
 bool distance_constraint_references_in_range_body(const DistanceConstraint& constraint, u32 bodyCount) {
     return contact_references_in_range_body(constraint.bodyA, constraint.bodyB, bodyCount);
@@ -689,28 +664,23 @@ bool distance_constraint_references_in_range_body(const DistanceConstraint& cons
     preflight.ownedDistanceCount = static_cast<u32>(distanceConstraints.size());
 
         if (!contact_references_in_range_body(contact.bodyA, contact.bodyB, bodyCount)) {
-            continue;
 
         if (distance_constraint_references_in_range_body(constraint, bodyCount)) {
 
 
-    return !preflight_island_build(bodyCount, contacts, distanceConstraints).can_build();
 
 void build_island_graph_guarded(ContactIslandGraph& graph,
-    if (should_skip_island_build(bodyCount, contacts, distanceConstraints)) {
-        graph.clear();
         return;
-    graph.build(bodyCount, contacts, distanceConstraints);
-        if (isOutOfRangeBodyRef(bodyCount, contact.bodyA) || isOutOfRangeBodyRef(bodyCount, contact.bodyB)) {
             ++preflight.outOfRangeBodyRefCount;
 
-        if (isOutOfRangeBodyRef(bodyCount, constraint.bodyA) || isOutOfRangeBodyRef(bodyCount, constraint.bodyB)) {
 
-    preflight.reason = island_build_reject_reason(bodyCount, contacts, distanceConstraints);
     preflight.rejected = preflight.reason != IslandBuildRejectReason::None;
 
-bool should_skip_island_build(
     return !preflight_island_build(bodyCount, contacts, distanceConstraints).has_constraints();
+bool is_contact_in_body_range(const narrowphase::ContactManifold& contact, u32 bodyCount) {
+    return contact.bodyA < bodyCount && contact.bodyB < bodyCount;
+
+bool is_distance_in_body_range(const DistanceConstraint& constraint, u32 bodyCount) {
 }
 
 bool build_guarded(ContactIslandGraph& graph,
