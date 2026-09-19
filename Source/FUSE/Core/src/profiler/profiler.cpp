@@ -1439,3 +1439,12 @@ AsyncFlowPreflight preflightAsyncFlow() {
 // --- deepen additive from deepen-b16-profiler-name-flow-lookup-7ab9 ---
 bool tryFindExportableEventByName(const char* name, ProfileEvent& outEvent) {
 bool tryFindExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+
+// --- deepen additive from deepen-b16-profiler-guards-2244 ---
+bool wouldSkipProfileScope(const char* name) {
+bool wouldSkipAsyncFlowBegin(const char* name) {
+bool wouldSkipAsyncFlowEnd(const char* name) {
+bool wouldSkipCounterSample(const char* track) {
+bool wouldSkipChromeTraceExport() {
+bool wouldSkipChromeTraceExportSafely() {
+    return !preflightChromeTraceExport().canExportSafely();

@@ -4780,3 +4780,74 @@ void testPreflightNestingGuard() {
     const fuse::profiler::NestingPreflight orphanPreflight = fuse::profiler::preflightNesting();
     expectTrue(orphanPreflight.hasOrphanAsyncFlowEnds, "nesting preflight marks orphan async flow ends");
     testPreflightNestingGuard();
+
+// --- deepen additive from deepen-b16-profiler-guards-2244 ---
+void testWouldSkipProfileScopeGuard() {
+    expectTrue(fuse::profiler::wouldSkipProfileScope(nullptr), "wouldSkip true for null scope name");
+    expectTrue(fuse::profiler::wouldSkipProfileScope(""), "wouldSkip true for empty scope name");
+    expectTrue(!fuse::profiler::wouldSkipProfileScope("valid_scope"), "wouldSkip false for valid scope name");
+    expectTrue(fuse::profiler::wouldSkipProfileScope("valid_scope"),
+               "wouldSkip true when profiler disabled");
+        FUSE_PROFILE_SCOPE("would_skip_scope");
+    expectTrue(fuse::profiler::eventCount() == 2u, "valid scope still records when wouldSkip false");
+void testWouldSkipAsyncFlowAndCounterGuards() {
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowBegin(nullptr), "wouldSkip begin true for null name");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowBegin(""), "wouldSkip begin true for empty name");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd(nullptr), "wouldSkip end true for null name");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd(""), "wouldSkip end true for empty name");
+    expectTrue(fuse::profiler::wouldSkipCounterSample(nullptr), "wouldSkip counter true for null track");
+    expectTrue(fuse::profiler::wouldSkipCounterSample(""), "wouldSkip counter true for empty track");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd("orphan_flow"),
+               "wouldSkip end true when no open flows");
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowBegin("paired_flow"),
+               "wouldSkip begin false for valid open flow");
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowEnd("paired_flow"),
+               "wouldSkip end false when flow is open");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowBegin("disabled_flow"),
+               "wouldSkip begin true when profiler disabled");
+    expectTrue(fuse::profiler::wouldSkipCounterSample("disabled_counter"),
+               "wouldSkip counter true when profiler disabled");
+void testWouldSkipChromeTraceExportGuards() {
+    expectTrue(!fuse::profiler::wouldSkipChromeTraceExport(), "wouldSkip export false when enabled");
+    expectTrue(!fuse::profiler::wouldSkipChromeTraceExportSafely(),
+               "wouldSkip safe export false on balanced empty buffer");
+    expectTrue(fuse::profiler::wouldSkipChromeTraceExport(), "wouldSkip export true when disabled");
+    expectTrue(fuse::profiler::wouldSkipChromeTraceExportSafely(),
+               "wouldSkip safe export true when disabled");
+               "wouldSkip safe export false for balanced trace");
+               "wouldSkip safe export true with open async flow");
+               "tryFirst by null name false");
+               "tryLast by empty name false");
+               "tryFirst by name succeeds");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::Begin, "tryFirst copies begin phase");
+               "tryFirst copies scope name");
+               "tryLast by name succeeds for counter");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::Counter, "tryLast copies counter phase");
+    expectTrue(outEvent.counterIntValue == 8, "tryLast copies counter value");
+               "tryFirst by flow id succeeds");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::FlowStart, "tryFirst copies flow start phase");
+    expectTrue(outEvent.scopeId == flowId, "tryFirst copies flow id");
+               "tryLast by flow id succeeds");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::FlowFinish, "tryLast copies flow finish phase");
+    expectTrue(outEvent.scopeId == flowId, "tryLast preserves flow id");
+    expectTrue(!fuse::profiler::tryFirstEventByFlowId(flowId + 1000u, outEvent),
+               "tryFirst false for missing flow id");
+    expectTrue(resetPreflight.isBalanced(), "reset preflight nesting is balanced");
+    expectTrue(resetPreflight.canSafelyExport(), "reset preflight can safely export");
+    expectTrue(resetPreflight.activeScopeNestingDepth == 0u, "reset preflight scope depth is zero");
+    expectTrue(resetPreflight.activeFlowNestingDepth == 0u, "reset preflight flow depth is zero");
+    expectTrue(!resetPreflight.hasOpenAsyncFlows, "reset preflight has no open flows");
+    expectTrue(!resetPreflight.flowDepthDetached, "reset preflight flow depth attached");
+        expectTrue(!activePreflight.isBalanced(), "active scope/flow preflight is unbalanced");
+        expectTrue(!activePreflight.canSafelyExport(), "active nesting blocks safe export");
+        expectTrue(activePreflight.activeScopeNestingDepth == 1u, "preflight reports active scope depth");
+        expectTrue(activePreflight.activeFlowNestingDepth == 1u, "preflight reports active flow depth");
+        expectTrue(activePreflight.openAsyncFlowCount == 1u, "preflight open flow count is one");
+    const fuse::profiler::NestingPreflight closedPreflight = fuse::profiler::preflightNesting();
+    expectTrue(closedPreflight.isBalanced(), "closed preflight nesting is balanced");
+    expectTrue(closedPreflight.canSafelyExport(), "closed preflight can safely export");
+    expectTrue(closedPreflight.maxScopeNestingDepth == 1u, "preflight max scope depth tracked");
+    expectTrue(closedPreflight.maxFlowNestingDepth == 1u, "preflight max flow depth tracked");
+void testPreflightNestingCrossThreadHandoff() {
+    const fuse::profiler::NestingPreflight preflight = fuse::profiler::preflightNesting();
+    testPreflightNestingCrossThreadHandoff();
