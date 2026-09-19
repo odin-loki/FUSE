@@ -747,5 +747,6 @@ bool friction_basis_rejects_for_manifold(
     FrictionBasisRejectReason expected);
 
 /// Rebuild friction tangents on a manifold only when finalize and friction preflights allow (B4.6 deepen pass).
+/// Build friction tangents only when preflight allows; returns false when skipped (B4.5 deepen pass).
 
 } // namespace fuse::physics::narrowphase

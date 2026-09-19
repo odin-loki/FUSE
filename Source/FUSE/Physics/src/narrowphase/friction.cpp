@@ -1401,4 +1401,6 @@ bool friction_basis_rejects_for_manifold(
 
     if (!can_finalize_contact_manifold(manifold)) {
 
+    if (rebuild_friction_basis_with_preflight(manifold, epsilon)) {
+
 } // namespace fuse::physics::narrowphase

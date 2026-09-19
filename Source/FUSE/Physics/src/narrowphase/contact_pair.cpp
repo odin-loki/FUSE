@@ -1596,6 +1596,7 @@ bool is_plane_plane_contact_pair(
 }
 
 bool is_invalid_plane_normal_pair(
+bool is_capsule_capsule_contact_pair(
     const broadphase::CandidatePair& pair,
     const CollisionShapeSoA& shapes) {
     const u32 shapeA = findShapeForBody(shapes, pair.bodyA, CollisionShapeType::Sphere);
@@ -1691,6 +1692,21 @@ bool narrowphase_batch_rejects_for_reason(
     const CollisionShapeSoA& shapes,
     NarrowphaseBatchRejectReason expected) {
     return narrowphase_batch_reject_reason(pairs, bodies, shapes) == expected;
+    return typeA == CollisionShapeType::Capsule && typeB == CollisionShapeType::Capsule;
+}
+
+bool is_box_capsule_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes) {
+    const u32 shapeA = findShapeForBody(shapes, pair.bodyA, CollisionShapeType::Sphere);
+    const u32 shapeB = findShapeForBody(shapes, pair.bodyB, CollisionShapeType::Sphere);
+    if (shapeA >= shapes.count() || shapeB >= shapes.count()) {
+        return false;
+
+    const CollisionShapeType typeA = shapeType(shapes, shapeA);
+    const CollisionShapeType typeB = shapeType(shapes, shapeB);
+    return (typeA == CollisionShapeType::Box && typeB == CollisionShapeType::Capsule) ||
+           (typeA == CollisionShapeType::Capsule && typeB == CollisionShapeType::Box);
 }
 
 NarrowphaseBatchPreflight preflight_narrowphase_batch(
@@ -2464,6 +2480,29 @@ bool generate_contact_manifold_with_deepen_preflight(ContactManifold& manifold) 
         return false;
     }
     return finalize_contact_manifold_with_preflight(manifold);
+}
+
+ContactPairRejectReason contact_pair_union_reject_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    const ContactPairRejectReason baseReason = contact_pair_reject_reason(pair, bodies, shapes);
+    if (baseReason != ContactPairRejectReason::None) {
+        return baseReason;
+    }
+    return contact_pair_deepen_reject_reason(pair, bodies, shapes);
+}
+
+ContactPairUnionPreflight preflight_contact_pair_union(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    ContactPairUnionPreflight preflight{};
+    preflight.baseReason = contact_pair_reject_reason(pair, bodies, shapes);
+    preflight.deepenReason = contact_pair_deepen_reject_reason(pair, bodies, shapes);
+    preflight.reason = contact_pair_union_reject_reason(pair, bodies, shapes);
+    preflight.rejected = preflight.reason != ContactPairRejectReason::None;
+    return preflight;
 }
 
 } // namespace fuse::physics::narrowphase
