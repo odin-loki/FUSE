@@ -1703,3 +1703,8 @@ bool FroxelGridLayout::canPreflightTileCoords(u32 tileX, u32 tileY, u32 sliceZ, 
 // --- deepen additive from deepen-froxel-b511-guards-e86c ---
     if (!tryCanLookupAtIndex(grid, desc, FroxelGridLayout::froxelIndexClamped(tileX, tileY, sliceZ, desc),
         if (lookupReason == DensityLookupRejectReason::EmptyGrid) {
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-425b ---
+    case DensityLookupRejectReason::CoordOutOfRange:
+    if (!tryCanLookupAtIndex(grid, desc, FroxelGridLayout::froxelIndexClamped(tileX, tileY, sliceZ, desc), outReason)) {
+        outReason = DensityLookupRejectReason::CoordOutOfRange;

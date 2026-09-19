@@ -2391,3 +2391,18 @@ void testFroxelCoordLookupAndGuardDiagnostics() {
                "tryWriteDensityAtCoord with reason rejects empty storage");
     expectTrue(fuse::renderer::froxel_util::tryWriteDensityAtIndex(grid, desc, 5u, 4.5f, lookupReason),
                "trySampleDensityAtScreen with reason rejects empty froxel desc");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-425b ---
+void testFroxelCoordLookupScreenSampleAndPopulateReasonGuards() {
+    expectTrue(lookupReason == fuse::renderer::DensityLookupRejectReason::CoordOutOfRange,
+    expectTrue(std::strcmp(fuse::renderer::densityLookupRejectReasonLabel(lookupReason), "coord_out_of_range") == 0,
+               "trySampleDensityAtIndex with reason succeeds at origin");
+               "trySampleDensityAtIndex with reason succeeds for clampable OOB index");
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtIndex(grid, desc, 5u, writtenIndex),
+               "written index readable after tryWrite with reason");
+    expectNear(writtenIndex, 3.25f, 1e-5f, "tryWriteDensityAtIndex with reason persists density");
+               "trySampleDensityAtCoord with reason succeeds at origin");
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtCoord(grid, desc, 99u, 99u, 99u, coordSample, lookupReason),
+               "trySampleDensityAtCoord with reason succeeds for clampable OOB coords");
+    expectNear(coordSample, 2.f, 1e-5f, "trySampleDensityAtCoord with reason clamps OOB coords");
+    expectTrue(populated.matchesDesc(desc), "tryPopulate with reason allocates matching grid");
