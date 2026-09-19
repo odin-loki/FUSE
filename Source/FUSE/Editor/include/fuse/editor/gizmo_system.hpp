@@ -2557,8 +2557,7 @@ enum class GizmoSnapDragRejectReason : u8 {
 
 
 
-    InvalidActiveAxis,
-    NonFiniteHit,
+
 
 };
 
