@@ -4713,3 +4713,7 @@ void testTaaPassTryClassifyGuardWrappers() {
                "pass tryPreflightJitterSync succeeds after init");
     expectTrue(fuse::renderer::tryPreflightTaaJitterSync(3u, pass->jitter().sequenceLength(), jitterReject),
                "free tryPreflightJitterSync matches pass sequence length");
+
+// --- deepen additive from deepen-taa-pass-guards-4405 ---
+    expectNear(weights.current, 0.3f, 1e-5f, "pass tryCompute steady current weight after warmup");
+    expectNear(weights.history, 0.7f, 1e-5f, "pass tryCompute steady history weight after warmup");
