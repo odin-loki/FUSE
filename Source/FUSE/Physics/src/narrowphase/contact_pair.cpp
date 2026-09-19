@@ -905,3 +905,13 @@ NarrowphaseDispatchRejectReason narrowphase_dispatch_reject_reason(
 ContactPairDispatchPreflight preflight_detect_contacts_pair(
 bool should_skip_detect_contacts_pair(
     if (should_skip_detect_contacts_pair(pair, bodies, shapes, useDeepenReject)) {
+
+// --- deepen additive from deepen-narrowphase-guards-f8e8 ---
+    case ContactPairRejectReason::BothNoGravity:
+    case ContactPairRejectReason::BothCcd:
+        return ContactPairRejectReason::BothNoGravity;
+        return ContactPairRejectReason::BothCcd;
+NarrowphaseBatchDeepenPreflight preflight_narrowphase_batch_deepen(
+    NarrowphaseBatchDeepenPreflight preflight{};
+        if (deepenReason == ContactPairRejectReason::BothNoGravity) {
+        } else if (deepenReason == ContactPairRejectReason::BothCcd) {

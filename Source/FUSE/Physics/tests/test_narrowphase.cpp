@@ -3190,3 +3190,14 @@ void testManifoldNormalizeAndChainFinalizeGuards() {
 void testFrictionBasisComputeWithPreflightGuards() {
     testContactBufferWriteCompactPreflightGuards();
     testFrictionBasisComputeWithPreflightGuards();
+
+// --- deepen additive from deepen-narrowphase-guards-f8e8 ---
+void testContactPairDeepenPassB46Guards() {
+            fuse::physics::narrowphase::ContactPairRejectReason::BothNoGravity,
+            fuse::physics::narrowphase::ContactPairRejectReason::BothCcd,
+    expectTrue(deepenPreflight.base.dispatchableCount == 1u, "batch deepen preflight counts dispatchable pairs");
+    expectTrue(deepenPreflight.noGravityRejectedCount == 1u, "batch deepen preflight counts no-gravity rejects");
+                fuse::physics::narrowphase::ContactPairRejectReason::BothNoGravity),
+                fuse::physics::narrowphase::ContactPairRejectReason::BothCcd),
+void testManifoldPruneFinalizeB46Guards() {
+void testFrictionBasisB46Guards() {

@@ -408,3 +408,8 @@ NarrowphaseDispatchRejectReason narrowphase_dispatch_reject_reason(
 // --- deepen additive from b4-narrowphase-deepen-guards-01df ---
 ContactPairDispatchPreflight preflight_detect_contacts_pair(
 bool should_skip_detect_contacts_pair(
+
+// --- deepen additive from deepen-narrowphase-guards-f8e8 ---
+struct NarrowphaseBatchDeepenPreflight {
+    NarrowphaseBatchPreflight base{};
+NarrowphaseBatchDeepenPreflight preflight_narrowphase_batch_deepen(
