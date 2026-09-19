@@ -83,6 +83,8 @@ bool TaaPass::syncJitterToFrameIndexIfReady(u32 frameIndex) {
 
 bool TaaPass::jitterAlignedToFrameIndex(u32 frameIndex) const {
     return m_jitter.isAlignedToFrameIndex(frameIndex);
+bool TaaPass::isJitterSyncedTo(u32 frameIndex) const {
+    return m_jitter.isSyncedToFrameIndex(frameIndex);
 }
 
 void TaaPass::invalidateHistory() {
@@ -112,6 +114,16 @@ bool TaaPass::matchesDimensions(u32 width, u32 height) const {
 
 u32 TaaPass::warmupFramesRemaining() const {
     return m_history.warmupFramesRemaining();
+bool TaaPass::isWarmupResolveFrame() const {
+    return m_history.isWarmupFrame();
+}
+
+bool TaaPass::preflightHistoryReuse(u32 observedGeneration) const {
+    return m_history.preflightReuse(observedGeneration);
+
+bool TaaPass::preflightResolveBlend(const TaaResolveDesc& desc,
+                                    TaaResolveBlendPreflightRejectReason* reason) const {
+    return preflightTaaResolveBlend(desc, m_history, reason);
 }
 
 bool TaaPass::canReuseHistory() const {

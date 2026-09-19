@@ -57,6 +57,9 @@ public:
     /// Pass jitter monotonic frame counter (B5.9 deepen).
     u32 jitterMonotonicFrameIndex() const { return m_jitter.monotonicFrameIndex(); }
     /// True when pass jitter monotonic counter matches `frameIndex` (B5.9 deepen).
+    /// Align jitter only when sync preflight passes; returns false when blocked (B5.9 deepen).
+    /// True when pass jitter matches the expected slot for `frameIndex` (B5.9 deepen).
+    bool isJitterSyncedTo(u32 frameIndex) const;
     void invalidateHistory();
     void resize(u32 width, u32 height);
     bool matchesDimensions(u32 width, u32 height) const;
@@ -69,6 +72,13 @@ public:
     bool historyWarmupRequired() const;
     /// True when pass history is warmed after init (B5.9 deepen).
     bool historyWarmupComplete() const;
+    /// True when the next resolve would be the warm-up frame (B5.9 deepen).
+    bool isWarmupResolveFrame() const;
+    /// True when temporal history reuse is allowed for the observed invalidate epoch (B5.9 deepen).
+    bool preflightHistoryReuse(u32 observedGeneration) const;
+    /// Preflight resolve blend weights; false when history is not ready or weights violate reuse policy (B5.9 deepen).
+    bool preflightResolveBlend(const TaaResolveDesc& desc,
+                               TaaResolveBlendPreflightRejectReason* reason = nullptr) const;
     /// True when pass history is warmed and may be sampled (B5.9 deepen).
     bool canReuseHistory() const;
     /// True when pass history is ready, warmed, and generation matches for reuse (B5.9 deepen).

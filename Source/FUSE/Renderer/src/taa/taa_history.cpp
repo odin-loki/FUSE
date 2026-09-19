@@ -136,6 +136,12 @@ bool taaHistoryReusePreflight(const TaaHistoryBuffer& history, u32 observedGener
     const TaaHistoryReuseRejectReason reject = classifyTaaHistoryReuseReject(history, observedGeneration);
         *reason = reject;
     return reject == TaaHistoryReuseRejectReason::None;
+bool taaHistoryIsWarmupFrame(const TaaHistoryBuffer& history) {
+    return history.isReady() && !history.hasValidHistory();
+}
+
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history) {
+
 }
 
 bool TaaHistoryBuffer::canReuseHistory() const {
@@ -182,6 +188,11 @@ bool TaaHistoryBuffer::temporalReuseAllowed(u32 observedGeneration) const {
 
 bool TaaHistoryBuffer::warmupComplete() const {
     return taaHistoryWarmupComplete(*this);
+bool TaaHistoryBuffer::isWarmupFrame() const {
+    return taaHistoryIsWarmupFrame(*this);
+
+bool TaaHistoryBuffer::preflightReuse(u32 observedGeneration) const {
+    return preflightTaaHistoryReuse(*this, observedGeneration);
 }
 
 bool TaaHistoryBuffer::init(ResourceManager& resources, const TaaHistoryBufferDesc& desc) {

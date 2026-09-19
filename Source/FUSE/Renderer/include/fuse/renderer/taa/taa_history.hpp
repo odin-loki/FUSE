@@ -30,6 +30,10 @@ public:
     bool temporalReuseAllowed(u32 observedGeneration) const;
     /// True when ping-pong targets are allocated and the first resolve has completed (B5.9 deepen).
     bool warmupComplete() const;
+    /// True when the next resolve would be the warm-up frame (B5.9 deepen).
+    bool isWarmupFrame() const;
+    /// True when temporal history reuse is allowed for the observed invalidate epoch (B5.9 deepen).
+    bool preflightReuse(u32 observedGeneration) const;
     /// True until the first successful resolve warms the ping-pong targets.
     bool needsWarmup() const { return !m_validity.hasValidHistory; }
     /// Frames remaining before temporal reuse is allowed — 0 when warmed (B5.9 deepen).
