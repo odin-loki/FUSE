@@ -174,3 +174,8 @@ bool populateAndPreflightDDGIKernelParams(DDGIKernelParams& params,
 // --- deepen additive from deepen-ddgi-guards-51fd ---
 bool tryPreflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
 bool tryPreflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
+
+// --- deepen additive from deepen-ddgi-b56-guards-132c ---
+ProbeKernelRejectReason classifyProbeKernelRejectForDesc(const DDGIDesc& desc, const DDGIKernelParams& params);
+bool preflightProbeKernelLaunchForDesc(const DDGIDesc& desc,
+bool wouldSkipProbeKernelLaunchForDesc(const DDGIDesc& desc, const DDGIKernelParams& params);

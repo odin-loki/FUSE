@@ -3984,3 +3984,41 @@ void testProbeGridRejectReasons() {
     expectTrue(!fuse::renderer::ddgi_util::preflightProbeTrilinearSample(desc, coords, cache.data(), 4u),
                "classifyProbeScheduleAtRateReject none for valid rate");
     testProbeGridRejectReasons();
+
+// --- deepen additive from deepen-ddgi-b56-guards-132c ---
+void testProbeGridSourceGuards() {
+               "preflightProbeGridSource succeeds for valid init desc");
+               "wouldSkip false for valid init desc");
+               "classifyProbeGridSourceReject empty_grid for init");
+                   fuse::renderer::ProbeGridSourceRejectReason::ZeroIrradianceRes,
+               "classifyProbeGridSourceReject zero_irradiance_res for init");
+                               fuse::renderer::ProbeGridSourceRejectReason::ZeroIrradianceRes),
+                   fuse::renderer::ProbeGridSourceRejectReason::ZeroDepthRes,
+               "classifyProbeGridSourceReject zero_depth_res for init");
+                   fuse::renderer::ProbeGridSourceRejectReason::InvalidSpacing,
+               "classifyProbeGridSourceReject invalid_spacing for sample");
+                               fuse::renderer::ProbeGridSourceRejectReason::InvalidSpacing),
+                   fuse::renderer::ProbeGridSourceRejectReason::ZeroRaysPerProbe,
+               "classifyProbeGridSourceReject zero_rays_per_probe for update");
+                               fuse::renderer::ProbeGridSourceRejectReason::ZeroRaysPerProbe),
+                   fuse::renderer::ProbeGridSourceRejectReason::ZeroProbesPerFrame,
+               "classifyProbeGridSourceReject zero_probes_per_frame for update");
+void testTrilinearSamplePreflightDeepen() {
+    expectTrue(fuse::renderer::ddgi_util::classifyTrilinearSampleReject(desc, coords, cache.data(), 8u) ==
+               "classifyTrilinearSampleReject none for valid sample");
+    expectTrue(!fuse::renderer::ddgi_util::preflightTrilinearProbeSample(desc, coords, nullptr, 8u, &reason),
+void testKernelDescPreflightDeepen() {
+    expectTrue(fuse::renderer::gi::classifyProbeKernelRejectForDesc(desc, kernelParams) ==
+               "classifyProbeKernelRejectForDesc none for valid desc+params");
+    expectTrue(fuse::renderer::gi::preflightProbeKernelLaunchForDesc(desc, kernelParams),
+               "preflightProbeKernelLaunchForDesc succeeds for valid desc+params");
+    expectTrue(!fuse::renderer::gi::wouldSkipProbeKernelLaunchForDesc(desc, kernelParams),
+               "wouldSkipProbeKernelLaunchForDesc false for valid desc+params");
+    expectTrue(fuse::renderer::gi::classifyProbeKernelRejectForDesc(empty, kernelParams) ==
+               "classifyProbeKernelRejectForDesc empty_grid for empty desc");
+    expectTrue(fuse::renderer::gi::wouldSkipProbeKernelLaunchForDesc(empty, kernelParams),
+               "wouldSkipProbeKernelLaunchForDesc true for empty desc");
+    expectTrue(fuse::renderer::gi::classifyProbeKernelRejectForDesc(desc, zeroRays) ==
+               "classifyProbeKernelRejectForDesc zero_rays_per_probe after empty-grid check");
+    testTrilinearSamplePreflightDeepen();
+    testKernelDescPreflightDeepen();

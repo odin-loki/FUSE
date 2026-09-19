@@ -2965,3 +2965,32 @@ bool ProbeGridLayout::wouldSkipProbeCoord(const DDGIDesc& desc, const ProbeGridC
         outReason = ProbeGridRejectReason::InvalidCoord;
 bool ProbeGridLayout::wouldSkipProbeCoordLookup(const DDGIDesc& desc, const ProbeGridCoord& coord) {
 bool ProbeGridLayout::wouldSkipProbeIndexLookup(const DDGIDesc& desc, u32 probe_index) {
+
+// --- deepen additive from deepen-ddgi-b56-guards-132c ---
+    case ProbeGridSourceRejectReason::ZeroIrradianceRes:
+    case ProbeGridSourceRejectReason::ZeroDepthRes:
+    case ProbeGridSourceRejectReason::InvalidSpacing:
+    case ProbeGridSourceRejectReason::ZeroRaysPerProbe:
+    case ProbeGridSourceRejectReason::ZeroProbesPerFrame:
+bool tryValidateProbeGridSourceInit(const DDGIDesc& desc, ProbeGridSourceRejectReason& outReason) {
+        outReason = ProbeGridSourceRejectReason::ZeroIrradianceRes;
+        outReason = ProbeGridSourceRejectReason::ZeroDepthRes;
+        return tryValidateProbeGridSourceInit(desc, outReason);
+            outReason = ProbeGridSourceRejectReason::InvalidSpacing;
+        if (!tryValidateProbeGridSourceInit(desc, outReason)) {
+            outReason = ProbeGridSourceRejectReason::ZeroRaysPerProbe;
+            outReason = ProbeGridSourceRejectReason::ZeroProbesPerFrame;
+ProbeGridSourceRejectReason classifyProbeGridSourceReject(const DDGIDesc& desc, ProbeGridSourceKind kind) {
+    tryValidateProbeGridSource(desc, kind, reason);
+    const ProbeGridSourceRejectReason reject = classifyProbeGridSourceReject(desc, kind);
+bool wouldSkipProbeGridSource(const DDGIDesc& desc, ProbeGridSourceKind kind) {
+    return !preflightProbeGridSource(desc, kind);
+    return tryValidateProbeGridSource(desc, ProbeGridSourceKind::Sample, reason);
+ProbeTrilinearSampleRejectReason classifyTrilinearSampleReject(const DDGIDesc& desc,
+        classifyTrilinearSampleReject(desc, coords, cache, cache_count);
+ProbeKernelRejectReason classifyProbeKernelRejectForDesc(const DDGIDesc& desc, const DDGIKernelParams& params) {
+        return ProbeKernelRejectReason::EmptyGrid;
+bool preflightProbeKernelLaunchForDesc(const DDGIDesc& desc,
+    const ProbeKernelRejectReason reject = classifyProbeKernelRejectForDesc(desc, params);
+bool wouldSkipProbeKernelLaunchForDesc(const DDGIDesc& desc, const DDGIKernelParams& params) {
+    return !preflightProbeKernelLaunchForDesc(desc, params);

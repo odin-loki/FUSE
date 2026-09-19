@@ -965,3 +965,8 @@ bool wouldSkipProbeLookup(const DDGIDesc& desc, const IrradianceCacheEntry* cach
 // --- deepen additive from deepen-ddgi-guards-5451 ---
     static bool wouldSkipProbeCoordLookup(const DDGIDesc& desc, const ProbeGridCoord& coord);
     static bool wouldSkipProbeIndexLookup(const DDGIDesc& desc, u32 probe_index);
+
+// --- deepen additive from deepen-ddgi-b56-guards-132c ---
+ProbeGridSourceRejectReason classifyProbeGridSourceReject(const DDGIDesc& desc, ProbeGridSourceKind kind);
+bool wouldSkipProbeGridSource(const DDGIDesc& desc, ProbeGridSourceKind kind);
+ProbeTrilinearSampleRejectReason classifyTrilinearSampleReject(const DDGIDesc& desc,
