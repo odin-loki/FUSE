@@ -821,6 +821,16 @@ struct ProbeGridLayout {
     /// Early-out when grid-only sample-coord preflight would reject (B5.6 deepen pass).
     static bool shouldSkipProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     static bool wouldSkipSampleCoordPreflight(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// Last valid flat probe index; returns 0 when the grid is empty.
+    static u32 lastProbeIndex(const DDGIDesc& desc);
+    /// True when probe-grid coordinates exceed grid bounds (would be clamped).
+    static bool isProbeCoordOutOfRange(const DDGIDesc& desc, const ProbeGridCoord& coord);
+    /// Clamp probe-grid coordinates in place; returns false without modifying `outCoord` on an empty grid.
+    static bool tryClampProbeGridCoord(const DDGIDesc& desc,
+                                       const ProbeGridCoord& coord,
+                                       ProbeGridCoord& outCoord);
+    /// Early-out when probe-grid coordinate preflight would reject the coord.
+    static bool wouldSkipProbeCoordPreflight(const DDGIDesc& desc, const ProbeGridCoord& coord);
     /// Classify sample-coord rejection — same ordering as `tryValidateProbeSampleCoords`.
     static ProbeSampleCoordsRejectReason classifyProbeSampleCoordsReject(const DDGIDesc& desc,
                                                                          const ProbeSampleCoords& coords);
@@ -1327,6 +1337,7 @@ bool cacheIndexLookupReady(const DDGIDesc& desc,
 /// True when all eight trilinear corner probe indices pass cache-index preflight.
 bool areTrilinearCornerCacheIndicesValid(const DDGIDesc& desc,
                                          const ProbeSampleCoords& coords,
+/// Non-mutating cache-index preflight without cache pointer — returns true when lookup would proceed.
 /// True when `probe_index` exceeds the valid probe range on a non-empty grid.
 bool wouldClampProbeIndexForLookup(u32 probe_index, const DDGIDesc& desc);
 /// Minimum irradiance cache entries required for full-grid sampling; 0 on empty grid.
@@ -1717,6 +1728,9 @@ bool tryScheduleProbeUpdatesAtRate(u32 frame_index,
                                    ProbeScheduleRejectReason& outReason);
 /// Rate-aware schedule preflight with mandatory reject-reason output (B5.6 deepen pass).
 bool tryPreflightProbeScheduleAtRate(u32 probe_count,
+                                  u32 probes_per_frame,
+                                  u32 max_indices,
+                                  const u32* out_indices,
 /// True when output capacity would cap scheduled probes below `probes_per_frame`.
 bool wouldClampScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
 /// Early-out when probe scheduling would be rejected — same ordering as `tryScheduleProbeUpdates`.
@@ -1797,6 +1811,10 @@ bool wouldSkipTrilinearProbeSample(const DDGIDesc& desc,
 /// Classify why trilinear probe sampling would reject at explicit sample coords.
 ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleRejectAtCoords(const DDGIDesc& desc,
 /// Non-mutating trilinear sample preflight at a world position.
+/// Classify why trilinear probe sample preflight would reject — same ordering as `tryCanSampleAtProbeCoords`.
+/// Non-mutating trilinear sample preflight at built sample coords — returns true when sampling would proceed.
+/// Non-mutating trilinear sample preflight from a world position — returns true when sampling would proceed.
+/// Early-out when trilinear probe sampling would be rejected — same ordering as `preflightTrilinearProbeSample`.
 /// Directional octahedral bilinear sample within one probe cache entry (CPU stub).
 fuse::math::Vec3 sampleDirectionalIrradianceAtProbe(const IrradianceCacheEntry& entry,
                                                   const fuse::math::Vec3& direction,
