@@ -356,6 +356,7 @@ bool eventNameEquals(const char* lhs, const char* rhs) {
 bool eventFlowIdMatches(const ProfileEvent& event, u32 flowId) {
     if (!isValidFlowId(flowId) || !isValidEventName(event.name)) {
 
+bool isAsyncFlowEventForId(const ProfileEvent& event, u32 flowId) {
         && event.scopeId == flowId;
 }
 
@@ -1669,6 +1670,7 @@ bool flowEventMatchesId(const ProfileEvent& event, u32 flowId) {
 bool eventNameMatches(const char* eventName, const char* queryName) {
     return isValidEventName(eventName) && isValidEventName(queryName)
         && std::strcmp(eventName, queryName) == 0;
+
 
 
 bool isValidProfileEvent(const ProfileEvent& event) {
@@ -2999,6 +3001,16 @@ bool tryFindFirstFlowEvent(u32 flowId, ProfileEvent& outEvent) {
 bool tryFindLastFlowEvent(u32 flowId, ProfileEvent& outEvent) {
 
 
+
+
+
+
+
+
+
+
+
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -3601,7 +3613,6 @@ bool tryLastFlowEventById(u32 flowId, ProfileEvent& outEvent) {
 
 
 
-        if (eventNameMatches(event.name, name)) {
 
 
 
@@ -3674,7 +3685,6 @@ bool tryFindLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
 
 
 
-        if (isAsyncFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
 
 
 
@@ -4233,15 +4243,25 @@ bool isFlowIdOpen(u32 flowId) {
             if (openStarts > 0u) {
                 --openStarts;
     return openStarts > 0u;
-    }
-
-
-    if (index == kInvalidEventIndex) {
-        outIndex = kInvalidEventIndex;
-        return false;
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        if (isAsyncFlowEventForId(event, flowId) && isValidEventName(event.name)) {
 
 
 
@@ -4986,6 +5006,12 @@ AsyncFlowPreflight preflightAsyncFlow() {
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
     preflight.flowDepthDetached = isFlowDepthDetached();
     preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
+
+NestingPreflight preflightNesting() {
+    NestingPreflight preflight{};
+
+
+
     return preflight;
 }
 
