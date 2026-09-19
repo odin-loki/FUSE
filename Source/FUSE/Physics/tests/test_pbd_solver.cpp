@@ -2545,6 +2545,191 @@ void testPreflightIslandSleepWakeGuards() {
     expectTrue(outOfRangeWake.skipped, "wake index preflight skips out-of-range island");
 }
 
+void testIslandGraphBuildRejectReasonGuards() {
+    std::vector<narrowphase::ContactManifold> contacts;
+    contacts.push_back(narrowphase::ContactManifold{});
+    contacts.back().valid = true;
+    contacts.back().bodyA = 0;
+    contacts.back().bodyB = 1;
+    contacts.push_back(narrowphase::ContactManifold{});
+    contacts.back().valid = true;
+    contacts.back().bodyA = 8;
+    contacts.back().bodyB = 9;
+
+    const std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+        DistanceConstraint{.bodyA = 4, .bodyB = 5, .restLength = 2.f},
+    };
+
+    expectTrue(island_graph_build_rejects_for_reason(4, contacts, constraints,
+                                                     IslandGraphBuildRejectReason::OutOfRangeContactBody),
+               "build reject reason flags out-of-range contact bodies");
+    expectTrue(island_graph_build_rejects_for_reason(0, {}, {},
+                                                     IslandGraphBuildRejectReason::EmptyInput),
+               "build reject reason flags empty inputs");
+
+    const IslandBuildPreflight preflight = preflight_island_build(4, contacts, constraints);
+    expectTrue(preflight.reason == IslandGraphBuildRejectReason::OutOfRangeContactBody,
+               "build preflight records out-of-range contact reject reason");
+
+    ContactIslandGraph graph;
+    expectTrue(!graph.build_guarded(4, contacts, constraints),
+               "ContactIslandGraph::build_guarded rejects unsafe refs");
+    expectTrue(graph.islandCount() == 0u, "build_guarded clears graph on reject");
+
+    std::vector<narrowphase::ContactManifold> safeContacts;
+    safeContacts.push_back(contacts[0]);
+    const std::vector<DistanceConstraint> safeConstraints = {constraints[0]};
+    expectTrue(graph.build_guarded(4, safeContacts, safeConstraints),
+               "ContactIslandGraph::build_guarded succeeds for in-range inputs");
+    expectTrue(graph.constrainedIslandCount() == 1u, "build_guarded forms constrained island");
+}
+
+void testIslandDispatchSolveRejectReasonGuards() {
+    ContactIslandGraph graph;
+    std::vector<narrowphase::ContactManifold> contacts;
+    std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+    };
+    graph.build(2, contacts, constraints);
+
+    const IslandSolvePreflight solvePreflight = preflight_island_solve(graph);
+    expectTrue(solvePreflight.reason == IslandSolveRejectReason::None,
+               "solve preflight reason is None for constrained graph");
+
+    const IslandDispatchPreflight validDispatch = preflight_island_dispatch(graph, 1.f / 60.f);
+    expectTrue(validDispatch.reason == IslandDispatchRejectReason::None,
+               "dispatch preflight reason is None with valid dt");
+    expectTrue(island_dispatch_rejects_for_reason(graph, 0.f, IslandDispatchRejectReason::InvalidDt),
+               "dispatch reject reason flags invalid dt");
+
+    ContactIslandGraph emptyGraph;
+    emptyGraph.build(0, {}, {});
+    const IslandSolvePreflight emptySolve = preflight_island_solve(emptyGraph);
+    expectTrue(emptySolve.reason == IslandSolveRejectReason::NoDispatchableIslands,
+               "solve preflight reason flags empty graph");
+
+    const IslandSolveJob job = extract_island(graph, 0);
+    const IslandSolveJobPreflight jobPreflight = preflight_solve_island_job(job, 1.f / 60.f);
+    expectTrue(jobPreflight.reason == IslandDispatchRejectReason::None,
+               "job preflight reason is None for dispatchable job");
+
+    const IslandSolveJob invalid{};
+    const IslandSolveJobPreflight invalidJobPreflight = preflight_solve_island_job(invalid, 1.f / 60.f);
+    expectTrue(invalidJobPreflight.reason == IslandDispatchRejectReason::OutOfRangeIsland,
+               "job preflight reason flags out-of-range island");
+}
+
+void testIslandSleepWakeRejectReasonGuards() {
+    ContactIslandGraph graph;
+    std::vector<narrowphase::ContactManifold> contacts;
+    std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+        DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f},
+    };
+    graph.build(4, contacts, constraints);
+
+    RigidBodySoA bodies;
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+    bodies.addBody({2.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
+    bodies.addBody({20.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
+    bodies.addBody({22.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
+
+    const u32 mixedIsland = graph.bodyIsland(0);
+    const u32 sleepingIsland = graph.bodyIsland(2);
+
+    const IslandSleepPreflight mixedSleep = preflight_island_sleep(graph.island(mixedIsland), bodies);
+    expectTrue(mixedSleep.reason == IslandSleepRejectReason::None,
+               "mixed island sleep preflight reason is None");
+
+    const IslandSleepPreflight allSleeping = preflight_island_sleep(graph.island(sleepingIsland), bodies);
+    expectTrue(allSleeping.reason == IslandSleepRejectReason::AllSleeping,
+               "all-sleeping island sleep preflight records AllSleeping reason");
+
+    const IslandWakePreflight mixedWake = preflight_island_wake(graph.island(mixedIsland), bodies);
+    expectTrue(mixedWake.reason == IslandWakeRejectReason::None,
+               "mixed island wake preflight reason is None");
+
+    const IslandWakePreflight sleepingWake = preflight_island_wake(graph.island(sleepingIsland), bodies);
+    expectTrue(sleepingWake.reason == IslandWakeRejectReason::NoWakeTarget,
+               "all-sleeping island wake preflight records NoWakeTarget reason");
+
+    const IslandSleepGraphPreflight sleepGraph = preflight_island_sleep_graph(graph, bodies);
+    expectTrue(sleepGraph.reason == IslandSleepRejectReason::None,
+               "sleep graph preflight reason is None when mixed island exists");
+
+    const IslandWakeGraphPreflight wakeGraph = preflight_island_wake_graph(graph, bodies);
+    expectTrue(wakeGraph.reason == IslandWakeRejectReason::None,
+               "wake graph preflight reason is None when wakeable island exists");
+
+    const IslandSleepPreflight outOfRangeSleep =
+        preflight_island_sleep_by_index(graph, graph.islandCount() + 1u, bodies);
+    expectTrue(outOfRangeSleep.reason == IslandSleepRejectReason::OutOfRangeIsland,
+               "sleep index preflight records OutOfRangeIsland reason");
+}
+
+void testPipelineDispatchGuardedHelpers() {
+    std::vector<narrowphase::ContactManifold> contacts;
+    std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+        DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f},
+    };
+
+    RigidBodySoA bodies;
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+    bodies.addBody({2.1f, 0.f, 0.f}, 1.f, 0);
+    bodies.addBody({20.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
+    bodies.addBody({22.1f, 0.f, 0.f}, 1.f, 0);
+    bodies.predictedPositions = bodies.positions;
+
+    ContactIslandGraph graph;
+    graph.build(4, contacts, constraints);
+
+    SolverWorkBuffers work;
+    work.init(4, 0, 2);
+    const auto invMassFn = [](const RigidBodySoA&, u32) { return 1.f; };
+    const f32 dt = 1.f / 60.f;
+
+    const IslandPipelineDispatchPreflight pipelinePreflight =
+        preflight_pipeline_island_dispatch(4, graph, bodies, contacts, constraints, dt);
+    expectTrue(pipelinePreflight.can_build(), "pipeline preflight can build in-range graph");
+    expectTrue(pipelinePreflight.can_wake(), "pipeline preflight can wake mixed island");
+    expectTrue(pipelinePreflight.can_dispatch(), "pipeline preflight can dispatch constrained graph");
+
+    ContactIslandGraph rebuilt;
+    expectTrue(pipeline_build_islands_guarded(rebuilt, 4, contacts, constraints),
+               "pipeline_build_islands_guarded succeeds for valid inputs");
+    expectTrue(rebuilt.constrainedIslandCount() == 2u,
+               "pipeline build forms both constrained islands");
+
+    const u32 wokeCount = pipeline_wake_islands_guarded(bodies, graph);
+    expectTrue(wokeCount == 1u, "pipeline wake activates one mixed island");
+
+    const u32 solvedCount = pipeline_dispatch_islands_guarded(bodies,
+                                                              graph,
+                                                              work,
+                                                              constraints,
+                                                              dt,
+                                                              0.f,
+                                                              invMassFn);
+    expectTrue(solvedCount == graph.constrainedIslandCount(),
+               "pipeline dispatch solves all constrained islands");
+
+    ContactIslandGraph freshGraph;
+    const u32 pipelineSolved = pipeline_build_wake_and_dispatch_islands_guarded(bodies,
+                                                                                freshGraph,
+                                                                                work,
+                                                                                4,
+                                                                                contacts,
+                                                                                constraints,
+                                                                                dt,
+                                                                                0.f,
+                                                                                invMassFn);
+    expectTrue(pipelineSolved == 2u, "full pipeline build-wake-dispatch solves constrained islands");
+    expectTrue(!pipeline_build_islands_guarded(freshGraph, 0, {}, {}),
+               "pipeline build rejects empty inputs");
+}
+
 void testBodyFlagHelpers() {
     expectTrue(is_body_sleeping(RB_SLEEPING), "is_body_sleeping detects sleeping flag");
     expectTrue(!is_body_sleeping(0u), "is_body_sleeping false for awake body");
@@ -2668,6 +2853,10 @@ int main() {
     testPreflightIslandBuildGuards();
     testPreflightIslandSolveBodiesGuards();
     testPreflightIslandSleepWakeGuards();
+    testIslandGraphBuildRejectReasonGuards();
+    testIslandDispatchSolveRejectReasonGuards();
+    testIslandSleepWakeRejectReasonGuards();
+    testPipelineDispatchGuardedHelpers();
     testBodyFlagHelpers();
     testEarlyExitWhenResidualBelowTolerance();
     fuse::core::shutdown();
