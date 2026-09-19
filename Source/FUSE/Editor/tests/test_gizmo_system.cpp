@@ -2979,3 +2979,29 @@ void testTryBeginDragRejectsWhileDragging() {
     expectTrue(gizmo.tryUpdateDrag(hit, result), "tryUpdateDrag accepts active drag");
     expectTrue(result.axis == fuse::editor::GizmoAxis::X, "tryUpdateDrag preserves active axis");
     expectTrue(result.transform.posX != 1.f, "tryUpdateDrag applies drag delta");
+
+// --- deepen additive from deepen-b6-gizmo-pick-snap-preflight-1066 ---
+    expectTrue(!fuse::editor::trySnapValue(1.37f, fuse::editor::GizmoMode::Translate, snap, out),
+               "trySnapValue rejects disabled snap");
+    expectNear(out, 1.37f, 0.001f, "trySnapValue leaves value unchanged on reject");
+               "trySnapValue rejects invalid step");
+    expectNear(out, 1.37f, 0.001f, "trySnapValue leaves value unchanged on invalid step");
+    expectTrue(fuse::editor::trySnapValue(1.37f, fuse::editor::GizmoMode::Translate, snap, out),
+               "trySnapValue applies when snap is valid");
+    expectNear(out, 1.5f, 0.001f, "trySnapValue snaps scalar value");
+void testUpdateDragPreflightDeepen() {
+    const fuse::editor::UpdateDragPreflight noAxisPreflight = fuse::editor::preflightUpdateDrag(
+    expectTrue(noAxisPreflight.noActiveAxis, "update preflight marks missing active axis");
+    const fuse::editor::UpdateDragPreflight screenMissPreflight = gizmo.preflightUpdateDrag(deadZone);
+    expectTrue(screenMissPreflight.screenMiss, "update preflight marks translate dead zone");
+    expectTrue(!screenMissPreflight.canUpdate(), "update preflight rejects translate dead zone");
+    expectTrue(!gizmo.tryUpdateDrag(deadZone, updateResult),
+               "tryUpdateDrag rejects translate dead zone");
+    expectTrue(!updateResult.changed, "dead-zone tryUpdateDrag leaves result unchanged");
+    expectTrue(gizmo.isDragging(), "dead-zone tryUpdateDrag keeps drag active");
+    expectTrue(gizmo.tryUpdateDrag(hit, updateResult), "tryUpdateDrag accepts valid drag hit");
+void testEndDragPreflightAndCancelDrag() {
+    const fuse::editor::EndDragPreflight inactivePreflight = fuse::editor::preflightEndDrag(false);
+    expectTrue(gizmo.preflightEndDrag().canEnd(), "end preflight accepts active drag");
+    testUpdateDragPreflightDeepen();
+    testEndDragPreflightAndCancelDrag();
