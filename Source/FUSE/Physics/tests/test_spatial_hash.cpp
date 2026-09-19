@@ -3868,3 +3868,26 @@ void testMergePairsIntoBufferInsufficientCapacityPreflight() {
     testRefineDedupePreflightPairCountGuards();
     testBroadphaseMergePreflightBodyCountGuards();
     testMergePairsIntoBufferInsufficientCapacityPreflight();
+
+// --- deepen additive from deepen-b4-broadphase-guards-103f ---
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferWriteSlotRejectReason::UnpreparedBuffer),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferInvalidateSlotRejectReason(buffer, 0u)),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferInvalidateSlotRejectReason(buffer, 2u)),
+    expectTrue(validPreflight.canInvalidate(), "invalidate-slot preflight accepts valid slot");
+void testCellOccupancyPreflightRemainingBudgetGuards() {
+        fuse::physics::broadphase::preflightCellOccupancy(validRange, 10u);
+    expectEq(planePreflight.remainingBudget, 2u, "2D preflight reports remaining budget");
+void testRefineAndDedupePreflightCountGuards() {
+    expectEq(dedupePreflight.activePairCount, 2u, "dedupe preflight reports active pair count");
+void testMergePairsIntoBufferCapacityPreflightGuards() {
+    const fuse::physics::broadphase::MergePairsIntoBufferPreflight openPreflight =
+    expectEq(openPreflight.incomingPairCount, 2u, "merge preflight reports incoming pair count");
+    expectTrue(openPreflight.remainingCapacity > 0u, "unlimited buffer reports remaining capacity");
+    expectTrue(openPreflight.canMerge(), "merge preflight accepts pairs into open buffer");
+    expectEq(fullPreflight.remainingCapacity, 0u, "full buffer merge preflight reports zero remaining capacity");
+    expectTrue(fullPreflight.bufferFull, "full buffer merge preflight marks buffer full");
+    expectEq(partialPreflight.remainingCapacity, 2u, "partial-capacity merge preflight reports remaining slots");
+    expectTrue(partialPreflight.canMerge(), "merge preflight accepts when capacity fits incoming pairs");
+    testCellOccupancyPreflightRemainingBudgetGuards();
+    testRefineAndDedupePreflightCountGuards();
+    testMergePairsIntoBufferCapacityPreflightGuards();
