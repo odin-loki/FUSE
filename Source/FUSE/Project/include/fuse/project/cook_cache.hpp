@@ -155,6 +155,8 @@ struct CookCacheInvalidationSurface {
 
 
     [[nodiscard]] bool would_prune() const { return total() != 0; }
+    /// True when `prune_*` would remove at least one entry (B7.9 deepen).
+    /// True when prune reconcile can be skipped — mirrors `!would_prune()` (B7.9 deepen).
 };
 
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
@@ -418,6 +420,10 @@ const char* cookCacheRejectReasonLabel(CookCacheRejectReason reason);
 /// True when `lookup` would miss without recording stats — zero key or empty cache (B7.9 deepen).
 [[nodiscard]] inline bool should_skip_cache_lookup_key(u64 content_hash) {
     return !is_valid_cook_cache_key(content_hash);
+/// Read-only store guard — mirrors `CookCache::store` rejection without mutating stats (B7.9 deepen).
+[[nodiscard]] inline bool should_skip_cook_cache_store(const CookCacheEntry& entry) {
+
+/// Read-only hash preflight for cache records — mirrors `is_valid_cook_cache_entry` (B7.9 deepen).
 
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
@@ -497,6 +503,8 @@ public:
     [[nodiscard]] bool would_invalidate_all() const;
     /// True when `lookup` would miss for a valid key — does not touch hit/miss stats (B7.9 deepen).
     [[nodiscard]] bool should_skip_cache_lookup(u64 content_hash) const;
+    /// True when `prune_all` can be skipped — mirrors `!would_prune_all()` (B7.9 deepen).
+    [[nodiscard]] bool should_skip_prune_all() const;
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,
