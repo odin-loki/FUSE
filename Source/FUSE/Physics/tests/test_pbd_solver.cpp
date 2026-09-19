@@ -3006,3 +3006,17 @@ void testIslandIndexDispatchableGuard() {
     expectTrue(should_skip_frame_warm_start(graph, {}, {}),
                "should_skip_frame_warm_start when no prior data");
 void testWarmStartAllIslandsGuarded() {
+
+// --- deepen additive from deepen-b4-pbd-island-preflight-warmstart-8200 ---
+    const IslandWarmStartGraphPreflight emptyPreflight =
+    expectTrue(emptyPreflight.skipped, "graph warm-start preflight skips empty graph");
+    expectTrue(!emptyPreflight.can_warm_start(), "empty graph cannot warm-start");
+    expectTrue(should_skip_warm_start_graph(emptyGraph, priorDistance, priorContact),
+               "should_skip_warm_start_graph on empty graph");
+    const IslandWarmStartGraphPreflight lonePreflight =
+    expectTrue(lonePreflight.skipped, "graph warm-start preflight skips lone bodies");
+    expectTrue(lonePreflight.stats.emptyCount == loneBodies.islandCount(),
+               "should_skip false when warm-startable islands exist");
+        const IslandWarmStartPreflight islandPreflight =
+        expectTrue(islandPreflight.can_warm_start(), "collected index passes island preflight");
+void testWarmStartIslandByIndexGuarded() {

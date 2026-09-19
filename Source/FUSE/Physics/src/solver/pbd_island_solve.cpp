@@ -1921,3 +1921,6 @@ bool should_skip_all_island_solves(const ContactIslandGraph& graph) {
 // --- deepen additive from deepen-b4-pbd-island-preflight-warmstart-4254 ---
 bool should_skip_frame_warm_start(const ContactIslandGraph& graph,
     if (should_skip_frame_warm_start(graph, priorDistanceLambdas, priorContactLambdas)) {
+
+// --- deepen additive from deepen-b4-pbd-island-preflight-warmstart-8200 ---
+    const IslandSolvePreflight preflight = preflight_island_solve(graph);
