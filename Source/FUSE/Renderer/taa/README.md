@@ -127,3 +127,10 @@ Part of `fuse_rhi`. Built with `FUSE_BUILD_CORE=ON`. Tests run when `FUSE_BUILD_
 - `tryPreflightTaaJitterNdc` / `shouldSkipTaaJitterNdc` / `taaJitterNdcReady` — NDC jitter preflight deepening
 - `TaaPass::preflightJitterNdc` / `shouldSkipJitterNdc` / `shouldSkipJitterSync` — pass-level jitter preflights
 - `TaaPass::preflightTemporalBlend` / `shouldSkipTemporalBlend` / `isHistoryWarmed` — pass temporal blend guards
+
+// --- deepen additive from deepen-b59-taa-guards-6172 ---
+- `tryPreflightTaaJitterNdc` — NDC jitter preflight with mandatory reject-reason output
+- `TaaTemporalGuardRejectReason` / `classifyTaaTemporalGuardReject` — combined history-reuse + blend-weight guard classification
+- `preflightTaaTemporalResolve` / `tryPreflightTaaTemporalResolve` / `shouldSkipTaaTemporalResolve` — chained temporal resolve preflight
+- `TaaPass::preflightTemporalResolve` / `shouldSkipTemporalResolve` — pass-level chained temporal resolve preflight
+- `TaaPass::preflightJitterNdc` / `shouldSkipJitterSync` / `shouldSkipJitterNdc` — pass-level jitter skip/preflight helpers

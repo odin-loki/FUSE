@@ -3695,3 +3695,25 @@ void testTaaPassWarmupAndJitterPreflights() {
     testHistoryWarmupPreflights();
     testResolveReuseAndBlendPreflights();
     testTaaPassWarmupAndJitterPreflights();
+
+// --- deepen additive from deepen-b59-taa-guards-6172 ---
+void testTemporalResolveGuardBundle() {
+    expectTrue(std::strcmp(fuse::renderer::taaTemporalGuardRejectReasonLabel(
+                               fuse::renderer::TaaTemporalGuardRejectReason::None),
+                               fuse::renderer::TaaTemporalGuardRejectReason::HistoryReuseBlocked),
+                               fuse::renderer::TaaTemporalGuardRejectReason::BlendWeightsRejected),
+    expectTrue(fuse::renderer::classifyTaaTemporalGuardReject(desc, emptyHistory) ==
+                   fuse::renderer::TaaTemporalGuardRejectReason::HistoryReuseBlocked,
+    fuse::renderer::TaaTemporalGuardRejectReason temporalReason =
+        fuse::renderer::TaaTemporalGuardRejectReason::None;
+    expectTrue(!fuse::renderer::preflightTaaTemporalResolve(desc, history, &temporalReason),
+    expectTrue(temporalReason == fuse::renderer::TaaTemporalGuardRejectReason::HistoryReuseBlocked,
+    expectTrue(!fuse::renderer::tryPreflightTaaTemporalResolve(desc, history, temporalReason),
+               "tryPreflightTaaTemporalResolve fails for unwarmed history");
+    expectTrue(fuse::renderer::preflightTaaTemporalResolve(desc, history, &temporalReason),
+    expectTrue(temporalReason == fuse::renderer::TaaTemporalGuardRejectReason::None,
+void testTaaPassTemporalAndJitterSkipGuards() {
+    expectTrue(pass->preflightJitterNdc(&jitterReject), "pass preflightJitterNdc passes before init");
+               "pass preflightJitterNdc reject reason is None");
+    expectTrue(!pass->preflightTemporalResolve(resolveDesc, &temporalReason),
+    expectTrue(pass->preflightTemporalResolve(resolveDesc, &temporalReason),

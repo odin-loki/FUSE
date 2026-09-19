@@ -547,3 +547,8 @@ bool TaaPass::preflightTemporalBlend(const TaaResolveDesc& desc, TaaHistoryReuse
 bool TaaPass::preflightResolveReuseAndBlend(const TaaResolveDesc& desc, u32 observedGeneration,
                                             TaaResolveReuseBlendRejectReason* reason) const {
     return preflightTaaResolveReuseAndBlend(desc, m_history, observedGeneration, reason);
+
+// --- deepen additive from deepen-b59-taa-guards-6172 ---
+bool TaaPass::preflightTemporalResolve(const TaaResolveDesc& desc,
+                                       TaaTemporalGuardRejectReason* reason) const {
+    return preflightTaaTemporalResolve(desc, m_history, reason);

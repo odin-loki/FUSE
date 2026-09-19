@@ -363,3 +363,12 @@ bool preflightTaaResolveReuseAndBlend(const TaaResolveDesc& desc, const TaaHisto
                                       u32 observedGeneration, TaaResolveReuseBlendRejectReason* reason = nullptr);
 bool tryPreflightTaaResolveReuseAndBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                         u32 observedGeneration, TaaResolveReuseBlendRejectReason& reason);
+
+// --- deepen additive from deepen-b59-taa-guards-6172 ---
+enum class TaaTemporalGuardRejectReason : u8 {
+const char* taaTemporalGuardRejectReasonLabel(TaaTemporalGuardRejectReason reason);
+TaaTemporalGuardRejectReason classifyTaaTemporalGuardReject(const TaaResolveDesc& desc,
+bool preflightTaaTemporalResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                 TaaTemporalGuardRejectReason* reason = nullptr);
+bool tryPreflightTaaTemporalResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                    TaaTemporalGuardRejectReason& reason);
