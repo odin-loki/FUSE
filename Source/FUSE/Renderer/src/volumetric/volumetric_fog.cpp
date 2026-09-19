@@ -2308,3 +2308,12 @@ bool preflightDensityLookupCoord(const FroxelDensityGrid& grid,
 
 // --- deepen additive from deepen-froxel-volumetrics-b511-c27f ---
     ScreenMappingRejectReason reject = classifyScreenMappingReject(screenX, screenY, viewDepth, desc, camera);
+
+// --- deepen additive from deepen-b511-classify-guards-05f2 ---
+    outReason = classifyFroxelSampleCoordsReject(coords, desc);
+    return sampleCoordRejectReasonIsBlocking(classifyFroxelSampleCoordsReject(coords, desc));
+SampleCoordRejectReason FroxelGridLayout::classifyFroxelSampleCoordsReject(const FroxelSampleCoords& coords,
+    const SampleCoordRejectReason reject = classifyFroxelSampleCoordsReject(coords, desc);
+    outReason = classifyDensityLookupAtCoordReject(grid, desc, tileX, tileY, sliceZ);
+        classifyDensityLookupAtCoordReject(grid, desc, tileX, tileY, sliceZ));
+        FroxelGridLayout::classifyFroxelSampleCoordsReject(coords, desc);

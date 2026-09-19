@@ -3685,3 +3685,20 @@ void testFroxelRejectClassifyAndPreflightGuards() {
 
 // --- deepen additive from deepen-froxel-volumetrics-b511-c27f ---
                "preflightScreenDepthToSampleCoords rejects empty grid");
+
+// --- deepen additive from deepen-b511-classify-guards-05f2 ---
+               "preflightDensityLookup reports empty_storage on rejection");
+    expectTrue(fuse::renderer::FroxelGridLayout::classifyFroxelSampleCoordsReject(inBounds, desc) ==
+               "classifyFroxelSampleCoordsReject none for in-bounds coords");
+    expectTrue(fuse::renderer::FroxelGridLayout::classifyFroxelSampleCoordsReject(warnWeights, desc) ==
+               "classifyFroxelSampleCoordsReject invalid_weights for clampable weights");
+    expectTrue(fuse::renderer::FroxelGridLayout::classifyFroxelSampleCoordsReject(hardOob, desc) ==
+               "classifyFroxelSampleCoordsReject out_of_bounds for hard OOB tile coord");
+    expectTrue(fuse::renderer::FroxelGridLayout::preflightFroxelSampleCoords(inBounds, desc, &sampleReason),
+               "preflightFroxelSampleCoords reports no reject reason on success");
+               "preflightFroxelSampleCoords succeeds for clampable weights");
+    expectTrue(!fuse::renderer::FroxelGridLayout::preflightFroxelSampleCoords(hardOob, desc, &sampleReason),
+               "preflightFroxelSampleCoords reports out_of_bounds for hard OOB tile coord");
+               "classifyFroxelTrilinearSampleReject invalid_sample_coords for hard OOB tile coord");
+               "preflightFroxelTrilinearSample reports no reject reason on success");
+               "preflightFroxelPopulate reports zero_density on rejection");
