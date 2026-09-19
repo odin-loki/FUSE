@@ -15,6 +15,7 @@ bool taaHistoryCanReuse(const TaaHistoryBuffer& history) {
 }
 
 bool taaHistoryNeedsWarmup(const TaaHistoryBuffer& history) {
+bool taaHistoryWarmupRequired(const TaaHistoryBuffer& history) {
     return history.isReady() && history.needsWarmup();
 }
 
@@ -113,6 +114,8 @@ bool taaResolveWouldBeFirstFrame(const TaaHistoryBuffer& history) {
 
 bool TaaHistoryBuffer::warmupComplete() const {
     return m_ready && m_validity.hasValidHistory;
+bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration) {
+    return taaHistoryReuseAllowed(history, observedGeneration);
 }
 
 bool TaaHistoryBuffer::canReuseHistory() const {
@@ -154,6 +157,11 @@ bool tryTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
     if (reason != nullptr) {
         *reason = reject;
     return reject == TaaHistoryReuseRejectReason::None;
+bool TaaHistoryBuffer::temporalReuseAllowed(u32 observedGeneration) const {
+    return taaHistoryReuseAllowed(*this, observedGeneration);
+
+bool TaaHistoryBuffer::warmupComplete() const {
+    return taaHistoryWarmupComplete(*this);
 }
 
 bool TaaHistoryBuffer::init(ResourceManager& resources, const TaaHistoryBufferDesc& desc) {

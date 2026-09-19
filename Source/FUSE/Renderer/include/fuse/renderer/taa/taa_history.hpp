@@ -26,6 +26,10 @@ public:
     bool canReuseHistory() const { return m_ready && m_validity.hasValidHistory; }
     /// True when the read target is ready, warmed, and bound (B5.9 deepen).
     bool hasReadableHistory() const;
+    /// True when warmed history may be reused for the observed invalidate epoch (B5.9 deepen).
+    bool temporalReuseAllowed(u32 observedGeneration) const;
+    /// True when ping-pong targets are allocated and the first resolve has completed (B5.9 deepen).
+    bool warmupComplete() const;
     /// True until the first successful resolve warms the ping-pong targets.
     bool needsWarmup() const { return !m_validity.hasValidHistory; }
     /// Frames remaining before temporal reuse is allowed — 0 when warmed (B5.9 deepen).

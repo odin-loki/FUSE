@@ -123,6 +123,14 @@ bool TaaPass::historyReuseReady(u32 observedGeneration) const {
 bool TaaPass::shouldSkipHistoryReuse(u32 observedGeneration) const {
     return shouldSkipTaaHistoryReuse(m_history, observedGeneration);
 
+bool TaaPass::historyWarmupRequired() const {
+    return m_stats.ready && m_history.needsWarmup();
+}
+
+bool TaaPass::historyWarmupComplete() const {
+    return m_stats.ready && m_history.warmupComplete();
+}
+
 bool TaaPass::historyBlendAllowed() const {
     return taaHistoryBlendAllowed(!m_history.hasValidHistory(), m_history);
 
@@ -328,6 +336,10 @@ bool TaaPass::preflightResolveBlend(const TaaResolveDesc& desc, TaaBlendWeights*
     return preflightTaaResolveBlend(desc, m_history, weights);
 }
 
+bool TaaPass::isJitterSyncedToFrameIndex(u32 frameIndex) const {
+    return m_jitter.isSyncedToFrameIndex(frameIndex);
+}
+
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
     return m_resolve.wouldSkip(desc, m_history, reason);
 }
@@ -343,6 +355,8 @@ TaaResolveBlendPreflight TaaPass::preflightResolveBlend(const TaaResolveDesc& de
 
 bool TaaPass::isJitterSyncedToFrameIndex(u32 frameIndex) const {
     return m_jitter.isSyncedToFrameIndex(frameIndex);
+bool TaaPass::preflightResolveBlend(const TaaResolveDesc& desc, TaaBlendWeights* weights) const {
+    return preflightTaaResolveBlend(desc, m_history, weights);
 }
 
 void TaaPass::stampObservedHistoryGeneration(TaaResolveDesc& desc) const {

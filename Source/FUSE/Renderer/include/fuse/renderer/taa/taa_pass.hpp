@@ -56,6 +56,7 @@ public:
     bool isJitterSyncedToFrameIndex(u32 frameIndex) const;
     /// Pass jitter monotonic frame counter (B5.9 deepen).
     u32 jitterMonotonicFrameIndex() const { return m_jitter.monotonicFrameIndex(); }
+    /// True when pass jitter monotonic counter matches `frameIndex` (B5.9 deepen).
     void invalidateHistory();
     void resize(u32 width, u32 height);
     bool matchesDimensions(u32 width, u32 height) const;
@@ -64,6 +65,10 @@ public:
     bool needsHistoryWarmup() const { return m_history.needsWarmup(); }
     /// Frames remaining before pass history may be temporally reused (B5.9 deepen).
     u32 warmupFramesRemaining() const;
+    /// True when pass history is allocated but still awaiting first resolve (B5.9 deepen).
+    bool historyWarmupRequired() const;
+    /// True when pass history is warmed after init (B5.9 deepen).
+    bool historyWarmupComplete() const;
     /// True when pass history is warmed and may be sampled (B5.9 deepen).
     bool canReuseHistory() const;
     /// True when pass history is ready, warmed, and generation matches for reuse (B5.9 deepen).
@@ -182,6 +187,8 @@ public:
     bool tryPreflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason& reason) const;
     /// Compute expected blend weights for a resolve request without mutating history (B5.9 deepen).
     TaaResolveBlendPreflight preflightResolveBlend(const TaaResolveDesc& desc) const;
+    /// Resolve + blend preflight using pass history — optionally fills projected blend weights (B5.9 deepen).
+    bool preflightResolveBlend(const TaaResolveDesc& desc, TaaBlendWeights* weights = nullptr) const;
     /// Stamp `observed_history_generation` from pass history when still at the no-guard sentinel.
     void stampObservedHistoryGeneration(TaaResolveDesc& desc) const;
     /// Clamp params and stamp observed generation from pass history.

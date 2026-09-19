@@ -114,6 +114,8 @@ bool TaaJitterLayout::jitterIndexInRange(u32 index, u32 sequenceLength) {
 
 bool TaaJitterLayout::canSyncToFrameIndex(u32 sequenceLength) {
     return validateSequenceLength(sequenceLength);
+bool TaaJitterLayout::jitterIndexMatchesFrame(u32 index, u32 frameIndex, u32 sequenceLength) {
+    return index == frameIndexInSequence(frameIndex, sequenceLength);
 }
 
 bool TaaJitterLayout::canProduceNdcOffset(u32 width, u32 height, u32 sequenceLength) {
@@ -316,6 +318,18 @@ u32 TaaJitter::expectedSlotForFrameIndex(u32 frameIndex) const {
 
 bool TaaJitter::slotMatchesFrameIndex(u32 frameIndex) const {
     return isSyncedToFrameIndex(frameIndex) && m_index == expectedSlotForFrameIndex(frameIndex);
+}
+
+bool TaaJitter::isSyncedToFrameIndex(u32 frameIndex) const {
+    return m_monotonicFrame == frameIndex;
+}
+
+bool TaaJitter::needsSyncToFrameIndex(u32 frameIndex) const {
+    return !isSyncedToFrameIndex(frameIndex);
+}
+
+bool TaaJitter::slotMatchesFrame(u32 frameIndex) const {
+    return TaaJitterLayout::jitterIndexMatchesFrame(m_index, frameIndex, m_sequenceLength);
 }
 
 void TaaJitter::advance() {

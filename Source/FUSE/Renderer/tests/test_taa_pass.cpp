@@ -3048,6 +3048,30 @@ void testHistoryWarmupGuards() {
     expectTrue(fuse::renderer::taaResolveWouldBeFirstFrame(emptyHistory),
                "empty history next resolve would be first frame");
 
+    expectTrue(jitter.isSyncedToFrameIndex(0u), "default jitter starts synced to frame zero");
+    expectTrue(!jitter.needsSyncToFrameIndex(0u), "default jitter does not need resync to frame zero");
+    expectTrue(jitter.needsSyncToFrameIndex(1u), "default jitter needs sync to frame one");
+    expectTrue(!jitter.isSyncedToFrameIndex(1u), "default jitter is not synced to frame one");
+
+    jitter.syncToFrameIndex(11u);
+    expectTrue(jitter.isSyncedToFrameIndex(11u), "syncToFrameIndex marks frame as synced");
+    expectTrue(!jitter.needsSyncToFrameIndex(11u), "synced jitter no longer needs resync");
+    expectTrue(jitter.slotMatchesFrame(11u), "synced slot matches wrapped frame index");
+    expectTrue(TaaJitterLayout::jitterIndexMatchesFrame(jitter.index(), 11u, 8u),
+               "layout slot match agrees with jitter state");
+
+    expectTrue(jitter.isSyncedToFrameIndex(12u), "advance keeps monotonic sync");
+    expectTrue(jitter.slotMatchesFrame(12u), "advanced slot matches frame index");
+
+    expectTrue(jitter.isSyncedToFrameIndex(0u), "reset syncs monotonic counter to zero");
+    expectTrue(jitter.slotMatchesFrame(0u), "reset slot matches frame zero");
+
+    expectTrue(!fuse::renderer::taaHistoryWarmupRequired(emptyHistory),
+               "empty history does not require warmup preflight");
+    expectTrue(!fuse::renderer::taaHistoryWarmupComplete(emptyHistory),
+               "empty history warmup is incomplete");
+    expectTrue(!fuse::renderer::preflightTaaHistoryReuse(emptyHistory, 0u),
+
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
     bootstrapDesc.createSwapchain = false;
@@ -3056,6 +3080,7 @@ void testHistoryWarmupGuards() {
     expectTrue(bootstrap != nullptr, "bootstrap allocated for history warmup preflight test");
     expectTrue(bootstrap != nullptr, "bootstrap allocated for history reuse reject test");
     expectTrue(bootstrap != nullptr, "bootstrap allocated for history warmup guard test");
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for warmup preflight test");
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -3152,6 +3177,17 @@ void testHistoryWarmupGuards() {
                "resolved history next resolve is not first frame");
 
                "invalidated history next resolve is first frame again");
+    expectTrue(fuse::renderer::taaHistoryWarmupRequired(history), "allocated history requires warmup");
+    expectTrue(!history.warmupComplete(), "warmupComplete false before first resolve");
+    expectTrue(!history.temporalReuseAllowed(0u), "temporal reuse blocked before warmup");
+
+    expectTrue(!fuse::renderer::taaHistoryWarmupRequired(history), "warmed history no longer requires warmup");
+    expectTrue(history.warmupComplete(), "warmupComplete true after first resolve");
+    expectTrue(fuse::renderer::preflightTaaHistoryReuse(history, 0u),
+               "reuse preflight passes with current generation");
+
+    expectTrue(!fuse::renderer::preflightTaaHistoryReuse(history, 0u),
+               "reuse preflight fails after invalidate");
 
     history.destroy();
     resources.destroy();
@@ -3406,6 +3442,24 @@ void testResolveBlendPreflight() {
     expectTrue(!fuse::renderer::taaResolveBlendPreflightPasses(desc, history),
                "blend preflight alias rejects invalid dimensions");
 
+        fuse::renderer::computeTaaResolveBlendPreflight(desc, history);
+    expectNear(warmupWeights.current, 1.f, 1e-5f, "blend preflight uses full current on warmup frame");
+    expectNear(warmupWeights.history, 0.f, 1e-5f, "blend preflight uses zero history on warmup frame");
+
+    fuse::renderer::TaaBlendWeights projected{};
+    expectTrue(fuse::renderer::preflightTaaResolveBlend(desc, history, &projected),
+               "preflightTaaResolveBlend succeeds before first resolve");
+    expectNear(projected.current, warmupWeights.current, 1e-5f, "preflight fills projected current weight");
+    expectNear(projected.history, warmupWeights.history, 1e-5f, "preflight fills projected history weight");
+
+    expectNear(steadyWeights.current, 0.3f, 1e-5f, "blend preflight uses configured current after warmup");
+    expectNear(steadyWeights.history, 0.7f, 1e-5f, "blend preflight uses history complement after warmup");
+    expectTrue(fuse::renderer::preflightTaaResolveBlend(desc, history),
+               "preflightTaaResolveBlend succeeds after warmup");
+
+    expectTrue(!fuse::renderer::preflightTaaResolveBlend(desc, history, &projected),
+               "preflightTaaResolveBlend rejects invalid dimensions");
+
     history.destroy();
     resources.destroy();
     bindless.destroy(*bootstrap->device());
@@ -3473,6 +3527,7 @@ void testJitterGuardRejectReasons() {
 void testResolveBlendTryAndShouldSkip() {
 void testTaaPassPreflightGuards() {
 void testTaaPassJitterSyncAndBlendPreflight() {
+void testTaaPassWarmupAndBlendPreflight() {
     fuse::renderer::TaaPassDesc passDesc{};
     passDesc.width = 128;
     passDesc.height = 128;
@@ -3491,6 +3546,9 @@ void testTaaPassJitterSyncAndBlendPreflight() {
     pass->syncJitterToFrameIndex(2u);
     expectTrue(pass->isJitterSyncedToFrameIndex(2u), "pass jitter synced to frame 2");
     expectTrue(!pass->isJitterSyncedToFrameIndex(3u), "pass jitter no longer synced to frame 3");
+    expectTrue(!pass->historyWarmupRequired(), "pass warmup not required before init");
+    expectTrue(!pass->historyWarmupComplete(), "pass warmup incomplete before init");
+    expectTrue(!pass->isJitterSyncedToFrameIndex(4u), "pass jitter not synced before explicit sync");
 
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
@@ -3499,6 +3557,7 @@ void testTaaPassJitterSyncAndBlendPreflight() {
     expectTrue(bootstrap != nullptr, "bootstrap allocated for blend try/should-skip test");
     expectTrue(bootstrap != nullptr, "bootstrap allocated for pass preflight guard test");
     expectTrue(bootstrap != nullptr, "bootstrap allocated for pass jitter/blend preflight test");
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for pass warmup/blend preflight test");
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -3568,6 +3627,12 @@ void testTaaPassDeepenGuardWrappers() {
                    fuse::renderer::TaaHistoryReuseRejectReason::NeedsWarmup,
                "pass classifies NeedsWarmup before first resolve");
     expectTrue(pass->init(resources), "TaaPass initialized for jitter/blend preflight test");
+    expectTrue(pass->init(resources), "TaaPass initialized for warmup/blend preflight test");
+    expectTrue(pass->historyWarmupRequired(), "pass requires warmup after init");
+    expectTrue(!pass->historyWarmupComplete(), "pass warmup incomplete after init");
+
+    pass->syncJitterToFrameIndex(4u);
+    expectTrue(pass->isJitterSyncedToFrameIndex(4u), "pass reports jitter synced after sync");
 
     fuse::renderer::TaaResolveDesc resolveDesc{};
     resolveDesc.width = 128;
@@ -3653,6 +3718,19 @@ void testTaaPassDeepenGuardWrappers() {
     resolveDesc.width = 64;
     expectTrue(!pass->preflightResolveBlend(resolveDesc, &weights),
                "pass blend preflight rejects dimension mismatch");
+
+    fuse::renderer::TaaBlendWeights projected{};
+    expectTrue(pass->preflightResolveBlend(resolveDesc, &projected),
+               "pass resolve blend preflight passes before first resolve");
+    expectNear(projected.current, 1.f, 1e-5f, "pass preflight projects warmup current weight");
+
+    expectTrue(pass->resolveFrame(resolveDesc), "initial resolve completes warmup");
+    expectTrue(pass->historyWarmupComplete(), "pass warmup complete after first resolve");
+    expectTrue(!pass->historyWarmupRequired(), "pass no longer requires warmup");
+
+               "pass resolve blend preflight passes after warmup");
+    expectNear(projected.current, 0.2f, 1e-5f, "pass preflight projects steady current weight");
+    expectNear(projected.history, 0.8f, 1e-5f, "pass preflight projects steady history weight");
 
     pass->destroy();
     resources.destroy();
@@ -4504,6 +4582,9 @@ int main() {
     testResolveBlendPreflightGuards();
     testTaaPassPreflightGuards();
     testTaaPassJitterSyncAndBlendPreflight();
+    testJitterSyncGuards();
+    testHistoryWarmupPreflightGuards();
+    testTaaPassWarmupAndBlendPreflight();
     testTaaPassReuseAndJitterGuards();
     testHistoryWarmupAndResolveShouldSkip();
     testJitterShouldSkipAndAdvancePreflight();
