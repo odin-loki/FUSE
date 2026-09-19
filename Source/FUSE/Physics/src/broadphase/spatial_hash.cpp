@@ -1391,6 +1391,7 @@ ShapeCellInsertPreflight preflightShapeCellInsertImpl(
     if (bodyCount > 0u && bodyIndex >= bodyCount) {
     if (bodyIndex >= bodyCount) {
     if (!shouldRunCellCapacityInsert(shapeIndex, bodies, shapes, params, use2D)) {
+    if (canSkipShapeCellInsert(shapeIndex, bodies, shapes, params, use2D)) {
         return;
     ShapeCellInsertPreflight preflight{};
         preflight.reason = ShapeCellInsertRejectReason::OutOfRangeBody;
@@ -1399,6 +1400,7 @@ ShapeCellInsertPreflight preflightShapeCellInsertImpl(
     }
 
 
+    const u32 bodyIndex = shapeBodyIndex(shapes, shapeIndex);
     const vec3 position = bodies.positions[bodyIndex];
     const f32 cellSize = clampCellSize(params.cellSize);
     const u32 maxOccupancy = params.maxCellOccupancy;
@@ -1867,8 +1869,6 @@ void refineBroadphasePairsParallelImpl(
         if (slotPreflight.outOfRangeSlot || slotPreflight.invalidSlot) {
             return;
         if (slotPreflight.invalidPair) {
-            return;
-        }
 
         const u32 bodyA = buffer.bodyA[pairIndex];
         const u32 bodyB = buffer.bodyB[pairIndex];
@@ -1880,7 +1880,6 @@ void refineBroadphasePairsParallelImpl(
                 candidatePairRejectReason(bodyA, bodyB, bodies.count());
             if (indexReason != CandidatePairRejectReason::None) {
                 return indexReason;
-            }
             if (!pairPassesAabbRefine(bodyA, bodyB, bodies, shapes)) {
                 return CandidatePairRejectReason::AabbSeparated;
             return CandidatePairRejectReason::None;
@@ -1888,17 +1887,14 @@ void refineBroadphasePairsParallelImpl(
         if (rejectReason != CandidatePairRejectReason::None) {
             buffer.lastRejectReason = rejectReason;
         if (!shouldRunPairBufferInvalidateSlot(buffer, pairIndex)) {
-            return;
         if (!isValidCandidatePair(bodyA, bodyB, bodies.count())) {
-            buffer.invalidateSlot(pairIndex);
             if (shouldRunPairBufferInvalidateSlot(buffer, pairIndex)) {
             if (shouldRunPairBufferInvalidate(buffer, pairIndex)) {
-        if (!pairPassesAabbRefine(bodyA, bodyB, bodies, shapes)) {
         if (!pairPassesAabbRefine(bodyA, bodyB, bodies, shapes) &&
             shouldRunPairBufferInvalidateSlot(buffer, pairIndex)) {
-            }
-            return;
             shouldRunPairBufferInvalidate(buffer, pairIndex)) {
+            preflightRefinePairSlot(pairIndex, bodies, shapes, buffer);
+        if (!slotPreflight.shouldInvalidate()) {
         }
     });
 
@@ -3140,6 +3136,8 @@ MergePairsIntoBufferPreflight preflightMergePairsIntoBuffer(
     preflight.pairsToMerge = static_cast<u32>(pairs.size());
     preflight.incomingPairCount = static_cast<u32>(pairs.size());
     preflight.remainingCapacity = buffer.remainingCapacity();
+    preflight.wouldTruncate = mergePairsIntoBufferWouldTruncate(pairs, buffer);
+    preflight.invalidPairCount = countInvalidMergePairs(pairs);
     return preflight;
 }
 
@@ -4035,6 +4033,62 @@ bool canSkipMergeBroadphasePush(const PairBufferSoA& buffer, u32 bodyA, u32 body
 
 bool shouldRunMergeBroadphasePush(const PairBufferSoA& buffer, u32 bodyA, u32 bodyB) {
     return preflightMergeBroadphasePush(buffer, bodyA, bodyB).canPush();
+bool mergePairsIntoBufferWouldTruncate(
+    if (pairs.empty() || buffer.maxCapacity == 0u) {
+        return false;
+    u32 validPairCount = 0u;
+            ++validPairCount;
+    return validPairCount > buffer.remainingCapacity();
+
+u32 countInvalidMergePairs(const std::vector<CandidatePair>& pairs, u32 bodyCount) {
+    u32 invalidCount = 0u;
+        if (!isValidCandidatePair(pair.bodyA, pair.bodyB, bodyCount)) {
+            ++invalidCount;
+    return invalidCount;
+
+
+
+
+    const CollisionShapeType type = static_cast<CollisionShapeType>(shapes.types[shapeIndex]);
+
+        CellRange2 range = {};
+            range = cellRangeFromAabb2D(bounds, cellSize, maxSpan);
+            const f32 radius = shapes.params[shapeIndex].x;
+            range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
+
+    CellRange3 range = {};
+        range = cellRangeFromBox(position, halfExtents, cellSize, maxSpan);
+        range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
+
+    ShapeCellInsertRejectReason expected,
+
+    if (shapeIndex < shapes.count()) {
+        if (bodyIndex < bodies.count()) {
+
+
+
+    case RefinePairSlotRejectReason::Separated:
+        return "Separated";
+
+
+
+    const vec3 posA = bodies.positions[bodyA];
+    const vec3 posB = bodies.positions[bodyB];
+    f32 radiusA = 0.5f;
+    f32 radiusB = 0.5f;
+    for (u32 shapeIndex = 0; shapeIndex < shapes.count(); ++shapeIndex) {
+        if (shapes.bodyIndices[shapeIndex] == bodyA) {
+            radiusA = shapes.params[shapeIndex].x;
+        if (shapes.bodyIndices[shapeIndex] == bodyB) {
+            radiusB = shapes.params[shapeIndex].x;
+    if (!sphereAabbOverlap(posA, radiusA, posB, radiusB)) {
+        return RefinePairSlotRejectReason::Separated;
+
+    return refinePairSlotRejectReason(pairIndex, bodies, shapes, buffer) == expected;
+
+RefinePairSlotPreflight preflightRefinePairSlot(
+    preflight.reason = refinePairSlotRejectReason(pairIndex, bodies, shapes, buffer);
+    preflight.separated = preflight.reason == RefinePairSlotRejectReason::Separated;
 
 void refineBroadphasePairsParallel(
     const RigidBodySoA& bodies,

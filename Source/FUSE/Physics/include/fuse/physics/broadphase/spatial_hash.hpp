@@ -3741,6 +3741,8 @@ struct MergePairsIntoBufferPreflight {
     u32 pairsToMerge = 0;
     u32 incomingPairCount = 0;
     u32 remainingCapacity = 0;
+    bool wouldTruncate = false;
+    u32 invalidPairCount = 0;
 
     bool canMerge() const { return reason == MergePairsIntoBufferRejectReason::None; }
 
@@ -4055,6 +4057,17 @@ u32 countPairsForCell(const std::vector<u32>& occupants);
     ExceedsBudget,
 
 /// Human-readable label for shape→cell insert reject reasons (logging / tests).
+/// True when not all pairs in `pairs` fit before `maxCapacity` clamp (diagnostic only; merge may still proceed).
+bool mergePairsIntoBufferWouldTruncate(
+    const std::vector<CandidatePair>& pairs,
+
+/// Count candidate pairs in `pairs` that fail `isValidCandidatePair` (merge list diagnostic).
+u32 countInvalidMergePairs(const std::vector<CandidatePair>& pairs, u32 bodyCount = 0u);
+
+/// Why shape→cell insertion would skip for one shape (B4.2 deepen pass).
+    ExceedsOccupancy,
+
+/// Human-readable label for shape cell-insert reject reasons (logging / tests).
 const char* shapeCellInsertRejectReasonName(ShapeCellInsertRejectReason reason);
 
 /// Diagnose why shape→cell insertion would skip; vacuously succeeds when insertion may proceed.
@@ -4683,6 +4696,48 @@ bool canSkipMergeBroadphasePush(const PairBufferSoA& buffer, u32 bodyA, u32 body
 
 /// Non-mutating merge push predicate — mirrors `preflightMergeBroadphasePush` (B4.2 deepen pass).
 bool shouldRunMergeBroadphasePush(const PairBufferSoA& buffer, u32 bodyA, u32 bodyB);
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    bool use2D = false);
+
+    u32 shapeIndex,
+    ShapeCellInsertRejectReason expected,
+
+
+};
+
+
+
+
+/// Why refine would invalidate one pair slot (B4.2 deepen pass).
+enum class RefinePairSlotRejectReason : u8 {
+    None = 0,
+    Separated,
+
+/// Human-readable label for refine pair-slot reject reasons (logging / tests).
+const char* refinePairSlotRejectReasonName(RefinePairSlotRejectReason reason);
+
+/// Diagnose why refine would invalidate slot `pairIndex`; `None` means the pair passes refine.
+RefinePairSlotRejectReason refinePairSlotRejectReason(
+    const PairBufferSoA& buffer);
+
+/// Returns true when `refinePairSlotRejectReason` matches `expected` (B4.2 deepen pass).
+bool refinePairSlotRejectsForReason(
+    const PairBufferSoA& buffer,
+    RefinePairSlotRejectReason expected);
+
+/// Read-only refine pair-slot diagnostics — no mutation (B4.2 deepen pass).
+struct RefinePairSlotPreflight {
+    RefinePairSlotRejectReason reason = RefinePairSlotRejectReason::None;
+    bool separated = false;
+
+    bool passesRefine() const { return reason == RefinePairSlotRejectReason::None; }
+    bool shouldInvalidate() const {
+        return reason == RefinePairSlotRejectReason::InvalidPair ||
+               reason == RefinePairSlotRejectReason::Separated;
+    }
+
+RefinePairSlotPreflight preflightRefinePairSlot(
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(
