@@ -341,6 +341,23 @@ const char* probeGridCoordRejectReasonLabel(ProbeGridCoordRejectReason reason);
 
 /// True when a probe-grid coord reject reason would block lookup (B5.6 deepen pass).
 bool probeGridCoordRejectReasonIsBlocking(ProbeGridCoordRejectReason reason);
+/// Why probe-grid coord lookup preflight rejected the request (B5.6 deepen).
+enum class ProbeCoordRejectReason : u8 {
+
+/// Why probe-grid index lookup preflight rejected the request (B5.6 deepen).
+enum class ProbeIndexRejectReason : u8 {
+
+/// Human-readable label for probe-coord reject reasons (logging / tests).
+const char* probeCoordRejectReasonLabel(ProbeCoordRejectReason reason);
+
+/// Human-readable label for probe-index reject reasons (logging / tests).
+const char* probeIndexRejectReasonLabel(ProbeIndexRejectReason reason);
+
+/// True when a probe-coord reject reason would block lookup (B5.6 deepen pass).
+bool probeCoordRejectReasonIsBlocking(ProbeCoordRejectReason reason);
+
+/// True when a probe-index reject reason would block lookup (B5.6 deepen pass).
+bool probeIndexRejectReasonIsBlocking(ProbeIndexRejectReason reason);
 
 /// Why probe sample coord validation rejected the request (B5.6 deepen).
 enum class ProbeSampleCoordsRejectReason : u8 {
@@ -918,6 +935,16 @@ struct ProbeGridLayout {
     /// Non-mutating grid-coord preflight — returns true when lookup would proceed.
                                     ProbeCoordRejectReason* reason = nullptr);
     /// Early-out when grid-coord lookup would be rejected.
+    /// Diagnose why probe-coord lookup preflight would reject; vacuously succeeds on valid coords.
+    /// Diagnose why probe-index lookup preflight would reject; vacuously succeeds on valid indices.
+    /// Classify why probe-coord lookup would reject — same ordering as `tryValidateProbeCoord`.
+    /// Classify why probe-index lookup would reject — same ordering as `tryValidateProbeIndex`.
+    /// Non-mutating probe-coord lookup preflight — returns true when lookup would proceed.
+    static bool preflightProbeCoordLookup(const DDGIDesc& desc,
+    /// Non-mutating probe-index lookup preflight — returns true when lookup would proceed.
+    static bool preflightProbeIndexLookup(const DDGIDesc& desc,
+    /// Early-out when probe-coord lookup would be rejected — same ordering as `tryValidateProbeCoord`.
+    /// Early-out when probe-index lookup would be rejected — same ordering as `tryValidateProbeIndex`.
     static bool isBorderProbeCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
     /// Border probe check via flat index; false when index is out of range or grid is empty.
     static bool isBorderProbeIndex(const DDGIDesc& desc, u32 probe_index);
@@ -1044,6 +1071,7 @@ struct ProbeGridLayout {
                                     ProbeGridCoordRejectReason* reason = nullptr);
     /// Early-out when probe-grid coord preflight would be rejected.
     static bool wouldSkipProbeCoordPreflight(const DDGIDesc& desc, const ProbeGridCoord& coord);
+    static bool wouldSkipProbeSampleCoordsPreflight(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// Classify sample-coord rejection — same ordering as `tryValidateProbeSampleCoords`.
     static ProbeSampleCoordsRejectReason classifyProbeSampleCoordsReject(const DDGIDesc& desc,
                                                                          const ProbeSampleCoords& coords);
@@ -1442,6 +1470,8 @@ bool preflightTrilinearProbeSample(const DDGIDesc& desc,
                                    ProbeTrilinearSampleRejectReason* reason = nullptr);
 bool wouldSkipTrilinearProbeSample(const DDGIDesc& desc,
                                    u32 cache_count);
+                                       const fuse::math::Vec3& world_position,
+/// Early-out when world-position directional trilinear sampling would be rejected.
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
@@ -1613,6 +1643,7 @@ bool areTrilinearCornerCacheIndicesValid(const DDGIDesc& desc,
 /// Non-mutating cache-index preflight — returns true when lookup would proceed (no cache pointer).
 /// Non-mutating cache-index preflight without cache pointer — index + length only.
 /// Cache-index preflight with mandatory reject-reason output.
+/// Non-mutating cache-index preflight without cache pointer — returns true when index lookup would proceed.
 /// True when `probe_index` exceeds the valid probe range on a non-empty grid.
 bool wouldClampProbeIndexForLookup(u32 probe_index, const DDGIDesc& desc);
 /// Minimum irradiance cache entries required for full-grid sampling; 0 on empty grid.

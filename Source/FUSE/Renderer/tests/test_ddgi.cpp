@@ -8374,6 +8374,189 @@ void testKernelDescPreflightDeepen() {
                "classifyProbeKernelRejectForDesc zero_rays_per_probe after empty-grid check");
 }
 
+void testProbeGridSourceGuards() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+
+    const fuse::renderer::ProbeGridCoord valid{1, 0, 1};
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeCoordLookup(desc, valid),
+               "in-range coord does not skip probe-coord lookup");
+    expectTrue(fuse::renderer::ProbeGridLayout::preflightProbeCoordLookup(desc, valid),
+               "preflightProbeCoordLookup succeeds for in-range coord");
+    expectTrue(fuse::renderer::ProbeGridLayout::classifyProbeCoordReject(desc, valid) ==
+                   fuse::renderer::ProbeCoordRejectReason::None,
+               "classifyProbeCoordReject none for valid coord");
+    expectTrue(!fuse::renderer::probeCoordRejectReasonIsBlocking(
+                   fuse::renderer::ProbeCoordRejectReason::None),
+               "none probe-coord reject reason is not blocking");
+    expectTrue(std::strcmp(fuse::renderer::probeCoordRejectReasonLabel(
+                               fuse::renderer::ProbeCoordRejectReason::None),
+                           "none") == 0,
+               "none probe-coord reject reason label");
+
+    const fuse::renderer::ProbeGridCoord invalid{9, 0, 0};
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeCoordLookup(desc, invalid),
+               "OOB coord skips probe-coord lookup");
+    expectTrue(fuse::renderer::ProbeGridLayout::classifyProbeCoordReject(desc, invalid) ==
+                   fuse::renderer::ProbeCoordRejectReason::OutOfRangeCoord,
+               "OOB coord reports out_of_range_coord reason");
+    expectTrue(std::strcmp(fuse::renderer::probeCoordRejectReasonLabel(
+                               fuse::renderer::ProbeCoordRejectReason::OutOfRangeCoord),
+                           "out_of_range_coord") == 0,
+               "out_of_range_coord probe-coord reject reason label");
+    expectTrue(fuse::renderer::probeCoordRejectReasonIsBlocking(
+                   fuse::renderer::ProbeCoordRejectReason::OutOfRangeCoord),
+               "out_of_range_coord probe-coord reject reason is blocking");
+
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeIndexLookup(desc, 3u),
+               "in-range index does not skip probe-index lookup");
+    expectTrue(fuse::renderer::ProbeGridLayout::preflightProbeIndexLookup(desc, 3u),
+               "preflightProbeIndexLookup succeeds for in-range index");
+    expectTrue(fuse::renderer::ProbeGridLayout::classifyProbeIndexReject(desc, 3u) ==
+                   fuse::renderer::ProbeIndexRejectReason::None,
+               "classifyProbeIndexReject none for valid index");
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeIndexLookup(desc, 99u),
+               "OOB index skips probe-index lookup");
+    expectTrue(fuse::renderer::ProbeGridLayout::classifyProbeIndexReject(desc, 99u) ==
+                   fuse::renderer::ProbeIndexRejectReason::OutOfRangeProbeIndex,
+               "OOB index reports out_of_range_probe_index reason");
+    expectTrue(std::strcmp(fuse::renderer::probeIndexRejectReasonLabel(
+                               fuse::renderer::ProbeIndexRejectReason::OutOfRangeProbeIndex),
+                           "out_of_range_probe_index") == 0,
+               "out_of_range_probe_index probe-index reject reason label");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeCoordLookup(empty, valid),
+               "empty grid skips probe-coord lookup");
+    expectTrue(fuse::renderer::ProbeGridLayout::classifyProbeCoordReject(empty, valid) ==
+                   fuse::renderer::ProbeCoordRejectReason::EmptyGrid,
+               "empty grid coord reports empty_grid reason");
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeIndexLookup(empty, 0u),
+               "empty grid skips probe-index lookup");
+    expectTrue(fuse::renderer::ProbeGridLayout::classifyProbeIndexReject(empty, 0u) ==
+                   fuse::renderer::ProbeIndexRejectReason::EmptyGrid,
+               "empty grid index reports empty_grid reason");
+}
+
+void testTrilinearWouldSkipGuards() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+    desc.irradiance_res = 8;
+
+    fuse::renderer::ProbeSampleCoords coords{};
+    expectTrue(fuse::renderer::ProbeGridLayout::buildProbeSampleCoords(desc, {0.5f, 0.5f, 0.5f}, coords),
+               "build coords for trilinear wouldSkip test");
+
+    std::vector<fuse::renderer::IrradianceCacheEntry> cache(8);
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipTrilinearProbeSample(desc, coords, cache.data(), 8u),
+               "accessible cache does not skip trilinear sample");
+    expectTrue(fuse::renderer::ddgi_util::preflightTrilinearProbeSample(desc, coords, cache.data(), 8u),
+               "preflightTrilinearProbeSample succeeds on accessible grid");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeTrilinearSampleReject(desc, coords, cache.data(), 8u) ==
+                   fuse::renderer::ProbeTrilinearSampleRejectReason::None,
+               "classifyProbeTrilinearSampleReject none for valid sample");
+    expectTrue(!fuse::renderer::probeTrilinearSampleRejectReasonIsBlocking(
+                   fuse::renderer::ProbeTrilinearSampleRejectReason::None),
+               "none trilinear reject reason is not blocking");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipTrilinearProbeIrradiance(
+                   desc, {0.5f, 0.5f, 0.5f}, cache.data(), 8u),
+               "world-position trilinear does not skip on accessible grid");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipTrilinearDirectionalProbeIrradiance(
+                   desc, {0.5f, 0.5f, 0.5f}, cache.data(), 8u),
+               "directional trilinear does not skip on accessible grid");
+
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipTrilinearProbeSample(desc, coords, nullptr, 8u),
+               "null cache skips trilinear sample");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeTrilinearSampleReject(desc, coords, nullptr, 8u) ==
+                   fuse::renderer::ProbeTrilinearSampleRejectReason::NullCache,
+               "null cache reports null_cache trilinear reason");
+    expectTrue(fuse::renderer::probeTrilinearSampleRejectReasonIsBlocking(
+                   fuse::renderer::ProbeTrilinearSampleRejectReason::NullCache),
+               "null_cache trilinear reject reason is blocking");
+
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipTrilinearProbeSample(desc, coords, cache.data(), 4u),
+               "undersized cache skips trilinear sample");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipTrilinearProbeIrradiance(
+                   desc, {0.5f, 0.5f, 0.5f}, cache.data(), 4u),
+               "undersized cache skips world-position trilinear");
+
+    fuse::renderer::ProbeSampleCoords invalid = coords;
+    invalid.x0 = 1u;
+    invalid.x1 = 0u;
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipTrilinearProbeSample(desc, invalid, cache.data(), 8u),
+               "unordered corners skip trilinear sample");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeTrilinearSampleReject(desc, invalid, cache.data(), 8u) ==
+                   fuse::renderer::ProbeTrilinearSampleRejectReason::InvalidSampleCoords,
+               "unordered corners report invalid_sample_coords trilinear reason");
+
+    fuse::renderer::ProbeSampleCoords oobWeights = coords;
+    oobWeights.tx = 2.f;
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoordsPreflight(desc, oobWeights),
+               "clampable weights do not skip sample-coord preflight");
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoordsPreflight(desc, invalid),
+               "unordered corners do not skip sample-coord preflight");
+
+    fuse::renderer::ProbeSampleCoords oobIndices = coords;
+    oobIndices.x0 = 9u;
+    oobIndices.x1 = 9u;
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoordsPreflight(desc, oobIndices),
+               "hard OOB indices skip sample-coord preflight");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipTrilinearProbeIrradiance(
+                   empty, {0.f, 0.f, 0.f}, cache.data(), 8u),
+               "empty grid skips world-position trilinear");
+}
+
+void testScheduleAtRatePreflightGuards() {
+    fuse::u32 indices[64]{};
+    fuse::u32 count = 0u;
+
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeScheduleRejectAtRate(2048u, 64u, 64u, indices, &count) ==
+                   fuse::renderer::ProbeScheduleRejectReason::None,
+               "classifyProbeScheduleRejectAtRate none for valid inputs");
+    expectTrue(fuse::renderer::ddgi_util::preflightProbeScheduleAtRate(2048u, 64u, 64u, indices, &count),
+               "preflightProbeScheduleAtRate succeeds for valid inputs");
+
+    fuse::renderer::ProbeScheduleRejectReason scheduleReason =
+        fuse::renderer::ProbeScheduleRejectReason::None;
+    expectTrue(fuse::renderer::ddgi_util::tryScheduleProbeUpdatesAtRate(
+                   0u, 2048u, 64u, indices, 64u, &count, scheduleReason),
+               "tryScheduleProbeUpdatesAtRate succeeds for valid inputs");
+    expectTrue(scheduleReason == fuse::renderer::ProbeScheduleRejectReason::None,
+               "successful trySchedule at rate reports no reject reason");
+    expectTrue(count == 64u, "tryScheduleProbeUpdatesAtRate schedules 64 probes");
+
+    fuse::renderer::ProbeScheduleRejectReason reason = fuse::renderer::ProbeScheduleRejectReason::None;
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdatesAtRate(
+                   0u, 2048u, 0u, indices, 64u, &count, reason),
+               "tryScheduleProbeUpdatesAtRate rejects zero probes_per_frame");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::ZeroProbesPerFrame,
+               "trySchedule at rate reports zero_probes_per_frame reason");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeScheduleRejectAtRate(2048u, 0u, 64u, indices, &count) ==
+                   fuse::renderer::ProbeScheduleRejectReason::ZeroProbesPerFrame,
+               "classifyProbeScheduleRejectAtRate zero_probes_per_frame");
+}
+
+void testCacheIndexCountOnlyPreflight() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+
+    expectTrue(fuse::renderer::ddgi_util::preflightCacheIndexLookup(desc, 3u, 8u),
+               "count-only preflightCacheIndexLookup succeeds for valid index");
+    expectTrue(!fuse::renderer::ddgi_util::preflightCacheIndexLookup(desc, 99u, 8u),
+               "count-only preflightCacheIndexLookup rejects OOB index");
+    expectTrue(!fuse::renderer::ddgi_util::preflightCacheIndexLookup(desc, 3u, 2u),
+               "count-only preflightCacheIndexLookup rejects undersized cache");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+    expectTrue(!fuse::renderer::ddgi_util::preflightCacheIndexLookup(empty, 0u, 8u),
+               "count-only preflightCacheIndexLookup rejects empty grid");
+}
+
 void testDdgiPreflightDeepenGuards() {
     fuse::renderer::DDGIDesc desc{};
     desc.grid_dims = {2, 2, 2};
@@ -11838,6 +12021,9 @@ int main() {
     testProbeGridIndexBoundsHelpers();
     testPreflightTrilinearProbeSample();
     testKernelOobProbeIndexGuards();
+    testTrilinearWouldSkipGuards();
+    testScheduleAtRatePreflightGuards();
+    testCacheIndexCountOnlyPreflight();
     testDdgiPreflightDeepenGuards();
     testLaunchProbeUpdateIndexGuard();
     testKernelLaunchGuards();
