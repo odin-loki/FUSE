@@ -4019,3 +4019,6 @@ void testFroxelDeepenPreflightAndClassifyGuards() {
 
 // --- deepen additive from deepen-b511-froxel-preflight-ce10 ---
                "preflightDensityLookupAtCoord still succeeds for clampable OOB coords");
+
+// --- deepen additive from deepen-b511-froxel-preflight-4caa ---
+               "preflightDensityLookup succeeds when OOB coords would clamp");
