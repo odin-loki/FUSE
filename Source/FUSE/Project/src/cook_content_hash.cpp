@@ -542,3 +542,9 @@ CookHashPreflight preflight_manifest_dependency_coverage(
 CookHashPreflight preflight_upstream_dependency_path(const std::string& dependency_output_path,
 CookHashPreflight preflight_file_mtime_ns(const std::string& path) {
 CookHashPreflight preflight_fnv1a64_combine(u64 left, u64 /*right*/) {
+
+// --- deepen additive from deepen-b79-cooker-hash-0e64 ---
+    case CookHashRejectReason::UnresolvedDependencyOutput:
+CookHashPreflight preflight_manifest_dependency_outputs(const CookManifestEntry& entry,
+            preflight.reason = CookHashRejectReason::UnresolvedDependencyOutput;
+CookHashPreflight preflight_file_mtime(const std::string& path) {

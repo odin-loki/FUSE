@@ -1213,3 +1213,22 @@ void testCookCacheInvalidationEstimateGuards() {
     expectTrue(!cooker.cache().would_invalidate(seeded.content_hash),
                "would_invalidate false after prune removes entry");
     const fuse::project::CookHashPreflight zero_key = fuse::project::preflight_cook_cache_entry({});
+
+// --- deepen additive from deepen-b79-cooker-hash-0e64 ---
+void testCookHashPreflightManifestDependencyOutputs() {
+    const fuse::project::CookHashPreflight resolved =
+    const fuse::project::CookHashPreflight unresolved =
+    expectTrue(unresolved.reason == fuse::project::CookHashRejectReason::UnresolvedDependencyOutput,
+void testCookHashPreflightFileMtime() {
+    expectTrue(fuse::project::preflight_file_mtime("").reason == fuse::project::CookHashRejectReason::EmptyPath,
+    expectTrue(!cache.would_invalidate_stale_upstream_hashes({{"/tmp/fuse_b79_would_inv.obj", 1u}}),
+    expectTrue(!cache.would_invalidate_downstream_of("/tmp/fuse_b79_would_inv.fusemesh", {}, {}),
+    expectTrue(cache.would_invalidate_source(valid.source_path), "would_invalidate matches source estimate");
+    expectTrue(cache.would_invalidate_output(valid.output_path), "would_invalidate matches output estimate");
+void testCookCachePreflightStoreEntry() {
+    const fuse::project::CookHashPreflight zero_key = cache.preflight_store_entry(invalid);
+    expectTrue(cache.preflight_store_entry(invalid).reason == fuse::project::CookHashRejectReason::EmptyInputPath,
+    expectTrue(cache.preflight_store_entry(invalid).reason == fuse::project::CookHashRejectReason::EmptyOutputPath,
+    testCookHashPreflightManifestDependencyOutputs();
+    testCookHashPreflightFileMtime();
+    testCookCachePreflightStoreEntry();

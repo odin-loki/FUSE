@@ -235,3 +235,6 @@ struct CookCacheEntryPreflight {
 
 // --- deepen additive from deepen-b79-cooker-hash-4ea3 ---
     [[nodiscard]] bool would_invalidate_any(
+
+// --- deepen additive from deepen-b79-cooker-hash-0e64 ---
+    [[nodiscard]] CookHashPreflight preflight_store_entry(const CookCacheEntry& entry) const;

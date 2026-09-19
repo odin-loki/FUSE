@@ -881,3 +881,6 @@ CookCacheEntryPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) 
 
 // --- deepen additive from deepen-b79-cooker-hash-4ea3 ---
 bool CookCache::would_invalidate_any(const std::string& source_path, const std::string& output_path,
+
+// --- deepen additive from deepen-b79-cooker-hash-0e64 ---
+CookHashPreflight CookCache::preflight_store_entry(const CookCacheEntry& entry) const {
