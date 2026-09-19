@@ -535,6 +535,12 @@ public:
     /// Read-only mirror of `invalidate_stale_content_for_source` (B7.9 deepen).
     /// Read-only mirror of `invalidate_stale_upstream_hashes` (B7.9 deepen).
     [[nodiscard]] bool would_invalidate_all() const;
+                                                                       u64 current_content_hash) const;
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    [[nodiscard]] bool should_skip_invalidate_downstream_of(
+        const std::vector<CookJob>& jobs) const;
+    [[nodiscard]] bool should_skip_prune_invalid() const;
+    [[nodiscard]] bool should_skip_prune_stale() const;
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,

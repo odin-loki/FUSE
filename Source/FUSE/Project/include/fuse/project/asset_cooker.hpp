@@ -187,6 +187,7 @@ struct CookUpstreamInvalidateEstimate {
     /// True when no dependency or prune reconcile work is pending (B7.9 deepen).
     /// True when reconcile invalidation should be skipped — no stale deps or prunable entries (B7.9 deepen).
     /// True when dependency + prune reconcile can be skipped (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate() const { return total() != 0; }
 };
 
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
@@ -556,6 +557,9 @@ public:
     /// True when dependency or prune reconcile would remove at least one entry (B7.9 deepen).
     /// True when `estimate_prune_reconcile()` reports nothing to remove (B7.9 deepen).
     /// True when `estimate_reconcile_invalidation(manifest)` reports nothing to invalidate (B7.9 deepen).
+    /// Read-only upstream invalidation probe — mirrors `count_upstream_invalidation` (B7.9 deepen).
+    /// Read-only stale dependency invalidation probe (B7.9 deepen).
+    /// True when stale dependency invalidation would be a no-op (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
