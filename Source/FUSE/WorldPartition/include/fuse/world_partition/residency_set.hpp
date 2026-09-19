@@ -359,6 +359,8 @@ template <typename ScoreFn>
         return 0u;
     }
     return count_budget_eviction_candidates(set.collect_eviction_candidates(), score_fn, incoming_priority, policy);
+    return count_budget_eviction_candidates(set.collect_eviction_candidates(), score_fn, incoming_priority,
+                                            policy);
 }
 
 /// Empty-set guard: pick budget eviction candidate from a residency set.
@@ -393,9 +395,7 @@ template <typename ScoreFn>
                                                                  EvictionPolicy policy) {
     if (!set.has_eviction_candidate()) {
         return false;
-    }
     return has_budget_eviction_candidate(set, score_fn, incoming_priority, policy);
-}
 
 /// Guard: budget pressure plus a non-empty residency set that can supply eviction candidates.
 [[nodiscard]] inline bool can_attempt_budget_eviction_from_set(const ResidencySet& set, u32 max_loaded_cells,
@@ -403,17 +403,15 @@ template <typename ScoreFn>
                                                                 u64 resident_bytes, u64 incoming_bytes) {
     return can_attempt_budget_eviction(max_loaded_cells, resident_count, max_resident_bytes, resident_bytes,
                                        incoming_bytes, set.has_eviction_candidate());
-}
 
 /// Guard: budget pressure plus an eligible budget eviction candidate in the residency set.
-template <typename ScoreFn>
 [[nodiscard]] inline bool can_attempt_budget_eviction_with_eligible_candidate(
     const ResidencySet& set, ScoreFn&& score_fn, u32 max_loaded_cells, u32 resident_count,
     u64 max_resident_bytes, u64 resident_bytes, u64 incoming_bytes, f32 incoming_priority,
-    EvictionPolicy policy) {
     return can_attempt_budget_eviction_from_set(set, max_loaded_cells, resident_count, max_resident_bytes,
                                                 resident_bytes, incoming_bytes) &&
            has_budget_eviction_candidate_guarded(set, score_fn, incoming_priority, policy);
+    return is_valid_grid_coord(picked) && is_valid_eviction_score(score);
 }
 
 /// Combined unload rank for budget-driven eviction (B7.6 deepen).
