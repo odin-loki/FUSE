@@ -36,6 +36,8 @@ struct CookCachePruneEstimate {
     u32 stale_entries = 0;
 
     [[nodiscard]] u32 total() const { return invalid_entries + stale_entries; }
+    /// True when no prune removals are estimated — mirrors `total() == 0` (B7.9 deepen).
+    [[nodiscard]] bool should_skip() const { return total() == 0; }
 };
 
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
