@@ -3494,3 +3494,28 @@ void testBeginDragPreflightPickedAxis() {
     const fuse::editor::UpdateDragPreflight axisPreflight = gizmo.preflightUpdateDrag(hit);
     expectTrue(axisPreflight.canUpdate(), "gizmo update preflight accepts axis-band cursor");
     expectTrue(!axisPreflight.screenMiss, "axis-band cursor clears screenMiss");
+
+// --- deepen additive from deepen-b6-gizmo-interaction-preflights-10fa ---
+    const fuse::editor::BeginDragPreflight rayValidPreflight = fuse::editor::preflightBeginDrag(
+    expectTrue(!rayValidPreflight.snapDegraded, "valid snap clears snapDegraded on ray begin");
+    const fuse::editor::InteractionPreflight idlePreflight = fuse::editor::preflightInteraction(
+    expectTrue(!idlePreflight.canApplySnap(), "interaction preflight rejects invalid snap step");
+    expectTrue(idlePreflight.canBegin(), "interaction preflight allows begin on valid pick");
+    expectTrue(!idlePreflight.canUpdate(), "interaction preflight rejects update when not dragging");
+    expectTrue(!idlePreflight.canEnd(), "interaction preflight rejects end when not dragging");
+    expectTrue(idlePreflight.begin.snapDegraded, "interaction preflight propagates begin snapDegraded");
+    expectTrue(idlePreflight.snap.invalidStep, "interaction preflight propagates snap invalidStep");
+    const fuse::editor::InteractionPreflight draggingPreflight = fuse::editor::preflightInteraction(
+    expectTrue(draggingPreflight.canUpdate(), "interaction preflight accepts update while dragging");
+    expectTrue(draggingPreflight.canEnd(), "interaction preflight accepts end while dragging");
+    expectTrue(draggingPreflight.update.snapDegraded,
+    expectTrue(draggingPreflight.end.snapDegraded,
+    const fuse::editor::InteractionPreflight rayPreflight = fuse::editor::preflightInteraction(
+    expectTrue(rayPreflight.canBegin(), "ray interaction preflight allows begin");
+    expectTrue(rayPreflight.pick.axis == fuse::editor::GizmoAxis::X,
+    const fuse::editor::InteractionPreflight gizmoPreflight = gizmo.preflightInteraction(hit);
+    expectTrue(gizmoPreflight.canBegin(), "gizmo interaction preflight allows begin");
+    expectTrue(gizmoPreflight.begin.snapDegraded,
+    const fuse::editor::InteractionPreflight activeGizmoPreflight = gizmo.preflightInteraction(hit);
+    expectTrue(activeGizmoPreflight.canUpdate(), "gizmo interaction preflight accepts active update");
+    expectTrue(activeGizmoPreflight.update.snapDegraded,

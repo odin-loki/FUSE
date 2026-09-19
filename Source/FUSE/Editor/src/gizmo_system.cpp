@@ -2499,3 +2499,7 @@ BeginInteractionPreflight preflightBeginInteraction(const GizmoRay& ray,
 
 // --- deepen additive from deepen-b6-gizmo-preflight-guards-5c39 ---
     const f32 delta = fuse::editor::trySnapDragDelta(dx + dy, m_mode, m_snap);
+
+// --- deepen additive from deepen-b6-gizmo-interaction-preflights-10fa ---
+void annotateBeginDragSnapDegraded_(BeginDragPreflight& preflight, GizmoMode mode,
+InteractionPreflight preflightInteraction(const GizmoHitTest& hit, GizmoMode mode, bool dragging,

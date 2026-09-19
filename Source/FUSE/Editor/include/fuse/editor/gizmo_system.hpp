@@ -1085,3 +1085,6 @@ DragUpdateFramePreflight preflightDragUpdateFrame(const GizmoHitTest& hit, bool 
 PickSnapPreflight preflightPickSnap(GizmoMode mode, const GizmoSnapSettings& settings);
     EndDragPreflight drag{};
 BeginInteractionPreflight preflightBeginInteraction(const GizmoRay& ray,
+
+// --- deepen additive from deepen-b6-gizmo-interaction-preflights-10fa ---
+InteractionPreflight preflightInteraction(const GizmoHitTest& hit, GizmoMode mode, bool dragging,
