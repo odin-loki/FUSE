@@ -1147,3 +1147,10 @@ bool should_skip_all_island_solves(const ContactIslandGraph& graph);
 // --- deepen additive from deepen-b4-pbd-island-preflight-warmstart-4254 ---
     IslandSolvePreflight preflight{};
 bool should_skip_frame_warm_start(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-b4-pbd-island-dispatch-warmstart-guards-e8ca ---
+IslandContactImpulseWarmStartPreflight preflight_contact_impulse_warm_start_island(
+IslandContactImpulseWarmStartPreflight preflight_contact_impulse_warm_start_island_by_index(
+bool should_skip_contact_impulse_warm_start_island(const ContactIslandGraph::Island& island);
+bool should_skip_contact_impulse_warm_start_island_index(const ContactIslandGraph& graph, u32 islandIndex);
+IslandCombinedWarmStartPreflight preflight_warm_start_island_combined(

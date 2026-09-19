@@ -3020,3 +3020,19 @@ void testWarmStartAllIslandsGuarded() {
         const IslandWarmStartPreflight islandPreflight =
         expectTrue(islandPreflight.can_warm_start(), "collected index passes island preflight");
 void testWarmStartIslandByIndexGuarded() {
+
+// --- deepen additive from deepen-b4-pbd-island-dispatch-warmstart-guards-e8ca ---
+void testPreflightContactImpulseWarmStartGuards() {
+    expectTrue(constrainedPreflight.nonZeroImpulseCoverage == 1u,
+    expectTrue(should_skip_contact_impulse_warm_start_island_index(graph, graph.islandCount() + 1u),
+               "should_skip_contact_impulse_warm_start_island_index on out-of-range index");
+        expectTrue(should_skip_contact_impulse_warm_start_island(island),
+                   "should_skip_contact_impulse_warm_start_island on empty island");
+void testPreflightWarmStartIslandCombinedGuards() {
+    const IslandCombinedWarmStartPreflight combinedPreflight =
+    expectTrue(!combinedPreflight.skipped, "combined preflight does not skip constrained island");
+    expectTrue(combinedPreflight.lambdas.can_warm_start(), "combined preflight sees prior lambda data");
+    expectTrue(combinedPreflight.impulses.can_warm_start(), "combined preflight sees non-zero impulses");
+    expectTrue(combinedPreflight.can_warm_start(), "combined island can warm-start");
+    testPreflightContactImpulseWarmStartGuards();
+    testPreflightWarmStartIslandCombinedGuards();
