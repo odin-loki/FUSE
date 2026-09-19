@@ -3189,6 +3189,65 @@ struct IslandPipelineDispatchResult {
 
 /// Batch pipeline dispatch summary for wake-then-solve iteration stubs.
 
+/// Diagnostic reason one island constraint solve would reject (B4.4 deepen follow-up).
+enum class IslandSolveRejectReason : u8 {
+    None,
+    InvalidDt,
+
+/// Human-readable label for island solve reject reasons (B4.4 deepen follow-up).
+const char* island_solve_reject_reason_name(IslandSolveRejectReason reason);
+
+/// Returns the first reject reason for one island solve pass.
+IslandSolveRejectReason island_solve_reject_reason(
+
+/// Returns true when `island_solve_reject_reason` matches `expected` (B4.4 deepen follow-up).
+bool island_solve_rejects_for_reason(
+    f32 dt,
+    IslandSolveRejectReason expected);
+
+/// Extended constraint-solve preflight combining refs, bodies, and sleep guards.
+struct IslandExtendedSolvePreflight {
+    IslandSolveRejectReason reason = IslandSolveRejectReason::None;
+
+    bool can_solve() const { return !skipped && reason == IslandSolveRejectReason::None; }
+
+/// Populate extended island solve preflight without mutating bodies (B4.4 deepen follow-up).
+IslandExtendedSolvePreflight preflight_island_extended_solve(
+
+/// Early-out guard when extended island solve preflight rejects the pass.
+bool should_skip_island_extended_solve(
+
+/// Diagnostic reason island pipeline dispatch would reject (B4.4 deepen follow-up).
+enum class IslandPipelineRejectReason : u8 {
+    NoDispatchableIslands,
+    AllIslandsSleeping,
+
+/// Human-readable label for island pipeline reject reasons (B4.4 deepen follow-up).
+const char* island_pipeline_reject_reason_name(IslandPipelineRejectReason reason);
+
+/// Returns the first reject reason for graph-level island pipeline dispatch.
+IslandPipelineRejectReason island_pipeline_reject_reason(const ContactIslandGraph& graph,
+
+/// Returns true when `island_pipeline_reject_reason` matches `expected` (B4.4 deepen follow-up).
+bool island_pipeline_rejects_for_reason(const ContactIslandGraph& graph,
+                                        IslandPipelineRejectReason expected);
+
+/// Combined wake + dispatch + sleep preflight for one substep pipeline stub.
+struct IslandPipelinePreflight {
+    IslandPipelineRejectReason reason = IslandPipelineRejectReason::None;
+
+    bool can_dispatch() const { return !skipped && reason == IslandPipelineRejectReason::None; }
+
+/// Populate island pipeline dispatch preflight without mutating bodies (B4.4 deepen follow-up).
+IslandPipelinePreflight preflight_island_pipeline_dispatch(const ContactIslandGraph& graph,
+
+/// Early-out guard when island pipeline dispatch should not run.
+bool should_skip_island_pipeline_dispatch(const ContactIslandGraph& graph,
+
+/// Per-island pipeline dispatch outcome (wake vs solve vs skip).
+
+struct IslandBatchPipelineDispatchResult {
+
 
 /// Aggregate contact-impulse warm-start counts for graph-level batch guards.
 struct IslandContactImpulseWarmStartStats {
@@ -5500,6 +5559,26 @@ bool dispatch_solve_island_with_sleep_guard(RigidBodySoA& bodies,
 
 /// Batch guarded dispatch with sleep-skip counts (B4.4 deepen follow-up pass).
 IslandBatchSleepDispatchResult dispatch_all_islands_with_sleep_guard_result(
+/// Guarded island solve with extended refs/bodies/sleep preflight; valid paths delegate to `solve_island_job`.
+
+/// Guarded per-island pipeline: wake mixed sleepers then solve; returns false when skipped.
+IslandPipelineDispatchResult dispatch_island_pipeline_guarded(
+
+/// Batch guarded pipeline dispatch over solveable islands; returns count actually solved.
+u32 dispatch_all_islands_pipeline_guarded(
+
+/// Batch guarded pipeline dispatch with explicit wake/solve/skip counts.
+IslandBatchPipelineDispatchResult dispatch_all_islands_pipeline_result(
+
+/// Collect island indices that are dispatchable and not all-sleeping (pipeline solve prep).
+std::vector<u32> collect_solveable_island_indices(const ContactIslandGraph& graph,
+                                                  const RigidBodySoA& bodies);
+
+/// Count islands that pass pipeline solve preflight.
+u32 count_solveable_islands(const ContactIslandGraph& graph, const RigidBodySoA& bodies);
+
+/// True when at least one island can wake-and-solve this substep.
+bool has_solveable_islands(const ContactIslandGraph& graph, const RigidBodySoA& bodies);
 
 /// Clear lambdas and warm-start distance/contact slots from the prior frame (first substep only).
 void frame_lambda_warm_start(SolverWorkBuffers& workBuffers,

@@ -666,9 +666,6 @@ bool island_build_body_pair_in_range(u32 bodyCount, u32 bodyA, u32 bodyB);
 struct IslandGraphPartitionStats {
 /// Returns true when `island_graph_build_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
 bool island_graph_build_rejects_for_reason(
-    u32 bodyCount,
-    const std::vector<narrowphase::ContactManifold>& contacts,
-    const std::vector<DistanceConstraint>& distanceConstraints,
     IslandGraphBuildRejectReason expected);
 
 /// True when `bodyIndex` fits the declared body count for island partitioning.
@@ -676,12 +673,30 @@ bool island_body_index_in_range(u32 bodyIndex, u32 bodyCount);
 /// Non-mutating island graph build skip predicate — inverse of `should_run_island_graph_build`.
 bool can_skip_island_graph_build(
 bool should_skip_contact_island_build(
+/// Diagnostic reason island graph build would reject inputs (B4.4 deepen follow-up).
+    OutOfRangeContact,
+    OutOfRangeDistance,
+
+/// Human-readable label for island build reject reasons (B4.4 deepen follow-up).
+
+/// Returns the first reject reason for island graph build inputs.
+
+
+
+
+/// Populate island graph build preflight without mutating the graph (B4.4 deepen follow-up).
+ContactIslandGraphBuildPreflight preflight_contact_island_graph_build(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
 
 /// Non-mutating island graph build predicate — mirrors `island_graph_build_reject_reason`.
 bool should_run_island_graph_build(
+/// Non-mutating island graph build predicate (B4.4 deepen follow-up).
+bool can_build_contact_island_graph(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
@@ -740,6 +755,8 @@ struct ContactIslandGraph {
     /// Build only when `preflight_contact_island_graph_build` passes; clears and returns false otherwise.
     /// Guarded build; clears and returns false when `island_graph_build_reject_reason` is non-None.
     /// Guarded build; returns false when preflight skips build or refs are out of range.
+    /// Build while skipping out-of-range constraint refs (additive safe-build stub).
+    void build_skipping_unsafe_refs(u32 bodyCount,
 
     void clear();
 
