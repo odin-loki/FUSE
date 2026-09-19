@@ -3982,3 +3982,15 @@ void testSnapDeltaPreflight() {
     expectNear(gizmo.preflightSnapDelta(0.37f).snappedDelta, 0.5f, 0.001f,
     testRayNormalizationPreflight();
     testSnapDeltaPreflight();
+
+// --- deepen additive from deepen-gizmo-preflights-8c2e ---
+    expectTrue(nanBeginPreflight.nonFinite, "begin preflight marks non-finite screen hit");
+    const fuse::editor::SnapPreflight nanSnapPreflight =
+        fuse::editor::preflightSnap(fuse::editor::GizmoMode::Translate, nanSnap);
+    expectTrue(nanSnapPreflight.nonFiniteSettings, "snap preflight marks non-finite settings");
+    expectTrue(!nanSnapPreflight.canApply(), "snap preflight rejects non-finite settings");
+    expectTrue(nanSnapPreflight.isDegraded(), "non-finite snap settings are degraded");
+    const fuse::editor::UpdateDragPreflight nanUpdatePreflight = gizmo.preflightUpdateDrag(hit);
+    expectTrue(nanUpdatePreflight.nonFinite, "update preflight marks non-finite screen hit");
+    expectTrue(!nanUpdatePreflight.canUpdate(), "update preflight rejects non-finite screen hit");
+    expectTrue(!gizmo.preflightPickInteraction(nanHit).canPick(),
