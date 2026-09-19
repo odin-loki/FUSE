@@ -33,16 +33,30 @@ enum class ProbeKernelRejectReason : u8 {
 
 /// Human-readable label for probe-kernel reject reasons (logging / tests).
 const char* probeKernelRejectReasonLabel(ProbeKernelRejectReason reason);
+/// Classify why probe-kernel launch preflight would reject (B5.6 deepen).
+ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params);
 
 /// Preflight guard before probe trace kernel launch.
 bool canLaunchProbeTraceKernel(const DDGIKernelParams& params);
 /// Diagnose why probe trace launch preflight would reject.
 bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
+/// Early-out when probe trace launch would be rejected (B5.6 deepen).
+bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
+/// Early-out when probe trace launch would be rejected — same ordering as `wouldSkipProbeTraceKernel` (B5.6 deepen).
+bool shouldSkipProbeTraceKernel(const DDGIKernelParams& params);
+/// Probe trace launch preflight; false when launch would be rejected (B5.6 deepen).
+bool preflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
 /// Preflight guard before probe blend kernel launch.
 bool canLaunchProbeBlendKernel(const DDGIKernelParams& params);
 /// Diagnose why probe blend launch preflight would reject.
 bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
+/// Early-out when probe blend launch would be rejected (B5.6 deepen).
+bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
+/// Early-out when probe blend launch would be rejected — same ordering as `wouldSkipProbeBlendKernel` (B5.6 deepen).
+bool shouldSkipProbeBlendKernel(const DDGIKernelParams& params);
+/// Probe blend launch preflight; false when launch would be rejected (B5.6 deepen).
+bool preflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);
