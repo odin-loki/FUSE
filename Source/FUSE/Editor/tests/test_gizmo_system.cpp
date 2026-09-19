@@ -1325,6 +1325,66 @@ void testGizmoUpdateDragSnapDegradedPreflight() {
     gizmo.endDrag();
 }
 
+void testBeginDragSnapDegradedPreflight() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::BeginDragPreflight degradedHitPreflight = fuse::editor::preflightBeginDrag(
+        hit, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(degradedHitPreflight.canBegin, "begin preflight still allows drag when snap degraded");
+    expectTrue(degradedHitPreflight.snapDegraded, "begin preflight marks snap degraded");
+
+    fuse::editor::GizmoTransform transform{};
+    const fuse::editor::GizmoRay xRay = rayAlongX();
+    const fuse::editor::BeginDragPreflight degradedRayPreflight = fuse::editor::preflightBeginDrag(
+        xRay, transform, fuse::editor::GizmoMode::Translate, fuse::editor::GizmoSpace::World,
+        fuse::editor::GizmoSystem::kAxisLength, fuse::editor::GizmoSystem::kPickRadius, snap);
+    expectTrue(degradedRayPreflight.canBegin, "ray begin preflight still allows drag when snap degraded");
+    expectTrue(degradedRayPreflight.snapDegraded, "ray begin preflight marks snap degraded");
+
+    snap.gridSize = 1.f;
+    const fuse::editor::BeginDragPreflight validPreflight = fuse::editor::preflightBeginDrag(
+        hit, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(validPreflight.canBegin, "begin preflight accepts valid snap settings");
+    expectTrue(!validPreflight.snapDegraded, "valid snap clears snapDegraded on begin");
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    const fuse::editor::BeginDragPreflight gizmoPreflight = gizmo.preflightBeginDrag(hit);
+    expectTrue(gizmoPreflight.canBegin, "gizmo begin preflight accepts valid snap settings");
+    expectTrue(!gizmoPreflight.snapDegraded, "gizmo begin preflight clears snapDegraded");
+}
+
+void testSnapPreflightStepField() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.5f;
+
+    const fuse::editor::SnapPreflight validPreflight =
+        fuse::editor::preflightSnap(fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(validPreflight.canApply(), "snap preflight accepts enabled snap with valid step");
+    expectNear(validPreflight.step, 0.5f, 0.001f, "snap preflight resolves translate grid step");
+
+    snap.gridSize = 0.f;
+    const fuse::editor::SnapPreflight invalidPreflight =
+        fuse::editor::preflightSnap(fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(invalidPreflight.invalidStep, "snap preflight marks invalid step");
+    expectNear(invalidPreflight.step, 0.f, 0.001f, "snap preflight reports zero step when invalid");
+
+    snap.translateSnap = false;
+    const fuse::editor::SnapPreflight disabledPreflight =
+        fuse::editor::preflightSnap(fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(disabledPreflight.snapDisabled, "snap preflight marks disabled snap");
+    expectNear(disabledPreflight.step, 0.f, 0.001f, "snap preflight leaves step zero when disabled");
+}
+
 void testDirtyFlagOnEndDrag() {
     fuse::editor::GizmoSystem gizmo;
     fuse::editor::CommandStack commandStack;
@@ -1398,6 +1458,8 @@ int main() {
     testEndInteractionPreflight();
     testInteractionPreflightCombined();
     testGizmoUpdateDragSnapDegradedPreflight();
+    testBeginDragSnapDegradedPreflight();
+    testSnapPreflightStepField();
     testDirtyFlagOnEndDrag();
 
     if (g_failures != 0) {
