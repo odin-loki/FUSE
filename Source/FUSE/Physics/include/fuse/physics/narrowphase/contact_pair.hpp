@@ -1240,6 +1240,8 @@ bool is_degenerate_plane_normal_pair(
 
 /// Returns true when the resolved shape types have no narrowphase dispatch handler (B4.6 deepen pass).
 
+/// Returns true when shapes pass base checks but have no narrowphase dispatch path (B4.6 deepen follow-up pass).
+
 /// Const preflight for narrowphase batch dispatch (B4.5 deepen follow-up pass).
 struct NarrowphaseBatchPreflight {
     NarrowphaseBatchRejectReason reason = NarrowphaseBatchRejectReason::None;
@@ -1966,6 +1968,8 @@ bool can_skip_detect_contacts_pair(
 ContactManifold detect_contacts_pair_with_preflight(
 /// Inverse of `should_skip_contact_pair_deepen_dispatch` (B4.6 deepen pass).
 bool is_valid_contact_pair_deepen(
+/// Non-mutating pair-dispatch skip predicate for base preflight (B4.6 deepen follow-up pass).
+bool can_skip_contact_pair_dispatch(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -1980,12 +1984,16 @@ bool can_skip_generate_contact_manifold(const ContactManifold& manifold);
 ContactPairRejectReason contact_pair_deepen_followup_reject_reason(
 /// Detect contacts only when deepen preflight allows; invalid manifold otherwise (B4.6 deepen pass).
 ContactManifold detect_contacts_pair_with_deepen_preflight(
+/// Non-mutating pair-dispatch predicate — mirrors `preflight_contact_pair` (B4.6 deepen follow-up pass).
+bool should_run_contact_pair_dispatch(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
 /// Returns true when extended deepen follow-up rejects this pair (B4.6 deepen follow-up pass).
 bool should_skip_contact_pair_deepen_followup_dispatch(
+/// Non-mutating deepen-dispatch skip predicate (B4.6 deepen follow-up pass).
+bool can_skip_contact_pair_deepen_dispatch(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -2030,5 +2038,17 @@ bool generate_contact_manifold_with_preflight(
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
+/// Non-mutating deepen-dispatch predicate — mirrors `preflight_contact_pair_deepen` (B4.6 deepen follow-up pass).
+bool should_run_contact_pair_deepen_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating narrowphase predicate — inverse of `can_skip_narrowphase` (B4.6 deepen follow-up pass).
+bool should_run_narrowphase(
+    const std::vector<broadphase::CandidatePair>& pairs,
+
+/// Non-mutating batch predicate — inverse of `narrowphase_batch_rejects_all` (B4.6 deepen follow-up pass).
+bool should_run_narrowphase_batch(
 
 } // namespace fuse::physics::narrowphase

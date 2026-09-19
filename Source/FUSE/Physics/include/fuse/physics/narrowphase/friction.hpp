@@ -915,5 +915,11 @@ FUSE_PHYSICS_INLINE bool can_skip_project_tangential_velocity(
         speedThreshold,
         impulseEpsilon);
 
+/// Non-mutating friction-basis rebuild predicate — inverse of `should_skip_friction_basis_preflight` (B4.6 deepen follow-up pass).
+
+/// Non-mutating rebuild-with-preflight skip predicate (B4.6 deepen follow-up pass).
+bool can_skip_rebuild_friction_basis_with_preflight(
+
+/// Non-mutating rebuild-with-preflight predicate — inverse of skip predicate (B4.6 deepen follow-up pass).
 
 } // namespace fuse::physics::narrowphase

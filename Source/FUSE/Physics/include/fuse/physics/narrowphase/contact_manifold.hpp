@@ -458,6 +458,14 @@ bool should_run_manifold_prune(
     f32 shallowMinDepth = 0.f);
 
 /// Non-mutating prune predicate — inverse of `should_skip_manifold_prune` (B4.6 deepen pass).
+/// Non-mutating prune skip predicate — alias of `should_skip_manifold_prune` (B4.6 deepen follow-up pass).
+bool can_skip_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Non-mutating prune predicate — inverse of `can_skip_manifold_prune` (B4.6 deepen follow-up pass).
 bool should_run_manifold_prune(
     const ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,
@@ -1537,6 +1545,15 @@ bool prune_shallow_contact_manifold_with_preflight(
 
 /// Returns true when manifold finalize preflight would skip after guarded prune (B4.6 deepen pass).
 bool can_skip_manifold_finalize_after_prune(
+/// Non-mutating prune-with-preflight skip predicate (B4.6 deepen follow-up pass).
+bool can_skip_prune_contact_manifold_with_preflight(
+
+/// Non-mutating prune-with-preflight predicate — inverse of skip predicate (B4.6 deepen follow-up pass).
+
+/// Non-mutating finalize-with-preflight skip predicate (B4.6 deepen follow-up pass).
+bool can_skip_finalize_contact_manifold_with_preflight(
+
+/// Non-mutating finalize-with-preflight predicate — inverse of skip predicate (B4.6 deepen follow-up pass).
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

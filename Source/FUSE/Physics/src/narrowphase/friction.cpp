@@ -1583,4 +1583,10 @@ bool should_run_rebuild_friction_basis_with_preflight(
     return preflight.reason == FrictionBasisRejectReason::None && preflight.needsRebuild;
 
 
+bool can_skip_rebuild_friction_basis_with_preflight(const ContactManifold& manifold, f32 epsilon) {
+    return preflight.can_skip_rebuild();
+
+bool should_run_rebuild_friction_basis_with_preflight(const ContactManifold& manifold, f32 epsilon) {
+    return !can_skip_rebuild_friction_basis_with_preflight(manifold, epsilon);
+
 } // namespace fuse::physics::narrowphase

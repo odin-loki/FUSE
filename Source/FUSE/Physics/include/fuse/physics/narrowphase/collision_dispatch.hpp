@@ -673,5 +673,8 @@ FUSE_PHYSICS_INLINE bool run_narrowphase_into_buffer_with_preflight(
 FUSE_PHYSICS_INLINE std::vector<ContactManifold> run_narrowphase_with_preflight(
         return {};
     return runNarrowphase(pairs, bodies, shapes);
+/// Non-mutating narrowphase-into-buffer skip predicate using batch preflight (B4.6 deepen follow-up pass).
+
+/// Non-mutating narrowphase-into-buffer predicate — inverse of skip predicate (B4.6 deepen follow-up pass).
 
 } // namespace fuse::physics::narrowphase
