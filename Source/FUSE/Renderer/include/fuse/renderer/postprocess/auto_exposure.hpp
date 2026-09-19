@@ -192,6 +192,16 @@ bool exposure_meter_can_measure(const ExposureMeter& meter);
 /// Average luminance from meter; returns 0 when empty (B5.10 deepen).
 /// Average luminance from samples; returns 0 when empty (B5.10 deepen).
 
+/// Batch exposure-meter helpers mirroring histogram_util (B5.10 deepen).
+namespace meter_util {
+/// True when an exposure meter has accumulated samples.
+bool hasMeteringMeter(const ExposureMeter& meter);
+/// Average luminance from meter; returns 0 when empty (B5.10 deepen).
+f32 meterFromMeter(const ExposureMeter& meter);
+/// Average luminance from samples; returns 0 when empty (B5.10 deepen).
+f32 meterFromSamples(const fuse::math::Vec3* samples, u32 count);
+} // namespace meter_util
+
 /// Host-side auto-exposure pass stub (CUDA histogram deferred).
 class AutoExposure {
 public:
@@ -221,6 +231,8 @@ private:
 bool auto_exposure_can_update_from_samples(const fuse::math::Vec3* samples, u32 count);
 /// True when a histogram can drive auto-exposure adaptation (B5.10 deepen).
 bool auto_exposure_can_update_from_histogram(const LuminanceHistogram& histogram);
+/// True when a positive measured luminance can drive adaptation (B5.10 deepen).
+bool auto_exposure_can_update_from_luminance(f32 measured_luminance, const AutoExposureParams& params);
 /// Reset temporal auto-exposure state via facade (B5.10 deepen).
 void reset_auto_exposure(AutoExposure& exposure);
 /// Reset temporal auto-exposure state with clamped EV anchor via facade (B5.10 deepen).

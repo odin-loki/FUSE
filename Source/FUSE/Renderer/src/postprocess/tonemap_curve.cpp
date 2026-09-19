@@ -147,6 +147,8 @@ bool tonemap_curve_is_usable(const TonemapCurveParams& params, f32 white_input, 
     if (params.kind == TonemapCurveKind::ACES && params.aces.shoulder < 0.f) {
     }
         return false;
+    if (params.kind == TonemapCurveKind::ACES && params.aces.shoulder < 0.f) {
+    }
     return true;
 }
 
