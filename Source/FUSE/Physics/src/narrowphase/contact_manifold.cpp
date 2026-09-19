@@ -700,3 +700,11 @@ ManifoldPruneDispatchPreflight preflight_manifold_prune_dispatch(
     if (should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth)) {
     if (prunePreflight.wouldBeEmpty) {
     if (preflight.reason == ManifoldFinalizeRejectReason::Empty) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-6242 ---
+    case ManifoldPruneRejectReason::NoPruneNeeded:
+        return ManifoldPruneRejectReason::NoPruneNeeded;
+    const ManifoldPruneRejectReason reason =
+    if (reason == ManifoldPruneRejectReason::EmptyManifold ||
+        reason == ManifoldPruneRejectReason::WouldBeEmptyAfterPrune) {
+    if (reason == ManifoldPruneRejectReason::NoPruneNeeded) {

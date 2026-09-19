@@ -762,3 +762,20 @@ ContactPairBatchPreflight preflight_contact_pair_batch(
 
 // --- deepen additive from deepen-b4-narrowphase-guards-f4c2 ---
     if (preflight.reason != NarrowphaseRejectReason::None) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-6242 ---
+    case ContactPairRejectReason::PlanePlane:
+    case ContactPairRejectReason::InvalidPlaneNormal:
+    case ContactPairRejectReason::ShapeBodyMismatch:
+ContactPairRejectReason contact_pair_deepen_pass_reject_reason(
+        if (deepenReason == ContactPairRejectReason::UnsupportedShapePair &&
+            return ContactPairRejectReason::PlanePlane;
+        if (deepenReason == ContactPairRejectReason::DegenerateShape &&
+            return ContactPairRejectReason::InvalidPlaneNormal;
+        return ContactPairRejectReason::ShapeBodyMismatch;
+ContactPairDeepenPassPreflight preflight_contact_pair_deepen_pass(
+    ContactPairDeepenPassPreflight preflight{};
+bool should_skip_contact_pair_deepen_pass_dispatch(
+    return contact_pair_deepen_pass_reject_reason(pair, bodies, shapes) != ContactPairRejectReason::None;
+        if (should_skip_contact_pair_deepen_pass_dispatch(pair, bodies, shapes)) {
+bool should_skip_contact_pair_batch(

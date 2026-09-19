@@ -326,3 +326,10 @@ ContactPairBatchPreflight preflight_contact_pair_batch(
 
 // --- deepen additive from deepen-b4-narrowphase-guards-f4c2 ---
         return reason == NarrowphaseRejectReason::None && dispatchableCount > 0u;
+
+// --- deepen additive from b4-narrowphase-deepen-guards-6242 ---
+ContactPairRejectReason contact_pair_deepen_pass_reject_reason(
+struct ContactPairDeepenPassPreflight {
+ContactPairDeepenPassPreflight preflight_contact_pair_deepen_pass(
+bool should_skip_contact_pair_deepen_pass_dispatch(
+bool should_skip_contact_pair_batch(

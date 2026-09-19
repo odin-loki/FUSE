@@ -2422,3 +2422,24 @@ void testFrictionBasisDeepenPassShouldRunGuards() {
     expectTrue(batchPreflight.stats.rejectedPairs == 1u, "batch preflight reports rejected count");
     expectTrue(batchPreflight.can_dispatch_any(), "batch preflight can dispatch mixed list");
 void testFrictionBasisRebuildDeepenPassGuards() {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-6242 ---
+void testContactPairDeepenPassLayerGuards() {
+            fuse::physics::narrowphase::ContactPairRejectReason::PlanePlane,
+            fuse::physics::narrowphase::ContactPairRejectReason::InvalidPlaneNormal,
+    const auto deepenPassPreflight =
+    expectTrue(deepenPassPreflight.can_dispatch(), "deepen-pass preflight allows valid pair");
+        !fuse::physics::narrowphase::should_skip_contact_pair_deepen_pass_dispatch({dynamicA, dynamicB}, bodies, shapes),
+        fuse::physics::narrowphase::should_skip_contact_pair_deepen_pass_dispatch({planeA, planeB}, bodies, shapes),
+    expectTrue(!batchPreflight.allRejected, "batch preflight not all rejected for mixed list");
+        !fuse::physics::narrowphase::should_skip_contact_pair_batch(mixedPairs, bodies, shapes),
+        fuse::physics::narrowphase::should_skip_contact_pair_batch({{planeA, planeB}}, bodies, shapes),
+                fuse::physics::narrowphase::ContactPairRejectReason::PlanePlane),
+            fuse::physics::narrowphase::ManifoldPruneRejectReason::NoPruneNeeded,
+            fuse::physics::narrowphase::ManifoldPruneRejectReason::NoPruneNeeded),
+void testFrictionBasisDeepenPassRejectGuards() {
+            fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::SkippedEmpty,
+            fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::SkippedEmpty),
+            fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::NeedsRebuild,
+            fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::CanReuse,
+                fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::NeedsRebuild),
