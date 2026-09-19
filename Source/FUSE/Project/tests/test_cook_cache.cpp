@@ -1326,3 +1326,10 @@ void testCookHashPreflightManifestWithUpstream() {
                "would_invalidate mirrors contains for seeded hash");
     const fuse::project::CookCacheEntryPreflight zero_key =
                "would_invalidate_stale_upstream mirrors non-zero count");
+
+// --- deepen additive from b79-cooker-hash-deepen-f116 ---
+                   fuse::project::CookHashRejectReason::InvalidCacheEntry)) == "invalid_cache_entry",
+    expectTrue(!cache.would_invalidate_downstream_of("/tmp/fuse_b79_would_output.fusemesh", {}, {}),
+    expectTrue(!cache.would_invalidate_stale_upstream_hashes({{"/tmp/fuse_b79_would_source.obj", 1u}}),
+    expectTrue(!cooker.cache().would_invalidate_source(""), "empty source would_invalidate guarded");
+    expectTrue(!cooker.cache().would_invalidate_output(""), "empty output would_invalidate guarded");
