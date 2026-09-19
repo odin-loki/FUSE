@@ -1331,3 +1331,36 @@ bool tryFindEventByName(const char* name, u32& outIndex) {
 
 // --- deepen additive from deepen-b16-profiler-guards-ce9d ---
 bool tryFindEventByName(const char* name, ProfileEvent& outEvent) {
+
+// --- deepen additive from deepen-b16-profiler-guards-8f82 ---
+        outReason = EventNameRejectReason::Null;
+        outReason = EventNameRejectReason::Empty;
+        outReason = EventNameRejectReason::Blank;
+    outReason = EventNameRejectReason::None;
+EventNameRejectReason eventNameRejectReason(const char* name) {
+    EventNameRejectReason reason = EventNameRejectReason::None;
+    tryValidateEventName(name, reason);
+    return enabled() && tryValidateEventName(name, reason);
+    return tryValidateEventName(event.name, reason);
+    return tryValidateEventName(eventAt(index).name, reason);
+EventLookupRejectReason eventLookupRejectReason(u32 index) {
+        return EventLookupRejectReason::EmptyBuffer;
+        return EventLookupRejectReason::OutOfRange;
+    EventNameRejectReason nameReason = EventNameRejectReason::None;
+    if (!tryValidateEventName(eventAt(index).name, nameReason)) {
+        return EventLookupRejectReason::InvalidEvent;
+    return EventLookupRejectReason::None;
+    outReason = eventLookupRejectReason(index);
+    return outReason == EventLookupRejectReason::None;
+    EventLookupRejectReason lookupReason = EventLookupRejectReason::None;
+    if (!tryCanLookupEventAt(index, lookupReason)) {
+NestingStateRejectReason nestingStateRejectReason() {
+    const NestingStateRejectReason stateReason = nestingStateRejectReason();
+    return stateReason == NestingStateRejectReason::None;
+    preflight.rejectReason = chromeTraceExportRejectReason();
+        return ChromeTraceExportRejectReason::BufferOverflow;
+    return chromeTraceExportRejectReason() == ChromeTraceExportRejectReason::None;
+    const ChromeTraceExportRejectReason rejectReason = chromeTraceExportRejectReason();
+    if (rejectReason != ChromeTraceExportRejectReason::None) {
+    case EventNameRejectReason::Blank:
+    case ChromeTraceExportRejectReason::BufferOverflow:

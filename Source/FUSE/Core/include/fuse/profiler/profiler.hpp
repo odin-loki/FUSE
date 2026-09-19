@@ -440,3 +440,10 @@ bool tryFindEventByName(const char* name, u32& outIndex);
 
 // --- deepen additive from deepen-b16-profiler-guards-ce9d ---
 bool tryFindEventByName(const char* name, ProfileEvent& outEvent);
+
+// --- deepen additive from deepen-b16-profiler-guards-8f82 ---
+    ChromeTraceExportRejectReason rejectReason = ChromeTraceExportRejectReason::None;
+        return !profilerDisabled && exportableEventCount > 0 && rejectReason == ChromeTraceExportRejectReason::None;
+EventNameRejectReason eventNameRejectReason(const char* name);
+EventLookupRejectReason eventLookupRejectReason(u32 index);
+NestingStateRejectReason nestingStateRejectReason();

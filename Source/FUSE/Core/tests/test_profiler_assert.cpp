@@ -3791,3 +3791,47 @@ void testReconcileDetachedFlowNestingDepthGuard() {
     expectTrue(cleanPreflight.canExportClean(), "preflight canExportClean with balanced paired scope");
     expectTrue(!cleanPreflight.bufferFull, "preflight bufferFull false below ring capacity");
     expectTrue(!openPreflight.canExportClean(),
+
+// --- deepen additive from deepen-b16-profiler-guards-8f82 ---
+    expectTrue(fuse::profiler::hasRejectedInvalidNames(), "hasRejectedInvalidNames after blank attempts");
+    expectTrue(!fuse::profiler::tryValidateEventName("   ", reason),
+               "tryValidateEventName rejects whitespace-only name");
+    expectTrue(reason == fuse::profiler::EventNameRejectReason::Blank, "whitespace maps to Blank reason");
+    expectTrue(fuse::profiler::eventNameRejectReason(nullptr) == fuse::profiler::EventNameRejectReason::Null,
+    expectTrue(fuse::profiler::eventNameRejectReason("") == fuse::profiler::EventNameRejectReason::Empty,
+void testEventLookupRejectReasonGuards() {
+    expectTrue(fuse::profiler::eventLookupRejectReason(99u) == fuse::profiler::EventLookupRejectReason::EmptyBuffer,
+               "eventLookupRejectReason empty buffer on OOB when empty");
+    expectTrue(fuse::profiler::eventLookupRejectReason(2u) == fuse::profiler::EventLookupRejectReason::OutOfRange,
+    expectTrue(fuse::profiler::tryExportableEventAt(0u, exportable),
+    expectTrue(exportable.phase == fuse::profiler::EventPhase::Begin, "tryExportableEventAt copies begin phase");
+    expectTrue(!fuse::profiler::tryExportableEventAt(99u, exportable),
+    expectTrue(exportable.name == nullptr, "tryExportableEventAt clears output on failure");
+    expectTrue(fuse::profiler::tryFirstExportableEvent(firstExportable), "tryFirstExportableEvent succeeds");
+    expectTrue(fuse::profiler::tryLastExportableEvent(lastExportable), "tryLastExportableEvent succeeds");
+               "tryFirstExportableEvent returns begin");
+               "tryLastExportableEvent returns end");
+void testNestingStateRejectReasonGuard() {
+    expectTrue(reason == fuse::profiler::NestingStateRejectReason::None, "reset nesting reason is None");
+        expectTrue(fuse::profiler::nestingStateRejectReason()
+    expectTrue(fuse::profiler::nestingStateRejectReason() == fuse::profiler::NestingStateRejectReason::None,
+void testChromeTraceExportRejectReasonGuards() {
+    expectTrue(!fuse::profiler::tryExportChromeTraceJson(json, &reason),
+               "tryExport sets NoExportableEvents reason");
+    expectTrue(json.empty(), "tryExport clears output json on failure");
+    expectTrue(fuse::profiler::tryExportChromeTraceJson(json, &reason),
+               "tryExportChromeTraceJson succeeds with valid events");
+    expectTrue(reason == fuse::profiler::ChromeTraceExportRejectReason::None, "success reason is None");
+               "tryExport returns populated trace json");
+void testPreflightReportsBufferOverflow() {
+    expectTrue(preflight.rejectReason == fuse::profiler::ChromeTraceExportRejectReason::BufferOverflow,
+void testRejectReasonLabels() {
+                   fuse::profiler::EventNameRejectReason::Blank)) == "blank",
+                   fuse::profiler::EventLookupRejectReason::OutOfRange)) == "out_of_range",
+                   fuse::profiler::NestingStateRejectReason::OpenAsyncFlows)) == "open_async_flows",
+                   fuse::profiler::ChromeTraceExportRejectReason::BufferOverflow)) == "buffer_overflow",
+    testEventLookupRejectReasonGuards();
+    testNestingStateRejectReasonGuard();
+    testChromeTraceExportRejectReasonGuards();
+    testPreflightReportsBufferOverflow();
+    testRejectReasonLabels();
