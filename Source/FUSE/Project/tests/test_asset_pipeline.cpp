@@ -3614,6 +3614,8 @@ void testCookCacheDownstreamWouldInvalidateProbe() {
     expectTrue(upstream.downstream_entries >= 1u, "upstream estimate includes downstream entries");
     expectTrue(upstream.total() == cooker.count_upstream_invalidation(manifest, source_a),
 
+
+
     const std::vector<std::string> closure = cooker.probe_upstream_invalidation_closure(manifest, source_a);
     expectTrue(closure.size() >= 2u, "upstream closure probe lists changed source and dependents");
     expectTrue(cooker.probe_upstream_invalidation_closure(manifest, "").empty(),
@@ -3754,6 +3756,9 @@ void testCookCacheDownstreamWouldInvalidateProbe() {
                "stale upstream reconcile estimate includes dependency count");
     expectTrue(stale_with_source.upstream_invalidation_entries >= 2u,
                "stale upstream reconcile estimate includes upstream count");
+    expectTrue(cooker.would_reconcile_invalidation(manifest), "stale cache would_reconcile is true");
+
+    const fuse::project::CookCacheReconcileEstimate reconcile = cooker.estimate_reconcile_invalidation(manifest);
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
