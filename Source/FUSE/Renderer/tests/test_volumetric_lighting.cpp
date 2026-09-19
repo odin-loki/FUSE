@@ -2434,3 +2434,11 @@ void testFroxelCoordLookupAndRejectReasonGuards() {
     expectTrue(fuse::renderer::froxel_util::tryWriteDensityAtIndex(grid, desc, 5u, 2.75f, lookupReason),
                "trySampleDensityAtCoord with reason succeeds when coords will clamp");
     testFroxelCoordLookupAndRejectReasonGuards();
+
+// --- deepen additive from deepen-b511-froxel-guards-ea5a ---
+void testFroxelCoordLookupPopulateAndScreenGuards() {
+               "trySampleDensityAtCoord with reason succeeds in range");
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtCoord(grid, desc, 99u, 99u, 99u, clampedCoordSample,
+    expectNear(clampedCoordSample, 2.f, 1e-5f, "trySampleDensityAtCoord clamps OOB coords to last cell");
+    expectTrue(fuse::renderer::froxel_util::tryWriteDensityAtCoord(grid, desc, 1u, 1u, 1u, 3.25f, lookupReason),
+               "tryWriteDensityAtCoord with reason succeeds in range");
