@@ -3761,3 +3761,25 @@ void testTrilinearAndSchedulePreflightGuards() {
                "wouldSkipTrilinearProbeIrradiance true for undersized cache");
                "classifyProbeTrilinearSampleReject empty_grid for empty grid");
     testTrilinearAndSchedulePreflightGuards();
+
+// --- deepen additive from deepen-ddgi-guards-c2c2 ---
+               "classifyProbeTrilinearSampleReject none for valid coords and cache");
+               "preflightTrilinearProbeSample succeeds for valid coords and cache");
+               "wouldSkipTrilinearProbeSample false for valid coords and cache");
+                   fuse::renderer::ProbeTrilinearSampleRejectReason::ClampableSampleCoords),
+               "tryPreflightTrilinearProbeSample succeeds for clampable weights");
+    expectTrue(trilinearReason == fuse::renderer::ProbeTrilinearSampleRejectReason::ClampableSampleCoords,
+    expectTrue(std::strcmp(fuse::renderer::probeTrilinearSampleRejectReasonLabel(trilinearReason),
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipTrilinearProbeSample(desc, oobWeights, cache.data(), 8u),
+               "wouldSkipTrilinearProbeSample false for clampable weights");
+               "classifyProbeTrilinearSampleReject invalid_sample_coords for hard OOB indices");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipTrilinearProbeSample(desc, oobIndices, cache.data(), 8u),
+               "wouldSkipTrilinearProbeSample true for hard OOB indices");
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipSampleCoordPreflight(desc, built),
+               "wouldSkipSampleCoordPreflight false for valid coords");
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipSampleCoordPreflight(desc, oobIndices),
+               "wouldSkipSampleCoordPreflight true for hard OOB indices");
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipSampleCoordPreflight(desc, oobWeights),
+               "wouldSkipSampleCoordPreflight false for clampable weights");
+               "tryScheduleProbeUpdatesAtRate reports no reject reason on success");
+               "tryScheduleProbeUpdatesAtRate reports zero_probes_per_frame reason");

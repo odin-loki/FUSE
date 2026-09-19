@@ -920,3 +920,6 @@ bool preflightDdgiHostKernelLaunch(const DDGIDesc& desc,
 bool tryPreflightDdgiHostKernelLaunch(const DDGIDesc& desc,
                                       DdgiHostKernelLaunchRejectReason& reason);
 bool wouldSkipDdgiHostKernelLaunch(const DDGIDesc& desc, const gi::DDGIKernelParams& params);
+
+// --- deepen additive from deepen-ddgi-guards-c2c2 ---
+    static bool wouldSkipSampleCoordPreflight(const DDGIDesc& desc, const ProbeSampleCoords& coords);

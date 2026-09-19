@@ -2861,3 +2861,12 @@ bool tryPreflightDdgiHostKernelLaunch(const DDGIDesc& desc,
     return !ddgiHostKernelLaunchRejectReasonIsBlocking(reason);
 bool wouldSkipDdgiHostKernelLaunch(const DDGIDesc& desc, const gi::DDGIKernelParams& params) {
     return !preflightDdgiHostKernelLaunch(desc, params);
+
+// --- deepen additive from deepen-ddgi-guards-c2c2 ---
+    case ProbeTrilinearSampleRejectReason::ClampableSampleCoords:
+bool ProbeGridLayout::wouldSkipSampleCoordPreflight(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
+ProbeTrilinearSampleRejectReason trilinearRejectFromSampleCoords(ProbeSampleCoordsRejectReason reason) {
+        return ProbeTrilinearSampleRejectReason::ClampableSampleCoords;
+    return trilinearRejectFromSampleCoords(ProbeGridLayout::classifyProbeSampleCoordsReject(desc, coords));
+    return !probeTrilinearSampleRejectReasonIsBlocking(outReason);
+        classifyProbeTrilinearSampleReject(desc, coords, cache, cache_count));
