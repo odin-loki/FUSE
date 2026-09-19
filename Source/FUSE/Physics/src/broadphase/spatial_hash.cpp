@@ -467,6 +467,7 @@ void runBroadphaseIntoBufferInternal(
     if (shouldSkipBroadphaseInput(bodies.count(), shapes.count())) {
     if (isEmptyBroadphaseInput(bodies, shapes)) {
     if (canSkipBroadphase(bodies.count(), shapes.count())) {
+    if (canSkipBroadphase(bodies, shapes)) {
         return;
     }
 
@@ -562,6 +563,7 @@ void refineBroadphasePairsParallelImpl(
     if (!shouldRunRefineBroadphase(bodies, shapes, buffer)) {
     if (buffer.canSkipRefine() || bodies.count() == 0 || shapes.count() == 0) {
     if (shouldSkipBroadphaseRefine(buffer.activeCount, buffer.pairSlotCount, bodies.count(), shapes.count())) {
+    if (buffer.canSkipRefine() || !buffer.hasValidPairs() || canSkipBroadphase(bodies, shapes)) {
         return;
     }
 
@@ -829,6 +831,7 @@ CandidatePairRejectReason candidatePairRejectReason(
         if (shapes.bodyIndices[shapeIndex] == pair.bodyB) {
             radiusB = shapes.params[shapeIndex].x;
         return CandidatePairRejectReason::AabbSeparated;
+
     return CandidatePairRejectReason::None;
 }
 

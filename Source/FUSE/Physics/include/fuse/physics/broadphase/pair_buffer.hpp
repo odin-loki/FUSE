@@ -60,6 +60,7 @@ struct PairBufferSoA {
     bool canSkipRefine() const { return canSkipSoAIteration(); }
     /// True when compact has no invalidated slots to gather.
     bool canSkipCompact() const;
+    /// True when any prepared slot has been invalidated.
     bool hasInvalidSlots() const;
     bool slotIsValid(u32 slot) const;
 

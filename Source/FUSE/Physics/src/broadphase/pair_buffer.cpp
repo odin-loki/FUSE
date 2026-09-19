@@ -87,6 +87,7 @@ void PairBufferSoA::writeSlot(u32 slot, u32 idxA, u32 idxB, u32 bodyCount) {
     if (slot >= pairSlotCount || !isValidCandidatePair(idxA, idxB, bodyCount)) {
     const CandidatePairRejectReason rejectReason = candidatePairRejectReason(idxA, idxB, bodyCount);
     if (rejectReason != CandidatePairRejectReason::None) {
+    const CandidatePairRejectReason rejectReason = candidatePairRejectReason(idxA, idxB);
         return;
     }
 
@@ -132,6 +133,10 @@ bool PairBufferSoA::push(u32 idxA, u32 idxB) {
 bool PairBufferSoA::wouldRejectPush(u32 idxA, u32 idxB, u32 bodyCount) const {
     if (!isValidCandidatePair(idxA, idxB, bodyCount)) {
         return true;
+    const CandidatePairRejectReason rejectReason = candidatePairRejectReason(idxA, idxB);
+    if (rejectReason != CandidatePairRejectReason::None) {
+        lastRejectReason = rejectReason;
+        return false;
     }
     return isFull();
 

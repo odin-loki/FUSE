@@ -188,6 +188,12 @@ FUSE_PHYSICS_INLINE bool isRejectedCandidatePair(const CandidatePair& pair, u32 
 CandidatePairRejectReason candidatePairRejectReason(
     const CollisionShapeSoA& shapes);
 
+
+
+
+/// Empty-set guard: true when broadphase has no bodies or shapes to process.
+FUSE_PHYSICS_INLINE bool canSkipBroadphase(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes) {
+
 /// Clamp cell size to a positive stub default (broadphase occupancy guard).
 FUSE_PHYSICS_INLINE f32 clampCellSize(f32 cellSize) {
     return cellSize > 0.f ? cellSize : 1.f;
@@ -650,6 +656,13 @@ FUSE_PHYSICS_INLINE u32 countValidCandidatePairs(
 /// Clamp per-axis cell span budget (0 = unlimited stub).
 FUSE_PHYSICS_INLINE u32 clampMaxCellSpanPerAxis(u32 maxSpanPerAxis) {
     return maxSpanPerAxis;
+/// True when any per-axis span exceeds `maxSpanPerAxis` before clamping (0 = unlimited).
+FUSE_PHYSICS_INLINE bool cellSpanExceedsClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+
+FUSE_PHYSICS_INLINE bool cellSpanExceedsClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+
+/// Cell-capacity guard: true when occupancy exceeds `maxCells` (0 = unlimited).
+
 
 /// Clamp broadphase params to safe stub defaults (positive cell size, at least one bucket).
 FUSE_PHYSICS_INLINE SpatialHashParams normalizeSpatialHashParams(SpatialHashParams params) {
@@ -821,6 +834,15 @@ FUSE_PHYSICS_INLINE CellRange2 clampCellRange2(CellRange2 range, u32 maxSpanPerA
     range.minCell.y = clampCellCoord(range.minCell.y, center.y - halfSpan, center.y + halfSpan);
     range.maxCell.y = clampCellCoord(range.maxCell.y, center.y - halfSpan, center.y + halfSpan);
     return range;
+}
+
+/// Occupancy count after per-axis span clamp (budgeting stub).
+FUSE_PHYSICS_INLINE u32 estimateCellOccupancyCountAfterClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+    return estimateCellOccupancyCount(clampCellRange3(range, maxSpanPerAxis));
+}
+
+FUSE_PHYSICS_INLINE u32 estimateCellOccupancyCountAfterClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+    return estimateCellOccupancyCount(clampCellRange2(range, maxSpanPerAxis));
 }
 
 FUSE_PHYSICS_INLINE u32 spatialHash(s32 cx, s32 cy, s32 cz, u32 tableSize) {
