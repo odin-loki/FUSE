@@ -155,6 +155,9 @@ bool isRayValid(const GizmoRay& ray);
 bool isHitTestValid(const GizmoHitTest& hit);
 
 /// Normalize ray direction; returns false when the ray is empty (B6.4 deepen follow-up).
+/// Convenience inverse of `isRayEmpty` / `isHitTestEmpty` (B6.4 deepen — empty-ray guards).
+
+/// Normalize ray direction; returns false when the ray is empty (B6.4 deepen — empty-ray guard).
 bool normalizeRay(GizmoRay& ray);
 
 /// True when axis length and pick radius are positive (B6.4 deepen pass).
@@ -425,6 +428,12 @@ bool canUpdateInteraction(const GizmoHitTest& hit, bool dragging, GizmoAxis acti
 
 /// Non-mutating end-interaction predicate — same guards as `preflightEndInteraction` (B6.4 deepen pass).
 bool canEndInteraction(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+    GizmoAxis axis = GizmoAxis::None;
+};
+
+/// Read-only drag-update diagnostics — no mutation (B6.4 deepen pass).
+    bool canUpdate = false;
+    bool emptyHit = false;
 
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
                                       f32 pickRadius, bool alreadyDragging = false);
@@ -461,6 +470,8 @@ GizmoBeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTrans
                                            const GizmoSnapSettings& snap);
 GizmoBeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode,
                                            bool alreadyDragging, const GizmoSnapSettings& snap);
+
+UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging);
 
 /// Pick axis with empty-hit guards — returns false when pick misses (B6.4 deepen follow-up).
 bool tryPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
@@ -667,6 +678,9 @@ bool preflightEndDragReady(bool dragging, GizmoEndDragRejectReason* reason = nul
 bool tryPreflightEndDrag(bool dragging, GizmoEndDragRejectReason& reason);
 bool shouldSkipEndDrag(bool dragging);
 
+/// Non-mutating drag-update predicate — empty viewport / inactive drag early-outs (B6.4 deepen pass).
+bool canUpdateDrag(const GizmoHitTest& hit, bool dragging);
+
 /// Screen-space dead-zone check before axis pick (B6.4 deepen).
 bool isScreenHitMiss(const GizmoHitTest& hit, GizmoMode mode);
 GizmoTransform snapTransform(const GizmoTransform& transform, GizmoMode mode,
@@ -791,6 +805,10 @@ public:
     /// Read-only begin-drag preflight without mutating drag state (B6.4 deepen).
     GizmoBeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit,
     GizmoBeginDragPreflight preflightBeginDrag(const GizmoRay& ray,
+    /// Read-only drag-update diagnostics — same guards as `canUpdateDrag` (B6.4 deepen pass).
+    [[nodiscard]] UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit) const;
+    [[nodiscard]] bool canUpdateDrag(const GizmoHitTest& hit) const;
+    /// Guarded drag update — returns false on empty viewport or inactive drag (B6.4 deepen pass).
     GizmoResult updateDrag(const GizmoHitTest& hit);
     /// Read-only end-drag diagnostics — same guards as `canEndDrag` (B6.4 deepen pass).
     [[nodiscard]] EndDragPreflight preflightEndDrag() const;
@@ -884,6 +902,7 @@ public:
     [[nodiscard]] bool tryPreflightEndDrag(GizmoEndDragRejectReason& reason) const;
     [[nodiscard]] bool shouldSkipEndDrag() const;
     /// Cancel an active drag without dirty marking (B6.4 deepen — begin-drag guards).
+    /// Cancel an active drag without dirty marking (B6.4 deepen pass).
 
     bool isDragging() const { return m_dragging; }
     bool canBeginDrag(const GizmoHitTest& hit, const GizmoTransform& transform) const;
