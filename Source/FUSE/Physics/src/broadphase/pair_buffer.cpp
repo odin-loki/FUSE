@@ -2957,8 +2957,6 @@ bool wouldSkipPairBufferWriteSlot(
                                                     : static_cast<u32>(buffer.validFlags.size());
     if (slotBound == 0u || slot >= slotBound) {
 
-bool wouldSkipPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB) {
-    return canSkipPairBufferWriteSlot(buffer, slot, idxA, idxB);
     const PairBufferWriteSlotPreflight preflight = preflightPairBufferWriteSlot(buffer, slot, idxA, idxB);
         *reason = preflight.reason;
     return !preflight.canWrite();
@@ -2989,7 +2987,12 @@ bool wouldSkipPairBufferWriteSlot(const PairBufferSoA& buffer,
     if (buffer.canSkipSoAIteration() || slot >= pairBufferSlotBound(buffer)) {
 
 
-    }
+
+
+
+    if (buffer.pairSlotCount > 0u) {
+    } else if (slot >= buffer.validFlags.size()) {
+
 
 bool pairBufferInvalidateSlotRejectsForReason(
     const PairBufferSoA& buffer,
@@ -3074,6 +3077,9 @@ bool wouldSkipPairBufferInvalidateSlot(const PairBufferSoA& buffer,
 
 
         *reason = reject;
+
+
+
 
 
 
