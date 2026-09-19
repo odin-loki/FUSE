@@ -5457,3 +5457,12 @@ void testRejectReasonMirrorsExistingPreflights() {
     expectTrue(sleepingWake.reason == IslandWakeRejectReason::NoWakeTarget,
     const IslandWakeGraphPreflight wakeGraph = preflight_island_wake_graph(sleepGraph, bodies);
                "islandWakeGraphRejectReasonName labels NoWakeableIslands");
+
+// --- deepen additive from deepen-b4-pbd-island-reject-reasons-5ccf ---
+    expectTrue(island_graph_build_reject_reason(0, {}, {}) == IslandGraphBuildRejectReason::EmptyInputs,
+    expectTrue(island_solve_job_reject_reason(invalid, dt) == IslandSolveJobRejectReason::EmptyJob,
+    expectTrue(island_solve_job_rejects_for_reason(invalid, 0.f, IslandSolveJobRejectReason::InvalidDt),
+    expectTrue(preflight.reason == IslandConstraintSolveRejectReason::AllSleeping,
+                   IslandWakeRejectReason::NoActiveDynamic,
+    const IslandPipelineDispatchPreflight preflight = preflight_island_pipeline_dispatch(graph, bodies, dt);
+               "should_skip_island_pipeline_dispatch true when all islands sleeping");

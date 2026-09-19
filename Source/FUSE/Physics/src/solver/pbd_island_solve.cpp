@@ -3098,3 +3098,7 @@ bool tryPreflightIslandBuild(u32 bodyCount,
         preflight.reason = classifyIslandWakeReject(preflight);
     preflight.reason = classifyIslandSleepGraphReject(preflight);
     preflight.reason = classifyIslandWakeGraphReject(preflight);
+
+// --- deepen additive from deepen-b4-pbd-island-reject-reasons-5ccf ---
+const char* island_pipeline_dispatch_reject_reason_name(IslandPipelineDispatchRejectReason reason) {
+IslandPipelineDispatchRejectReason island_pipeline_dispatch_reject_reason(const ContactIslandGraph& graph,

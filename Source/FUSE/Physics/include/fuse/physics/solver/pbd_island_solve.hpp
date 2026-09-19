@@ -1823,3 +1823,9 @@ IslandSleepRejectReason classifyIslandSleepReject(const IslandSleepPreflight& pr
 IslandSleepGraphRejectReason classifyIslandSleepGraphReject(const IslandSleepGraphPreflight& preflight);
 IslandWakeRejectReason classifyIslandWakeReject(const IslandWakePreflight& preflight);
 IslandWakeGraphRejectReason classifyIslandWakeGraphReject(const IslandWakeGraphPreflight& preflight);
+
+// --- deepen additive from deepen-b4-pbd-island-reject-reasons-5ccf ---
+        return !skipped && reason == IslandSleepGraphRejectReason::None &&
+        return !skipped && reason == IslandWakeGraphRejectReason::None && stats.wakeableCount > 0u;
+const char* island_pipeline_dispatch_reject_reason_name(IslandPipelineDispatchRejectReason reason);
+IslandPipelineDispatchRejectReason island_pipeline_dispatch_reject_reason(const ContactIslandGraph& graph,
