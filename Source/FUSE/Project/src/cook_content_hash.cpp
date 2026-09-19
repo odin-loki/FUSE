@@ -189,6 +189,18 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason) {
     return "unknown";
 }
 
+CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size) {
+    CookHashPreflight preflight;
+    if (!is_valid_fnv1a64_input(data, size)) {
+        preflight.reason = CookHashRejectReason::NullData;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
+}
+
 CookHashPreflight preflight_file_content_hash(const std::string& path) {
     CookHashPreflight preflight;
     if (path.empty()) {
@@ -256,7 +268,25 @@ CookHashPreflight preflight_manifest_entry_hash(const CookManifestEntry& entry) 
         preflight.reason = CookHashRejectReason::EmptyOutputPath;
         return preflight;
     }
-    return preflight_file_content_hash(entry.source_path);
+
+    const CookHashPreflight source_preflight = preflight_file_content_hash(entry.source_path);
+    if (!source_preflight.can_hash) {
+        return source_preflight;
+    }
+
+    for (const std::string& dependency : entry.dependencies) {
+        if (dependency.empty()) {
+            continue;
+        }
+        const CookHashPreflight dependency_preflight = preflight_file_content_hash(dependency);
+        if (!dependency_preflight.can_hash) {
+            return dependency_preflight;
+        }
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
 }
 
 CookHashPreflight preflight_upstream_dependencies_hash(const std::vector<std::string>& dependency_output_paths,
