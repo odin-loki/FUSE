@@ -130,6 +130,7 @@ struct CookCacheKeyPreflight {
     /// True when hashing should be skipped — mirrors guard paths without computing keys (B7.9 deepen).
     /// True when hashing should be skipped — mirrors failed preflight guards (B7.9 deepen).
     /// True when hashing should be skipped — mirrors `ok()` guard without computing keys (B7.9 deepen).
+    /// True when hashing should be skipped — mirrors empty-input guards without computing keys (B7.9 deepen).
 };
 
 /// True when hash preflight succeeded — mirrors `CookHashPreflight::ok()` (B7.9 deepen).
@@ -807,6 +808,18 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] bool should_skip_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
 
 /// Read-only skip guards — mirror `preflight_*` without constructing diagnostics (B7.9 deepen).
+[[nodiscard]] bool should_skip_file_content_hash(const std::string& path);
+[[nodiscard]] bool should_skip_mesh_import_hash(const MeshImportDesc& desc);
+[[nodiscard]] bool should_skip_texture_import_hash(const TextureImportDesc& desc);
+[[nodiscard]] bool should_skip_audio_import_hash(const AudioImportDesc& desc);
+[[nodiscard]] bool should_skip_manifest_entry_hash(const CookManifestEntry& entry);
+[[nodiscard]] bool should_skip_upstream_dependencies_hash(
+    const std::vector<std::string>& dependency_output_paths, const CookManifest& manifest);
+[[nodiscard]] bool should_skip_cook_cache_key(u64 source_hash, u64 upstream_hash);
+[[nodiscard]] bool should_skip_fnv1a64_bytes(const u8* data, usize size);
+[[nodiscard]] bool should_skip_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
+
+/// Read-only hash skip guards — mirror `preflight_*` without computing keys (B7.9 deepen).
 [[nodiscard]] bool should_skip_file_content_hash(const std::string& path);
 [[nodiscard]] bool should_skip_mesh_import_hash(const MeshImportDesc& desc);
 [[nodiscard]] bool should_skip_texture_import_hash(const TextureImportDesc& desc);
