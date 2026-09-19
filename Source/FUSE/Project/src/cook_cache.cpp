@@ -1480,6 +1480,19 @@ bool CookCache::would_invalidate_downstream_of(const std::string& output_path,
     return count_downstream_of(output_path, edges, jobs) != 0;
 }
 
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) != 0;
+}
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) != 0;
+}
+
+bool CookCache::would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                          u64 current_content_hash) const {
+    return count_stale_content_for_source(source_path, current_content_hash) != 0;
+}
+
 u32 CookCache::count_by_source(const std::string& source_path) const {
     if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
 
@@ -2217,7 +2230,6 @@ namespace {
 void append_unique_source_path_(std::vector<std::string>& sources, const std::string& source_path) {
     if (!is_valid_cook_cache_path(source_path)) {
         return;
-    }
     for (const std::string& recorded : sources) {
         if (recorded == source_path) {
     sources.push_back(source_path);
@@ -2228,7 +2240,7 @@ u32 CookCache::count_unique_stale_upstream_sources(
     return static_cast<u32>(probe_unique_stale_upstream_sources(source_upstream_by_path).size());
 
     if (m_entries.empty() || source_upstream_by_path.empty()) {
-        return {};
+std::vector<std::string> CookCache::probe_stale_upstream_sources_unique(
 
     std::vector<std::string> stale_sources;
     for (const auto& pair : source_upstream_by_path) {
@@ -2310,40 +2322,25 @@ std::vector<std::string> CookCache::probe_stale_content_sources(
     for (const auto& pair : source_content_by_path) {
         const std::string& source_path = pair.first;
         if (!is_valid_cook_cache_path(source_path) || !is_valid_cook_cache_key(pair.second)) {
-            continue;
         const u64 current_content = pair.second;
 
-        for (const CookCacheEntry& entry : m_entries) {
             if (entry.source_path == source_path && entry.content_hash != current_content) {
                 stale_sources.push_back(source_path);
-    return stale_sources;
 bool CookCache::would_invalidate_source(const std::string& source_path) const {
     return count_by_source(source_path) > 0;
 
 bool CookCache::would_invalidate_output(const std::string& output_path) const {
     return count_by_output(output_path) > 0;
 
-u32 CookCache::count_stale_entries() const {
-    if (m_entries.empty()) {
-        return 0;
 
-    u32 count = 0;
         if (is_valid_cook_cache_entry(entry) && is_stale_cache_entry_(entry)) {
-            ++count;
-    return count;
-std::vector<std::string> CookCache::probe_stale_content_sources() const {
 
         if (!is_stale_cache_entry_(entry)) {
-        if (!is_valid_cook_cache_entry(entry)) {
         stale_sources.push_back(entry.source_path);
 
 CookCachePruneEstimate CookCache::estimate_prune_reconciliation() const {
-    CookCachePruneEstimate estimate;
-        return estimate;
 
-            ++estimate.invalid_entries;
         } else if (is_stale_cache_entry_(entry)) {
-            ++estimate.stale_entries;
 
 CookCacheStaleUpstreamEstimate CookCache::estimate_stale_upstream_reconciliation(
     const std::vector<std::pair<std::string, u64>>& source_upstream_by_path,
@@ -2355,7 +2352,6 @@ CookCacheStaleUpstreamEstimate CookCache::estimate_stale_upstream_reconciliation
         for (const CookJob& job : jobs) {
             if (job.source_path == stale_source) {
                 estimate.downstream_cascade += count_downstream_of(job.output_path, edges, jobs);
-                break;
 
 
             if (entry.source_path == source_path && entry.content_hash != pair.second) {
@@ -2379,13 +2375,12 @@ u32 CookCache::estimate_prune_reconcile() const {
 
     for (const auto& pair : source_upstream_by_path) {
         if (!is_valid_cook_cache_path(source_path)) {
-        const u64 current_upstream = pair.second;
 
         bool is_stale = false;
-            if (entry.source_path == source_path && entry.upstream_hash != current_upstream) {
                 is_stale = true;
         if (!is_stale) {
 std::vector<std::string> CookCache::probe_stale_upstream_sources_unique(
+
 
 
 
@@ -2435,11 +2430,14 @@ std::vector<std::string> CookCache::probe_unique_stale_upstream_sources(
     const std::vector<std::string> stale_sources = probe_stale_upstream_sources(source_upstream_by_path);
     std::vector<std::string> unique_sources;
     for (const std::string& source_path : stale_sources) {
-        append_unique_source_(unique_sources, source_path);
     return unique_sources;
 
-u32 CookCache::count_unique_stale_upstream_sources(
-    return static_cast<u32>(probe_unique_stale_upstream_sources(source_upstream_by_path).size());
+                break;
+            stale_sources.push_back(source_path);
+    return stale_sources;
+
+                                               const std::vector<CookJobDependencyEdge>& edges,
+                                               const std::vector<CookJob>& jobs) const {
 
 namespace {
 

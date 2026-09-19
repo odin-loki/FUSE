@@ -464,6 +464,12 @@ bool AssetCooker::would_reconcile_invalidate(const CookManifest& manifest) const
 u32 AssetCooker::count_upstream_invalidation(const CookManifest& manifest,
     return estimate_upstream_invalidation(manifest, changed_source).total();
 
+    return m_cache.count_downstream_of(changed_output, graph.edges(), graph.jobs());
+
+CookUpstreamInvalidationEstimate AssetCooker::estimate_upstream_invalidation(
+    CookUpstreamInvalidationEstimate estimate;
+
+
 }
 
 bool AssetCooker::would_upstream_invalidate(const CookManifest& manifest,
