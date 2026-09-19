@@ -3892,3 +3892,16 @@ void testChromeTraceExportRejectReasonGuard() {
     testEventNameRejectReasonGuard();
     testEventLookupRejectReasonGuard();
     testChromeTraceExportRejectReasonGuard();
+
+// --- deepen additive from deepen-profiler-b16-guards-183a ---
+void testIgnoredAsyncFlowEndCountGuard() {
+    expectTrue(!fuse::profiler::tryFindEventIndexByName("missing", outIndex),
+               "tryFindEventIndexByName false on empty buffer");
+               "tryFindEventIndexByName clears output on failure");
+    expectTrue(fuse::profiler::tryFindEventIndexByName("name_counter", outIndex),
+               "tryFindEventIndexByName true for counter");
+    expectTrue(outIndex == 1u, "tryFindEventIndexByName returns counter index");
+void testFindEventIndexByScopeIdGuard() {
+void testExportableEventBoundaryGuards() {
+void testChromeTraceExportPreflightIgnoredAsyncFlowEnds() {
+    testChromeTraceExportPreflightIgnoredAsyncFlowEnds();

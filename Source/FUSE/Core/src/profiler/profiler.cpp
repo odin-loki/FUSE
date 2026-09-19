@@ -1383,3 +1383,6 @@ EventLookupRejectReason exportableEventLookupRejectReason(u32 index) {
         return ChromeTraceExportRejectReason::UnbalancedNesting;
     case ChromeTraceExportRejectReason::UnbalancedNesting:
     case ChromeTraceExportRejectReason::CrossThreadFlowHandoffPending:
+
+// --- deepen additive from deepen-profiler-b16-guards-183a ---
+bool tryFindEventIndexByName(const char* name, u32& outIndex) {
