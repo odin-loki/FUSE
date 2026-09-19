@@ -528,7 +528,6 @@ enum class ProbeGridSourceKind : u8 {
 
 /// Why probe-grid source validation rejected the descriptor (B5.6 deepen pass).
 /// Why probe grid source preflight rejected the request (B5.6 deepen).
-enum class ProbeGridSourceRejectReason : u8 {
     None = 0,
     EmptyGrid,
     ZeroIrradianceRes,
@@ -536,6 +535,11 @@ enum class ProbeGridSourceRejectReason : u8 {
     InvalidSpacing,
     ZeroRaysPerProbe,
     ZeroProbesPerFrame,
+/// Why probe-grid source validation rejected the request (B5.6 deepen pass).
+    EmptyDesc,
+    InvalidResources,
+    ProbeCountMismatch,
+    DescMismatch,
 };
 
 /// Human-readable label for probe-grid source reject reasons (logging / tests).
@@ -546,6 +550,7 @@ const char* probeGridSourceRejectReasonLabel(ProbeGridSourceRejectReason reason)
 /// Human-readable label for probe-grid-source reject reasons (logging / tests).
 
 /// True when a probe-grid-source reject reason would block sampling (B5.6 deepen pass).
+/// True when a probe-grid source reject reason would block validation (B5.6 deepen pass).
 bool probeGridSourceRejectReasonIsBlocking(ProbeGridSourceRejectReason reason);
 
 /// Why a cache-index lookup preflight rejected the request (B5.6 deepen).
@@ -1682,6 +1687,17 @@ ProbeGridSourceRejectReason classifyProbeGridSourceReject(const DDGIDesc& desc);
 bool validateProbeGridSource(const DDGIDesc& desc);
 /// Non-mutating grid-source preflight — returns true when init/update would proceed.
 bool preflightProbeGridSource(const DDGIDesc& desc, ProbeGridSourceRejectReason* reason = nullptr);
+/// True when `volume.probe_count` matches the clamped probe count derived from `desc`.
+bool volumeMatchesDesc(const ProbeVolume& volume, const DDGIDesc& desc);
+/// Diagnose why probe-grid source validation would reject; vacuously succeeds when `desc` is empty.
+bool tryValidateProbeGridSource(const ProbeVolume& volume,
+                                const DDGIDesc& desc,
+/// Validate probe volume resources against `desc`; vacuously true when `desc` is empty.
+bool validateProbeGridSource(const ProbeVolume& volume, const DDGIDesc& desc);
+/// Validate probe volume resources against the clamped probe count derived from `desc`.
+bool validateProbeGridSourceForDesc(const ProbeVolume& volume, const DDGIDesc& desc);
+/// Non-mutating probe-grid source preflight — returns true when validation would proceed.
+bool preflightProbeGridSource(const ProbeVolume& volume,
 /// True when the probe grid can participate in spatial irradiance sampling.
 bool canSampleProbeGrid(const DDGIDesc& desc);
 /// Non-mutating probe-grid source preflight — returns true when the grid can supply irradiance samples.
@@ -2032,6 +2048,8 @@ bool wouldSkipProbeTrilinearSample(const ProbeGridSource& source, const ProbeSam
 /// World-position trilinear preflight — builds coords then checks cache.
 /// True when `cache` is allocated and sized for every probe in a sampleable `desc`.
 bool validateProbeCacheForGrid(const DDGIDesc& desc,
+/// Non-mutating trilinear sample preflight at probe coords — returns true when sampling would proceed.
+/// Non-mutating trilinear sample preflight from a world position — returns true when sampling would proceed.
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
@@ -2646,6 +2664,7 @@ bool tryScheduleProbeUpdates(u32 frame_index,
 /// Rate-aware schedule with reject-reason diagnostics; false when preflight rejects (B5.6 deepen pass).
 /// Schedule probe updates with rate-aware preflight; false when preflight rejects.
 /// Schedule probe updates with rate-aware reject-reason diagnostics; false when preflight rejects.
+/// Schedule probe updates with rate-aware preflight; false when rate or capacity preflight rejects.
 bool tryScheduleProbeUpdatesAtRate(u32 frame_index,
                                    u32 probe_count,
                                    u32 probes_per_frame,
