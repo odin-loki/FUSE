@@ -1364,3 +1364,6 @@ void testCookHashPreflightImportCookKeys() {
 void testCookHashImportCacheKeyPreflight() {
     const fuse::project::CookHashPreflight mesh_key =
     testCookHashImportCacheKeyPreflight();
+
+// --- deepen additive from deepen-b79-cooker-hash-would-probes-69b7 ---
+    expectTrue(cooker.cache().would_invalidate_stale_content_for_source(source, refreshed_hash),

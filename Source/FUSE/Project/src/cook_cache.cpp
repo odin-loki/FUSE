@@ -890,3 +890,9 @@ CookCacheEntryPreflight CookCache::preflight_cook_cache_entry(const CookCacheEnt
 
 // --- deepen additive from deepen-b79-cooker-hash-90b0 ---
     preflight.reason = CookHashRejectReason::SourceUnreadable;
+
+// --- deepen additive from deepen-b79-cooker-hash-would-probes-69b7 ---
+        return {false, CookHashRejectReason::EmptyInputPath};
+        return {false, CookHashRejectReason::EmptyOutputPath};
+        return {false, CookHashRejectReason::ZeroSourceHash};
+        return {true, CookHashRejectReason::None};
