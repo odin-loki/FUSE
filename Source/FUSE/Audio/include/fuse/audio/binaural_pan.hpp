@@ -1332,3 +1332,8 @@ bool hrtf_binaural_narrowing_rejects_for_reason(const HrtfBinauralPreflight& pre
                                                 HrtfBinauralNarrowingRejectReason expected);
                                              HrtfBinauralNarrowingRejectReason* reason = nullptr,
                                            HrtfBinauralNarrowingRejectReason& reason,
+
+// --- deepen additive from deepen-b7-2-hrtf-binaural-guards-903f ---
+HrtfIrRejectReason hrtf_binaural_convolution_reject_reason(const HrtfBinauralPreflight& preflight);
+HrtfAttenuationCouplingRejectReason hrtf_binaural_attenuation_reject_reason(
+    const HrtfBinauralPreflight& preflight, HrtfAttenuationCouplingRejectReason expected);

@@ -2618,3 +2618,9 @@ void testHrtfPanConvolveRejectReasonGuards() {
     expectTrue(spatial_reason == fuse::audio::HrtfBinauralRejectReason::HrtfDisabled,
     expectTrue(spatial_reason == fuse::audio::HrtfBinauralRejectReason::CoLocated,
     expectTrue(narrow_reason == fuse::audio::HrtfBinauralNarrowingRejectReason::BypassPath,
+
+// --- deepen additive from deepen-b7-2-hrtf-binaural-guards-903f ---
+    const fuse::audio::HrtfIrPreflight preflight = fuse::audio::preflight_hrtf_ir(valid);
+void testHrtfBinauralRejectReasonWrappers() {
+                   stub_preflight, fuse::audio::HrtfIrRejectReason::NullSamples),
+    testHrtfBinauralRejectReasonWrappers();
