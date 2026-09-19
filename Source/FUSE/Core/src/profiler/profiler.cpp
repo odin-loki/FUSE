@@ -3676,12 +3676,29 @@ bool tryExportableLastEvent(ProfileEvent& outEvent) {
 
 
 
-        }
 
-    std::unordered_map<u32, FlowPairCounts> counts;
-    accumulateFlowPairCounts(counts);
 
-    for (const auto& entry : counts) {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -4372,6 +4389,32 @@ AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/
 
 AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
     AsyncFlowEndPreflight preflight{};
+    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
+    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
+        && !preflight.wouldUnderflowOpenCount;
+    return preflight;
+}
+
+ProfileScopePreflight preflightProfileScope(const char* name) {
+    ProfileScopePreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
+    return preflight;
+}
+
+AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
+    AsyncFlowBeginPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
+    return preflight;
+}
+
+AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
+    AsyncFlowEndPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
     preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
     preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
         && !preflight.wouldUnderflowOpenCount;
