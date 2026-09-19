@@ -425,6 +425,7 @@ struct BeginDragPreflight {
     /// Snap is enabled but the mode step is unusable — begin still applies (B6.4 deepen pass).
     bool snapDegraded = false;
     GizmoAxis pickedAxis = GizmoAxis::None;
+    /// Resolved pick axis when begin can proceed (B6.4 deepen pass).
 };
 
     /// Resolved axis from pick preflight when `canBegin` (B6.4 deepen pass).
@@ -490,6 +491,7 @@ struct BeginDragPreflight {
     bool outOfBounds = false;
     bool invalidActiveAxis = false;
     /// Hit is in the screen dead zone — update still applies (B6.4 deepen pass).
+    /// Viewport is valid but the cursor is in the mode dead zone — update still applies (B6.4 deepen pass).
     bool screenMiss = false;
     /// Snap is enabled but the mode step is unusable — update still applies (B6.4 deepen pass).
     bool snapDegraded = false;
