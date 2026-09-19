@@ -1279,6 +1279,21 @@ bool computeTaaResolveBlendWeightsIfReady(const TaaResolveDesc& desc, const TaaH
     return true;
 }
 
+bool preflightTaaTemporalBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                               TaaHistoryReuseBlockReason* reuseReason,
+                               TaaResolveBlendRejectReason* blendReason) {
+    const u32 observedGeneration = taaResolveBypassesHistoryGenerationGuard(desc)
+                                         ? history.invalidateGeneration()
+                                         : desc.observed_history_generation;
+    const bool reuseOk = preflightTaaHistoryReuse(history, observedGeneration, reuseReason);
+    const bool blendOk = preflightTaaResolveBlendWeights(desc, history, blendReason);
+    return reuseOk && blendOk;
+}
+
+bool shouldSkipTaaTemporalBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return !preflightTaaTemporalBlend(desc, history);
+}
+
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaHistoryCanReuse(history)) {
     if (taaResolveBypassesHistoryGenerationGuard(desc)) {

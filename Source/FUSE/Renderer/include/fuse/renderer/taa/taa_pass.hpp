@@ -209,6 +209,14 @@ public:
     TaaJitterGuardRejectReason classifyJitterSyncReject() const;
     /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
+    /// True when history reuse and resolve blend-weight preflights both pass (B5.9 deepen).
+    bool preflightTemporalBlend(const TaaResolveDesc& desc,
+                                TaaHistoryReuseBlockReason* reuseReason = nullptr,
+                                TaaResolveBlendRejectReason* blendReason = nullptr) const;
+    /// Early-out when temporal blend preflight would reject reuse or blend weights (B5.9 deepen).
+    bool shouldSkipTemporalBlend(const TaaResolveDesc& desc) const;
+    /// True when pass history has completed warm-up (B5.9 deepen).
+    bool isHistoryWarmed() const;
     /// Early-out when pass jitter sync preflight would reject (B5.9 deepen).
     bool shouldSkipJitterSync(u32 frameIndex) const;
     /// True when pass jitter can produce NDC offsets for the configured viewport (B5.9 deepen).

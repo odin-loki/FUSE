@@ -42,6 +42,7 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaHistoryBuffer::needsWarmup()` — inverse of `hasValidHistory` for resolve warm-up gating
 - `taaHistoryNeedsWarmup(history)` / `taaHistoryWarmupComplete(history)` — free-function warmup guards
 - `taaHistoryWarmupComplete(history)` / `TaaHistoryBuffer::warmupComplete()` — true when warm-up finished
+- `TaaHistoryBuffer::isWarmed()` / `taaHistoryIsWarmed()` — true after the first successful resolve
 - `TaaHistoryBuffer::accumulatedFrames()` — monotonic frame counter reset on invalidate/resize
 - `TaaHistoryBuffer::invalidateGeneration()` — bumped on invalidate/resize for stale-history detection
 - `TaaHistoryBuffer::isHistoryStale(observedGeneration)` — true when a consumer's epoch differs from current history
@@ -81,6 +82,7 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `classifyTaaResolveSkip(desc, history)` — public skip classifier (same ordering as `wouldSkip`)
 - `preflightTaaResolve(desc, history)` — stamp observed generation then classify
 - `taaResolveCanProceed(desc, history, &reason)` — inverse of `wouldSkip`
+- `preflightTaaTemporalBlend` / `shouldSkipTaaTemporalBlend` — combined history-reuse + blend-weight preflight
 - `taaResolveDimensionsValid(w, h)` / `taaResolveDimensionsMatch(desc, history)` — dimension preflight helpers
 - `taaViewportDimensionsMatchPass(passW, passH, desc)` — pass viewport vs resolve request
 - `taaResolveBypassesHistoryGenerationGuard(desc)` — true when `observed_history_generation` uses the no-guard sentinel
@@ -143,6 +145,10 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaPass::tryPreflightJitterSync` / `shouldSkipJitterSync` / `jitterSyncReady` — pass-level jitter sync guards
 - `TaaPass::tryPreflightHistoryReuse` / `tryPreflightResolveBlendWeights` / `tryComputeResolveBlendWeights` — pass-level try-preflight helpers
 - `TaaPass::resolveBlendReady` / `historyWarmupComplete` — pass-level blend/warmup readiness checks
+- `shouldSkipTaaJitterSync` / `taaJitterSyncReady` — jitter sync early-out and positive predicates
+- `tryPreflightTaaJitterNdc` / `shouldSkipTaaJitterNdc` / `taaJitterNdcReady` — NDC jitter preflight deepening
+- `TaaPass::preflightJitterNdc` / `shouldSkipJitterNdc` / `shouldSkipJitterSync` — pass-level jitter preflights
+- `TaaPass::preflightTemporalBlend` / `shouldSkipTemporalBlend` / `isHistoryWarmed` — pass temporal blend guards
 
 ## Pipeline (stub)
 

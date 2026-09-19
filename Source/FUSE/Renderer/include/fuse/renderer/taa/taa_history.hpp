@@ -42,6 +42,8 @@ public:
     /// True when warm-up is complete and temporal reuse may proceed (B5.9 deepen).
     /// True when history is allocated and warmed for temporal reuse (B5.9 deepen).
     bool warmupComplete() const;
+    /// True when history has completed warm-up (B5.9 deepen).
+    bool isWarmed() const { return m_validity.hasValidHistory; }
     /// Frames remaining before temporal reuse is allowed — 0 when warmed (B5.9 deepen).
     u32 warmupFramesRemaining() const;
     /// True when history warm-up is complete (B5.9 deepen).

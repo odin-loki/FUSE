@@ -49,6 +49,9 @@ bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
 bool shouldSkipTaaHistoryWarmup(const TaaHistoryBuffer& history) {
     return taaHistoryNeedsWarmup(history);
 
+bool taaHistoryIsWarmed(const TaaHistoryBuffer& history) {
+    return history.hasValidHistory();
+
 bool taaHistoryReadyForResolve(const TaaHistoryBuffer& history) {
     return history.isReady();
 

@@ -4198,6 +4198,7 @@ void testWouldSkipAndTryHistoryReuseGuards() {
                "tryPreflight fails for empty history");
                "tryPreflight reason is NotReady for empty history");
 void testJitterSkipAndReadyGuards() {
+void testJitterSyncShouldSkipAndReady() {
     expectTrue(fuse::renderer::taaJitterSyncReady(5u, 8u), "valid sequence is sync-ready");
     expectTrue(!fuse::renderer::shouldSkipTaaJitterSync(5u, 8u), "valid sequence should not skip sync");
     expectTrue(fuse::renderer::shouldSkipTaaJitterSync(5u, 0u), "invalid sequence should skip sync");
@@ -4249,6 +4250,17 @@ void testHistoryWarmupPreflightGuards() {
     expectTrue(!fuse::renderer::tryPreflightTaaHistoryWarmup(emptyHistory, reason),
                "tryPreflightTaaHistoryWarmup fails for empty history");
                "empty history warmup reason is NotReady");
+    expectTrue(fuse::renderer::tryPreflightTaaJitterNdc(128u, 128u, 8u, rejectReason),
+               "valid viewport should not skip NDC jitter");
+    expectTrue(fuse::renderer::shouldSkipTaaJitterNdc(0u, 128u, 8u),
+               "zero width should skip NDC jitter");
+}
+
+void testHistoryIsWarmedGuard() {
+    fuse::renderer::TaaHistoryBuffer emptyHistory;
+    expectTrue(!fuse::renderer::taaHistoryIsWarmed(emptyHistory), "empty history is not warmed");
+    expectTrue(fuse::renderer::taaHistoryNeedsWarmup(emptyHistory), "empty history needs warmup");
+    expectTrue(!emptyHistory.isWarmed(), "empty history buffer isWarmed is false");
 
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
@@ -4257,6 +4269,7 @@ void testHistoryWarmupPreflightGuards() {
     expectTrue(bootstrap != nullptr, "bootstrap allocated for warmup reject guard test");
     expectTrue(bootstrap != nullptr, "bootstrap allocated for warmup state guard test");
     expectTrue(bootstrap != nullptr, "bootstrap allocated for warmup preflight test");
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for is-warmed guard test");
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -4325,6 +4338,13 @@ void testHistoryWarmupPreflightGuards() {
                "warmed history passes warmup preflight");
     expectTrue(reason == fuse::renderer::TaaHistoryReuseBlockReason::None,
                "warmed history warmup reason is None");
+    expectTrue(history.init(resources, historyDesc), "history ready for is-warmed guard test");
+    expectTrue(!fuse::renderer::taaHistoryIsWarmed(history), "fresh history is not warmed");
+    expectTrue(!history.isWarmed(), "fresh history buffer isWarmed is false");
+
+    expectTrue(fuse::renderer::taaHistoryIsWarmed(history), "resolved history is warmed");
+    expectTrue(history.isWarmed(), "resolved history buffer isWarmed is true");
+    expectTrue(!fuse::renderer::taaHistoryNeedsWarmup(history), "warmed history does not need warmup");
 
     history.destroy();
     resources.destroy();
@@ -4345,7 +4365,6 @@ void testJitterShouldSkipAndTryNdcGuards() {
                "zero width should skip jitter NDC");
 
     expectTrue(fuse::renderer::tryPreflightTaaJitterNdc(128u, 128u, 8u, rejectReason),
-}
 
 void testJitterShouldSkipAndReadyGuards() {
     expectTrue(fuse::renderer::taaJitterSyncReady(5u, 8u),
@@ -4353,7 +4372,6 @@ void testJitterShouldSkipAndReadyGuards() {
     expectTrue(!fuse::renderer::taaJitterSyncReady(5u, 0u),
                "invalid sequence jitter sync not ready");
 
-    expectTrue(!fuse::renderer::shouldSkipTaaJitterNdc(128u, 128u, 8u),
     expectTrue(fuse::renderer::taaJitterNdcReady(128u, 128u, 8u),
                "valid viewport jitter NDC ready");
     expectTrue(!fuse::renderer::taaJitterNdcReady(0u, 128u, 8u),
@@ -4392,7 +4410,6 @@ void testHistoryWarmupCompleteGuard() {
     expectTrue(!fuse::renderer::shouldSkipTaaJitterAdvance(jitter.sequenceLength()),
                "default jitter should not skip advance");
     expectTrue(jitter.advanceIfReady(), "advanceIfReady still succeeds with guard helpers");
-}
 
 void testResolveHistoryBlendPreflightGuards() {
     fuse::math::Vec2 ndcOut{};
@@ -4428,6 +4445,8 @@ void testResolveShouldSkipAndTryPreflight() {
     expectTrue(skipReason == fuse::renderer::TaaResolveSkipReason::HistoryNotReady,
                "empty history resolve skip reason is HistoryNotReady");
 
+
+void testTemporalBlendPreflight() {
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
     bootstrapDesc.createSwapchain = false;
@@ -4439,6 +4458,7 @@ void testResolveShouldSkipAndTryPreflight() {
     expectTrue(bootstrap != nullptr, "bootstrap allocated for warmup-complete guard test");
     expectTrue(bootstrap != nullptr, "bootstrap allocated for history blend preflight test");
     expectTrue(bootstrap != nullptr, "bootstrap allocated for resolve should-skip test");
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for temporal blend preflight test");
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -4546,6 +4566,31 @@ void testResolveShouldSkipAndTryPreflight() {
                "tryPreflightTaaResolve fails for invalid dimensions");
     expectTrue(skipReason == fuse::renderer::TaaResolveSkipReason::InvalidDimensions,
                "invalid dimensions skip reason is InvalidDimensions");
+    expectTrue(history.init(resources, historyDesc), "history ready for temporal blend preflight test");
+
+    desc.params.blend_factor = 0.2f;
+
+    fuse::renderer::TaaHistoryReuseBlockReason reuseReason = fuse::renderer::TaaHistoryReuseBlockReason::None;
+    fuse::renderer::TaaResolveBlendRejectReason blendReason =
+    expectTrue(!fuse::renderer::preflightTaaTemporalBlend(desc, history, &reuseReason, &blendReason),
+               "temporal blend preflight fails before warmup");
+    expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::NotWarm,
+               "temporal blend reuse reason is NotWarm before warmup");
+    expectTrue(blendReason == fuse::renderer::TaaResolveBlendRejectReason::None,
+               "temporal blend reject reason is None before warmup");
+    expectTrue(fuse::renderer::shouldSkipTaaTemporalBlend(desc, history),
+               "temporal blend should be skipped before warmup");
+
+    expectTrue(fuse::renderer::preflightTaaTemporalBlend(desc, history, &reuseReason, &blendReason),
+               "temporal blend preflight passes after warmup");
+    expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::None,
+               "temporal blend reuse reason is None after warmup");
+    expectTrue(!fuse::renderer::shouldSkipTaaTemporalBlend(desc, history),
+               "temporal blend should not be skipped after warmup");
+
+               "temporal blend preflight fails after invalidate");
+    expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::StaleGeneration,
+               "temporal blend reuse reason is StaleGeneration after invalidate");
 
     history.destroy();
     resources.destroy();
@@ -4733,11 +4778,19 @@ void testTaaPassDeepenShouldSkipWrappers() {
     expectTrue(!pass->shouldSkipJitterNdc(), "pass jitter NDC valid before init");
     expectTrue(pass->preflightJitterNdc(), "pass jitter NDC preflight passes before init");
 
+void testTaaPassTemporalAndJitterPreflights() {
+
+    expectTrue(!pass->isHistoryWarmed(), "pass history not warmed before init");
+    expectTrue(!pass->shouldSkipJitterSync(3u), "pass jitter sync should not skip before init");
+    expectTrue(pass->preflightJitterNdc(), "pass NDC jitter preflight passes before init");
+    expectTrue(!pass->shouldSkipJitterNdc(), "pass NDC jitter should not skip before init");
+
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
     bootstrapDesc.createSwapchain = false;
     auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
     expectTrue(bootstrap != nullptr, "bootstrap allocated for pass should-skip wrapper test");
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for pass temporal/jitter preflight test");
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -4746,6 +4799,7 @@ void testTaaPassDeepenShouldSkipWrappers() {
     resources.init(*bootstrap->device(), bindless);
     expectTrue(pass->init(resources), "TaaPass initialized for should-skip wrapper test");
     expectTrue(pass->shouldSkipHistoryWarmup(), "pass should skip warmup after init");
+    expectTrue(pass->init(resources), "TaaPass initialized for temporal/jitter preflight test");
 
     fuse::renderer::TaaResolveDesc resolveDesc{};
     resolveDesc.width = 128;
@@ -5757,6 +5811,21 @@ void testTaaPassWouldSkipAndTryHelpers() {
     resolveDesc.width = 0;
     expectTrue(pass->shouldSkipResolve(resolveDesc), "pass should skip invalid resolve");
 
+    fuse::renderer::TaaHistoryReuseBlockReason reuseReason = fuse::renderer::TaaHistoryReuseBlockReason::None;
+        fuse::renderer::TaaResolveBlendRejectReason::None;
+    expectTrue(!pass->preflightTemporalBlend(resolveDesc, &reuseReason, &blendReason),
+               "pass temporal blend preflight fails before warmup");
+    expectTrue(pass->shouldSkipTemporalBlend(resolveDesc), "pass should skip temporal blend before warmup");
+
+    expectTrue(pass->isHistoryWarmed(), "pass history warmed after resolve");
+    expectTrue(pass->preflightTemporalBlend(resolveDesc, &reuseReason, &blendReason),
+               "pass temporal blend preflight passes after warmup");
+    expectTrue(!pass->shouldSkipTemporalBlend(resolveDesc),
+               "pass should not skip temporal blend after warmup");
+
+    expectTrue(pass->shouldSkipTemporalBlend(resolveDesc),
+               "pass should skip temporal blend after invalidate");
+
     fuse::renderer::TaaPassDesc zeroWidthDesc{};
     zeroWidthDesc.width = 0;
     zeroWidthDesc.height = 128;
@@ -6065,6 +6134,9 @@ void testResolveTemporalBlendPreflight() {
 
     history.destroy();
     expectTrue(!zeroPass->preflightJitterNdc(), "zero-width pass jitter NDC preflight fails");
+
+    expectTrue(zeroPass->shouldSkipJitterNdc(), "zero-width pass should skip NDC jitter");
+    expectTrue(!zeroPass->preflightJitterNdc(), "zero-width pass NDC preflight fails");
 
     resources.destroy();
     bindless.destroy(*bootstrap->device());
@@ -7950,6 +8022,10 @@ int main() {
     testJitterShouldSkipAndTryNdcGuards();
     testResolveShouldSkipAndTryPreflight();
     testTaaPassDeepenShouldSkipWrappers();
+    testJitterSyncShouldSkipAndReady();
+    testHistoryIsWarmedGuard();
+    testTemporalBlendPreflight();
+    testTaaPassTemporalAndJitterPreflights();
     testTaaPassReuseAndJitterGuards();
     testHistoryWarmupAndResolveShouldSkip();
     testJitterShouldSkipAndAdvancePreflight();
