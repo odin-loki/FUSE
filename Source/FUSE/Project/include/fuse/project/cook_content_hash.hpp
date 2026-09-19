@@ -26,6 +26,8 @@ struct CookHashPreflight {
     CookHashRejectReason reason = CookHashRejectReason::None;
 
     [[nodiscard]] bool ok() const { return can_hash; }
+    /// True when hashing should be skipped — mirrors empty-input guards without computing keys (B7.9 deepen).
+    [[nodiscard]] bool should_skip() const { return !ok(); }
 };
 
 /// FNV-1a 64-bit hash over raw bytes — shared by cook cache keys (B7.9 deepen stub).
@@ -70,5 +72,10 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size);
 /// Fold source/upstream preflight — upstream zero is allowed on valid source keys (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
+
+/// True when hash preflight rejects the inputs — convenience over `CookHashPreflight::should_skip` (B7.9 deepen).
+[[nodiscard]] inline bool should_skip_cook_hash(const CookHashPreflight& preflight) {
+    return preflight.should_skip();
+}
 
 } // namespace fuse::project
