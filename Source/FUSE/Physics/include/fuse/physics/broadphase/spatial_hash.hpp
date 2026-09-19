@@ -234,6 +234,20 @@ FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
     return shouldRunBroadphasePairGeneration(bodies, shapes);
 }
 
+/// Non-mutating broadphase predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !canSkipBroadphasePairGeneration(bodies, shapes);
+}
+
+/// Non-mutating broadphase predicate — mirrors `preflightBroadphase` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return shouldRunBroadphasePairGeneration(bodies, shapes);
+}
+
 /// Why broadphase pair generation would early-out (B4.2 deepen follow-up pass).
 enum class BroadphaseRejectReason : u8 {
     None = 0,
@@ -2464,7 +2478,6 @@ bool mergePairsIntoBufferRejectsForReason(
 /// Returns true when `mergePairsIntoBufferRejectReason` matches `expected` (B4.2 deepen follow-up pass).
     const PairBufferSoA& buffer,
 
-    const std::vector<CandidatePair>& pairs,
 
 /// Read-only merge-into-buffer diagnostics — no mutation (B4.2 deepen follow-up pass).
 struct MergePairsIntoBufferPreflight {
@@ -2566,7 +2579,6 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
 /// Why plane/dynamic merge into a pair buffer would early-out (B4.2 deepen pass).
 enum class BroadphaseMergeBufferRejectReason : u8 {
     SceneNotMergeable,
-    BufferAtCapacity,
 
 const char* mergeBroadphaseBufferRejectReasonName(BroadphaseMergeBufferRejectReason reason);
 
@@ -2588,16 +2600,41 @@ bool mergeBroadphaseBufferRejectsForReason(
 /// Non-mutating merge-into-buffer skip predicate — inverse of `shouldRunBroadphaseMergeIntoBuffer` (B4.2 deepen pass).
 
 
-};
 
-    const std::vector<CandidatePair>& pairs,
-    const PairBufferSoA& buffer);
 
 
 
 /// Count candidate pairs that pass AABB refine preflight (B4.2 deepen follow-up pass).
 
 /// True when at least one candidate pair passes AABB refine preflight (B4.2 deepen follow-up pass).
+/// Why per-cell pair slot generation would early-out (B4.2 deepen pass).
+enum class BroadphaseCellPairRejectReason : u8 {
+    ZeroSlots,
+
+/// Human-readable label for cell-pair reject reasons (logging / tests).
+const char* broadphaseCellPairRejectReasonName(BroadphaseCellPairRejectReason reason);
+
+/// Diagnose why cell-pair slot generation would skip; vacuously succeeds when slots exist.
+BroadphaseCellPairRejectReason broadphaseCellPairRejectReason(u32 totalCellSlots);
+
+/// Returns true when `broadphaseCellPairRejectReason` matches `expected` (B4.2 deepen pass).
+bool broadphaseCellPairRejectsForReason(u32 totalCellSlots, BroadphaseCellPairRejectReason expected);
+
+/// Read-only cell-pair slot diagnostics — no mutation (B4.2 deepen pass).
+struct BroadphaseCellPairPreflight {
+    BroadphaseCellPairRejectReason reason = BroadphaseCellPairRejectReason::None;
+    bool zeroSlots = false;
+    u32 totalCellSlots = 0;
+
+    bool canGenerate() const { return reason == BroadphaseCellPairRejectReason::None; }
+
+BroadphaseCellPairPreflight preflightBroadphaseCellPairs(u32 totalCellSlots);
+
+/// Non-mutating cell-pair skip predicate — inverse of `shouldRunBroadphaseCellPairGeneration`.
+bool canSkipBroadphaseCellPairGeneration(u32 totalCellSlots);
+
+/// Non-mutating cell-pair predicate — mirrors `preflightBroadphaseCellPairs` (B4.2 deepen pass).
+bool shouldRunBroadphaseCellPairGeneration(u32 totalCellSlots);
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(
