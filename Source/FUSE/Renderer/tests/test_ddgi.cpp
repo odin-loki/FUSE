@@ -3754,3 +3754,10 @@ void testDdgiThirdLayerPreflightGuards() {
                    fuse::renderer::DdgiHostKernelLaunchRejectReason::ZeroRaysPerProbe,
                "classifyDdgiHostKernelLaunchReject zero_rays_per_probe");
     testDdgiThirdLayerPreflightGuards();
+
+// --- deepen additive from deepen-ddgi-guards-41b7 ---
+void testTrilinearAndSchedulePreflightGuards() {
+               "wouldSkipTrilinearProbeIrradiance false for valid world position");
+               "wouldSkipTrilinearProbeIrradiance true for undersized cache");
+               "classifyProbeTrilinearSampleReject empty_grid for empty grid");
+    testTrilinearAndSchedulePreflightGuards();
