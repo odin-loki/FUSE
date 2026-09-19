@@ -3483,3 +3483,13 @@ void testWouldRejectAndTryResolveBlendGuards() {
     expectTrue(pass->jitterAlignedToFrameIndex(4u), "pass jitter aligned after trySync");
     expectTrue(!pass->wouldSkipHistoryReuse(0u), "pass wouldSkip history reuse false after warmup");
                "pass tryPreflight history reuse succeeds after warmup");
+
+// --- deepen additive from deepen-b59-taa-guards-8a91 ---
+void testHistoryWarmupCompleteGuard() {
+void testJitterShouldSkipAndReadyGuards() {
+void testResolveBlendReadyGuard() {
+void testTaaPassWarmupAndJitterReadyGuards() {
+    expectTrue(pass->preflightJitterNdc(&rejectReason), "pass preflightJitterNdc passes before init");
+               "pass preflightJitterNdc reject reason is None before init");
+    expectTrue(!zeroPass->preflightJitterNdc(&rejectReason),
+               "zero-width pass preflightJitterNdc reject reason is InvalidViewport");
