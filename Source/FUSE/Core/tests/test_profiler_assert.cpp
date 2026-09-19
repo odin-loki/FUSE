@@ -4218,3 +4218,49 @@ void testChromeTraceExportPreflightEventPairCounts() {
     expectTrue(!openPreflight.canExportSafelyWithConsistentBuffer(),
     expectTrue(!openPreflight.canExportSafely(),
     testChromeTraceExportPreflightEventPairCounts();
+
+// --- deepen additive from b16-profiler-deepen-guards-8e14 ---
+void testTryFindEventByNameAndFlowIdGuard() {
+               "tryFindFirstEventIndexByName clears index on miss");
+    expectTrue(!fuse::profiler::tryFindFirstEventByName("missing", outEvent),
+               "tryFindFirstEventByName clears output on miss");
+    expectTrue(!fuse::profiler::tryFindFirstEventIndexByFlowId(7u, outIndex),
+               "tryFindFirstEventIndexByFlowId false on empty buffer");
+    expectTrue(!fuse::profiler::tryFindFirstEventByFlowId(7u, outEvent),
+               "tryFindFirstEventByFlowId false on empty buffer");
+    expectTrue(fuse::profiler::tryFindFirstEventIndexByName("try_counter", outIndex),
+    expectTrue(outIndex == 1u, "tryFindFirstEventIndexByName returns counter index");
+    expectTrue(fuse::profiler::tryFindFirstEventByName("try_flow", outEvent),
+               "tryFindFirstEventByName true for flow start");
+               "tryFindFirstEventByName copies flow start phase");
+    expectTrue(fuse::profiler::tryFindLastEventByName("try_flow", outEvent),
+               "tryFindLastEventByName true for flow finish");
+               "tryFindLastEventByName copies flow finish phase");
+void testTryExportableFirstLastEventGuard() {
+               "tryExportableFirstEvent copies begin phase");
+               "tryExportableFirstEvent copies scope name");
+               "tryExportableLastEvent copies end phase");
+    const fuse::profiler::ProfileScopePreflight enabledPreflight =
+        fuse::profiler::preflightProfileScope("preflight_scope");
+    expectTrue(enabledPreflight.canEnter, "preflight allows valid scope name");
+    expectTrue(!enabledPreflight.invalidName, "preflight valid scope name is not invalid");
+    expectTrue(!enabledPreflight.profilerDisabled, "preflight profiler enabled on reset");
+    expectTrue(!nullPreflight.canEnter, "preflight blocks null scope name");
+    expectTrue(nullPreflight.invalidName, "preflight marks null scope name invalid");
+    expectTrue(!disabledPreflight.canEnter, "preflight blocks scope when profiler disabled");
+    expectTrue(disabledPreflight.profilerDisabled, "preflight marks profiler disabled");
+void testPreflightBeginEndAsyncFlowGuard() {
+        fuse::profiler::preflightBeginAsyncFlow("preflight_flow", flowId);
+    expectTrue(beginPreflight.canBegin, "preflight allows valid flow begin");
+    expectTrue(!beginPreflight.invalidName, "preflight valid flow name is not invalid");
+    const fuse::profiler::AsyncFlowEndPreflight orphanEndPreflight =
+        fuse::profiler::preflightEndAsyncFlow("preflight_flow", flowId);
+    expectTrue(!orphanEndPreflight.canEnd, "preflight blocks orphan flow end");
+    expectTrue(orphanEndPreflight.wouldUnderflowOpenCount,
+    const fuse::profiler::AsyncFlowEndPreflight matchedEndPreflight =
+    expectTrue(matchedEndPreflight.canEnd, "preflight allows matched flow end");
+    expectTrue(!matchedEndPreflight.wouldUnderflowOpenCount,
+void testChromeTraceExportPreflightNameAndOrphanFlags() {
+    expectTrue(orphanPreflight.canExportWithEvents(),
+    testPreflightBeginEndAsyncFlowGuard();
+    testChromeTraceExportPreflightNameAndOrphanFlags();
