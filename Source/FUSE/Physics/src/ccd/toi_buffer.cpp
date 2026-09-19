@@ -56,6 +56,17 @@ void ToiBufferSoA::preparePairSlots(u32 pairCount) {
     validFlags.assign(pairCount, 0u);
 }
 
+bool ToiBufferSoA::slotIsValid(u32 slot) const {
+    return slot < validFlags.size() && validFlags[slot] != 0u;
+}
+
+void ToiBufferSoA::invalidateSlot(u32 slot) {
+    if (slot >= validFlags.size()) {
+        return;
+    }
+    validFlags[slot] = 0u;
+}
+
 void ToiBufferSoA::writeSlot(u32 slot, const TOIResult& result) {
     if (slot >= pairSlotCount || !result.valid || !isToiInWindow(result.toi)) {
     if (pairSlotCount == 0u || slot >= pairSlotCount || !result.valid) {
@@ -195,6 +206,7 @@ void ToiBufferSoA::sortIfNeeded() {
 
 void ToiBufferSoA::sortByToi() {
     if (canSkipSort()) {
+    if (canSkipSoAIteration() || activeCount <= 1u || isSortedByToi()) {
         return;
     }
 
@@ -235,6 +247,12 @@ void ToiBufferSoA::sortByToi() {
 bool ToiBufferSoA::needsCompact() const {
     if (canSkipSoAIteration() || pairSlotCount == 0u) {
         return false;
+u32 ToiBufferSoA::compact() {
+    if (canSkipSoAIteration()) {
+        return 0u;
+    }
+    if (pairSlotCount == 0u) {
+        return activeCount;
     }
 
     u32 validCount = 0u;
@@ -348,6 +366,7 @@ u32 ToiBufferSoA::compact() {
 
 u32 ToiBufferSoA::applyMaxCapacityClamp() {
     if (!canApplyMaxCapacityClamp()) {
+    if (canSkipSoAIteration() || maxCapacity == 0u || activeCount <= maxCapacity) {
         return activeCount;
     }
 
@@ -379,6 +398,7 @@ u32 ToiBufferSoA::applyMaxCapacityClamp() {
 u32 ToiBufferSoA::compactAndSort() {
     if (canSkipCompactAndSort()) {
         activeCount = 0u;
+    if (canSkipSoAIteration()) {
         return 0u;
     }
 
@@ -409,6 +429,7 @@ u32 ToiBufferSoA::countValidSlots() const {
 
 bool ToiBufferSoA::isSortedByToi() const {
     if (canSkipSoAIteration()) {
+    if (canSkipSoAIteration() || activeCount <= 1u) {
         return true;
     }
 
@@ -455,6 +476,7 @@ bool ToiBufferSoA::isSortedByToi() const {
 
 TOIResult ToiBufferSoA::earliestToi() const {
     if (canSkipSoAIteration() || isEmpty()) {
+    if (!hasValidTois()) {
         return {};
     }
     return resultAt(0u);
@@ -501,7 +523,10 @@ std::vector<TOIResult> ToiBufferSoA::toVector() const {
     for (u32 i = 0; i < activeCount; ++i) {
         if (slotIsValid(i)) {
             results.push_back(resultAt(i));
+        if (!slotIsValid(i)) {
+            continue;
         }
+        results.push_back(resultAt(i));
     }
     return results;
 }
