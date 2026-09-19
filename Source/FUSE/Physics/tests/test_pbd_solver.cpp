@@ -5503,3 +5503,6 @@ void testRejectReasonMirrorsExistingPreflights() {
     expectTrue(std::strcmp(island_dispatch_reject_reason_name(IslandDispatchRejectReason::NothingDispatchable),
     expectTrue(std::strcmp(island_solve_reject_reason_name(IslandSolveRejectReason::NoMovableBodies),
     expectTrue(std::strcmp(island_sleep_reject_reason_name(IslandSleepRejectReason::NotAllSleeping),
+
+// --- deepen additive from deepen-b4-pbd-island-reject-reasons-aaff ---
+    expectTrue(preflight.reason == IslandGraphBuildRejectReason::OutOfRangeDistanceBodies,
