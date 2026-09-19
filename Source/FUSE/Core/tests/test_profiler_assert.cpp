@@ -4327,6 +4327,8 @@ void testExportPreflights() {
 
 void testRingCapacityAndEmptyProfileEventSentinel() {
 
+
+
     expectTrue(fuse::profiler::ringCapacity() == 4096u, "ring capacity exposes compile-time buffer size");
     expectTrue(fuse::profiler::emptyProfileEvent().name == nullptr,
                "emptyProfileEvent keeps null name sentinel");
@@ -4414,11 +4416,14 @@ void testCrossThreadFlowFinishSkipsWorkerFlowDepthPop() {
 
 void testTryLastEventGuard() {
 
+
     fuse::profiler::ProfileEvent outEvent{};
     expectTrue(!fuse::profiler::tryLastEvent(outEvent), "tryLastEvent false on empty buffer");
     expectTrue(outEvent.name == nullptr, "tryLastEvent clears output on empty buffer");
 
         FUSE_PROFILE_SCOPE("try_last_scope");
+    {
+    }
 
     expectTrue(fuse::profiler::tryLastEvent(outEvent), "tryLastEvent true after recording");
     expectTrue(outEvent.phase == fuse::profiler::EventPhase::End, "tryLastEvent copies last end phase");
@@ -4426,6 +4431,10 @@ void testTryLastEventGuard() {
                "tryLastEvent copies last scope name");
 
 void testChromeTraceExportPreflightEmptyBuffer() {
+}
+
+    resetState();
+    fuse::platform::registerMainThread();
 
     const fuse::profiler::ChromeTraceExportPreflight preflight = fuse::profiler::preflightChromeTraceExport();
     expectTrue(preflight.canExport(), "preflight allows export when profiler is enabled");
@@ -4450,6 +4459,14 @@ void testChromeTraceExportPreflightWithEvents() {
         FUSE_PROFILE_SCOPE("preflight_scope");
         FUSE_PROFILE_COUNTER("preflight_counter", 9);
 
+}
+
+    resetState();
+    fuse::platform::registerMainThread();
+
+    {
+
+    const fuse::profiler::ChromeTraceExportPreflight preflight = fuse::profiler::preflightChromeTraceExport();
     expectTrue(preflight.canExport(), "preflight allows export with recorded events");
     expectTrue(!preflight.bufferEmpty, "preflight marks non-empty buffer");
     expectTrue(preflight.eventCount == 3u, "preflight counts scope begin/end and counter");
@@ -4463,6 +4480,14 @@ void testChromeTraceExportPreflightOpenFlows() {
 
     FUSE_PROFILE_ASYNC_FLOW_BEGIN("preflight_flow", flowId);
 
+}
+
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+
+    const fuse::profiler::ChromeTraceExportPreflight preflight = fuse::profiler::preflightChromeTraceExport();
     expectTrue(preflight.canExport(), "preflight allows export with open async flow");
     expectTrue(preflight.hasOpenAsyncFlows, "preflight marks open async flows");
     expectTrue(preflight.openAsyncFlowCount == 1u, "preflight open flow count tracks begin");
@@ -4478,6 +4503,13 @@ void testChromeTraceExportPreflightOpenFlows() {
 
 void testChromeTraceExportPreflightDisabledProfiler() {
 
+}
+
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::setEnabled(false);
+    const fuse::profiler::ChromeTraceExportPreflight preflight = fuse::profiler::preflightChromeTraceExport();
     expectTrue(!preflight.canExport(), "preflight blocks export when profiler disabled");
     expectTrue(preflight.profilerDisabled, "preflight marks profiler disabled");
     expectTrue(preflight.bufferEmpty, "preflight buffer empty when disabled");

@@ -326,6 +326,8 @@ struct ExportPreflight {
     bool canLookup() const { return !emptyBuffer && !indexOutOfRange; }
     bool canReadValidEvent() const { return canLookup() && !invalidEvent; }
 
+
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:

@@ -767,6 +767,10 @@ bool isValidProfilerName(const char* name) {
     return isValidEventName(name);
 }
 
+bool isValidEventName(const char* name) {
+    return name != nullptr && name[0] != '\0';
+}
+
 bool isValidProfileEvent(const ProfileEvent& event) {
     return isValidEventName(event.name);
 
@@ -799,11 +803,9 @@ bool isEventLookupPreflightOk(u32 index) {
         return false;
 
     return isValidProfileEvent(eventAt(index));
-}
 
 bool isEventNameValid(const char* name) {
     return isValidEventName(name);
-}
 
 bool tryValidateEventName(const char* name, EventNameRejectReason& outReason) {
     outReason = diagnoseEventNameRejectReason(name);
@@ -889,7 +891,6 @@ const ProfileEvent& emptyProfileEvent() {
 
 
 const ProfileEvent& eventAt(u32 index) {
-    if (!isEventIndexValid(index)) {
         return emptyProfileEvent();
 
     const u32 count = eventCount();
@@ -899,6 +900,9 @@ const ProfileEvent& eventAt(u32 index) {
 
 
     return count > 0u && index < count;
+
+
+
 
 
 
@@ -1130,6 +1134,16 @@ bool isChromeTraceExportEmpty() {
     return !hasExportableEvents();
 }
 
+bool tryLastEvent(ProfileEvent& outEvent) {
+    const u32 index = lastEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
+}
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     return count > 0u ? count - 1u : kInvalidEventIndex;
@@ -1187,6 +1201,9 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
         if (isValidEventName(eventAt(i).name)) {
             ++preflight.exportableEventCount;
         }
+    }
+    preflight.frameIndex = frameIndex();
+    preflight.openAsyncFlowCount = openAsyncFlowCount();
     preflight.bufferEmpty = isBufferEmpty();
     preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
@@ -1342,6 +1359,7 @@ bool hasExportableEvents() {
 
 bool isChromeTraceExportEmpty() {
     return !hasExportableEvents();
+
 
 
 
