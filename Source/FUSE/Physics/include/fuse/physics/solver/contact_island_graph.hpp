@@ -86,6 +86,7 @@ enum class IslandBuildRejectReason : u8 {
 /// Why island graph build would reject input (B4.4 deepen follow-up).
     OutOfRangeContactBody,
     OutOfRangeDistanceBody,
+/// Why island graph build would early-out (B4.4 deepen follow-up pass).
 
 /// Human-readable label for island build reject reasons (logging / tests).
 const char* island_build_reject_reason_name(IslandBuildRejectReason reason);
@@ -235,6 +236,18 @@ struct IslandBuildPreflight {
 };
 
 /// Populate island build preflight without mutating the graph.
+/// Diagnose why island build would skip; vacuously succeeds when build may proceed.
+
+/// Returns true when `island_build_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
+
+/// Read-only island build diagnostics — no mutation (B4.4 deepen follow-up pass).
+    u32 validContactCount = 0;
+    u32 skippedDistanceCount = 0;
+    u32 connectableConstraintCount = 0;
+    bool zeroBodies = false;
+
+
+/// Populate island build preflight without mutating a graph (B4.4 deepen follow-up pass).
 IslandBuildPreflight preflight_island_build(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
@@ -397,6 +410,7 @@ struct ContactIslandGraph {
     /// Guarded build wrapper; returns false when preflight rejects inputs.
     bool build_guarded(u32 bodyCount,
     /// Build only when `preflight_island_build` passes; clears and returns false otherwise.
+    /// Guarded build entry: returns false when preflight rejects zero-body input.
 
     void clear();
 

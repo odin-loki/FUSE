@@ -9774,6 +9774,199 @@ void testDispatchAllAwakeIslandsSkipsSleeping() {
     expectTrue(!awakeResult.skipped, "sleep-guarded dispatch does not skip awake island");
 }
 
+void testPreflightIslandBuildGuards() {
+    std::vector<narrowphase::ContactManifold> contacts;
+    contacts.push_back(narrowphase::ContactManifold{});
+    contacts.back().valid = true;
+    contacts.back().bodyA = 0;
+    contacts.back().bodyB = 1;
+    contacts.push_back(narrowphase::ContactManifold{});
+    contacts.back().valid = false;
+    contacts.back().bodyA = 0;
+    contacts.back().bodyB = 1;
+    contacts.push_back(narrowphase::ContactManifold{});
+    contacts.back().valid = true;
+    contacts.back().bodyA = 4;
+    contacts.back().bodyB = 5;
+
+    const std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+        DistanceConstraint{.bodyA = 9, .bodyB = 10, .restLength = 1.f},
+    };
+
+    const IslandBuildPreflight zeroBodies = preflight_island_build(0u, contacts, constraints);
+    expectTrue(zeroBodies.zeroBodies, "build preflight flags zero bodies");
+    expectTrue(!zeroBodies.can_build(), "build preflight rejects zero bodies");
+    expectTrue(should_skip_island_build(0u, contacts, constraints), "should_skip build for zero bodies");
+    expectTrue(island_build_rejects_for_reason(0u, contacts, constraints, IslandBuildRejectReason::ZeroBodies),
+               "reject reason matches zero bodies");
+
+    const IslandBuildPreflight valid = preflight_island_build(4u, contacts, constraints);
+    expectTrue(valid.can_build(), "build preflight accepts populated body count");
+    expectTrue(valid.validContactCount == 2u, "build preflight counts valid contacts");
+    expectTrue(valid.inRangeContactCount == 1u, "build preflight counts in-range valid contacts");
+    expectTrue(valid.skippedContactCount == 2u, "build preflight counts skipped contacts");
+    expectTrue(valid.inRangeDistanceCount == 1u, "build preflight counts in-range distance constraints");
+    expectTrue(valid.skippedDistanceCount == 1u, "build preflight counts skipped distance constraints");
+    expectTrue(valid.connectableConstraintCount == 2u, "build preflight counts connectable constraints");
+    expectTrue(!should_skip_island_build(4u, contacts, constraints), "should_skip false for valid build");
+}
+
+void testIslandBuildGuardedSkipsZeroBodies() {
+    ContactIslandGraph graph;
+    expectTrue(!graph.build_guarded(0u, {}, {}), "build_guarded returns false for zero bodies");
+    expectTrue(graph.islandCount() == 0u, "build_guarded clears graph on skip");
+
+    std::vector<narrowphase::ContactManifold> contacts;
+    contacts.push_back(narrowphase::ContactManifold{});
+    contacts.back().valid = true;
+    contacts.back().bodyA = 0;
+    contacts.back().bodyB = 1;
+    const std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+    };
+
+    expectTrue(graph.build_guarded(2u, contacts, constraints), "build_guarded succeeds for valid input");
+    expectTrue(graph.constrainedIslandCount() == 1u, "build_guarded populates constrained island");
+
+    ContactIslandGraph unguarded;
+    unguarded.build(2u, contacts, constraints);
+    expectTrue(unguarded.islandCount() == graph.islandCount(),
+               "unguarded build matches guarded island count on valid path");
+}
+
+void testPreflightIslandSleepWakeGuards() {
+    RigidBodySoA bodies;
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
+    bodies.addBody({2.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
+    bodies.addBody({4.f, 0.f, 0.f}, 1.f, 0);
+    bodies.addBody({6.f, 0.f, 0.f}, 1.f, RB_STATIC);
+
+    ContactIslandGraph graph;
+    graph.build(4, {}, {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+        DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f},
+    });
+
+    const u32 sleepingIsland = graph.bodyIsland(0);
+    const u32 mixedIsland = graph.bodyIsland(2);
+
+    const IslandSleepWakePreflight sleepingPreflight =
+        preflight_island_sleep_wake(graph.island(sleepingIsland), bodies);
+    expectTrue(!sleepingPreflight.skipped, "sleep preflight does not skip constrained island");
+    expectTrue(sleepingPreflight.all_sleeping(), "both-sleeping island flagged all sleeping");
+    expectTrue(sleepingPreflight.should_remain_asleep(), "sleeping island should remain asleep");
+    expectTrue(!sleepingPreflight.can_solve(), "all-sleeping island cannot solve");
+    expectTrue(should_skip_solve_sleeping_island(graph.island(sleepingIsland), bodies),
+               "should_skip sleeping island");
+
+    const IslandSleepWakePreflight mixedPreflight =
+        preflight_island_sleep_wake(graph.island(mixedIsland), bodies);
+    expectTrue(mixedPreflight.has_awake_dynamic(), "mixed island has awake dynamic body");
+    expectTrue(mixedPreflight.should_wake(), "mixed island should wake");
+    expectTrue(mixedPreflight.can_solve(), "mixed island can solve");
+    expectTrue(!should_skip_solve_sleeping_island(graph.island(mixedIsland), bodies),
+               "should_skip false for awake dynamic island");
+
+    expectTrue(island_body_is_sleeping(bodies, 0), "body helper detects sleeping");
+    expectTrue(island_body_is_static_or_kinematic(bodies, 3), "body helper detects static");
+    expectTrue(island_body_is_awake_dynamic(bodies, 2), "body helper detects awake dynamic");
+}
+
+void testPreflightIslandConstraintSolveGuards() {
+    RigidBodySoA bodies;
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
+    bodies.addBody({2.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
+
+    std::vector<narrowphase::ContactManifold> contacts;
+    contacts.push_back(narrowphase::ContactManifold{});
+    contacts.back().valid = true;
+    contacts.back().bodyA = 0;
+    contacts.back().bodyB = 1;
+
+    const std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+    };
+
+    ContactIslandGraph graph;
+    graph.build(2, contacts, constraints);
+    const ContactIslandGraph::Island& island = graph.island(0);
+
+    const IslandConstraintSolvePreflight preflight =
+        preflight_island_constraint_solve(island, bodies, contacts, constraints);
+    expectTrue(!preflight.skipped, "constraint solve preflight does not skip constrained island");
+    expectTrue(preflight.refs.can_solve(), "constraint solve preflight has in-range refs");
+    expectTrue(!preflight.sleepWake.can_solve(), "constraint solve preflight rejects all-sleeping island");
+    expectTrue(!preflight.can_solve(), "combined constraint solve preflight cannot solve sleeping island");
+    expectTrue(should_skip_island_constraint_solve(island, bodies, contacts, constraints),
+               "should_skip combined solve for all-sleeping island");
+
+    bodies.flags[0] &= ~RB_SLEEPING;
+    const IslandConstraintSolvePreflight awakePreflight =
+        preflight_island_constraint_solve(island, bodies, contacts, constraints);
+    expectTrue(awakePreflight.can_solve(), "constraint solve preflight allows partially awake island");
+    expectTrue(!should_skip_island_constraint_solve(island, bodies, contacts, constraints),
+               "should_skip false when island has awake dynamic body");
+}
+
+void testSolveIslandJobSkipsAllSleepingIsland() {
+    RigidBodySoA bodies;
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
+    bodies.addBody({2.1f, 0.f, 0.f}, 1.f, RB_SLEEPING);
+    bodies.predictedPositions = bodies.positions;
+
+    ContactIslandGraph graph;
+    graph.build(2, {}, {DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f}});
+
+    SolverWorkBuffers work;
+    work.init(2, 0, 1);
+    const IslandSolveJob job = extract_island(graph, 0);
+    expectTrue(should_solve_island(job), "sleeping island job still dispatchable by constraint count");
+    expectTrue(!solve_island_job(bodies,
+                                 *job.island,
+                                 work,
+                                 {DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f}},
+                                 1.f / 60.f,
+                                 0.f,
+                                 [](const RigidBodySoA&, u32) { return 1.f; }),
+               "solve_island_job skips all-sleeping island");
+}
+
+void testPreflightIslandSleepWakeGraphGuards() {
+    RigidBodySoA bodies;
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
+    bodies.addBody({2.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
+    bodies.addBody({4.f, 0.f, 0.f}, 1.f, 0);
+    bodies.addBody({6.f, 0.f, 0.f}, 1.f, RB_STATIC);
+
+    ContactIslandGraph graph;
+    graph.build(4, {}, {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+        DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f},
+    });
+
+    const IslandSleepWakeGraphPreflight preflight = preflight_island_sleep_wake_graph(graph, bodies);
+    expectTrue(!preflight.skipped, "graph sleep preflight does not skip mixed graph");
+    expectTrue(preflight.can_solve(), "graph sleep preflight can solve");
+    expectTrue(preflight.stats.solvableCount == 1u, "graph sleep preflight counts solvable island");
+    expectTrue(preflight.stats.allSleepingCount == 1u, "graph sleep preflight counts all-sleeping island");
+    expectTrue(count_solvable_islands(graph, bodies) == 1u, "count_solvable_islands matches stats");
+    expectTrue(has_solvable_islands(graph, bodies), "has_solvable_islands true for mixed graph");
+    expectTrue(!should_skip_island_solve_sleep_wake(graph, bodies),
+               "should_skip graph false when solvable island exists");
+
+    for (u32 i = 0; i < bodies.count(); ++i) {
+        if ((bodies.flags[i] & RB_STATIC) == 0u) {
+            bodies.flags[i] |= RB_SLEEPING;
+        }
+    }
+    const IslandSleepWakeGraphPreflight allSleeping =
+        preflight_island_sleep_wake_graph(graph, bodies);
+    expectTrue(allSleeping.skipped, "graph sleep preflight skips all-sleeping graph");
+    expectTrue(should_skip_island_solve_sleep_wake(graph, bodies),
+               "should_skip graph true when no solvable islands");
+}
+
 void testEarlyExitWhenResidualBelowTolerance() {
     CollisionShapeSoA shapes;
     RigidBodySoA bodies;
@@ -10357,6 +10550,8 @@ int main() {
     testPreflightIslandDispatchNonFiniteDt();
     testPreflightIslandBodyRefsGuards();
     testDispatchAllAwakeIslandsSkipsSleeping();
+    testIslandBuildGuardedSkipsZeroBodies();
+    testPreflightIslandSleepWakeGraphGuards();
     testEarlyExitWhenResidualBelowTolerance();
     testPreflightIslandBuildGuards();
     testPreflightIslandConstraintSolveGuards();
