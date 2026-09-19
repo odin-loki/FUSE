@@ -971,6 +971,13 @@ public:
     /// Classify why pass resolve would skip (B5.9 deepen).
     /// Classify why resolve would skip — same ordering as `wouldSkipResolve` (B5.9 deepen).
     /// Classify why pass resolve would skip — same ordering as `wouldSkipResolve` (B5.9 deepen).
+    /// Classify why pass jitter sync is blocked (B5.9 deepen).
+    /// Pass jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
+    /// Pass history reuse preflight with mandatory reject-reason output (B5.9 deepen).
+    /// Pass history resolve-readiness preflight with mandatory reject-reason output (B5.9 deepen).
+    /// Pass resolve blend preflight with mandatory reject-reason output (B5.9 deepen).
+    /// Compute pass resolve blend weights with reject-reason diagnostics (B5.9 deepen).
+    /// Pass resolve preflight with mandatory skip-reason output (B5.9 deepen).
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
