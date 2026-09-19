@@ -255,6 +255,60 @@ CookCacheReconcileEstimate AssetCooker::estimate_reconcile_invalidation(const Co
     return estimate;
 }
 
+bool AssetCooker::would_reconcile_invalidation(const CookManifest& manifest) const {
+    return estimate_reconcile_invalidation(manifest).total() != 0;
+}
+
+CookUpstreamInvalidationEstimate AssetCooker::estimate_upstream_invalidation(
+    const CookManifest& manifest, const std::string& changed_source) const {
+    CookUpstreamInvalidationEstimate estimate;
+    if (!is_valid_cook_cache_path(changed_source)) {
+        return estimate;
+    }
+
+    estimate.direct_source_entries = m_cache.count_by_source(changed_source);
+
+    CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    for (const CookJob& job : graph.jobs()) {
+        if (job.source_path == changed_source) {
+            estimate.downstream_entries += m_cache.count_downstream_of(job.output_path, graph.edges(), graph.jobs());
+        }
+    }
+    return estimate;
+}
+
+CookStaleDependencyEstimate AssetCooker::estimate_stale_dependency_reconcile(const CookManifest& manifest) const {
+    CookStaleDependencyEstimate estimate;
+    if (m_cache.empty()) {
+        return estimate;
+    }
+
+    CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    std::vector<std::pair<std::string, u64>> source_upstream;
+    source_upstream.reserve(graph.jobs().size());
+    for (const CookJob& job : graph.jobs()) {
+        source_upstream.emplace_back(job.source_path, hash_upstream_from_jobs(job, graph.jobs()));
+    }
+
+    estimate.stale_upstream_entries = m_cache.count_stale_upstream_hashes(source_upstream);
+
+    const std::vector<std::string> stale_sources = m_cache.probe_stale_upstream_sources(source_upstream);
+    for (const std::string& stale_source : stale_sources) {
+        for (const CookJob& job : graph.jobs()) {
+            if (job.source_path == stale_source) {
+                estimate.downstream_cascade_entries +=
+                    m_cache.count_downstream_of(job.output_path, graph.edges(), graph.jobs());
+                break;
+            }
+        }
+    }
+    return estimate;
+}
+
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {
     CookJobGraph graph;
     graph.build_from_manifest(manifest);

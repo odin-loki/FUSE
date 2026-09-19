@@ -59,6 +59,9 @@ struct CookCachePruneEstimate {
     return is_valid_cook_cache_key(combine_cook_cache_key(source_hash, upstream_hash));
 }
 
+/// Structural + kind-aware source preflight for cache records — mirrors `store` guards (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
+
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
 public:
@@ -117,6 +120,25 @@ public:
     [[nodiscard]] std::vector<std::string> probe_downstream_sources(
         const std::string& output_path, const std::vector<CookJobDependencyEdge>& edges,
         const std::vector<CookJob>& jobs) const;
+
+    /// Read-only invalidation would_* probes — mirror `invalidate_*` guards (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                                 u64 current_content_hash) const;
+    [[nodiscard]] bool would_invalidate_stale_upstream_hashes(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
+                                                    const std::vector<CookJobDependencyEdge>& edges,
+                                                    const std::vector<CookJob>& jobs) const;
+    /// True when `estimate_prune_removals().invalid_entries` is non-zero (B7.9 deepen).
+    [[nodiscard]] bool would_prune_invalid() const;
+    /// True when `estimate_prune_removals().stale_entries` is non-zero (B7.9 deepen).
+    [[nodiscard]] bool would_prune_stale() const;
+    /// Content hashes `invalidate_source` would remove — one push per matching entry (B7.9 deepen).
+    [[nodiscard]] std::vector<u64> probe_invalidation_hashes_for_source(const std::string& source_path) const;
+    /// Content hashes `invalidate_output` would remove — one push per matching entry (B7.9 deepen).
+    [[nodiscard]] std::vector<u64> probe_invalidation_hashes_for_output(const std::string& output_path) const;
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 
