@@ -1602,3 +1602,28 @@ FUSE_PHYSICS_INLINE CellOccupancyRejectReason cellOccupancyRejectReasonForParams
     return cellOccupancyRejectReason(range, params.maxCellOccupancy);
     return !preflightCellOccupancyForParams(range, params).canIterate();
     return preflightCellOccupancyForParams(range, params).canIterate();
+
+// --- deepen additive from deepen-b4-broadphase-guards-03ca ---
+struct ShapeCellInsertionPreflight {
+    CellOccupancyPreflight occupancy{};
+FUSE_PHYSICS_INLINE ShapeCellInsertionPreflight preflightShapeCellInsertion(const CellRange3& range, u32 maxCells) {
+    ShapeCellInsertionPreflight preflight{};
+    preflight.occupancy = preflightCellOccupancy(range, maxCells);
+FUSE_PHYSICS_INLINE ShapeCellInsertionPreflight preflightShapeCellInsertion(const CellRange2& range, u32 maxCells) {
+    return preflightShapeCellInsertion(range, maxCells).canInsert();
+enum class RefinePairSlotRejectReason : u8 {
+const char* refinePairSlotRejectReasonName(RefinePairSlotRejectReason reason);
+RefinePairSlotRejectReason refinePairSlotRejectReason(
+    RefinePairSlotRejectReason expected);
+struct RefinePairSlotPreflight {
+    RefinePairSlotRejectReason reason = RefinePairSlotRejectReason::None;
+    bool canRefine() const { return reason == RefinePairSlotRejectReason::None; }
+RefinePairSlotPreflight preflightRefinePairSlot(
+enum class MergeBroadphasePushRejectReason : u8 {
+const char* mergeBroadphasePushRejectReasonName(MergeBroadphasePushRejectReason reason);
+MergeBroadphasePushRejectReason mergeBroadphasePushRejectReason(
+    MergeBroadphasePushRejectReason expected);
+struct MergeBroadphasePushPreflight {
+    MergeBroadphasePushRejectReason reason = MergeBroadphasePushRejectReason::None;
+    bool canPush() const { return reason == MergeBroadphasePushRejectReason::None; }
+MergeBroadphasePushPreflight preflightMergeBroadphasePush(

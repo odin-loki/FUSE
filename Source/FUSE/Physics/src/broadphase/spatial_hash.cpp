@@ -1580,3 +1580,47 @@ const char* cellSpanCapacityRejectReasonName(CellSpanCapacityRejectReason reason
     case CellSpanCapacityRejectReason::None:
     case CellSpanCapacityRejectReason::EmptyRange:
     case CellSpanCapacityRejectReason::ExceedsSpanPerAxis:
+
+// --- deepen additive from deepen-b4-broadphase-guards-03ca ---
+        if (!preflightMergeBroadphasePush(buffer, pair.bodyA, pair.bodyB).canPush()) {
+        const RefinePairSlotPreflight slotPreflight =
+            preflightRefinePairSlot(buffer, pairIndex, bodies.count());
+        if (slotPreflight.outOfRangeSlot || slotPreflight.invalidSlot) {
+        if (slotPreflight.invalidPair) {
+const char* refinePairSlotRejectReasonName(RefinePairSlotRejectReason reason) {
+    case RefinePairSlotRejectReason::None:
+    case RefinePairSlotRejectReason::OutOfRangeSlot:
+    case RefinePairSlotRejectReason::InvalidSlot:
+    case RefinePairSlotRejectReason::InvalidPair:
+RefinePairSlotRejectReason refinePairSlotRejectReason(
+        return RefinePairSlotRejectReason::OutOfRangeSlot;
+        return RefinePairSlotRejectReason::InvalidSlot;
+        return RefinePairSlotRejectReason::InvalidPair;
+    return RefinePairSlotRejectReason::None;
+    RefinePairSlotRejectReason expected) {
+    return refinePairSlotRejectReason(buffer, slot, bodyCount) == expected;
+RefinePairSlotPreflight preflightRefinePairSlot(const PairBufferSoA& buffer, u32 slot, u32 bodyCount) {
+    RefinePairSlotPreflight preflight{};
+    preflight.reason = refinePairSlotRejectReason(buffer, slot, bodyCount);
+    preflight.outOfRangeSlot = preflight.reason == RefinePairSlotRejectReason::OutOfRangeSlot;
+    preflight.invalidSlot = preflight.reason == RefinePairSlotRejectReason::InvalidSlot;
+    preflight.invalidPair = preflight.reason == RefinePairSlotRejectReason::InvalidPair;
+    return !preflightRefinePairSlot(buffer, slot, bodyCount).canRefine();
+    return preflightRefinePairSlot(buffer, slot, bodyCount).canRefine();
+const char* mergeBroadphasePushRejectReasonName(MergeBroadphasePushRejectReason reason) {
+    case MergeBroadphasePushRejectReason::None:
+    case MergeBroadphasePushRejectReason::InvalidPair:
+    case MergeBroadphasePushRejectReason::BufferFull:
+MergeBroadphasePushRejectReason mergeBroadphasePushRejectReason(
+        return MergeBroadphasePushRejectReason::InvalidPair;
+        return MergeBroadphasePushRejectReason::BufferFull;
+    return MergeBroadphasePushRejectReason::None;
+    MergeBroadphasePushRejectReason expected) {
+    return mergeBroadphasePushRejectReason(buffer, bodyA, bodyB) == expected;
+MergeBroadphasePushPreflight preflightMergeBroadphasePush(
+    MergeBroadphasePushPreflight preflight{};
+    preflight.reason = mergeBroadphasePushRejectReason(buffer, bodyA, bodyB);
+    preflight.invalidPair = preflight.reason == MergeBroadphasePushRejectReason::InvalidPair;
+    preflight.bufferFull = preflight.reason == MergeBroadphasePushRejectReason::BufferFull;
+    return !preflightMergeBroadphasePush(buffer, bodyA, bodyB).canPush();
+    return preflightMergeBroadphasePush(buffer, bodyA, bodyB).canPush();
