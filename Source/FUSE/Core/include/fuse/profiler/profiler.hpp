@@ -55,9 +55,14 @@ struct ChromeTraceExportPreflight {
     bool hasOpenAsyncFlows = false;
     bool flowDepthDetached = false;
     u32 invalidNameEventCount = 0;
+    u32 nonExportableEventCount = 0;
+    u32 firstExportableEventIndex = kInvalidEventIndex;
+    u32 lastExportableEventIndex = kInvalidEventIndex;
     bool ringBufferFull = false;
     bool hasInvalidNameEvents = false;
     bool crossThreadFlowHandoffPending = false;
+    bool hasActiveScope = false;
+    bool hasActiveAsyncFlowNesting = false;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
@@ -65,6 +70,7 @@ struct ChromeTraceExportPreflight {
     bool canExportSafely() const {
         return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending;
     }
+    bool canExportNonEmptyTrace() const { return canExport() && hasExportableEvents(); }
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -104,6 +110,8 @@ bool isFlowNestingBalanced();
 bool hasUnbalancedNesting();
 bool isFlowDepthDetached();
 bool isCrossThreadFlowHandoffPending();
+bool hasActiveScope();
+bool hasActiveAsyncFlowNesting();
 
 bool hasEvents();
 bool isBufferEmpty();
@@ -115,20 +123,41 @@ bool isProfileEventSentinel(const ProfileEvent& event);
 u32 invalidNameEventCount();
 bool hasInvalidNameEvents();
 u32 exportableEventCount();
+u32 nonExportableEventCount();
 bool isEventExportable(u32 index);
 u32 firstEventIndex();
 u32 lastEventIndex();
+u32 firstExportableEventIndex();
+u32 lastExportableEventIndex();
 u32 findFirstEventIndexByPhase(EventPhase phase);
 u32 findLastEventIndexByPhase(EventPhase phase);
 u32 countEventsByPhase(EventPhase phase);
+u32 findFirstEventIndexByName(const char* name);
+u32 findLastEventIndexByName(const char* name);
+u32 countEventsByName(const char* name);
+u32 findFirstEventIndexByFlowId(u32 flowId);
+u32 findLastEventIndexByFlowId(u32 flowId);
+u32 countEventsByFlowId(u32 flowId);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
 bool tryExportableEventAt(u32 index, ProfileEvent& outEvent);
 bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
+bool tryFirstExportableEvent(ProfileEvent& outEvent);
+bool tryLastExportableEvent(ProfileEvent& outEvent);
+bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent);
+bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent);
+bool tryFindFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 void reset();
+
+bool wouldSkipScope(const char* name);
+bool wouldSkipAsyncFlowBegin(const char* name, u32 flowId);
+bool wouldSkipAsyncFlowEnd(const char* name, u32 flowId);
+bool wouldSkipCounterSample(const char* track);
+bool wouldSkipChromeTraceExport();
+bool wouldSkipChromeTraceExportSafely();
 
 ChromeTraceExportPreflight preflightChromeTraceExport();
 
