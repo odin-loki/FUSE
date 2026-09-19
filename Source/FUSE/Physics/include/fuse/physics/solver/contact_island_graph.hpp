@@ -205,6 +205,12 @@ bool has_island_build_constraints(
 /// True when `bodyCount` is valid for island graph construction.
 
 /// Preflight island graph build inputs; sets `skipped` when `bodyCount` is zero but constraints reference bodies.
+
+    bool has_out_of_range_refs() const {
+        return outOfRangeContactCount > 0u || outOfRangeDistanceCount > 0u;
+    }
+
+/// Populate build preflight without mutating a graph (B4.4 deepen).
 IslandBuildPreflight preflight_island_build(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
@@ -330,6 +336,7 @@ bool should_skip_island_build(u32 bodyCount);
 /// Returns true when island graph build should be skipped (B4.4 deepen follow-up).
 /// True when island graph build is a no-op (zero bodies).
 /// Early-out guard when island graph build inputs are degenerate.
+/// Early-out guard when island build inputs cannot produce a meaningful graph.
 bool should_skip_island_build(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
