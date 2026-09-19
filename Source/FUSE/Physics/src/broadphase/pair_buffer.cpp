@@ -306,9 +306,48 @@ std::vector<CandidatePair> PairBufferSoA::toVector() const {
 }
 
 PairBufferPushPreflight preflightPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB) {
+    return preflightPairBufferPush(buffer, idxA, idxB, 0u);
+}
+
+PairBufferPushPreflight preflightPairBufferPush(
+    const PairBufferSoA& buffer,
+    u32 idxA,
+    u32 idxB,
+    u32 bodyCount) {
     PairBufferPushPreflight preflight{};
-    preflight.invalidPair = !isValidCandidatePair(idxA, idxB);
+    preflight.invalidPair = !isValidCandidatePair(idxA, idxB, bodyCount);
     preflight.atCapacity = buffer.isFull();
+    return preflight;
+}
+
+PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB) {
+    return preflightPairBufferWriteSlot(buffer, slot, idxA, idxB, 0u);
+}
+
+PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB,
+    u32 bodyCount) {
+    PairBufferWriteSlotPreflight preflight{};
+    preflight.invalidSlot = slot >= buffer.pairSlotCount;
+    preflight.invalidPair = !isValidCandidatePair(idxA, idxB, bodyCount);
+    return preflight;
+}
+
+PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u32 incomingPairCount) {
+    PairBufferMergePreflight preflight{};
+    preflight.incomingCount = incomingPairCount;
+    preflight.emptyIncoming = incomingPairCount == 0u;
+    preflight.remainingCapacity = buffer.remainingCapacity();
+    preflight.bufferAtCapacity = !preflight.emptyIncoming && preflight.remainingCapacity == 0u;
+    preflight.wouldTruncate =
+        !preflight.emptyIncoming && incomingPairCount > preflight.remainingCapacity;
     return preflight;
 }
 
