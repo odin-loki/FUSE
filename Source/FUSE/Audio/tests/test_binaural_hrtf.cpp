@@ -2446,3 +2446,35 @@ void testHrtfPanPathRejectReasonNoIrOverload() {
                "preflightHrtfBinauralConvolutionReady mirrors can_convolve_hrtf_binaural");
     expectTrue(fuse::audio::preflightHrtfBinauralNarrowingReady(true, empty, offset, 0.2f, 0.3f)
                "preflightHrtfBinauralNarrowingReady mirrors can_narrow_hrtf_binaural_spatial_image");
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-4454 ---
+               "should_skip_hrtf_ir_preflight true on empty IR");
+               "should_skip_hrtf_ir_preflight false on valid IR");
+    fuse::audio::HrtfPanPathRejectReason pan_reason = fuse::audio::HrtfPanPathRejectReason::None;
+    expectTrue(pan_reason == fuse::audio::HrtfPanPathRejectReason::None,
+    pan_reason = fuse::audio::HrtfPanPathRejectReason::None;
+    expectTrue(pan_reason == fuse::audio::HrtfPanPathRejectReason::HrtfDisabled,
+    expectTrue(pan_reason == fuse::audio::HrtfPanPathRejectReason::CoLocated,
+    fuse::audio::HrtfConvolutionRejectReason conv_reason =
+    expectTrue(conv_reason == fuse::audio::HrtfConvolutionRejectReason::None,
+    conv_reason = fuse::audio::HrtfConvolutionRejectReason::None;
+    expectTrue(conv_reason == fuse::audio::HrtfConvolutionRejectReason::EmptyIr,
+    expectTrue(conv_reason == fuse::audio::HrtfConvolutionRejectReason::CoLocated,
+    expectTrue(fuse::audio::should_skip_hrtf_convolution_preflight(true, empty, offset),
+               "should_skip_hrtf_convolution_preflight true on empty IR");
+    expectTrue(fuse::audio::should_skip_hrtf_spatial_pan_preflight(false, offset),
+               "no-IR overload should_skip spatial pan when disabled");
+    expectTrue(fuse::audio::should_skip_hrtf_narrowing_preflight(fuse::audio::HrtfPanPath::Bypass,
+               "should_skip_hrtf_narrowing_preflight true on bypass");
+    fuse::audio::HrtfBinauralConvolutionRejectReason conv_reason =
+        fuse::audio::HrtfBinauralConvolutionRejectReason::None;
+    expectTrue(conv_reason == fuse::audio::HrtfBinauralConvolutionRejectReason::EmptyIr,
+    conv_reason = fuse::audio::HrtfBinauralConvolutionRejectReason::None;
+    expectTrue(conv_reason == fuse::audio::HrtfBinauralConvolutionRejectReason::None,
+    fuse::audio::HrtfBinauralNarrowingRejectReason narrow_reason =
+        fuse::audio::HrtfBinauralNarrowingRejectReason::None;
+    expectTrue(narrow_reason == fuse::audio::HrtfBinauralNarrowingRejectReason::None,
+    narrow_reason = fuse::audio::HrtfBinauralNarrowingRejectReason::None;
+    expectTrue(narrow_reason == fuse::audio::HrtfBinauralNarrowingRejectReason::UnityAttenuation,
+    expectTrue(fuse::audio::should_skip_hrtf_binaural_preflight(false, offset, 0.1f, 0.1f),
+               "should_skip_hrtf_binaural_preflight true when disabled");

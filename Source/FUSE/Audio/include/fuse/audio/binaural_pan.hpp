@@ -1243,3 +1243,16 @@ bool preflightHrtfBinauralNarrowingReady(bool hrtf_enabled, const HrtfIrStub& ir
 bool preflightHrtfBinauralNarrowingReady(bool hrtf_enabled, const Vec3& rel_listener,
 bool tryPreflightHrtfBinauralNarrowing(bool hrtf_enabled, const HrtfIrStub& ir,
 bool tryPreflightHrtfBinauralNarrowing(bool hrtf_enabled, const Vec3& rel_listener,
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-4454 ---
+const char* hrtf_convolution_reject_reason_label(HrtfConvolutionRejectReason reason);
+HrtfConvolutionRejectReason classify_hrtf_convolution_reject(const HrtfPanPathPreflight& pan_path,
+bool should_skip_hrtf_spatial_pan_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
+bool should_skip_hrtf_spatial_pan_preflight(bool hrtf_enabled, const Vec3& rel_listener);
+bool should_skip_hrtf_convolution_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
+bool try_preflight_hrtf_narrowing(HrtfPanPath path, float distance_attenuation, float occlusion_gain,
+bool should_skip_hrtf_narrowing_preflight(HrtfPanPath path, float distance_attenuation,
+                                               HrtfBinauralConvolutionRejectReason* reason = nullptr);
+                                             HrtfBinauralConvolutionRejectReason& reason);
+                                             HrtfBinauralNarrowingRejectReason* reason = nullptr);
+                                           HrtfBinauralNarrowingRejectReason& reason);
