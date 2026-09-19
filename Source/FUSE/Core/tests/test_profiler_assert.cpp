@@ -5720,3 +5720,12 @@ void testAsyncFlowPreflight() {
     expectTrue(fuse::profiler::wouldSkipBeginAsyncFlow("flow", flowId)
     expectTrue(fuse::profiler::wouldSkipEndAsyncFlow("flow", flowId)
                "wouldSkipEndAsyncFlow agrees with end preflight");
+
+// --- deepen additive from b16-profiler-deepen-guards-aba4 ---
+void testWouldSkipGuards() {
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd("orphan"),
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowEnd("paired_skip"),
+               "wouldSkipAsyncFlowEnd false after begin");
+               "wouldSkipChromeTraceExport false when enabled");
+               "wouldSkipChromeTraceExportSafely true with open flow and unbalanced nesting");
+               "wouldSkipChromeTraceExportSafely false after paired flow teardown");

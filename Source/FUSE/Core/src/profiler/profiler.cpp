@@ -1581,3 +1581,6 @@ bool wouldSkipCounter(const char* track, ProfilerRecordSkipReason* reason) {
     preflight.wouldSkip = wouldSkipAsyncFlowBegin(name, &preflight.skipReason);
     preflight.wouldSkip = wouldSkipAsyncFlowEnd(name, &preflight.skipReason);
 bool wouldSkipChromeTraceExport(bool requireBalancedNesting) {
+
+// --- deepen additive from b16-profiler-deepen-guards-aba4 ---
+    return !preflightChromeTraceExport().canExport();
