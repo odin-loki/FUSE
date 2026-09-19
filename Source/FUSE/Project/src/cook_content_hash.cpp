@@ -517,3 +517,8 @@ CookHashPreflight preflight_manifest_entry_dependencies(const CookManifestEntry&
 
 // --- deepen additive from deepen-b79-cooker-hash-a61f ---
             preflight.reason = CookHashRejectReason::UnresolvedDependency;
+
+// --- deepen additive from deepen-b79-cooker-hash-83b8 ---
+    case CookHashRejectReason::InvalidCacheEntry:
+    const CookHashPreflight fold_preflight = preflight_combine_cook_cache_key(source_hash, upstream_hash);
+CookHashPreflight preflight_manifest_entry_with_dependencies_hash(const CookManifestEntry& entry,

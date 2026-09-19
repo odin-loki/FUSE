@@ -1105,3 +1105,18 @@ void testCookHashPreflightFnvAndManifestCook() {
                "would_invalidate_stale_upstream false when upstream hash matches");
     expectTrue(cooker.cache().would_invalidate_stale_upstream({{source, 42u}}),
                "would_invalidate_stale_upstream true when upstream hash mismatches");
+
+// --- deepen additive from deepen-b79-cooker-hash-83b8 ---
+    expectTrue(!cache.would_invalidate_all(), "would_invalidate_all on empty cache is false");
+    expectTrue(!empty_estimate.would_invalidate_all(), "empty estimate would_invalidate_all is false");
+               "matching hash does not would_invalidate stale content");
+               "mismatched hash would_invalidate stale content");
+    expectTrue(cooker.cache().would_invalidate_all(), "populated cache would_invalidate_all is true");
+    const fuse::project::CookHashPreflight zero_hash = fuse::project::preflight_cook_cache_entry(invalid);
+    expectTrue(zero_hash.reason == fuse::project::CookHashRejectReason::ZeroSourceHash,
+    const fuse::project::CookHashPreflight empty_source = fuse::project::preflight_cook_cache_entry(invalid);
+    expectTrue(empty_source.reason == fuse::project::CookHashRejectReason::EmptyInputPath,
+    const fuse::project::CookHashPreflight empty_output = fuse::project::preflight_cook_cache_entry(invalid);
+    expectTrue(empty_output.reason == fuse::project::CookHashRejectReason::EmptyOutputPath,
+void testCookHashPreflightCacheableAndManifestDeps() {
+    testCookHashPreflightCacheableAndManifestDeps();
