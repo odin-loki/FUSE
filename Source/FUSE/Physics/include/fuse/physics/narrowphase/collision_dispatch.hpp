@@ -187,6 +187,12 @@ ContactManifold collideBoxBox(
 
 struct ContactBufferSoA;
 
+/// True when narrowphase batch may early-out before slot preparation (B4.6 deepen pass).
+bool can_skip_narrowphase_into_buffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
 /// Job-safe narrowphase: one output slot per candidate pair, then compact valid contacts.
 void runNarrowphaseIntoBuffer(
     const std::vector<broadphase::CandidatePair>& pairs,
