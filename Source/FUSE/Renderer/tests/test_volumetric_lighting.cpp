@@ -3849,3 +3849,10 @@ void testFroxelRejectClassifyAndPreflightGuards() {
                "preflightFroxelSampleCoords still succeeds for clampable weights");
                "classifyFroxelSampleCoordsReject out_of_bounds for hard OOB tile");
                "preflightFroxelSampleCoords rejects hard OOB tile");
+
+// --- deepen additive from deepen-b511-froxel-classify-preflight-9601 ---
+               "preflightDensityLookup succeeds with clamp warning for OOB index");
+               "classifyDensityLookupAtCoordReject none for in-range coords");
+               "preflightDensityLookupAtCoord succeeds with clamp warning for OOB coords");
+    expectTrue(!fuse::renderer::froxel_util::preflightDensityTrilinearSample(emptyGrid, desc, inBounds),
+               "preflightDensityTrilinearSample rejects empty storage");
