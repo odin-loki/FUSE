@@ -300,6 +300,9 @@ public:
     /// History resolve-readiness preflight with mandatory block-reason output (B5.9 deepen).
     /// Compute resolve blend weights with mandatory reject-reason output (B5.9 deepen).
     bool tryComputeExpectedResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& outWeights,
+    /// True when pass history buffers are warmed and temporal reuse is allowed (B5.9 deepen).
+    /// Early-out when pass history warmup/reuse preflight would reject (B5.9 deepen).
+    bool shouldSkipHistoryWarmupAndReuse(u32 observedGeneration) const;
     /// Early-out when resolve blend-weight preflight would reject (B5.9 deepen).
     bool shouldSkipResolveBlend(const TaaResolveDesc& desc) const;
     /// Early-out when resolve preflight would bail (B5.9 deepen).
@@ -456,6 +459,9 @@ public:
     bool ndcJitterForFrameIndexIfReady(u32 frameIndex, fuse::math::Vec2& out) const;
     /// Classify why pass jitter sync would be rejected (B5.9 deepen).
     TaaJitterGuardRejectReason classifyJitterSyncReject() const;
+    /// True when jitter can sync to `frameIndex` and produce NDC for the pass viewport (B5.9 deepen).
+    /// Early-out when pass jitter sync+NDC preflight would reject (B5.9 deepen).
+    bool shouldSkipJitterSyncAndNdc(u32 frameIndex) const;
     /// Early-out when pass history still needs warm-up (B5.9 deepen).
     bool shouldSkipHistoryWarmup() const;
     /// True when pass history warm-up is complete (B5.9 deepen).
