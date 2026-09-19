@@ -3019,3 +3019,14 @@ void testPairBufferSortAndDedupeShouldRunGuards() {
     const fuse::physics::broadphase::MergePairsIntoBufferPreflight preflight =
         fuse::physics::broadphase::preflightMergePairsIntoBuffer(pairs, mergeBuffer);
 void testShouldRunBroadphaseGuard() {
+
+// --- deepen additive from deepen-b4-broadphase-guards-1f94 ---
+void testBroadphaseMergePreflightHasBodiesFields() {
+    expectTrue(!emptyPreflight.hasPlaneBodies, "empty scene has no plane bodies");
+    expectTrue(!emptyPreflight.hasDynamicBodies, "empty scene has no dynamic bodies");
+    expectTrue(planeOnlyPreflight.hasPlaneBodies, "plane-only scene marks hasPlaneBodies");
+    expectTrue(!planeOnlyPreflight.hasDynamicBodies, "plane-only scene has no dynamic bodies");
+    expectTrue(mergePreflight.hasPlaneBodies, "merge scene marks hasPlaneBodies");
+    expectTrue(mergePreflight.hasDynamicBodies, "merge scene marks hasDynamicBodies");
+    expectTrue(mergePreflight.canMerge(), "merge scene can merge with positive body flags");
+    testBroadphaseMergePreflightHasBodiesFields();
