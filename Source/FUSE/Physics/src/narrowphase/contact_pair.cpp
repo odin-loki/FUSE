@@ -851,3 +851,7 @@ bool should_skip_contact_pair_dispatch_preflight(
 // --- deepen additive from deepen-b4-narrowphase-guards-b135 ---
     case ContactPairRejectReason::BothPlane:
         return ContactPairRejectReason::BothPlane;
+
+// --- deepen additive from b4-narrowphase-deepen-guards-ed7c ---
+    if (baseReason == ContactPairRejectReason::UnsupportedShapePair &&
+bool should_skip_narrowphase_batch(

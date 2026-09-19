@@ -3001,3 +3001,19 @@ void testContactPairBothPlaneDeepenRejectGuards() {
         fuse::physics::narrowphase::should_skip_contact_pair_deepen_dispatch({planeA, planeB}, bodies, shapes),
                 fuse::physics::narrowphase::ContactPairRejectReason::BothPlane),
 void testManifoldNormalizeContactNormalGuards() {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-ed7c ---
+        "writeSlotWithPreflight stores valid manifold");
+        !buffer.writeSlotWithPreflight(1u, selfPair),
+        "writeSlotWithPreflight no-ops on self pair");
+        buffer.compactAndClampWithPreflight() == 2u,
+        "compactAndClampWithPreflight truncates to max capacity");
+    expectTrue(emptyPreflight.emptyBuffer, "compact-and-clamp preflight marks empty buffer");
+        buffer.compactAndClampWithPreflight() == 0u,
+        "compactAndClampWithPreflight early-outs on empty buffer");
+        "compactAndClampWithPreflight no-ops when already compact");
+void testContactPairPlanePlaneDeepenGuards() {
+        fuse::physics::narrowphase::should_skip_narrowphase_batch(pairs, bodies, shapes),
+        "should_skip_narrowphase_batch true when all pairs rejected");
+void testFinalizeContactManifoldIfNeededGuard() {
+void testFrictionBasisStaleRejectGuards() {

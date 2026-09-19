@@ -480,3 +480,7 @@ ContactNormalNormalizeRejectReason contact_normal_normalize_reject_reason(
 ContactNormalNormalizePreflight preflight_contact_normal_normalize(
     ContactNormalNormalizePreflight preflight{};
     if (preflight.reason != ContactNormalNormalizeRejectReason::None) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-ed7c ---
+    if (preflight.reason != FrictionBasisRejectReason::None &&
+        preflight.reason != FrictionBasisRejectReason::StaleBasis) {

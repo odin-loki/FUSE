@@ -238,3 +238,6 @@ struct ContactNormalNormalizePreflight {
     ContactNormalNormalizeRejectReason reason = ContactNormalNormalizeRejectReason::None;
     bool can_normalize() const { return !skipped && reason == ContactNormalNormalizeRejectReason::None; }
 ContactNormalNormalizePreflight preflight_contact_normal_normalize(
+
+// --- deepen additive from b4-narrowphase-deepen-guards-ed7c ---
+        return skipped || (reason == FrictionBasisRejectReason::None && canReuse);
