@@ -118,6 +118,41 @@ struct DdgiTileBilinearCoords {
     f32 tv = 0.f;
 };
 
+/// Why probe sample coord validation rejected a trilinear lookup (B5.6 deepen).
+enum class ProbeSampleCoordsRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    OutOfRangeIndices,
+    OutOfRangeWeights,
+    UnorderedCorners,
+};
+
+/// Human-readable label for sample-coords reject reasons (logging / tests).
+const char* probeSampleCoordsRejectReasonLabel(ProbeSampleCoordsRejectReason reason);
+
+/// Why a cache-index guard rejected a probe lookup (B5.6 deepen).
+enum class CacheIndexRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    ProbeIndexOutOfRange,
+    CacheUndersized,
+};
+
+/// Human-readable label for cache-index reject reasons (logging / tests).
+const char* cacheIndexRejectReasonLabel(CacheIndexRejectReason reason);
+
+/// Why a host probe-update launch preflight rejected the request (B5.6 deepen).
+enum class DdgiLaunchRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    NullIndices,
+    ZeroCount,
+    OutOfRangeIndex,
+};
+
+/// Human-readable label for launch reject reasons (logging / tests).
+const char* ddgiLaunchRejectReasonLabel(DdgiLaunchRejectReason reason);
+
 /// Continuous probe-grid sample coordinates for trilinear irradiance lookup.
 struct ProbeSampleCoords {
     u32 x0 = 0;
@@ -383,11 +418,14 @@ struct ProbeGridLayout {
     /// Alias for `isValidProbeSampleCoords` — mirrors froxel `areSampleCoordsInBounds`.
     /// Clamp sample coords in place; returns false without modifying `coords` on an empty grid.
     static bool tryClampProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCoords& coords);
+    /// Diagnose why sample coords fail validation; vacuously succeeds when valid.
+                                             ProbeSampleCoordsRejectReason& outReason);
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
                                        ProbeSampleCoords& out_coords);
     /// Build sample coords with reject-reason diagnostics.
+    /// Build sample coords with reject-reason diagnostics; false on empty grid.
     static bool tryBuildProbeSampleCoords(const DDGIDesc& desc,
                                           const fuse::math::Vec3& world_position,
                                           ProbeSampleCoords& out_coords,
@@ -568,6 +606,7 @@ bool trySampleCacheAtCoord(const DDGIDesc& desc,
 bool isCacheIndexOutOfRange(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
 /// Diagnose why cache-index preflight would reject; vacuously succeeds on valid lookups.
 bool tryIsCacheIndexValid(const DDGIDesc& desc,
+/// Diagnose why a cache-index guard would reject; vacuously succeeds when valid.
                           CacheIndexRejectReason& outReason);
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
     /// True when `probe_index` is out of range for the grid or exceeds `cache_count`.

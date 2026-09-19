@@ -10,6 +10,17 @@ struct DDGIDesc;
 
 namespace fuse::renderer::gi {
 
+/// Why a CUDA kernel launch preflight rejected the request (B5.6 deepen).
+enum class DdgiKernelRejectReason : u8 {
+    None = 0,
+    NullIndices,
+    ZeroCount,
+    ZeroRaysPerProbe,
+};
+
+/// Human-readable label for kernel reject reasons (logging / tests).
+const char* ddgiKernelRejectReasonLabel(DdgiKernelRejectReason reason);
+
 /// CUDA kernel parameter bundle for DDGI probe update (B5.6 — P5 §5.6).
 ///
 /// Full kernels (`probe_trace_kernel`, `probe_blend_kernel`) cast rays from each
@@ -125,6 +136,10 @@ bool canLaunchDdgiKernels(const ::fuse::renderer::DDGIDesc& desc, const DDGIKern
 bool tryCanLaunchDdgiKernels(const ::fuse::renderer::DDGIDesc& desc,
                              const DDGIKernelParams& params,
                              DdgiKernelRejectReason& outReason);
+
+/// Diagnose why probe trace preflight would reject; vacuously succeeds when launch is allowed.
+
+/// Diagnose why probe blend preflight would reject; vacuously succeeds when launch is allowed.
 
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);
