@@ -324,6 +324,7 @@ void testProbePerAxisClamp() {
 }
 
 void testProbeSampleCoordValidation() {
+void testProbeSampleCoordGuards() {
     fuse::renderer::DDGIDesc desc{};
     desc.grid_origin = {0.f, 0.f, 0.f};
     desc.probe_spacing = {1.f, 1.f, 1.f};
@@ -357,6 +358,47 @@ void testProbeSampleCoordValidation() {
                "buildAndClamp fails on empty grid");
     expectTrue(!fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(empty, built),
                "sample coord validation fails on empty grid");
+               "built sample coords pass validation");
+
+    fuse::renderer::ProbeSampleCoords invalidWeights = built;
+    invalidWeights.tx = 1.5f;
+    expectTrue(!fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, invalidWeights),
+               "sample coords with OOB weight rejected");
+
+    fuse::renderer::ProbeSampleCoords invalidNeighbour = built;
+    invalidNeighbour.x1 = built.x0 + 2u;
+    expectTrue(!fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, invalidNeighbour),
+               "sample coords with distant neighbour rejected");
+
+    fuse::renderer::ProbeSampleCoords dirty{};
+    dirty.x0 = 99u;
+    dirty.y0 = 99u;
+    dirty.z0 = 99u;
+    dirty.x1 = 99u;
+    dirty.y1 = 99u;
+    dirty.z1 = 99u;
+    dirty.tx = 2.f;
+    dirty.ty = -1.f;
+    dirty.tz = 0.25f;
+    fuse::renderer::ProbeGridLayout::sanitizeProbeSampleCoords(desc, dirty);
+    expectTrue(fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, dirty),
+               "sanitize restores valid trilinear neighbourhood");
+    expectTrue(dirty.x0 == 1u && dirty.x1 == 1u, "sanitize clamps high corner indices");
+    expectNear(dirty.tx, 1.f, 1e-5f, "sanitize clamps high blend weight");
+    expectNear(dirty.ty, 0.f, 1e-5f, "sanitize clamps low blend weight");
+
+    fuse::renderer::ProbeSampleCoords huge{};
+    huge.x0 = UINT32_MAX;
+    huge.y0 = UINT32_MAX;
+    huge.z0 = UINT32_MAX;
+    fuse::renderer::ProbeGridLayout::sanitizeProbeSampleCoords(desc, huge);
+    expectTrue(huge.x0 == 1u && huge.y0 == 1u && huge.z0 == 1u,
+               "sanitize clamps UINT32_MAX corner indices to grid max");
+
+    fuse::renderer::ProbeSampleCoords emptyCoords{};
+               "empty grid sample coords invalid");
+    fuse::renderer::ProbeGridLayout::sanitizeProbeSampleCoords(empty, emptyCoords);
+    expectTrue(emptyCoords.x0 == 0u && emptyCoords.x1 == 0u, "empty grid sanitize clears sample coords");
 }
 
 void testClampProbeSampleCoords() {
@@ -1749,6 +1791,14 @@ void testSampleGuards() {
     expectTrue(!fuse::renderer::ddgi_util::isCacheSizedForGrid(desc, 4u), "undersized cache rejected");
     expectTrue(fuse::renderer::ddgi_util::cacheEntriesMissing(desc, 8u) == 0u, "full cache has zero missing entries");
     expectTrue(fuse::renderer::ddgi_util::cacheEntriesMissing(desc, 4u) == 4u, "undersized cache reports shortfall");
+    expectTrue(fuse::renderer::ddgi_util::canAccessCacheIndex(desc, 0u, 8u),
+               "origin probe index accessible in full cache");
+    expectTrue(fuse::renderer::ddgi_util::canAccessCacheIndex(desc, 7u, 8u),
+               "last probe index accessible in full cache");
+    expectTrue(!fuse::renderer::ddgi_util::canAccessCacheIndex(desc, 7u, 4u),
+               "last probe index rejected in undersized cache");
+    expectTrue(!fuse::renderer::ddgi_util::canAccessCacheIndex(desc, 99u, 8u),
+               "OOB probe index rejected even with full cache");
 
     fuse::renderer::DDGISampleRequest request{};
     request.world_position = {0.5f, 0.5f, 0.5f};
@@ -1790,6 +1840,51 @@ void testSampleGuards() {
     emptyNormal.world_normal = {0.f, 0.f, 0.f};
     expectTrue(fuse::renderer::ddgi_util::isValidSampleRequest(desc, emptyNormal, 8u),
                "empty normal still valid — resolved at sample time");
+
+    fuse::math::Vec3 tryResult{};
+    expectTrue(fuse::renderer::ddgi_util::tryTrilinearProbeIrradiance(
+                   desc, {0.5f, 0.5f, 0.5f}, cache.data(), 8u, tryResult),
+               "tryTrilinearProbeIrradiance succeeds with sized cache");
+    expectTrue(tryResult.x > 0.f, "tryTrilinearProbeIrradiance returns non-zero irradiance");
+
+    fuse::math::Vec3 tryRejected{};
+    expectTrue(!fuse::renderer::ddgi_util::tryTrilinearProbeIrradiance(
+                   desc, {0.5f, 0.5f, 0.5f}, cache.data(), 4u, tryRejected),
+               "tryTrilinearProbeIrradiance rejects undersized cache");
+    expectNear(tryRejected.x, 0.f, 1e-5f, "tryTrilinearProbeIrradiance clears output on failure");
+
+    fuse::math::Vec3 tryDirectional{};
+    expectTrue(fuse::renderer::ddgi_util::tryTrilinearDirectionalProbeIrradiance(
+                   desc, {0.5f, 0.5f, 0.5f}, {0.f, 1.f, 0.f}, cache.data(), 8u, tryDirectional),
+               "tryTrilinearDirectionalProbeIrradiance succeeds with sized cache");
+    expectTrue(tryDirectional.x > 0.f, "tryTrilinearDirectionalProbeIrradiance returns non-zero irradiance");
+}
+
+void testKernelLaunchGuards() {
+    fuse::u32 indices[4] = {0u, 1u, 2u, 3u};
+    fuse::renderer::gi::DDGIKernelParams valid{};
+    valid.probe_indices_to_update = indices;
+    valid.probe_update_count = 4u;
+    valid.rays_per_probe = 256u;
+    valid.max_ray_distance = 20.f;
+    expectTrue(fuse::renderer::gi::canLaunchProbeUpdate(valid), "valid kernel params pass preflight");
+
+    fuse::renderer::gi::DDGIKernelParams nullIndices = valid;
+    nullIndices.probe_indices_to_update = nullptr;
+    expectTrue(!fuse::renderer::gi::canLaunchProbeUpdate(nullIndices),
+               "null probe index buffer rejected");
+
+    fuse::renderer::gi::DDGIKernelParams zeroCount = valid;
+    zeroCount.probe_update_count = 0u;
+    expectTrue(!fuse::renderer::gi::canLaunchProbeUpdate(zeroCount), "zero update count rejected");
+
+    fuse::renderer::gi::DDGIKernelParams zeroRays = valid;
+    zeroRays.rays_per_probe = 0u;
+    expectTrue(!fuse::renderer::gi::canLaunchProbeUpdate(zeroRays), "zero rays_per_probe rejected");
+
+    fuse::renderer::gi::DDGIKernelParams zeroDistance = valid;
+    zeroDistance.max_ray_distance = 0.f;
+    expectTrue(!fuse::renderer::gi::canLaunchProbeUpdate(zeroDistance), "zero max_ray_distance rejected");
 }
 
 void testProbeSampleAndCacheGuards() {
@@ -2033,6 +2128,7 @@ int main() {
     testEmptyProbeGrid();
     testProbeValidityFlags();
     testProbePerAxisClamp();
+    testProbeSampleCoordGuards();
     testClampProbeSampleCoords();
     testProbeBorderCounts();
     testBorderProbeIndexGuards();
@@ -2068,6 +2164,7 @@ int main() {
     testLaunchProbeUpdateIndexGuard();
     testSampleGuards();
     testProbeSampleAndCacheGuards();
+    testKernelLaunchGuards();
     testProbeWorldPositionClamped();
     testProbeAtlasLayout();
     testIrradianceOctahedralEncoding();

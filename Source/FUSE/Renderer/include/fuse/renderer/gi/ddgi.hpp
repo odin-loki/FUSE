@@ -349,6 +349,9 @@ struct ProbeGridLayout {
     static bool isProbeSampleAtGridBorder(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// True when all eight trilinear corners are interior probes (full 2×2×2 neighbourhood).
     static bool hasFullTrilinearNeighbourhood(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// Clamp sample coords to grid bounds and restore trilinear neighbour ordering.
+    static void sanitizeProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCoords& coords);
+    /// True when corner indices and blend weights are usable for trilinear lookup.
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
@@ -508,6 +511,8 @@ u32 clampProbeIndexForCache(u32 probe_index, u32 cache_count);
 bool isValidSampleRequest(const DDGIDesc& desc,
                           const DDGISampleRequest& request,
                           u32 cache_count);
+/// True when `probe_index` maps to a valid grid cell and lies within `cache_count`.
+bool canAccessCacheIndex(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
 fuse::math::Vec3 probeWorldPosition(const DDGIDesc& desc, u32 probe_index);
 /// World position after `clampProbeIndex` — safe for OOB scheduling indices.
 fuse::math::Vec3 probeWorldPositionClamped(const DDGIDesc& desc, u32 probe_index);
@@ -611,6 +616,7 @@ fuse::math::Vec3 trilinearProbeIrradiance(const DDGIDesc& desc,
                                           const IrradianceCacheEntry* cache,
                                           u32 cache_count);
 /// Trilinear sample with guard preflight; returns false when lookup would be rejected.
+/// Guarded trilinear sample — returns false when grid/cache/sample preflight fails.
 bool tryTrilinearProbeIrradiance(const DDGIDesc& desc,
                                  const fuse::math::Vec3& world_position,
                                  const IrradianceCacheEntry* cache,
@@ -634,6 +640,7 @@ fuse::math::Vec3 trilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
                                                      const IrradianceCacheEntry* cache,
                                                      u32 cache_count);
 /// Directional trilinear sample with guard preflight; returns false when lookup would be rejected.
+/// Guarded directional trilinear sample — returns false when grid/cache/sample preflight fails.
 bool tryTrilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
                                             const fuse::math::Vec3& world_position,
                                             const fuse::math::Vec3& direction,
