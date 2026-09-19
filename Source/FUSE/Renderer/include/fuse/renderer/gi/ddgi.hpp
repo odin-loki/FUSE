@@ -881,3 +881,7 @@ bool tryPreflightProbeSchedule(u32 probe_count,
 
 // --- deepen additive from deepen-ddgi-b56-guards-ae4c ---
 bool tryValidateScheduledCacheIndices(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-guards-ba83 ---
+ProbeTrilinearSampleRejectReason classifyTrilinearProbeSampleReject(const DDGIDesc& desc,
+bool preflightTrilinearProbeIrradiance(const DDGIDesc& desc,

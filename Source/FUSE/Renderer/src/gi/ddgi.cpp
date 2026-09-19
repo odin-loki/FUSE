@@ -2753,3 +2753,14 @@ bool wouldSkipProbeKernelLaunch(const DDGIKernelParams& params, const DDGIDesc& 
     return tryCanLaunchProbeTraceKernel(params, desc, reason);
     return tryCanLaunchProbeTraceKernel(params, desc, outReason);
     return tryCanLaunchProbeBlendKernel(params, desc, reason);
+
+// --- deepen additive from deepen-ddgi-guards-ba83 ---
+ProbeTrilinearSampleRejectReason classifyTrilinearProbeSampleReject(const DDGIDesc& desc,
+        return ProbeGridLayout::isEmptyGrid(desc) ? ProbeTrilinearSampleRejectReason::EmptyGrid
+    return classifyTrilinearProbeSampleReject(desc, coords, cache, cache_count);
+bool preflightTrilinearProbeIrradiance(const DDGIDesc& desc,
+        classifyTrilinearProbeSampleReject(desc, world_position, cache, cache_count);
+    return !preflightTrilinearProbeIrradiance(desc, world_position, cache, cache_count);
+    return classifyProbeTraceKernelReject(params);
+    const ProbeKernelRejectReason reject = classifyProbeTraceKernelReject(params);
+    const ProbeKernelRejectReason reject = classifyProbeBlendKernelReject(params);
