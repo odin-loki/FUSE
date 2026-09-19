@@ -892,6 +892,10 @@ bool AssetCooker::would_prune_reconcile() const {
 CookUpstreamReconcileEstimate AssetCooker::estimate_upstream_invalidation(const CookManifest& manifest,
     CookUpstreamReconcileEstimate estimate;
 
+u32 AssetCooker::count_prune_reconcile() const {
+    return estimate_prune_reconcile().total();
+
+
     CookJobGraph graph;
     graph.build_from_manifest(manifest);
 
@@ -1009,6 +1013,15 @@ std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(const 
                  m_cache.probe_downstream_sources(job.output_path, graph.edges(), graph.jobs())) {
                 append_unique(probed);
 
+        }
+    return estimate;
+
+bool AssetCooker::would_upstream_invalidate(const CookManifest& manifest,
+                                            const std::string& changed_source) const {
+    return count_upstream_invalidation(manifest, changed_source) != 0;
+
+bool AssetCooker::would_stale_dependency_invalidate(const CookManifest& manifest) const {
+    return count_stale_dependency_invalidation(manifest) != 0;
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {

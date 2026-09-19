@@ -744,6 +744,20 @@ public:
     [[nodiscard]] bool would_invalidate_any(
     /// Deduplicated source paths whose stored upstream hash differs — mirrors `invalidate_stale_upstream_hashes` (B7.9 deepen).
 
+    /// Read-only mirrors for remaining `invalidate_*` guards — no stat mutation (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                               u64 current_content_hash) const;
+    [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
+                                                    const std::vector<CookJobDependencyEdge>& edges,
+                                                    const std::vector<CookJob>& jobs) const;
+    [[nodiscard]] bool would_invalidate_stale_upstream_hashes(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    /// Deduplicated count of stale upstream sources — mirrors `probe_stale_upstream_sources` (B7.9 deepen).
+    [[nodiscard]] u32 count_stale_upstream_sources(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+
     [[nodiscard]] bool contains(u64 content_hash) const;
 
     /// Read-only store preflight — mirrors `store` guards without mutating stats (B7.9 deepen).

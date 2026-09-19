@@ -1137,6 +1137,30 @@ CookHashPreflight preflight_manifest_entry_with_upstream(const CookManifestEntry
     return preflight_upstream_dependencies_hash(entry.dependencies, manifest);
 }
 
+CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    CookHashPreflight preflight;
+    if (!is_valid_cook_cache_entry(entry)) {
+        if (!is_valid_cook_cache_key(entry.content_hash)) {
+            preflight.reason = CookHashRejectReason::ZeroSourceHash;
+        } else if (!is_valid_cook_cache_path(entry.source_path)) {
+            preflight.reason = CookHashRejectReason::EmptyInputPath;
+        } else if (!is_valid_cook_cache_path(entry.output_path)) {
+            preflight.reason = CookHashRejectReason::EmptyOutputPath;
+        } else {
+            preflight.reason = CookHashRejectReason::InvalidCacheEntry;
+        }
+        return preflight;
+    }
+
+    if (entry.kind == CookAssetKind::Shader) {
+        preflight.can_hash = true;
+        preflight.reason = CookHashRejectReason::None;
+        return preflight;
+    }
+
+    return preflight_file_content_hash(entry.source_path);
+}
+
 u64 hash_manifest_entry(const CookManifestEntry& entry) {
     if (entry.source_path.empty() || entry.output_path.empty()) {
         return 0;

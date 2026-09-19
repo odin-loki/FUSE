@@ -375,5 +375,6 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_manifest_entry_with_dependencies(const CookManifestEntry& entry,
 /// Structural cache-entry preflight — mirrors `is_valid_cook_cache_entry` (B7.9 deepen).
 /// Manifest entry plus upstream dependency preflight — guarded on empty deps (B7.9 deepen).
+/// Structural + source readability guard for cache persistence — mirrors `CookCache::store` (B7.9 deepen).
 
 } // namespace fuse::project
