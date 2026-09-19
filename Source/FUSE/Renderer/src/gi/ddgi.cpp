@@ -2674,3 +2674,13 @@ bool wouldClampProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& 
     return reject == ProbeUpdateLaunchRejectReason::None;
     return reject == ProbeKernelRejectReason::None;
     return preflightProbeTraceKernel(params, reason);
+
+// --- deepen additive from deepen-b56-ddgi-guards-3e47 ---
+    return wouldSkipTrilinearProbeSample(desc, coords, cache, cache_count);
+bool tryReadIrradianceAtCoord(const DDGIDesc& desc,
+    return tryReadIrradianceAtCoord(desc, cache, cache_count, coord, out_irradiance, reason);
+    if (!tryCanLookupAtCoord(desc, coord, cache_count, outReason)) {
+    if (outReason == CacheIndexRejectReason::OutOfRangeProbeIndex) {
+    return tryReadIrradianceAtIndex(desc, cache, cache_count, index, out_irradiance, outReason);
+    return tryCanLookupAtCoord(desc, coord, cache_count, reason);
+bool tryCanLookupAtCoord(const DDGIDesc& desc,

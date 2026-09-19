@@ -860,3 +860,7 @@ bool wouldClampCacheIndexLookup(const DDGIDesc& desc, u32 probe_index);
 
 // --- deepen additive from deepen-ddgi-guards-1a6d ---
 ProbeSampleCoordsRejectReason classifyProbeSampleCoordsReject(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+
+// --- deepen additive from deepen-b56-ddgi-guards-3e47 ---
+bool tryReadIrradianceAtCoord(const DDGIDesc& desc,
+bool tryCanLookupAtCoord(const DDGIDesc& desc,

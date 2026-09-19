@@ -3354,3 +3354,30 @@ void testDdgiClassifyPreflightGuards() {
     expectTrue(kernelReason == fuse::renderer::gi::ProbeKernelRejectReason::NullProbeIndices,
                "preflightProbeTraceKernel reports null_probe_indices");
     testDdgiClassifyPreflightGuards();
+
+// --- deepen additive from deepen-b56-ddgi-guards-3e47 ---
+    expectTrue(fuse::renderer::ddgi_util::tryCanLookupAtCoord(desc, valid, 8u, reason),
+    expectTrue(fuse::renderer::ddgi_util::tryCanLookupAtCoord(desc, invalid, 8u, reason),
+    expectTrue(!fuse::renderer::ddgi_util::tryCanLookupAtCoord(empty, valid, 8u, reason),
+               "built coords pass canPreflightProbeSampleCoords");
+               "built coords pass tryPreflightProbeSampleCoords");
+    expectTrue(!fuse::renderer::ProbeGridLayout::canPreflightProbeSampleCoords(desc, oobIndices),
+               "OOB indices fail canPreflightProbeSampleCoords");
+               "OOB indices fail tryPreflightProbeSampleCoords");
+    expectTrue(fuse::renderer::ddgi_util::tryReadIrradianceAtCoord(desc, cache.data(), 8u, coord, irradiance, reason),
+               "tryReadIrradianceAtCoord succeeds for valid coord");
+    expectTrue(!fuse::renderer::ddgi_util::tryReadIrradianceAtCoord(desc, cache.data(), 8u, invalid, irradiance, reason),
+               "tryReadIrradianceAtCoord rejects OOB coord");
+    expectTrue(!fuse::renderer::ddgi_util::tryReadIrradianceAtCoord(desc, nullptr, 8u, coord, irradiance, reason),
+               "tryReadIrradianceAtCoord rejects null cache");
+    expectTrue(fuse::renderer::ddgi_util::tryReadIrradianceAtIndex(desc, cache.data(), 8u, 2u, irradiance, reason),
+               "tryReadIrradianceAtIndex with reason succeeds for valid index");
+    expectTrue(!fuse::renderer::ddgi_util::tryReadIrradianceAtIndex(desc, cache.data(), 4u, 2u, irradiance, reason),
+               "tryReadIrradianceAtIndex with reason rejects undersized cache");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipTrilinearProbeSample(desc, centrePos, cache.data(), 4u),
+               "wouldSkip true for undersized cache world-position sample");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipTrilinearProbeSample(empty, originPos, cache.data(), 8u),
+               "wouldSkip true for empty grid world-position sample");
+               "wouldSkip true for null probe indices trace launch");
+               "wouldSkip true for null probe indices blend launch");
+               "wouldSkip true for zero rays per probe trace launch");
