@@ -1100,6 +1100,8 @@ struct ProbeGridLayout {
     static bool wouldSkipProbeGridIndexSource(const DDGIDesc& desc, u32 probe_index);
     /// Early-out when grid-coord source preflight would reject.
     static bool wouldSkipProbeGridCoordSource(const DDGIDesc& desc, const ProbeGridCoord& coord);
+    /// Early-out when sample-coord validation would reject — same ordering as `isValidProbeSampleCoords`.
+    static bool wouldSkipProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// Classify sample-coord rejection — same ordering as `tryValidateProbeSampleCoords`.
     static ProbeSampleCoordsRejectReason classifyProbeSampleCoordsReject(const DDGIDesc& desc,
                                                                          const ProbeSampleCoords& coords);
@@ -1320,6 +1322,10 @@ bool preflightProbeGridSource(const DDGIDesc& desc,
 bool wouldSkipProbeGridSource(const DDGIDesc& desc, ProbeGridSourceKind kind);
 /// True when the probe grid can participate in spatial irradiance sampling.
 bool canSampleProbeGrid(const DDGIDesc& desc);
+/// Non-mutating probe-grid source preflight — returns true when the grid can supply irradiance samples.
+bool preflightProbeGridSource(const DDGIDesc& desc, ProbeSampleCoordsRejectReason* reason = nullptr);
+/// Early-out when the probe grid cannot act as an irradiance sample source.
+bool wouldSkipProbeGridSource(const DDGIDesc& desc);
 /// Early-out when probe irradiance lookup should be skipped for an empty or non-sampleable grid.
 bool shouldSkipProbeGrid(const DDGIDesc& desc);
 /// Early-out when the probe grid cannot serve as an irradiance sample source (B5.6 deepen pass).
@@ -1506,6 +1512,7 @@ bool tryPreflightProbeTrilinearSample(const DDGIDesc& desc,
 /// Preflight guard before trilinear probe irradiance sampling; false on inaccessible grid or hard OOB coords.
 bool tryCanTrilinearSampleAtProbeCoords(const DDGIDesc& desc,
 /// Early-out when trilinear probe sampling would be rejected — same ordering as `tryCanTrilinearSampleAtProbeCoords`.
+/// Early-out when coord-based trilinear probe sampling would be rejected.
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
@@ -1626,6 +1633,8 @@ bool wouldClampCacheIndexLookupCoord(const DDGIDesc& desc, const ProbeGridCoord&
 /// Read irradiance at a probe grid coord with guard preflight and reject-reason diagnostics.
 bool tryReadIrradianceAtCoord(const DDGIDesc& desc,
                               fuse::math::Vec3& out_irradiance,
+/// Early-out when cache-index lookup at a grid coord would be rejected.
+/// Early-out when cache-index lookup at a grid coord would be rejected — includes null-cache check.
 /// Classify why cache-index preflight would reject — same ordering as `tryValidateCacheIndex`.
 CacheIndexRejectReason classifyCacheIndexReject(const DDGIDesc& desc,
 /// Non-mutating cache-index preflight — returns true when lookup would proceed.

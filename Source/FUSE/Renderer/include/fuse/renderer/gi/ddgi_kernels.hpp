@@ -131,11 +131,7 @@ ProbeKernelRejectReason classifyProbeBlendKernelReject(const DDGIKernelParams& p
 
 
 
-/// Classify why probe trace kernel launch would reject — same ordering as `tryCanLaunchProbeTraceKernel`.
-ProbeKernelRejectReason classifyProbeTraceKernelReject(const DDGIKernelParams& params);
 
-/// Classify why probe blend kernel launch would reject — same ordering as `tryCanLaunchProbeBlendKernel`.
-ProbeKernelRejectReason classifyProbeBlendKernelReject(const DDGIKernelParams& params);
 
 /// Classify why grid-aware probe kernel launch would reject — same ordering as `tryCanLaunchProbeTraceKernelWithGrid`.
 ProbeKernelRejectReason classifyProbeKernelRejectWithGrid(const DDGIDesc& desc, const DDGIKernelParams& params);
