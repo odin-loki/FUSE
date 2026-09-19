@@ -38,6 +38,12 @@ struct IslandBuildStats {
 /// Const preflight for island graph build inputs (B4.4 deepen).
 struct IslandBuildPreflight {
     IslandBuildStats stats{};
+/// Preflight diagnostics for island graph build inputs (B4.4 deepen).
+    u32 inRangeContactCount = 0;
+    u32 outOfRangeContactCount = 0;
+    u32 validContactCount = 0;
+    u32 inRangeDistanceCount = 0;
+    u32 outOfRangeDistanceCount = 0;
     bool skipped = false;
 
     bool can_build() const { return !skipped; }
@@ -396,6 +402,19 @@ bool should_skip_island_graph_build(
 
 /// True when at least one contact or distance constraint references in-range bodies (B4.4 deepen).
 bool has_usable_island_build_constraints(
+    bool has_in_range_constraints() const {
+        return inRangeContactCount > 0u || inRangeDistanceCount > 0u;
+};
+
+/// True when both contact body indices are in range for `bodyCount`.
+bool contact_bodies_in_range(u32 bodyCount, u32 bodyA, u32 bodyB);
+
+/// True when both distance-constraint body indices are in range for `bodyCount`.
+bool distance_constraint_bodies_in_range(u32 bodyCount, const DistanceConstraint& constraint);
+
+/// Read-only preflight for island graph build inputs; flags out-of-range constraint body refs.
+
+/// Early-out guard when build inputs have no bodies to partition.
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
@@ -428,6 +447,7 @@ struct ContactIslandGraph {
     bool build_guarded(u32 bodyCount,
     /// Build only when `preflight_island_build` passes; clears and returns false otherwise.
     /// Guarded build entry: returns false when preflight rejects zero-body input.
+    /// Guarded build: returns false when preflight skips; otherwise identical to `build`.
 
     void clear();
 
