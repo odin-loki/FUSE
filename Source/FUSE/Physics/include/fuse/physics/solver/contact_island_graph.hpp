@@ -28,8 +28,12 @@ struct ContactIslandGraph {
     void clear();
 
     u32 islandCount() const { return static_cast<u32>(islands_.size()); }
+    /// True when the graph contains at least one body partition (B4.4 deepen follow-up).
+    bool has_islands() const { return islandCount() > 0u; }
     /// Islands that carry at least one contact or distance constraint.
     u32 constrainedIslandCount() const;
+    /// True when at least one island carries contacts or distance constraints (B4.4 deepen follow-up).
+    bool has_constrained_islands() const { return constrainedIslandCount() > 0u; }
     const Island& island(u32 index) const { return islands_[index]; }
 
     /// Body → island id, or `invalidIsland` when the body has no constraints.
