@@ -1449,3 +1449,15 @@ bool tryValidateDensityCounts(const FroxelDensityGrid& grid,
         outReason = DensityGridRejectReason::CountPartitionMismatch;
     DensityGridRejectReason reason = DensityGridRejectReason::None;
     return tryValidateDensityCounts(grid, desc, reason, epsilon);
+
+// --- deepen additive from deepen-froxel-density-guards-6d29 ---
+const char* froxelDensityRejectReasonLabel(FroxelDensityRejectReason reason) {
+    case FroxelDensityRejectReason::None:
+    case FroxelDensityRejectReason::EmptyStorage:
+    case FroxelDensityRejectReason::DescMismatch:
+bool tryWriteDensityAtIndex(FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index, f32 value) {
+                            FroxelDensityRejectReason& outReason,
+        outReason = FroxelDensityRejectReason::None;
+        outReason = FroxelDensityRejectReason::EmptyStorage;
+        outReason = FroxelDensityRejectReason::DescMismatch;
+    FroxelDensityRejectReason reason = FroxelDensityRejectReason::None;

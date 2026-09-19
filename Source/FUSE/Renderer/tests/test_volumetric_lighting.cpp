@@ -1804,3 +1804,33 @@ void testFroxelDensityAccessGuardsAndValidation() {
     expectTrue(!fuse::renderer::froxel_util::tryValidateDensityCounts(grid, mismatched, reason),
     expectTrue(reason == fuse::renderer::DensityGridRejectReason::DescMismatch,
     expectTrue(std::string(fuse::renderer::densityGridRejectReasonLabel(reason)) == "desc_mismatch",
+
+// --- deepen additive from deepen-froxel-density-guards-6d29 ---
+void testFroxelSampleCoordGuards() {
+    expectTrue(fuse::renderer::FroxelGridLayout::tryClampSampleCoords(clamped, desc),
+               "tryClamp sample coords succeeds on non-empty grid");
+               "tryClamp sample coords produces in-bounds coords");
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryClampSampleCoords(emptyClamp, zeroDesc),
+               "tryClamp sample coords rejects empty grid");
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtIndex(grid, desc, 0u, sampled),
+               "trySample succeeds on valid grid");
+    expectNear(sampled, 1.5f, 1e-5f, "trySample returns origin density");
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtIndex(grid, desc, 999u, clampedSample),
+               "trySample succeeds when clamping OOB index");
+    expectNear(clampedSample, 2.5f, 1e-5f, "trySample clamps OOB index to last froxel");
+    expectNear(rejectedSample, 0.f, 1e-6f, "trySample zeroes output on guard failure");
+    expectTrue(fuse::renderer::froxel_util::tryWriteDensityAtIndex(grid, desc, 5u, 3.25f),
+               "tryWrite succeeds on valid grid");
+               "tryWrite value readable via sample");
+    fuse::renderer::FroxelDensityRejectReason reason = fuse::renderer::FroxelDensityRejectReason::None;
+               "tryValidate accepts allocated grid");
+    expectTrue(reason == fuse::renderer::FroxelDensityRejectReason::None, "valid grid reports no reject reason");
+    expectTrue(!fuse::renderer::froxel_util::tryValidateGridDensity(emptyStorage, desc, reason),
+               "tryValidate rejects empty storage");
+    expectTrue(reason == fuse::renderer::FroxelDensityRejectReason::EmptyStorage,
+    expectTrue(std::strcmp(fuse::renderer::froxelDensityRejectReasonLabel(reason), "empty_storage") == 0,
+               "tryValidate rejects undersized storage");
+    expectTrue(reason == fuse::renderer::FroxelDensityRejectReason::DescMismatch,
+    expectTrue(!fuse::renderer::froxel_util::tryValidateGridDensity(oversized, desc, reason),
+               "tryValidate rejects oversized storage");
+    expectTrue(std::strcmp(fuse::renderer::froxelDensityRejectReasonLabel(reason), "desc_mismatch") == 0,

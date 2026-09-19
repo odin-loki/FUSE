@@ -586,3 +586,9 @@ enum class DensityGridRejectReason : u8 {
 const char* densityGridRejectReasonLabel(DensityGridRejectReason reason);
 bool tryValidateDensityCounts(const FroxelDensityGrid& grid,
                               DensityGridRejectReason& outReason,
+
+// --- deepen additive from deepen-froxel-density-guards-6d29 ---
+enum class FroxelDensityRejectReason : u8 {
+const char* froxelDensityRejectReasonLabel(FroxelDensityRejectReason reason);
+bool tryWriteDensityAtIndex(FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index, f32 value);
+                            FroxelDensityRejectReason& outReason,
