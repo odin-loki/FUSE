@@ -2874,3 +2874,14 @@ void testPairBufferRejectReasonAndSkipGuards() {
     expectTrue(compactionPreflight.needsWork(), "invalid slot compact+clamp preflight needs work");
     expectTrue(clampPreflight.needsClamp, "overflow buffer compact+clamp preflight needs clamp");
 void testPairBufferSkipHelperGuards() {
+
+// --- deepen additive from b4-broadphase-deepen-guards-727e ---
+                   buffer, fuse::physics::broadphase::PairBufferSortRejectReason::EmptyBuffer),
+void testShouldRunPairBufferDedupeAndSortGuards() {
+    const fuse::physics::broadphase::PairSlotPreflight zeroSlots =
+    const fuse::physics::broadphase::PairSlotPreflight withinCapacity =
+        fuse::physics::broadphase::preflightPairSlots(2u, buffer);
+    const fuse::physics::broadphase::PairSlotPreflight exceedsCapacity =
+        fuse::physics::broadphase::preflightPairSlots(4u, buffer);
+                 fuse::physics::broadphase::PairBufferCompactAndClampRejectReason::NoWorkNeeded),
+    expectTrue(std::strcmp(fuse::physics::broadphase::pairBufferCompactAndClampRejectReasonName(
