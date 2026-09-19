@@ -82,7 +82,6 @@ QueryFilterPreflight preflight_query_filter(const std::vector<Archetype>& archet
     result.runnable = query_filter_is_runnable(filter);
 
     if (result.has_conflict || result.empty_table) {
-        result.skipped = true;
         return result;
     }
 
@@ -112,6 +111,10 @@ bool can_match_query_filter(const std::vector<Archetype>& archetypes, const Quer
     return preflight_query_filter(archetypes, filter).can_match();
 
 bool should_skip_query_filter(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
+}
+
+bool should_skip_query_match(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
+    return preflight_query_filter(archetypes, filter).should_skip_match();
 }
 
 bool archetype_matches(const Archetype& archetype, const QueryFilter& filter) {
