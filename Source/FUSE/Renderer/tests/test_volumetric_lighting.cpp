@@ -4298,3 +4298,27 @@ void testFroxelClassifyRejectAndPreflightGuards() {
                "preflightScreenMapping mapped tile coords in range");
     expectTrue(!fuse::renderer::gridDensityRejectReasonIsBlocking(densityReason),
                "preflightDensityLookup mirrors canLookupAtIndex on accessible grid");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-0ad3 ---
+void testFroxelDeepenClassifyAndPreflightGuards() {
+               "preflightScreenDepthToSampleCoords passes for valid mapping");
+               "preflightScreenDepthToSampleCoords fills coords on success");
+    expectTrue(!fuse::renderer::preflightScreenDepthToFroxelIndex(0.5f, 0.5f, 0.01f, desc, camera),
+               "preflightScreenDepthToFroxelIndex rejects below-near depth");
+               "preflightFroxelSampleCoords passes for in-bounds coords");
+               "preflightFroxelSampleCoords passes for clampable weights");
+               "preflightDensityLookup passes for accessible grid");
+               "preflightDensityLookup passes for OOB index that clamps");
+               "preflightDensityLookupAtCoord passes for OOB coords that clamp");
+               "classifyFroxelSampleCoordReject none for accessible grid");
+               "preflightFroxelSampleAtCoords passes for accessible grid");
+               "classifyFroxelSampleCoordReject out_of_bounds for hard OOB coords");
+    expectTrue(!fuse::renderer::froxel_util::preflightFroxelSampleAtCoords(grid, desc, hardOob, &sampleReason),
+               "preflightFroxelTrilinearSample passes for accessible grid");
+               "preflightFroxelTrilinearSample passes for clampable weights");
+               "preflightFroxelTrilinearSample reports clampable_weights reason");
+               "preflightGridDensity passes for accessible grid");
+               "preflightGridDensity passes vacuously for empty desc");
+               "preflightFroxelPopulate passes for valid inputs");
+    expectTrue(!fuse::renderer::froxel_util::preflightFroxelPopulate(zeroDesc, camera, params, &populateReason),
+    testFroxelDeepenClassifyAndPreflightGuards();
