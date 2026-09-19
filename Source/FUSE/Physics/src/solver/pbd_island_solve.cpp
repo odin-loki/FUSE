@@ -1910,3 +1910,10 @@ IslandBatchDispatchResult dispatch_island_pipeline_guarded(
 }
 
 } // namespace fuse::physics
+
+// --- deepen additive from deepen-b4-pbd-island-solve-guards-848c ---
+bool should_skip_island_solve(const IslandSolveJob& job) {
+bool should_skip_all_island_solves(const ContactIslandGraph& graph) {
+    if (should_skip_island_solve(job)) {
+                                 IslandWarmStartPreflight& out) {
+                                       const IslandWarmStartPreflight& preflight) {

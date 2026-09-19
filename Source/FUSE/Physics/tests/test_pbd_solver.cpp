@@ -2961,3 +2961,26 @@ int main() {
     std::fprintf(stderr, "fuse_physics_pbd_tests: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+// --- deepen additive from deepen-b4-pbd-island-solve-guards-848c ---
+void testShouldSkipIslandSolveGuards() {
+    expectTrue(should_skip_island_solve(invalid), "default job is skipped");
+    expectTrue(!should_solve_island(invalid), "should_skip mirrors should_solve");
+            expectTrue(should_skip_island_solve(job), "empty island job is skipped");
+            expectTrue(!should_skip_island_solve(job), "constrained island job is not skipped");
+    expectTrue(should_skip_island_solve(outOfRange), "out-of-range island job is skipped");
+        expectTrue(!should_skip_island_solve(job), "collected index is not skipped");
+    expectTrue(should_skip_all_island_solves(loneBodies),
+               "should_skip_all_island_solves for lone unconstrained bodies");
+    expectTrue(!should_skip_all_island_solves(constrained),
+    expectTrue(should_skip_all_island_solves(graph), "skip-all mirrors stats no-work");
+void testPreflightWarmStartIsland() {
+    IslandWarmStartPreflight emptyPreflight{};
+                                            emptyPreflight),
+    IslandWarmStartPreflight preflight{};
+    IslandWarmStartPreflight zeroPreflight{};
+    zeroPreflight.hasDistanceLambdas = false;
+    zeroPreflight.hasContactLambdas = false;
+    zeroPreflight.hasContactImpulses = false;
+                                      zeroPreflight);
+    testPreflightWarmStartIsland();

@@ -1137,3 +1137,9 @@ bool wake_island_sleepers_by_index_guarded(RigidBodySoA& bodies,
 u32 wake_all_island_sleepers_guarded(RigidBodySoA& bodies, const ContactIslandGraph& graph);
 
 } // namespace fuse::physics
+
+// --- deepen additive from deepen-b4-pbd-island-solve-guards-848c ---
+bool should_skip_island_solve(const IslandSolveJob& job);
+bool should_skip_all_island_solves(const ContactIslandGraph& graph);
+                                 IslandWarmStartPreflight& out);
+                                       const IslandWarmStartPreflight& preflight);
