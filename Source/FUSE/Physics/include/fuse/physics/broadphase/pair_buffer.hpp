@@ -38,6 +38,9 @@ struct PairBufferSoA {
     u32 remainingCapacity() const {
         return maxCapacity > 0u && activeCount < maxCapacity ? maxCapacity - activeCount : 0u;
     }
+    /// True when post-pass maxCapacity clamp is unnecessary.
+    /// True when push would fail due to invalid pair or capacity.
+    bool wouldRejectPush(u32 idxA, u32 idxB) const;
     /// True when both dense and slot storage are empty (safe to skip SoA scans).
     bool canSkipSoAIteration() const { return activeCount == 0u && pairSlotCount == 0u; }
     /// True when at most one canonical pair is present (dedupe is a no-op).

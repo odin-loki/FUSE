@@ -27,6 +27,8 @@ struct SpatialHashParams {
     u32 maxCellOccupancy = 0u;
     /// Per-shape total cell occupancy budget (0 = unlimited stub).
     u32 maxCellOccupancyCount = 0u;
+    /// Total cell occupancy budget per shape insertion (0 = unlimited stub).
+    u32 maxCellOccupancyPerShape = 0u;
 };
 
 struct CandidatePair {
@@ -556,6 +558,77 @@ bool canSkipShapeCellInsert(
 
 /// Non-mutating shape→cell insert predicate — mirrors `preflightShapeCellInsert` (B4.2 deepen pass).
 bool shouldRunShapeCellInsert(
+/// Empty broadphase input guard: no bodies or shapes to hash.
+FUSE_PHYSICS_INLINE bool canSkipBroadphase(u32 bodyCount, u32 shapeCount) {
+    return bodyCount == 0u || shapeCount == 0u;
+}
+
+/// Empty pair-list guard for vector broadphase output.
+FUSE_PHYSICS_INLINE bool isEmptyCandidatePairList(const std::vector<CandidatePair>& pairs) {
+    return pairs.empty();
+
+/// Cell with fewer than two occupants cannot emit candidate pairs.
+FUSE_PHYSICS_INLINE bool canSkipCellPairGeneration(u32 occupantCount) {
+    return occupantCount < 2u;
+
+/// Pair-list dedupe is a no-op for zero or one pairs.
+FUSE_PHYSICS_INLINE bool canSkipPairListDedupe(u32 pairCount) {
+    return pairCount <= 1u;
+
+/// True when any axis span exceeds the per-axis budget (0 = never exceeds).
+FUSE_PHYSICS_INLINE bool exceedsMaxCellSpanPerAxis(const CellRange3& range, u32 maxSpanPerAxis) {
+    if (maxSpanPerAxis == 0u || isEmptyCellRange(range)) {
+        return false;
+    const ivec3 span = cellSpanPerAxis(range);
+    return span.x > static_cast<s32>(maxSpanPerAxis) || span.y > static_cast<s32>(maxSpanPerAxis) ||
+           span.z > static_cast<s32>(maxSpanPerAxis);
+
+FUSE_PHYSICS_INLINE bool exceedsMaxCellSpanPerAxis(const CellRange2& range, u32 maxSpanPerAxis) {
+    const ivec2 span = cellSpanPerAxis(range);
+
+/// True when estimated cell count exceeds budget (0 = unlimited).
+FUSE_PHYSICS_INLINE bool exceedsCellOccupancyBudget(const CellRange3& range, u32 maxCells) {
+    if (maxCells == 0u) {
+    return estimateCellOccupancyCount(range) > maxCells;
+
+FUSE_PHYSICS_INLINE bool exceedsCellOccupancyBudget(const CellRange2& range, u32 maxCells) {
+
+/// Shrink range from the largest axis until occupancy fits budget (no-op when budget is 0).
+FUSE_PHYSICS_INLINE CellRange3 shrinkCellRangeToOccupancyBudget(CellRange3 range, u32 maxCells) {
+    if (maxCells == 0u || isEmptyCellRange(range)) {
+        return range;
+
+    while (estimateCellOccupancyCount(range) > maxCells) {
+        if (span.x >= span.y && span.x >= span.z && span.x > 1) {
+            if (range.maxCell.x > range.minCell.x) {
+                --range.maxCell.x;
+            } else {
+                ++range.minCell.x;
+        } else if (span.y >= span.z && span.y > 1) {
+            if (range.maxCell.y > range.minCell.y) {
+                --range.maxCell.y;
+                ++range.minCell.y;
+        } else if (span.z > 1) {
+            if (range.maxCell.z > range.minCell.z) {
+                --range.maxCell.z;
+                ++range.minCell.z;
+            break;
+        if (isEmptyCellRange(range)) {
+
+FUSE_PHYSICS_INLINE CellRange2 shrinkCellRangeToOccupancyBudget(CellRange2 range, u32 maxCells) {
+
+        if (span.x >= span.y && span.x > 1) {
+        } else if (span.y > 1) {
+
+/// Count pairs passing the validity guard.
+FUSE_PHYSICS_INLINE u32 countValidCandidatePairs(
+    const std::vector<CandidatePair>& pairs,
+    u32 bodyCount = 0u) {
+    u32 count = 0u;
+    for (const CandidatePair& pair : pairs) {
+        if (isValidCandidatePair(pair, bodyCount)) {
+            ++count;
+    return count;
 
 /// Clamp broadphase params to safe stub defaults (positive cell size, at least one bucket).
 FUSE_PHYSICS_INLINE SpatialHashParams normalizeSpatialHashParams(SpatialHashParams params) {
@@ -1073,7 +1146,6 @@ struct BroadphaseCellPairGenPreflight {
     bool emptyCells = false;
 
     bool canGenerate() const { return reason == BroadphaseCellPairGenRejectReason::None; }
-};
 
 BroadphaseCellPairGenPreflight preflightBroadphaseCellPairGen(u32 totalCellSlots);
 
@@ -1082,6 +1154,8 @@ bool canSkipBroadphaseCellPairGen(u32 totalCellSlots);
 
 /// Non-mutating broadphase cell-pair generation predicate — mirrors `preflightBroadphaseCellPairGen` (B4.2 deepen pass).
 bool shouldRunBroadphaseCellPairGen(u32 totalCellSlots);
+/// Remove invalid pairs in-place (self-pair, optional OOB); returns removed count.
+u32 pruneInvalidCandidatePairs(std::vector<CandidatePair>& pairs, u32 bodyCount = 0u);
 
 /// CPU stub of the CUDA broad-phase pipeline (B4.2).
 /// Phase 1 jobifies shape→cell insertion; phase 2 jobifies per-cell candidate generation
