@@ -1444,3 +1444,11 @@ bool should_skip_hrtf_pan_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
 bool should_skip_hrtf_pan_preflight(bool hrtf_enabled, const Vec3& rel_listener);
 bool should_skip_hrtf_attenuation_coupling_inputs(HrtfPanPath path, float distance_attenuation,
 HrtfAttenuationCouplingRejectReason classify_hrtf_binaural_coupling_reject(
+
+// --- deepen additive from deepen-b72-binaural-reject-reasons-564d ---
+bool tryCanConvolveHrtfIr(const HrtfIrStub& ir, HrtfIrRejectReason& reason);
+HrtfIrPreflight preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrRejectReason* reason);
+bool tryCanApplySpatialHrtfPan(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+bool tryCanApplySpatialHrtfPan(bool hrtf_enabled, const Vec3& rel_listener,
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener,
+bool tryCanNarrowHrtfSpatialImage(HrtfPanPath path, float distance_attenuation, float occlusion_gain,

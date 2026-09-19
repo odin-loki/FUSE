@@ -2720,3 +2720,72 @@ void testHrtfBinauralConvolutionRejectReasonGuards() {
 void testHrtfBinauralCouplingRejectReasonGuards() {
     testHrtfBinauralConvolutionRejectReasonGuards();
     testHrtfBinauralCouplingRejectReasonGuards();
+
+// --- deepen additive from deepen-b72-binaural-reject-reasons-564d ---
+    expectTrue(!fuse::audio::tryCanConvolveHrtfIr(empty, reason),
+               "empty IR tryCanConvolve rejects convolution");
+    expectTrue(fuse::audio::tryCanConvolveHrtfIr(valid, reason),
+               "valid IR tryCanConvolve accepts convolution");
+    expectTrue(!fuse::audio::tryCanConvolveHrtfIr(malformed, reason),
+               "malformed IR tryCanConvolve rejects convolution");
+    const fuse::audio::HrtfIrPreflight emptyPreflight = fuse::audio::preflight_hrtf_ir(empty);
+    expectTrue(fuse::audio::classifyHrtfIrReject(emptyPreflight)
+               "classifyHrtfIrReject maps nullSamples flag");
+    fuse::audio::HrtfIrRejectReason optionalReason = fuse::audio::HrtfIrRejectReason::None;
+    const fuse::audio::HrtfIrPreflight withReason =
+    expectTrue(optionalReason == fuse::audio::HrtfIrRejectReason::NullSamples,
+    expectTrue(fuse::audio::tryCanApplySpatialHrtfPan(true, valid, offset, reason),
+               "valid spatial pan tryPreflight succeeds");
+    expectTrue(!fuse::audio::tryCanApplySpatialHrtfPan(false, valid, offset, reason),
+               "disabled HRTF tryPreflight rejects spatial pan");
+    expectTrue(!fuse::audio::tryCanApplySpatialHrtfPan(true, valid, co_located, reason),
+               "co-located source tryPreflight rejects spatial pan");
+    expectTrue(fuse::audio::tryCanApplySpatialHrtfPan(true, empty, offset, reason),
+    expectTrue(fuse::audio::tryCanApplySpatialHrtfPan(true, malformed, offset, reason),
+    expectTrue(reason == fuse::audio::HrtfPanPathRejectReason::MalformedIr,
+    const fuse::audio::HrtfPanPathPreflight stubPreflight =
+    expectTrue(fuse::audio::classifyHrtfPanPathReject(stubPreflight)
+               "classifyHrtfPanPathReject maps emptyIr flag");
+    fuse::audio::HrtfPanPathRejectReason optionalReason =
+    const fuse::audio::HrtfPanPathPreflight withReason =
+    expectTrue(optionalReason == fuse::audio::HrtfPanPathRejectReason::HrtfDisabled,
+    expectTrue(!fuse::audio::tryCanNarrowHrtfSpatialImage(fuse::audio::HrtfPanPath::Bypass, 0.1f,
+               "bypass path tryCanNarrow rejects narrowing");
+    expectTrue(!fuse::audio::tryCanNarrowHrtfSpatialImage(fuse::audio::HrtfPanPath::Convolution,
+               "unity attenuation tryCanNarrow rejects narrowing");
+    expectTrue(fuse::audio::tryCanNarrowHrtfSpatialImage(fuse::audio::HrtfPanPath::IldItdStub, 0.2f,
+               "reduced attenuation tryCanNarrow accepts narrowing");
+    const fuse::audio::HrtfAttenuationCouplingPreflight unityPreflight =
+    expectTrue(fuse::audio::classifyHrtfAttenuationCouplingReject(unityPreflight)
+               "classifyHrtfAttenuationCouplingReject maps unityAttenuation flag");
+    fuse::audio::HrtfAttenuationCouplingRejectReason optionalReason =
+    const fuse::audio::HrtfAttenuationCouplingPreflight withReason =
+    expectTrue(optionalReason == fuse::audio::HrtfAttenuationCouplingRejectReason::BypassPath,
+               "valid composite tryPreflight succeeds");
+               "disabled HRTF composite tryPreflight rejects spatial pan");
+               "co-located composite tryPreflight rejects spatial pan");
+    const fuse::audio::HrtfBinauralPreflight stubPreflight =
+    expectTrue(fuse::audio::classifyHrtfBinauralConvolutionReject(stubPreflight)
+               "classifyHrtfBinauralConvolutionReject maps empty IR");
+    expectTrue(fuse::audio::classifyHrtfBinauralReject(stubPreflight)
+               "classifyHrtfBinauralReject none on spatial stub path");
+    const fuse::audio::HrtfBinauralPreflight unityPreflight =
+    expectTrue(fuse::audio::classifyHrtfBinauralNarrowingReject(unityPreflight)
+               "classifyHrtfBinauralNarrowingReject maps unity attenuation");
+    const fuse::audio::HrtfBinauralPreflight malformedPreflight =
+    expectTrue(fuse::audio::classifyHrtfBinauralConvolutionReject(malformedPreflight)
+    fuse::audio::HrtfBinauralRejectReason optionalReason =
+    const fuse::audio::HrtfBinauralPreflight withReason =
+    expectTrue(withReason.should_skip(),
+    expectTrue(optionalReason == fuse::audio::HrtfBinauralRejectReason::HrtfDisabled,
+    expectTrue(fuse::audio::tryCanConvolveHrtfIr(valid, irReason)
+               "tryCanConvolveHrtfIr mirrors can_convolve_hrtf_ir on valid IR");
+    expectTrue(fuse::audio::tryCanConvolveHrtfIr(empty, irReason)
+               "tryCanConvolveHrtfIr mirrors can_convolve_hrtf_ir on empty IR");
+    expectTrue(fuse::audio::tryCanApplySpatialHrtfPan(true, empty, offset, panReason)
+               "tryCanApplySpatialHrtfPan mirrors can_apply_spatial_hrtf_pan on stub path");
+    fuse::audio::HrtfAttenuationCouplingRejectReason couplingReason =
+               "tryCanNarrowHrtfSpatialImage mirrors can_narrow_hrtf_spatial_image");
+    fuse::audio::HrtfBinauralRejectReason binauralReason = fuse::audio::HrtfBinauralRejectReason::None;
+    expectTrue(fuse::audio::tryPreflightHrtfBinaural(true, empty, offset, 0.2f, 0.3f, binauralReason)
+               "tryPreflightHrtfBinaural mirrors can_apply_hrtf_binaural_pan on stub path");
