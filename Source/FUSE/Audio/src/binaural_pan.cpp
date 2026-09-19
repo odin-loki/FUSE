@@ -46,12 +46,41 @@ bool is_nonnull_zero_length_hrtf_ir(const HrtfIrStub& ir) {
     return ir.samples != nullptr && ir.length == 0;
 }
 
+HrtfIrSkipReason classify_hrtf_ir_skip(const HrtfIrStub& ir) {
+    if (ir.samples == nullptr) {
+        return HrtfIrSkipReason::NullSamples;
+    }
+    if (ir.length == 0) {
+        return HrtfIrSkipReason::ZeroLength;
+    }
+    return HrtfIrSkipReason::None;
+}
+
+bool hrtf_ir_skip_reason_is_blocking(HrtfIrSkipReason reason) {
+    return reason != HrtfIrSkipReason::None;
+}
+
+bool preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrSkipReason* reason) {
+    const HrtfIrSkipReason skip = classify_hrtf_ir_skip(ir);
+    if (reason != nullptr) {
+        *reason = skip;
+    }
+    return !hrtf_ir_skip_reason_is_blocking(skip);
+}
+
+HrtfIrPreflight preflight_hrtf_ir_stub(const HrtfIrStub& ir) {
+    HrtfIrPreflight preflight{};
+    preflight.reason = classify_hrtf_ir_skip(ir);
+    preflight.skipped = hrtf_ir_skip_reason_is_blocking(preflight.reason);
+    return preflight;
+}
+
 HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
                                   const Vec3& rel_listener) {
-    if (!should_apply_hrtf_pan(hrtf_enabled, rel_listener)) {
+    if (should_skip_hrtf_pan(hrtf_enabled, rel_listener)) {
         return HrtfPanPath::Bypass;
     }
-    if (should_use_hrtf_ir(ir)) {
+    if (!should_skip_hrtf_convolution(ir)) {
         return HrtfPanPath::Convolution;
     }
     return HrtfPanPath::IldItdStub;
@@ -79,6 +108,42 @@ bool hrtf_pan_path_uses_convolution(HrtfPanPath path) {
 
 bool hrtf_pan_path_uses_ild_itd_stub(HrtfPanPath path) {
     return path == HrtfPanPath::IldItdStub;
+}
+
+bool hrtf_pan_path_uses_ild_stub(HrtfPanPath path) {
+    return hrtf_pan_path_uses_ild_itd_stub(path);
+}
+
+HrtfPanPathSkipReason classify_hrtf_pan_path_skip(bool hrtf_enabled, const Vec3& rel_listener) {
+    if (!hrtf_enabled) {
+        return HrtfPanPathSkipReason::Disabled;
+    }
+    if (is_co_located_hrtf_source(rel_listener)) {
+        return HrtfPanPathSkipReason::CoLocated;
+    }
+    return HrtfPanPathSkipReason::None;
+}
+
+bool hrtf_pan_path_skip_reason_is_blocking(HrtfPanPathSkipReason reason) {
+    return reason != HrtfPanPathSkipReason::None;
+}
+
+bool preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+                             HrtfPanPathSkipReason* reason) {
+    const HrtfPanPathSkipReason skip = classify_hrtf_pan_path_skip(hrtf_enabled, rel_listener);
+    if (reason != nullptr) {
+        *reason = skip;
+    }
+    return !hrtf_pan_path_skip_reason_is_blocking(skip);
+}
+
+HrtfPanPathPreflight preflight_hrtf_pan_path_guarded(bool hrtf_enabled, const HrtfIrStub& ir,
+                                                     const Vec3& rel_listener) {
+    HrtfPanPathPreflight preflight{};
+    preflight.skip_reason = classify_hrtf_pan_path_skip(hrtf_enabled, rel_listener);
+    preflight.skipped = hrtf_pan_path_skip_reason_is_blocking(preflight.skip_reason);
+    preflight.path = resolve_hrtf_pan_path(hrtf_enabled, ir, rel_listener);
+    return preflight;
 }
 
 bool is_hrtf_pan_path_bypass(HrtfPanPath path) {
@@ -274,7 +339,7 @@ BinauralPanGains compute_binaural_pan_gains_guarded(bool hrtf_enabled, const Hrt
 
 BinauralPanGains compute_binaural_pan_gains_for_path(HrtfPanPath path, const Vec3& rel_listener,
                                                     const BinauralPanParams& params) {
-    if (path == HrtfPanPath::Bypass) {
+    if (is_bypass_hrtf_pan_path(path)) {
         return make_centre_binaural_pan_gains();
     }
     // Convolution path deferred — ILD/ITD stub until delay-line / IR wiring lands.
@@ -322,6 +387,50 @@ bool should_narrow_hrtf_spatial_image(HrtfPanPath path, float distance_attenuati
                                       float occlusion_gain) {
     return should_apply_hrtf_attenuation_coupling(path)
         && !is_unity_hrtf_attenuation(distance_attenuation, occlusion_gain);
+}
+
+HrtfAttenuationCouplingSkipReason classify_hrtf_attenuation_coupling_skip(
+    HrtfPanPath path, float distance_attenuation, float occlusion_gain,
+    const HrtfAttenuationCoupling& coupling, const BinauralPanParams& params) {
+    if (should_skip_hrtf_attenuation_coupling(path)) {
+        return HrtfAttenuationCouplingSkipReason::BypassPath;
+    }
+    if (is_unity_hrtf_attenuation(distance_attenuation, occlusion_gain)) {
+        return HrtfAttenuationCouplingSkipReason::UnityAttenuation;
+    }
+    if (should_skip_hrtf_spatial_blend(distance_attenuation, occlusion_gain, coupling, params)) {
+        return HrtfAttenuationCouplingSkipReason::UnitySpatialBlend;
+    }
+    return HrtfAttenuationCouplingSkipReason::None;
+}
+
+bool hrtf_attenuation_coupling_skip_reason_is_blocking(HrtfAttenuationCouplingSkipReason reason) {
+    return reason != HrtfAttenuationCouplingSkipReason::None;
+}
+
+bool preflight_hrtf_attenuation_coupling(HrtfPanPath path, float distance_attenuation,
+                                       float occlusion_gain,
+                                       HrtfAttenuationCouplingSkipReason* reason,
+                                       const HrtfAttenuationCoupling& coupling,
+                                       const BinauralPanParams& params) {
+    const HrtfAttenuationCouplingSkipReason skip =
+        classify_hrtf_attenuation_coupling_skip(path, distance_attenuation, occlusion_gain, coupling,
+                                              params);
+    if (reason != nullptr) {
+        *reason = skip;
+    }
+    return !hrtf_attenuation_coupling_skip_reason_is_blocking(skip);
+}
+
+HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling_for_path(
+    HrtfPanPath path, float distance_attenuation, float occlusion_gain,
+    const HrtfAttenuationCoupling& coupling, const BinauralPanParams& params) {
+    HrtfAttenuationCouplingPreflight preflight{};
+    preflight.reason =
+        classify_hrtf_attenuation_coupling_skip(path, distance_attenuation, occlusion_gain, coupling,
+                                              params);
+    preflight.skipped = hrtf_attenuation_coupling_skip_reason_is_blocking(preflight.reason);
+    return preflight;
 }
 
 float compute_hrtf_distance_factor(float distance_attenuation,
