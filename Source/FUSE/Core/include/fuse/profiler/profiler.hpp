@@ -171,13 +171,21 @@ struct ScopeNestingPreflight {
     bool hasActiveScope = false;
 
     bool canEnterScope() const { return balanced; }
-};
 
 /// Read-only async-flow nesting diagnostics — safe to call while flows are open.
+bool isValidEventName(const char* name);
+
+/// Read-only scope nesting diagnostics — safe before entering profile scopes.
+
+    bool canRecord() const { return !profilerDisabled; }
+    bool canEnterScope(const char* name) const { return canRecord() && isValidEventName(name); }
+
+/// Read-only async flow diagnostics — safe before begin/end async flow calls.
 struct AsyncFlowPreflight {
     u32 activeDepth = 0;
     u32 maxDepth = 0;
     u32 openFlowCount = 0;
+    bool profilerDisabled = false;
     bool balanced = true;
     bool depthDetached = false;
     bool crossThreadHandoffPending = false;
@@ -189,6 +197,9 @@ struct AsyncFlowPreflight {
     }
     bool canBeginFlow() const { return !depthDetached; }
     bool canEndFlow() const { return hasOpenFlows; }
+    bool canRecord() const { return !profilerDisabled; }
+    bool canBeginFlow(const char* name) const { return canRecord() && isValidEventName(name); }
+    bool canEndFlow(const char* name) const { return canBeginFlow(name) && openFlowCount > 0u; }
 };
 
 /// Read-only chrome export diagnostics — safe to call before `exportChromeTraceJson()`.
@@ -1096,7 +1107,6 @@ bool hasRingBufferWrapped();
 u32 totalWriteCount();
 u32 droppedEventCount();
 bool isEventIndexValid(u32 index);
-/// True for null, empty, or whitespace-only names — diagnostic only; does not affect recording guards.
 bool isValidFlowId(u32 flowId);
 bool isFlowPhaseEvent(const ProfileEvent& event);
 bool eventNameMatches(const ProfileEvent& event, const char* name);
@@ -1105,9 +1115,6 @@ const char* eventNameRejectReasonLabel(EventNameRejectReason reason);
 bool wouldRecordEvent(const char* name);
 bool canSampleCounter(const char* track);
 bool isWhitespaceOnlyEventName(const char* name);
-bool isBlankEventName(const char* name);
-bool isEmptyEventName(const char* name);
-/// True for null, empty, or whitespace-only names — does not affect recording guards.
 bool isFlowEventPhase(EventPhase phase);
 bool eventMatchesName(const ProfileEvent& event, const char* name);
 bool isValidProfileEvent(const ProfileEvent& event);
@@ -1218,6 +1225,10 @@ bool isAsyncFlowOpen(u32 flowId);
 u32 openAsyncFlowCountForId(u32 flowId);
 bool hasUnpairedFlowEvents();
 bool isFlowIdOpen(u32 flowId);
+bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent);
+bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent);
+bool tryFindFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent);
+bool tryFindLastEventByFlowId(u32 flowId, ProfileEvent& outEvent);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 const char* eventNameAt(u32 index);
@@ -1498,6 +1509,14 @@ bool wouldSkipProfileScope(const char* name);
 bool wouldSkipBeginAsyncFlow(const char* name, u32 flowId);
 bool wouldSkipEndAsyncFlow(const char* name, u32 flowId);
 bool wouldSkipCounterSample(const char* track);
+
+bool wouldSkipProfileScope(const char* name);
+bool wouldSkipAsyncFlowBegin(const char* name);
+bool wouldSkipAsyncFlowEnd(const char* name);
+bool wouldSkipCounterSample(const char* track);
+bool wouldSkipCounterFloatSample(const char* track);
+bool wouldSkipCounterSnapshotAtFrame(const char* track);
+bool wouldSkipCounterFloatSnapshotAtFrame(const char* track);
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();

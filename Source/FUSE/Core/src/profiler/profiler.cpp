@@ -277,10 +277,17 @@ bool eventNameEquals(const char* lhs, const char* rhs) {
         return lhs == rhs;
     }
     return std::strcmp(lhs, rhs) == 0;
-}
 
 bool isAsyncFlowPhase(EventPhase phase) {
     return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
+bool eventNameMatches(const ProfileEvent& event, const char* name) {
+    if (name == nullptr || name[0] == '\0' || event.name == nullptr || event.name[0] == '\0') {
+        return false;
+    return std::strcmp(event.name, name) == 0;
+
+bool eventFlowIdMatches(const ProfileEvent& event, u32 flowId) {
+    return (event.phase == EventPhase::FlowStart || event.phase == EventPhase::FlowFinish)
+        && event.scopeId == flowId && event.name != nullptr && event.name[0] != '\0';
 }
 
 const char* chromeCategory(EventPhase phase) {
@@ -4530,6 +4537,18 @@ bool eventNameMatches(const char* eventName, const char* searchName) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -4807,10 +4826,8 @@ AsyncFlowPreflight preflightAsyncFlow() {
     preflight.openCount = openAsyncFlowCount();
     preflight.activeFlowDepth = flowNestingDepth();
     preflight.hasActiveScope = preflight.activeDepth > 0u;
-    return preflight;
-}
 
-    AsyncFlowPreflight preflight{};
+
     preflight.activeDepth = flowNestingDepth();
     preflight.maxDepth = maxFlowNestingDepth();
     preflight.openFlowCount = openAsyncFlowCount();
@@ -4822,6 +4839,27 @@ NestingPreflight preflightNesting() {
     NestingPreflight preflight{};
     return preflight;
 }
+
+
+bool wouldSkipProfileScope(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(name);
+
+bool wouldSkipAsyncFlowBegin(const char* name) {
+    return wouldSkipProfileScope(name);
+
+bool wouldSkipAsyncFlowEnd(const char* name) {
+    return wouldSkipProfileScope(name)
+        || g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u;
+
+bool wouldSkipCounterSample(const char* track) {
+    return wouldSkipProfileScope(track);
+
+bool wouldSkipCounterFloatSample(const char* track) {
+    return wouldSkipCounterSample(track);
+
+bool wouldSkipCounterSnapshotAtFrame(const char* track) {
+
+bool wouldSkipCounterFloatSnapshotAtFrame(const char* track) {
 
 ChromeTraceExportPreflight preflightChromeTraceExport() {
     ChromeTraceExportPreflight preflight{};
