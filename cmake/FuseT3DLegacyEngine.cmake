@@ -59,8 +59,22 @@ set(_fuse_t3d_legacy_engine_sources
     "${CMAKE_SOURCE_DIR}/Engine/source/core/util/byteBuffer.cpp"
     "${CMAKE_SOURCE_DIR}/Engine/source/core/util/refBase.cpp"
     "${CMAKE_SOURCE_DIR}/Engine/source/core/util/tVector.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/source/core/util/timeClass.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/source/core/util/tSignal.cpp"
     "${CMAKE_SOURCE_DIR}/Engine/source/gfx/bitmap/loaders/bitmapSTB.cpp"
 )
+
+# bitmapPng.cpp needs bundled lpng + libpng dev headers — skip when unavailable.
+find_package(PNG QUIET)
+if(PNG_FOUND)
+    list(APPEND _fuse_t3d_legacy_engine_sources
+        "${CMAKE_SOURCE_DIR}/Engine/source/gfx/bitmap/loaders/bitmapPng.cpp"
+    )
+    target_link_libraries(fuse_t3d_legacy PRIVATE PNG::PNG)
+    message(STATUS "FUSE: engine probe bitmapPng enabled (libpng found)")
+else()
+    message(STATUS "FUSE: engine probe bitmapPng skipped (libpng not found)")
+endif()
 
 target_sources(fuse_t3d_legacy PRIVATE ${_fuse_t3d_legacy_engine_sources})
 
@@ -92,4 +106,4 @@ target_compile_definitions(fuse_t3d_legacy PRIVATE
     FUSE_T3D_LEGACY_ENGINE_PROBE=1
 )
 
-message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (batch 1-5: bitmapUtils/ies/md5/hash/swizzles/stream + bitmapSTB + stubs)")
+message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (batch 1-6: bitmapUtils/ies/md5/hash/swizzles/stream + bitmapSTB + readBitmap stub + timeClass/tSignal + stubs)")

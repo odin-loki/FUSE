@@ -70,6 +70,10 @@ u32 fourccSmoke();
 bool memStreamRoundTripSmoke();
 bool fileStreamTempRoundTripSmoke();
 bool bitmapStbMemoryLoadSmoke();
+bool readBitmapRejectsUnknownSmoke();
+bool readBitmapPathSmoke();
+bool timeClassSmoke();
+bool signalSmoke();
 } // namespace engineProbe
 #endif
 

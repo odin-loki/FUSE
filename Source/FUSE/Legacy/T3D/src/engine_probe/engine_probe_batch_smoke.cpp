@@ -7,6 +7,8 @@
 #include "core/util/swizzle.h"
 #include "core/stream/fileStream.h"
 #include "core/stream/memStream.h"
+#include "core/util/tSignal.h"
+#include "core/util/timeClass.h"
 #include "gfx/bitmap/loaders/ies/ies_loader.h"
 #include "core/util/md5.h"
 
@@ -101,6 +103,30 @@ bool fileStreamTempRoundTripSmoke() {
     reader.close();
     std::remove(path.c_str());
     return std::memcmp(payload, out, sizeof(payload)) == 0;
+}
+
+bool timeClassSmoke() {
+    Torque::Time t(2020, 1, 15, 12, 30, 45, 0);
+    S32 year = 0;
+    S32 month = 0;
+    S32 day = 0;
+    t.get(&year, &month, &day, nullptr, nullptr, nullptr, nullptr);
+    return year == 2020 && month == 1 && day == 15 && t.getSeconds() > 0;
+}
+
+namespace {
+int g_signalSmokeCount = 0;
+void signalSmokeIncrement() {
+    ++g_signalSmokeCount;
+}
+} // namespace
+
+bool signalSmoke() {
+    Signal<void()> sig;
+    g_signalSmokeCount = 0;
+    sig.notify(signalSmokeIncrement);
+    sig.trigger();
+    return g_signalSmokeCount == 1 && !sig.isEmpty();
 }
 
 } // namespace fuse::legacy::t3d::engineProbe

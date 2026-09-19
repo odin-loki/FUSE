@@ -1,11 +1,15 @@
 // Engine probe smoke wrapper — only linked when FUSE_T3D_LEGACY_ENGINE_PROBE=ON.
 #include <fuse/legacy/t3d/api.hpp>
 
+#include "platform/platform.h"
+#include "core/stream/fileStream.h"
 #include "core/stream/memStream.h"
 #include "core/util/path.h"
 #include "gfx/bitmap/bitmapUtils.h"
 #include "gfx/bitmap/gBitmap.h"
 #include "platform/types.h"
+
+#include <cstdio>
 
 extern void bitmapExtrude5551_c(const void* srcMip, void* mip, U32 srcHeight, U32 srcWidth);
 
@@ -36,11 +40,6 @@ bool bitmapStbMemoryLoadSmoke() {
     };
     const U32 len = static_cast<U32>(sizeof(kBmp1x1));
 
-    const GBitmap::Registration* reg = GBitmap::sFindRegInfo(String("bmp"));
-    if (reg == nullptr || reg->readStreamFunc == nullptr) {
-        return false;
-    }
-
     MemStream stream(len, true, true);
     if (!stream.write(len, kBmp1x1)) {
         return false;
@@ -48,10 +47,43 @@ bool bitmapStbMemoryLoadSmoke() {
     stream.setPosition(0);
 
     GBitmap bitmap;
-    if (!reg->readStreamFunc(stream, &bitmap, len)) {
+    if (!bitmap.readBitmapStream(String("bmp"), stream, len)) {
         return false;
     }
     return bitmap.getWidth() == 1u && bitmap.getHeight() == 1u && bitmap.getByteSize() > 0u;
+}
+
+bool readBitmapRejectsUnknownSmoke() {
+    MemStream stream(16, true, true);
+    GBitmap bitmap;
+    return !bitmap.readBitmapStream(String("unknown_fmt"), stream, 0u);
+}
+
+bool readBitmapPathSmoke() {
+    bitmapStbRegisterAnchor();
+
+    static const U8 kBmp1x1[] = {
+        0x42, 0x4D, 0x3A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x00, 0x00, 0x00, 0x28, 0x00,
+        0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x18, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x13, 0x0B, 0x00, 0x00, 0x13, 0x0B, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00,
+    };
+    const String path("/tmp/fuse_u2_readbitmap_probe.bmp");
+    {
+        FileStream writer;
+        if (!writer.open(path, Torque::FS::File::Write)) {
+            return false;
+        }
+        if (!writer.write(static_cast<U32>(sizeof(kBmp1x1)), kBmp1x1)) {
+            return false;
+        }
+        writer.close();
+    }
+
+    GBitmap bitmap;
+    const bool ok = bitmap.readBitmap(String("bmp"), Torque::Path(path));
+    std::remove(path.c_str());
+    return ok && bitmap.getWidth() == 1u && bitmap.getHeight() == 1u;
 }
 
 } // namespace fuse::legacy::t3d::engineProbe

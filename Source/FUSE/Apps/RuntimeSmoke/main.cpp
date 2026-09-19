@@ -324,7 +324,15 @@ int main() {
         check(fuse::legacy::t3d::engineProbe::fileStreamTempRoundTripSmoke(),
               "engine probe FileStream temp file round-trip");
         check(fuse::legacy::t3d::engineProbe::bitmapStbMemoryLoadSmoke(),
-              "engine probe bitmapSTB MemStream 1x1 BMP load");
+              "engine probe bitmapSTB MemStream 1x1 BMP load via readBitmapStream");
+        check(fuse::legacy::t3d::engineProbe::readBitmapRejectsUnknownSmoke(),
+              "engine probe readBitmapStream rejects unknown format");
+        check(fuse::legacy::t3d::engineProbe::readBitmapPathSmoke(),
+              "engine probe readBitmap path dispatch loads 1x1 BMP");
+        check(fuse::legacy::t3d::engineProbe::timeClassSmoke(),
+              "engine probe Torque::Time date round-trip");
+        check(fuse::legacy::t3d::engineProbe::signalSmoke(),
+              "engine probe Signal<void> notify/trigger");
     }
 #endif
 

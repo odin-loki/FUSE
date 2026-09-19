@@ -1,10 +1,13 @@
 // Minimal GBitmap subset for FUSE_T3D_LEGACY_ENGINE_PROBE (bitmapSTB.cpp).
-// Implements only allocation, registration, and transparency helpers — not full gBitmap.cpp.
+// Implements allocation, registration, transparency, and readBitmap dispatch — not full gBitmap.cpp.
 
+#include "console/console.h"
+#include "core/stream/stream.h"
 #include "core/util/path.h"
 #include "gfx/bitmap/gBitmap.h"
 
 #include "platform/platformAssert.h"
+#include "platform/profiler.h"
 
 #include <algorithm>
 
@@ -250,4 +253,24 @@ const U8* GBitmap::Face::getBits(const U32 mipLevel) const {
 U8* GBitmap::Face::getWritableBits(const U32 mipLevel) {
     AssertFatal(mipLevel < mNumMipLevels, "GBitmap::Face::getWritableBits: mip level out of range");
     return &mBits[mMipLevelOffsets[mipLevel]];
+}
+
+bool GBitmap::readBitmap(const String& bmType, const Torque::Path& path) {
+    PROFILE_SCOPE(ResourceGBitmap_readBitmap);
+    const GBitmap::Registration* regInfo = GBitmap::sFindRegInfo(bmType);
+    if (regInfo == nullptr) {
+        Con::errorf("[GBitmap::readBitmap] unable to find registration for extension [%s]", bmType.c_str());
+        return false;
+    }
+    return regInfo->readFunc(path, this);
+}
+
+bool GBitmap::readBitmapStream(const String& bmType, Stream& ioStream, U32 len) {
+    PROFILE_SCOPE(ResourceGBitmap_readBitmapStream);
+    const GBitmap::Registration* regInfo = GBitmap::sFindRegInfo(bmType);
+    if (regInfo == nullptr) {
+        Con::errorf("[GBitmap::readBitmap] unable to find registration for extension [%s]", bmType.c_str());
+        return false;
+    }
+    return regInfo->readStreamFunc(ioStream, this, len);
 }
