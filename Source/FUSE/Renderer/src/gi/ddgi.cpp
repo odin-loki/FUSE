@@ -2337,3 +2337,14 @@ bool wouldSkipCacheIndexValidation(const DDGIDesc& desc,
         outReason = ProbeKernelRejectReason::NullRadianceSurfaces;
         outReason = ProbeKernelRejectReason::NullAtlasSurfaces;
         outReason = ProbeKernelRejectReason::InvalidHysteresis;
+
+// --- deepen additive from deepen-ddgi-guards-ed0c ---
+    case ProbeScheduleRejectReason::NullCountOutput:
+bool ProbeGridLayout::wouldSkipProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
+    if (!tryValidateCacheIndex(desc, probe_index, cache_count, reason)) {
+CacheIndexRejectReason classifyCacheIndexReject(const DDGIDesc& desc, u32 probe_index, u32 cache_count) {
+bool wouldSkipCacheIndex(const DDGIDesc& desc, u32 probe_index, u32 cache_count) {
+bool wouldSkipCacheIndex(const DDGIDesc& desc,
+ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleReject(const DDGIDesc& desc,
+        outReason = ProbeScheduleRejectReason::NullCountOutput;
+ProbeUpdateLaunchRejectReason classifyProbeUpdateLaunchReject(const DDGIDesc& desc,

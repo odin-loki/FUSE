@@ -785,3 +785,10 @@ bool tryValidateCacheAccess(const DDGIDesc& desc,
 // --- deepen additive from deepen-ddgi-guards-c7e8 ---
 bool tryValidateCacheLookup(const DDGIDesc& desc,
 bool wouldSkipCacheIndexValidation(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-guards-ed0c ---
+    static bool wouldSkipProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+bool wouldSkipCacheIndex(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
+bool wouldSkipCacheIndex(const DDGIDesc& desc,
+ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleReject(
+ProbeUpdateLaunchRejectReason classifyProbeUpdateLaunchReject(const DDGIDesc& desc,
