@@ -440,6 +440,7 @@ void assignSkipReason(ProfilerSkipReason* reason, ProfilerSkipReason value) {
 
 
 
+
 } // namespace
 
 bool isBlankEventName(const char* name);
@@ -1944,6 +1945,35 @@ bool wouldSkipChromeTraceExport() {
     return !enabled() || exportableEventCount() == 0u;
 }
 
+bool hasActiveScopes() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool isFlowNestingConsistent() {
+    return flowNestingDepth() == openAsyncFlowCount();
+}
+
+bool wouldSkipProfileScope(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(name);
+}
+
+bool wouldSkipAsyncFlowBegin(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(name);
+}
+
+bool wouldSkipAsyncFlowEnd(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)
+        || g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u;
+}
+
+bool wouldSkipCounterSample(const char* track) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(track);
+}
+
+bool wouldSkipChromeTraceExport() {
+    return !enabled() || exportableEventCount() == 0u;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -3189,6 +3219,9 @@ bool tryFindExportableEventByName(const char* name, ProfileEvent& outEvent) {
 
 
 bool tryFindExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+
+
+
 
 
 
@@ -5974,6 +6007,18 @@ bool tryFindLastFlowEventIndexById(u32 flowId, u32& outIndex) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -6700,6 +6745,10 @@ bool hasRingOverflowEvents() {
     AsyncFlowPreflight preflight = preflightAsyncFlow();
     if (!isValidEventName(name) || preflight.profilerDisabled || preflight.openFlowCount == 0u) {
         preflight.balanced = false;
+    return preflight;
+}
+
+    AsyncFlowPreflight preflight{};
 
 ChromeTraceExportPreflight preflightChromeTraceExport() {
     ChromeTraceExportPreflight preflight{};
