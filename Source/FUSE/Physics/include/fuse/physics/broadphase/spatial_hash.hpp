@@ -2073,6 +2073,7 @@ u32 countPairsForCellOccupants(const std::vector<u32>& occupants);
 /// Pair count stub for a cell's occupants after deduplicating body indices.
 u32 estimateCellPairCount(const std::vector<u32>& occupants);
 
+};
 
 /// Human-readable label for cell-pair generation reject reasons (logging / tests).
 const char* cellPairGenRejectReasonName(CellPairGenRejectReason reason);
@@ -2084,10 +2085,12 @@ FUSE_PHYSICS_INLINE CellPairGenRejectReason cellPairGenRejectReason(u32 uniqueOc
     if (uniqueOccupantCount < 2u) {
         return CellPairGenRejectReason::SingletonOccupant;
     return CellPairGenRejectReason::None;
+    }
 
 /// Returns true when `cellPairGenRejectReason` matches `expected` (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool cellPairGenRejectsForReason(u32 uniqueOccupantCount, CellPairGenRejectReason expected) {
     return cellPairGenRejectReason(uniqueOccupantCount) == expected;
+}
 
 /// Read-only per-cell pair-generation diagnostics — no mutation (B4.2 deepen pass).
 struct CellPairGenPreflight {
@@ -2097,6 +2100,9 @@ struct CellPairGenPreflight {
     u32 uniqueOccupantCount = 0;
 
     bool canGenerate() const { return reason == CellPairGenRejectReason::None; }
+    u32 pairCount = 0;
+
+};
 
 /// Count unique body indices in a hash-cell occupant list (cell-pair gen budgeting stub).
 u32 countUniqueCellOccupants(const std::vector<u32>& occupants);
@@ -2113,6 +2119,8 @@ bool shouldRunCellPairGeneration(const std::vector<u32>& occupants);
 enum class ShapeCellInsertRejectReason : u8 {
     OutOfRangeBody,
     OccupancySkipped,
+    None = 0,
+};
 
 /// Human-readable label for shape cell-insert reject reasons (logging / tests).
 const char* shapeCellInsertRejectReasonName(ShapeCellInsertRejectReason reason);
@@ -2120,11 +2128,17 @@ const char* shapeCellInsertRejectReasonName(ShapeCellInsertRejectReason reason);
 /// Diagnose why shape→cell insertion would skip; vacuously succeeds when insertion may proceed.
 ShapeCellInsertRejectReason shapeCellInsertRejectReason(
     u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
     const SpatialHashParams& params,
     bool use2D);
 
 /// Returns true when `shapeCellInsertRejectReason` matches `expected` (B4.2 deepen pass).
 bool shapeCellInsertRejectsForReason(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
     bool use2D,
     ShapeCellInsertRejectReason expected);
 
@@ -2220,6 +2234,16 @@ bool canSkipCellCapacityInsert(
 
 /// Non-mutating cell-capacity insert predicate — mirrors `preflightCellCapacityInsert` (B4.2 deepen follow-up pass).
 bool shouldRunCellCapacityInsert(
+
+    u32 occupancyCount = 0;
+
+
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D);
+
 
 
 /// Clamp broadphase params to safe stub defaults (positive cell size, at least one bucket).
