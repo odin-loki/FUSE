@@ -1653,3 +1653,19 @@ CellSpanPreflight preflightCellSpan(const CellRange3& range, u32 maxSpanPerAxis)
 CellSpanPreflight preflightCellSpan2D(const CellRange2& range, u32 maxSpanPerAxis);
     return cellSpanRejectReason(range, maxSpanPerAxis) != CellSpanRejectReason::None;
     bool passesRefine() const { return reason == RefinePairRejectReason::None; }
+
+// --- deepen additive from deepen-b4-broadphase-guards-1159 ---
+enum class ShapeCellInsertionRejectReason : u8 {
+const char* shapeCellInsertionRejectReasonName(ShapeCellInsertionRejectReason reason);
+FUSE_PHYSICS_INLINE ShapeCellInsertionRejectReason shapeCellInsertionRejectReason(const CellRange3& range, u32 maxCells) {
+    return static_cast<ShapeCellInsertionRejectReason>(
+FUSE_PHYSICS_INLINE ShapeCellInsertionRejectReason shapeCellInsertionRejectReason(const CellRange2& range, u32 maxCells) {
+    ShapeCellInsertionRejectReason expected) {
+    return shapeCellInsertionRejectReason(range, maxCells) == expected;
+    ShapeCellInsertionRejectReason reason = ShapeCellInsertionRejectReason::None;
+    bool canInsert() const { return reason == ShapeCellInsertionRejectReason::None; }
+    preflight.reason = shapeCellInsertionRejectReason(range, maxCells);
+    preflight.emptyRange = preflight.reason == ShapeCellInsertionRejectReason::EmptyRange;
+    preflight.exceedsBudget = preflight.reason == ShapeCellInsertionRejectReason::ExceedsOccupancyBudget;
+    return !preflightShapeCellInsertion(range, maxCells).canInsert();
+void dedupeBroadphasePairBufferWithPreflight(PairBufferSoA& buffer);

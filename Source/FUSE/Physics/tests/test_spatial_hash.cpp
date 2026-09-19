@@ -4052,3 +4052,26 @@ void testRefinePairAndDedupeDeepenGuards() {
     expectTrue(batchPreflight.partialMergeOnly, "batch merge preflight marks partial merge");
     testPairBufferWriteInvalidatePreflightGuards();
     testCellSpanCapacityPreflightGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-1159 ---
+    fuse::physics::broadphase::dedupeBroadphasePairBufferWithPreflight(dedupeBuffer);
+    expectTrue(buffer.invalidateSlotWithPreflight(0u), "invalidateSlotWithPreflight clears valid slot");
+    expectTrue(!buffer.slotIsValid(0u), "invalidateSlotWithPreflight leaves slot invalid");
+    expectTrue(!buffer.invalidateSlotWithPreflight(0u), "invalidateSlotWithPreflight is no-op on invalid slot");
+    expectTrue(!buffer.invalidateSlotWithPreflight(99u), "invalidateSlotWithPreflight ignores out-of-range slot");
+    const fuse::physics::broadphase::ShapeCellInsertionPreflight validPreflight =
+    expectTrue(validPreflight.canInsert(), "shape cell-insertion preflight accepts within-budget range");
+    expectEq(validPreflight.occupancyCount, 8u, "shape cell-insertion preflight reports occupancy count");
+    expectEq(validPreflight.budgetRemaining, 0u, "shape cell-insertion preflight reports zero budget remaining at limit");
+                 fuse::physics::broadphase::shapeCellInsertionRejectReason(overBudgetRange, 5u)),
+                 fuse::physics::broadphase::ShapeCellInsertionRejectReason::ExceedsOccupancyBudget),
+    expectTrue(fuse::physics::broadphase::shapeCellInsertionRejectsForReason(
+    expectTrue(std::strcmp(fuse::physics::broadphase::shapeCellInsertionRejectReasonName(
+                               fuse::physics::broadphase::ShapeCellInsertionRejectReason::EmptyRange),
+    expectEq(planePreflight.occupancyCount, 8u, "2D shape cell-insertion preflight reports occupancy count");
+void testDedupePairBufferSoAWithPreflightGuards() {
+    fuse::physics::broadphase::dedupePairBufferSoAWithPreflight(buffer);
+void testMergePairsIntoBufferPreflightCapacityFields() {
+    expectEq(fullPreflight.remainingCapacity, 0u, "merge preflight reports zero remaining capacity on full buffer");
+    testDedupePairBufferSoAWithPreflightGuards();
+    testMergePairsIntoBufferPreflightCapacityFields();

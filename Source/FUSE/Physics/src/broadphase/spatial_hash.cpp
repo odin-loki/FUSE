@@ -1676,3 +1676,11 @@ CellSpanPreflight preflightCellSpan2D(const CellRange2& range, u32 maxSpanPerAxi
     preflight.atCapacity = preflight.reason == MergePairIntoBufferRejectReason::AtCapacity;
     return !preflightMergePairIntoBuffer(pair, buffer).canMerge();
     return preflightMergePairIntoBuffer(pair, buffer).canMerge();
+
+// --- deepen additive from deepen-b4-broadphase-guards-1159 ---
+const char* shapeCellInsertionRejectReasonName(ShapeCellInsertionRejectReason reason) {
+    case ShapeCellInsertionRejectReason::None:
+    case ShapeCellInsertionRejectReason::EmptyRange:
+    case ShapeCellInsertionRejectReason::ExceedsOccupancyBudget:
+            buffer.invalidateSlotWithPreflight(pairIndex);
+void dedupeBroadphasePairBufferWithPreflight(PairBufferSoA& buffer) {
