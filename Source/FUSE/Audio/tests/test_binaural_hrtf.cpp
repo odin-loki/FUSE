@@ -1600,3 +1600,38 @@ void testListenerAwareBinauralPreflight() {
     const fuse::audio::HrtfBinauralPreflight ir_listener_preflight =
     testHrtfPanPathPreflightAliases();
     testListenerAwareBinauralPreflight();
+
+// --- deepen additive from deepen-fuse-b7-2-hrtf-guards-708b ---
+void testHrtfIrRejectReasonClassifiers() {
+                   fuse::audio::HrtfIrRejectReason::NullSamples)) == "null_samples",
+                   fuse::audio::HrtfIrRejectReason::MalformedIr)) == "malformed_ir",
+    expectTrue(!fuse::audio::should_skip_hrtf_ir_preflight(valid),
+    fuse::audio::HrtfIrPreflight preflight{};
+    expectTrue(preflight.reason == fuse::audio::HrtfIrRejectReason::None,
+    expectTrue(preflight.reason == fuse::audio::HrtfIrRejectReason::NullSamples,
+void testHrtfPanPathRejectReasonClassifiers() {
+                   fuse::audio::HrtfPanPathRejectReason::CoLocated)) == "co_located",
+    fuse::audio::HrtfPanPathPreflight preflight{};
+    expectTrue(preflight.reason == fuse::audio::HrtfPanPathRejectReason::None,
+    expectTrue(preflight.reason == fuse::audio::HrtfPanPathRejectReason::HrtfDisabled,
+    expectTrue(fuse::audio::should_skip_hrtf_pan_path_preflight(false, offset),
+    expectTrue(!fuse::audio::should_skip_hrtf_pan_path_preflight(true, offset),
+void testHrtfAttenuationCouplingRejectReasonClassifiers() {
+                   fuse::audio::HrtfAttenuationCouplingRejectReason::UnityAttenuation))
+    fuse::audio::HrtfAttenuationCouplingPreflight preflight{};
+    expectTrue(preflight.reason == fuse::audio::HrtfAttenuationCouplingRejectReason::None,
+    expectTrue(preflight.reason == fuse::audio::HrtfAttenuationCouplingRejectReason::BypassPath,
+void testHrtfBinauralRejectReasonClassifiers() {
+    expectTrue(stub_preflight.reason == fuse::audio::HrtfBinauralRejectReason::IrFallback,
+    expectTrue(conv_preflight.reason == fuse::audio::HrtfBinauralRejectReason::AttenuationSkipped,
+                   fuse::audio::HrtfBinauralRejectReason::AttenuationSkipped))
+    expectTrue(bypass_preflight.reason == fuse::audio::HrtfBinauralRejectReason::PanBypass,
+    expectTrue(fuse::audio::should_skip_hrtf_binaural_preflight(false, offset),
+    expectTrue(!fuse::audio::should_skip_hrtf_binaural_preflight(true, offset),
+    fuse::audio::HrtfBinauralPreflight try_preflight{};
+    expectTrue(try_preflight.reason == fuse::audio::HrtfBinauralRejectReason::None,
+    expectTrue(try_preflight.reason == fuse::audio::HrtfBinauralRejectReason::PanBypass,
+    testHrtfIrRejectReasonClassifiers();
+    testHrtfPanPathRejectReasonClassifiers();
+    testHrtfAttenuationCouplingRejectReasonClassifiers();
+    testHrtfBinauralRejectReasonClassifiers();

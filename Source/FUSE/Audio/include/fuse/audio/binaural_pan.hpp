@@ -721,3 +721,14 @@ bool is_consistent_hrtf_binaural_preflight(const HrtfBinauralPreflight& prefligh
 bool has_empty_hrtf_ir(const HrtfBinauralPreflight& preflight);
 bool should_apply_hrtf_attenuation_coupling(const HrtfBinauralPreflight& preflight);
 bool should_skip_hrtf_attenuation_coupling(const HrtfBinauralPreflight& preflight);
+
+// --- deepen additive from deepen-fuse-b7-2-hrtf-guards-708b ---
+bool try_preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrPreflight& preflight);
+bool should_skip_hrtf_ir_preflight(const HrtfIrStub& ir);
+bool should_skip_hrtf_pan_path_preflight(bool hrtf_enabled, const Vec3& rel_listener);
+    HrtfAttenuationCouplingPreflight& preflight,
+bool should_skip_hrtf_attenuation_coupling_preflight(HrtfPanPath path, float distance_attenuation,
+const char* hrtf_binaural_reject_reason_label(HrtfBinauralRejectReason reason);
+HrtfBinauralRejectReason classify_hrtf_binaural_reject(const HrtfBinauralPreflight& preflight);
+bool try_preflight_hrtf_binaural(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+bool should_skip_hrtf_binaural_preflight(bool hrtf_enabled, const Vec3& rel_listener);

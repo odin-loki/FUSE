@@ -1045,3 +1045,24 @@ bool is_consistent_hrtf_binaural_preflight(const HrtfBinauralPreflight& prefligh
 bool has_empty_hrtf_ir(const HrtfBinauralPreflight& preflight) {
 bool should_apply_hrtf_attenuation_coupling(const HrtfBinauralPreflight& preflight) {
 bool should_skip_hrtf_attenuation_coupling(const HrtfBinauralPreflight& preflight) {
+
+// --- deepen additive from deepen-fuse-b7-2-hrtf-guards-708b ---
+bool try_preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrPreflight& preflight) {
+bool should_skip_hrtf_ir_preflight(const HrtfIrStub& ir) {
+    return classify_hrtf_ir_reject(ir) != HrtfIrRejectReason::None;
+bool try_preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+bool should_skip_hrtf_pan_path_preflight(bool hrtf_enabled, const Vec3& rel_listener) {
+    return classify_hrtf_pan_path_reject(hrtf_enabled, rel_listener) != HrtfPanPathRejectReason::None;
+    HrtfAttenuationCouplingPreflight& preflight, const HrtfAttenuationCoupling& coupling,
+bool should_skip_hrtf_attenuation_coupling_preflight(HrtfPanPath path, float distance_attenuation,
+const char* hrtf_binaural_reject_reason_label(HrtfBinauralRejectReason reason) {
+    case HrtfBinauralRejectReason::PanBypass:
+    case HrtfBinauralRejectReason::IrFallback:
+    case HrtfBinauralRejectReason::AttenuationSkipped:
+HrtfBinauralRejectReason classify_hrtf_binaural_reject(const HrtfBinauralPreflight& preflight) {
+        return HrtfBinauralRejectReason::PanBypass;
+        return HrtfBinauralRejectReason::IrFallback;
+        return HrtfBinauralRejectReason::AttenuationSkipped;
+bool try_preflight_hrtf_binaural(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+bool should_skip_hrtf_binaural_preflight(bool hrtf_enabled, const Vec3& rel_listener) {
+    return should_skip_hrtf_pan_path_preflight(hrtf_enabled, rel_listener);
