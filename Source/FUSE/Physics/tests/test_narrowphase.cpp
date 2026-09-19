@@ -3395,3 +3395,38 @@ void testNarrowphaseBufferDispatchDeepenGuards() {
     expectTrue(validPreflight.can_dispatch(), "deepen buffer preflight dispatches valid pair");
     expectTrue(validPreflight.dispatchableCount == 1u, "deepen buffer preflight counts dispatchable pair");
     testContactBufferToVectorAndFrictionPreflightGuards();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-d1c7 ---
+        fuse::physics::narrowphase::preflightContactBufferWriteSlot(buffer, 0u, valid);
+        fuse::physics::narrowphase::preflightContactBufferWriteSlot(buffer, 0u, selfPair);
+            buffer, 0u, selfPair, fuse::physics::narrowphase::ContactBufferWriteSlotRejectReason::SelfPair),
+        emptyCompactionPreflight.reason == fuse::physics::narrowphase::ContactBufferCompactionRejectReason::None,
+    const auto clearedCompactionPreflight =
+        fuse::physics::narrowphase::preflightContactBufferCompaction(clearedBuffer);
+        clearedCompactionPreflight.reason ==
+        allValidPreflight.reason == fuse::physics::narrowphase::ContactBufferCompactionRejectReason::AllValid,
+void testContactBufferClampAndCompactPreflightGuards() {
+        withinPreflight.reason == fuse::physics::narrowphase::ContactBufferClampRejectReason::WithinCapacity,
+        fuse::physics::narrowphase::preflightContactBufferCompactAndClamp(compactBuffer);
+        compactAndClampPreflight.needsCompactAndClamp(),
+        fuse::physics::narrowphase::compactContactBufferWithPreflight(compactBuffer) == 1u,
+    const auto emptyExport = fuse::physics::narrowphase::preflightContactBufferToVector(buffer);
+            buffer, fuse::physics::narrowphase::ContactBufferToVectorRejectReason::EmptyBuffer),
+    expectTrue(exportPreflight.canExport(), "toVector preflight allows populated buffer");
+    const auto frictionPreflight = fuse::physics::narrowphase::preflightContactBufferFrictionBasis(buffer);
+    expectTrue(frictionPreflight.canBuild(), "friction preflight can build on valid contacts");
+    fuse::physics::narrowphase::buildContactBufferFrictionBasesWithPreflight(buffer);
+    const auto noValidPreflight = fuse::physics::narrowphase::preflightContactBufferFrictionBasis(buffer);
+        noValidPreflight.reason ==
+            fuse::physics::narrowphase::ContactBufferFrictionBasisRejectReason::NoValidContacts,
+void testContactBufferWriteSlotWithPreflight() {
+        !fuse::physics::narrowphase::writeContactBufferSlotWithPreflight(buffer, 0u, invalid),
+void testNarrowphaseIntoBufferSkipGuard() {
+void testContactPairDeepenDispatchWithPreflight() {
+void testGenerateContactManifoldWithPreflight() {
+void testComputeFrictionTangentsWithPreflight() {
+    testContactBufferClampAndCompactPreflightGuards();
+    testContactBufferWriteSlotWithPreflight();
+    testContactPairDeepenDispatchWithPreflight();
+    testGenerateContactManifoldWithPreflight();
+    testComputeFrictionTangentsWithPreflight();

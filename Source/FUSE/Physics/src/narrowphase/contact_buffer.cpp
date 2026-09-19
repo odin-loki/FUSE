@@ -867,3 +867,13 @@ ContactBufferToVectorPreflight preflightContactBufferToVector(const ContactBuffe
 const char* contact_buffer_to_vector_reject_reason_name(ContactBufferToVectorRejectReason reason) {
 ContactBufferToVectorRejectReason contact_buffer_to_vector_reject_reason(const ContactBufferSoA& buffer) {
 ContactBufferToVectorPreflight preflight_contact_buffer_to_vector(const ContactBufferSoA& buffer) {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-d1c7 ---
+    if (!preflightContactBufferFrictionBasis(*this).canBuild()) {
+bool contactBufferClampRejectsForReason(const ContactBufferSoA& buffer, ContactBufferClampRejectReason expected) {
+ContactBufferCompactAndClampRejectReason contactBufferCompactAndClampRejectReason(const ContactBufferSoA& buffer) {
+    return !preflightContactBufferFrictionBasis(buffer).canBuild();
+    return preflightContactBufferFrictionBasis(buffer).canBuild();
+    if (!preflightContactBufferWriteSlot(buffer, slot, manifold).canWrite()) {
+void buildContactBufferFrictionBasesWithPreflight(ContactBufferSoA& buffer) {
+    if (!preflightContactBufferFrictionBasis(buffer).canBuild()) {

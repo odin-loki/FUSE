@@ -354,3 +354,9 @@ const char* contact_buffer_to_vector_reject_reason_name(ContactBufferToVectorRej
 ContactBufferToVectorRejectReason contact_buffer_to_vector_reject_reason(const ContactBufferSoA& buffer);
     bool can_export() const { return reason == ContactBufferToVectorRejectReason::None; }
 ContactBufferToVectorPreflight preflight_contact_buffer_to_vector(const ContactBufferSoA& buffer);
+
+// --- deepen additive from deepen-b4-narrowphase-guards-d1c7 ---
+bool contactBufferClampRejectsForReason(const ContactBufferSoA& buffer, ContactBufferClampRejectReason expected);
+ContactBufferCompactAndClampRejectReason contactBufferCompactAndClampRejectReason(const ContactBufferSoA& buffer);
+    bool canBuild() const { return reason == ContactBufferFrictionBasisRejectReason::None; }
+void buildContactBufferFrictionBasesWithPreflight(ContactBufferSoA& buffer);
