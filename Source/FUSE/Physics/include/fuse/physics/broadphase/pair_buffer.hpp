@@ -70,6 +70,7 @@ struct PairBufferSoA {
     bool canSkipDedupe() const;
     /// True when compact+clamp would leave the buffer unchanged.
     bool canSkipCompactAndClamp() const;
+    /// True when refine would be a no-op (empty buffer or no valid pairs).
     /// True when slot storage has no invalid flags (compact is a no-op).
     bool canSkipCompaction() const;
     /// True when compact has no invalidated slots to gather.
@@ -424,7 +425,6 @@ FUSE_PHYSICS_INLINE bool isEmptyBroadphaseOutput(const PairBufferSoA& buffer) {
 
     bool needs_dedupe() const { return !skipped && activePairCount > 1u; }
     bool can_dedupe() const { return needs_dedupe(); }
-};
 
 /// Populate dedupe preflight without sorting pair slots (B4.2 deepen pass).
 PairBufferDedupePreflight preflight_dedupe_pair_buffer(const PairBufferSoA& buffer);
@@ -438,13 +438,19 @@ bool should_skip_dedupe_pair_buffer(const PairBufferSoA& buffer);
 
     bool needs_clamp() const { return !skipped && maxCapacity > 0u && activePairCount > maxCapacity; }
     bool can_clamp() const { return needs_clamp(); }
-struct PairBufferClampPreflight {
-    u32 activePairCount = 0;
-    bool skipped = false;
 
-};
 
 /// Populate clamp preflight without truncating pair slots (B4.2 deepen pass).
 PairBufferClampPreflight preflight_pair_buffer_clamp(const PairBufferSoA& buffer);
+/// Const preflight for pair-buffer dedupe (B4.2 deepen pass).
+    u32 activeCount = 0;
+
+    bool can_dedupe() const { return !skipped && activeCount > 1u; }
+
+/// Populate dedupe preflight without sorting or compacting pairs (B4.2 deepen pass).
+PairBufferDedupePreflight preflight_pair_buffer_dedupe(const PairBufferSoA& buffer);
+
+/// Early-out guard for pair-buffer dedupe (B4.2 deepen pass).
+bool should_skip_pair_buffer_dedupe(const PairBufferSoA& buffer);
 
 } // namespace fuse::physics::broadphase

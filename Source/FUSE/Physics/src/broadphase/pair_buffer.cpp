@@ -25,9 +25,14 @@ PairSlotPreflight preflightPairSlots(u32 slotCount, const PairBufferSoA& buffer)
     }
     if (buffer.maxCapacity > 0u && slotCount > buffer.maxCapacity) {
         preflight.exceedsBufferCapacity = true;
-    }
-    return preflight;
-}
+
+PairBufferDedupePreflight preflight_pair_buffer_dedupe(const PairBufferSoA& buffer) {
+    PairBufferDedupePreflight preflight{};
+    preflight.activeCount = buffer.activeCount;
+    preflight.skipped = buffer.canSkipDedupe();
+
+bool should_skip_pair_buffer_dedupe(const PairBufferSoA& buffer) {
+    return !preflight_pair_buffer_dedupe(buffer).can_dedupe();
 
 void PairBufferSoA::reserve(u32 capacity) {
     bodyA.reserve(capacity);
