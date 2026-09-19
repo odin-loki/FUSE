@@ -1109,5 +1109,14 @@ FUSE_PHYSICS_INLINE bool try_rebuild_friction_basis_with_preflight(
 
 /// Rebuild friction tangents only when refresh is needed; no-op when skipped (B4.3 deepen follow-up pass).
 FUSE_PHYSICS_INLINE void try_compute_friction_tangents_if_needed(
+/// Non-mutating alias for `should_skip_friction_basis_preflight` (B4.5 deepen follow-up pass).
+
+/// Non-mutating alias for `should_skip_friction_tangents` (B4.5 deepen follow-up pass).
+inline bool would_skip_friction_tangents(const ContactManifold& manifold) {
+
+/// Build or reuse friction basis only when preflight allows; returns false when skipped (B4.5 deepen follow-up pass).
+inline bool try_ensure_friction_basis(ContactManifold& manifold) {
+    if (would_skip_friction_tangents(manifold)) {
+
 
 } // namespace fuse::physics::narrowphase
