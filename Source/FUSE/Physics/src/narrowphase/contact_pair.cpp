@@ -654,3 +654,8 @@ ContactManifoldFinalizePreflight preflight_contact_manifold_finalize(
     const ManifoldPrunePreflight prunePreflight =
     preflight.pruneWouldEmpty = prunePreflight.wouldBeEmpty;
 bool should_skip_contact_manifold_finalize(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-d11b ---
+bool contact_pair_was_rejected(const ContactPairPreflight& preflight) {
+bool should_skip_finalize_contact_manifold(const ContactManifold& manifold) {
+    const ContactPairPreflight preflight = preflight_contact_pair(pair, bodies, shapes);

@@ -163,3 +163,6 @@ bool rebuild_friction_basis_from_preflight(ContactManifold& manifold, const Fric
 
 // --- deepen additive from b4-narrowphase-deepen-guards-e063 ---
 bool should_skip_friction_basis_rebuild(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-d11b ---
+bool should_skip_friction_basis_rebuild_preflight(

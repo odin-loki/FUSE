@@ -1939,3 +1939,23 @@ void testContactManifoldFinalizePreflightGuards() {
 void testNarrowphaseDispatchPreflightWiring() {
     testContactManifoldFinalizePreflightGuards();
     testNarrowphaseDispatchPreflightWiring();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-d11b ---
+void testContactPairEmptyInputGuards() {
+    const auto rejectedPreflight =
+        fuse::physics::narrowphase::contact_pair_was_rejected(rejectedPreflight),
+        !fuse::physics::narrowphase::contact_pair_was_rejected(validPreflight),
+        fuse::physics::narrowphase::should_skip_finalize_contact_manifold(empty),
+    expectTrue(noNormalPreflight.invalidNormal, "finalize preflight flags zero-length normal");
+    expectTrue(separatedPreflight.allSeparated, "finalize preflight flags all-separated points");
+void testManifoldPruneGuardedDispatch() {
+    expectTrue(emptyPreflight.shouldSkipTangents, "friction preflight flags skip-tangents");
+        fuse::physics::narrowphase::should_skip_friction_basis_rebuild_preflight(empty),
+    const auto needsBuildPreflight =
+    expectTrue(needsBuildPreflight.missingBasis, "friction preflight flags missing basis");
+    expectTrue(needsBuildPreflight.needs_rebuild(), "friction preflight requests rebuild");
+    expectTrue(!needsBuildPreflight.can_skip_rebuild(), "friction preflight cannot skip rebuild");
+    expectTrue(cachedPreflight.can_skip_rebuild(), "friction preflight skips valid cached basis");
+        fuse::physics::narrowphase::should_skip_friction_basis_rebuild_preflight(needsBuild),
+    expectTrue(stalePreflight.needs_rebuild(), "friction preflight requests stale rebuild");
+void testDetectContactsPairGuarded() {

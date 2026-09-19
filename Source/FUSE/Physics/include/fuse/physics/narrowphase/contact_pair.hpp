@@ -266,3 +266,7 @@ ManifoldFinalizePreflight preflight_finalize_contact_manifold(const ContactManif
 struct ContactManifoldFinalizePreflight {
 ContactManifoldFinalizePreflight preflight_contact_manifold_finalize(
 bool should_skip_contact_manifold_finalize(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-d11b ---
+bool contact_pair_was_rejected(const ContactPairPreflight& preflight);
+bool should_skip_finalize_contact_manifold(const ContactManifold& manifold);
