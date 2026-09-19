@@ -228,6 +228,7 @@ ProfileScope::ProfileScope(const char* name)
     : m_name(name),
       m_active(g_enabled.load(std::memory_order_acquire) && isValidEventName(name)) {
       m_active(g_enabled.load(std::memory_order_acquire) && name != nullptr) {
+      m_active(name != nullptr && g_enabled.load(std::memory_order_acquire)) {
     if (m_active) {
         m_scopeId = g_nextScopeId.fetch_add(1u, std::memory_order_acq_rel);
         m_nestingDepth = pushNestingDepth();
@@ -283,6 +284,7 @@ u32 maxFlowNestingDepth() {
 }
 
 u32 scopeNestingDepth() {
+u32 nestingDepth() {
     return currentNestingDepth();
 }
 

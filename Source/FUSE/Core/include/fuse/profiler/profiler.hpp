@@ -173,6 +173,7 @@ bool hasUnbalancedNesting();
 bool isFlowDepthDetached();
 bool isCrossThreadFlowHandoffPending();
 NestingAsyncFlowPreflight preflightNestingAndAsyncFlow();
+u32 nestingDepth();
 
 bool hasEvents();
 bool isBufferEmpty();
