@@ -496,6 +496,29 @@ bool manifold_needs_prune(
         const f32 penetration = manifold.points[i].penetration;
         if (penetration < -separationEpsilon) {
         if (penetration < shallowPenetration) {
+u32 ContactManifold::countSeparatedPoints(f32 epsilon) const {
+    u32 separated = 0u;
+        if (points[i].penetration < -epsilon) {
+            ++separated;
+        }
+    return separated;
+
+bool ContactManifold::hasUnitNormal(f32 epsilon) const {
+    if (!hasValidNormal()) {
+    return std::fabs(contactNormal.length() - 1.f) <= epsilon;
+
+bool ContactManifold::normalizeContactNormal(f32 epsilon) {
+    if (!hasValidNormal(epsilon)) {
+    const f32 normalLength = contactNormal.length();
+    contactNormal = contactNormal * (1.f / normalLength);
+
+bool ContactManifold::canFinalize(f32 separationEpsilon, f32 /*duplicateEpsilon*/) const {
+    if (empty() || !hasValidNormal()) {
+    return countPenetratingPoints(separationEpsilon) > 0u;
+
+bool ContactManifold::pruneForFinalization(f32 separationEpsilon, f32 duplicateEpsilon) {
+    pruneContactPoints(separationEpsilon, duplicateEpsilon);
+    return hasPenetratingPoints(separationEpsilon);
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};

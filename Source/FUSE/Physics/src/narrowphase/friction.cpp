@@ -166,70 +166,39 @@ bool friction_basis_is_stale(const ContactManifold& manifold, f32 epsilon) {
         manifold.frictionBasis.tangent1.length() > epsilon ||
         manifold.frictionBasis.tangent2.length() > epsilon;
     if (!hasPartialBasis) {
-        return false;
-    }
 
     return !friction_basis_matches_normal(manifold, epsilon);
-}
 
 bool needs_friction_basis_refresh(const ContactManifold& manifold, f32 epsilon) {
-    if (should_skip_friction_tangents(manifold)) {
-        return false;
-    }
     return !has_cached_friction_basis(manifold) || friction_basis_is_stale(manifold, epsilon);
-}
 
 bool can_skip_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon) {
-    if (should_skip_friction_tangents(manifold)) {
         return true;
-    }
     return has_cached_friction_basis(manifold) && !friction_basis_is_stale(manifold, epsilon);
-}
 
 bool rebuild_friction_basis_if_needed(ContactManifold& manifold, f32 epsilon) {
-    if (should_skip_friction_tangents(manifold)) {
         invalidate_friction_basis(manifold);
-        return false;
-    }
 
     if (can_skip_friction_basis_rebuild(manifold, epsilon)) {
-        return true;
-    }
 
-    invalidate_friction_basis(manifold);
     return ensure_friction_basis(manifold);
-}
 
 bool contact_normal_needs_normalize(const ContactManifold& manifold, f32 lengthEpsilon) {
     return manifold.needsNormalNormalization(lengthEpsilon);
-}
 
 bool should_normalize_contact_normal_before_friction(
     const ContactManifold& manifold,
     f32 lengthEpsilon) {
-    if (should_skip_friction_tangents(manifold)) {
-        return false;
-    }
     return contact_normal_needs_normalize(manifold, lengthEpsilon);
-}
 
 void compute_friction_tangents_if_needed(ContactManifold& manifold, f32 epsilon) {
-    if (should_skip_friction_tangents(manifold)) {
-        invalidate_friction_basis(manifold);
         return;
-    }
 
-    if (can_skip_friction_basis_rebuild(manifold, epsilon)) {
-        return;
-    }
 
-    invalidate_friction_basis(manifold);
     const f32 normalLength = manifold.contactNormal.length();
     if (std::fabs(normalLength - 1.f) > 1e-4f) {
         manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
-    }
     manifold.buildFrictionBasis();
-}
 
 const char* friction_basis_reject_reason_name(FrictionBasisRejectReason reason) {
     switch (reason) {
@@ -239,82 +208,52 @@ const char* friction_basis_reject_reason_name(FrictionBasisRejectReason reason) 
         return "EmptyManifold";
     case FrictionBasisRejectReason::InvalidNormal:
         return "InvalidNormal";
-    }
     return "Unknown";
-}
 
 FrictionBasisRejectReason friction_basis_reject_reason(const ContactManifold& manifold) {
     if (manifold.empty()) {
         return FrictionBasisRejectReason::EmptyManifold;
-    }
     if (!manifold.hasValidNormal()) {
         return FrictionBasisRejectReason::InvalidNormal;
-    }
     return FrictionBasisRejectReason::None;
-}
 
 bool friction_basis_rejects_for_reason(
-    const ContactManifold& manifold,
     FrictionBasisRejectReason expected) {
     return friction_basis_reject_reason(manifold) == expected;
-}
 
 FrictionBasisPreflight preflight_friction_basis_rebuild(
-    const ContactManifold& manifold,
     f32 epsilon) {
     FrictionBasisPreflight preflight{};
     preflight.reason = friction_basis_reject_reason(manifold);
     if (preflight.reason != FrictionBasisRejectReason::None) {
         preflight.skipped = true;
         return preflight;
-    }
 
     preflight.stale = friction_basis_is_stale(manifold, epsilon);
     preflight.needsNormalNormalize = contact_normal_needs_normalize(manifold, epsilon);
     preflight.canReuse = can_skip_friction_basis_rebuild(manifold, epsilon);
     preflight.needsRebuild = needs_friction_basis_refresh(manifold, epsilon);
-    return preflight;
-}
 
 bool should_skip_friction_basis_preflight(
-    const ContactManifold& manifold,
-    f32 epsilon) {
     return preflight_friction_basis_rebuild(manifold, epsilon).can_skip_rebuild();
-}
 
 bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilon) {
     const FrictionBasisPreflight preflight = preflight_friction_basis_rebuild(manifold, epsilon);
-    if (preflight.reason != FrictionBasisRejectReason::None) {
-        invalidate_friction_basis(manifold);
-        return false;
-    }
     if (preflight.can_skip_rebuild()) {
         return manifold.hasFrictionBasis();
-    }
     if (preflight.needsNormalNormalize) {
-        const f32 normalLength = manifold.contactNormal.length();
         if (normalLength > 1e-8f) {
-            manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
-        }
-    }
     return rebuild_friction_basis_if_needed(manifold, epsilon);
-}
 
 bool should_run_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon) {
     return !should_skip_friction_basis_preflight(manifold, epsilon);
-}
 
 bool should_skip_friction_for_manifold(
-    const ContactManifold& manifold,
     f32 staticFriction,
     f32 dynamicFriction,
     f32 normalImpulse,
     f32 impulseEpsilon) {
-    if (should_skip_friction_tangents(manifold)) {
-        return true;
-    }
     return should_skip_friction_solve(staticFriction, dynamicFriction, normalImpulse, impulseEpsilon);
-}
 
 vec2 combine_body_friction_coefficients(
     const RigidBodySoA& bodies,
@@ -322,7 +261,6 @@ vec2 combine_body_friction_coefficients(
     u32 bodyB) {
     if (bodyA >= bodies.count() || bodyB >= bodies.count()) {
         return {};
-    }
 
     const f32 staticA = bodies.frictionStatic[bodyA];
     const f32 staticB = bodies.frictionStatic[bodyB];
@@ -332,7 +270,6 @@ vec2 combine_body_friction_coefficients(
         std::sqrt(staticA * staticB),
         std::sqrt(dynamicA * dynamicB),
     };
-}
 
 bool should_rebuild_friction_basis(
     vec3 previousNormal,
@@ -341,13 +278,27 @@ bool should_rebuild_friction_basis(
     const f32 previousLength = previousNormal.length();
     const f32 currentLength = currentNormal.length();
     if (previousLength <= 1e-8f || currentLength <= 1e-8f) {
-        return true;
-    }
 
     const vec3 unitPrevious = previousNormal * (1.f / previousLength);
     const vec3 unitCurrent = currentNormal * (1.f / currentLength);
     const f32 cosine = std::max(-1.f, std::min(1.f, unitPrevious.dot(unitCurrent)));
     return std::acos(cosine) > angleThresholdRadians;
+bool isValidFrictionBasisForNormal(vec3 normal, const TangentBasis& basis, f32 epsilon) {
+    return isOrthonormalTangentBasis(normal, basis, epsilon);
+
+bool needs_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon) {
+    return !isValidFrictionBasisForNormal(manifold.contactNormal, manifold.frictionBasis, epsilon);
+
+bool should_rebuild_friction_basis(const ContactManifold& manifold, f32 epsilon) {
+    return needs_friction_basis_rebuild(manifold, epsilon);
+
+bool ensure_friction_basis(ContactManifold& manifold, f32 epsilon) {
+        manifold.frictionBasis = {};
+
+    if (!needs_friction_basis_rebuild(manifold, epsilon)) {
+
+    if (!manifold.normalizeContactNormal()) {
+
 }
 
 } // namespace fuse::physics::narrowphase

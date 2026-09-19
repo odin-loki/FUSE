@@ -168,5 +168,16 @@ bool should_rebuild_friction_basis(
     vec3 previousNormal,
     vec3 currentNormal,
     f32 angleThresholdRadians = 1e-3f);
+/// Returns true when `basis` is orthonormal and aligned with `normal` (B4.3 deepen pass).
+bool isValidFrictionBasisForNormal(vec3 normal, const TangentBasis& basis, f32 epsilon = 1e-4f);
+
+/// Returns true when an existing basis is missing or no longer matches the manifold normal (B4.3 deepen pass).
+bool needs_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Alias for `needs_friction_basis_rebuild` (B4.3 deepen pass).
+bool should_rebuild_friction_basis(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Build or refresh the manifold friction basis when required; returns false on skip/failure (B4.3 deepen pass).
+bool ensure_friction_basis(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase

@@ -20,6 +20,8 @@ enum class ContactPairRejectReason : u8 {
     BothSleeping,
     UnsupportedShapePair,
     BothStatic,
+    BothSleeping,
+    BothKinematic,
     DegenerateShape,
     BothSleeping,
     BothKinematic,
@@ -100,6 +102,11 @@ bool is_any_trigger_contact_pair(
 bool is_massless_contact_pair(
     const RigidBodySoA& bodies,
     f32 invMassEpsilon = 1e-8f);
+/// Returns true when both bodies carry `RB_SLEEPING` (no narrowphase dispatch stub, B4.3 deepen pass).
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies);
+
+/// Returns true when both bodies carry `RB_KINEMATIC` (no dynamic response stub, B4.3 deepen pass).
 
 /// Returns true when either shape has zero or negative extent (B4.3 deepen pass).
 bool is_degenerate_shape_pair(

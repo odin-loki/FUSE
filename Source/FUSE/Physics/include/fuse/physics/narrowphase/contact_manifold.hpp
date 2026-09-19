@@ -131,6 +131,22 @@ struct ContactManifold {
     /// Prune shallow slots only when `hasShallowPenetrations`; returns true when points remain (B4.4 deepen follow-up).
     bool pruneShallowPenetrationsIfNeeded(f32 minDepth);
     /// Prune contact points; returns false when the manifold is empty afterward (B4.3 deepen).
+    /// Count contact points with penetration below `-epsilon` (B4.3 deepen pass).
+    u32 countSeparatedPoints(f32 epsilon = 1e-6f) const;
+
+    /// Returns true when the contact normal is unit length within `epsilon` (B4.3 deepen pass).
+    bool hasUnitNormal(f32 epsilon = 1e-4f) const;
+
+    /// Normalize `contactNormal`; returns false when length is below `epsilon`.
+    bool normalizeContactNormal(f32 epsilon = 1e-6f);
+
+    /// Returns true when finalize/generate may proceed after conceptual pruning (B4.3 deepen pass).
+    bool canFinalize(
+        f32 separationEpsilon = 1e-6f,
+
+    /// Run `pruneContactPoints` and return true when penetrating points remain (B4.3 deepen pass).
+    bool pruneForFinalization(
+        f32 duplicateEpsilon = 1e-4f);
 };
 
 /// Why manifold prune would early-out (B4.5 deepen follow-up pass).
