@@ -392,6 +392,9 @@ struct CookCacheInvalidationEstimate {
     [[nodiscard]] bool should_skip() const { return !can_store; }
 
 /// Structural + kind-aware source preflight for cache records — mirrors `store` guards (B7.9 deepen).
+/// Read-only store preflight — mirrors `store` structural guards plus source readability (B7.9 deepen).
+    if (entry.kind == CookAssetKind::Shader) {
+    return preflight_file_content_hash(entry.source_path);
 
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
