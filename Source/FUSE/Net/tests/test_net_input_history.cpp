@@ -197,3 +197,7 @@ void run_input_history_tests() {
 }
 
 } // namespace fuse::net::tests
+
+// --- deepen additive from deepen-b74-net-rollback-input-history-5dc1 ---
+    const fuse::net::InputReconcilePreflight future_preflight = capacity_history.preflight_reconcile(9u);
+    expectTrue(capacity_history.should_skip_reconcile(9u), "should_skip true for future frame");

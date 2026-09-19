@@ -233,3 +233,8 @@ ReconcileResult InputHistoryBuffer::reconcile_authoritative(u32 frame, const Pla
 }
 
 } // namespace fuse::net
+
+// --- deepen additive from deepen-b74-net-rollback-input-history-5dc1 ---
+InputReconcilePreflight InputHistoryBuffer::preflight_reconcile(u32 frame) const {
+bool InputHistoryBuffer::should_skip_reconcile(u32 frame) const {
+    return should_skip_reconcile_input(*this, frame);
