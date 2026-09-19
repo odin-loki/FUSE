@@ -613,6 +613,18 @@ bool tryPreflightDdgiProbeUpdate(const DDGIDesc& desc,
 /// Early-out when host probe-update launch would be rejected (B5.6 deepen pass).
 bool shouldSkipDdgiProbeUpdate(const DDGIDesc& desc, const u32* probe_indices, u32 probe_count);
 
+/// Host probe-update launch preflight with mandatory reject-reason output (B5.6 deepen pass).
+bool tryPreflightDdgiProbeUpdate(const DDGIDesc& desc,
+                                 const u32* probe_indices,
+                                 u32 probe_count,
+                                 ProbeUpdateLaunchRejectReason& outReason);
+
+/// Why probe-update scheduling preflight rejected the request (B5.6 deepen).
+enum class ProbeScheduleRejectReason : u8 {
+    None = 0,
+    ZeroProbeCount,
+    ZeroProbesPerFrame,
+    ZeroMaxIndices,
     NullOutIndices,
     NullOutCount,
     NullIndicesBuffer,
@@ -1088,6 +1100,9 @@ bool preflightTrilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
                                                   const fuse::math::Vec3& direction,
 /// Early-out when directional trilinear sampling would be rejected.
 bool wouldSkipTrilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
+/// Classify why coord-based probe trilinear sampling preflight would reject.
+/// Non-mutating trilinear sample preflight — returns true when sampling would proceed.
+/// Early-out when coord-based trilinear sample preflight would reject.
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
@@ -1238,6 +1253,7 @@ bool wouldClampCacheIndexCoord(const DDGIDesc& desc, u32 x, u32 y, u32 z);
 bool cacheIndexLookupReady(const DDGIDesc& desc,
 /// Non-mutating cache-index preflight — index/count only; null-cache not diagnosed.
                                CacheIndexRejectReason* reason = nullptr);
+                                  CacheIndexRejectReason& outReason);
 /// True when `probe_index` exceeds the valid probe range on a non-empty grid.
 bool wouldClampProbeIndexForLookup(u32 probe_index, const DDGIDesc& desc);
 /// Minimum irradiance cache entries required for full-grid sampling; 0 on empty grid.
@@ -1597,8 +1613,9 @@ bool tryPreflightProbeSchedule(u32 probe_count,
 bool shouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_indices, u32* out_count);
 bool shouldSkipProbeSchedule(u32 probe_count,
 /// Classify why rate-aware probe scheduling would reject.
-                                  ProbeScheduleRejectReason* reason = nullptr);
 /// Schedule probe updates with rate-aware reject-reason diagnostics; false when preflight rejects.
+ProbeScheduleRejectReason classifyProbeScheduleAtRateReject(u32 probe_count,
+/// Schedule probe updates at rate with reject-reason diagnostics; false when preflight rejects.
 bool tryScheduleProbeUpdatesAtRate(u32 frame_index,
                                    u32 probe_count,
                                    u32 probes_per_frame,
