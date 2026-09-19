@@ -327,8 +327,16 @@ bool isEventIndexValid(u32 index) {
     return index < eventCount();
 }
 
+bool isNullEventName(const char* name) {
+    return name == nullptr;
+}
+
+bool isEmptyEventName(const char* name) {
+    return name != nullptr && name[0] == '\0';
+}
+
 bool isValidEventName(const char* name) {
-    return name != nullptr && name[0] != '\0';
+    return !isNullEventName(name) && !isEmptyEventName(name);
 }
 
 bool isValidProfileEvent(const ProfileEvent& event) {
@@ -346,8 +354,25 @@ u32 exportableEventCount() {
     return count;
 }
 
+u32 nonExportableEventCount() {
+    const u32 total = eventCount();
+    const u32 exportable = exportableEventCount();
+    return total >= exportable ? total - exportable : 0u;
+}
+
 bool isEventExportable(u32 index) {
     return isEventIndexValid(index) && isValidEventName(eventAt(index).name);
+}
+
+u32 countEventsByPhase(EventPhase phase) {
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (eventAt(i).phase == phase) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 const ProfileEvent& emptyProfileEvent() {
@@ -397,6 +422,23 @@ bool tryLastEvent(ProfileEvent& outEvent) {
     return tryEventAt(index, outEvent);
 }
 
+const char* eventNameAt(u32 index) {
+    if (!isEventIndexValid(index)) {
+        return nullptr;
+    }
+    return eventAt(index).name;
+}
+
+bool tryEventPhaseAt(u32 index, EventPhase& outPhase) {
+    if (!isEventIndexValid(index)) {
+        outPhase = EventPhase::Begin;
+        return false;
+    }
+
+    outPhase = eventAt(index).phase;
+    return true;
+}
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -404,6 +446,27 @@ u32 firstEventIndex() {
 u32 lastEventIndex() {
     const u32 count = eventCount();
     return count > 0u ? count - 1u : kInvalidEventIndex;
+}
+
+u32 lastEventIndexByPhase(EventPhase phase) {
+    const u32 count = eventCount();
+    for (u32 i = count; i > 0u; --i) {
+        const u32 index = i - 1u;
+        if (eventAt(index).phase == phase) {
+            return index;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+bool tryFindLastEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
+    const u32 index = lastEventIndexByPhase(phase);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
 }
 
 const ProfileEvent& lastEvent() {
@@ -430,7 +493,17 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
     preflight.flowDepthDetached = isFlowDepthDetached();
+    preflight.bufferFull = isBufferFull();
+    preflight.nonExportableEventCount = nonExportableEventCount();
     return preflight;
+}
+
+bool canEndAsyncFlow() {
+    return openAsyncFlowCount() > 0u;
+}
+
+bool wouldIgnoreOrphanAsyncFlowEnd() {
+    return openAsyncFlowCount() == 0u;
 }
 
 void reset() {
