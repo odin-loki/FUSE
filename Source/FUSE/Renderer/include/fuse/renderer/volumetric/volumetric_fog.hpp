@@ -803,6 +803,8 @@ bool wouldSkipDensityLookup(const FroxelDensityGrid& grid, const FroxelGridDesc&
 /// Early-out when index-based density lookup would be rejected; OOB indices that clamp are not skipped.
 bool wouldSkipDensityLookup(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index);
 /// Early-out when coord-based density lookup would be rejected; OOB coords that clamp are not skipped.
+/// Diagnose why density sampling preflight would reject before index/coord lookup.
+bool tryCanLookupForDensitySample(const FroxelDensityGrid& grid,
 /// True when a lookup at `index` would clamp into the valid froxel range.
 bool wouldClampDensityLookupIndex(u32 index, const FroxelGridDesc& desc);
 /// True when a lookup at tile/slice coords would clamp into the valid froxel range.
@@ -970,6 +972,11 @@ bool wouldClampDensityTrilinearSample(const FroxelDensityGrid& grid,
 /// Preflight guard before trilinear density sampling; false on inaccessible grid or invalid coords.
 /// True when trilinear sampling would clamp lookup indices or interpolation weights.
 bool wouldClampTrilinearSampleCoords(const FroxelDensityGrid& grid,
+/// True when sample coords would be hard-rejected (not merely clamped) before sampling.
+bool wouldRejectSampleCoords(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
+/// Early-out when trilinear density sampling should be skipped for an inaccessible grid.
+bool shouldSkipFroxelTrilinear(const FroxelDensityGrid& grid, const FroxelGridDesc& desc);
+/// True when density lookup or sample coords would clamp before trilinear sampling.
 /// True when at least one froxel exceeds `epsilon`; false when storage is empty.
 bool hasNonZeroDensity(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
 /// Early-out when the grid is inaccessible or uniformly below `epsilon`.
@@ -1363,6 +1370,12 @@ bool wouldSkipAnalyticPopulate(const FroxelGridDesc& desc,
 /// True when populate would allocate storage but skip the analytic fill loop.
 bool wouldPopulateAllocateOnly(const FroxelGridDesc& desc,
 /// Populate skip preflight with reject-reason diagnostics.
+/// True when populate would allocate a froxel grid but skip the analytic fill loop.
+bool wouldPopulateAllocateWithoutFill(const FroxelGridDesc& desc,
+/// True when the clamped froxel desc can allocate storage for populate.
+bool canAllocateFroxelGridForPopulate(const FroxelGridDesc& desc);
+/// Grid-only populate allocation preflight; false when the clamped desc is empty.
+bool tryPreflightPopulateAllocation(const FroxelGridDesc& desc, FroxelPopulateRejectReason& outReason);
 /// True when analytic populate would write non-zero froxel density for a valid camera.
 bool canPopulateFromAnalyticFog(const FroxelGridDesc& desc,
 /// Classify why analytic populate would skip meaningful fill — same ordering as `tryCanPopulateFromAnalyticFog`.
