@@ -1842,6 +1842,14 @@ bool shouldRunPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
 
 
 
+
+bool wouldSkipPairBufferPush(
+    PairBufferPushRejectReason* reason) {
+    const PairBufferPushRejectReason rejectReason = pairBufferPushRejectReason(buffer, idxA, idxB);
+    if (reason != nullptr) {
+        *reason = rejectReason;
+    return rejectReason != PairBufferPushRejectReason::None;
+
 PairBufferCompactionPreflight preflightPairBufferCompaction(const PairBufferSoA& buffer) {
     PairBufferCompactionPreflight preflight{};
     preflight.reason = pairBufferCompactionRejectReason(buffer);
@@ -2927,6 +2935,26 @@ bool wouldSkipPairBufferWriteSlot(
                                                     : static_cast<u32>(buffer.validFlags.size());
     if (slotBound == 0u || slot >= slotBound) {
 
+    }
+
+const char* pairBufferInvalidateSlotRejectReasonName(PairBufferInvalidateSlotRejectReason reason) {
+    switch (reason) {
+    case PairBufferInvalidateSlotRejectReason::None:
+        return "None";
+    case PairBufferInvalidateSlotRejectReason::OutOfRangeSlot:
+        return "OutOfRangeSlot";
+    return "Unknown";
+
+PairBufferInvalidateSlotRejectReason pairBufferInvalidateSlotRejectReason(const PairBufferSoA& buffer, u32 slot) {
+    if (slot >= buffer.validFlags.size()) {
+        return PairBufferInvalidateSlotRejectReason::OutOfRangeSlot;
+    return PairBufferInvalidateSlotRejectReason::None;
+
+bool pairBufferInvalidateSlotRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    PairBufferInvalidateSlotRejectReason expected) {
+    return pairBufferInvalidateSlotRejectReason(buffer, slot) == expected;
 
 PairBufferInvalidateSlotPreflight preflightPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
     PairBufferInvalidateSlotPreflight preflight{};
@@ -2964,6 +2992,9 @@ bool wouldSkipPairBufferPush(
     PairBufferPushRejectReason* reason) {
     const PairBufferPushRejectReason rejectReason = pairBufferPushRejectReason(buffer, idxA, idxB);
     return rejectReason != PairBufferPushRejectReason::None;
+
+
+
 
 const char* pairBufferToVectorRejectReasonName(PairBufferToVectorRejectReason reason) {
     case PairBufferToVectorRejectReason::None:
