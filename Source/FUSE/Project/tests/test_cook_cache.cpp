@@ -1797,3 +1797,12 @@ void testCookCacheShouldSkipStoreGuard() {
     expectTrue(!fuse::project::should_skip_combine_cook_cache_key(99u, 42u),
                "should_skip allows valid combined cache key");
                "prune estimate should_skip mirrors would_prune_all");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-fce1 ---
+    expectTrue(!estimate.should_skip(), "shader stale entry makes prune estimate should_skip false");
+    expectTrue(estimate.should_skip() == !cache.would_prune_all(),
+               "should_skip false for readable mesh import");
+               "should_skip rejects empty mesh input path");
+               "should_skip allows zero upstream on valid source key");
+               "would_invalidate_stale_content true after source revision");
+    expectTrue(!cooker.cache().would_invalidate_all(), "would_invalidate_all false after prune");
