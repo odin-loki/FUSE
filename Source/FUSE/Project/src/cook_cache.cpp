@@ -81,6 +81,40 @@ std::string escapeJson(const std::string& text) {
 
 } // namespace
 
+const char* cookCacheEntryRejectReasonLabel(CookCacheEntryRejectReason reason) {
+    switch (reason) {
+    case CookCacheEntryRejectReason::None:
+        return "none";
+    case CookCacheEntryRejectReason::ZeroContentHash:
+        return "zero_content_hash";
+    case CookCacheEntryRejectReason::EmptySourcePath:
+        return "empty_source_path";
+    case CookCacheEntryRejectReason::EmptyOutputPath:
+        return "empty_output_path";
+    }
+    return "unknown";
+}
+
+CookCacheEntryPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    CookCacheEntryPreflight preflight;
+    if (!is_valid_cook_cache_key(entry.content_hash)) {
+        preflight.reason = CookCacheEntryRejectReason::ZeroContentHash;
+        return preflight;
+    }
+    if (!is_valid_cook_cache_path(entry.source_path)) {
+        preflight.reason = CookCacheEntryRejectReason::EmptySourcePath;
+        return preflight;
+    }
+    if (!is_valid_cook_cache_path(entry.output_path)) {
+        preflight.reason = CookCacheEntryRejectReason::EmptyOutputPath;
+        return preflight;
+    }
+
+    preflight.can_store = true;
+    preflight.reason = CookCacheEntryRejectReason::None;
+    return preflight;
+}
+
 CookCacheEntry* CookCache::find_entry_(u64 content_hash) {
     for (CookCacheEntry& entry : m_entries) {
         if (entry.content_hash == content_hash) {
@@ -348,6 +382,18 @@ bool CookCache::would_invalidate(u64 content_hash) const {
     return find_entry_(content_hash) != nullptr;
 }
 
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) != 0;
+}
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) != 0;
+}
+
+bool CookCache::would_invalidate_all() const {
+    return !m_entries.empty();
+}
+
 u32 CookCache::count_by_source(const std::string& source_path) const {
     if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
         return 0;
@@ -435,6 +481,79 @@ std::vector<std::string> CookCache::probe_stale_upstream_sources(
         }
     }
     return stale_sources;
+}
+
+std::vector<std::string> CookCache::probe_stale_upstream_sources_unique(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    const std::vector<std::string> stale_sources = probe_stale_upstream_sources(source_upstream_by_path);
+    std::vector<std::string> unique_sources;
+    for (const std::string& source_path : stale_sources) {
+        if (!is_valid_cook_cache_path(source_path)) {
+            continue;
+        }
+        bool already_recorded = false;
+        for (const std::string& recorded : unique_sources) {
+            if (recorded == source_path) {
+                already_recorded = true;
+                break;
+            }
+        }
+        if (!already_recorded) {
+            unique_sources.push_back(source_path);
+        }
+    }
+    return unique_sources;
+}
+
+u32 CookCache::count_stale_upstream_sources_unique(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    return static_cast<u32>(probe_stale_upstream_sources_unique(source_upstream_by_path).size());
+}
+
+u32 CookCache::count_reconcile_overlap_entries(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    if (m_entries.empty() || source_upstream_by_path.empty()) {
+        return 0;
+    }
+
+    u32 overlap = 0;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (!is_valid_cook_cache_entry(entry)) {
+            continue;
+        }
+
+        bool upstream_stale = false;
+        for (const auto& pair : source_upstream_by_path) {
+            if (pair.first == entry.source_path && pair.second != entry.upstream_hash) {
+                upstream_stale = true;
+                break;
+            }
+        }
+
+        if (upstream_stale && is_stale_cache_entry_(entry)) {
+            ++overlap;
+        }
+    }
+    return overlap;
+}
+
+bool CookCache::probe_stale_content_for_source(const std::string& source_path) const {
+    if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
+        return false;
+    }
+
+    for (const CookCacheEntry& entry : m_entries) {
+        if (entry.source_path != source_path) {
+            continue;
+        }
+        if (!is_valid_cook_cache_entry(entry)) {
+            continue;
+        }
+        if (is_stale_cache_entry_(entry)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 namespace {

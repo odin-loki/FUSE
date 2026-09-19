@@ -13,9 +13,16 @@ struct CookCacheReconcileEstimate {
     u32 stale_dependency_entries = 0;
     u32 prune_invalid_entries = 0;
     u32 prune_stale_entries = 0;
+    /// Entries counted in more than one bucket above (B7.9 deepen).
+    u32 overlapping_entries = 0;
 
     [[nodiscard]] u32 total() const {
         return stale_dependency_entries + prune_invalid_entries + prune_stale_entries;
+    }
+
+    [[nodiscard]] u32 unique_total() const {
+        const u32 sum = total();
+        return sum > overlapping_entries ? sum - overlapping_entries : 0;
     }
 };
 
@@ -47,6 +54,15 @@ public:
     /// Combined dependency + prune reconcile estimator for incremental invalidation planning (B7.9 deepen).
     [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile_invalidation(
         const CookManifest& manifest) const;
+    /// True when `estimate_reconcile_invalidation(manifest).unique_total()` is non-zero (B7.9 deepen).
+    [[nodiscard]] bool would_reconcile_invalidation(const CookManifest& manifest) const;
+    /// Deduplicated source paths needing reconcile action — dependency stale + prune stale (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_reconcile_sources(const CookManifest& manifest) const;
+    /// Read-only upstream invalidation predicate — guarded on empty `changed_source` (B7.9 deepen).
+    [[nodiscard]] bool would_upstream_invalidation(const CookManifest& manifest,
+                                                    const std::string& changed_source) const;
+    /// Read-only stale dependency-hash reconcile predicate (B7.9 deepen).
+    [[nodiscard]] bool would_stale_dependency_invalidation(const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
