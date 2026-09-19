@@ -254,3 +254,8 @@ bool should_skip_occlusion_from_blockers(const Vec3& listener, const Vec3& sourc
 bool should_skip_occlusion_blockers(const AABB* blockers, u32 blocker_count) {
     if (should_skip_occlusion_blockers(blockers, blocker_count)
     if (should_skip_occlusion_blockers(blockers, blocker_count)) {
+
+// --- deepen additive from deepen-b72-audio-occlusion-blocker-wet-mix-guards-4901 ---
+bool should_skip_occlusion_blocker_raycast(const Vec3& listener, const Vec3& source,
+    if (should_skip_occlusion_from_blockers(listener, source, visibility, blockers, blocker_count)) {
+    if (should_skip_occlusion_blocker_raycast(listener, source, blockers, blocker_count,

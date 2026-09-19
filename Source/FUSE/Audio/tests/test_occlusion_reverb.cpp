@@ -343,3 +343,20 @@ void testDryWetBlendGuards() {
     expectTrue(fuse::audio::should_skip_reverb_zone_blend(inside, &zone, 0),
     expectTrue(fuse::audio::should_skip_reverb_zone_blend(outside, &zone, 1),
     expectTrue(!fuse::audio::should_skip_reverb_zone_blend(inside, &zone, 1),
+
+// --- deepen additive from deepen-b72-audio-occlusion-blocker-wet-mix-guards-4901 ---
+void testOcclusionBlockerRaycastGuards() {
+    expectTrue(fuse::audio::should_skip_occlusion_blocker_raycast(listener, source, nullptr, 0, 0.5f),
+        fuse::audio::should_skip_occlusion_blocker_raycast(listener, listener, &blocker, 1, 0.5f),
+    expectTrue(fuse::audio::should_skip_occlusion_blocker_raycast(listener, source, &blocker, 1, 0.f),
+        !fuse::audio::should_skip_occlusion_blocker_raycast(listener, source, &blocker, 1, 0.5f),
+    expectTrue(fuse::audio::should_skip_combine_occlusion_visibility(0.f, 0.75f),
+    expectTrue(fuse::audio::should_skip_combine_occlusion_visibility(0.5f, 0.f),
+    expectTrue(!fuse::audio::should_skip_combine_occlusion_visibility(0.5f, 0.75f),
+    expectTrue(fuse::audio::should_skip_occlusion_from_blockers(listener, source, 0.5f, nullptr, 0),
+        !fuse::audio::should_skip_occlusion_from_blockers(listener, source, 0.5f, &blocker, 1),
+               "should_skip_wet_mix_processing delegates to should_skip_reverb_wet_mix");
+    expectTrue(fuse::audio::should_skip_listener_reverb_zone_blend(inside, nullptr, 0),
+    expectTrue(fuse::audio::should_skip_listener_reverb_zone_blend(inside, &zone, 0),
+    expectTrue(fuse::audio::should_skip_listener_reverb_zone_blend(outside, &zone, 1),
+    expectTrue(!fuse::audio::should_skip_listener_reverb_zone_blend(inside, &zone, 1),
