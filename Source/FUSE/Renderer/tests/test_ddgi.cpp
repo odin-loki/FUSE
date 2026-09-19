@@ -2735,3 +2735,26 @@ void testCacheLookupRejectReasons() {
     expectTrue(fuse::renderer::gi::tryCanLaunchProbeBlendKernel(nullSurfaces, reason),
     expectTrue(count == 4u, "trySchedule writes scheduled count");
                "wouldSkipProbeSchedule false for schedulable inputs");
+
+// --- deepen additive from ddgi-b56-guards-deepen-0ebc ---
+    expectTrue(fuse::renderer::ddgi_util::tryCanSampleAtProbeCoords(desc, invalid, cache.data(), 8u, reason),
+               "tryCanSampleAtProbeCoords succeeds for fixable unordered corners via preflight path");
+void testProbeSampleCoordPreflightGuards() {
+               "canPreflightProbeSampleCoords succeeds for valid coords");
+void testCacheIndexLookupGuards() {
+    expectTrue(fuse::renderer::ddgi_util::tryValidateCacheIndexLookup(desc, cache.data(), 8u, 3u, reason),
+               "tryValidateCacheIndexLookup succeeds for in-range index");
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateCacheIndexLookup(desc, nullptr, 8u, 3u, reason),
+               "tryValidateCacheIndexLookup rejects null cache");
+               "tryCanScheduleProbeUpdates succeeds for valid inputs");
+               "tryCanScheduleProbeUpdates rejects null output indices");
+               "tryCanScheduleProbeUpdates rejects null output count");
+    expectTrue(std::strcmp(fuse::renderer::probeScheduleRejectReasonLabel(reason), "zero_max_indices") == 0,
+void testProbeKernelTryLaunchGuards() {
+    expectTrue(fuse::renderer::gi::tryCanLaunchDdgiKernelParams(validParams, reason),
+               "tryLaunch_probe_blend_kernel rejects zero update count");
+void testTryCanSampleAtProbeCoordsSoftPreflight() {
+    expectTrue(fuse::renderer::ddgi_util::tryCanSampleAtProbeCoords(desc, softWeights, cache.data(), 8u, reason),
+               "tryCanSampleAtProbeCoords succeeds for clampable weights via preflight path");
+    testProbeSampleCoordPreflightGuards();
+    testTryCanSampleAtProbeCoordsSoftPreflight();

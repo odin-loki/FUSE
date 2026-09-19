@@ -2402,3 +2402,10 @@ bool wouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_ind
     return tryValidateProbeBlendKernelSurfaces(params, reason);
 bool tryValidateProbeBlendKernelSurfaces(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
         outReason = ProbeKernelRejectReason::NullBlendSurfaces;
+
+// --- deepen additive from ddgi-b56-guards-deepen-0ebc ---
+    ProbeSampleCoordsRejectReason coordReason = ProbeSampleCoordsRejectReason::None;
+    if (!ProbeGridLayout::tryPreflightProbeSampleCoords(desc, coords, coordReason)) {
+bool tryValidateCacheIndexLookup(const DDGIDesc& desc,
+bool wouldClampCacheIndex(const DDGIDesc& desc, u32 probe_index) {
+bool tryCanLaunchDdgiKernelParams(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
