@@ -4587,3 +4587,15 @@ void testWouldSkipBroadphaseGuardParity() {
                "wouldSkipPairBufferCompactAndClamp true after compact within capacity");
     expectTrue(!fuse::physics::broadphase::wouldSkipPairBufferToVector(buffer),
                "wouldSkipPairBufferToVector false when buffer has exportable pair");
+
+// --- deepen additive from deepen-b4-broadphase-wouldskip-fcaf ---
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferWriteSlot(buffer, 2u, 0u, 1u, &skipReason),
+               "wouldSkipPairBufferWriteSlot true for out-of-range slot");
+             "wouldSkipPairBufferWriteSlot reports OutOfRangeSlot");
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferWriteSlot(buffer, 2u, 0u, 1u) ==
+               "wouldSkipCellSpanClamp false when span exceeds limit");
+             "wouldSkipCellSpanClamp reports ExceedsSpan when clamp is required");
+               "wouldSkipCellSpanClamp agrees with canSkipCellSpanClamp for within-limit range");
+    expectTrue(fuse::physics::broadphase::wouldSkipCellSpanClamp(inverted, 4u),
+               "wouldSkipCellSpanClamp true for empty range");
+             "wouldSkipRefineBroadphase reports EmptyBuffer");
