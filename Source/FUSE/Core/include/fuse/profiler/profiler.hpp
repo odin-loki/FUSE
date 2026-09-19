@@ -311,6 +311,14 @@ void setEnabled(bool enabled);
 /// True when `name` is non-null and non-empty — shared guard for scopes, flows, and counters.
 bool isValidEventName(const char* name);
 
+/// True when a profiler label/track name is non-null and non-empty.
+
+/// Preflight guards for record entry points — false when disabled or name is invalid.
+bool canRecordScope(const char* name);
+bool canBeginAsyncFlow(const char* name);
+bool canEndAsyncFlow(const char* name);
+bool canSampleCounter(const char* track);
+
 void beginFrame();
 void endFrame();
 
@@ -392,71 +400,15 @@ bool isNestingStateClean();
     bool isClean() const {
         return !unbalancedScopeNesting && !unbalancedFlowNesting && !hasOpenAsyncFlows;
 
-/// Snapshot of scope/async nesting and open-flow guard state (read-only introspection).
-struct NestingIntrospection {
-    u32 scopeDepth = 0;
-    u32 flowDepth = 0;
-    u32 maxScopeDepth = 0;
-    u32 maxFlowDepth = 0;
-    u32 openAsyncFlowCount = 0;
-    bool scopeBalanced = true;
-    bool flowBalanced = true;
-    bool hasOpenAsyncFlows = false;
-};
-NestingIntrospection nestingIntrospection();
 
-/// Returns true when scope, flow, and open-async-flow guards are all clean.
-bool isNestingStateClean();
 
-/// Read-only chrome export diagnostics — no mutation.
-struct ChromeTraceExportPreflight {
-    bool profilerDisabled = false;
-    bool emptyBuffer = false;
-    bool unbalancedScopeNesting = false;
-    bool unbalancedFlowNesting = false;
-    bool hasOpenAsyncFlows = false;
-    u32 eventCount = 0;
-    u32 frameIndex = 0;
 
-    bool canExport() const { return true; }
-    bool isClean() const {
-        return !unbalancedScopeNesting && !unbalancedFlowNesting && !hasOpenAsyncFlows;
-    }
-};
-ChromeTraceExportPreflight preflightChromeTraceExport();
 
-/// Snapshot of scope/async nesting and open-flow guard state (read-only introspection).
-struct NestingIntrospection {
-    u32 scopeDepth = 0;
-    u32 flowDepth = 0;
-    u32 maxScopeDepth = 0;
-    u32 maxFlowDepth = 0;
-    u32 openAsyncFlowCount = 0;
-    bool scopeBalanced = true;
-    bool flowBalanced = true;
-    bool hasOpenAsyncFlows = false;
-};
-NestingIntrospection nestingIntrospection();
 
-/// Returns true when scope, flow, and open-async-flow guards are all clean.
-bool isNestingStateClean();
 
-/// Read-only chrome export diagnostics — no mutation.
-struct ChromeTraceExportPreflight {
-    bool profilerDisabled = false;
-    bool emptyBuffer = false;
-    bool unbalancedScopeNesting = false;
-    bool unbalancedFlowNesting = false;
-    bool hasOpenAsyncFlows = false;
-    u32 eventCount = 0;
-    u32 frameIndex = 0;
 
-    bool canExport() const { return true; }
-    bool isClean() const {
-        return !unbalancedScopeNesting && !unbalancedFlowNesting && !hasOpenAsyncFlows;
-    }
-};
-ChromeTraceExportPreflight preflightChromeTraceExport();
+/// True when scope/flow nesting is balanced and no async flows remain open.
+bool isProfilerGuardStateBalanced();
 
 bool hasEvents();
 bool hasExportableEvents();
@@ -725,6 +677,9 @@ bool canExportChromeTrace();
 ChromeExportPreflight preflightChromeTraceExport();
 ChromeTraceExportRejectReason chromeTraceExportRejectReason();
 /// Non-mutating chrome export predicate — same guards as `preflightChromeTraceExport`.
+
+/// Export preflights — export is always safe to invoke; these diagnose content/readiness.
+bool hasExportableEvents();
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();

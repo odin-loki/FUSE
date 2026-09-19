@@ -293,6 +293,19 @@ bool isValidEventName(const char* name) {
     return name != nullptr && name[0] != '\0';
 }
 
+bool canRecordScope(const char* name) {
+    return enabled() && isValidEventName(name);
+}
+
+bool canBeginAsyncFlow(const char* name) {
+
+bool canEndAsyncFlow(const char* name) {
+    return enabled() && isValidEventName(name)
+           && g_openAsyncFlowCount.load(std::memory_order_acquire) > 0u;
+
+bool canSampleCounter(const char* track) {
+    return enabled() && isValidEventName(track);
+
 void beginFrame() {
     g_frameIndex.fetch_add(1u, std::memory_order_acq_rel);
 }
@@ -530,6 +543,10 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     result.eventCount = eventCount();
     result.frameIndex = frameIndex();
     return result;
+}
+
+bool isProfilerGuardStateBalanced() {
+    return isScopeNestingBalanced() && isFlowNestingBalanced() && !hasOpenAsyncFlows();
 }
 
 bool hasEvents() {
@@ -949,6 +966,16 @@ bool tryLastEvent(ProfileEvent& outEvent) {
 
     return tryEventAt(index, outEvent);
 }
+
+bool hasExportableEvents() {
+    const u32 count = eventCount();
+    for (u32 i = 0; i < count; ++i) {
+        if (isValidProfileEvent(eventAt(i))) {
+            return true;
+        }
+    return false;
+
+bool canExportChromeTrace() {
 
 const ProfileEvent& lastEvent() {
     const u32 index = lastEventIndex();
