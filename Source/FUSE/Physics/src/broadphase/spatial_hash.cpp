@@ -36,6 +36,30 @@ const char* cellOccupancyRejectReasonName(CellOccupancyRejectReason reason) {
     return "Unknown";
 }
 
+const char* cellSpanRejectReasonName(CellSpanRejectReason reason) {
+    switch (reason) {
+    case CellSpanRejectReason::None:
+        return "None";
+    case CellSpanRejectReason::EmptyRange:
+        return "EmptyRange";
+    case CellSpanRejectReason::ExceedsMaxSpan:
+        return "ExceedsMaxSpan";
+    }
+    return "Unknown";
+}
+
+const char* cellPairGenRejectReasonName(CellPairGenRejectReason reason) {
+    switch (reason) {
+    case CellPairGenRejectReason::None:
+        return "None";
+    case CellPairGenRejectReason::EmptyOccupants:
+        return "EmptyOccupants";
+    case CellPairGenRejectReason::SingleOccupant:
+        return "SingleOccupant";
+    }
+    return "Unknown";
+}
+
 const char* broadphaseRejectReasonName(BroadphaseRejectReason reason) {
     switch (reason) {
     case BroadphaseRejectReason::None:
@@ -157,17 +181,20 @@ std::vector<u32> uniqueOccupants(const std::vector<u32>& occupants) {
     return uniqueBodies;
 }
 
-u32 countPairsForCell(const std::vector<u32>& occupants) {
+u32 countPairsForOccupantsInternal(const std::vector<u32>& occupants) {
     if (occupants.size() < 2u) {
         return 0u;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
-    const u32 bodyCount = static_cast<u32>(uniqueBodies.size());
-    return bodyCount > 1u ? bodyCount * (bodyCount - 1u) / 2u : 0u;
+    return estimatePairCountForUniqueBodies(static_cast<u32>(uniqueBodies.size()));
+}
+
+u32 countPairsForCell(const std::vector<u32>& occupants) {
+    return countPairsForOccupantsInternal(occupants);
 }
 
 void generatePairsForCell(const std::vector<u32>& occupants, std::vector<CandidatePair>& out) {
-    if (occupants.size() < 2u) {
+    if (!shouldRunCellPairGen(occupants)) {
         return;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -182,7 +209,7 @@ void writePairsForCellSlots(
     const std::vector<u32>& occupants,
     u32 slotStart,
     PairBufferSoA& buffer) {
-    if (occupants.size() < 2u) {
+    if (!shouldRunCellPairGen(occupants)) {
         return;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -460,6 +487,7 @@ RefineBroadphasePreflight preflightRefineBroadphase(
     preflight.emptyBuffer = buffer.canSkipSoAIteration();
     preflight.noValidPairs = !buffer.hasValidPairs();
     preflight.emptyInput = canSkipBroadphase(bodies, shapes);
+    preflight.validPairCount = buffer.countValidSlots();
     preflight.reason = refineBroadphaseRejectReason(bodies, shapes, buffer);
     return preflight;
 }
@@ -496,6 +524,7 @@ DedupeBroadphasePreflight preflightDedupeBroadphase(const PairBufferSoA& buffer)
     DedupeBroadphasePreflight preflight{};
     preflight.emptyBuffer = buffer.canSkipSoAIteration();
     preflight.singlePair = !preflight.emptyBuffer && buffer.activeCount <= 1u;
+    preflight.pairCount = buffer.activeCount;
     preflight.reason = dedupeBroadphaseRejectReason(buffer);
     return preflight;
 }
@@ -512,8 +541,8 @@ BroadphaseMergePreflight preflightBroadphaseMerge(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     BroadphaseMergePreflight preflight{};
-    bool hasPlaneBodies = false;
-    bool hasDynamicBodies = false;
+    u32 planeBodyCount = 0u;
+    u32 dynamicBodyCount = 0u;
 
     for (u32 shapeIndex = 0; shapeIndex < shapes.count(); ++shapeIndex) {
         const u32 bodyIndex = shapes.bodyIndices[shapeIndex];
@@ -522,17 +551,17 @@ BroadphaseMergePreflight preflightBroadphaseMerge(
         }
         const CollisionShapeType type = static_cast<CollisionShapeType>(shapes.types[shapeIndex]);
         if (type == CollisionShapeType::Plane) {
-            hasPlaneBodies = true;
+            ++planeBodyCount;
         } else if ((bodies.flags[bodyIndex] & RB_STATIC) == 0) {
-            hasDynamicBodies = true;
-        }
-        if (hasPlaneBodies && hasDynamicBodies) {
-            break;
+            ++dynamicBodyCount;
         }
     }
 
-    preflight.emptyPlaneBodies = !hasPlaneBodies;
-    preflight.emptyDynamicBodies = !hasDynamicBodies;
+    preflight.planeBodyCount = planeBodyCount;
+    preflight.dynamicBodyCount = dynamicBodyCount;
+    preflight.estimatedMergePairs = planeBodyCount * dynamicBodyCount;
+    preflight.emptyPlaneBodies = planeBodyCount == 0u;
+    preflight.emptyDynamicBodies = dynamicBodyCount == 0u;
     if (preflight.emptyPlaneBodies) {
         preflight.reason = BroadphaseMergeRejectReason::EmptyPlaneBodies;
     } else if (preflight.emptyDynamicBodies) {
@@ -611,6 +640,49 @@ bool canSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const 
 
 bool shouldRunMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer) {
     return preflightMergePairsIntoBuffer(pairs, buffer).canMerge();
+}
+
+u32 countUniqueCellOccupants(const std::vector<u32>& occupants) {
+    if (occupants.empty()) {
+        return 0u;
+    }
+    return static_cast<u32>(uniqueOccupants(occupants).size());
+}
+
+u32 countPairsForCellOccupants(const std::vector<u32>& occupants) {
+    return countPairsForOccupantsInternal(occupants);
+}
+
+CellPairGenRejectReason cellPairGenRejectReason(const std::vector<u32>& occupants) {
+    if (occupants.empty()) {
+        return CellPairGenRejectReason::EmptyOccupants;
+    }
+    if (countUniqueCellOccupants(occupants) < 2u) {
+        return CellPairGenRejectReason::SingleOccupant;
+    }
+    return CellPairGenRejectReason::None;
+}
+
+bool cellPairGenRejectsForReason(const std::vector<u32>& occupants, CellPairGenRejectReason expected) {
+    return cellPairGenRejectReason(occupants) == expected;
+}
+
+CellPairGenPreflight preflightCellPairGen(const std::vector<u32>& occupants) {
+    CellPairGenPreflight preflight{};
+    preflight.reason = cellPairGenRejectReason(occupants);
+    preflight.emptyOccupants = preflight.reason == CellPairGenRejectReason::EmptyOccupants;
+    preflight.singleOccupant = preflight.reason == CellPairGenRejectReason::SingleOccupant;
+    preflight.uniqueBodyCount = countUniqueCellOccupants(occupants);
+    preflight.pairCount = countPairsForCellOccupants(occupants);
+    return preflight;
+}
+
+bool canSkipCellPairGen(const std::vector<u32>& occupants) {
+    return !preflightCellPairGen(occupants).canGenerate();
+}
+
+bool shouldRunCellPairGen(const std::vector<u32>& occupants) {
+    return preflightCellPairGen(occupants).canGenerate();
 }
 
 void refineBroadphasePairsParallel(
