@@ -213,6 +213,28 @@ bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryReu
     return preflightTaaHistoryWarmup(history, &reason);
 }
 
+bool taaHistoryWarmupReady(const TaaHistoryBuffer& history) {
+    return !shouldSkipTaaHistoryWarmup(history);
+}
+
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryReuseBlockReason* reason) {
+    if (taaHistoryNeedsWarmup(history)) {
+        if (reason != nullptr) {
+            *reason = history.isReady() ? TaaHistoryReuseBlockReason::NotWarm
+                                        : TaaHistoryReuseBlockReason::NotReady;
+        }
+        return false;
+    }
+    if (reason != nullptr) {
+        *reason = TaaHistoryReuseBlockReason::None;
+    }
+    return true;
+}
+
+bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryReuseBlockReason& reason) {
+    return preflightTaaHistoryWarmup(history, &reason);
+}
+
 bool shouldSkipTaaHistoryResolve(const TaaHistoryBuffer& history) {
     return !taaHistoryReadyForResolve(history);
 
@@ -256,12 +278,21 @@ bool preflightTaaHistoryReadyForResolve(const TaaHistoryBuffer& history, TaaHist
     return false;
 }
 
-bool tryPreflightTaaHistoryReadyForResolve(const TaaHistoryBuffer& history,
-                                           TaaHistoryReuseBlockReason& reason) {
+bool taaHistoryResolveReady(const TaaHistoryBuffer& history) {
+    return !shouldSkipTaaHistoryResolve(history);
+}
+
+bool preflightTaaHistoryReadyForResolve(const TaaHistoryBuffer& history,
+                                        TaaHistoryReuseBlockReason* reason) {
     if (!history.isReady()) {
-        reason = TaaHistoryReuseBlockReason::NotReady;
+        if (reason != nullptr) {
+            *reason = TaaHistoryReuseBlockReason::NotReady;
+        }
         return false;
     reason = TaaHistoryReuseBlockReason::None;
+    }
+    if (reason != nullptr) {
+        *reason = TaaHistoryReuseBlockReason::None;
     return true;
 
 const char* taaHistoryWarmupBlockReasonLabel(TaaHistoryWarmupBlockReason reason) {
@@ -382,6 +413,11 @@ bool preflightTaaHistoryTemporalSample(const TaaHistoryBuffer& history, u32 obse
 bool tryPreflightTaaHistoryTemporalSample(const TaaHistoryBuffer& history, u32 observedGeneration,
 
 bool shouldSkipTaaHistoryTemporalSample(const TaaHistoryBuffer& history, u32 observedGeneration) {
+    return preflightTaaHistoryReadyForResolve(history, &reason);
+}
+
+bool tryPreflightTaaHistoryReadyForResolve(const TaaHistoryBuffer& history,
+                                           TaaHistoryReuseBlockReason& reason) {
     return preflightTaaHistoryReadyForResolve(history, &reason);
 }
 

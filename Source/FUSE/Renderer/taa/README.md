@@ -26,6 +26,10 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `tryPreflightTaaJitterNdc(w, h, length, reason)` — NDC preflight with mandatory reject-reason output
 - `shouldSkipTaaJitterSync(frame, length)` / `shouldSkipTaaJitterNdc(w, h, length)` — early-out when jitter preflight would reject
 - `taaJitterSyncReady(frame, length)` / `taaJitterNdcReady(w, h, length)` — positive readiness checks for jitter sync/NDC
+- `TaaJitter::trySyncToFrameIndexIfReady(frame, reason)` — sync with reject-reason diagnostics
+- `TaaJitter::tryAdvanceIfReady(reason)` — advance with reject-reason diagnostics
+- `TaaJitter::currentPixelOffsetIfReady(out)` — pixel offset only when sequence is valid
+- `TaaJitter::tryCurrentNdcOffsetIfReady(w, h, out, reason)` — NDC offset with reject-reason diagnostics
 - `TaaJitter::monotonicFrameIndex()` — monotonic frame counter incremented by `advance`, set by `syncToFrameIndex`
 - `TaaJitterLayout::safeHaltonNdcOffset` / `safeNdcOffsetForFrameIndex` — zero NDC when viewport invalid
 - `TaaJitter::advanceIfPossible()` — advance only when sequence is valid
@@ -54,6 +58,8 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `taaHistoryWarmupComplete(history)` / `TaaHistoryBuffer::warmupComplete()` — true when warm-up finished
 - `TaaHistoryBuffer::isWarmed()` / `taaHistoryIsWarmed()` — true after the first successful resolve
 - `shouldSkipTaaHistoryWarmup` / `tryPreflightTaaHistoryWarmup` — warm-up completion preflight with reject-reason diagnostics
+- `taaHistoryWarmupReady(history)` / `preflightTaaHistoryWarmup` / `tryPreflightTaaHistoryWarmup` — warmup preflight guards
+- `taaHistoryResolveReady(history)` / `preflightTaaHistoryReadyForResolve` — resolve-readiness preflight guards
 - `TaaHistoryBuffer::accumulatedFrames()` — monotonic frame counter reset on invalidate/resize
 - `TaaHistoryBuffer::invalidateGeneration()` — bumped on invalidate/resize for stale-history detection
 - `TaaHistoryBuffer::isHistoryStale(observedGeneration)` — true when a consumer's epoch differs from current history
@@ -244,6 +250,10 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaPass::preflightJitterNdc` / `shouldSkipJitterSync` / `shouldSkipJitterNdc` — pass-level jitter guard wrappers
 - `TaaPass::isWarmupComplete` / `shouldSkipWarmup` — pass-level warm-up guard wrappers
 - `TaaPass::preflightTemporalResolve` / `shouldSkipTemporalResolve` — pass-level combined temporal preflight
+- `TaaPass::trySyncJitterToFrameIndexIfReady(frame, reason)` / `tryAdvanceJitterIfReady(reason)` — jitter sync/advance with diagnostics
+- `TaaPass::tryPreflightHistoryWarmup` / `tryPreflightHistoryReuse` / `tryPreflightHistoryReadyForResolve` — history guard try-preflights
+- `TaaPass::tryPreflightResolveBlendWeights` / `tryPreflightResolve` — resolve blend and resolve try-preflights
+- `TaaPass::shouldSkipJitterAdvance()` — early-out when jitter advance preflight would reject
 
 ## Pipeline (stub)
 

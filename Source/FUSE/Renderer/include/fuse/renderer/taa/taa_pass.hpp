@@ -236,8 +236,7 @@ public:
     /// True when pass history warm-up is complete (B5.9 deepen).
     bool preflightHistoryWarmup(TaaHistoryWarmupBlockReason* reason = nullptr) const;
     bool tryPreflightHistoryWarmup(TaaHistoryWarmupBlockReason& reason) const;
-    bool preflightHistoryWarmup(TaaHistoryReuseBlockReason* reason = nullptr) const;
-                                       TaaResolveBlendRejectReason& reason) const;
+    /// True when pass history warm-up preflight passes (B5.9 deepen).
     /// Early-out when resolve blend-weight preflight would reject (B5.9 deepen).
     bool shouldSkipResolveBlend(const TaaResolveDesc& desc) const;
     bool tryPreflightResolveBlendWeights(const TaaResolveDesc& desc, TaaResolveBlendRejectReason& reason) const;
@@ -347,6 +346,10 @@ public:
     /// True when pass jitter can advance for the configured sequence (B5.9 deepen).
     /// Jitter advance preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightJitterAdvance(TaaJitterGuardRejectReason& reason) const;
+    /// Advance jitter with reject-reason diagnostics; returns false when blocked (B5.9 deepen).
+    bool tryAdvanceJitterIfReady(TaaJitterGuardRejectReason& reason);
+    /// Sync jitter with reject-reason diagnostics; returns false when blocked (B5.9 deepen).
+    bool trySyncJitterToFrameIndexIfReady(u32 frameIndex, TaaJitterGuardRejectReason& reason);
     /// Early-out when pass history still needs warm-up (B5.9 deepen).
     bool shouldSkipHistoryWarmup() const;
     /// True when pass history warm-up is complete (B5.9 deepen).

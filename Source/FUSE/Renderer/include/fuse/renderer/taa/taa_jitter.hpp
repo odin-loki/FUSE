@@ -373,6 +373,7 @@ public:
     bool tryCurrentNdcOffset(u32 width, u32 height, fuse::math::Vec2& out, TaaJitterGuardRejectReason& reason) const;
     /// NDC offset with reject-reason diagnostics (B5.9 deepen).
     /// NDC offset with mandatory reject-reason output (B5.9 deepen).
+    /// NDC offset with reject-reason diagnostics; returns false when blocked (B5.9 deepen).
     bool tryCurrentNdcOffsetIfReady(u32 width, u32 height, fuse::math::Vec2& out,
                                     TaaJitterGuardRejectReason& reason) const;
 
@@ -391,6 +392,7 @@ public:
     bool tryAdvanceIfViewportReady(u32 width, u32 height, TaaJitterAdvanceBlockReason& outReason);
     /// Advance with mandatory reject-reason output (B5.9 deepen).
     /// Advance with reject-reason diagnostics (B5.9 deepen).
+    /// Advance with reject-reason diagnostics; returns false when blocked (B5.9 deepen).
     bool tryAdvanceIfReady(TaaJitterGuardRejectReason& reason);
     void reset();
     /// Align jitter state to a monotonic frame counter (wraps with sequence period).
@@ -425,6 +427,7 @@ public:
     /// Sync with mandatory reject-reason output; returns false when blocked (B5.9 deepen).
     bool trySyncToFrameIndex(u32 frameIndex, TaaJitterGuardRejectReason& reason);
     /// Sync with mandatory reject-reason output (B5.9 deepen).
+    /// Sync with reject-reason diagnostics; returns false when blocked (B5.9 deepen).
     /// True when monotonic frame counter and slot match `frameIndex` (B5.9 deepen).
     bool isAlignedToFrameIndex(u32 frameIndex) const;
     /// True when jitter slot and monotonic counter match a frame index (B5.9 deepen).
