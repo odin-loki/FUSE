@@ -420,3 +420,6 @@ bool AssetCooker::should_skip_prune_reconcile() const {
 
 // --- deepen additive from deepen-b79-cooker-hash-should-skip-1706 ---
     return !would_invalidate_upstream_dependency(manifest, changed_source);
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-2c18 ---
+    return m_cache.estimate_prune_removals().should_skip();

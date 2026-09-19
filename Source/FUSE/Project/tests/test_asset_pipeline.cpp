@@ -2205,3 +2205,18 @@ void testCookerShouldSkipReconcileGuards() {
                "upstream change makes should_skip_stale_dependency_invalidation false");
                "upstream change makes should_skip_reconcile_invalidation false");
                "should_skip_stale_dependency_invalidation after stale reconcile");
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-2c18 ---
+    expectTrue(cooker.should_skip_upstream_invalidation(manifest, sourceA),
+               "should_skip upstream invalidation true after cache cleared");
+    expectTrue(cooker.estimate_prune_reconcile().should_skip(), "fresh prune reconcile should_skip is true");
+               "should_skip upstream invalidation false when cache has matching entries");
+               "should_skip upstream invalidation for empty changed source");
+               "should_skip stale dependency invalidation on fresh cache");
+    expectTrue(cooker.should_skip_prune_reconcile(), "should_skip prune reconcile on fresh cache");
+               "should_skip reconcile invalidation on fresh cache");
+               "should_skip stale dependency invalidation false after upstream change");
+               "should_skip reconcile invalidation false after upstream change");
+    expectTrue(!after.should_skip(), "post-invalidation prune reconcile estimate should_skip is false");
+               "should_skip prune reconcile false when stale entries remain");
+               "should_skip stale dependency invalidation true after stale invalidation");
