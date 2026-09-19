@@ -147,6 +147,8 @@ struct CookCacheReconcileEstimate {
         preflight.reason = CookHashRejectReason::EmptyOutputPath;
     preflight.can_hash = true;
     preflight.reason = CookHashRejectReason::None;
+/// Read-only store preflight — mirrors `store` guards plus source readability (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
 
 /// Combined source/upstream fold is cacheable when non-zero (B7.9 deepen).
 [[nodiscard]] inline bool is_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {
@@ -462,6 +464,7 @@ public:
     /// Entries `prune_all` would remove — zero when cache is empty or nothing is prunable (B7.9 deepen).
     [[nodiscard]] u32 estimate_prune_removals() const;
     /// Source paths whose stored content keys differ from a fresh recompute (B7.9 deepen).
+    /// Entries whose recomputed key differs from stored hash — excludes structurally invalid rows (B7.9 deepen).
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

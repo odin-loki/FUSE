@@ -1657,6 +1657,7 @@ void testCookerReconcileEstimators() {
 void testCookerStaleDependencyEstimateParity() {
     const std::string sourceA = writeTempFile("/tmp/fuse_b79_est_chain_a.obj", "# est chain a\n");
     const std::string sourceB = writeTempFile("/tmp/fuse_b79_est_chain_b.obj", "# est chain b\n");
+void testCookerStaleDependencyReconcileEstimatorParity() {
     const std::string sourceA = writeTempFile("/tmp/fuse_b79_reconcile_a.obj", "# reconcile a\n");
     const std::string sourceB = writeTempFile("/tmp/fuse_b79_reconcile_b.obj", "# reconcile b\n");
 
@@ -1730,6 +1731,20 @@ void testCookerStaleDependencyEstimateParity() {
 
     cooker.cache().prune_all();
                "reconcile estimate zero after prune");
+    expectTrue(cooked.ok, "manifest cook for reconcile estimator ok");
+    expectTrue(cooker.cache().entry_count() == 2u, "two entries seeded for reconcile estimator");
+
+    const fuse::u32 estimated = cooker.count_stale_dependency_invalidation(manifest);
+    expectTrue(estimated > 0u, "stale dependency reconcile estimator is non-zero after upstream change");
+
+    expectTrue(removed == estimated, "stale dependency reconcile removal matches estimator");
+               "stale dependency estimator is zero after reconcile");
+    expectTrue(cooker.cache().entry_count() == 1u,
+               "upstream source entry remains after dependency-hash reconcile");
+    expectTrue(cooker.cache().count_stale_entries() == 1u,
+               "remaining upstream entry is content-stale after source revision");
+    expectTrue(!cooker.cache().contains(cooked.records[1].content_hash),
+               "downstream entry removed by dependency-hash reconcile");
 }
 
 void testCookerInvalidationCountProbes() {
@@ -1770,6 +1785,15 @@ void testCookStaleDependencyHashReconcileEstimate() {
 
     const fuse::u32 upstream_count = cooker.count_upstream_invalidation(manifest, sourceA);
     expectTrue(upstream_count >= 2u, "upstream count probe estimates chain removals");
+    expectTrue(cooker.cache().would_invalidate_downstream_of(entryA.output_path,
+                                                             fuse::project::CookJobGraph{}.edges(),
+                                                             fuse::project::CookJobGraph{}.jobs()) == false,
+               "would_invalidate_downstream rejects empty graph");
+
+    fuse::project::CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+    expectTrue(cooker.cache().would_invalidate_downstream_of(entryA.output_path, graph.edges(), graph.jobs()),
+               "would_invalidate_downstream reports dependent entries");
 
     const fuse::u32 empty_upstream_count = cooker.count_upstream_invalidation(manifest, "");
     expectTrue(empty_upstream_count == 0u, "empty changed source upstream count is zero");
@@ -2392,6 +2416,7 @@ int main() {
     testCookCacheEmptyKeyPaths();
     testCookDirtyInvalidatesCache();
     testCookerReconcileEstimators();
+    testCookerStaleDependencyReconcileEstimatorParity();
     testCookerInvalidationCountProbes();
     testCookerWouldInvalidateProbes();
     testCookerReconcileEstimateShouldSkip();

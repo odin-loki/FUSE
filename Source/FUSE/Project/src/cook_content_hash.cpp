@@ -151,6 +151,7 @@ bool preflight_hash_upstream_dependencies(const std::vector<std::string>& depend
 u64 fnv1a64_bytes(const u8* data, usize size) {
     if (!is_valid_fnv1a64_input(data, size)) {
         return kFnvOffset;
+        return 0;
     }
     if (size == 0) {
         return kFnvOffset;
