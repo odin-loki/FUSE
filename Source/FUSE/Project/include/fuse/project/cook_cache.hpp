@@ -338,6 +338,9 @@ public:
         const std::vector<CookJob>& jobs) const;
     /// Source paths whose entries `prune_stale_entries` would remove — one push per matching entry (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_prunable_source_paths() const;
+    /// Source paths whose stored content hash differs from the supplied value (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_stale_content_sources(
+        const std::vector<std::pair<std::string, u64>>& source_content_by_path) const;
     [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
     [[nodiscard]] u32 count_prunable_entries() const;
     [[nodiscard]] u32 count_stale_entries() const;

@@ -186,6 +186,11 @@ public:
     [[nodiscard]] CookStaleDependencyEstimate estimate_stale_dependency_reconcile(
     /// Entries `cache().prune_all` would remove — mirrors prune guards without mutating stats (B7.9 deepen).
     [[nodiscard]] u32 estimate_cache_prune() const;
+    /// True when `count_upstream_invalidation` would remove at least one entry (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_upstream(const CookManifest& manifest,
+    /// True when `count_stale_dependency_invalidation` is non-zero (B7.9 deepen).
+    /// Read-only prune reconcile estimator — mirrors `CookCache::count_prunable_entries` (B7.9 deepen).
+    [[nodiscard]] u32 count_prune_reconcile() const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

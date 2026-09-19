@@ -783,6 +783,11 @@ void testCookHashPreflightGuards() {
     expectTrue(null_bytes.reason == fuse::project::CookHashRejectReason::NullData,
                "null bytes preflight reason is NullData");
                "zero-size null bytes preflight passes");
+               "null data FNV preflight reason is NullData");
+
+    const fuse::u8 byte = 42;
+    expectTrue(fuse::project::preflight_fnv1a64_bytes(&byte, 1u).ok(),
+               "non-null data passes FNV preflight");
 
     const fuse::project::CookHashPreflight empty_path =
         fuse::project::preflight_file_content_hash("");
@@ -1058,8 +1063,6 @@ void testCookCacheReconcileEstimators() {
                    fuse::project::CookHashRejectReason::UnknownDependencyOutput)) == "unknown_dependency_output",
                "reject reason label for unknown dependency output");
 
-    tex.input_path = tex_source;
-    tex.output_path = "/tmp/fuse_b79_preflight_tex.fusetex";
     expectTrue(fuse::project::preflight_texture_import_hash(tex).ok(), "readable texture import passes preflight");
 
     const std::string audio_source = writeTempFile("/tmp/fuse_b79_preflight_audio.wav", "# preflight audio\n");
@@ -1095,7 +1098,6 @@ void testCookCacheEntryPreflightGuards() {
     expectTrue(fuse::project::preflight_combine_cook_cache_key(99u, 42u).ok(),
                "valid source and upstream pass combine cache key preflight");
 
-    expectTrue(fuse::project::preflight_texture_import_hash(tex).ok(),
 
     audio.input_path = source;
     expectTrue(fuse::project::preflight_audio_import_hash(audio).ok(),
@@ -1121,7 +1123,6 @@ void testCookCacheEntryPreflightGuards() {
     fuse::project::CookCacheEntry zero_entry = valid_entry;
     zero_entry.content_hash = 0;
     expectTrue(fuse::project::preflight_cook_cache_entry(zero_entry).reason ==
-    const std::string dep = writeTempFile("/tmp/fuse_b79_preflight_dep.obj", "# preflight dep\n");
     fuse::project::CookManifestEntry dep_entry;
     dep_entry.kind = fuse::project::CookAssetKind::Mesh;
     dep_entry.source_path = dep;
@@ -1129,7 +1130,6 @@ void testCookCacheEntryPreflightGuards() {
     manifest.assets.push_back(dep_entry);
 
     expectTrue(!fuse::project::preflight_upstream_dependencies_hash({"/tmp/fuse_b79_missing_dep.fusemesh"}, manifest)
-                    .ok(),
                "unknown dependency output fails upstream preflight");
     expectTrue(fuse::project::preflight_upstream_dependencies_hash({"/tmp/fuse_b79_missing_dep.fusemesh"}, manifest)
                        .reason == fuse::project::CookHashRejectReason::UnknownDependencyOutput,
@@ -1142,10 +1142,8 @@ void testCookCacheEntryPreflightGuards() {
     with_dep.dependencies.push_back(dep_entry.output_path);
     expectTrue(fuse::project::preflight_manifest_entry_hash(with_dep, manifest).ok(),
                "manifest entry with resolved dependency passes preflight");
-}
 
 void testCookCachePruneReconcileEstimate() {
-    fuse::project::CookCache cache;
     const fuse::project::CookCachePruneEstimate empty_estimate = cache.estimate_prune_reconcile();
     expectTrue(empty_estimate.invalid_count == 0u && empty_estimate.stale_count == 0u,
                "empty cache prune estimate is zero");
@@ -1153,12 +1151,8 @@ void testCookCachePruneReconcileEstimate() {
     expectTrue(cache.count_stale_entries() == 0u, "empty cache stale count is zero");
 
     const std::string source = writeTempFile("/tmp/fuse_b79_prune_est.obj", "# prune est v1\n");
-    fuse::project::MeshImportDesc desc;
-    desc.input_path = source;
     desc.output_path = "/tmp/fuse_b79_prune_est.fusemesh";
 
-    fuse::project::AssetCooker cooker;
-    const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
     expectTrue(seeded.ok, "seed cook for prune estimate ok");
 
     const fuse::project::CookCachePruneEstimate fresh_estimate = cooker.cache().estimate_prune_reconcile();
@@ -1172,8 +1166,24 @@ void testCookCachePruneReconcileEstimate() {
     expectTrue(stale_estimate.total() == cooker.cache().count_prunable_entries(),
                "prune estimate total matches prunable count");
 
-    const fuse::u32 removed = cooker.cache().prune_all();
     expectTrue(removed == stale_estimate.total(), "prune_all removes estimated total");
+                   fuse::project::CookHashRejectReason::NullData)) == "null_data",
+               "reject reason label for null data");
+
+    fuse::project::CookManifestEntry entry;
+    entry.kind = fuse::project::CookAssetKind::Mesh;
+    entry.source_path = source;
+    entry.output_path = "/tmp/fuse_b79_preflight_mesh.fusemesh";
+    entry.dependencies.push_back(dep);
+    expectTrue(fuse::project::preflight_manifest_entry_hash(entry).ok(),
+               "manifest entry with readable dependency passes preflight");
+
+    entry.dependencies.push_back("/tmp/fuse_b79_missing_preflight_dep.obj");
+    expectTrue(!fuse::project::preflight_manifest_entry_hash(entry).ok(),
+               "manifest entry with unreadable dependency fails preflight");
+    expectTrue(fuse::project::preflight_manifest_entry_hash(entry).reason ==
+                   fuse::project::CookHashRejectReason::SourceUnreadable,
+               "unreadable dependency preflight reason is SourceUnreadable");
 }
 
 void testCookCacheInvalidationProbes() {
@@ -1240,6 +1250,12 @@ void testCookCacheInvalidationProbes() {
                "would_invalidate_stale_content rejects matching hash");
                "would_invalidate_stale_content with matching hash is false");
                "would_invalidate_stale_content with mismatched hash is true");
+    expectTrue(cooker.cache().probe_stale_content_sources({{source, seeded.content_hash}}).empty(),
+               "probe_stale_content with matching hash returns empty list");
+    expectTrue(cooker.cache().probe_stale_content_sources({{source, seeded.content_hash + 1u}}).size() == 1u,
+               "probe_stale_content with mismatched hash returns one source");
+    expectTrue(!cooker.cache().would_invalidate_stale_upstream_hashes({{source, 0u}}),
+               "would_invalidate_stale_upstream with matching upstream is false");
 
     writeTempFile(source, "# probe mesh updated\n");
     expectTrue(cooker.cache().count_stale_entries() == 1u, "count_stale reports content-drift entry");

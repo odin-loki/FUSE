@@ -305,6 +305,11 @@ bool AssetCooker::would_stale_dependency_invalidation(const CookManifest& manife
 
 u32 AssetCooker::estimate_cache_prune() const {
     return m_cache.estimate_prune_all();
+bool AssetCooker::would_invalidate_upstream(const CookManifest& manifest,
+
+bool AssetCooker::would_reconcile_stale_dependencies(const CookManifest& manifest) const {
+
+u32 AssetCooker::count_prune_reconcile() const {
 
 u32 AssetCooker::count_stale_dependency_invalidation(const CookManifest& manifest) const {
     return estimate_stale_dependency_hashes(manifest).total_entries();
