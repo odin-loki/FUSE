@@ -2645,3 +2645,13 @@ void testHrtfBinauralCompositeRejectReasonWrappers() {
 
 // --- deepen additive from deepen-b72-hrtf-reject-reasons-d084 ---
                    || reason == fuse::audio::HrtfIrRejectReason::EmptyIr,
+
+// --- deepen additive from binaural-hrtf-reject-reasons-5f75 ---
+    expectTrue(rejects.convolution == fuse::audio::HrtfIrRejectReason::NullSamples,
+    expectTrue(rejects.spatialPan == fuse::audio::HrtfPanPathRejectReason::None,
+    expectTrue(rejects.narrowing == fuse::audio::HrtfAttenuationCouplingRejectReason::None,
+    expectTrue(rejects.convolution == fuse::audio::HrtfIrRejectReason::None,
+    expectTrue(rejects.narrowing == fuse::audio::HrtfAttenuationCouplingRejectReason::UnityAttenuation,
+    expectTrue(rejects.spatialPan == fuse::audio::HrtfPanPathRejectReason::HrtfDisabled,
+    expectTrue(rejects.spatialPan == fuse::audio::HrtfPanPathRejectReason::CoLocated,
+    expectTrue(rejects.narrowing == fuse::audio::HrtfAttenuationCouplingRejectReason::BypassPath,

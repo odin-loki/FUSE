@@ -2245,3 +2245,11 @@ bool hrtf_binaural_preflight_rejects_for_reason(const HrtfBinauralPreflight& pre
 
 // --- deepen additive from deepen-b72-hrtf-reject-reasons-d084 ---
 bool try_preflight_hrtf_attenuation_coupling_narrow(
+
+// --- deepen additive from binaural-hrtf-reject-reasons-5f75 ---
+    const HrtfIrRejectReason reject = classify_hrtf_ir_reject(preflight);
+    const HrtfPanPathRejectReason reject = classify_hrtf_pan_path_reject(preflight);
+bool try_preflight_spatial_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
+bool try_preflight_hrtf_spatial_narrowing(HrtfPanPath path, float distance_attenuation,
+HrtfBinauralRejectBundle classify_hrtf_binaural_rejects(const HrtfBinauralPreflight& preflight) {
+                                 const BinauralPanParams& params, HrtfBinauralPreflight& preflight,
