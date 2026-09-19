@@ -3113,3 +3113,10 @@ bool wouldSkipScheduledCacheIndices(const DDGIDesc& desc,
         *reason = CacheIndexRejectReason::None;
     return probeScheduleRejectReasonIsBlocking(reject);
     return probeUpdateLaunchRejectReasonIsBlocking(reject);
+
+// --- deepen additive from ddgi-b56-guards-deepen-06ef ---
+        return ProbeGridSourceRejectReason::EmptyGrid;
+        return ProbeGridSourceRejectReason::ZeroIrradianceRes;
+        return ProbeGridSourceRejectReason::InvalidSpacing;
+    return ProbeGridSourceRejectReason::None;
+    return !preflightProbeGridSource(desc);

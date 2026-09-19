@@ -4240,3 +4240,25 @@ void testDdgiProbeGridSourceGuards() {
 
 // --- deepen additive from deepen-ddgi-b56-guards-aa73 ---
                "wouldSkipProbeGridSource false for valid init desc");
+
+// --- deepen additive from ddgi-b56-guards-deepen-06ef ---
+void testProbeGridSourcePreflights() {
+    expectTrue(fuse::renderer::classifyProbeGridSourceReject(desc) ==
+    expectTrue(fuse::renderer::preflightProbeGridSource(desc),
+    expectTrue(!fuse::renderer::wouldSkipProbeGridSource(desc),
+    expectTrue(fuse::renderer::classifyProbeGridSourceReject(empty) ==
+    expectTrue(fuse::renderer::wouldSkipProbeGridSource(empty),
+    expectTrue(fuse::renderer::classifyProbeGridSourceReject(zeroRes) ==
+    expectTrue(fuse::renderer::classifyProbeGridSourceReject(badSpacing) ==
+void testProbeTrilinearSamplePreflights() {
+void testWouldSkipSampleCoordPreflight() {
+               "build coords for wouldSkip sample-coord preflight");
+void testProbeScheduleAtRatePreflights() {
+               "count-only preflightCacheIndexLookup succeeds for valid index");
+               "count-only preflightCacheIndexLookup rejects OOB index");
+               "wouldSkipProbeLookup false for accessible cache");
+               "wouldSkipProbeLookup true for null cache");
+    testProbeGridSourcePreflights();
+    testProbeTrilinearSamplePreflights();
+    testWouldSkipSampleCoordPreflight();
+    testProbeScheduleAtRatePreflights();
