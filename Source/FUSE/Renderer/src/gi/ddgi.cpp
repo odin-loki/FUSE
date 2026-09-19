@@ -2073,3 +2073,7 @@ void DDGI::releaseResources() {
 }
 
 } // namespace fuse::renderer
+
+// --- deepen additive from deepen-ddgi-probe-guards-964a ---
+    if (!ProbeGridLayout::tryBuildProbeSampleCoords(desc, world_position, coords)) {
+bool probeSampleSkipReasonIsBlocking(ProbeSampleSkipReason reason) {

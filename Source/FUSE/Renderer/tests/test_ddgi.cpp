@@ -1974,3 +1974,15 @@ int main() {
     std::fprintf(stderr, "fuse_ddgi: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+// --- deepen additive from deepen-ddgi-probe-guards-964a ---
+void testBorderProbeIndexGuards() {
+    expectTrue(fuse::renderer::ProbeGridLayout::tryBuildProbeSampleCoords(desc, {1.5f, 1.5f, 1.5f}, built),
+               "tryBuildProbeSampleCoords succeeds for interior sample");
+    expectTrue(fuse::renderer::ProbeGridLayout::tryBuildProbeSampleCoords(borderDesc, {0.f, 0.f, 0.f}, border),
+               "tryBuildProbeSampleCoords succeeds for border sample");
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryBuildProbeSampleCoords(empty, {0.f, 0.f, 0.f}, emptyBuilt),
+               "tryBuildProbeSampleCoords fails on empty grid");
+void testCacheSizingGuards() {
+    expectTrue(!fuse::renderer::probeSampleSkipReasonIsBlocking(ProbeSampleSkipReason::None),
+    expectTrue(fuse::renderer::probeSampleSkipReasonIsBlocking(ProbeSampleSkipReason::UndersizedCache),

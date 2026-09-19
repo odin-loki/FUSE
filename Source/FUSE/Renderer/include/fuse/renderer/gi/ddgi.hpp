@@ -725,3 +725,7 @@ bool tryLaunch_ddgi_probe_update(const DDGIDesc& desc,
                                  ProbeUpdateLaunchRejectReason& outReason);
 
 } // namespace fuse::renderer
+
+// --- deepen additive from deepen-ddgi-probe-guards-964a ---
+enum class ProbeSampleSkipReason : u8 {
+bool probeSampleSkipReasonIsBlocking(ProbeSampleSkipReason reason);
