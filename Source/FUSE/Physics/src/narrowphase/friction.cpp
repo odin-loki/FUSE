@@ -1395,5 +1395,10 @@ bool normalize_contact_normal_for_friction(ContactManifold& manifold, f32 length
 
         normalize_contact_normal_for_friction(manifold, epsilon);
     rebuild_friction_basis_if_needed(manifold, epsilon);
+bool friction_basis_rejects_for_manifold(
+    FrictionBasisRejectReason expected) {
+    return friction_basis_reject_reason(manifold) == expected;
+
+    if (!can_finalize_contact_manifold(manifold)) {
 
 } // namespace fuse::physics::narrowphase

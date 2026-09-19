@@ -328,6 +328,11 @@ bool should_skip_contact_buffer_write_slot(
 
 /// Non-mutating slot-write skip predicate — inverse of `canWrite` (B4.6 deepen pass).
 
+    bool outOfRange = false;
+
+
+
+
 
 /// Human-readable label for contact-buffer compaction reject reasons (B4.6 deepen pass).
 const char* contact_buffer_compaction_reject_reason_name(ContactBufferCompactionRejectReason reason);
@@ -1222,6 +1227,22 @@ bool write_contact_buffer_slot_with_preflight(
 
 
 /// Const preflight for contact-buffer max-capacity clamp (B4.5 deepen follow-up pass).
+    const ContactBufferSoA& buffer,
+
+
+};
+
+
+/// Returns true when compaction should be skipped (B4.6 deepen pass).
+
+/// Returns true when compaction should run (B4.6 deepen pass).
+
+    None = 0,
+    EmptyBuffer,
+
+
+
+
 struct ContactBufferClampPreflight {
     ContactBufferClampRejectReason reason = ContactBufferClampRejectReason::None;
     bool emptyBuffer = false;
@@ -1445,6 +1466,24 @@ ContactBufferCompactAndClampPreflight preflightContactBufferCompactAndClamp(
 /// Non-mutating compact-and-clamp predicate — mirrors `preflightContactBufferCompactAndClamp` (B4.6 deepen pass).
 
 void writeContactBufferSlotWithPreflight(
+
+
+/// Returns true when clamp should be skipped (B4.6 deepen pass).
+
+/// Returns true when clamp should run (B4.6 deepen pass).
+
+
+
+
+
+
+
+
+/// Returns true when compact-and-clamp should be skipped (B4.6 deepen pass).
+
+/// Returns true when compact-and-clamp should run (B4.6 deepen pass).
+
+void write_contact_buffer_slot_with_preflight(
     ContactBufferSoA& buffer,
     u32 slot,
     const ContactManifold& manifold);
@@ -1681,5 +1720,8 @@ bool shouldRunContactBufferFrictionRebuild(const ContactBufferSoA& buffer, f32 e
 /// Returns true when contact-buffer compact-and-clamp should be skipped (B4.5 deepen follow-up pass).
 
 /// Returns true when contact-buffer compact-and-clamp should run (B4.5 deepen follow-up pass).
+
+u32 clamp_contact_buffer_with_preflight(ContactBufferSoA& buffer);
+
 
 } // namespace fuse::physics::narrowphase

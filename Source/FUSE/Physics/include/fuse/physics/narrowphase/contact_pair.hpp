@@ -1283,11 +1283,8 @@ bool contact_pair_deepen_rejected(
 /// Returns true when extended preflight would reject before buffer slot write (B4.6 deepen pass).
 bool should_skip_contact_pair_for_buffer(
     const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Detect contacts only when extended deepen preflight passes; invalid manifold otherwise (B4.6 deepen pass).
-ContactManifold detect_contacts_pair_with_preflight(
 
 /// Returns true when both shapes resolve to capsule types (B4.6 deepen pass).
 bool is_capsule_capsule_contact_pair(
@@ -1299,12 +1296,10 @@ bool is_box_plane_contact_pair(
 ContactPairRejectReason first_contact_pair_deepen_reject_in_batch(
 /// Returns the first deepen reject reason in `pairs`, or `None` when all may dispatch (B4.6 deepen pass).
 ContactPairRejectReason first_contact_pair_deepen_reject_reason(
-/// Run shape dispatch only when extended deepen preflight passes (B4.6 deepen pass).
 ContactManifold detect_contacts_pair_with_deepen_preflight(
 
 /// Collect pairs that pass extended deepen preflight without mutating input (B4.6 deepen pass).
 std::vector<broadphase::CandidatePair> filter_dispatchable_contact_pairs(
-    const std::vector<broadphase::CandidatePair>& pairs,
 
 /// Non-mutating deepen-dispatch skip predicate — mirrors `should_skip_contact_pair_deepen_dispatch` (B4.6 deepen pass).
 bool can_skip_contact_pair_deepen_dispatch(
@@ -1391,7 +1386,6 @@ bool generate_contact_manifold_with_preflight(
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
 /// Count pairs rejected by extended deepen preflight (B4.6 deepen pass).
-u32 count_rejected_contact_pairs(
 
 /// Returns true when narrowphase batch should be skipped before dispatch (B4.6 deepen pass).
 bool should_skip_narrowphase_batch(
@@ -1399,6 +1393,7 @@ bool should_skip_narrowphase_batch(
 bool finalize_contact_manifold_if_needed(ContactManifold& manifold);
 /// Detect contacts only when extended deepen preflight allows dispatch (B4.6 deepen pass).
 ContactManifold detect_contacts_pair_if_dispatchable(
+/// Run shape dispatch only when extended deepen preflight allows (B4.6 deepen pass).
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -1415,5 +1410,7 @@ struct NarrowphaseSlotPreflight {
 
 /// Populate slot preflight without running shape dispatch or buffer write (B4.6 deepen pass).
 NarrowphaseSlotPreflight preflight_narrowphase_slot(
+/// Finalize only when deepen preflight and finalize preflight both pass (B4.6 deepen pass).
+bool generate_contact_manifold_with_deepen_preflight(ContactManifold& manifold);
 
 } // namespace fuse::physics::narrowphase
