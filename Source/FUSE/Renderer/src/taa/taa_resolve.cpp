@@ -384,6 +384,20 @@ bool preflightTaaResolveHistoryReuse(const TaaResolveDesc& desc, const TaaHistor
     return preflightTaaHistoryReuse(history, observedGeneration, reason);
 }
 
+bool tryPreflightTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                            TaaResolveSkipReason& reason) {
+    reason = classifyTaaResolveSkip(desc, history);
+    return !taaResolveSkipReasonIsBlocking(reason);
+}
+
+bool shouldSkipTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return !preflightTaaResolve(desc, history);
+}
+
+bool taaResolveReady(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return preflightTaaResolve(desc, history);
+}
+
 TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaHistoryCanAccumulate(history)) {
         return TaaResolveSkipReason::HistoryNotReady;
@@ -1147,6 +1161,10 @@ bool tryPreflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHis
 
 bool taaResolveBlendReady(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     return !shouldSkipTaaResolveBlend(desc, history);
+}
+
+bool taaResolveBlendReady(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return preflightTaaResolveBlendWeights(desc, history);
 }
 
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {

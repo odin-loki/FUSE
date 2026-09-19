@@ -34,6 +34,7 @@ public:
     bool isWarmupFrame() const;
     /// True when temporal history reuse is allowed for the observed invalidate epoch (B5.9 deepen).
     bool preflightReuse(u32 observedGeneration) const;
+    /// True when history is allocated and warmed for temporal reuse (B5.9 deepen).
     /// True until the first successful resolve warms the ping-pong targets.
     bool needsWarmup() const { return !m_validity.hasValidHistory; }
     /// True when history targets are allocated and warmed for temporal reuse (B5.9 deepen).
