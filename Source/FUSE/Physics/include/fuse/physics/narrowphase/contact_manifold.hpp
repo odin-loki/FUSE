@@ -1391,6 +1391,7 @@ bool can_skip_manifold_prune_after_normalize(
 
 /// Chain prune then finalize only when both preflights allow (B4.6 deepen follow-up pass).
 
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }

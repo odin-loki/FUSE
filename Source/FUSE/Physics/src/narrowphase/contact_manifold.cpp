@@ -2439,16 +2439,15 @@ bool can_skip_manifold_prune_after_normalize(
     normalize_contact_normal_if_needed(normalized, lengthEpsilon);
     return should_skip_manifold_prune(
         normalized, separationEpsilon, duplicateEpsilon, shallowMinDepth);
-}
 
 
     if (prunePreflight.reason == ManifoldPruneRejectReason::AllSeparated) {
-        return false;
     if (prunePreflight.reason == ManifoldPruneRejectReason::EmptyManifold) {
 
     if (!prunePreflight.can_skip_prune(shallowMinDepth)) {
 
     if (!normalize_contact_normal_if_needed(manifold, frictionEpsilon)) {
+
 
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

@@ -1586,17 +1586,18 @@ bool should_run_narrowphase_batch(
 /// Non-mutating deepen dispatch predicate — inverse of `should_skip_contact_pair_deepen_dispatch` (B4.6 deepen pass).
 
 /// Non-mutating batch predicate — inverse of `narrowphase_batch_rejects_all` (B4.6 deepen pass).
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 /// Populate detect dispatch preflight without running shape dispatch (B4.6 deepen follow-up pass).
 ContactPairDispatchPreflight preflight_detect_contacts_pair(
-    const broadphase::CandidatePair& pair,
-    const CollisionShapeSoA& shapes,
     bool useDeepenReject = false);
 
 /// Returns true when `detect_contacts_pair` should early-out (B4.6 deepen follow-up pass).
 bool should_skip_detect_contacts_pair(
 
 /// Run shape dispatch only when preflight allows; returns invalid manifold otherwise (B4.6 deepen follow-up pass).
+/// Run shape dispatch only when extended deepen preflight passes (B4.6 deepen pass).
+ContactManifold detect_contacts_pair_deepen(
+
+/// Finalize manifold with prune+finalize preflight gates (B4.6 deepen pass).
+bool generate_contact_manifold_deepen(ContactManifold& manifold);
 
 } // namespace fuse::physics::narrowphase

@@ -804,4 +804,5 @@ bool can_skip_friction_basis_rebuild_after_normalize(
 
 /// Build friction tangents only when preflight allows; returns false when skipped (B4.6 deepen follow-up pass).
 
+
 } // namespace fuse::physics::narrowphase

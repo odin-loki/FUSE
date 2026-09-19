@@ -17020,6 +17020,165 @@ void testNarrowphasePairSlotPass2Guards() {
         "pair slot preflight reports NonCanonicalPair");
 }
 
+void testContactBufferPreflightGuards() {
+    fuse::physics::narrowphase::ContactBufferSoA buffer;
+    expectTrue(buffer.canSkipSoAIteration(), "empty buffer skips SoA iteration");
+    expectEq(buffer.countValidSlots(), 0u, "countValidSlots early-outs when empty");
+
+    const auto emptyCompaction =
+        fuse::physics::narrowphase::preflight_contact_buffer_compaction(buffer);
+    expectTrue(emptyCompaction.emptyBuffer, "compaction preflight marks empty buffer");
+    expectTrue(
+        fuse::physics::narrowphase::can_skip_contact_buffer_compaction(buffer),
+        "can_skip compaction on empty buffer");
+
+    const auto emptyClamp = fuse::physics::narrowphase::preflight_contact_buffer_clamp(buffer);
+    expectTrue(emptyClamp.emptyBuffer, "clamp preflight marks empty buffer");
+    expectTrue(
+        fuse::physics::narrowphase::can_skip_contact_buffer_clamp(buffer),
+        "can_skip clamp on empty buffer");
+
+    const auto emptyFriction =
+        fuse::physics::narrowphase::preflight_contact_buffer_friction_bases(buffer);
+    expectTrue(emptyFriction.emptyBuffer, "friction-bases preflight marks empty buffer");
+    expectTrue(
+        fuse::physics::narrowphase::can_skip_contact_buffer_friction_bases(buffer),
+        "can_skip friction-bases on empty buffer");
+
+    const auto emptyCompactClamp =
+        fuse::physics::narrowphase::preflight_contact_buffer_compact_and_clamp(buffer);
+    expectTrue(emptyCompactClamp.emptyBuffer, "compact-and-clamp preflight marks empty buffer");
+    expectEq(
+        fuse::physics::narrowphase::compact_and_clamp_contact_buffer_with_preflight(buffer),
+        0u,
+        "compact_and_clamp_with_preflight early-outs on empty buffer");
+
+    buffer.preparePairSlots(2u);
+    fuse::physics::narrowphase::ContactManifold valid{};
+    valid.valid = true;
+    valid.bodyA = 0u;
+    valid.bodyB = 1u;
+    valid.contactNormal = {0.f, 1.f, 0.f};
+    valid.addPoint({0.f, 0.f, 0.f}, 0.5f);
+
+    const auto validWrite =
+        fuse::physics::narrowphase::preflight_contact_buffer_write_slot(buffer, 0u, valid);
+    expectTrue(validWrite.canWrite(), "write-slot preflight accepts valid manifold");
+
+    fuse::physics::narrowphase::ContactManifold selfPair = valid;
+    selfPair.bodyB = selfPair.bodyA;
+    expectTrue(
+        fuse::physics::narrowphase::contact_buffer_write_slot_rejects_for_reason(
+            buffer,
+            1u,
+            selfPair,
+            fuse::physics::narrowphase::ContactBufferWriteSlotRejectReason::SelfPair),
+        "write-slot rejects_for_reason flags self pair");
+    expectTrue(
+        fuse::physics::narrowphase::should_skip_contact_buffer_write_slot(buffer, 1u, selfPair),
+        "should_skip write-slot on self pair");
+    buffer.writeSlot(0u, valid);
+    buffer.writeSlot(1u, selfPair);
+    expectTrue(buffer.countValidSlots() == 1u, "writeSlot ignores self pair via preflight");
+
+    const auto needsCompaction =
+        fuse::physics::narrowphase::preflight_contact_buffer_compaction(buffer);
+    expectTrue(needsCompaction.needsCompaction(), "compaction preflight needs work with hole in slots");
+    expectEq(buffer.compact(), 1u, "compact gathers valid slot via preflight gate");
+
+    const auto allValidCompaction =
+        fuse::physics::narrowphase::preflight_contact_buffer_compaction(buffer);
+    expectTrue(allValidCompaction.allValid, "compaction preflight marks all-valid buffer");
+    expectTrue(
+        fuse::physics::narrowphase::contact_buffer_compaction_rejects_for_reason(
+            buffer, fuse::physics::narrowphase::ContactBufferCompactionRejectReason::AllValid),
+        "compaction rejects_for_reason flags all-valid buffer");
+
+    buffer.setMaxCapacity(1u);
+    fuse::physics::narrowphase::ContactManifold shallow = valid;
+    shallow.bodyB = 2u;
+    shallow.penetrationDepth = 0.1f;
+    shallow.points[0].penetration = 0.1f;
+    fuse::physics::narrowphase::ContactManifold deep = valid;
+    deep.bodyB = 3u;
+    deep.penetrationDepth = 0.9f;
+    deep.points[0].penetration = 0.9f;
+
+    buffer.preparePairSlots(2u);
+    buffer.writeSlot(0u, shallow);
+    buffer.writeSlot(1u, deep);
+    buffer.compact();
+    expectTrue(buffer.canApplyMaxCapacityClamp(), "overflow buffer requests post clamp");
+    const auto needsClamp = fuse::physics::narrowphase::preflight_contact_buffer_clamp(buffer);
+    expectTrue(needsClamp.needsClamp(), "clamp preflight needs work when over capacity");
+    expectEq(buffer.applyMaxCapacityClamp(), 1u, "applyMaxCapacityClamp truncates via preflight gate");
+    expectNear(buffer.manifoldAt(0u).penetrationDepth, 0.9f, 1e-4f, "clamp keeps deepest contact");
+
+    expectTrue(
+        std::strcmp(
+            fuse::physics::narrowphase::contact_buffer_clamp_reject_reason_name(
+                fuse::physics::narrowphase::ContactBufferClampRejectReason::WithinCapacity),
+            "WithinCapacity") == 0,
+        "clamp reject reason name resolves WithinCapacity");
+}
+
+void testNarrowphaseDeepenPassGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 dynamicA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 dynamicB = bodies.addBody({1.5f, 0.f, 0.f}, 1.f);
+    const fuse::u32 sleepingA = bodies.addBody({0.f, 2.f, 0.f}, 1.f, fuse::physics::RB_SLEEPING);
+    const fuse::u32 sleepingB = bodies.addBody({0.f, 3.f, 0.f}, 1.f, fuse::physics::RB_SLEEPING);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, dynamicA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, dynamicB, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, sleepingA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, sleepingB, {1.f, 0.f, 0.f});
+
+    const auto sleepingManifold = fuse::physics::narrowphase::detect_contacts_pair_deepen(
+        {sleepingA, sleepingB}, bodies, shapes);
+    expectTrue(!sleepingManifold.valid, "detect_contacts_pair_deepen rejects sleeping pair");
+
+    const auto validManifold = fuse::physics::narrowphase::detect_contacts_pair_deepen(
+        {dynamicA, dynamicB}, bodies, shapes);
+    expectTrue(validManifold.valid, "detect_contacts_pair_deepen accepts valid pair");
+
+    fuse::physics::narrowphase::ContactBufferSoA buffer;
+    fuse::physics::narrowphase::runNarrowphaseIntoBuffer({{sleepingA, sleepingB}}, bodies, shapes, buffer);
+    expectTrue(buffer.isEmpty(), "runNarrowphaseIntoBuffer early-outs when all pairs deepen-rejected");
+
+    fuse::physics::narrowphase::ContactManifold ready =
+        fuse::physics::narrowphase::collideSphereSphere({0.f, 0.f, 0.f}, 1.f, {1.5f, 0.f, 0.f}, 1.f, 0u, 1u);
+    expectTrue(
+        fuse::physics::narrowphase::generate_contact_manifold_deepen(ready),
+        "generate_contact_manifold_deepen finalizes valid manifold");
+    expectTrue(ready.hasFrictionBasis(), "generate_contact_manifold_deepen builds friction basis");
+
+    fuse::physics::narrowphase::ContactManifold dirty{};
+    dirty.contactNormal = {0.f, 1.f, 0.f};
+    dirty.addPoint({0.f, 0.f, 0.f}, 0.4f);
+    dirty.addPoint({1.f, 0.f, 0.f}, -0.2f);
+    expectTrue(
+        fuse::physics::narrowphase::prune_and_finalize_contact_manifold_with_preflight(dirty),
+        "prune_and_finalize_with_preflight keeps penetrating slots");
+    expectTrue(dirty.valid, "prune_and_finalize_with_preflight sets validity");
+    expectTrue(dirty.pointCount == 1u, "prune_and_finalize_with_preflight removes separated slot");
+
+    fuse::physics::narrowphase::ContactManifold needsTangents{};
+    needsTangents.contactNormal = {0.f, 1.f, 0.f};
+    needsTangents.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    fuse::physics::narrowphase::compute_friction_tangents_with_preflight(needsTangents);
+    expectTrue(needsTangents.hasFrictionBasis(), "compute_friction_tangents_with_preflight builds basis");
+
+    needsTangents.buildFrictionBasis();
+    const auto cachedTangent1 = needsTangents.frictionBasis.tangent1;
+    fuse::physics::narrowphase::compute_friction_tangents_with_preflight(needsTangents);
+    expectNear(
+        needsTangents.frictionBasis.tangent1.x,
+        cachedTangent1.x,
+        1e-4f,
+        "compute_friction_tangents_with_preflight preserves cached basis");
+}
+
 } // namespace
 
 int main() {
