@@ -292,4 +292,62 @@ bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilo
     return rebuild_friction_basis_if_needed(manifold, epsilon);
 }
 
+const char* contact_normal_normalize_reject_reason_name(ContactNormalNormalizeRejectReason reason) {
+    switch (reason) {
+    case ContactNormalNormalizeRejectReason::None:
+        return "None";
+    case ContactNormalNormalizeRejectReason::EmptyManifold:
+        return "EmptyManifold";
+    case ContactNormalNormalizeRejectReason::InvalidNormal:
+        return "InvalidNormal";
+    case ContactNormalNormalizeRejectReason::AlreadyUnit:
+        return "AlreadyUnit";
+    }
+    return "Unknown";
+}
+
+ContactNormalNormalizeRejectReason contact_normal_normalize_reject_reason(
+    const ContactManifold& manifold,
+    f32 lengthEpsilon) {
+    if (manifold.empty()) {
+        return ContactNormalNormalizeRejectReason::EmptyManifold;
+    }
+    if (!manifold.hasValidNormal()) {
+        return ContactNormalNormalizeRejectReason::InvalidNormal;
+    }
+    if (!contact_normal_needs_normalize(manifold, lengthEpsilon)) {
+        return ContactNormalNormalizeRejectReason::AlreadyUnit;
+    }
+    return ContactNormalNormalizeRejectReason::None;
+}
+
+bool contact_normal_normalize_rejects_for_reason(
+    const ContactManifold& manifold,
+    ContactNormalNormalizeRejectReason expected,
+    f32 lengthEpsilon) {
+    return contact_normal_normalize_reject_reason(manifold, lengthEpsilon) == expected;
+}
+
+ContactNormalNormalizePreflight preflight_contact_normal_normalize(
+    const ContactManifold& manifold,
+    f32 lengthEpsilon) {
+    ContactNormalNormalizePreflight preflight{};
+    preflight.reason = contact_normal_normalize_reject_reason(manifold, lengthEpsilon);
+    if (preflight.reason != ContactNormalNormalizeRejectReason::None) {
+        preflight.skipped = true;
+        return preflight;
+    }
+    preflight.needsNormalize = contact_normal_needs_normalize(manifold, lengthEpsilon);
+    return preflight;
+}
+
+bool normalize_contact_normal_with_preflight(ContactManifold& manifold, f32 lengthEpsilon) {
+    if (!preflight_contact_normal_normalize(manifold, lengthEpsilon).can_normalize()) {
+        return false;
+    }
+    const f32 normalLength = manifold.contactNormal.length();
+    manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+    return true;
+}
+
 } // namespace fuse::physics::narrowphase
