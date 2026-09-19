@@ -555,6 +555,16 @@ enum class DensityLookupRejectReason : u8 {
     CoordOutOfRange,
 };
 
+/// Why a froxel trilinear density sample preflight rejected the request (B5.11 deepen).
+enum class FroxelTrilinearSampleRejectReason : u8 {
+    None = 0,
+    LookupFailed,
+    InvalidSampleCoords,
+};
+
+/// Human-readable label for trilinear sample reject reasons (logging / tests).
+const char* froxelTrilinearSampleRejectReasonLabel(FroxelTrilinearSampleRejectReason reason);
+
 /// Human-readable label for density lookup reject reasons (logging / tests).
 const char* densityLookupRejectReasonLabel(DensityLookupRejectReason reason);
 
@@ -665,6 +675,13 @@ bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
                          u32 sliceZ,
                          DensityLookupRejectReason& outReason);
 /// Diagnose why tile/slice coord lookup preflight would reject; vacuously succeeds on accessible grids.
+bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
+                         const FroxelGridDesc& desc,
+                         u32 tileX,
+                         u32 tileY,
+                         u32 sliceZ,
+                         DensityLookupRejectReason& outReason);
+/// Diagnose why coord lookup preflight would reject; vacuously succeeds on accessible grids.
 bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
                          const FroxelGridDesc& desc,
                          u32 tileX,
@@ -825,6 +842,8 @@ bool tryCanSampleAtCoordsStrict(const FroxelDensityGrid& grid,
                                 SampleCoordRejectReason& outReason);
 /// Diagnose why coord-based trilinear sample preflight would reject (unified reject reasons).
 bool tryCanSampleAtCoords(const FroxelDensityGrid& grid,
+/// Diagnose why trilinear sample preflight would reject.
+bool tryCanSampleDensityTrilinear(const FroxelDensityGrid& grid,
 /// True when at least one froxel exceeds `epsilon`; false when storage is empty.
 bool hasNonZeroDensity(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
 /// Early-out when the grid is inaccessible or uniformly below `epsilon`.
