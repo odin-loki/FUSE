@@ -141,8 +141,20 @@ bool isSnapStepValid(GizmoMode mode, const GizmoSnapSettings& settings);
 /// True when snap is enabled with a usable step for the active mode (B6.4 deepen pass).
 bool canApplySnap(GizmoMode mode, const GizmoSnapSettings& settings);
 
-/// True when snap is enabled but the mode step is unusable (B6.4 deepen pass).
-bool isSnapDegraded(GizmoMode mode, const GizmoSnapSettings& settings);
+/// True when screen or viewport fields are NaN / Inf (B6.4 deepen pass).
+bool isHitTestNonFinite(const GizmoHitTest& hit);
+
+/// True when ray direction components are NaN / Inf (B6.4 deepen pass).
+bool isRayDirectionNonFinite(const GizmoRay& ray);
+
+/// True when ray direction length is non-zero but not unit length (B6.4 deepen pass).
+bool isRayUnnormalized(const GizmoRay& ray);
+
+/// True when the active axis is incompatible with the gizmo mode (B6.4 deepen pass).
+bool isAxisValidForMode(GizmoAxis axis, GizmoMode mode);
+
+/// True when snap is enabled and the mode step is negative (B6.4 deepen pass).
+bool isSnapStepNegative(GizmoMode mode, const GizmoSnapSettings& settings);
 
 /// Read-only pick diagnostics — no mutation (B6.4 deepen follow-up — pick guard).
 struct PickPreflight {
@@ -153,11 +165,14 @@ struct PickPreflight {
     bool outOfBounds = false;
     bool screenMiss = false;
     bool pickMiss = false;
+    bool nonFiniteInput = false;
+    /// Non-unit direction — pick still proceeds (B6.4 deepen pass).
+    bool unnormalizedRay = false;
     GizmoAxis axis = GizmoAxis::None;
 
     bool canPick() const {
         return !emptyRay && !emptyHit && !invalidPickConfig && !invalidDimensions && !outOfBounds &&
-               !screenMiss && !pickMiss;
+               !screenMiss && !pickMiss && !nonFiniteInput;
     }
 };
 
@@ -169,6 +184,7 @@ PickPreflight preflightPick(const GizmoHitTest& hit, GizmoMode mode);
 struct SnapPreflight {
     bool snapDisabled = false;
     bool invalidStep = false;
+    bool negativeStep = false;
 
     bool canApply() const { return !snapDisabled && !invalidStep; }
     /// Enabled snap with unusable step — drag still applies without grid rounding (B6.4 deepen pass).
@@ -202,6 +218,7 @@ struct BeginDragPreflight {
     bool outOfBounds = false;
     bool screenMiss = false;
     bool pickMiss = false;
+    bool nonFiniteInput = false;
     bool alreadyDragging = false;
     /// Resolved axis from pick preflight when `canBegin` (B6.4 deepen pass).
     GizmoAxis axis = GizmoAxis::None;
@@ -216,11 +233,14 @@ struct UpdateDragPreflight {
     bool invalidDimensions = false;
     bool outOfBounds = false;
     bool invalidActiveAxis = false;
+    bool nonFiniteInput = false;
+    bool modeAxisMismatch = false;
     /// Snap is enabled but the mode step is unusable — update still applies (B6.4 deepen pass).
     bool snapDegraded = false;
 
     bool canUpdate() const {
-        return !notDragging && !emptyHit && !invalidDimensions && !outOfBounds && !invalidActiveAxis;
+        return !notDragging && !emptyHit && !invalidDimensions && !outOfBounds && !invalidActiveAxis &&
+               !nonFiniteInput && !modeAxisMismatch;
     }
 };
 
@@ -238,6 +258,7 @@ bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis,
 struct EndDragPreflight {
     bool notDragging = false;
     bool invalidActiveAxis = false;
+    bool modeAxisMismatch = false;
     /// Snap is enabled but the mode step is unusable — end still applies (B6.4 deepen pass).
     bool snapDegraded = false;
 
@@ -600,6 +621,9 @@ public:
                                            const GizmoTransform& transform) const;
     [[nodiscard]] bool canUpdateInteraction(const GizmoHitTest& hit) const;
     [[nodiscard]] bool canEndInteraction() const;
+    /// Primary action allowed for the active lifecycle phase (B6.4 deepen pass).
+    [[nodiscard]] bool canActOnPhase(const GizmoHitTest& hit) const;
+    [[nodiscard]] bool canActOnPhase(const GizmoRay& ray, const GizmoTransform& transform) const;
     /// Guarded begin-drag — returns false on empty viewport / miss picks (B6.4 deepen follow-up).
     bool tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& current, GizmoResult& out);
     bool tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current, GizmoResult& out);
