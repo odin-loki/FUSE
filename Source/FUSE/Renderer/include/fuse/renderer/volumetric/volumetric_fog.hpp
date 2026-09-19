@@ -844,3 +844,8 @@ bool froxelBilinearSampleRejectReasonIsBlocking(FroxelBilinearSampleRejectReason
 bool tryCanBilinearSampleAtCoords(const FroxelDensityGrid& grid,
                                   FroxelBilinearSampleRejectReason& outReason);
 bool wouldSkipDensityBilinearSample(const FroxelDensityGrid& grid,
+
+// --- deepen additive from deepen-b511-froxel-classify-preflight-49bd ---
+    static bool wouldSkipScreenMapping(f32 screenX,
+bool preflightDensityTrilinearSample(const FroxelDensityGrid& grid,
+FroxelPopulateRejectReason classifyPopulateReject(const FroxelGridDesc& desc,

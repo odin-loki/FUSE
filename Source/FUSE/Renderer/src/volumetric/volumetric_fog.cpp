@@ -2188,3 +2188,11 @@ bool tryCanBilinearSampleAtCoords(const FroxelDensityGrid& grid,
 bool wouldSkipDensityBilinearSample(const FroxelDensityGrid& grid,
     return !tryCanBilinearSampleAtCoords(grid, desc, coords, reason);
     if (!tryCanBilinearSampleAtCoords(grid, desc, coords, outReason)) {
+
+// --- deepen additive from deepen-b511-froxel-classify-preflight-49bd ---
+bool FroxelGridLayout::wouldSkipScreenMapping(f32 screenX,
+    return !preflightScreenDepthMapping(screenX, screenY, viewDepth, desc, camera);
+bool preflightDensityTrilinearSample(const FroxelDensityGrid& grid,
+    return !tryCanSampleAtCoords(grid, desc, coords, reason);
+FroxelPopulateRejectReason classifyPopulateReject(const FroxelGridDesc& desc,
+    const FroxelPopulateRejectReason reject = classifyPopulateReject(desc, camera, params);
