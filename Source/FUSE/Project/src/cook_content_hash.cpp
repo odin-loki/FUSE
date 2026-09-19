@@ -605,6 +605,8 @@ CookHashPreflight preflight_manifest_entry_dependencies(const CookManifestEntry&
             continue;
         }
         const CookHashPreflight dependency_preflight = preflight_file_content_hash(dependency);
+        const CookHashPreflight dependency_preflight =
+            preflight_upstream_dependency_path(dependency_output, manifest);
         if (!dependency_preflight.can_hash) {
             return dependency_preflight;
         }
@@ -637,6 +639,28 @@ CookHashPreflight preflight_upstream_dependencies_hash(const std::vector<std::st
                 const CookHashPreflight source_preflight = preflight_file_content_hash(asset.source_path);
                 if (!source_preflight.can_hash) {
                     return source_preflight;
+
+CookHashPreflight preflight_upstream_dependency_path(const std::string& dependency_output_path,
+    CookHashPreflight preflight;
+    if (dependency_output_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyPath;
+        return preflight;
+    }
+
+        if (asset.output_path == dependency_output_path) {
+            return preflight_file_content_hash(asset.source_path);
+
+    preflight.reason = CookHashRejectReason::UnresolvedDependency;
+
+CookHashPreflight preflight_file_mtime_ns(const std::string& path) {
+    if (path.empty()) {
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+
+CookHashPreflight preflight_fnv1a64_combine(u64 left, u64 /*right*/) {
+    if (left == 0) {
+        preflight.reason = CookHashRejectReason::ZeroSourceHash;
 
 
 CookHashPreflight preflight_cook_cache_key(u64 source_hash, u64 /*upstream_hash*/) {

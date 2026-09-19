@@ -347,5 +347,12 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_manifest_dependency_coverage(
     const std::vector<std::string>& dependency_output_paths, const CookManifest& manifest);
 /// Mirrors `is_cacheable_cook_cache_key` — rejects zero source fold with `ZeroSourceHash` (B7.9 deepen).
+/// Empty-path guard for mtime reads — mirrors `file_mtime_ns` (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_file_mtime_ns(const std::string& path);
+/// Single dependency output path must resolve in the manifest (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_upstream_dependency_path(const std::string& dependency_output_path,
+                                                                 const CookManifest& manifest);
+/// FNV combine preflight — rejects zero left operand (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_fnv1a64_combine(u64 left, u64 right);
 
 } // namespace fuse::project
