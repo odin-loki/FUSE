@@ -4,6 +4,10 @@
 
 namespace fuse::physics {
 
+bool body_pair_in_range(u32 bodyCount, u32 bodyA, u32 bodyB) {
+    return bodyA < bodyCount && bodyB < bodyCount;
+}
+
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();
