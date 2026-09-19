@@ -405,3 +405,10 @@ bool TaaPass::preflightHistoryReuse(u32 observedGeneration) const {
 
 // --- deepen additive from deepen-taa-b59-guards-f7b5 ---
 bool TaaPass::preflightResolveBlend(const TaaResolveDesc& desc) const {
+
+// --- deepen additive from deepen-b59-taa-guards-27d7 ---
+bool TaaPass::preflightJitterSync(u32 frameIndex, TaaJitterSyncBlockReason* reason) const {
+    return m_jitter.preflightSync(frameIndex, m_desc.width, m_desc.height, reason);
+bool TaaPass::preflightResolveWithBlend(const TaaResolveDesc& desc, TaaResolveSkipReason* skipReason,
+                                        TaaResolveBlendRejectReason* blendReason) const {
+    return preflightTaaResolveWithBlend(desc, m_history, skipReason, blendReason);

@@ -3094,3 +3094,21 @@ void testTaaPassPreflightAndSyncGuards() {
     expectTrue(pass->preflightResolveBlend(resolveDesc), "pass blend preflight passes after warmup");
     expectTrue(pass->preflightHistoryReuse(0u), "pass reuse still valid with current generation");
     testTaaPassPreflightAndSyncGuards();
+
+// --- deepen additive from deepen-b59-taa-guards-27d7 ---
+void testHistoryWarmupCompositeGuards() {
+void testJitterSyncBlockGuards() {
+    expectTrue(fuse::renderer::preflightTaaJitterSync(5u, 128u, 128u, 8u, &reason),
+    expectTrue(!fuse::renderer::preflightTaaJitterSync(5u, 0u, 128u, 8u, &reason),
+    expectTrue(jitter.preflightSync(5u, 128u, 128u, &reason),
+               "default jitter preflightSync passes for valid viewport");
+    expectTrue(!jitter.preflightSync(5u, 0u, 128u, &reason),
+               "default jitter preflightSync fails for zero width");
+void testPreflightTaaResolveWithBlend() {
+    expectTrue(fuse::renderer::preflightTaaResolveWithBlend(desc, history, &skipReason, &blendReason),
+    expectTrue(blendReason == fuse::renderer::TaaResolveBlendRejectReason::None,
+    expectTrue(!fuse::renderer::preflightTaaResolveWithBlend(desc, history, &skipReason, &blendReason),
+void testTaaPassCompositeGuards() {
+    expectTrue(pass->preflightJitterSync(4u, &syncReason), "pass jitter sync preflight passes");
+    expectTrue(pass->preflightResolveWithBlend(resolveDesc, &skipReason, &blendReason),
+    testPreflightTaaResolveWithBlend();

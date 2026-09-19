@@ -258,3 +258,6 @@ enum class TaaResolveBlendPreflightRejectReason : u8 {
 const char* taaResolveBlendPreflightRejectReasonLabel(TaaResolveBlendPreflightRejectReason reason);
 TaaResolveBlendPreflightRejectReason diagnoseTaaResolveBlendPreflight(const TaaResolveDesc& desc,
                               TaaResolveBlendPreflightRejectReason* reason = nullptr);
+
+// --- deepen additive from deepen-b59-taa-guards-27d7 ---
+bool preflightTaaJitterSync(u32 /*frameIndex*/, u32 width, u32 height, u32 sequenceLength = 8u,
