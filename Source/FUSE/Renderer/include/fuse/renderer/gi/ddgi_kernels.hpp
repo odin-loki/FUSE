@@ -88,6 +88,7 @@ enum class ProbeKernelResourceRejectReason : u8 {
 /// Human-readable label for probe-kernel reject reasons (logging / tests).
 const char* probeKernelRejectReasonLabel(ProbeKernelRejectReason reason);
 /// Classify why probe-kernel launch preflight would reject — same ordering as `tryCanLaunchProbeTraceKernel`.
+/// Classify why probe-kernel launch preflight would reject; returns `None` when launchable (B5.6 deepen).
 ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params);
 
 /// True when a kernel reject reason would block launch (B5.6 deepen pass).
@@ -306,6 +307,11 @@ bool shouldSkipProbeBlendKernel(const DDGIKernelParams& params);
 bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
 /// Early-out when probe blend kernel launch would be rejected — includes reject-reason diagnostics.
 bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
+/// True when probe trace kernel launch preflight passes (B5.6 deepen).
+bool preflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
+/// True when probe blend kernel launch preflight passes (B5.6 deepen).
+/// Early-out when probe trace kernel launch would be rejected (B5.6 deepen).
+bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
 
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);

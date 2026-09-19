@@ -1246,6 +1246,13 @@ bool ProbeGridLayout::areProbeSampleCoordsInBounds(const DDGIDesc& desc, const P
 bool ProbeGridLayout::isProbeSampleCoordsOutOfRange(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
     return !areProbeSampleCoordsInBounds(desc, coords);
 
+ProbeSampleCoordsRejectReason classifyProbeSampleCoordsReject(const DDGIDesc& desc,
+                                                              const ProbeSampleCoords& coords) {
+    ProbeSampleCoordsRejectReason reason = ProbeSampleCoordsRejectReason::None;
+    ProbeGridLayout::tryValidateProbeSampleCoords(desc, coords, reason);
+    return reason;
+}
+
 bool ProbeGridLayout::tryClampProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCoords& coords) {
 
     clampProbeSampleCoords(desc, coords);
@@ -1573,7 +1580,19 @@ const char* launchRejectReasonLabel(LaunchRejectReason reason) {
     case LaunchRejectReason::ProbeIndexOutOfRange:
     case LaunchRejectReason::ZeroRaysPerProbe:
         return "zero_rays_per_probe";
-    if (isEmptyGrid(desc)) {
+bool ProbeGridLayout::buildProbeSampleCoordsIfReady(const DDGIDesc& desc,
+    ProbeSampleCoordsRejectReason reason = ProbeSampleCoordsRejectReason::None;
+    return tryBuildProbeSampleCoords(desc, world_position, out_coords, reason);
+
+bool ProbeGridLayout::preflightProbeSampleCoords(const DDGIDesc& desc,
+                                                 ProbeSampleCoordsRejectReason* reason) {
+    const ProbeSampleCoordsRejectReason reject = classifyProbeSampleCoordsReject(desc, coords);
+    if (reason != nullptr) {
+        *reason = reject;
+    return reject == ProbeSampleCoordsRejectReason::None;
+
+bool ProbeGridLayout::shouldSkipProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
+    return !preflightProbeSampleCoords(desc, coords);
 }
 
 fuse::math::Vec2 DdgiIrradianceEncoding::clampEncodedUV(const fuse::math::Vec2& encoded) {
@@ -2234,6 +2253,26 @@ bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
     return true;
 }
 
+bool preflightTrilinearProbeSample(const DDGIDesc& desc,
+                                   const ProbeSampleCoords& coords,
+                                   const IrradianceCacheEntry* cache,
+                                   u32 cache_count,
+                                   ProbeTrilinearSampleRejectReason* reason) {
+    const ProbeTrilinearSampleRejectReason reject =
+        classifyProbeTrilinearSampleReject(desc, coords, cache, cache_count);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == ProbeTrilinearSampleRejectReason::None;
+}
+
+bool shouldSkipTrilinearProbeSample(const DDGIDesc& desc,
+                                    const ProbeSampleCoords& coords,
+                                    const IrradianceCacheEntry* cache,
+                                    u32 cache_count) {
+    return !preflightTrilinearProbeSample(desc, coords, cache, cache_count);
+}
+
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               const IrradianceCacheEntry* cache,
                               u32 cache_count,
@@ -2267,6 +2306,10 @@ bool wouldSkipReadIrradianceAtIndex(const DDGIDesc& desc,
                                     u32 probe_index) {
     fuse::math::Vec3 irradiance{};
     return !tryReadIrradianceAtIndex(desc, cache, cache_count, probe_index, irradiance);
+bool readIrradianceAtIndexIfReady(const DDGIDesc& desc,
+                                  u32 probe_index,
+                                  fuse::math::Vec3& out_irradiance) {
+    return tryReadIrradianceAtIndex(desc, cache, cache_count, probe_index, out_irradiance);
 }
 
 u32 requiredCacheCount(const DDGIDesc& desc) {
@@ -2759,6 +2802,41 @@ bool wouldSkipCacheIndexLookup(const DDGIDesc& desc,
                                u32 cache_count) {
     CacheIndexRejectReason reason = CacheIndexRejectReason::None;
     return wouldSkipCacheIndexLookup(desc, cache, probe_index, cache_count, reason);
+}
+
+bool cacheIndexLookupReady(const DDGIDesc& desc, u32 probe_index, u32 cache_count) {
+    return !wouldSkipCacheIndexLookup(desc, probe_index, cache_count);
+}
+
+bool cacheIndexLookupReady(const DDGIDesc& desc,
+                           const IrradianceCacheEntry* cache,
+                           u32 probe_index,
+                           u32 cache_count) {
+    return !wouldSkipCacheIndexLookup(desc, cache, probe_index, cache_count);
+}
+
+bool preflightCacheIndex(const DDGIDesc& desc,
+                         u32 probe_index,
+                         u32 cache_count,
+                         CacheIndexRejectReason* reason) {
+    const CacheIndexRejectReason reject = classifyCacheIndexReject(desc, probe_index, cache_count);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == CacheIndexRejectReason::None;
+}
+
+bool preflightCacheIndex(const DDGIDesc& desc,
+                         const IrradianceCacheEntry* cache,
+                         u32 probe_index,
+                         u32 cache_count,
+                         CacheIndexRejectReason* reason) {
+    const CacheIndexRejectReason reject =
+        classifyCacheIndexReject(desc, cache, probe_index, cache_count);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == CacheIndexRejectReason::None;
 }
 
 bool isValidSampleRequest(const DDGIDesc& desc,
@@ -3474,6 +3552,13 @@ bool tryValidateScheduledProbeIndices(const DDGIDesc& desc,
             outReason = ProbeUpdateLaunchRejectReason::OutOfRangeProbeIndex;
 
     outReason = ProbeUpdateLaunchRejectReason::None;
+bool probeScheduleReady(u32 probe_count, u32 max_indices, const u32* out_indices, u32* out_count) {
+    return canScheduleProbeUpdates(probe_count, max_indices, out_indices, out_count);
+
+    const ProbeScheduleRejectReason reject =
+        classifyProbeScheduleReject(probe_count, max_indices, out_indices, out_count);
+        *reason = reject;
+    return reject == ProbeScheduleRejectReason::None;
 }
 
 fuse::math::Vec3 blendIrradiance(const fuse::math::Vec3& previous,
@@ -3639,6 +3724,14 @@ bool wouldSkipTrilinearProbeIrradiance(const DDGIDesc& desc,
                                        u32 cache_count) {
     fuse::math::Vec3 irradiance{};
     return !tryTrilinearProbeIrradiance(desc, world_position, cache, cache_count, irradiance);
+}
+
+bool trilinearProbeIrradianceIfReady(const DDGIDesc& desc,
+                                     const fuse::math::Vec3& world_position,
+                                     const IrradianceCacheEntry* cache,
+                                     u32 cache_count,
+                                     fuse::math::Vec3& out_irradiance) {
+    return tryTrilinearProbeIrradiance(desc, world_position, cache, cache_count, out_irradiance);
 }
 
 fuse::math::Vec3 trilinearProbeIrradiance(const DDGIDesc& desc,
@@ -3895,6 +3988,28 @@ const char* probeUpdateLaunchRejectReasonLabel(ProbeUpdateLaunchRejectReason rea
         return "zero_count";
     case ProbeUpdateLaunchRejectReason::OutOfRangeIndex:
         return "out_of_range_index";
+ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleReject(const DDGIDesc& desc,
+                                                                    const ProbeSampleCoords& coords,
+                                                                    const IrradianceCacheEntry* cache,
+                                                                    u32 cache_count) {
+    ProbeTrilinearSampleRejectReason reason = ProbeTrilinearSampleRejectReason::None;
+    ddgi_util::tryCanSampleAtProbeCoords(desc, coords, cache, cache_count, reason);
+    return reason;
+
+CacheIndexRejectReason classifyCacheIndexReject(const DDGIDesc& desc, u32 probe_index, u32 cache_count) {
+    CacheIndexRejectReason reason = CacheIndexRejectReason::None;
+    ddgi_util::tryValidateCacheIndex(desc, probe_index, cache_count, reason);
+
+CacheIndexRejectReason classifyCacheIndexReject(const DDGIDesc& desc,
+                                                u32 probe_index,
+    ddgi_util::tryValidateCacheIndex(desc, cache, probe_index, cache_count, reason);
+
+ProbeScheduleRejectReason classifyProbeScheduleReject(u32 probe_count,
+                                                      u32 max_indices,
+                                                      const u32* out_indices,
+                                                      u32* out_count) {
+    ProbeScheduleRejectReason reason = ProbeScheduleRejectReason::None;
+    ddgi_util::tryCanScheduleProbeUpdates(probe_count, max_indices, out_indices, out_count, reason);
 }
 
 DdgiInfo ddgi_info() {
@@ -4015,6 +4130,14 @@ bool wouldSkipDdgiProbeUpdate(const DDGIDesc& desc,
     return outReason != ProbeUpdateLaunchRejectReason::None;
 }
 
+ProbeUpdateLaunchRejectReason classifyProbeUpdateLaunchReject(const DDGIDesc& desc,
+                                                              const u32* probe_indices,
+                                                              u32 probe_count) {
+    ProbeUpdateLaunchRejectReason reason = ProbeUpdateLaunchRejectReason::None;
+    tryCanLaunchDdgiProbeUpdate(desc, probe_indices, probe_count, reason);
+    return reason;
+}
+
 bool wouldSkipDdgiProbeUpdate(const DDGIDesc& desc, const u32* probe_indices, u32 probe_count) {
     return !canLaunchDdgiProbeUpdate(desc, probe_indices, probe_count);
 bool wouldSkipDdgiProbeUpdate(const DDGIDesc& desc,
@@ -4052,6 +4175,18 @@ bool wouldSkipScheduledProbeUpdate(const DDGIDesc& desc, const u32* probe_indice
     return !tryCanLaunchDdgiProbeUpdate(desc, probe_indices, probe_count, outReason);
     ProbeUpdateLaunchRejectReason reason = ProbeUpdateLaunchRejectReason::None;
     return wouldSkipDdgiProbeUpdate(desc, probe_indices, probe_count, reason);
+}
+
+bool preflightDdgiProbeUpdate(const DDGIDesc& desc,
+                              const u32* probe_indices,
+                              u32 probe_count,
+                              ProbeUpdateLaunchRejectReason* reason) {
+    const ProbeUpdateLaunchRejectReason reject =
+        classifyProbeUpdateLaunchReject(desc, probe_indices, probe_count);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == ProbeUpdateLaunchRejectReason::None;
 }
 
 bool tryLaunch_ddgi_probe_update(const DDGIDesc& desc,
@@ -4168,6 +4303,12 @@ bool launch_ddgi_probe_update(const DDGIDesc& desc,
 }
 
 namespace gi {
+
+ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params) {
+    ProbeKernelRejectReason reason = ProbeKernelRejectReason::None;
+    tryCanLaunchProbeTraceKernel(params, reason);
+    return reason;
+}
 
 const char* probeKernelRejectReasonLabel(ProbeKernelRejectReason reason) {
     switch (reason) {
@@ -4575,6 +4716,26 @@ bool shouldSkipProbeBlendKernel(const DDGIKernelParams& params) {
 bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
     return !tryCanLaunchProbeBlendKernel(params, outReason);
 
+}
+
+bool preflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason) {
+    const ProbeKernelRejectReason reject = classifyProbeKernelReject(params);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == ProbeKernelRejectReason::None;
+}
+
+bool preflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason) {
+    return preflightProbeTraceKernel(params, reason);
+}
+
+bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params) {
+    return !canLaunchProbeTraceKernel(params);
+}
+
+bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params) {
+    return !canLaunchProbeBlendKernel(params);
 }
 
 bool tryLaunch_probe_trace_kernel(const DDGIKernelParams& params,
