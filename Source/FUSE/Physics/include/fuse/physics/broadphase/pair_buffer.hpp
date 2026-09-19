@@ -3532,6 +3532,12 @@ struct PairBufferInvalidateSlotPreflight {
 
 
 
+    const PairBufferSoA& buffer,
+    u32 slot,
+
+    bool outOfRangeSlot = false;
+
+};
 
 PairBufferInvalidateSlotPreflight preflightPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
 
@@ -3801,5 +3807,13 @@ bool wouldSkipPairBufferCompactAndClamp(const PairBufferSoA& buffer);
 
 /// Early-out when toVector would return empty — same ordering as `canSkipPairBufferToVector` (B4.2 deepen pass).
 bool wouldSkipPairBufferToVector(const PairBufferSoA& buffer);
+
+/// Preflight alias for write-slot skip checks (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool wouldSkipPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB) {
+    return canSkipPairBufferWriteSlot(buffer, slot, idxA, idxB);
+}
+
+/// Preflight alias for invalidate-slot skip checks (B4.2 deepen pass).
+bool wouldSkipPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
 
 } // namespace fuse::physics::broadphase
