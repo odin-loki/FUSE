@@ -2837,3 +2837,10 @@ void testHrtfBinauralCouplingRejectReasonGuards() {
 // --- deepen additive from deepen-b72-hrtf-reject-reasons-dda1 ---
     fuse::audio::HrtfIrRejectReason optional_reason = fuse::audio::HrtfIrRejectReason::None;
     expectTrue(optional_reason == fuse::audio::HrtfIrRejectReason::NullSamples,
+
+// --- deepen additive from b7-2-hrtf-reject-reasons-f623 ---
+                   fuse::audio::hrtf_ir_reject_reason_label(fuse::audio::HrtfIrRejectReason::MalformedIr),
+               "should_skip_hrtf_ir_preflight rejects empty IR");
+               "should_skip_hrtf_pan_path_preflight rejects disabled HRTF");
+               "should_skip_hrtf_attenuation_coupling_preflight rejects bypass path");
+               "should_skip_hrtf_binaural_preflight rejects disabled HRTF");
