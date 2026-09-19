@@ -1477,6 +1477,9 @@ bool trilinearProbeSampleReady(const DDGIDesc& desc,
 /// Build sample coords + cache preflight — returns true when trilinear lookup would proceed.
 /// Non-mutating trilinear sample preflight — returns true when lookup would proceed.
 /// Early-out when trilinear probe sampling would be rejected — same ordering as `tryCanSampleAtProbeCoords`.
+/// Classify why trilinear probe sampling would reject — same ordering as `tryCanSampleAtProbeCoords`.
+ProbeTrilinearSampleRejectReason classifyTrilinearSampleReject(const DDGIDesc& desc,
+/// Non-mutating trilinear sample preflight — returns true when sampling would proceed.
 /// Diagnose cache-index preflight for every scheduled probe index; vacuously succeeds when all valid.
 bool tryValidateScheduledCacheIndices(const DDGIDesc& desc,
                                       const u32* probe_indices,
@@ -1545,6 +1548,16 @@ bool tryCanTrilinearSampleAtProbeCoords(const DDGIDesc& desc,
 /// Early-out when trilinear probe sampling would be rejected — same ordering as `tryCanTrilinearSampleAtProbeCoords`.
 /// Early-out when coord-based trilinear probe sampling would be rejected.
 /// Preflight guard before trilinear probe irradiance sampling; false on inaccessible cache or hard OOB coords.
+                                      u32 cache_count,
+bool tryValidateScheduledCacheIndices(const DDGIDesc& desc,
+                                      const IrradianceCacheEntry* cache,
+                                      const u32* probe_indices,
+                                      u32 probe_count,
+/// Non-mutating cache-index preflight for scheduled indices — returns true when all lookups would proceed.
+bool preflightScheduledCacheIndices(const DDGIDesc& desc,
+/// Early-out when any scheduled probe index would fail cache-index lookup.
+bool wouldSkipScheduledCacheIndices(const DDGIDesc& desc,
+                                    u32 cache_count);
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
@@ -2062,6 +2075,8 @@ bool tryScheduleProbeUpdatesAtRate(u32 frame_index,
                                    u32 max_indices,
                                    u32* out_count,
                                    ProbeScheduleRejectReason& outReason);
+/// Probes that would be scheduled after capacity/probe-count caps (B5.6 deepen pass).
+u32 effectiveScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
 /// Schedule probe updates with reject-reason diagnostics; false when preflight rejects.
 bool canScheduleProbeUpdates(u32 probe_count,
 bool wouldSkipProbeSchedule(u32 probe_count,

@@ -270,6 +270,17 @@ bool preflightProbeKernelLaunchWithGrid(const DDGIDesc& desc,
                                         const DDGIKernelParams& params,
                                         ProbeKernelRejectReason* reason = nullptr);
 
+/// Classify why probe kernel launch would reject when cross-checked against `desc`.
+ProbeKernelRejectReason classifyProbeKernelRejectForDesc(const DDGIDesc& desc, const DDGIKernelParams& params);
+
+/// Non-mutating kernel launch preflight including probe-grid source checks.
+bool preflightProbeKernelLaunchForDesc(const DDGIDesc& desc,
+                                       const DDGIKernelParams& params,
+                                       ProbeKernelRejectReason* reason = nullptr);
+
+/// Early-out when kernel launch would be rejected for `desc` + params.
+bool wouldSkipProbeKernelLaunchForDesc(const DDGIDesc& desc, const DDGIKernelParams& params);
+
 /// Populate kernel params from desc + scheduled indices without changing launch guards.
 void populateDDGIKernelParams(DDGIKernelParams& params,
                               const DDGIDesc& desc,
