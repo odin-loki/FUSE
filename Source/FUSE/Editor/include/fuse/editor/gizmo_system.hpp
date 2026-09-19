@@ -813,6 +813,7 @@ struct EndDragPreflight {
     EndDragRejectReason reason = EndDragRejectReason::None;
     bool notDragging = false;
     bool invalidActiveAxis = false;
+    bool modeAxisMismatch = false;
     /// Snap is enabled but the mode step is unusable — end still applies (B6.4 deepen pass).
     bool snapDegraded = false;
     /// Transform matches drag start — end still applies (B6.4 deepen pass).
@@ -820,6 +821,8 @@ struct EndDragPreflight {
 
     bool canEnd() const { return !notDragging; }
     bool canEnd() const { return reason == EndDragRejectReason::None; }
+
+    GizmoInteractionRejectReason rejectReason() const;
 };
 
 EndDragPreflight preflightEndDrag(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
@@ -827,6 +830,24 @@ EndDragPreflight preflightEndDrag(bool dragging, GizmoAxis activeAxis, GizmoMode
 GizmoBeginDragGuardRejectReason classifyBeginDragReject(const BeginDragPreflight& preflight);
 GizmoUpdateDragGuardRejectReason classifyUpdateDragReject(const UpdateDragPreflight& preflight);
 GizmoEndDragGuardRejectReason classifyEndDragReject(const EndDragPreflight& preflight);
+
+/// Early-out when pick preflight would reject (B6.4 deepen pass).
+bool shouldSkipPick(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+                    GizmoSpace space, f32 axisLength, f32 pickRadius);
+bool shouldSkipPick(const GizmoHitTest& hit, GizmoMode mode);
+
+/// Early-out when begin-drag preflight would reject (B6.4 deepen pass).
+bool shouldSkipBeginDrag(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+                         GizmoSpace space, f32 axisLength, f32 pickRadius,
+                         bool alreadyDragging = false);
+bool shouldSkipBeginDrag(const GizmoHitTest& hit, GizmoMode mode, bool alreadyDragging = false);
+
+/// Early-out when update-drag preflight would reject (B6.4 deepen pass).
+bool shouldSkipUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis,
+                          GizmoMode mode);
+
+/// Early-out when end-drag preflight would reject (B6.4 deepen pass).
+bool shouldSkipEndDrag(bool dragging);
 
 /// Combined pick + snap diagnostics — no mutation (B6.4 deepen pass — interaction guard).
 struct PickInteractionPreflight {
@@ -1890,6 +1911,7 @@ public:
     [[nodiscard]] bool canEndDrag() const;
     [[nodiscard]] bool canEndDrag(GizmoMode mode, const GizmoSnapSettings& settings) const;
     /// Early-out when pick / begin / update / end preflight would reject (B6.4 deepen pass).
+    /// Early-out predicates — same guards as preflights (B6.4 deepen pass).
     [[nodiscard]] bool shouldSkipPick(const GizmoHitTest& hit) const;
     [[nodiscard]] bool shouldSkipPick(const GizmoRay& ray, const GizmoTransform& transform) const;
     [[nodiscard]] bool shouldSkipBeginDrag(const GizmoHitTest& hit) const;
