@@ -79,7 +79,41 @@ std::string escapeJson(const std::string& text) {
     return out;
 }
 
+void append_unique_source_(std::vector<std::string>& sources, const std::string& source_path) {
+    if (!is_valid_cook_cache_path(source_path)) {
+        return;
+    }
+    for (const std::string& recorded : sources) {
+        if (recorded == source_path) {
+            return;
+        }
+    }
+    sources.push_back(source_path);
+}
+
 } // namespace
+
+CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    CookHashPreflight preflight;
+    if (!is_valid_cook_cache_key(entry.content_hash)) {
+        preflight.reason = CookHashRejectReason::ZeroSourceHash;
+        return preflight;
+    }
+    if (!is_valid_cook_cache_path(entry.source_path)) {
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+        return preflight;
+    }
+    if (!is_valid_cook_cache_path(entry.output_path)) {
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
+        return preflight;
+    }
+    if (entry.kind == CookAssetKind::Shader) {
+        preflight.can_hash = true;
+        preflight.reason = CookHashRejectReason::None;
+        return preflight;
+    }
+    return preflight_file_content_hash(entry.source_path);
+}
 
 CookCacheEntry* CookCache::find_entry_(u64 content_hash) {
     for (CookCacheEntry& entry : m_entries) {
@@ -348,6 +382,19 @@ bool CookCache::would_invalidate(u64 content_hash) const {
     return find_entry_(content_hash) != nullptr;
 }
 
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) > 0;
+}
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) > 0;
+}
+
+bool CookCache::would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                        u64 current_content_hash) const {
+    return count_stale_content_for_source(source_path, current_content_hash) > 0;
+}
+
 u32 CookCache::count_by_source(const std::string& source_path) const {
     if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
         return 0;
@@ -435,6 +482,20 @@ std::vector<std::string> CookCache::probe_stale_upstream_sources(
         }
     }
     return stale_sources;
+}
+
+std::vector<std::string> CookCache::probe_unique_stale_upstream_sources(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    const std::vector<std::string> per_entry = probe_stale_upstream_sources(source_upstream_by_path);
+    if (per_entry.empty()) {
+        return {};
+    }
+
+    std::vector<std::string> unique_sources;
+    for (const std::string& source_path : per_entry) {
+        append_unique_source_(unique_sources, source_path);
+    }
+    return unique_sources;
 }
 
 namespace {
@@ -555,18 +616,6 @@ std::vector<std::string> CookCache::probe_stale_content_sources() const {
 }
 
 namespace {
-
-void append_unique_source_(std::vector<std::string>& sources, const std::string& source_path) {
-    if (!is_valid_cook_cache_path(source_path)) {
-        return;
-    }
-    for (const std::string& recorded : sources) {
-        if (recorded == source_path) {
-            return;
-        }
-    }
-    sources.push_back(source_path);
-}
 
 void probe_downstream_sources_(const CookCache& cache,
                                const std::string& output_path,
