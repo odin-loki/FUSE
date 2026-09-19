@@ -162,6 +162,7 @@ bool tangentBasisIsBuilt(vec3 normal, vec3 tangent1, vec3 tangent2) {
 void writeSlotFields(ContactBufferSoA& buffer, u32 slot, const ContactManifold& manifold) {
 void writeContactBufferSlot(ContactBufferSoA& buffer, u32 slot, const ContactManifold& manifold) {
 void writeSlotUnchecked(u32 slot, const ContactManifold& manifold, ContactBufferSoA& buffer) {
+void writeSlotUnchecked(u32 slot, ContactBufferSoA& buffer, const ContactManifold& manifold) {
     buffer.contactPoints[slot] = manifold.contactPoint;
     buffer.contactNormals[slot] = manifold.contactNormal;
     buffer.penetrationDepths[slot] = manifold.penetrationDepth;
@@ -672,6 +673,9 @@ u32 ContactBufferSoA::remainingCapacity() const {
 bool ContactBufferSoA::canApplyMaxCapacityClamp() const {
     return !canSkipSoAIteration() && maxCapacity > 0u && activeCount > maxCapacity;
 
+
+
+
 u32 ContactBufferSoA::countValidSlots() const {
     if (canSkipSoAIteration()) {
         return 0u;
@@ -695,6 +699,17 @@ bool ContactBufferSoA::canSkipCompactAndClamp() const {
 
 bool ContactBufferSoA::slotIsValid(u32 slot) const {
     return slot < validFlags.size() && validFlags[slot] != 0u;
+    }
+
+    for (u32 slot = 0; slot < scanCount; ++slot) {
+
+    if (canSkipSoAIteration()) {
+
+
+
+    if (slot >= validFlags.size()) {
+    if (pairSlotCount > 0u && slot >= pairSlotCount) {
+    return validFlags[slot] != 0u;
 
 void ContactBufferSoA::setMaxCapacity(u32 capacity) {
     maxCapacity = capacity;
@@ -1013,7 +1028,8 @@ bool ContactBufferSoA::writeSlotWithPreflight(u32 slot, const ContactManifold& m
     writeSlotUnchecked(slot, manifold, *this);
 
 bool ContactBufferSoA::writeSlotIfPreflight(u32 slot, const ContactManifold& manifold) {
-}
+
+    writeSlotUnchecked(slot, *this, manifold);
 
 void ContactBufferSoA::invalidateSlot(u32 slot) {
     if (slot >= validFlags.size()) {
@@ -1036,6 +1052,8 @@ bool writeContactBufferSlotWithPreflight(
     const ContactManifold& manifold) {
     if (!preflightContactBufferWrite(buffer, slot, manifold).canWrite()) {
     buffer.writeSlot(slot, manifold);
+    if (pairSlotCount > 0u && slot >= pairSlotCount) {
+        return;
 }
 
 void ContactBufferSoA::applyWarmStartStub(u32 slot, ContactManifold& manifold) const {
@@ -1281,6 +1299,7 @@ bool ContactBufferSoA::canSkipClamp() const {
 
         activeCount = pairSlotCount > 0u ? countValidSlots() : activeCount;
 
+
         return activeCount;
     }
 
@@ -1309,6 +1328,25 @@ bool ContactBufferSoA::canSkipClamp() const {
         }
         if (writeIndex != readIndex) {
             copySlotFields(*this, writeIndex, readIndex);
+            contactPoints[writeIndex] = contactPoints[readIndex];
+            contactNormals[writeIndex] = contactNormals[readIndex];
+            penetrationDepths[writeIndex] = penetrationDepths[readIndex];
+            minSeparations[writeIndex] = minSeparations[readIndex];
+            bodyA[writeIndex] = bodyA[readIndex];
+            bodyB[writeIndex] = bodyB[readIndex];
+            validFlags[writeIndex] = 1u;
+            pointCounts[writeIndex] = pointCounts[readIndex];
+            warmNormalImpulses[writeIndex] = warmNormalImpulses[readIndex];
+            warmTangentImpulses[writeIndex] = warmTangentImpulses[readIndex];
+            tangent1[writeIndex] = tangent1[readIndex];
+            tangent2[writeIndex] = tangent2[readIndex];
+
+            const u32 readBase = readIndex * kMaxContactPointsPerManifold;
+            const u32 writeBase = writeIndex * kMaxContactPointsPerManifold;
+            for (u32 pointIndex = 0u; pointIndex < kMaxContactPointsPerManifold; ++pointIndex) {
+                pointSlots[writeBase + pointIndex] = pointSlots[readBase + pointIndex];
+                pointPenetrations[writeBase + pointIndex] = pointPenetrations[readBase + pointIndex];
+            }
         }
         ++writeIndex;
     }
@@ -1427,7 +1465,7 @@ u32 ContactBufferSoA::compactWithPreflight() {
             sortedTangent1[i] = tangent1[src];
             sortedTangent2[i] = tangent2[src];
 
-            const u32 readBase = pointSlotBase(src);
+            const u32 readBase = src * kMaxContactPointsPerManifold;
             const u32 writeBase = i * kMaxContactPointsPerManifold;
             for (u32 pointIndex = 0u; pointIndex < kMaxContactPointsPerManifold; ++pointIndex) {
                 sortedPointSlots[writeBase + pointIndex] = pointSlots[readBase + pointIndex];
@@ -1735,7 +1773,7 @@ ContactManifold ContactBufferSoA::manifoldAt(u32 index) const {
 
     const u32 pointCount = std::min(static_cast<u32>(pointCounts[index]), kMaxContactPointsPerManifold);
     manifold.pointCount = pointCount;
-    const u32 base = pointSlotBase(index);
+    const u32 base = index * kMaxContactPointsPerManifold;
     for (u32 pointIndex = 0u; pointIndex < pointCount; ++pointIndex) {
         manifold.points[pointIndex].point = pointSlots[base + pointIndex];
         manifold.points[pointIndex].penetration = pointPenetrations[base + pointIndex];
@@ -1818,6 +1856,7 @@ ContactBufferWriteRejectReason contactBufferWriteRejectReason(
 
 
     }
+
 
 
 
@@ -1997,11 +2036,13 @@ void write_contact_buffer_slot_with_preflight(
 
 
 
-}
 
-    const ContactBufferSoA& buffer,
-    u32 slot,
-    const ContactManifold& manifold) {
+
+
+
+
+
+
 
 
 
@@ -2428,6 +2469,18 @@ bool shouldRunContactBufferClamp(const ContactBufferSoA& buffer) {
     if (!shouldRunContactBufferCompaction(buffer) && !shouldRunContactBufferClamp(buffer)) {
 
 
+
+
+
+
+
+
+
+
+
+
+
+
     ContactBufferCompactAndClampPreflight preflight{};
     preflight.reason = contact_buffer_compact_and_clamp_reject_reason(buffer);
     preflight.emptyBuffer = preflight.reason == ContactBufferCompactAndClampRejectReason::EmptyBuffer;
@@ -2787,6 +2840,8 @@ bool writeContactSlotWithPreflight(
 
     return preflight;
 }
+
+
 
 
 }
