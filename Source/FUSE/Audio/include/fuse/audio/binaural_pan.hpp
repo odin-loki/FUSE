@@ -653,3 +653,15 @@ HrtfPanPathRejectReason classify_hrtf_pan_path_reject(bool hrtf_enabled, const V
 HrtfAttenuationCouplingRejectReason classify_hrtf_attenuation_coupling_reject(
     HrtfAttenuationCouplingRejectReason reject_reason = HrtfAttenuationCouplingRejectReason::None;
                                         HrtfAttenuationCouplingRejectReason* reason,
+
+// --- deepen additive from deepen-hrtf-b7-2-guards-9316 ---
+enum class HrtfIrPreflightReject : u8 {
+    HrtfIrPreflightReject reject = HrtfIrPreflightReject::None;
+bool try_preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrPreflightReject* reject = nullptr);
+enum class HrtfPanPathPreflightReject : u8 {
+    HrtfPanPathPreflightReject reject = HrtfPanPathPreflightReject::None;
+bool try_preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+                                 HrtfPanPathPreflightReject* reject = nullptr);
+enum class HrtfAttenuationCouplingPreflightReject : u8 {
+    HrtfAttenuationCouplingPreflightReject reject = HrtfAttenuationCouplingPreflightReject::None;
+                                             HrtfAttenuationCouplingPreflightReject* reject = nullptr,

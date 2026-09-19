@@ -973,3 +973,20 @@ HrtfAttenuationCouplingPreflight make_hrtf_attenuation_coupling_preflight(
         && should_skip_hrtf_spatial_blend(distance_attenuation, occlusion_gain, coupling, params);
     preflight.skipped = preflight.reject_reason != HrtfAttenuationCouplingRejectReason::None;
                                         HrtfAttenuationCouplingRejectReason* reason,
+
+// --- deepen additive from deepen-hrtf-b7-2-guards-9316 ---
+        preflight.reject = HrtfIrPreflightReject::NullSamples;
+        preflight.reject = HrtfIrPreflightReject::ZeroLength;
+    preflight.reject = HrtfIrPreflightReject::None;
+bool try_preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrPreflightReject* reject) {
+    const HrtfIrPreflight preflight = preflight_hrtf_ir(ir);
+        preflight.reject = HrtfPanPathPreflightReject::Disabled;
+        preflight.reject = HrtfPanPathPreflightReject::CoLocated;
+    preflight.reject = HrtfPanPathPreflightReject::None;
+bool try_preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
+                                 const Vec3& rel_listener, HrtfPanPathPreflightReject* reject) {
+    const HrtfPanPathPreflight preflight = preflight_hrtf_pan_path(hrtf_enabled, ir, rel_listener);
+        preflight.reject = HrtfAttenuationCouplingPreflightReject::BypassPath;
+        preflight.reject = HrtfAttenuationCouplingPreflightReject::UnityAttenuation;
+    preflight.reject = HrtfAttenuationCouplingPreflightReject::None;
+                                             HrtfAttenuationCouplingPreflightReject* reject,

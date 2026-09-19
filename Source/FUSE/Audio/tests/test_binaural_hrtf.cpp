@@ -1465,3 +1465,24 @@ void testPreflightHrtfSpatialPan() {
     const fuse::audio::HrtfAttenuationCouplingPreflight bypassed =
         fuse::audio::HrtfAttenuationCouplingRejectReason::None;
     expectTrue(reason == fuse::audio::HrtfAttenuationCouplingRejectReason::PanBypassed,
+
+// --- deepen additive from deepen-hrtf-b7-2-guards-9316 ---
+    expectTrue(empty_preflight.reject == fuse::audio::HrtfIrPreflightReject::NullSamples,
+    const fuse::audio::HrtfIrPreflight zero_preflight = fuse::audio::preflight_hrtf_ir(zero_length);
+    expectTrue(zero_preflight.reject == fuse::audio::HrtfIrPreflightReject::ZeroLength,
+    fuse::audio::HrtfIrPreflightReject reject = fuse::audio::HrtfIrPreflightReject::None;
+    expectTrue(reject == fuse::audio::HrtfIrPreflightReject::None,
+    expectTrue(reject == fuse::audio::HrtfIrPreflightReject::NullSamples,
+    expectTrue(disabled.reject == fuse::audio::HrtfPanPathPreflightReject::Disabled,
+    expectTrue(co_located_preflight.reject == fuse::audio::HrtfPanPathPreflightReject::CoLocated,
+    fuse::audio::HrtfPanPathPreflightReject reject =
+        fuse::audio::HrtfPanPathPreflightReject::None;
+    expectTrue(reject == fuse::audio::HrtfPanPathPreflightReject::None,
+    expectTrue(reject == fuse::audio::HrtfPanPathPreflightReject::Disabled,
+    expectTrue(bypass.reject == fuse::audio::HrtfAttenuationCouplingPreflightReject::BypassPath,
+        unity.reject == fuse::audio::HrtfAttenuationCouplingPreflightReject::UnityAttenuation,
+    expectTrue(narrowed.reject == fuse::audio::HrtfAttenuationCouplingPreflightReject::None,
+    fuse::audio::HrtfAttenuationCouplingPreflightReject reject =
+        fuse::audio::HrtfAttenuationCouplingPreflightReject::None;
+    expectTrue(reject == fuse::audio::HrtfAttenuationCouplingPreflightReject::None,
+    expectTrue(reject == fuse::audio::HrtfAttenuationCouplingPreflightReject::BypassPath,
