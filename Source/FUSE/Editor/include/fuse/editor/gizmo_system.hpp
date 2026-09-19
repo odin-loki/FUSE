@@ -278,6 +278,7 @@ struct UpdateDragPreflight {
     /// Snap is enabled but the mode step is unusable — update still applies (B6.4 deepen pass).
     bool emptyHit = false;
     /// Screen dead-zone hit during drag — diagnostic only; does not block `canUpdate()` (B6.4 deepen pass).
+    /// Diagnostic only — does not affect `canUpdate()` (drag may continue through dead zones).
     bool screenMiss = false;
 
     bool canUpdate() const {
@@ -518,14 +519,10 @@ struct EndDragPreflight {
 
 
 /// Non-mutating update-drag predicate — same guards as `preflightUpdateDrag` (B6.4 deepen pass).
-bool canUpdateDrag(const GizmoHitTest& hit, bool dragging);
 
 /// Read-only end-drag diagnostics — no mutation (B6.4 deepen pass).
-struct EndDragPreflight {
     bool notDragging = false;
 
-    bool canEnd() const { return !notDragging; }
-};
 
 EndDragPreflight preflightEndDrag(bool dragging);
 
@@ -533,26 +530,19 @@ EndDragPreflight preflightEndDrag(bool dragging);
 bool canEndDrag(bool dragging);
 
 /// Read-only end-drag diagnostics — no mutation (B6.4 deepen pass — end guard).
-struct EndDragPreflight {
-    bool notDragging = false;
     bool snapSkipped = false;
 
-    bool canEnd() const { return !notDragging; }
-};
 
 EndDragPreflight preflightEndDrag(bool dragging, GizmoMode mode, const GizmoSnapSettings& settings);
 
-/// Non-mutating update-drag predicate — same guards as `preflightUpdateDrag` (B6.4 deepen pass).
-bool canUpdateDrag(const GizmoHitTest& hit, bool dragging);
 
-/// Non-mutating end-drag predicate — rejects inactive drags (B6.4 deepen pass).
 bool canEndDrag(bool dragging, GizmoMode mode, const GizmoSnapSettings& settings);
 
-/// Non-mutating update-drag predicate — same guards as `preflightUpdateDrag` (B6.4 deepen pass).
-bool canUpdateDrag(const GizmoHitTest& hit, bool dragging);
 
 /// Read-only end-drag diagnostics — no mutation (B6.4 deepen follow-up — end-drag guard).
-struct EndDragPreflight {
+
+bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoMode mode);
+
     bool notDragging = false;
     bool snapDisabled = false;
     bool invalidSnapStep = false;
@@ -576,8 +566,11 @@ struct EndDragPreflight {
 
 EndDragPreflight preflightEndDrag(bool dragging);
 
-/// Non-mutating end-drag predicate — rejects inactive drags (B6.4 deepen pass).
-bool canEndDrag(bool dragging);
+EndDragPreflight preflightEndDrag(bool dragging, GizmoMode mode,
+                                  const GizmoSnapSettings& settings);
+
+/// Non-mutating end-drag predicate — same guards as `preflightEndDrag` (B6.4 deepen pass).
+bool canEndDrag(bool dragging, GizmoMode mode, const GizmoSnapSettings& settings);
 
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
                                       f32 pickRadius, bool alreadyDragging = false);
