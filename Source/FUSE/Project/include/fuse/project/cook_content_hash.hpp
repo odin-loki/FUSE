@@ -30,6 +30,7 @@ struct CookHashPreflight {
 
 /// FNV-1a 64-bit hash over raw bytes — shared by cook cache keys (B7.9 deepen stub).
 [[nodiscard]] u64 fnv1a64_bytes(const u8* data, usize size);
+[[nodiscard]] CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size);
 [[nodiscard]] u64 fnv1a64_combine(u64 left, u64 right);
 
 /// True when `size == 0` or `data` is non-null — guards null pointer with non-zero length (B7.9 deepen).

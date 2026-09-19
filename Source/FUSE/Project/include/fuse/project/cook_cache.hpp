@@ -84,10 +84,20 @@ public:
 
     /// Read-only invalidation probes — mirror `invalidate_*` guards without mutating stats (B7.9 deepen).
     [[nodiscard]] bool would_invalidate(u64 content_hash) const;
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                                 u64 current_content_hash) const;
+    [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
+                                                      const std::vector<CookJobDependencyEdge>& edges,
+                                                      const std::vector<CookJob>& jobs) const;
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,
                                                      u64 current_content_hash) const;
+    /// Source paths whose stored hash differs from the supplied current key (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_stale_content_sources(
+        const std::vector<std::pair<std::string, u64>>& source_content_by_path) const;
     [[nodiscard]] u32 count_stale_upstream_hashes(
         const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
     /// Source paths that `invalidate_stale_upstream_hashes` would touch — one push per matching entry (B7.9 deepen).
@@ -97,7 +107,10 @@ public:
                                           const std::vector<CookJobDependencyEdge>& edges,
                                           const std::vector<CookJob>& jobs) const;
     [[nodiscard]] u32 count_prunable_entries() const;
+    [[nodiscard]] u32 count_stale_entries() const;
     [[nodiscard]] u32 count_invalid_entries() const;
+    /// Entries `prune_all` would remove — invalid plus stale (B7.9 deepen).
+    [[nodiscard]] u32 estimate_prune_all() const;
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 
