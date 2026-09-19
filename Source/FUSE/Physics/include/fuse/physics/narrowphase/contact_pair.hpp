@@ -226,4 +226,28 @@ bool narrowphase_batch_rejects_all(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Non-mutating pair-dispatch predicate — inverse of `should_skip_contact_pair_dispatch` (B4.6 deepen pass).
+bool should_run_contact_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating deepen-dispatch predicate — inverse of `should_skip_contact_pair_deepen_dispatch` (B4.6 deepen pass).
+bool should_run_contact_pair_deepen_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating narrowphase predicate — inverse of `can_skip_narrowphase` (B4.6 deepen pass).
+bool should_run_narrowphase(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating batch-dispatch predicate — inverse of `NarrowphaseBatchPreflight::can_skip` (B4.6 deepen pass).
+bool should_run_narrowphase_batch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
 } // namespace fuse::physics::narrowphase
