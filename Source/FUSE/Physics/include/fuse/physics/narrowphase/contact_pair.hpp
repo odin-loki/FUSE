@@ -226,4 +226,32 @@ bool narrowphase_batch_rejects_all(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Count pairs rejected by a specific deepen reason (B4.6 deepen pass).
+u32 count_contact_pairs_rejected_for_reason(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason reason);
+
+/// Const preflight for per-slot narrowphase dispatch (B4.6 deepen pass).
+struct NarrowphasePairSlotPreflight {
+    ContactPairRejectReason reason = ContactPairRejectReason::None;
+    bool rejected = false;
+    bool canWriteSlot = false;
+
+    bool can_dispatch() const { return !rejected; }
+};
+
+/// Populate per-slot dispatch preflight without running shape dispatch (B4.6 deepen pass).
+NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when narrowphase should skip this pair slot before dispatch (B4.6 deepen pass).
+bool should_skip_narrowphase_pair_slot(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
 } // namespace fuse::physics::narrowphase
