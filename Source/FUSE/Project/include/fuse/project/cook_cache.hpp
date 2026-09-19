@@ -315,6 +315,10 @@ public:
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,
+                                                     u64 current_content_hash) const;
+    /// Source paths whose stored hash differs from the supplied current key (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_stale_content_sources(
+        const std::vector<std::pair<std::string, u64>>& source_content_by_path) const;
     [[nodiscard]] u32 count_stale_upstream_hashes(
     /// Source paths that `invalidate_stale_upstream_hashes` would touch — one push per matching entry (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_stale_upstream_sources(
@@ -333,6 +337,7 @@ public:
         const std::vector<CookJob>& jobs) const;
     [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
     [[nodiscard]] u32 count_prunable_entries() const;
+    [[nodiscard]] u32 count_stale_entries() const;
     [[nodiscard]] u32 count_invalid_entries() const;
     [[nodiscard]] u32 count_stale_entries() const;
     /// Prune reconcile breakdown without mutating stats (B7.9 deepen).
@@ -504,6 +509,7 @@ public:
 
     /// Source paths with stale content keys — one entry per matching cache record (B7.9 deepen).
     /// Read-only prune estimator — mirrors `prune_all` guards without mutating stats (B7.9 deepen).
+    /// Entries `prune_all` would remove — invalid plus stale (B7.9 deepen).
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

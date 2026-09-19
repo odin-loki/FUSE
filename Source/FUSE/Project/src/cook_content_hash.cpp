@@ -134,6 +134,15 @@ u64 fnv1a64_bytes(const u8* data, usize size) {
 
 bool is_readable_cook_source_path(const std::string& path) {
     return !path.empty() && !is_zero_cook_hash(hash_file_content(path));
+CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size) {
+    CookHashPreflight preflight;
+    if (!is_valid_fnv1a64_input(data, size)) {
+        preflight.reason = CookHashRejectReason::NullData;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
 }
 
 u64 fnv1a64_combine(u64 left, u64 right) {

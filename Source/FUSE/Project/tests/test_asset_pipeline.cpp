@@ -2162,6 +2162,10 @@ void testCookerStaleDependencyReconcileEstimate() {
 
 void testCookerReconcileEstimatorGuards() {
 
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
     manifest.assets.push_back(entryA);
 
     fuse::project::CookManifestEntry entryB;
@@ -2352,6 +2356,19 @@ void testCookerPruneReconcileEstimator() {
 
     expectTrue(removed >= 1u, "stale dependency reconcile removes probed entries");
                "reconcile estimator false after stale invalidation");
+               "fresh cache would not reconcile stale dependencies");
+    expectTrue(cooker.estimate_stale_dependency_reconcile(manifest) == 0u,
+               "fresh cache reconcile estimate is zero");
+
+    const fuse::u32 estimate = cooker.estimate_stale_dependency_reconcile(manifest);
+    expectTrue(estimate >= 1u, "reconcile estimate reports stale upstream entries");
+               "would_reconcile true after upstream hash change");
+    expectTrue(cooker.count_stale_dependency_invalidation(manifest) == estimate,
+               "reconcile estimate matches stale dependency count probe");
+
+    expectTrue(removed >= estimate, "stale dependency invalidation removes at least estimated count");
+               "would_reconcile false after reconcile completes");
+               "reconcile estimate zero after reconcile completes");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {

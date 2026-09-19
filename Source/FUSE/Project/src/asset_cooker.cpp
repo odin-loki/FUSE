@@ -507,6 +507,10 @@ bool AssetCooker::would_reconcile_stale_dependencies(const CookManifest& manifes
     return count_stale_dependency_invalidation(manifest) > 0;
 }
 
+bool AssetCooker::would_reconcile_stale_dependencies(const CookManifest& manifest) const {
+    return count_stale_dependency_invalidation(manifest) > 0;
+}
+
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {
     if (manifest.assets.empty() || m_cache.empty()) {
     if (m_cache.empty() || manifest.assets.empty()) {
