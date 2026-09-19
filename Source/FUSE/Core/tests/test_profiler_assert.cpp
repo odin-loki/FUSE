@@ -6102,3 +6102,33 @@ void testCounterSamplePreflightGuard() {
     expectTrue(!filledPreflight.exportWouldTrimEvents, "valid trace does not trim events");
 void testChromeTraceExportPreflightOrphanFlags() {
     testChromeTraceExportPreflightOrphanFlags();
+
+// --- deepen additive from b16-profiler-deepen-guards-ac0d ---
+    expectTrue(nullPreflight.wouldSkip(), "scope preflight wouldSkip for null name");
+    expectTrue(!validPreflight.wouldSkip(), "scope preflight wouldRecord for valid name");
+    expectTrue(validPreflight.wouldRecord(), "scope preflight wouldRecord mirrors canEnter");
+    expectTrue(nullBegin.wouldSkip(), "flow begin preflight wouldSkip for null name");
+    expectTrue(orphanEnd.wouldSkip(), "flow end preflight wouldSkip for orphan finish");
+    expectTrue(!validEnd.wouldSkip(), "flow end preflight wouldRecord after begin");
+    expectTrue(!fuse::profiler::wouldSkipScopeRecording("valid_scope"),
+    expectTrue(!fuse::profiler::wouldSkipCounterRecording("valid_counter"),
+               "wouldSkipCounterRecording true for empty track");
+    const fuse::profiler::CounterRecordingPreflight counterPreflight =
+        fuse::profiler::preflightCounterRecording("budget");
+    expectTrue(!counterPreflight.wouldSkip(), "counter preflight wouldRecord for valid track");
+    expectTrue(counterPreflight.wouldRecord(), "counter preflight wouldRecord mirrors wouldSkip");
+    expectTrue(fuse::profiler::wouldSkipScopeRecording("ignored"),
+    expectTrue(fuse::profiler::wouldSkipCounterRecording("ignored"),
+    expectTrue(resetPreflight.activeScopeNestingDepth == 0u, "reset scope depth is zero");
+    expectTrue(resetPreflight.activeFlowNestingDepth == 0u, "reset flow depth is zero");
+        expectTrue(!activePreflight.isBalanced(), "active scope reports unbalanced nesting");
+        expectTrue(!activePreflight.canNestSafely(), "active scope blocks safe nesting");
+        expectTrue(activePreflight.scopeNestingUnbalanced, "nesting preflight marks scope unbalanced");
+            fuse::profiler::preflightBeginAsyncFlow("nesting_preflight_flow", flowId);
+        expectTrue(beginPreflight.openAsyncFlowCount == 1u, "flow begin preflight reports open count");
+        expectTrue(beginPreflight.activeFlowNestingDepth == 1u, "flow begin preflight reports flow depth");
+        expectTrue(flowPreflight.hasOpenAsyncFlows, "nesting preflight marks open flows");
+        expectTrue(flowPreflight.openAsyncFlowCount == 1u, "nesting preflight reports open flow count");
+        expectTrue(!flowPreflight.canNestSafely(), "open flow blocks safe nesting");
+    expectTrue(closedPreflight.isBalanced(), "ended scope restores balanced nesting preflight");
+    expectTrue(closedPreflight.canNestSafely(), "ended scope restores safe nesting preflight");

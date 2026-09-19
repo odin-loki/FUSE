@@ -659,3 +659,9 @@ bool tryPreflightProfileScope(const char* name, ProfileScopePreflight& outPrefli
 bool tryPreflightAsyncFlowBegin(const char* name, u32 flowId, AsyncFlowBeginPreflight& outPreflight);
 bool tryPreflightAsyncFlowEnd(const char* name, u32 flowId, AsyncFlowEndPreflight& outPreflight);
 bool tryPreflightCounterSample(const char* track, CounterSamplePreflight& outPreflight);
+
+// --- deepen additive from b16-profiler-deepen-guards-ac0d ---
+    bool wouldRecord() const { return canEnter; }
+    bool wouldRecord() const { return canBegin; }
+    bool wouldSkip() const { return profilerDisabled || invalidName || wouldUnderflowOpenCount; }
+    bool wouldRecord() const { return canEnd; }
