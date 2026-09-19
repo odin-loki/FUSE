@@ -516,6 +516,9 @@ bool ContactManifold::canFinalize(f32 separationEpsilon, f32 /*duplicateEpsilon*
     if (empty() || !hasValidNormal()) {
     return countPenetratingPoints(separationEpsilon) > 0u;
 
+
+
+
 bool ContactManifold::pruneForFinalization(f32 separationEpsilon, f32 duplicateEpsilon) {
     pruneContactPoints(separationEpsilon, duplicateEpsilon);
     return hasPenetratingPoints(separationEpsilon);
@@ -527,6 +530,7 @@ bool ContactManifold::canFinalize(f32 separationEpsilon, f32 duplicateEpsilon) c
     if (wouldBeEmptyAfterPrune(separationEpsilon, duplicateEpsilon)) {
 
     return !empty();
+}
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};

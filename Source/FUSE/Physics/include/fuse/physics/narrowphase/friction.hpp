@@ -192,4 +192,6 @@ bool should_rebuild_friction_basis(const ContactManifold& manifold, f32 epsilon 
 /// Build or refresh the manifold friction basis when required; returns false on skip/failure (B4.3 deepen pass).
 bool ensure_friction_basis(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
+
+
 } // namespace fuse::physics::narrowphase
