@@ -2513,3 +2513,31 @@ SnapDragPreflight GizmoSystem::preflightSnapDragDelta() const {
     return preflightBeginInteraction(ray, transform).canBegin();
     return preflightUpdateInteraction(hit).canUpdate();
     return preflightEndInteraction().canEnd();
+
+// --- deepen additive from gizmo-preflight-reject-reasons-f595 ---
+GizmoInteractionRejectReason PickPreflight::rejectReason() const {
+        return GizmoInteractionRejectReason::EmptyRay;
+        return GizmoInteractionRejectReason::EmptyHit;
+        return GizmoInteractionRejectReason::NonFiniteInput;
+        return GizmoInteractionRejectReason::InvalidPickConfig;
+        return GizmoInteractionRejectReason::InvalidDimensions;
+        return GizmoInteractionRejectReason::OutOfBounds;
+        return GizmoInteractionRejectReason::ScreenMiss;
+        return GizmoInteractionRejectReason::PickMiss;
+    return GizmoInteractionRejectReason::None;
+GizmoInteractionRejectReason SnapPreflight::rejectReason() const {
+        return GizmoInteractionRejectReason::SnapDisabled;
+        return GizmoInteractionRejectReason::InvalidSnapStep;
+GizmoInteractionRejectReason BeginDragPreflight::rejectReason() const {
+        return GizmoInteractionRejectReason::AlreadyDragging;
+GizmoInteractionRejectReason UpdateDragPreflight::rejectReason() const {
+        return GizmoInteractionRejectReason::NotDragging;
+        return GizmoInteractionRejectReason::InvalidActiveAxis;
+        return GizmoInteractionRejectReason::ModeAxisMismatch;
+GizmoInteractionRejectReason EndDragPreflight::rejectReason() const {
+    return !preflightPick(ray, transform, mode, space, axisLength, pickRadius).canPick();
+    return !preflightPick(hit, mode).canPick();
+    return !preflightBeginDrag(ray, transform, mode, space, axisLength, pickRadius, alreadyDragging)
+    return !preflightBeginDrag(hit, mode, alreadyDragging).canBegin;
+    return !preflightUpdateDrag(hit, dragging, activeAxis, mode, {}).canUpdate();
+    return !preflightEndDrag(dragging, GizmoAxis::None, GizmoMode::Translate, {}).canEnd();

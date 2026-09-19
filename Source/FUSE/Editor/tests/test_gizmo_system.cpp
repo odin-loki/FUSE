@@ -3571,3 +3571,30 @@ void testUpdateInteractionScreenMissPreflight() {
     const fuse::editor::UpdateInteractionPreflight activeUpdate =
     const fuse::editor::UpdateInteractionPreflight deadZoneUpdate =
     testUpdateInteractionScreenMissPreflight();
+
+// --- deepen additive from gizmo-preflight-reject-reasons-f595 ---
+void testHitTestNonFiniteGuards() {
+    const fuse::editor::PickPreflight nanPick =
+    expectTrue(nanPick.rejectReason() == fuse::editor::GizmoInteractionRejectReason::NonFiniteInput,
+void testRayNonFiniteGuards() {
+    const fuse::editor::PickPreflight nanPick = fuse::editor::preflightPick(
+void testAxisModeValidationGuards() {
+    const fuse::editor::UpdateDragPreflight mismatchPreflight = fuse::editor::preflightUpdateDrag(
+    expectTrue(mismatchPreflight.modeAxisMismatch, "update preflight marks mode-axis mismatch");
+    expectTrue(!mismatchPreflight.canUpdate(), "update preflight rejects mode-axis mismatch");
+    expectTrue(mismatchPreflight.rejectReason() ==
+                   fuse::editor::GizmoInteractionRejectReason::ModeAxisMismatch,
+    const fuse::editor::EndDragPreflight endMismatchPreflight = fuse::editor::preflightEndDrag(
+    expectTrue(endMismatchPreflight.modeAxisMismatch, "end preflight marks mode-axis mismatch");
+    expectTrue(endMismatchPreflight.canEnd(),
+    expectTrue(endMismatchPreflight.rejectReason() ==
+void testRejectReasonDiagnostics() {
+    expectTrue(emptyPick.rejectReason() == fuse::editor::GizmoInteractionRejectReason::EmptyHit,
+    const fuse::editor::BeginDragPreflight draggingBegin = fuse::editor::preflightBeginDrag(
+                   fuse::editor::GizmoInteractionRejectReason::AlreadyDragging,
+    const fuse::editor::SnapPreflight disabledSnap =
+        fuse::editor::preflightSnap(fuse::editor::GizmoMode::Translate, {});
+    expectTrue(disabledSnap.rejectReason() == fuse::editor::GizmoInteractionRejectReason::SnapDisabled,
+    const fuse::editor::SnapPreflight invalidStepSnap =
+                   fuse::editor::GizmoInteractionRejectReason::InvalidSnapStep,
+    testRejectReasonDiagnostics();

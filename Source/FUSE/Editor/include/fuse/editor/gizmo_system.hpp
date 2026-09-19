@@ -1092,3 +1092,7 @@ InteractionPreflight preflightInteraction(const GizmoHitTest& hit, GizmoMode mod
 // --- deepen additive from gizmo-interaction-preflight-guards-d31b ---
 SnapDragPreflight preflightSnapDragDelta(GizmoMode mode, const GizmoSnapSettings& settings);
     [[nodiscard]] SnapDragPreflight preflightSnapDragDelta() const;
+
+// --- deepen additive from gizmo-preflight-reject-reasons-f595 ---
+enum class GizmoInteractionRejectReason {
+    GizmoInteractionRejectReason rejectReason() const;
