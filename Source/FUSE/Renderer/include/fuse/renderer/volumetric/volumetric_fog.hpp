@@ -171,6 +171,9 @@ bool preflightScreenMapping(f32 screenX,
 /// True when a screen-mapping reject reason would block mapping (B5.11 deepen).
 bool screenMappingRejectReasonIsBlocking(ScreenMappingRejectReason reason);
 
+/// True when a screen-mapping reject reason would block mapping (B5.11 deepen).
+bool screenMappingRejectReasonIsBlocking(ScreenMappingRejectReason reason);
+
 /// Why froxel sample-coord preflight rejected the request (B5.11 deepen).
 enum class SampleCoordRejectReason : u8 {
     None = 0,
@@ -232,6 +235,9 @@ enum class FroxelBilinearSampleRejectReason : u8 {
 
 /// Human-readable label for bilinear sample reject reasons (logging / tests).
 const char* froxelBilinearSampleRejectReasonLabel(FroxelBilinearSampleRejectReason reason);
+
+/// True when a sample-coord reject reason would block sampling (B5.11 deepen).
+bool sampleCoordRejectReasonIsBlocking(SampleCoordRejectReason reason);
 
 /// True when a sample-coord reject reason would block sampling (B5.11 deepen).
 bool sampleCoordRejectReasonIsBlocking(SampleCoordRejectReason reason);
@@ -366,6 +372,9 @@ enum class FroxelScreenSampleRejectReason : u8 {
 
 /// Human-readable label for screen-sample reject reasons (logging / tests).
 const char* froxelScreenSampleRejectReasonLabel(FroxelScreenSampleRejectReason reason);
+
+/// True when a trilinear sample reject reason would block sampling (B5.11 deepen).
+bool froxelTrilinearSampleRejectReasonIsBlocking(FroxelTrilinearSampleRejectReason reason);
 
 /// True when a trilinear sample reject reason would block sampling (B5.11 deepen).
 bool froxelTrilinearSampleRejectReasonIsBlocking(FroxelTrilinearSampleRejectReason reason);
@@ -707,6 +716,9 @@ bool gridDensityRejectReasonIsBlocking(GridDensityRejectReason reason);
 /// True when a grid-density reject reason would block validation (B5.11 deepen).
 bool gridDensityRejectReasonIsBlocking(GridDensityRejectReason reason);
 
+/// True when a grid-density reject reason would block validation (B5.11 deepen).
+bool gridDensityRejectReasonIsBlocking(GridDensityRejectReason reason);
+
 /// Why analytic froxel populate would skip meaningful fill (B5.11 deepen).
 enum class FroxelPopulateRejectReason : u8 {
     InvalidCamera,
@@ -841,6 +853,9 @@ bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 /// True when a populate reject reason would block meaningful analytic fill (B5.11 deepen pass).
 
 /// True when the reject reason blocks analytic froxel populate fill.
+bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
+
+/// True when a populate reject reason would block meaningful fill (B5.11 deepen).
 bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 
 /// True when a populate reject reason would block meaningful fill (B5.11 deepen).
@@ -981,6 +996,9 @@ bool froxelTrilinearSampleRejectReasonIsBlocking(FroxelTrilinearSampleRejectReas
 
 
 
+
+/// True when a density lookup reject reason would block lookup (B5.11 deepen).
+bool densityLookupRejectReasonIsBlocking(DensityLookupRejectReason reason);
 
 /// True when a density lookup reject reason would block lookup (B5.11 deepen).
 bool densityLookupRejectReasonIsBlocking(DensityLookupRejectReason reason);
