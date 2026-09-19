@@ -4649,3 +4649,7 @@ void testTaaPassTryPreflightGuardWrappers() {
     expectTrue(pass->jitter().index() != jitterIndexBefore, "pass tryAdvanceJitter advances jitter");
                "pass tryPreflightResolve skip reason is None before warmup");
     testTaaPassTryPreflightGuardWrappers();
+
+// --- deepen additive from deepen-taa-b59-guards-5600 ---
+void testTaaPassTryAndClassifyGuardWrappers() {
+               "pass tryPreflightHistoryReuse passes after warmup with current generation");
