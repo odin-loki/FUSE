@@ -3469,3 +3469,16 @@ void testFroxelClassifyAndBlockingGuards() {
                "classifyGridDensityReject none for empty desc (vacuous)");
     expectTrue(!fuse::renderer::froxel_util::preflightFroxelPopulate(zeroDesc, camera, params),
                "classifyFroxelPopulateReject invalid_camera for inverted near/far");
+
+// --- deepen additive from deepen-froxel-classify-isblocking-34dc ---
+    expectTrue(fuse::renderer::froxel_util::preflightTrilinearSample(grid, desc, warnWeights),
+               "classifyTrilinearSampleReject invalid_sample_coords for hard OOB");
+               "classifyGridDensityReject vacuously none for empty desc");
+               "classifyPopulateReject none for valid populate");
+    expectTrue(fuse::renderer::froxel_util::preflightPopulate(desc, camera, params),
+               "preflightPopulate succeeds for valid populate");
+    expectTrue(!fuse::renderer::froxel_util::preflightPopulate(desc, camera, zeroDensity),
+               "preflightPopulate rejects zero density");
+               "classifyPopulateReject invalid_camera for bad camera");
+    expectTrue(!fuse::renderer::froxel_util::preflightPopulate(desc, badCamera, params),
+               "preflightPopulate rejects invalid camera");

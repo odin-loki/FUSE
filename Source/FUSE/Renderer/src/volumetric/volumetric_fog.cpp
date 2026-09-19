@@ -2226,3 +2226,14 @@ SampleCoordRejectReason classifyFroxelSampleCoordReject(const FroxelDensityGrid&
     return !gridDensityRejectReasonIsBlocking(outReason);
     outReason = classifyFroxelPopulateReject(desc, camera, params);
     return !froxelPopulateRejectReasonIsBlocking(outReason);
+
+// --- deepen additive from deepen-froxel-classify-isblocking-34dc ---
+    if (densityLookupRejectReasonIsBlocking(baseReject)) {
+    return !densityLookupRejectReasonIsBlocking(outReason);
+    outReason = classifyDensityLookupReject(grid, desc, tileX, tileY, sliceZ);
+    if (densityLookupRejectReasonIsBlocking(lookupReject)) {
+    const SampleCoordRejectReason sampleReject = FroxelGridLayout::classifySampleCoordsReject(coords, desc);
+    if (sampleCoordRejectReasonIsBlocking(sampleReject)) {
+    if (sampleReject == SampleCoordRejectReason::InvalidWeights) {
+bool preflightPopulate(const FroxelGridDesc& desc,
+    outReason = classifyPopulateReject(desc, camera, params);
