@@ -1025,22 +1025,21 @@ SnapPreflight preflightSnap(GizmoMode mode, const GizmoSnapSettings& settings,
         preflight.noChange = true;
 
 
-namespace {
 
-bool gizmoTransformNear(const GizmoTransform& a, const GizmoTransform& b, f32 tolerance) {
-    return std::fabs(a.posX - b.posX) <= tolerance && std::fabs(a.posY - b.posY) <= tolerance &&
-           std::fabs(a.posZ - b.posZ) <= tolerance && std::fabs(a.rotX - b.rotX) <= tolerance &&
-           std::fabs(a.rotY - b.rotY) <= tolerance && std::fabs(a.rotZ - b.rotZ) <= tolerance &&
-           std::fabs(a.rotW - b.rotW) <= tolerance && std::fabs(a.scaleX - b.scaleX) <= tolerance &&
-           std::fabs(a.scaleY - b.scaleY) <= tolerance && std::fabs(a.scaleZ - b.scaleZ) <= tolerance;
-}
 
-} // namespace
 
-SnapPreflight preflightSnap(GizmoMode mode, const GizmoSnapSettings& settings,
-                            const GizmoTransform& transform) {
-    SnapPreflight preflight = preflightSnap(mode, settings);
-    if (!preflight.canApply()) {
+UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging,
+                                        GizmoAxis activeAxis, GizmoMode mode) {
+    UpdateDragPreflight preflight = preflightUpdateDrag(hit, dragging, activeAxis);
+    if (!preflight.canUpdate()) {
+
+    if (isScreenHitMiss(hit, mode)) {
+        preflight.screenMiss = true;
+
+
+                                        GizmoAxis activeAxis, GizmoMode mode,
+                                        const GizmoSnapSettings& settings) {
+    UpdateDragPreflight preflight = preflightUpdateDrag(hit, dragging, activeAxis, mode);
         return preflight;
     }
 
@@ -1176,6 +1175,12 @@ bool gizmoTransformEquals(const GizmoTransform& a, const GizmoTransform& b) {
     return a.posX == b.posX && a.posY == b.posY && a.posZ == b.posZ && a.rotX == b.rotX &&
            a.rotY == b.rotY && a.rotZ == b.rotZ && a.rotW == b.rotW && a.scaleX == b.scaleX &&
            a.scaleY == b.scaleY && a.scaleZ == b.scaleZ;
+bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis, GizmoMode mode) {
+    return preflightUpdateDrag(hit, dragging, activeAxis, mode).canUpdate();
+
+bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+                   const GizmoSnapSettings& settings) {
+    return preflightUpdateDrag(hit, dragging, activeAxis, mode, settings).canUpdate();
 }
 
 EndDragPreflight preflightEndDrag(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
@@ -1287,6 +1292,23 @@ BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform&
 
     preflight.canBegin = true;
 
+BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
+                                      GizmoMode mode, GizmoSpace space, f32 axisLength,
+                                      f32 pickRadius, const GizmoSnapSettings& settings,
+                                      bool alreadyDragging) {
+    BeginDragPreflight preflight =
+        preflightBeginDrag(ray, transform, mode, space, axisLength, pickRadius, alreadyDragging);
+    if (!preflight.canBegin) {
+        return preflight;
+    }
+
+    if (isSnapEnabled(mode, settings) && !isSnapStepValid(mode, settings)) {
+        preflight.snapDegraded = true;
+    }
+
+    return preflight;
+}
+
 BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode,
                                       bool alreadyDragging) {
     return preflightBeginDrag(hit, mode, {}, alreadyDragging);
@@ -1301,6 +1323,20 @@ BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode,
     preflight.outOfBounds = pick.outOfBounds;
     preflight.screenMiss = pick.screenMiss;
 
+
+    return preflight;
+}
+
+BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode,
+                                      const GizmoSnapSettings& settings, bool alreadyDragging) {
+    BeginDragPreflight preflight = preflightBeginDrag(hit, mode, alreadyDragging);
+    if (!preflight.canBegin) {
+        return preflight;
+    }
+
+    if (isSnapEnabled(mode, settings) && !isSnapStepValid(mode, settings)) {
+        preflight.snapDegraded = true;
+    }
 
     return preflight;
 }
@@ -2020,6 +2056,10 @@ bool GizmoSystem::trySnapTransform(const GizmoTransform& transform, GizmoTransfo
     return fuse::editor::trySnapTransform(transform, m_mode, m_snap, out);
 }
 
+f32 GizmoSystem::trySnapDragDelta(f32 delta) const {
+    return fuse::editor::trySnapDragDelta(delta, m_mode, m_snap);
+}
+
 UpdateDragPreflight GizmoSystem::preflightUpdateDrag(const GizmoHitTest& hit) const {
     return fuse::editor::preflightUpdateDrag(hit, m_dragging, m_activeAxis, m_mode, m_snap);
 }
@@ -2287,6 +2327,8 @@ bool GizmoSystem::tryUpdateDrag(const GizmoHitTest& hit, GizmoResult& out) {
     out = {};
     if (!preflightUpdateDrag(hit).canUpdate()) {
     if (!m_dragging || isHitTestEmpty(hit)) {
+    const UpdateDragPreflight preflight = preflightUpdateDrag(hit);
+    if (!preflight.canUpdate()) {
         return false;
 GizmoResult GizmoSystem::updateDrag(const GizmoHitTest& hit) {
     GizmoResult result;
@@ -2452,7 +2494,7 @@ GizmoTransform GizmoSystem::applyAxisDelta_(const GizmoHitTest& hit,
                                             const GizmoTransform& base) const {
     const f32 dx = normalizedX(hit) - normalizedX(m_lastHit);
     const f32 dy = normalizedY(hit) - normalizedY(m_lastHit);
-    const f32 delta = trySnapDragDelta(dx + dy, m_mode, m_snap);
+    const f32 delta = this->trySnapDragDelta(dx + dy);
 
     switch (m_mode) {
     case GizmoMode::Translate: {

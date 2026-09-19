@@ -288,6 +288,9 @@ struct BeginDragPreflight {
     bool invalidPickConfig = false;
     bool screenMiss = false;
     bool pickMiss = false;
+    bool alreadyDragging = false;
+    /// Snap is enabled but the mode step is unusable — begin still applies (B6.4 deepen pass).
+    bool snapDegraded = false;
 };
 
 /// Read-only update-drag diagnostics — no mutation (B6.4 deepen follow-up).
@@ -296,6 +299,7 @@ struct UpdateDragPreflight {
     bool emptyHit = false;
     bool outOfBounds = false;
     bool invalidActiveAxis = false;
+    bool screenMiss = false;
     /// Snap is enabled but the mode step is unusable — update still applies (B6.4 deepen pass).
     bool emptyHit = false;
     /// Screen dead-zone hit during drag — diagnostic only; does not block `canUpdate()` (B6.4 deepen pass).
@@ -309,16 +313,20 @@ struct UpdateDragPreflight {
 
         return !notDragging && !emptyHit && !invalidActiveAxis && !outOfBounds;
         return !notDragging && !emptyHit && !outOfBounds && !invalidActiveAxis;
+        return !notDragging && !emptyHit && !invalidActiveAxis && !screenMiss;
     }
 };
 
 UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging,
                                         GizmoAxis activeAxis = GizmoAxis::None);
 UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis,
+                                        GizmoMode mode);
+UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis,
                                         GizmoMode mode, const GizmoSnapSettings& settings);
 
 /// Non-mutating update-drag predicate — same guards as `preflightUpdateDrag` (B6.4 deepen follow-up).
 bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis = GizmoAxis::None);
+bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis, GizmoMode mode);
 bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis, GizmoMode mode,
                    const GizmoSnapSettings& settings);
 
@@ -650,6 +658,9 @@ bool canEndDrag(bool dragging, GizmoAxis activeAxis = GizmoAxis::None);
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
                                       f32 pickRadius, bool alreadyDragging = false);
                                       f32 pickRadius, const GizmoSnapSettings& settings,
+BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
+                                      GizmoMode mode, GizmoSpace space, f32 axisLength,
+                                      bool alreadyDragging = false);
 BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode,
 /// Pick-axis preflight — no axis output when inputs are invalid (B6.4 deepen follow-up).
 bool canPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
@@ -733,6 +744,8 @@ BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform&
 
 /// Component-wise transform equality for end-drag diagnostics (B6.4 deepen pass).
 bool gizmoTransformEquals(const GizmoTransform& a, const GizmoTransform& b);
+BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode,
+                                      const GizmoSnapSettings& settings, bool alreadyDragging = false);
 
 /// Pick axis with empty-hit guards — returns false when pick misses (B6.4 deepen follow-up).
 bool tryPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
@@ -1038,6 +1051,7 @@ public:
     [[nodiscard]] bool canSnapDragDeltaNow() const;
     [[nodiscard]] bool trySnapTransform(const GizmoTransform& transform,
                                         GizmoTransform& out) const;
+    [[nodiscard]] f32 trySnapDragDelta(f32 delta) const;
     [[nodiscard]] UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit) const;
     [[nodiscard]] UpdateDragInteractionPreflight preflightUpdateDragInteraction(
         const GizmoHitTest& hit, f32 delta) const;
