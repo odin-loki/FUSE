@@ -2751,3 +2751,21 @@ void testFroxelTrilinearPreflightAndSkipGuards() {
     expectTrue(fuse::renderer::froxel_util::wouldSkipAnalyticPopulate(desc, camera, zeroDensity),
     expectTrue(!fuse::renderer::froxel_util::tryValidateGridDensity(corrupt, desc, densityReason),
     testFroxelTrilinearPreflightAndSkipGuards();
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-2131 ---
+void testFroxelTrilinearAndPopulateDeepGuards() {
+    fuse::renderer::DensityTrilinearSampleRejectReason trilinearReason =
+        fuse::renderer::DensityTrilinearSampleRejectReason::None;
+    expectTrue(trilinearReason == fuse::renderer::DensityTrilinearSampleRejectReason::None,
+    expectTrue(std::strcmp(fuse::renderer::densityTrilinearSampleRejectReasonLabel(trilinearReason), "none") == 0,
+               "tryCanTrilinearSampleAtCoords succeeds when weights will clamp");
+    expectTrue(trilinearReason == fuse::renderer::DensityTrilinearSampleRejectReason::ClampableWeights,
+    expectTrue(std::strcmp(fuse::renderer::densityTrilinearSampleRejectReasonLabel(trilinearReason),
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityTrilinear(grid, desc, warnWeights, trilinearSample,
+               "trySampleDensityTrilinear with trilinear reason succeeds for clampable weights");
+    expectTrue(trilinearReason == fuse::renderer::DensityTrilinearSampleRejectReason::InvalidSampleCoords,
+    expectTrue(trilinearReason == fuse::renderer::DensityTrilinearSampleRejectReason::EmptyGrid,
+    expectTrue(trilinearReason == fuse::renderer::DensityTrilinearSampleRejectReason::EmptyStorage,
+    expectTrue(!fuse::renderer::froxel_util::tryCanTrilinearSampleAtCoords(grid, mismatched, inBounds, trilinearReason),
+               "tryCanTrilinearSampleAtCoords rejects desc mismatch");
+    expectTrue(trilinearReason == fuse::renderer::DensityTrilinearSampleRejectReason::DescMismatch,
