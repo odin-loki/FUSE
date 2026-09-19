@@ -2317,3 +2317,16 @@ void testParticleGpuMirrorPackUnpackGuards() {
     expectTrue(!packed.empty(), "synced mirror tryPack returns packed bytes");
     expectTrue(mirror.tryPackToDeviceLayout().empty(), "stale alive_count blocks tryPack");
     expectTrue(!mirror.tryPackToDeviceLayout().empty(), "repaired alive_count restores tryPack");
+
+// --- deepen additive from deepen-vfx-gpu-dispatch-mirror-guards-9299 ---
+    const fuse::vfx::ParticleGpuDispatchPreflight partial_preflight = partial.preflight(100u, 0u);
+    const fuse::vfx::ParticleGpuDispatchPreflight emit_preflight = emit.preflight(0u, 200u);
+    const fuse::vfx::ParticleGpuDispatchPreflight frame_preflight = frame.preflight(4096u, 200u);
+    const fuse::vfx::ParticleGpuDispatchPreflight exact_preflight =
+void testParticleGpuSlotAddressGuards() {
+void testParticleGpuMirrorPackGuards() {
+    const std::vector<fuse::u8> blocked = mirror.tryPackToDeviceLayout();
+    expectTrue(blocked.empty(), "tryPackToDeviceLayout returns empty on uninitialized mirror");
+             "tryPackToDeviceLayout returns full layout on ok guard");
+    expectTrue(mirror.tryPackToDeviceLayout().empty(), "tryPackToDeviceLayout blocks on alive count mismatch");
+    const fuse::vfx::ParticleGpuMirrorPreflight stale = mirror.preflightFromCpu(cpu);

@@ -989,3 +989,8 @@ ParticleGpuDispatchPreflight ParticleGpuDispatch::preflight(u32 capacity, u32 em
     ParticleGpuDispatchPreflight result{};
 bool ParticleGpuMirrorPreflight::can_unpack(const std::vector<u8>& bytes, u32 particle_capacity) const {
 std::vector<u8> ParticleGpuMirror::tryPackToDeviceLayout() const {
+
+// --- deepen additive from deepen-vfx-gpu-dispatch-mirror-guards-9299 ---
+bool ParticleGpuDispatchPreflight::ready_for_stub(u32 slot_count, u32 emit_count) const {
+ParticleGpuDispatchPreflight ParticleGpuDispatch::preflight(u32 slot_count, u32 emit_count) const {
+bool ParticleGpuMirrorPreflight::can_unpack(const std::vector<u8>& bytes, u32 capacity) const {
