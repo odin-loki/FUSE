@@ -130,6 +130,9 @@ bool screenMappingRejectReasonIsBlocking(ScreenMappingRejectReason reason);
 
 /// Why froxel sample-coord preflight rejected the request (B5.11 deepen).
 enum class SampleCoordRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    UnorderedCorners,
     OutOfBounds,
     InvalidWeights,
 /// Why froxel grid desc validation rejected the request (B5.11 deepen).
@@ -198,6 +201,9 @@ enum class GridDensityRejectReason : u8 {
     EmptyDesc,
     UndersizedStorage,
     DensityCountMismatch,
+    None = 0,
+    DescMismatch,
+};
 
 /// Human-readable label for density reject reasons (logging / tests).
 const char* gridDensityRejectReasonLabel(GridDensityRejectReason reason);
@@ -250,6 +256,12 @@ struct FroxelGridLayout {
     static bool isValidSampleCoords(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
     /// True when sample coords exceed grid bounds or interpolation weights are outside [0, 1].
     static bool isSampleCoordsOutOfRange(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
+    /// Diagnose why sample-coord validation would reject; vacuously succeeds on valid coords.
+    static bool tryValidateSampleCoords(const FroxelSampleCoords& coords,
+                                        const FroxelGridDesc& desc,
+                                        SampleCoordRejectReason& outReason);
+    /// Empty-grid preflight before froxel grid operations; vacuously succeeds on non-empty grids.
+    static bool tryPreflightNonEmptyGrid(const FroxelGridDesc& desc, GridDensityRejectReason& outReason);
     /// Ensure corner indices are ordered and interpolation weights stay in [0, 1].
     /// True when corner indices are ordered and weights are within [0, 1] on a non-empty grid.
     static bool isValidSampleCoords(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
@@ -390,9 +402,7 @@ bool tryMapScreenDepthToSampleCoords(f32 screenX,
 
 /// Why grid density validation rejected a froxel cache (B5.11 deepen).
 enum class GridDensityRejectReason : u8 {
-    None = 0,
     EmptyDesc,
-    EmptyGrid,
     DescMismatch,
     UndersizedStorage,
     DensityCountMismatch,
@@ -533,6 +543,10 @@ bool wouldSkipDensityLookupAtCoord(const FroxelDensityGrid& grid,
 bool wouldClampDensityLookupIndex(u32 index, const FroxelGridDesc& desc);
 /// True when a lookup at tile/slice coords would clamp into the valid froxel range.
 bool wouldClampDensityLookupCoord(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc);
+/// Combined empty-desc + grid accessibility preflight before density lookup/sample.
+bool tryPreflightDensityGridAccess(const FroxelDensityGrid& grid,
+                                   const FroxelGridDesc& desc,
+                                   GridDensityRejectReason& outReason);
 /// Preflight guard before coord-based density sampling; false on inaccessible grid or invalid coords.
 bool canSampleAtCoords(const FroxelDensityGrid& grid,
                        const FroxelSampleCoords& coords);
@@ -727,6 +741,7 @@ bool tryWriteDensityAtIndex(FroxelDensityGrid& grid,
                             u32 index,
                             f32 value);
 /// Write density with guard preflight and reject-reason diagnostics.
+/// Write density with guard preflight and lookup reject-reason diagnostics.
 bool tryWriteDensityAtIndex(FroxelDensityGrid& grid,
                             const FroxelGridDesc& desc,
                             u32 index,
@@ -747,6 +762,7 @@ bool trySampleDensityAtCoord(const FroxelDensityGrid& grid,
                              f32& outDensity);
 /// Read density at tile/slice coords with guard preflight and reject-reason diagnostics.
 /// Read density at clamped tile/slice coords with guard preflight and reject-reason diagnostics.
+/// Read density at clamped tile/slice coords with guard preflight and lookup reject-reason diagnostics.
 bool trySampleDensityAtCoord(const FroxelDensityGrid& grid,
                              const FroxelGridDesc& desc,
                              u32 tileX,
@@ -772,6 +788,10 @@ bool validateDensityCountsForDesc(const FroxelDensityGrid& grid,
 /// Write density at clamped tile/slice coords with guard preflight and reject-reason diagnostics.
 bool tryWriteDensityAtCoord(FroxelDensityGrid& grid,
                             const FroxelGridDesc& desc,
+/// Write density at clamped tile/slice coords with guard preflight and lookup reject-reason diagnostics.
+                            u32 tileX,
+                            u32 tileY,
+                            u32 sliceZ,
                             f32 value,
                             DensityLookupRejectReason& outReason);
 f32 sampleDensityBilinear(const FroxelDensityGrid& grid,

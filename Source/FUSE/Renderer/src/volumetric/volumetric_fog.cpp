@@ -232,12 +232,51 @@ bool FroxelGridLayout::areSampleCoordsInBounds(const FroxelSampleCoords& coords,
     return true;
 }
 
-bool FroxelGridLayout::isValidSampleCoords(const FroxelSampleCoords& coords, const FroxelGridDesc& desc) {
-    if (!areSampleCoordsInBounds(coords, desc)) {
+bool FroxelGridLayout::tryValidateSampleCoords(const FroxelSampleCoords& coords,
+                                               const FroxelGridDesc& desc,
+                                               SampleCoordRejectReason& outReason) {
+    if (isEmptyGrid(desc)) {
+        outReason = SampleCoordRejectReason::EmptyGrid;
         return false;
     }
 
-    return coords.tileX0 <= coords.tileX1 && coords.tileY0 <= coords.tileY1 && coords.sliceZ0 <= coords.sliceZ1;
+    if (coords.tileX0 > coords.tileX1 || coords.tileY0 > coords.tileY1 || coords.sliceZ0 > coords.sliceZ1) {
+        outReason = SampleCoordRejectReason::UnorderedCorners;
+        return false;
+    }
+
+    const u32 maxTileX = desc.tilesX - 1u;
+    const u32 maxTileY = desc.tilesY - 1u;
+    const u32 maxSliceZ = desc.slicesZ - 1u;
+    if (coords.tileX0 > maxTileX || coords.tileY0 > maxTileY || coords.sliceZ0 > maxSliceZ ||
+        coords.tileX1 > maxTileX || coords.tileY1 > maxTileY || coords.sliceZ1 > maxSliceZ) {
+        outReason = SampleCoordRejectReason::OutOfBounds;
+        return false;
+    }
+
+    if (coords.tx < 0.f || coords.tx > 1.f || coords.ty < 0.f || coords.ty > 1.f || coords.tz < 0.f ||
+        coords.tz > 1.f) {
+        outReason = SampleCoordRejectReason::InvalidWeights;
+        return false;
+    }
+
+    outReason = SampleCoordRejectReason::None;
+    return true;
+}
+
+bool FroxelGridLayout::tryPreflightNonEmptyGrid(const FroxelGridDesc& desc, GridDensityRejectReason& outReason) {
+    if (isEmptyGrid(desc)) {
+        outReason = GridDensityRejectReason::EmptyDesc;
+        return false;
+    }
+
+    outReason = GridDensityRejectReason::None;
+    return true;
+}
+
+bool FroxelGridLayout::isValidSampleCoords(const FroxelSampleCoords& coords, const FroxelGridDesc& desc) {
+    SampleCoordRejectReason reason = SampleCoordRejectReason::None;
+    return tryValidateSampleCoords(coords, desc, reason);
 }
 
 void FroxelGridLayout::normalizeSampleCoords(FroxelSampleCoords& coords) {
@@ -1019,6 +1058,9 @@ bool screenMappingRejectReasonIsBlocking(ScreenMappingRejectReason reason) {
 const char* sampleCoordRejectReasonLabel(SampleCoordRejectReason reason) {
     case SampleCoordRejectReason::None:
     case SampleCoordRejectReason::EmptyGrid:
+        return "empty_grid";
+    case SampleCoordRejectReason::UnorderedCorners:
+        return "unordered_corners";
     case SampleCoordRejectReason::OutOfBounds:
         return "out_of_bounds";
     case SampleCoordRejectReason::InvalidWeights:
@@ -1355,6 +1397,27 @@ bool wouldClampDensityLookupIndex(u32 index, const FroxelGridDesc& desc) {
 
 bool wouldClampDensityLookupCoord(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc) {
     return !FroxelGridLayout::isEmptyGrid(desc) && FroxelGridLayout::isCoordOutOfRange(tileX, tileY, sliceZ, desc);
+
+bool tryPreflightDensityGridAccess(const FroxelDensityGrid& grid,
+                                   const FroxelGridDesc& desc,
+                                   GridDensityRejectReason& outReason) {
+    if (!FroxelGridLayout::tryPreflightNonEmptyGrid(desc, outReason)) {
+        return false;
+    }
+    if (!isDensityGridAccessible(grid, desc)) {
+        if (grid.isEmpty()) {
+            outReason = GridDensityRejectReason::UndersizedStorage;
+        } else if (!gridMatchesDesc(grid, desc)) {
+            outReason = GridDensityRejectReason::DescMismatch;
+        } else {
+            outReason = GridDensityRejectReason::UndersizedStorage;
+        }
+        return false;
+    }
+
+    outReason = GridDensityRejectReason::None;
+    return true;
+}
 
 bool canSampleAtCoords(const FroxelDensityGrid& grid,
                        const FroxelSampleCoords& /*coords*/) {
@@ -1758,6 +1821,28 @@ bool preflightGridDensity(const FroxelDensityGrid& grid,
     if (reason != nullptr) {
         *reason = reject;
     return !gridDensityRejectReasonIsBlocking(reject);
+    GridDensityRejectReason reason = GridDensityRejectReason::None;
+    return tryValidateGridDensityForDesc(grid, desc, reason, epsilon);
+}
+
+bool tryValidateGridDensityForDesc(const FroxelDensityGrid& grid,
+                                   GridDensityRejectReason& outReason,
+    const FroxelGridDesc clampedDesc = FroxelGridDesc::clampCounts(desc);
+    const u32 froxelCount = clampedDesc.froxelCount();
+
+    if (froxelCount == 0u) {
+        outReason = GridDensityRejectReason::None;
+        return true;
+    if (FroxelGridLayout::isEmptyGrid(desc)) {
+        outReason = GridDensityRejectReason::EmptyDesc;
+        return false;
+    if (grid.density.size() < froxelCount) {
+        outReason = GridDensityRejectReason::UndersizedStorage;
+    if (!gridMatchesDesc(grid, desc)) {
+        outReason = GridDensityRejectReason::DescMismatch;
+    if (!validateDensityCounts(grid, epsilon)) {
+        outReason = GridDensityRejectReason::DensityCountMismatch;
+
 
 bool tryValidateGridDensity(const FroxelDensityGrid& grid,
                             GridDensityRejectReason& outReason,
@@ -2211,6 +2296,9 @@ bool tryWriteDensityAtCoord(FroxelDensityGrid& grid,
     if (!tryCanLookupAtIndex(grid, desc, 0u, outReason)) {
         return false;
 
+
+    }
+
     const bool wrote = writeDensityAtCoord(grid, desc, tileX, tileY, sliceZ, value);
     outReason = DensityLookupRejectReason::None;
     return wrote;
@@ -2578,6 +2666,13 @@ bool tryPopulateFromAnalyticFog(FroxelDensityGrid& grid,
 
         outReason = lookupReason == DensityLookupRejectReason::EmptyGrid ? ScreenMappingRejectReason::EmptyGrid
                                                                          : ScreenMappingRejectReason::None;
+
+        switch (lookupReason) {
+        case DensityLookupRejectReason::EmptyGrid:
+            break;
+        case DensityLookupRejectReason::EmptyStorage:
+        case DensityLookupRejectReason::DescMismatch:
+        case DensityLookupRejectReason::None:
         return false;
     }
 
