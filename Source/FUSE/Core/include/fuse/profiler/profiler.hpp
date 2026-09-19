@@ -447,6 +447,8 @@ struct NestingStatePreflight {
     bool isExportRecommended() const {
         return canExport() && hasExportableEvents() && !hasUnbalancedNesting() && !flowDepthDetached;
     bool isNestingClean() const { return !hasUnbalancedNesting() && !flowDepthDetached; }
+    bool hasValidEventIndices() const {
+        return firstEventIndex != kInvalidEventIndex && lastEventIndex != kInvalidEventIndex;
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -573,6 +575,7 @@ bool isValidProfileEvent(const ProfileEvent& event);
 bool canRecordEvent(const char* name);
 bool canBeginAsyncFlow(const char* name);
 bool canEndAsyncFlow(const char* name);
+bool isEmptyProfileEvent(const ProfileEvent& event);
 u32 exportableEventCount();
 u32 invalidEventCount();
 bool isExportableProfileEvent(const ProfileEvent& event);
@@ -605,6 +608,7 @@ bool tryExportableEventAt(u32 index, ProfileEvent& outEvent);
 u32 lastExportableEventIndex();
 u32 findLastEventIndexByPhase(EventPhase phase);
 bool tryEventAtPhase(u32 index, EventPhase expectedPhase, ProfileEvent& outEvent);
+bool tryRecordedEventAt(u32 index, ProfileEvent& outEvent);
 bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
 bool tryFirstExportableEvent(ProfileEvent& outEvent);

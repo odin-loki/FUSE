@@ -1339,6 +1339,10 @@ const ProfileEvent& emptyProfileEvent() {
     return isNonEmptyProfileName(event.name);
 
 
+bool isEmptyProfileEvent(const ProfileEvent& event) {
+    return &event == &emptyProfileEvent() || event.name == nullptr;
+}
+
 const ProfileEvent& eventAt(u32 index) {
         return emptyProfileEvent();
 
@@ -1381,11 +1385,8 @@ bool tryCanLookupEventAt(u32 index, EventLookupRejectReason& outReason) {
     if (eventCount() == 0u) {
         outReason = EventLookupRejectReason::EmptyBuffer;
         return false;
-    }
     if (index >= eventCount()) {
         outReason = EventLookupRejectReason::OutOfRange;
-        return false;
-    }
 
     const ProfileEvent& candidate = eventAt(index);
     if (!isValidProfileEvent(candidate)) {
@@ -1393,8 +1394,6 @@ bool tryCanLookupEventAt(u32 index, EventLookupRejectReason& outReason) {
 
     outReason = EventLookupRejectReason::None;
     return true;
-        return false;
-    }
 
 
 
@@ -1410,9 +1409,9 @@ const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason) {
         return "invalid_event";
     return "unknown";
 const char* eventNameAt(u32 index) {
-    }
 
 bool tryEventAt(u32 index, ProfileEvent& outEvent) {
+bool tryRecordedEventAt(u32 index, ProfileEvent& outEvent) {
     if (!isEventIndexValid(index)) {
         return nullptr;
 
@@ -1429,6 +1428,14 @@ bool tryEventAt(u32 index, ProfileEvent& outEvent) {
     }
 
     outEvent = eventAt(index);
+    return true;
+}
+
+bool tryEventAt(u32 index, ProfileEvent& outEvent) {
+    if (!tryRecordedEventAt(index, outEvent)) {
+        return false;
+    }
+
     return isValidProfileEvent(outEvent);
 
 bool tryExportableEventAt(u32 index, ProfileEvent& outEvent) {
