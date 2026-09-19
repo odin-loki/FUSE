@@ -44,6 +44,9 @@ struct HrtfIrPreflight {
     bool malformedIr = false;
 
     bool can_convolve() const { return !emptyIr && !malformedIr; }
+
+    /// True when convolution dispatch should be skipped (empty or malformed IR).
+    bool should_skip_convolution() const { return !can_convolve(); }
 };
 
 /// Preflight an HRTF IR stub before convolution dispatch.
@@ -51,6 +54,9 @@ HrtfIrPreflight preflight_hrtf_ir(const HrtfIrStub& ir);
 
 /// Non-mutating convolution predicate — mirrors \c HrtfIrPreflight::can_convolve.
 bool can_convolve_hrtf_ir(const HrtfIrPreflight& preflight);
+
+/// Non-mutating skip predicate — mirrors \c HrtfIrPreflight::should_skip_convolution.
+bool should_skip_hrtf_ir_convolution(const HrtfIrPreflight& preflight);
 
 /// HRTF pan routing — empty IR uses ILD/ITD stub; convolution deferred until IR wired.
 enum class HrtfPanPath {
@@ -75,6 +81,12 @@ struct HrtfPanPathPreflight {
 
     bool can_spatial_pan() const { return !skipped && path != HrtfPanPath::Bypass; }
     bool can_convolve() const { return can_spatial_pan() && path == HrtfPanPath::Convolution; }
+
+    /// True when pan routing resolves to centre bypass (disabled or co-located).
+    bool should_skip() const { return skipped; }
+
+    /// True when the resolved path selects ILD/ITD stub (empty IR fallback).
+    bool uses_ild_itd_stub() const { return path == HrtfPanPath::IldItdStub; }
 };
 
 /// Preflight HRTF pan routing from enable flag, IR stub, and listener-local offset.
@@ -86,6 +98,15 @@ HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_
 
 /// Non-mutating spatial-pan predicate — mirrors \c HrtfPanPathPreflight::can_spatial_pan.
 bool can_apply_spatial_hrtf_pan(const HrtfPanPathPreflight& preflight);
+
+/// Non-mutating convolution predicate — mirrors \c HrtfPanPathPreflight::can_convolve.
+bool can_convolve_hrtf_pan_path(const HrtfPanPathPreflight& preflight);
+
+/// Non-mutating skip predicate — mirrors \c HrtfPanPathPreflight::should_skip.
+bool should_skip_hrtf_pan_path_preflight(const HrtfPanPathPreflight& preflight);
+
+/// True when pan-path preflight selects ILD/ITD stub (empty IR fallback).
+bool uses_ild_itd_stub_hrtf_pan_path(const HrtfPanPathPreflight& preflight);
 
 /// True when a resolved pan path bypasses HRTF (disabled or co-located).
 bool is_hrtf_pan_bypassed(HrtfPanPath path);
@@ -238,6 +259,11 @@ BinauralPanGains compute_binaural_pan_gains_guarded(bool hrtf_enabled, const Hrt
 BinauralPanGains compute_binaural_pan_gains_for_path(HrtfPanPath path, const Vec3& rel_listener,
                                                      const BinauralPanParams& params = {});
 
+/// Apply pan gains from a pan-path preflight bundle (read-only guards; valid paths unchanged).
+BinauralPanGains compute_binaural_pan_gains_from_pan_path_preflight(
+    const HrtfPanPathPreflight& preflight, const Vec3& rel_listener,
+    const BinauralPanParams& params = {});
+
 /// Linear interpolation between two binaural pan gain states.
 BinauralPanGains lerp_binaural_pan_gains(const BinauralPanGains& from, const BinauralPanGains& to,
                                          float t);
@@ -283,6 +309,9 @@ struct HrtfAttenuationCouplingPreflight {
     float spatialBlend = 1.f;
 
     bool can_narrow() const { return !skipped; }
+
+    /// True when distance/occlusion coupling should be skipped (bypass or unity attenuation).
+    bool should_skip() const { return skipped; }
 };
 
 /// Preflight distance + occlusion coupling before spatial image narrowing.
@@ -293,6 +322,9 @@ HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling(
 
 /// Non-mutating narrowing predicate — mirrors \c HrtfAttenuationCouplingPreflight::can_narrow.
 bool can_narrow_hrtf_spatial_image(const HrtfAttenuationCouplingPreflight& preflight);
+
+/// Non-mutating skip predicate — mirrors \c HrtfAttenuationCouplingPreflight::should_skip.
+bool should_skip_hrtf_attenuation_coupling_preflight(const HrtfAttenuationCouplingPreflight& preflight);
 
 /// True when a spatial blend preserves full L/R separation.
 bool is_unity_hrtf_spatial_blend(float blend, float epsilon = 1e-5f);
@@ -360,7 +392,22 @@ struct HrtfBinauralPreflight {
     bool can_convolve() const { return panPath.can_convolve(); }
     bool can_narrow_spatial_image() const { return attenuationCoupling.can_narrow(); }
     bool is_bypass() const { return panPath.skipped; }
+
+    /// True when composite preflight selects centre bypass (disabled or co-located).
+    bool should_skip() const { return is_bypass(); }
+
+    /// True when the resolved path selects ILD/ITD stub (empty IR fallback).
+    bool uses_ild_itd_stub() const { return panPath.uses_ild_itd_stub(); }
+
+    /// True when the composite preflight carries an empty or malformed IR stub.
+    bool has_empty_ir() const { return ir.emptyIr; }
+
+    /// True when IR convolution should be skipped (empty or malformed IR, or bypass).
+    bool should_skip_convolution() const { return !can_convolve(); }
 };
+
+/// True when composite IR and pan-path preflights agree on convolution eligibility.
+bool is_consistent_hrtf_binaural_preflight(const HrtfBinauralPreflight& preflight);
 
 /// Preflight all binaural/HRTF guards for one source (IR-aware).
 HrtfBinauralPreflight preflight_hrtf_binaural(bool hrtf_enabled, const HrtfIrStub& ir,
@@ -375,16 +422,58 @@ HrtfBinauralPreflight preflight_hrtf_binaural(bool hrtf_enabled, const Vec3& rel
                                               const HrtfAttenuationCoupling& coupling = {},
                                               const BinauralPanParams& params = {});
 
+/// Preflight all binaural/HRTF guards from listener and source world positions (IR-aware).
+HrtfBinauralPreflight preflight_hrtf_binaural(bool hrtf_enabled, const AudioListener& listener,
+                                              const Vec3& source_position, const HrtfIrStub& ir,
+                                              float distance_attenuation, float occlusion_gain,
+                                              const HrtfAttenuationCoupling& coupling = {},
+                                              const BinauralPanParams& params = {});
+
+/// Preflight all binaural/HRTF guards from listener and source world positions (no IR wired).
+HrtfBinauralPreflight preflight_hrtf_binaural(bool hrtf_enabled, const AudioListener& listener,
+                                              const Vec3& source_position, float distance_attenuation,
+                                              float occlusion_gain,
+                                              const HrtfAttenuationCoupling& coupling = {},
+                                              const BinauralPanParams& params = {});
+
 /// Non-mutating spatial-pan predicate — mirrors \c HrtfBinauralPreflight::can_spatial_pan.
 bool can_apply_hrtf_binaural_pan(const HrtfBinauralPreflight& preflight);
 
+/// Non-mutating convolution predicate — mirrors \c HrtfBinauralPreflight::can_convolve.
+bool can_convolve_hrtf_binaural(const HrtfBinauralPreflight& preflight);
+
+/// Non-mutating narrowing predicate — mirrors \c HrtfBinauralPreflight::can_narrow_spatial_image.
+bool can_narrow_hrtf_binaural_spatial_image(const HrtfBinauralPreflight& preflight);
+
 /// True when the composite preflight selects centre bypass (disabled or co-located).
 bool should_skip_hrtf_binaural(const HrtfBinauralPreflight& preflight);
+
+/// Non-mutating skip predicate — mirrors \c HrtfBinauralPreflight::should_skip_convolution.
+bool should_skip_hrtf_binaural_convolution(const HrtfBinauralPreflight& preflight);
+
+/// True when composite preflight carries an empty or malformed IR stub.
+bool has_empty_hrtf_ir(const HrtfBinauralPreflight& preflight);
+
+/// True when composite preflight selects ILD/ITD stub (empty IR fallback).
+bool uses_ild_itd_stub_hrtf_binaural(const HrtfBinauralPreflight& preflight);
+
+/// True when distance/occlusion coupling should narrow the binaural image.
+bool should_apply_hrtf_attenuation_coupling(const HrtfBinauralPreflight& preflight);
+
+/// Early-out inverse of composite \c should_apply_hrtf_attenuation_coupling.
+bool should_skip_hrtf_attenuation_coupling(const HrtfBinauralPreflight& preflight);
 
 /// Apply pan + coupling using a preflight bundle (read-only guards; valid paths unchanged).
 BinauralPanGains compute_binaural_pan_gains_from_preflight(const HrtfBinauralPreflight& preflight,
                                                            const Vec3& rel_listener,
                                                            const HrtfAttenuationCoupling& coupling = {},
                                                            const BinauralPanParams& params = {});
+
+/// Apply one mono sample through a preflight bundle (bypass → centre pan; valid paths unchanged).
+void apply_binaural_pan_to_sample_from_preflight(float mono, const HrtfBinauralPreflight& preflight,
+                                                 const Vec3& rel_listener, float attenuation,
+                                                 float& left, float& right,
+                                                 const HrtfAttenuationCoupling& coupling = {},
+                                                 const BinauralPanParams& params = {});
 
 } // namespace fuse::audio
