@@ -2802,3 +2802,7 @@ void testRefineDedupeBroadphasePreflightGuards() {
     testCellSpanClampPreflightGuards();
     testPairBufferWriteSlotAndPreparePreflights();
     testRefineDedupeBroadphasePreflightGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-603e ---
+    const fuse::physics::broadphase::PairBufferCompactionPreflight needsWork =
+void testPairBufferSortAndDedupeSkipGuards() {

@@ -845,3 +845,6 @@ BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
     BroadphaseMergeIntoBufferPreflight preflight{};
     preflight.merge = preflightBroadphaseMerge(bodies, shapes);
     preflight.buffer = preflightPairBufferMerge(buffer, incomingPairCount);
+
+// --- deepen additive from deepen-b4-broadphase-guards-603e ---
+        if (pushPreflight.reason == PairBufferPushRejectReason::AtCapacity) {
