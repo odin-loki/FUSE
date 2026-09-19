@@ -1826,3 +1826,8 @@ void testFrictionForManifoldCompositeGuard() {
         fuse::physics::narrowphase::should_skip_friction_for_manifold(manifold, 0.f, 0.f, 1.f),
         !fuse::physics::narrowphase::should_skip_friction_for_manifold(manifold, 0.5f, 0.3f, 0.25f),
 void testContactPairStaticSleepingRejectGuards() {
+
+// --- deepen additive from deepen-b4-narrowphase-manifold-prune-friction-guards-78b1 ---
+void testContactPairSleepingKinematicGuards() {
+void testManifoldFinalizeGuards() {
+void testFrictionBasisRebuildGuards() {
