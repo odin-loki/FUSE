@@ -4275,3 +4275,11 @@ void testProbeScheduleAtRatePreflight() {
     expectTrue(fuse::renderer::gi::preflightProbeTraceKernel(params),
     expectTrue(fuse::renderer::gi::preflightProbeBlendKernel(params),
     testProbeScheduleAtRatePreflight();
+
+// --- deepen additive from deepen-b56-ddgi-guards-98c7 ---
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoordsPreflight(desc, built),
+               "wouldSkipProbeSampleCoordsPreflight false for valid coords");
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoordsPreflight(desc, oobIndices),
+               "wouldSkipProbeSampleCoordsPreflight true for hard OOB indices");
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoordsPreflight(desc, oobWeights),
+               "wouldSkipProbeSampleCoordsPreflight false for clampable weights");

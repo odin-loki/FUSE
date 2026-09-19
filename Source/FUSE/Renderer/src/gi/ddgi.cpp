@@ -3123,3 +3123,8 @@ bool wouldSkipScheduledCacheIndices(const DDGIDesc& desc,
 
 // --- deepen additive from deepen-b56-ddgi-guards-fc82 ---
     return probeSampleCoordsRejectReasonIsBlocking(classifyProbeSampleCoordsReject(desc, coords));
+
+// --- deepen additive from deepen-b56-ddgi-guards-98c7 ---
+bool ProbeGridLayout::wouldSkipProbeSampleCoordsPreflight(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
+    return tryPreflightProbeGridSource(desc, reason);
+    tryPreflightProbeGridSource(desc, reason);
