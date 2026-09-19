@@ -85,6 +85,10 @@ const char* probeTrilinearSampleRejectReasonLabel(ProbeTrilinearSampleRejectReas
     return "unknown";
 }
 
+bool probeTrilinearSampleRejectReasonIsBlocking(ProbeTrilinearSampleRejectReason reason) {
+    return reason != ProbeTrilinearSampleRejectReason::None;
+}
+
 const char* probeUpdateLaunchRejectReasonLabel(ProbeUpdateLaunchRejectReason reason) {
     switch (reason) {
     case ProbeUpdateLaunchRejectReason::None:
@@ -981,6 +985,33 @@ bool preflightCacheIndexLookup(const DDGIDesc& desc,
     return !cacheIndexRejectReasonIsBlocking(reject);
 }
 
+bool tryPreflightCacheIndexLookup(const DDGIDesc& desc,
+                                  const IrradianceCacheEntry* cache,
+                                  u32 probe_index,
+                                  u32 cache_count,
+                                  CacheIndexRejectReason& reason) {
+    reason = classifyCacheIndexReject(desc, cache, probe_index, cache_count);
+    return !cacheIndexRejectReasonIsBlocking(reason);
+}
+
+bool areTrilinearCornerCacheIndicesValid(const DDGIDesc& desc,
+                                         const ProbeSampleCoords& coords,
+                                         u32 cache_count) {
+    const auto index_valid = [&](u32 x, u32 y, u32 z) -> bool {
+        const ProbeGridCoord probe_coord{x, y, z};
+        const u32 index = ProbeGridLayout::probeIndexFromCoord(desc, probe_coord);
+        if (index == UINT32_MAX) {
+            return false;
+        }
+        return isCacheIndexValid(desc, index, cache_count);
+    };
+
+    return index_valid(coords.x0, coords.y0, coords.z0) && index_valid(coords.x1, coords.y0, coords.z0) &&
+           index_valid(coords.x0, coords.y1, coords.z0) && index_valid(coords.x1, coords.y1, coords.z0) &&
+           index_valid(coords.x0, coords.y0, coords.z1) && index_valid(coords.x1, coords.y0, coords.z1) &&
+           index_valid(coords.x0, coords.y1, coords.z1) && index_valid(coords.x1, coords.y1, coords.z1);
+}
+
 bool wouldClampProbeIndexForLookup(u32 probe_index, const DDGIDesc& desc) {
     return !ProbeGridLayout::isEmptyGrid(desc) && ProbeGridLayout::isProbeIndexOutOfRange(probe_index, desc);
 }
@@ -1157,6 +1188,40 @@ bool preflightProbeSchedule(u32 probe_count,
     return !probeScheduleRejectReasonIsBlocking(reject);
 }
 
+ProbeScheduleRejectReason classifyProbeScheduleRejectAtRate(u32 probe_count,
+                                                            u32 probes_per_frame,
+                                                            u32 max_indices,
+                                                            const u32* out_indices,
+                                                            u32* out_count) {
+    ProbeScheduleRejectReason reason = ProbeScheduleRejectReason::None;
+    tryCanScheduleProbeUpdatesAtRate(probe_count, probes_per_frame, max_indices, out_indices, out_count, reason);
+    return reason;
+}
+
+bool preflightProbeScheduleAtRate(u32 probe_count,
+                                  u32 probes_per_frame,
+                                  u32 max_indices,
+                                  const u32* out_indices,
+                                  u32* out_count,
+                                  ProbeScheduleRejectReason* reason) {
+    const ProbeScheduleRejectReason reject =
+        classifyProbeScheduleRejectAtRate(probe_count, probes_per_frame, max_indices, out_indices, out_count);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return !probeScheduleRejectReasonIsBlocking(reject);
+}
+
+bool tryPreflightProbeScheduleAtRate(u32 probe_count,
+                                     u32 probes_per_frame,
+                                     u32 max_indices,
+                                     const u32* out_indices,
+                                     u32* out_count,
+                                     ProbeScheduleRejectReason& reason) {
+    reason = classifyProbeScheduleRejectAtRate(probe_count, probes_per_frame, max_indices, out_indices, out_count);
+    return !probeScheduleRejectReasonIsBlocking(reason);
+}
+
 bool wouldClampScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices) {
     if (probe_count == 0u || max_indices == 0u) {
         return false;
@@ -1267,6 +1332,56 @@ fuse::math::Vec3 trilinearProbeIrradianceFromCoords(const DDGIDesc& desc,
 }
 
 } // namespace
+
+ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleReject(const DDGIDesc& desc,
+                                                                    const fuse::math::Vec3& world_position,
+                                                                    const IrradianceCacheEntry* cache,
+                                                                    u32 cache_count) {
+    ProbeSampleCoords coords{};
+    if (!ProbeGridLayout::buildProbeSampleCoords(desc, world_position, coords)) {
+        return ProbeGridLayout::isEmptyGrid(desc) ? ProbeTrilinearSampleRejectReason::EmptyGrid
+                                                 : ProbeTrilinearSampleRejectReason::NotSampleable;
+    }
+    return classifyProbeTrilinearSampleRejectAtCoords(desc, coords, cache, cache_count);
+}
+
+ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleRejectAtCoords(const DDGIDesc& desc,
+                                                                            const ProbeSampleCoords& coords,
+                                                                            const IrradianceCacheEntry* cache,
+                                                                            u32 cache_count) {
+    ProbeTrilinearSampleRejectReason reason = ProbeTrilinearSampleRejectReason::None;
+    tryCanSampleAtProbeCoords(desc, coords, cache, cache_count, reason);
+    return reason;
+}
+
+bool preflightTrilinearProbeSample(const DDGIDesc& desc,
+                                   const fuse::math::Vec3& world_position,
+                                   const IrradianceCacheEntry* cache,
+                                   u32 cache_count,
+                                   ProbeTrilinearSampleRejectReason* reason) {
+    const ProbeTrilinearSampleRejectReason reject =
+        classifyProbeTrilinearSampleReject(desc, world_position, cache, cache_count);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return !probeTrilinearSampleRejectReasonIsBlocking(reject);
+}
+
+bool tryPreflightTrilinearProbeSample(const DDGIDesc& desc,
+                                      const fuse::math::Vec3& world_position,
+                                      const IrradianceCacheEntry* cache,
+                                      u32 cache_count,
+                                      ProbeTrilinearSampleRejectReason& reason) {
+    reason = classifyProbeTrilinearSampleReject(desc, world_position, cache, cache_count);
+    return !probeTrilinearSampleRejectReasonIsBlocking(reason);
+}
+
+bool wouldSkipTrilinearProbeSample(const DDGIDesc& desc,
+                                   const fuse::math::Vec3& world_position,
+                                   const IrradianceCacheEntry* cache,
+                                   u32 cache_count) {
+    return !preflightTrilinearProbeSample(desc, world_position, cache, cache_count);
+}
 
 bool tryTrilinearProbeIrradiance(const DDGIDesc& desc,
                                  const fuse::math::Vec3& world_position,
@@ -1519,6 +1634,11 @@ bool preflightProbeKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejec
         *reason = reject;
     }
     return !probeKernelRejectReasonIsBlocking(reject);
+}
+
+bool tryPreflightProbeKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason& reason) {
+    reason = classifyProbeKernelReject(params);
+    return !probeKernelRejectReasonIsBlocking(reason);
 }
 
 void populateDDGIKernelParams(DDGIKernelParams& params,
@@ -1794,6 +1914,80 @@ void DDGI::releaseResources() {
         m_resources->destroyBuffer(m_volume.probe_offsets);
     }
     m_volume = {};
+}
+
+const char* ddgiHostKernelLaunchRejectReasonLabel(DdgiHostKernelLaunchRejectReason reason) {
+    switch (reason) {
+    case DdgiHostKernelLaunchRejectReason::None:
+        return "none";
+    case DdgiHostKernelLaunchRejectReason::EmptyGrid:
+        return "empty_grid";
+    case DdgiHostKernelLaunchRejectReason::NullProbeIndices:
+        return "null_probe_indices";
+    case DdgiHostKernelLaunchRejectReason::ZeroUpdateCount:
+        return "zero_update_count";
+    case DdgiHostKernelLaunchRejectReason::ZeroRaysPerProbe:
+        return "zero_rays_per_probe";
+    case DdgiHostKernelLaunchRejectReason::OutOfRangeProbeIndex:
+        return "out_of_range_probe_index";
+    }
+    return "unknown";
+}
+
+bool ddgiHostKernelLaunchRejectReasonIsBlocking(DdgiHostKernelLaunchRejectReason reason) {
+    return reason != DdgiHostKernelLaunchRejectReason::None;
+}
+
+DdgiHostKernelLaunchRejectReason classifyDdgiHostKernelLaunchReject(const DDGIDesc& desc,
+                                                                    const gi::DDGIKernelParams& params) {
+    gi::ProbeKernelRejectReason kernelReason = gi::ProbeKernelRejectReason::None;
+    if (!gi::tryCanLaunchProbeTraceKernel(params, kernelReason)) {
+        switch (kernelReason) {
+        case gi::ProbeKernelRejectReason::ZeroUpdateCount:
+            return DdgiHostKernelLaunchRejectReason::ZeroUpdateCount;
+        case gi::ProbeKernelRejectReason::NullProbeIndices:
+            return DdgiHostKernelLaunchRejectReason::NullProbeIndices;
+        case gi::ProbeKernelRejectReason::ZeroRaysPerProbe:
+            return DdgiHostKernelLaunchRejectReason::ZeroRaysPerProbe;
+        case gi::ProbeKernelRejectReason::None:
+            break;
+        }
+    }
+
+    if (ProbeGridLayout::isEmptyGrid(desc)) {
+        return DdgiHostKernelLaunchRejectReason::EmptyGrid;
+    }
+
+    ProbeUpdateLaunchRejectReason launchReason = ProbeUpdateLaunchRejectReason::None;
+    if (!tryCanLaunchDdgiProbeUpdate(
+            desc, params.probe_indices_to_update, params.probe_update_count, launchReason)) {
+        if (launchReason == ProbeUpdateLaunchRejectReason::OutOfRangeProbeIndex) {
+            return DdgiHostKernelLaunchRejectReason::OutOfRangeProbeIndex;
+        }
+    }
+
+    return DdgiHostKernelLaunchRejectReason::None;
+}
+
+bool preflightDdgiHostKernelLaunch(const DDGIDesc& desc,
+                                   const gi::DDGIKernelParams& params,
+                                   DdgiHostKernelLaunchRejectReason* reason) {
+    const DdgiHostKernelLaunchRejectReason reject = classifyDdgiHostKernelLaunchReject(desc, params);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return !ddgiHostKernelLaunchRejectReasonIsBlocking(reject);
+}
+
+bool tryPreflightDdgiHostKernelLaunch(const DDGIDesc& desc,
+                                      const gi::DDGIKernelParams& params,
+                                      DdgiHostKernelLaunchRejectReason& reason) {
+    reason = classifyDdgiHostKernelLaunchReject(desc, params);
+    return !ddgiHostKernelLaunchRejectReasonIsBlocking(reason);
+}
+
+bool wouldSkipDdgiHostKernelLaunch(const DDGIDesc& desc, const gi::DDGIKernelParams& params) {
+    return !preflightDdgiHostKernelLaunch(desc, params);
 }
 
 } // namespace fuse::renderer
