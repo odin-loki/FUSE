@@ -2220,3 +2220,9 @@ void testCookerShouldSkipReconcileGuards() {
     expectTrue(!after.should_skip(), "post-invalidation prune reconcile estimate should_skip is false");
                "should_skip prune reconcile false when stale entries remain");
                "should_skip stale dependency invalidation true after stale invalidation");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-c4a5 ---
+               "stale dependency should_skip false after upstream change");
+               "reconcile should_skip false after upstream change");
+               "reconcile estimate should_skip matches cooker guard");
+               "stale dependency should_skip true after invalidation");

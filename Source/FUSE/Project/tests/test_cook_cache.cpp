@@ -1788,3 +1788,12 @@ void testCookCacheShouldSkipStoreGuard() {
                "preflight should_skip matches empty dependency list");
     expectTrue(empty.should_skip(), "empty prune estimate should_skip is true");
     expectTrue(!estimate.should_skip(), "non-zero prune estimate should_skip is false");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-c4a5 ---
+               "should_skip rejects missing file");
+    expectTrue(!fuse::project::should_skip_mesh_import_hash(desc), "should_skip allows valid mesh import");
+    expectTrue(fuse::project::should_skip_mesh_import_hash(desc), "should_skip rejects empty mesh input");
+    expectTrue(fuse::project::should_skip_cook_cache_key(0, 42u), "should_skip rejects zero source cache key");
+    expectTrue(!fuse::project::should_skip_combine_cook_cache_key(99u, 42u),
+               "should_skip allows valid combined cache key");
+               "prune estimate should_skip mirrors would_prune_all");
