@@ -13,6 +13,8 @@ namespace fuse::profiler {
 
 namespace {
 
+constexpr u32 kRingCapacity = kRingEventCapacity;
+
 std::atomic<bool> g_enabled{true};
 std::atomic<u32> g_frameIndex{0};
 std::atomic<u32> g_nextScopeId{1};
@@ -28,6 +30,10 @@ std::atomic<u32> g_openAsyncFlowCount{0};
 std::atomic<u32> g_orphanAsyncFlowEndCount{0};
 
 std::mutex g_exportMutex;
+
+bool isRecordableName(const char* name) {
+    return name != nullptr && name[0] != '\0';
+}
 
 u64 nowNanoseconds() {
     const auto now = std::chrono::steady_clock::now().time_since_epoch();
@@ -231,6 +237,7 @@ ProfileScope::ProfileScope(const char* name)
       m_active(g_enabled.load(std::memory_order_acquire) && name != nullptr) {
       m_active(name != nullptr && g_enabled.load(std::memory_order_acquire)) {
       m_active(g_enabled.load(std::memory_order_acquire) && isNonEmptyProfileName(name)) {
+      m_active(g_enabled.load(std::memory_order_acquire) && isRecordableName(name)) {
     if (m_active) {
         m_scopeId = g_nextScopeId.fetch_add(1u, std::memory_order_acq_rel);
         m_nestingDepth = pushNestingDepth();
@@ -420,6 +427,35 @@ u32 exportableEventCount() {
 
 bool isEventExportable(u32 index) {
     return isEventIndexValid(index) && isValidEventName(eventAt(index).name);
+    return isRecordableName(event.name);
+}
+
+bool isValidProfileName(const char* name) {
+    return isRecordableName(name);
+
+bool isScopeNestingBalanced() {
+    return currentNestingDepth() == 0u;
+
+bool isFlowNestingBalanced() {
+    return currentFlowNestingDepth() == 0u;
+
+bool hasOpenAsyncFlows() {
+    return openAsyncFlowCount() > 0u;
+
+u32 ringCapacity() {
+    return kRingCapacity;
+
+ChromeTraceExportPreflight preflightChromeTraceExport() {
+    ChromeTraceExportPreflight preflight{};
+    preflight.event_count = eventCount();
+    preflight.frame_index = frameIndex();
+    preflight.has_events = preflight.event_count > 0u;
+    preflight.buffer_empty = preflight.event_count == 0u;
+    preflight.scope_nesting_balanced = isScopeNestingBalanced();
+    preflight.flow_nesting_balanced = isFlowNestingBalanced();
+    preflight.has_open_async_flows = hasOpenAsyncFlows();
+    preflight.can_export = preflight.scope_nesting_balanced && preflight.flow_nesting_balanced;
+    return preflight;
 
 const ProfileEvent& emptyProfileEvent() {
     static const ProfileEvent kEmpty{};
@@ -428,6 +464,10 @@ const ProfileEvent& emptyProfileEvent() {
 const ProfileEvent& eventAt(u32 index) {
     if (!isEventIndexValid(index)) {
         return emptyProfileEvent();
+}
+
+    const u32 count = eventCount();
+    if (count == 0u || index >= count) {
 
     const u32 count = eventCount();
     return count > 0u && index < count;
@@ -455,109 +495,54 @@ bool tryEventAt(u32 index, ProfileEvent& outEvent) {
 
     outEvent = eventAt(index);
     return isValidProfileEvent(outEvent);
-}
 
 bool tryExportableEventAt(u32 index, ProfileEvent& outEvent) {
     if (!isEventExportable(index)) {
-        outEvent = ProfileEvent{};
-        return false;
-    }
 
-    outEvent = eventAt(index);
     return true;
-}
 
 bool tryFirstEvent(ProfileEvent& outEvent) {
     const u32 index = firstEventIndex();
     if (index == kInvalidEventIndex) {
-        outEvent = ProfileEvent{};
-        return false;
-    }
 
     return tryEventAt(index, outEvent);
-}
 
 bool tryLastEvent(ProfileEvent& outEvent) {
     const u32 index = lastEventIndex();
-    if (index == kInvalidEventIndex) {
-        outEvent = ProfileEvent{};
-        return false;
-    }
 
-    return tryEventAt(index, outEvent);
-}
 
 bool tryFirstEventByName(const char* name, ProfileEvent& outEvent) {
 bool tryExportableFirstEvent(ProfileEvent& outEvent) {
-    const u32 index = firstEventIndex();
-    if (index == kInvalidEventIndex) {
-        outEvent = ProfileEvent{};
-        return false;
-    }
 
     return tryExportableEventAt(index, outEvent);
 
 bool tryExportableLastEvent(ProfileEvent& outEvent) {
-    const u32 index = lastEventIndex();
 
 
 bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent) {
     const u32 index = findFirstEventIndexByName(name);
-    if (index == kInvalidEventIndex) {
-        outEvent = ProfileEvent{};
-        return false;
-    }
 
-    return tryExportableEventAt(index, outEvent);
-}
 
 bool tryLastEventByName(const char* name, ProfileEvent& outEvent) {
-    outEvent = eventAt(index);
-    return isValidProfileEvent(outEvent);
 
 bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent) {
     const u32 index = findLastEventIndexByName(name);
-    if (index == kInvalidEventIndex) {
-        outEvent = ProfileEvent{};
-        return false;
-    }
 
-    return tryExportableEventAt(index, outEvent);
-}
 
 bool tryFirstFlowEvent(u32 flowId, ProfileEvent& outEvent) {
-    outEvent = eventAt(index);
-    return isValidProfileEvent(outEvent);
 
 bool tryFindFirstFlowEvent(u32 flowId, ProfileEvent& outEvent) {
     const u32 index = findFirstEventIndexByFlowId(flowId);
-    if (index == kInvalidEventIndex) {
-        outEvent = ProfileEvent{};
-        return false;
-    }
 
-    return tryExportableEventAt(index, outEvent);
-}
 
 bool tryLastFlowEvent(u32 flowId, ProfileEvent& outEvent) {
-    outEvent = eventAt(index);
-    return isValidProfileEvent(outEvent);
 
 bool tryFindLastFlowEvent(u32 flowId, ProfileEvent& outEvent) {
     const u32 index = findLastEventIndexByFlowId(flowId);
-    if (index == kInvalidEventIndex) {
-        outEvent = ProfileEvent{};
-        return false;
-    }
 
-    return tryExportableEventAt(index, outEvent);
-    outEvent = eventAt(index);
-    return isValidProfileEvent(outEvent);
-}
 
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
-}
 
 u32 findFirstEventIndexByPhase(EventPhase phase) {
     const u32 total = eventCount();
@@ -565,165 +550,68 @@ u32 findFirstEventIndexByPhase(EventPhase phase) {
         const ProfileEvent& event = eventAt(i);
         if (event.phase == phase && isValidEventName(event.name)) {
             return i;
-        }
-    }
     return kInvalidEventIndex;
-}
 
 u32 findLastEventIndexByPhase(EventPhase phase) {
-    const u32 total = eventCount();
     for (u32 i = total; i > 0u; --i) {
         const ProfileEvent& event = eventAt(i - 1u);
-        if (event.phase == phase && isValidEventName(event.name)) {
             return i - 1u;
-        }
-    }
-    return kInvalidEventIndex;
-}
 
 u32 countEventsByPhase(EventPhase phase) {
     u32 count = 0u;
-    const u32 total = eventCount();
-    for (u32 i = 0u; i < total; ++i) {
-        const ProfileEvent& event = eventAt(i);
-        if (event.phase == phase && isValidEventName(event.name)) {
             ++count;
-        }
-    }
     return count;
-}
 
 u32 findFirstEventIndexByName(const char* name) {
     if (!isValidEventName(name)) {
-        return kInvalidEventIndex;
-    }
 
-    const u32 total = eventCount();
-    for (u32 i = 0u; i < total; ++i) {
-        const ProfileEvent& event = eventAt(i);
         if (eventNameMatches(event, name)) {
         if (eventNameMatches(event.name, name)) {
-            return i;
-        }
-    }
-    return kInvalidEventIndex;
-}
 
 u32 findLastEventIndexByName(const char* name) {
-    if (!isValidEventName(name)) {
-        return kInvalidEventIndex;
-    }
 
-    const u32 total = eventCount();
-    for (u32 i = total; i > 0u; --i) {
-        const ProfileEvent& event = eventAt(i - 1u);
-        if (eventNameMatches(event, name)) {
-        if (eventNameMatches(event.name, name)) {
-            return i - 1u;
-        }
-    }
-    return kInvalidEventIndex;
-}
 
 u32 countEventsByName(const char* name) {
-    if (!isValidEventName(name)) {
         return 0u;
-    }
 
-    u32 count = 0u;
-    const u32 total = eventCount();
-    for (u32 i = 0u; i < total; ++i) {
         if (eventNameMatches(eventAt(i), name)) {
-        const ProfileEvent& event = eventAt(i);
-        if (eventNameMatches(event.name, name)) {
-            ++count;
-        }
-    }
-    return count;
-}
 
 bool hasEventsWithName(const char* name) {
     return findFirstEventIndexByName(name) != kInvalidEventIndex;
-}
 
 u32 findFirstEventIndexByFlowId(u32 flowId) {
     if (!isValidFlowId(flowId)) {
     if (flowId == 0u) {
-        return kInvalidEventIndex;
-    }
 
-    const u32 total = eventCount();
-    for (u32 i = 0u; i < total; ++i) {
-        const ProfileEvent& event = eventAt(i);
         if (eventMatchesFlowId(event, flowId)) {
         if (isAsyncFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
-            return i;
-        }
-    }
-    return kInvalidEventIndex;
-}
 
 u32 findLastEventIndexByFlowId(u32 flowId) {
-    if (!isValidFlowId(flowId)) {
-    if (flowId == 0u) {
-        return kInvalidEventIndex;
-    }
 
-    const u32 total = eventCount();
-    for (u32 i = total; i > 0u; --i) {
-        const ProfileEvent& event = eventAt(i - 1u);
-        if (eventMatchesFlowId(event, flowId)) {
-        if (isAsyncFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
-            return i - 1u;
-        }
-    }
-    return kInvalidEventIndex;
-}
 
 u32 countEventsByFlowId(u32 flowId) {
-    if (!isValidFlowId(flowId)) {
-    if (flowId == 0u) {
-        return 0u;
-    }
 
-    u32 count = 0u;
-    const u32 total = eventCount();
-    for (u32 i = 0u; i < total; ++i) {
         if (eventMatchesFlowId(eventAt(i), flowId)) {
-        const ProfileEvent& event = eventAt(i);
-        if (isAsyncFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
-            ++count;
-        }
-    }
-    return count;
-}
 
 bool hasEventsWithFlowId(u32 flowId) {
     return findFirstEventIndexByFlowId(flowId) != kInvalidEventIndex;
 bool tryFindFirstEventIndexByPhase(EventPhase phase, u32& outIndex) {
     const u32 index = findFirstEventIndexByPhase(phase);
-    if (index == kInvalidEventIndex) {
         outIndex = kInvalidEventIndex;
-        return false;
-    }
 
     outIndex = index;
-    return true;
 
 bool tryFindLastEventIndexByPhase(EventPhase phase, u32& outIndex) {
     const u32 index = findLastEventIndexByPhase(phase);
 
 
 bool tryFindFirstEventIndexByName(const char* name, u32& outIndex) {
-    const u32 index = findFirstEventIndexByName(name);
 
 
 bool tryFindFirstEventIndexByFlowId(u32 flowId, u32& outIndex) {
-    const u32 index = findFirstEventIndexByFlowId(flowId);
 
 
 bool tryFindLastEventIndexByFlowId(u32 flowId, u32& outIndex) {
-    const u32 index = findLastEventIndexByFlowId(flowId);
 
 
 u32 orphanAsyncFlowEndCount() {
@@ -731,7 +619,9 @@ u32 orphanAsyncFlowEndCount() {
 
 bool hasOrphanAsyncFlowEnds() {
     return orphanAsyncFlowEndCount() > 0u;
-}
+
+bool tryEventAt(u32 index, ProfileEvent& out) {
+    out = eventAt(index);
 
 u32 lastEventIndex() {
     const u32 count = eventCount();
@@ -840,6 +730,7 @@ u32 nextFlowId() {
 void beginAsyncFlow(const char* name, u32 flowId) {
     if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isNonEmptyProfileName(name)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isRecordableName(name)) {
         return;
     }
 
@@ -860,6 +751,7 @@ void endAsyncFlow(const char* name, u32 flowId) {
 
     if (!g_enabled.load(std::memory_order_acquire)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isNonEmptyProfileName(name)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isRecordableName(name)) {
         return;
     }
 
@@ -890,6 +782,7 @@ void endAsyncFlow(const char* name, u32 flowId) {
 void sampleCounter(const char* track, s64 value) {
     if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isNonEmptyProfileName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isRecordableName(track)) {
         return;
     }
 
@@ -907,6 +800,7 @@ void sampleCounter(const char* track, s64 value) {
 void sampleCounterFloat(const char* track, f64 value) {
     if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isNonEmptyProfileName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isRecordableName(track)) {
         return;
     }
 
@@ -924,6 +818,7 @@ void sampleCounterFloat(const char* track, f64 value) {
 void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
     if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isNonEmptyProfileName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isRecordableName(track)) {
         return;
     }
 
@@ -941,6 +836,7 @@ void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
 void sampleCounterFloatSnapshotAtFrame(const char* track, f64 value) {
     if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isNonEmptyProfileName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isRecordableName(track)) {
         return;
     }
 
@@ -972,6 +868,7 @@ std::string exportChromeTraceJson() {
     for (u32 i = 0; i < count; ++i) {
         const ProfileEvent& event = eventAt(i);
         if (!isValidEventName(event.name)) {
+        if (!isRecordableName(event.name)) {
             continue;
         }
 

@@ -12,6 +12,20 @@ constexpr u32 kInvalidEventIndex = static_cast<u32>(-1);
 
 /// Ring buffer capacity for CPU profile events (diagnostic only).
 constexpr u32 kRingCapacity = 4096u;
+/// Ring buffer capacity exposed for editor consumers and export preflight.
+constexpr u32 kRingEventCapacity = 4096u;
+
+/// Non-hot-path snapshot of chrome export readiness (does not mutate profiler state).
+struct ChromeTraceExportPreflight {
+    bool can_export = true;
+    bool has_events = false;
+    bool buffer_empty = true;
+    bool scope_nesting_balanced = true;
+    bool flow_nesting_balanced = true;
+    bool has_open_async_flows = false;
+    u32 event_count = 0;
+    u32 frame_index = 0;
+};
 
 enum class EventPhase : u8 {
     Begin,
@@ -193,6 +207,12 @@ bool hasInvalidNameEvents();
 u32 exportableEventCount();
 bool isEventExportable(u32 index);
 u32 firstEventIndex();
+bool isValidProfileName(const char* name);
+bool isScopeNestingBalanced();
+bool isFlowNestingBalanced();
+bool hasOpenAsyncFlows();
+u32 ringCapacity();
+ChromeTraceExportPreflight preflightChromeTraceExport();
 u32 lastEventIndex();
 u32 findFirstEventIndexByPhase(EventPhase phase);
 u32 findLastEventIndexByPhase(EventPhase phase);
@@ -228,6 +248,8 @@ bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent);
 bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent);
 bool tryFindFirstFlowEvent(u32 flowId, ProfileEvent& outEvent);
 bool tryFindLastFlowEvent(u32 flowId, ProfileEvent& outEvent);
+const ProfileEvent& emptyProfileEvent();
+bool tryEventAt(u32 index, ProfileEvent& out);
 const ProfileEvent& lastEvent();
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
