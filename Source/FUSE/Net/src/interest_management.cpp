@@ -340,6 +340,25 @@ bool has_any_candidates_in_radius(const ecs::vec3& observer, const InterestPolic
     return count_candidates_in_radius(observer, policy, candidates) > 0;
 
     return count_candidates_in_radius(observer, policy, candidates, prior_scope) > 0;
+    preflight.has_enters = diff.has_enters();
+    preflight.has_leaves = diff.has_leaves();
+    preflight.would_change_scope = can_apply_interest_diff(diff, scope);
+
+    return !preflight_interest_diff(diff, scope).can_apply();
+
+    RadiusFilterPreflight preflight{};
+    preflight.radii_disabled = relevance_radii_disabled(policy);
+    preflight.empty_candidates = candidates.empty();
+    preflight.prior_scope_empty = true;
+    preflight.early_out = preflight.empty_candidates || preflight.radii_disabled;
+
+    preflight.prior_scope_empty = prior_scope.empty();
+    preflight.early_out =
+        preflight.empty_candidates || (preflight.radii_disabled && preflight.prior_scope_empty);
+
+    return preflight_radius_filter(policy, candidates).early_out;
+
+    return preflight_radius_filter(policy, candidates, prior_scope).early_out;
 
 bool diff_interest_scope_sets(const InterestScopeSet& previous, const InterestScopeSet& current,
                               InterestSetDiff& out) {
@@ -655,6 +674,10 @@ bool InterestManager::has_any_registered_in_radius() const {
 u32 InterestManager::filter_registered_in_radius(std::vector<InterestEntry>& out_entries) const {
     return filter_candidates_in_radius(m_observer, m_policy, m_candidates, m_previous_scope_set,
                                        out_entries);
+}
+
+RadiusFilterPreflight InterestManager::preflight_registered_in_radius() const {
+    return preflight_radius_filter(m_policy, m_candidates, m_previous_scope_set);
 }
 
 bool InterestPriorityQueue::higher_priority_(const InterestEntry& a, const InterestEntry& b) {

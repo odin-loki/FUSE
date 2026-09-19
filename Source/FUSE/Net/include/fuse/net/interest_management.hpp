@@ -63,6 +63,36 @@ struct InterestScopeSet {
     [[nodiscard]] u32 size() const { return static_cast<u32>(entities.size()); }
 };
 
+/// Preflight for applying an interest scope diff without mutating scope (B7.4 deepen follow-up).
+struct InterestDiffPreflight {
+    bool empty_diff = true;
+    bool has_enters = false;
+    bool has_leaves = false;
+    /// True when at least one enter/leave would modify `scope`.
+    bool would_change_scope = false;
+
+    [[nodiscard]] bool can_apply() const { return !empty_diff && would_change_scope; }
+
+    /// True when apply can proceed normally or via the empty/redundant-diff fast path (B7.4 deepen follow-up).
+    [[nodiscard]] bool can_apply_or_skip() const {
+        return empty_diff || would_change_scope || (!empty_diff && !would_change_scope);
+    }
+};
+
+/// Preflight for radius filter/count early-out checks (B7.4 deepen follow-up).
+struct RadiusFilterPreflight {
+    bool radii_disabled = false;
+    bool empty_candidates = true;
+    bool prior_scope_empty = true;
+    /// True when filter/count would return zero without scanning candidates.
+    bool early_out = true;
+
+    [[nodiscard]] bool can_filter() const { return !early_out; }
+
+    /// True when filter/count can proceed or is a no-op early-out (B7.4 deepen follow-up).
+    [[nodiscard]] bool can_filter_or_skip() const { return can_filter() || early_out; }
+};
+
 /// Entities that entered or left scope between two snapshots.
 struct InterestSetDiff {
     std::vector<ecs::EntityID> entered;
@@ -186,6 +216,12 @@ struct RadiusFilterPreflight {
 /// Preflight diff-apply without mutating `scope` (B7.4 deepen follow-up).
 [[nodiscard]] InterestDiffPreflight preflight_interest_diff_apply(const InterestSetDiff& diff,
 [[nodiscard]] bool should_skip_interest_diff_apply(const InterestSetDiff& diff, const InterestScopeSet& scope);
+/// Preflight diff apply without mutating scope (B7.4 deepen follow-up).
+/// True when diff apply should be skipped (empty or redundant non-empty diff).
+/// Preflight radius filter/count without building entry rows (B7.4 deepen follow-up).
+/// Preflight radius filter/count with prior scope hysteresis (B7.4 deepen follow-up).
+/// True when radius filter/count would early-out without scanning candidates.
+/// True when hysteresis radius filter/count would early-out without scanning candidates.
 
 /// Returns true when `out` is non-empty.
 [[nodiscard]] bool diff_interest_scope_sets(const InterestScopeSet& previous, const InterestScopeSet& current,
@@ -303,6 +339,8 @@ public:
     [[nodiscard]] bool has_any_registered_in_radius() const;
     /// Filter registered candidates in scope for the current observer (uses prior scope hysteresis).
     [[nodiscard]] u32 filter_registered_in_radius(std::vector<InterestEntry>& out_entries) const;
+    /// Preflight registered radius filter/count without building entry rows (B7.4 deepen follow-up).
+    [[nodiscard]] RadiusFilterPreflight preflight_registered_in_radius() const;
 
     /// Snapshot of in-scope entities from the last `evaluate()` call.
     [[nodiscard]] const InterestScopeSet& scope_set() const { return m_scope_set; }
