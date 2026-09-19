@@ -263,6 +263,14 @@ void TaaJitter::advance() {
     m_index = TaaJitterLayout::frameIndexInSequence(m_monotonicFrame, m_sequenceLength);
 }
 
+bool TaaJitter::advanceIfPossible() {
+    if (!canAdvance()) {
+        return false;
+    }
+    advance();
+    return true;
+}
+
 void TaaJitter::reset() {
     m_index = 0u;
     m_monotonicFrame = 0u;

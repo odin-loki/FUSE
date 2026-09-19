@@ -15,6 +15,14 @@ bool taaHistoryCanReuse(const TaaHistoryBuffer& history);
 bool taaHistoryReuseReady(const TaaHistoryBuffer& history, u32 observed_generation);
 /// True when observed epoch matches current invalidate generation (B5.9 deepen).
 bool taaHistoryIsGenerationCurrent(const TaaHistoryBuffer& history, u32 observed_generation);
+/// True when required colour surfaces are bound (B5.9 deepen).
+bool taaResolveSurfacesSatisfied(const TaaResolveDesc& desc);
+/// True when resolve request passes all preflight guards (inverse of blocking skip).
+bool canAttemptTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// Stamp observed generation and return whether request can proceed (B5.9 deepen).
+bool prepareTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// True when this resolve would sample prior history (B5.9 deepen).
+bool taaResolveWillReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// Classify why resolve would skip — same ordering as `TaaResolve::wouldSkip` (B5.9 deepen).
 TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// Stamp observed generation then classify — convenience preflight for resolve callers.

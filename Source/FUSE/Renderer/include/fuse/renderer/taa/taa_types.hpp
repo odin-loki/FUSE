@@ -100,6 +100,14 @@ bool taaResolveRequiresRejectionSurfaces(const TAAParams& params);
 f32 computeEffectiveBlend(bool firstFrame, const TAAParams& params);
 /// Blend weight with explicit history-reuse guard — forces 1.0 when history cannot be sampled.
 f32 computeEffectiveBlend(bool firstFrame, bool historyReusable, const TAAParams& params);
+/// True when `blend_factor` is within [0, 1] before clamping (B5.9 deepen).
+bool isTaaBlendFactorInRange(f32 blend_factor);
+/// True when warm-up path forces full current-frame weight (no history reuse).
+bool taaUsesWarmupBlend(bool first_frame);
+/// True when effective blend samples history (strictly below full-current weight).
+bool taaBlendUsesHistory(f32 effective_blend);
+/// True when effective blend ignores history (warm-up / stale / full-current weight).
+bool taaBlendSkipsHistoryReuse(f32 effective_blend);
 /// History contribution weight — complement of `effectiveBlend`, clamped to [0, 1].
 f32 computeHistoryBlend(f32 effectiveBlend);
 /// True when `blend_factor` is within [0, 1] before clamping (B5.9 deepen).
@@ -119,6 +127,9 @@ struct TaaBlendWeights {
 
 /// Compute current/history blend weights for a resolve frame (B5.9 deepen).
 TaaBlendWeights computeTaaBlendWeights(bool firstFrame, const TAAParams& params);
+/// Compute blend weights with an explicit history-reuse guard (B5.9 deepen).
+TaaBlendWeights computeTaaBlendWeightsWithReuseGuard(bool firstFrame, bool historyReusable,
+                                                     const TAAParams& params);
 /// True when blend weights are within [0, 1] and sum to ~1 (B5.9 deepen).
 bool taaBlendWeightsValid(const TaaBlendWeights& weights);
 /// True when history is warm and ready for temporal reuse (B5.9 deepen).

@@ -106,6 +106,8 @@ public:
     void advance();
     /// Advance only when the sequence is valid; returns false when blocked (B5.9 deepen).
     bool advanceIfReady();
+    /// Advance only when the jitter sequence is valid; returns false when blocked (B5.9 deepen).
+    bool advanceIfPossible();
     void reset();
     /// Align jitter state to a monotonic frame counter (wraps with sequence period).
     void syncToFrameIndex(u32 frameIndex);

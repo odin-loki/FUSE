@@ -117,6 +117,23 @@ bool taaHistoryIsReusable(const TaaHistoryBuffer& history, const TaaResolveDesc&
         return false;
     }
     return !taaResolveHistoryGenerationIsStale(desc, history);
+bool taaResolveSurfacesSatisfied(const TaaResolveDesc& desc) {
+    return desc.surfaces.current_frame != nullptr && desc.surfaces.output != nullptr;
+
+bool canAttemptTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return preflightTaaResolve(desc, history);
+
+bool prepareTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    sanitizeTaaResolveDesc(desc, history);
+    return canAttemptTaaResolve(desc, history);
+
+bool taaResolveWillReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    if (!taaResolveCanReuseHistory(desc, history)) {
+    const bool firstFrame = !history.hasValidHistory();
+    const TAAParams params = clampTaaParams(desc.params);
+    const f32 effectiveBlend =
+        computeEffectiveBlend(firstFrame, taaResolveCanReuseHistory(desc, history), params);
+    return taaBlendUsesHistory(effectiveBlend);
 }
 
 void sanitizeTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
@@ -367,6 +384,7 @@ f32 computeHistoryContributionWeight(f32 effective_blend) {
 bool taaUsesWarmupBlend(bool first_frame) {
     return first_frame;
 
+    if (taaUsesWarmupBlend(firstFrame) || !historyReusable) {
         return 1.f;
     }
     return clampTaaParams(params).blend_factor;
@@ -436,6 +454,21 @@ bool taaBlendUsesHistory(f32 effectiveBlend) {
 
 bool taaBlendSkipsHistoryReuse(f32 effectiveBlend) {
     return effectiveBlend >= 1.f;
+
+
+
+bool taaBlendUsesHistory(f32 effective_blend) {
+
+bool taaBlendSkipsHistoryReuse(f32 effective_blend) {
+    return effective_blend >= 1.f;
+
+TaaBlendWeights computeTaaBlendWeightsWithReuseGuard(bool firstFrame, bool historyReusable,
+                                                     const TAAParams& params) {
+    const f32 effectiveBlend = computeEffectiveBlend(firstFrame, historyReusable, params);
+    TaaBlendWeights weights{};
+    weights.current = effectiveBlend;
+    weights.history = computeHistoryBlend(effectiveBlend);
+    return weights;
 }
 
 const char* taaResolveSkipReasonLabel(TaaResolveSkipReason reason) {
@@ -511,6 +544,9 @@ bool TaaResolve::resolve(const TaaResolveDesc& desc, TaaHistoryBuffer& history, 
     m_stats.first_frame = !history.hasValidHistory();
     const TaaBlendWeights blendWeights = computeTaaResolveBlendWeights(desc, history);
     const f32 effectiveBlend = computeEffectiveBlend(m_stats.first_frame, historyReusable, params);
+    const bool historyReusable = taaResolveCanReuseHistory(desc, history);
+    const TaaBlendWeights blendWeights =
+        computeTaaBlendWeightsWithReuseGuard(m_stats.first_frame, historyReusable, params);
     history.markResolved();
     history.swap();
 
@@ -522,6 +558,7 @@ bool TaaResolve::resolve(const TaaResolveDesc& desc, TaaHistoryBuffer& history, 
     m_stats.history_blend = blendWeights.history;
     m_stats.effective_blend = effectiveBlend;
     m_stats.history_reused = historyReusable && taaBlendUsesHistory(effectiveBlend);
+    m_stats.history_reused = historyReusable && taaBlendUsesHistory(blendWeights.current);
     m_stats.history_swapped = true;
     m_stats.has_valid_history = history.hasValidHistory();
     m_stats.accumulated_frames = history.accumulatedFrames();
