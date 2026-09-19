@@ -3344,6 +3344,7 @@ struct PairBufferInvalidateSlotPreflight {
 
     bool emptyBuffer = false;
 
+
 };
 
 PairBufferInvalidateSlotPreflight preflightPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
