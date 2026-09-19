@@ -19,6 +19,7 @@ float hrtf_co_located_epsilon();
 HrtfIrStub make_empty_hrtf_ir();
 
 /// Validated IR stub factory — returns empty when samples are null or length is zero.
+/// Build an IR stub from external sample data (may still be empty).
 HrtfIrStub make_hrtf_ir_stub(const float* samples, u32 length);
 
 /// True when an HRTF IR stub has non-null, non-empty sample data.
@@ -167,6 +168,8 @@ bool is_bypass_hrtf_pan_path(HrtfPanPath path);
 
 /// Early-out: true when spatial panning should be skipped (bypass path).
 bool should_skip_hrtf_spatial_pan(HrtfPanPath path);
+
+/// True when the pan path is centre-mono bypass.
 
 /// True when listener and source share the same listener-local position.
 bool is_co_located_hrtf_source(const Vec3& rel_listener);
@@ -386,7 +389,6 @@ struct HrtfAttenuationCouplingPreflight {
 
     /// True when distance/occlusion coupling should be skipped (bypass or unity attenuation).
     bool should_skip() const { return skipped; }
-};
 
 /// Preflight distance + occlusion coupling before spatial image narrowing.
 HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling(
@@ -405,8 +407,6 @@ bool is_unity_hrtf_spatial_blend(float blend, float epsilon = 1e-5f);
 
 /// True when distance/occlusion scalars produce unity spatial blend — skip narrowing.
 bool should_skip_hrtf_spatial_blend(float distance_attenuation, float occlusion_gain,
-                                    const HrtfAttenuationCoupling& coupling = {},
-                                    const BinauralPanParams& params = {});
 
 /// Combined spatial blend from distance attenuation and occlusion LF gain.
 float compute_hrtf_spatial_blend(float distance_attenuation, float occlusion_gain,
