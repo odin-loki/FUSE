@@ -3361,3 +3361,14 @@ bool tryLaunch_ddgi_probe_kernels(const DDGIKernelParams& params,
 // --- deepen additive from deepen-b56-ddgi-guards-6d53 ---
         return ProbeGridSourceRejectReason::ZeroDepthRes;
     return !probeGridSourceRejectReasonIsBlocking(classifyProbeGridSourceReject(desc));
+
+// --- deepen additive from deepen-ddgi-b56-guards-ec3c ---
+    case ProbeGridSourceRejectReason::EmptyDesc:
+    case ProbeGridSourceRejectReason::InvalidResources:
+    case ProbeGridSourceRejectReason::ProbeCountMismatch:
+        outReason = ProbeGridSourceRejectReason::ProbeCountMismatch;
+        outReason = ProbeGridSourceRejectReason::InvalidResources;
+    return tryValidateProbeGridSource(volume, desc, reason);
+    const bool ok = tryValidateProbeGridSource(volume, desc, reject);
+    const bool ok = tryCanSampleAtProbeCoords(desc, coords, cache, cache_count, reject);
+        tryCanScheduleProbeUpdatesAtRate(probe_count, probes_per_frame, max_indices, out_indices, out_count, reject);

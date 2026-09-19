@@ -4745,3 +4745,33 @@ void testProbeTrilinearPreflightDeepen() {
                "tryLaunch_probe_kernels succeeds for valid params");
                "tryLaunch_probe_kernels rejects zero update count");
     testProbeTrilinearPreflightDeepen();
+
+// --- deepen additive from deepen-ddgi-b56-guards-ec3c ---
+    expectTrue(fuse::renderer::ddgi_util::tryValidateProbeGridSource(volume, desc, reason),
+               "tryValidateProbeGridSource succeeds for matching volume");
+    expectTrue(fuse::renderer::ddgi_util::preflightProbeGridSource(volume, desc),
+               "preflightProbeGridSource succeeds for matching volume");
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateProbeGridSource(mismatchedCount, desc, reason),
+               "tryValidateProbeGridSource rejects probe_count mismatch");
+    expectTrue(reason == fuse::renderer::ProbeGridSourceRejectReason::ProbeCountMismatch,
+    expectTrue(std::strcmp(fuse::renderer::probeGridSourceRejectReasonLabel(reason), "probe_count_mismatch") == 0,
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateProbeGridSource(invalidResources, desc, reason),
+               "tryValidateProbeGridSource rejects invalid resources");
+    expectTrue(reason == fuse::renderer::ProbeGridSourceRejectReason::InvalidResources,
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateProbeGridSource(volume, zeroRes, reason),
+               "tryValidateProbeGridSource rejects zero irradiance_res desc");
+    expectTrue(reason == fuse::renderer::ProbeGridSourceRejectReason::DescMismatch,
+    expectTrue(fuse::renderer::ddgi_util::tryValidateProbeGridSource(emptyVolume, empty, reason),
+               "tryValidateProbeGridSource vacuously succeeds on empty desc");
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipSampleCoordPreflight(desc, inBounds),
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipSampleCoordPreflight(desc, warnWeights),
+void testTrilinearAndCachePreflightDeepen() {
+    expectTrue(fuse::renderer::ddgi_util::preflightProbeTrilinearSampleAtCoords(desc, coords, cache.data(), 8u),
+               "preflightProbeTrilinearSampleAtCoords succeeds for accessible grid");
+    expectTrue(!fuse::renderer::ddgi_util::preflightProbeTrilinearSampleAtCoords(
+               "preflightProbeTrilinearSampleAtCoords rejects null cache");
+               "wouldSkipProbeTrilinearSample true for invalid sample coords");
+               "preflightTrilinearProbeIrradiance rejects undersized cache");
+               "zero probes_per_frame tryScheduleAtRate reports zero_probes_per_frame reason");
+               "preflightProbeScheduleAtRate zero rate reports zero_probes_per_frame reason");
+    testTrilinearAndCachePreflightDeepen();
