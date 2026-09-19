@@ -340,6 +340,19 @@ bool ContactManifold::pruneShallowPenetrationsIfNeeded(f32 minDepth) {
     return !empty();
 }
 
+bool ContactManifold::normalizeContactNormalIfNeeded(f32 lengthEpsilon) {
+    if (!hasValidNormal()) {
+        return false;
+    }
+    if (!needsNormalNormalization(lengthEpsilon)) {
+        return true;
+    }
+
+    const f32 normalLength = contactNormal.length();
+    contactNormal = contactNormal * (1.f / normalLength);
+    return hasValidNormal();
+}
+
 const char* manifold_prune_reject_reason_name(ManifoldPruneRejectReason reason) {
     switch (reason) {
     case ManifoldPruneRejectReason::None:

@@ -125,6 +125,9 @@ struct ContactManifold {
 
     /// Prune shallow slots only when `hasShallowPenetrations`; returns true when points remain (B4.4 deepen follow-up).
     bool pruneShallowPenetrationsIfNeeded(f32 minDepth);
+
+    /// Normalize contact normal when non-unit; returns true when normal is valid after call (B4.6 deepen pass).
+    bool normalizeContactNormalIfNeeded(f32 lengthEpsilon = 1e-4f);
 };
 
 /// Why manifold prune would early-out (B4.5 deepen follow-up pass).
