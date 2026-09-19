@@ -3354,3 +3354,20 @@ void testFroxelClassifyPreflightAndBlockingGuards() {
                "classifyDensityLookupAtCoordReject index_out_of_range for OOB coords");
                "preflightFroxelTrilinearSample succeeds for clampable weights");
                "preflightFroxelTrilinearSample rejects hard OOB tile");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-4d56 ---
+void testFroxelPreflightClassifyAndIsBlockingGuards() {
+               "classifySampleCoordReject out_of_bounds for hard OOB tile coord");
+    expectTrue(fuse::renderer::FroxelGridLayout::preflightScreenMapping(0.5f, 0.5f, 10.f, desc, camera),
+               "preflightScreenMapping succeeds for in-range depth");
+               "classifyScreenMappingReject empty_grid for zero-dimension desc");
+    expectTrue(!fuse::renderer::FroxelGridLayout::preflightScreenMapping(0.5f, 0.5f, 10.f, zeroDesc, camera),
+               "preflightDensityLookup succeeds for in-range index");
+    expectTrue(fuse::renderer::froxel_util::classifyDensityLookupReject(grid, desc, 3u, 1u, 2u) ==
+               "preflightDensityLookupAtCoord succeeds for clampable OOB coords");
+    expectTrue(fuse::renderer::froxel_util::classifyFroxelPopulateReject(zeroDesc, camera, params) ==
+               "classifyFroxelPopulateReject empty_desc for zero-dimension grid");
+                   fuse::renderer::FroxelPopulateRejectReason::EmptyDesc),
+    expectTrue(fuse::renderer::froxel_util::classifyFroxelPopulateReject(desc, badCamera, params) ==
+               "classifyFroxelPopulateReject invalid_camera for bad near/far");
+    testFroxelPreflightClassifyAndIsBlockingGuards();
