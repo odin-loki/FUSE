@@ -441,3 +441,8 @@ FrictionBasisRebuildRejectReason friction_basis_rebuild_reject_reason(
 FrictionBasisNormalizePreflight preflight_friction_basis_normalize_rebuild(
     FrictionBasisNormalizePreflight preflight{};
 bool should_skip_friction_basis_normalize_rebuild(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-bc5b ---
+    case FrictionBasisRebuildRejectReason::InvalidNormal:
+        return manifold.empty() ? FrictionBasisRebuildRejectReason::EmptyManifold
+                                : FrictionBasisRebuildRejectReason::InvalidNormal;

@@ -2528,3 +2528,11 @@ void testNarrowphaseDispatchPreflightGuards() {
     testManifoldPruneFinalizeCombinedPreflights();
     testFrictionBasisNormalizeCombinedPreflights();
     testNarrowphaseDispatchPreflightGuards();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-bc5b ---
+void testContactPairDeepenShouldRunGuards() {
+void testContactBufferRejectReasonGuards() {
+            fuse::physics::narrowphase::ContactBufferWriteRejectReason::OutOfRange),
+            buffer, fuse::physics::narrowphase::ContactBufferCompactionRejectReason::None),
+            fuse::physics::narrowphase::contactBufferWriteRejectReasonName(
+    testContactBufferRejectReasonGuards();

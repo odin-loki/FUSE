@@ -786,3 +786,6 @@ bool should_skip_contact_pair_batch(
     preflight.isAnyTrigger = preflight.reason == ContactPairRejectReason::AnyTrigger;
     preflight.isMassless = preflight.reason == ContactPairRejectReason::BothMassless;
     preflight.isDeepenDegenerate = preflight.reason == ContactPairRejectReason::DegenerateShape &&
+
+// --- deepen additive from deepen-b4-narrowphase-guards-bc5b ---
+    return should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
