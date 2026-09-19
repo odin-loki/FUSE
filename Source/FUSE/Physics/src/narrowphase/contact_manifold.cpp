@@ -380,6 +380,25 @@ bool ContactManifold::normalizeContactNormalIfNeeded(f32 lengthEpsilon) {
     return hasValidNormal();
 }
 
+bool ContactManifold::normalizeContactNormal(f32 lengthEpsilon) {
+    if (!hasValidNormal()) {
+        return false;
+    }
+    const f32 normalLength = contactNormal.length();
+    if (normalLength <= lengthEpsilon) {
+        return false;
+    }
+    contactNormal = contactNormal * (1.f / normalLength);
+    return true;
+}
+
+bool ContactManifold::normalizeContactNormalIfNeeded(f32 lengthEpsilon) {
+    if (!needsNormalNormalization(lengthEpsilon)) {
+        return hasValidNormal();
+    }
+    return normalizeContactNormal(lengthEpsilon);
+}
+
 const char* manifold_prune_reject_reason_name(ManifoldPruneRejectReason reason) {
     switch (reason) {
     case ManifoldPruneRejectReason::None:
@@ -2449,6 +2468,11 @@ bool can_skip_manifold_prune_after_normalize(
     if (!normalize_contact_normal_if_needed(manifold, frictionEpsilon)) {
 
 
+
+
+bool prune_and_finalize_contact_manifold(
+    if (!prune_contact_manifold_if_needed(
+    return finalize_contact_manifold_if_needed(
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};

@@ -191,6 +191,11 @@ struct ContactManifold {
         f32 duplicateEpsilon = 1e-4f);
 
     /// Normalize contact normal when non-unit; returns true when normal is valid after call (B4.6 deepen pass).
+
+    /// Normalize `contactNormal` when non-zero; no-op when invalid (B4.6 deepen pass).
+    bool normalizeContactNormal(f32 lengthEpsilon = 1e-4f);
+
+    /// Normalize only when `needsNormalNormalization` reports true (B4.6 deepen pass).
     bool normalizeContactNormalIfNeeded(f32 lengthEpsilon = 1e-4f);
 };
 
@@ -1391,6 +1396,13 @@ bool can_skip_manifold_prune_after_normalize(
 
 /// Chain prune then finalize only when both preflights allow (B4.6 deepen follow-up pass).
 
+
+/// Prune only when `should_skip_manifold_prune` is false; returns true when points remain (B4.6 deepen pass).
+
+/// Finalize only when `can_skip_manifold_finalize` is false; no-op otherwise (B4.6 deepen pass).
+
+/// Prune then finalize using preflight guards; returns false when either step fails (B4.6 deepen pass).
+bool prune_and_finalize_contact_manifold(
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

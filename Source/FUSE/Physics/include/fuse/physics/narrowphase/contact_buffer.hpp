@@ -300,6 +300,7 @@ struct ContactBufferSoA {
     void rebuildFrictionTangentBasisAt(u32 slot, f32 epsilon = 1e-4f);
     void rebuildFrictionTangentBasesIfNeeded(f32 epsilon = 1e-4f);
     bool writeSlotWithFinalize(u32 slot, ContactManifold& manifold, f32 frictionEpsilon = 1e-4f);
+    bool slotNeedsFrictionBasisRebuild(u32 slot, f32 epsilon = 1e-4f) const;
     u32 compact();
     /// Compact only when preflight allows (B4.6 deepen pass).
     u32 compactWithPreflight();

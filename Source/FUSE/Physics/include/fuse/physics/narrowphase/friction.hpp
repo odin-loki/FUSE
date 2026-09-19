@@ -804,5 +804,11 @@ bool can_skip_friction_basis_rebuild_after_normalize(
 
 /// Build friction tangents only when preflight allows; returns false when skipped (B4.6 deepen follow-up pass).
 
+/// Normalize the contact normal when needed, then rebuild friction basis (B4.6 deepen pass).
+bool normalize_and_rebuild_friction_basis(ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Rebuild friction tangents via preflight; no-op when skip predicate passes (B4.6 deepen pass).
+
+/// Returns true when friction-basis rebuild should run for this manifold (B4.6 deepen pass).
 
 } // namespace fuse::physics::narrowphase

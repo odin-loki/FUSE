@@ -1533,7 +1533,6 @@ bool ContactBufferSoA::rebuildFrictionTangentBasesWithPreflight(f32 epsilon) {
     if (preflight.reason != FrictionBasisRejectReason::None) {
     if (preflight.can_skip_rebuild()) {
         return activeCount > 0u;
-void ContactBufferSoA::rebuildFrictionTangentBasesIfNeeded(f32 epsilon) {
 
         if (should_skip_friction_basis_beyond_rebuild(manifold, epsilon)) {
 
@@ -1548,15 +1547,22 @@ bool ContactBufferSoA::writeSlotWithFinalize(
     writeSlot(slot, manifold);
     if (buffer.isEmpty()) {
         preflight.skipped = true;
-    }
 
-            continue;
         const ContactManifold manifold = buffer.manifoldAt(slot);
         if (needs_friction_basis_refresh(manifold, epsilon)) {
             ++preflight.needsRebuildCount;
 
 bool should_skip_buffer_friction_rebuild(const ContactBufferSoA& buffer, f32 epsilon) {
     return preflight_buffer_friction_rebuild(buffer, epsilon).can_skip_rebuild();
+bool ContactBufferSoA::slotNeedsFrictionBasisRebuild(u32 slot, f32 epsilon) const {
+
+    const TangentBasis basis{tangent1[slot], tangent2[slot]};
+    return !isOrthonormalTangentBasis(contactNormals[slot], basis, epsilon);
+
+        if (validFlags[slot] == 0u || !slotNeedsFrictionBasisRebuild(slot, epsilon)) {
+        const TangentBasis basis = buildTangentBasis(contactNormals[slot]);
+        tangent1[slot] = basis.tangent1;
+        tangent2[slot] = basis.tangent2;
 }
 
 TangentBasis ContactBufferSoA::tangentBasisAt(u32 index) const {

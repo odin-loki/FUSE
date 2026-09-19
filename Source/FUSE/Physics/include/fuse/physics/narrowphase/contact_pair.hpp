@@ -42,6 +42,8 @@ enum class ContactPairRejectReason : u8 {
     UndispatchableShapePair,
     NonCanonicalPair,
     DuplicatePairInBatch,
+    BothNoGravity,
+    BothCcd,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
@@ -140,6 +142,21 @@ bool is_zero_inv_mass_contact_pair(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     f32 invMassEpsilon = 1e-8f);
+
+/// Returns true when both bodies carry `RB_NO_GRAVITY` (B4.6 deepen pass).
+bool is_no_gravity_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies);
+
+/// Returns true when both bodies carry `RB_CCD` (B4.6 deepen pass).
+bool is_ccd_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies);
+
+/// Returns true when either shape resolves to `SdfMesh` or `Voxel` (B4.6 deepen pass).
+bool is_mesh_shape_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
 
 /// Returns true when either shape has zero or negative extent (B4.3 deepen pass).
 bool is_degenerate_shape_pair(
@@ -1521,6 +1538,18 @@ broadphase::CandidatePair canonicalize_contact_pair(const broadphase::CandidateP
 
 /// Count pairs rejected by extended deepen preflight (B4.6 deepen follow-up pass).
 u32 count_rejected_contact_pairs(
+/// Const preflight with B4.6 deepen reject checks layered on batch preflight (B4.6 deepen pass).
+struct NarrowphaseBatchDeepenPreflight {
+    NarrowphaseBatchPreflight base{};
+    u32 noGravityRejectedCount = 0u;
+    u32 ccdRejectedCount = 0u;
+
+    bool can_dispatch() const { return base.can_dispatch(); }
+    bool can_skip_deepen() const { return base.can_skip(); }
+};
+
+/// Populate B4.6 batch deepen preflight without running shape dispatch (B4.6 deepen pass).
+NarrowphaseBatchDeepenPreflight preflight_narrowphase_batch_deepen(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -1599,5 +1628,10 @@ ContactManifold detect_contacts_pair_deepen(
 
 /// Finalize manifold with prune+finalize preflight gates (B4.6 deepen pass).
 bool generate_contact_manifold_deepen(ContactManifold& manifold);
+/// Returns true when all pairs are rejected by B4.6 deepen preflight (B4.6 deepen pass).
+bool narrowphase_batch_deepen_rejects_all(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
 
 } // namespace fuse::physics::narrowphase
