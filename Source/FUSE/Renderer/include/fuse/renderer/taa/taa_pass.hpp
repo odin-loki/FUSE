@@ -495,6 +495,11 @@ public:
     bool tryPreflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason& reason) const;
     /// Early-out when resolve preflight would bail before history update (B5.9 deepen).
     bool shouldSkipResolve(const TaaResolveDesc& desc) const;
+    bool isWarmupComplete() const;
+    bool shouldSkipWarmup() const;
+    /// Combined history-reuse + blend-weight preflight for temporal resolve (B5.9 deepen).
+    bool preflightTemporalResolve(const TaaResolveDesc& desc, TaaHistoryReuseBlockReason* reuseReason = nullptr,
+    /// Early-out when combined temporal resolve preflight would reject (B5.9 deepen).
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;

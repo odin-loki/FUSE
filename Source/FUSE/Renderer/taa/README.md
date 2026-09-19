@@ -234,6 +234,16 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaFrameGuardPreflight` / `preflightTaaFrameGuards(desc, history, observedGeneration)` — combined history + blend guard bundle
 - `TaaPass::preflightJitterFrame(frame)` / `preflightHistoryWarmup(observedGeneration)` / `preflightResolveBlendFrame(desc)` / `preflightFrameGuards(desc, observedGeneration)` — pass-level combined preflights
 - `TaaPass::isHistoryWarmupComplete()` / `shouldSkipHistoryWarmup()` — pass-level warm-up completion helpers
+- `shouldSkipTaaJitterSync` / `taaJitterSyncReady` — early-out and readiness for jitter sync preflight
+- `shouldSkipTaaJitterNdc` / `taaJitterNdcReady` / `tryPreflightTaaJitterNdc` — NDC jitter guard early-out, readiness, and mandatory reject output
+- `TaaJitter::shouldSkipNdcOffset(w, h)` — instance-level NDC production early-out
+- `taaHistoryWarmupComplete` / `shouldSkipTaaHistoryWarmup` / `taaHistoryWarmupReady` — warm-up completion and readiness guards
+- `TaaHistoryBuffer::warmupComplete()` — true when first resolve has warmed history
+- `taaResolveBlendReady` — true when resolve blend weights pass validation and reuse policy
+- `preflightTaaResolveTemporal` / `tryPreflightTaaResolveTemporal` / `shouldSkipTaaResolveTemporal` — combined history-reuse + blend-weight preflight
+- `TaaPass::preflightJitterNdc` / `shouldSkipJitterSync` / `shouldSkipJitterNdc` — pass-level jitter guard wrappers
+- `TaaPass::isWarmupComplete` / `shouldSkipWarmup` — pass-level warm-up guard wrappers
+- `TaaPass::preflightTemporalResolve` / `shouldSkipTemporalResolve` — pass-level combined temporal preflight
 
 ## Pipeline (stub)
 

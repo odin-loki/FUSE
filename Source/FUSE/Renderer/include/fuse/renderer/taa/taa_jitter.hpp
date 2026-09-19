@@ -176,6 +176,8 @@ struct TaaJitterFramePreflight {
 /// Combined jitter sync + NDC preflight for a monotonic frame counter (B5.9 deepen).
 TaaJitterFramePreflight preflightTaaJitterFrame(u32 frameIndex, u32 width, u32 height,
                                                 u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// True when jitter can sync to a monotonic frame counter (B5.9 deepen).
+bool taaJitterSyncReady(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {

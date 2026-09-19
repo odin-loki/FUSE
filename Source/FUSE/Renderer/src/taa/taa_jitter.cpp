@@ -256,6 +256,9 @@ TaaJitterFramePreflight preflightTaaJitterFrame(u32 frameIndex, u32 width, u32 h
     if (preflight.canSync()) {
         preflight.slot = TaaJitterLayout::frameIndexInSequence(frameIndex, sequenceLength);
     return preflight;
+bool taaJitterSyncReady(u32 sequenceLength) {
+    return preflightTaaJitterSync(0u, sequenceLength);
+
 
 bool TaaJitterLayout::validateSequenceLength(u32 length) {
     return length > 0u && length <= kTaaMaxJitterSequenceLength;

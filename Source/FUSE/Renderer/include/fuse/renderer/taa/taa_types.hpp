@@ -483,6 +483,8 @@ bool isTaaHistoryWarmupComplete(const TaaHistoryBuffer& history);
 TaaHistoryWarmupPreflight preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, u32 observedGeneration);
 /// True when history has completed warm-up and may contribute temporally (B5.9 deepen).
 /// True when history warm-up is complete and ready for temporal contribution (B5.9 deepen).
+/// True when history is allocated, warmed, and ready for temporal reuse (B5.9 deepen).
+bool taaHistoryWarmupReady(const TaaHistoryBuffer& history);
 
 /// Why resolve blend-weight preflight rejected the request (B5.9 deepen).
 enum class TaaResolveBlendRejectReason : u8 {
@@ -828,6 +830,11 @@ struct TaaFrameGuardPreflight {
 
 /// Combined history warm-up + resolve blend guard preflight (B5.9 deepen).
 TaaFrameGuardPreflight preflightTaaFrameGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+/// Combined history-reuse + blend-weight preflight for temporal resolve (B5.9 deepen).
+/// Combined temporal preflight with mandatory reject-reason outputs (B5.9 deepen).
+                                    TaaHistoryReuseBlockReason& reuseReason,
+                                    TaaResolveBlendRejectReason& blendReason);
+/// Early-out when combined temporal resolve preflight would reject (B5.9 deepen).
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {
