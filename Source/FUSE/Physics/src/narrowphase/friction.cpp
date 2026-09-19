@@ -1582,4 +1582,5 @@ bool should_run_rebuild_friction_basis_if_needed(const ContactManifold& manifold
 bool should_run_rebuild_friction_basis_with_preflight(
     return preflight.reason == FrictionBasisRejectReason::None && preflight.needsRebuild;
 
+
 } // namespace fuse::physics::narrowphase

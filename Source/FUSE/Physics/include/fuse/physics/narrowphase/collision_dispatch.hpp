@@ -1,6 +1,5 @@
 #pragma once
 
-#include <fuse/physics/broadphase/spatial_hash.hpp>
 #include <fuse/physics/config.hpp>
 #include <fuse/physics/math.hpp>
 #include <fuse/physics/narrowphase/contact_buffer.hpp>
@@ -383,6 +382,16 @@ bool can_skip_narrowphase_buffer_dispatch(
 
 /// Returns true when deepen buffer dispatch may be skipped (empty or all pairs rejected) (B4.6 deepen pass).
 bool can_skip_narrowphase_buffer_dispatch_deepen(
+/// Const preflight for narrowphase into-buffer dispatch (B4.6 deepen pass).
+struct NarrowphaseIntoBufferPreflight {
+    NarrowphaseBatchPreflight batch{};
+    bool skipped = false;
+
+    bool can_run() const { return !skipped && batch.can_dispatch(); }
+};
+
+/// Populate into-buffer preflight without running shape dispatch (B4.6 deepen pass).
+NarrowphaseIntoBufferPreflight preflight_narrowphase_into_buffer(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -405,6 +414,14 @@ NarrowphaseBufferDispatchPreflight preflight_narrowphase_buffer_dispatch(
 
 /// Job-safe narrowphase with deepen pair-reject guards; valid pairs unchanged (B4.6 deepen pass).
 void runNarrowphaseIntoBufferDeepen(
+/// Returns true when into-buffer dispatch should be skipped entirely (B4.6 deepen pass).
+bool can_skip_narrowphase_into_buffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Run narrowphase into buffer only when preflight allows; clears buffer when skipped (B4.6 deepen pass).
+void run_narrowphase_into_buffer_with_preflight(
     ContactBufferSoA& buffer);
 
 /// CPU stub of the CUDA narrow-phase dispatch (B4.3).

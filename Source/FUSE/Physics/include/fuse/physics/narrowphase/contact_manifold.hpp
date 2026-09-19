@@ -437,6 +437,9 @@ struct ManifoldPrunePreflight {
     bool can_prune() const { return reason == ManifoldPruneRejectReason::None; }
     /// Inverse of `can_skip_prune` (B4.4 deepen follow-up pass).
     bool should_run_prune(f32 shallowMinDepth = 0.f) const { return !can_skip_prune(shallowMinDepth); }
+    bool can_skip_shallow_prune(f32 shallowMinDepth) const {
+        return skipped || reason != ManifoldPruneRejectReason::None || !needs_shallow_pruning(shallowMinDepth);
+    }
 };
 
 /// Populate prune preflight from a manifold without mutating slots (B4.4 deepen pass).
@@ -1531,6 +1534,9 @@ bool can_skip_contact_normal_normalize(const ContactManifold& manifold, f32 leng
 /// Prune shallow slots only when preflight allows; returns false when prune rejects (B4.6 deepen follow-up pass).
 bool prune_shallow_contact_manifold_with_preflight(
     f32 minDepth,
+
+/// Returns true when manifold finalize preflight would skip after guarded prune (B4.6 deepen pass).
+bool can_skip_manifold_finalize_after_prune(
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

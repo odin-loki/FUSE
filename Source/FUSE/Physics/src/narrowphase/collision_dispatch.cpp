@@ -262,6 +262,12 @@ bool can_skip_narrowphase_buffer_dispatch_deepen(
     const RigidBodySoA& /*bodies*/,
     const CollisionShapeSoA& /*shapes*/) {
     return should_run_narrowphase(pairs, bodies, shapes);
+    preflight.skipped = preflight.batch.can_skip();
+
+    return preflight_narrowphase_into_buffer(pairs, bodies, shapes).skipped;
+
+void run_narrowphase_into_buffer_with_preflight(
+    if (can_skip_narrowphase_into_buffer(pairs, bodies, shapes)) {
 
 void runNarrowphaseIntoBuffer(
     const std::vector<broadphase::CandidatePair>& pairs,

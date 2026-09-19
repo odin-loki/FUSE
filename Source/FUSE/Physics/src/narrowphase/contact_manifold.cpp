@@ -2596,6 +2596,9 @@ bool should_run_prune_contact_manifold_with_preflight(
 
 bool should_run_finalize_contact_manifold_with_preflight(
         .can_finalize();
+bool can_skip_manifold_finalize_after_prune(
+    if (!preflight.needsPruning) {
+    return prunePreflight.wouldBeEmpty || !prunePreflight.can_prune_in_place();
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};

@@ -915,4 +915,5 @@ FUSE_PHYSICS_INLINE bool can_skip_project_tangential_velocity(
         speedThreshold,
         impulseEpsilon);
 
+
 } // namespace fuse::physics::narrowphase

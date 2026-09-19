@@ -1964,6 +1964,8 @@ bool can_skip_detect_contacts_pair(
 
 /// Detect contacts only when preflight allows; returns invalid manifold when skipped (B4.6 deepen follow-up pass).
 ContactManifold detect_contacts_pair_with_preflight(
+/// Inverse of `should_skip_contact_pair_deepen_dispatch` (B4.6 deepen pass).
+bool is_valid_contact_pair_deepen(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -1976,6 +1978,8 @@ bool can_skip_generate_contact_manifold(const ContactManifold& manifold);
 
 /// Extended deepen reject including plane-plane diagnostic path (B4.6 deepen follow-up pass).
 ContactPairRejectReason contact_pair_deepen_followup_reject_reason(
+/// Detect contacts only when deepen preflight allows; invalid manifold otherwise (B4.6 deepen pass).
+ContactManifold detect_contacts_pair_with_deepen_preflight(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -1990,56 +1994,41 @@ bool should_skip_contact_pair_deepen_followup_dispatch(
 void compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 FUSE_PHYSICS_INLINE bool can_skip_detect_contacts_pair(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return should_skip_contact_pair_dispatch(pair, bodies, shapes);
 }
 
 FUSE_PHYSICS_INLINE ContactManifold detect_contacts_pair_with_preflight(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     if (can_skip_detect_contacts_pair(pair, bodies, shapes)) {
         return invalidContactManifold();
-    }
     return detect_contacts_pair(pair, bodies, shapes);
-}
 
 FUSE_PHYSICS_INLINE bool can_skip_generate_contact_manifold(const ContactManifold& manifold) {
     return !can_finalize_contact_manifold(manifold);
-}
 
 FUSE_PHYSICS_INLINE bool generate_contact_manifold_with_preflight(ContactManifold& manifold) {
     return generate_contact_manifold_if_needed(manifold);
-}
 
 FUSE_PHYSICS_INLINE ContactPairRejectReason contact_pair_deepen_followup_reject_reason(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     const ContactPairRejectReason deepenReason = contact_pair_deepen_reject_reason(pair, bodies, shapes);
     if (deepenReason != ContactPairRejectReason::None) {
         return deepenReason;
-    }
     if (is_plane_plane_contact_pair(pair, shapes)) {
         return ContactPairRejectReason::UnsupportedShapePair;
-    }
     return ContactPairRejectReason::None;
-}
 
 FUSE_PHYSICS_INLINE bool should_skip_contact_pair_deepen_followup_dispatch(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     return contact_pair_deepen_followup_reject_reason(pair, bodies, shapes) != ContactPairRejectReason::None;
-}
 
 FUSE_PHYSICS_INLINE void compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 epsilon) {
     if (should_skip_friction_basis_preflight(manifold, epsilon)) {
         return;
-    }
     compute_friction_tangents(manifold);
-}
+/// Finalize only when manifold finalize preflight passes; no-op otherwise (B4.6 deepen pass).
+bool generate_contact_manifold_with_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase
