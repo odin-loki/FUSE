@@ -1915,3 +1915,9 @@ void testHrtfBinauralCompositeRejectReasonPreflight() {
     expectTrue(malformed_preflight.convolutionReject
     expectTrue(reason == fuse::audio::HrtfBinauralRejectReason::UnityAttenuation,
     testHrtfBinauralCompositeRejectReasonPreflight();
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-494b ---
+    expectTrue(reason == fuse::audio::HrtfIrRejectReason::MalformedIr,
+    expectTrue(reason == fuse::audio::HrtfBinauralRejectReason::CoLocated,
+                       fuse::audio::HrtfBinauralConvolutionRejectReason::EmptyIr),
+                       fuse::audio::HrtfBinauralNarrowingRejectReason::UnityAttenuation),

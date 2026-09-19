@@ -905,3 +905,17 @@ HrtfBinauralRejectReason classify_hrtf_binaural_spatial_pan_reject(
 bool try_preflight_hrtf_binaural_spatial_pan(bool hrtf_enabled, const HrtfIrStub& ir,
 bool try_preflight_hrtf_binaural_convolution(bool hrtf_enabled, const HrtfIrStub& ir,
 bool try_preflight_hrtf_binaural_narrowing(bool hrtf_enabled, const HrtfIrStub& ir,
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-494b ---
+HrtfIrRejectReason classify_hrtf_ir_reject(const HrtfIrPreflight& preflight);
+bool hrtf_ir_reject_reason_blocks_convolution(HrtfIrRejectReason reason);
+bool preflight_hrtf_ir_ready(const HrtfIrStub& ir, HrtfIrRejectReason* reason = nullptr);
+HrtfPanPathRejectReason classify_hrtf_pan_path_reject(const HrtfPanPathPreflight& preflight);
+bool hrtf_pan_path_reject_reason_blocks_spatial_pan(HrtfPanPathRejectReason reason);
+enum class HrtfBinauralConvolutionRejectReason : u8 {
+enum class HrtfBinauralNarrowingRejectReason : u8 {
+const char* hrtf_binaural_convolution_reject_reason_label(HrtfBinauralConvolutionRejectReason reason);
+const char* hrtf_binaural_narrowing_reject_reason_label(HrtfBinauralNarrowingRejectReason reason);
+HrtfBinauralConvolutionRejectReason classify_hrtf_binaural_convolution_reject(
+HrtfBinauralNarrowingRejectReason classify_hrtf_binaural_narrowing_reject(
+bool hrtf_binaural_reject_reason_blocks_spatial_pan(HrtfBinauralRejectReason reason);
