@@ -218,6 +218,19 @@ u32 AssetCooker::count_upstream_invalidation(const CookManifest& manifest,
     return count;
 }
 
+bool AssetCooker::would_invalidate_upstream(const CookManifest& manifest,
+                                            const std::string& changed_source) const {
+    return count_upstream_invalidation(manifest, changed_source) > 0;
+}
+
+bool AssetCooker::would_reconcile_stale_dependencies(const CookManifest& manifest) const {
+    return count_stale_dependency_invalidation(manifest) > 0;
+}
+
+u32 AssetCooker::count_prune_reconcile() const {
+    return m_cache.count_prunable_entries();
+}
+
 u32 AssetCooker::count_stale_dependency_invalidation(const CookManifest& manifest) const {
     CookJobGraph graph;
     graph.build_from_manifest(manifest);

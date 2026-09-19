@@ -1598,10 +1598,55 @@ void testCookerInvalidationCountProbes() {
 
     const fuse::u32 stale_count_before = cooker.count_stale_dependency_invalidation(manifest);
     expectTrue(stale_count_before == 0u, "fresh cache stale dependency count is zero");
+    expectTrue(!cooker.would_reconcile_stale_dependencies(manifest),
+               "fresh cache would not reconcile stale dependencies");
+    expectTrue(cooker.would_invalidate_upstream(manifest, sourceA),
+               "would_invalidate_upstream true for seeded chain source");
+    expectTrue(!cooker.would_invalidate_upstream(manifest, ""),
+               "would_invalidate_upstream false for empty changed source");
+    expectTrue(cooker.count_prune_reconcile() == 0u, "fresh cache prune reconcile count is zero");
 
     const fuse::u32 removed = cooker.invalidate_upstream_dependency(manifest, sourceA);
     expectTrue(removed >= upstream_count, "upstream invalidation removes at least probed count");
     expectTrue(cooker.cache().entry_count() == 0u, "cache empty after probed upstream invalidation");
+    expectTrue(!cooker.would_invalidate_upstream(manifest, sourceA),
+               "would_invalidate_upstream false after upstream invalidation");
+}
+
+void testCookerStaleDependencyReconcileProbes() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_reconcile_a.obj", "# reconcile a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_reconcile_b.obj", "# reconcile b\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_reconcile_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_reconcile_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookBatchResult batch = cooker.cook_manifest(manifest);
+    expectTrue(batch.ok, "manifest cook for reconcile probes ok");
+    expectTrue(!cooker.would_reconcile_stale_dependencies(manifest),
+               "fresh dependency chain would not reconcile");
+
+    writeTempFile(sourceA, "# reconcile a revised\n");
+    const fuse::u32 stale_count = cooker.count_stale_dependency_invalidation(manifest);
+    expectTrue(stale_count >= 1u, "stale dependency count non-zero after upstream source change");
+    expectTrue(cooker.would_reconcile_stale_dependencies(manifest),
+               "would_reconcile_stale_dependencies true after upstream hash change");
+
+    const fuse::u32 reconciled = cooker.invalidate_stale_dependency_hashes(manifest);
+    expectTrue(reconciled >= stale_count, "reconcile removes at least probed stale count");
+    expectTrue(!cooker.would_reconcile_stale_dependencies(manifest),
+               "would_reconcile_stale_dependencies false after reconcile");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
@@ -1686,6 +1731,7 @@ int main() {
     testCookCacheEmptyKeyPaths();
     testCookDirtyInvalidatesCache();
     testCookerInvalidationCountProbes();
+    testCookerStaleDependencyReconcileProbes();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
