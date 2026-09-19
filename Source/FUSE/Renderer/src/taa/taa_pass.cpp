@@ -615,3 +615,12 @@ bool TaaPass::preflightHistoryWarmupComplete(TaaHistoryWarmupRejectReason* reaso
 // --- deepen additive from deepen-taa-b59-guards-4701 ---
                                        TaaResolveBlendRejectReason& blendReason) const {
     return tryPreflightTaaResolveFrame(desc, m_history, skipReason, blendReason);
+
+// --- deepen additive from deepen-taa-b59-guards-4c9c ---
+    return preflightTaaResolveTemporalBlend(desc, m_history, reuseReason, blendReason);
+bool TaaPass::tryPreflightResolveTemporalBlend(const TaaResolveDesc& desc,
+    return tryPreflightTaaResolveTemporalBlend(desc, m_history, reuseReason, blendReason);
+bool TaaPass::preflightHistoryWarmupSatisfied(TaaHistoryReuseBlockReason* reason) const {
+    return preflightTaaHistoryWarmupSatisfied(m_history, reason);
+bool TaaPass::tryPreflightHistoryWarmupSatisfied(TaaHistoryReuseBlockReason& reason) const {
+    return tryPreflightTaaHistoryWarmupSatisfied(m_history, reason);

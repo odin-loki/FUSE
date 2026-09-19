@@ -756,3 +756,6 @@ bool tryComputeTaaResolveBlendWeightsIfResolveReady(const TaaResolveDesc& desc,
     const TaaResolveBlendRejectReason blendReject = classifyTaaResolveBlendReject(desc, history);
     return blendReject == TaaResolveBlendRejectReason::None;
     return preflightTaaResolveFrame(desc, history, &skipReason, &blendReason);
+
+// --- deepen additive from deepen-taa-b59-guards-4c9c ---
+    return preflightTaaResolveTemporalBlend(desc, history, &reuseReason, &blendReason);

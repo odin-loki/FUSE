@@ -4143,3 +4143,28 @@ void testHistoryWarmupClassifyAndTryPreflight() {
     expectTrue(pass->tryPreflightResolveFrame(resolveDesc, skipReason, blendReason),
                "pass tryPreflightResolveFrame passes before warmup");
     testHistoryWarmupClassifyAndTryPreflight();
+
+// --- deepen additive from deepen-taa-b59-guards-4c9c ---
+void testJitterAlignmentPreflightGuards() {
+    expectTrue(fuse::renderer::preflightTaaJitterAlignment(jitter, 5u, &rejectReason),
+               "preflightTaaJitterAlignment passes after sync");
+    expectTrue(!fuse::renderer::preflightTaaJitterAlignment(jitter, 6u, &rejectReason),
+               "preflightTaaJitterAlignment rejects misaligned frame");
+    expectTrue(fuse::renderer::preflightTaaJitterAlignment(jitter, 6u, &rejectReason),
+               "preflightTaaJitterAlignment passes after advance to frame six");
+void testHistoryWarmupSatisfiedPreflight() {
+    expectTrue(!fuse::renderer::tryPreflightTaaHistoryWarmupSatisfied(emptyHistory, reason),
+    expectTrue(!fuse::renderer::preflightTaaHistoryWarmupSatisfied(history, &reason),
+    expectTrue(fuse::renderer::preflightTaaHistoryWarmupSatisfied(history, &reason),
+    expectTrue(!fuse::renderer::tryPreflightTaaResolveTemporalBlend(desc, history, reuseReason, blendReason),
+    expectTrue(fuse::renderer::tryPreflightTaaResolveTemporalBlend(desc, history, reuseReason, blendReason),
+    expectTrue(!fuse::renderer::preflightTaaResolveTemporalBlend(desc, history, &reuseReason, &blendReason),
+    expectTrue(pass->preflightJitterAlignment(4u, &jitterReject),
+    expectTrue(pass->tryPreflightJitterAlignment(4u, jitterReject),
+               "pass tryPreflightJitterAlignment passes after sync");
+    expectTrue(!pass->tryPreflightHistoryWarmupSatisfied(warmupReason),
+    expectTrue(pass->tryPreflightHistoryWarmupSatisfied(warmupReason),
+    expectTrue(pass->tryPreflightResolveTemporalBlend(resolveDesc, reuseReason, blendReason),
+               "pass tryPreflightResolveTemporalBlend passes after warmup");
+    testJitterAlignmentPreflightGuards();
+    testHistoryWarmupSatisfiedPreflight();

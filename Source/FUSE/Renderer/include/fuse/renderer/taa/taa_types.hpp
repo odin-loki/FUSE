@@ -420,3 +420,7 @@ bool tryPreflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuf
 bool preflightTaaHistoryWarmupComplete(const TaaHistoryBuffer& history,
 bool tryPreflightTaaHistoryWarmupComplete(const TaaHistoryBuffer& history,
                                     u32 observedGeneration, TaaResolveTemporalRejectReason& reason);
+
+// --- deepen additive from deepen-taa-b59-guards-4c9c ---
+bool preflightTaaHistoryWarmupSatisfied(const TaaHistoryBuffer& history,
+bool tryPreflightTaaHistoryWarmupSatisfied(const TaaHistoryBuffer& history,
