@@ -4252,3 +4252,6 @@ void testUpdateDragNonFiniteRejectReasonGuards() {
 // --- deepen additive from deepen-gizmo-reject-reasons-4cfe ---
                    fuse::editor::GizmoBeginDragRejectReason::NonFiniteHit),
                "preflightSnapDragReady accepts valid delta and snap");
+
+// --- deepen additive from deepen-b6-gizmo-reject-reasons-18e4 ---
+    const fuse::editor::PickPreflight nanPick = fuse::editor::preflightPick(nanHit,
