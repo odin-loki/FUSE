@@ -368,6 +368,11 @@ const char* manifold_prune_reject_reason_name(ManifoldPruneRejectReason reason) 
     return "Unknown";
 
 ManifoldPruneRejectReason manifold_prune_reject_reason(
+}
+
+        return !empty();
+
+ManifoldPrunePreflight preflight_manifold_prune(
     const ContactManifold& manifold,
     f32 separationEpsilon,
     f32 duplicateEpsilon) {
@@ -677,6 +682,20 @@ bool should_skip_manifold_finalize(const ContactManifold& manifold) {
 
 bool can_finalize_with_preflight(const ManifoldFinalizePreflight& preflight) {
     return preflight.can_finalize();
+
+    preflight.empty = false;
+    preflight.noPenetrating = !manifold.hasPenetratingPoints();
+    preflight.needsPruning = manifold.needsPruning();
+    preflight.needsNormalization = needs_normal_normalization(manifold);
+
+bool needs_normal_normalization(const ContactManifold& manifold, f32 epsilon) {
+    if (!manifold.hasValidNormal()) {
+    return std::fabs(manifold.contactNormal.length() - 1.f) > epsilon;
+
+bool can_skip_manifold_finalize(const ContactManifold& manifold) {
+
+bool generate_contact_manifold_guarded(ContactManifold& manifold) {
+    const ManifoldFinalizePreflight preflight = preflight_manifold_finalize(manifold);
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

@@ -278,7 +278,6 @@ bool is_both_sleeping_pair(
     return sleepingA && sleepingB;
 
 bool is_kinematic_contact_pair(
-}
 
 
 
@@ -292,10 +291,15 @@ bool is_kinematic_contact_pair(
     return kinematicA && kinematicB;
 }
 
+bool is_sleeping_contact_pair(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies) {
     if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
         return false;
+    }
+    const bool sleepingA = (bodies.flags[pair.bodyA] & RB_SLEEPING) != 0u;
+    const bool sleepingB = (bodies.flags[pair.bodyB] & RB_SLEEPING) != 0u;
+    return sleepingA && sleepingB;
 
 bool is_degenerate_shape_pair(
     const broadphase::CandidatePair& pair,
@@ -464,7 +468,6 @@ ContactPairRejectReason contact_pair_reject_reason(
     }
     if (is_kinematic_contact_pair(pair, bodies)) {
         return ContactPairRejectReason::BothKinematic;
-    }
     if (is_degenerate_shape_pair(pair, shapes)) {
         return ContactPairRejectReason::DegenerateShape;
     }
@@ -1043,6 +1046,30 @@ bool contact_pair_preflight_rejects_for_reason(
 
 bool can_dispatch_contact_pair(const ContactPairPreflight& preflight) {
     return preflight.can_dispatch();
+bool contact_pair_has_reject_reason(
+    const RigidBodySoA& bodies,
+    return contact_pair_reject_reason(pair, bodies, shapes) != ContactPairRejectReason::None;
+
+bool should_reject_contact_pair(
+    return is_invalid_contact_pair(pair, bodies, shapes);
+
+ContactPairDispatchPreflight preflight_contact_pair_dispatch(
+    ContactPairDispatchPreflight preflight{};
+    preflight.reason = contact_pair_reject_reason(pair, bodies, shapes);
+    preflight.rejected = preflight.reason != ContactPairRejectReason::None;
+    preflight.has_valid_bodies =
+        !is_self_contact_pair(pair) && !is_out_of_range_contact_pair(pair, bodies);
+    preflight.has_valid_shapes =
+        preflight.has_valid_bodies && !is_missing_shape_contact_pair(pair, shapes);
+
+ContactPairDispatchResult dispatch_contact_pair(
+    ContactPairDispatchResult result{};
+    result.preflight = preflight_contact_pair_dispatch(pair, bodies, shapes);
+    if (!result.preflight.can_dispatch()) {
+        return result;
+
+    result.manifold = dispatchShapePair(pair, bodies, shapes);
+    result.dispatched = true;
 }
 
 } // namespace fuse::physics::narrowphase

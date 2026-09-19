@@ -307,5 +307,20 @@ bool should_skip_friction_basis_rebuild_preflight(const FrictionBasisPreflight& 
 
 /// Returns true when preflight indicates an existing basis can be reused (B4.4 deepen pass).
 bool can_reuse_friction_basis(const FrictionBasisPreflight& preflight);
+struct FrictionBasisRebuildPreflight {
+    bool skipTangents = false;
+    bool isStale = false;
+
+    bool needs_rebuild() const { return !skipped && !skipTangents && (!hasCachedBasis || isStale); }
+
+    bool can_skip_rebuild() const { return !needs_rebuild(); }
+
+FrictionBasisRebuildPreflight preflight_friction_basis_rebuild(
+
+/// Build friction tangents only when rebuild preflight requires it (B4.5 deepen pass).
+bool compute_friction_tangents_guarded(ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Build or reuse friction basis via rebuild preflight (B4.5 deepen pass).
+bool ensure_friction_basis_guarded(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase

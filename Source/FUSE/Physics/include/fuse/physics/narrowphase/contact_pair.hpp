@@ -107,7 +107,9 @@ bool is_massless_contact_pair(
     const RigidBodySoA& bodies);
 
 /// Returns true when both bodies carry `RB_KINEMATIC` (no dynamic response stub, B4.3 deepen pass).
-bool is_kinematic_contact_pair(
+/// Returns true when both bodies carry `RB_KINEMATIC` (no solver response stub, B4.5 deepen pass).
+
+/// Returns true when both bodies carry `RB_SLEEPING` (narrowphase skip stub, B4.5 deepen pass).
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies);
 
@@ -439,5 +441,26 @@ bool contact_pair_preflight_rejects_for_reason(
 
 /// Returns true when preflight indicates dispatch may proceed without shape tests (B4.4 deepen pass).
 bool can_dispatch_contact_pair(const ContactPairPreflight& preflight);
+/// Returns true when `contact_pair_reject_reason` is not `None` (B4.5 deepen pass).
+bool contact_pair_has_reject_reason(
+
+/// Alias for `is_invalid_contact_pair` (B4.5 deepen pass).
+
+/// Richer dispatch preflight with body/shape validity flags (B4.5 deepen pass).
+struct ContactPairDispatchPreflight {
+    bool has_valid_bodies = false;
+    bool has_valid_shapes = false;
+
+    bool can_dispatch() const { return !rejected && has_valid_bodies && has_valid_shapes; }
+
+/// Populate dispatch preflight without running shape dispatch (B4.5 deepen pass).
+ContactPairDispatchPreflight preflight_contact_pair_dispatch(
+
+/// Dispatch outcome for guarded pair entry points (B4.5 deepen pass).
+    ContactPairDispatchPreflight preflight{};
+    bool dispatched = false;
+
+/// Run preflight then shape dispatch when allowed (B4.5 deepen pass).
+ContactPairDispatchResult dispatch_contact_pair(
 
 } // namespace fuse::physics::narrowphase
