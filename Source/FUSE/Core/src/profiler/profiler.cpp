@@ -975,6 +975,18 @@ u32 invalidNameEventCount() {
 bool hasInvalidNameEvents() {
     return invalidNameEventCount() > 0u;
 
+bool canRecordEvent(const char* name) {
+    return enabled() && isValidEventName(name);
+}
+
+bool canBeginAsyncFlow(const char* name) {
+    return canRecordEvent(name);
+}
+
+bool canEndAsyncFlow(const char* name) {
+    return canRecordEvent(name) && openAsyncFlowCount() > 0u;
+}
+
 u32 exportableEventCount() {
     u32 count = 0u;
     for (u32 i = 0u; i < total; ++i) {
@@ -1372,6 +1384,16 @@ bool tryExportableEventAt(u32 index, ProfileEvent& outEvent) {
     return true;
 }
 
+bool tryExportableEventAt(u32 index, ProfileEvent& outEvent) {
+    if (!isEventExportable(index)) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    outEvent = eventAt(index);
+    return true;
+}
+
 bool tryFirstEvent(ProfileEvent& outEvent) {
     const u32 index = firstEventIndex();
     if (index == kInvalidEventIndex) {
@@ -1602,6 +1624,27 @@ bool canExportChromeTrace() {
 
     return true;
 
+u32 countEventsByPhase(EventPhase phase) {
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (eventAt(i).phase == phase) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 findFirstEventIndexOfPhase(EventPhase phase) {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (eventAt(i).phase == phase) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
 const ProfileEvent& lastEvent() {
     const u32 index = lastEventIndex();
     if (index == kInvalidEventIndex) {
@@ -1628,14 +1671,21 @@ AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name) {
     AsyncFlowBeginPreflight preflight{};
     preflight.profilerDisabled = !enabled();
     preflight.emptyName = isEmptyEventName(name);
-    return preflight;
-}
 
 AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name) {
     AsyncFlowEndPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.emptyName = isEmptyEventName(name);
     preflight.orphanEnd = openAsyncFlowCount() == 0u;
+EventNamePreflight preflightEventName(const char* name) {
+    EventNamePreflight preflight{};
+    preflight.nullName = name == nullptr;
+    preflight.emptyName = name != nullptr && name[0] == '\0';
+
+AsyncFlowPreflight preflightAsyncFlowBegin(const char* name) {
+    AsyncFlowPreflight preflight{};
+
+AsyncFlowPreflight preflightAsyncFlowEnd(const char* name) {
+    AsyncFlowPreflight preflight = preflightAsyncFlowBegin(name);
+    preflight.noOpenFlows = openAsyncFlowCount() == 0u;
     return preflight;
 }
 
