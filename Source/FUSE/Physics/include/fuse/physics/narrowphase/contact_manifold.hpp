@@ -45,6 +45,8 @@ struct ContactManifold {
 
     bool empty() const { return pointCount == 0u; }
     bool hasValidNormal(f32 epsilon = 1e-6f) const;
+    bool hasNonUnitNormal(f32 lengthEpsilon = 1e-4f) const;
+    bool needsNormalNormalization(f32 lengthEpsilon = 1e-4f) const;
     bool hasFrictionBasis() const;
     const ContactPoint& pointAt(u32 index) const;
     f32 maxPenetration() const;
@@ -132,6 +134,7 @@ struct ManifoldPrunePreflight {
     bool hasShallow = false;
     bool exceedsMaxPoints = false;
     bool wouldBeEmpty = false;
+    bool needsNormalNormalize = false;
     bool skipped = false;
 
     bool needs_pruning() const {
@@ -141,10 +144,21 @@ struct ManifoldPrunePreflight {
     bool needs_shallow_pruning(f32 minDepth) const { return !skipped && hasShallow; }
 
     bool can_prune_in_place() const { return needs_pruning() && !wouldBeEmpty; }
+
+    bool can_skip_prune(f32 shallowMinDepth = 0.f) const {
+        return skipped || (!needs_pruning() && !needs_shallow_pruning(shallowMinDepth));
+    }
 };
 
 /// Populate prune preflight from a manifold without mutating slots (B4.4 deepen pass).
 ManifoldPrunePreflight preflight_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Returns true when manifold prune should be skipped (B4.4 deepen pass).
+bool should_skip_manifold_prune(
     const ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f,
@@ -156,6 +170,7 @@ struct ManifoldFinalizePreflight {
     bool canFinalize = false;
     bool needsPruning = false;
     bool wouldBeEmptyAfterPrune = false;
+    bool needsNormalNormalize = false;
     bool needsFrictionBasis = false;
     bool canReuseFrictionBasis = false;
 

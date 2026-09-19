@@ -230,6 +230,10 @@ const char* contact_pair_reject_reason_name(ContactPairRejectReason reason) {
         return "BothSleeping";
     case ContactPairRejectReason::BothKinematic:
         return "BothKinematic";
+    case ContactPairRejectReason::AnyTrigger:
+        return "AnyTrigger";
+    case ContactPairRejectReason::BothMassless:
+        return "BothMassless";
     }
     return "Unknown";
 }
@@ -276,6 +280,28 @@ bool is_kinematic_contact_pair(
     const bool kinematicA = (bodies.flags[pair.bodyA] & RB_KINEMATIC) != 0u;
     const bool kinematicB = (bodies.flags[pair.bodyB] & RB_KINEMATIC) != 0u;
     return kinematicA && kinematicB;
+}
+
+bool is_any_trigger_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies) {
+    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
+        return false;
+    }
+    const bool triggerA = (bodies.flags[pair.bodyA] & RB_TRIGGER) != 0u;
+    const bool triggerB = (bodies.flags[pair.bodyB] & RB_TRIGGER) != 0u;
+    return triggerA || triggerB;
+}
+
+bool is_massless_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    f32 invMassEpsilon) {
+    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
+        return false;
+    }
+    return bodies.invMasses[pair.bodyA] <= invMassEpsilon &&
+           bodies.invMasses[pair.bodyB] <= invMassEpsilon;
 }
 
 bool is_degenerate_shape_pair(
@@ -487,6 +513,12 @@ ContactPairRejectReason contact_pair_deepen_reject_reason(
     if (is_kinematic_contact_pair(pair, bodies)) {
         return ContactPairRejectReason::BothKinematic;
     }
+    if (is_any_trigger_contact_pair(pair, bodies)) {
+        return ContactPairRejectReason::AnyTrigger;
+    }
+    if (is_massless_contact_pair(pair, bodies)) {
+        return ContactPairRejectReason::BothMassless;
+    }
     return ContactPairRejectReason::None;
 }
 
@@ -511,16 +543,30 @@ bool can_skip_narrowphase(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
-    if (pairs.empty()) {
-        return true;
-    }
+    return !has_dispatchable_contact_pair(pairs, bodies, shapes);
+}
 
+u32 count_dispatchable_contact_pairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    u32 dispatchable = 0u;
     for (const broadphase::CandidatePair& pair : pairs) {
         if (!should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
-            return false;
+            ++dispatchable;
         }
     }
-    return true;
+    return dispatchable;
+}
+
+bool has_dispatchable_contact_pair(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (pairs.empty()) {
+        return false;
+    }
+    return count_dispatchable_contact_pairs(pairs, bodies, shapes) > 0u;
 }
 
 } // namespace fuse::physics::narrowphase

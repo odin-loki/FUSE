@@ -42,6 +42,18 @@ bool ContactManifold::hasValidNormal(f32 epsilon) const {
     return contactNormal.length() > epsilon;
 }
 
+bool ContactManifold::hasNonUnitNormal(f32 lengthEpsilon) const {
+    if (!hasValidNormal()) {
+        return false;
+    }
+    const f32 normalLength = contactNormal.length();
+    return std::fabs(normalLength - 1.f) > lengthEpsilon;
+}
+
+bool ContactManifold::needsNormalNormalization(f32 lengthEpsilon) const {
+    return hasNonUnitNormal(lengthEpsilon);
+}
+
 bool ContactManifold::hasFrictionBasis() const {
     if (!hasValidNormal()) {
         return false;
@@ -345,7 +357,17 @@ ManifoldPrunePreflight preflight_manifold_prune(
     }
     preflight.exceedsMaxPoints = manifold.pointCount > kMaxContactPointsPerManifold;
     preflight.wouldBeEmpty = manifold.wouldBeEmptyAfterPrune(separationEpsilon, duplicateEpsilon);
+    preflight.needsNormalNormalize = manifold.needsNormalNormalization();
     return preflight;
+}
+
+bool should_skip_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
+    return preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth)
+        .can_skip_prune(shallowMinDepth);
 }
 
 ManifoldFinalizePreflight preflight_manifold_finalize(
@@ -376,6 +398,7 @@ ManifoldFinalizePreflight preflight_manifold_finalize(
         return preflight;
     }
 
+    preflight.needsNormalNormalize = manifold.needsNormalNormalization(frictionEpsilon);
     preflight.canFinalize = true;
     preflight.canReuseFrictionBasis = can_skip_friction_basis_rebuild(manifold, frictionEpsilon);
     preflight.needsFrictionBasis = needs_friction_basis_refresh(manifold, frictionEpsilon);
