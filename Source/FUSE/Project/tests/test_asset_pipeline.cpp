@@ -1567,6 +1567,53 @@ void testCookCachePruneInvalidEntries() {
     expectTrue(invalidOnly.prune_invalid_entries() == 0u, "prune on empty cache after rejected load");
 }
 
+void testCookerReconcileEstimators() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_reconcile_a.obj", "# reconcile a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_reconcile_b.obj", "# reconcile b\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_reconcile_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_reconcile_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookBatchResult cooked = cooker.cook_manifest(manifest);
+    expectTrue(cooked.ok, "manifest cook for reconcile estimators ok");
+    expectTrue(cooker.estimate_prune_all() == 0u, "fresh cache prune estimate is zero");
+    expectTrue(cooker.estimate_reconcile_invalidation(manifest) == 0u,
+               "fresh cache reconcile estimate is zero");
+
+    writeTempFile(sourceA, "# reconcile a revised\n");
+    const fuse::u32 stale_estimate = cooker.count_stale_dependency_invalidation(manifest);
+    expectTrue(stale_estimate >= 1u, "stale dependency estimate after upstream change is non-zero");
+    expectTrue(cooker.estimate_reconcile_invalidation(manifest) >= stale_estimate,
+               "reconcile estimate includes stale dependency impact");
+
+    const fuse::u32 removed = cooker.invalidate_stale_dependency_hashes(manifest);
+    expectTrue(removed >= stale_estimate, "stale invalidation removes at least estimated count");
+    expectTrue(cooker.count_stale_dependency_invalidation(manifest) == 0u,
+               "stale dependency estimate zero after upstream reconcile");
+
+    // Revised upstream source may leave a stale-content entry until pruned.
+    expectTrue(cooker.estimate_prune_all() <= 1u,
+               "upstream reconcile leaves at most one stale-content entry");
+    expectTrue(cooker.estimate_reconcile_invalidation(manifest) == cooker.estimate_prune_all(),
+               "reconcile estimate matches prune impact after upstream reconcile");
+
+    cooker.cache().prune_all();
+    expectTrue(cooker.estimate_reconcile_invalidation(manifest) == 0u,
+               "reconcile estimate zero after prune");
+}
+
 void testCookerInvalidationCountProbes() {
     const std::string sourceA = writeTempFile("/tmp/fuse_b79_count_chain_a.obj", "# count chain a\n");
     const std::string sourceB = writeTempFile("/tmp/fuse_b79_count_chain_b.obj", "# count chain b\n");
@@ -1685,6 +1732,7 @@ int main() {
     testCookCacheRoundTrip();
     testCookCacheEmptyKeyPaths();
     testCookDirtyInvalidatesCache();
+    testCookerReconcileEstimators();
     testCookerInvalidationCountProbes();
 
     fuse::core::shutdown();
