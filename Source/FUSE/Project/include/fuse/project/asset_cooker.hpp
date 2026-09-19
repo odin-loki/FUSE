@@ -91,6 +91,14 @@ struct CookUpstreamInvalidationEstimate {
     [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
 };
 
+/// Read-only upstream invalidation breakdown for a changed source (B7.9 deepen).
+struct CookCacheUpstreamReconcileEstimate {
+    u32 direct_source_entries = 0;
+    u32 downstream_entries = 0;
+
+    [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
+};
+
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
 class AssetCooker {
 public:
@@ -292,6 +300,7 @@ public:
     /// Deduplicated source paths contributing to a non-zero reconcile estimate (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_reconcile_stale_sources(
     [[nodiscard]] CookCacheInvalidationEstimate estimate_upstream_invalidation(
+        const CookManifest& manifest, const std::string& changed_source) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

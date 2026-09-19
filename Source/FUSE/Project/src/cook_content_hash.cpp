@@ -976,6 +976,7 @@ CookHashPreflight preflight_manifest_dependency_coverage(
         return combined;
 
 CookHashPreflight preflight_shader_entry_hash(const CookManifestEntry& entry) {
+        preflight.reason = CookHashRejectReason::ZeroContentHash;
         return preflight;
     }
 
@@ -1091,8 +1092,6 @@ CookHashPreflight preflight_manifest_entry_with_dependencies_hash(const CookMani
 
     if (entry.dependencies.empty()) {
 
-        }
-        return preflight;
 
     const CookHashPreflight upstream_preflight =
         preflight_upstream_dependencies_hash(entry.dependencies, manifest);
