@@ -4627,3 +4627,9 @@ void testAsyncFlowOpenPreflightIntegration() {
 void testChromeTraceExportPreflightCanExportCleanly() {
     testAsyncFlowOpenPreflightIntegration();
     testChromeTraceExportPreflightCanExportCleanly();
+
+// --- deepen additive from deepen-b16-profiler-guards-9951 ---
+    expectTrue(!fuse::profiler::tryFindLastEventByFlowId(42u, outEvent),
+    expectTrue(fuse::profiler::tryFindFirstEventByName("named_flow", outEvent),
+    expectTrue(outEvent.scopeId == flowId, "tryFindLastEventByFlowId preserves flow id");
+    expectTrue(!filledPreflight.exportWouldTrimEvents,
