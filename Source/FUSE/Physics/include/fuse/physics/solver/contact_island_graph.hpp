@@ -8,6 +8,28 @@
 
 namespace fuse::physics {
 
+/// Why island graph build would early-out (B4.4 deepen pass).
+enum class IslandGraphBuildRejectReason : u8 {
+    None = 0,
+    EmptyInput,
+    UnsafeRefs,
+};
+
+/// Human-readable label for island graph build reject reasons (logging / tests).
+const char* islandGraphBuildRejectReasonName(IslandGraphBuildRejectReason reason);
+
+/// Diagnose why island graph build would skip; vacuously succeeds on safe in-range inputs.
+IslandGraphBuildRejectReason islandGraphBuildRejectReason(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Returns true when `islandGraphBuildRejectReason` matches `expected` (B4.4 deepen pass).
+bool islandGraphBuildRejectsForReason(u32 bodyCount,
+                                      const std::vector<narrowphase::ContactManifold>& contacts,
+                                      const std::vector<DistanceConstraint>& distanceConstraints,
+                                      IslandGraphBuildRejectReason expected);
+
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
 /// contacts and distance constraints run sequentially (Gauss-Seidel stub).
@@ -24,6 +46,11 @@ struct ContactIslandGraph {
     void build(u32 bodyCount,
                const std::vector<narrowphase::ContactManifold>& contacts,
                const std::vector<DistanceConstraint>& distanceConstraints);
+
+    /// Guarded build entry: skips empty inputs and out-of-range constraint refs.
+    bool build_guarded(u32 bodyCount,
+                       const std::vector<narrowphase::ContactManifold>& contacts,
+                       const std::vector<DistanceConstraint>& distanceConstraints);
 
     void clear();
 
