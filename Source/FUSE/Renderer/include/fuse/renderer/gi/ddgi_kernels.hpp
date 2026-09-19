@@ -122,11 +122,7 @@ bool canLaunchProbeTraceKernel(const DDGIKernelParams& params);
 bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
 /// Diagnose why probe trace launch preflight would reject.
 bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
-/// Early-out when probe trace launch would be rejected.
-bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
-/// Early-out when probe trace kernel launch would be rejected.
 bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
-/// Early-out when probe trace launch would be rejected — same ordering as `canLaunchProbeTraceKernel`.
 /// Classify why probe trace launch preflight would reject; vacuously returns `None` when launchable (B5.6 deepen).
 ProbeKernelRejectReason classifyProbeTraceKernelReject(const DDGIKernelParams& params);
 /// Probe trace launch preflight with optional reject-reason output (B5.6 deepen).
@@ -145,10 +141,6 @@ bool canLaunchProbeBlendKernel(const DDGIKernelParams& params);
 bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
 /// Diagnose why probe blend launch preflight would reject.
 bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
-/// Early-out when probe trace launch would be rejected — same ordering as `canLaunchProbeTraceKernel`.
-bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
-/// Early-out when probe blend launch would be rejected — same ordering as `canLaunchProbeBlendKernel`.
-bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
 /// Preflight guard before probe update launch — false when params or indices are unusable.
 bool canLaunchProbeUpdate(const DDGIKernelParams& params);
 /// Why a probe-kernel launch preflight rejected the request (B5.6 deepen).
@@ -235,8 +227,6 @@ bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, KernelLaunchRe
 /// Diagnose extended kernel-parameter invariants (rays-per-probe, etc.) beyond launch guards.
 bool preflightProbeKernelParams(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
 
-/// Early-out when probe trace kernel launch would be rejected.
-/// Early-out when probe blend kernel launch would be rejected.
 /// Classify why probe-kernel launch preflight would reject — same ordering as trace preflight.
 ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params);
 /// Early-out when probe trace kernel launch preflight would reject.
@@ -276,7 +266,6 @@ bool canLaunchProbeBlendKernelWithSurfaces(const DDGIKernelParams& params);
 /// Diagnose why blend launch with GPU surfaces would reject.
 bool tryCanLaunchProbeBlendKernelWithSurfaces(const DDGIKernelParams& params,
 
-/// Early-out when probe blend launch would be rejected.
 
 
 /// Resource preflight for probe trace — checks world-position buffer without launch-count guards.
@@ -298,6 +287,7 @@ bool preflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelReject
 /// Early-out when probe blend launch would be rejected — same ordering as `wouldSkipProbeBlendKernel` (B5.6 deepen).
 bool shouldSkipProbeBlendKernel(const DDGIKernelParams& params);
 /// Probe blend launch preflight; false when launch would be rejected (B5.6 deepen).
+
 
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);
