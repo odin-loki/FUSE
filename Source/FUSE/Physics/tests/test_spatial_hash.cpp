@@ -4346,3 +4346,21 @@ void testWouldSkipRefineDedupeMergeGuards() {
     expectTrue(fuse::physics::broadphase::wouldSkipBroadphaseMerge(bodies, shapes),
     expectTrue(!fuse::physics::broadphase::wouldSkipMergePairsIntoBuffer(pairs, buffer),
     expectTrue(fuse::physics::broadphase::wouldSkipMergePairsIntoBuffer(pairs, buffer),
+
+// --- deepen additive from deepen-b4-broadphase-guards-e881 ---
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason::EmptyBuffer),
+void testWouldSkipPairBufferWriteInvalidateGuards() {
+    expectTrue(!fuse::physics::broadphase::wouldSkipPairBufferInvalidateSlot(buffer, 0u, &invalidateReason),
+               "wouldSkipPairBufferInvalidateSlot false for in-range slot");
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferInvalidateSlot(buffer, 0u) ==
+             "wouldSkipCellSpanClamp reports ExceedsSpan when clamp needed");
+    expectTrue(fuse::physics::broadphase::wouldSkipCellSpanClamp(wideRange, 4u) ==
+               "wouldSkipCellSpanClamp agrees with shouldRunCellSpanClamp inversion");
+    expectTrue(fuse::physics::broadphase::wouldSkipCellSpanClamp(wideRange, 0u),
+               "wouldSkipCellSpanClamp true when span budget is unlimited");
+             "wouldSkipRefineBroadphase reports EmptyBuffer on empty buffer");
+             "wouldSkipDedupeBroadphase reports EmptyBuffer on empty buffer");
+             "wouldSkipBroadphaseMerge reports EmptyPlaneBodies on empty scene");
+    expectTrue(fuse::physics::broadphase::wouldSkipMergePairsIntoBuffer(pairs, buffer, &mergeIntoReason),
+             "wouldSkipMergePairsIntoBuffer reports BufferFull when buffer is full");
+               "wouldSkipDedupeBroadphase false for multiple pairs in populated refine scene");
