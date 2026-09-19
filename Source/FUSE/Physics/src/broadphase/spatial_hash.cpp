@@ -1025,3 +1025,15 @@ BroadphaseRefinePreflight preflightRefineBroadphasePairs(
         preflightCellOccupancy(range, perShapeCellBudget(maxSpan, false));
     const PairSlotPreflight slotPreflight = preflightPairSlots(totalCellSlots, buffer);
     if (slotPreflight.skipped) {
+
+// --- deepen additive from deepen-b4-broadphase-preflights-a60a ---
+bool PairBufferPreflight::can_push(u32 additionalCount) const {
+PairBufferPreflight preflight_pair_buffer(const PairBufferSoA& buffer) {
+    PairBufferPreflight preflight{};
+BroadphaseDedupePreflight preflight_broadphase_dedupe(const PairBufferSoA& buffer) {
+    BroadphaseDedupePreflight preflight{};
+    const BroadphaseDedupePreflight preflight = preflight_broadphase_dedupe(buffer);
+    const BroadphaseInputPreflight inputPreflight = preflight_broadphase_input(bodies, shapes);
+    if (!inputPreflight.can_run()) {
+    const BroadphaseRefinePreflight refinePreflight = preflight_broadphase_refine(buffer, bodies, shapes);
+    if (!refinePreflight.can_refine()) {

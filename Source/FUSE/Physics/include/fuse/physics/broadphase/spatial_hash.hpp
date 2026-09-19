@@ -1144,3 +1144,12 @@ bool should_skip_refine_broadphase(
 
 // --- deepen additive from b4-broadphase-deepen-guards-1b87 ---
 BroadphaseRefinePreflight preflightRefineBroadphasePairs(
+
+// --- deepen additive from deepen-b4-broadphase-preflights-a60a ---
+struct CellCapacityPreflight {
+FUSE_PHYSICS_INLINE CellCapacityPreflight preflight_cell_capacity(
+    CellCapacityPreflight preflight{};
+struct PairBufferPreflight {
+PairBufferPreflight preflight_pair_buffer(const PairBufferSoA& buffer);
+struct BroadphaseDedupePreflight {
+BroadphaseDedupePreflight preflight_broadphase_dedupe(const PairBufferSoA& buffer);
