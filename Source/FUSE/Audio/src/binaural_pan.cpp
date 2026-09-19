@@ -1383,3 +1383,14 @@ const char* hrtf_binaural_narrowing_reject_reason_label(HrtfBinauralNarrowingRej
     case HrtfBinauralNarrowingRejectReason::BypassPath:
     case HrtfBinauralNarrowingRejectReason::UnityAttenuation:
 bool hrtf_binaural_reject_reason_blocks_spatial_pan(HrtfBinauralRejectReason reason) {
+
+// --- deepen additive from deepen-hrtf-b7-2-guards-64dd ---
+    preflight.spatialPanRejectReason =
+        preflight.convolutionRejectReason = HrtfBinauralRejectReason::None;
+    } else if (preflight.spatialPanRejectReason != HrtfBinauralRejectReason::None) {
+        preflight.convolutionRejectReason = preflight.spatialPanRejectReason;
+        preflight.convolutionRejectReason = map_ir_reject_to_binaural(preflight.ir.rejectReason);
+    return preflight.spatialPanRejectReason;
+    return preflight.convolutionRejectReason;
+    return preflight.narrowingRejectReason;
+    const HrtfBinauralRejectReason reject = preflight.spatialPanRejectReason;

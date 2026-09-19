@@ -919,3 +919,6 @@ const char* hrtf_binaural_narrowing_reject_reason_label(HrtfBinauralNarrowingRej
 HrtfBinauralConvolutionRejectReason classify_hrtf_binaural_convolution_reject(
 HrtfBinauralNarrowingRejectReason classify_hrtf_binaural_narrowing_reject(
 bool hrtf_binaural_reject_reason_blocks_spatial_pan(HrtfBinauralRejectReason reason);
+
+// --- deepen additive from deepen-hrtf-b7-2-guards-64dd ---
+    HrtfBinauralRejectReason spatialPanRejectReason = HrtfBinauralRejectReason::None;

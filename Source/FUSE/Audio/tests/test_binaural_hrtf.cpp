@@ -1921,3 +1921,30 @@ void testHrtfBinauralCompositeRejectReasonPreflight() {
     expectTrue(reason == fuse::audio::HrtfBinauralRejectReason::CoLocated,
                        fuse::audio::HrtfBinauralConvolutionRejectReason::EmptyIr),
                        fuse::audio::HrtfBinauralNarrowingRejectReason::UnityAttenuation),
+
+// --- deepen additive from deepen-hrtf-b7-2-guards-64dd ---
+    expectTrue(empty_preflight.rejectReason == fuse::audio::HrtfIrRejectReason::NullSamples,
+    fuse::audio::HrtfIrRejectReason rejectReason = fuse::audio::HrtfIrRejectReason::None;
+    expectTrue(rejectReason == fuse::audio::HrtfIrRejectReason::NullSamples,
+    expectTrue(rejectReason == fuse::audio::HrtfIrRejectReason::None,
+    expectTrue(bypass_preflight.rejectReason == fuse::audio::HrtfPanPathRejectReason::HrtfDisabled,
+    fuse::audio::HrtfPanPathRejectReason rejectReason =
+    expectTrue(rejectReason == fuse::audio::HrtfPanPathRejectReason::HrtfDisabled,
+    expectTrue(rejectReason == fuse::audio::HrtfPanPathRejectReason::None,
+    fuse::audio::HrtfAttenuationCouplingRejectReason rejectReason =
+    expectTrue(rejectReason == fuse::audio::HrtfAttenuationCouplingRejectReason::BypassPath,
+    expectTrue(stub_preflight.spatialPanRejectReason == fuse::audio::HrtfBinauralRejectReason::None,
+    expectTrue(stub_preflight.convolutionRejectReason == fuse::audio::HrtfBinauralRejectReason::EmptyIr,
+    expectTrue(stub_preflight.narrowingRejectReason == fuse::audio::HrtfBinauralRejectReason::None,
+    expectTrue(conv_preflight.convolutionRejectReason == fuse::audio::HrtfBinauralRejectReason::None,
+    expectTrue(conv_preflight.narrowingRejectReason
+    expectTrue(bypass_preflight.spatialPanRejectReason
+    expectTrue(bypass_preflight.narrowingRejectReason
+    expectTrue(co_located_preflight.spatialPanRejectReason
+    expectTrue(co_located_preflight.narrowingRejectReason
+    expectTrue(malformed_preflight.convolutionRejectReason
+    const fuse::audio::HrtfBinauralPreflight bypass_narrow_preflight =
+    expectTrue(bypass_narrow_preflight.narrowingRejectReason
+    fuse::audio::HrtfBinauralRejectReason rejectReason = fuse::audio::HrtfBinauralRejectReason::None;
+    expectTrue(rejectReason == fuse::audio::HrtfBinauralRejectReason::None,
+    expectTrue(rejectReason == fuse::audio::HrtfBinauralRejectReason::HrtfDisabled,
