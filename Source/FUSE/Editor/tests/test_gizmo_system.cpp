@@ -3005,3 +3005,9 @@ void testEndDragPreflightAndCancelDrag() {
     expectTrue(gizmo.preflightEndDrag().canEnd(), "end preflight accepts active drag");
     testUpdateDragPreflightDeepen();
     testEndDragPreflightAndCancelDrag();
+
+// --- deepen additive from deepen-b6-gizmo-preflights-1fb6 ---
+void testShouldSkipPickGuards() {
+void testShouldSkipSnapGuards() {
+        fuse::editor::preflightUpdateDrag(hit, true, fuse::editor::GizmoAxis::None);
+    expectTrue(result.changed, "active tryUpdateDrag marks result changed");

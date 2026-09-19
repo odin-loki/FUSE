@@ -2257,3 +2257,15 @@ bool trySnapValue(f32 value, GizmoMode mode, const GizmoSnapSettings& settings, 
 EndDragPreflight preflightEndDrag(bool dragging) {
     return fuse::editor::preflightUpdateDrag(hit, m_dragging, m_mode, m_activeAxis);
     return fuse::editor::preflightEndDrag(m_dragging);
+
+// --- deepen additive from deepen-b6-gizmo-preflights-1fb6 ---
+UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis) {
+bool shouldSkipPick(const PickPreflight& preflight) { return !preflight.canPick(); }
+    return shouldSkipPick(preflightPick(ray, transform, mode, space, axisLength, pickRadius));
+    return shouldSkipPick(preflightPick(hit, mode));
+bool shouldSkipSnap(const SnapPreflight& preflight) { return !preflight.canApply(); }
+    return shouldSkipSnap(preflightSnap(mode, settings));
+bool shouldSkipUpdateDrag(const UpdateDragPreflight& preflight) { return !preflight.canUpdate(); }
+    return shouldSkipUpdateDrag(preflightUpdateDrag(hit, dragging));
+    return shouldSkipUpdateDrag(preflightUpdateDrag(hit, dragging, activeAxis));
+    return fuse::editor::preflightUpdateDrag(hit, m_dragging, m_activeAxis);

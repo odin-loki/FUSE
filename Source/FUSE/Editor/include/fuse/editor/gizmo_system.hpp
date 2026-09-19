@@ -985,3 +985,9 @@ UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging, 
 // --- deepen additive from deepen-b6-gizmo-pick-snap-preflight-1066 ---
 bool trySnapValue(f32 value, GizmoMode mode, const GizmoSnapSettings& settings, f32& out);
 EndDragPreflight preflightEndDrag(bool dragging);
+
+// --- deepen additive from deepen-b6-gizmo-preflights-1fb6 ---
+UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis);
+bool shouldSkipPick(const PickPreflight& preflight);
+bool shouldSkipSnap(const SnapPreflight& preflight);
+bool shouldSkipUpdateDrag(const UpdateDragPreflight& preflight);
