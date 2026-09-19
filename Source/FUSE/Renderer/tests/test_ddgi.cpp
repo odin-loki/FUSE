@@ -860,6 +860,16 @@ void testCacheIndexRejectReasons() {
                "empty grid fails cache-index validation");
     expectTrue(reason == fuse::renderer::CacheIndexRejectReason::EmptyGrid,
                "empty grid reports empty_grid cache reject reason");
+
+    std::vector<fuse::renderer::IrradianceCacheEntry> cache(8);
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateCacheIndex(desc, nullptr, 3u, 8u, reason),
+               "null cache fails cache-index validation with pointer overload");
+    expectTrue(reason == fuse::renderer::CacheIndexRejectReason::NullCache,
+               "null cache reports null_cache reject reason");
+    expectTrue(std::strcmp(fuse::renderer::cacheIndexRejectReasonLabel(reason), "null_cache") == 0,
+               "null_cache cache-index reject reason label");
+    expectTrue(fuse::renderer::ddgi_util::tryValidateCacheIndex(desc, cache.data(), 3u, 8u, reason),
+               "non-null cache passes cache-index validation with pointer overload");
 }
 
 void testLaunchProbeUpdateRejectReasons() {
@@ -957,6 +967,16 @@ void testTryBuildProbeSampleCoords() {
                "tryBuildProbeSampleCoords rejects empty grid");
     expectTrue(reason == fuse::renderer::ProbeSampleCoordsRejectReason::EmptyGrid,
                "empty grid build reports empty_grid reason");
+
+    fuse::renderer::DDGIDesc nonSampleable = desc;
+    nonSampleable.probe_spacing = {0.f, 1.f, 1.f};
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryBuildProbeSampleCoords(
+                   nonSampleable, {0.5f, 0.5f, 0.5f}, coords, reason),
+               "tryBuildProbeSampleCoords rejects non-sampleable grid");
+    expectTrue(reason == fuse::renderer::ProbeSampleCoordsRejectReason::NonSampleableGrid,
+               "zero spacing reports non_sampleable_grid reason");
+    expectTrue(std::strcmp(fuse::renderer::probeSampleCoordsRejectReasonLabel(reason), "non_sampleable_grid") == 0,
+               "non_sampleable_grid sample-coord reject reason label");
 }
 
 void testProbeCacheAccessibilityGuards() {
@@ -1192,6 +1212,27 @@ void testProbeKernelLaunchGuards() {
                "zero_rays_per_probe kernel reject reason label");
     expectTrue(!fuse::renderer::gi::launch_probe_trace_kernel(zeroRays, nullptr),
                "trace kernel launch rejects zero rays per probe");
+
+    fuse::renderer::gi::DDGIKernelParams nullSurfaces = validParams;
+    nullSurfaces.prev_irradiance_surface = nullptr;
+    expectTrue(!fuse::renderer::gi::tryValidateProbeBlendKernelSurfaces(nullSurfaces, reason),
+               "null blend surfaces fail surface preflight");
+    expectTrue(reason == fuse::renderer::gi::ProbeKernelRejectReason::NullBlendSurfaces,
+               "null blend surfaces report null_blend_surfaces reason");
+    expectTrue(std::strcmp(fuse::renderer::gi::probeKernelRejectReasonLabel(reason), "null_blend_surfaces") == 0,
+               "null_blend_surfaces kernel reject reason label");
+    expectTrue(fuse::renderer::gi::launch_probe_blend_kernel(nullSurfaces, nullptr),
+               "stub blend kernel launch still succeeds without surfaces");
+    expectTrue(fuse::renderer::gi::tryCanLaunchProbeBlendKernel(nullSurfaces, reason),
+               "null blend surfaces do not affect blend launch preflight");
+
+    fuse::u8 surfaceStorage[3]{};
+    fuse::renderer::gi::DDGIKernelParams withSurfaces = validParams;
+    withSurfaces.prev_irradiance_surface = &surfaceStorage[0];
+    withSurfaces.out_radiance_surface = &surfaceStorage[1];
+    withSurfaces.irradiance_atlas_surface = &surfaceStorage[2];
+    expectTrue(fuse::renderer::gi::hasProbeBlendKernelSurfaces(withSurfaces),
+               "bound blend surfaces pass surface preflight");
 }
 
 void testSampleGuards() {
@@ -1306,6 +1347,49 @@ void testProbeScheduling() {
 
     fuse::renderer::ddgi_util::scheduleProbeUpdates(1u, 2048u, 64u, indices, 64u, &count);
     expectTrue(indices[0] == 64u, "frame 1 starts at probe 64");
+}
+
+void testProbeScheduleRejectReasons() {
+    fuse::u32 indices[8]{};
+    fuse::u32 count = 0u;
+    fuse::renderer::ProbeScheduleRejectReason reason = fuse::renderer::ProbeScheduleRejectReason::None;
+
+    expectTrue(fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 16u, 4u, indices, 8u, &count, reason),
+               "tryScheduleProbeUpdates succeeds for valid inputs");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::None,
+               "valid schedule reports no reject reason");
+    expectTrue(std::strcmp(fuse::renderer::probeScheduleRejectReasonLabel(reason), "none") == 0,
+               "none schedule reject reason label");
+    expectTrue(count == 4u, "trySchedule writes scheduled count");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 16u, 4u, nullptr, 8u, &count, reason),
+               "trySchedule rejects null output indices");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::NullOutputIndices,
+               "null indices report null_output_indices reason");
+    expectTrue(std::strcmp(fuse::renderer::probeScheduleRejectReasonLabel(reason), "null_output_indices") == 0,
+               "null_output_indices schedule reject reason label");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 16u, 4u, indices, 8u, nullptr, reason),
+               "trySchedule rejects null output count");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::NullOutputCount,
+               "null count reports null_output_count reason");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 0u, 4u, indices, 8u, &count, reason),
+               "trySchedule rejects zero probe count");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::ZeroProbeCount,
+               "zero probe count reports zero_probe_count reason");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 16u, 4u, indices, 0u, &count, reason),
+               "trySchedule rejects zero max indices");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::ZeroMaxIndices,
+               "zero max indices reports zero_max_indices reason");
+
+    expectTrue(fuse::renderer::ddgi_util::canScheduleProbeUpdates(16u, 8u, indices, &count),
+               "canScheduleProbeUpdates true for valid inputs");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeSchedule(16u, 8u, indices, &count),
+               "wouldSkipProbeSchedule false for schedulable inputs");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeSchedule(0u, 8u, indices, &count),
+               "wouldSkipProbeSchedule true for zero probe count");
 }
 
 void testHysteresisBlend() {
@@ -1431,6 +1515,7 @@ int main() {
     testPartialCacheTrilinear();
     testTrilinearProbeIrradiance();
     testProbeScheduling();
+    testProbeScheduleRejectReasons();
     testHysteresisBlend();
     testPipelineSlot();
     testDdgiInfo();
