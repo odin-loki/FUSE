@@ -245,6 +245,7 @@ struct FroxelGridLayout {
     static bool isFroxelIndexOutOfRange(u32 index, const FroxelGridDesc& desc);
     /// True when tile/slice coords exceed grid bounds (would be clamped).
     static bool isCoordOutOfRange(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc);
+    static bool isFroxelCoordOutOfRange(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc);
     static u32 clampFroxelIndex(u32 index, const FroxelGridDesc& desc);
     static u32 clampTileX(u32 tileX, const FroxelGridDesc& desc);
     static u32 clampTileY(u32 tileY, const FroxelGridDesc& desc);
@@ -654,6 +655,13 @@ bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
                          u32 tileY,
                          u32 sliceZ,
                          DensityLookupRejectReason& outReason);
+/// Diagnose why coord lookup preflight would reject; vacuously succeeds on accessible grids.
+bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
+                         const FroxelGridDesc& desc,
+                         u32 tileX,
+                         u32 tileY,
+                         u32 sliceZ,
+                         DensityLookupRejectReason& outReason);
 /// True when a lookup at `index` would clamp into the valid froxel range.
 bool wouldClampDensityLookupIndex(u32 index, const FroxelGridDesc& desc);
 /// True when a lookup at tile/slice coords would clamp into the valid froxel range.
@@ -681,8 +689,6 @@ bool canLookupAtCoord(const FroxelDensityGrid& grid,
                       u32 sliceZ);
 /// Diagnose coord lookup preflight; vacuously succeeds on accessible grids with clamp warnings.
 bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
-                         u32 tileX,
-                         u32 tileY,
                          u32 sliceZ,
                          DensityLookupRejectReason& outReason);
 /// True when tile/slice coords would clamp before density lookup.
@@ -791,6 +797,10 @@ u32 countNonZeroFroxelsForDesc(const FroxelDensityGrid& grid, const FroxelGridDe
 u32 countEmptyFroxelsForDesc(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, f32 epsilon = 1e-6f);
 /// True when grid is accessible but all froxels are at or below `epsilon`.
 bool isDensityGridFullyEmpty(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, f32 epsilon = 1e-6f);
+/// True when grid is accessible but uniformly below `epsilon`.
+bool isDensityFullyEmpty(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, f32 epsilon = 1e-6f);
+/// Validate density counts against the clamped froxel count derived from `desc`.
+bool validateDensityCountsForDesc(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, f32 epsilon = 1e-6f);
 /// Read density at a clamped flat froxel index; returns 0 when grid/desc mismatch or empty.
 f32 sampleDensityAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index);
 /// Lookup with guard preflight; returns false when `canSampleDensityAtIndex` would reject the request.
