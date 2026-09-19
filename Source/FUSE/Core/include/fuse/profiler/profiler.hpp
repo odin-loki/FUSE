@@ -256,6 +256,14 @@ struct ChromeTraceExportPreflight {
     bool hasUnpairedFlowEventsInBuffer() const { return hasUnpairedFlowEvents; }
     bool isNestingStateConsistent() const { return nestingStateConsistent; }
             && !hasUnpairedFlowEvents;
+    u32 ringCapacity = 0;
+    u32 firstExportableEventIndex = 0;
+    u32 lastExportableEventIndex = 0;
+    bool hasActiveScopeNesting = false;
+    bool hasActiveFlowNesting = false;
+    bool hasNestedAsyncFlowContext = false;
+
+            && !hasInvalidNameEvents;
     }
 
     bool canExportSafely() const {
