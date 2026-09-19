@@ -230,6 +230,8 @@ struct ChromeTraceExportPreflight {
         return hasPairedScopeEventsInBuffer() && hasPairedFlowEventsInBuffer();
     bool hasInconsistentRecordedNesting() const {
         return !recordedScopePairingConsistent || !recordedFlowPairingConsistent;
+    bool canExportSafely() const {
+        return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending;
     }
     bool canExportSafely() const {
         return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending
@@ -576,6 +578,28 @@ struct NestingStatePreflight {
         return canExportSafely() && !hasInvalidNameEvents && !ringBufferFull && !hasUnbalancedBufferedFlowPairs;
     bool canExportSafelyWithConsistentBuffer() const {
         return canExportSafely() && hasConsistentEventPairsInBuffer();
+};
+
+/// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
+struct ProfileScopePreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canEnter = false;
+};
+
+/// Read-only async-flow begin diagnostics — safe to call before `beginAsyncFlow()`.
+struct AsyncFlowBeginPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canBegin = false;
+};
+
+/// Read-only async-flow end diagnostics — safe to call before `endAsyncFlow()`.
+struct AsyncFlowEndPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool wouldUnderflowOpenCount = false;
+    bool canEnd = false;
 };
 
 /// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
@@ -983,6 +1007,11 @@ bool isRecordedAsyncFlowPairingConsistent();
 bool isRecordedNestingConsistent();
 u32 orphanScopeEndCount();
 u32 orphanFlowEndCount();
+u32 findFirstEventIndexByFlow(u32 flowId);
+u32 findLastEventIndexByFlow(u32 flowId);
+u32 countEventsByFlow(u32 flowId);
+u32 openFlowEventCountForId(u32 flowId);
+bool isFlowIdBalanced(u32 flowId);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 const char* eventNameAt(u32 index);
@@ -1030,6 +1059,8 @@ bool tryLastEventByFlowId(u32 flowId, ProfileEvent& outEvent);
 bool tryFindFirstEventIndexByFlowId(u32 flowId, u32& outIndex);
 bool tryFindFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent);
 bool tryFindLastEventByFlowId(u32 flowId, ProfileEvent& outEvent);
+bool tryFindFirstEventByFlow(u32 flowId, ProfileEvent& outEvent);
+bool tryFindLastEventByFlow(u32 flowId, ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 ProfilerRecordPreflight preflightRecord(const char* name);
 ProfilerExportPreflight preflightChromeTraceExport();
