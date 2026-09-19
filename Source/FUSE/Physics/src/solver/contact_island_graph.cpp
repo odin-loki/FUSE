@@ -360,3 +360,7 @@ IslandBuildRejectReason island_build_reject_reason(
 
 // --- deepen additive from deepen-pbd-island-guards-358e ---
         preflight.reason = IslandBuildRejectReason::AllConstraintsStale;
+
+// --- deepen additive from pbd-island-sleep-wake-preflights-1600 ---
+        return IslandBuildRejectReason::OutOfRangeBodyRef;
+    preflight.rejected = preflight.reason != IslandBuildRejectReason::None;

@@ -1429,3 +1429,13 @@ bool should_skip_solve_all_sleeping_islands(const ContactIslandGraph& graph, con
 bool should_skip_wake_island(const ContactIslandGraph::Island& island,
 IslandSolveBodyPreflight preflight_solve_island_with_bodies(
 bool should_skip_solve_island_with_bodies(const ContactIslandGraph::Island& island,
+
+// --- deepen additive from pbd-island-sleep-wake-preflights-1600 ---
+struct IslandDispatchBodiesPreflight {
+    IslandSleepWakeGraphPreflight sleepWake{};
+bool should_skip_inactive_island_solve(const ContactIslandGraph::Island& island,
+bool should_skip_inactive_island_solve_index(const ContactIslandGraph& graph,
+IslandConstraintRefsPreflight preflight_island_solvable_constraint_refs(
+bool should_skip_island_solvable_constraint_refs(const ContactIslandGraph::Island& island,
+IslandDispatchBodiesPreflight preflight_island_dispatch_with_bodies(const ContactIslandGraph& graph,
+bool should_skip_island_dispatch_with_bodies(const ContactIslandGraph& graph,
