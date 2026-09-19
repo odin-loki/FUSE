@@ -26,6 +26,7 @@ struct CookHashPreflight {
     CookHashRejectReason reason = CookHashRejectReason::None;
 
     [[nodiscard]] bool ok() const { return can_hash; }
+    [[nodiscard]] bool should_skip() const { return !can_hash; }
 };
 
 /// FNV-1a 64-bit hash over raw bytes — shared by cook cache keys (B7.9 deepen stub).
@@ -70,5 +71,29 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size);
 /// Fold source/upstream preflight — upstream zero is allowed on valid source keys (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
+
+/// Convenience skip probes — mirror preflight `ok()` without computing keys (B7.9 deepen).
+[[nodiscard]] inline bool should_skip_file_content_hash(const std::string& path) {
+    return !preflight_file_content_hash(path).ok();
+}
+[[nodiscard]] inline bool should_skip_mesh_import_hash(const MeshImportDesc& desc) {
+    return !preflight_mesh_import_hash(desc).ok();
+}
+[[nodiscard]] inline bool should_skip_texture_import_hash(const TextureImportDesc& desc) {
+    return !preflight_texture_import_hash(desc).ok();
+}
+[[nodiscard]] inline bool should_skip_audio_import_hash(const AudioImportDesc& desc) {
+    return !preflight_audio_import_hash(desc).ok();
+}
+[[nodiscard]] inline bool should_skip_manifest_entry_hash(const CookManifestEntry& entry) {
+    return !preflight_manifest_entry_hash(entry).ok();
+}
+[[nodiscard]] inline bool should_skip_upstream_dependencies_hash(
+    const std::vector<std::string>& dependency_output_paths, const CookManifest& manifest) {
+    return !preflight_upstream_dependencies_hash(dependency_output_paths, manifest).ok();
+}
+[[nodiscard]] inline bool should_skip_combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    return !preflight_combine_cook_cache_key(source_hash, upstream_hash).ok();
+}
 
 } // namespace fuse::project

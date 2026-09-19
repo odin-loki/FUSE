@@ -59,6 +59,19 @@ struct CookCachePruneEstimate {
     return is_valid_cook_cache_key(combine_cook_cache_key(source_hash, upstream_hash));
 }
 
+/// Read-only store preflight — mirrors `store` guards without mutating the cache (B7.9 deepen).
+struct CookCacheEntryPreflight {
+    bool can_store = false;
+    bool zero_content_hash = false;
+    bool empty_source_path = false;
+    bool empty_output_path = false;
+
+    [[nodiscard]] bool ok() const { return can_store; }
+    [[nodiscard]] bool should_skip() const { return !can_store; }
+};
+
+[[nodiscard]] CookCacheEntryPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
+
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
 public:
@@ -101,6 +114,23 @@ public:
     /// Source paths that `invalidate_stale_upstream_hashes` would touch — one push per matching entry (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_stale_upstream_sources(
         const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    /// Deduplicated stale-upstream source probe — mirrors `probe_stale_upstream_sources` (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_unique_stale_upstream_sources(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    /// True when `invalidate_source` would remove at least one entry — guarded on empty path (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    /// True when `invalidate_output` would remove at least one entry — guarded on empty path (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
+    /// True when `invalidate_stale_content_for_source` would remove entries — guarded like the mutator (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                                 u64 current_content_hash) const;
+    /// True when `invalidate_stale_upstream_hashes` would touch entries — guarded on empty inputs (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_stale_upstream_hashes(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    /// True when `invalidate_downstream_of` would remove entries — guarded on empty output path (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
+                                                      const std::vector<CookJobDependencyEdge>& edges,
+                                                      const std::vector<CookJob>& jobs) const;
     [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
                                           const std::vector<CookJobDependencyEdge>& edges,
                                           const std::vector<CookJob>& jobs) const;
