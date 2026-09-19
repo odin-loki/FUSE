@@ -107,6 +107,9 @@ bool is_massless_contact_pair(
     const RigidBodySoA& bodies);
 
 /// Returns true when both bodies carry `RB_KINEMATIC` (no dynamic response stub, B4.3 deepen pass).
+bool is_kinematic_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies);
 
 /// Returns true when either shape has zero or negative extent (B4.3 deepen pass).
 bool is_degenerate_shape_pair(

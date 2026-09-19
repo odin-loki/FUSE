@@ -94,16 +94,30 @@ bool friction_basis_matches_normal(const ContactManifold& manifold, f32 epsilon)
     return isOrthonormalTangentBasis(manifold.contactNormal, manifold.frictionBasis, epsilon);
 
 bool needs_friction_basis_rebuild(const ContactManifold& manifold) {
+    return needs_friction_basis_rebuild(manifold, 1e-4f);
+}
+
+bool needs_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon) {
     if (should_skip_friction_tangents(manifold)) {
     return !has_cached_friction_basis(manifold);
+        return false;
+    }
+    if (!has_cached_friction_basis(manifold)) {
+        return true;
+    return !isValidFrictionBasisForNormal(manifold.contactNormal, manifold.frictionBasis, epsilon);
 
 void invalidate_friction_basis(ContactManifold& manifold) {
     manifold.frictionBasis = {};
 
 bool ensure_friction_basis(ContactManifold& manifold) {
+    return ensure_friction_basis(manifold, 1e-4f);
+}
+
+bool ensure_friction_basis(ContactManifold& manifold, f32 epsilon) {
+    if (should_skip_friction_tangents(manifold)) {
         invalidate_friction_basis(manifold);
 
-    if (has_cached_friction_basis(manifold)) {
+    if (!needs_friction_basis_rebuild(manifold, epsilon)) {
         return true;
 
     manifold.buildFrictionBasis();
@@ -120,6 +134,14 @@ void ensureFrictionBasis(ContactManifold& manifold) {
     const f32 normalLength = manifold.contactNormal.length();
     if (std::fabs(normalLength - 1.f) > 1e-4f && normalLength > 1e-8f) {
         manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+}
+
+bool isValidFrictionBasisForNormal(vec3 normal, const TangentBasis& basis, f32 epsilon) {
+    return isOrthonormalTangentBasis(normal, basis, epsilon);
+}
+
+bool should_rebuild_friction_basis(const ContactManifold& manifold, f32 epsilon) {
+    return needs_friction_basis_rebuild(manifold, epsilon);
 }
 
 bool should_skip_friction_solve(

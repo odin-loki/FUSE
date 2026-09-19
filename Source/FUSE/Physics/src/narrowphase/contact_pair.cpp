@@ -280,6 +280,12 @@ bool is_kinematic_contact_pair(
     const bool kinematicA = (bodies.flags[pair.bodyA] & RB_KINEMATIC) != 0u;
     const bool kinematicB = (bodies.flags[pair.bodyB] & RB_KINEMATIC) != 0u;
     return kinematicA && kinematicB;
+}
+
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies) {
+    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
+        return false;
 
 bool is_degenerate_shape_pair(
     const broadphase::CandidatePair& pair,
