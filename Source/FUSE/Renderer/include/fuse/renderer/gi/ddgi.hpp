@@ -169,6 +169,17 @@ const char* probeSampleCoordsRejectReasonLabel(ProbeSampleCoordsRejectReason rea
 enum class CacheIndexRejectReason : u8 {
     ProbeIndexOutOfRange,
     CacheUndersized,
+/// Why probe sample-coord preflight rejected the request (B5.6 deepen).
+enum class ProbeSampleCoordRejectReason : u8 {
+    OutOfBounds,
+    InvalidWeights,
+
+/// Human-readable label for probe sample-coord reject reasons (logging / tests).
+const char* probeSampleCoordRejectReasonLabel(ProbeSampleCoordRejectReason reason);
+
+/// Why a probe cache-index preflight rejected the request (B5.6 deepen).
+    OutOfRangeProbe,
+    UndersizedCache,
 
 /// Human-readable label for cache-index reject reasons (logging / tests).
 const char* cacheIndexRejectReasonLabel(CacheIndexRejectReason reason);
@@ -186,6 +197,13 @@ const char* ddgiLaunchRejectReasonLabel(DdgiLaunchRejectReason reason);
     InvalidSpacing,
 
 /// Human-readable label for probe sample coord reject reasons (logging / tests).
+
+/// Why DDGI probe-update launch preflight rejected the request (B5.6 deepen).
+    None = 0,
+    EmptyGrid,
+};
+
+/// Human-readable label for probe-update launch reject reasons (logging / tests).
 
 /// Continuous probe-grid sample coordinates for trilinear irradiance lookup.
 struct ProbeSampleCoords {
@@ -478,6 +496,7 @@ struct ProbeGridLayout {
     /// Preflight guard before `buildProbeSampleCoords`; false on empty grid or invalid spacing.
     /// Preflight before `buildProbeSampleCoords`; false on empty grid or invalid spacing.
     static bool canBuildProbeSampleCoords(const DDGIDesc& desc);
+    static bool isSampleCoordsOutOfRange(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
@@ -505,7 +524,7 @@ struct ProbeGridLayout {
     /// Validate sample coords with reject-reason diagnostics (B5.6 deepen).
     static bool tryValidateProbeSampleCoords(const DDGIDesc& desc,
                                              const ProbeSampleCoords& coords,
-                                             ProbeSampleCoordsRejectReason& outReason);
+                                          ProbeSampleCoordRejectReason& outReason);
     /// Fractional grid coordinates — origin cell centre is (0,0,0).
     static fuse::math::Vec3 worldToProbeGridCoord(const DDGIDesc& desc,
                                                   const fuse::math::Vec3& world_position);
@@ -700,6 +719,13 @@ bool tryIsCacheIndexValid(const DDGIDesc& desc,
 /// Diagnose why cache index lookup would reject (B5.6 deepen).
 /// Diagnose why cache sizing would reject sampling (B5.6 deepen).
 bool tryValidateCacheSizedForGrid(const DDGIDesc& desc,
+/// Preflight guard before coord-based probe irradiance sampling; false on inaccessible grid or invalid coords.
+bool canSampleAtProbeCoords(const DDGIDesc& desc,
+                            const ProbeSampleCoords& coords,
+                            u32 cache_count);
+/// Diagnose why coord-based sample preflight would reject.
+bool tryCanSampleAtProbeCoords(const DDGIDesc& desc,
+                               ProbeSampleCoordRejectReason& outReason);
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
     /// True when `probe_index` is out of range for the grid or exceeds `cache_count`.
     bool isCacheIndexOutOfRange(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
@@ -927,6 +953,7 @@ bool preflightDdgiProbeUpdate(const DDGIDesc& desc,
 u32 countInvalidLaunchProbeIndices(const DDGIDesc& desc, const u32* probe_indices, u32 probe_count);
 /// Diagnose why launch preflight would reject; vacuously succeeds when launch is allowed.
 /// Diagnose why launch preflight would reject (B5.6 deepen).
+/// Diagnose why probe-update launch preflight would reject.
 
 /// Host launcher for probe trace + blend kernels — stub until CUDA kernels land.
 bool launch_ddgi_probe_update(const DDGIDesc& desc,
