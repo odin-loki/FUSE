@@ -36,6 +36,20 @@ const char* cellSpanRejectReasonName(CellSpanRejectReason reason) {
     return "Unknown";
 }
 
+const char* shapeCellCapacityRejectReasonName(ShapeCellCapacityRejectReason reason) {
+    switch (reason) {
+    case ShapeCellCapacityRejectReason::None:
+        return "None";
+    case ShapeCellCapacityRejectReason::EmptyRange:
+        return "EmptyRange";
+    case ShapeCellCapacityRejectReason::ExceedsSpan:
+        return "ExceedsSpan";
+    case ShapeCellCapacityRejectReason::ExceedsBudget:
+        return "ExceedsBudget";
+    }
+    return "Unknown";
+}
+
 const char* cellOccupancyRejectReasonName(CellOccupancyRejectReason reason) {
     switch (reason) {
     case CellOccupancyRejectReason::None:
@@ -235,7 +249,7 @@ void populateShapeCells(
             const f32 radius = shapeRadius(shapes, shapeIndex);
             range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
         }
-        if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+        if (canSkipShapeCellCapacityIteration(range, maxSpan, maxOccupancy)) {
             return;
         }
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
@@ -255,7 +269,7 @@ void populateShapeCells(
         const f32 radius = shapeRadius(shapes, shapeIndex);
         range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
     }
-    if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+    if (canSkipShapeCellCapacityIteration(range, maxSpan, maxOccupancy)) {
         return;
     }
     for (s32 cz = range.minCell.z; cz <= range.maxCell.z; ++cz) {
@@ -427,11 +441,11 @@ void refineBroadphasePairsParallelImpl(
         const u32 bodyA = buffer.bodyA[pairIndex];
         const u32 bodyB = buffer.bodyB[pairIndex];
         if (!isValidCandidatePair(bodyA, bodyB, bodies.count())) {
-            buffer.invalidateSlot(pairIndex);
+            invalidateSlotWithPreflight(buffer, pairIndex);
             return;
         }
         if (!pairPassesAabbRefine(bodyA, bodyB, bodies, shapes)) {
-            buffer.invalidateSlot(pairIndex);
+            invalidateSlotWithPreflight(buffer, pairIndex);
         }
     });
 
@@ -643,12 +657,110 @@ bool refineBroadphasePairsParallelWithPreflight(
     return true;
 }
 
-void dedupeBroadphasePairBufferWithPreflight(PairBufferSoA& buffer) {
+bool dedupeBroadphasePairBufferWithPreflight(PairBufferSoA& buffer) {
+    if (!shouldRunDedupeBroadphase(buffer)) {
+        return false;
+    }
     dedupeBuffer(buffer);
+    return true;
 }
 
-void mergePairsIntoBufferWithPreflight(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer) {
+bool mergePairsIntoBufferWithPreflight(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer) {
+    if (!shouldRunMergePairsIntoBuffer(pairs, buffer)) {
+        return false;
+    }
     mergePairsIntoBuffer(pairs, buffer);
+    return true;
+}
+
+const char* broadphaseMergePairsIntoBufferRejectReasonName(BroadphaseMergePairsIntoBufferRejectReason reason) {
+    switch (reason) {
+    case BroadphaseMergePairsIntoBufferRejectReason::None:
+        return "None";
+    case BroadphaseMergePairsIntoBufferRejectReason::EmptyPlaneBodies:
+        return "EmptyPlaneBodies";
+    case BroadphaseMergePairsIntoBufferRejectReason::EmptyDynamicBodies:
+        return "EmptyDynamicBodies";
+    case BroadphaseMergePairsIntoBufferRejectReason::EmptyPairs:
+        return "EmptyPairs";
+    case BroadphaseMergePairsIntoBufferRejectReason::BufferFull:
+        return "BufferFull";
+    }
+    return "Unknown";
+}
+
+BroadphaseMergePairsIntoBufferRejectReason broadphaseMergePairsIntoBufferRejectReason(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer) {
+    const BroadphaseMergePreflight mergePreflight = preflightBroadphaseMerge(bodies, shapes);
+    if (mergePreflight.emptyPlaneBodies) {
+        return BroadphaseMergePairsIntoBufferRejectReason::EmptyPlaneBodies;
+    }
+    if (mergePreflight.emptyDynamicBodies) {
+        return BroadphaseMergePairsIntoBufferRejectReason::EmptyDynamicBodies;
+    }
+    if (pairs.empty()) {
+        return BroadphaseMergePairsIntoBufferRejectReason::EmptyPairs;
+    }
+    if (buffer.isFull()) {
+        return BroadphaseMergePairsIntoBufferRejectReason::BufferFull;
+    }
+    return BroadphaseMergePairsIntoBufferRejectReason::None;
+}
+
+bool broadphaseMergePairsIntoBufferRejectsForReason(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer,
+    BroadphaseMergePairsIntoBufferRejectReason expected) {
+    return broadphaseMergePairsIntoBufferRejectReason(bodies, shapes, pairs, buffer) == expected;
+}
+
+BroadphaseMergePairsIntoBufferPreflight preflightBroadphaseMergePairsIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer) {
+    BroadphaseMergePairsIntoBufferPreflight preflight{};
+    preflight.reason = broadphaseMergePairsIntoBufferRejectReason(bodies, shapes, pairs, buffer);
+    preflight.emptyPlaneBodies =
+        preflight.reason == BroadphaseMergePairsIntoBufferRejectReason::EmptyPlaneBodies;
+    preflight.emptyDynamicBodies =
+        preflight.reason == BroadphaseMergePairsIntoBufferRejectReason::EmptyDynamicBodies;
+    preflight.emptyPairs = preflight.reason == BroadphaseMergePairsIntoBufferRejectReason::EmptyPairs;
+    preflight.bufferFull = preflight.reason == BroadphaseMergePairsIntoBufferRejectReason::BufferFull;
+    return preflight;
+}
+
+bool canSkipBroadphaseMergePairsIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer) {
+    return !preflightBroadphaseMergePairsIntoBuffer(bodies, shapes, pairs, buffer).canMerge();
+}
+
+bool shouldRunBroadphaseMergePairsIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer) {
+    return preflightBroadphaseMergePairsIntoBuffer(bodies, shapes, pairs, buffer).canMerge();
+}
+
+bool mergeBroadphasePairsIntoBufferWithPreflight(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const std::vector<CandidatePair>& pairs,
+    PairBufferSoA& buffer) {
+    if (!shouldRunBroadphaseMergePairsIntoBuffer(bodies, shapes, pairs, buffer)) {
+        return false;
+    }
+    mergePairsIntoBuffer(pairs, buffer);
+    return true;
 }
 
 void runBroadphaseIntoBuffer(
