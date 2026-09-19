@@ -635,3 +635,11 @@ bool should_skip_cook_cache_key(u64 source_hash, u64 upstream_hash) {
     return preflight_cook_cache_key(source_hash, upstream_hash).should_skip();
 bool should_skip_fnv1a64_bytes(const u8* data, usize size) {
     return preflight_fnv1a64_bytes(data, size).should_skip();
+
+// --- deepen additive from deepen-b79-cooker-hash-7269 ---
+    return should_skip_cook_hash_preflight(preflight_mesh_import_hash(desc));
+    return should_skip_cook_hash_preflight(preflight_texture_import_hash(desc));
+    return should_skip_cook_hash_preflight(preflight_audio_import_hash(desc));
+    return should_skip_cook_hash_preflight(preflight_manifest_entry_hash(entry));
+    return should_skip_cook_hash_preflight(
+    return should_skip_cook_hash_preflight(preflight_cook_cache_key(source_hash, upstream_hash));

@@ -930,3 +930,7 @@ bool CookCache::should_skip_prune() const {
 // --- deepen additive from deepen-b79-cooker-hash-should-skip-fa40 ---
 bool CookCache::should_skip_lookup(u64 content_hash) const {
 bool CookCache::should_skip_store(const CookCacheEntry& entry) const {
+
+// --- deepen additive from deepen-b79-cooker-hash-7269 ---
+bool CookCache::should_skip_cache_lookup(u64 content_hash) const {
+    if (should_skip_cache_lookup_key(content_hash) || m_entries.empty()) {

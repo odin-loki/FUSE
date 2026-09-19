@@ -286,3 +286,8 @@ const char* cookCacheRejectReasonLabel(CookCacheRejectReason reason);
     return !cache.would_invalidate_output(output_path);
 [[nodiscard]] inline bool should_skip_store_cache_entry(const CookCacheEntry& entry) {
     return preflight_cook_cache_entry(entry).should_skip();
+
+// --- deepen additive from deepen-b79-cooker-hash-7269 ---
+[[nodiscard]] inline bool should_skip_cache_store(const CookCacheEntry& entry) {
+[[nodiscard]] inline bool should_skip_cache_lookup_key(u64 content_hash) {
+    [[nodiscard]] bool should_skip_cache_lookup(u64 content_hash) const;

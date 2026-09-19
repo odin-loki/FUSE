@@ -250,3 +250,8 @@ struct CookFnvInputPreflight {
     return preflight_cook_cache_key(source_hash, upstream_hash).should_skip();
 [[nodiscard]] inline bool should_skip_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {
     return preflight_cacheable_cook_cache_key(source_hash, upstream_hash).should_skip();
+
+// --- deepen additive from deepen-b79-cooker-hash-7269 ---
+    [[nodiscard]] bool should_skip_hash() const { return !can_hash; }
+[[nodiscard]] inline bool should_skip_cook_hash_preflight(const CookHashPreflight& preflight) {
+    return preflight.should_skip_hash();

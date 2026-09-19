@@ -1579,3 +1579,30 @@ void testCookCacheShouldSkipAndWouldInvalidateGuards() {
     expectTrue(!cooker.cache().would_invalidate_stale_upstream_hashes({}),
                "empty upstream pair list would_invalidate_stale_upstream is false");
     expectTrue(!fuse::project::preflight_shader_entry_hash(shader).should_skip(),
+
+// --- deepen additive from deepen-b79-cooker-hash-7269 ---
+    fuse::project::CookHashPreflight ok_preflight;
+    expectTrue(!ok_preflight.should_skip_hash(), "ok preflight does not skip hash");
+    expectTrue(!fuse::project::should_skip_cook_hash_preflight(ok_preflight),
+               "should_skip_cook_hash_preflight mirrors struct method");
+    fuse::project::CookHashPreflight reject_preflight;
+    reject_preflight.reason = fuse::project::CookHashRejectReason::EmptyPath;
+    expectTrue(reject_preflight.should_skip_hash(), "reject preflight skips hash");
+    expectTrue(fuse::project::should_skip_cook_hash_preflight(reject_preflight),
+               "should_skip_cook_hash_preflight true on reject");
+    expectTrue(!fuse::project::should_skip_mesh_import_hash(desc), "readable mesh import does not skip hash");
+    expectTrue(fuse::project::should_skip_mesh_import_hash(desc), "empty mesh input skips hash");
+               "should_skip_mesh_import_hash mirrors preflight");
+    expectTrue(fuse::project::should_skip_cook_cache_key(0, 42u), "zero source cache key skips");
+    expectTrue(!fuse::project::should_skip_cook_cache_key(99u, 0), "valid source-only cache key does not skip");
+    expectTrue(!fuse::project::should_skip_cook_cache_key(99u, 42u), "valid combined cache key does not skip");
+    expectTrue(fuse::project::should_skip_cache_store(invalid), "invalid entry skips store");
+    expectTrue(fuse::project::should_skip_cache_lookup_key(0), "zero key skips cache lookup");
+    expectTrue(cache.should_skip_cache_lookup(0), "zero key skips cache lookup on empty cache");
+    expectTrue(cache.should_skip_cache_lookup(42u), "unknown key skips cache lookup on empty cache");
+    expectTrue(!fuse::project::should_skip_cache_store(valid), "valid entry does not skip store");
+    expectTrue(!cache.should_skip_cache_lookup(valid.content_hash), "seeded key does not skip lookup");
+    expectTrue(cache.should_skip_cache_lookup(valid.content_hash + 1u), "unknown key skips lookup on populated cache");
+               "should_skip_cache_lookup false implies lookup hits");
+    expectTrue(seeded.ok, "seed cook for would_invalidate helpers ok");
+               "would_invalidate hash mirrors contains for seeded entry");
