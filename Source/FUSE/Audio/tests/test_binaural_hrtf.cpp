@@ -1817,3 +1817,18 @@ void testHrtfBinauralRejectReasons() {
     testHrtfPanPathRejectReasons();
     testHrtfAttenuationCouplingRejectReasons();
     testHrtfBinauralRejectReasons();
+
+// --- deepen additive from b72-hrtf-reject-reason-preflights-6c04 ---
+                   null_samples_nonzero_length, fuse::audio::HrtfIrRejectReason::NullSamples),
+    fuse::audio::HrtfIrPreflight out{};
+    expectTrue(bypass_preflight.should_skip(), "HrtfDisabled pan-path preflight is skipped");
+    fuse::audio::HrtfPanPathPreflight out{};
+    fuse::audio::HrtfAttenuationCouplingPreflight out{};
+                   true, empty, offset, fuse::audio::HrtfBinauralRejectReason::EmptyIr),
+                   true, valid, offset, fuse::audio::HrtfBinauralRejectReason::None),
+                   false, valid, offset, fuse::audio::HrtfBinauralRejectReason::HrtfDisabled),
+                   true, valid, co_located, fuse::audio::HrtfBinauralRejectReason::CoLocated),
+                   true, offset, fuse::audio::HrtfBinauralRejectReason::EmptyIr),
+                   true, malformed, offset, fuse::audio::HrtfBinauralRejectReason::MalformedIr),
+    expectTrue(!stub_preflight.should_skip(), "EmptyIr composite preflight is not bypassed");
+    fuse::audio::HrtfBinauralPreflight out{};
