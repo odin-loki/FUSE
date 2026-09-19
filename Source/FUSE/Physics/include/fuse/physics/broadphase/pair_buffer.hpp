@@ -142,6 +142,7 @@ struct PairBufferSoA {
 };
 
 /// Why pair-buffer push would reject (B4.2 deepen pass).
+/// Why a pair-buffer push would be rejected (B4.2 deepen pass).
 enum class PairBufferPushRejectReason : u8 {
     None = 0,
     InvalidPair,
@@ -152,6 +153,7 @@ enum class PairBufferPushRejectReason : u8 {
 const char* pairBufferPushRejectReasonName(PairBufferPushRejectReason reason);
 
 /// Diagnose why push would reject; vacuously succeeds when push may proceed.
+/// Diagnose why push would fail; vacuously succeeds when push may proceed.
 PairBufferPushRejectReason pairBufferPushRejectReason(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
 
 /// Returns true when `pairBufferPushRejectReason` matches `expected` (B4.2 deepen pass).
@@ -168,6 +170,7 @@ struct PairBufferPushPreflight {
     bool atCapacity = false;
 
     bool canPush() const { return reason == PairBufferPushRejectReason::None; }
+};
 
 PairBufferPushPreflight preflightPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
 
@@ -175,15 +178,19 @@ PairBufferPushPreflight preflightPairBufferPush(const PairBufferSoA& buffer, u32
 enum class PairBufferCompactionRejectReason : u8 {
     EmptyBuffer,
     AllValid,
+    None = 0,
+};
 
 /// Human-readable label for pair-buffer compaction reject reasons (logging / tests).
 const char* pairBufferCompactionRejectReasonName(PairBufferCompactionRejectReason reason);
 
 /// Diagnose why compaction would skip its scan loop; vacuously succeeds when compaction may proceed.
+/// Diagnose why compaction would skip; vacuously succeeds when compaction may proceed.
 PairBufferCompactionRejectReason pairBufferCompactionRejectReason(const PairBufferSoA& buffer);
 
 /// Returns true when `pairBufferCompactionRejectReason` matches `expected` (B4.2 deepen pass).
 bool pairBufferCompactionRejectsForReason(
+    const PairBufferSoA& buffer,
     PairBufferCompactionRejectReason expected);
 
 /// Read-only compaction diagnostics — no mutation (B4.2 deepen follow-up).
@@ -205,6 +212,11 @@ bool shouldRunPairBufferCompaction(const PairBufferSoA& buffer);
 /// Why pair-buffer max-capacity clamp would early-out (B4.2 deepen pass).
 enum class PairBufferClampRejectReason : u8 {
     WithinCapacity,
+};
+
+
+    None = 0,
+    EmptyBuffer,
 
 /// Human-readable label for pair-buffer clamp reject reasons (logging / tests).
 const char* pairBufferClampRejectReasonName(PairBufferClampRejectReason reason);
@@ -233,6 +245,13 @@ bool shouldRunPairBufferClamp(const PairBufferSoA& buffer);
 /// Why pair-buffer dedupe would early-out at the SoA layer (B4.2 deepen pass).
 enum class PairBufferDedupeRejectReason : u8 {
     SinglePair,
+    bool emptyBuffer = false;
+
+};
+
+
+    None = 0,
+    EmptyBuffer,
 
 /// Human-readable label for pair-buffer dedupe reject reasons (logging / tests).
 const char* pairBufferDedupeRejectReasonName(PairBufferDedupeRejectReason reason);
@@ -249,6 +268,9 @@ struct PairBufferDedupePreflight {
     bool singlePair = false;
 
     bool canDedupe() const { return reason == PairBufferDedupeRejectReason::None; }
+    bool emptyBuffer = false;
+
+};
 
 PairBufferDedupePreflight preflightPairBufferDedupe(const PairBufferSoA& buffer);
 
@@ -256,10 +278,15 @@ PairBufferDedupePreflight preflightPairBufferDedupe(const PairBufferSoA& buffer)
 bool canSkipPairBufferDedupe(const PairBufferSoA& buffer);
 
 /// Non-mutating dedupe predicate — inverse of `canSkipPairBufferDedupe` (B4.2 deepen pass).
+/// Non-mutating dedupe launch predicate — inverse of `canSkipPairBufferDedupe` (B4.2 deepen pass).
 bool shouldRunPairBufferDedupe(const PairBufferSoA& buffer);
 
 /// Why pair-buffer canonical sort would early-out (B4.2 deepen pass).
 enum class PairBufferSortRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    SinglePair,
+};
 
 /// Human-readable label for pair-buffer sort reject reasons (logging / tests).
 const char* pairBufferSortRejectReasonName(PairBufferSortRejectReason reason);
@@ -495,5 +522,13 @@ bool should_skip_pair_buffer_compaction(const PairBufferSoA& buffer);
 
     bool needsClamp() const { return !emptyBuffer && !withinCapacity; }
 
+
+    bool emptyBuffer = false;
+    bool singlePair = false;
+
+};
+
+
+/// Non-mutating sort launch predicate — inverse of sort preflight skip (B4.2 deepen pass).
 
 } // namespace fuse::physics::broadphase
