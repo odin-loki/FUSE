@@ -585,6 +585,7 @@ bool shouldRunPairBufferDedupe(const PairBufferSoA& buffer);
 /// Why pair-buffer canonical sort would early-out (B4.2 deepen follow-up pass).
 /// Non-mutating dedupe predicate — mirrors `preflightPairBufferDedupe` (B4.2 deepen pass).
 
+
 enum class PairBufferSortRejectReason : u8 {
     None = 0,
     EmptyBuffer,
@@ -596,6 +597,8 @@ enum class PairBufferSortRejectReason : u8 {
 const char* pairBufferSortRejectReasonName(PairBufferSortRejectReason reason);
 
 /// Diagnose why sort would skip; vacuously succeeds when sort may proceed.
+
+/// Diagnose why SoA sort would skip; vacuously succeeds when sort may proceed.
 PairBufferSortRejectReason pairBufferSortRejectReason(const PairBufferSoA& buffer);
 
 /// Returns true when `pairBufferSortRejectReason` matches `expected` (B4.2 deepen pass).
@@ -618,6 +621,7 @@ enum class PairBufferSortRejectReason : u8 {
     bool singlePair = false;
 
 /// Returns true when `pairBufferSortRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+
 
 
 
@@ -693,14 +697,10 @@ struct PairSlotPreflight {
     bool exceedsBufferCapacity = false;
 
     bool canPrepare() const { return !skipped; }
-};
 
 PairSlotPreflight preflightPairSlots(u32 slotCount, const PairBufferSoA& buffer);
 
 /// Why pair-buffer compact+clamp would early-out (B4.2 deepen pass).
-    None = 0,
-    EmptyBuffer,
-    NoWorkNeeded,
 
 /// Human-readable label for compact+clamp reject reasons (logging / tests).
 /// Non-mutating sort skip predicate — inverse of `needsSort` (B4.2 deepen follow-up pass).
@@ -718,7 +718,6 @@ PairBufferCompactAndClampRejectReason pairBufferCompactAndClampRejectReason(cons
 
 /// Returns true when `pairBufferCompactAndClampRejectReason` matches `expected` (B4.2 deepen pass).
 bool pairBufferCompactAndClampRejectsForReason(
-    const PairBufferSoA& buffer,
     PairBufferCompactAndClampRejectReason expected);
 
 /// Read-only compact-and-clamp diagnostics — no mutation (B4.2 deepen pass).
@@ -735,7 +734,6 @@ PairBufferCompactAndClampPreflight preflightPairBufferCompactAndClamp(const Pair
     bool noWorkNeeded = false;
 
     bool needsWork() const { return reason == PairBufferCompactAndClampRejectReason::None; }
-};
 
 
 /// Non-mutating compact-and-clamp skip predicate — inverse of `needsWork` (B4.2 deepen pass).
@@ -745,29 +743,15 @@ bool canSkipPairBufferCompactAndClamp(const PairBufferSoA& buffer);
 bool shouldRunPairBufferCompactAndClamp(const PairBufferSoA& buffer);
 
 /// Why pair-buffer slot write would reject (B4.2 deepen follow-up pass).
-enum class PairBufferWriteSlotRejectReason : u8 {
-    OutOfRangeSlot,
 
 /// Human-readable label for pair-buffer write-slot reject reasons (logging / tests).
-const char* pairBufferWriteSlotRejectReasonName(PairBufferWriteSlotRejectReason reason);
 
-/// Diagnose why writeSlot would reject; vacuously succeeds when write may proceed.
-PairBufferWriteSlotRejectReason pairBufferWriteSlotRejectReason(
-    u32 slot,
-    u32 idxB);
 
 /// Returns true when `pairBufferWriteSlotRejectReason` matches `expected` (B4.2 deepen follow-up pass).
-bool pairBufferWriteSlotRejectsForReason(
-    PairBufferWriteSlotRejectReason expected);
 
 /// Read-only write-slot diagnostics — no mutation (B4.2 deepen follow-up pass).
-struct PairBufferWriteSlotPreflight {
-    PairBufferWriteSlotRejectReason reason = PairBufferWriteSlotRejectReason::None;
-    bool outOfRangeSlot = false;
 
-    bool canWrite() const { return reason == PairBufferWriteSlotRejectReason::None; }
 
-PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
 
 /// Non-mutating write-slot skip predicate — inverse of `canWrite` (B4.2 deepen follow-up pass).
 bool canSkipPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB);
@@ -926,7 +910,6 @@ bool should_skip_pair_buffer_compaction(const PairBufferSoA& buffer);
     bool needsClamp() const { return !emptyBuffer && !withinCapacity; }
 
 
-    bool emptyBuffer = false;
     bool singlePair = false;
 
 
@@ -962,12 +945,9 @@ bool canSkipPairBufferCompaction(const PairBufferSoA& buffer);
 
 /// Non-mutating sort skip predicate — inverse of `PairBufferSortPreflight::needsSort` (B4.2 deepen pass).
 /// Read-only slot-write diagnostics — no mutation (B4.2 deepen follow-up pass).
-    bool invalidPair = false;
 
     bool canWrite() const { return !outOfRangeSlot && !invalidPair; }
 
-    const PairBufferSoA& buffer,
-    u32 idxA,
 
 
 
@@ -1040,7 +1020,6 @@ bool canSkipPairBufferClamp(const PairBufferSoA& buffer);
 /// Non-mutating sort skip predicate — inverse of `preflightPairBufferSort::needsSort` (B4.2 deepen pass).
 
 
-    bool noWorkNeeded = false;
 
 
 
@@ -1061,7 +1040,6 @@ bool canSkipPairBufferClamp(const PairBufferSoA& buffer);
 
 
 enum class PairBufferSlotWriteRejectReason : u8 {
-    InvalidPair,
 
 /// Human-readable label for pair-buffer slot-write reject reasons (logging / tests).
 const char* pairBufferSlotWriteRejectReasonName(PairBufferSlotWriteRejectReason reason);
@@ -1071,7 +1049,6 @@ PairBufferSlotWriteRejectReason pairBufferSlotWriteRejectReason(
 
 /// Returns true when `pairBufferSlotWriteRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 bool pairBufferSlotWriteRejectsForReason(
-    u32 idxB,
     PairBufferSlotWriteRejectReason expected);
 
 struct PairBufferSlotWritePreflight {

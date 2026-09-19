@@ -289,10 +289,18 @@ FUSE_PHYSICS_INLINE BroadphasePreflight preflightBroadphase(
 }
 
 /// Non-mutating broadphase predicate — mirrors `preflightBroadphase` (B4.2 deepen follow-up pass).
+/// Non-mutating broadphase predicate — inverse of `canSkipBroadphase` (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return preflightBroadphase(bodies, shapes).canRun();
+}
+
+/// Non-mutating pair-generation predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !canSkipBroadphasePairGeneration(bodies, shapes);
 }
 
 /// Clamp cell size to a positive stub default (broadphase occupancy guard).
@@ -500,6 +508,7 @@ struct CellOccupancyPreflight {
     bool emptyRange = false;
     bool exceedsBudget = false;
     u32 occupancyCount = 0;
+    u32 budgetRemaining = 0;
 
     bool canIterate() const { return reason == CellOccupancyRejectReason::None; }
 };
@@ -510,6 +519,7 @@ FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancy(const CellRang
     preflight.emptyRange = preflight.reason == CellOccupancyRejectReason::EmptyRange;
     preflight.occupancyCount = estimateCellOccupancyCount(range);
     preflight.exceedsBudget = preflight.reason == CellOccupancyRejectReason::ExceedsBudget;
+    preflight.budgetRemaining = occupancyBudgetRemaining(range, maxCells);
     return preflight;
 
 FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancy(const CellRange2& range, u32 maxCells) {
@@ -746,6 +756,8 @@ FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellOccupancyPrefli
 
 
 
+    preflight.budgetRemaining = occupancyBudgetRemaining(range, maxCells);
+    return preflight;
 }
 
 /// Non-mutating cell-occupancy skip predicate — inverse of `preflightCellOccupancy::canIterate` (B4.2 deepen pass).

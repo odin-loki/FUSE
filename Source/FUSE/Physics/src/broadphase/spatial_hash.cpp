@@ -1605,6 +1605,7 @@ BroadphaseMergeScan scanBroadphaseMergeBodies(
     preflight.planeBodyCount = planeBodyCount;
     preflight.dynamicBodyCount = dynamicBodyCount;
     preflight.estimatedMergePairs = planeBodyCount * dynamicBodyCount;
+
     preflight.emptyPlaneBodies = planeBodyCount == 0u;
     preflight.emptyDynamicBodies = dynamicBodyCount == 0u;
     if (preflight.emptyPlaneBodies) {
