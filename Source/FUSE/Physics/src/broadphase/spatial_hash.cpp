@@ -764,6 +764,12 @@ const char* cellSpanClampRejectReasonName(CellSpanClampRejectReason reason) {
         return "UnboundedSpan";
     case CellSpanRejectReason::ExceedsSpan:
         return "ExceedsSpan";
+const char* cellPairGenRejectReasonName(CellPairGenRejectReason reason) {
+    case CellPairGenRejectReason::None:
+    case CellPairGenRejectReason::EmptyCell:
+        return "EmptyCell";
+    case CellPairGenRejectReason::InsufficientOccupants:
+        return "InsufficientOccupants";
     }
     return "Unknown";
 }
@@ -820,6 +826,12 @@ const char* mergeIntoBufferBroadphaseRejectReasonName(BroadphaseMergeIntoBufferR
     case BroadphaseMergeIntoBufferRejectReason::SceneNotMergeable:
     case BroadphaseMergeIntoBufferRejectReason::BufferFull:
         return "BufferFull";
+const char* shapeCellInsertRejectReasonName(ShapeCellInsertRejectReason reason) {
+    case ShapeCellInsertRejectReason::None:
+    case ShapeCellInsertRejectReason::OutOfRangeBody:
+        return "OutOfRangeBody";
+    case ShapeCellInsertRejectReason::ExceedsOccupancyBudget:
+        return "ExceedsOccupancyBudget";
 }
 
 namespace {
@@ -1064,6 +1076,7 @@ void populateShapeCells(
         if (canSkipShapeCellInsert(range, maxOccupancy)) {
         if (canSkipCellShapeInsert(bodyIndex, bodyCount, range, maxOccupancy)) {
         if (canSkipCellCapacityInsert(range, maxOccupancy, bodyIndex, bodyCount)) {
+        if (!shouldRunShapeCellInsert(bodyIndex, bodyCount, range, maxOccupancy)) {
             return;
         return ShapeCellInsertRejectReason::None;
 
@@ -1205,6 +1218,7 @@ void populateShapeCells(
     if (canSkipShapeCellInsert(range, maxOccupancy)) {
     if (canSkipCellShapeInsert(bodyIndex, bodyCount, range, maxOccupancy)) {
     if (canSkipCellCapacityInsert(range, maxOccupancy, bodyIndex, bodyCount)) {
+    if (!shouldRunShapeCellInsert(bodyIndex, bodyCount, range, maxOccupancy)) {
         return;
     if (isEmptyCellRange(range)) {
     if (params.maxCellOccupancyPerShape > 0u) {
@@ -2938,6 +2952,53 @@ u32 countPairsForCellOccupants(const std::vector<u32>& occupants) {
     preflight.pairCount = countPairsForCellOccupants(occupants);
 
 
+
+u32 uniqueBodyPairCount(const std::vector<u32>& occupants) {
+    const u32 bodyCount = static_cast<u32>(uniqueBodies.size());
+    return bodyCount > 1u ? bodyCount * (bodyCount - 1u) / 2u : 0u;
+
+
+    if (occupants.size() < 2u || uniqueBodyPairCount(occupants) == 0u) {
+
+
+    preflight.pairCount = preflight.canGenerate() ? uniqueBodyPairCount(occupants) : 0u;
+
+u32 countPairsForCell(const std::vector<u32>& occupants) {
+    return preflightCellPairGen(occupants).pairCount;
+
+
+
+ShapeCellInsertRejectReason shapeCellInsertRejectReason(
+    u32 maxOccupancy) {
+    if (bodyIndex >= bodyCount) {
+        return ShapeCellInsertRejectReason::OutOfRangeBody;
+    if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+        return ShapeCellInsertRejectReason::ExceedsOccupancyBudget;
+    return ShapeCellInsertRejectReason::None;
+
+
+bool shapeCellInsertRejectsForReason(
+    u32 maxOccupancy,
+    ShapeCellInsertRejectReason expected) {
+    return shapeCellInsertRejectReason(bodyIndex, bodyCount, range, maxOccupancy) == expected;
+
+
+ShapeCellInsertPreflight preflightShapeCellInsert(
+    ShapeCellInsertPreflight preflight{};
+    preflight.reason = shapeCellInsertRejectReason(bodyIndex, bodyCount, range, maxOccupancy);
+    preflight.outOfRangeBody = preflight.reason == ShapeCellInsertRejectReason::OutOfRangeBody;
+    preflight.exceedsOccupancyBudget = preflight.reason == ShapeCellInsertRejectReason::ExceedsOccupancyBudget;
+
+
+bool canSkipShapeCellInsert(u32 bodyIndex, u32 bodyCount, const CellRange3& range, u32 maxOccupancy) {
+    return !preflightShapeCellInsert(bodyIndex, bodyCount, range, maxOccupancy).canInsert();
+
+bool canSkipShapeCellInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& range, u32 maxOccupancy) {
+
+bool shouldRunShapeCellInsert(u32 bodyIndex, u32 bodyCount, const CellRange3& range, u32 maxOccupancy) {
+    return preflightShapeCellInsert(bodyIndex, bodyCount, range, maxOccupancy).canInsert();
+
+bool shouldRunShapeCellInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& range, u32 maxOccupancy) {
 }
 
 void refineBroadphasePairsParallel(
