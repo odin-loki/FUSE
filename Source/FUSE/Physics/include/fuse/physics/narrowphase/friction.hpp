@@ -417,6 +417,8 @@ bool ensure_friction_basis_from_preflight(ContactManifold& manifold, f32 epsilon
     f32 epsilon = 1e-4f);
 
 /// Rebuild friction tangents only when preflight reports `needsRebuild` (B4.4 deepen pass).
+bool rebuild_friction_basis_from_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
+
 /// Returns true when friction-basis rebuild can proceed (B4.5 deepen follow-up).
 bool can_run_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon = 1e-4f);
 

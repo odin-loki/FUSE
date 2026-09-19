@@ -954,6 +954,7 @@ ContactManifold detect_contacts_pair_if_needed(
     const broadphase::CandidatePair& pair,
 /// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.5 deepen follow-up).
 bool contact_pair_deepen_rejects_for_reason(
+/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 deepen pass).
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     ContactPairRejectReason expected);
@@ -968,6 +969,7 @@ struct NarrowphasePairBatchStats {
 /// Count dispatchable vs rejected pairs without running shape dispatch (B4.5 deepen follow-up).
 NarrowphasePairBatchStats compute_narrowphase_pair_stats(
     const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
 /// Const batch preflight for narrowphase pair dispatch (B4.5 deepen follow-up).
@@ -983,5 +985,16 @@ struct NarrowphasePairBatchPreflight {
 NarrowphasePairBatchPreflight preflight_narrowphase_pairs(
 
 /// Run shape dispatch only when deepen preflight allows; invalid manifold otherwise (B4.5 deepen follow-up).
+};
+
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating narrowphase predicate — inverse of `can_skip_narrowphase` (B4.4 deepen pass).
+bool should_run_narrowphase_dispatch(
+
+ContactManifold detect_contacts_pair_if_needed(
+    const broadphase::CandidatePair& pair,
 
 } // namespace fuse::physics::narrowphase
