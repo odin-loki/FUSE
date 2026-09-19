@@ -609,4 +609,68 @@ bool narrowphase_batch_rejects_all(
     return preflight_narrowphase_batch(pairs, bodies, shapes).can_skip();
 }
 
+bool should_run_contact_pair_deepen_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
+}
+
+ContactManifold detect_contacts_pair_with_preflight(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
+        return invalidContactManifold();
+    }
+    return detect_contacts_pair(pair, bodies, shapes);
+}
+
+bool is_capsule_capsule_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes) {
+    const u32 shapeA = findShapeForBody(shapes, pair.bodyA, CollisionShapeType::Sphere);
+    const u32 shapeB = findShapeForBody(shapes, pair.bodyB, CollisionShapeType::Sphere);
+    if (shapeA >= shapes.count() || shapeB >= shapes.count()) {
+        return false;
+    }
+
+    const CollisionShapeType typeA = shapeType(shapes, shapeA);
+    const CollisionShapeType typeB = shapeType(shapes, shapeB);
+    return typeA == CollisionShapeType::Capsule && typeB == CollisionShapeType::Capsule;
+}
+
+bool is_box_plane_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes) {
+    const u32 shapeA = findShapeForBody(shapes, pair.bodyA, CollisionShapeType::Sphere);
+    const u32 shapeB = findShapeForBody(shapes, pair.bodyB, CollisionShapeType::Sphere);
+    if (shapeA >= shapes.count() || shapeB >= shapes.count()) {
+        return false;
+    }
+
+    const CollisionShapeType typeA = shapeType(shapes, shapeA);
+    const CollisionShapeType typeB = shapeType(shapes, shapeB);
+    return (typeA == CollisionShapeType::Box && typeB == CollisionShapeType::Plane) ||
+           (typeA == CollisionShapeType::Plane && typeB == CollisionShapeType::Box);
+}
+
+ContactPairRejectReason first_contact_pair_deepen_reject_in_batch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (pairs.empty()) {
+        return ContactPairRejectReason::OutOfRangeBody;
+    }
+
+    for (const broadphase::CandidatePair& pair : pairs) {
+        const ContactPairRejectReason reason = contact_pair_deepen_reject_reason(pair, bodies, shapes);
+        if (reason == ContactPairRejectReason::None) {
+            return ContactPairRejectReason::None;
+        }
+    }
+
+    return contact_pair_deepen_reject_reason(pairs.front(), bodies, shapes);
+}
+
 } // namespace fuse::physics::narrowphase
