@@ -990,3 +990,6 @@ void ClusteredLightCuller::recordCullPass(CommandBufferRecorder& recorder,
 // --- deepen additive from deepen-b5-clustered-lights-lookup-23c0 ---
 bool cluster_util::tryLookupClusterLights(const ClusterGridSoA& grid,
 bool ClusterGridLayout::tryClusterIndex(u32 tileX, u32 tileY, u32 sliceZ, const ClusterDesc& desc, u32& outIndex) {
+
+// --- deepen additive from deepen-b5-clustered-lights-lookup-guards-d4e0 ---
+    return tryLookupClusterLightsAtIndex(grid, desc, clusterIndex, outLights, outCount);

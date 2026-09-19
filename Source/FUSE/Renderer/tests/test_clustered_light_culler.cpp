@@ -1418,3 +1418,19 @@ int main() {
     expectTrue(fuse::renderer::cluster_util::tryLookupClusterLights(grid, desc, 0u, strictLights),
     expectTrue(!fuse::renderer::cluster_util::tryLookupClusterLights(grid, desc, 99u, staleOutput),
     expectTrue(!fuse::renderer::cluster_util::tryLookupClusterLights(emptyGrid, desc, 0u, emptyLights),
+
+// --- deepen additive from deepen-b5-clustered-lights-lookup-guards-d4e0 ---
+void testClusterGridAccessibleGuard() {
+void testClusterLookupAtCoordGuards() {
+    expectTrue(fuse::renderer::cluster_util::tryLookupClusterLightsAtCoord(grid, desc, 0u, 0u, 0u, tryLights, tryCount),
+               "tryLookup at coord succeeds on valid grid");
+    expectTrue(tryCount == 2u, "tryLookup at coord reports cluster light count");
+               "tryLookup at coord rejects empty storage");
+    expectTrue(rejectedCount == 0u, "tryLookup at coord zeroes count on guard failure");
+void testClusterLookupFromScreenGuards() {
+    expectTrue(fuse::renderer::cluster_util::tryValidateGridPopulationForDesc(grid, desc, reason),
+               "tryValidateForDesc accepts rebuilt grid");
+    expectTrue(!fuse::renderer::cluster_util::tryValidateGridPopulationForDesc(grid, mismatchedDesc, reason),
+               "tryValidateForDesc rejects desc mismatch");
+    expectTrue(fuse::renderer::cluster_util::tryValidateGridPopulationForDesc(grid, zeroDesc, reason),
+               "tryValidateForDesc vacuously accepts empty desc");
