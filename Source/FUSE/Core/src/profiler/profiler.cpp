@@ -1403,3 +1403,7 @@ FlowIdLookupPreflight preflightFlowLookupById(u32 flowId) {
     FlowIdLookupPreflight preflight{};
 NestingConsistencyPreflight preflightNestingConsistency() {
     NestingConsistencyPreflight preflight{};
+
+// --- deepen additive from deepen-b16-profiler-name-flow-e105 ---
+bool tryFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+bool tryLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {

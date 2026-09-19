@@ -470,3 +470,7 @@ bool tryLastFlowEventById(u32 flowId, ProfileEvent& outEvent);
 EventNameLookupPreflight preflightEventLookupByName(const char* name);
 FlowIdLookupPreflight preflightFlowLookupById(u32 flowId);
 NestingConsistencyPreflight preflightNestingConsistency();
+
+// --- deepen additive from deepen-b16-profiler-name-flow-e105 ---
+bool tryFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent);
+bool tryLastEventByFlowId(u32 flowId, ProfileEvent& outEvent);

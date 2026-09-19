@@ -4149,3 +4149,28 @@ void testNestingConsistencyPreflight() {
 void testEventMatchesNameAndFlowGuards() {
     testEventNameLookupPreflight();
     testNestingConsistencyPreflight();
+
+// --- deepen additive from deepen-b16-profiler-name-flow-e105 ---
+               "tryFirstEventByName clears output for invalid name");
+void testTryEventByFlowIdGuard() {
+    expectTrue(fuse::profiler::tryFirstEventByFlowId(flowId, outEvent),
+               "tryFirstEventByFlowId true for flow start");
+               "tryFirstEventByFlowId copies flow start phase");
+    expectTrue(outEvent.scopeId == flowId, "tryFirstEventByFlowId copies flow id");
+    expectTrue(fuse::profiler::tryLastEventByFlowId(flowId, outEvent),
+               "tryLastEventByFlowId true for flow finish");
+               "tryLastEventByFlowId copies flow finish phase");
+    expectTrue(!fuse::profiler::tryFirstEventByFlowId(flowId + 999u, outEvent),
+               "tryFirstEventByFlowId false for missing flow id");
+               "tryFirstEventByFlowId clears output for missing flow id");
+    expectTrue(!emptyPreflight.hasActiveScope, "empty preflight hasActiveScope false");
+    expectTrue(!emptyPreflight.hasActiveAsyncFlowNesting,
+        expectTrue(activePreflight.firstExportableEventIndex == 0u,
+        expectTrue(activePreflight.lastExportableEventIndex == 0u,
+        expectTrue(activePreflight.canExportNonEmptyTrace(),
+        expectTrue(activePreflight.hasActiveScope, "active preflight marks hasActiveScope");
+    expectTrue(closedPreflight.firstExportableEventIndex == 0u,
+    expectTrue(closedPreflight.lastExportableEventIndex == 1u,
+    expectTrue(closedPreflight.canExportNonEmptyTrace(),
+    expectTrue(!closedPreflight.hasActiveScope, "closed preflight clears hasActiveScope");
+    expectTrue(fuse::profiler::tryFirstEventByName("lookup_valid_scope", outEvent),
