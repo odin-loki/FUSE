@@ -3507,6 +3507,10 @@ CookHashPreflight CookCache::preflight_store_entry(const CookCacheEntry& entry) 
         return preflight_audio_import_hash(desc);
     case CookAssetKind::Shader:
         preflight.reason = CookHashRejectReason::SourceUnreadable;
+        return preflight;
+    default:
+        preflight.reason = CookHashRejectReason::SourceUnreadable;
+    }
 }
 
 void CookCache::clear() {
