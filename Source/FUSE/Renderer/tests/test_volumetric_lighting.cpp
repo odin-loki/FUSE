@@ -2684,3 +2684,40 @@ void testFroxelTrilinearSampleAndPopulatePreflightGuards() {
     expectTrue(fuse::renderer::froxel_util::preflightPopulateFromAnalyticFog(desc, camera, params),
                "preflightPopulateFromAnalyticFog without reason output succeeds for valid inputs");
     testFroxelTrilinearSampleAndPopulatePreflightGuards();
+
+// --- deepen additive from deepen-b511-froxel-guards-f8af ---
+void testFroxelTrilinearAndPreflightGuards() {
+    expectTrue(fuse::renderer::froxel_util::preflightSampleAtCoords(grid, desc, inBounds, sampleReason),
+               "preflightSampleAtCoords succeeds for in-bounds coords");
+               "preflightSampleAtCoords reports no reject reason for in-bounds coords");
+    expectTrue(fuse::renderer::froxel_util::preflightSampleAtCoords(grid, desc, inBounds),
+               "preflightSampleAtCoords without reason succeeds for in-bounds coords");
+    expectTrue(fuse::renderer::froxel_util::preflightTrilinearSample(grid, desc, inBounds, sampleReason),
+    expectTrue(fuse::renderer::froxel_util::preflightTrilinearSample(grid, desc, inBounds),
+               "preflightTrilinearSample without reason succeeds for in-bounds coords");
+    expectTrue(fuse::renderer::froxel_util::preflightTrilinearSample(grid, desc, warnWeights, sampleReason),
+               "preflightTrilinearSample warns but succeeds for clampable weights");
+               "preflightTrilinearSample reports invalid_weights for clampable weights");
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityTrilinear(grid, desc, inBounds, trilinearSample, sampleReason),
+               "trySampleDensityTrilinear with reason succeeds for in-bounds coords");
+               "trySampleDensityTrilinear with reason matches unguarded sample");
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookupAtIndex(grid, desc, 0u, lookupReason),
+               "preflightDensityLookupAtIndex succeeds for accessible grid");
+               "preflightDensityLookupAtIndex reports no reject reason for in-range index");
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookupAtIndex(grid, desc, 0u),
+               "preflightDensityLookupAtIndex without reason succeeds for accessible grid");
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookupAtIndex(grid, desc, 999u, lookupReason),
+               "preflightDensityLookupAtIndex warns but succeeds for OOB index");
+               "preflightDensityLookupAtIndex reports index_out_of_range for OOB index");
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookupAtCoord(grid, desc, 3u, 1u, 2u, lookupReason),
+               "preflightDensityLookupAtCoord succeeds for in-range coords");
+               "preflightDensityLookupAtCoord reports no reject reason for in-range coords");
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookupAtCoord(grid, desc, 99u, 99u, 99u, lookupReason),
+               "preflightDensityLookupAtCoord warns but succeeds for OOB coords");
+               "trySampleDensityAtScreen with dual reasons succeeds on accessible grid");
+               "trySampleDensityAtScreen with dual reasons matches unguarded screen sample");
+               "preflightPopulateFromAnalyticFog reports no reject reason for valid inputs");
+               "preflightPopulateFromAnalyticFog without reason succeeds for valid inputs");
+               "preflightPopulateFromAnalyticFog rejects invalid camera");
+               "preflightPopulateFromAnalyticFog reports invalid_camera reject reason");
+    testFroxelTrilinearAndPreflightGuards();

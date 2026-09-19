@@ -1832,3 +1832,16 @@ bool tryPreflightDensityLookupAtCoord(const FroxelDensityGrid& grid,
         outReason = FroxelTrilinearSampleRejectReason::HardOutOfBounds;
     return tryCanTrilinearSampleAtCoords(grid, desc, coords, outReason);
                                       FroxelPopulateRejectReason* outReason) {
+
+// --- deepen additive from deepen-b511-froxel-guards-f8af ---
+    return preflightSampleAtCoords(grid, desc, coords);
+bool preflightSampleAtCoords(const FroxelDensityGrid& grid,
+    return preflightSampleAtCoords(grid, desc, coords, reason);
+    return tryCanSampleAtCoords(grid, desc, coords, outReason);
+bool wouldClampSampleAtCoords(const FroxelDensityGrid& grid,
+    return preflightSampleAtCoords(grid, desc, coords, outReason);
+bool preflightDensityLookupAtIndex(const FroxelDensityGrid& grid,
+    return preflightDensityLookupAtIndex(grid, desc, index, reason);
+    return preflightDensityLookupAtCoord(grid, desc, tileX, tileY, sliceZ, reason);
+    return preflightPopulateFromAnalyticFog(desc, camera, params);
+    return preflightPopulateFromAnalyticFog(desc, camera, params, reason);

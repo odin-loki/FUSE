@@ -724,3 +724,8 @@ bool tryShouldSkipFroxelPopulate(const FroxelGridDesc& desc,
 bool tryPreflightDensityLookupAtIndex(const FroxelDensityGrid& grid,
 bool tryPreflightDensityLookupAtCoord(const FroxelDensityGrid& grid,
                                       FroxelPopulateRejectReason* outReason = nullptr);
+
+// --- deepen additive from deepen-b511-froxel-guards-f8af ---
+bool preflightSampleAtCoords(const FroxelDensityGrid& grid,
+bool wouldClampSampleAtCoords(const FroxelDensityGrid& grid,
+bool preflightDensityLookupAtIndex(const FroxelDensityGrid& grid,
