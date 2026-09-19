@@ -8,6 +8,33 @@
 
 namespace fuse::physics {
 
+/// Input coverage for island graph build (out-of-range body-index guards).
+struct IslandBuildInputStats {
+    u32 bodyCount = 0;
+    u32 contactSlotCount = 0;
+    u32 distanceSlotCount = 0;
+    u32 validContactCount = 0;
+    u32 inRangeContactCount = 0;
+    u32 inRangeDistanceCount = 0;
+    u32 outOfRangeContactBodyCount = 0;
+    u32 outOfRangeDistanceBodyCount = 0;
+
+    bool has_unsafe_refs() const {
+        return outOfRangeContactBodyCount > 0u || outOfRangeDistanceBodyCount > 0u;
+    }
+};
+
+/// Scan contact/distance refs for out-of-range body indices before `ContactIslandGraph::build`.
+IslandBuildInputStats scan_island_build_inputs(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// True when build inputs carry no out-of-range body references.
+bool island_build_inputs_safe(u32 bodyCount,
+                              const std::vector<narrowphase::ContactManifold>& contacts,
+                              const std::vector<DistanceConstraint>& distanceConstraints);
+
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
 /// contacts and distance constraints run sequentially (Gauss-Seidel stub).
@@ -24,6 +51,11 @@ struct ContactIslandGraph {
     void build(u32 bodyCount,
                const std::vector<narrowphase::ContactManifold>& contacts,
                const std::vector<DistanceConstraint>& distanceConstraints);
+
+    /// Guarded build; returns false and clears when inputs are unsafe or empty.
+    bool buildGuarded(u32 bodyCount,
+                      const std::vector<narrowphase::ContactManifold>& contacts,
+                      const std::vector<DistanceConstraint>& distanceConstraints);
 
     void clear();
 
