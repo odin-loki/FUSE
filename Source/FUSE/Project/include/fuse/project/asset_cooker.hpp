@@ -8,6 +8,15 @@
 
 namespace fuse::project {
 
+/// Read-only invalidation breakdown for upstream / reconcile planning (B7.9 deepen).
+struct CookReconcileEstimate {
+    u32 direct_entries = 0;
+    u32 downstream_entries = 0;
+
+    [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
+    [[nodiscard]] bool would_invalidate() const { return total() > 0; }
+};
+
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
 class AssetCooker {
 public:
@@ -31,6 +40,15 @@ public:
                                                   const std::string& changed_source) const;
     /// Read-only stale dependency-hash reconcile probe (B7.9 deepen).
     [[nodiscard]] u32 count_stale_dependency_invalidation(const CookManifest& manifest) const;
+    /// Upstream invalidation breakdown — direct source entries plus downstream dependents (B7.9 deepen).
+    [[nodiscard]] CookReconcileEstimate estimate_upstream_invalidation(
+        const CookManifest& manifest, const std::string& changed_source) const;
+    /// Stale dependency-hash reconcile breakdown — stale upstream entries plus downstream (B7.9 deepen).
+    [[nodiscard]] CookReconcileEstimate estimate_stale_dependency_reconcile(
+        const CookManifest& manifest) const;
+    /// True when `invalidate_upstream_dependency` would remove at least one entry (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_upstream_dependency(const CookManifest& manifest,
+                                                            const std::string& changed_source) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
