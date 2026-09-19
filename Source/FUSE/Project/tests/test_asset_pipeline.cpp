@@ -2496,6 +2496,58 @@ void testCookerPruneReconcileEstimator() {
                "stale dependency invalidation removes at least estimated total");
 }
 
+void testCookerReconcileEstimators() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_est_chain_a.obj", "# est chain a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_est_chain_b.obj", "# est chain b\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_est_chain_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_est_chain_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookBatchResult cooked = cooker.cook_manifest(manifest);
+    expectTrue(cooked.ok, "manifest cook for reconcile estimators ok");
+
+    const fuse::project::AssetCooker::CookUpstreamInvalidationEstimate upstream_estimate =
+        cooker.estimate_upstream_invalidation(manifest, sourceA);
+    expectTrue(upstream_estimate.direct >= 1u, "upstream estimate direct includes changed source");
+    expectTrue(upstream_estimate.downstream >= 1u, "upstream estimate downstream includes dependents");
+    expectTrue(upstream_estimate.total == upstream_estimate.direct + upstream_estimate.downstream,
+               "upstream estimate total matches direct plus downstream");
+    expectTrue(upstream_estimate.total == cooker.count_upstream_invalidation(manifest, sourceA),
+               "upstream estimate total matches count probe");
+
+    const fuse::project::AssetCooker::CookDependencyReconcileEstimate fresh_estimate =
+        cooker.estimate_stale_dependency_reconcile(manifest);
+    expectTrue(fresh_estimate.direct_stale == 0u, "fresh cache direct stale estimate is zero");
+    expectTrue(fresh_estimate.downstream_stale == 0u, "fresh cache downstream stale estimate is zero");
+    expectTrue(fresh_estimate.total == 0u, "fresh cache reconcile estimate total is zero");
+    expectTrue(fresh_estimate.total == cooker.count_stale_dependency_invalidation(manifest),
+               "reconcile estimate total matches count probe");
+
+    writeTempFile(sourceA, "# est chain a revised\n");
+    const fuse::project::AssetCooker::CookDependencyReconcileEstimate stale_estimate =
+        cooker.estimate_stale_dependency_reconcile(manifest);
+    expectTrue(stale_estimate.direct_stale >= 1u, "stale upstream direct estimate is non-zero");
+    expectTrue(stale_estimate.total >= stale_estimate.direct_stale,
+               "stale reconcile total includes direct stale entries");
+    expectTrue(stale_estimate.total == cooker.count_stale_dependency_invalidation(manifest),
+               "stale reconcile estimate total matches count probe");
+
+    const fuse::u32 removed = cooker.invalidate_stale_dependency_hashes(manifest);
+    expectTrue(removed >= stale_estimate.total, "reconcile removes at least estimated entries");
+}
+
 void testCookManifestCacheHitsOnSecondRun() {
     const std::string source = writeTempFile("/tmp/fuse_b79_rehit_mesh.obj", "# rehit mesh\n");
 

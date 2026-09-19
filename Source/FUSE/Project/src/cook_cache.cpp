@@ -1482,10 +1482,26 @@ std::vector<std::string> CookCache::probe_unique_stale_upstream_sources(
         if (std::find(unique_sources.begin(), unique_sources.end(), source_path) == unique_sources.end()) {
             unique_sources.push_back(source_path);
     return unique_sources;
+std::vector<std::string> CookCache::probe_stale_content_sources(
+    const std::vector<std::pair<std::string, u64>>& source_content_by_path) const {
+    if (m_entries.empty() || source_content_by_path.empty()) {
+
+    std::vector<std::string> stale_sources;
+    for (const auto& pair : source_content_by_path) {
+        const std::string& source_path = pair.first;
+        if (!is_valid_cook_cache_path(source_path) || !is_valid_cook_cache_key(pair.second)) {
+            continue;
+        const u64 current_content = pair.second;
+
+        for (const CookCacheEntry& entry : m_entries) {
+            if (entry.source_path == source_path && entry.content_hash != current_content) {
+                stale_sources.push_back(source_path);
+    return stale_sources;
 
 u32 CookCache::count_stale_entries() const {
     if (m_entries.empty()) {
         return 0;
+    }
 
     u32 count = 0;
     for (const CookCacheEntry& entry : m_entries) {
@@ -1530,6 +1546,13 @@ std::vector<std::string> CookCache::probe_stale_content_sources(
 
             if (entry.source_path == source_path && entry.content_hash != pair.second) {
                 stale_sources.push_back(source_path);
+        }
+
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) > 0;
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) > 0;
 
 namespace {
 

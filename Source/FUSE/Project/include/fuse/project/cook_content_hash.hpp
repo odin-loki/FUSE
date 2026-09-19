@@ -322,5 +322,8 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 /// Read-only cache-key fold preflight — mirrors `combine_cook_cache_key` zero guards (B7.9 deepen).
 /// Read-only FNV input preflight — mirrors `is_valid_fnv1a64_input` without hashing (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_manifest_cook_hash(const CookManifestEntry& entry,
+/// Entry source plus upstream dependency readability — does not alter `preflight_manifest_entry_hash` (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_manifest_entry_with_upstream_hash(const CookManifestEntry& entry,
+/// Read-only FNV input guard — mirrors `is_valid_fnv1a64_input` with reject reason (B7.9 deepen).
 
 } // namespace fuse::project

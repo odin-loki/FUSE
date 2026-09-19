@@ -217,7 +217,6 @@ CookUpstreamInvalidationEstimate AssetCooker::estimate_upstream_invalidation(
         return 0;
 CookCacheReconcileEstimate AssetCooker::estimate_cache_reconcile() const {
     return m_cache.estimate_reconcile();
-}
 
 CookCacheInvalidationProbe AssetCooker::estimate_stale_dependency_invalidation(
     const CookManifest& manifest) const {
@@ -274,6 +273,8 @@ u32 AssetCooker::count_stale_dependency_invalidation(const CookManifest& manifes
 
 AssetCooker::CookUpstreamInvalidationEstimate AssetCooker::estimate_upstream_invalidation(
         return estimate;
+    return estimate_stale_dependency_reconcile(manifest).total;
+
 
     CookJobGraph graph;
     graph.build_from_manifest(manifest);
@@ -295,10 +296,6 @@ bool AssetCooker::would_upstream_invalidation(const CookManifest& manifest,
 
 u32 AssetCooker::count_prunable_cache_entries() const {
     return m_cache.count_prunable_entries();
-bool AssetCooker::would_upstream_invalidation(const CookManifest& manifest,
-                                              const std::string& changed_source) const {
-    return count_upstream_invalidation(manifest, changed_source) > 0;
-}
 
 bool AssetCooker::would_stale_dependency_invalidation(const CookManifest& manifest) const {
     return count_stale_dependency_invalidation(manifest) > 0;
@@ -334,6 +331,12 @@ CookCacheStaleUpstreamEstimate AssetCooker::estimate_stale_dependency_reconcilia
 
 AssetCooker::CookStaleDependencyEstimate AssetCooker::estimate_stale_dependency_reconcile(
     CookStaleDependencyEstimate estimate;
+    estimate.direct = m_cache.count_by_source(changed_source);
+            estimate.downstream += m_cache.count_downstream_of(job.output_path, graph.edges(), graph.jobs());
+    estimate.total = estimate.direct + estimate.downstream;
+
+AssetCooker::CookDependencyReconcileEstimate AssetCooker::estimate_stale_dependency_reconcile(
+    CookDependencyReconcileEstimate estimate;
 
     CookJobGraph graph;
     graph.build_from_manifest(manifest);
@@ -543,6 +546,11 @@ bool AssetCooker::would_reconcile_stale_dependencies(const CookManifest& manifes
 bool AssetCooker::would_stale_dependency_invalidation(const CookManifest& manifest) const {
                 break;
     return estimate;
+                estimate.downstream_stale +=
+    estimate.total = estimate.direct_stale + estimate.downstream_stale;
+
+u32 AssetCooker::count_upstream_invalidation(const CookManifest& manifest,
+    return estimate_upstream_invalidation(manifest, changed_source).total;
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {

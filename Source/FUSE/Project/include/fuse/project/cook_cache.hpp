@@ -341,6 +341,10 @@ public:
     /// Source paths whose stored content hash differs from the supplied value (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_stale_content_sources(
         const std::vector<std::pair<std::string, u64>>& source_content_by_path) const;
+    /// Entries that `prune_stale_entries` would remove — excludes structurally invalid records (B7.9 deepen).
+    /// Read-only probes mirroring `invalidate_source` / `invalidate_output` guards (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
     [[nodiscard]] u32 count_prunable_entries() const;
     [[nodiscard]] u32 count_stale_entries() const;
