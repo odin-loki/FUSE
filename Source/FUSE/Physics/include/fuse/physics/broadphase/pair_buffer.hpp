@@ -1828,7 +1828,7 @@ const char* pairBufferWriteSlotRejectReasonName(PairBufferWriteSlotRejectReason 
 /// Human-readable label for pair-buffer writeSlot reject reasons (logging / tests).
 
 /// Diagnose why writeSlot would reject; vacuously succeeds when writeSlot may proceed.
-/// Human-readable label for pair-buffer slot-write reject reasons (logging / tests).
+
 
 /// Diagnose why slot write would reject; vacuously succeeds when write may proceed.
 PairBufferWriteSlotRejectReason pairBufferWriteSlotRejectReason(
@@ -1838,6 +1838,7 @@ PairBufferWriteSlotRejectReason pairBufferWriteSlotRejectReason(
     u32 idxB);
 
 /// Returns true when `pairBufferWriteSlotRejectReason` matches `expected` (B4.2 deepen pass).
+/// Returns true when `pairBufferWriteSlotRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 bool pairBufferWriteSlotRejectsForReason(
     const PairBufferSoA& buffer,
     u32 slot,
@@ -1897,6 +1898,8 @@ bool canSkipPairBufferAcceptPairs(const PairBufferSoA& buffer, u32 additionalCou
 /// Non-mutating bulk-accept predicate — mirrors `preflightPairBufferAcceptPairs` (B4.2 deepen pass).
 bool shouldAcceptPairBufferPairs(const PairBufferSoA& buffer, u32 additionalCount);
 };
+
+
 
 
 
@@ -1979,5 +1982,7 @@ bool canSkipPairBufferAcceptPairs(const PairBufferSoA& buffer, u32 additionalCou
 
 /// Non-mutating accept-pairs predicate — mirrors `preflightPairBufferAcceptPairs` (B4.2 deepen pass).
 bool shouldRunPairBufferAcceptPairs(const PairBufferSoA& buffer, u32 additionalCount);
+
+
 
 } // namespace fuse::physics::broadphase

@@ -3001,7 +3001,6 @@ bool canSkipPairBufferMerge(const PairBufferSoA& buffer, u32 pairCount) {
 
 bool shouldRunPairBufferMerge(const PairBufferSoA& buffer, u32 pairCount) {
     return preflightPairBufferMerge(buffer, pairCount).canMerge();
-}
 
 
 
@@ -3009,17 +3008,11 @@ bool shouldRunPairBufferMerge(const PairBufferSoA& buffer, u32 pairCount) {
 
 
 const char* pairBufferAcceptPairsRejectReasonName(PairBufferAcceptPairsRejectReason reason) {
-    switch (reason) {
     case PairBufferAcceptPairsRejectReason::None:
-        return "None";
     case PairBufferAcceptPairsRejectReason::ExceedsCapacity:
-    return "Unknown";
     case PairBufferAcceptPairsRejectReason::AtCapacity:
-        return "AtCapacity";
-    }
 
 PairBufferAcceptPairsRejectReason pairBufferAcceptPairsRejectReason(
-    const PairBufferSoA& buffer,
     u32 additionalCount) {
     if (additionalCount == 0u) {
         return PairBufferAcceptPairsRejectReason::None;
@@ -3067,17 +3060,18 @@ bool canSkipPairBufferPrepareSlots(u32 slotCount) {
 
 bool shouldRunPairBufferPrepareSlots(u32 slotCount) {
     return preflightPairBufferPrepareSlots(slotCount).canPrepare();
-    }
         return PairBufferAcceptPairsRejectReason::AtCapacity;
-    return PairBufferAcceptPairsRejectReason::None;
 
-    const PairBufferSoA& buffer,
 
-    u32 additionalCount) {
     preflight.atCapacity = preflight.reason == PairBufferAcceptPairsRejectReason::AtCapacity;
-    return preflight;
 
 
 bool shouldRunPairBufferAcceptPairs(const PairBufferSoA& buffer, u32 additionalCount) {
+
+
+
+
+
+
 
 } // namespace fuse::physics::broadphase

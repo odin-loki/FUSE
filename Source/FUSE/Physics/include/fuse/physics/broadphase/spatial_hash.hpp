@@ -341,6 +341,7 @@ FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
 }
 
 /// Non-mutating pair-generation predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen pass).
+/// Non-mutating pair-generation predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
@@ -3195,6 +3196,68 @@ bool canSkipBroadphaseCellPairBuild(u32 totalCellSlots);
 
 /// Non-mutating cell-pair-build predicate — mirrors `preflightBroadphaseCellPairBuild` (B4.2 deepen pass).
 bool shouldRunBroadphaseCellPairBuild(u32 totalCellSlots);
+/// Why shape→cell insertion would early-out (B4.2 deepen follow-up pass).
+enum class ShapeCellInsertRejectReason : u8 {
+    OutOfRangeBody,
+    OccupancyRejected,
+
+/// Human-readable label for shape→cell insert reject reasons (logging / tests).
+const char* shapeCellInsertRejectReasonName(ShapeCellInsertRejectReason reason);
+
+/// Diagnose why shape→cell insertion would skip; vacuously succeeds when insertion may proceed.
+ShapeCellInsertRejectReason shapeCellInsertRejectReason(
+    u32 shapeIndex,
+    const SpatialHashParams& params,
+    bool use2D);
+
+/// Returns true when `shapeCellInsertRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+bool shapeCellInsertRejectsForReason(
+    bool use2D,
+    ShapeCellInsertRejectReason expected);
+
+/// Read-only shape→cell insert diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct ShapeCellInsertPreflight {
+    ShapeCellInsertRejectReason reason = ShapeCellInsertRejectReason::None;
+    bool outOfRangeBody = false;
+    bool occupancyRejected = false;
+
+    bool canInsert() const { return reason == ShapeCellInsertRejectReason::None; }
+
+ShapeCellInsertPreflight preflightShapeCellInsert(
+
+/// Non-mutating shape→cell insert skip predicate — inverse of `canInsert` (B4.2 deepen follow-up pass).
+bool canSkipShapeCellInsert(
+
+/// Non-mutating shape→cell insert predicate — mirrors `preflightShapeCellInsert` (B4.2 deepen follow-up pass).
+bool shouldRunShapeCellInsert(
+
+/// Why per-cell pair generation would early-out (B4.2 deepen follow-up pass).
+enum class BroadphaseCellPairGenRejectReason : u8 {
+    EmptyCells,
+
+/// Human-readable label for cell-pair generation reject reasons (logging / tests).
+const char* broadphaseCellPairGenRejectReasonName(BroadphaseCellPairGenRejectReason reason);
+
+/// Diagnose why cell-pair generation would skip; vacuously succeeds when generation may proceed.
+BroadphaseCellPairGenRejectReason broadphaseCellPairGenRejectReason(u32 totalCellSlots);
+
+/// Returns true when `broadphaseCellPairGenRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+bool broadphaseCellPairGenRejectsForReason(u32 totalCellSlots, BroadphaseCellPairGenRejectReason expected);
+
+/// Read-only cell-pair generation diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct BroadphaseCellPairGenPreflight {
+    BroadphaseCellPairGenRejectReason reason = BroadphaseCellPairGenRejectReason::None;
+    bool emptyCells = false;
+
+    bool canGenerate() const { return reason == BroadphaseCellPairGenRejectReason::None; }
+
+BroadphaseCellPairGenPreflight preflightBroadphaseCellPairGen(u32 totalCellSlots);
+
+/// Non-mutating cell-pair generation skip predicate — inverse of `canGenerate` (B4.2 deepen follow-up pass).
+bool canSkipBroadphaseCellPairGen(u32 totalCellSlots);
+
+/// Non-mutating cell-pair generation predicate — mirrors `preflightBroadphaseCellPairGen` (B4.2 deepen follow-up pass).
+bool shouldRunBroadphaseCellPairGen(u32 totalCellSlots);
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(

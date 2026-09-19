@@ -931,11 +931,44 @@ void writePairsForCellSlots(
                 continue;
             }
             buffer.writeSlot(slot++, uniqueBodies[i], uniqueBodies[j]);
+            if (shouldRunPairBufferWriteSlot(buffer, slot, uniqueBodies[i], uniqueBodies[j])) {
+            } else {
         }
     }
 }
 
 ShapeCellInsertRejectReason shapeCellInsertRejectReasonImpl(
+CellRange3 shapeCellRange3(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params) {
+    const u32 bodyIndex = shapeBodyIndex(shapes, shapeIndex);
+    if (bodyIndex >= bodies.count()) {
+        return {};
+    }
+
+    const vec3 position = bodies.positions[bodyIndex];
+    const f32 cellSize = clampCellSize(params.cellSize);
+    const u32 maxSpan = params.maxCellSpanPerAxis;
+    const CollisionShapeType type = shapeType(shapes, shapeIndex);
+
+    if (type == CollisionShapeType::Box) {
+        const vec3 halfExtents = shapes.params[shapeIndex];
+        return cellRangeFromBox(position, halfExtents, cellSize, maxSpan);
+
+    const f32 radius = shapeRadius(shapes, shapeIndex);
+    return cellRangeFromSphere(position, radius, cellSize, maxSpan);
+
+CellRange2 shapeCellRange2(
+
+
+        const aabb bounds = aabbFromBox(position, halfExtents);
+        return cellRangeFromAabb2D(bounds, cellSize, maxSpan);
+
+    return cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
+
+void populateShapeCells(
     u32 shapeIndex,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
@@ -947,6 +980,7 @@ ShapeCellInsertRejectReason shapeCellInsertRejectReasonImpl(
     bool use2D,
     CellBuckets& cells) {
     if (!shouldRunBroadphaseShapeInsert(shapeIndex, bodies, shapes, params, use2D)) {
+    if (!shouldRunShapeCellInsert(shapeIndex, bodies, shapes, params, use2D)) {
         return;
     }
 
@@ -976,15 +1010,10 @@ ShapeCellInsertRejectReason shapeCellInsertRejectReasonImpl(
         if (!shouldRunCellOccupancyIteration(range, maxOccupancy)) {
         if (canSkipShapeCellInsert(range, maxOccupancy)) {
             return;
-        }
         return ShapeCellInsertRejectReason::None;
 
     CellRange3 range = {};
-    if (type == CollisionShapeType::Box) {
-        const vec3 halfExtents = shapes.params[shapeIndex];
         range = cellRangeFromBox(position, halfExtents, cellSize, maxSpan);
-    } else {
-        const f32 radius = shapeRadius(shapes, shapeIndex);
         range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
 
 ShapeCellInsertPreflight preflightShapeCellInsertImpl(
@@ -1000,15 +1029,6 @@ ShapeCellInsertPreflight preflightShapeCellInsertImpl(
 
     if (preflight.reason != ShapeCellInsertRejectReason::OutOfRangeBody) {
         const u32 bodyIndex = shapeBodyIndex(shapes, shapeIndex);
-        const vec3 position = bodies.positions[bodyIndex];
-        const f32 cellSize = clampCellSize(params.cellSize);
-        const u32 maxSpan = params.maxCellSpanPerAxis;
-        const CollisionShapeType type = shapeType(shapes, shapeIndex);
-        if (use2D) {
-            CellRange2 range = {};
-                const aabb bounds = aabbFromBox(position, halfExtents);
-                range = cellRangeFromAabb2D(bounds, cellSize, maxSpan);
-                range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
             preflight.occupancyCount = estimateCellOccupancyCount(range);
 
     return preflight;
@@ -1021,7 +1041,6 @@ void populateShapeCells(
     if (!insertPreflight.canInsert()) {
 
     const u32 tableSize = clampTableSize(params.tableSize);
-    const u32 occupancyBudget = use2D ? cellOccupancyBudgetFromSpan2D(maxSpan) : cellOccupancyBudgetFromSpan(maxSpan);
 
         if (isEmptyCellRange(range) || exceedsCellOccupancyBudget(range, occupancyBudget)) {
         if (canSkipShapeCellInsertion(range, maxOccupancy)) {
@@ -1042,6 +1061,8 @@ void populateShapeCells(
         if (canSkipCellOccupancyIteration(preflightCellOccupancy(range, maxOccupancy))) {
         if (params.maxCellOccupancyPerShape > 0u) {
             range = shrinkCellRangeToOccupancyBudget(range, params.maxCellOccupancyPerShape);
+
+        const CellRange2 range = shapeCellRange2(shapeIndex, bodies, shapes, params);
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
             for (s32 cx = range.minCell.x; cx <= range.maxCell.x; ++cx) {
                 const u32 key = spatialHash2D(cx, cy, tableSize);
@@ -1079,10 +1100,10 @@ void populateShapeCells(
     if (!shouldRunCellOccupancyIteration(range, maxOccupancy)) {
     if (canSkipShapeCellInsert(range, maxOccupancy)) {
         return;
-    }
     if (isEmptyCellRange(range)) {
     if (params.maxCellOccupancyPerShape > 0u) {
         range = shrinkCellRangeToOccupancyBudget(range, params.maxCellOccupancyPerShape);
+    const CellRange3 range = shapeCellRange3(shapeIndex, bodies, shapes, params);
     for (s32 cz = range.minCell.z; cz <= range.maxCell.z; ++cz) {
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
             for (s32 cx = range.minCell.x; cx <= range.maxCell.x; ++cx) {
@@ -1438,6 +1459,12 @@ const char* broadphaseShapeInsertRejectReasonName(BroadphaseShapeInsertRejectRea
         return "ExceedsOccupancyBudget";
 
 BroadphaseShapeInsertRejectReason broadphaseShapeInsertRejectReason(
+const char* shapeCellInsertRejectReasonName(ShapeCellInsertRejectReason reason) {
+    case ShapeCellInsertRejectReason::None:
+    case ShapeCellInsertRejectReason::OutOfRangeBody:
+    case ShapeCellInsertRejectReason::OccupancyRejected:
+        return "OccupancyRejected";
+
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     const SpatialHashParams& params,
@@ -1510,6 +1537,65 @@ BroadphaseCellSlotPreflight preflightBroadphaseCellSlots(u32 totalCellSlots) {
     return !preflightBroadphaseCellSlots(totalCellSlots).canGenerate();
 
     return preflightBroadphaseCellSlots(totalCellSlots).canGenerate();
+        return ShapeCellInsertRejectReason::OutOfRangeBody;
+    }
+
+    const u32 bodyIndex = shapeBodyIndex(shapes, shapeIndex);
+
+        const CellRange2 range = shapeCellRange2(shapeIndex, bodies, shapes, params);
+            return ShapeCellInsertRejectReason::OccupancyRejected;
+        return ShapeCellInsertRejectReason::None;
+
+    const CellRange3 range = shapeCellRange3(shapeIndex, bodies, shapes, params);
+
+bool shapeCellInsertRejectsForReason(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    ShapeCellInsertRejectReason expected) {
+    return shapeCellInsertRejectReason(shapeIndex, bodies, shapes, params, use2D) == expected;
+
+ShapeCellInsertPreflight preflightShapeCellInsert(
+    bool use2D) {
+    ShapeCellInsertPreflight preflight{};
+    preflight.reason = shapeCellInsertRejectReason(shapeIndex, bodies, shapes, params, use2D);
+    preflight.outOfRangeBody = preflight.reason == ShapeCellInsertRejectReason::OutOfRangeBody;
+    preflight.occupancyRejected = preflight.reason == ShapeCellInsertRejectReason::OccupancyRejected;
+    return preflight;
+
+bool canSkipShapeCellInsert(
+    return !preflightShapeCellInsert(shapeIndex, bodies, shapes, params, use2D).canInsert();
+
+bool shouldRunShapeCellInsert(
+    return preflightShapeCellInsert(shapeIndex, bodies, shapes, params, use2D).canInsert();
+
+const char* broadphaseCellPairGenRejectReasonName(BroadphaseCellPairGenRejectReason reason) {
+    switch (reason) {
+    case BroadphaseCellPairGenRejectReason::None:
+        return "None";
+    case BroadphaseCellPairGenRejectReason::EmptyCells:
+        return "EmptyCells";
+    return "Unknown";
+
+BroadphaseCellPairGenRejectReason broadphaseCellPairGenRejectReason(u32 totalCellSlots) {
+    if (totalCellSlots == 0u) {
+        return BroadphaseCellPairGenRejectReason::EmptyCells;
+    return BroadphaseCellPairGenRejectReason::None;
+
+bool broadphaseCellPairGenRejectsForReason(u32 totalCellSlots, BroadphaseCellPairGenRejectReason expected) {
+    return broadphaseCellPairGenRejectReason(totalCellSlots) == expected;
+
+BroadphaseCellPairGenPreflight preflightBroadphaseCellPairGen(u32 totalCellSlots) {
+    BroadphaseCellPairGenPreflight preflight{};
+    preflight.reason = broadphaseCellPairGenRejectReason(totalCellSlots);
+    preflight.emptyCells = preflight.reason == BroadphaseCellPairGenRejectReason::EmptyCells;
+
+bool canSkipBroadphaseCellPairGen(u32 totalCellSlots) {
+    return !preflightBroadphaseCellPairGen(totalCellSlots).canGenerate();
+
+bool shouldRunBroadphaseCellPairGen(u32 totalCellSlots) {
+    return preflightBroadphaseCellPairGen(totalCellSlots).canGenerate();
 
 RefineBroadphaseRejectReason refineBroadphaseRejectReason(
     const RigidBodySoA& bodies,
