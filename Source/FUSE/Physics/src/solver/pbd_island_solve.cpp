@@ -190,6 +190,34 @@ IslandJobDispatchPreflight preflight_dispatch_island_index(const ContactIslandGr
 bool should_skip_dispatch_island_index(const ContactIslandGraph& graph, u32 islandIndex, f32 dt) {
     const IslandJobDispatchPreflight preflight = preflight_dispatch_island_index(graph, islandIndex, dt);
     return !preflight.can_dispatch();
+IslandSolveStats compute_island_solve_stats_from_jobs(const std::vector<IslandSolveJob>& jobs) {
+    IslandSolveStats stats{};
+    stats.totalIslands = static_cast<u32>(jobs.size());
+    for (const IslandSolveJob& job : jobs) {
+        if (job.empty) {
+            ++stats.emptyCount;
+        } else {
+            ++stats.constrainedCount;
+        }
+        if (should_solve_island(job)) {
+            ++stats.dispatchableCount;
+    return stats;
+
+u32 count_dispatchable_jobs(const std::vector<IslandSolveJob>& jobs) {
+    return compute_island_solve_stats_from_jobs(jobs).dispatchableCount;
+
+bool has_dispatchable_jobs(const std::vector<IslandSolveJob>& jobs) {
+    return count_dispatchable_jobs(jobs) > 0u;
+
+IslandDispatchJobPreflight preflight_island_dispatch_from_jobs(const std::vector<IslandSolveJob>& jobs, f32 dt) {
+    IslandDispatchJobPreflight preflight{};
+    preflight.stats = compute_island_solve_stats_from_jobs(jobs);
+    preflight.invalidDt = !is_valid_island_solve_dt(dt);
+    preflight.skipped = preflight.stats.dispatchableCount == 0u;
+    return preflight;
+
+bool should_skip_island_dispatch_from_jobs(const std::vector<IslandSolveJob>& jobs, f32 dt) {
+    return !preflight_island_dispatch_from_jobs(jobs, dt).can_dispatch();
 }
 
 bool should_skip_island_solve(const ContactIslandGraph& graph) {
@@ -1191,6 +1219,72 @@ IslandContactImpulseWarmStartPreflight preflight_warm_start_contact_impulses_by_
     if (!island_index_valid(graph, islandIndex)) {
     return preflight_warm_start_contact_impulses(graph.island(islandIndex), contacts, dt);
 
+IslandContactImpulseWarmStartStats compute_island_contact_impulse_warm_start_stats(
+    const ContactIslandGraph& graph,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    f32 dt) {
+    IslandContactImpulseWarmStartStats stats{};
+    stats.totalIslands = graph.islandCount();
+    for (u32 islandIndex = 0; islandIndex < stats.totalIslands; ++islandIndex) {
+        const IslandContactImpulseWarmStartPreflight preflight =
+            preflight_warm_start_contact_impulses(graph.island(islandIndex), contacts, dt);
+        if (preflight.skipped) {
+            ++stats.emptyCount;
+        } else if (preflight.can_warm_start()) {
+            ++stats.warmStartableCount;
+        } else {
+            ++stats.zeroImpulseCount;
+        }
+    }
+    return stats;
+}
+
+u32 count_warm_startable_contact_impulse_islands(const ContactIslandGraph& graph,
+                                                 const std::vector<narrowphase::ContactManifold>& contacts,
+                                                 f32 dt) {
+    return compute_island_contact_impulse_warm_start_stats(graph, contacts, dt).warmStartableCount;
+}
+
+bool has_warm_startable_contact_impulse_islands(const ContactIslandGraph& graph,
+                                                const std::vector<narrowphase::ContactManifold>& contacts,
+                                                f32 dt) {
+    return count_warm_startable_contact_impulse_islands(graph, contacts, dt) > 0u;
+}
+
+IslandContactImpulseWarmStartGraphPreflight preflight_warm_start_contact_impulses_graph(
+    const ContactIslandGraph& graph,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    f32 dt) {
+    IslandContactImpulseWarmStartGraphPreflight preflight{};
+    preflight.invalidDt = !is_valid_warm_start_dt(dt);
+    preflight.stats = compute_island_contact_impulse_warm_start_stats(graph, contacts, dt);
+    preflight.skipped = preflight.stats.warmStartableCount == 0u;
+    return preflight;
+}
+
+bool should_skip_warm_start_contact_impulses_graph(const ContactIslandGraph& graph,
+                                                   const std::vector<narrowphase::ContactManifold>& contacts,
+                                                   f32 dt) {
+    return !has_warm_startable_contact_impulse_islands(graph, contacts, dt) || !is_valid_warm_start_dt(dt);
+}
+
+std::vector<u32> collect_warm_startable_contact_impulse_island_indices(
+    const ContactIslandGraph& graph,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    f32 dt) {
+    std::vector<u32> indices;
+    const u32 count = graph.islandCount();
+    indices.reserve(count);
+    for (u32 islandIndex = 0; islandIndex < count; ++islandIndex) {
+        const IslandContactImpulseWarmStartPreflight preflight =
+            preflight_warm_start_contact_impulses(graph.island(islandIndex), contacts, dt);
+        if (preflight.can_warm_start()) {
+            indices.push_back(islandIndex);
+        }
+    }
+    return indices;
+}
+
 bool should_skip_warm_start_contact_impulses(const ContactIslandGraph::Island& island, f32 dt) {
     if (!is_valid_warm_start_dt(dt) || should_skip_warm_start_island(island)) {
         return true;
@@ -1358,6 +1452,116 @@ IslandCombinedWarmStartPreflight preflight_warm_start_island_combined_by_index(
     preflight.impulse = preflight_warm_start_island_contact_impulses(island, contacts, dt);
 }
 
+IslandCombinedWarmStartPreflight preflight_warm_start_combined_island_by_index(
+    const ContactIslandGraph& graph,
+    u32 islandIndex,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    f32 dt,
+    const std::vector<f32>& priorDistanceLambdas,
+    const std::vector<f32>& priorContactLambdas) {
+    IslandCombinedWarmStartPreflight preflight{};
+    if (!island_index_valid(graph, islandIndex)) {
+        preflight.skipped = true;
+        return preflight;
+    }
+    return preflight_warm_start_combined_island(graph.island(islandIndex),
+                                                contacts,
+                                                dt,
+                                                priorDistanceLambdas,
+                                                priorContactLambdas);
+}
+
+bool should_skip_warm_start_combined_island_index(const ContactIslandGraph& graph,
+                                                  u32 islandIndex,
+                                                  f32 dt) {
+    if (!island_index_valid(graph, islandIndex) || !is_valid_warm_start_dt(dt)) {
+        return true;
+    }
+    return should_skip_warm_start_island(graph.island(islandIndex));
+}
+
+IslandCombinedWarmStartStats compute_island_combined_warm_start_stats(
+    const ContactIslandGraph& graph,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    f32 dt,
+    const std::vector<f32>& priorDistanceLambdas,
+    const std::vector<f32>& priorContactLambdas) {
+    IslandCombinedWarmStartStats stats{};
+    stats.totalIslands = graph.islandCount();
+    for (u32 islandIndex = 0; islandIndex < stats.totalIslands; ++islandIndex) {
+        const IslandCombinedWarmStartPreflight preflight = preflight_warm_start_combined_island(
+            graph.island(islandIndex), contacts, dt, priorDistanceLambdas, priorContactLambdas);
+        if (preflight.skipped) {
+            ++stats.emptyCount;
+        } else if (preflight.can_warm_start()) {
+            ++stats.warmStartableCount;
+        } else {
+            ++stats.noPriorDataCount;
+        }
+    }
+    return stats;
+}
+
+u32 count_warm_startable_combined_islands(const ContactIslandGraph& graph,
+                                          const std::vector<narrowphase::ContactManifold>& contacts,
+                                          f32 dt,
+                                          const std::vector<f32>& priorDistanceLambdas,
+                                          const std::vector<f32>& priorContactLambdas) {
+    return compute_island_combined_warm_start_stats(graph, contacts, dt, priorDistanceLambdas, priorContactLambdas)
+        .warmStartableCount;
+}
+
+bool has_warm_startable_combined_islands(const ContactIslandGraph& graph,
+                                         const std::vector<narrowphase::ContactManifold>& contacts,
+                                         f32 dt,
+                                         const std::vector<f32>& priorDistanceLambdas,
+                                         const std::vector<f32>& priorContactLambdas) {
+    return count_warm_startable_combined_islands(
+               graph, contacts, dt, priorDistanceLambdas, priorContactLambdas) > 0u;
+}
+
+IslandCombinedWarmStartGraphPreflight preflight_warm_start_combined_graph(
+    const ContactIslandGraph& graph,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    f32 dt,
+    const std::vector<f32>& priorDistanceLambdas,
+    const std::vector<f32>& priorContactLambdas) {
+    IslandCombinedWarmStartGraphPreflight preflight{};
+    preflight.invalidDt = !is_valid_warm_start_dt(dt);
+    preflight.stats =
+        compute_island_combined_warm_start_stats(graph, contacts, dt, priorDistanceLambdas, priorContactLambdas);
+    preflight.skipped = preflight.stats.warmStartableCount == 0u;
+    return preflight;
+}
+
+bool should_skip_warm_start_combined_graph(const ContactIslandGraph& graph,
+                                           const std::vector<narrowphase::ContactManifold>& contacts,
+                                           f32 dt,
+                                           const std::vector<f32>& priorDistanceLambdas,
+                                           const std::vector<f32>& priorContactLambdas) {
+    return !preflight_warm_start_combined_graph(graph, contacts, dt, priorDistanceLambdas, priorContactLambdas)
+        .can_warm_start();
+}
+
+std::vector<u32> collect_warm_startable_combined_island_indices(
+    const ContactIslandGraph& graph,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    f32 dt,
+    const std::vector<f32>& priorDistanceLambdas,
+    const std::vector<f32>& priorContactLambdas) {
+    std::vector<u32> indices;
+    const u32 count = graph.islandCount();
+    indices.reserve(count);
+    for (u32 islandIndex = 0; islandIndex < count; ++islandIndex) {
+        const IslandCombinedWarmStartPreflight preflight = preflight_warm_start_combined_island(
+            graph.island(islandIndex), contacts, dt, priorDistanceLambdas, priorContactLambdas);
+        if (preflight.can_warm_start()) {
+            indices.push_back(islandIndex);
+        }
+    }
+    return indices;
+}
+
 bool warm_start_island_combined_guarded(SolverWorkBuffers& workBuffers,
                                         const ContactIslandGraph::Island& island,
                                         const std::vector<narrowphase::ContactManifold>& contacts,
@@ -1392,6 +1596,73 @@ bool warm_start_island_combined_guarded(SolverWorkBuffers& workBuffers,
     }
     return true;
 }
+
+void warm_start_island_lambdas(SolverWorkBuffers& workBuffers,
+                               const ContactIslandGraph::Island& island,
+                               const std::vector<f32>& priorDistanceLambdas,
+                               const std::vector<f32>& priorContactLambdas) {
+    for (u32 distanceIndex : island.distanceIndices) {
+        if (distanceIndex < priorDistanceLambdas.size()) {
+            workBuffers.seedDistanceLambda(distanceIndex, priorDistanceLambdas[distanceIndex]);
+        }
+    for (u32 contactIndex : island.contactIndices) {
+        if (contactIndex >= priorContactLambdas.size()) {
+            continue;
+        const f32 prior = priorContactLambdas[contactIndex];
+        if (prior == 0.f) {
+        f32& lambda = workBuffers.contactLambda(contactIndex);
+        if (lambda == 0.f) {
+            lambda = prior;
+
+void warm_start_island_contact_impulses(SolverWorkBuffers& workBuffers,
+                                        const std::vector<narrowphase::ContactManifold>& contacts,
+                                        f32 dt) {
+        if (contactIndex >= contacts.size()) {
+        workBuffers.seedContactLambdaFromImpulse(contactIndex,
+                                                 contacts[contactIndex].warmNormalImpulse,
+                                                 dt);
+
+bool warm_start_island_contact_impulses_guarded(SolverWorkBuffers& workBuffers,
+    const IslandContactImpulseWarmStartPreflight preflight =
+        preflight_warm_start_contact_impulses(island, contacts, dt);
+    if (!preflight.can_warm_start()) {
+        return false;
+    warm_start_island_contact_impulses(workBuffers, island, contacts, dt);
+    return true;
+
+IslandWarmStartResult warm_start_island_contact_impulses_result(SolverWorkBuffers& workBuffers,
+                                                                const ContactIslandGraph& graph,
+                                                                u32 islandIndex,
+    IslandWarmStartResult result{};
+    result.islandIndex = islandIndex;
+    if (!island_index_valid(graph, islandIndex)) {
+        result.skipped = true;
+        return result;
+
+    const ContactIslandGraph::Island& island = graph.island(islandIndex);
+
+    result.warmed = true;
+
+bool warm_start_island_contact_impulses_by_index_guarded(SolverWorkBuffers& workBuffers,
+    return warm_start_island_contact_impulses_result(workBuffers, graph, islandIndex, contacts, dt).warmed;
+
+u32 warm_start_all_islands_contact_impulses_guarded(SolverWorkBuffers& workBuffers,
+    return warm_start_all_islands_contact_impulses_result(workBuffers, graph, contacts, dt).warmedCount;
+
+IslandBatchWarmStartResult warm_start_all_islands_contact_impulses_result(
+    SolverWorkBuffers& workBuffers,
+    IslandBatchWarmStartResult result{};
+    const IslandContactImpulseWarmStartGraphPreflight preflight =
+        preflight_warm_start_contact_impulses_graph(graph, contacts, dt);
+    result.warmStartableCount = preflight.stats.warmStartableCount;
+
+    for (u32 islandIndex : collect_warm_startable_contact_impulse_island_indices(graph, contacts, dt)) {
+        const IslandWarmStartResult warmResult =
+            warm_start_island_contact_impulses_result(workBuffers, graph, islandIndex, contacts, dt);
+        if (warmResult.warmed) {
+            ++result.warmedCount;
+        } else {
+            ++result.skippedCount;
 
 IslandWarmStartResult warm_start_island_combined_result(SolverWorkBuffers& workBuffers,
                                                         const ContactIslandGraph& graph,
@@ -1433,51 +1704,30 @@ void warm_start_island_lambdas(SolverWorkBuffers& workBuffers,
     for (u32 distanceIndex : island.distanceIndices) {
         if (distanceIndex < priorDistanceLambdas.size()) {
             workBuffers.seedDistanceLambda(distanceIndex, priorDistanceLambdas[distanceIndex]);
-        }
-    }
     for (u32 contactIndex : island.contactIndices) {
         if (contactIndex >= priorContactLambdas.size()) {
             continue;
-        }
         const f32 prior = priorContactLambdas[contactIndex];
         if (prior == 0.f) {
-            continue;
-        }
         f32& lambda = workBuffers.contactLambda(contactIndex);
         if (lambda == 0.f) {
             lambda = prior;
-        }
-    }
-}
 
 void warm_start_island_contact_impulses(SolverWorkBuffers& workBuffers,
-                                        const ContactIslandGraph::Island& island,
                                         const std::vector<narrowphase::ContactManifold>& contacts,
                                         f32 dt) {
-    if (!should_warm_start_island(island)) {
-        return;
-    }
 
-    for (u32 contactIndex : island.contactIndices) {
         if (contactIndex >= contacts.size()) {
-            continue;
-        }
         workBuffers.seedContactLambdaFromImpulse(contactIndex,
                                                  contacts[contactIndex].warmNormalImpulse,
                                                  dt);
-    }
-}
 
 bool warm_start_island_contact_impulses_guarded(SolverWorkBuffers& workBuffers,
-                                                const ContactIslandGraph::Island& island,
-                                                const std::vector<narrowphase::ContactManifold>& contacts,
-                                                f32 dt) {
     const IslandContactImpulseWarmStartPreflight preflight =
         preflight_warm_start_contact_impulses(island, contacts, dt);
         preflight_contact_impulse_warm_start_island(island, contacts);
     if (!preflight.can_warm_start()) {
         return false;
-    }
     warm_start_island_contact_impulses(workBuffers, island, contacts, dt);
     return true;
 
@@ -1507,7 +1757,6 @@ IslandBatchWarmStartResult warm_start_all_islands_contact_impulses_result(
 
     for (u32 islandIndex = 0; islandIndex < graph.islandCount(); ++islandIndex) {
             preflight_warm_start_contact_impulses(graph.island(islandIndex), contacts, dt);
-            continue;
         ++result.warmStartableCount;
         const IslandWarmStartResult warmResult =
             warm_start_island_contact_impulses_result(workBuffers, graph, islandIndex, contacts, dt);
@@ -1520,8 +1769,6 @@ IslandBatchWarmStartResult warm_start_all_islands_contact_impulses_result(
 
 IslandWarmStartResult warm_start_island_combined_result(SolverWorkBuffers& workBuffers,
                                                         f32 dt,
-                                                        const std::vector<f32>& priorDistanceLambdas,
-                                                        const std::vector<f32>& priorContactLambdas) {
 
     if (!warm_start_island_combined_guarded(workBuffers,
                                             island,
@@ -2001,14 +2248,11 @@ bool preflight_warm_start_island(const ContactIslandGraph::Island& island,
                                  IslandWarmStartPreflight& out) {
     out = {};
 
-    for (u32 distanceIndex : island.distanceIndices) {
         if (distanceIndex >= priorDistanceLambdas.size()) {
         ++out.distanceSlotCount;
         if (priorDistanceLambdas[distanceIndex] != 0.f) {
             out.hasDistanceLambdas = true;
 
-    for (u32 contactIndex : island.contactIndices) {
-        if (contactIndex >= priorContactLambdas.size()) {
         ++out.contactSlotCount;
         if (priorContactLambdas[contactIndex] != 0.f) {
             out.hasContactLambdas = true;
@@ -2020,7 +2264,6 @@ bool preflight_warm_start_island(const ContactIslandGraph::Island& island,
 void warm_start_island_lambdas_guarded(SolverWorkBuffers& workBuffers,
                                        const IslandWarmStartPreflight& preflight) {
     if (!preflight.hasDistanceLambdas && !preflight.hasContactLambdas) {
-        return;
     warm_start_island_lambdas(workBuffers, island, priorDistanceLambdas, priorContactLambdas);
 
 void warm_start_island_contact_impulses_guarded(SolverWorkBuffers& workBuffers,
@@ -2035,156 +2278,62 @@ bool preflight_and_warm_start_island(SolverWorkBuffers& workBuffers,
     warm_start_island_lambdas_guarded(workBuffers,
                                       preflight);
     warm_start_island_contact_impulses_guarded(workBuffers, island, contacts, dt, preflight);
-}
 
 IslandWarmStartStats compute_island_warm_start_stats(const ContactIslandGraph& graph,
-                                                     const std::vector<f32>& priorDistanceLambdas,
-                                                     const std::vector<f32>& priorContactLambdas) {
     IslandWarmStartStats stats{};
-    stats.totalIslands = graph.islandCount();
-    for (u32 islandIndex = 0; islandIndex < stats.totalIslands; ++islandIndex) {
         const IslandWarmStartPreflight preflight =
             preflight_warm_start_island(graph.island(islandIndex), priorDistanceLambdas, priorContactLambdas);
-        if (preflight.skipped) {
             ++stats.skippedCount;
         } else if (preflight.can_warm_start()) {
             ++stats.warmStartableCount;
-        }
-    }
-    return stats;
-}
 
 bool should_skip_frame_warm_start(const ContactIslandGraph& graph,
-                                  const std::vector<f32>& priorDistanceLambdas,
-                                  const std::vector<f32>& priorContactLambdas) {
     return compute_island_warm_start_stats(graph, priorDistanceLambdas, priorContactLambdas)
                .warmStartableCount == 0u;
-}
 
 std::vector<u32> collect_warm_startable_island_indices(const ContactIslandGraph& graph,
-                                                       const std::vector<f32>& priorDistanceLambdas,
-                                                       const std::vector<f32>& priorContactLambdas) {
-    std::vector<u32> indices;
-    const u32 count = graph.islandCount();
-    indices.reserve(count);
-    for (u32 islandIndex = 0; islandIndex < count; ++islandIndex) {
-        const IslandWarmStartPreflight preflight =
-            preflight_warm_start_island(graph.island(islandIndex), priorDistanceLambdas, priorContactLambdas);
         if (preflight.can_warm_start()) {
-            indices.push_back(islandIndex);
-        }
-    }
-    return indices;
-}
 
 u32 warm_start_all_islands_guarded(SolverWorkBuffers& workBuffers,
-                                   const ContactIslandGraph& graph,
-                                   const std::vector<f32>& priorDistanceLambdas,
-                                   const std::vector<f32>& priorContactLambdas) {
     if (should_skip_frame_warm_start(graph, priorDistanceLambdas, priorContactLambdas)) {
         return 0u;
-    }
 
     u32 seededCount = 0u;
     for (u32 islandIndex : collect_warm_startable_island_indices(graph,
-                                                                 priorDistanceLambdas,
-                                                                 priorContactLambdas)) {
         if (warm_start_island_lambdas_guarded(workBuffers,
                                               graph.island(islandIndex),
-                                              priorDistanceLambdas,
-                                              priorContactLambdas)) {
             ++seededCount;
-        }
-    }
     return seededCount;
-}
 
-IslandWarmStartResult warm_start_island_contact_impulses_result(SolverWorkBuffers& workBuffers,
-                                                                const ContactIslandGraph& graph,
-                                                                u32 islandIndex,
-                                                                const std::vector<narrowphase::ContactManifold>& contacts,
-                                                                f32 dt) {
-    IslandWarmStartResult result{};
-    result.islandIndex = islandIndex;
-    if (!island_index_valid(graph, islandIndex)) {
-        result.skipped = true;
-        return result;
-    }
 
-    const ContactIslandGraph::Island& island = graph.island(islandIndex);
     if (should_skip_warm_start_island(island)) {
-        result.skipped = true;
-        return result;
-    }
 
-    warm_start_island_contact_impulses(workBuffers, island, contacts, dt);
-    result.warmed = true;
-    return result;
-}
 
 IslandWarmStartResult warm_start_island_contact_impulses_result(
-    SolverWorkBuffers& workBuffers,
-    const ContactIslandGraph& graph,
-    u32 islandIndex,
-    const std::vector<narrowphase::ContactManifold>& contacts,
-    f32 dt) {
-    IslandWarmStartResult result{};
-    result.islandIndex = islandIndex;
-    if (!island_index_valid(graph, islandIndex)) {
-        result.skipped = true;
-        return result;
-    }
 
-    const ContactIslandGraph::Island& island = graph.island(islandIndex);
-    const IslandContactImpulseWarmStartPreflight preflight =
-        preflight_contact_impulse_warm_start_island(island, contacts);
-    if (!preflight.can_warm_start()) {
-        result.skipped = true;
-        return result;
-    }
 
-    warm_start_island_contact_impulses(workBuffers, island, contacts, dt);
-    result.warmed = true;
-    return result;
-}
 
-bool warm_start_island_contact_impulses_by_index_guarded(SolverWorkBuffers& workBuffers,
-                                                         const ContactIslandGraph& graph,
-                                                         u32 islandIndex,
-                                                         const std::vector<narrowphase::ContactManifold>& contacts,
-                                                         f32 dt) {
-    return warm_start_island_contact_impulses_result(workBuffers, graph, islandIndex, contacts, dt).warmed;
-}
 
 std::vector<u32> collect_contact_impulse_warm_startable_island_indices(
-    const ContactIslandGraph& graph,
     const std::vector<narrowphase::ContactManifold>& contacts) {
-    std::vector<u32> indices;
-    const u32 count = graph.islandCount();
-    indices.reserve(count);
-    for (u32 islandIndex = 0; islandIndex < count; ++islandIndex) {
-        const IslandContactImpulseWarmStartPreflight preflight =
             preflight_contact_impulse_warm_start_island(graph.island(islandIndex), contacts);
-        if (preflight.can_warm_start()) {
-            indices.push_back(islandIndex);
-        }
-    }
-    return indices;
-}
 
 u32 warm_start_all_contact_impulses_guarded(SolverWorkBuffers& workBuffers,
-                                            const ContactIslandGraph& graph,
-                                            const std::vector<narrowphase::ContactManifold>& contacts,
-                                            f32 dt) {
     u32 warmedCount = 0u;
     for (u32 islandIndex : collect_contact_impulse_warm_startable_island_indices(graph, contacts)) {
         const IslandWarmStartResult result =
-            warm_start_island_contact_impulses_result(workBuffers, graph, islandIndex, contacts, dt);
         if (result.warmed) {
             ++warmedCount;
+
+    const IslandCombinedWarmStartGraphPreflight preflight =
+        preflight_warm_start_combined_graph(graph, contacts, dt, priorDistanceLambdas, priorContactLambdas);
+    result.warmStartableCount = preflight.stats.warmStartableCount;
+
+    for (u32 islandIndex :
+         collect_warm_startable_combined_island_indices(graph, contacts, dt, priorDistanceLambdas, priorContactLambdas)) {
         }
     }
-    return warmedCount;
+    return result;
 }
 
 IslandWarmStartResult warm_start_island_contact_impulses_result(
