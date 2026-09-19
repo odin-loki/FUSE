@@ -1485,3 +1485,6 @@ ShapeCellInsertRejectReason shapeCellInsertRejectReason(u32 bodyIndex, u32 bodyC
 ShapeCellInsertRejectReason shapeCellInsertRejectReason(u32 bodyIndex, u32 bodyCount, const CellRange2& range, u32 maxOccupancy);
 ShapeCellInsertPreflight preflightShapeCellInsert(u32 bodyIndex, u32 bodyCount, const CellRange3& range, u32 maxOccupancy);
 ShapeCellInsertPreflight preflightShapeCellInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& range, u32 maxOccupancy);
+
+// --- deepen additive from b4-broadphase-deepen-guards-7a6f ---
+CellShapeInsertPreflight preflightShapeCellInsert(

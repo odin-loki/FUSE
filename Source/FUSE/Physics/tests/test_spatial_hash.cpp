@@ -3665,3 +3665,23 @@ void testCellCapacityInsertRejectReasonGuards() {
     expectEq(multiPreflight.uniqueBodyCount, 3u, "multi occupant reports three unique bodies");
     expectEq(multiPreflight.estimatedPairCount, 3u, "three unique bodies estimate three pairs");
 void testPairBufferCanSkipCompactAndClampGuard() {
+
+// --- deepen additive from b4-broadphase-deepen-guards-7a6f ---
+    expectTrue(fuse::physics::broadphase::pairBufferWriteRejectsForReason(
+                   buffer, 0u, 0u, 1u, fuse::physics::broadphase::PairBufferWriteRejectReason::None),
+        fuse::physics::broadphase::preflightPairBufferWrite(buffer, 0u, 2u, 3u);
+                   buffer, 0u, fuse::physics::broadphase::PairBufferInvalidateRejectReason::None),
+                 fuse::physics::broadphase::pairBufferInvalidateRejectReason(buffer, 99u)),
+    expectTrue(std::strcmp(fuse::physics::broadphase::pairBufferInvalidateRejectReasonName(
+        fuse::physics::broadphase::preflightPairBufferInvalidate(buffer, 2u);
+                   0u, fuse::physics::broadphase::CellPairGenRejectReason::EmptyOccupants),
+void testCellShapeInsertRejectReasonGuards() {
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::cellShapeInsertRejectReason(
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellShapeInsertRejectReason::OutOfRangeBody),
+    expectTrue(std::strcmp(fuse::physics::broadphase::cellShapeInsertRejectReasonName(
+                               fuse::physics::broadphase::CellShapeInsertRejectReason::OccupancyRejected),
+    const fuse::physics::broadphase::CellShapeInsertPreflight validPreflight =
+    const fuse::physics::broadphase::CellShapeInsertPreflight budgetPreflight =
+    expectTrue(!budgetPreflight.canInsert(), "oversized shape insert preflight rejects occupancy");
+    expectTrue(budgetPreflight.occupancyRejected, "oversized shape insert preflight marks occupancyRejected");
+    testCellShapeInsertRejectReasonGuards();
