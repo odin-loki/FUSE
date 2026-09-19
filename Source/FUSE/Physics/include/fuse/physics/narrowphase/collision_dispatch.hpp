@@ -323,9 +323,37 @@ bool should_skip_narrowphase_buffer_pass(const ContactBufferSoA& buffer);
 
 /// Returns true when beyond batch preflight reports no dispatchable pairs (B4.6 deepen pass).
 bool can_skip_narrowphase_beyond(
+/// Returns true when buffer dispatch may be skipped (empty pair list) (B4.6 deepen pass).
+bool can_skip_narrowphase_buffer_dispatch(
+    const std::vector<broadphase::CandidatePair>& pairs);
+
+/// Returns true when deepen buffer dispatch may be skipped (empty or all pairs rejected) (B4.6 deepen pass).
+bool can_skip_narrowphase_buffer_dispatch_deepen(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
+
+/// Const preflight for narrowphase buffer dispatch (B4.6 deepen pass).
+struct NarrowphaseBufferDispatchPreflight {
+    bool skipped = false;
+    bool emptyPairs = false;
+    bool allRejected = false;
+    u32 pairCount = 0u;
+    u32 dispatchableCount = 0u;
+
+    bool can_dispatch() const { return !skipped; }
+};
+
+/// Populate buffer-dispatch preflight without running shape dispatch (B4.6 deepen pass).
+NarrowphaseBufferDispatchPreflight preflight_narrowphase_buffer_dispatch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    bool useDeepenReject = false);
+
+/// Job-safe narrowphase with deepen pair-reject guards; valid pairs unchanged (B4.6 deepen pass).
+void runNarrowphaseIntoBufferDeepen(
+    ContactBufferSoA& buffer);
 
 /// CPU stub of the CUDA narrow-phase dispatch (B4.3).
 std::vector<ContactManifold> runNarrowphase(

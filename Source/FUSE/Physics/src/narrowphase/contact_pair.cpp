@@ -695,6 +695,7 @@ ContactManifold detect_contacts_pair_deepen(
         return invalidContactManifold();
     }
     return detect_contacts_pair(pair, bodies, shapes);
+    return dispatchShapePair(pair, bodies, shapes);
 }
 
 bool can_finalize_contact_manifold(const ContactManifold& manifold) {
@@ -749,6 +750,10 @@ bool generate_contact_manifold_if_needed(ContactManifold& manifold) {
         return false;
     }
     return generate_contact_manifold(manifold);
+}
+
+bool generate_contact_manifold_deepen(ContactManifold& manifold) {
+    return finalize_contact_manifold_with_preflight(manifold);
 }
 
 void compute_friction_tangents(ContactManifold& manifold) {
