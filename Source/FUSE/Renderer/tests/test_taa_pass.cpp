@@ -4794,3 +4794,7 @@ void testTaaPassTryClassifyGuardWrappers() {
 
 // --- deepen additive from deepen-b59-taa-pass-guards-5dd5 ---
                "pass tryPreflightResolveBlendWeights passes before init warmup");
+
+// --- deepen additive from deepen-b59-taa-pass-try-classify-99bc ---
+               "pass tryPreflightJitterSync passes when aligned");
+               "pass tryPreflightJitterSync reject reason is None when aligned");
