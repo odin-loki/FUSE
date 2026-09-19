@@ -4264,3 +4264,40 @@ void testChromeTraceExportPreflightNameAndOrphanFlags() {
     expectTrue(orphanPreflight.canExportWithEvents(),
     testPreflightBeginEndAsyncFlowGuard();
     testChromeTraceExportPreflightNameAndOrphanFlags();
+
+// --- deepen additive from deepen-b16-profiler-guards-590c ---
+void testWouldSkipNameAndFlowLookupGuards() {
+    expectTrue(fuse::profiler::wouldSkipNameLookup(nullptr), "null name skips lookup");
+    expectTrue(fuse::profiler::wouldSkipNameLookup(""), "empty name skips lookup");
+    expectTrue(fuse::profiler::wouldSkipNameLookup("missing"), "missing name skips lookup on empty buffer");
+    expectTrue(fuse::profiler::wouldSkipFlowIdLookup(0u), "zero flow id skips lookup");
+    expectTrue(fuse::profiler::wouldSkipFlowIdLookup(42u), "non-zero flow id skips lookup on empty buffer");
+    expectTrue(!fuse::profiler::wouldSkipNameLookup("lookup_scope"),
+    expectTrue(!fuse::profiler::wouldSkipNameLookup("missing"),
+    expectTrue(!fuse::profiler::wouldSkipFlowIdLookup(flowId),
+void testTryEventLookupByNameAndFlowGuards() {
+    expectTrue(!fuse::profiler::tryFirstEventByName("", outEvent),
+               "tryFirstEventByName false for empty name");
+    expectTrue(outEvent.name == nullptr, "tryFirstEventByName clears output for empty name");
+    expectTrue(!fuse::profiler::tryLastFlowEvent(0u, outEvent),
+               "tryLastFlowEvent false for zero flow id");
+    expectTrue(fuse::profiler::tryFirstEventByName("try_lookup_scope", outEvent),
+               "tryFirstEventByName succeeds for scope begin");
+               "tryFirstEventByName copies scope begin phase");
+    expectTrue(fuse::profiler::tryLastEventByName("try_lookup_counter", outEvent),
+               "tryLastEventByName succeeds for counter sample");
+               "tryLastEventByName copies counter phase");
+               "tryFirstFlowEvent succeeds for flow start");
+               "tryLastFlowEvent succeeds for flow finish");
+void testRecordedNestingConsistencyGuards() {
+void testChromeTraceExportPreflightRecordedNesting() {
+    const fuse::u32 preflightBeginFlowId = fuse::profiler::nextFlowId();
+    const fuse::u32 preflightOrphanFlowId = fuse::profiler::nextFlowId();
+    fuse::profiler::beginAsyncFlow("preflight_mismatched_begin", preflightBeginFlowId);
+    fuse::profiler::endAsyncFlow("preflight_mismatched_orphan", preflightOrphanFlowId);
+    expectTrue(!orphanPreflight.recordedFlowPairingConsistent,
+    expectTrue(orphanPreflight.hasInconsistentRecordedNesting(),
+    expectTrue(orphanPreflight.orphanFlowEndCount == 1u,
+    expectTrue(!orphanPreflight.canExportSafely(),
+    expectTrue(fuse::profiler::tryFirstEventByName("valid_name_lookup", counterEvent),
+    testChromeTraceExportPreflightRecordedNesting();
