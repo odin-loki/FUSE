@@ -36,6 +36,25 @@ bool should_skip_hrtf_convolution(const HrtfIrStub& ir);
 /// True when IR samples are non-null but length is zero (malformed stub).
 bool is_nonnull_zero_length_hrtf_ir(const HrtfIrStub& ir);
 
+/// Read-only empty-IR diagnostics — no mutation (B7.2 deepen).
+struct HrtfIrPreflight {
+    bool null_samples = false;
+    bool zero_length = false;
+    /// Non-null samples with zero length — malformed stub.
+    bool malformed_stub = false;
+    /// True when IR samples are non-null and length > 0.
+    bool has_valid_ir = false;
+
+    [[nodiscard]] bool can_convolve() const { return has_valid_ir; }
+    [[nodiscard]] bool should_skip_convolution() const { return !can_convolve(); }
+};
+
+/// Preflight empty-IR guard without mutating the stub (B7.2 deepen).
+HrtfIrPreflight preflight_hrtf_ir(const HrtfIrStub& ir);
+
+/// Convenience guard — `preflight_hrtf_ir(ir).can_convolve()` (B7.2 deepen).
+bool can_convolve_hrtf_ir(const HrtfIrStub& ir);
+
 /// HRTF pan routing — empty IR uses ILD/ITD stub; convolution deferred until IR wired.
 enum class HrtfPanPath {
     Bypass,
@@ -48,6 +67,28 @@ HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const
 
 /// Select pan path when no IR is wired (ILD/ITD stub or bypass).
 HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener);
+
+/// Read-only pan-path diagnostics — no mutation (B7.2 deepen).
+struct HrtfPanPathPreflight {
+    bool hrtf_disabled = false;
+    bool co_located = false;
+    bool empty_ir = false;
+    HrtfPanPath path = HrtfPanPath::Bypass;
+
+    [[nodiscard]] bool can_apply_spatial_pan() const { return path != HrtfPanPath::Bypass; }
+    [[nodiscard]] bool should_skip_spatial_pan() const { return !can_apply_spatial_pan(); }
+    [[nodiscard]] bool uses_convolution() const { return path == HrtfPanPath::Convolution; }
+    [[nodiscard]] bool uses_ild_itd_stub() const { return path == HrtfPanPath::IldItdStub; }
+};
+
+/// Preflight pan-path resolution without computing gains (B7.2 deepen).
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
+                                             const Vec3& rel_listener);
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener);
+
+/// Convenience guard — `preflight_hrtf_pan_path(...).can_apply_spatial_pan()` (B7.2 deepen).
+bool can_apply_hrtf_spatial_pan(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener);
+bool can_apply_hrtf_spatial_pan(bool hrtf_enabled, const Vec3& rel_listener);
 
 /// True when a resolved pan path bypasses HRTF (disabled or co-located).
 bool is_hrtf_pan_bypassed(HrtfPanPath path);
@@ -217,6 +258,28 @@ void apply_hrtf_spatial_blend_guarded(BinauralPanGains& gains, float blend);
 struct HrtfAttenuationCoupling {
     float occlusion_weight = 0.5f;
 };
+
+/// Read-only attenuation-coupling diagnostics — no mutation (B7.2 deepen).
+struct HrtfAttenuationCouplingPreflight {
+    bool bypass_path = false;
+    bool unity_attenuation = false;
+    bool would_narrow = false;
+    float spatial_blend = 1.f;
+
+    [[nodiscard]] bool can_apply_coupling() const { return !bypass_path && !unity_attenuation; }
+    [[nodiscard]] bool should_skip_coupling() const { return !can_apply_coupling(); }
+};
+
+/// Preflight attenuation coupling without mutating pan gains (B7.2 deepen).
+HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling(
+    HrtfPanPath path, float distance_attenuation, float occlusion_gain,
+    const HrtfAttenuationCoupling& coupling = {}, const BinauralPanParams& params = {});
+
+/// Convenience guard — `preflight_hrtf_attenuation_coupling(...).can_apply_coupling()` (B7.2 deepen).
+bool can_apply_hrtf_attenuation_coupling(HrtfPanPath path, float distance_attenuation,
+                                         float occlusion_gain,
+                                         const HrtfAttenuationCoupling& coupling = {},
+                                         const BinauralPanParams& params = {});
 
 /// Clamp distance or occlusion attenuation scalars into [0, 1].
 float clamp_hrtf_attenuation(float attenuation);
