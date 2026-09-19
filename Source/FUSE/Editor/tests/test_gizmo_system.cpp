@@ -4330,3 +4330,7 @@ void testNonFiniteUpdateDragRejectReasonGuards() {
     testNonFinitePickRejectReasonGuards();
     testNonFiniteBeginDragRejectReasonGuards();
     testNonFiniteUpdateDragRejectReasonGuards();
+
+// --- deepen additive from deepen-gizmo-preflight-guards-dd74 ---
+    expectTrue(!gizmo.preflightSnapDragReady(std::numeric_limits<fuse::f32>::infinity(), &reason),
+               "gizmo preflightSnapDragReady rejects non-finite delta");
