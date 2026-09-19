@@ -1101,6 +1101,148 @@ void testCookCacheStaleClassificationGuards() {
     expectTrue(fuse::project::is_stale_cook_cache_entry(fresh), "unchanged record is stale after source edit");
 }
 
+void testCookCacheKeyPreflight() {
+    fuse::project::CookCacheKeyRejectReason reason = fuse::project::CookCacheKeyRejectReason::None;
+
+    expectTrue(!fuse::project::preflight_cook_cache_key(0, 0, &reason),
+               "zero source fails cache key preflight");
+    expectTrue(reason == fuse::project::CookCacheKeyRejectReason::ZeroSource,
+               "zero source reports zero_source reject reason");
+
+    expectTrue(fuse::project::preflight_cook_cache_key(99u, 0, &reason),
+               "valid source-only fold passes preflight");
+    expectTrue(reason == fuse::project::CookCacheKeyRejectReason::None,
+               "valid fold reports none reject reason");
+
+    expectTrue(fuse::project::preflight_cook_cache_key(99u, 42u, &reason),
+               "valid combined fold passes preflight");
+    expectTrue(std::string(fuse::project::cookCacheKeyRejectReasonLabel(
+                   fuse::project::CookCacheKeyRejectReason::ZeroSource)) == "zero_source",
+               "cache key reject reason label is stable");
+}
+
+void testCookHashPreflight() {
+    fuse::project::CookHashRejectReason reason = fuse::project::CookHashRejectReason::None;
+
+    expectTrue(!fuse::project::preflight_hash_file_content("", nullptr, &reason),
+               "empty path fails file hash preflight");
+    expectTrue(reason == fuse::project::CookHashRejectReason::EmptyPath,
+               "empty path reports empty_path reject reason");
+
+    expectTrue(!fuse::project::preflight_hash_file_content("/tmp/fuse_b79_missing_preflight.obj", nullptr, &reason),
+               "missing file fails file hash preflight");
+    expectTrue(reason == fuse::project::CookHashRejectReason::Unreadable,
+               "missing file reports unreadable reject reason");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_preflight_hash.obj", "# preflight hash\n");
+    fuse::u64 hash = 0;
+    expectTrue(fuse::project::preflight_hash_file_content(source, &hash, &reason),
+               "readable file passes file hash preflight");
+    expectTrue(hash == fuse::project::hash_file_content(source),
+               "preflight file hash matches hash_file_content");
+    expectTrue(reason == fuse::project::CookHashRejectReason::None,
+               "readable file reports none reject reason");
+
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_preflight_hash.fusemesh";
+    fuse::u64 mesh_hash = 0;
+    expectTrue(fuse::project::preflight_mesh_import_hash(desc, &mesh_hash, &reason),
+               "valid mesh desc passes import hash preflight");
+    expectTrue(mesh_hash == fuse::project::hash_mesh_import(desc),
+               "preflight mesh hash matches hash_mesh_import");
+}
+
+void testCookCachePreflightLookupAndStore() {
+    fuse::project::CookCache cache;
+    fuse::project::CookCache::LookupRejectReason lookup_reason =
+        fuse::project::CookCache::LookupRejectReason::None;
+
+    expectTrue(cache.preflight_lookup(0, &lookup_reason) == fuse::project::CookCacheLookup::Miss,
+               "zero key preflight misses");
+    expectTrue(lookup_reason == fuse::project::CookCache::LookupRejectReason::ZeroKey,
+               "zero key reports zero_key reject reason");
+    expectTrue(cache.stats().misses == 0u, "preflight lookup does not bump miss stats");
+
+    expectTrue(cache.preflight_lookup(77u, &lookup_reason) == fuse::project::CookCacheLookup::Miss,
+               "valid key preflight misses on empty cache");
+    expectTrue(lookup_reason == fuse::project::CookCache::LookupRejectReason::EmptyCache,
+               "empty cache reports empty_cache reject reason");
+
+    fuse::project::CookCacheEntry entry;
+    entry.content_hash = 201;
+    entry.source_path = "/tmp/fuse_b79_preflight_store.obj";
+    entry.output_path = "/tmp/fuse_b79_preflight_store.fusemesh";
+    fuse::project::CookCache::StoreRejectReason store_reason =
+        fuse::project::CookCache::StoreRejectReason::None;
+    expectTrue(cache.preflight_store(entry, &store_reason), "valid entry passes store preflight");
+    expectTrue(store_reason == fuse::project::CookCache::StoreRejectReason::None,
+               "valid entry reports none store reject reason");
+
+    fuse::project::CookCacheEntry invalid = entry;
+    invalid.content_hash = 0;
+    expectTrue(!cache.preflight_store(invalid, &store_reason), "invalid entry fails store preflight");
+    expectTrue(store_reason == fuse::project::CookCache::StoreRejectReason::InvalidEntry,
+               "invalid entry reports invalid_entry store reject reason");
+
+    cache.store(entry);
+    expectTrue(cache.preflight_lookup(201u, &lookup_reason) == fuse::project::CookCacheLookup::Hit,
+               "stored key preflight hits");
+    expectTrue(lookup_reason == fuse::project::CookCache::LookupRejectReason::None,
+               "hit reports none lookup reject reason");
+
+    expectTrue(cache.preflight_lookup(202u, &lookup_reason) == fuse::project::CookCacheLookup::Miss,
+               "unknown key preflight misses");
+    expectTrue(lookup_reason == fuse::project::CookCache::LookupRejectReason::NotFound,
+               "unknown key reports not_found reject reason");
+}
+
+void testCookCacheCountProbes() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_count_probe.obj", "# count probe v1\n");
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_count_probe.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
+    expectTrue(seeded.ok, "seed cook for count probes ok");
+
+    expectTrue(cooker.cache().count_stale_content_for_source(source, seeded.content_hash) == 0u,
+               "matching hash reports zero stale content");
+    expectTrue(cooker.cache().count_stale_content_for_source(source, seeded.content_hash + 1u) == 1u,
+               "mismatched hash reports one stale content entry");
+    expectTrue(cooker.cache().count_source_entries(source) == 1u,
+               "one entry matches source path");
+
+    writeTempFile(source, "# count probe v2\n");
+    const fuse::u32 prunable_before = cooker.cache().count_prunable_entries();
+    expectTrue(prunable_before == 1u, "stale entry increments prunable count");
+    expectTrue(cooker.cache().has_prunable_entries(), "has_prunable agrees with positive count");
+
+    const fuse::u32 pruned = cooker.cache().prune_all();
+    expectTrue(pruned == prunable_before, "prune_all removes counted prunable entries");
+    expectTrue(cooker.cache().count_prunable_entries() == 0u, "cache clean after prune");
+}
+
+void testCookCacheStaleUpstreamCountProbe() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_upstream_count.obj", "# upstream count\n");
+
+    fuse::project::CookCache cache;
+    fuse::project::CookCacheEntry entry;
+    entry.content_hash = 301;
+    entry.upstream_hash = 10;
+    entry.source_path = source;
+    entry.output_path = "/tmp/fuse_b79_upstream_count.fusemesh";
+    cache.store(entry);
+
+    expectTrue(cache.count_stale_upstream_entries({{source, 10u}}) == 0u,
+               "matching upstream hash reports zero stale entries");
+    expectTrue(cache.count_stale_upstream_entries({{source, 11u}}) == 1u,
+               "mismatched upstream hash reports one stale entry");
+    expectTrue(cache.count_stale_upstream_entries({}) == 0u,
+               "empty upstream list reports zero stale entries");
+}
+
 void testCookCachePruneInvalidEntriesOnLoad() {
     const std::string source = writeTempFile("/tmp/fuse_b79_prune_load_valid.obj", "# prune load valid\n");
     fuse::project::MeshImportDesc desc;
@@ -1365,6 +1507,11 @@ int main() {
     fuse::core::initialize();
 
     testCombineCookCacheKeyGuards();
+    testCookCacheKeyPreflight();
+    testCookHashPreflight();
+    testCookCachePreflightLookupAndStore();
+    testCookCacheCountProbes();
+    testCookCacheStaleUpstreamCountProbe();
     testFnv1a64BytesEmptyGuard();
     testHashUpstreamDependenciesEmptyPathGuards();
     testHashManifestEntryEmptyDependencyGuards();

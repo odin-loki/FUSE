@@ -250,36 +250,68 @@ CookCacheKeyPreflight preflight_cook_cache_key(u64 source_hash, u64 upstream_has
     preflight.combined_key = combine_cook_cache_key(source_hash, upstream_hash);
     if (preflight.combined_key == 0) {
         preflight.reason = CookCacheKeyRejectReason::UncacheableFold;
-        return preflight;
-    }
 
     preflight.valid = true;
     preflight.reason = CookCacheKeyRejectReason::None;
-    return preflight;
-}
 
 CookFileHashPreflight preflight_file_content_hash(const std::string& path) {
     CookFileHashPreflight preflight{};
     if (path.empty()) {
         preflight.reason = CookFileHashRejectReason::EmptyPath;
-        return preflight;
-    }
 
     std::error_code ec;
     if (!std::filesystem::exists(std::filesystem::path(path), ec)) {
         preflight.reason = CookFileHashRejectReason::UnreadableSource;
-        return preflight;
-    }
 
     std::ifstream file(path, std::ios::binary);
     if (!file) {
-        preflight.reason = CookFileHashRejectReason::UnreadableSource;
-        return preflight;
-    }
 
-    preflight.valid = true;
     preflight.reason = CookFileHashRejectReason::None;
-    return preflight;
+const char* cookCacheKeyRejectReasonLabel(CookCacheKeyRejectReason reason) {
+    switch (reason) {
+    case CookCacheKeyRejectReason::None:
+        return "none";
+    case CookCacheKeyRejectReason::ZeroSource:
+        return "zero_source";
+    case CookCacheKeyRejectReason::ZeroFold:
+        return "zero_fold";
+    return "unknown";
+
+bool preflight_cook_cache_key(u64 source_hash, u64 upstream_hash, CookCacheKeyRejectReason* reason) {
+        if (reason) {
+            *reason = CookCacheKeyRejectReason::ZeroSource;
+        return false;
+
+    const u64 folded = combine_cook_cache_key(source_hash, upstream_hash);
+    if (folded == 0) {
+            *reason = CookCacheKeyRejectReason::ZeroFold;
+
+        *reason = CookCacheKeyRejectReason::None;
+    return true;
+
+const char* cookHashRejectReasonLabel(CookHashRejectReason reason) {
+    case CookHashRejectReason::None:
+    case CookHashRejectReason::EmptyPath:
+        return "empty_path";
+    case CookHashRejectReason::Unreadable:
+        return "unreadable";
+
+bool preflight_hash_file_content(const std::string& path, u64* out_hash, CookHashRejectReason* reason) {
+            *reason = CookHashRejectReason::EmptyPath;
+
+    const u64 hash = hash_file_content(path);
+    if (hash == 0) {
+            *reason = CookHashRejectReason::Unreadable;
+
+    if (out_hash) {
+        *out_hash = hash;
+        *reason = CookHashRejectReason::None;
+
+bool preflight_mesh_import_hash(const MeshImportDesc& desc, u64* out_hash, CookHashRejectReason* reason) {
+    if (desc.input_path.empty() || desc.output_path.empty()) {
+
+    const u64 hash = hash_mesh_import(desc);
+
 }
 
 u64 hash_mesh_import(const MeshImportDesc& desc) {

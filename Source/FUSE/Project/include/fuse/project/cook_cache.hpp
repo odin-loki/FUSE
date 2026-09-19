@@ -298,6 +298,30 @@ public:
         const std::string& source_path, u64 current_content_hash) const;
     [[nodiscard]] std::vector<std::string> probe_invalidate_stale_upstream_hashes(
     [[nodiscard]] CookCacheInvalidationProbe probe_invalidate_downstream_of(
+    /// Cardinality probe — how many entries `prune_all` would remove (B7.9 deepen).
+    /// Non-mutating probe mirroring `invalidate_stale_content_for_source` (B7.9 deepen).
+    /// Non-mutating probe mirroring `invalidate_source` (B7.9 deepen).
+    [[nodiscard]] u32 count_source_entries(const std::string& source_path) const;
+    /// Non-mutating probe mirroring `invalidate_downstream_of` (B7.9 deepen).
+    /// Non-mutating reconcile estimator — entries whose stored upstream hash differs (B7.9 deepen).
+    [[nodiscard]] u32 count_stale_upstream_entries(
+
+    /// Why a cache lookup preflight rejected or missed (B7.9 deepen).
+    enum class LookupRejectReason : u8 {
+        None = 0,
+        ZeroKey,
+        EmptyCache,
+        NotFound,
+    };
+    /// Non-mutating lookup preflight — does not touch hit/miss stats (B7.9 deepen).
+    [[nodiscard]] CookCacheLookup preflight_lookup(u64 content_hash,
+                                                   LookupRejectReason* reason = nullptr) const;
+    /// Why a cache store preflight rejected the entry (B7.9 deepen).
+    enum class StoreRejectReason : u8 {
+        InvalidEntry,
+    /// Non-mutating store preflight — valid entries return true (B7.9 deepen).
+    [[nodiscard]] bool preflight_store(const CookCacheEntry& entry,
+                                       StoreRejectReason* reason = nullptr) const;
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

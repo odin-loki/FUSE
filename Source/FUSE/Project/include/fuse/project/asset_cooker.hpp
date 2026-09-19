@@ -96,6 +96,12 @@ public:
     [[nodiscard]] CookCacheReconcileEstimate estimate_cache_reconcile() const;
     /// Non-destructive estimate of stale upstream dependency invalidations (B7.9 deepen).
     [[nodiscard]] CookCacheInvalidationProbe estimate_stale_dependency_invalidation(
+    /// Non-mutating reconcile estimator — stale upstream entries that reconcile would remove (B7.9 deepen).
+    [[nodiscard]] u32 estimate_stale_dependency_entries(const CookManifest& manifest) const;
+    /// True when `estimate_stale_dependency_entries` is non-zero (B7.9 deepen).
+    [[nodiscard]] bool cache_needs_dependency_reconcile(const CookManifest& manifest) const;
+    /// Non-mutating probe mirroring `invalidate_upstream_dependency` (B7.9 deepen).
+    [[nodiscard]] u32 estimate_upstream_invalidation(const CookManifest& manifest,
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
