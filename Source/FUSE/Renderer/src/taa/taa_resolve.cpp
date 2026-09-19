@@ -600,6 +600,59 @@ bool taaResolveWouldUseHistoryBlend(const TaaResolveDesc& desc, const TaaHistory
     return taaHistoryBlendAllowed(firstFrame, history);
 }
 
+bool taaBlendWeightsConsistentWithReuse(const TaaBlendWeights& weights, bool historyBlendAllowed) {
+    if (!taaBlendWeightsValid(weights)) {
+        return false;
+    }
+    if (historyBlendAllowed) {
+        return true;
+    }
+    return weights.history <= 1e-5f && weights.current >= 1.f - 1e-5f;
+}
+
+TaaBlendWeights computeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    const bool firstFrame = !history.hasValidHistory();
+    const TAAParams params = clampTaaParams(desc.params);
+    TaaBlendWeights weights = computeTaaBlendWeights(firstFrame, params);
+    if (!taaResolveCanReuseHistory(desc, history)) {
+        weights.current = 1.f;
+        weights.history = 0.f;
+    }
+    return weights;
+}
+
+bool taaResolveAppliesHistoryBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    const TaaBlendWeights weights = computeTaaResolveBlendWeights(desc, history);
+    return weights.history > 1e-5f;
+}
+
+const char* taaHistoryReuseBlockReasonLabel(TaaHistoryReuseBlockReason reason) {
+    switch (reason) {
+    case TaaHistoryReuseBlockReason::None:
+        return "none";
+    case TaaHistoryReuseBlockReason::NotReady:
+        return "not_ready";
+    case TaaHistoryReuseBlockReason::NotWarm:
+        return "not_warm";
+    case TaaHistoryReuseBlockReason::StaleGeneration:
+        return "stale_generation";
+    }
+    return "unknown";
+}
+
+TaaHistoryReuseBlockReason classifyTaaHistoryReuseBlock(const TaaHistoryBuffer& history, u32 observedGeneration) {
+    if (!history.isReady()) {
+        return TaaHistoryReuseBlockReason::NotReady;
+    }
+    if (history.isHistoryStale(observedGeneration)) {
+        return TaaHistoryReuseBlockReason::StaleGeneration;
+    }
+    if (!history.hasValidHistory()) {
+        return TaaHistoryReuseBlockReason::NotWarm;
+    }
+    return TaaHistoryReuseBlockReason::None;
+}
+
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaHistoryCanReuse(history)) {
     if (taaResolveBypassesHistoryGenerationGuard(desc)) {

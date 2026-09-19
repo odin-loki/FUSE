@@ -142,6 +142,10 @@ bool TaaJitterLayout::ndcOffsetsMatch(const fuse::math::Vec2& a, const fuse::mat
     return std::fabs(a.x - b.x) <= epsilon && std::fabs(a.y - b.y) <= epsilon;
 }
 
+bool TaaJitterLayout::canSyncToFrameIndex(u32 /*frameIndex*/, u32 sequenceLength) {
+    return validateSequenceLength(sequenceLength);
+}
+
 u32 TaaJitterLayout::sequencePeriod(u32 sequenceLength) {
     return validateSequenceLength(sequenceLength) ? sequenceLength : 0u;
 }
@@ -356,6 +360,18 @@ bool TaaJitter::isSyncedToFrameIndex(u32 frameIndex) const {
 
 bool taaJitterFrameSynced(const TaaJitter& jitter, u32 frameIndex) {
     return jitter.isSyncedToFrameIndex(frameIndex);
+}
+
+bool TaaJitter::canSyncToFrameIndex(u32 frameIndex) const {
+    return TaaJitterLayout::canSyncToFrameIndex(frameIndex, m_sequenceLength);
+}
+
+bool TaaJitter::advanceIfReady() {
+    if (!canAdvance()) {
+        return false;
+    }
+    advance();
+    return true;
 }
 
 void TaaJitter::advance() {

@@ -209,6 +209,7 @@ enum class TaaHistoryReuseBlockReason : u8 {
     NotReady,
     NotWarm,
     StaleGeneration,
+};
 /// Human-readable label for history reuse block reasons (B5.9 deepen).
 const char* taaHistoryReuseBlockReasonLabel(TaaHistoryReuseBlockReason reason);
 /// Classify why history reuse is blocked for an observed invalidate epoch (B5.9 deepen).
