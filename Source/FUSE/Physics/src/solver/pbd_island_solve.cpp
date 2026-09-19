@@ -1969,3 +1969,15 @@ IslandContactImpulsePreflight preflight_warm_start_contact_impulses_by_index(
 bool should_skip_warm_start_island_combined(const ContactIslandGraph::Island& island,
         const IslandContactImpulsePreflight preflight =
     const IslandContactImpulsePreflight preflight = preflight_warm_start_contact_impulses(island, contacts, dt);
+
+// --- deepen additive from deepen-pbd-island-guards-426b ---
+IslandJobDispatchPreflight preflight_dispatch_island_index(const ContactIslandGraph& graph,
+    IslandJobDispatchPreflight preflight{};
+bool should_skip_dispatch_island_index(const ContactIslandGraph& graph, u32 islandIndex, f32 dt) {
+    const IslandJobDispatchPreflight preflight = preflight_dispatch_island_index(graph, islandIndex, dt);
+IslandContactImpulsePreflight preflight_warm_start_island_contact_impulses(
+IslandContactImpulsePreflight preflight_warm_start_island_contact_impulses_by_index(
+IslandContactImpulseGraphPreflight preflight_warm_start_contact_impulses_graph(
+    IslandContactImpulseGraphPreflight preflight{};
+bool should_skip_contact_impulse_warm_start_graph(const ContactIslandGraph& graph,
+    const IslandContactImpulseGraphPreflight preflight =

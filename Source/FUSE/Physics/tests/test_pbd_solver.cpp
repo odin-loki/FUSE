@@ -3170,3 +3170,27 @@ void testContactImpulseWarmStartGraphBatchGuards() {
     expectTrue(should_skip_warm_start_contact_impulses_graph(graph, contacts, 0.f),
     testPreflightIslandSolveInputsGuards();
     testPreflightCombinedWarmStartGuards();
+
+// --- deepen additive from deepen-pbd-island-guards-426b ---
+void testPreflightDispatchIslandIndexGuards() {
+    const IslandJobDispatchPreflight outOfRange =
+    expectTrue(should_skip_dispatch_island_index(graph, graph.islandCount() + 1u, 1.f / 60.f),
+               "should_skip_dispatch_island_index on out-of-range index");
+    const IslandJobDispatchPreflight invalidDt = preflight_dispatch_island_index(graph, 0u, 0.f);
+    const IslandJobDispatchPreflight constrained =
+    expectTrue(!should_skip_dispatch_island_index(graph, constrainedIndex, 1.f / 60.f),
+               "should_skip false for constrained island with valid dt");
+    const IslandContactImpulsePreflight constrainedPreflight =
+    expectTrue(constrainedPreflight.seedableContactCount == 1u,
+    expectTrue(constrainedPreflight.can_warm_start(), "contact island can seed impulse warm-start");
+    const IslandContactImpulsePreflight zeroImpulsePreflight =
+    expectTrue(!zeroImpulsePreflight.skipped, "impulse preflight does not skip zero-impulse contact island");
+    expectTrue(zeroImpulsePreflight.seedableContactCount == 0u,
+    expectTrue(!zeroImpulsePreflight.can_warm_start(), "zero impulse island cannot seed");
+    const IslandContactImpulsePreflight outOfRange =
+    const IslandContactImpulseGraphPreflight preflight =
+    expectTrue(!should_skip_contact_impulse_warm_start_graph(graph, contacts, dt),
+               "should_skip_contact_impulse_warm_start_graph false when seedable");
+    expectTrue(should_skip_contact_impulse_warm_start_graph(emptyGraph, contacts, dt),
+    expectTrue(should_skip_contact_impulse_warm_start_graph(graph, contacts, 0.f),
+    testPreflightDispatchIslandIndexGuards();
