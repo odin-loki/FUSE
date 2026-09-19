@@ -799,11 +799,17 @@ bool should_run_contact_pair_deepen_dispatch(
 /// Non-mutating pair-dispatch predicate — inverse of `should_skip_contact_pair_dispatch` (B4.4 deepen pass).
 bool should_run_contact_pair_dispatch(
 /// Non-mutating deepen dispatch predicate — inverse of `should_skip_contact_pair_deepen_dispatch` (B4.4 deepen guard pass).
+/// Non-mutating deepen skip predicate — mirrors `should_skip_contact_pair_deepen_dispatch` (B4.4 deepen pass).
+bool can_skip_contact_pair_deepen_dispatch(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
 /// Non-mutating deepen-dispatch predicate — inverse of `should_skip_contact_pair_deepen_dispatch` (B4.4 deepen pass).
+/// Non-mutating deepen predicate — inverse of `can_skip_contact_pair_deepen_dispatch` (B4.4 deepen pass).
+bool should_run_contact_pair_deepen_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
 /// True when all pairs are rejected by extended preflight or the pair list is empty (B4.4 deepen follow-up).
