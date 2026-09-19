@@ -2342,3 +2342,14 @@ void testFroxelCoordLookupAndReasonOverloadGuards() {
     expectTrue(!fuse::renderer::froxel_util::tryPopulateFromAnalyticFog(populateGrid, desc, badCamera, params,
                "tryPopulateFromAnalyticFog with reason rejects invalid camera");
     expectTrue(populateGrid.matchesDesc(desc), "tryPopulateFromAnalyticFog with reason still allocates on rejection");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-4bac ---
+void testFroxelDeepenedLookupPopulateAndScreenGuards() {
+    expectTrue(fuse::renderer::froxel_util::tryCanLookupAtCoord(grid, desc, 0u, 0u, 0u, lookupReason),
+               "trySampleDensityAtCoord with reason succeeds for clampable coords");
+    expectNear(oobCoordSample, 2.f, 1e-5f, "trySampleDensityAtCoord with reason clamps OOB coords");
+               "trySampleDensityAtIndex with reason succeeds for clampable index");
+    expectNear(indexSample, 2.f, 1e-5f, "trySampleDensityAtIndex with reason clamps OOB index");
+               "trySampleDensityAtScreen with map reason rejects empty storage");
+    expectTrue(fuse::renderer::froxel_util::tryPopulateFromAnalyticFog(populateGrid, desc, camera, params,
+    expectTrue(!fuse::renderer::froxel_util::tryPopulateFromAnalyticFog(rejectedPopulate, desc, badCamera, zeroDensity,

@@ -672,3 +672,6 @@ bool tryCanSampleAtCoordsStrict(const FroxelDensityGrid& grid,
 // --- deepen additive from deepen-b511-froxel-guards-62b9 ---
                               ScreenMappingRejectReason& outScreenReason);
                               ScreenMappingRejectReason& outScreenReason,
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-4bac ---
+                              ScreenMappingRejectReason& outMapReason);
