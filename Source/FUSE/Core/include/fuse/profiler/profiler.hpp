@@ -447,3 +447,6 @@ bool tryFindEventByName(const char* name, ProfileEvent& outEvent);
 EventNameRejectReason eventNameRejectReason(const char* name);
 EventLookupRejectReason eventLookupRejectReason(u32 index);
 NestingStateRejectReason nestingStateRejectReason();
+
+// --- deepen additive from deepen-fuse-b16-profiler-e55b ---
+bool tryFindLastEventIndexByName(const char* name, u32& outIndex);

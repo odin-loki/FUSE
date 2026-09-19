@@ -1364,3 +1364,7 @@ NestingStateRejectReason nestingStateRejectReason() {
     if (rejectReason != ChromeTraceExportRejectReason::None) {
     case EventNameRejectReason::Blank:
     case ChromeTraceExportRejectReason::BufferOverflow:
+
+// --- deepen additive from deepen-fuse-b16-profiler-e55b ---
+bool tryFindLastEventIndexByName(const char* name, u32& outIndex) {
+        if (tryExportableEventAt(i - 1u, outEvent)) {

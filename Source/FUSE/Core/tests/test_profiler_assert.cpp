@@ -3835,3 +3835,39 @@ void testRejectReasonLabels() {
     testChromeTraceExportRejectReasonGuards();
     testPreflightReportsBufferOverflow();
     testRejectReasonLabels();
+
+// --- deepen additive from deepen-fuse-b16-profiler-e55b ---
+    expectTrue(!fuse::profiler::tryFindLastEventIndexByName("scope", outIndex),
+               "tryFindLastEventIndexByName false on empty buffer");
+               "tryFindFirstEventIndexByName false for null name");
+               "tryFindFirstEventIndexByName clears output for null name");
+    expectTrue(fuse::profiler::tryFindFirstEventIndexByPhase(fuse::profiler::EventPhase::Begin, outIndex),
+               "tryFindFirstEventIndexByPhase true after recording");
+    expectTrue(outIndex == 0u, "tryFindFirstEventIndexByPhase copies begin index");
+    expectTrue(fuse::profiler::tryFindLastEventIndexByPhase(fuse::profiler::EventPhase::End, outIndex),
+               "tryFindLastEventIndexByPhase true after recording");
+    expectTrue(outIndex == 4u, "tryFindLastEventIndexByPhase copies scope end index");
+    expectTrue(fuse::profiler::tryFindFirstEventIndexByName("try_find_flow", outIndex),
+               "tryFindFirstEventIndexByName true for flow name");
+    expectTrue(outIndex == 1u, "tryFindFirstEventIndexByName copies flow start index");
+    expectTrue(fuse::profiler::tryFindLastEventIndexByName("try_find_counter", outIndex),
+               "tryFindLastEventIndexByName true for counter track");
+    expectTrue(outIndex == 2u, "tryFindLastEventIndexByName copies counter index");
+void testEventNameAtAndTryLastExportableEventGuards() {
+               "tryLastExportableEvent clears output on empty buffer");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::End, "tryLastExportableEvent copies last end phase");
+void testIsInvalidEventIndexGuard() {
+void testBufferPairBalanceGuards() {
+void testChromeTraceExportPreflightBufferPairs() {
+        expectTrue(activePreflight.scopeBeginCount == 1u, "preflight counts active scope begin");
+        expectTrue(activePreflight.scopeEndCount == 0u, "preflight scope end count zero inside scope");
+        expectTrue(activePreflight.flowStartCount == 1u, "preflight counts open flow start");
+        expectTrue(activePreflight.flowFinishCount == 0u, "preflight flow finish count zero inside flow");
+        expectTrue(activePreflight.scopePairImbalancedInBuffer,
+        expectTrue(activePreflight.flowPairImbalancedInBuffer,
+        expectTrue(activePreflight.hasBufferPairImbalance(),
+    expectTrue(closedPreflight.scopeBeginCount == closedPreflight.scopeEndCount,
+    expectTrue(closedPreflight.flowStartCount == closedPreflight.flowFinishCount,
+    expectTrue(!closedPreflight.scopePairImbalancedInBuffer,
+    expectTrue(!closedPreflight.flowPairImbalancedInBuffer,
+    testChromeTraceExportPreflightBufferPairs();
