@@ -955,3 +955,25 @@ PairBufferMergeIntoPreflight preflightPairBufferMergeInto(const PairBufferSoA& b
     preflight.bufferFull = preflight.reason == PairBufferMergeIntoRejectReason::BufferFull;
     return !preflightPairBufferMergeInto(buffer, pairCount).canMerge();
     return preflightPairBufferMergeInto(buffer, pairCount).canMerge();
+
+// --- deepen additive from deepen-b4-broadphase-guards-e578 ---
+    if (preflightPairBufferClamp(*this).needsClamp()) {
+const char* pairBufferCompactClampRejectReasonName(PairBufferCompactClampRejectReason reason) {
+    case PairBufferCompactClampRejectReason::None:
+    case PairBufferCompactClampRejectReason::EmptyBuffer:
+    case PairBufferCompactClampRejectReason::NoWork:
+PairBufferCompactClampRejectReason pairBufferCompactClampRejectReason(const PairBufferSoA& buffer) {
+        return PairBufferCompactClampRejectReason::EmptyBuffer;
+        return PairBufferCompactClampRejectReason::NoWork;
+    return PairBufferCompactClampRejectReason::None;
+    PairBufferCompactClampRejectReason expected) {
+    return pairBufferCompactClampRejectReason(buffer) == expected;
+PairBufferCompactClampPreflight preflightPairBufferCompactClamp(const PairBufferSoA& buffer) {
+    PairBufferCompactClampPreflight preflight{};
+    preflight.reason = pairBufferCompactClampRejectReason(buffer);
+    preflight.emptyBuffer = preflight.reason == PairBufferCompactClampRejectReason::EmptyBuffer;
+    preflight.noWork = preflight.reason == PairBufferCompactClampRejectReason::NoWork;
+    preflight.needsCompaction = preflightPairBufferCompaction(buffer).needsCompaction();
+    preflight.needsClamp = preflightPairBufferClamp(buffer).needsClamp();
+    return !preflightPairBufferCompactClamp(buffer).canRun();
+    return preflightPairBufferCompactClamp(buffer).canRun();

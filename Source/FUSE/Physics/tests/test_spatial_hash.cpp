@@ -3156,3 +3156,33 @@ void testBroadphaseMergeIntoBufferPreflightGuards() {
     testPairBufferSlotWriteRejectReasonGuards();
     testPairBufferMergeIntoRejectReasonGuards();
     testBroadphaseMergeIntoBufferPreflightGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-e578 ---
+void testPairBufferCompactClampRejectReasonGuards() {
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferCompactClampRejectReason(buffer)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferCompactClampRejectReason::EmptyBuffer),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferCompactClampRejectReason::NoWork),
+    expectTrue(std::strcmp(fuse::physics::broadphase::pairBufferCompactClampRejectReasonName(
+                               fuse::physics::broadphase::PairBufferCompactClampRejectReason::NoWork),
+    const fuse::physics::broadphase::PairBufferCompactClampPreflight workPreflight =
+        fuse::physics::broadphase::preflightPairBufferCompactClamp(workBuffer);
+    expectTrue(workPreflight.canRun(), "compact-clamp preflight accepts compaction work");
+    expectTrue(workPreflight.needsCompaction, "compact-clamp preflight marks compaction needed");
+    expectEq(emptyPreflight.budgetRemaining, 4u, "empty range leaves full budget in preflight");
+        fuse::physics::broadphase::preflightCellOccupancy(planeRange, 10u);
+    expectEq(planePreflight.budgetRemaining, 2u, "2D preflight reports occupancy budget remaining");
+void testRefineBroadphaseActivePairCountPreflight() {
+    expectEq(emptyPreflight.activePairCount, 0u, "refine preflight reports zero active pairs on empty buffer");
+    expectEq(validPreflight.activePairCount, 2u, "refine preflight reports active pair count");
+    expectTrue(validPreflight.canRefine(), "refine preflight accepts valid scene with pair count");
+void testBroadphaseMergeStatsPreflight() {
+    expectEq(emptyPreflight.stats.planeBodyCount, 0u, "empty scene has zero plane bodies");
+    expectEq(emptyPreflight.stats.dynamicBodyCount, 0u, "empty scene has zero dynamic bodies");
+    expectEq(planeOnlyPreflight.stats.planeBodyCount, 1u, "plane-only scene reports one plane body");
+    expectEq(planeOnlyPreflight.stats.dynamicBodyCount, 0u, "plane-only scene reports zero dynamic bodies");
+    expectEq(mergePreflight.stats.planeBodyCount, 1u, "merge scene reports plane body count");
+    expectEq(mergePreflight.stats.dynamicBodyCount, 1u, "merge scene reports dynamic body count");
+    expectTrue(mergePreflight.canMerge(), "merge preflight accepts scene with plane and dynamic counts");
+    testPairBufferCompactClampRejectReasonGuards();
+    testRefineBroadphaseActivePairCountPreflight();
+    testBroadphaseMergeStatsPreflight();
