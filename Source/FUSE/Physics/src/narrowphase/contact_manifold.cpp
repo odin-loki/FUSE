@@ -2277,6 +2277,7 @@ ContactManifoldWritePreflight preflight_contact_manifold_buffer_write(const Cont
 bool should_skip_contact_manifold_buffer_write(const ContactManifold& manifold) {
     return !preflight_contact_manifold_buffer_write(manifold).can_write();
 bool finalize_manifold_after_prune_with_preflight(
+
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

@@ -57,6 +57,14 @@ bool can_skip_narrowphase_into_buffer(
     if (pairs.empty()) {
         return true;
     return countBaseDispatchableContactPairs(pairs, bodies, shapes) == 0u;
+NarrowphaseIntoBufferPreflight preflightNarrowphaseIntoBuffer(
+    preflight.emptyPairs = pairs.empty();
+    if (!preflight.emptyPairs) {
+        const NarrowphaseBatchPreflight batchPreflight = preflight_narrowphase_batch(pairs, bodies, shapes);
+        preflight.dispatchableCount = batchPreflight.dispatchableCount;
+
+bool should_skip_narrowphase_into_buffer(
+    return !preflightNarrowphaseIntoBuffer(pairs, bodies, shapes).can_run();
 }
 
 void runNarrowphaseIntoBuffer(
@@ -67,11 +75,14 @@ void runNarrowphaseIntoBuffer(
     if (pairs.empty()) {
     const NarrowphaseRunPreflight runPreflight = preflight_run_narrowphase(pairs, bodies, shapes);
     if (runPreflight.canSkip) {
+    const NarrowphaseIntoBufferPreflight preflight = preflightNarrowphaseIntoBuffer(pairs, bodies, shapes);
+    if (!preflight.can_run()) {
         buffer.preparePairSlots(0u);
         return;
     }
 
     const u32 pairCount = static_cast<u32>(pairs.size());
+    const u32 pairCount = preflight.pairCount;
     buffer.preparePairSlots(pairCount);
 
     if (can_skip_narrowphase(pairs, bodies, shapes)) {
@@ -88,6 +99,8 @@ void runNarrowphaseIntoBuffer(
         if (should_skip_narrowphase_pair_slot(pairs[pairIndex], bodies, shapes)) {
         if (should_skip_contact_pair_dispatch(pairs[pairIndex], bodies, shapes)) {
 
+        if (should_skip_narrowphase_pair_slot(pairIndex, pairs[pairIndex], bodies, shapes)) {
+        }
         ContactManifold manifold = detect_contacts_pair(pairs[pairIndex], bodies, shapes);
         if (finalize_contact_manifold_with_preflight(manifold)) {
         const broadphase::CandidatePair& pair = pairs[pairIndex];

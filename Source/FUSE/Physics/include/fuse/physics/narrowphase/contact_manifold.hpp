@@ -1254,6 +1254,10 @@ bool can_skip_generate_contact_manifold(const ContactManifold& manifold);
 /// Finalize only when `can_finalize_contact_manifold` passes; no-op otherwise (B4.6 deepen pass).
 bool generate_contact_manifold_with_preflight(ContactManifold& manifold);
 
+/// Prune only when skip-guard reports work is needed; returns true when points remain (B4.6 deepen pass).
+
+/// Finalize only when skip-guard allows; no-op otherwise (B4.6 deepen pass).
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }
