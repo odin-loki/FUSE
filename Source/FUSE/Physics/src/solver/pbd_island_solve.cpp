@@ -102,7 +102,7 @@ bool is_finite_warm_start_dt(f32 dt) {
 
 IslandSolveJobPreflight preflight_solve_island_job(const IslandSolveJob& job, f32 dt) {
     IslandSolveJobPreflight preflight{};
-    preflight.invalidDt = !is_valid_island_solve_dt(dt);
+    preflight.invalidDt = !is_finite_island_solve_dt(dt);
     preflight.constraintCount = job.constraintCount;
     preflight.skipped = should_skip_island_solve_job(job);
     return preflight;
@@ -160,7 +160,7 @@ IslandSolvePreflight preflight_island_solve(const ContactIslandGraph& graph) {
 IslandDispatchPreflight preflight_island_dispatch(const ContactIslandGraph& graph, f32 dt) {
     IslandDispatchPreflight preflight{};
     preflight.solve = preflight_island_solve(graph);
-    preflight.invalidDt = !is_valid_island_solve_dt(dt);
+    preflight.invalidDt = !is_finite_island_solve_dt(dt);
     preflight.skipped = preflight.solve.skipped;
     return preflight;
 }
@@ -1090,6 +1090,348 @@ IslandBatchWarmStartResult warm_start_all_islands_combined_result(
         result.skipped = true;
     }
     return result;
+}
+
+bool is_body_sleeping(u32 flags) {
+    return (flags & RB_SLEEPING) != 0u;
+}
+
+bool is_body_static_or_kinematic(u32 flags) {
+    return (flags & RB_STATIC) != 0u || (flags & RB_KINEMATIC) != 0u;
+}
+
+bool is_body_movable(const RigidBodySoA& bodies, u32 bodyIndex) {
+    if (bodyIndex >= bodies.count()) {
+        return false;
+    }
+    if (is_body_static_or_kinematic(bodies.flags[bodyIndex])) {
+        return false;
+    }
+    if (is_body_sleeping(bodies.flags[bodyIndex])) {
+        return false;
+    }
+    return bodies.invMasses[bodyIndex] > 0.f;
+}
+
+IslandBuildPreflight preflight_island_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    IslandBuildPreflight preflight{};
+    preflight.stats.bodyCount = bodyCount;
+    preflight.stats.contactSlotCount = static_cast<u32>(contacts.size());
+    preflight.stats.distanceSlotCount = static_cast<u32>(distanceConstraints.size());
+
+    for (const narrowphase::ContactManifold& contact : contacts) {
+        if (contact.valid) {
+            ++preflight.stats.validContactCount;
+        }
+        const bool inRange = contact.bodyA < bodyCount && contact.bodyB < bodyCount;
+        if (inRange) {
+            ++preflight.stats.inRangeContactCount;
+        } else if (contact.valid) {
+            ++preflight.stats.outOfRangeContactBodyCount;
+        }
+    }
+
+    for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (constraint.bodyA < bodyCount && constraint.bodyB < bodyCount) {
+            ++preflight.stats.inRangeDistanceCount;
+        } else {
+            ++preflight.stats.outOfRangeDistanceBodyCount;
+        }
+    }
+
+    preflight.skipped = bodyCount == 0u && preflight.stats.inRangeContactCount == 0u &&
+                        preflight.stats.inRangeDistanceCount == 0u;
+    return preflight;
+}
+
+bool should_skip_island_build(u32 bodyCount,
+                              const std::vector<narrowphase::ContactManifold>& contacts,
+                              const std::vector<DistanceConstraint>& distanceConstraints) {
+    return !preflight_island_build(bodyCount, contacts, distanceConstraints).can_build();
+}
+
+bool build_island_graph_guarded(ContactIslandGraph& graph,
+                                u32 bodyCount,
+                                const std::vector<narrowphase::ContactManifold>& contacts,
+                                const std::vector<DistanceConstraint>& distanceConstraints) {
+    if (should_skip_island_build(bodyCount, contacts, distanceConstraints)) {
+        graph.clear();
+        return false;
+    }
+    graph.build(bodyCount, contacts, distanceConstraints);
+    return true;
+}
+
+IslandSolveBodiesPreflight preflight_island_solve_bodies(const ContactIslandGraph::Island& island,
+                                                         const RigidBodySoA& bodies) {
+    IslandSolveBodiesPreflight preflight{};
+    if (!island_has_constraints(island)) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    preflight.bodyCount = static_cast<u32>(island.bodyIndices.size());
+    for (u32 bodyIndex : island.bodyIndices) {
+        if (bodyIndex >= bodies.count()) {
+            continue;
+        }
+        ++preflight.inRangeBodyCount;
+        const u32 flags = bodies.flags[bodyIndex];
+        if (is_body_static_or_kinematic(flags)) {
+            ++preflight.staticOrKinematicCount;
+        }
+        if (is_body_sleeping(flags)) {
+            ++preflight.sleepingCount;
+        }
+        if (is_body_movable(bodies, bodyIndex)) {
+            ++preflight.movableCount;
+        }
+    }
+    return preflight;
+}
+
+bool should_skip_island_solve_bodies(const ContactIslandGraph::Island& island,
+                                     const RigidBodySoA& bodies) {
+    return !preflight_island_solve_bodies(island, bodies).can_solve();
+}
+
+IslandConstraintSolvePreflight preflight_island_constraint_solve(
+    const ContactIslandGraph::Island& island,
+    const RigidBodySoA& bodies,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    IslandConstraintSolvePreflight preflight{};
+    if (!island_has_constraints(island)) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    preflight.refs = preflight_island_constraint_refs(island, contacts, distanceConstraints);
+    preflight.bodies = preflight_island_solve_bodies(island, bodies);
+    return preflight;
+}
+
+bool should_skip_island_constraint_solve(const ContactIslandGraph::Island& island,
+                                         const RigidBodySoA& bodies,
+                                         const std::vector<narrowphase::ContactManifold>& contacts,
+                                         const std::vector<DistanceConstraint>& distanceConstraints) {
+    return !preflight_island_constraint_solve(island, bodies, contacts, distanceConstraints).can_solve();
+}
+
+IslandSleepPreflight preflight_island_sleep(const ContactIslandGraph::Island& island,
+                                            const RigidBodySoA& bodies) {
+    IslandSleepPreflight preflight{};
+    if (!island_has_constraints(island)) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    preflight.bodyCount = static_cast<u32>(island.bodyIndices.size());
+    for (u32 bodyIndex : island.bodyIndices) {
+        if (bodyIndex >= bodies.count()) {
+            continue;
+        }
+        const u32 flags = bodies.flags[bodyIndex];
+        if (is_body_static_or_kinematic(flags)) {
+            ++preflight.staticOrKinematicCount;
+            continue;
+        }
+        if (is_body_sleeping(flags)) {
+            ++preflight.sleepingCount;
+        } else {
+            ++preflight.activeDynamicCount;
+        }
+    }
+
+    preflight.allSleeping = preflight.activeDynamicCount == 0u && preflight.sleepingCount > 0u;
+    return preflight;
+}
+
+IslandSleepPreflight preflight_island_sleep_by_index(const ContactIslandGraph& graph,
+                                                     u32 islandIndex,
+                                                     const RigidBodySoA& bodies) {
+    IslandSleepPreflight preflight{};
+    if (!island_index_valid(graph, islandIndex)) {
+        preflight.skipped = true;
+        return preflight;
+    }
+    return preflight_island_sleep(graph.island(islandIndex), bodies);
+}
+
+IslandWakePreflight preflight_island_wake(const ContactIslandGraph::Island& island,
+                                          const RigidBodySoA& bodies) {
+    IslandWakePreflight preflight{};
+    if (!island_has_constraints(island)) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    preflight.bodyCount = static_cast<u32>(island.bodyIndices.size());
+    for (u32 bodyIndex : island.bodyIndices) {
+        if (bodyIndex >= bodies.count()) {
+            continue;
+        }
+        const u32 flags = bodies.flags[bodyIndex];
+        if (is_body_static_or_kinematic(flags)) {
+            continue;
+        }
+        if (is_body_sleeping(flags)) {
+            ++preflight.sleepingCount;
+        } else {
+            ++preflight.activeDynamicCount;
+        }
+    }
+
+    preflight.hasMixedSleepState =
+        preflight.sleepingCount > 0u && preflight.activeDynamicCount > 0u;
+    return preflight;
+}
+
+IslandWakePreflight preflight_island_wake_by_index(const ContactIslandGraph& graph,
+                                                   u32 islandIndex,
+                                                   const RigidBodySoA& bodies) {
+    IslandWakePreflight preflight{};
+    if (!island_index_valid(graph, islandIndex)) {
+        preflight.skipped = true;
+        return preflight;
+    }
+    return preflight_island_wake(graph.island(islandIndex), bodies);
+}
+
+IslandSleepGraphStats compute_island_sleep_stats(const ContactIslandGraph& graph,
+                                                 const RigidBodySoA& bodies) {
+    IslandSleepGraphStats stats{};
+    stats.totalIslands = graph.islandCount();
+    for (u32 islandIndex = 0; islandIndex < stats.totalIslands; ++islandIndex) {
+        const IslandSleepPreflight preflight = preflight_island_sleep(graph.island(islandIndex), bodies);
+        if (preflight.skipped) {
+            ++stats.emptyCount;
+        } else if (preflight.allSleeping) {
+            ++stats.allSleepingCount;
+        } else if (preflight.sleepingCount > 0u) {
+            ++stats.mixedSleepCount;
+        } else {
+            ++stats.fullyActiveCount;
+        }
+    }
+    return stats;
+}
+
+IslandSleepGraphPreflight preflight_island_sleep_graph(const ContactIslandGraph& graph,
+                                                       const RigidBodySoA& bodies) {
+    IslandSleepGraphPreflight preflight{};
+    preflight.stats = compute_island_sleep_stats(graph, bodies);
+    preflight.skipped = !preflight.has_solveable_islands();
+    return preflight;
+}
+
+bool should_skip_island_sleep_solve_graph(const ContactIslandGraph& graph, const RigidBodySoA& bodies) {
+    return preflight_island_sleep_graph(graph, bodies).skipped;
+}
+
+bool should_skip_island_sleep_solve(const ContactIslandGraph::Island& island,
+                                    const RigidBodySoA& bodies) {
+    return preflight_island_sleep(island, bodies).can_skip_solve();
+}
+
+IslandWakeGraphStats compute_island_wake_stats(const ContactIslandGraph& graph, const RigidBodySoA& bodies) {
+    IslandWakeGraphStats stats{};
+    stats.totalIslands = graph.islandCount();
+    for (u32 islandIndex = 0; islandIndex < stats.totalIslands; ++islandIndex) {
+        const IslandWakePreflight preflight = preflight_island_wake(graph.island(islandIndex), bodies);
+        if (preflight.skipped) {
+            ++stats.emptyCount;
+        } else if (preflight.should_wake_sleepers()) {
+            ++stats.wakeableCount;
+        }
+    }
+    return stats;
+}
+
+IslandWakeGraphPreflight preflight_island_wake_graph(const ContactIslandGraph& graph,
+                                                     const RigidBodySoA& bodies) {
+    IslandWakeGraphPreflight preflight{};
+    preflight.stats = compute_island_wake_stats(graph, bodies);
+    preflight.skipped = !preflight.can_wake();
+    return preflight;
+}
+
+bool should_skip_island_wake_graph(const ContactIslandGraph& graph, const RigidBodySoA& bodies) {
+    return !preflight_island_wake_graph(graph, bodies).can_wake();
+}
+
+bool should_skip_island_wake(const ContactIslandGraph::Island& island, const RigidBodySoA& bodies) {
+    return !preflight_island_wake(island, bodies).should_wake_sleepers();
+}
+
+std::vector<u32> collect_nonsleeping_island_indices(const ContactIslandGraph& graph,
+                                                    const RigidBodySoA& bodies) {
+    std::vector<u32> indices;
+    const u32 count = graph.islandCount();
+    indices.reserve(count);
+    for (u32 islandIndex = 0; islandIndex < count; ++islandIndex) {
+        const IslandSleepPreflight preflight = preflight_island_sleep(graph.island(islandIndex), bodies);
+        if (preflight.skipped || preflight.can_skip_solve()) {
+            continue;
+        }
+        indices.push_back(islandIndex);
+    }
+    return indices;
+}
+
+std::vector<u32> collect_wakeable_island_indices(const ContactIslandGraph& graph,
+                                                 const RigidBodySoA& bodies) {
+    std::vector<u32> indices;
+    const u32 count = graph.islandCount();
+    indices.reserve(count);
+    for (u32 islandIndex = 0; islandIndex < count; ++islandIndex) {
+        const IslandWakePreflight preflight = preflight_island_wake(graph.island(islandIndex), bodies);
+        if (preflight.should_wake_sleepers()) {
+            indices.push_back(islandIndex);
+        }
+    }
+    return indices;
+}
+
+bool wake_island_sleepers_guarded(RigidBodySoA& bodies, const ContactIslandGraph::Island& island) {
+    const IslandWakePreflight preflight = preflight_island_wake(island, bodies);
+    if (!preflight.should_wake_sleepers()) {
+        return false;
+    }
+
+    for (u32 bodyIndex : island.bodyIndices) {
+        if (bodyIndex >= bodies.count()) {
+            continue;
+        }
+        if (!is_body_sleeping(bodies.flags[bodyIndex])) {
+            continue;
+        }
+        bodies.flags[bodyIndex] &= ~RB_SLEEPING;
+        bodies.sleepTimers[bodyIndex] = 0.f;
+    }
+    return true;
+}
+
+bool wake_island_sleepers_by_index_guarded(RigidBodySoA& bodies,
+                                           const ContactIslandGraph& graph,
+                                           u32 islandIndex) {
+    if (!island_index_valid(graph, islandIndex)) {
+        return false;
+    }
+    return wake_island_sleepers_guarded(bodies, graph.island(islandIndex));
+}
+
+u32 wake_all_island_sleepers_guarded(RigidBodySoA& bodies, const ContactIslandGraph& graph) {
+    u32 wokeCount = 0;
+    for (u32 islandIndex : collect_wakeable_island_indices(graph, bodies)) {
+        if (wake_island_sleepers_by_index_guarded(bodies, graph, islandIndex)) {
+            ++wokeCount;
+        }
+    }
+    return wokeCount;
 }
 
 } // namespace fuse::physics
