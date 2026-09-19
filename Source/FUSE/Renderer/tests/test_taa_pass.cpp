@@ -3812,3 +3812,19 @@ void testTaaPassWarmupAndCompositeGuards() {
                "pass tryPreflightHistoryWarmup fails before init");
                "pass tryPreflightHistoryWarmup reason is NotReady before init");
                "pass tryPreflightHistoryWarmup passes after resolve");
+
+// --- deepen additive from deepen-b59-taa-guards-7381 ---
+void testJitterShouldSkipAndTryNdcPreflight() {
+void testHistoryIsWarmGuard() {
+void testTemporalResolveGuardPreflights() {
+    expectTrue(!fuse::renderer::preflightTaaTemporalResolveGuards(desc, history, 0u, &reuseReason, &blendReason),
+    expectTrue(fuse::renderer::preflightTaaTemporalResolveGuards(desc, history, 0u, &reuseReason, &blendReason),
+void testTaaPassTemporalAndJitterGuardWrappers() {
+    expectTrue(pass->preflightJitterSync(3u, &jitterReject), "pass preflightJitterSync before init");
+    expectTrue(pass->preflightJitterNdc(128u, 128u, &jitterReject), "pass preflightJitterNdc succeeds");
+    expectTrue(pass->preflightJitterNdcIfReady(&jitterReject), "pass preflightJitterNdcIfReady succeeds");
+               "pass tryPreflightHistoryReuse reason is NotWarm");
+    expectTrue(pass->preflightTemporalResolveGuards(resolveDesc, 0u, &reuseReason, &blendReason),
+               "pass preflightTemporalResolveGuards passes after warmup");
+    testJitterShouldSkipAndTryNdcPreflight();
+    testTemporalResolveGuardPreflights();

@@ -555,3 +555,10 @@ bool TaaPass::preflightTemporalResolve(const TaaResolveDesc& desc,
 
 // --- deepen additive from deepen-b59-taa-guards-61ca ---
 bool TaaPass::tryPreflightHistoryWarmup(TaaHistoryReuseBlockReason& reason) const {
+
+// --- deepen additive from deepen-b59-taa-guards-7381 ---
+bool TaaPass::preflightTemporalResolveGuards(const TaaResolveDesc& desc, u32 observedGeneration,
+    return preflightTaaTemporalResolveGuards(desc, m_history, observedGeneration, reuseReason, blendReason);
+bool TaaPass::preflightJitterNdc(u32 width, u32 height, TaaJitterGuardRejectReason* reason) const {
+    return preflightTaaJitterNdc(width, height, m_jitter.sequenceLength(), reason);
+bool TaaPass::preflightJitterNdcIfReady(TaaJitterGuardRejectReason* reason) const {
