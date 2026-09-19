@@ -4,6 +4,7 @@
 #include <fuse/physics/config.hpp>
 #include <fuse/physics/math.hpp>
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
+#include <fuse/physics/narrowphase/contact_pair.hpp>
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/types.hpp>
 
@@ -186,6 +187,18 @@ ContactManifold collideBoxBox(
     u32 idxB);
 
 struct ContactBufferSoA;
+
+/// Populate narrowphase run preflight without mutating buffers (B4.6 deepen pass).
+NarrowphaseRunPreflight preflightNarrowphaseRun(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when narrowphase run should early-out before pair dispatch (B4.6 deepen pass).
+bool canSkipNarrowphaseRun(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
 
 /// Job-safe narrowphase: one output slot per candidate pair, then compact valid contacts.
 void runNarrowphaseIntoBuffer(

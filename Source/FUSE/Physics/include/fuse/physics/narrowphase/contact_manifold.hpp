@@ -256,6 +256,30 @@ bool finalize_contact_manifold_with_preflight(
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
 
+/// Why shallow manifold prune would early-out (B4.6 deepen pass).
+enum class ManifoldShallowPruneRejectReason : u8 {
+    None = 0,
+    EmptyManifold,
+    NoShallowPoints,
+};
+
+/// Human-readable label for shallow prune reject reasons (B4.6 deepen pass).
+const char* manifold_shallow_prune_reject_reason_name(ManifoldShallowPruneRejectReason reason);
+
+/// Diagnose why shallow prune would skip; vacuously succeeds when shallow prune may proceed (B4.6 deepen pass).
+ManifoldShallowPruneRejectReason manifold_shallow_prune_reject_reason(
+    const ContactManifold& manifold,
+    f32 minDepth);
+
+/// Returns true when `manifold_shallow_prune_reject_reason` matches `expected` (B4.6 deepen pass).
+bool manifold_shallow_prune_rejects_for_reason(
+    const ContactManifold& manifold,
+    ManifoldShallowPruneRejectReason expected,
+    f32 minDepth);
+
+/// Prune shallow slots only when preflight allows; returns true when points remain (B4.6 deepen pass).
+bool prune_shallow_penetrations_with_preflight(ContactManifold& manifold, f32 minDepth);
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }

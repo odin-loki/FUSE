@@ -528,6 +528,44 @@ bool finalize_contact_manifold_with_preflight(
     return generate_contact_manifold(manifold);
 }
 
+const char* manifold_shallow_prune_reject_reason_name(ManifoldShallowPruneRejectReason reason) {
+    switch (reason) {
+    case ManifoldShallowPruneRejectReason::None:
+        return "None";
+    case ManifoldShallowPruneRejectReason::EmptyManifold:
+        return "EmptyManifold";
+    case ManifoldShallowPruneRejectReason::NoShallowPoints:
+        return "NoShallowPoints";
+    }
+    return "Unknown";
+}
+
+ManifoldShallowPruneRejectReason manifold_shallow_prune_reject_reason(
+    const ContactManifold& manifold,
+    f32 minDepth) {
+    if (manifold.empty()) {
+        return ManifoldShallowPruneRejectReason::EmptyManifold;
+    }
+    if (!manifold.hasShallowPenetrations(minDepth)) {
+        return ManifoldShallowPruneRejectReason::NoShallowPoints;
+    }
+    return ManifoldShallowPruneRejectReason::None;
+}
+
+bool manifold_shallow_prune_rejects_for_reason(
+    const ContactManifold& manifold,
+    ManifoldShallowPruneRejectReason expected,
+    f32 minDepth) {
+    return manifold_shallow_prune_reject_reason(manifold, minDepth) == expected;
+}
+
+bool prune_shallow_penetrations_with_preflight(ContactManifold& manifold, f32 minDepth) {
+    if (manifold_shallow_prune_reject_reason(manifold, minDepth) != ManifoldShallowPruneRejectReason::None) {
+        return !manifold.empty();
+    }
+    return manifold.pruneShallowPenetrationsIfNeeded(minDepth);
+}
+
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};
     if (index >= pointCount) {
