@@ -2102,3 +2102,7 @@ ScreenMappingRejectReason classifyScreenDensitySampleReject(const FroxelDensityG
     FroxelGridLayout::tryMapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, coords, mapReason);
         classifyScreenDensitySampleReject(grid, desc, camera, screenX, screenY, viewDepth);
     return !preflightScreenDensitySample(grid, desc, camera, screenX, screenY, viewDepth, &reason);
+
+// --- deepen additive from deepen-b511-froxel-guards-9fe1 ---
+    return tryMapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, coords, reason);
+    return tryMapScreenDepthToFroxelIndex(screenX, screenY, viewDepth, desc, camera, froxelIndex, reason);

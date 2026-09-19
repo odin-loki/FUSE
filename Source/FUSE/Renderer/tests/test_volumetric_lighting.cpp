@@ -3154,3 +3154,11 @@ void testFroxelClassifyPreflightAndWouldSkipGuards() {
     expectTrue(fuse::renderer::froxel_util::wouldSkipFroxelMarch(zeroMarchGrid, desc),
                "wouldSkipFroxelMarch true for uniformly zero grid");
     testFroxelClassifyPreflightAndWouldSkipGuards();
+
+// --- deepen additive from deepen-b511-froxel-guards-9fe1 ---
+void testFroxelGridDensityPreflightTrilinearAndPopulateGuards() {
+    expectTrue(fuse::renderer::froxel_util::tryCanSampleTrilinearAtCoords(grid, desc, inBounds, sampleReason),
+    expectTrue(fuse::renderer::froxel_util::tryCanSampleTrilinearAtCoords(grid, desc, warnWeights, sampleReason),
+               "tryCanSampleTrilinearAtCoords warns but succeeds for clampable weights");
+    expectTrue(!fuse::renderer::froxel_util::tryCanSampleTrilinearAtCoords(grid, desc, hardOob, sampleReason),
+    testFroxelGridDensityPreflightTrilinearAndPopulateGuards();

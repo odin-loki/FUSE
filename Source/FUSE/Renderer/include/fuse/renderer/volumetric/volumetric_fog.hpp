@@ -818,3 +818,6 @@ bool wouldSkipFroxelMarch(const FroxelDensityGrid& grid, const FroxelGridDesc& d
 bool tryCanTrilinearSample(const FroxelDensityGrid& grid,
 FroxelTrilinearSampleRejectReason classifyTrilinearSampleReject(const FroxelDensityGrid& grid,
 ScreenMappingRejectReason classifyScreenDensitySampleReject(const FroxelDensityGrid& grid,
+
+// --- deepen additive from deepen-b511-froxel-guards-9fe1 ---
+    static bool wouldClampScreenCoords(f32 screenX, f32 screenY);
