@@ -2105,3 +2105,7 @@ void testEvictionDeficitAndScoreGuards() {
 // --- deepen additive from deepen-b76-eviction-budget-guards-ea1b ---
 void testEmptyResidencyEvictionSkipGuard() {
 void testResidencyEvictionCandidateGuards() {
+
+// --- deepen additive from deepen-b75-terrain-lod-budget-residency-guards-02af ---
+void testAsyncSubmitBudgetGuards() {
+void testStreamingRequestQueueTrySubmitGuarded() {
