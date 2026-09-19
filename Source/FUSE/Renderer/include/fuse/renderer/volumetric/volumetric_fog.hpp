@@ -450,6 +450,10 @@ enum class FroxelPopulateRejectReason : u8 {
     ZeroDensity,
     ZeroMarchSteps,
     InvalidCamera,
+    DescMismatch,
+    EmptyStorage,
+    IndexOutOfRange,
+};
 
 /// Human-readable label for density lookup reject reasons (logging / tests).
 const char* densityLookupRejectReasonLabel(DensityLookupRejectReason reason);
@@ -498,6 +502,8 @@ const char* sampleCoordRejectReasonLabel(SampleCoordRejectReason reason);
 enum class FroxelPopulateRejectReason : u8 {
     None = 0,
     EmptyGrid,
+/// Why analytic froxel populate preflight rejected or skipped non-zero fill (B5.11 deepen).
+    InvalidCamera,
     ZeroDensity,
     ZeroMarchSteps,
 };
@@ -655,6 +661,8 @@ SampleCoordRejectReason classifyFroxelSampleReject(const FroxelDensityGrid& grid
 bool wouldSkipFroxelSample(const FroxelDensityGrid& grid,
                          const FroxelSampleCoords& coords,
                          SampleCoordRejectReason* outReason = nullptr);
+/// True when tile/slice corners and interpolation weights are valid for sampling.
+bool areSampleCoordsReady(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
 /// True when at least one froxel exceeds `epsilon`; false when storage is empty.
 bool hasNonZeroDensity(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
 /// Early-out when the grid is inaccessible or uniformly below `epsilon`.
@@ -977,13 +985,16 @@ bool tryPopulateFromAnalyticFog(FroxelDensityGrid& grid,
 /// Populate with preflight guards; returns false without modifying `grid` when populate would be skipped.
 /// Populate with guard preflight; returns false when `tryCanPopulateFromAnalyticFog` would reject.
 /// Populate with guard preflight and reject-reason diagnostics.
-bool tryPopulateFromAnalyticFog(FroxelDensityGrid& grid,
-                                const FroxelGridDesc& desc,
-                                const FroxelCameraDesc& camera,
-                                const VolumetricFogParams& params,
-                                FroxelPopulateRejectReason& outReason);
                                 FroxelGridRejectReason& outGridReason,
                                 FroxelCameraRejectReason& outCameraReason);
+/// True when `camera` has a positive near plane and far exceeds near.
+bool isValidPopulateCamera(const FroxelCameraDesc& camera);
+/// Early-out when analytic populate would not write non-zero froxel density.
+/// True when analytic populate would fill froxels with non-zero density.
+/// Diagnose why non-zero analytic populate would be skipped; false on empty grid or invalid camera.
+/// Preflight analytic populate without mutation — same semantics as `tryCanPopulateFromAnalyticFog`.
+bool preflightPopulateFromAnalyticFog(const FroxelGridDesc& desc,
+/// Populate with guard preflight; returns false when empty grid or invalid camera would be rejected.
 } // namespace froxel_util
 
 /// CPU stub — exponential height falloff density sample (P5 acceptance reference).
