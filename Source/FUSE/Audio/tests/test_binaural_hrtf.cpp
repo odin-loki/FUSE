@@ -1583,3 +1583,20 @@ void testCoupledForPathUsesCompositePreflight() {
     testPanPathPreflightApplyHelper();
     testHrtfBinauralPreflightCompositeAliases();
     testCoupledForPathUsesCompositePreflight();
+
+// --- deepen additive from deepen-b72-hrtf-preflights-0447 ---
+void testHrtfPanPathPreflightAliases() {
+    expectTrue(!stub_preflight.should_skip(), "ILD/ITD stub path is not skipped");
+               "should_skip pan-path preflight false on stub path");
+    expectTrue(bypass_preflight.should_skip(), "disabled HRTF pan-path is skipped");
+               "should_skip pan-path preflight true on bypass");
+               "should_skip attenuation coupling preflight mirrors struct method");
+    expectTrue(!narrow_preflight.should_skip(), "reduced attenuation coupling is not skipped");
+    expectTrue(!fuse::audio::should_skip_hrtf_attenuation_coupling_preflight(narrow_preflight),
+               "should_skip false when narrowing is warranted");
+    expectTrue(!stub_preflight.should_skip(), "enabled offset stub path is not skipped");
+    expectTrue(bypass_preflight.should_skip(), "disabled HRTF composite is skipped");
+void testListenerAwareBinauralPreflight() {
+    const fuse::audio::HrtfBinauralPreflight ir_listener_preflight =
+    testHrtfPanPathPreflightAliases();
+    testListenerAwareBinauralPreflight();
