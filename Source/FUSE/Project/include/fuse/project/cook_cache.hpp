@@ -334,6 +334,7 @@ struct CookCacheInvalidationEstimate {
 
     [[nodiscard]] u32 total() const {
         return by_source_path + by_output_path + stale_content + stale_upstream;
+/// Read-only store preflight — structural key/paths plus readable source for cook kinds (B7.9 deepen).
 
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {

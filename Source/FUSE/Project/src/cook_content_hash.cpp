@@ -579,9 +579,9 @@ CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size) {
     preflight.can_hash = true;
     preflight.reason = CookHashRejectReason::None;
 
-CookHashPreflight preflight_mesh_import_hash(const MeshImportDesc& desc) {
+CookHashPreflight preflight_import_paths(const std::string& input_path, const std::string& output_path) {
     CookHashPreflight preflight;
-    if (desc.input_path.empty()) {
+    if (input_path.empty()) {
         preflight.reason = CookHashRejectReason::EmptyInputPath;
     if (desc.output_path.empty()) {
         preflight.reason = CookHashRejectReason::EmptyOutputPath;
@@ -590,6 +590,15 @@ CookHashPreflight preflight_mesh_import_hash(const MeshImportDesc& desc) {
 CookHashPreflight preflight_texture_import_hash(const TextureImportDesc& desc) {
 
 CookHashPreflight preflight_audio_import_hash(const AudioImportDesc& desc) {
+        return preflight;
+    }
+    if (output_path.empty()) {
+    return preflight_file_content_hash(input_path);
+
+CookHashPreflight preflight_mesh_import_hash(const MeshImportDesc& desc) {
+    return preflight_import_paths(desc.input_path, desc.output_path);
+
+
 
 CookHashPreflight preflight_manifest_entry_hash(const CookManifestEntry& entry) {
     if (entry.source_path.empty()) {

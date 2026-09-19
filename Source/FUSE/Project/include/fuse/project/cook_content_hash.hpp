@@ -364,5 +364,8 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_shader_entry_hash(const CookManifestEntry& entry);
 /// Manifest entry plus optional upstream dependency preflight — read-only planning guard (B7.9 deepen).
 /// Cacheability preflight — mirrors `is_cacheable_cook_cache_key` without folding keys (B7.9 deepen).
+/// Shared empty-path guard for import descriptors — mirrors mesh/texture/audio hash preconditions (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_import_paths(const std::string& input_path,
+                                                       const std::string& output_path);
 
 } // namespace fuse::project

@@ -3275,6 +3275,9 @@ void testCookerUpstreamInvalidationEstimateProbes() {
 void testCookerUpstreamInvalidateEstimateProbes() {
     const std::string source_a = writeTempFile("/tmp/fuse_b79_up_est_a.obj", "# up est a\n");
     const std::string source_b = writeTempFile("/tmp/fuse_b79_up_est_b.obj", "# up est b\n");
+void testCookerUpstreamEstimateAndReconcileWouldProbes() {
+    const std::string source_a = writeTempFile("/tmp/fuse_b79_up_est_a.obj", "# upstream est a\n");
+    const std::string source_b = writeTempFile("/tmp/fuse_b79_up_est_b.obj", "# upstream est b\n");
 
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry_a;
@@ -3445,6 +3448,22 @@ void testCookCacheDownstreamWouldInvalidateProbe() {
                "producer output would_invalidate_downstream is true");
     expectTrue(cooker.cache().count_downstream_of(entry_a.output_path, graph.edges(), graph.jobs()) == 1u,
                "downstream count matches dependent entry");
+
+
+    const fuse::project::CookUpstreamInvalidationEstimate upstream =
+    expectTrue(upstream.direct_entries == 1u, "upstream estimate direct entries for changed source");
+    expectTrue(upstream.downstream_entries >= 1u, "upstream estimate includes downstream entries");
+    expectTrue(upstream.total() == cooker.count_upstream_invalidation(manifest, source_a),
+               "upstream estimate total matches count probe");
+
+    const std::vector<std::string> closure = cooker.probe_upstream_invalidation_closure(manifest, source_a);
+    expectTrue(closure.size() >= 2u, "upstream closure probe lists changed source and dependents");
+    expectTrue(cooker.probe_upstream_invalidation_closure(manifest, "").empty(),
+               "empty changed source upstream closure probe is guarded");
+
+    writeTempFile(source_a, "# upstream est a revised\n");
+
+    expectTrue(reconcile.total() > 0u, "stale reconcile estimate is non-zero after upstream change");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
@@ -3665,6 +3684,7 @@ int main() {
     testCookerEstimateUpstreamInvalidation();
     testCookCacheWouldInvalidateDownstreamProbe();
     testCookerUpstreamEstimateAndWouldProbes();
+    testCookerUpstreamEstimateAndReconcileWouldProbes();
     testCookCacheDownstreamSourceProbe();
     testCookCachePreflightAndReconcileEstimators();
     testCookCacheReconcileEstimators();
