@@ -1345,6 +1345,141 @@ void testLensFlareGeneration() {
     expectTrue(occluded.empty(), "fully occluded sun produces no flare elements");
 }
 
+void testFroxelTrilinearSampleAndPopulatePreflightGuards() {
+    fuse::renderer::FroxelGridDesc desc{};
+    desc.tilesX = 4;
+    desc.tilesY = 2;
+    desc.slicesZ = 3;
+
+    fuse::renderer::FroxelDensityGrid grid{};
+    grid.allocate(desc);
+    grid.density[0] = 1.f;
+    grid.density[desc.maxFroxelIndex()] = 2.f;
+
+    fuse::renderer::FroxelSampleCoords inBounds{};
+    inBounds.tileX0 = 0u;
+    inBounds.tileY0 = 0u;
+    inBounds.tileX1 = 1u;
+    inBounds.tileY1 = 1u;
+    inBounds.sliceZ0 = 0u;
+    inBounds.sliceZ1 = 1u;
+    inBounds.tx = 0.5f;
+    inBounds.ty = 0.5f;
+    inBounds.tz = 0.5f;
+
+    fuse::renderer::FroxelTrilinearSampleRejectReason trilinearReason =
+        fuse::renderer::FroxelTrilinearSampleRejectReason::None;
+    expectTrue(fuse::renderer::froxel_util::tryCanTrilinearSampleAtCoords(grid, desc, inBounds, trilinearReason),
+               "tryCanTrilinearSampleAtCoords succeeds on accessible grid");
+    expectTrue(trilinearReason == fuse::renderer::FroxelTrilinearSampleRejectReason::None,
+               "accessible grid reports no trilinear reject reason");
+    expectTrue(std::strcmp(fuse::renderer::froxelTrilinearSampleRejectReasonLabel(trilinearReason), "none") == 0,
+               "none trilinear reject reason label");
+
+    expectTrue(fuse::renderer::froxel_util::tryPreflightTrilinearSample(grid, desc, inBounds, trilinearReason),
+               "tryPreflightTrilinearSample succeeds on accessible grid");
+    expectTrue(trilinearReason == fuse::renderer::FroxelTrilinearSampleRejectReason::None,
+               "preflight trilinear sample reports no reject reason");
+
+    fuse::renderer::FroxelGridDesc zeroDesc{};
+    zeroDesc.tilesX = 0u;
+    expectTrue(!fuse::renderer::froxel_util::tryCanTrilinearSampleAtCoords(grid, zeroDesc, inBounds, trilinearReason),
+               "tryCanTrilinearSampleAtCoords rejects empty desc");
+    expectTrue(trilinearReason == fuse::renderer::FroxelTrilinearSampleRejectReason::EmptyGrid,
+               "empty desc reports empty_grid trilinear reject reason");
+    expectTrue(std::strcmp(fuse::renderer::froxelTrilinearSampleRejectReasonLabel(trilinearReason), "empty_grid") == 0,
+               "empty_grid trilinear reject reason label");
+
+    fuse::renderer::FroxelDensityGrid emptyGrid{};
+    expectTrue(!fuse::renderer::froxel_util::tryCanTrilinearSampleAtCoords(emptyGrid, desc, inBounds, trilinearReason),
+               "tryCanTrilinearSampleAtCoords rejects empty storage");
+    expectTrue(trilinearReason == fuse::renderer::FroxelTrilinearSampleRejectReason::NotAccessible,
+               "empty storage reports not_accessible trilinear reject reason");
+
+    fuse::renderer::FroxelSampleCoords warnWeights = inBounds;
+    warnWeights.tx = 2.f;
+    expectTrue(fuse::renderer::froxel_util::tryCanTrilinearSampleAtCoords(grid, desc, warnWeights, trilinearReason),
+               "tryCanTrilinearSampleAtCoords warns but succeeds for clampable weights");
+    expectTrue(trilinearReason == fuse::renderer::FroxelTrilinearSampleRejectReason::InvalidSampleCoords,
+               "clampable weights report invalid_sample_coords trilinear reject reason");
+
+    fuse::renderer::FroxelSampleCoords hardOob = inBounds;
+    hardOob.tileX0 = 99u;
+    expectTrue(!fuse::renderer::froxel_util::tryCanTrilinearSampleAtCoords(grid, desc, hardOob, trilinearReason),
+               "tryCanTrilinearSampleAtCoords rejects hard OOB tile coord");
+    expectTrue(trilinearReason == fuse::renderer::FroxelTrilinearSampleRejectReason::HardOutOfBounds,
+               "hard OOB tile coord reports hard_out_of_bounds trilinear reject reason");
+
+    fuse::f32 trilinearSample = 0.f;
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityTrilinear(grid, desc, inBounds, trilinearSample, trilinearReason),
+               "trySampleDensityTrilinear with trilinear reason succeeds on accessible grid");
+    expectNear(trilinearSample,
+               fuse::renderer::froxel_util::sampleDensityTrilinear(grid, desc, inBounds),
+               1e-5f,
+               "trySampleDensityTrilinear with trilinear reason matches unguarded sample");
+    expectTrue(trilinearReason == fuse::renderer::FroxelTrilinearSampleRejectReason::None,
+               "successful trilinear sample reports no trilinear reject reason");
+
+    fuse::f32 rejectedTrilinear = 1.f;
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityTrilinear(emptyGrid, desc, inBounds, rejectedTrilinear, trilinearReason),
+               "trySampleDensityTrilinear with trilinear reason rejects empty storage");
+    expectNear(rejectedTrilinear, 0.f, 1e-6f, "trySampleDensityTrilinear zeroes output on rejection");
+    expectTrue(trilinearReason == fuse::renderer::FroxelTrilinearSampleRejectReason::NotAccessible,
+               "rejected trilinear sample reports not_accessible reason");
+
+    fuse::renderer::SampleCoordRejectReason sampleReason = fuse::renderer::SampleCoordRejectReason::None;
+    expectTrue(fuse::renderer::FroxelGridLayout::tryValidateSampleCoords(inBounds, desc, sampleReason),
+               "tryValidateSampleCoords succeeds for in-bounds coords");
+    expectTrue(sampleReason == fuse::renderer::SampleCoordRejectReason::None,
+               "in-bounds coords report no sample validation reject reason");
+
+    fuse::renderer::DensityLookupRejectReason lookupReason = fuse::renderer::DensityLookupRejectReason::None;
+    expectTrue(fuse::renderer::froxel_util::tryPreflightDensityLookupAtIndex(grid, desc, 0u, lookupReason),
+               "tryPreflightDensityLookupAtIndex succeeds on accessible grid");
+    expectTrue(lookupReason == fuse::renderer::DensityLookupRejectReason::None,
+               "in-range index reports no density lookup reject reason");
+    expectTrue(!fuse::renderer::froxel_util::wouldRejectDensityLookupAtIndex(grid, desc, 0u),
+               "accessible grid does not reject density lookup at index");
+
+    expectTrue(fuse::renderer::froxel_util::tryPreflightDensityLookupAtCoord(grid, desc, 1u, 1u, 2u, lookupReason),
+               "tryPreflightDensityLookupAtCoord succeeds on accessible grid");
+    expectTrue(lookupReason == fuse::renderer::DensityLookupRejectReason::None,
+               "in-range coords report no density lookup reject reason");
+    expectTrue(!fuse::renderer::froxel_util::wouldRejectDensityLookupAtCoord(grid, desc, 1u, 1u, 2u),
+               "accessible grid does not reject density lookup at coord");
+
+    expectTrue(fuse::renderer::froxel_util::wouldRejectDensityLookupAtIndex(emptyGrid, desc, 0u),
+               "empty storage rejects density lookup at index");
+    expectTrue(fuse::renderer::froxel_util::wouldRejectDensityLookupAtCoord(emptyGrid, desc, 0u, 0u, 0u),
+               "empty storage rejects density lookup at coord");
+    expectTrue(!fuse::renderer::froxel_util::tryPreflightDensityLookupAtIndex(emptyGrid, desc, 0u, lookupReason),
+               "tryPreflightDensityLookupAtIndex rejects empty storage");
+    expectTrue(lookupReason == fuse::renderer::DensityLookupRejectReason::EmptyStorage,
+               "empty storage reports empty_storage density lookup reject reason");
+
+    fuse::renderer::FroxelCameraDesc camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+    fuse::renderer::VolumetricFogParams params{};
+    params.density = 0.02f;
+    params.march_steps = 32u;
+
+    fuse::renderer::FroxelPopulateRejectReason populateReason = fuse::renderer::FroxelPopulateRejectReason::None;
+    expectTrue(fuse::renderer::froxel_util::preflightPopulateFromAnalyticFog(desc, camera, params, &populateReason),
+               "preflightPopulateFromAnalyticFog succeeds for valid inputs");
+    expectTrue(populateReason == fuse::renderer::FroxelPopulateRejectReason::None,
+               "valid populate preflight reports no reject reason");
+
+    fuse::renderer::VolumetricFogParams zeroDensity = params;
+    zeroDensity.density = 0.f;
+    expectTrue(!fuse::renderer::froxel_util::preflightPopulateFromAnalyticFog(desc, camera, zeroDensity, &populateReason),
+               "preflightPopulateFromAnalyticFog rejects zero density");
+    expectTrue(populateReason == fuse::renderer::FroxelPopulateRejectReason::ZeroDensity,
+               "zero density reports zero_density populate preflight reject reason");
+    expectTrue(fuse::renderer::froxel_util::preflightPopulateFromAnalyticFog(desc, camera, params),
+               "preflightPopulateFromAnalyticFog without reason output succeeds for valid inputs");
+}
+
 void testDeferredPipelinePassHooks() {
     expectTrue(fuse::renderer::DeferredFramePipeline::passCount() == 19u,
                "deferred pipeline exposes 19 passes after B5.11 hooks");
@@ -1363,12 +1498,18 @@ void testDeferredPipelinePassHooks() {
     bootstrapDesc.createSwapchain = false;
     auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
     expectTrue(bootstrap != nullptr, "bootstrap allocated for B5.11 graph test");
+    if (bootstrap->device() == nullptr || !bootstrap->device()->isValid()) {
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
 
     fuse::renderer::ResourceManager resources;
-    resources.init(*bootstrap->device(), bindless);
+    if (!resources.init(*bootstrap->device(), bindless)) {
+        bindless.destroy(*bootstrap->device());
+        return;
+    }
 
     auto renderer = fuse::renderer::DeferredRenderer::create({});
     renderer->init(resources);
@@ -1403,6 +1544,7 @@ int main() {
     testFroxelSampleCoordNormalizeAndScreenMappingGuards();
     testFroxelPopulatePreflightAndLookupGuards();
     testFroxelCoordLookupAndDiagnosticGuards();
+    testFroxelTrilinearSampleAndPopulatePreflightGuards();
     testEmptySceneVolumetricFog();
     testZeroDimensionFroxelGrid();
     testFroxelPopulateFromAnalyticFog();
