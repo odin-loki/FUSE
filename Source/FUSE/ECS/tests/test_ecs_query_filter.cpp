@@ -1040,3 +1040,19 @@ void testPreflightCanMatchWithoutEntities() {
     expectTrue(fuse::ecs::should_skip_query_filter({typed}, missingWith),
                "should_skip_query_filter true when With set is unsatisfied");
     testPreflightCanMatchWithoutEntities();
+
+// --- deepen additive from deepen-b3-ecs-filters-preflight-e861 ---
+    expectTrue(!conflictPreflight.can_count(), "preflight can_count false for conflicting filter");
+    expectTrue(missingPreflight.runnable, "unsatisfied With filter remains runnable");
+    expectTrue(!missingPreflight.has_conflict, "unsatisfied With filter has no conflict");
+    expectTrue(missingPreflight.skipped, "unsatisfied With filter is skipped");
+    expectTrue(!missingPreflight.has_signature_match(), "unsatisfied With filter has no signature match");
+    expectTrue(!missingPreflight.can_iterate(), "unsatisfied With filter cannot iterate");
+    const fuse::ecs::QueryFilterPreflight excludedPreflight = fuse::ecs::preflight_query_filter(table, excluded);
+    expectTrue(excludedPreflight.skipped, "Without exclusion skips populated archetype");
+    expectTrue(!fuse::ecs::should_skip_query_filter(table, filter),
+               "should_skip_query_filter false when entities match");
+    expectTrue(fuse::ecs::should_skip_query_filter(table, filter) == preflight.skipped,
+               "should_skip_query_filter matches preflight skipped");
+               "should_skip_query_filter true for empty table");
+    expectTrue(fuse::ecs::should_skip_query_filter(table, conflicting),
