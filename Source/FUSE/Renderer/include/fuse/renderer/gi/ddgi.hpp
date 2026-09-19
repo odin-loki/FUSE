@@ -737,6 +737,7 @@ struct ProbeGridLayout {
     /// Classify why sample-coord validation would reject; returns `None` on valid coords.
     /// Early-out when sample-coord validation would reject — includes reject-reason diagnostics.
     static bool wouldSkipProbeSampleCoords(const DDGIDesc& desc,
+    /// Early-out when sample-coord validation would be rejected — same ordering as `tryValidateProbeSampleCoords`.
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
@@ -903,6 +904,7 @@ ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleReject(const DDGIDe
 bool shouldSkipTrilinearProbeSample(const DDGIDesc& desc,
 /// Early-out when directional trilinear sampling would be rejected (B5.6 deepen).
 bool shouldSkipTrilinearDirectionalProbeSample(const DDGIDesc& desc,
+/// Early-out when coord-based probe trilinear sampling would be rejected — same ordering as `tryCanSampleAtProbeCoords`.
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
@@ -926,6 +928,9 @@ bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
 bool wouldClampCacheIndex(u32 probe_index, const DDGIDesc& desc);
                               fuse::math::Vec3& out_irradiance,
                               CacheIndexRejectReason& outReason);
+/// Early-out when cache-index irradiance read would be rejected — same ordering as `tryReadIrradianceAtIndex`.
+bool wouldSkipReadIrradianceAtIndex(const DDGIDesc& desc,
+                                    u32 probe_index);
 /// Minimum irradiance-cache entries for trilinear sampling; 0 when the grid is not sampleable.
 u32 requiredCacheCount(const DDGIDesc& desc);
 /// True when `cache_count` covers every probe in `desc`.

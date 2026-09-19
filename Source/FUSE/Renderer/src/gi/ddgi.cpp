@@ -852,6 +852,12 @@ bool ProbeGridLayout::tryPreflightProbeSampleCoords(const DDGIDesc& desc,
 
 
 bool ProbeGridLayout::canPreflightProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
+bool ProbeGridLayout::wouldSkipProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
+    ProbeSampleCoordsRejectReason reason = ProbeSampleCoordsRejectReason::None;
+    return !tryValidateProbeSampleCoords(desc, coords, reason);
+}
+
+bool ProbeGridLayout::tryClampProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCoords& coords) {
     ProbeSampleCoordsRejectReason reason = ProbeSampleCoordsRejectReason::None;
     return tryPreflightProbeSampleCoords(desc, coords, reason);
 
@@ -1929,6 +1935,14 @@ bool wouldSkipCanSampleAtProbeCoords(const DDGIDesc& desc,
     return !canSampleAtProbeCoords(desc, coords, cache, cache_count);
 }
 
+bool wouldSkipTrilinearProbeSampleAtCoords(const DDGIDesc& desc,
+                                           const ProbeSampleCoords& coords,
+                                           const IrradianceCacheEntry* cache,
+                                           u32 cache_count) {
+    ProbeTrilinearSampleRejectReason reason = ProbeTrilinearSampleRejectReason::None;
+    return !tryCanSampleAtProbeCoords(desc, coords, cache, cache_count, reason);
+}
+
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               const IrradianceCacheEntry* cache,
                               u32 cache_count,
@@ -1958,6 +1972,14 @@ bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
     out_irradiance = cache[probe_index].irradiance;
     outReason = CacheIndexRejectReason::None;
     return true;
+}
+
+bool wouldSkipReadIrradianceAtIndex(const DDGIDesc& desc,
+                                    const IrradianceCacheEntry* cache,
+                                    u32 cache_count,
+                                    u32 probe_index) {
+    fuse::math::Vec3 irradiance{};
+    return !tryReadIrradianceAtIndex(desc, cache, cache_count, probe_index, irradiance);
 }
 
 u32 requiredCacheCount(const DDGIDesc& desc) {
@@ -4132,6 +4154,14 @@ bool preflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelReject
         *reason = local;
     }
     return ok;
+}
+
+bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params) {
+    return !canLaunchProbeBlendKernel(params);
+}
+
+bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params) {
+    return !canLaunchProbeTraceKernel(params);
 }
 
 bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params) {
