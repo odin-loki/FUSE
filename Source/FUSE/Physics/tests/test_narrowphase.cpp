@@ -2415,3 +2415,10 @@ void testFrictionBasisDeepenPassShouldRunGuards() {
                 fuse::physics::narrowphase::FrictionBasisRejectReason::BasisReusable),
     testManifoldPruneDeepenPassRejectReasonGuards();
     testManifoldFinalizeDeepenPassRejectReasonGuards();
+
+// --- deepen additive from b4-narrowphase-deepen-guards-931e ---
+    expectTrue(batchPreflight.stats.totalPairs == 2u, "batch preflight reports total pairs");
+    expectTrue(batchPreflight.stats.dispatchablePairs == 1u, "batch preflight reports dispatchable count");
+    expectTrue(batchPreflight.stats.rejectedPairs == 1u, "batch preflight reports rejected count");
+    expectTrue(batchPreflight.can_dispatch_any(), "batch preflight can dispatch mixed list");
+void testFrictionBasisRebuildDeepenPassGuards() {
