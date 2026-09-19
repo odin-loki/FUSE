@@ -842,6 +842,7 @@ enum class NarrowphaseRejectReason : u8 {
     None = 0,
     EmptyPairList,
     AllPairsRejected,
+};
 
 /// Human-readable label for narrowphase batch reject reasons (logging / tests).
 const char* narrowphase_reject_reason_name(NarrowphaseRejectReason reason);
@@ -851,6 +852,11 @@ NarrowphaseRejectReason narrowphase_reject_reason(
 
 /// Returns true when `narrowphase_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
 bool narrowphase_rejects_for_reason(
+/// Diagnose why narrowphase batch dispatch would skip; vacuously succeeds when any pair may dispatch.
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
     const CollisionShapeSoA& shapes,
     NarrowphaseRejectReason expected);
 
@@ -888,5 +894,27 @@ bool is_zero_mass_contact_pair(
 
 /// Returns true when one body is sleeping and the other is kinematic (B4.5 deepen follow-up).
 bool is_sleeping_kinematic_mix_pair(
+struct NarrowphaseBatchPreflight {
+    u32 pairCount = 0;
+    u32 rejectedCount = 0;
+    u32 dispatchableCount = 0;
+
+    bool can_dispatch() const {
+        return reason == NarrowphaseRejectReason::None && dispatchableCount > 0u;
+    }
+};
+
+/// Populate batch narrowphase preflight without running shape dispatch (B4.4 deepen follow-up pass).
+NarrowphaseBatchPreflight preflight_narrowphase_batch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating batch skip predicate — mirrors `can_skip_narrowphase` (B4.4 deepen follow-up pass).
+bool can_skip_narrowphase_dispatch(
+
+/// Detect contacts only when deepen preflight allows dispatch; invalid manifold otherwise (B4.4 deepen follow-up pass).
+ContactManifold detect_contacts_pair_if_needed(
+    const broadphase::CandidatePair& pair,
 
 } // namespace fuse::physics::narrowphase

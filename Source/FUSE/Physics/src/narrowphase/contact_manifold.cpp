@@ -546,6 +546,9 @@ const char* manifold_finalize_reject_reason_name(ManifoldFinalizeRejectReason re
     case ManifoldFinalizeRejectReason::EmptyAfterPrune:
         return "EmptyAfterPrune";
 
+    case ManifoldFinalizeRejectReason::NoPenetration:
+        return "NoPenetration";
+
     const ContactManifold& manifold,
     f32 separationEpsilon,
     f32 duplicateEpsilon) {
@@ -593,6 +596,8 @@ bool manifold_finalize_rejects_for_reason(
     f32 duplicateEpsilon) {
         return ManifoldFinalizeRejectReason::Empty;
         return ManifoldFinalizeRejectReason::EmptyAfterPrune;
+
+        return ManifoldFinalizeRejectReason::NoPenetration;
 
 
 ManifoldFinalizePreflight preflight_manifold_finalize(
@@ -893,6 +898,33 @@ bool generate_contact_manifold_guarded(ContactManifold& manifold) {
     preflight.hasValidNormal = manifold.hasValidNormal();
     preflight.hasPenetrating = manifold.hasPenetratingPoints(separationEpsilon);
     preflight.needsFrictionBasis = needs_friction_basis_refresh(manifold);
+
+ManifoldPruneDispatchPreflight preflight_manifold_prune_dispatch(
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
+    ManifoldPruneDispatchPreflight preflight{};
+        preflight.wouldBeEmpty = true;
+
+    const ManifoldPrunePreflight regularPreflight =
+    preflight.needsRegularPrune = regularPreflight.needs_pruning();
+    preflight.wouldBeEmpty = regularPreflight.wouldBeEmpty;
+    if (shallowMinDepth > 0.f) {
+        preflight.needsShallowPrune = manifold.hasShallowPenetrations(shallowMinDepth);
+
+bool can_skip_manifold_prune_dispatch(
+    return preflight_manifold_prune_dispatch(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth)
+        .can_skip();
+
+bool prune_contact_manifold_if_needed(
+    const ManifoldPruneDispatchPreflight preflight =
+        preflight_manifold_prune_dispatch(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+    if (preflight.can_skip()) {
+
+    if (preflight.needsRegularPrune) {
+        if (!manifold.pruneContactPointsIfNeeded(separationEpsilon, duplicateEpsilon)) {
+
+    if (shallowMinDepth > 0.f && preflight.needsShallowPrune) {
+        return manifold.pruneShallowPenetrationsIfNeeded(shallowMinDepth);
 
 
 bool can_skip_manifold_finalize(

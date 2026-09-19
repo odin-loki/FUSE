@@ -182,6 +182,8 @@ FrictionBasisRejectReason friction_basis_reject_reason(
 
 /// Returns true when `friction_basis_reject_reason` matches `expected` (B4.5 deepen follow-up).
 
+
+
 /// Const preflight for friction-basis rebuild dispatch (B4.4 deepen follow-up).
 struct FrictionBasisPreflight {
     FrictionBasisRejectReason reason = FrictionBasisRejectReason::None;
@@ -490,5 +492,9 @@ bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilo
 
 /// Returns true when friction-basis rebuild dispatch may proceed (B4.5 deepen follow-up).
 bool can_dispatch_friction_basis_rebuild(
+/// Rebuild friction basis only when preflight allows; returns false when skipped (B4.4 deepen follow-up pass).
+
+/// Build friction tangents only when preflight allows rebuild (B4.4 deepen follow-up pass).
+void compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase
