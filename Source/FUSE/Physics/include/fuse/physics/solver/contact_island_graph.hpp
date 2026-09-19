@@ -209,6 +209,8 @@ IslandGraphBuildRejectReason islandGraphBuildRejectReason(
 /// Returns the first reject reason for build inputs, or `None` when build may proceed.
 
 
+
+
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
@@ -783,6 +785,7 @@ bool can_build_island_graph(
 bool islandGraphBuildRejectsForReason(
 bool islandGraphBuildRejectsForReason(u32 bodyCount,
 
+
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
 /// contacts and distance constraints run sequentially (Gauss-Seidel stub).
@@ -851,6 +854,7 @@ struct ContactIslandGraph {
     /// Guarded build entry: skips empty inputs and out-of-range constraint refs.
     /// Build only when inputs pass preflight guards; clears graph and returns false on reject.
                        IslandGraphBuildRejectReason* reason = nullptr);
+    /// Build only when `island_graph_build_reject_reason` allows; clears and returns false when skipped.
 
     void clear();
 
