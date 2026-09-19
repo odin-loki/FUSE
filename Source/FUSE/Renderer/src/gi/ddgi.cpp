@@ -2468,3 +2468,52 @@ bool ProbeGridLayout::tryNormalizeAndValidateProbeSampleCoords(const DDGIDesc& d
 bool tryPreflightProbeTraceKernelResources(const DDGIKernelParams& params,
         outReason = ProbeKernelRejectReason::NullProbeWorldPositions;
 bool tryPreflightProbeBlendKernelResources(const DDGIKernelParams& params,
+
+// --- deepen additive from deepen-ddgi-guards-6f23 ---
+ProbeSampleCoordsRejectReason classifyProbeSampleCoordsReject(const DDGIDesc& desc,
+        return ProbeSampleCoordsRejectReason::EmptyGrid;
+        return indicesInRange ? ProbeSampleCoordsRejectReason::OutOfRangeWeights
+        return ProbeSampleCoordsRejectReason::UnorderedCorners;
+    return ProbeSampleCoordsRejectReason::None;
+    return classifyProbeSampleCoordsReject(desc, coords) != ProbeSampleCoordsRejectReason::None;
+    return outReason == ProbeSampleCoordsRejectReason::None;
+        return ProbeTrilinearSampleRejectReason::EmptyGrid;
+        return ProbeTrilinearSampleRejectReason::NotSampleable;
+        return ProbeTrilinearSampleRejectReason::NullCache;
+        return ProbeTrilinearSampleRejectReason::UndersizedCache;
+        return ProbeTrilinearSampleRejectReason::InvalidSampleCoords;
+    return ProbeTrilinearSampleRejectReason::None;
+    return classifyProbeTrilinearSampleReject(desc, coords, cache, cache_count) !=
+    outReason = classifyProbeTrilinearSampleReject(desc, coords, cache, cache_count);
+    return outReason == ProbeTrilinearSampleRejectReason::None;
+        return CacheIndexRejectReason::EmptyGrid;
+        return CacheIndexRejectReason::OutOfRangeProbeIndex;
+        return CacheIndexRejectReason::UndersizedCache;
+    return CacheIndexRejectReason::None;
+        return CacheIndexRejectReason::NullCache;
+    return classifyCacheIndexReject(desc, probe_index, cache_count);
+    outReason = classifyCacheIndexReject(desc, probe_index, cache_count);
+    return outReason == CacheIndexRejectReason::None;
+    outReason = classifyCacheIndexReject(desc, cache, probe_index, cache_count);
+        return ProbeScheduleRejectReason::NullOutIndices;
+        return ProbeScheduleRejectReason::NullOutCount;
+        return ProbeScheduleRejectReason::ZeroProbeCount;
+        return ProbeScheduleRejectReason::ZeroMaxIndices;
+    return ProbeScheduleRejectReason::None;
+    outReason = classifyProbeScheduleReject(probe_count, max_indices, out_indices, out_count);
+    return outReason == ProbeScheduleRejectReason::None;
+        return ProbeUpdateLaunchRejectReason::EmptyGrid;
+        return ProbeUpdateLaunchRejectReason::NullIndices;
+        return ProbeUpdateLaunchRejectReason::ZeroCount;
+            return ProbeUpdateLaunchRejectReason::OutOfRangeProbeIndex;
+    return ProbeUpdateLaunchRejectReason::None;
+    outReason = classifyProbeUpdateLaunchReject(desc, probe_indices, probe_count);
+    return outReason == ProbeUpdateLaunchRejectReason::None;
+        return ProbeKernelRejectReason::ZeroUpdateCount;
+        return ProbeKernelRejectReason::NullProbeIndices;
+        return ProbeKernelRejectReason::ZeroRaysPerProbe;
+    return ProbeKernelRejectReason::None;
+    outReason = classifyProbeKernelReject(params);
+    return outReason == ProbeKernelRejectReason::None;
+    return classifyProbeKernelReject(params) == ProbeKernelRejectReason::None;
+    return classifyProbeKernelReject(params) != ProbeKernelRejectReason::None;

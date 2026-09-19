@@ -818,3 +818,7 @@ bool wouldSkipProbeSchedule(u32 probe_count, u32* out_indices, u32 max_indices, 
 
 // --- deepen additive from deepen-ddgi-guards-c8ba ---
     static bool tryNormalizeAndValidateProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCoords& coords);
+
+// --- deepen additive from deepen-ddgi-guards-6f23 ---
+ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleReject(const DDGIDesc& desc,
+CacheIndexRejectReason classifyCacheIndexReject(const DDGIDesc& desc, u32 probe_index, u32 cache_count);

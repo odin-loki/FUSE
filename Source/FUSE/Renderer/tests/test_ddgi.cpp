@@ -2932,3 +2932,12 @@ void testProbeKernelResourcePreflights() {
                "trySchedule succeeds for zero probe count no-op");
     testProbeSampleCoordPreflightHelpers();
     testProbeKernelResourcePreflights();
+
+// --- deepen additive from deepen-ddgi-guards-6f23 ---
+void testClassifyAndSkipGuards() {
+    expectTrue(fuse::renderer::classifyProbeSampleCoordsReject(desc, coords) ==
+    expectTrue(fuse::renderer::classifyProbeSampleCoordsReject(desc, reversed) ==
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeTrilinearSampleReject(desc, coords, cache.data(), 4u) ==
+    expectTrue(!fuse::renderer::gi::wouldSkipProbeTraceKernel(kernelParams),
+    expectTrue(!fuse::renderer::gi::wouldSkipProbeBlendKernel(kernelParams),
+    expectTrue(fuse::renderer::gi::classifyProbeKernelReject(nullIndices) ==
