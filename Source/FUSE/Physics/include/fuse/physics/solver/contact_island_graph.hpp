@@ -372,9 +372,6 @@ bool should_skip_island_build(
 /// True when `bodyIndex` is in range for island graph union.
 
 /// Preflight island graph build; flags out-of-range body references without mutating.
-    u32 bodyCount,
-    const std::vector<narrowphase::ContactManifold>& contacts,
-    const std::vector<DistanceConstraint>& distanceConstraints);
 
 /// Build only when preflight passes; clears graph and returns false on reject.
 bool build_island_graph_guarded(u32 bodyCount,
@@ -385,6 +382,20 @@ bool build_island_graph_guarded(u32 bodyCount,
 bool can_build_island_graph(u32 bodyCount,
 /// Early-out guard when island graph build inputs are invalid.
 bool should_skip_island_graph_build(
+/// Why island graph build preflight rejected early-out (B4.4 deepen).
+    AllConstraintsStale,
+
+/// Const preflight for island graph build dispatch (B4.4 deepen).
+    u32 staleContactCount = 0;
+    u32 staleDistanceCount = 0;
+
+
+/// Populate island build preflight without mutating a graph (B4.4 deepen).
+
+/// Returns true when island graph build should be skipped before mutation (B4.4 deepen).
+
+/// True when at least one contact or distance constraint references in-range bodies (B4.4 deepen).
+bool has_usable_island_build_constraints(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
