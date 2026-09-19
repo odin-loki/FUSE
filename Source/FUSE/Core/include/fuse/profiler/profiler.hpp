@@ -441,8 +441,6 @@ struct FlowIdLookupPreflight {
 
 /// Read-only nesting/async-flow consistency snapshot for export and diagnostics.
 struct NestingConsistencyPreflight {
-    bool scopeNestingBalanced = true;
-    bool flowNestingBalanced = true;
     bool flowDepthAttached = true;
 
     bool isConsistent() const {
@@ -606,7 +604,6 @@ enum class ChromeTraceExportRejectReason : u8 {
 
 
 /// Read-only scope nesting diagnostics (B1.6 deepen — nesting guard).
-struct NestingPreflight {
     u32 scopeDepth = 0;
     u32 flowDepth = 0;
     bool scopeBalanced = true;
@@ -714,7 +711,6 @@ struct NestingStatePreflight {
 
 
 
-/// Read-only scope/async-flow nesting diagnostics — safe before recording or export.
 
         return scopeNestingBalanced && flowNestingBalanced && !flowDepthDetached && !crossThreadFlowHandoffPending;
     bool hasUnbalancedNesting() const { return !scopeNestingBalanced || !flowNestingBalanced; }
@@ -785,6 +781,8 @@ struct NestingStatePreflight {
     bool canNestAsyncFlow() const { return !crossThreadFlowHandoffPending; }
     bool isBalanced() const { return scopeNestingBalanced && flowNestingBalanced; }
     bool hasPendingHandoff() const { return crossThreadFlowHandoffPending; }
+
+
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -1494,6 +1492,12 @@ FlowIdLookupPreflight preflightFlowLookupById(u32 flowId);
 NestingConsistencyPreflight preflightNestingConsistency();
 AsyncFlowPreflight preflightAsyncFlow();
 NestingPreflight preflightNesting();
+
+/// Preflight skip checks — same ordering as the corresponding record entry points (no mutation).
+bool wouldSkipProfileScope(const char* name);
+bool wouldSkipBeginAsyncFlow(const char* name, u32 flowId);
+bool wouldSkipEndAsyncFlow(const char* name, u32 flowId);
+bool wouldSkipCounterSample(const char* track);
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();
