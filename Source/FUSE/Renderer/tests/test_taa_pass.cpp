@@ -4653,3 +4653,6 @@ void testTaaPassTryPreflightGuardWrappers() {
 // --- deepen additive from deepen-taa-b59-guards-5600 ---
 void testTaaPassTryAndClassifyGuardWrappers() {
                "pass tryPreflightHistoryReuse passes after warmup with current generation");
+
+// --- deepen additive from deepen-b59-taa-guards-a216 ---
+    expectTrue(pass->tryPreflightHistoryReuse(resolveDesc.observed_history_generation, reuseReason),
