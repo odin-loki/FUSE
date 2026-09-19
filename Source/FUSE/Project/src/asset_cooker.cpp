@@ -252,7 +252,72 @@ CookCacheReconcileEstimate AssetCooker::estimate_reconcile_invalidation(const Co
     const CookCachePruneEstimate prune = m_cache.estimate_prune_removals();
     estimate.prune_invalid_entries = prune.invalid_entries;
     estimate.prune_stale_entries = prune.stale_entries;
+
+    CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    std::vector<std::pair<std::string, u64>> source_upstream;
+    source_upstream.reserve(graph.jobs().size());
+    for (const CookJob& job : graph.jobs()) {
+        source_upstream.emplace_back(job.source_path, hash_upstream_from_jobs(job, graph.jobs()));
+    }
+
+    estimate.overlapping_entries = m_cache.count_reconcile_overlap_entries(source_upstream);
     return estimate;
+}
+
+bool AssetCooker::would_reconcile_invalidation(const CookManifest& manifest) const {
+    return estimate_reconcile_invalidation(manifest).unique_total() != 0;
+}
+
+std::vector<std::string> AssetCooker::probe_reconcile_sources(const CookManifest& manifest) const {
+    std::vector<std::string> sources;
+
+    CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    std::vector<std::pair<std::string, u64>> source_upstream;
+    source_upstream.reserve(graph.jobs().size());
+    for (const CookJob& job : graph.jobs()) {
+        source_upstream.emplace_back(job.source_path, hash_upstream_from_jobs(job, graph.jobs()));
+    }
+
+    for (const std::string& stale_upstream : m_cache.probe_stale_upstream_sources_unique(source_upstream)) {
+        bool already_recorded = false;
+        for (const std::string& recorded : sources) {
+            if (recorded == stale_upstream) {
+                already_recorded = true;
+                break;
+            }
+        }
+        if (!already_recorded) {
+            sources.push_back(stale_upstream);
+        }
+    }
+
+    for (const std::string& stale_content : m_cache.probe_stale_content_sources()) {
+        bool already_recorded = false;
+        for (const std::string& recorded : sources) {
+            if (recorded == stale_content) {
+                already_recorded = true;
+                break;
+            }
+        }
+        if (!already_recorded) {
+            sources.push_back(stale_content);
+        }
+    }
+
+    return sources;
+}
+
+bool AssetCooker::would_upstream_invalidation(const CookManifest& manifest,
+                                              const std::string& changed_source) const {
+    return count_upstream_invalidation(manifest, changed_source) != 0;
+}
+
+bool AssetCooker::would_stale_dependency_invalidation(const CookManifest& manifest) const {
+    return count_stale_dependency_invalidation(manifest) != 0;
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {
