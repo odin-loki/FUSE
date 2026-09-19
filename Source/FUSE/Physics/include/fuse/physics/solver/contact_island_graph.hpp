@@ -164,7 +164,6 @@ IslandBuildInput count_island_build_input(
 
 /// Const preflight for island graph build dispatch (B4.4 deepen follow-up).
 /// Input sizing for island graph build preflight (B4.4 deepen follow-up).
-struct IslandBuildInputStats {
     u32 invalidContactBodyRefs = 0;
     u32 invalidDistanceBodyRefs = 0;
 
@@ -240,7 +239,6 @@ bool has_island_build_constraints(
 
     bool has_out_of_range_refs() const {
         return outOfRangeContactCount > 0u || outOfRangeDistanceCount > 0u;
-    }
 
 /// Populate build preflight without mutating a graph (B4.4 deepen).
 bool island_build_rejects_for_reason(u32 bodyCount,
@@ -286,8 +284,6 @@ bool contactIslandGraphBuildRejectsForReason(
 struct ContactIslandGraphBuildPreflight {
     ContactIslandGraphBuildRejectReason reason = ContactIslandGraphBuildRejectReason::None;
 
-    bool has_unsafe_refs() const {
-        return outOfRangeContactBodyCount > 0u || outOfRangeDistanceBodyCount > 0u;
 
     bool can_build() const { return reason == ContactIslandGraphBuildRejectReason::None; }
 
@@ -550,8 +546,20 @@ struct IslandGraphIntegrityPreflight {
     bool can_use() const { return !skipped && !has_unsafe_refs(); }
 /// True when build inputs carry no out-of-range body references.
 bool island_build_inputs_safe(u32 bodyCount,
-                              const std::vector<narrowphase::ContactManifold>& contacts,
-                              const std::vector<DistanceConstraint>& distanceConstraints);
+/// True when `bodyIndex` refers to a body slot in an island partition build.
+inline bool is_valid_island_body_index(u32 bodyIndex, u32 bodyCount) {
+    return bodyIndex < bodyCount;
+
+/// True when both body indices are in range for island union during graph build.
+inline bool are_island_body_refs_in_range(u32 bodyA, u32 bodyB, u32 bodyCount) {
+    return is_valid_island_body_index(bodyA, bodyCount) && is_valid_island_body_index(bodyB, bodyCount);
+
+/// True when a contact manifold references in-range bodies for island build.
+inline bool is_in_range_island_contact(const narrowphase::ContactManifold& contact, u32 bodyCount) {
+    return are_island_body_refs_in_range(contact.bodyA, contact.bodyB, bodyCount);
+
+inline bool is_in_range_island_distance(const DistanceConstraint& constraint, u32 bodyCount) {
+    return are_island_body_refs_in_range(constraint.bodyA, constraint.bodyB, bodyCount);
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
