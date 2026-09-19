@@ -1092,6 +1092,158 @@ void testTryEndDragGuards() {
     expectTrue(result.axis == fuse::editor::GizmoAxis::X, "tryEndDrag records active axis");
 }
 
+void testBeginDragPreflightAxisResolution() {
+    fuse::editor::GizmoTransform transform{};
+
+    const fuse::editor::GizmoRay xRay = rayAlongX();
+    const fuse::editor::BeginDragPreflight rayPreflight = fuse::editor::preflightBeginDrag(
+        xRay, transform, fuse::editor::GizmoMode::Translate, fuse::editor::GizmoSpace::World,
+        fuse::editor::GizmoSystem::kAxisLength, fuse::editor::GizmoSystem::kPickRadius);
+    expectTrue(rayPreflight.canBegin, "begin preflight accepts valid ray pick");
+    expectTrue(rayPreflight.axis == fuse::editor::GizmoAxis::X,
+               "begin preflight resolves ray pick axis");
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+    const fuse::editor::BeginDragPreflight hitPreflight =
+        fuse::editor::preflightBeginDrag(hit, fuse::editor::GizmoMode::Translate);
+    expectTrue(hitPreflight.canBegin, "begin preflight accepts valid screen hit");
+    expectTrue(hitPreflight.axis == fuse::editor::GizmoAxis::X,
+               "begin preflight resolves screen pick axis");
+
+    fuse::editor::GizmoSystem gizmo;
+    const fuse::editor::BeginDragPreflight gizmoPreflight = gizmo.preflightBeginDrag(hit);
+    expectTrue(gizmoPreflight.axis == fuse::editor::GizmoAxis::X,
+               "gizmo begin preflight resolves screen pick axis");
+}
+
+void testSnapDragPreflightGuards() {
+    fuse::editor::GizmoSnapSettings snap{};
+
+    const fuse::editor::SnapDragPreflight disabledPreflight =
+        fuse::editor::preflightSnapDrag(fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(disabledPreflight.snapDisabled, "snap-drag preflight marks disabled snap");
+    expectTrue(!disabledPreflight.canApply(), "snap-drag preflight rejects disabled snap");
+    expectTrue(!fuse::editor::canSnapDrag(fuse::editor::GizmoMode::Translate, snap),
+               "canSnapDrag rejects disabled snap");
+
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+    const fuse::editor::SnapDragPreflight degradedPreflight =
+        fuse::editor::preflightSnapDrag(fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(degradedPreflight.snapDegraded, "snap-drag preflight marks degraded snap");
+    expectTrue(!degradedPreflight.canApply(), "snap-drag preflight rejects degraded snap");
+    expectTrue(!fuse::editor::canSnapDrag(fuse::editor::GizmoMode::Translate, snap),
+               "canSnapDrag rejects degraded snap");
+
+    snap.gridSize = 1.f;
+    const fuse::editor::SnapDragPreflight validPreflight =
+        fuse::editor::preflightSnapDrag(fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(validPreflight.canApply(), "snap-drag preflight accepts valid snap");
+    expectTrue(!validPreflight.snapDisabled, "valid snap-drag preflight clears snapDisabled");
+    expectTrue(!validPreflight.snapDegraded, "valid snap-drag preflight clears snapDegraded");
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    expectTrue(gizmo.preflightSnapDrag().canApply(), "gizmo snap-drag preflight accepts valid snap");
+    expectTrue(gizmo.canSnapDragNow(), "gizmo canSnapDragNow mirrors preflight");
+}
+
+void testDragInteractionPreflightGuards() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::DragInteractionPreflight beginPreflight =
+        fuse::editor::preflightDragInteraction(hit, fuse::editor::GizmoMode::Translate, snap,
+                                               false);
+    expectTrue(beginPreflight.canBegin(), "interaction preflight accepts valid begin");
+    expectTrue(!beginPreflight.canUpdate(), "interaction preflight rejects update before drag");
+    expectTrue(!beginPreflight.canEnd(), "interaction preflight rejects end before drag");
+    expectTrue(!beginPreflight.snapWillApply(), "interaction preflight marks degraded snap");
+    expectTrue(beginPreflight.begin.axis == fuse::editor::GizmoAxis::X,
+               "interaction preflight forwards begin axis");
+
+    hit.screenX = 50.f;
+    hit.screenY = 50.f;
+    const fuse::editor::DragInteractionPreflight deadZonePreflight =
+        fuse::editor::preflightDragInteraction(hit, fuse::editor::GizmoMode::Translate, snap,
+                                               false);
+    expectTrue(!deadZonePreflight.canBegin(), "interaction preflight rejects dead-zone begin");
+    expectTrue(deadZonePreflight.begin.screenMiss, "interaction preflight forwards screen miss");
+
+    hit.screenX = 30.f;
+    hit.screenY = 50.f;
+    const fuse::editor::DragInteractionPreflight dragPreflight = fuse::editor::preflightDragInteraction(
+        hit, fuse::editor::GizmoMode::Translate, snap, true, fuse::editor::GizmoAxis::X);
+    expectTrue(!dragPreflight.canBegin(), "interaction preflight skips begin while dragging");
+    expectTrue(dragPreflight.canUpdate(), "interaction preflight accepts active drag update");
+    expectTrue(dragPreflight.canEnd(), "interaction preflight accepts active drag end");
+    expectTrue(dragPreflight.update.snapDegraded, "interaction preflight forwards snap degraded");
+
+    hit.screenX = 50.f;
+    hit.screenY = 50.f;
+    const fuse::editor::DragInteractionPreflight screenMissPreflight =
+        fuse::editor::preflightDragInteraction(hit, fuse::editor::GizmoMode::Translate, snap, true,
+                                                fuse::editor::GizmoAxis::X);
+    expectTrue(screenMissPreflight.canUpdate(),
+               "interaction preflight still allows update in dead zone");
+    expectTrue(screenMissPreflight.update.screenMiss,
+               "interaction preflight marks update screen miss");
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    hit.screenX = 10.f;
+    const fuse::editor::DragInteractionPreflight gizmoBeginPreflight =
+        gizmo.preflightDragInteraction(hit);
+    expectTrue(gizmoBeginPreflight.canBegin(), "gizmo interaction preflight accepts begin");
+
+    gizmo.beginDrag(hit, fuse::editor::GizmoTransform{});
+    hit.screenX = 30.f;
+    const fuse::editor::DragInteractionPreflight gizmoDragPreflight =
+        gizmo.preflightDragInteraction(hit);
+    expectTrue(gizmoDragPreflight.canUpdate(), "gizmo interaction preflight accepts drag update");
+    expectTrue(gizmoDragPreflight.canEnd(), "gizmo interaction preflight accepts drag end");
+    gizmo.endDrag();
+}
+
+void testGizmoSnapAwareUpdatePreflight() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    gizmo.beginDrag(hit, fuse::editor::GizmoTransform{});
+
+    const fuse::editor::UpdateDragPreflight degradedPreflight = gizmo.preflightUpdateDrag(hit);
+    expectTrue(degradedPreflight.canUpdate(),
+               "gizmo update preflight still allows drag when snap degraded");
+    expectTrue(degradedPreflight.snapDegraded, "gizmo update preflight marks snap degraded");
+
+    snap.gridSize = 1.f;
+    gizmo.setSnapSettings(snap);
+    const fuse::editor::UpdateDragPreflight validPreflight = gizmo.preflightUpdateDrag(hit);
+    expectTrue(validPreflight.canUpdate(), "gizmo update preflight accepts valid snap settings");
+    expectTrue(!validPreflight.snapDegraded, "valid snap clears snapDegraded on gizmo update");
+    gizmo.endDrag();
+}
+
 void testDirtyFlagOnEndDrag() {
     fuse::editor::GizmoSystem gizmo;
     fuse::editor::CommandStack commandStack;
@@ -1159,6 +1311,10 @@ int main() {
     testEndDragPreflightGuards();
     testCanEndDragGuards();
     testTryEndDragGuards();
+    testBeginDragPreflightAxisResolution();
+    testSnapDragPreflightGuards();
+    testDragInteractionPreflightGuards();
+    testGizmoSnapAwareUpdatePreflight();
     testDirtyFlagOnEndDrag();
 
     if (g_failures != 0) {
