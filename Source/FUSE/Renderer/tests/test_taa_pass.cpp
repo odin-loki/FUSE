@@ -4723,3 +4723,6 @@ void testTaaPassTryClassifyGuardWrappers() {
                "fallback pass classifyJitterSyncReject passes after normalization");
     expectTrue(fallbackSeqPass->tryPreflightJitterAdvance(jitterReject),
                "fallback pass tryPreflightJitterAdvance passes after normalization");
+
+// --- deepen additive from deepen-taa-pass-guards-35c6 ---
+    expectTrue(pass->tryPreflightJitterSync(11u, jitterReject),
