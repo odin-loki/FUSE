@@ -1318,6 +1318,28 @@ struct AsyncFlowNestingPreflight {
     bool hasOpenAsyncFlows = false;
 };
 
+/// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
+struct ProfileScopePreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canEnter = false;
+};
+
+/// Read-only async-flow begin diagnostics — safe to call before `beginAsyncFlow()`.
+struct AsyncFlowBeginPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canBegin = false;
+};
+
+/// Read-only async-flow end diagnostics — safe to call before `endAsyncFlow()`.
+struct AsyncFlowEndPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool wouldUnderflowOpenCount = false;
+    bool canEnd = false;
+};
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:
@@ -2220,6 +2242,7 @@ bool tryPreflightProfileScope(const char* name, ProfileScopePreflight& outPrefli
 bool tryPreflightAsyncFlowBegin(const char* name, u32 flowId, AsyncFlowBeginPreflight& outPreflight);
 bool tryPreflightAsyncFlowEnd(const char* name, u32 flowId, AsyncFlowEndPreflight& outPreflight);
 bool tryPreflightCounterSample(const char* track, CounterSamplePreflight& outPreflight);
+
 
 
 

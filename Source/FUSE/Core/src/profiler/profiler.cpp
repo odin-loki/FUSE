@@ -74,6 +74,8 @@ bool shouldRejectEventName(const char* name) {
 
 
 
+
+
 bool isAsyncFlowPhase(EventPhase phase) {
     return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
 }
@@ -4159,6 +4161,20 @@ bool tryFindAsyncFlowFinishIndex(u32 flowId, u32& outIndex) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -6032,6 +6048,16 @@ bool tryFindLastFlowEventIndexById(u32 flowId, u32& outIndex) {
 
 
     if (!tryFindLastEventIndexByName(name, index)) {
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -8096,6 +8122,48 @@ bool wouldSkipCounter(const char* track) {
 
 bool wouldSkipCounterSnapshotAtFrame(const char* track) {
     return wouldSkipCounter(track);
+}
+
+ProfileScopePreflight preflightProfileScope(const char* name) {
+    ProfileScopePreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
+    return preflight;
+}
+
+AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
+    AsyncFlowBeginPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
+    return preflight;
+}
+
+AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
+    AsyncFlowEndPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
+    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
+        && !preflight.wouldUnderflowOpenCount;
+    return preflight;
+}
+
+bool wouldSkipProfileScope(const char* name) {
+    return !preflightProfileScope(name).canEnter;
+}
+
+bool wouldSkipBeginAsyncFlow(const char* name) {
+    return !preflightBeginAsyncFlow(name, 0u).canBegin;
+}
+
+bool wouldSkipEndAsyncFlow(const char* name) {
+    return !preflightEndAsyncFlow(name, 0u).canEnd;
+}
+
+bool wouldSkipCounterSample(const char* track) {
+    return !enabled() || !isValidEventName(track);
 }
 
 void reset() {
