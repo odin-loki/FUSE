@@ -1034,5 +1034,16 @@ inline bool try_rebuild_friction_basis(ContactManifold& manifold, f32 epsilon = 
 inline bool try_compute_friction_tangents(ContactManifold& manifold, f32 epsilon = 1e-4f) {
     if (would_skip_friction_basis_rebuild(manifold, epsilon)) {
     return would_skip_friction_basis_rebuild(manifold, epsilon);
+/// Non-mutating friction-basis rebuild skip predicate with optional reject reason (B4.6 deepen pass).
+inline bool wouldSkipFrictionBasisRebuild(
+    FrictionBasisRejectReason* reason = nullptr,
+    const FrictionBasisRejectReason rejectReason = friction_basis_reject_reason(manifold);
+    if (reason != nullptr) {
+        *reason = rejectReason;
+
+/// Rebuild friction basis only when preflight allows; returns false when skipped (B4.6 deepen pass).
+    if (wouldSkipFrictionBasisRebuild(manifold, nullptr, epsilon)) {
+
+inline bool tryComputeFrictionTangents(ContactManifold& manifold, f32 epsilon = 1e-4f) {
 
 } // namespace fuse::physics::narrowphase

@@ -2175,11 +2175,7 @@ inline bool should_run_contact_pair_deepen_dispatch(
 /// Non-mutating deepen pair-dispatch skip predicate — mirrors `should_skip_contact_pair_deepen_dispatch` (B4.5 deepen follow-up pass).
 inline bool wouldSkipContactPairDeepenDispatch(
 inline bool would_skip_contact_pair_deepen_dispatch(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     return should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
-}
 
 /// Non-mutating narrowphase skip predicate — mirrors `can_skip_narrowphase` (B4.5 deepen follow-up pass).
 inline bool wouldSkipNarrowphase(
@@ -2195,19 +2191,12 @@ inline bool tryGenerateContactManifold(ContactManifold& manifold) {
     return generate_contact_manifold(manifold);
 /// Non-mutating batch skip predicate — mirrors `can_skip_narrowphase` (B4.5 deepen follow-up pass).
 inline bool would_skip_narrowphase_batch(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
-}
 
 /// Detect contacts only when base preflight allows; returns false when skipped (B4.5 deepen follow-up pass).
 inline bool try_detect_contacts_pair(
-    const broadphase::CandidatePair& pair,
-    const CollisionShapeSoA& shapes,
     ContactManifold& out) {
     if (would_skip_contact_pair_dispatch(pair, bodies, shapes)) {
         out = invalidContactManifold();
-        return false;
     out = detect_contacts_pair(pair, bodies, shapes);
     return out.valid;
 
@@ -2217,6 +2206,32 @@ inline bool try_detect_contacts_pair_deepen(
 
 /// Finalize manifold only when preflight allows; no-op otherwise (B4.5 deepen follow-up pass).
 inline bool try_generate_contact_manifold(ContactManifold& manifold) {
+/// Non-mutating pair-dispatch skip predicate with optional reject reason (B4.6 deepen pass).
+    ContactPairRejectReason* reason = nullptr) {
+    const ContactPairRejectReason rejectReason = contact_pair_reject_reason(pair, bodies, shapes);
+    if (reason != nullptr) {
+        *reason = rejectReason;
+    return rejectReason != ContactPairRejectReason::None;
+
+/// Non-mutating deepen pair-dispatch skip predicate with optional reject reason (B4.6 deepen pass).
+    const ContactPairRejectReason rejectReason =
+        contact_pair_deepen_reject_reason(pair, bodies, shapes);
+
+/// Detect contacts only when pair preflight allows; returns false when skipped (B4.6 deepen pass).
+inline bool tryDetectContactsPair(
+    ContactManifold& outManifold) {
+        outManifold = invalidContactManifold();
+    outManifold = detect_contacts_pair(pair, bodies, shapes);
+    return true;
+
+/// Detect contacts only when deepen preflight allows; returns false when skipped (B4.6 deepen pass).
+inline bool tryDetectContactsPairDeepen(
+    if (wouldSkipContactPairDeepenDispatch(pair, bodies, shapes)) {
+
+/// Finalize manifold only when preflight allows; returns false when skipped (B4.6 deepen pass).
+
+/// Finalize manifold only when `can_finalize_contact_manifold` passes; no-op otherwise (B4.6 deepen pass).
+inline bool tryGenerateContactManifoldIfNeeded(ContactManifold& manifold) {
     return generate_contact_manifold_if_needed(manifold);
 }
 

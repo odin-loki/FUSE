@@ -1719,6 +1719,28 @@ inline bool try_prune_contact_manifold(
 /// Finalize only when preflight allows; returns false when skipped (B4.5 deepen follow-up pass).
 inline bool try_finalize_contact_manifold(
     return finalize_contact_manifold_with_preflight(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+/// Non-mutating manifold prune skip predicate with optional reject reason (B4.6 deepen pass).
+inline bool wouldSkipManifoldPrune(
+    ManifoldPruneRejectReason* reason = nullptr,
+    if (should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth)) {
+        if (reason != nullptr) {
+            *reason = manifold_prune_reject_reason(manifold, separationEpsilon, duplicateEpsilon);
+        *reason = ManifoldPruneRejectReason::None;
+
+/// Non-mutating manifold finalize skip predicate with optional reject reason (B4.6 deepen pass).
+inline bool wouldSkipManifoldFinalize(
+    ManifoldFinalizeRejectReason* reason = nullptr,
+    const ManifoldFinalizeRejectReason rejectReason =
+        manifold_finalize_reject_reason(manifold, separationEpsilon, duplicateEpsilon);
+        *reason = rejectReason;
+
+/// Prune only when preflight allows; returns false when skipped (B4.6 deepen pass).
+inline bool tryPruneContactManifold(
+    if (wouldSkipManifoldPrune(manifold, nullptr, separationEpsilon, duplicateEpsilon, shallowMinDepth)) {
+
+/// Finalize only when preflight allows; returns false when skipped (B4.6 deepen pass).
+inline bool tryFinalizeContactManifold(
+    if (wouldSkipManifoldFinalize(manifold, nullptr, separationEpsilon, duplicateEpsilon, frictionEpsilon)) {
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
