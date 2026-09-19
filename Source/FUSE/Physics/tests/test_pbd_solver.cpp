@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <tuple>
 
@@ -2399,7 +2400,12 @@ void testPreflightIslandBuildGuards() {
     };
 
     const IslandBuildPreflight preflight = preflight_island_build(4, contacts, constraints);
-    expectTrue(!preflight.skipped, "build preflight does not skip valid partition inputs");
+    expectTrue(!preflight.skipped, "build preflight does not skip unsafe-ref partition inputs");
+    expectTrue(preflight.reason == IslandGraphBuildRejectReason::OutOfRangeContactBody,
+               "build preflight reason flags out-of-range contact refs");
+    expectTrue(island_graph_build_rejects_for_reason(4, contacts, constraints,
+                                                     IslandGraphBuildRejectReason::OutOfRangeContactBody),
+               "island_graph_build_rejects_for_reason matches contact OOB");
     expectTrue(preflight.has_unsafe_refs(), "build preflight flags out-of-range constraint refs");
     expectTrue(!preflight.can_build(), "build preflight cannot build unsafe contact refs");
     expectTrue(should_skip_island_build(4, contacts, constraints),
@@ -2415,9 +2421,14 @@ void testPreflightIslandBuildGuards() {
 
     const IslandBuildPreflight emptyPreflight = preflight_island_build(0, {}, {});
     expectTrue(emptyPreflight.skipped, "build preflight skips zero-body empty inputs");
+    expectTrue(emptyPreflight.reason == IslandGraphBuildRejectReason::EmptyInput,
+               "build preflight reason is EmptyInput for zero-body scene");
+    expectTrue(island_graph_build_rejects_for_reason(0, {}, {}, IslandGraphBuildRejectReason::EmptyInput),
+               "island_graph_build_rejects_for_reason matches empty input");
     expectTrue(should_skip_island_build(0, {}, {}), "should_skip_island_build on empty inputs");
 
     ContactIslandGraph graph;
+    expectTrue(!graph.build_guarded(0, {}, {}), "ContactIslandGraph::build_guarded skips empty inputs");
     expectTrue(!build_island_graph_guarded(graph, 0, {}, {}), "guarded build skips empty inputs");
     expectTrue(graph.islandCount() == 0u, "skipped guarded build clears graph");
 
@@ -2428,9 +2439,96 @@ void testPreflightIslandBuildGuards() {
                "guarded build rejects unsafe out-of-range contact refs");
     expectTrue(graph.islandCount() == 0u, "unsafe guarded build clears graph");
 
+    expectTrue(graph.build_guarded(4, safeContacts, safeConstraints),
+               "ContactIslandGraph::build_guarded succeeds for in-range inputs");
     expectTrue(build_island_graph_guarded(graph, 4, safeContacts, safeConstraints),
                "guarded build succeeds for in-range inputs");
     expectTrue(graph.constrainedIslandCount() == 1u, "guarded build forms constrained island");
+    expectTrue(island_graph_build_reject_reason(4, safeContacts, safeConstraints) ==
+                   IslandGraphBuildRejectReason::None,
+               "safe inputs have None build reject reason");
+}
+
+void testIslandPipelineRejectReasonPreflights() {
+    ContactIslandGraph graph;
+    std::vector<narrowphase::ContactManifold> contacts;
+    std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+    };
+    graph.build(3, contacts, constraints);
+
+    RigidBodySoA bodies;
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+    bodies.addBody({2.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
+    bodies.addBody({10.f, 0.f, 0.f}, 1.f, 0);
+
+    const f32 dt = 1.f / 60.f;
+    const IslandDispatchPreflight dispatchPreflight = preflight_island_dispatch(graph, dt);
+    expectTrue(dispatchPreflight.reason == IslandDispatchRejectReason::None,
+               "dispatch preflight reason is None for constrained graph");
+    expectTrue(dispatchPreflight.can_dispatch(), "dispatch preflight can dispatch constrained graph");
+
+    const IslandDispatchPreflight invalidDtPreflight = preflight_island_dispatch(graph, 0.f);
+    expectTrue(invalidDtPreflight.reason == IslandDispatchRejectReason::InvalidDt,
+               "dispatch preflight reason is InvalidDt for zero dt");
+    expectTrue(invalidDtPreflight.invalidDt, "dispatch preflight flags invalid dt");
+
+    ContactIslandGraph emptyGraph;
+    emptyGraph.build(0, {}, {});
+    const IslandSolvePreflight emptySolve = preflight_island_solve(emptyGraph);
+    expectTrue(emptySolve.reason == IslandDispatchRejectReason::EmptyGraph,
+               "solve preflight reason is EmptyGraph when nothing dispatchable");
+
+    const u32 mixedIsland = graph.bodyIsland(0);
+    const IslandSolveJob job = extract_island(graph, mixedIsland);
+    const IslandSolveJobPreflight jobPreflight = preflight_solve_island_job(job, dt);
+    expectTrue(jobPreflight.reason == IslandSolveRejectReason::None,
+               "job preflight reason is None for constrained island");
+    const IslandSolveJobPreflight invalidJobPreflight = preflight_solve_island_job(job, 0.f);
+    expectTrue(invalidJobPreflight.reason == IslandSolveRejectReason::InvalidDt,
+               "job preflight reason is InvalidDt for zero dt");
+
+    bodies.flags[0] |= RB_SLEEPING;
+    const IslandConstraintSolvePreflight solvePreflight = preflight_island_constraint_solve(
+        graph.island(mixedIsland), bodies, contacts, constraints);
+    expectTrue(solvePreflight.bodies.reason == IslandSolveRejectReason::NoMovableBodies,
+               "solve preflight bodies reason is NoMovableBodies when all dynamic sleep");
+    expectTrue(solvePreflight.reason == IslandSolveRejectReason::NoMovableBodies,
+               "combined solve preflight propagates NoMovableBodies reason");
+
+    const IslandSleepPreflight mixedSleep = preflight_island_sleep(graph.island(mixedIsland), bodies);
+    expectTrue(mixedSleep.reason == IslandSleepRejectReason::AllSleeping,
+               "sleep preflight reason is AllSleeping when all dynamic bodies sleep");
+    const IslandSleepPreflight outOfRangeSleep =
+        preflight_island_sleep_by_index(graph, graph.islandCount() + 3u, bodies);
+    expectTrue(outOfRangeSleep.reason == IslandSleepRejectReason::OutOfRangeIsland,
+               "sleep index preflight reason is OutOfRangeIsland");
+
+    bodies.flags[0] &= ~RB_SLEEPING;
+    const IslandWakePreflight mixedWake = preflight_island_wake(graph.island(mixedIsland), bodies);
+    expectTrue(mixedWake.reason == IslandWakeRejectReason::None,
+               "wake preflight reason is None for mixed sleep island");
+
+    bodies.flags[0] |= RB_SLEEPING;
+    const IslandWakePreflight noWake = preflight_island_wake(graph.island(mixedIsland), bodies);
+    expectTrue(noWake.reason == IslandWakeRejectReason::NoWakeTarget,
+               "wake preflight reason is NoWakeTarget without active dynamic neighbor");
+
+    bodies.flags[0] &= ~RB_SLEEPING;
+    const IslandSleepGraphPreflight sleepGraph = preflight_island_sleep_graph(graph, bodies);
+    expectTrue(sleepGraph.reason == IslandSleepRejectReason::None,
+               "sleep graph preflight reason is None when mixed island exists");
+
+    const IslandWakeGraphPreflight wakeGraph = preflight_island_wake_graph(graph, bodies);
+    expectTrue(wakeGraph.reason == IslandWakeRejectReason::None,
+               "wake graph preflight reason is None when wakeable island exists");
+
+    expectTrue(std::strcmp(island_dispatch_reject_reason_name(IslandDispatchRejectReason::InvalidDt), "InvalidDt") ==
+                   0,
+               "dispatch reject reason name resolves InvalidDt");
+    expectTrue(std::strcmp(island_graph_build_reject_reason_name(IslandGraphBuildRejectReason::EmptyInput),
+                           "EmptyInput") == 0,
+               "build reject reason name resolves EmptyInput");
 }
 
 void testPreflightIslandSolveBodiesGuards() {
@@ -2666,6 +2764,7 @@ int main() {
     testPreflightWarmStartContactImpulsesGraphGuards();
     testWarmStartAllIslandsCombinedResultBatch();
     testPreflightIslandBuildGuards();
+    testIslandPipelineRejectReasonPreflights();
     testPreflightIslandSolveBodiesGuards();
     testPreflightIslandSleepWakeGuards();
     testBodyFlagHelpers();
