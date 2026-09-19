@@ -355,6 +355,18 @@ HrtfIrPreflight preflight_hrtf_ir_stub(const HrtfIrStub& ir);
 /// Preflight an HRTF IR stub without mutation.
 
 /// True when \p ir fails preflight for \p expected.
+    /// Non-null samples with zero length — malformed stub.
+    bool malformed_stub = false;
+    /// True when IR samples are non-null and length > 0.
+    bool has_valid_ir = false;
+
+    [[nodiscard]] bool can_convolve() const { return has_valid_ir; }
+    [[nodiscard]] bool should_skip_convolution() const { return !can_convolve(); }
+
+/// Preflight empty-IR guard without mutating the stub (B7.2 deepen).
+
+/// Convenience guard — `preflight_hrtf_ir(ir).can_convolve()` (B7.2 deepen).
+bool can_convolve_hrtf_ir(const HrtfIrStub& ir);
 
 /// HRTF pan routing — empty IR uses ILD/ITD stub; convolution deferred until IR wired.
 enum class HrtfPanPath {
@@ -588,6 +600,17 @@ bool try_preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const 
 /// IR-aware pan-path preflight.
 
 /// True when pan-path preflight rejects for \p expected.
+
+    [[nodiscard]] bool can_apply_spatial_pan() const { return path != HrtfPanPath::Bypass; }
+    [[nodiscard]] bool should_skip_spatial_pan() const { return !can_apply_spatial_pan(); }
+    [[nodiscard]] bool uses_convolution() const { return path == HrtfPanPath::Convolution; }
+    [[nodiscard]] bool uses_ild_itd_stub() const { return path == HrtfPanPath::IldItdStub; }
+
+/// Preflight pan-path resolution without computing gains (B7.2 deepen).
+
+/// Convenience guard — `preflight_hrtf_pan_path(...).can_apply_spatial_pan()` (B7.2 deepen).
+bool can_apply_hrtf_spatial_pan(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener);
+bool can_apply_hrtf_spatial_pan(bool hrtf_enabled, const Vec3& rel_listener);
 
 /// True when a resolved pan path bypasses HRTF (disabled or co-located).
 bool is_hrtf_pan_bypassed(HrtfPanPath path);
@@ -1094,6 +1117,11 @@ enum class HrtfAttenuationCouplingSkipReason {
     bool can_apply() const { return !skipped; }
 
 /// Populate attenuation-coupling preflight without mutating pan gains (B7.2 deepen).
+
+    [[nodiscard]] bool can_apply_coupling() const { return !bypass_path && !unity_attenuation; }
+    [[nodiscard]] bool should_skip_coupling() const { return !can_apply_coupling(); }
+
+/// Preflight attenuation coupling without mutating pan gains (B7.2 deepen).
 HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling(
     HrtfPanPath path, float distance_attenuation, float occlusion_gain,
     const HrtfAttenuationCoupling& coupling = {}, const BinauralPanParams& params = {});
@@ -1103,6 +1131,8 @@ bool should_skip_hrtf_attenuation_coupling_apply(HrtfPanPath path, float distanc
                                                  float occlusion_gain,
                                                  const HrtfAttenuationCoupling& coupling = {},
                                                  const BinauralPanParams& params = {});
+/// Convenience guard — `preflight_hrtf_attenuation_coupling(...).can_apply_coupling()` (B7.2 deepen).
+bool can_apply_hrtf_attenuation_coupling(HrtfPanPath path, float distance_attenuation,
 
 /// Clamp distance or occlusion attenuation scalars into [0, 1].
 float clamp_hrtf_attenuation(float attenuation);
