@@ -532,6 +532,41 @@ bool validate_entity_patch_indices_unique(const SnapshotDelta& delta) {
     return true;
 }
 
+bool validate_entity_patch_trackable(const SnapshotEntityPatch& patch) {
+    return entity_index_trackable(patch.entity_index);
+}
+
+bool validate_entity_patch_indices_trackable(const SnapshotDelta& delta) {
+    if (delta.kind != SnapshotDeltaKind::EntityPatch) {
+        return true;
+    }
+
+    for (const SnapshotEntityPatch& patch : delta.entity_patches) {
+        if (!validate_entity_patch_trackable(patch)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool validate_delta_frame_order(const SnapshotDelta& delta) {
+    return delta.target_frame >= delta.base_frame;
+}
+
+bool is_valid_snapshot_delta_kind(SnapshotDeltaKind kind) {
+    switch (kind) {
+    case SnapshotDeltaKind::None:
+    case SnapshotDeltaKind::Full:
+    case SnapshotDeltaKind::EntityPatch:
+        return true;
+    }
+    return false;
+}
+
+bool validate_delta_kind(const SnapshotDelta& delta) {
+    return is_valid_snapshot_delta_kind(delta.kind);
+}
+
 bool validate_full_delta_payload(const SnapshotDelta& delta) {
     if (delta.kind != SnapshotDeltaKind::Full) {
         return true;
@@ -654,7 +689,7 @@ bool validate_delta_payload(const SnapshotDelta& delta) {
             }
         }
         return validate_changed_entity_mask(delta) && entity_mask_popcount_matches_patches(delta) &&
-               validate_entity_patch_indices_unique(delta);
+               validate_entity_patch_indices_unique(delta) && validate_entity_patch_indices_trackable(delta);
     }
 
     return false;
@@ -693,6 +728,19 @@ bool is_redundant_empty_delta(const GameSnapshot& base, const SnapshotDelta& del
 
 bool should_skip_redundant_empty_apply(const GameSnapshot& base, const SnapshotDelta& delta) {
     return is_redundant_empty_delta(base, delta);
+}
+
+SnapshotDelta make_full_snapshot_delta(u32 base_frame, u32 target_frame, u64 base_checksum, u64 target_checksum,
+                                       const GameSnapshot& target) {
+    SnapshotDelta delta;
+    delta.base_frame = base_frame;
+    delta.target_frame = target_frame;
+    delta.base_checksum = base_checksum;
+    delta.target_checksum = target_checksum;
+    delta.kind = SnapshotDeltaKind::Full;
+    delta.full_ecs_state = target.ecs_state;
+    delta.full_physics_state = target.physics_state;
+    return delta;
 }
 
 SnapshotDelta compute_snapshot_delta(const GameSnapshot& base, const GameSnapshot& target) {
@@ -870,6 +918,10 @@ SnapshotDeltaPreflight preflight_delta_masks(const SnapshotDelta& delta) {
     result.empty_delta = is_empty_snapshot_delta(delta);
     result.base_checksum_ok = true;
     result.base_frame_ok = true;
+    result.kind_ok = validate_delta_kind(delta);
+    result.target_frame_ok = validate_delta_frame_order(delta);
+    result.trackable_indices_ok = validate_entity_patch_indices_trackable(delta);
+    result.base_checksum_ok = verify_delta_base_checksum(base, delta);
     result.entity_mask_ok = validate_changed_entity_mask(delta);
     result.mask_popcount_ok = entity_mask_popcount_matches_patches(delta);
     result.field_masks_ok = delta.kind != SnapshotDeltaKind::EntityPatch ||
@@ -909,6 +961,10 @@ bool can_apply_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& del
     return preflight_snapshot_delta(base, delta).can_apply();
 }
 
+bool should_reject_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta) {
+    return !can_apply_snapshot_delta(base, delta);
+}
+
 bool can_apply_or_skip_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta) {
     return can_apply_snapshot_delta(base, delta) || should_skip_delta_apply(delta);
 bool can_skip_verified_delta_apply(const GameSnapshot& base, const SnapshotDelta& delta) {
@@ -933,6 +989,7 @@ DeltaApplyResult apply_snapshot_delta_verified(const GameSnapshot& base, const S
     result.trackable_indices_ok = preflight.trackable_indices_ok;
     result.field_masks_ok = preflight.field_masks_ok;
     result.empty_delta = preflight.empty_delta;
+    result.kind_ok = preflight.kind_ok;
     result.snapshot = apply_snapshot_delta(base, delta);
 
     if (delta.target_checksum != 0) {

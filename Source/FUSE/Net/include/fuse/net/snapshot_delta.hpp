@@ -93,6 +93,8 @@ struct DeltaApplyResult {
     /// True when apply can be skipped because the delta carries no state changes.
     [[nodiscard]] bool should_skip_apply() const { return empty_delta; }
     /// True when the delta is a no-op `SnapshotDeltaKind::None` payload (B7.4 deepen follow-up).
+    /// True when `delta.kind` is a known `SnapshotDeltaKind` value.
+    bool kind_ok = true;
 };
 
 /// Preflight checks before applying a delta (baseline checksum + entity mask consistency).
@@ -115,6 +117,8 @@ struct SnapshotDeltaPreflight {
     bool full_payload_ok = true;
     /// True when `delta.target_frame` is not before `delta.base_frame`.
     bool target_frame_ok = true;
+    /// True when `delta.kind` is a known `SnapshotDeltaKind` value.
+    bool kind_ok = true;
     /// True when every entity patch index is within the 64-bit mask stub range.
     bool trackable_indices_ok = true;
 
@@ -133,6 +137,8 @@ struct SnapshotDeltaPreflight {
 
 
                field_masks_ok && patch_indices_unique_ok && full_payload_ok;
+               field_bits_ok && duplicate_index_ok && full_payload_ok && target_frame_ok && kind_ok &&
+               trackable_indices_ok;
     }
 
     /// True when apply can be skipped because the delta carries no state changes.
@@ -265,6 +271,24 @@ struct SnapshotHistoryPreflight {
 /// True when no duplicate `(entity_index, generation)` rows appear in `entity_patches`.
 [[nodiscard]] bool validate_entity_patch_indices_unique(const SnapshotDelta& delta);
 
+/// True when `entity_index` is within the 64-bit changed-entity mask stub range.
+[[nodiscard]] bool entity_index_trackable(u32 entity_index);
+
+/// True when an entity patch row uses a trackable entity index.
+[[nodiscard]] bool validate_entity_patch_trackable(const SnapshotEntityPatch& patch);
+
+/// True when every entity patch index is trackable (EntityPatch only).
+[[nodiscard]] bool validate_entity_patch_indices_trackable(const SnapshotDelta& delta);
+
+/// True when `delta.target_frame` is not before `delta.base_frame`.
+[[nodiscard]] bool validate_delta_frame_order(const SnapshotDelta& delta);
+
+/// True when `kind` is a known `SnapshotDeltaKind` enumerator value.
+[[nodiscard]] bool is_valid_snapshot_delta_kind(SnapshotDeltaKind kind);
+
+/// True when `delta.kind` is a known `SnapshotDeltaKind` value.
+[[nodiscard]] bool validate_delta_kind(const SnapshotDelta& delta);
+
 /// True when `SnapshotDeltaKind::Full` carries non-empty ecs or physics bytes.
 [[nodiscard]] bool validate_full_delta_payload(const SnapshotDelta& delta);
 
@@ -341,6 +365,9 @@ struct SnapshotHistoryPreflight {
 /// Convenience guard — `preflight_snapshot_delta(base, delta).can_apply()` (B7.4 deepen follow-up).
 [[nodiscard]] bool can_apply_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta);
 
+/// Convenience guard — `!can_apply_snapshot_delta(base, delta)` (B7.4 deepen follow-up).
+[[nodiscard]] bool should_reject_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta);
+
 /// True when apply can proceed or the delta is a no-op skip payload (B7.4 deepen follow-up).
 [[nodiscard]] bool can_apply_or_skip_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta);
 
@@ -351,6 +378,10 @@ struct SnapshotHistoryPreflight {
 [[nodiscard]] SnapshotDeltaPreflight preflight_delta_masks(const SnapshotDelta& delta);
 /// True when verified apply should be skipped because preflight guards fail (B7.4 deepen follow-up).
 [[nodiscard]] bool should_skip_verified_apply(const GameSnapshot& base, const SnapshotDelta& delta);
+
+/// Builds a `SnapshotDeltaKind::Full` delta from authoritative snapshot bytes (B7.4 deepen follow-up).
+[[nodiscard]] SnapshotDelta make_full_snapshot_delta(u32 base_frame, u32 target_frame, u64 base_checksum,
+                                                     u64 target_checksum, const GameSnapshot& target);
 
 [[nodiscard]] SnapshotDelta compute_snapshot_delta(const GameSnapshot& base, const GameSnapshot& target);
 [[nodiscard]] GameSnapshot apply_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta);
