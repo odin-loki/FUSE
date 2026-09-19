@@ -230,6 +230,55 @@ void testMoveTowardDemoTreeFactory() {
     expectTrue(tree.node(0).kind == fuse::ai::NodeKind::ActionMoveToward, "demo tree root is move toward");
 }
 
+void testPatrolWithAllySupportDemoTree() {
+    fuse::ai::BehaviorRuntime runtime;
+    runtime.setTree(fuse::ai::BehaviorTree::makePatrolWithAllySupportDemoTree(8.f));
+
+    fuse::ai::AgentBinding ally{};
+    ally.x = 0.f;
+    ally.y = 0.f;
+    ally.targetX = 10.f;
+    ally.targetY = 0.f;
+    ally.teamId = 1;
+    runtime.addAgent(ally);
+
+    fuse::ai::AgentBinding squadMate{};
+    squadMate.x = 1.f;
+    squadMate.y = 0.f;
+    squadMate.targetX = 10.f;
+    squadMate.targetY = 0.f;
+    squadMate.teamId = 1;
+    runtime.addAgent(squadMate);
+
+    expectTrue(runtime.agentCount() == 2u, "patrol ally runtime has squad pair");
+
+    fuse::frame::FrameCtx ctx;
+    runtime.buildSnapshots();
+    runtime.evaluate(ctx);
+    runtime.commit();
+
+    expectTrue(runtime.blackboard().flag(0, 1), "ally agent sets squad flag when allies in radius");
+}
+
+void testUaiskPatrolSquadTemplateLoad() {
+    const std::string text = R"(
+bb.condition.allies_in_radius threshold=8 loops=1
+bb.action.set_flag flag=1
+bb.condition.distance_less threshold=5
+bb.action.set_flag flag=0
+bb.sequence children=0,1
+bb.sequence children=2,3
+bb.selector children=4,5 hook=aiBehaviors.cs
+root=6
+)";
+
+    fuse::ai::BehaviorTree tree;
+    std::string error;
+    expectTrue(fuse::ai::loadTreeFromText(text, tree, &error), "UAISK patrol_squad template loads");
+    expectTrue(tree.nodeCount() == 7u, "patrol_squad template has seven nodes");
+    expectTrue(tree.node(6).kind == fuse::ai::NodeKind::Selector, "patrol_squad root is selector");
+}
+
 void testGuideBotMoveTowardLeaf() {
     const std::vector<fuse::ai::NodeLoadSpec> specs = {
         {"gb.action.move_toward", 1.f, 2, 1, {"aiMovement.cs"}, {}},
@@ -1791,6 +1840,8 @@ int main() {
     testSucceedAlwaysDecorator();
     testMoveTowardRuntimeCommit();
     testMoveTowardDemoTreeFactory();
+    testPatrolWithAllySupportDemoTree();
+    testUaiskPatrolSquadTemplateLoad();
     testGuideBotMoveTowardLeaf();
     testMonitorDecorator();
     testWaitLeaf();

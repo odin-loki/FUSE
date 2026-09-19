@@ -603,4 +603,26 @@ BehaviorTree BehaviorTree::makeMoveTowardDemoTree(float moveSpeed) {
     return tree;
 }
 
+BehaviorTree BehaviorTree::makePatrolWithAllySupportDemoTree(float allyRadius) {
+    BehaviorTree tree;
+
+    const u32 alliesCond = 0;
+    const u32 squadFlag = 1;
+    const u32 distCond = 2;
+    const u32 patrolFlag = 3;
+    const u32 squadSeq = 4;
+    const u32 patrolSeq = 5;
+    const u32 selector = 6;
+
+    tree.addNode({NodeKind::ConditionAlliesInRadius, allyRadius, 0, 1, 0, 0});
+    tree.addNode({NodeKind::ActionSetFlag, 0.f, 1, 1, 0, 0});
+    tree.addNode({NodeKind::ConditionDistanceLess, 5.f, 0, 1, 0, 0});
+    tree.addNode({NodeKind::ActionSetFlag, 0.f, 0, 1, 0, 0});
+    tree.addNode({NodeKind::Sequence, 0.f, 0, 1, alliesCond, squadFlag});
+    tree.addNode({NodeKind::Sequence, 0.f, 0, 1, distCond, patrolFlag});
+    tree.addNode({NodeKind::Selector, 0.f, 0, 1, squadSeq, patrolSeq});
+    tree.setRoot(selector);
+    return tree;
+}
+
 } // namespace fuse::ai

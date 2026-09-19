@@ -7,7 +7,9 @@ add_library(fuse_adventure STATIC
     src/pickup_interactable.cpp
     src/adventure_interactable_component.cpp
     src/examine_interactable.cpp
+    src/conversation_interactable.cpp
     src/door_interactable.cpp
+    src/weapon_pickup_interactable.cpp
     src/hud_prompt_interactable.cpp
     src/mechanics_bridge.cpp
     src/puzzle_gate.cpp
@@ -20,7 +22,9 @@ add_library(fuse_adventure STATIC
     include/fuse/adventure/pickup_interactable.hpp
     include/fuse/adventure/adventure_interactable_component.hpp
     include/fuse/adventure/examine_interactable.hpp
+    include/fuse/adventure/conversation_interactable.hpp
     include/fuse/adventure/door_interactable.hpp
+    include/fuse/adventure/weapon_pickup_interactable.hpp
     include/fuse/adventure/hud_prompt_interactable.hpp
     include/fuse/adventure/mechanics_bridge.hpp
     include/fuse/adventure/puzzle_gate.hpp

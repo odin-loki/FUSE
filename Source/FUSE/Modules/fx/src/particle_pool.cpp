@@ -24,6 +24,7 @@ bool ParticlePool::spawn(const fuse::math::Vec3& position,
         slot.blend_weight = blend_weight;
         slot.alive = true;
         ++m_activeCount;
+        ++m_spawnCount;
         return true;
     }
 

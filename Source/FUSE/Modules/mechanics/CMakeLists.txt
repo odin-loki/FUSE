@@ -4,6 +4,8 @@ add_library(fuse_mechanics STATIC
     src/component.cpp
     src/health_component.cpp
     src/trigger_zone.cpp
+    src/console_method_component.cpp
+    src/polyhedron_trigger.cpp
     src/toggle_component.cpp
     src/inventory_provider.cpp
     src/interact_action.cpp
@@ -14,6 +16,8 @@ add_library(fuse_mechanics STATIC
     include/fuse/mechanics/component.hpp
     include/fuse/mechanics/health_component.hpp
     include/fuse/mechanics/trigger_zone.hpp
+    include/fuse/mechanics/console_method_component.hpp
+    include/fuse/mechanics/polyhedron_trigger.hpp
     include/fuse/mechanics/toggle_component.hpp
     include/fuse/mechanics/inventory_provider.hpp
     include/fuse/mechanics/interact_action.hpp

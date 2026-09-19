@@ -1,0 +1,6 @@
+# AFX-Template minimal sample pack (ore: third_party/addons/AFX-Template/game/)
+# Maps AFXDemo spell/FX ids to fuse_fx EffectDescriptor entries.
+
+effect afx_demo_spark duration=0.5
+effect afx_demo_smoke duration=1.2
+effect afx_demo_fireball_trail duration=2.0

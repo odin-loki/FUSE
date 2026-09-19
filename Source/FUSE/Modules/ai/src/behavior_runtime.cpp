@@ -24,6 +24,13 @@ void BehaviorRuntime::addAgent(const AgentBinding& binding) {
     ensureWaitState();
 }
 
+void BehaviorRuntime::setBindingPosition(u32 agentIndex, float x, float y) {
+    if (agentIndex < m_bindings.size()) {
+        m_bindings[agentIndex].x = x;
+        m_bindings[agentIndex].y = y;
+    }
+}
+
 void BehaviorRuntime::ensureWaitState() {
     const std::size_t needed = m_bindings.size() * m_tree.nodeCount();
     if (m_waitStartTicks.size() != needed) {

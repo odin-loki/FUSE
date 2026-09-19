@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/adventure/conversation_interactable.hpp>
 #include <fuse/adventure/interactable.hpp>
 #include <fuse/adventure/inventory.hpp>
 
@@ -21,6 +22,9 @@ public:
 
     /// Examine/show HUD prompt and return prompt text (3DAAK interface hint flow).
     std::string showHudPrompt(InteractContext& ctx, IInteractable& target);
+
+    /// Advance one conversation line (3DAAK NPC scripts).
+    std::string converse(InteractContext& ctx, ConversationInteractable& target);
 };
 
 } // namespace fuse::adventure

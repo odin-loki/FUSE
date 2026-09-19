@@ -51,8 +51,11 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 - Blackboard spatial query stubs: `spatial_query.hpp` — ally radius count/filter, nearest-ally lookup (max-radius, tie-break); `teamId` on `AgentSnapshot` / `AgentBinding`; optional ally-index scalar write on `bb.action.nearest_ally`
 - `BehaviorRuntime::commit()` applies `gb.action.move_toward` position deltas via `AgentBinding::moveSpeed`
 - `BehaviorTree::makeMoveTowardDemoTree()` — single-node hybrid 3D agent chase tree
-- Unit tests: `fuse_ai_behavior_tree` — registry parity, composite child-status aggregation (sequence/selector/parallel with success/fail thresholds + abort-on-fail + parallel/spatial), empty blackboard/ally context, blackboard try-get/set + typed scalars, leaf nodes (wait, blackboard set/get, distance, allies_in_radius, nearest_ally), spatial query radius filter, text loader, UAISK hooks, multi-agent parallel runtime, move-toward runtime commit, move-toward demo factory
-- Hybrid demo: `demo_hybrid_hud` drives `SceneObject3D` agent via `makeMoveTowardDemoTree()` + runtime commit (`hybrid_module_gates.cpp`)
+- `BehaviorTree::makePatrolWithAllySupportDemoTree()` — selector(squad `allies_in_radius` → flag 1, patrol `distance_less` → flag 0)
+- UAISK template pack: `Samples/Modules/ai/uaisk-templates/patrol_squad.bt` (text loader import)
+- `BehaviorRuntime::setBindingPosition()` — sync squad-mate positions for multi-runtime ally spatial
+- Unit tests: `fuse_ai_behavior_tree` — registry parity, composite child-status aggregation (sequence/selector/parallel with success/fail thresholds + abort-on-fail + parallel/spatial), empty blackboard/ally context, blackboard try-get/set + typed scalars, leaf nodes (wait, blackboard set/get, distance, allies_in_radius, nearest_ally), spatial query radius filter, text loader, UAISK hooks + patrol_squad template, multi-agent parallel runtime, move-toward runtime commit, move-toward demo factory, patrol-with-ally demo factory
+- Hybrid demo: `demo_hybrid_hud` drives `SceneObject3D` agent via `makeMoveTowardDemoTree()` + ally patrol runtime with spatial squad flag (`hybrid_module_gates.cpp`)
 
 ### Ore extraction (BadBehaviour / GuideBot / UAISK)
 
@@ -83,8 +86,10 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 - **ActorTrack** — VActor mount/unmount event lane (`mount_point_at` sampling)
 - **HybridTimelineSample** / `sample_hybrid_timeline_drive()` — camera clear tint + sprite position sampling for hybrid frame
 - Tests: `fuse_cinematics_tests` includes motion path length + midpoint sampling, actor mount/unmount, hybrid timeline drive
-- Hybrid demo: `demo_hybrid_hud` timeline advances sprite track + camera clear tint each frame
-- TODO: Torque bridge (`VActor` ShapeBase attach); 30s authored sequence content pack
+- **VActorBridge** / `drain_actor_cues()` — headless mount/unmount bridge (VActor event signal without ShapeBase)
+- **Outpost intro stub** — `make_outpost_intro_30s_stub()` (30s sprite/camera/actor/motion content)
+- Hybrid demo: `demo_hybrid_hud` timeline advances sprite track + camera clear tint + VActor mount cue each frame
+- TODO: full Torque `ShapeBase` attach; load 30s sequence from `Samples/Modules/cinematics/` asset file
 
 ### `fuse_fx`
 
@@ -99,10 +104,12 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
   - `FxComposer::tick()` advances effect timeline, effect graph, casts, and residuals
   - `MissileDescriptor` / `MissilePipeline` — `afxMagicMissileData` velocity/ballistic/lifetime stub wired into `FxComposer::tick`
   - `FxComposer::registerDemoVerticalSlice()` — spark/muzzle/fireball bundle for demos
-  - Tests: `fuse_fx_runtime` — registry, socket reject, timeline completion, graph tick, parameter bind, phase progression, cast→residual, missile pipeline, demo vertical slice registration
+  - `registerAfxTemplateSamplePack()` + `Samples/Modules/fx/afx_minimal_pack.txt` — AFX-Template sample effect ids
+  - `FxComposer::particlePool()` — CPU pool tick hooked into composer (spawn on active effect timeline)
+  - Tests: `fuse_fx_runtime` — registry, socket reject, timeline completion, graph tick, parameter bind, phase progression, cast→residual, missile pipeline, demo vertical slice registration, AFX template pack, composer particle pool
   - Demo: `demo_fx` registers descriptors, attaches 2D/3D sockets, begins fireball cast
-  - Hybrid demo: `demo_hybrid_hud` attaches spark (2D) + muzzle (3D) sockets and ticks `FxComposer` each frame
-- TODO: refactor remaining `Engine/source/afx/` (218 files) into module; sample content from `third_party/addons/AFX-Template/game/`
+  - Hybrid demo: `demo_hybrid_hud` attaches spark (2D) + muzzle (3D) sockets, AFX template pack, and ticks `FxComposer` + particle pool each frame
+- TODO: refactor remaining `Engine/source/afx/` (218 files) into module; GPU particle pool backend
 
 #### Ore extraction (AFX)
 
@@ -117,7 +124,7 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 | ✅ P2 | `Engine/source/afx/afxConstraint.h` | `SocketConstraintManager`, `parse_constraint_spec`, socket remap |
 | ✅ P2 | `Engine/source/afx/util/afxParticlePool.h` | `ParticlePool` CPU stub (spawn/tick/cull) |
 | ✅ P2 | `Engine/source/afx/afxMagicMissile.h` | `MissileDescriptor`, `MissilePipeline` projectile sim stub |
-| 🚧 P3 | `third_party/addons/AFX-Template/game/` | Sample spell/FX content pack |
+| ✅ P3 | `third_party/addons/AFX-Template/game/` | `registerAfxTemplateSamplePack()` + `Samples/Modules/fx/afx_minimal_pack.txt` |
 
 **Do not compile** from `third_party/addons/*/Engine/` — extract kernels into `Source/FUSE/Modules/fx/`. See [Modules/fx/README.md](../../Source/FUSE/Modules/fx/README.md).
 
@@ -131,9 +138,11 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 - **HealthComponent** (`IHealthProvider`, `HealthProviderInterface`) — GMK damageable `SimpleComponent` leaf
 - **TriggerZoneComponent** — T3D `Trigger` enter/leave/tickPeriodMS AABB volume stub
 - **ToggleComponent** — GMK toggle/switch leaf (`toggle()`, `setState()`)
-- Tests: `fuse_mechanics_tests`, `fuse_mechanics_inventory_provider`, `fuse_mechanics_action_stubs`, `fuse_mechanics_health`, `fuse_mechanics_trigger_zone`, `fuse_mechanics_toggle`
-- Hybrid demo: `demo_hybrid_hud` registers 3D lever `InteractableComponent`; trigger zone fires mechanics interact when AI agent enters volume
-- TODO: extract remaining GMK `SimComponent` leaves (`DynamicConsoleMethodComponent`, unit harness) from `third_party/addons/GMK/Engine/source/component/`
+- **ConsoleMethodComponent** — GMK `DynamicConsoleMethodComponent` distilled (`registerMethod`, `invoke`)
+- **PolyhedronTriggerZone** / `ConvexPolyhedron` — T3D `Trigger` polyhedron half-space containment (no physics bridge)
+- Tests: `fuse_mechanics_tests`, `fuse_mechanics_inventory_provider`, `fuse_mechanics_action_stubs`, `fuse_mechanics_health`, `fuse_mechanics_trigger_zone`, `fuse_mechanics_toggle`, `fuse_mechanics_console_method`, `fuse_mechanics_polyhedron_trigger`
+- Hybrid demo: `demo_hybrid_hud` registers 3D lever `InteractableComponent`; polyhedron trigger + console method toggles lever when AI agent enters volume
+- TODO: extract remaining GMK `SimComponent` leaves from `third_party/addons/GMK/Engine/source/component/`; physics trigger polyhedron bridge
 
 ### `fuse_adventure`
 
@@ -145,10 +154,13 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 - **ExamineInteractable** — 3DAAK examine / lore interaction (`InteractionSystem::examine`, `InteractResult::Examined`)
 - **DoorInteractable** — locked door opened by key consumption (Outpost door pattern)
 - **HudPromptInteractable** — 2D HUD prompt string (`InteractionSystem::promptFor`, `showHudPrompt`)
-- Tests: `fuse_adventure_inventory`, `fuse_adventure_interact`, `fuse_adventure_vertical_slice`, `fuse_adventure_interaction_queue`, `fuse_adventure_examine`, `fuse_adventure_door_hud`
+- **WeaponPickupInteractable** — weapon + ammo grant on pickup (`weapon.cs` ore)
+- **ConversationInteractable** — multi-line NPC dialogue (`InteractionSystem::converse`)
+- **Content stub** — `Samples/Modules/adventure/outpost_stub.json` (door, weapon, conversation ids)
+- Tests: `fuse_adventure_inventory`, `fuse_adventure_interact`, `fuse_adventure_vertical_slice`, `fuse_adventure_interaction_queue`, `fuse_adventure_examine`, `fuse_adventure_door_hud`, `fuse_adventure_weapon_conversation`
 - Demo: `demo_adventure_stub` exercises inventory + door unlock
 - Hybrid demo: `demo_hybrid_hud` drives 2D HUD prompt text via `showHudPrompt` on trigger enter
-- TODO: extract remaining 3DAAK interaction scripts (weapons, conversations) + `Samples/Modules/adventure/`
+- TODO: JSON content loader; remaining 3DAAK interaction scripts
 
 ---
 
@@ -181,7 +193,7 @@ cmake -B build-fuse -G Ninja \
   -DFUSE_BUILD_T2D=OFF
 
 cmake --build build-fuse
-ctest --test-dir build-fuse -R "fuse_ai_behavior_tree|fuse_cinematics_tests|fuse_fx_runtime|fuse_mechanics_toggle|fuse_adventure_door_hud|fuse_hybrid_module_gates" --output-on-failure
+ctest --test-dir build-fuse -R "fuse_ai_behavior_tree|fuse_cinematics_tests|fuse_fx_runtime|fuse_mechanics_toggle|fuse_mechanics_console_method|fuse_mechanics_polyhedron_trigger|fuse_adventure_door_hud|fuse_adventure_weapon_conversation|fuse_hybrid_module_gates" --output-on-failure
 ./build-fuse/Source/FUSE/Apps/HybridHud/demo_hybrid_hud
 ```
 
@@ -203,11 +215,11 @@ Headless proof: `fuse_hybrid_module_gates_tests` (shared `hybrid_module_gates.cp
 
 | Module | Next ore / work |
 |--------|-----------------|
-| `fuse_ai` | Multi-agent patrol + ally spatial leaves in hybrid demo; UAISK template pack import |
-| `fuse_cinematics` | Torque `VActor` bridge; 30s authored Outpost intro sequence |
-| `fuse_fx` | AFX-Template sample content pack; GPU particle pool hookup |
-| `fuse_mechanics` | GMK `DynamicConsoleMethodComponent`; physics trigger polyhedron bridge |
-| `fuse_adventure` | Weapon/conversation interactables; `Samples/Modules/adventure/` content |
+| `fuse_ai` | Per-agent tree selection; full UAISK `.cs` script-host import |
+| `fuse_cinematics` | Torque `ShapeBase` VActor attach; load 30s sequence from asset file |
+| `fuse_fx` | GPU particle pool backend (`afxParticlePool`); full AFX-Template mission scripts |
+| `fuse_mechanics` | Physics trigger polyhedron bridge; remaining GMK `SimComponent` leaves |
+| `fuse_adventure` | JSON content loader for `outpost_stub.json`; NPC conversation in hybrid demo |
 
 ---
 

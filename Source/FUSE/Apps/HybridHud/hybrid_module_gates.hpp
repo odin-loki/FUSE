@@ -10,7 +10,10 @@
 #include <fuse/hybrid/hybrid_composer.hpp>
 #include <fuse/mechanics/interactable.hpp>
 #include <fuse/mechanics/registry.hpp>
-#include <fuse/mechanics/trigger_zone.hpp>
+#include <fuse/cinematics/vactor_bridge.hpp>
+#include <fuse/mechanics/console_method_component.hpp>
+#include <fuse/mechanics/polyhedron_trigger.hpp>
+#include <fuse/mechanics/toggle_component.hpp>
 #include <fuse/world2d/scene_object_2d.hpp>
 #include <fuse/world3d/scene_object_3d.hpp>
 #include <fuse/world2d/world_2d.hpp>
@@ -30,18 +33,25 @@ struct State {
     fuse::world3d::World3D world3D;
     fuse::SceneObject2D hudSprite{"hud_sprite"};
     fuse::SceneObject3D agent3D{"agent_3d"};
+    fuse::SceneObject3D ally3D{"ally_3d"};
     fuse::SceneObject3D lever3D{"lever_3d"};
 
     fuse::ai::BehaviorRuntime aiRuntime;
+    fuse::ai::BehaviorRuntime allyAiRuntime;
     fuse::cinematics::Timeline timeline;
     fuse::fx::FxComposer fxComposer;
 
     fuse::mechanics::MechanicsRegistry mechanicsRegistry;
     fuse::mechanics::InteractableComponent leverInteractable{"lever_interactable"};
-    fuse::mechanics::TriggerZoneComponent leverTrigger;
+    fuse::mechanics::ToggleComponent leverToggle{"lever_toggle"};
+    fuse::mechanics::ConsoleMethodComponent leverConsole{"lever_console"};
+    fuse::mechanics::PolyhedronTriggerZone leverTrigger;
 
     fuse::adventure::InteractionSystem adventureSystem;
     fuse::adventure::HudPromptInteractable hudPrompt{"Press E to activate lever"};
+
+    fuse::cinematics::VActorBridge vactorBridge;
+    fuse::cinematics::TimelineMs lastTimelineMs = 0;
 
     std::string hudPromptText;
     bool agentInsideTrigger = false;

@@ -140,6 +140,9 @@ public:
     /// Single `gb.action.move_toward` root for hybrid 3D agent drive (GuideBot ore).
     static BehaviorTree makeMoveTowardDemoTree(float moveSpeed = 1.f);
 
+    /// Selector(squad allies_in_radius → flag 1, patrol distance_less → flag 0) for hybrid ally agent.
+    static BehaviorTree makePatrolWithAllySupportDemoTree(float allyRadius = 8.f);
+
 private:
     BehaviorTickResult tickNode(u32 nodeIndex,
                                 u32 agentIndex,

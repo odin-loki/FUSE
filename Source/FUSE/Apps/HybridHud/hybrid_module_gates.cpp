@@ -1,9 +1,11 @@
 #include "hybrid_module_gates.hpp"
 
 #include <fuse/ai/behavior_tree.hpp>
+#include <fuse/cinematics/actor_track.hpp>
 #include <fuse/cinematics/camera_track.hpp>
 #include <fuse/cinematics/hybrid_timeline_drive.hpp>
 #include <fuse/cinematics/sprite_track.hpp>
+#include <fuse/fx/afx_template_pack.hpp>
 #include <fuse/fx/fx_socket.hpp>
 #include <fuse/handle.hpp>
 #include <fuse/object.hpp>
@@ -39,11 +41,22 @@ void setupTimeline(fuse::cinematics::Timeline& timeline) {
     cameraTrack.add_keyframe(end);
     cameraTrack.sort_keyframes();
 
+    fuse::cinematics::ActorTrack& actorTrack = group.add_actor_track("agent_mount");
+    actorTrack.set_actor_id("agent_3d");
+    fuse::cinematics::ActorEvent mount{};
+    mount.time_ms = 500;
+    mount.kind = fuse::cinematics::ActorEventKind::Mount;
+    mount.actor_id = "agent_3d";
+    mount.mount_point = "cockpit";
+    actorTrack.add_actor_event(mount);
+    actorTrack.sort_actor_events();
+
     timeline.play();
 }
 
 void setupFx(fuse::fx::FxComposer& fxComposer, const fuse::SceneObject3D& /*agent3D*/) {
     fxComposer.registerDemoVerticalSlice();
+    fuse::fx::registerAfxTemplateSamplePack(fxComposer);
 
     fuse::fx::FxSocket spriteSocket;
     spriteSocket.kind = fuse::fx::FxSocketKind::Sprite2D;
@@ -66,9 +79,12 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
 
     state.agent3D.setPosition(-4.f, 0.f);
     state.agent3D.setZ(0.f);
+    state.ally3D.setPosition(-3.5f, 0.5f);
+    state.ally3D.setZ(0.f);
     state.lever3D.setPosition(3.f, 0.f);
     state.lever3D.setZ(0.f);
     state.world3D.addObject(&state.agent3D);
+    state.world3D.addObject(&state.ally3D);
     state.world3D.addObject(&state.lever3D);
 
     state.initialClearR = 0.1f;
@@ -90,7 +106,25 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
     agentBinding.targetX = 4.f;
     agentBinding.targetY = 0.f;
     agentBinding.moveSpeed = 0.12f;
+    agentBinding.teamId = 1;
     state.aiRuntime.addAgent(agentBinding);
+
+    state.allyAiRuntime.setTree(fuse::ai::BehaviorTree::makePatrolWithAllySupportDemoTree(8.f));
+    fuse::ai::AgentBinding allyBinding{};
+    allyBinding.x = state.ally3D.x();
+    allyBinding.y = state.ally3D.y();
+    allyBinding.targetX = 4.f;
+    allyBinding.targetY = 0.f;
+    allyBinding.teamId = 1;
+    state.allyAiRuntime.addAgent(allyBinding);
+
+    fuse::ai::AgentBinding squadLeadBinding{};
+    squadLeadBinding.x = state.agent3D.x();
+    squadLeadBinding.y = state.agent3D.y();
+    squadLeadBinding.teamId = 1;
+    state.allyAiRuntime.addAgent(squadLeadBinding);
+
+    state.vactorBridge.bind("agent_3d", &state.agent3D);
 
     setupTimeline(state.timeline);
     setupFx(state.fxComposer, state.agent3D);
@@ -99,16 +133,13 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
     state.leverInteractable.attach();
     state.mechanicsRegistry.registerInteractable(&state.leverInteractable, &state.leverInteractable);
 
-    fuse::mechanics::AxisAlignedBox bounds{};
-    bounds.minX = 1.5f;
-    bounds.maxX = 4.5f;
-    bounds.minY = -1.f;
-    bounds.maxY = 1.f;
-    bounds.minZ = -1.f;
-    bounds.maxZ = 1.f;
-    state.leverTrigger.setBounds(bounds);
+    const fuse::mechanics::ConvexPolyhedron triggerVolume =
+        fuse::mechanics::ConvexPolyhedron::axis_aligned_box(1.5f, -1.f, -1.f, 4.5f, 1.f, 1.f);
+    state.leverTrigger.setPolyhedron(triggerVolume);
+    state.leverConsole.registerMethod("toggleLever", [&state]() { state.leverToggle.toggle(); });
     state.leverTrigger.setOnEnter([&state](u32 /*objectId*/) {
         state.agentInsideTrigger = true;
+        state.leverConsole.invoke("toggleLever");
 
         fuse::mechanics::InteractionContext mechanicsCtx;
         mechanicsCtx.verb = "use";
@@ -125,7 +156,10 @@ void tickFrame(State& state, fuse::hybrid::HybridComposer& composer, const fuse:
 
     const fuse::cinematics::TimelineMs deltaMs =
         static_cast<fuse::cinematics::TimelineMs>(std::lround(ctx.dt * 1000.f));
+    const fuse::cinematics::TimelineMs timelineBefore = state.timeline.playhead().time_ms();
     state.timeline.advance(deltaMs);
+    fuse::cinematics::drain_actor_cues(state.timeline, state.vactorBridge, timelineBefore);
+    state.lastTimelineMs = state.timeline.playhead().time_ms();
 
     const fuse::cinematics::HybridTimelineSample drive =
         fuse::cinematics::sample_hybrid_timeline_drive(state.timeline);
@@ -136,6 +170,13 @@ void tickFrame(State& state, fuse::hybrid::HybridComposer& composer, const fuse:
     state.aiRuntime.evaluate(ctx);
     state.aiRuntime.commit();
 
+    if (state.allyAiRuntime.agentCount() >= 2u) {
+        state.allyAiRuntime.setBindingPosition(1u, state.agent3D.x(), state.agent3D.y());
+    }
+    state.allyAiRuntime.buildSnapshots();
+    state.allyAiRuntime.evaluate(ctx);
+    state.allyAiRuntime.commit();
+
     if (!state.aiRuntime.bindings().empty()) {
         const fuse::ai::AgentBinding& binding = state.aiRuntime.bindings()[0];
         state.agent3D.setPosition(binding.x, binding.y);
@@ -144,7 +185,6 @@ void tickFrame(State& state, fuse::hybrid::HybridComposer& composer, const fuse:
     state.fxComposer.tick(ctx);
 
     state.leverTrigger.testObject(kAgentObjectId, state.agent3D.x(), state.agent3D.y(), state.agent3D.z());
-    state.leverTrigger.advance(deltaMs);
 }
 
 VerifyResult verify(const State& state, const fuse::hybrid::HybridComposer& composer) {
@@ -169,6 +209,21 @@ VerifyResult verify(const State& state, const fuse::hybrid::HybridComposer& comp
     if (state.fxComposer.attachmentCount() < 2u || state.fxComposer.tickCount() != static_cast<fuse::u32>(kFrameCount)) {
         return {false, "fuse_fx sockets ticked each frame"};
     }
+    if (!state.allyAiRuntime.blackboard().flag(0, 1)) {
+        return {false, "fuse_ai ally spatial squad flag set for hybrid ally agent"};
+    }
+    if (state.vactorBridge.mountCount() == 0u) {
+        return {false, "fuse_cinematics VActor bridge applied mount cue"};
+    }
+    if (state.fxComposer.particlePool().spawnCount() == 0u) {
+        return {false, "fuse_fx particle pool received spawns from active sockets"};
+    }
+    if (state.fxComposer.findEffect("afx_demo_spark") == nullptr) {
+        return {false, "fuse_fx AFX-Template sample pack registered"};
+    }
+    if (state.leverToggle.toggleCount() == 0u) {
+        return {false, "fuse_mechanics ToggleComponent toggled on polyhedron trigger enter"};
+    }
     if (state.leverInteractable.interactionCount() == 0u) {
         return {false, "fuse_mechanics 3D interactable fired on trigger enter"};
     }
@@ -181,8 +236,8 @@ VerifyResult verify(const State& state, const fuse::hybrid::HybridComposer& comp
     if (state.world2D.readSnapshot().sprites().size() != 1u) {
         return {false, "2D snapshot built via hierarchy fillSnapshotSoA"};
     }
-    if (state.world3D.readSnapshot().objects().size() < 2u) {
-        return {false, "3D snapshot includes agent + lever objects"};
+    if (state.world3D.readSnapshot().objects().size() < 3u) {
+        return {false, "3D snapshot includes agent + ally + lever objects"};
     }
     if (composer.renderer().sample(160, 120) == 0) {
         return {false, "3D clear colour present"};

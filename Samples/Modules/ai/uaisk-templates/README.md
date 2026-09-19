@@ -13,4 +13,10 @@ Ore path: `third_party/addons/UAISK/The_Universal_AI_Starter_Kit/Templates/Full/
 
 C++ mapping header: `Source/FUSE/Modules/ai/include/fuse/ai/uaisk_template_hooks.hpp`
 
+## Text template packs
+
+| File | FUSE tree |
+|------|-----------|
+| `patrol_squad.bt` | `makePatrolWithAllySupportDemoTree()` equivalent via `loadTreeFromText` |
+
 License: MIT (`third_party/addons/UAISK/LICENSE`).

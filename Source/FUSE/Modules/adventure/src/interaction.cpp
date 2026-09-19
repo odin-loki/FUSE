@@ -1,5 +1,6 @@
 #include <fuse/adventure/interaction.hpp>
 
+#include <fuse/adventure/conversation_interactable.hpp>
 #include <fuse/adventure/examine_interactable.hpp>
 #include <fuse/adventure/hud_prompt_interactable.hpp>
 
@@ -40,6 +41,13 @@ std::string InteractionSystem::showHudPrompt(InteractContext& ctx, IInteractable
         return {};
     }
     return promptFor(target);
+}
+
+std::string InteractionSystem::converse(InteractContext& ctx, ConversationInteractable& target) {
+    if (target.converse(ctx) != InteractResult::Examined) {
+        return {};
+    }
+    return target.currentLine();
 }
 
 } // namespace fuse::adventure

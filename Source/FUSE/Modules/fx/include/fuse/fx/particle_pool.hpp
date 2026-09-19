@@ -34,6 +34,7 @@ public:
 
     u32 capacity() const { return static_cast<u32>(m_slots.size()); }
     u32 activeCount() const { return m_activeCount; }
+    u32 spawnCount() const { return m_spawnCount; }
 
     bool spawn(const fuse::math::Vec3& position,
                const fuse::math::Vec3& velocity,
@@ -49,6 +50,7 @@ private:
     ParticlePoolType m_poolType = ParticlePoolType::Normal;
     std::vector<ParticleSlot> m_slots;
     u32 m_activeCount = 0;
+    u32 m_spawnCount = 0;
 };
 
 } // namespace fuse::fx
