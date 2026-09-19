@@ -2297,3 +2297,12 @@ void testCookerReconcileShouldSkipGuards() {
 
 // --- deepen additive from deepen-b79-hash-should-skip-4ba0 ---
                "should_skip upstream invalidation false for seeded source");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-d100 ---
+               "seeded chain does not should_skip upstream invalidation");
+               "fresh reconcile estimate should_skip matches helper");
+               "stale dependency invalidation does not should_skip after upstream change");
+               "combined reconcile does not should_skip after upstream change");
+    expectTrue(!stale.should_skip(), "stale reconcile estimate does not should_skip");
+               "estimate should_skip matches should_skip_reconcile_invalidation helper");
+               "prune reconcile does not should_skip after upstream content change");

@@ -1896,3 +1896,30 @@ void testCookCachePruneReconcileShouldSkipGuards() {
                "would_invalidate_stale_content true when stored hash differs from revised key");
                "prune estimate should_skip false when stale entry present");
                "prune estimate should_skip true after prune");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-d100 ---
+    expectTrue(!estimate.should_skip(), "shader stale estimate does not should_skip");
+               "empty path should_skip file hash");
+               "missing file should_skip file hash");
+    expectTrue(!fuse::project::should_skip_file_content_hash(source),
+               "readable file does not should_skip file hash");
+               "valid mesh import does not should_skip hash");
+               "valid texture import does not should_skip hash");
+               "valid audio import does not should_skip hash");
+               "valid manifest entry does not should_skip hash");
+               "zero source hash should_skip cache key");
+               "valid source hash does not should_skip cache key");
+               "zero-size null bytes does not should_skip");
+    const fuse::project::CookHashPreflight preflight = fuse::project::preflight_mesh_import_hash(mesh);
+    expectTrue(preflight.should_skip() == fuse::project::should_skip_mesh_import_hash(mesh),
+               "preflight should_skip matches mesh should_skip helper");
+    expectTrue(cooked.ok, "manifest cook for would_invalidate probes ok");
+    expectTrue(!cooker.cache().would_invalidate_stale_upstream_hashes({{"", 1u}}),
+               "empty source path upstream would_invalidate is false");
+    expectTrue(!cooker.cache().would_invalidate_stale_upstream_hashes({{source_b, matching_upstream}}),
+               "matching upstream hash would_invalidate is false");
+               "mismatched upstream hash would_invalidate is true");
+    expectTrue(cooker.cache().would_invalidate_downstream_of(entry_a.output_path, graph.edges(), graph.jobs()),
+               "downstream would_invalidate true for chain head");
+    expectTrue(!cooker.cache().would_invalidate_downstream_of("", graph.edges(), graph.jobs()),
+               "empty output path downstream would_invalidate is false");
