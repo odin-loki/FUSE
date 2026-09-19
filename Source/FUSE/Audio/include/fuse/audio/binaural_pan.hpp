@@ -1984,6 +1984,7 @@ bool is_consistent_hrtf_binaural_preflight(const HrtfBinauralPreflight& prefligh
 /// Classify the primary composite binaural reject reason (B7.2 deepen follow-up).
 HrtfBinauralRejectReason classify_hrtf_binaural_reject(const HrtfBinauralPreflight& preflight);
 
+
 /// Preflight all binaural/HRTF guards for one source (IR-aware).
 HrtfBinauralPreflight preflight_hrtf_binaural(bool hrtf_enabled, const HrtfIrStub& ir,
                                               const Vec3& rel_listener, float distance_attenuation,
@@ -2023,6 +2024,9 @@ bool preflight_hrtf_binaural(bool hrtf_enabled, const Vec3& rel_listener, float 
 
 /// Composite binaural preflight without IR with mandatory reject-reason output (B7.2 deepen).
 bool try_preflight_hrtf_binaural(bool hrtf_enabled, const Vec3& rel_listener,
+HrtfBinauralPreflight preflight_hrtf_binaural(bool hrtf_enabled, const AudioListener& listener,
+                                              const HrtfAttenuationCoupling& coupling = {},
+                                              const BinauralPanParams& params = {});
 
 /// Non-mutating spatial-pan predicate — mirrors \c HrtfBinauralPreflight::can_spatial_pan.
 bool can_apply_hrtf_binaural_pan(const HrtfBinauralPreflight& preflight);
@@ -2066,6 +2070,10 @@ bool can_narrow_hrtf_binaural_spatial_image(const HrtfBinauralPreflight& preflig
 /// Early-out inverse of composite \c should_apply_hrtf_attenuation_coupling.
 /// Early-out when composite binaural preflight would bypass spatial pan (B7.2 deepen follow-up).
 bool should_skip_hrtf_binaural_preflight(bool hrtf_enabled, const Vec3& rel_listener);
+
+
+
+
 
 /// Apply pan + coupling using a preflight bundle (read-only guards; valid paths unchanged).
 BinauralPanGains compute_binaural_pan_gains_from_preflight(const HrtfBinauralPreflight& preflight,
