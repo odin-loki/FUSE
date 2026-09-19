@@ -4857,3 +4857,9 @@ void testTaaPassTryClassifyGuardWrappers() {
 // --- deepen additive from deepen-taa-pass-guards-af67 ---
                "pass tryPreflightJitterSync passes after init");
                "pass syncJitterToFrameIndexIfReady succeeds after tryPreflight");
+
+// --- deepen additive from taa-pass-try-classify-wrappers-9393 ---
+               "pass tryPreflightResolveBlendWeights reject reason is None before warmup resolve");
+               "pass classifyJitterSyncReject matches subsystem helper");
+               "pass classifyJitterNdcReject matches subsystem helper");
+               "pass classifyResolveBlendReject matches subsystem helper");
