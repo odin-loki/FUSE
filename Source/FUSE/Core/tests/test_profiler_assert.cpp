@@ -2880,3 +2880,10 @@ void testNestingStatePreflight() {
     expectTrue(!dirtyPreflight.unbalancedScopeNesting, "ended scope is balanced");
     expectTrue(dirtyPreflight.unbalancedFlowNesting, "unmatched flow marks flow nesting unbalanced");
     expectTrue(dirtyPreflight.hasOpenAsyncFlows, "unmatched flow marks open async flows");
+
+// --- deepen additive from deepen-b16-profiler-guards-5e0c ---
+void testExportPreflightStubs() {
+    expectTrue(!fuse::profiler::isValidProfileEvent(out), "tryEventAt out param unchanged on failure");
+    expectTrue(!fuse::profiler::tryEventAt(99u, out), "tryEventAt false for out-of-range index");
+void testIsValidProfileEventRejectsEmptyName() {
+    testExportPreflightStubs();
