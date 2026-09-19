@@ -1482,6 +1482,15 @@ bool finalize_contact_manifold_if_not_finalized(
 /// Inverse of `should_skip_manifold_prune` (B4.5 deepen follow-up pass).
 
 /// Inverse of `can_skip_manifold_finalize` (B4.5 deepen follow-up pass).
+/// Returns true when manifold prune may proceed (B4.6 deepen pass).
+
+/// Returns true when manifold finalize may proceed (B4.6 deepen pass).
+
+/// Returns true when preflight-guarded prune may proceed (B4.6 deepen pass).
+bool should_run_prune_contact_manifold_with_preflight(
+
+/// Returns true when preflight-guarded finalize may proceed (B4.6 deepen pass).
+bool should_run_finalize_contact_manifold_with_preflight(
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

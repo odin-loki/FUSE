@@ -2589,6 +2589,14 @@ bool finalize_contact_manifold_if_not_finalized(
 
 
 
+
+bool should_run_prune_contact_manifold_with_preflight(
+    return preflight.reason == ManifoldPruneRejectReason::None &&
+           (preflight.needs_pruning() || preflight.needs_shallow_pruning(shallowMinDepth));
+
+bool should_run_finalize_contact_manifold_with_preflight(
+        .can_finalize();
+
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};
     if (index >= pointCount) {

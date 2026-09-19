@@ -867,4 +867,12 @@ bool invalidate_friction_basis_if_stale(ContactManifold& manifold, f32 epsilon =
 
 /// Inverse of `should_skip_friction_basis_preflight` (B4.5 deepen follow-up pass).
 
+/// Returns true when friction-basis rebuild may proceed (B4.6 deepen pass).
+
+/// Returns true when `rebuild_friction_basis_if_needed` may mutate the manifold (B4.6 deepen pass).
+bool should_run_rebuild_friction_basis_if_needed(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Returns true when preflight-guarded friction-basis rebuild may proceed (B4.6 deepen pass).
+bool should_run_rebuild_friction_basis_with_preflight(
+
 } // namespace fuse::physics::narrowphase
