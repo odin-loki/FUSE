@@ -4412,3 +4412,7 @@ void testHasActiveScopeAndFlowNestingGuards() {
     expectTrue(fuse::profiler::tryLastFlowEvent(outerFlowId, outEvent),
                "tryLastFlowEvent true for outer flow finish");
     expectTrue(outEvent.scopeId == outerFlowId, "tryLastFlowEvent preserves flow id");
+
+// --- deepen additive from profiler-deepen-guards-fd14 ---
+    expectTrue(!fuse::profiler::tryFindLastEventByFlowId(flowId, outEvent),
+               "tryFindLastEventByFlowId false on empty buffer");
