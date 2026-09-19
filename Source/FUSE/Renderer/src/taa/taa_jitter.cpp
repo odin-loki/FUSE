@@ -171,6 +171,18 @@ bool shouldSkipTaaJitterSync(u32 frameIndex, u32 sequenceLength) {
 
 bool taaJitterSyncReady(u32 frameIndex, u32 sequenceLength, TaaJitterGuardRejectReason* reason) {
     return preflightTaaJitterSync(frameIndex, sequenceLength, reason);
+bool taaJitterSyncReady(u32 frameIndex, u32 sequenceLength) {
+    return preflightTaaJitterSync(frameIndex, sequenceLength);
+}
+
+bool tryPreflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength, TaaJitterGuardRejectReason& reason) {
+    return preflightTaaJitterNdc(width, height, sequenceLength, &reason);
+
+bool shouldSkipTaaJitterNdc(u32 width, u32 height, u32 sequenceLength) {
+    return !preflightTaaJitterNdc(width, height, sequenceLength);
+
+bool taaJitterNdcReady(u32 width, u32 height, u32 sequenceLength) {
+    return preflightTaaJitterNdc(width, height, sequenceLength);
 }
 
 bool preflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength, TaaJitterGuardRejectReason* reason) {

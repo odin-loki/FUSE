@@ -1000,6 +1000,10 @@ bool taaResolveBlendReady(const TaaResolveDesc& desc, const TaaHistoryBuffer& hi
     return preflightTaaResolveBlendWeights(desc, history);
 }
 
+bool wouldSkipTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return shouldSkipTaaResolveBlend(desc, history);
+}
+
 bool tryComputeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                       TaaBlendWeights& outWeights, TaaResolveBlendRejectReason* reason) {
     const TaaResolveBlendRejectReason reject = classifyTaaResolveBlendReject(desc, history);

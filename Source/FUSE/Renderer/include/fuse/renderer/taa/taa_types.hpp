@@ -201,6 +201,8 @@ bool taaHistoryNeedsWarmup(const TaaHistoryBuffer& history);
 /// True when history is allocated and warmed for temporal reuse (B5.9 deepen).
 /// True when history warm-up is complete and temporal reuse may proceed (B5.9 deepen).
 bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history);
+/// Early-out when history still needs warm-up before temporal reuse (B5.9 deepen).
+bool shouldSkipTaaHistoryWarmup(const TaaHistoryBuffer& history);
 /// Blend weights for a resolve frame considering warm-up and reuse guards (B5.9 deepen).
 TaaBlendWeights computeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// True when resolve would apply a non-zero history blend weight (B5.9 deepen).
@@ -229,6 +231,8 @@ bool tryPreflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGe
                                  TaaHistoryReuseBlockReason& reason);
 /// Early-out when history temporal reuse should be skipped (B5.9 deepen).
 bool shouldSkipTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration);
+/// Alias for `shouldSkipTaaHistoryReuse` — same ordering as reuse preflight (B5.9 deepen).
+bool wouldSkipTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration);
 /// True when history is ready, warmed, and generation matches for reuse (B5.9 deepen).
 bool taaHistoryReuseReady(const TaaHistoryBuffer& history, u32 observedGeneration);
 /// Convenience wrapper — true when `preflightTaaHistoryReuse` would pass (B5.9 deepen).
@@ -431,6 +435,8 @@ bool tryPreflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHis
 bool shouldSkipTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// True when resolve blend weights pass validation and reuse policy (B5.9 deepen).
 bool taaResolveBlendReady(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// Alias for `shouldSkipTaaResolveBlend` — same ordering as blend preflight (B5.9 deepen).
+bool wouldSkipTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// Compute resolve blend weights with reject-reason diagnostics (B5.9 deepen).
 bool tryComputeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                       TaaBlendWeights& outWeights, TaaResolveBlendRejectReason& reason);
