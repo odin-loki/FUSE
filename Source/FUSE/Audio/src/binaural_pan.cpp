@@ -2172,3 +2172,11 @@ bool should_skip_hrtf_pan_path_convolution_preflight(bool hrtf_enabled, const Hr
 bool try_preflight_hrtf_binaural_spatial_pan(bool hrtf_enabled, const Vec3& rel_listener,
 bool should_skip_hrtf_binaural_spatial_pan_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
 bool should_skip_hrtf_binaural_spatial_pan_preflight(bool hrtf_enabled, const Vec3& rel_listener) {
+
+// --- deepen additive from deepen-b7-2-hrtf-guards-e3ef ---
+        *reason = classifyHrtfIrReject(preflight);
+        *reason = classifyHrtfPanPathReject(preflight);
+        *reason = classifyHrtfAttenuationCouplingReject(preflight);
+    const HrtfBinauralRejectReason pan_reject = classifyHrtfBinauralPanReject(preflight);
+bool preflight_hrtf_binaural_pan_ready(const HrtfBinauralPreflight& preflight,
+bool try_preflight_hrtf_binaural_pan(const HrtfBinauralPreflight& preflight,

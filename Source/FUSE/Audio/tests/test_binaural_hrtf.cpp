@@ -2587,3 +2587,23 @@ void testHrtfPanConvolveRejectReasonGuards() {
 
 // --- deepen additive from deepen-b72-hrtf-reject-reasons-d9df ---
                    stub_preflight, fuse::audio::HrtfPanPathRejectReason::EmptyIr),
+
+// --- deepen additive from deepen-b7-2-hrtf-guards-e3ef ---
+    expectTrue(fuse::audio::classifyHrtfIrReject(malformed_preflight)
+               "classifyHrtfIrReject maps malformed IR");
+                   || reason == fuse::audio::HrtfIrRejectReason::ZeroLength,
+    expectTrue(fuse::audio::classifyHrtfPanPathReject(stub_preflight)
+    expectTrue(fuse::audio::classifyHrtfAttenuationCouplingReject(bypass_preflight)
+               "classifyHrtfAttenuationCouplingReject maps bypass path");
+    expectTrue(fuse::audio::classifyHrtfBinauralPanReject(bypass_preflight)
+               "classifyHrtfBinauralPanReject maps disabled HRTF");
+    expectTrue(fuse::audio::classifyHrtfBinauralNarrowingReject(co_located_preflight)
+    expectTrue(fuse::audio::classifyHrtfBinauralConvolutionReject(malformed_preflight)
+               "classifyHrtfBinauralConvolutionReject maps malformed IR");
+    expectTrue(fuse::audio::classifyHrtfIrReject(ir_preflight)
+                   != fuse::audio::HrtfIrRejectReason::None,
+    expectTrue(pan_reason == fuse::audio::classifyHrtfPanPathReject(pan_preflight),
+               "pan-path ready reason mirrors classifyHrtfPanPathReject");
+    fuse::audio::HrtfAttenuationCouplingRejectReason coupling_reason =
+    expectTrue(coupling_reason == fuse::audio::HrtfAttenuationCouplingRejectReason::None,
+    fuse::audio::HrtfBinauralRejectReason composite_reason =
