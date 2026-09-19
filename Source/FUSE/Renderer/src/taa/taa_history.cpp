@@ -104,6 +104,15 @@ TaaHistoryReusePreflight preflightTaaHistoryReuseForDesc(const TaaHistoryBuffer&
         TaaHistoryReusePreflight preflight = preflightTaaHistoryReuse(history, history.invalidateGeneration());
         preflight.reuse_allowed = taaHistoryCanReuse(history);
     return preflightTaaHistoryReuse(history, desc.observed_history_generation);
+    return !history.isReady() || history.needsWarmup();
+
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
+    return history.warmupComplete();
+
+bool taaResolveWouldBeFirstFrame(const TaaHistoryBuffer& history) {
+
+bool TaaHistoryBuffer::warmupComplete() const {
+    return m_ready && m_validity.hasValidHistory;
 }
 
 bool TaaHistoryBuffer::canReuseHistory() const {

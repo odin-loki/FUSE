@@ -82,6 +82,13 @@ bool taaHistoryIsReusable(const TaaHistoryBuffer& history, const TaaResolveDesc&
 /// Preflight resolve blend weights for the next frame without mutating history (B5.9 deepen).
 bool preflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                     TaaBlendWeights* outWeights = nullptr);
+/// Blend weights that would be applied for this resolve request (B5.9 deepen).
+TaaBlendWeights computeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// Preflight resolve plus blend-weight validation; optionally fills `weights` (B5.9 deepen).
+bool preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                              TaaBlendWeights* weights = nullptr);
+/// True when resolve and blend-weight preflights pass (B5.9 deepen).
+bool taaResolveBlendPreflightPasses(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 
 /// CPU/CUDA resolve facade — records resolve intent; kernel deferred (B5.9 stub).
 class TaaResolve {

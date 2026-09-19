@@ -55,6 +55,8 @@ struct TaaJitterLayout {
     static bool validateViewportDimensions(u32 width, u32 height);
     /// True when jitter slot index is within the active sequence (B5.9 deepen).
     static bool jitterIndexInRange(u32 index, u32 sequenceLength);
+    /// True when a monotonic frame counter may be synced into the active sequence (B5.9 deepen).
+    static bool canSyncToFrameIndex(u32 sequenceLength);
     /// True when NDC jitter can be produced for viewport and sequence (B5.9 deepen).
     static bool canProduceNdcOffset(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// True when jitter can align to a monotonic frame counter (B5.9 deepen).
@@ -149,6 +151,11 @@ public:
     bool canSyncToFrameIndex(u32 frameIndex) const;
     /// True when jitter slot and monotonic counter match `frameIndex` (B5.9 deepen).
     bool isSyncedToFrameIndex(u32 frameIndex) const;
+    /// True when jitter state matches `frameIndex` (B5.9 deepen).
+    /// Expected Halton slot for `frameIndex` with the active sequence length (B5.9 deepen).
+    u32 expectedSlotForFrameIndex(u32 frameIndex) const;
+    /// True when slot and monotonic counter align with `frameIndex` (B5.9 deepen).
+    bool slotMatchesFrameIndex(u32 frameIndex) const;
     /// Monotonic frame counter — incremented by `advance`, set by `syncToFrameIndex`, cleared by `reset`.
     u32 monotonicFrameIndex() const { return m_monotonicFrame; }
     /// True when jitter state matches the expected monotonic frame counter (B5.9 deepen).

@@ -316,6 +316,18 @@ bool TaaPass::preflightResolveBlend(const TaaResolveDesc& desc, TaaResolveBlendP
     return preflightTaaResolveBlend(desc, m_history, out);
 }
 
+bool TaaPass::isJitterSyncedToFrameIndex(u32 frameIndex) const {
+    return m_jitter.slotMatchesFrameIndex(frameIndex);
+}
+
+bool TaaPass::canSyncJitterToFrameIndex() const {
+    return m_jitter.canAdvance();
+}
+
+bool TaaPass::preflightResolveBlend(const TaaResolveDesc& desc, TaaBlendWeights* weights) const {
+    return preflightTaaResolveBlend(desc, m_history, weights);
+}
+
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
     return m_resolve.wouldSkip(desc, m_history, reason);
 }

@@ -276,10 +276,7 @@ TaaHistoryReusePreflight preflightTaaHistoryReuseForDesc(const TaaHistoryBuffer&
 TaaResolveBlendPreflight preflightTaaResolveBlend(bool firstFrame, const TAAParams& params,
 TaaResolveBlendPreflight preflightTaaResolveBlendForDesc(const TaaResolveDesc& desc,
 
-/// Why history temporal reuse is blocked (B5.9 deepen).
 enum class TaaHistoryReuseRejectReason : u8 {
-    None = 0,
-    NotReady,
     NeedsWarmup,
 
 /// Human-readable label for history reuse reject reasons (logging / tests).
@@ -324,6 +321,10 @@ bool taaResolveBlendPreflightValid(const TaaResolveBlendPreflight& preflight);
 bool taaResolveWouldBlendHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// True when blend preflight matches history warm-up state (B5.9 deepen).
 bool taaResolveBlendConsistentWithHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// True when history is not ready or still needs warm-up (B5.9 deepen).
+/// True when history targets are ready and warmed for temporal reuse (B5.9 deepen).
+/// True when the next resolve would run before history is warm (B5.9 deepen).
+bool taaResolveWouldBeFirstFrame(const TaaHistoryBuffer& history);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {
